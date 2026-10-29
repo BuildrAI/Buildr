@@ -528,7 +528,13 @@ export class ConversationApplication {
     }
     entry = { id: randomUUID(), sequence: (record.view.entries.at(-1)?.sequence ?? 0) + 1, createdAt: this.options.now(), kind: item.kind, role: item.role, text: item.text, name: item.name, input: item.input, participantId: participant.id, provider: participant.provider, runId:runId??record.attempts.find(a=>a.participantId===participant.id&&(a.executionRef?.id===item.executionId||a.clientRequestId===item.executionId))?.runId, status: item.status };
     record.view.entries.push(entry); record.sources[source] = entry.id;
-    participant.deliveredThrough = Math.max(participant.deliveredThrough, entry.sequence);
+    // A late native projection is known to this participant; intervening foreign
+    // work and an input still awaiting acceptance are not. Never skip that gap.
+    for (const visible of record.view.entries) {
+      if (visible.sequence <= participant.deliveredThrough) continue;
+      if (visible.participantId !== participant.id || record.attempts.some(value => value.userEntryId === visible.id && !value.accepted)) break;
+      participant.deliveredThrough = visible.sequence;
+    }
     return true;
   }
   private event(workspaceId: string, id: string, runId: string, event: ExecutorEvent): void {
@@ -636,9 +642,20 @@ export class ConversationApplication {
       if (participant.contextRef) {
         await runtime.resumeContext({ contextRef: participant.contextRef, cwd: record.view.cwd, permissionMode: prepared.draft.permissionMode });
         const history = await runtime.readHistory({ contextRef: participant.contextRef, cwd: record.view.cwd });
-        let changed = false;
-        for (const item of history) changed = this.applyItem(record, participant, item) || changed;
-        if (changed) { this.save(record); fail('agent_history_changed', '原生记录有新变化，本次要求已保留；请核对后再继续。', 409); }
+        let changed = false, needsReview = false;
+        for (const item of history) {
+          if (!this.applyItem(record, participant, item)) continue;
+          changed = true;
+          const sourceEntryId = record.sources[`${participant.id}:${item.kind}:${item.id}`];
+          const entry = record.view.entries.find(value => value.id === sourceEntryId);
+          const outcome = entry?.runId ? record.runOutcomes?.[entry.runId] : undefined;
+          // The same native context already owns settled results. Repairing their
+          // visible projection cannot invalidate a new, not-yet-delivered input.
+          // Unknown executions and changed user acceptance still require review.
+          if (item.role === 'user' || !outcome || !['completed', 'stopped', 'failed'].includes(outcome.status) || item.kind === 'tool' && !['completed', 'failed'].includes(item.status ?? '')) needsReview = true;
+        }
+        if (changed) this.save(record);
+        if (needsReview) fail('agent_history_changed', '原生记录有新变化，本次要求已保留；请核对后再继续。', 409);
       } else {
         creatingContext = true;
         const ref = await runtime.createContext({ cwd: record.view.cwd, permissionMode: prepared.draft.permissionMode });

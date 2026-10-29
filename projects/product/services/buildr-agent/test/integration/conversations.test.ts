@@ -1963,3 +1963,50 @@ test('reconciliation preserves received terminal tool evidence and supplies exac
     assert.equal(entry?.status, 'completed'); assert.equal(native.sends.length, 1);
   } finally { await f.close(); }
 });
+
+
+test('settled same-context image backfill preserves the new input and dispatches it exactly once', async () => {
+  const native=fake(),f=fixture([native.executor]);
+  try {
+    await connected(f.service,'local');const created=await f.service.conversations.create('workspace-one',{});
+    send(f.service,created.id,'local','first');
+    await waitUntil(()=>f.service.conversations.read('workspace-one',created.id),v=>v.run?.status==='completed');
+    const context=[...native.contexts.values()][0]!;
+    context.items.push({id:'old-image',kind:'tool',role:'system',name:'view-image',text:'查看图片',status:'completed',executionId:'execution-1'});
+    send(f.service,created.id,'local','next');
+    const result=await waitUntil(()=>f.service.conversations.read('workspace-one',created.id),v=>v.run?.status==='completed'||v.run?.status==='failed');
+    assert.equal(result.run?.status,'completed');assert.equal(native.sends.length,2);
+    assert.equal(result.entries.filter(e=>e.text==='next').length,1);
+    const image=result.entries.find(e=>e.name==='view-image')!;assert.ok(image);assert.notEqual(image.runId,result.run?.id);
+    await f.service.conversations.observe('workspace-one',created.id);
+    assert.equal(native.sends.length,2);assert.equal(f.service.conversations.read('workspace-one',created.id).entries.filter(e=>e.name==='view-image').length,1);
+  } finally {await f.close();}
+});
+
+test('late backfill cannot mark foreign work or the current unsent input delivered', async () => {
+  const a=fake('a'),b=fake('b'),f=fixture([a.executor,b.executor]);
+  try {
+    await connected(f.service,'a');await connected(f.service,'b');const created=await f.service.conversations.create('workspace-one',{});
+    send(f.service,created.id,'a','first');await waitUntil(()=>f.service.conversations.read('workspace-one',created.id),v=>v.run?.status==='completed');
+    const through=f.service.conversations.read('workspace-one',created.id).participants[0]!.deliveredThrough;
+    send(f.service,created.id,'b','foreign');await waitUntil(()=>f.service.conversations.read('workspace-one',created.id),v=>v.run?.status==='completed');
+    const context=[...a.contexts.values()][0]!;
+    context.items.push({id:'unknown-tool',kind:'tool',role:'system',name:'read',text:'unknown execution',status:'completed',executionId:'foreign-execution'});
+    send(f.service,created.id,'a','next');
+    const failed=await waitUntil(()=>f.service.conversations.read('workspace-one',created.id),v=>v.run?.status==='failed');
+    assert.equal(a.sends.length,1);assert.equal(failed.run?.accepted,false);
+    assert.equal(failed.participants.find(p=>p.provider==='a')!.deliveredThrough,through);
+    assert.match(failed.run?.diagnostic??'',/原生记录有新变化/);
+  } finally {await f.close();}
+});
+
+test('new unmapped native user input still blocks dispatch while preserving the local request', async () => {
+  const native=fake(),f=fixture([native.executor]);
+  try {
+    await connected(f.service,'local');const created=await f.service.conversations.create('workspace-one',{});
+    send(f.service,created.id,'local','first');await waitUntil(()=>f.service.conversations.read('workspace-one',created.id),v=>v.run?.status==='completed');
+    [...native.contexts.values()][0]!.items.push({id:'outside-input',kind:'message',role:'user',text:'outside',executionId:'outside'});
+    send(f.service,created.id,'local','next');const failed=await waitUntil(()=>f.service.conversations.read('workspace-one',created.id),v=>v.run?.status==='failed');
+    assert.equal(native.sends.length,1);assert.equal(failed.entries.filter(e=>e.text==='next').length,1);assert.match(failed.run?.diagnostic??'',/原生用户输入尚不能准确映射/);
+  } finally {await f.close();}
+});

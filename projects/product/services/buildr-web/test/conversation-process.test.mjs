@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {groupConversationStream,processBlockKey,carryExpandedProcessBlocks,processEntryStatus,conversationStreamTurns} from '../src/features/agent-conversations/conversation-state.ts';
+import {groupConversationStream,processBlockKey,carryExpandedProcessBlocks,processEntryStatus,conversationStreamTurns,conversationTurnExecution} from '../src/features/agent-conversations/conversation-state.ts';
 import {processTool,conversationFileTarget} from '../src/features/agent-conversations/conversation-process.ts';
 const message=(id,text,runId='r1',role='assistant')=>({id,sequence:0,kind:'message',role,text,runId,createdAt:'2026-10-26T00:00:00Z'});
 const tool=(id,options={})=>({...message(id,'output'),kind:'tool',role:'system',status:'completed',...options});
@@ -116,4 +116,25 @@ test('来源引用行号不混入文件名，准确工作树定位保持安全�
   const catalog={worktrees:[{id:'actual',repositoryId:'repo',path:'/repo',available:true}]};
   assert.deepEqual(conversationFileTarget('/repo',conversationFileReference('src/a.ts:12').path,catalog),{repositoryId:'repo',checkoutId:'actual',path:'src/a.ts'});
   assert.equal(conversationFileTarget('/repo',conversationFileReference('%2e%2e/other/a.ts:12').path,catalog),null);
+});
+
+
+test('补回旧执行的记录按准确轮次归属，原轮不在当前页时单独保留',()=>{
+ const oldPrompt=message('old-u','旧要求','old','user'),newPrompt=message('new-u','新要求','new','user'),late=tool('image',{runId:'old'});
+ const turns=conversationStreamTurns(groupConversationStream([oldPrompt,message('old-a','完成','old'),newPrompt,late]));
+ assert.equal(turns.length,2);assert.equal(turns[0].items.at(-1).entries[0].id,'image');assert.deepEqual(turns[1].items,[]);
+ const page=conversationStreamTurns(groupConversationStream([newPrompt,late]));
+ assert.equal(page[0].key,'history:old');assert.equal(page[1].prompt.id,'new-u');assert.deepEqual(page[1].items,[]);
+});
+
+test('重试通知在首条原生回应前即绑定当前执行与计时，旧图片不能干扰',()=>{
+ const prompt=message('u','原要求','failed','user'),retry={...message('retry','已请求重试上次未送达的要求。','retry','system'),kind:'notice'};
+ const turns=conversationStreamTurns(groupConversationStream([prompt,tool('old-image',{runId:'old'}),retry]));
+ const run={id:'retry',status:'running',accepted:true,startedAt:'2026-10-29T01:31:08Z'};
+ assert.deepEqual(conversationTurnExecution(turns.at(-1),run),{current:true,active:true,waiting:'已送达，等待智能体回应…'});
+ assert.equal(conversationTurnExecution(turns[0],run).current,false);
+ const preparing={...run,status:'starting',accepted:false};assert.equal(conversationTurnExecution(turns.at(-1),preparing).waiting,'正在准备连接并确认指令送达…');
+ const responded=conversationStreamTurns(groupConversationStream([prompt,retry,tool('current',{runId:'retry'})],run));
+ assert.deepEqual(conversationTurnExecution(responded.at(-1),run),{current:true,active:true});
+ assert.equal(conversationTurnExecution(responded.at(-1),{...run,status:'completed'}).active,false);
 });

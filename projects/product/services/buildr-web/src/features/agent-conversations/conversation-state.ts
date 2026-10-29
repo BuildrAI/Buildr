@@ -170,12 +170,34 @@ export function groupConversationStream(entries:readonly ConversationEntry[],cur
 }
 export type ConversationTurnItems={key:string;prompt?:ConversationEntry;items:ConversationStreamItem[]};
 export function conversationStreamTurns(items:readonly ConversationStreamItem[]):ConversationTurnItems[]{
-  const turns:ConversationTurnItems[]=[];
+  const turns:ConversationTurnItems[]=[], owners=new Map<string,ConversationTurnItems>();
   for(const item of items){
-    if(item.type==='entry'&&item.entry.kind==='message'&&item.entry.role==='user')turns.push({key:item.entry.id,prompt:item.entry,items:[]});
-    else {if(!turns.length)turns.push({key:'earlier',items:[]});turns.at(-1)!.items.push(item);}
+    const entry=item.type==='entry'?item.entry:item.entries[0];
+    if(item.type==='entry'&&entry.kind==='message'&&entry.role==='user'){
+      const turn={key:entry.id,prompt:entry,items:[]};turns.push(turn);
+      // Supplementary inputs in the same execution start a new visible segment.
+      if(entry.runId)owners.set(entry.runId,turn);
+    }else{
+      if(!turns.length)turns.push({key:'earlier',items:[]});
+      let owner=entry.runId?owners.get(entry.runId):undefined;
+      if(!owner&&item.type==='process-block'&&entry.runId&&turns.at(-1)!.prompt?.runId&&entry.runId!==turns.at(-1)!.prompt!.runId){
+        // A replayed result may precede the loaded history page. It cannot belong
+        // to the latest input merely because it was projected later.
+        owner={key:'history:'+entry.runId,items:[]};turns.unshift(owner);
+      }
+      owner??=turns.at(-1)!;owner.items.push(item);
+      if(entry.runId)owners.set(entry.runId,owner);
+    }
   }
   return turns;
+}
+/** Retry notices carry the accepted run before its first assistant/tool item. */
+export function conversationTurnExecution(turn:ConversationTurnItems,run?:ConversationRun):{current:boolean;active:boolean;waiting?:string}{
+  const entries=[...(turn.prompt?[turn.prompt]:[]),...turn.items.flatMap(item=>item.type==='entry'?[item.entry]:item.entries)];
+  const current=Boolean(run&&entries.some(entry=>entry.runId===run.id));
+  const active=current&&Boolean(run&&['starting','running'].includes(run.status));
+  const responded=Boolean(run&&entries.some(entry=>entry.runId===run.id&&(entry.role==='assistant'||entry.kind==='tool')));
+  return {current,active,...(active&&!responded?{waiting:run?.accepted?'已送达，等待智能体回应…':'正在准备连接并确认指令送达…'}:{})};
 }
 export function toolEntryHeadline(entry:ConversationEntry):string {
   return entry.text.split('\n',1)[0].trim();
