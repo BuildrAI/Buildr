@@ -120,3 +120,26 @@ test('continuity health proof rejects launcher identity drift', async t => {
   assert.equal(observed.status, 'stale');
   assert.equal(observed.reason, 'health-identity-mismatch');
 });
+
+function manualSource(f: ReturnType<typeof fixture>, patch: Record<string, unknown> = {}) {
+  f.write(100, proof('1'), null as any);
+  const state = JSON.parse(fs.readFileSync(f.file, 'utf8'));
+  state.productIdentity = { channel: 'development', sourceRoot: f.root, runtime: { role: 'development', executable: process.execPath }, developmentRuntimeIdentity: proof('1'), ...patch };
+  fs.writeFileSync(f.file, JSON.stringify(state));
+}
+test('authenticated manual source Web is updated through the same owner without inventing a Launcher identity', async t => {
+  const f = fixture(t); manualSource(f);
+  const observed = await inspectDevelopmentInstance({ dataRoot: f.base.dataRoot, fetchImpl: f.base.fetchImpl });
+  assert.equal(observed.status, 'healthy-development'); assert.equal(observed.instance?.launcherIdentity, null);
+  const result = await restartDevelopmentInstance(f.base);
+  assert.equal(result.instance?.pid, 300); assert.deepEqual(f.stops, [100]); assert.equal(f.spawns(), 1);
+});
+for (const patch of [
+  { channel: 'npm' }, { sourceRoot: undefined }, { developmentRuntimeIdentity: undefined },
+  { runtime: { role: 'host', executable: process.execPath } }, { runtime: { role: 'development' } },
+  { sourceRoot: '/unrelated/source' }, { runtime: { role: 'development', executable: '/unrelated/node' } },
+]) test('manual source update preserves unknown or foreign ownership: ' + JSON.stringify(patch), async t => {
+  const f = fixture(t); manualSource(f, patch);
+  await assert.rejects(restartDevelopmentInstance(f.base), (error: any) => error.code === 'development-web-continuity.owner-mismatch');
+  assert.deepEqual(f.stops, []); assert.equal(f.spawns(), 0);
+});

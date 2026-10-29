@@ -39,6 +39,17 @@ function samePath(left, right) {
   try { return fs.realpathSync(left) === fs.realpathSync(right); } catch { return path.resolve(left || '') === path.resolve(right || ''); }
 }
 
+/** A manually started source service can prove the same owner without pretending it has a Launcher identity. */
+export function developmentSourceBinding(instance) {
+  if (instance?.launcherIdentity != null) return instance.launcherIdentity;
+  const product = instance?.productIdentity;
+  if (product?.channel !== 'development' || product.runtime?.role !== 'development'
+    || typeof product.sourceRoot !== 'string' || !path.isAbsolute(product.sourceRoot)
+    || typeof product.runtime.executable !== 'string' || !path.isAbsolute(product.runtime.executable)
+    || !/^sha256-[a-f0-9]{64}$/.test(product.developmentRuntimeIdentity || '')) return null;
+  return { channel: 'development', sourceRoot: product.sourceRoot, developmentRuntime: { executable: product.runtime.executable } };
+}
+
 function publicInstance(state, port, restartInProgress = false) {
   return {
     url: state.url,
@@ -79,7 +90,7 @@ export async function inspectDevelopmentInstance({
     return { schemaVersion: DEVELOPMENT_WEB_CONTINUITY_SCHEMA, action: 'inspect', status: 'stale', reason: 'health-unreachable', instance: null };
   }
   const instance = publicInstance(state, port, restartInProgress);
-  if (state.launcherIdentity?.channel !== 'development') {
+  if (developmentSourceBinding(state)?.channel !== 'development') {
     return { schemaVersion: DEVELOPMENT_WEB_CONTINUITY_SCHEMA, action: 'inspect', status: 'different-owner', reason: state.launcherIdentity?.channel || 'launcher-identity-missing', instance };
   }
   return { schemaVersion: DEVELOPMENT_WEB_CONTINUITY_SCHEMA, action: 'inspect', status: 'healthy-development', reason: null, instance };
@@ -100,16 +111,18 @@ function assertRestartIdentity(identity, expected) {
 }
 
 function matchesRunningSource(instance, expected) {
+  const source = developmentSourceBinding(instance);
   return instance.port === expected.port
     && instance.productIdentity?.developmentRuntimeIdentity === expected.runtimeIdentity
-    && samePath(instance.launcherIdentity?.sourceRoot, expected.sourceRoot)
-    && samePath(instance.launcherIdentity?.developmentRuntime?.executable, expected.nodeExecutable);
+    && samePath(source?.sourceRoot, expected.sourceRoot)
+    && samePath(source?.developmentRuntime?.executable, expected.nodeExecutable);
 }
 
 function matchesDevelopmentOwner(instance, expected) {
-  return instance.launcherIdentity?.channel === 'development'
-    && samePath(instance.launcherIdentity?.sourceRoot, expected.sourceRoot)
-    && samePath(instance.launcherIdentity?.developmentRuntime?.executable, expected.nodeExecutable);
+  const source = developmentSourceBinding(instance);
+  return source?.channel === 'development'
+    && samePath(source?.sourceRoot, expected.sourceRoot)
+    && samePath(source?.developmentRuntime?.executable, expected.nodeExecutable);
 }
 
 function continuityError(code, message) {
