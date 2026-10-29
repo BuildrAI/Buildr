@@ -1,4 +1,4 @@
-import type { ExecutorItem } from '../../contracts.ts';
+import type { ExecutorItem, ExecutorObservation } from '../../contracts.ts';
 import { errorDiagnostic } from '../../domain/error-diagnostic.ts';
 import { visibleText, nativePreview } from '../native-process.ts';
 
@@ -11,10 +11,11 @@ export function qoderResultOutcome(message:any,stopping=false,secrets:readonly s
 }
 
 /** Fold repeated native assistant snapshots by their stable message identity. */
-export function qoderHistoryItems(messages: any[], contextId: string): ExecutorItem[] {
+export function qoderHistoryItems(messages: any[], contextId: string, interruptions: ReadonlySet<string> = new Set()): ExecutorItem[] {
   const items: ExecutorItem[] = []; let executionId: string | undefined;
   for (const message of messages) {
     if (message.session_id !== contextId) throw new Error('qoder_context_identity_mismatch');
+    if (interruptions.has(message.uuid)) continue;
     const content = message.message?.content; const text = visibleText(content);
     const isOrdinaryInput = message.type === 'user' && (Boolean(text) || Array.isArray(content) && content.some((part: any) => part.type === 'image')) && !message.parent_tool_use_id && !(Array.isArray(content) && content.some((part: any) => part.type === 'tool_result'));
     if (isOrdinaryInput) executionId = message.uuid;
@@ -25,4 +26,36 @@ export function qoderHistoryItems(messages: any[], contextId: string): ExecutorI
     }
   }
   const latest = new Map<string, ExecutorItem>(); for (const item of items) latest.set(item.id, { ...latest.get(item.id), ...item }); return [...latest.values()];
+}
+
+/** The SDK projection omits origin metadata. Match only native primary-chain receipts, never user text alone. */
+export function qoderInterruptionIds(messages: any[], records: any[], contextId: string): Set<string> {
+  const raw = new Map(records.filter(record => record.sessionId === contextId && record.isSidechain === false).map(record => [record.uuid, record]));
+  const ids = new Set<string>();
+  for (let index = 1; index < messages.length; index++) {
+    const message = messages[index], record = raw.get(message.uuid), content = message.message?.content;
+    if (message.session_id === contextId && message.type === 'user' && record?.type === 'user' &&
+        record.parentUuid === messages[index - 1].uuid && !record.humanInput && !record.origin && !record.promptId &&
+        !message.parent_tool_use_id && Array.isArray(content) && content.length === 1 &&
+        content[0].type === 'text' && content[0].text === '[Request interrupted by user]') ids.add(message.uuid);
+  }
+  return ids;
+}
+
+/** A cold observer can prove an interrupted turn, but cannot infer the outcome of unsettled side effects. */
+export function qoderInterruptedObservation(messages: any[], records: any[], contextId: string, executionId?: string): ExecutorObservation {
+  const interruptions = qoderInterruptionIds(messages, records, contextId);
+  const items = qoderHistoryItems(messages, contextId, interruptions);
+  const owned = items.filter(item => item.executionId === executionId), tools = owned.filter(item => item.kind === 'tool');
+  const unknown: ExecutorObservation = { status: 'unknown', tools: tools.map(item => ({ id: item.id, label: item.name ?? '工具', status: item.status === 'completed' ? 'completed' : 'unknown' })), diagnostic: 'qoder_exact_execution_not_observed' };
+  if (!executionId || !interruptions.has(messages.at(-1)?.uuid) || items.filter(item => item.role === 'user').at(-1)?.id !== executionId) return unknown;
+  const start = messages.findIndex(message => message.uuid === executionId);
+  if (start < 0 || tools.some(item => item.status !== 'completed')) return unknown;
+  const tail = messages.slice(start), tailIds = new Set(tail.map(message => message.uuid));
+  // Native background jobs may outlive their foreground tool result; do not release their execution from history alone.
+  if (tail.some(message => message.subtype === 'task_started' ||
+      message.tool_use_result?.backgroundTaskId || message.tool_use_result?.taskId ||
+      (Array.isArray(message.message?.content) ? message.message.content : []).some((part: any) => part.type === 'tool_use' && part.input?.run_in_background === true)) ||
+      records.some(record => tailIds.has(record.uuid) && (record.toolUseResult?.backgroundTaskId || record.toolUseResult?.taskId))) return unknown;
+  return { status: 'stopped', executionRef: { id: executionId }, tools: unknown.tools, requests: [] };
 }

@@ -187,7 +187,7 @@ class QoderRuntime implements AgentRuntime {
   async observe({ contextRef, executionRef }: { contextRef: ContextRef; executionRef?: ExecutionRef }): Promise<ExecutorObservation> {
     this.reference(contextRef);
     try {
-      const observed = await this.rpc.call('observe', { contextId: contextRef.id, executionId: executionRef?.id }, 5000);
+      const observed = await this.rpc.call('observe', { contextId: contextRef.id, cwd: this.contexts.get(contextRef.id), executionId: executionRef?.id }, 5000);
       if (['idle', 'stopped'].includes(observed.status) && this.historyFailures.has(contextRef.id)) await this.repairHistory(contextRef.id, observed.executionRef?.id);
       return observed;
     }

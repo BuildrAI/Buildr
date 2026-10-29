@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { dshHistoryItems, dshItem } from '../../src/executors/dsh/protocol.ts';
-import { qoderHistoryItems, qoderResultOutcome } from '../../src/executors/qoder/protocol.ts';
+import { qoderHistoryItems, qoderResultOutcome, qoderInterruptionIds, qoderInterruptedObservation } from '../../src/executors/qoder/protocol.ts';
 
 test('DSH context envelopes are not user inputs and steering keeps the original execution owner',()=>{
   const user=(id:string,rpcId:string)=>({type:'user/message',data:{id,source:{kind:'user',rpcId},content:[{type:'text',text:'继续'}]}});
@@ -68,4 +68,44 @@ test('DSH cold stop observation cannot borrow another completed turn as success'
   assert.equal(dshExecutionObservation(events, 'missing').status, 'unknown');
   events.push({ type: 'tool/result', data: { turn: 2, message: { toolCallId: 'tool-2' } } } as any, { type: 'turn/end', data: { turn: 2, reason: { kind: 'aborted' } } } as any);
   assert.equal(dshExecutionObservation(events, 'current').status, 'stopped');
+});
+
+function interruptedQoder(completed = true) {
+  const base = { session_id: 'qoder-session', sessionId: 'qoder-session', isSidechain: false };
+  return [
+    { ...base, type: 'user', uuid: 'exact-request', origin: { kind: 'human' }, humanInput: { text: 'work' }, promptId: 'prompt', message: { content: [{ type: 'text', text: 'work' }] } },
+    { ...base, type: 'assistant', uuid: 'assistant', parentUuid: 'exact-request', message: { id: 'assistant', content: [{ type: 'tool_use', id: 'append', name: 'Bash', input: { command: 'append once' } }] } },
+    ...(completed ? [{ ...base, type: 'user', uuid: 'result', parentUuid: 'assistant', message: { content: [{ type: 'tool_result', tool_use_id: 'append', content: 'COMMITTED' }] } }] : []),
+    { ...base, type: 'user', uuid: 'interruption', parentUuid: completed ? 'result' : 'assistant', message: { content: [{ type: 'text', text: '[Request interrupted by user]' }] } },
+  ];
+}
+test('Qoder cold recovery uses exact native interruption evidence and retains completed operations', () => {
+  const messages = interruptedQoder(), ids = qoderInterruptionIds(messages, messages, 'qoder-session');
+  assert.deepEqual([...ids], ['interruption']);
+  const items = qoderHistoryItems(messages, 'qoder-session', ids);
+  assert.deepEqual(items.filter(item => item.role === 'user').map(item => item.id), ['exact-request']);
+  assert.equal(items.find(item => item.id === 'append')?.status, 'completed');
+  const observation = qoderInterruptedObservation(messages, messages, 'qoder-session', 'exact-request');
+  assert.equal(observation.status, 'stopped'); assert.equal(observation.executionRef?.id, 'exact-request');
+  for (const id of ['other', undefined]) assert.equal(qoderInterruptedObservation(messages, messages, 'qoder-session', id).status, 'unknown');
+  assert.equal(qoderInterruptedObservation(messages.slice(0, -1), messages, 'qoder-session', 'exact-request').status, 'unknown');
+});
+test('Qoder cannot mistake genuine user interruption text, untrusted metadata or unrelated chain for a stop', () => {
+  for (const patch of [{ humanInput: { text: '[Request interrupted by user]' } }, { origin: { kind: 'human' } }, { promptId: 'human' }, { isSidechain: true }, { parentUuid: 'unrelated' }, { sessionId: 'other' }]) {
+    const messages = interruptedQoder(), records = structuredClone(messages); Object.assign(records.at(-1)!, patch);
+    const ids = qoderInterruptionIds(messages, records, 'qoder-session'); assert.equal(ids.size, 0);
+    assert.equal(qoderHistoryItems(messages, 'qoder-session', ids).at(-1)?.role, 'user');
+    assert.equal(qoderInterruptedObservation(messages, records, 'qoder-session', 'exact-request').status, 'unknown');
+  }
+  const messages = interruptedQoder(); assert.equal(qoderInterruptedObservation(messages, [], 'qoder-session', 'exact-request').status, 'unknown');
+});
+test('Qoder crash recovery holds incomplete, failed and background side effects instead of replaying', () => {
+  const active = interruptedQoder(false);
+  assert.equal(qoderInterruptedObservation(active, active, 'qoder-session', 'exact-request').status, 'unknown');
+  const failed = interruptedQoder(); (failed[2].message.content[0] as any).is_error = true;
+  assert.equal(qoderInterruptedObservation(failed, failed, 'qoder-session', 'exact-request').status, 'unknown');
+  const background = interruptedQoder(); (background[1].message.content[0] as any).input.run_in_background = true;
+  assert.equal(qoderInterruptedObservation(background, background, 'qoder-session', 'exact-request').status, 'unknown');
+  const metadata = interruptedQoder(); (metadata[2] as any).toolUseResult = { backgroundTaskId: 'native-job' };
+  assert.equal(qoderInterruptedObservation(metadata, metadata, 'qoder-session', 'exact-request').status, 'unknown');
 });

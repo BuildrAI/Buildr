@@ -207,3 +207,23 @@ test('a terminal projection error cannot strand the native send promise',async()
     assert.equal(runtime.closed,false);assert.equal((await runtime.observe({contextRef,executionRef:accepted.executionRef})).status,'stopped');
   }finally{await runtime?.close();await rm(root,{recursive:true,force:true});}
 });
+
+test('Codex cold recovery detects an unfinished durable call omitted by thread/read', async () => {
+  const { codexUnsettledTools } = await import('../../../src/executors/codex/recovery.ts');
+  const root = await mkdtemp(join(tmpdir(), 'buildr-codex-unsettled-')), sessions = join(root, 'sessions'); await mkdir(sessions);
+  const path = join(sessions, 'exact.jsonl');
+  const rows = [{ type: 'session_meta', payload: { id: 'context' } }, { type: 'event_msg', payload: { type: 'task_started', turn_id: 'exact' } }, { type: 'response_item', payload: { type: 'function_call', call_id: 'effect', name: 'exec_command' } }];
+  try {
+    await writeFile(path, rows.map(row => JSON.stringify(row)).join('\n') + '\n');
+    assert.deepEqual((await codexUnsettledTools(path, root, 'context', 'exact')).map(tool => tool.id), ['effect']);
+    await assert.rejects(codexUnsettledTools(path, root, 'other', 'exact'), /mismatch/);
+    await assert.rejects(codexUnsettledTools(path, root, 'context', 'other'), /incomplete/);
+    await assert.rejects(codexUnsettledTools(undefined, root, 'context', 'exact'), /unavailable/);
+    rows.push({ type: 'response_item', payload: { type: 'function_call_output', call_id: 'effect', output: 'COMMITTED' } } as any);
+    await writeFile(path, rows.map(row => JSON.stringify(row)).join('\n') + '\n');
+    assert.deepEqual(await codexUnsettledTools(path, root, 'context', 'exact'), []);
+    (rows.at(-1)!.payload as any).output = 'Process running with session ID 123';
+    await writeFile(path, rows.map(row => JSON.stringify(row)).join('\n') + '\n');
+    assert.equal((await codexUnsettledTools(path, root, 'context', 'exact'))[0].status, 'unknown');
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

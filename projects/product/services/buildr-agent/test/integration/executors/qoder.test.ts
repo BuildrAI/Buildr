@@ -1,7 +1,7 @@
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createQoderExecutor } from '../../../build/executors/qoder/index.js';
@@ -97,4 +97,49 @@ for (const unavailable of [false,true]) test('Qoder repairs lost items before pu
     if(unavailable){assert.equal(observed.status,'unknown');assert.ok(!events.some(e=>e.type==='observation'&&e.observation.status==='stopped'));}
     else{assert.equal(observed.status,'stopped');const repaired=events.findIndex(e=>e.type==='item'&&e.item.text==='completed once'),terminal=events.findIndex(e=>e.type==='observation'&&e.observation.status==='stopped');assert.ok(repaired>=0&&terminal>repaired);}
   }finally{await runtime?.close();await rm(root,{recursive:true,force:true});}
+});
+
+for (const completed of [false, true]) test('Qoder fresh worker reconciles durable interrupted execution without replay; completed=' + completed, { timeout: 15000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-qoder-cold-')), workspace = join(root, 'workspace'), configRoot = join(root, 'config');
+  await mkdir(workspace); const executable = join(root, 'qoder.mjs'); await writeFile(executable, cli);
+  const open = () => createQoderExecutor().open({ connectionId: 'qoder', configRoot, executable, environment: { PATH: process.env.PATH ?? '' } });
+  let runtime: AgentRuntime | undefined;
+  try {
+    runtime = await open(); const contextRef = await runtime.createContext({ cwd: workspace }), requestId = '72c5b846-8bcf-4eb7-8ca2-682af42aca45';
+    const dir = join(configRoot, 'qoder-config', 'projects', (await realpath(workspace)).replace(/[^a-zA-Z0-9]/g, '-')); await mkdir(dir, { recursive: true });
+    const base = { sessionId: contextRef.id, cwd: workspace, isSidechain: false, timestamp: new Date().toISOString(), userType: 'external', entrypoint: 'cli', version: '1.1.75' };
+    const records = [
+      { ...base, type: 'user', uuid: requestId, parentUuid: null, origin: { kind: 'human' }, humanInput: { text: 'append once' }, promptId: 'prompt', message: { role: 'user', content: [{ type: 'text', text: 'append once' }] } },
+      { ...base, type: 'assistant', uuid: 'assistant', parentUuid: requestId, message: { role: 'assistant', id: 'assistant', content: [{ type: 'tool_use', id: 'append', name: 'Bash', input: { command: 'append once' } }] } },
+      ...(completed ? [{ ...base, type: 'user', uuid: 'tool-result', parentUuid: 'assistant', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'append', content: 'COMMITTED' }] } }] : []),
+      { ...base, type: 'user', uuid: 'interruption', parentUuid: completed ? 'tool-result' : 'assistant', message: { role: 'user', content: [{ type: 'text', text: '[Request interrupted by user]' }] } },
+    ];
+    await writeFile(join(dir, contextRef.id + '.jsonl'), records.map(record => JSON.stringify(record)).join('\n') + '\n');
+    (runtime as any).rpc.child.kill('SIGKILL'); await eventually(() => runtime!.closed); await runtime.close();
+    runtime = await open(); await runtime.resumeContext({ contextRef, cwd: workspace });
+    const items = await runtime.readHistory({ contextRef, cwd: workspace });
+    assert.deepEqual(items.filter(item => item.role === 'user').map(item => item.id), [requestId]);
+    assert.equal(items.filter(item => item.kind === 'tool').length, 1);
+    const observed = await runtime.observe({ contextRef, executionRef: { id: requestId } });
+    assert.equal(observed.status, completed ? 'stopped' : 'unknown');
+    assert.equal(observed.tools[0].status, completed ? 'completed' : 'unknown');
+    assert.equal((await runtime.observe({ contextRef, executionRef: { id: 'unrelated' } })).status, 'unknown');
+    assert.equal((await runtime.readHistory({ contextRef, cwd: workspace })).length, items.length);
+  } finally { await runtime?.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+for (const completed of [false, true]) test('Qoder native child exit recovers only settled tools while the bridge remains alive; completed=' + completed, { timeout: 15000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-qoder-native-exit-')), workspace = join(root, 'workspace'); await mkdir(workspace);
+  const executable = join(root, 'qoder.mjs'); await writeFile(executable, cli); let runtime: AgentRuntime | undefined;
+  try {
+    runtime = await createQoderExecutor().open({ connectionId: 'qoder', configRoot: join(root, 'config'), executable, environment: { PATH: process.env.PATH ?? '' } });
+    const contextRef = await runtime.createContext({ cwd: workspace }), events: ExecutorEvent[] = [], requestId = '923ba1de-b0e2-444a-b442-169ab8f219fc';
+    await assert.rejects(runtime.send({ contextRef, cwd: workspace, text: 'native-crash:' + (completed ? 'completed' : 'active'), images: [], clientRequestId: requestId, onEvent: event => events.push(event) }), /qoder_execution_observation_lost/);
+    assert.equal(runtime.closed, false); assert.ok(events.some(event => event.type === 'accepted'));
+    const observed = await runtime.observe({ contextRef, executionRef: { id: requestId } });
+    assert.equal(observed.status, completed ? 'stopped' : 'unknown'); assert.equal(observed.executionRef?.id, requestId);
+    assert.equal(observed.tools[0].status, completed ? 'completed' : 'unknown');
+    assert.equal((await runtime.observe({ contextRef, executionRef: { id: 'unrelated' } })).status, 'unknown');
+    assert.equal(events.filter(event => event.type === 'item' && event.item.kind === 'tool' && event.item.status === 'running').length, 1);
+  } finally { await runtime?.close(); await rm(root, { recursive: true, force: true }); }
 });

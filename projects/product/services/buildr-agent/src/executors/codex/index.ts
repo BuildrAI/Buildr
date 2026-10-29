@@ -1,3 +1,4 @@
+import { codexUnsettledTools } from './recovery.ts';
 import {createHash} from 'node:crypto';
 import { errorDiagnostic, NativeObservationError } from '../../domain/error-diagnostic.ts';
 import { isCompatibleProgram, nativeProgramPolicy } from '../program-policy.ts';
@@ -275,7 +276,12 @@ class CodexRuntime implements AgentRuntime {
     const history = await this.rpc.call('thread/read', { threadId: contextRef.id, includeTurns: true });
     const exact = executionRef ? history.thread?.turns?.find((item: any) => item.id === executionRef.id) : history.thread?.turns?.at(-1);
     if (!exact) return { status: 'unknown', tools: [], diagnostic: 'codex_turn_not_observed' };
-    return { status: exact.status === 'inProgress' ? 'unknown' : exact.status === 'interrupted' ? 'stopped' : 'idle', executionRef: { id: exact.id }, tools: (exact.items ?? []).filter((item: any) => ['commandExecution', 'fileChange', 'mcpToolCall'].includes(item.type) && !['completed', 'failed', 'declined'].includes(item.status)).map((item: any) => ({ id: item.id, label: String(item.command ?? '命令'), status: 'unknown' as const, canStop: false })) };
+    let unsettled: Awaited<ReturnType<typeof codexUnsettledTools>> = [];
+    if (exact.status === 'interrupted') {
+      try { unsettled = await codexUnsettledTools(history.thread.path, this.modelConfig!, contextRef.id, exact.id); }
+      catch { return { status: 'unknown', executionRef: { id: exact.id }, tools: [], diagnostic: 'codex_recovery_history_unconfirmed' }; }
+    }
+    return { status: exact.status === 'inProgress' ? 'unknown' : exact.status === 'interrupted' ? 'stopped' : 'idle', executionRef: { id: exact.id }, tools: [...unsettled, ...(exact.items ?? []).filter((item: any) => ['commandExecution', 'fileChange', 'mcpToolCall'].includes(item.type) && !['completed', 'declined'].includes(item.status)).map((item: any) => ({ id: item.id, label: String(item.command ?? '命令'), status: 'unknown' as const, canStop: false }))] };
   }
   async reply({ contextRef, executionRef, requestId, answer }: { contextRef: ContextRef; executionRef: ExecutionRef; requestId: string; answer: unknown }): Promise<void> {
     this.reference(contextRef); const turn = this.turns.get(contextRef.id); const pending = turn?.pending.get(requestId);

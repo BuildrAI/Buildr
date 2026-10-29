@@ -6,8 +6,8 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import type { ExecutorEvent, ExecutorItem, ExecutorObservation, ExecutorRequest, PermissionMode } from '../../contracts.ts';
 import { bounded, closeOwnedProcess, visibleText, nativePreview } from '../native-process.ts';
-import { query, qodercliAuth, ProcessTransport, getSessionInfo, getSessionMessages } from '@qoder-ai/qoder-agent-sdk';
-import { qoderHistoryItems, qoderResultOutcome } from './protocol.ts';
+import { query, qodercliAuth, ProcessTransport, getSessionInfo, getSessionMessages, InMemorySessionStore, importSessionToStore } from '@qoder-ai/qoder-agent-sdk';
+import { qoderHistoryItems, qoderResultOutcome, qoderInterruptionIds, qoderInterruptedObservation } from './protocol.ts';
 import { qoderModel } from '../model-options.ts';
 import { resolvePermissionMode } from '../../domain/permission-mode.ts';
 import { safeDiagnostic } from '../../domain/agent-state.ts';
@@ -20,7 +20,7 @@ let gateway: ExecutorGateway | undefined;
 interface LiveQuery {
   inputGate?: Promise<void>;
   inputAcks: Map<string, { resolve(value: { executionRef: { id: string }; inputItemId: string }): void; reject(error: Error): void }>;
-  id: string; contextId: string; permissionMode: PermissionMode; q: any; child?: ChildProcessWithoutNullStreams; accepted: boolean; stopping: boolean; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string;
+  id: string; contextId: string; permissionMode: PermissionMode; q: any; child?: ChildProcessWithoutNullStreams; accepted: boolean; stopping: boolean; closing?: boolean; nativeExited?: boolean; blockedOnExit?: boolean; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string;
   tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown'; taskId?: string }>;
   pending: Map<string, { request: ExecutorRequest; input: any; resolve: (value: any) => void }>; texts: Map<string, string>; streamMessageId?: string;
 }
@@ -37,7 +37,7 @@ function closeTitle(owner:TitleQuery):Promise<void> {
 }
 const emit = (state: LiveQuery, event: ExecutorEvent) => send({ method: 'event', params: { contextId: state.contextId, event } });
 const accepted = (state: LiveQuery) => { if (!state.accepted) { state.accepted = true; emit(state, { type: 'accepted', executionRef: { id: state.id }, inputItemId: state.id }); } };
-const observe = (state: LiveQuery): ExecutorObservation => ({ status: state.terminal ? [...state.tools.values()].some(tool => tool.status === 'running') ? 'tools-active' : [...state.tools.values()].some(tool => tool.status === 'unknown') ? 'unknown' : state.terminal === 'stopped' ? 'stopped' : 'idle' : state.pending.size ? 'waiting' : 'running', executionRef: { id: state.id }, tools: [...state.tools.values()].map(({ taskId, ...tool }) => ({ ...tool, canStop: Boolean(taskId) && tool.status === 'running' })), requests: [...state.pending.values()].map(pending => pending.request), ...(state.diagnostic ? { diagnostic: state.diagnostic } : {}) });
+const observe = (state: LiveQuery): ExecutorObservation => ({ status: state.nativeExited && !state.terminal ? state.blockedOnExit || [...state.tools.values()].some(tool => tool.status !== 'completed' || tool.taskId) ? 'unknown' : 'stopped' : state.terminal ? [...state.tools.values()].some(tool => tool.status === 'running') ? 'tools-active' : [...state.tools.values()].some(tool => tool.status === 'unknown') ? 'unknown' : state.terminal === 'stopped' ? 'stopped' : 'idle' : state.pending.size ? 'waiting' : 'running', executionRef: { id: state.id }, tools: [...state.tools.values()].map(({ taskId, ...tool }) => ({ ...tool, canStop: Boolean(taskId) && tool.status === 'running' })), requests: [...state.pending.values()].map(pending => pending.request), ...(state.diagnostic ? { diagnostic: state.diagnostic } : {}) });
 function gatewayPolicy(context: any, selected?: string, effort?: string) {
   const policy = qoderGatewayPolicy(gateway!, selected, effort);
   assertGatewayModel(context.availableModels);
@@ -58,7 +58,7 @@ function options(cwd: string, state?: LiveQuery, onChild?: (child: ChildProcessW
     } } : {}),
     spawnQoderCLIProcess: (input: any) => {
       const child = spawn(input.command, input.args, { cwd: input.cwd, env: input.env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
-      child.stderr.on('data', () => {}); if (state) state.child = child; onChild?.(child); return child;
+      child.stderr.on('data', () => {}); if (state) { state.child = child; child.once('exit', () => { if (!state.closing && !state.terminal) { state.nativeExited = true; state.blockedOnExit = state.pending.size > 0; } }); } onChild?.(child); return child;
     },
     canUseTool: async (tool: string, input: any, details: any) => {
       if (!state) return { behavior: 'deny', message: 'No active user execution.' };
@@ -97,11 +97,18 @@ async function accountQuery(cwd: string, operation: 'account' | 'models'): Promi
     throw error;
   } finally { release(); await q.close(); }
 }
-async function history(contextId: string, cwd: string): Promise<ExecutorItem[]> {
+async function transcript(contextId: string, cwd: string): Promise<{ messages: any[]; records: any[] }> {
   const info = await getSessionInfo(contextId, { dir: cwd });
   if (!info || info.sessionId !== contextId || info.cwd && info.cwd !== cwd) throw new Error('qoder_context_not_found');
-  const messages: any[] = await getSessionMessages(contextId, { dir: cwd, view: 'historical', limit: 20000 });
-  return qoderHistoryItems(messages, contextId);
+  const store = new InMemorySessionStore(), records: any[] = [], append = store.append.bind(store);
+  store.append = async (key, entries) => { records.push(...entries); await append(key, entries); };
+  await importSessionToStore(contextId, store, { dir: cwd, includeSubagents: false });
+  const messages: any[] = await getSessionMessages(contextId, { dir: cwd, sessionStore: store, view: 'historical', limit: 20000 });
+  return { messages, records };
+}
+async function history(contextId: string, cwd: string): Promise<ExecutorItem[]> {
+  const { messages, records } = await transcript(contextId, cwd);
+  return qoderHistoryItems(messages, contextId, qoderInterruptionIds(messages, records, contextId));
 }
 async function generateTitle(requestId:string,description: string): Promise<string | undefined> {
   if (typeof requestId!=='string' || !requestId || titleQueries.has(requestId) || typeof description !== 'string' || Buffer.byteLength(description) > 8 * 1024) throw new Error('agent_title_input_invalid');
@@ -188,7 +195,11 @@ async function execute(params: any): Promise<void> {
       }
     }
     if (!state.terminal) throw new Error('qoder_terminal_observation_missing');
+  } catch (error) {
+    if (state.nativeExited) throw new Error('qoder_execution_observation_lost');
+    throw error;
   } finally {
+    state.closing = true;
     for (const ack of state.inputAcks.values()) ack.reject(new Error('agent_supplement_unknown'));
     state.inputAcks.clear();
     release(); for (const [id, pending] of state.pending) { pending.resolve({ behavior: 'deny', message: 'Execution ended.' }); emit(state, { type: 'request-resolved', requestId: id }); } state.pending.clear();
@@ -235,6 +246,10 @@ async function dispatch(method: string, params: any): Promise<any> {
     })); return {};
   }
   const state = live.get(params.contextId);
+  if (method === 'observe' && !state) {
+    const { messages, records } = await transcript(params.contextId, params.cwd);
+    return qoderInterruptedObservation(messages, records, params.contextId, params.executionId);
+  }
   if (!state || params.executionId && state.id !== params.executionId) throw new Error('qoder_exact_live_turn_unavailable');
   if (method === 'observe') return observe(state);
   if (method === 'stop') {
