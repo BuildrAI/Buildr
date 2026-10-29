@@ -10,6 +10,7 @@ import { runtimeProvide } from '../../src/bootstrap/runtime.ts';
 import { SERVICE_RUNTIME_APPLICATION } from '../../src/modules/service-runtime/module.ts';
 import { isActiveRun, type ManagedRunRecord } from '../../src/modules/service-runtime/domain/runs.ts';
 import type { ServiceRuntimeApplication } from '../../src/modules/service-runtime/application/service-runtime-application.ts';
+import { createAgentConversationFixture } from '../../../buildr-web/test/browser/agent-conversation-fixture.ts';
 
 type Service = { id: string; name: string; code: string };
 type Context = { page: Page; runtime: any; workspaceRoot: string; workspaceUrl: string; expectedBrowserErrors: Set<string>; capture: (page: Page, name: string) => Promise<unknown> };
@@ -168,6 +169,8 @@ export async function createServiceRuntimeBrowserFixture(runtime: any, workspace
 /** Service/main and task paths share real instances; local injection is proved by an actual HTTP request. */
 export async function runServiceRuntimeJourney({ page, runtime, workspaceRoot, workspaceUrl, expectedBrowserErrors, capture }: Context) {
   const fixture = await createServiceRuntimeBrowserFixture(runtime, workspaceRoot);
+  const agent = await createAgentConversationFixture({ t: null, page, workspaceUrl, workspaceRoot, capture, expectedBrowserErrors });
+  for (const connection of agent.connections) { connection.enabled = false; connection.status = 'disconnected'; }
   const { frontend, backend, taskId } = fixture;
   const scope = new URL(workspaceUrl), apiBase = `${scope.origin}/api/v1${scope.pathname}/service-runtime`;
   const detailUrl = `${apiBase}/services/${frontend.code}`;
@@ -187,6 +190,7 @@ export async function runServiceRuntimeJourney({ page, runtime, workspaceRoot, w
   const openService = async () => {
     await page.goto(`${workspaceUrl}/services/${frontend.id}?view=runtime`); await section().waitFor({ state: 'visible' });
   };
+  const configurationStep = (name: string) => process.stderr.write(`[service-runtime-configuration] ${name}\n`);
   const stopInUi = async (target: ManagedRunRecord) => {
     await card(target.id).getByRole('button', { name: /停止$/ }).click();
     const confirm = page.locator('.ant-modal-confirm'); await confirm.waitFor({ state: 'visible' }); assert.match(await confirm.innerText(), new RegExp(target.id));
@@ -293,7 +297,50 @@ export async function runServiceRuntimeJourney({ page, runtime, workspaceRoot, w
     assert.match(await configuration.innerText(), /测试环境/); assert.deepEqual(await configuration.locator('.runtime-configuration-connections dd').allInnerTexts(), ['沿已验证配置']);
     await configuration.getByRole('button', { name: /配置启动与连接$/ }).click();
     const discoveryDrawer = page.locator('#service-runtime-discovery-drawer'); await discoveryDrawer.waitFor({ state: 'visible' });
+    configurationStep('copy drawer opened');
+    assert.match(await discoveryDrawer.innerText(), /尚未执行配置/);
+    assert.equal(await discoveryDrawer.locator('details.discovery-prompt[open]').count(), 0);
+    assert.match(await discoveryDrawer.innerText(), /本次允许的影响/);
+    await discoveryDrawer.locator('details.discovery-prompt summary').click();
+    const fallbackPrompt = await discoveryDrawer.getByRole('textbox', { name: '运行配置指令', exact: true }).inputValue();
+    assert.match(fallbackPrompt, /references\/local-services\.md/); assert.doesNotMatch(fallbackPrompt, /portOverride|expectedRoutingDigest/);
+    await capture(page, 'service-runtime-configuration-copy.png');
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert.equal(await discoveryDrawer.evaluate(element => element.scrollWidth <= element.clientWidth + 1), true, '窄屏展开指令不撑宽抽屉');
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
+    await capture(page, 'service-runtime-configuration-copy-mobile.png');
     await discoveryDrawer.getByRole('button', { name: '关闭', exact: true }).click(); await discoveryDrawer.waitFor({ state: 'hidden' });
+    await page.setViewportSize({ width: 1680, height: 1000 });
+    // Ready internal connections use the existing conversation instead of another execution surface.
+    for (const connection of agent.connections) { connection.enabled = true; connection.status = 'ready'; }
+    const createPaused = new Promise<void>(resolve => { agent.createStarted = resolve; });
+    agent.holdCreate = true;
+    configurationStep('direct submission click');
+    await configuration.getByRole('button', { name: /配置启动与连接$/ }).click();
+    const creationObserved = await Promise.race([createPaused.then(() => true), page.waitForTimeout(5000).then(() => false)]);
+    if (!creationObserved) {
+      const drawerText = await discoveryDrawer.innerText().catch(() => '');
+      const bodyText = await page.locator('body').innerText();
+      await capture(page, 'service-runtime-configuration-direct-stalled.png');
+      throw new Error(`直接提交未进入创建：${JSON.stringify({ creations: agent.creations, sends: agent.sends, drawerText, bodyText: bodyText.slice(-5000) })}`);
+    }
+    configurationStep('direct creation paused');
+    assert.equal(agent.creations, 1); assert.equal(agent.sends, 0);
+    assert.equal(await discoveryDrawer.count(), 0, '已接入不再打开复制抽屉');
+    const pendingConfiguration = configuration.getByRole('button', { name: /配置启动与连接$/ });
+    await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent?.includes('配置启动与连接') && button.classList.contains('ant-btn-loading')));
+    await pendingConfiguration.click({ force: true });
+    assert.equal(agent.creations, 1, '重复点击仍只创建一个请求');
+    agent.releaseCreate?.(); await agent.input().waitFor({ state: 'visible' });
+    configurationStep('direct submission accepted');
+    assert.equal(agent.sends, 1);
+    assert.match(agent.sentInputs[0].text, new RegExp(frontend.code));
+    assert.match(agent.sentInputs[0].text, /references\/local-services\.md/);
+    assert.doesNotMatch(agent.sentInputs[0].text, /portOverride|expectedRoutingDigest/);
+    assert.equal(agent.sentInputs[0].cwd, fs.realpathSync(workspaceRoot));
+    await capture(page, 'service-runtime-configuration-direct.png');
+    await agent.closeConversation();
+    configurationStep('direct conversation closed');
     await section().getByRole('button', { name: '查看配置', exact: true }).click();
     const definitionDrawer = page.locator('#service-runtime-definition-drawer'); await definitionDrawer.waitFor({ state: 'visible' });
     const definition = before.service.definition; assert.ok(definition.path.length > 100, '实际夹具应覆盖长定义路径');
@@ -307,7 +354,18 @@ export async function runServiceRuntimeJourney({ page, runtime, workspaceRoot, w
     });
     assert.equal(definitionLayout.gap, '24px'); assert.ok(definitionLayout.gaps.every(gap => Math.abs(gap - 24) <= 1), JSON.stringify(definitionLayout));
     assert.equal(definitionLayout.overflowing, false, '长路径和参数应换行，不扩大抽屉宽度');
-    await capture(page, 'service-runtime-definition.png'); await definitionDrawer.getByRole('button', { name: '关闭', exact: true }).click(); await definitionDrawer.waitFor({ state: 'hidden' });
+    await capture(page, 'service-runtime-definition.png');
+    // A lost response is looked up under the original identity, never copied or submitted again.
+    agent.loseFirstResponse = true;
+    await definitionDrawer.getByRole('button', { name: /交给智能体（Agent）检查配置/ }).click();
+    await agent.input().waitFor({ state: 'visible' });
+    configurationStep('lost response recovered');
+    assert.equal(agent.creations, 2); assert.equal(agent.sends, 2);
+    assert.equal(await discoveryDrawer.count(), 0);
+    assert.match(agent.sentInputs[1].text, new RegExp(frontend.code));
+    await agent.closeConversation();
+    configurationStep('recovery conversation closed');
+    await definitionDrawer.waitFor({ state: 'hidden' });
     await section().getByRole('button', { name: /启动本地/ }).click();
     const start = page.locator('#service-runtime-start-drawer'); await start.waitFor({ state: 'visible' });
     await assertCentered(page, modal());
@@ -380,7 +438,7 @@ export async function runServiceRuntimeJourney({ page, runtime, workspaceRoot, w
     await logs.getByRole('textbox', { name: '搜索本实例日志', exact: true }).fill('RuntimeFixture target');
     assert.equal(await logs.getByRole('switch', { name: '跟随日志输出', exact: true }).getAttribute('aria-checked'), 'false');
     assert.equal(await logs.locator('.local-log-lines').innerText(), `RuntimeFixture target ${REMOTE_URL}`);
-    await logs.getByRole('button', { name: /复制匹配日志$/ }).click(); await page.getByText('日志已复制', { exact: true }).waitFor({ state: 'visible' });
+    await logs.getByRole('button', { name: /复制匹配日志$/ }).click(); const copiedLogs = logs.getByRole('button', { name: '已复制', exact: true }); await copiedLogs.waitFor({ state: 'visible' }); assert.equal(await copiedLogs.isDisabled(), true);
     assert.equal(await page.evaluate(() => navigator.clipboard.readText()), `RuntimeFixture target ${REMOTE_URL}`); await capture(page, 'service-runtime-log-search.png');
     await page.locator('.ant-drawer-open .ant-drawer-footer').getByRole('button', { name: /关\s*闭/ }).click(); await logs.waitFor({ state: 'hidden' });
     // Leaving the drawer near the conversation rail can open its hover preview.
@@ -498,7 +556,36 @@ export async function runServiceRuntimeJourney({ page, runtime, workspaceRoot, w
     assert.equal((await page.request.post(`${detailUrl}/deployments`, { headers: { origin: scope.origin, 'x-buildr-session': session }, data: {} })).status(), 404);
     assert.equal(await page.locator('#service-runtime-qa-drawer').count(), 0);
     for (const file of fixture.definitionFiles) assert.match(fs.readFileSync(file, 'utf8'), /retired-invalid-field/, '旧配置保持原样');
+    const frontendDefinition = fixture.definitionFiles.find(file => file.endsWith(path.join(frontend.code, 'runtime.yml')))!;
+    const frontendDefinitionContent = fs.readFileSync(frontendDefinition, 'utf8');
+    fs.rmSync(frontendDefinition);
+    try {
+      // Directory and task entries share the same direct submission behavior when definition is absent.
+      await page.goto(`${workspaceUrl}/services?project=demo`);
+      await directoryAction(/运行配置/).waitFor({ state: 'visible' });
+      await directoryAction(/运行配置/).click(); await agent.input().waitFor({ state: 'visible' });
+      configurationStep('directory submission accepted');
+      assert.equal(agent.creations, 3); assert.equal(agent.sends, 3);
+      await agent.closeConversation();
+      await openTask();
+      const taskConfiguration = taskPanel().getByRole('button', { name: '运行配置', exact: true });
+      await taskConfiguration.waitFor({ state: 'visible' }); await taskConfiguration.click(); await agent.input().waitFor({ state: 'visible' });
+      configurationStep('task submission accepted');
+      assert.equal(agent.creations, 4); assert.equal(agent.sends, 4);
+      assert.match(agent.sentInputs[3].text, new RegExp(frontend.code));
+      await agent.closeConversation();
+      await taskConfiguration.waitFor({ state: 'visible' });
+      assert.equal((await detail()).service.definition, null, '请求受理不能生成配置成功事实');
+    } finally {
+      fs.writeFileSync(frontendDefinition, frontendDefinitionContent);
+    }
+    await openService(); await section().getByRole('button', { name: /启动本地/ }).waitFor({ state: 'visible' });
     await page.setViewportSize({ width: 390, height: 844 }); assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
     await capture(page, 'service-runtime-mobile.png');
-  } finally { await fixture.cleanup(); await page.setViewportSize({ width: 1280, height: 720 }); }
+  } finally {
+    // Stop the current conversation subscription before removing its transport fixture.
+    await page.evaluate(() => sessionStorage.clear()).catch(() => {});
+    await page.reload().catch(() => {});
+    await agent.dispose(); await fixture.cleanup(); await page.setViewportSize({ width: 1280, height: 720 });
+  }
 }

@@ -26,19 +26,13 @@ test('服务展示名保持为引用数据，不改变目标编码或引入终�
   assert.ok(prompt.includes('服务名称："运营 \\"界面\\"\\n其他服务"'));
 });
 
-test('配置请求让智能体调查真实代码及双模式连接，不把名字当作服务类型', () => {
+test('配置请求只保留目标、技能入口和验证后保存要求，不复制技能方法', () => {
   const prompt = runtimeConfigurationPrompt(context);
-  for (const requirement of ['Buildr Skill', 'references/local-services.md', 'buildr service-runtime --help', 'show 和 worktrees', '不凭服务名称猜测', '工作目录', 'portOverride', 'flag=port', '就绪检查', 'local.backend', 'serviceCode、environmentVariable 和 remoteUrl', '没有下游切换需求的服务不添加 backends', '目标确实注入进程', '核对只读请求结果', 'local.remoteEnvironments', '不要求维护全部下游清单']) assert.ok(prompt.includes(requirement), requirement);
+  for (const requirement of ['Buildr Skill', 'references/local-services.md', '核对服务登记、真实代码和已有定义', '验证候选后按差异更新 services/operator-front/runtime.yml 并读回', '保留已有运行和无关配置', '不伪造验证结果']) assert.ok(prompt.includes(requirement), requirement);
+  for (const copiedMethod of ['buildr service-runtime --help', 'show 和 worktrees', 'portOverride', 'local.remoteEnvironments', 'kind: service-discovery', 'expectedRoutingDigest', '当前没有配置 validate/save 命令']) assert.ok(!prompt.includes(copiedMethod), copiedMethod);
 });
 
-test('重配保全已有事实与授权边界，不虚构配置命令或已验证结果', () => {
+test('请求明确本次本地验证授权及不扩大的边界', () => {
   const prompt = runtimeConfigurationPrompt(context);
-  for (const requirement of ['候选命令与正式已验证定义要区分', '不为未验证内容更新 verifiedAt', '保留未知字段与旧 environments', '不静默停止或重启', '当前没有配置 validate/save 命令', '现有同范围的配置、启动和验证授权继续有效，不重复询问', '远程业务写入', '尚存缺口']) assert.ok(prompt.includes(requirement), requirement);
-  assert.doesNotMatch(prompt, /buildr service-runtime (?:validate|save)/);
-});
-
-
-test('发现配置要求真实接入与运行身份，不为未知结果补写验证事实', () => {
-  const prompt = runtimeConfigurationPrompt(context);
-  for (const text of ['version: 2', 'kind: service-discovery', 'local.routing', '自身 serviceId', 'buildr.local-service-routing/v1', 'expectedRoutingDigest', '接收方须拒绝旧运行编号', '注册受理、当前可发现', '不伪造 verifiedAt', '变量只传入身份上下文文件路径']) assert.ok(prompt.includes(text), text);
+  for (const requirement of ['本地候选启动、只读验证和上述运行定义修改', '不包括远程业务写入、部署、共享配置修改或凭证读取', '最后简要说明配置、实际验证和剩余缺口']) assert.ok(prompt.includes(requirement), requirement);
 });

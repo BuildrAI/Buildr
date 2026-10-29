@@ -2,8 +2,10 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { withAgentDataOffline } from '../process/offline-data.ts';
+import { CONVERSATION_SCHEMA_VERSION } from './conversation-repository.ts';
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = CONVERSATION_SCHEMA_VERSION;
 const BINDING_FORMAT = 'buildr-native-binding/v2';
 
 export type ConnectionRelocationFailure = {
@@ -159,6 +161,11 @@ export function listConnectionExecutables(input: { sourceRoot: string; database?
  * copied; existing preview conversations stay intact.
  */
 export function relocateConnections(input: { sourceRoot: string; targetRoot: string; sourceDatabase?: string; targetDatabase?: string }): ConnectionRelocationResult {
+  if(path.resolve(input.sourceRoot)===path.resolve(input.targetRoot) || path.resolve(input.sourceDatabase??databasePath(input.sourceRoot))===path.resolve(input.targetDatabase??databasePath(input.targetRoot)))throw new Error('agent_relocation_same_root');
+  return withAgentDataOffline(input.targetRoot, () => relocateOffline(input));
+}
+
+function relocateOffline(input: { sourceRoot: string; targetRoot: string; sourceDatabase?: string; targetDatabase?: string }): ConnectionRelocationResult {
   const sourceRoot = path.resolve(input.sourceRoot);
   const targetRoot = path.resolve(input.targetRoot);
   if (sourceRoot === targetRoot) throw new Error('agent_relocation_same_root');

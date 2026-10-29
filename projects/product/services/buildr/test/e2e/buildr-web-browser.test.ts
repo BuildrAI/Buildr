@@ -1,4 +1,6 @@
 import { runTaskListJourney } from '../../../buildr-web/test/browser/task-list-journey.ts';
+import { AGENT_SERVICE_APPLICATION } from '../../src/modules/agent-service/module.ts';
+import { stopAgentProcess } from '@buildr-ai/buildr-agent';
 import { TASK_MATERIALS_APPLICATION } from '../../src/modules/task/materials/module.ts';
 import { showPrimaryNavigation } from '../../../buildr-web/test/browser/primary-navigation-controls.ts';
 import assert from 'node:assert/strict';
@@ -16,15 +18,20 @@ import { launchTestBrowser } from './browser-launch.ts';
 import { createRuntime } from '../helpers/runtime-harness.ts';
 import { createRuntime as createProductionRuntime, runtimeProvide } from '../../src/bootstrap/runtime.ts';
 import { WORKSPACE_APPLICATION } from '../../src/modules/workspace/module.ts';
+import { WORKBENCH_APPLICATION } from '../../src/modules/workbench/module.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { recordVerificationResultFromEvidence } from '../helpers/task-verification-result-fixture.ts';
 import { gitCheckoutReadId } from '../../src/infrastructure/git/checkout-read-identity.ts';
+import { readResourceAdoption, readSharedResourceSet } from '../../src/infrastructure/product-resources/shared-resources.ts';
 import { withSourceControlBranchFixture } from '../helpers/source-control-branch-fixture.ts';
 import { planCodeBrowserGroups } from '../verification/browser-selector-dispatcher.ts';
 import { runWorkspaceCompositionJourney } from './workspace-composition-journey.ts';
 import { runCodeExplorerJourney } from '../../../buildr-web/test/browser/code-explorer-journey.ts';
 import { runSourceControlJourney } from '../../../buildr-web/test/browser/source-control-journey.ts';
 import { runAgentConversationsJourney } from '../../../buildr-web/test/browser/agent-conversations-journey.ts';
+import { parseAgentConversationBatch, runAgentConversationBatch } from '../../../buildr-web/test/browser/agent-conversation-groups.ts';
+import { claimAgentConversationGroups, finishAgentConversationGroup } from '../../../buildr-web/test/browser/agent-conversation-queue.ts';
+import { guardConversationServerWrite, resetConversationVisits } from '../../../buildr-web/test/browser/agent-conversation-isolation.ts';
 import { runLayoutJourney } from '../../../buildr-web/test/browser/layout-journey.ts';
 import { runTaskCommitsJourney } from '../../../buildr-web/test/browser/task-commits-journey.ts';
 import { runTaskMaterialsJourney } from '../../../buildr-web/test/browser/task-materials-journey.ts';
@@ -53,7 +60,7 @@ const codeGroup = selected('code') && codeFocusProvided ? planCodeBrowserGroups(
 const runCodeExplorer = !codeGroup || codeGroup.id === 'explorer';
 const runSourceControl = !codeGroup || codeGroup.id === 'source-control';
 const selectorLabel: any = [...SELECTORS].join(',') + (SELECTORS.has('code') && codeGroup ? ':' + codeGroup.id : '');
-// Optional scenario-name filter for long task journeys; same pipe-separated
+// Optional scenario-name filter for long task/layout journeys; same pipe-separated
 // semantics as BUILDR_SOURCE_CONTROL_FOCUS. Empty runs everything.
 const taskFocus: any = process.env.BUILDR_TASK_FOCUS || '';
 const taskFocused = (name: string) => !taskFocus || taskFocus === 'all' || taskFocus.split('|').some((part: string) => part && name.includes(part));
@@ -385,7 +392,7 @@ async function capture(page: any, name: any): Promise<any>  {
 
 // Dispatcher splits code into independent Explorer/SCM parents (240/900 seconds)
 // and reserves 15 seconds outside each parent for its isolated cleanup.
-test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeout: SELECTORS.has('code') && codeGroup ? codeGroup.nodeTimeoutMs : SELECTORS.has('code') || SELECTORS.has('task') ? 480_000 : SELECTORS.has('all') ? 300_000 : SELECTORS.has('task-materials') ? 240_000 : SELECTORS.has('service') || SELECTORS.has('agent-conversations') ? 180_000 : SELECTORS.has('layout') || SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('project') ? 120_000 : 45_000 }, async (t: any) => {
+test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeout: SELECTORS.has('code') && codeGroup ? codeGroup.nodeTimeoutMs : SELECTORS.has('code') || SELECTORS.has('task') ? 480_000 : SELECTORS.has('all') ? 300_000 : SELECTORS.has('agent-conversations') && process.env.BUILDR_AGENT_JOURNEY_QUEUE_ROOT ? 450_000 : SELECTORS.has('task-materials') ? 240_000 : SELECTORS.has('service') || SELECTORS.has('agent-conversations') ? 180_000 : SELECTORS.has('layout') || SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('project') ? 120_000 : 45_000 }, async (t: any) => {
   const requestedSmokeRoot: any = process.env.BUILDR_SMOKE_ROOT;
   const managedSmokeRoot: any = requestedSmokeRoot && fs.existsSync(path.join(requestedSmokeRoot, '.buildr-smoke-owner')) ? requestedSmokeRoot : null;
   const base: any = managedSmokeRoot || fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-browser-e2e-'));
@@ -395,10 +402,15 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
   let browser: any;
   let server: any;
   let previewServer: any;
+  let webRuntime: any;
   t.after(async () => {
     if (browser) await browser.close();
     if (server) await new Promise((resolve: any) => server.close(resolve));
     if (previewServer) await new Promise((resolve: any) => previewServer.close(resolve));
+    if (webRuntime) await runtimeProvide(webRuntime, AGENT_SERVICE_APPLICATION).close();
+    // The direct HTTP fixture owns its callback bridge and isolated execution
+    // daemon; closing server sockets alone cannot release those resources.
+    await stopAgentProcess({dataRoot:path.join(base,'app-data'),mode:'stop-owned'});
     fs.rmSync(base, { recursive: true, force: true });
     process.stderr.write(`[buildr-browser] selector=${selectorLabel} phase=cleanup-complete\n`);
   });
@@ -459,7 +471,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
   registry = runtime.registerLocalWorkspace({ rootPath: otherRoot, revision: registry.revision });
   const otherWorkspaceId: any = registry.workspaces.find((item: any) => item.rootPath === otherRoot).workspace.id;
   // Fixture writers may use the test adapter; the HTTP host must use production composition.
-  const webRuntime = createProductionRuntime();
+  webRuntime = createProductionRuntime();
   const workspaceApplication = runtimeProvide(webRuntime, WORKSPACE_APPLICATION);
   const workspacePorts = {
     ensureRegisteredTarget: workspaceApplication.ensureRegisteredTarget,
@@ -485,18 +497,55 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
   previewServer = previewInstance.server;
   const { url: previewUrl }: any = await previewInstance.ready;
   const workspaceUrl: any = `${url}/workspaces/${initialWorkspaceId}`;
+  const isolateConversationService = SELECTORS.size === 1 && SELECTORS.has('agent-conversations');
+  const workbenchApplication = runtimeProvide(webRuntime, WORKBENCH_APPLICATION);
+  const conversationRoots = [workspaceRoot, otherRoot];
+  let resourceBaseline: any[] = [];
+  let sharedResourceBaseline: string | null = null;
+  if (isolateConversationService) {
+    // Prepare once before any group; subsequent real open requests must be current.
+    for (const id of [initialWorkspaceId, otherWorkspaceId]) {
+      const opened = workspaceApplication.prepareWorkspaceForOpen(id);
+      assert.equal(opened.ready, true, '共享对话现场必须先准备测试工作空间。');
+    }
+    sharedResourceBaseline = readSharedResourceSet().id;
+    resourceBaseline = conversationRoots.map(root => readResourceAdoption(root));
+    assert.ok(resourceBaseline.every(value => value?.ready && value.resourceSet === sharedResourceBaseline), '测试工作空间资源必须已准备且保持当前。');
+    for (const root of conversationRoots) {
+      assert.deepEqual(workbenchApplication.inspectWorkbenchPreferences(root).items, [], '测试工作空间的初始工作台状态必须为空。');
+    }
+  }
   browser = await launchTestBrowser();
-  const page: any = await browser.newPage({ locale: 'zh-CN' });
-  process.stderr.write(`[buildr-browser] selector=${selectorLabel} fixture=${fixtureProfile} phase=browser-ready\n`);
   const browserErrors: any[] = [];
   const expectedBrowserErrors: any = new Set();
-  page.on('pageerror', (error: any) => browserErrors.push(`pageerror ${page.url()}: ${error.message}`));
-  page.on('console', (message: any) => { if (message.type() === 'error') browserErrors.push(`console.error ${page.url()} [${message.location().url}]: ${message.text()}`); });
-
-  page.setDefaultTimeout(10_000);
+  const blockedConversationWrites: string[] = [];
+  const pendingConversationRequests = new Set<Promise<void>>();
+  const newBrowserPage = async () => {
+    // browser.newPage creates a fresh BrowserContext; storage and route
+    // fixtures never carry over from the previous conversation group.
+    const nextPage = await browser.newPage({ locale: 'zh-CN' });
+    nextPage.on('pageerror', (error: any) => browserErrors.push(`pageerror ${nextPage.url()}: ${error.message}`));
+    nextPage.on('console', (message: any) => { if (message.type() === 'error') browserErrors.push(`console.error ${nextPage.url()} [${message.location().url}]: ${message.text()}`); });
+    nextPage.setDefaultTimeout(10_000);
+    if (isolateConversationService) {
+      // Conversation writes are supplied by the per-group route fixture.
+      // Only real workspace opens and recent visits are allowed; visits are reset.
+      await nextPage.route('**/api/**', async (route: any) => {
+        const request = guardConversationServerWrite(route, blockedConversationWrites, [initialWorkspaceId, otherWorkspaceId]);
+        pendingConversationRequests.add(request);
+        try { await request; } finally { pendingConversationRequests.delete(request); }
+      });
+    }
+    return nextPage;
+  };
+  let page: any = await newBrowserPage();
+  process.stderr.write(`[buildr-browser] selector=${selectorLabel} fixture=${fixtureProfile} phase=browser-ready\n`);
   t.beforeEach(() => { browserErrors.length = 0; expectedBrowserErrors.clear(); });
   t.afterEach(async () => {
     try {
+      if (isolateConversationService) {
+        while (pendingConversationRequests.size) await Promise.allSettled([...pendingConversationRequests]);
+      }
       const unexpected = browserErrors.filter(error => ![...expectedBrowserErrors].some((expected: any) => error.includes(expected)));
       assert.deepEqual(unexpected, [], unexpected.join('\n'));
     } finally {
@@ -691,8 +740,57 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     await runSourceControlJourney({t,page,workspaceUrl,capture,expectedBrowserErrors,fixture:{path:sourceControlPath,location:fs.realpathSync(workspaceRoot),commitHash:history.stdout.trim(),historyText:historicalSource.stdout,indexText,workingText,prepareWorktrees,prepareRemoteStatuses,withStatusDigits,withDuplicateFiles,withImages,withBranches,withRegisteredSource,cleanLocation:codeWorktreeFixture.nativeCheckoutLocation,baselineWorktrees,unrelatedRetiredTaskId:codeWorktreeFixture.worktreeTaskId,unavailableRepositoryLocation,withUnavailableRepository}});
     }
   }
-  if (selected('agent-conversations')) await runAgentConversationsJourney({t,page,workspaceUrl,capture,expectedBrowserErrors});
-  if (selected('layout')) await runLayoutJourney({ t, page, workspaceUrl, capture });
+  if (selected('agent-conversations')) {
+    const batch = parseAgentConversationBatch(process.env.BUILDR_AGENT_JOURNEY_BATCH);
+    const queueRoot = process.env.BUILDR_AGENT_JOURNEY_QUEUE_ROOT;
+    if ((batch && process.env.BUILDR_AGENT_JOURNEY_PART) || (queueRoot && (batch || process.env.BUILDR_AGENT_JOURNEY_PART))) {
+      throw new Error('对话场景组、批次和共享队列不能同时指定。');
+    }
+    const groups = queueRoot ? claimAgentConversationGroups(queueRoot) : batch || [process.env.BUILDR_AGENT_JOURNEY_PART || 'all'];
+    const baselineTask = runtime.inspectTask(workspaceRoot, 'browser-task').recordDigest;
+    const baselineCatalog = runtime.assetCatalog(workspaceRoot).revision;
+    let tainted = false;
+    await runAgentConversationBatch(groups, {
+      canContinue: () => browser.isConnected() && server.listening && !tainted,
+      ...(queueRoot ? { afterGroup: (group: string) => finishAgentConversationGroup(queueRoot, group) } : {}),
+      preparePage: async (index: number) => {
+        if (index > 0) {
+          const canary = `buildr-group-isolation-${index}`;
+          await page.context().addCookies([{ name: canary, value: 'previous-group', url: workspaceUrl }]);
+          await page.context().close();
+          page = await newBrowserPage();
+          const cookies = await page.context().cookies(workspaceUrl);
+          assert.equal(cookies.some((cookie: any) => cookie.name === canary), false, '前一场景组的浏览器状态不得进入新场景组');
+          process.stderr.write('[agent-conversation-group] phase=browser-state-isolated\n');
+        }
+      },
+      runGroup: async (group: string) => {
+        process.stderr.write(`[agent-conversation-group] group=${group} phase=isolated-page-ready\n`);
+        try {
+          await runAgentConversationsJourney({t,page,workspaceUrl,workspaceRoot,capture,expectedBrowserErrors,group});
+        } finally {
+          try {
+            while (pendingConversationRequests.size) await Promise.allSettled([...pendingConversationRequests]);
+            if (isolateConversationService) {
+              resetConversationVisits(workbenchApplication, conversationRoots);
+              assert.equal(readSharedResourceSet().id, sharedResourceBaseline, '共享资源身份不得在场景间变化。');
+              assert.deepEqual(conversationRoots.map(root => readResourceAdoption(root)), resourceBaseline, '工作空间资源状态不得在场景间变化。');
+            }
+            const task = runtime.inspectTask(workspaceRoot, 'browser-task').recordDigest;
+            const catalog = runtime.assetCatalog(workspaceRoot).revision;
+            if (blockedConversationWrites.length || task !== baselineTask || catalog !== baselineCatalog) {
+              throw new Error(`对话场景改变或尝试改变共享服务端状态：${JSON.stringify(blockedConversationWrites)}`);
+            }
+            if (isolateConversationService) process.stderr.write('[agent-conversation-group] phase=server-state-isolated\n');
+          } catch (error) {
+            tainted = true;
+            throw error;
+          }
+        }
+      },
+    });
+  }
+  if (selected('layout')) await runLayoutJourney({ t: taskFocusedT(t), page, workspaceUrl, capture });
 
   if (SELECTORS.has('core')) await t.test('核心流程进入 Workspace、Task 路由并读取代表性 Tab', async () => {
     await page.goto(`${workspaceUrl}/tasks`);
@@ -830,6 +928,9 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     await page.locator('#more-actions').hover();
     await page.locator('#quit-buildr').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#restart-buildr').locator('xpath=ancestor::*[@role="menuitem"]').getAttribute('aria-disabled'), 'true', '托管预览在统一菜单中禁用重启');
+    // Navigation preserves the pointer position; leave the trigger so the
+    // next page cannot reopen its hover menu before the closed-state check.
+    await page.mouse.move(0, 0);
     await page.goto(url);
     assert.equal(await page.locator('#more-actions').isVisible(), true, '默认实例通过更多操作菜单提供重启和退出');
     assert.equal(await page.locator('#quit-buildr').count(), 0, '退出入口收进下拉菜单，未展开时不存在');
@@ -1173,10 +1274,10 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     await page.locator('#restart-buildr').click();
     const confirmDialog = page.getByRole('dialog', { name: '重启 Buildr Web？', exact: true });
     await confirmDialog.waitFor({ state: 'visible' });
-    assert.match(await confirmDialog.innerText(), /进行中的生成与任务验证将被取消/);
+    assert.match(await confirmDialog.innerText(), /独立智能体（Agent）执行服务不会被强制停止/);
     await confirmAntModal(page);
     await page.locator('#restart-buildr-error').waitFor();
-    assert.match(await page.locator('#restart-buildr-error').innerText(), /尚未重启/);
+    assert.match(await page.locator('#restart-buildr-error').innerText(), /未能确认重启请求/);
     assert.equal(await page.locator('#workspace-grid').isVisible(), true);
     assert.equal(await page.locator('#restart-screen').count(), 0);
     await page.unroute(restartUrl, failRestart);
@@ -1903,10 +2004,9 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     assert.deepEqual(project.serviceIds, [service.id]);
     assert.equal(service.type, 'backend');
     assert.equal(service.repositoryId, repository.id);
-    assert.equal(repository.present, false);
     assert.equal(repository.source.path, 'repositories/nested-code');
     assert.equal(runtime.catalogRepositoryStatus(workspaceRoot, repository.id).available, false);
-    assert.ok(!fs.existsSync(path.join(workspaceRoot, repository.source.path)));
+    assert.ok(['cloning', 'failed'].includes(runtime.repositoryCloneStatus(workspaceRoot, repository.id).state), '登记后异步克隆，未完成前不可用');
     assert.equal(fs.existsSync(path.join(workspaceRoot, 'projects/nested-project/services/nested-business')), false);
     assert.equal(fs.existsSync(path.join(workspaceRoot, 'services/nested-business')), false);
     await page.getByRole('button', { name: '解除关联 嵌套业务服务', exact: true }).click();

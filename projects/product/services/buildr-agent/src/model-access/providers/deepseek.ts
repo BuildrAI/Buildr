@@ -21,7 +21,7 @@ class DeepSeekRuntime implements ModelProviderRuntime {
   async inspect(): Promise<ModelProviderObservation> {
     try {
       const account = await this.owner.inspect();
-      if (account.status !== 'ready') return { status: account.status, label: account.label, models: [], diagnostic: account.diagnostic };
+      if (account.status !== 'ready') return { status: account.status, incomplete: account.status === 'failed', label: account.label, models: [], diagnostic: account.diagnostic };
       const response = await this.owner.request('https://api.deepseek.com/models', { method: 'GET', signal: AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(15000)]) });
       if (response.status === 401) { await response.body?.cancel(); return { status: 'expired', label: account.label, models: [], diagnostic: 'model_deepseek_login_expired' }; }
       if (!response.ok) { await response.body?.cancel(); throw new Error('model_deepseek_catalog_failed'); }
@@ -38,7 +38,7 @@ class DeepSeekRuntime implements ModelProviderRuntime {
       });
       this.catalog = new Map(models.map(model => [model.id, model]));
       return { status: models.length ? 'ready' : 'failed', label: account.label ?? 'DeepSeek', models, quota: { available: false, observedAt: new Date().toISOString(), summary: 'DeepSeek 账号未返回可读取套餐额度' }, ...(!models.length ? { diagnostic: 'model_deepseek_catalog_empty' } : {}) };
-    } catch { return { status: 'failed', models: [], diagnostic: 'model_deepseek_observation_failed' }; }
+    } catch { return { status: 'failed', incomplete: true, models: [], diagnostic: 'model_deepseek_observation_failed' }; }
   }
   async beginLogin(update: (value: LoginObservation) => void): Promise<void> {
     let completed = false;

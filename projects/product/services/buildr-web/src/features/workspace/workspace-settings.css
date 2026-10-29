@@ -28,13 +28,13 @@
   padding-top: 22px;
   border-top: 1px solid var(--soft-line);
   color: var(--soft-muted);
-  font-size: 12px;
+  font-size: var(--font-size-secondary);
 }
 
 .workspace-settings-location > .anticon { margin-top: 3px; }
 .workspace-settings-location > div { min-width: 0; }
 .workspace-settings-location span { display: block; margin-bottom: 6px; }
-.workspace-settings-location code { overflow-wrap: anywhere; font-size: 12px; }
+.workspace-settings-location code { overflow-wrap: anywhere; font-size: var(--font-size-code); }
 
 .workspace-settings-actions,
 .workspace-settings-conflict-actions {
@@ -48,12 +48,12 @@
 .workspace-settings-actions > [role='status'] {
   flex: 1;
   color: var(--soft-muted);
-  font-size: 12px;
+  font-size: var(--font-size-secondary);
 }
 
 .workspace-settings-conflict p { margin: 0 0 10px; }
 .workspace-settings-conflict dl { margin: 0 0 14px; }
-.workspace-settings-conflict dt { font-size: 12px; color: var(--soft-muted); }
+.workspace-settings-conflict dt { font-size: var(--font-size-secondary); color: var(--soft-muted); }
 .workspace-settings-conflict dd { margin: 3px 0 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .workspace-settings-conflict-actions { justify-content: flex-start; }
 
@@ -65,5 +65,5 @@
 }
 
 .workspace-card.has-settings .workspace-card-heading { padding-right: 34px; }
-.workspace-card.has-settings .workspace-health { font-size: 11px; }
+.workspace-card.has-settings .workspace-health { font-size: var(--font-size-meta); }
 .workspace-card-main:focus-visible { outline: 2px solid var(--soft-primary); outline-offset: -3px; }

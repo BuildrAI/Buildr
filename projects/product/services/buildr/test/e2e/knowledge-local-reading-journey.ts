@@ -41,7 +41,8 @@ export async function verifyKnowledgeQuestionHandoff(page: Page, trigger: Locato
   assert.doesNotMatch(prompt, /即请求在指定范围建设|将实际文章|将更新后的地图/);
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
   await action.getByRole('button', { name: '复制给智能体', exact: true }).click();
-  await action.getByRole('status').filter({ hasText: '已复制' }).waitFor({ state: 'visible' });
+  const copied = action.getByRole('button', { name: '已复制', exact: true });
+  await copied.waitFor({ state: 'visible' }); assert.equal(await copied.isDisabled(), true);
   assert.equal(await page.evaluate(() => navigator.clipboard.readText()), prompt);
   await page.locator('#close-agent-action').click();
   await action.waitFor({ state: 'detached' });
@@ -178,7 +179,14 @@ export async function runKnowledgeLocalReadingJourney({ page, workspaceRoot, ser
     const originalViewport = page.viewportSize();
     for (const width of [1280, 390]) {
       await page.setViewportSize({ width, height: 900 });
-      await reader().locator('.markdown-table-scroll').scrollIntoViewIfNeeded();
+      // 响应式阅读器在断点切换时重挂载；从当前可见正文定位并滚动，
+      // 不持有已被替换节点等待 Playwright 的稳定性检查。
+      await page.waitForFunction(() => {
+        const table = [...document.querySelectorAll('[data-knowledge-view="artifact"] .markdown-table-scroll')].find(element => element.getClientRects().length);
+        if (!table) return false;
+        table.scrollIntoView({ block: 'center' });
+        return true;
+      });
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, '表格不得撑宽页面');
       const table = await reader().locator('.markdown-table-scroll').evaluate((element: HTMLElement) => ({ width: element.clientWidth, scroll: element.scrollWidth }));
       if (width === 390) assert.ok(table.scroll > table.width, '窄屏宽表局部滚动');

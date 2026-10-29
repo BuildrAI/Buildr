@@ -1,7 +1,7 @@
 .source-control-worktree-status { display:flex; gap:8px; flex:none; align-items:center; }
-:is(.source-control-status-button,.source-control-sync-button).ant-btn { display:inline-flex; height:28px; align-items:center; gap:5px; min-width:18px; padding:0 1px; color:var(--soft-muted); font-size:11px; }
+:is(.source-control-status-button,.source-control-sync-button).ant-btn { display:inline-flex; height:28px; align-items:center; gap:5px; min-width:18px; padding:0 1px; color:var(--soft-muted); font-size:var(--font-size-meta); }
 .source-control-status-button.is-clean { color:var(--soft-primary); }
-:is(.source-control-status-button,.source-control-sync-button) .anticon { font-size:13px; }
+:is(.source-control-status-button,.source-control-sync-button) .anticon { font-size:var(--font-size-meta); }
 :is(.source-control-status-button,.source-control-sync-button):focus-visible { outline:2px solid var(--soft-primary); outline-offset:1px; }
 .source-control-status-content { display:inline-flex; align-items:center; gap:8px; white-space:nowrap; }
 .source-control-status-count,.source-control-status-unknown { display:inline-flex; align-items:center; gap:3px; font-variant-numeric:tabular-nums; white-space:nowrap; }
@@ -9,9 +9,9 @@
 .source-control-status-button .is-untracked { position:relative; }
 .source-control-status-button .is-untracked::after { content:''; position:absolute; top:6px; left:0; width:13px; height:1px; background:currentColor; transform:rotate(-45deg); }
 .source-control-status-details { max-width:260px; color:var(--soft-ink); overflow-wrap:anywhere; }
-.source-control-status-details dl { display:grid; grid-template-columns:60px minmax(0,1fr); gap:8px; margin:10px 0; font-size:12px; }
+.source-control-status-details dl { display:grid; grid-template-columns:60px minmax(0,1fr); gap:8px; margin:10px 0; font-size:var(--font-size-meta); }
 .source-control-status-details dt,.source-control-status-details p { color:var(--soft-muted); }
 .source-control-status-details dd { margin:0; }
-.source-control-status-details p { font-size:11px; margin:0; }
+.source-control-status-details p { font-size:var(--font-size-meta); margin:0; }
 
 .source-control-sync-tooltip { pointer-events:none; }

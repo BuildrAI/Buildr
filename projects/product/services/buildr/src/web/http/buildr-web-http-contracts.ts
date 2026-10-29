@@ -19,9 +19,16 @@ export const BUILDR_WEB_HTTP_SCHEMAS: Readonly<Record<string, any>> = Object.fre
     productIdentity: nullable({ type: 'object', additionalProperties: true }),
     webProfile: nullable({ type: 'object', additionalProperties: true }),
     previewIdentity: nullable({ type: 'object', additionalProperties: true }),
+    restartInProgress: { type: 'boolean' },
   }, ['schemaVersion', 'status', 'pid'])),
   stoppingResponse: schema('stopping/response', 'BuildrWebStoppingResponse', closed({ status: { const: 'stopping' } }, ['status'])),
   restartingResponse: schema('restarting/response', 'BuildrWebRestartingResponse', closed({ status: { const: 'restarting' } }, ['status'])),
+  restartStatusResponse: schema('restart-status/response', 'BuildrWebRestartStatusResponse', {
+    oneOf: [
+      closed({ status: { enum: ['idle', 'restarting'] } }, ['status']),
+      closed({ status: { const: 'failed' }, error: closed({ code: { ...text, maxLength: 200 }, message: { ...text, maxLength: 4096 } }, ['code', 'message']) }, ['status', 'error']),
+    ],
+  }),
   errorResponse: schema('error/response', 'BuildrWebErrorResponse', closed({
     error: closed({ code: text, message: text, details: true }, ['code', 'message']),
   }, ['error'])),
@@ -39,6 +46,7 @@ export const BUILDR_WEB_HTTP_OPERATIONS = Object.freeze([
   jsonOperation('local-app.quit', 'POST', '/api/v1/app/quit', 'quitRequest', 'stoppingResponse'),
   jsonOperation('local-app.quit-instance', 'POST', '/api/v1/app/quit-instance', 'emptyRequest', 'stoppingResponse'),
   jsonOperation('local-app.restart', 'POST', '/api/v1/app/restart', 'restartRequest', 'restartingResponse'),
+  jsonOperation('local-app.restart-status', 'GET', '/api/v1/app/restart-status', 'emptyRequest', 'restartStatusResponse'),
 ]);
 
 export const BUILDR_WEB_HTTP_VALIDATORS = compileJsonSchemaCatalog(Object.values(BUILDR_WEB_HTTP_SCHEMAS));

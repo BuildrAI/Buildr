@@ -7,6 +7,8 @@ import type { StoredConnection } from '../domain/agent-state.ts';
 import type { ConversationRepository } from '../persistence/conversation-repository.ts';
 
 export class ConnectionApplication {
+  private metadataReadOnly = false;
+  freezeMetadata(value = true): void { this.metadataReadOnly = value; }
   private readonly executors: Map<string, AgentExecutor>;
   private readonly gatewayRuntimes = new Map<string, Promise<AgentRuntime>>();
   private readonly runtimes = new Map<string, Promise<AgentRuntime>>();
@@ -45,6 +47,9 @@ export class ConnectionApplication {
     } };
   }
   private save(record: StoredConnection): ConnectionView {
+    // A retiring instance may observe its owned runtime, but shared metadata
+    // belongs to the successor. Do not publish a stale runtime observation.
+    if (this.metadataReadOnly) return this.get(record.view.id);
     const prior = record.view.revision === 'unconfigured' ? undefined : record.view.revision;
     record.view.revision = randomUUID();
     // Auth URLs live only in the current login attempt, never in persistent records or event diagnostics.
@@ -150,6 +155,19 @@ export class ConnectionApplication {
     this.gatewayRuntimes.set(key, promise); return promise;
   }
   binding(id: string): string | undefined { return this.stored(id).bindingIdentity; }
+  async releaseGatewayRuntime(runtime: AgentRuntime): Promise<void> {
+    const owned = [];
+    for (const [key, pending] of this.gatewayRuntimes) {
+      const candidate = await pending.catch(() => undefined);
+      if (candidate === runtime) owned.push({key,pending});
+    }
+    if (!owned.length) {
+      if (!runtime.closed) fail('agent_runtime_release_unconfirmed', '原执行资源归属尚未确认，不能交接原对话。', 409);
+      return;
+    }
+    await runtime.close();
+    for (const {key,pending} of owned) if (this.gatewayRuntimes.get(key) === pending) this.gatewayRuntimes.delete(key);
+  }
   observeModels(id: string, bindingIdentity: string, models: ConnectionView['models']): ConnectionView {
     const record = this.stored(id);
     if (!this.closing && record.view.enabled && record.bindingIdentity === bindingIdentity) {
@@ -266,5 +284,6 @@ export class ConnectionApplication {
     const runtimes = [...this.runtimes.values(), ...this.gatewayRuntimes.values()]; this.runtimes.clear(); this.gatewayRuntimes.clear();
     await Promise.allSettled(runtimes.map(async runtime => (await runtime).close()));
   }
+  activity() { return [{kind:'connection-operation',count:this.opening.size+this.checking.size},{kind:'native-login',count:this.list().filter(value=>['initializing','waiting-browser','checking'].includes(value.loginAttempt?.state??'')).length}].filter(value=>value.count>0); }
   beginClosing(): void { this.closing = true; }
 }

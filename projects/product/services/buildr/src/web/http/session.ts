@@ -122,3 +122,20 @@ export async function readAllowedJsonBody(request: any, allowed: any, label: any
   }
   return input;
 }
+
+/** A path-scoped, HttpOnly cookie lets same-origin <img> requests authenticate without a custom header. */
+export function imageSessionCookie(sessionToken: string) {
+  return `buildr-image=${sessionToken}; Path=/api/v1/conversation-image; HttpOnly; SameSite=Strict`;
+}
+
+export function assertImageRequest(request: any, origin: string, sessionToken: string) {
+  const cookie = String(request.headers.cookie || '').split(';').map(value => value.trim()).find(value => value.startsWith('buildr-image='));
+  if (cookie?.slice('buildr-image='.length) !== sessionToken) {
+    const error: Error & Record<string, any> = new Error('图片会话已失效，请刷新页面。');
+    error.code = 'session_forbidden'; error.status = 403; throw error;
+  }
+  if ((request.headers.origin && request.headers.origin !== origin) || request.headers['sec-fetch-site'] === 'cross-site') {
+    const error: Error & Record<string, any> = new Error('图片只允许当前 Buildr Web 读取。');
+    error.code = 'origin_forbidden'; error.status = 403; throw error;
+  }
+}

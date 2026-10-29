@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPromptRequest } from "../../../lib/promptRequest";
-import { copyText } from "../../../lib/copyText";
+import { CopyButton } from "../../../components/CopyButton";
 import { Alert, Button, Input, Radio, Space } from "antd";
 import {
   buildKnowledgeRequest,
@@ -31,8 +31,7 @@ export function KnowledgeAgentAction({
     exploration: "overview",
   });
   const [prompt, setPrompt] = useState(""),
-    [error, setError] = useState(""),
-    [copyState, setCopyState] = useState("");
+    [error, setError] = useState("");
   const problem = knowledgeRequestProblem(context, input);
   const shownPrompt = initialize && !problem ? buildKnowledgeRequest(context, input) : prompt;
   const update = (field: keyof KnowledgeRequest, value: string) => {
@@ -40,28 +39,16 @@ export function KnowledgeAgentAction({
     setInput((current) => ({ ...current, [field]: value }));
     setPrompt("");
     setError("");
-    setCopyState("");
   };
   const generate = () => {
     request.invalidate();
     setPrompt("");
-    setCopyState("");
     try {
       setPrompt(buildKnowledgeRequest(context, input));
       setError("");
-      setCopyState("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "无法准备指令。");
     }
-  };
-  const copy = async () => {
-    const current = request.observe();
-    const copied = await copyText(shownPrompt);
-    if (current()) setCopyState(copied
-      ? (readOnly
-        ? "已复制；此处尚未执行调查。交给智能体后继续了解，不会自动修改知识内容。"
-        : "已复制；此处未执行建设。交给智能体后，刷新查看实际成果。")
-      : "自动复制失败，请在下方选择指令手动复制；尚未执行。");
   };
   return (
     <div className="knowledge-action">
@@ -179,7 +166,7 @@ export function KnowledgeAgentAction({
       {initialize && problem && <Alert type="warning" message={problem} />}
       <p className="page-copy" role="status">
         {shownPrompt
-          ? copyState || (readOnly ? "指令已准备；此处尚未执行调查，也未修改知识内容。" : "指令已准备；此处尚未执行知识建设。")
+          ? (readOnly ? "指令已准备；此处尚未执行调查，也未修改知识内容。" : "指令已准备；此处尚未执行知识建设。")
           : readOnly ? "先准备指令，再交给智能体继续了解；此处不会直接执行调查或修改内容。" : "先准备指令，再交给智能体执行；此处不会直接创建成果。"}
       </p>
       {shownPrompt && (
@@ -193,7 +180,7 @@ export function KnowledgeAgentAction({
               rows={10}
             />
           </label>
-          <Button type={initialize ? "primary" : "default"} onClick={() => void copy()}>复制给智能体</Button>
+          <CopyButton type={initialize ? "primary" : "default"} size="middle" text={shownPrompt} failureMessage="自动复制失败，请在下方选择指令手动复制。">复制给智能体</CopyButton>
           <p className="page-copy">
             {readOnly ? "保留当前阅读位置，交给智能体回答后继续追问；需要修改长期内容时再选择“完善当前内容”。" : "完成后回到当前知识页刷新，查看实际成果与引用，再继续提出完善意见。"}
           </p>

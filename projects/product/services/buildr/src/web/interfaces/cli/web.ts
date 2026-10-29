@@ -1,4 +1,4 @@
-import process from 'node:process';
+import { reportWebHandoffStartupFailure } from '../../../bootstrap/cli/main.ts';
 
 type WebCliRuntime = {
   manageBuildrWebPreview(action: string, args: string[]): unknown;
@@ -19,16 +19,9 @@ async function startWeb(application: WebCliRuntime, args: string[]): Promise<unk
   try {
     return await application.startBuildrWeb(args);
   } catch (cause: any) {
-    // The detached updater has no standard streams. Flush only its startup
-    // failure through the private channel before ordinary CLI error reporting.
-    if ((args.includes('--update-handoff') || args.includes('--restart')) && process.send && process.connected) {
-      await new Promise<void>(resolve => {
-        const timer = setTimeout(resolve, 250);
-        try {
-          process.send!({ type: 'buildr.web-update-handoff-failed', code: typeof cause?.code === 'string' ? cause.code : 'web_update_process_failed', message: String(cause?.message || cause).slice(0, 4096) }, () => { clearTimeout(timer); resolve(); });
-        } catch { clearTimeout(timer); resolve(); }
-      });
-    }
+    // The detached updater has no standard streams. Flush its startup failure
+    // through the private channel before ordinary CLI error reporting.
+    await reportWebHandoffStartupFailure(cause, args);
     throw cause;
   }
 }

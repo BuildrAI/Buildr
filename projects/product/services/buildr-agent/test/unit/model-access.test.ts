@@ -3,12 +3,24 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { translateRequest, type OpaqueReasoning } from '../../src/model-access/protocols.ts';
+import { modelQuotaFailure } from '../../src/model-access/quota.ts';
+import { upstreamFailure } from '../../src/model-access/errors.ts';
 
 import type { ProtocolJson } from '../../src/model-access/contracts.ts';
 
 const model={id:'source-model',label:'真实来源模型',images:true,tools:true,contextWindow:32000};
 
 const noOpaque:OpaqueReasoning={encode(value){return JSON.stringify(value);},decode(value){return JSON.parse(value);}};
+
+test('only a fresh exhausted window blocks paid work; stale quota, free models and throttling remain distinct',()=>{
+ const now=Date.now(),account={label:'Qoder',provider:'native-qoder',quota:{available:true,observedAt:new Date(now).toISOString(),remainingPercent:0}};
+ assert.equal(modelQuotaFailure(account,{creditFactor:1},now)?.code,'model_quota_exhausted');
+ assert.equal(modelQuotaFailure(account,{creditFactor:0},now),undefined);
+ for(const quota of [{...account.quota,available:false},{...account.quota,stale:true},{...account.quota,observedAt:new Date(now-61_000).toISOString()},{...account.quota,remainingPercent:0.1}])assert.equal(modelQuotaFailure({...account,quota},undefined,now),undefined);
+ assert.equal(upstreamFailure({code:'insufficient_quota',message:'quota exhausted; Bearer private-token'},429).code,'model_quota_exhausted');
+ assert.doesNotMatch(upstreamFailure({code:'insufficient_quota',message:'quota exhausted; Bearer private-token'},429).message,/private-token/);
+ assert.equal(upstreamFailure({code:'rate_limit_exceeded',message:'requests per minute exceeded'},429).code,'rate_limit_exceeded');
+});
 
 test('Messages preserves system authority, tool identity and images when converted to Responses',()=>{
   const converted=translateRequest({model:'m',system:[{type:'text',text:'system rule'}],messages:[{role:'user',content:[{type:'text',text:'look'},{type:'image',source:{type:'base64',media_type:'image/png',data:'abc'}}]},{role:'assistant',content:[{type:'tool_use',id:'t1',name:'read',input:{path:'a'}}]},{role:'user',content:[{type:'tool_result',tool_use_id:'t1',content:'value'}]}],tools:[{name:'read',input_schema:{type:'object'}}],max_tokens:42},'anthropic-messages','responses',noOpaque);

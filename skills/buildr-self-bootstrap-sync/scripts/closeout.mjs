@@ -27,6 +27,13 @@ const PRODUCT_ROOT = 'projects/product';
 const SERVICE_ROOT = `${PRODUCT_ROOT}/services/buildr`;
 const COMPONENT_PATH = 'components/workspace/buildr-self-bootstrap/component.yml';
 const DEVELOPMENT_WEB_CONTINUITY_SCRIPT = 'skills/buildr-self-bootstrap-sync/scripts/development-web-continuity.mjs';
+function developmentSourceBinding(root, instance) {
+  // Projected callers load policy from the explicitly verified retained checkout.
+  const file = path.join(root, DEVELOPMENT_WEB_CONTINUITY_SCRIPT);
+  const shared = createRequire(file)(file);
+  if (typeof shared.developmentSourceBinding !== 'function') throw closeoutError('self-bootstrap-closeout.development-web-inspection-invalid', '当前开发更新来源定义不可用。');
+  return shared.developmentSourceBinding(instance);
+}
 const DEFAULT_DEVELOPMENT_WEB_PORT = 4458;
 
 // This runner must remain executable after the Skill is projected under an
@@ -237,14 +244,14 @@ function inspectDevelopmentWebContinuity(execute, root, nodeExecutable, environm
     throw closeoutError('self-bootstrap-closeout.development-web-inspection-invalid', 'Development Web安装前状态不符合closed continuity contract。', { payload });
   }
   if (payload.status === 'healthy-development') {
-    const instance = payload.instance;
+    const instance = payload.instance, source = developmentSourceBinding(root, instance);
     if (!Number.isInteger(instance?.port) || instance.port <= 0 || instance.port > 65535
       || !Number.isInteger(instance?.pid) || instance.pid <= 0
-      || instance.launcherIdentity?.channel !== 'development') {
-      throw closeoutError('self-bootstrap-closeout.development-web-inspection-invalid', '健康Development Web实例缺少可证明的port、PID或Launcher identity。', { payload });
+      || source?.channel !== 'development') {
+      throw closeoutError('self-bootstrap-closeout.development-web-inspection-invalid', '健康Development Web实例缺少可证明的port、PID或开发来源身份。', { payload });
     }
-    if (!sameFilesystemPath(instance.launcherIdentity.sourceRoot, path.join(root, SERVICE_ROOT))
-      || !sameFilesystemPath(instance.launcherIdentity.developmentRuntime?.executable, nodeExecutable)) {
+    if (!sameFilesystemPath(source.sourceRoot, path.join(root, SERVICE_ROOT))
+      || !sameFilesystemPath(source.developmentRuntime?.executable, nodeExecutable)) {
       return { ...payload, status: 'different-owner', reason: 'development-source-mismatch' };
     }
   }
@@ -342,15 +349,16 @@ function readDevelopmentWebRecovery(root, nodeExecutable) {
     if (error.code === 'ENOENT') return null;
     throw closeoutError('self-bootstrap-closeout.development-web-recovery-invalid', '开发应用待恢复信息无法读取，已保留。', { file });
   }
+  const source = developmentSourceBinding(root, state?.continuity?.instance);
   if (state?.schemaVersion !== 'buildr.development-web-recovery/v1'
     || !sameFilesystemPath(state.workspaceRoot, root)
     || !sameFilesystemPath(state.nodeExecutable, nodeExecutable)
     || state.continuity?.status !== 'healthy-development'
     || !Number.isInteger(state.continuity.instance?.pid) || state.continuity.instance.pid <= 0
     || !Number.isInteger(state.continuity.instance.port) || state.continuity.instance.port <= 0 || state.continuity.instance.port > 65535
-    || state.continuity.instance.launcherIdentity?.channel !== 'development'
-    || !sameFilesystemPath(state.continuity.instance.launcherIdentity.sourceRoot, path.join(root, SERVICE_ROOT))
-    || !sameFilesystemPath(state.continuity.instance.launcherIdentity.developmentRuntime?.executable, nodeExecutable)) {
+    || source?.channel !== 'development'
+    || !sameFilesystemPath(source.sourceRoot, path.join(root, SERVICE_ROOT))
+    || !sameFilesystemPath(source.developmentRuntime?.executable, nodeExecutable)) {
     throw closeoutError('self-bootstrap-closeout.development-web-recovery-invalid', '开发应用待恢复信息与当前来源不匹配，已保留。', { file });
   }
   return state;
@@ -385,7 +393,7 @@ function restoreDevelopmentWebAfterFailure({ execute, root, nodeExecutable, reco
   recoveryEnvironment(recovery, environment);
   const observed = inspectDevelopmentWebContinuity(execute, root, nodeExecutable, environment, phaseResult);
   if (observed.status === 'healthy-development') {
-    const identity = observed.instance.launcherIdentity;
+    const identity = developmentSourceBinding(root, observed.instance);
     if (!sameFilesystemPath(identity.sourceRoot, path.join(root, SERVICE_ROOT))
       || !sameFilesystemPath(identity.developmentRuntime?.executable, nodeExecutable)) {
       throw closeoutError('self-bootstrap-closeout.development-web-recovery-owner-mismatch', '当前开发应用来源不同，未替换该实例。');

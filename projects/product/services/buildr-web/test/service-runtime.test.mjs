@@ -27,12 +27,25 @@ const { createServiceRuntimeClient } = await import('../src/features/service-run
 const { LocalRunCard } = await import('../src/features/service-runtime/components/LocalRunCard.tsx');
 const { RuntimeStartOptions } = await import('../src/features/service-runtime/components/RuntimeStartOptions.tsx');
 const { RuntimeConfigurationSummary } = await import('../src/features/service-runtime/components/RuntimeConfigurationSummary.tsx');
+const { AgentDiscoveryContent } = await import('../src/features/service-runtime/components/AgentDiscoveryContent.tsx');
 const worktree = (id, main = false) => ({ id, path: '/actual/' + id, label: id, main, branch: main ? 'qa' : 'topic', head: 'a'.repeat(40), dirty: true, taskId: main ? null : 'task-one', taskTitle: main ? null : '本次订单验证' });
 const definition = { source: 'agent', verifiedAt: '2026-10-22T01:00:00Z', path: 'services/front/runtime.yml', local: { command: ['node', 'dev.mjs'], cwd: '.', profile: 'dev', preferredPort: 3000, portOverride: '--port', readiness: { kind: 'http', path: '/' }, timeoutSeconds: 60, backends: [{ serviceCode: 'back', environmentVariable: 'BACKEND_URL', remoteUrl: 'https://test.example.com' }] } };
 const service = (code, configured = true) => ({ id: code + '-id', code, type: code === 'front' ? 'frontend' : 'backend', name: code === 'front' ? '运营前端' : '业务后端', projects: ['pig'], repositoryId: code + '-repo', definition: configured ? code === 'front' ? definition : { ...definition, local: { ...definition.local, backends: undefined } } : null, definitionDiagnostic: null, runs: [], local: { activeCount: 0, activePorts: [] } });
 const run = { id: 'run-one', serviceId: 'front-id', serviceCode: 'front', worktreeId: 'task-front', worktreePath: '/actual/task-front', worktreeLabel: 'topic', branch: 'main', head: 'b'.repeat(40), main: false, taskId: 'task-one', taskTitle: '本次订单验证', dirty: null, origin: 'unknown', url: 'http://127.0.0.1:3001', connection: { mode: 'remote', url: 'https://test.example.com', serviceCode: 'back', runId: null }, launch: null, pid: 3456, preferredPort: 3000, actualPort: 3001, portNote: '已避让首选端口', status: 'running', startedAt: '2026-10-22T01:00:00Z', stoppedAt: null, failure: null, logPath: '/actual/run.log' };
 const render = (component, props) => renderToStaticMarkup(React.createElement(MemoryRouter, null, React.createElement(component, props)));
 const elements = node => Array.isArray(node) ? node.flatMap(elements) : node && typeof node === 'object' ? [node, ...elements(node.props?.children)] : [];
+
+test('未接入复制抽屉先说明未执行与影响，完整指令默认收起', () => {
+  const html = render(AgentDiscoveryContent, { prompt: '配置请求', reason: '没有就绪连接', tone: 'warning' });
+  assert.match(html, /尚未执行配置/);
+  assert.match(html, /没有就绪连接/);
+  assert.match(html, /本次允许的影响/);
+  assert.match(html, /远程业务写入/);
+  assert.match(html, /复制指令不会执行配置/);
+  assert.match(html, /<details class="discovery-prompt">/);
+  assert.match(html, /查看完整指令/);
+  assert.doesNotMatch(html, /<details[^>]*open/);
+});
 
 test('任务选择只发送已选可用任务目录，单前端不会扩大到后端或主库', () => {
   const choices = [{ service: service('front'), worktree: worktree('task-front'), diagnostics: [] }, { service: service('back'), worktree: worktree('task-back'), diagnostics: [] }, { service: service('main-only'), worktree: worktree('main', true), diagnostics: [] }, { service: service('missing'), worktree: null, diagnostics: [] }, { service: service('unconfigured', false), worktree: worktree('task-u'), diagnostics: [] }];

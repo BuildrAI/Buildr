@@ -16,7 +16,7 @@ import { WorkspaceStage, type WorkspaceObjectContentState } from '../../../compo
 import { DrawerShell } from '../../../components/DrawerShell';
 import { ResourceDocumentPane } from '../../../components/ResourceDocumentPane';
 import { workspaceHref } from '../../../lib/labels';
-import { copyText } from '../../../lib/copyText';
+import { CopyButton } from '../../../components/CopyButton';
 import { assetCatalogApi, repositoryBranch } from '../api/asset-catalog-api';
 import { useAssetCatalog } from './useAssetCatalog';
 import { CatalogMigration } from './CatalogMigration';
@@ -44,7 +44,7 @@ export function AssetHome({ kind, previewId, knowledge, initialEditing, initialV
   const [deleting, setDeleting] = useState(false);
   const [editing, setEditing] = useState(false), [prepareOpen, setPrepareOpen] = useState(false);
   useEffect(() => { if (initialEditing) setEditing(true); }, [initialEditing]);
-  const [prompt, setPrompt] = useState(''), [promptError, setPromptError] = useState(''), [copyState, setCopyState] = useState('');
+  const [prompt, setPrompt] = useState(''), [promptError, setPromptError] = useState('');
   const [documents, setDocuments] = useState<string[]>([]), [activeDocument, setActiveDocument] = useState<string | null>(null);
   const data = catalog.data;
   const service = data?.services.find(s => s.id === assetId || s.code === assetId);
@@ -66,7 +66,7 @@ export function AssetHome({ kind, previewId, knowledge, initialEditing, initialV
   };
   const prepare = async () => {
     if (!repository) return;
-    setPrepareOpen(true); setPromptError(''); setCopyState(''); setPrompt('');
+    setPrepareOpen(true); setPromptError(''); setPrompt('');
     try { setPrompt((await assetCatalogApi.preparePrompt(repository.id)).prompt); } catch (error) { setPromptError((error as Error).message); }
   };
   if (catalog.error) return <Alert type="error" message={catalog.error} />;
@@ -104,7 +104,7 @@ export function AssetHome({ kind, previewId, knowledge, initialEditing, initialV
 </>} />
     {deleting && <AssetDeleteDialog kind={kind} id={item.id} onClose={() => setDeleting(false)} />}
     {editing && <AssetEditDrawer catalog={data} kind={kind} id={item.id} onClose={() => { setEditing(false); if (initialEditing) previews?.open(location.pathname, href(`/${area}/${encodeURIComponent(assetId)}`)); }} />}
-    {prepareOpen && <DrawerShell open title="代码对齐指引" sub={repository?.name} onClose={() => setPrepareOpen(false)} footer={<Space style={{ display: 'flex', justifyContent: 'space-between' }}><span className="page-copy" role="status">{copyState || '尚未执行'}</span><Button type="primary" disabled={!prompt} onClick={async () => { setCopyState(await copyText(prompt) ? '已复制，交给智能体执行' : '无法自动复制，请在上方选择文本复制'); }}>复制指令</Button></Space>}>
+    {prepareOpen && <DrawerShell open title="代码对齐指引" sub={repository?.name} onClose={() => setPrepareOpen(false)} footer={<Space style={{ display: 'flex', justifyContent: 'space-between' }}><span className="page-copy" role="status">尚未执行</span><CopyButton type="primary" size="middle" text={prompt} disabled={!prompt} failureMessage="无法自动复制，请在上方选择文本复制。">复制指令</CopyButton></Space>}>
       <p className="page-copy">这里提供后续处理指引，尚未执行对齐。智能体（Agent）可核对声明与实际差异，在授权内处理并保留已有改动。</p>
       {promptError ? <Alert type="error" message={promptError} /> : <Input.TextArea aria-label="代码准备指令" readOnly value={prompt} placeholder="正在准备指令…" autoSize={{ minRows: 12, maxRows: 24 }} />}
     </DrawerShell>}

@@ -39,13 +39,25 @@ function samePath(left, right) {
   try { return fs.realpathSync(left) === fs.realpathSync(right); } catch { return path.resolve(left || '') === path.resolve(right || ''); }
 }
 
-function publicInstance(state, port) {
+/** A manually started source service can prove the same owner without pretending it has a Launcher identity. */
+export function developmentSourceBinding(instance) {
+  if (instance?.launcherIdentity != null) return instance.launcherIdentity;
+  const product = instance?.productIdentity;
+  if (product?.channel !== 'development' || product.runtime?.role !== 'development'
+    || typeof product.sourceRoot !== 'string' || !path.isAbsolute(product.sourceRoot)
+    || typeof product.runtime.executable !== 'string' || !path.isAbsolute(product.runtime.executable)
+    || !/^sha256-[a-f0-9]{64}$/.test(product.developmentRuntimeIdentity || '')) return null;
+  return { channel: 'development', sourceRoot: product.sourceRoot, developmentRuntime: { executable: product.runtime.executable } };
+}
+
+function publicInstance(state, port, restartInProgress = false) {
   return {
     url: state.url,
     port,
     pid: state.pid,
     launcherIdentity: state.launcherIdentity || null,
     productIdentity: state.productIdentity || null,
+    restartInProgress,
   };
 }
 
@@ -60,6 +72,7 @@ export async function inspectDevelopmentInstance({
   if (!port || !Number.isInteger(state.pid) || state.pid <= 0 || !state.secret) {
     return { schemaVersion: DEVELOPMENT_WEB_CONTINUITY_SCHEMA, action: 'inspect', status: 'stale', reason: 'instance-record-invalid', instance: null };
   }
+  let restartInProgress = false;
   try {
     const response = await fetchImpl(`${state.url}/api/v1/health`, {
       headers: { 'x-buildr-instance': state.secret },
@@ -67,14 +80,17 @@ export async function inspectDevelopmentInstance({
     });
     if (!response.ok) return { schemaVersion: DEVELOPMENT_WEB_CONTINUITY_SCHEMA, action: 'inspect', status: 'stale', reason: `health-${response.status}`, instance: null };
     const health = await response.json();
-    if (health.schemaVersion !== 'buildr.local-app-health/v1' || health.status !== 'ready' || health.pid !== state.pid) {
+    if (health.schemaVersion !== 'buildr.local-app-health/v1' || !['ready', 'stopping'].includes(health.status) || health.pid !== state.pid
+      || ['launcherIdentity', 'productIdentity', 'webProfile'].some(key => JSON.stringify(health[key] ?? null) !== JSON.stringify(state[key] ?? null))) {
       return { schemaVersion: DEVELOPMENT_WEB_CONTINUITY_SCHEMA, action: 'inspect', status: 'stale', reason: 'health-identity-mismatch', instance: null };
     }
+    restartInProgress = health.restartInProgress === true;
+    if (health.status === 'stopping') return { schemaVersion: DEVELOPMENT_WEB_CONTINUITY_SCHEMA, action: 'inspect', status: 'stale', reason: 'instance-stopping', instance: publicInstance(state, port, restartInProgress) };
   } catch {
     return { schemaVersion: DEVELOPMENT_WEB_CONTINUITY_SCHEMA, action: 'inspect', status: 'stale', reason: 'health-unreachable', instance: null };
   }
-  const instance = publicInstance(state, port);
-  if (state.launcherIdentity?.channel !== 'development') {
+  const instance = publicInstance(state, port, restartInProgress);
+  if (developmentSourceBinding(state)?.channel !== 'development') {
     return { schemaVersion: DEVELOPMENT_WEB_CONTINUITY_SCHEMA, action: 'inspect', status: 'different-owner', reason: state.launcherIdentity?.channel || 'launcher-identity-missing', instance };
   }
   return { schemaVersion: DEVELOPMENT_WEB_CONTINUITY_SCHEMA, action: 'inspect', status: 'healthy-development', reason: null, instance };
@@ -95,10 +111,22 @@ function assertRestartIdentity(identity, expected) {
 }
 
 function matchesRunningSource(instance, expected) {
+  const source = developmentSourceBinding(instance);
   return instance.port === expected.port
     && instance.productIdentity?.developmentRuntimeIdentity === expected.runtimeIdentity
-    && samePath(instance.launcherIdentity?.sourceRoot, expected.sourceRoot)
-    && samePath(instance.launcherIdentity?.developmentRuntime?.executable, expected.nodeExecutable);
+    && samePath(source?.sourceRoot, expected.sourceRoot)
+    && samePath(source?.developmentRuntime?.executable, expected.nodeExecutable);
+}
+
+function matchesDevelopmentOwner(instance, expected) {
+  const source = developmentSourceBinding(instance);
+  return source?.channel === 'development'
+    && samePath(source?.sourceRoot, expected.sourceRoot)
+    && samePath(source?.developmentRuntime?.executable, expected.nodeExecutable);
+}
+
+function continuityError(code, message) {
+  return Object.assign(new Error(message), { code: `development-web-continuity.${code}` });
 }
 
 async function waitForRestart({ dataRoot, expected, fetchImpl, timeoutMs, wait, spawnError }) {
@@ -127,7 +155,7 @@ async function waitForRestart({ dataRoot, expected, fetchImpl, timeoutMs, wait, 
 /**
  * @param {{projectBridge: string, launcherIdentityPath: string, expectedSourceRoot: string,
  * expectedHead: string, expectedRuntimeIdentity: string, nodeExecutable: string, previousPid: number,
- * port?: number, previousPort?: number, dataRoot?: string, environment?: NodeJS.ProcessEnv,
+ * port?: number, expectedPort?: number, previousPort?: number, dataRoot?: string, environment?: NodeJS.ProcessEnv,
  * forceRestart?: boolean, timeoutMs?: number, fetchImpl?: typeof fetch,
  * spawnImpl?: (command: string, args: string[], options: import('node:child_process').SpawnOptions) => import('node:child_process').ChildProcess,
  * killProcess?: typeof process.kill, wait?: (duration: number) => Promise<unknown>}} options
@@ -135,6 +163,7 @@ async function waitForRestart({ dataRoot, expected, fetchImpl, timeoutMs, wait, 
 export async function restartDevelopmentInstance({
   projectBridge,
   port = DEFAULT_DEVELOPMENT_WEB_PORT,
+  expectedPort = DEFAULT_DEVELOPMENT_WEB_PORT,
   previousPort = port,
   launcherIdentityPath,
   expectedSourceRoot,
@@ -145,7 +174,7 @@ export async function restartDevelopmentInstance({
   dataRoot = developmentWebDataRoot(),
   environment = process.env,
   forceRestart = false,
-  timeoutMs = 10000,
+  timeoutMs = 30000,
   fetchImpl = fetch,
   spawnImpl = spawn,
   killProcess = process.kill.bind(process),
@@ -155,27 +184,47 @@ export async function restartDevelopmentInstance({
   const expected = { sourceRoot: expectedSourceRoot, head: expectedHead, nodeExecutable, port, runtimeIdentity: expectedRuntimeIdentity };
   assertRestartIdentity(identity, expected);
   if (!/^sha256-[a-f0-9]{64}$/.test(expectedRuntimeIdentity || '')) throw new Error('Development Web recovery requires the current runtime source proof.');
-  if (port !== DEFAULT_DEVELOPMENT_WEB_PORT) throw new Error(`Development Web continuity port must be ${DEFAULT_DEVELOPMENT_WEB_PORT}: ${port}`);
+  if (!Number.isInteger(port) || port <= 0 || port > 65535 || port !== expectedPort) throw new Error(`Development Web continuity port must be ${expectedPort}: ${port}`);
   if (!Number.isInteger(previousPort) || previousPort <= 0 || previousPort > 65535) throw new Error(`Invalid previous Development Web port: ${previousPort}`);
   if (!Number.isInteger(previousPid) || previousPid <= 0) throw new Error(`Invalid previous Development Web PID: ${previousPid}`);
-  const before = await inspectDevelopmentInstance({ dataRoot, fetchImpl });
-  if (before.status === 'different-owner') throw Object.assign(new Error('The current instance belongs to a different owner.'), { code: 'development-web-continuity.owner-mismatch' });
-  if (before.status === 'healthy-development') {
-    if (!forceRestart && matchesRunningSource(before.instance, expected)) {
+  const coordinationDeadline = Date.now() + timeoutMs;
+  let coordinated = false;
+  while (true) {
+    const before = await inspectDevelopmentInstance({ dataRoot, fetchImpl });
+    if (before.status === 'different-owner' || (before.instance && !matchesDevelopmentOwner(before.instance, expected))) {
+      throw continuityError('owner-mismatch', 'The current instance belongs to a different owner.');
+    }
+    if (before.instance?.restartInProgress || (coordinated && before.status !== 'healthy-development')) {
+      coordinated = true;
+      if (Date.now() >= coordinationDeadline) throw continuityError('restart-wait-timeout', 'The concurrent Development Web restart did not settle before timeout.');
+      await wait(50);
+      continue;
+    }
+    if (before.status !== 'healthy-development') break;
+    if ((!forceRestart || (coordinated && before.instance.pid !== previousPid)) && matchesRunningSource(before.instance, expected)) {
       return { schemaVersion: DEVELOPMENT_WEB_CONTINUITY_SCHEMA, action: 'restart', status: 'passed',
         disposition: 'reused', previous: { pid: previousPid, port: previousPort }, instance: before.instance, launcherIdentity: identity, cleanup: null };
     }
     // Only the exact, authenticated observation may be stopped. Installing the
     // new launcher no longer stops the app before its identity is validated.
     const state = readJson(instanceFile(dataRoot));
-    if (before.instance.pid !== previousPid || state?.pid !== previousPid
-      || !samePath(state.launcherIdentity?.sourceRoot, expectedSourceRoot)
-      || !samePath(state.launcherIdentity?.developmentRuntime?.executable, nodeExecutable)) {
+    if (state?.pid !== before.instance.pid || state?.url !== before.instance.url
+      || !matchesDevelopmentOwner(state, expected)
+      || ['launcherIdentity', 'productIdentity'].some(key => JSON.stringify(state[key] ?? null) !== JSON.stringify(before.instance[key] ?? null))) {
       throw Object.assign(new Error('The running development instance changed; it has been preserved.'), { code: 'development-web-continuity.owner-mismatch' });
     }
     const response = await fetchImpl(`${state.url}/api/v1/app/quit-instance`, {
       method: 'POST', headers: { 'x-buildr-instance': state.secret }, signal: AbortSignal.timeout(1000),
     });
+    if (response.status === 409 || response.status === 503) {
+      const failure = await response.json().catch(() => null);
+      if (['restart_in_progress', 'app_shutting_down'].includes(failure?.error?.code)) {
+        coordinated = true;
+        if (Date.now() >= coordinationDeadline) throw continuityError('restart-wait-timeout', 'The concurrent Development Web restart did not settle before timeout.');
+        await wait(50);
+        continue;
+      }
+    }
     if (response.status !== 202) throw Object.assign(new Error('Development Web rejected the authenticated shutdown request.'), { code: 'development-web-continuity.shutdown-rejected' });
     await response.arrayBuffer();
     const deadline = Date.now() + timeoutMs;
@@ -184,12 +233,13 @@ export async function restartDevelopmentInstance({
       // for the exact receipt to be removed or for the observed process to die.
       if (!fs.existsSync(instanceFile(dataRoot))) break;
       const current = readJson(instanceFile(dataRoot));
-      if (!current || current.pid !== previousPid || current.secret !== state.secret) throw Object.assign(new Error('The development instance record changed during shutdown; it has been preserved.'), { code: 'development-web-continuity.owner-mismatch' });
-      try { killProcess(previousPid, 0); }
+      if (!current || current.pid !== state.pid || current.secret !== state.secret) throw Object.assign(new Error('The development instance record changed during shutdown; it has been preserved.'), { code: 'development-web-continuity.owner-mismatch' });
+      try { killProcess(state.pid, 0); }
       catch (error) { if (error.code === 'ESRCH') break; throw error; }
       if (Date.now() >= deadline) throw Object.assign(new Error('The previous Development Web did not finish shutting down.'), { code: 'development-web-continuity.shutdown-timeout' });
       await wait(50);
     }
+    break;
   }
   fs.mkdirSync(dataRoot, { recursive: true });
   const logRoot = path.join(dataRoot, 'logs');

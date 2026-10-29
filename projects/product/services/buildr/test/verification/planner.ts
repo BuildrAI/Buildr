@@ -807,12 +807,15 @@ export function createDevelopmentPlatformPlan(request: any = {}, steps: any = ve
   const runner: any = request.runner;
   if (!VERIFICATION_DEVELOPMENT_RUNNERS.includes(runner)) throw new Error(`Unknown development verification runner: ${runner}`);
   const paths: any[] = [...new Set((request.paths ?? []).map(normalizeProductPath))];
+  const fullScopePaths = new Set(paths.filter(productPath => VERIFICATION_FULL_SCOPE_AUTHORITIES
+    .some((authority: any) => matchesInput(productPath, authority.pattern))));
   const matchedReasons: any = new Map();
   for (const item of steps) {
     if (!item.developmentRunners.includes(runner)) continue;
-    const matched: any = paths.filter((productPath: any) => item.inputs.some((pattern: any) => matchesInput(productPath, pattern))
-      && !(item.inputExclusions ?? []).some((pattern: any) => matchesInput(productPath, pattern)));
-    if (matched.length > 0) matchedReasons.set(item.id, matched.map((productPath: any) => `${productPath} matches ${runner} development owner ${item.id}`));
+    const matched: any = paths.filter((productPath: any) => fullScopePaths.has(productPath)
+      || item.inputs.some((pattern: any) => matchesInput(productPath, pattern))
+        && !(item.inputExclusions ?? []).some((pattern: any) => matchesInput(productPath, pattern)));
+    if (matched.length > 0) matchedReasons.set(item.id, matched.map((productPath: any) => `${productPath} matches ${runner} development owner ${item.id}${fullScopePaths.has(productPath) ? ' (full-scope authority)' : ''}`));
   }
   const base: any = createVerificationPlan({ stepIds: [...matchedReasons.keys()] }, steps);
   return Object.freeze({

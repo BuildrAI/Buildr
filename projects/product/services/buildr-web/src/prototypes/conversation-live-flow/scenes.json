@@ -1,0 +1,109 @@
+{
+  "version": 1,
+  "pages": [
+    {
+      "id": "conversation",
+      "title": "自然继续的对话",
+      "notes": [
+        {
+          "id": "stream",
+          "title": "过程直接出现在对话里",
+          "text": "执行时，助手说明自然展示，连续工具默认汇总折叠，展开后可逐条查看命令、文件和输出。助手说明与工具组处于同一层级，不使用层级竖线。",
+          "position": "conversation-stream"
+        },
+        {
+          "id": "supplement",
+          "title": "补充信息就像正常聊天",
+          "text": "直接输入文字，或选择、粘贴、拖入图片，再点发送即可。消息出现在自己的气泡里，不需要选择“插入”等模式。中间这条图文消息示范了补充的时间位置，完成后也始终保留。",
+          "position": "supplement-message"
+        },
+        {
+          "id": "composer",
+          "title": "执行中也能发送",
+          "text": "输入框始终保留发送按钮，有文字或图片即可发送。停止按钮移到对话顶部，滚动阅读时也能找到。可从“更多”试试补充图文或长输入。文字与图片只保存在当前页面内存中。",
+          "position": "composer"
+        },
+        {
+          "id": "indicator",
+          "title": "只固定当前正在执行的上下文",
+          "text": "仅当前正在执行的最后一段保留输入、智能体与模型、呼吸灯和时间，滚动时用底边和轻阴影区分正文，不再套大框。结束、停止、失败、等待回应和历史段落均恢复普通聊天排版。悬停输入或名称可见定位图标，也可用键盘操作；长输入仍能有界展开。",
+          "position": "conversation-stream"
+        }
+      ],
+      "states": [
+        {
+          "id": "running",
+          "title": "执行中",
+          "notes": [
+            {
+              "id": "running-detail",
+              "title": "自然观察当前过程",
+              "text": "上半段为补充前的过程，下半段为收到图文后的继续处理。助手说明可见，连续工具默认折叠；展开选择在调用追加后保持。可在“更多”模拟完成。",
+              "position": "process-after"
+            }
+          ]
+        },
+        {
+          "id": "completed",
+          "title": "完成并自动折叠",
+          "notes": [
+            {
+              "id": "complete-detail",
+              "title": "答复保留，过程自动收起",
+              "text": "完成后自动解除悬浮，恢复用户气泡、名称和答复的自然排版，过程自动折叠。展开后与答复同级，不显示层级竖线；该段名称行和过程底部均可收起。点击助手名称定位最终答复，“更多”可试长过程。",
+              "position": "final-answer"
+            }
+          ]
+        },
+        {
+          "id": "failed",
+          "title": "执行未完成",
+          "notes": [
+            {
+              "id": "failure-detail",
+              "title": "失败保留可核对的信息",
+              "text": "失败不会冒充完成，也不会抹去已经收到的补充图文。过程摘要标出失败项，展开能看到对应工具的输入和结果；可以继续发送要求。",
+              "position": "process-after"
+            }
+          ]
+        },
+        {
+          "id": "waiting",
+          "title": "等待明确授权",
+          "notes": [
+            {
+              "id": "waiting-detail",
+              "title": "补充信息不等于授权",
+              "text": "等待授权时仍能添加和发送图文，但请求会继续保留。只有点击该请求的“允许本次”才继续命令；点击“拒绝”停止。本状态不使用呼吸灯冒充正在执行。",
+              "position": "approval-request"
+            }
+          ]
+        },
+        {
+          "id": "supplement-error",
+          "title": "发送失败保留图文",
+          "notes": [
+            {
+              "id": "send-failure",
+              "title": "没有收到就明确告诉你",
+              "text": "此状态预置未发送的文字和图片。首次点击发送会模拟失败，两者原样保留，信息流中不会出现已收到的气泡；再次发送成功后才加入对话。",
+              "position": "composer"
+            }
+          ]
+        },
+        {
+          "id": "stopped",
+          "title": "主动停止",
+          "notes": [
+            {
+              "id": "stopped-detail",
+              "title": "停止不丢失对话",
+              "text": "停止后不再呼吸和计时，用户图文、处理过程及未发送草稿保留。可以继续输入并再次发送。",
+              "position": "conversation-stream"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -125,6 +125,7 @@ export async function healthyBuildrWebInstance(instance: any = readBuildrWebInst
           launcherIdentity: strictIdentity ? body.launcherIdentity : body.launcherIdentity ?? instance.launcherIdentity ?? null,
           productIdentity: strictIdentity ? body.productIdentity : body.productIdentity ?? instance.productIdentity ?? null,
           webProfile: strictIdentity ? body.webProfile : body.webProfile ?? instance.webProfile ?? null,
+          restartInProgress: body.restartInProgress === true,
         }
       : null;
   } catch {
@@ -173,12 +174,12 @@ export function matchesNpmLauncherBinding(instance: any, binding: any) {
   return npmLauncherInstanceDisposition(instance, binding).disposition === 'reuse';
 }
 
-export async function requestBuildrWebInstanceShutdown(instance: any, { fetchImpl = fetch, timeoutMs = 1000 }: any = {}) {
+export async function requestBuildrWebInstanceShutdown(instance: any, { fetchImpl = fetch, timeoutMs = 3000, restartAttemptToken = null }: any = {}) {
   let response;
   try {
     response = await fetchImpl(new URL('/api/v1/app/quit-instance', instance.url), {
       method: 'POST',
-      headers: { 'x-buildr-instance': instance.secret },
+      headers: { 'x-buildr-instance': instance.secret, ...(restartAttemptToken ? { 'x-buildr-restart-attempt': restartAttemptToken } : {}) },
       signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (cause: any) {

@@ -1,12 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { TextAreaRef } from 'antd/es/input/TextArea';
 import { Alert, Button, Dropdown, Input, Space, Spin, Tooltip } from 'antd';
-import { CheckOutlined, CopyOutlined, DownOutlined, InfoCircleOutlined } from '@ant-design/icons';
+import { CheckOutlined, DownOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { useAgentConversations } from '../../agent-conversations/AgentConversationsContext';
 import { AgentActionControl } from '../../../components/AgentActionControl';
 import { useExecutionModelChoice } from '../../../components/ExecutionModelSelect';
 import { executionModelOptions } from '../../../lib/execution-model';
-import { copyText } from '../../../lib/copyText';
+import { CopyButton } from '../../../components/CopyButton';
 import type { CommitMode, CodeActionSource } from '../api/code-actions-api';
 import type { SourceControlRepository, SourceControlWorktree } from '../source-control-model';
 import { actionSourceKey, commitResultFeedback, type SourceControlActions } from '../source-control-actions';
@@ -61,7 +61,6 @@ export function SourceControlCommitPanel({active = true, workspaceId, repository
   const resultFeedback = result ? commitResultFeedback(result) : null;
   const pendingText = state.gitPending === 'push' ? '正在推送…' : state.gitPending === 'commit-sync' ? '正在提交并同步…' : state.gitPending === 'commit-push' ? '正在提交并推送…' : state.gitPending ? '正在提交…' : '提交';
   const generationPhase = state.generation?.phase === 'cancelling' ? '正在取消…' : state.generation?.phase === 'running' ? '正在生成…' : '正在准备…';
-  const copy = async () => setFeedback(await copyText(state.text) ? '已复制说明' : '无法复制，请选中文字后手动复制。');
   return <section className="source-control-commit-panel" aria-label="提交变更" data-source-commit-key={key}>
     <div className="source-control-message-input"><Input.TextArea key={key} ref={textarea} id="commit-message-text" aria-label="提交说明内容" title={provenance ? `${provenance}；${scope}` : scope} placeholder="提交说明" value={state.text} disabled={generating || writing} onChange={event => {actions.setText(source, event.target.value); setFeedback('');}} autoSize={{minRows: expandedMessage ? 6 : 1, maxRows: 12}} />
       <AgentActionControl id="generate-commit-message" label={state.generatedBy ? '重新生成提交说明' : '生成提交说明'} executor={executor} options={options} disabled={!ready || noChanges || writing} pending={generating} onAction={() => {if (nextExecutor) void actions.generate(source, {id: nextExecutor.key, label: nextExecutor.label, modelAccountId: nextExecutor.accountId, modelId: nextExecutor.modelId, accountIdentity: nextExecutor.accountIdentity, accountRevision: nextExecutor.accountRevision, serviceTier: nextExecutor.serviceTier});}} onOpenModels={() => models.setSettings(true)} />
@@ -71,7 +70,7 @@ export function SourceControlCommitPanel({active = true, workspaceId, repository
       <Tooltip title={state.contextLoading || !context ? '正在核对当前变更' : state.contextError || (!state.text.trim() ? '请先填写提交说明' : noChanges ? '没有未提交变更' : scope)}><Button id="commit-changes" type="primary" size="small" icon={<CheckOutlined />} loading={writing} disabled={disabledCommit} onClick={() => commit('commit')}>{pendingText}</Button></Tooltip>
       <Dropdown trigger={['click']} open={menuOpen && active && !disabledCommit} onOpenChange={open => setMenuOpen(open && !disabledCommit)} menu={{selectable: false, items: [{key: 'commit-sync', label: <Tooltip title={syncScope}><span>提交并同步</span></Tooltip>, disabled: disabledCommit}, {key: 'commit-push', label: <Tooltip title={pushScope}><span>提交并推送</span></Tooltip>, disabled: disabledCommit}], onClick: ({key: next}) => {if (next === 'commit-sync' || next === 'commit-push') commit(next);}}}><Button id="commit-action-menu" aria-label="选择提交操作" type="primary" size="small" icon={<DownOutlined />} disabled={disabledCommit} /></Dropdown>
     </Space.Compact>
-      {state.text && <><Tooltip title={(provenance ? `${provenance}，可编辑；` : '') + scope}><Button id="commit-message-info" type="text" size="small" aria-label="查看说明来源" icon={<InfoCircleOutlined />} /></Tooltip><Tooltip title="复制提交说明"><Button id="copy-commit-message" type="text" size="small" aria-label="复制提交说明" icon={<CopyOutlined />} disabled={generating || writing} onClick={() => void copy()} /></Tooltip></>}
+      {state.text && <><Tooltip title={(provenance ? `${provenance}，可编辑；` : '') + scope}><Button id="commit-message-info" type="text" size="small" aria-label="查看说明来源" icon={<InfoCircleOutlined />} /></Tooltip><CopyButton id="copy-commit-message" type="text" text={state.text} ariaLabel="复制提交说明" failureMessage="无法复制，请选中文字后手动复制。" disabled={generating || writing} /></>}
     </div>
     {result && resultFeedback && <><div className={'source-control-commit-result' + (resultFeedback.warning ? ' is-warning' : '')} role="status"><Tooltip title={resultFeedback.details}><span>{resultFeedback.text}</span></Tooltip>{result.commit.completed && !result.sync && result.push.retry && !state.unknownCommit && <Button id="retry-push" type="link" size="small" disabled={writing} onClick={() => void actions.retryPush(source)}>重试推送</Button>}</div>{resultFeedback.note && <p className="source-control-action-note">{resultFeedback.note}</p>}</>}
     {state.unknownCommit && <Alert type="warning" showIcon message="提交结果尚未确认，请先重新核对。" action={<Button id="recheck-commit" size="small" disabled={writing || state.contextLoading} onClick={() => void actions.recheck(source)}>重新核对</Button>} />}

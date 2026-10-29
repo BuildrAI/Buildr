@@ -8,7 +8,7 @@ let state=fs.existsSync(file)?JSON.parse(fs.readFileSync(file)):{};
 let active;
 const reply=(id,result)=>process.stdout.write(JSON.stringify({id,result})+'\n');
 const event=(method,params)=>process.stdout.write(JSON.stringify({method,params})+'\n');
-const save=()=>fs.writeFileSync(file,JSON.stringify(state));
+const save=()=>{for(const t of Object.values(state)){t.path=path.join(process.env.CODEX_HOME,'sessions',t.id+'.jsonl');fs.mkdirSync(path.dirname(t.path),{recursive:true});const rows=[{type:'session_meta',payload:{id:t.id}}];for(const turn of t.turns){rows.push({type:'event_msg',payload:{type:'task_started',turn_id:turn.id}});for(const item of turn.items??[]){if(item.type!=='commandExecution')continue;rows.push({type:'response_item',payload:{type:'function_call',call_id:item.id,name:'exec_command'}});if(item.status==='completed')rows.push({type:'response_item',payload:{type:'function_call_output',call_id:item.id,output:'done'}});}}fs.writeFileSync(t.path,rows.map(row=>JSON.stringify(row)).join('\n')+'\n');}fs.writeFileSync(file,JSON.stringify(state));};
 r.on('line',l=>{const m=JSON.parse(l);
 if(m.method==='initialize'){if(process.env.OPENAI_API_KEY||process.env.CODEX_APP_SERVER_TOKEN)throw Error('credential leak');
 reply(m.id,{userAgent:'fixture'});
@@ -32,7 +32,7 @@ return;
 }
 if(m.method==='turn/start'){const p=m.params;
 const id='turn-'+state[p.threadId].turns.length;
-const user={id:'user-'+id,type:'userMessage',content:p.input};
+const user={id:p.clientUserMessageId??'user-'+id,type:'userMessage',content:p.input};
 active={id,threadId:p.threadId,status:'inProgress',items:[user]};
 state[p.threadId].turns.push(active);
 save();
@@ -55,6 +55,11 @@ save();
 reply(m.id,{});
 event('turn/completed',{threadId:active.threadId,turn:active});
 return;
+}
+if(m.method==='turn/steer'){
+const p=m.params;
+if(!active||active.status!=='inProgress'||p.expectedTurnId!==active.id||p.threadId!==active.threadId){process.stdout.write(JSON.stringify({id:m.id,error:{code:-32600,message:'inactive turn'}})+'\n');return;}
+const user={id:'native-'+p.clientUserMessageId,clientId:p.clientUserMessageId,type:'userMessage',content:p.input};active.items.push(user);save();reply(m.id,{turnId:active.id});event('item/completed',{threadId:active.threadId,turnId:active.id,item:user});return;
 }
 if(m.method==='thread/backgroundTerminals/list'){reply(m.id,{data:active?.items.filter(i=>i.type==='commandExecution'&&i.status!=='completed').map(i=>({itemId:i.id,processId:i.processId}))??[],nextCursor:null});
 return;

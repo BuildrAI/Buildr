@@ -50,6 +50,29 @@ export function useWorkspaceCatalog({ stayOnCatalog, onOpenWorkspace, onRecovery
     return () => { active = false; };
   }, [load, onOpenWorkspace, onPreparationStart, stayOnCatalog, workspaceRegistryRevision]);
 
+  const preparing = registry?.workspaces.some(entry => entry.readiness === 'preparing') ?? false;
+  useEffect(() => {
+    if (!preparing) return;
+    let active = true, reading = false;
+    const tick = async () => {
+      if (!active || reading || mutation.current || document.visibilityState === 'hidden') return;
+      reading = true;
+      try { await load(); } catch { /* Keep the last observation; explicit refresh reports errors. */ }
+      finally { reading = false; }
+    };
+    let timer: ReturnType<typeof setInterval> | undefined;
+    const visible = () => {
+      if (timer !== undefined) clearInterval(timer);
+      timer = undefined;
+      if (document.visibilityState === 'hidden') return;
+      timer = setInterval(() => { void tick(); }, 2000);
+      void tick();
+    };
+    visible();
+    document.addEventListener('visibilitychange', visible);
+    return () => { active = false; if (timer !== undefined) clearInterval(timer); document.removeEventListener('visibilitychange', visible); };
+  }, [preparing, load]);
+
   const remove = useCallback(async (entry: WorkspaceEntry, observed: WorkspaceRegistry) => {
     if (mutation.current) return;
     // Removing a card is an explicit decision to stay in the catalog. Registry

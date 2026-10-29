@@ -14,3 +14,24 @@ test('public diagnostics retain the reason while redacting credentials and URLs 
   assert.ok(!modelFailure(new Error('private opaque vendor body')).message.includes('private'));
   assert.equal(modelFailure(new Error('model_devin_stream_truncated')).code, 'model_devin_stream_truncated');
 });
+
+test('native RPC rejection preserves sanitized cause without claiming login failure', async () => {
+  const {NativeRequestError} = await import('../../src/domain/error-diagnostic.ts');
+  const {safeDiagnostic} = await import('../../src/domain/agent-state.ts');
+  const rejection = new NativeRequestError('Selected model is at capacity. Authorization: Bearer secret-value https://internal.invalid/request');
+  assert.equal(rejection.message, 'agent_native_request_failed');
+  assert.match(safeDiagnostic(rejection), /Selected model is at capacity/);
+  assert.doesNotMatch(safeDiagnostic(rejection), /secret-value|internal.invalid|登录/);
+  assert.doesNotMatch(safeDiagnostic(new Error('opaque internal failure')), /登录|opaque internal/);
+});
+
+test('observation failures identify the affected executor and preserve only the safe cause',async()=>{
+  const {NativeObservationError}=await import('../../src/domain/error-diagnostic.ts');
+  const {safeDiagnostic}=await import('../../src/domain/agent-state.ts');
+  for(const provider of ['codex','dsh','qoder']){
+    const error=new NativeObservationError(provider+'_event_observation_lost',new Error('database is locked; Authorization: Bearer secret-value https://internal.invalid/request'));
+    const message=safeDiagnostic(error);
+    assert.match(message,/database is locked/);assert.doesNotMatch(message,/secret-value|internal.invalid/);
+    assert.match(message,/核对原执行/);
+  }
+});

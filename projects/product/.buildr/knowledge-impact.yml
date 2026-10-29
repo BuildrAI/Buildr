@@ -1,37 +1,25 @@
 schemaVersion: buildr.knowledge-impact/v1
-task: mysql-controlled-change
-operation: assess
+task: conversation-activity-cleanup
+operation: reconcile
 impacts:
   - type: reference
-    target: knowledge/docs/architecture/external-connections.md
-    reason: MySQL 职责新增受控变更与环境、破坏性语句边界，原“测试和数据库发现”描述不再完整。
-    status: applied
-    sourceIdentities:
-      - services/buildr/resources/workspace/skills/connections/mysql-connection/assets/connection.yml
-      - openspec/changes/mysql-controlled-change/specs/builtin-connection-skills/spec.md
-  - type: reference
     target: knowledge/code-map/technical-layers.md
-    reason: mysql-query 模块新增结构摘要与受控变更，原“只读执行内核”和“所有入口只读边界”表述已按实际职责更新。
-    status: applied
+    reason: ConversationActivityFilters.tsx 已删除，原条目移除；入口单角标与未知执行由条目徽标、入口说明表达的事实并入 ConversationActivityEntry.tsx 描述。
+    status: updated
     sourceIdentities:
-      - services/buildr/src/modules/mysql-query/interfaces/program/mysql-connection-program.ts
-      - services/buildr/src/modules/mysql-query/infrastructure/mysql-client.ts
+      - services/buildr-web/src/features/agent-conversations/ConversationHistory.tsx
+      - services/buildr-web/src/features/agent-conversations/ConversationActivityEntry.tsx
   - type: reference
-    target: knowledge/code-map/system-services-assets.md
-    reason: 服务资产行补充受控变更归属，查询仍保持只读。
-    status: applied
+    target: knowledge/docs/architecture/agent-integration.md
+    reason: 完整列表不再保留常驻分类筛选与按智能体、模型的执行统计，改为移除分类统计栏与未知提示条、保留执行分布筛选与搜索空间行为。
+    status: updated
     sourceIdentities:
-      - services/buildr/src/modules/mysql-query/interfaces/program/mysql-connection-program.ts
+      - openspec/changes/conversation-activity-cleanup/specs/agent-conversations/spec.md
+      - services/buildr-web/src/features/agent-conversations/ConversationHistory.tsx
   - type: reference
     target: knowledge/docs/overview.md
-    reason: 概览只说明用户可查看数据，未承诺只读或写入，本次不需要新增叙述。
-    status: aligned
-    sourceIdentities:
-      - openspec/changes/mysql-controlled-change/proposal.md
-  - type: reference
-    target: knowledge/docs/architecture/buildr-data-design.md
-    reason: 数据设计只记录查询偏好存储，未涉及变更动作，不需修改。
+    reason: 概览未描述对话列表分类统计栏或未知提示条，不需要修改。
     status: not-applicable
     sourceIdentities:
-      - openspec/changes/mysql-controlled-change/design.md
+      - openspec/changes/conversation-activity-cleanup/proposal.md
 unresolvedItems: []

@@ -11,6 +11,10 @@ import { executeVerificationCommand } from './support/process-executor.ts';
 import { collectChangedProductPaths } from './changed-paths.ts';
 
 import { BROWSER_SELECTORS } from './browser-selector-catalog.ts';
+import { AGENT_CONVERSATION_GROUPS, AGENT_CONVERSATION_WORKERS } from '../../../buildr-web/test/browser/agent-conversation-groups.ts';
+import { inspectAgentConversationQueue } from '../../../buildr-web/test/browser/agent-conversation-queue.ts';
+import { createVerificationResourceCoordinator, coordinatedResourcesFromLimits, resolveVerificationCoordinationRoot } from './resource-coordinator.ts';
+import { resolveVerificationWorkerBudget } from './worker-budget.ts';
 export { BROWSER_SELECTORS } from './browser-selector-catalog.ts';
 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -34,12 +38,25 @@ export function planCodeBrowserGroups(env: any = process.env, selector = 'code')
   return selector === 'code-explorer' ? [explorer] : [sourceControl];
 }
 
+export function planAgentConversationGroups(env: any = process.env): any[] {
+  const focus = env.BUILDR_AGENT_JOURNEY_PART || 'all';
+  if (focus !== 'all' && !AGENT_CONVERSATION_GROUPS.some(group=>group===focus)) {
+    const error: Error & Record<string, any> = new Error('BUILDR_AGENT_JOURNEY_PART 必须是有效的对话场景组或 all。');
+    error.code = 'browser_agent_conversation_focus_invalid';
+    throw error;
+  }
+  if (focus !== 'all') return [{ id: focus, parts: [focus], queue: false, processTimeoutMs: 195_000 }];
+  return Array.from({ length: AGENT_CONVERSATION_WORKERS }, (_, index) => ({
+    id: `worker-${index + 1}`, parts: [], queue: true, processTimeoutMs: 465_000,
+  }));
+}
+
 export function planBrowserCommands(selectors: any[], webDistRoot: string, env: any = process.env): any[] {
   const selected = selectors.includes('all') ? BROWSER_SELECTORS : selectors;
   const browserTest = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../e2e/buildr-web-browser.test.ts');
   const isolationRunner = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../tools/development/run-isolated-workspace-check.ts');
   return selected.flatMap((selector: string) => {
-    const groups = selector === 'code' || selector === 'code-explorer' ? planCodeBrowserGroups(env, selector) : [null];
+    const groups = selector === 'code' || selector === 'code-explorer' ? planCodeBrowserGroups(env, selector) : selector === 'agent-conversations' ? planAgentConversationGroups(env) : [null];
     return groups.map((group: any) => ({
       id: `browser:${selector}${group ? ':' + group.id : ''}`,
       argv: [process.execPath, isolationRunner, '--script', selector === 'connection-skills' ? path.join(productRoot, 'test/e2e/connection-skills.ts') : browserTest, '--', selector === 'code-explorer' ? 'code' : selector],
@@ -48,7 +65,13 @@ export function planBrowserCommands(selectors: any[], webDistRoot: string, env: 
       env: {
         ...env,
         BUILDR_BROWSER_WEB_DIST_ROOT: webDistRoot,
-        ...(group ? {
+        ...(group && selector === 'agent-conversations' ? {
+          BUILDR_AGENT_JOURNEY_PART: group.queue ? '' : group.parts[0],
+          BUILDR_AGENT_JOURNEY_BATCH: '',
+          BUILDR_AGENT_JOURNEY_QUEUE_ROOT: '',
+          BUILDR_AGENT_JOURNEY_USES_QUEUE: group.queue ? '1' : '',
+        } : {}),
+        ...(group && (selector === 'code' || selector === 'code-explorer') ? {
           BUILDR_CODE_EXPLORER_FOCUS: group.id === 'explorer' ? group.focus : '',
           BUILDR_SOURCE_CONTROL_FOCUS: group.id === 'source-control' ? group.focus : '',
         } : {}),
@@ -192,15 +215,83 @@ export function selectBrowserSelectors(changedPaths: any): any  {
   return plan;
 }
 
-export async function runPhase(id: any, argv: any, cwd: any, timeoutMs: any, env: any = process.env): Promise<any>  {
+export async function runPhase(id: any, argv: any, cwd: any, timeoutMs: any, env: any = process.env, signal?: AbortSignal): Promise<any>  {
   const startedAt: any = Date.now();
   process.stderr.write(`[buildr-verification-phase] ${JSON.stringify({ scope: 'buildr-web-browser', id, status: 'started', startedAt: new Date(startedAt).toISOString() })}\n`);
-  const result: any = await executeVerificationCommand({ name: id, command: { argv, cwd, timeoutMs } }, { env });
+  const result: any = await executeVerificationCommand({ name: id, command: { argv, cwd, timeoutMs } }, { env, signal });
   const finishedAt: any = Date.now();
   process.stdout.write(result.stdout || '');
   process.stderr.write(result.stderr || '');
   process.stderr.write(`[buildr-verification-phase] ${JSON.stringify({ scope: 'buildr-web-browser', id, status: result.status === 'passed' ? 'passed' : 'failed', startedAt: new Date(startedAt).toISOString(), finishedAt: new Date(finishedAt).toISOString(), durationMs: finishedAt - startedAt, failureCode: result.failureCode || null })}\n`);
   return result;
+}
+
+/** 每个现场单独申请全局浏览器资源；现场退出后可重建以执行尚未领取的组。 */
+export async function runAgentConversationCommands(commands: any[], options: any): Promise<any[]> {
+  const limit = options.limit;
+  if (!Number.isInteger(limit) || limit < 1) throw new Error('对话浏览器并发预算必须是正整数。');
+  const results: any[] = new Array(commands.length);
+  let next = 0;
+  async function worker() {
+    while (next < commands.length) {
+      const index = next++;
+      const command = commands[index];
+      let lease: any = null;
+      let result: any;
+      try {
+        if (options.signal?.aborted) throw new Error('对话浏览器检查已取消。');
+        if (options.shouldRun && !options.shouldRun()) {
+          results[index] = { status: 'not-needed' };
+          continue;
+        }
+        lease = await options.acquire({ signal: options.signal });
+        // Another worker may drain the queue while this worker waits for a lease.
+        if (options.shouldRun && !options.shouldRun()) {
+          result = { status: 'not-needed' };
+        } else {
+          const attempts: any[] = [];
+          for (let attempt = 0; ; attempt++) {
+            const invocation = attempt ? { ...command, id: `${command.id}:restart-${attempt}` } : command;
+            const current = await options.run(invocation, options.signal);
+            attempts.push(current);
+            if (current.status === 'passed' || !options.shouldRun || options.signal?.aborted
+              || current.processCleanup?.status === 'failed'
+              || attempt >= (options.maxRestarts ?? 0) || !options.shouldRun()) break;
+          }
+          // A restarted environment must not erase the failure that required it.
+          result = { ...(attempts.find(item => item.status !== 'passed') || attempts.at(-1)), attempts };
+        }
+      } catch (error: any) {
+        const message = error instanceof Error ? error.message : String(error);
+        process.stderr.write(`[buildr-browser] ${command.id}: ${message}\n`);
+        result = { status: 'failed', exitCode: 1, stderr: message };
+      } finally {
+        if (lease) {
+          const unsafeCleanup = result?.attempts?.some((attempt: any) => attempt.processCleanup?.status === 'failed');
+          if (unsafeCleanup) {
+            const message = '浏览器进程清理未确认；保留资源占用并停止本轮其他工作。';
+            process.stderr.write(`[buildr-browser] ${command.id}: ${message}\n`);
+            result = { ...result, status: 'failed', exitCode: 1, stderr: `${result?.stderr || ''}\n${message}` };
+            options.onUnsafeCleanup?.();
+          } else {
+            try {
+              const released = await lease.release();
+              if (released.some((item: any) => !['released', 'not-applicable'].includes(item.status))) {
+                throw new Error('浏览器资源释放未能确认归属。');
+              }
+            } catch (error: any) {
+              const message = error instanceof Error ? error.message : String(error);
+              process.stderr.write(`[buildr-browser] ${command.id}: ${message}\n`);
+              result = { ...result, status: 'failed', exitCode: 1, stderr: `${result?.stderr || ''}\n${message}` };
+            }
+          }
+        }
+      }
+      results[index] = result;
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, commands.length) }, () => worker()));
+  return results;
 }
 
 async function main(): Promise<any>  {
@@ -246,27 +337,78 @@ async function main(): Promise<any>  {
   const suppliedWebDist = process.env.BUILDR_BROWSER_WEB_DIST_ROOT;
   const stagingParent: any = suppliedWebDist ? null : fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-browser-web-dist-'));
   const stagingRoot: any = suppliedWebDist ? path.resolve(suppliedWebDist) : path.join(stagingParent, 'web-dist');
+  const controller = new AbortController();
+  let unsafeCleanupDetected = false;
+  const cancel = () => controller.abort();
+  process.on('SIGINT', cancel);
+  process.on('SIGTERM', cancel);
   try {
     const commands = planBrowserCommands(plan.selectors, stagingRoot, { ...process.env, BUILDR_BROWSER_SELECTOR_PLAN_JSON: JSON.stringify(plan) });
     if (!suppliedWebDist) {
-    const prepareResult = await runPhase('artifacts', [process.execPath, path.join(productRoot, 'tools/development/run-development-npm.ts'), '--prefix', productRoot, 'run', 'artifacts:prepare'], productRoot, 120_000);
+    const prepareResult = await runPhase('artifacts', [process.execPath, path.join(productRoot, 'tools/development/run-development-npm.ts'), '--prefix', productRoot, 'run', 'artifacts:prepare'], productRoot, 120_000, process.env, controller.signal);
     if (prepareResult.status !== 'passed') {
       process.exitCode = prepareResult.exitCode ?? 1;
       return;
     }
-    const webDistResult: any = await runPhase('web-dist', [process.execPath, webDistVerifier, '--output', stagingRoot], path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..'), 300_000);
+    const webDistResult: any = await runPhase('web-dist', [process.execPath, webDistVerifier, '--output', stagingRoot], path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..'), 300_000, process.env, controller.signal);
     if (webDistResult.status !== 'passed') {
       process.exitCode = webDistResult.exitCode ?? 1;
       return;
     }
     }
-    // Each declared check owns its workspace and browser. The project scheduler
-    // can overlap independent checks against this immutable production build.
-    for (const command of commands) {
-      const result = await runPhase(command.id, command.argv, command.cwd, command.timeoutMs, command.env);
-      if (result.status !== 'passed') process.exitCode = 1;
+    for (let index = 0; index < commands.length;) {
+      if (commands[index].id.startsWith('browser:agent-conversations:')) {
+        const batches = [];
+        while (index < commands.length && commands[index].id.startsWith('browser:agent-conversations:')) batches.push(commands[index++]);
+        const { resolveVerificationExecutionProfile } = await import('./registry.ts');
+        const profile = resolveVerificationExecutionProfile(process.env.BUILDR_VERIFICATION_PROFILE);
+        const coordinator = createVerificationResourceCoordinator({
+          root: resolveVerificationCoordinationRoot(productRoot),
+          resources: coordinatedResourcesFromLimits(profile.limits),
+          owner: { taskId: process.env.BUILDR_TASK_ID || 'browser-conversations', runId: `browser-${process.pid}` },
+        });
+        const limit = resolveVerificationWorkerBudget({ env: process.env, fallback: 2, maximum: 2, label: 'Agent conversation browser' });
+        const usesQueue = batches.some(command => command.env.BUILDR_AGENT_JOURNEY_USES_QUEUE === '1');
+        const queueRoot = usesQueue ? fs.mkdtempSync(path.join(process.env.BUILDR_TEST_SHARED_TEMP_ROOT || os.tmpdir(), 'buildr-conversation-queue-')) : null;
+        let results: any[] = [];
+        try {
+          if (queueRoot) for (const command of batches) command.env.BUILDR_AGENT_JOURNEY_QUEUE_ROOT = queueRoot;
+          results = await runAgentConversationCommands(batches, {
+            limit, signal: controller.signal,
+            ...(queueRoot ? { shouldRun: () => inspectAgentConversationQueue(queueRoot).unclaimed.length > 0, maxRestarts: 1 } : {}),
+            onUnsafeCleanup: () => { unsafeCleanupDetected = true; controller.abort(); },
+            acquire: (options: any) => coordinator.acquire(['browser-runtime'], options),
+            run: (command: any, signal: AbortSignal) => runPhase(command.id, command.argv, command.cwd, command.timeoutMs, command.env, signal),
+          });
+          if (results.some(result => !['passed', 'not-needed'].includes(result.status))) process.exitCode = 1;
+          if (queueRoot) {
+            const queue = inspectAgentConversationQueue(queueRoot);
+            process.stderr.write(`[agent-conversation-queue] summary=${JSON.stringify(queue)}\n`);
+            if (queue.unclaimed.length || queue.unfinished.length) process.exitCode = 1;
+          }
+        } finally {
+          if (queueRoot) {
+            const unsafe = results.some(result => result.attempts?.some((attempt: any) =>
+              !['clean', 'not-applicable'].includes(attempt.processCleanup?.status)));
+            if (unsafe) {
+              process.exitCode = 1;
+              process.stderr.write(`[agent-conversation-queue] process cleanup not confirmed; preserved ${queueRoot}\n`);
+            } else fs.rmSync(queueRoot, { recursive: true, force: true });
+          }
+        }
+      } else {
+        const command = commands[index++];
+        const result = await runPhase(command.id, command.argv, command.cwd, command.timeoutMs, command.env, controller.signal);
+        if (result.status !== 'passed') process.exitCode = 1;
+      }
+      if (controller.signal.aborted) {
+        process.exitCode = unsafeCleanupDetected ? 1 : 130;
+        break;
+      }
     }
   } finally {
+    process.off('SIGINT', cancel);
+    process.off('SIGTERM', cancel);
     if (stagingParent) fs.rmSync(stagingParent, { recursive: true, force: true });
   }
 }

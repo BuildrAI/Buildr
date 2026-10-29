@@ -582,7 +582,7 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
           if (actual !== base && !actual.startsWith(base + path.sep)) throw assetError('service_module_path_forbidden', `服务 ${service.name} 的模块目录超出代码库范围。`);
         }
         catalog.repositories[index] = createRepositoryInstance({ ...replacement, id: existing.id });
-        cloneCandidates.push(catalog.repositories[index]);
+        // Declaration edits never clone: materializing code remains an explicit action.
         return;
       }
       const { revision: _revision, repository: repositoryDraft, projectIds, serviceIds, newServices, ...patch } = input;

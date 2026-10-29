@@ -31,6 +31,7 @@
     "@deepseek-ai/cordis": "4.0.5",
     "@deepseek-ai/dsh-api-account-controller": "0.2.1-rc.2",
     "@deepseek-ai/dsh-api-gateway": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-api-job-controller": "0.2.1-rc.2",
     "@deepseek-ai/dsh-api-session-controller": "0.2.1-rc.2",
     "@deepseek-ai/dsh-api-settings-controller": "0.2.1-rc.2",
     "@deepseek-ai/dsh-api-workspace-controller": "0.2.1-rc.2",
@@ -41,6 +42,7 @@
     "@deepseek-ai/dsh-user-approval": "0.2.1-rc.2",
     "@deepseek-ai/dsh-user-questions": "0.2.1-rc.2",
     "@qoder-ai/qoder-agent-sdk": "1.0.55",
+    "ajv": "8.18.0",
     "ws": "8.22.0"
   },
   "overrides": {

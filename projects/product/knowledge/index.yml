@@ -304,7 +304,7 @@ objects:
   - id: agent-integration
     parent: system-structure
     title: 智能体接入与执行
-    summary: 内部对话与单次生成共用智能体和模型配置；外部桌面关联已退役。
+    summary: 内部对话与单次生成共用智能体和模型配置；服务运行配置复用首条文本提交，外部桌面关联已退役。
 artifacts:
   - id: product-release-flow
     title: Buildr 发布
@@ -380,6 +380,13 @@ artifacts:
       - agent-service-qoder-source
       - agent-service-host-source
       - agent-service-ui-source
+      - agent-service-ui-options-source
+      - agent-service-conversation-preferences-source
+      - agent-service-product-action-source
+      - agent-service-ui-context-source
+      - service-runtime-configuration-action-source
+      - service-runtime-configuration-prompt-source
+      - service-runtime-configuration-hook-source
       - agent-service-task-ui-source
       - agent-service-delivery-source
       - model-single-generation-source
@@ -518,6 +525,7 @@ artifacts:
       - agent-service-conversations-source
       - agent-service-host-source
       - agent-service-ui-source
+      - agent-service-product-action-source
       - agent-service-delivery-source
       - product-reference-code-map
       - product-reference-technical-architecture
@@ -543,6 +551,12 @@ artifacts:
       - agent-service-handoff-ui-source
       - agent-service-host-source
       - agent-service-ui-source
+      - agent-service-ui-context-source
+      - agent-service-product-action-source
+      - service-runtime-configuration-action-source
+      - service-runtime-configuration-prompt-source
+      - service-runtime-configuration-hook-source
+      - service-runtime-configuration-copy-source
       - product-reference-code-map
       - local-runtime-module
       - local-runtime-definition
@@ -929,6 +943,8 @@ artifacts:
       - agent-service-task-ui-source
       - agent-service-host-source
       - agent-service-conversations-source
+      - agent-service-ui-options-source
+      - agent-service-conversation-preferences-source
       - task-brief-storage-migration
       - task-workbench-summary-wiring
       - task-reading-history
@@ -1306,6 +1322,19 @@ artifacts:
       - verification-source-54cae75589
       - verification-source-bb45a79c77
       - verification-source-427279b9f5
+      - verification-conversation-fixture
+      - verification-conversation-groups
+      - verification-conversation-queue
+      - verification-conversation-isolation
+      - verification-conversation-journey
+      - verification-conversation-setup
+      - verification-conversation-history
+      - verification-conversation-handoff
+      - verification-conversation-tasks
+      - verification-conversation-models
+      - verification-conversation-recovery
+      - verification-conversation-selection
+      - verification-conversation-video
       - verification-source-1a428d5163
       - verification-source-c37838fbfa
       - verification-source-23f06815b2
@@ -1984,11 +2013,46 @@ sources:
     kind: code
     path: services/buildr-web/src/features/agent-conversations/ConversationDock.tsx
     summary: 复用原面板暂看和分隔器，管理图标悬停、固定展开、宽度偏好、左右停靠及键盘焦点。
+  - id: agent-service-product-action-source
+    title: 内部对话文本产品动作
+    kind: code
+    path: services/buildr-web/src/features/agent-conversations/conversation-product-action.ts
+    summary: 选择当前可用执行入口，复用首条文本提交身份；未知响应和已有提交只核对原身份，不自动重复执行。
+  - id: agent-service-ui-context-source
+    title: 内部对话共享上下文（Context）
+    kind: code
+    path: services/buildr-web/src/features/agent-conversations/AgentConversationsContext.tsx
+    summary: 维护当前对话、连接、事件读取与首条提交记录，向产品动作提供通用文本提交和恢复。
+  - id: service-runtime-configuration-action-source
+    title: 服务运行配置统一交接
+    kind: code
+    path: services/buildr-web/src/features/service-runtime/configurationAction.ts
+    summary: 三个配置入口共用同一简短请求；已接入直接提交，尚未执行时才提供复制，受理不冒充配置成功。
+  - id: service-runtime-configuration-prompt-source
+    title: 服务运行配置简短请求
+    kind: code
+    path: services/buildr-web/src/features/service-runtime/configurationPrompt.ts
+    summary: 绑定规范工作空间与服务身份、技能入口、本地验证授权及结果要求，不复制技能方法正文。
+  - id: service-runtime-configuration-hook-source
+    title: 服务运行配置交接钩子（Hook）
+    kind: code
+    path: services/buildr-web/src/features/service-runtime/hooks/useRuntimeConfiguration.ts
+    summary: 装配当前工作空间与内部对话，统一提交中、复制抽屉、恢复提示及受理后的真实定义刷新。
+  - id: service-runtime-configuration-copy-source
+    title: 运行配置复制交接正文
+    kind: code
+    path: services/buildr-web/src/features/service-runtime/components/AgentDiscoveryContent.tsx
+    summary: 先展示尚未执行、目标和授权影响，完整请求按需展开；复制不冒充执行或配置成功。
   - id: agent-service-ui-options-source
     title: 对话执行选项
     kind: code
     path: services/buildr-web/src/features/agent-conversations/ConversationOptions.tsx
-    summary: 按实际模型目录完整呈现智能体、模型与思考深度，支持自然换行并传递原生标识。
+    summary: 按当前来源和档位呈现模型及思考深度，切换时恢复有效的逐模型强度记忆。
+  - id: agent-service-conversation-preferences-source
+    title: 对话选择偏好
+    kind: code
+    path: services/buildr-web/src/features/agent-conversations/conversation-preferences.ts
+    summary: 保存对话输入偏好，按执行方、来源身份和模型独立记住用户明确选择的推理强度。
   - id: agent-service-codex-title-source
     title: Codex隔离短标题
     kind: code
@@ -3313,10 +3377,75 @@ sources:
     observedDigest: 6c5674125576f50c2d7d25d51689466dcfd77dbcaae8b84813f9af986e74cef3
   - id: verification-source-427279b9f5
     title: 浏览器检查选择与运行
-    summary: 选择页面检查，准备隔离 web-dist，通过隔离执行器（Runner）启动浏览器（Browser）测试
+    summary: 选择页面检查、准备隔离 web-dist，并在资源预算内调度对话场景共享队列；支持单组选跑。
     kind: code
     path: services/buildr/test/verification/browser-selector-dispatcher.ts
     observedDigest: 772a7d3629cf3ff2aa11604b213634abf53368fc8d694467631b1cb227e3cedc
+  - id: verification-conversation-fixture
+    title: 对话浏览器测试夹具
+    summary: 提供对话测试的隔离接口替身、现场初始化、页面操作及清理。
+    kind: code
+    path: services/buildr-web/test/browser/agent-conversation-fixture.ts
+  - id: verification-conversation-groups
+    title: 对话浏览器测试分组
+    summary: 声明可选场景组、工作进程数量以及逐组执行与失败汇总。
+    kind: code
+    path: services/buildr-web/test/browser/agent-conversation-groups.ts
+  - id: verification-conversation-queue
+    title: 对话浏览器场景队列
+    summary: 在一次验证中原子领取场景组，记录已尝试并检查未完成组，不以标记代替测试结果。
+    kind: code
+    path: services/buildr-web/test/browser/agent-conversation-queue.ts
+  - id: verification-conversation-isolation
+    title: 对话浏览器服务端隔离
+    summary: 限制未模拟的服务端写入并重置允许的最近访问，异常时停止复用现场。
+    kind: code
+    path: services/buildr-web/test/browser/agent-conversation-isolation.ts
+  - id: verification-conversation-journey
+    title: 对话浏览器测试装配入口
+    summary: 为每个场景组装配独立测试数据并执行场景。
+    kind: code
+    path: services/buildr-web/test/browser/agent-conversations-journey.ts
+  - id: verification-conversation-setup
+    title: 对话入口与基础交互场景
+    summary: 验证导航、对话入口与基础交互。
+    kind: code
+    path: services/buildr-web/test/browser/agent-conversations-setup-scenarios.ts
+  - id: verification-conversation-history
+    title: 对话记录场景
+    summary: 验证对话记录、展示与恢复。
+    kind: code
+    path: services/buildr-web/test/browser/agent-conversations-history-scenarios.ts
+  - id: verification-conversation-handoff
+    title: 对话交接场景
+    summary: 验证执行者交接以及异常后的继续与重试。
+    kind: code
+    path: services/buildr-web/test/browser/agent-conversations-handoff-scenarios.ts
+  - id: verification-conversation-tasks
+    title: 任务对话场景
+    summary: 验证任务对话入口、草稿与并发交互。
+    kind: code
+    path: services/buildr-web/test/browser/agent-conversations-tasks-scenarios.ts
+  - id: verification-conversation-models
+    title: 对话模型场景
+    summary: 验证模型与推理强度、执行操作及窄屏交互。
+    kind: code
+    path: services/buildr-web/test/browser/agent-conversations-models-scenarios.ts
+  - id: verification-conversation-recovery
+    title: 对话恢复场景
+    summary: 验证未知执行状态核对与事件流断线恢复。
+    kind: code
+    path: services/buildr-web/test/browser/agent-conversations-recovery-scenarios.ts
+  - id: verification-conversation-selection
+    title: 新对话选择场景
+    summary: 验证新建草稿、跨工作空间选择与首次发送。
+    kind: code
+    path: services/buildr-web/test/browser/agent-conversations-selection-scenarios.ts
+  - id: verification-conversation-video
+    title: 对话视频场景
+    summary: 验证视频输入、发送、播放与错误处理。
+    kind: code
+    path: services/buildr-web/test/browser/agent-conversations-video-scenarios.ts
   - id: verification-source-1a428d5163
     title: 验证耗时与诊断汇总
     summary: 汇总实际步骤结果、上下文（Context）、耗时与诊断文件

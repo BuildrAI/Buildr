@@ -5,6 +5,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { performance } from 'node:perf_hooks';
 import { DatabaseSync } from 'node:sqlite';
+import { stopAgentProcess } from '@buildr-ai/buildr-agent';
 
 import { buildrWebDataRoot } from '../../modules/workspace/module.ts';
 import { sameFilesystemPath } from '../../infrastructure/filesystem/filesystem-path-identity.ts';
@@ -719,6 +720,7 @@ export async function stopPreview(name: string, options: PreviewStopOptions = {}
     }
     if (await healthyInstance(readPreviewInstance(instance, dataRoot))) throw codedError(`预览实例 ${instance} 停止后仍保持健康。`, 'preview_stop_unconfirmed');
   }
+  await stopAgentProcess({ dataRoot: previewDataRoot(instance, dataRoot) });
   if (options.purge) {
     await assertPreviewStopped(instance, dataRoot);
     const target = assertPurgeTargetSafe(instance, dataRoot);

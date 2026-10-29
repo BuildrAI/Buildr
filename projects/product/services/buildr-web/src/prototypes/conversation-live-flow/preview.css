@@ -1,0 +1,27 @@
+.clf-preview{height:100dvh;overflow:hidden}
+.clf-preview #app-view{display:flex;flex:1;min-width:0;padding:0;overflow:hidden}
+.clf-panel.ac-panel{flex:1;width:100%;min-width:0;max-width:none}
+.clf-panel .ac-message-list{max-width:830px;padding:28px 30px 22px}
+.clf-panel .ac-compose-wrap{max-width:830px;padding:10px 26px 15px}
+.clf-panel .ac-participants{padding-inline:24px}
+.clf-panel .ac-thread-heading .ac-thread-title{max-width:65%}
+.clf-panel .clf-assistant.ac-assistant-reply{border:0;margin-bottom:21px;padding:0}
+.clf-panel .clf-assistant>.ac-message-identity{margin-bottom:12px}
+.clf-panel .clf-segment>.ac-message.is-user{margin-bottom:26px}
+.clf-panel .clf-segment+.clf-segment{margin-top:24px}
+.clf-panel .clf-final.ac-assistant-reply{margin-top:6px;margin-bottom:15px}
+.clf-panel .ac-process.is-flow{margin:0}
+.clf-panel .ac-process.is-flow>.ac-process-timeline>.ac-process-narration:last-child{margin-bottom:0}
+.clf-panel .ac-process.is-flow>.ac-process-timeline>.ac-step:last-child{margin-bottom:0}
+.clf-panel .ac-process.is-flow>summary{min-height:29px}
+.clf-panel .clf-indicator-wrap{padding:0 4px 7px}
+.clf-panel .clf-stop.ant-btn{margin-right:4px;color:#789285;border-color:#dce5df;background:#fff}
+.clf-panel .clf-stop.ant-btn:hover{border-color:#8eb5a0;color:#427b5d}
+.clf-panel .ac-composer{border-color:#b3cbbb}
+.clf-panel .clf-status-alert{margin-top:10px;font-size:var(--font-size-meta)}
+.clf-panel .clf-status-alert .ant-alert-description{font-size:var(--font-size-meta);line-height:1.8}
+.clf-panel .clf-stopped{font-size:var(--font-size-secondary);color:#84958a;line-height:1.8;padding:8px 0}
+.clf-panel .ac-history{max-width:830px;width:100%;margin:auto;height:100%;display:flex;flex-direction:column}
+.clf-panel .ac-history-body{flex:1;overflow:auto}
+.clf-preview .topbar-actions .ant-tag{font-size:var(--font-size-meta);margin:0;color:#899a8f;border-color:#e0e9e3;background:#f8faf9}
+@media(max-width:760px){.clf-preview .primary-navigation{display:none}.clf-panel .ac-message-list{padding:24px 19px 16px}.clf-panel .ac-compose-wrap{padding:8px 15px 12px}.clf-panel .ac-thread-identity{display:none}.clf-panel .ac-thread-heading .ac-thread-title{max-width:100%}.clf-panel .ac-compose-execution{gap:2px}.clf-panel .ac-participants{padding-inline:18px}.clf-preview .brand-link strong{display:none}.clf-preview .topbar-actions .ant-tag{font-size:var(--font-size-meta)}.clf-panel .ac-location-meta{font-size:var(--font-size-meta);gap:4px}.clf-panel .ac-location-keys{font-size:var(--font-size-meta)}.clf-panel .ac-request{margin-inline:0}}

@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { execFileSync } from 'node:child_process';
+import { connectAgentProcess, stopAgentProcess } from '@buildr-ai/buildr-agent';
 
 import { previewDataRoot, startPreview, stopPreview, listPreviews, readPreviewOwner, type PreviewRuntime } from '../../src/web/application/preview-lifecycle.ts';
 import { defaultWebDataRoot } from '../../src/modules/installation/contracts/web-profile.ts';
@@ -87,6 +88,36 @@ server.listen(0, '127.0.0.1', () => {
     },
   };
 }
+
+test('preview stop includes its independent backend and refuses purge after uncertain native release', {timeout:30_000}, async t => {
+  t.after(async()=>{await connection?.disconnect();await stopAgentProcess({dataRoot:profileRoot}).catch(()=>{});});
+  const data=fixture(t),profileRoot=previewDataRoot('demo',data.dataRoot);
+  await data.start([]);
+  const connection=await connectAgentProcess({dataRoot:profileRoot,profileId:'preview-fixture',sourceId:'minimal'});
+  const status=await connection.lifecycle.status();assert.ok(status.identity.pid>0);
+  await connection.disconnect();
+  await stopPreview('demo',{dataRoot:data.dataRoot,retainOwner:true});
+  assert.equal(fs.existsSync(path.join(profileRoot,'agent-service/process/instance.json')),false);
+  assert.ok(fs.existsSync(profileRoot));
+  const receiptFile=path.join(profileRoot,'agent-service/process/instances',status.identity.generation+'.json');
+  const confirmedReceipt=fs.readFileSync(receiptFile,'utf8'),receipt=JSON.parse(confirmedReceipt);
+  assert.equal(receipt.identity.instanceId,status.identity.instanceId);assert.equal(receipt.stopped,true);assert.equal(receipt.confirmed,true);
+  fs.writeFileSync(receiptFile,JSON.stringify({...receipt,confirmed:false}));
+  try {
+    // Real process shutdown was proved above; advance only the refusal poll.
+    t.mock.timers.enable({apis:['setTimeout']});
+    let settled=false;
+    const rejected=assert.rejects(stopPreview('demo',{dataRoot:data.dataRoot,purge:true}),error=>coded(error,'agent_process_stop_unconfirmed'));
+    void rejected.then(()=>{settled=true;},()=>{settled=true;});
+    for(let tick=0;tick<600&&!settled;tick++){await new Promise<void>(resolve=>setImmediate(resolve));t.mock.timers.tick(50);}
+    assert.ok(settled,'uncertain generation release must reject within its controlled polling budget');
+    await rejected;
+  } finally {
+    t.mock.timers.reset();
+    if(fs.existsSync(receiptFile))fs.writeFileSync(receiptFile,confirmedReceipt);
+  }
+  assert.ok(fs.existsSync(profileRoot));
+});
 
 test('预览沿用开发版模型目录并可复用、刷新与彻底清理', { timeout: 30_000 }, async (t) => {
   const data = fixture(t);

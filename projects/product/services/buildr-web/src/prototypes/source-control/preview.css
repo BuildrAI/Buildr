@@ -4,11 +4,11 @@
 .scm-object-tabs { height:43px; flex:none; display:flex; align-items:stretch; border-bottom:1px solid var(--soft-line); justify-content:space-between; }
 .scm-object-tabs .object-tab-strip { min-width:0; flex:1; }
 .scm-object-tabs > .ant-btn { align-self:center; margin-inline:8px; }
-.scm-context-label { align-self:center; color:var(--soft-muted); font-size:12px; padding:0 16px; border-left:1px solid var(--soft-line); }
+.scm-context-label { align-self:center; color:var(--soft-muted); font-size:var(--font-size-body); padding:0 16px; border-left:1px solid var(--soft-line); }
 .scm-task-demo { overflow:auto; height:100%; }
 .scm-task-demo .task-detail-page { max-width:1200px; margin:auto; padding:24px 32px; }
 .scm-task-copy { padding:26px 0; }
-.scm-task-copy h2 { font-size:18px; }
+.scm-task-copy h2 { font-size:var(--font-size-heading); }
 .scm-task-copy p { max-width:800px; color:var(--soft-muted); line-height:1.8; }
 .scm-child-row { padding:12px 0; border-bottom:1px solid var(--soft-line); }
 .scm-workbench-demo { height:100%; overflow:auto; }

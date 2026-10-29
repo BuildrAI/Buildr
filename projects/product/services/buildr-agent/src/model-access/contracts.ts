@@ -35,6 +35,8 @@ export interface ModelQuotaObservation {
   windows?: Array<{id:string;label:string;remainingPercent:number;resetsAt?:string;limitWindowSeconds?:number}>;
 }
 export interface ModelProviderObservation {
+  /** The inspection did not establish current availability; not a confirmed account failure. */
+  incomplete?: boolean;
   status: 'not-authenticated' | 'ready' | 'expired' | 'failed';
   label?: string;
   identity?: string;

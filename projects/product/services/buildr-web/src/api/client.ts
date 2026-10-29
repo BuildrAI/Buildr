@@ -30,6 +30,7 @@ export function createApiClient(options: {
 
   return async function api(resource: string, init: RequestInit = {}) {
     const send = async () => {
+      init.signal?.throwIfAborted();
       const headers = new Headers(init.headers || {});
       if (init.body || headers.has('x-buildr-session') || !['GET', 'HEAD'].includes((init.method || 'GET').toUpperCase())) {
         const writeHeaders = options.sessionAdapter.writeHeaders();
@@ -54,9 +55,13 @@ export function createApiClient(options: {
     try {
       return await send();
     } catch (error) {
+      init.signal?.throwIfAborted();
       // 令牌随服务进程轮换：过期页面或缺失 meta 先重取当前令牌，再原样重试一次。
       if ((error as ApiError)?.code !== 'session_forbidden' || typeof options.sessionAdapter.refreshSession !== 'function') throw error;
-      if (!await options.sessionAdapter.refreshSession()) throw error;
+      if (!await options.sessionAdapter.refreshSession(init.signal ?? undefined)) {
+        init.signal?.throwIfAborted();
+        throw error;
+      }
       return send();
     }
   };

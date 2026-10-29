@@ -5,6 +5,8 @@ import type { ModelProvider, ModelOffering, ModelProviderObservation, ProtocolJs
 import type { AccountObservation } from '../../contracts.ts';
 import { record, string, positive } from './private-account.ts';
 import { buildAuthHeaders, qoderEncodeBody } from './qoder-signing.ts';
+import { ModelAccessError } from '../contracts.ts';
+import { upstreamFailure } from '../errors.ts';
 
 /** Read only the exact Buildr private profile. The native CLI remains the credential writer. */
 export async function readQoderIdentity(config: string) {
@@ -38,7 +40,7 @@ export interface QoderModelOwner {
 }
 const quotaNumber=(value:unknown):number|undefined=>typeof value==='number'&&Number.isFinite(value)?value:undefined;
 const quotaFormat=(value:number):string=>Number.isInteger(value)?String(value):value.toFixed(1);
-const quotaPercent=(value:number):number=>Math.round(Math.max(0,Math.min(100,value))*10)/10;
+const quotaPercent=(value:number):number=>value>0?Math.max(0.1,Math.round(Math.min(100,value)*10)/10):0;
 /** Read the openapi credits usage. A failed read keeps the model catalog usable. */
 async function observeQoderQuota(request:(path:string,init?:RequestInit)=>Promise<Response>):Promise<ModelProviderObservation['quota']>{
   const observedAt=new Date().toISOString();
@@ -68,7 +70,7 @@ export function createQoderModelProvider(owner:QoderModelOwner):ModelProvider {
   return {id:'native-qoder',label:'Qoder',connectionId:'qoder',async open(){
     const models=new Map<string,{offering:ModelOffering;config:ProtocolJson}>();
     const inspect=async():Promise<ModelProviderObservation>=>{
-        const account=await owner.inspect(); if(account.status!=='ready')return{status:account.status,models:[],label:account.label};
+        const account=await owner.inspect(); if(account.status!=='ready')return{status:account.status,incomplete:account.status==='failed',models:[],label:account.label,diagnostic:account.diagnostic};
         const response=await owner.request('/models',{signal:AbortSignal.timeout(15000)});
         if(response.status===401){await response.body?.cancel();return{status:'expired',models:[]};}
         if(!response.ok){await response.body?.cancel();throw new Error('qoder_catalog_failed');}
@@ -98,7 +100,10 @@ export function createQoderModelProvider(owner:QoderModelOwner):ModelProvider {
         const effort=string(source.reasoning_effort);const parameters:ProtocolJson={...(positive(source.max_tokens)?{max_tokens:positive(source.max_tokens)}:{}),...(effort?{enable_thinking:effort!=='none',reasoning_effort:effort}:{})};
         const id=randomUUID();const body={request_id:input.context.requestId,request_set_id:id,chat_record_id:id,session_id:input.context.conversationId,stream:true,chat_task:'FREE_INPUT',is_reply:true,is_retry:false,source:1,version:'3',session_type:'qodercli',agent_id:'agent_common',task_id:'common',code_language:'',chat_prompt:'',image_urls:null,aliyun_user_type:'',system:'',messages,tools:source.tools??[],parameters,chat_context:{chatPrompt:'',imageUrls:null,extra:{context:[],modelConfig:{key:input.modelId,is_reasoning:selected.config.is_reasoning},originalContent:lastText},features:[],text:lastText},model_config:selected.config,business:{product:'cli',version:'1.0.0',type:'agent',stage:'start',id:input.context.runId,name:lastText.slice(0,30),begin_at:Date.now()}};
         const response=await owner.request('/chat',{body:JSON.stringify(body),signal:input.signal});
-        if(!response.ok){await response.body?.cancel();return Response.json({error:{code:'qoder_model_upstream_failed'}},{status:response.status});}
+        if(!response.ok){
+          const failure=await qoderResponseFailure(response);
+          return Response.json({error:{code:failure.code,message:failure.message}},{status:failure.status});
+        }
         const stream=unwrapQoderStream(response,input.signal);
         if(source.stream===true)return new Response(stream,{headers:{'content-type':'text/event-stream'}});
         const chunks:ProtocolJson[]=[];for await(const value of readSse(new Response(stream)))if(value!=='[DONE]')chunks.push(record(JSON.parse(value)));
@@ -111,13 +116,26 @@ export function createQoderModelProvider(owner:QoderModelOwner):ModelProvider {
 }
 export async function* readSse(response:Response):AsyncGenerator<string>{
   if(!response.body)throw new Error('qoder_stream_missing');const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='';
-  try{while(true){const part=await reader.read();buffer+=decoder.decode(part.value,{stream:!part.done}).replace(/\r\n/g,'\n');let at;while((at=buffer.indexOf('\n\n'))>=0){const frame=buffer.slice(0,at);buffer=buffer.slice(at+2);const data=frame.split('\n').filter(line=>line.startsWith('data:')).map(line=>line.slice(5).trimStart()).join('\n');if(data)yield data;}if(part.done)break;}if(buffer.trim())throw new Error('qoder_stream_truncated');}finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
+  try{while(true){const part=await reader.read();buffer+=decoder.decode(part.value,{stream:!part.done}).replace(/\r\n/g,'\n');let at;while((at=buffer.indexOf('\n\n'))>=0){const frame=buffer.slice(0,at);buffer=buffer.slice(at+2);const lines=frame.split('\n'),data=lines.filter(line=>line.startsWith('data:')).map(line=>line.slice(5).trimStart()).join('\n');if(data)yield data;if(lines.includes('event:finish'))yield '[DONE]';}if(part.done)break;}if(buffer.trim())throw new Error('qoder_stream_truncated');}finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
+}
+async function qoderResponseFailure(response:Response):Promise<ModelAccessError>{
+  const reader=response.body?.getReader();let text='',bytes=0;
+  try{if(reader){const decoder=new TextDecoder();for(;;){const part=await reader.read();if(part.done)break;bytes+=part.value.length;if(bytes>8192)break;text+=decoder.decode(part.value,{stream:true});}text+=decoder.decode();}}
+  finally{await reader?.cancel().catch(()=>{});reader?.releaseLock();}
+  let detail:ProtocolJson={};try{if(bytes<=8192){const body=record(JSON.parse(text));detail=record(body.error??body);}}catch{/* Arbitrary response bodies stay private. */}
+  return upstreamFailure({code:detail.code??'qoder_model_upstream_failed',message:detail.message??detail.msg},response.status);
+}
+function qoderStreamFailure(envelope:ProtocolJson):ModelAccessError{
+  let body:ProtocolJson={};try{if(typeof envelope.body==='string'&&envelope.body.length<=8192)body=record(JSON.parse(envelope.body));}catch{/* Non-JSON error bodies stay private. */}
+  const detail=record(envelope.error??body.error??(Object.keys(body).length?body:envelope));
+  const status=typeof envelope.statusCodeValue==='number'&&envelope.statusCodeValue>=400&&envelope.statusCodeValue<=599?envelope.statusCodeValue:502;
+  return upstreamFailure({code:detail.code??'qoder_stream_upstream_failed',message:detail.message??detail.msg},status);
 }
 export function unwrapQoderStream(response:Response,signal:AbortSignal):ReadableStream<Uint8Array>{
-  const encoder=new TextEncoder();const iterator=readSse(response)[Symbol.asyncIterator]();let done=false,finished=false;
-  return new ReadableStream({async pull(controller){try{signal.throwIfAborted();const next=await iterator.next();if(next.done){if(!done||!finished)throw new Error('qoder_stream_truncated');controller.close();return;}
-    let value=next.value;if(value!=='[DONE]'){const envelope=record(JSON.parse(value));if(typeof envelope.statusCodeValue==='number'&&envelope.statusCodeValue!==200)throw new Error('qoder_stream_upstream_failed');if(typeof envelope.body==='string')value=envelope.body;else if(envelope.error||envelope.code&&String(envelope.code)!=='200')throw new Error('qoder_stream_upstream_failed');else if(!envelope.choices&&!envelope.usage)return;}
-    if(value==='[DONE]'){if(!finished)throw new Error('qoder_stream_truncated');done=true;controller.enqueue(encoder.encode('data: [DONE]\n\n'));controller.close();await iterator.return?.(undefined);return;}
-    const chunk=record(JSON.parse(value));if(chunk.error)throw new Error('qoder_stream_upstream_failed');if((chunk.choices as Array<ProtocolJson>|undefined)?.some(c=>c.finish_reason))finished=true;controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));
-  }catch{controller.error(new Error(signal.aborted?'qoder_stream_cancelled':'qoder_stream_failed'));await iterator.return?.(undefined);}},async cancel(){await iterator.return?.(undefined);}});
+  const encoder=new TextEncoder();const iterator=readSse(response)[Symbol.asyncIterator]();let done=false,finished=false,toolCalls=false;
+  return new ReadableStream({async pull(controller){try{while(true){signal.throwIfAborted();const next=await iterator.next();if(next.done){if(!done||!finished)throw new Error('qoder_stream_truncated');controller.close();return;}
+    let value=next.value;if(value!=='[DONE]'){const envelope=record(JSON.parse(value));if(typeof envelope.statusCodeValue==='number'&&envelope.statusCodeValue!==200)throw qoderStreamFailure(envelope);if(typeof envelope.body==='string')value=envelope.body;else if(envelope.error||envelope.code&&String(envelope.code)!=='200')throw qoderStreamFailure(envelope);else if(!envelope.choices&&!envelope.usage)continue;}
+    if(value==='[DONE]'){if(!finished){if(!toolCalls)throw new Error('qoder_stream_truncated');controller.enqueue(encoder.encode('data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}\n\n'));}done=true;controller.enqueue(encoder.encode('data: [DONE]\n\n'));controller.close();await iterator.return?.(undefined);return;}
+    const chunk=record(JSON.parse(value));if(chunk.error)throw qoderStreamFailure(chunk);const choices=chunk.choices as Array<ProtocolJson>|undefined;if(choices?.some(c=>c.finish_reason))finished=true;if(choices?.some(c=>{const calls=record(c.delta).tool_calls;return Array.isArray(calls)&&calls.length>0;}))toolCalls=true;controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`));return;
+  }}catch(error){controller.error(!signal.aborted&&error instanceof ModelAccessError?error:new Error(signal.aborted?'qoder_stream_cancelled':'qoder_stream_failed'));await iterator.return?.(undefined);}},async cancel(){await iterator.return?.(undefined);}});
 }

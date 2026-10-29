@@ -6,7 +6,7 @@ export interface SessionAdapter {
    * 可选：重新从同源页面取得当前 session token 并使其对后续 writeHeaders 生效。
    * 无法取得当前令牌时返回 false，由调用方决定重试策略。
    */
-  refreshSession?(): Promise<boolean>;
+  refreshSession?(signal?: AbortSignal): Promise<boolean>;
 }
 
 export function readSessionTokenFromDocument(doc: Document = document): string | null {
@@ -46,20 +46,25 @@ export class LocalSessionAdapter implements SessionAdapter {
     };
   }
 
-  async refreshSession(): Promise<boolean> {
+  async refreshSession(signal?: AbortSignal): Promise<boolean> {
+    // A bounded observer owns its refresh cancellation. It must not cancel or
+    // permanently occupy the shared refresh used by other page operations.
+    if (signal) return this.requestSessionToken(signal);
     this.refreshInFlight ??= this.requestSessionToken().finally(() => {
       this.refreshInFlight = null;
     });
     return this.refreshInFlight;
   }
 
-  private async requestSessionToken(): Promise<boolean> {
+  private async requestSessionToken(signal?: AbortSignal): Promise<boolean> {
     if (typeof fetch !== 'function' || typeof window === 'undefined') return false;
     let html: string;
     try {
-      const response = await fetch(window.location.href, { cache: 'no-store' });
+      signal?.throwIfAborted();
+      const response = await fetch(window.location.href, { cache: 'no-store', signal });
       if (!response.ok) return false;
       html = await response.text();
+      signal?.throwIfAborted();
     } catch {
       return false;
     }

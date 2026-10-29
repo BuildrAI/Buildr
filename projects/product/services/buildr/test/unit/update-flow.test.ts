@@ -111,18 +111,25 @@ function devFixture(overrides: any = {}): any  {
   return { flow, spawnCalls, handoffs, awarenessCalls: () => awarenessCalls };
 }
 
-test('update-flow：development checkout 走本地模拟流程，不产生外部副作用', async () => {
+test('update-flow：development checkout 走本地模拟流程，不产生外部副作用', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   const { flow, spawnCalls, handoffs, awarenessCalls } = devFixture();
+  const advanceUntil = async (status: string) => {
+    for (let tick = 0; tick < 20 && flow.webUpdateStatus().status !== status; tick++) {
+      t.mock.timers.tick(1);
+      await new Promise<void>(resolve => setImmediate(resolve));
+    }
+  };
   const prepared = flow.webUpdatePrepare({ track: 'stable', expectedVersion: '0.1.1' });
   assert.equal(prepared.status, 'preparing');
   assert.equal(prepared.version, '0.1.1');
   assert.equal(flow.webUpdateStatus().status, 'preparing');
-  await new Promise((resolve) => setTimeout(resolve, 10));
+  await advanceUntil('ready');
   assert.equal(flow.webUpdateStatus().status, 'ready');
 
   const applying = flow.webUpdateApply({ expectedVersion: '0.1.1' });
   assert.equal(applying.status, 'applying');
-  await new Promise((resolve) => setTimeout(resolve, 10));
+  await advanceUntil('completed');
   assert.equal(flow.webUpdateStatus().status, 'completed');
   assert.equal(spawnCalls.length, 0, '模拟流程不得执行真实子进程');
   assert.equal(awarenessCalls(), 0, '模拟流程不得查询 registry');

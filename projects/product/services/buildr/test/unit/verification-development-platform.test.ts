@@ -45,3 +45,14 @@ test('ordinary related selection retains the same native check and its actual op
   assert.ok(ordinary.steps.some((item: any) => item.id === 'integration-windows-native'));
   assert.deepEqual(createDevelopmentPlatformPlan({ runner: 'windows', paths }).steps.map((step: any) => step.id), ['integration-windows-native']);
 });
+
+test('full-scope changes retain the native proof required by ordinary selection on both platforms', () => {
+  for (const input of ['.github/workflows/verify.yml', 'test/verification/registry.ts', 'test/verification/planner.ts']) {
+    const ordinary = createVerificationPlan({ paths: [input], target: 'source' });
+    for (const [runner, id] of [['windows', 'integration-windows-native'], ['macos', 'integration-macos-native']]) {
+      assert.ok(ordinary.steps.some((step: any) => step.id === id), input);
+      const projected = createDevelopmentPlatformPlan({ runner, paths: [input] });
+      assert.deepEqual(projected.steps.map((step: any) => step.id), [id], `${runner}: ${input}`);
+    }
+  }
+});

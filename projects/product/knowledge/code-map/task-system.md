@@ -24,7 +24,7 @@
 
 [宿主装配](../../services/buildr/src/modules/agent-service/module.ts)用任务查询能力核对身份，[对话应用](../../services/buildr-agent/src/application/conversation-application.ts)在创建时保存 `workspaceId`、`taskId` 与真实 `cwd`，创建后也可经同一更新动作按观察版本更换或解除任务引用。它不把任务全文或当前页面静默复制成模型输入；交付给执行方的工作上下文包含当前对话标题与任务引用，供后续创建任务保持一致命名，执行者仍须重读任务和实际成果。全局对话可以不关联任务，统一历史也不按 Codex、DSH、Qoder 分组。换执行方先分别恢复原生上下文，再交付未见可见记录，未知运行不重发；见[智能体接入](../docs/architecture/agent-integration.md)。
 
-输入栏的[ConversationOptions.tsx](../../services/buildr-web/src/features/agent-conversations/ConversationOptions.tsx)提供独立的智能体（Agent）与模型选择器，并按实际模型能力呈现思考档位；切换执行方后恢复其默认模型并清除不兼容档位，只更新未发送选择，不创建参与者或执行。权限选择与附件位于左侧，保留独立的模式范围。[conversation-preferences.ts](../../services/buildr-web/src/features/agent-conversations/conversation-preferences.ts)按应用配置域保存两个独立偏好：对话模块记忆智能体与最近权限工作空间，模型选择器记忆来源、模型、服务档位和思考深度；两者只解析到新对话，且与提交说明的 `buildr.execution-model` 分离。完全访问只在同一工作空间恢复，跨工作空间新对话使用默认权限。
+输入栏的[ConversationOptions.tsx](../../services/buildr-web/src/features/agent-conversations/ConversationOptions.tsx)提供独立的智能体（Agent）与模型选择器，并按实际来源和档位呈现思考深度；切换执行方使用其默认模型，再恢复该模型仍受支持的上次强度，只更新未发送选择，不创建参与者或执行。权限选择与附件位于左侧，保留独立的模式范围。[conversation-preferences.ts](../../services/buildr-web/src/features/agent-conversations/conversation-preferences.ts)按应用配置域保存对话模块与模型选择器偏好，并按执行方、来源身份和模型分别记住明确选择的推理强度；它们与提交说明的 `buildr.execution-model` 分离。最近智能体和模型的自动初始选择只用于新草稿；已有对话在用户主动切换模型时也可恢复该模型的强度，不改写旧运行。完全访问只在同一工作空间恢复，跨工作空间新对话使用默认权限。
 
 外部桌面会话（Session）关系已退役；内部对话保留可选任务（Task）引用，任务状态与成果继续由任务应用及实际系统维护。
 

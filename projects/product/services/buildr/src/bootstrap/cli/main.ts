@@ -1,6 +1,7 @@
 import process from 'node:process';
 import fs from 'node:fs';
 import { streamRemoteText } from '../../infrastructure/network/stream-remote-text.ts';
+import { captureWebRestartAttempt } from '../../web/startup-context.ts';
 
 function writeInternalDownload(file: string, bytes: Uint8Array): void {
   fs.writeFileSync(file, bytes, { flag: 'wx' });
@@ -47,14 +48,47 @@ async function runInternalProductAction(argv: string[]): Promise<boolean> {
 }
 
 export async function runCli(argv: string[] = process.argv): Promise<unknown> {
+  captureWebRestartAttempt(argv);
   if (await runInternalProductAction(argv)) return;
   if (process.env.BUILDR_TEST_FAIL_FULL_BOOTSTRAP === '1') throw new Error('Injected full runtime bootstrap failure.');
   const { dispatch } = await import('./registry.ts');
   return dispatch(argv);
 }
 
-export function reportCliFailure(cause: unknown, argv: string[] = process.argv): never {
-  const error = cause instanceof Error ? cause : new Error(String(cause));
+type WebHandoffSend = (message: { type: string; code: string; message: string }, callback: () => void) => void;
+
+// Startup failures of a detached update/restart successor must reach the
+// predecessor over IPC regardless of where dispatch stopped — not only inside
+// the web contribution's catch — or the handoff reports an opaque exit code.
+const reportedWebHandoffFailures = new WeakSet<object>();
+
+export function normalizeCliError(cause: unknown): Error {
+  return cause instanceof Error ? cause : new Error(String(cause));
+}
+
+export async function reportWebHandoffStartupFailure(
+  cause: unknown,
+  argv: string[] = process.argv,
+  sendImpl?: WebHandoffSend,
+): Promise<boolean> {
+  if (!argv.includes('--update-handoff') && !argv.includes('--restart')) return false;
+  const error = normalizeCliError(cause);
+  if (reportedWebHandoffFailures.has(error)) return false;
+  reportedWebHandoffFailures.add(error);
+  const send: WebHandoffSend | null = sendImpl || (typeof process.send === 'function' && process.connected ? (message, callback) => { void process.send!(message, callback); } : null);
+  if (!send) return false;
+  await new Promise<void>(resolve => {
+    const timer = setTimeout(resolve, 250);
+    try {
+      send({ type: 'buildr.web-update-handoff-failed', code: typeof (error as any).code === 'string' ? (error as any).code : 'web_update_process_failed', message: String(error.message || error).slice(0, 4096) }, () => { clearTimeout(timer); resolve(); });
+    } catch { clearTimeout(timer); resolve(); }
+  });
+  return true;
+}
+
+export async function reportCliFailure(cause: unknown, argv: string[] = process.argv): Promise<never> {
+  await reportWebHandoffStartupFailure(cause, argv);
+  const error = normalizeCliError(cause);
   const fields = Object.fromEntries(Object.entries(error));
   const code = typeof fields.code === 'string' ? fields.code : '';
   const usage = typeof fields.usage === 'string' ? fields.usage : '';

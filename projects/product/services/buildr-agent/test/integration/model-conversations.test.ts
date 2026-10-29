@@ -8,6 +8,64 @@ import {createAgentService} from '../../src/index.ts';
 import type {AgentExecutor,ExecutorItem,ExecutorOpenOptions} from '../../src/contracts.ts';
 import type {ModelOffering,ModelProvider} from '../../src/model-access/contracts.ts';
 
+test('retiring versions release idle native writers while other conversations keep executing', async () => {
+  const root = mkdtempSync(join(tmpdir(),'buildr-idle-writer-'));
+  const writers = new Map<string, object>(), sent: string[] = [];
+  let finish!: () => void;
+  const held = new Promise<void>(resolve => { finish=resolve; });
+  const capabilities = {text:true,images:false,approval:false,questions:false,stop:true,resume:true,maxInputBytes:65536};
+  const executor: AgentExecutor = {descriptor:{id:'local',label:'Local',capabilities}, async open() {
+    const owner = {}, executions = new Map<string,string>(); let closed=false;
+    return {get closed(){return closed;},bindingIdentity:'stable-native-binding',capabilities,
+      inspectAccount:async()=>({status:'ready'}),models:async()=>[{id:'model',label:'Model'}],beginLogin:async()=>{},cancelLogin:async()=>{},
+      async createContext(){const ref={id:randomUUID()};writers.set(ref.id,owner);return ref;},
+      async resumeContext({contextRef}){if(writers.has(contextRef.id)&&writers.get(contextRef.id)!==owner)throw new Error('already has an active writer');writers.set(contextRef.id,owner);},
+      readHistory:async()=>[],async send(input){sent.push(input.text);executions.set(input.contextRef.id,input.clientRequestId);input.onEvent({type:'accepted',executionRef:{id:input.clientRequestId}});if(input.text==='hold')await held;input.onEvent({type:'item',item:{id:input.clientRequestId,kind:'message',role:'assistant',text:'done',status:'completed'}});input.onEvent({type:'completed',status:'completed'});},
+      observe:async({contextRef})=>({status:'idle',tools:[],executionRef:{id:executions.get(contextRef.id)!}}),reply:async()=>{},stop:async()=>({status:'stopped',tools:[]}),
+      async close(){closed=true;for(const [id,value] of writers)if(value===owner)writers.delete(id);},
+    };
+  }};
+  const provider: ModelProvider = {id:'fixture',label:'Fixture',async open(){return {protocol:'chat-completions',inspect:async()=>({status:'ready',models:[{id:'model',label:'Model',images:false,tools:true}]}),beginLogin:async()=>{},cancelLogin:async()=>{},infer:async()=>{throw new Error('paid request forbidden');},close:async()=>{}};}};
+  const options={dataRoot:root,executors:[executor],modelProviders:[provider],resolveWorkspace:()=>({rootPath:root}),assertTask(){}};
+  const old = createAgentService(options); let next: ReturnType<typeof createAgentService> | undefined;
+  const wait = async (predicate:()=>boolean) => {for(let n=0;n<200&&!predicate();n++)await new Promise(resolve=>setTimeout(resolve,5));assert.ok(predicate());};
+  try {
+    await old.connections.connect('local',{expectedRevision:'unconfigured'});
+    const added=await old.models.accounts.add({provider:'fixture'}),checked=await old.models.accounts.check(added.id);
+    await old.models.accounts.preferences(added.id,{expectedRevision:checked.revision,models:[{id:'model',enabled:true}]});
+    const send = (service:typeof old,id:string,text:string,continueRunId?:string) => {
+      const view=service.conversations.read('workspace',id);
+      const draft={expectedRevision:view.revision,connectionId:'local',modelAccountId:added.id,model:'model',text,continueRunId};
+      const preview=service.conversations.prepareSend('workspace',id,draft);
+      return service.conversations.send('workspace',id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});
+    };
+    const idle=await old.conversations.create('workspace',{}),active=await old.conversations.create('workspace',{});
+    send(old,idle.id,'first');await wait(()=>!old.conversationBusy('workspace',idle.id));
+    send(old,active.id,'hold');await wait(()=>old.conversations.read('workspace',active.id).run?.accepted===true);
+    const contextIds=[...writers.keys()];assert.equal(contextIds.length,2);
+    assert.equal(old.canAdoptParallel(),true);
+    await old.freezeMetadata();await old.releaseIdleSources();
+    assert.equal(writers.has(contextIds[0]),false);assert.equal(writers.has(contextIds[1]),true,'active native writer stays with its original generation');
+    next=createAgentService(options);
+    send(next,idle.id,'ordinary next request');await wait(()=>!next!.conversationBusy('workspace',idle.id));
+    assert.equal(next.conversations.read('workspace',idle.id).run?.status,'completed');
+    assert.equal(writers.has(contextIds[0]),true,'the successor resumes the exact original context');
+    assert.equal(writers.size,2,'no replacement native conversation was created');
+    await old.releaseIdleSources();assert.equal(writers.has(contextIds[0]),true,'the old generation cannot close the successor runtime');
+    finish();await wait(()=>!old.conversationBusy('workspace',active.id));await old.releaseIdleSources();
+    assert.equal(writers.has(contextIds[1]),false,'a later completed old execution also releases its writer');
+    send(next,active.id,'next after old completion');await wait(()=>!next!.conversationBusy('workspace',active.id));
+    assert.equal(next.conversations.read('workspace',active.id).run?.status,'completed');
+    assert.deepEqual(sent,['first','hold','ordinary next request','next after old completion']);
+    const legacy=await next.conversations.create('workspace',{});
+    const legacyDraft={expectedRevision:legacy.revision,connectionId:'local',model:'model',text:'legacy direct'};
+    const legacyPreview=next.conversations.prepareSend('workspace',legacy.id,legacyDraft);
+    next.conversations.send('workspace',legacy.id,{...legacyDraft,previewToken:legacyPreview.token,clientRequestId:randomUUID()});
+    await wait(()=>!next!.conversationBusy('workspace',legacy.id));
+    assert.equal(next.canAdoptParallel(),false,'legacy contexts share the account process and require a fully drained handoff');
+  } finally {finish();await next?.close();await old.close();rmSync(root,{recursive:true,force:true});}
+});
+
 test('Codex Devin participants bind permission modes and hand off visible history without mixing native instructions',async()=>{
  for(const providerId of ['devin','fixture']){
   const root=mkdtempSync(join(tmpdir(),'buildr-permission-context-')),contexts=new Map<string,string>(),sent:Array<{context:string;mode:string;text:string}>=[];let execution='';
@@ -100,7 +158,6 @@ test('the current executor rejects unverified Devin model-source combinations be
     await service.models.accounts.preferences(added.id,{expectedRevision:checked.revision,models:checked.models.map(model=>({id:model.id,enabled:true}))});
     const conversation=await service.conversations.create('workspace',{});
     const draft={expectedRevision:conversation.revision,modelAccountId:added.id,modelAccountIdentity:checked.identity,text:'compatibility probe',permissionMode:'default' as const};
-    for(const [connectionId,model] of [['qoder','swe-2'],['codex','other-model']])assert.throws(()=>service.conversations.prepareSend('workspace',conversation.id,{...draft,connectionId,model}),/Devin 当前暂不兼容/);
-    for(const [connectionId,model] of [['dsh','swe-2'],['dsh','other-model'],['codex','swe-2']])service.conversations.prepareSend('workspace',conversation.id,{...draft,connectionId,model});
+    for(const [connectionId,model] of [['qoder','swe-2'],['qoder','other-model'],['dsh','swe-2'],['dsh','other-model'],['codex','swe-2'],['codex','other-model']])service.conversations.prepareSend('workspace',conversation.id,{...draft,connectionId,model});
   }finally{await service.close();rmSync(root,{recursive:true,force:true});}
 });

@@ -1,7 +1,7 @@
 .prototype-reader { min-width:0; position:relative; container-name:prototype-reader; container-type:inline-size; }
 .prototype-reader[hidden] { display:none; }
 .prototype-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
-.prototype-reader .prototype-toolbar h2 { flex:1 1 0; min-width:80px; font-size:16px; line-height:1.5; margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.prototype-reader .prototype-toolbar h2 { flex:1 1 0; min-width:80px; font-size:var(--font-size-subheading); line-height:1.5; margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .prototype-toolbar-actions { display:flex; flex:0 1 auto; align-items:center; justify-content:flex-end; gap:8px; min-width:0; max-width:calc(100% - 92px); }
 .prototype-toolbar-actions > .ant-btn { flex:none; }
 .prototype-state-select { flex:0 1 224px; min-width:80px; width:224px; max-width:100%; }
@@ -10,7 +10,7 @@
   .prototype-reader .prototype-toolbar h2 { flex-basis:160px; min-width:0; }
   .prototype-toolbar-actions { flex-wrap:wrap; max-width:100%; }
 }
-.prototype-source { border:0; background:transparent; padding:0; color:var(--soft-muted); font-size:12px; margin-bottom:12px; overflow-wrap:anywhere; }
+.prototype-source { border:0; background:transparent; padding:0; color:var(--soft-muted); font-size:var(--font-size-secondary); margin-bottom:12px; overflow-wrap:anywhere; }
 .prototype-reading-layout { position:relative; display:flex; gap:16px; min-height:480px; margin-top:12px; }
 .prototype-canvas { min-width:0; flex:1; }
 .prototype-viewport { height:max(740px,calc(100vh - 150px)); overflow:hidden; border:1px solid var(--soft-line); border-radius:8px; }
@@ -18,12 +18,12 @@
 .prototype-standalone { padding:16px; min-height:100vh; background:var(--soft-surface); display:grid; grid-template-columns:156px minmax(0,1fr); gap:16px; }
 .prototype-standalone nav { border-right:1px solid var(--soft-line); padding-right:16px; }
 .prototype-standalone nav button { display:block; width:100%; height:auto; white-space:normal; text-align:left; margin:5px 0; padding:10px; }
-.prototype-standalone nav small { display:block; color:var(--soft-muted); font-size:10px; }
+.prototype-standalone nav small { display:block; color:var(--soft-muted); font-size:var(--font-size-meta); }
 @media(max-width:700px) {
   .prototype-standalone { grid-template-columns:minmax(0,1fr); gap:16px; padding:12px; }
   .prototype-standalone > nav { display:flex; align-items:center; flex-wrap:wrap; gap:6px; border-right:0; border-bottom:1px solid var(--soft-line); padding:0 0 12px; }
-  .prototype-standalone > nav h1 { flex-basis:100%; margin:0 0 4px; font-size:16px; line-height:1.5; }
-  .prototype-standalone > nav button { flex:0 1 auto; width:auto; max-width:100%; margin:0; padding:7px 10px; font-size:12px; }
+  .prototype-standalone > nav h1 { flex-basis:100%; margin:0 0 4px; font-size:var(--font-size-subheading); line-height:1.5; }
+  .prototype-standalone > nav button { flex:0 1 auto; width:auto; max-width:100%; margin:0; padding:7px 10px; font-size:var(--font-size-body); }
 }
 
 .prototype-reading-layout > .side-reading.is-pinned { flex-basis:280px; width:280px; }

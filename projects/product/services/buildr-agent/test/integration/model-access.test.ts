@@ -13,6 +13,41 @@ function provider(infer:(input:ProviderInferenceInput)=>Promise<Response>,protoc
   return {id:'fixture',label:'Fixture',async open(){return {protocol,async inspect(){return {status:'ready',label:'套餐账号',models:[model],quota:{available:false,observedAt:new Date().toISOString()}};},async beginLogin(update){update({state:'waiting-browser',url:'https://auth.example.com/?state=secret-login-state'});},async cancelLogin(){},infer,async close(){}};}};
 }
 const chat=(message:ProtocolJson)=>Response.json({choices:[{message,finish_reason:message.tool_calls?'tool_calls':'stop'}],usage:{prompt_tokens:12,completion_tokens:4}});
+
+test('fresh quota exhaustion rejects new leases and retained gateway calls, without affecting another account',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'buildr-model-quota-'));let exhausted:string|undefined,calls=0,stale=false;
+ const source:ModelProvider={id:'fixture',label:'Fixture',async open({accountId}){return{protocol:'chat-completions',inspect:async()=>({status:'ready',models:[model],quota:{available:true,observedAt:new Date().toISOString(),remainingPercent:exhausted===accountId?0:50,stale}}),beginLogin:async()=>{},cancelLogin:async()=>{},infer:async()=>{calls++;return chat({content:'ok'});},close:async()=>{}};}};
+ const access=createModelAccess({root,providers:[source]});
+ try{
+  const account=await access.accounts.add({provider:'fixture'});await checkEnabled(access,account.id);
+  const other=await access.accounts.add({provider:'fixture'});await checkEnabled(access,other.id);
+  const input={accountId:account.id,modelId:model.id,agentId:'codex',conversationId:'one',runId:'one'},lease=await access.leases.create(input);
+  exhausted=account.id;await access.accounts.check(account.id);
+  await assert.rejects(access.leases.create({...input,conversationId:'two'}),{code:'model_quota_exhausted'});
+  const response=await fetch(lease.baseUrl+'/chat/completions',{method:'POST',headers:{Authorization:'Bearer '+lease.apiKey,'Content-Type':'application/json'},body:JSON.stringify({model:lease.model,messages:[]})});
+  assert.equal(response.status,429);assert.equal((await response.json()).error.code,'model_quota_exhausted');assert.equal(calls,0);
+  assert.ok(await access.leases.create({...input,accountId:other.id}));
+  stale=true;await access.accounts.check(account.id);assert.ok(await access.leases.create({...input,conversationId:'stale-observation'}));
+ }finally{await access.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('retiring model gateway observes successor account state without writing stale metadata',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'buildr-model-retiring-'));
+  const source=provider(async()=>chat({role:'assistant',content:'ok'}));
+  const old=createModelAccess({root,providers:[source]});let current:ReturnType<typeof createModelAccess>|undefined;
+  try{
+    const added=await old.accounts.add({provider:'fixture'}),ready=await checkEnabled(old,added.id);
+    const lease=await old.leases.create({accountId:ready.id,modelId:model.id,agentId:'codex',conversationId:'one',runId:'one'});
+    old.freezeMetadata();current=createModelAccess({root,providers:[source]});
+    await current.accounts.disconnect(ready.id,{expectedRevision:ready.revision});
+    const metadata=await readFile(join(root,'accounts.json'),'utf8');
+    assert.equal(old.accounts.read(ready.id).enabled,false);
+    await assert.rejects(old.accounts.preferences(ready.id,{expectedRevision:old.accounts.read(ready.id).revision,models:[{id:model.id,enabled:true}]}),{code:'model_owner_transferred'});
+    const response=await fetch(lease.baseUrl+'/chat/completions',{method:'POST',headers:{Authorization:'Bearer '+lease.apiKey,'Content-Type':'application/json'},body:JSON.stringify({model:lease.model,messages:[{role:'user',content:'test'}]})});
+    assert.equal(response.status,409);await response.body?.cancel();
+    assert.equal(await readFile(join(root,'accounts.json'),'utf8'),metadata);
+  }finally{await old.close();await current?.close();await rm(root,{recursive:true,force:true});}
+});
 function frames(values:unknown[]){return new Response(values.map(value=>'data: '+JSON.stringify(value)+'\n\n').join('')+'data: [DONE]\n\n',{headers:{'Content-Type':'text/event-stream'}});}
 
 test('gateway preserves a bounded HTTP failure before streaming without exposing credentials or HTML',async()=>{
@@ -242,4 +277,39 @@ test('single generation rejects unsolicited tool calls and abort propagates to o
   await assert.rejects(access.generate(input),/纯文本/);mode='wait';const pending=access.generate({...input,conversationId:'two'});await start;controller.abort();await assert.rejects(pending);
   for(let i=0;i<20&&!signal?.aborted;i++)await new Promise(resolve=>setTimeout(resolve,5));assert.equal(signal?.aborted,true);
  }finally{await access.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('incomplete checks retain usable observations; confirmed logout and identity changes do not',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'buildr-model-check-'));
+  let state:'ready'|'failed'|'expired'|'not-authenticated'|'throw'='ready',identity='account-a',checks=0,incomplete=true;
+  const source:ModelProvider={id:'fixture',label:'Fixture',async open(){return{
+    protocol:'chat-completions',async inspect(){checks++;if(state==='throw')throw new Error('timeout');return{status:state,incomplete:state==='failed'&&incomplete,identity,models:state==='ready'?[model]:[],...(state==='failed'?{diagnostic:'inspection_unfinished'}:{})};},
+    async beginLogin(){},async cancelLogin(){},async infer(){return Response.json({});},async close(){},
+  };}};
+  const access=createModelAccess({root,providers:[source]});
+  try{
+    const added=await access.accounts.add({provider:'fixture'});await checkEnabled(access,added.id);
+    const before=access.accounts.read(added.id);
+    for(let i=0;i<5;i++)access.catalog.list();
+    assert.equal(checks,1,'cached reads must not issue inspections or invalidate models');
+    for(const incomplete of ['throw','failed'] as const){
+      state=incomplete;const result=await access.accounts.check(added.id);
+      assert.equal(result.status,'ready');assert.equal(result.revision,before.revision);
+      assert.equal(result.observedAt,before.observedAt);assert.ok(result.diagnostic);
+      assert.equal(access.catalog.list().models[0].available,true);
+    }
+    state='ready';assert.equal((await access.accounts.check(added.id)).diagnostic,undefined);
+    for(const confirmed of ['expired','not-authenticated'] as const){
+      state=confirmed;assert.equal((await access.accounts.check(added.id)).status,confirmed);
+      assert.equal(access.catalog.list().models[0].available,false);
+      state='ready';await access.accounts.check(added.id);
+    }
+    state='failed';incomplete=false;
+    assert.equal((await access.accounts.check(added.id)).status,'failed','confirmed failure must remain unavailable');
+    assert.equal(access.catalog.list().models[0].available,false);
+    state='ready';await access.accounts.check(added.id);incomplete=true;
+    identity='account-b';state='failed';
+    assert.equal((await access.accounts.check(added.id)).status,'failed');
+    assert.equal(access.catalog.list().models[0].available,false,'old identity cannot survive a confirmed change');
+  }finally{await access.close();await rm(root,{recursive:true,force:true});}
 });

@@ -3,6 +3,22 @@ import type { ModelProvider, ModelProviderRuntime, ModelProviderObservation, Mod
 import { PrivateAccount, beginPkce, record, string, positive, type CredentialRecord } from './private-account.ts';
 
 const AUTH = 'https://auth.openai.com', BASE = 'https://chatgpt.com/backend-api', CLIENT = 'app_EMoamEEZ73f0CkXaXp7hrann', VERSION = '0.163.0';
+/** Codex's UI calls the speed tier "fast"; the Responses wire uses "priority". */
+function serviceTiers(row:ProtocolJson,efforts:ModelOffering['reasoningEfforts'],defaultEffort:string|undefined):Pick<ModelOffering,'serviceTiers'|'defaultServiceTier'> {
+  const tiers=new Map<string,string>();
+  for(const value of Array.isArray(row.service_tiers)?row.service_tiers:[]){
+    const tier=record(value),id=string(tier.id)??string(value);
+    if(id&&id!=='default'&&id!=='auto')tiers.set(id==='fast'?'priority':id,string(tier.name)??id);
+  }
+  for(const value of Array.isArray(row.additional_speed_tiers)?row.additional_speed_tiers:[]){
+    if(value==='fast')tiers.set('priority','Fast');
+  }
+  if(!tiers.size)return {};
+  const defaults=string(row.default_service_tier),selected=defaults==='fast'?'priority':defaults;
+  return {defaultServiceTier:selected&&tiers.has(selected)?selected:'default',
+    serviceTiers:[{id:'default',label:'标准',reasoningEfforts:efforts,defaultReasoningEffort:defaultEffort},
+      ...[...tiers].map(([id,label])=>({id,label:id==='priority'?'快速（用量更高）':label,reasoningEfforts:efforts,defaultReasoningEffort:defaultEffort}))]};
+}
 export interface CodexProviderOptions { owner?: {request(path:string,init?:RequestInit):Promise<Response>;inspect():Promise<import("../../contracts.ts").AccountObservation>;identity():Promise<string>}; fetch?: typeof fetch; callbackPort?: number; loginTimeoutMs?: number; }
 /** Explicit model-account login. Never reads ~/.codex or the desktop credential store. */
 export function createCodexModelProvider(options: CodexProviderOptions = {}): ModelProvider { return { id: options.owner?'native-codex':'codex', ...(options.owner?{connectionId:'codex'}:{}), label: 'Codex / ChatGPT', async open(input) { return new CodexRuntime(new PrivateAccount(input.configRoot), options); } }; }
@@ -38,7 +54,7 @@ class CodexRuntime implements ModelProviderRuntime {
   async inspect(): Promise<ModelProviderObservation> {
     try {
       let nativeLabel:string|undefined;
-      if(this.options.owner){const account=await this.options.owner.inspect();nativeLabel=account.label;if(account.status!=='ready')return{status:account.status,models:[],label:account.label};}
+      if(this.options.owner){const account=await this.options.owner.inspect();nativeLabel=account.label;if(account.status!=='ready')return{status:account.status,incomplete:account.status==='failed',models:[],label:account.label,diagnostic:account.diagnostic};}
       else {const credential=await this.credential();if(!credential)return{status:'not-authenticated',models:[]};}
       const response = await this.request(`/codex/models?client_version=${VERSION}`);
       if (response.status === 401) { await response.body?.cancel(); return { status: 'expired', models: [], diagnostic: 'model_codex_login_expired' }; }
@@ -47,7 +63,7 @@ class CodexRuntime implements ModelProviderRuntime {
       const models = (Array.isArray(data.models) ? data.models : []).flatMap(value => {
         const row = record(value), id = string(row.slug) ?? string(row.id); if (!id || row.visibility === 'hide' || row.hidden === true) return [];
         const efforts = (Array.isArray(row.supported_reasoning_levels) ? row.supported_reasoning_levels : []).flatMap(value => { const level = record(value), effort = string(level.effort) ?? string(value); return effort ? [{ id: effort, label: string(level.description) ?? effort }] : []; });
-        return [{ id, label: string(row.display_name) ?? id, images: Array.isArray(row.input_modalities) ? row.input_modalities.includes('image') : row.supports_image === true, tools: true, ...(positive(row.context_window) ? { contextWindow: positive(row.context_window) } : {}), ...(positive(row.max_context_window)?{reportedContextWindow:positive(row.max_context_window)}:{}), ...(efforts.length ? { reasoningEfforts: efforts } : {}), ...(string(row.default_reasoning_level) ? { defaultReasoningEffort: string(row.default_reasoning_level) } : {}) } satisfies ModelOffering];
+        return [{ id, label: string(row.display_name) ?? id, images: Array.isArray(row.input_modalities) ? row.input_modalities.includes('image') : row.supports_image === true, tools: true, ...(positive(row.context_window) ? { contextWindow: positive(row.context_window) } : {}), ...(positive(row.max_context_window)?{reportedContextWindow:positive(row.max_context_window)}:{}), ...(efforts.length ? { reasoningEfforts: efforts } : {}), ...(string(row.default_reasoning_level) ? { defaultReasoningEffort: string(row.default_reasoning_level) } : {}),...serviceTiers(row,efforts.length?efforts:undefined,string(row.default_reasoning_level)) } satisfies ModelOffering];
       });
       this.catalog = new Map(models.map(model => [model.id, model]));
       let quota: ModelProviderObservation['quota'] = { available: false, observedAt: new Date().toISOString() };
@@ -61,7 +77,7 @@ class CodexRuntime implements ModelProviderRuntime {
         } else await response.body?.cancel();
       } catch { /* Quota observation cannot invalidate an otherwise usable source. */ }
       return { status: models.length ? 'ready' : 'failed', label: nativeLabel??'Codex / ChatGPT', ...(this.options.owner?{identity:await this.options.owner.identity()}:{}), models, quota, ...(!models.length ? { diagnostic: 'model_codex_catalog_empty' } : {}) };
-    } catch (error) { return { status: (error as Error).message === 'model_codex_login_expired' ? 'expired' : 'failed', models: [], diagnostic: (error as Error).message === 'model_codex_login_expired' ? 'model_codex_login_expired' : 'model_codex_observation_failed' }; }
+    } catch (error) { return { incomplete: (error as Error).message !== 'model_codex_login_expired', status: (error as Error).message === 'model_codex_login_expired' ? 'expired' : 'failed', models: [], diagnostic: (error as Error).message === 'model_codex_login_expired' ? 'model_codex_login_expired' : 'model_codex_observation_failed' }; }
   }
   async beginLogin(update: (value: LoginObservation) => void): Promise<void> {
     if(this.options.owner)throw new Error('model_managed_account');
@@ -83,6 +99,11 @@ class CodexRuntime implements ModelProviderRuntime {
   async infer(input: ProviderInferenceInput): Promise<Response> {
     if (!this.catalog.has(input.modelId)) await this.inspect(); if (!this.catalog.has(input.modelId)) return Response.json({ error: { code: 'model_not_available' } }, { status: 404 });
     const body = codexBody(input.body, input.modelId);
+    // Standard must explicitly clear a previous/native fast choice. The gateway
+    // has already replaced caller-supplied tiers with this lease's bound tier.
+    const tier=string(body.service_tier);
+    if(tier&&tier!=='default'&&!this.catalog.get(input.modelId)?.serviceTiers?.some(value=>value.id===tier))return Response.json({error:{code:'model_tier_unavailable'}},{status:400});
+    if(tier==='default')delete body.service_tier;
     const response = await this.request('/codex/responses', { method: 'POST', headers: { 'content-type': 'application/json', accept: 'text/event-stream', 'x-codex-routing-hint': `model=${input.modelId}`, 'session_id': input.context.conversationId }, body: JSON.stringify(body) }, input.signal);
     if (!response.ok) { await response.body?.cancel(); return Response.json({ error: { code: response.status === 401 ? 'model_codex_login_expired' : 'model_codex_upstream_failed' } }, { status: response.status }); }
     if (input.body.stream === true) {

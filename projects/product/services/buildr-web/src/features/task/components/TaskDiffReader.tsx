@@ -1,12 +1,12 @@
 import { useTaskFileDiff } from '../hooks/useTaskFileDiff';
 import { SplitDivider } from '../../../components/SplitDivider';
-import { App, Button, Segmented, Spin, Tooltip } from 'antd';
-import { ArrowDownOutlined, ArrowUpOutlined, BranchesOutlined, CheckOutlined, CopyOutlined, DownOutlined, FileAddOutlined, MenuFoldOutlined, MenuUnfoldOutlined, RightOutlined } from '@ant-design/icons';
+import { Button, Segmented, Spin, Tooltip } from 'antd';
+import { ArrowDownOutlined, ArrowUpOutlined, BranchesOutlined, DownOutlined, FileAddOutlined, MenuFoldOutlined, MenuUnfoldOutlined, RightOutlined } from '@ant-design/icons';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ChangedFileList, changedFileKey, type ChangedFileEntry } from './TaskChangedFiles';
 import type { TaskCommit } from './task-commit-model';
 import { formatShortDateTime } from '../../../lib/taskLabels';
-import { copyText } from '../../../lib/copyText';
+import { CopyButton } from '../../../components/CopyButton';
 import { diffContentRows, inlineChangePairs, inlineSegments, parseUnifiedDiff, pairForSplit, type InlineSegment } from './diff-text';
 import './task-diff-reader.css';
 
@@ -68,14 +68,12 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
   defaultCommit?: boolean;
   showTaskSource?: boolean;
 }) {
-  const { message } = App.useApp();
   const [localView, setView] = useState<DiffMode>('split');
   const view = viewMode || localView;
   const [splitRoom, setSplitRoom] = useState(false);
   const [stacked, setStacked] = useState(false);
   const readerRef = useRef<HTMLElement>(null);
   const paneRef = useRef<HTMLDivElement>(null);
-  const [copied, setCopied] = useState(false);
   const [railCollapsed, setRailCollapsed] = useState(false);
   const [railPeek, setRailPeek] = useState(false);
   const [railWidth, setRailWidth] = useState(320);
@@ -95,7 +93,6 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
     if (selectedCommit && !commitEntries.some(item => item.entry.key === selectedCommit)) setSelectedCommit(null);
     else if (defaultCommit && !selected && !fileCommit && !selectedCommit && firstCommit) setSelectedCommit(firstCommit.entry.key);
   }, [defaultCommit, selected, fileCommit, selectedCommit, firstCommit, commitEntries]);
-  useEffect(() => { setCopied(false); }, [selected, filePresentation?.absolutePath]);
   const [openRepos, setOpenRepos] = useState<Record<string, boolean>>({});
   useEffect(() => {
     if (!dragging) return;
@@ -239,19 +236,7 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
       }
     });
   }, [taskId, readScope, selected, fileCommit, selectedCommit, selectionVersion, mode, full.loading, pairs, rows, changes, selectedChange]);
-  async function copyPath() {
-    if (!current) return;
-    const path = filePresentation ? filePresentation.absolutePath : current.path;
-    if (!path) { message.info('完整绝对路径暂不可读取。'); return; }
-    if (await copyText(path)) {
-      setCopied(true);
-      message.success('已复制');
-    } else message.info('当前环境不允许访问剪贴板，请选中文字复制。');
-  }
-  async function copyCommit(value: string) {
-    if (await copyText(value)) message.success('已复制');
-    else message.info('当前环境不允许访问剪贴板，请选中文字复制。');
-  }
+  const copyPath = current ? filePresentation ? filePresentation.absolutePath : current.path : '';
   const isAddOnly = current?.status === 'added' || current?.status === 'untracked';
   const hasAny = repositories.some(repository => repository.changes.length > 0 || repository.commits.length > 0 || repository.status === 'unavailable');
   const railContent = <div className="task-rail-body">
@@ -323,7 +308,7 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
             { value: 'split', disabled: !splitRoom, label: <Tooltip title={splitRoom ? '旧版本与新版本并排对照' : '当前阅读宽度不足，使用上下对比'}><span>左右对比</span></Tooltip> },
             { value: 'unified', label: <Tooltip title='同一视图按顺序显示删除和新增行'><span>上下对比</span></Tooltip> },
           ]} />}
-          {!commitEntry && current && (copied ? <Button size="small" type="text" icon={<CheckOutlined />}>已复制路径</Button> : <Button size="small" type="text" icon={<CopyOutlined />} aria-label="复制路径" disabled={Boolean(filePresentation && !filePresentation.absolutePath)} onClick={() => void copyPath()}>复制路径</Button>)}
+          {!commitEntry && current && <CopyButton type="text" text={copyPath ?? ''} ariaLabel="复制路径" failureMessage="当前环境不允许访问剪贴板，请选中文字复制。" disabled={!copyPath}>复制路径</CopyButton>}
         </div>
         {!commitEntry && current && filePresentation && <div className="task-diff-absolute-path"><code aria-label="完整绝对路径">{filePresentation.absolutePath ? `${filePresentation.previousAbsolutePath ? `${filePresentation.previousAbsolutePath} → ` : ''}${filePresentation.absolutePath}` : '完整绝对路径暂不可读取'}</code></div>}
       </header>
@@ -334,7 +319,7 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
         {commitEntry && <article className="task-commit-details" aria-label="提交完整信息">
           <h2>{commitEntry.entry.commit.subject}</h2>
           <dl><dt>仓库</dt><dd>{commitEntry.repository.label}</dd>{(commitEntry.entry.commit.taskId || (showTaskSource && taskId)) && <><dt>来源任务</dt><dd>{commitEntry.entry.commit.taskTitle || commitEntry.entry.commit.taskId || taskId} <code>{commitEntry.entry.commit.taskId || taskId}</code></dd></>}<dt>提交</dt><dd><code>{commitEntry.entry.commit.hash}</code></dd><dt>作者</dt><dd>{commitEntry.entry.commit.authorName} &lt;{commitEntry.entry.commit.authorEmail}&gt;</dd><dt>时间</dt><dd>{formatShortDateTime(commitEntry.entry.commit.committedAt)}</dd></dl>
-          <div className="task-commit-actions"><Button size="small" aria-label="复制提交说明" icon={<CopyOutlined />} onClick={() => void copyCommit(commitEntry.entry.commit.message)}>复制提交说明</Button><Button size="small" aria-label="复制完整哈希" icon={<CopyOutlined />} onClick={() => void copyCommit(commitEntry.entry.commit.hash)}>复制完整哈希</Button></div>
+          <div className="task-commit-actions"><CopyButton text={commitEntry.entry.commit.message} ariaLabel="复制提交说明" failureMessage="当前环境不允许访问剪贴板，请选中文字复制。">复制提交说明</CopyButton><CopyButton text={commitEntry.entry.commit.hash} ariaLabel="复制完整哈希" failureMessage="当前环境不允许访问剪贴板，请选中文字复制。">复制完整哈希</CopyButton></div>
           <pre>{commitEntry.entry.commit.message}</pre>
         </article>}
         {!commitEntry && !current && <p className="task-diff-empty">{hasAny ? '从左侧文件栏选择一个文件查看差异。' : '该范围暂无可查看的文件。'}</p>}

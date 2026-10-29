@@ -22,7 +22,10 @@ return;
 }ack(m.request_id,{});
 return;
 }
+if(m.type==='user'&&m.shouldQuery===false){if(m.priority!=='next'||!input)throw Error('wrong supplementary delivery');emit({...m,isReplay:true});return;}
 if(m.type==='user'){input=m;
+const crash=m.message.content.find(p=>p.type==='text')?.text;
+if(crash?.startsWith('native-crash:')){sid=m.session_id;emit({type:'assistant',uuid:'tool',session_id:sid,message:{id:'tool',content:[{type:'tool_use',id:'effect',name:'Bash',input:{command:'append once'}}]}});if(crash.endsWith('completed'))emit({type:'user',uuid:'result',session_id:sid,message:{role:'user',content:[{type:'tool_result',tool_use_id:'effect',content:'COMMITTED'}]}});setTimeout(()=>process.kill(process.pid,'SIGKILL'),25);return;}
 const image=m.message.content.find(p=>p.type==='image');if(image){if(image.source.type!=='base64'||image.source.media_type!=='image/png'||image.source.data!=='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5EsAAAAASUVORK5CYII=')throw Error('image bytes mismatch');emit({type:'assistant',uuid:'message-live',session_id:m.session_id,message:{id:'message-live',content:[{type:'text',text:'图片已接收'}]}});}
 sid=m.session_id??process.argv[process.argv.indexOf('--session-id')+1];
 emit({type:'assistant',uuid:'snapshot-1',session_id:sid,message:{id:'message-live',content:[{type:'text',text:'正在处理'}]}});

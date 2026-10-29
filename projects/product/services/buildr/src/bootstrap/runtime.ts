@@ -51,6 +51,11 @@ import * as webProfileContract from '../modules/installation/contracts/web-profi
 
 const RUNTIME_CONTEXT = new WeakMap();
 
+function warnRecoveryFailure(error: unknown): void {
+  const code = error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' && /^[a-z][a-z0-9_]{0,79}$/iu.test(error.code) ? error.code : null;
+  console.warn('中断执行恢复检查未完成，已有工作记录保留。', ...(code ? [code] : []));
+}
+
 export function createRuntime(): any  {
   const runtime: any = { ...platform };
   registerInfrastructure(runtime);
@@ -89,7 +94,10 @@ export function createRuntime(): any  {
   registry.install(createArtifactLifecycleModule(runtime));
   registry.install(createSystemInstallationModule(runtime));
   registry.install(createWebModule(runtime, { httpContributions: registry.contributions('http'), onReady: () => {
-    void registry.provide(AGENT_SERVICE_APPLICATION).start().catch(() => { console.warn('中断执行恢复检查未完成，已有工作记录保留。'); });
+    // start() resolves the service lazily; a synchronous throw here must not
+    // escape the listen callback and kill the process.
+    try { void registry.provide(AGENT_SERVICE_APPLICATION).start().catch(warnRecoveryFailure); }
+    catch (error) { warnRecoveryFailure(error); }
     try {
       const profile=webProfileContract.resolveWebProfile(readCurrentProductIdentity());
       const roots=registry.provide(WORKSPACE_APPLICATION).listRegisteredWorkspaces().workspaces.filter((entry:any)=>entry.registryScope!=='shared'&&entry.workspace?.id).map((entry:any)=>entry.rootPath);

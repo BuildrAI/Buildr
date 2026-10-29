@@ -1,10 +1,10 @@
 .file-diff-editor { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; height: 100%; overflow: hidden; background: var(--ant-color-bg-container, #fff); }
 .file-diff-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; flex-shrink: 0; padding: 7px 12px; border-bottom: 1px solid var(--ant-color-border-secondary, #eceef1); }
 .file-diff-navigation { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; min-width: 0; }
-.file-diff-position { min-width: 42px; color: var(--ant-color-text-secondary, #68717b); text-align: center; font-size: 12px; font-variant-numeric: tabular-nums; }
-.file-diff-save { color: var(--ant-color-text-secondary, #68717b); font-size: 12px; white-space: nowrap; }
+.file-diff-position { min-width: 42px; color: var(--ant-color-text-secondary, #68717b); text-align: center; font-size: var(--font-size-secondary); font-variant-numeric: tabular-nums; }
+.file-diff-save { color: var(--ant-color-text-secondary, #68717b); font-size: var(--font-size-secondary); white-space: nowrap; }
 .file-diff-save.state-conflict,.file-diff-save.state-error { color: var(--ant-color-warning-text, #ad6800); }
-.file-diff-version-labels { display: grid; grid-template-columns: 1fr 1fr; flex-shrink: 0; gap: 12px; padding: 6px 12px; color: var(--ant-color-text-secondary, #68717b); font-size: 12px; border-bottom: 1px solid var(--ant-color-border-secondary, #eceef1); }
+.file-diff-version-labels { display: grid; grid-template-columns: 1fr 1fr; flex-shrink: 0; gap: 12px; padding: 6px 12px; color: var(--ant-color-text-secondary, #68717b); font-size: var(--font-size-secondary); border-bottom: 1px solid var(--ant-color-border-secondary, #eceef1); }
 .file-diff-editor[data-diff-mode=unified] .file-diff-version-labels { display: flex; flex-wrap: wrap; justify-content: space-between; }
 .file-diff-host { flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
 .file-diff-host>.cm-editor,.file-diff-host>.cm-mergeView { height: 100%; min-height: 0; }

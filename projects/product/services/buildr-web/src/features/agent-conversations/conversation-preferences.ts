@@ -1,9 +1,9 @@
 import type {CatalogModel,ConnectionView} from './types.ts';
-import {conversationModelCompatibility,officialConversationChoice,type ConversationChoice,type PermissionMode} from './conversation-options.ts';
+import {choiceReasoningOptions,officialConversationChoice,selectedConversationModel,type ConversationChoice,type PermissionMode} from './conversation-options.ts';
 
 type PreferenceStorage=Pick<Storage,'getItem'|'setItem'|'removeItem'>;
 export type ConversationModulePreference={version:1;agent?:{connectionId:string};permission?:{mode?:PermissionMode;workspaceId?:string;workspaces?:Record<string,PermissionMode>}};
-export type ConversationModelPreference={version:1;connectionId:string;model?:string;modelAccountId?:string;serviceTier?:string;reasoningEffort?:string};
+export type ConversationModelPreference={version:1;connectionId:string;model?:string;modelAccountId?:string;modelAccountIdentity?:string;serviceTier?:string;reasoningEffort?:string};
 
 const emptyModule=():ConversationModulePreference=>({version:1});
 const webProfile=()=>typeof document==='undefined'?'local':document.querySelector('meta[name="buildr-web-profile"]')?.getAttribute('content')||'local';
@@ -57,12 +57,12 @@ export function readConversationModelPreference(storage:PreferenceStorage|undefi
  const value=parsed(stored(storage,conversationPreferenceKeys(profile).model));
  const connectionId=optionalString(value?.connectionId);
  if(value?.version!==1||!connectionId)return null;
- const model=optionalString(value.model),modelAccountId=optionalString(value.modelAccountId),serviceTier=optionalString(value.serviceTier),reasoningEffort=optionalString(value.reasoningEffort);
- return {version:1,connectionId,...(model?{model}:{}),...(modelAccountId?{modelAccountId}:{}),...(serviceTier?{serviceTier}:{}),...(reasoningEffort?{reasoningEffort}:{})};
+ const model=optionalString(value.model),modelAccountId=optionalString(value.modelAccountId),modelAccountIdentity=optionalString(value.modelAccountIdentity),serviceTier=optionalString(value.serviceTier),reasoningEffort=optionalString(value.reasoningEffort);
+ return {version:1,connectionId,...(model?{model}:{}),...(modelAccountId?{modelAccountId}:{}),...(modelAccountIdentity?{modelAccountIdentity}:{}),...(serviceTier?{serviceTier}:{}),...(reasoningEffort?{reasoningEffort}:{})};
 }
 export function modelPreferenceFromChoice(choice:ConversationChoice):ConversationModelPreference|null{
  if(!choice.connectionId)return null;
- return {version:1,connectionId:choice.connectionId,...(choice.model?{model:choice.model}:{}),...(choice.modelAccountId?{modelAccountId:choice.modelAccountId}:{}),...(choice.serviceTier?{serviceTier:choice.serviceTier}:{}),...(choice.reasoningEffort?{reasoningEffort:choice.reasoningEffort}:{})};
+ return {version:1,connectionId:choice.connectionId,...(choice.model?{model:choice.model}:{}),...(choice.modelAccountId?{modelAccountId:choice.modelAccountId}:{}),...(choice.modelAccountIdentity?{modelAccountIdentity:choice.modelAccountIdentity}:{}),...(choice.serviceTier?{serviceTier:choice.serviceTier}:{}),...(choice.reasoningEffort?{reasoningEffort:choice.reasoningEffort}:{})};
 }
 export function writeConversationModelPreference(preference:ConversationModelPreference|null,storage:PreferenceStorage|undefined=defaultStorage(),profile=webProfile()):boolean{
  try{
@@ -89,14 +89,14 @@ export function rememberedConversationPermission(preference:ConversationModulePr
 function selectableModel(connection:ConnectionView,catalog:CatalogModel[],preference:ConversationModelPreference){
  if(preference.model&&preference.modelAccountId){
   const source=catalog.find(model=>model.accountId===preference.modelAccountId&&model.modelId===preference.model&&model.available&&model.enabled!==false);
-  if(!source||conversationModelCompatibility(connection,source))return;
+  if(!source)return;
   const tier=source.serviceTiers?.find(item=>item.id===preference.serviceTier)?preference.serviceTier:source.defaultServiceTier;
-  const efforts=tier?source.serviceTiers?.find(item=>item.id===tier)?.reasoningEfforts:source.reasoningEfforts;
-  return {choice:{connectionId:connection.id,model:source.modelId,modelAccountId:source.accountId,modelAccountRevision:source.accountRevision,modelAccountIdentity:source.accountIdentity,serviceTier:tier,reasoningEffort:preference.reasoningEffort&&efforts?.some(item=>item.id===preference.reasoningEffort)?preference.reasoningEffort:undefined} satisfies ConversationChoice};
+  const efforts=source.serviceTiers?.find(item=>item.id===tier)?.reasoningEfforts??source.reasoningEfforts;
+  return {choice:{connectionId:connection.id,model:source.modelId,modelAccountId:source.accountId,modelAccountRevision:source.accountRevision,modelAccountIdentity:source.accountIdentity,serviceTier:tier,reasoningEffort:preference.modelAccountIdentity&&preference.modelAccountIdentity===source.accountIdentity&&preference.reasoningEffort&&efforts?.some(item=>item.id===preference.reasoningEffort)?preference.reasoningEffort:undefined} satisfies ConversationChoice};
  }
  if(preference.model){
   const native=connection.models.find(model=>model.id===preference.model);
-  if(native)return {choice:{connectionId:connection.id,model:native.id} satisfies ConversationChoice};
+  if(native)return {choice:{connectionId:connection.id,model:native.id,reasoningEffort:preference.reasoningEffort&&native.reasoningEfforts?.some(item=>item.id===preference.reasoningEffort)?preference.reasoningEffort:undefined} satisfies ConversationChoice};
  }
 }
 
@@ -106,7 +106,31 @@ export function preferredConversationChoice(modulePreference:ConversationModuleP
  if(!connection)return;
  if(modelPreference?.connectionId===connection.id){
   const selected=selectableModel(connection,catalog,modelPreference);
-  if(selected)return selected.choice;
+  if(selected)return restoreReasoningChoice(selected.choice,connection,catalog);
  }
- return officialConversationChoice(connection,catalog);
+ return restoreReasoningChoice(officialConversationChoice(connection,catalog),connection,catalog);
+}
+
+// 每个身份使用独立存储项，多个选择器或标签页写入不同模型时不会覆盖整张表。
+const volatileReasoningMemory=new Map<string,string>();
+export function reasoningMemoryKey(choice:ConversationChoice,profile=webProfile()):string|undefined{
+ if(!choice.connectionId||!choice.model)return;
+ return `buildr.agent-conversation.reasoning-effort:${encodeURIComponent(profile||'local')}:${encodeURIComponent(JSON.stringify([choice.connectionId,choice.modelAccountId||'',choice.modelAccountIdentity||'',choice.model]))}`;
+}
+export function rememberReasoningEffort(choice:ConversationChoice,effort:string,storage:PreferenceStorage|undefined=defaultStorage(),profile=webProfile()):boolean{
+ const key=reasoningMemoryKey(choice,profile);
+ if(!key||!effort)return false;
+ try{if(storage){storage.setItem(key,effort);volatileReasoningMemory.delete(key);return true;}}catch{/* 存储不可写时在当前页面继续记住。 */}
+ volatileReasoningMemory.set(key,effort);
+ return false;
+}
+export function restoreReasoningChoice(choice:ConversationChoice,connection:ConnectionView|undefined,catalog:CatalogModel[],storage:PreferenceStorage|undefined=defaultStorage(),profile=webProfile()):ConversationChoice{
+ const model=choice.model??selectedConversationModel(connection)?.id??connection?.models[0]?.id;
+ const nativeSource=!choice.modelAccountId?catalog.find(item=>item.accountId==='native-'+choice.connectionId&&item.modelId===model):undefined;
+ const key=reasoningMemoryKey({...choice,model,...(nativeSource?{modelAccountId:nativeSource.accountId,modelAccountIdentity:nativeSource.accountIdentity}:{})},profile);
+ if(!key)return choice;
+ const effort=volatileReasoningMemory.get(key)??stored(storage,key);
+ if(!effort)return choice;
+ const options=choiceReasoningOptions(choice,connection,catalog);
+ return {...choice,reasoningEffort:options?.some(item=>item.id===effort)?effort:undefined};
 }

@@ -1,7 +1,7 @@
 import { createPortal } from 'react-dom';
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Alert, App, Button, Empty, Input, Modal, Segmented, Select, Space, Spin, Tag, Tooltip, Tree } from 'antd';
-import { CopyOutlined, DownOutlined, EyeInvisibleOutlined, EyeOutlined, FileImageOutlined, FileTextOutlined, FolderOpenOutlined, FolderOutlined, MenuFoldOutlined, MenuUnfoldOutlined, ReloadOutlined, RightOutlined, SearchOutlined } from '@ant-design/icons';
+import { DownOutlined, EyeInvisibleOutlined, EyeOutlined, FileImageOutlined, FileTextOutlined, FolderOpenOutlined, FolderOutlined, MenuFoldOutlined, MenuUnfoldOutlined, ReloadOutlined, RightOutlined, SearchOutlined } from '@ant-design/icons';
 import type { DataNode } from 'antd/es/tree';
 import { MarkdownHost } from '../../../components/MarkdownHost';
 import { ReadOnlyFileCodeEditor } from '../../../components/file-editing/ReadOnlyFileCodeEditor';
@@ -10,7 +10,7 @@ import { RepositorySearchText } from './RepositorySearchText';
 import { SelectableHoverCard } from '../../../components/SelectableHoverCard';
 import { repositorySearchQuery } from './repository-search-query';
 import { selectPopupGuard } from '../../../lib/select-popup';
-import { copyText } from '../../../lib/copyText';
+import { CopyButton } from '../../../components/CopyButton';
 import { repositorySourceLines, visibleRepositoryMatch, type RepositoryFilePage } from './repository-file-page';
 export type { RepositoryFilePage } from './repository-file-page';
 import './repository-file-browser.css';
@@ -224,7 +224,7 @@ export function RepositoryFileBrowser(props: Props) {
         {repo.locationLabel && <p className="repository-root-location-label">{repo.locationLabel}</p>}
         <code className="repository-root-location">{repo.location}</code>
         {repo.version && <p className="repository-root-version">版本：{repo.version}</p>}
-        {repo.location && <Button type="text" size="small" icon={<CopyOutlined />} aria-label="复制代码库完整路径" onClick={() => void copy(repo.location!)}>复制路径</Button>}
+        {repo.location && <CopyButton type="text" text={repo.location} ariaLabel="复制代码库完整路径" failureMessage="可在下方选中文字复制。">复制路径</CopyButton>}
       </article>}><span tabIndex={0} className="repository-root-name" aria-label={repo.fullName || repo.name} data-location={repo.location} data-location-label={repo.locationLabel} data-version={repo.version} data-repository-id={repo.repositoryId || repo.id} data-has-changes={repo.hasChanges || undefined}><strong>{repo.name}</strong>{repo.hasChanges && <i className="repository-directory-change-dot" title="包含未提交变更" aria-label="包含未提交变更" />}</span></SelectableHoverCard>,
       children: build(visible.filter(item => item.repositoryId === repo.id)),
     })) : build(visible);
@@ -245,10 +245,6 @@ export function RepositoryFileBrowser(props: Props) {
   function changeQuery(value: string) {
     setQuery(value);
     props.onScene?.(value ? 'search' : '');
-  }
-  async function copy(text: string) {
-    if (await copyText(text)) message.success('已复制');
-    else message.info('可在下方选中文字复制。');
   }
   useEffect(()=>{props.onDirectoryExpansionChange?.(expanded);},[expanded,props.onDirectoryExpansionChange]);
   async function refresh(directories=false) {
@@ -334,7 +330,7 @@ export function RepositoryFileBrowser(props: Props) {
             {props.onReturnTask && <Button size="small" onClick={props.onReturnTask} data-prototype-position="return-task">返回任务</Button>}
             {file.kind === 'markdown' && !props.readPage && <Segmented size="small" value={raw ? 'raw' : 'read'} options={[{ label: '阅读', value: 'read' }, { label: '原文', value: 'raw' }]} onChange={value => setRaw(value === 'raw')} />}
             {props.historical ? <Button size="small" onClick={props.onViewCurrent} data-prototype-position="current-file">查看当前文件</Button> : props.onChanges && <Button size="small" disabled={!file.status} onClick={() => props.onChanges?.(file.path)} data-prototype-position="file-diff-link">查看改动</Button>}
-            <Button size="small" type="text" icon={<CopyOutlined />} onClick={() => void copy(file.path)}>复制路径</Button>
+            <CopyButton type="text" text={file.path} failureMessage="可在下方选中文字复制。">复制路径</CopyButton>
           </Space>
         </header>}
         {props.readMessage && <Alert type="warning" message={props.readMessage} />}
@@ -359,7 +355,7 @@ export function RepositoryFileBrowser(props: Props) {
         </footer>}
       </div>
     </div>
-    <Modal open={Boolean(request)} title={request === 'modify' ? '交给智能体（Agent）修改' : '交给智能体（Agent）解释'} onCancel={() => setRequest(null)} footer={<Space><Button onClick={() => setRequest(null)}>返回文件</Button><Button type="primary" icon={<CopyOutlined />} onClick={() => void copy(prompt)}>复制指令</Button></Space>}>
+    <Modal open={Boolean(request)} title={request === 'modify' ? '交给智能体（Agent）修改' : '交给智能体（Agent）解释'} onCancel={() => setRequest(null)} footer={<Space><Button onClick={() => setRequest(null)}>返回文件</Button><CopyButton type="primary" size="middle" text={prompt} failureMessage="可在下方选中文字复制。">复制指令</CopyButton></Space>}>
       <p className="page-copy">文件位置、查看版本和选中范围已带入指令。你可以补充目标后交给智能体（Agent）。</p>
       {request === 'modify' && <Input.TextArea aria-label="修改目标" placeholder="描述希望怎样修改…" value={requestGoal} onChange={event => setRequestGoal(event.target.value)} autoSize={{ minRows: 3, maxRows: 6 }} style={{ marginBottom: 12 }} />}
       <Input.TextArea aria-label="文件协作指令" value={prompt} readOnly autoSize={{ minRows: 8, maxRows: 16 }} />

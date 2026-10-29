@@ -1,4 +1,5 @@
 import type { ModelProvider } from './model-access/contracts.ts';
+import type { AgentHostCapabilities } from './execution-contracts.ts';
 /** Public executor protocol. Vendor credentials and opaque state never become UI state. */
 export type ProviderId = string;
 export type PermissionMode = 'default' | 'full-access';
@@ -6,6 +7,8 @@ export type ContextRef = { id: string; data?: Record<string, unknown> };
 export type ExecutionRef = { id: string; data?: Record<string, unknown> };
 
 export interface AgentCapabilities {
+  /** Admission into an already active execution; absence means unavailable. */
+  supplement?: boolean;
   text: boolean;
   images: boolean;
   approval: boolean;
@@ -39,6 +42,8 @@ export interface ExecutorBinding {
 export interface ModelGatewayConfiguration {
   identity: string; baseUrl: string; apiKey: string;
   models: Array<AgentModel & { contextWindow?: number; maxOutputTokens?: number; vision?: boolean; tools?: boolean }>;
+  /** Same-account Qoder execution uses its native model route, retaining the source lease binding. */
+  nativeModel?: { provider: 'qoder'; id: string; accountIdentity: string };
 }
 export interface ExecutorOpenOptions {
   gateway?: ModelGatewayConfiguration;
@@ -56,8 +61,11 @@ export interface LoginObservation {
   diagnostic?: string;
 }
 export interface ExecutorImage { id: string; path: string; mimeType: string }
+export interface VideoAttachment { duration: number; frames: Array<{ id: string; time: number }> }
+export interface AttachmentInput { expectedRevision?: string; expectedAttachmentRevision?: string; mimeType: string; bytes: Uint8Array; video?: VideoAttachment }
 export interface ExecutorItem {
   id: string;
+  clientRequestId?: string;
   kind: 'message' | 'tool' | 'notice';
   role: 'user' | 'assistant' | 'system';
   text: string;
@@ -66,17 +74,19 @@ export interface ExecutorItem {
   /** Original tool invocation input; retained when a later result replaces text. */
   input?: string;
   executionId?: string;
-  status?: 'running' | 'completed' | 'failed';
+  status?: 'running' | 'completed' | 'failed' | 'unknown';
 }
 export interface ExecutorRequest {
   id: string;
   kind: 'approval' | 'question';
   title: string;
   description?: string;
-  options?: Array<{ id: string; label: string }>;
-  questions?: Array<{ id: string; label: string; options?: Array<{ id: string; label: string }>; multiple?: boolean }>;
+  options?: Array<{ id: string; label: string; description?: string }>;
+  questions?: Array<{ id: string; label: string; options?: Array<{ id: string; label: string; description?: string }>; multiple?: boolean; allowOther?: boolean }>;
 }
 export interface ExecutorObservation {
+  /** Native SDK background work, distinct from missing historical tool results. */
+  backgroundWork?: boolean;
   status: 'idle' | 'running' | 'waiting' | 'stopped' | 'tools-active' | 'unknown';
   executionRef?: ExecutionRef;
   tools: Array<{ id: string; label: string; status: 'running' | 'completed' | 'unknown'; canStop?: boolean }>;
@@ -107,6 +117,17 @@ export interface ExecutorSendInput {
   clientRequestId: string;
   onEvent(event: ExecutorEvent): void;
 }
+export interface ExecutorSupplementInput {
+  contextRef: ContextRef;
+  executionRef: ExecutionRef;
+  cwd: string;
+  text: string;
+  images: ExecutorImage[];
+  clientRequestId: string;
+}
+export interface ExecutorInputReceipt { executionRef: ExecutionRef; inputItemId?: string }
+/** Only a proven pre-admission rejection may leave input safe to send again. */
+export class ExecutorInputRejected extends Error {}
 export interface AgentRuntime {
   /** True only when this owned transport is no longer usable; absence is not failure. */
   readonly closed?: boolean;
@@ -126,7 +147,10 @@ export interface AgentRuntime {
   readHistory(input: { contextRef: ContextRef; cwd: string }): Promise<ExecutorItem[]>;
   /** Resolves at terminal observation. Control requests must stay independent. */
   send(input: ExecutorSendInput): Promise<void>;
-  observe(input: { contextRef: ContextRef; executionRef?: ExecutionRef }): Promise<ExecutorObservation>;
+  supplement?(input: ExecutorSupplementInput): Promise<ExecutorInputReceipt>;
+  observe(input: { contextRef: ContextRef; executionRef?: ExecutionRef; knownItems?: readonly ExecutorItem[] }): Promise<ExecutorObservation>;
+  /** Exact backend control-resource proof. true also proves native execution ended; an object can preserve unknown independent commands. Neither asserts successful results. */
+  canRelease?(input: { contextRef: ContextRef; executionRef: ExecutionRef }): Promise<boolean | {executionState:'ended'|'unknown'}>;
   reply(input: { contextRef: ContextRef; executionRef: ExecutionRef; requestId: string; answer: unknown }): Promise<void>;
   stop(input: { contextRef: ContextRef; executionRef: ExecutionRef; toolId?: string }): Promise<ExecutorObservation>;
   /** Native generated/name metadata only; never a first-prompt preview or fallback. */
@@ -203,10 +227,15 @@ export interface ConversationEntry {
   runId?: string;
   status?: 'sending' | 'accepted' | 'unknown' | 'running' | 'completed' | 'failed';
   attachments?: string[];
+  deliveryDiagnostic?: string;
   handoff?: HandoffMaterial;
   createdAt: string;
 }
 export interface RunView {
+  /** Physical execution/resource facts never imply that the user's goal succeeded. */
+  executionState?: 'active' | 'ended' | 'unknown';
+  /** This backend no longer holds the original control resources; independent command outcomes may remain unknown. */
+  resourcesReleased?: boolean;
   /** Host interruption is unfinished work, distinct from a user stop. */
   interrupted?: boolean;
   contextUsage?: {usedTokens:number;windowTokens?:number};
@@ -235,7 +264,10 @@ export interface PendingRequestView extends ExecutorRequest {
   generation: string;
 }
 export interface ConversationView {
-  activity?: { version: number; seenThrough: number; updatedAt: string; active: boolean };
+  pendingSend?: PendingSendView;
+  /** Independent observation version for append-only image admission. */
+  attachmentRevision?: string;
+  activity?: { version: number; seenThrough: number; updatedAt: string; active: boolean; userInputAt?: string };
   titleState?: { status: 'pending' | 'generating' | 'generated' | 'manual' | 'failed' | 'unavailable' | 'unknown'; reason?: string };
   id: string;
   workspaceId: string;
@@ -267,6 +299,13 @@ export interface HandoffMaterial {
   mode: 'records'|'summary'|'indexed'; sourcePath?: string;
 }
 export interface SendDraft {
+  /** Explicitly end this waiting question round before handing work to a different selection. */
+  waitingHandoff?: {
+    runId: string; participantId: string; generation: string; requestIds: string[];
+    answers?: Array<{ requestId: string; answer: unknown }>;
+  };
+  /** Explicit recovery of this exact latest run, without a new user message. */
+  continueRunId?: string;
   skipHandoffSummary?: boolean;
   modelAccountId?: string; modelAccountIdentity?: string; modelAccountRevision?: string;
   expectedRevision: string;
@@ -279,6 +318,35 @@ export interface SendDraft {
   attachmentIds?: string[];
   /** Explicit user-authored replacement for the selected history range. */
   handoffSummary?: string;
+}
+export interface PendingSendView {
+  /** Authoritative questions saved before the original native wait is stopped. */
+  waitingQuestions?: PendingRequestView[];
+  id: string;
+  revision: string;
+  state: 'waiting' | 'dispatching' | 'failed';
+  draft: SendDraft;
+  reason: string;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface StartConversationDraft extends Omit<SendDraft, 'expectedRevision'> {
+  cwd?: string;
+  taskId?: string;
+  expectedDraftRevision: string;
+  clientRequestId: string;
+}
+export interface SupplementInput {
+  runId: string;
+  participantId: string;
+  generation: string;
+  clientRequestId: string;
+  text: string;
+  attachmentIds?: string[];
+}
+export interface SupplementResult {
+  conversation: ConversationView;
+  delivery: 'accepted' | 'unknown' | 'rejected';
 }
 export interface SendPreview {
   handoff?: HandoffMaterial;
@@ -313,6 +381,8 @@ export interface ServiceEvent {
   payload: { conversation?: ConversationView; connection?: ConnectionView };
 }
 export interface AgentServiceOptions {
+  /** Other accurately discovered process generations must not be recovered. */
+  generationAlive?: (generation: string) => boolean;
   /** Trusted host profile only; released installations default to manual continuation. */
   autoContinueInterrupted?: boolean;
   modelProviders?: ModelProvider[];
@@ -321,9 +391,12 @@ export interface AgentServiceOptions {
   environment?: Record<string, string | undefined>;
   /** Native program discovery/install port; credentials remain in executor-owned configs. */
   programManager?: AgentProgramManager;
-  /** Host authority: resolve a registered workspace and validate an optional task. */
-  resolveWorkspace(workspaceId: string): Promise<{ rootPath: string }> | { rootPath: string };
-  assertTask(workspaceId: string, taskId: string): Promise<void> | void;
+  /** Product-independent host authority; source identity survives connection replacement. */
+  host?: AgentHostCapabilities;
+  legacySourceId?: string;
+  /** Compatibility for in-memory embedders. New process integrations use host. */
+  resolveWorkspace?(workspaceId: string): Promise<{ rootPath: string }> | { rootPath: string };
+  assertTask?(workspaceId: string, taskId: string): Promise<void> | void;
   now?: () => Date;
   /** Bounded host shutdown; chiefly useful for deterministic lifecycle tests. */
   shutdownTimeoutMs?: number;

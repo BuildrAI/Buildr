@@ -59,9 +59,9 @@
   font:inherit;
   cursor:default;
 }
-.pane-collapsed-count { display:grid; place-items:center; min-width:22px; height:22px; padding:0 4px; border-radius:6px; background:#fff; color:var(--soft-ink); font-size:11px; }
-.pane-collapsed-title { flex:0 1 auto; min-height:0; max-height:calc(100% - 115px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; writing-mode:vertical-rl; font-size:12px; line-height:20px; }
-.pane-collapsed-dirty { flex:none; color:#b47c2d; font-size:10px; line-height:1; }
+.pane-collapsed-count { display:grid; place-items:center; min-width:22px; height:22px; padding:0 4px; border-radius:6px; background:#fff; color:var(--soft-ink); font-size:var(--font-size-meta); }
+.pane-collapsed-title { flex:0 1 auto; min-height:0; max-height:calc(100% - 115px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; writing-mode:vertical-rl; font-size:var(--font-size-body); line-height:20px; }
+.pane-collapsed-dirty { flex:none; color:#b47c2d; font-size:var(--font-size-meta); line-height:1; }
 .workspace-page .pane-stage.unified-collapse > .pane-left,
 .workspace-page .pane-stage.unified-collapse > .pane-right { position:relative; overflow:visible; }
 .workspace-page .pane-stage.unified-collapse > .pane-left > .pane-page-toggle,
@@ -116,8 +116,8 @@
   background:#f4f6f7;
 }
 .pane-restore-actions > .ant-btn { display:inline-flex; align-items:center; gap:6px; height:28px; }
-.pane-restore-count { display:inline-grid; place-items:center; min-width:18px; height:18px; padding-inline:3px; border-radius:5px; background:#fff; color:var(--soft-muted); font-size:11px; }
-.pane-restore-dirty { color:#b47c2d; font-size:10px; }
+.pane-restore-count { display:inline-grid; place-items:center; min-width:18px; height:18px; padding-inline:3px; border-radius:5px; background:#fff; color:var(--soft-muted); font-size:var(--font-size-meta); }
+.pane-restore-dirty { color:#b47c2d; font-size:var(--font-size-meta); }
 .workspace-page .pane-stage.header-collapse.page-collapsed > .pane-right > .pane-tabstrip { right:132px; padding-right:10px; }
 .workspace-pages:has(.workspace-page:not([hidden]) > .pane-stage.header-collapse.reading-collapsed) > .workspace-page-tabs > .workspace-tabstrip { padding-right:156px; }
 .workspace-page .pane-stage.peek-collapse.page-collapsed > .pane-right > .pane-tabstrip { right:0; padding-right:10px; }

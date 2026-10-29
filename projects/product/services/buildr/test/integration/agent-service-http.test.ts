@@ -1,3 +1,6 @@
+import { AGENT_SERVICE_APPLICATION } from '../../src/modules/agent-service/module.ts';
+import { stopAgentProcess } from '@buildr-ai/buildr-agent';
+import { runtimeProvide } from '../../src/bootstrap/runtime.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -14,6 +17,7 @@ import { createAgentServiceHttpContribution } from '../../src/modules/agent-serv
 import { AGENT_SERVICE_HTTP_OPERATIONS } from '../../src/modules/agent-service/interfaces/http/agent-service-http-contracts.ts';
 import { inspectHttpOperationCoverage } from '../../src/web/http/http-operation-coverage.ts';
 import { eventStreamResponse } from '../../src/web/http/responses.ts';
+import { stopOwnedChildProcess } from '../verification/support/owned-process.ts';
 
 test('program preparation is authenticated, schema checked and independently observable/cancellable', { timeout: 30_000 }, async t => {
   const { base, root } = taskRecordFixture(t, 'agent-program-http');
@@ -75,7 +79,7 @@ test('private conversations use authenticated HTTP and bounded binary input; str
   response = await fetch(`${app}/conversations`, {headers:readHeaders}); assert.equal(response.status,200);
   let summaries=await response.json();
   // 已创建但从未发出内容的草稿不进入对话历史。
-  assert.equal(summaries.total,0);assert.deepEqual(summaries.conversations,[]);
+  assert.equal(summaries.total,0);assert.deepEqual(summaries.conversations,[]);assert.deepEqual(summaries.stats.executions,[],'执行组合摘要穿过真实HTTP契约，不被丢弃');
   {
     const store=new DatabaseSync(path.join(base,'agent-profile','agent-service','conversations.sqlite'));
     try{const row=store.prepare('SELECT body FROM conversations WHERE id=?').get(created.id) as {body:string};const record=JSON.parse(row.body);record.view.entries.push({id:'seed-entry',sequence:1,kind:'message',role:'user',text:'started work',createdAt:'2026-10-27T00:00:00Z'});store.prepare('UPDATE conversations SET body=? WHERE id=?').run(JSON.stringify(record),created.id);}finally{store.close();}
@@ -84,11 +88,21 @@ test('private conversations use authenticated HTTP and bounded binary input; str
   summaries=await response.json();assert.equal(summaries.total,1);assert.equal(summaries.conversations[0].id,created.id);assert.deepEqual(summaries.conversations[0].entries,[]);
   response = await fetch(`${app}/conversations?workspaceId=unregistered`, {headers:readHeaders});assert.equal(response.status,404);
   response = await fetch(`${app}/conversations?activeOnly=1`, {headers:readHeaders});assert.equal(response.status,400);
+  response=await fetch(`${app}/conversations?activityState=invalid`,{headers:readHeaders});assert.equal(response.status,400);
+  response=await fetch(`${app}/conversations?activityState=waiting`,{headers:readHeaders});assert.equal(response.status,200);const waitingPage=await response.json();assert.equal(waitingPage.total,0);assert.deepEqual(waitingPage.conversations,[]);assert.equal(typeof waitingPage.activityCounts.attention,'number');
   response = await fetch(`${conversations}/${created.id}/seen`, {method:'POST',headers:{...headers,'x-buildr-session':'invalid'},body:JSON.stringify({through:0})});assert.equal(response.status,403);
   response = await fetch(`${conversations}/${created.id}/seen`, {method:'POST',headers,body:JSON.stringify({through:1})});assert.equal(response.status,409);
   response = await fetch(`${conversations}/${created.id}/seen`, {method:'POST',headers,body:JSON.stringify({through:0})});assert.equal(response.status,200);assert.equal((await response.json()).activity.seenThrough,0);
 
   const permissionDraft = { expectedRevision: created.revision, connectionId: 'not-registered', text: 'Keep this unsent.' };
+  response=await fetch(`${conversations}/${created.id}/pending-send`,{method:'POST',headers:{...headers,'x-buildr-session':'invalid'},body:JSON.stringify({...permissionDraft,clientRequestId:'queued-http'})});assert.equal(response.status,403);
+  response=await fetch(`${conversations}/${created.id}/pending-send`,{method:'POST',headers,body:JSON.stringify({...permissionDraft,clientRequestId:'queued-http',unrecognized:true})});assert.equal(response.status,400);
+  response=await fetch(`${conversations}/${created.id}/pending-send`,{method:'POST',headers,body:JSON.stringify({...permissionDraft,clientRequestId:'queued-http'})});assert.equal(response.status,202);
+  const queued=await response.json();assert.equal(queued.pendingSend.state,'waiting');assert.equal(queued.pendingSend.draft.text,permissionDraft.text);
+  response=await fetch(`${conversations}/${created.id}`,{headers:readHeaders});assert.equal((await response.json()).pendingSend.id,'queued-http');
+  response=await fetch(`${conversations}/${created.id}/cancel-pending-send`,{method:'POST',headers,body:JSON.stringify({expectedPendingRevision:'stale'})});assert.equal(response.status,409);
+  response=await fetch(`${conversations}/${created.id}/cancel-pending-send`,{method:'POST',headers,body:JSON.stringify({expectedPendingRevision:queued.pendingSend.revision})});assert.equal(response.status,200);assert.equal((await response.json()).pendingSend,undefined);
+  response=await fetch(`${conversations}/${created.id}/pending-send`,{method:'POST',headers,body:JSON.stringify({...permissionDraft,clientRequestId:'queued-http'})});assert.equal(response.status,202);assert.equal((await response.json()).pendingSend,undefined);
   for (const permissionMode of ['always-approve', true, null]) {
     response = await fetch(`${conversations}/${created.id}/prepare-send`, { method: 'POST', headers, body: JSON.stringify({ ...permissionDraft, permissionMode }) });
     assert.equal(response.status, 400, 'unsupported permission values must fail before any native effect');
@@ -120,6 +134,11 @@ test('private conversations use authenticated HTTP and bounded binary input; str
   const attachment = await response.json() as { id: string; revision: string };
   response = await fetch(`${conversations}/${created.id}/attachments/${attachment.id}`); assert.equal(response.status, 403);
   response = await fetch(`${conversations}/${created.id}/attachments/${attachment.id}`, { headers: readHeaders }); assert.equal(response.status, 200); assert.deepEqual(Buffer.from(await response.arrayBuffer()), png);
+  const videoBytes=Buffer.alloc(9*1024*1024);Buffer.from('000000186674797069736f6d0000020069736f6d69736f32','hex').copy(videoBytes);
+  const videoHeaders={origin:url,...readHeaders,'content-type':'video/mp4','x-buildr-conversation-revision':attachment.revision,'x-buildr-video':JSON.stringify({duration:2,frames:[{id:attachment.id,time:0}]})};
+  response=await fetch(`${conversations}/${created.id}/attachments`,{method:'POST',headers:{...videoHeaders,'x-buildr-session':'invalid'},body:videoBytes});assert.equal(response.status,403);
+  response=await fetch(`${conversations}/${created.id}/attachments`,{method:'POST',headers:videoHeaders,body:videoBytes});assert.equal(response.status,201);const video=await response.json();attachment.revision=video.revision;
+  response=await fetch(`${conversations}/${created.id}/attachments/${video.id}`,{headers:readHeaders});assert.equal(response.status,200);assert.equal(response.headers.get('content-type'),'video/mp4');assert.deepEqual(Buffer.from(await response.arrayBuffer()),videoBytes);
   response = await fetch(`${conversations}/${created.id}/prepare-send`, { method: 'POST', headers, body: JSON.stringify({ expectedRevision: attachment.revision, connectionId: 'not-registered', text: 'x'.repeat(129 * 1024) }) }); assert.equal(response.status, 413);
   response = await fetch(`${conversations}?hidden=true&query=updated`, { headers: readHeaders }); assert.equal(response.status, 200); assert.equal((await response.json()).conversations.length, 1);
   response = await fetch(`${conversations}/${created.id}`, { method: 'PATCH', headers, body: JSON.stringify({ expectedRevision: attachment.revision, taskId: 'task-http' }) }); assert.equal(response.status, 200);
@@ -174,11 +193,11 @@ test('model account HTTP preserves authentication, revisions, source identity an
   response=await fetch(endpoint+'/'+created.id+'/login-attempts/'+login.loginAttempt.id+'/cancel',{method:'POST',headers,body:JSON.stringify({expectedRevision:login.revision})});assert.equal(response.status,200);const cancelled=await response.json();assert.equal(cancelled.loginAttempt.state,'cancelled');
 });
 
-test('model selection HTTP waits for refreshed account revisions while other reads remain available', {timeout:30000},async t=>{
+test('model selection HTTP returns the local snapshot without waiting for external account checks', {timeout:30000},async t=>{
   const {base,root}=taskRecordFixture(t,'model-catalog-current-http');
   const service=createAgentService({dataRoot:path.join(base,'profile'),executors:[],modelProviders:[{id:'fixture',label:'Fixture',async open(){return{protocol:'chat-completions',async inspect(){return{status:'ready',models:[{id:'model',label:'Model',images:false,tools:true}]};},async beginLogin(){},async cancelLogin(){},async infer(){return assert.fail('catalog must not infer');},async close(){}};}}],resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
   const added=await service.models.accounts.add({provider:'fixture'});await service.models.accounts.check(added.id);
-  const list=service.models.catalog.list,cached=await list(),updated=await service.models.accounts.check(added.id);
+  const list=service.models.catalog.list,cached=await list();
   let release!:()=>void,started!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;}),reading=new Promise<void>(resolve=>{started=resolve;});
   // The discovery boundary offers a quick cached read or its current refresh.
   service.models.catalog.list=async(input={})=>{started();if(input.refresh===false)return cached;await gate;return list();};
@@ -187,8 +206,9 @@ test('model selection HTTP waits for refreshed account revisions while other rea
   t.after(async()=>{release();await service.close();server.server.closeAllConnections();await new Promise<void>(resolve=>server.server.close(()=>resolve()));});
   const pending=fetch(url+'/api/v1/app/agent-service/model-catalog',{headers});await reading;
   assert.equal((await fetch(url+'/api/v1/app/agent-service/connections',{headers})).status,200);
-  release();const response=await pending;assert.equal(response.status,200);
-  assert.equal((await response.json()).models[0].accountRevision,updated.revision);
+  const response=await pending;assert.equal(response.status,200);
+  assert.equal((await response.json()).models[0].accountRevision,cached.models[0].accountRevision);
+  release();
 });
 
 test('model preferences enforce authentication, revision and context limits', {timeout:30000},async t=>{
@@ -252,7 +272,10 @@ test('the real web CLI discovers host interruptions on listening without a brows
   db.prepare('UPDATE conversations SET body=? WHERE id=?').run(JSON.stringify(record),conversation.id);db.close();
   const child=spawn(process.execPath,[path.resolve('bin/buildr.mjs'),'web','--port','0','--no-open'],{env:{...process.env,BUILDR_APP_DATA_DIR:dataRoot},stdio:['ignore','pipe','pipe']});
   let output='';child.stdout.on('data',chunk=>{output+=chunk});child.stderr.on('data',chunk=>{output+=chunk});
-  t.after(async()=>{if(child.exitCode===null){child.kill('SIGTERM');await new Promise<void>(resolve=>child.once('exit',()=>resolve()));}});
+  t.after(async()=>{
+    try { await stopOwnedChildProcess(child); }
+    finally { await stopAgentProcess({dataRoot}).catch(error=>{if(error.code!=='agent_process_stop_unconfirmed')throw error;}); }
+  });
   const end=Date.now()+20_000;let diagnostic='before-startup';
   while(Date.now()<end){
     const read=new DatabaseSync(filename,{readOnly:true});
@@ -262,11 +285,13 @@ test('the real web CLI discovers host interruptions on listening without a brows
     if(diagnostic!=='before-startup')break;
     assert.equal(child.exitCode,null,output);await new Promise(resolve=>setTimeout(resolve,50));
   }
-  assert.match(diagnostic,/执行未完成.*尚不能确认/,output);
+  const startupLog=path.join(dataRoot,'agent-service/process/startup.log');
+  assert.match(diagnostic,/执行未完成.*尚不能确认/,JSON.stringify({output,startupLog:fs.existsSync(startupLog)?fs.readFileSync(startupLog,'utf8').slice(-6000):null}));
 });
 
 
 test('default conversations use a stable application directory without a registered workspace', async t => {
+  t.after(async()=>{await runtimeProvide(runtime,AGENT_SERVICE_APPLICATION).close();await stopAgentProcess({dataRoot:path.join(base,'private-app')});});
   const { base, root } = taskRecordFixture(t, 'agent-default-http');
   const previous = process.env.BUILDR_APP_DATA_DIR;
   process.env.BUILDR_APP_DATA_DIR = path.join(base, 'private-app');
@@ -336,4 +361,66 @@ test('changing the default workspace only affects new conversations and preserve
   assert.equal(newChat.cwd, fs.realpathSync(newRoot));
   assert.equal(fs.readFileSync(path.join(root, 'existing.txt'), 'utf8'), 'original work');
   assert.equal(fs.readFileSync(path.join(newRoot, 'existing.txt'), 'utf8'), 'new workspace work');
+});
+
+
+test('live text and image input uses exact admission identity while stop remains independent', {timeout:15000},async t=>{
+ const {base,root}=taskRecordFixture(t,'agent-live-http');let workspaceId='',emit:any,finish!:()=>void,admit!:()=>void,admissionStarted!:()=>void;
+ const ending=new Promise<void>(resolve=>{finish=resolve;}),admission=new Promise<void>(resolve=>{admit=resolve;}),started=new Promise<void>(resolve=>{admissionStarted=resolve;});let supplements=0;
+ const capabilities={supplement:true,text:true,images:true,approval:true,questions:true,stop:true,resume:true,maxInputBytes:65536};
+ const service=createAgentService({dataRoot:path.join(base,'profile'),modelProviders:[],executors:[{descriptor:{id:'fixture',label:'Fixture',capabilities},async open(){return{
+  bindingIdentity:'fixture-binding',capabilities,inspectAccount:async()=>({status:'ready' as const}),models:async()=>[{id:'fixture-model',label:'Fixture model',isDefault:true}],beginLogin:async()=>{},cancelLogin:async()=>{},createContext:async()=>({id:'context'}),resumeContext:async()=>{},readHistory:async()=>[],
+  async send(input:any){emit=input.onEvent;emit({type:'accepted',executionRef:{id:'native-run'},inputItemId:input.clientRequestId});await ending;},
+  async supplement(input:any){supplements++;admissionStarted();await admission;emit({type:'item',item:{id:input.clientRequestId,clientRequestId:input.clientRequestId,kind:'message',role:'user',text:input.text,executionId:'native-run'}});return{executionRef:input.executionRef,inputItemId:input.clientRequestId};},
+  observe:async()=>({status:'running' as const,executionRef:{id:'native-run'},tools:[]}),reply:async()=>{},stop:async()=>{finish();return{status:'stopped' as const,tools:[]};},close:async()=>{finish();admit();},
+ };}}],resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
+ await service.connections.connect('fixture',{expectedRevision:'unconfigured'});
+ const runtime=createRuntime(),contributions=runtimeContributions(runtime,'http').filter((item:{id:string})=>item.id!=='agent-service.http');contributions.push(createAgentServiceHttpContribution(()=>service));
+ const server=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions}),ready=await server.ready;workspaceId=ready.initialWorkspaceId;
+ t.after(async()=>{admit();finish();await service.close();server.server.closeAllConnections();await new Promise<void>(resolve=>server.server.close(()=>resolve()));});
+ const headers={origin:ready.url,'x-buildr-session':ready.sessionToken,'content-type':'application/json'},endpoint=`${ready.url}/api/v1/workspaces/${workspaceId}/agent-conversations`;
+ let response=await fetch(endpoint,{method:'POST',headers,body:'{}'});const created=await response.json();
+ const draft={expectedRevision:created.revision,connectionId:'fixture',text:'initial'},preview=service.conversations.prepareSend(workspaceId,created.id,draft);
+ response=await fetch(endpoint+'/'+created.id+'/send',{method:'POST',headers,body:JSON.stringify({...draft,previewToken:preview.token,clientRequestId:'initial-client'})});assert.equal(response.status,202);
+ for(let n=0;n<100&&!service.conversations.read(workspaceId,created.id).run?.accepted;n++)await new Promise(resolve=>setTimeout(resolve,2));
+ const before=service.conversations.read(workspaceId,created.id),run=before.run!;
+ emit({type:'item',item:{id:'live-note',kind:'message',role:'assistant',text:'concurrent text',executionId:'native-run'}});
+ const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==','base64');
+ response=await fetch(endpoint+'/'+created.id+'/attachments',{method:'POST',headers:{origin:ready.url,'x-buildr-session':ready.sessionToken,'content-type':'image/png','x-buildr-attachment-revision':before.attachmentRevision!},body:png});assert.equal(response.status,201);const image=await response.json();assert.ok(image.attachmentRevision);
+ const input={runId:run.id,participantId:run.participantId,generation:run.generation,text:'',attachmentIds:[image.id],clientRequestId:'image-client'},supplementUrl=endpoint+'/'+created.id+'/supplement';
+ assert.equal((await fetch(supplementUrl,{method:'POST',body:JSON.stringify(input)})).status,403);
+ assert.equal((await fetch(supplementUrl,{method:'POST',headers,body:JSON.stringify({...input,untrusted:true})})).status,400);
+ assert.equal((await fetch(supplementUrl,{method:'POST',headers,body:JSON.stringify({...input,runId:'other'})})).status,409);
+ const pending=fetch(supplementUrl,{method:'POST',headers,body:JSON.stringify(input)});await started;
+ const current=service.conversations.read(workspaceId,created.id);
+ response=await fetch(endpoint+'/'+created.id+'/stop',{method:'POST',headers,body:JSON.stringify({expectedRevision:current.revision,runId:run.id,participantId:run.participantId,generation:run.generation})});assert.equal(response.status,200);assert.equal((await response.json()).run.status,'stopped');
+ admit();response=await pending;assert.equal(response.status,202);const receipt=await response.json();assert.equal(receipt.delivery,'accepted');assert.equal(receipt.conversation.run.status,'stopped');assert.ok(receipt.conversation.entries.some((entry:any)=>entry.text==='concurrent text'));
+ response=await fetch(supplementUrl,{method:'POST',headers,body:JSON.stringify(input)});assert.equal((await response.json()).delivery,'accepted');assert.equal(supplements,1);
+});
+
+test('draft image HTTP is authenticated and never creates a conversation or binds a workspace',async t=>{
+  const {base,root}=taskRecordFixture(t,'draft-image-http');
+  const previous=process.env.BUILDR_APP_DATA_DIR;process.env.BUILDR_APP_DATA_DIR=path.join(base,'private-app');
+  t.after(()=>{if(previous===undefined)delete process.env.BUILDR_APP_DATA_DIR;else process.env.BUILDR_APP_DATA_DIR=previous;});
+  const runtime=createRuntime(),service=createAgentService({dataRoot:path.join(base,'agent-profile'),executors:[],resolveWorkspace:()=>assert.fail('image staging must not resolve a workspace')});
+  const contributions=runtimeContributions(runtime,'http').filter((item:{id:string})=>item.id!=='agent-service.http');contributions.push(createAgentServiceHttpContribution(()=>service));
+  const server=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions}),{url,sessionToken}=await server.ready;
+  t.after(async()=>{await service.close();server.server.closeAllConnections();await new Promise<void>(resolve=>server.server.close(()=>resolve()));});
+  const draftId='9eab19bd-94b9-4cfa-93d0-1d277715737f',endpoint=url+'/api/v1/app/agent-service/conversations/drafts/'+draftId,readHeaders={'x-buildr-session':sessionToken};
+  let response=await fetch(endpoint);assert.equal(response.status,403);
+  response=await fetch(endpoint,{headers:readHeaders});assert.equal(response.status,200);const empty=await response.json();assert.deepEqual(empty.images,[]);
+  const png=Buffer.from([137,80,78,71,13,10,26,10]),headers={...readHeaders,origin:url,'content-type':'image/png','x-buildr-draft-revision':empty.revision,'x-buildr-image-name':encodeURIComponent('截图.png')};
+  response=await fetch(endpoint+'/attachments',{method:'POST',headers:{...headers,'x-buildr-session':'wrong'},body:png});assert.equal(response.status,403);
+  response=await fetch(endpoint+'/attachments',{method:'POST',headers,body:png});assert.equal(response.status,201);const saved=await response.json();assert.equal(saved.images[0].name,'截图.png');
+  assert.equal(fs.existsSync(path.join(base,'agent-profile/agent-service/conversations.sqlite')),false);
+  response=await fetch(endpoint+'/attachments/'+saved.images[0].id,{headers:readHeaders});assert.equal(response.status,200);assert.deepEqual(Buffer.from(await response.arrayBuffer()),png);
+  response=await fetch(endpoint+'/attachments/'+saved.images[0].id,{method:'DELETE',headers:{...readHeaders,origin:url,'content-type':'application/json'},body:JSON.stringify({expectedRevision:empty.revision})});assert.equal(response.status,409);
+  response=await fetch(endpoint+'/attachments/'+saved.images[0].id,{method:'DELETE',headers:{...readHeaders,origin:url,'content-type':'application/json'},body:JSON.stringify({expectedRevision:saved.revision})});assert.equal(response.status,200);assert.deepEqual((await response.json()).images,[]);
+  response=await fetch(endpoint,{headers:readHeaders});const cleared=await response.json();
+  response=await fetch(endpoint+'/attachments',{method:'POST',headers:{...headers,'x-buildr-draft-revision':cleared.revision,'x-buildr-frame':'true'},body:png});assert.equal(response.status,201);const frame=await response.json();assert.equal(frame.images[0].frame,true);
+  const recording=Buffer.from('000000186674797069736f6d0000020069736f6d69736f32','hex');
+  response=await fetch(endpoint+'/attachments',{method:'POST',headers:{...headers,'content-type':'video/mp4','x-buildr-image-name':'recording.mp4','x-buildr-draft-revision':frame.revision,'x-buildr-video':JSON.stringify({duration:2,frames:[{id:frame.images[0].id,time:0}]})},body:recording});assert.equal(response.status,201);const video=await response.json(),original=video.images.find((image:any)=>image.video);assert.ok(original);
+  response=await fetch(endpoint+'/attachments/'+original.id,{headers:readHeaders});assert.equal(response.status,200);assert.equal(response.headers.get('content-type'),'video/mp4');assert.deepEqual(Buffer.from(await response.arrayBuffer()),recording);
+  response=await fetch(endpoint+'/attachments/'+original.id,{method:'DELETE',headers:{...readHeaders,origin:url,'content-type':'application/json'},body:JSON.stringify({expectedRevision:video.revision})});assert.equal(response.status,200);assert.deepEqual((await response.json()).images,[]);
+  assert.equal(fs.existsSync(path.join(base,'agent-profile/agent-service/conversations.sqlite')),false);
 });

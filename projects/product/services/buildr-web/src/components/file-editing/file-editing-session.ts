@@ -17,7 +17,7 @@ const protectedRanges = StateField.define<Range[]>({
 });
 
 const editorTheme = EditorView.theme({
-  '&': { height: '100%', fontSize: '13px', backgroundColor: 'var(--ant-color-bg-container, #fff)' },
+  '&': { height: '100%', fontSize: 'var(--font-size-code)', backgroundColor: 'var(--ant-color-bg-container, #fff)' },
   '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', lineHeight: '1.8', overflow: 'auto' },
   '.cm-content': { padding: '14px 0', minHeight: '100%' },
   '.cm-line': { padding: '0 16px' },

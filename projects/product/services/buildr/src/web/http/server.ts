@@ -3,6 +3,7 @@ import http from 'node:http';
 import process from 'node:process';
 
 import { spawnBuildrWebRestartSuccessor } from '../application/restart-web-handoff.ts';
+import { createWebRestartControl } from '../application/restart-control.ts';
 import { createBoundedBuildrWebReadExecutor } from './read-executor.ts';
 import { createBoundedBuildrWebWriteExecutor } from './write-executor.ts';
 import { apiError } from './responses.ts';
@@ -20,6 +21,7 @@ export function createLocalWorkspaceServer(runtime: any, {
   onShutdown = null,
   beforeShutdown = null,
   spawnSuccessor = null,
+  restartTimeoutMs = 30_000,
   readExecutor = null,
   writeExecutor = null,
   httpContributions = runtime.__bootstrapContributions?.('http') || [],
@@ -46,12 +48,13 @@ export function createLocalWorkspaceServer(runtime: any, {
   const healthSecret = instanceSecret || crypto.randomBytes(32).toString('hex');
   let origin: any = null;
   let closing = false;
-  let restartRequested = false;
+  const restartControl = createWebRestartControl(() => closing, { timeoutMs: restartTimeoutMs });
   let routeRequest: any = null;
   let shutdownPromise: Promise<void> | null = null;
   let resourceShutdown: Promise<void> | null = null;
 
   function closeResources(): Promise<void> {
+    restartControl.dispose();
     resourceShutdown ||= Promise.resolve().then(() => beforeShutdown?.());
     return resourceShutdown;
   }
@@ -111,12 +114,14 @@ export function createLocalWorkspaceServer(runtime: any, {
       closing = true;
       setImmediate(() => { void shutdown().catch(error => { console.error('Buildr Web resource shutdown failed:', error); process.exitCode = 1; }); });
     },
-    restartRequested: () => restartRequested,
+    restartRequested: restartControl.inProgress,
+    restartStatus: restartControl.status,
+    permitsRestartShutdown: restartControl.permitsShutdown,
     restart: () => {
       // A restart keeps health 'ready': the successor must be able to confirm
       // this instance through its authenticated health proof until quit-instance.
       // Only the restart action itself is gated here.
-      restartRequested = true;
+      const attemptToken = restartControl.begin();
       setImmediate(() => {
         try {
           launchSuccessor({
@@ -126,9 +131,11 @@ export function createLocalWorkspaceServer(runtime: any, {
             launcherIdentity,
             productIdentity,
             webProfile,
-          });
+          }, { attemptToken, onFailure: (error: { code: string; message: string }) => restartControl.fail(attemptToken, error) });
         } catch (error) {
           console.error('Buildr Web restart successor did not start:', error);
+          const details = error as { code?: string; message?: string };
+          restartControl.fail(attemptToken, { code: details?.code || 'web_restart_process_failed', message: details?.message || String(error) });
         }
       });
     },

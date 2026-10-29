@@ -619,7 +619,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/nacos-connection-skill.test.ts',
     'test/integration/retired-connections.test.ts',
     'test/integration/xxl-job-connection-skill.test.ts',
-  ], { schedulingCostMs: 5000, timeoutMs: 240_000, args: ['--test-concurrency=3'] }),
+  ], { schedulingCostMs: 5000, timeoutMs: 300_000, args: ['--test-concurrency=3'] }),
   // This scenario spawns dozens of real CLI processes. Keep it isolated from
   // the heavier authoring scenario so one worker covers its actual runtime.
   integrationSlice('integration-connections-cli', [
@@ -637,6 +637,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/standard-runtime-projection.test.ts',
   ], { schedulingCostMs: 4000, args: ['--test-concurrency=2'] }),
   integrationSlice('integration-runtime', [
+    'test/integration/development-workspace-refresh.test.ts',
     'test/integration/buildr-web-read-executor.test.ts',
     'test/integration/buildr-web-write-executor.test.ts',
     'test/integration/buildr-web-runtime.test.ts',
@@ -707,6 +708,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
   ], { schedulingCostMs: 2000, args: ['--test-concurrency=1'] }),
   integrationSlice('integration-self-bootstrap', [
     'test/integration/self-bootstrap-closeout.test.ts',
+    'test/integration/development-web-continuity.test.ts',
   ], { schedulingCostMs: 50000, resources: ['workspace-saturating'], args: ['--test-concurrency=1'] }),
   integrationSlice('integration-task-read-models', [
     'test/integration/task-review-repository.test.ts',
@@ -911,7 +913,13 @@ const browserSteps = BROWSER_SELECTORS.map((selector: string) => Object.freeze({
   executor: { type: 'node', file: 'test/verification/browser-selector-dispatcher.ts', args: ['--selector', selector, '--run'], discoveredFiles: selector === 'core' ? ['test/e2e/buildr-web-browser.test.ts'] : [] },
   ...(browserSchedulingCostMs[selector] ? { schedulingCostMs: browserSchedulingCostMs[selector] } : {}),
   timeoutMs: selector === 'code' ? 1_300_000 : 600_000, concurrencyClass: 'workspace-heavy', resources: ['browser-runtime'],
-  isolationMode: 'full-lifecycle', resetStrategy: 'recreate', parallelSafety: 'bounded', resourceDemand: { workers: 1, processes: 1, workspaceIo: 1 },
+  // Conversation workers acquire browser-runtime individually in the dispatcher.
+  // The parent must not hold a slot while waiting for its own child workers.
+  ...(selector === 'agent-conversations' ? { resourceClaims: [] } : {}),
+  isolationMode: 'full-lifecycle', resetStrategy: 'recreate', parallelSafety: 'bounded',
+  resourceDemand: selector === 'agent-conversations'
+    ? { workers: 2, processes: 2, workspaceIo: 2 }
+    : { workers: 1, processes: 1, workspaceIo: 1 },
   reuse: false,
   testing: { ownerScope: 'project:product', primaryIntent: 'Development', executionBoundary: 'E2E', primaryEvidenceOwner: `e2e-browser:${selector}`,
     proves: `The ${selector} user journey works through the real hosted frontend and backend.`,

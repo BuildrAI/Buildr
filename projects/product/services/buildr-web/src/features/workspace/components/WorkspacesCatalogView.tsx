@@ -82,6 +82,7 @@ export function WorkspacesCatalogView({
           </div>
           <h2>{entry.workspace?.name || '不可用的工作空间'}</h2>
           <p className="workspace-description">{entry.workspace?.description || entry.error?.message || '无法读取工作空间信息。'}</p>
+          {entry.workspace?.description && entry.error?.message ? <p className="workspace-description"><Typography.Text type="warning">{entry.error.message}</Typography.Text></p> : null}
           <p className="mono workspace-root">{entry.rootPath}</p>
           <span className="workspace-open-label">进入工作空间{' '}<span aria-hidden="true">→</span></span>
         </>;

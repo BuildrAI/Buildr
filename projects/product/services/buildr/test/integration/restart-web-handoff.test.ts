@@ -21,11 +21,15 @@ function developmentIdentity() {
 
 function restartLifecycleFixture(t: any) {
   const previousRoot = process.env.BUILDR_APP_DATA_DIR;
+  const previousAttempt = process.env.BUILDR_WEB_RESTART_ATTEMPT;
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'restart-handoff-'));
   process.env.BUILDR_APP_DATA_DIR = root;
+  process.env.BUILDR_WEB_RESTART_ATTEMPT = 'fixture-private-attempt';
   t.after(() => {
     if (previousRoot === undefined) delete process.env.BUILDR_APP_DATA_DIR;
     else process.env.BUILDR_APP_DATA_DIR = previousRoot;
+    if (previousAttempt === undefined) delete process.env.BUILDR_WEB_RESTART_ATTEMPT;
+    else process.env.BUILDR_WEB_RESTART_ATTEMPT = previousAttempt;
     fs.rmSync(root, { recursive: true, force: true });
   });
   const identity = developmentIdentity();
@@ -33,10 +37,10 @@ function restartLifecycleFixture(t: any) {
   const receiptFile = path.join(webProfile.dataRoot, 'instance.json');
   const previous = {
     pid: process.pid - 1, url: 'http://127.0.0.1:4499/', secret: 'old-secret',
-    launcherIdentity: null, productIdentity: identity, webProfile,
+    launcherIdentity: null as Record<string, unknown> | null, productIdentity: identity, webProfile,
   };
   fs.writeFileSync(receiptFile, JSON.stringify({ schemaVersion: 'buildr.local-app-instance/v2', ...previous }));
-  const calls: any = { npmOwnership: 0, shutdown: 0, servers: [] };
+  const calls: any = { npmOwnership: 0, shutdown: 0, shutdownHeaders: [], servers: [] };
   const runtime: any = {
     assertNoUnknownOptions() {},
     optionValue: (args: string[], name: string, fallback: any) => args.includes(name) ? args[args.indexOf(name) + 1] : fallback,
@@ -71,6 +75,7 @@ function restartLifecycleFixture(t: any) {
     const url = String(input?.url || input);
     if (url.endsWith('/api/v1/app/quit-instance')) {
       calls.shutdown += 1;
+      calls.shutdownHeaders.push(init.headers);
       fs.rmSync(receiptFile, { force: true });
       return new Response(JSON.stringify({ status: 'stopping' }), { status: 202 });
     }
@@ -95,6 +100,83 @@ test('--restart 拒绝非法摘要、--target 与摘要漂移，npm 归属核验
   await assert.rejects(f.runtime.startBuildrWeb(['--restart', buildrWebInstanceObservationDigest(f.previous), '--target', '/tmp/x']), /同身份重启/);
   await assert.rejects(f.runtime.startBuildrWeb(['--restart', 'sha256-' + '0'.repeat(64)]), { code: 'web_update_instance_changed' });
   assert.equal(f.calls.npmOwnership, 0);
+  assert.equal(f.calls.servers.length, 0);
+});
+
+test('--restart inherits the authenticated launcher snapshot even when its identity file changes', async t => {
+  const f = restartLifecycleFixture(t);
+  const launcher = {
+    schemaVersion: 'buildr.launcher-identity/v1', protocolVersion: 1, protocolIdentity: f.identity.protocolIdentity,
+    channel: 'development', source: 'checkout', sourceRoot: '/source/checkout',
+    developmentRuntime: { executable: '/dev/node' }, checkout: { head: 'old-verified' },
+  };
+  f.previous.launcherIdentity = launcher;
+  fs.writeFileSync(f.receiptFile, JSON.stringify({ schemaVersion: 'buildr.local-app-instance/v2', ...f.previous }));
+  const identityFile = path.join(f.webProfile.dataRoot, 'launcher-identity.json');
+  fs.writeFileSync(identityFile, JSON.stringify({ ...launcher, sourceRoot: '/different/unverified', checkout: { head: 'later-install' } }));
+  const beforeLauncher = process.env.BUILDR_LAUNCHER_IDENTITY;
+  const beforeAttempt = process.env.BUILDR_WEB_RESTART_ATTEMPT;
+  process.env.BUILDR_LAUNCHER_IDENTITY = identityFile;
+  process.env.BUILDR_WEB_RESTART_ATTEMPT = 'one-use-private-attempt';
+  t.after(() => {
+    if (beforeLauncher === undefined) delete process.env.BUILDR_LAUNCHER_IDENTITY;
+    else process.env.BUILDR_LAUNCHER_IDENTITY = beforeLauncher;
+    if (beforeAttempt === undefined) delete process.env.BUILDR_WEB_RESTART_ATTEMPT;
+    else process.env.BUILDR_WEB_RESTART_ATTEMPT = beforeAttempt;
+  });
+  await f.runtime.startBuildrWeb(['--restart', buildrWebInstanceObservationDigest(f.previous), '--port', '4499']);
+  const receipt = JSON.parse(fs.readFileSync(f.receiptFile, 'utf8'));
+  assert.deepEqual(receipt.launcherIdentity, launcher);
+  assert.deepEqual(f.calls.servers[0].launcherIdentity, launcher);
+  assert.equal(f.calls.shutdownHeaders[0]['x-buildr-restart-attempt'], 'one-use-private-attempt');
+  assert.equal(process.env.BUILDR_WEB_RESTART_ATTEMPT, undefined);
+  assert.equal(JSON.stringify(receipt).includes('one-use-private-attempt'), false);
+});
+
+test('--restart rejects a launcher snapshot from another source before stopping the old host', async t => {
+  const f = restartLifecycleFixture(t);
+  f.previous.launcherIdentity = { protocolVersion: 1, channel: 'development', sourceRoot: '/other', developmentRuntime: { executable: '/dev/node' } };
+  fs.writeFileSync(f.receiptFile, JSON.stringify({ schemaVersion: 'buildr.local-app-instance/v2', ...f.previous }));
+  await assert.rejects(f.runtime.startBuildrWeb(['--restart', buildrWebInstanceObservationDigest(f.previous)]), { code: 'web_launcher_profile_mismatch' });
+  assert.equal(f.calls.shutdown, 0);
+  assert.equal(f.calls.servers.length, 0);
+});
+
+test('--restart rechecks the launcher snapshot inside the start lock before authenticated shutdown', async t => {
+  const f = restartLifecycleFixture(t);
+  const originalFetch = globalThis.fetch;
+  let observations = 0;
+  t.mock.method(globalThis, 'fetch', async (...args: Parameters<typeof fetch>) => {
+    const response = await originalFetch(...args);
+    if (String(args[0]).endsWith('/api/v1/health') && ++observations === 1) {
+      fs.writeFileSync(f.receiptFile, JSON.stringify({ schemaVersion: 'buildr.local-app-instance/v2', ...f.previous, launcherIdentity: { protocolVersion: 1, channel: 'changed' } }));
+    }
+    return response;
+  });
+  await assert.rejects(f.runtime.startBuildrWeb(['--restart', buildrWebInstanceObservationDigest(f.previous)]), { code: 'web_update_instance_changed' });
+  assert.equal(f.calls.shutdown, 0);
+  assert.equal(f.calls.servers.length, 0);
+});
+
+test('a delayed private restart successor cannot create a host after its observed predecessor disappeared', async t => {
+  const f = restartLifecycleFixture(t);
+  fs.rmSync(f.receiptFile);
+  const previousAttempt = process.env.BUILDR_WEB_RESTART_ATTEMPT;
+  process.env.BUILDR_WEB_RESTART_ATTEMPT = 'delayed-attempt';
+  t.after(() => {
+    if (previousAttempt === undefined) delete process.env.BUILDR_WEB_RESTART_ATTEMPT;
+    else process.env.BUILDR_WEB_RESTART_ATTEMPT = previousAttempt;
+  });
+  await assert.rejects(f.runtime.startBuildrWeb(['--restart', buildrWebInstanceObservationDigest(f.previous)]), { code: 'web_update_instance_unconfirmed' });
+  assert.equal(f.calls.shutdown, 0);
+  assert.equal(f.calls.servers.length, 0);
+});
+
+test('--restart cannot fall back to ordinary authenticated shutdown without its private attempt token', async t => {
+  const f = restartLifecycleFixture(t);
+  delete process.env.BUILDR_WEB_RESTART_ATTEMPT;
+  await assert.rejects(f.runtime.startBuildrWeb(['--restart', buildrWebInstanceObservationDigest(f.previous)]), { code: 'web_restart_attempt_missing' });
+  assert.equal(f.calls.shutdown, 0);
   assert.equal(f.calls.servers.length, 0);
 });
 

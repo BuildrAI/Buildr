@@ -1,20 +1,25 @@
 #!/usr/bin/env node
 
-import { writeWorkbenchDto } from '../codegen/contracts/workbench-dto.ts';
 
 import path from 'node:path';
 import process from 'node:process';
+import { spawnSync } from 'node:child_process';
 
-import { writeRuntimeSystemDto } from '../codegen/contracts/runtime-system-dto.ts';
-import { writeTaskProfessionalHttpDto } from '../codegen/contracts/task-professional-dto.ts';
-import { writeTaskRecordHttpDto } from '../codegen/contracts/task-dto.ts';
-import { writeWorkspaceAgentAssetsDtos } from '../codegen/contracts/workspace-agent-assets-dto.ts';
 import { buildWebDist } from '../build/web-dist.ts';
 import { prepareDevelopmentAgent } from './prepare-development-agent.ts';
 
 const serviceRoot = path.resolve(import.meta.dirname, '../..');
 
 export async function generateDevelopmentWebDtos(): Promise<string[]> {
+  // Importing HTTP catalogs can dereference newly added Agent schemas. Do not
+  // load any writer until the prepared package is available in this process.
+  const [{writeWorkbenchDto},{writeRuntimeSystemDto},{writeTaskProfessionalHttpDto},{writeTaskRecordHttpDto},{writeWorkspaceAgentAssetsDtos}] = await Promise.all([
+    import('../codegen/contracts/workbench-dto.ts'),
+    import('../codegen/contracts/runtime-system-dto.ts'),
+    import('../codegen/contracts/task-professional-dto.ts'),
+    import('../codegen/contracts/task-dto.ts'),
+    import('../codegen/contracts/workspace-agent-assets-dto.ts'),
+  ]);
   const outputs = [
     ...await writeTaskRecordHttpDto(),
     ...await writeWorkbenchDto(),
@@ -25,9 +30,20 @@ export async function generateDevelopmentWebDtos(): Promise<string[]> {
   return outputs.map((file) => path.resolve(file)).sort();
 }
 
+async function generateFreshDevelopmentWebDtos(): Promise<string[]> {
+  // The launcher may already have loaded the previous Agent package. A fresh
+  // process must resolve its public schemas after preparation replaces it.
+  const result = spawnSync(process.execPath, [import.meta.filename, '--generate-dtos'], {
+    cwd: serviceRoot, encoding: 'utf8', env: process.env,
+  });
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(`development_web_dto_generation_failed: ${(result.stderr || result.stdout).trim()}`);
+  return JSON.parse(result.stdout) as string[];
+}
+
 export async function prepareDevelopmentWeb({
   outputRoot = path.join(serviceRoot, 'web-dist'),
-  generateDtos = generateDevelopmentWebDtos,
+  generateDtos = generateFreshDevelopmentWebDtos,
   build = buildWebDist,
   prepareAgent = prepareDevelopmentAgent,
 }: {
@@ -56,6 +72,10 @@ function option(args: string[], name: string, fallback: string): string {
 }
 
 async function main(args = process.argv.slice(2)): Promise<void> {
+  if (args.includes('--generate-dtos')) {
+    process.stdout.write(`${JSON.stringify(await generateDevelopmentWebDtos())}\n`);
+    return;
+  }
   const result = await prepareDevelopmentWeb({ outputRoot: option(args, '--output', path.join(serviceRoot, 'web-dist')) });
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }

@@ -7,6 +7,18 @@ import { withExclusiveFileLock } from '../../src/infrastructure/filesystem/exclu
 
 const buildrRoot = path.resolve(import.meta.dirname, '../..');
 
+function sameRuntimeTree(left: string, right: string): boolean {
+  const expected = fs.lstatSync(left);
+  const current = fs.lstatSync(right, { throwIfNoEntry: false });
+  if (!current || expected.isSymbolicLink() || current.isSymbolicLink()
+    || expected.isDirectory() !== current.isDirectory() || (expected.mode & 0o777) !== (current.mode & 0o777)) return false;
+  if (expected.isFile()) return current.isFile() && expected.size === current.size && fs.readFileSync(left).equals(fs.readFileSync(right));
+  if (!expected.isDirectory()) return false;
+  const names = fs.readdirSync(left).sort(), existing = fs.readdirSync(right).sort();
+  return names.length === existing.length && names.every((name, index) => name === existing[index]
+    && sameRuntimeTree(path.join(left, name), path.join(right, name)));
+}
+
 /** Materialize the same public package consumed by an installed Buildr. */
 export function prepareDevelopmentAgent({
   serviceRoot = buildrRoot,
@@ -36,6 +48,15 @@ function materializeDevelopmentAgent({ serviceRoot, agentRoot, build }: { servic
     // Runtime dependencies stay nested with their owner. Only declared runtime
     // packages and their actual transitive closure are copied, never dev tools.
     const rootVersions = new Map<string, string>();
+    // Reserve the package's own dependency versions before traversing transitive
+    // trees. Otherwise a transitive version can occupy the direct import path.
+    const rootRequire = createRequire(path.join(agentRoot, 'package.json'));
+    for (const name of Object.keys(metadata.dependencies ?? {})) {
+      const found = (rootRequire.resolve.paths(name) ?? []).map(base => path.join(base, name))
+        .find(candidate => fs.statSync(path.join(candidate, 'package.json'), { throwIfNoEntry: false })?.isFile());
+      if (!found) throw new Error(`agent_runtime_dependency_missing: ${name}`);
+      rootVersions.set(name, String(JSON.parse(fs.readFileSync(path.join(found, 'package.json'), 'utf8')).version));
+    }
     const copyDependencies = (source: string, target: string): Record<string, string> => {
       const pkg = JSON.parse(fs.readFileSync(path.join(source, 'package.json'), 'utf8'));
       const exactDependencies: Record<string, string> = {};
@@ -58,8 +79,8 @@ function materializeDevelopmentAgent({ serviceRoot, agentRoot, build }: { servic
         const version = String(dependencyMetadata.version);
         exactDependencies[name] = version;
         const rootVersion = rootVersions.get(name);
-        if (rootVersion === version) continue;
-        const output = rootVersion ? path.join(target, 'node_modules', name) : rootTarget;
+        if (rootVersion === version && fs.existsSync(path.join(rootTarget, 'package.json'))) continue;
+        const output = rootVersion && rootVersion !== version ? path.join(target, 'node_modules', name) : rootTarget;
         if (fs.existsSync(path.join(output, 'package.json'))) {
           if (JSON.parse(fs.readFileSync(path.join(output, 'package.json'), 'utf8')).version === version) continue;
           throw new Error(`agent_runtime_dependency_conflict: ${name}`);
@@ -100,6 +121,9 @@ function materializeDevelopmentAgent({ serviceRoot, agentRoot, build }: { servic
     delete runtimeMetadata.devDependencies;
     delete runtimeMetadata.scripts;
     fs.writeFileSync(path.join(destination, 'package.json'), `${JSON.stringify(runtimeMetadata, null, 2)}\n`);
+    // Concurrent CLI and runtime preparation can be reading these public files.
+    // Repeated preparation must not retire an identical package underneath them.
+    if (sameRuntimeTree(destination, finalDestination)) return finalDestination;
     const previous = `${destination}-previous`;
     if (fs.existsSync(finalDestination)) fs.renameSync(finalDestination, previous);
     try { fs.renameSync(destination, finalDestination); }

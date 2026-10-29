@@ -15,6 +15,7 @@ registerHooks({
       if (specifier.endsWith('/AppShellContext')) return facade('export const useAppShell=()=>({workspaceId:"workspace-one"});');
       if (specifier === '../../../api') return facade('export const api=(...args)=>globalThis.__startRequest(...args);');
       if (specifier.endsWith('/useServiceRuntime')) return facade('export const useServiceRuntimeDetail=(...args)=>{globalThis.__startDetailArgs.push(args);return globalThis.__startRead;};export const useTaskRuntime=()=>globalThis.__startRead;');
+      if (specifier.endsWith('/useRuntimeConfiguration')) return facade('export const useRuntimeConfiguration=()=>({discovery:null,pendingCode:"",configure(){},closeDiscovery(){}});');
       if (specifier.endsWith('/labels')) return facade('export const workspaceHref=(_workspace,path)=>path;');
       if (specifier.endsWith('/confirm')) return facade('export const confirmModal=async()=>{throw Error("unexpected stop confirmation")};');
       if (specifier.startsWith('./')) {

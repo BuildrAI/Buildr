@@ -42,6 +42,9 @@ export function SelectableHoverCard({ children, content, title, placement = 'rig
     return true;
   };
   const openNow = () => { if (viewActive && !dismissedHover.current && (!sideBoundary || placeBeside())) { cancelClose(); change(true); } };
+  // Page-link routing can consume click in an ancestor's capture handler.
+  // Dismiss before that click so an opened preview cannot cover the next row.
+  const dismissTrigger = () => { if (closeOnTriggerClick) { dismissedHover.current = true; cancelClose(); change(false); } };
   const closeSoon = () => {
     cancelClose();
     timer.current = setTimeout(() => {
@@ -68,9 +71,11 @@ export function SelectableHoverCard({ children, content, title, placement = 'rig
     classNames={{ root: 'selectable-hover-card' }} title={title}
     content={<div ref={panel} className="selectable-hover-card-content" style={sideBoundary && sideLayout ? {width: sideLayout.width} : undefined} onPointerEnter={cancelClose} onPointerLeave={closeSoon}
       onFocusCapture={cancelClose} onBlurCapture={event => { if (!contains(event.relatedTarget)) closeSoon(); }}>{content}</div>}>
-    <span ref={trigger} className="selectable-hover-trigger" onClickCapture={() => { if (closeOnTriggerClick) { dismissedHover.current = true; cancelClose(); change(false); } }}
+    <span ref={trigger} className="selectable-hover-trigger" onPointerDownCapture={event => { if (event.button === 0) dismissTrigger(); }}
+      onKeyDownCapture={event => { if (event.key === 'Enter' || event.key === ' ') dismissTrigger(); }}
+      onClickCapture={dismissTrigger}
       onPointerLeave={() => { dismissedHover.current = false; }}
-      onFocusCapture={event => { if (focusTrigger === 'always' || event.target instanceof Element && event.target.matches(':focus-visible')) { dismissedHover.current = false; openNow(); } }}
+      onFocusCapture={event => { if (focusTrigger === 'always' || event.target instanceof Element && event.target.matches(':focus-visible')) { if (event.target instanceof Element && event.target.matches(':focus-visible')) dismissedHover.current = false; openNow(); } }}
       onBlurCapture={event => { if (!contains(event.relatedTarget)) closeSoon(); }}>{children}</span>
   </Popover>;
 }

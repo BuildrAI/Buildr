@@ -13,7 +13,8 @@ function StoredImage({ conversation, id, index, read }: { conversation: Conversa
     const load = () => {
       if (started) return; started = true;
       void read(conversation, id, controller.signal).then(blob => {
-        if (active) setImage({ name: `图片 ${index + 1}`, file: new File([blob], `图片 ${index + 1}`, { type: blob.type }) });
+        const name = `${blob.type.startsWith('video/')?'视频':'图片'} ${index + 1}`;
+        if (active) setImage({ name, file: new File([blob], name, { type: blob.type }) });
       }).catch(() => { if (active) setFailed(true); });
     };
     const observer: IntersectionObserver | undefined = typeof IntersectionObserver === 'undefined' ? undefined : new IntersectionObserver(entries => {
@@ -22,8 +23,8 @@ function StoredImage({ conversation, id, index, read }: { conversation: Conversa
     if (observer && target.current) observer.observe(target.current); else load();
     return () => { active = false; observer?.disconnect(); controller.abort(); };
   }, [conversation.workspaceId, conversation.id, id, index, read, retry]);
-  return <div ref={target} className="ac-stored-image">{image ? <ImageThumbnail image={image} /> : failed ? <button type="button" onClick={() => setRetry(value => value + 1)}>重新加载图片</button> : <span>图片 {index + 1}</span>}</div>;
+  return <div ref={target} className="ac-stored-image">{image ? <ImageThumbnail image={image} /> : failed ? <button type="button" onClick={() => setRetry(value => value + 1)}>重新加载附件</button> : <span>附件 {index + 1}</span>}</div>;
 }
-export function ConversationMessageImages({ conversation, ids, read }: { conversation: ConversationView; ids: string[]; read: ReadImage }) {
-  return <div className="ac-attachments ac-message-images" aria-label="已发送图片">{ids.map((id, index) => <StoredImage key={conversation.id + ':' + id} conversation={conversation} id={id} index={index} read={read} />)}</div>;
+export function ConversationMessageImages({ conversation, ids, read, label = '已发送附件' }: { conversation: ConversationView; ids: string[]; read: ReadImage; label?: string }) {
+  return <div className="ac-attachments ac-message-images" aria-label={label}>{ids.map((id, index) => <StoredImage key={conversation.id + ':' + id} conversation={conversation} id={id} index={index} read={read} />)}</div>;
 }

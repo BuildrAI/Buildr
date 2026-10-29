@@ -43,8 +43,10 @@ export async function verifyKnowledgeInitializationHandoff(page: Page, trigger: 
     assert.equal(await copy.isEnabled(), true, '无需先填写主题或重新生成');
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
     await copy.click();
-    await action.getByRole('status').filter({ hasText: '已复制' }).waitFor({ state: 'visible' });
+    const copied = action.getByRole('button', { name: '已复制', exact: true });
+    await copied.waitFor({ state: 'visible' }); assert.equal(await copied.isDisabled(), true);
     assert.equal(await page.evaluate(() => navigator.clipboard.readText()), prompt);
+    await copy.waitFor({ state: 'visible', timeout: 6000 });
     if (focus) {
       await action.getByRole('textbox', { name: '知识关注点', exact: true }).fill(focus);
       await page.waitForFunction(value => (document.querySelector('[aria-label="架构知识指令"]') as HTMLTextAreaElement | null)?.value.includes(value), focus);
@@ -52,8 +54,9 @@ export async function verifyKnowledgeInitializationHandoff(page: Page, trigger: 
       assert.ok(focused.includes(focus));
       assert.ok(focused.includes(`"id": "${scope.id}"`) && focused.includes('entryObject'), '补充关注点保留范围和首次结构要求');
       await copy.click();
-      await action.getByRole('status').filter({ hasText: '已复制' }).waitFor({ state: 'visible' });
+      await action.getByRole('button', { name: '已复制', exact: true }).waitFor({ state: 'visible' });
       assert.equal(await page.evaluate(() => navigator.clipboard.readText()), focused);
+      await copy.waitFor({ state: 'visible', timeout: 6000 });
     }
     if (capture) {
       await action.getByRole('textbox', { name: '知识关注点', exact: true }).scrollIntoViewIfNeeded();

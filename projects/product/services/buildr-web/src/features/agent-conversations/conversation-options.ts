@@ -35,6 +35,25 @@ export function conversationReasoningOptions(connection:ConnectionView|undefined
   return sortReasoningEfforts(model?.reasoningEfforts||[]);
 }
 
+/** 只依据所选来源及档位判断能力，不借用同名原生模型。undefined 表示尚未观察到来源。 */
+export function choiceReasoningOptions(choice:ConversationChoice,connection:ConnectionView|undefined,catalog:CatalogModel[]):ReadonlyArray<{id:string}>|undefined {
+  const modelId=choice.model??selectedConversationModel(connection)?.id??connection?.models[0]?.id;
+  const source=catalog.find(item=>item.accountId===(choice.modelAccountId??'native-'+choice.connectionId)&&item.modelId===modelId&&(!choice.modelAccountIdentity||item.accountIdentity===choice.modelAccountIdentity));
+  if(choice.modelAccountId||source){
+    if(!source)return;
+    const tier=source.serviceTiers?.find(item=>item.id===(choice.serviceTier??source.defaultServiceTier));
+    return tier?.reasoningEfforts??source.reasoningEfforts??[];
+  }
+  const model=selectedConversationModel(connection,modelId);
+  return model?model.reasoningEfforts??[]:undefined;
+}
+
+/** 只修正下一次选择和发送，不修改历史运行记录。 */
+export function validConversationChoice(choice:ConversationChoice,connection:ConnectionView|undefined,catalog:CatalogModel[]):ConversationChoice {
+  const options=choiceReasoningOptions(choice,connection,catalog);
+  return choice.reasoningEffort&&options&&!options.some(item=>item.id===choice.reasoningEffort)?{...choice,reasoningEffort:undefined}:choice;
+}
+
 export function conversationReasoningSelection(connection:ConnectionView|undefined,choice:ConversationChoice) {
   const model=selectedConversationModel(connection,choice.model);
   const options=conversationReasoningOptions(connection,choice.model);
@@ -64,13 +83,6 @@ export function modelSourceName(provider:string):string {
   return ({codex:'Codex',dsh:'DSH',deepseek:'DeepSeek',qoder:'Qoder',devin:'Devin'} as Record<string,string>)[id]??provider;
 }
 
-/** Current conversation UI limitation; source account availability remains independent. */
-export function conversationModelCompatibility(connection:Pick<ConnectionView,'provider'>|undefined,model:(Pick<CatalogModel,'provider'>&Partial<Pick<CatalogModel,'modelId'>>)|undefined,permissionMode:PermissionMode='default'):string|undefined {
-  if(model?.provider!=='devin'||!connection||connection.provider==='dsh')return;
-  if(connection.provider==='codex'&&model.modelId==='swe-2'&&(permissionMode==='default'||permissionMode==='full-access'))return;
-  return `Devin 当前暂不兼容 ${modelSourceName(connection.provider)}，请切换到 DSH 或选择其他模型来源。`;
-}
-
 /** 状态行表达执行身份（智能体与模型）；来源账号只保留在模型设置和发送预览。 */
 export function conversationRunIdentity(run:ConversationRun,connection:ConnectionView|undefined,catalog:CatalogModel[]):string {
   const shared=catalog.find(model=>model.accountId===run.modelAccountId&&model.modelId===run.model);
@@ -91,6 +103,13 @@ export function tierReasoningEffort(tier:{reasoningEfforts?:ReadonlyArray<{id:st
   if(!effort)return effort;
   const options=tier?.reasoningEfforts??fallback;
   return options?.some(option=>option.id===effort)?effort:undefined;
+}
+
+/** A legacy native choice must bind its own catalog source before selecting a tier. */
+export function conversationTierChoice(choice:ConversationChoice,source:CatalogModel,tierId:string|undefined):ConversationChoice {
+ const tier=source.serviceTiers?.find(item=>item.id===tierId);
+ return {...choice,model:source.modelId,modelAccountId:source.accountId,modelAccountIdentity:source.accountIdentity,modelAccountRevision:source.accountRevision,
+   serviceTier:tierId,reasoningEffort:tierReasoningEffort(tier,source.reasoningEfforts,choice.reasoningEffort)};
 }
 
 /** Never select a different subscription without an explicit user choice. */

@@ -51,10 +51,10 @@ export function AddWorkspaceDialog({ open, stage, selected, name, step, onName, 
   const title = stage === 'preparing' ? '正在准备工作空间' : stage === 'ready' ? '工作空间已准备好' : stage === 'failed' ? '工作空间尚未准备完成' : '添加工作空间';
   const directory = selected ? (
     <div className="workspace-lifecycle-directory-summary" style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: 16, border: '1px solid var(--soft-line, #e1e5e9)', borderRadius: 8 }}>
-      <FolderOpenOutlined style={{ marginTop: 3, fontSize: 20, color: 'var(--soft-primary, #397d74)' }} />
+      <FolderOpenOutlined style={{ marginTop: 3, fontSize: 'var(--icon-size-large)', color: 'var(--soft-primary, #397d74)' }} />
       <div style={{ minWidth: 0, flex: 1 }}>
         <Typography.Text strong>{name.trim() || selected.name}</Typography.Text>
-        <Typography.Paragraph className="mono" type="secondary" style={{ margin: '4px 0 0', overflowWrap: 'anywhere', fontSize: 13 }}>{selected.path}</Typography.Paragraph>
+        <Typography.Paragraph className="mono" type="secondary" style={{ margin: '4px 0 0', overflowWrap: 'anywhere', fontSize: 'var(--font-size-secondary)' }}>{selected.path}</Typography.Paragraph>
       </div>
       {choosing && <Button type="link" size="small" onClick={() => setPickerOpen(true)}>更换</Button>}
     </div>
@@ -87,21 +87,21 @@ export function AddWorkspaceDialog({ open, stage, selected, name, step, onName, 
               <div data-prototype-position="directory-picker">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 8 }}>
                   <Typography.Text strong>选择本机目录</Typography.Text>
-                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>本机</Typography.Text>
+                  <Typography.Text type="secondary" style={{ fontSize: 'var(--font-size-meta)' }}>本机</Typography.Text>
                 </div>
                 <Space direction="vertical" size={8} style={{ width: '100%' }}>
                   {candidates.map((candidate) => (
                     <Button key={candidate.id} className="workspace-lifecycle-directory-option" style={{ display: 'flex', height: 'auto', minHeight: 76, padding: '12px 14px', textAlign: 'left', whiteSpace: 'normal' }} block onClick={() => selectDirectory(candidate)}>
-                      <FolderOutlined style={{ marginRight: 4, fontSize: 20, color: 'var(--soft-primary, #397d74)' }} />
+                      <FolderOutlined style={{ marginRight: 4, fontSize: 'var(--icon-size-large)', color: 'var(--soft-primary, #397d74)' }} />
                       <span style={{ flex: 1, minWidth: 0 }}>
                         <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}><strong>{candidate.name}</strong><Tag style={{ margin: 0 }} color={candidate.kind === 'registered' ? 'success' : 'default'}>{kindLabels[candidate.kind]}</Tag></span>
-                        <span className="mono" style={{ display: 'block', color: 'var(--soft-muted, #68717b)', fontSize: 12, marginTop: 4, overflowWrap: 'anywhere' }}>{candidate.path}</span>
+                        <span className="mono" style={{ display: 'block', color: 'var(--soft-muted, #68717b)', fontSize: 'var(--font-size-meta)', marginTop: 4, overflowWrap: 'anywhere' }}>{candidate.path}</span>
                       </span>
                       {selected?.id === candidate.id && <CheckCircleOutlined style={{ color: 'var(--soft-primary, #397d74)' }} />}
                     </Button>
                   ))}
                 </Space>
-                <Typography.Paragraph type="secondary" style={{ margin: '12px 0 0', fontSize: 12 }}>也可以选择一个已有项目目录。</Typography.Paragraph>
+                <Typography.Paragraph type="secondary" style={{ margin: '12px 0 0', fontSize: 'var(--font-size-meta)' }}>也可以选择一个已有项目目录。</Typography.Paragraph>
               </div>
             )}
             {stage === 'confirm' && !pickerOpen && selected && (

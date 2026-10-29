@@ -355,3 +355,17 @@ test('标题计数与渲染使用相同的围栏结束条件', async () => {
   assert.deepEqual(markdownHeadingCounts(text), { '说明': 1 });
   assert.equal(renderMarkdown(text).querySelector('h2').getAttribute('id'), '说明');
 });
+
+test('conversation file references opt in to short labels without enabling executable URLs',async()=>{
+  const {renderMarkdown}:any=await loadRenderer();
+  const markdown='[来源](projects/product/a.ts:155) [绝对位置](/repo/a.ts#L9) [脚本](javascript:alert)';
+  const view=renderMarkdown(markdown,{allowRelativeLinks:true,allowAbsoluteFileLinks:true});
+  const links=view.querySelectorAll('a');assert.equal(links.length,2);assert.equal(links[0].textContent,'来源');assert.equal(links[0].getAttribute('data-markdown-href'),'projects/product/a.ts:155');assert.equal(links[1].textContent,'绝对位置');
+  assert.equal(renderMarkdown(markdown).querySelectorAll('a').length,0,'other consumers remain closed by default');
+});
+
+test('a filename-only line citation is local, not a custom URL protocol',async()=>{
+  const {renderMarkdown}:any=await loadRenderer();
+  const view=renderMarkdown('[来源](README.md:1)',{allowRelativeLinks:true});
+  const link=view.querySelector('a');assert.ok(link);assert.equal(link.textContent,'来源');assert.equal(link.getAttribute('href'),'./README.md:1');assert.equal(link.getAttribute('data-markdown-href'),'README.md:1');
+});

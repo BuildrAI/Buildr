@@ -1,9 +1,38 @@
-import type { ConversationView, ConversationEntry, ConversationEvent, ConversationRun } from './types';
+import type { ConversationView, ConversationEntry, ConversationEvent, ConversationRun, CatalogModel } from './types';
+
+export function conversationRecoveryAction(conversation: ConversationView | null): {kind:'recover'|'observe';label:string} | null {
+  const run = conversation?.run; if (!conversation || !run) return null;
+  if (run.status === 'unknown' || run.status === 'tools-active' || ['failed','stopped','completed'].includes(run.status) && run.tools.some(tool => tool.status !== 'completed')) return {kind:'observe',label:'核对状态'};
+  if (executionLocked(run) || conversation.requests.length || run.tools.some(tool => tool.status !== 'completed')) return null;
+  const replied = conversation.entries.some(entry => entry.role === 'assistant' && entry.kind === 'message' && entry.text.trim() && (entry.runId === run.id || !entry.runId && entry.createdAt >= run.startedAt));
+  if (!['failed','stopped','completed'].includes(run.status) || run.status === 'completed' && replied) return null;
+  return {kind:'recover',label:run.accepted?'继续':'重试'};
+}
+
+/** A changed execution choice may continue existing work after an explicit send. */
+export function conversationContinuationText(conversation: ConversationView | null, changed: boolean, text: string, imageCount: number): string {
+  if (text.trim() || imageCount || !changed || !conversation?.entries.some(entry => entry.role === 'user' && entry.kind === 'message')) return text;
+  return '继续当前工作。请核对已有对话、尚未交付的用户要求和当前成果，接着完成未完成的目标；不要重复执行已完成的操作，不扩大原有授权。';
+}
 
 export function executionLocked(run?: ConversationRun): boolean {
   return Boolean(run && ['starting', 'running', 'waiting-approval', 'waiting-question', 'stopping', 'tools-active', 'unknown'].includes(run.status));
 }
-const conversationConflictRefreshCodes = new Set(['agent_revision_conflict','agent_preview_stale','agent_model_source_changed','agent_model_source_unavailable','agent_model_unavailable','agent_model_disabled']);
+/** Execution completion, not transport health or final-reply wording, ends observation. */
+export function needsConversationObservation(conversation: ConversationView | null): boolean {
+  if (!conversation) return false;
+  if (conversation.pendingSend || conversation.requests.length) return true;
+  const run = conversation.run;
+  return Boolean(run && (executionLocked(run) || run.tools.some(tool => tool.status !== 'completed') ||
+    run.executionState === 'active' || run.executionState === 'unknown'));
+}
+/** Ordinary output/revision changes must not restart a healthy subscription. */
+export function conversationObservationKey(conversation: ConversationView | null): string | null {
+  if (!needsConversationObservation(conversation)) return null;
+  return JSON.stringify([conversation!.workspaceId, conversation!.id, conversation!.run?.id,
+    conversation!.run?.participantId, conversation!.run?.generation, conversation!.pendingSend?.id]);
+}
+const conversationConflictRefreshCodes = new Set(['agent_revision_conflict','agent_preview_stale','agent_model_source_changed','agent_model_source_unavailable','agent_model_unavailable','agent_model_disabled','agent_continue_stale']);
 /** Only stale observations need a reread; busy and permission errors must keep their exact reason. */
 export function conversationConflictNeedsRefresh(error:{status?:number;code?:string}|undefined):boolean {
   return error?.status===409&&Boolean(error.code&&conversationConflictRefreshCodes.has(error.code));
@@ -50,17 +79,19 @@ export function prependConversationEntries(current: ConversationView,page: Conve
 }
 
 export function draftKey(profile: string, workspaceId: string | null, conversationId: string | null): string {
-  return `buildr.agent-conversation.draft:${encodeURIComponent(profile)}:${encodeURIComponent(workspaceId || 'unselected')}:${encodeURIComponent(conversationId || 'new')}`;
+  return !conversationId || conversationId === 'new'
+    ? `buildr.agent-conversation.draft:${encodeURIComponent(profile)}:new`
+    : `buildr.agent-conversation.draft:${encodeURIComponent(profile)}:${encodeURIComponent(workspaceId || 'unselected')}:${encodeURIComponent(conversationId)}`;
 }
-export function readDraft(key: string, storage: Pick<Storage, 'getItem'>): {text: string; taskId?: string; available: boolean} {
+export function readDraft(key: string, storage: Pick<Storage, 'getItem'>): {text: string; taskId?: string; workspaceId?: string; available: boolean} {
   try {
     const saved=storage.getItem(key)||'';
-    if(saved.startsWith('{')){const parsed=JSON.parse(saved);return {text:typeof parsed.text==='string'?parsed.text:'',taskId:typeof parsed.taskId==='string'&&parsed.taskId?parsed.taskId:undefined,available:true};}
+    if(saved.startsWith('{')){const parsed=JSON.parse(saved);return {text:typeof parsed.text==='string'?parsed.text:'',taskId:typeof parsed.taskId==='string'&&parsed.taskId?parsed.taskId:undefined,...(typeof parsed.workspaceId==='string'&&parsed.workspaceId?{workspaceId:parsed.workspaceId}:{}),available:true};}
     return { text: saved, taskId: undefined, available: true };
   } catch { return { text: '', taskId: undefined, available: false }; }
 }
-export function writeDraft(key: string, text: string, storage: Pick<Storage, 'setItem' | 'removeItem'>, taskId?: string): boolean {
-  try { if (text) storage.setItem(key, taskId ? JSON.stringify({ text, taskId }) : text); else storage.removeItem(key); return true; } catch { return false; }
+export function writeDraft(key: string, text: string, storage: Pick<Storage, 'setItem' | 'removeItem'>, taskId?: string, workspaceId?: string): boolean {
+  try { if (text || workspaceId) storage.setItem(key, taskId || workspaceId ? JSON.stringify({ text, taskId, workspaceId }) : text); else storage.removeItem(key); return true; } catch { return false; }
 }
 export function transferDraftText(source:string,target:string,read:(key:string)=>{text:string;taskId?:string},save:(key:string,text:string,taskId?:string)=>boolean):{text:string;taskId?:string;available:boolean} {
   const {text,taskId}=read(source);
@@ -99,6 +130,14 @@ export function sameConversationSelection(current:ConversationSelection,observed
 export function latestConversationParticipant(conversation:ConversationView|null) {
   return conversation?.participants.find(participant=>participant.id===conversation.run?.participantId)??conversation?.participants.at(-1);
 }
+/** A prompt may have only a run ID; never borrow an unrelated run or participant. */
+export function conversationTurnBinding(entry:ConversationEntry|undefined,conversation:ConversationView|null) {
+  const current=conversation?.run;
+  const run=entry?.runId&&entry.runId===current?.id&&(!entry.participantId||entry.participantId===current.participantId)?current:undefined;
+  const participantId=entry?.participantId??run?.participantId;
+  const participant=participantId?conversation?.participants.find(item=>item.id===participantId):undefined;
+  return {participant,run};
+}
 /** The same agent may hold several participants (sources or models); the summary names it once. */
 export function participantAgentIds(participants:ConversationView['participants']):string[] {
   return [...new Set(participants.map(participant=>participant.provider))];
@@ -123,18 +162,56 @@ export type ConversationStreamItem = {type:'entry';entry:ConversationEntry}|{typ
 export function groupConversationStream(entries:readonly ConversationEntry[],currentRun?:ConversationRun):ConversationStreamItem[] {
   const items:ConversationStreamItem[]=[];
   const isProcess=(entry:ConversationEntry)=>entry.kind==='tool'||entry.kind==='message'&&entry.role==='assistant';
+  const finals=new Map<string,ConversationEntry>(),keys=new Map<ConversationEntry,string>();let legacy=0;
+  for(const entry of entries){
+    if(!entry.runId&&entry.kind==='message'&&entry.role==='user')legacy++;
+    const key=entry.runId||'legacy:'+legacy;keys.set(entry,key);
+    if(entry.kind==='message'&&entry.role==='assistant'&&!(entry.runId===currentRun?.id&&executionLocked(currentRun)))finals.set(key,entry);
+  }
   for(let index=0;index<entries.length;){
     const first=entries[index];
     if(!isProcess(first)){items.push({type:'entry',entry:first});index++;continue;}
     const run:ConversationEntry[]=[];
     while(index<entries.length&&isProcess(entries[index])&&entries[index].runId===first.runId)run.push(entries[index++]);
     const active=Boolean(currentRun&&currentRun.id===first.runId&&executionLocked(currentRun));
-    const result=active?undefined:[...run].reverse().find(entry=>entry.kind==='message'&&entry.role==='assistant');
+    const candidate=finals.get(keys.get(first)!);
+    const result=active?undefined:run.find(entry=>entry===candidate);
     const process=result?run.filter(entry=>entry!==result):run;
     if(process.length)items.push({type:'process-block',entries:process,active,finishedAt:result?.createdAt});
     if(result)items.push({type:'entry',entry:result});
   }
   return items;
+}
+export type ConversationTurnItems={key:string;prompt?:ConversationEntry;items:ConversationStreamItem[]};
+export function conversationStreamTurns(items:readonly ConversationStreamItem[]):ConversationTurnItems[]{
+  const turns:ConversationTurnItems[]=[], owners=new Map<string,ConversationTurnItems>();
+  for(const item of items){
+    const entry=item.type==='entry'?item.entry:item.entries[0];
+    if(item.type==='entry'&&entry.kind==='message'&&entry.role==='user'){
+      const turn={key:entry.id,prompt:entry,items:[]};turns.push(turn);
+      // Supplementary inputs in the same execution start a new visible segment.
+      if(entry.runId)owners.set(entry.runId,turn);
+    }else{
+      if(!turns.length)turns.push({key:'earlier',items:[]});
+      let owner=entry.runId?owners.get(entry.runId):undefined;
+      if(!owner&&item.type==='process-block'&&entry.runId&&turns.at(-1)!.prompt?.runId&&entry.runId!==turns.at(-1)!.prompt!.runId){
+        // A replayed result may precede the loaded history page. It cannot belong
+        // to the latest input merely because it was projected later.
+        owner={key:'history:'+entry.runId,items:[]};turns.unshift(owner);
+      }
+      owner??=turns.at(-1)!;owner.items.push(item);
+      if(entry.runId)owners.set(entry.runId,owner);
+    }
+  }
+  return turns;
+}
+/** Retry notices carry the accepted run before its first assistant/tool item. */
+export function conversationTurnExecution(turn:ConversationTurnItems,run?:ConversationRun):{current:boolean;active:boolean;waiting?:string}{
+  const entries=[...(turn.prompt?[turn.prompt]:[]),...turn.items.flatMap(item=>item.type==='entry'?[item.entry]:item.entries)];
+  const current=Boolean(run&&entries.some(entry=>entry.runId===run.id));
+  const active=current&&Boolean(run&&['starting','running'].includes(run.status));
+  const responded=Boolean(run&&entries.some(entry=>entry.runId===run.id&&(entry.role==='assistant'||entry.kind==='tool')));
+  return {current,active,...(active&&!responded?{waiting:run?.accepted?'已送达，等待智能体回应…':'正在准备连接并确认指令送达…'}:{})};
 }
 export function toolEntryHeadline(entry:ConversationEntry):string {
   return entry.text.split('\n',1)[0].trim();
@@ -193,4 +270,67 @@ export function processEntryStatus(entry:ConversationEntry,active:boolean):strin
 /** Each entry toggles its own view; the other entry switches the visible view. */
 export function nextConversationPanel(open:boolean,view:'conversation'|'history',target:'conversation'|'history') {
   return {open:!open||view!==target,view:target};
+}
+
+/** The latest real context-usage report observed for a conversation, kept with its original source. */
+export type ConversationContextReport = {
+  workspaceId: string;
+  conversationId: string;
+  runId: string;
+  provider?: string;
+  model?: string;
+  modelAccountId?: string;
+  modelAccountIdentity?: string;
+  modelSourceLabel?: string;
+  serviceTier?: string;
+  usedTokens: number;
+  windowTokens?: number;
+};
+
+/** A newer run without a report never erases the retained one; a real report (including zero) replaces it wholesale. */
+export function rememberContextReport(current: ConversationContextReport | null, conversation: ConversationView | null | undefined): ConversationContextReport | null {
+  const run = conversation?.run;
+  const usage = run?.contextUsage;
+  if (!conversation || !run || !usage || !Number.isSafeInteger(usage.usedTokens) || usage.usedTokens < 0) return current;
+  if (current?.runId === run.id && current.conversationId === conversation.id && current.usedTokens === usage.usedTokens && current.windowTokens === usage.windowTokens) return current;
+  return {
+    workspaceId: conversation.workspaceId,
+    conversationId: conversation.id,
+    runId: run.id,
+    provider: run.provider,
+    model: run.model,
+    modelAccountId: run.modelAccountId,
+    modelAccountIdentity: run.modelAccountIdentity,
+    modelSourceLabel: run.modelSourceLabel,
+    serviceTier: run.serviceTier,
+    usedTokens: usage.usedTokens,
+    windowTokens: Number.isSafeInteger(usage.windowTokens) && usage.windowTokens! > 0 ? usage.windowTokens : undefined,
+  };
+}
+
+/** A retained report is only visible in the workspace and conversation that produced it. */
+export function visibleContextReport(report: ConversationContextReport | null | undefined, conversation: ConversationView | null | undefined): ConversationContextReport | null {
+  if (!report || !conversation || report.workspaceId !== conversation.workspaceId || report.conversationId !== conversation.id) return null;
+  return report;
+}
+
+/** The percentage basis belongs to the report; a missing window is filled only from the same catalog source and tier, never from the current selection. */
+export function contextReportWindow(report: ConversationContextReport, catalog: CatalogModel[]): number | undefined {
+  if (Number.isSafeInteger(report.windowTokens) && report.windowTokens! > 0) return report.windowTokens;
+  const source = catalog.find(item => item.accountId === report.modelAccountId && item.modelId === report.model && (!report.modelAccountIdentity || item.accountIdentity === report.modelAccountIdentity));
+  if (!source) return undefined;
+  const tier = source.serviceTiers?.find(item => item.id === (report.serviceTier ?? source.defaultServiceTier));
+  return source.contextWindowOverride === undefined ? tier?.contextWindow ?? source.contextWindow : Math.min(source.contextWindowOverride, tier?.contextWindow ?? source.reportedContextWindow ?? source.contextWindowOverride);
+}
+
+/** The current run's own report wins; a retained report fills the gap while a new run has not reported yet. */
+export function conversationUsageReport(contextReport: ConversationContextReport | null | undefined, conversation: ConversationView | null | undefined): ConversationContextReport | null {
+  return rememberContextReport(null, conversation) ?? visibleContextReport(contextReport, conversation);
+}
+
+/** Only current execution bindings are actionable; history is rendered as ordinary entries. */
+export function currentConversationRequests(conversation: ConversationView | null): ConversationView['requests'] {
+  const run=conversation?.run;
+  if(!run||['completed','stopped'].includes(run.status))return [];
+  return conversation!.requests.filter(request=>request.runId===run.id&&request.participantId===run.participantId&&request.generation===run.generation);
 }

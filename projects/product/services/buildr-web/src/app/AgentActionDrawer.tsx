@@ -1,6 +1,7 @@
 import { KnowledgeAgentAction } from '../features/knowledge/components/KnowledgeAgentAction';
 import { useEffect, useState } from 'react';
 import { Button, Input } from 'antd';
+import { CopyButton } from '../components/CopyButton';
 import { useAgentActionFeedback } from '../components/AgentActionFeedback';
 import { WorkspaceAgentAction } from '../features/workspace/components/WorkspaceAgentAction';
 import { ProjectAgentAction } from '../features/project/components/ProjectAgentAction';
@@ -15,7 +16,7 @@ export function AgentActionDrawer({ initialAction, initialContext = EMPTY_CONTEX
   const [action, setAction] = useState(initialAction);
   const [context, setContext] = useState(initialContext);
   const [generation, setGeneration] = useState(0);
-  const { copyState, invalidatePrompt, copyProvidedPrompt } = useAgentActionFeedback(() => setAction(undefined));
+  const { invalidatePrompt } = useAgentActionFeedback(() => setAction(undefined));
   useEffect(() => {
     setAction(initialAction);
     setContext(initialContext);
@@ -42,13 +43,8 @@ export function AgentActionDrawer({ initialAction, initialContext = EMPTY_CONTEX
             <Input.TextArea id="action-prompt-output" rows={13} readOnly value={context.prompt} />
           </label>
           <div className="copy-row">
-            <Button
-              id="copy-action-prompt"
-              onClick={() => void copyProvidedPrompt(context.prompt as string, '目录尚未被初始化、迁移或登记。')}
-            >
-              复制指令
-            </Button>
-            <span id="action-copy-state">{copyState || '目录尚未被初始化、迁移或登记。'}</span>
+            <CopyButton id="copy-action-prompt" size="middle" text={context.prompt as string} failureMessage="自动复制失败，请选择指令手动复制。">复制指令</CopyButton>
+            <span id="action-copy-state">目录尚未被初始化、迁移或登记。</span>
           </div>
         </div>
       </>
@@ -75,14 +71,8 @@ export function AgentActionDrawer({ initialAction, initialContext = EMPTY_CONTEX
             <Input.TextArea id="action-prompt-output" rows={10} readOnly value={context.prompt} />
           </label>
           <div className="copy-row">
-            <Button
-              id="copy-action-prompt"
-              type="primary"
-              onClick={() => void copyProvidedPrompt(context.prompt as string, '本机 Buildr 尚未更新。')}
-            >
-              复制给 Agent
-            </Button>
-            <span id="action-copy-state">{copyState || '本机 Buildr 尚未更新。'}</span>
+            <CopyButton id="copy-action-prompt" type="primary" size="middle" text={context.prompt as string} failureMessage="自动失败，请选择指令手动复制。">复制给 Agent</CopyButton>
+            <span id="action-copy-state">本机 Buildr 尚未更新。</span>
           </div>
         </div>
       </>

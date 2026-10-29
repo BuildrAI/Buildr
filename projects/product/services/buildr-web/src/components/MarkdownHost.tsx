@@ -39,9 +39,9 @@ export function MarkdownHost({ markdown, className, options, fragment, renderVer
           // The workspace shell handles this real resource link, preserving the
           // original reading pane. Never send a task reference to a file reader.
           link.classList.remove('markdown-relative-link');
-          if (taskId) {
+          if (taskId && currentOptions.taskLinkPathname !== null) {
             link.classList.add('markdown-task-link');
-            link.setAttribute('href', taskBriefHref(taskId, window.location.pathname));
+            link.setAttribute('href', taskBriefHref(taskId, currentOptions.taskLinkPathname ?? window.location.pathname));
             link.setAttribute('title', `任务说明：${taskId}`);
           } else {
             link.removeAttribute('href');
@@ -58,7 +58,7 @@ export function MarkdownHost({ markdown, className, options, fragment, renderVer
     }
     host.replaceChildren(view);
     if (fragment) requestAnimationFrame(() => scrollMarkdownFragment(view, fragment));
-  }, [markdown, className, fragment, renderVersion, JSON.stringify(options?.headingCounts)]);
+  }, [markdown, className, fragment, renderVersion, options?.taskLinkPathname, options?.imageResolver, JSON.stringify(options?.headingCounts)]);
 
   return <div ref={ref} />;
 }

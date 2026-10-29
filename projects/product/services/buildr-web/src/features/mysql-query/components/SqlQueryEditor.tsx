@@ -11,7 +11,7 @@ import type { SqlSelection } from '../sql-execution-target';
 
 type Props = { completion?: SqlCompletionScope | null; runningTarget?: SqlRunningTarget | null; value: string; busy: boolean; onChange(value: string): void; onSelectionChange(selection: SqlSelection): void; onRun(selection: SqlSelection): void };
 const theme = EditorView.theme({
-  '&': { height: '100%', fontSize: '13px' },
+  '&': { height: '100%', fontSize: 'var(--font-size-code)' },
   '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', lineHeight: '1.8', overflow: 'auto' },
   '.cm-content': { padding: '12px 0', minHeight: '100%' },
   '.cm-line': { padding: '0 14px' },

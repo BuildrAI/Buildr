@@ -1,18 +1,25 @@
 // @ts-nocheck
 import { copyText } from './lib/copyText.ts';
+/** Failed destinations stay textual across re-renders; a new document load starts with a clean view. */
+const failedMarkdownImages = new Set<string>();
+
 export type MarkdownRenderOptions = {
   document?: Document;
   headingOffset?: number;
   sourcePath?: string;
   headingCounts?: Record<string, number>;
   allowRelativeLinks?: boolean;
+  /** Only callers with a source-checked opener may enable absolute file references. */
+  allowAbsoluteFileLinks?: boolean;
+  /** Explicit task source for retained conversations; null means there is no task workspace. */
+  taskLinkPathname?: string | null;
   /** When true with allowRelativeLinks, relative href may include `..` segments (still sanitized by consumer / API). */
   allowParentRelativeLinks?: boolean;
   imageResolver?: (href: string) => { href: string } | null | undefined;
   onRelativeLinkClick?: (href: string, event: MouseEvent) => void;
 };
 
-function resolveSafeHref(href, { allowRelativeLinks = false, allowParentRelativeLinks = false } = {}) {
+function resolveSafeHref(href, { allowRelativeLinks = false, allowParentRelativeLinks = false, allowAbsoluteFileLinks = false } = {}) {
   const value = String(href ?? '').trim();
   if (!value) return null;
 
@@ -29,7 +36,9 @@ function resolveSafeHref(href, { allowRelativeLinks = false, allowParentRelative
   }
 
   if (!allowRelativeLinks) return null;
-  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(value)) return null;
+  if (allowAbsoluteFileLinks && (/^\/(?!\/)/.test(value) || /^[a-z]:[\\/]/i.test(value)) && !/[\0\r\n]/.test(value)) return {href:value,external:false};
+  const citation = /^[^:?#]+:[1-9]\d*(?::[1-9]\d*)?$/.test(value);
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(value) && !citation) return null;
   if (value.startsWith('//') || value.startsWith('/') || value.includes('\\')) return null;
 
   const hashIndex = value.indexOf('#');
@@ -44,7 +53,8 @@ function resolveSafeHref(href, { allowRelativeLinks = false, allowParentRelative
 
   const normalizedPath = segments.filter((segment) => segment && segment !== '.').join('/');
   if (!normalizedPath && !suffix.startsWith('#')) return null;
-  return { href: `${normalizedPath}${suffix}`, external: false };
+  // A root filename with a line suffix must not become a browser URL scheme.
+  return { href: `${citation ? './' : ''}${normalizedPath}${suffix}`, external: false };
 }
 
 function splitTableRow(line) {
@@ -57,27 +67,53 @@ function isTableSeparator(line) {
   return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
 }
 
+function imageFallback(doc, alt) {
+  const fallback = doc.createElement('span');
+  fallback.className = 'markdown-image-fallback';
+  fallback.setAttribute('role', 'img');
+  fallback.textContent = alt ? `图片无法预览：${alt}` : '图片无法预览';
+  return fallback;
+}
+
 function appendInline(parent, text, doc, linkOptions) {
-  const pattern = /!\[([^\]]*)\]\(([^)]+)\)|(\`+)([^\`]+?)\3|\*\*([^*]+)\*\*|\*([^*]+)\*|\[([^\]]+)\]\(([^)]+)\)/g;
+  const pattern = /!\[([^\]]*)\]\(([^)]+)\)|(\`+)([^\`]+?)\3|\*\*([^*]+)\*\*|\*([^*]+)\*|\[([^\]]+)\]\(([^)]+)\)|(https?:\/\/[^\s<>"']+)/g;
   let lastIndex = 0;
   let match;
   while ((match = pattern.exec(text)) !== null) {
     if (match.index > lastIndex) parent.append(doc.createTextNode(text.slice(lastIndex, match.index)));
     if (match[1] !== undefined) {
       const resolved = linkOptions.imageResolver?.(match[2]);
-      if (resolved?.href) {
+      if (resolved?.href && !failedMarkdownImages.has(resolved.href)) {
+        const alt = match[1];
         const image = doc.createElement('img');
-        image.setAttribute('src', resolved.href);
-        image.setAttribute('alt', match[1]);
+        image.setAttribute('alt', alt);
         image.setAttribute('loading', 'lazy');
+        image.setAttribute('referrerpolicy', 'no-referrer');
+        if (typeof image.addEventListener === 'function') image.addEventListener('error', () => {
+          failedMarkdownImages.add(resolved.href);
+          if (image.parentNode) image.replaceWith(imageFallback(doc, alt));
+        });
         parent.append(image);
+        image.setAttribute('src', resolved.href);
       } else {
-        parent.append(doc.createTextNode(`![${match[1]}](${match[2]})`));
+        parent.append(imageFallback(doc, match[1]));
       }
     } else if (match[3] !== undefined) {
       const code = doc.createElement('code');
       code.textContent = match[4];
-      parent.append(code);
+      const codeUrl = /^https?:\/\/[^\s]+$/i.test(match[4].trim()) ? resolveSafeHref(match[4].trim(), linkOptions) : null;
+      if (codeUrl) {
+        const codeLink = doc.createElement('a');
+        codeLink.setAttribute('href', codeUrl.href);
+        if (codeUrl.external) {
+          codeLink.setAttribute('rel', 'noopener noreferrer');
+          codeLink.setAttribute('target', '_blank');
+        }
+        codeLink.append(code);
+        parent.append(codeLink);
+      } else {
+        parent.append(code);
+      }
     } else if (match[5] !== undefined) {
       const strong = doc.createElement('strong');
       strong.textContent = match[5];
@@ -86,6 +122,28 @@ function appendInline(parent, text, doc, linkOptions) {
       const em = doc.createElement('em');
       em.textContent = match[6];
       parent.append(em);
+    } else if (match[9] !== undefined) {
+      let url = match[9];
+      let trailing = '';
+      const trimmed = url.match(/[(.,;:!?\)\]'"，。；：！？、》）】」』]+$/);
+      if (trimmed) {
+        trailing = trimmed[0];
+        url = url.slice(0, url.length - trailing.length);
+      }
+      const resolved = resolveSafeHref(url, linkOptions);
+      if (resolved) {
+        const link = doc.createElement('a');
+        link.setAttribute('href', resolved.href);
+        if (resolved.external) {
+          link.setAttribute('rel', 'noopener noreferrer');
+          link.setAttribute('target', '_blank');
+        }
+        link.textContent = url;
+        parent.append(link);
+        if (trailing) parent.append(doc.createTextNode(trailing));
+      } else {
+        parent.append(doc.createTextNode(url + trailing));
+      }
     } else {
       const label = match[7];
       const resolved = resolveSafeHref(match[8], linkOptions);
@@ -218,8 +276,14 @@ function createCodeBlock(language, code, doc, sourcePath) {
   copy.setAttribute('type', 'button');
   copy.setAttribute('data-copy-code', '');
   copy.textContent = '复制代码';
+  let restore: ReturnType<typeof setTimeout> | undefined;
   copy.addEventListener?.('click', async () => {
-    copy.textContent = await copyText(code) ? '已复制' : '复制失败，请选择代码复制';
+    if (copy.dataset.copied === 'true') return;
+    if (!await copyText(code)) { copy.textContent = '复制失败，请选择代码复制'; return; }
+    copy.dataset.copied = 'true';
+    copy.textContent = '已复制';
+    clearTimeout(restore);
+    restore = setTimeout(() => { copy.dataset.copied = ''; copy.textContent = '复制代码'; }, 3000);
   });
   block.append(copy);
   if (language.toLowerCase() === 'mermaid') {
@@ -292,6 +356,7 @@ export function renderMarkdown(markdown: string, docOrOptions: Document | Markdo
   const headingOffset = Math.max(0, Number.isFinite(options.headingOffset) ? options.headingOffset : 0);
   const linkOptions = {
     allowRelativeLinks: Boolean(options.allowRelativeLinks),
+    allowAbsoluteFileLinks: Boolean(options.allowAbsoluteFileLinks),
     allowParentRelativeLinks: Boolean(options.allowParentRelativeLinks),
     imageResolver: options.imageResolver,
     headings: new Map(Object.entries(options.headingCounts || {})),

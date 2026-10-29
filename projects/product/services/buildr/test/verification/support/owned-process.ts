@@ -113,10 +113,12 @@ export async function terminateOwnedProcess({ pid, processes = [], platform = pr
     if (error) forced.push({ target: item.pid, error });
   }
   const deadline = Date.now() + confirmMs;
-  const remaining: any[] = [];
-  while (Date.now() < deadline && alive(groupTarget, kill)) await wait(25);
-  if (alive(groupTarget, kill)) remaining.push(groupTarget);
-  for (const item of descendants) if (alive(item.pid, kill)) remaining.push(item.pid);
+  const targets = [groupTarget, ...descendants.map((item: any) => item.pid)];
+  const remainingTargets = () => targets.filter(target => alive(target, kill));
+  // A detached descendant can outlive an already-exited group. Its SIGKILL
+  // also completes asynchronously and needs the same confirmation window.
+  while (Date.now() < deadline && remainingTargets().length) await wait(25);
+  const remaining = remainingTargets();
   return {
     status: termError || forced.length || remaining.length ? 'failed' : 'clean',
     ownership: platform === 'win32' ? `pid-tree-${pid}` : `pgid-${pid}`,

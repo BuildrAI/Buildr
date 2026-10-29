@@ -1,12 +1,15 @@
+import {createConversationInputAttempts} from '../src/features/agent-conversations/conversation-actions.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import {needsConversationObservation,conversationObservationKey} from '../src/features/agent-conversations/conversation-state.ts';
 import {conversationActionKey,createConversationActions} from '../src/features/agent-conversations/conversation-actions.ts';
 import { registerHooks } from 'node:module';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createApiClient } from '../src/api/client.ts';
-import { appendDraftAttachment, canGenerateConversationTitle, canStopConversationTool, conversationConflictNeedsRefresh, createdConversationVisibility, executionLocked, participantAgentIds, shouldSendOnKey, draftKey, readDraft, removeSubmittedAttachments, transferDraftText, writeDraft, applyConversationEvent, isCurrentConversationEvent, mergeConversationView, prependConversationEntries, parseEventFrame, sameConversationSelection, latestConversationParticipant } from '../src/features/agent-conversations/conversation-state.ts';
+import { conversationRecoveryAction, conversationContinuationText, appendDraftAttachment, canGenerateConversationTitle, canStopConversationTool, conversationConflictNeedsRefresh, conversationTurnBinding, createdConversationVisibility, executionLocked, participantAgentIds, shouldSendOnKey, draftKey, readDraft, removeSubmittedAttachments, transferDraftText, writeDraft, applyConversationEvent, isCurrentConversationEvent, mergeConversationView, prependConversationEntries, parseEventFrame, sameConversationSelection, latestConversationParticipant } from '../src/features/agent-conversations/conversation-state.ts';
 import {conversationPermissionKey,conversationPermissionStorageKey,conversationReasoningOptions,conversationRunIdentity,readConversationPermission,reasoningEffortLabel,selectedConversationModel,selectedConversationPermission,supportsConversationPermission,writeConversationPermission} from '../src/features/agent-conversations/conversation-options.ts';
+import {conversationImageSource,conversationImageLinkSource} from '../src/features/agent-conversations/conversation-markdown-images.ts';
 registerHooks({resolve(specifier,context,next){
   if(specifier==='../../../api'&&context.parentURL?.endsWith('/agent-conversations-api.ts'))return next(new URL('../src/api/index.ts',import.meta.url).href,context);
   try{return next(specifier,context);}catch(cause){if(!specifier.startsWith('.')||!context.parentURL?.includes('/src/'))throw cause;for(const suffix of ['.ts','/index.ts']){const url=new URL(specifier+suffix,context.parentURL);if(existsSync(fileURLToPath(url)))return next(url.href,context);}throw cause;}
@@ -58,6 +61,21 @@ test('参与过此对话按智能体去重，同一执行者的多个参与者�
   assert.deepEqual(participantAgentIds([]),[]);
 });
 
+test('首条用户输入按准确执行绑定身份，历史和冲突身份不借用当前执行',()=>{
+  const prior={id:'old-participant',connectionId:'dsh',provider:'dsh',model:'old-model'};
+  const current={id:'original-codex',connectionId:'codex',provider:'codex',model:'older-model'};
+  const run={...conversation.run,model:'current-model'};
+  const chat={...conversation,participants:[prior,current],run};
+  const prompt={id:'prompt',role:'user',runId:run.id};
+  assert.deepEqual(conversationTurnBinding(prompt,chat),{participant:current,run});
+  assert.deepEqual(conversationTurnBinding({...prompt,participantId:current.id},chat),{participant:current,run});
+  assert.deepEqual(conversationTurnBinding({...prompt,participantId:prior.id},chat),{participant:prior,run:undefined});
+  assert.deepEqual(conversationTurnBinding({...prompt,runId:'old-run'},chat),{participant:undefined,run:undefined});
+  assert.deepEqual(conversationTurnBinding({...prompt,runId:undefined},chat),{participant:undefined,run:undefined});
+  assert.deepEqual(conversationTurnBinding(prompt,{...chat,participants:[]}),{participant:undefined,run});
+  assert.deepEqual(conversationTurnBinding(undefined,chat),{participant:undefined,run:undefined});
+});
+
 test('执行状态行只表达智能体与模型，不把模型来源账号标签当作状态',()=>{
   const catalog=[{accountId:'account-devin',accountIdentity:'identity-devin',modelId:'grok-4.7',accountLabel:'someone@example.com · Pro',accountRevision:'account-r1',provider:'devin',label:'Grok 4.7',available:true,enabled:true}];
   const shared={...conversation.run,provider:'dsh',modelAccountId:'account-devin',modelAccountIdentity:'identity-devin',model:'grok-4.7',modelSourceLabel:'someone@example.com · Pro'};
@@ -80,7 +98,7 @@ test('草稿按配置域/工作空间/对话隔离，存储拒绝不会假称保
   assert.equal(writeDraft(first,'same input',{setItem(){throw Error('denied');}}),false);assert.deepEqual(readDraft(first,{getItem(){throw Error('denied');}}),{text:'',taskId:undefined,available:false});assert.equal(writeDraft(first,'',storage),true);assert.equal(readDraft(first,storage).text,'');
 });
 
-test('草稿任务绑定跟随工作空间草稿记录，纯文本旧草稿不破坏兼容，清空文本不留绑定',()=>{
+test('草稿任务绑定跟随唯一新草稿记录，纯文本旧草稿不破坏兼容，清空文本不留绑定',()=>{
   const rows=new Map(),storage={getItem:key=>rows.get(key)||null,setItem:(key,value)=>rows.set(key,value),removeItem:key=>rows.delete(key)};
   const key=draftKey('dev','ws-a','new');
   assert.equal(writeDraft(key,'从任务进入的草稿',storage,'task-one'),true);
@@ -368,4 +386,173 @@ test('双入口按自己的视图打开、切换或收起，不把历史当作�
     assert.deepEqual(nextConversationPanel(false,view,target),{open:true,view:target});
     assert.deepEqual(nextConversationPanel(true,view,target),{open:view!==target,view:target});
   }
+});
+
+
+test('新草稿只有一份，归属可切换或清除，已创建对话与配置域仍隔离',()=>{
+  const rows=new Map(),storage={getItem:key=>rows.get(key)||null,setItem:(key,value)=>rows.set(key,value),removeItem:key=>rows.delete(key)};
+  const key=draftKey('dev','ws-a',null);
+  assert.equal(key,draftKey('dev','ws-b',null));assert.equal(key,draftKey('dev',null,'new'));
+  assert.notEqual(key,draftKey('release','ws-a',null));assert.notEqual(key,draftKey('dev','ws-a','existing'));
+  writeDraft(key,'未发送输入',storage,'task-a','ws-a');
+  assert.equal(readDraft(draftKey('dev','ws-b',null),storage).text,'未发送输入');
+  writeDraft(key,readDraft(key,storage).text,storage,undefined,'ws-b');
+  assert.deepEqual(readDraft(key,storage),{text:'未发送输入',taskId:undefined,workspaceId:'ws-b',available:true});
+  writeDraft(key,readDraft(key,storage).text,storage,undefined,'@default');
+  assert.equal(readDraft(key,storage).workspaceId,'@default');assert.equal(readDraft(key,storage).text,'未发送输入');
+  writeDraft(key,'',storage,undefined,'@default');assert.equal(readDraft(key,storage).workspaceId,'@default','空文本也保留明确清除后的选择');
+});
+
+test('并发模型目录请求合并，完成或失败后允许重新读取，取消保持独立',async()=>{
+  let resolve,reject,calls=0;
+  const api=createAgentConversationsClient(()=>{calls++;return new Promise((yes,no)=>{resolve=yes;reject=no;});},session);
+  const first=api.modelCatalog(),second=api.modelCatalog();assert.equal(calls,1);
+  resolve({models:[]});assert.deepEqual(await Promise.all([first,second]),[{models:[]},{models:[]}]);
+  const failing=api.modelCatalog();assert.equal(calls,2);reject(new Error('offline'));await assert.rejects(failing,/offline/);
+  const fresh=api.modelCatalog();assert.equal(calls,3);const finishShared=resolve;
+  const cancelled=api.modelCatalog(new AbortController().signal);assert.equal(calls,4);resolve({models:[]});finishShared({models:[]});await Promise.all([fresh,cancelled]);
+});
+
+
+test('模型写入使旧目录读取失效，旧完成不能解除新读取的合并',async()=>{
+  const reads=[];let posts=0;
+  const api=createAgentConversationsClient((url,init)=>init?.method==='POST'?(posts++,Promise.resolve({id:'account'})):new Promise(resolve=>reads.push(resolve)),session);
+  const old=api.modelCatalog();await api.addModelAccount('devin');assert.equal(posts,1);
+  const fresh=api.modelCatalog();assert.equal(reads.length,2);
+  reads[0]({models:[{id:'old'}]});await old;
+  const shared=api.modelCatalog();assert.equal(reads.length,2,'旧读取完成不清除新的合并槽位');
+  reads[1]({models:[{id:'fresh'}]});assert.equal((await fresh).models[0].id,'fresh');assert.equal((await shared).models[0].id,'fresh');
+});
+
+test('补充发送绑定原执行且与停止和授权回复独立，认证重试保留同一编号',async()=>{
+ let release,first=true,token='old';const calls=[];
+ const api=createAgentConversationsClient(async(url,init)=>{
+  const body=JSON.parse(init.body);calls.push({url,body,token:init.headers['x-buildr-session']});
+  if(url.endsWith('/supplement')){if(first){first=false;throw Object.assign(Error('expired'),{code:'session_forbidden'});}return new Promise(resolve=>{release=resolve;});}return conversation;
+ },{writeHeaders:()=>({'x-buildr-session':token}),refreshSession:async()=>{token='new';return true;}});
+ const pending=api.supplement(conversation,{text:'',attachmentIds:['image-only'],clientRequestId:'same-input'});
+ await new Promise(resolve=>setImmediate(resolve));await api.stop(conversation);await api.reply(conversation,'approval/id',{answer:'deny'});
+ assert.equal(calls.length,4);assert.deepEqual(calls[0].body,calls[1].body);
+ assert.deepEqual(calls[1].body,{text:'',attachmentIds:['image-only'],clientRequestId:'same-input',runId:'run/1',participantId:'original-codex',generation:'generation-1'});
+ assert.equal(calls[1].token,'new');release({conversation,delivery:'accepted'});assert.equal((await pending).delivery,'accepted');
+});
+test('图片上传优先使用附件集合版本，保留旧版本协议兼容',async()=>{
+ const calls=[];const api=createAgentConversationsClient(async()=>({}),session,async(url,init)=>{calls.push({url,init});return Response.json({id:'image',revision:'next',attachmentRevision:'materials-next'});});
+ const file=new File([new Uint8Array([1,2])],'image.png',{type:'image/png'});
+ await api.upload({...conversation,attachmentRevision:'materials-observed'},file);await api.upload(conversation,file);
+ assert.equal(calls[0].init.headers['x-buildr-attachment-revision'],'materials-observed');assert.equal(calls[0].init.headers['x-buildr-conversation-revision'],undefined);
+ assert.equal(calls[1].init.headers['x-buildr-conversation-revision'],conversation.revision);
+});
+
+test('补充请求身份按对话保存，丢失回执刷新后复用，确认拒绝后新尝试可重试',()=>{
+ const rows=new Map(),storage={getItem:key=>rows.get(key)||null,setItem:(key,value)=>rows.set(key,value),removeItem:key=>rows.delete(key)};
+ const images=[{id:'image',name:'a.png',mimeType:'image/png',size:8,revision:'r1'}];
+ const first=createConversationInputAttempts(storage),one=first.begin(conversation,'text',images);
+ const other={...conversation,id:'other'};first.begin(other,'other text',[]);
+ assert.equal(first.begin(conversation,'text',images).clientRequestId,one.clientRequestId);
+ const reloaded=createConversationInputAttempts(storage);assert.deepEqual(reloaded.read(conversation).images,images);assert.equal(reloaded.begin(conversation,'text',images).clientRequestId,one.clientRequestId);
+ reloaded.finish(conversation,one.clientRequestId);assert.notEqual(reloaded.begin(conversation,'text',images).clientRequestId,one.clientRequestId);
+});
+
+
+test('空草稿只在有用户历史且明确切换执行组合后生成继续要求',()=>{
+  const history={...conversation,entries:[{kind:'message',role:'user',text:'尚未完成的目标',status:'failed'}]};
+  assert.match(conversationContinuationText(history,true,'',0),/继续当前工作/);
+  assert.match(conversationContinuationText(history,true,'',0),/尚未交付的用户要求/);
+  assert.equal(conversationContinuationText(history,true,'新的要求',0),'新的要求');
+  assert.equal(conversationContinuationText(history,false,'',0),'');
+  assert.equal(conversationContinuationText(conversation,true,'',0),'');
+  assert.equal(conversationContinuationText(null,true,'',0),'');
+  assert.equal(conversationContinuationText(history,true,'',1),'');
+});
+
+
+test('异常恢复入口只取决于原执行状态，与选择模型或智能体无关',()=>{
+  const base={...conversation,requests:[],run:{...conversation.run,tools:[],startedAt:'2026-10-28T00:00:00Z'}};
+  const view=(status,accepted=true,entries=[])=>({...base,entries,run:{...base.run,status,accepted}});
+  assert.deepEqual(conversationRecoveryAction(view('failed',false)),{kind:'recover',label:'重试'});
+  assert.deepEqual(conversationRecoveryAction(view('failed')),{kind:'recover',label:'继续'});
+  assert.deepEqual(conversationRecoveryAction(view('stopped')),{kind:'recover',label:'继续'});
+  assert.deepEqual(conversationRecoveryAction(view('completed')),{kind:'recover',label:'继续'});
+  const reply={kind:'message',role:'assistant',runId:base.run.id,text:'已完成并答复',createdAt:'2026-10-28T00:00:01Z'};
+  assert.equal(conversationRecoveryAction(view('completed',true,[reply])),null);
+  assert.deepEqual(conversationRecoveryAction(view('unknown')),{kind:'observe',label:'核对状态'});
+  for(const status of ['starting','running','stopping','waiting-approval','waiting-question']) assert.equal(conversationRecoveryAction(view(status)),null);
+  assert.equal(conversationRecoveryAction({...view('failed'),requests:[{id:'pending'}]}),null);
+  assert.deepEqual(conversationRecoveryAction({...view('failed'),run:{...view('failed').run,tools:[{status:'unknown'}]}}),{kind:'observe',label:'核对状态'});
+  assert.equal(conversationRecoveryAction(null),null);
+});
+
+test('草稿图片入口独立于工作空间，首次发送和观察保持同一请求身份',async()=>{
+  const calls=[],wire=[];
+  const api=createAgentConversationsClient(async(url,init)=>{calls.push({url,body:init.body&&JSON.parse(init.body)});return {revision:'images-1',images:[]};},session,async(url,init)=>{wire.push({url,init});return new Response(JSON.stringify({revision:'images-2',images:[]}));});
+  await api.draftImages('draft-id');await api.uploadDraftImage('draft-id','images-1',new File([new Uint8Array([137,80,78,71,13,10,26,10])],'picture.png',{type:'image/png'}));
+  await api.startDraft('selected-workspace','draft-id',{connectionId:'codex',text:'one',expectedDraftRevision:'images-2',clientRequestId:'same-request'});
+  await api.lookupDraft('selected-workspace','draft-id','same-request');
+  assert.equal(calls[0].url,'/api/v1/app/agent-service/conversations/drafts/draft-id');
+  assert.equal(wire[0].url,'/api/v1/app/agent-service/conversations/drafts/draft-id/attachments');assert.equal(wire[0].init.headers['x-buildr-draft-revision'],'images-1');
+  assert.equal(calls[1].url,'/api/v1/workspaces/selected-workspace/agent-conversations/drafts/draft-id/send');assert.equal(calls[1].body.clientRequestId,'same-request');
+  assert.equal(calls[2].url,'/api/v1/workspaces/selected-workspace/agent-conversations/drafts/draft-id/submissions/same-request');
+  assert.equal(calls.some(call=>call.url.endsWith('/agent-conversations')),false,'图片准备没有创建真实对话请求');
+});
+
+test('对话 Markdown 图片按可访问来源解析，拒绝脚本与不安全协议',()=>{
+  assert.deepEqual(conversationImageSource('/work','https://example.org/a.png'),{href:'https://example.org/a.png'});
+  assert.deepEqual(conversationImageSource('/work','data:image/png;base64,AAAA'),{href:'data:image/png;base64,AAAA'});
+  assert.deepEqual(conversationImageSource('/work','blob:https://example.org/id'),{href:'blob:https://example.org/id'});
+  const absolute=conversationImageSource('/work','/tmp/图 片.PNG?size=1#preview');
+  assert.equal(absolute.href,'/api/v1/conversation-image?path=%2Ftmp%2F%E5%9B%BE%20%E7%89%87.PNG');
+  const relative=conversationImageSource('/work','images/a.png');
+  assert.equal(relative.href,'/api/v1/conversation-image?path=%2Fwork%2Fimages%2Fa.png');
+  assert.equal(conversationImageSource(undefined,'images/a.png'),null);
+  for(const href of ['javascript:alert(1)','file:///tmp/a.png','//example.org/a.png','a%zz.png','a\0b.png']) assert.equal(conversationImageSource('/work',href),null,href);
+});
+
+test('本机截图链接复用认证图片来源，普通文件和不支持类型仍交给文件来源定位',()=>{
+  for(const value of ['/tmp/验收 截图.PNG','images/photo.webp','<images/a.jpg>','images/a%2Egif?download=1#preview','C:\\temp\\shot.bmp']){
+    assert.deepEqual(conversationImageLinkSource('/work',value),conversationImageSource('/work',value),value);
+  }
+  for(const value of ['/tmp/file.md','/tmp/page.svg','/tmp/shot.png:12','images/a.png%00','javascript:alert(1)','file:///tmp/a.png','//remote/a.png','https://example.org/a.png','data:image/png;base64,AAAA','blob:https://example.org/id','a%zz.png']){
+    assert.equal(conversationImageLinkSource('/work',value),null,value);
+  }
+  assert.equal(conversationImageLinkSource(undefined,'relative.png'),null);
+  assert.deepEqual(conversationImageLinkSource(undefined,'/tmp/shot.png'),conversationImageSource(undefined,'/tmp/shot.png'));
+});
+
+
+test('结束轮次退出观察，未知/工具/待回应/待发送保持观察，失败与停止不冒充成功',()=>{
+  const ended={...conversation,requests:[],run:{...conversation.run,status:'completed',tools:[],executionState:'ended'}};
+  assert.equal(needsConversationObservation(null),false);
+  assert.equal(needsConversationObservation({...ended,run:undefined}),false);
+  for(const status of ['completed','failed','stopped']){
+    const finished={...ended,run:{...ended.run,status}};
+    assert.equal(needsConversationObservation(finished),false,status);
+    assert.equal(conversationObservationKey(finished),null,status);
+    for(const executionState of ['active','unknown'])assert.equal(needsConversationObservation({...finished,run:{...finished.run,executionState}}),true);
+  }
+  for(const status of ['starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown'])assert.equal(needsConversationObservation({...ended,run:{...ended.run,status,resourcesReleased:true}}),true,status);
+  for(const status of ['running','unknown'])assert.equal(needsConversationObservation({...ended,run:{...ended.run,tools:[{id:'tool',status}]}}),true,status);
+  assert.equal(needsConversationObservation({...ended,requests:conversation.requests}),true);
+  assert.equal(needsConversationObservation({...ended,pendingSend:{id:'queued',state:'waiting'}}),true);
+  assert.equal(needsConversationObservation({...ended,entries:[{role:'assistant',text:'完成了'}],run:{...ended.run,status:'running'}}),true,'最后一段文字不是结束事实');
+});
+
+test('观察身份忽略普通输出变化，按新轮和待发送身份重建',()=>{
+  const active={...conversation,run:{...conversation.run,tools:[]}};
+  const key=conversationObservationKey(active);
+  assert.equal(conversationObservationKey({...active,revision:'r2',entries:[{text:'进展'}]}),key);
+  assert.notEqual(conversationObservationKey({...active,run:{...active.run,id:'new-run'}}),key);
+  assert.notEqual(conversationObservationKey({...active,run:{...active.run,generation:'new-generation'}}),key);
+  assert.notEqual(conversationObservationKey({...active,workspaceId:'another-workspace'}),key);
+  assert.notEqual(conversationObservationKey({...active,pendingSend:{id:'queued'}}),key);
+});
+
+
+test('收到结束快照后取消订阅，流关闭不再报断联且不继续投递',async()=>{
+  const controller=new AbortController(),event={cursor:1,generation:'g1',type:'snapshot',workspaceId:conversation.workspaceId,conversationId:conversation.id,payload:{conversation:{...conversation,run:{...conversation.run,status:'completed',tools:[]},requests:[]}}};
+  const body=`data: ${JSON.stringify(event)}\n\n`;
+  const api=createAgentConversationsClient(async()=>({}),session,async()=>new Response(body,{headers:{'content-type':'text/event-stream'}}));
+  let received=0;
+  await api.subscribe(conversation.workspaceId,conversation.id,controller.signal,()=>{received++;controller.abort();});
+  assert.equal(received,1);assert.equal(controller.signal.aborted,true);
 });

@@ -21,3 +21,5 @@ export type SendPreview = AgentConversationSendPreviewPreview;
 export type AttachmentView = AgentConversationAttachmentResultAttachmentResult;
 export type ConversationSummary = Omit<ConversationView,'entries'|'requests'> & {entries?:ConversationEntry[];requests?:ConversationRequest[]};
 export type PendingConversation = {conversationId:string;workspaceId:string;title:string;status:RunStatus;count?:number};
+
+export type { AgentConversationSupplementRequestSupplement as SupplementInput, AgentConversationSupplementResultSupplemented as SupplementResult } from '../../../build/generated/agent-service-http-dto';

@@ -4,8 +4,9 @@ import { useAppShell } from '../../../app/AppShellContext';
 import { api } from '../../../api';
 import { workspaceHref } from '../../../lib/labels';
 import { confirmModal } from '../../../lib/confirm';
-import { createServiceRuntimeClient, type ConnectionSelection, type ManagedRun, type ServiceRuntimeSummary, type TaskStartResult } from '../api/service-runtime-api';
+import { createServiceRuntimeClient, type ConnectionSelection, type ManagedRun, type TaskStartResult } from '../api/service-runtime-api';
 import { useTaskRuntime } from '../hooks/useServiceRuntime';
+import { useRuntimeConfiguration } from '../hooks/useRuntimeConfiguration';
 import { availableTaskServices, canUseLocalConnection, isActiveRun, runConnections, sourceLabel, taskSelections } from '../model';
 import { LocalRuntimeSurface } from './LocalRuntimeSurface';
 import { LocalLogsDrawer } from './LocalLogsDrawer';
@@ -28,7 +29,7 @@ export function TaskLocalRuntime({ taskId }: { taskId: string }) {
   const [busyIds, setBusyIds] = useState<string[]>([]);
   const [logRun, setLogRun] = useState<ManagedRun | null>(null);
   const [switchRun, setSwitchRun] = useState<ManagedRun | null>(null);
-  const [discovery, setDiscovery] = useState<ServiceRuntimeSummary | null>(null);
+  const configuration = useRuntimeConfiguration();
   const services = runtime.data?.services || [];
   const runs = runtime.data?.runs.filter(run => run.taskId === taskId) || [];
   const connectionBlocked = connection === 'local' && !canUseLocalConnection(services, selected, true);
@@ -65,7 +66,7 @@ export function TaskLocalRuntime({ taskId }: { taskId: string }) {
     {error && !startOpen ? <Alert type="error" showIcon message={error} closable onClose={() => setError('')} /> : null}
     {runtime.data?.diagnostics.length ? <Alert type="warning" showIcon message="任务服务诊断" description={runtime.data.diagnostics.join('；')} /> : null}
     {runtime.loading && !runtime.data ? <p className="runtime-section-note">正在读取任务服务与代码目录…</p> : null}
-    {services.filter(item => !item.service.definition || !item.worktree || item.diagnostics.length).map(item => <Alert key={item.service.code} type="warning" showIcon message={item.service.name} description={[...item.diagnostics, ...(!item.worktree ? ['没有唯一匹配的本任务代码目录，不会回落主工作库。'] : []), ...(!item.service.definition ? [item.service.definitionDiagnostic || '尚未配置启动方式。'] : [])].join('；')} action={!item.service.definition ? <Button size="small" onClick={() => setDiscovery(item.service)}>运行配置</Button> : undefined} />)}
+    {services.filter(item => !item.service.definition || !item.worktree || item.diagnostics.length).map(item => <Alert key={item.service.code} type="warning" showIcon message={item.service.name} description={[...item.diagnostics, ...(!item.worktree ? ['没有唯一匹配的本任务代码目录，不会回落主工作库。'] : []), ...(!item.service.definition ? [item.service.definitionDiagnostic || '尚未配置启动方式。'] : [])].join('；')} action={!item.service.definition ? <Button size="small" loading={configuration.pendingCode === item.service.code} onClick={() => void configuration.configure({ code: item.service.code, name: item.service.name })}>运行配置</Button> : undefined} />)}
     <LocalRuntimeSurface taskScope services={services.map(item => item.service)} runs={runs} busyIds={busyIds} startDisabled={!availableTaskServices(services).length || starting} onStart={openStart} onStop={run => void stop([run])} onStopAll={() => void stop(runs.filter(isActiveRun))} onLogs={setLogRun} onConnection={setSwitchRun} serviceHref={service => workspaceHref(workspaceId, `/services/${encodeURIComponent(service.id)}?view=runtime`)} />
     <Modal centered open={startOpen} onCancel={starting ? undefined : () => setStartOpen(false)} closable={!starting} keyboard={!starting} maskClosable={!starting} title="启动本任务服务" width={760} footer={<>{starting ? <Button onClick={() => setStartOpen(false)}>后台查看运行状态</Button> : <Button onClick={() => setStartOpen(false)}>取消</Button>}<Button type="primary" loading={starting} disabled={!taskSelections(services, selected).length || connectionBlocked} onClick={() => void start()}>启动所选服务</Button></>}>
       <div id="task-runtime-start-modal">
@@ -77,6 +78,6 @@ export function TaskLocalRuntime({ taskId }: { taskId: string }) {
     </Modal>
     <StartWorktreeModal open={Boolean(switchRun)} serviceCode={switchRun?.serviceCode || null} serviceName={selectedService?.name} initialRun={switchRun} onClose={() => setSwitchRun(null)} onStarted={async () => { await runtime.refresh({ silent: true }); }} />
     <LocalLogsDrawer open={Boolean(logRun)} run={runs.find(run => run.id === logRun?.id) || logRun} serviceName={services.find(item => item.service.code === logRun?.serviceCode)?.service.name} onClose={() => setLogRun(null)} />
-    <AgentDiscoveryDrawer open={Boolean(discovery)} serviceCode={discovery?.code || null} serviceName={discovery?.name} onClose={() => setDiscovery(null)} />
+    <AgentDiscoveryDrawer open={Boolean(configuration.discovery)} serviceCode={configuration.discovery?.code ?? null} serviceName={configuration.discovery?.name} tone={configuration.discovery?.tone} reason={configuration.discovery?.message} onClose={configuration.closeDiscovery} />
   </section>;
 }

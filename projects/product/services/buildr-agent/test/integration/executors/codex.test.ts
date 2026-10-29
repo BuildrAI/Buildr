@@ -4,11 +4,78 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+import { createAgentService } from '../../../build/index.js';
 import { createCodexExecutor } from '../../../build/executors/codex/index.js';
 import type { ExecutorEvent, AgentRuntime, ContextRef, ExecutionRef } from '../../../src/contracts.ts';
 
 const source = readFileSync(new URL('./fixtures/codex-cli.mjs', import.meta.url), 'utf8');
 async function eventually(condition: () => unknown, timeout = 1000) { const until = Date.now() + timeout; while (!condition()) { if (Date.now() > until) throw new Error('condition timeout'); await new Promise(resolve => setTimeout(resolve, 5)); } }
+test('Codex supplementary text and local images bind to the exact active turn and client input identity', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-codex-supplement-')); let runtime: AgentRuntime | undefined;
+  try {
+    const executable = join(root,'codex.mjs'); await writeFile(executable, source);
+    const imagePath=join(root,'image.png');await writeFile(imagePath,Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5EsAAAAASUVORK5CYII=','base64'));
+    runtime = await createCodexExecutor().open({connectionId:'codex',configRoot:root,executable,environment:{PATH:process.env.PATH??''}});
+    const contextRef=await runtime.createContext({cwd:root}),events:ExecutorEvent[]=[];
+    const sending=runtime.send({contextRef,cwd:root,text:'initial',images:[],clientRequestId:'initial-request',onEvent:event=>events.push(event)});
+    sending.catch(()=>{});
+    await eventually(()=>events.some(event=>event.type==='request'));
+    const accepted=events.find(event=>event.type==='accepted');assert.equal(accepted?.type,'accepted');
+    const receipt=await runtime.supplement!({contextRef,executionRef:accepted.executionRef,cwd:root,text:'extra',images:[{id:'image',path:imagePath,mimeType:'image/png'}],clientRequestId:'extra-request'});
+    assert.equal(receipt.executionRef.id,accepted.executionRef.id);assert.equal(receipt.inputItemId,'extra-request');
+    await eventually(()=>events.some(event=>event.type==='item'&&event.item.id==='native-extra-request'));
+    const extra=events.find(event=>event.type==='item'&&event.item.id==='native-extra-request');assert.equal(extra?.type,'item');assert.equal(extra.item.clientRequestId,'extra-request');
+    const history=await runtime.readHistory({contextRef,cwd:root});assert.deepEqual(history.filter(item=>item.role==='user').map(item=>[item.id,item.clientRequestId]),[['initial-request',undefined],['native-extra-request','extra-request']]);
+    const state=JSON.parse(await readFile(join(root,'codex-home/state.json'),'utf8'));assert.equal(state[contextRef.id].turns.length,1);assert.ok(state[contextRef.id].turns[0].items[1].content.some((part:any)=>part.type==='localImage'&&part.path===imagePath));
+    assert.equal((await runtime.observe({contextRef,executionRef:accepted.executionRef})).status,'waiting');
+    await assert.rejects(runtime.supplement!({contextRef,executionRef:{id:'other'},cwd:root,text:'wrong',images:[],clientRequestId:'wrong'}),/stale/);
+    await runtime.stop({contextRef,executionRef:accepted.executionRef});await sending;
+    await runtime.close();runtime=await createCodexExecutor().open({connectionId:'codex',configRoot:root,executable,environment:{PATH:process.env.PATH??''}});
+    await runtime.resumeContext({contextRef,cwd:root});
+    assert.equal((await runtime.readHistory({contextRef,cwd:root})).find(item=>item.id==='native-extra-request')?.clientRequestId,'extra-request');
+  } finally { await runtime?.close();await rm(root,{recursive:true,force:true}); }
+});
+test('Codex supplementary native identities repair legacy history and allow a new turn in the same conversation', async () => {
+  const root=await mkdtemp(join(tmpdir(),'buildr-codex-supplement-resume-'));
+  const options={dataRoot:join(root,'profile'),executors:[createCodexExecutor()],modelProviders:[],environment:{PATH:process.env.PATH??''},resolveWorkspace(){return {rootPath:root};}};
+  let service:ReturnType<typeof createAgentService>|undefined;
+  try {
+    const executable=join(root,'codex.mjs');await writeFile(executable,source);
+    service=createAgentService(options);
+    await service.connections.connect('codex',{expectedRevision:service.connections.read('codex').revision,executable});
+    const view=await service.conversations.create('workspace',{}),id=view.id;
+    const send=(text:string,clientRequestId:string)=>{const draft={expectedRevision:service!.conversations.read('workspace',id).revision,connectionId:'codex',text};const preview=service!.conversations.prepareSend('workspace',id,draft);return service!.conversations.send('workspace',id,{...draft,previewToken:preview.token,clientRequestId});};
+    send('initial','initial-request');
+    await eventually(()=>service!.conversations.read('workspace',id).run?.status==='waiting-question');
+    const run=service.conversations.read('workspace',id).run!;
+    // Identical content must still match the two explicit client identities.
+    for(const clientRequestId of ['extra-one','extra-two']){
+      assert.equal((await service.conversations.supplement('workspace',id,{runId:run.id,participantId:run.participantId,generation:run.generation,text:'same text',clientRequestId})).delivery,'accepted');
+    }
+    assert.equal(service.conversations.read('workspace',id).run?.status,'waiting-question');
+    await service.conversations.stop('workspace',id,{expectedRevision:service.conversations.read('workspace',id).revision,runId:run.id,participantId:run.participantId,generation:run.generation});
+    await service.close();service=undefined;
+    // The old adapter saved the client id as the native id and never indexed
+    // the native supplementary item. Recreate that existing persisted shape.
+    const db=new DatabaseSync(join(options.dataRoot,'agent-service/conversations.sqlite'));
+    let contextId:string;
+    try {
+      const row=db.prepare('SELECT body FROM conversations WHERE id=?').get(id) as {body:string};const record=JSON.parse(row.body);contextId=record.participants[0].contextRef.id;
+      for(const attempt of record.attempts.filter((a:any)=>a.supplement)){delete record.sources[`${attempt.participantId}:message:${attempt.nativeInputItemId}`];attempt.nativeInputItemId=attempt.clientRequestId;record.sources[`${attempt.participantId}:message:${attempt.clientRequestId}`]=attempt.userEntryId;}
+      db.prepare('UPDATE conversations SET body=? WHERE id=?').run(JSON.stringify(record),id);
+    } finally {db.close();}
+    service=createAgentService(options);
+    await service.conversations.observe('workspace',id);
+    assert.deepEqual(service.conversations.read('workspace',id).entries.filter(entry=>entry.role==='user').map(entry=>[entry.text,entry.status]),[['initial','accepted'],['same text','accepted'],['same text','accepted']]);
+    send('next instruction','next-request');
+    await eventually(()=>service!.conversations.read('workspace',id).run?.status==='waiting-question');
+    const state=JSON.parse(await readFile(join(options.dataRoot,'agent-service/connections/codex/codex-home/state.json'),'utf8'));
+    assert.deepEqual(Object.values(state).filter((thread:any)=>thread.turns.some((turn:any)=>turn.items.some((item:any)=>item.id==='next-request'))).map((thread:any)=>thread.id),[contextId!]);assert.equal(state[contextId!].turns.length,2);
+    assert.deepEqual(state[contextId!].turns[0].items.filter((item:any)=>item.type==='userMessage').map((item:any)=>item.id),['initial-request','native-extra-one','native-extra-two']);
+    const next=service.conversations.read('workspace',id).run!;await service.conversations.stop('workspace',id,{expectedRevision:service.conversations.read('workspace',id).revision,runId:next.id,participantId:next.participantId,generation:next.generation});
+  } finally {await service?.close();await rm(root,{recursive:true,force:true});}
+});
 test('Codex retains a safe native failure after tools in completion and observation', async () => {
   const root = await mkdtemp(join(tmpdir(), 'buildr-codex-error-')); let runtime: AgentRuntime | undefined;
   try {
@@ -54,7 +121,7 @@ test('Codex native adapter preserves exact context, streams, answers and stops o
     const nativeState = JSON.parse(await readFile(join(configRoot, 'codex-home/state.json'), 'utf8')); assert.equal(nativeState[reference.id].turns[0].items[0].content[1].type, 'localImage');
     const binding = runtime.bindingIdentity; await runtime.close(); runtime = await createCodexExecutor().open(options); assert.equal(runtime.bindingIdentity, binding);
     await runtime.resumeContext({ contextRef: reference, cwd: workspace });
-    const history = await runtime.readHistory({ contextRef: reference, cwd: workspace }); assert.ok(history.some(item => item.id === 'user-turn-0' && item.executionId === 'turn-0'));
+    const history = await runtime.readHistory({ contextRef: reference, cwd: workspace }); assert.ok(history.some(item => item.id === 'client-1' && item.executionId === 'turn-0'));
     assert.equal(history.find(item=>item.id==='command-turn-0')?.status,'completed','completed native tool stays completed inside an interrupted turn');
     await assert.rejects(runtime.resumeContext({ contextRef: reference, cwd: root }), /binding_mismatch/);
     const prior={identity:runtime.bindingIdentity,data:runtime.bindingData};await runtime.close();
@@ -62,7 +129,7 @@ test('Codex native adapter preserves exact context, streams, answers and stops o
     runtime=await createCodexExecutor().open({...options,binding:prior});
     assert.equal(runtime.bindingIdentity,binding);assert.equal(runtime.bindingData?.observedVersion,'0.164.0-alpha.11.1');
     await runtime.resumeContext({contextRef:reference,cwd:workspace});
-    assert.ok((await runtime.readHistory({contextRef:reference,cwd:workspace})).some(item=>item.id==='user-turn-0'));
+    assert.ok((await runtime.readHistory({contextRef:reference,cwd:workspace})).some(item=>item.id==='client-1'));
     await runtime.close();runtime=undefined;
     await writeFile(executable,source.replace('codex 0.163.0','codex 1.0.0'));
     await assert.rejects(createCodexExecutor().open({...options,binding:prior}),/version_unsupported/);
@@ -95,6 +162,12 @@ test('closed Codex transport restores the exact interrupted execution from nativ
     await runtime.resumeContext({contextRef,cwd:root});
     const uncertain=await runtime.observe({contextRef,executionRef:accepted.executionRef});
     assert.equal(uncertain.tools[0]?.status,'unknown');assert.equal(uncertain.tools[0]?.id,'unfinished');
+    const rawPath=state[contextRef.id].path;
+    await writeFile(rawPath,(await readFile(rawPath,'utf8'))+JSON.stringify({type:'response_item',payload:{type:'function_call',call_id:'received-complete',name:'exec_command'}})+'\n');
+    const receipt={id:'received-complete',kind:'tool' as const,role:'system' as const,text:'exit code 0',status:'completed' as const,executionId:accepted.executionRef.id};
+    assert.ok((await runtime.observe({contextRef,executionRef:accepted.executionRef})).tools.some(tool=>tool.id===receipt.id));
+    assert.ok(!(await runtime.observe({contextRef,executionRef:accepted.executionRef,knownItems:[receipt]})).tools.some(tool=>tool.id===receipt.id));
+    for(const invalid of [{...receipt,executionId:'other'},{...receipt,text:'Process running with session ID 4'}]) assert.ok((await runtime.observe({contextRef,executionRef:accepted.executionRef,knownItems:[invalid]})).tools.some(tool=>tool.id===receipt.id));
 
   } finally {await runtime?.close();await rm(root,{recursive:true,force:true});}
 });
@@ -139,4 +212,42 @@ test('a terminal projection error cannot strand the native send promise',async()
     try{await Promise.race([sending,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('send remained pending')),1000);})]);}finally{clearTimeout(timer);}
     assert.equal(runtime.closed,false);assert.equal((await runtime.observe({contextRef,executionRef:accepted.executionRef})).status,'stopped');
   }finally{await runtime?.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('Codex cold recovery detects an unfinished durable call omitted by thread/read', async () => {
+  const { codexUnsettledTools } = await import('../../../src/executors/codex/recovery.ts');
+  const root = await mkdtemp(join(tmpdir(), 'buildr-codex-unsettled-')), sessions = join(root, 'sessions'); await mkdir(sessions);
+  const path = join(sessions, 'exact.jsonl');
+  const rows = [{ type: 'session_meta', payload: { id: 'context' } }, { type: 'event_msg', payload: { type: 'task_started', turn_id: 'exact' } }, { type: 'response_item', payload: { type: 'function_call', call_id: 'effect', name: 'exec_command' } }];
+  try {
+    await writeFile(path, rows.map(row => JSON.stringify(row)).join('\n') + '\n');
+    assert.deepEqual((await codexUnsettledTools(path, root, 'context', 'exact')).map(tool => tool.id), ['effect']);
+    await assert.rejects(codexUnsettledTools(path, root, 'other', 'exact'), /mismatch/);
+    await assert.rejects(codexUnsettledTools(path, root, 'context', 'other'), /incomplete/);
+    await assert.rejects(codexUnsettledTools(undefined, root, 'context', 'exact'), /unavailable/);
+    rows.push({ type: 'response_item', payload: { type: 'function_call_output', call_id: 'effect', output: 'COMMITTED' } } as any);
+    await writeFile(path, rows.map(row => JSON.stringify(row)).join('\n') + '\n');
+    assert.deepEqual(await codexUnsettledTools(path, root, 'context', 'exact'), []);
+    (rows.at(-1)!.payload as any).output = 'Process running with session ID 123';
+    await writeFile(path, rows.map(row => JSON.stringify(row)).join('\n') + '\n');
+    assert.equal((await codexUnsettledTools(path, root, 'context', 'exact'))[0].status, 'unknown');
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('Codex image viewing appears once in both live flow and durable history', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-codex-image-view-')); let runtime: AgentRuntime | undefined;
+  try {
+    const executable = join(root, 'codex.mjs'), before = "event('item/agentMessage/delta'";
+    await writeFile(executable, source.replace(before, "const imageView={id:'native-image',type:'imageView',path:'file:///test/image.png'};active.items.push(imageView);save();event('item/completed',{threadId:p.threadId,turnId:id,item:imageView});" + before));
+    runtime = await createCodexExecutor().open({ connectionId: 'codex', configRoot: root, executable, environment: { PATH: process.env.PATH ?? '' } });
+    const contextRef = await runtime.createContext({ cwd: root }), events: ExecutorEvent[] = [];
+    const sending = runtime.send({ contextRef, cwd: root, text: 'view image', images: [], clientRequestId: 'image-request', onEvent: event => events.push(event) }); sending.catch(() => {});
+    await eventually(() => events.some(event => event.type === 'request'));
+    const live = events.filter(event => event.type === 'item' && event.item.id === 'native-image'); assert.equal(live.length, 1);
+    assert.equal(live[0].type === 'item' && live[0].item.name, 'view-image');
+    const history = await runtime.readHistory({ contextRef, cwd: root }); assert.equal(history.filter(item => item.id === 'native-image').length, 1);
+    assert.equal(history.find(item => item.id === 'native-image')?.status, 'completed');
+    const accepted = events.find(event => event.type === 'accepted'); assert.equal(accepted?.type, 'accepted');
+    await runtime.stop({ contextRef, executionRef: accepted.executionRef }); await sending;
+  } finally { await runtime?.close(); await rm(root, { recursive: true, force: true }); }
 });

@@ -166,6 +166,40 @@ test('Codex explicit login, dynamic catalog and Responses negotiation work witho
   assert.ok(!JSON.stringify(view).includes('private-codex-token'));
 });
 
+test('Codex exposes only reported speed tiers, keeps reasoning and sends priority then clears standard',async t=>{
+  const root=await mkdtemp(join(tmpdir(),'buildr-codex-tiers-'));
+  const sent:Record<string,unknown>[]=[];
+  const runtime=await createCodexModelProvider({owner:{
+    inspect:async()=>({status:'ready'}),identity:async()=> 'fixture',
+    request:async(path,init={})=>{
+      if(path.includes('/codex/models'))return Response.json({models:[
+        {slug:'sol',supported_reasoning_levels:[{effort:'high'}],default_reasoning_level:'high',additional_speed_tiers:['fast'],service_tiers:[{id:'priority',name:'Fast',description:'increased usage'}]},
+        {slug:'legacy',additional_speed_tiers:['fast']},
+        {slug:'plain'},
+      ]});
+      if(path==='/wham/usage')return Response.json({});
+      assert.equal(path,'/codex/responses');sent.push(JSON.parse(String(init.body)));
+      return new Response('data: {"type":"response.completed","response":{"status":"completed","output":[]}}\n\n',{headers:{'content-type':'text/event-stream'}});
+    }
+  }}).open({accountId:'native-codex',configRoot:root,environment:{}});
+  t.after(async()=>{await runtime.close();await rm(root,{recursive:true,force:true});});
+  const view=await runtime.inspect(),sol=view.models.find(model=>model.id==='sol')!;
+  assert.deepEqual(sol.serviceTiers?.map(tier=>tier.id),['default','priority']);
+  assert.equal(sol.defaultServiceTier,'default');
+  assert.deepEqual(sol.serviceTiers?.[1].reasoningEfforts,[{id:'high',label:'high'}]);
+  assert.equal(sol.serviceTiers?.[1].defaultReasoningEffort,'high');
+  assert.equal(view.models.find(model=>model.id==='plain')?.serviceTiers,undefined);
+  assert.deepEqual(view.models.find(model=>model.id==='legacy')?.serviceTiers?.map(tier=>tier.id),['default','priority']);
+  for(const tier of ['priority','default']){
+    const response=await runtime.infer(input({input:'work',stream:true,service_tier:tier,reasoning:{effort:'high'}},'sol'));
+    assert.equal(response.status,200);await response.text();
+  }
+  assert.equal(sent[0].service_tier,'priority');assert.equal(sent[1].service_tier,undefined);
+  assert.deepEqual(sent[0].reasoning,{effort:'high'});
+  assert.equal((await runtime.infer(input({input:'work',service_tier:'priority'},'plain'))).status,400);
+  assert.equal(sent.length,2,'unsupported model is rejected before inference');
+});
+
 test('native Codex headerless Responses streams complete a Chat tool loop through the real translators', async t => {
   const root = await mkdtemp(join(tmpdir(), 'buildr-codex-owner-stream-')), requests: Record<string, unknown>[] = [];
   const runtime = await createCodexModelProvider({ owner: {

@@ -497,15 +497,32 @@ export function createRuntimeContext(value: any): any  {
 }
 
 export function createRuntimePlan(value: any): any  {
+  const writes = value.writes || [];
+  const writeTargets: any = new Set(writes.filter((item: any) => typeof item?.targetFile === 'string').map((item: any) => path.resolve(item.targetFile)));
+  // A removal colliding with a write in the same plan is replace intent, not
+  // ambiguity: every target already lives under the managed runtime root, so
+  // the write wins and the redundant removal is dropped. Without this,
+  // producers that disagree on a stale layout (for example orphan cleanup
+  // versus a rewritten projection) make the plan reject itself — or worse,
+  // the removal would delete freshly written files during reconciliation.
+  const removals = (value.removals || []).filter((item: any) => {
+    const targetFile = typeof item === 'string' ? item : item?.targetFile;
+    if (typeof targetFile !== 'string') return true;
+    const target = path.resolve(targetFile);
+    if (writeTargets.has(target)) return false;
+    if (typeof item === 'object' && item.type === 'directory'
+      && [...writeTargets].some((written) => written.startsWith(`${target}${path.sep}`))) return false;
+    return true;
+  });
   return freeze({
     schemaVersion: 'buildr.runtime-plan/v1',
     adapterId: value.adapterId === 'codex' ? DEFAULT_RUNTIME_ADAPTER_ID : value.adapterId,
     runtimeId: Object.hasOwn(value, 'runtimeId') ? value.runtimeId : value.adapterId === 'codex' ? 'codex' : null,
     targetRoot: path.resolve(value.targetRoot),
     scope: value.scope,
-    writes: value.writes || [],
+    writes,
     nativeAssets: value.nativeAssets || [],
-    removals: value.removals || [],
+    removals,
     capabilityEvidence: value.capabilityEvidence || [],
     findings: value.findings || [],
     repairs: value.repairs || [],

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { App, Button, Space } from 'antd';
-import { CopyOutlined, FolderOpenOutlined } from '@ant-design/icons';
-import { copyText } from '../lib/copyText';
+import { FolderOpenOutlined } from '@ant-design/icons';
+import { CopyButton } from './CopyButton';
 
 export function FileSystemActions({ path, onOpen, disabled = false }: { path: string; onOpen(): Promise<unknown>; disabled?: boolean }) {
   const { message } = App.useApp();
@@ -13,5 +13,5 @@ export function FileSystemActions({ path, onOpen, disabled = false }: { path: st
     catch (error) { void message.error(error instanceof Error ? error.message : '打开失败，请重试。'); }
     finally { setOpening(false); }
   };
-  return <Space wrap><Button size="small" icon={<FolderOpenOutlined />} disabled={disabled} loading={opening} onClick={() => void open()}>在文件系统中打开</Button><Button size="small" icon={<CopyOutlined />} onClick={() => void copyText(path).then(ok => { if (ok) void message.success('路径已复制'); else void message.warning('复制失败，请选中路径复制。'); })}>复制路径</Button></Space>;
+  return <Space wrap><Button size="small" icon={<FolderOpenOutlined />} disabled={disabled} loading={opening} onClick={() => void open()}>在文件系统中打开</Button><CopyButton text={path} failureMessage="复制失败，请选中路径复制。">复制路径</CopyButton></Space>;
 }

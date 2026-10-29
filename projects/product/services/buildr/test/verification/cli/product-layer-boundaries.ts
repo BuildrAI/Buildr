@@ -27,6 +27,11 @@ const allowedTargets: any = {
   module: new Set(['interfaces', 'application', 'domain', 'infrastructure']),
 };
 const allowedCrossModulePorts: any = new Set([
+  // A lightweight public Web port captures the private startup environment
+  // before Bootstrap loads the full composition or starts Agent processes.
+  'bootstrap/cli/main.ts -> web/startup-context.ts',
+  'web/application/instance-lifecycle.ts -> web/startup-context.ts',
+  'web/application/restart-web-handoff.ts -> web/startup-context.ts',
   'modules/agent-service/module.ts -> modules/workspace/module.ts',
   'modules/agent-service/module.ts -> modules/task/module.ts',
   'modules/artifact-lifecycle/module.ts -> modules/task/module.ts',

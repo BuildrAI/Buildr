@@ -6,11 +6,14 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomUUID } from 'node:crypto';
 import { createAgentService } from '../../src/index.ts';
-import type { AgentExecutor, AgentRuntime, AgentServiceOptions, ContextRef, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorSendInput, ExecutorTitleInput, LoginObservation } from '../../src/contracts.ts';
+import type { AgentExecutor, AgentRuntime, AgentServiceOptions, ContextRef, ConversationEntry, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorSendInput, ExecutorTitleInput, LoginObservation } from '../../src/contracts.ts';
+import { NativeRequestError } from '../../src/domain/error-diagnostic.ts';
+import { ConversationRepository } from '../../src/persistence/conversation-repository.ts';
 
 type Context = { items: ExecutorItem[]; observation: ExecutorObservation; unblock?: () => void };
-function fake(id = 'local', options: { hold?: boolean; disconnect?: 'stopped'|'running'|'unknown'|'tool'; beforeDisconnect?: Promise<void>; disconnectAlways?: boolean; beforeResume?: Promise<void>; unknown?: boolean; images?: boolean; request?: boolean; coldUnknown?: boolean; beforeAccepted?: Promise<void>; replyAfterTerminal?: boolean; toolSurvives?: boolean; toolInput?: boolean; failure?: string; summary?:(input:ExecutorTitleInput)=>Promise<string|undefined> } = {}) {
-  const contexts = new Map<string, Context>(); const sends: ExecutorSendInput[] = []; const opens: ExecutorOpenOptions[] = [];
+function fake(id = 'local', options: { hold?: boolean; disconnect?: 'stopped'|'running'|'unknown'|'tool'; disconnectError?: string; beforeDisconnect?: Promise<void>; disconnectAlways?: boolean; disconnectOn?: number; beforeResume?: Promise<void>; unknown?: boolean; images?: boolean; noAnswer?: boolean; multipleModels?: boolean; request?: boolean; question?: boolean; coldUnknown?: boolean; beforeAccepted?: Promise<void>; replyAfterTerminal?: boolean; toolSurvives?: boolean; toolInput?: boolean; failure?: string | ((attempt: number) => string | undefined); prepareFailures?: number; unknownCreate?: boolean; beforeObservation?: Promise<void>; wrongObservation?: boolean; summary?:(input:ExecutorTitleInput)=>Promise<string|undefined> } = {}) {
+  const contexts = new Map<string, Context>(); const sends: ExecutorSendInput[] = []; const replies: unknown[] = []; const opens: ExecutorOpenOptions[] = [];
+  let preparations = 0;
   let loginUpdate: ((value: LoginObservation) => void) | undefined;
   const capabilities = { text: true, images: Boolean(options.images), approval: true, questions: true, stop: true, resume: true, maxInputBytes: 128 * 1024 };
   const get = (ref: ContextRef) => { const context = contexts.get(ref.id); assert.ok(context, 'exact context must be restored'); return context; };
@@ -20,10 +23,10 @@ function fake(id = 'local', options: { hold?: boolean; disconnect?: 'stopped'|'r
     const runtime: AgentRuntime = {
       bindingIdentity: `${id}:${input.configRoot}`, capabilities, get closed() { return closed; },
       async inspectAccount() { return { status: 'ready', label: 'local account' }; },
-      async models() { return [{ id: 'test-model', label: 'test-model' }]; },
+      async models() { return [{ id: 'test-model', label: 'test-model' }, ...(options.multipleModels ? [{id:'other-model',label:'other-model'}] : [])]; },
       async beginLogin(update) { loginUpdate = update; update({ state: 'waiting-browser', url: 'https://example.test/official?secret=temporary' }); },
       async cancelLogin() {},
-      async createContext() { const ref = { id: randomUUID() }; contexts.set(ref.id, { items: [], observation: { status: 'idle', tools: [] } }); return ref; },
+      async createContext() { if (++preparations <= (options.prepareFailures ?? 0)) throw options.unknownCreate ? new Error('agent_native_timeout') : new NativeRequestError('service temporarily unavailable'); const ref = { id: randomUUID() }; contexts.set(ref.id, { items: [], observation: { status: 'idle', tools: [] } }); return ref; },
       async resumeContext({ contextRef }) { if (opens.length > 1) await options.beforeResume; get(contextRef); },
       async readHistory({ contextRef }) { return structuredClone(get(contextRef).items); },
       async send(input) {
@@ -35,15 +38,17 @@ function fake(id = 'local', options: { hold?: boolean; disconnect?: 'stopped'|'r
         input.onEvent({ type: 'accepted', executionRef, inputItemId: `input-${sends.length}` });
         const user: ExecutorItem = { id: `input-${sends.length}`, kind: 'message', role: 'user', text: input.text, executionId: executionRef.id };
         context.items.push(user); input.onEvent({ type: 'item', item: user });
+        if(options.request||options.question)context.observation={status:'waiting',executionRef,tools:[]};
+        if(options.question)input.onEvent({type:'request',request:{id:'question-one',kind:'question',title:'处理范围',questions:[{id:'scope',label:'具体范围',allowOther:true,options:[{id:'yes',label:'确认'}]}]}});
         if (options.request) input.onEvent({ type: 'request', request: { id: 'permit-one', kind: 'approval', title: 'Write a file?', options: [{ id: 'allow-once', label: 'Allow once' }, { id: 'deny', label: 'Deny' }] } });
-        if (options.disconnect && (sends.length === 1 || options.disconnectAlways)) {
+        if (options.disconnect && (sends.length === (options.disconnectOn ?? 1) || options.disconnectAlways)) {
           await options.beforeDisconnect;
           closed = true;
           context.observation = { status: options.disconnect === 'tool' ? 'stopped' : options.disconnect, executionRef,
             tools: options.disconnect === 'tool' ? [{id:'uncertain-tool',label:'write',status:'unknown',canStop:false}] : [] };
-          throw new Error('codex_execution_observation_lost');
+          throw new Error(options.disconnectError ?? 'codex_execution_observation_lost');
         }
-        if (options.hold || options.request) await new Promise<void>(resolve => { context.unblock = resolve; });
+        if (options.hold || options.request || options.question) await new Promise<void>(resolve => { context.unblock = resolve; });
         if (context.observation.status === 'stopped') { input.onEvent({ type: 'completed', status: 'stopped' }); return; }
         if (options.toolInput) {
           const invocation:ExecutorItem={id:`tool-${sends.length}`,kind:'tool',role:'system',name:'read',input:'{"file_path":"src/example.ts"}',text:'read\n{"file_path":"src/example.ts"}',executionId:executionRef.id,status:'running'};
@@ -52,19 +57,20 @@ function fake(id = 'local', options: { hold?: boolean; disconnect?: 'stopped'|'r
           context.items.push(result);input.onEvent({type:'item',item:result});
         }
         const item: ExecutorItem = { id: `answer-${sends.length}`, kind: 'message', role: 'assistant', text: `answer from ${id}`, executionId: executionRef.id, status: 'completed' };
-        context.items.push(item); input.onEvent({ type: 'item', item });
+        if (!options.noAnswer) { context.items.push(item); input.onEvent({ type: 'item', item }); }
         context.observation = options.toolSurvives ? { status: 'tools-active', executionRef, tools: [{ id: 'own-tool', label: 'owned command', status: 'running', canStop: true }] } : { status: 'idle', executionRef, tools: [] };
-        input.onEvent({ type: 'completed', status: options.failure ? 'failed' : 'completed', ...(options.failure ? {diagnostic:options.failure} : {}) });
+        const failure = typeof options.failure === 'function' ? options.failure(sends.length) : options.failure;
+        input.onEvent({ type: 'completed', status: failure ? 'failed' : 'completed', ...(failure ? {diagnostic:failure} : {}) });
       },
-      async observe({ contextRef }) { return options.coldUnknown && !didSend ? { status: 'unknown', tools: [] } : structuredClone(get(contextRef).observation); },
-      async reply({ contextRef, answer }) { assert.equal(answer, 'allow-once'); const context = get(contextRef); context.unblock?.(); if (options.replyAfterTerminal) await new Promise(resolve => setTimeout(resolve, 25)); },
+      async observe({ contextRef }) { await options.beforeObservation; if (options.wrongObservation) return {...structuredClone(get(contextRef).observation), executionRef:{id:'wrong-execution'}}; return options.coldUnknown && !didSend ? { status: 'unknown', tools: [] } : structuredClone(get(contextRef).observation); },
+      async reply({ contextRef, answer }) { if(!options.question)assert.equal(answer, 'allow-once'); replies.push(answer); const context = get(contextRef); context.unblock?.(); if (options.replyAfterTerminal) await new Promise(resolve => setTimeout(resolve, 25)); },
       async stop({ contextRef }) { const context = get(contextRef); context.observation = { ...context.observation, status: 'stopped', tools: [] }; context.unblock?.(); return context.observation; },
       summarizeHandoff:options.summary,
       async close() {},
     };
     return runtime;
   } };
-  return { executor, contexts, sends, opens, loginUpdate: () => loginUpdate };
+  return { executor, contexts, sends, replies, opens, loginUpdate: () => loginUpdate };
 }
 function fixture(executors: AgentExecutor[], settings: { modelProviders?: AgentServiceOptions['modelProviders']; autoContinueInterrupted?: boolean; shutdownTimeoutMs?: number; now?: () => Date } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-agent-core-'));
@@ -76,7 +82,7 @@ function fixture(executors: AgentExecutor[], settings: { modelProviders?: AgentS
 async function connected(service: ReturnType<typeof createAgentService>, id: string) { return service.connections.connect(id, { expectedRevision: service.connections.read(id).revision }); }
 async function waitUntil<T>(read: () => T, predicate: (value: T) => boolean): Promise<T> {
   for (let i = 0; i < 500; i++) { const value = read(); if (predicate(value)) return value; await new Promise(resolve => setTimeout(resolve, 2)); }
-  assert.fail('observable state did not settle');
+  assert.fail('observable state did not settle: ' + JSON.stringify(read()).slice(-1800));
 }
 function send(service: ReturnType<typeof createAgentService>, id: string, connectionId: string, text: string, clientRequestId: string = randomUUID()) {
   const view = service.conversations.read('workspace-one', id);
@@ -434,11 +440,11 @@ test('temporary image expiry and capacity preserve every image referenced by a s
     assert.deepEqual(f.service.conversations.readAttachment('workspace-one', created.id, retained.id).bytes, png);
     assert.throws(() => f.service.conversations.readAttachment('workspace-one', created.id, temporary.id), { code: 'agent_attachment_missing' });
     assert.equal(fs.existsSync(path.join(f.options.dataRoot, 'agent-service', 'attachments', created.id, temporary.id)), false);
-    for (let index = 1; index < 32; index++) upload();
+    for (let index = 1; index < 64; index++) upload();
     const before = f.service.conversations.read('workspace-one', created.id);
     assert.throws(upload, { code: 'agent_attachment_capacity', status: 413 });
     assert.equal(f.service.conversations.read('workspace-one', created.id).revision, before.revision);
-    assert.equal(fs.readdirSync(path.join(f.options.dataRoot, 'agent-service', 'attachments', created.id)).length, 33, '32 temporary files plus the submitted image remain');
+    assert.equal(fs.readdirSync(path.join(f.options.dataRoot, 'agent-service', 'attachments', created.id)).length, 65, '64 temporary files plus the submitted image remain');
   } finally { await f.close(); }
 });
 
@@ -563,6 +569,79 @@ test('expired image cleanup refuses a replaced attachment directory before delet
     assert.throws(() => f.service.conversations.addAttachment('workspace-one', created.id, { expectedRevision: attached.revision, mimeType: 'image/png', bytes: png }), { code: 'agent_attachment_unsafe' });
     assert.equal(fs.readFileSync(path.join(foreign, attached.id), 'utf8'), 'foreign-owned-file');
     assert.equal(f.service.conversations.read('workspace-one', created.id).revision, attached.revision);
+  } finally { await f.close(); }
+});
+
+test('default history pages retain five rounds including dense tools and in-round answers, with exact earlier cursors', async t => {
+  for (const mode of ['named', 'legacy', 'mixed']) await t.test(`${mode} round identities`, async () => {
+    const f = fixture([]);
+    try {
+      const created = await f.service.conversations.create('workspace-one', {});
+      const entries: ConversationEntry[] = [];
+      for (let round = 1; round <= 12; round++) {
+        const append = (kind: ConversationEntry['kind'], role: ConversationEntry['role'], text: string) => entries.push({ id: `entry-${entries.length + 1}`, sequence: entries.length + 1, createdAt: created.updatedAt, kind, role, text, ...(mode === 'legacy' || mode === 'mixed' && (kind !== 'message' || round % 2 === 0 && role === 'user') ? {} : {runId:`run-${round}`}) });
+        append('message', 'user', `request ${round}`);
+        append('notice', 'user', `answer to approval ${round}`);
+        for (let tool = 0; tool < (round === 12 ? 120 : 2); tool++) append('tool', 'system', `tool ${round}/${tool}`);
+        append('message', 'assistant', `reply ${round}`);
+      }
+      const repository = new ConversationRepository(path.join(f.options.dataRoot, 'agent-service'));
+      const stored = repository.readConversation(created.id)!;
+      const revision = stored.view.revision;
+      stored.view.entries = entries; stored.view.revision = randomUUID();
+      repository.saveConversation(stored, revision);
+      const recent = f.service.conversations.read('workspace-one', created.id);
+      assert.ok(recent.entries.length > 100, 'a tool-heavy round must not displace the latest five rounds');
+      const pages: ConversationEntry[] = []; let page = recent;
+      for (const rounds of [[8, 9, 10, 11, 12], [3, 4, 5, 6, 7], [1, 2]]) {
+        assert.deepEqual(page.entries.filter(entry => entry.kind === 'message' && entry.role === 'user').map(entry => entry.text), rounds.map(round => `request ${round}`));
+        assert.equal(page.entries.filter(entry => entry.kind === 'notice').length, rounds.length);
+        pages.unshift(...page.entries);
+        if (page.nextEntryCursor === undefined) break;
+        assert.equal(page.nextEntryCursor, page.entries[0]!.sequence);
+        page = f.service.conversations.read('workspace-one', created.id, {before:page.nextEntryCursor});
+      }
+      assert.equal(page.nextEntryCursor, undefined);
+      assert.deepEqual(pages, entries);
+      assert.equal(new Set(pages.map(entry => entry.id)).size, entries.length);
+      const explicit = f.service.conversations.read('workspace-one', created.id, {limit:100});
+      assert.deepEqual(explicit.entries, entries.slice(-100), 'explicit entry-count callers retain their existing semantics');
+      assert.equal(explicit.nextEntryCursor, explicit.entries[0]!.sequence);
+      const subscription = f.service.conversations.subscribe('workspace-one', created.id);
+      const iterator = subscription.events[Symbol.asyncIterator]();
+      try {
+        const snapshot = (await iterator.next()).value!;
+        assert.deepEqual(snapshot.payload.conversation!.entries, recent.entries);
+        assert.equal(snapshot.payload.conversation!.nextEntryCursor, recent.nextEntryCursor);
+      } finally { subscription.close(); await iterator.return?.(); }
+    } finally { await f.close(); }
+  });
+});
+
+test('default round pages split oversized rounds by bytes without dropping durable entries', async () => {
+  const f = fixture([]);
+  try {
+    const created = await f.service.conversations.create('workspace-one', {});
+    const entries: ConversationEntry[] = Array.from({length:10}, (_, index) => ({id:`large-${index}`,sequence:index + 1,createdAt:created.updatedAt,kind:'tool',role:'system',runId:'large-round',text:'x'.repeat(700 * 1024)}));
+    const repository = new ConversationRepository(path.join(f.options.dataRoot, 'agent-service'));
+    const stored = repository.readConversation(created.id)!;
+    const revision = stored.view.revision;
+    stored.view.entries = entries; stored.view.revision = randomUUID();
+    repository.saveConversation(stored, revision);
+    const recovered: ConversationEntry[] = [];
+    let page = f.service.conversations.read('workspace-one', created.id);
+    assert.ok(page.nextEntryCursor);
+    for (;;) {
+      assert.ok(page.entries.length > 0);
+      assert.ok(Buffer.byteLength(JSON.stringify(page.entries)) <= 4 * 1024 * 1024);
+      recovered.unshift(...page.entries);
+      if (page.nextEntryCursor === undefined) break;
+      const next = f.service.conversations.read('workspace-one', created.id, {before:page.nextEntryCursor});
+      assert.ok(next.entries.at(-1)!.sequence < page.entries[0]!.sequence);
+      page = next;
+    }
+    assert.deepEqual(recovered, entries);
+    assert.deepEqual(repository.readConversation(created.id)!.view.entries, entries);
   } finally { await f.close(); }
 });
 
@@ -1238,8 +1317,8 @@ test('live transport loss reopens the same binding and continues once without a 
 });
 
 test('live recovery never resends active work, unknown tools, pending decisions or release-profile work', async () => {
-  for (const kind of ['running','unknown','tool','approval','release'] as const) {
-    const native=fake('local',{disconnect:kind==='approval'||kind==='release'?'stopped':kind,request:kind==='approval'});
+  for (const disconnectError of ['codex_execution_observation_lost','dsh_execution_observation_lost','qoder_execution_observation_lost']) for (const kind of ['running','unknown','tool','approval','release'] as const) {
+    const native=fake('local',{disconnectError,disconnect:kind==='approval'||kind==='release'?'stopped':kind,request:kind==='approval'});
     const f=fixture([native.executor],{autoContinueInterrupted:kind!=='release'});
     try {
       await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','work');
@@ -1420,4 +1499,571 @@ test('manual title refresh failure leaves a persisted safe reason and preserves 
     const body=(db.prepare('select body from conversations where id=?').get(chat.id) as {body:string}).body;db.close();
     assert.doesNotMatch(body,/private-secret|Bearer|vendor/);assert.equal(JSON.parse(body).titleDiagnostics[0].phase,'manual');
   }finally{await f.close();}
+});
+
+test('video keeps original bytes, timed visual inputs, history sources and referenced frames across expiry and restart', async () => {
+  const native=fake('visual',{images:true}),reader=fake('reader');let now=new Date('2026-10-28T00:00:00Z');
+  const f=fixture([native.executor,reader.executor],{now:()=>now});
+  const png=Buffer.from('89504e470d0a1a0a','hex'),mp4=Buffer.from('000000186674797069736f6d0000020069736f6d69736f32','hex');
+  try {
+    await connected(f.service,'visual');await connected(f.service,'reader');
+    const chat=await f.service.conversations.create('workspace-one',{});
+    const upload=(mimeType:string,bytes:Buffer,video?:{duration:number;frames:Array<{id:string;time:number}>})=>f.service.conversations.addAttachment('workspace-one',chat.id,{expectedRevision:f.service.conversations.read('workspace-one',chat.id).revision,mimeType,bytes,video});
+    const frames=Array.from({length:8},(_,i)=>({id:upload('image/png',png).id,time:i*2}));
+    const video=upload('video/mp4',mp4,{duration:14.4,frames});
+    const draft={expectedRevision:video.revision,connectionId:'visual',text:'inspect the recording',attachmentIds:[video.id]};
+    const preview=f.service.conversations.prepareSend('workspace-one',chat.id,draft);assert.equal(preview.fits,true);
+    f.service.conversations.send('workspace-one',chat.id,{...draft,previewToken:preview.token,clientRequestId:'video-input'});
+    await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
+    assert.deepEqual(native.sends[0].images.map(image=>image.id),frames.map(frame=>frame.id));
+    assert.match(native.sends[0].text,/抽样画面，不含音轨/);assert.match(native.sends[0].text,/"time":14/);assert.ok(native.sends[0].text.includes(video.id));
+    const original=f.service.conversations.read('workspace-one',chat.id).entries.find(entry=>entry.role==='user');assert.equal(original?.text,'inspect the recording');assert.deepEqual(original?.attachments,[video.id]);
+    now=new Date(now.getTime()+25*60*60*1000);upload('image/png',png);
+    for(const frame of frames)assert.deepEqual(f.service.conversations.readAttachment('workspace-one',chat.id,frame.id).bytes,png);
+    assert.deepEqual(f.service.conversations.readAttachment('workspace-one',chat.id,video.id).bytes,mp4);
+    const current=f.service.conversations.read('workspace-one',chat.id),handoff=f.service.conversations.prepareSend('workspace-one',chat.id,{expectedRevision:current.revision,connectionId:'reader',text:'continue'});
+    assert.equal(handoff.fits,true,'historical video never blocks a later text-only executor');
+    const index=JSON.parse(fs.readFileSync(handoff.handoff!.sourcePath!,'utf8'));
+    const source=index.images.find((image:any)=>image.id===video.id);assert.equal(source.mimeType,'video/mp4');assert.equal(source.video.frames.length,8);assert.ok(fs.existsSync(source.video.frames[0].path));
+    await f.service.close();const cold=createAgentService(f.options);
+    try{assert.deepEqual(cold.conversations.readAttachment('workspace-one',chat.id,video.id).bytes,mp4);assert.deepEqual(cold.conversations.readAttachment('workspace-one',chat.id,frames[0].id).bytes,png);}finally{await cold.close();}
+  } finally {await f.close();}
+});
+
+test('video ownership, metadata, bytes, revision and visual capability reject incomplete input without dispatch',async()=>{
+  const native=fake('text'),f=fixture([native.executor]);
+  const png=Buffer.from('89504e470d0a1a0a','hex'),mp4=Buffer.from('000000186674797069736f6d0000020069736f6d69736f32','hex');
+  try{
+    await connected(f.service,'text');const chat=await f.service.conversations.create('workspace-one',{}),other=await f.service.conversations.create('workspace-one',{});
+    const frame=f.service.conversations.addAttachment('workspace-one',chat.id,{expectedRevision:chat.revision,mimeType:'image/png',bytes:png});
+    const input={mimeType:'video/mp4',bytes:mp4,video:{duration:2,frames:[{id:frame.id,time:0}]}};
+    assert.throws(()=>f.service.conversations.addAttachment('workspace-one',other.id,{...input,expectedRevision:other.revision}),{code:'agent_attachment_missing'});
+    assert.throws(()=>f.service.conversations.addAttachment('workspace-one',chat.id,{...input,expectedRevision:chat.revision}),{code:'agent_revision_conflict'});
+    const upload=(extra:Record<string,unknown>)=>f.service.conversations.addAttachment('workspace-one',chat.id,{...input,expectedRevision:f.service.conversations.read('workspace-one',chat.id).revision,...extra});
+    assert.throws(()=>upload({bytes:Buffer.from('bad')}),{code:'agent_video_invalid'});
+    assert.throws(()=>upload({bytes:Buffer.alloc(32*1024*1024+1)}),{code:'agent_video_invalid',status:413});
+    assert.throws(()=>upload({video:{duration:2,frames:[]}}),{code:'agent_video_invalid'});
+    assert.throws(()=>upload({video:{duration:2,frames:[{id:frame.id,time:3}]}}),{code:'agent_video_invalid'});
+    const video=upload({});
+    const preview=f.service.conversations.prepareSend('workspace-one',chat.id,{expectedRevision:video.revision,connectionId:'text',text:'',attachmentIds:[video.id]});
+    assert.equal(preview.fits,false);assert.match(preview.diagnostic!,/无法接收这些图片/);assert.equal(native.sends.length,0);
+  }finally{await f.close();}
+});
+
+function fastRetries(t: import('node:test').TestContext) {
+  t.mock.method(globalThis, 'setTimeout', new Proxy(setTimeout, { apply(target, receiver, args) {
+    if ([2000, 5000, 10000].includes(args[1])) args[1] = 1;
+    return Reflect.apply(target, receiver, args);
+  } }));
+}
+
+test('temporary preparation failures retry the original input without creating duplicate user turns', async t => {
+  fastRetries(t);
+  const native = fake('local', {prepareFailures: 2}), f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local'); const chat = await f.service.conversations.create('workspace-one', {});
+    const initial = send(f.service, chat.id, 'local', 'inspect current work');
+    const done = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => view.run?.status === 'completed');
+    assert.equal(done.run?.id, initial.run.id); assert.equal(native.sends.length, 1);
+    assert.equal(native.sends[0].text, 'inspect current work');
+    assert.equal(done.entries.filter(entry => entry.role === 'user').length, 1);
+  } finally { await f.close(); }
+});
+
+test('capacity failure continues the exact context as a system retry and retains original failure', async t => {
+  fastRetries(t);
+  const native = fake('local', {failure: n => n === 1 ? 'Selected model is at capacity. Please try a different model.' : undefined}), f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local'); const chat = await f.service.conversations.create('workspace-one', {});
+    const initial = send(f.service, chat.id, 'local', 'finish the change');
+    const done = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => view.run?.status === 'completed');
+    assert.equal(native.sends.length, 2); assert.equal(native.sends[0].contextRef.id, native.sends[1].contextRef.id);
+    assert.equal(native.sends[0].model, native.sends[1].model); assert.equal(native.sends[0].permissionMode, native.sends[1].permissionMode);
+    assert.match(native.sends[1].text, /系统自动重试/);
+    assert.equal(done.entries.filter(entry => entry.role === 'user').length, 1);
+    assert.ok(done.entries.some(entry => entry.role === 'system' && entry.kind === 'notice' && entry.status === 'accepted'));
+    assert.equal(new ConversationRepository(path.join(f.options.dataRoot, 'agent-service')).readConversation(chat.id)?.runOutcomes?.[initial.run.id]?.status, 'failed');
+  } finally { await f.close(); }
+});
+
+test('persistent capacity errors stop after three automatic attempts', async t => {
+  fastRetries(t);
+  const native = fake('local', {failure: 'Selected model is at capacity.'}), f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local'); const chat = await f.service.conversations.create('workspace-one', {});
+    send(f.service, chat.id, 'local', 'finish');
+    await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => native.sends.length === 4 && view.run?.status === 'failed');
+    assert.equal(new Set(native.sends.map(input => input.clientRequestId)).size, 4);
+    assert.equal(native.contexts.size, 1);
+  } finally { await f.close(); }
+});
+
+test('stop cancels a retry wait and concurrent observations do not start a second execution', async () => {
+  const native = fake('local', {failure: 'Selected model is at capacity.'}), f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local'); const chat = await f.service.conversations.create('workspace-one', {});
+    send(f.service, chat.id, 'local', 'finish');
+    await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => Boolean(view.run?.diagnostic?.includes('自动重试')));
+    await Promise.all([f.service.conversations.observe('workspace-one', chat.id), f.service.conversations.observe('workspace-one', chat.id)]);
+    const pending = f.service.conversations.read('workspace-one', chat.id), run = pending.run!;
+    const stopped = await f.service.conversations.stop('workspace-one', chat.id, {expectedRevision: pending.revision, runId: run.id, participantId: run.participantId, generation: run.generation});
+    assert.equal(stopped.run?.status, 'stopped');
+    await new Promise(resolve => setImmediate(resolve)); assert.equal(native.sends.length, 1);
+  } finally { await f.close(); }
+});
+
+test('quota, authentication, unknown delivery and unfinished tools are not automatically retried', async t => {
+  fastRetries(t);
+  for (const options of [{failure: 'at capacity; daily quota exhausted'}, {failure: 'unauthorized: temporary failure'}, {failure: 'at capacity', toolSurvives: true}, {unknown: true}]) {
+    const native = fake('local', options), f = fixture([native.executor]);
+    try {
+      await connected(f.service, 'local'); const chat = await f.service.conversations.create('workspace-one', {});
+      send(f.service, chat.id, 'local', 'finish');
+      const ended = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => ['failed', 'tools-active', 'unknown'].includes(view.run?.status ?? ''));
+      assert.doesNotMatch(ended.run?.diagnostic ?? '', /自动重试/); assert.equal(native.sends.length, 1);
+    } finally { await f.close(); }
+  }
+});
+
+test('host shutdown cancels a retry wait without converting it into host recovery', async () => {
+  const native = fake('local', {failure: 'at capacity'}), f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local'); const chat = await f.service.conversations.create('workspace-one', {});
+    send(f.service, chat.id, 'local', 'finish');
+    await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => Boolean(view.run?.diagnostic?.includes('自动重试')));
+    await f.service.close(); const cold = createAgentService(f.options);
+    try {
+      await cold.conversations.recoverInterrupted();
+      assert.equal(cold.conversations.read('workspace-one', chat.id).run?.status, 'failed'); assert.equal(native.sends.length, 1);
+    }finally{await cold.close();}
+  }finally{await f.close();}
+});
+
+test('draft images survive ownership changes and cold reads without creating a conversation', async () => {
+  const f = fixture([]), id = randomUUID(), png = Buffer.from([137,80,78,71,13,10,26,10]);
+  try {
+    const empty = f.service.conversations.readDraft('@default', id);
+    assert.deepEqual(empty.images, []); assert.equal(fs.existsSync(f.options.dataRoot), false);
+    const added = f.service.conversations.addDraftImage('@default', id, { expectedRevision: empty.revision, name: 'image.png', mimeType: 'image/png', bytes: png });
+    assert.equal(added.images.length, 1);
+    assert.deepEqual(f.service.conversations.readDraft('workspace-one', id), added);
+    assert.equal(new ConversationRepository(path.join(f.options.dataRoot, 'agent-service')).readConversation(id), undefined);
+    assert.equal(fs.existsSync(path.join(f.options.dataRoot, 'agent-service/conversations.sqlite')), false);
+    assert.throws(() => f.service.conversations.addDraftImage('@default', id, { expectedRevision: empty.revision, name: 'old.png', mimeType: 'image/png', bytes: png }), { code: 'agent_revision_conflict' });
+    assert.throws(() => f.service.conversations.addDraftImage('@default', id, { expectedRevision: added.revision, name: 'bad.png', mimeType: 'image/png', bytes: Buffer.from('not an image') }), { code: 'agent_image_invalid' });
+    assert.deepEqual(f.service.conversations.readDraftImage('@default', id, added.images[0]!.id).bytes, png);
+    const foreign = 'scope:' + Buffer.from(JSON.stringify(['another-host', '@default'])).toString('base64url');
+    assert.deepEqual(f.service.conversations.readDraft(foreign, id).images, []);
+    await f.service.close(); const cold = createAgentService(f.options);
+    try {
+      assert.deepEqual(cold.conversations.readDraft('workspace-one', id), added);
+      const removed = cold.conversations.removeDraftImage('@default', id, { expectedRevision: added.revision, attachmentId: added.images[0]!.id });
+      assert.deepEqual(removed.images, []);
+    } finally { await cold.close(); }
+  } finally { await f.close(); }
+});
+
+
+test('an explicit stop during terminal observation cancels a not-yet-scheduled retry', async () => {
+  let release!: () => void;
+  const beforeObservation = new Promise<void>(resolve => {release = resolve;});
+  const native = fake('local', {failure: 'at capacity', beforeObservation}), f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local'); const chat = await f.service.conversations.create('workspace-one', {});
+    send(f.service, chat.id, 'local', 'finish');
+    const failed = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => view.run?.status === 'failed');
+    const run = failed.run!;
+    await f.service.conversations.stop('workspace-one', chat.id, {expectedRevision:failed.revision, runId:run.id, participantId:run.participantId, generation:run.generation});
+    release(); await new Promise(resolve => setImmediate(resolve));
+    assert.doesNotMatch(f.service.conversations.read('workspace-one', chat.id).run?.diagnostic ?? '', /自动重试/);
+    assert.equal(native.sends.length, 1);
+  } finally {release(); await f.close();}
+});
+
+test('a terminal observation for a different execution cannot authorize retry', async () => {
+  const native = fake('local', {failure: 'at capacity', wrongObservation:true}), f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local'); const chat = await f.service.conversations.create('workspace-one', {});
+    send(f.service, chat.id, 'local', 'finish');
+    await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => view.run?.status === 'failed');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.doesNotMatch(f.service.conversations.read('workspace-one', chat.id).run?.diagnostic ?? '', /自动重试/);
+    assert.equal(native.sends.length, 1);
+  } finally {await f.close();}
+});
+
+
+test('ambiguous context creation is preserved without automatically creating another context', async () => {
+  const native = fake('local', {prepareFailures:1, unknownCreate:true}), f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local'); const chat = await f.service.conversations.create('workspace-one', {});
+    send(f.service, chat.id, 'local', 'finish');
+    const failed = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => view.run?.status === 'failed');
+    assert.doesNotMatch(failed.run?.diagnostic ?? '', /自动重试/); assert.equal(native.sends.length, 0);
+    assert.equal(native.contexts.size, 0);
+  } finally {await f.close();}
+});
+
+
+test('transport recovery preserves the temporary-failure retry budget instead of resetting it', async t => {
+  fastRetries(t);
+  const native = fake('local', {failure:'at capacity', disconnect:'stopped', disconnectOn:2}), f = fixture([native.executor], {autoContinueInterrupted:true});
+  try {
+    await connected(f.service, 'local'); const chat = await f.service.conversations.create('workspace-one', {});
+    send(f.service, chat.id, 'local', 'finish');
+    const ended = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => Boolean(view.run?.diagnostic?.includes('已达上限')));
+    assert.equal(native.sends.length, 5); // Original + three temporary-failure retries + one transport recovery.
+    assert.equal(native.sends.filter(input => input.clientRequestId.startsWith('automatic-retry:')).length, 3);
+    assert.equal(native.sends.filter(input => input.clientRequestId.startsWith('host-recovery:')).length, 1);
+    assert.equal(ended.run?.status, 'failed');
+  } finally {await f.close();}
+});
+
+
+function continueDraft(service: ReturnType<typeof createAgentService>, id:string, connectionId='local', model?:string) {
+  const current=service.conversations.read('workspace-one',id);
+  return {expectedRevision:current.revision, connectionId, model, text:'', continueRunId:current.run!.id};
+}
+
+test('explicit retry restores undelivered text and images without a duplicate user message', async () => {
+  const native=fake('local',{images:true,prepareFailures:1,unknownCreate:true}), f=fixture([native.executor]);
+  try {
+    await connected(f.service,'local'); const chat=await f.service.conversations.create('workspace-one',{});
+    const image=f.service.conversations.addAttachment('workspace-one',chat.id,{expectedRevision:chat.revision,mimeType:'image/png',bytes:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==','base64')});
+    const input={expectedRevision:image.revision,connectionId:'local',text:'Inspect the image and finish the original task',attachmentIds:[image.id]};
+    const preview=f.service.conversations.prepareSend('workspace-one',chat.id,input);
+    const original=f.service.conversations.send('workspace-one',chat.id,{...input,previewToken:preview.token,clientRequestId:randomUUID()});
+    await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='failed');
+    const draft=continueDraft(f.service,chat.id), next=f.service.conversations.prepareSend('workspace-one',chat.id,draft), request={...draft,previewToken:next.token,clientRequestId:randomUUID()};
+    const started=f.service.conversations.send('workspace-one',chat.id,request);
+    assert.equal(f.service.conversations.send('workspace-one',chat.id,request).run.id,started.run.id);
+    const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='completed');
+    assert.equal(native.sends.length,1);assert.match(native.sends[0].text,/Inspect the image/);assert.equal(native.sends[0].images.length,1);
+    assert.equal(done.entries.filter(entry=>entry.kind==='message'&&entry.role==='user').length,1);
+    assert.ok(done.entries.some(entry=>entry.role==='system'&&entry.text==='已请求重试上次未送达的要求。'));
+    assert.equal(new ConversationRepository(path.join(f.options.dataRoot,'agent-service')).readConversation(chat.id)?.attempts.at(-1)?.continuationOf,original.run.id);
+    assert.throws(()=>f.service.conversations.prepareSend('workspace-one',chat.id,{...draft,expectedRevision:done.revision}),{code:'agent_continue_stale'});
+  } finally {await f.close();}
+});
+
+test('manual continuation works with the same selection, another model or another executor', async () => {
+  for (const target of ['same','model','executor']) {
+    const first=fake('local',{multipleModels:true,failure:n=>n===1?'permission_denied: previous execution failed':undefined}),second=fake('other',{multipleModels:true}),f=fixture([first.executor,second.executor]);
+    try {
+      await connected(f.service,'local');await connected(f.service,'other');const chat=await f.service.conversations.create('workspace-one',{});
+      send(f.service,chat.id,'local','Complete the existing goal');
+      await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='failed');
+      const draft=continueDraft(f.service,chat.id,target==='executor'?'other':'local',target==='model'?'other-model':undefined);
+      const preview=f.service.conversations.prepareSend('workspace-one',chat.id,draft);
+      f.service.conversations.send('workspace-one',chat.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});
+      const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='completed');
+      const sent=target==='executor'?second.sends[0]:first.sends.at(-1)!;
+      assert.match(sent.text,/接着完成原目标/);if(target==='model')assert.equal(sent.model,'other-model');
+      assert.equal(done.entries.filter(entry=>entry.kind==='message'&&entry.role==='user').length,1);
+      assert.ok(done.entries.some(entry=>entry.role==='system'&&entry.text==='已请求继续上次执行。'));
+      if(target==='same')assert.equal(first.sends[0].contextRef.id,sent.contextRef.id);
+      else assert.match(sent.text,/Complete the existing goal/);
+    } finally {await f.close();}
+  }
+});
+
+test('an empty completed response can continue, but a normal response or unknown work cannot', async () => {
+  for(const options of [{noAnswer:true},{unknown:true},{toolSurvives:true},{}]) {
+    const native=fake('local',options),f=fixture([native.executor]);
+    try {
+      await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','finish');
+      await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>['completed','unknown','tools-active'].includes(view.run?.status??''));
+      const draft=continueDraft(f.service,chat.id);
+      if('noAnswer' in options)assert.ok(f.service.conversations.prepareSend('workspace-one',chat.id,draft).fits);
+      else assert.throws(()=>f.service.conversations.prepareSend('workspace-one',chat.id,draft),error=>['agent_conversation_busy','agent_continue_unavailable'].includes((error as any).code));
+      assert.throws(()=>f.service.conversations.prepareSend('workspace-one',chat.id,{...draft,text:'unrelated new instruction'}),{code:'agent_continue_input_conflict'});
+      assert.throws(()=>f.service.conversations.queueSend('workspace-one',chat.id,{...draft,clientRequestId:randomUUID()}),{code:'agent_continue_unavailable'});
+      assert.equal(native.sends.length,1);
+    } finally {await f.close();}
+  }
+});
+
+test('manual continuation can still use bounded automatic retry without replaying the manual action', async t => {
+  fastRetries(t);
+  const native=fake('local',{failure:n=>n===1?'permission_denied: failed':n===2?'Selected model is at capacity.':undefined}),f=fixture([native.executor]);
+  try {
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','finish original goal');
+    await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='failed');
+    const draft=continueDraft(f.service,chat.id),preview=f.service.conversations.prepareSend('workspace-one',chat.id,draft);
+    f.service.conversations.send('workspace-one',chat.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});
+    const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='completed');
+    assert.equal(native.sends.length,3);assert.equal(done.entries.filter(entry=>entry.kind==='message'&&entry.role==='user').length,1);
+    assert.equal(done.entries.filter(entry=>entry.text==='已请求继续上次执行。').length,1);
+  } finally {await f.close();}
+});
+
+test('explicit retry keeps an undelivered video and its timed frames after mainline integration', async () => {
+  const native=fake('local',{images:true,prepareFailures:1,unknownCreate:true}),f=fixture([native.executor]);
+  const png=Buffer.from('89504e470d0a1a0a','hex'),mp4=Buffer.from('000000186674797069736f6d0000020069736f6d69736f32','hex');
+  try {
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});
+    const frame=f.service.conversations.addAttachment('workspace-one',chat.id,{expectedRevision:chat.revision,mimeType:'image/png',bytes:png});
+    const video=f.service.conversations.addAttachment('workspace-one',chat.id,{expectedRevision:frame.revision,mimeType:'video/mp4',bytes:mp4,video:{duration:2,frames:[{id:frame.id,time:0}]}});
+    const input={expectedRevision:video.revision,connectionId:'local',text:'finish reviewing this recording',attachmentIds:[video.id]};
+    const preview=f.service.conversations.prepareSend('workspace-one',chat.id,input);
+    f.service.conversations.send('workspace-one',chat.id,{...input,previewToken:preview.token,clientRequestId:randomUUID()});
+    await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='failed');
+    const draft=continueDraft(f.service,chat.id),next=f.service.conversations.prepareSend('workspace-one',chat.id,draft);
+    f.service.conversations.send('workspace-one',chat.id,{...draft,previewToken:next.token,clientRequestId:randomUUID()});
+    const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='completed');
+    assert.equal(native.sends.length,1);assert.deepEqual(native.sends[0].images.map(image=>image.id),[frame.id]);assert.match(native.sends[0].text,/抽样画面，不含音轨/);
+    assert.equal(done.entries.filter(entry=>entry.role==='user').length,1);assert.deepEqual(f.service.conversations.readAttachment('workspace-one',chat.id,video.id).bytes,mp4);
+  } finally {await f.close();}
+});
+
+test('first submission persists input and conversation together and is idempotent across restart', async () => {
+  const native = fake('local', { images: true }), f = fixture([native.executor]), id = randomUUID();
+  try {
+    const staged = f.service.conversations.addDraftImage('@default', id, { expectedRevision: f.service.conversations.readDraft('@default', id).revision, name: 'one.png', mimeType: 'image/png', bytes: Buffer.from([137,80,78,71,13,10,26,10]) });
+    const input = { connectionId: 'local', text: 'inspect this picture', attachmentIds: staged.images.map(image => image.id), clientRequestId: randomUUID(), expectedDraftRevision: staged.revision };
+    await assert.rejects(f.service.conversations.startDraft('workspace-one', id, input), { code: 'agent_account_unavailable' });
+    assert.deepEqual(f.service.conversations.readDraft('@default', id), staged);
+    assert.equal(f.service.conversations.lookupDraft('workspace-one', id, input.clientRequestId).found, false);
+    assert.deepEqual(f.service.conversations.list('workspace-one').conversations, []);
+    await connected(f.service, 'local');
+    const [first, repeated] = await Promise.all([f.service.conversations.startDraft('workspace-one', id, input), f.service.conversations.startDraft('workspace-one', id, input)]);
+    assert.equal(first.conversation.id, repeated.conversation.id);
+    assert.equal(first.conversation.entries.filter(entry => entry.role === 'user').length, 1);
+    const accepted = await waitUntil(() => f.service.conversations.read('workspace-one', first.conversation.id), view => view.run?.status === 'completed');
+    assert.equal(native.sends.length, 1); assert.equal(native.sends[0]!.images?.length, 1);
+    assert.deepEqual(f.service.conversations.readDraft('@default', id).images, []);
+    assert.deepEqual(f.service.conversations.readAttachment('workspace-one', accepted.id, staged.images[0]!.id).bytes, Buffer.from([137,80,78,71,13,10,26,10]));
+    assert.throws(() => f.service.conversations.startDraft('workspace-one', id, { ...input, text: 'different' }), { code: 'agent_request_conflict' });
+    await f.service.close(); const cold = createAgentService(f.options);
+    try {
+      assert.equal(cold.conversations.lookupDraft('workspace-one', id, input.clientRequestId).conversation?.id, accepted.id);
+      assert.equal((await cold.conversations.startDraft('workspace-one', id, input)).conversation.id, accepted.id);
+      assert.equal(native.sends.length, 1);
+    } finally { await cold.close(); }
+  } finally { await f.close(); }
+});
+
+test('shared video draft keeps original and frames without creating a conversation, then transfers them once', async () => {
+  const native=fake('local',{images:true}),f=fixture([native.executor]),id=randomUUID();
+  const png=Buffer.from('89504e470d0a1a0a','hex'),mp4=Buffer.from('000000186674797069736f6d0000020069736f6d69736f32','hex');
+  try {
+    let staged=f.service.conversations.readDraft('@default',id);
+    staged=f.service.conversations.addDraftImage('@default',id,{expectedRevision:staged.revision,name:'frame.png',mimeType:'image/png',bytes:png,frame:true});
+    const frame=staged.images[0]!;
+    assert.throws(()=>f.service.conversations.addDraftImage('@default',id,{expectedRevision:staged.revision,name:'broken.mp4',mimeType:'video/mp4',bytes:mp4,video:{duration:2,frames:[{id:randomUUID(),time:0}]}}),{code:'agent_video_invalid'});
+    staged=f.service.conversations.addDraftImage('@default',id,{expectedRevision:staged.revision,name:'recording.mp4',mimeType:'video/mp4',bytes:mp4,video:{duration:2,frames:[{id:frame.id,time:0}]}});
+    const video=staged.images.find(image=>image.video)!;
+    assert.deepEqual(f.service.conversations.readDraft('workspace-one',id),staged);
+    assert.deepEqual(f.service.conversations.readDraftImage('@default',id,video.id).bytes,mp4);
+    assert.deepEqual(f.service.conversations.list('workspace-one').conversations,[]);
+    assert.throws(()=>f.service.conversations.removeDraftImage('@default',id,{expectedRevision:staged.revision,attachmentId:frame.id}),{code:'agent_video_invalid'});
+    const input={connectionId:'local',text:'inspect recording',attachmentIds:[video.id],expectedDraftRevision:staged.revision,clientRequestId:randomUUID()};
+    await assert.rejects(f.service.conversations.startDraft('workspace-one',id,input),{code:'agent_account_unavailable'});
+    assert.deepEqual(f.service.conversations.readDraft('@default',id),staged);
+    await connected(f.service,'local');
+    const accepted=await f.service.conversations.startDraft('workspace-one',id,input);
+    await waitUntil(()=>f.service.conversations.read('workspace-one',accepted.conversation.id),view=>view.run?.status==='completed');
+    assert.deepEqual(native.sends[0].images.map(image=>image.id),[frame.id]);assert.match(native.sends[0].text,/抽样画面，不含音轨/);
+    assert.deepEqual(f.service.conversations.readAttachment('workspace-one',accepted.conversation.id,video.id).bytes,mp4);
+    assert.deepEqual(f.service.conversations.readAttachment('workspace-one',accepted.conversation.id,frame.id).bytes,png);
+    assert.deepEqual(f.service.conversations.readDraft('@default',id).images,[]);
+    assert.equal((await f.service.conversations.startDraft('workspace-one',id,input)).conversation.id,accepted.conversation.id);assert.equal(native.sends.length,1);
+    let removable=f.service.conversations.addDraftImage('@default',id,{expectedRevision:f.service.conversations.readDraft('@default',id).revision,name:'frame.png',mimeType:'image/png',bytes:png,frame:true});
+    removable=f.service.conversations.addDraftImage('@default',id,{expectedRevision:removable.revision,name:'recording.mp4',mimeType:'video/mp4',bytes:mp4,video:{duration:2,frames:[{id:removable.images[0]!.id,time:0}]}});
+    assert.deepEqual(f.service.conversations.removeDraftImage('@default',id,{expectedRevision:removable.revision,attachmentId:removable.images.find(image=>image.video)!.id}).images,[]);
+  }finally{await f.close();}
+});
+
+function titleFake(id:string,options:{hold?:boolean;title:()=>Promise<string|undefined>}) {
+  const native=fake(id,{hold:options.hold}),open=native.executor.open;
+  native.executor.open=async input=>({...await open(input),generateTitle:options.title});
+  return native;
+}
+
+test('title retry belongs to each participant: an empty first executor cannot block the healthy replacement',async()=>{
+  let aCalls=0,bCalls=0;const a=titleFake('first',{title:async()=>{aCalls++;return undefined;}}),b=titleFake('second',{hold:true,title:async()=>{bCalls++;return '切换执行方后恢复的标题';}}),f=fixture([a.executor,b.executor]);
+  try{
+    await connected(f.service,'first');await connected(f.service,'second');const chat=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'first','调整对话布局');await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed'&&v.titleState?.status==='failed'&&aCalls===2);
+    send(f.service,chat.id,'second','接着完成布局调整');const named=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.title==='切换执行方后恢复的标题');
+    assert.equal(named.run?.status,'running');assert.equal(bCalls,1);assert.equal(aCalls,2);assert.equal(a.sends.length,1);assert.equal(b.sends.length,1);
+  }finally{for(const c of b.contexts.values())c.unblock?.();await f.close();}
+});
+
+test('title retry migrates legacy flags and preserves each participant budget across switching back and restart',async()=>{
+  let aCalls=0,bCalls=0;const a=titleFake('first',{title:async()=>{aCalls++;return undefined;}}),b=titleFake('second',{title:async()=>{bCalls++;return undefined;}}),f=fixture([a.executor,b.executor]);let service=f.service;
+  try{
+    await connected(service,'first');await connected(service,'second');const chat=await service.conversations.create('workspace-one',{});
+    send(service,chat.id,'first','原执行方标题失败');await waitUntil(()=>service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed'&&v.titleState?.status==='failed'&&aCalls===2);
+    await service.close();
+    const repository=new ConversationRepository(path.join(f.options.dataRoot,'agent-service')),legacy=repository.readConversation(chat.id)!;
+    assert.equal(legacy.earlyTitleAttempted,true);assert.equal(legacy.titleAttempted,true);delete legacy.titleAttemptsByParticipant;repository.saveConversation(legacy,legacy.view.revision);
+    service=createAgentService(f.options);
+    send(service,chat.id,'first','原执行方普通后续消息');await waitUntil(()=>service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');assert.equal(aCalls,2);
+    send(service,chat.id,'second','切换执行方获得独立预算');await waitUntil(()=>service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed'&&v.titleState?.status==='failed'&&bCalls===2);
+    await service.close();service=createAgentService(f.options);
+    send(service,chat.id,'first','切回不重置');await waitUntil(()=>service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
+    send(service,chat.id,'second','重启也不重置');await waitUntil(()=>service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
+    await service.conversations.observe('workspace-one',chat.id);assert.equal(aCalls,2);assert.equal(bCalls,2);assert.equal(a.sends.length,3);assert.equal(b.sends.length,2);
+    const stored=repository.readConversation(chat.id)!;assert.equal(Object.keys(stored.titleAttemptsByParticipant!).length,2);assert.ok(Object.values(stored.titleAttemptsByParticipant!).every(value=>value.early&&value.completion));
+  }finally{if(service!==f.service)await service.close();await f.close();}
+});
+
+for(const manual of [false,true])test('title retry serializes a late old result and protects current/manual title; manual='+manual,async()=>{
+  let release!:(value:string)=>void;const pending=new Promise<string>(resolve=>{release=resolve;});let bCalls=0;
+  const a=titleFake('first',{title:async()=>pending}),b=titleFake('second',{hold:true,title:async()=>{bCalls++;return '新执行方的准确标题';}}),f=fixture([a.executor,b.executor]);
+  try{
+    await connected(f.service,'first');await connected(f.service,'second');const chat=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'first','原执行方');await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed'&&v.titleState?.status==='generating');
+    send(f.service,chat.id,'second','新执行方继续工作');await waitUntil(()=>b.sends.length,n=>n===1);assert.equal(bCalls,0,'the working turn does not wait for the previous title request');
+    if(manual){const current=f.service.conversations.read('workspace-one',chat.id);await f.service.conversations.update('workspace-one',chat.id,{expectedRevision:current.revision,title:'用户手动名称'});}
+    release('旧执行方迟到的标题');
+    const named=await waitUntil(()=>{const v=f.service.conversations.read('workspace-one',chat.id);return {title:v.title,titleState:v.titleState,bCalls};},v=>v.title===(manual?'用户手动名称':'新执行方的准确标题'));
+    assert.equal(named.titleState?.status,manual?'manual':'generated');assert.equal(bCalls,manual?0:1);assert.equal(a.sends.length,1);assert.equal(b.sends.length,1);
+  }finally{release?.('结束');for(const c of b.contexts.values())c.unblock?.();await f.close();}
+});
+
+test('title retry persists an unavailable new participant before its working turn completes',async()=>{
+  let calls=0;const a=titleFake('first',{title:async()=>{calls++;return undefined;}}),b=fake('second',{hold:true}),f=fixture([a.executor,b.executor]);
+  try{
+    await connected(f.service,'first');await connected(f.service,'second');const chat=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'first','先前标题失败');await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed'&&v.titleState?.status==='failed'&&calls===2);
+    send(f.service,chat.id,'second','执行方暂不支持独立标题');const running=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='running'&&v.titleState?.status==='unavailable');
+    const stored=new ConversationRepository(path.join(f.options.dataRoot,'agent-service')).readConversation(chat.id)!;
+    assert.equal(stored.titleAttemptsByParticipant?.[running.run!.participantId]?.early,true);assert.equal(stored.titleAttemptsByParticipant?.[running.run!.participantId]?.completion,undefined);
+    assert.equal(a.sends.length,1);assert.equal(b.sends.length,1);
+  }finally{for(const c of b.contexts.values())c.unblock?.();await f.close();}
+});
+
+test('DSH and Qoder exact stopped transport losses enter the existing single continuation policy',async()=>{
+  for(const disconnectError of ['dsh_execution_observation_lost','dsh_event_observation_lost','qoder_execution_observation_lost','qoder_event_observation_lost']){
+    const native=fake('local',{disconnect:'stopped',disconnectError}),f=fixture([native.executor],{autoContinueInterrupted:true});
+    try{
+      await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','finish existing work');
+      await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='completed');
+      await Promise.all([f.service.conversations.recoverInterrupted(),f.service.conversations.observe('workspace-one',chat.id)]);
+      assert.equal(native.sends.length,2,disconnectError);assert.equal(native.opens.length,2);
+      assert.equal(native.sends[0]!.contextRef.id,native.sends[1]!.contextRef.id);
+      assert.equal(native.opens[0]!.configRoot,native.opens[1]!.configRoot);
+    }finally{await f.close();}
+  }
+});
+
+test('reconciliation preserves received terminal tool evidence and supplies exact receipts to the native observer', async () => {
+  const native = fake('local', { hold: true }), open = native.executor.open; let received: readonly ExecutorItem[] | undefined;
+  native.executor.open = async options => { const runtime = await open(options), observe = runtime.observe.bind(runtime); runtime.observe = async input => { received = input.knownItems; return observe(input); }; return runtime; };
+  const f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local'); const chat = await f.service.conversations.create('workspace-one', {}); send(f.service, chat.id, 'local', 'one operation');
+    await waitUntil(() => f.service.conversations.read('workspace-one', chat.id).run?.accepted, accepted => accepted === true);
+    const sending = native.sends[0]!, context = native.contexts.get(sending.contextRef.id)!;
+    const tool: ExecutorItem = { id: 'native-completed-tool', kind: 'tool', role: 'system', text: 'COMMITTED', status: 'completed', executionId: context.observation.executionRef!.id };
+    sending.onEvent({ type: 'item', item: tool }); context.items.push({ ...tool, status: 'running' });
+    await f.service.conversations.observe('workspace-one', chat.id);
+    assert.deepEqual(received?.map(item => [item.id, item.executionId, item.status]), [[tool.id, tool.executionId, 'completed']]);
+    const entry = f.service.conversations.read('workspace-one', chat.id).entries.find(item => item.kind === 'tool');
+    assert.equal(entry?.status, 'completed'); assert.equal(native.sends.length, 1);
+  } finally { await f.close(); }
+});
+
+
+test('settled same-context image backfill preserves the new input and dispatches it exactly once', async () => {
+  const native=fake(),f=fixture([native.executor]);
+  try {
+    await connected(f.service,'local');const created=await f.service.conversations.create('workspace-one',{});
+    send(f.service,created.id,'local','first');
+    await waitUntil(()=>f.service.conversations.read('workspace-one',created.id),v=>v.run?.status==='completed');
+    const context=[...native.contexts.values()][0]!;
+    context.items.push({id:'old-image',kind:'tool',role:'system',name:'view-image',text:'查看图片',status:'completed',executionId:'execution-1'});
+    send(f.service,created.id,'local','next');
+    const result=await waitUntil(()=>f.service.conversations.read('workspace-one',created.id),v=>v.run?.status==='completed'||v.run?.status==='failed');
+    assert.equal(result.run?.status,'completed');assert.equal(native.sends.length,2);
+    assert.equal(result.entries.filter(e=>e.text==='next').length,1);
+    const image=result.entries.find(e=>e.name==='view-image')!;assert.ok(image);assert.notEqual(image.runId,result.run?.id);
+    await f.service.conversations.observe('workspace-one',created.id);
+    assert.equal(native.sends.length,2);assert.equal(f.service.conversations.read('workspace-one',created.id).entries.filter(e=>e.name==='view-image').length,1);
+  } finally {await f.close();}
+});
+
+test('late backfill cannot mark foreign work or the current unsent input delivered', async () => {
+  const a=fake('a'),b=fake('b'),f=fixture([a.executor,b.executor]);
+  try {
+    await connected(f.service,'a');await connected(f.service,'b');const created=await f.service.conversations.create('workspace-one',{});
+    send(f.service,created.id,'a','first');await waitUntil(()=>f.service.conversations.read('workspace-one',created.id),v=>v.run?.status==='completed');
+    const through=f.service.conversations.read('workspace-one',created.id).participants[0]!.deliveredThrough;
+    send(f.service,created.id,'b','foreign');await waitUntil(()=>f.service.conversations.read('workspace-one',created.id),v=>v.run?.status==='completed');
+    const context=[...a.contexts.values()][0]!;
+    context.items.push({id:'unknown-tool',kind:'tool',role:'system',name:'read',text:'unknown execution',status:'completed',executionId:'foreign-execution'});
+    send(f.service,created.id,'a','next');
+    const failed=await waitUntil(()=>f.service.conversations.read('workspace-one',created.id),v=>v.run?.status==='failed');
+    assert.equal(a.sends.length,1);assert.equal(failed.run?.accepted,false);
+    assert.equal(failed.participants.find(p=>p.provider==='a')!.deliveredThrough,through);
+    assert.match(failed.run?.diagnostic??'',/原生记录有新变化/);
+  } finally {await f.close();}
+});
+
+test('new unmapped native user input still blocks dispatch while preserving the local request', async () => {
+  const native=fake(),f=fixture([native.executor]);
+  try {
+    await connected(f.service,'local');const created=await f.service.conversations.create('workspace-one',{});
+    send(f.service,created.id,'local','first');await waitUntil(()=>f.service.conversations.read('workspace-one',created.id),v=>v.run?.status==='completed');
+    [...native.contexts.values()][0]!.items.push({id:'outside-input',kind:'message',role:'user',text:'outside',executionId:'outside'});
+    send(f.service,created.id,'local','next');const failed=await waitUntil(()=>f.service.conversations.read('workspace-one',created.id),v=>v.run?.status==='failed');
+    assert.equal(native.sends.length,1);assert.equal(failed.entries.filter(e=>e.text==='next').length,1);assert.match(failed.run?.diagnostic??'',/原生用户输入尚不能准确映射/);
+  } finally {await f.close();}
+});
+
+
+for(const media of ['image','video'] as const)test('正式材料回答校验同对话文件，保存原件并交付准确原生来源：'+media,async()=>{
+  const native=fake('local',{question:true,images:true}),f=fixture([native.executor]);
+  try{
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'local','检查');
+    let waiting=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='waiting-question');
+    const bytes=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5EsAAAAASUVORK5CYII=','base64');
+    const frame=f.service.conversations.addAttachment('workspace-one',chat.id,{expectedRevision:waiting.revision,mimeType:'image/png',bytes});
+    const attachment=media==='image'?frame:f.service.conversations.addAttachment('workspace-one',chat.id,{expectedRevision:frame.revision,mimeType:'video/mp4',bytes:Buffer.from('000000186674797069736f6d0000020069736f6d69736f32','hex'),video:{duration:2,frames:[{id:frame.id,time:0}]}});
+    waiting=f.service.conversations.read('workspace-one',chat.id);const request=waiting.requests[0]!,run=waiting.run!;
+    const input={expectedRevision:waiting.revision,runId:run.id,participantId:run.participantId,generation:run.generation};
+    await assert.rejects(f.service.conversations.reply('workspace-one',chat.id,request.id,{...input,answer:{scope:{text:'',attachmentIds:[randomUUID()]}}}),{code:'agent_attachment_missing'});
+    const other=await f.service.conversations.create('workspace-one',{}),foreign=f.service.conversations.addAttachment('workspace-one',other.id,{expectedRevision:other.revision,mimeType:'image/png',bytes});
+    await assert.rejects(f.service.conversations.reply('workspace-one',chat.id,request.id,{...input,answer:{scope:{text:'',attachmentIds:[foreign.id]}}}),{code:'agent_attachment_missing'});
+    assert.equal(f.service.conversations.read('workspace-one',chat.id).requests.length,1);assert.equal(native.replies.length,0);
+    await f.service.conversations.reply('workspace-one',chat.id,request.id,{...input,answer:{scope:{text:'看截图',attachmentIds:[attachment.id]}}});
+    const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='completed');
+    assert.equal(done.requests.length,0);const reply=done.entries.find(entry=>entry.id==='reply-'+request.id)!;
+    assert.deepEqual(reply.attachments,[attachment.id]);const delivered=(native.replies[0] as any).scope;assert.match(delivered,/看截图/);
+    const sources=JSON.parse(delivered.split('：\n')[1].split('\n\n')[0]);assert.equal(fs.readFileSync(sources[0].path).equals(bytes),true);assert.equal(reply.status,'accepted');assert.equal(done.run!.id,run.id);
+    if(media==='video'){assert.match(delivered,/不含音轨/);assert.match(delivered,/不能据此声称连续观看/);const video=JSON.parse(delivered.split('：\n').at(-1)!)[0];assert.equal(video.id,attachment.id);assert.equal(video.frames[0].id,frame.id);assert.equal(video.frames[0].time,0);assert.equal(fs.statSync(video.path).size,24);}
+    await assert.rejects(f.service.conversations.reply('workspace-one',chat.id,request.id,{...input,expectedRevision:done.revision,answer:{scope:'yes'}}),{code:'agent_request_stale'});assert.equal(native.replies.length,1);
+  }finally{await f.close();}
+});
+
+test('准确原生观察已继续时移除旧等待卡片并保留未答事实，未知时不隐藏',async()=>{
+  const native=fake('local',{question:true}),f=fixture([native.executor]);
+  try{
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','检查');
+    const waiting=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='waiting-question');
+    const context=[...native.contexts.values()][0]!;context.observation={...context.observation,status:'unknown'};
+    const unknown=await f.service.conversations.observe('workspace-one',chat.id);assert.equal(unknown.requests.length,1);
+    context.observation={...context.observation,status:'running'};
+    const current=await f.service.conversations.observe('workspace-one',chat.id);assert.equal(current.requests.length,0);assert.equal(native.replies.length,0);
+    assert.ok(current.entries.some(entry=>entry.id==='retired-question-'+waiting.requests[0]!.id&&entry.text.includes('不补造答复')));
+    await assert.rejects(f.service.conversations.reply('workspace-one',chat.id,waiting.requests[0]!.id,{expectedRevision:current.revision,runId:current.run!.id,participantId:current.run!.participantId,generation:current.run!.generation,answer:{scope:'yes'}}),{code:'agent_request_stale'});
+  }finally{await f.close();}
+});
+
+for(const visual of [true,false])test('正式材料回答的容量与能力失败不回应原问题：images='+visual,async()=>{
+ const native=fake('local',{question:true,images:visual}),f=fixture([native.executor]);try{
+  await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','检查');
+  let waiting=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='waiting-question');
+  const ids:string[]=[];for(let n=0;n<5;n++){const attachment=f.service.conversations.addAttachment('workspace-one',chat.id,{expectedRevision:waiting.revision,mimeType:'image/png',bytes:Buffer.from('89504e470d0a1a0a','hex')});ids.push(attachment.id);waiting=f.service.conversations.read('workspace-one',chat.id);}
+  const input={expectedRevision:waiting.revision,runId:waiting.run!.id,participantId:waiting.run!.participantId,generation:waiting.run!.generation};
+  await assert.rejects(f.service.conversations.reply('workspace-one',chat.id,waiting.requests[0]!.id,{...input,answer:{scope:{text:'',attachmentIds:ids}}}),{code:'agent_question_answer_invalid'});
+  await assert.rejects(f.service.conversations.reply('workspace-one',chat.id,waiting.requests[0]!.id,{...input,answer:{scope:{text:'',attachmentIds:[ids[0]],path:'/etc/passwd'}}}),{code:'agent_question_answer_invalid'});
+  assert.throws(()=>f.service.conversations.addAttachment('workspace-one',chat.id,{expectedRevision:waiting.revision,mimeType:'image/png',bytes:Buffer.alloc(8*1024*1024+1)}),{code:'agent_image_invalid',status:413});
+  if(!visual)await assert.rejects(f.service.conversations.reply('workspace-one',chat.id,waiting.requests[0]!.id,{...input,answer:{scope:{text:'',attachmentIds:[ids[0]]}}}),{code:'agent_capability_unavailable'});
+  assert.equal(native.replies.length,0);assert.equal(f.service.conversations.read('workspace-one',chat.id).requests.length,1);
+  if(visual){await f.service.conversations.reply('workspace-one',chat.id,waiting.requests[0]!.id,{...input,answer:{scope:{text:'四份材料',attachmentIds:ids.slice(0,4)}}});assert.equal(native.replies.length,1);}
+ }finally{await f.close();}
 });

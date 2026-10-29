@@ -3,6 +3,7 @@ import { releaseAwarenessApi, type ReleaseAwareness } from '../api/release-aware
 import { updateFlowApi, type UpdateFlowJob } from '../api/update-flow-api';
 import { waitForRestart } from '../../../app/restart-watch';
 import type { ConnectionState } from '../lib/update-view';
+import { observesInstalledJob, reconnectTrigger } from '../lib/update-reconnect';
 
 export function useUpdateFlow({ enabled, onCompleted }: { enabled:boolean; onCompleted?():void }) {
   const [awareness,setAwareness]=useState<ReleaseAwareness|null>(null),[job,setJob]=useState<UpdateFlowJob|null>(null);
@@ -19,18 +20,33 @@ export function useUpdateFlow({ enabled, onCompleted }: { enabled:boolean; onCom
     watcher.current=null;
     if(result==='ready')window.location.reload();else setConnection('timed-out');
   },[]);
+  // The backend already reports the target version; only the session token can
+  // tell whether this page is a stale bundle left behind by the old process.
+  const confirmCurrent=useCallback(async()=>{
+    if(watcher.current)return;
+    const controller=new AbortController();watcher.current=controller;
+    const result=await waitForRestart({url:window.location.origin+'/',previousToken:document.querySelector('meta[name="buildr-session"]')?.getAttribute('content')??null,signal:controller.signal,attempts:3,intervalMs:250});
+    if(controller.signal.aborted||!mounted.current)return;
+    watcher.current=null;
+    if(result==='ready')window.location.reload();
+  },[]);
   const accept=useCallback((next:UpdateFlowJob)=>{
     if(!mounted.current)return;
     setJob(next);jobRef.current=next;
-    if(!expectingRestart.current||finished.current)return;
+    if(finished.current)return;
+    // A fresh page can meet an installed job already past the handoff request;
+    // it never ran a mutation, so re-arm the restart expectation here.
+    if(observesInstalledJob(next))expectingRestart.current=true;
+    if(!expectingRestart.current)return;
     if(next.simulated&&next.status==='completed'){
       finished.current=true;onCompleted?.();
-    }else if(!next.simulated&&next.installedVersion&&next.runningVersion!==next.version&&['partial','completed'].includes(next.status)){
-      finished.current=true;
-      // A new session and the successor's actual version are observed independently.
-      void reconnect();
+      return;
     }
-  },[onCompleted,reconnect]);
+    const trigger=reconnectTrigger(next);
+    if(trigger==='none')return;
+    finished.current=true;
+    if(trigger==='confirm-current')void confirmCurrent();else void reconnect();
+  },[onCompleted,reconnect,confirmCurrent]);
   const check=useCallback(async(options:{silent?:boolean;signal?:AbortSignal}={})=>{
     if(mutating.current)return;
     if(options.silent&&manualCheck.current)return;

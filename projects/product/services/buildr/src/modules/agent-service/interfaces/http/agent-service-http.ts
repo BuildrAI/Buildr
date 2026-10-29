@@ -1,4 +1,4 @@
-import type { AgentService } from '@buildr-ai/buildr-agent';
+import type { AgentService, AgentOperations } from '@buildr-ai/buildr-agent';
 import { AgentServiceError } from '@buildr-ai/buildr-agent';
 import { AGENT_SERVICE_HTTP_OPERATIONS, AGENT_SERVICE_HTTP_SCHEMAS as SCHEMAS, AGENT_SERVICE_HTTP_VALIDATORS } from './agent-service-http-contracts.ts';
 
@@ -15,7 +15,7 @@ function query(input: URLSearchParams, allowed: string[]): void {
 }
 function numberQuery(value: string | null): number | undefined { if (value === null) return; if (!/^\d+$/.test(value)) throw inputError(); const number = Number(value); if (!Number.isSafeInteger(number)) throw inputError(); return number; }
 
-export function createAgentServiceHttpContribution(resolve: () => AgentService, options: { defaultWorkspace?: () => { rootPath: string }; registeredWorkspaceIds?: () => string[] } = {}) {
+export function createAgentServiceHttpContribution(resolve: () => AgentService | AgentOperations | Promise<AgentService | AgentOperations>, options: { defaultWorkspace?: () => { rootPath: string }; registeredWorkspaceIds?: () => string[]; runtimeStatus?: () => Promise<unknown>; prepareDefaultWorkspace?: () => void } = {}) {
   const { defaultWorkspace, registeredWorkspaceIds = () => [] } = options;
   return {
     id: 'agent-service.http', schemas: SCHEMAS, operations: AGENT_SERVICE_HTTP_OPERATIONS,
@@ -25,9 +25,10 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService, 
       if (pathname !== prefix && !pathname.startsWith(`${prefix}/`)) return null;
       if(pathname===prefix+'/conversations'&&request.method==='GET'&&!searchParams.has('taskId')){
         authorizeRead();
-        query(searchParams,['workspaceId','cursor','limit','hidden','query','activeOnly','agent','model']);
+        query(searchParams,['workspaceId','cursor','limit','hidden','query','activeOnly','agent','model','activityState']);
         for(const key of ['activeOnly','hidden'])if(searchParams.has(key)&&!['true','false'].includes(searchParams.get(key)!))throw inputError();
-        return result('conversations',resolve().conversations.listAll(registeredWorkspaceIds(),{workspaceId:searchParams.get('workspaceId')??undefined,cursor:searchParams.get('cursor')??undefined,limit:numberQuery(searchParams.get('limit')),hidden:searchParams.get('hidden')==='true',activeOnly:searchParams.get('activeOnly')==='true',query:searchParams.get('query')??undefined,agent:searchParams.get('agent')??undefined,model:searchParams.get('model')??undefined}));
+        if(searchParams.has('activityState')&&!['running','waiting','unseen','unknown','attention'].includes(searchParams.get('activityState')!))throw inputError();
+        return result('conversations',await (await resolve()).conversations.listAll(registeredWorkspaceIds(),{workspaceId:searchParams.get('workspaceId')??undefined,cursor:searchParams.get('cursor')??undefined,limit:numberQuery(searchParams.get('limit')),hidden:searchParams.get('hidden')==='true',activeOnly:searchParams.get('activeOnly')==='true',query:searchParams.get('query')??undefined,agent:searchParams.get('agent')??undefined,model:searchParams.get('model')??undefined,activityState:searchParams.get('activityState')??undefined}));
       }
       // 任务按空间的默认工作空间列表沿用单空间入口；其余默认工作空间对话操作同样委派。
       if (pathname === `${prefix}/conversations` || pathname.startsWith(`${prefix}/conversations/`)) {
@@ -36,12 +37,13 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService, 
       if (request.method === 'GET') authorizeRead(); else authorizeWrite();
       query(searchParams, []);
       if (pathname === `${prefix}/default-workspace` && request.method === 'GET' && defaultWorkspace) return result('defaultWorkspace', defaultWorkspace());
-      const service = resolve();
+      if (pathname === `${prefix}/runtime` && request.method === 'GET' && options.runtimeStatus) return result('runtimeStatus', await options.runtimeStatus());
+      const service = await resolve();
       if (pathname === `${prefix}/model-accounts`) {
         if (request.method === 'GET') return result('modelAccounts', await service.models.accounts.list({refresh:false}));
         if (request.method === 'POST') return result('modelAccount', await service.models.accounts.add(validate('addModelAccount', await readJsonBody())), 201);
       }
-      if (pathname === `${prefix}/model-catalog` && request.method === 'GET') return result('modelCatalog', await service.models.catalog.list());
+      if (pathname === `${prefix}/model-catalog` && request.method === 'GET') return result('modelCatalog', await service.models.catalog.list({refresh:false}));
       const accountRoute = pathname.slice(prefix.length).match(/^\/model-accounts\/([a-zA-Z0-9_-]{1,100})(?:\/(check|disconnect|login-attempts|preferences)(?:\/([a-f0-9-]{36})(?:\/(cancel))?)?)?$/);
       if (accountRoute) {
         const [, accountId, action, attemptId, cancel] = accountRoute;
@@ -56,63 +58,89 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService, 
         if (action === 'login-attempts' && attemptId && cancel) return result('modelAccount', await service.models.accounts.cancelLogin(accountId, attemptId, body));
         return null;
       }
-      if (pathname === `${prefix}/connections` && request.method === 'GET') return result('connections', service.connections.list());
-      if (pathname === `${prefix}/pending-requests` && request.method === 'GET') return result('conversations', service.conversations.pending());
+      if (pathname === `${prefix}/connections` && request.method === 'GET') return result('connections', await service.connections.list());
+      if (pathname === `${prefix}/pending-requests` && request.method === 'GET') return result('conversations', await service.conversations.pending());
       const match = pathname.slice(prefix.length).match(/^\/connections\/([a-z][a-z0-9-]*)(?:\/(connect|check|disconnect|login-attempts|preparation-attempts)(?:\/([a-f0-9-]{36})(?:\/(cancel))?)?)?$/);
       if (!match) return null;
       const [, id, action, attemptId, cancel] = match;
-      if (request.method === 'GET' && !action) return result('connection', service.connections.read(id));
-      if (request.method === 'GET' && action === 'preparation-attempts' && !attemptId) return result('currentPreparation', service.connections.currentPreparation(id));
-      if (request.method === 'GET' && action === 'preparation-attempts' && attemptId && !cancel) return result('preparation', service.connections.preparation(id, attemptId));
-      if (request.method === 'GET' && action === 'login-attempts' && attemptId && !cancel) return result('connection', service.connections.loginAttempt(id, attemptId));
+      if (request.method === 'GET' && !action) return result('connection', await service.connections.read(id));
+      if (request.method === 'GET' && action === 'preparation-attempts' && !attemptId) return result('currentPreparation', await service.connections.currentPreparation(id));
+      if (request.method === 'GET' && action === 'preparation-attempts' && attemptId && !cancel) return result('preparation', await service.connections.preparation(id, attemptId));
+      if (request.method === 'GET' && action === 'login-attempts' && attemptId && !cancel) return result('connection', await service.connections.loginAttempt(id, attemptId));
       if (request.method !== 'POST') return null;
       const body = await readJsonBody();
-      if (action === 'preparation-attempts' && !attemptId) return result('preparation', service.connections.prepare(id, validate('prepare', body)), 202);
+      if (action === 'preparation-attempts' && !attemptId) return result('preparation', await service.connections.prepare(id, validate('prepare', body)), 202);
       if (action === 'preparation-attempts' && attemptId && cancel) { validate('empty', body); return result('preparation', await service.connections.cancelPreparation(id, attemptId)); }
       if (action === 'connect' && !attemptId) return result('connection', await service.connections.connect(id, validate('connect', body)));
       if (action === 'check' && !attemptId) return result('connection', await service.connections.check(id, validate('check', body)));
       if (action === 'disconnect' && !attemptId) return result('connection', await service.connections.disconnect(id, validate('revision', body)));
-      if (action === 'login-attempts' && !attemptId) return result('connection', service.connections.login(id, validate('revision', body)), 202);
+      if (action === 'login-attempts' && !attemptId) return result('connection', await service.connections.login(id, validate('revision', body)), 202);
       if (action === 'login-attempts' && attemptId && cancel) return result('connection', await service.connections.cancelLogin(id, attemptId, validate('revision', body)));
       return null;
     },
     async handle(context: any) {
       const { request, suffix, workspaceId, searchParams, authorizeRead, authorizeWrite, authorizeMutation, readJsonBody, readBinaryBody, respond } = context;
       if (suffix !== '/agent-conversations' && !suffix.startsWith('/agent-conversations/')) return null;
-      const isImageUpload = request.method === 'POST' && /^\/agent-conversations\/[a-f0-9-]{36}\/attachments$/.test(suffix);
+      const isImageUpload = request.method === 'POST' && /^\/agent-conversations\/(?:drafts\/)?[a-f0-9-]{36}\/attachments$/.test(suffix);
       if (request.method === 'GET') authorizeRead(); else if (isImageUpload) authorizeMutation(); else authorizeWrite();
-      const service = resolve();
+      const service = await resolve();
+      const draftRoute = suffix.match(/^\/agent-conversations\/drafts\/([a-f0-9-]{36})(?:\/(attachments|send|submissions)(?:\/([a-f0-9-]{36}))?)?$/);
+      if (draftRoute) {
+        query(searchParams, []);
+        const [, draftId, action, childId] = draftRoute;
+        if (request.method === 'GET' && !action) return result('draftImages', await service.conversations.readDraft(workspaceId, draftId));
+        if (request.method === 'GET' && action === 'submissions' && childId) return result('draftLookup', await service.conversations.lookupDraft(workspaceId, draftId, childId));
+        if (request.method === 'GET' && action === 'attachments' && childId) {
+          const image = await service.conversations.readDraftImage(workspaceId, draftId, childId);
+          respond.binary(image.bytes, image.mimeType, { disposition: 'inline', filename: childId }); return true;
+        }
+        if (request.method === 'POST' && action === 'attachments' && !childId) {
+          let name: string; try { name = decodeURIComponent(request.headers['x-buildr-image-name'] ?? '图片'); } catch { throw inputError(); }
+          let video: unknown;try {if(request.headers['x-buildr-video'])video=JSON.parse(request.headers['x-buildr-video']);}catch{throw inputError();}
+          const metadata = validate('draftImage', { expectedRevision: request.headers['x-buildr-draft-revision'], name, mimeType: request.headers['content-type'], ...(request.headers['x-buildr-frame']==='true'?{frame:true}:{}), ...(video!==undefined?{video}:{}) });
+          return result('draftImages', await service.conversations.addDraftImage(workspaceId, draftId, { ...metadata, bytes: await readBinaryBody((metadata.mimeType.startsWith('video/')?32:8) * 1024 * 1024) }), 201);
+        }
+        if (request.method === 'DELETE' && action === 'attachments' && childId) return result('draftImages', await service.conversations.removeDraftImage(workspaceId, draftId, validate('removeDraftImage', { ...await readJsonBody(), attachmentId: childId })));
+        if (request.method === 'POST' && action === 'send' && !childId) {
+          const input = validate('startDraft', await readJsonBody(128 * 1024));
+          if (workspaceId === '@default' && (input.cwd !== undefined || input.taskId !== undefined)) throw inputError();
+          if (workspaceId === '@default') options.prepareDefaultWorkspace?.();
+          return result('draftStarted', await service.conversations.startDraft(workspaceId, draftId, input), 202);
+        }
+        return null;
+      }
       if (suffix === '/agent-conversations') {
         if (request.method === 'GET') {
           query(searchParams, ['taskId', 'cursor', 'limit', 'hidden', 'query']);
           if (searchParams.has('hidden') && !['true', 'false'].includes(searchParams.get('hidden'))) throw inputError();
-          return result('conversations', service.conversations.list(workspaceId, { taskId: searchParams.get('taskId') ?? undefined, cursor: searchParams.get('cursor') ?? undefined, limit: numberQuery(searchParams.get('limit')), hidden: searchParams.get('hidden') === 'true', query: searchParams.get('query') ?? undefined }));
+          return result('conversations', await service.conversations.list(workspaceId, { taskId: searchParams.get('taskId') ?? undefined, cursor: searchParams.get('cursor') ?? undefined, limit: numberQuery(searchParams.get('limit')), hidden: searchParams.get('hidden') === 'true', query: searchParams.get('query') ?? undefined }));
         }
         query(searchParams, []);
         if (request.method === 'POST') {
           const input = validate('create', await readJsonBody());
           if (workspaceId === '@default' && (input.cwd !== undefined || input.taskId !== undefined)) throw inputError();
+          if (workspaceId === '@default') options.prepareDefaultWorkspace?.();
           return result('conversation', await service.conversations.create(workspaceId, input), 201);
         }
         return null;
       }
-      const match = suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})(?:\/(prepare-send|send|generate-title|seen|observe|stop|events|entries|attachments|requests)(?:\/([a-f0-9-]{36})(?:\/(reply))?)?)?$/);
+      const match = suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})(?:\/(prepare-send|send|supplement|pending-send|cancel-pending-send|generate-title|seen|observe|stop|events|entries|attachments|requests)(?:\/([a-f0-9-]{36})(?:\/(reply))?)?)?$/);
       if (!match) return null;
       const [, id, action, childId, reply] = match;
       if (request.method === 'GET') {
         if (!action || action === 'entries') {
           query(searchParams, ['before', 'limit']);
-          return result('conversation', service.conversations.read(workspaceId, id, { before: numberQuery(searchParams.get('before')), limit: numberQuery(searchParams.get('limit')) }));
+          return result('conversation', await service.conversations.read(workspaceId, id, { before: numberQuery(searchParams.get('before')), limit: numberQuery(searchParams.get('limit')) }));
         }
         if (action === 'events') {
           query(searchParams, ['cursor', 'generation']);
           numberQuery(searchParams.get('cursor'));
-          const subscription = service.conversations.subscribe(workspaceId, id);
+          const subscription = await service.conversations.subscribe(workspaceId, id);
           return respond.stream(subscription, (event: unknown) => validate('event', event, true));
         }
         if (action === 'attachments' && childId) {
           query(searchParams, []);
-          const attachment = service.conversations.readAttachment(workspaceId, id, childId);
+          const attachment = await service.conversations.readAttachment(workspaceId, id, childId);
           respond.binary(attachment.bytes, attachment.mimeType, { disposition: 'inline', filename: childId }); return true;
         }
         return null;
@@ -125,15 +153,20 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService, 
       }
       if (request.method !== 'POST') return null;
       if (action === 'prepare-send') return result('preview', await service.conversations.prepareHandoff(workspaceId, id, validate('draft', await readJsonBody(128 * 1024))));
-      if (action === 'send') return result('sent', service.conversations.send(workspaceId, id, validate('send', await readJsonBody(128 * 1024))), 202);
-      if (action === 'seen') return result('seenResult',service.conversations.markSeen(workspaceId,id,validate('seen',await readJsonBody())));
+      if (action === 'send') return result('sent', await service.conversations.send(workspaceId, id, validate('send', await readJsonBody(128 * 1024))), 202);
+      if (action === 'pending-send') return result('conversation', await service.conversations.queueSend(workspaceId, id, validate('queueSend', await readJsonBody(128 * 1024))), 202);
+      if (action === 'cancel-pending-send') return result('conversation', await service.conversations.cancelPendingSend(workspaceId, id, validate('cancelPendingSend', await readJsonBody())));
+      if (action === 'supplement') return result('supplemented', await service.conversations.supplement(workspaceId, id, validate('supplement', await readJsonBody(128 * 1024))), 202);
+      if (action === 'seen') return result('seenResult',await service.conversations.markSeen(workspaceId,id,validate('seen',await readJsonBody())));
       if (action === 'observe') { validate('empty', await readJsonBody()); return result('conversation', await service.conversations.observe(workspaceId, id)); }
       if (action === 'generate-title') return result('conversation', await service.conversations.generateTitle(workspaceId, id, validate('revision', await readJsonBody())));
       if (action === 'stop') return result('conversation', await service.conversations.stop(workspaceId, id, validate('stop', await readJsonBody())));
       if (action === 'requests' && childId && reply) return result('conversation', await service.conversations.reply(workspaceId, id, childId, validate('reply', await readJsonBody())));
       if (action === 'attachments' && !childId) {
-        const metadata = validate('attachment', { expectedRevision: request.headers['x-buildr-conversation-revision'], mimeType: request.headers['content-type'] });
-        return result('attachmentResult', service.conversations.addAttachment(workspaceId, id, { ...metadata, bytes: await readBinaryBody(8 * 1024 * 1024) }), 201);
+        let video: unknown;
+        try { if (request.headers['x-buildr-video']) video = JSON.parse(request.headers['x-buildr-video']); } catch { throw inputError(); }
+        const metadata = validate('attachment', { expectedRevision: request.headers['x-buildr-conversation-revision'], expectedAttachmentRevision: request.headers['x-buildr-attachment-revision'], mimeType: request.headers['content-type'], ...(video !== undefined ? { video } : {}) });
+        return result('attachmentResult', await service.conversations.addAttachment(workspaceId, id, { ...metadata, bytes: await readBinaryBody((metadata.mimeType.startsWith('video/') ? 32 : 8) * 1024 * 1024) }), 201);
       }
       return null;
     },

@@ -27,7 +27,7 @@ const mirrored = Annotation.define<boolean>();
 const diffHighlightStyle = HighlightStyle.define(defaultHighlightStyle.specs.map(spec =>
   spec.textDecoration === 'underline' ? { ...spec, textDecoration: 'none' } : spec));
 const diffTheme = EditorView.theme({
-  '&': { height: '100%', fontSize: '13px', backgroundColor: 'var(--ant-color-bg-container, #fff)' },
+  '&': { height: '100%', fontSize: 'var(--font-size-code)', backgroundColor: 'var(--ant-color-bg-container, #fff)' },
   '.cm-scroller': { overflow: 'auto', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', lineHeight: '1.8' },
   '.cm-content': { padding: '12px 0', minHeight: '100%' },
   '.cm-line': { padding: '0 12px' },

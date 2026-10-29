@@ -83,6 +83,11 @@ function cleanupApplication(declarations: any[]) {
     listManagedDirectories: (directory: string) => existsDirectory(directory) ? fs.readdirSync(directory).filter((name) => existsDirectory(path.join(directory, name))) : [],
     collectFiles, existsFile, existsDirectory,
     toPosixRelative: (root: string, file: string) => path.relative(root, file).split(path.sep).join('/'),
+    normalizeRelativePathForBuildr: (input: string, message: string) => {
+      const normalized = path.normalize(input).replace(/^\.[\\/]/, '');
+      if (!normalized || path.isAbsolute(normalized) || normalized === '..' || normalized.startsWith(`..${path.sep}`)) throw new Error(message);
+      return normalized.split(path.sep).join('/');
+    },
   } as any);
 }
 
@@ -356,4 +361,15 @@ test('concurrent shared writers cannot commit incompatible payload and receipts'
   assert.deepEqual((await Promise.all(results)).sort(), ['conflict', 'written']);
   const receipt = parseSkillProjectionReceipt(fs.readFileSync(skillProjectionOwnershipReceiptTarget(root, 'workspace', 'dsh', 'demo'), 'utf8'));
   for (const file of receipt.files) assert.equal(runtimeFileMatches(path.join(root, '.agents', 'skills', 'demo', file.path), file.integrity, file.executable), true);
+});
+
+test('manifest 条目缺少 runtimePath 时按渲染回退声明布局，在用投射不被误判为孤儿', (t: any) => {
+  const { root, skill } = fixture(t);
+  const nested = { ...skill, id: 'yearning-connection', runtimePath: 'connections/yearning-connection' };
+  applySkillRenderPlan(buildSkillRenderPlan(root, root, [nested], 'claude-code'), root);
+  const cleanup = cleanupApplication([{ id: 'yearning-connection', path: 'connections/yearning-connection' }]);
+  assert.deepEqual(cleanup.buildRuntimeOrphanRemovalPlan(root, 'claude-code', '.', {}), []);
+  const migrated = cleanupApplication([{ id: 'yearning-connection', path: 'connections/yearning-connection', runtimePath: 'yearning-connection' }]);
+  const removals = migrated.buildRuntimeOrphanRemovalPlan(root, 'claude-code', '.', {});
+  assert.ok(removals.some((item: any) => item.path.includes(`connections${path.sep}yearning-connection`)), 'a divergent runtimePath must still retire the old layout');
 });

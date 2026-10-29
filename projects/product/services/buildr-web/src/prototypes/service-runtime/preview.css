@@ -36,7 +36,7 @@
 
 .workbench-head h1 {
   margin: 2px 0 6px;
-  font-size: 26px;
+  font-size: var(--font-size-page);
   line-height: 34px;
   font-weight: 650;
 }
@@ -44,12 +44,12 @@
 .workbench-head p {
   margin: 0;
   color: var(--soft-muted);
-  font-size: 13px;
+  font-size: var(--font-size-body);
 }
 
 .workbench-date {
   color: #789087 !important;
-  font-size: 12px !important;
+  font-size: var(--font-size-meta) !important;
 }
 
 .workbench-grid {
@@ -95,14 +95,14 @@
 
 .workbench-section-head h2 {
   margin: 0;
-  font-size: 16px;
+  font-size: var(--font-size-subheading);
   font-weight: 650;
 }
 
 .workbench-section-head h2 span {
   margin-left: 4px;
   color: var(--soft-muted);
-  font-size: 12px;
+  font-size: var(--font-size-secondary);
   font-weight: 500;
 }
 
@@ -116,7 +116,7 @@
   background: transparent;
   color: var(--soft-muted);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-size-body);
   cursor: pointer;
 }
 
@@ -143,20 +143,20 @@
 
 .workbench-task h3 {
   margin: 0 0 5px;
-  font-size: 14px;
+  font-size: var(--font-size-body);
   font-weight: 600;
 }
 
 .workbench-task p {
   margin: 0 0 8px;
   color: var(--soft-muted);
-  font-size: 12.5px;
+  font-size: var(--font-size-secondary);
 }
 
 .workbench-empty {
   margin: 0;
   color: var(--soft-muted);
-  font-size: 12.5px;
+  font-size: var(--font-size-secondary);
   line-height: 1.7;
 }
 
@@ -168,18 +168,18 @@
 }
 
 .workbench-done strong {
-  font-size: 13.5px;
+  font-size: var(--font-size-body);
 }
 
 .workbench-done p {
   margin: 5px 0 7px;
   color: var(--soft-muted);
-  font-size: 12.5px;
+  font-size: var(--font-size-secondary);
 }
 
 .workbench-done span {
   color: #93a49d;
-  font-size: 11.5px;
+  font-size: var(--font-size-secondary);
 }
 
 .workbench-local {
@@ -204,13 +204,13 @@
 
 .workbench-local-head h2 {
   margin: 0;
-  font-size: 15px;
+  font-size: var(--font-size-subheading);
   font-weight: 650;
 }
 
 .workbench-local-head .ant-tag {
   margin-inline-end: 0;
-  font-size: 10px;
+  font-size: var(--font-size-meta);
   line-height: 18px;
 }
 
@@ -248,7 +248,7 @@
 
 .workbench-run-main strong {
   overflow: hidden;
-  font-size: 12.5px;
+  font-size: var(--font-size-body);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -257,7 +257,7 @@
 .workbench-run-main small {
   overflow: hidden;
   color: var(--soft-muted);
-  font-size: 11px;
+  font-size: var(--font-size-meta);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -265,7 +265,7 @@
 .workbench-run-port {
   color: #2f7d68;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11.5px;
+  font-size: var(--font-size-code);
 }
 
 .workbench-local-note {
@@ -273,14 +273,14 @@
   padding-top: 9px;
   border-top: 1px dashed #dbe9e3;
   color: #80948c;
-  font-size: 11px;
+  font-size: var(--font-size-meta);
   line-height: 1.6;
 }
 
 .workbench-side-line {
   margin: 0 0 5px;
   color: var(--soft-ink);
-  font-size: 12.5px;
+  font-size: var(--font-size-secondary);
 }
 
 .workbench-project-list {
@@ -289,7 +289,7 @@
   margin: 0;
   padding: 0;
   list-style: none;
-  font-size: 12.5px;
+  font-size: var(--font-size-body);
 }
 
 .workbench-project-list li {
@@ -317,7 +317,7 @@
   border-radius: 8px;
   background: #fafcfb;
   color: var(--soft-muted);
-  font-size: 11.5px;
+  font-size: var(--font-size-meta);
 }
 
 .service-directory-table .ant-table {
@@ -335,19 +335,19 @@
 }
 
 .directory-service strong {
-  font-size: 13.5px;
+  font-size: var(--font-size-body);
   font-weight: 600;
 }
 
 .directory-service small {
   color: var(--soft-muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px;
+  font-size: var(--font-size-meta);
 }
 
 .directory-muted {
   color: #9aa9a3;
-  font-size: 12px;
+  font-size: var(--font-size-secondary);
 }
 
 .directory-status {
@@ -376,13 +376,13 @@
   min-width: 0;
   overflow: hidden;
   color: var(--soft-muted);
-  font-size: 11.5px;
+  font-size: var(--font-size-secondary);
   white-space: nowrap;
 }
 
 .directory-env-text strong {
   color: var(--soft-ink);
-  font-size: 12px;
+  font-size: var(--font-size-body);
   font-weight: 600;
 }
 
@@ -396,13 +396,13 @@
   gap: 3px 10px;
   overflow: hidden;
   color: var(--soft-muted);
-  font-size: 11.5px;
+  font-size: var(--font-size-secondary);
   white-space: nowrap;
 }
 
 .directory-run-ports code {
   color: #2f7d68;
-  font-size: 11px;
+  font-size: var(--font-size-meta);
 }
 
 .directory-projects {
@@ -424,7 +424,7 @@
 
 .directory-popover-section h4 {
   margin: 0 0 5px;
-  font-size: 12px;
+  font-size: var(--font-size-secondary);
   font-weight: 600;
 }
 
@@ -443,7 +443,7 @@
   gap: 4px 8px;
   margin: 0;
   color: var(--soft-ink);
-  font-size: 11.5px;
+  font-size: var(--font-size-secondary);
   line-height: 1.6;
 }
 
@@ -453,7 +453,7 @@
 
 .directory-popover code {
   color: #2f7d68;
-  font-size: 11px;
+  font-size: var(--font-size-meta);
 }
 
 .directory-actions {
@@ -484,7 +484,7 @@
 
 .runtime-section-head h2 {
   margin: 0 0 4px;
-  font-size: 17px;
+  font-size: var(--font-size-heading);
   font-weight: 650;
 }
 
@@ -492,7 +492,7 @@
   max-width: 780px;
   margin: 0;
   color: var(--soft-muted);
-  font-size: 12.5px;
+  font-size: var(--font-size-secondary);
   line-height: 1.7;
 }
 
@@ -525,13 +525,13 @@
 
 .runtime-card-title h3 {
   margin: 0;
-  font-size: 15px;
+  font-size: var(--font-size-subheading);
   font-weight: 650;
 }
 
 .runtime-card-title .ant-tag {
   margin-inline-end: 0;
-  font-size: 10px;
+  font-size: var(--font-size-meta);
 }
 
 .runtime-unconfigured {
@@ -546,14 +546,14 @@
 }
 
 .runtime-unconfigured strong {
-  font-size: 13.5px;
+  font-size: var(--font-size-body);
 }
 
 .runtime-unconfigured p {
   max-width: 560px;
   margin: 4px 0 0;
   color: var(--soft-muted);
-  font-size: 12.5px;
+  font-size: var(--font-size-secondary);
   line-height: 1.7;
 }
 
@@ -568,7 +568,7 @@
   border-radius: 8px;
   background: #f7fbf9;
   color: var(--soft-muted);
-  font-size: 11.5px;
+  font-size: var(--font-size-secondary);
 }
 
 .runtime-source .ant-tag {
@@ -577,7 +577,7 @@
 
 .runtime-source code {
   color: #2f7d68;
-  font-size: 11px;
+  font-size: var(--font-size-meta);
 }
 
 .runtime-run-list {
@@ -611,13 +611,13 @@
 }
 
 .runtime-run-title strong {
-  font-size: 13px;
+  font-size: var(--font-size-body);
   font-weight: 600;
 }
 
 .runtime-run-title .ant-tag {
   margin-inline-end: 0;
-  font-size: 10px;
+  font-size: var(--font-size-meta);
 }
 
 .runtime-run-sub {
@@ -626,20 +626,20 @@
   flex-wrap: wrap;
   gap: 4px 10px;
   color: #8b9a94;
-  font-size: 11px;
+  font-size: var(--font-size-meta);
 }
 
 .runtime-run-sub code {
   overflow: hidden;
   color: var(--soft-muted);
-  font-size: 10.5px;
+  font-size: var(--font-size-meta);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .run-status-text {
   color: #2f7d68;
-  font-size: 12px;
+  font-size: var(--font-size-meta);
   font-weight: 600;
 }
 
@@ -650,12 +650,12 @@
   background: #eaf5f0;
   color: #236a57;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px;
+  font-size: var(--font-size-meta);
 }
 
 .runtime-started {
   color: var(--soft-muted);
-  font-size: 11px;
+  font-size: var(--font-size-meta);
 }
 
 .runtime-run-actions {
@@ -676,7 +676,7 @@
 .runtime-empty p {
   margin: 0;
   color: var(--soft-muted);
-  font-size: 12.5px;
+  font-size: var(--font-size-secondary);
 }
 
 .runtime-notes {
@@ -691,7 +691,7 @@
   border-radius: 5px;
   background: #fff7e8;
   color: #8a6d2f;
-  font-size: 10.5px;
+  font-size: var(--font-size-meta);
 }
 
 .runtime-facts {
@@ -709,7 +709,7 @@
 
 .runtime-facts dt {
   color: var(--soft-muted);
-  font-size: 11.5px;
+  font-size: var(--font-size-secondary);
 }
 
 .runtime-facts dd {
@@ -718,17 +718,17 @@
   flex-wrap: wrap;
   gap: 6px;
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--font-size-secondary);
 }
 
 .runtime-facts code {
   color: #2f7d68;
-  font-size: 11px;
+  font-size: var(--font-size-meta);
 }
 
 .runtime-id {
   color: #9aa9a3;
-  font-size: 10.5px;
+  font-size: var(--font-size-meta);
 }
 
 .runtime-submitted {
@@ -739,7 +739,7 @@
 .runtime-scope-note {
   margin: 10px 0 0;
   color: var(--soft-muted);
-  font-size: 11.5px;
+  font-size: var(--font-size-meta);
   line-height: 1.7;
 }
 
@@ -761,7 +761,7 @@
 .start-worktree-note {
   margin: 0;
   color: var(--soft-muted);
-  font-size: 12px;
+  font-size: var(--font-size-meta);
   line-height: 1.7;
 }
 
@@ -784,20 +784,20 @@
 }
 
 .start-worktree-main strong {
-  font-size: 13px;
+  font-size: var(--font-size-body);
 }
 
 .start-worktree-main code {
   overflow: hidden;
   color: var(--soft-muted);
-  font-size: 10.5px;
+  font-size: var(--font-size-meta);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .start-worktree-main .ant-tag {
   margin-inline-end: 0;
-  font-size: 10px;
+  font-size: var(--font-size-meta);
 }
 
 .start-worktree-running {
@@ -828,20 +828,20 @@
 
 .config-field label {
   color: #587068;
-  font-size: 11.5px;
+  font-size: var(--font-size-body);
   font-weight: 600;
 }
 
 .config-field small {
   color: var(--soft-muted);
-  font-size: 10.5px;
+  font-size: var(--font-size-meta);
   line-height: 1.6;
 }
 
 .config-save-note {
   margin: 0;
   color: var(--soft-muted);
-  font-size: 11px;
+  font-size: var(--font-size-meta);
   line-height: 1.7;
 }
 
@@ -851,7 +851,7 @@
   border-radius: 8px;
   background: #fafcfb;
   color: var(--soft-muted);
-  font-size: 11.5px;
+  font-size: var(--font-size-secondary);
   line-height: 1.7;
 }
 
@@ -861,7 +861,7 @@
   margin: 0;
   padding-left: 18px;
   color: var(--soft-muted);
-  font-size: 12px;
+  font-size: var(--font-size-secondary);
   line-height: 1.7;
 }
 
@@ -870,7 +870,7 @@
   border-radius: 8px;
   background: #fff8e8;
   color: #876c31;
-  font-size: 11.5px;
+  font-size: var(--font-size-meta);
   line-height: 1.7;
 }
 
@@ -880,7 +880,7 @@
   flex-wrap: wrap;
   gap: 8px;
   color: var(--soft-muted);
-  font-size: 11.5px;
+  font-size: var(--font-size-meta);
 }
 
 .local-logs-meta .ant-tag {
@@ -896,7 +896,7 @@
   border-radius: 9px;
   background: #17211d;
   color: #d8e7e0;
-  font: 12px/1.8 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font: var(--font-size-code)/1.8 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   white-space: pre-wrap;
 }
 
@@ -906,7 +906,7 @@
   gap: 6px;
   margin: 0;
   color: var(--soft-muted);
-  font-size: 11.5px;
+  font-size: var(--font-size-meta);
 }
 
 @media (max-width: 1100px) {

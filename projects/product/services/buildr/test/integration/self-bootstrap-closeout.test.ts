@@ -851,7 +851,7 @@ for (const failFirstStart of [false, true]) {
           })); return;
         }
         response.setHeader('content-type', 'application/json');
-        response.end(JSON.stringify({ schemaVersion: 'buildr.local-app-health/v1', status: 'ready', pid: process.pid }));
+        response.end(JSON.stringify({ schemaVersion: 'buildr.local-app-health/v1', status: 'ready', pid: process.pid, launcherIdentity: config.identity, productIdentity: { developmentRuntimeIdentity: config.proof } }));
       });
       server.listen(0, '127.0.0.1', () => fs.writeFileSync(file, JSON.stringify({
         url: 'http://127.0.0.1:4458', testingUrl: 'http://127.0.0.1:' + server.address().port,
@@ -891,7 +891,9 @@ for (const failFirstStart of [false, true]) {
         }
         return launch();
       } };
-    await assert.rejects(restartDevelopmentInstance({ ...input, previousPid: previous.pid! + 1, timeoutMs: 2000 }), (error: any) => error.code === 'development-web-continuity.owner-mismatch');
+    const beforeInvalid = attempts;
+    await assert.rejects(restartDevelopmentInstance({ ...input, previousPid: 0, timeoutMs: 2000 }), /Invalid previous Development Web PID/);
+    assert.equal(attempts, beforeInvalid);
     assert.equal(attempts, 0);
     assert.equal((await inspectDevelopmentInstance({ dataRoot, fetchImpl })).instance?.pid, previous.pid);
     if (failFirstStart) await assert.rejects(restartDevelopmentInstance({ ...input, timeoutMs: 300 }), (error: any) => error.code === 'development-web-continuity.start-timeout');

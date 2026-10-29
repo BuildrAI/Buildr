@@ -59,8 +59,8 @@ for (const [index, extra] of [[1, []], [2, ['--source-only']]]) {
 const registry = JSON.parse(fs.readFileSync(path.join(process.env.BUILDR_APP_DATA_DIR, 'workspace-registry.json'), 'utf8'));
 console.log(JSON.stringify({ root: process.env.BUILDR_TEST_LOCAL_STATE_ROOT, app: process.env.BUILDR_APP_DATA_DIR, product: process.env.BUILDR_PRODUCT_DATA_DIR, roots: registry.roots }));
 `);
-  const result = spawnSync(process.execPath, [script], { cwd: serviceRoot, env: f.env, encoding: 'utf8', timeout: 60_000 });
-  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const result = spawnSync(process.execPath, [script], { cwd: serviceRoot, env: { ...f.env, NODE_COMPILE_CACHE: path.join(f.root, 'compile-cache') }, encoding: 'utf8', timeout: 120_000 });
+  assert.equal(result.status, 0, result.stderr || result.stdout || result.error?.message);
   const observed = JSON.parse(result.stdout.trim());
   assert.notEqual(observed.app, f.appData);
   assert.notEqual(observed.product, f.productData);

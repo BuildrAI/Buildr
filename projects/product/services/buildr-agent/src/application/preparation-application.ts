@@ -101,6 +101,7 @@ export class PreparationApplication {
     attempt.controller.signal.throwIfAborted();
     this.update(attempt, 'ready', '程序已就绪。账号登录与模型检查在“模型”中管理。');
   }
+  activity() { return [{kind:'program-preparation',count:[...this.attempts.values()].filter(attempt=>Boolean(attempt.work)||active.has(attempt.view.state)).length}].filter(value=>value.count>0); }
   beginClosing(): void { this.closing = true; for (const attempt of this.attempts.values()) attempt.controller.abort(); }
   async close(): Promise<void> { this.beginClosing(); await Promise.allSettled([...this.attempts.values()].map(attempt => attempt.work)); }
 }

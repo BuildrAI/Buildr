@@ -24,7 +24,13 @@ function fakeWorkerFactory({ delayMs = 20, failFirst = false, metrics }: any): a
     const workerId: any = ++created;
     let timer: any = null;
     let running: any = false;
+    let closing = false;
     worker.postMessage = (message: any) => {
+      if (message.type === 'close') {
+        closing = true;
+        if (!running) queueMicrotask(() => worker.emit('exit', 0));
+        return;
+      }
       metrics.calls += 1;
       metrics.started.push(message.id);
       metrics.messages?.push(message);
@@ -41,6 +47,7 @@ function fakeWorkerFactory({ delayMs = 20, failFirst = false, metrics }: any): a
           return;
         }
         worker.emit('message', { id: message.id, ok: true, value: { operation: message.operation, taskId: message.taskId } });
+        if (closing) worker.emit('exit', 0);
       }, typeof delayMs === 'function' ? delayMs(workerId, message) : delayMs);
     };
     worker.terminate = () => {
@@ -88,9 +95,9 @@ test('固定容量与 FIFO 队列限制并发且不重复派发', async () => {
   }
 });
 
-test('取消排队和运行中的读取都不重试，运行中取消会回收 Worker 并立即恢复容量', async () => {
+test('取消立即结算但保留在途读取容量，迟到结果不交付也不重试', async () => {
   const metrics: any = { calls: 0, active: 0, maxActive: 0, started: [], terminated: 0 };
-  const executor: any = createBoundedBuildrWebReadExecutor({ workerCount: 1, queueLimit: 1, workerFactory: fakeWorkerFactory({ delayMs: (workerId: any) => workerId === 1 ? 1000 : 20, metrics }) });
+  const executor: any = createBoundedBuildrWebReadExecutor({ workerCount: 1, queueLimit: 1, workerFactory: fakeWorkerFactory({ delayMs: (workerId: any) => workerId === 1 ? 50 : 20, metrics }) });
   try {
     const runningController: any = new AbortController();
     const running: any = executor.run('coordination', input('task-running', runningController.signal));
@@ -101,10 +108,15 @@ test('取消排队和运行中的读取都不重试，运行中取消会回收 W
     runningController.abort();
     await assert.rejects(running, (error: any) => error.code === 'local_app_read_cancelled');
     const next: any = executor.run('verification', input('task-next'));
+    assert.equal(metrics.calls, 1, '取消不释放仍在途线程的容量');
+    assert.equal(executor.stats().active, 1);
+    assert.equal(executor.stats().queued, 1);
     await next;
     assert.equal(metrics.calls, 2);
     assert.deepEqual(metrics.started, [1, 3], '取消的 queued request 不得派发，后续请求使用新的 sequence id');
-    assert.equal(metrics.terminated, 1, '运行中的取消必须终止占用容量的 Worker');
+    assert.equal(metrics.terminated, 0, '取消不得强制终止正在加载模块的线程');
+    assert.equal(executor.stats().active, 0);
+    assert.equal(executor.stats().queued, 0);
     assert.equal(metrics.maxActive, 1);
   } finally {
     await executor.close();
@@ -312,4 +324,31 @@ test('one warm slot leaves the rest of the bounded pool lazy until concurrent wo
     await Promise.all([executor.run('coordination', input('two')), executor.run('coordination', input('three'))]);
     assert.equal(created, 2); assert.equal(metrics.maxActive, 2);
   } finally { await executor.close(); }
+});
+
+test('real worker cancellation and close during lazy ESM loading keep the host alive', { timeout: 60_000 }, t => {
+  const { root } = copyPreparedWorkspace(t, 'read-import-cancellation');
+  createRuntime().createTask(root, { taskId: 'import-race', title: '读取取消', intent: '验证线程退出', projects: [], services: [], changes: [] });
+  const moduleUrl = new URL('../../src/web/http/read-executor.ts', import.meta.url).href;
+  // A subprocess contains the old V8 SIGTRAP instead of crashing the test host.
+  // Cover abort before startup, during the first full import, and after loading.
+  const script = `
+    const { createBoundedBuildrWebReadExecutor } = await import(${JSON.stringify(moduleUrl)});
+    for (const delay of [0, 250, 600, 900]) {
+      const executor = createBoundedBuildrWebReadExecutor({workerCount:1});
+      const controller = new AbortController();
+      const request = executor.run('verification', {targetRoot:${JSON.stringify(root)},taskId:'import-race',signal:controller.signal}).catch(e=>{
+        if (!['local_app_read_cancelled','local_app_read_executor_closed'].includes(e.code)) throw e;
+      });
+      await new Promise(resolve=>setTimeout(resolve,delay));
+      controller.abort();
+      await request;
+      await executor.close();
+    }
+    console.log('read-import-race: passed');
+  `;
+  const scriptPath = path.join(root, 'read-import-race.mjs');
+  fs.writeFileSync(scriptPath, script);
+  const output = execFileSync(process.execPath, [scriptPath], { encoding: 'utf8', timeout: 50_000 });
+  assert.match(output, /read-import-race: passed/);
 });

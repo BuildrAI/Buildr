@@ -169,6 +169,7 @@ jobs:
         working-directory: projects/product/services/buildr-web
         run: npm ci
       - name: Install pinned DSH package manager
+        if: steps.services.outputs.dsh == 'true'
         continue-on-error: true
         shell: bash
         run: |
@@ -179,6 +180,7 @@ jobs:
           env -i PATH="${PATH}" NPM_CONFIG_USERCONFIG="${RUNNER_TEMP}/dsh-tooling/user.npmrc" NPM_CONFIG_GLOBALCONFIG="${RUNNER_TEMP}/dsh-tooling/global.npmrc" \
             npm install --prefix "${RUNNER_TEMP}/dsh-tooling" --ignore-scripts --no-save --no-package-lock --no-audit --no-fund --registry=https://registry.npmjs.org/ pnpm@11.7.0
       - name: Prepare pinned DSH SDK
+        if: steps.services.outputs.dsh == 'true'
         continue-on-error: true
         working-directory: projects/product/services/dsh-plugin
         shell: bash
@@ -214,7 +216,7 @@ jobs:
         env:
           BUILDR_TIMING_OUTPUT: ${{ runner.temp }}/pre-push-check-timing.json
           BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/pre-push-check-diagnostics
-          BUILDR_VERIFICATION_PROFILE: ci
+          BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
         run: npm run check -- --base "${{ steps.base.outputs.sha }}"
       - name: Prepare related browser dependency
         if: steps.services.outputs.browser == 'true'
@@ -224,7 +226,7 @@ jobs:
         env:
           BUILDR_TIMING_OUTPUT: ${{ runner.temp }}/development-feedback-timing.json
           BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/development-feedback-diagnostics
-          BUILDR_VERIFICATION_PROFILE: ci
+          BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
         shell: bash
         run: npm run test:related -- --base "${{ steps.base.outputs.sha }}"
       - name: Upload macOS development evidence

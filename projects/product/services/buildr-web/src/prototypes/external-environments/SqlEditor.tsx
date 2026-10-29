@@ -5,7 +5,7 @@ import { EditorView, keymap, placeholder } from '@codemirror/view';
 import { FileCodeEditor } from '../../components/file-editing/FileCodeEditor';
 type Props = { id: string; value: string; readOnly: boolean; canRun: boolean; onChange(value: string): void; onRun(): void };
 const sqlTheme = EditorView.theme({
-  '&': { height: '100%', fontSize: '13px' },
+  '&': { height: '100%', fontSize: 'var(--font-size-code)' },
   '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', lineHeight: '1.8', overflow: 'auto' },
   '.cm-content': { padding: '14px 0', minHeight: '100%' },
   '.cm-line': { padding: '0 16px' },
