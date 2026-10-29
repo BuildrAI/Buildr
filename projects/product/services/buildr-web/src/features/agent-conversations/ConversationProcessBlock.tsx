@@ -35,7 +35,7 @@ function ToolStep({entry,active,onOpenFile,open,onToggle}:{entry:ConversationEnt
   </details>;
 }
 /** 连续工具条目折叠为一个分组行；单条命令从一开始也以分组呈现，避免后续折叠跳动。 */
-function ToolGroup({entries,active,onOpenFile,open,onToggle,toolsOpen,onToolToggle}:{entries:ConversationEntry[];active:boolean;onOpenFile:FileOpener;open:boolean;onToggle:(open:boolean)=>void;toolsOpen?:Record<string,boolean>;onToolToggle?:(id:string,open:boolean)=>void}){
+function ToolGroup({entries,active,onOpenFile,open,onToggle,toolsOpen,onToolToggle,liveForce=false}:{entries:ConversationEntry[];active:boolean;onOpenFile:FileOpener;open:boolean;onToggle:(open:boolean)=>void;toolsOpen?:Record<string,boolean>;onToolToggle?:(id:string,open:boolean)=>void;liveForce?:boolean}){
   const [visited,setVisited]=useState(open);
   useEffect(()=>{if(open)setVisited(true);},[open]);
   const tools=entries.map(processTool);
@@ -46,7 +46,9 @@ function ToolGroup({entries,active,onOpenFile,open,onToggle,toolsOpen,onToolTogg
   const label=runningEntry?`${processTool(runningEntry).action} ${processTool(runningEntry).description}`.trim():entries.length>1?[...counts].map(([action,count])=>count>1?`${action} ×${count}`:action).join(' · '):`${tools[0].action} ${tools[0].description}`.trim();
   const failed=entries.filter(entry=>processEntryStatus(entry,active)==='failed').length;
   const unknown=entries.filter(entry=>processEntryStatus(entry,active)==='unknown').length;
-  const live=Boolean(runningEntry);
+  /* Native status updates can lag behind the live stream; while the block is still
+     executing, the group holding the newest tool stays in the live presentation. */
+  const live=Boolean(runningEntry)||liveForce;
   const latestTool=processTool(runningEntry??entries.at(-1)!);
   const liveLabel=`${latestTool.action} ${latestTool.description}`.trim();
   return <details className={'ac-step-group'+(failed?' is-failed':'')+(live?' is-live':'')} open={open} onToggle={event=>{if(event.target===event.currentTarget&&event.currentTarget.open!==open)onToggle(event.currentTarget.open);}}>
@@ -93,9 +95,10 @@ export function ConversationProcessBlock({markdownOptions,headerless,blockKey,en
   const summary=processBlockSummary(entries);
   const tools=entries.filter(entry=>entry.kind==='tool');
   const duration=active?'':durationLabel(summary.startedAt,finishedAt||summary.finishedAt);
+  const lastToolId=tools.at(-1)?.id;
   const timeline=active||open||visited?<div className="ac-process-timeline">{processTimeline(entries).map(item=>item.type==='narration'
     ?<div key={item.entry.id} className="ac-process-narration" data-entry-id={item.entry.id}><MarkdownHost markdown={item.entry.text} className="markdown-body" options={markdownOptions}/></div>
-    :<ToolGroup key={item.entries[0].id} entries={item.entries} active={active} onOpenFile={onOpenFile} toolsOpen={toolsOpen} onToolToggle={onToolToggle} open={item.entries.map(entry=>groupsOpen['tool-group:'+entry.id]).find(value=>value!==undefined)??false} onToggle={value=>onGroupToggle?.(item.entries.map(entry=>entry.id),value)}/> )}</div>:null;
+    :<ToolGroup key={item.entries[0].id} entries={item.entries} active={active} onOpenFile={onOpenFile} toolsOpen={toolsOpen} onToolToggle={onToolToggle} liveForce={active&&item.entries.some(entry=>entry.id===lastToolId)} open={item.entries.map(entry=>groupsOpen['tool-group:'+entry.id]).find(value=>value!==undefined)??false} onToggle={value=>onGroupToggle?.(item.entries.map(entry=>entry.id),value)}/> )}</div>:null;
     if(active)return <div className="ac-process is-flow" data-process-state="live">{timeline}</div>;
     if(headerless)return <div className="ac-process is-flow ac-process-inline" data-process-state="settled" data-expanded={open}>{open&&timeline}</div>;
     return <details className={'ac-process is-flow'+(summary.failed?' is-failed':'')} data-process-state="settled" open={open} onToggle={event=>{

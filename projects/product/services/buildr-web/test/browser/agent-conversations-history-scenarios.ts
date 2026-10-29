@@ -59,7 +59,7 @@ await step('历史两行展示完整标识，标题可复制同一标识且保�
 await step('连续工具默认汇总折叠，明确展开在追加时保持，结束折叠且展开后失败提醒靠右',async()=>{
       const previous=structuredClone(fixture.conversation);
       const tool=(id:string,status='completed')=>({id,sequence:id==='single-tool'?1:2,kind:'tool',role:'system',name:'command',text:'echo verify\ncommand output',status,runId:'run-fixture',createdAt:new Date().toISOString()});
-      update({entries:[tool('single-tool','running')],run:run('running')});await page.reload();
+      update({entries:[tool('single-tool')],run:run('running')});await page.reload();
       const initialGroup=panel().locator('.ac-step-group');await initialGroup.locator(':scope>summary').waitFor();assert.equal(await initialGroup.getAttribute('open'),null);assert.equal(await panel().locator('.ac-step').count(),0,'工具默认只显示汇总');
       assert.equal(await initialGroup.locator(':scope>summary .ac-execution-light').count(),1,'执行中工具行显示呼吸光点');assert.equal(await initialGroup.locator(':scope>summary .ac-step-action').count(),0,'执行中工具行不显示调用统计');assert.equal(await initialGroup.locator(':scope>summary .ac-step-chevron').count(),0,'执行中工具行尾部无其他内容');await initialGroup.locator(':scope>summary').click();
       const first=panel().locator('[data-entry-id="single-tool"]');await first.locator(':scope>summary').waitFor();
