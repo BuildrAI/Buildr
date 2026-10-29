@@ -520,6 +520,7 @@ export class ConversationApplication {
     if (entry) {
       record.sources[source] = entry.id;
       if (entry.role === 'user' || entry.role === 'system' && entry.kind === 'notice') return false;
+      if (entry.kind === 'tool' && ['completed', 'failed'].includes(entry.status ?? '') && (!item.status || item.status === 'running')) return false;
       const nameChanged = item.name !== undefined && entry.name !== item.name;
       const inputChanged = item.input !== undefined && entry.input !== item.input;
       if (entry.text === item.text && entry.status === item.status && !nameChanged && !inputChanged) return false;
@@ -979,7 +980,12 @@ export class ConversationApplication {
         const run = this.load(workspaceId, id).view.run;
         const attempt = run ? this.load(workspaceId, id).attempts.find(value => value.runId === run.id) : undefined;
         const needsObservation = run?.participantId === saved.id && (BUSY_STATES.has(run.status) || Boolean(run.interrupted));
-        const observation = needsObservation ? await runtime.observe({ contextRef: saved.contextRef, executionRef: attempt?.executionRef }) : undefined;
+        const receiptRecord = this.load(workspaceId, id), prefix = `${saved.id}:tool:`, receiptEntries = new Map(receiptRecord.view.entries.map(entry => [entry.id, entry]));
+        const knownItems: ExecutorItem[] = !needsObservation ? [] : Object.entries(receiptRecord.sources).flatMap(([source, entryId]) => {
+          const entry = source.startsWith(prefix) ? receiptEntries.get(entryId) : undefined;
+          return entry && entry.runId === run?.id && attempt?.executionRef ? [{ id: source.slice(prefix.length), kind: 'tool', role: 'system', text: entry.text, status: entry.status === 'completed' || entry.status === 'failed' ? entry.status : undefined, executionId: attempt.executionRef.id }] : [];
+        });
+        const observation = needsObservation ? await runtime.observe({ contextRef: saved.contextRef, executionRef: attempt?.executionRef, knownItems }) : undefined;
         record = this.load(workspaceId, id);
         const participant = record.participants.find(value => value.id === saved.id)!;
         let changed = false;

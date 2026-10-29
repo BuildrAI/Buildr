@@ -126,7 +126,7 @@ async function generateTitle(requestId:string,description: string): Promise<stri
 }
 
 async function execute(params: any): Promise<void> {
-  if (live.has(params.contextId) && !live.get(params.contextId)!.terminal) throw new Error('agent_native_turn_active');
+  if (live.has(params.contextId) && !live.get(params.contextId)!.terminal && !live.get(params.contextId)!.nativeExited) throw new Error('agent_native_turn_active');
   const info = await getSessionInfo(params.contextId, { dir: params.cwd });
   if (info && (info.sessionId !== params.contextId || info.cwd && info.cwd !== params.cwd)) throw new Error('qoder_context_identity_mismatch');
   const state: LiveQuery = { id: params.clientRequestId, contextId: params.contextId, permissionMode: resolvePermissionMode(params.permissionMode), q: undefined, accepted: false, stopping: false, tools: new Map(), pending: new Map(), texts: new Map(), inputAcks: new Map() }; live.set(params.contextId, state);
@@ -196,6 +196,13 @@ async function execute(params: any): Promise<void> {
     }
     if (!state.terminal) throw new Error('qoder_terminal_observation_missing');
   } catch (error) {
+    // SDK stdout failure can beat ChildProcess.exit. Observe this exact child before close() obscures its cause.
+    if (!state.stopping && state.child && state.child.exitCode === null && state.child.signalCode === null) {
+      await bounded(new Promise<void>(resolve => state.child!.once('exit', () => resolve())), 250).catch(() => {});
+    }
+    if (!state.stopping && state.child && (state.child.exitCode !== null || state.child.signalCode !== null)) {
+      state.nativeExited = true; state.blockedOnExit ||= state.pending.size > 0;
+    }
     if (state.nativeExited) throw new Error('qoder_execution_observation_lost');
     throw error;
   } finally {

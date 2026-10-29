@@ -1946,3 +1946,20 @@ test('DSH and Qoder exact stopped transport losses enter the existing single con
     }finally{await f.close();}
   }
 });
+
+test('reconciliation preserves received terminal tool evidence and supplies exact receipts to the native observer', async () => {
+  const native = fake('local', { hold: true }), open = native.executor.open; let received: readonly ExecutorItem[] | undefined;
+  native.executor.open = async options => { const runtime = await open(options), observe = runtime.observe.bind(runtime); runtime.observe = async input => { received = input.knownItems; return observe(input); }; return runtime; };
+  const f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local'); const chat = await f.service.conversations.create('workspace-one', {}); send(f.service, chat.id, 'local', 'one operation');
+    await waitUntil(() => f.service.conversations.read('workspace-one', chat.id).run?.accepted, accepted => accepted === true);
+    const sending = native.sends[0]!, context = native.contexts.get(sending.contextRef.id)!;
+    const tool: ExecutorItem = { id: 'native-completed-tool', kind: 'tool', role: 'system', text: 'COMMITTED', status: 'completed', executionId: context.observation.executionRef!.id };
+    sending.onEvent({ type: 'item', item: tool }); context.items.push({ ...tool, status: 'running' });
+    await f.service.conversations.observe('workspace-one', chat.id);
+    assert.deepEqual(received?.map(item => [item.id, item.executionId, item.status]), [[tool.id, tool.executionId, 'completed']]);
+    const entry = f.service.conversations.read('workspace-one', chat.id).entries.find(item => item.kind === 'tool');
+    assert.equal(entry?.status, 'completed'); assert.equal(native.sends.length, 1);
+  } finally { await f.close(); }
+});

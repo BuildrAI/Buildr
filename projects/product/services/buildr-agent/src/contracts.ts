@@ -146,7 +146,7 @@ export interface AgentRuntime {
   /** Resolves at terminal observation. Control requests must stay independent. */
   send(input: ExecutorSendInput): Promise<void>;
   supplement?(input: ExecutorSupplementInput): Promise<ExecutorInputReceipt>;
-  observe(input: { contextRef: ContextRef; executionRef?: ExecutionRef }): Promise<ExecutorObservation>;
+  observe(input: { contextRef: ContextRef; executionRef?: ExecutionRef; knownItems?: readonly ExecutorItem[] }): Promise<ExecutorObservation>;
   reply(input: { contextRef: ContextRef; executionRef: ExecutionRef; requestId: string; answer: unknown }): Promise<void>;
   stop(input: { contextRef: ContextRef; executionRef: ExecutionRef; toolId?: string }): Promise<ExecutorObservation>;
   /** Native generated/name metadata only; never a first-prompt preview or fallback. */

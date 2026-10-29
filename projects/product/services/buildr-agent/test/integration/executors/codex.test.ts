@@ -162,6 +162,12 @@ test('closed Codex transport restores the exact interrupted execution from nativ
     await runtime.resumeContext({contextRef,cwd:root});
     const uncertain=await runtime.observe({contextRef,executionRef:accepted.executionRef});
     assert.equal(uncertain.tools[0]?.status,'unknown');assert.equal(uncertain.tools[0]?.id,'unfinished');
+    const rawPath=state[contextRef.id].path;
+    await writeFile(rawPath,(await readFile(rawPath,'utf8'))+JSON.stringify({type:'response_item',payload:{type:'function_call',call_id:'received-complete',name:'exec_command'}})+'\n');
+    const receipt={id:'received-complete',kind:'tool' as const,role:'system' as const,text:'exit code 0',status:'completed' as const,executionId:accepted.executionRef.id};
+    assert.ok((await runtime.observe({contextRef,executionRef:accepted.executionRef})).tools.some(tool=>tool.id===receipt.id));
+    assert.ok(!(await runtime.observe({contextRef,executionRef:accepted.executionRef,knownItems:[receipt]})).tools.some(tool=>tool.id===receipt.id));
+    for(const invalid of [{...receipt,executionId:'other'},{...receipt,text:'Process running with session ID 4'}]) assert.ok((await runtime.observe({contextRef,executionRef:accepted.executionRef,knownItems:[invalid]})).tools.some(tool=>tool.id===receipt.id));
 
   } finally {await runtime?.close();await rm(root,{recursive:true,force:true});}
 });
@@ -226,4 +232,22 @@ test('Codex cold recovery detects an unfinished durable call omitted by thread/r
     await writeFile(path, rows.map(row => JSON.stringify(row)).join('\n') + '\n');
     assert.equal((await codexUnsettledTools(path, root, 'context', 'exact'))[0].status, 'unknown');
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('Codex image viewing appears once in both live flow and durable history', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-codex-image-view-')); let runtime: AgentRuntime | undefined;
+  try {
+    const executable = join(root, 'codex.mjs'), before = "event('item/agentMessage/delta'";
+    await writeFile(executable, source.replace(before, "const imageView={id:'native-image',type:'imageView',path:'file:///test/image.png'};active.items.push(imageView);save();event('item/completed',{threadId:p.threadId,turnId:id,item:imageView});" + before));
+    runtime = await createCodexExecutor().open({ connectionId: 'codex', configRoot: root, executable, environment: { PATH: process.env.PATH ?? '' } });
+    const contextRef = await runtime.createContext({ cwd: root }), events: ExecutorEvent[] = [];
+    const sending = runtime.send({ contextRef, cwd: root, text: 'view image', images: [], clientRequestId: 'image-request', onEvent: event => events.push(event) }); sending.catch(() => {});
+    await eventually(() => events.some(event => event.type === 'request'));
+    const live = events.filter(event => event.type === 'item' && event.item.id === 'native-image'); assert.equal(live.length, 1);
+    assert.equal(live[0].type === 'item' && live[0].item.name, 'view-image');
+    const history = await runtime.readHistory({ contextRef, cwd: root }); assert.equal(history.filter(item => item.id === 'native-image').length, 1);
+    assert.equal(history.find(item => item.id === 'native-image')?.status, 'completed');
+    const accepted = events.find(event => event.type === 'accepted'); assert.equal(accepted?.type, 'accepted');
+    await runtime.stop({ contextRef, executionRef: accepted.executionRef }); await sending;
+  } finally { await runtime?.close(); await rm(root, { recursive: true, force: true }); }
 });

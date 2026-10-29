@@ -141,5 +141,11 @@ for (const completed of [false, true]) test('Qoder native child exit recovers on
     assert.equal(observed.tools[0].status, completed ? 'completed' : 'unknown');
     assert.equal((await runtime.observe({ contextRef, executionRef: { id: 'unrelated' } })).status, 'unknown');
     assert.equal(events.filter(event => event.type === 'item' && event.item.kind === 'tool' && event.item.status === 'running').length, 1);
+    if (completed) {
+      const next: ExecutorEvent[] = [], sending = runtime.send({ contextRef, cwd: workspace, text: '继续剩余答复', images: [], clientRequestId: 'a786d530-d34a-48a5-b8af-a721d030579f', onEvent: event => next.push(event) }); sending.catch(() => {});
+      await eventually(() => next.some(event => event.type === 'request'));
+      const admitted = next.find(event => event.type === 'accepted'); assert.equal(admitted?.type, 'accepted');
+      await runtime.stop({ contextRef, executionRef: admitted.executionRef }); await sending;
+    }
   } finally { await runtime?.close(); await rm(root, { recursive: true, force: true }); }
 });

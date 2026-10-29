@@ -109,3 +109,12 @@ test('Qoder crash recovery holds incomplete, failed and background side effects 
   const metadata = interruptedQoder(); (metadata[2] as any).toolUseResult = { backgroundTaskId: 'native-job' };
   assert.equal(qoderInterruptedObservation(metadata, metadata, 'qoder-session', 'exact-request').status, 'unknown');
 });
+
+test('Qoder distinguishes an explicit failed tool receipt from an interrupted tool with unknown effects', () => {
+  const messages = interruptedQoder(); (messages[2].message.content[0] as any).is_error = true;
+  const records = structuredClone(messages);
+  Object.assign(records[2], { sourceToolAssistantUUID: 'assistant', promptId: 'prompt', toolUseResult: { errorType: 'file_not_found', isHardFailure: false } });
+  assert.equal(qoderInterruptedObservation(messages, records, 'qoder-session', 'exact-request').status, 'stopped');
+  (records[2] as any).toolUseResult.errorType = 'interrupted';
+  assert.equal(qoderInterruptedObservation(messages, records, 'qoder-session', 'exact-request').status, 'unknown');
+});

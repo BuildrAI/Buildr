@@ -47,10 +47,12 @@ export function qoderInterruptedObservation(messages: any[], records: any[], con
   const interruptions = qoderInterruptionIds(messages, records, contextId);
   const items = qoderHistoryItems(messages, contextId, interruptions);
   const owned = items.filter(item => item.executionId === executionId), tools = owned.filter(item => item.kind === 'tool');
-  const unknown: ExecutorObservation = { status: 'unknown', tools: tools.map(item => ({ id: item.id, label: item.name ?? '工具', status: item.status === 'completed' ? 'completed' : 'unknown' })), diagnostic: 'qoder_exact_execution_not_observed' };
+  const confirmedFailures = new Set(records.flatMap(record => typeof record.toolUseResult?.errorType === 'string' && !/interrupt|abort|cancel/i.test(record.toolUseResult.errorType) && record.sourceToolAssistantUUID && record.promptId ? (Array.isArray(record.message?.content) ? record.message.content : []).filter((part: any) => part.type === 'tool_result' && part.is_error).map((part: any) => part.tool_use_id) : []));
+  const settled = (item: ExecutorItem) => item.status === 'completed' || item.status === 'failed' && confirmedFailures.has(item.id);
+  const unknown: ExecutorObservation = { status: 'unknown', tools: tools.map(item => ({ id: item.id, label: item.name ?? '工具', status: settled(item) ? 'completed' : 'unknown' })), diagnostic: 'qoder_exact_execution_not_observed' };
   if (!executionId || !interruptions.has(messages.at(-1)?.uuid) || items.filter(item => item.role === 'user').at(-1)?.id !== executionId) return unknown;
   const start = messages.findIndex(message => message.uuid === executionId);
-  if (start < 0 || tools.some(item => item.status !== 'completed')) return unknown;
+  if (start < 0 || tools.some(item => !settled(item))) return unknown;
   const tail = messages.slice(start), tailIds = new Set(tail.map(message => message.uuid));
   // Native background jobs may outlive their foreground tool result; do not release their execution from history alone.
   if (tail.some(message => message.subtype === 'task_started' ||
