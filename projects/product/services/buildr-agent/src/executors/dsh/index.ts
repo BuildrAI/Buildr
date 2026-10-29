@@ -428,7 +428,7 @@ export class DshRuntime implements AgentRuntime {
     if (request.questions.some((question: any) => typeof question.id !== 'string' || typeof question.question !== 'string')) throw new Error('dsh_question_invalid');
     const id = typeof request.wait?.callId === 'string' ? request.wait.callId : randomUUID();
     if (turn.pending.has(id)) throw new Error('dsh_question_duplicate');
-    const safe: ExecutorRequest = { id, kind: 'question', title: '需要补充信息', questions: request.questions.map((question: any) => ({ id: question.id, label: question.question, options: question.options?.map((option: any) => ({ id: option.label, label: option.label })), multiple: Boolean(question.multiSelect) })) };
+    const safe: ExecutorRequest = { id, kind: 'question', title: '需要补充信息', questions: request.questions.map((question: any) => ({ id: question.id, label: question.question, options: question.options?.map((option: any) => ({ id: option.label, label: option.label, ...(typeof option.description === 'string' ? { description: option.description } : {}) })), multiple: Boolean(question.multiSelect) })) };
     const wait = request.wait?.timed ? this.client.remote.userQuestions.attachWait(contextId, id) : undefined;
     if (wait) void (async () => { try { for await (const _ of wait) { /* Hold only this native foreground timed claim. */ } } catch { /* Native cancellation resolves the exact pending request. */ } })();
     try {

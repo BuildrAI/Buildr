@@ -81,8 +81,8 @@ export interface ExecutorRequest {
   kind: 'approval' | 'question';
   title: string;
   description?: string;
-  options?: Array<{ id: string; label: string }>;
-  questions?: Array<{ id: string; label: string; options?: Array<{ id: string; label: string }>; multiple?: boolean }>;
+  options?: Array<{ id: string; label: string; description?: string }>;
+  questions?: Array<{ id: string; label: string; options?: Array<{ id: string; label: string; description?: string }>; multiple?: boolean; allowOther?: boolean }>;
 }
 export interface ExecutorObservation {
   /** Native SDK background work, distinct from missing historical tool results. */

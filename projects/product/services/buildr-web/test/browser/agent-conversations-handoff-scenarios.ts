@@ -65,4 +65,35 @@ await step('原生授权与问题回复绑定原请求，未知执行只保存�
       update({run:run('waiting-question','dsh'),requests:[{id:'native-question',conversationId:fixture.conversation.id,workspaceId:workspaceId,participantId:'participant-dsh',runId:'run-fixture',generation:'generation-fixture',kind:'question',title:'需要明确范围',questions:[{id:'scope',label:'这次处理范围'}]}]});await reopen();await panel().getByRole('textbox',{name:'这次处理范围',exact:true}).fill('只调整本次目标');await panel().getByRole('button',{name:'回答并继续',exact:true}).click();assert.equal(fixture.replies,2);await panel().locator('.ac-message.is-user').filter({hasText:'这次处理范围：只调整本次目标'}).waitFor();
       update({run:run('unknown','dsh'),requests:[]});await reopen();await input().fill('未知时保留输入');await input().press('Enter');await panel().getByText('已提交，等待自动发送',{exact:true}).waitFor();assert.equal(fixture.sends,2);assert.equal(await input().inputValue(),'');assert.equal(fixture.conversation.pendingSend.draft.text,'未知时保留输入');await capture(page,'agent-conversation-unknown.png');await panel().getByRole('button',{name:'取消待发送',exact:true}).click();await panel().locator('[data-pending-send-state]').waitFor({state:'hidden'});
     });
+
+await step('用户决定复用问题卡片，选项说明与其他回答可用且回答后接续原轮',async()=>{
+      const decision=(id:string)=>({id,conversationId:fixture.conversation.id,workspaceId,participantId:'participant-codex',runId:'run-fixture',generation:'generation-fixture',kind:'question',title:'需要你的回复',questions:[{id:'direction',label:'接下来选择哪个方向？',allowOther:true,options:[{id:'preview',label:'先看效果',description:'先查看交互效果再决定。'},{id:'implement',label:'直接修改',description:'按已确认方向继续。'}]}]});
+      const before=fixture.replies;
+      update({run:run('waiting-question','codex',{permissionMode:'full-access'}),requests:[decision('decision-choice')]});
+      await page.reload();await input().waitFor();
+      let card=panel().locator('[data-agent-request="decision-choice"]');await card.waitFor();
+      await panel().locator('[data-execution-state="waiting-question"]').waitFor();
+      assert.equal(await card.getByRole('button',{name:'回答并继续',exact:true}).isDisabled(),true);
+      await card.getByText('先查看交互效果再决定。',{exact:true}).waitFor();
+      assert.equal(fixture.replies,before,'等待与刷新都不自动选择');
+      await card.getByRole('radio',{name:/先看效果/}).check();
+      await card.getByRole('button',{name:'回答并继续',exact:true}).click();await card.waitFor({state:'hidden'});
+      assert.equal(fixture.replies,before+1);assert.equal(fixture.conversation.run.id,'run-fixture');assert.equal(fixture.conversation.run.status,'running');
+      assert.deepEqual(JSON.parse(fixture.conversation.entries.at(-1).text).回答,{direction:'preview'});
+
+      update({run:run('waiting-question','codex',{permissionMode:'full-access'}),requests:[decision('decision-other')]});
+      await page.reload();await input().waitFor();card=panel().locator('[data-agent-request="decision-other"]');await card.waitFor();
+      await card.getByRole('radio',{name:'其他',exact:true}).check();
+      const submit=card.getByRole('button',{name:'回答并继续',exact:true}),other=card.getByRole('textbox',{name:'接下来选择哪个方向？：其他回答',exact:true});
+      assert.equal(await submit.isDisabled(),true);await other.fill('先说明影响，暂不修改');
+      await card.getByRole('radio',{name:/直接修改/}).check();await other.waitFor({state:'hidden'});
+      await card.getByRole('radio',{name:'其他',exact:true}).check();assert.equal(await other.inputValue(),'先说明影响，暂不修改');
+      await capture(page,'agent-conversation-user-decision.png');
+      await submit.click();await card.waitFor({state:'hidden'});
+      assert.equal(fixture.replies,before+2);assert.deepEqual(JSON.parse(fixture.conversation.entries.at(-1).text).回答,{direction:'先说明影响，暂不修改'});
+      assert.equal(fixture.conversation.run.id,'run-fixture');
+      update({run:run('running','codex'),requests:[]});await page.reload();await input().waitFor();
+      assert.equal(await panel().locator('[data-agent-request]').count(),0);
+      assert.equal(fixture.replies,before+2,'取消或失效的卡片不会再发送答复');
+    });
 }
