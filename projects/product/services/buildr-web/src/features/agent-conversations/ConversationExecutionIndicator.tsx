@@ -17,7 +17,7 @@ export function ConversationExecutionIndicator({ startedAt, active, finishedAt }
     return () => clearInterval(timer);
   }, [active, startedAt]);
   const duration = elapsedLabel(startedAt, !active && finishedAt ? Date.parse(finishedAt) : now);
-  return <div className={'ac-execution-indicator' + (active ? ' is-active' : '')} role="status" aria-label={(active ? '智能体正在执行，已持续 ' : '本轮执行时间 ') + duration}>
+  return <span className={'ac-execution-indicator' + (active ? ' is-active' : '')} role="status" aria-label={(active ? '智能体正在执行，已持续 ' : '本轮执行时间 ') + duration}>
     {active && <span className="ac-execution-light" aria-hidden="true" />}<time>{duration}</time>
-  </div>;
+  </span>;
 }

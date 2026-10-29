@@ -102,6 +102,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
   const [expandedToolGroups,setExpandedToolGroups]=useState<Record<string,boolean>>({});
   const [atBottom,setAtBottom]=useState(true);
   const stream=useRef<HTMLDivElement>(null),readPosition=useRef(0),bottom=useRef(true),composing=useRef(false);
+  const messageList=useRef<HTMLDivElement>(null);
   const selectedSourceModel=context.modelCatalog.find(model=>model.accountId===choice.modelAccountId&&model.modelId===choice.model&&(!choice.modelAccountIdentity||model.accountIdentity===choice.modelAccountIdentity));
   const effectiveModel=choice.model??selectedConversationModel(connection,undefined)?.id;
   const effectiveModelLabel=selectedSourceModel?.label||selectedConversationModel(connection,effectiveModel)?.label||effectiveModel||'默认模型';
@@ -146,6 +147,17 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
   useEffect(()=>{setMoreOpen(false);setLocationOpen(false);},[context.selectionGeneration,context.open,context.side,context.full,context.view]);
   useEffect(()=>{if(bottom.current)stream.current?.scrollTo({top:stream.current.scrollHeight});},[chat?.id,chat?.entries.length,chat?.entries.at(-1)?.text,chat?.requests.length,chat?.run?.status]);
   useLayoutEffect(()=>{if(stream.current?.getClientRects().length)stream.current.scrollTop=bottom.current?stream.current.scrollHeight:readPosition.current;},[portalTarget,context.view,context.open]);
+  const hasMessageList=Boolean(chat?.entries.length)&&!context.loading&&!context.error;
+  useEffect(()=>{
+    const node=stream.current,list=messageList.current;
+    if(!node?.getClientRects().length)return;
+    // Layout settles after the first pin: the compose area grows and fonts or images reflow content.
+    // While the reader sits at the bottom, follow every size change so refreshes land on the true bottom.
+    const observer=new ResizeObserver(()=>{if(bottom.current)node.scrollTop=node.scrollHeight;});
+    observer.observe(node);
+    if(list)observer.observe(list);
+    return()=>observer.disconnect();
+  },[chat?.id,hasMessageList,context.view,context.open]);
   const fail=(failure:unknown)=>{setError(failure instanceof Error?failure.message:'操作未完成。');};
   const openProcessFile=async(path:string)=>{
     if(!chat)return;
@@ -450,7 +462,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
       {participantPairs.length?<div className="ac-participants" aria-label="参与过此对话的智能体与模型">参与过此对话 {participantPairs.map(pair=><span key={pair.key} title={`${providerNames[pair.provider]||pair.provider} · ${pair.modelName}`}>{providerNames[pair.provider]||pair.provider} · {pair.modelName}</span>)}</div>:null}
       <div className="ac-stream" ref={stream} tabIndex={0} aria-label="对话记录" aria-busy={earlier.loading} onScroll={()=>{earlier.onScroll();followBottom();}} onWheel={earlier.onWheel} onKeyDown={earlier.onKeyDown} onTouchStart={earlier.onTouchStart} onTouchMove={earlier.onTouchMove} onTouchEnd={earlier.onTouchEnd} onTouchCancel={earlier.onTouchCancel}>
         {earlier.loading&&<div className="ac-history-loading" role="status" aria-label="正在加载更早记录"><Spin size="small"/></div>}
-        {context.loading?<Spin/>:context.error?<Alert type="error" showIcon message={context.error} action={<Button onClick={()=>void context.refresh().catch(fail)}>重新读取</Button>}/>:!chat?.entries.length?<div className="ac-welcome"><CommentOutlined/><h1>{chat?.taskId||boundTaskId?'从这项任务继续':'今天想做什么？'}</h1><p>了解一个问题，或者交办一件事。</p>{!chat&&settings}</div>:<div className="ac-message-list">
+        {context.loading?<Spin/>:context.error?<Alert type="error" showIcon message={context.error} action={<Button onClick={()=>void context.refresh().catch(fail)}>重新读取</Button>}/>:!chat?.entries.length?<div className="ac-welcome"><CommentOutlined/><h1>{chat?.taskId||boundTaskId?'从这项任务继续':'今天想做什么？'}</h1><p>了解一个问题，或者交办一件事。</p>{!chat&&settings}</div>:<div className="ac-message-list" ref={messageList}>
           {turns.map((turn,index)=>{
             const first=turn.items.find(item=>item.type==='process-block'||item.type==='entry'&&item.entry.role==='assistant');
             const assistant=first?.type==='process-block'?first.entries[0]:first?.entry;

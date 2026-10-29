@@ -47,14 +47,22 @@ function ToolGroup({entries,active,onOpenFile,open,onToggle,toolsOpen,onToolTogg
   const failed=entries.filter(entry=>processEntryStatus(entry,active)==='failed').length;
   const unknown=entries.filter(entry=>processEntryStatus(entry,active)==='unknown').length;
   const live=Boolean(runningEntry);
+  const latestTool=processTool(runningEntry??entries.at(-1)!);
+  const liveLabel=`${latestTool.action} ${latestTool.description}`.trim();
   return <details className={'ac-step-group'+(failed?' is-failed':'')+(live?' is-live':'')} open={open} onToggle={event=>{if(event.target===event.currentTarget&&event.currentTarget.open!==open)onToggle(event.currentTarget.open);}}>
     <summary data-entry-group={JSON.stringify(entries.map(entry=>entry.id))}>
-      <span className="ac-step-node" aria-hidden="true"><ToolIcon kind={kinds.size===1?tools[0].kind:'tool'}/></span>
-      <span className="ac-step-action">{entries.length} 次工具调用</span>
-      <span className="ac-step-label" title={label}>{label}</span>
-      {unknown>0&&<span className="ac-step-status">{unknown} 项结果待核对</span>}
-      {failed>0&&<span className="ac-step-status"><WarningOutlined aria-hidden="true"/>{failed} 项失败</span>}
-      <RightOutlined className="ac-step-chevron" aria-hidden="true"/>
+      {live ? <>
+        <span className="ac-step-node" aria-hidden="true"><ToolIcon kind={latestTool.kind}/></span>
+        <span className="ac-execution-light" aria-hidden="true"/>
+        <span className={'ac-step-label'+(latestTool.kind==='command'?' is-command':'')} title={liveLabel}>{liveLabel}</span>
+      </> : <>
+        <span className="ac-step-node" aria-hidden="true"><ToolIcon kind={kinds.size===1?tools[0].kind:'tool'}/></span>
+        <span className="ac-step-action">{entries.length} 次工具调用</span>
+        <span className="ac-step-label" title={label}>{label}</span>
+        {unknown>0&&<span className="ac-step-status">{unknown} 项结果待核对</span>}
+        {failed>0&&<span className="ac-step-status"><WarningOutlined aria-hidden="true"/>{failed} 项失败</span>}
+        <RightOutlined className="ac-step-chevron" aria-hidden="true"/>
+      </>}
     </summary>
     {(open||visited)&&<div className="ac-step-group-items">{entries.map(entry=><ToolStep key={entry.id} entry={entry} active={active} onOpenFile={onOpenFile} open={toolsOpen?toolsOpen['tool:'+entry.id]??false:undefined} onToggle={value=>onToolToggle?.(entry.id,value)}/>)}</div>}
     {open&&<button type="button" className="ac-process-collapse" onClick={event=>{const details=event.currentTarget.closest('details')!;onToggle(false);requestAnimationFrame(()=>{const summary=details.querySelector('summary');if(summary)locateConversationContent(summary);});}}>收起工具调用</button>}

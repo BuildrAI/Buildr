@@ -46,19 +46,27 @@ export function ConversationTurn({ id, runId, prompt, identity, executing = fals
     locateAssistant();
   };
   return <section ref={turn} className={'ac-turn' + (executing ? ' is-executing' : '')} data-turn-id={id} data-run-id={runId} tabIndex={-1}>
-    <div className="ac-turn-context">
-      {prompt && <article className="ac-message is-user ac-turn-prompt" data-entry-id={prompt.id}>
-        <div ref={content} className={'ac-turn-prompt-content' + (expanded ? ' is-expanded' : '')} tabIndex={expanded ? 0 : undefined}>
-          {prompt.text && <p>{prompt.text}</p>}{prompt.images}
-        </div>
-        {long && <button type="button" className="ac-turn-prompt-toggle" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? '收起内容' : '展开内容'}</button>}
-        {prompt.diagnostic}
-      </article>}
+    <div className="ac-turn-head">
+      <div className="ac-turn-context">
+        {prompt && <article className="ac-message is-user ac-turn-prompt" data-entry-id={prompt.id}>
+          <div ref={content} className={'ac-turn-prompt-content' + (expanded ? ' is-expanded' : '')} tabIndex={expanded ? 0 : undefined}>
+            {prompt.text && <p>{prompt.text}</p>}{prompt.images}
+          </div>
+          {long && <button type="button" className="ac-turn-prompt-toggle" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? '收起内容' : '展开内容'}</button>}
+          {prompt.diagnostic}
+        </article>}
+      </div>
+      {showIdentity && <div className="ac-turn-identity">
+          {canToggleProcess ? <button type="button" className="ac-message-identity ac-turn-identity-link ac-turn-identity-toggle" aria-label={identityActionLabel} title={identityActionLabel} aria-expanded={identityExpanded} onClick={handleIdentityClick}>
+            <span className="ac-turn-identity-name">{identity||'助手'}</span>
+            {showExecutionIndicator && startedAt && <ConversationExecutionIndicator startedAt={startedAt} active={executing} finishedAt={finishedAt} />}
+            {identityExpanded ? <UpOutlined className="ac-turn-identity-caret" /> : <DownOutlined className="ac-turn-identity-caret" />}
+          </button> : <>
+            <button type="button" className="ac-message-identity ac-turn-identity-link" aria-label={identityActionLabel} title={identityActionLabel} onClick={handleIdentityClick}>{identity||'助手'}</button>
+            {showExecutionIndicator && startedAt && <ConversationExecutionIndicator startedAt={startedAt} active={executing} finishedAt={finishedAt} />}
+          </>}
+        </div>}
     </div>
-    {showIdentity && <div className="ac-turn-identity">
-        <button type="button" className={'ac-message-identity ac-turn-identity-link' + (canToggleProcess ? ' ac-turn-identity-toggle' : '')} aria-label={identityActionLabel} title={identityActionLabel} aria-expanded={canToggleProcess ? identityExpanded : undefined} onClick={handleIdentityClick}>{identity||'助手'}{canToggleProcess && (identityExpanded ? <UpOutlined className="ac-turn-identity-caret" /> : <DownOutlined className="ac-turn-identity-caret" />)}</button>
-        {showExecutionIndicator && startedAt && <ConversationExecutionIndicator startedAt={startedAt} active={executing} finishedAt={finishedAt} />}
-      </div>}
     <div ref={body} className="ac-turn-content" tabIndex={-1}>{children}</div>
   </section>;
 }
