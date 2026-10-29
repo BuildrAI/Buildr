@@ -102,9 +102,12 @@ class QoderRuntime implements AgentRuntime {
       await rpc.call('initialize', { executable, ...(gateway ? { gateway } : {}) });
       if (gateway) {
         await runtime.assertNativeAccount();
-        // The platform login starts Qoder itself; paid native model access is unrelated.
-        const account: AccountObservation = await rpc.call('account', { cwd: options.configRoot }, 40000);
-        if (account.status !== 'ready') throw new Error(account.status === 'expired' ? 'qoder_platform_login_expired' : account.status === 'not-authenticated' ? 'qoder_platform_login_required' : 'qoder_platform_auth_unavailable');
+        // A linked native account is checked above and by the real query's login/model policy.
+        // Starting a second CLI only to inspect that same account adds a full initialization before every new chat.
+        if (!gateway.nativeModel) {
+          const account: AccountObservation = await rpc.call('account', { cwd: options.configRoot }, 40000);
+          if (account.status !== 'ready') throw new Error(account.status === 'expired' ? 'qoder_platform_login_expired' : account.status === 'not-authenticated' ? 'qoder_platform_login_required' : 'qoder_platform_auth_unavailable');
+        }
       }
       options.signal?.throwIfAborted(); return runtime;
     } catch (error) { await (abortedClose ?? rpc.close()); throw error; }

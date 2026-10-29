@@ -76,7 +76,7 @@ async function accountQuery(cwd: string, operation: 'account' | 'models'): Promi
   let release!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
   async function* emptyInput(): AsyncGenerator<any> { await gate; }
-  let authExpired = false; const inspectionOptions = { ...options(cwd), onAuthExpired: () => { authExpired = true; } };
+  let authExpired = false; const inspectionOptions = { ...options(cwd), persistSession: false, settingSources: [], skills: [], tools: [], mcpServers: {}, onAuthExpired: () => { authExpired = true; } };
   const q: any = query({ prompt: emptyInput(), options: inspectionOptions });
   try {
     await bounded(q.initializationResult(), 30000);

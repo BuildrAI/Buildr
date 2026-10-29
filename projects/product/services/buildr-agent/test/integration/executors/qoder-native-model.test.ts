@@ -35,6 +35,7 @@ test('Qoder uses its native Qwen model with custom providers unavailable and ref
     await login(config,'user');
     const executable = join(root,'qoder.mjs'); await writeFile(executable,source());
     runtime = await createQoderExecutor().open({connectionId:'qoder',configRoot:join(root,'binding'),nativeAccountConfigRoot:owner,executable,environment:{PATH:process.env.PATH??''},gateway:lease});
+    await assert.rejects(readFile(join(config,'launch.json'),'utf8'), {code:'ENOENT'}, 'native account binding must not launch a redundant inspection CLI');
     const contextRef = await runtime.createContext({cwd:root}), events: ExecutorEvent[] = [];
     const input = {contextRef,cwd:root,text:'native model probe',images:[],model:'bound-route',reasoningEffort:'medium',permissionMode:'full-access' as const,clientRequestId:randomUUID(),onEvent:(event:ExecutorEvent)=>events.push(event)};
     await runtime.send(input);
