@@ -10,7 +10,7 @@ export function messageSignature(record: StoredConversation): string {
 }
 /** 列表顺序只跟随用户输入：用户消息与对问题的答复。 */
 export function userActivityAt(record: StoredConversation): string | undefined {
-  let latest: string | undefined;
+  let latest: string | undefined = record.view.forkedFrom?.forkedAt;
   for (const entry of record.view.entries) {
     const fromUser = entry.kind === 'message' && entry.role === 'user' || entry.role === 'user' && entry.kind === 'notice' && entry.id.startsWith('reply-');
     if (!fromUser || entry.status === 'failed') continue;

@@ -104,7 +104,28 @@ export type ExecutorEvent =
   | { type: 'observation'; observation: ExecutorObservation }
   | { type: 'completed'; status: 'completed' | 'stopped' | 'failed'; diagnostic?: string }
   | { type: 'diagnostic'; message: string };
-export interface ExecutorTitleInput { contextRef: ContextRef; cwd: string; description: string; model?: string; signal: AbortSignal }
+export interface ExecutorTitleInput { contextRef: ContextRef; cwd: string; description: string; model?: string; freshInstruction?: boolean; signal: AbortSignal }
+/** In-process only: the source validates its own binding; the destination owns the new context. */
+export interface ExecutorForkInput {
+  source: AgentRuntime;
+  contextRef: ContextRef;
+  cwd: string;
+  executionRef: ExecutionRef;
+  itemId: string;
+  /** Exact admitted inputs, including supplements, belonging to the selected round. */
+  inputItemIds?: readonly string[];
+  onCreated(contextRef: ContextRef): void;
+}
+export interface ConversationForkInput { expectedRevision: string; entryId: string; clientRequestId: string }
+export interface ConversationForkOrigin {
+  conversationId: string;
+  workspaceId: string;
+  entryId: string;
+  runId: string;
+  throughSequence: number;
+  title: string;
+  forkedAt: string;
+}
 export interface ExecutorSendInput {
   contextRef: ContextRef;
   cwd: string;
@@ -143,6 +164,7 @@ export interface AgentRuntime {
   beginLogin(onUpdate: (observation: LoginObservation) => void): Promise<void>;
   cancelLogin(): Promise<void>;
   createContext(input: { cwd: string; permissionMode?: PermissionMode }): Promise<ContextRef>;
+  forkContext?(input: ExecutorForkInput): Promise<ContextRef>;
   resumeContext(input: { contextRef: ContextRef; cwd: string; permissionMode?: PermissionMode }): Promise<void>;
   readHistory(input: { contextRef: ContextRef; cwd: string }): Promise<ExecutorItem[]>;
   /** Resolves at terminal observation. Control requests must stay independent. */
@@ -264,6 +286,9 @@ export interface PendingRequestView extends ExecutorRequest {
   generation: string;
 }
 export interface ConversationView {
+  /** Immutable direct-parent provenance, independent of current titles and UI state. */
+  forkedFrom?: ConversationForkOrigin;
+  forkState?: { status: 'creating' | 'ready' | 'failed'; reason?: string };
   pendingSend?: PendingSendView;
   /** Independent observation version for append-only image admission. */
   attachmentRevision?: string;

@@ -57,6 +57,7 @@ export interface StoredConnection {
   bindingData?: Record<string, unknown>;
 }
 export interface StoredParticipant {
+  historical?: boolean;
   modelAccountId?: string; modelAccountIdentity?: string; modelId?: string; serviceTier?:string;modelConfiguration?:string;
   id: string;
   connectionId: string;
@@ -67,6 +68,7 @@ export interface StoredParticipant {
   deliveredThrough: number;
 }
 export interface StoredConversation {
+  forkRequest?: { digest: string; clientRequestId: string };
   initialDraft?: { id: string; requestId: string; digest: string };
   view: ConversationView;
   hostScope?: import('../execution-contracts.ts').ExecutionScope;

@@ -240,3 +240,10 @@
 .ac-linked-image-reference code{min-width:0;flex:1;overflow-wrap:anywhere;color:var(--soft-muted)}
 .ac-linked-image-preview{display:flex;align-items:center;justify-content:center;min-height:100px}
 .ac-linked-image-preview .ant-image-img{width:auto;max-width:100%;max-height:70vh;object-fit:contain}
+
+.ac-reply-actions{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.ac-fork-action{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+.ac-fork-origin{padding:8px 12px;border-radius:8px;background:var(--ant-color-fill-quaternary,rgba(128,128,128,.06));font-size:var(--font-size-secondary);min-width:0}
+.ac-fork-origin>div{display:flex;align-items:center;gap:4px;min-width:0}
+.ac-fork-origin .ant-btn{min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto}
+.ac-fork-origin small{display:block;color:var(--ant-color-text-secondary,#777)}

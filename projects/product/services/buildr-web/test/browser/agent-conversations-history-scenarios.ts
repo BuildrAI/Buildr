@@ -6,6 +6,33 @@ import type {AgentConversationFixture} from './agent-conversation-fixture.ts';
 /** history 场景使用独立准备的对话现场。 */
 export async function runHistoryScenarios(fixture:AgentConversationFixture){
   const {capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,supplementaryInputs,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
+await step('指定答复分叉为独立对话，刷新保留来源并可返回原对话',async()=>{
+  const original=structuredClone(fixture.conversation),additional=[...fixture.additionalConversations],sends=fixture.sends;
+  try{
+    const at=new Date().toISOString(),source=update({title:'分叉来源对话',requests:[],run:run('completed'),entries:[
+      {id:'fork-user',sequence:1,runId:'fork-first',kind:'message',role:'user',text:'分叉前的问题',createdAt:at},
+      {id:'fork-answer',sequence:2,runId:'fork-first',kind:'message',role:'assistant',text:'从这一轮分叉',status:'completed',createdAt:at},
+      {id:'fork-later-user',sequence:3,runId:'run-fixture',kind:'message',role:'user',text:'不要带入的后续消息',createdAt:at},
+      {id:'fork-later-answer',sequence:4,runId:'run-fixture',kind:'message',role:'assistant',text:'后续答复',status:'completed',createdAt:at},
+    ]});
+    await page.reload();await input().waitFor();
+    await panel().locator('[data-entry-id="fork-answer"]').getByRole('button',{name:'分支到新对话',exact:true}).click();
+    const origin=panel().locator('[data-forked-from="'+source.id+'"]');await origin.waitFor();
+    await panel().getByRole('button',{name:'对话信息',exact:true}).filter({hasText:'新对话'}).waitFor();
+    assert.equal(await panel().getByText('不要带入的后续消息',{exact:true}).count(),0);
+    assert.equal(await input().inputValue(),'');assert.equal(fixture.sends,sends,'创建分支不发送工作指令');
+    await page.reload();await origin.waitFor();
+    await page.setViewportSize({width:390,height:844});
+    assert.ok(await panel().evaluate((node:HTMLElement)=>node.scrollWidth-node.clientWidth<=1),'窄屏来源提示不造成横向溢出');
+    await capture(page,'agent-conversation-fork-origin.png');
+    await origin.getByRole('button',{name:'分叉来源对话',exact:true}).click();
+    await panel().getByText('不要带入的后续消息',{exact:true}).waitFor();
+    assert.equal(fixture.conversation.id,source.id);assert.equal(fixture.sends,sends);
+  }finally{
+    fixture.conversation=original;fixture.additionalConversations=additional;
+    await page.setViewportSize({width:1600,height:1000});await page.reload();await input().waitFor();
+  }
+});
 await step('顶部正文输入与列表共用最大宽度，宽屏居中且窄屏自适应',async()=>{
   const sends=fixture.sends;
   const toggleFull=async(label:string)=>{await panel().getByRole('button',{name:'更多对话操作',exact:true}).click();await page.getByRole('menuitem',{name:label,exact:true}).click();await page.locator('.ant-dropdown:visible').waitFor({state:'hidden'});};

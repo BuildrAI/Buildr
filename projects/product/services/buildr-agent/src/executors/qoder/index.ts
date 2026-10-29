@@ -10,6 +10,7 @@ import { NativeRpc, nativeBinding, bounded, closeOwnedProcess, findExecutable, i
 import {readQoderIdentity,requestQoderModel} from '../../model-access/providers/qoder.ts';
 import { ExecutorInputRejected, type ExecutorSupplementInput, type ExecutorInputReceipt } from '../../contracts.ts';
 import { checkedGateway, consumerBinding, gatewayModel, qoderGatewayPolicy, type ExecutorGateway } from '../model-gateway.ts';
+import type { ExecutorForkInput } from '../../contracts.ts';
 const capabilities = { supplement: true, permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
 export function createQoderExecutor(): AgentExecutor { return { descriptor: { id: 'qoder', label: 'Qoder', capabilities }, open: options => QoderRuntime.open(options) }; }
 class QoderRuntime implements AgentRuntime {
@@ -164,6 +165,16 @@ class QoderRuntime implements AgentRuntime {
   }
   async cancelLogin(): Promise<void> { const login = this.login; if (!login) return; this.login = undefined; login.cancelled = true; await closeOwnedProcess(login.child); login.update({ state: 'cancelled' }); }
   async createContext({ cwd }: { cwd: string }): Promise<ContextRef> { const id = randomUUID(); this.contexts.set(id, cwd); return { id, data: { cwd, native: opaqueReference('qoder', id, cwd, this.bindingIdentity) } }; }
+  async forkContext(input: ExecutorForkInput): Promise<ContextRef> {
+    if (!(input.source instanceof QoderRuntime)) throw new Error('agent_context_binding_mismatch');
+    input.source.reference(input.contextRef, input.cwd);
+    const result = await this.rpc.call('fork', { contextId: input.contextRef.id, cwd: input.cwd, itemId: input.itemId, executionId: input.executionRef.id, inputItemIds: input.inputItemIds });
+    if (typeof result.sessionId !== 'string' || result.sessionId === input.contextRef.id) throw new Error('agent_fork_identity_invalid');
+    this.contexts.set(result.sessionId, input.cwd);
+    const ref = { id: result.sessionId, data: { cwd: input.cwd, native: opaqueReference('qoder', result.sessionId, input.cwd, this.bindingIdentity) } };
+    input.onCreated(ref);
+    return ref;
+  }
   async resumeContext({ contextRef, cwd }: { contextRef: ContextRef; cwd: string }): Promise<void> { this.reference(contextRef, cwd); await this.rpc.call('resume', { contextId: contextRef.id, cwd }); }
   async readHistory({ contextRef, cwd }: { contextRef: ContextRef; cwd: string }): Promise<ExecutorItem[]> { this.reference(contextRef, cwd); return await this.rpc.call('history', { contextId: contextRef.id, cwd }); }
   async send(input: ExecutorSendInput): Promise<void> {

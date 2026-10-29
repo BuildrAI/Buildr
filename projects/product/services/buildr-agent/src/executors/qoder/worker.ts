@@ -6,7 +6,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import type { ExecutorEvent, ExecutorItem, ExecutorObservation, ExecutorRequest, PermissionMode } from '../../contracts.ts';
 import { bounded, closeOwnedProcess, visibleText, nativePreview } from '../native-process.ts';
-import { query, qodercliAuth, ProcessTransport, getSessionInfo, getSessionMessages, InMemorySessionStore, importSessionToStore } from '@qoder-ai/qoder-agent-sdk';
+import { query, qodercliAuth, ProcessTransport, getSessionInfo, getSessionMessages, InMemorySessionStore, importSessionToStore, forkSession } from '@qoder-ai/qoder-agent-sdk';
 import { qoderHistoryItems, qoderResultOutcome, qoderInterruptionIds, qoderInterruptedObservation } from './protocol.ts';
 import { qoderModel } from '../model-options.ts';
 import { resolvePermissionMode } from '../../domain/permission-mode.ts';
@@ -225,6 +225,26 @@ async function dispatch(method: string, params: any): Promise<any> {
   if (method === 'models') return await accountQuery(params.cwd, 'models');
   if (method === 'title') return await generateTitle(params.requestId,params.description);
   if (method === 'cancelTitle') {const owner=titleQueries.get(params.requestId);if(owner){owner.cancel();await closeTitle(owner);}return {};}
+  if (method === 'fork') {
+    const { records } = await transcript(params.contextId, params.cwd);
+    const messages: any[] = await getSessionMessages(params.contextId, { dir: params.cwd, view: 'historical', includeSystemMessages: true, limit: 20000 });
+    const executions = new Set([params.executionId, ...(params.inputItemIds ?? [])]);
+    const item = qoderHistoryItems(messages, params.contextId).find(value => value.id === params.itemId && executions.has(value.executionId) && value.role === 'assistant');
+    const selected = messages.findLastIndex(message => message.type === 'assistant' && `message:${message.message?.id ?? message.uuid}` === item?.id);
+    const interruptions = qoderInterruptionIds(messages, records, params.contextId);
+    let boundary = messages[selected];
+    // Keep the native round's trailing tool results and interruption/closure
+    // records, but never the next independent user input or its later answers.
+    for (const message of messages.slice(selected + 1)) {
+      const content = message.message?.content;
+      const ordinary = message.type === 'user' && !message.parent_tool_use_id && !interruptions.has(message.uuid) && Array.isArray(content) &&
+        !content.some((part: any) => part.type === 'tool_result') && content.some((part: any) => part.type === 'image' || part.type === 'text' && part.text?.trim());
+      if (ordinary && !executions.has(message.uuid)) break;
+      boundary = message;
+    }
+    if (!item || !boundary?.uuid || !records.some(record => record.uuid === boundary.uuid)) throw new Error('agent_fork_boundary_unavailable');
+    return await forkSession(params.contextId, { dir: params.cwd, upToMessageId: boundary.uuid, title: '新对话' });
+  }
   if (method === 'resume') { const info = await getSessionInfo(params.contextId, { dir: params.cwd }); if (!info || info.sessionId !== params.contextId || info.cwd && info.cwd !== params.cwd) throw new Error('qoder_context_not_found'); return {}; }
   if (method === 'history') return await history(params.contextId, params.cwd);
   if (method === 'send') { await execute(params); return {}; }

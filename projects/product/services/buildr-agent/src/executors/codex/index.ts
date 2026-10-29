@@ -2,8 +2,9 @@ import { codexUnsettledTools } from './recovery.ts';
 import {createHash} from 'node:crypto';
 import { errorDiagnostic, NativeObservationError } from '../../domain/error-diagnostic.ts';
 import { isCompatibleProgram, nativeProgramPolicy } from '../program-policy.ts';
-import { join } from 'node:path';
-import { lstat, readFile, writeFile } from 'node:fs/promises';
+import { join, relative, sep, isAbsolute } from 'node:path';
+import { lstat, readFile, writeFile, copyFile, realpath, chmod } from 'node:fs/promises';
+import { constants } from 'node:fs';
 import type { AgentExecutor, AgentRuntime, ContextRef, ExecutionRef, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorRequest, ExecutorSendInput, ExecutorTitleInput, LoginObservation, PermissionMode } from '../../contracts.ts';
 import { NativeRpc, nativePreview, nativeBinding, bounded, findExecutable, inspectVersion, isolatedEnvironment, nativeCommand, nativeHome, opaqueReference, parseReference, privateDirectories, visibleText, type RpcMessage } from '../native-process.ts';
 import { modelOptions } from '../model-options.ts';
@@ -11,6 +12,7 @@ import { generateCodexTitle } from './title.ts';
 import { codexThreadPermissions, codexTurnPermissions } from './permissions.ts';
 import { ExecutorInputRejected, type ExecutorSupplementInput, type ExecutorInputReceipt } from '../../contracts.ts';
 import { checkedGateway, consumerBinding, gatewayModel, gatewayEffort, type ExecutorGateway } from '../model-gateway.ts';
+import type { ExecutorForkInput } from '../../contracts.ts';
 
 const capabilities = { supplement: true, permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
 // Work-thread overrides also apply on resume; auxiliary title/summary threads stay tool-free.
@@ -155,6 +157,47 @@ class CodexRuntime implements AgentRuntime {
     const result = await this.rpc.call('thread/start', { cwd, ephemeral: false, ...conversationInteraction, ...codexThreadPermissions(permissionMode) });
     if (!result.thread?.id || result.thread.cwd !== cwd) throw new Error('codex_context_identity_mismatch');
     return this.context(result.thread.id, cwd);
+  }
+  async forkContext(input: ExecutorForkInput): Promise<ContextRef> {
+    const source = input.source;
+    if (!(source instanceof CodexRuntime)) throw new Error('agent_context_binding_mismatch');
+    source.reference(input.contextRef, input.cwd);
+    const observed = await source.rpc.call('thread/read', { threadId: input.contextRef.id, includeTurns: true });
+    const turns = observed.thread?.turns ?? [];
+    const selected = turns.find((turn: any) => turn.id === input.executionRef.id);
+    if (observed.thread?.id !== input.contextRef.id || observed.thread.cwd !== input.cwd || !selected || selected.status === 'inProgress') throw new Error('agent_fork_boundary_unavailable');
+    // A paginated Codex store cannot resolve a foreign CODEX_HOME's thread from
+    // path alone. Copy the native-owned opaque rollout into the destination's
+    // private store first; Codex, not Buildr, interprets and slices that history.
+    // Never link or mutate the original; the imported snapshot is not used for work.
+    let importPath: string | undefined;
+    if (source !== this) {
+      if (typeof observed.thread.path !== 'string' || !source.modelConfig || !this.modelConfig) throw new Error('agent_fork_unavailable');
+      const filename = await realpath(observed.thread.path), root = await realpath(source.modelConfig);
+      const local = relative(root, filename);
+      if (!local || isAbsolute(local) || local.startsWith('..' + sep) || !['sessions','archived_sessions'].includes(local.split(sep)[0]!)) throw new Error('agent_context_binding_mismatch');
+      const info = await lstat(filename);
+      if (!info.isFile() || info.isSymbolicLink()) throw new Error('agent_context_binding_mismatch');
+      const parts = local.split(sep).slice(1);
+      let directory = join(this.modelConfig, 'sessions');
+      await privateDirectories(directory);
+      for (const part of parts.slice(0,-1)) { directory = join(directory, part); await privateDirectories(directory); }
+      importPath = join(directory, parts.at(-1)!);
+      await copyFile(filename, importPath, constants.COPYFILE_EXCL);
+      await chmod(importPath, 0o600);
+    }
+    const forked = await this.rpc.call('thread/fork', {
+      threadId: input.contextRef.id, ...(importPath ? { path: importPath } : {}),
+      lastTurnId: input.executionRef.id, cwd: input.cwd, ephemeral: false, deferGoalContinuation: true, ...conversationInteraction,
+      ...(this.gateway ? { model: gatewayModel(this.gateway).id, modelProvider: 'buildr-models' } : {}),
+    });
+    if (!forked.thread?.id || forked.thread.id === input.contextRef.id || forked.thread.cwd !== input.cwd) throw new Error('agent_fork_identity_invalid');
+    const ref = this.context(forked.thread.id, input.cwd);
+    input.onCreated(ref);
+    // Older servers can ignore unknown fields. Never accept a whole-history fork.
+    const result = await this.rpc.call('thread/read', { threadId: ref.id, includeTurns: true });
+    if (result.thread?.turns?.at(-1)?.id !== input.executionRef.id) throw new Error('agent_fork_boundary_unavailable');
+    return ref;
   }
   async resumeContext({ contextRef, cwd, permissionMode }: { contextRef: ContextRef; cwd: string; permissionMode?: PermissionMode }): Promise<void> {
     this.reference(contextRef, cwd);

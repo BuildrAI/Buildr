@@ -17,6 +17,22 @@ const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(valu
 export class ConversationAttachments {
   private readonly options: { root: string; now(): string; save(record: StoredConversation): void };
   constructor(options: ConversationAttachments['options']) { this.options = options; }
+  inherit(source: StoredConversation, target: StoredConversation): void {
+    const ids = new Set(target.view.entries.flatMap(entry => entry.attachments ?? []));
+    for (const id of [...ids]) for (const frame of source.attachments[id]?.video?.frames ?? []) ids.add(frame.id);
+    if (!ids.size) return;
+    const directory = path.join(this.options.root, 'attachments', target.view.id);
+    for (const location of [path.dirname(directory), directory]) {
+      fs.mkdirSync(location, { recursive: true, mode: 0o700 });
+      if (!fs.lstatSync(location).isDirectory() || fs.lstatSync(location).isSymbolicLink()) fail('agent_attachment_unsafe', '附件目录来源不安全。', 409);
+    }
+    for (const id of ids) {
+      const material = this.read(source, id);
+      fs.writeFileSync(path.join(directory, id), material.bytes, { flag: 'wx', mode: 0o600 });
+      target.attachments[id] = structuredClone(source.attachments[id]!);
+    }
+    this.options.save(target);
+  }
   get(record: StoredConversation, id: string): ExecutorImage {
     const meta = record.attachments[id];
     if (!meta || !/^[a-f0-9-]{36}$/.test(id)) fail('agent_attachment_missing', '附件不属于此对话。', 404);

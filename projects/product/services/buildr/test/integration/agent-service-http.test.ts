@@ -9,7 +9,7 @@ import test from 'node:test';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
-import { createAgentService } from '@buildr-ai/buildr-agent';
+import { createAgentService, type AgentRuntime, type ExecutorItem } from '@buildr-ai/buildr-agent';
 import { createRuntime, runtimeContributions } from '../helpers/runtime-harness.ts';
 import { taskRecordFixture } from '../helpers/task-record-system-fixture.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
@@ -148,6 +148,84 @@ test('private conversations use authenticated HTTP and bounded binary input; str
   assert.equal((await response.json() as { taskId?: string }).taskId, undefined);
   const coverage = inspectHttpOperationCoverage([AGENT_SERVICE_HTTP_OPERATIONS], []);
   assert.equal(coverage.status, 'aligned', JSON.stringify(coverage));
+});
+
+test('fork HTTP validates authentication and observations, preserves provenance and never sends work', { timeout: 15_000 }, async t => {
+  const { base, root } = taskRecordFixture(t, 'agent-fork-http');
+  const capabilities = { text: true, images: false, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 65536 };
+  const history: ExecutorItem[] = [];
+  let sends = 0, forks = 0;
+  const executor: AgentRuntime = {
+    bindingIdentity: 'fork-http-binding', capabilities,
+    async inspectAccount() { return { status: 'ready' }; }, async models() { return [{ id: 'fixture-model', label: 'Fixture model', isDefault: true }]; },
+    async beginLogin() {}, async cancelLogin() {},
+    async createContext() { return { id: 'source-native' }; }, async resumeContext() {},
+    async readHistory() { return history; },
+    async forkContext(input) {
+      forks++;
+      assert.equal(input.contextRef.id, 'source-native');
+      assert.equal(input.executionRef.id, 'native-turn');
+      assert.equal(input.itemId, 'native-answer');
+      const child = { id: 'child-native' };
+      input.onCreated(child);
+      return child;
+    },
+    async send(input) {
+      sends++;
+      input.onEvent({ type: 'accepted', executionRef: { id: 'native-turn' }, inputItemId: input.clientRequestId });
+      const answer: ExecutorItem = { id: 'native-answer', kind: 'message', role: 'assistant', text: 'Final answer', executionId: 'native-turn', status: 'completed' };
+      history.push(answer);
+      input.onEvent({ type: 'item', item: answer });
+      input.onEvent({ type: 'completed', status: 'completed' });
+    },
+    async observe({ executionRef }) { return { status: 'idle', executionRef, tools: [] }; }, async reply() {},
+    async stop() { return { status: 'stopped', tools: [] }; }, async close() {},
+  };
+  const service = createAgentService({
+    dataRoot: path.join(base, 'agent-profile'), modelProviders: [],
+    executors: [{ descriptor: { id: 'fixture', label: 'Fixture', capabilities }, async open() { return executor; } }],
+    resolveWorkspace: () => ({ rootPath: root }),
+  });
+  const runtime = createRuntime(), contributions = runtimeContributions(runtime, 'http').filter((item: { id: string }) => item.id !== 'agent-service.http');
+  contributions.push(createAgentServiceHttpContribution(() => service));
+  const server = createLocalWorkspaceServer(runtime, { targetRoot: root, httpContributions: contributions });
+  t.after(async () => { await service.close(); server.server.closeAllConnections(); await new Promise<void>(resolve => server.server.close(() => resolve())); });
+  const { url, initialWorkspaceId: workspaceId, sessionToken } = await server.ready;
+  await service.connections.connect('fixture', { expectedRevision: 'unconfigured' });
+  const source = await service.conversations.create(workspaceId, { title: 'Original title' });
+  const draft = { expectedRevision: source.revision, connectionId: 'fixture', text: 'Original instruction' };
+  const preview = service.conversations.prepareSend(workspaceId, source.id, draft);
+  service.conversations.send(workspaceId, source.id, { ...draft, previewToken: preview.token, clientRequestId: 'source-input' });
+  for (let n = 0; n < 100 && service.conversations.read(workspaceId, source.id).run?.status !== 'completed'; n++) await new Promise(resolve => setTimeout(resolve, 2));
+  const before = service.conversations.read(workspaceId, source.id);
+  assert.equal(before.run?.status, 'completed', JSON.stringify(before.run));
+  const answer = before.entries.findLast(entry => entry.role === 'assistant')!;
+  const endpoint = `${url}/api/v1/workspaces/${workspaceId}/agent-conversations/${source.id}/fork`;
+  const headers = { origin: url, 'x-buildr-session': sessionToken, 'content-type': 'application/json' };
+  const input = { expectedRevision: before.revision, entryId: answer.id, clientRequestId: 'fork-http-request' };
+  const post = (body: unknown, auth = headers) => fetch(endpoint, { method: 'POST', headers: auth, body: JSON.stringify(body) });
+  assert.equal((await post(input, { ...headers, 'x-buildr-session': 'invalid' })).status, 403);
+  assert.equal((await post({ ...input, untrusted: true })).status, 400);
+  assert.equal((await post({ expectedRevision: before.revision, entryId: answer.id })).status, 400);
+  assert.equal((await post({ ...input, expectedRevision: 'stale' })).status, 409);
+  assert.equal(forks, 0);
+  const response = await post(input);
+  assert.equal(response.status, 201);
+  const child = await response.json();
+  assert.notEqual(child.id, source.id);
+  assert.deepEqual(child.forkedFrom, { conversationId: source.id, workspaceId, entryId: answer.id, runId: answer.runId, throughSequence: before.entries.at(-1)!.sequence, title: source.title, forkedAt: child.forkedFrom.forkedAt });
+  assert.equal(child.forkState.status, 'ready');
+  assert.equal(child.run, undefined);
+  assert.deepEqual(child.requests, []);
+  const repeated = await post(input);
+  assert.equal(repeated.status, 201);
+  assert.equal((await repeated.json()).id, child.id);
+  const read = await fetch(endpoint.replace(`${source.id}/fork`, child.id), { headers });
+  assert.equal(read.status, 200);
+  assert.deepEqual((await read.json()).forkedFrom, child.forkedFrom);
+  assert.equal(service.conversations.read(workspaceId, source.id).revision, before.revision);
+  assert.equal(forks, 1);
+  assert.equal(sends, 1);
 });
 
 test('a valid large initial snapshot drains before subsequent live events instead of disconnecting', { timeout: 10_000 }, async t => {

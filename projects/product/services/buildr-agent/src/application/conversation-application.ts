@@ -27,6 +27,8 @@ import { PendingSendRepository } from '../persistence/pending-send-repository.ts
 import { ConversationSupplements } from './conversation-supplements.ts';
 import type { SupplementInput } from '../contracts.ts';
 import { ConversationDrafts } from './conversation-drafts.ts';
+import { ConversationForks } from './conversation-forks.ts';
+import type { ConversationForkInput } from '../contracts.ts';
 
 const TITLE_TIMEOUT_MS = 45_000;
 const MAX_TEXT_BYTES = 64 * 1024;
@@ -59,6 +61,7 @@ export class ConversationApplication {
       {kind:'reply',count:this.repliesInFlight.size},
       {kind:'observation',count:this.observations.size + this.releaseChecks.size},
       {kind:'source-resource',count:this.sourceRuntimes.size},
+      {kind:'fork',count:this.forks.active},
     ].filter(value=>value.count>0);
   }
   private readonly previewSecret = randomUUID();
@@ -85,6 +88,7 @@ export class ConversationApplication {
   private readonly handoffPreviews = new Map<string,{baseToken:string;prepared:ReturnType<ConversationApplication['prepare']>}>();
   private readonly supplements: ConversationSupplements;
   private readonly media: ConversationAttachments;
+  private readonly forks: ConversationForks;
   private readonly options: {
     repository: ConversationRepository;
     connections: ConnectionApplication;
@@ -100,6 +104,12 @@ export class ConversationApplication {
   constructor(options: ConversationApplication['options']) {
     this.options = options;
     this.media = new ConversationAttachments({ root: options.root, now: options.now, save: record => this.save(record) });
+    this.forks = new ConversationForks({
+      repository: options.repository, media: this.media, now: options.now,
+      load: (scope, id) => this.load(scope, id), candidate: (scope, input) => this.candidate(scope, input),
+      runtime: async (record, participant) => (await this.sourceRuntime(record, participant)).runtime,
+      save: (record, initial) => this.save(record, initial), view: record => this.view(record),
+    });
     this.drafts = new ConversationDrafts({
       root: options.root, repository: options.repository, source: scope => options.host.ref(scope).sourceId,
       candidate: (scope, input) => this.candidate(scope, input),
@@ -170,6 +180,12 @@ export class ConversationApplication {
           const held=this.sourceOwners.get(member.id);
           if(!held||this.sourceRuntimes.get(member.id)!==member.source||member.leaseIdentity&&this.options.modelAccess?.leases.hasActiveRequests(member.leaseIdentity)){safe=false;break;}
           const record=this.load(held.workspaceId,held.id),run=record.view.run;
+          // A finished fork has durable history but has never admitted a work
+          // prompt. Its private reader/import process is idle, not an unknown run.
+          if(!run&&record.view.forkState?.status==='ready'&&!record.attempts.length&&!record.view.requests.length&&!this.forks.active&&!this.titleWork.has(held.id)&&!this.earlyTitles.has(held.id)){
+            candidates.push({...member,workspaceId:held.workspaceId,conversationId:held.id,runId:''});
+            continue;
+          }
           if(!run||record.view.requests.length||this.workers.has(run.id)||this.recoveries.has(run.id)||this.observations.has(held.id)||this.earlyTitles.has(held.id)||this.titleWork.has(held.id)||this.supplements.size||this.repliesInFlight.size){safe=false;break;}
           const participant=record.participants.find(value=>value.id===member.id),attempt=[...record.attempts].reverse().find(value=>value.participantId===member.id);
           const settled=run.resourcesReleased||!this.busy(held.workspaceId,held.id);
@@ -179,7 +195,7 @@ export class ConversationApplication {
         }
         if(!safe)continue;
         // Recheck after asynchronous native proof, then freeze reuse before close.
-        if(candidates.some(value=>value.leaseIdentity&&this.options.modelAccess?.leases.hasActiveRequests(value.leaseIdentity)||this.sourceRuntimes.get(value.id)!==value.source||this.load(value.workspaceId,value.conversationId).view.run?.id!==value.runId||this.workers.has(value.runId)||this.observations.has(value.conversationId)||this.recoveries.has(value.runId)||this.earlyTitles.has(value.conversationId)||this.titleWork.has(value.conversationId)||this.load(value.workspaceId,value.conversationId).view.requests.length)||this.supplements.size||this.repliesInFlight.size)continue;
+        if(candidates.some(value=>value.leaseIdentity&&this.options.modelAccess?.leases.hasActiveRequests(value.leaseIdentity)||this.sourceRuntimes.get(value.id)!==value.source||(this.load(value.workspaceId,value.conversationId).view.run?.id??'')!==value.runId||this.workers.has(value.runId)||this.observations.has(value.conversationId)||this.recoveries.has(value.runId)||this.earlyTitles.has(value.conversationId)||this.titleWork.has(value.conversationId)||this.load(value.workspaceId,value.conversationId).view.requests.length)||this.supplements.size||this.repliesInFlight.size)continue;
         const finish=async()=>{
           if(candidates.some(value=>value.leaseIdentity&&this.options.modelAccess?.leases.hasActiveRequests(value.leaseIdentity)))return false;
           await this.options.connections.releaseGatewayRuntime(runtime);
@@ -319,6 +335,9 @@ export class ConversationApplication {
     this.options.events.publish({ type: 'conversation', workspaceId, conversationId: record.view.id, revision: record.view.revision, payload: { conversation: this.view(record) } });
     return this.view(record);
   }
+  fork(workspaceId: string, id: string, input: ConversationForkInput): Promise<ConversationView> {
+    return this.forks.fork(workspaceId, id, input);
+  }
   private async candidate(workspaceId: string, input: { cwd?: string; taskId?: string; title?: string }): Promise<StoredConversation> {
     const workspace = await this.options.host.resolve(workspaceId);
     if (input.taskId) await this.options.host.verify(workspaceId, nonempty(input.taskId, '任务身份'));
@@ -427,7 +446,8 @@ export class ConversationApplication {
     input.reasoningEffort ??= boundModel?.defaultReasoningEffort;
     if (input.reasoningEffort && !boundModel?.reasoningEfforts?.some(effort => effort.id === input.reasoningEffort)) fail('agent_reasoning_unavailable', '该思考深度不在所选模型的可用目录中。', 409);
     if (!connection.capabilities.text) fail('agent_capability_unavailable', '此接入尚不支持文本输入。', 409);
-    const participant = record.participants.find(value => value.connectionId === input.connectionId && value.modelAccountId === input.modelAccountId && value.modelId === input.model && (!input.modelAccountId || value.modelAccountIdentity === source?.identity && value.modelConfiguration===configuration));
+    if (record.view.forkState && record.view.forkState.status !== 'ready') fail('agent_fork_pending', '此分叉尚未完成，不能发送新指令；原对话不受影响。', 409);
+    const participant = record.participants.find(value => !value.historical && value.connectionId === input.connectionId && value.modelAccountId === input.modelAccountId && value.modelId === input.model && (!input.modelAccountId || value.modelAccountIdentity === source?.identity && value.modelConfiguration===configuration));
     const through = record.view.entries.at(-1)?.sequence ?? 0;
     const changes = handoffEntries(record.view.entries,participant?.deliveredThrough??0);
     const switching = record.participants.length > 0 && record.view.run?.participantId !== participant?.id;
@@ -600,6 +620,7 @@ export class ConversationApplication {
   private applyItem(record: StoredConversation, participant: StoredParticipant, item: ExecutorItem, runId?: string): boolean {
     if (Buffer.byteLength(item.text) > MAX_ITEM_BYTES) fail('agent_native_item_too_large', '原生条目超出安全展示容量，原记录保留于准确原生会话。', 413);
     const source = `${participant.id}:${item.kind}:${item.id}`;
+    if (record.sources[source] === '@inherited') return false;
     let entry = record.view.entries.find(value => value.id === record.sources[source]);
     if (!entry && item.role === 'user') {
       const candidates = record.attempts.filter(value => value.participantId === participant.id && (value.nativeInputItemId === item.id || value.clientRequestId === item.id || item.clientRequestId && value.clientRequestId === item.clientRequestId));
@@ -644,7 +665,7 @@ export class ConversationApplication {
       const connection = this.options.connections.observeModels(participant.connectionId, participant.bindingIdentity, event.models);
       this.options.events.publish({ type: 'connection', workspaceId, conversationId: id, revision: connection.revision, payload: { connection } }); return;
     }
-    if (event.type === 'title') { if (this.acceptTitle(record, event.title)) this.save(record); return; }
+    if (event.type === 'title') { if (!record.view.forkedFrom && this.acceptTitle(record, event.title)) this.save(record); return; }
     if (run.resourcesReleased && ['accepted','request'].includes(event.type)) return;
     if (['completed', 'stopped', 'failed'].includes(run.status) && (event.type === 'accepted' || event.type === 'request')) return;
     if (event.type === 'accepted') {
@@ -909,7 +930,7 @@ export class ConversationApplication {
     const controller = new AbortController(); this.titleWork.set(id, controller);
     const timeout = setTimeout(() => controller.abort(), TITLE_TIMEOUT_MS + 2_000); timeout.unref();
     try {
-      const title = await within(runtime.generateTitle({ contextRef: participant.contextRef, cwd: record.view.cwd, description, model: record.view.run?.model, signal: controller.signal }), TITLE_TIMEOUT_MS, 'agent_title_timeout', controller.signal);
+      const title = await within(runtime.generateTitle({ contextRef: participant.contextRef, cwd: record.view.cwd, description, model: record.view.run?.model, freshInstruction: Boolean(record.view.forkedFrom), signal: controller.signal }), TITLE_TIMEOUT_MS, 'agent_title_timeout', controller.signal);
       const current = this.currentRun(workspaceId, id, runId);
       if (!current || controller.signal.aborted) return;
       if (!this.titleEligible(current)) return;
@@ -957,10 +978,10 @@ export class ConversationApplication {
     record.view.title = title; record.titleOrigin = 'generated'; record.view.titleState={status:'generated'}; return true;
   }
   private titleDescription(record: StoredConversation, requireAnswer = true): string | undefined {
-    const visible = record.view.entries.filter(entry => ['user', 'assistant'].includes(entry.role) && entry.kind === 'message' && entry.status !== 'failed' && entry.text.trim());
+    const visible = record.view.entries.filter(entry => entry.sequence > (record.view.forkedFrom?.throughSequence ?? 0) && ['user', 'assistant'].includes(entry.role) && entry.kind === 'message' && entry.status !== 'failed' && entry.text.trim());
     const users = visible.filter(entry => entry.role === 'user'); const answers = visible.filter(entry => entry.role === 'assistant');
     if (!users.length || requireAnswer && !answers.length) return;
-    const selected = new Map([users[0], answers[0], users.at(-1), answers.at(-1)].filter((entry): entry is NonNullable<typeof entry> => Boolean(entry)).map(entry => [entry.id, entry]));
+    const selected = new Map((record.view.forkedFrom ? [users[0]] : [users[0], answers[0], users.at(-1), answers.at(-1)]).filter((entry): entry is NonNullable<typeof entry> => Boolean(entry)).map(entry => [entry.id, entry]));
     const messages = [...selected.values()].sort((a, b) => a.sequence - b.sequence).map(entry => {
       let bytes = 0; let text = ''; for (const character of entry.text) { const size = Buffer.byteLength(character); if (bytes + size > 1024) break; text += character; bytes += size; }
       return { role: entry.role, text };
@@ -1000,11 +1021,11 @@ export class ConversationApplication {
     const timeout = setTimeout(() => controller.abort(), TITLE_TIMEOUT_MS + 2_000); timeout.unref();
     try {
       let title: string | undefined;
-      if (runtime.readTitle) title = await within(runtime.readTitle({ contextRef: participant.contextRef, cwd: record.view.cwd }), 2_000, 'agent_title_timeout').catch(() => undefined);
+      if (runtime.readTitle && !record.view.forkedFrom) title = await within(runtime.readTitle({ contextRef: participant.contextRef, cwd: record.view.cwd }), 2_000, 'agent_title_timeout').catch(() => undefined);
       record = this.load(workspaceId, id); expected(record.view.revision, revision);
       if (this.acceptTitle(record, title, explicit)) { this.save(record); return; }
       if (!runtime.generateTitle) fail('agent_title_unavailable', '此执行方尚未提供可用的精短标题，原有标题已保留。', 409);
-      title = await within(runtime.generateTitle({ contextRef: participant.contextRef, cwd: record.view.cwd, description, model: record.view.run?.model, signal: controller.signal }), TITLE_TIMEOUT_MS, 'agent_title_timeout', controller.signal);
+      title = await within(runtime.generateTitle({ contextRef: participant.contextRef, cwd: record.view.cwd, description, model: record.view.run?.model, freshInstruction: Boolean(record.view.forkedFrom), signal: controller.signal }), TITLE_TIMEOUT_MS, 'agent_title_timeout', controller.signal);
       const current = this.load(workspaceId, id);
       if (controller.signal.aborted || current.view.run?.id !== runId || current.view.revision !== revision) fail('agent_revision_conflict', '对话已变化，保留当前标题。', 409);
       if (!this.acceptTitle(current, title, explicit)) fail('agent_title_failed', '未生成符合长度要求的精短标题，原有标题已保留。', 502);

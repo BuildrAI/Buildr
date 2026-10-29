@@ -37,6 +37,7 @@ export const AGENT_SERVICE_HTTP_OPERATIONS = [
   operation('seen','POST',`${workspace}/:conversationId/seen`,'seen','seenResult'),
   operation('list', 'GET', workspace, 'empty', 'conversations'),
   operation('create', 'POST', workspace, 'create', 'conversation'),
+  operation('fork', 'POST', `${workspace}/:conversationId/fork`, 'fork', 'conversation'),
   operation('draft-images','GET',`${workspace}/drafts/:draftId`,'empty','draftImages'),
   operation('draft-image-upload','POST',`${workspace}/drafts/:draftId/attachments`,'draftImage','draftImages'),
   operation('draft-image-read','GET',`${workspace}/drafts/:draftId/attachments/:attachmentId`,'empty','draftImages','binary'),

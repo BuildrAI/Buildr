@@ -1,4 +1,5 @@
 import {createConversationInputAttempts} from '../src/features/agent-conversations/conversation-actions.ts';
+import {forkableReplyIds} from '../src/features/agent-conversations/conversation-fork.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {needsConversationObservation,conversationObservationKey} from '../src/features/agent-conversations/conversation-state.ts';
@@ -555,4 +556,24 @@ test('收到结束快照后取消订阅，流关闭不再报断联且不继续�
   let received=0;
   await api.subscribe(conversation.workspaceId,conversation.id,controller.signal,()=>{received++;controller.abort();});
   assert.equal(received,1);assert.equal(controller.signal.aborted,true);
+});
+
+test('分叉请求绑定所选答复、来源对话和已观察版本，不发送新的工作指令',async()=>{
+  const calls=[];
+  const api=createAgentConversationsClient(async(url,init)=>{calls.push({url,body:JSON.parse(init.body)});return {...conversation,id:'child',forkedFrom:{conversationId:conversation.id}};},session);
+  const child=await api.fork(conversation,'answer-id','stable-fork-request');
+  assert.equal(calls.length,1);assert.equal(calls[0].url,'/api/v1/workspaces/saved%2Fws/agent-conversations/chat%2Fid/fork');
+  assert.deepEqual(calls[0].body,{expectedRevision:conversation.revision,entryId:'answer-id',clientRequestId:'stable-fork-request'});
+  assert.equal(child.forkedFrom.conversationId,conversation.id);
+});
+
+test('只在每轮最终答复提供分叉，后续执行不遮蔽较早答复',()=>{
+  const view={...conversation,run:{id:'new',status:'running'},entries:[
+    {id:'note',runId:'old',role:'assistant',kind:'message'},
+    {id:'final',runId:'old',role:'assistant',kind:'message'},
+    {id:'running',runId:'new',role:'assistant',kind:'message'},
+  ]};
+  assert.deepEqual([...forkableReplyIds(view)],['final']);
+  assert.deepEqual([...forkableReplyIds({...view,run:{id:'new',status:'completed'}})],['final','running']);
+  assert.equal(forkableReplyIds({...view,forkState:{status:'failed'}}).size,0);
 });
