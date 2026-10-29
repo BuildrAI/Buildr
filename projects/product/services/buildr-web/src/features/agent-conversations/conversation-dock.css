@@ -14,8 +14,6 @@
   .ac-panel.is-peeking[data-dock=left]{left:52px;right:auto;box-shadow:4px 0 18px #273f3220;border-radius:0 8px 8px 0}
 }
 .ac-boundary-toggle{position:absolute;top:0;right:0;width:36px;height:43px;display:flex;align-items:center;justify-content:center;background:#f4f6f7;border-bottom:1px solid var(--soft-line);z-index:9}
-.ac-panel[data-dock] .ac-thread-header{padding-left:9px;padding-right:9px}
-.ac-panel:not(.is-full) .ac-message-list,.ac-panel:not(.is-full) .ac-compose-wrap{max-width:none}
 #global-conversations-entry.is-active{color:var(--soft-primary);background:#edf4f0}
 .global-conversations-control{display:none;align-items:center;gap:0}
 .ac-attention-entry.ant-btn{padding-inline:2px;min-width:23px;height:24px}

@@ -39,7 +39,8 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
   let preferencePosts=0,holdPreferences=false,releasePreferences:(()=>void)|undefined,preferencesStarted:(()=>void)|undefined;
   const preferenceBodies:any[]=[];
   let connectionProbeBarrier:Promise<void>|undefined,releaseConnectionProbe:(()=>void)|undefined;
-  let connectionReads=0,connectionEventProbe=false,dropEventStreams=0,eventStreams=0,observes=0,recoverNextObserve=false;
+  let connectionReads=0,conversationReads=0,connectionEventProbe=false,dropEventStreams=0,eventStreams=0,observes=0,recoverNextObserve=false;
+  let eventStreamHook:(()=>void|Promise<void>)|undefined;
   let programScenario='ready';
   const programAttempts:Record<string,any>={};
   const preparedInputs:any[]=[],sentInputs:any[]=[];
@@ -134,7 +135,7 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
       const body=request.postDataJSON();creations++;conversation={id:'internal-fixture-'+creations,workspaceId:scoped===appPrefix?'@default':workspaceId,cwd:body.cwd||'/isolated/default',taskId:body.taskId,title:'浏览器验证对话',revision:'r'+(++revision),hidden:false,updatedAt:new Date().toISOString(),participants:[],entries:[],requests:[]};const created=conversation;if(holdCreate){holdCreate=false;await new Promise<void>(resolve=>{releaseCreate=resolve;createStarted?.();});}return route.fulfill({json:created});
     }
     if(url.pathname.endsWith('/entries')){entryReads++;assert.equal(url.searchParams.has('limit'),false,'历史请求使用服务端按轮默认分页');const value=historyPages.get(Number(url.searchParams.get('before')));assert.ok(value,'observed cursor resolves one fixture page');if(failEntryRead){failEntryRead=false;expectedBrowserErrors?.add(request.url());return route.fulfill({status:503,json:{error:{code:'history_fixture_unavailable',message:'更早记录暂时不可用'}}});}if(holdEntryRead){holdEntryRead=false;await new Promise<void>(resolve=>{releaseEntryRead=resolve;entryReadStarted?.();});}return route.fulfill({json:value});}
-    if(url.pathname.endsWith('/events')){eventStreams++;if(dropEventStreams>0){dropEventStreams--;return route.fulfill({contentType:'text/event-stream',body:''});}const target=[...additionalConversations,...additionalPending].find(item=>url.pathname.includes('/'+item.id+'/'))||conversation;if(!target)return route.fulfill({status:404,json:{error:'对话不存在或已移除'}});const events:Array<Record<string,unknown>>=[{cursor:++cursor,generation:'stream-fixture',type:'snapshot',workspaceId:target.workspaceId,conversationId:target.id,revision:target.revision,payload:{conversation:target}}];if(connectionEventProbe){await connectionProbeBarrier;connectionEventProbe=false;const stale={...connections[1],models:connections[1].models.map(item=>({...item,isDefault:item.id==='fixture-model'}))};const changed={cursor:++cursor,generation:'stream-fixture',type:'connection',workspaceId,conversationId:target.id,revision:target.revision,payload:{connection:stale}};events.push(changed as any,{...changed},{...changed,cursor:++cursor,generation:'stale-generation'},{...changed,cursor:++cursor,conversationId:'other-conversation'});}return route.fulfill({contentType:'text/event-stream',body:events.map(event=>`id: ${event.cursor}\ndata: ${JSON.stringify(event)}\n\n`).join('')});}
+    if(url.pathname.endsWith('/events')){eventStreams++;await eventStreamHook?.();if(dropEventStreams>0){dropEventStreams--;return route.fulfill({contentType:'text/event-stream',body:''});}const target=[...additionalConversations,...additionalPending].find(item=>url.pathname.includes('/'+item.id+'/'))||conversation;if(!target)return route.fulfill({status:404,json:{error:'对话不存在或已移除'}});const events:Array<Record<string,unknown>>=[{cursor:++cursor,generation:'stream-fixture',type:'snapshot',workspaceId:target.workspaceId,conversationId:target.id,revision:target.revision,payload:{conversation:target}}];if(connectionEventProbe){await connectionProbeBarrier;connectionEventProbe=false;const stale={...connections[1],models:connections[1].models.map(item=>({...item,isDefault:item.id==='fixture-model'}))};const changed={cursor:++cursor,generation:'stream-fixture',type:'connection',workspaceId,conversationId:target.id,revision:target.revision,payload:{connection:stale}};events.push(changed as any,{...changed},{...changed,cursor:++cursor,generation:'stale-generation'},{...changed,cursor:++cursor,conversationId:'other-conversation'});}return route.fulfill({contentType:'text/event-stream',body:events.map(event=>`id: ${event.cursor}\ndata: ${JSON.stringify(event)}\n\n`).join('')});}
     if(url.pathname.endsWith('/attachments')&&method==='POST'){
       attachmentUploads++;
       if(conversation.attachmentRevision)assert.equal(request.headers()['x-buildr-attachment-revision'],conversation.attachmentRevision);else assert.equal(request.headers()['x-buildr-conversation-revision'],conversation.revision);
@@ -171,7 +172,7 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
     if(url.pathname.endsWith('/generate-title')){assert.equal(request.postDataJSON().expectedRevision,conversation.revision);titleGenerations++;if(holdTitle){holdTitle=false;await new Promise<void>(resolve=>{releaseTitle=resolve;titleStarted?.();});}return route.fulfill({json:update({title:'服务停止与重试'})});}
     if(method==='PATCH'){const body=request.postDataJSON();update({...('title'in body?{title:body.title}:{}),...('hidden'in body?{hidden:body.hidden}:{})});return route.fulfill({json:conversation});}
     if(method==='POST'&&url.pathname.endsWith('/seen')){const body=request.postDataJSON();const target=[...additionalConversations,...additionalPending].find(item=>url.pathname.includes('/'+item.id+'/'))||conversation;const activity={version:Math.max(body.through,target?.activity?.version??body.through),seenThrough:body.through,updatedAt:new Date().toISOString(),active:target?.activity?.active??true};if(target)target.activity=activity;return route.fulfill({json:{activity}});}
-    if(method==='GET')return route.fulfill({json:[...additionalConversations,...additionalPending].find(item=>url.pathname.endsWith('/'+item.id))||conversation});
+    if(method==='GET'){conversationReads++;return route.fulfill({json:[...additionalConversations,...additionalPending].find(item=>url.pathname.endsWith('/'+item.id))||conversation});}
     return route.fallback();
   };
   await page.route('**/api/v1/app/agent-service/**',route);
@@ -258,6 +259,8 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
     get dropEventStreams(){return dropEventStreams;}, set dropEventStreams(value){dropEventStreams=value;},
     get entryReads(){return entryReads;}, set entryReads(value){entryReads=value;},
     get entryReadStarted(){return entryReadStarted;}, set entryReadStarted(value){entryReadStarted=value;},
+    get conversationReads(){return conversationReads;},
+    get eventStreamHook(){return eventStreamHook;}, set eventStreamHook(value){eventStreamHook=value;},
     get eventStreams(){return eventStreams;}, set eventStreams(value){eventStreams=value;},
     expectedBrowserErrors,
     get failEntryRead(){return failEntryRead;}, set failEntryRead(value){failEntryRead=value;},

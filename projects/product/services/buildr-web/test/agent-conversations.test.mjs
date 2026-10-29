@@ -1,6 +1,7 @@
 import {createConversationInputAttempts} from '../src/features/agent-conversations/conversation-actions.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import {needsConversationObservation,conversationObservationKey} from '../src/features/agent-conversations/conversation-state.ts';
 import {conversationActionKey,createConversationActions} from '../src/features/agent-conversations/conversation-actions.ts';
 import { registerHooks } from 'node:module';
 import { existsSync } from 'node:fs';
@@ -516,4 +517,42 @@ test('本机截图链接复用认证图片来源，普通文件和不支持类�
   }
   assert.equal(conversationImageLinkSource(undefined,'relative.png'),null);
   assert.deepEqual(conversationImageLinkSource(undefined,'/tmp/shot.png'),conversationImageSource(undefined,'/tmp/shot.png'));
+});
+
+
+test('结束轮次退出观察，未知/工具/待回应/待发送保持观察，失败与停止不冒充成功',()=>{
+  const ended={...conversation,requests:[],run:{...conversation.run,status:'completed',tools:[],executionState:'ended'}};
+  assert.equal(needsConversationObservation(null),false);
+  assert.equal(needsConversationObservation({...ended,run:undefined}),false);
+  for(const status of ['completed','failed','stopped']){
+    const finished={...ended,run:{...ended.run,status}};
+    assert.equal(needsConversationObservation(finished),false,status);
+    assert.equal(conversationObservationKey(finished),null,status);
+    for(const executionState of ['active','unknown'])assert.equal(needsConversationObservation({...finished,run:{...finished.run,executionState}}),true);
+  }
+  for(const status of ['starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown'])assert.equal(needsConversationObservation({...ended,run:{...ended.run,status,resourcesReleased:true}}),true,status);
+  for(const status of ['running','unknown'])assert.equal(needsConversationObservation({...ended,run:{...ended.run,tools:[{id:'tool',status}]}}),true,status);
+  assert.equal(needsConversationObservation({...ended,requests:conversation.requests}),true);
+  assert.equal(needsConversationObservation({...ended,pendingSend:{id:'queued',state:'waiting'}}),true);
+  assert.equal(needsConversationObservation({...ended,entries:[{role:'assistant',text:'完成了'}],run:{...ended.run,status:'running'}}),true,'最后一段文字不是结束事实');
+});
+
+test('观察身份忽略普通输出变化，按新轮和待发送身份重建',()=>{
+  const active={...conversation,run:{...conversation.run,tools:[]}};
+  const key=conversationObservationKey(active);
+  assert.equal(conversationObservationKey({...active,revision:'r2',entries:[{text:'进展'}]}),key);
+  assert.notEqual(conversationObservationKey({...active,run:{...active.run,id:'new-run'}}),key);
+  assert.notEqual(conversationObservationKey({...active,run:{...active.run,generation:'new-generation'}}),key);
+  assert.notEqual(conversationObservationKey({...active,workspaceId:'another-workspace'}),key);
+  assert.notEqual(conversationObservationKey({...active,pendingSend:{id:'queued'}}),key);
+});
+
+
+test('收到结束快照后取消订阅，流关闭不再报断联且不继续投递',async()=>{
+  const controller=new AbortController(),event={cursor:1,generation:'g1',type:'snapshot',workspaceId:conversation.workspaceId,conversationId:conversation.id,payload:{conversation:{...conversation,run:{...conversation.run,status:'completed',tools:[]},requests:[]}}};
+  const body=`data: ${JSON.stringify(event)}\n\n`;
+  const api=createAgentConversationsClient(async()=>({}),session,async()=>new Response(body,{headers:{'content-type':'text/event-stream'}}));
+  let received=0;
+  await api.subscribe(conversation.workspaceId,conversation.id,controller.signal,()=>{received++;controller.abort();});
+  assert.equal(received,1);assert.equal(controller.signal.aborted,true);
 });

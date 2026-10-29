@@ -116,7 +116,7 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
       if (!response.ok || !response.body) { const error: ApiError = new Error('对话事件连接未建立，请重新核对执行状态。'); error.status = response.status; throw error; }
       const reader = response.body.getReader(), decoder = new TextDecoder(); let buffer = '';
       try { while (!signal.aborted) { const {value, done} = await reader.read(); if (done) break; buffer = (buffer + decoder.decode(value, {stream:true})).replace(/\r\n/g, '\n'); if (buffer.length > 8 * 1024 * 1024) throw new Error('事件缓冲超限，需要重新读取对话。'); let boundary; while ((boundary = buffer.indexOf('\n\n')) >= 0) { const frame = parseEventFrame(buffer.slice(0,boundary)); buffer = buffer.slice(boundary + 2); if (frame.data) onEvent(JSON.parse(frame.data) as ConversationEvent); } } } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
-      if (!signal.aborted) throw new Error('对话连接已中断；原执行状态尚未确认。');
+      if (!signal.aborted) throw new Error('对话连接已中断；暂时无法同步最新进展，已收到的消息仍保留。');
     },
   };
 }

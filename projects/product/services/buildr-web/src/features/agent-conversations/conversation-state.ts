@@ -18,6 +18,20 @@ export function conversationContinuationText(conversation: ConversationView | nu
 export function executionLocked(run?: ConversationRun): boolean {
   return Boolean(run && ['starting', 'running', 'waiting-approval', 'waiting-question', 'stopping', 'tools-active', 'unknown'].includes(run.status));
 }
+/** Execution completion, not transport health or final-reply wording, ends observation. */
+export function needsConversationObservation(conversation: ConversationView | null): boolean {
+  if (!conversation) return false;
+  if (conversation.pendingSend || conversation.requests.length) return true;
+  const run = conversation.run;
+  return Boolean(run && (executionLocked(run) || run.tools.some(tool => tool.status !== 'completed') ||
+    run.executionState === 'active' || run.executionState === 'unknown'));
+}
+/** Ordinary output/revision changes must not restart a healthy subscription. */
+export function conversationObservationKey(conversation: ConversationView | null): string | null {
+  if (!needsConversationObservation(conversation)) return null;
+  return JSON.stringify([conversation!.workspaceId, conversation!.id, conversation!.run?.id,
+    conversation!.run?.participantId, conversation!.run?.generation, conversation!.pendingSend?.id]);
+}
 const conversationConflictRefreshCodes = new Set(['agent_revision_conflict','agent_preview_stale','agent_model_source_changed','agent_model_source_unavailable','agent_model_unavailable','agent_model_disabled','agent_continue_stale']);
 /** Only stale observations need a reread; busy and permission errors must keep their exact reason. */
 export function conversationConflictNeedsRefresh(error:{status?:number;code?:string}|undefined):boolean {

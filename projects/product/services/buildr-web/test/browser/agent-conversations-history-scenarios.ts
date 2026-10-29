@@ -6,6 +6,41 @@ import type {AgentConversationFixture} from './agent-conversation-fixture.ts';
 /** history 场景使用独立准备的对话现场。 */
 export async function runHistoryScenarios(fixture:AgentConversationFixture){
   const {capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,supplementaryInputs,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
+await step('顶部正文输入与列表共用最大宽度，宽屏居中且窄屏自适应',async()=>{
+  const sends=fixture.sends;
+  const toggleFull=async(label:string)=>{await panel().getByRole('button',{name:'更多对话操作',exact:true}).click();await page.getByRole('menuitem',{name:label,exact:true}).click();await page.locator('.ant-dropdown:visible').waitFor({state:'hidden'});};
+  const checkConversation=async(label:string)=>{
+    const geometry=await panel().evaluate((node:HTMLElement)=>{
+      const rect=(item:Element)=>{const r=item.getBoundingClientRect();return{left:r.left,right:r.right,width:r.width};};
+      const content=(item:Element)=>{const r=rect(item),style=getComputedStyle(item);return{left:r.left+parseFloat(style.paddingLeft),right:r.right-parseFloat(style.paddingRight)};};
+      return{host:rect(node),header:rect(node.querySelector('.ac-thread-header')!),title:content(node.querySelector('.ac-thread-header')!),participants:content(node.querySelector('.ac-participants')!),messages:content(node.querySelector('.ac-message-list')!),composer:rect(node.querySelector('.ac-composer')!),max:parseFloat(getComputedStyle(node).getPropertyValue('--ac-content-width'))};
+    });
+    for(const edge of ['left','right'] as const){for(const area of ['title','participants','messages'] as const)assert.ok(Math.abs(geometry[area][edge]-geometry.composer[edge])<1,label+' '+area+' '+edge+' '+JSON.stringify(geometry));}
+    assert.equal(geometry.header.width,geometry.host.width,'顶部背景保持铺满');assert.equal(geometry.max,800);
+    await capture(page,'conversation-shared-width-'+label+'.png');
+  };
+  const checkHistory=async(label:string)=>{
+    await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();await panel().locator('.ac-history-row').first().waitFor();
+    const geometry=await panel().locator('.ac-history').evaluate((node:HTMLElement)=>{
+      const rect=(item:Element)=>{const r=item.getBoundingClientRect();return{left:r.left,right:r.right,width:r.width};};
+      const body=node.querySelector<HTMLElement>('.ac-history-body')!;return{host:rect(node),body:rect(body),header:rect(node.querySelector('.ac-thread-header')!),toolbar:rect(node.querySelector('.ac-history-toolbar')!),stats:rect(node.querySelector('.ac-execution-summary')!),group:rect(node.querySelector('.ac-history-group')!),overflow:body.scrollWidth-body.clientWidth};
+    });
+    assert.ok(Math.abs(geometry.body.width-Math.min(800,geometry.host.width))<1,label+'列表宽度封顶');
+    assert.ok(Math.abs((geometry.body.left-geometry.host.left)-(geometry.host.right-geometry.body.right))<1,label+'居中');
+    for(const area of ['stats','group'] as const){assert.ok(Math.abs(geometry[area].left-geometry.toolbar.left)<1);assert.ok(Math.abs(geometry[area].right-geometry.toolbar.right)<1);}
+    assert.equal(geometry.header.width,geometry.host.width);assert.ok(geometry.overflow<=1,label+'无横向溢出');
+    await capture(page,'conversation-history-width-'+label+'.png');await panel().getByRole('button',{name:'返回当前对话',exact:true}).click();
+  };
+  try{
+    await checkConversation('sidebar');await checkHistory('sidebar');await toggleFull('专注对话');
+    for(const [label,width,height] of [['wide',2048,1152],['desktop',1280,900],['mobile',375,844]] as const){await page.setViewportSize({width,height});await checkConversation(label);await checkHistory(label);}
+    assert.equal(fixture.sends,sends,'调整布局和查看列表不发送工作');
+  }finally{
+    await page.setViewportSize({width:1600,height:1000});const back=panel().getByRole('button',{name:'返回当前对话',exact:true});if(await back.isVisible())await back.click();
+    if((await panel().getAttribute('class'))?.includes('is-full'))await toggleFull('恢复分屏');
+  }
+});
+
 await step('列表手动从末条加载，整行折叠与拖动互不干扰',async()=>{
   const original=fixture.additionalConversations,requests:Array<{workspaceId:string|null;query:string|null;limit:number;cursor:string|null}>=[];
   let fail=false,stale=false,release:(()=>void)|undefined,started:(()=>void)|undefined;

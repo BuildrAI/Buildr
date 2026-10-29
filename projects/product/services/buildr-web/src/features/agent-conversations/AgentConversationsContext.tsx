@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { agentConversationsApi, type ConversationPage, type AgentConversationsClient } from './api/agent-conversations-api';
-import { applyConversationEvent, nextConversationPanel, createdConversationVisibility, isCurrentConversationEvent, mergeConversationView, prependConversationEntries, rememberContextReport, sameConversationSelection, type ConversationContextReport, type ConversationSelection } from './conversation-state';
+import { conversationObservationKey, needsConversationObservation, nextConversationPanel, createdConversationVisibility, isCurrentConversationEvent, mergeConversationView, prependConversationEntries, rememberContextReport, sameConversationSelection, type ConversationContextReport, type ConversationSelection } from './conversation-state';
 import { readOptionalPreference, writeOptionalPreference } from '../../lib/optional-preferences';
 import type { CatalogModel, ConnectionView, ConversationEvent, ConversationView, PendingConversation } from './types';
 import { conversationProductActionSelection, recoverConversationProductAction, startConversationProductAction } from './conversation-product-action';
@@ -69,7 +69,7 @@ export function AgentConversationsProvider({children, client = agentConversation
   const [activityStats,setActivityStats]=useState<ConversationPage['stats']>();
   const [activityRows,setActivityRows]=useState<ConversationView[]>([]),[activityTotal,setActivityTotal]=useState(0),[activityCursor,setActivityCursor]=useState<string>(),[activityError,setActivityError]=useState(''),[activityTick,setActivityTick]=useState(0),[historyWorkspaceId,setHistoryWorkspaceId]=useState<string|null|undefined>(undefined);
   const activityGeneration=useRef(0),activitySignature=useRef('');
-  const refreshActivity=useCallback(async()=>{if(!client.listAll)return;const generation=++activityGeneration.current;try{const result=await client.listAll({activeOnly:true,limit:100});if(generation!==activityGeneration.current)return;const signature=JSON.stringify([result.nextCursor,result.conversations.map(row=>[row.workspaceId,row.id,row.title,row.run?.status,row.run?.model,row.activity])]);if(signature!==activitySignature.current){setActivityRows(result.conversations);setActivityCursor(result.nextCursor);}setActivityCounts(result.activityCounts);setActivityStats(result.stats);setActivityTotal(result.total??result.conversations.length);setActivityError('');if(signature!==activitySignature.current){activitySignature.current=signature;setActivityTick(value=>value+1);}}catch(error){if(generation===activityGeneration.current)setActivityError(error instanceof Error?error.message:'活动对话尚未更新，保留上次结果。');}},[client]);
+  const refreshActivity=useCallback(async()=>{if(!client.listAll)return;const generation=++activityGeneration.current;try{const result=await client.listAll({activeOnly:true,limit:100});if(generation!==activityGeneration.current)return;const signature=JSON.stringify([result.nextCursor,result.conversations.map(row=>[row.workspaceId,row.id,row.revision,row.title,row.run?.id,row.run?.status,row.run?.model,row.activity])]);if(signature!==activitySignature.current){setActivityRows(result.conversations);setActivityCursor(result.nextCursor);}setActivityCounts(result.activityCounts);setActivityStats(result.stats);setActivityTotal(result.total??result.conversations.length);setActivityError('');if(signature!==activitySignature.current){activitySignature.current=signature;setActivityTick(value=>value+1);}}catch(error){if(generation===activityGeneration.current)setActivityError(error instanceof Error?error.message:'活动对话尚未更新，保留上次结果。');}},[client]);
   const loadMoreActivity=useCallback(async()=>{if(!activityCursor)return;const generation=activityGeneration.current;try{const result=await client.listAll({activeOnly:true,limit:100,cursor:activityCursor});if(generation!==activityGeneration.current)return;setActivityRows(previous=>[...previous,...result.conversations.filter(row=>!previous.some(item=>item.id===row.id&&item.workspaceId===row.workspaceId))]);setActivityCursor(result.nextCursor);}catch{await refreshActivity();}},[client,activityCursor,refreshActivity]);
   const [modelCatalog,setModelCatalog]=useState<CatalogModel[]>([]);
   const [modelCatalogReady,setModelCatalogReady]=useState(false),[modelCatalogError,setModelCatalogError]=useState('');
@@ -96,31 +96,82 @@ export function AgentConversationsProvider({children, client = agentConversation
   const getSelection=useCallback(()=>({generation:serial.current,scope:scopeRef.current}),[]);
   const isSelectionCurrent=useCallback((selection:ConversationSelection)=>sameConversationSelection(getSelection(),selection),[getSelection]);
   const advanceSelection=useCallback(()=>{const generation=++serial.current;setSelectionGeneration(generation);return generation;},[]);
-  const apply = useCallback((next: ConversationView, observedRevision?:string) => { const current = scopeRef.current; if (current?.workspaceId === next.workspaceId && current.conversationId === next.id) { setConversation(previous => mergeConversationView(previous,next,observedRevision)); setError(''); } }, []);
-  const prependEntries = useCallback((page:ConversationView) => setConversation(current => current ? prependConversationEntries(current,page) : current),[]);
+  const apply = useCallback((next: ConversationView, observedRevision?:string) => { const current = scopeRef.current; if (current?.workspaceId === next.workspaceId && current.conversationId === next.id) {
+    // Keep the observed fact synchronous: a stream can end in the same tick as
+    // its completion event, before React commits the corresponding render.
+    const merged=mergeConversationView(conversationRef.current,next,observedRevision);
+    conversationRef.current=merged;setConversation(merged);setError('');
+  } }, []);
+  const prependEntries = useCallback((page:ConversationView) => {
+    if(!conversationRef.current)return;
+    const next=prependConversationEntries(conversationRef.current,page);
+    conversationRef.current=next;setConversation(next);
+  },[]);
   const connectionReadGeneration=useRef(0);
   const refreshConnections = useCallback(async () => {const generation=++connectionReadGeneration.current;const result=await client.connections();if(connectionReadGeneration.current===generation)setConnections(result.connections);},[client]);
   const refreshPending = useCallback(async () => { void refreshActivity(); const result = await client.pending(); setPending(result.conversations); }, [client,refreshActivity]);
   const updateConnection = useCallback((value: ConnectionView) => {++connectionReadGeneration.current;setConnections(previous=>previous.some(item=>item.id===value.id)?previous.map(item=>item.id===value.id?value:item):[...previous,value]);},[]);
   useEffect(() => { let active = true; const refresh = () => { void refreshModelCatalog().catch(()=>{});void refreshConnections().catch(() => {}); void refreshPending().catch(() => {}); }; refresh(); const interval = setInterval(() => {if (active && document.visibilityState === 'visible') void refreshPending().catch(() => {});}, 5000); window.addEventListener('focus', refresh); return () => { active = false; ++activityGeneration.current; clearInterval(interval); window.removeEventListener('focus', refresh); }; }, [refreshConnections, refreshPending,refreshModelCatalog]);
   const openConversation = useCallback(async (workspaceId: string, conversationId: string,options:VisibilityOptions={}) => {
-    const request = advanceSelection(); const nextScope = {workspaceId, conversationId}; scopeRef.current = nextScope; setScope(nextScope); setDraftScope(null); setConversation(null); setView('conversation'); if(!options.preserveVisibility)setVisibility(true); setLoading(true); setError(''); setStreamError(''); eventCursor.current = undefined; savePanel(visibility.current.open,nextScope);
-    try { const next = await client.read(workspaceId, conversationId); if (request === serial.current && scopeRef.current?.conversationId === conversationId && scopeRef.current.workspaceId === workspaceId) setConversation(next); } catch (failure) { if (request === serial.current) setError(failure instanceof Error ? failure.message : '无法读取对话。'); } finally { if (request === serial.current) setLoading(false); }
-  }, [client,advanceSelection,setVisibility]);
+    const request = advanceSelection(); const nextScope = {workspaceId, conversationId}; scopeRef.current = nextScope; setScope(nextScope); setDraftScope(null); conversationRef.current=null; setConversation(null); setView('conversation'); if(!options.preserveVisibility)setVisibility(true); setLoading(true); setError(''); setStreamError(''); eventCursor.current = undefined; savePanel(visibility.current.open,nextScope);
+    try { const next = await client.read(workspaceId, conversationId); if (request === serial.current && scopeRef.current?.conversationId === conversationId && scopeRef.current.workspaceId === workspaceId) apply(next); } catch (failure) { if (request === serial.current) setError(failure instanceof Error ? failure.message : '无法读取对话。'); } finally { if (request === serial.current) setLoading(false); }
+  }, [client,advanceSelection,setVisibility,apply]);
   useEffect(() => {const saved=initialPanel;if(saved.scope)void openConversation(saved.scope.workspaceId,saved.scope.conversationId,{preserveVisibility:true});},[openConversation]);
-  const refresh = useCallback(async () => { const current = scopeRef.current; if (!current) return; const observed=conversationRef.current?.revision; const result = await client.read(current.workspaceId, current.conversationId); apply(result,observed); setStreamError(''); setObservation(value => value + 1); void refreshPending().catch(() => {}); }, [client, apply, refreshPending]);
+  const refresh = useCallback(async () => { const current = scopeRef.current; if (!current) return; const selection=getSelection(),observed=conversationRef.current?.revision; const result = await client.read(current.workspaceId, current.conversationId); if(!isSelectionCurrent(selection))return; apply(result,observed); setStreamError(''); setObservation(value => value + 1); void refreshPending().catch(() => {}); }, [client, apply, refreshPending,getSelection,isSelectionCurrent]);
+  // Reuse global activity discovery instead of polling a finished run. List rows
+  // are only a change signal; reread the authoritative conversation by identity.
+  useEffect(()=>{
+    const before=conversationRef.current;
+    if(!before||needsConversationObservation(before)&&!streamError)return;
+    const changed=activityRows.find(row=>row.id===before.id&&row.workspaceId===before.workspaceId);
+    // A completed, already-seen run can disappear from the active list without
+    // another message. Absence is only a reason to reread, never proof of ending.
+    if(changed?changed.revision===before.revision:!streamError)return;
+    const selection=getSelection(),controller=new AbortController();
+    void client.read(before.workspaceId,before.id,controller.signal).then(next=>{
+      if(!controller.signal.aborted&&isSelectionCurrent(selection))apply(next,before.revision);
+    }).catch(()=>{ /* A global refresh will retry discovery; do not alarm an ended run. */ });
+    return()=>controller.abort();
+  },[activityRows,streamError,client,apply,getSelection,isSelectionCurrent]);
+  useEffect(()=>{
+    const readCurrent=()=>{
+      const before=conversationRef.current;if(!before)return;
+      const selection=getSelection();
+      void client.read(before.workspaceId,before.id).then(next=>{if(isSelectionCurrent(selection))apply(next,before.revision);}).catch(()=>{});
+    };
+    window.addEventListener('focus',readCurrent);return()=>window.removeEventListener('focus',readCurrent);
+  },[client,apply,getSelection,isSelectionCurrent]);
+  const observationKey=conversationObservationKey(conversation);
+  const previousObservationKey=useRef<string|null>(null);
   useEffect(() => {
-    if (!scope || !conversation) return;
+    setStreamError('');setReconnecting(false);
+    if(previousObservationKey.current!==observationKey)eventCursor.current=undefined;
+    previousObservationKey.current=observationKey;
+    if (!scope || !observationKey) return;
+    const selection=getSelection();
     const controller = new AbortController(); let generation: string | undefined;
     let retryTimer: ReturnType<typeof setTimeout> | undefined, failures = 0;
+    const current=()=>!controller.signal.aborted&&isSelectionCurrent(selection)&&conversationObservationKey(conversationRef.current)===observationKey;
+    const finish=()=>{controller.abort();if(retryTimer)clearTimeout(retryTimer);setStreamError('');setReconnecting(false);};
+    const reconcile=async()=>{
+      const observed=conversationRef.current?.revision;
+      try{
+        const next=await client.read(scope.workspaceId,scope.conversationId,controller.signal);
+        if(!current())return false;
+        apply(next,observed);
+        if(!needsConversationObservation(conversationRef.current)){finish();return false;}
+      }catch{ /* The subscription may recover even when this read failed. */ }
+      return current();
+    };
     const handle = (event: ConversationEvent) => {
-      if (controller.signal.aborted) return;
+      if (!current()) return;
       const expectedGeneration = generation;
       const previousCursor = eventCursor.current;
       if(!isCurrentConversationEvent(event,scope,expectedGeneration,previousCursor))return;
       if (event.type === 'snapshot') generation = event.generation;
       if(event.type==='connection'&&event.payload.connection)void refreshConnections().catch(()=>{});
-      setConversation(current => applyConversationEvent(current, event, scope, expectedGeneration, previousCursor));
+      const next=event.payload.conversation;
+      if(next&&next.id===scope.conversationId&&next.workspaceId===scope.workspaceId)apply(next);
       if (!expectedGeneration || event.type === 'snapshot' || event.generation === expectedGeneration) eventCursor.current = event.cursor;
       setStreamError('');
       // Only live changes prove the subscription healthy; a lone snapshot on a
@@ -129,35 +180,40 @@ export function AgentConversationsProvider({children, client = agentConversation
       setReconnecting(false);
       const snapshot=event.payload.conversation;
       if(snapshot){const signature=[snapshot.workspaceId,snapshot.id,snapshot.run?.status||'',...snapshot.requests.map(request=>request.id)].join(':');if(signature!==attentionSignature.current){attentionSignature.current=signature;void refreshPending().catch(()=>{});}}
+      if(!needsConversationObservation(conversationRef.current))finish();
     };
-    // The next subscription starts from a current snapshot, so the first drop
-    // recovers silently; only a second consecutive drop needs the user.
-    const connect = async (): Promise<void> => {
+    // Every dropped connection first reconciles current facts. A missed final
+    // event must not cause retries or an alarm after the run actually ended.
+    const connect = async (retry=false): Promise<void> => {
+      if(!current())return;
+      if(retry&&!await reconcile())return;
       generation = undefined;
       try { await client.subscribe(scope.workspaceId, scope.conversationId, controller.signal, handle, eventCursor.current); }
       catch (failure) {
-        if (controller.signal.aborted) return;
-        if (failures<5) {const delay=Math.min(5000,500*2**failures++);setReconnecting(true);retryTimer=setTimeout(()=>{void connect();},delay);return;}
+        if (!current()) return;
+        if (failures<5) {const delay=Math.min(5000,500*2**failures++);setReconnecting(true);retryTimer=setTimeout(()=>{void connect(true);},delay);return;}
+        if(!await reconcile())return;
         setReconnecting(false);
-        setStreamError(failure instanceof Error ? failure.message : '对话连接已中断；请重新核对执行状态。');
+        setStreamError(failure instanceof Error ? failure.message : '暂时无法同步最新进展；已保留收到的消息，请重新连接。');
       }
     };
     void connect();
     return () => { controller.abort(); if (retryTimer) clearTimeout(retryTimer);setReconnecting(false); };
-    // Snapshot updates must not recreate the subscriber or lose its cursor.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client, scope?.workspaceId, scope?.conversationId, Boolean(conversation), observation, refreshPending, refreshConnections]);
+    // Ordinary snapshot changes must not recreate the subscriber or lose its cursor.
+  }, [client, scope?.workspaceId, scope?.conversationId, observationKey, observation, refreshPending, refreshConnections,apply,getSelection,isSelectionCurrent]);
   useEffect(()=>{
     if(!scope||conversation?.run?.status!=='unknown')return;
+    const selection=getSelection(),key=conversationObservationKey(conversation);
     let active=true,attempts=0,timer:ReturnType<typeof setTimeout>|undefined;setRecovering(true);
+    const current=()=>active&&isSelectionCurrent(selection)&&conversationObservationKey(conversationRef.current)===key;
     const recover=async()=>{
-      try{const before=conversationRef.current;if(!before)return;const result=await client.observe(before);if(!active)return;apply(result,before.revision);if(result.run?.status!=='unknown'){setRecovering(false);return;}}
-      catch(failure){if(!active)return;if(attempts>=2)setStreamError(failure instanceof Error?failure.message:'原执行状态仍未确认。');}
-      if(!active)return;if(++attempts<3)timer=setTimeout(()=>{void recover();},1500*attempts);else setRecovering(false);
+      try{const before=conversationRef.current;if(!before||!current())return;const result=await client.observe(before);if(!current())return;apply(result,before.revision);if(result.run?.status!=='unknown'){setRecovering(false);return;}}
+      catch(failure){if(!current())return;if(attempts>=2)setStreamError(failure instanceof Error?failure.message:'原执行状态仍未确认。');}
+      if(!current())return;if(++attempts<3)timer=setTimeout(()=>{void recover();},1500*attempts);else setRecovering(false);
     };
     void recover();return()=>{active=false;if(timer)clearTimeout(timer);setRecovering(false);};
-  },[client,scope?.workspaceId,scope?.conversationId,conversation?.run?.id,conversation?.run?.status,apply]);
-  const newConversation = useCallback((options:VisibilityOptions&{scope?:DraftScope|null}={}) => { advanceSelection(); eventCursor.current=undefined; scopeRef.current = null; setScope(null); setDraftScope(options.scope??null); setConversation(null); setError(''); setStreamError(''); setView('conversation'); if(!options.preserveVisibility)setVisibility(true); setLoading(false); savePanel(visibility.current.open,null); }, [advanceSelection,setVisibility]);
+  },[client,scope?.workspaceId,scope?.conversationId,conversation?.run?.id,conversation?.run?.generation,conversation?.run?.participantId,conversation?.run?.status,apply,getSelection,isSelectionCurrent]);
+  const newConversation = useCallback((options:VisibilityOptions&{scope?:DraftScope|null}={}) => { advanceSelection(); eventCursor.current=undefined; scopeRef.current = null; setScope(null); setDraftScope(options.scope??null); conversationRef.current=null; setConversation(null); setError(''); setStreamError(''); setView('conversation'); if(!options.preserveVisibility)setVisibility(true); setLoading(false); savePanel(visibility.current.open,null); }, [advanceSelection,setVisibility]);
   const startTextConversation = useCallback(async (input: TextConversationActionInput): Promise<TextConversationActionResult> => {
     if(productActionBusy.current)return {status:'busy',message:'已有一项操作正在提交，请先等待原操作完成。'};
     productActionBusy.current=true;setProductActionPending(true);setProductActionError('');
@@ -201,13 +257,24 @@ export function AgentConversationsProvider({children, client = agentConversation
     if(!isSelectionCurrent(observed))return result;
     setLoading(false);setError('');
     const nextOpen=createdConversationVisibility(observedVisibility,visibility.current,selection===undefined);
-    eventCursor.current=undefined;scopeRef.current={workspaceId:result.workspaceId,conversationId:result.id};setScope(scopeRef.current);setDraftScope(null);savePanel(nextOpen,scopeRef.current);setConversation(result);setView('conversation');setVisibility(nextOpen,false);setStreamError('');return result;
+    eventCursor.current=undefined;scopeRef.current={workspaceId:result.workspaceId,conversationId:result.id};setScope(scopeRef.current);setDraftScope(null);savePanel(nextOpen,scopeRef.current);conversationRef.current=result;setConversation(result);setView('conversation');setVisibility(nextOpen,false);setStreamError('');return result;
   },[client,advanceSelection,isSelectionCurrent,setVisibility]);
   const setOpen = useCallback((value: boolean) => { setVisibility(value); savePanel(value,scopeRef.current); if (!value) setFull(false); }, [setVisibility]);
   const openHistory=useCallback((workspaceId:string|null=null)=>{setHistoryWorkspaceId(workspaceId);setView('history');setVisibility(true);savePanel(true,scopeRef.current);},[setVisibility]);
   const openGlobal=useCallback(()=>openHistory(null),[openHistory]);
   const seenInFlight=useRef(new Set<string>());
-  const markSeen=useCallback(async(value:ConversationView)=>{const version=value.activity?.version;if(version===undefined||version<=(value.activity?.seenThrough??0)||!client.seen)return;const key=value.workspaceId+':'+value.id+':'+version;if(seenInFlight.current.has(key))return;seenInFlight.current.add(key);try{const result=await client.seen(value,version);setConversation(previous=>previous?.id===value.id&&previous.workspaceId===value.workspaceId?{...previous,activity:previous.activity&&previous.activity.version>result.activity.version?{...previous.activity,seenThrough:Math.max(previous.activity.seenThrough,result.activity.seenThrough)}:result.activity}:previous);await refreshActivity();}catch(error){setActivityError(error instanceof Error?error.message:'查看状态尚未保存。');}finally{seenInFlight.current.delete(key);}},[client,refreshActivity]);
+  const markSeen=useCallback(async(value:ConversationView)=>{
+    const version=value.activity?.version;if(version===undefined||version<=(value.activity?.seenThrough??0)||!client.seen)return;
+    const key=value.workspaceId+':'+value.id+':'+version;if(seenInFlight.current.has(key))return;seenInFlight.current.add(key);
+    try{
+      const result=await client.seen(value,version),previous=conversationRef.current;
+      if(previous?.id===value.id&&previous.workspaceId===value.workspaceId){
+        const next={...previous,activity:previous.activity&&previous.activity.version>result.activity.version?{...previous.activity,seenThrough:Math.max(previous.activity.seenThrough,result.activity.seenThrough)}:result.activity};
+        conversationRef.current=next;setConversation(next);
+      }
+      await refreshActivity();
+    }catch(error){setActivityError(error instanceof Error?error.message:'查看状态尚未保存。');}finally{seenInFlight.current.delete(key);}
+  },[client,refreshActivity]);
   const toggleView=useCallback((target:'conversation'|'history')=>{const next=nextConversationPanel(open,view,target);if(target==='history'&&next.open)setHistoryWorkspaceId(null);setView(next.view);setOpen(next.open);},[open,view,setOpen]);
   const toggle=useCallback(()=>setOpen(!open),[open,setOpen]);
   const shell=useMemo(()=>({open,view,full,pending,openGlobal,toggle,toggleView,setSettings}),[open,view,full,pending,openGlobal,toggle,toggleView]);
