@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { realpath, stat, lstat, mkdir, chmod } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
+import type { ExecutionRef } from '../contracts.ts';
 import { StringDecoder } from 'node:string_decoder';
 import { dirname, isAbsolute, join } from 'node:path';
 import type { ExecutorBinding } from '../contracts.ts';
@@ -48,6 +49,21 @@ export async function closeOwnedProcess(child: ChildProcessWithoutNullStreams, t
   await bounded(exited, timeoutMs);
 }
 export interface RpcMessage { id?: string | number; method?: string; params?: any; result?: any; error?: { code?: number; message?: string }; }
+/** Observe the control resource group created by this executor. A detached
+ * command may outlive that group: releasing it never proves the operation ended. */
+export async function ownedProcessGroupIdle(group:number,controlPid?:number):Promise<boolean>{
+  if(process.platform==='win32'||!Number.isSafeInteger(group)||group<=1)return false;
+  const observer=spawn('/bin/ps',['-axo','pid=,pgid='],{stdio:['ignore','pipe','ignore'],windowsHide:true});
+  let output='',overflow=false;
+  observer.stdout.on('data',value=>{output+=value.toString();if(output.length>4*1024*1024){overflow=true;observer.kill();}});
+  try{
+    const status=await bounded(new Promise<number|null>((resolve,reject)=>{observer.once('exit',resolve);observer.once('error',reject);}),1000);
+    if(status!==0||overflow)return false;
+    for(const line of output.trim().split('\n')){const match=/^\s*(\d+)\s+(\d+)\s*$/.exec(line);if(!match)return false;if(Number(match[2])===group&&Number(match[1])!==controlPid)return false;}
+    return true;
+  }catch{return false;}
+  finally{if(observer.exitCode===null&&observer.signalCode===null)observer.kill();}
+}
 export class NativeRpc {
   private sequence = 0;
   private buffer = '';
@@ -61,13 +77,31 @@ export class NativeRpc {
   get closed(): boolean { return this.disposed || this.failed || this.child.exitCode !== null || this.child.signalCode !== null || this.child.stdin.destroyed; }
   constructor(command: string, args: string[], options: { cwd: string; env: NativeEnvironment }) {
     this.diagnosticSecrets = Object.entries(options.env).filter(([key, value]) => /(?:TOKEN|KEY|PASSWORD|SECRET)$/i.test(key) && value).map(([, value]) => value!);
-    this.child = spawn(command, args, { ...options, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+    this.child = spawn(command, args, { ...options, detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     // Native diagnostics may contain credentials. They never become public errors or events.
     this.child.stderr.on('data', () => {});
     this.child.stdout.on('data', chunk => this.read(this.decoder.write(chunk)));
     this.child.stdin.on('error', () => this.fail('agent_native_process_closed'));
     this.child.once('error', () => this.fail('agent_native_process_failed'));
     this.child.once('exit', () => this.fail('agent_native_process_closed'));
+  }
+  executionRef(id: string, contextId: string, binding: string, backgroundWork = false): ExecutionRef {
+    return { id, ...(process.platform !== 'win32' && this.child.pid ? { data: { resourceGroup: this.child.pid, resourceContext: contextId, resourceBinding: binding, backgroundWork } } : {}) };
+  }
+  async canReleaseExecution(ref: ExecutionRef, contextId: string, binding: string, ended: boolean): Promise<boolean> {
+    const data = ref.data;
+    if (!data || data.resourceContext !== contextId || data.resourceBinding !== binding || data.backgroundWork !== false || !Number.isSafeInteger(data.resourceGroup)) return false;
+    const group = data.resourceGroup as number;
+    if (group === this.child.pid) {
+      const exited = this.child.exitCode !== null || this.child.signalCode !== null;
+      if(this.closed&&!exited)return false;
+      return (ended || exited) && await ownedProcessGroupIdle(group, exited?undefined:this.child.pid);
+    }
+    // A cold observer cannot release a still-live old control process. The old
+    // control group must be entirely gone, and this read-only control must be idle too.
+    const observerExited=this.child.exitCode!==null||this.child.signalCode!==null;
+    if(this.closed&&!observerExited)return false;
+    return await ownedProcessGroupIdle(group) && Boolean(this.child.pid && await ownedProcessGroupIdle(this.child.pid, observerExited?undefined:this.child.pid));
   }
   onMessage(listener: (message: RpcMessage) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
   private read(chunk: string): void {

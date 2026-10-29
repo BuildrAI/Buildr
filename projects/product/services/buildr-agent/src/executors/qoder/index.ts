@@ -39,6 +39,8 @@ class QoderRuntime implements AgentRuntime {
       }
       if (message.method === 'event') {
         const { contextId, event } = message.params;
+        if (event.type === 'accepted') event.executionRef = this.rpc.executionRef(event.executionRef.id, contextId, this.bindingIdentity);
+        if (event.type === 'observation' && event.observation.executionRef) event.observation.executionRef = this.rpc.executionRef(event.observation.executionRef.id, contextId, this.bindingIdentity, event.observation.backgroundWork === true);
         if (event.type === 'accepted') this.observations.set(contextId, { status: 'running', executionRef: event.executionRef, tools: [] });
         if (event.type === 'observation') this.observations.set(contextId, event.observation);
         if (event.type === 'observation' && ['idle', 'stopped'].includes(event.observation.status) && this.historyFailures.has(contextId)) {
@@ -192,9 +194,21 @@ class QoderRuntime implements AgentRuntime {
     try {
       const observed = await this.rpc.call('observe', { contextId: contextRef.id, cwd: this.contexts.get(contextRef.id), executionId: executionRef?.id }, 5000);
       if (['idle', 'stopped'].includes(observed.status) && this.historyFailures.has(contextRef.id)) await this.repairHistory(contextRef.id, observed.executionRef?.id);
+      if (executionRef && observed.executionRef?.id === executionRef.id) observed.executionRef = { ...executionRef, data: executionRef.data ? { ...executionRef.data, ...(observed.backgroundWork === undefined ? {} : { backgroundWork: observed.backgroundWork }) } : undefined };
       return observed;
     }
     catch { return { status: 'unknown', tools: this.observations.get(contextRef.id)?.tools ?? [], diagnostic: 'qoder_exact_execution_not_observed' }; }
+  }
+  async canRelease({contextRef,executionRef}:{contextRef:ContextRef;executionRef:ExecutionRef}):Promise<boolean|{executionState:'ended'|'unknown'}>{
+    this.reference(contextRef);
+    let ended=false,executionState:'ended'|'unknown'='unknown';
+    if (executionRef.data?.resourceGroup===this.rpc.child.pid && !this.rpc.closed) {
+      const proof=await this.rpc.call('release-check',{contextId:contextRef.id,executionId:executionRef.id},2000);
+      if(!proof.ended||proof.blocked)return false;
+      ended=true;executionState=proof.executionState==='ended'?'ended':'unknown';
+    }
+    if(!await this.rpc.canReleaseExecution(executionRef,contextRef.id,this.bindingIdentity,ended))return false;
+    return {executionState};
   }
   async supplement(input: ExecutorSupplementInput): Promise<ExecutorInputReceipt> {
     this.reference(input.contextRef, input.cwd);

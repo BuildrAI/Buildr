@@ -180,3 +180,15 @@ test('executing models aggregate by actual account across executors and expose u
   const after=repo.querySummaries(['w1'],{limit:10}).conversations;
   assert.deepEqual(after.map(row=>row.id),before.map(row=>row.id));assert.deepEqual(after.map(row=>row.activity?.userInputAt),before.map(row=>row.activity?.userInputAt));
 });
+
+
+test('hidden unknown outcomes stop reminding only after execution and resources are independently released',t=>{
+ const repo=fixture(t),r=record();message(r,'u','one operation');
+ r.view.run={id:'r',participantId:'p',provider:'codex',generation:'g',status:'unknown',accepted:true,tools:[{id:'tool',label:'result missing',status:'unknown'}],startedAt:r.view.updatedAt,updatedAt:r.view.updatedAt};
+ repo.saveConversation(r);save(repo,r,r=>{r.view.hidden=true;r.view.run!.executionState='ended';});
+ assert.equal(repo.querySummaries(['w1'],{activeOnly:true,limit:10}).activityCounts.unknown,1,'ended without release proof remains visible');
+ save(repo,r,r=>{r.view.run!.resourcesReleased=true;});
+ const quiet=repo.querySummaries(['w1'],{activeOnly:true,limit:10});assert.equal(quiet.total,0);assert.equal(quiet.activityCounts.unknown,0);assert.equal(quiet.stats.modelExecutions.length,0);
+ const archived=repo.querySummaries(['w1'],{hidden:true,limit:10});assert.equal(archived.total,1);assert.equal(archived.conversations[0].run?.status,'unknown');assert.equal(repo.readConversation(r.view.id)?.view.run?.tools[0].status,'unknown');
+ save(repo,r,r=>{r.view.hidden=false;});assert.equal(repo.querySummaries(['w1'],{activeOnly:true,limit:10}).activityCounts.unknown,1,'an unhidden historical doubt is still discoverable');
+});

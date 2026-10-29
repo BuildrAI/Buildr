@@ -138,3 +138,40 @@ test('an explicit RPC rejection preserves a sanitized service cause for recovery
     });
   } finally { await rpc.close(); await rm(root, {recursive: true, force: true}); }
 });
+
+
+test('owned control groups distinguish an ended controller from a still-live foreground tool', {skip:process.platform==='win32'}, async()=>{
+  const root=await mkdtemp(join(tmpdir(),'buildr-group-proof-'));
+  const code=`const {spawn}=require('node:child_process');const rl=require('node:readline').createInterface({input:process.stdin});let child;rl.on('line',async line=>{const m=JSON.parse(line);let result={};if(m.method==='hold'||m.method==='hold-detached'){child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore',detached:m.method==='hold-detached'});await new Promise(r=>child.once('spawn',r));result={pid:child.pid};}if(m.method==='stop-tool'){const exited=new Promise(r=>child.once('exit',r));child.kill('SIGTERM');await exited;}process.stdout.write(JSON.stringify({id:m.id,result})+'\\n');});rl.on('close',()=>process.exit(0));`;
+  const rpc=new NativeRpc(process.execPath,['-e',code],{cwd:root,env:process.env});
+  let toolPid:number|undefined;
+  try{
+    const ref=rpc.executionRef('run','context','binding');
+    assert.equal(await rpc.canReleaseExecution(ref,'context','binding',false),false,'a quiet controller is not a completed native execution');
+    assert.equal(await rpc.canReleaseExecution(ref,'context','binding',true),true);
+    assert.equal(await rpc.canReleaseExecution(ref,'other-context','binding',true),false);
+    assert.equal(await rpc.canReleaseExecution({...ref,data:{...ref.data,backgroundWork:true}},'context','binding',true),false);
+    assert.equal(await rpc.canReleaseExecution({id:'legacy'},'context','binding',true),false);
+    toolPid=(await rpc.call('hold')).pid;
+    assert.equal(await rpc.canReleaseExecution(ref,'context','binding',true),false,'an inherited foreground tool keeps the session occupied');
+    await rpc.call('stop-tool');toolPid=undefined;
+    assert.equal(await rpc.canReleaseExecution(ref,'context','binding',true),true);
+    toolPid=(await rpc.call('hold-detached')).pid;
+    assert.equal(await rpc.canReleaseExecution(ref,'context','binding',true),true,'a detached command does not keep the original control group alive or prove its own result');
+    await rpc.close();process.kill(toolPid!,0);
+    assert.equal(await rpc.canReleaseExecution(ref,'context','binding',false),true,'actual owned process exit is independent of a missing result');
+  }finally{if(toolPid)try{process.kill(toolPid,'SIGTERM');}catch{}await rpc.close();await rm(root,{recursive:true,force:true});}
+});
+
+
+test('a cold observer with a broken channel must actually exit before release is confirmed',{skip:process.platform==='win32'},async()=>{
+ const root=await mkdtemp(join(tmpdir(),'buildr-cold-release-'));
+ const original=new NativeRpc(process.execPath,['-e','setInterval(()=>{},1000)'],{cwd:root,env:process.env});
+ const observer=new NativeRpc(process.execPath,['-e','process.stdin.resume();setInterval(()=>{},1000)'],{cwd:root,env:process.env});
+ try{
+  const ref=original.executionRef('run','context','binding');await original.close();
+  assert.equal(await observer.canReleaseExecution(ref,'context','binding',false),true);
+  observer.child.stdin.destroy();assert.equal(observer.child.exitCode,null);assert.equal(await observer.canReleaseExecution(ref,'context','binding',false),false);
+  await observer.close();assert.equal(await observer.canReleaseExecution(ref,'context','binding',false),true);
+ }finally{await original.close();await observer.close();await rm(root,{recursive:true,force:true});}
+});

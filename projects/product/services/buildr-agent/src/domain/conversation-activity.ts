@@ -24,6 +24,6 @@ export function summaryView(record: StoredConversation, version: number, seenThr
     ...view, titleState:view.titleState??{status:'unknown'}, entries: [], requests: [], nextEntryCursor: undefined,
     run: view.run ? {...view.run, tools: []} : undefined,
     participants: record.participants.map(p => ({id:p.id,provider:p.provider as ConversationView['participants'][number]['provider'],connectionId:p.connectionId,label:p.label,model:p.modelId,modelAccountId:p.modelAccountId,deliveredThrough:p.deliveredThrough,contextId:''})),
-    activity: {version, seenThrough, updatedAt, active: BUSY_STATES.has(view.run?.status as never) || view.requests.length > 0 || version > seenThrough},
+    activity: {version, seenThrough, updatedAt, active: !(view.hidden && view.run?.executionState === 'ended' && view.run.resourcesReleased && view.run.status === 'unknown') && (BUSY_STATES.has(view.run?.status as never) || view.requests.length > 0 || version > seenThrough)},
   };
 }

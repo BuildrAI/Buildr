@@ -309,3 +309,25 @@ for(const legacy of [false,true])test('observe releases a durably finished old r
     fs.writeFileSync(path.join(dataRoot,'release-other'),'yes');await until(()=>observer!.operations.conversations.read(scope,other.id),v=>v.run?.status==='completed');
   }finally{fs.writeFileSync(path.join(dataRoot,'release-other'),'yes');await main?.close();await observer?.disconnect();await stopAgentProcess({dataRoot,profileId,mode:'stop-owned'}).catch(()=>{});fs.rmSync(root,{recursive:true,force:true});}
 });
+
+test('retiring process exits with an unknown historical result only after exact resources drain and never dispatches its queued retry',{timeout:90000},async()=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-result-resource-')),dataRoot=path.join(root,'profile'),workspace=path.join(root,'work'),packageRoot=path.join(root,'package');fs.mkdirSync(workspace);fs.cpSync(prepared,packageRoot,{recursive:true});
+ fs.copyFileSync(path.join(import.meta.dirname,'fixtures/agent-process-entry.mjs'),path.join(packageRoot,'build/process-fixture.mjs'));
+ const marker=path.join(packageRoot,'build/fixture-version.json');fs.writeFileSync(marker,JSON.stringify({version:'old'}));const runtime=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'}),profileId='result-resource',scope=executionScopeKey({sourceId:'minimal',id:'directory'});
+ let main:Awaited<ReturnType<typeof actor>>|undefined,observer:AgentProcessConnection|undefined;
+ try{
+  main=await actor({dataRoot,profileId,runtime,workspace});observer=await connectAgentProcess({dataRoot,profileId,runtime,sourceId:'minimal'});const old=await observer.lifecycle.identity();
+  const connection=await main.call('connections.read',['first']);await main.call('connections.connect',['first',{expectedRevision:connection.revision}]);const added=await main.call('models.accounts.add',[{provider:'fixture-model'}]),checked=await main.call('models.accounts.check',[added.id]);await main.call('models.accounts.preferences',[added.id,{expectedRevision:checked.revision,models:[{id:'fixture',enabled:true}]}]);const choice={connectionId:'first',modelAccountId:added.id,model:'fixture'};
+  const start=async(text:string)=>{const chat=await main!.call('conversations.create',[scope,{}]),draft={expectedRevision:chat.revision,...choice,text},preview=await main!.call('conversations.prepareSend',[scope,chat.id,draft]);await main!.call('conversations.send',[scope,chat.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()}]);return await until(()=>observer!.operations.conversations.read(scope,chat.id),v=>v.run?.accepted===true);};
+  let uncertain=await start('uncertain-ended');const other=await start('hold:other');uncertain=await until(()=>observer!.operations.conversations.read(scope,uncertain.id),v=>v.run?.status==='unknown');
+  uncertain=await observer.operations.conversations.queueSend(scope,uncertain.id,{expectedRevision:uncertain.revision,...choice,text:'NEVER_REPLAY',clientRequestId:randomUUID(),previousRunId:uncertain.run!.id});
+  fs.writeFileSync(marker,JSON.stringify({version:'new'}));const next=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'});await observer.lifecycle.requestRuntime({expectedGeneration:old.generation,runtime:next});await until(()=>observer!.lifecycle.status(),v=>v.identity.runtime.digest===next.digest);
+  await main.call('conversations.read',[scope,uncertain.id]);assert.ok(isLive(old.pid));
+  fs.writeFileSync(path.join(dataRoot,'release-uncertain-resource'),'yes');
+  uncertain=await until(()=>observer!.operations.conversations.read(scope,uncertain.id),v=>v.run?.resourcesReleased===true);
+  assert.equal(uncertain.run?.status,'unknown');assert.equal(uncertain.run?.executionState,'unknown');assert.equal(uncertain.run?.tools[0].status,'unknown');assert.ok(uncertain.pendingSend);assert.ok(isLive(old.pid),'another conversation still owns this generation');
+  fs.writeFileSync(path.join(dataRoot,'release-other'),'yes');await until(()=>observer!.operations.conversations.read(scope,other.id),v=>v.run?.status==='completed');await until(async()=>isLive(old.pid),v=>!v);
+  const sent=fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').trim().split('\n').map(v=>JSON.parse(v));assert.equal(sent.filter(v=>v.text==='uncertain-ended').length,1);assert.equal(sent.some(v=>v.text==='NEVER_REPLAY'),false);
+  uncertain=await observer.operations.conversations.read(scope,uncertain.id);assert.equal(uncertain.run?.status,'unknown');assert.equal(uncertain.run?.resourcesReleased,true);assert.ok(uncertain.pendingSend);await observer.operations.conversations.cancelPendingSend(scope,uncertain.id,{expectedPendingRevision:uncertain.pendingSend!.revision});
+ }finally{fs.writeFileSync(path.join(dataRoot,'release-other'),'yes');fs.writeFileSync(path.join(dataRoot,'release-uncertain-resource'),'yes');await main?.close();await observer?.disconnect();await stopAgentProcess({dataRoot,profileId,mode:'stop-owned'}).catch(()=>{});fs.rmSync(root,{recursive:true,force:true});}
+});

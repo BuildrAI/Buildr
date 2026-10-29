@@ -54,6 +54,8 @@ export class ConversationApplication {
       {kind:'title',count:this.titleWork.size + this.earlyTitles.size},
       {kind:'recovery',count:this.recoveries.size},
       {kind:'reply',count:this.repliesInFlight.size},
+      {kind:'observation',count:this.observations.size + this.releaseChecks.size},
+      {kind:'source-resource',count:this.sourceRuntimes.size},
     ].filter(value=>value.count>0);
   }
   private readonly previewSecret = randomUUID();
@@ -64,6 +66,8 @@ export class ConversationApplication {
   private readonly earlyTitles = new Map<string, Promise<void>>();
   private readonly sourceConnections = new Map<string,string>();
   private readonly sourceRuntimes = new Map<string, Promise<{runtime: AgentRuntime; model: string}>>();
+  private readonly sourceReleasePending = new Map<AgentRuntime,()=>Promise<boolean>>();
+  private readonly sourceReleases = new Map<AgentRuntime,Promise<void>>();
   private readonly sourceOwners = new Map<string, {workspaceId: string; id: string}>();
   private releasingIdleSources?: Promise<void>;
   private readonly releaseChecks = new Map<string,Promise<boolean>>();
@@ -129,6 +133,10 @@ export class ConversationApplication {
     const found = this.sourceRuntimes.get(participant.id);
     if (found) {
       const source = await found;
+      const releasing = this.sourceReleases.get(source.runtime);
+      if (releasing) { await releasing; return this.sourceRuntime(record, participant); }
+      const pendingRelease=this.sourceReleasePending.get(source.runtime);
+      if(pendingRelease){if(!await pendingRelease())fail('agent_runtime_release_unconfirmed','上一轮资源仍待释放，请稍后核对。',409);return this.sourceRuntime(record,participant);}
       if (!source.runtime.closed) return source;
       if (this.sourceRuntimes.get(participant.id) === found) this.sourceRuntimes.delete(participant.id);
       const replacement = this.sourceRuntimes.get(participant.id); if (replacement) return replacement;
@@ -144,27 +152,59 @@ export class ConversationApplication {
   releaseIdleSources(owner?: {workspaceId:string; id:string}): Promise<void> {
     if (this.releasingIdleSources) return this.releasingIdleSources;
     const work = (async () => {
+      for(const finish of [...this.sourceReleasePending.values()])await finish().catch(()=>false);
       const groups = new Map<AgentRuntime, Array<{id:string; source:Promise<{runtime:AgentRuntime;model:string}>}>>();
       for (const [id, source] of this.sourceRuntimes) {
-        const value = await source.catch(() => undefined);
-        if (!value) continue;
-        const {runtime} = value;
-        const members = groups.get(runtime) ?? []; members.push({id,source}); groups.set(runtime,members);
+        const value = await source.catch(() => undefined); if (!value) continue;
+        const members=groups.get(value.runtime)??[];members.push({id,source});groups.set(value.runtime,members);
       }
-      for (const [runtime, members] of groups) {
-        if (owner && !members.some(({id}) => { const value=this.sourceOwners.get(id); return value?.workspaceId===owner.workspaceId && value.id===owner.id; })) continue;
-        if (members.some(({id,source}) => {
-          const owner = this.sourceOwners.get(id);
-          return !owner || this.sourceRuntimes.get(id) !== source || this.busy(owner.workspaceId,owner.id);
-        })) continue;
-        await this.options.connections.releaseGatewayRuntime(runtime);
-        for (const {id,source} of members) if (this.sourceRuntimes.get(id) === source) {
-          this.sourceRuntimes.delete(id); this.sourceOwners.delete(id); this.sourceConnections.delete(id);
+      for (const [runtime,members] of groups) {
+        if(this.sourceReleasePending.has(runtime))continue;
+        if(owner&&!members.some(({id})=>{const held=this.sourceOwners.get(id);return held?.workspaceId===owner.workspaceId&&held.id===owner.id;}))continue;
+        const candidates:Array<{id:string;source:Promise<{runtime:AgentRuntime;model:string}>;workspaceId:string;conversationId:string;runId:string;proof?:()=>Promise<boolean|{executionState:'ended'|'unknown'}>}>=[];
+        let safe=true;
+        for(const member of members){
+          const held=this.sourceOwners.get(member.id);
+          if(!held||this.sourceRuntimes.get(member.id)!==member.source){safe=false;break;}
+          const record=this.load(held.workspaceId,held.id),run=record.view.run;
+          if(!run||record.view.requests.length||this.workers.has(run.id)||this.recoveries.has(run.id)||this.observations.has(held.id)||this.earlyTitles.has(held.id)||this.titleWork.has(held.id)||this.supplements.size||this.repliesInFlight.size){safe=false;break;}
+          const participant=record.participants.find(value=>value.id===member.id),attempt=[...record.attempts].reverse().find(value=>value.participantId===member.id);
+          const settled=run.resourcesReleased||!this.busy(held.workspaceId,held.id);
+          const exactProof=participant?.contextRef&&attempt?.executionRef&&runtime.canRelease;
+          if(exactProof?!await runtime.canRelease!({contextRef:participant!.contextRef!,executionRef:attempt!.executionRef!}).catch(()=>false):!settled){safe=false;break;}
+          candidates.push({...member,workspaceId:held.workspaceId,conversationId:held.id,runId:run.id,...(exactProof?{proof:()=>runtime.canRelease!({contextRef:participant!.contextRef!,executionRef:attempt!.executionRef!}).catch(()=>false)}:{})});
         }
+        if(!safe)continue;
+        // Recheck after asynchronous native proof, then freeze reuse before close.
+        if(candidates.some(value=>this.sourceRuntimes.get(value.id)!==value.source||this.load(value.workspaceId,value.conversationId).view.run?.id!==value.runId||this.workers.has(value.runId)||this.observations.has(value.conversationId)||this.recoveries.has(value.runId)||this.earlyTitles.has(value.conversationId)||this.titleWork.has(value.conversationId)||this.load(value.workspaceId,value.conversationId).view.requests.length)||this.supplements.size||this.repliesInFlight.size)continue;
+        const finish=async()=>{
+          await this.options.connections.releaseGatewayRuntime(runtime);
+          const facts=new Map<string,'ended'|'unknown'>();
+          for(const value of candidates){const proof=value.proof?await value.proof():true;if(!proof)return false;facts.set(value.id,proof===true?'ended':proof.executionState);}
+          for(const value of candidates){
+            if(this.sourceRuntimes.get(value.id)===value.source){this.sourceRuntimes.delete(value.id);this.sourceOwners.delete(value.id);this.sourceConnections.delete(value.id);}
+            const record=this.load(value.workspaceId,value.conversationId),run=record.view.run;
+            if(!run||run.id!==value.runId||run.participantId!==value.id||run.generation!==this.options.generation)continue;
+            run.executionState=run.executionState==='ended'?'ended':facts.get(value.id)!;run.resourcesReleased=true;
+            if(BUSY_STATES.has(run.status)){
+              run.status='unknown';run.interrupted=true;
+              run.diagnostic=run.executionState==='ended'?'原执行已结束、后台资源已释放；操作结果仍待核对，不会自动重发。':'原生控制资源已释放；独立命令及操作结果仍待核对，不会自动重发。';
+              run.tools=run.tools.map(tool=>tool.status==='running'?{...tool,status:'unknown',canStop:false}:tool);
+            }
+            run.updatedAt=this.options.now();this.save(record);
+          }
+          this.sourceReleasePending.delete(runtime);return true;
+        };
+        let finalizing:Promise<boolean>|undefined;
+        const serialized=()=>finalizing??=(finish().finally(()=>{finalizing=undefined;}));
+        this.sourceReleasePending.set(runtime,serialized);
+        const closing=serialized().then(()=>{});
+        this.sourceReleases.set(runtime,closing);
+        try{await closing.catch(()=>{});}finally{if(this.sourceReleases.get(runtime)===closing)this.sourceReleases.delete(runtime);}
       }
     })();
-    this.releasingIdleSources = work;
-    void work.finally(() => { if (this.releasingIdleSources === work) this.releasingIdleSources = undefined; }).catch(() => {});
+    this.releasingIdleSources=work;
+    void work.finally(()=>{if(this.releasingIdleSources===work)this.releasingIdleSources=undefined;}).catch(()=>{});
     return work;
   }
   retainsConversationSource(workspaceId:string,id:string): boolean {
@@ -547,6 +587,7 @@ export class ConversationApplication {
       this.options.events.publish({ type: 'connection', workspaceId, conversationId: id, revision: connection.revision, payload: { connection } }); return;
     }
     if (event.type === 'title') { if (this.acceptTitle(record, event.title)) this.save(record); return; }
+    if (run.resourcesReleased && ['accepted','request'].includes(event.type)) return;
     if (['completed', 'stopped', 'failed'].includes(run.status) && (event.type === 'accepted' || event.type === 'request')) return;
     if (event.type === 'accepted') {
       attempt.accepted = true; attempt.executionRef = event.executionRef; attempt.nativeInputItemId = event.inputItemId;
@@ -592,6 +633,13 @@ export class ConversationApplication {
   }
   private applyObservation(record: StoredConversation, observation: ExecutorObservation): void {
     const run = record.view.run; if (!run) return;
+    if(run.resourcesReleased&&(!['idle','stopped'].includes(observation.status)||observation.tools.some(tool=>tool.status!=='completed')))return;
+    const attempt=record.attempts.find(value=>value.runId===run.id);
+    if(attempt?.executionRef&&observation.executionRef?.id===attempt.executionRef.id&&observation.executionRef.data){
+      const prior=attempt.executionRef.data,next=observation.executionRef.data;
+      if(prior?.resourceGroup===next.resourceGroup&&prior?.resourceContext===next.resourceContext&&prior?.resourceBinding===next.resourceBinding)attempt.executionRef={...attempt.executionRef,data:{...prior,...next}};
+    }
+    run.executionState=['idle','stopped'].includes(observation.status)&&observation.tools.every(tool=>tool.status==='completed')?'ended':['running','waiting','tools-active'].includes(observation.status)?'active':'unknown';
     run.tools = observation.tools;
     if (observation.diagnostic) run.diagnostic = observation.diagnostic;
     if (observation.status === 'tools-active' || observation.tools.some(tool => tool.status === 'running') && !['running', 'waiting'].includes(observation.status)) run.status = 'tools-active';
@@ -1057,7 +1105,7 @@ export class ConversationApplication {
       this.save(control.record); retry.abort(); this.retryWaits.delete(input.runId); return this.view(control.record);
     }
     if(!this.closing && !input.toolId && control.record.interruption){control.record.interruption.cancelled=true;this.save(control.record);}
-    if (!BUSY_STATES.has(control.record.view.run!.status)) return this.view(control.record);
+    if (control.record.view.run!.resourcesReleased || !BUSY_STATES.has(control.record.view.run!.status)) return this.view(control.record);
     if (input.toolId) {
       if (control.record.view.run!.tools.find(tool => tool.id === input.toolId)?.canStop !== true) fail('agent_tool_stop_unavailable', '此命令尚不支持单独停止，可停止本轮剩余执行。', 409);
     } else { control.record.view.run!.status = 'stopping'; this.save(control.record); }
@@ -1065,7 +1113,12 @@ export class ConversationApplication {
     const runtime = (await this.sourceRuntime(control.record, control.participant)).runtime;
     let observation: ExecutorObservation;
     try { observation = await runtime.stop({ contextRef: control.participant.contextRef, executionRef: control.executionRef, toolId: input.toolId }); }
-    catch (error) { if (input.toolId) fail('agent_tool_stop_failed', '未能确认此命令已停止，原执行状态已保留，请重新核对。', 409); throw error; }
+    catch (error) {
+      if (input.toolId) fail('agent_tool_stop_failed', '未能确认此命令已停止，原执行状态已保留，请重新核对。', 409);
+      const latest=this.currentRun(workspaceId,id,input.runId);
+      if(latest&&!latest.view.run!.resourcesReleased){latest.view.run!.status='unknown';latest.view.run!.executionState='unknown';latest.view.run!.diagnostic='停止尚未确认：'+safeDiagnostic(error);latest.view.run!.updatedAt=this.options.now();this.save(latest);}
+      throw error;
+    }
     const record = this.currentRun(workspaceId, id, input.runId);
     if (record) { this.applyObservation(record, observation); this.save(record); }
     if (observation.status === 'running' || observation.status === 'unknown' || observation.status === 'tools-active') this.pollStop(workspaceId, id, input.runId);
@@ -1125,7 +1178,7 @@ export class ConversationApplication {
         catch { const latest = this.load(record.view.workspaceId, record.view.id); latest.view.run!.status = 'unknown'; latest.view.run!.diagnostic = '断开时未能确认原生执行退出。'; this.save(latest); }
       }
     }));
-    for (const [id, sourceConnection] of this.sourceConnections) if (sourceConnection === connectionId) { this.sourceRuntimes.delete(id); this.sourceOwners.delete(id); this.sourceConnections.delete(id); }
+    for (const [id, sourceConnection] of this.sourceConnections) if (!this.closing && sourceConnection === connectionId) { this.sourceRuntimes.delete(id); this.sourceOwners.delete(id); this.sourceConnections.delete(id); }
   }
   async close(): Promise<void> {
     this.closing = true;

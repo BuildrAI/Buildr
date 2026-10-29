@@ -37,7 +37,7 @@ function closeTitle(owner:TitleQuery):Promise<void> {
 }
 const emit = (state: LiveQuery, event: ExecutorEvent) => send({ method: 'event', params: { contextId: state.contextId, event } });
 const accepted = (state: LiveQuery) => { if (!state.accepted) { state.accepted = true; emit(state, { type: 'accepted', executionRef: { id: state.id }, inputItemId: state.id }); } };
-const observe = (state: LiveQuery): ExecutorObservation => ({ status: state.nativeExited && !state.terminal ? state.blockedOnExit || [...state.tools.values()].some(tool => tool.status !== 'completed' || tool.taskId) ? 'unknown' : 'stopped' : state.terminal ? [...state.tools.values()].some(tool => tool.status === 'running') ? 'tools-active' : [...state.tools.values()].some(tool => tool.status === 'unknown') ? 'unknown' : state.terminal === 'stopped' ? 'stopped' : 'idle' : state.pending.size ? 'waiting' : 'running', executionRef: { id: state.id }, tools: [...state.tools.values()].map(({ taskId, ...tool }) => ({ ...tool, canStop: Boolean(taskId) && tool.status === 'running' })), requests: [...state.pending.values()].map(pending => pending.request), ...(state.diagnostic ? { diagnostic: state.diagnostic } : {}) });
+const observe = (state: LiveQuery): ExecutorObservation => ({ status: state.nativeExited && !state.terminal ? state.blockedOnExit || [...state.tools.values()].some(tool => tool.status !== 'completed' || tool.taskId) ? 'unknown' : 'stopped' : state.terminal ? [...state.tools.values()].some(tool => tool.status === 'running') ? 'tools-active' : [...state.tools.values()].some(tool => tool.status === 'unknown') ? 'unknown' : state.terminal === 'stopped' ? 'stopped' : 'idle' : state.pending.size ? 'waiting' : 'running', executionRef: { id: state.id }, tools: [...state.tools.values()].map(({ taskId, ...tool }) => ({ ...tool, canStop: Boolean(taskId) && tool.status === 'running' })), backgroundWork: [...state.tools.values()].some(tool => Boolean(tool.taskId) && tool.status !== 'completed'), requests: [...state.pending.values()].map(pending => pending.request), ...(state.diagnostic ? { diagnostic: state.diagnostic } : {}) });
 function gatewayPolicy(context: any, selected?: string, effort?: string) {
   const policy = qoderGatewayPolicy(gateway!, selected, effort);
   assertGatewayModel(context.availableModels);
@@ -253,6 +253,10 @@ async function dispatch(method: string, params: any): Promise<any> {
     })); return {};
   }
   const state = live.get(params.contextId);
+  if (method === 'release-check') {
+    if (!state || state.id !== params.executionId) return { ended: false, blocked: true };
+    return { ended: Boolean(state.nativeExited || state.terminal), executionState:state.terminal&&[...state.tools.values()].every(tool=>tool.status==='completed')?'ended':'unknown', blocked: state.pending.size > 0 || [...live.values()].some(item => item.id !== state.id && !item.nativeExited && !item.terminal) || [...state.tools.values()].some(tool => Boolean(tool.taskId) && tool.status !== 'completed') || titleQueries.size > 0 };
+  }
   if (method === 'observe' && !state) {
     const { messages, records } = await transcript(params.contextId, params.cwd);
     return qoderInterruptedObservation(messages, records, params.contextId, params.executionId);

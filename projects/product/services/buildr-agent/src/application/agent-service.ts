@@ -98,7 +98,8 @@ export function createAgentService(options: AgentServiceOptions) {
       if(discovery)reasons.push({kind:'model-discovery',count:1});
       try {
         const pending = repository.listPending(true).filter(record => !options.generationAlive || record.view.run?.generation === generation);
-        if(pending.length)reasons.push({kind:'unfinished-execution',count:pending.length});
+        const held=pending.filter(record=>!(record.view.run?.resourcesReleased)&&conversations.retainsConversationSource(record.view.workspaceId,record.view.id));
+        if(held.length)reasons.push({kind:'unfinished-execution',count:held.length});
       } catch { reasons.push({kind:'storage-unconfirmed',count:1}); }
       return {busy:reasons.length>0,reasons};
     },
@@ -192,6 +193,7 @@ export function createAgentService(options: AgentServiceOptions) {
       finally {
         // Always start actual resource release, even if a vendor's stop never responds.
         await within(Promise.allSettled([discovery, preparations.close(), connections.close(), models.close()]), Math.max(1, deadline - Date.now()));
+        await within(conversations.releaseIdleSources(), Math.max(1, deadline - Date.now()));
         events.close();
       }
     },

@@ -18,6 +18,10 @@ function executor(id){return{descriptor:{id,label:id,capabilities},async open({c
       state.executionRef=executionRef;state.status='running';state.kind=input.text;state.stopRequested=false;state.tools=[];save(ref,state);
       fs.appendFileSync(path.join(bootstrap.dataRoot,'native-sends.jsonl'),JSON.stringify({id,text:input.text,executionRef,version:marker.version})+'\n');
       input.onEvent({type:'accepted',executionRef});
+      if(input.text==='uncertain-ended'){
+        state.status='unknown';state.tools=[{id:'unsettled',label:'one operation, result missing',status:'unknown'}];
+        const item={id:'unsettled',kind:'tool',role:'system',name:'command',text:'operation may have happened; receipt missing',status:'running',executionId:executionRef.id};state.items.push(item);save(ref,state);input.onEvent({type:'item',item});return;
+      }
       if(input.text==='lost-observation'){state.status='unknown';save(ref,state);throw new Error('dsh_execution_observation_lost');}
       if(input.text==='approval'){input.onEvent({type:'request',request:{id:'permit',kind:'approval',title:'Continue?',options:[{id:'allow',label:'Allow'}]}});}
       for(let n=0;n<3000;n++){
@@ -34,6 +38,7 @@ function executor(id){return{descriptor:{id,label:id,capabilities},async open({c
     },
     async supplement(input){fs.appendFileSync(path.join(bootstrap.dataRoot,'native-inputs.jsonl'),JSON.stringify({text:input.text,version:marker.version})+'\n');const state=read(input.contextRef);if(state.executionRef.id!==input.executionRef.id)throw Error('wrong execution');const item={id:input.clientRequestId,clientRequestId:input.clientRequestId,kind:'message',role:'user',text:input.text,executionId:state.executionRef.id};state.items.push(item);save(input.contextRef,state);return{executionRef:state.executionRef,inputItemId:item.id};},
     observe:async({contextRef})=>{const value=read(contextRef);return{status:value.status,tools:value.tools,executionRef:value.executionRef};},
+    canRelease:async({contextRef,executionRef})=>{const state=read(contextRef);return state.executionRef.id===executionRef.id&&(state.kind==='uncertain-ended'?(fs.existsSync(path.join(bootstrap.dataRoot,'release-uncertain-resource'))?{executionState:'unknown'}:false):['idle','stopped'].includes(state.status)&&!state.tools.some(tool=>tool.status!=='completed'));},
     reply:async({contextRef})=>{const value=read(contextRef);value.approved=true;save(contextRef,value);},
     stop:async({contextRef})=>{const value=read(contextRef);if(value.kind==='hold:slow'&&!fs.existsSync(path.join(bootstrap.dataRoot,'finish-stop'))){value.stopRequested=true;value.status='tools-active';value.tools=[{id:'slow-tool',label:'正在停止的命令',status:'running',canStop:true}];}else{value.status='stopped';value.tools=[];}save(contextRef,value);return{status:value.status,tools:value.tools,executionRef:value.executionRef};},close:async()=>{if(fs.existsSync(path.join(bootstrap.dataRoot,'slow-close')))await new Promise(resolve=>setTimeout(resolve,800));},
   };

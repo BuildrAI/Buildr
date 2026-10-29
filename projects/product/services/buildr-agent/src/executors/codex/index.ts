@@ -194,7 +194,7 @@ class CodexRuntime implements AgentRuntime {
       const response = await this.rpc.call('turn/start', { threadId: turn.contextId, clientUserMessageId: input.clientRequestId, input: [{ type: 'text', text: input.text }, ...input.images.map(image => ({ type: 'localImage', path: image.path }))], ...(input.model ? { model: input.model } : {}), effort: input.reasoningEffort ?? null, ...codexTurnPermissions(input.permissionMode, input.cwd) });
       if (!response.turn?.id) throw new Error('codex_turn_identity_missing');
       turn.id = response.turn.id;
-      input.onEvent({ type: 'accepted', executionRef: { id: turn.id }, inputItemId: response.turn.items?.find((item: any) => item.type === 'userMessage')?.id });
+      input.onEvent({ type: 'accepted', executionRef: this.rpc.executionRef(turn.id, turn.contextId, this.bindingIdentity), inputItemId: response.turn.items?.find((item: any) => item.type === 'userMessage')?.id });
       turn.accepted = true;
       for (const message of turn.buffered.splice(0)) this.turnMessage(turn, message);
       await ended;
@@ -267,7 +267,7 @@ class CodexRuntime implements AgentRuntime {
   }
   private activeObservation(turn: ActiveTurn): ExecutorObservation {
     const tools = [...turn.tools.values()].map(({ processId, ...tool }) => ({ ...tool, canStop: Boolean(processId) && tool.status === 'running' }));
-    return { status: turn.terminal ? tools.some(tool => tool.status === 'running') ? 'tools-active' : turn.terminal === 'stopped' ? 'stopped' : 'idle' : turn.pending.size ? 'waiting' : 'running', executionRef: { id: turn.id }, tools, ...(turn.terminal === 'failed' && turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) };
+    return { status: turn.terminal ? tools.some(tool => tool.status === 'running') ? 'tools-active' : turn.terminal === 'stopped' ? 'stopped' : 'idle' : turn.pending.size ? 'waiting' : 'running', executionRef: this.rpc.executionRef(turn.id, turn.contextId, this.bindingIdentity, [...turn.tools.values()].some(tool => Boolean(tool.processId) && tool.status !== 'completed')), tools, ...(turn.terminal === 'failed' && turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) };
   }
   async observe({ contextRef, executionRef, knownItems }: { contextRef: ContextRef; executionRef?: ExecutionRef; knownItems?: readonly ExecutorItem[] }): Promise<ExecutorObservation> {
     this.reference(contextRef);
@@ -283,7 +283,21 @@ class CodexRuntime implements AgentRuntime {
         unsettled = unsettled.filter(tool => !received.has(tool.id)); }
       catch { return { status: 'unknown', executionRef: { id: exact.id }, tools: [], diagnostic: 'codex_recovery_history_unconfirmed' }; }
     }
-    return { status: exact.status === 'inProgress' ? 'unknown' : exact.status === 'interrupted' ? 'stopped' : 'idle', executionRef: { id: exact.id }, tools: [...new Map([...unsettled, ...(exact.items ?? []).filter((item: any) => ['commandExecution', 'fileChange', 'mcpToolCall'].includes(item.type) && !['completed', 'declined'].includes(item.status)).map((item: any) => ({ id: item.id, label: String(item.command ?? '命令'), status: 'unknown' as const, canStop: false }))].map(tool => [tool.id, tool])).values()] };
+    return { status: exact.status === 'inProgress' ? 'unknown' : exact.status === 'interrupted' ? 'stopped' : 'idle', executionRef: executionRef ?? { id: exact.id }, tools: [...new Map([...unsettled, ...(exact.items ?? []).filter((item: any) => ['commandExecution', 'fileChange', 'mcpToolCall'].includes(item.type) && !['completed', 'declined'].includes(item.status)).map((item: any) => ({ id: item.id, label: String(item.command ?? '命令'), status: 'unknown' as const, canStop: false }))].map(tool => [tool.id, tool])).values()] };
+  }
+  async canRelease({contextRef,executionRef}:{contextRef:ContextRef;executionRef:ExecutionRef}):Promise<boolean|{executionState:'ended'|'unknown'}>{
+    this.reference(contextRef);
+    const turn=this.turns.get(contextRef.id);
+    if(turn&&turn.id!==executionRef.id||this.auxiliary.size||this.login)return false;
+    const exited=this.rpc.child.exitCode!==null||this.rpc.child.signalCode!==null;
+    if(!exited&&[...this.turns.values()].some(value=>value.pending.size||!value.terminal&&value.id!==executionRef.id))return false;
+    if(turn?.pending.size)return false;
+    if(turn?.terminal&&!this.rpc.closed)await this.refreshTerminals(turn);
+    // A PTY handle cannot retain this backend after its control process has gone.
+    // The command may continue independently: preserve unknown execution/results.
+    const ref=turn&&!exited?this.rpc.executionRef(turn.id,turn.contextId,this.bindingIdentity,[...turn.tools.values()].some(tool=>Boolean(tool.processId)&&tool.status!=='completed')):{...executionRef,data:executionRef.data?{...executionRef.data,backgroundWork:false}:undefined};
+    if(!await this.rpc.canReleaseExecution(ref,contextRef.id,this.bindingIdentity,Boolean(turn?.terminal)))return false;
+    return {executionState:turn?.terminal&&[...turn.tools.values()].every(tool=>tool.status==='completed')?'ended':'unknown'};
   }
   async reply({ contextRef, executionRef, requestId, answer }: { contextRef: ContextRef; executionRef: ExecutionRef; requestId: string; answer: unknown }): Promise<void> {
     this.reference(contextRef); const turn = this.turns.get(contextRef.id); const pending = turn?.pending.get(requestId);

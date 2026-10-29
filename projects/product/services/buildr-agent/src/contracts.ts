@@ -85,6 +85,8 @@ export interface ExecutorRequest {
   questions?: Array<{ id: string; label: string; options?: Array<{ id: string; label: string }>; multiple?: boolean }>;
 }
 export interface ExecutorObservation {
+  /** Native SDK background work, distinct from missing historical tool results. */
+  backgroundWork?: boolean;
   status: 'idle' | 'running' | 'waiting' | 'stopped' | 'tools-active' | 'unknown';
   executionRef?: ExecutionRef;
   tools: Array<{ id: string; label: string; status: 'running' | 'completed' | 'unknown'; canStop?: boolean }>;
@@ -147,6 +149,8 @@ export interface AgentRuntime {
   send(input: ExecutorSendInput): Promise<void>;
   supplement?(input: ExecutorSupplementInput): Promise<ExecutorInputReceipt>;
   observe(input: { contextRef: ContextRef; executionRef?: ExecutionRef; knownItems?: readonly ExecutorItem[] }): Promise<ExecutorObservation>;
+  /** Exact backend control-resource proof. true also proves native execution ended; an object can preserve unknown independent commands. Neither asserts successful results. */
+  canRelease?(input: { contextRef: ContextRef; executionRef: ExecutionRef }): Promise<boolean | {executionState:'ended'|'unknown'}>;
   reply(input: { contextRef: ContextRef; executionRef: ExecutionRef; requestId: string; answer: unknown }): Promise<void>;
   stop(input: { contextRef: ContextRef; executionRef: ExecutionRef; toolId?: string }): Promise<ExecutorObservation>;
   /** Native generated/name metadata only; never a first-prompt preview or fallback. */
@@ -228,6 +232,10 @@ export interface ConversationEntry {
   createdAt: string;
 }
 export interface RunView {
+  /** Physical execution/resource facts never imply that the user's goal succeeded. */
+  executionState?: 'active' | 'ended' | 'unknown';
+  /** This backend no longer holds the original control resources; independent command outcomes may remain unknown. */
+  resourcesReleased?: boolean;
   /** Host interruption is unfinished work, distinct from a user stop. */
   interrupted?: boolean;
   contextUsage?: {usedTokens:number;windowTokens?:number};
