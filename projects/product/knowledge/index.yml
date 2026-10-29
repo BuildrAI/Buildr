@@ -380,6 +380,8 @@ artifacts:
       - agent-service-qoder-source
       - agent-service-host-source
       - agent-service-ui-source
+      - agent-service-ui-options-source
+      - agent-service-conversation-preferences-source
       - agent-service-product-action-source
       - agent-service-ui-context-source
       - service-runtime-configuration-action-source
@@ -941,6 +943,8 @@ artifacts:
       - agent-service-task-ui-source
       - agent-service-host-source
       - agent-service-conversations-source
+      - agent-service-ui-options-source
+      - agent-service-conversation-preferences-source
       - task-brief-storage-migration
       - task-workbench-summary-wiring
       - task-reading-history
@@ -2043,7 +2047,12 @@ sources:
     title: 对话执行选项
     kind: code
     path: services/buildr-web/src/features/agent-conversations/ConversationOptions.tsx
-    summary: 按实际模型目录完整呈现智能体、模型与思考深度，支持自然换行并传递原生标识。
+    summary: 按当前来源和档位呈现模型及思考深度，切换时恢复有效的逐模型强度记忆。
+  - id: agent-service-conversation-preferences-source
+    title: 对话选择偏好
+    kind: code
+    path: services/buildr-web/src/features/agent-conversations/conversation-preferences.ts
+    summary: 保存对话输入偏好，按执行方、来源身份和模型独立记住用户明确选择的推理强度。
   - id: agent-service-codex-title-source
     title: Codex隔离短标题
     kind: code
