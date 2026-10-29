@@ -78,7 +78,21 @@ export class ConversationRepository {
             CREATE INDEX conversations_workspace_activity ON conversations(workspace_id,is_active DESC,user_at DESC,id DESC);
             PRAGMA user_version=3; COMMIT;`);
         }
-        if (write) fs.chmodSync(this.filename, 0o600);
+        if (write) {
+          // Rebuildable acceleration, not a storage-version change. SQLite also
+          // maintains this predicate when an older retained writer changes body.
+          // Keeping the list fields here avoids reading large history pages.
+          try {
+            db.exec(`CREATE INDEX IF NOT EXISTS conversations_list_summary
+              ON conversations(workspace_id,is_active DESC,user_at DESC,id DESC,hidden,activity_version,seen_version,summary)
+              WHERE ${HAS_WORK}`);
+          } catch (error) {
+            // An unrelated damaged history must not make this optional
+            // acceleration a prerequisite for saving an otherwise valid row.
+            if (!(error instanceof Error) || error.message !== 'malformed JSON') throw error;
+          }
+          fs.chmodSync(this.filename, 0o600);
+        }
         return db;
       } catch (error) { db.close(); throw error; }
     } catch (error) {
@@ -163,12 +177,17 @@ export class ConversationRepository {
     try {
       db.exec('BEGIN');
       const version=(db.prepare('PRAGMA user_version').get() as {user_version:number}).user_version,modern=version>=2;
+      // Existing databases stay read-only until a normal write installs the
+      // optional index. Prefer it explicitly: the narrower ordering index can
+      // otherwise win the planner's estimate and force full-history reads.
+      const indexed=version>=3&&!!db.prepare("SELECT 1 FROM sqlite_master WHERE type='index' AND name='conversations_list_summary'").get();
+      const table=indexed?'conversations INDEXED BY conversations_list_summary':'conversations';
       // Legacy reads remain zero-write and omit private records and full entries.
-      const storedSource=version>=3?'conversations':modern?'(SELECT *,activity_at AS user_at FROM conversations)':`(SELECT *,updated_at AS activity_at,updated_at AS user_at,0 AS activity_version,0 AS seen_version,CASE WHEN json_extract(body,'$.view.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown') THEN 1 ELSE 0 END AS is_active,json_set(json_extract(body,'$.view'),'$.entries',json('[]'),'$.requests',json('[]'),'$.activity',json_object('version',0,'seenThrough',0,'updatedAt',updated_at,'active',json(CASE WHEN json_extract(body,'$.view.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown') THEN 'true' ELSE 'false' END))) AS summary FROM conversations)`;
+      const storedSource=version>=3?table:modern?'(SELECT *,activity_at AS user_at FROM conversations)':`(SELECT *,updated_at AS activity_at,updated_at AS user_at,0 AS activity_version,0 AS seen_version,CASE WHEN json_extract(body,'$.view.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown') THEN 1 ELSE 0 END AS is_active,json_set(json_extract(body,'$.view'),'$.entries',json('[]'),'$.requests',json('[]'),'$.activity',json_object('version',0,'seenThrough',0,'updatedAt',updated_at,'active',json(CASE WHEN json_extract(body,'$.view.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown') THEN 'true' ELSE 'false' END))) AS summary FROM conversations)`;
       const status = "json_extract(summary,'$.run.status')";
       // Parallel owners are still authoritative. Compute this from compact
       // summaries so activity counts and filters need not load full histories.
-      const retained = input.generation && generationAlive ? (db.prepare(`SELECT DISTINCT json_extract(summary,'$.run.generation') AS generation FROM ${storedSource} WHERE ${status} IN ('starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown')`).all() as Array<{generation:string|null}>).map(row=>row.generation).filter((generation):generation is string=>Boolean(generation&&generation!==input.generation&&generationAlive(generation))) : [];
+      const retained = input.generation && generationAlive ? (db.prepare(`SELECT DISTINCT json_extract(summary,'$.run.generation') AS generation FROM ${storedSource} WHERE ${indexed?`${HAS_WORK} AND `:''}${status} IN ('starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown')`).all() as Array<{generation:string|null}>).map(row=>row.generation).filter((generation):generation is string=>Boolean(generation&&generation!==input.generation&&generationAlive(generation))) : [];
       const generations = input.generation ? [...new Set([input.generation,...retained])].sort() : [];
       const effectiveStatus = generations.length ? `CASE WHEN coalesce(json_extract(summary,'$.run.generation'),'') NOT IN (${generations.map(()=>'?').join(',')}) AND ${status} IN ('starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown') THEN 'unknown' ELSE ${status} END` : status;
       const state = `CASE WHEN hidden=1 AND json_extract(summary,'$.run.executionState')='ended' AND json_extract(summary,'$.run.resourcesReleased')=1 AND effective_status='unknown' THEN NULL WHEN effective_status='unknown' THEN 'unknown' WHEN effective_status IN ('waiting-approval','waiting-question') THEN 'waiting' WHEN effective_status IN ('starting','running','stopping','tools-active') THEN 'running' WHEN activity_version>seen_version THEN 'unseen' ELSE NULL END`;
@@ -180,7 +199,45 @@ export class ConversationRepository {
       if(input.workspaceId){where.push('workspace_id=?');values.push(input.workspaceId);}
       where.push(HAS_WORK);
       const statsWhere=[...where],statsValues=[...values];
-      const counts = db.prepare(`SELECT count(activity_state) AS active,coalesce(sum(activity_state='running'),0) AS running,coalesce(sum(activity_state='waiting'),0) AS waiting,coalesce(sum(activity_state='unseen'),0) AS unseen,coalesce(sum(activity_state='unknown'),0) AS unknown,coalesce(sum(activity_state IN ('waiting','unseen','unknown')),0) AS attention FROM ${source} WHERE ${statsWhere.join(' AND ')}`).get(...statsValues) as typeof empty.activityCounts;
+      // Materialize only compact, scoped facts once. Search, pagination and
+      // execution filters must not narrow the overview's scope.
+      const overview = db.prepare(`WITH scoped AS MATERIALIZED (
+        SELECT activity_state,effective_status,
+          coalesce(nullif(json_extract(summary,'$.run.provider'),''),'未指定') AS provider,
+          coalesce(nullif(json_extract(summary,'$.run.model'),''),'未指定') AS model,
+          coalesce(nullif(json_extract(summary,'$.run.modelAccountId'),''),'unknown:'||id) AS account_id,
+          json_extract(summary,'$.run.modelSourceLabel') AS account_label
+        FROM ${source} WHERE ${statsWhere.join(' AND ')}
+      ), executing AS MATERIALIZED (
+        SELECT provider,model,account_id,account_label FROM scoped
+        WHERE effective_status IN ('starting','running','stopping','tools-active')
+      ) SELECT
+        (SELECT json_object('active',count(activity_state),
+          'running',coalesce(sum(activity_state='running'),0),
+          'waiting',coalesce(sum(activity_state='waiting'),0),
+          'unseen',coalesce(sum(activity_state='unseen'),0),
+          'unknown',coalesce(sum(activity_state='unknown'),0),
+          'attention',coalesce(sum(activity_state IN ('waiting','unseen','unknown')),0)) FROM scoped) AS counts,
+        (SELECT json_group_array(json_object('label',label,'count',n)) FROM (
+          SELECT provider AS label,count(*) AS n FROM executing GROUP BY label ORDER BY n DESC,label
+        )) AS agents,
+        (SELECT json_group_array(json_object('label',label,'count',n)) FROM (
+          SELECT model AS label,count(*) AS n FROM executing GROUP BY label ORDER BY n DESC,label
+        )) AS models,
+        (SELECT json_group_array(json_object('provider',provider,'model',model,'count',n)) FROM (
+          SELECT provider,model,count(*) AS n FROM executing GROUP BY provider,model ORDER BY n DESC,provider,model
+        )) AS executions,
+        (SELECT json_group_array(json_object('accountId',account_id,'accountLabel',account_label,'model',model,'count',n)) FROM (
+          SELECT account_id,coalesce(nullif(max(account_label),''),'账号未记录') AS account_label,model,count(*) AS n
+          FROM executing GROUP BY account_id,model ORDER BY n DESC,account_id,model
+        )) AS model_executions`).get(...statsValues) as {counts:string;agents:string;models:string;executions:string;model_executions:string};
+      const counts = JSON.parse(overview.counts) as typeof empty.activityCounts;
+      const stats = {
+        agents: JSON.parse(overview.agents) as typeof empty.stats.agents,
+        models: JSON.parse(overview.models) as typeof empty.stats.models,
+        executions: JSON.parse(overview.executions) as typeof empty.stats.executions,
+        modelExecutions: JSON.parse(overview.model_executions) as typeof empty.stats.modelExecutions,
+      };
       if(input.activityState) {
         if(!['running','waiting','unseen','unknown','attention'].includes(input.activityState))fail('agent_activity_state_invalid','活动分类无效。',400);
         where.push(input.activityState==='attention'?"activity_state IN ('waiting','unseen','unknown')":'activity_state=?');
@@ -201,10 +258,7 @@ export class ConversationRepository {
       }
       const rows=db.prepare(`SELECT summary,is_active,user_at,id FROM ${source} WHERE ${where.join(' AND ')} ORDER BY is_active DESC,user_at DESC,id DESC LIMIT ?`).all(...values,input.limit+1) as Array<{summary:string;is_active:number;user_at:string;id:string}>;
       const chosen=rows.slice(0,input.limit),last=chosen.at(-1);
-      const group=(field:'provider'|'model')=>(db.prepare(`SELECT coalesce(nullif(json_extract(summary,'$.run.${field}'),''),'未指定') AS label,count(*) AS count FROM ${source} WHERE ${statsWhere.join(' AND ')} AND effective_status IN ('starting','running','stopping','tools-active') GROUP BY label ORDER BY count DESC,label`).all(...statsValues) as Array<{label:string|null;count:number}>).map(row=>({label:row.label||'未指定',count:row.count}));
-      const executions=(db.prepare(`SELECT coalesce(nullif(json_extract(summary,'$.run.provider'),''),'未指定') AS provider,coalesce(nullif(json_extract(summary,'$.run.model'),''),'未指定') AS model,count(*) AS count FROM ${source} WHERE ${statsWhere.join(' AND ')} AND effective_status IN ('starting','running','stopping','tools-active') GROUP BY provider,model ORDER BY count DESC,provider,model`).all(...statsValues) as Array<{provider:string;model:string;count:number}>).map(row=>({...row}));
-      const modelExecutions = (db.prepare(`SELECT coalesce(nullif(json_extract(summary,'$.run.modelAccountId'),''),'unknown:'||id) AS accountId,coalesce(nullif(max(json_extract(summary,'$.run.modelSourceLabel')),''),'账号未记录') AS accountLabel,coalesce(nullif(json_extract(summary,'$.run.model'),''),'未指定') AS model,count(*) AS count FROM ${source} WHERE ${statsWhere.join(' AND ')} AND effective_status IN ('starting','running','stopping','tools-active') GROUP BY accountId,model ORDER BY count DESC,accountId,model`).all(...statsValues) as Array<{accountId:string;accountLabel:string;model:string;count:number}>).map(row=>({...row}));
-      return {conversations:chosen.map(row=>{const view=JSON.parse(row.summary) as ConversationView;return {...view,activity:view.activity?{...view.activity,userInputAt:row.user_at}:undefined,entries:[],requests:[],run:view.run?{...view.run,tools:[]}:undefined,participants:view.participants.map(participant=>({...participant,contextId:''}))};}),total,activityCounts:{...counts},stats:{agents:group('provider'),models:group('model'),executions,modelExecutions},nextCursor:rows.length>input.limit&&last?Buffer.from(JSON.stringify({scope,epoch,active:last.is_active,at:last.user_at,id:last.id})).toString('base64url'):undefined};
+      return {conversations:chosen.map(row=>{const view=JSON.parse(row.summary) as ConversationView;return {...view,activity:view.activity?{...view.activity,userInputAt:row.user_at}:undefined,entries:[],requests:[],run:view.run?{...view.run,tools:[]}:undefined,participants:view.participants.map(participant=>({...participant,contextId:''}))};}),total,activityCounts:{...counts},stats,nextCursor:rows.length>input.limit&&last?Buffer.from(JSON.stringify({scope,epoch,active:last.is_active,at:last.user_at,id:last.id})).toString('base64url'):undefined};
     }finally{db.close();}
   }
   markSeen(workspaceId:string,id:string,through:number): NonNullable<ConversationView['activity']> {

@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { ConversationRepository } from '../../src/persistence/conversation-repository.ts';
+import { CONVERSATION_SCHEMA_VERSION, ConversationRepository } from '../../src/persistence/conversation-repository.ts';
 import type { StoredConversation } from '../../src/domain/agent-state.ts';
 
 function fixture(t:TestContext) {
@@ -191,4 +191,116 @@ test('hidden unknown outcomes stop reminding only after execution and resources 
  const quiet=repo.querySummaries(['w1'],{activeOnly:true,limit:10});assert.equal(quiet.total,0);assert.equal(quiet.activityCounts.unknown,0);assert.equal(quiet.stats.modelExecutions.length,0);
  const archived=repo.querySummaries(['w1'],{hidden:true,limit:10});assert.equal(archived.total,1);assert.equal(archived.conversations[0].run?.status,'unknown');assert.equal(repo.readConversation(r.view.id)?.view.run?.tools[0].status,'unknown');
  save(repo,r,r=>{r.view.hidden=false;});assert.equal(repo.querySummaries(['w1'],{activeOnly:true,limit:10}).activityCounts.unknown,1,'an unhidden historical doubt is still discoverable');
+});
+
+test('the rebuildable list index preserves storage compatibility and follows older body-only writes',t=>{
+  const repo=fixture(t),draft=record('legacy-writer');
+  repo.saveConversation(draft);
+  const db=new DatabaseSync(repo.filename);
+  try{
+    assert.equal(db.prepare('PRAGMA user_version').get()!.user_version,CONVERSATION_SCHEMA_VERSION);
+    assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE name='conversations_list_summary'").get());
+    assert.equal(repo.querySummaries(['w1'],{limit:5}).total,0);
+
+    // Retained writers do not know about the index. SQLite must maintain its
+    // membership even if only the history changes and the summary is unchanged.
+    message(draft,'sent','sent by an older writer');
+    const write=db.prepare('UPDATE conversations SET body=? WHERE id=?');
+    write.run(JSON.stringify(draft),draft.view.id);
+    assert.equal(repo.querySummaries(['w1'],{limit:5}).total,1);
+    assert.equal(repo.listConversations('w1',{limit:5}).length,1);
+    draft.view.entries=[];
+    write.run(JSON.stringify(draft),draft.view.id);
+    assert.equal(repo.querySummaries(['w1'],{limit:5}).total,0);
+
+    db.exec('DROP INDEX conversations_list_summary');
+    const before=fs.readFileSync(repo.filename);
+    assert.equal(repo.querySummaries(['w1'],{limit:5}).total,0);
+    assert.deepEqual(fs.readFileSync(repo.filename),before,'reads must not create the optional index');
+    assert.equal(db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name='conversations_list_summary'").get()!.n,0);
+    save(repo,draft,()=>{});
+    assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE name='conversations_list_summary'").get());
+    assert.equal(db.prepare('PRAGMA user_version').get()!.user_version,CONVERSATION_SCHEMA_VERSION);
+  }finally{db.close();}
+});
+
+test('ordinary summary reads use the compact index without loading history and share one overview scan',t=>{
+  const repo=fixture(t),item=record('large-history');
+  message(item,'input','history-only-search-token '+ 'x'.repeat(1024*1024));
+  item.view.run={id:'run',participantId:'p',provider:'codex',generation:'g',status:'running',accepted:true,tools:[],model:'m',startedAt:item.view.updatedAt,updatedAt:item.view.updatedAt};
+  repo.saveConversation(item);
+  const statements:Array<{sql:string;args:unknown[]}>=[];
+  const prepare=DatabaseSync.prototype.prepare;
+  t.mock.method(DatabaseSync.prototype,'prepare',function(this:DatabaseSync,sql:string){
+    const statement=prepare.call(this,sql);
+    if(sql.includes('json_array_length(json_extract(body') && /^(SELECT|WITH)\b/.test(sql)){
+      for(const method of ['all','get'] as const){
+        const invoke=statement[method];
+        t.mock.method(statement,method,function(...args:unknown[]){
+          statements.push({sql,args});
+          return Reflect.apply(invoke,statement,args);
+        });
+      }
+    }
+    return statement;
+  });
+  const result=repo.querySummaries(['w1'],{limit:5,generation:'g'},()=>false);
+  assert.equal(result.total,1);
+  assert.equal(result.conversations[0].entries.length,0);
+  assert.deepEqual(result.stats.models,[{label:'m',count:1}]);
+  assert.equal(statements.length,4,'generation, overview, total and page are the only scoped reads');
+  assert.equal(statements.filter(row=>row.sql.includes('AS MATERIALIZED')).length,1);
+
+  const db=new DatabaseSync(repo.filename,{readOnly:true});
+  try{
+    const root=db.prepare("SELECT rootpage FROM sqlite_master WHERE name='conversations'").get()!.rootpage;
+    const bodyColumn=db.prepare('PRAGMA table_info(conversations)').all().find(row=>row.name==='body')!.cid;
+    for(const {sql,args} of statements){
+      const queryPlan=prepare.call(db,'EXPLAIN QUERY PLAN '+sql);
+      const plan=Reflect.apply(queryPlan.all,queryPlan,args) as Array<{detail:string}>;
+      assert.ok(plan.some(row=>row.detail.includes('conversations_list_summary')),JSON.stringify(plan));
+      const explain=prepare.call(db,'EXPLAIN '+sql);
+      const operations=Reflect.apply(explain.all,explain,args) as Array<{opcode:string;p1:number;p2:number}>;
+      const tableCursors=new Set(operations.filter(row=>row.opcode==='OpenRead'&&row.p2===root).map(row=>row.p1));
+      assert.equal(operations.filter(row=>row.opcode==='Column'&&tableCursors.has(row.p1)&&row.p2===bodyColumn).length,0,'normal list reads must not load the full body');
+    }
+  }finally{db.close();}
+  assert.equal(repo.querySummaries(['w1'],{limit:5,query:'history-only-search-token'}).total,1,'explicit search still includes full history');
+});
+
+test('combined overview retains empty-scope results and account label aggregation across executors',t=>{
+  const repo=fixture(t);
+  for(const [id,provider,label] of [['a','codex','A'],['b','qoder','Z']] as const){
+    const item=record(id);message(item,'input','work');
+    item.view.run={id:'run-'+id,participantId:'p',provider,generation:'g',status:'running',accepted:true,tools:[],model:'same',modelAccountId:'account',modelSourceLabel:label,startedAt:item.view.updatedAt,updatedAt:item.view.updatedAt};
+    repo.saveConversation(item);
+  }
+  const page=repo.querySummaries(['w1'],{limit:1,query:'no result',activityState:'waiting'});
+  assert.equal(page.total,0);
+  assert.deepEqual(page.activityCounts,{active:2,running:2,waiting:0,unseen:0,unknown:0,attention:0});
+  assert.deepEqual(page.stats.modelExecutions,[{accountId:'account',accountLabel:'Z',model:'same',count:2}]);
+  assert.deepEqual(page.stats.executions,[{provider:'codex',model:'same',count:1},{provider:'qoder',model:'same',count:1}]);
+  const empty=repo.querySummaries(['other'],{limit:1});
+  assert.deepEqual(empty.activityCounts,{active:0,running:0,waiting:0,unseen:0,unknown:0,attention:0});
+  assert.deepEqual(empty.stats,{agents:[],models:[],executions:[],modelExecutions:[]});
+});
+
+test('optional index construction cannot make an unrelated damaged history block a valid scope',t=>{
+  const repo=fixture(t),good=record('good'),damaged=record('damaged','other');
+  message(good,'input','valid work');
+  repo.saveConversation(good);repo.saveConversation(damaged);
+  const db=new DatabaseSync(repo.filename);
+  try{
+    db.exec('DROP INDEX conversations_list_summary');
+    db.prepare('UPDATE conversations SET body=? WHERE id=?').run('damaged historical JSON',damaged.view.id);
+  }finally{db.close();}
+  save(repo,good,r=>{r.view.title='still writable';});
+  const page=repo.querySummaries(['w1'],{limit:5,generation:'current'},()=>false);
+  assert.equal(page.total,1);
+  assert.equal(page.conversations[0].title,'still writable');
+  const check=new DatabaseSync(repo.filename,{readOnly:true});
+  try{
+    assert.equal(check.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name='conversations_list_summary'").get()!.n,0);
+    assert.equal(check.prepare('SELECT body FROM conversations WHERE id=?').get(damaged.view.id)!.body,'damaged historical JSON','unrelated content stays untouched');
+  }finally{check.close();}
 });
