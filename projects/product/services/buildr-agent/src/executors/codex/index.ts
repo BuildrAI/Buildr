@@ -308,8 +308,7 @@ class CodexRuntime implements AgentRuntime {
     // A PTY handle cannot retain this backend after its control process has gone.
     // The command may continue independently: preserve unknown execution/results.
     const ref=turn&&!exited?this.rpc.executionRef(turn.id,turn.contextId,this.bindingIdentity,[...turn.tools.values()].some(tool=>Boolean(tool.processId)&&tool.status!=='completed')):{...executionRef,data:executionRef.data?{...executionRef.data,backgroundWork:false}:undefined};
-    if(!await this.rpc.canReleaseExecution(ref,contextRef.id,this.bindingIdentity,Boolean(turn?.terminal)))return false;
-    return {executionState:turn?.terminal&&[...turn.tools.values()].every(tool=>tool.status==='completed')?'ended':'unknown'};
+    return this.rpc.control.releaseExecution(ref,contextRef.id,this.bindingIdentity,{ended:Boolean(turn?.terminal),executionState:turn?.terminal&&[...turn.tools.values()].every(tool=>tool.status==='completed')?'ended':'unknown',channelClosed:this.rpc.closed});
   }
   async reply({ contextRef, executionRef, requestId, answer }: { contextRef: ContextRef; executionRef: ExecutionRef; requestId: string; answer: unknown }): Promise<void> {
     this.reference(contextRef); const turn = this.turns.get(contextRef.id); const pending = turn?.pending.get(requestId);

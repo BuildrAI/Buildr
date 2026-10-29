@@ -8,12 +8,13 @@ import {createAgentService} from '../../src/index.ts';
 import type {AgentExecutor,AgentRuntime,ExecutorObservation} from '../../src/contracts.ts';
 import type {ModelProvider} from '../../src/model-access/contracts.ts';
 
-async function fixture({proof=true,shared=false,stopFails=false,closeStartsWork=false,executionUnknown=false}={}){
+async function fixture({proof=true,shared=false,stopFails=false,closeStartsWork=false,executionUnknown=false,modelHold=false}={}){
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-resource-lifecycle-'));
  const contexts=new Map<string,{execution:string;idle:boolean;observation:ExecutorObservation;finish?:()=>void}>();
  const sent:string[]=[],closed:AgentRuntime[]=[];let opens=0,common:AgentRuntime|undefined;
+ let releaseModel:(()=>void)|undefined,modelStarted=false,modelResponse:Promise<string>|undefined;
  const capabilities={text:true,images:false,approval:false,questions:false,stop:true,resume:true,maxInputBytes:65536};
- const executor:AgentExecutor={descriptor:{id:'local',label:'Local',capabilities},async open(){
+ const executor:AgentExecutor={descriptor:{id:'local',label:'Local',capabilities},async open(options){
   opens++;if(shared&&common)return common;
   let disposed=false;
   const runtime:AgentRuntime={get closed(){return disposed;},bindingIdentity:'resource-fixture',capabilities,
@@ -21,6 +22,7 @@ async function fixture({proof=true,shared=false,stopFails=false,closeStartsWork=
    async createContext(){const ref={id:randomUUID()};contexts.set(ref.id,{execution:'',idle:false,observation:{status:'idle',tools:[]}});return ref;},
    async resumeContext({contextRef}){assert.ok(contexts.has(contextRef.id));},readHistory:async()=>[],
    async send(input){
+    if(input.text==='auxiliary'){const gateway=options.gateway!;modelResponse=fetch(gateway.baseUrl+'/chat/completions',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+gateway.apiKey},body:JSON.stringify({model:input.model,stream:false,messages:[{role:'user',content:'one auxiliary result'}]})}).then(response=>{assert.equal(response.status,200);return response.text();});modelResponse.catch(()=>{});}
     sent.push(input.text);const state=contexts.get(input.contextRef.id)!;state.execution=input.clientRequestId;
     const executionRef={id:state.execution};input.onEvent({type:'accepted',executionRef});
     if(input.text==='hold')await new Promise<void>(resolve=>{state.finish=resolve;});
@@ -35,12 +37,12 @@ async function fixture({proof=true,shared=false,stopFails=false,closeStartsWork=
    async close(){if(!disposed){disposed=true;closed.push(runtime);if(closeStartsWork)for(const state of contexts.values())state.idle=false;}},
   };common=runtime;return runtime;
  }};
- const provider:ModelProvider={id:'fixture',label:'Fixture',async open(){return {protocol:'chat-completions',inspect:async()=>({status:'ready',models:[{id:'model',label:'Model',images:false,tools:true},{id:'other-model',label:'Other',images:false,tools:true}]}),beginLogin:async()=>{},cancelLogin:async()=>{},infer:async()=>{throw Error('paid model forbidden');},close:async()=>{}};}};
+ const provider:ModelProvider={id:'fixture',label:'Fixture',async open(){return {protocol:'chat-completions',inspect:async()=>({status:'ready',models:[{id:'model',label:'Model',images:false,tools:true},{id:'other-model',label:'Other',images:false,tools:true}]}),beginLogin:async()=>{},cancelLogin:async()=>{},infer:async()=>{if(!modelHold)throw Error('paid model forbidden');modelStarted=true;await new Promise<void>(resolve=>{releaseModel=resolve;});return Response.json({id:'auxiliary',object:'chat.completion',choices:[{index:0,message:{role:'assistant',content:'finished'},finish_reason:'stop'}]});},close:async()=>{}};}};
  const service=createAgentService({dataRoot:root,executors:[executor],modelProviders:[provider],resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
  await service.connections.connect('local',{expectedRevision:'unconfigured'});const account=await service.models.accounts.add({provider:'fixture'});const checked=await service.models.accounts.check(account.id);await service.models.accounts.preferences(account.id,{expectedRevision:checked.revision,models:[{id:'model',enabled:true},{id:'other-model',enabled:true}]});
  async function wait(predicate:()=>boolean){for(let n=0;n<300;n++){if(predicate())return;await new Promise(r=>setTimeout(r,5));}assert.fail('resource state did not settle');}
  async function start(text:string){const c=await service.conversations.create('workspace',{}),draft={expectedRevision:c.revision,connectionId:'local',modelAccountId:account.id,model:'model',text},preview=service.conversations.prepareSend('workspace',c.id,draft);service.conversations.send('workspace',c.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});await wait(()=>service.conversations.read('workspace',c.id).run?.accepted===true);if(text!=='hold')await wait(()=>!service.activity().reasons.some(r=>['execution','title','recovery','observation'].includes(r.kind)));return service.conversations.read('workspace',c.id);}
- return {service,contexts,sent,closed,start,wait,opens:()=>opens,async close(){for(const state of contexts.values())state.finish?.();await service.close();fs.rmSync(root,{recursive:true,force:true});}};
+ return {service,contexts,sent,closed,start,wait,modelStarted:()=>modelStarted,finishModel:async()=>{releaseModel?.();await modelResponse;},opens:()=>opens,async close(){releaseModel?.();await modelResponse?.catch(()=>{});for(const state of contexts.values())state.finish?.();await service.close();fs.rmSync(root,{recursive:true,force:true});}};
 }
 
 test('unknown result can release an idle exact source without declaring success or replaying input',async()=>{
@@ -129,5 +131,17 @@ test('historical participant resources use their own exact attempt after a model
   await f.wait(()=>f.service.conversations.read('workspace',first.id).run?.status==='completed');
   await f.service.releaseIdleSources();const current=f.service.conversations.read('workspace',first.id);
   assert.equal(current.participants.length,2);assert.equal(f.closed.length,2);assert.equal(current.run?.resourcesReleased,true);assert.equal(f.service.activity().busy,false);assert.equal(f.sent.length,2);assert.match(f.sent[1]!,/\nnext\n/);
+ }finally{await f.close();}
+});
+
+
+test('shared release protects the exact model lease without holding an unrelated conversation',async()=>{
+ const f=await fixture({modelHold:true});try{
+  const auxiliary=await f.start('auxiliary');await f.wait(f.modelStarted);
+  const other=await f.start('done');await f.service.releaseIdleSources();
+  assert.equal(f.closed.length,1);assert.equal(f.service.conversations.read('workspace',other.id).run?.resourcesReleased,true);
+  assert.notEqual(f.service.conversations.read('workspace',auxiliary.id).run?.resourcesReleased,true);
+  await f.finishModel();await f.service.releaseIdleSources();
+  assert.equal(f.closed.length,2);assert.equal(f.service.conversations.read('workspace',auxiliary.id).run?.resourcesReleased,true);assert.equal(f.service.activity().busy,false);
  }finally{await f.close();}
 });

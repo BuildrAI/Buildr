@@ -118,3 +118,16 @@ test('Qoder distinguishes an explicit failed tool receipt from an interrupted to
   (records[2] as any).toolUseResult.errorType = 'interrupted';
   assert.equal(qoderInterruptedObservation(messages, records, 'qoder-session', 'exact-request').status, 'unknown');
 });
+
+
+test('DSH native synthetic repair cannot turn an unknown side effect into a completed tool result',async()=>{
+ const {dshExecutionObservation,dshHistoryItems}=await import('../../src/executors/dsh/protocol.ts');
+ const events:any[]=[{type:'turn/start',data:{turn:1}},{type:'user/message',data:{turn:1,id:'input',source:{rpcId:'request'},content:[]}},{type:'tool/call',data:{turn:1,callId:'operation',name:'bash'}}];
+ const result={type:'tool/result',data:{turn:1,error:{code:'TOOL_OUTCOME_UNKNOWN',name:'ToolOutcomeUnknownError'},message:{toolCallId:'operation',isError:true,content:[{type:'text',text:'no durable result'}]}}};
+ events.push(result,{type:'turn/end',data:{turn:1,reason:{kind:'interrupted'}}});
+ assert.equal(dshExecutionObservation(events,'request').status,'unknown');assert.equal(dshExecutionObservation(events,'request').tools[0]?.status,'unknown');assert.equal(dshHistoryItems(events).find(item=>item.id==='operation')?.status,'unknown');
+ assert.equal(dshExecutionObservation(events,'request',[{id:'operation',kind:'tool',role:'system',text:'received real output',executionId:'request',status:'completed'}]).status,'stopped');
+ assert.equal(dshExecutionObservation(events,'request',[{id:'operation',kind:'tool',role:'system',text:'another execution',executionId:'other',status:'completed'}]).status,'unknown');
+ result.data.error={code:'TOOL_NOT_STARTED',name:'ToolNotStartedError'};assert.equal(dshExecutionObservation(events,'request').status,'stopped');
+ result.data.error={code:'KNOWN_TOOL_FAILURE',name:'ToolError'};assert.equal(dshExecutionObservation(events,'request').status,'stopped');assert.equal(dshHistoryItems(events).find(item=>item.id==='operation')?.status,'failed');
+});

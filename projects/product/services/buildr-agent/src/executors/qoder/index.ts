@@ -207,8 +207,7 @@ class QoderRuntime implements AgentRuntime {
       if(!proof.ended||proof.blocked)return false;
       ended=true;executionState=proof.executionState==='ended'?'ended':'unknown';
     }
-    if(!await this.rpc.canReleaseExecution(executionRef,contextRef.id,this.bindingIdentity,ended))return false;
-    return {executionState};
+    return this.rpc.control.releaseExecution(executionRef,contextRef.id,this.bindingIdentity,{ended,executionState,channelClosed:this.rpc.closed});
   }
   async supplement(input: ExecutorSupplementInput): Promise<ExecutorInputReceipt> {
     this.reference(input.contextRef, input.cwd);

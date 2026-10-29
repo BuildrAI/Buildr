@@ -4,13 +4,17 @@ import { visibleText, nativePreview } from '../native-process.ts';
 function isUserInput(event: any): boolean {
   return event?.type === 'user/message' && (!event.data?.source?.kind || event.data.source.kind === 'user');
 }
+/** Native crash repair supplies an error envelope, not a completed operation receipt. */
+export function dshToolOutcomeUnknown(event:any):boolean {
+  return event?.type==='tool/result'&&event.data?.error?.code==='TOOL_OUTCOME_UNKNOWN';
+}
 export function dshItem(event: any): ExecutorItem[] {
   const data = event?.data ?? {}; const id = `event:${event?.seq}`;
   if (event?.type === 'user/message' && !isUserInput(event)) return [];
   if (event?.type === 'assistant/message') { const text = visibleText(data.message?.content); return text ? [{ id: `assistant:${data.turn}:${data.step}`, kind: 'message', role: 'assistant', text, status: 'completed' }] : []; }
   if (event?.type === 'user/message') { const text = visibleText(data.content); return text || data.content?.some((part: any) => part.type === 'image') ? [{ id: data.id ?? id, kind: 'message', role: 'user', text, clientRequestId: data.source?.rpcId, executionId: data.source?.rpcId, status: 'completed' }] : []; }
   if (event?.type === 'tool/call') return [{ id: data.callId, kind: 'tool', role: 'system', name: typeof data.name === 'string' && data.name ? data.name : undefined, input: nativePreview(String(data.arguments ?? '')), text: String(data.name ?? '工具') + '\n' + nativePreview(String(data.arguments ?? '')), status: 'running' }];
-  if (event?.type === 'tool/result') return [{ id: data.message?.toolCallId ?? id, kind: 'tool', role: 'system', text: nativePreview(visibleText(data.message?.content)), status: data.message?.isError ? 'failed' : 'completed' }];
+  if (event?.type === 'tool/result') return [{ id: data.message?.toolCallId ?? id, kind: 'tool', role: 'system', text: nativePreview(visibleText(data.message?.content)), status: dshToolOutcomeUnknown(event)?'unknown':data.message?.isError ? 'failed' : 'completed' }];
   return [];
 }
 
@@ -32,18 +36,19 @@ export function dshHistoryItems(events: any[]): ExecutorItem[] {
 }
 
 /** A cold read answers only for the turn containing this exact client request. */
-export function dshExecutionObservation(events: any[], requestId: string): import('../../contracts.ts').ExecutorObservation {
+export function dshExecutionObservation(events: any[], requestId: string, knownItems:readonly ExecutorItem[]=[]): import('../../contracts.ts').ExecutorObservation {
   let currentTurn: number | undefined; let targetTurn: number | undefined;
   for (const event of events) {
     if (event.type === 'turn/start') currentTurn = event.data.turn;
     if (isUserInput(event) && event.data?.source?.rpcId === requestId) targetTurn = currentTurn;
   }
   if (targetTurn === undefined) return { status: 'unknown', tools: [], diagnostic: 'dsh_exact_execution_not_found' };
+  const received=new Set(knownItems.filter(item=>item.kind==='tool'&&item.executionId===requestId&&item.status==='completed').map(item=>item.id));
   const tools = new Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown' }>(); let end: string | undefined;
   for (const event of events) {
     if (event.data?.turn !== targetTurn) continue;
     if (event.type === 'tool/call') tools.set(event.data.callId, { id: event.data.callId, label: String(event.data.name ?? '工具'), status: 'unknown' });
-    if (event.type === 'tool/result' && tools.has(event.data.message?.toolCallId)) tools.get(event.data.message.toolCallId)!.status = 'completed';
+    if (event.type === 'tool/result' && tools.has(event.data.message?.toolCallId)) tools.get(event.data.message.toolCallId)!.status = dshToolOutcomeUnknown(event)&&!received.has(event.data.message.toolCallId)?'unknown':'completed';
     if (event.type === 'turn/end') end = event.data.reason?.kind;
   }
   if (end && !['completed','aborted','cancelled','interrupted'].includes(end)) return {status:'unknown',executionRef:{id:requestId},tools:[...tools.values()],diagnostic:'dsh_native_execution_failed'};

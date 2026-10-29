@@ -1,12 +1,13 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { bounded, closeOwnedProcess, nativeCommand, type NativeEnvironment } from '../native-process.ts';
+import { type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { OwnedControlResource, bounded, closeOwnedProcess, nativeCommand, type NativeEnvironment } from '../native-process.ts';
 
 export interface DshClient { ctx: any; remote: any; origin: string; close(): Promise<void>; }
 /** Owns the complete native web Host; the authorization URL and cookie stay private. */
-export async function launchDshHost(executable: string, env: NativeEnvironment, cwd: string, signal?: AbortSignal, patch?: string): Promise<{ child: ChildProcessWithoutNullStreams; client: DshClient; close(): Promise<void> }> {
+export async function launchDshHost(executable: string, env: NativeEnvironment, cwd: string, signal?: AbortSignal, patch?: string): Promise<{ control: OwnedControlResource; child: ChildProcessWithoutNullStreams; client: DshClient; close(): Promise<void> }> {
   signal?.throwIfAborted();
   const launch = nativeCommand(executable);
-  const child = spawn(launch.command, [...launch.prefix, 'web', ...(patch ? ['--patch', patch] : []), '--no-open', '--port', '0'], { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+  const control=new OwnedControlResource(launch.command,[...launch.prefix,'web',...(patch?['--patch',patch]:[]),'--no-open','--port','0'],{cwd,env});
+  const child=control.child;
   let output = ''; let settled = false;
   const ready = new Promise<string>((resolve, reject) => {
     const read = (chunk: Buffer) => {
@@ -25,8 +26,9 @@ export async function launchDshHost(executable: string, env: NativeEnvironment, 
   try {
     const privateUrl = await bounded(ready, 45000, 'dsh_host_startup_timeout');
     client = await connectDshClient(privateUrl, signal);
+    child.once('exit',()=>{void client?.close().catch(()=>{});});
     signal?.throwIfAborted();
-    return { child, client, async close() { await client?.close(); await closeOwnedProcess(child); } };
+    return { control, child, client, async close() { await client?.close(); await closeOwnedProcess(child); } };
   } catch (error) { settled = true; await client?.close(); await (abortedClose ?? closeOwnedProcess(child)); throw error; }
   finally { signal?.removeEventListener('abort', abort); }
 }
@@ -101,6 +103,7 @@ export async function connectDshClient(privateUrl: string, signal?: AbortSignal)
   const remotes = await Promise.all([
     import('@deepseek-ai/dsh-api-session-controller/remote'), import('@deepseek-ai/dsh-api-account-controller/remote'),
     import('@deepseek-ai/dsh-api-settings-controller/remote'), import('@deepseek-ai/dsh-api-workspace-controller/remote'),
+    import('@deepseek-ai/dsh-api-job-controller/remote'),
     import('@deepseek-ai/dsh-user-questions/remote'), import('@deepseek-ai/dsh-commands/remote'), import('@deepseek-ai/dsh-permission-presets/remote'),
   ]);
   try {
@@ -109,7 +112,8 @@ export async function connectDshClient(privateUrl: string, signal?: AbortSignal)
     while (!signal?.aborted && ctx.connection.state.getSnapshot() !== 'connected' && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50));
     signal?.throwIfAborted();
     if (ctx.connection.state.getSnapshot() !== 'connected') throw new Error('dsh_client_timeout');
-    return { ctx, remote: ctx.remote, origin, close: () => ctx.fiber.dispose() };
+    let closing:Promise<void>|undefined;
+    return { ctx, remote: ctx.remote, origin, close: () => closing??=(Promise.resolve(ctx.fiber.dispose())) };
   } catch (error) { await ctx.fiber.dispose(); throw error; }
   finally { signal?.removeEventListener('abort', abort); }
 }

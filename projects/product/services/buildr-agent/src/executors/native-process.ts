@@ -64,12 +64,42 @@ export async function ownedProcessGroupIdle(group:number,controlPid?:number):Pro
   }catch{return false;}
   finally{if(observer.exitCode===null&&observer.signalCode===null)observer.kill();}
 }
+/** Shared ownership and release proof for RPC and native HTTP control hosts. */
+export class OwnedControlResource {
+  readonly child: ChildProcessWithoutNullStreams;
+  constructor(command:string,args:string[],options:{cwd:string;env:NativeEnvironment}) {
+    this.child=spawn(command,args,{...options,detached:process.platform!=='win32',stdio:['pipe','pipe','pipe'],windowsHide:true});
+  }
+  executionRef(id: string, contextId: string, binding: string, backgroundWork = false): ExecutionRef {
+    return { id, ...(process.platform !== 'win32' && this.child.pid ? { data: { resourceGroup: this.child.pid, resourceContext: contextId, resourceBinding: binding, backgroundWork } } : {}) };
+  }
+  async canReleaseExecution(ref: ExecutionRef, contextId: string, binding: string, ended: boolean, channelClosed = false): Promise<boolean> {
+    const data = ref.data;
+    if (!data || data.resourceContext !== contextId || data.resourceBinding !== binding || data.backgroundWork !== false || !Number.isSafeInteger(data.resourceGroup)) return false;
+    const group = data.resourceGroup as number;
+    if (group === this.child.pid) {
+      const exited = this.child.exitCode !== null || this.child.signalCode !== null;
+      if(channelClosed&&!exited)return false;
+      return (ended || exited) && await ownedProcessGroupIdle(group, exited?undefined:this.child.pid);
+    }
+    // A cold observer cannot release a still-live old control process. The old
+    // control group must be entirely gone, and this read-only control must be idle too.
+    const observerExited=this.child.exitCode!==null||this.child.signalCode!==null;
+    if(channelClosed&&!observerExited)return false;
+    return await ownedProcessGroupIdle(group) && Boolean(this.child.pid && await ownedProcessGroupIdle(this.child.pid, observerExited?undefined:this.child.pid));
+  }
+  async releaseExecution(ref:ExecutionRef,contextId:string,binding:string,facts:{ended:boolean;executionState:'ended'|'unknown';blocked?:boolean;channelClosed?:boolean}):Promise<false|{executionState:'ended'|'unknown'}> {
+    if(facts.blocked||!await this.canReleaseExecution(ref,contextId,binding,facts.ended,facts.channelClosed))return false;
+    return {executionState:facts.executionState};
+  }
+}
 export class NativeRpc {
   private sequence = 0;
   private buffer = '';
   private decoder = new StringDecoder('utf8');
   private pending = new Map<string | number, { resolve: (value: any) => void; reject: (error: Error) => void }>();
   private listeners = new Set<(message: RpcMessage) => void>();
+  readonly control: OwnedControlResource;
   readonly child: ChildProcessWithoutNullStreams;
   private disposed = false;
   private failed = false;
@@ -77,7 +107,8 @@ export class NativeRpc {
   get closed(): boolean { return this.disposed || this.failed || this.child.exitCode !== null || this.child.signalCode !== null || this.child.stdin.destroyed; }
   constructor(command: string, args: string[], options: { cwd: string; env: NativeEnvironment }) {
     this.diagnosticSecrets = Object.entries(options.env).filter(([key, value]) => /(?:TOKEN|KEY|PASSWORD|SECRET)$/i.test(key) && value).map(([, value]) => value!);
-    this.child = spawn(command, args, { ...options, detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+    this.control=new OwnedControlResource(command,args,options);
+    this.child=this.control.child;
     // Native diagnostics may contain credentials. They never become public errors or events.
     this.child.stderr.on('data', () => {});
     this.child.stdout.on('data', chunk => this.read(this.decoder.write(chunk)));
@@ -85,24 +116,8 @@ export class NativeRpc {
     this.child.once('error', () => this.fail('agent_native_process_failed'));
     this.child.once('exit', () => this.fail('agent_native_process_closed'));
   }
-  executionRef(id: string, contextId: string, binding: string, backgroundWork = false): ExecutionRef {
-    return { id, ...(process.platform !== 'win32' && this.child.pid ? { data: { resourceGroup: this.child.pid, resourceContext: contextId, resourceBinding: binding, backgroundWork } } : {}) };
-  }
-  async canReleaseExecution(ref: ExecutionRef, contextId: string, binding: string, ended: boolean): Promise<boolean> {
-    const data = ref.data;
-    if (!data || data.resourceContext !== contextId || data.resourceBinding !== binding || data.backgroundWork !== false || !Number.isSafeInteger(data.resourceGroup)) return false;
-    const group = data.resourceGroup as number;
-    if (group === this.child.pid) {
-      const exited = this.child.exitCode !== null || this.child.signalCode !== null;
-      if(this.closed&&!exited)return false;
-      return (ended || exited) && await ownedProcessGroupIdle(group, exited?undefined:this.child.pid);
-    }
-    // A cold observer cannot release a still-live old control process. The old
-    // control group must be entirely gone, and this read-only control must be idle too.
-    const observerExited=this.child.exitCode!==null||this.child.signalCode!==null;
-    if(this.closed&&!observerExited)return false;
-    return await ownedProcessGroupIdle(group) && Boolean(this.child.pid && await ownedProcessGroupIdle(this.child.pid, observerExited?undefined:this.child.pid));
-  }
+  executionRef(id:string,contextId:string,binding:string,backgroundWork=false):ExecutionRef{return this.control.executionRef(id,contextId,binding,backgroundWork);}
+  canReleaseExecution(ref:ExecutionRef,contextId:string,binding:string,ended:boolean):Promise<boolean>{return this.control.canReleaseExecution(ref,contextId,binding,ended,this.closed);}
   onMessage(listener: (message: RpcMessage) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
   private read(chunk: string): void {
     this.buffer += chunk;

@@ -65,7 +65,7 @@ export class ConversationApplication {
   private readonly titleWork = new Map<string, AbortController>();
   private readonly earlyTitles = new Map<string, Promise<void>>();
   private readonly sourceConnections = new Map<string,string>();
-  private readonly sourceRuntimes = new Map<string, Promise<{runtime: AgentRuntime; model: string}>>();
+  private readonly sourceRuntimes = new Map<string, Promise<{runtime: AgentRuntime; model: string; leaseIdentity?:string}>>();
   private readonly sourceReleasePending = new Map<AgentRuntime,()=>Promise<boolean>>();
   private readonly sourceReleases = new Map<AgentRuntime,Promise<void>>();
   private readonly sourceOwners = new Map<string, {workspaceId: string; id: string}>();
@@ -124,7 +124,7 @@ export class ConversationApplication {
   }
   private get pendingSends() { return new PendingSendRepository(this.options.root); }
 
-  private async sourceRuntime(record: StoredConversation, participant: StoredParticipant): Promise<{runtime: AgentRuntime; model: string}> {
+  private async sourceRuntime(record: StoredConversation, participant: StoredParticipant): Promise<{runtime: AgentRuntime; model: string; leaseIdentity?:string}> {
     if (!participant.modelAccountId) {
       this.sharedNativeContext = true;
       return this.options.connections.runtime(participant.connectionId).then(runtime => ({runtime, model: record.view.run?.model ?? ''}));
@@ -144,7 +144,7 @@ export class ConversationApplication {
     const access = this.options.modelAccess; if (!access) fail('agent_model_source_unavailable', '模型套餐组件不可用。', 409);
     const work = access.leases.create({ accountId: participant.modelAccountId, expectedIdentity: participant.modelAccountIdentity, modelId: participant.modelId!,serviceTier:participant.serviceTier, conversationId: record.view.id, agentId: participant.connectionId, runId: record.view.run?.id ?? 'observe' }).then(async lease => ({ runtime: await this.options.connections.runtime(participant.connectionId, { identity: lease.identity, baseUrl: lease.baseUrl, apiKey: lease.apiKey,
       ...(lease.provider === 'native-qoder' && participant.connectionId === 'qoder' ? { nativeModel: { provider: 'qoder' as const, id: participant.modelId!, accountIdentity: participant.modelAccountIdentity! } } : {}),
-      models: [{id: lease.model, label: lease.offering.label, isDefault: true, reasoningEfforts: lease.offering.reasoningEfforts, defaultReasoningEffort: lease.offering.defaultReasoningEffort, contextWindow: lease.offering.contextWindow, maxOutputTokens: lease.offering.maxOutputTokens, vision: lease.offering.images, tools: lease.offering.tools}] }), model: lease.model })).catch(error => { this.sourceRuntimes.delete(participant.id); throw error; });
+      models: [{id: lease.model, label: lease.offering.label, isDefault: true, reasoningEfforts: lease.offering.reasoningEfforts, defaultReasoningEffort: lease.offering.defaultReasoningEffort, contextWindow: lease.offering.contextWindow, maxOutputTokens: lease.offering.maxOutputTokens, vision: lease.offering.images, tools: lease.offering.tools}] }), model: lease.model, leaseIdentity:lease.identity })).catch(error => { this.sourceRuntimes.delete(participant.id); throw error; });
     this.sourceConnections.set(participant.id, participant.connectionId); this.sourceRuntimes.set(participant.id, work); return work;
   }
   /** Retiring generations release only idle, conversation-specific runtimes.
@@ -153,19 +153,19 @@ export class ConversationApplication {
     if (this.releasingIdleSources) return this.releasingIdleSources;
     const work = (async () => {
       for(const finish of [...this.sourceReleasePending.values()])await finish().catch(()=>false);
-      const groups = new Map<AgentRuntime, Array<{id:string; source:Promise<{runtime:AgentRuntime;model:string}>}>>();
+      const groups = new Map<AgentRuntime, Array<{id:string; leaseIdentity?:string; source:Promise<{runtime:AgentRuntime;model:string;leaseIdentity?:string}>}>>();
       for (const [id, source] of this.sourceRuntimes) {
         const value = await source.catch(() => undefined); if (!value) continue;
-        const members=groups.get(value.runtime)??[];members.push({id,source});groups.set(value.runtime,members);
+        const members=groups.get(value.runtime)??[];members.push({id,source,leaseIdentity:value.leaseIdentity});groups.set(value.runtime,members);
       }
       for (const [runtime,members] of groups) {
         if(this.sourceReleasePending.has(runtime))continue;
         if(owner&&!members.some(({id})=>{const held=this.sourceOwners.get(id);return held?.workspaceId===owner.workspaceId&&held.id===owner.id;}))continue;
-        const candidates:Array<{id:string;source:Promise<{runtime:AgentRuntime;model:string}>;workspaceId:string;conversationId:string;runId:string;proof?:()=>Promise<boolean|{executionState:'ended'|'unknown'}>}>=[];
+        const candidates:Array<{id:string;source:Promise<{runtime:AgentRuntime;model:string;leaseIdentity?:string}>;workspaceId:string;conversationId:string;runId:string;leaseIdentity?:string;proof?:()=>Promise<boolean|{executionState:'ended'|'unknown'}>}>=[];
         let safe=true;
         for(const member of members){
           const held=this.sourceOwners.get(member.id);
-          if(!held||this.sourceRuntimes.get(member.id)!==member.source){safe=false;break;}
+          if(!held||this.sourceRuntimes.get(member.id)!==member.source||member.leaseIdentity&&this.options.modelAccess?.leases.hasActiveRequests(member.leaseIdentity)){safe=false;break;}
           const record=this.load(held.workspaceId,held.id),run=record.view.run;
           if(!run||record.view.requests.length||this.workers.has(run.id)||this.recoveries.has(run.id)||this.observations.has(held.id)||this.earlyTitles.has(held.id)||this.titleWork.has(held.id)||this.supplements.size||this.repliesInFlight.size){safe=false;break;}
           const participant=record.participants.find(value=>value.id===member.id),attempt=[...record.attempts].reverse().find(value=>value.participantId===member.id);
@@ -176,8 +176,9 @@ export class ConversationApplication {
         }
         if(!safe)continue;
         // Recheck after asynchronous native proof, then freeze reuse before close.
-        if(candidates.some(value=>this.sourceRuntimes.get(value.id)!==value.source||this.load(value.workspaceId,value.conversationId).view.run?.id!==value.runId||this.workers.has(value.runId)||this.observations.has(value.conversationId)||this.recoveries.has(value.runId)||this.earlyTitles.has(value.conversationId)||this.titleWork.has(value.conversationId)||this.load(value.workspaceId,value.conversationId).view.requests.length)||this.supplements.size||this.repliesInFlight.size)continue;
+        if(candidates.some(value=>value.leaseIdentity&&this.options.modelAccess?.leases.hasActiveRequests(value.leaseIdentity)||this.sourceRuntimes.get(value.id)!==value.source||this.load(value.workspaceId,value.conversationId).view.run?.id!==value.runId||this.workers.has(value.runId)||this.observations.has(value.conversationId)||this.recoveries.has(value.runId)||this.earlyTitles.has(value.conversationId)||this.titleWork.has(value.conversationId)||this.load(value.workspaceId,value.conversationId).view.requests.length)||this.supplements.size||this.repliesInFlight.size)continue;
         const finish=async()=>{
+          if(candidates.some(value=>value.leaseIdentity&&this.options.modelAccess?.leases.hasActiveRequests(value.leaseIdentity)))return false;
           await this.options.connections.releaseGatewayRuntime(runtime);
           const facts=new Map<string,'ended'|'unknown'>();
           for(const value of candidates){const proof=value.proof?await value.proof():true;if(!proof)return false;facts.set(value.id,proof===true?'ended':proof.executionState);}
@@ -560,7 +561,7 @@ export class ConversationApplication {
     if (entry) {
       record.sources[source] = entry.id;
       if (entry.role === 'user' || entry.role === 'system' && entry.kind === 'notice') return false;
-      if (entry.kind === 'tool' && ['completed', 'failed'].includes(entry.status ?? '') && (!item.status || item.status === 'running')) return false;
+      if (entry.kind === 'tool' && ['completed', 'failed'].includes(entry.status ?? '') && (!item.status || item.status === 'running' || entry.status==='completed'&&item.status==='unknown')) return false;
       const nameChanged = item.name !== undefined && entry.name !== item.name;
       const inputChanged = item.input !== undefined && entry.input !== item.input;
       if (entry.text === item.text && entry.status === item.status && !nameChanged && !inputChanged) return false;

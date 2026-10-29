@@ -74,7 +74,7 @@ export interface ExecutorItem {
   /** Original tool invocation input; retained when a later result replaces text. */
   input?: string;
   executionId?: string;
-  status?: 'running' | 'completed' | 'failed';
+  status?: 'running' | 'completed' | 'failed' | 'unknown';
 }
 export interface ExecutorRequest {
   id: string;

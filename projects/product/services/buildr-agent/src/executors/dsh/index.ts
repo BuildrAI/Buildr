@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import type { AgentExecutor, AgentRuntime, ContextRef, ExecutionRef, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorRequest, ExecutorSendInput, LoginObservation, PermissionMode } from '../../contracts.ts';
 import { nativeBinding, visibleText, bounded, findExecutable, inspectVersion, isolatedEnvironment, nativeHome, opaqueReference, parseReference, privateDirectories } from '../native-process.ts';
 import { launchDshHost, dshValue, type DshClient } from './client.ts';
-import { dshItem, dshHistoryItems, dshExecutionObservation } from './protocol.ts';
+import { dshItem, dshHistoryItems, dshExecutionObservation, dshToolOutcomeUnknown } from './protocol.ts';
 import { modelOptions } from '../model-options.ts';
 import { applyDshPermissions, dshPermissionCatalog } from './permissions.ts';
 import { AgentServiceError } from '../../domain/agent-state.ts';
@@ -54,7 +54,18 @@ export class DshRuntime implements AgentRuntime {
   private client: DshClient;
   private gateway?: ExecutorGateway;
   private modelBridge?: {key:string;addressFile:string};
-  private constructor(bindingIdentity: string, host: Awaited<ReturnType<typeof launchDshHost>>, client: DshClient) { this.bindingIdentity = bindingIdentity; this.host = host; this.client = client; }
+  private constructor(bindingIdentity: string, host: Awaited<ReturnType<typeof launchDshHost>>, client: DshClient) {
+    this.bindingIdentity=bindingIdentity;this.host=host;this.client=client;
+    host.child?.once('exit',()=>{
+      for(const turn of this.turns.values())if(!turn.terminal){
+        if(turn.retryTimer){clearTimeout(turn.retryTimer);turn.retryTimer=undefined;}
+        this.followFailed(turn,new Error('dsh_host_closed'));
+      }
+    });
+  }
+  private executionReference(id:string,contextId:string):ExecutionRef {
+    return this.host.control?.executionRef(id,contextId,this.bindingIdentity)??{id};
+  }
   static async open(options: ExecutorOpenOptions, ownerPatch?: string): Promise<DshRuntime> {
     options.signal?.throwIfAborted();
     const gateway = checkedGateway(options.gateway);
@@ -213,7 +224,7 @@ export class DshRuntime implements AgentRuntime {
       await follow.opened;
       dshValue(await bounded(this.client.remote.session.prompt({ sessionId: input.contextRef.id, requestId: input.clientRequestId, mode: 'queue', content: [{ type: 'text', text: input.text }, ...await Promise.all(input.images.map(async image => ({ type: 'image' as const, mediaType: image.mimeType as 'image/png'|'image/jpeg'|'image/webp'|'image/gif', data: (await readFile(image.path)).toString('base64') })))] }), 5000));
       turn.accepted = true;
-      input.onEvent({ type: 'accepted', executionRef: { id: turn.id } });
+      input.onEvent({ type: 'accepted', executionRef: this.executionReference(turn.id,input.contextRef.id) });
       for (const frame of follow.buffer.splice(0)) {
         if (frame.buildrStream) this.assistantFrame(turn, frame.buildrStream);
         else { this.event(turn, frame); turn.lastSeq = frame.seq ?? turn.lastSeq; }
@@ -406,7 +417,7 @@ export class DshRuntime implements AgentRuntime {
       turn.tools.set(data.callId, { id: data.callId, label: String(data.name ?? '工具'), status: 'running' });
 
     }
-    if (event.type === 'tool/result') { const id = data.message?.toolCallId; const tool = turn.tools.get(id); if (tool) tool.status = 'completed'; }
+    if (event.type === 'tool/result') { const id = data.message?.toolCallId; const tool = turn.tools.get(id); if (tool) tool.status = dshToolOutcomeUnknown(event)?'unknown':'completed'; }
     if (event.type === 'approval/decided') { for (const [id, pending] of turn.pending) if (pending.resolve && id === String(data.id)) { turn.pending.delete(id); emit({ type: 'request-resolved', requestId: id }); } }
     if (event.type === 'turn/end') {
       const reason = data.reason?.kind; turn.terminal = reason === 'completed' ? 'completed' : ['cancelled', 'interrupted', 'aborted'].includes(reason) ? 'stopped' : 'failed';
@@ -480,16 +491,44 @@ export class DshRuntime implements AgentRuntime {
     turn.cancellation=work;return work;
   }
   private activeObservation(turn: ActiveTurn): ExecutorObservation {
-    const tools = [...turn.tools.values()].map(tool => ({ ...tool, canStop: false })); return { status: turn.observationLost || turn.supplementUnknown ? 'unknown' : turn.terminal ? tools.some(tool => tool.status === 'running') ? 'tools-active' : turn.terminal === 'stopped' ? 'stopped' : 'idle' : turn.pending.size ? 'waiting' : 'running', executionRef: { id: turn.id }, tools, requests: [...turn.pending.values()].map(value => value.request), ...(turn.observationLost ? { diagnostic: 'DSH 执行观察中断，正在核对原执行。' + (turn.observationDiagnostic ? ' 原因：' + turn.observationDiagnostic : '') } : turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) };
+    const tools = [...turn.tools.values()].map(tool => ({ ...tool, canStop: false })); return { status: turn.observationLost || turn.supplementUnknown ? 'unknown' : turn.terminal ? tools.some(tool => tool.status === 'running') ? 'tools-active' : tools.some(tool=>tool.status==='unknown')?'unknown': turn.terminal === 'stopped' ? 'stopped' : 'idle' : turn.pending.size ? 'waiting' : 'running', executionRef: this.executionReference(turn.id,turn.input.contextRef.id), tools, requests: [...turn.pending.values()].map(value => value.request), ...(turn.observationLost ? { diagnostic: 'DSH 执行观察中断，正在核对原执行。' + (turn.observationDiagnostic ? ' 原因：' + turn.observationDiagnostic : '') } : turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) };
   }
-  async observe({ contextRef, executionRef }: { contextRef: ContextRef; executionRef?: ExecutionRef }): Promise<ExecutorObservation> {
+  async observe({ contextRef, executionRef,knownItems=[] }: { contextRef: ContextRef; executionRef?: ExecutionRef;knownItems?:readonly ExecutorItem[] }): Promise<ExecutorObservation> {
     this.reference(contextRef); const turn = this.turns.get(contextRef.id);
     if (turn && executionRef?.id === turn.id && (turn.observationLost || turn.terminal && [...turn.tools.values()].some(tool => tool.status !== 'completed'))) await this.restoreObservation(turn);
+    if(turn&&executionRef?.id===turn.id)for(const item of knownItems)if(item.kind==='tool'&&item.executionId===turn.id&&item.status==='completed'&&turn.tools.get(item.id)?.status==='unknown')turn.tools.get(item.id)!.status='completed';
     if (turn && (!executionRef || turn.id === executionRef.id)) { if(turn.stopRequested&&!turn.terminal)await this.cancelSteering(turn).catch(()=>{turn.supplementUnknown=true;});return this.activeObservation(turn); }
     const cwd = this.reference(contextRef);
     await this.readHistory({ contextRef, cwd });
     const events = this.historyEvents.get(contextRef.id) ?? [];
-    return executionRef ? dshExecutionObservation(events, executionRef.id) : { status: 'unknown', tools: [], diagnostic: 'dsh_execution_identity_required' };
+    if(!executionRef)return {status:'unknown',tools:[],diagnostic:'dsh_execution_identity_required'};
+    const observation=dshExecutionObservation(events,executionRef.id,knownItems);
+    return {...observation,...(observation.executionRef?.id===executionRef.id?{executionRef}: {})};
+  }
+  private async hasBackgroundWork(contextId:string):Promise<boolean>{
+    const abort=new AbortController();let stream:any;
+    try{
+      stream=this.client.remote.job.list({sessionId:contextId},abort.signal);
+      const frame=await bounded(stream[Symbol.asyncIterator]().next(),2000,'dsh_jobs_observation_timeout');
+      const value=(frame as any).value;
+      if((frame as any).done||value?.type!=='rows'||!Array.isArray(value.jobs))throw new Error('dsh_jobs_observation_unconfirmed');
+      return value.jobs.some((job:any)=>{
+        if(job.owner!==undefined&&job.owner!==contextId)return false;
+        if(!['running','stopping','completed','failed','killed'].includes(job.status))throw new Error('dsh_jobs_observation_unconfirmed');
+        return ['running','stopping'].includes(job.status);
+      });
+    }finally{abort.abort();await bounded(Promise.resolve(stream?.dispose()),1000).catch(()=>{});}
+  }
+  async canRelease({contextRef,executionRef}:{contextRef:ContextRef;executionRef:ExecutionRef}):Promise<boolean|{executionState:'ended'|'unknown'}>{
+    this.reference(contextRef);if(!this.host.control)return false;
+    const turn=this.turns.get(contextRef.id),exited=this.host.child.exitCode!==null||this.host.child.signalCode!==null;
+    if(turn&&turn.id!==executionRef.id||this.login||[...this.turns.values()].some(value=>value.pending.size||value.id!==executionRef.id&&!value.terminal))return false;
+    if(!exited&&turn&&(turn.supplementAdmissions||turn.supplementInputs?.size||turn.supplementUnknown||turn.pendingEnd))return false;
+    if(!exited){try{if(await this.hasBackgroundWork(contextRef.id))return false;}catch{return false;}}
+    const observation=turn?this.activeObservation(turn):dshExecutionObservation(this.historyEvents.get(contextRef.id)??[],executionRef.id);
+    const ended=Boolean(turn?.terminal)||['idle','stopped'].includes(observation.status);
+    const executionState=['idle','stopped'].includes(observation.status)&&observation.tools.every(tool=>tool.status==='completed')?'ended':'unknown';
+    return this.host.control.releaseExecution(executionRef,contextRef.id,this.bindingIdentity,{ended,executionState,channelClosed:this.disposed});
   }
   async reply({ contextRef, executionRef, requestId, answer }: { contextRef: ContextRef; executionRef: ExecutionRef; requestId: string; answer: unknown }): Promise<void> {
     this.reference(contextRef); const turn = this.turns.get(contextRef.id); const pending = turn?.pending.get(requestId);
@@ -513,12 +552,13 @@ export class DshRuntime implements AgentRuntime {
     return this.activeObservation(turn);
   }
   async close(): Promise<void> {
+    const controlExited=Boolean(this.host.child&&(this.host.child.exitCode!==null||this.host.child.signalCode!==null));
     this.disposed = true;
     for (const turn of this.turns.values()) if (turn.retryTimer) { clearTimeout(turn.retryTimer); turn.retryTimer = undefined; }
     await this.cancelLogin();
     await Promise.allSettled([...this.turns.values()].map(async turn => {
       if (!turn.terminal) turn.reject?.(new Error('agent_native_process_closed'));
-      if (!turn.terminal) await bounded(this.client.remote.session.cancel({ sessionId: turn.input.contextRef.id }), 1500).catch(() => {});
+      if (!turn.terminal&&!controlExited) await bounded(this.client.remote.session.cancel({ sessionId: turn.input.contextRef.id }), 1500).catch(() => {});
       for (const pending of turn.pending.values()) { pending.resolve?.('cancelled'); pending.reject?.(new Error('dsh_question_expired')); await pending.wait?.dispose(); }
       await turn.stream?.dispose(); await turn.pump;
     }));
