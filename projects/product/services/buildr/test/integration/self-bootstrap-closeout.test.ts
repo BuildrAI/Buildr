@@ -74,6 +74,7 @@ runtime:
     version: ${process.versions.node}
 `);
   fs.writeFileSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'tools', 'build', 'launcher', 'manage.ts'), '#!/usr/bin/env node\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(root, 'projects/product/services/buildr/tools/development/prepare-development-agent.ts'), 'console.log(JSON.stringify({status:"passed"}));\n');
   fs.mkdirSync(defaultBin);
   fs.writeFileSync(path.join(defaultBin, 'buildr'), '#!/bin/sh\nexit 97\n', { mode: 0o755 });
   fs.writeFileSync(path.join(root, 'skills', 'generated', 'SKILL.md'), 'v1\n');
@@ -108,6 +109,7 @@ function executor(root: any, options: any = {}): any  {
   let developmentPid = options.previousDevelopmentPid || 71173;
   let developmentPort = 4317;
   let restartAttempts = 0;
+  let agentPrepared = false;
   return (executable: any, args: any, context: any) => {
     if (executable === 'git') {
       if (args[0] === 'add' && options.failStage) return { status: 128, stdout: '', stderr: 'simulated index.lock contention' };
@@ -125,6 +127,12 @@ function executor(root: any, options: any = {}): any  {
     const launcher: any = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'tools', 'development', 'run-development-cli');
     const launcherManager: any = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'tools', 'build', 'launcher', 'manage.ts');
     const continuityHelper: any = path.join(canonicalRoot, 'skills', 'buildr-self-bootstrap-sync', 'scripts', 'development-web-continuity.mjs');
+    const agentPreparation = path.join(canonicalRoot, 'projects/product/services/buildr/tools/development/prepare-development-agent.ts');
+    if (executable === process.execPath && args[0] === agentPreparation) {
+      if (options.failAgentPreparation) return { status: 1, stdout: '', stderr: 'agent package preparation failed' };
+      agentPrepared = true;
+      return { status: 0, stdout: '{"status":"passed"}', stderr: '' };
+    }
     let resolvedExecutable: any = null;
     try { resolvedExecutable = fs.realpathSync(executable); } catch { /* unexpected commands are handled below */ }
     if (resolvedExecutable === fs.realpathSync(projectBridge)) {
@@ -176,6 +184,7 @@ function executor(root: any, options: any = {}): any  {
         return { status: 0, stdout: JSON.stringify(payload), stderr: '' };
       }
       if (productArgs[0] === 'sync') {
+        if (options.requiresAgentPreparation && !agentPrepared) return { status: 1, stdout: '', stderr: "Cannot read properties of undefined (reading '$id')" };
         for (const [relative, content] of Object.entries(options.syncFiles || { 'skills/generated/SKILL.md': 'v2\n' })) {
           const file = path.join(root, relative);
           fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -455,6 +464,34 @@ test('direct activation uses real Git without Finish and does not repeat a succe
   const second: any = runDirectSelfBootstrapCloseout({ ...current.input, execute });
   assert.equal(second.status, 'passed', JSON.stringify(second));
   assert.equal(calls.filter((args: any) => args[0] === 'git' && args[1] === 'push').length, 0);
+});
+
+test('direct activation prepares the current Agent package before importing new Product HTTP schemas', (t: any) => {
+  const current = directFixture(t), calls: string[][] = [];
+  const perform = executor(current.root, { ...current.options, requiresAgentPreparation: true });
+  const result = runDirectSelfBootstrapCloseout({ ...current.input, execute: (exe: string, args: string[], context: any) => {
+    calls.push([exe, ...args]); return perform(exe, args, context);
+  } });
+  assert.equal(result.status, 'passed', JSON.stringify(result));
+  const preparation = calls.findIndex(args => args[1]?.endsWith('/tools/development/prepare-development-agent.ts'));
+  const sync = calls.findIndex(args => args[2] === 'sync');
+  assert.ok(preparation >= 0 && preparation < sync, JSON.stringify(calls));
+  assert.equal(calls[preparation]![0], process.execPath);
+  assert.equal(calls.filter(args => args[1]?.endsWith('/tools/development/prepare-development-agent.ts')).length, 1);
+});
+
+test('failed Agent preparation preserves delivery and never syncs or stops the running application', (t: any) => {
+  const current = directFixture(t), calls: string[][] = [];
+  const perform = executor(current.root, { ...current.options, failAgentPreparation: true, runningDevelopmentInstance: true });
+  const result = runDirectSelfBootstrapCloseout({ ...current.input, execute: (exe: string, args: string[], context: any) => {
+    calls.push([exe, ...args]); return perform(exe, args, context);
+  } });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.diagnostic?.code, 'self-bootstrap-closeout.agent-preparation-failed');
+  assert.equal(result.delivery.observed, true);
+  assert.equal(git(current.root, 'rev-parse', 'HEAD'), current.input.deliveredRef);
+  assert.equal(git(current.root, 'status', '--porcelain'), '');
+  assert.equal(calls.some(args => args.includes('sync') || args.includes('install') || args.includes('restart')), false);
 });
 
 test('direct activation resumes only its own committed successor after push failure', (t: any) => {
