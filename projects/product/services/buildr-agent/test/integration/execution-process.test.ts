@@ -33,6 +33,14 @@ for(const answer of [false,true])test('waiting question handoff crosses retained
   fs.mkdirSync(workspace);fs.cpSync(prepared,packageRoot,{recursive:true});
   fs.copyFileSync(path.join(import.meta.dirname,'fixtures/agent-process-entry.mjs'),path.join(packageRoot,'build/process-fixture.mjs'));
   const marker=path.join(packageRoot,'build/fixture-version.json');fs.writeFileSync(marker,JSON.stringify({version:'old'}));
+  const serverFile=path.join(packageRoot,'build/process/server.js'),serverCode=fs.readFileSync(serverFile,'utf8');
+  if(!answer){
+    // A retained old version can report historical ownership even after the
+    // exact round's release acknowledgement was durably written.
+    assert.ok(serverCode.includes('busy: !released'));
+    assert.ok(serverCode.includes('busy: service.conversationBusy(input.scope, input.id)'));
+    fs.writeFileSync(serverFile,serverCode.replace('busy: !released','busy: true').replace('busy: service.conversationBusy(input.scope, input.id)','busy: retiring || service.conversationBusy(input.scope, input.id)'));
+  }
   const runtime=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'}),profileId='question-handoff',scope=executionScopeKey({sourceId:'minimal',id:'directory'});
   let main:Awaited<ReturnType<typeof actor>>|undefined,observer:AgentProcessConnection|undefined;
   try{
@@ -43,7 +51,7 @@ for(const answer of [false,true])test('waiting question handoff crosses retained
     const start=async(text:string)=>{const chat=await main!.call('conversations.create',[scope,{}]),draft={expectedRevision:chat.revision,connectionId:'first',...source,text},preview=await main!.call('conversations.prepareSend',[scope,chat.id,draft]);await main!.call('conversations.send',[scope,chat.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()}]);return await until(()=>observer!.operations.conversations.read(scope,chat.id),view=>view.run?.accepted===true);};
     let target=await start('question');const other=await start('hold:other');target=await until(()=>observer!.operations.conversations.read(scope,target.id),view=>view.run?.status==='waiting-question');
     const original=target.run!,question=target.requests[0]!,requestId=randomUUID();
-    fs.writeFileSync(marker,JSON.stringify({version:'new'}));const next=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'});
+    fs.writeFileSync(serverFile,serverCode);fs.writeFileSync(marker,JSON.stringify({version:'new'}));const next=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'});
     await observer.lifecycle.requestRuntime({expectedGeneration:old.generation,runtime:next});const adopted=await until(()=>observer!.lifecycle.status(),status=>status.identity.runtime.digest===next.digest);
     await main.close();main=undefined; // Content remains durable while no host can admit new work.
     target=await observer.operations.conversations.read(scope,target.id);
