@@ -155,7 +155,7 @@ await step('问题自由回答共享完整视频输入，失败保留文字和�
             const data=new DataTransfer();data.items.add(new File([new Uint8Array(detail.bytes)],'回答录屏.webm',{type:'video/webm'}));
             node.dispatchEvent(detail.method==='paste'?new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:data}):new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:data}));
           },{method,bytes:recording});
-          const remove=card.getByRole('button',{name:'移除视频 回答录屏.webm',exact:true});await remove.waitFor().catch(async error=>{console.log('[question-video-failure]',method,await card.innerText());throw error;});
+          const remove=card.getByRole('button',{name:'移除视频 回答录屏.webm',exact:true});await remove.waitFor().catch(async (error:unknown)=>{console.log('[question-video-failure]',method,await card.innerText());throw error;});
           await page.waitForFunction(()=>{const video=document.querySelector<HTMLVideoElement>('[data-agent-request="video-answer"] video');return Boolean(video&&video.readyState>=2&&video.videoWidth===160);});
           const stored=fixture.uploadedMedia.get('image-fixture-'+fixture.attachmentUploads)!;assert.equal(stored.mimeType,'video/webm');assert.deepEqual(stored.bytes,Buffer.from(recording));assert.ok(stored.video.frames.length>0&&stored.video.frames.length<=8);
           assert.equal(await input().inputValue(),'底部文字保留');assert.equal(await panel().locator('.ac-compose-wrap video').count(),0);
