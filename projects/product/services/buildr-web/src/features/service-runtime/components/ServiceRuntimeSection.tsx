@@ -12,6 +12,7 @@ import { LocalRuntimeSurface } from './LocalRuntimeSurface';
 import { RuntimeDefinitionDrawer } from './RuntimeDefinitionDrawer';
 import { RuntimeConfigurationSummary } from './RuntimeConfigurationSummary';
 import { useServiceRuntimeDetail } from '../hooks/useServiceRuntime';
+import { useRuntimeConfiguration } from '../hooks/useRuntimeConfiguration';
 import { createServiceRuntimeClient, type ManagedRun } from '../api/service-runtime-api';
 import { sourceLabel } from '../model';
 
@@ -25,12 +26,12 @@ export function ServiceRuntimeSection({ serviceCode, serviceName }: Props) {
   const detail = useServiceRuntimeDetail(workspaceId, serviceCode);
   const [startOpen, setStartOpen] = useState(false);
   const [initialRun, setInitialRun] = useState<ManagedRun | null>(null);
-  const [discoveryOpen, setDiscoveryOpen] = useState(false);
   const [definitionOpen, setDefinitionOpen] = useState(false);
   const [logRun, setLogRun] = useState<ManagedRun | null>(null);
   const [stopping, setStopping] = useState('');
   const [error, setError] = useState('');
   const service = detail.data?.service;
+  const configuration = useRuntimeConfiguration();
   const definition = service?.definition;
   const start = (run?: ManagedRun) => { setInitialRun(run || null); setStartOpen(true); };
   const stop = async (run: ManagedRun) => {
@@ -44,13 +45,13 @@ export function ServiceRuntimeSection({ serviceCode, serviceName }: Props) {
     {error ? <Alert type="error" showIcon message={error} closable onClose={() => setError('')} /> : null}
     {detail.error ? <Alert type="warning" showIcon message={detail.error} action={<Button size="small" onClick={() => void detail.refresh()}>重试</Button>} /> : null}
     {detail.data?.diagnostics.length ? <Alert type="warning" showIcon message="代码目录诊断" description={detail.data.diagnostics.join('；')} /> : null}
-    {!definition && !detail.loading ? <div className="runtime-unconfigured"><div><strong>尚未配置启动方式</strong><p>{service?.definitionDiagnostic || '由智能体（Agent）核对仓库并实际验证后保存运行定义。已有运行仍可查看。'}</p></div><Button icon={<SettingOutlined />} onClick={() => setDiscoveryOpen(true)}>运行配置</Button></div> : null}
+    {!definition && !detail.loading ? <div className="runtime-unconfigured"><div><strong>尚未配置启动方式</strong><p>{service?.definitionDiagnostic || '由智能体（Agent）核对仓库并实际验证后保存运行定义。已有运行仍可查看。'}</p></div><Button icon={<SettingOutlined />} loading={configuration.pendingCode === serviceCode} onClick={() => void configuration.configure({ code: serviceCode, name: serviceName })}>运行配置</Button></div> : null}
     {detail.loading && !service ? <p className="runtime-section-note">正在读取运行状态…</p> : null}
-    <LocalRuntimeSurface services={service ? [service] : []} runs={service?.runs || []} busyIds={stopping ? [stopping] : []} startDisabled={!definition} onStart={start} onStop={run => void stop(run)} onLogs={setLogRun} onConnection={start} taskHref={id => workspaceHref(workspaceId, `/tasks/${encodeURIComponent(id)}`)} configuration={definition ? <RuntimeConfigurationSummary definition={definition} onView={() => setDefinitionOpen(true)} onConfigure={() => setDiscoveryOpen(true)} /> : null} />
+    <LocalRuntimeSurface services={service ? [service] : []} runs={service?.runs || []} busyIds={stopping ? [stopping] : []} startDisabled={!definition} onStart={start} onStop={run => void stop(run)} onLogs={setLogRun} onConnection={start} taskHref={id => workspaceHref(workspaceId, `/tasks/${encodeURIComponent(id)}`)} configuration={definition ? <RuntimeConfigurationSummary definition={definition} configuring={configuration.pendingCode === serviceCode} onView={() => setDefinitionOpen(true)} onConfigure={() => void configuration.configure({ code: serviceCode, name: serviceName })} /> : null} />
     <p className="runtime-scope-note">本地运行托管进程和日志，不管理共享环境的注册、流量或消息队列。就绪不代表业务验证完成。</p>
     <StartWorktreeModal open={startOpen} serviceCode={serviceCode} serviceName={serviceName} initialRun={initialRun} onClose={() => setStartOpen(false)} onStarted={async () => { await detail.refresh({ silent: true }); }} />
-    <RuntimeDefinitionDrawer service={definitionOpen && service ? service : null} onClose={() => setDefinitionOpen(false)} onConfigure={() => { setDefinitionOpen(false); setDiscoveryOpen(true); }} />
-    <AgentDiscoveryDrawer open={discoveryOpen} serviceCode={serviceCode} serviceName={serviceName} onClose={() => setDiscoveryOpen(false)} />
+    <RuntimeDefinitionDrawer service={definitionOpen && service ? service : null} onClose={() => setDefinitionOpen(false)} onConfigure={() => { setDefinitionOpen(false); void configuration.configure({ code: serviceCode, name: serviceName }); }} />
+    <AgentDiscoveryDrawer open={Boolean(configuration.discovery)} serviceCode={configuration.discovery?.code ?? null} serviceName={configuration.discovery?.name} tone={configuration.discovery?.tone} reason={configuration.discovery?.message} onClose={configuration.closeDiscovery} />
     <LocalLogsDrawer open={Boolean(logRun)} run={service?.runs.find(run => run.id === logRun?.id) || logRun} serviceName={serviceName} onClose={() => setLogRun(null)} />
   </section>;
 }

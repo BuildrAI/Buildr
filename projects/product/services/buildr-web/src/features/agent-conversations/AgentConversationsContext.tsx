@@ -3,10 +3,18 @@ import { agentConversationsApi, type ConversationPage, type AgentConversationsCl
 import { applyConversationEvent, nextConversationPanel, createdConversationVisibility, isCurrentConversationEvent, mergeConversationView, prependConversationEntries, rememberContextReport, sameConversationSelection, type ConversationContextReport, type ConversationSelection } from './conversation-state';
 import { readOptionalPreference, writeOptionalPreference } from '../../lib/optional-preferences';
 import type { CatalogModel, ConnectionView, ConversationEvent, ConversationView, PendingConversation } from './types';
+import { conversationProductActionSelection, recoverConversationProductAction, startConversationProductAction } from './conversation-product-action';
+import { firstConversationSubmissions } from './conversation-first-submission';
+import { readConversationModelPreference, readConversationModulePreference } from './conversation-preferences';
 
 type Scope = {workspaceId: string; conversationId: string};
 export type DraftScope = {workspaceId: string; taskId?: string};
 type VisibilityOptions={preserveVisibility?:boolean};
+export type TextConversationActionInput = {workspaceId: string; cwd: string; text: string};
+export type TextConversationActionResult =
+  | {status: 'started'; conversation: ConversationView}
+  | {status: 'recovering'; reason: 'existing-submission' | 'submission-unknown'; conversation?: ConversationView; message: string}
+  | {status: 'unavailable' | 'failed' | 'busy'; message: string};
 export type AgentConversationsContextValue = {
   activityCounts:ConversationPage['activityCounts'];activityStats:ConversationPage['stats'];activityRows:ConversationView[];activityTotal:number;activityCursor?:string;activityError:string;activityTick:number;
   historyWorkspaceId:string|null|undefined;openHistory(workspaceId?:string|null):void;
@@ -23,6 +31,10 @@ export type AgentConversationsContextValue = {
   refresh(): Promise<void>; refreshConnections(): Promise<void>; refreshPending(): Promise<void>; apply(value: ConversationView, observedRevision?:string): void; prependEntries(value: ConversationView): void; updateConnection(value: ConnectionView): void;
   selectionGeneration:number; getSelection():ConversationSelection; isSelectionCurrent(selection:ConversationSelection):boolean;
   create(input: {workspaceId: string; cwd?: string; taskId?: string},selection?:ConversationSelection): Promise<ConversationView>;
+  /** 产品动作入口在纯展示宿主中可选；真实宿主复用首条提交与恢复记录。 */
+  productActionPending?: boolean; productActionError?: string;
+  firstSubmissionStore?: ReturnType<typeof firstConversationSubmissions>;
+  startTextConversation?(input: TextConversationActionInput): Promise<TextConversationActionResult>;
 };
 const Context = createContext<AgentConversationsContextValue | null>(null);
 type ShellValue=Pick<AgentConversationsContextValue,'open'|'view'|'full'|'pending'|'openGlobal'|'toggle'|'toggleView'|'setSettings'>;
@@ -47,6 +59,12 @@ export function AgentConversationsProvider({children, client = agentConversation
   const [settings, setSettings] = useState(false), [scope, setScope] = useState<Scope | null>(null), [draftScope, setDraftScope] = useState<DraftScope | null>(null), [conversation, setConversation] = useState<ConversationView | null>(null);
   const [connections, setConnections] = useState<ConnectionView[]>([]), [pending, setPending] = useState<PendingConversation[]>([]), [loading, setLoading] = useState(false), [error, setError] = useState(''), [streamError, setStreamError] = useState('');
   const [reconnecting,setReconnecting]=useState(false),[recovering,setRecovering]=useState(false);
+  const [productActionPending,setProductActionPending]=useState(false),[productActionError,setProductActionError]=useState('');
+  const productActionBusy=useRef(false);
+  const [firstSubmissionStore]=useState(()=>{
+    const profile=document.querySelector('meta[name="buildr-web-profile"]')?.getAttribute('content')||'local';
+    try{return firstConversationSubmissions(sessionStorage,'buildr.conversation-first:'+profile);}catch{return firstConversationSubmissions();}
+  });
   const [activityCounts,setActivityCounts]=useState<ConversationPage['activityCounts']>();
   const [activityStats,setActivityStats]=useState<ConversationPage['stats']>();
   const [activityRows,setActivityRows]=useState<ConversationView[]>([]),[activityTotal,setActivityTotal]=useState(0),[activityCursor,setActivityCursor]=useState<string>(),[activityError,setActivityError]=useState(''),[activityTick,setActivityTick]=useState(0),[historyWorkspaceId,setHistoryWorkspaceId]=useState<string|null|undefined>(undefined);
@@ -140,6 +158,40 @@ export function AgentConversationsProvider({children, client = agentConversation
     void recover();return()=>{active=false;if(timer)clearTimeout(timer);setRecovering(false);};
   },[client,scope?.workspaceId,scope?.conversationId,conversation?.run?.id,conversation?.run?.status,apply]);
   const newConversation = useCallback((options:VisibilityOptions&{scope?:DraftScope|null}={}) => { advanceSelection(); eventCursor.current=undefined; scopeRef.current = null; setScope(null); setDraftScope(options.scope??null); setConversation(null); setError(''); setStreamError(''); setView('conversation'); if(!options.preserveVisibility)setVisibility(true); setLoading(false); savePanel(visibility.current.open,null); }, [advanceSelection,setVisibility]);
+  const startTextConversation = useCallback(async (input: TextConversationActionInput): Promise<TextConversationActionResult> => {
+    if(productActionBusy.current)return {status:'busy',message:'已有一项操作正在提交，请先等待原操作完成。'};
+    productActionBusy.current=true;setProductActionPending(true);setProductActionError('');
+    try{
+      const originalSubmission=firstSubmissionStore.read();
+      let result=await recoverConversationProductAction(client,firstSubmissionStore);
+      if(!result){
+        const connectionGeneration=++connectionReadGeneration.current,modelGeneration=++modelReadGeneration.current;
+        const [connectionResult,catalogResult]=await Promise.all([client.connections(),client.modelCatalog()]);
+        if(connectionGeneration===connectionReadGeneration.current)setConnections(connectionResult.connections);
+        if(modelGeneration===modelReadGeneration.current){setModelCatalog(catalogResult.models);setModelCatalogReady(catalogResult.hasSnapshot??true);setModelCatalogError(catalogResult.diagnostic||'');}
+        const selection=conversationProductActionSelection(input.workspaceId,readConversationModulePreference(),readConversationModelPreference(),connectionResult.connections,catalogResult.models);
+        if(!selection){
+          const message='当前没有已启用并就绪的智能体，或所选执行权限不受支持。';
+          setProductActionError(message);return {status:'unavailable',message};
+        }
+        result=await startConversationProductAction({client,input,selection,submissions:firstSubmissionStore});
+      }
+      if(result.status==='started'){
+        await openConversation(result.conversation.workspaceId,result.conversation.id);
+        return result;
+      }
+      const message=result.reason==='existing-submission'
+        ?'还有一条首次提交需要核对，已恢复原提交；核对完成后再发起新操作。'
+        :'本次提交结果待核对，已保留原提交，不会自动重复发送。';
+      setProductActionError(message);
+      if(result.conversation)await openConversation(result.conversation.workspaceId,result.conversation.id);
+      else newConversation({scope:{workspaceId:originalSubmission?.workspaceId??input.workspaceId}});
+      return {...result,message};
+    }catch(failure){
+      const message=failure instanceof Error?failure.message:'操作提交失败，尚未确认执行。';
+      setProductActionError(message);return {status:'failed',message};
+    }finally{productActionBusy.current=false;setProductActionPending(false);}
+  },[client,newConversation,openConversation,firstSubmissionStore]);
   const create = useCallback(async (input: {workspaceId: string; cwd?: string; taskId?: string},selection?:ConversationSelection) => {
     const observed=selection??{generation:advanceSelection(),scope:scopeRef.current};
     if(!isSelectionCurrent(observed))throw new Error('已切换对话，原创建操作已取消。');
@@ -159,7 +211,7 @@ export function AgentConversationsProvider({children, client = agentConversation
   const toggleView=useCallback((target:'conversation'|'history')=>{const next=nextConversationPanel(open,view,target);if(target==='history'&&next.open)setHistoryWorkspaceId(null);setView(next.view);setOpen(next.open);},[open,view,setOpen]);
   const toggle=useCallback(()=>setOpen(!open),[open,setOpen]);
   const shell=useMemo(()=>({open,view,full,pending,openGlobal,toggle,toggleView,setSettings}),[open,view,full,pending,openGlobal,toggle,toggleView]);
-  return <ShellContext.Provider value={shell}><Context.Provider value={{activityCounts,activityStats,activityRows,activityTotal,activityCursor,activityError,activityTick,historyWorkspaceId,openHistory,refreshActivity,loadMoreActivity,markSeen,api:client,reconnecting,recovering, modelCatalog,modelCatalogReady,modelCatalogError,refreshModelCatalog,open,side,full,view,scope,draftScope,conversation,contextReport,connections,pending,loading,error,streamError,settings,setSettings,setOpen,setFull,setView,move:() => setSide(current => { const next = current === 'right' ? 'left' : 'right'; writeOptionalPreference('buildr.agent-conversation-side',next); return next; }),openGlobal,toggle,toggleView,openConversation,newConversation,refresh,refreshConnections,refreshPending,apply,prependEntries,updateConnection,create,selectionGeneration,getSelection,isSelectionCurrent}}>{children}</Context.Provider></ShellContext.Provider>;
+  return <ShellContext.Provider value={shell}><Context.Provider value={{activityCounts,activityStats,activityRows,activityTotal,activityCursor,activityError,activityTick,historyWorkspaceId,openHistory,refreshActivity,loadMoreActivity,markSeen,api:client,reconnecting,recovering, modelCatalog,modelCatalogReady,modelCatalogError,refreshModelCatalog,open,side,full,view,scope,draftScope,conversation,contextReport,connections,pending,loading,error,streamError,settings,setSettings,setOpen,setFull,setView,move:() => setSide(current => { const next = current === 'right' ? 'left' : 'right'; writeOptionalPreference('buildr.agent-conversation-side',next); return next; }),openGlobal,toggle,toggleView,openConversation,newConversation,refresh,refreshConnections,refreshPending,apply,prependEntries,updateConnection,create,selectionGeneration,getSelection,isSelectionCurrent,productActionPending,productActionError,firstSubmissionStore,startTextConversation}}>{children}</Context.Provider></ShellContext.Provider>;
 }
 export function useAgentConversations() { const value = useContext(Context); if (!value) throw new Error('AgentConversationsProvider 未提供。'); return value; }
 export function useOptionalAgentConversations() { return useContext(Context); }

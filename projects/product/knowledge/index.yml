@@ -304,7 +304,7 @@ objects:
   - id: agent-integration
     parent: system-structure
     title: 智能体接入与执行
-    summary: 内部对话与单次生成共用智能体和模型配置；外部桌面关联已退役。
+    summary: 内部对话与单次生成共用智能体和模型配置；服务运行配置复用首条文本提交，外部桌面关联已退役。
 artifacts:
   - id: product-release-flow
     title: Buildr 发布
@@ -380,6 +380,11 @@ artifacts:
       - agent-service-qoder-source
       - agent-service-host-source
       - agent-service-ui-source
+      - agent-service-product-action-source
+      - agent-service-ui-context-source
+      - service-runtime-configuration-action-source
+      - service-runtime-configuration-prompt-source
+      - service-runtime-configuration-hook-source
       - agent-service-task-ui-source
       - agent-service-delivery-source
       - model-single-generation-source
@@ -518,6 +523,7 @@ artifacts:
       - agent-service-conversations-source
       - agent-service-host-source
       - agent-service-ui-source
+      - agent-service-product-action-source
       - agent-service-delivery-source
       - product-reference-code-map
       - product-reference-technical-architecture
@@ -543,6 +549,12 @@ artifacts:
       - agent-service-handoff-ui-source
       - agent-service-host-source
       - agent-service-ui-source
+      - agent-service-ui-context-source
+      - agent-service-product-action-source
+      - service-runtime-configuration-action-source
+      - service-runtime-configuration-prompt-source
+      - service-runtime-configuration-hook-source
+      - service-runtime-configuration-copy-source
       - product-reference-code-map
       - local-runtime-module
       - local-runtime-definition
@@ -1997,6 +2009,36 @@ sources:
     kind: code
     path: services/buildr-web/src/features/agent-conversations/ConversationDock.tsx
     summary: 复用原面板暂看和分隔器，管理图标悬停、固定展开、宽度偏好、左右停靠及键盘焦点。
+  - id: agent-service-product-action-source
+    title: 内部对话文本产品动作
+    kind: code
+    path: services/buildr-web/src/features/agent-conversations/conversation-product-action.ts
+    summary: 选择当前可用执行入口，复用首条文本提交身份；未知响应和已有提交只核对原身份，不自动重复执行。
+  - id: agent-service-ui-context-source
+    title: 内部对话共享上下文（Context）
+    kind: code
+    path: services/buildr-web/src/features/agent-conversations/AgentConversationsContext.tsx
+    summary: 维护当前对话、连接、事件读取与首条提交记录，向产品动作提供通用文本提交和恢复。
+  - id: service-runtime-configuration-action-source
+    title: 服务运行配置统一交接
+    kind: code
+    path: services/buildr-web/src/features/service-runtime/configurationAction.ts
+    summary: 三个配置入口共用同一简短请求；已接入直接提交，尚未执行时才提供复制，受理不冒充配置成功。
+  - id: service-runtime-configuration-prompt-source
+    title: 服务运行配置简短请求
+    kind: code
+    path: services/buildr-web/src/features/service-runtime/configurationPrompt.ts
+    summary: 绑定规范工作空间与服务身份、技能入口、本地验证授权及结果要求，不复制技能方法正文。
+  - id: service-runtime-configuration-hook-source
+    title: 服务运行配置交接钩子（Hook）
+    kind: code
+    path: services/buildr-web/src/features/service-runtime/hooks/useRuntimeConfiguration.ts
+    summary: 装配当前工作空间与内部对话，统一提交中、复制抽屉、恢复提示及受理后的真实定义刷新。
+  - id: service-runtime-configuration-copy-source
+    title: 运行配置复制交接正文
+    kind: code
+    path: services/buildr-web/src/features/service-runtime/components/AgentDiscoveryContent.tsx
+    summary: 先展示尚未执行、目标和授权影响，完整请求按需展开；复制不冒充执行或配置成功。
   - id: agent-service-ui-options-source
     title: 对话执行选项
     kind: code

@@ -18,6 +18,7 @@ import { AgentDiscoveryDrawer } from '../../service-runtime/components/AgentDisc
 import { ServiceRuntimeStatusCell } from '../../service-runtime/components/ServiceRuntimeStatusCell';
 import { StartWorktreeModal } from '../../service-runtime/components/StartWorktreeModal';
 import { usePrepareServiceStart, useServiceRuntimeOverview } from '../../service-runtime/hooks/useServiceRuntime';
+import { useRuntimeConfiguration } from '../../service-runtime/hooks/useRuntimeConfiguration';
 import { useWorkbenchPreferences } from '../../workbench/hooks/useWorkbenchPreferences';
 import { activeRuns } from '../../service-runtime/model';
 import '../../service-runtime/service-runtime.css';
@@ -30,12 +31,12 @@ export function ServicesPage() {
   const [actionError, setActionError] = useState('');
   const [deleting, setDeleting] = useState<string | null>(null);
   const [starting, setStarting] = useState<{ code: string; name: string } | null>(null);
-  const [discovering, setDiscovering] = useState<{ code: string; name: string } | null>(null);
   const [onlyRunning, setOnlyRunning] = useState(false);
   const [projectFilter, setProjectFilter] = useState<string[]>([]);
   const [onlyFrequent, setOnlyFrequent] = useState(false), [savingFrequent, setSavingFrequent] = useState(''), [preparing, setPreparing] = useState('');
   const catalog = useAssetCatalog(Boolean(editing || creating)), data = catalog.data, list = listing.data;
   const runtime = useServiceRuntimeOverview(workspaceId);
+  const configuration = useRuntimeConfiguration();
   const href = (id: string) => workspaceHref(workspaceId, `/services/${id}`);
   useEffect(() => { tabs.register({ key: 'dir:services', kind: 'dir', title: '服务目录', path: workspaceHref(workspaceId, '/services') }); }, [workspaceId]);
 
@@ -99,7 +100,7 @@ export function ServicesPage() {
             ? <Button type="text" icon={<UnorderedListOutlined />} onClick={() => navigate(href(s.id) + '?view=runtime')}>查看运行</Button>
             : summary?.definition
             ? <Button className="service-directory-start" icon={<PlayCircleOutlined />} loading={preparing === s.code} disabled={list?.migrationRequired} onPointerEnter={() => { void prepareStart(s.code).catch(() => undefined); }} onFocus={() => { void prepareStart(s.code).catch(() => undefined); }} onClick={() => void openStart({ code: s.code, name: s.name })}>启动</Button>
-            : <Button type="text" icon={<SettingOutlined />} disabled={list?.migrationRequired} onClick={() => setDiscovering({ code: s.code, name: s.name })}>运行配置</Button>}
+            : <Button type="text" icon={<SettingOutlined />} loading={configuration.pendingCode === s.code} disabled={list?.migrationRequired} onClick={() => void configuration.configure({ code: s.code, name: s.name })}>运行配置</Button>}
           <Button type="text" disabled={list?.migrationRequired} onClick={() => setEditing(s.id)}>编辑</Button>
           <Button type="text" disabled={list?.migrationRequired} onClick={() => setDeleting(s.id)}>移除</Button>
         </>;
@@ -111,6 +112,6 @@ export function ServicesPage() {
     {data && editing && <AssetEditDrawer key={editing} catalog={data} kind="service" id={editing} onClose={() => setEditing(null)} />}
     {data && creating && <ServiceCreateDrawer catalog={data} initial={draft} onClose={d => { setDraft(d); setCreating(false); }} onSave={async service => { await assetCatalogApi.service({ revision: data.revision, service }); setDraft(undefined); setCreating(false); }} />}
     <StartWorktreeModal open={Boolean(starting)} serviceCode={starting?.code ?? null} serviceName={starting?.name} onClose={() => setStarting(null)} onStarted={() => void runtime.refresh({ silent: true })} />
-    <AgentDiscoveryDrawer open={Boolean(discovering)} serviceCode={discovering?.code ?? null} serviceName={discovering?.name} onClose={() => setDiscovering(null)} />
+    <AgentDiscoveryDrawer open={Boolean(configuration.discovery)} serviceCode={configuration.discovery?.code ?? null} serviceName={configuration.discovery?.name} tone={configuration.discovery?.tone} reason={configuration.discovery?.message} onClose={configuration.closeDiscovery} />
   </WorkspaceStage>;
 }

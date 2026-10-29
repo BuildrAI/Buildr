@@ -18,6 +18,16 @@ Buildr 宿主负责页面认证、网页 HTTP 与事件映射，以及已登记�
 
 ## 主程序与执行后台怎样连接
 
+### 产品动作怎样交给内部智能体（Agent）
+
+服务“运行配置”是复用内部对话的产品动作：服务目录、服务详情与任务本地运行通过同一[配置动作](../../../services/buildr-web/src/features/service-runtime/configurationAction.ts)提交[简短请求](../../../services/buildr-web/src/features/service-runtime/configurationPrompt.ts)。请求携带规范工作空间（Workspace）与服务（Service）身份、技能入口和本次本地验证授权，不复制调查与命令教程。
+
+[共享对话上下文（Context）](../../../services/buildr-web/src/features/agent-conversations/AgentConversationsContext.tsx)的 `startTextConversation` 与[文本提交原语](../../../services/buildr-web/src/features/agent-conversations/conversation-product-action.ts)负责实时选择和首条请求去重：可用时直接打开现有对话，未接入或提交前读取失败才回退到复制交接；已有未确认请求或提交响应丢失时先核对原身份，不换通道再执行。它们复用手工发送的首条提交记录、模型（Model）、权限及恢复机制，不新增后台接口或服务专用执行状态。
+
+调查、候选启动、验证及保存仍由[服务本地运行技能（Skill）](../../../services/buildr/resources/runtime/skills/buildr/references/local-services.md)指导智能体（Agent）完成。最终配置以 `services/<service-code>/runtime.yml` 及本地运行页面读回为准；对话受理或结束不生成“配置成功”，保存定义也不重启已有实例。现有刷新机制发现配置变化，本轮不建立服务与对话的持久关联。
+
+### 公共执行边界
+
 公开边界包含三组版本化契约（Contract）：执行操作（Agent Operations）、宿主能力（Host Capabilities）和运行管理（Lifecycle）。Buildr 通过宿主能力解析准确执行范围、核验可选工作对象并列出查询范围；后台只依赖来源、对象编号和已观察版本，不加载 Buildr 任务或工作空间模块。新工作必须重新核验环境；宿主暂不可达不取消已经受理的执行，也不把对象判为不存在。
 
 同一数据根及配置域（Profile）只允许一个活动持有者。公共客户端（Client）使用认证回环通信，事件流只负责观察；Buildr 退出仅释放本次连接，重新打开后读取同一后台代次和原生执行。响应丢失时以原 `clientRequestId` 核对受理结果，不自动重发；后台本身退出仍沿既有准确恢复规则处理。

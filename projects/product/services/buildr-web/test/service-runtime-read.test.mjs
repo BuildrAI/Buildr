@@ -12,6 +12,7 @@ registerHooks({
       if (specifier === 'react') return facade(['useCallback', 'useContext', 'useEffect', 'useMemo', 'useRef', 'useState'].map(name => `export const ${name}=(...args)=>globalThis.__runtimeHooks.${name}(...args);`).join('\n') + '\nexport const createContext=value=>({cacheContext:true,defaultValue:value});');
       if (specifier.endsWith('.css')) return facade('');
       if (specifier.endsWith('/useServiceRuntime') || specifier.endsWith('/service-runtime/model')) return next(new URL(specifier + '.ts', context.parentURL).href, context);
+      if (specifier.endsWith('/useRuntimeConfiguration')) return facade('export const useRuntimeConfiguration=()=>({discovery:null,pendingCode:"",configure(){},closeDiscovery(){}});');
       const source = ts.createSourceFile('host.tsx', readFileSync(new URL(context.parentURL), 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
       const imported = source.statements.filter(item => ts.isImportDeclaration(item) && item.moduleSpecifier.text === specifier);
       if (!imported.length) return next(specifier, context);

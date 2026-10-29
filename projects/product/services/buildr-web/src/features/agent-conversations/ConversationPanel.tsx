@@ -111,7 +111,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
   const recovery=conversationRecoveryAction(chat);
   const pendingAttempt=useRef<{workspaceId:string;conversationId:string;value:ReturnType<typeof pendingSubmission>}|undefined>(undefined);
   const activeSend=useRef<SendOperation|null>(null),locked=executionLocked(chat?.run);
-  const canSend=(Boolean(context.scope)||newImages.ready)&&!context.loading&&(!context.scope||Boolean(chat))&&!sending&&!uploading;
+  const canSend=(Boolean(context.scope)||newImages.ready)&&!context.loading&&!context.productActionPending&&(!context.scope||Boolean(chat))&&!sending&&!uploading;
   const supplementing=Boolean(chat?.run?.accepted&&['running','waiting-approval','waiting-question'].includes(chat.run.status)&&lastParticipant?.connectionId===choice.connectionId&&chat.run.model===effectiveModel&&chat.run.modelAccountId===choice.modelAccountId);
   const [inputAttempts]=useState(()=>{try{return createConversationInputAttempts(sessionStorage,permissionProfile+':conversation-input:');}catch{return createConversationInputAttempts();}});
   useEffect(()=>{
@@ -181,7 +181,8 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
     try{await context.refresh();await Promise.allSettled([context.refreshConnections(),context.refreshModelCatalog()]);const message=api.message.trim()||'请求未完成。';setError(/[。！？]$/.test(message)?message+' 草稿保留。':message+'。草稿保留。');}catch{fail(failure);}
     return true;
   };
-  const [firstSubmissions]=useState(()=>{try{return firstConversationSubmissions(sessionStorage,'buildr.conversation-first:'+permissionProfile);}catch{return firstConversationSubmissions();}});
+  const [fallbackFirstSubmissions]=useState(()=>{try{return firstConversationSubmissions(sessionStorage,'buildr.conversation-first:'+permissionProfile);}catch{return firstConversationSubmissions();}});
+  const firstSubmissions=context.firstSubmissionStore??fallbackFirstSubmissions;
   const [unconfirmedFirst,setUnconfirmedFirst]=useState(()=>firstSubmissions.read());
   const acceptFirst=async(submitted:FirstSubmission,result:ConversationView,selection:ConversationSelection,transferRemainder=false)=>{
     draft.acceptNewSubmitted(result.workspaceId,result.id,submitted.input.text,transferRemainder&&context.isSelectionCurrent(selection));

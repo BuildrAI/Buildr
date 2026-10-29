@@ -179,7 +179,14 @@ export async function runKnowledgeLocalReadingJourney({ page, workspaceRoot, ser
     const originalViewport = page.viewportSize();
     for (const width of [1280, 390]) {
       await page.setViewportSize({ width, height: 900 });
-      await reader().locator('.markdown-table-scroll').scrollIntoViewIfNeeded();
+      // 响应式阅读器在断点切换时重挂载；从当前可见正文定位并滚动，
+      // 不持有已被替换节点等待 Playwright 的稳定性检查。
+      await page.waitForFunction(() => {
+        const table = [...document.querySelectorAll('[data-knowledge-view="artifact"] .markdown-table-scroll')].find(element => element.getClientRects().length);
+        if (!table) return false;
+        table.scrollIntoView({ block: 'center' });
+        return true;
+      });
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, '表格不得撑宽页面');
       const table = await reader().locator('.markdown-table-scroll').evaluate((element: HTMLElement) => ({ width: element.clientWidth, scroll: element.scrollWidth }));
       if (width === 390) assert.ok(table.scroll > table.width, '窄屏宽表局部滚动');
