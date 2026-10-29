@@ -25,6 +25,11 @@ await step('首个回复前使用本轮实际智能体和模型，切换草稿�
       const pinned=await streamForPin.evaluate((node:HTMLElement)=>({distance:node.scrollHeight-node.clientHeight-node.scrollTop,button:document.querySelectorAll('.ac-scroll-latest').length}));
       assert.ok(pinned.distance<24,'底部布局增高后应重新贴底 '+JSON.stringify(pinned));assert.equal(pinned.button,0,'贴底时布局变化不弹出到底按钮');
       await streamForPin.evaluate((node:HTMLElement)=>{document.querySelector('#late-growth')?.remove();});
+      await streamForPin.evaluate((node:HTMLElement)=>{const grow=document.createElement('div');grow.id='late-growth-2';grow.style.height='120px';document.querySelector('.ac-compose-wrap')?.appendChild(grow);node.dispatchEvent(new Event('scroll'));});
+      await page.waitForTimeout(250);
+      const pinned2=await streamForPin.evaluate((node:HTMLElement)=>({distance:Math.round(node.scrollHeight-node.clientHeight-node.scrollTop),button:document.querySelectorAll('.ac-scroll-latest').length}));
+      assert.ok(pinned2.distance<24,'贴底时视口收缩伴随滚动事件不应丢失贴底态 '+JSON.stringify(pinned2));assert.equal(pinned2.button,0,'贴底态丢失会误弹到底按钮');
+      await streamForPin.evaluate((node:HTMLElement)=>{document.querySelector('#late-growth-2')?.remove();});
       fixture.conversation=previous;await page.reload();await input().waitFor();
     });
 
