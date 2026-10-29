@@ -1,13 +1,13 @@
 import { cloneElement, useRef, useState, type HTMLAttributes, type ReactElement, type Ref } from 'react';
 import { Button } from 'antd';
-import { CommentOutlined } from '@ant-design/icons';
+import { CommentOutlined, SettingOutlined } from '@ant-design/icons';
 import { usePanePeek } from '../../components/usePanePeek';
 import type { ActivityPopupControl } from './ConversationActivityEntry';
 import './conversation-dock.css';
 
-type Props={panel:ReactElement<HTMLAttributes<HTMLElement>&{ref?:Ref<HTMLElement>}>;activity:ReactElement<ActivityPopupControl>;open:boolean;initialActivityOpen?:boolean;view?:'conversation'|'history';onPreviewCurrent?():void;full?:boolean;side?:'left'|'right';width:number;onToggle():void;divider?:ReactElement;railClassName?:string};
+type Props={panel:ReactElement<HTMLAttributes<HTMLElement>&{ref?:Ref<HTMLElement>}>;activity:ReactElement<ActivityPopupControl>;open:boolean;initialActivityOpen?:boolean;view?:'conversation'|'history';onPreviewCurrent?():void;full?:boolean;side?:'left'|'right';width:number;onToggle():void;divider?:ReactElement;railClassName?:string;onSettings?():void};
 /** Current conversation keeps its transient/pinned behavior; activity is a separate entry. */
-export function ConversationDockSurface({panel,activity,open,initialActivityOpen=false,view='conversation',onPreviewCurrent,full,side='right',width,onToggle,divider,railClassName=''}:Props) {
+export function ConversationDockSurface({panel,activity,open,initialActivityOpen=false,view='conversation',onPreviewCurrent,full,side='right',width,onToggle,divider,railClassName='',onSettings}:Props) {
   const effectiveSide=full?'left':side;
   const pane=useRef<HTMLElement>(null),current=useRef<HTMLButtonElement>(null);
   const [activityOpen,setActivityOpen]=useState(initialActivityOpen);
@@ -30,6 +30,7 @@ export function ConversationDockSurface({panel,activity,open,initialActivityOpen
         onFocus={()=>enterCurrent('keyboard')} onBlur={()=>peek.exit('current','keyboard')}
         onClick={event=>{setActivityOpen(false);peek.close();onToggle();if(event.detail>0)requestAnimationFrame(()=>current.current?.blur());}}/>
       {cloneElement(activity,{open:activityOpen,onOpenChange:activityChange})}
+      {onSettings&&<Button type="text" className="ac-conversation-icon ac-account-settings" icon={<SettingOutlined aria-hidden="true"/>} aria-label="账号与配置" title="账号与配置" onClick={()=>{setActivityOpen(false);peek.close();onSettings();}}/>}
     </aside>
   </>;
 }

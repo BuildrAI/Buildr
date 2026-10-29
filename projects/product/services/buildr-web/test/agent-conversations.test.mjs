@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { createApiClient } from '../src/api/client.ts';
 import { conversationRecoveryAction, conversationContinuationText, appendDraftAttachment, canGenerateConversationTitle, canStopConversationTool, conversationConflictNeedsRefresh, conversationTurnBinding, createdConversationVisibility, executionLocked, participantAgentIds, shouldSendOnKey, draftKey, readDraft, removeSubmittedAttachments, transferDraftText, writeDraft, applyConversationEvent, isCurrentConversationEvent, mergeConversationView, prependConversationEntries, parseEventFrame, sameConversationSelection, latestConversationParticipant } from '../src/features/agent-conversations/conversation-state.ts';
 import {conversationPermissionKey,conversationPermissionStorageKey,conversationReasoningOptions,conversationRunIdentity,readConversationPermission,reasoningEffortLabel,selectedConversationModel,selectedConversationPermission,supportsConversationPermission,writeConversationPermission} from '../src/features/agent-conversations/conversation-options.ts';
-import {conversationImageSource} from '../src/features/agent-conversations/conversation-markdown-images.ts';
+import {conversationImageSource,conversationImageLinkSource} from '../src/features/agent-conversations/conversation-markdown-images.ts';
 registerHooks({resolve(specifier,context,next){
   if(specifier==='../../../api'&&context.parentURL?.endsWith('/agent-conversations-api.ts'))return next(new URL('../src/api/index.ts',import.meta.url).href,context);
   try{return next(specifier,context);}catch(cause){if(!specifier.startsWith('.')||!context.parentURL?.includes('/src/'))throw cause;for(const suffix of ['.ts','/index.ts']){const url=new URL(specifier+suffix,context.parentURL);if(existsSync(fileURLToPath(url)))return next(url.href,context);}throw cause;}
@@ -505,4 +505,15 @@ test('对话 Markdown 图片按可访问来源解析，拒绝脚本与不安全�
   assert.equal(relative.href,'/api/v1/conversation-image?path=%2Fwork%2Fimages%2Fa.png');
   assert.equal(conversationImageSource(undefined,'images/a.png'),null);
   for(const href of ['javascript:alert(1)','file:///tmp/a.png','//example.org/a.png','a%zz.png','a\0b.png']) assert.equal(conversationImageSource('/work',href),null,href);
+});
+
+test('本机截图链接复用认证图片来源，普通文件和不支持类型仍交给文件来源定位',()=>{
+  for(const value of ['/tmp/验收 截图.PNG','images/photo.webp','<images/a.jpg>','images/a%2Egif?download=1#preview','C:\\temp\\shot.bmp']){
+    assert.deepEqual(conversationImageLinkSource('/work',value),conversationImageSource('/work',value),value);
+  }
+  for(const value of ['/tmp/file.md','/tmp/page.svg','/tmp/shot.png:12','images/a.png%00','javascript:alert(1)','file:///tmp/a.png','//remote/a.png','https://example.org/a.png','data:image/png;base64,AAAA','blob:https://example.org/id','a%zz.png']){
+    assert.equal(conversationImageLinkSource('/work',value),null,value);
+  }
+  assert.equal(conversationImageLinkSource(undefined,'relative.png'),null);
+  assert.deepEqual(conversationImageLinkSource(undefined,'/tmp/shot.png'),conversationImageSource(undefined,'/tmp/shot.png'));
 });

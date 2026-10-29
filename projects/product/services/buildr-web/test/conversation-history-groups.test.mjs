@@ -7,8 +7,8 @@ const storage = (initial = {}) => {
   return { getItem: key => data.get(key) ?? null, setItem: (key, value) => data.set(key, value), data };
 };
 
-test('默认空间固定最后，其余按偏好在前、未记录按出现顺序', () => {
-  assert.deepEqual(historyGroupOrder(['w2', 'w1', '@default']), ['w2', 'w1', '@default']);
+test('默认空间固定最后，其余按偏好在前、未记录按稳定身份次序', () => {
+  assert.deepEqual(historyGroupOrder(['w2', 'w1', '@default']), ['w1', 'w2', '@default']);
   assert.deepEqual(historyGroupOrder(['w2', 'w1', '@default'], ['w1']), ['w1', 'w2', '@default']);
   assert.deepEqual(historyGroupOrder(['w1']), ['w1']);
   assert.deepEqual(historyGroupOrder(['@default', 'w1'], ['gone', 'w1']), ['w1', '@default']);
@@ -34,4 +34,12 @@ test('组顺序偏好只保存非默认空间，损坏或不安全内容回退�
   store.setItem('buildr.agent-conversation.history-groups:local', JSON.stringify(['@default', 3, ' w2 ', 'w2']));
   assert.deepEqual(readHistoryGroupPreference(store, 'local'), ['w2']);
   assert.deepEqual(readHistoryGroupPreference(undefined, 'local'), []);
+});
+
+test('活动顺序变化不影响空间顺序，完整偏好在筛选后仍保留', () => {
+  const preferred = ['w3', 'w1', 'w2'];
+  assert.deepEqual(historyGroupOrder(['w2', 'w1', 'w3']), historyGroupOrder(['w3', 'w2', 'w1']));
+  assert.deepEqual(historyGroupOrder(['w2'], preferred), ['w2']);
+  assert.deepEqual(historyGroupOrder(['w2', 'w3', 'w1'], preferred), preferred);
+  assert.deepEqual(historyGroupOrder(['w2', 'w1'], ['w2', 'w2']), ['w2', 'w1']);
 });

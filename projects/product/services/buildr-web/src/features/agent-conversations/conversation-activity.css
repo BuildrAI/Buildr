@@ -94,3 +94,5 @@
 .ac-execution-summary>div{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px;max-height:132px;overflow:auto}
 .ac-execution-summary>div>span{display:flex;align-items:center;gap:9px;max-width:100%;padding:3px 7px;border-radius:5px;background:#f0f5f2;font-size:var(--font-size-meta)}
 .ac-execution-summary>div>span>span{min-width:0;overflow-wrap:anywhere}.ac-execution-summary>div>span>b{flex:none;font-weight:500;color:var(--soft-primary)}
+.ac-history-group-actions{display:flex;flex-wrap:wrap;align-items:center}
+.ac-history-workspace.is-drop-target.is-drop-after{box-shadow:inset 0 -2px 0 var(--soft-primary)}

@@ -25,3 +25,11 @@ export function conversationImageSource(cwd: string | undefined, href: string): 
   }
   return { href: `/api/v1/conversation-image?path=${encodeURIComponent(path)}` };
 }
+
+/** Ordinary local image links use the same authenticated reader as inline images. */
+export function conversationImageLinkSource(cwd: string | undefined, href: string): { href: string } | null {
+  const source = conversationImageSource(cwd, href);
+  if (!source?.href.startsWith('/api/v1/conversation-image?')) return null;
+  const path = new URLSearchParams(source.href.split('?')[1]).get('path') ?? '';
+  return /\.(?:png|jpe?g|gif|webp|avif|bmp|ico)$/i.test(path) ? source : null;
+}

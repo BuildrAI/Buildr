@@ -74,8 +74,8 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
       if(url.searchParams.get('workspaceId'))rows=rows.filter(item=>item.workspaceId===url.searchParams.get('workspaceId'));
       if(url.searchParams.get('query')){const query=url.searchParams.get('query')!.toLowerCase();rows=rows.filter(item=>String(item.title||'').toLowerCase().includes(query)||(item.entries||[]).some((entry:any)=>String(entry.text||'').toLowerCase().includes(query)));}
       if(reminderReadFailure&&category)return route.fulfill({status:503,json:{error:{code:'fixture_unavailable',message:'模拟分组读取失败'}}});
-      const total=rows.length,offset=reminderPaging?Number(url.searchParams.get('cursor')||0):0,limit=reminderPaging?100:rows.length;
-      const nextCursor=reminderPaging&&offset+limit<rows.length?String(offset+limit):undefined;
+      const total=rows.length,offset=Number(url.searchParams.get('cursor')||0),limit=Number(url.searchParams.get('limit')||(reminderPaging?100:30));
+      const nextCursor=offset+limit<rows.length?String(offset+limit):undefined;
       return route.fulfill({json:{conversations:rows.slice(offset,offset+limit),nextCursor,total,activityCounts,stats:{agents:statGroup('provider'),models:statGroup('model'),executions,modelExecutions}}});
     }
     if(url.pathname.startsWith('/api/v1/app/agent-service/connections/')){

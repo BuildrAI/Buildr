@@ -8,7 +8,8 @@ import type { ApiError } from '../../api';
 import { CopyButton } from '../../components/CopyButton';
 import { useAgentConversations } from './AgentConversationsContext';
 import {useEarlierConversationEntries} from './useEarlierConversationEntries';
-import {conversationImageSource} from './conversation-markdown-images';
+import {conversationImageSource,conversationImageLinkSource} from './conversation-markdown-images';
+import { ConversationImagePreview } from './ConversationImagePreview';
 import {carryExpandedProcessBlocks, conversationContinuationText, conversationRecoveryAction} from './conversation-state';
 import { ConversationHistory, type ConversationWorkspace } from './ConversationHistory';
 import { ConversationRequest } from './ConversationRequest';
@@ -100,7 +101,8 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
   const [selectedHandoff,setSelectedHandoff]=useState<ConversationEntry|null>(null),[prepared,setPrepared]=useState<Prepared|null>(null),[previewOpen,setPreviewOpen]=useState(false),[rename,setRename]=useState(false),[title,setTitle]=useState('');
   const viewedHandoff=selectedHandoff?(chat?.entries.find(entry=>entry.id===selectedHandoff.id)??selectedHandoff):null;
   const [moreOpen,setMoreOpen]=useState(false),[locationOpen,setLocationOpen]=useState(false);
-  const [fileLinkFailure,setFileLinkFailure]=useState<{reference:string;message:string}|null>(null);
+  const [fileLinkFailure,setFileLinkFailure]=useState<{selection:ConversationSelection;reference:string;message:string}|null>(null);
+  const [imageLink,setImageLink]=useState<{selection:ConversationSelection;reference:string;href:string}|null>(null);
   const [expandedToolGroups,setExpandedToolGroups]=useState<Record<string,boolean>>({});
   const [atBottom,setAtBottom]=useState(true);
   const stream=useRef<HTMLDivElement>(null),readPosition=useRef(0),bottom=useRef(true),composing=useRef(false);
@@ -153,7 +155,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
     try{writeConversationPermission(permissionStorageKey,value,sessionStorage);writeConversationPermission(conversationPermissionStorageKey(permissionProfile,null,workspaceId),value,sessionStorage);}catch{/* Same-page selection remains usable. */}
     setPrepared(null);setSelectedHandoff(null);setPreviewOpen(false);
   };
-  useEffect(()=>{setError('');setFeedback('');setExpandedToolGroups({});const active=activeSend.current;if(!active||!context.isSelectionCurrent(active.selection)){activeSend.current=null;setSending(false);setPreparing(false);setPrepared(null);setSelectedHandoff(null);setPreviewOpen(false);}bottom.current=true;setAtBottom(true);},[context.selectionGeneration,context.scope?.workspaceId,context.scope?.conversationId,context.isSelectionCurrent]);
+  useEffect(()=>{setError('');setFeedback('');setFileLinkFailure(null);setImageLink(null);setExpandedToolGroups({});const active=activeSend.current;if(!active||!context.isSelectionCurrent(active.selection)){activeSend.current=null;setSending(false);setPreparing(false);setPrepared(null);setSelectedHandoff(null);setPreviewOpen(false);}bottom.current=true;setAtBottom(true);},[context.selectionGeneration,context.scope?.workspaceId,context.scope?.conversationId,context.isSelectionCurrent]);
   useEffect(()=>{setMoreOpen(false);setLocationOpen(false);},[context.selectionGeneration,context.open,context.side,context.full,context.view]);
   useEffect(()=>{if(bottom.current)stream.current?.scrollTo({top:stream.current.scrollHeight});},[chat?.id,chat?.entries.length,chat?.entries.at(-1)?.text,chat?.requests.length,chat?.run?.status]);
   useLayoutEffect(()=>{if(stream.current?.getClientRects().length)stream.current.scrollTop=bottom.current?stream.current.scrollHeight:readPosition.current;},[portalTarget,context.view,context.open]);
@@ -173,6 +175,8 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
     if(!chat)return;
     const selection=context.getSelection();
     try{
+      const image=conversationImageLinkSource(chat.cwd,path);
+      if(image){setFileLinkFailure(null);setImageLink({selection,reference:path,href:image.href});return;}
       const reference=conversationFileReference(path);
       if(!reference)throw new Error('来源路径或行号无效，请复制原路径核对。');
       const catalog=await codeApi.repositories(chat.workspaceId,chat.taskId);
@@ -182,7 +186,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
       context.setFull(false);
       navigate(`/workspaces/${encodeURIComponent(chat.workspaceId)}/code/explorer`,{state:{codeEntry:{file:{...file,...(reference.line?{line:reference.line}:{})},from:{pathname:location.pathname,search:location.search,hash:location.hash,state:location.state}}}});
       setFileLinkFailure(null);
-    }catch(failure){if(context.isSelectionCurrent(selection))setFileLinkFailure({reference:path,message:failure instanceof Error?failure.message:'无法打开来源文件。'});}
+    }catch(failure){if(context.isSelectionCurrent(selection))setFileLinkFailure({selection,reference:path,message:failure instanceof Error?failure.message:'无法打开来源文件。'});}
   };
   const recoverConflict=async(failure:unknown)=>{
     const api=failure as ApiError;if(api?.status!==409)return false;
@@ -446,7 +450,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
   const markdownImageResolver=useMemo(()=>(href:string)=>conversationImageSource(chat?.cwd,href),[chat?.cwd]);
   const markdownOptions:MarkdownRenderOptions={allowRelativeLinks:true,allowParentRelativeLinks:true,allowAbsoluteFileLinks:true,taskLinkPathname:chat&&chat.workspaceId!=='@default'?'/workspaces/'+encodeURIComponent(chat.workspaceId):null,onRelativeLinkClick:reference=>void openProcessFile(reference),imageResolver:markdownImageResolver};
   const renderEntry=(entry:ConversationEntry)=>entry.kind==='handoff'?<div className="ac-handoff-receipt" key={entry.id}><span>{entry.handoff?`${entry.handoff.changes.map(c=>c.after).join(' · ')||entry.handoff.agent} ${entry.status==='accepted'?'已接手':entry.status==='failed'?'未接收':'接收待确认'}`:entry.text}</span>{entry.handoff&&<Button type="link" size="small" onClick={()=>{setSelectedHandoff(entry);setPreviewOpen(true);}}>交接内容</Button>}</div>:<article key={entry.id} className={'ac-message is-'+entry.role} data-entry-id={entry.id} data-message-provider={entry.provider}>{entry.role==='assistant'?<MarkdownHost markdown={entry.text} className="markdown-body" options={markdownOptions}/>:<p>{entry.kind==='notice'&&entry.id.startsWith('reply-')?conversationReplyText(entry.text):entry.text}</p>}{entry.attachments?.length?<ConversationMessageImages conversation={chat!} ids={entry.attachments} read={context.api.readImage}/>:null}{entry.status==='unknown'&&<Tag color="warning">是否送达待确认</Tag>}{entry.role==='assistant'&&<CopyButton type="text" text={entry.text} ariaLabel="复制回复" failureMessage="复制失败，请手动选择文字。"/>}</article>;
-  const fileError=fileLinkFailure&&<Alert type="warning" message={fileLinkFailure.message} description={<code>{fileLinkFailure.reference}</code>} closable onClose={()=>setFileLinkFailure(null)} action={<CopyButton type="text" text={fileLinkFailure.reference} ariaLabel="复制来源路径" failureMessage="复制失败，请手动复制来源路径。"/>}/>;
+  const fileError=fileLinkFailure&&context.isSelectionCurrent(fileLinkFailure.selection)&&<Alert type="warning" message={fileLinkFailure.message} description={<code>{fileLinkFailure.reference}</code>} closable onClose={()=>setFileLinkFailure(null)} action={<CopyButton type="text" text={fileLinkFailure.reference} ariaLabel="复制来源路径" failureMessage="复制失败，请手动复制来源路径。"/>}/>;
   const panel=<section id="agent-conversation-panel" className={'ac-panel'+(context.full?' is-full':'')} aria-label="内部对话" data-dock={context.side} data-conversation-id={chat?.id}>
     {context.view==='history'?<ConversationHistory workspaces={workspaces} defaultWorkspaceId={defaultWorkspaceId}/>:<>
       <header className="ac-thread-header" data-run-status={run&&['running','completed'].includes(run.status)?run.status:undefined}>
@@ -531,5 +535,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
     <ConversationHandoffDrawer open={previewOpen} side={context.side} material={viewedHandoff?.handoff??prepared?.preview.handoff??null} onChooseModel={!viewedHandoff&&prepared&&!prepared.preview.fits?()=>{setPreviewOpen(false);requestAnimationFrame(()=>document.querySelector<HTMLButtonElement>('#agent-conversation-panel .ac-model-trigger')?.click());}:undefined} onContinue={!viewedHandoff&&prepared&&prepared.preview.fits?()=>{if(prepared.input.continueRunId&&!prepared.input.waitingHandoff)void prepare(false,false,prepared.input.continueRunId);else void commit(prepared);}:undefined} continueLabel={prepared?.input.waitingHandoff?(prepared.input.waitingHandoff.answers?.length?'回答并交接':prepared.input.continueRunId?'交接并继续':'交接并发送'):undefined} continuing={sending} continueDisabled={!canSend||(locked&&!prepared?.input.waitingHandoff)||Boolean(chat?.pendingSend)} delivery={viewedHandoff&&viewedHandoff.status!=='accepted'?viewedHandoff.status==='failed'?'failed':'unknown':undefined} received={viewedHandoff?.status==='accepted'} issue={viewedHandoff&&viewedHandoff.status!=='accepted'?'尚未确认接收，请先核对原执行。':prepared&&!prepared.preview.fits?prepared.preview.diagnostic:undefined} onClose={()=>{setPreviewOpen(false);setSelectedHandoff(null);}}/>
     <Modal open={rename} title="重命名对话" getContainer={false} styles={{mask:{position:'absolute'},wrapper:{position:'absolute'}}} onCancel={()=>setRename(false)} onOk={()=>void updateMetadata({title:title.trim()})} okButtonProps={{disabled:!title.trim()}} okText="保存" cancelText="取消"><Input aria-label="对话名称" value={title} onChange={event=>setTitle(event.target.value)}/></Modal>
   </section>;
-  return <ConversationDock panel={panel} portalTarget={portalTarget} workspaces={workspaces}/>;
+  return <><ConversationDock panel={panel} portalTarget={portalTarget} workspaces={workspaces}/>
+    {imageLink&&context.isSelectionCurrent(imageLink.selection)&&<ConversationImagePreview key={imageLink.selection.generation+':'+imageLink.href} href={imageLink.href} reference={imageLink.reference} onClose={()=>setImageLink(null)}/>}
+  </>;
 }

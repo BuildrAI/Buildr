@@ -6,6 +6,62 @@ import type {AgentConversationFixture} from './agent-conversation-fixture.ts';
 /** history 场景使用独立准备的对话现场。 */
 export async function runHistoryScenarios(fixture:AgentConversationFixture){
   const {capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,supplementaryInputs,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
+await step('工作空间独立分批展示、刷新保留展开与侧栏配置入口',async()=>{
+  const original=fixture.additionalConversations,requests:Array<{workspaceId:string|null;query:string|null;limit:number}>=[];
+  let fail=false,release:(()=>void)|undefined,started:(()=>void)|undefined;
+  const held=new Promise<void>(resolve=>{started=resolve;});
+  const matcher='**/api/v1/app/agent-service/conversations?*';
+  const intercept=async(route:any)=>{
+    const url=new URL(route.request().url());
+    requests.push({workspaceId:url.searchParams.get('workspaceId'),query:url.searchParams.get('query'),limit:Number(url.searchParams.get('limit'))});
+    if(url.searchParams.get('query')==='迟到现场'&&url.searchParams.get('workspaceId')===workspaceId){started?.();await new Promise<void>(resolve=>{release=resolve;});}
+    if(fail&&url.searchParams.get('workspaceId')===workspaceId&&Number(url.searchParams.get('limit'))>1)return route.fulfill({status:503,json:{error:{code:'fixture_unavailable',message:'分组暂不可用'}}});
+    await route.fallback();
+  };
+  await page.route(matcher,intercept);
+  try{
+    const make=(id:string,space:string)=>({...fixture.conversation,id,workspaceId:space,title:'分批现场 '+id,entries:[],participants:[],run:undefined,activity:undefined});
+    const registry=await (await page.request.get(new URL('/api/v1/workspaces',workspaceUrl).href)).json();
+    const otherId=registry.workspaces.find((entry:any)=>entry.workspace?.id&&entry.workspace.id!==workspaceId)?.workspace.id;assert.ok(otherId,'独立测试有第二个已登记工作空间');
+    fixture.additionalConversations=[make('other-batch',otherId),...Array.from({length:26},(_,i)=>make('batch-'+i,workspaceId)),...Array.from({length:8},(_,i)=>make('default-batch-'+i,'@default'))];
+    await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();
+    const search=panel().getByRole('textbox',{name:'搜索对话',exact:true});await search.fill('分批现场');
+    await panel().locator('.ac-history-toolbar .ant-select-selector').click();await page.locator('.ant-select-dropdown:visible .ant-select-item-option-content').filter({hasText:/^全部工作空间$/}).click();
+    const group=panel().locator('[data-history-workspace="'+workspaceId+'"]'),defaults=panel().locator('[data-history-workspace="@default"]');
+    const count=async(n:number)=>{await page.waitForFunction(({id,n}:any)=>document.querySelectorAll('[data-history-workspace="'+id+'"] .ac-history-row').length===n,{id:workspaceId,n});};
+    await count(5);await defaults.locator('.ac-history-row').first().waitFor();assert.equal(await defaults.locator('.ac-history-row').count(),5,'其他空间不被全局首批遗漏');
+    const other=panel().locator('[data-history-workspace="'+otherId+'"]');await other.locator('.ac-history-row').waitFor();
+    const handle=group.locator('.ac-history-group-handle'),otherHeader=other.locator('h3');
+    const order=()=>panel().locator('[data-history-workspace]').evaluateAll((nodes:HTMLElement[])=>nodes.map(node=>node.dataset.historyWorkspace));
+    await handle.dragTo(otherHeader,{targetPosition:{x:20,y:2}});assert.deepEqual(await order(),[workspaceId,otherId,'@default']);
+    const box=await otherHeader.boundingBox();await handle.dragTo(otherHeader,{targetPosition:{x:20,y:box!.height-2}});assert.deepEqual(await order(),[otherId,workspaceId,'@default'],'可以拖到最后一个具名空间之后');
+    await handle.press('Alt+ArrowUp');assert.deepEqual(await order(),[workspaceId,otherId,'@default']);
+    fixture.additionalConversations.reverse();await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await count(5);assert.deepEqual(await order(),[workspaceId,otherId,'@default'],'对话活动顺序不移动空间');
+    assert.equal(await panel().getByRole('button',{name:'加载更多',exact:true}).count(),0);
+    await group.getByRole('button',{name:'再展开 10 条',exact:true}).click();await count(15);
+    await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await page.waitForFunction((id:string)=>document.querySelector('[data-history-workspace="'+id+'"]')?.getAttribute('aria-busy')==='false',workspaceId);await count(15);
+    await group.getByRole('button',{name:'再展开 10 条',exact:true}).click();await count(25);
+    await group.getByRole('button',{name:'再展开 1 条',exact:true}).click();await count(26);
+    await group.getByRole('button',{name:'收起',exact:true}).click();await count(5);
+    await defaults.getByRole('button',{name:'再展开 3 条',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('[data-history-workspace="@default"] .ac-history-row').length===8);
+    fixture.expectedBrowserErrors.add('503');fixture.expectedBrowserErrors.add('Service Unavailable');fail=true;await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await group.getByText('分组暂不可用',{exact:true}).waitFor();assert.equal(await group.locator('.ac-history-row').count(),5,'失败保留旧数据');fail=false;await group.getByRole('button',{name:/重\s*试/}).click();await group.getByText('分组暂不可用',{exact:true}).waitFor({state:'hidden'});
+    await group.getByRole('button',{name:'再展开 10 条',exact:true}).click();await count(15);
+    await search.fill('迟到现场');await held;
+    await search.fill('分批现场');await count(5);release?.();await page.waitForTimeout(100);await count(5);
+    const rail=page.locator('.ac-collapsed-rail'),settings=rail.getByRole('button',{name:'账号与配置',exact:true}),sends=fixture.sends;
+    assert.equal(await settings.evaluate((node:HTMLElement)=>node.previousElementSibling?.classList.contains('ac-all-conversations')),true,'账号紧邻对话列表');
+    await settings.click();await page.getByRole('button',{name:'关闭智能体账号与配置',exact:true}).click();await page.getByRole('button',{name:'关闭智能体账号与配置',exact:true}).waitFor({state:'hidden'});assert.equal(await panel().locator('.ac-history').isVisible(),true);assert.equal(fixture.sends,sends);
+    await capture(page,'conversation-history-batches-and-settings.png');
+    await fixture.closeConversation();await panel().waitFor({state:'hidden'});await settings.click();await page.getByRole('button',{name:'关闭智能体账号与配置',exact:true}).click();await page.getByRole('button',{name:'关闭智能体账号与配置',exact:true}).waitFor({state:'hidden'});assert.equal(await panel().isVisible(),false,'收起时打开配置不会展开对话');
+    await rail.locator('.ac-all-conversations').click();await panel().locator('.ac-history').waitFor();
+    assert.ok(requests.some(item=>item.limit===15)&&requests.some(item=>item.limit===25));
+    assert.ok(requests.filter(item=>item.workspaceId&&item.query==='分批现场').every(item=>item.limit<=26),'只读取展开目标，不读取全量');
+  }finally{
+    release?.();fail=false;fixture.additionalConversations=original;await page.unroute(matcher,intercept);
+    const back=panel().getByRole('button',{name:'返回当前对话',exact:true});if(await back.isVisible())await back.click();await input().waitFor();
+  }
+});
+
 await step('首个回复前使用本轮实际智能体和模型，切换草稿或刷新不改写历史',async()=>{
       const previous=structuredClone(fixture.conversation),createdAt=new Date().toISOString();
       const participants=[{id:'participant-dsh',connectionId:'dsh',provider:'dsh',label:'DSH',model:'fixture-fast',contextId:'old',deliveredThrough:0},{id:'participant-codex',connectionId:'codex',provider:'codex',label:'Codex',model:'fixture-fast',contextId:'current',deliveredThrough:0}];
@@ -220,6 +276,38 @@ await step('不足一屏不自动耗尽历史，滚轮触摸与键盘可自然�
         }
       }finally{historyPages.clear();fixture.conversation=previous;await page.reload();await panel().locator('[data-run-status="stopped"]').waitFor();}
     });
+await step('临时截图链接使用认证预览，文件错误提示不跨对话或草稿残留',async()=>{
+  const previous=structuredClone(fixture.conversation),otherId='file-warning-other';
+  const base=fs.realpathSync(path.dirname(workspaceRoot)),imagePath=path.join(base,'验收 截图.png'),missingPath=path.join(base,'恢复图片.png');
+  const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64');
+  let delay=false,release:(()=>void)|undefined,started:(()=>void)|undefined;
+  const held=new Promise<void>(resolve=>{started=resolve;}),matcher='**/api/v1/workspaces/*/code/repositories*';
+  const intercept=async(route:any)=>{if(!delay)return route.fallback();delay=false;started?.();await new Promise<void>(resolve=>{release=resolve;});await route.fulfill({status:503,json:{error:{code:'fixture_unavailable',message:'旧对话迟到的文件读取失败'}}});};
+  const switchTo=async(id:string)=>{await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();await panel().locator('button[data-conversation-id="'+id+'"]').click();await page.locator('#agent-conversation-panel[data-conversation-id="'+id+'"]').waitFor();};
+  const preview=()=>page.getByRole('dialog',{name:'图片预览',exact:true});
+  const closePreview=async()=>{await preview().getByRole('button',{name:'关闭预览',exact:true}).click();await preview().waitFor({state:'hidden'});};
+  const assertImage=async()=>{await preview().waitFor();await page.waitForFunction(()=>{const image=document.querySelector<HTMLImageElement>('.ac-linked-image-preview img');return Boolean(image?.complete&&image.naturalWidth>0);});};
+  fs.writeFileSync(imagePath,png,{flag:'wx'});await page.route(matcher,intercept);
+  try{
+    fixture.additionalConversations.push({...previous,id:otherId,title:'另一段对话',entries:[{id:'other-entry',sequence:1,kind:'message',role:'user',text:'其他对话正文',createdAt:new Date().toISOString()}],run:undefined,participants:[]});
+    update({cwd:base,entries:[{id:'screenshot-reference',sequence:1,kind:'message',role:'assistant',runId:'run-fixture',text:`[查看验收截图](${encodeURI(imagePath)}) [相对截图](验收%20截图.png) [暂不可用截图](${encodeURI(missingPath)}) [无法定位的文件](/outside/not-authorized.md) [延迟文件](/outside/delayed.md)`,createdAt:new Date().toISOString()}],run:run('completed','codex')});
+    await page.reload();await panel().getByRole('link',{name:'查看验收截图',exact:true}).waitFor();
+    const loaded=page.waitForResponse((response:any)=>new URL(response.url()).pathname==='/api/v1/conversation-image');
+    await panel().getByRole('link',{name:'查看验收截图',exact:true}).click();assert.equal((await loaded).status(),200);await assertImage();assert.equal(await panel().getByRole('button',{name:'复制来源路径',exact:true}).count(),0,'临时图片不进入源码定位');await preview().evaluate(async(node:HTMLElement)=>{await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));await Promise.all(node.getAnimations({subtree:true}).map(animation=>animation.finished.catch(()=>{})));});await capture(page,'conversation-local-screenshot-preview.png');await closePreview();
+    await panel().getByRole('link',{name:'相对截图',exact:true}).click();await assertImage();await closePreview();
+    fixture.expectedBrowserErrors.add('conversation-image');await panel().getByRole('link',{name:'暂不可用截图',exact:true}).click();await preview().getByText('图片暂时无法读取，可能已被移动、删除或超过大小限制。',{exact:true}).waitFor();
+    fs.writeFileSync(missingPath,png,{flag:'wx'});await preview().getByRole('button',{name:'重新加载',exact:true}).click();await assertImage();await closePreview();
+    await panel().getByRole('link',{name:'无法定位的文件',exact:true}).click();await panel().getByRole('button',{name:'复制来源路径',exact:true}).waitFor();
+    await switchTo(otherId);assert.equal(await panel().getByRole('button',{name:'复制来源路径',exact:true}).count(),0,'其他对话没有旧提醒');await switchTo(previous.id);assert.equal(await panel().getByRole('button',{name:'复制来源路径',exact:true}).count(),0,'返回原对话也不恢复过期提醒');
+    await panel().getByRole('link',{name:'无法定位的文件',exact:true}).click();await panel().getByRole('button',{name:'复制来源路径',exact:true}).waitFor();await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().waitFor();assert.equal(await panel().getByRole('button',{name:'复制来源路径',exact:true}).count(),0,'新草稿也没有旧提醒');
+    await switchTo(previous.id);fixture.expectedBrowserErrors.add('503');delay=true;await panel().getByRole('link',{name:'延迟文件',exact:true}).click();await held;await switchTo(otherId);const late=page.waitForResponse((response:any)=>new URL(response.url()).pathname.endsWith('/code/repositories')&&response.status()===503);release?.();await late;await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));assert.equal(await panel().getByRole('button',{name:'复制来源路径',exact:true}).count(),0,'旧请求迟到失败不能给新对话添加提醒');
+  }finally{
+    release?.();await page.unroute(matcher,intercept);fixture.additionalConversations=fixture.additionalConversations.filter(item=>item.id!==otherId);fixture.conversation=previous;
+    for(const file of [imagePath,missingPath])if(fs.existsSync(file))fs.unlinkSync(file);
+    await page.reload();await input().waitFor();await switchTo(previous.id);await input().waitFor();
+  }
+});
+
 await step('file citations render labels and open the observed source with its line number',async()=>{
       const response=await page.request.get(workspaceUrl.replace('/workspaces/','/api/v1/workspaces/')+'/code/repositories');assert.equal(response.status(),200);
       const catalog=await response.json(),member=catalog.worktrees.find((item:any)=>item.available);assert.ok(member,'fixture has an observed source');

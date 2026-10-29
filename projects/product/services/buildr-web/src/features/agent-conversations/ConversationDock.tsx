@@ -57,5 +57,5 @@ export function ConversationDock({panel, portalTarget, workspaces}: Props) {
     onPointerUp={event => finish(event.pointerId)} onPointerCancel={event => finish(event.pointerId)} onLostPointerCapture={event => finish(event.pointerId)} onDoubleClick={() => resize(defaultWidth, true)}>
     <span className="split-divider-header-marker" aria-hidden="true"/>
   </SplitDivider>;
-  return render(<ConversationDockSurface panel={panel} activity={<ConversationActivity workspaces={workspaces}/>} open={context.open} view={context.view} onPreviewCurrent={()=>context.setView('conversation')} full={context.full} side={context.side} width={width} onToggle={()=>context.toggleView('conversation')} divider={divider}/>);
+  return render(<ConversationDockSurface panel={panel} activity={<ConversationActivity workspaces={workspaces}/>} open={context.open} view={context.view} onPreviewCurrent={()=>context.setView('conversation')} full={context.full} side={context.side} width={width} onToggle={()=>context.toggleView('conversation')} onSettings={()=>context.setSettings(true)} divider={divider}/>);
 }

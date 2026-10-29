@@ -1,5 +1,6 @@
 export const DEFAULT_HISTORY_GROUP = '@default';
 export const HISTORY_GROUP_LIMIT = 5;
+export const HISTORY_GROUP_BATCH = 10;
 type Reader = Pick<Storage, 'getItem'>;
 type Writer = Pick<Storage, 'setItem'>;
 
@@ -7,11 +8,11 @@ const profileName = () => typeof document === 'undefined' ? 'local' : document.q
 const storageKey = (profile: string) => `buildr.agent-conversation.history-groups:${encodeURIComponent(profile || 'local')}`;
 const browserStorage = () => { try { return typeof localStorage === 'undefined' ? undefined : localStorage; } catch { return undefined; } };
 
-/** 默认空间固定最后；其余组按已保存偏好在前，未保存过的组按列表出现顺序。 */
+/** 默认空间固定最后；其余组按已保存偏好在前，未保存过的组按稳定身份次序。 */
 export function historyGroupOrder(workspaceIds: string[], preferred: string[] = []): string[] {
   const present = [...new Set(workspaceIds)];
-  const ordered = preferred.filter(id => id !== DEFAULT_HISTORY_GROUP && present.includes(id));
-  const rest = present.filter(id => id !== DEFAULT_HISTORY_GROUP && !ordered.includes(id));
+  const ordered = [...new Set(preferred)].filter(id => id !== DEFAULT_HISTORY_GROUP && present.includes(id));
+  const rest = present.filter(id => id !== DEFAULT_HISTORY_GROUP && !ordered.includes(id)).sort();
   return [...ordered, ...rest, ...(present.includes(DEFAULT_HISTORY_GROUP) ? [DEFAULT_HISTORY_GROUP] : [])];
 }
 
