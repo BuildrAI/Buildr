@@ -2,7 +2,7 @@ import { ConversationExecutionSummary } from './ConversationExecutionSummary';
 import { conversationModelSourceLabel, conversationModelLabel } from './conversation-model-label';
 import { useEffect, useState } from 'react';
 import { Alert, Button, Empty, Input, Select, Spin } from 'antd';
-import { ArrowLeftOutlined, HolderOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import { useAgentConversations } from './AgentConversationsContext';
 import { ConversationActivityStatus } from './ConversationActivityStatus';
 import { activityState, conversationMetadata } from './conversation-activity';
@@ -48,10 +48,10 @@ export function ConversationHistory({workspaces,defaultWorkspaceId}:{workspaces:
     className={'ac-history-group ac-history-workspace'+(draggingGroup===id?' is-dragging':'')+(dropGroup===id&&draggingGroup&&draggingGroup!==id?' is-drop-target'+(dropAfter?' is-drop-after':''):'')}
     onDragOver={event=>{if(!draggingGroup||draggingGroup===id||id===DEFAULT_HISTORY_GROUP)return;event.preventDefault();setDropGroup(id);const header=event.currentTarget.querySelector('h3')?.getBoundingClientRect();setDropAfter(Boolean(header&&event.clientY>header.top+header.height/2));}}
     onDrop={event=>{if(!draggingGroup)return;event.preventDefault();if(id!==DEFAULT_HISTORY_GROUP){const header=event.currentTarget.querySelector('h3')?.getBoundingClientRect();const after=Boolean(header&&event.clientY>header.top+header.height/2);const target=after?order[order.indexOf(id)+1]??'end':id;reorder(draggingGroup,target===DEFAULT_HISTORY_GROUP?'end':target);}setDraggingGroup('');setDropGroup('');}}
-    handle={id!==DEFAULT_HISTORY_GROUP&&movable.length>1&&<span role="button" tabIndex={0} draggable className="ac-history-group-handle" aria-label={`调整${workspaceName(id)}分组顺序`} title="拖动调整分组顺序；Alt+上下方向键移动分组"
-        onDragStart={event=>{setDraggingGroup(id);event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',id);}}
-        onDragEnd={()=>{setDraggingGroup('');setDropGroup('');}}
-        onKeyDown={event=>{if(!event.altKey||(event.key!=='ArrowUp'&&event.key!=='ArrowDown'))return;event.preventDefault();keyboardMove(id,event.key==='ArrowUp'?-1:1);}}><HolderOutlined aria-hidden/></span>}
+    headerProps={{draggable:id!==DEFAULT_HISTORY_GROUP&&movable.length>1,title:"单击折叠或展开；拖动调整顺序；Alt+上下方向键移动分组",
+        onDragStart:event=>{setDraggingGroup(id);event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',id);},
+        onDragEnd:()=>{setDraggingGroup('');setDropGroup('');},
+        onKeyDown:event=>{if(!event.altKey||(event.key!=='ArrowUp'&&event.key!=='ArrowDown'))return;event.preventDefault();keyboardMove(id,event.key==='ArrowUp'?-1:1);}}}
   />;
   return <section className="ac-history" aria-label="对话列表">
     <header className="ac-thread-header"><Button type="text" icon={<ArrowLeftOutlined/>} aria-label="返回当前对话" onClick={()=>context.setView('conversation')}/><strong>对话列表</strong><Button type="text" icon={<PlusOutlined/>} aria-label="新建对话" onClick={()=>context.newConversation({preserveVisibility:true})}/></header>
