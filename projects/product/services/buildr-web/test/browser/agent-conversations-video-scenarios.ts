@@ -20,10 +20,10 @@ await step('视频选择、粘贴与拖入均保留原件和画面，发送及�
         return Array.from(new Uint8Array(await new Blob(chunks,{type:'video/webm'}).arrayBuffer()));
       });
       const buffer=Buffer.from(recording),file={name:'录屏.webm',mimeType:'video/webm',buffer};
-      await panel().locator('input[type=file]').setInputFiles({name:'损坏.mp4',mimeType:'video/mp4',buffer:Buffer.from('not a video')});
+      await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles({name:'损坏.mp4',mimeType:'video/mp4',buffer:Buffer.from('not a video')});
       await panel().getByText('视频编码无法解码，请换用浏览器可播放的 MP4 或 WebM。',{exact:true}).waitFor();assert.equal(await input().inputValue(),'录屏说明保留');
       for(const method of ['file','paste','drop']){
-        if(method==='file')await panel().locator('input[type=file]').setInputFiles(file);
+        if(method==='file')await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles(file);
         else await input().evaluate((node:HTMLElement,detail:{method:string;bytes:number[]})=>{
           const data=new DataTransfer();data.items.add(new File([new Uint8Array(detail.bytes)],'录屏.webm',{type:'video/webm'}));
           node.dispatchEvent(detail.method==='paste'?new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:data}):new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:data}));
@@ -35,7 +35,7 @@ await step('视频选择、粘贴与拖入均保留原件和画面，发送及�
         await panel().locator('.ac-video-thumbnail[title="录屏.webm"]').hover();
         await remove.click();await remove.waitFor({state:'hidden'});
       }
-      await panel().locator('input[type=file]').setInputFiles(file);await panel().getByRole('button',{name:'移除视频 录屏.webm',exact:true}).waitFor();
+      await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles(file);await panel().getByRole('button',{name:'移除视频 录屏.webm',exact:true}).waitFor();
       const originalId='image-fixture-'+fixture.attachmentUploads,creationsBeforeVideo=fixture.creations;assert.equal(await panel().getAttribute('data-conversation-id'),null);
       await page.reload();await panel().getByRole('button',{name:'移除视频 录屏.webm',exact:true}).waitFor();await page.waitForFunction(()=>{const video=document.querySelector<HTMLVideoElement>('.ac-composer video');return Boolean(video&&video.readyState>=2&&video.videoWidth===160);});assert.equal(fixture.creations,creationsBeforeVideo);assert.equal(await panel().getAttribute('data-conversation-id'),null);assert.equal(await input().inputValue(),'录屏说明保留');
       await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().locator('[data-run-status="running"]').waitFor();assert.deepEqual(sentInputs.at(-1).attachmentIds,[originalId]);

@@ -13,7 +13,7 @@ import type { AgentExecutor, ContextRef, ExecutorObservation, ExecutorSendInput,
 function executor(id:string, question=false) {
   const contexts=new Map<string,{observation:ExecutorObservation;finish?():void}>(),inputs:ExecutorSendInput[]=[],replies:unknown[]=[];
   let stops=0,unknownStop=false;
-  const capabilities={text:true,images:false,questions:true,approval:true,stop:true,resume:true,maxInputBytes:128*1024};
+  const capabilities={text:true,images:true,questions:true,approval:true,stop:true,resume:true,maxInputBytes:128*1024};
   const get=(ref:ContextRef)=>contexts.get(ref.id)!;
   const value:AgentExecutor={descriptor:{id,label:id,capabilities},async open(){return{
     bindingIdentity:id,capabilities,inspectAccount:async()=>({status:'ready'}),models:async()=>[{id:'a',label:'A'},{id:'b',label:'B'}],
@@ -21,7 +21,7 @@ function executor(id:string, question=false) {
     resumeContext:async()=>{},readHistory:async()=>[],
     async send(input){
       inputs.push(input);const context=get(input.contextRef),executionRef={id:randomUUID()};
-      context.observation={status:'running',tools:[],executionRef};input.onEvent({type:'accepted',executionRef});
+      context.observation={status:question?'waiting':'running',tools:[],executionRef};input.onEvent({type:'accepted',executionRef});
       if(question){
         input.onEvent({type:'request',request:{id:'native-question',kind:'question',title:'是否验收？',questions:[{id:'result',label:'结果如何？',allowOther:true,options:[{id:'later',label:'稍后确认'},{id:'ok',label:'符合预期'}]}]}});
         await new Promise<void>(resolve=>{context.finish=resolve;});
@@ -121,7 +121,7 @@ test('an answer through another entry invalidates an old preview and changed ide
   try{
     const draft=f.queued('另一个要求');
     assert.throws(()=>f.service.conversations.prepareSend('scope',f.chat.id,{...draft,waitingHandoff:{...draft.waitingHandoff!,runId:'other-run'}}),{code:'agent_handoff_stale'});
-    assert.throws(()=>f.service.conversations.prepareSend('scope',f.chat.id,{...draft,connectionId:'old'}),{code:'agent_handoff_unchanged'});
+    assert.throws(()=>f.service.conversations.prepareSend('scope',f.chat.id,{...f.queued(),connectionId:'old'}),{code:'agent_handoff_unchanged'});
     await f.service.conversations.reply('scope',f.chat.id,f.chat.requests[0]!.id,{expectedRevision:f.chat.revision,runId:f.intent.runId,participantId:f.intent.participantId,generation:f.intent.generation,answer:{result:'later'}});
     const latest=f.service.conversations.read('scope',f.chat.id);
     assert.throws(()=>f.service.conversations.queueSend('scope',f.chat.id,{...draft,expectedRevision:latest.revision,clientRequestId:randomUUID()}),{code:'agent_handoff_answered'});
@@ -156,4 +156,30 @@ test('a reply accepted by a retained old entry during stop prevents new delivery
     assert.equal(pending.state,'failed');assert.match(pending.reason,/已有答复/);assert.deepEqual(pending.draft.waitingHandoff?.answers,draft.waitingHandoff?.answers);
     assert.equal(f.next.inputs.length,0);
   }finally{await f.close();}
+});
+
+
+test('同组合新要求不能隐式停止或接替待答问题',async()=>{
+ const f=await fixture();try{
+  const draft={...f.queued('先优化新指出的问题'),connectionId:'old'};
+  assert.throws(()=>f.service.conversations.prepareSend('scope',f.chat.id,draft),{code:'agent_handoff_unchanged'});
+  assert.throws(()=>f.service.conversations.queueSend('scope',f.chat.id,{...draft,clientRequestId:'replace-wait'}),{code:'agent_handoff_unchanged'});
+  assert.equal(f.old.stops,0);assert.equal(f.old.replies.length,0);assert.equal(f.old.inputs.length,1);
+  assert.equal(f.service.conversations.read('scope',f.chat.id).requests[0]!.id,f.intent.requestIds[0]);
+ }finally{await f.close();}
+});
+
+for(const media of ['image','video'] as const)test('正式交接回答保全同对话原件与抽样来源：'+media,async()=>{
+ const f=await fixture();try{
+  const bytes=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5EsAAAAASUVORK5CYII=','base64');
+  const frame=f.service.conversations.addAttachment('scope',f.chat.id,{expectedRevision:f.chat.revision,mimeType:'image/png',bytes});
+  const original=media==='image'?frame:f.service.conversations.addAttachment('scope',f.chat.id,{expectedRevision:frame.revision,mimeType:'video/mp4',bytes:Buffer.from('000000186674797069736f6d0000020069736f6d69736f32','hex'),video:{duration:2,frames:[{id:frame.id,time:0}]}});
+  const draft={...f.queued('',[{requestId:f.chat.requests[0]!.id,answer:{result:{text:'请核对材料',attachmentIds:[original.id]}}}]),expectedRevision:original.revision};
+  const preview=await f.service.conversations.prepareHandoff('scope',f.chat.id,draft);assert.equal(preview.fits,true);assert.equal(f.old.stops,0);assert.equal(f.old.replies.length,0);assert.equal(f.next.inputs.length,0);
+  f.service.conversations.queueSend('scope',f.chat.id,{...draft,clientRequestId:randomUUID()});
+  const sends=f.pump();await until(async()=>{await sends.pump();return f.service.conversations.read('scope',f.chat.id);},view=>view.run?.id!==f.intent.runId&&view.run?.status==='completed');
+  assert.equal(f.next.inputs.length,1);assert.equal(f.old.replies.length,0);assert.equal(f.old.stops,1);assert.ok(f.next.inputs[0]!.images.some(image=>image.id===frame.id));assert.match(f.next.inputs[0]!.text,/请核对材料/);
+  const history=f.service.conversations.read('scope',f.chat.id).entries.find(entry=>entry.id.startsWith('waiting-handoff-'))!;assert.deepEqual(history.attachments,[original.id]);
+  if(media==='video'){assert.match(f.next.inputs[0]!.text,/不含音轨/);assert.match(history.text,/不能据此声称连续观看/);assert.match(history.text,new RegExp(original.id));assert.match(history.text,new RegExp(frame.id));}
+ }finally{await f.close();}
 });

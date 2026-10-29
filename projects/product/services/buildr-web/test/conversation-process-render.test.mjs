@@ -43,3 +43,12 @@ test('未展开的历史过程不挂载正文，执行中的说明与工具汇�
  assert.doesNotMatch(closed,/ac-process-narration|ac-step ac-step-tool|ac-tool-detail/);assert.match(closed,/查看处理过程/);
  const live=renderEntries(entries,{active:true,open:false});assert.match(live,/ac-process-narration/);assert.match(live,/ac-step-group/);assert.doesNotMatch(live,/ac-tool-detail|ac-step-group-items/);
 });
+
+test('执行中光点排在工具图标之前，结束后恢复统计',()=>{const live=render(true);assert.ok(live.indexOf('ac-execution-light')<live.indexOf('ac-step-node'));assert.doesNotMatch(live,/次工具调用/);assert.match(render(false),/次工具调用/);});
+
+test('工具图标按真实类型区分，不用统一占位图标',()=>{
+ for(const [name,icon] of [['read','file-text'],['write','file-add'],['edit','edit'],['search','search'],['web_fetch','global'],['ls','folder-open'],['unknown','tool']]){
+  const html=renderEntries([{...tool('typed',name),status:'running'}],{active:true});assert.match(html,new RegExp('data-icon="'+icon+'"'),name);
+ }
+ assert.match(render(true),/ac-command-symbol/);
+});

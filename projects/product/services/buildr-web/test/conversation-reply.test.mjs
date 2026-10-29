@@ -10,3 +10,5 @@ test('handoff question snapshots show their actual status and explicit answers k
   assert.match(conversationReplyText(JSON.stringify({...base,状态:'未回答，已交接'})),/未回答；交接不代表同意/);
   assert.equal(conversationReplyText(JSON.stringify({...base,状态:'已提交交接回答',回答:{result:'later'}})),'验收结果：稍后确认');
 });
+
+test('当前可答请求只属于当前执行，旧轮和结束轮不再可答',async()=>{const {currentConversationRequests}=await import('../src/features/agent-conversations/conversation-state.ts');const question={id:'q',runId:'old',participantId:'p',generation:'g'};const chat={requests:[question],run:{id:'new',participantId:'p',generation:'g',status:'running'}};assert.deepEqual(currentConversationRequests(chat),[]);chat.run.id='old';assert.equal(currentConversationRequests(chat).length,1);chat.run.status='unknown';assert.equal(currentConversationRequests(chat).length,1);chat.run.status='stopped';assert.deepEqual(currentConversationRequests(chat),[]);});

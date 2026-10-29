@@ -22,6 +22,23 @@ await step('悬停预览与点击固定分离，重复点击收起，切组和�
       await code.focus();await code.press('Enter');await primary.locator('[data-navigation-mode="fixed"]').waitFor({state:'hidden'});await page.mouse.move(500,80);await code.hover();const codePopup=page.getByLabel('代码二级导航',{exact:true});await codePopup.waitFor();await codePopup.getByRole('link',{name:'源代码管理',exact:true}).click();await codePopup.waitFor({state:'hidden'});assert.equal(await primary.locator('[data-navigation-mode="preview"]:visible').count(),0,'选择页面后预览关闭');await page.goto(workUrl);await page.locator('#workbench-overview').waitFor();
     });
 
+await step('账号与模型配置固定在竖条最底部，展开或收起都可直接打开',async()=>{
+      await reset();const rail=page.getByRole('complementary',{name:'当前对话与所有对话',exact:true}),settings=rail.getByRole('button',{name:'账号与配置',exact:true});
+      const counts=[fixture.sends,fixture.creations],drawer=page.getByRole('dialog',{name:/^智能体与模型/});
+      for(const view of ['collapsed','conversation','history']){
+        if(view==='conversation')await openDesktopConversation();
+        if(view==='history')await rail.locator('.ac-all-conversations').click();
+        const currentState=await rail.locator('.ac-current-conversation').getAttribute('aria-expanded'),historyState=await rail.locator('.ac-all-conversations').getAttribute('aria-pressed');
+        const bounds=await rail.boundingBox(),icon=await settings.boundingBox(),list=await rail.locator('.ac-all-conversations').boundingBox();
+        assert.ok(bounds&&icon&&list&&Math.abs(bounds.y+bounds.height-icon.y-icon.height-10)<=2&&icon.y>list.y+list.height+80,'配置入口固定在竖条底部，与上方对话入口分区');
+        assert.equal(await panel().getByRole('button',{name:'账号与配置',exact:true}).count(),0,'不在对话列表内容底部保留重复入口');
+        await settings.click();await drawer.waitFor();assert.deepEqual([fixture.sends,fixture.creations],counts);
+        await drawer.getByRole('button',{name:'关闭智能体账号与配置',exact:true}).click();await drawer.waitFor({state:'hidden'});
+        assert.equal(await rail.locator('.ac-current-conversation').getAttribute('aria-expanded'),currentState);assert.equal(await rail.locator('.ac-all-conversations').getAttribute('aria-pressed'),historyState);
+      }
+      await capture(page,'agent-settings-rail-bottom.png');await rail.locator('.ac-all-conversations').click();
+    });
+
 await step('模型目录初次读取和无关账号核对失败不打扰对话',async()=>{
       await reset();
       await openDesktopConversation();await input().waitFor();assert.equal(await panel().getByText(/正在获取|正在刷新|刷新成功|恢复成功/).count(),0);
@@ -136,7 +153,7 @@ await step('收起图标暂看同一对话，输入与下拉不消失，固定�
 
 await step('图片能力按当前执行者显示，不支持时保留附件并提示',async()=>{
       const workspaceName=await page.locator('.workspace-switcher strong').innerText();await chooseOption('新对话工作空间',workspaceName);await input().fill('草稿只保存，不自动执行');
-      await panel().locator('input[type=file]').setInputFiles({name:'fixture.png',mimeType:'image/png',buffer:Buffer.from([137,80,78,71,13,10,26,10])});await panel().getByRole('button',{name:'移除图片 fixture.png',exact:true}).waitFor();
+      await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles({name:'fixture.png',mimeType:'image/png',buffer:Buffer.from([137,80,78,71,13,10,26,10])});await panel().getByRole('button',{name:'移除图片 fixture.png',exact:true}).waitFor();
       await chooseAgent('DSH');assert.equal(await panel().getByRole('button',{name:'发送对话',exact:true}).isDisabled(),false);await panel().getByText('当前执行者不支持图片或视频画面。请移除附件或选择支持图片的执行者。',{exact:true}).waitFor();assert.equal(fixture.sends,0);
       await chooseAgent('Codex');await panel().locator('.ac-image-thumbnail[title="fixture.png"]').hover();await panel().getByRole('button',{name:'移除图片 fixture.png',exact:true}).click();assert.equal(await panel().getByRole('button',{name:'发送对话',exact:true}).isDisabled(),false);
     });
@@ -158,7 +175,7 @@ await step('模型设置按真实弹层和滑块交互，切换与恢复默认�
 
 await step('shared image draft survives refresh and workspace clearing without creating a conversation',async()=>{
       const before=fixture.creations,text=await input().inputValue();
-      await panel().locator('input[type=file]').setInputFiles({name:'shared.png',mimeType:'image/png',buffer:Buffer.from([137,80,78,71,13,10,26,10])});
+      await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles({name:'shared.png',mimeType:'image/png',buffer:Buffer.from([137,80,78,71,13,10,26,10])});
       await panel().getByRole('button',{name:'移除图片 shared.png',exact:true}).waitFor();assert.equal(fixture.creations,before);assert.equal(await panel().getAttribute('data-conversation-id'),null);
       const selector=panel().locator('.ac-welcome .ac-location-settings .ant-select');await selector.hover();await selector.locator('.ant-select-clear').click();
       assert.equal(await input().inputValue(),text);assert.equal(await panel().getAttribute('data-conversation-id'),null);

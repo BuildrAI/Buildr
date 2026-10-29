@@ -149,3 +149,23 @@ for (const completed of [false, true]) test('Qoder native child exit recovers on
     }
   } finally { await runtime?.close(); await rm(root, { recursive: true, force: true }); }
 });
+
+for(const confirmed of [true,false])test('Qoder whole-run stop cancels owned native background tasks before interrupt; confirmed='+confirmed,{timeout:15000},async()=>{
+ const root=await mkdtemp(join(tmpdir(),'qoder-stop-owned-')),workspace=join(root,'workspace');await mkdir(workspace);
+ const executable=join(root,'qoder.mjs'),log=join(root,'calls.jsonl');let runtime:AgentRuntime|undefined;
+ let fixture="import fs from 'node:fs';\n"+cli.replace("capabilities:['interrupt_receipt_v1']","capabilities:['interrupt_receipt_v1','background_tasks_v1']").replace("subtype:'init',session_id:","subtype:'init',capabilities:['interrupt_receipt_v1','background_tasks_v1'],session_id:").replace("r.on('line',line=>{const m=JSON.parse(line);",`r.on('line',line=>{const m=JSON.parse(line);fs.appendFileSync(${JSON.stringify(log)},JSON.stringify(m)+'\\n');`);
+ fixture=fixture.replace("if(t==='interrupt')",`if(t==='stop_task'){if(m.request.task_id!=='owned-task')throw Error('foreign task');ack(m.request_id);${confirmed?"emit({type:'user',uuid:'finished-task',session_id:sid,message:{role:'user',content:[{type:'tool_result',tool_use_id:'owned-tool',content:'cancelled'}]}});":''}return;}if(t==='interrupt')`);
+ fixture=fixture.replace("emit({type:'control_request',request_id:'permission-native'", "emit({type:'assistant',uuid:'tool-msg',session_id:sid,message:{content:[{type:'tool_use',id:'owned-tool',name:'Bash',input:{command:'owned-background'}}]}});emit({type:'system',subtype:'task_started',tool_use_id:'owned-tool',task_id:'owned-task',session_id:sid});emit({type:'control_request',request_id:'permission-native'");
+ await writeFile(executable,fixture);
+ try{
+  runtime=await createQoderExecutor().open({connectionId:'qoder',configRoot:join(root,'config'),executable,environment:{PATH:process.env.PATH??''}});
+  const contextRef=await runtime.createContext({cwd:workspace}),events:ExecutorEvent[]=[];
+  const sending=runtime.send({contextRef,cwd:workspace,text:'owned background',images:[],clientRequestId:'8c9ee253-42a9-4816-b157-74a067736e38',onEvent:event=>events.push(event)});sending.catch(()=>{});
+  await eventually(()=>events.some(event=>event.type==='observation'&&event.observation.tools.some(tool=>tool.canStop)));
+  const accepted=events.find(event=>event.type==='accepted');assert.equal(accepted?.type,'accepted');
+  await runtime.stop({contextRef,executionRef:accepted.executionRef});await sending;
+  const calls=(await import('node:fs/promises')).readFile(log,'utf8');const methods=(await calls).trim().split('\n').map(line=>JSON.parse(line)).filter(call=>call.type==='control_request').map(call=>call.request.subtype??call.request.type);
+  assert.ok(methods.indexOf('stop_task')>=0&&methods.indexOf('stop_task')<methods.indexOf('interrupt'),JSON.stringify(methods));
+  const observed=await runtime.observe({contextRef,executionRef:accepted.executionRef});assert.equal(observed.status,confirmed?'stopped':'unknown');assert.equal(observed.tools[0].status,confirmed?'completed':'unknown');
+ }finally{await runtime?.close();await rm(root,{recursive:true,force:true});}
+});

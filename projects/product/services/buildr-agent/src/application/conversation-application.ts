@@ -1,3 +1,4 @@
+import { answerAttachmentIds, resolveQuestionAnswer } from '../domain/question-answer.ts';
 import { normalizeSendDraft } from '../domain/send-draft.ts';
 import { ConversationAttachments, MAX_IMAGE_BYTES, MAX_VISUAL_INPUTS } from './conversation-attachments.ts';
 import type { AttachmentInput } from '../contracts.ts';
@@ -264,6 +265,7 @@ export class ConversationApplication {
     }
     // Historical tool output can be large; clone only the page that will be sent.
     const view = structuredClone({ ...record.view, entries: entries.slice(start), nextEntryCursor: start > 0 ? entries[start]!.sequence : undefined });
+    view.requests = view.requests.filter(request => request.runId === view.run?.id && request.participantId === view.run.participantId && request.generation === view.run.generation);
     view.attachmentRevision = hash(record.attachments ?? {});
     view.titleState??={status:'unknown'};
     view.participants = record.participants.map(participant => ({
@@ -392,7 +394,7 @@ export class ConversationApplication {
     return view;
   }
   private draft(input: SendDraft): SendDraft { return normalizeSendDraft(input); }
-  private prepare(record: StoredConversation, raw: SendDraft): { preview: SendPreview; text: string; images: ExecutorImage[]; draft: SendDraft;configuration?:string;needsCompression:boolean;fullText:string } {
+  private prepare(record: StoredConversation, raw: SendDraft, answerMaterials: string[] = []): { preview: SendPreview; text: string; images: ExecutorImage[]; draft: SendDraft;configuration?:string;needsCompression:boolean;fullText:string } {
     let input = this.draft(raw); expected(record.view.revision, input.expectedRevision);
     const waitingQuestions = input.waitingHandoff ? waitingHandoffQuestions(record, input) : undefined;
     if (!waitingQuestions) this.assertIdle(record);
@@ -435,7 +437,9 @@ export class ConversationApplication {
     const historicalImages=[...new Set(changes.flatMap(e=>e.attachments??[]))].map(id=>{try{const image=this.media.describe(record,id);return {...image,available:true};}catch{return {id,available:false};}});
     const sources=changes.length?handoffSources(this.options.root,record.view.id,changes,localRounds,historicalImages):undefined;
     const rounds=sources?.rounds??localRounds;
-    const currentImages=input.attachmentIds??[];
+    const answerImages=(input.waitingHandoff?.answers??[]).flatMap(item=>answerAttachmentIds(item.answer));
+    const currentImages=[...new Set([...(input.attachmentIds??[]),...answerImages,...answerMaterials])];
+    if(currentImages.length>4)fail('agent_question_answer_invalid','每次回答最多添加4份图片或视频。');
     const canAttachHistory=connection.capabilities.images&&(!source||Boolean(selectedModel&&'images' in selectedModel&&selectedModel.images));
     const priorImages=canAttachHistory&&currentImages.length<4?historicalImages.filter(image=>image.available&&'mimeType' in image&&image.mimeType?.startsWith('image/')&&!currentImages.includes(image.id)).slice(-Math.max(0,4-currentImages.length)).map(image=>image.id):[];
     const ids=[...new Set([...priorImages,...currentImages])];
@@ -445,7 +449,7 @@ export class ConversationApplication {
     const questionEntries = changes.filter(entry=>entry.kind==='notice'&&entry.runId===record.view.run?.id);
     const hasHandoffAnswers = questionEntries.some(entry=>entry.id.startsWith('waiting-handoff-'));
     const unanswered = questionEntries.filter(entry=>entry.role==='system'&&entry.id.startsWith(hasHandoffAnswers?'waiting-handoff-':'waiting-question-')).map(entry=>entry.text);
-    const suffix=`\n\n本次用户要求：\n${input.text}${materials.description}${unanswered.length?'\n原轮保留的问题与未回答事项（答复以明确记录为准，交接不代表同意）：\n'+unanswered.join('\n'):''}${waitingQuestions?'\n原轮问题及本次明确提交的回答：\n'+waitingQuestions.map(question=>waitingQuestionText(question,input.waitingHandoff!).text).join('\n'):''}${input.handoffSummary?'\n用户补充的交接说明（不替代本地历史）：\n'+input.handoffSummary:''}`;
+    const suffix=`\n\n本次用户要求：\n${input.text}${materials.description}${unanswered.length?'\n原轮保留的问题与未回答事项（答复以明确记录为准，交接不代表同意）：\n'+unanswered.join('\n'):''}${waitingQuestions?'\n原轮问题及本次明确提交的回答：\n'+waitingQuestions.map(question=>waitingQuestionText(question,input.waitingHandoff!, answer => resolveQuestionAnswer(question,answer,ids=>this.media.expand(record,ids)).answer).text).join('\n'):''}${input.handoffSummary?'\n用户补充的交接说明（不替代本地历史）：\n'+input.handoffSummary:''}`;
     const fullText=changes.length||switching?`${HANDOFF_PROMPT}\n工作位置与来源：${context}\n按轮次组织的本地记录：\n${formatHandoffRounds(rounds)}${suffix}`:input.text+materials.description;
     const needsCompression=Buffer.byteLength(fullText)>maxInputBytes;
     const text=needsCompression&&sources?`${HANDOFF_PROMPT}\n工作位置与来源：${context}\n完整历史共有 ${rounds.length} 轮，记录 #${changes[0]?.sequence??0}–#${through}，超过内联容量。请先读取本地索引 ${sources.index}，按各轮路径读取用户要求、授权纠正、失败未知、成果和待办。正文没有省略来源，具体内容需按引用读取。${suffix}`:fullText;
@@ -533,17 +537,18 @@ export class ConversationApplication {
     for (const question of pending.waitingQuestions!) {
       const entryId = 'waiting-handoff-'+requestId+'-'+question.id;
       if (record.view.entries.some(entry=>entry.id===entryId)) continue;
-      const {text,answered} = waitingQuestionText(question,pending.draft.waitingHandoff!);
-      record.view.entries.push({id:entryId,sequence:(record.view.entries.at(-1)?.sequence??0)+1,kind:'notice',role:answered?'user':'system',text,runId:run.id,participantId:run.participantId,status:'accepted',createdAt:this.options.now()});
+      const {text,answered} = waitingQuestionText(question,pending.draft.waitingHandoff!, answer => resolveQuestionAnswer(question,answer,ids=>this.media.expand(record,ids)).answer);
+      record.view.entries.push({id:entryId,sequence:(record.view.entries.at(-1)?.sequence??0)+1,kind:'notice',role:answered?'user':'system',text,attachments:answerAttachmentIds(pending.draft.waitingHandoff!.answers?.find(item=>item.requestId===question.id)?.answer),runId:run.id,participantId:run.participantId,status:'accepted',createdAt:this.options.now()});
     }
     // Save explicit answers atomically with the next run. A cancelled or failed
     // handoff must not leave a business answer that a later model could adopt.
     const {waitingHandoff,...ordinary}=pending.draft;
     const draft={...ordinary,expectedRevision:record.view.revision,skipHandoffSummary:true};
-    const preview=this.prepare(record,draft).preview;
-    return this.submit(record,{...draft,previewToken:preview.token,clientRequestId:requestId});
+    const answerMaterials=(waitingHandoff!.answers??[]).flatMap(item=>answerAttachmentIds(item.answer));
+    const preview=this.prepare(record,draft,answerMaterials).preview;
+    return this.submit(record,{...draft,previewToken:preview.token,clientRequestId:requestId},false,false,answerMaterials);
   }
-  private submit(record: StoredConversation, raw: SendDraft & { previewToken: string; clientRequestId: string }, systemRecovery = false, initial = false): { run: RunView; conversation: ConversationView } {
+  private submit(record: StoredConversation, raw: SendDraft & { previewToken: string; clientRequestId: string }, systemRecovery = false, initial = false, answerMaterials: string[] = []): { run: RunView; conversation: ConversationView } {
     const { workspaceId, id } = record.view;
     const clientRequestId = nonempty(raw.clientRequestId, '请求身份', 200);
     const inputDigest = hash({ ...this.draft(raw), expectedRevision: undefined });
@@ -554,7 +559,7 @@ export class ConversationApplication {
       if (record.view.run?.id !== repeated.runId) fail('agent_request_already_accepted', '该请求已受理，请读取其原有历史。', 409);
       return { run: structuredClone(record.view.run), conversation: this.view(record) };
     }
-    const baseline = this.prepare(record, raw);
+    const baseline = this.prepare(record, raw, answerMaterials);
     const cached=this.handoffPreviews.get(raw.previewToken);
     const prepared=cached?.baseToken===baseline.preview.token?cached.prepared:baseline;
     const a = Buffer.from(prepared.preview.token); const b = Buffer.from(String(raw.previewToken));
@@ -578,6 +583,7 @@ export class ConversationApplication {
     const previousRun=record.view.run;if(previousRun){record.runOutcomes??={};record.runOutcomes[previousRun.id]={status:previousRun.status,diagnostic:previousRun.diagnostic,model:previousRun.model,provider:previousRun.provider,updatedAt:previousRun.updatedAt};}
     if (!participant.modelAccountId) this.sharedNativeContext = true;
     delete record.interruption;
+    this.retireQuestions(record);
     record.view.run = run;
     this.save(record, initial);
     const work = this.execute(workspaceId, id, run.id, prepared).finally(() => { this.workers.delete(run.id); this.cancelledRetries.delete(run.id); });
@@ -660,12 +666,9 @@ export class ConversationApplication {
       }
       run.status = event.request.kind === 'approval' ? 'waiting-approval' : 'waiting-question';
     } else if (event.type === 'request-resolved') {
-      let removed = false;
-      record.view.requests = record.view.requests.filter(request => {
-        if (record.requests[request.id]?.nativeId !== event.requestId) return true;
-        delete record.requests[request.id]; removed = true; return false;
-      });
-      if (!removed) return;
+      const resolved = record.view.requests.filter(request => record.requests[request.id]?.nativeId === event.requestId);
+      if (!resolved.length) return;
+      this.retireQuestions(record,resolved);
       if (!record.view.requests.length && ['waiting-approval', 'waiting-question'].includes(run.status)) run.status = 'running';
     } else if (event.type === 'observation') this.applyObservation(record, event.observation);
     else if (event.type === 'diagnostic') run.diagnostic = event.message;
@@ -683,6 +686,15 @@ export class ConversationApplication {
       });
     }
   }
+  private retireQuestions(record: StoredConversation, requests = record.view.requests): void {
+    for (const request of requests) {
+      const id = 'retired-question-' + request.id;
+      if (!record.view.entries.some(entry => entry.id === id || entry.id === 'waiting-question-'+request.runId+'-'+request.id || entry.id === 'reply-'+request.id || entry.id.startsWith('reply-'+request.id+'-'))) record.view.entries.push({id, sequence:(record.view.entries.at(-1)?.sequence ?? 0)+1, kind:'notice', role:'system', runId:request.runId, participantId:request.participantId, createdAt:this.options.now(), text:JSON.stringify({请求标识:request.id,问题:request.title,说明:request.description,问题列表:request.questions,选项:request.options,状态:'原问题等待已结束；没有通过此卡片提交的回答不构成同意。',授权性质:'只保留原问题，不补造答复或授权。'})});
+    }
+    const retired = new Set(requests.map(request=>request.id));
+    record.view.requests = record.view.requests.filter(request=>!retired.has(request.id));
+    for(const id of retired)delete record.requests[id];
+  }
   private applyObservation(record: StoredConversation, observation: ExecutorObservation): void {
     const run = record.view.run; if (!run) return;
     if(run.resourcesReleased&&(!['idle','stopped'].includes(observation.status)||observation.tools.some(tool=>tool.status!=='completed')))return;
@@ -698,14 +710,16 @@ export class ConversationApplication {
     else if (observation.status === 'unknown' || observation.tools.some(tool => tool.status === 'unknown')) run.status = 'unknown';
     else if (observation.status === 'stopped') {
       if (run.status === 'unknown' && !record.interruption && !observation.diagnostic) run.diagnostic = '原执行已确认停止，可以继续对话。';
-      run.status = 'stopped'; record.view.requests = []; record.requests = {};
+      run.status = 'stopped'; this.retireQuestions(record);
     }
     else if (observation.status === 'idle') {
       if (!run.accepted) { if (run.status !== 'starting' && run.status !== 'stopping') run.status = 'unknown'; return; }
       run.status = run.status === 'stopping' ? 'stopped' : run.status === 'failed' ? 'failed' : 'completed';
       if (run.status==='completed' && !observation.diagnostic) delete run.diagnostic;
-      record.view.requests = []; record.requests = {};
+      this.retireQuestions(record);
     } else if (observation.status === 'running') {
+      // An exact live observation no longer reports a wait. Keep its history, not a stale reply surface.
+      this.retireQuestions(record);
       run.status = run.status === 'stopping' ? 'stopping' : 'running';
       if (run.status === 'running' && !observation.diagnostic && record.interruption?.reason === 'transport') {
         delete record.interruption; delete run.interrupted; delete run.diagnostic;
@@ -1207,12 +1221,19 @@ export class ConversationApplication {
     const fresh = this.load(workspaceId, id);
     if (this.pendingSends.read(workspaceId,id)?.draft.waitingHandoff) fail('agent_handoff_pending', '已保存交接，请先取消后再回应原轮。', 409);
     if (!fresh.requests[requestId] || fresh.view.run?.id !== input.runId) fail('agent_request_stale', '此交互已变化。', 409);
-    const answerText=JSON.stringify({请求标识:requestId,问题:request.title,说明:request.description,问题列表:request.questions,选项:request.options,回答:input.answer,授权性质:request.kind==='approval'?'仅原请求及其明确范围，不自动扩展到后续执行方或重放':'用户答复'});
+    const resolved = resolveQuestionAnswer(request,input.answer,ids=>this.media.expand(fresh,ids));
+    if(resolved.attachmentIds.length){
+      const connection=this.options.connections.get(control.participant.connectionId);
+      const source=control.participant.modelAccountId?this.options.modelAccess?.accounts.snapshot(control.participant.modelAccountId):undefined;
+      if(!connection.capabilities.images||source&&!source.models.find(model=>model.id===control.participant.modelId)?.images)fail('agent_capability_unavailable','当前执行的模型不支持图片，回答已保留。',409);
+      if(resolved.images.length>MAX_VISUAL_INPUTS||resolved.images.some(image=>fresh.attachments[image.id]!.size>(connection.capabilities.maxImageBytes??MAX_IMAGE_BYTES))||resolved.images.reduce((sum,image)=>sum+fresh.attachments[image.id]!.size,0)>32*1024*1024)fail('agent_image_invalid','图片或视频画面超过当前接入容量，回答已保留。',413);
+    }
+    const answerText=JSON.stringify({请求标识:requestId,问题:request.title,说明:request.description,问题列表:request.questions,选项:request.options,回答:resolved.answer,授权性质:request.kind==='approval'?'仅原请求及其明确范围，不自动扩展到后续执行方或重放':'用户答复'});
     if(Buffer.byteLength(answerText)>MAX_TEXT_BYTES)fail('agent_reply_too_large','回答过长，请缩小后重试。',413);
     const baseReplyId='reply-'+requestId;const priorReply=fresh.view.entries.find(e=>e.id===baseReplyId);
     const replyId=priorReply&&priorReply.text!==answerText?baseReplyId+'-'+hash(answerText):baseReplyId;
-    if(!fresh.view.entries.some(e=>e.id===replyId)){fresh.view.entries.push({id:replyId,sequence:(fresh.view.entries.at(-1)?.sequence??0)+1,kind:'notice',role:'user',text:answerText,runId:input.runId,participantId:input.participantId,status:'sending',createdAt:this.options.now()});this.save(fresh);}
-    try{await runtime.reply({ contextRef: control.participant.contextRef, executionRef: binding.executionRef, requestId: binding.nativeId, answer: input.answer });}
+    if(!fresh.view.entries.some(e=>e.id===replyId)){fresh.view.entries.push({id:replyId,sequence:(fresh.view.entries.at(-1)?.sequence??0)+1,kind:'notice',role:'user',text:answerText,attachments:resolved.attachmentIds,runId:input.runId,participantId:input.participantId,status:'sending',createdAt:this.options.now()});this.save(fresh);}
+    try{await runtime.reply({ contextRef: control.participant.contextRef, executionRef: binding.executionRef, requestId: binding.nativeId, answer: resolved.answer });}
     catch(error){const latest=this.load(workspaceId,id);const answer=latest.view.entries.find(e=>e.id===replyId);if(answer){answer.status='unknown';this.save(latest);}throw error;}
     const record = this.currentRun(workspaceId, id, input.runId);
     if (record) { const answer=record.view.entries.find(e=>e.id===replyId);if(answer)answer.status='accepted';delete record.requests[requestId]; record.view.requests = record.view.requests.filter(value => value.id !== requestId); if (!record.view.requests.length && ['waiting-approval', 'waiting-question'].includes(record.view.run!.status)) record.view.run!.status = 'running'; this.save(record); }
@@ -1222,7 +1243,7 @@ export class ConversationApplication {
 
   addAttachment(workspaceId: string, id: string, input: AttachmentInput) {
     const record = this.load(workspaceId, id);
-    return this.media.add(record, input, this.pendingSends.read(workspaceId, id)?.draft.attachmentIds ?? []);
+    return this.media.add(record, input, [...(this.pendingSends.read(workspaceId, id)?.draft.attachmentIds ?? []), ...(this.pendingSends.read(workspaceId,id)?.draft.waitingHandoff?.answers ?? []).flatMap(item=>answerAttachmentIds(item.answer))]);
   }
   readAttachment(workspaceId: string, id: string, attachmentId: string): { bytes: Buffer; mimeType: string } {
     return this.media.read(this.load(workspaceId, id), attachmentId);

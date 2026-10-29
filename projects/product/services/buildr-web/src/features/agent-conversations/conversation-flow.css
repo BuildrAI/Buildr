@@ -10,7 +10,7 @@
 .ac-process.is-flow:not([open])>summary{margin-bottom:0}
 .ac-process.is-flow .ac-process-failures{font-size: var(--font-size-secondary)}
 .ac-execution-indicator{display:flex;align-items:center;gap:9px;min-height:27px;color:var(--soft-primary,#397d74);font-size: var(--font-size-secondary);font-variant-numeric:tabular-nums}
-.ac-execution-light{width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.55;flex:none}
+.ac-execution-light{color:var(--soft-primary,#397d74);width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.55;flex:none}
 .ac-execution-indicator.is-active .ac-execution-light,.ac-step-group.is-live>summary>.ac-execution-light{animation:ac-execution-breathe 2.2s ease-in-out infinite}
 .ac-execution-indicator time{color:#84958b;line-height:20px}
 .ac-turn{position:relative;min-width:0;margin-bottom:24px}
@@ -67,3 +67,6 @@
 .ac-waiting-handoff > div > span, .ac-question-handoff-target { font-size:var(--font-size-secondary); color:var(--soft-muted,#65766f); }
 .ac-cancelled-send { margin:8px 0; color:var(--soft-muted,#65766f); font-size:var(--font-size-secondary); }
 .ac-cancelled-send pre { white-space:pre-wrap; overflow-wrap:anywhere; }
+
+.ac-question-send-notice{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;margin:4px 0 8px;color:var(--soft-muted,#65766f);font-size:var(--font-size-secondary)}
+.ac-question-send-notice .ant-btn{padding-inline:0;height:auto}

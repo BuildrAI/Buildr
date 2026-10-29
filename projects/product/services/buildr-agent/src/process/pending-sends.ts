@@ -45,7 +45,7 @@ export class PendingSends {
             await this.options.stopWaitingHandoff(claimed,Boolean(row.handoffStopRequested));
             service.checkWaitingHandoff(row.scope,row.conversationId,row.id);
           }
-          if (await this.options.conversationBusy(row.scope, row.conversationId)) { const reason=row.draft.waitingHandoff?'正在核对原轮及工具是否结束，确认释放后交给新模型；可取消下一轮，已停止的等待不会恢复。':'等待上一轮释放执行资源，结束后将自动发送。'; if(claimed||row.reason!==reason)this.repository.finish(claimed??row,'waiting',reason); continue; }
+          if (await this.options.conversationBusy(row.scope, row.conversationId)) { const reason=row.draft.waitingHandoff?'正在核对原轮及工具是否结束，确认释放后接续已保存的要求；可取消下一轮，已停止的等待不会恢复。':'等待上一轮释放执行资源，结束后将自动发送。'; if(claimed||row.reason!==reason)this.repository.finish(claimed??row,'waiting',reason); continue; }
           await service.verifyNext(row.scope, row.conversationId);
           if(row.draft.waitingHandoff){
             if(!this.options.active()){this.repository.finish(claimed!,'waiting','交接已保存，等待当前接收后台就绪。');continue;}

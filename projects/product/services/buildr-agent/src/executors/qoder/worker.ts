@@ -265,7 +265,14 @@ async function dispatch(method: string, params: any): Promise<any> {
   if (method === 'observe') return observe(state);
   if (method === 'stop') {
     if (params.toolId) { const tool = state.tools.get(params.toolId); if (!tool?.taskId) throw new Error('qoder_exact_tool_stop_unavailable'); await bounded(state.q.stopTask(tool.taskId), 5000); }
-    else if (!state.terminal) { state.stopping = true; await bounded(state.q.interrupt(), 5000); }
+    else {
+      state.stopping = true;
+      // Interrupting generation alone does not prove that owned background tasks stopped.
+      // Request their native cancellation before interrupt closes this exact query channel.
+      const tasks=[...state.tools.values()].filter(tool=>tool.taskId&&tool.status!=='completed');
+      await Promise.all(tasks.map(async tool=>{try{await bounded(state.q.stopTask(tool.taskId!),5000);}catch{if(tool.status!=='completed')tool.status='unknown';}}));
+      if (!state.terminal) await bounded(state.q.interrupt(),5000);
+    }
     return observe(state);
   }
   if (method === 'reply') {

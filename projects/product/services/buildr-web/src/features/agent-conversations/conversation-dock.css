@@ -3,6 +3,7 @@
 .ac-collapsed-rail{display:flex;flex-direction:column;flex:none;justify-content:flex-start;align-items:center;box-sizing:border-box;width:52px;padding:6px 5px 10px;background:#fff;border-left:1px solid var(--soft-line)}
 .ac-collapsed-rail[data-dock=left]{order:-3;border-left:0;border-right:1px solid var(--soft-line)}
 .ac-conversation-icon.ant-btn{width:40px;height:40px;padding:0;border-radius:8px;color:var(--soft-muted);font-size:var(--icon-size-navigation)}
+.ac-account-settings.ant-btn{margin-top:auto;flex-shrink:0}
 .ac-conversation-icon.ant-btn:hover{color:var(--soft-primary);background:#edf4f0}
 .ac-conversation-icon.ant-btn.is-active{color:var(--soft-primary);background:#edf4f0}
 .ac-conversation-icon.ant-btn.is-active:hover{color:var(--soft-muted);background:transparent}
@@ -32,3 +33,5 @@
 .ac-conversation-icon.ant-btn{border:0!important;box-shadow:none!important}.ac-conversation-icon .anticon,.ac-conversation-icon svg{color:inherit}.ac-conversation-icon:not(:focus-visible){outline:none!important}.ac-conversation-icon.ant-btn:not(.is-active):hover{color:var(--soft-primary)!important;background:#edf4f0!important}
 /* Hover does not erase the selected view: both entries indicate their own pinned state. */
 .ac-collapsed-rail .ac-conversation-icon.ant-btn.is-active:hover,.global-conversations-control .ac-conversation-icon.ant-btn.is-active:hover{color:var(--soft-primary);background:#edf4f0}
+
+.ac-panel:not(.is-full) .ac-request{max-width:none}

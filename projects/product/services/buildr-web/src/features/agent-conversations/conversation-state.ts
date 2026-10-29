@@ -313,3 +313,10 @@ export function contextReportWindow(report: ConversationContextReport, catalog: 
 export function conversationUsageReport(contextReport: ConversationContextReport | null | undefined, conversation: ConversationView | null | undefined): ConversationContextReport | null {
   return rememberContextReport(null, conversation) ?? visibleContextReport(contextReport, conversation);
 }
+
+/** Only current execution bindings are actionable; history is rendered as ordinary entries. */
+export function currentConversationRequests(conversation: ConversationView | null): ConversationView['requests'] {
+  const run=conversation?.run;
+  if(!run||['completed','stopped'].includes(run.status))return [];
+  return conversation!.requests.filter(request=>request.runId===run.id&&request.participantId===run.participantId&&request.generation===run.generation);
+}

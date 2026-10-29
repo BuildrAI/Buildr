@@ -54,8 +54,8 @@ function ToolGroup({entries,active,onOpenFile,open,onToggle,toolsOpen,onToolTogg
   return <details className={'ac-step-group'+(failed?' is-failed':'')+(live?' is-live':'')} open={open} onToggle={event=>{if(event.target===event.currentTarget&&event.currentTarget.open!==open)onToggle(event.currentTarget.open);}}>
     <summary data-entry-group={JSON.stringify(entries.map(entry=>entry.id))}>
       {live ? <>
-        <span className="ac-step-node" aria-hidden="true"><ToolIcon kind={latestTool.kind}/></span>
         <span className="ac-execution-light" aria-hidden="true"/>
+        <span className="ac-step-node" aria-hidden="true"><ToolIcon kind={latestTool.kind}/></span>
         <span className={'ac-step-label'+(latestTool.kind==='command'?' is-command':'')} title={liveLabel}>{liveLabel}</span>
       </> : <>
         <span className="ac-step-node" aria-hidden="true"><ToolIcon kind={kinds.size===1?tools[0].kind:'tool'}/></span>

@@ -1,3 +1,4 @@
+import { currentConversationRequests } from './conversation-state';
 import { conversationModelLabel } from './conversation-model-label';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Button, Dropdown, Input, Modal, Popover, Select, Spin, Tag } from 'antd';
@@ -22,8 +23,8 @@ import { ConversationDock } from './ConversationDock';
 import { ConversationMessageImages } from './ConversationMessageImages';
 import { ConversationComposer } from './ConversationComposer';
 import { ConversationTurn } from './ConversationTurn';
-import { attachmentMimeType, imageSelectionError } from './conversation-images';
-import { extractVideoFrames } from './conversation-video';
+import { imageSelectionError } from './conversation-images';
+import { uploadConversationMaterials } from './conversation-material-upload';
 import {conversationPermissionKey,conversationPermissionStorageKey,conversationRunIdentity,permissionModeLabels,readConversationPermission,selectedConversationModel,selectedConversationPermission,supportsConversationPermission,validConversationChoice,writeConversationPermission,type ConversationChoice,type PermissionMode} from './conversation-options';
 import { appendDraftAttachment, canGenerateConversationTitle, canStopConversationTool, conversationConflictNeedsRefresh, conversationTurnBinding, executionLocked, groupConversationStream, conversationStreamTurns, conversationTurnExecution, participantExecutionPairs, removeSubmittedAttachments, shouldSendOnKey, latestConversationParticipant, processBlockKey, type ConversationSelection } from './conversation-state';
 import { conversationActionKey, createConversationActions, createConversationInputAttempts } from './conversation-actions';
@@ -113,6 +114,14 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
   const effectiveModelLabel=selectedSourceModel?.label||selectedConversationModel(connection,effectiveModel)?.label||effectiveModel||'默认模型';
   const executionChanged=Boolean(chat?.run&&(lastParticipant?.connectionId!==choice.connectionId||chat.run.model!==effectiveModel||chat.run.modelAccountId!==choice.modelAccountId||chat.run.serviceTier!==choice.serviceTier));
   const waitingHandoffAvailable=Boolean(executionChanged&&chat?.run?.status==='waiting-question'&&handoffSelections[choiceKey]===chat.run.id&&chat.requests.length&&chat.requests.every(request=>request.kind==='question'&&request.runId===chat.run!.id&&request.participantId===chat.run!.participantId&&request.generation===chat.run!.generation)&&!chat.pendingSend);
+  const waitingQuestions=currentConversationRequests(chat).filter(request=>request.kind==='question');
+  const ordinarySendBlocked=waitingQuestions.length>0;
+  const locateAnswer=()=>{
+    const card=Array.from(stream.current?.querySelectorAll<HTMLElement>('[data-agent-request]')??[]).find(node=>node.dataset.agentRequest===waitingQuestions[0]?.id);
+    if(!card)return;card.scrollIntoView({block:'center',behavior:'auto'});
+    const inputs=Array.from(card.querySelectorAll<HTMLElement>('textarea,input:not([type=file]),button'));
+    (inputs.find(node=>node.matches('textarea')&&node.getClientRects().length&&!node.hasAttribute('disabled'))??inputs.find(node=>node.getClientRects().length&&!node.hasAttribute('disabled')))?.focus({preventScroll:true});
+  };
   const waitingHandoffLabel=draft.text.trim()||images.length?'交接并发送':'交接并继续';
   const sendText=conversationContinuationText(chat,executionChanged,draft.text,images.length);
   const recovery=conversationRecoveryAction(chat);
@@ -305,6 +314,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
     }}finally{if(activeSend.current===operation){activeSend.current=null;setSending(false);}}
   };
   const prepare=async(show=true,skipSummary=false,recoveryRunId?:string,retryFirst=false,handoffAnswer?:{requestId:string;answer:unknown})=>{
+    if(ordinarySendBlocked&&!handoffAnswer&&!waitingHandoffAvailable){locateAnswer();return;}
     const waitingHandoff:SendDraft['waitingHandoff']=waitingHandoffAvailable&&chat?.run?{runId:chat.run.id,participantId:chat.run.participantId,generation:chat.run.generation,requestIds:chat.requests.map(request=>request.id) as NonNullable<SendDraft['waitingHandoff']>['requestIds'],...(handoffAnswer?{answers:[handoffAnswer]}:{})}:undefined;
     if(handoffAnswer&&!waitingHandoff){setError('原问题或模型选择已变化，请核对后重新提交；回答保留。');return;}
     const continueRunId=recoveryRunId??(waitingHandoff&&(handoffAnswer||!draft.text.trim()&&!images.length)?chat?.run?.id:!draft.text.trim()&&!images.length&&recovery?.kind==='recover'?chat?.run?.id:undefined);
@@ -359,6 +369,13 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
     if(!chat)return;const key=actionKey(chat,'reply',requestId);if(!actions.begin(key))return;const selection=context.getSelection();setError('');
     try{context.apply(await context.api.reply(chat,requestId,{answer}),chat.revision);void context.refreshPending().catch(()=>{});}catch(failure){if(context.isSelectionCurrent(selection)){fail(failure);void context.refresh().catch(()=>{});}}finally{actions.finish(key);}
   };
+  const uploadAnswerMaterials=async(files:File[],accept:(image:DraftImage)=>void)=>{
+    if(!chat)throw new Error('原对话已变化，请重新打开问题。');
+    const key=actionKey(chat,'upload','');if(!actions.begin(key))throw new Error('正在上传，请稍后再添加图片。');
+    const selection=context.getSelection();
+    try{await uploadConversationMaterials(chat,files,context.api.upload,accept,()=>context.isSelectionCurrent(selection));}
+    finally{try{if(context.isSelectionCurrent(selection))await context.refresh();}finally{actions.finish(key);}}
+  };
   const upload=async(files:FileList|File[]|null)=>{
     if(!files?.length||uploading||sending||context.loading||Boolean(context.scope&&!chat))return;setError('');
     const selected=Array.from(files);const validation=imageSelectionError(selected,images.length,connection?.capabilities.maxImageBytes);
@@ -366,26 +383,13 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
     let key=uploadKey;if(!actions.begin(key))return;let selection=context.getSelection();
     try {
       if(!chat){await newImages.add(selected);return;}
-      let current=chat;
+      const current=chat;
       selection={...selection,scope:{workspaceId:current.workspaceId,conversationId:current.id}};
       if(!context.isSelectionCurrent(selection))return;
       const boundKey=actionKey(current,'upload','');actions.move(key,boundKey);key=boundKey;
-      for(const original of selected) {
-        const mimeType=attachmentMimeType(original),file=original.type===mimeType?original:new File([original],original.name,{type:mimeType});
-        let video:{duration:number;frames:Array<{id:string;time:number}>}|undefined;
-        if(mimeType.startsWith('video/')) {
-          const extracted=await extractVideoFrames(file);
-          video={duration:extracted.duration,frames:[]};
-          for(const frame of extracted.frames) {
-            const saved=await context.api.upload(current,frame.file);
-            current={...current,revision:saved.revision,attachmentRevision:saved.attachmentRevision};
-            video.frames.push({id:saved.id,time:frame.time});
-          }
-        }
-        const attachment=await context.api.upload(current,file,video);
-        current={...current,revision:attachment.revision,attachmentRevision:attachment.attachmentRevision};
-        setAttachments(previous=>({...previous,[current.id]:appendDraftAttachment(previous[current.id]||[],{...attachment,name:file.name,file})}));
-      }
+      await uploadConversationMaterials(current,selected,context.api.upload,image=>{
+        setAttachments(previous=>({...previous,[current.id]:appendDraftAttachment(previous[current.id]||[],image)}));
+      },()=>context.isSelectionCurrent(selection));
       if(context.isSelectionCurrent(selection))await context.refresh();
     }catch(failure){if(context.isSelectionCurrent(selection))fail(failure);}finally{actions.finish(key);}
   };
@@ -516,7 +520,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
         </div>}
         {context.streamError&&run?.status!=='unknown'&&<Alert className="ac-stream-disconnect" type="warning" showIcon message="对话连接已中断" description={context.streamError.replace(/^对话连接已中断[；;]\s*/,'')} action={<Button type="text" size="small" loading={observing} onClick={()=>void observe()}>重新连接并核对</Button>}/>}
         {chat?.run?.status==='tools-active'&&<Alert type="warning" showIcon message="模型已中断，仍有命令运行" description={<div>{chat.run.tools.filter(tool=>tool.status!=='completed').map(tool=><p key={tool.id}>{tool.label}{canStopConversationTool(tool)?<Button size="small" loading={stopping} onClick={()=>void stop(tool.id)}>停止此命令</Button>:<small> · 不支持单独停止</small>}</p>)}<Button type="link" size="small" loading={observing} onClick={()=>void observe()}>核对执行状态</Button></div>} action={<Button loading={stopping} onClick={()=>void stop()}>停止剩余执行</Button>}/>}
-        <ConversationPendingSend conversation={chat} onCancelled={(cancelled,answers)=>{setError('');const text=[cancelled.text,answers].filter(Boolean).join('\n');if(text&&!draft.text.trim())draft.setText(text);if(cancelled.attachmentIds?.length&&chat)setAttachments(previous=>({...previous,[chat.id]:[...(previous[chat.id]||[]),...(previous['@pending:'+chat.id]||queuedImages.current[chat.id]||[]).filter(image=>cancelled.attachmentIds!.some(id=>id===image.id)&&!(previous[chat.id]||[]).some(value=>value.id===image.id))]}));setFeedback('已取消待发送，内容保留，可以重新发送或继续。');}}/>{chat?.requests.map(request=><ConversationRequest key={request.id} request={request} provider={chat.run?.provider||chat.participants.find(item=>item.id===request.participantId)?.provider||'codex'} handoffTarget={waitingHandoffAvailable?effectiveModelLabel:undefined} busy={sending||stopping||Boolean(chat.pendingSend?.draft.waitingHandoff)||actions.has(actionKey(chat,'reply',request.id))} onReply={answer=>void reply(request.id,answer)}/>)}
+        <ConversationPendingSend conversation={chat} onCancelled={(cancelled,answers)=>{setError('');const text=[cancelled.text,answers].filter(Boolean).join('\n');if(text&&!draft.text.trim())draft.setText(text);if(cancelled.attachmentIds?.length&&chat)setAttachments(previous=>({...previous,[chat.id]:[...(previous[chat.id]||[]),...(previous['@pending:'+chat.id]||queuedImages.current[chat.id]||[]).filter(image=>cancelled.attachmentIds!.some(id=>id===image.id)&&!(previous[chat.id]||[]).some(value=>value.id===image.id))]}));setFeedback('已取消待发送，内容保留，可以重新发送或继续。');}}/>{currentConversationRequests(chat).map(request=><ConversationRequest key={request.id} request={request} provider={chat?.run?.provider||chat?.participants.find(item=>item.id===request.participantId)?.provider||'codex'} handoffTarget={waitingHandoffAvailable?effectiveModelLabel:undefined} onUpload={uploadAnswerMaterials} busy={sending||stopping||uploading||Boolean(chat?.pendingSend?.draft.waitingHandoff)||actions.has(actionKey(chat!,'reply',request.id))} onReply={answer=>void reply(request.id,answer)}/>)}
       </div>
       {!atBottom&&<div className="ac-scroll-latest"><Button className="ac-scroll-latest-button" shape="circle" icon={<ArrowDownOutlined/>} aria-label="向下到底" title="向下到底，回到最新消息" onClick={scrollToLatest}/></div>}
       <div className="ac-compose-wrap">{fileError}{run?.status==='unknown'&&<ConversationExecutionNotice diagnostic={[run.diagnostic,context.streamError].filter(Boolean).join('\n')} observing={observing} stopping={stopping} onObserve={()=>void observe()} onStop={()=>void stop()}/>}{run&&locked&&run.status!=='unknown'&&<div className="ac-execution-statusbar" role="status" data-execution-state={run.status}>{run.status!=='running'&&<span>{statusLabels[run.status]}</span>}<Button className="ac-stop-button" type="text" icon={<StopOutlined/>} aria-label="停止本次执行" title="停止本次执行" loading={stopping} disabled={run.status==='stopping'} onClick={()=>void stop()}>{stopping||run.status==='stopping'?'正在停止…':'停止'}</Button></div>}{!chat&&newImages.error&&<Alert type="warning" message={newImages.error} action={<Button size="small" onClick={()=>void newImages.refresh().catch(fail)}>重新读取图片</Button>}/>} {!chat&&unconfirmedFirst&&<Alert type="warning" message="首次发送结果待核对，原内容已保留；重试将核对并沿用原提交，不发送后来编辑的内容。" action={<Button size="small" loading={sending} onClick={()=>void prepare(false,false,undefined,true)}>核对并重试原提交</Button>}/>}{run&&run.status!=='running'&&run.status!=='completed'&&run.status!=='unknown'&&(!locked||Boolean(run.diagnostic))&&<div className="ac-run-status" role="status" data-run-status={run.status}>{!locked&&<>{run.interrupted?'执行未完成':statusLabels[run.status]}{runIdentity&&` · ${runIdentity}`} · {permissionModeLabels[run.permissionMode||'default']}</>}{run.diagnostic&&<p>{run.diagnostic}</p>}</div>} {modelWarning&&<Alert type="warning" showIcon message={modelWarning}/>}{earlier.error&&<Alert type="warning" showIcon message={earlier.error}/>} {actionError&&<Alert type="warning" showIcon message={actionError} closable onClose={()=>setError('')}/>} {feedback&&<small role="status">{feedback}</small>}{(!draft.available||!attachmentsAvailable)&&<Alert type="warning" message="浏览器存储不可用，刷新后无法恢复未发送草稿。"/>}
@@ -526,10 +530,11 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget}:P
         {waitingHandoffAvailable&&<div className="ac-waiting-handoff" role="status"><div><strong>交给 {effectiveModelLabel} 继续处理</strong><span>你可以在上方回答后交接，也可以发送新的要求。交接会结束原轮等待；未提交的选项不算回答。</span></div><Button type="primary" disabled={!canSend} loading={sending} onClick={()=>void prepare(false)}>{waitingHandoffLabel}</Button><Button type="link" size="small" disabled={!canSend} onClick={()=>void prepare(true)}>交接内容</Button></div>}
         {preparing&&<div className="ac-notice" role="status">正在准备交接资料… <Button type="link" size="small" title="跳过模型精简，使用本地记录与按需读取" onClick={()=>{const continueRunId=activeSend.current?.continueRunId;activeSend.current=null;setSending(false);setPreparing(false);void prepare(false,true,continueRunId);}}>直接交接</Button><Button type="text" size="small" onClick={()=>{activeSend.current=null;setSending(false);setPreparing(false);}}>取消发送</Button></div>}
         {choice.connectionId&&!permissionAvailable&&<Alert type="warning" showIcon message={"当前执行者不支持"+permissionModeLabels[permissionMode]} description="已保留所选权限。请选择可用权限或切换执行者后再发送，草稿保留。"/>}{images.length>0&&!connection?.capabilities.images&&<Alert type="warning" message="当前执行者不支持图片或视频画面。请移除附件或选择支持图片的执行者。"/>}
+        {ordinarySendBlocked&&<div className="ac-question-send-notice" role="status"><span>当前有问题等待回答，请在上方问题中补充意见。</span><Button type="link" onClick={locateAnswer}>前往回答</Button></div>}
         <ConversationComposer images={images} materialDisabled={sending||uploading||context.loading||Boolean(context.scope&&!chat)} addDisabled={sending||context.loading||Boolean(context.scope&&!chat)} uploading={uploading} onAdd={upload} onBlocked={()=>setError('当前正在发送或上传，请稍后再添加图片或视频。')} onRemove={id=>{if(!chat){void newImages.remove(id).catch(fail);}else setAttachments(previous=>({...previous,[attachmentKey]:(previous[attachmentKey]||[]).filter(item=>item.id!==id)}));setPrepared(null);setPreviewOpen(false);}}
-          input={{id:'agent-conversation-input','aria-label':'对话输入',disabled:context.loading||Boolean(context.scope&&!chat),placeholder:waitingHandoffAvailable?'输入新要求，将与已有记录一起交给所选模型…':supplementing?'继续补充要求，也可以粘贴截图…':locked?'可以提交下一条指令，上一轮结束后自动发送…':'提出问题，或描述想完成的工作…（可粘贴图片或视频）',value:draft.text,onChange:event=>{draft.setText(event.target.value);setPrepared(null);},autoSize:{minRows:2,maxRows:8},onCompositionStart:()=>{composing.current=true;},onCompositionEnd:()=>{composing.current=false;},onKeyDown:event=>{if(shouldSendOnKey({key:event.key,shiftKey:event.shiftKey,isComposing:composing.current||event.nativeEvent.isComposing,keyCode:event.nativeEvent.keyCode})){event.preventDefault();if(canSend)void prepare(false);}}}}
+          input={{id:'agent-conversation-input','aria-label':'对话输入',disabled:context.loading||Boolean(context.scope&&!chat),placeholder:ordinarySendBlocked?'草稿会保留；请在上方问题中回答，或停止本轮后再发送…':waitingHandoffAvailable?'输入新要求，将与已有记录一起交给所选模型…':supplementing?'继续补充要求，也可以粘贴截图…':locked?'可以提交下一条指令，上一轮结束后自动发送…':'提出问题，或描述想完成的工作…（可粘贴图片或视频）',value:draft.text,onChange:event=>{draft.setText(event.target.value);setPrepared(null);},autoSize:{minRows:2,maxRows:8},onCompositionStart:()=>{composing.current=true;},onCompositionEnd:()=>{composing.current=false;},onKeyDown:event=>{if(shouldSendOnKey({key:event.key,shiftKey:event.shiftKey,isComposing:composing.current||event.nativeEvent.isComposing,keyCode:event.nativeEvent.keyCode})){event.preventDefault();if(ordinarySendBlocked)locateAnswer();else if(canSend)void prepare(false);}}}}
           access={<><ConversationAgentSelect connections={context.connections} value={choice} disabled={sending} onChange={select}/><Select<PermissionMode> className="ac-choice ac-permission-select" aria-label="执行权限" placement="topLeft" variant="borderless" size="small" suffixIcon={null} labelRender={({label})=><span className="ac-permission-label"><SafetyCertificateOutlined/>{label}</span>} value={permissionMode} disabled={sending||uploading||context.loading||Boolean(context.scope&&!chat)} popupMatchSelectWidth={false} classNames={{popup:{root:'ac-panel-popup ac-choice-popup'}}} title="权限更改用于本对话下一轮。完全访问会跳过逐次工具审批；业务问题仍需回复，系统与厂家限制继续有效。" options={[{value:'default',label:'默认权限',disabled:!supportsConversationPermission(connection,'default')},{value:'full-access',label:'完全访问',disabled:!supportsConversationPermission(connection,'full-access')}]} onChange={selectPermission}/></>}
-          execution={<><ConversationOptions showAgent={false} key={choiceKey+':'+context.side+':'+context.open} connections={context.connections} value={choice} disabled={sending} onChange={select}/><Button type="primary" shape="circle" icon={<ArrowUpOutlined/>} aria-label="发送对话" title={waitingHandoffAvailable?waitingHandoffLabel:'发送'} disabled={!canSend||(!waitingHandoffAvailable&&!sendText.trim()&&!images.length)} loading={sending} onClick={()=>void prepare(false)}/></>}/>
+          execution={<><ConversationOptions showAgent={false} key={choiceKey+':'+context.side+':'+context.open} connections={context.connections} value={choice} disabled={sending} onChange={select}/><Button type="primary" shape="circle" icon={<ArrowUpOutlined/>} aria-label="发送对话" title={ordinarySendBlocked?'请先回答上方问题，或停止本轮':waitingHandoffAvailable?waitingHandoffLabel:'发送'} disabled={ordinarySendBlocked||!canSend||(!waitingHandoffAvailable&&!sendText.trim()&&!images.length)} loading={sending} onClick={()=>void prepare(false)}/></>}/>
         <div className="ac-location-meta"><span>所属工作空间：<span className="ac-location-name" title={(chat?.cwd||newCwd)||undefined}>{chat?(workspace?.name||(chat.workspaceId==='@default'?'默认工作空间':chat.workspaceId)):(workspaces.find(item=>item.id===draftWorkspaceId)?.name||'默认工作空间')}</span></span>{chat?chat.workspaceId!=='@default'&&<span>· {chat.taskId&&<>关联任务：<Link className="ac-task-link" to={'/workspaces/'+encodeURIComponent(chat.workspaceId)+'/tasks/'+encodeURIComponent(chat.taskId)} title={'打开关联任务 '+chat.taskId}>{chat.taskId}</Link> </>}<ConversationTaskLink workspaceId={chat.workspaceId} taskId={chat.taskId} onAssign={assignTask}/></span>:draftWorkspaceId!=='@default'&&<span>· {boundTaskId&&<>关联任务：<Link className="ac-task-link" to={'/workspaces/'+encodeURIComponent(draftWorkspaceId)+'/tasks/'+encodeURIComponent(boundTaskId)} title={'打开关联任务 '+boundTaskId}>{boundTaskId}</Link> </>}<ConversationTaskLink workspaceId={draftWorkspaceId} taskId={boundTaskId||undefined} onAssign={assignTask}/></span>}<small className="ac-location-keys">Enter 发送 · Shift+Enter 换行</small></div>
       </div>
     </>}

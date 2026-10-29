@@ -11,8 +11,8 @@ import { NativeRequestError } from '../../src/domain/error-diagnostic.ts';
 import { ConversationRepository } from '../../src/persistence/conversation-repository.ts';
 
 type Context = { items: ExecutorItem[]; observation: ExecutorObservation; unblock?: () => void };
-function fake(id = 'local', options: { hold?: boolean; disconnect?: 'stopped'|'running'|'unknown'|'tool'; disconnectError?: string; beforeDisconnect?: Promise<void>; disconnectAlways?: boolean; disconnectOn?: number; beforeResume?: Promise<void>; unknown?: boolean; images?: boolean; noAnswer?: boolean; multipleModels?: boolean; request?: boolean; coldUnknown?: boolean; beforeAccepted?: Promise<void>; replyAfterTerminal?: boolean; toolSurvives?: boolean; toolInput?: boolean; failure?: string | ((attempt: number) => string | undefined); prepareFailures?: number; unknownCreate?: boolean; beforeObservation?: Promise<void>; wrongObservation?: boolean; summary?:(input:ExecutorTitleInput)=>Promise<string|undefined> } = {}) {
-  const contexts = new Map<string, Context>(); const sends: ExecutorSendInput[] = []; const opens: ExecutorOpenOptions[] = [];
+function fake(id = 'local', options: { hold?: boolean; disconnect?: 'stopped'|'running'|'unknown'|'tool'; disconnectError?: string; beforeDisconnect?: Promise<void>; disconnectAlways?: boolean; disconnectOn?: number; beforeResume?: Promise<void>; unknown?: boolean; images?: boolean; noAnswer?: boolean; multipleModels?: boolean; request?: boolean; question?: boolean; coldUnknown?: boolean; beforeAccepted?: Promise<void>; replyAfterTerminal?: boolean; toolSurvives?: boolean; toolInput?: boolean; failure?: string | ((attempt: number) => string | undefined); prepareFailures?: number; unknownCreate?: boolean; beforeObservation?: Promise<void>; wrongObservation?: boolean; summary?:(input:ExecutorTitleInput)=>Promise<string|undefined> } = {}) {
+  const contexts = new Map<string, Context>(); const sends: ExecutorSendInput[] = []; const replies: unknown[] = []; const opens: ExecutorOpenOptions[] = [];
   let preparations = 0;
   let loginUpdate: ((value: LoginObservation) => void) | undefined;
   const capabilities = { text: true, images: Boolean(options.images), approval: true, questions: true, stop: true, resume: true, maxInputBytes: 128 * 1024 };
@@ -38,6 +38,8 @@ function fake(id = 'local', options: { hold?: boolean; disconnect?: 'stopped'|'r
         input.onEvent({ type: 'accepted', executionRef, inputItemId: `input-${sends.length}` });
         const user: ExecutorItem = { id: `input-${sends.length}`, kind: 'message', role: 'user', text: input.text, executionId: executionRef.id };
         context.items.push(user); input.onEvent({ type: 'item', item: user });
+        if(options.request||options.question)context.observation={status:'waiting',executionRef,tools:[]};
+        if(options.question)input.onEvent({type:'request',request:{id:'question-one',kind:'question',title:'处理范围',questions:[{id:'scope',label:'具体范围',allowOther:true,options:[{id:'yes',label:'确认'}]}]}});
         if (options.request) input.onEvent({ type: 'request', request: { id: 'permit-one', kind: 'approval', title: 'Write a file?', options: [{ id: 'allow-once', label: 'Allow once' }, { id: 'deny', label: 'Deny' }] } });
         if (options.disconnect && (sends.length === (options.disconnectOn ?? 1) || options.disconnectAlways)) {
           await options.beforeDisconnect;
@@ -46,7 +48,7 @@ function fake(id = 'local', options: { hold?: boolean; disconnect?: 'stopped'|'r
             tools: options.disconnect === 'tool' ? [{id:'uncertain-tool',label:'write',status:'unknown',canStop:false}] : [] };
           throw new Error(options.disconnectError ?? 'codex_execution_observation_lost');
         }
-        if (options.hold || options.request) await new Promise<void>(resolve => { context.unblock = resolve; });
+        if (options.hold || options.request || options.question) await new Promise<void>(resolve => { context.unblock = resolve; });
         if (context.observation.status === 'stopped') { input.onEvent({ type: 'completed', status: 'stopped' }); return; }
         if (options.toolInput) {
           const invocation:ExecutorItem={id:`tool-${sends.length}`,kind:'tool',role:'system',name:'read',input:'{"file_path":"src/example.ts"}',text:'read\n{"file_path":"src/example.ts"}',executionId:executionRef.id,status:'running'};
@@ -61,14 +63,14 @@ function fake(id = 'local', options: { hold?: boolean; disconnect?: 'stopped'|'r
         input.onEvent({ type: 'completed', status: failure ? 'failed' : 'completed', ...(failure ? {diagnostic:failure} : {}) });
       },
       async observe({ contextRef }) { await options.beforeObservation; if (options.wrongObservation) return {...structuredClone(get(contextRef).observation), executionRef:{id:'wrong-execution'}}; return options.coldUnknown && !didSend ? { status: 'unknown', tools: [] } : structuredClone(get(contextRef).observation); },
-      async reply({ contextRef, answer }) { assert.equal(answer, 'allow-once'); const context = get(contextRef); context.unblock?.(); if (options.replyAfterTerminal) await new Promise(resolve => setTimeout(resolve, 25)); },
+      async reply({ contextRef, answer }) { if(!options.question)assert.equal(answer, 'allow-once'); replies.push(answer); const context = get(contextRef); context.unblock?.(); if (options.replyAfterTerminal) await new Promise(resolve => setTimeout(resolve, 25)); },
       async stop({ contextRef }) { const context = get(contextRef); context.observation = { ...context.observation, status: 'stopped', tools: [] }; context.unblock?.(); return context.observation; },
       summarizeHandoff:options.summary,
       async close() {},
     };
     return runtime;
   } };
-  return { executor, contexts, sends, opens, loginUpdate: () => loginUpdate };
+  return { executor, contexts, sends, replies, opens, loginUpdate: () => loginUpdate };
 }
 function fixture(executors: AgentExecutor[], settings: { modelProviders?: AgentServiceOptions['modelProviders']; autoContinueInterrupted?: boolean; shutdownTimeoutMs?: number; now?: () => Date } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-agent-core-'));
@@ -2009,4 +2011,59 @@ test('new unmapped native user input still blocks dispatch while preserving the 
     send(f.service,created.id,'local','next');const failed=await waitUntil(()=>f.service.conversations.read('workspace-one',created.id),v=>v.run?.status==='failed');
     assert.equal(native.sends.length,1);assert.equal(failed.entries.filter(e=>e.text==='next').length,1);assert.match(failed.run?.diagnostic??'',/原生用户输入尚不能准确映射/);
   } finally {await f.close();}
+});
+
+
+for(const media of ['image','video'] as const)test('正式材料回答校验同对话文件，保存原件并交付准确原生来源：'+media,async()=>{
+  const native=fake('local',{question:true,images:true}),f=fixture([native.executor]);
+  try{
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'local','检查');
+    let waiting=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='waiting-question');
+    const bytes=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5EsAAAAASUVORK5CYII=','base64');
+    const frame=f.service.conversations.addAttachment('workspace-one',chat.id,{expectedRevision:waiting.revision,mimeType:'image/png',bytes});
+    const attachment=media==='image'?frame:f.service.conversations.addAttachment('workspace-one',chat.id,{expectedRevision:frame.revision,mimeType:'video/mp4',bytes:Buffer.from('000000186674797069736f6d0000020069736f6d69736f32','hex'),video:{duration:2,frames:[{id:frame.id,time:0}]}});
+    waiting=f.service.conversations.read('workspace-one',chat.id);const request=waiting.requests[0]!,run=waiting.run!;
+    const input={expectedRevision:waiting.revision,runId:run.id,participantId:run.participantId,generation:run.generation};
+    await assert.rejects(f.service.conversations.reply('workspace-one',chat.id,request.id,{...input,answer:{scope:{text:'',attachmentIds:[randomUUID()]}}}),{code:'agent_attachment_missing'});
+    const other=await f.service.conversations.create('workspace-one',{}),foreign=f.service.conversations.addAttachment('workspace-one',other.id,{expectedRevision:other.revision,mimeType:'image/png',bytes});
+    await assert.rejects(f.service.conversations.reply('workspace-one',chat.id,request.id,{...input,answer:{scope:{text:'',attachmentIds:[foreign.id]}}}),{code:'agent_attachment_missing'});
+    assert.equal(f.service.conversations.read('workspace-one',chat.id).requests.length,1);assert.equal(native.replies.length,0);
+    await f.service.conversations.reply('workspace-one',chat.id,request.id,{...input,answer:{scope:{text:'看截图',attachmentIds:[attachment.id]}}});
+    const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='completed');
+    assert.equal(done.requests.length,0);const reply=done.entries.find(entry=>entry.id==='reply-'+request.id)!;
+    assert.deepEqual(reply.attachments,[attachment.id]);const delivered=(native.replies[0] as any).scope;assert.match(delivered,/看截图/);
+    const sources=JSON.parse(delivered.split('：\n')[1].split('\n\n')[0]);assert.equal(fs.readFileSync(sources[0].path).equals(bytes),true);assert.equal(reply.status,'accepted');assert.equal(done.run!.id,run.id);
+    if(media==='video'){assert.match(delivered,/不含音轨/);assert.match(delivered,/不能据此声称连续观看/);const video=JSON.parse(delivered.split('：\n').at(-1)!)[0];assert.equal(video.id,attachment.id);assert.equal(video.frames[0].id,frame.id);assert.equal(video.frames[0].time,0);assert.equal(fs.statSync(video.path).size,24);}
+    await assert.rejects(f.service.conversations.reply('workspace-one',chat.id,request.id,{...input,expectedRevision:done.revision,answer:{scope:'yes'}}),{code:'agent_request_stale'});assert.equal(native.replies.length,1);
+  }finally{await f.close();}
+});
+
+test('准确原生观察已继续时移除旧等待卡片并保留未答事实，未知时不隐藏',async()=>{
+  const native=fake('local',{question:true}),f=fixture([native.executor]);
+  try{
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','检查');
+    const waiting=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='waiting-question');
+    const context=[...native.contexts.values()][0]!;context.observation={...context.observation,status:'unknown'};
+    const unknown=await f.service.conversations.observe('workspace-one',chat.id);assert.equal(unknown.requests.length,1);
+    context.observation={...context.observation,status:'running'};
+    const current=await f.service.conversations.observe('workspace-one',chat.id);assert.equal(current.requests.length,0);assert.equal(native.replies.length,0);
+    assert.ok(current.entries.some(entry=>entry.id==='retired-question-'+waiting.requests[0]!.id&&entry.text.includes('不补造答复')));
+    await assert.rejects(f.service.conversations.reply('workspace-one',chat.id,waiting.requests[0]!.id,{expectedRevision:current.revision,runId:current.run!.id,participantId:current.run!.participantId,generation:current.run!.generation,answer:{scope:'yes'}}),{code:'agent_request_stale'});
+  }finally{await f.close();}
+});
+
+for(const visual of [true,false])test('正式材料回答的容量与能力失败不回应原问题：images='+visual,async()=>{
+ const native=fake('local',{question:true,images:visual}),f=fixture([native.executor]);try{
+  await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','检查');
+  let waiting=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='waiting-question');
+  const ids:string[]=[];for(let n=0;n<5;n++){const attachment=f.service.conversations.addAttachment('workspace-one',chat.id,{expectedRevision:waiting.revision,mimeType:'image/png',bytes:Buffer.from('89504e470d0a1a0a','hex')});ids.push(attachment.id);waiting=f.service.conversations.read('workspace-one',chat.id);}
+  const input={expectedRevision:waiting.revision,runId:waiting.run!.id,participantId:waiting.run!.participantId,generation:waiting.run!.generation};
+  await assert.rejects(f.service.conversations.reply('workspace-one',chat.id,waiting.requests[0]!.id,{...input,answer:{scope:{text:'',attachmentIds:ids}}}),{code:'agent_question_answer_invalid'});
+  await assert.rejects(f.service.conversations.reply('workspace-one',chat.id,waiting.requests[0]!.id,{...input,answer:{scope:{text:'',attachmentIds:[ids[0]],path:'/etc/passwd'}}}),{code:'agent_question_answer_invalid'});
+  assert.throws(()=>f.service.conversations.addAttachment('workspace-one',chat.id,{expectedRevision:waiting.revision,mimeType:'image/png',bytes:Buffer.alloc(8*1024*1024+1)}),{code:'agent_image_invalid',status:413});
+  if(!visual)await assert.rejects(f.service.conversations.reply('workspace-one',chat.id,waiting.requests[0]!.id,{...input,answer:{scope:{text:'',attachmentIds:[ids[0]]}}}),{code:'agent_capability_unavailable'});
+  assert.equal(native.replies.length,0);assert.equal(f.service.conversations.read('workspace-one',chat.id).requests.length,1);
+  if(visual){await f.service.conversations.reply('workspace-one',chat.id,waiting.requests[0]!.id,{...input,answer:{scope:{text:'四份材料',attachmentIds:ids.slice(0,4)}}});assert.equal(native.replies.length,1);}
+ }finally{await f.close();}
 });
