@@ -1,4 +1,4 @@
-import { answerAttachmentIds, resolveQuestionAnswer } from '../domain/question-answer.ts';
+import { answerAttachmentIds, resolveQuestionAnswer, questionAnswerDisplay } from '../domain/question-answer.ts';
 import { normalizeSendDraft } from '../domain/send-draft.ts';
 import { ConversationAttachments, MAX_IMAGE_BYTES, MAX_VISUAL_INPUTS } from './conversation-attachments.ts';
 import type { AttachmentInput } from '../contracts.ts';
@@ -10,6 +10,7 @@ import {selectedOffering,modelConfiguration} from '../model-access/model-prefere
 import type {ModelOffering} from '../model-access/contracts.ts';
 import type { ModelAccess } from '../model-access/application.ts';
 import { modelQuotaFailure } from '../model-access/quota.ts';
+import { qoderLoginExpiredMessage } from '../model-access/providers/qoder-auth.ts';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -435,8 +436,9 @@ export class ConversationApplication {
     if (!waitingQuestions) this.assertIdle(record);
     input = continuationDraft(record, input);
     const connection = this.options.connections.get(input.connectionId);
+    if (connection.enabled && connection.provider === 'qoder' && connection.status === 'expired') fail('qoder_platform_login_expired', qoderLoginExpiredMessage, 409);
     if (!connection.enabled || (!input.modelAccountId && connection.status !== 'ready')) fail('agent_account_unavailable', '请先准备智能体程序，并连接所选模型账号。', 409);
-    if (input.modelAccountId && connection.provider === 'qoder' && ['not-authenticated','expired'].includes(connection.status)) fail('qoder_platform_login_required', 'Qoder 程序需要先完成基础平台登录；所选套餐不变，不要求使用 Qoder 自有模型。', 409);
+    if (input.modelAccountId && connection.provider === 'qoder' && connection.status === 'not-authenticated') fail('qoder_platform_login_required', 'Qoder 程序需要先完成基础平台登录；所选套餐不变，不要求使用 Qoder 自有模型。', 409);
     if (!(connection.capabilities.permissionModes ?? ['default']).includes(input.permissionMode!)) fail('agent_permission_unavailable', '此接入尚不支持所选权限模式，请明确改选后重试。', 409);
     const source = input.modelAccountId ? this.options.modelAccess?.accounts.snapshot(input.modelAccountId) : undefined;
     if (input.modelAccountId && (!source || !source.enabled || source.status !== 'ready')) fail('agent_model_source_unavailable', '所选套餐尚未连接，请检查账号。', 409);
@@ -1266,7 +1268,7 @@ export class ConversationApplication {
       if(!connection.capabilities.images||source&&!source.models.find(model=>model.id===control.participant.modelId)?.images)fail('agent_capability_unavailable','当前执行的模型不支持图片，回答已保留。',409);
       if(resolved.images.length>MAX_VISUAL_INPUTS||resolved.images.some(image=>fresh.attachments[image.id]!.size>(connection.capabilities.maxImageBytes??MAX_IMAGE_BYTES))||resolved.images.reduce((sum,image)=>sum+fresh.attachments[image.id]!.size,0)>32*1024*1024)fail('agent_image_invalid','图片或视频画面超过当前接入容量，回答已保留。',413);
     }
-    const answerText=JSON.stringify({请求标识:requestId,问题:request.title,说明:request.description,问题列表:request.questions,选项:request.options,回答:resolved.answer,授权性质:request.kind==='approval'?'仅原请求及其明确范围，不自动扩展到后续执行方或重放':'用户答复'});
+    const answerText=JSON.stringify({请求标识:requestId,问题:request.title,说明:request.description,问题列表:request.questions,选项:request.options,回答:resolved.answer,...(resolved.attachmentIds.length?{显示回答:questionAnswerDisplay(input.answer)}:{}),授权性质:request.kind==='approval'?'仅原请求及其明确范围，不自动扩展到后续执行方或重放':'用户答复'});
     if(Buffer.byteLength(answerText)>MAX_TEXT_BYTES)fail('agent_reply_too_large','回答过长，请缩小后重试。',413);
     const baseReplyId='reply-'+requestId;const priorReply=fresh.view.entries.find(e=>e.id===baseReplyId);
     const replyId=priorReply&&priorReply.text!==answerText?baseReplyId+'-'+hash(answerText):baseReplyId;

@@ -310,7 +310,7 @@ test('incomplete checks retain usable observations; confirmed logout and identit
     state='ready';await access.accounts.check(added.id);incomplete=true;
     identity='account-b';state='failed';
     assert.equal((await access.accounts.check(added.id)).status,'failed');
-    assert.equal(access.catalog.list().models[0].available,false,'old identity cannot survive a confirmed change');
+    assert.deepEqual(access.catalog.list().models,[],'a different identity must not inherit the previous account catalog');
   }finally{await access.close();await rm(root,{recursive:true,force:true});}
 });
 

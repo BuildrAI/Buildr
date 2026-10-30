@@ -51,12 +51,26 @@ class CodexRuntime implements ModelProviderRuntime {
     if (response.status === 401 && credential.refreshToken) { await response.body?.cancel(); const fresh = await this.credential(true); if (fresh) response = await send(fresh); }
     return response;
   }
+  private async observeQuota(): Promise<ModelProviderObservation['quota']> {
+    let quota: ModelProviderObservation['quota'] = { available: false, observedAt: new Date().toISOString() };
+    try {
+      const response = await this.request('/wham/usage');
+      if (response.ok) {
+        const data = record(await response.json()), limits = record(data.rate_limit), windows = [record(limits.primary_window), record(limits.secondary_window)];
+        const reported = windows.flatMap((window,index) => typeof window.used_percent === 'number' && window.used_percent >= 0 && window.used_percent <= 100 ? [{ id:index===0?'primary':'secondary',label:window.limit_window_seconds===604800?'每周窗口':window.limit_window_seconds===86400?'每日窗口':index===0?'主要窗口':'次要窗口',limitWindowSeconds:typeof window.limit_window_seconds==='number'?window.limit_window_seconds:undefined,remaining: 100 - window.used_percent, reset: typeof window.reset_at === 'number' ? window.reset_at : undefined }] : []);
+        const tightest = [...reported].sort((a, b) => a.remaining - b.remaining)[0];
+        if (tightest) quota = { available: true, planLabel:string(data.plan_type), windows:reported.map(window=>({id:window.id,label:window.label,remainingPercent:window.remaining,limitWindowSeconds:window.limitWindowSeconds,...(window.reset?{resetsAt:new Date(window.reset*1000).toISOString()}:{})})), observedAt: new Date().toISOString(), remainingPercent: tightest.remaining, ...(tightest.reset ? { resetsAt: new Date(tightest.reset * 1000).toISOString() } : {}), summary: 'ChatGPT 套餐上游报告额度' };
+      } else await response.body?.cancel();
+    } catch { /* Quota observation cannot invalidate an otherwise usable source. */ }
+    return quota;
+  }
   async inspect(): Promise<ModelProviderObservation> {
     try {
-      let nativeLabel:string|undefined;
+      let nativeLabel:string|undefined,nativeIdentity:string|undefined;
       if(this.options.owner){const account=await this.options.owner.inspect();nativeLabel=account.label;if(account.status!=='ready')return{status:account.status,incomplete:account.status==='failed',models:[],label:account.label,diagnostic:account.diagnostic};}
       else {const credential=await this.credential();if(!credential)return{status:'not-authenticated',models:[]};}
-      const response = await this.request(`/codex/models?client_version=${VERSION}`);
+      if(this.options.owner)nativeIdentity=await this.options.owner.identity();
+      const [response,quota] = await Promise.all([this.request(`/codex/models?client_version=${VERSION}`),this.observeQuota()]);
       if (response.status === 401) { await response.body?.cancel(); return { status: 'expired', models: [], diagnostic: 'model_codex_login_expired' }; }
       if (!response.ok) { await response.body?.cancel(); throw new Error('model_codex_catalog_failed'); }
       const data = record(await response.json());
@@ -66,17 +80,9 @@ class CodexRuntime implements ModelProviderRuntime {
         return [{ id, label: string(row.display_name) ?? id, images: Array.isArray(row.input_modalities) ? row.input_modalities.includes('image') : row.supports_image === true, tools: true, ...(positive(row.context_window) ? { contextWindow: positive(row.context_window) } : {}), ...(positive(row.max_context_window)?{reportedContextWindow:positive(row.max_context_window)}:{}), ...(efforts.length ? { reasoningEfforts: efforts } : {}), ...(string(row.default_reasoning_level) ? { defaultReasoningEffort: string(row.default_reasoning_level) } : {}),...serviceTiers(row,efforts.length?efforts:undefined,string(row.default_reasoning_level)) } satisfies ModelOffering];
       });
       this.catalog = new Map(models.map(model => [model.id, model]));
-      let quota: ModelProviderObservation['quota'] = { available: false, observedAt: new Date().toISOString() };
-      try {
-        const response = await this.request('/wham/usage');
-        if (response.ok) {
-          const data = record(await response.json()), limits = record(data.rate_limit), windows = [record(limits.primary_window), record(limits.secondary_window)];
-          const reported = windows.flatMap((window,index) => typeof window.used_percent === 'number' && window.used_percent >= 0 && window.used_percent <= 100 ? [{ id:index===0?'primary':'secondary',label:window.limit_window_seconds===604800?'每周窗口':window.limit_window_seconds===86400?'每日窗口':index===0?'主要窗口':'次要窗口',limitWindowSeconds:typeof window.limit_window_seconds==='number'?window.limit_window_seconds:undefined,remaining: 100 - window.used_percent, reset: typeof window.reset_at === 'number' ? window.reset_at : undefined }] : []);
-          const tightest = [...reported].sort((a, b) => a.remaining - b.remaining)[0];
-          if (tightest) quota = { available: true, planLabel:string(data.plan_type), windows:reported.map(window=>({id:window.id,label:window.label,remainingPercent:window.remaining,limitWindowSeconds:window.limitWindowSeconds,...(window.reset?{resetsAt:new Date(window.reset*1000).toISOString()}:{})})), observedAt: new Date().toISOString(), remainingPercent: tightest.remaining, ...(tightest.reset ? { resetsAt: new Date(tightest.reset * 1000).toISOString() } : {}), summary: 'ChatGPT 套餐上游报告额度' };
-        } else await response.body?.cancel();
-      } catch { /* Quota observation cannot invalidate an otherwise usable source. */ }
-      return { status: models.length ? 'ready' : 'failed', label: nativeLabel??'Codex / ChatGPT', ...(this.options.owner?{identity:await this.options.owner.identity()}:{}), models, quota, ...(!models.length ? { diagnostic: 'model_codex_catalog_empty' } : {}) };
+      const identity=this.options.owner?await this.options.owner.identity():undefined;
+      if(identity!==nativeIdentity){this.catalog.clear();return{status:'failed',incomplete:true,identity,models:[],diagnostic:'Codex 账号已变化，请重新刷新；未使用前一个账号的模型或额度。'};}
+      return { status: models.length ? 'ready' : 'failed', label: nativeLabel??'Codex / ChatGPT', ...(identity?{identity}:{}), models, quota, ...(!models.length ? { diagnostic: 'model_codex_catalog_empty' } : {}) };
     } catch (error) { return { incomplete: (error as Error).message !== 'model_codex_login_expired', status: (error as Error).message === 'model_codex_login_expired' ? 'expired' : 'failed', models: [], diagnostic: (error as Error).message === 'model_codex_login_expired' ? 'model_codex_login_expired' : 'model_codex_observation_failed' }; }
   }
   async beginLogin(update: (value: LoginObservation) => void): Promise<void> {

@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import type { AccountObservation, AgentExecutor, AgentRuntime, ContextRef, ExecutionRef, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorSendInput, ExecutorTitleInput, LoginObservation, PermissionMode } from '../../contracts.ts';
 import { NativeRpc, nativeBinding, bounded, closeOwnedProcess, findExecutable, inspectVersion, isolatedEnvironment, nativeCommand, nativeHome, opaqueReference, parseReference, privateDirectories } from '../native-process.ts';
-import {readQoderIdentity,requestQoderModel} from '../../model-access/providers/qoder.ts';
+import {readQoderIdentity,requestQoderModel,inspectQoderLogin} from '../../model-access/providers/qoder.ts';
 import { ExecutorInputRejected, type ExecutorSupplementInput, type ExecutorInputReceipt } from '../../contracts.ts';
 import { checkedGateway, consumerBinding, gatewayModel, qoderGatewayPolicy, type ExecutorGateway } from '../model-gateway.ts';
 import type { ExecutorForkInput } from '../../contracts.ts';
@@ -157,9 +157,9 @@ class QoderRuntime implements AgentRuntime {
       const status = await bounded(new Promise<number | null>((resolve, reject) => { child.once('exit', resolve); child.once('error', () => reject(new Error('qoder_login_failed'))); }), 15 * 60 * 1000);
       if (this.login !== login || login.cancelled) return;
       if (status !== 0) { update({ state: 'failed', diagnostic: 'qoder_login_failed' }); return; }
-      update({ state: 'checking' }); const account = await this.inspectAccount();
+      update({ state: 'checking' }); const account = await inspectQoderLogin(this.environment.QODER_CONFIG_DIR!);
       if (this.login !== login) return;
-      if (account.status === 'ready' && (await this.models()).length) update({ state: 'completed' }); else update({ state: 'failed', diagnostic: 'qoder_account_not_ready' });
+      if (account.status === 'ready') update({ state: 'completed' }); else update({ state: account.status === 'expired' ? 'expired' : 'failed', diagnostic: account.diagnostic ?? 'qoder_account_not_ready' });
     } catch { if (this.login === login) { await closeOwnedProcess(child); update({ state: 'expired' }); } }
     finally { text = ''; if (this.login === login) this.login = undefined; }
   }

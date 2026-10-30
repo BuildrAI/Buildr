@@ -102,6 +102,16 @@ test('Qoder reports its required platform login without demanding native paid mo
     await assert.rejects(createQoderExecutor().open({ connectionId: 'qoder', configRoot: root, executable, environment: { PATH: process.env.PATH ?? '' }, gateway: lease }), /qoder_platform_login_required/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+test('Qoder preserves SDK login expiration even when no auth-expired callback is delivered', { timeout: 15000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-qoder-expired-gateway-'));
+  try {
+    const executable = join(root, 'qoder.mjs');
+    const source = (await readFile(new URL('./fixtures/qoder-cli.mjs', import.meta.url), 'utf8'))
+      .replace("if(t==='get_models'){", `if(t==='get_models'){emit({type:'control_response',response:{subtype:'error',request_id:m.request_id,error:'Local login has expired. Run "qodercli login" to refresh.'}});return;`);
+    await writeFile(executable, source);
+    await assert.rejects(createQoderExecutor().open({ connectionId: 'qoder', configRoot: root, executable, environment: { PATH: process.env.PATH ?? '' }, gateway: lease }), /qoder_platform_login_expired/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
 test('Qoder rejects an unavailable external model route before any work input is sent', { timeout: 15000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'buildr-qoder-gateway-unavailable-'));
   try {

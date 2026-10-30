@@ -79,7 +79,8 @@ export function createAgentService(options: AgentServiceOptions) {
   };
   linkedChanged=connection=>{
     if(!connection.enabled||['not-authenticated','expired'].includes(connection.status)||connection.loginAttempt&&['initializing','waiting-browser'].includes(connection.loginAttempt.state))models.invalidate('native-'+connection.id);
-    if(discoveryTimer)refreshInBackground();
+    // Login completion must not wait for an unrelated source's discovery.
+    if(discoveryTimer&&connection.enabled&&!connection.loginAttempt?.state.match(/^(initializing|waiting-browser|checking)$/))void models.accounts.check('native-'+connection.id).catch(()=>{});
   };
   const cachedCatalog=()=>{
     const result=models.catalog.list();

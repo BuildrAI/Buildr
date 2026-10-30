@@ -23,6 +23,7 @@ test('图片回答随交接解析为来源而不是回应旧执行',()=>{
  const answer={scope:{text:'',attachmentIds:['a']}};
  const result=waitingQuestionText(request,{runId:'run',participantId:'agent',generation:'gen',requestIds:['request'],answers:[{requestId:'request',answer}]},value=>resolveQuestionAnswer(request,value,expand).answer);
  assert.equal(result.answered,true);const text=JSON.parse(result.text);assert.match(text.回答.scope,/\/private\/attachments\/a/);assert.match(text.状态,/未回应旧原生执行/);
+  assert.deepEqual(text.显示回答,{scope:''},'human display and native attachment delivery remain separate');
 });
 
 test('视频回答复用媒体展开并保留原件与抽样画面的来源说明',()=>{

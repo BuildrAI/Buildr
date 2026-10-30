@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { authorize, json, listen, privateToken, request } from '../../src/process/transport.ts';
+import { authorize, json, listen, privateToken, request, keepEventStreamAlive } from '../../src/process/transport.ts';
 
 test('accepted response finishes before the execution channel closes', { timeout: 10_000 }, async t => {
   // Exceed the socket write buffer so shutdown cannot race an unflushed body.
@@ -30,4 +30,26 @@ test('channel close still reclaims an unfinished event stream', { timeout: 10_00
   await Promise.all([channel.close(), channel.close()]);
   assert.equal(await ended, true);
   reader.releaseLock();
+});
+
+test('a quiet internal event stream emits comments across a long question wait and cleans up', { timeout: 10_000 }, async t => {
+  t.mock.timers.enable({apis:['setInterval']});
+  let stop=()=>{};
+  const channel=await listen(async(_req,res)=>{
+    res.writeHead(200,{'Content-Type':'text/event-stream'});
+    res.write('data: {"status":"waiting-question","cursor":1}\n\n');
+    stop=keepEventStreamAlive(res);
+  });
+  const controller=new AbortController();
+  const response=await fetch(channel.origin,{signal:controller.signal});
+  const reader=response.body!.getReader(),decoder=new TextDecoder();
+  try{
+    assert.match(decoder.decode((await reader.read()).value),/waiting-question/);
+    for(let n=0;n<24;n++){
+      t.mock.timers.tick(15_000);
+      assert.equal(decoder.decode((await reader.read()).value),': heartbeat\n\n','idle comments keep the HTTP body active without changing the question or event cursor');
+    }
+    stop();t.mock.timers.tick(60_000);
+    controller.abort();
+  }finally{stop();controller.abort();await reader.cancel().catch(()=>{});reader.releaseLock();await channel.close();t.mock.timers.reset();}
 });

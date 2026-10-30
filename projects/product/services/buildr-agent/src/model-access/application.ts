@@ -35,6 +35,7 @@ export class ModelAccessApplication {
   private readonly rows = new Map<string, ModelAccountView>();
   private readonly preferences = new Map<string,Record<string,ModelPreference>>();
   private readonly runtimes = new Map<string, Promise<ModelProviderRuntime>>();
+  private readonly checks = new Map<string, { operation: number; promise: Promise<ModelAccountView> }>();
   private readonly urls = new Map<string, { attemptId: string; url: string }>();
   private readonly leasesByToken = new Map<string, LeaseRecord>();
   private readonly leasesByIdentity = new Map<string, LeaseRecord>();
@@ -163,7 +164,7 @@ export class ModelAccessApplication {
   invalidate(id:string) {
     const row=this.rows.get(id); if(!row)return;
     this.operations.set(id,(this.operations.get(id)??0)+1);
-    row.status='not-authenticated';row.models=[];
+    row.status='not-authenticated';row.models=[];delete row.quota;delete row.accountLabel;delete row.observedAt;
     for(const lease of [...this.leasesByIdentity.values()])if(lease.input.accountId===id)this.release(lease.view.identity);
   }
   list() { if (this.storageError) throw this.storageError; return { accounts: [...this.rows.values()].map(row => this.view(row)), providers: [...this.providers.values()].filter(provider=>!provider.connectionId).map(provider => ({ id: provider.id, label: provider.label })) }; }
@@ -177,13 +178,20 @@ export class ModelAccessApplication {
   }
   async check(id: string, input: { expectedRevision?: string } = {}) {
     await this.ready; const row = this.current(id); conflict(row.revision, input.expectedRevision);
+    const pending=this.checks.get(id);
+    if(pending&&pending.operation===this.operations.get(id))return pending.promise;
     const operation = (this.operations.get(id) ?? 0) + 1; this.operations.set(id, operation);
+    const promise=this.inspectAccount(row,operation).finally(()=>{if(this.checks.get(id)?.operation===operation)this.checks.delete(id);});
+    this.checks.set(id,{operation,promise});return promise;
+  }
+  private async inspectAccount(row: ModelAccountView, operation: number): Promise<ModelAccountView> {
+    const id=row.id;
     let before: string | undefined;
     try {
       const observation = await (await this.runtime(id)).inspect();
-      if (this.operations.get(id) !== operation) return this.view(this.current(id));
+      if (this.closed || this.metadataReadOnly || this.operations.get(id) !== operation) return this.view(this.current(id));
       before=this.selectionState(row);
-      if(observation.identity && row.identity!==digest(observation.identity)){row.status='not-authenticated';row.identity=digest(observation.identity);for(const lease of [...this.leasesByIdentity.values()])if(lease.input.accountId===id)this.release(lease.view.identity);}
+      if(observation.identity && row.identity!==digest(observation.identity)){row.status='not-authenticated';row.identity=digest(observation.identity);row.models=[];delete row.quota;delete row.accountLabel;delete row.observedAt;for(const lease of [...this.leasesByIdentity.values()])if(lease.input.accountId===id)this.release(lease.view.identity);}
       // An incomplete observation is not evidence that a previously usable account expired.
       // Explicit authentication results and identity changes still invalidate it immediately.
       row.enabled = true; row.status = observation.status === 'failed' && observation.incomplete === true && row.status === 'ready' && (!observation.identity || row.identity === digest(observation.identity)) ? 'ready' : observation.status; if(observation.label) row.accountLabel = observation.label; row.diagnostic = observation.diagnostic;
@@ -193,7 +201,7 @@ export class ModelAccessApplication {
         this.preferences.set(id,prefs);row.models = structuredClone(observation.models); row.observedAt = this.now;
       }
       if(observation.quota)row.quota=!observation.quota.available&&row.quota?.available?{...row.quota,stale:true,diagnostic:'本次额度读取未完成，以下保留上次观察。'}:observation.quota;
-    } catch { if (this.operations.get(id) !== operation) return this.view(this.current(id)); before??=this.selectionState(row); if (row.status !== 'ready') row.status = 'failed'; row.diagnostic = '模型账号检查未完成，已保留上次目录。'; }
+    } catch { if (this.closed || this.metadataReadOnly || this.operations.get(id) !== operation) return this.view(this.current(id)); before??=this.selectionState(row); if (row.status !== 'ready') row.status = 'failed'; row.diagnostic = '模型账号检查未完成，已保留上次目录。'; }
     return await this.observed(row, before!);
   }
   async login(id: string, input: { expectedRevision: string }) {
@@ -384,7 +392,7 @@ export class ModelAccessApplication {
     }
     const requests=[...this.leasesByIdentity.values()].reduce((count,lease)=>count+lease.requests.size,0);
     const logins=this.metadataReadOnly ? 0 : [...this.rows.values()].filter(row=>['initializing','waiting-browser','checking'].includes(row.loginAttempt?.state??'')).length;
-    return [{kind:'model-request',count:requests},{kind:'model-login',count:logins},{kind:'model-write',count:this.pendingWrites}].filter(value=>value.count>0);
+    return [{kind:'model-request',count:requests},{kind:'model-login',count:logins},{kind:'model-check',count:this.checks.size},{kind:'model-write',count:this.pendingWrites}].filter(value=>value.count>0);
   }
   freezeMetadata(value = true) {
     const wasReadOnly=this.metadataReadOnly;this.metadataReadOnly=value;

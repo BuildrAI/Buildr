@@ -1,7 +1,7 @@
 import type { PendingRequestView, SendDraft } from '../contracts.ts';
 import { fail, nonempty, type StoredConversation } from './agent-state.ts';
 
-import { isMaterialAnswer } from './question-answer.ts';
+import { isMaterialAnswer, answerAttachmentIds, questionAnswerDisplay } from './question-answer.ts';
 
 type Intent = NonNullable<SendDraft['waitingHandoff']>;
 export function normalizeWaitingHandoff(value: Intent | undefined): Intent | undefined {
@@ -53,6 +53,7 @@ export function waitingQuestionText(question: PendingRequestView, intent: Intent
     请求标识: question.id, 问题: question.title, 说明: question.description, 问题列表: question.questions, 选项: question.options,
     状态: supplied ? '用户已提交回答，随交接交给新执行方；未回应旧原生执行' : '未回答，用户选择交接并继续或提出新要求',
     ...(supplied ? { 回答: resolve(supplied.answer) } : {}),
+    ...(supplied && answerAttachmentIds(supplied.answer).length ? { 显示回答: questionAnswerDisplay(supplied.answer) } : {}),
     授权性质: '仅实际提交的业务回答具有其明确语义；交接和停止本身不构成验收、选项答复或工具授权。仍缺必要决定时须重新询问，不得代选。'
   }) };
 }

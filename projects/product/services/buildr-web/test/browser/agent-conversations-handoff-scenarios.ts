@@ -201,8 +201,10 @@ await step('用户决定复用问题卡片，选项说明与其他回答可用�
       await card.getByRole('button',{name:'移除图片 问题截图.png',exact:true}).waitFor();
       await imageAnswer.fill('按截图核对后继续');
       await card.getByRole('button',{name:'回答并继续',exact:true}).click();await card.waitFor({state:'hidden'});
-      assert.equal(fixture.replies,before+3);const imageReply=JSON.parse(fixture.conversation.entries.at(-1).text).回答.direction;
-      assert.equal(imageReply.text,'按截图核对后继续');assert.equal(imageReply.attachmentIds.length,1);
+      assert.equal(fixture.replies,before+3);const imageReply=JSON.parse(fixture.conversation.entries.at(-1).text);
+      assert.equal(imageReply.显示回答.direction,'按截图核对后继续');assert.match(imageReply.回答.direction,/\/fixture\/attachments\//);
+      const materialMessage=panel().locator('[data-entry-id="reply-decision-images"]');await materialMessage.locator('.ac-image-thumbnail').waitFor();assert.match(await materialMessage.innerText(),/按截图核对后继续/);assert.doesNotMatch(await materialMessage.innerText(),/fixture\/attachments|未读取不能声称|attachmentIds/);await capture(page,'agent-question-answer-materials-display.png');
+      const legacy={...imageReply};delete legacy.显示回答;fixture.conversation.entries.at(-1).text=JSON.stringify(legacy);update({entries:[...fixture.conversation.entries]});await page.reload();await input().waitFor();await materialMessage.locator('.ac-image-thumbnail').waitFor();assert.doesNotMatch(await materialMessage.innerText(),/fixture\/attachments|未读取不能声称/);
       assert.equal(await input().inputValue(),'底部未发送草稿，不能夹带');await input().fill('');
       update({run:run('running','codex',{id:'new-run-after-instruction'}),requests:[decision('stale-old-question')]});await page.reload();await input().waitFor();
       assert.equal(await panel().locator('[data-agent-request]').count(),0,'新一轮不显示旧轮可答卡片');
@@ -238,7 +240,7 @@ await step('问题自由回答共享完整视频输入，失败保留文字和�
         await card.getByText('视频编码无法解码，请换用浏览器可播放的 MP4 或 WebM。',{exact:true}).waitFor();
         assert.equal(await answer.inputValue(),'录屏说明');await card.getByRole('button',{name:'移除视频 回答录屏.webm',exact:true}).waitFor();assert.equal(fixture.replies,before);
         await capture(page,'agent-question-video-answer.png');await card.getByRole('button',{name:'回答并继续',exact:true}).click();await card.waitFor({state:'hidden'});
-        const reply=JSON.parse(fixture.conversation.entries.at(-1).text).回答.scope;assert.deepEqual(reply,{text:'录屏说明',attachmentIds:[originalId,'image-fixture-'+fixture.attachmentUploads]});assert.equal(fixture.conversation.run.id,'run-fixture');assert.equal(await input().inputValue(),'底部文字保留');assert.equal(fixture.replies,before+1);
+        const replyEntry=fixture.conversation.entries.at(-1),reply=JSON.parse(replyEntry.text);assert.equal(reply.显示回答.scope,'录屏说明');assert.deepEqual(replyEntry.attachments,[originalId,'image-fixture-'+fixture.attachmentUploads]);assert.match(reply.回答.scope,/\/fixture\/attachments\//);assert.equal(fixture.conversation.run.id,'run-fixture');assert.equal(await input().inputValue(),'底部文字保留');assert.equal(fixture.replies,before+1);
       }finally{fixture.conversation=saved;await page.reload();await input().waitFor();await input().fill('');}
     });
 await step('等待问题时普通发送禁用，定位回答保留草稿；停止确认后才可发送新轮',async()=>{

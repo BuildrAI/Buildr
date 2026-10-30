@@ -1,4 +1,5 @@
 import {qoderTitleBudget} from './title.ts';
+import { qoderAccountFailure } from '../../model-access/providers/qoder-auth.ts';
 /** A dedicated process keeps SDK auth/history discovery out of the Buildr host environment. */
 import { createInterface } from 'node:readline';
 import { readFile } from 'node:fs/promises';
@@ -90,9 +91,9 @@ async function accountQuery(cwd: string, operation: 'account' | 'models'): Promi
   } catch (error: any) {
     if (['qoder_gateway_model_unavailable', 'qoder_native_model_unavailable'].includes(error?.message)) throw error;
     if (operation === 'account') {
-      if (authExpired) return { status: 'expired', diagnostic: 'qoder_auth_expired' };
+      if (authExpired) return qoderAccountFailure(error, true);
       if (error?.name === 'QoderCliInitializationError' && error.message === 'No qodercli login found. Run \"qodercli login\" first.') return { status: 'not-authenticated' };
-      return { status: 'failed', diagnostic: 'qoder_account_not_observed' };
+      return qoderAccountFailure(error);
     }
     throw error;
   } finally { release(); await q.close(); }

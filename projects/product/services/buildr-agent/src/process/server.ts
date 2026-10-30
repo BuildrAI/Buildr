@@ -9,7 +9,7 @@ import type { AgentProcessIdentity, AgentProcessStatus, AgentRuntimeUnit } from 
 import { AgentServiceError } from '../domain/agent-state.ts';
 import { AgentHostRegistry } from './host-channel.ts';
 import { dispatchOperation, validateOperation } from './operations.ts';
-import { authorize, body, json, listen, request, privateToken } from './transport.ts';
+import { authorize, body, json, listen, request, privateToken, keepEventStreamAlive } from './transport.ts';
 import { claim, clearProcessRecord, controlRoot, readPrivate, writePrivate, readProcessRecord, readProcessInstances, writeProcessInstance, generationAlive, live, readLock } from './ownership.ts';
 import type { ProcessBootstrap, ProcessRecord } from './ownership.ts';
 import { validateAgentRuntime, canRunParallel } from './runtime-unit.ts';
@@ -160,6 +160,8 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       scope(input.sourceId, input.scope);
       const subscription = service.conversations.subscribe(input.scope, input.id);
       res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store' });
+      res.flushHeaders();
+      const stopHeartbeat = keepEventStreamAlive(res);
       const controller = new AbortController();
       let signature = '', relayCursor = 0;
       const refresh = () => {
@@ -176,14 +178,14 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       // Shared snapshots also cover another retained generation and pending-only
       // changes; they do not resume native contexts or trigger an execution.
       const poll = setInterval(refresh, 500); poll.unref();
-      const stop = () => { controller.abort(); subscription.close(); clearInterval(poll); }; res.once('close', stop);
+      const stop = () => { controller.abort(); subscription.close(); clearInterval(poll); stopHeartbeat(); }; res.once('close', stop);
       try { for await (const event of subscription.events) {
         if (res.destroyed) break;
         const conversation = service.conversations.read(input.scope, input.id);
         signature = [conversation.revision,conversation.pendingSend?.revision,conversation.activity?.seenThrough].join(':');
         if (!res.write('data: ' + JSON.stringify({...event,cursor:++relayCursor,revision:conversation.revision,payload:{conversation}}) + '\n\n')) await once(res, 'drain', {signal:controller.signal});
       } }
-      finally { res.removeListener('close', stop); clearInterval(poll); controller.abort(); subscription.close(); if (!res.destroyed) res.end(); }
+      finally { res.removeListener('close', stop); clearInterval(poll); stopHeartbeat(); controller.abort(); subscription.close(); if (!res.destroyed) res.end(); }
       return;
     }
     inflight++;

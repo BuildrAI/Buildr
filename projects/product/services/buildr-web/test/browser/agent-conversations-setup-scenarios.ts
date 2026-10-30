@@ -19,6 +19,11 @@ await step('账号入口悬停与聚焦显示所有已登录账号的真实额�
     await overview.getByText('CNY 123.46',{exact:true}).waitFor();
     assert.equal(await overview.locator('section').count(),3);await overview.getByText('额度暂不可读取',{exact:true}).waitFor();
     assert.doesNotMatch(await overview.innerText(),/观察时间|重置|充值|赠送/);
+    // Measure the settled popover, not a scaled frame of its entrance animation.
+    await overview.evaluate(async(node:HTMLElement)=>{
+      await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));
+      await Promise.all((node.closest('.ant-popover')??node).getAnimations({subtree:true}).map(animation=>animation.finished.catch(()=>{})));
+    });
     await capture(page,'agent-account-balance-hover.png');
     // Hold a real polling response: existing rows and layout must not turn into a loading view.
     const before=await overview.innerText(),boundsBefore=await overview.boundingBox();
@@ -118,6 +123,7 @@ await step('模型目录初次读取和无关账号核对失败不打扰对话',
 await step('统一账号来源按真实登录观察更新，登录链接和迟到接入列表不冒充账号已连接',async()=>{
       connections[0].status='expired';await openDesktopConversation();await page.getByRole('button',{name:'账号与配置',exact:true}).click();const drawer=page.getByRole('dialog',{name:/^智能体与模型/});await drawer.waitFor();await drawer.locator('.ams-setup').getByRole('tab',{name:'模型',exact:true}).click();await drawer.locator('.amm-source-list').getByRole('button').filter({hasText:'Codex'}).click();const card=drawer.locator('.amm-quota-card');await card.getByText('登录已过期',{exact:true}).waitFor();
       await card.getByRole('button',{name:'重新登录',exact:true}).click();const login=card.getByRole('link',{name:'打开登录页',exact:true});await login.waitFor();assert.match(await login.getAttribute('href'),/^https:\/\/auth\.openai\.com\//);assert.equal(await card.getByText('已登录',{exact:true}).count(),0,'等待官方登录不冒充已登录');
+      (connections[0] as any).loginAttempt.state='checking';connections[0].revision='connection-'+(++fixture.revision);await card.getByText('正在核对登录结果',{exact:true}).waitFor();assert.equal(await card.getByText('正在等待官方登录',{exact:true}).count(),0,'官方已返回时不再要求等待浏览器登录');
       connections[0].status='ready';(connections[0] as any).loginAttempt.state='completed';connections[0].revision='connection-'+(++fixture.revision);await card.getByText('已登录',{exact:true}).waitFor();await card.getByRole('button',{name:'刷新Codex额度',exact:true}).click();await capture(page,'agent-conversation-account.png');
       await drawer.locator('.amm-tabs').getByRole('tab',{name:/^模型/}).click();const fixtureSwitch=drawer.getByRole('switch',{name:'停用 Fixture model',exact:true});await fixtureSwitch.waitFor();fixture.holdPreferences=true;const saving=new Promise<void>(resolve=>{fixture.preferencesStarted=resolve;});const preferenceSaved=page.waitForResponse((response:any)=>response.url().endsWith('/preferences'));await fixtureSwitch.click();await saving;assert.equal(await drawer.getByRole('switch',{name:'启用 Fixture model',exact:true}).count(),1,'启停用先生效，不等保存回执');assert.equal(await drawer.getByRole('switch',{name:'停用 Fast model',exact:true}).isDisabled(),false,'保存期间不锁定其他控件');assert.equal(await page.getByText('模型设置已保存',{exact:true}).count(),0,'保存不再弹成功提示');fixture.releasePreferences!();await preferenceSaved;await drawer.locator('.amm-model-summary').getByText(/已启用 1/).waitFor();assert.equal(fixture.preferencePosts,1);assert.equal(preferenceBodies.at(-1).expectedRevision,'model-account-codex','偏好写入携带已观察版本');assert.deepEqual(preferenceBodies.at(-1).models,[{id:'fixture-model',enabled:false}],'只写入本次改动的字段');assert.equal(await page.getByText('模型设置已保存',{exact:true}).count(),0,'保存完成后也不补成功提示');
       await drawer.locator('.amm-tabs').getByRole('tab',{name:'账号与额度',exact:true}).click();await card.getByText('已登录',{exact:true}).waitFor();

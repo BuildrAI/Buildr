@@ -79,6 +79,23 @@ function fixture(executors: AgentExecutor[], settings: { modelProviders?: AgentS
   const service = createAgentService(options);
   return { root, workspace, options, service, async close() { await service.close(); fs.rmSync(root, { recursive: true, force: true }); } };
 }
+
+test('Qoder expired preparation retains the account-switch action for native and shared models', async () => {
+  const native=fake('qoder'),open=native.executor.open;
+  native.executor.open=async input=>({...await open(input),inspectAccount:async()=>({status:'expired'})});
+  const f=fixture([native.executor]);
+  try {
+    await f.service.connections.connect('qoder',{expectedRevision:'unconfigured'});
+    const conversation=await f.service.conversations.create('workspace-one',{});
+    for(const modelAccountId of [undefined,'shared-source']){
+      assert.throws(()=>f.service.conversations.prepareSend('workspace-one',conversation.id,{expectedRevision:conversation.revision,connectionId:'qoder',modelAccountId,model:'fixture-model',text:'preserve this draft'}),(error:any)=>{
+        assert.equal(error.code,'qoder_platform_login_expired');
+        assert.match(error.message,/团队账号额度已用尽.*更换有额度/);return true;
+      });
+    }
+    assert.equal(native.sends.length,0);
+  } finally {await f.close();}
+});
 async function connected(service: ReturnType<typeof createAgentService>, id: string) { return service.connections.connect(id, { expectedRevision: service.connections.read(id).revision }); }
 async function waitUntil<T>(read: () => T, predicate: (value: T) => boolean): Promise<T> {
   for (let i = 0; i < 500; i++) { const value = read(); if (predicate(value)) return value; await new Promise(resolve => setTimeout(resolve, 2)); }
@@ -2032,7 +2049,7 @@ for(const media of ['image','video'] as const)test('正式材料回答校验同�
     await f.service.conversations.reply('workspace-one',chat.id,request.id,{...input,answer:{scope:{text:'看截图',attachmentIds:[attachment.id]}}});
     const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='completed');
     assert.equal(done.requests.length,0);const reply=done.entries.find(entry=>entry.id==='reply-'+request.id)!;
-    assert.deepEqual(reply.attachments,[attachment.id]);const delivered=(native.replies[0] as any).scope;assert.match(delivered,/看截图/);
+    assert.deepEqual(reply.attachments,[attachment.id]);assert.deepEqual(JSON.parse(reply.text).显示回答,{scope:'看截图'});assert.match(JSON.parse(reply.text).回答.scope,/未读取不能声称看过/);const delivered=(native.replies[0] as any).scope;assert.match(delivered,/看截图/);
     const sources=JSON.parse(delivered.split('：\n')[1].split('\n\n')[0]);assert.equal(fs.readFileSync(sources[0].path).equals(bytes),true);assert.equal(reply.status,'accepted');assert.equal(done.run!.id,run.id);
     if(media==='video'){assert.match(delivered,/不含音轨/);assert.match(delivered,/不能据此声称连续观看/);const video=JSON.parse(delivered.split('：\n').at(-1)!)[0];assert.equal(video.id,attachment.id);assert.equal(video.frames[0].id,frame.id);assert.equal(video.frames[0].time,0);assert.equal(fs.statSync(video.path).size,24);}
     await assert.rejects(f.service.conversations.reply('workspace-one',chat.id,request.id,{...input,expectedRevision:done.revision,answer:{scope:'yes'}}),{code:'agent_request_stale'});assert.equal(native.replies.length,1);

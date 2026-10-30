@@ -4,6 +4,18 @@ test('response display resolves labels while source text is unchanged',()=>{cons
 test('multiple question responses preserve order and selected option labels',()=>{const text=JSON.stringify({请求标识:'request',问题:'补充',问题列表:[{id:'scope',label:'范围',options:[{id:'local',label:'本地'}]}],回答:{scope:['local']}});assert.equal(conversationReplyText(text),'范围：本地');});
 test('ordinary prose and unrelated JSON are never reinterpreted',()=>{for(const text of ['ordinary input','{"问题":"sample","回答":"x"}','{"请求标识":"id","问题":"q","回答":"a","extra":"user data"}'])assert.equal(conversationReplyText(text),text);});
 test('malformed response-like user JSON remains readable and cannot break the renderer',()=>{const text=JSON.stringify({请求标识:'id',问题:'q',回答:'a',选项:'unexpected'});assert.equal(conversationReplyText(text),text);});
+test('material answers display only human text while native locations and video context remain unchanged',()=>{
+ const appendix='\n\n用户随此问题回答附加的材料（请按需读取以下准确本机来源，未读取不能声称看过）：\n'+JSON.stringify([{id:'frame',path:'/private/attachment/frame',mimeType:'image/png'}])+'\n用户附加视频：原件 /private/video，不含音轨';
+ const source={请求标识:'request',问题:'补充',问题列表:[{id:'scope',label:'范围'}],回答:{scope:'按图片处理'+appendix},显示回答:{scope:'按图片处理'}};
+ const text=JSON.stringify(source);
+ assert.equal(conversationReplyText(text),'范围：按图片处理');
+ assert.equal(JSON.parse(text).回答.scope,'按图片处理'+appendix,'stored native material is not stripped or rewritten');
+ delete source.显示回答;
+ assert.equal(conversationReplyText(JSON.stringify(source)),'范围：按图片处理','already-stored replies are readable without migrating private data');
+ source.显示回答={scope:''};assert.equal(conversationReplyText(JSON.stringify(source)),'范围：（见附件）');
+ source.显示回答={scope:'用户原文'+appendix};
+ assert.equal(conversationReplyText(JSON.stringify(source)),'范围：用户原文'+appendix,'an explicit human-authored display answer is never heuristically truncated');
+});
 test('handoff question snapshots show their actual status and explicit answers keep option labels',()=>{
   const base={请求标识:'id',问题:'是否完成？',问题列表:[{id:'result',label:'验收结果',options:[{id:'later',label:'稍后确认'}]}]};
   assert.match(conversationReplyText(JSON.stringify({...base,状态:'原问题；回答以用户明确提交的记录为准。'})),/原问题；回答以用户明确提交/);

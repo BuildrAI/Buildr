@@ -1,4 +1,5 @@
 import {ModelAccessError} from '../model-access/contracts.ts';
+import { qoderLoginExpiredMessage } from '../model-access/providers/qoder-auth.ts';
 import { NativeObservationError, NativeRequestError } from './error-diagnostic.ts';
 import type { ConnectionView, ContextRef, ConversationView, ExecutionRef, RunStatus, RunView } from '../contracts.ts';
 
@@ -24,8 +25,8 @@ export function safeDiagnostic(error: unknown): string {
   const code = error instanceof Error ? error.message.split(':')[0] : '';
   const messages: Record<string, string> = {
     qoder_platform_login_required: 'Qoder 程序需要先完成基础平台登录；不要求购买或选择 Qoder 模型套餐。',
-    qoder_platform_login_expired: 'Qoder 基础平台登录已过期，请在智能体程序中重新登录。所选模型套餐保持。',
-    qoder_platform_auth_unavailable: '尚未确认 Qoder 基础平台登录，请检查该程序的独立账号。',
+    qoder_platform_login_expired: qoderLoginExpiredMessage,
+    qoder_platform_auth_unavailable: 'Qoder 账号检查未完成，请检查网络或程序连接后重试；当前不能确定登录是否失效。',
     qoder_gateway_model_unavailable: '当前 Qoder 接入未开放所选外部模型通道，本次模型调用未发出。请改选可用组合；原模型来源与输入已保留。',
     qoder_native_model_unavailable: '所选模型不在 Qoder 当前原生模型目录中，本次模型调用未发出。请刷新账号模型后核对选择；原输入已保留。',
     qoder_native_account_changed: 'Qoder 登录账号已变化，未发送工作指令。请刷新账号后核对原模型来源；原输入已保留。',

@@ -4,6 +4,17 @@ import { once } from 'node:events';
 import { AgentServiceError, safeDiagnostic } from '../domain/agent-state.ts';
 
 export const privateToken = () => randomBytes(32).toString('base64url');
+/** Keep a quiet internal SSE hop alive without inventing business events or cursor changes. */
+export function keepEventStreamAlive(res: ServerResponse): () => void {
+  const close = () => { clearInterval(timer); res.off('close', close); };
+  const timer = setInterval(() => {
+    if (res.destroyed || res.writableEnded || res.writableLength > 8 * 1024 * 1024) { close(); res.destroy(); return; }
+    res.write(': heartbeat\n\n');
+  }, 15_000);
+  timer.unref();
+  res.once('close', close);
+  return close;
+}
 export function authorize(req: IncomingMessage, token: string): void {
   const actual = Buffer.from(req.headers.authorization ?? ''), expected = Buffer.from('Bearer ' + token);
   if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) throw new AgentServiceError('agent_process_unauthorized', '执行后台认证失败。', 401);

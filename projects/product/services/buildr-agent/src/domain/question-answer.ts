@@ -11,6 +11,14 @@ export function answerAttachmentIds(answer: unknown): string[] {
   if (isMaterialAnswer(answer)) return answer.attachmentIds;
   return answer && typeof answer === 'object' && !Array.isArray(answer) ? Object.values(answer).flatMap(value => isMaterialAnswer(value) ? value.attachmentIds : []) : [];
 }
+/** Human-authored answer only; native delivery separately keeps resolved material locations. */
+export function questionAnswerDisplay(answer: unknown): unknown {
+  if (isMaterialAnswer(answer)) return answer.text;
+  if (answer && typeof answer === 'object' && !Array.isArray(answer)) {
+    return Object.fromEntries(Object.entries(answer).map(([id, value]) => [id, isMaterialAnswer(value) ? value.text : value]));
+  }
+  return answer;
+}
 
 /** Native question protocols remain text-only. Resolve private image sources on the host, never trust client paths. */
 export function resolveQuestionAnswer(request: PendingRequestView, answer: unknown, expand: (ids: string[]) => {images: ExecutorImage[]; description: string}): { answer: unknown; attachmentIds: string[]; images: ExecutorImage[] } {

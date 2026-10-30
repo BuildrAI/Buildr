@@ -7,6 +7,7 @@ import { record, string, positive } from './private-account.ts';
 import { buildAuthHeaders, qoderEncodeBody } from './qoder-signing.ts';
 import { ModelAccessError } from '../contracts.ts';
 import { upstreamFailure } from '../errors.ts';
+import { qoderAccountFailure, qoderAuthenticationError, qoderTeamQuotaMessage } from './qoder-auth.ts';
 
 /** Read only the exact Buildr private profile. The native CLI remains the credential writer. */
 export async function readQoderIdentity(config: string) {
@@ -37,6 +38,19 @@ export interface QoderModelOwner {
   inspect(): Promise<AccountObservation>;
   identity(): Promise<string>;
   request(path:string,init?:RequestInit):Promise<Response>;
+}
+/** Verify official login without starting another SDK query or invoking a model. */
+export async function inspectQoderLogin(config: string): Promise<AccountObservation> {
+  try {
+    const response = await requestQoderModel(config, '/models', { signal: AbortSignal.timeout(15000) });
+    if (!response.ok) throw await qoderResponseFailure(response);
+    const data = record(await response.json());
+    if (!Array.isArray(data.chat)) throw new Error('qoder_catalog_invalid');
+    return { status: 'ready', label: 'Qoder', loginMethod: 'Qoder 账号' };
+  } catch (error) {
+    if (error instanceof ModelAccessError && error.code === 'qoder_platform_login_expired') return { status: 'expired', diagnostic: error.message };
+    return qoderAccountFailure(error);
+  }
 }
 const quotaNumber=(value:unknown):number|undefined=>typeof value==='number'&&Number.isFinite(value)?value:undefined;
 const quotaFormat=(value:number):string=>Number.isInteger(value)?String(value):value.toFixed(1);
@@ -70,10 +84,13 @@ export function createQoderModelProvider(owner:QoderModelOwner):ModelProvider {
   return {id:'native-qoder',label:'Qoder',connectionId:'qoder',async open(){
     const models=new Map<string,{offering:ModelOffering;config:ProtocolJson}>();
     const inspect=async():Promise<ModelProviderObservation>=>{
-        const account=await owner.inspect(); if(account.status!=='ready')return{status:account.status,incomplete:account.status==='failed',models:[],label:account.label,diagnostic:account.diagnostic};
-        const response=await owner.request('/models',{signal:AbortSignal.timeout(15000)});
-        if(response.status===401){await response.body?.cancel();return{status:'expired',models:[]};}
-        if(!response.ok){await response.body?.cancel();throw new Error('qoder_catalog_failed');}
+      let identity: string | undefined;
+      try {
+        identity=await owner.identity();
+        // Authenticated endpoints establish current login. Avoid launching an
+        // additional CLI just to reread the same local account.
+        const [response,quota]=await Promise.all([owner.request('/models',{signal:AbortSignal.timeout(15000)}),observeQoderQuota((path,init)=>owner.request(path,init))]);
+        if(!response.ok)throw await qoderResponseFailure(response);
         const data=record(await response.json());if(!Array.isArray(data.chat))throw new Error('qoder_catalog_invalid');models.clear();
         for(const value of data.chat){const config=record(value),id=string(config.key);if(!id||config.enable===false)continue;
           const thinking=record(config.thinking_config),enabled=record(thinking.enabled),efforts=Object.keys(record(enabled.efforts));
@@ -82,7 +99,14 @@ export function createQoderModelProvider(owner:QoderModelOwner):ModelProvider {
           const creditFactor=quotaNumber(config.price_factor);
           const offering:ModelOffering={id,...(reportedContextWindow?{reportedContextWindow}:{}),label:string(config.display_name)??id,tools:true,images:config.is_vl===true,...(contextWindow?{contextWindow}:{}),...(creditFactor!==undefined?{creditFactor}:{}),...(efforts.length?{reasoningEfforts:efforts.map(id=>({id,label:id})),defaultReasoningEffort:efforts.find(id=>record(record(enabled.efforts)[id]).is_default===true)}:{})};
           models.set(id,{offering,config});}
-        return{status:models.size?'ready':'failed',label:account.label??'Qoder',identity:await owner.identity(),models:[...models.values()].map(v=>v.offering),quota:await observeQoderQuota((path,init)=>owner.request(path,init))};
+        const currentIdentity=await owner.identity();
+        if(currentIdentity!==identity){models.clear();return{status:'failed',incomplete:true,identity:currentIdentity,models:[],diagnostic:'Qoder 账号已变化，请重新刷新；未使用前一个账号的模型或额度。'};}
+        const exhaustedTeam=quota?.available&&quota.planLabel==='Teams'&&quota.remainingPercent===0;
+        return{status:models.size?'ready':'failed',label:'Qoder',identity,models:[...models.values()].map(v=>v.offering),quota,...(exhaustedTeam?{diagnostic:qoderTeamQuotaMessage}:{})};
+      } catch(error) {
+        const failure=error instanceof ModelAccessError&&error.code==='qoder_platform_login_expired'?{status:'expired' as const,diagnostic:error.message}:error instanceof ModelAccessError&&error.code==='model_quota_exhausted'?{status:'failed' as const,diagnostic:'Qoder 当前账号额度不足；团队账号额度用尽后无法继续使用，请更换有额度的账号后重新登录。'}:qoderAccountFailure(error);
+        return{...failure,incomplete:failure.status==='failed',identity,models:[]};
+      }
     };
     return {protocol:'chat-completions',inspect,
       async beginLogin(){throw new Error('请在Qoder账号中登录。');},async cancelLogin(){},async close(){},
@@ -123,6 +147,7 @@ async function qoderResponseFailure(response:Response):Promise<ModelAccessError>
   try{if(reader){const decoder=new TextDecoder();for(;;){const part=await reader.read();if(part.done)break;bytes+=part.value.length;if(bytes>8192)break;text+=decoder.decode(part.value,{stream:true});}text+=decoder.decode();}}
   finally{await reader?.cancel().catch(()=>{});reader?.releaseLock();}
   let detail:ProtocolJson={};try{if(bytes<=8192){const body=record(JSON.parse(text));detail=record(body.error??body);}}catch{/* Arbitrary response bodies stay private. */}
+  const auth=qoderAuthenticationError(response.status,{code:detail.code,message:detail.message??detail.msg});if(auth)return auth;
   return upstreamFailure({code:detail.code??'qoder_model_upstream_failed',message:detail.message??detail.msg},response.status);
 }
 function qoderStreamFailure(envelope:ProtocolJson):ModelAccessError{
