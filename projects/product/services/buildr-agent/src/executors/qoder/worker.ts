@@ -1,4 +1,5 @@
 import {qoderTitleBudget} from './title.ts';
+import { interactionPolicy } from '../../domain/interaction-policy.ts';
 import { qoderAccountFailure } from '../../model-access/providers/qoder-auth.ts';
 /** A dedicated process keeps SDK auth/history discovery out of the Buildr host environment. */
 import { createInterface } from 'node:readline';
@@ -17,6 +18,7 @@ import { checkedGateway, qoderGatewayModelId, qoderGatewayPolicy, qoderGatewaySe
 console.log = console.info = console.warn = console.error = console.debug = () => {};
 const send = (message: unknown) => { process.stdout.write(JSON.stringify(message) + '\n'); };
 let executable = '';
+let workInstructions = interactionPolicy.instructions;
 let gateway: ExecutorGateway | undefined;
 interface LiveQuery {
   inputGate?: Promise<void>;
@@ -52,6 +54,7 @@ function options(cwd: string, state?: LiveQuery, onChild?: (child: ChildProcessW
     auth: qodercliAuth(), transport: ProcessTransport.default, pathToQoderCLIExecutable: executable, cwd, env: { ...process.env },
     settingSources: ['user', 'project', 'local'], skills: 'all', settings: { skills: { loadFromAgentsDirectory: true }, ...(gateway && !gateway.nativeModel ? qoderGatewaySettings(gateway) : {}) }, permissionMode: state?.permissionMode === 'full-access' ? 'bypassPermissions' : 'default', allowDangerouslySkipPermissions: state?.permissionMode === 'full-access',
     stderr: () => {}, includePartialMessages: true,
+    ...(state ? { systemPrompt: { type: 'preset', preset: 'qodercli', append: workInstructions } } : {}),
     // Apply the lease to every purpose, including title, compaction and child agents.
     ...(gateway ? { resolveModel: (context: any) => {
       try { return gatewayPolicy(context); }
@@ -65,7 +68,7 @@ function options(cwd: string, state?: LiveQuery, onChild?: (child: ChildProcessW
       if (!state) return { behavior: 'deny', message: 'No active user execution.' };
       accepted(state);
       const id = details?.toolUseID ?? details?.toolUseId ?? randomUUID();
-      const request: ExecutorRequest = tool === 'AskUserQuestion' ? { id, kind: 'question', title: '需要补充信息', questions: (input.questions ?? []).map((question: any, index: number) => ({ id: String(index), label: String(question.question ?? ''), options: question.options?.map((option: any) => ({ id: option.label, label: option.label, ...(typeof option.description === 'string' ? { description: option.description } : {}) })), multiple: Boolean(question.multiSelect) })) } : { id, kind: 'approval', title: `允许 ${tool}？`, description: String(input.command ?? input.file_path ?? input.path ?? details?.blockedPath ?? ''), options: [{ id: 'approve', label: '允许本次' }, { id: 'deny', label: '拒绝' }] };
+      const request: ExecutorRequest = tool === 'AskUserQuestion' ? { id, kind: 'question', blocking: true, title: '需要补充信息', questions: (input.questions ?? []).map((question: any, index: number) => ({ id: String(index), label: String(question.question ?? ''), options: question.options?.map((option: any) => ({ id: option.label, label: option.label, ...(typeof option.description === 'string' ? { description: option.description } : {}) })), multiple: Boolean(question.multiSelect) })) } : { id, kind: 'approval', title: `允许 ${tool}？`, description: String(input.command ?? input.file_path ?? input.path ?? details?.blockedPath ?? ''), options: [{ id: 'approve', label: '允许本次' }, { id: 'deny', label: '拒绝' }] };
       return await new Promise(resolve => {
         state.pending.set(id, { request, input, resolve }); emit(state, { type: 'request', request });
         details?.signal?.addEventListener('abort', () => { if (state.pending.delete(id)) { resolve({ behavior: 'deny', message: 'Request cancelled.' }); emit(state, { type: 'request-resolved', requestId: id }); } }, { once: true });
@@ -220,7 +223,7 @@ async function execute(params: any): Promise<void> {
   }
 }
 async function dispatch(method: string, params: any): Promise<any> {
-  if (method === 'initialize') { executable = params.executable; gateway = checkedGateway(params.gateway); return {}; }
+  if (method === 'initialize') { executable = params.executable; workInstructions = params.interaction?.instructions ?? interactionPolicy.instructions; gateway = checkedGateway(params.gateway); return {}; }
   if (!executable) throw new Error('qoder_worker_not_initialized');
   if (method === 'account') return await accountQuery(params.cwd, 'account');
   if (method === 'models') return await accountQuery(params.cwd, 'models');

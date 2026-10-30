@@ -16,7 +16,7 @@ export function conversationReplyText(text:string):string{
   const keys=['请求标识','问题','说明','问题列表','选项','回答','显示回答','授权性质','状态'];
   if(!value||typeof value!=='object'||Array.isArray(value)||typeof value.请求标识!=='string'||typeof value.问题!=='string'||(!Object.hasOwn(value,'回答')&&typeof value.状态!=='string')||Object.keys(value).some(key=>!keys.includes(key)))return text;
   if(value.选项!==undefined&&!Array.isArray(value.选项)||value.问题列表!==undefined&&!Array.isArray(value.问题列表))return text;
-  if(!Object.hasOwn(value,'回答'))return value.问题+'\n'+(Array.isArray(value.问题列表)?value.问题列表.map((question:any)=>question.label).join('\n')+'\n':'')+(value.状态.startsWith('原问题')?value.状态:'未回答；交接不代表同意。');
+  if(!Object.hasOwn(value,'回答'))return value.问题+'\n'+(Array.isArray(value.问题列表)?value.问题列表.map((question:any)=>question.label).join('\n')+'\n':'')+(value.状态.startsWith('原问题')||value.状态.includes('用户要求先讨论')?value.状态:'未回答；交接不代表同意。');
   const displayProvided=Object.hasOwn(value,'显示回答'),answer=displayProvided?value.显示回答:value.回答;
   const label=(answer:unknown,options:any[]|undefined):string=>Array.isArray(answer)?answer.map(item=>label(item,options)).join('、'):options?.find(item=>item.id===answer)?.label??(typeof answer==='string'?(displayProvided?answer||'（见附件）':withoutNativeMaterialAppendix(answer)):JSON.stringify(answer));
   if(answer&&typeof answer==='object'&&!Array.isArray(answer)&&Array.isArray(value.问题列表))return Object.entries(answer).map(([id,answer])=>{const question=value.问题列表.find((item:any)=>item.id===id);return `${question?.label??id}：${label(answer,question?.options)}`;}).join('\n');

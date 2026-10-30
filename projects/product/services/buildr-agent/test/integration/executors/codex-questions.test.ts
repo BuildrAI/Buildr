@@ -12,7 +12,7 @@ function replace(source: string, before: string, after: string) {
   assert.ok(source.includes(before), 'native fixture changed: '+before);
   return source.replace(before, after);
 }
-async function questionFixture(twoQuestions = false) {
+async function questionFixture(twoQuestions = false, blocking = true) {
   let source = await readFile(new URL('./fixtures/codex-cli.mjs', import.meta.url), 'utf8');
   source = replace(source, 'state[t.id]=t;', 't.interaction={config:m.params.config,developerInstructions:m.params.developerInstructions};state[t.id]=t;');
   source = replace(source, "if(m.method==='thread/resume'||m.method==='thread/read'){", "if(m.method==='thread/resume'){state[m.params.threadId].interaction={config:m.params.config,developerInstructions:m.params.developerInstructions};save();}if(m.method==='thread/resume'||m.method==='thread/read'){");
@@ -23,6 +23,7 @@ async function questionFixture(twoQuestions = false) {
   source = replace(source, "m.id?.startsWith('request-')", "/^(request|second)-/.test(String(m.id))");
   source = replace(source, "if(m.result.answers.color.answers[0]!=='蓝')throw Error('wrong answer');", 'state[active.threadId].lastAnswer=m.result.answers;save();');
   source = replace(source, "const user={id:'native-'+p.clientUserMessageId", "if(p.input[0]?.text==='cancel-first'){event('serverRequest/resolved',{threadId:p.threadId,requestId:'request-'+active.id});event('serverRequest/resolved',{threadId:p.threadId,requestId:'unknown'});event('serverRequest/resolved',{threadId:'another-thread',requestId:'second-'+active.id});}const user={id:'native-'+p.clientUserMessageId");
+  if (!blocking) source = source.replaceAll('questions:[{', 'isBlocking:false,autoResolutionMs:1,questions:[{');
   return source;
 }
 async function eventually(read: () => ConversationView, predicate: (view: ConversationView) => boolean) {
@@ -30,9 +31,9 @@ async function eventually(read: () => ConversationView, predicate: (view: Conver
   while (Date.now()<deadline) { const view=read(); if (predicate(view)) return view; await delay(5); }
   assert.fail('question state was not observed: '+JSON.stringify(read().run));
 }
-async function fixture(mode: PermissionMode, twoQuestions = false) {
+async function fixture(mode: PermissionMode, twoQuestions = false, blocking = true) {
   const root = await mkdtemp(join(tmpdir(), 'buildr-codex-decisions-'));
-  const executable=join(root,'codex.mjs');await writeFile(executable,await questionFixture(twoQuestions));
+  const executable=join(root,'codex.mjs');await writeFile(executable,await questionFixture(twoQuestions, blocking));
   const service=createAgentService({dataRoot:join(root,'profile'),executors:[createCodexExecutor()],modelProviders:[],environment:{PATH:process.env.PATH??''},resolveWorkspace:()=>({rootPath:root})});
   await service.connections.connect('codex',{expectedRevision:service.connections.read('codex').revision,executable});
   const chat=await service.conversations.create('workspace',{});
@@ -107,4 +108,22 @@ test('resuming a legacy Codex thread enables native questions without changing i
     const native=JSON.parse(await readFile(file,'utf8'));assert.deepEqual(Object.keys(native),[contextRef.id]);assert.match(native[contextRef.id].interaction.developerInstructions,/request_user_input/);
     await runtime.stop({contextRef,executionRef:events.find(e=>e.type==='accepted').executionRef});await sending;
   } finally {await runtime?.close();await rm(root,{recursive:true,force:true});}
+});
+
+
+test('Codex non-blocking metadata keeps the question while work runs and never auto-selects', async () => {
+  const f = await fixture('default', false, false);
+  try {
+    const first = await eventually(f.read, v => v.requests.length === 1);
+    assert.equal(first.requests[0].blocking, false);
+    assert.equal(first.run!.status, 'running');
+    await delay(20);
+    const current = await f.service.conversations.observe('workspace', f.chat.id);
+    assert.equal(current.requests.length, 1, 'running does not cancel the question');
+    assert.equal(current.run!.status, 'running');
+    assert.equal(current.entries.some(e => e.id.startsWith('reply-')), false, 'native timeout hint is not user consent');
+    await f.service.conversations.reply('workspace', f.chat.id, current.requests[0].id, { ...f.control(), answer: { color: '绿' } });
+    await eventually(f.read, v => v.requests.length === 0);
+    await f.service.conversations.stop('workspace', f.chat.id, f.control());
+  } finally { await f.close(); }
 });

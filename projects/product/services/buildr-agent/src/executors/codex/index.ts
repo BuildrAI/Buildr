@@ -1,4 +1,5 @@
 import { codexUnsettledTools } from './recovery.ts';
+import { interactionPolicy, blocksExecution } from '../../domain/interaction-policy.ts';
 import {createHash} from 'node:crypto';
 import { errorDiagnostic, NativeObservationError } from '../../domain/error-diagnostic.ts';
 import { isCompatibleProgram, nativeProgramPolicy } from '../program-policy.ts';
@@ -14,11 +15,11 @@ import { ExecutorInputRejected, type ExecutorSupplementInput, type ExecutorInput
 import { checkedGateway, consumerBinding, gatewayModel, gatewayEffort, type ExecutorGateway } from '../model-gateway.ts';
 import type { ExecutorForkInput } from '../../contracts.ts';
 
-const capabilities = { supplement: true, permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
+const capabilities = { interaction: { policy: interactionPolicy.version, nonBlockingQuestions: true }, supplement: true, permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
 // Work-thread overrides also apply on resume; auxiliary title/summary threads stay tool-free.
 const conversationInteraction = {
   config: { features: { default_mode_request_user_input: true } },
-  developerInstructions: '在 Buildr 工作对话中，当缺少用户的必要决定或信息而不能继续时，使用 request_user_input 发起明确问题并等待用户回答，再继续依赖该决定的工作。不要只在过程文字中询问后继续，也不要自行假定用户选择。已有明确授权继续有效，不重复提问；完全访问不代表可以代答业务问题，工具权限继续使用原生审批。普通补充消息不代替待答问题的正式回答。',
+  developerInstructions: interactionPolicy.instructions + '\n必要提问使用 request_user_input。',
 };
 function codexEffort(value?: string): string | undefined {
   if (value === 'off') return 'none';
@@ -52,6 +53,7 @@ class CodexRuntime implements AgentRuntime {
   readonly bindingIdentity: string;
   bindingData?: Record<string, unknown>;
   private rpc: NativeRpc;
+  private interaction = conversationInteraction;
   get closed(): boolean { return this.rpc.closed; }
   private readonly titleDirectory: string;
   private readonly auxiliary = new Set<string>();
@@ -80,6 +82,7 @@ class CodexRuntime implements AgentRuntime {
     }
     const rpc = new NativeRpc(launch.command, [...launch.prefix, 'app-server', '--listen', 'stdio://', '-c', 'cli_auth_credentials_store="file"', ...overrides], { cwd: options.configRoot, env });
     const runtime = new CodexRuntime(binding.identity, rpc, join(temporary, 'title-requests'));
+    runtime.interaction = { ...conversationInteraction, developerInstructions: (options.interaction ?? interactionPolicy).instructions + '\n必要提问使用 request_user_input。' };
     runtime.bindingData = binding.data;
     runtime.gateway = gateway; runtime.modelConfig = config;
     let abortedClose: Promise<void> | undefined; const abort = () => { abortedClose ??= rpc.close(); };
@@ -154,7 +157,7 @@ class CodexRuntime implements AgentRuntime {
     login.update({ state: 'cancelled' }); login.done();
   }
   async createContext({ cwd, permissionMode }: { cwd: string; permissionMode?: PermissionMode }): Promise<ContextRef> {
-    const result = await this.rpc.call('thread/start', { cwd, ephemeral: false, ...conversationInteraction, ...codexThreadPermissions(permissionMode) });
+    const result = await this.rpc.call('thread/start', { cwd, ephemeral: false, ...this.interaction, ...codexThreadPermissions(permissionMode) });
     if (!result.thread?.id || result.thread.cwd !== cwd) throw new Error('codex_context_identity_mismatch');
     return this.context(result.thread.id, cwd);
   }
@@ -188,7 +191,7 @@ class CodexRuntime implements AgentRuntime {
     }
     const forked = await this.rpc.call('thread/fork', {
       threadId: input.contextRef.id, ...(importPath ? { path: importPath } : {}),
-      lastTurnId: input.executionRef.id, cwd: input.cwd, ephemeral: false, deferGoalContinuation: true, ...conversationInteraction,
+      lastTurnId: input.executionRef.id, cwd: input.cwd, ephemeral: false, deferGoalContinuation: true, ...this.interaction,
       ...(this.gateway ? { model: gatewayModel(this.gateway).id, modelProvider: 'buildr-models' } : {}),
     });
     if (!forked.thread?.id || forked.thread.id === input.contextRef.id || forked.thread.cwd !== input.cwd) throw new Error('agent_fork_identity_invalid');
@@ -201,7 +204,7 @@ class CodexRuntime implements AgentRuntime {
   }
   async resumeContext({ contextRef, cwd, permissionMode }: { contextRef: ContextRef; cwd: string; permissionMode?: PermissionMode }): Promise<void> {
     this.reference(contextRef, cwd);
-    const result = await this.rpc.call('thread/resume', { threadId: contextRef.id, cwd, ...conversationInteraction, ...(permissionMode === undefined ? {} : codexThreadPermissions(permissionMode)) });
+    const result = await this.rpc.call('thread/resume', { threadId: contextRef.id, cwd, ...this.interaction, ...(permissionMode === undefined ? {} : codexThreadPermissions(permissionMode)) });
     if (result.thread?.id !== contextRef.id || result.thread.cwd !== cwd) throw new Error('codex_context_identity_mismatch');
   }
   async readHistory({ contextRef, cwd }: { contextRef: ContextRef; cwd: string }): Promise<ExecutorItem[]> {
@@ -322,7 +325,8 @@ class CodexRuntime implements AgentRuntime {
   }
   private activeObservation(turn: ActiveTurn): ExecutorObservation {
     const tools = [...turn.tools.values()].map(({ processId, ...tool }) => ({ ...tool, canStop: Boolean(processId) && tool.status === 'running' }));
-    return { status: turn.terminal ? tools.some(tool => tool.status === 'running') ? 'tools-active' : turn.terminal === 'stopped' ? 'stopped' : 'idle' : turn.pending.size ? 'waiting' : 'running', executionRef: this.rpc.executionRef(turn.id, turn.contextId, this.bindingIdentity, [...turn.tools.values()].some(tool => Boolean(tool.processId) && tool.status !== 'completed')), tools, ...(turn.terminal === 'failed' && turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) };
+    const requests = [...turn.pending].flatMap(([id, pending]) => codexRequest(id, pending.method, pending.params) ?? []);
+    return { status: turn.terminal ? tools.some(tool => tool.status === 'running') ? 'tools-active' : turn.terminal === 'stopped' ? 'stopped' : 'idle' : requests.some(blocksExecution) ? 'waiting' : 'running', executionRef: this.rpc.executionRef(turn.id, turn.contextId, this.bindingIdentity, [...turn.tools.values()].some(tool => Boolean(tool.processId) && tool.status !== 'completed')), tools, requests, ...(turn.terminal === 'failed' && turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) };
   }
   async observe({ contextRef, executionRef, knownItems }: { contextRef: ContextRef; executionRef?: ExecutionRef; knownItems?: readonly ExecutorItem[] }): Promise<ExecutorObservation> {
     this.reference(contextRef);
@@ -424,7 +428,7 @@ function codexItem(item: any, executionId: string, status: string): ExecutorItem
   return [];
 }
 function codexRequest(id: string, method: string, params: any): ExecutorRequest | undefined {
-  if (method === 'item/tool/requestUserInput') return { id, kind: 'question', title: '需要你的回复', questions: (params.questions ?? []).map((question: any) => ({ id: question.id, label: String(question.question ?? question.header ?? ''), allowOther: Boolean(question.isOther), options: question.options?.map((option: any) => ({ id: option.label, label: option.label, ...(typeof option.description === 'string' ? { description: option.description } : {}) })) })) };
+  if (method === 'item/tool/requestUserInput') return { id, kind: 'question', blocking: params.isBlocking !== false, title: '需要你的回复', questions: (params.questions ?? []).map((question: any) => ({ id: question.id, label: String(question.question ?? question.header ?? ''), allowOther: Boolean(question.isOther), options: question.options?.map((option: any) => ({ id: option.label, label: option.label, ...(typeof option.description === 'string' ? { description: option.description } : {}) })) })) };
   if (method === 'item/permissions/requestApproval') return { id, kind: 'approval', title: '允许本轮所列权限？', description: String(params.reason ?? '') + '\n' + JSON.stringify(params.permissions ?? {}), options: [{ id: 'approve', label: '允许本轮所列权限' }, { id: 'deny', label: '拒绝' }] };
   if (method === 'item/commandExecution/requestApproval' || method === 'item/fileChange/requestApproval') return { id, kind: 'approval', title: method === 'item/fileChange/requestApproval' ? '允许修改文件？' : '允许运行命令？', description: String(params.command ?? params.reason ?? ''), options: [{ id: 'approve', label: '允许本次' }, { id: 'deny', label: '拒绝' }] };
   return undefined;

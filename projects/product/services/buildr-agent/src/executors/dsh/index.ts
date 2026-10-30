@@ -1,4 +1,5 @@
 import { readFile, writeFile, rm } from 'node:fs/promises';
+import { interactionPolicy } from '../../domain/interaction-policy.ts';
 import { errorDiagnostic, NativeObservationError } from '../../domain/error-diagnostic.ts';
 import { isCompatibleProgram, nativeProgramPolicy } from '../program-policy.ts';
 import { fileURLToPath } from 'node:url';
@@ -16,7 +17,7 @@ import { ExecutorInputRejected, type ExecutorSupplementInput, type ExecutorInput
 import { checkedGateway, consumerBinding, gatewayModel, gatewayEffort, type ExecutorGateway } from '../model-gateway.ts';
 import type { ExecutorForkInput, ExecutorTitleInput } from '../../contracts.ts';
 import { generateDshTitle } from './title.ts';
-const capabilities = { supplement: true, text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
+const capabilities = { interaction: { policy: interactionPolicy.version, nonBlockingQuestions: false }, supplement: true, text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
 // @deepseek-ai/dsh-llm-pi-ai Config.reasoningEfforts uses these THINKING_LEVELS keys (0.2.1-rc.3).
 const dshReasoningEfforts = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
 export function dshGatewayModels(gateway: ExecutorGateway) {
@@ -85,6 +86,7 @@ export class DshRuntime implements AgentRuntime {
     if(modelBridge){patch=join(config,'buildr-native-model-owner.json');await writeFile(patch,JSON.stringify([{insert:[{id:'buildr-deepseek-model-owner',name:fileURLToPath(new URL(import.meta.url.endsWith('.ts')?'./model-source-plugin.ts':'./model-source-plugin.js',import.meta.url)),config:{addressFile:modelBridge.addressFile}}]}]),{mode:0o600});}
     const forkPatch = join(config, 'buildr-fork-patch-'+randomUUID()+'.json');
     const patches = patch ? JSON.parse(await readFile(patch, 'utf8')) : [];
+    patches.push({insert:[{id:'buildr-interaction',name:fileURLToPath(new URL(import.meta.url.endsWith('.ts')?'./interaction-plugin.ts':'./interaction-plugin.js',import.meta.url)),config:{instructions:(options.interaction??interactionPolicy).instructions}}]});
     patches.push({insert:[{id:'buildr-fork-transfer',name:fileURLToPath(new URL(import.meta.url.endsWith('.ts')?'./fork-transfer-plugin.ts':'./fork-transfer-plugin.js',import.meta.url)),config:{addressFile:forkBridge.addressFile}}]});
     await writeFile(forkPatch, JSON.stringify(patches), {mode:0o600});
     patch = forkPatch;
@@ -514,7 +516,7 @@ export class DshRuntime implements AgentRuntime {
     if (request.questions.some((question: any) => typeof question.id !== 'string' || typeof question.question !== 'string')) throw new Error('dsh_question_invalid');
     const id = typeof request.wait?.callId === 'string' ? request.wait.callId : randomUUID();
     if (turn.pending.has(id)) throw new Error('dsh_question_duplicate');
-    const safe: ExecutorRequest = { id, kind: 'question', title: '需要补充信息', questions: request.questions.map((question: any) => ({ id: question.id, label: question.question, options: question.options?.map((option: any) => ({ id: option.label, label: option.label, ...(typeof option.description === 'string' ? { description: option.description } : {}) })), multiple: Boolean(question.multiSelect) })) };
+    const safe: ExecutorRequest = { id, kind: 'question', blocking: true, title: '需要补充信息', questions: request.questions.map((question: any) => ({ id: question.id, label: question.question, options: question.options?.map((option: any) => ({ id: option.label, label: option.label, ...(typeof option.description === 'string' ? { description: option.description } : {}) })), multiple: Boolean(question.multiSelect) })) };
     const wait = request.wait?.timed ? this.client.remote.userQuestions.attachWait(contextId, id) : undefined;
     if (wait) void (async () => { try { for await (const _ of wait) { /* Hold only this native foreground timed claim. */ } } catch { /* Native cancellation resolves the exact pending request. */ } })();
     try {

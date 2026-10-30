@@ -57,6 +57,49 @@ async function fixture(){
   return{root,old,next,service,repository,chat,intent,queued,pump,async close(){old.finish();await service.close();fs.rmSync(root,{recursive:true,force:true});}};
 }
 
+test('explicit discussion stops the exact wait and resumes the same selection without answering', async () => {
+  const f = await fixture();
+  try {
+    const draft: SendDraft = { expectedRevision: f.chat.revision, connectionId: 'old', model: 'a', text: '为什么推荐这个方案？先解释，不要验收。', waitingHandoff: { ...f.intent, intent: 'discussion' } };
+    const preview = f.service.conversations.prepareSend('scope', f.chat.id, draft);
+    assert.equal(preview.fits, true);
+    assert.match(preview.handoff!.body, /仅解释和调查/);
+    assert.equal(f.old.stops, 0);
+    assert.throws(() => f.service.conversations.prepareSend('scope', f.chat.id, { ...draft, connectionId: 'next' }), { code: 'agent_discussion_invalid' });
+    assert.throws(() => f.service.conversations.prepareSend('scope', f.chat.id, { ...draft, waitingHandoff: { ...draft.waitingHandoff!, answers: [{ requestId: f.chat.requests[0].id, answer: 'ok' }] } }), { code: 'agent_handoff_invalid' });
+    const requestId = randomUUID();
+    f.service.conversations.queueSend('scope', f.chat.id, { ...draft, clientRequestId: requestId });
+    const pump = f.pump();
+    await until(async () => { await pump.pump(); return f.old.inputs.length; }, value => value === 2);
+    assert.equal(f.old.stops, 1);
+    assert.equal(f.next.inputs.length, 0);
+    assert.deepEqual(f.old.replies, []);
+    assert.equal(f.old.inputs[0].contextRef.id, f.old.inputs[1].contextRef.id);
+    assert.match(f.old.inputs[1].text, /先解释/);
+    assert.match(f.old.inputs[1].text, /用户要求先讨论/);
+    assert.match(f.old.inputs[1].text, /未回答/);
+    await f.pump().pump();
+    assert.equal(f.old.inputs.length, 2, 'a durable discussion is delivered once');
+  } finally { await f.close(); }
+});
+
+test('discussion stop unknown preserves the request and cannot dispatch', async () => {
+  const f = await fixture();
+  try {
+    f.old.setUnknown(true);
+    const draft: SendDraft = { expectedRevision: f.chat.revision, connectionId: 'old', model: 'a', text: '先说明依据', waitingHandoff: { ...f.intent, intent: 'discussion' } };
+    const requestId = randomUUID();
+    f.service.conversations.queueSend('scope', f.chat.id, { ...draft, clientRequestId: requestId });
+    await f.pump().pump();
+    assert.equal(f.old.inputs.length, 1);
+    assert.equal(f.old.replies.length, 0);
+    const saved = f.repository.read('scope', f.chat.id)!;
+    assert.equal(saved.draft.text, draft.text);
+    assert.equal(saved.draft.waitingHandoff?.intent, 'discussion');
+    assert.notEqual(saved.state, 'delivered');
+  } finally { await f.close(); }
+});
+
 for(const mode of ['answer','instruction','continue'] as const)test('waiting handoff '+mode+' keeps exact questions and delivers once without answering the old model',async()=>{
   const f=await fixture();
   try{

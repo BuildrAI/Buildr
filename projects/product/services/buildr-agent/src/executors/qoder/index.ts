@@ -1,4 +1,5 @@
 import {generateQoderTitle} from './title.ts';
+import { interactionPolicy } from '../../domain/interaction-policy.ts';
 import { NativeObservationError } from '../../domain/error-diagnostic.ts';
 import { isCompatibleProgram, nativeProgramPolicy } from '../program-policy.ts';
 import { createHash, randomUUID } from 'node:crypto';
@@ -11,7 +12,7 @@ import {readQoderIdentity,requestQoderModel,inspectQoderLogin} from '../../model
 import { ExecutorInputRejected, type ExecutorSupplementInput, type ExecutorInputReceipt } from '../../contracts.ts';
 import { checkedGateway, consumerBinding, gatewayModel, qoderGatewayPolicy, type ExecutorGateway } from '../model-gateway.ts';
 import type { ExecutorForkInput } from '../../contracts.ts';
-const capabilities = { supplement: true, permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
+const capabilities = { interaction: { policy: interactionPolicy.version, nonBlockingQuestions: false }, supplement: true, permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
 export function createQoderExecutor(): AgentExecutor { return { descriptor: { id: 'qoder', label: 'Qoder', capabilities }, open: options => QoderRuntime.open(options) }; }
 class QoderRuntime implements AgentRuntime {
   readonly capabilities = capabilities;
@@ -102,7 +103,7 @@ class QoderRuntime implements AgentRuntime {
     let abortedClose: Promise<void> | undefined; const abort = () => { abortedClose ??= rpc.close(); };
     options.signal?.addEventListener('abort', abort, { once: true }); if (options.signal?.aborted) abort();
     try {
-      await rpc.call('initialize', { executable, ...(gateway ? { gateway } : {}) });
+      await rpc.call('initialize', { executable, interaction: options.interaction ?? interactionPolicy, ...(gateway ? { gateway } : {}) });
       if (gateway) {
         await runtime.assertNativeAccount();
         // A linked native account is checked above and by the real query's login/model policy.

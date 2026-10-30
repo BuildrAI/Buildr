@@ -1,3 +1,4 @@
+import { interactionPolicy } from '../../src/domain/interaction-policy.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import fs from 'node:fs';
@@ -2056,7 +2057,7 @@ for(const media of ['image','video'] as const)test('正式材料回答校验同�
   }finally{await f.close();}
 });
 
-test('准确原生观察已继续时移除旧等待卡片并保留未答事实，未知时不隐藏',async()=>{
+test('明确待答快照移除旧卡片；仅运行和未知观察不证明问题结束',async()=>{
   const native=fake('local',{question:true}),f=fixture([native.executor]);
   try{
     await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','检查');
@@ -2064,6 +2065,8 @@ test('准确原生观察已继续时移除旧等待卡片并保留未答事实�
     const context=[...native.contexts.values()][0]!;context.observation={...context.observation,status:'unknown'};
     const unknown=await f.service.conversations.observe('workspace-one',chat.id);assert.equal(unknown.requests.length,1);
     context.observation={...context.observation,status:'running'};
+    const running=await f.service.conversations.observe('workspace-one',chat.id);assert.equal(running.requests.length,1);
+    context.observation={...context.observation,requests:[]};
     const current=await f.service.conversations.observe('workspace-one',chat.id);assert.equal(current.requests.length,0);assert.equal(native.replies.length,0);
     assert.ok(current.entries.some(entry=>entry.id==='retired-question-'+waiting.requests[0]!.id&&entry.text.includes('不补造答复')));
     await assert.rejects(f.service.conversations.reply('workspace-one',chat.id,waiting.requests[0]!.id,{expectedRevision:current.revision,runId:current.run!.id,participantId:current.run!.participantId,generation:current.run!.generation,answer:{scope:'yes'}}),{code:'agent_request_stale'});
@@ -2225,4 +2228,61 @@ test('child discovery reflects current unread and seen activity without changing
     assert.deepEqual(f.service.conversations.list('workspace-one').conversations[0]!.activity,seen.activity);
     assert.equal(f.service.conversations.read('workspace-one',parent.id).revision,parent.revision);
   }finally{await f.close();}
+});
+
+
+test('service supplies its interaction policy through the public contract to any executor', async () => {
+  const native = fake('another-executor'), f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'another-executor');
+    assert.ok(native.opens.length > 0);
+    for (const opening of native.opens) assert.deepEqual(opening.interaction, interactionPolicy);
+  } finally { await f.close(); }
+});
+
+test('request snapshots require exact execution identity and preserve public request bindings', async () => {
+  const native = fake('local', { question: true }), f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local');
+    const chat = await f.service.conversations.create('workspace-one', {});
+    send(f.service, chat.id, 'local', '检查');
+    const waiting = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => view.requests.length === 1);
+    const input = native.sends[0], context = [...native.contexts.values()][0];
+    input.onEvent({ type: 'observation', observation: { status: 'running', tools: [], executionRef: { id: 'another-execution' }, requests: [] } });
+    assert.equal(f.service.conversations.read('workspace-one', chat.id).requests[0].id, waiting.requests[0].id);
+    input.onEvent({ type: 'observation', observation: { status: 'running', tools: [], executionRef: context.observation.executionRef, requests: [{ id: 'question-one', kind: 'question', title: '仍待回答', blocking: false, generation: 'foreign', runId: 'foreign' } as any] } });
+    const current = f.service.conversations.read('workspace-one', chat.id);
+    assert.equal(current.requests[0].id, waiting.requests[0].id);
+    assert.equal(current.requests[0].generation, current.run!.generation);
+    assert.equal(current.requests[0].runId, current.run!.id);
+    assert.equal(current.requests[0].blocking, false);
+    assert.equal(current.run!.status, 'running');
+  } finally { await f.close(); }
+});
+
+test('a resolved request cannot be resurrected by an older in-flight observation', async () => {
+  const native = fake('local', { question: true }), open = native.executor.open;
+  let release!: () => void, captured!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const ready = new Promise<void>(resolve => { captured = resolve; });
+  native.executor.open = async options => {
+    const runtime = await open(options);
+    return { ...runtime, async observe(input) { const snapshot = await runtime.observe(input); captured(); await gate; return snapshot; } };
+  };
+  const f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local');
+    const chat = await f.service.conversations.create('workspace-one', {});
+    send(f.service, chat.id, 'local', '检查');
+    await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => view.requests.length === 1);
+    const context = [...native.contexts.values()][0];
+    context.observation.requests = [{ id: 'question-one', kind: 'question', title: '旧快照中的问题' }];
+    const observing = f.service.conversations.observe('workspace-one', chat.id);
+    await ready;
+    native.sends[0].onEvent({ type: 'request-resolved', requestId: 'question-one' });
+    release();
+    const current = await observing;
+    assert.equal(current.requests.length, 0);
+    assert.equal(native.replies.length, 0);
+  } finally { release(); await f.close(); }
 });

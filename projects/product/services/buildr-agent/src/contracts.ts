@@ -7,6 +7,8 @@ export type ContextRef = { id: string; data?: Record<string, unknown> };
 export type ExecutionRef = { id: string; data?: Record<string, unknown> };
 
 export interface AgentCapabilities {
+  /** Supported Buildr contract, not a claim about model compliance. */
+  interaction?: { policy: 'buildr-interaction/v1'; nonBlockingQuestions: boolean };
   /** Admission into an already active execution; absence means unavailable. */
   supplement?: boolean;
   text: boolean;
@@ -46,6 +48,8 @@ export interface ModelGatewayConfiguration {
   nativeModel?: { provider: 'qoder'; id: string; accountIdentity: string };
 }
 export interface ExecutorOpenOptions {
+  /** Service-owned instructions supplied to every executor, including future providers. */
+  interaction?: { version: 'buildr-interaction/v1'; instructions: string };
   gateway?: ModelGatewayConfiguration;
   nativeAccountConfigRoot?: string;
   /** Trusted original source identity, set only by an explicit verified program upgrade. */
@@ -81,6 +85,8 @@ export interface ExecutorItem {
 export interface ExecutorRequest {
   id: string;
   kind: 'approval' | 'question';
+  /** Missing means blocking for compatibility. Approvals always block. */
+  blocking?: boolean;
   title: string;
   description?: string;
   options?: Array<{ id: string; label: string; description?: string }>;
@@ -92,6 +98,7 @@ export interface ExecutorObservation {
   status: 'idle' | 'running' | 'waiting' | 'stopped' | 'tools-active' | 'unknown';
   executionRef?: ExecutionRef;
   tools: Array<{ id: string; label: string; status: 'running' | 'completed' | 'unknown'; canStop?: boolean }>;
+  /** Complete live-request snapshot for executionRef; omission says nothing about absence. */
   requests?: ExecutorRequest[];
   diagnostic?: string;
 }
@@ -363,6 +370,8 @@ export interface HandoffMaterial {
 export interface SendDraft {
   /** Explicitly end this waiting question round before handing work to a different selection. */
   waitingHandoff?: {
+    /** Explicitly stop the wait and discuss using the same execution selection. */
+    intent?: 'discussion';
     runId: string; participantId: string; generation: string; requestIds: string[];
     answers?: Array<{ requestId: string; answer: unknown }>;
   };

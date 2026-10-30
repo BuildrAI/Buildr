@@ -1,3 +1,4 @@
+import { interactionPolicy } from '../../../src/domain/interaction-policy.ts';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
@@ -12,7 +13,7 @@ async function eventually(condition: () => unknown, timeout = 3000) { const end 
 test('Qoder SDK worker keeps control responsive and binds native input UUID while send waits', { timeout: 15000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'buildr-executor-qoder-')); const workspace = join(root, 'workspace'); await mkdir(workspace);
   const imagePath = join(root, 'image.png'); await writeFile(imagePath, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5EsAAAAASUVORK5CYII=', 'base64'));
-  const executable = join(root, 'qoder.mjs'); await writeFile(executable, cli); let runtime: AgentRuntime | undefined;
+  const executable = join(root, 'qoder.mjs'); const checkedCli = cli.replace("if(t==='initialize'){", "if(t==='initialize'){if(sid!=='account-probe'&&m.request.appendSystemPrompt!=="+JSON.stringify(interactionPolicy.instructions)+")throw Error('shared interaction policy missing');"); await writeFile(executable, checkedCli); let runtime: AgentRuntime | undefined;
   try {
     runtime = await createQoderExecutor().open({ connectionId: 'qoder', configRoot: join(root, 'config'), executable, environment: { PATH: process.env.PATH ?? '', QODER_PERSONAL_ACCESS_TOKEN: 'must-not-inherit' } });
     assert.equal((await runtime.inspectAccount()).status, 'ready');
@@ -106,7 +107,12 @@ for (const completed of [false, true]) test('Qoder fresh worker reconciles durab
   let runtime: AgentRuntime | undefined;
   try {
     runtime = await open(); const contextRef = await runtime.createContext({ cwd: workspace }), requestId = '72c5b846-8bcf-4eb7-8ca2-682af42aca45';
-    const dir = join(configRoot, 'qoder-config', 'projects', (await realpath(workspace)).replace(/[^a-zA-Z0-9]/g, '-')); await mkdir(dir, { recursive: true });
+    // SDK 1.0.55 shortens long canonical project paths with its transcript hash.
+    // Agent-hosted test TMPDIR paths can exceed the native 200-character limit.
+    const canonical = await realpath(workspace), encoded = canonical.replace(/[^a-zA-Z0-9]/g, '-');
+    let hash = 5381; for (let i = 0; i < canonical.length; i++) hash = hash * 33 ^ canonical.charCodeAt(i);
+    const project = encoded.length <= 200 ? encoded : encoded.slice(0, 200) + '-' + Math.abs(hash).toString(36);
+    const dir = join(configRoot, 'qoder-config', 'projects', project); await mkdir(dir, { recursive: true });
     const base = { sessionId: contextRef.id, cwd: workspace, isSidechain: false, timestamp: new Date().toISOString(), userType: 'external', entrypoint: 'cli', version: '1.1.75' };
     const records = [
       { ...base, type: 'user', uuid: requestId, parentUuid: null, origin: { kind: 'human' }, humanInput: { text: 'append once' }, promptId: 'prompt', message: { role: 'user', content: [{ type: 'text', text: 'append once' }] } },

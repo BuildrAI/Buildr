@@ -10,9 +10,11 @@ export function normalizeWaitingHandoff(value: Intent | undefined): Intent | und
   const requestIds = value.requestIds.map(id => nonempty(id, '原问题身份', 200));
   if (new Set(requestIds).size !== requestIds.length) fail('agent_handoff_invalid', '交接包含重复问题。', 409);
   const answers = value.answers;
+  if (value.intent !== undefined && value.intent !== 'discussion') fail('agent_handoff_invalid', '等待交互意图无效。', 409);
+  if (value.intent === 'discussion' && answers?.length) fail('agent_handoff_invalid', '先讨论不能同时提交问题答案。', 409);
   if (answers !== undefined && (!Array.isArray(answers) || !answers.length || answers.length > requestIds.length || answers.some(item => !item || !requestIds.includes(item.requestId)) || new Set(answers.map(item => item.requestId)).size !== answers.length)) fail('agent_handoff_invalid', '交接回答未匹配原问题。', 409);
   if (Buffer.byteLength(JSON.stringify(answers ?? [])) > 64 * 1024) fail('agent_reply_too_large', '交接回答过长，请缩小后重试。', 413);
-  return { runId: nonempty(value.runId, '原执行身份', 200), participantId: nonempty(value.participantId, '原参与者身份', 200), generation: nonempty(value.generation, '原后台身份', 200), requestIds, ...(answers ? { answers: structuredClone(answers) } : {}) };
+  return { ...(value.intent ? { intent: value.intent } : {}), runId: nonempty(value.runId, '原执行身份', 200), participantId: nonempty(value.participantId, '原参与者身份', 200), generation: nonempty(value.generation, '原后台身份', 200), requestIds, ...(answers ? { answers: structuredClone(answers) } : {}) };
 }
 
 function validAnswer(request: PendingRequestView, answer: unknown): boolean {
@@ -35,7 +37,10 @@ export function waitingHandoffQuestions(record: StoredConversation, draft: SendD
   const run = record.view.run;
   if (!run || run.id !== intent.runId || run.participantId !== intent.participantId || run.generation !== intent.generation || draft.continueRunId && draft.continueRunId !== run.id) fail('agent_handoff_stale', '原执行身份已变化，交接内容保留，请核对后重新提交。', 409);
   const participant = record.participants.find(item => item.id === run.participantId);
-  if (participant?.connectionId === draft.connectionId && run.model === draft.model && run.modelAccountId === draft.modelAccountId && run.serviceTier === draft.serviceTier) fail('agent_handoff_unchanged', '当前仍选择原执行组合，请直接回答原问题，或选择其他模型后交接。', 409);
+  const sameSelection = participant?.connectionId === draft.connectionId && run.model === draft.model && run.modelAccountId === draft.modelAccountId && run.serviceTier === draft.serviceTier && (run.permissionMode ?? 'default') === (draft.permissionMode ?? 'default') && run.reasoningEffort === draft.reasoningEffort;
+  if (intent.intent === 'discussion') {
+    if (!sameSelection || !draft.text.trim() || draft.continueRunId) fail('agent_discussion_invalid', '先讨论需保持原执行组合并填写要讨论的内容。', 409);
+  } else if (participant?.connectionId === draft.connectionId && run.model === draft.model && run.modelAccountId === draft.modelAccountId && run.serviceTier === draft.serviceTier) fail('agent_handoff_unchanged', '当前仍选择原执行组合，请直接回答原问题，或选择其他模型后交接。', 409);
   if (record.view.entries.some(entry => intent.requestIds.some(id => entry.id === 'reply-' + id || entry.id.startsWith('reply-' + id + '-')))) fail('agent_handoff_answered', '原问题已有答复或答复结果待确认，交接内容保留，请先核对原执行。', 409);
   const requests = record.view.requests;
   const questions = saved ?? requests;
@@ -51,7 +56,7 @@ export function waitingQuestionText(question: PendingRequestView, intent: Intent
   const supplied = intent.answers?.find(answer => answer.requestId === question.id);
   return { answered: Boolean(supplied), text: JSON.stringify({
     请求标识: question.id, 问题: question.title, 说明: question.description, 问题列表: question.questions, 选项: question.options,
-    状态: supplied ? '用户已提交回答，随交接交给新执行方；未回应旧原生执行' : '未回答，用户选择交接并继续或提出新要求',
+    状态: supplied ? '用户已提交回答，随交接交给新执行方；未回应旧原生执行' : intent.intent === 'discussion' ? '未回答；用户要求先讨论。仅解释和调查，不继续依赖该答案的动作，不把讨论视为同意。' : '未回答，用户选择交接并继续或提出新要求',
     ...(supplied ? { 回答: resolve(supplied.answer) } : {}),
     ...(supplied && answerAttachmentIds(supplied.answer).length ? { 显示回答: questionAnswerDisplay(supplied.answer) } : {}),
     授权性质: '仅实际提交的业务回答具有其明确语义；交接和停止本身不构成验收、选项答复或工具授权。仍缺必要决定时须重新询问，不得代选。'

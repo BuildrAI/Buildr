@@ -1,5 +1,6 @@
 import { answerAttachmentIds, resolveQuestionAnswer, questionAnswerDisplay } from '../domain/question-answer.ts';
 import { normalizeSendDraft } from '../domain/send-draft.ts';
+import { blocksExecution } from '../domain/interaction-policy.ts';
 import { ConversationAttachments, MAX_IMAGE_BYTES, MAX_VISUAL_INPUTS } from './conversation-attachments.ts';
 import type { AttachmentInput } from '../contracts.ts';
 import { continuationDraft } from '../domain/conversation-continuation.ts';
@@ -489,7 +490,7 @@ export class ConversationApplication {
     const unanswered = questionEntries.filter(entry=>entry.role==='system'&&entry.id.startsWith(hasHandoffAnswers?'waiting-handoff-':'waiting-question-')).map(entry=>entry.text);
     const suffix=`\n\n本次用户要求：\n${input.text}${materials.description}${unanswered.length?'\n原轮保留的问题与未回答事项（答复以明确记录为准，交接不代表同意）：\n'+unanswered.join('\n'):''}${waitingQuestions?'\n原轮问题及本次明确提交的回答：\n'+waitingQuestions.map(question=>waitingQuestionText(question,input.waitingHandoff!, answer => resolveQuestionAnswer(question,answer,ids=>this.media.expand(record,ids)).answer).text).join('\n'):''}${input.handoffSummary?'\n用户补充的交接说明（不替代本地历史）：\n'+input.handoffSummary:''}`;
     const handoffPrompt=record.view.childOf?HANDOFF_PROMPT+'\n这是独立子对话。以上主对话记录只作为创建时的背景；不要继续或重复执行主对话任务、回答其问题或沿用一次性许可，只处理下方本次新要求。创建子对话只沿用起始工作位置，本身不新建或切换工作树（Worktree）；后续任务（Task）和实际工作位置仍按本次用户要求及适用规则安排，需要时使用已有能力新建任务（Task）与工作树（Worktree），不要求始终共享目录。主对话可能仍在执行，文件和外部系统必须重新核对。':HANDOFF_PROMPT;
-    const fullText=changes.length||switching?`${handoffPrompt}\n工作位置与来源：${context}\n按轮次组织的本地记录：\n${formatHandoffRounds(rounds)}${suffix}`:input.text+materials.description;
+    const fullText=changes.length||switching||waitingQuestions?`${handoffPrompt}\n工作位置与来源：${context}\n按轮次组织的本地记录：\n${formatHandoffRounds(rounds)}${suffix}`:input.text+materials.description;
     const needsCompression=Buffer.byteLength(fullText)>maxInputBytes;
     const text=needsCompression&&sources?`${handoffPrompt}\n工作位置与来源：${context}\n完整历史共有 ${rounds.length} 轮，记录 #${changes[0]?.sequence??0}–#${through}，超过内联容量。请先读取本地索引 ${sources.index}，按各轮路径读取用户要求、授权纠正、失败未知、成果和待办。正文没有省略来源，具体内容需按引用读取。${suffix}`:fullText;
     const previous=record.participants.find(p=>p.id===record.view.run?.participantId);
@@ -704,12 +705,12 @@ export class ConversationApplication {
         record.requests[requestId] = { nativeId: event.request.id, executionRef: attempt.executionRef };
         record.view.requests.push({ ...event.request, id: requestId, conversationId: id, workspaceId, participantId: participant.id, runId, generation: this.options.generation });
       }
-      run.status = event.request.kind === 'approval' ? 'waiting-approval' : 'waiting-question';
+      if (blocksExecution(event.request) && run.status !== 'stopping') run.status = this.waitingStatus(record) ?? run.status;
     } else if (event.type === 'request-resolved') {
       const resolved = record.view.requests.filter(request => record.requests[request.id]?.nativeId === event.requestId);
       if (!resolved.length) return;
       this.retireQuestions(record,resolved);
-      if (!record.view.requests.length && ['waiting-approval', 'waiting-question'].includes(run.status)) run.status = 'running';
+      if (['waiting-approval', 'waiting-question'].includes(run.status)) run.status = this.waitingStatus(record) ?? 'running';
     } else if (event.type === 'observation') this.applyObservation(record, event.observation);
     else if (event.type === 'diagnostic') run.diagnostic = event.message;
     else if (event.type === 'completed') {
@@ -735,6 +736,10 @@ export class ConversationApplication {
     record.view.requests = record.view.requests.filter(request=>!retired.has(request.id));
     for(const id of retired)delete record.requests[id];
   }
+  private waitingStatus(record: StoredConversation): 'waiting-approval' | 'waiting-question' | undefined {
+    const blocking = record.view.requests.filter(blocksExecution);
+    return blocking.some(request => request.kind === 'approval') ? 'waiting-approval' : blocking.length ? 'waiting-question' : undefined;
+  }
   private applyObservation(record: StoredConversation, observation: ExecutorObservation): void {
     const run = record.view.run; if (!run) return;
     if(run.resourcesReleased&&(!['idle','stopped'].includes(observation.status)||observation.tools.some(tool=>tool.status!=='completed')))return;
@@ -745,6 +750,23 @@ export class ConversationApplication {
     }
     run.executionState=['idle','stopped'].includes(observation.status)&&observation.tools.every(tool=>tool.status==='completed')?'ended':['running','waiting','tools-active'].includes(observation.status)?'active':'unknown';
     run.tools = observation.tools;
+    // A complete native snapshot, not "running" alone, proves request absence.
+    if (observation.requests && attempt?.executionRef && observation.executionRef?.id === attempt.executionRef.id) {
+      const ids = new Set(observation.requests.map(request => request.id));
+      this.retireQuestions(record, record.view.requests.filter(request => !ids.has(record.requests[request.id]?.nativeId)));
+      if (attempt?.executionRef && ['running', 'waiting'].includes(observation.status)) {
+        for (const request of observation.requests) {
+          const existing = record.view.requests.find(value => record.requests[value.id]?.nativeId === request.id);
+          if (existing) {
+            Object.assign(existing, request, { id: existing.id, conversationId: record.view.id, workspaceId: record.view.workspaceId, participantId: run.participantId, runId: run.id, generation: run.generation });
+            continue;
+          }
+          const id = randomUUID();
+          record.requests[id] = { nativeId: request.id, executionRef: attempt.executionRef };
+          record.view.requests.push({ ...request, id, conversationId: record.view.id, workspaceId: record.view.workspaceId, participantId: run.participantId, runId: run.id, generation: run.generation });
+        }
+      }
+    }
     if (observation.diagnostic) run.diagnostic = observation.diagnostic;
     if (observation.status === 'tools-active' || observation.tools.some(tool => tool.status === 'running') && !['running', 'waiting'].includes(observation.status)) run.status = 'tools-active';
     else if (observation.status === 'unknown' || observation.tools.some(tool => tool.status === 'unknown')) run.status = 'unknown';
@@ -758,13 +780,11 @@ export class ConversationApplication {
       if (run.status==='completed' && !observation.diagnostic) delete run.diagnostic;
       this.retireQuestions(record);
     } else if (observation.status === 'running') {
-      // An exact live observation no longer reports a wait. Keep its history, not a stale reply surface.
-      this.retireQuestions(record);
       run.status = run.status === 'stopping' ? 'stopping' : 'running';
       if (run.status === 'running' && !observation.diagnostic && record.interruption?.reason === 'transport') {
         delete record.interruption; delete run.interrupted; delete run.diagnostic;
       }
-    }
+    } else if (observation.status === 'waiting' && run.status !== 'stopping') run.status = this.waitingStatus(record) ?? 'unknown';
     run.updatedAt = this.options.now();
   }
 
@@ -1163,8 +1183,10 @@ export class ConversationApplication {
           const entry = source.startsWith(prefix) ? receiptEntries.get(entryId) : undefined;
           return entry && entry.runId === run?.id && attempt?.executionRef ? [{ id: source.slice(prefix.length), kind: 'tool', role: 'system', text: entry.text, status: entry.status === 'completed' || entry.status === 'failed' ? entry.status : undefined, executionId: attempt.executionRef.id }] : [];
         });
+        const observedRequests = hash(receiptRecord.view.requests);
         const observation = needsObservation ? await runtime.observe({ contextRef: saved.contextRef, executionRef: attempt?.executionRef, knownItems }) : undefined;
         record = this.load(workspaceId, id);
+        const requestsUnchanged = hash(record.view.requests) === observedRequests;
         const participant = record.participants.find(value => value.id === saved.id)!;
         let changed = false;
         for (const item of items) changed = this.applyItem(record, participant, item) || changed;
@@ -1184,7 +1206,8 @@ export class ConversationApplication {
               record.view.run.status = 'unknown'; record.view.run.diagnostic = '原生观察未匹配本轮执行，不能据此结束或重新发送。';
               this.save(record); continue;
             }
-            this.applyObservation(record, observation!); changed = true;
+            // A newer request/answer event wins over an in-flight request snapshot.
+            this.applyObservation(record, requestsUnchanged ? observation! : { ...observation!, requests: undefined }); changed = true;
           }
         }
         if (changed) this.save(record);
@@ -1276,7 +1299,7 @@ export class ConversationApplication {
     try{await runtime.reply({ contextRef: control.participant.contextRef, executionRef: binding.executionRef, requestId: binding.nativeId, answer: resolved.answer });}
     catch(error){const latest=this.load(workspaceId,id);const answer=latest.view.entries.find(e=>e.id===replyId);if(answer){answer.status='unknown';this.save(latest);}throw error;}
     const record = this.currentRun(workspaceId, id, input.runId);
-    if (record) { const answer=record.view.entries.find(e=>e.id===replyId);if(answer)answer.status='accepted';delete record.requests[requestId]; record.view.requests = record.view.requests.filter(value => value.id !== requestId); if (!record.view.requests.length && ['waiting-approval', 'waiting-question'].includes(record.view.run!.status)) record.view.run!.status = 'running'; this.save(record); }
+    if (record) { const answer=record.view.entries.find(e=>e.id===replyId);if(answer)answer.status='accepted';delete record.requests[requestId]; record.view.requests = record.view.requests.filter(value => value.id !== requestId); if (['waiting-approval', 'waiting-question'].includes(record.view.run!.status)) record.view.run!.status = this.waitingStatus(record) ?? 'running'; this.save(record); }
     return this.read(workspaceId, id);
     } finally { this.repliesInFlight.delete(requestId); }
   }

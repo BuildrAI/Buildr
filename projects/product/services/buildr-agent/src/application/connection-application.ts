@@ -1,3 +1,4 @@
+import { interactionPolicy } from '../domain/interaction-policy.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -57,7 +58,7 @@ export class ConnectionApplication {
     const source = original.programSource ?? (typeof original.bindingData?.executable === 'string' ? original.bindingData.executable : original.view.executable && fs.realpathSync(original.view.executable));
     const configRoot = path.join(this.options.root, 'connections', id);
     const executor = this.executors.get(id)!;
-    const open = (record: StoredConnection, selected: string, programSource?: string) => executor.open({connectionId:id,configRoot,executable:selected,environment:this.options.environment,programSource,...(record.bindingIdentity ? {binding:{identity:record.bindingIdentity,data:record.bindingData,executable:record.view.executable,configRoot:record.view.configPath}} : {})});
+    const open = (record: StoredConnection, selected: string, programSource?: string) => executor.open({interaction: interactionPolicy, connectionId:id,configRoot,executable:selected,environment:this.options.environment,programSource,...(record.bindingIdentity ? {binding:{identity:record.bindingIdentity,data:record.bindingData,executable:record.view.executable,configRoot:record.view.configPath}} : {})});
     const owned = [...this.gatewayRuntimes].filter(([key]) => key.startsWith(id + ':'));
     const previous = this.runtimes.get(id);
     let oldReleased = false;
@@ -207,7 +208,7 @@ export class ConnectionApplication {
       const executor = this.executors.get(id)!;
       const lifecycle = this.lifecycles.get(id);
       const opening = new AbortController(); this.opening.set(id, opening);
-      promise = executor.open({ connectionId: id, configRoot, executable: record.view.executable, programSource: record.programSource, environment: this.options.environment, signal: opening.signal,
+      promise = executor.open({ interaction: interactionPolicy, connectionId: id, configRoot, executable: record.view.executable, programSource: record.programSource, environment: this.options.environment, signal: opening.signal,
         ...(record.bindingIdentity ? { binding: { identity: record.bindingIdentity, data: record.bindingData, executable: record.view.executable, configRoot: record.view.configPath } } : {}),
       }).then(async runtime => {
         if (this.closing || opening.signal.aborted || this.lifecycles.get(id) !== lifecycle) { await runtime.close(); fail('agent_service_closing', '接入已断开或智能体服务正在退出。', 503); }
@@ -241,7 +242,7 @@ export class ConnectionApplication {
     const configRoot = path.join(this.options.root, 'connections', id, 'model-bindings', createHash('sha256').update(gateway.identity).digest('hex'));
     const lifecycle = this.lifecycles.get(id);
     const opening = new AbortController(); this.opening.set(key, opening);
-    const promise = this.executors.get(id)!.open({ connectionId: id, configRoot, executable: record.view.executable, programSource: record.programSource, environment: this.options.environment, signal: opening.signal, gateway, nativeAccountConfigRoot: record.view.configPath ?? path.join(this.options.root, 'connections', id) }).then(async runtime => {
+    const promise = this.executors.get(id)!.open({ interaction: interactionPolicy, connectionId: id, configRoot, executable: record.view.executable, programSource: record.programSource, environment: this.options.environment, signal: opening.signal, gateway, nativeAccountConfigRoot: record.view.configPath ?? path.join(this.options.root, 'connections', id) }).then(async runtime => {
       if (this.closing || opening.signal.aborted || this.lifecycles.get(id) !== lifecycle) { await runtime.close(); fail('agent_connection_disabled', '接入已断开。', 409); }
       return runtime;
     }).catch(error => { if (this.gatewayRuntimes.get(key) === promise) this.gatewayRuntimes.delete(key); throw error; }).finally(() => { this.opening.delete(key); });
