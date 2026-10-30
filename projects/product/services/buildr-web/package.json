@@ -29,6 +29,8 @@
     "antd": "^5.29.3",
     "codemirror": "^6.0.2",
     "dayjs": "1.11.21",
+    "dompurify": "3.4.17",
+    "mermaid": "12.2.0",
     "node-sql-parser": "5.4.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

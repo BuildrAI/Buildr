@@ -21,6 +21,19 @@ export function textResponse(response: any, status: any, content: any, contentTy
   response.end(content);
 }
 
+/** Only the packaged drawing entry can be embedded; ordinary pages stay DENY. */
+export function mermaidRendererResponse(response: any, content: string) {
+  response.writeHead(200, {
+    'content-type': 'text/html; charset=utf-8',
+    'cache-control': 'no-store',
+    'content-security-policy': "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'none'; font-src 'none'; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'",
+    'referrer-policy': 'no-referrer',
+    'x-content-type-options': 'nosniff',
+    'x-frame-options': 'SAMEORIGIN',
+  });
+  response.end(content);
+}
+
 export function binaryResponse(response: any, status: any, content: any, contentType: any, options?: { disposition: 'inline' | 'attachment'; filename: string }) {
   const encodedFilename = options ? encodeURIComponent(options.filename).replace(/[!'()*]/g, value => `%${value.charCodeAt(0).toString(16).toUpperCase()}`) : '';
   response.writeHead(status, {

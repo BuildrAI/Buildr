@@ -314,15 +314,27 @@ test('嵌套有序与任务列表保持各自类型且不会丢失相邻列表',
   assert.equal(root.childNodes[1].tagName, 'UL');
 });
 
-test('代码正文保留空行和缩进，Mermaid明确源码回退，表格独立滚动', async () => {
+test('代码正文保留空行和缩进，完整Mermaid标记异步绘图，表格独立滚动', async () => {
   const { renderMarkdown } = await loadRenderer();
   const code = 'first\n  second\n\nlast';
   const root = renderMarkdown('```sh\n' + code + '\n```\n\n```mermaid\ngraph LR\n  A --> B\n```\n\n| a | b |\n| --- | --- |\n| c | d |', { sourcePath: 'docs/readme.md' });
   assert.equal(root.querySelector('pre code').textContent, code);
   assert.equal(root.querySelectorAll('button').length, 2);
-  assert.match(root.textContent, /当前阅读器显示 Mermaid 源码，尚未渲染图示/);
+  assert.match(root.textContent, /正在绘制图示/);
+  assert.equal(root.querySelectorAll('div').find((node: any) => node.className.includes('markdown-diagram')).getAttribute('data-mermaid-source'), 'graph LR\n  A --> B');
+  assert.equal(root.querySelector('details').open, true);
   assert.match(root.textContent, /docs\/readme.md/);
   assert.equal(root.querySelector('table').parentNode.className, 'markdown-table-scroll');
+});
+
+test('未闭合Mermaid不进入绘图并保留完整源码，大小写语言标识一致', async () => {
+  const { renderMarkdown } = await loadRenderer();
+  const root = renderMarkdown('```Mermaid\ngraph LR\n  A -->');
+  const block = root.querySelectorAll('div').find((node: any) => node.className.includes('markdown-diagram'));
+  assert.equal(block.getAttribute('data-mermaid-source'), null);
+  assert.equal(block.getAttribute('data-mermaid-state'), 'incomplete');
+  assert.equal(block.querySelector('code').textContent, 'graph LR\n  A -->');
+  assert.match(root.textContent, /尚未完整输出/);
 });
 
 test('标题章节标识与常见GitHub片段一致，重名章节不覆盖', async () => {

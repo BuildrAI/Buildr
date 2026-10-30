@@ -2189,6 +2189,12 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: var(--font
 .resource-directory-picker { display:flex; gap:8px; align-items:center; }
 .resource-directory-picker > .ant-select { flex:1; min-width:0; }
 .markdown-code-block { position: relative; min-width: 0; }
+.markdown-diagram { margin-block: 16px; }
+.markdown-diagram-view { max-width: 100%; overflow: auto; padding: 12px; border: 1px solid var(--soft-line); border-radius: 8px; background: var(--soft-surface); }
+.markdown-diagram-view svg { display: block; margin: auto; }
+.markdown-diagram details summary { cursor: pointer; color: var(--soft-muted); font-size: var(--font-size-code); margin-block: 8px; }
+/* Keep layout measurements available without showing the private rendering page. */
+.markdown-diagram-renderer { position: fixed; left: -10000px; top: 0; width: 1200px; height: 900px; border: 0; pointer-events: none; }
 .markdown-code-block > button { display: block; margin: 0 0 5px auto; border: 0; background: transparent; color: var(--soft-muted); font: inherit; font-size: var(--font-size-code); cursor: pointer; }
 .markdown-body .markdown-render-note { margin: 0 0 8px; color: var(--soft-muted); font-size: var(--font-size-reading); }
 .markdown-table-scroll { max-width: 100%; overflow-x: auto; }

@@ -50,6 +50,74 @@ export async function runTaskMaterialsJourney({ t, page, runtime, materials, wor
   assert.equal(runtime.inspectTask(workspaceRoot, simple).recordDigest, recordBefore.recordDigest);
   assert.deepEqual(runtime.inspectTask(workspaceRoot, simple).record.changes, []);
 
+  await scenario('Mermaid：共享正文默认绘图、源码复制、更新与安全回退', async () => {
+    const id = 'mermaid-reader';
+    const flow = 'flowchart LR\nA[用户目标] --> B[智能体执行] --> C[交付成果]';
+    const sequence = 'sequenceDiagram\nparticipant U as 用户\nparticipant A as 智能体\nU->>A: 开始工作\nA-->>U: 完成交付';
+    cli(['task', 'create', id, '--title', '本地Mermaid阅读', '--intent', '验证共享正文绘图。', '--project', 'demo']);
+    const fence = (value: string) => `\`\`\`mermaid\n${value}\n\`\`\``;
+    writeBrief(id, ['# 图示阅读', fence(flow), fence(sequence), fence(flow), fence('not-a-real-diagram'), '正文仍可阅读。'].join('\n\n'));
+    await open(id);
+    const diagrams = body().locator('.markdown-diagram');
+    await diagrams.nth(0).locator('svg').waitFor();
+    await diagrams.nth(1).locator('svg').waitFor();
+    await diagrams.nth(2).locator('svg').waitFor();
+    await diagrams.nth(3).locator('[role=status]').filter({ hasText: '当前显示 Mermaid 源码' }).waitFor();
+    assert.match(await diagrams.nth(0).locator('.markdown-diagram-view').innerText(), /用户目标/);
+    assert.match(await diagrams.nth(1).locator('.markdown-diagram-view').innerText(), /开始工作/);
+    assert.equal(await diagrams.nth(0).locator('details').getAttribute('open'), null);
+    await diagrams.nth(0).locator('summary').click();
+    assert.equal(await diagrams.nth(0).locator('code').innerText(), flow);
+    await diagrams.nth(0).locator('[data-copy-code]').click();
+    await diagrams.nth(0).locator('[data-copy-code]').filter({ hasText: '已复制' }).waitFor();
+    const ids = await body().locator('.markdown-diagram-view > svg').evaluateAll((nodes: Element[]) => nodes.map(node => node.id));
+    assert.equal(new Set(ids).size, 3);
+    const allIds = await body().locator('.markdown-diagram-view [id]').evaluateAll((nodes: Element[]) => nodes.map(node => node.id));
+    assert.equal(new Set(allIds).size, allIds.length, '重复图示不共享节点或箭头标识');
+    assert.match(await body().innerText(), /正文仍可阅读/);
+
+    // Refresh is the same replacement lifecycle used by streamed conversations.
+    writeBrief(id, '# 输出中\n\n```mermaid\nflowchart LR\nA -->');
+    await refresh();
+    await body().locator('[data-mermaid-state=incomplete]').waitFor();
+    assert.equal(await body().locator('svg').count(), 0);
+    await page.setViewportSize({ width: 390, height: 844 });
+    writeBrief(id, '# 最新正文\n\n校验页面原有宽度。');
+    await refresh();
+    await body().getByText('校验页面原有宽度。', { exact: true }).waitFor();
+    const baselineWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+    const wide = 'flowchart LR\n' + Array.from({ length: 18 }, (_, i) => `N${i}[中文流程节点${i}]`).join(' --> ');
+    writeBrief(id, '# 最新正文\n\n' + fence(wide));
+    await refresh();
+    await body().locator('.markdown-diagram-view svg').waitFor();
+    try {
+      const metrics = await body().locator('.markdown-diagram-view').evaluate((element: HTMLElement) => ({ width: element.clientWidth, scroll: element.scrollWidth, right: element.getBoundingClientRect().right, viewport: innerWidth }));
+      assert.ok(metrics.scroll > metrics.width, '宽图在图容器内滚动');
+      assert.ok(metrics.right <= metrics.viewport + 1);
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth) <= baselineWidth + 1, '宽图不得增加页面横向溢出');
+      await capture(page, 'mermaid-narrow.png');
+    } finally { await page.setViewportSize({ width: 1440, height: 1000 }); }
+
+    const external: string[] = [];
+    // Playwright emits request events even for requests rejected by CSP. A route
+    // sees only network dispatch; abort defensively if the security boundary fails.
+    const watch = async (route: any) => { external.push(route.request().url()); await route.abort(); };
+    await page.route('**/mermaid.invalid/**', watch);
+    expectedBrowserErrors.add("violates the following Content Security Policy directive");
+    expectedBrowserErrors.add("violates the document's Content Security Policy");
+    try {
+      writeBrief(id, ['# 安全图示', fence('%%{init: {"securityLevel":"loose"}}%%\ngraph LR\nA --> B'), fence('flowchart LR\nA@{ img: "https://mermaid.invalid/leak.png", label: "外部图片", h: 60 }'), fence('flowchart LR\nA[安全节点]\nclick A "https://mermaid.invalid/click"'), fence('flowchart LR\nA[样式资源]\nstyle A fill:url(https://mermaid.invalid/style)'), fence('flowchart LR\nA["<img src=https://mermaid.invalid/html onerror=parent.__mermaidInjected=1>"]')].join('\n\n'));
+      await refresh();
+      await page.waitForFunction(() => [...document.querySelectorAll('#task-node-content .markdown-diagram')].length === 5 && [...document.querySelectorAll('#task-node-content .markdown-diagram')].every(node => ['rendered', 'fallback'].includes((node as HTMLElement).dataset.mermaidState || '')));
+      assert.equal(await body().locator('[data-mermaid-state=fallback]').count() >= 1, true);
+      assert.equal(await body().locator('.markdown-diagram-view a, .markdown-diagram-view image, .markdown-diagram-view script, .markdown-diagram-view foreignObject').count(), 0);
+      assert.deepEqual(external, [], '绘图前后均不得请求外部资源');
+      assert.equal(await page.evaluate(() => (window as any).__mermaidInjected), undefined);
+    } finally { await page.unroute('**/mermaid.invalid/**', watch); }
+    await page.goto(`${workspaceUrl}/tasks`);
+    assert.equal(await page.locator('iframe.markdown-diagram-renderer').count(), 0, '卸载清理绘图环境');
+  });
+
   await scenario('交付资料：普通收尾与组合验收同源读取脚本配置图片，归档后仍可读', async () => {
     const id = 'delivery-reader', parent = 'delivery-parent', change = 'delivery-files';
     const projectRoot = path.join(workspaceRoot, 'projects/demo');
