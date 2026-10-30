@@ -1,3 +1,5 @@
+import { pathToFileURL } from 'node:url';
+import { resolveProductResource } from '../../../infrastructure/product-resources/index.ts';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -10,6 +12,7 @@ import { ConnectionDirectoryReads } from './directory-reads.ts';
 import { createConnectionCatalog, type ConnectionCatalogEntry, type ConnectionCatalogResult } from './catalog.ts';
 import { checkProgram, programRecipient, resolveProgram, runProgram } from '../infrastructure/program.ts';
 import { runAuthorizationProgram } from '../infrastructure/authorization-program.ts';
+import { BrowserAuthorization } from '../../browser-authorization/application/browser-authorization-application.ts';
 
 type Catalog = ReturnType<typeof createConnectionCatalog>;
 type ProgramAvailability = Record<string, { ready: boolean; diagnostics: string[] }>;
@@ -32,6 +35,18 @@ function publicWebsite(definition: ConnectionDefinition | undefined, config: Val
   } catch { return null; }
 }
 export class ConnectionSkillsApplication {
+  async browserProfiles(root: string, action: string, input: Record<string, unknown> = {}) {
+    if (Object.keys(input).some(key => !['id', 'expectedRevision', 'directory', 'confirmSharedReset'].includes(key))) throw failure('browser_authorization_input_invalid', '共享配置输入包含未知字段。', 400);
+    const browser = new BrowserAuthorization(this.resolveScope(root).rootPath), profiles = browser.profiles;
+    if (action === 'list') return profiles.list();
+    if (typeof input.id !== 'string') throw failure('browser_authorization_profile_invalid', '必须提供准确浏览器配置编号。', 400);
+    if (action === 'inspect') return browser.inspect(input.id);
+    if (typeof input.expectedRevision !== 'string') throw failure('browser_authorization_revision_required', '必须提供当前浏览器配置观察版本。', 400);
+    if (action === 'create') return profiles.create(input.id, input.expectedRevision);
+    if (action === 'adopt' && typeof input.directory === 'string') return profiles.create(input.id, input.expectedRevision, input.directory);
+    if (action === 'reset' && input.confirmSharedReset === true) return profiles.reset(input.id, input.expectedRevision);
+    throw failure('browser_authorization_input_invalid', '未知动作；接管须提供目录，重置须明确confirmSharedReset。', 400);
+  }
   readonly files: ConnectionFiles;
   readonly catalog: Catalog;
   readonly resolveScope: (root: string) => ConnectionScope;
@@ -266,8 +281,12 @@ export class ConnectionSkillsApplication {
     };
     let response: { status: 'success'; instance: ReturnType<ConnectionSkillsApplication['get']>['instance']; accountLabel?: string; warnings?: string[] } | undefined;
     let authorizationError: unknown;
+    let browser: Awaited<ReturnType<BrowserAuthorization['acquire']>> | undefined;
     try {
-      const rawValues = await runAuthorizationProgram(program, authorization.args || [], context, { signal: options.signal, timeoutMs: authorization.timeoutMs ?? 180_000 });
+      if (authorization.browserProfile) browser = await new BrowserAuthorization(scope.rootPath).acquire(authorization.browserProfile, options.signal);
+      const rawValues = await runAuthorizationProgram(program, authorization.args || [], {
+        ...context, ...(browser ? { browser: { protocolVersion: 'buildr.browser-authorization/v1', profileId: authorization.browserProfile, clientModule: pathToFileURL(resolveProductResource('browser-authorization/client.mjs', { developmentFallback: 'resources/browser-authorization/client.mjs' })).href } } : {}),
+      }, { signal: options.signal, timeoutMs: authorization.timeoutMs ?? 180_000, browser });
       let values: Values;
       try { values = validateAuthentication(initial.entry.definition.authentication.fields, rawValues); }
       catch { throw failure('connection_skill_authorization_result_invalid', '授权程序未返回声明要求的完整认证组；未替换个人认证。'); }
@@ -288,13 +307,16 @@ export class ConnectionSkillsApplication {
       authorizationError = cause;
       throw cause;
     } finally {
+      if (browser) try { await browser.close(); } catch {
+        if (response) (response.warnings ??= []).push('本次浏览器使用权释放尚未确认；共享配置保留，已保存认证事实不变。');
+      }
       let cleaned = false;
       try {
         const current = fs.lstatSync(directory, { throwIfNoEntry: false });
         if (!current) cleaned = true;
         else if (current.isDirectory() && !current.isSymbolicLink() && current.dev === directoryIdentity.dev && current.ino === directoryIdentity.ino) { fs.rmSync(directory, { recursive: true }); cleaned = true; }
       } catch { /* Retain changed or in-use state, never remove an unverified path. */ }
-      if (!cleaned && response) response.warnings = ['本次授权临时目录尚未清理；已保存个人认证的事实保持，需核对本机浏览器是否退出。'];
+      if (!cleaned && response) (response.warnings ??= []).push('本次授权临时目录尚未清理；已保存个人认证的事实保持，需核对本机浏览器是否退出。');
       if (!cleaned && authorizationError && typeof authorizationError === 'object') Object.assign(authorizationError, { details: { ...('details' in authorizationError && typeof authorizationError.details === 'object' ? authorizationError.details : {}), cleanup: 'unconfirmed' } });
     }
   }

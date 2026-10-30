@@ -224,3 +224,39 @@ test('原子保存后持久化核验失败保留新组可读事实，不谎报�
   });
   assert.equal(f.read().group?.values.password, 'new-secret');
 });
+
+test('声明显式选择共享配置，真实授权子进程通过公开私有客户端取得页面能力并保存完整认证', async t => {
+  const { BrowserProfiles } = await import('../../src/modules/browser-authorization/persistence/profiles.ts');
+  const { serveBrowser } = await import('../../src/modules/browser-authorization/infrastructure/runtime.ts');
+  const f = fixture(t);
+  Object.assign(f.definition.authentication.authorization, { browserProfile: 'personal' }); f.writeDefinition();
+  const profiles = new BrowserProfiles(f.workspace), created = profiles.create('personal', 'absent');
+  const crypto = await import('node:crypto'), secret = crypto.randomBytes(32).toString('hex');
+  const endpoint = process.platform === 'win32' ? '\\\\.\\pipe\\buildr-auth-' + crypto.randomUUID() : '/tmp/buildr-auth-' + crypto.randomUUID().slice(0, 12) + '.sock';
+  fs.writeFileSync(profiles.runtimeFile('personal'), JSON.stringify({ root: profiles.root, profileId: 'personal', pid: process.pid, secret, endpoint, revision: created.revision, startedAt: Date.now() }), { mode: 0o600 });
+  const pipe: any = new EventEmitter();
+  pipe.request = async (method: string) => method === 'Target.createTarget' ? { targetId: 'owned' } : method === 'Target.getTargets' ? { targetInfos: [{ targetId: 'owned' }] } : {};
+  const runtime = await serveBrowser(f.workspace, 'personal', (() => ({ pipe, close: async () => {} })) as any);
+  t.after(() => runtime.close());
+  fs.writeFileSync(f.script, `process.on('message',async message=>{
+    if(message.type!=='buildr.connection-authorization-context')return;
+    const c=message.context;
+    const {createBrowserClient}=await import(c.browser.clientModule);
+    const client=createBrowserClient(c);
+    try {
+      const page=await client.pipe.request('Target.createTarget',{url:'about:blank'});
+      if(page.targetId!=='owned')process.exit(12);
+      let forbidden=false;
+      try{await client.pipe.request('Browser.close');}catch{forbidden=true;}
+      if(!forbidden)process.exit(13);
+      await client.close();
+      process.stdout.write('bridge-secret');
+      process.send({type:'buildr.connection-auth-result',callId:c.callId,status:'success',values:{username:'bridge-user',password:'bridge-secret'}},()=>process.disconnect());
+    }catch{process.exit(14);}
+  });`);
+  const result = await f.authorize();
+  assert.equal(result.status, 'success');
+  assert.equal(f.read().group!.values.password, 'bridge-secret');
+  assert.equal(JSON.stringify(result).includes('bridge-secret'), false);
+  await runtime.close();
+});

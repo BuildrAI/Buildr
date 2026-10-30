@@ -8,6 +8,7 @@ include:
   - docs/known-limitations.md
   - resources/installation/launcher/
   - resources/runtime/
+  - resources/browser-authorization/
   - resources/workspace/skills/connections/nacos-connection/
   - resources/workspace/skills/connections/mysql-connection/
   - resources/workspace/skills/connections/kibana-connection/

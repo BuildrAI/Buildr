@@ -22,17 +22,19 @@ export function createConnectionSkillsCli(application: ConnectionSkillsApplicati
       'help 来自所选程序，不交付认证；list/get 仅返回遮蔽认证的观察，源已登记不代表程序已安装或连接已验证。',
       'auth migrate 仅在进程内转移完整组；auth relocate 将本 profile 的旧个人密文迁入工作空间 .buildr/local，均以 --file 提供准确观察，不输出秘密。',
       'auth authorize --connection <id> --file <json-file|-> 明确启动所声明授权程序；输入仅 {expected:{teamRevision,localRevision,definitionRevision}}，新认证只经私有通道保存。',
+      'browser list|inspect|create|adopt|reset --file <json-file|->：共享配置本机管理，输入{id,expectedRevision,directory?}；重置整个共享配置还须confirmSharedReset:true。',
     ], match: ({ domain }: { domain?: string }) => domain === 'connection-skill',
     async run(_runtime: unknown, context: { argv: string[] }) {
       const args = context.argv.slice(3), action = args.shift() || 'list';
-      const subaction = ['definitions', 'auth'].includes(action) ? args.shift() : null;
+      const subaction = ['definitions', 'auth', 'browser'].includes(action) ? args.shift() : null;
       const flags = new Map<string, string>(), contexts: Record<string, { id: string; revision: string }> = {};
       let professional: string[] = [];
       const actionFlags: Record<string, string[]> = {
         definitions: ['--asset', '--definition'], list: [], get: ['--connection'], create: ['--file'], update: ['--connection', '--file'], remove: ['--connection', '--file', '--expected-revision'],
-        auth: ['--connection', '--file'], check: ['--connection', '--program'], help: ['--connection', '--program'], test: ['--connection', '--file'], discover: ['--connection', '--file', '--hook'], run: ['--connection', '--expected-revision', '--program', '--context', '--timeout-ms'],
+        browser: ['--file'], auth: ['--connection', '--file'], check: ['--connection', '--program'], help: ['--connection', '--program'], test: ['--connection', '--file'], discover: ['--connection', '--file', '--hook'], run: ['--connection', '--expected-revision', '--program', '--context', '--timeout-ms'],
       };
       if (!actionFlags[action] || action === 'definitions' && !['list', 'inspect'].includes(subaction || '') || action === 'auth' && !['authorize', 'set', 'clear', 'use-team', 'migrate', 'relocate'].includes(subaction || '')) throw failure('connection_skill_cli_invalid', '未知连接技能动作。', 400);
+      if (action === 'browser' && !['list', 'inspect', 'create', 'adopt', 'reset'].includes(subaction || '')) throw failure('connection_skill_cli_invalid', '未知共享浏览器动作。', 400);
       const allowed = ['--target', '--json', ...actionFlags[action]!];
       while (args.length) {
         const flag = args.shift()!;
@@ -62,7 +64,8 @@ export function createConnectionSkillsCli(application: ConnectionSkillsApplicati
         if (flags.has('--hook')) { if (input.hook !== undefined && input.hook !== flags.get('--hook')) throw failure('connection_skill_cli_invalid', '发现槽位不一致。', 400); input.hook = flags.get('--hook'); }
       }
       let result: unknown;
-      if (action === 'definitions') { const catalog = application.definitions(root); result = subaction === 'inspect' ? { ...catalog, definitions: catalog.definitions.filter(entry => entry.skill.assetIdentity === flags.get('--asset') && entry.definition.definitionId === flags.get('--definition')) } : catalog; }
+      if (action === 'browser') result = await application.browserProfiles(root, subaction!, input);
+      else if (action === 'definitions') { const catalog = application.definitions(root); result = subaction === 'inspect' ? { ...catalog, definitions: catalog.definitions.filter(entry => entry.skill.assetIdentity === flags.get('--asset') && entry.definition.definitionId === flags.get('--definition')) } : catalog; }
       else if (action === 'list') result = application.list(root);
       else if (action === 'get') result = application.get(root, id);
       else if (action === 'create') result = application.save(root, null, input);

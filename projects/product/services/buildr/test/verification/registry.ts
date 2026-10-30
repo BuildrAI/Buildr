@@ -602,6 +602,8 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/workbench-http-contract.test.ts',
   ], { schedulingCostMs: 5000, args: ['--test-concurrency=3'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),
   integrationSlice('integration-connections', [
+    'test/integration/browser-profiles.test.ts',
+    'test/integration/browser-runtime.test.ts',
     'test/integration/connection-authoring-forward.test.ts',
     'test/integration/connection-instance-filenames.test.ts',
     'test/integration/connection-skill-definitions.test.ts',

@@ -24,6 +24,22 @@ const definitions = command(['connection-skill', 'definitions', 'list']);
 const entry = definitions.definitions.find((item: any) => item.definition.definitionId === 'nacos');
 assert.ok(entry, JSON.stringify(definitions));
 const file = path.join(temporary, 'input.json');
+// Shared-browser management is exercised through the public CLI in this
+// isolated workspace; it never starts a browser or touches a real profile.
+const browserInput = path.join(temporary, 'browser-input.json');
+fs.writeFileSync(browserInput, JSON.stringify({ id: 'personal', expectedRevision: 'absent' }));
+const browserCreated = command(['connection-skill', 'browser', 'create', '--file', browserInput]);
+assert.equal(browserCreated.profile.id, 'personal');
+assert.equal(command(['connection-skill', 'browser', 'list']).profiles.length, 1);
+fs.writeFileSync(browserInput, JSON.stringify({ id: 'personal' }));
+const browserRead = command(['connection-skill', 'browser', 'inspect', '--file', browserInput]);
+assert.equal(browserRead.revision, browserCreated.revision);
+assert.equal(browserRead.runtime.status, 'stopped');
+if (process.platform !== 'win32') {
+  fs.writeFileSync(browserInput, JSON.stringify({ id: 'personal', expectedRevision: browserRead.revision, confirmSharedReset: true }));
+  const browserReset = command(['connection-skill', 'browser', 'reset', '--file', browserInput]);
+  assert.notEqual(browserReset.revision, browserRead.revision);
+}
 fs.writeFileSync(file, JSON.stringify({ id: 'smoke-nacos', name: 'Mock only', binding: { skillAssetIdentity: entry.skill.assetIdentity, sourceIdentity: entry.skill.sourceIdentity, definitionId: 'nacos', configVersion: entry.definition.configVersion }, config: { apiBaseUrl: 'https://unreachable.invalid/nacos', consoleUrl: 'https://console.invalid/', production: false }, authentication: { intent: 'replace', values: { username: 'fixture-user', password: 'fixture-password-only' } }, expected: { teamRevision: 'absent', definitionRevision: entry.revision } }));
 const created = command(['connection-skill', 'create', '--file', file]);
 assert.equal(created.instance.id, 'smoke-nacos'); assert.ok(!JSON.stringify(created).includes('fixture-password-only'));

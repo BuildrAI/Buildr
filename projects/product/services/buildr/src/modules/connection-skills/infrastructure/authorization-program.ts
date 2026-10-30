@@ -12,11 +12,12 @@ const failures = {
 } as const;
 
 /** Only IPC carries the new group. Never retain or expose either output stream. */
-export function runAuthorizationProgram(program: ResolvedProgram, args: string[], context: Record<string, unknown>, options: { signal?: AbortSignal; timeoutMs: number }): Promise<unknown> {
+export function runAuthorizationProgram(program: ResolvedProgram, args: string[], context: Record<string, unknown>, options: { signal?: AbortSignal; timeoutMs: number; browser?: { request(method: string, params?: unknown, sessionId?: string): Promise<unknown> } }): Promise<unknown> {
   if (options.signal?.aborted) return Promise.reject(failure('connection_skill_authorization_cancelled', '本次授权已取消；未替换个人认证。', 409));
   return new Promise((resolve, reject) => {
     const child = spawn(program.executable, [...program.args, ...args], { cwd: program.cwd, env: connectionProgramEnvironment(), shell: false, detached: process.platform !== 'win32', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
     let finished = false, resultCount = 0, candidate: unknown, invalid = false, outputBytes = 0, failureReason: keyof typeof failures | undefined;
+    const browserRequests = new Set<string>();
     let stopped: 'cancelled' | 'timeout' | 'output-limit' | undefined, killTimer: ReturnType<typeof setTimeout> | undefined;
     const kill = (signal: NodeJS.Signals) => {
       try { if (process.platform !== 'win32' && child.pid) process.kill(-child.pid, signal); else child.kill(signal); } catch { /* Already exited. */ }
@@ -48,6 +49,16 @@ export function runAuthorizationProgram(program: ResolvedProgram, args: string[]
       if (stopped || finished) return;
       if (!message || typeof message !== 'object') { invalid = true; return; }
       const result = message as Record<string, unknown>;
+      if (result.type === 'buildr.browser-request') {
+        if (!options.browser || result.callId !== context.callId || typeof result.requestId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(result.requestId) || typeof result.method !== 'string' || browserRequests.has(result.requestId) || browserRequests.size >= 32 || Buffer.byteLength(JSON.stringify(result)) > 256 * 1024 || result.sessionId !== undefined && typeof result.sessionId !== 'string' || Object.keys(result).some(key => !['type', 'callId', 'requestId', 'method', 'params', 'sessionId'].includes(key))) { invalid = true; stop('output-limit'); return; }
+        const requestId = result.requestId;
+        browserRequests.add(requestId);
+        void options.browser.request(result.method, result.params, result.sessionId as string | undefined)
+          .then(value => { if (!finished && !stopped && child.connected) child.send({ type: 'buildr.browser-result', callId: context.callId, requestId, result: value }, () => {}); })
+          .catch((error: any) => { if (!finished && !stopped && child.connected) child.send({ type: 'buildr.browser-result', callId: context.callId, requestId, error: /^browser_authorization_[a-z_]+$/.test(error?.code) ? error.code : 'browser_request_failed' }, () => {}); })
+          .finally(() => browserRequests.delete(requestId));
+        return;
+      }
       if (result.type !== 'buildr.connection-auth-result') { invalid = true; return; }
       resultCount++;
       if (resultCount !== 1 || result.callId !== context.callId) { invalid = true; return; }

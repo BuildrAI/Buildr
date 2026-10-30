@@ -21,7 +21,7 @@ export interface ConnectionProgram {
 }
 export type ConnectionFieldReference = `config.${string}` | `authentication.${string}`;
 export type AuthenticationSource = 'team' | 'personal';
-export interface ConnectionAuthorization { program: string; args?: string[]; inputs?: `config.${string}`[]; label: string; reauthorizeLabel: string; timeoutMs?: number; accountLabelField?: string }
+export interface ConnectionAuthorization { program: string; args?: string[]; inputs?: `config.${string}`[]; label: string; reauthorizeLabel: string; timeoutMs?: number; accountLabelField?: string; browserProfile?: string }
 export interface ConnectionPresentationGroup { id: string; title: string; fields: ConnectionFieldReference[]; collapsed?: boolean }
 export interface ConnectionHook { program: string; args: string[]; effect: 'read'; inputs?: ConnectionFieldReference[] }
 export interface ConnectionDefinition {
@@ -127,7 +127,8 @@ export function parseConnectionDefinition(content: string): ConnectionDefinition
   }
   if (value.authentication.authorization !== undefined) {
     const authorization = value.authentication.authorization;
-    closed(authorization, ['program', 'args', 'inputs', 'label', 'reauthorizeLabel', 'timeoutMs', 'accountLabelField'], 'authentication.authorization');
+    closed(authorization, ['program', 'args', 'inputs', 'label', 'reauthorizeLabel', 'timeoutMs', 'accountLabelField', 'browserProfile'], 'authentication.authorization');
+    if (authorization.browserProfile !== undefined) ensure(typeof authorization.browserProfile === 'string' && /^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(authorization.browserProfile), 'authentication.authorization.browserProfile', '共享浏览器配置必须使用明确的合法编号。');
     ensure(value.authentication.allowedSources?.length === 1 && value.authentication.allowedSources[0] === 'personal', 'authentication.authorization', '授权程序只允许本机个人认证。');
     ensure(key(authorization.program) && Object.hasOwn(value.programs, authorization.program), 'authentication.authorization.program', '授权必须引用已声明程序。');
     const program = value.programs[authorization.program];
