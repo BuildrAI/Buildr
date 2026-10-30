@@ -276,6 +276,8 @@ export interface PreparationInput { expectedRevision: string; executable?: strin
 export type RunStatus = 'starting' | 'running' | 'waiting-approval' | 'waiting-question' | 'stopping' | 'stopped' | 'tools-active' | 'unknown' | 'completed' | 'failed';
 export interface ParticipantView { modelAccountId?: string; model?: string; id: string; provider: ProviderId; connectionId: string; label: string; deliveredThrough: number; contextId: string }
 export interface ConversationEntry {
+  /** Bounded tool preview; fetch the exact content revision when expanded. */
+  detail?: {revision: string};
   id: string;
   sequence: number;
   kind: 'message' | 'tool' | 'notice' | 'handoff';

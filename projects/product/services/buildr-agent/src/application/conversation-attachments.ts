@@ -17,7 +17,7 @@ const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(valu
 export class ConversationAttachments {
   private readonly options: { root: string; now(): string; save(record: StoredConversation): void };
   constructor(options: ConversationAttachments['options']) { this.options = options; }
-  get(record: StoredConversation, id: string): ExecutorImage {
+  get(record: Pick<StoredConversation,'view'|'attachments'>, id: string): ExecutorImage {
     const meta = record.attachments[id];
     if (!meta || !/^[a-f0-9-]{36}$/.test(id)) fail('agent_attachment_missing', '附件不属于此对话。', 404);
     const filename = path.join(this.options.root, 'attachments', record.view.id, id);
@@ -120,7 +120,7 @@ export class ConversationAttachments {
     try { this.options.save(record); } catch (error) { fs.unlinkSync(filename); throw error; }
     return { id, mimeType: input.mimeType, size: bytes.length, revision: record.view.revision, attachmentRevision: hash(record.attachments) };
   }
-  read(record: StoredConversation, id: string): { bytes: Buffer; mimeType: string } {
+  read(record: Pick<StoredConversation,'view'|'attachments'>, id: string): { bytes: Buffer; mimeType: string } {
     const attachment = this.get(record, id), limit = attachment.mimeType.startsWith('video/') ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
     const descriptor = fs.openSync(attachment.path, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
     try {

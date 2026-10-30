@@ -563,3 +563,26 @@ test('child creation and discovery preserve provenance through authenticated HTT
   response=await fetch(`${endpoint}/${child.id}`,{headers});assert.equal((await response.json()).childOf.conversationId,parent.id);
   response=await fetch(`${endpoint}/${parent.id}`,{headers});assert.equal((await response.json()).revision,parent.revision);
 });
+
+test('tool detail reads preserve full history, enforce content revisions and remain scoped/authenticated',async t=>{
+  const {base,root}=taskRecordFixture(t,'agent-entry-detail');
+  const runtime=createRuntime();const profile=path.join(base,'agent-profile');
+  const service=createAgentService({dataRoot:profile,executors:[],resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
+  const contributions=runtimeContributions(runtime,'http').filter((item:{id:string})=>item.id!=='agent-service.http');contributions.push(createAgentServiceHttpContribution(()=>service));
+  const server=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions});const {url,sessionToken}=await server.ready;
+  t.after(async()=>{await service.close();server.server.closeAllConnections();await new Promise<void>(resolve=>server.server.close(()=>resolve()));});
+  const workspaceId=(await server.ready).initialWorkspaceId;
+  const created=await service.conversations.create(workspaceId,{});
+  const filename=path.join(profile,'agent-service/conversations.sqlite'),db=new DatabaseSync(filename);t.after(()=>db.close());
+  const raw=JSON.parse((db.prepare('SELECT body FROM conversations WHERE id=?').get(created.id) as {body:string}).body);
+  const full={id:'tool/http-id',sequence:1,kind:'tool',role:'system',name:'command',text:'complete output\n'+'x'.repeat(50000),input:JSON.stringify({cmd:'read result'}),createdAt:created.updatedAt};raw.view.entries=[full];raw.view.revision='seed-large';
+  db.prepare('UPDATE conversations SET body=?,revision=? WHERE id=?').run(JSON.stringify(raw),raw.view.revision,created.id);
+  const headers={'x-buildr-session':sessionToken};const endpoint=`${url}/api/v1/workspaces/${workspaceId}/agent-conversations/${created.id}`;
+  let response=await fetch(endpoint,{headers});assert.equal(response.status,200);const page=await response.json();assert.ok(page.entries[0].detail);assert.ok(page.entries[0].text.length<full.text.length);
+  const detail=endpoint+'/entry-detail/'+encodeURIComponent(full.id)+'?revision='+page.entries[0].detail.revision;
+  response=await fetch(detail);assert.equal(response.status,403);
+  response=await fetch(detail,{headers});assert.equal(response.status,200);assert.deepEqual(await response.json(),full);
+  response=await fetch(detail.replace(page.entries[0].detail.revision,'0'.repeat(64)),{headers});assert.equal(response.status,409);
+  response=await fetch(detail.replace('/workspaces/'+workspaceId,'/workspaces/00000000-0000-0000-0000-000000000001'),{headers});assert.equal(response.status,400);
+  assert.deepEqual(JSON.parse((db.prepare('SELECT body FROM conversations WHERE id=?').get(created.id) as {body:string}).body).view.entries,[full]);
+});

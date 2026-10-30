@@ -16,7 +16,7 @@ export interface AgentOperations {
 
 const names = {
   connections: ['upgradeProgram','programUpdates','checkProgramUpdates','list','read','prepare','preparation','currentPreparation','cancelPreparation','connect','check','login','loginAttempt','cancelLogin','disconnect'],
-  conversations: ['readDraft','addDraftImage','removeDraftImage','readDraftImage','startDraft','lookupDraft','listAll','markSeen','list','create','fork','createChild','listChildren','read','update','generateTitle','prepareHandoff','prepareSend','send','supplement','queueSend','cancelPendingSend','observe','observeRun','stop','reply','addAttachment','readAttachment','pending','lookupRequest'],
+  conversations: ['readDraft','addDraftImage','removeDraftImage','readDraftImage','startDraft','lookupDraft','listAll','readEntry','markSeen','list','create','fork','createChild','listChildren','read','update','generateTitle','prepareHandoff','prepareSend','send','supplement','queueSend','cancelPendingSend','observe','observeRun','stop','reply','addAttachment','readAttachment','pending','lookupRequest'],
   'models.accounts': ['list','read','preferences','add','login','attempt','cancelLogin','check','disconnect'],
   'models.catalog': ['list'],
 } as const;

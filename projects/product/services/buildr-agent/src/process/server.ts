@@ -47,7 +47,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     return { identity, activity, accepting, retiring, instances: readProcessInstances(options.dataRoot).filter(record => !record.stopped && live(record.identity.pid)).map(record => ({generation:record.identity.generation,runtimeDigest:record.identity.runtime.digest,retiring:Boolean(record.retiring)})), ...(pending && pending.runtime.digest !== options.runtime.digest ? { pendingRuntime: pending.runtime, diagnostic: pending.diagnostic } : {}) };
   }
   async function recipient(scope: string, id: string, generation?: string): Promise<ProcessRecord | undefined> {
-    const conversation = repository.readConversation(id)?.view;
+    const conversation = repository.readState(id)?.view;
     const run = conversation?.run;
     const ownerGeneration = generation ?? run?.generation;
     if (!ownerGeneration || ownerGeneration === identity.generation) return;
@@ -137,7 +137,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     if (req.url === '/cancel-generation') { generations.get(input.requestId)?.abort(); json(res, 200, { cancelled: true }); return; }
     if (req.url === '/events') {
       scope(input.sourceId, input.scope);
-      const subscription = service.conversations.subscribe(input.scope, input.id);
+      const subscription = service.conversations.subscribe(input.scope, input.id,{compactTools:true});
       res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store' });
       res.flushHeaders();
       const stopHeartbeat = keepEventStreamAlive(res);
@@ -146,10 +146,10 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       const refresh = () => {
         if (res.destroyed || controller.signal.aborted) return;
         try {
-          const conversation = service.conversations.read(input.scope, input.id);
-          const next = [conversation.revision,conversation.pendingSend?.revision,conversation.activity?.seenThrough].join(':');
+          const next = service.conversations.observationVersion(input.scope,input.id);
           if (next === signature) return;
-          signature = next;
+          const conversation = service.conversations.read(input.scope, input.id,{compactTools:true});
+          signature = [conversation.revision,conversation.activity?.seenThrough,conversation.pendingSend?.revision].join(':');
           if (res.writableLength > 8 * 1024 * 1024) { res.destroy(); return; }
           res.write('data: ' + JSON.stringify({type:'conversation',generation:identity.generation,cursor:++relayCursor,workspaceId:input.scope,conversationId:input.id,revision:conversation.revision,payload:{conversation}}) + '\n\n');
         } catch { /* Preserve the last observed snapshot on a transient read conflict. */ }
@@ -160,8 +160,8 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       const stop = () => { controller.abort(); subscription.close(); clearInterval(poll); stopHeartbeat(); }; res.once('close', stop);
       try { for await (const event of subscription.events) {
         if (res.destroyed) break;
-        const conversation = service.conversations.read(input.scope, input.id);
-        signature = [conversation.revision,conversation.pendingSend?.revision,conversation.activity?.seenThrough].join(':');
+        const conversation = service.conversations.read(input.scope, input.id,{compactTools:true});
+        signature = [conversation.revision,conversation.activity?.seenThrough,conversation.pendingSend?.revision].join(':');
         if (!res.write('data: ' + JSON.stringify({...event,cursor:++relayCursor,revision:conversation.revision,payload:{conversation}}) + '\n\n')) await once(res, 'drain', {signal:controller.signal});
       } }
       finally { res.removeListener('close', stop); clearInterval(poll); stopHeartbeat(); controller.abort(); subscription.close(); if (!res.destroyed) res.end(); }
@@ -187,7 +187,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       let target: ProcessRecord | undefined;
       let controlGeneration:string|undefined;
       const perConversation = name.startsWith('conversations.') && !/Draft/.test(name) && typeof input.args[0] === 'string' && typeof input.args[1] === 'string';
-      if (perConversation && !['conversations.fork','conversations.createChild','conversations.listChildren','conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.queueSend','conversations.cancelPendingSend'].includes(name)) {
+      if (perConversation && !['conversations.readEntry','conversations.fork','conversations.createChild','conversations.listChildren','conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.queueSend','conversations.cancelPendingSend'].includes(name)) {
         const control = ['conversations.stop','conversations.observeRun','conversations.supplement'].includes(name) ? input.args[2] : name === 'conversations.reply' ? input.args[3] : undefined;
         controlGeneration=control?.generation;
         target = await recipient(input.args[0], input.args[1], controlGeneration);
@@ -202,9 +202,9 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       }
       const current = readProcessRecord(options.dataRoot);
       if (!target && retiring && current && current.identity.instanceId !== instanceId) {
-        const run = perConversation ? repository.readConversation(input.args[1])?.view.run : undefined;
+        const run = perConversation ? repository.readState(input.args[1])?.view.run : undefined;
         const ownsRun = controlGeneration ? controlGeneration === identity.generation : run?.generation === identity.generation;
-        if (!ownsRun || ['conversations.fork','conversations.createChild','conversations.listChildren','conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.queueSend','conversations.cancelPendingSend'].includes(name)) target = current;
+        if (!ownsRun || ['conversations.readEntry','conversations.fork','conversations.createChild','conversations.listChildren','conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.queueSend','conversations.cancelPendingSend'].includes(name)) target = current;
       }
       if (target) { json(res, 200, await forward(target, '/operations', input)); return; }
       const startsWork = !name.startsWith('conversations.') || ['conversations.fork','conversations.startDraft','conversations.create','conversations.createChild','conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.generateTitle'].includes(name);

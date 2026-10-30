@@ -5,6 +5,7 @@ import { ConversationAttachments, MAX_IMAGE_BYTES, MAX_VISUAL_INPUTS } from './c
 import type { AttachmentInput } from '../contracts.ts';
 import { continuationDraft, releasedContinuation } from '../domain/conversation-continuation.ts';
 import { waitingHandoffQuestions, waitingQuestionText } from '../domain/waiting-question-handoff.ts';
+import { ConversationReadModel, type ConversationReadState } from '../persistence/conversation-read-model.ts';
 import { RETRY_DELAYS, transientFailure } from '../domain/transient-failure.ts';
 import { NativeRequestError } from '../domain/error-diagnostic.ts';
 import {selectedOffering,modelConfiguration} from '../model-access/model-preferences.ts';
@@ -262,7 +263,7 @@ export class ConversationApplication {
     record.attachments ??= {};
     return record;
   }
-  private view(record: StoredConversation, before?: number, limit?: number): ConversationView {
+  private view(record: ConversationReadState, before?: number, limit?: number): ConversationView {
     const entries = record.view.entries.filter(entry => before === undefined || entry.sequence < before);
     const count = limit === undefined ? undefined : bounded(limit, PAGE_SIZE, 200);
     let inferredRound = {id:'legacy:0'};
@@ -289,7 +290,7 @@ export class ConversationApplication {
       pageBytes += size; start--; rounds.add(round);
     }
     // Historical tool output can be large; clone only the page that will be sent.
-    const view = structuredClone({ ...record.view, entries: entries.slice(start), nextEntryCursor: start > 0 ? entries[start]!.sequence : undefined });
+    const view = structuredClone({ ...record.view, entries: entries.slice(start), nextEntryCursor: start > 0 ? entries[start]!.sequence : record.view.nextEntryCursor });
     view.requests = view.requests.filter(request => conversationRuns(view).some(run => request.runId === run.id && request.participantId === run.participantId && request.generation === run.generation));
     view.attachmentRevision = hash(record.attachments ?? {});
     view.titleState??={status:'unknown'};
@@ -311,8 +312,27 @@ export class ConversationApplication {
     this.options.repository.saveConversation(record, initial ? undefined : prior);
     this.options.events.publish({ type: 'conversation', workspaceId: record.view.workspaceId, conversationId: record.view.id, revision: record.view.revision, payload: { conversation: this.view(record) } });
   }
-  read(workspaceId: string, id: string, options: { before?: number; limit?: number } = {}): ConversationView {
-    return this.view(this.load(workspaceId, id), options.before, options.limit);
+  read(workspaceId: string, id: string, options: { before?: number; limit?: number; compactTools?: boolean } = {}): ConversationView {
+    const limit=options.limit===undefined?undefined:bounded(options.limit,PAGE_SIZE,200);
+    const record=this.options.repository.readPage(id,options.before,limit,options.compactTools)??this.load(workspaceId,id);
+    if(record.view.workspaceId!==workspaceId)fail('agent_conversation_missing','该工作空间中没有此对话。',404);
+    const result=this.view(record,options.before,limit);
+    if(options.compactTools)result.entries=result.entries.map(entry=>entry.detail?entry:ConversationReadModel.compact(entry));
+    return result;
+  }
+  readEntry(workspaceId:string,id:string,entryId:string,revision:string) {
+    nonempty(entryId,'工具记录身份');
+    if(typeof revision!=='string'||!/^[a-f0-9]{64}$/.test(revision))fail('agent_entry_revision_invalid','工具记录内容版本无效。',400);
+    const current=this.options.repository.readState(id)??this.load(workspaceId,id);
+    if(current.view.workspaceId!==workspaceId)fail('agent_conversation_missing','该工作空间中没有此对话。',404);
+    const entry=this.options.repository.readEntry(id,entryId,revision);
+    if(!entry)fail('agent_entry_missing','该对话中没有此工具记录。',404);
+    return entry;
+  }
+  observationVersion(workspaceId:string,id:string):string {
+    const current=this.options.repository.readRevision(id);
+    if(!current)fail('agent_conversation_missing','该工作空间中没有此对话。',404);
+    return [current.revision,current.seenThrough,this.pendingSends.read(workspaceId,id)?.revision].join(':');
   }
   list(workspaceId: string, input: { taskId?: string; cursor?: string; limit?: number; hidden?: boolean; query?: string } = {}): { conversations: ConversationView[]; nextCursor?: string } {
     const limit = bounded(input.limit, 30, 100);
@@ -324,7 +344,7 @@ export class ConversationApplication {
     const record=this.load(workspaceId,id),attempt=record.attempts.find(value=>value.clientRequestId===clientRequestId);
     return attempt ? {found:true,runId:attempt.runId,accepted:attempt.accepted,conversation:this.view(record)} : {found:false};
   }
-  pending(): { conversations: ConversationView[] } { return { conversations: this.options.repository.listPending().map(record => ({ ...this.view(record, undefined, 1), entries: [] })) }; }
+  pending(): { conversations: ConversationView[] } { return { conversations: this.options.repository.listPendingStates().map(record => ({ ...this.view(record, undefined, 1), entries: [] })) }; }
   listAll(workspaceIds:string[],input:{workspaceId?:string;activeOnly?:boolean;hidden?:boolean;query?:string;agent?:string;model?:string;activityState?:string;cursor?:string;limit?:number}={}) {
     if(input.workspaceId&&!workspaceIds.includes(input.workspaceId))fail('agent_workspace_missing','工作空间未登记。',404);
     const result=this.options.repository.querySummaries(workspaceIds,{...input,generation:this.options.generation,query:input.query?.trim().slice(0,200),limit:bounded(input.limit,30,100)},this.options.generationAlive);
@@ -334,7 +354,7 @@ export class ConversationApplication {
     return result;
   }
   markSeen(workspaceId:string,id:string,input:{through:number}) {
-    this.load(workspaceId,id);
+    if(this.options.repository.readState(id)?.view.workspaceId!==workspaceId)fail('agent_conversation_missing','该工作空间中没有此对话。',404);
     return {activity:this.options.repository.markSeen(workspaceId,id,input.through)};
   }
 
@@ -342,7 +362,7 @@ export class ConversationApplication {
     return this.children.create(workspaceId,id,input);
   }
   listChildren(workspaceId: string,id: string,input: {cursor?:string;limit?:number} = {}) {
-    this.load(workspaceId,id);
+    if(this.options.repository.readState(id)?.view.workspaceId!==workspaceId)fail('agent_conversation_missing','该工作空间中没有此对话。',404);
     const limit=bounded(input.limit,30,100);
     const records=this.options.repository.listConversations(workspaceId,{parentConversationId:id,before:input.cursor,limit:limit+1});
     const chosen=records.slice(0,limit);
@@ -1367,22 +1387,24 @@ export class ConversationApplication {
     return this.media.add(record, input, [...(this.pendingSends.read(workspaceId, id)?.draft.attachmentIds ?? []), ...(this.pendingSends.read(workspaceId,id)?.draft.waitingHandoff?.answers ?? []).flatMap(item=>answerAttachmentIds(item.answer))]);
   }
   readAttachment(workspaceId: string, id: string, attachmentId: string): { bytes: Buffer; mimeType: string } {
-    return this.media.read(this.load(workspaceId, id), attachmentId);
+    const record=this.options.repository.readState(id);
+    if(!record||record.view.workspaceId!==workspaceId)fail('agent_conversation_missing','该工作空间中没有此对话。',404);
+    return this.media.read(record, attachmentId);
   }
-  subscribe(workspaceId: string, id: string) {
-    const conversation = this.read(workspaceId, id);
+  subscribe(workspaceId: string, id: string, options:{compactTools?:boolean}={}) {
+    const conversation = this.read(workspaceId, id,options);
     return this.options.events.subscribe({ type: 'snapshot', workspaceId, conversationId: id, revision: conversation.revision, payload: { conversation } }, event => event.workspaceId === workspaceId && event.conversationId === id);
   }
   async releaseForProgramUpgrade(connectionId: string): Promise<boolean> {
     await this.releaseIdleSources();
     if ([...this.sourceConnections].some(([id, connection]) => connection === connectionId && this.sourceRuntimes.has(id))) return false;
-    return !this.options.repository.listPending(true).some(record => {
+    return !this.options.repository.listPendingStates(true).some(record => {
       return conversationRuns(record.view).some(run => unfinishedRun(run) && record.participants.some(item => item.id === run.participantId && item.connectionId === connectionId));
     });
   }
 
   async closeConnection(connectionId: string): Promise<void> {
-    for (const saved of this.options.repository.listPending(true)) {
+    for (const saved of this.options.repository.listPendingStates(true)) {
       for (const prior of conversationRuns(saved.view)) {
         const record = this.load(saved.view.workspaceId,saved.view.id);
         const run = conversationRuns(record.view).find(run=>run.id===prior.id)!;
@@ -1409,7 +1431,7 @@ export class ConversationApplication {
         if(record.view.run.status!=='stopping'){record.interruption={runId:record.view.run.id,awaitingUser:record.view.requests.some(request=>request.runId===record.view.run!.id)||['waiting-approval','waiting-question'].includes(record.view.run.status)};record.view.run.interrupted=true;}
         record.view.run.status = 'unknown'; record.view.run.diagnostic = '宿主正在退出，原生执行尚待确认。'; this.save(record); }
     }
-    const ids = new Set(this.options.repository.listPending(true).flatMap(record => conversationRuns(record.view).filter(run=>run.generation===this.options.generation).flatMap(run=>record.participants.find(value=>value.id===run.participantId)?.connectionId??[])));
+    const ids = new Set(this.options.repository.listPendingStates(true).flatMap(record => conversationRuns(record.view).filter(run=>run.generation===this.options.generation).flatMap(run=>record.participants.find(value=>value.id===run.participantId)?.connectionId??[])));
     await Promise.allSettled([...ids].map(id => this.closeConnection(id)));
     for(const item of interrupted){const record=this.load(item.workspaceId,item.id);if(record.view.run?.id===item.runId&&record.view.run&&['stopped','unknown','tools-active','stopping'].includes(record.view.run.status)){record.view.run.diagnostic=record.view.run.status==='stopped'?'宿主退出导致执行停止；这不是用户主动停止。':'宿主退出后原执行仍待核对，不能重复发送。';this.save(record);}}
   }

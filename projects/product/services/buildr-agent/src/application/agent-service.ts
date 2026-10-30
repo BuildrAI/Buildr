@@ -30,6 +30,7 @@ export function createAgentService(options: AgentServiceOptions) {
   const generation = randomUUID();
   const root = path.join(options.dataRoot, 'agent-service');
   const repository = new ConversationRepository(root);
+  repository.startReadModels();
   const events = new ConversationEvents(generation);
   const now = () => (options.now?.() ?? new Date()).toISOString();
   let linkedChanged: ((connection:ConnectionView)=>void)|undefined;
@@ -105,7 +106,7 @@ export function createAgentService(options: AgentServiceOptions) {
       const reasons = [...conversations.activity(), ...preparations.activity(), ...connections.activity(), ...models.activity(), ...upgrades.activity()];
       if(discovery)reasons.push({kind:'model-discovery',count:1});
       try {
-        const pending = repository.listPending(true).filter(record => !options.generationAlive || conversationRuns(record.view).some(run=>run.generation===generation&&unfinishedRun(run)));
+        const pending = repository.listPendingStates(true).filter(record => !options.generationAlive || conversationRuns(record.view).some(run=>run.generation===generation&&unfinishedRun(run)));
         const held=pending.filter(record=>conversationRuns(record.view).some(run=>run.generation===generation&&!run.resourcesReleased&&unfinishedRun(run))&&conversations.retainsConversationSource(record.view.workspaceId,record.view.id));
         if(held.length)reasons.push({kind:'unfinished-execution',count:held.length});
       } catch { reasons.push({kind:'storage-unconfirmed',count:1}); }
@@ -183,6 +184,8 @@ export function createAgentService(options: AgentServiceOptions) {
       listChildren: (workspaceId:string,id:string,input:Parameters<ConversationApplication['listChildren']>[2]={}) => conversations.listChildren(workspaceId,id,input),
       create: (workspaceId: string, input: Parameters<ConversationApplication['create']>[1]) => conversations.create(workspaceId, input),
       read: (workspaceId: string, id: string, input: Parameters<ConversationApplication['read']>[2] = {}) => conversations.read(workspaceId, id, input),
+      readEntry: (workspaceId:string,id:string,entryId:string,revision:string) => conversations.readEntry(workspaceId,id,entryId,revision),
+      observationVersion: (workspaceId:string,id:string) => conversations.observationVersion(workspaceId,id),
       update: (workspaceId: string, id: string, input: Parameters<ConversationApplication['update']>[2]) => conversations.update(workspaceId, id, input),
       generateTitle: (workspaceId: string, id: string, input: Parameters<ConversationApplication['generateTitle']>[2]) => conversations.generateTitle(workspaceId, id, input),
       prepareHandoff: (workspaceId:string,id:string,input:SendDraft) => conversations.prepareHandoff(workspaceId,id,input),
@@ -197,11 +200,11 @@ export function createAgentService(options: AgentServiceOptions) {
       reply: (workspaceId: string, id: string, requestId: string, input: Parameters<ConversationApplication['reply']>[3]) => conversations.reply(workspaceId, id, requestId, input),
       addAttachment: (workspaceId: string, id: string, input: Parameters<ConversationApplication['addAttachment']>[2]) => conversations.addAttachment(workspaceId, id, input),
       readAttachment: (workspaceId: string, id: string, attachmentId: string) => conversations.readAttachment(workspaceId, id, attachmentId),
-      subscribe: (workspaceId: string, id: string) => conversations.subscribe(workspaceId, id),
+      subscribe: (workspaceId: string, id: string, options:{compactTools?:boolean}={}) => conversations.subscribe(workspaceId, id,options),
       pending: () => conversations.pending(),
     },
     async close() {
-      if (closed) return; closed = true; programUpdates.close(); upgrades.beginClosing();
+      if (closed) return; closed = true; repository.stopReadModels(); programUpdates.close(); upgrades.beginClosing();
       clearInterval(discoveryTimer);discoveryTimer=undefined;
       const budget = Math.max(50, Math.min(options.shutdownTimeoutMs ?? 10_000, 10_000));
       const deadline = Date.now() + budget;

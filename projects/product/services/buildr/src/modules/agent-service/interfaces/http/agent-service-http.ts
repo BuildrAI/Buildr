@@ -127,6 +127,8 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
         }
         return null;
       }
+      const detailMatch=suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})\/entry-detail\/([^/]+)$/);
+      if(detailMatch&&request.method==='GET'){query(searchParams,['revision']);const revision=searchParams.get('revision');if(!revision||!(/^[a-f0-9]{64}$/).test(revision))throw inputError();let entryId:string;try{entryId=decodeURIComponent(detailMatch[2]);}catch{throw inputError();}if(!entryId||entryId.length>1024)throw inputError();return result('entry',await service.conversations.readEntry(workspaceId,detailMatch[1],entryId,revision));}
       const match = suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})(?:\/(fork|prepare-send|send|supplement|pending-send|cancel-pending-send|generate-title|children|seen|observe|stop|events|entries|attachments|requests)(?:\/([a-f0-9-]{36})(?:\/(reply))?)?)?$/);
       if (!match) return null;
       const [, id, action, childId, reply] = match;
@@ -137,7 +139,7 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
         }
         if (!action || action === 'entries') {
           query(searchParams, ['before', 'limit']);
-          return result('conversation', await service.conversations.read(workspaceId, id, { before: numberQuery(searchParams.get('before')), limit: numberQuery(searchParams.get('limit')) }));
+          return result('conversation', await service.conversations.read(workspaceId, id, { before: numberQuery(searchParams.get('before')), limit: numberQuery(searchParams.get('limit')), compactTools:true }));
         }
         if (action === 'events') {
           query(searchParams, ['cursor', 'generation']);

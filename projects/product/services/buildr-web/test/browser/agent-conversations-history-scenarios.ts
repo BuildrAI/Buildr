@@ -6,6 +6,27 @@ import type {AgentConversationFixture} from './agent-conversation-fixture.ts';
 /** history 场景使用独立准备的对话现场。 */
 export async function runHistoryScenarios(fixture:AgentConversationFixture){
   const {capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,supplementaryInputs,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
+await step('大工具记录仅在展开明细时读取完整内容并按内容版本复用',async()=>{
+  const saved=structuredClone(fixture.conversation);let reads=0,release:(()=>void)|undefined;
+  const matcher='**/entry-detail/**';
+  const full={id:'lazy-large-tool',sequence:2,kind:'tool',role:'system',name:'command',input:JSON.stringify({cmd:'read large result'}),text:'完整工具输出\n'+'x'.repeat(100000)+'\n完整输出结束',status:'completed',runId:'run-fixture',createdAt:new Date().toISOString()};
+  const route=async(intercept:any)=>{reads++;const url=new URL(intercept.request().url());assert.equal(url.searchParams.get('revision'),'a'.repeat(64));await new Promise<void>(resolve=>{release=resolve;});await intercept.fulfill({json:full});};
+  await page.route(matcher,route);
+  try{
+    update({run:run('completed'),requests:[],nextEntryCursor:undefined,entries:[{id:'lazy-user',sequence:1,kind:'message',role:'user',text:'检查大工具结果',runId:'run-fixture',createdAt:full.createdAt},{...full,text:'工具输出预览',detail:{revision:'a'.repeat(64)}},{id:'lazy-answer',sequence:3,kind:'message',role:'assistant',text:'检查完成',runId:'run-fixture',createdAt:full.createdAt}]});
+    await page.reload();await input().waitFor();assert.equal(reads,0);
+    await panel().getByRole('button',{name:'展开处理过程',exact:true}).click();
+    await panel().locator('.ac-step-group>summary').first().click();assert.equal(reads,0,'展开分组不读取工具全文');
+    const tool=panel().locator('[data-entry-id="lazy-large-tool"]');await tool.locator(':scope>summary').click();
+    await tool.getByText('正在读取完整工具记录…',{exact:true}).waitFor();
+    await page.waitForFunction(()=>document.querySelector('[data-entry-id="lazy-large-tool"] [role="status"]'));
+    assert.equal(reads,1);release?.();
+    await page.waitForFunction(()=>document.querySelector('[data-entry-id="lazy-large-tool"] .ac-tool-detail')?.textContent?.includes('完整输出结束'));
+    assert.equal(await tool.locator('.ac-tool-detail pre').last().textContent(),full.text);
+    await tool.locator(':scope>summary').click();await tool.locator(':scope>summary').click();assert.equal(reads,1,'相同版本再次展开复用已读取内容');
+  }finally{release?.();await page.unroute(matcher,route);fixture.conversation=saved;await page.reload();await input().waitFor();}
+});
+
 await step('较旧的待决策与待查看始终排在最新输入的执行中之前',async()=>{
   const saved=structuredClone(fixture.conversation),additional=fixture.additionalConversations;
   const rows=[
@@ -125,12 +146,12 @@ await step('列表手动从末条加载，整行折叠与拖动互不干扰',asy
     await header.press('Alt+ArrowUp');assert.deepEqual(await order(),[workspaceId,otherId,'@default']);assert.equal(await header.getAttribute('aria-expanded'),'true');
     const callsBefore=groupCalls().length;await page.waitForTimeout(5300);await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await page.waitForTimeout(150);assert.equal(groupCalls().length,callsBefore,'等待和窗口焦点不重读列表');
     assert.equal(await group.getByRole('button',{name:'收起',exact:true}).count(),0);
-    for(const n of [15,25,26]){await group.getByRole('button',{name:'加载更多',exact:true}).click();await count(n);}
-    assert.deepEqual(groupCalls().slice(-3).map(row=>({limit:row.limit,cursor:row.cursor})),[{limit:10,cursor:'5'},{limit:10,cursor:'15'},{limit:10,cursor:'25'}]);assert.equal(await group.getByRole('button',{name:'加载更多',exact:true}).count(),0);
+    for(const n of [15,25,26]){await group.getByRole('button',{name:/加载更多/}).click();await count(n);}
+    assert.deepEqual(groupCalls().slice(-3).map(row=>({limit:row.limit,cursor:row.cursor})),[{limit:10,cursor:'5'},{limit:10,cursor:'15'},{limit:10,cursor:'25'}]);assert.equal(await group.getByRole('button',{name:/加载更多/}).count(),0);
     await header.click();await count(0);assert.equal(await header.getAttribute('aria-expanded'),'false');await header.press('Enter');await count(5);assert.equal(groupCalls().at(-1)!.limit,5);assert.equal(groupCalls().at(-1)!.cursor,null);
-    await defaults.getByRole('button',{name:'加载更多',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('[data-history-workspace="@default"] .ac-history-row').length===8);
-    fixture.expectedBrowserErrors.add('503');fixture.expectedBrowserErrors.add('Service Unavailable');fail=true;await group.getByRole('button',{name:'加载更多',exact:true}).click();await group.getByText('分组暂不可用',{exact:true}).waitFor();await count(5);fail=false;await group.getByRole('button',{name:/重\s*试/}).click();await count(15);
-    fixture.expectedBrowserErrors.add('409');fixture.expectedBrowserErrors.add('Conflict');stale=true;await group.getByRole('button',{name:'加载更多',exact:true}).click();await group.getByText('列表位置已变化，请刷新后继续。',{exact:true}).waitFor();await count(15);stale=false;await group.getByRole('button',{name:'刷新列表',exact:true}).click();await count(5);
+    await defaults.getByRole('button',{name:/加载更多/}).click();await page.waitForFunction(()=>document.querySelectorAll('[data-history-workspace="@default"] .ac-history-row').length===8);
+    fixture.expectedBrowserErrors.add('503');fixture.expectedBrowserErrors.add('Service Unavailable');fail=true;await group.getByRole('button',{name:/加载更多/}).click();await group.getByText('分组暂不可用',{exact:true}).waitFor();await count(5);fail=false;await group.getByRole('button',{name:/重\s*试/}).click();await count(15);
+    fixture.expectedBrowserErrors.add('409');fixture.expectedBrowserErrors.add('Conflict');stale=true;await group.getByRole('button',{name:/加载更多/}).click();await group.getByText('列表位置已变化，请刷新后继续。',{exact:true}).waitFor();await count(15);stale=false;await group.getByRole('button',{name:'刷新列表',exact:true}).click();await count(5);
     await search.fill('迟到现场');await held;await search.fill('分批现场');await count(5);release?.();await page.waitForTimeout(100);await count(5);
     await capture(page,'conversation-history-manual-controls.png');
   }finally{

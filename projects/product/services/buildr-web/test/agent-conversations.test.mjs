@@ -617,3 +617,10 @@ test('新要求不等待旧执行，只有相同选择的正常执行使用同�
  assert.equal(canSupplementConversation(current,choice,false),false);
  for(const change of [{connectionId:'qoder'},{model:'new'},{modelAccountId:'different'},{serviceTier:'fast'},{permissionMode:'full-access'},{reasoningEffort:'high'}])assert.equal(canSupplementConversation(current,{...choice,...change},true),false);
 });
+
+test('工具完整内容读取绑定保存的对话、条目和已观察内容版本',async()=>{
+ const calls=[];const api=createAgentConversationsClient(async(url,init)=>{calls.push({url,init});return {id:'tool/id',text:'complete'};},session);
+ const controller=new AbortController();const entry={id:'tool/id',detail:{revision:'version-1'}};
+ const result=await api.entry('saved/ws','chat/id',entry,controller.signal);
+ assert.equal(calls[0].url,'/api/v1/workspaces/saved%2Fws/agent-conversations/chat%2Fid/entry-detail/tool%2Fid?revision=version-1');assert.equal(calls[0].init.signal,controller.signal);assert.equal(result.text,'complete');
+});
