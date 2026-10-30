@@ -100,7 +100,8 @@ export async function serveBrowser(root: string, id: string, start = startBrowse
   const observed = profiles.get(id);
   if (!observed.profile || observed.revision !== runtime.revision) throw browserError('revision_conflict', '浏览器配置已变化。');
   const directory = path.resolve(profiles.root, observed.profile.directory); privateDirectory(profiles.root, directory);
-  const browser = start(directory);
+  if (!['headless', 'interactive'].includes(runtime.mode)) throw browserError('mode_conflict', '运行实例模式未知，请等待原使用方释放。');
+  const browser = start(directory, runtime.mode);
   try {
     await browser.pipe.request('Browser.getVersion');
     await browser.pipe.request('Target.setDiscoverTargets', { discover: true });
@@ -114,9 +115,9 @@ export async function serveBrowser(root: string, id: string, start = startBrowse
       for await (const chunk of req) { bytes += chunk.length; if (bytes > 256 * 1024) throw browserError('request_large', '浏览器请求超过限制。'); chunks.push(chunk); }
       const input = JSON.parse(Buffer.concat(chunks).toString('utf8'));
       let result;
-      if (input.op === 'status') result = { status: closing ? 'closing' : 'running', active: [...leases.leases.values()].filter(lease => !lease.closing).length, cleanupPending: [...leases.leases.values()].filter(lease => lease.closing).length };
+      if (input.op === 'status') result = { mode: runtime.mode, status: closing ? 'closing' : 'running', active: [...leases.leases.values()].filter(lease => !lease.closing).length, cleanupPending: [...leases.leases.values()].filter(lease => lease.closing).length };
       else if (closing) throw browserError('closing', '共享浏览器正在释放，请重新观察。');
-      else if (input.op === 'acquire') { everLeased = true; result = { lease: leases.acquire() }; }
+      else if (input.op === 'acquire') { if (input.mode !== runtime.mode) throw browserError('mode_conflict', '共享实例模式与请求不同，不会重启其他使用方。'); everLeased = true; result = { lease: leases.acquire() }; }
       else if (input.op === 'release') { await leases.release(input.lease); result = {}; }
       else if (input.op === 'request') result = await leases.request(input.lease, input.method, input.params, input.sessionId);
       else throw browserError('request_invalid', '未知浏览器资源动作。');

@@ -3,6 +3,7 @@ import { failure } from '../domain/instance.ts';
 import { connectionProgramEnvironment, type ResolvedProgram } from './program.ts';
 
 const failures = {
+  'interaction-required': ['interaction_required', '需要本人扫码或确认，请使用browserMode=interactive继续授权；未替换个人认证。'],
   'dependency-unavailable': ['dependency_unavailable', '授权所需浏览器或依赖不可用，请检查接入方法的安装说明；未替换个人认证。'],
   'browser-closed': ['browser_closed', '授权浏览器已关闭；未替换个人认证，可重新发起授权。'],
   'session-invalid': ['session_invalid', '外部登录尚未产生有效会话；未替换个人认证，请重新完成授权。'],

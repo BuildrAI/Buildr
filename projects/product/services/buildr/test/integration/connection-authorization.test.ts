@@ -12,6 +12,7 @@ import { createConnectionCatalog } from '../../src/modules/connection-skills/app
 import { createConnectionSkillsHttp } from '../../src/modules/connection-skills/interfaces/http/connection-skills-http.ts';
 import { createConnectionSkillsCli } from '../../src/modules/connection-skills/interfaces/cli/connection-skills-cli.ts';
 import { parseConnectionDefinition } from '../../src/modules/connection-skills/domain/definition.ts';
+import { BrowserAuthorization } from '../../src/modules/browser-authorization/application/browser-authorization-application.ts';
 import { digest } from '../../src/modules/connection-skills/persistence/files.ts';
 
 function fixture(t: { after(fn: () => void): void }, mode = 'success') {
@@ -29,6 +30,7 @@ process.on('message', async message => {
   if(c.protocolVersion!=='buildr.connection-authorization-context/v1' || 'authentication' in c.connection || JSON.stringify(c).includes('old-secret')) process.exit(11);
   const fs = await import('node:fs'); const path = await import('node:path');
   fs.writeFileSync(path.join(c.workspace.root,'started'), c.privateStateRoot);
+  if(c.browser) fs.writeFileSync(path.join(c.workspace.root,'browser-mode'), c.browser.mode);
   fs.writeFileSync(path.join(c.privateStateRoot,'fixture-profile'),'temporary');
   if(c.connection.config.mode==='hang') {setInterval(()=>{},1000); return;}
   await new Promise(resolve=>setTimeout(resolve, c.connection.config.mode==='slow'?150:10));
@@ -233,7 +235,7 @@ test('声明显式选择共享配置，真实授权子进程通过公开私有�
   const profiles = new BrowserProfiles(f.workspace), created = profiles.create('personal', 'absent');
   const crypto = await import('node:crypto'), secret = crypto.randomBytes(32).toString('hex');
   const endpoint = process.platform === 'win32' ? '\\\\.\\pipe\\buildr-auth-' + crypto.randomUUID() : '/tmp/buildr-auth-' + crypto.randomUUID().slice(0, 12) + '.sock';
-  fs.writeFileSync(profiles.runtimeFile('personal'), JSON.stringify({ root: profiles.root, profileId: 'personal', pid: process.pid, secret, endpoint, revision: created.revision, startedAt: Date.now() }), { mode: 0o600 });
+  fs.writeFileSync(profiles.runtimeFile('personal'), JSON.stringify({ mode: 'headless', root: profiles.root, profileId: 'personal', pid: process.pid, secret, endpoint, revision: created.revision, startedAt: Date.now() }), { mode: 0o600 });
   const pipe: any = new EventEmitter();
   pipe.request = async (method: string) => method === 'Target.createTarget' ? { targetId: 'owned' } : method === 'Target.getTargets' ? { targetInfos: [{ targetId: 'owned' }] } : {};
   const runtime = await serveBrowser(f.workspace, 'personal', (() => ({ pipe, close: async () => {} })) as any);
@@ -259,4 +261,21 @@ test('声明显式选择共享配置，真实授权子进程通过公开私有�
   assert.equal(f.read().group!.values.password, 'bridge-secret');
   assert.equal(JSON.stringify(result).includes('bridge-secret'), false);
   await runtime.close();
+});
+
+test('共享授权模式经输入传递到资源与私有上下文，非法模式不启动方法', async t => {
+  const f = fixture(t);
+  f.definition.authentication.authorization.browserProfile = 'personal'; f.writeDefinition();
+  let observed: unknown, closed = 0;
+  t.mock.method(BrowserAuthorization.prototype, 'acquire', async (_id: string, _signal?: AbortSignal, mode = 'headless') => {
+    observed = mode; return { mode, request: async () => ({}), close: async () => { closed++; } };
+  });
+  for (const mode of ['headless', 'interactive']) {
+    const result = await f.app.authorize(f.workspace, f.instance.id, { expected: f.expected(), ...(mode === 'interactive' ? { browserMode: mode } : {}) });
+    assert.equal(result.status, 'success'); assert.equal(observed, mode);
+    assert.equal(fs.readFileSync(path.join(f.workspace, 'browser-mode'), 'utf8'), mode);
+  }
+  assert.equal(closed, 2);
+  await assert.rejects(f.app.authorize(f.workspace, f.instance.id, { expected: f.expected(), browserMode: 'unknown' }), { code: 'connection_skill_authorization_input_invalid' });
+  assert.equal(closed, 2);
 });

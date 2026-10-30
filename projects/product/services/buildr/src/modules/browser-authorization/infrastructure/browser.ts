@@ -82,9 +82,14 @@ export function assertProfileAvailable(directory: string) {
   }
   throw browserError('externally_owned', '配置有活动或归属不明的外部占用，请由原使用方释放；不会删除锁或终止进程。');
 }
-export function startBrowser(directory: string) {
+export type BrowserMode = 'headless' | 'interactive';
+export function browserArguments(directory: string, mode: BrowserMode = 'headless') {
+  if (!['headless', 'interactive'].includes(mode)) throw browserError('mode_invalid', '浏览器模式必须为headless或interactive。');
+  return [`--user-data-dir=${directory}`, '--remote-debugging-pipe', '--no-first-run', '--no-default-browser-check', '--no-startup-window', '--disable-session-crashed-bubble', ...(mode === 'headless' ? ['--headless=new'] : [])];
+}
+export function startBrowser(directory: string, mode: BrowserMode = 'headless') {
   assertProfileAvailable(directory);
-  const child = spawn(findBrowser(), [`--user-data-dir=${directory}`, '--remote-debugging-pipe', '--no-first-run', '--no-default-browser-check', '--no-startup-window', '--disable-session-crashed-bubble'], { stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'] });
+  const child = spawn(findBrowser(), browserArguments(directory, mode), { stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'] });
   const pipe = new BrowserPipe(child.stdio[3]! as NodeJS.WritableStream, child.stdio[4]! as NodeJS.ReadableStream);
   child.on('error', () => pipe.close());
   const exited = new Promise<void>(resolve => child.once('exit', () => { pipe.close(); resolve(); }));

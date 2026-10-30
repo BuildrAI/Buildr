@@ -250,7 +250,8 @@ export class ConnectionSkillsApplication {
   }
   async authorize(root: string, id: string, raw: unknown, options: { signal?: AbortSignal } = {}) {
     const scope = this.resolveScope(root), input = object(raw), expected = object(input.expected) as Expected;
-    if (Object.keys(input).some(key => key !== 'expected') || Object.keys(expected).some(key => !['teamRevision', 'localRevision', 'definitionRevision'].includes(key))) throw failure('connection_skill_authorization_input_invalid', '授权只接收准确的三项当前观察。', 400);
+    if (Object.keys(input).some(key => !['expected', 'browserMode'].includes(key)) || Object.keys(expected).some(key => !['teamRevision', 'localRevision', 'definitionRevision'].includes(key))) throw failure('connection_skill_authorization_input_invalid', '授权只接收准确的三项当前观察及可选browserMode。', 400);
+    if (input.browserMode !== undefined && !['headless', 'interactive'].includes(input.browserMode as string)) throw failure('connection_skill_authorization_input_invalid', 'browserMode必须为headless或interactive。', 400);
     identifier(id); requireDefinitionObservation(expected);
     if (typeof expected.teamRevision !== 'string' || typeof expected.localRevision !== 'string') throw failure('connection_skill_revision_required', '授权必须提供连接和本机个人认证的当前观察。', 400);
     const initial = this.observedAuthentication(scope, id, expected), authorization = initial.entry.definition.authentication.authorization;
@@ -283,9 +284,9 @@ export class ConnectionSkillsApplication {
     let authorizationError: unknown;
     let browser: Awaited<ReturnType<BrowserAuthorization['acquire']>> | undefined;
     try {
-      if (authorization.browserProfile) browser = await new BrowserAuthorization(scope.rootPath).acquire(authorization.browserProfile, options.signal);
+      if (authorization.browserProfile) browser = await new BrowserAuthorization(scope.rootPath).acquire(authorization.browserProfile, options.signal, input.browserMode as 'headless' | 'interactive' | undefined);
       const rawValues = await runAuthorizationProgram(program, authorization.args || [], {
-        ...context, ...(browser ? { browser: { protocolVersion: 'buildr.browser-authorization/v1', profileId: authorization.browserProfile, clientModule: pathToFileURL(resolveProductResource('browser-authorization/client.mjs', { developmentFallback: 'resources/browser-authorization/client.mjs' })).href } } : {}),
+        ...context, ...(browser ? { browser: { protocolVersion: 'buildr.browser-authorization/v1', profileId: authorization.browserProfile, mode: browser.mode, clientModule: pathToFileURL(resolveProductResource('browser-authorization/client.mjs', { developmentFallback: 'resources/browser-authorization/client.mjs' })).href } } : {}),
       }, { signal: options.signal, timeoutMs: authorization.timeoutMs ?? 180_000, browser });
       let values: Values;
       try { values = validateAuthentication(initial.entry.definition.authentication.fields, rawValues); }

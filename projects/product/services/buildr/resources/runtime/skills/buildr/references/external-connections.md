@@ -22,4 +22,4 @@
 
 ## 共享浏览器登录基础
 
-跨连接复用本人的浏览器登录状态时，由Buildr管理共享配置（Profile）、运行实例及页面使用权，连接声明可选 `authentication.authorization.browserProfile`。使用 `connection-skill browser list|inspect|create|adopt|reset` 管理；专业程序从授权私有上下文取得页面能力。具体输入和边界见[共享浏览器授权资源](../../connection-authoring/references/browser-authorization.md)。单个连接失效不清空共享配置；共用登录基础不改变各系统凭证和业务授权边界。
+跨连接复用本人的浏览器登录状态时，由Buildr管理共享配置（Profile）、运行实例及页面使用权，连接声明可选 `authentication.authorization.browserProfile`。使用 `connection-skill browser list|inspect|create|adopt|reset` 管理；专业程序从授权私有上下文取得页面能力。具体输入和边界见[共享浏览器授权资源](../../connection-authoring/references/browser-authorization.md)。共享授权默认无头运行（Headless）；确需本人扫码时通过同一授权输入显式提供 `browserMode: "interactive"`，模式冲突时等待原使用方释放，不重启其他调用。单个连接失效不清空共享配置；共用登录基础不改变各系统凭证和业务授权边界。

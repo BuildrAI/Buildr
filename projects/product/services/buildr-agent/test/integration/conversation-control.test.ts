@@ -52,3 +52,10 @@ test('packaged control subprocess reads, observes and precisely stops without ex
     assert.equal(calls.length,4);
   }finally{await channel.close();fs.rmSync(root,{recursive:true,force:true});}
 });
+
+test('public Agent package remains synchronously loadable by the bundled CJS host', async () => {
+  const entry = path.resolve(import.meta.dirname, '../../../buildr/node_modules/@buildr-ai/buildr-agent/build/index.js');
+  const result = await execute(process.execPath, ['-e', 'require(process.argv[1])', entry], { timeout: 10000 });
+  assert.equal(result.stderr, '');
+  assert.equal(result.stdout, '');
+});

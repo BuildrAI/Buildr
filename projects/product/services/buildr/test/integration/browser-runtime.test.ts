@@ -14,13 +14,16 @@ test('private runtime shares one driver across independent callers and rejects w
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-browser-runtime-'))), id = 'personal', profiles = new BrowserProfiles(root), selected = profiles.create(id, 'absent');
   const endpoint = process.platform === 'win32' ? '\\\\.\\pipe\\buildr-fixture-' + crypto.randomUUID() : '/tmp/buildr-fixture-' + crypto.randomUUID().slice(0, 12) + '.sock';
   const secret = crypto.randomBytes(32).toString('hex');
-  fs.writeFileSync(profiles.runtimeFile(id), JSON.stringify({ root, profileId: id, pid: process.pid, secret, endpoint, revision: selected.revision, startedAt: Date.now() }), { mode: 0o600 });
+  fs.writeFileSync(profiles.runtimeFile(id), JSON.stringify({ mode: 'headless', root, profileId: id, pid: process.pid, secret, endpoint, revision: selected.revision, startedAt: Date.now() }), { mode: 0o600 });
   const pipe = new EventEmitter() as EventEmitter & { request(method: string, params?: any): Promise<any> }; let sequence = 0, closes = 0, starts = 0;
   pipe.request = async (method, params) => method === 'Target.createTarget' ? { targetId: 'page-' + ++sequence } : method === 'Target.getTargets' ? { targetInfos: Array.from({ length: sequence }, (_, i) => ({ targetId: 'page-' + (i + 1) })) } : {};
   const runtime = await serveBrowser(root, id, (() => { starts++; return { pipe, close: async () => { closes++; } }; }) as unknown as typeof startBrowser);
   t.after(async () => { await runtime.close(); fs.rmSync(root, { recursive: true, force: true }); });
   const a = await new BrowserAuthorization(root).acquire(id), b = await new BrowserAuthorization(root).acquire(id);
   assert.equal(starts, 1);
+  assert.equal(a.mode, 'headless');
+  await assert.rejects(new BrowserAuthorization(root).acquire(id, undefined, 'interactive'), { code: 'browser_authorization_mode_conflict' });
+  assert.equal((await new BrowserAuthorization(root).inspect(id)).runtime.mode, 'headless');
   await a.request('Target.createTarget', { url: 'about:blank' }); await b.request('Target.createTarget', { url: 'about:blank' });
   await a.close(); assert.equal(closes, 0); assert.equal((await b.request('Target.getTargets')).targetInfos.length, 1);
   const rejected = await new Promise<number>(resolve => { const request = http.request({ socketPath: endpoint, method: 'POST', path: '/', headers: { authorization: 'Bearer wrong-fixture' } }, response => { response.resume(); resolve(response.statusCode!); }); request.end('{}'); });
@@ -32,7 +35,7 @@ test('private runtime shares one driver across independent callers and rejects w
 test('failed shutdown retains ownership and concurrent retries await the actual stop', async t => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-browser-stop-'))), id = 'personal', profiles = new BrowserProfiles(root), selected = profiles.create(id, 'absent');
   const endpoint = process.platform === 'win32' ? '\\\\.\\pipe\\buildr-fixture-' + crypto.randomUUID() : '/tmp/buildr-fixture-' + crypto.randomUUID().slice(0, 12) + '.sock';
-  fs.writeFileSync(profiles.runtimeFile(id), JSON.stringify({ root, profileId: id, pid: process.pid, secret: crypto.randomBytes(32).toString('hex'), endpoint, revision: selected.revision, startedAt: Date.now() }), { mode: 0o600 });
+  fs.writeFileSync(profiles.runtimeFile(id), JSON.stringify({ mode: 'headless', root, profileId: id, pid: process.pid, secret: crypto.randomBytes(32).toString('hex'), endpoint, revision: selected.revision, startedAt: Date.now() }), { mode: 0o600 });
   let fail = true, closes = 0, finishClose!: () => void;
   const pipe = new EventEmitter() as EventEmitter & { request(method: string): Promise<any> };
   pipe.request = async method => {
@@ -47,7 +50,7 @@ test('failed shutdown retains ownership and concurrent retries await the actual 
   await lease.request('Target.createTarget', { url: 'about:blank' });
   await assert.rejects(runtime.close(), { code: 'browser_authorization_cleanup_unconfirmed' });
   assert.equal(fs.existsSync(profiles.runtimeFile(id)), true);
-  assert.deepEqual((await owner.inspect(id)).runtime, { status: 'closing', active: 0, cleanupPending: 1 });
+  assert.deepEqual((await owner.inspect(id)).runtime, { mode: 'headless', status: 'closing', active: 0, cleanupPending: 1 });
   fail = false;
   const first = runtime.close(), second = runtime.close();
   assert.equal(first, second);

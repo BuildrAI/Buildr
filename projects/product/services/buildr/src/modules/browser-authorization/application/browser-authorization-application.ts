@@ -8,7 +8,9 @@ import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { BrowserProfiles, browserError, readPrivate, processAlive } from '../persistence/profiles.ts';
 
-type Runtime = { pid: number; secret: string; endpoint: string; revision: string; startedAt: number; root: string; profileId: string };
+import type { BrowserMode } from '../infrastructure/browser.ts';
+
+type Runtime = { mode: BrowserMode; pid: number; secret: string; endpoint: string; revision: string; startedAt: number; root: string; profileId: string };
 function rpc(runtime: Runtime, value: unknown): Promise<any> {
   return new Promise((resolve, reject) => {
     const req = http.request({ socketPath: runtime.endpoint, method: 'POST', path: '/', headers: { authorization: 'Bearer ' + runtime.secret, 'content-type': 'application/json' }, timeout: 28_000 }, res => {
@@ -31,18 +33,19 @@ export class BrowserAuthorization {
     try { return { ...observed, runtime: await rpc(runtime, { op: 'status' }) }; }
     catch { return { ...observed, runtime: { status: 'unconfirmed' } }; }
   }
-  async acquire(id: string, signal?: AbortSignal) {
+  async acquire(id: string, signal?: AbortSignal, mode: BrowserMode = 'headless') {
+    if (!['headless', 'interactive'].includes(mode)) throw browserError('mode_invalid', '浏览器模式必须为headless或interactive。');
     if (signal?.aborted) throw browserError('cancelled', '授权已取消。');
     const runtime = this.profiles.lock(() => {
       const observed = this.profiles.get(id);
       if (!observed.profile) throw browserError('profile_missing', '共享配置尚未登记，请先显式创建或接管。');
       const file = this.profiles.runtimeFile(id), current = readPrivate(file) as Runtime | null;
       if (current && (current.root !== this.profiles.root || current.profileId !== id || !/^[a-f0-9]{64}$/.test(current.secret))) throw browserError('runtime_changed', '运行实例不属于当前工作空间和配置。');
-      if (current && processAlive(current.pid)) { if (current.revision !== observed.revision) throw browserError('runtime_changed', '运行实例与配置版本不符。'); return current; }
+      if (current && processAlive(current.pid)) { if (current.revision !== observed.revision) throw browserError('runtime_changed', '运行实例与配置版本不符。'); if (current.mode !== mode) throw browserError('mode_conflict', '共享实例模式不同或未知，请等待原使用方释放后以所需模式重试；不会重启其他使用方。'); return current; }
       if (current) fs.unlinkSync(file); // A dead managed owner is not a live browser; profile locks are still checked by the driver.
       const secret = crypto.randomBytes(32).toString('hex');
       const endpoint = process.platform === 'win32' ? `\\\\.\\pipe\\buildr-browser-${secret}` : path.join(fs.realpathSync(os.tmpdir()).length < 50 ? fs.realpathSync(os.tmpdir()) : fs.realpathSync('/tmp'), `buildr-browser-${secret.slice(0, 24)}.sock`);
-      const value: Runtime = { pid: 0, secret, endpoint, revision: observed.revision, startedAt: Date.now(), root: this.profiles.root, profileId: id };
+      const value: Runtime = { mode, pid: 0, secret, endpoint, revision: observed.revision, startedAt: Date.now(), root: this.profiles.root, profileId: id };
       // Spawn cannot read the state until the parent has recorded its exact pid.
       const child = spawn(process.execPath, [resolveProductResource('runtime/browser-authorization-worker.cjs', { developmentFallback: 'src/modules/browser-authorization/infrastructure/worker.ts' }), this.profiles.root, id], { detached: true, stdio: 'ignore', env: { ...process.env, NODE_OPTIONS: '' } });
       if (!child.pid) throw browserError('start_failed', '浏览器资源进程未启动。');
@@ -54,7 +57,7 @@ export class BrowserAuthorization {
     let selected: { lease: string } | undefined;
     for (let attempt = 0; attempt < 80; attempt++) {
       if (signal?.aborted) throw browserError('cancelled', '授权已取消。');
-      try { selected = await rpc(runtime, { op: 'acquire' }); break; } catch (error: any) {
+      try { selected = await rpc(runtime, { op: 'acquire', mode }); break; } catch (error: any) {
         if (!['ENOENT', 'ECONNREFUSED'].includes(error.code)) throw error;
         if (!processAlive(runtime.pid)) throw browserError('start_failed', '浏览器未就绪，请核对依赖和外部占用；配置未清理。');
         await delay(100);
@@ -66,6 +69,7 @@ export class BrowserAuthorization {
     const heartbeat = setInterval(() => { void rpc(runtime, { op: 'request', lease, method: 'Lease.heartbeat' }).catch(() => {}); }, 10_000);
     heartbeat.unref();
     return {
+      mode,
       async request(method: string, params: unknown = {}, sessionId?: string) { if (released) throw browserError('lease_invalid', '授权资源使用权已释放。'); return rpc(runtime, { op: 'request', lease, method, params, sessionId }); },
       async close() { if (released) return; released = true; clearInterval(heartbeat); await rpc(runtime, { op: 'release', lease }); },
     };

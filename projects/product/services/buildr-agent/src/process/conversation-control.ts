@@ -29,10 +29,14 @@ export async function controlConversation(binding:Binding,action:string,input?:u
   return {revision:result.revision,run:result.run,retainedRuns:result.retainedRuns??[],requests:result.requests};
 }
 
-if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href===import.meta.url) {
+async function runControlEntry(): Promise<void> {
   try {
     if (process.argv.length<4 || process.argv.length>5) throw new AgentServiceError('agent_control_invalid','用法：conversation-control <绑定 JSON> read|observe|stop [控制 JSON]');
     const result = await controlConversation(JSON.parse(process.argv[2]!),process.argv[3]!,process.argv[4]?JSON.parse(process.argv[4]):undefined);
     process.stdout.write(JSON.stringify(result)+'\n');
   } catch(error) { process.stderr.write(safeDiagnostic(error)+'\n'); process.exitCode=1; }
+}
+// Keep executable-only awaits out of the synchronously imported public package.
+if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href===import.meta.url) {
+  void runControlEntry().catch(error => { process.stderr.write(safeDiagnostic(error)+'\n'); process.exitCode=1; });
 }
