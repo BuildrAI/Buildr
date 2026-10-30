@@ -4,6 +4,40 @@ import type {AgentConversationFixture} from './agent-conversation-fixture.ts';
 /** setup 场景使用独立准备的对话现场。 */
 export async function runSetupScenarios(fixture:AgentConversationFixture){
   const {assertFixed,assertModelSummary,assertNavigationHighlight,assertReminderGap,capture,chooseAgent,chooseModel,chooseOption,closeConversation,closeModelSettings,connections,expectedBrowserErrors,input,modelSettings,openDesktopConversation,openModelSettings,page,panel,preferenceBodies,preparedInputs,programAttempts,reset,run,sentInputs,setHighEffort,step,workspaceId}=fixture;
+await step('账号入口悬停与聚焦显示所有已登录账号的真实额度，点击仍进入设置',async()=>{
+  await reset();
+  const observedAt=new Date().toISOString();
+  fixture.quotaOverrides.set('codex',{available:true,observedAt,windows:[{id:'week',label:'周限额',remainingPercent:82},{id:'hour',label:'5小时限额',remainingPercent:45,resetsAt:new Date(Date.now()+3600000).toISOString()}]});
+  fixture.quotaOverrides.set('dsh',{available:true,observedAt,balances:[{currency:'CNY',total:'123.45',toppedUp:'120.00',granted:'3.45'}]});
+  fixture.quotaOverrides.set('qoder',{available:false,observedAt});
+  try{
+    const button=page.getByRole('button',{name:'账号与配置',exact:true}),overview=page.getByTestId('account-quota-overview');
+    const leaveQuota=async()=>{await button.evaluate((node:HTMLElement)=>node.blur());await page.mouse.move(70,100);await overview.waitFor({state:'hidden'});};
+    await button.hover();await overview.waitFor({state:'visible'});
+    await overview.getByText('周限额 · 剩余 82%',{exact:true}).waitFor();await overview.getByText('5小时限额 · 剩余 45%',{exact:false}).waitFor();
+    await overview.getByText('账户余额 CNY 123.45（充值 120.00 · 赠送 3.45）',{exact:true}).waitFor();
+    assert.equal(await overview.locator('section').count(),3);await overview.getByText('额度暂不可读取',{exact:true}).waitFor();
+    await capture(page,'agent-account-balance-hover.png');
+    await leaveQuota();
+    await button.focus();await overview.waitFor({state:'visible'});await button.click();
+    const drawer=page.getByRole('dialog',{name:/^智能体与模型/});await drawer.waitFor();await overview.waitFor({state:'hidden'});
+    await drawer.getByText('账户余额 CNY 123.45（充值 120.00 · 赠送 3.45）',{exact:true}).waitFor();
+    await drawer.getByRole('button',{name:'关闭智能体账号与配置',exact:true}).click();await drawer.waitFor({state:'hidden'});
+    await page.setViewportSize({width:800,height:900});await button.hover();await overview.waitFor({state:'visible'});
+    const bounds=await overview.boundingBox();assert.ok(bounds&&bounds.x>=0&&bounds.x+bounds.width<=800,'紧凑桌面额度概览不越界');
+    await capture(page,'agent-account-balance-hover-compact.png');
+    await leaveQuota();
+    expectedBrowserErrors.add('api/v1/app/agent-service/model-accounts]: Failed to load resource: the server responded with a status of 503');
+    const failAccounts=async(route:any)=>route.fulfill({status:503,json:{error:{code:'unavailable',message:'fixture'}}});
+    await page.route('**/api/v1/app/agent-service/model-accounts',failAccounts);
+    try{await button.hover();await overview.getByText(/账号额度读取失败/).waitFor();assert.equal(await overview.locator('section').count(),3,'读取失败保留已观察账号');}
+    finally{await page.unroute('**/api/v1/app/agent-service/model-accounts',failAccounts);await leaveQuota();}
+    const emptyAccounts=async(route:any)=>route.fulfill({json:{accounts:[],providers:[]}});
+    await page.route('**/api/v1/app/agent-service/model-accounts',emptyAccounts);
+    try{await button.hover();await overview.getByText('尚无已登录账号，点击图标接入',{exact:true}).waitFor();assert.equal(await overview.locator('section').count(),0);}
+    finally{await page.unroute('**/api/v1/app/agent-service/model-accounts',emptyAccounts);await leaveQuota();}
+  }finally{fixture.quotaOverrides.clear();await page.setViewportSize({width:1280,height:900});}
+});
 await step('悬停预览与点击固定分离，重复点击收起，切组和键盘保留工作屏',async()=>{
       await page.setViewportSize({width:1600,height:1000});await reset();
       const workUrl=page.url(),primary=page.locator('.primary-navigation'),workspace=primary.locator('button[data-nav="workspace"]'),code=primary.locator('button[data-nav="code"]');
@@ -51,7 +85,7 @@ await step('模型目录初次读取和无关账号核对失败不打扰对话',
     });
 
 await step('统一账号来源按真实登录观察更新，登录链接和迟到接入列表不冒充账号已连接',async()=>{
-      connections[0].status='expired';await openDesktopConversation();await panel().getByRole('button',{name:'更多对话操作',exact:true}).click();await page.getByRole('menuitem',{name:'智能体与模型',exact:true}).click();const drawer=page.getByRole('dialog',{name:/^智能体与模型/});await drawer.waitFor();await drawer.locator('.ams-setup').getByRole('tab',{name:'模型',exact:true}).click();await drawer.locator('.amm-source-list').getByRole('button').filter({hasText:'Codex'}).click();const card=drawer.locator('.amm-quota-card');await card.getByText('登录已过期',{exact:true}).waitFor();
+      connections[0].status='expired';await openDesktopConversation();await page.getByRole('button',{name:'账号与配置',exact:true}).click();const drawer=page.getByRole('dialog',{name:/^智能体与模型/});await drawer.waitFor();await drawer.locator('.ams-setup').getByRole('tab',{name:'模型',exact:true}).click();await drawer.locator('.amm-source-list').getByRole('button').filter({hasText:'Codex'}).click();const card=drawer.locator('.amm-quota-card');await card.getByText('登录已过期',{exact:true}).waitFor();
       await card.getByRole('button',{name:'重新登录',exact:true}).click();const login=card.getByRole('link',{name:'打开登录页',exact:true});await login.waitFor();assert.match(await login.getAttribute('href'),/^https:\/\/auth\.openai\.com\//);assert.equal(await card.getByText('已登录',{exact:true}).count(),0,'等待官方登录不冒充已登录');
       connections[0].status='ready';(connections[0] as any).loginAttempt.state='completed';connections[0].revision='connection-'+(++fixture.revision);await card.getByText('已登录',{exact:true}).waitFor();await card.getByRole('button',{name:'刷新Codex额度',exact:true}).click();await capture(page,'agent-conversation-account.png');
       await drawer.locator('.amm-tabs').getByRole('tab',{name:/^模型/}).click();const fixtureSwitch=drawer.getByRole('switch',{name:'停用 Fixture model',exact:true});await fixtureSwitch.waitFor();fixture.holdPreferences=true;const saving=new Promise<void>(resolve=>{fixture.preferencesStarted=resolve;});const preferenceSaved=page.waitForResponse((response:any)=>response.url().endsWith('/preferences'));await fixtureSwitch.click();await saving;assert.equal(await drawer.getByRole('switch',{name:'启用 Fixture model',exact:true}).count(),1,'启停用先生效，不等保存回执');assert.equal(await drawer.getByRole('switch',{name:'停用 Fast model',exact:true}).isDisabled(),false,'保存期间不锁定其他控件');assert.equal(await page.getByText('模型设置已保存',{exact:true}).count(),0,'保存不再弹成功提示');fixture.releasePreferences!();await preferenceSaved;await drawer.locator('.amm-model-summary').getByText(/已启用 1/).waitFor();assert.equal(fixture.preferencePosts,1);assert.equal(preferenceBodies.at(-1).expectedRevision,'model-account-codex','偏好写入携带已观察版本');assert.deepEqual(preferenceBodies.at(-1).models,[{id:'fixture-model',enabled:false}],'只写入本次改动的字段');assert.equal(await page.getByText('模型设置已保存',{exact:true}).count(),0,'保存完成后也不补成功提示');
@@ -63,7 +97,7 @@ await step('统一账号来源按真实登录观察更新，登录链接和迟�
 await step('智能体与模型分开管理，程序准备、取消与刷新恢复不登录账号也不改变执行者',async()=>{
       connections[0].enabled=false;connections[0].status='disconnected';fixture.programScenario='missing';await page.reload();await page.locator('#workbench-overview').waitFor();await openDesktopConversation();const initialAgent=await panel().locator('.ac-provider-select .ant-select-selection-item').innerText(),loginsBefore=fixture.nativeLoginPosts;
       const drawer=page.getByRole('dialog',{name:/^智能体与模型/});
-      const openSettings=async()=>{await panel().getByRole('button',{name:'更多对话操作',exact:true}).click();await page.getByRole('menuitem',{name:'智能体与模型',exact:true}).click();await drawer.waitFor();await drawer.locator('.ams-setup').getByRole('tab',{name:'智能体',exact:true}).click();};
+      const openSettings=async()=>{await page.getByRole('button',{name:'账号与配置',exact:true}).click();await drawer.waitFor();await drawer.locator('.ams-setup').getByRole('tab',{name:'智能体',exact:true}).click();};
       const executor=(provider:string)=>drawer.locator('.ams-executor').filter({has:page.getByRole('heading',{name:provider,exact:true})});
       const program=drawer.getByTestId('agent-program-preparation');
       const expand=async(provider:string)=>{const row=executor(provider),header=row.locator('header');if(await header.getAttribute('aria-expanded')!=='true')await header.click();await program.waitFor();};

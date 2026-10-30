@@ -313,3 +313,24 @@ test('incomplete checks retain usable observations; confirmed logout and identit
     assert.equal(access.catalog.list().models[0].available,false,'old identity cannot survive a confirmed change');
   }finally{await access.close();await rm(root,{recursive:true,force:true});}
 });
+
+test('native decimal balances survive account persistence and failed observations without rotating selection revision', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-wallet-observation-'));
+  let fail = false;
+  const balances = [{currency:'CNY',total:'123.45',toppedUp:'120.00',granted:'3.45'}];
+  const source: ModelProvider = {id:'wallet',label:'Wallet',async open(){return {
+    protocol:'chat-completions',async inspect(){return {status:'ready',models:[model],quota:{available:!fail,observedAt:new Date().toISOString(),...(fail?{}:{balances})}};},
+    async beginLogin(){},async cancelLogin(){},async infer(){return Response.json({});},async close(){},
+  };}};
+  let access = createModelAccess({root,providers:[source]});
+  try {
+    const added = await access.accounts.add({provider:'wallet'}), ready = await access.accounts.check(added.id);
+    assert.deepEqual(ready.quota?.balances, balances);
+    fail = true;
+    const failed = await access.accounts.check(added.id);
+    assert.equal(failed.status, 'ready'); assert.equal(failed.revision,ready.revision);
+    assert.equal(failed.quota?.stale,true); assert.deepEqual(failed.quota?.balances,balances);
+    await access.close(); access = createModelAccess({root,providers:[source]});
+    assert.deepEqual(access.accounts.read(added.id).quota?.balances,balances);
+  } finally { await access.close(); await rm(root,{recursive:true,force:true}); }
+});

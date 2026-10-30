@@ -161,6 +161,7 @@ export interface AgentRuntime {
   /** Private fixed-upstream model bridge; never exposed over host HTTP. */
   requestModel?(path: string, init?: RequestInit, expectedIdentity?: string): Promise<Response>;
   modelIdentity?(): Promise<string>;
+  modelQuota?(): Promise<import('./model-access/contracts.ts').ModelQuotaObservation>;
   beginLogin(onUpdate: (observation: LoginObservation) => void): Promise<void>;
   cancelLogin(): Promise<void>;
   createContext(input: { cwd: string; permissionMode?: PermissionMode }): Promise<ContextRef>;

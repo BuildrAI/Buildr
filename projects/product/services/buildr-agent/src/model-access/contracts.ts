@@ -32,6 +32,8 @@ export interface ModelQuotaObservation {
   planLabel?: string;
   stale?:boolean;
   diagnostic?:string;
+  /** Decimal strings preserve the native wallet precision; currencies are never converted. */
+  balances?: Array<{currency:string;total:string;toppedUp?:string;granted?:string}>;
   windows?: Array<{id:string;label:string;remainingPercent:number;resetsAt?:string;limitWindowSeconds?:number}>;
 }
 export interface ModelProviderObservation {

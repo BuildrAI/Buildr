@@ -1,0 +1,9 @@
+.ac-account-quota-overview{width:min(370px,calc(100vw - 48px));max-height:min(520px,70vh);overflow:auto;overflow-wrap:anywhere}
+.ac-account-quota-overview section{padding:12px 0;border-bottom:1px solid var(--soft-line)}
+.ac-account-quota-overview section:last-child{border-bottom:0;padding-bottom:0}
+.ac-account-quota-overview header{display:flex;justify-content:space-between;gap:12px}
+.ac-account-quota-overview header>span,.ac-account-quota-overview small{color:var(--soft-muted);font-size:var(--font-size-meta)}
+.ac-account-quota-overview p{margin:8px 0;line-height:1.6}
+.ac-account-quota-overview p>small{display:block}
+.ac-account-quota-overview .ac-account-quota-warning{color:var(--soft-muted);font-size:var(--font-size-secondary)}
+.ac-account-quota-overview .ant-spin{display:block;padding:16px}

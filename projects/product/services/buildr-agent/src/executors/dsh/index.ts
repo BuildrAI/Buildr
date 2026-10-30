@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import type { AgentExecutor, AgentRuntime, ContextRef, ExecutionRef, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorRequest, ExecutorSendInput, LoginObservation, PermissionMode } from '../../contracts.ts';
 import { nativeBinding, visibleText, bounded, findExecutable, inspectVersion, isolatedEnvironment, nativeHome, opaqueReference, parseReference, privateDirectories } from '../native-process.ts';
 import { launchDshHost, dshValue, type DshClient } from './client.ts';
+import { dshBalanceQuota } from './balance.ts';
 import { dshItem, dshHistoryItems, dshExecutionObservation, dshToolOutcomeUnknown } from './protocol.ts';
 import { modelOptions } from '../model-options.ts';
 import { applyDshPermissions, dshPermissionCatalog } from './permissions.ts';
@@ -136,6 +137,10 @@ export class DshRuntime implements AgentRuntime {
     return profile?.status === 'ready' ? { status: 'ready' as const, label: 'DeepSeek', loginMethod: 'DeepSeek 账号' } : { status: 'failed' as const, diagnostic: 'dsh_account_profile_unavailable' };
   }
   async modelIdentity():Promise<string> { const profile=dshValue(await this.client.remote.account.getProfile(this.metadata)); return 'dsh:'+String(profile?.value?.id??(()=>{throw new Error('dsh_account_identity_missing');})()); }
+  async modelQuota() {
+    try { return dshBalanceQuota(dshValue(await this.client.remote.account.getBalance(this.metadata))); }
+    catch { return dshBalanceQuota(undefined); }
+  }
   async requestModel(path:string,init:RequestInit={},expectedIdentity?:string):Promise<Response>{
     if(!this.modelBridge||!['/models','/anthropic/v1/messages'].includes(path))throw new Error('dsh_model_target_invalid');
     if(expectedIdentity&&createHash('sha256').update(await this.modelIdentity()).digest('hex')!==expectedIdentity)throw new Error('model_identity_conflict');

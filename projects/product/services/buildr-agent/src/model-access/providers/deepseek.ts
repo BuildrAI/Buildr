@@ -6,6 +6,7 @@ export interface DeepSeekSourceOwner {
   inspect(): Promise<AccountObservation>;
   beginLogin(update: (value: LoginObservation) => void): Promise<void>;
   cancelLogin(): Promise<void>;
+  quota?(): Promise<NonNullable<ModelProviderObservation['quota']>>;
   request(url: string, init?: RequestInit): Promise<Response>;
   close(): Promise<void>;
 }
@@ -37,7 +38,8 @@ class DeepSeekRuntime implements ModelProviderRuntime {
         return [{ id, label: string(row.name) ?? string(row.display_name) ?? id, images: Array.isArray(row.input_modalities) && row.input_modalities.includes('image'), tools: true, ...(positive(row.context_window) ? { contextWindow: positive(row.context_window) } : {}), ...(positive(row.max_output_tokens) ? { maxOutputTokens: positive(row.max_output_tokens) } : {}), ...(efforts.length ? { reasoningEfforts: efforts, ...(efforts.some(effort=>effort.id===effortConfig.default_level)?{defaultReasoningEffort:string(effortConfig.default_level)}:{}) } : {}) }];
       });
       this.catalog = new Map(models.map(model => [model.id, model]));
-      return { status: models.length ? 'ready' : 'failed', label: account.label ?? 'DeepSeek', models, quota: { available: false, observedAt: new Date().toISOString(), summary: 'DeepSeek 账号未返回可读取套餐额度' }, ...(!models.length ? { diagnostic: 'model_deepseek_catalog_empty' } : {}) };
+      const quota = await this.owner.quota?.().catch(() => undefined) ?? { available: false, observedAt: new Date().toISOString(), summary: 'DeepSeek 账户余额暂不可读取' };
+      return { status: models.length ? 'ready' : 'failed', label: account.label ?? 'DeepSeek', models, quota, ...(!models.length ? { diagnostic: 'model_deepseek_catalog_empty' } : {}) };
     } catch { return { status: 'failed', incomplete: true, models: [], diagnostic: 'model_deepseek_observation_failed' }; }
   }
   async beginLogin(update: (value: LoginObservation) => void): Promise<void> {
