@@ -277,3 +277,7 @@
 .ac-request-submit>small{flex:1 1 160px;min-width:0;color:var(--soft-muted,#65766f);font-size:var(--font-size-meta);line-height:1.5;overflow-wrap:anywhere}
 .ac-request-submit>.ant-btn{flex:none;margin-left:auto}
 .ac-execution-statusbar .ac-question-locate{height:auto;padding:0;font-size:inherit}
+.ac-answer-input .ac-compose-toolbar{flex-wrap:nowrap}
+.ac-answer-input .ac-compose-execution{flex:1}
+.ac-answer-input .ac-request-submit{width:100%;margin-top:0;flex-wrap:nowrap}
+.ac-answer-input .ac-request-submit>small{flex:1 1 auto}

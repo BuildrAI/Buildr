@@ -178,6 +178,17 @@ await step('用户决定复用问题卡片，选项说明与其他回答可用�
       await page.reload();await input().waitFor();card=panel().locator('[data-agent-request="decision-other"]');await card.waitFor();
       await card.getByRole('radio',{name:'其他',exact:true}).check();
       const submit=card.getByRole('button',{name:'回答并继续',exact:true}),other=card.getByRole('textbox',{name:'接下来选择哪个方向？：其他回答',exact:true});
+      assert.equal(await other.getAttribute('placeholder'),'输入你的回答');
+      for(const width of [1280,390]){
+        await page.setViewportSize({width,height:900});await submit.scrollIntoViewIfNeeded();
+        assert.equal(await card.getByRole('button',{name:'回答并继续',exact:true}).count(),1,'问题卡片只有一个提交按钮');
+        const toolbar=other.locator('..').locator('.ac-compose-toolbar');
+        const addBox=await toolbar.getByRole('button',{name:'添加回答图片或视频',exact:true}).boundingBox(),submitBox=await submit.boundingBox();
+        assert.ok(addBox&&submitBox&&Math.abs((addBox.y+addBox.height)-(submitBox.y+submitBox.height))<6,'回答提交与附件加号共用同一操作行');
+        assert.equal(await card.evaluate((node:HTMLElement)=>node.scrollWidth<=node.clientWidth+1),true,'窄屏问题卡片不横向溢出');
+        await capture(page,`agent-question-toolbar-${width}.png`);
+      }
+      await page.setViewportSize({width:1280,height:900});
       assert.equal(await submit.isDisabled(),true);await other.fill('先说明影响，暂不修改');
       await card.getByRole('radio',{name:/直接修改/}).check();await other.waitFor({state:'hidden'});
       await card.getByRole('radio',{name:'其他',exact:true}).check();assert.equal(await other.inputValue(),'先说明影响，暂不修改');
@@ -210,6 +221,7 @@ await step('用户决定复用问题卡片，选项说明与其他回答可用�
       assert.equal(await panel().locator('[data-agent-request]').count(),0,'新一轮不显示旧轮可答卡片');
       assert.equal(fixture.replies,before+3,'新指令不自动回答旧问题');
       update({run:run('running','codex'),requests:[]});await page.reload();await input().waitFor();
+      assert.doesNotMatch(await input().getAttribute('placeholder')||'',/粘贴截图|粘贴图片|粘贴.*视频/);
     });
 await step('问题自由回答共享完整视频输入，失败保留文字和已上传材料',async()=>{
       const saved=structuredClone(fixture.conversation),before=fixture.replies;

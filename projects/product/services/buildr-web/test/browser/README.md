@@ -31,6 +31,8 @@ tools/development/run-development-npm run test:related -- --check e2e-browser:la
 
 源码管理局部失败可设置 `BUILDR_SOURCE_CONTROL_FOCUS`，值为场景名称片段，多个片段以 `|` 分隔，再运行同一 `code` 入口。保留真实源码管理夹具、生产托管及清理，只执行匹配场景；日志列出实际选择，零匹配报错。此诊断结果只证明所选场景，不能当作完整 `code` 回归。
 
+对话局部诊断可同时设置 `BUILDR_AGENT_JOURNEY_PART=handoff` 和 `BUILDR_AGENT_SCENARIO_FOCUS`（场景名称片段，以 `|` 分隔），再运行 `test:related -- --check e2e-browser:agent-conversations`。保留真实夹具、生产托管和清理，只执行匹配场景；零匹配报错，局部结果不代表完整分组通过。
+
 ## 换用户或工具环境
 
 智能体（Agent）先读取适用声明和能力绑定（Capability Binding），再发现现场工具并阅读其真实接口说明。Tabbit、egolite、Codex 内置浏览器都只是可能的工具，不能从名称推断视口、脚本、截图或控制台能力。
