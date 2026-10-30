@@ -3,7 +3,7 @@ import { normalizeSendDraft } from '../domain/send-draft.ts';
 import { blocksExecution } from '../domain/interaction-policy.ts';
 import { ConversationAttachments, MAX_IMAGE_BYTES, MAX_VISUAL_INPUTS } from './conversation-attachments.ts';
 import type { AttachmentInput } from '../contracts.ts';
-import { continuationDraft } from '../domain/conversation-continuation.ts';
+import { continuationDraft, releasedContinuation } from '../domain/conversation-continuation.ts';
 import { waitingHandoffQuestions, waitingQuestionText } from '../domain/waiting-question-handoff.ts';
 import { RETRY_DELAYS, transientFailure } from '../domain/transient-failure.ts';
 import { NativeRequestError } from '../domain/error-diagnostic.ts';
@@ -387,6 +387,13 @@ export class ConversationApplication {
     const record = this.load(workspaceId, id);
     return Boolean(record.view.run && (BUSY_STATES.has(record.view.run.status) || record.view.run.tools.some(tool=>tool.status!=='completed') || this.workers.has(record.view.run.id)) || record.view.requests.length || this.titleWork.has(id) || this.earlyTitles.has(id) || this.recoveries.has(`${workspaceId}/${id}`) || this.observations.has(`${workspaceId}/${id}`));
   }
+  allowsReleasedContinuation(workspaceId: string, id: string, input: SendDraft): boolean {
+    const record = this.load(workspaceId, id), run = record.view.run;
+    return Boolean(!this.closing && run?.generation === this.options.generation && releasedContinuation(record, input) &&
+      !this.workers.has(run.id) && !this.titleWork.has(id) && !this.earlyTitles.has(id) &&
+      !this.recoveries.has(`${workspaceId}/${id}`) && !this.observations.has(`${workspaceId}/${id}`) &&
+      !this.supplements.size && !this.repliesInFlight.size);
+  }
   async verifyNext(workspaceId: string, id: string): Promise<void> {
     const record = this.load(workspaceId, id);
     await this.options.host.resolve(workspaceId);
@@ -434,7 +441,7 @@ export class ConversationApplication {
     this.options.connections.assertProgramAvailable(raw.connectionId);
     let input = this.draft(raw); expected(record.view.revision, input.expectedRevision);
     const waitingQuestions = input.waitingHandoff ? waitingHandoffQuestions(record, input) : undefined;
-    if (!waitingQuestions) this.assertIdle(record);
+    if (!waitingQuestions && !this.allowsReleasedContinuation(record.view.workspaceId, record.view.id, input)) this.assertIdle(record);
     input = continuationDraft(record, input);
     const connection = this.options.connections.get(input.connectionId);
     if (connection.enabled && connection.provider === 'qoder' && connection.status === 'expired') fail('qoder_platform_login_expired', qoderLoginExpiredMessage, 409);

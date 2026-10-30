@@ -370,6 +370,12 @@ test('retiring process exits with an unknown historical result only after exact 
   fs.writeFileSync(path.join(dataRoot,'release-other'),'yes');await until(()=>observer!.operations.conversations.read(scope,other.id),v=>v.run?.status==='completed');await until(async()=>isLive(old.pid),v=>!v);
   const sent=fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').trim().split('\n').map(v=>JSON.parse(v));assert.equal(sent.filter(v=>v.text==='uncertain-ended').length,1);assert.equal(sent.some(v=>v.text==='NEVER_REPLAY'),false);
   uncertain=await observer.operations.conversations.read(scope,uncertain.id);assert.equal(uncertain.run?.status,'unknown');assert.equal(uncertain.run?.resourcesReleased,true);assert.ok(uncertain.pendingSend);await observer.operations.conversations.cancelPendingSend(scope,uncertain.id,{expectedPendingRevision:uncertain.pendingSend!.revision});
+  uncertain=await observer.operations.conversations.observe(scope,uncertain.id);
+  const prior=uncertain.run!,recovery={expectedRevision:uncertain.revision,...choice,modelAccountIdentity:prior.modelAccountIdentity,model:prior.model,serviceTier:prior.serviceTier,reasoningEffort:prior.reasoningEffort,permissionMode:prior.permissionMode,continueRunId:prior.id,text:''};
+  const preview=await observer.operations.conversations.prepareSend(scope,uncertain.id,recovery);
+  const resumed=await observer.operations.conversations.send(scope,uncertain.id,{...recovery,previewToken:preview.token,clientRequestId:randomUUID()});
+  await until(()=>observer!.operations.conversations.read(scope,uncertain.id),v=>v.run?.id===resumed.run.id&&v.run.status==='completed');
+  const after=fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').trim().split('\n').map(v=>JSON.parse(v));assert.equal(after.filter(v=>v.text==='uncertain-ended').length,1);assert.equal(after.filter(v=>v.text.includes('用户明确请求恢复原对话')).length,1);
  }finally{fs.writeFileSync(path.join(dataRoot,'release-other'),'yes');fs.writeFileSync(path.join(dataRoot,'release-uncertain-resource'),'yes');await main?.close();await observer?.disconnect();await stopAgentProcess({dataRoot,profileId,mode:'stop-owned'}).catch(()=>{});fs.rmSync(root,{recursive:true,force:true});}
 });
 

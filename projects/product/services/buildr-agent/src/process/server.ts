@@ -229,7 +229,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       const startsWork = !name.startsWith('conversations.') || ['conversations.fork','conversations.startDraft','conversations.create','conversations.createChild','conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.generateTitle'].includes(name);
       if (startsWork && !accepting) throw new AgentServiceError('agent_process_switching', '执行后台正在采用新版，本次新操作尚未受理。', 503);
       if (['conversations.startDraft','conversations.send'].includes(name) && pending?.runtime.digest !== undefined && pending.runtime.digest !== options.runtime.digest) throw new AgentServiceError('agent_process_switching','新版尚未就绪，可以提交待发送内容。',503);
-      if (name === 'conversations.send' && await conversationBusy(input.args[0],input.args[1])) throw new AgentServiceError('agent_conversation_busy','上一轮仍未释放，可以提交待发送内容。',409);
+      if (name === 'conversations.send' && await conversationBusy(input.args[0],input.args[1]) && !service.allowsReleasedContinuation(input.args[0],input.args[1],input.args[2])) throw new AgentServiceError('agent_conversation_busy','上一轮仍未释放，可以提交待发送内容。',409);
       if (name === 'conversations.send' && new PendingSendRepository(path.join(options.dataRoot,'agent-service')).read(input.args[0],input.args[1])) throw new AgentServiceError('agent_pending_conflict','已有待发送内容，请等待、修改或取消。',409);
       let result: any = await dispatchOperation(service, input.operation, input.args);
       if (name === 'connections.disconnect' || name === 'models.accounts.disconnect') {

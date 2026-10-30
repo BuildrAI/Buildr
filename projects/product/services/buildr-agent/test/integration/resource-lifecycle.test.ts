@@ -7,6 +7,7 @@ import {randomUUID} from 'node:crypto';
 import {createAgentService} from '../../src/index.ts';
 import type {AgentExecutor,AgentRuntime,ExecutorObservation} from '../../src/contracts.ts';
 import type {ModelProvider} from '../../src/model-access/contracts.ts';
+import {ConversationRepository} from '../../src/persistence/conversation-repository.ts';
 
 async function fixture({proof=true,shared=false,stopFails=false,closeStartsWork=false,executionUnknown=false,modelHold=false}={}){
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-resource-lifecycle-'));
@@ -42,7 +43,7 @@ async function fixture({proof=true,shared=false,stopFails=false,closeStartsWork=
  await service.connections.connect('local',{expectedRevision:'unconfigured'});const account=await service.models.accounts.add({provider:'fixture'});const checked=await service.models.accounts.check(account.id);await service.models.accounts.preferences(account.id,{expectedRevision:checked.revision,models:[{id:'model',enabled:true},{id:'other-model',enabled:true}]});
  async function wait(predicate:()=>boolean){for(let n=0;n<300;n++){if(predicate())return;await new Promise(r=>setTimeout(r,5));}assert.fail('resource state did not settle');}
  async function start(text:string){const c=await service.conversations.create('workspace',{}),draft={expectedRevision:c.revision,connectionId:'local',modelAccountId:account.id,model:'model',text},preview=service.conversations.prepareSend('workspace',c.id,draft);service.conversations.send('workspace',c.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});await wait(()=>service.conversations.read('workspace',c.id).run?.accepted===true);if(text!=='hold')await wait(()=>!service.activity().reasons.some(r=>['execution','title','recovery','observation'].includes(r.kind)));return service.conversations.read('workspace',c.id);}
- return {service,contexts,sent,closed,start,wait,modelStarted:()=>modelStarted,finishModel:async()=>{releaseModel?.();await modelResponse;},opens:()=>opens,async close(){releaseModel?.();await modelResponse?.catch(()=>{});for(const state of contexts.values())state.finish?.();await service.close();fs.rmSync(root,{recursive:true,force:true});}};
+ return {root,service,contexts,sent,closed,start,wait,modelStarted:()=>modelStarted,finishModel:async()=>{releaseModel?.();await modelResponse;},opens:()=>opens,async close(){releaseModel?.();await modelResponse?.catch(()=>{});for(const state of contexts.values())state.finish?.();await service.close();fs.rmSync(root,{recursive:true,force:true});}};
 }
 
 test('unknown result can release an idle exact source without declaring success or replaying input',async()=>{
@@ -56,6 +57,32 @@ test('unknown result can release an idle exact source without declaring success 
   const draft={expectedRevision:chat.revision,connectionId:'local',text:'repeat'};assert.throws(()=>f.service.conversations.prepareSend('workspace',chat.id,draft),{code:'agent_conversation_busy'});
   const opens=f.opens();await f.service.conversations.stop('workspace',chat.id,{expectedRevision:chat.revision,runId:original,participantId:chat.run!.participantId,generation:chat.run!.generation});assert.equal(f.opens(),opens,'stopping already-released resources must not recreate a native owner');
   chat=f.service.conversations.read('workspace',chat.id);await f.service.conversations.update('workspace',chat.id,{expectedRevision:chat.revision,hidden:true});assert.equal(f.service.conversations.listAll(['workspace'],{activeOnly:true}).total,0);
+ }finally{await f.close();}
+});
+
+test('explicit same-selection continuation preserves released unknown work and cannot be queued or replayed',async()=>{
+ const f=await fixture({executionUnknown:true});try{
+  let chat=await f.start('uncertain');const original=chat.run!.id, originalExecution=f.contexts.get(chat.participants[0].contextId)!.execution;
+  const draft=()=>({expectedRevision:chat.revision,connectionId:'local',continueRunId:original,text:'',modelAccountId:chat.run!.modelAccountId,modelAccountIdentity:chat.run!.modelAccountIdentity,model:chat.run!.model,serviceTier:chat.run!.serviceTier,reasoningEffort:chat.run!.reasoningEffort,permissionMode:chat.run!.permissionMode});
+  assert.throws(()=>f.service.conversations.prepareSend('workspace',chat.id,draft()),{code:'agent_conversation_busy'});
+  f.contexts.get(chat.participants[0].contextId)!.idle=true;await f.service.releaseIdleSources();chat=f.service.conversations.read('workspace',chat.id);
+  assert.equal(chat.run!.status,'unknown');assert.equal(chat.run!.resourcesReleased,true);assert.equal(chat.run!.executionState,'unknown');
+  const input=draft();assert.equal(f.service.allowsReleasedContinuation('workspace',chat.id,input),true);
+  for(const changed of [{...input,continueRunId:'stale'},{...input,model:'other-model'},{...input,permissionMode:'full-access' as const},{...input,modelAccountIdentity:'other'}]){
+   assert.equal(f.service.allowsReleasedContinuation('workspace',chat.id,changed),false);
+   assert.throws(()=>f.service.conversations.prepareSend('workspace',chat.id,changed));
+  }
+  assert.throws(()=>f.service.conversations.queueSend('workspace',chat.id,{...input,clientRequestId:randomUUID()}),{code:'agent_continue_unavailable'});
+  const preview=f.service.conversations.prepareSend('workspace',chat.id,input);assert.equal(preview.fits,true);assert.deepEqual(f.sent,['uncertain']);
+  const submission={...input,previewToken:preview.token,clientRequestId:randomUUID()};
+  const next=f.service.conversations.send('workspace',chat.id,submission);const repeated=f.service.conversations.send('workspace',chat.id,submission);assert.equal(repeated.run.id,next.run.id);
+  await f.wait(()=>f.service.conversations.read('workspace',chat.id).run?.status==='completed');
+  assert.equal(f.sent.length,2);assert.notEqual(f.sent[1],'uncertain');assert.match(f.sent[1],/结果仍未知/);assert.match(f.sent[1],/unsettled/);
+  const stored=new ConversationRepository(path.join(f.root,'agent-service')).readConversation(chat.id)!;
+  assert.equal(stored.runOutcomes?.[original].status,'unknown');assert.equal(stored.attempts.at(-1)?.continuationOf,original);
+  assert.equal(stored.attempts.find(attempt=>attempt.runId===original)?.executionRef?.id,originalExecution);
+  assert.ok(stored.view.entries.some(entry=>entry.runId===original&&entry.kind==='tool'&&entry.status!=='completed'));
+  assert.equal(stored.view.entries.filter(entry=>entry.runId===next.run.id&&entry.role==='user').length,0);
  }finally{await f.close();}
 });
 

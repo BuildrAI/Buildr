@@ -122,6 +122,7 @@ export function createAgentService(options: AgentServiceOptions) {
     },
     resumeMetadata() { connections.freezeMetadata(false); models.freezeMetadata(false); startRefreshing(); },
     conversationBusy: (scope: string, id: string) => conversations.busy(scope, id),
+    allowsReleasedContinuation: (scope: string, id: string, input: SendDraft) => conversations.allowsReleasedContinuation(scope, id, input),
     retainsConversationSource: (scope:string,id:string) => conversations.retainsConversationSource(scope,id),
     releaseIdleSources: (owner?:{workspaceId:string;id:string}) => conversations.releaseIdleSources(owner),
     observeForRelease: (scope:string,id:string,runId:string,generation:string) => conversations.observeForRelease(scope,id,runId,generation),
