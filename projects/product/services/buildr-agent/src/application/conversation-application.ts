@@ -441,7 +441,7 @@ export class ConversationApplication {
     this.options.connections.assertProgramAvailable(raw.connectionId);
     let input = this.draft(raw); expected(record.view.revision, input.expectedRevision);
     const waitingQuestions = input.waitingHandoff ? waitingHandoffQuestions(record, input) : undefined;
-    if (!waitingQuestions && !this.allowsReleasedContinuation(record.view.workspaceId, record.view.id, input)) this.assertIdle(record);
+    if (!waitingQuestions && (!record.view.run || !this.allowsReleasedContinuation(record.view.workspaceId, record.view.id, input))) this.assertIdle(record);
     input = continuationDraft(record, input);
     const connection = this.options.connections.get(input.connectionId);
     if (connection.enabled && connection.provider === 'qoder' && connection.status === 'expired') fail('qoder_platform_login_expired', qoderLoginExpiredMessage, 409);
@@ -1174,7 +1174,7 @@ export class ConversationApplication {
   private async reconcile(workspaceId: string, id: string): Promise<ConversationView> {
     let record = this.load(workspaceId, id);
     if (record.view.run && this.retryWaits.has(record.view.run.id)) return this.view(record);
-    if (record.view.run && BUSY_STATES.has(record.view.run.status) && record.view.run.generation !== this.options.generation && this.options.generationAlive?.(record.view.run.generation)) return this.read(workspaceId, id);
+    if (record.view.run && !record.view.run.resourcesReleased && BUSY_STATES.has(record.view.run.status) && record.view.run.generation !== this.options.generation && this.options.generationAlive?.(record.view.run.generation)) return this.read(workspaceId, id);
     for (const saved of record.participants) {
       if (!saved.contextRef) continue;
       try {

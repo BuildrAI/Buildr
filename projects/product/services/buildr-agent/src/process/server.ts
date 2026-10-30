@@ -54,10 +54,10 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     if (!record || !live(record.identity.pid)) return;
     if (record.identity.profileId !== options.profileId) throw new AgentServiceError('agent_process_identity_mismatch', '执行所属配置域不匹配。', 409);
     if (generation) return record;
-    // The owning generation persists this acknowledgement only after closing the
-    // exact native resources. Historical contexts retained by that process do
-    // not own this ended round; unknown results and unfinished tools still wait.
-    if (run?.resourcesReleased && run.executionState === 'ended' && ['completed','failed','stopped'].includes(run.status) && !conversation!.requests.length && run.tools.every(tool=>tool.status==='completed')) return;
+    // This acknowledges release of the exact old controls, independently of
+    // operation results. A new observer still resumes the exact native context;
+    // native writer conflicts fail there rather than replaying uncertain work.
+    if (run?.resourcesReleased && !conversation!.requests.length) return;
     let state = await request(record.origin, record.token, '/conversation-state', { scope, id }, AbortSignal.timeout(3000)).catch(error => {
       if (error instanceof AgentServiceError) throw error;
       throw new AgentServiceError('agent_process_state_unconfirmed', '上一轮后台状态尚未确认，指令已保存并继续等待。', 503);
