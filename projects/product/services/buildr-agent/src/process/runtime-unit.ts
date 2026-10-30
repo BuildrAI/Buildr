@@ -35,10 +35,10 @@ export function prepareAgentRuntime(input: { dataRoot: string; packageRoot?: str
   if (fs.existsSync(path.join(packageRoot, 'node_modules'))) names.push(...files(path.join(packageRoot, 'node_modules')).map(name => path.join('node_modules', name)));
   names.push('package.json');
   const digest = digestTree(packageRoot, names.sort(), node, entry);
-  const compatibility = readPrivate<{ parallelCompatibility?: 1 | 2 }>(path.join(packageRoot, 'build/runtime-contracts.json'));
+  const compatibility = readPrivate<{ parallelCompatibility?: 1 | 2 | 3 }>(path.join(packageRoot, 'build/runtime-contracts.json'));
   const units = path.join(controlRoot(input.dataRoot), 'runtimes'); privateDirectory(units);
   const directory = path.join(units, digest);
-  const descriptor: AgentRuntimeUnit = { schemaVersion: 1, digest, directory, entry: path.join(directory, entry), node: path.join(directory, process.platform === 'win32' ? 'node.exe' : 'node'), ...([1,2].includes(compatibility?.parallelCompatibility ?? 0) ? { parallelCompatibility: compatibility!.parallelCompatibility } : {}) };
+  const descriptor: AgentRuntimeUnit = { schemaVersion: 1, digest, directory, entry: path.join(directory, entry), node: path.join(directory, process.platform === 'win32' ? 'node.exe' : 'node'), ...([1,2,3].includes(compatibility?.parallelCompatibility ?? 0) ? { parallelCompatibility: compatibility!.parallelCompatibility } : {}) };
   if (fs.existsSync(directory)) { validateAgentRuntime(input.dataRoot, descriptor); return descriptor; }
   const stage = path.join(units, '.stage-' + randomUUID()); privateDirectory(stage);
   try {
@@ -52,10 +52,10 @@ export function prepareAgentRuntime(input: { dataRoot: string; packageRoot?: str
 export function canRunParallel(current: AgentRuntimeUnit, target: AgentRuntimeUnit): boolean {
   // v1 shares storage but retains idle native writers. Its upgrade must drain
   // before a successor can resume the same native sessions.
-  if (current.parallelCompatibility !== 2 || target.parallelCompatibility !== 2) return false;
+  if (current.parallelCompatibility !== 3 || target.parallelCompatibility !== 3) return false;
   const left = readPrivate<{parallelCompatibility?:number;storageVersion:number}>(path.join(current.directory, 'build/runtime-contracts.json'));
   const right = readPrivate<{parallelCompatibility?:number;storageVersion:number}>(path.join(target.directory, 'build/runtime-contracts.json'));
-  return left?.parallelCompatibility === 2 && right?.parallelCompatibility === 2 && left.storageVersion === right.storageVersion;
+  return left?.parallelCompatibility === 3 && right?.parallelCompatibility === 3 && left.storageVersion === right.storageVersion;
 }
 export function validateAgentRuntime(dataRoot: string, runtime: AgentRuntimeUnit): void {
   const expected = path.join(controlRoot(dataRoot), 'runtimes', runtime.digest);

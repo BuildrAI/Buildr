@@ -1,14 +1,14 @@
 import { createHash } from 'node:crypto';
 import { summaryView, messageSignature, userActivityAt } from '../domain/conversation-activity.ts';
 import type { ConversationView } from '../contracts.ts';
-import { BUSY_STATES } from '../domain/agent-state.ts';
+import { BUSY_STATES, conversationRuns, unfinishedRun } from '../domain/agent-state.ts';
 import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
 import { AgentServiceError, fail } from '../domain/agent-state.ts';
 import type { StoredConnection, StoredConversation } from '../domain/agent-state.ts';
 
-export const CONVERSATION_SCHEMA_VERSION = 3;
+export const CONVERSATION_SCHEMA_VERSION = 4;
 const SCHEMA_VERSION = CONVERSATION_SCHEMA_VERSION;
 // 附件准备不等于开始；已发送或结果未知的尝试仍必须可发现。
 const HAS_WORK = "(json_array_length(json_extract(body,'$.view.entries'))>0 OR json_array_length(json_extract(body,'$.attempts'))>0 OR json_type(body,'$.view.run')='object' OR json_type(body,'$.view.childOf')='object')";
@@ -78,6 +78,7 @@ export class ConversationRepository {
             CREATE INDEX conversations_workspace_activity ON conversations(workspace_id,is_active DESC,user_at DESC,id DESC);
             PRAGMA user_version=3; COMMIT;`);
         }
+        if (write && row.user_version < 4) db.exec('PRAGMA user_version=4');
         if (write) {
           // Rebuildable acceleration, not a storage-version change. SQLite also
           // maintains this predicate when an older retained writer changes body.
@@ -153,12 +154,12 @@ export class ConversationRepository {
   }
   listPending(includeActive = false): StoredConversation[] {
     const db = this.open(false); if (!db) return [];
-    try { return (db.prepare('SELECT body FROM conversations ORDER BY updated_at DESC').all() as { body: string }[]).map(row => JSON.parse(row.body)).filter((record: StoredConversation) => record.view.requests.length || record.view.run?.tools.some(tool=>tool.status!=='completed') || (includeActive ? ['starting', 'running', 'waiting-approval', 'waiting-question', 'stopping', 'unknown', 'tools-active'] : ['unknown', 'tools-active']).includes(record.view.run?.status ?? '')); }
+    try { return (db.prepare('SELECT body FROM conversations ORDER BY updated_at DESC').all() as { body: string }[]).map(row => JSON.parse(row.body)).filter((record: StoredConversation) => record.view.requests.length || record.view.retainedRuns?.some(unfinishedRun) || record.view.run?.tools.some(tool=>tool.status!=='completed') || (includeActive ? ['starting', 'running', 'waiting-approval', 'waiting-question', 'stopping', 'unknown', 'tools-active'] : ['unknown', 'tools-active']).includes(record.view.run?.status ?? '')); }
     finally { db.close(); }
   }
   hasUnfinishedWork(): boolean {
     const db=this.open(false);if(!db)return false;
-    try{return !!db.prepare("SELECT 1 FROM conversations WHERE json_array_length(body,'$.view.requests')>0 OR json_extract(body,'$.view.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','unknown','tools-active') OR EXISTS(SELECT 1 FROM json_each(conversations.body,'$.view.run.tools') AS tool WHERE COALESCE(json_extract(tool.value,'$.status'),'unknown')<>'completed') OR json_extract(body,'$.view.titleState.status')='generating' LIMIT 1").get();}
+    try{return !!db.prepare("SELECT 1 FROM conversations WHERE EXISTS(SELECT 1 FROM json_each(conversations.body,'$.view.retainedRuns') AS retained WHERE json_extract(retained.value,'$.status') IN ('starting','running','waiting-approval','waiting-question','stopping','unknown','tools-active') OR EXISTS(SELECT 1 FROM json_each(retained.value,'$.tools') AS tool WHERE COALESCE(json_extract(tool.value,'$.status'),'unknown')<>'completed')) OR json_array_length(body,'$.view.requests')>0 OR json_extract(body,'$.view.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','unknown','tools-active') OR EXISTS(SELECT 1 FROM json_each(conversations.body,'$.view.run.tools') AS tool WHERE COALESCE(json_extract(tool.value,'$.status'),'unknown')<>'completed') OR json_extract(body,'$.view.titleState.status')='generating' LIMIT 1").get();}
     finally{db.close();}
   }
   listInterruptedTitles(generation:string): StoredConversation[] {
@@ -270,7 +271,7 @@ export class ConversationRepository {
       if(!Number.isSafeInteger(through)||through<0||through>row.activity_version)fail('agent_seen_invalid','查看位置不属于已观察的消息。',409);
       const view=JSON.parse(row.summary) as ConversationView;
       const seen=Math.max(row.seen_version,through);
-      const activity={version:row.activity_version,seenThrough:seen,updatedAt:view.activity!.updatedAt,active:BUSY_STATES.has(view.run?.status as never)||row.activity_version>seen};
+      const activity={version:row.activity_version,seenThrough:seen,updatedAt:view.activity!.updatedAt,active:conversationRuns(view).some(unfinishedRun)||row.activity_version>seen};
       if(seen!==row.seen_version){
         view.activity=activity;
         db.prepare('UPDATE conversations SET seen_version=?,is_active=?,summary=? WHERE id=?').run(seen,Number(activity.active),JSON.stringify(view),id);

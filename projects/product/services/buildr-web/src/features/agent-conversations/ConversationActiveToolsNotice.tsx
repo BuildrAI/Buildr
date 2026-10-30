@@ -7,6 +7,7 @@ import type { ConversationRun } from './types';
 type Props = {
   tools: ConversationRun['tools'];
   diagnostic?: string;
+  canContinue?: boolean;
   observing: boolean;
   stopping: boolean;
   onObserve(): void;
@@ -14,12 +15,12 @@ type Props = {
 };
 
 /** Model output ending is not proof that its commands have exited. */
-export function ConversationActiveToolsNotice({tools,diagnostic,observing,stopping,onObserve,onStop}: Props) {
+export function ConversationActiveToolsNotice({tools,diagnostic,canContinue,observing,stopping,onObserve,onStop}: Props) {
   const active=tools.filter(tool=>tool.status!=='completed');
   const [expanded,setExpanded]=useState(false),detailsId=useId();
   return <section className="ac-active-tools" data-run-status="tools-active" aria-label="尚未结束的命令">
     <div className="ac-active-tools-summary">
-      <span className="ac-active-tools-title" role="status"><ClockCircleOutlined aria-hidden/>{active.length?`仍有 ${active.length} 项命令未结束`:'命令结束状态待确认'}</span>
+      <span className="ac-active-tools-title" role="status"><ClockCircleOutlined aria-hidden/>{active.length?canContinue?`仍有 ${active.length} 项命令${active.some(tool=>tool.status==='unknown')?'待核对':'运行'}，可继续对话`:`仍有 ${active.length} 项命令未结束`:'命令结束状态待确认'}</span>
       <div className="ac-active-tools-actions">
         {active.length>0&&<Button type="text" size="small" aria-expanded={expanded} aria-controls={detailsId} onClick={()=>setExpanded(value=>!value)}>{expanded?'收起命令':'查看命令'}</Button>}
         <Button type="text" size="small" loading={observing} disabled={stopping} onClick={onObserve}>核对状态</Button>

@@ -8,9 +8,96 @@ import { DatabaseSync } from 'node:sqlite';
 import { createAgentService } from '../../../build/index.js';
 import { createCodexExecutor } from '../../../build/executors/codex/index.js';
 import type { ExecutorEvent, AgentRuntime, ContextRef, ExecutionRef } from '../../../src/contracts.ts';
+import { PendingSends } from '../../../src/process/pending-sends.ts';
 
 const source = readFileSync(new URL('./fixtures/codex-cli.mjs', import.meta.url), 'utf8');
 async function eventually(condition: () => unknown, timeout = 1000) { const until = Date.now() + timeout; while (!condition()) { if (Date.now() > until) throw new Error('condition timeout'); await new Promise(resolve => setTimeout(resolve, 5)); } }
+
+test('normal completion retains command control across turns without letting a late old receipt end the new turn', async () => {
+  const root=await mkdtemp(join(tmpdir(),'buildr-codex-retained-'));let runtime:AgentRuntime|undefined;
+  try {
+    const executable=join(root,'codex.mjs');await writeFile(executable,source);
+    runtime=await createCodexExecutor().open({connectionId:'codex',configRoot:root,executable,environment:{PATH:process.env.PATH??''}});
+    const contextRef=await runtime.createContext({cwd:root}),first:ExecutorEvent[]=[],second:ExecutorEvent[]=[];
+    await runtime.send({contextRef,cwd:root,text:'[retain-command]',images:[],clientRequestId:'first',onEvent:event=>first.push(event)});
+    const accepted=first.find(event=>event.type==='accepted');assert.equal(accepted?.type,'accepted');
+    const retained=await runtime.observe({contextRef,executionRef:accepted.executionRef});
+    assert.equal(retained.canContinue,true);assert.equal(retained.status,'tools-active');
+    assert.equal(await runtime.canRelease!({contextRef,executionRef:accepted.executionRef}),false,'input readiness cannot release retained native command control');
+    await assert.rejects(runtime.send({contextRef,cwd:root,text:'[reject-start]',images:[],clientRequestId:'rejected',onEvent(){}}),/agent_native_request_failed/);
+    assert.equal((await runtime.observe({contextRef,executionRef:accepted.executionRef})).canContinue,true,'a rejected next turn cannot discard the previous command control');
+    const sending=runtime.send({contextRef,cwd:root,text:'new requirement',images:[],clientRequestId:'second',onEvent:event=>second.push(event)});
+    sending.catch(()=>{});
+    await eventually(()=>second.some(event=>event.type==='request'));
+    const next=second.find(event=>event.type==='accepted');assert.equal(next?.type,'accepted');
+    assert.notEqual(next.executionRef.id,accepted.executionRef.id);
+    const stopped=await runtime.stop({contextRef,executionRef:next.executionRef,toolId:'command-turn-0'});
+    assert.equal(stopped.status,'waiting','stopping an old command must not interrupt the new model wait');
+    await eventually(()=>second.some(event=>event.type==='item'&&event.item.id==='command-turn-0'&&event.item.status==='completed'));
+    const receipt=second.find(event=>event.type==='item'&&event.item.id==='command-turn-0');assert.equal(receipt?.type,'item');
+    assert.equal(receipt.item.executionId,accepted.executionRef.id);
+    assert.equal(second.some(event=>event.type==='completed'),false);
+    assert.equal((await runtime.readHistory({contextRef,cwd:root})).filter(item=>item.role==='user').length,2);
+    await runtime.stop({contextRef,executionRef:next.executionRef});await sending;
+  } finally { await runtime?.close();await rm(root,{recursive:true,force:true}); }
+});
+
+test('unknown observations and unconfirmed whole-run stops revoke continuation without guessing that commands ended', async () => {
+  const root=await mkdtemp(join(tmpdir(),'buildr-codex-retained-unknown-'));let runtime:AgentRuntime|undefined;
+  try {
+    const executable=join(root,'codex.mjs');await writeFile(executable,source);
+    runtime=await createCodexExecutor().open({connectionId:'codex',configRoot:root,executable,environment:{PATH:process.env.PATH??''}});
+    const contextRef=await runtime.createContext({cwd:root});
+    await runtime.send({contextRef,cwd:root,text:'[retain-command]',images:[],clientRequestId:'first',onEvent(){}});
+    await writeFile(join(root,'codex-home/fail-terminal-observation'),'fail');
+    const unknown=await runtime.observe({contextRef});
+    assert.equal(unknown.canContinue,false);assert.equal(unknown.status,'unknown');
+    assert.equal(unknown.tools[0]?.status,'unknown');assert.equal(unknown.tools[0]?.canStop,false);
+    await rm(join(root,'codex-home/fail-terminal-observation'));
+    const live=await runtime.observe({contextRef});assert.equal(live.canContinue,true);
+    await writeFile(join(root,'codex-home/fail-terminal-stop'),'fail');
+    const stopping=await runtime.stop({contextRef,executionRef:live.executionRef!});
+    assert.equal(stopping.status,'tools-active');assert.equal(stopping.canContinue,false);
+    assert.equal((await runtime.observe({contextRef})).canContinue,false,'later live command observation cannot undo the user stop');
+    await rm(join(root,'codex-home/fail-terminal-stop'));
+  } finally { await runtime?.close();await rm(root,{recursive:true,force:true}); }
+});
+
+test('queued new-context input dispatches once while old command resources and receipt ownership survive', async () => {
+  const root=await mkdtemp(join(tmpdir(),'buildr-codex-queued-retained-'));
+  const dataRoot=join(root,'profile');let service:ReturnType<typeof createAgentService>|undefined;
+  try {
+    const executable=join(root,'codex.mjs');await writeFile(executable,source);
+    service=createAgentService({dataRoot,executors:[createCodexExecutor()],modelProviders:[],environment:{PATH:process.env.PATH??''},resolveWorkspace(){return {rootPath:root};}});
+    await service.connections.connect('codex',{expectedRevision:service.connections.read('codex').revision,executable});
+    const chat=await service.conversations.create('workspace',{}),id=chat.id;
+    const draft={expectedRevision:chat.revision,connectionId:'codex',text:'[retain-command]'};
+    const preview=service.conversations.prepareSend('workspace',id,draft);
+    service.conversations.send('workspace',id,{...draft,previewToken:preview.token,clientRequestId:'first'});
+    await eventually(()=>service!.conversations.read('workspace',id).run?.canContinue && !service!.conversationInputBusy('workspace',id));
+    const before=service.conversations.read('workspace',id),ownerRunId=before.run!.id;
+    assert.equal(service.conversationBusy('workspace',id),true);
+    assert.equal(service.conversationInputBusy('workspace',id),false);
+    assert.equal(service!.conversations.prepareSend('workspace',id,{expectedRevision:before.revision,connectionId:'codex',text:'change permissions',permissionMode:'full-access'}).fits,true);
+    service.conversations.queueSend('workspace',id,{expectedRevision:before.revision,connectionId:'codex',text:'[finish]',clientRequestId:'queued-next'});
+    const pump=new PendingSends({dataRoot,service,active:()=>true,generationAlive:()=>true,conversationBusy:async(scope,id)=>service!.conversationInputBusy(scope,id)});
+    await pump.pump();
+    await eventually(()=>service!.conversations.read('workspace',id).run?.id!==ownerRunId && service!.conversations.read('workspace',id).run?.status==='completed');
+    await pump.pump();
+    const after=service.conversations.read('workspace',id);
+    assert.equal(after.pendingSend,undefined);assert.equal(after.entries.filter(entry=>entry.role==='user'&&entry.text==='[finish]').length,1);
+    const state=JSON.parse(await readFile(join(dataRoot,'agent-service/connections/codex/codex-home/state.json'),'utf8'));
+    const contexts=(Object.values(state) as any[]).filter(context=>context.turns.some((turn:any)=>turn.items.some((item:any)=>['first','queued-next'].includes(item.id))));
+    assert.equal(contexts.length,2);assert.equal(contexts.flatMap(context=>context.turns).filter((turn:any)=>turn.items.some((item:any)=>item.id==='queued-next')).length,1);
+    const control=service.conversations.read('workspace',id),latest=control.run!,retained=control.retainedRuns!.find(run=>run.id===ownerRunId)!;
+    await service.conversations.stop('workspace',id,{expectedRevision:control.revision,runId:retained.id,participantId:retained.participantId,generation:retained.generation,toolId:'command-turn-0'});
+    await eventually(()=>service!.conversations.read('workspace',id).entries.some(entry=>entry.kind==='tool'&&entry.runId===ownerRunId&&entry.status==='completed'));
+    const settled=service.conversations.read('workspace',id);
+    assert.equal(settled.entries.filter(entry=>entry.kind==='tool'&&entry.runId===latest.id).length,0,'old receipt must not become a new tool execution');
+    assert.equal(settled.run?.status,'completed');
+  } finally { await service?.close();await rm(root,{recursive:true,force:true}); }
+});
+
 test('Codex supplementary text and local images bind to the exact active turn and client input identity', async () => {
   const root = await mkdtemp(join(tmpdir(), 'buildr-codex-supplement-')); let runtime: AgentRuntime | undefined;
   try {

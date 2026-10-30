@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { ConversationView } from '../contracts.ts';
-import { BUSY_STATES, type StoredConversation } from './agent-state.ts';
+import { BUSY_STATES, unfinishedRun, type StoredConversation } from './agent-state.ts';
 
 /** Only meaningful visible message changes advance activity, including streamed additions. */
 export function messageSignature(record: StoredConversation): string {
@@ -22,8 +22,9 @@ export function summaryView(record: StoredConversation, version: number, seenThr
   const view = record.view;
   return {
     ...view, titleState:view.titleState??{status:'unknown'}, entries: [], requests: [], nextEntryCursor: undefined,
+    retainedRuns:view.retainedRuns?.map(run=>({...run,tools:[]})),
     run: view.run ? {...view.run, tools: []} : undefined,
     participants: record.participants.map(p => ({id:p.id,provider:p.provider as ConversationView['participants'][number]['provider'],connectionId:p.connectionId,label:p.label,model:p.modelId,modelAccountId:p.modelAccountId,deliveredThrough:p.deliveredThrough,contextId:''})),
-    activity: {version, seenThrough, updatedAt, active: !(view.hidden && view.run?.executionState === 'ended' && view.run.resourcesReleased && view.run.status === 'unknown') && (BUSY_STATES.has(view.run?.status as never) || view.requests.length > 0 || version > seenThrough)},
+    activity: {version, seenThrough, updatedAt, active: (Boolean(view.retainedRuns?.some(unfinishedRun)) || !(view.hidden && view.run?.executionState === 'ended' && view.run.resourcesReleased && view.run.status === 'unknown')) && (BUSY_STATES.has(view.run?.status as never) || view.retainedRuns?.some(unfinishedRun) || view.requests.length > 0 || version > seenThrough)},
   };
 }

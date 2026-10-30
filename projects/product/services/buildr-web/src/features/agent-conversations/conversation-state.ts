@@ -2,8 +2,9 @@ import type { ConversationView, ConversationEntry, ConversationEvent, Conversati
 
 export function conversationRecoveryAction(conversation: ConversationView | null): {kind:'recover'|'observe';label:string} | null {
   const run = conversation?.run; if (!conversation || !run) return null;
+  if (run.status === 'tools-active' && run.canContinue) return null;
   if (run.status === 'unknown' || run.status === 'tools-active' || ['failed','stopped','completed'].includes(run.status) && run.tools.some(tool => tool.status !== 'completed')) return {kind:'observe',label:'核对状态'};
-  if (executionLocked(run) || conversation.requests.length || run.tools.some(tool => tool.status !== 'completed')) return null;
+  if (executionLocked(run) || currentConversationRequests(conversation).length || run.tools.some(tool => tool.status !== 'completed')) return null;
   const replied = conversation.entries.some(entry => entry.role === 'assistant' && entry.kind === 'message' && entry.text.trim() && (entry.runId === run.id || !entry.runId && entry.createdAt >= run.startedAt));
   if (!['failed','stopped','completed'].includes(run.status) || run.status === 'completed' && replied) return null;
   return {kind:'recover',label:run.accepted?'继续':'重试'};
@@ -15,13 +16,21 @@ export function conversationContinuationText(conversation: ConversationView | nu
   return '继续当前工作。请核对已有对话、尚未交付的用户要求和当前成果，接着完成未完成的目标；不要重复执行已完成的操作，不扩大原有授权。';
 }
 
+/** Only an unchanged, live execution can receive a supplement. Every other
+ * ordinary input starts a new turn; old work is not an input admission gate. */
+export function canSupplementConversation(conversation:ConversationView|null,choice:{connectionId?:string;model?:string;modelAccountId?:string;serviceTier?:string;permissionMode?:string;reasoningEffort?:string},supported:boolean):boolean {
+  const run=conversation?.run,participant=conversation?.participants.find(value=>value.id===run?.participantId);
+  return Boolean(supported&&run?.accepted&&run.status==='running'&&participant?.connectionId===choice.connectionId&&run.model===choice.model&&run.modelAccountId===choice.modelAccountId&&run.serviceTier===choice.serviceTier&&(run.permissionMode??'default')===(choice.permissionMode??'default')&&run.reasoningEffort===choice.reasoningEffort);
+}
+
 export function executionLocked(run?: ConversationRun): boolean {
+  if (run?.status === 'tools-active' && run.canContinue) return false;
   return Boolean(run && ['starting', 'running', 'waiting-approval', 'waiting-question', 'stopping', 'tools-active', 'unknown'].includes(run.status));
 }
 /** Execution completion, not transport health or final-reply wording, ends observation. */
 export function needsConversationObservation(conversation: ConversationView | null): boolean {
   if (!conversation) return false;
-  if (conversation.pendingSend || conversation.requests.length) return true;
+  if (conversation.pendingSend || conversation.requests.length || conversation.retainedRuns?.some(run=>executionLocked(run)||run.tools.some(tool=>tool.status!=='completed'))) return true;
   const run = conversation.run;
   return Boolean(run && (executionLocked(run) || run.tools.some(tool => tool.status !== 'completed') ||
     run.executionState === 'active' || run.executionState === 'unknown'));
@@ -41,6 +50,7 @@ export function canStopConversationTool(tool:ConversationRun['tools'][number]):b
   return tool.canStop===true&&tool.status!=='completed';
 }
 export function needsAttention(run?: ConversationRun): boolean {
+  if (run?.status === 'tools-active' && run.canContinue) return false;
   return Boolean(run && ['waiting-approval', 'waiting-question', 'tools-active', 'unknown'].includes(run.status));
 }
 export function canGenerateConversationTitle(conversation:ConversationView|null):boolean {

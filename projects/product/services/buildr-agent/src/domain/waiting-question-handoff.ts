@@ -42,7 +42,7 @@ export function waitingHandoffQuestions(record: StoredConversation, draft: SendD
     if (!sameSelection || !draft.text.trim() || draft.continueRunId) fail('agent_discussion_invalid', '先讨论需保持原执行组合并填写要讨论的内容。', 409);
   } else if (participant?.connectionId === draft.connectionId && run.model === draft.model && run.modelAccountId === draft.modelAccountId && run.serviceTier === draft.serviceTier) fail('agent_handoff_unchanged', '当前仍选择原执行组合，请直接回答原问题，或选择其他模型后交接。', 409);
   if (record.view.entries.some(entry => intent.requestIds.some(id => entry.id === 'reply-' + id || entry.id.startsWith('reply-' + id + '-')))) fail('agent_handoff_answered', '原问题已有答复或答复结果待确认，交接内容保留，请先核对原执行。', 409);
-  const requests = record.view.requests;
+  const requests = record.view.requests.filter(request=>request.runId===run.id);
   const questions = saved ?? requests;
   if (!questions.length || questions.length !== intent.requestIds.length || questions.some(question => question.kind !== 'question' || !intent.requestIds.includes(question.id) || question.runId !== run.id || question.participantId !== run.participantId || question.generation !== run.generation)) fail('agent_handoff_stale', '原问题集合已变化，不能交接此旧请求，内容已保留。', 409);
   if (run.status === 'waiting-question') {

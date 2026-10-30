@@ -52,6 +52,9 @@ export function safeDiagnostic(error: unknown): string {
 }
 export const BUSY_STATES: ReadonlySet<RunStatus> = new Set(['starting', 'running', 'waiting-approval', 'waiting-question', 'stopping', 'tools-active', 'unknown']);
 
+export const conversationRuns = (view: Pick<ConversationView, 'run' | 'retainedRuns'>): RunView[] => [...(view.run ? [view.run] : []), ...(view.retainedRuns ?? [])];
+export const unfinishedRun = (run: RunView): boolean => BUSY_STATES.has(run.status) || run.tools.some(tool => tool.status !== 'completed');
+
 export interface StoredConnection {
   programSource?: string;
   view: ConnectionView;

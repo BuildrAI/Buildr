@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { conversationControlInstruction } from './conversation-control.ts';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
@@ -26,7 +27,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
   let abortStart: (() => Promise<void>) | undefined;
   try {
   const hosts = new AgentHostRegistry();
-  const service = createAgentService({ ...options.serviceOptions, dataRoot: options.dataRoot, legacySourceId: options.legacySourceId, autoContinueInterrupted: options.autoContinueInterrupted, host: hosts, generationAlive: generation => generationAlive(options.dataRoot, generation) });
+  const service = createAgentService({ ...options.serviceOptions, dataRoot: options.dataRoot, legacySourceId: options.legacySourceId, autoContinueInterrupted: options.autoContinueInterrupted, host: hosts, conversationControl:(scope,id)=>conversationControlInstruction({dataRoot:options.dataRoot,profileId:options.profileId,sourceId:executionScopeRef(scope,options.legacySourceId).sourceId,scope,conversationId:id},options.runtime.node), generationAlive: generation => generationAlive(options.dataRoot, generation) });
   const repository = new ConversationRepository(path.join(options.dataRoot, 'agent-service'));
   service.models.startRefreshing();
   abortStart = () => service.close();
@@ -71,8 +72,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     return state.busy ? record : undefined;
   }
   async function conversationBusy(scope: string, id: string): Promise<boolean> {
-    if (await recipient(scope, id)) return true;
-    return service.conversationBusy(scope, id);
+    return service.conversationInputBusy(scope, id);
   }
   async function forward(record: ProcessRecord, route: string, input: any): Promise<any> {
     const visited: string[] = input.forwarded ?? [];
@@ -80,28 +80,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     try { return await request(record.origin, record.token, route, {...input,forwarded:[...visited,identity.instanceId]}); }
     catch (error) { if (error instanceof AgentServiceError) throw error; throw new AgentServiceError('agent_operation_result_unknown', '原后台操作结果尚待核对，不会自动重发。', 503); }
   }
-  const sends = new PendingSends({dataRoot:options.dataRoot,service,active:()=>!closing&&accepting&&!retiring&&(!pending||pending.runtime.digest===options.runtime.digest)&&readProcessRecord(options.dataRoot)?.identity.instanceId===instanceId,generationAlive:generation=>generationAlive(options.dataRoot,generation),conversationBusy,stopWaitingHandoff:async(row,alreadyRequested)=>{
-    service.checkWaitingHandoff(row.scope,row.conversationId,row.id);
-    const view=service.conversations.read(row.scope,row.conversationId), run=view.run!;
-    if(['stopped','failed','completed'].includes(run.status)&&!view.requests.length&&run.tools.every(tool=>tool.status==='completed'))return;
-    const stop=run.status==='waiting-question'&&!alreadyRequested;
-    const operation=stop?'conversations.stop':'conversations.observe';
-    const control={expectedRevision:view.revision,runId:run.id,participantId:run.participantId,generation:run.generation};
-    const target=await recipient(row.scope,row.conversationId,run.generation);
-    try {
-      if(target)await forward(target,'/operations',{contract:AGENT_EXECUTION_CONTRACTS.operations,sourceId:executionScopeRef(row.scope,options.legacySourceId).sourceId,operation,args:stop?[row.scope,row.conversationId,control]:[row.scope,row.conversationId]});
-      else if(stop)await service.conversations.stop(row.scope,row.conversationId,control);
-      else await service.conversations.observe(row.scope,row.conversationId);
-    }catch(error){
-      const latest=service.conversations.read(row.scope,row.conversationId).run;
-      if(latest?.id===run.id&&['unknown','stopping'].includes(latest.status))throw new AgentServiceError('agent_process_state_unconfirmed',latest.diagnostic??'停止尚未确认，交接内容已保存，正在核对原执行。',409);
-      throw error;
-    }
-    service.checkWaitingHandoff(row.scope,row.conversationId,row.id);
-    const latest=service.conversations.read(row.scope,row.conversationId).run!;
-    if(latest.status==='waiting-question')throw new AgentServiceError('agent_handoff_stop_unconfirmed','原轮仍在等待回答，尚未确认停止。交接内容已保留，可修改后重试或取消。',409);
-    if(latest.status==='unknown')throw new AgentServiceError('agent_process_state_unconfirmed',latest.diagnostic??'原轮停止结果尚未确认，正在核对，未发送给新模型。',409);
-  }});
+  const sends = new PendingSends({dataRoot:options.dataRoot,service,active:()=>!closing&&accepting&&!retiring&&(!pending||pending.runtime.digest===options.runtime.digest)&&readProcessRecord(options.dataRoot)?.identity.instanceId===instanceId,generationAlive:generation=>generationAlive(options.dataRoot,generation),conversationBusy});
   function scope(sourceId: string, key: unknown): void {
     if (typeof key !== 'string' || !key || executionScopeRef(key, options.legacySourceId).sourceId !== sourceId) throw new AgentServiceError('agent_host_source_mismatch', '执行范围不属于当前接入来源。', 409);
   }
@@ -206,10 +185,12 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       validateOperation(input.operation, input.args);
       const name: string = input.operation;
       let target: ProcessRecord | undefined;
+      let controlGeneration:string|undefined;
       const perConversation = name.startsWith('conversations.') && !/Draft/.test(name) && typeof input.args[0] === 'string' && typeof input.args[1] === 'string';
       if (perConversation && !['conversations.fork','conversations.createChild','conversations.listChildren','conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.queueSend','conversations.cancelPendingSend'].includes(name)) {
-        const control = ['conversations.stop','conversations.supplement'].includes(name) ? input.args[2] : name === 'conversations.reply' ? input.args[3] : undefined;
-        target = await recipient(input.args[0], input.args[1], control?.generation);
+        const control = ['conversations.stop','conversations.observeRun','conversations.supplement'].includes(name) ? input.args[2] : name === 'conversations.reply' ? input.args[3] : undefined;
+        controlGeneration=control?.generation;
+        target = await recipient(input.args[0], input.args[1], controlGeneration);
       }
       if (target && name==='conversations.observe') {
         const run=repository.readConversation(input.args[1])?.view.run;
@@ -222,7 +203,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       const current = readProcessRecord(options.dataRoot);
       if (!target && retiring && current && current.identity.instanceId !== instanceId) {
         const run = perConversation ? repository.readConversation(input.args[1])?.view.run : undefined;
-        const ownsRun = run?.generation === identity.generation;
+        const ownsRun = controlGeneration ? controlGeneration === identity.generation : run?.generation === identity.generation;
         if (!ownsRun || ['conversations.fork','conversations.createChild','conversations.listChildren','conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.queueSend','conversations.cancelPendingSend'].includes(name)) target = current;
       }
       if (target) { json(res, 200, await forward(target, '/operations', input)); return; }

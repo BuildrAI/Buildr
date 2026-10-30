@@ -354,3 +354,19 @@ test('optional index construction cannot make an unrelated damaged history block
     assert.equal(check.prepare('SELECT body FROM conversations WHERE id=?').get(damaged.view.id)!.body,'damaged historical JSON','unrelated content stays untouched');
   }finally{check.close();}
 });
+
+test('retained work remains discoverable after the latest response is read and cannot be hidden as a released current outcome',t=>{
+ const repo=fixture(t),r=record('retained');
+ message(r,'input','new instruction');
+ const at=r.view.updatedAt;
+ r.view.run={id:'new',participantId:'new-p',provider:'codex',generation:'g',status:'completed',accepted:true,tools:[],startedAt:at,updatedAt:at};
+ r.view.retainedRuns=[{...r.view.run,id:'old',participantId:'old-p',status:'unknown',tools:[{id:'helper',label:'helper',status:'unknown'}]}];
+ repo.saveConversation(r);save(repo,r,row=>message(row,'reply','done','message','assistant'));
+ assert.equal(repo.markSeen('w1',r.view.id,r.view.activity!.version).active,true);
+ assert.equal(repo.hasUnfinishedWork(),true);assert.equal(repo.listPending(true)[0]?.view.retainedRuns?.[0]?.id,'old');
+ assert.equal(repo.querySummaries(['w1'],{limit:10,activeOnly:true}).total,1);
+ save(repo,r,row=>{row.view.hidden=true;Object.assign(row.view.run!,{status:'unknown',executionState:'ended',resourcesReleased:true});});
+ assert.equal(repo.readConversation(r.view.id)?.view.activity?.active,true,'hiding the latest released result cannot hide unfinished prior work');
+ save(repo,r,row=>{row.view.run!.status='stopped';Object.assign(row.view.retainedRuns![0],{status:'stopped',executionState:'ended',tools:[]});});
+ assert.equal(repo.hasUnfinishedWork(),false);
+});

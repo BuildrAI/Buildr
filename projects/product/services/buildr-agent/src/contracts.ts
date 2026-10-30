@@ -93,6 +93,8 @@ export interface ExecutorRequest {
   questions?: Array<{ id: string; label: string; options?: Array<{ id: string; label: string; description?: string }>; multiple?: boolean; allowOther?: boolean }>;
 }
 export interface ExecutorObservation {
+  /** The native model ended normally; retained commands remain controllable in this context. */
+  canContinue?: boolean;
   /** Native SDK background work, distinct from missing historical tool results. */
   backgroundWork?: boolean;
   status: 'idle' | 'running' | 'waiting' | 'stopped' | 'tools-active' | 'unknown';
@@ -293,6 +295,8 @@ export interface ConversationEntry {
   createdAt: string;
 }
 export interface RunView {
+  /** Same-context input is allowed; this does not release command control resources. */
+  canContinue?: boolean;
   /** Physical execution/resource facts never imply that the user's goal succeeded. */
   executionState?: 'active' | 'ended' | 'unknown';
   /** This backend no longer holds the original control resources; independent command outcomes may remain unknown. */
@@ -349,6 +353,8 @@ export interface ConversationView {
   participants: ParticipantView[];
   entries: ConversationEntry[];
   run?: RunView;
+  /** Unfinished prior executions retain their original context and owner. */
+  retainedRuns?: RunView[];
   requests: PendingRequestView[];
   nextEntryCursor?: number;
 }
@@ -452,6 +458,8 @@ export interface ServiceEvent {
   payload: { conversation?: ConversationView; connection?: ConnectionView };
 }
 export interface AgentServiceOptions {
+  /** Process-owned local control instructions; never includes authentication secrets. */
+  conversationControl?: (scope:string,id:string)=>string;
   /** Other accurately discovered process generations must not be recovered. */
   generationAlive?: (generation: string) => boolean;
   /** Trusted host profile only; released installations default to manual continuation. */

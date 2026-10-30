@@ -19,7 +19,7 @@ const capabilities = { interaction: { policy: interactionPolicy.version, nonBloc
 // Work-thread overrides also apply on resume; auxiliary title/summary threads stay tool-free.
 const conversationInteraction = {
   config: { features: { default_mode_request_user_input: true } },
-  developerInstructions: interactionPolicy.instructions + '\n必要提问使用 request_user_input。',
+  developerInstructions: interactionPolicy.instructions + '\n必要提问使用 request_user_input。收到新要求时按最新指示调整工作；上轮保留的辅助命令仍可接续，需要的继续使用，不再需要的安全关闭并核对结果。不因命令等待输入而要求用户另开对话；不强停结果未知的业务操作，不重放已生效或结果未知的操作。',
 };
 function codexEffort(value?: string): string | undefined {
   if (value === 'off') return 'none';
@@ -41,7 +41,7 @@ function codexGatewayCatalog(gateway: ExecutorGateway) {
     truncation_policy: { mode: 'tokens', limit: 10000 },
   })) };
 }
-interface ActiveTurn { contextId: string; id: string; input: ExecutorSendInput; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown'; processId?: string }>; pending: Map<string, { nativeId: string | number; method: string; params: any }>; texts: Map<string, string>; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string; done: () => void; reject: (error: Error) => void; accepted: boolean; buffered: RpcMessage[] }
+interface ActiveTurn { contextId: string; id: string; input: ExecutorSendInput; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown'; processId?: string; executionId: string }>; pending: Map<string, { nativeId: string | number; method: string; params: any }>; texts: Map<string, string>; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string; done: () => void; reject: (error: Error) => void; accepted: boolean; buffered: RpcMessage[] }
 export function createCodexExecutor(): AgentExecutor {
   return { descriptor: { id: 'codex', label: 'Codex', capabilities }, async open(options) { return await CodexRuntime.open(options); } };
 }
@@ -237,19 +237,21 @@ class CodexRuntime implements AgentRuntime {
       input = { ...input, model: gatewayModel(this.gateway, input.model).id, reasoningEffort: codexEffort(effort) };
     }
     if (this.turns.get(input.contextRef.id)?.terminal === undefined && this.turns.has(input.contextRef.id)) throw new Error('agent_native_turn_active');
+    const previous = this.turns.get(input.contextRef.id);
     let done!: () => void; let reject!: (error: Error) => void;
     const ended = new Promise<void>((resolve, fail) => { done = resolve; reject = fail; }); ended.catch(() => {});
-    const turn: ActiveTurn = { contextId: input.contextRef.id, id: '', input, tools: new Map(), pending: new Map(), texts: new Map(), done, reject, accepted: false, buffered: [] };
+    const turn: ActiveTurn = { contextId: input.contextRef.id, id: '', input, tools: new Map([...(previous?.tools ?? [])].filter(([,tool]) => tool.status !== 'completed')), pending: new Map(), texts: new Map(), done, reject, accepted: false, buffered: [] };
     this.turns.set(turn.contextId, turn);
     try {
       const response = await this.rpc.call('turn/start', { threadId: turn.contextId, clientUserMessageId: input.clientRequestId, input: [{ type: 'text', text: input.text }, ...input.images.map(image => ({ type: 'localImage', path: image.path }))], ...(input.model ? { model: input.model } : {}), effort: input.reasoningEffort ?? null, ...codexTurnPermissions(input.permissionMode, input.cwd) });
       if (!response.turn?.id) throw new Error('codex_turn_identity_missing');
       turn.id = response.turn.id;
-      input.onEvent({ type: 'accepted', executionRef: this.rpc.executionRef(turn.id, turn.contextId, this.bindingIdentity), inputItemId: response.turn.items?.find((item: any) => item.type === 'userMessage')?.id });
+      input.onEvent({ type: 'accepted', executionRef: this.rpc.executionRef(turn.id, turn.contextId, this.bindingIdentity, turn.tools.size > 0), inputItemId: response.turn.items?.find((item: any) => item.type === 'userMessage')?.id });
       turn.accepted = true;
+      if (turn.tools.size) input.onEvent({ type: 'observation', observation: this.activeObservation(turn) });
       for (const message of turn.buffered.splice(0)) this.turnMessage(turn, message);
       await ended;
-    } catch (error) { if (!turn.accepted) { this.turns.delete(turn.contextId); } throw error; }
+    } catch (error) { if (!turn.accepted) { if (previous) this.turns.set(turn.contextId, previous); else this.turns.delete(turn.contextId); } throw error; }
   }
   async supplement(input: ExecutorSupplementInput): Promise<ExecutorInputReceipt> {
     this.reference(input.contextRef, input.cwd);
@@ -284,7 +286,17 @@ class CodexRuntime implements AgentRuntime {
     const p = message.params ?? {}; const emit = turn.input.onEvent;
     if(message.method==='thread/tokenUsage/updated'){const usage=p.tokenUsage;const used=usage?.last?.totalTokens;const window=usage?.modelContextWindow;if(Number.isSafeInteger(used)&&used>=0)emit({type:'context-usage',usedTokens:used,...(Number.isSafeInteger(window)&&window>0?{windowTokens:window}:{})});return;}
     if (message.method === 'thread/name/updated') { if (typeof p.threadName === 'string') emit({ type: 'title', title: p.threadName }); return; }
-    if (p.turnId && p.turnId !== turn.id || p.turn?.id && p.turn.id !== turn.id) return;
+    if (p.turnId && p.turnId !== turn.id || p.turn?.id && p.turn.id !== turn.id) {
+      // A prior command belongs to the same native context, not to this model
+      // turn. Keep its exact receipt without letting an old turn end this one.
+      const tool = p.item?.id ? turn.tools.get(p.item.id) : undefined;
+      if (message.method === 'item/completed' && tool?.processId && tool.executionId === p.turnId) {
+        tool.status = 'completed';
+        for (const item of codexItem(p.item, tool.executionId, 'completed')) emit({ type: 'item', item });
+        emit({ type: 'observation', observation: this.activeObservation(turn) });
+      }
+      return;
+    }
     if (message.method === 'serverRequest/resolved') {
       if ((typeof p.requestId === 'string' || typeof p.requestId === 'number') && turn.pending.delete(String(p.requestId))) {
         emit({ type: 'request-resolved', requestId: String(p.requestId) });
@@ -304,8 +316,8 @@ class CodexRuntime implements AgentRuntime {
     }
     if (message.method === 'item/started' || message.method === 'item/completed') {
       const item = p.item;
-      if (item?.type === 'commandExecution') turn.tools.set(item.id, { id: item.id, label: String(item.command ?? '命令'), status: message.method === 'item/completed' ? 'completed' : 'running', processId: item.processId });
-      else if (item?.type === 'fileChange' || item?.type === 'mcpToolCall') turn.tools.set(item.id, { id: item.id, label: item.type === 'fileChange' ? '修改文件' : String(item.tool ?? '工具'), status: message.method === 'item/completed' ? 'completed' : 'running' });
+      if (item?.type === 'commandExecution') turn.tools.set(item.id, { id: item.id, label: String(item.command ?? '命令'), status: message.method === 'item/completed' ? 'completed' : 'running', processId: item.processId, executionId: turn.id });
+      else if (item?.type === 'fileChange' || item?.type === 'mcpToolCall') turn.tools.set(item.id, { id: item.id, label: item.type === 'fileChange' ? '修改文件' : String(item.tool ?? '工具'), status: message.method === 'item/completed' ? 'completed' : 'running', executionId: turn.id });
       for (const safe of codexItem(item, turn.id, message.method === 'item/completed' ? 'completed' : 'inProgress')) emit({ type: 'item', item: safe });
       emit({ type: 'observation', observation: this.activeObservation(turn) });
     }
@@ -324,9 +336,10 @@ class CodexRuntime implements AgentRuntime {
     }
   }
   private activeObservation(turn: ActiveTurn): ExecutorObservation {
-    const tools = [...turn.tools.values()].map(({ processId, ...tool }) => ({ ...tool, canStop: Boolean(processId) && tool.status === 'running' }));
+    const tools = [...turn.tools.values()].map(({ processId, executionId, ...tool }) => ({ ...tool, canStop: Boolean(processId) && tool.status === 'running' }));
     const requests = [...turn.pending].flatMap(([id, pending]) => codexRequest(id, pending.method, pending.params) ?? []);
-    return { status: turn.terminal ? tools.some(tool => tool.status === 'running') ? 'tools-active' : turn.terminal === 'stopped' ? 'stopped' : 'idle' : requests.some(blocksExecution) ? 'waiting' : 'running', executionRef: this.rpc.executionRef(turn.id, turn.contextId, this.bindingIdentity, [...turn.tools.values()].some(tool => Boolean(tool.processId) && tool.status !== 'completed')), tools, requests, ...(turn.terminal === 'failed' && turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) };
+    const canContinue = turn.terminal === 'completed' && !turn.pending.size && tools.some(tool => tool.status === 'running') && [...turn.tools.values()].every(tool => tool.status === 'completed' || tool.status === 'running' && Boolean(tool.processId));
+    return { canContinue, status: turn.terminal ? tools.some(tool => tool.status === 'running') ? 'tools-active' : tools.some(tool => tool.status === 'unknown') ? 'unknown' : turn.terminal === 'stopped' ? 'stopped' : 'idle' : requests.some(blocksExecution) ? 'waiting' : 'running', executionRef: this.rpc.executionRef(turn.id, turn.contextId, this.bindingIdentity, [...turn.tools.values()].some(tool => Boolean(tool.processId) && tool.status !== 'completed')), tools, requests, ...(turn.terminal === 'failed' && turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) };
   }
   async observe({ contextRef, executionRef, knownItems }: { contextRef: ContextRef; executionRef?: ExecutionRef; knownItems?: readonly ExecutorItem[] }): Promise<ExecutorObservation> {
     this.reference(contextRef);
@@ -390,6 +403,7 @@ class CodexRuntime implements AgentRuntime {
       return this.observe({ contextRef, executionRef });
     }
     if (!turn.terminal && !toolId) await this.rpc.call('turn/interrupt', { threadId: contextRef.id, turnId: turn.id }, 5000);
+    if (turn.terminal && !toolId) turn.terminal = 'stopped'; // An unconfirmed whole-run stop must not release queued input.
     await this.refreshTerminals(turn);
     const selected = [...turn.tools.values()].filter(tool => tool.status === 'running' && (!toolId || tool.id === toolId));
     if (toolId && !selected.some(tool => tool.processId)) throw new Error('codex_exact_tool_stop_unavailable');

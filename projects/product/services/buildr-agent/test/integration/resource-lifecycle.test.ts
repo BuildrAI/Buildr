@@ -54,7 +54,7 @@ test('unknown result can release an idle exact source without declaring success 
   await f.service.releaseIdleSources();chat=f.service.conversations.read('workspace',chat.id);
   assert.equal(f.closed.length,1);assert.equal(chat.run?.status,'unknown');assert.equal(chat.run?.executionState,'ended');assert.equal(chat.run?.resourcesReleased,true);
   assert.equal(chat.run?.tools[0].status,'unknown');assert.equal(chat.run?.id,original);assert.deepEqual(f.sent,['uncertain']);assert.equal(f.service.activity().busy,false);
-  const draft={expectedRevision:chat.revision,connectionId:'local',text:'repeat'};assert.throws(()=>f.service.conversations.prepareSend('workspace',chat.id,draft),{code:'agent_conversation_busy'});
+  const draft={expectedRevision:chat.revision,connectionId:'local',text:'new goal, do not repeat the original'};assert.equal(f.service.conversations.prepareSend('workspace',chat.id,draft).participantId,undefined);assert.deepEqual(f.sent,['uncertain']);
   const opens=f.opens();await f.service.conversations.stop('workspace',chat.id,{expectedRevision:chat.revision,runId:original,participantId:chat.run!.participantId,generation:chat.run!.generation});assert.equal(f.opens(),opens,'stopping already-released resources must not recreate a native owner');
   chat=f.service.conversations.read('workspace',chat.id);await f.service.conversations.update('workspace',chat.id,{expectedRevision:chat.revision,hidden:true});assert.equal(f.service.conversations.listAll(['workspace'],{activeOnly:true}).total,0);
  }finally{await f.close();}
@@ -64,7 +64,7 @@ test('explicit same-selection continuation preserves released unknown work and c
  const f=await fixture({executionUnknown:true});try{
   let chat=await f.start('uncertain');const original=chat.run!.id, originalExecution=f.contexts.get(chat.participants[0].contextId)!.execution;
   const draft=()=>({expectedRevision:chat.revision,connectionId:'local',continueRunId:original,text:'',modelAccountId:chat.run!.modelAccountId,modelAccountIdentity:chat.run!.modelAccountIdentity,model:chat.run!.model,serviceTier:chat.run!.serviceTier,reasoningEffort:chat.run!.reasoningEffort,permissionMode:chat.run!.permissionMode});
-  assert.throws(()=>f.service.conversations.prepareSend('workspace',chat.id,draft()),{code:'agent_conversation_busy'});
+  assert.throws(()=>f.service.conversations.prepareSend('workspace',chat.id,draft()),{code:'agent_continue_unavailable'});
   f.contexts.get(chat.participants[0].contextId)!.idle=true;await f.service.releaseIdleSources();chat=f.service.conversations.read('workspace',chat.id);
   assert.equal(chat.run!.status,'unknown');assert.equal(chat.run!.resourcesReleased,true);assert.equal(chat.run!.executionState,'unknown');
   const input=draft();assert.equal(f.service.allowsReleasedContinuation('workspace',chat.id,input),true);
@@ -145,7 +145,7 @@ test('backend resource release is independent of an unknown detached command out
   const chat=await f.start('uncertain'),state=f.contexts.get(chat.participants[0].contextId)!;state.idle=true;
   await f.service.releaseIdleSources();const released=f.service.conversations.read('workspace',chat.id);
   assert.equal(released.run?.resourcesReleased,true);assert.equal(released.run?.executionState,'unknown');assert.equal(released.run?.status,'unknown');assert.equal(released.run?.tools[0].status,'unknown');assert.equal(f.service.activity().busy,false);assert.deepEqual(f.sent,['uncertain']);
-  assert.throws(()=>f.service.conversations.prepareSend('workspace',chat.id,{expectedRevision:released.revision,connectionId:'local',text:'repeat'}),{code:'agent_conversation_busy'});
+  assert.equal(f.service.conversations.prepareSend('workspace',chat.id,{expectedRevision:released.revision,connectionId:'local',text:'new goal, do not replay'}).participantId,undefined);assert.deepEqual(f.sent,['uncertain']);
  }finally{await f.close();}
 });
 

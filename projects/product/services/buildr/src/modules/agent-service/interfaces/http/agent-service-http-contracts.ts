@@ -59,6 +59,7 @@ export const AGENT_SERVICE_HTTP_OPERATIONS = [
   operation('supplement', 'POST', `${workspace}/:conversationId/supplement`, 'supplement', 'supplemented'),
   operation('generate-title', 'POST', `${workspace}/:conversationId/generate-title`, 'revision', 'conversation'),
   operation('observe', 'POST', `${workspace}/:conversationId/observe`, 'empty', 'conversation'),
+  operation('observe-run','POST',`${workspace}/:conversationId/observe-run`,'control','conversation'),
   operation('stop', 'POST', `${workspace}/:conversationId/stop`, 'stop', 'conversation'),
   operation('reply', 'POST', `${workspace}/:conversationId/requests/:requestId/reply`, 'reply', 'conversation'),
   operation('attachment', 'POST', `${workspace}/:conversationId/attachments`, 'attachment', 'attachmentResult'),

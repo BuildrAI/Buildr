@@ -14,23 +14,25 @@ function executor(id){return{descriptor:{id,label:id,capabilities},async open({c
     beginLogin:async update=>update({state:'waiting-browser',url:'https://example.test/login'}),cancelLogin:async()=>{},
     async createContext(){const ref={id:randomUUID()};save(ref,{items:[],status:'idle',tools:[]});return ref;},resumeContext:async({contextRef})=>{read(contextRef);},readHistory:async({contextRef})=>read(contextRef).items,
     async send(input){
+      const plain=input.text.startsWith('Buildr 本对话工作控制：')?input.text.slice(input.text.indexOf('\n\n')+2):input.text;
+      const workText=plain.includes('\n\n本次用户要求：\n')?plain.slice(plain.lastIndexOf('\n\n本次用户要求：\n')+'\n\n本次用户要求：\n'.length).split('\n')[0]:plain;
       const ref=input.contextRef,state=read(ref),executionRef={id:randomUUID()};
-      state.executionRef=executionRef;state.status='running';state.kind=input.text;state.stopRequested=false;state.tools=[];save(ref,state);
-      fs.appendFileSync(path.join(bootstrap.dataRoot,'native-sends.jsonl'),JSON.stringify({id,text:input.text,executionRef,version:marker.version})+'\n');
+      state.executionRef=executionRef;state.status='running';state.kind=workText;state.stopRequested=false;state.tools=[];save(ref,state);
+      fs.appendFileSync(path.join(bootstrap.dataRoot,'native-sends.jsonl'),JSON.stringify({id,text:workText,prompt:input.text,executionRef,version:marker.version})+'\n');
       input.onEvent({type:'accepted',executionRef});
-      if(input.text==='uncertain-ended'){
+      if(workText==='uncertain-ended'){
         state.status='unknown';state.tools=[{id:'unsettled',label:'one operation, result missing',status:'unknown'}];
         const item={id:'unsettled',kind:'tool',role:'system',name:'command',text:'operation may have happened; receipt missing',status:'running',executionId:executionRef.id};state.items.push(item);save(ref,state);input.onEvent({type:'item',item});return;
       }
-      if(input.text==='lost-observation'){state.status='unknown';save(ref,state);throw new Error('dsh_execution_observation_lost');}
-      if(input.text==='question'){input.onEvent({type:'request',request:{id:'question',kind:'question',title:'Choose next work',questions:[{id:'scope',label:'Work scope',options:[{id:'later',label:'Later'},{id:'ok',label:'Accepted'}]}]}});}
-      if(input.text==='approval'){input.onEvent({type:'request',request:{id:'permit',kind:'approval',title:'Continue?',options:[{id:'allow',label:'Allow'}]}});}
+      if(workText==='lost-observation'){state.status='unknown';save(ref,state);throw new Error('dsh_execution_observation_lost');}
+      if(workText==='question'){input.onEvent({type:'request',request:{id:'question',kind:'question',title:'Choose next work',questions:[{id:'scope',label:'Work scope',options:[{id:'later',label:'Later'},{id:'ok',label:'Accepted'}]}]}});}
+      if(workText==='approval'){input.onEvent({type:'request',request:{id:'permit',kind:'approval',title:'Continue?',options:[{id:'allow',label:'Allow'}]}});}
       for(let n=0;n<3000;n++){
         const current=read(ref);
         if(current.stopRequested){if(!fs.existsSync(path.join(bootstrap.dataRoot,'finish-stop'))){await new Promise(resolve=>setTimeout(resolve,10));continue;}current.status='stopped';current.tools=[];save(ref,current);break;}
         if(current.status==='stopped')break;
-        if(input.text.startsWith('hold:')&&!fs.existsSync(path.join(bootstrap.dataRoot,'release-'+input.text.slice(5)))){await new Promise(resolve=>setTimeout(resolve,10));continue;}
-        if((input.text==='approval'||input.text==='question')&&!current.approved||input.text==='hold'&&!fs.existsSync(path.join(bootstrap.dataRoot,'release'))){await new Promise(resolve=>setTimeout(resolve,10));continue;}
+        if(workText.startsWith('hold:')&&!fs.existsSync(path.join(bootstrap.dataRoot,'release-'+workText.slice(5)))){await new Promise(resolve=>setTimeout(resolve,10));continue;}
+        if((workText==='approval'||workText==='question')&&!current.approved||workText==='hold'&&!fs.existsSync(path.join(bootstrap.dataRoot,'release'))){await new Promise(resolve=>setTimeout(resolve,10));continue;}
         break;
       }
       const current=read(ref),item={id:randomUUID(),kind:'message',role:'assistant',text:'answer '+marker.version,status:'completed',executionId:executionRef.id};

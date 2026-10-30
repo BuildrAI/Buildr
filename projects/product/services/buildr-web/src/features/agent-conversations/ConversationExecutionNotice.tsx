@@ -11,7 +11,7 @@ export function ConversationExecutionNotice({diagnostic,observing,stopping,onObs
         <Button type="text" size="small" loading={stopping} disabled={stopping} onClick={onStop}>{stopping?'正在停止…':'停止'}</Button>
       </div>
     </div>
-    <small>尚未确认原执行是否结束，核对前不会重发。</small>
+    <small>原执行状态尚待核对，不会重发；仍可发送新的要求。</small>
     {diagnostic&&<details><summary>查看原因</summary><p>{diagnostic}</p></details>}
   </div>;
 }

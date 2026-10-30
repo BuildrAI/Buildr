@@ -65,7 +65,7 @@ export class PendingSendRepository {
       if (expectedRevision !== undefined && (!current || current.id !== requestId || current.revision !== expectedRevision || current.state === 'dispatching')) fail('agent_pending_conflict', '待发送内容已变化或正在发送，请重新读取。', 409);
       if (expectedRevision === undefined && current) fail('agent_pending_conflict', '已有待发送内容，请修改或取消后继续。', 409);
       const now = new Date().toISOString();
-      return this.write(db, { scope, conversationId: id, id: requestId, revision: randomUUID(), state: 'waiting', draft, ...(waitingQuestions ? {waitingQuestions} : {}), ...(current?.handoffStopRequested && !retryStop ? {handoffStopRequested:true} : {}), reason: draft.waitingHandoff ? '交接内容已保存，正在核对并结束原轮等待；确认结束后接续已保存的要求。' : '已保存，正在核对上一轮状态与执行后台。', submissionDigest: existing?.submissionDigest ?? submissionDigest, createdAt: current?.createdAt ?? now, updatedAt: now });
+      return this.write(db, { scope, conversationId: id, id: requestId, revision: randomUUID(), state: 'waiting', draft, ...(waitingQuestions ? {waitingQuestions} : {}), ...(current?.handoffStopRequested && !retryStop ? {handoffStopRequested:true} : {}), reason: draft.waitingHandoff ? '交接内容已保存，正在准备投递；原执行及未回答问题继续保留。' : '新要求已保存，等待当前接收后台就绪；不等待原命令退出。', submissionDigest: existing?.submissionDigest ?? submissionDigest, createdAt: current?.createdAt ?? now, updatedAt: now });
     }, undefined as never);
   }
   cancel(scope: string, id: string, revision: string): void {
@@ -79,7 +79,7 @@ export class PendingSendRepository {
     return this.use(true, db => {
       const current = this.rows(db, row.scope, row.conversationId).find(value => value.id === row.id);
       if (!current || current.revision !== row.revision || current.state === 'failed' || !active(current) || current.state === 'dispatching' && current.owner && ownerAlive(current.owner)) return;
-      return this.write(db, { ...current, state: 'dispatching', owner: generation, ...(current.draft.waitingHandoff ? {handoffStopRequested:true} : {}), revision: randomUUID(), updatedAt: new Date().toISOString() });
+      return this.write(db, { ...current, state: 'dispatching', owner: generation, revision: randomUUID(), updatedAt: new Date().toISOString() });
     }, undefined);
   }
   finish(row: PendingSendRecord, state: PendingSendRecord['state'], reason: string): void {

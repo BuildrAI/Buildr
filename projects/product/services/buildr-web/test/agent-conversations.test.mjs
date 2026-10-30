@@ -19,6 +19,16 @@ const {createAgentConversationsClient}=await import('../src/features/agent-conve
 const session={writeHeaders:()=>({'x-buildr-session':'native-test-session','content-type':'application/json'})};
 const conversation={id:'chat/id',workspaceId:'saved/ws',revision:'r1',cwd:'/saved/root',title:'Work',hidden:false,updatedAt:'2026-10-23',participants:[],entries:[],requests:[{id:'approval/id',runId:'run/1',participantId:'original-codex',generation:'generation-1',kind:'approval',title:'Allow?'}],run:{id:'run/1',participantId:'original-codex',generation:'generation-1',provider:'codex',status:'running'}};
 
+test('准确可接续的命令不锁输入，仍持续观察；缺少证明时保持保护',()=>{
+  const view={...conversation,requests:[],run:{...conversation.run,status:'tools-active',canContinue:true,tools:[{id:'old',label:'browser',status:'running',canStop:true}]}};
+  assert.equal(executionLocked(view.run),false);
+  assert.equal(conversationRecoveryAction(view),null);
+  assert.equal(needsConversationObservation(view),true);
+  assert.equal(executionLocked({...view.run,canContinue:false}),true);
+  assert.equal(executionLocked({...view.run,canContinue:undefined}),true);
+  assert.equal(executionLocked({...view.run,status:'unknown'}),true);
+});
+
 test('读取/历史/登录状态以本机令牌访问，执行始终使用对话保存身份而非当前浏览空间',async t=>{
   const requests=[];t.mock.method(globalThis,'fetch',async(url,init)=>{requests.push({url,init});return new Response(JSON.stringify({connections:[],conversations:[]}));});
   const api=createAgentConversationsClient(createApiClient({getWorkspaceId:()=> 'browsing-other-ws',sessionAdapter:session}),session);
@@ -479,8 +489,9 @@ test('异常恢复入口只取决于原执行状态，与选择模型或智能�
   assert.equal(conversationRecoveryAction(view('completed',true,[reply])),null);
   assert.deepEqual(conversationRecoveryAction(view('unknown')),{kind:'observe',label:'核对状态'});
   for(const status of ['starting','running','stopping','waiting-approval','waiting-question']) assert.equal(conversationRecoveryAction(view(status)),null);
-  assert.equal(conversationRecoveryAction({...view('failed'),requests:[{id:'pending'}]}),null);
+  assert.equal(conversationRecoveryAction({...view('failed'),requests:[{id:'pending',runId:base.run.id,participantId:base.run.participantId,generation:base.run.generation}]}),null);
   assert.deepEqual(conversationRecoveryAction({...view('failed'),run:{...view('failed').run,tools:[{status:'unknown'}]}}),{kind:'observe',label:'核对状态'});
+  assert.deepEqual(conversationRecoveryAction({...view('failed'),requests:[{id:'old-question',runId:'retained'}]}),{kind:'recover',label:'继续'});
   assert.equal(conversationRecoveryAction(null),null);
 });
 
@@ -595,4 +606,14 @@ test('更新程序只提交已观察接入修订与精确发布版本，使用�
   assert.equal(calls[0].url,'/api/v1/app/agent-service/connections/codex/program-upgrades');
   assert.equal(calls[0].init.method,'POST');assert.equal(calls[0].init.headers['x-buildr-session'],'native-test-session');
   assert.deepEqual(JSON.parse(calls[0].init.body),{expectedRevision:'r-observed',expectedVersion:'0.164.0'});
+});
+
+test('新要求不等待旧执行，只有相同选择的正常执行使用同轮补充',async()=>{
+ const {canSupplementConversation}=await import('../src/features/agent-conversations/conversation-state.ts');
+ const choice={connectionId:'codex',model:'model',permissionMode:'default'};
+ const current={participants:[{id:'p',connectionId:'codex'}],run:{id:'r',participantId:'p',accepted:true,status:'running',model:'model',tools:[]}};
+ assert.equal(canSupplementConversation(current,choice,true),true);
+ for(const status of ['waiting-question','waiting-approval','unknown','tools-active','stopping','starting','completed'])assert.equal(canSupplementConversation({...current,run:{...current.run,status}},choice,true),false,status+' must use ordinary new-turn delivery, never wait for the old work');
+ assert.equal(canSupplementConversation(current,choice,false),false);
+ for(const change of [{connectionId:'qoder'},{model:'new'},{modelAccountId:'different'},{serviceTier:'fast'},{permissionMode:'full-access'},{reasoningEffort:'high'}])assert.equal(canSupplementConversation(current,{...choice,...change},true),false);
 });

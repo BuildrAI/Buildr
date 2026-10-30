@@ -60,11 +60,11 @@ for(const answer of [false,true])test('waiting question handoff crosses retained
     assert.equal(target.pendingSend?.waitingQuestions?.[0]?.id,question.id);
     main=await actor({dataRoot,profileId,runtime:next,workspace});await main.call('conversations.read',[scope,target.id]);
     target=await until(()=>observer!.operations.conversations.read(scope,target.id),view=>!view.pendingSend&&view.run?.generation===adopted.identity.generation&&view.run?.status==='completed');
-    assert.equal(target.requests.length,0);assert.ok(target.entries.some(entry=>entry.id.startsWith('waiting-handoff-')&&entry.text.includes('Choose next work')));
+    assert.equal(target.requests.filter(request=>request.runId===target.run?.id).length,0);assert.equal(target.retainedRuns?.[0]?.id,original.id);assert.ok(target.entries.some(entry=>entry.id.startsWith('waiting-handoff-')&&entry.text.includes('Choose next work')));
     assert.equal(fs.existsSync(path.join(dataRoot,'native-replies.jsonl')),false);
     await observer.operations.conversations.queueSend(scope,target.id,{...draft,clientRequestId:requestId});
     const sent=fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').trim().split('\n').map(line=>JSON.parse(line));
-    assert.equal(sent.filter(value=>value.version==='new').length,1);assert.match(sent.find(value=>value.version==='new').text,answer?/"回答":\{"scope":"later"\}/:/未回答/);
+    assert.equal(sent.filter(value=>value.version==='new').length,1);assert.match(sent.find(value=>value.version==='new').prompt,answer?/"回答":\{"scope":"later"\}/:/未回答/);
     assert.equal((await observer.operations.conversations.read(scope,other.id)).run?.status,'running');assert.ok(isLive(old.pid));
   }finally{fs.writeFileSync(path.join(dataRoot,'release-other'),'yes');await main?.close();await observer?.disconnect();await stopAgentProcess({dataRoot,profileId,mode:'stop-owned'}).catch(()=>{});fs.rmSync(root,{recursive:true,force:true});}
 });
@@ -209,7 +209,7 @@ test('parallel versions retain old controls, dispatch durable next instructions 
   fs.copyFileSync(path.join(import.meta.dirname,'fixtures/agent-process-entry.mjs'),path.join(packageRoot,'build/process-fixture.mjs'));
   const marker=path.join(packageRoot,'build/fixture-version.json');fs.writeFileSync(marker,JSON.stringify({version:'old'}));
   const runtime=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'}),profileId='parallel-test',scope=executionScopeKey({sourceId:'minimal',id:'directory'});
-  assert.equal(runtime.parallelCompatibility,2);
+  assert.equal(runtime.parallelCompatibility,3);
   assert.equal(canRunParallel(runtime,{...runtime,parallelCompatibility:1}),false,'old versions retain native writers and must drain before adopting this version');
   assert.equal(canRunParallel({...runtime,parallelCompatibility:1},runtime),false);
   assert.equal(canRunParallel(runtime,runtime),true);
@@ -232,13 +232,13 @@ test('parallel versions retain old controls, dispatch durable next instructions 
     };
     let first=await start('hold:slow'),second=await start('hold:second'),approval=await start('approval');
     const failedRequest=randomUUID();
-    first=await observer.operations.conversations.queueSend(scope,first.id,{expectedRevision:first.revision,connectionId:'first',...sourceChoice,text:'saved during failed update',clientRequestId:failedRequest,previousRunId:first.run!.id});
     fs.writeFileSync(path.join(packageRoot,'build/parallel-broken.mjs'),'throw new Error("parallel startup failure");\n');
     const broken=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/parallel-broken.mjs'});
     await observer.lifecycle.requestRuntime({expectedGeneration:firstIdentity.generation,runtime:broken});
     const failed=await until(()=>observer!.lifecycle.status(),value=>Boolean(value.diagnostic));
     assert.equal(failed.identity.generation,firstIdentity.generation);assert.equal(failed.pendingRuntime?.digest,broken.digest);assert.ok(isLive(firstIdentity.pid));
     first=await observer.operations.conversations.read(scope,first.id);
+    first=await observer.operations.conversations.queueSend(scope,first.id,{expectedRevision:first.revision,connectionId:'first',...sourceChoice,text:'saved during failed update',clientRequestId:failedRequest,previousRunId:first.run!.id});
     assert.equal(first.run?.generation,firstIdentity.generation);assert.equal(first.pendingSend?.id,failedRequest);assert.equal(first.pendingSend?.state,'waiting');
     await observer.operations.conversations.cancelPendingSend(scope,first.id,{expectedPendingRevision:first.pendingSend!.revision});
     fs.writeFileSync(marker,JSON.stringify({version:'new'}));
@@ -263,23 +263,27 @@ test('parallel versions retain old controls, dispatch durable next instructions 
     assert.equal(fresh.run?.generation,adopted.identity.generation);
     first=await observer.operations.conversations.stop(scope,first.id,{expectedRevision:first.revision,runId:first.run!.id,participantId:first.run!.participantId,generation:first.run!.generation});
     assert.equal(first.run?.status,'tools-active');
+    const original=first.run!;
+    await main.close();main=undefined;
     const requestId=randomUUID(),draft={expectedRevision:first.revision,connectionId:'first',...sourceChoice,text:'queued original'};
     first=await observer.operations.conversations.queueSend(scope,first.id,{...draft,clientRequestId:requestId,previousRunId:first.run!.id});
     assert.equal(first.pendingSend?.state,'waiting');
     const queuedRevision=first.pendingSend!.revision;
     assert.equal((await observer.operations.conversations.queueSend(scope,first.id,{...draft,clientRequestId:requestId})).pendingSend?.id,requestId);
-    await main.close();main=undefined;await observer.disconnect();observer=undefined;
-    main=await actor({dataRoot,profileId,runtime:next,workspace});
+    await observer.disconnect();observer=undefined;
     observer=await connectAgentProcess({dataRoot,profileId,runtime:next,sourceId:'minimal'});
-    first=await main.call('conversations.read',[scope,first.id]);assert.equal(first.pendingSend?.id,requestId);
+    first=await observer.operations.conversations.read(scope,first.id);assert.equal(first.pendingSend?.id,requestId);
     first=await observer.operations.conversations.queueSend(scope,first.id,{...draft,expectedRevision:first.revision,text:'queued revised',clientRequestId:requestId,expectedPendingRevision:first.pendingSend!.revision});
     await assert.rejects(observer.operations.conversations.cancelPendingSend(scope,first.id,{expectedPendingRevision:queuedRevision}),{code:'agent_pending_conflict'});
     assert.equal(fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').split('\n').filter(line=>line.includes('queued')).length,0);
-    fs.writeFileSync(path.join(dataRoot,'finish-stop'),'yes');
+    main=await actor({dataRoot,profileId,runtime:next,workspace});
+    await main.call('conversations.read',[scope,first.id]);
     first=await until(()=>observer!.operations.conversations.read(scope,first.id),value=>value.run?.generation===adopted.identity.generation&&value.run?.status==='completed'&&!value.pendingSend);
     const sent=fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').trim().split('\n').map(line=>JSON.parse(line));
     assert.equal(sent.filter(value=>value.text==='queued revised').length,1);assert.equal(sent.find(value=>value.text==='queued revised').version,'new');
     assert.equal(sent.filter(value=>value.text==='queued original').length,0);
+    assert.equal(first.retainedRuns?.find(run=>run.id===original.id)?.status,'tools-active','delivery must not wait for the old stop');
+    fs.writeFileSync(path.join(dataRoot,'finish-stop'),'yes');
     // A response lost before the edit must not recreate its initial submission.
     await observer.operations.conversations.queueSend(scope,first.id,{...draft,clientRequestId:requestId});
     assert.equal((await observer.operations.conversations.lookupRequest(scope,first.id,requestId)).runId,first.run!.id);
@@ -328,20 +332,21 @@ for(const legacy of [false,true])test('observe releases a durably finished old r
     const start=async(text:string)=>{const chat:ConversationView=await main!.call('conversations.create',[scope,{}]);const draft={...choice,text,expectedRevision:chat.revision};const preview=await main!.call('conversations.prepareSend',[scope,chat.id,draft]);await main!.call('conversations.send',[scope,chat.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()}]);return await until(()=>observer!.operations.conversations.read(scope,chat.id),v=>v.run?.accepted===true);};
     let target=await start('lost-observation'),other=await start('hold:other');target=await until(()=>observer!.operations.conversations.read(scope,target.id),v=>v.run?.status==='unknown');
     const originalRun=target.run!.id,requestId=randomUUID();
-    await observer.operations.conversations.queueSend(scope,target.id,{...choice,text:'continue saved work',expectedRevision:target.revision,clientRequestId:requestId,previousRunId:originalRun});
     fs.writeFileSync(serverFile,serverCode);fs.writeFileSync(marker,JSON.stringify({version:'new'}));const next=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'});
     await observer.lifecycle.requestRuntime({expectedGeneration:old.generation,runtime:next});const adopted=await until(()=>observer!.lifecycle.status(),v=>v.identity.runtime.digest===next.digest);
+    await observer.operations.conversations.queueSend(scope,target.id,{...choice,text:'continue saved work',expectedRevision:target.revision,clientRequestId:requestId,previousRunId:originalRun});
     await main.call('conversations.read',[scope,target.id]); // Attach the live host to the adopted unit.
     const retained=readProcessInstances(dataRoot).find(v=>v.identity.generation===old.generation)!;
     if(legacy){const state=await request(retained.origin,retained.token,'/conversation-state',{sourceId:'minimal',scope,id:target.id,observe:true,runId:originalRun,generation:old.generation});assert.equal(state.observed,undefined);assert.equal(state.busy,true);}
     else await assert.rejects(request(retained.origin,retained.token,'/conversation-state',{sourceId:'minimal',scope,id:target.id,observe:true,runId:originalRun,generation:'wrong-generation'}),{code:'agent_control_stale'});
-    await observer.operations.conversations.observe(scope,target.id);
-    assert.equal(fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').includes('continue saved work'),false,'unknown original cannot be replayed');
+    target=await until(()=>observer!.operations.conversations.read(scope,target.id),v=>v.run?.generation===adopted.identity.generation&&v.run?.status==='completed'&&!v.pendingSend);
+    assert.equal(target.retainedRuns?.find(run=>run.id===originalRun)?.status,'unknown','the new instruction does not resolve or replay the old operation');
     // The fixture native store is authoritative; finish the exact request without an event.
     const walk=(dir:string):string[]=>fs.readdirSync(dir,{withFileTypes:true}).flatMap(e=>e.isDirectory()?walk(path.join(dir,e.name)):[path.join(dir,e.name)]);
     const filename=walk(path.join(dataRoot,'agent-service','connections')).find(file=>{try{const v=JSON.parse(fs.readFileSync(file,'utf8'));return v.kind==='lost-observation'&&v.executionRef;}catch{return false;}});assert.ok(filename);
     const native=JSON.parse(fs.readFileSync(filename,'utf8'));native.status='idle';native.items.push({id:'finished-answer',kind:'message',role:'assistant',text:'original result retained',executionId:native.executionRef.id,status:'completed'});fs.writeFileSync(filename,JSON.stringify(native));
-    await observer.operations.conversations.observe(scope,target.id);
+    const retainedRun=target.retainedRuns!.find(run=>run.id===originalRun)!;
+    await observer.operations.conversations.observeRun(scope,target.id,{expectedRevision:target.revision,runId:retainedRun.id,participantId:retainedRun.participantId,generation:retainedRun.generation});
     target=await until(()=>observer!.operations.conversations.read(scope,target.id),v=>v.run?.generation===adopted.identity.generation&&v.run?.status==='completed'&&!v.pendingSend);
     await Promise.all([observer.operations.conversations.observe(scope,target.id),observer.operations.conversations.observe(scope,target.id)]);
     assert.ok(target.entries.some(e=>e.text==='original result retained'));
@@ -351,7 +356,7 @@ for(const legacy of [false,true])test('observe releases a durably finished old r
   }finally{fs.writeFileSync(path.join(dataRoot,'release-other'),'yes');await main?.close();await observer?.disconnect();await stopAgentProcess({dataRoot,profileId,mode:'stop-owned'}).catch(()=>{});fs.rmSync(root,{recursive:true,force:true});}
 });
 
-test('retiring process exits with an unknown historical result only after exact resources drain and never dispatches its queued retry',{timeout:90000},async()=>{
+for(const newInstruction of [true,false])test('retiring process preserves unknown work and supports explicit '+(newInstruction?'new instruction':'released continuation'),{timeout:90000},async()=>{
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-result-resource-')),dataRoot=path.join(root,'profile'),workspace=path.join(root,'work'),packageRoot=path.join(root,'package');fs.mkdirSync(workspace);fs.cpSync(prepared,packageRoot,{recursive:true});
  fs.copyFileSync(path.join(import.meta.dirname,'fixtures/agent-process-entry.mjs'),path.join(packageRoot,'build/process-fixture.mjs'));
  const marker=path.join(packageRoot,'build/fixture-version.json');fs.writeFileSync(marker,JSON.stringify({version:'old'}));const runtime=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'}),profileId='result-resource',scope=executionScopeKey({sourceId:'minimal',id:'directory'});
@@ -361,19 +366,28 @@ test('retiring process exits with an unknown historical result only after exact 
   const connection=await main.call('connections.read',['first']);await main.call('connections.connect',['first',{expectedRevision:connection.revision}]);const added=await main.call('models.accounts.add',[{provider:'fixture-model'}]),checked=await main.call('models.accounts.check',[added.id]);await main.call('models.accounts.preferences',[added.id,{expectedRevision:checked.revision,models:[{id:'fixture',enabled:true}]}]);const choice={connectionId:'first',modelAccountId:added.id,model:'fixture'};
   const start=async(text:string)=>{const chat=await main!.call('conversations.create',[scope,{}]),draft={expectedRevision:chat.revision,...choice,text},preview=await main!.call('conversations.prepareSend',[scope,chat.id,draft]);await main!.call('conversations.send',[scope,chat.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()}]);return await until(()=>observer!.operations.conversations.read(scope,chat.id),v=>v.run?.accepted===true);};
   let uncertain=await start('uncertain-ended');const other=await start('hold:other');uncertain=await until(()=>observer!.operations.conversations.read(scope,uncertain.id),v=>v.run?.status==='unknown');
-  uncertain=await observer.operations.conversations.queueSend(scope,uncertain.id,{expectedRevision:uncertain.revision,...choice,text:'NEVER_REPLAY',clientRequestId:randomUUID(),previousRunId:uncertain.run!.id});
+  const original=uncertain.run!;
   fs.writeFileSync(marker,JSON.stringify({version:'new'}));const next=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'});await observer.lifecycle.requestRuntime({expectedGeneration:old.generation,runtime:next});await until(()=>observer!.lifecycle.status(),v=>v.identity.runtime.digest===next.digest);
+  if(newInstruction)uncertain=await observer.operations.conversations.queueSend(scope,uncertain.id,{expectedRevision:uncertain.revision,...choice,text:'NEW_INSTRUCTION',clientRequestId:randomUUID(),previousRunId:uncertain.run!.id});
   await main.call('conversations.read',[scope,uncertain.id]);assert.ok(isLive(old.pid));
+  if(newInstruction)uncertain=await until(()=>observer!.operations.conversations.read(scope,uncertain.id),v=>v.run?.id!==original.id&&v.run?.status==='completed'&&!v.pendingSend);
   fs.writeFileSync(path.join(dataRoot,'release-uncertain-resource'),'yes');
-  uncertain=await until(()=>observer!.operations.conversations.read(scope,uncertain.id),v=>v.run?.resourcesReleased===true);
-  assert.equal(uncertain.run?.status,'unknown');assert.equal(uncertain.run?.executionState,'unknown');assert.equal(uncertain.run?.tools[0].status,'unknown');assert.ok(uncertain.pendingSend);assert.ok(isLive(old.pid),'another conversation still owns this generation');
-  uncertain=await observer.operations.conversations.read(scope,uncertain.id);assert.equal(uncertain.run?.status,'unknown');assert.equal(uncertain.run?.resourcesReleased,true);assert.ok(uncertain.pendingSend);await observer.operations.conversations.cancelPendingSend(scope,uncertain.id,{expectedPendingRevision:uncertain.pendingSend!.revision});
+  uncertain=await until(()=>observer!.operations.conversations.read(scope,uncertain.id),v=>(newInstruction?v.retainedRuns?.find(run=>run.id===original.id):v.run)?.resourcesReleased===true);
+  const retainedRun=(newInstruction?uncertain.retainedRuns!.find(run=>run.id===original.id):uncertain.run)!;
+  assert.equal(retainedRun.status,'unknown');assert.equal(retainedRun.executionState,'unknown');assert.equal(retainedRun.tools[0].status,'unknown');assert.equal(uncertain.pendingSend,undefined);assert.ok(isLive(old.pid),'another conversation still owns this generation');
+  if(newInstruction){
+  const sent=fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').trim().split('\n').map(v=>JSON.parse(v));assert.equal(sent.filter(v=>v.text==='uncertain-ended').length,1);assert.equal(sent.filter(v=>v.text==='NEW_INSTRUCTION').length,1);
+  uncertain=await observer.operations.conversations.read(scope,uncertain.id);assert.equal(uncertain.run?.status,'completed');assert.equal(uncertain.retainedRuns?.find(run=>run.id===original.id)?.resourcesReleased,true);assert.equal(uncertain.pendingSend,undefined);
+  }else{
+  const sent=fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').trim().split('\n').map(v=>JSON.parse(v));assert.equal(sent.filter(v=>v.text==='uncertain-ended').length,1);assert.equal(sent.some(v=>v.text==='NEVER_REPLAY'),false);
+  uncertain=await observer.operations.conversations.read(scope,uncertain.id);assert.equal(uncertain.run?.status,'unknown');assert.equal(uncertain.run?.resourcesReleased,true);assert.equal(uncertain.pendingSend,undefined);
   uncertain=await observer.operations.conversations.observe(scope,uncertain.id);
   const prior=uncertain.run!,recovery={expectedRevision:uncertain.revision,...choice,modelAccountIdentity:prior.modelAccountIdentity,model:prior.model,serviceTier:prior.serviceTier,reasoningEffort:prior.reasoningEffort,permissionMode:prior.permissionMode,continueRunId:prior.id,text:''};
   const preview=await observer.operations.conversations.prepareSend(scope,uncertain.id,recovery);
   const resumed=await observer.operations.conversations.send(scope,uncertain.id,{...recovery,previewToken:preview.token,clientRequestId:randomUUID()});
   await until(()=>observer!.operations.conversations.read(scope,uncertain.id),v=>v.run?.id===resumed.run.id&&v.run.status==='completed');
   const after=fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').trim().split('\n').map(v=>JSON.parse(v));assert.equal(after.filter(v=>v.text==='uncertain-ended').length,1);assert.equal(after.filter(v=>v.text.includes('用户明确请求恢复原对话')).length,1);
+  }
   assert.ok(isLive(old.pid));assert.equal((await observer.operations.conversations.read(scope,other.id)).run?.status,'running');
   fs.writeFileSync(path.join(dataRoot,'release-other'),'yes');await until(()=>observer!.operations.conversations.read(scope,other.id),v=>v.run?.status==='completed');await until(async()=>isLive(old.pid),v=>!v);
  }finally{fs.writeFileSync(path.join(dataRoot,'release-other'),'yes');fs.writeFileSync(path.join(dataRoot,'release-uncertain-resource'),'yes');await main?.close();await observer?.disconnect();await stopAgentProcess({dataRoot,profileId,mode:'stop-owned'}).catch(()=>{});fs.rmSync(root,{recursive:true,force:true});}

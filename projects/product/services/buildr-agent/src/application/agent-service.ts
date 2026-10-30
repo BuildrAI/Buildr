@@ -1,3 +1,4 @@
+import { conversationRuns, unfinishedRun } from '../domain/agent-state.ts';
 import { AgentServiceError } from '../domain/agent-state.ts';
 import { ProgramUpgrades } from './program-upgrades.ts';
 import { ProgramUpdates } from './program-updates.ts';
@@ -95,7 +96,7 @@ export function createAgentService(options: AgentServiceOptions) {
     const diagnostic=discoveryDiagnostic||(failed?'部分模型账号核对失败或登录已失效，请在智能体与模型中查看。':undefined);
     return {...result,hasSnapshot,...(diagnostic?{diagnostic}:{})};
   };
-  const conversations = new ConversationApplication({ repository, connections, modelAccess: models, events, root, generation, now, host: new HostContext(options), autoContinueInterrupted: options.autoContinueInterrupted, generationAlive: options.generationAlive });
+  const conversations = new ConversationApplication({ conversationControl:options.conversationControl, repository, connections, modelAccess: models, events, root, generation, now, host: new HostContext(options), autoContinueInterrupted: options.autoContinueInterrupted, generationAlive: options.generationAlive });
   const upgrades = new ProgramUpgrades({root,connections,programs:programManager,checks:programUpdates,release:id=>conversations.releaseForProgramUpgrade(id),now});
   const withUpgrades=(snapshot:ReturnType<typeof programUpdates.list>)=>({programs:snapshot.programs.map(program=>({...program,upgrade:(()=>{const job=upgrades.read(program.connectionId);return job&&(job.executable===program.executable||job.installedExecutable===program.executable)?job:undefined;})()}))});
   return {
@@ -104,8 +105,8 @@ export function createAgentService(options: AgentServiceOptions) {
       const reasons = [...conversations.activity(), ...preparations.activity(), ...connections.activity(), ...models.activity(), ...upgrades.activity()];
       if(discovery)reasons.push({kind:'model-discovery',count:1});
       try {
-        const pending = repository.listPending(true).filter(record => !options.generationAlive || record.view.run?.generation === generation);
-        const held=pending.filter(record=>!(record.view.run?.resourcesReleased)&&conversations.retainsConversationSource(record.view.workspaceId,record.view.id));
+        const pending = repository.listPending(true).filter(record => !options.generationAlive || conversationRuns(record.view).some(run=>run.generation===generation&&unfinishedRun(run)));
+        const held=pending.filter(record=>conversationRuns(record.view).some(run=>run.generation===generation&&!run.resourcesReleased&&unfinishedRun(run))&&conversations.retainsConversationSource(record.view.workspaceId,record.view.id));
         if(held.length)reasons.push({kind:'unfinished-execution',count:held.length});
       } catch { reasons.push({kind:'storage-unconfirmed',count:1}); }
       return {busy:reasons.length>0,reasons};
@@ -123,6 +124,7 @@ export function createAgentService(options: AgentServiceOptions) {
     resumeMetadata() { connections.freezeMetadata(false); models.freezeMetadata(false); startRefreshing(); },
     conversationBusy: (scope: string, id: string) => conversations.busy(scope, id),
     allowsReleasedContinuation: (scope: string, id: string, input: SendDraft) => conversations.allowsReleasedContinuation(scope, id, input),
+    conversationInputBusy: (scope: string, id: string) => conversations.inputBusy(scope, id),
     retainsConversationSource: (scope:string,id:string) => conversations.retainsConversationSource(scope,id),
     releaseIdleSources: (owner?:{workspaceId:string;id:string}) => conversations.releaseIdleSources(owner),
     observeForRelease: (scope:string,id:string,runId:string,generation:string) => conversations.observeForRelease(scope,id,runId,generation),
@@ -189,6 +191,7 @@ export function createAgentService(options: AgentServiceOptions) {
       queueSend: (workspaceId: string, id: string, input: Parameters<ConversationApplication['queueSend']>[2]) => conversations.queueSend(workspaceId, id, input),
       cancelPendingSend: (workspaceId: string, id: string, input: Parameters<ConversationApplication['cancelPendingSend']>[2]) => conversations.cancelPendingSend(workspaceId, id, input),
       supplement: (workspaceId: string, id: string, input: Parameters<ConversationApplication['supplement']>[2]) => conversations.supplement(workspaceId, id, input),
+      observeRun: (workspaceId:string,id:string,input:Parameters<ConversationApplication['observeRun']>[2]) => conversations.observeRun(workspaceId,id,input),
       observe: (workspaceId: string, id: string) => conversations.observe(workspaceId, id),
       stop: (workspaceId: string, id: string, input: Parameters<ConversationApplication['stop']>[2]) => conversations.stop(workspaceId, id, input),
       reply: (workspaceId: string, id: string, requestId: string, input: Parameters<ConversationApplication['reply']>[3]) => conversations.reply(workspaceId, id, requestId, input),

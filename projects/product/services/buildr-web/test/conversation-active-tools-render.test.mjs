@@ -7,14 +7,21 @@ import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 
 registerHooks({resolve(specifier,context,next){
-  if(specifier==='./conversation-state'&&context.parentURL?.endsWith('/ConversationActiveToolsNotice.tsx'))return next(new URL('./conversation-state.ts',context.parentURL).href,context);
+  if(specifier==='./conversation-state'&&/\/Conversation(?:ActiveToolsNotice|RetainedWork)\.tsx$/.test(context.parentURL??''))return next(new URL('./conversation-state.ts',context.parentURL).href,context);
+  if(specifier==='./ConversationActiveToolsNotice'&&context.parentURL?.endsWith('/ConversationRetainedWork.tsx'))return next(new URL('./ConversationActiveToolsNotice.tsx',context.parentURL).href,context);
   return next(specifier,context);
 },load(url,context,next){
-  if(url.endsWith('/ConversationActiveToolsNotice.tsx'))return {format:'module',source:ts.transpileModule(readFileSync(new URL(url),'utf8'),{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText,shortCircuit:true};
+  if(/\/Conversation(?:ActiveToolsNotice|RetainedWork)\.tsx$/.test(url))return {format:'module',source:ts.transpileModule(readFileSync(new URL(url),'utf8'),{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText,shortCircuit:true};
   return next(url,context);
 }});
 const {ConversationActiveToolsNotice}=await import('../src/features/agent-conversations/ConversationActiveToolsNotice.tsx');
 const render=props=>renderToStaticMarkup(React.createElement(ConversationActiveToolsNotice,{observing:false,stopping:false,onObserve(){},onStop(){},...props}));
+
+test('正常答完后保留命令明确允许继续，不误报模型中断',()=>{
+  const html=render({canContinue:true,tools:[{id:'browser',status:'running',label:'browser helper',canStop:true}]});
+  assert.match(html,/仍有 1 项命令运行，可继续对话/);
+  assert.doesNotMatch(html,/中断|等待上一轮|恢复执行/);
+});
 
 test('命令默认只显示紧凑摘要，排除完成项，长原文不铺入页面',()=>{
   const html=render({tools:[{id:'done',status:'completed',label:'completed private command'},{id:'running',status:'running',label:'long raw command '.repeat(500),canStop:true},{id:'unknown',status:'unknown',label:'unknown command'}]});
@@ -36,4 +43,17 @@ test('停止与核对期间保留准确操作，不提供重复恢复执行',()=
   const html=render({tools:[{id:'x',status:'unknown',label:'raw'}],stopping:true});
   assert.match(html,/正在停止/);assert.match(html,/disabled/);
   assert.doesNotMatch(html,/恢复执行|恢复成功|已停止/);
+});
+
+const {ConversationRetainedWork}=await import('../src/features/agent-conversations/ConversationRetainedWork.tsx');
+test('原执行和未答问题保持原归属且不阻止继续对话',()=>{
+  const conversation={participants:[{id:'p',label:'原执行方'}],requests:[{id:'q',runId:'old-question',participantId:'p',title:'确认发布吗？'}],retainedRuns:[
+    {id:'old-tool',participantId:'p',status:'tools-active',tools:[{id:'tool',status:'unknown',label:'private command'}]},
+    {id:'old-question',participantId:'p',status:'waiting-question',tools:[]},
+    {id:'settled',participantId:'p',status:'completed',tools:[]},
+  ]};
+  const html=renderToStaticMarkup(React.createElement(ConversationRetainedWork,{conversation,busy(){return false;},onObserve(){},onStop(){}}));
+  assert.match(html,/保留了 2 项原执行，不影响继续对话/);assert.match(html,/命令待核对，可继续对话/);
+  assert.match(html,/未回答：确认发布吗/);assert.match(html,/新的要求不算回答/);assert.match(html,/data-retained-run="old-tool"/);
+  assert.doesNotMatch(html,/data-retained-run="settled"|模型已中断|private command/);
 });

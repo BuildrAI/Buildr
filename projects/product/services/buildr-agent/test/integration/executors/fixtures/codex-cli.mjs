@@ -37,6 +37,8 @@ const t={...structuredClone(source),id:'fork-'+Date.now()+'-'+Object.keys(state)
 state[t.id]=t;save();reply(m.id,{thread:t});return;
 }
 if(m.method==='turn/start'){const p=m.params;
+const originalText=p.input.find(part=>part.type==='text')?.text??'';const workText=originalText.includes('\n\n本次用户要求：\n')?originalText.slice(originalText.lastIndexOf('\n\n本次用户要求：\n')+'\n\n本次用户要求：\n'.length):originalText;
+if(p.input.some(part=>part.text?.includes('[reject-start]'))){process.stdout.write(JSON.stringify({id:m.id,error:{code:-32600,message:'start rejected'}})+'\n');return;}
 const id='turn-'+state[p.threadId].turns.length;
 const user={id:p.clientUserMessageId??'user-'+id,type:'userMessage',content:p.input};
 active={id,threadId:p.threadId,status:'inProgress',items:[user]};
@@ -45,6 +47,11 @@ save();
 reply(m.id,{turn:active});
 setTimeout(()=>{event('item/started',{threadId:p.threadId,turnId:id,item:user});
 event('item/agentMessage/delta',{threadId:p.threadId,turnId:id,itemId:'assistant-'+id,delta:'你好'});
+if(workText.includes('[retain-command]')||workText.includes('[finish]')){
+if(workText.includes('[retain-command]')){const item={id:'command-'+id,type:'commandExecution',command:'synthetic retained command',status:'inProgress',processId:'native-process-'+id};active.items.push(item);event('item/started',{threadId:p.threadId,turnId:id,item});}
+const answer={id:'assistant-'+id,type:'agentMessage',text:'正常答复',phase:'final_answer'};active.items.push(answer);event('item/completed',{threadId:p.threadId,turnId:id,item:answer});
+active.status='completed';save();event('turn/completed',{threadId:p.threadId,turn:active});return;
+}
 process.stdout.write(JSON.stringify({id:'request-'+id,method:'item/tool/requestUserInput',params:{threadId:p.threadId,turnId:id,questions:[{id:'color',question:'颜色',options:[{label:'蓝'}]}]}})+'\n');
 },10);
 return;
@@ -67,15 +74,19 @@ const p=m.params;
 if(!active||active.status!=='inProgress'||p.expectedTurnId!==active.id||p.threadId!==active.threadId){process.stdout.write(JSON.stringify({id:m.id,error:{code:-32600,message:'inactive turn'}})+'\n');return;}
 const user={id:'native-'+p.clientUserMessageId,clientId:p.clientUserMessageId,type:'userMessage',content:p.input};active.items.push(user);save();reply(m.id,{turnId:active.id});event('item/completed',{threadId:active.threadId,turnId:active.id,item:user});return;
 }
-if(m.method==='thread/backgroundTerminals/list'){reply(m.id,{data:active?.items.filter(i=>i.type==='commandExecution'&&i.status!=='completed').map(i=>({itemId:i.id,processId:i.processId}))??[],nextCursor:null});
+if(m.method==='thread/backgroundTerminals/list'){
+if(fs.existsSync(path.join(process.env.CODEX_HOME,'fail-terminal-observation'))){process.stdout.write(JSON.stringify({id:m.id,error:{code:-32603,message:'observation unavailable'}})+'\n');return;}
+reply(m.id,{data:(state[m.params.threadId]?.turns??[]).flatMap(turn=>turn.items.filter(i=>i.type==='commandExecution'&&i.status!=='completed').map(i=>({itemId:i.id,processId:i.processId}))),nextCursor:null});
 return;
 }
-if(m.method==='thread/backgroundTerminals/terminate'){if(m.params.processId!=='native-process-'+active.id)throw Error('wrong process');
-const item=active.items.find(i=>i.type==='commandExecution');
+if(m.method==='thread/backgroundTerminals/terminate'){
+if(fs.existsSync(path.join(process.env.CODEX_HOME,'fail-terminal-stop'))){process.stdout.write(JSON.stringify({id:m.id,error:{code:-32603,message:'stop unavailable'}})+'\n');return;}
+const owner=state[m.params.threadId]?.turns.find(turn=>turn.items.some(i=>i.processId===m.params.processId));if(!owner)throw Error('wrong process');
+const item=owner.items.find(i=>i.processId===m.params.processId);
 item.status='completed';
 save();
 reply(m.id,{});
-event('item/completed',{threadId:active.threadId,turnId:active.id,item});
+event('item/completed',{threadId:owner.threadId,turnId:owner.id,item});
 return;
 }reply(m.id,{});
 });
