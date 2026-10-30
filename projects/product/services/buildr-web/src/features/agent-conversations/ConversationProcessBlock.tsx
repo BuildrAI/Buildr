@@ -1,4 +1,4 @@
-import { EditOutlined, FileAddOutlined, FileTextOutlined, FolderOpenOutlined, GlobalOutlined, RightOutlined, SearchOutlined, ToolOutlined, WarningOutlined } from '@ant-design/icons';
+import { FolderOpenOutlined, GlobalOutlined, PictureOutlined, RightOutlined, SearchOutlined, ToolOutlined, WarningOutlined } from '@ant-design/icons';
 import {useEffect,useState} from 'react';
 import { MarkdownHost } from '../../components/MarkdownHost';
 import type { MarkdownRenderOptions } from '../../markdown';
@@ -10,8 +10,15 @@ import { locateConversationContent } from './conversation-reading';
 type EntryLoader=(entry:ConversationEntry,signal?:AbortSignal)=>Promise<ConversationEntry>;
 type FileOpener=(path:string)=>void;
 function ToolIcon({kind}:{kind:ProcessToolKind}){
-  if(kind==='command')return <span className="ac-command-symbol">›_</span>;
-  const Icon={read:FileTextOutlined,write:FileAddOutlined,edit:EditOutlined,search:SearchOutlined,fetch:GlobalOutlined,directory:FolderOpenOutlined,tool:ToolOutlined}[kind];
+  if(kind==='command')return <svg className="ac-command-symbol" viewBox="0 0 15 13" aria-hidden="true"><rect x=".5" y=".5" width="14" height="12" rx="2"/><g className="ac-command-glyph"><path d="m3.5 4 2.5 2.5L3.5 9M8 9h3.5"/></g></svg>;
+  if(kind==='read'||kind==='write'||kind==='edit'){
+    const modifying=kind!=='read';
+    const mark=modifying?'m7 15 .6-2.2 5.2-5.2 1.6 1.6-5.2 5.2L7 15Zm4.7-6.3 1.6 1.6':'M5.5 8h5M5.5 10.5h4';
+    const outline=modifying?'M5 13H2.5V1H8l3.5 3.5v.75':'M3.5 1.5H9L12.5 5v9.5h-9Z';
+    const fold=modifying?'M8 1v3.5h3.5':'M9 1.5V5h3.5';
+    return <svg className="ac-file-symbol" data-file-operation={kind} viewBox="0 0 16 16" aria-hidden="true"><path className="ac-file-outline" d={outline}/><path className="ac-file-fold" d={fold}/><path className="ac-file-mark" d={mark}/></svg>;
+  }
+  const Icon={search:SearchOutlined,fetch:GlobalOutlined,directory:FolderOpenOutlined,image:PictureOutlined,tool:ToolOutlined}[kind];
   return <Icon/>;
 }
 function ToolStep({entry,active,onOpenFile,open,onToggle,loadEntry}:{entry:ConversationEntry;active:boolean;onOpenFile:FileOpener;open?:boolean;onToggle?:(open:boolean)=>void;loadEntry?:EntryLoader}){
@@ -56,7 +63,7 @@ function ToolGroup({entries,active,onOpenFile,open,onToggle,toolsOpen,onToolTogg
   const counts=new Map<string,number>();
   for(const tool of tools)counts.set(tool.action,(counts.get(tool.action)||0)+1);
   const runningEntry=active?[...entries].reverse().find(entry=>entry.status==='running'):undefined;
-  const label=runningEntry?`${processTool(runningEntry).action} ${processTool(runningEntry).description}`.trim():entries.length>1?[...counts].map(([action,count])=>count>1?`${action} ×${count}`:action).join(' · '):`${tools[0].action} ${tools[0].description}`.trim();
+  const label=[...counts].map(([action,count])=>count>1?`${action} ×${count}`:action).join(' · ');
   const failed=entries.filter(entry=>processEntryStatus(entry,active)==='failed').length;
   const unknown=entries.filter(entry=>processEntryStatus(entry,active)==='unknown').length;
   /* Native status updates can lag behind the live stream; while the block is still

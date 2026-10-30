@@ -46,6 +46,33 @@ test('文件修改保留实际路径，多路径不丢失',()=>{
   const edit=processTool(tool('e',{name:'file-change',text:'修改文件\nsrc/a.ts\nsrc/b.ts'}));
   assert.equal(edit.kind,'edit');assert.deepEqual(edit.paths,['src/a.ts','src/b.ts']);
 });
+test('明确编辑工具别名不区分大小写，补丁正文不猜文件目标',()=>{
+  for(const name of ['apply_patch','MultiEdit','EditFile',' EDIT_FILE ']){
+    const input=JSON.stringify({file_path:'/repo/a.ts',edits:[]});
+    const edit=processTool(tool(name,{name,input}));
+    assert.equal(edit.kind,'edit');assert.equal(edit.action,'编辑文件');assert.equal(edit.input,input);
+    assert.deepEqual(edit.paths,['/repo/a.ts']);
+  }
+  const patch=processTool(tool('patch',{name:'apply_patch',input:'*** Begin Patch\n*** Add File: a.ts\n+hello\n*** End Patch'}));
+  assert.equal(patch.kind,'edit');assert.deepEqual(patch.paths,[]);
+});
+test('图片有独立用途，不把图片路径变成代码文件打开动作',()=>{
+  for(const name of ['view-image','view_image','imageView']){
+    const image=processTool(tool(name,{name,input:'{"path":"/repo/diagram.png"}',text:'图片已读取'}));
+    assert.equal(image.kind,'image');assert.equal(image.action,'查看图片');assert.equal(image.description,'diagram.png');
+    assert.deepEqual(image.paths,[]);
+  }
+  const native=processTool(tool('native',{name:'view-image',text:'查看图片\n/repo/diagram.png'}));
+  assert.equal(native.description,'');assert.deepEqual(native.paths,[]);
+});
+test('外部未知工具保留原名称，不从名称片段或命令正文猜用途',()=>{
+  for(const name of ['mcp-tool','company_view_image','my_apply_patch']){
+    const result=processTool(tool(name,{name,input:'{"path":"/repo/a.png"}',text:'read /repo/a.png'}));
+    assert.equal(result.kind,'tool');assert.equal(result.action,name);assert.deepEqual(result.paths,[]);
+  }
+  const command=processTool(tool('read-via-shell',{name:'command',input:'cat /repo/a.ts'}));
+  assert.equal(command.kind,'command');
+});
 const member=(id,path,repositoryId='repo',available=true)=>({id,path,repositoryId,available});
 test('相对路径依据对话目录解析，选择真实嵌套代码库和明确checkout',()=>{
   const catalog={worktrees:[member('default','/repo'),member('task','/repo/.worktrees/task'),member('nested','/repo/.worktrees/task/modules/service','service')]};
