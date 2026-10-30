@@ -162,6 +162,13 @@ test('closed Codex transport restores the exact interrupted execution from nativ
     await runtime.resumeContext({contextRef,cwd:root});
     const uncertain=await runtime.observe({contextRef,executionRef:accepted.executionRef});
     assert.equal(uncertain.tools[0]?.status,'unknown');assert.equal(uncertain.tools[0]?.id,'unfinished');
+    // A command failure is a terminal result, even when the enclosing turn was interrupted.
+    await runtime.close(); runtime=undefined;
+    state[contextRef.id].turns[0].items.push({id:'failed-command',type:'commandExecution',status:'failed',exitCode:1});
+    await writeFile(statePath,JSON.stringify(state));runtime=await createCodexExecutor().open(options);
+    await runtime.resumeContext({contextRef,cwd:root});
+    assert.ok(!(await runtime.observe({contextRef,executionRef:accepted.executionRef})).tools.some(tool=>tool.id==='failed-command'));
+    assert.equal((await runtime.stop({contextRef,executionRef:accepted.executionRef})).executionRef?.id,accepted.executionRef.id);
     const rawPath=state[contextRef.id].path;
     await writeFile(rawPath,(await readFile(rawPath,'utf8'))+JSON.stringify({type:'response_item',payload:{type:'function_call',call_id:'received-complete',name:'exec_command'}})+'\n');
     const receipt={id:'received-complete',kind:'tool' as const,role:'system' as const,text:'exit code 0',status:'completed' as const,executionId:accepted.executionRef.id};
@@ -170,6 +177,30 @@ test('closed Codex transport restores the exact interrupted execution from nativ
     for(const invalid of [{...receipt,executionId:'other'},{...receipt,text:'Process running with session ID 4'}]) assert.ok((await runtime.observe({contextRef,executionRef:accepted.executionRef,knownItems:[invalid]})).tools.some(tool=>tool.id===receipt.id));
 
   } finally {await runtime?.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('Codex cold recovery links yielded commands to exact terminal poll receipts', async () => {
+  const { codexUnsettledTools } = await import('../../../src/executors/codex/recovery.ts');
+  const root = await mkdtemp(join(tmpdir(), 'buildr-codex-poll-recovery-')), sessions = join(root, 'sessions'); await mkdir(sessions);
+  const path = join(sessions, 'exact.jsonl');
+  const call = (id:string,name:string,args:unknown={}) => ({type:'response_item',payload:{type:'function_call',call_id:id,name,arguments:JSON.stringify(args)}});
+  const output = (id:string,text:string) => ({type:'response_item',payload:{type:'function_call_output',call_id:id,output:text}});
+  const rows = [
+    {type:'session_meta',payload:{id:'context'}},
+    {type:'event_msg',payload:{type:'task_started',turn_id:'exact'}},
+    call('command','exec_command'),output('command','Process running with session ID 123'),
+    call('other-command','exec_command'),output('other-command','Process running with session ID 456'),
+    call('poll','write_stdin',{session_id:123}),output('poll','Process running with session ID 123'),
+    call('wrong-poll','write_stdin',{session_id:789}),output('wrong-poll','Process exited with code 0'),
+  ];
+  try {
+    const read = async () => {await writeFile(path,rows.map(row=>JSON.stringify(row)).join('\n')+'\n');return(await codexUnsettledTools(path,root,'context','exact')).map(tool=>tool.id);};
+    assert.ok((await read()).includes('command'));
+    rows.push(call('failed-poll','write_stdin',{session_id:123}),output('failed-poll','Unknown session id 123'));
+    assert.ok((await read()).includes('command'),'missing session is not a terminal receipt');
+    rows.push(call('final-poll','write_stdin',{session_id:123}),output('final-poll','Process exited with code 1'));
+    assert.deepEqual(await read(),['other-command']);
+  } finally {await rm(root,{recursive:true,force:true});}
 });
 
 

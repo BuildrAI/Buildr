@@ -339,10 +339,13 @@ class CodexRuntime implements AgentRuntime {
     if (exact.status === 'interrupted') {
       try { unsettled = await codexUnsettledTools(history.thread.path, this.modelConfig!, contextRef.id, exact.id);
         const received = new Set((knownItems ?? []).filter(item => item.kind === 'tool' && item.executionId === exact.id && ['completed', 'failed'].includes(item.status ?? '') && !/Process running with session ID/.test(item.text)).map(item => item.id));
+        for (const item of exact.items ?? []) {
+          if (['commandExecution', 'fileChange', 'mcpToolCall'].includes(item.type) && ['completed', 'failed', 'declined'].includes(item.status)) received.add(item.id);
+        }
         unsettled = unsettled.filter(tool => !received.has(tool.id)); }
       catch { return { status: 'unknown', executionRef: { id: exact.id }, tools: [], diagnostic: 'codex_recovery_history_unconfirmed' }; }
     }
-    return { status: exact.status === 'inProgress' ? 'unknown' : exact.status === 'interrupted' ? 'stopped' : 'idle', executionRef: executionRef ?? { id: exact.id }, tools: [...new Map([...unsettled, ...(exact.items ?? []).filter((item: any) => ['commandExecution', 'fileChange', 'mcpToolCall'].includes(item.type) && !['completed', 'declined'].includes(item.status)).map((item: any) => ({ id: item.id, label: String(item.command ?? '命令'), status: 'unknown' as const, canStop: false }))].map(tool => [tool.id, tool])).values()] };
+    return { status: exact.status === 'inProgress' ? 'unknown' : exact.status === 'interrupted' ? 'stopped' : 'idle', executionRef: executionRef ?? { id: exact.id }, tools: [...new Map([...unsettled, ...(exact.items ?? []).filter((item: any) => ['commandExecution', 'fileChange', 'mcpToolCall'].includes(item.type) && !['completed', 'failed', 'declined'].includes(item.status)).map((item: any) => ({ id: item.id, label: String(item.command ?? '命令'), status: 'unknown' as const, canStop: false }))].map(tool => [tool.id, tool])).values()] };
   }
   async canRelease({contextRef,executionRef}:{contextRef:ContextRef;executionRef:ExecutionRef}):Promise<boolean|{executionState:'ended'|'unknown'}>{
     this.reference(contextRef);
@@ -382,7 +385,10 @@ class CodexRuntime implements AgentRuntime {
   }
   async stop({ contextRef, executionRef, toolId }: { contextRef: ContextRef; executionRef: ExecutionRef; toolId?: string }): Promise<ExecutorObservation> {
     this.reference(contextRef); const turn = this.turns.get(contextRef.id);
-    if (!turn || turn.id !== executionRef.id) return { status: 'unknown', tools: [], diagnostic: 'codex_exact_live_turn_unavailable' };
+    if (!turn || turn.id !== executionRef.id) {
+      if (toolId) return { status: 'unknown', tools: [], diagnostic: 'codex_exact_live_turn_unavailable' };
+      return this.observe({ contextRef, executionRef });
+    }
     if (!turn.terminal && !toolId) await this.rpc.call('turn/interrupt', { threadId: contextRef.id, turnId: turn.id }, 5000);
     await this.refreshTerminals(turn);
     const selected = [...turn.tools.values()].filter(tool => tool.status === 'running' && (!toolId || tool.id === toolId));
