@@ -3,7 +3,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { browserError } from '../persistence/profiles.ts';
+import { browserError, processAlive } from '../persistence/profiles.ts';
 
 /** Only a private inherited pipe is used; never expose a remote-debugging port. */
 export class BrowserPipe extends EventEmitter {
@@ -70,8 +70,20 @@ export function findBrowser(): string {
   for (const file of candidates) try { fs.accessSync(file, fs.constants.X_OK); if (fs.statSync(file).isFile()) return file; } catch { /* Try the next installed browser. */ }
   throw browserError('browser_missing', '未找到已安装的受支持浏览器。');
 }
+export function assertProfileAvailable(directory: string) {
+  const file = path.join(directory, 'SingletonLock'), lock = fs.lstatSync(file, { throwIfNoEntry: false });
+  if (!lock) return;
+  // Chromium owns lock reclamation. Only let it examine a provably dead local
+  // owner; never remove a lock ourselves or take over a live/unknown owner.
+  if (lock.isSymbolicLink()) {
+    const value = fs.readlinkSync(file), prefix = os.hostname() + '-';
+    const pid = value.startsWith(prefix) ? value.slice(prefix.length) : '';
+    if (/^[1-9][0-9]*$/.test(pid) && Number.isSafeInteger(Number(pid)) && !processAlive(Number(pid))) return;
+  }
+  throw browserError('externally_owned', '配置有活动或归属不明的外部占用，请由原使用方释放；不会删除锁或终止进程。');
+}
 export function startBrowser(directory: string) {
-  if (fs.lstatSync(path.join(directory, 'SingletonLock'), { throwIfNoEntry: false })) throw browserError('externally_owned', '配置已被外部浏览器占用，请由原使用方释放；不会删除锁或终止进程。');
+  assertProfileAvailable(directory);
   const child = spawn(findBrowser(), [`--user-data-dir=${directory}`, '--remote-debugging-pipe', '--no-first-run', '--no-default-browser-check', '--no-startup-window', '--disable-session-crashed-bubble'], { stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'] });
   const pipe = new BrowserPipe(child.stdio[3]! as NodeJS.WritableStream, child.stdio[4]! as NodeJS.ReadableStream);
   child.on('error', () => pipe.close());

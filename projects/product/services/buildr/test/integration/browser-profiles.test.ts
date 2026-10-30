@@ -4,6 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { BrowserProfiles } from '../../src/modules/browser-authorization/persistence/profiles.ts';
+import { assertProfileAvailable } from '../../src/modules/browser-authorization/infrastructure/browser.ts';
+import { spawn } from 'node:child_process';
 function fixture(t: any) { const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-browser-profile-'))); t.after(() => fs.rmSync(root, { recursive: true, force: true })); return new BrowserProfiles(root); }
 test('explicit adoption retains existing login data and path, rejects duplicate and overlapping ownership', t => {
   const profiles = fixture(t), relative = '.buildr/local/legacy/provider';
@@ -52,4 +54,22 @@ test('one unreadable profile does not hide healthy profiles, replaced data direc
   assert.throws(()=>profiles.get('good'),{code:'browser_authorization_directory_changed'});
   assert.throws(()=>profiles.reset('good',selected.revision),{code:'browser_authorization_directory_changed'});
   assert.equal(fs.existsSync(directory+'-preserved'),true);
+});
+test('only a dead local browser lock may be left for Chromium to reclaim; no lock is deleted', async t => {
+  if (process.platform === 'win32') return;
+  const profiles = fixture(t), selected = profiles.create('work', 'absent'), directory = path.join(profiles.root, selected.profile!.directory);
+  const lock = path.join(directory, 'SingletonLock');
+  for (const owner of [os.hostname() + '-' + process.pid, 'unknown-host-42', os.hostname() + '-invalid']) {
+    fs.symlinkSync(owner, lock);
+    assert.throws(() => assertProfileAvailable(directory), { code: 'browser_authorization_externally_owned' });
+    assert.equal(fs.readlinkSync(lock), owner); fs.unlinkSync(lock);
+  }
+  const child = spawn(process.execPath, ['-e', 'process.exit(0)']);
+  const pid = child.pid!; await new Promise<void>((resolve, reject) => { child.once('exit', () => resolve()); child.once('error', reject); });
+  const owner = os.hostname() + '-' + pid; fs.symlinkSync(owner, lock);
+  assertProfileAvailable(directory);
+  assert.equal(fs.readlinkSync(lock), owner);
+  fs.unlinkSync(lock); fs.writeFileSync(lock, 'unknown');
+  assert.throws(() => assertProfileAvailable(directory), { code: 'browser_authorization_externally_owned' });
+  assert.equal(fs.readFileSync(lock, 'utf8'), 'unknown');
 });
