@@ -19,3 +19,12 @@ test('未知不填零，旧观察和摘要型额度保持真实边界',()=>{
  assert.equal(accountQuotaView({...account,quota:{...quota,observedAt:'invalid'}},now).stale,true);
  assert.equal(accountQuotaView({...account,quota:{...quota,stale:true,observedAt:new Date(now).toISOString()}},now).stale,true);
 });
+test('紧凑概览只显示适度精度的余额，不改写设置中的原始金额或丢失额度窗口',()=>{
+ const source={...account,quota:{available:true,observedAt:new Date(now).toISOString(),balances:[{currency:'CNY',total:'96.813383920000000',toppedUp:'96.813383920000000',granted:'0'},{currency:'USD',total:'0.00'}],windows:[{id:'week',label:'每周窗口',remainingPercent:92},{id:'hour',label:'5小时窗口',remainingPercent:0}]}};
+ const view=accountQuotaView(source,now,true);
+ assert.deepEqual(view.lines.map(line=>line.text),['CNY 96.81','USD 0.00','每周窗口 · 剩余 92%','5小时窗口 · 剩余 0%']);
+ assert.match(accountQuotaView(source,now).lines[0].text,/96\.813383920000000（充值/);
+ assert.match(modelSourceViews([source],[])[0].balanceLabels[0],/96\.813383920000000（充值/);
+ assert.equal(accountQuotaView({...account,quota:{available:true,balances:[{currency:'CNY',total:'未知'}]}},now,true).lines[0].text,'CNY 未知');
+ assert.equal(accountQuotaView(account,now,true).lines[0].text,'额度暂不可读取');
+});

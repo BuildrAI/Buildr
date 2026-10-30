@@ -9,21 +9,46 @@ await step('账号入口悬停与聚焦显示所有已登录账号的真实额�
   await reset();
   const observedAt=new Date().toISOString();
   fixture.quotaOverrides.set('codex',{available:true,observedAt,windows:[{id:'week',label:'周限额',remainingPercent:82},{id:'hour',label:'5小时限额',remainingPercent:45,resetsAt:new Date(Date.now()+3600000).toISOString()}]});
-  fixture.quotaOverrides.set('dsh',{available:true,observedAt,balances:[{currency:'CNY',total:'123.45',toppedUp:'120.00',granted:'3.45'}]});
+  fixture.quotaOverrides.set('dsh',{available:true,observedAt,balances:[{currency:'CNY',total:'123.45600000000000',toppedUp:'120.00600000000000',granted:'3.45'}]});
   fixture.quotaOverrides.set('qoder',{available:false,observedAt});
   try{
     const button=page.getByRole('button',{name:'账号与配置',exact:true}),overview=page.getByTestId('account-quota-overview');
     const leaveQuota=async()=>{await button.evaluate((node:HTMLElement)=>node.blur());await page.mouse.move(70,100);await overview.waitFor({state:'hidden'});};
     await button.hover();await overview.waitFor({state:'visible'});
     await overview.getByText('周限额 · 剩余 82%',{exact:true}).waitFor();await overview.getByText('5小时限额 · 剩余 45%',{exact:false}).waitFor();
-    await overview.getByText('账户余额 CNY 123.45（充值 120.00 · 赠送 3.45）',{exact:true}).waitFor();
+    await overview.getByText('CNY 123.46',{exact:true}).waitFor();
     assert.equal(await overview.locator('section').count(),3);await overview.getByText('额度暂不可读取',{exact:true}).waitFor();
+    assert.doesNotMatch(await overview.innerText(),/观察时间|重置|充值|赠送/);
     await capture(page,'agent-account-balance-hover.png');
+    // Hold a real polling response: existing rows and layout must not turn into a loading view.
+    const before=await overview.innerText(),boundsBefore=await overview.boundingBox();
+    let release!:()=>void,started!:()=>void;
+    const held=new Promise<void>(resolve=>{release=resolve;}),requested=new Promise<void>(resolve=>{started=resolve;});
+    const holdAccounts=async(route:any)=>{started();await held;await route.fallback();};
+    await page.route('**/api/v1/app/agent-service/model-accounts',holdAccounts);
+    try{
+      await Promise.race([requested,new Promise((_,reject)=>setTimeout(()=>reject(new Error('额度轮询未触发')),10000))]);
+      assert.equal(await overview.innerText(),before);assert.equal(await overview.locator('.ant-spin').count(),0);
+      assert.deepEqual(await overview.boundingBox(),boundsBefore);
+      fixture.quotaOverrides.set('codex',{available:true,observedAt:new Date().toISOString(),windows:[{id:'week',label:'周限额',remainingPercent:81},{id:'hour',label:'5小时限额',remainingPercent:45}]});
+      release();await overview.getByText('周限额 · 剩余 81%',{exact:true}).waitFor();
+      assert.deepEqual(await overview.boundingBox(),boundsBefore);
+    }finally{release();await page.unroute('**/api/v1/app/agent-service/model-accounts',holdAccounts);}
     await leaveQuota();
-    await button.focus();await overview.waitFor({state:'visible'});await button.click();
+    // Press before the hover delay elapses; holding down must cancel both hover and pointer focus.
+    await button.hover();await page.mouse.down();await page.waitForTimeout(650);
+    assert.equal(await overview.isVisible(),false,'按下后待触发的悬停不能重新打开浮窗');
+    await page.mouse.up();
     const drawer=page.getByRole('dialog',{name:/^智能体与模型/});await drawer.waitFor();await overview.waitFor({state:'hidden'});
-    await drawer.getByText('账户余额 CNY 123.45（充值 120.00 · 赠送 3.45）',{exact:true}).waitFor();
+    await drawer.getByText('账户余额 CNY 123.45600000000000（充值 120.00600000000000 · 赠送 3.45）',{exact:true}).waitFor();
     await drawer.getByRole('button',{name:'关闭智能体账号与配置',exact:true}).click();await drawer.waitFor({state:'hidden'});
+    await page.waitForTimeout(650);assert.equal(await overview.isVisible(),false,'设置关闭后恢复焦点不得重开额度预览');
+    await leaveQuota();
+    await button.focus();await overview.waitFor({state:'visible'});
+    await button.press('Escape');await overview.waitFor({state:'hidden'});
+    await button.focus();await overview.waitFor({state:'visible'});await button.press('Enter');
+    await drawer.waitFor();await overview.waitFor({state:'hidden'});
+    await drawer.getByRole('button',{name:'关闭智能体账号与配置',exact:true}).click();await drawer.waitFor({state:'hidden'});await leaveQuota();
     await page.setViewportSize({width:800,height:900});await button.hover();await overview.waitFor({state:'visible'});
     const bounds=await overview.boundingBox();assert.ok(bounds&&bounds.x>=0&&bounds.x+bounds.width<=800,'紧凑桌面额度概览不越界');
     await capture(page,'agent-account-balance-hover-compact.png');
@@ -31,11 +56,15 @@ await step('账号入口悬停与聚焦显示所有已登录账号的真实额�
     expectedBrowserErrors.add('api/v1/app/agent-service/model-accounts]: Failed to load resource: the server responded with a status of 503');
     const failAccounts=async(route:any)=>route.fulfill({status:503,json:{error:{code:'unavailable',message:'fixture'}}});
     await page.route('**/api/v1/app/agent-service/model-accounts',failAccounts);
-    try{await button.hover();await overview.getByText(/账号额度读取失败/).waitFor();assert.equal(await overview.locator('section').count(),3,'读取失败保留已观察账号');}
+    try{await button.hover();await overview.getByText('更新失败，已保留上次额度',{exact:true}).waitFor();assert.equal(await overview.locator('section').count(),3,'读取失败保留已观察账号');}
     finally{await page.unroute('**/api/v1/app/agent-service/model-accounts',failAccounts);await leaveQuota();}
     const emptyAccounts=async(route:any)=>route.fulfill({json:{accounts:[],providers:[]}});
     await page.route('**/api/v1/app/agent-service/model-accounts',emptyAccounts);
-    try{await button.hover();await overview.getByText('尚无已登录账号，点击图标接入',{exact:true}).waitFor();assert.equal(await overview.locator('section').count(),0);}
+    try{
+      await button.hover();await overview.getByText('尚无已登录账号，点击图标接入',{exact:true}).waitFor();assert.equal(await overview.locator('section').count(),0);
+      await leaveQuota();await button.hover();await overview.waitFor({state:'visible'});
+      assert.equal(await overview.locator('.ant-spin').count(),0,'已读取的空结果在再次刷新时不切换成加载画面');
+    }
     finally{await page.unroute('**/api/v1/app/agent-service/model-accounts',emptyAccounts);await leaveQuota();}
   }finally{fixture.quotaOverrides.clear();await page.setViewportSize({width:1280,height:900});}
 });

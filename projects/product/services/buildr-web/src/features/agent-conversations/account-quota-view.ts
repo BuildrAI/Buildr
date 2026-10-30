@@ -1,8 +1,12 @@
 import type { ModelAccount } from './types';
 
 type Quota = NonNullable<ModelAccount['quota']>;
-export function balanceLines(balances: Quota['balances']): string[] {
+export function balanceLines(balances: Quota['balances'], compact = false): string[] {
   return (balances ?? []).map(balance => {
+    if (compact) {
+      const amount = Number(balance.total);
+      return `${balance.currency} ${balance.total.trim() && Number.isFinite(amount) ? amount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : balance.total}`;
+    }
     const details = [
       balance.toppedUp !== undefined ? `充值 ${balance.toppedUp}` : '',
       balance.granted !== undefined ? `赠送 ${balance.granted}` : '',
@@ -10,10 +14,10 @@ export function balanceLines(balances: Quota['balances']): string[] {
     return `账户余额 ${balance.currency} ${balance.total}${details.length ? `（${details.join(' · ')}）` : ''}`;
   });
 }
-export function accountQuotaView(account: ModelAccount, now = Date.now()) {
+export function accountQuotaView(account: ModelAccount, now = Date.now(), compact = false) {
   const quota = account.quota, lines: Array<{ text: string; resetsAt?: string }> = [];
   if (quota?.available) {
-    lines.push(...balanceLines(quota.balances).map(text => ({ text })));
+    lines.push(...balanceLines(quota.balances, compact).map(text => ({ text })));
     lines.push(...(quota.windows ?? []).map(window => ({ text: `${window.label} · 剩余 ${window.remainingPercent}%`, resetsAt: window.resetsAt })));
     if (!lines.length && typeof quota.remainingPercent === 'number') lines.push({ text: `账号额度 · 剩余 ${quota.remainingPercent}%`, resetsAt: quota.resetsAt });
     if (!lines.length && quota.summary) lines.push({ text: quota.summary });
