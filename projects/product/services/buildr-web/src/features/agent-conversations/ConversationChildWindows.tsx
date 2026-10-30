@@ -1,6 +1,7 @@
-import {useCallback,useEffect,useRef,useState} from 'react';
-import {Alert,Button} from 'antd';
-import {CommentOutlined,PlusOutlined,ReloadOutlined} from '@ant-design/icons';
+import {useCallback,useEffect,useImperativeHandle,useRef,useState,type Ref} from 'react';
+import {createPortal} from 'react-dom';
+import {Alert,Badge,Button,Tooltip} from 'antd';
+import {CommentOutlined,LoadingOutlined,MoreOutlined,ReloadOutlined} from '@ant-design/icons';
 import {AgentConversationsViewProvider,useAgentConversations} from './AgentConversationsContext';
 import {ConversationPanel} from './ConversationPanel';
 import type {ConversationWorkspace} from './ConversationHistory';
@@ -10,7 +11,8 @@ import type {ConversationView} from './types';
 import type {ApiError} from '../../api';
 import './conversation-children.css';
 
-type Props={parent:ConversationView;workspaces:ConversationWorkspace[]};
+export type ConversationChildActions={create:()=>void};
+type Props={parent:ConversationView;workspaces:ConversationWorkspace[];ref?:Ref<ConversationChildActions>};
 function ChildWindow({summary,visible,workspaces,onClose,onUpdate}:{summary:ConversationView;visible:boolean;workspaces:ConversationWorkspace[];onClose:()=>void;onUpdate:(value:ConversationView)=>void}) {
   const host=useAgentConversations(),value=useChildConversation(host,summary,visible,onClose,onUpdate);
   return <div className="ac-child-window" hidden={!visible} role="dialog" aria-modal="false" aria-label={'子对话：'+(value.conversation?.title||summary.title)} data-child-window={summary.id}
@@ -19,11 +21,14 @@ function ChildWindow({summary,visible,workspaces,onClose,onUpdate}:{summary:Conv
   </div>;
 }
 
-export function ConversationChildWindows({parent,workspaces}:Props) {
+export function ConversationChildWindows({parent,workspaces,ref}:Props) {
   const host=useAgentConversations(),{api}=host;
   const [rows,setRows]=useState<ConversationView[]>([]),[cursor,setCursor]=useState<string>();
   const [active,setActive]=useState<string|null>(null),[visited,setVisited]=useState<string[]>([]);
   const [creating,setCreating]=useState(false),[error,setError]=useState(''),[loading,setLoading]=useState(false);
+  const [windowTarget,setWindowTarget]=useState<HTMLElement|null>(null);
+  // Keep floating panels out of the header's layout and descendant styles.
+  const attach=useCallback((node:HTMLDivElement|null)=>setWindowTarget(node?.closest<HTMLElement>('.ac-panel')??null),[]);
   const busy=useRef(false),live=useRef(true),paging=useRef(false),parentRef=useRef(parent);parentRef.current=parent;
   const profile=document.querySelector('meta[name="buildr-web-profile"]')?.getAttribute('content')||'local';
   const storageKey=childCreationStorageKey(parent,profile);
@@ -66,17 +71,26 @@ export function ConversationChildWindows({parent,workspaces}:Props) {
     catch(failure){if(live.current)setError(failure instanceof Error?failure.message:'更多子对话读取失败。');}
     finally{if(live.current)setLoading(false);}
   };
+  useImperativeHandle(ref,()=>({create:()=>void create()}));
   const collapse=useCallback(()=>setActive(null),[]);
-  return <div className="ac-children" aria-label="主对话的子对话">
+  return <div ref={attach} className="ac-children" aria-label="主对话的子对话">
     <div className="ac-child-entries">
-      {rows.map((row,index)=><Button key={row.id} size="small" type={active===row.id?'primary':'default'} className="ac-child-entry" icon={<CommentOutlined/>}
-        data-child-entry={row.id} aria-expanded={active===row.id} aria-controls={'agent-child-conversation-panel-'+row.id} title={row.title+' · '+childConversationStatus(row)} onClick={()=>choose(row.id)}>
-        <span className="ac-child-entry-title">{row.title==='新对话'?'子对话 '+(index+1):row.title}</span><small>{childConversationStatus(row)}</small>
-      </Button>)}
-      {cursor&&<Button size="small" loading={loading} onClick={()=>void more()}>更多子对话</Button>}
-      <Button size="small" type="text" icon={<PlusOutlined/>} loading={creating} onClick={()=>void create()} aria-label="创建子对话">{attempt?'重试创建子对话':'创建子对话'}</Button>
+      {rows.map((row,index)=>{
+        const label=(row.title==='新对话'?'子对话 '+(index+1):row.title)+' · '+childConversationStatus(row);
+        const attention=['waiting-approval','waiting-question','unknown','tools-active','failed'].includes(row.run?.status||'');
+        const unread=Boolean(row.activity&&row.activity.version>row.activity.seenThrough);
+        return <Tooltip key={row.id} title={label} trigger={['hover','focus']}>
+          <Button size="small" type={active===row.id?'primary':'text'} className="ac-child-entry"
+            icon={<Badge dot={attention||unread} color={attention?'var(--ac-attention-ink,#796747)':'var(--soft-primary,#397d74)'}><CommentOutlined/></Badge>}
+            data-child-entry={row.id} aria-label={label} aria-expanded={active===row.id} aria-controls={'agent-child-conversation-panel-'+row.id} onClick={()=>choose(row.id)}/>
+        </Tooltip>;
+      })}
+      {cursor&&<Tooltip title="更多子对话" trigger={['hover','focus']}><Button size="small" type="text" icon={<MoreOutlined/>} loading={loading} aria-label="更多子对话" onClick={()=>void more()}/></Tooltip>}
+      {creating&&<LoadingOutlined className="ac-child-creating" role="status" aria-label="正在创建子对话"/>}
     </div>
-    {error&&<Alert className="ac-child-error" type="warning" message={error} closable onClose={()=>setError('')} action={<Button type="text" size="small" icon={<ReloadOutlined/>} aria-label="刷新子对话" onClick={()=>void read().then(()=>setError('')).catch(()=>{})}/>}/>}
-    {rows.filter(row=>visited.includes(row.id)).map(row=><ChildWindow key={row.id} summary={row} visible={active===row.id&&host.open&&host.view==='conversation'} workspaces={workspaces} onClose={collapse} onUpdate={update}/>)}
+    {windowTarget&&createPortal(<>
+      {error&&<Alert className="ac-child-error" type="warning" message={error} closable onClose={()=>setError('')} action={<Button type="text" size="small" icon={<ReloadOutlined/>} aria-label={attempt?'重试创建子对话':'刷新子对话'} onClick={()=>attempt?void create():void read().then(()=>setError('')).catch(()=>{})}/>}/>}
+      {rows.filter(row=>visited.includes(row.id)).map(row=><ChildWindow key={row.id} summary={row} visible={active===row.id&&host.open&&host.view==='conversation'} workspaces={workspaces} onClose={collapse} onUpdate={update}/>)}
+    </>,windowTarget)}
   </div>;
 }

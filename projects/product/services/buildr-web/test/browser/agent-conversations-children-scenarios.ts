@@ -69,9 +69,18 @@ export async function runChildConversationScenarios(fixture:AgentConversationFix
   const patterns=['**/api/v1/workspaces/*/agent-conversations/**','**/api/v1/app/agent-service/conversations/**'];
   for(const pattern of patterns)await page.route(pattern,route);
   const window=()=>page.locator('.ac-child-window:not([hidden])');
+  const header=()=>panel().locator(':scope > .ac-thread-header');
+  const createChild=async()=>{
+    await header().getByRole('button',{name:'更多对话操作',exact:true}).click();
+    assert.equal(await page.getByRole('menuitem',{name:'智能体与模型',exact:true}).count(),0);
+    await page.getByRole('menuitem',{name:'创建子对话',exact:true}).click();
+  };
+  const childStatus=(id:string,status:string)=>page.locator('[data-child-entry="'+id+'"][aria-label$=" · '+status+'"]');
   let firstId='',secondId='';
   try{
     await step('创建多个子浮窗不替换主对话，切换保留各自草稿和阅读位置',async()=>{
+      assert.equal(await input().getAttribute('placeholder'),'提出问题，或描述想完成的工作');
+      assert.equal(await panel().locator('.ac-location-settings code').count(),0,'新对话不展示工作空间目录');
       await input().fill('主对话保持原来的工作');await panel().getByRole('button',{name:'发送对话',exact:true}).click();
       await panel().locator(':scope > .ac-thread-header[data-run-status="running"]').waitFor();
       const parentId=fixture.conversation.id;
@@ -80,8 +89,13 @@ export async function runChildConversationScenarios(fixture:AgentConversationFix
       const stream=panel().locator(':scope > .ac-stream');
       await stream.evaluate((node:HTMLElement)=>{node.scrollTop=120;node.dispatchEvent(new Event('scroll'));});
       const top=await stream.evaluate((node:HTMLElement)=>node.scrollTop),before=JSON.stringify(fixture.conversation);
-      await panel().getByRole('button',{name:'创建子对话',exact:true}).click();
+      await createChild();
       await window().getByRole('textbox',{name:'子对话输入',exact:true}).waitFor();firstId=await window().getAttribute('data-child-window');
+      const entry=page.locator('[data-child-entry="'+firstId+'"]');
+      assert.equal(await entry.innerText(),'','子对话入口仅保留图标');
+      await entry.focus();await page.getByRole('tooltip',{name:'子对话 1 · 尚未开始',exact:true}).waitFor();
+      const layout=await panel().evaluate((node:HTMLElement)=>({header:node.querySelector(':scope > .ac-thread-header')!.getBoundingClientRect().bottom,stream:node.querySelector(':scope > .ac-stream')!.getBoundingClientRect().top}));
+      assert.ok(Math.abs(layout.header-layout.stream)<2,'顶部不再占用子对话和参与记录两行');
       assert.equal(fixture.sends,1);assert.equal(childSends,0);assert.equal(JSON.stringify(fixture.conversation),before);
       await window().getByRole('textbox',{name:'子对话输入',exact:true}).fill('解释支线问题');
       await window().getByRole('button',{name:'发送对话',exact:true}).click();await window().getByText('支线答复第 30 段：这里只是子对话的说明，不属于主对话。',{exact:false}).waitFor();
@@ -90,7 +104,7 @@ export async function runChildConversationScenarios(fixture:AgentConversationFix
       await childStream.evaluate((node:HTMLElement)=>{node.scrollTop=90;node.dispatchEvent(new Event('scroll'));});
       const childTop=await childStream.evaluate((node:HTMLElement)=>node.scrollTop);
       const created=page.waitForResponse((response:any)=>response.url().endsWith('/children')&&response.request().method()==='POST');
-      await panel().getByRole('button',{name:'创建子对话',exact:true}).click();
+      await createChild();
       secondId=(await (await created).json()).id;
       await page.locator('[data-child-window="'+secondId+'"]:not([hidden])').getByRole('textbox',{name:'子对话输入',exact:true}).waitFor();assert.notEqual(firstId,secondId);
       await window().getByRole('textbox',{name:'子对话输入',exact:true}).fill('第二条子对话草稿');
@@ -99,20 +113,26 @@ export async function runChildConversationScenarios(fixture:AgentConversationFix
       assert.ok(Math.abs(await window().locator('.ac-stream').evaluate((node:HTMLElement)=>node.scrollTop)-childTop)<2);
       assert.equal(await input().inputValue(),'主对话未发送的文字');assert.equal(await panel().getAttribute('data-conversation-id'),parentId);
       assert.ok(Math.abs(await stream.evaluate((node:HTMLElement)=>node.scrollTop)-top)<2);assert.equal(await page.locator('.ac-child-window:not([hidden])').count(),1);
+      await header().getByRole('button',{name:'参与过此对话的智能体与模型',exact:true}).click();
+      await page.locator('.ac-participant-history .ac-participants').waitFor();
+      await header().getByRole('button',{name:'参与过此对话的智能体与模型',exact:true}).click();
+      const fork=window().getByRole('button',{name:'分支到新对话',exact:true}).last();
+      assert.equal(await fork.innerText(),'','消息分支仅保留图标');
+      await fork.hover();await page.getByRole('tooltip',{name:'分支到新对话',exact:true}).waitFor();
       await fixture.capture(page,'agent-conversation-child-windows.png');
     });
     await step('收起保留真实执行和待回应状态，子对话独立回答和停止',async()=>{
       await window().getByRole('textbox',{name:'子对话输入',exact:true}).fill('需要问我');await window().getByRole('button',{name:'发送对话',exact:true}).click();
       await window().getByText('子对话范围确认',{exact:true}).waitFor();await window().getByRole('button',{name:'收起子对话',exact:true}).click();
-      await page.locator('[data-child-entry="'+firstId+'"]').getByText('等待回答',{exact:true}).waitFor();assert.equal(await window().count(),0);assert.equal(childReplies,0);
+      await childStatus(firstId,'等待回答').waitFor();assert.equal(await childStatus(firstId,'等待回答').locator('.ant-badge-dot').count(),1);assert.equal(await window().count(),0);assert.equal(childReplies,0);
       await page.locator('[data-child-entry="'+firstId+'"]').click();await window().getByRole('radio',{name:'仅此支线',exact:true}).check();
       await window().getByRole('button',{name:'回答并继续',exact:true}).click();await window().getByText('子对话范围确认',{exact:true}).waitFor({state:'hidden'});assert.equal(childReplies,1);
       await page.locator('[data-child-entry="'+secondId+'"]').click();assert.equal(await window().getByRole('textbox',{name:'子对话输入',exact:true}).inputValue(),'第二条子对话草稿');
       await window().getByRole('textbox',{name:'子对话输入',exact:true}).fill('持续工作');await window().getByRole('button',{name:'发送对话',exact:true}).click();
       await window().getByRole('button',{name:'停止本次执行',exact:true}).waitFor();await window().getByRole('button',{name:'收起子对话',exact:true}).click();
-      await page.locator('[data-child-entry="'+secondId+'"]').getByText('正在处理',{exact:true}).waitFor();assert.equal(childStops,0);
+      await childStatus(secondId,'正在处理').waitFor();assert.equal(childStops,0);
       await page.locator('[data-child-entry="'+secondId+'"]').click();await window().getByRole('button',{name:'停止本次执行',exact:true}).click();
-      await page.locator('[data-child-entry="'+secondId+'"]').getByText('已停止',{exact:true}).waitFor();assert.equal(childStops,1);assert.equal(fixture.stops,0);assert.equal(fixture.conversation.run.status,'running');
+      await childStatus(secondId,'已停止').waitFor();assert.equal(childStops,1);assert.equal(fixture.stops,0);assert.equal(fixture.conversation.run.status,'running');
       await page.reload();await input().waitFor();await page.locator('[data-child-entry="'+firstId+'"]').waitFor();await page.locator('[data-child-entry="'+secondId+'"]').waitFor();
       assert.equal(await input().inputValue(),'主对话未发送的文字');assert.equal(await window().count(),0);
     });

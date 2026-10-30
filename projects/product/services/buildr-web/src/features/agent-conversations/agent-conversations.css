@@ -247,3 +247,5 @@
 .ac-fork-origin>div{display:flex;align-items:center;gap:4px;min-width:0}
 .ac-fork-origin .ant-btn{min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto}
 .ac-fork-origin small{display:block;color:var(--ant-color-text-secondary,#777)}
+
+.ac-participant-history .ac-participants{max-width:320px;min-height:0;padding:0;border:0;gap:6px}

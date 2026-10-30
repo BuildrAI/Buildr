@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Button } from 'antd';
+import { Button, Tooltip } from 'antd';
 import { ForkOutlined } from '@ant-design/icons';
 import { useAgentConversations } from './AgentConversationsContext';
 import type { ConversationView } from './types';
@@ -27,7 +27,7 @@ export function ConversationForkAction({ conversation, entryId }: { conversation
     finally { submitting.current = false; setBusy(false); }
   };
   return <span className="ac-fork-action">
-    <Button type="text" size="small" icon={<ForkOutlined />} loading={busy} onClick={() => void fork()} aria-label="分支到新对话">分支到新对话</Button>
+    <Tooltip title="分支到新对话" trigger={['hover','focus']}><Button type="text" size="small" icon={<ForkOutlined />} loading={busy} onClick={() => void fork()} aria-label="分支到新对话"/></Tooltip>
     {error && <small role="alert" className="ac-input-diagnostic">{error}</small>}
   </span>;
 }
