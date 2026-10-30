@@ -577,3 +577,13 @@ test('只在每轮最终答复提供分叉，后续执行不遮蔽较早答复',
   assert.deepEqual([...forkableReplyIds({...view,run:{id:'new',status:'completed'}})],['final','running']);
   assert.equal(forkableReplyIds({...view,forkState:{status:'failed'}}).size,0);
 });
+
+
+test('程序更新使用共用认证客户端，只读观察与主动检查不调用连接或安装入口',async()=>{
+  const calls=[];
+  const api=createAgentConversationsClient(async(url,init)=>{calls.push({url,init});return{programs:[]};},session);
+  await api.programUpdates();await api.checkProgramUpdates();await api.checkProgramUpdates('codex');
+  assert.deepEqual(calls.map(item=>item.url),['/api/v1/app/agent-service/program-updates','/api/v1/app/agent-service/program-updates/check','/api/v1/app/agent-service/program-updates/check']);
+  assert.equal(calls[0].init.method,undefined);assert.deepEqual(JSON.parse(calls[1].init.body),{});assert.deepEqual(JSON.parse(calls[2].init.body),{connectionId:'codex'});
+  assert.ok(calls.every(item=>item.init.headers['x-buildr-session']==='native-test-session'));
+});

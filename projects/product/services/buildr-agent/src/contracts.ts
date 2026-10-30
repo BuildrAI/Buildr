@@ -205,6 +205,25 @@ export interface ConnectionView {
   capabilities: AgentCapabilities;
   loginAttempt?: LoginAttemptView;
 }
+export interface ProgramUpdateView {
+  connectionId: string;
+  revision: string;
+  provider: string;
+  label: string;
+  executable?: string;
+  status: 'unchecked' | 'not-connected' | 'available' | 'latest' | 'ahead' | 'unknown' | 'stale';
+  versionKind: 'program' | 'package';
+  packageName: string;
+  updateUrl: string;
+  currentVersion?: string;
+  currentReleaseVersion?: string;
+  latestVersion?: string;
+  releaseSource?: string;
+  compatible?: boolean;
+  checkedAt?: string;
+  diagnostic?: string;
+}
+
 export interface ProgramCandidate {
   executable: string;
   source: 'configured' | 'selected' | 'path' | 'managed' | 'application' | 'sdk';

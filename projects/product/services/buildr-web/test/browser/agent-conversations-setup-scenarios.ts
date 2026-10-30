@@ -1,3 +1,4 @@
+import {runAgentProgramUpdatesJourney} from './agent-program-updates-journey.ts';
 import assert from 'node:assert/strict';
 import type {AgentConversationFixture} from './agent-conversation-fixture.ts';
 
@@ -38,6 +39,7 @@ await step('账号入口悬停与聚焦显示所有已登录账号的真实额�
     finally{await page.unroute('**/api/v1/app/agent-service/model-accounts',emptyAccounts);await leaveQuota();}
   }finally{fixture.quotaOverrides.clear();await page.setViewportSize({width:1280,height:900});}
 });
+await step('两处程序更新共用结果，Buildr 发布失败与单项失败独立',async()=>{await reset();await runAgentProgramUpdatesJourney({page,capture,expectedBrowserErrors});});
 await step('悬停预览与点击固定分离，重复点击收起，切组和键盘保留工作屏',async()=>{
       await page.setViewportSize({width:1600,height:1000});await reset();
       const workUrl=page.url(),primary=page.locator('.primary-navigation'),workspace=primary.locator('button[data-nav="workspace"]'),code=primary.locator('button[data-nav="code"]');

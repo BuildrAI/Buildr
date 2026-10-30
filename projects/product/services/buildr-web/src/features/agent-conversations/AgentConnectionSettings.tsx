@@ -1,3 +1,4 @@
+import {AgentProgramUpdates} from './AgentProgramUpdates';
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {Alert,App} from 'antd';
 import {DrawerShell} from '../../components/DrawerShell';
@@ -89,5 +90,6 @@ export function AgentConnectionSettings(){
  return <><DrawerShell open={context.settings} title="智能体与模型" sub="智能体与模型分别管理" onClose={()=>context.setSettings(false)} closeAriaLabel="关闭智能体账号与配置" width="min(800px,100vw)" rootClassName="agent-conversation-settings model-account-settings">
  {error&&<Alert type="warning" showIcon message={error} style={{marginBottom:16}}/>}
  <AgentModelSetup refreshingIds={refreshingIds} mode={mode} onMode={setMode} executors={context.connections.map(item=>({id:item.id,label:item.label,prepared:item.enabled&&!!item.configPath,checking:preparing[item.id]}))} expandedExecutor={program} onPrepareExecutor={id=>{setStartProgram(true);setProgramGeneration(value=>value+1);setProgram(id);}} onToggleExecutor={id=>{setStartProgram(false);setProgram(current=>current===id?null:id);}} renderExecutor={id=>{const item=context.connections.find(item=>item.id===id);return item&&<AgentProgramPreparation key={id+programGeneration} connection={item} onPending={onPending} autoStart={startProgram}/>;}} additionalProviders={providers} onAdd={provider=>void act(async()=>{const account=await context.api.addModelAccount(provider);update(account);setSelection({sourceId:account.id,tab:'quota'});})} sources={sources.map(({program:_,...source})=>source)} selection={selection} busy={busy} onSelect={setSelection} onRefresh={check} onLogin={login} onDisconnect={disconnect} onPrepare={id=>setProgram(accounts.find(account=>account.id===id)?.connectionId??null)} onCancelLogin={cancel} onEnable={values=>changes(values)} onContext={(sourceId,modelId,contextWindow)=>changes([{sourceId,modelId,contextWindow}])}/>
+ {mode==='agents'&&<AgentProgramUpdates active={context.settings&&mode==='agents'}/>}
  </DrawerShell></>;
 }

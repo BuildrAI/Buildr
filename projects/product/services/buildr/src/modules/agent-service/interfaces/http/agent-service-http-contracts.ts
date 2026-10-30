@@ -8,6 +8,8 @@ const base = '/api/v1/app/agent-service';
 const workspace = '/api/v1/workspaces/:workspaceId/agent-conversations';
 const operation = (id: string, method: string, path: string, input: keyof typeof AGENT_SERVICE_HTTP_SCHEMAS, output: keyof typeof AGENT_SERVICE_HTTP_SCHEMAS, responseKind = 'json') => ({ id: `agent-service.${id}`, owner: 'agent-service', method, path, disposition: responseKind === 'json' ? 'migrated-json' : responseKind === 'binary' ? 'migrated-binary' : 'migrated-stream', responseKind, requestSchemaId: AGENT_SERVICE_HTTP_SCHEMAS[input].$id, successSchemaId: responseKind === 'binary' ? null : AGENT_SERVICE_HTTP_SCHEMAS[output].$id, errorSchemaId: 'https://schemas.buildr.ai/http/local-app/error/response/v1' });
 export const AGENT_SERVICE_HTTP_OPERATIONS = [
+  operation('program-updates', 'GET', `${base}/program-updates`, 'empty', 'programUpdates'),
+  operation('check-program-updates', 'POST', `${base}/program-updates/check`, 'programUpdateCheck', 'programUpdates'),
   operation('runtime', 'GET', `${base}/runtime`, 'empty', 'runtimeStatus'),
   operation('model-accounts', 'GET', `${base}/model-accounts`, 'empty', 'modelAccounts'),
   operation('add-model-account', 'POST', `${base}/model-accounts`, 'addModelAccount', 'modelAccount'),

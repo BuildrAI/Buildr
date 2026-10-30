@@ -1,0 +1,9 @@
+.ac-program-updates { margin-block: 20px; border-top: 1px solid var(--soft-line); padding-top: 16px; }
+.ac-program-updates-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.ac-program-updates-heading h2 { font-size: var(--font-size-subheading); margin: 0; }
+.ac-program-updates-note { color: var(--soft-muted); font-size: var(--font-size-meta); }
+.ac-program-update { padding-block: 12px; border-bottom: 1px solid var(--soft-line); }
+.ac-program-update p { margin-block: 6px; font-size: var(--font-size-body); }
+.ac-program-update small { color: var(--soft-muted); }
+.ac-program-update-path { overflow-wrap: anywhere; font-family: monospace; font-size: var(--font-size-code); margin-top: 6px; color: var(--soft-muted); }
+.ac-program-update-links { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; font-size: var(--font-size-meta); }

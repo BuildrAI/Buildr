@@ -58,6 +58,8 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
         if (action === 'login-attempts' && attemptId && cancel) return result('modelAccount', await service.models.accounts.cancelLogin(accountId, attemptId, body));
         return null;
       }
+      if (pathname === `${prefix}/program-updates` && request.method === 'GET') return result('programUpdates', await service.connections.programUpdates());
+      if (pathname === `${prefix}/program-updates/check` && request.method === 'POST') return result('programUpdates', await service.connections.checkProgramUpdates(validate('programUpdateCheck', await readJsonBody())));
       if (pathname === `${prefix}/connections` && request.method === 'GET') return result('connections', await service.connections.list());
       if (pathname === `${prefix}/pending-requests` && request.method === 'GET') return result('conversations', await service.conversations.pending());
       const match = pathname.slice(prefix.length).match(/^\/connections\/([a-z][a-z0-9-]*)(?:\/(connect|check|disconnect|login-attempts|preparation-attempts)(?:\/([a-f0-9-]{36})(?:\/(cancel))?)?)?$/);

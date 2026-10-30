@@ -1,3 +1,4 @@
+import type { ProgramUpdatesView } from '../types';
 import type { AgentDraftImagesDraftImages, AgentDraftStartStartDraft } from '../../../../build/generated/agent-service-http-dto';
 import type { ActivityCounts, ActivityFilter } from '../conversation-activity';
 import { createApiClient, LocalSessionAdapter } from '../../../api';
@@ -38,6 +39,8 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
     modelAccountAction(account:ModelAccount,action:'check'|'disconnect'|'login-attempts') {return changeModels<ModelAccount>(appPath+'/model-accounts/'+account.id+'/'+action,post({expectedRevision:account.revision}));},
     modelLoginAttempt(accountId:string,attemptId:string,signal?:AbortSignal) {return changeModels<ModelAccount>(appPath+'/model-accounts/'+accountId+'/login-attempts/'+attemptId,{signal});},
     cancelModelLogin(account:ModelAccount) {return changeModels<ModelAccount>(appPath+'/model-accounts/'+account.id+'/login-attempts/'+account.loginAttempt!.id+'/cancel',post({expectedRevision:account.revision}));},
+    programUpdates(signal?: AbortSignal) { return request<ProgramUpdatesView>(appPath + '/program-updates', {signal}); },
+    checkProgramUpdates(connectionId?: string) { return request<ProgramUpdatesView>(appPath + '/program-updates/check', post(connectionId ? {connectionId} : {})); },
     connections(signal?: AbortSignal) { return request<{connections: ConnectionView[]}>(appPath + '/connections', {signal}); },
     prepareConnection(connection: ConnectionView, options: {executable?: string; install?: boolean} = {}) { return request<PreparationView>(`${appPath}/connections/${encodeURIComponent(connection.id)}/preparation-attempts`, post({expectedRevision: connection.revision, ...options})); },
     currentPreparation(connectionId: string, signal?: AbortSignal) { return request<{attempt: PreparationView|null}>(`${appPath}/connections/${encodeURIComponent(connectionId)}/preparation-attempts`, {signal}); },

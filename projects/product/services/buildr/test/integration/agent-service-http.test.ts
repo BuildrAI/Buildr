@@ -45,6 +45,17 @@ test('program preparation is authenticated, schema checked and independently obs
   response=await fetch(`${endpoint}/${attempt.id}/cancel`,{method:'POST',headers,body:'{}'});assert.equal(response.status,200);assert.equal((await response.json()).state,'cancelled');
   response=await fetch(endpoint,{headers});assert.equal((await response.json()).attempt.state,'cancelled');
   assert.equal(service.connections.read('codex').enabled,false);
+  const updates=`${url}/api/v1/app/agent-service/program-updates`;
+  response=await fetch(updates);assert.equal(response.status,403);
+  response=await fetch(updates,{headers});assert.equal(response.status,200);
+  assert.equal((await response.json()).programs[0].status,'not-connected');
+  response=await fetch(updates+'/check',{method:'POST',headers:{...headers,origin:'https://foreign.example'},body:'{}'});assert.equal(response.status,403);
+  response=await fetch(updates+'/check',{method:'POST',headers,body:'{"install":true}'});assert.equal(response.status,400);
+  response=await fetch(updates+'/check',{method:'POST',headers,body:'{"connectionId":"missing"}'});assert.equal(response.status,404);
+  response=await fetch(updates+'/check',{method:'POST',headers,body:'{"connectionId":"codex"}'});assert.equal(response.status,200);
+  assert.equal((await response.json()).programs[0].status,'not-connected');
+  assert.equal(service.connections.read('codex').enabled,false);
+
 });
 
 test('private conversations use authenticated HTTP and bounded binary input; streams are observation only', { timeout: 30_000 }, async t => {

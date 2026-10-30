@@ -1,3 +1,4 @@
+import { ProgramUpdates } from './program-updates.ts';
 import {createQoderModelProvider} from '../model-access/providers/qoder.ts';
 import type {ModelProvider} from '../model-access/contracts.ts';
 import {createHash} from 'node:crypto';
@@ -31,6 +32,7 @@ export function createAgentService(options: AgentServiceOptions) {
   let linkedChanged: ((connection:ConnectionView)=>void)|undefined;
   const connections = new ConnectionApplication({ repository, root, executors: options.executors ?? createNativeExecutors(), environment: executorEnvironment(options.environment ?? process.env), generation, now, changed: (connection: ConnectionView) => {events.publish({ type: 'connection', revision: connection.revision, payload: { connection } });linkedChanged?.(connection);} });
   const programManager = options.programManager ?? new NativeProgramManager(root, executorEnvironment(options.environment ?? process.env));
+  const programUpdates = new ProgramUpdates(() => connections.list(), programManager, now);
   const preparations = new PreparationApplication(connections, programManager, generation, now);
   const owner=(id:string)=>({
     async inspect(){if(!connections.get(id).enabled)return{status:'not-authenticated' as const};return(await connections.runtime(id)).inspectAccount();},
@@ -128,6 +130,8 @@ export function createAgentService(options: AgentServiceOptions) {
     models: { startRefreshing, generate: models.generate, accounts: {...models.accounts,list:async(input:{refresh?:boolean}={})=>{if(input.refresh===true)await discover();return models.accounts.list();}}, catalog: {list:async(input:{refresh?:boolean}={})=>{if(input.refresh===true)await discover();return cachedCatalog();}} },
     connections: {
       list: () => ({ connections: connections.list() }),
+      programUpdates: () => programUpdates.list(),
+      checkProgramUpdates: (input: { connectionId?: string } = {}) => programUpdates.check(input),
       read: (id: string) => connections.get(id),
       prepare: (id: string, input: PreparationInput) => preparations.begin(id, input),
       preparation: (id: string, attemptId: string) => preparations.read(id, attemptId),
@@ -184,7 +188,7 @@ export function createAgentService(options: AgentServiceOptions) {
       pending: () => conversations.pending(),
     },
     async close() {
-      if (closed) return; closed = true;
+      if (closed) return; closed = true; programUpdates.close();
       clearInterval(discoveryTimer);discoveryTimer=undefined;
       const budget = Math.max(50, Math.min(options.shutdownTimeoutMs ?? 10_000, 10_000));
       const deadline = Date.now() + budget;

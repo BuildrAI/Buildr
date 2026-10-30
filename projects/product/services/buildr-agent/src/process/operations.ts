@@ -15,7 +15,7 @@ export interface AgentOperations {
 }
 
 const names = {
-  connections: ['list','read','prepare','preparation','currentPreparation','cancelPreparation','connect','check','login','loginAttempt','cancelLogin','disconnect'],
+  connections: ['programUpdates','checkProgramUpdates','list','read','prepare','preparation','currentPreparation','cancelPreparation','connect','check','login','loginAttempt','cancelLogin','disconnect'],
   conversations: ['readDraft','addDraftImage','removeDraftImage','readDraftImage','startDraft','lookupDraft','listAll','markSeen','list','create','fork','createChild','listChildren','read','update','generateTitle','prepareHandoff','prepareSend','send','supplement','queueSend','cancelPendingSend','observe','stop','reply','addAttachment','readAttachment','pending','lookupRequest'],
   'models.accounts': ['list','read','preferences','add','login','attempt','cancelLogin','check','disconnect'],
   'models.catalog': ['list'],
@@ -28,6 +28,7 @@ const validators = new Map(Object.entries(AGENT_OPERATION_SCHEMAS).map(([name, s
 const inputs: Record<string, [number, string]> = {
   'conversations.startDraft':[2,'startDraft'], 'conversations.removeDraftImage':[2,'removeDraftImage'],
   'conversations.queueSend': [2, 'queueSend'], 'conversations.cancelPendingSend': [2, 'cancelPendingSend'],
+  'connections.checkProgramUpdates':[0,'programUpdateCheck'],
   'connections.prepare':[1,'prepare'], 'connections.connect':[1,'connect'], 'connections.check':[1,'check'], 'connections.login':[1,'revision'], 'connections.disconnect':[1,'revision'], 'connections.cancelLogin':[2,'revision'],
   'conversations.createChild':[2,'createChild'],
   'conversations.fork':[2,'fork'], 'conversations.create':[1,'create'], 'conversations.update':[2,'update'], 'conversations.markSeen':[2,'seen'], 'conversations.generateTitle':[2,'revision'], 'conversations.prepareHandoff':[2,'draft'], 'conversations.prepareSend':[2,'draft'], 'conversations.send':[2,'send'], 'conversations.supplement':[2,'supplement'], 'conversations.stop':[2,'stop'], 'conversations.reply':[3,'reply'],
