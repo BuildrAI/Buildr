@@ -69,6 +69,56 @@ test('legacy reads are zero-write, upgrade establishes seen baseline, then count
   save(repo,r,r=>message(r,'new','new'));assert.equal(r.view.activity?.version,1);
 });
 
+test('waiting and unseen outrank newer running input across all pages, filters and seen transitions',t=>{
+  const repo=fixture(t);
+  const make=(id:string,status:NonNullable<StoredConversation['view']['run']>['status'],at:string,seen=false,workspaceId='w1')=>{
+    const r=record(id,workspaceId);r.view.updatedAt=at;
+    message(r,'input-'+id,'input '+id);
+    r.view.run={id:'run-'+id,participantId:'p',provider:'codex',generation:'g',status,accepted:true,tools:[],model:'m',startedAt:at,updatedAt:at};
+    repo.saveConversation(r);
+    save(repo,r,row=>message(row,'answer-'+id,'answer','message','assistant'));
+    if(seen)repo.markSeen(workspaceId,id,r.view.activity!.version);
+    return r;
+  };
+  const waiting=make('waiting','waiting-question','2026-10-27T01:00:00Z',false,'w2');
+  const unseen=make('unseen','completed','2026-10-27T02:00:00Z');
+  const running=make('running','running','2026-10-27T03:00:00Z');
+  make('running-tie','running','2026-10-27T03:00:00Z');
+  make('unknown','unknown','2026-10-27T04:00:00Z');
+  make('history','completed','2026-10-27T05:00:00Z',true);
+  const read=(options:Parameters<ConversationRepository['querySummaries']>[1])=>repo.querySummaries(['w1','w2'],options);
+  const ids=(options:Parameters<ConversationRepository['querySummaries']>[1])=>read(options).conversations.map(row=>row.id);
+  const expected=['unseen','waiting','unknown','running-tie','running','history'];
+  assert.deepEqual(ids({limit:20}),expected);
+  for(const limit of [1,2,3,4]){
+    const found:string[]=[];let cursor:string|undefined;
+    do {const page=read({limit,cursor});found.push(...page.conversations.map(row=>row.id));cursor=page.nextCursor;}while(cursor);
+    assert.deepEqual(found,expected,'分页容量 '+limit);
+  }
+  assert.deepEqual(ids({limit:20,activeOnly:true}),expected.slice(0,-1));
+  assert.deepEqual(ids({limit:20,workspaceId:'w1'}),expected.filter(id=>id!=='waiting'));
+  assert.deepEqual(ids({limit:20,activityState:'attention'}),['unseen','waiting','unknown']);
+  assert.deepEqual(ids({limit:20,model:'m'}),['running-tie','running']);
+  assert.deepEqual(ids({limit:20,query:'running'}),['running-tie','running']);
+  const first=read({limit:1}),old=JSON.parse(Buffer.from(first.nextCursor!,'base64url').toString());
+  delete old.priority;old.active=1;
+  assert.throws(()=>read({limit:1,cursor:Buffer.from(JSON.stringify(old)).toString('base64url')}),/顺序/);
+  const userAt=read({limit:20}).conversations.find(row=>row.id==='running')!.activity!.userInputAt;
+  save(repo,running,r=>{r.view.updatedAt='2026-10-27T06:00:00Z';message(r,'new-input','newest user input');});
+  assert.deepEqual(ids({limit:20}),['unseen','waiting','running','unknown','running-tie','history']);
+  assert.notEqual(read({limit:20}).conversations.find(row=>row.id==='running')!.activity!.userInputAt,userAt);
+  const latestUserAt=read({limit:20}).conversations.find(row=>row.id==='running')!.activity!.userInputAt;
+  save(repo,running,r=>{message(r,'output','background response','message','assistant');});
+  assert.equal(read({limit:20}).conversations.find(row=>row.id==='running')!.activity!.userInputAt,latestUserAt);
+  assert.deepEqual(ids({limit:20}).slice(0,3),['unseen','waiting','running']);
+  const cursor=read({limit:1}).nextCursor;
+  repo.markSeen('w1','unseen',unseen.view.activity!.version);
+  assert.throws(()=>read({limit:1,cursor}),/顺序/);
+  assert.deepEqual(ids({limit:20}),['waiting','running','unknown','running-tie','history','unseen']);
+  repo.markSeen('w2','waiting',waiting.view.activity!.version);
+  assert.equal(ids({limit:20})[0],'waiting','等待明确决定不会被已读降级');
+});
+
 test('execution overview is full-scope, independent from search/page/filter and counts only actual current runs',t=>{
   const repo=fixture(t);
   const statuses=['running','tools-active','waiting-question','unknown','completed'] as const;

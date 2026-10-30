@@ -5,7 +5,44 @@ import type {AgentConversationFixture} from './agent-conversation-fixture.ts';
 export async function runModelsScenarios(fixture:AgentConversationFixture){
   const {assertModelSummary,capture,chooseAgent,chooseModel,chooseOption,closeConversation,closeModelSettings,input,modelSettings,modelTrigger,openModelSettings,page,panel,preparedInputs,reopen,run,sentInputs,setHighEffort,step,update,workspaceId}=fixture;
 await step('单项停止只对原生明确可停止的命令开放，旧记录与不支持者不误给按钮',async()=>{
-      update({run:run('tools-active','codex',{tools:[{id:'native-exact',label:'可停止的精确命令',status:'running',canStop:true},{id:'native-unsupported',label:'厂家不支持单独停止',status:'running',canStop:false},{id:'native-legacy',label:'旧命令未声明能力',status:'running'}]})});await reopen();await panel().getByText('厂家不支持单独停止',{exact:false}).waitFor();assert.equal(await panel().getByRole('button',{name:'停止此命令',exact:true}).count(),1);assert.equal(await panel().getByText('· 不支持单独停止',{exact:true}).count(),2);assert.equal(await panel().getByRole('button',{name:'停止剩余执行',exact:true}).isVisible(),true);await panel().getByRole('button',{name:'停止剩余执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
+      const rawCommand='node /isolated/very-long-command.mjs\n'+Array.from({length:80},(_,i)=>'步骤 '+i+'：'+('long-argument-without-spaces-'.repeat(12))).join('\n');
+      const tools=[{id:'native-exact',label:rawCommand,status:'running',canStop:true},{id:'native-unsupported',label:'厂家不支持单独停止',status:'running',canStop:false},{id:'native-legacy',label:'旧命令未声明能力',status:'unknown'},{id:'native-done',label:'已经完成的命令',status:'completed',canStop:true}];
+      const before=fixture.sends,stopBodies:any[]=[];
+      const matcher='**/agent-conversations/*/stop',intercept=async(route:any)=>{stopBodies.push(route.request().postDataJSON());await route.fallback();};
+      await page.route(matcher,intercept);
+      try{
+        update({run:run('tools-active','codex',{tools}),requests:[],pendingSend:{id:'compact-pending',revision:'pending-v1',state:'waiting',draft:{connectionId:'codex',text:'上一轮结束后再继续',permissionMode:'full-access'},reason:'等待原命令退出后再发送。'}});
+        await reopen();
+        const notice=panel().locator('.ac-active-tools'),pending=panel().locator('.ac-pending-send');
+        await notice.getByText('仍有 3 项命令未结束',{exact:true}).waitFor();
+        assert.equal(await notice.locator('pre').count(),0,'长命令默认不铺开');
+        assert.equal(await panel().locator('.ac-execution-statusbar,.ac-recovery-action').count(),0,'没有重复状态和恢复入口');
+        assert.equal(await pending.locator('.ant-alert').count(),0,'待发送不再嵌套大提示框');
+        assert.equal(await panel().getByRole('button',{name:'停止剩余执行',exact:true}).count(),1);
+        await capture(page,'agent-active-tools-compact-desktop.png');
+        for(const width of [1600,390]){
+          await page.setViewportSize({width,height:width===390?844:1000});
+          const box=await notice.boundingBox();assert.ok(box&&box.height<110,'默认状态保持紧凑');
+          assert.equal(await notice.evaluate((node:HTMLElement)=>node.scrollWidth<=node.clientWidth+1),true);
+          assert.equal(await pending.evaluate((node:HTMLElement)=>node.scrollWidth<=node.clientWidth+1),true);
+        }
+        await capture(page,'agent-active-tools-compact-mobile.png');
+        await notice.getByRole('button',{name:'查看命令',exact:true}).click();
+        await notice.getByText('厂家不支持单独停止',{exact:true}).waitFor();
+        assert.equal(await notice.getByRole('button',{name:'停止此命令',exact:true}).count(),1);
+        assert.equal(await notice.getByText('不支持单独停止',{exact:true}).count(),2);
+        await notice.getByText('状态待确认',{exact:true}).waitFor();
+        assert.equal(await notice.locator('pre').first().innerText(),rawCommand,'完整命令保留在有界详情');
+        assert.equal(await notice.getByText('已经完成的命令',{exact:true}).count(),0);
+        const list=notice.locator('.ac-active-tools-list');assert.ok((await list.boundingBox())!.height<=241);
+        assert.equal(await list.evaluate((node:HTMLElement)=>node.scrollWidth<=node.clientWidth+1),true);
+        await capture(page,'agent-active-tools-expanded-mobile.png');
+        await notice.getByRole('button',{name:'停止此命令',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
+        assert.equal(stopBodies.at(-1).toolId,'native-exact');
+        update({run:run('tools-active','codex',{tools}),pendingSend:undefined});await reopen();
+        await panel().getByRole('button',{name:'停止剩余执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
+        assert.equal(stopBodies.at(-1).toolId,undefined);assert.equal(fixture.sends,before,'样式、展开和停止均不发送下一轮');
+      }finally{await page.unroute(matcher,intercept);await page.setViewportSize({width:1600,height:1000});}
     });
 
 await step('390px下对话输入、停止、历史与关闭可达且无页面横向溢出',async()=>{

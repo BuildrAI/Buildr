@@ -4,6 +4,56 @@ import type {AgentConversationFixture} from './agent-conversation-fixture.ts';
 /** handoff 场景使用独立准备的对话现场。 */
 export async function runHandoffScenarios(fixture:AgentConversationFixture){
   const {assertFixed,assertModelSummary,capture,chooseAgent,chooseModel,closeConversation,closeModelSettings,connections,input,modelSettings,page,panel,preparedInputs,reopen,run,sentInputs,step,update,workspaceId}=fixture;
+await step('后台版本漂移自动恢复一次，真实变化与未知送达保留草稿',async()=>{
+  const saved=structuredClone(fixture.conversation),savedSends=fixture.sends,savedPrepares=fixture.prepares,savedInputs=sentInputs.length;
+  const matcher=/\/agent-conversations\/[^/]+\/(?:prepare-send|send)$/;
+  try{
+    for(const scene of ['prepare','send','changed','twice','unknown']){
+      fixture.conversation=structuredClone(saved);
+      update({run:run('completed','codex',{model:'fixture-model'}),requests:[]});
+      await page.reload();await input().waitFor();
+      const text='版本恢复测试 '+scene;await input().fill(text);
+      const calls:Array<{action:string;body:any}>=[];let rejected=0;
+      const intercept=async(route:any)=>{
+        const request=route.request(),action=new URL(request.url()).pathname.split('/').at(-1)!;
+        calls.push({action,body:request.postDataJSON()});
+        if(scene==='unknown'&&action==='send'){
+          fixture.expectedBrowserErrors.add(request.url());return route.abort('failed');
+        }
+        if(scene!=='unknown'&&action===(scene==='send'?'send':'prepare-send')&&(rejected===0||scene==='twice')){
+          rejected++;fixture.expectedBrowserErrors.add('409');fixture.expectedBrowserErrors.add('Conflict');
+          update({title:'后台生成标题 '+rejected,run:{...fixture.conversation.run,contextUsage:{usedTokens:rejected*100}},
+            ...(scene==='changed'?{entries:fixture.conversation.entries.map((entry:any,index:number)=>index===0?{...entry,text:entry.text+' 已更改'}:entry)}:{})});
+          return route.fulfill({status:409,json:{error:{code:'agent_revision_conflict',message:'内容已变化，请刷新后重试。'}}});
+        }
+        return route.fallback();
+      };
+      await page.route(matcher,intercept);
+      try{
+        await panel().getByRole('button',{name:'发送对话',exact:true}).click();
+        if(scene==='prepare'||scene==='send'){
+          await page.waitForFunction(()=>document.querySelector<HTMLTextAreaElement>('#agent-conversation-input')?.value==='');
+          assert.equal(calls.filter(call=>call.action==='prepare-send').length,2);
+          const sends=calls.filter(call=>call.action==='send');
+          assert.equal(sends.length,scene==='send'?2:1);
+          if(scene==='send')assert.equal(sends[0].body.clientRequestId,sends[1].body.clientRequestId);
+          assert.equal(fixture.conversation.entries.filter((entry:any)=>entry.role==='user'&&entry.text===text).length,1);
+          assert.equal(await panel().getByText(/请刷新后重试/).count(),0);
+        }else{
+          if(scene==='unknown')await panel().getByText(/Failed to fetch|送达|Load failed/).first().waitFor();
+          else await panel().getByText('对话状态已更新，请核对后重新发送。草稿保留。',{exact:true}).waitFor();
+          assert.equal(await input().inputValue(),text);
+          assert.equal(calls.filter(call=>call.action==='prepare-send').length,scene==='twice'?2:1);
+          assert.equal(calls.filter(call=>call.action==='send').length,scene==='unknown'?1:0);
+          if(scene==='changed')await capture(page,'conversation-real-conflict-draft-retained.png');
+        }
+      }finally{await page.unroute(matcher,intercept);}
+    }
+  }finally{
+    fixture.conversation=saved;fixture.sends=savedSends;fixture.prepares=savedPrepares;sentInputs.splice(savedInputs);
+    await page.reload();await input().waitFor();await input().fill('');
+  }
+});
 await step('同一会话选下一位不发送，可查看实际原文并直接发送',async()=>{
       await chooseAgent('DSH');await panel().locator('#agent-conversation-input').fill('');assert.equal(fixture.sends,1);assert.equal(await panel().locator('.ac-permission-select .ant-select-selection-item').innerText(),'完全访问','同一对话换执行者保留权限意图');
       await panel().getByRole('button',{name:'交接内容',exact:true}).click();const preview=panel().locator('.ac-handoff-drawer');await preview.waitFor();assert.equal(fixture.sends,1);assert.equal(preparedInputs.at(-1).continueRunId,fixture.conversation.run.id);assert.equal(preparedInputs.at(-1).text,'');assert.equal(await panel().getByText('请填写内容或添加图片。',{exact:true}).count(),0);assert.equal(await preview.locator('.ac-hd-send-body').isVisible(),false);await preview.locator('.ac-hd-material-more>summary').click();assert.match(await preview.locator('.ac-hd-send-body>pre').innerText(),/第一轮/);await preview.locator('.ant-drawer-content-wrapper').evaluate((node:HTMLElement)=>node.getBoundingClientRect());await capture(page,'agent-handoff-details-desktop.png');await preview.getByRole('button',{name:'继续',exact:true}).click();await preview.waitFor({state:'hidden'});await panel().locator('[data-run-status="running"]').waitFor();assert.equal(fixture.sends,2);assert.equal(sentInputs[1].reasoningEffort,undefined);assert.equal(sentInputs[1].permissionMode,'full-access');assert.equal(fixture.conversation.run.permissionMode,'full-access');assert.ok(fixture.prepares>=2);assert.equal(fixture.conversation.participants.length,2);assert.equal(fixture.conversation.entries[0].provider,'codex');
@@ -63,7 +113,7 @@ await step('暂看历史与恢复不固定，对话滚动在收起、暂看、�
 await step('原生授权与问题回复绑定原请求，未知执行只保存待发送内容',async()=>{
       update({run:run('waiting-approval','dsh'),requests:[{id:'native-approval',conversationId:fixture.conversation.id,workspaceId:workspaceId,participantId:'participant-dsh',runId:'run-fixture',generation:'generation-fixture',kind:'approval',title:'允许这次写入吗？',options:[{id:'deny',label:'拒绝'},{id:'allow-once',label:'允许本次'}]}]});await reopen();await panel().getByRole('button',{name:'允许本次',exact:true}).click();assert.equal(fixture.replies,1);
       update({run:run('waiting-question','dsh'),requests:[{id:'native-question',conversationId:fixture.conversation.id,workspaceId:workspaceId,participantId:'participant-dsh',runId:'run-fixture',generation:'generation-fixture',kind:'question',title:'需要明确范围',questions:[{id:'scope',label:'这次处理范围'}]}]});await page.reload();await input().waitFor();await panel().getByRole('textbox',{name:'这次处理范围',exact:true}).fill('只调整本次目标');await panel().getByRole('button',{name:'回答并继续',exact:true}).click();assert.equal(fixture.replies,2);await panel().locator('.ac-message.is-user').filter({hasText:'这次处理范围：只调整本次目标'}).waitFor();
-      update({run:run('unknown','dsh'),requests:[]});await reopen();await input().fill('未知时保留输入');await input().press('Enter');await panel().getByText('已提交，等待自动发送',{exact:true}).waitFor();assert.equal(fixture.sends,2);assert.equal(await input().inputValue(),'');assert.equal(fixture.conversation.pendingSend.draft.text,'未知时保留输入');await capture(page,'agent-conversation-unknown.png');await panel().getByRole('button',{name:'取消待发送',exact:true}).click();await panel().locator('[data-pending-send-state]').waitFor({state:'hidden'});
+      update({run:run('unknown','dsh'),requests:[]});await reopen();await input().fill('未知时保留输入');await input().press('Enter');await panel().getByText('等待上一轮结束后自动发送',{exact:true}).waitFor();assert.equal(fixture.sends,2);assert.equal(await input().inputValue(),'');assert.equal(fixture.conversation.pendingSend.draft.text,'未知时保留输入');await capture(page,'agent-conversation-unknown.png');await panel().getByRole('button',{name:'取消待发送',exact:true}).click();await panel().locator('[data-pending-send-state]').waitFor({state:'hidden'});
     });
 
 await step('问题卡片在专注、分屏和窄屏与输入内容列对齐，长说明不溢出',async()=>{
@@ -79,11 +129,33 @@ await step('问题卡片在专注、分屏和窄屏与输入内容列对齐，�
           assert.ok(box.x>=pane.x+10&&box.x+box.width<=pane.x+pane.width-10,'卡片保留两侧留白');
           assert.equal(await card.evaluate((node:HTMLElement)=>node.scrollWidth<=node.clientWidth+1),true,'长问题与说明不撑出卡片');
           const submit=await card.getByRole('button',{name:'回答并继续',exact:true}).boundingBox();assert.ok(submit&&submit.x+submit.width<=box.x+box.width-8,'提交按钮留在卡片内容区');
+          if(box.width>600){
+            const note=await card.locator('.ac-request-submit>small').boundingBox();
+            assert.ok(note&&submit&&Math.abs(note.y+note.height/2-submit.y-submit.height/2)<2,'桌面确认与说明同行');
+          }
         };
         await page.setViewportSize({width:2048,height:1100});await focus('专注对话');await panel().locator('.ac-request').waitFor();await geometry();assert.ok((await card.boundingBox())!.width<800,'宽屏问题卡片不铺满整页');await capture(page,'agent-question-card-focused.png');
         await focus('恢复分屏');await page.setViewportSize({width:1600,height:1000});await geometry();
         await page.setViewportSize({width:390,height:844});await geometry();await card.getByRole('radio',{name:'其他',exact:true}).check();
+        const confirmVisible=async()=>{
+          await page.waitForFunction(()=>{
+            const card=document.querySelector('.ac-request'),stream=document.querySelector('.ac-stream'),footer=card?.querySelector('.ac-request-submit');
+            if(!stream||!footer)return false;
+            const available=stream.getBoundingClientRect(),action=footer.getBoundingClientRect();
+            return action.top>=available.top-1&&action.bottom<=available.bottom+1;
+          });
+        };
+        await confirmVisible();
         const answer=card.getByRole('textbox',{name:'是否同步更新现有说明，使其与新的行为保持一致？：其他回答',exact:true});await answer.fill('保留这份回答草稿');await geometry();assert.equal(await answer.inputValue(),'保留这份回答草稿');assert.equal(fixture.replies,before);await capture(page,'agent-question-card-mobile.png');
+        await answer.fill('保留这份回答草稿\n'+Array.from({length:6},(_,index)=>'补充说明 '+index).join('\n'));await confirmVisible();
+        const stream=panel().locator('.ac-stream');
+        await stream.evaluate((node:HTMLElement)=>{node.scrollTop=10;});
+        await page.waitForFunction(()=>document.querySelector('.ac-scroll-latest')!==null);
+        const position=await stream.evaluate((node:HTMLElement)=>node.scrollTop);
+        await card.evaluate((node:HTMLElement)=>{node.style.paddingBottom='100px';});
+        await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
+        assert.equal(await stream.evaluate((node:HTMLElement)=>node.scrollTop),position,'阅读旧记录时高度变化不拉回底部');
+        await card.evaluate((node:HTMLElement)=>{node.style.paddingBottom='';});
       }finally{fixture.conversation=saved;await page.setViewportSize({width:1280,height:900});await page.reload();await input().waitFor();}
     });
 
@@ -176,7 +248,7 @@ await step('等待问题时普通发送禁用，定位回答保留草稿；停�
         update({run:run('waiting-question','codex',{model:'fixture-model',permissionMode:'full-access'}),requests:[request],pendingSend:undefined});
         await page.reload();await input().waitFor();await input().fill('保留底部独立草稿');
         const card=panel().locator('[data-agent-request="waiting-send-boundary"]'),send=panel().getByRole('button',{name:'发送对话',exact:true});
-        assert.equal(await send.isDisabled(),true);await panel().getByText('当前有问题等待回答，请在上方问题中补充意见。',{exact:true}).waitFor();
+        assert.equal(await send.isDisabled(),true);await panel().getByText('等待回答',{exact:true}).waitFor();assert.equal(await panel().locator('.ac-question-send-notice').count(),0);
         await input().press('Enter');assert.equal(await card.getByRole('textbox',{name:'具体处理范围？',exact:true}).evaluate((node:HTMLElement)=>node===document.activeElement),true);
         assert.equal(await input().inputValue(),'保留底部独立草稿');assert.equal(fixture.prepares,prepares);assert.equal(fixture.sends,sends);assert.equal(fixture.supplementaryCalls,supplements);assert.equal(fixture.stops,stops);assert.equal(fixture.replies,before);assert.equal(fixture.conversation.pendingSend,undefined);
         await page.setViewportSize({width:520,height:800});await panel().getByRole('button',{name:'前往回答',exact:true}).click();

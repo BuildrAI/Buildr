@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Alert, Button, Input, Modal, Select, Space } from 'antd';
+import { ClockCircleOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import { useAgentConversations } from './AgentConversationsContext';
 import { ConversationOptions } from './ConversationOptions';
 import type { ConversationView, SendDraft } from './types';
@@ -45,11 +46,15 @@ export function ConversationPendingSend({ conversation, onCancelled }: { convers
   const choose = (choice: ConversationChoice) => setEdit(value=>value?{...value,draft:{...value.draft,connectionId:choice.connectionId,model:choice.model,modelAccountId:choice.modelAccountId,modelAccountIdentity:choice.modelAccountIdentity,modelAccountRevision:choice.modelAccountRevision,serviceTier:choice.serviceTier,reasoningEffort:choice.reasoningEffort}}:value);
   return <>
     {pending&&conversation&&<section className="ac-pending-send" data-pending-send-state={pending.state} aria-label="待发送指令">
-      <Alert type={pending.state==='failed'?'warning':'info'} showIcon message={pending.state==='dispatching'?(pending.draft.waitingHandoff?'正在结束原轮等待并交接':'正在提交下一轮'):pending.state==='failed'?'待发送指令尚未执行':'已提交，等待自动发送'} description={pending.reason}/>
+      <div className="ac-pending-send-header">
+        <span className="ac-pending-send-status" role="status">{pending.state==='failed'?<ExclamationCircleOutlined aria-hidden/>:<ClockCircleOutlined aria-hidden/>}{pending.state==='dispatching'?(pending.draft.waitingHandoff?'正在结束原轮等待并交接':'正在提交下一轮'):pending.state==='failed'?'待发送指令尚未执行':'等待上一轮结束后自动发送'}</span>
+        <div className="ac-pending-send-actions"><Button type="text" size="small" disabled={busy||pending.state==='dispatching'} onClick={()=>{setError('');setEdit({pending,draft:{...pending.draft},conversation});}}>修改待发送内容</Button><Button type="text" size="small" disabled={busy||pending.state==='dispatching'} onClick={()=>void cancel()}>取消待发送</Button></div>
+      </div>
+      {pending.reason&&pending.state==='failed'&&<p className="ac-pending-send-reason" role="alert">{pending.reason}</p>}
       <div className="ac-pending-send-text">{pending.draft.text||(!pending.draft.waitingHandoff?.answers?.length?'继续原目标':'')}{handoffAnswers(pending)&&<p>随交接提交的回答：{handoffAnswers(pending)}</p>}</div>
+      {pending.reason&&pending.state!=='failed'&&<details className="ac-pending-send-explanation"><summary>查看等待原因</summary><p>{pending.reason}</p></details>}
       {pending.draft.waitingHandoff&&<small>仅交接明确提交的回答。取消只撤回下一轮，已停止的原轮等待不会恢复。</small>}
       {!!pending.draft.attachmentIds?.length&&<ConversationMessageImages conversation={conversation} ids={pending.draft.attachmentIds} read={context.api.readImage} label="待发送图片"/>}
-      <Space><Button size="small" disabled={busy||pending.state==='dispatching'} onClick={()=>{setError('');setEdit({pending,draft:{...pending.draft},conversation});}}>修改待发送内容</Button><Button size="small" disabled={busy||pending.state==='dispatching'} onClick={()=>void cancel()}>取消待发送</Button></Space>
     </section>}
     {cancelled&&!pending&&<details className="ac-cancelled-send"><summary>查看已取消的内容</summary><pre>{cancelled}</pre></details>}
     {error&&!edit&&<Alert type="warning" message={error}/ >}

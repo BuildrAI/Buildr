@@ -6,6 +6,30 @@ import type {AgentConversationFixture} from './agent-conversation-fixture.ts';
 /** history 场景使用独立准备的对话现场。 */
 export async function runHistoryScenarios(fixture:AgentConversationFixture){
   const {capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,supplementaryInputs,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
+await step('较旧的待决策与待查看始终排在最新输入的执行中之前',async()=>{
+  const saved=structuredClone(fixture.conversation),additional=fixture.additionalConversations;
+  const rows=[
+    {id:'priority-running',status:'running',at:'2026-10-30T08:00:00Z'},
+    {id:'priority-waiting',status:'waiting-question',at:'2026-10-29T08:00:00Z'},
+    {id:'priority-unseen',status:'completed',at:'2026-10-29T09:00:00Z'},
+  ];
+  try{
+    update({run:run('completed'),activity:{version:1,seenThrough:1,active:false,userInputAt:'2026-10-28T08:00:00Z'}});
+    fixture.additionalConversations=rows.map(row=>({...structuredClone(saved),id:row.id,title:row.id,workspaceId,
+      revision:row.id,updatedAt:row.at,requests:[],run:run(row.status),activity:{version:1,seenThrough:0,active:true,userInputAt:row.at}}));
+    await page.reload();await input().waitFor();
+    const open=async()=>{await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();await panel().locator('[data-conversation-id="priority-running"]').waitFor();};
+    const order=()=>panel().locator(`[data-history-workspace="${workspaceId}"] .ac-history-row-main`).evaluateAll((nodes:HTMLElement[])=>nodes.map(node=>node.dataset.conversationId).filter(id=>id?.startsWith('priority-')));
+    await open();assert.deepEqual(await order(),['priority-unseen','priority-waiting','priority-running']);
+    await panel().getByRole('button',{name:'返回当前对话',exact:true}).click();
+    fixture.additionalConversations[0].activity.userInputAt='2026-10-31T08:00:00Z';
+    fixture.additionalConversations[0].revision='newer-input';
+    await open();assert.deepEqual(await order(),['priority-unseen','priority-waiting','priority-running']);
+    await capture(page,'conversation-attention-priority.png');
+  }finally{
+    fixture.additionalConversations=additional;fixture.conversation=saved;await page.reload();await input().waitFor();
+  }
+});
 await step('指定答复分叉为独立对话，刷新保留来源并可返回原对话',async()=>{
   const original=structuredClone(fixture.conversation),additional=[...fixture.additionalConversations],sends=fixture.sends;
   try{
@@ -40,9 +64,9 @@ await step('顶部正文输入与列表共用最大宽度，宽屏居中且窄�
     const geometry=await panel().evaluate((node:HTMLElement)=>{
       const rect=(item:Element)=>{const r=item.getBoundingClientRect();return{left:r.left,right:r.right,width:r.width};};
       const content=(item:Element)=>{const r=rect(item),style=getComputedStyle(item);return{left:r.left+parseFloat(style.paddingLeft),right:r.right-parseFloat(style.paddingRight)};};
-      return{host:rect(node),header:rect(node.querySelector('.ac-thread-header')!),title:content(node.querySelector('.ac-thread-header')!),participants:content(node.querySelector('.ac-participants')!),messages:content(node.querySelector('.ac-message-list')!),composer:rect(node.querySelector('.ac-composer')!),max:parseFloat(getComputedStyle(node).getPropertyValue('--ac-content-width'))};
+      return{host:rect(node),header:rect(node.querySelector('.ac-thread-header')!),title:content(node.querySelector('.ac-thread-header')!),messages:content(node.querySelector('.ac-message-list')!),composer:rect(node.querySelector('.ac-composer')!),max:parseFloat(getComputedStyle(node).getPropertyValue('--ac-content-width'))};
     });
-    for(const edge of ['left','right'] as const){for(const area of ['title','participants','messages'] as const)assert.ok(Math.abs(geometry[area][edge]-geometry.composer[edge])<1,label+' '+area+' '+edge+' '+JSON.stringify(geometry));}
+    for(const edge of ['left','right'] as const){for(const area of ['title','messages'] as const)assert.ok(Math.abs(geometry[area][edge]-geometry.composer[edge])<1,label+' '+area+' '+edge+' '+JSON.stringify(geometry));}
     assert.equal(geometry.header.width,geometry.host.width,'顶部背景保持铺满');assert.equal(geometry.max,800);
     await capture(page,'conversation-shared-width-'+label+'.png');
   };
