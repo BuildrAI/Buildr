@@ -429,6 +429,7 @@ export class ConversationApplication {
   }
   private draft(input: SendDraft): SendDraft { return normalizeSendDraft(input); }
   private prepare(record: StoredConversation, raw: SendDraft, answerMaterials: string[] = []): { preview: SendPreview; text: string; images: ExecutorImage[]; draft: SendDraft;configuration?:string;needsCompression:boolean;fullText:string } {
+    this.options.connections.assertProgramAvailable(raw.connectionId);
     let input = this.draft(raw); expected(record.view.revision, input.expectedRevision);
     const waitingQuestions = input.waitingHandoff ? waitingHandoffQuestions(record, input) : undefined;
     if (!waitingQuestions) this.assertIdle(record);
@@ -1289,6 +1290,15 @@ export class ConversationApplication {
     const conversation = this.read(workspaceId, id);
     return this.options.events.subscribe({ type: 'snapshot', workspaceId, conversationId: id, revision: conversation.revision, payload: { conversation } }, event => event.workspaceId === workspaceId && event.conversationId === id);
   }
+  async releaseForProgramUpgrade(connectionId: string): Promise<boolean> {
+    await this.releaseIdleSources();
+    if ([...this.sourceConnections].some(([id, connection]) => connection === connectionId && this.sourceRuntimes.has(id))) return false;
+    return !this.options.repository.listPending(true).some(record => {
+      const run = record.view.run;
+      return Boolean(run && record.participants.some(item => item.id === run.participantId && item.connectionId === connectionId));
+    });
+  }
+
   async closeConnection(connectionId: string): Promise<void> {
     await Promise.allSettled(this.options.repository.listPending(true).filter(record => !this.options.generationAlive || record.view.run?.generation === this.options.generation).map(async record => {
       const run = record.view.run; const participant = record.participants.find(value => value.id === run?.participantId);

@@ -48,6 +48,8 @@ export interface ModelGatewayConfiguration {
 export interface ExecutorOpenOptions {
   gateway?: ModelGatewayConfiguration;
   nativeAccountConfigRoot?: string;
+  /** Trusted original source identity, set only by an explicit verified program upgrade. */
+  programSource?: string;
   connectionId: string;
   configRoot: string;
   executable?: string;
@@ -205,12 +207,21 @@ export interface ConnectionView {
   capabilities: AgentCapabilities;
   loginAttempt?: LoginAttemptView;
 }
+export interface ProgramUpgradeInput { expectedRevision: string; expectedVersion: string }
+export interface ProgramUpgradeView {
+  id: string; connectionId: string; expectedVersion: string; executable: string;
+  state: 'downloading' | 'waiting' | 'restarting' | 'completed' | 'failed' | 'interrupted';
+  message: string; updatedAt: string; installedExecutable?: string; currentVersion?: string;
+}
+
 export interface ProgramUpdateView {
   connectionId: string;
   revision: string;
   provider: string;
   label: string;
   executable?: string;
+  managed?: boolean;
+  upgrade?: ProgramUpgradeView;
   status: 'unchecked' | 'not-connected' | 'available' | 'latest' | 'ahead' | 'unknown' | 'stale';
   versionKind: 'program' | 'package';
   packageName: string;
@@ -238,7 +249,8 @@ export interface ProgramCatalog {
 }
 export interface AgentProgramManager {
   discover(input: { provider: string; executable?: string; boundExecutable?: string; signal: AbortSignal }): Promise<ProgramCatalog>;
-  install(input: { provider: string; signal: AbortSignal; progress(message: string): void }): Promise<string>;
+  install(input: { provider: string; version?: string; signal: AbortSignal; progress(message: string): void }): Promise<string>;
+  isManaged?(provider: string, executable: string): boolean;
 }
 export type PreparationState = 'discovering' | 'selection-required' | 'installation-required' | 'installing' | 'connecting' | 'waiting-login' | 'ready' | 'failed' | 'cancelled';
 export interface PreparationView {
@@ -441,6 +453,7 @@ export interface AgentServiceOptions {
   environment?: Record<string, string | undefined>;
   /** Native program discovery/install port; credentials remain in executor-owned configs. */
   programManager?: AgentProgramManager;
+  programRelease?: (provider: string, executable: string, signal: AbortSignal) => Promise<{latestVersion: string; currentReleaseVersion?: string; source: string}>;
   /** Product-independent host authority; source identity survives connection replacement. */
   host?: AgentHostCapabilities;
   legacySourceId?: string;

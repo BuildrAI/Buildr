@@ -62,7 +62,7 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       if (pathname === `${prefix}/program-updates/check` && request.method === 'POST') return result('programUpdates', await service.connections.checkProgramUpdates(validate('programUpdateCheck', await readJsonBody())));
       if (pathname === `${prefix}/connections` && request.method === 'GET') return result('connections', await service.connections.list());
       if (pathname === `${prefix}/pending-requests` && request.method === 'GET') return result('conversations', await service.conversations.pending());
-      const match = pathname.slice(prefix.length).match(/^\/connections\/([a-z][a-z0-9-]*)(?:\/(connect|check|disconnect|login-attempts|preparation-attempts)(?:\/([a-f0-9-]{36})(?:\/(cancel))?)?)?$/);
+      const match = pathname.slice(prefix.length).match(/^\/connections\/([a-z][a-z0-9-]*)(?:\/(connect|check|disconnect|login-attempts|preparation-attempts|program-upgrades)(?:\/([a-f0-9-]{36})(?:\/(cancel))?)?)?$/);
       if (!match) return null;
       const [, id, action, attemptId, cancel] = match;
       if (request.method === 'GET' && !action) return result('connection', await service.connections.read(id));
@@ -71,6 +71,7 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       if (request.method === 'GET' && action === 'login-attempts' && attemptId && !cancel) return result('connection', await service.connections.loginAttempt(id, attemptId));
       if (request.method !== 'POST') return null;
       const body = await readJsonBody();
+      if (action === 'program-upgrades' && !attemptId) return result('programUpgrade', await service.connections.upgradeProgram(id, validate('programUpgradeInput', body)), 202);
       if (action === 'preparation-attempts' && !attemptId) return result('preparation', await service.connections.prepare(id, validate('prepare', body)), 202);
       if (action === 'preparation-attempts' && attemptId && cancel) { validate('empty', body); return result('preparation', await service.connections.cancelPreparation(id, attemptId)); }
       if (action === 'connect' && !attemptId) return result('connection', await service.connections.connect(id, validate('connect', body)));

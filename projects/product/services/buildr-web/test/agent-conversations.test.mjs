@@ -587,3 +587,12 @@ test('程序更新使用共用认证客户端，只读观察与主动检查不�
   assert.equal(calls[0].init.method,undefined);assert.deepEqual(JSON.parse(calls[1].init.body),{});assert.deepEqual(JSON.parse(calls[2].init.body),{connectionId:'codex'});
   assert.ok(calls.every(item=>item.init.headers['x-buildr-session']==='native-test-session'));
 });
+
+test('更新程序只提交已观察接入修订与精确发布版本，使用统一认证',async()=>{
+  const calls=[];
+  const api=createAgentConversationsClient(async(url,init)=>{calls.push({url,init});return{state:'downloading'};},session);
+  await api.upgradeProgram('codex',{expectedRevision:'r-observed',expectedVersion:'0.164.0'});
+  assert.equal(calls[0].url,'/api/v1/app/agent-service/connections/codex/program-upgrades');
+  assert.equal(calls[0].init.method,'POST');assert.equal(calls[0].init.headers['x-buildr-session'],'native-test-session');
+  assert.deepEqual(JSON.parse(calls[0].init.body),{expectedRevision:'r-observed',expectedVersion:'0.164.0'});
+});

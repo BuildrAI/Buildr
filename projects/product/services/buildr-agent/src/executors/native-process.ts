@@ -209,11 +209,11 @@ export async function bindingFingerprint(provider: string, executable: string, v
   return createHash('sha256').update(JSON.stringify({ provider, executable: await executableIdentity(executable), version, config, dev: info.dev, ino: info.ino })).digest('hex');
 }
 /** Program contents may change on a compatible update; source/config identity must not. */
-export async function nativeBinding(provider: string, executable: string, version: string, configRoot: string, prior?: ExecutorBinding): Promise<Required<Pick<ExecutorBinding, 'identity' | 'data'>>> {
+export async function nativeBinding(provider: string, executable: string, version: string, configRoot: string, prior?: ExecutorBinding, programSource?: string): Promise<Required<Pick<ExecutorBinding, 'identity' | 'data'>>> {
   if (!isCompatibleProgram(provider, version)) throw new Error(`${provider}_version_unsupported`);
   const source = await realpath(executable), config = await realpath(configRoot), info = await stat(config);
   // Keep the v2 namespace byte-for-byte: changing admission must not change old native IDs.
-  const provenance = { format: 'buildr-native-binding/v2', provider, executable: source, config, dev: info.dev, ino: info.ino, series: nativeProgramPolicy(provider).bindingSeries };
+  const provenance = { format: 'buildr-native-binding/v2', provider, executable: programSource ?? source, config, dev: info.dev, ino: info.ino, series: nativeProgramPolicy(provider).bindingSeries };
   const data = { ...provenance, observedVersion: version };
   if (!prior) return { identity: createHash('sha256').update(JSON.stringify(provenance)).digest('hex'), data };
   if (prior.data !== undefined) {

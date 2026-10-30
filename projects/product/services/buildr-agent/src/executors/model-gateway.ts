@@ -15,9 +15,9 @@ export function checkedGateway(gateway?: ExecutorGateway): ExecutorGateway | und
 export async function consumerBinding(provider: string, executable: string, version: string, config: string, options: ExecutorOpenOptions) {
   if (!options.gateway) {
     if (options.binding?.data?.gatewayIdentity) throw new Error('agent_context_binding_mismatch');
-    return await nativeBinding(provider, executable, version, config, options.binding);
+    return await nativeBinding(provider, executable, version, config, options.binding, options.programSource);
   }
-  const native = await nativeBinding(provider, executable, version, config);
+  const native = await nativeBinding(provider, executable, version, config, undefined, options.programSource);
   const identity = createHash('sha256').update(JSON.stringify(['buildr-model-gateway/v1', native.identity, options.gateway.identity])).digest('hex');
   if (options.binding && (options.binding.identity !== identity || options.binding.data?.gatewayIdentity !== options.gateway.identity)) throw new Error('agent_context_binding_mismatch');
   return { identity, data: { ...native.data, gatewayIdentity: options.gateway.identity } };

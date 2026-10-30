@@ -1,3 +1,5 @@
+import { AgentServiceError } from '../domain/agent-state.ts';
+import { ProgramUpgrades } from './program-upgrades.ts';
 import { ProgramUpdates } from './program-updates.ts';
 import {createQoderModelProvider} from '../model-access/providers/qoder.ts';
 import type {ModelProvider} from '../model-access/contracts.ts';
@@ -11,7 +13,7 @@ import {createDeepSeekAccountOwner} from '../executors/dsh/model-source-owner.ts
 import path from 'node:path';
 import process from 'node:process';
 import { randomUUID } from 'node:crypto';
-import type { AgentServiceOptions, ConnectionView, PreparationInput, SendDraft } from '../contracts.ts';
+import type { AgentServiceOptions, ConnectionView, PreparationInput, ProgramUpgradeInput, SendDraft } from '../contracts.ts';
 import { ConversationRepository } from '../persistence/conversation-repository.ts';
 import { ConnectionApplication } from '../application/connection-application.ts';
 import { ConversationApplication } from '../application/conversation-application.ts';
@@ -32,15 +34,15 @@ export function createAgentService(options: AgentServiceOptions) {
   let linkedChanged: ((connection:ConnectionView)=>void)|undefined;
   const connections = new ConnectionApplication({ repository, root, executors: options.executors ?? createNativeExecutors(), environment: executorEnvironment(options.environment ?? process.env), generation, now, changed: (connection: ConnectionView) => {events.publish({ type: 'connection', revision: connection.revision, payload: { connection } });linkedChanged?.(connection);} });
   const programManager = options.programManager ?? new NativeProgramManager(root, executorEnvironment(options.environment ?? process.env));
-  const programUpdates = new ProgramUpdates(() => connections.list(), programManager, now);
+  const programUpdates = new ProgramUpdates(() => connections.list(), programManager, now, options.programRelease);
   const preparations = new PreparationApplication(connections, programManager, generation, now);
   const owner=(id:string)=>({
-    async inspect(){if(!connections.get(id).enabled)return{status:'not-authenticated' as const};return(await connections.runtime(id)).inspectAccount();},
-    async identity(){const runtime=await connections.runtime(id);if(!runtime.modelIdentity)throw new Error('native_model_identity_unavailable');return runtime.modelIdentity();},
-    async request(path:string,init?:RequestInit){if(!connections.get(id).enabled)return new Response(null,{status:401});const runtime=await connections.runtime(id);if(!runtime.requestModel)throw new Error('native_model_bridge_unavailable');return runtime.requestModel(path,init,['/chat','/codex/responses','/anthropic/v1/messages'].includes(path)?models.accounts.read('native-'+id).identity:undefined);}
+    async inspect(){return connections.useProgram(id,async()=>{if(!connections.get(id).enabled)return{status:'not-authenticated' as const};return(await connections.runtime(id)).inspectAccount();});},
+    async identity(){return connections.useProgram(id,async()=>{const runtime=await connections.runtime(id);if(!runtime.modelIdentity)throw new Error('native_model_identity_unavailable');return runtime.modelIdentity();});},
+    async request(path:string,init?:RequestInit){return connections.useProgram(id,async()=>{if(!connections.get(id).enabled)return new Response(null,{status:401});const runtime=await connections.runtime(id);if(!runtime.requestModel)throw new Error('native_model_bridge_unavailable');return runtime.requestModel(path,init,['/chat','/codex/responses','/anthropic/v1/messages'].includes(path)?models.accounts.read('native-'+id).identity:undefined);});}
   });
   const dsh=owner('dsh');
-  const dshProvider=createDeepSeekModelProvider({ownerFactory:()=>({...dsh,quota:async()=>{const runtime=await connections.runtime('dsh');return await runtime.modelQuota?.()??{available:false,observedAt:now()};},beginLogin:async()=>{throw new Error('请在DSH账号中登录。');},cancelLogin:async()=>{},close:async()=>{},request:(url,init)=>dsh.request(new URL(url).pathname,init)})});
+  const dshProvider=createDeepSeekModelProvider({ownerFactory:()=>({...dsh,quota:async()=>connections.useProgram('dsh',async()=>{const runtime=await connections.runtime('dsh');return await runtime.modelQuota?.()??{available:false,observedAt:now()};}),beginLogin:async()=>{throw new Error('请在DSH账号中登录。');},cancelLogin:async()=>{},close:async()=>{},request:(url,init)=>dsh.request(new URL(url).pathname,init)})});
   const nativeDsh:ModelProvider={...dshProvider,id:'native-dsh',label:'DSH / DeepSeek',connectionId:'dsh',async open(input){const runtime=await dshProvider.open(input);return{protocol:runtime.protocol,inspect:async()=>{const value=await runtime.inspect();return{...value,...(value.status==='ready'?{identity:await dsh.identity()}: {})};},beginLogin:u=>runtime.beginLogin(u),cancelLogin:()=>runtime.cancelLogin(),infer:i=>runtime.infer(i),close:()=>runtime.close()};}};
   const linkedProviders=[createCodexModelProvider({owner:owner('codex')}),nativeDsh,createQoderModelProvider(owner('qoder'))].map(provider=>({...provider,async open(input:Parameters<ModelProvider['open']>[0]){const runtime=await provider.open(input);return{protocol:runtime.protocol,inspect:()=>runtime.inspect(),beginLogin:(u:Parameters<typeof runtime.beginLogin>[0])=>runtime.beginLogin(u),cancelLogin:()=>runtime.cancelLogin(),close:()=>runtime.close(),infer:async(i:Parameters<typeof runtime.infer>[0])=>{const identity=createHash('sha256').update(await owner(provider.connectionId!).identity()).digest('hex');if(models.accounts.read(provider.id).identity!==identity)throw new ModelAccessError('model_identity_conflict','账号身份已变化，请刷新模型。');return runtime.infer(i);}};}}));
   const models = createModelAccess({root: path.join(root, 'model-access'), providers: options.modelProviders ?? [...linkedProviders,createCodexModelProvider(), createDevinModelProvider(), createDeepSeekModelProvider({ownerFactory: async input => {
@@ -93,10 +95,12 @@ export function createAgentService(options: AgentServiceOptions) {
     return {...result,hasSnapshot,...(diagnostic?{diagnostic}:{})};
   };
   const conversations = new ConversationApplication({ repository, connections, modelAccess: models, events, root, generation, now, host: new HostContext(options), autoContinueInterrupted: options.autoContinueInterrupted, generationAlive: options.generationAlive });
+  const upgrades = new ProgramUpgrades({root,connections,programs:programManager,checks:programUpdates,release:id=>conversations.releaseForProgramUpgrade(id),now});
+  const withUpgrades=(snapshot:ReturnType<typeof programUpdates.list>)=>({programs:snapshot.programs.map(program=>({...program,upgrade:(()=>{const job=upgrades.read(program.connectionId);return job&&(job.executable===program.executable||job.installedExecutable===program.executable)?job:undefined;})()}))});
   return {
     generation,
     activity() {
-      const reasons = [...conversations.activity(), ...preparations.activity(), ...connections.activity(), ...models.activity()];
+      const reasons = [...conversations.activity(), ...preparations.activity(), ...connections.activity(), ...models.activity(), ...upgrades.activity()];
       if(discovery)reasons.push({kind:'model-discovery',count:1});
       try {
         const pending = repository.listPending(true).filter(record => !options.generationAlive || record.view.run?.generation === generation);
@@ -108,7 +112,7 @@ export function createAgentService(options: AgentServiceOptions) {
     async freezeMetadata() {
       clearInterval(discoveryTimer); discoveryTimer = undefined;
       await discovery?.catch(() => {});
-      if ([...preparations.activity(), ...connections.activity(), ...models.activity().filter(reason => reason.kind !== 'model-request')].length) {
+      if ([...upgrades.activity(), ...preparations.activity(), ...connections.activity(), ...models.activity().filter(reason => reason.kind !== 'model-request')].length) {
         startRefreshing();
         const { AgentServiceError } = await import('../domain/agent-state.ts');
         throw new AgentServiceError('agent_process_busy', '仍有账号、准备或配置写入操作，尚未交接维护权。', 409);
@@ -130,14 +134,18 @@ export function createAgentService(options: AgentServiceOptions) {
     models: { startRefreshing, generate: models.generate, accounts: {...models.accounts,list:async(input:{refresh?:boolean}={})=>{if(input.refresh===true)await discover();return models.accounts.list();}}, catalog: {list:async(input:{refresh?:boolean}={})=>{if(input.refresh===true)await discover();return cachedCatalog();}} },
     connections: {
       list: () => ({ connections: connections.list() }),
-      programUpdates: () => programUpdates.list(),
-      checkProgramUpdates: (input: { connectionId?: string } = {}) => programUpdates.check(input),
+      programUpdates: () => withUpgrades(programUpdates.list()),
+      checkProgramUpdates: async (input: { connectionId?: string } = {}) => withUpgrades(await programUpdates.check(input)),
+      upgradeProgram: (id: string, input: ProgramUpgradeInput) => upgrades.begin(id,input),
       read: (id: string) => connections.get(id),
       prepare: (id: string, input: PreparationInput) => preparations.begin(id, input),
       preparation: (id: string, attemptId: string) => preparations.read(id, attemptId),
       currentPreparation: (id: string) => ({ attempt: preparations.current(id) }),
       cancelPreparation: (id: string, attemptId: string) => preparations.cancel(id, attemptId),
-      connect: (id: string, input: { expectedRevision: string; executable?: string }) => connections.connect(id, input),
+      connect: (id: string, input: { expectedRevision: string; executable?: string }) => {
+        if (!options.executors && !connections.get(id).executable && (!input.executable || !programManager.isManaged?.(id,input.executable))) throw new AgentServiceError('agent_program_preparation_required','请先准备 Buildr 独立程序，不使用桌面应用内程序。',409);
+        return connections.connect(id,input);
+      },
       check: (id: string, input: { expectedRevision?: string } = {}) => connections.check(id, input.expectedRevision),
       login: (id: string, input: { expectedRevision: string }) => connections.beginLogin(id, input.expectedRevision),
       loginAttempt: (id: string, attemptId: string) => connections.loginAttempt(id, attemptId),
@@ -188,7 +196,7 @@ export function createAgentService(options: AgentServiceOptions) {
       pending: () => conversations.pending(),
     },
     async close() {
-      if (closed) return; closed = true; programUpdates.close();
+      if (closed) return; closed = true; programUpdates.close(); upgrades.beginClosing();
       clearInterval(discoveryTimer);discoveryTimer=undefined;
       const budget = Math.max(50, Math.min(options.shutdownTimeoutMs ?? 10_000, 10_000));
       const deadline = Date.now() + budget;
@@ -202,7 +210,7 @@ export function createAgentService(options: AgentServiceOptions) {
       try { await within(conversations.close(), Math.max(1, Math.floor(budget * 0.7))); }
       finally {
         // Always start actual resource release, even if a vendor's stop never responds.
-        await within(Promise.allSettled([discovery, preparations.close(), connections.close(), models.close()]), Math.max(1, deadline - Date.now()));
+        await within(Promise.allSettled([discovery, preparations.close(), upgrades.close().finally(() => connections.close()), models.close()]), Math.max(1, deadline - Date.now()));
         await within(conversations.releaseIdleSources(), Math.max(1, deadline - Date.now()));
         events.close();
       }

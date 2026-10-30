@@ -84,8 +84,9 @@ function rebind(record: Record<string, unknown>): void {
     delete record.bindingData;
     return;
   }
-  const executable = fs.realpathSync(data.executable);
-  if (!fs.statSync(executable).isFile()) throw new Error('agent_relocation_executable_invalid');
+  const actual = fs.realpathSync(typeof record.programSource === 'string' ? (record.view as {executable:string}).executable : data.executable);
+  const executable = typeof record.programSource === 'string' ? record.programSource : actual;
+  if (!fs.statSync(actual).isFile()) throw new Error('agent_relocation_executable_invalid');
   const config = fs.realpathSync(data.config);
   const info = fs.statSync(config);
   if (!info.isDirectory()) throw new Error('agent_relocation_config_invalid');
@@ -150,7 +151,7 @@ export function listConnectionExecutables(input: { sourceRoot: string; database?
     let record: Record<string, any>;
     try { record = JSON.parse(row.body); } catch { continue; }
     if (typeof record?.view?.executable === 'string') executables.add(record.view.executable);
-    if (typeof record?.bindingData?.executable === 'string') executables.add(record.bindingData.executable);
+    if (!record.programSource && typeof record?.bindingData?.executable === 'string') executables.add(record.bindingData.executable);
   }
   return [...executables];
 }

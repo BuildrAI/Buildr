@@ -45,6 +45,10 @@ test('program preparation is authenticated, schema checked and independently obs
   response=await fetch(`${endpoint}/${attempt.id}/cancel`,{method:'POST',headers,body:'{}'});assert.equal(response.status,200);assert.equal((await response.json()).state,'cancelled');
   response=await fetch(endpoint,{headers});assert.equal((await response.json()).attempt.state,'cancelled');
   assert.equal(service.connections.read('codex').enabled,false);
+  const upgrade=`${url}/api/v1/app/agent-service/connections/codex/program-upgrades`;
+  response=await fetch(upgrade,{method:'POST',headers:{'content-type':'application/json'},body:'{}'});assert.equal(response.status,403);
+  response=await fetch(upgrade,{method:'POST',headers,body:JSON.stringify({expectedRevision:'unconfigured',expectedVersion:'0.164.0',package:'arbitrary'})});assert.equal(response.status,400);
+  response=await fetch(upgrade,{method:'POST',headers,body:JSON.stringify({expectedRevision:'unconfigured',expectedVersion:'0.164.0'})});assert.equal(response.status,409);
   const updates=`${url}/api/v1/app/agent-service/program-updates`;
   response=await fetch(updates);assert.equal(response.status,403);
   response=await fetch(updates,{headers});assert.equal(response.status,200);
@@ -56,6 +60,27 @@ test('program preparation is authenticated, schema checked and independently obs
   assert.equal((await response.json()).programs[0].status,'not-connected');
   assert.equal(service.connections.read('codex').enabled,false);
 
+});
+
+test('explicit program upgrade returns accepted work and observes the restarted binding over HTTP', {timeout:30_000}, async t=>{
+  const {base,root}=taskRecordFixture(t,'agent-upgrade-http'),runtime=createRuntime();
+  const original=path.join(base,'original.js'),installed=path.join(base,'new.js');fs.writeFileSync(original,'old');fs.writeFileSync(installed,'new');
+  let opens=0,closes=0,installs=0;
+  const capabilities={text:true,images:false,approval:false,questions:false,stop:true,resume:true,maxInputBytes:65536};
+  const native:AgentRuntime={capabilities,bindingIdentity:'upgrade-fixture',bindingData:{executable:original},async inspectAccount(){return{status:'ready',label:'saved'};},async models(){return[];},async beginLogin(){assert.fail('upgrade cannot log in');},async cancelLogin(){},async createContext(){assert.fail('upgrade cannot create work');},async resumeContext(){},async readHistory(){return[];},async send(){assert.fail('upgrade cannot send');},async observe(){return{status:'idle',tools:[]};},async reply(){},async stop(){assert.fail('upgrade cannot stop work');},async close(){closes++;}};
+  const service=createAgentService({dataRoot:path.join(base,'agent-profile'),executors:[{descriptor:{id:'codex',label:'Codex',capabilities},async open(){opens++;return{...native};}}],programManager:{isManaged:(_,file)=>file===installed,async discover(input){return{candidates:[{executable:input.boundExecutable!,label:'fixture',source:'configured',compatible:true,version:input.boundExecutable===installed?'0.164.0':'0.163.0'}],installation:{label:'fixture',url:'https://fixture.invalid',version:'0.163.0',canInstall:true}};},async install(input){assert.equal(input.version,'0.164.0');installs++;return installed;}},programRelease:async()=>({latestVersion:'0.164.0',source:'https://registry.npmjs.org/%40openai%2Fcodex/latest'}),resolveWorkspace:()=>({rootPath:root}),assertTask:()=>{}});
+  const contributions=runtimeContributions(runtime,'http').filter((item:{id:string})=>item.id!=='agent-service.http');contributions.push(createAgentServiceHttpContribution(()=>service));
+  const server=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions}),{url,sessionToken}=await server.ready;
+  t.after(async()=>{await service.close();server.server.closeAllConnections();await new Promise<void>(resolve=>server.server.close(()=>resolve()));});
+  const connection=await service.connections.connect('codex',{expectedRevision:'unconfigured',executable:original}),headers={origin:url,'x-buildr-session':sessionToken,'content-type':'application/json'},endpoint=url+'/api/v1/app/agent-service/connections/codex/program-upgrades';
+  let response=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:connection.revision,expectedVersion:'0.164.0'})});assert.equal(response.status,202);assert.equal((await response.json()).state,'downloading');
+  let completed=false;
+  for(let n=0;n<200;n++){
+    response=await fetch(url+'/api/v1/app/agent-service/program-updates',{headers});assert.equal(response.status,200);const row=(await response.json()).programs[0];
+    if(row.upgrade?.state==='completed'){assert.equal(row.executable,installed);assert.equal(row.upgrade.currentVersion,'0.164.0');completed=true;break;}
+    assert.notEqual(row.upgrade?.state,'failed',row.upgrade?.message);await new Promise(resolve=>setTimeout(resolve,10));
+  }
+  assert.ok(completed);assert.equal(installs,1);assert.equal(opens,2);assert.equal(closes,1);assert.equal(fs.readFileSync(original,'utf8'),'old');
 });
 
 test('private conversations use authenticated HTTP and bounded binary input; streams are observation only', { timeout: 30_000 }, async t => {

@@ -20,7 +20,7 @@ export class ProgramUpdates {
     let policy: ReturnType<typeof nativeProgramPolicy> | undefined;
     try { policy = nativeProgramPolicy(connection.provider); } catch { /* Custom executors need their own release adapter. */ }
     return { connectionId: connection.id, revision: connection.revision, label: connection.label,
-      provider: connection.provider, executable: connection.executable, status: connection.executable ? 'unchecked' : 'not-connected',
+      provider: connection.provider, executable: connection.executable, managed: Boolean(connection.executable && this.programs.isManaged?.(connection.provider, connection.executable)), status: connection.executable ? 'unchecked' : 'not-connected',
       versionKind: connection.provider === 'qoder' ? 'package' : 'program',
       packageName: policy?.package.replace(/@[^@]+$/, '') ?? connection.provider,
       updateUrl: policy?.url ?? '',

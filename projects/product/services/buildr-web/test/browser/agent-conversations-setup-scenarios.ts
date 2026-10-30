@@ -100,10 +100,10 @@ await step('智能体与模型分开管理，程序准备、取消与刷新恢�
       connections[0].enabled=false;connections[0].status='disconnected';fixture.programScenario='missing';await page.reload();await page.locator('#workbench-overview').waitFor();await openDesktopConversation();const initialAgent=await panel().locator('.ac-provider-select .ant-select-selection-item').innerText(),loginsBefore=fixture.nativeLoginPosts;
       const drawer=page.getByRole('dialog',{name:/^智能体与模型/});
       const openSettings=async()=>{await page.getByRole('button',{name:'账号与配置',exact:true}).click();await drawer.waitFor();await drawer.locator('.ams-setup').getByRole('tab',{name:'智能体',exact:true}).click();};
-      const executor=(provider:string)=>drawer.locator('.ams-executor').filter({has:page.getByRole('heading',{name:provider,exact:true})});
-      const program=drawer.getByTestId('agent-program-preparation');
-      const expand=async(provider:string)=>{const row=executor(provider),header=row.locator('header');if(await header.getAttribute('aria-expanded')!=='true')await header.click();await program.waitFor();};
-      await openSettings();await executor('Codex').getByRole('button',{name:/^接\s*入$/}).click();await program.getByRole('link',{name:'下载官方 ChatGPT App',exact:true}).waitFor();assert.match(await program.getByRole('link',{name:'下载官方 ChatGPT App',exact:true}).getAttribute('href'),/^https:\/\/learn\.chatgpt\.com\//);
+      const executor=(provider:string)=>drawer.locator('.ac-program-update[data-program="'+provider.toLowerCase()+'"]');
+      let program=executor('Codex').getByTestId('agent-program-preparation');
+      const expand=async(provider:string)=>{const row=executor(provider);program=row.getByTestId('agent-program-preparation');if(await row.locator('details').getAttribute('open')===null)await row.locator('summary').click();await program.waitFor();};
+      await openSettings();await executor('Codex').getByRole('button',{name:/^接\s*入$/}).click();await program.getByRole('link',{name:'查看官方安装说明',exact:true}).waitFor();assert.match(await program.getByRole('link',{name:'查看官方安装说明',exact:true}).getAttribute('href'),/^https:\/\/learn\.chatgpt\.com\//);
       await program.getByRole('button',{name:'准备独立程序 · 0.163.0',exact:true}).click();await program.getByRole('button',{name:'取消准备',exact:true}).waitFor();const pendingId=programAttempts.codex.id;
       await expand('DSH');await program.getByRole('button',{name:'准备并连接',exact:true}).waitFor();assert.equal(programAttempts.codex.id,pendingId,'切换智能体不接管原准备');assert.equal(programAttempts.codex.state,'installing');
       await expand('Codex');await program.getByRole('button',{name:'取消准备',exact:true}).click();await program.getByText('已取消本次准备；已有程序、账号和对话均保留。',{exact:true}).waitFor();

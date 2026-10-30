@@ -7,3 +7,10 @@
 .ac-program-update small { color: var(--soft-muted); }
 .ac-program-update-path { overflow-wrap: anywhere; font-family: monospace; font-size: var(--font-size-code); margin-top: 6px; color: var(--soft-muted); }
 .ac-program-update-links { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; font-size: var(--font-size-meta); }
+.ac-program-update-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ac-program-update-summary { min-width: 0; }
+.ac-program-update-version { color: var(--soft-muted); font-size: var(--font-size-secondary); overflow-wrap: anywhere; }
+.ac-program-update-row > .ant-btn { flex-shrink: 0; }
+.ac-program-update-details { padding: 0; border: 0; background: transparent; margin-top: 6px; color: var(--soft-muted); font-size: var(--font-size-meta); }
+.ac-program-update-details > summary { cursor: pointer; width: fit-content; }
+.ac-program-update-details[open] > summary { margin-bottom: 8px; }

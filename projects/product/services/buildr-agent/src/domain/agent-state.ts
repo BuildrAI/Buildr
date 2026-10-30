@@ -52,6 +52,7 @@ export function safeDiagnostic(error: unknown): string {
 export const BUSY_STATES: ReadonlySet<RunStatus> = new Set(['starting', 'running', 'waiting-approval', 'waiting-question', 'stopping', 'tools-active', 'unknown']);
 
 export interface StoredConnection {
+  programSource?: string;
   view: ConnectionView;
   bindingIdentity?: string;
   bindingData?: Record<string, unknown>;

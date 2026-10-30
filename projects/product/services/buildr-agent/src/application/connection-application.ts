@@ -19,6 +19,96 @@ export class ConnectionApplication {
   private readonly lifecycles = new Map<string, number>();
   private readonly modelEpochs = new Map<string, number>();
   private closing = false;
+  private readonly programChanges = new Set<string>();
+  private readonly programRecovery = new Map<string, AgentRuntime[]>();
+  private readonly programUses = new Map<string, number>();
+  assertProgramAvailable(id: string): void {
+    if (this.programRecovery.has(id)) fail('agent_program_recovery_unconfirmed', '程序退出未确认，已暂停该智能体；请重启智能体后台后重新检查。', 409);
+    if (this.programChanges.has(id)) fail('agent_program_updating', '该智能体正在切换新版，请稍后重试；输入已保留。', 409);
+  }
+  async useProgram<T>(id: string, work: () => Promise<T>): Promise<T> {
+    this.assertProgramAvailable(id); this.programUses.set(id, (this.programUses.get(id) ?? 0) + 1);
+    let streaming = false, released = false;
+    const release = () => { if (!released) { released = true; this.programUses.set(id, (this.programUses.get(id) ?? 1) - 1); } };
+    try {
+      const value = await work();
+      if (value instanceof Response && value.body) {
+        streaming = true; const reader = value.body.getReader();
+        return new Response(new ReadableStream({
+          async pull(controller) { try { const next = await reader.read(); if (next.done) { release(); controller.close(); } else controller.enqueue(next.value); } catch (error) { release(); controller.error(error); } },
+          async cancel(reason) { try { await reader.cancel(reason); } finally { release(); } },
+        }, {highWaterMark:0}), {status:value.status,statusText:value.statusText,headers:value.headers}) as T;
+      }
+      return value;
+    } finally { if (!streaming) release(); }
+  }
+  acquireProgramChange(id: string): (() => void) | null {
+    if (this.closing || this.metadataReadOnly) fail('agent_service_closing', '智能体后台正在切换，请稍后重试。', 503);
+    if (this.programRecovery.has(id)) this.assertProgramAvailable(id);
+    if (this.programChanges.has(id) || this.programUses.get(id) || this.checking.has(id) || [...this.opening.keys()].some(key => key === id || key.startsWith(id + ':')) || ['initializing','waiting-browser','checking'].includes(this.get(id).loginAttempt?.state ?? '')) return null;
+    this.programChanges.add(id);
+    return () => this.programChanges.delete(id);
+  }
+  /** Called only while the upgrade owner holds the connection gate and proves all work released. */
+  async replaceProgram(id: string, observed: ConnectionView, executable: string): Promise<ConnectionView> {
+    if (!this.programChanges.has(id)) fail('agent_program_update_unowned', '程序切换缺少执行所有者。', 409);
+    const original = this.stored(id);
+    if (original.view.executable !== observed.executable || original.view.configPath !== observed.configPath || original.view.enabled !== observed.enabled) fail('agent_revision_conflict', '程序绑定已变化，请重新检查。', 409);
+    const source = original.programSource ?? (typeof original.bindingData?.executable === 'string' ? original.bindingData.executable : original.view.executable && fs.realpathSync(original.view.executable));
+    const configRoot = path.join(this.options.root, 'connections', id);
+    const executor = this.executors.get(id)!;
+    const open = (record: StoredConnection, selected: string, programSource?: string) => executor.open({connectionId:id,configRoot,executable:selected,environment:this.options.environment,programSource,...(record.bindingIdentity ? {binding:{identity:record.bindingIdentity,data:record.bindingData,executable:record.view.executable,configRoot:record.view.configPath}} : {})});
+    const owned = [...this.gatewayRuntimes].filter(([key]) => key.startsWith(id + ':'));
+    const previous = this.runtimes.get(id);
+    let oldReleased = false;
+    let candidate: AgentRuntime | undefined;
+    try {
+      // There must not be two native writers of the same independent config.
+      const oldRuntimes = await Promise.all([...(previous ? [previous] : []), ...owned.map(([,runtime]) => runtime)]);
+      if (original.bindingIdentity && !original.bindingData && original.view.executable) {
+        const native = oldRuntimes.find(runtime => runtime.bindingIdentity === original.bindingIdentity) ?? await open(original, original.view.executable, original.programSource);
+        if (!oldRuntimes.includes(native)) oldRuntimes.push(native);
+        original.bindingData = native.bindingData;
+      }
+      const closed = await Promise.allSettled(oldRuntimes.map(runtime => runtime.close()));
+      const unreleased = oldRuntimes.filter((_, index) => closed[index].status === 'rejected');
+      if (unreleased.length) {
+        this.programRecovery.set(id, unreleased);
+        fail('agent_program_recovery_unconfirmed', '旧程序退出未确认，未启动新版；请重启智能体后台后重新检查。', 409);
+      }
+      oldReleased = true;
+      this.runtimes.delete(id);
+      for (const [key] of owned) this.gatewayRuntimes.delete(key);
+      candidate = await open(original, executable, source);
+      if (original.bindingIdentity && candidate.bindingIdentity !== original.bindingIdentity) fail('agent_binding_changed', '新版未能延续原上下文身份，已保留旧程序。', 409);
+      const current = this.stored(id);
+      if (current.view.executable !== original.view.executable || current.bindingIdentity !== original.bindingIdentity || current.view.enabled !== original.view.enabled || current.view.configPath !== original.view.configPath) fail('agent_revision_conflict', '程序绑定已变化，未覆盖当前接入。', 409);
+      current.programSource = source;
+      current.view.executable = executable;
+      current.view.configPath = configRoot;
+      current.bindingIdentity = candidate.bindingIdentity; current.bindingData = candidate.bindingData;
+      current.view.capabilities = candidate.capabilities; delete current.view.diagnostic;
+      const result = this.save(current);
+      this.runtimes.set(id, Promise.resolve(candidate)); candidate = undefined;
+      return result;
+    } catch (error) {
+      if (candidate) {
+        try { await candidate.close(); }
+        catch {
+          this.programRecovery.set(id, [candidate]);
+          fail('agent_program_recovery_unconfirmed', '新版程序退出未确认，未重新启动旧程序；请重启智能体后台后重新检查。', 409);
+        }
+      }
+      const current = this.stored(id);
+      // A concurrent owner changing metadata is never rolled back.
+      if (oldReleased && current.view.executable === original.view.executable && current.bindingIdentity === original.bindingIdentity && current.view.enabled && original.view.executable) {
+        try { this.runtimes.set(id, Promise.resolve(await open(original, original.view.executable, original.programSource))); }
+        catch { /* The old binding is preserved and can be opened again; never claim ready. */ }
+      }
+      throw error;
+    }
+  }
+
 
   private readonly options: {
     repository: ConversationRepository;
@@ -73,12 +163,14 @@ export class ConnectionApplication {
   }
   list(): ConnectionView[] { return [...this.executors.keys()].map(id => this.get(id)); }
   programUnavailable(id: string, revision: string, diagnostic: string): ConnectionView {
+    this.assertProgramAvailable(id);
     const record = this.stored(id); expected(record.view.revision, revision);
     record.view.status = 'failed'; record.view.diagnostic = diagnostic;
     return this.save(record);
   }
 
   async connect(id: string, input: { expectedRevision: string; executable?: string; programOnly?: boolean }): Promise<ConnectionView> {
+    this.assertProgramAvailable(id);
     if (this.closing) fail('agent_service_closing', '智能体服务正在退出。', 503);
     const record = this.stored(id); expected(record.view.revision, input.expectedRevision);
     if (input.executable !== undefined) {
@@ -96,6 +188,7 @@ export class ConnectionApplication {
     return this.check(id);
   }
   async runtime(id: string, gateway?: ModelGatewayConfiguration): Promise<AgentRuntime> {
+    this.assertProgramAvailable(id);
     if (gateway) return this.gatewayRuntime(id, gateway);
     const record = this.stored(id);
     const existing = this.runtimes.get(id);
@@ -114,7 +207,7 @@ export class ConnectionApplication {
       const executor = this.executors.get(id)!;
       const lifecycle = this.lifecycles.get(id);
       const opening = new AbortController(); this.opening.set(id, opening);
-      promise = executor.open({ connectionId: id, configRoot, executable: record.view.executable, environment: this.options.environment, signal: opening.signal,
+      promise = executor.open({ connectionId: id, configRoot, executable: record.view.executable, programSource: record.programSource, environment: this.options.environment, signal: opening.signal,
         ...(record.bindingIdentity ? { binding: { identity: record.bindingIdentity, data: record.bindingData, executable: record.view.executable, configRoot: record.view.configPath } } : {}),
       }).then(async runtime => {
         if (this.closing || opening.signal.aborted || this.lifecycles.get(id) !== lifecycle) { await runtime.close(); fail('agent_service_closing', '接入已断开或智能体服务正在退出。', 503); }
@@ -148,7 +241,7 @@ export class ConnectionApplication {
     const configRoot = path.join(this.options.root, 'connections', id, 'model-bindings', createHash('sha256').update(gateway.identity).digest('hex'));
     const lifecycle = this.lifecycles.get(id);
     const opening = new AbortController(); this.opening.set(key, opening);
-    const promise = this.executors.get(id)!.open({ connectionId: id, configRoot, executable: record.view.executable, environment: this.options.environment, signal: opening.signal, gateway, nativeAccountConfigRoot: record.view.configPath ?? path.join(this.options.root, 'connections', id) }).then(async runtime => {
+    const promise = this.executors.get(id)!.open({ connectionId: id, configRoot, executable: record.view.executable, programSource: record.programSource, environment: this.options.environment, signal: opening.signal, gateway, nativeAccountConfigRoot: record.view.configPath ?? path.join(this.options.root, 'connections', id) }).then(async runtime => {
       if (this.closing || opening.signal.aborted || this.lifecycles.get(id) !== lifecycle) { await runtime.close(); fail('agent_connection_disabled', '接入已断开。', 409); }
       return runtime;
     }).catch(error => { if (this.gatewayRuntimes.get(key) === promise) this.gatewayRuntimes.delete(key); throw error; }).finally(() => { this.opening.delete(key); });
@@ -177,6 +270,7 @@ export class ConnectionApplication {
     return this.get(id);
   }
   disable(id: string, revision: string): void {
+    this.assertProgramAvailable(id);
     const record = this.stored(id); expected(record.view.revision, revision);
     record.view.enabled = false; record.view.status = 'disconnected'; this.save(record);
     this.lifecycles.set(id, (this.lifecycles.get(id) ?? 0) + 1);
@@ -185,6 +279,7 @@ export class ConnectionApplication {
   }
 
   async check(id: string, expectedRevision?: string): Promise<ConnectionView> {
+    this.assertProgramAvailable(id);
     if (expectedRevision !== undefined) expected(this.stored(id).view.revision, expectedRevision);
     const pending = this.checking.get(id); if (pending) return pending;
     const lifecycle = this.lifecycles.get(id);
@@ -224,6 +319,7 @@ export class ConnectionApplication {
   }
 
   beginLogin(id: string, expectedRevision: string): ConnectionView {
+    this.assertProgramAvailable(id);
     if (this.closing) fail('agent_service_closing', '智能体服务正在退出。', 503);
     const record = this.stored(id); expected(record.view.revision, expectedRevision);
     if (!record.view.enabled) fail('agent_connection_disabled', '请先连接此独立接入。', 409);
@@ -265,6 +361,7 @@ export class ConnectionApplication {
     return this.get(id);
   }
   async disconnect(id: string, revision: string): Promise<ConnectionView> {
+    this.assertProgramAvailable(id);
     const record = this.stored(id); expected(record.view.revision, revision);
     record.view.enabled = false; record.view.status = 'disconnected';
     this.save(record);
@@ -281,9 +378,9 @@ export class ConnectionApplication {
     for (const controller of this.opening.values()) controller.abort();
     for (const timer of this.loginTimers.values()) clearTimeout(timer);
     this.loginTimers.clear(); this.loginUrls.clear();
-    const runtimes = [...this.runtimes.values(), ...this.gatewayRuntimes.values()]; this.runtimes.clear(); this.gatewayRuntimes.clear();
+    const runtimes = [...this.runtimes.values(), ...this.gatewayRuntimes.values(), ...[...this.programRecovery.values()].flat().map(runtime => Promise.resolve(runtime))]; this.runtimes.clear(); this.gatewayRuntimes.clear();
     await Promise.allSettled(runtimes.map(async runtime => (await runtime).close()));
   }
-  activity() { return [{kind:'connection-operation',count:this.opening.size+this.checking.size},{kind:'native-login',count:this.list().filter(value=>['initializing','waiting-browser','checking'].includes(value.loginAttempt?.state??'')).length}].filter(value=>value.count>0); }
+  activity() { return [{kind:'connection-operation',count:this.opening.size+this.checking.size+this.programChanges.size},{kind:'native-login',count:this.list().filter(value=>['initializing','waiting-browser','checking'].includes(value.loginAttempt?.state??'')).length}].filter(value=>value.count>0); }
   beginClosing(): void { this.closing = true; }
 }
