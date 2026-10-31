@@ -69,10 +69,11 @@ function ToolGroup({entries,active,onOpenFile,open,onToggle,toolsOpen,onToolTogg
   /* Native status updates can lag behind the live stream; while the block is still
      executing, the group holding the newest tool stays in the live presentation. */
   const live=Boolean(runningEntry)||liveForce;
-  const latestTool=processTool(runningEntry??entries.at(-1)!);
+  const latestEntry=runningEntry??entries.at(-1)!;
+  const latestTool=processTool(latestEntry);
   const liveLabel=`${latestTool.action} ${latestTool.description}`.trim();
   return <details className={'ac-step-group'+(failed?' is-failed':'')+(live?' is-live':'')} open={open} onToggle={event=>{if(event.target===event.currentTarget&&event.currentTarget.open!==open)onToggle(event.currentTarget.open);}}>
-    <summary data-entry-group={JSON.stringify(entries.map(entry=>entry.id))}>
+    <summary data-entry-group={JSON.stringify(entries.map(entry=>entry.id))} data-current-tool-status={live?processEntryStatus(latestEntry,active):undefined}>
       {live ? <>
         <span className="ac-execution-light" aria-hidden="true"/>
         <span className="ac-step-node" aria-hidden="true"><ToolIcon kind={latestTool.kind}/></span>

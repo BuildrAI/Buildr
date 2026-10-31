@@ -45,6 +45,17 @@ test('未展开的历史过程不挂载正文，执行中的说明与工具汇�
 });
 
 test('执行中光点排在工具图标之前，结束后恢复统计',()=>{const live=render(true);assert.ok(live.indexOf('ac-execution-light')<live.indexOf('ac-step-node'));assert.doesNotMatch(live,/次工具调用/);assert.match(render(false),/次工具调用/);});
+test('实时摘要携带当前工具自身状态，不使用组内历史失败作为当前状态',()=>{
+ const failed={...tool('failed'),status:'failed'};
+ for(const status of ['running','completed','unknown','failed']){
+  const html=renderEntries([failed,{...tool('current','Agent'),status}],{active:true,groupsOpen:{'tool-group:failed':true}});
+  assert.match(html,/ac-step-group is-failed is-live/);
+  assert.match(html,new RegExp('data-current-tool-status="'+status+'"'));
+  assert.match(html,/data-entry-id="failed"/);assert.match(html,/失败/);
+ }
+ const historical=renderEntries([failed,tool('current')]);
+ assert.doesNotMatch(historical,/data-current-tool-status=/);assert.match(historical,/1 项失败/);
+});
 
 test('工具图标按真实类型区分，不用统一占位图标',()=>{
  for(const [name,icon] of [['search','search'],['web_fetch','global'],['ls','folder-open'],['view-image','picture'],['unknown','tool']]){

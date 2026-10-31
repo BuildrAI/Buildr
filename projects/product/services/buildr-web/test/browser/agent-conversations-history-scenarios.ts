@@ -210,6 +210,35 @@ await step('历史两行展示完整标识，标题可复制同一标识且保�
       await history();await assertTwoLines();await capture(page,'agent-conversation-history-mobile.png');await panel().locator('.ac-history-list button[data-conversation-id="'+originalId+'"]').click();await input().waitFor();fixture.additionalConversations=fixture.additionalConversations.filter(item=>item.id!==identity);await page.setViewportSize(viewport);
     });
 
+await step('历史工具失败不改变当前执行图形的状态',async()=>{
+  const saved=structuredClone(fixture.conversation),at=new Date().toISOString();
+  const tool=(id:string,name:string,status:string,sequence:number)=>({id,name,status,sequence,kind:'tool',role:'system',text:id,runId:'run-fixture',createdAt:at});
+  try{
+    for(const [name,status] of [['Agent','running'],['command','running'],['read','running'],['Agent','completed'],['Agent','unknown'],['Agent','failed']]){
+      update({entries:[tool('earlier-failed','command','failed',1),tool('earlier-ok','read','completed',2),tool('current-tool',name,status,3)],run:run('running'),requests:[]});
+      await page.reload();
+      const group=panel().locator('.ac-step-group.is-live'),summary=group.locator(':scope>summary');
+      await summary.waitFor();assert.equal(await summary.getAttribute('data-current-tool-status'),status);
+      await summary.click();
+      const color=(locator:any)=>locator.evaluate((node:HTMLElement)=>getComputedStyle(node).color);
+      const currentColor=await color(group.locator('[data-entry-id="current-tool"]>summary>.ac-step-node'));
+      const failedColor=await color(group.locator('[data-entry-id="earlier-failed"]>summary>.ac-step-node'));
+      assert.equal(await color(summary.locator(':scope>.ac-step-node')),currentColor,'实时图形只反映当前工具本身的状态');
+      if(status==='failed')assert.equal(currentColor,failedColor);
+      else assert.notEqual(currentColor,failedColor,'历史失败不能给正常执行的图形染色');
+      assert.match(await group.locator('[data-entry-id="earlier-failed"]>summary').innerText(),/失败/);
+      if(name==='Agent'&&status==='running')await capture(page,'conversation-live-status-isolated.png');
+    }
+    update({run:run('completed')});await page.reload();
+    await panel().getByRole('button',{name:'展开处理过程',exact:true}).click();
+    const settled=panel().locator('.ac-step-group:not(.is-live)');
+    assert.match(await settled.locator(':scope>summary').innerText(),/2 项失败/);
+    await settled.locator(':scope>summary').click();
+    assert.equal(await settled.locator(':scope>summary>.ac-step-node').evaluate((node:HTMLElement)=>getComputedStyle(node).color),
+      await settled.locator('[data-entry-id="earlier-failed"]>summary>.ac-step-node').evaluate((node:HTMLElement)=>getComputedStyle(node).color),'结束后的组汇总仍提示历史失败');
+  }finally{fixture.conversation=saved;await page.reload();await input().waitFor();}
+});
+
 await step('连续工具默认汇总折叠，明确展开在追加时保持，结束折叠且展开后失败提醒靠右',async()=>{
       const previous=structuredClone(fixture.conversation);
       const tool=(id:string,status='completed')=>({id,sequence:id==='single-tool'?1:2,kind:'tool',role:'system',name:'command',text:'echo verify\ncommand output',status,runId:'run-fixture',createdAt:new Date().toISOString()});
