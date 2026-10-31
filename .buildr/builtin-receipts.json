@@ -69,7 +69,7 @@
       "type": "skill",
       "id": "connection-authoring",
       "target": "skills/buildr/connection-authoring",
-      "integrity": "sha256-ef4caec2d23aa66ac19b213d4c77b7ad7e0be6cb01fc22f5ab1ec3a1e4e3708d",
+      "integrity": "sha256-450e89c416572201c2e5d6948457b322bed3352f55833ed17ba132e4a63a7a87",
       "files": [
         {
           "path": "SKILL.md",
@@ -81,7 +81,7 @@
         },
         {
           "path": "references/connection-contract.md",
-          "integrity": "sha256-4b31f705b6695c76c69e23f7f8e4969d1911080f9233987b9e6b81ee0286a145"
+          "integrity": "sha256-c491f4825f5018bc539a7203001b3322571dd5e195a965eeaa6c0dcd82e095b8"
         },
         {
           "path": "templates/SKILL.md",
