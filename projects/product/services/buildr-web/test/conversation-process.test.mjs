@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {groupConversationStream,processBlockKey,carryExpandedProcessBlocks,processEntryStatus,conversationStreamTurns,conversationTurnExecution} from '../src/features/agent-conversations/conversation-state.ts';
 import {processTool,conversationFileTarget} from '../src/features/agent-conversations/conversation-process.ts';
+import {visibleConversationEntries} from '../src/features/agent-conversations/conversation-notices.ts';
 const message=(id,text,runId='r1',role='assistant')=>({id,sequence:0,kind:'message',role,text,runId,createdAt:'2026-10-26T00:00:00Z'});
 const tool=(id,options={})=>({...message(id,'output'),kind:'tool',role:'system',status:'completed',...options});
 test('短最终答复留在主线，长过程说明保留在同轮过程内，不按字数判断',()=>{
@@ -164,4 +165,53 @@ test('重试通知在首条原生回应前即绑定当前执行与计时，旧�
  const responded=conversationStreamTurns(groupConversationStream([prompt,retry,tool('current',{runId:'retry'})],run));
  assert.deepEqual(conversationTurnExecution(responded.at(-1),run),{current:true,active:true});
  assert.equal(conversationTurnExecution(responded.at(-1),{...run,status:'completed'}).active,false);
+});
+
+test('交错到达的执行先归属再合组，同轮用户补充保持分段',()=>{
+ const entries=[message('old-u','旧要求','old','user'),tool('old-one',{runId:'old'}),message('new-u','新要求','new','user'),tool('new-one',{runId:'new'}),tool('old-two',{runId:'old'}),tool('new-two',{runId:'new'}),message('extra','补充','new','user'),tool('old-three',{runId:'old'}),tool('after-extra',{runId:'new'}),message('answer','完成','new')];
+ const grouped=groupConversationStream(entries,{id:'new',status:'completed'});
+ const original=structuredClone(grouped);
+ const turns=conversationStreamTurns(grouped);
+ assert.deepEqual(turns.map(turn=>turn.prompt?.id),['old-u','new-u','extra']);
+ assert.deepEqual(turns[0].items.map(item=>item.entries.map(entry=>entry.id)),[['old-one','old-two','old-three']]);
+ assert.deepEqual(turns[1].items.map(item=>item.entries.map(entry=>entry.id)),[['new-one','new-two']]);
+ assert.deepEqual(turns[2].items.map(item=>item.type==='process-block'?item.entries.map(entry=>entry.id):item.entry.id),[['after-extra'],'answer']);
+ assert.deepEqual(grouped,original,'归属合组不修改原始分段或持久顺序');
+});
+
+test('交错分组合并与加载更早记录共同保留过程展开选择',()=>{
+ const current=[message('a-u','旧要求','a','user'),tool('a-one',{runId:'a',sequence:3}),message('b-u','新要求','b','user'),tool('b-one',{runId:'b'}),tool('a-two',{runId:'a',sequence:7})].map((entry,index)=>({...entry,sequence:index+3}));
+ const key=processBlockKey([current[1]]),added=[tool('a-earlier',{runId:'a',sequence:1})];
+ for(const expanded of [true,false]){
+  const carried=carryExpandedProcessBlocks(current,added,{[key]:expanded});
+  // The earlier page can start a separate history segment; the existing merged
+  // segment retains its exact explicit choice and all stable tool identities.
+  assert.equal(carried[key],expanded);
+  const turns=conversationStreamTurns(groupConversationStream(current));
+  assert.deepEqual(turns[0].items[0].entries.map(entry=>entry.id),['a-one','a-two']);
+ }
+});
+
+test('新执行的接续回执不会切断仍属于原执行的工具组',()=>{
+ const handoff={...message('handoff','接续','new','system'),kind:'handoff'};
+ const entries=[message('old-u','旧要求','old','user'),tool('old-one',{runId:'old'}),handoff,message('new-u','新要求','new','user'),tool('new-one',{runId:'new'}),tool('old-two',{runId:'old'})];
+ const turns=conversationStreamTurns(groupConversationStream(entries));
+ assert.deepEqual(turns[0].items.filter(item=>item.type==='process-block').map(item=>item.entries.map(entry=>entry.id)),[['old-one','old-two']]);
+ assert.equal(turns.flatMap(turn=>turn.items).filter(item=>item.type==='entry'&&item.entry.id==='handoff').length,1);
+});
+
+test('带原生父工具来源的子报告不被提升为整轮最终答复',()=>{
+ const main=message('main','主助手结果'),child={...message('child','子任务报告'),parentToolId:'agent-tool'};
+ const entries=groupConversationStream([tool('agent-tool'),main,child],{id:'r1',status:'completed'});
+ assert.deepEqual(entries.filter(item=>item.type==='entry'&&item.entry.role==='assistant').map(item=>item.entry.id),['main']);
+});
+
+test('可见主线分页后保留展开选择，隐藏子报告不能改变过程身份',()=>{
+ const child={...message('hidden-first','内部报告'),parentToolId:'parent-agent',sequence:8};
+ const current=[child,{...tool('visible-tool'),sequence:9},{...message('answer','完成'),sequence:10}];
+ const added=[{...tool('earlier-tool'),sequence:1}],key=processBlockKey([current[1]]);
+ for(const open of [true,false]){
+  const carried=carryExpandedProcessBlocks(visibleConversationEntries(current),visibleConversationEntries(added),{[key]:open});
+  assert.equal(carried[processBlockKey([added[0],current[1]])],open);
+ }
 });

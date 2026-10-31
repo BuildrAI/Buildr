@@ -23,7 +23,7 @@ const entry={id:'tool',sequence:1,kind:'tool',role:'system',name:'command',text:
 const tool=(id,name='command')=>({id,sequence:0,kind:'tool',role:'system',name,text:'echo '+id,status:'completed',createdAt:'2026-10-27T00:00:00Z'});
 const narration=(id)=>({id,sequence:0,kind:'message',role:'assistant',text:'说明 '+id,createdAt:'2026-10-27T00:00:00Z'});
 const render=active=>renderToStaticMarkup(React.createElement(ConversationProcessBlock,{blockKey:'block',entries:[entry],active,open:true,onToggle(){},onOpenFile(){}}));
-const renderEntries=(entries,{active=false,open=true,groupsOpen={},toolsOpen={}}={})=>renderToStaticMarkup(React.createElement(ConversationProcessBlock,{blockKey:'block',entries,active,open,groupsOpen,toolsOpen,onToggle(){},onOpenFile(){}}));
+const renderEntries=(entries,{active=false,liveToolId,open=true,groupsOpen={},toolsOpen={}}={})=>renderToStaticMarkup(React.createElement(ConversationProcessBlock,{blockKey:'block',entries,active,liveToolId,open,groupsOpen,toolsOpen,onToggle(){},onOpenFile(){}}));
 test('折叠工具组也保留失败和未知，运行时不重复状态文案',()=>{
  const settled=render(false);assert.match(settled,/查看处理过程/);assert.match(settled,/1 项结果待核对/);assert.doesNotMatch(settled,/正在处理|执行中|is-running/);
  const live=render(true);assert.match(live,/data-process-state="live"/);assert.match(live,/ac-step-group/);assert.doesNotMatch(live,/正在处理|执行中|查看处理过程|ac-tool-detail/);
@@ -128,4 +128,17 @@ test('单条折叠统计继续提示失败和未知，展开仍能查看完整�
  const summary=html.match(/<summary data-entry-group=.*?<\/summary>/)?.[0];
  assert.match(summary,/1 次工具调用/);assert.doesNotMatch(summary,/full-command|full-output/);
  assert.match(html,/ac-tool-command">echo full-command/);assert.match(html,/<pre>full-output<\/pre>/);
+});
+
+test('旧分组残留running或同轮补充分段不会产生多个实时指示',()=>{
+ const old={...tool('old'),status:'running'},current={...tool('current'),status:'running'};
+ const html=renderEntries([old,narration('between'),current],{active:true,groupsOpen:{'tool-group:old':true}});
+ assert.equal((html.match(/ac-execution-light/g)||[]).length,1);
+ const summaries=[...html.matchAll(/<summary data-entry-group=.*?<\/summary>/g)].map(match=>match[0]);
+ assert.match(summaries[0],/1 次工具调用/);assert.doesNotMatch(summaries[0],/ac-execution-light/);
+ assert.match(summaries[1],/ac-execution-light/);
+ assert.match(html,/ac-step-group" open/,'较早分组仍保留用户明确展开选择');
+ const earlierSegment=renderEntries([old],{active:true,liveToolId:'current'});
+ assert.doesNotMatch(earlierSegment,/ac-execution-light/);assert.match(earlierSegment,/1 次工具调用/);
+ assert.equal((renderEntries([current],{active:true,liveToolId:'current'}).match(/ac-execution-light/g)||[]).length,1);
 });

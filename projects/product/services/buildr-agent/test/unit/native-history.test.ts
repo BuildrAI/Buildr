@@ -58,6 +58,35 @@ test('Qoder durable snapshots collapse by native message ID, preserving exact us
   assert.throws(() => qoderHistoryItems(messages, 'different-session'), /identity_mismatch/);
 });
 
+test('Qoder history preserves child roles and parent tools without treating child inputs as a new user execution', () => {
+  const messages = [
+    { type: 'user', uuid: 'main-input', session_id: 's', message: { content: [{ type: 'text', text: 'work' }] } },
+    { type: 'assistant', uuid: 'child-output', session_id: 's', parent_tool_use_id: 'delegate', message: { id: 'child-output', content: [{ type: 'text', text: 'child report' }, { type: 'tool_use', id: 'child-tool', name: 'Read', input: { file_path: '/file' } }] } },
+    { type: 'user', uuid: 'child-input', session_id: 's', parent_tool_use_id: 'delegate', message: { content: [{ type: 'text', text: 'child instruction' }] } },
+    { type: 'user', uuid: 'child-tool-output', session_id: 's', parent_tool_use_id: 'delegate', message: { content: [{ type: 'tool_result', tool_use_id: 'child-tool', content: 'read result' }] } },
+    { type: 'assistant', uuid: 'main-output', session_id: 's', message: { id: 'main-output', content: [{ type: 'text', text: 'main reply' }] } },
+  ];
+  const items = qoderHistoryItems(messages, 's');
+  assert.equal(items.filter(item => item.role === 'user').length, 1);
+  assert.equal(items.find(item => item.text === 'child report')?.role, 'assistant');
+  assert.equal(items.find(item => item.text === 'child report')?.parentToolId, 'delegate');
+  assert.equal(items.find(item => item.id === 'child-tool')?.parentToolId, 'delegate');
+  assert.ok(items.every(item => item.executionId === 'main-input'));
+  assert.equal(items.at(-1)?.parentToolId, undefined);
+});
+
+test('Qoder task completion preserves the launch receipt and exact native report facts in the parent tool history', () => {
+  const items = qoderHistoryItems([
+    { type: 'user', uuid: 'input', session_id: 's', message: { content: [{ type: 'text', text: 'work' }] } },
+    { type: 'assistant', uuid: 'agent', session_id: 's', message: { content: [{ type: 'tool_use', id: 'delegate', name: 'Agent', input: {} }] } },
+    { type: 'user', uuid: 'launch', session_id: 's', message: { content: [{ type: 'tool_result', tool_use_id: 'delegate', content: 'started native child' }] } },
+    { type: 'system', subtype: 'task_notification', session_id: 's', tool_use_id: 'delegate', status: 'completed', summary: 'actual child report', output_file: '/exact/native/output.md' },
+  ], 's');
+  const tool = items.find(item => item.id === 'delegate'); assert.equal(tool?.status, 'completed');
+  assert.match(tool!.text, /started native child/); assert.match(tool!.text, /actual child report/); assert.match(tool!.text, /\/exact\/native\/output\.md/);
+  assert.equal(items.filter(item => item.role === 'assistant').length, 0);
+});
+
 test('DSH cold stop observation cannot borrow another completed turn as success', async () => {
   const { dshExecutionObservation } = await import('../../src/executors/dsh/protocol.ts');
   const events = [

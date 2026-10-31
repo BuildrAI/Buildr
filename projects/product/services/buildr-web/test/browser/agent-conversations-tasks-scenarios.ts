@@ -40,14 +40,15 @@ await step('窄工作区同时打开任务与对话时，内容标题栏填满�
       await page.setViewportSize({width:1600,height:1000});
     });
 
-await step('停止期间提交待发送内容，刷新保留、可修改取消，并在新版开始后更新展示',async()=>{
+await step('原生暂忙时保存待发送内容，刷新保留、可修改取消，并在新版开始后更新展示',async()=>{
       update({run:run('stopping','dsh'),requests:[],pendingSend:undefined});await reopen();
       const before=fixture.sends,previewsBefore=fixture.prepares;
+      fixture.prepareError={code:'agent_process_switching',message:'原生服务正在切换。'};
       await input().fill('上一轮结束后继续修复');await input().press('Enter');
-      await panel().getByText('等待上一轮结束后自动发送',{exact:true}).waitFor();
-      assert.equal(fixture.sends,before);assert.equal(fixture.prepares,previewsBefore);assert.equal(await input().inputValue(),'');
+      await panel().getByText('新指令已保存，尚未发送',{exact:true}).waitFor();
+      assert.equal(fixture.sends,before);assert.equal(fixture.prepares,previewsBefore+1,'待发送依据真实服务占用，界面不只按状态名称决定');assert.equal(await input().inputValue(),'');
       assert.equal(fixture.conversation.pendingSend.draft.text,'上一轮结束后继续修复');
-      await page.reload();await panel().getByText('等待上一轮结束后自动发送',{exact:true}).waitFor();
+      await page.reload();await panel().getByText('新指令已保存，尚未发送',{exact:true}).waitFor();
       await panel().getByRole('button',{name:'修改待发送内容',exact:true}).click();
       const edit=page.getByRole('dialog',{name:'修改待发送指令',exact:true});
       await edit.getByRole('textbox',{name:'待发送内容',exact:true}).fill('修改后的下一轮指令');
@@ -66,11 +67,11 @@ await step('停止期间提交待发送内容，刷新保留、可修改取消�
       assert.equal(await panel().getByRole('button',{name:'取消待发送',exact:true}).isEnabled(),true);
       assert.equal(fixture.sends,before);
       await capture(page,'agent-conversation-pending-failure.png');
-      update({pendingSend:pending});await page.reload();await panel().getByText('等待上一轮结束后自动发送',{exact:true}).waitFor();
+      update({pendingSend:pending});await page.reload();await panel().getByText('新指令已保存，尚未发送',{exact:true}).waitFor();
       await panel().getByRole('button',{name:'取消待发送',exact:true}).click();await panel().locator('[data-pending-send-state]').waitFor({state:'hidden'});
       update({run:run('stopped','dsh'),requests:[]});await reopen();const observesBefore=fixture.observes;await panel().locator('.ac-recovery-action').getByRole('button',{name:'继续',exact:true}).click();await panel().locator('[data-run-status="running"]').waitFor();assert.equal(fixture.sends,before+1,'取消只撤回待发送，之后仍能继续原目标');assert.ok(fixture.observes>observesBefore,'继续会先核对原执行');assert.ok(fixture.sentInputs.at(-1).continueRunId);
       update({run:run('stopping','dsh')});await reopen();assert.equal(fixture.sends,before+1);
-      await input().fill('自动交给新版');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().getByText('等待上一轮结束后自动发送',{exact:true}).waitFor();
+      fixture.prepareError={code:'agent_process_switching',message:'原生服务正在切换。'};await input().fill('自动交给新版');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().getByText('新指令已保存，尚未发送',{exact:true}).waitFor();
       const submitted=fixture.conversation.pendingSend.draft;
       update({pendingSend:undefined,entries:[...fixture.conversation.entries,{id:'auto-new-version',sequence:fixture.conversation.entries.length+1,kind:'message',role:'user',text:submitted.text,createdAt:new Date().toISOString()}],run:run('running','dsh',{generation:'new-service-generation',permissionMode:submitted.permissionMode,model:submitted.model,modelAccountId:submitted.modelAccountId})});
       await panel().getByText('自动交给新版',{exact:true}).waitFor();await panel().locator('[data-pending-send-state]').waitFor({state:'hidden'});

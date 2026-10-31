@@ -487,6 +487,7 @@ test('异常恢复入口只取决于原执行状态，与选择模型或智能�
   assert.deepEqual(conversationRecoveryAction(view('completed')),{kind:'recover',label:'继续'});
   const reply={kind:'message',role:'assistant',runId:base.run.id,text:'已完成并答复',createdAt:'2026-10-28T00:00:01Z'};
   assert.equal(conversationRecoveryAction(view('completed',true,[reply])),null);
+  assert.deepEqual(conversationRecoveryAction(view('completed',true,[{...reply,parentToolId:'agent-tool'}])),{kind:'recover',label:'继续'},'子报告不代替缺失的主答复');
   assert.deepEqual(conversationRecoveryAction(view('unknown')),{kind:'observe',label:'核对状态'});
   for(const status of ['starting','running','stopping','waiting-approval','waiting-question']) assert.equal(conversationRecoveryAction(view(status)),null);
   assert.equal(conversationRecoveryAction({...view('failed'),requests:[{id:'pending',runId:base.run.id,participantId:base.run.participantId,generation:base.run.generation}]}),null);
@@ -587,6 +588,15 @@ test('只在每轮最终答复提供分叉，后续执行不遮蔽较早答复',
   assert.deepEqual([...forkableReplyIds(view)],['final']);
   assert.deepEqual([...forkableReplyIds({...view,run:{id:'new',status:'completed'}})],['final','running']);
   assert.equal(forkableReplyIds({...view,forkState:{status:'failed'}}).size,0);
+});
+
+test('子任务报告不能分叉或遮蔽同轮主助手的最终答复',()=>{
+  const main={id:'main-answer',runId:'completed',role:'assistant',kind:'message',status:'completed'};
+  const child={id:'child-answer',runId:'completed',role:'assistant',kind:'message',status:'completed',parentToolId:'agent-tool'};
+  const view={...conversation,run:{id:'completed',status:'completed'},entries:[main,child]};
+  assert.deepEqual([...forkableReplyIds(view)],['main-answer']);
+  assert.deepEqual([...forkableReplyIds({...view,entries:[child]})],[]);
+  assert.deepEqual([...forkableReplyIds({...view,entries:[main,{...child,status:'running'}]})],['main-answer']);
 });
 
 

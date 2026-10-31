@@ -32,6 +32,19 @@ test('reads never create storage; new messages and streaming advance activity, m
   save(repo,r,r=>message(r,'reply-request','answer','notice'));assert.equal(r.view.activity?.version,3);
   save(repo,r,()=>{});assert.equal(r.view.activity?.version,3);
 });
+
+test('native child messages preserve provenance without becoming user activity or unread primary replies',t=>{
+  const repo=fixture(t),r=record();repo.saveConversation(r);
+  save(repo,r,row=>message(row,'primary-user','authorized request'));
+  const version=r.view.activity!.version,userAt=repo.querySummaries(['w1'],{limit:10}).conversations[0]!.activity!.userInputAt;
+  save(repo,r,row=>{
+    message(row,'child-user','delegated instruction');row.view.entries.at(-1)!.parentToolId='delegate';
+    message(row,'child-answer','child report','message','assistant');row.view.entries.at(-1)!.parentToolId='delegate';
+  });
+  assert.equal(r.view.activity!.version,version);
+  assert.equal(repo.querySummaries(['w1'],{limit:10}).conversations[0]!.activity!.userInputAt,userAt);
+  assert.equal(repo.readConversation(r.view.id)!.view.entries.at(-1)!.parentToolId,'delegate');
+});
 test('seen is monotonic, revision independent, cannot acknowledge future output or another workspace',t=>{
   const repo=fixture(t),r=record();repo.saveConversation(r);save(repo,r,r=>message(r,'a','one'));
   const observed=r.view.activity!.version;save(repo,r,r=>message(r,'b','two'));

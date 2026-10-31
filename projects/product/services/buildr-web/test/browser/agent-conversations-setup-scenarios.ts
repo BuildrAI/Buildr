@@ -5,6 +5,38 @@ import type {AgentConversationFixture} from './agent-conversation-fixture.ts';
 /** setup 场景使用独立准备的对话现场。 */
 export async function runSetupScenarios(fixture:AgentConversationFixture){
   const {assertFixed,assertModelSummary,assertNavigationHighlight,assertReminderGap,capture,chooseAgent,chooseModel,chooseOption,closeConversation,closeModelSettings,connections,expectedBrowserErrors,input,modelSettings,openDesktopConversation,openModelSettings,page,panel,preferenceBodies,preparedInputs,programAttempts,reset,run,sentInputs,setHighEffort,step,workspaceId}=fixture;
+await step('智能体设置自定义内容在桌面与窄屏保留留白，长程序路径完整换行',async()=>{
+  await reset();const viewport=page.viewportSize(),matcher='**/api/v1/app/agent-service/program-updates';
+  const executable='/Users/fixture/Library/Application Support/Buildr Dev/'+('long-program-directory/').repeat(12)+'bin/codex';
+  const route=async(intercept:any)=>intercept.fulfill({json:{programs:connections.map(connection=>({connectionId:connection.id,provider:connection.provider,label:connection.label,revision:connection.revision,executable,status:'unchecked',managed:true,versionKind:'program',packageName:connection.id,updateUrl:'https://fixture.invalid'}))}});
+  await page.route(matcher,route);
+  const drawer=page.getByRole('dialog',{name:/^智能体与模型/});
+  try{
+    await page.getByRole('button',{name:'账号与配置',exact:true}).click();await drawer.waitFor();
+    await drawer.locator('.ams-setup').getByRole('tab',{name:'智能体',exact:true}).click();
+    const program=drawer.locator('[data-program="codex"]');await program.waitFor();await program.locator('summary').click();await program.locator('.ac-program-update-path').waitFor();
+    for(const width of [1280,390]){
+      await page.setViewportSize({width,height:900});
+      await drawer.evaluate(async(node:HTMLElement)=>{await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));await Promise.all(node.getAnimations({subtree:true}).map(animation=>animation.finished.catch(()=>{})));});
+      await program.scrollIntoViewIfNeeded();
+      const bounds=await program.evaluate((node:HTMLElement)=>{
+        const body=node.closest('.ant-drawer-body')!,wrapper=node.closest('.ams-executors')!,row=node.querySelector('.ac-program-update-row')!,path=node.querySelector('.ac-program-update-path')!;
+        const a=body.getBoundingClientRect(),b=wrapper.getBoundingClientRect(),c=row.getBoundingClientRect(),p=path.getBoundingClientRect();
+        return{body:{left:a.left,right:a.right},wrapper:{left:b.left,right:b.right},row:{left:c.left,right:c.right},path:{left:p.left,right:p.right},padding:parseFloat(getComputedStyle(wrapper).paddingLeft),pathOverflow:path.scrollWidth>path.clientWidth+1,bodyOverflow:body.scrollWidth>body.clientWidth+1};
+      });
+      assert.ok(bounds.padding>=16,'自定义程序内容仍使用现有留白容器');
+      assert.ok(bounds.row.left>=bounds.body.left+15&&bounds.row.right<=bounds.body.right-15,JSON.stringify(bounds));
+      assert.ok(bounds.path.left>=bounds.body.left+15&&bounds.path.right<=bounds.body.right-15&&!bounds.pathOverflow&&!bounds.bodyOverflow,JSON.stringify(bounds));
+      assert.equal(await program.locator('.ac-program-update-path').innerText(),executable);
+      await capture(page,width===390?'agent-settings-padding-mobile.png':'agent-settings-padding-desktop.png');
+    }
+    await drawer.locator('.ams-setup').getByRole('tab',{name:'模型',exact:true}).click();await drawer.locator('.ams-accounts').waitFor();
+    await capture(page,'agent-settings-models-after-layout-fix.png');
+  }finally{
+    if(await drawer.isVisible())await drawer.getByRole('button',{name:'关闭智能体账号与配置',exact:true}).click();
+    await page.unroute(matcher,route);if(viewport)await page.setViewportSize(viewport);
+  }
+});
 await step('账号入口悬停与聚焦显示所有已登录账号的真实额度，点击仍进入设置',async()=>{
   await reset();
   const observedAt=new Date().toISOString();

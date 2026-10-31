@@ -109,6 +109,63 @@ function send(service: ReturnType<typeof createAgentService>, id: string, connec
   return service.conversations.send('workspace-one', id, { ...draft, previewToken: preview.token, clientRequestId });
 }
 
+for (const provider of ['codex', 'dsh', 'qoder']) test(`${provider} preserves child provenance without admitting child input or handing off child reports as primary replies`, async () => {
+  const native = fake(provider), other = fake('other'), open = native.executor.open;
+  native.executor.open = async options => {
+    const runtime = await open(options), original = runtime.send.bind(runtime);
+    runtime.send = async input => {
+      await original(input);
+      const context = native.contexts.get(input.contextRef.id)!;
+      const executionId = context.observation.executionRef!.id;
+      const items: ExecutorItem[] = [
+        {id:'child-input',kind:'message',role:'user',text:'internal child instruction',parentToolId:'delegate',executionId,status:'completed'},
+        {id:'child-report',kind:'message',role:'assistant',text:'child report must not become primary',parentToolId:'delegate',executionId,status:'completed'},
+        {id:'child-read',kind:'tool',role:'system',name:'Read',input:'{"file_path":"probe.txt"}',text:'child tool output',parentToolId:'delegate',executionId,status:'completed'},
+      ];
+      for (const item of items) {context.items.push(item);input.onEvent({type:'item',item});}
+      // A replay with omitted ancestry must not erase the accurately observed source.
+      input.onEvent({type:'item',item:{...items[1]!,parentToolId:undefined}});
+    };
+    return runtime;
+  };
+  const f = fixture([native.executor, other.executor]);
+  try {
+    await connected(f.service,provider);await connected(f.service,'other');
+    const chat = await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,provider,'read a file');
+    const done = await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='completed');
+    for (const text of ['internal child instruction','child report must not become primary','child tool output']) assert.equal(done.entries.find(entry=>entry.text===text)?.parentToolId,'delegate');
+    const draft={expectedRevision:done.revision,connectionId:'other',text:'continue'};
+    const preview=f.service.conversations.prepareSend('workspace-one',chat.id,draft);
+    assert.ok(!preview.handoff?.body.includes('internal child instruction'));
+    assert.ok(!preview.handoff?.body.includes('child report must not become primary'));
+    assert.ok(preview.handoff?.body.includes(`answer from ${provider}`));
+    assert.equal(native.sends.length,1);assert.equal(other.sends.length,0);
+    await f.service.close();
+    const cold=createAgentService(f.options);
+    try {
+      const restored=cold.conversations.read('workspace-one',chat.id,{compactTools:true});
+      assert.equal(restored.entries.find(entry=>entry.text==='child report must not become primary')?.parentToolId,'delegate');
+      assert.equal(restored.entries.find(entry=>entry.text==='child tool output')?.parentToolId,'delegate');
+    } finally {await cold.close();}
+  } finally {await f.close();}
+});
+
+test('late history from a settled child does not block a new authorized input as a foreign user change',async()=>{
+  const native=fake('local'),f=fixture([native.executor]);
+  try {
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'local','first request');
+    await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='completed');
+    const context=[...native.contexts.values()][0]!;
+    context.items.push({id:'late-child-user',kind:'message',role:'user',parentToolId:'delegate',text:'late internal child instruction',executionId:context.observation.executionRef!.id,status:'completed'});
+    const next=send(f.service,chat.id,'local','new request');
+    const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.id===next.run.id&&view.run?.status==='completed');
+    assert.equal(native.sends.length,2);
+    assert.equal(done.entries.find(entry=>entry.text==='late internal child instruction')?.parentToolId,'delegate');
+  } finally {await f.close();}
+});
+
 test('a detailed model failure survives public reads, observation and a cold service restart without replay',async()=>{
   const diagnostic='DSH · 工具调用后：Devin · 工具结果接续 / 响应流：permission_denied: MCP configuration issue.';
   const native=fake('local',{toolInput:true,failure:diagnostic}),f=fixture([native.executor]);

@@ -14,7 +14,7 @@ await step('单项停止只对原生明确可停止的命令开放，旧记录�
         update({run:run('tools-active','codex',{tools}),requests:[],pendingSend:{id:'compact-pending',revision:'pending-v1',state:'waiting',draft:{connectionId:'codex',text:'上一轮结束后再继续',permissionMode:'full-access'},reason:'等待原命令退出后再发送。'}});
         await reopen();
         const notice=panel().locator('.ac-active-tools'),pending=panel().locator('.ac-pending-send');
-        await notice.getByText('仍有 3 项命令未结束',{exact:true}).waitFor();
+        await notice.getByText('仍有 3 项命令待核对，可继续对话',{exact:true}).waitFor();
         assert.equal(await notice.locator('pre').count(),0,'长命令默认不铺开');
         assert.equal(await panel().locator('.ac-execution-statusbar,.ac-recovery-action').count(),0,'没有重复状态和恢复入口');
         assert.equal(await pending.locator('.ant-alert').count(),0,'待发送不再嵌套大提示框');

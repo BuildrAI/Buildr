@@ -35,12 +35,12 @@ export class ConversationForks {
     let source = this.options.load(scope, id);
     expected(source.view.revision, input.expectedRevision);
     if (source.view.forkState && source.view.forkState.status !== 'ready') fail('agent_fork_unavailable', '此分叉尚未完成，不能继续分叉。', 409);
-    const entry = source.view.entries.find(value => value.id === input.entryId && value.role === 'assistant' && value.kind === 'message');
+    const entry = source.view.entries.find(value => value.id === input.entryId && !value.parentToolId && value.role === 'assistant' && value.kind === 'message');
     const runId = entry?.runId;
     const outcome = runId === source.view.run?.id ? source.view.run : runId ? source.runOutcomes?.[runId] : undefined;
     const round = source.view.entries.filter(value => value.runId === runId);
     if (!entry || entry.status === 'running' || !runId || !outcome || !['completed','stopped','failed'].includes(outcome.status) ||
-        round.filter(value => value.role === 'assistant' && value.kind === 'message').at(-1)?.id !== entry.id)
+        round.filter(value => !value.parentToolId && value.role === 'assistant' && value.kind === 'message').at(-1)?.id !== entry.id)
       fail('agent_fork_boundary_unavailable', '请选择已结束轮次的最后一条答复；旧记录缺少准确轮次时不能安全分叉。', 409);
     let nativeSource = source;
     const visited = new Set([id]);

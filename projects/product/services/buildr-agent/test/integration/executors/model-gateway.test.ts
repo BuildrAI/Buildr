@@ -95,30 +95,39 @@ test('Qoder SDK uses the query-local direct provider for every model purpose wit
 });
 test('Qoder reports its required platform login without demanding native paid models', { timeout: 15000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'buildr-qoder-auth-gateway-'));
+  let runtime: Awaited<ReturnType<ReturnType<typeof createQoderExecutor>['open']>> | undefined;
   try {
     const executable = join(root, 'qoder.mjs');
     const source = (await readFile(new URL('./fixtures/qoder-cli.mjs', import.meta.url), 'utf8')).replace("account:{userId:'fixture-user',subscriptionType:'test'}", 'account:{}').replace("ack(m.request_id,{userId:'fixture-user'});", 'ack(m.request_id,{});');
     await writeFile(executable, source);
-    await assert.rejects(createQoderExecutor().open({ connectionId: 'qoder', configRoot: root, executable, environment: { PATH: process.env.PATH ?? '' }, gateway: lease }), /qoder_platform_login_required/);
-  } finally { await rm(root, { recursive: true, force: true }); }
+    runtime = await createQoderExecutor().open({ connectionId: 'qoder', configRoot: root, executable, environment: { PATH: process.env.PATH ?? '' }, gateway: lease });
+    const contextRef = await runtime.createContext({ cwd: root });
+    await assert.rejects(runtime.send({ contextRef, cwd: root, text: 'must not reach native work', images: [], model: lease.models[0].id, clientRequestId: '1bc40922-e013-4f49-a502-cfcff95fb7cd', onEvent() { assert.fail('preflight failure emitted work'); } }), /qoder_platform_login_required/);
+  } finally { await runtime?.close(); await rm(root, { recursive: true, force: true }); }
 });
 test('Qoder preserves SDK login expiration even when no auth-expired callback is delivered', { timeout: 15000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'buildr-qoder-expired-gateway-'));
+  let runtime: Awaited<ReturnType<ReturnType<typeof createQoderExecutor>['open']>> | undefined;
   try {
     const executable = join(root, 'qoder.mjs');
     const source = (await readFile(new URL('./fixtures/qoder-cli.mjs', import.meta.url), 'utf8'))
       .replace("if(t==='get_models'){", `if(t==='get_models'){emit({type:'control_response',response:{subtype:'error',request_id:m.request_id,error:'Local login has expired. Run "qodercli login" to refresh.'}});return;`);
     await writeFile(executable, source);
-    await assert.rejects(createQoderExecutor().open({ connectionId: 'qoder', configRoot: root, executable, environment: { PATH: process.env.PATH ?? '' }, gateway: lease }), /qoder_platform_login_expired/);
-  } finally { await rm(root, { recursive: true, force: true }); }
+    runtime = await createQoderExecutor().open({ connectionId: 'qoder', configRoot: root, executable, environment: { PATH: process.env.PATH ?? '' }, gateway: lease });
+    const contextRef = await runtime.createContext({ cwd: root });
+    await assert.rejects(runtime.send({ contextRef, cwd: root, text: 'must not reach native work', images: [], model: lease.models[0].id, clientRequestId: '1bc40922-e013-4f49-a502-cfcff95fb7cd', onEvent() { assert.fail('preflight failure emitted work'); } }), /qoder_platform_login_expired/);
+  } finally { await runtime?.close(); await rm(root, { recursive: true, force: true }); }
 });
 test('Qoder rejects an unavailable external model route before any work input is sent', { timeout: 15000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'buildr-qoder-gateway-unavailable-'));
+  let runtime: Awaited<ReturnType<ReturnType<typeof createQoderExecutor>['open']>> | undefined;
   try {
     const executable = join(root, 'qoder.mjs');
     const source = (await readFile(new URL('./fixtures/qoder-cli.mjs', import.meta.url), 'utf8'))
       .replace("if(m.type==='user'){input=m;", "if(m.type==='user')throw new Error('work input must not be sent');if(m.type==='user'){input=m;");
     await writeFile(executable, source);
-    await assert.rejects(createQoderExecutor().open({ connectionId: 'qoder', configRoot: root, executable, environment: { PATH: process.env.PATH ?? '' }, gateway: lease }), /qoder_gateway_model_unavailable/);
-  } finally { await rm(root, { recursive: true, force: true }); }
+    runtime = await createQoderExecutor().open({ connectionId: 'qoder', configRoot: root, executable, environment: { PATH: process.env.PATH ?? '' }, gateway: lease });
+    const contextRef = await runtime.createContext({ cwd: root });
+    await assert.rejects(runtime.send({ contextRef, cwd: root, text: 'must not reach native work', images: [], model: lease.models[0].id, clientRequestId: '1bc40922-e013-4f49-a502-cfcff95fb7cd', onEvent() { assert.fail('preflight failure emitted work'); } }), /qoder_gateway_model_unavailable/);
+  } finally { await runtime?.close(); await rm(root, { recursive: true, force: true }); }
 });

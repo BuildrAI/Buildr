@@ -29,6 +29,7 @@ class QoderRuntime implements AgentRuntime {
   private configRoot: string;
   private contexts = new Map<string, string>();
   private handlers = new Map<string, ExecutorSendInput['onEvent']>();
+  private executionHandlers = new Map<string, ExecutorSendInput['onEvent']>();
   private observations = new Map<string, ExecutorObservation>();
   private login?: { child: ChildProcessWithoutNullStreams; cancelled: boolean; update: (value: LoginObservation) => void };
   private gateway?: ExecutorGateway;
@@ -40,24 +41,28 @@ class QoderRuntime implements AgentRuntime {
         return;
       }
       if (message.method === 'event') {
-        const { contextId, event } = message.params;
+        const { contextId, executionId, event } = message.params;
+        const handler = executionId ? this.executionHandlers.get(executionId) : this.handlers.get(contextId);
         if (event.type === 'accepted') event.executionRef = this.rpc.executionRef(event.executionRef.id, contextId, this.bindingIdentity);
         if (event.type === 'observation' && event.observation.executionRef) event.observation.executionRef = this.rpc.executionRef(event.observation.executionRef.id, contextId, this.bindingIdentity, event.observation.backgroundWork === true);
-        if (event.type === 'accepted') this.observations.set(contextId, { status: 'running', executionRef: event.executionRef, tools: [] });
+        if (event.type === 'accepted') {
+          if (handler) this.handlers.set(contextId, handler);
+          this.observations.set(contextId, { status: 'running', executionRef: event.executionRef, tools: [] });
+        }
         if (event.type === 'observation') this.observations.set(contextId, event.observation);
         if (event.type === 'observation' && ['idle', 'stopped'].includes(event.observation.status) && this.historyFailures.has(contextId)) {
           void this.repairHistory(contextId, event.observation.executionRef?.id).then(() => {
-            this.handlers.get(contextId)?.(event);
-            this.handlers.delete(contextId); this.projectionFailures.delete(contextId);
+            handler?.(event);
+            this.projectionFailures.delete(contextId);
           }).catch(error => this.observationFailed(contextId, 'qoder_event_observation_lost', error));
           return;
         }
-        try { this.handlers.get(contextId)?.(event); }
+        try { handler?.(event); }
         catch (error) {
           if (event.type === 'item') { const missing = this.historyFailures.get(contextId) ?? new Set<string>(); missing.add(event.item.id); this.historyFailures.set(contextId, missing); }
           this.observationFailed(contextId, 'qoder_event_observation_lost', error);
         }
-        if (event.type === 'observation' && ['idle', 'stopped'].includes(event.observation.status)) { this.handlers.delete(contextId); this.projectionFailures.delete(contextId); }
+        if (event.type === 'observation' && ['idle', 'stopped'].includes(event.observation.status)) { this.projectionFailures.delete(contextId); }
       }
     });
   }
@@ -104,15 +109,8 @@ class QoderRuntime implements AgentRuntime {
     options.signal?.addEventListener('abort', abort, { once: true }); if (options.signal?.aborted) abort();
     try {
       await rpc.call('initialize', { executable, interaction: options.interaction ?? interactionPolicy, ...(gateway ? { gateway } : {}) });
-      if (gateway) {
-        await runtime.assertNativeAccount();
-        // A linked native account is checked above and by the real query's login/model policy.
-        // Starting a second CLI only to inspect that same account adds a full initialization before every new chat.
-        if (!gateway.nativeModel) {
-          const account: AccountObservation = await rpc.call('account', { cwd: options.configRoot }, 40000);
-          if (account.status !== 'ready') throw new Error(account.status === 'expired' ? 'qoder_platform_login_expired' : account.status === 'not-authenticated' ? 'qoder_platform_login_required' : 'qoder_platform_auth_unavailable');
-        }
-      }
+      if (gateway) await runtime.assertNativeAccount();
+      // Platform account and live model checks use the real query before its first input.
       options.signal?.throwIfAborted(); return runtime;
     } catch (error) { await (abortedClose ?? rpc.close()); throw error; }
     finally { options.signal?.removeEventListener('abort', abort); }
@@ -182,17 +180,19 @@ class QoderRuntime implements AgentRuntime {
     this.reference(input.contextRef, input.cwd);
     await this.assertNativeAccount();
     if (this.gateway) input = { ...input, model: gatewayModel(this.gateway, input.model).id, reasoningEffort: qoderGatewayPolicy(this.gateway, input.model, input.reasoningEffort).parameters.reasoningEffort };
-    this.handlers.set(input.contextRef.id, input.onEvent);
+    this.executionHandlers.set(input.clientRequestId, input.onEvent);
+    if (!this.handlers.has(input.contextRef.id)) this.handlers.set(input.contextRef.id, input.onEvent);
     this.projectionFailures.delete(input.contextRef.id);
     const observationFailed = new Promise<never>((_, reject) => this.observationWaits.set(input.contextRef.id, reject));
     try {
       await Promise.race([this.rpc.call('send', { contextId: input.contextRef.id, cwd: input.cwd, text: input.text, images: input.images, model: input.model, reasoningEffort: input.reasoningEffort, permissionMode: input.permissionMode, clientRequestId: input.clientRequestId }, 24 * 60 * 60 * 1000), observationFailed]);
     } catch (error) {
+      if (error instanceof Error && error.message === 'agent_native_turn_active') this.executionHandlers.delete(input.clientRequestId);
       if (this.closed) throw new NativeObservationError('qoder_execution_observation_lost', error, this.gateway ? [this.gateway.apiKey] : []);
       throw error;
     } finally {
       this.observationWaits.delete(input.contextRef.id);
-      if (this.closed || !this.projectionFailures.has(input.contextRef.id)) this.handlers.delete(input.contextRef.id);
+      if (this.closed) { this.handlers.delete(input.contextRef.id); this.executionHandlers.delete(input.clientRequestId); }
     }
   }
 
@@ -215,11 +215,13 @@ class QoderRuntime implements AgentRuntime {
     this.reference(contextRef);
     let ended=false,executionState:'ended'|'unknown'='unknown';
     if (executionRef.data?.resourceGroup===this.rpc.child.pid && !this.rpc.closed) {
-      const proof=await this.rpc.call('release-check',{contextId:contextRef.id,executionId:executionRef.id},2000);
+      const proof=await this.rpc.call('release-check',{contextId:contextRef.id,executionId:executionRef.id},5000);
       if(!proof.ended||proof.blocked)return false;
       ended=true;executionState=proof.executionState==='ended'?'ended':'unknown';
     }
-    return this.rpc.control.releaseExecution(executionRef,contextRef.id,this.bindingIdentity,{ended,executionState,channelClosed:this.rpc.closed});
+    const released = await this.rpc.control.releaseExecution(executionRef,contextRef.id,this.bindingIdentity,{ended,executionState,channelClosed:this.rpc.closed});
+    if (released) { this.executionHandlers.delete(executionRef.id); if (this.observations.get(contextRef.id)?.executionRef?.id === executionRef.id) this.handlers.delete(contextRef.id); }
+    return released;
   }
   async supplement(input: ExecutorSupplementInput): Promise<ExecutorInputReceipt> {
     this.reference(input.contextRef, input.cwd);
@@ -228,5 +230,5 @@ class QoderRuntime implements AgentRuntime {
   }
   async reply({ contextRef, executionRef, requestId, answer }: { contextRef: ContextRef; executionRef: ExecutionRef; requestId: string; answer: unknown }): Promise<void> { this.reference(contextRef); await this.rpc.call('reply', { contextId: contextRef.id, executionId: executionRef.id, requestId, answer }); }
   async stop({ contextRef, executionRef, toolId }: { contextRef: ContextRef; executionRef: ExecutionRef; toolId?: string }): Promise<ExecutorObservation> { this.reference(contextRef); return await this.rpc.call('stop', { contextId: contextRef.id, executionId: executionRef.id, toolId }, 7000); }
-  async close(): Promise<void> { await this.cancelLogin(); await this.rpc.call('close', {}, 5000).catch(() => {}); await this.rpc.close(); }
+  async close(): Promise<void> { await this.cancelLogin(); await this.rpc.call('close', {}, 5000).catch(() => {}); await this.rpc.close(); this.handlers.clear(); this.executionHandlers.clear(); }
 }

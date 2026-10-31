@@ -5,7 +5,7 @@ export function conversationRecoveryAction(conversation: ConversationView | null
   if (run.status === 'tools-active' && run.canContinue) return null;
   if (run.status === 'unknown' || run.status === 'tools-active' || ['failed','stopped','completed'].includes(run.status) && run.tools.some(tool => tool.status !== 'completed')) return {kind:'observe',label:'核对状态'};
   if (executionLocked(run) || currentConversationRequests(conversation).length || run.tools.some(tool => tool.status !== 'completed')) return null;
-  const replied = conversation.entries.some(entry => entry.role === 'assistant' && entry.kind === 'message' && entry.text.trim() && (entry.runId === run.id || !entry.runId && entry.createdAt >= run.startedAt));
+  const replied = conversation.entries.some(entry => !entry.parentToolId && entry.role === 'assistant' && entry.kind === 'message' && entry.text.trim() && (entry.runId === run.id || !entry.runId && entry.createdAt >= run.startedAt));
   if (!['failed','stopped','completed'].includes(run.status) || run.status === 'completed' && replied) return null;
   return {kind:'recover',label:run.accepted?'继续':'重试'};
 }
@@ -176,7 +176,7 @@ export function groupConversationStream(entries:readonly ConversationEntry[],cur
   for(const entry of entries){
     if(!entry.runId&&entry.kind==='message'&&entry.role==='user')legacy++;
     const key=entry.runId||'legacy:'+legacy;keys.set(entry,key);
-    if(entry.kind==='message'&&entry.role==='assistant'&&!(entry.runId===currentRun?.id&&executionLocked(currentRun)))finals.set(key,entry);
+    if(entry.kind==='message'&&entry.role==='assistant'&&!entry.parentToolId&&!(entry.runId===currentRun?.id&&executionLocked(currentRun)))finals.set(key,entry);
   }
   for(let index=0;index<entries.length;){
     const first=entries[index];
@@ -209,7 +209,20 @@ export function conversationStreamTurns(items:readonly ConversationStreamItem[])
         // to the latest input merely because it was projected later.
         owner={key:'history:'+entry.runId,items:[]};turns.unshift(owner);
       }
-      owner??=turns.at(-1)!;owner.items.push(item);
+      owner??=turns.at(-1)!;
+      let previous:ConversationStreamItem|undefined;
+      for(let index=owner.items.length-1;index>=0;index--){
+        const candidate=owner.items[index];
+        const source=candidate.type==='entry'?candidate.entry:candidate.entries[0];
+        if(!entry.runId||!source.runId||source.runId===entry.runId){previous=candidate;break;}
+      }
+      // Arrival order can interleave other runs. Once ownership is known,
+      // reconnect only adjacent process pieces within this visible segment.
+      if(item.type==='process-block'&&previous?.type==='process-block'&&previous.entries[0].runId===entry.runId){
+        previous.entries.push(...item.entries);
+        previous.active ||= item.active;
+        previous.finishedAt=item.finishedAt??previous.finishedAt;
+      }else owner.items.push(item.type==='process-block'?{...item,entries:[...item.entries]}:item);
       if(entry.runId)owners.set(entry.runId,owner);
     }
   }
@@ -259,13 +272,13 @@ export function processBlockKey(entries:readonly ConversationEntry[]):string {
 /** Prepending steps can change a block's first entry; keep explicit open/closed choices on overlapping blocks. */
 export function carryExpandedProcessBlocks(current:readonly ConversationEntry[],added:readonly ConversationEntry[],expanded:Record<string,boolean>,run?:ConversationRun):Record<string,boolean>{
  const marks=new Map<string,boolean>();
- for(const item of groupConversationStream(current,run))if(item.type==='process-block'){
+ for(const item of conversationStreamTurns(groupConversationStream(current,run)).flatMap(turn=>turn.items))if(item.type==='process-block'){
    const value=expanded[processBlockKey(item.entries)];
    if(value!==undefined)for(const entry of item.entries)marks.set(entry.id,value);
  }
  if(!marks.size)return expanded;
  const entries=[...new Map([...added,...current].map(e=>[e.id,e])).values()].sort((a,b)=>a.sequence-b.sequence),next={...expanded};
- for(const item of groupConversationStream(entries,run))if(item.type==='process-block'){
+ for(const item of conversationStreamTurns(groupConversationStream(entries,run)).flatMap(turn=>turn.items))if(item.type==='process-block'){
    const value=item.entries.map(e=>marks.get(e.id)).find((v):v is boolean=>v!==undefined);
    if(value!==undefined)next[processBlockKey(item.entries)]=value;
  }

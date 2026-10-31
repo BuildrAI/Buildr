@@ -684,7 +684,7 @@ export class ConversationApplication {
     const source = `${participant.id}:${item.kind}:${item.id}`;
     if (record.sources[source] === '@inherited') return false;
     let entry = record.view.entries.find(value => value.id === record.sources[source]);
-    if (!entry && item.role === 'user') {
+    if (!entry && item.role === 'user' && !item.parentToolId) {
       const candidates = record.attempts.filter(value => value.participantId === participant.id && (value.nativeInputItemId === item.id || value.clientRequestId === item.id || item.clientRequestId && value.clientRequestId === item.clientRequestId));
       const legacy = record.attempts.filter(value => value.participantId === participant.id && item.executionId && value.executionRef?.id === item.executionId);
       const attempt = candidates.length === 1 ? candidates[0] : candidates.length === 0 && legacy.length === 1 && !legacy[0].supplement ? legacy[0] : undefined;
@@ -700,14 +700,17 @@ export class ConversationApplication {
     }
     if (entry) {
       record.sources[source] = entry.id;
-      if (entry.role === 'user' || entry.role === 'system' && entry.kind === 'notice') return false;
-      if (entry.kind === 'tool' && ['completed', 'failed'].includes(entry.status ?? '') && (!item.status || item.status === 'running' || entry.status==='completed'&&item.status==='unknown')) return false;
+      if (entry.parentToolId && item.parentToolId && entry.parentToolId !== item.parentToolId) fail('agent_native_item_identity_changed', '原生条目的父工具来源发生冲突，已保留原记录。', 409);
+      const originChanged = item.parentToolId !== undefined && entry.parentToolId !== item.parentToolId;
+      if (originChanged) entry.parentToolId = item.parentToolId;
+      if (entry.role === 'user' || entry.role === 'system' && entry.kind === 'notice') return originChanged;
+      if (entry.kind === 'tool' && ['completed', 'failed'].includes(entry.status ?? '') && (!item.status || item.status === 'running' || entry.status==='completed'&&item.status==='unknown')) return originChanged;
       const nameChanged = item.name !== undefined && entry.name !== item.name;
       const inputChanged = item.input !== undefined && entry.input !== item.input;
-      if (entry.text === item.text && entry.status === item.status && !nameChanged && !inputChanged) return false;
+      if (entry.text === item.text && entry.status === item.status && !nameChanged && !inputChanged) return originChanged;
       entry.text = item.text; entry.status = item.status; if (nameChanged) entry.name = item.name; if (inputChanged) entry.input = item.input; return true;
     }
-    entry = { id: randomUUID(), sequence: (record.view.entries.at(-1)?.sequence ?? record.view.childOf?.throughSequence ?? 0) + 1, createdAt: this.options.now(), kind: item.kind, role: item.role, text: item.text, name: item.name, input: item.input, participantId: participant.id, provider: participant.provider, runId:runId??record.attempts.find(a=>a.participantId===participant.id&&(a.executionRef?.id===item.executionId||a.clientRequestId===item.executionId))?.runId, status: item.status };
+    entry = { id: randomUUID(), sequence: (record.view.entries.at(-1)?.sequence ?? record.view.childOf?.throughSequence ?? 0) + 1, createdAt: this.options.now(), kind: item.kind, role: item.role, text: item.text, name: item.name, input: item.input, parentToolId: item.parentToolId, participantId: participant.id, provider: participant.provider, runId:runId??record.attempts.find(a=>a.participantId===participant.id&&(a.executionRef?.id===item.executionId||a.clientRequestId===item.executionId))?.runId, status: item.status };
     record.view.entries.push(entry); record.sources[source] = entry.id;
     // A late native projection is known to this participant; intervening foreign
     // work and an input still awaiting acceptance are not. Never skip that gap.
@@ -874,7 +877,7 @@ export class ConversationApplication {
           const sourceEntryId = record.sources[`${participant.id}:${item.kind}:${item.id}`];
           const entry = record.view.entries.find(value => value.id === sourceEntryId);
           const outcome = entry?.runId ? record.runOutcomes?.[entry.runId] : undefined;
-          if (item.role === 'user' || !outcome || !['completed', 'stopped', 'failed'].includes(outcome.status) || item.kind === 'tool' && !['completed', 'failed'].includes(item.status ?? '')) needsReview = true;
+          if (item.role === 'user' && !item.parentToolId || !outcome || !['completed', 'stopped', 'failed'].includes(outcome.status) || item.kind === 'tool' && !['completed', 'failed'].includes(item.status ?? '')) needsReview = true;
         }
         if (changed) this.save(record);
         if (needsReview) fail('agent_history_changed', '原生记录有新变化，本次要求已保留；请核对后再继续。', 409);
@@ -1079,7 +1082,7 @@ export class ConversationApplication {
     record.view.title = title; record.titleOrigin = 'generated'; record.view.titleState={status:'generated'}; return true;
   }
   private titleDescription(record: StoredConversation, requireAnswer = true): string | undefined {
-    const visible = record.view.entries.filter(entry => entry.sequence > (record.view.forkedFrom?.throughSequence ?? 0) && ['user', 'assistant'].includes(entry.role) && entry.kind === 'message' && entry.status !== 'failed' && entry.text.trim());
+    const visible = record.view.entries.filter(entry => !entry.parentToolId && entry.sequence > (record.view.forkedFrom?.throughSequence ?? 0) && ['user', 'assistant'].includes(entry.role) && entry.kind === 'message' && entry.status !== 'failed' && entry.text.trim());
     const users = visible.filter(entry => entry.role === 'user'); const answers = visible.filter(entry => entry.role === 'assistant');
     if (!users.length || requireAnswer && !answers.length) return;
     const selected = new Map((record.view.forkedFrom ? [users[0]] : [users[0], answers[0], users.at(-1), answers.at(-1)]).filter((entry): entry is NonNullable<typeof entry> => Boolean(entry)).map(entry => [entry.id, entry]));

@@ -13,7 +13,7 @@ export const HANDOFF_SUMMARY_PROMPT=`你只负责整理交接材料，不执行�
 合并重复动作，不复制脚本、文件和日志全文。不猜测成果或授权，不输出秘密和隐藏推理。每项判断保留来源序号；说明覆盖范围和缺失。本地索引继续作为完整来源，不声称摘要替代全部历史。`;
 
 const clip=(value:string,max=600)=>value.length>max?value.slice(0,max)+'…（完整内容见来源）':value;
-export function handoffEntries(entries:ConversationEntry[],after=0):ConversationEntry[]{return entries.filter(e=>e.sequence>after&&e.kind!=='handoff');}
+export function handoffEntries(entries:ConversationEntry[],after=0):ConversationEntry[]{return entries.filter(e=>e.sequence>after&&e.kind!=='handoff'&&!(e.parentToolId&&e.kind==='message'));}
 function locations(entry:ConversationEntry):string[]{
  const found:string[]=[];
  try{const value=JSON.parse(entry.input??'{}');for(const key of ['file_path','path','filePath','target_path'])if(typeof value[key]==='string'&&value[key].length<2048)found.push(value[key]);}catch{/* Commands and scripts remain in local sources. */}
@@ -58,7 +58,8 @@ export function organizeHandoff(entries:ConversationEntry[],outcomes:Record<stri
   const assistant=rows.filter(e=>e.role==='assistant'&&e.kind==='message');const tools=rows.filter(e=>e.kind==='tool');
   const outcome=outcomes[id];
   const unfinished=outcome&&['starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown'].includes(outcome.status);
-  const candidate=assistant.at(-1);const final=!unfinished&&candidate&&candidate.sequence>(tools.at(-1)?.sequence??0)&&candidate.status!=='running'?candidate:undefined;
+  const primaryOrUnsettled=tools.filter(tool=>!tool.parentToolId||tool.status!=='completed');
+  const candidate=assistant.at(-1);const final=!unfinished&&candidate&&candidate.sequence>(primaryOrUnsettled.at(-1)?.sequence??0)&&candidate.status!=='running'?candidate:undefined;
   return {id,title:`第 ${i+1} 轮`,...(outcome?{state:outcome.status,diagnostic:outcome.diagnostic,provider:outcome.provider,model:outcome.model}:{provider:rows.find(e=>e.provider)?.provider}),from:rows[0]!.sequence,through:rows.at(-1)!.sequence,
    userInputs:rows.filter(e=>e.role==='user').map(e=>e.text),assistantNotes:assistant.filter(e=>e!==final).map(e=>e.text),
    execution:executionOverview(tools),executionCount:tools.length,

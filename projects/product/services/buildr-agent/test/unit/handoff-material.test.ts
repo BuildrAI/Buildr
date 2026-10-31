@@ -31,3 +31,14 @@ test('an active source round never promotes completed commentary into a final re
   assert.equal(round.finalReply,undefined);assert.deepEqual(round.assistantNotes,['先解释当前发现']);assert.equal(round.state,status);
  }
 });
+
+test('child inputs and reports stay out of primary handoff while child tool evidence remains attributable',()=>{
+ const records=[entry(1,{text:'primary request'}),entry(2,{role:'assistant',text:'primary final',status:'completed'}),entry(3,{role:'user',text:'child instruction',parentToolId:'delegate'}),entry(4,{role:'assistant',text:'child report',parentToolId:'delegate',status:'completed'})];
+ const round=organizeHandoff(records)[0]!;
+ assert.deepEqual(round.userInputs,['primary request']);assert.equal(round.finalReply,'primary final');
+ assert.deepEqual(round.assistantNotes,[]);assert.equal(handoffEntries(records).length,2);
+ const tool=entry(5,{kind:'tool',role:'system',name:'Read',parentToolId:'delegate',text:'observed child output',status:'completed'});
+ assert.equal(handoffEntries([...records,tool]).at(-1),tool);
+ assert.equal(organizeHandoff([...records,tool])[0]!.finalReply,'primary final');
+ assert.equal(organizeHandoff([...records,{...tool,status:'running'}])[0]!.finalReply,undefined);
+});

@@ -4,7 +4,7 @@ import { BUSY_STATES, unfinishedRun, type StoredConversation } from './agent-sta
 
 /** Only meaningful visible message changes advance activity, including streamed additions. */
 export function messageSignature(record: StoredConversation): string {
-  const messages = record.view.entries.filter(entry => (entry.kind === 'message' && ['user','assistant'].includes(entry.role) || entry.role === 'user' && entry.kind === 'notice' && entry.id.startsWith('reply-')) && entry.status !== 'failed')
+  const messages = record.view.entries.filter(entry => !entry.parentToolId && (entry.kind === 'message' && ['user','assistant'].includes(entry.role) || entry.role === 'user' && entry.kind === 'notice' && entry.id.startsWith('reply-')) && entry.status !== 'failed')
     .map(entry => [entry.id, entry.text, entry.attachments ?? []]);
   return createHash('sha256').update(JSON.stringify(messages)).digest('hex');
 }
@@ -13,7 +13,7 @@ export function userActivityAt(record: StoredConversation): string | undefined {
   let latest: string | undefined = record.view.forkedFrom?.forkedAt;
   for (const entry of record.view.entries) {
     const fromUser = entry.kind === 'message' && entry.role === 'user' || entry.role === 'user' && entry.kind === 'notice' && entry.id.startsWith('reply-');
-    if (!fromUser || entry.status === 'failed') continue;
+    if (!fromUser || entry.parentToolId || entry.status === 'failed') continue;
     if (!latest || entry.createdAt > latest) latest = entry.createdAt;
   }
   return latest;

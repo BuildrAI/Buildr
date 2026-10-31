@@ -6,6 +6,55 @@ import type {AgentConversationFixture} from './agent-conversation-fixture.ts';
 /** history 场景使用独立准备的对话现场。 */
 export async function runHistoryScenarios(fixture:AgentConversationFixture){
   const {capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,supplementaryInputs,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
+await step('交错执行按归属合组，旧问题存档和子报告不打断主线',async()=>{
+  const saved=structuredClone(fixture.conversation),at=new Date().toISOString();
+  const entry=(id:string,sequence:number,runId:string,kind:string,role:string,text:string,extra:any={})=>({id,sequence,runId,kind,role,text,status:'completed',createdAt:at,...extra});
+  try{
+    update({run:run('running'),retainedRuns:[run('running','codex',{id:'older-unified-run'})],requests:[],entries:[
+      entry('unified-old-user',1,'older-unified-run','message','user','旧执行要求'),
+      entry('unified-old-one',2,'older-unified-run','tool','system','旧工具一',{name:'Read'}),
+      entry('unified-handoff',3,'run-fixture','handoff','system','旧接手文案',{status:'accepted',handoff:{agent:'Codex',model:'fixture-model',changes:[],rounds:[],body:'接续已有记录',sourceThrough:2,mode:'records'}}),
+      entry('unified-user',4,'run-fixture','message','user','新执行要求'),
+      entry('unified-current-one',5,'run-fixture','tool','system','当前工具一',{name:'Read',status:'running'}),
+      entry('unified-old-two',6,'older-unified-run','tool','system','旧工具二',{name:'Bash'}),
+      entry('unified-current-two',7,'run-fixture','tool','system','当前工具二',{name:'Grep'}),
+      entry('unified-extra',8,'run-fixture','message','user','同一执行的补充要求'),
+      entry('unified-current-last',9,'run-fixture','tool','system','可从父工具查看的报告',{name:'Agent',status:'running'}),
+      entry('retired-question-unified',10,'older-unified-run','notice','system','{"请求标识":"internal","问题":"原问题","状态":"未回答"}'),
+      entry('unified-child-report',11,'run-fixture','message','assistant','子任务独立报告不应重复出现',{parentToolId:'unified-current-last'}),
+    ]});
+    await page.reload();await input().waitFor();
+    const older=panel().locator('[data-turn-id="unified-old-user"]'),beforeExtra=panel().locator('[data-turn-id="unified-user"]'),afterExtra=panel().locator('[data-turn-id="unified-extra"]');
+    await afterExtra.waitFor();
+    await older.getByRole('button',{name:'展开处理过程',exact:true}).click();
+    assert.equal(await older.locator('.ac-step-group').count(),1,'另一执行插入的工具与接续回执不切碎旧工具组');
+    assert.equal(await beforeExtra.locator('.ac-step-group').count(),1);assert.equal(await afterExtra.locator('.ac-step-group').count(),1,'用户补充保留独立分段');
+    assert.equal(await panel().locator('.ac-step-group.is-live').count(),1);assert.equal(await afterExtra.locator('.ac-step-group.is-live').count(),1);
+    await panel().getByText('继续处理新要求',{exact:true}).waitFor();
+    assert.equal(await panel().locator('[data-entry-id="retired-question-unified"],[data-entry-id="unified-child-report"]').count(),0);
+    await older.locator('.ac-step-group>summary').click();
+    await older.locator('[data-entry-id="unified-old-two"]').waitFor();
+    assert.equal(await older.locator('.ac-step-tool').count(),2);await capture(page,'conversation-unified-interleaved-work.png');
+  }finally{fixture.conversation=saved;await page.reload();await input().waitFor();}
+});
+await step('主答复后的隐藏子消息不阻止真实已读确认',async()=>{
+  const saved=structuredClone(fixture.conversation),at=new Date().toISOString(),version=900001;
+  try{
+    update({run:run('completed'),retainedRuns:[],requests:[],activity:{version,seenThrough:version-1,active:false,updatedAt:at},entries:[
+      {id:'seen-primary-user',sequence:1,runId:'run-fixture',kind:'message',role:'user',text:'只查看主答复',status:'accepted',createdAt:at},
+      {id:'seen-primary-answer',sequence:2,runId:'run-fixture',kind:'message',role:'assistant',text:'主答复已经可以阅读',status:'completed',createdAt:at},
+      {id:'seen-child-input',sequence:3,runId:'run-fixture',kind:'message',role:'user',parentToolId:'parent-agent',text:'内部子任务输入',status:'completed',createdAt:at},
+      {id:'seen-child-answer',sequence:4,runId:'run-fixture',kind:'message',role:'assistant',parentToolId:'parent-agent',text:'内部子任务报告',status:'completed',createdAt:at},
+      {id:'retired-question-seen',sequence:5,runId:'run-fixture',kind:'notice',role:'system',text:'内部问题存档',createdAt:at},
+    ]});
+    const seen=page.waitForResponse((response:any)=>response.request().method()==='POST'&&response.url().endsWith('/seen')&&response.request().postDataJSON().through===version);
+    await page.reload();await input().waitFor();await panel().locator('[data-entry-id="seen-primary-answer"]').waitFor();
+    const jump=panel().getByRole('button',{name:'向下到底',exact:true});if(await jump.isVisible())await jump.click();
+    await panel().locator('.ac-stream').evaluate((node:HTMLElement)=>{node.scrollTop=node.scrollHeight;node.dispatchEvent(new Event('scroll'));});
+    assert.equal((await seen).status(),200);assert.equal(fixture.conversation.activity.seenThrough,version);
+    assert.equal(await panel().locator('[data-entry-id="seen-child-input"],[data-entry-id="seen-child-answer"],[data-entry-id="retired-question-seen"]').count(),0);
+  }finally{fixture.conversation=saved;await page.reload();await input().waitFor();}
+});
 await step('大工具记录仅在展开明细时读取完整内容并按内容版本复用',async()=>{
   const saved=structuredClone(fixture.conversation);let reads=0,release:(()=>void)|undefined;
   const matcher='**/entry-detail/**';
@@ -266,7 +315,7 @@ await step('执行中图文普通发送、固定上下文和长输入，失败�
       await panel().getByRole('button',{name:'展开内容',exact:true}).first().click();assert.equal(await panel().locator('.ac-turn-prompt-content').first().evaluate((node:HTMLElement)=>getComputedStyle(node).overflowY),'auto');await panel().getByRole('button',{name:'收起内容',exact:true}).click();assert.match(await panel().locator('.ac-turn-identity').first().innerText(),/Codex · Fixture model/);assert.ok(await panel().locator('.ac-turn-identity .ac-execution-indicator').first().innerText()!=='0:00');
       const png={name:'live.png',mimeType:'image/png',buffer:Buffer.from('89504e470d0a1a0a','hex')};await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles(png);await panel().getByRole('button',{name:'移除图片 live.png',exact:true}).waitFor();await input().fill('执行中补充图文');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().locator('.ac-turn-prompt').filter({hasText:'执行中补充图文'}).waitFor();assert.equal(await input().inputValue(),'');assert.deepEqual(supplementaryInputs.at(-1).attachmentIds,['image-fixture-'+(previousUploads+1)]);
       fixture.supplementaryDelivery='rejected';await input().fill('保留失败草稿');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().getByText('这条消息未发送成功，文字与图片已保留。',{exact:true}).waitFor();assert.equal(await input().inputValue(),'保留失败草稿');
-      fixture.supplementaryDelivery='unknown';await input().fill('接收待确认');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().getByText('这条消息是否接收尚待确认，请先核对原执行，不要重复发送。',{exact:true}).waitFor();assert.equal(await input().inputValue(),'');
+      fixture.supplementaryDelivery='unknown';await input().fill('接收待确认');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().getByText('消息已保存，是否送达仍待确认，请勿重复发送。',{exact:true}).waitFor();assert.equal(await input().inputValue(),'');
       fixture.supplementaryDelivery='accepted';fixture.holdSupplement=true;const waiting=new Promise<void>(resolve=>{fixture.supplementStarted=resolve;});await input().fill('发送等待时可以停止');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await waiting;await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();const admitted=page.waitForResponse((r:any)=>r.url().endsWith('/supplement'));fixture.releaseSupplement!();await admitted;assert.equal(fixture.supplementaryCalls,4);await panel().getByRole('button',{name:'发送对话',exact:true}).waitFor();
       fixture.conversation=previous;fixture.attachmentUploads=previousUploads;await page.reload();await input().fill('下一轮仍是草稿');
     });

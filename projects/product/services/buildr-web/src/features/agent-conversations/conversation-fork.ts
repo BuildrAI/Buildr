@@ -5,7 +5,7 @@ export function forkableReplyIds(conversation: ConversationView | null | undefin
   const replies = new Map<string, string>();
   if (!conversation || conversation.forkState && conversation.forkState.status !== 'ready') return new Set();
   for (const entry of conversation.entries) {
-    if (entry.role !== 'assistant' || entry.kind !== 'message' || !entry.runId) continue;
+    if (entry.role !== 'assistant' || entry.kind !== 'message' || entry.parentToolId || !entry.runId) continue;
     if (entry.runId === conversation.run?.id && !['completed','stopped','failed'].includes(conversation.run.status)) continue;
     replies.set(entry.runId, entry.status === 'running' ? '' : entry.id);
   }

@@ -71,6 +71,8 @@ export interface VideoAttachment { duration: number; frames: Array<{ id: string;
 export interface AttachmentInput { expectedRevision?: string; expectedAttachmentRevision?: string; mimeType: string; bytes: Uint8Array; video?: VideoAttachment }
 export interface ExecutorItem {
   id: string;
+  /** Native parent tool identity; absence does not imply an inferred child relationship. */
+  parentToolId?: string;
   clientRequestId?: string;
   kind: 'message' | 'tool' | 'notice';
   role: 'user' | 'assistant' | 'system';
@@ -84,6 +86,8 @@ export interface ExecutorItem {
 }
 export interface ExecutorRequest {
   id: string;
+  /** Present only when native request and task identity prove its parent tool. */
+  parentToolId?: string;
   kind: 'approval' | 'question';
   /** Missing means blocking for compatibility. Approvals always block. */
   blocking?: boolean;
@@ -279,6 +283,8 @@ export interface ConversationEntry {
   /** Bounded tool preview; fetch the exact content revision when expanded. */
   detail?: {revision: string};
   id: string;
+  /** Native child output stays attached to its parent tool, retaining its original role. */
+  parentToolId?: string;
   sequence: number;
   kind: 'message' | 'tool' | 'notice' | 'handoff';
   role: 'user' | 'assistant' | 'system';
