@@ -3,6 +3,19 @@ import assert from 'node:assert/strict';
 import { dshHistoryItems, dshItem } from '../../src/executors/dsh/protocol.ts';
 import { qoderHistoryItems, qoderResultOutcome, qoderInterruptionIds, qoderInterruptedObservation } from '../../src/executors/qoder/protocol.ts';
 
+test('Qoder native task notifications preserve the original execution in history without inventing user input', () => {
+  const input = (uuid: string, text: string) => ({ type: 'user', uuid, session_id: 's', message: { content: [{ type: 'text', text }] } });
+  const answer = { type: 'assistant', uuid: 'answer', session_id: 's', message: { id: 'answer', content: [{ type: 'text', text: 'final' }] } };
+  const records = [{ type: 'user', uuid: 'notification', sessionId: 's', isSidechain: false, origin: { kind: 'task-notification' } }];
+  const items = qoderHistoryItems([input('original', 'work'), input('notification', 'native report'), answer], 's', new Set(), records);
+  assert.deepEqual(items.filter(item => item.role === 'user').map(item => item.id), ['original']);
+  assert.equal(items.at(-1)?.executionId, 'original');
+  // A human copying notification text, or a receipt from another session, cannot change provenance.
+  for (const raw of [[], [{ ...records[0], sessionId: 'other' }]]) {
+    assert.equal(qoderHistoryItems([input('original', 'work'), input('notification', 'native report'), answer], 's', new Set(), raw).at(-1)?.executionId, 'notification');
+  }
+});
+
 test('DSH context envelopes are not user inputs and steering keeps the original execution owner',()=>{
   const user=(id:string,rpcId:string)=>({type:'user/message',data:{id,source:{kind:'user',rpcId},content:[{type:'text',text:'继续'}]}});
   const contexts=['time-context','runtime-context','agent-instructions','tool-jobs'].map((kind,index)=>({type:'user/message',seq:index+10,data:{id:'context-'+index,source:{kind,rpcId:'internal-request'},content:[{type:'text',text:'private runtime context'}]}}));
@@ -137,6 +150,17 @@ test('Qoder crash recovery holds incomplete, failed and background side effects 
   assert.equal(qoderInterruptedObservation(background, background, 'qoder-session', 'exact-request').status, 'unknown');
   const metadata = interruptedQoder(); (metadata[2] as any).toolUseResult = { backgroundTaskId: 'native-job' };
   assert.equal(qoderInterruptedObservation(metadata, metadata, 'qoder-session', 'exact-request').status, 'unknown');
+});
+
+test('Qoder lost terminal result retains only the exact durably identified input, without claiming completion', () => {
+  const messages = interruptedQoder().slice(0, -1);
+  const observed = qoderInterruptedObservation(messages, messages, 'qoder-session', 'exact-request');
+  assert.equal(observed.status, 'unknown');
+  assert.equal(observed.executionRef?.id, 'exact-request');
+  for (const records of [[], messages.map(message => ({ ...message, sessionId: 'other' })), messages.map(message => ({ ...message, isSidechain: true }))]) {
+    assert.equal(qoderInterruptedObservation(messages, records, 'qoder-session', 'exact-request').executionRef, undefined);
+  }
+  assert.equal(qoderInterruptedObservation(messages, messages, 'qoder-session', 'other').executionRef, undefined);
 });
 
 test('Qoder distinguishes an explicit failed tool receipt from an interrupted tool with unknown effects', () => {

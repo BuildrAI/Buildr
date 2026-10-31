@@ -9,7 +9,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { ExecutorEvent, ExecutorItem, ExecutorObservation, ExecutorRequest, PermissionMode } from '../../contracts.ts';
 import { bounded, closeOwnedProcess, visibleText, nativePreview } from '../native-process.ts';
 import { query, qodercliAuth, ProcessTransport, getSessionInfo, getSessionMessages, InMemorySessionStore, importSessionToStore, forkSession } from '@qoder-ai/qoder-agent-sdk';
-import { qoderHistoryItems, qoderResultOutcome, qoderInterruptionIds, qoderInterruptedObservation, qoderParentTool, qoderTaskResult } from './protocol.ts';
+import { qoderHistoryItems, qoderResultOutcome, qoderInterruptionIds, qoderInterruptedObservation, qoderParentTool, qoderTaskResult, qoderTaskNotificationIds } from './protocol.ts';
 import { qoderModel } from '../model-options.ts';
 import { resolvePermissionMode } from '../../domain/permission-mode.ts';
 import { safeDiagnostic } from '../../domain/agent-state.ts';
@@ -45,6 +45,7 @@ interface LiveQuery {
   ambiguous?: boolean;
   supplementUnknown?: boolean;
   unownedTasks: Set<string>;
+  continuationIds?: Set<string>;
   resolve(): void;
   reject(error: unknown): void;
   inputAcks: Map<string, { resolve(value: { executionRef: { id: string }; inputItemId: string }): void; reject(error: Error): void }>;
@@ -55,7 +56,7 @@ interface LiveQuery {
 interface ConversationQuery {
   contextId: string; cwd: string; key: string; q: any; child?: ChildProcessWithoutNullStreams;
   state: LiveQuery; input: ConversationInput; knownTools: Set<string>; fullAccessConfirmed: boolean;
-  resultIds: Set<string>; mirror: any[]; mirrorFailed: boolean; snapshot?: string; reusable: boolean;
+  resultIds: Set<string>; commandIds: Set<string>; mirror: any[]; mirrorFailed: boolean; snapshot?: string; reusable: boolean;
   closing?: Promise<void>; exited?: boolean; rounds: number; prepared?: boolean; initialized?: any; checkedAt?: number;
 }
 const live = new Map<string, LiveQuery>();
@@ -185,7 +186,7 @@ async function transcript(contextId: string, cwd: string): Promise<{ messages: a
 async function history(contextId: string, cwd: string): Promise<ExecutorItem[]> {
   const { messages, records } = await transcript(contextId, cwd);
   await checkHistory(contextId, cwd, records);
-  return qoderHistoryItems(messages, contextId, qoderInterruptionIds(messages, records, contextId));
+  return qoderHistoryItems(messages, contextId, qoderInterruptionIds(messages, records, contextId), records);
 }
 async function generateTitle(requestId:string,description: string): Promise<string | undefined> {
   if (typeof requestId!=='string' || !requestId || titleQueries.has(requestId) || typeof description !== 'string' || Buffer.byteLength(description) > 8 * 1024) throw new Error('agent_title_input_invalid');
@@ -240,12 +241,13 @@ async function execute(params: any, warmOnly = false): Promise<void> {
     assertPrevious(params.contextId, previous);
     if (conversations.get(params.contextId) !== owner || !owner.prepared && (owner.state !== previous || !owner.reusable || !settled(previous!)) || owner.closing || owner.exited) throw new Error('agent_native_turn_active');
     owner.state = state; owner.prepared = false; owner.initialized = undefined; owner.reusable = false; owner.rounds++;
+    owner.commandIds.add(state.id);
     state.owner = owner; state.q = owner.q; state.child = owner.child; live.set(params.contextId, state);
     owner.input.push({ type: 'user', message: { role: 'user', content }, parent_tool_use_id: null, uuid: state.id, session_id: state.contextId });
     return await completion;
   }
   assertPrevious(params.contextId, previous);
-  owner = { contextId: params.contextId, cwd: params.cwd, key, q: undefined, state, input: new ConversationInput(), knownTools: new Set(), fullAccessConfirmed: false, resultIds: new Set(), mirror: [], mirrorFailed: false, reusable: false, rounds: warmOnly ? 0 : 1, prepared:warmOnly };
+  owner = { contextId: params.contextId, cwd: params.cwd, key, q: undefined, state, input: new ConversationInput(), knownTools: new Set(), fullAccessConfirmed: false, resultIds: new Set(), commandIds: new Set(warmOnly ? [] : [state.id]), mirror: [], mirrorFailed: false, reusable: false, rounds: warmOnly ? 0 : 1, prepared:warmOnly };
   state.owner = owner; if (!warmOnly) live.set(params.contextId, state); conversations.set(params.contextId, owner);
   // Empty load retains the exact local native session; append observes post-commit records only.
   const mirror = new InMemorySessionStore();
@@ -323,6 +325,27 @@ async function readConversation(owner: ConversationQuery): Promise<void> {
       if (message.type === 'system' && message.subtype === 'mirror_error') { owner.mirrorFailed = true; owner.reusable = false; continue; }
       if (owner.prepared) { if (message.type === 'system') continue; throw new Error('qoder_preparation_unexpected_work'); }
       if (primary && message.type === 'result' && owner.resultIds.has(message.uuid)) continue;
+      // Queue receipts are metadata for a known command, not new native work after its result.
+      if (message.type === 'command_lifecycle' && owner.commandIds.has(message.command_uuid)) continue;
+      if (primary && message.type === 'user' && message.origin?.kind === 'task-notification') {
+        if (state.continuationIds?.has(message.uuid)) continue;
+        const text = visibleText(message.message?.content);
+        const taskId = /<task-id>([^<>]+)<\/task-id>/.exec(text)?.[1];
+        const toolId = /<tool-use-id>([^<>]+)<\/tool-use-id>/.exec(text)?.[1];
+        const status = /<status>(completed|failed|stopped)<\/status>/.exec(text)?.[1];
+        const tool = toolId ? state.tools.get(toolId) : undefined;
+        // Text alone never establishes ownership. Require native origin and the exact launch receipt.
+        if (!owner.closing && !state.stopping && !state.ambiguous && tool && tool.taskId === taskId && taskId && status && typeof message.uuid === 'string') {
+          owner.reusable = false; state.terminal = undefined; state.diagnostic = undefined;
+          (state.continuationIds ??= new Set()).add(message.uuid);
+          owner.commandIds.add(message.uuid);
+          tool.taskPending = false; tool.status = 'completed';
+          emit(state, { type: 'observation', observation: observe(state) }); continue;
+        }
+        owner.reusable = false; state.ambiguous = true; state.diagnostic = 'qoder_task_owner_unconfirmed';
+        state.unownedTasks.add(taskId ?? message.uuid ?? 'unidentified-notification');
+        emit(state, { type: 'observation', observation: observe(state) }); continue;
+      }
       if (message.type === 'system' && message.subtype === 'task_started' && !state.tools.has(message.tool_use_id)) {
         owner.reusable = false; state.ambiguous = true; state.diagnostic = 'qoder_task_owner_unconfirmed';
         if (typeof message.task_id === 'string' && message.task_id) state.unownedTasks.add(message.task_id);
@@ -370,8 +393,11 @@ async function readConversation(owner: ConversationQuery): Promise<void> {
           state.inputAcks.get(message.uuid)?.resolve({ executionRef: { id: state.id }, inputItemId: message.uuid });
           emit(state, { type: 'item', item: { id: message.uuid, clientRequestId: message.uuid, kind: 'message', role: 'user', text: visibleText(content), executionId: state.id, status: 'completed' } });
         }
-        for (const part of Array.isArray(content) ? content : []) if (part.type === 'tool_result') {
+        for (const [index, part] of (Array.isArray(content) ? content.filter((part: any) => part.type === 'tool_result') : []).entries()) {
           const tool = state.tools.get(part.tool_use_id); if (tool) tool.status = 'completed';
+          const receipt = Array.isArray(message.tool_use_result) ? message.tool_use_result[index] : message.tool_use_result;
+          const taskId = receipt?.kind === 'backgrounded' ? receipt.taskId : receipt?.backgroundTaskId;
+          if (tool && typeof taskId === 'string' && taskId) { tool.taskId = taskId; tool.taskPending = true; }
           const text = nativePreview(visibleText(part.content)); state.toolDetails.set(part.tool_use_id, text);
           emit(state, { type: 'item', item: { id: part.tool_use_id, ...parent, kind: 'tool', role: 'system', text, executionId: state.id, status: part.is_error ? 'failed' : 'completed' } });
         }
@@ -412,15 +438,16 @@ async function dispatch(method: string, params: any): Promise<any> {
     const { records } = await transcript(params.contextId, params.cwd);
     const messages: any[] = await getSessionMessages(params.contextId, { dir: params.cwd, view: 'historical', includeSystemMessages: true, limit: 20000 });
     const executions = new Set([params.executionId, ...(params.inputItemIds ?? [])]);
-    const item = qoderHistoryItems(messages, params.contextId).find(value => !value.parentToolId && value.id === params.itemId && executions.has(value.executionId) && value.role === 'assistant');
+    const item = qoderHistoryItems(messages, params.contextId, new Set(), records).find(value => !value.parentToolId && value.id === params.itemId && executions.has(value.executionId) && value.role === 'assistant');
     const selected = messages.findLastIndex(message => message.type === 'assistant' && `message:${message.message?.id ?? message.uuid}` === item?.id);
     const interruptions = qoderInterruptionIds(messages, records, params.contextId);
+    const notifications = qoderTaskNotificationIds(records, params.contextId);
     let boundary = messages[selected];
     // Keep the native round's trailing tool results and interruption/closure
     // records, but never the next independent user input or its later answers.
     for (const message of messages.slice(selected + 1)) {
       const content = message.message?.content;
-      const ordinary = message.type === 'user' && !message.parent_tool_use_id && !interruptions.has(message.uuid) && Array.isArray(content) &&
+      const ordinary = message.type === 'user' && !message.parent_tool_use_id && !interruptions.has(message.uuid) && !notifications.has(message.uuid) && Array.isArray(content) &&
         !content.some((part: any) => part.type === 'tool_result') && content.some((part: any) => part.type === 'image' || part.type === 'text' && part.text?.trim());
       if (ordinary && !executions.has(message.uuid)) break;
       boundary = message;
@@ -440,6 +467,7 @@ async function dispatch(method: string, params: any): Promise<any> {
     let ack!: { resolve(value: { executionRef: { id: string }; inputItemId: string }): void; reject(error: Error): void };
     const received = new Promise<{ executionRef: { id: string }; inputItemId: string }>((resolve, reject) => { ack = { resolve, reject }; });
     received.catch(() => {}); state.inputAcks.set(params.clientRequestId, ack);
+    state.owner!.commandIds.add(params.clientRequestId);
     try {
       state.owner!.input.push({ type: 'user', message: { role: 'user', content }, parent_tool_use_id: null, uuid: params.clientRequestId, session_id: state.contextId, priority: 'next', shouldQuery: false });
       return await bounded(received, 10000, 'agent_supplement_unknown');

@@ -22,12 +22,20 @@ export function qoderResultOutcome(message:any,stopping=false,secrets:readonly s
   return {status,diagnostic:reason?`Qoder · 本轮执行：${reason}`:'qoder_turn_failed'};
 }
 
+/** Only the exact primary-chain native receipt establishes a synthetic notification. */
+export function qoderTaskNotificationIds(records: any[], contextId: string): Set<string> {
+  return new Set(records.filter(record => record.sessionId === contextId && record.isSidechain === false && record.type === 'user' && record.origin?.kind === 'task-notification').map(record => record.uuid));
+}
+
 /** Fold repeated native assistant snapshots by their stable message identity. */
-export function qoderHistoryItems(messages: any[], contextId: string, interruptions: ReadonlySet<string> = new Set()): ExecutorItem[] {
+export function qoderHistoryItems(messages: any[], contextId: string, interruptions: ReadonlySet<string> = new Set(), records: any[] = []): ExecutorItem[] {
+  // The SDK historical projection omits origin. Preserve native notification provenance by UUID.
+  const notifications = qoderTaskNotificationIds(records, contextId);
   const items: ExecutorItem[] = []; let executionId: string | undefined;
   for (const message of messages) {
     if (message.session_id !== contextId) throw new Error('qoder_context_identity_mismatch');
     if (interruptions.has(message.uuid)) continue;
+    if (message.type === 'user' && (message.origin?.kind === 'task-notification' || notifications.has(message.uuid))) continue;
     if (message.type === 'system' && message.subtype === 'task_notification' && typeof message.tool_use_id === 'string') {
       const previous = items.findLast(item => item.kind === 'tool' && item.id === message.tool_use_id);
       const text = qoderTaskResult(previous?.text, message);
@@ -63,11 +71,13 @@ export function qoderInterruptionIds(messages: any[], records: any[], contextId:
 /** A cold observer can prove an interrupted turn, but cannot infer the outcome of unsettled side effects. */
 export function qoderInterruptedObservation(messages: any[], records: any[], contextId: string, executionId?: string): ExecutorObservation {
   const interruptions = qoderInterruptionIds(messages, records, contextId);
-  const items = qoderHistoryItems(messages, contextId, interruptions);
+  const items = qoderHistoryItems(messages, contextId, interruptions, records);
   const owned = items.filter(item => item.executionId === executionId), tools = owned.filter(item => item.kind === 'tool');
   const confirmedFailures = new Set(records.flatMap(record => typeof record.toolUseResult?.errorType === 'string' && !/interrupt|abort|cancel/i.test(record.toolUseResult.errorType) && record.sourceToolAssistantUUID && record.promptId ? (Array.isArray(record.message?.content) ? record.message.content : []).filter((part: any) => part.type === 'tool_result' && part.is_error).map((part: any) => part.tool_use_id) : []));
   const settled = (item: ExecutorItem) => item.status === 'completed' || item.status === 'failed' && confirmedFailures.has(item.id);
-  const unknown: ExecutorObservation = { status: 'unknown', tools: tools.map(item => ({ id: item.id, label: item.name ?? '工具', status: settled(item) ? 'completed' : 'unknown' })), diagnostic: 'qoder_exact_execution_not_observed' };
+  const exactInput = executionId && items.some(item => item.role === 'user' && item.id === executionId) && records.some(record => record.sessionId === contextId && record.isSidechain === false && record.type === 'user' && record.uuid === executionId);
+  // A known input identity survives a lost result. Physical release still requires the old control group to be gone.
+  const unknown: ExecutorObservation = { status: 'unknown', ...(exactInput ? { executionRef: { id: executionId } } : {}), tools: tools.map(item => ({ id: item.id, label: item.name ?? '工具', status: settled(item) ? 'completed' : 'unknown' })), diagnostic: 'qoder_exact_execution_not_observed' };
   if (!executionId || !interruptions.has(messages.at(-1)?.uuid) || items.filter(item => item.role === 'user').at(-1)?.id !== executionId) return unknown;
   const start = messages.findIndex(message => message.uuid === executionId);
   if (start < 0 || tools.some(item => !settled(item))) return unknown;

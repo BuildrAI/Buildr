@@ -21,12 +21,16 @@ const persist = records => {
   fs.appendFileSync(filename, records.map(record => JSON.stringify(record)).join('\n') + '\n');
   if (current?.message?.content[0]?.text !== 'no-mirror') emit({ type: 'transcript_mirror', session_id: sid, filePath: filename, entries: records });
 };
-let parent = null, current;
+let parent = null, current, firstCommand;
 const record = (type, uuid, message) => {
   const result = { type, uuid, parentUuid: parent, sessionId: sid, cwd, isSidechain: false, timestamp: new Date().toISOString(), userType: 'external', entrypoint: 'cli', version: '1.1.75', message };
   parent = uuid; return result;
 };
-const result = () => emit({ type: 'result', subtype: 'success', is_error: false, terminal_reason: 'completed', session_id: sid, uuid: randomUUID(), num_turns: 1, usage: {}, modelUsage: {}, permission_denials: [], result: 'complete' });
+const result = () => {
+  emit({ type: 'result', subtype: 'success', is_error: false, terminal_reason: 'completed', session_id: sid, uuid: randomUUID(), num_turns: 1, usage: {}, modelUsage: {}, permission_denials: [], result: 'complete' });
+  emit({ type: 'command_lifecycle', session_id: sid, command_uuid: current.uuid, state: 'completed', uuid: randomUUID() });
+  if (firstCommand !== current.uuid) emit({ type: 'command_lifecycle', session_id: sid, command_uuid: firstCommand, state: 'completed', uuid: randomUUID() });
+};
 const stream = (id, text, parentId = null) => {
   emit({ type: 'stream_event', session_id: sid, parent_tool_use_id: parentId, uuid: randomUUID(), event: { type: 'message_start', message: { id } } });
   emit({ type: 'stream_event', session_id: sid, parent_tool_use_id: parentId, uuid: randomUUID(), event: { type: 'content_block_delta', delta: { type: 'text_delta', text } } });
@@ -68,6 +72,7 @@ createInterface({ input: process.stdin }).on('line', line => {
   if (m.type !== 'user') return;
   fs.appendFileSync(path.join(config, 'native-inputs.jsonl'), JSON.stringify(m) + '\n');
   current = m;
+  firstCommand ??= m.uuid;
   if (m.shouldQuery === false) { emit({ ...m, isReplay: true }); return; }
   const text = m.message.content.find(part => part.type === 'text')?.text;
   if (text === 'close-slow') { process.on('SIGTERM', () => {}); setInterval(() => {}, 1000); }
@@ -79,6 +84,16 @@ createInterface({ input: process.stdin }).on('line', line => {
   }
   persist([record('user', m.uuid, m.message)]);
   emit({ ...m, isReplay: true });
+  if (text?.includes('background-continue-error')) {
+    const assistant = record('assistant', randomUUID(), { role: 'assistant', id: randomUUID(), content: [{ type: 'tool_use', id: 'continued-tool', name: 'Bash', input: { run_in_background: true } }] }); persist([assistant]);
+    emit({ ...assistant, session_id: sid, parent_tool_use_id: null });
+    const receipt = record('user', randomUUID(), { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'continued-tool', content: 'background launched' }] });
+    receipt.toolUseResult = { kind: 'backgrounded', taskId: 'continued-task' }; persist([receipt]);
+    emit({ ...receipt, session_id: sid, parent_tool_use_id: null, tool_use_result: text.includes('-array') ? [receipt.toolUseResult] : receipt.toolUseResult });
+    emit({ type: 'result', subtype: 'error_during_execution', is_error: true, session_id: sid, uuid: randomUUID(), errors: ['fixture foreground error'] });
+    emit({ type: 'command_lifecycle', session_id: sid, command_uuid: m.uuid, state: 'completed', uuid: randomUUID() });
+    return;
+  }
   if (text === 'permission-known' || text === 'permission-unknown' || text === 'permission-special' || text === 'question') {
     const tool = text === 'question' ? 'AskUserQuestion' : ['permission-known', 'permission-special'].includes(text) ? 'Skill' : 'UnadvertisedTool';
     emit({ type: 'control_request', request_id: 'known-permission', session_id: sid, request: { subtype: 'can_use_tool', ...(text === 'permission-special' ? { permission_kind: 'repeated_tool_call' } : {}), tool_name: tool, tool_use_id: 'permission-call', input: tool === 'AskUserQuestion' ? { questions: [{ question: 'choose', options: [{ label: 'yes' }] }] } : { skill: 'fixture' } } });
@@ -109,13 +124,37 @@ createInterface({ input: process.stdin }).on('line', line => {
     }, 100);
     if (text === 'background-stop-wait') return;
   } else {
+    if (text === 'task-metadata') {
+      const task = record('assistant', randomUUID(), { role: 'assistant', id: randomUUID(), content: [{ type: 'tool_use', id: 'task-update', name: 'TaskUpdate', input: { taskId: '1', status: 'completed' } }] }); persist([task]);
+      emit({ ...task, session_id: sid, parent_tool_use_id: null });
+      const receipt = record('user', randomUUID(), { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'task-update', content: 'task updated' }] }); persist([receipt]);
+      emit({ ...receipt, session_id: sid, parent_tool_use_id: null, tool_use_result: { success: true, taskId: '1', statusChange: { from: 'in_progress', to: 'completed' } } });
+    }
     const assistant = record('assistant', randomUUID(), { role: 'assistant', id: randomUUID(), content: [{ type: 'text', text: 'complete ' + text }] }); persist([assistant]);
     emit({ type: 'assistant', session_id: sid, parent_tool_use_id: null, uuid: assistant.uuid, message: assistant.message });
   }
   result();
+  if (text?.includes('legacy-late-unknown')) emit({ type: 'assistant', session_id: sid, parent_tool_use_id: null, uuid: randomUUID(), message: { id: randomUUID(), content: [{ type: 'text', text: 'unclassified late activity' }] } });
 });
 
 const trigger = setInterval(() => {
+  const continuation = path.join(config, 'continue-background'), complete = path.join(config, 'complete-continuation');
+  if (fs.existsSync(continuation)) {
+    const mode = fs.readFileSync(continuation, 'utf8');
+    fs.unlinkSync(continuation);
+    const notification = record('user', randomUUID(), { role: 'user', content: [{ type: 'text', text: `<task-notification><task-id>${mode === 'foreign-task' ? 'foreign-task' : 'continued-task'}</task-id><tool-use-id>${mode === 'foreign-tool' ? 'foreign-tool' : 'continued-tool'}</tool-use-id><status>completed</status></task-notification>` }] });
+    notification.isMeta = true; notification.origin = { kind: mode === 'human' ? 'human' : 'task-notification' }; persist([notification]);
+    emit({ ...notification, session_id: sid, parent_tool_use_id: null });
+    const assistant = record('assistant', randomUUID(), { role: 'assistant', id: randomUUID(), content: [{ type: 'tool_use', id: 'continuation-tool', name: 'Read', input: {} }] }); persist([assistant]);
+    emit({ ...assistant, session_id: sid, parent_tool_use_id: null });
+  }
+  if (fs.existsSync(complete)) {
+    fs.unlinkSync(complete);
+    const receipt = record('user', randomUUID(), { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'continuation-tool', content: 'continued tool finished' }] }); persist([receipt]);
+    emit({ ...receipt, session_id: sid, parent_tool_use_id: null });
+    const assistant = record('assistant', randomUUID(), { role: 'assistant', id: randomUUID(), content: [{ type: 'text', text: 'continued final answer' }] }); persist([assistant]);
+    emit({ ...assistant, session_id: sid, parent_tool_use_id: null }); result();
+  }
   const question = path.join(config, 'inject-child-question'), finished = path.join(config, 'settle-background');
   if (fs.existsSync(question)) { fs.unlinkSync(question); emit({ type: 'control_request', request_id: 'child-question-request', session_id: sid, request: { subtype: 'can_use_tool', agent_id: 'background-task', tool_name: 'AskUserQuestion', tool_use_id: 'child-question', input: { questions: [{ question: 'choose', options: [{ label: 'yes' }] }] } } }); }
   if (fs.existsSync(finished)) { fs.unlinkSync(finished); emit({ type: 'system', subtype: 'task_notification', session_id: sid, uuid: randomUUID(), task_id: 'background-task', tool_use_id: 'background-tool', summary: 'actual background report', output_file: path.join(config, 'native-report.md') }); }

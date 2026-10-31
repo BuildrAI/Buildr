@@ -23,6 +23,59 @@ async function fixture(externalModel = false) {
 }
 async function eventually(check: () => unknown) { for (let i = 0; i < 400; i++) { if (check()) return; await new Promise(resolve => setTimeout(resolve, 5)); } assert.fail('native conversation did not settle'); }
 
+for (const input of ['background-continue-error', 'background-continue-error-array']) test('Qoder foreground error retains native background continuation and converges after its final result: ' + input, async () => {
+  const f = await fixture();
+  try {
+    const round = await f.send(input);
+    const accepted = round.events.find(event => event.type === 'accepted'); assert.equal(accepted?.type, 'accepted');
+    const control = { contextRef: f.contextRef, executionRef: accepted.executionRef };
+    assert.equal(await f.runtime.canRelease!(control), false, 'a backgrounded tool receipt is not completion');
+    await writeFile(join(f.configRoot, 'qoder-config/continue-background'), 'yes');
+    await eventually(() => round.events.some(event => event.type === 'item' && event.item.id === 'continuation-tool'));
+    assert.equal((await f.runtime.observe(control)).status, 'running');
+    assert.equal(await f.runtime.canRelease!(control), false);
+    await assert.rejects(f.send('must not enter'), /agent_native_turn_active/);
+    await writeFile(join(f.configRoot, 'qoder-config/complete-continuation'), 'yes');
+    await eventually(() => round.events.some(event => event.type === 'item' && event.item.text === 'continued final answer'));
+    assert.equal((await f.runtime.observe(control)).status, 'idle');
+    const history = await f.runtime.readHistory({ contextRef: f.contextRef, cwd: f.cwd });
+    assert.deepEqual(history.filter(item => item.role === 'user').map(item => item.id), [round.clientRequestId]);
+    assert.ok(history.filter(item => item.text === 'continued final answer' || item.id === 'continuation-tool').every(item => item.executionId === round.clientRequestId));
+    assert.deepEqual(await f.runtime.canRelease!(control), { executionState: 'ended' });
+    assert.equal(round.events.filter(event => event.type === 'accepted').length, 1);
+    assert.equal((await f.launches()).length, 1);
+  } finally { await f.close(); }
+});
+
+test('Qoder ordinary task metadata with a taskId is not a live background process', async () => {
+  const f = await fixture();
+  try {
+    const round = await f.send('task-metadata');
+    const accepted = round.events.find(event => event.type === 'accepted'); assert.equal(accepted?.type, 'accepted');
+    const control = { contextRef: f.contextRef, executionRef: accepted.executionRef };
+    assert.equal((await f.runtime.observe(control)).status, 'idle');
+    assert.deepEqual(await f.runtime.canRelease!(control), { executionState: 'ended' });
+  } finally { await f.close(); }
+});
+
+for (const mode of ['foreign-task', 'foreign-tool', 'human']) test('Qoder cannot use an unowned notification or copied text to settle the original turn: ' + mode, async () => {
+  const f = await fixture();
+  try {
+    const round = await f.send('background-continue-error');
+    const accepted = round.events.find(event => event.type === 'accepted'); assert.equal(accepted?.type, 'accepted');
+    const control = { contextRef: f.contextRef, executionRef: accepted.executionRef };
+    await writeFile(join(f.configRoot, 'qoder-config/continue-background'), mode);
+    await eventually(() => round.events.some(event => event.type === 'observation' && event.observation.status === 'unknown'));
+    await writeFile(join(f.configRoot, 'qoder-config/complete-continuation'), 'yes');
+    // Wait for the fixture to emit its final result, then independently reread the original execution.
+    await eventually(() => existsSync(join(f.configRoot, 'qoder-config/complete-continuation')) === false);
+    assert.equal((await f.runtime.observe(control)).status, 'unknown');
+    assert.equal(await f.runtime.canRelease!(control), false);
+    await assert.rejects(f.send('must not enter'), /agent_native_turn_active/);
+    assert.equal(round.events.filter(event => event.type === 'accepted').length, 1);
+  } finally { await f.close(); }
+});
+
 test('Qoder reuses two proven normal rounds, preserves native history and releases its exact idle child', async () => {
   const f = await fixture();
   try {
