@@ -257,9 +257,7 @@
 .ac-execution-uncertain-summary{display:flex;align-items:center;gap:8px;min-height:28px;color:#a28a5b}
 .ac-execution-uncertain-actions{display:flex;gap:2px;margin-left:auto;flex:none}
 .ac-execution-uncertain .ant-btn{color:var(--soft-primary);font-size:inherit}
-.ac-execution-uncertain small,.ac-execution-uncertain details{font-size:inherit}
-.ac-execution-uncertain summary{cursor:pointer;color:var(--soft-primary);width:fit-content}
-.ac-execution-uncertain details p{margin:4px 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.ac-execution-uncertain-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ac-linked-image-reference{display:flex;align-items:flex-start;gap:8px;margin-bottom:16px}
 .ac-linked-image-reference code{min-width:0;flex:1;overflow-wrap:anywhere;color:var(--soft-muted)}
 .ac-linked-image-preview{display:flex;align-items:center;justify-content:center;min-height:100px}

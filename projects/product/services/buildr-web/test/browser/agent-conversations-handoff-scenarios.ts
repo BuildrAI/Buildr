@@ -87,7 +87,7 @@ await step('异常结束直接继续或重试，草稿保留，换模型与执�
         update({entries:[...fixture.conversation.entries,{id:'legacy-failed-input',sequence:999,kind:'message',role:'user',text:'未送达的历史要求',createdAt:'2026-10-28T00:00:00Z',runId:'older-failed-run',status:'failed'}]});
         await page.reload();await panel().locator('.ac-turn[data-run-id="older-failed-run"]').waitFor();
         assert.equal(await panel().locator('.ac-turn[data-run-id="older-failed-run"] .ac-turn-identity').count(),0,'历史失败输入没有来源事实时不显示空智能体标题');
-        update({run:run('unknown','codex'),requests:[]});await page.reload();await panel().locator('.ac-execution-uncertain').getByRole('button',{name:'核对状态',exact:true}).waitFor();
+        update({run:run('unknown','codex'),requests:[]});await page.reload();await panel().locator('.ac-execution-uncertain').getByRole('button',{name:'重新读取',exact:true}).waitFor();
         assert.equal(await panel().locator('.ac-recovery-action').getByRole('button',{name:'继续',exact:true}).count(),0);
       }finally{fixture.holdSend=false;fixture.releaseSend?.();fixture.conversation=saved;fixture.sends=savedSends;fixture.prepares=savedPrepares;fixture.stops=savedStops;sentInputs.splice(savedSentLength);await page.reload();await input().waitFor();await input().fill('');}
     });

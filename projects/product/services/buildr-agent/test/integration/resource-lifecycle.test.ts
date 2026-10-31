@@ -9,16 +9,18 @@ import type {AgentExecutor,AgentRuntime,ExecutorObservation} from '../../src/con
 import type {ModelProvider} from '../../src/model-access/contracts.ts';
 import {ConversationRepository} from '../../src/persistence/conversation-repository.ts';
 
-async function fixture({proof=true,shared=false,stopFails=false,closeStartsWork=false,executionUnknown=false,modelHold=false}={}){
+async function fixture({proof=true,shared=false,stopFails=false,closeStartsWork=false,executionUnknown=false,modelHold=false,upgrade=false}={}){
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-resource-lifecycle-'));
+ const connection=upgrade?'codex':'local',original=path.join(root,'original'),installed=path.join(root,'installed');
+ if(upgrade){fs.writeFileSync(original,'old');fs.writeFileSync(installed,'new');}
  const contexts=new Map<string,{execution:string;idle:boolean;observation:ExecutorObservation;finish?:()=>void}>();
  const sent:string[]=[],closed:AgentRuntime[]=[];let opens=0,common:AgentRuntime|undefined;
  let releaseModel:(()=>void)|undefined,modelStarted=false,modelResponse:Promise<string>|undefined;
  const capabilities={text:true,images:false,approval:false,questions:false,stop:true,resume:true,maxInputBytes:65536};
- const executor:AgentExecutor={descriptor:{id:'local',label:'Local',capabilities},async open(options){
+ const executor:AgentExecutor={descriptor:{id:connection,label:'Local',capabilities},async open(options){
   opens++;if(shared&&common)return common;
   let disposed=false;
-  const runtime:AgentRuntime={get closed(){return disposed;},bindingIdentity:'resource-fixture',capabilities,
+  const runtime:AgentRuntime={get closed(){return disposed;},bindingIdentity:'resource-fixture',...(upgrade?{bindingData:{executable:original}}:{}),capabilities,
    inspectAccount:async()=>({status:'ready'}),models:async()=>[{id:'model',label:'Model'}],beginLogin:async()=>{},cancelLogin:async()=>{},
    async createContext(){const ref={id:randomUUID()};contexts.set(ref.id,{execution:'',idle:false,observation:{status:'idle',tools:[]}});return ref;},
    async resumeContext({contextRef}){assert.ok(contexts.has(contextRef.id));},readHistory:async()=>[],
@@ -39,11 +41,11 @@ async function fixture({proof=true,shared=false,stopFails=false,closeStartsWork=
   };common=runtime;return runtime;
  }};
  const provider:ModelProvider={id:'fixture',label:'Fixture',async open(){return {protocol:'chat-completions',inspect:async()=>({status:'ready',models:[{id:'model',label:'Model',images:false,tools:true},{id:'other-model',label:'Other',images:false,tools:true}]}),beginLogin:async()=>{},cancelLogin:async()=>{},infer:async()=>{if(!modelHold)throw Error('paid model forbidden');modelStarted=true;await new Promise<void>(resolve=>{releaseModel=resolve;});return Response.json({id:'auxiliary',object:'chat.completion',choices:[{index:0,message:{role:'assistant',content:'finished'},finish_reason:'stop'}]});},close:async()=>{}};}};
- const service=createAgentService({dataRoot:root,executors:[executor],modelProviders:[provider],resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
- await service.connections.connect('local',{expectedRevision:'unconfigured'});const account=await service.models.accounts.add({provider:'fixture'});const checked=await service.models.accounts.check(account.id);await service.models.accounts.preferences(account.id,{expectedRevision:checked.revision,models:[{id:'model',enabled:true},{id:'other-model',enabled:true}]});
+ const service=createAgentService({dataRoot:root,executors:[executor],modelProviders:[provider],...(upgrade?{programRelease:async()=>({latestVersion:'0.166.0',source:'https://fixture.invalid'}),programManager:{isManaged:(_provider:string,file:string)=>file===installed,async discover(input:{boundExecutable?:string}){const file=input.boundExecutable??original;return {candidates:[{executable:file,source:'managed' as const,label:'Fixture',version:file===installed?'0.166.0':'0.165.0',compatible:true}],installation:{label:'Fixture',version:'0.166.0',url:'https://fixture.invalid',canInstall:true}};},async install(){return installed;}}}:{}),resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
+ await service.connections.connect(connection,{expectedRevision:'unconfigured',...(upgrade?{executable:original}:{})});const account=await service.models.accounts.add({provider:'fixture'});const checked=await service.models.accounts.check(account.id);await service.models.accounts.preferences(account.id,{expectedRevision:checked.revision,models:[{id:'model',enabled:true},{id:'other-model',enabled:true}]});
  async function wait(predicate:()=>boolean){for(let n=0;n<300;n++){if(predicate())return;await new Promise(r=>setTimeout(r,5));}assert.fail('resource state did not settle');}
- async function start(text:string){const c=await service.conversations.create('workspace',{}),draft={expectedRevision:c.revision,connectionId:'local',modelAccountId:account.id,model:'model',text},preview=service.conversations.prepareSend('workspace',c.id,draft);service.conversations.send('workspace',c.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});await wait(()=>service.conversations.read('workspace',c.id).run?.accepted===true);if(text!=='hold')await wait(()=>!service.activity().reasons.some(r=>['execution','title','recovery','observation'].includes(r.kind)));return service.conversations.read('workspace',c.id);}
- return {root,service,contexts,sent,closed,start,wait,modelStarted:()=>modelStarted,finishModel:async()=>{releaseModel?.();await modelResponse;},opens:()=>opens,async close(){releaseModel?.();await modelResponse?.catch(()=>{});for(const state of contexts.values())state.finish?.();await service.close();fs.rmSync(root,{recursive:true,force:true});}};
+ async function start(text:string){const c=await service.conversations.create('workspace',{}),draft={expectedRevision:c.revision,connectionId:connection,modelAccountId:account.id,model:'model',text},preview=service.conversations.prepareSend('workspace',c.id,draft);service.conversations.send('workspace',c.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});await wait(()=>service.conversations.read('workspace',c.id).run?.accepted===true);if(text!=='hold')await wait(()=>!service.activity().reasons.some(r=>['execution','title','recovery','observation'].includes(r.kind)));return service.conversations.read('workspace',c.id);}
+ return {root,service,contexts,original,installed,sent,closed,start,wait,modelStarted:()=>modelStarted,finishModel:async()=>{releaseModel?.();await modelResponse;},opens:()=>opens,async close(){releaseModel?.();await modelResponse?.catch(()=>{});for(const state of contexts.values())state.finish?.();await service.close();fs.rmSync(root,{recursive:true,force:true});}};
 }
 
 test('unknown result can release an idle exact source without declaring success or replaying input',async()=>{
@@ -170,5 +172,36 @@ test('shared release protects the exact model lease without holding an unrelated
   assert.notEqual(f.service.conversations.read('workspace',auxiliary.id).run?.resourcesReleased,true);
   await f.finishModel();await f.service.releaseIdleSources();
   assert.equal(f.closed.length,2);assert.equal(f.service.conversations.read('workspace',auxiliary.id).run?.resourcesReleased,true);assert.equal(f.service.activity().busy,false);
+ }finally{await f.close();}
+});
+
+
+test('historical participant without a retained run releases only with its exact accepted native proof',async()=>{
+ for(const mode of ['exact','missing-proof','unaccepted']){
+  const f=await fixture({proof:mode!=='missing-proof'});try{
+   const chat=await f.start('done'),repository=new ConversationRepository(path.join(f.root,'agent-service'));
+   const saved=repository.readConversation(chat.id)!,revision=saved.view.revision;
+   if(mode==='unaccepted')saved.attempts.at(-1)!.accepted=false;
+   delete saved.view.run;repository.saveConversation(saved,revision);
+   const state=f.contexts.get(chat.participants[0].contextId)!;state.idle=false;
+   await f.service.releaseIdleSources();assert.equal(f.closed.length,0);
+   state.idle=true;await f.service.releaseIdleSources();
+   assert.equal(f.closed.length,mode==='exact'?1:0,mode);assert.deepEqual(f.sent,['done']);
+   assert.equal(repository.readConversation(chat.id)!.view.run,undefined,'release must not invent a current execution');
+  }finally{await f.close();}
+ }
+});
+
+test('program upgrade proceeds after exact resources release while the historical tool result stays unknown',async()=>{
+ const f=await fixture({upgrade:true,executionUnknown:true});try{
+  const chat=await f.start('uncertain'),state=f.contexts.get(chat.participants[0].contextId)!;
+  const current=f.service.connections.read('codex');
+  f.service.connections.upgradeProgram('codex',{expectedRevision:current.revision,expectedVersion:'0.166.0'});
+  await f.wait(()=>f.service.connections.programUpdates().programs[0]?.upgrade?.state==='waiting');
+  assert.equal(f.service.connections.read('codex').executable,f.original);
+  state.idle=true;await f.service.releaseIdleSources();
+  await f.wait(()=>f.service.connections.programUpdates().programs[0]?.upgrade?.state==='completed');
+  assert.equal(f.service.connections.read('codex').executable,f.installed);
+  const result=f.service.conversations.read('workspace',chat.id);assert.equal(result.run?.status,'unknown');assert.equal(result.run?.executionState,'unknown');assert.equal(result.run?.tools[0]?.status,'unknown');assert.deepEqual(f.sent,['uncertain']);
  }finally{await f.close();}
 });

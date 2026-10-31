@@ -27,7 +27,7 @@ test('命令默认只显示紧凑摘要，排除完成项，长原文不铺入�
   const html=render({tools:[{id:'done',status:'completed',label:'completed private command'},{id:'running',status:'running',label:'long raw command '.repeat(500),canStop:true},{id:'unknown',status:'unknown',label:'unknown command'}]});
   assert.match(html,/仍有 2 项命令未结束/);
   assert.match(html,/aria-expanded="false"/);assert.match(html,/查看命令/);
-  assert.equal((html.match(/核对状态/g)??[]).length,1);
+  assert.equal((html.match(/重新读取/g)??[]).length,1);
   assert.equal((html.match(/停止剩余执行/g)??[]).length,2,'可访问名称与按钮文案对应同一个动作');
   assert.doesNotMatch(html,/long raw command|completed private command|unknown command|<pre|ant-alert|模型已中断|已确认停止/);
 });
@@ -35,8 +35,8 @@ test('命令默认只显示紧凑摘要，排除完成项，长原文不铺入�
 test('缺少可核对命令时保持未知，不把空列表当成已停止；诊断默认折叠',()=>{
   const html=render({tools:[],diagnostic:'原始退出结果尚未确认'});
   assert.match(html,/命令结束状态待确认/);assert.doesNotMatch(html,/查看命令|0 项|已停止/);
-  assert.match(html,/<details class="ac-active-tools-diagnostic"><summary>查看原因<\/summary>/);
-  assert.doesNotMatch(html,/<details[^>]* open/);
+  assert.match(html,/title="原始退出结果尚未确认/);
+  assert.doesNotMatch(html,/<details/);
 });
 
 test('停止与核对期间保留准确操作，不提供重复恢复执行',()=>{
@@ -56,4 +56,22 @@ test('原执行和未答问题保持原归属且不阻止继续对话',()=>{
   assert.match(html,/保留了 2 项原执行，不影响继续对话/);assert.match(html,/命令待核对，可继续对话/);
   assert.match(html,/未回答：确认发布吗/);assert.match(html,/新的要求不算回答/);assert.match(html,/data-retained-run="old-tool"/);
   assert.doesNotMatch(html,/data-retained-run="settled"|模型已中断|private command/);
+});
+
+
+test('已释放后台的未知命令只保留结果核对，不提供停止或误报运行',()=>{
+ const html=render({resourcesReleased:true,canContinue:true,tools:[{id:'unknown',status:'unknown',label:'private command',canStop:true}]});
+ assert.match(html,/后台连接已释放/);assert.match(html,/1 项命令的结束记录/);assert.match(html,/重新读取/);
+ assert.doesNotMatch(html,/停止剩余执行|停止此命令|命令运行|已确认停止/);
+});
+
+test('保留执行按各自的资源释放事实展示，仍活动的执行保留停止',()=>{
+ const conversation={participants:[{id:'p',label:'原执行方'}],requests:[],retainedRuns:[
+  {id:'released',participantId:'p',status:'unknown',resourcesReleased:true,tools:[]},
+  {id:'held',participantId:'p',status:'unknown',resourcesReleased:false,tools:[]},
+ ]};
+ const html=renderToStaticMarkup(React.createElement(ConversationRetainedWork,{conversation,busy(){return false;},onObserve(){},onStop(){}}));
+ const released=html.split('data-retained-run="released"')[1].split('</section>')[0],held=html.split('data-retained-run="held"')[1].split('</section>')[0];
+ assert.match(released,/原回复已中断，可继续发送/);assert.doesNotMatch(released,/停止原执行/);
+ assert.match(held,/停止原执行/);assert.doesNotMatch(held,/后台连接已释放/);
 });

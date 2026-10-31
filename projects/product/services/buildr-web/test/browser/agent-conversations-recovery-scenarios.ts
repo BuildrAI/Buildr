@@ -9,6 +9,28 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
   await step('状态未知时自动核对原执行，不重新发送工作',async()=>{
     const beforeSends=fixture.sends,beforeObserves=fixture.observes;fixture.recoverNextObserve=true;update({run:run('unknown')});await page.reload();await panel().locator('[data-run-status="completed"]').waitFor();assert.ok(fixture.observes>beforeObserves);assert.equal(fixture.sends,beforeSends,'自动恢复观察不创建新的执行');
   });
+  await step('已释放的中断回复只显示一行；重新读取没有新结果也明确反馈且不重发',async()=>{
+    const saved=structuredClone(fixture.conversation),viewport=page.viewportSize(),beforeSends=fixture.sends,beforeStops=fixture.stops;
+    try{
+      update({run:run('unknown','codex',{resourcesReleased:true,executionState:'unknown',interrupted:true,diagnostic:'未取得本轮结束记录'}),requests:[]});
+      await page.reload();await input().waitFor();
+      const state=panel().locator('.ac-execution-uncertain');
+      await state.getByText('回复已中断，可继续发送',{exact:true}).waitFor();
+      assert.equal(await state.getByRole('button',{name:'停止',exact:true}).count(),0);assert.equal(await state.locator('small,details').count(),0);
+      for(let attempt=0;attempt<2;attempt++){
+        const before=fixture.observes;
+        await state.getByRole('button',{name:'重新读取',exact:true}).click();
+        await state.getByText('未读到结束记录，可继续发送',{exact:true}).waitFor();
+        assert.ok(fixture.observes>before);assert.equal(fixture.sends,beforeSends);assert.equal(fixture.stops,beforeStops);assert.equal(fixture.conversation.run.status,'unknown');
+        assert.equal(await panel().locator('.ac-compose-wrap>small[role="status"]').count(),0,'反馈保留在同一行');
+      }
+      await page.setViewportSize({width:390,height:844});
+      const geometry=await state.evaluate((node:HTMLElement)=>{const row=node.querySelector('.ac-execution-uncertain-summary')!,label=row.querySelector('span')!,actions=row.querySelector('.ac-execution-uncertain-actions')!;return {height:row.getBoundingClientRect().height,overflow:node.scrollWidth-node.clientWidth,label:label.getBoundingClientRect().top,actions:actions.getBoundingClientRect().top};});
+      assert.ok(geometry.height<=36&&geometry.overflow<=1,JSON.stringify(geometry));
+      await fixture.capture(page,'agent-interrupted-reply-one-line.png');
+      update({run:run('unknown','codex',{resourcesReleased:false})});await page.reload();await input().waitFor();await state.getByRole('button',{name:'停止',exact:true}).waitFor();
+    }finally{fixture.conversation=saved;await page.setViewportSize(viewport);await page.reload();await input().waitFor();}
+  });
   await step('已结束轮次打开只读取记录，后台刷新不订阅或轮询该轮',async()=>{
     for(const status of ['completed','stopped','failed']){
       update({run:run(status,'codex',{executionState:'ended'})});const streams=fixture.eventStreams;

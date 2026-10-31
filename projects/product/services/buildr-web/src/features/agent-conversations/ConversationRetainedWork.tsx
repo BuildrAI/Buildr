@@ -21,12 +21,11 @@ export function ConversationRetainedWork({conversation,busy,onObserve,onStop,ren
     {runs.map(run=><section key={run.id} data-retained-run={run.id}>
       <strong>{conversation?.participants.find(participant=>participant.id===run.participantId)?.label} · {run.model||'默认模型'}</strong>
       {run.tools.some(tool=>tool.status!=='completed')?
-        <ConversationActiveToolsNotice tools={run.tools} diagnostic={run.diagnostic} canContinue observing={busy(run,'observe')} stopping={busy(run,'stop')} onObserve={()=>onObserve(run)} onStop={toolId=>onStop(run,toolId)}/>:
+        <ConversationActiveToolsNotice tools={run.tools} resourcesReleased={run.resourcesReleased} diagnostic={run.diagnostic} canContinue observing={busy(run,'observe')} stopping={busy(run,'stop')} onObserve={()=>onObserve(run)} onStop={toolId=>onStop(run,toolId)}/>:
         <div role="status">
-          <span>{run.status==='unknown'?'原执行状态待核对':run.status==='waiting-question'||run.status==='waiting-approval'?'原执行仍在等待决定，新的要求不算回答':'原执行尚未结束'}</span>
-          <Button type="text" size="small" loading={busy(run,'observe')} onClick={()=>onObserve(run)}>核对状态</Button>
-          <Button type="text" size="small" loading={busy(run,'stop')} onClick={()=>onStop(run)}>停止原执行</Button>
-          {run.diagnostic&&<p>{run.diagnostic}</p>}
+          <span title={run.diagnostic}>{run.resourcesReleased?'原回复已中断，可继续发送':run.status==='unknown'?'暂时无法读取原执行状态':run.status==='waiting-question'||run.status==='waiting-approval'?'原执行仍在等待决定，新的要求不算回答':'原执行尚未结束'}</span>
+          <Button type="text" size="small" loading={busy(run,'observe')} onClick={()=>onObserve(run)}>重新读取</Button>
+          {!run.resourcesReleased&&<Button type="text" size="small" loading={busy(run,'stop')} onClick={()=>onStop(run)}>停止原执行</Button>}
         </div>}
       {conversation?.requests.filter(request=>request.runId===run.id&&request.participantId===run.participantId&&request.generation===run.generation).map(request=><div key={request.id}>{renderRequest?renderRequest(request):<p>未回答：{request.title}</p>}</div>)}
     </section>)}

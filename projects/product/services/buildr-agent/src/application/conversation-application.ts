@@ -170,6 +170,11 @@ export class ConversationApplication {
       models: [{id: lease.model, label: lease.offering.label, isDefault: true, reasoningEfforts: lease.offering.reasoningEfforts, defaultReasoningEffort: lease.offering.defaultReasoningEffort, contextWindow: lease.offering.contextWindow, maxOutputTokens: lease.offering.maxOutputTokens, vision: lease.offering.images, tools: lease.offering.tools}] }), model: lease.model, leaseIdentity:lease.identity })).catch(error => { if(this.sourceRuntimes.get(participant.id)===work){this.sourceRuntimes.delete(participant.id);this.sourceOwners.delete(participant.id);this.sourceConnections.delete(participant.id);} throw error; });
     this.sourceConnections.set(participant.id, participant.connectionId); this.sourceRuntimes.set(participant.id, work); return work;
   }
+  private sourceExecution(record: StoredConversation, participantId: string) {
+    const run = conversationRuns(record.view).find(value => value.participantId === participantId);
+    const attempt = [...record.attempts].reverse().find(value => value.participantId === participantId && (!run || value.runId === run.id));
+    return { run, attempt, id: run?.id ?? attempt?.runId ?? '' };
+  }
   /** Retiring generations release only idle, conversation-specific runtimes.
    * Native contexts keep their writer until their owning process actually exits. */
   releaseIdleSources(owner?: {workspaceId:string; id:string}): Promise<void> {
@@ -189,23 +194,26 @@ export class ConversationApplication {
         for(const member of members){
           const held=this.sourceOwners.get(member.id);
           if(!held||this.sourceRuntimes.get(member.id)!==member.source||member.leaseIdentity&&this.options.modelAccess?.leases.hasActiveRequests(member.leaseIdentity)){safe=false;break;}
-          const record=this.load(held.workspaceId,held.id),run=conversationRuns(record.view).find(run=>run.participantId===member.id);
+          const record=this.load(held.workspaceId,held.id),{run,attempt,id:runId}=this.sourceExecution(record,member.id);
           // A finished fork has durable history but has never admitted a work
           // prompt. Its private reader/import process is idle, not an unknown run.
           if(!run&&record.view.forkState?.status==='ready'&&!record.attempts.length&&!record.view.requests.length&&!this.forks.active&&!this.titleWork.has(held.id)&&!this.earlyTitles.has(held.id)){
             candidates.push({...member,workspaceId:held.workspaceId,conversationId:held.id,runId:''});
             continue;
           }
-          if(!run||record.view.requests.some(request=>request.participantId===member.id)||this.workers.has(run.id)||this.recoveries.has(run.id)||this.observations.has(`${held.workspaceId}/${held.id}`)||this.earlyTitles.has(held.id)||this.titleWork.has(held.id)||this.supplements.size||this.repliesInFlight.size){safe=false;break;}
-          const participant=record.participants.find(value=>value.id===member.id),attempt=[...record.attempts].reverse().find(value=>value.participantId===member.id);
-          const settled=run.resourcesReleased||!this.busy(held.workspaceId,held.id);
+          if(!runId||record.view.requests.some(request=>request.participantId===member.id)||this.workers.has(runId)||this.recoveries.has(runId)||this.observations.has(`${held.workspaceId}/${held.id}`)||this.earlyTitles.has(held.id)||this.titleWork.has(held.id)||this.supplements.size||this.repliesInFlight.size){safe=false;break;}
+          const participant=record.participants.find(value=>value.id===member.id);
+          // Older histories may no longer retain this participant's RunView.
+          // Only its exact accepted native attempt can prove physical release.
+          const settled=Boolean(run && (run.resourcesReleased||!this.busy(held.workspaceId,held.id)));
+          if(!run&&!attempt?.accepted){safe=false;break;}
           const exactProof=participant?.contextRef&&attempt?.executionRef&&runtime.canRelease;
           if(exactProof?!await runtime.canRelease!({contextRef:participant!.contextRef!,executionRef:attempt!.executionRef!}).catch(()=>false):!settled){safe=false;break;}
-          candidates.push({...member,workspaceId:held.workspaceId,conversationId:held.id,runId:run.id,...(exactProof?{proof:()=>runtime.canRelease!({contextRef:participant!.contextRef!,executionRef:attempt!.executionRef!}).catch(()=>false)}:{})});
+          candidates.push({...member,workspaceId:held.workspaceId,conversationId:held.id,runId,...(exactProof?{proof:()=>runtime.canRelease!({contextRef:participant!.contextRef!,executionRef:attempt!.executionRef!}).catch(()=>false)}:{})});
         }
         if(!safe)continue;
         // Recheck after asynchronous native proof, then freeze reuse before close.
-        if(candidates.some(value=>value.leaseIdentity&&this.options.modelAccess?.leases.hasActiveRequests(value.leaseIdentity)||this.sourceRuntimes.get(value.id)!==value.source||(conversationRuns(this.load(value.workspaceId,value.conversationId).view).find(run=>run.participantId===value.id)?.id??'')!==value.runId||this.workers.has(value.runId)||this.observations.has(`${value.workspaceId}/${value.conversationId}`)||this.recoveries.has(value.runId)||this.earlyTitles.has(value.conversationId)||this.titleWork.has(value.conversationId)||this.load(value.workspaceId,value.conversationId).view.requests.some(request=>request.participantId===value.id))||this.supplements.size||this.repliesInFlight.size)continue;
+        if(candidates.some(value=>value.leaseIdentity&&this.options.modelAccess?.leases.hasActiveRequests(value.leaseIdentity)||this.sourceRuntimes.get(value.id)!==value.source||this.sourceExecution(this.load(value.workspaceId,value.conversationId),value.id).id!==value.runId||this.workers.has(value.runId)||this.observations.has(`${value.workspaceId}/${value.conversationId}`)||this.recoveries.has(value.runId)||this.earlyTitles.has(value.conversationId)||this.titleWork.has(value.conversationId)||this.load(value.workspaceId,value.conversationId).view.requests.some(request=>request.participantId===value.id))||this.supplements.size||this.repliesInFlight.size)continue;
         const finish=async()=>{
           if(candidates.some(value=>value.leaseIdentity&&this.options.modelAccess?.leases.hasActiveRequests(value.leaseIdentity)))return false;
           await this.options.connections.releaseGatewayRuntime(runtime);
@@ -1402,7 +1410,7 @@ export class ConversationApplication {
     await this.releaseIdleSources();
     if ([...this.sourceConnections].some(([id, connection]) => connection === connectionId && this.sourceRuntimes.has(id))) return false;
     return !this.options.repository.listPendingStates(true).some(record => {
-      return conversationRuns(record.view).some(run => unfinishedRun(run) && record.participants.some(item => item.id === run.participantId && item.connectionId === connectionId));
+      return conversationRuns(record.view).some(run => (!run.resourcesReleased && unfinishedRun(run) || record.view.requests.some(request => request.runId === run.id)) && record.participants.some(item => item.id === run.participantId && item.connectionId === connectionId));
     });
   }
 

@@ -634,3 +634,15 @@ test('工具完整内容读取绑定保存的对话、条目和已观察内容�
  const result=await api.entry('saved/ws','chat/id',entry,controller.signal);
  assert.equal(calls[0].url,'/api/v1/workspaces/saved%2Fws/agent-conversations/chat%2Fid/entry-detail/tool%2Fid?revision=version-1');assert.equal(calls[0].init.signal,controller.signal);assert.equal(result.text,'complete');
 });
+
+
+test('核对完成必须明确反馈未知、已释放与真实终态，不能把请求成功当作执行成功',async()=>{
+ const {conversationObservationFeedback}=await import('../src/features/agent-conversations/conversation-state.ts');
+ const unknown={status:'unknown',tools:[],resourcesReleased:true};
+ assert.match(conversationObservationFeedback(unknown),/读取完成.*后台连接已释放.*未读到.*结束记录/);
+ assert.doesNotMatch(conversationObservationFeedback(unknown),/已确认停止|执行成功/);
+ assert.match(conversationObservationFeedback({...unknown,resourcesReleased:false}),/仍无法读取原执行状态/);
+ assert.match(conversationObservationFeedback({status:'running',tools:[]}),/仍在执行/);
+ assert.match(conversationObservationFeedback({status:'stopped',tools:[]}),/已确认停止/);
+ assert.match(conversationObservationFeedback({status:'completed',tools:[]}),/本轮已结束/);
+});
