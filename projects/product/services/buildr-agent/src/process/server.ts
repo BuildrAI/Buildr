@@ -187,7 +187,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       let target: ProcessRecord | undefined;
       let controlGeneration:string|undefined;
       const perConversation = name.startsWith('conversations.') && !/Draft/.test(name) && typeof input.args[0] === 'string' && typeof input.args[1] === 'string';
-      if (perConversation && !['conversations.readEntry','conversations.fork','conversations.createChild','conversations.listChildren','conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.queueSend','conversations.cancelPendingSend'].includes(name)) {
+      if (perConversation && !['conversations.warmup','conversations.readEntry','conversations.fork','conversations.createChild','conversations.listChildren','conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.queueSend','conversations.cancelPendingSend'].includes(name)) {
         const control = ['conversations.stop','conversations.observeRun','conversations.supplement'].includes(name) ? input.args[2] : name === 'conversations.reply' ? input.args[3] : undefined;
         controlGeneration=control?.generation;
         target = await recipient(input.args[0], input.args[1], controlGeneration);
@@ -204,10 +204,10 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       if (!target && retiring && current && current.identity.instanceId !== instanceId) {
         const run = perConversation ? repository.readState(input.args[1])?.view.run : undefined;
         const ownsRun = controlGeneration ? controlGeneration === identity.generation : run?.generation === identity.generation;
-        if (!ownsRun || ['conversations.readEntry','conversations.fork','conversations.createChild','conversations.listChildren','conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.queueSend','conversations.cancelPendingSend'].includes(name)) target = current;
+        if (!ownsRun || ['conversations.warmup','conversations.readEntry','conversations.fork','conversations.createChild','conversations.listChildren','conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.queueSend','conversations.cancelPendingSend'].includes(name)) target = current;
       }
       if (target) { json(res, 200, await forward(target, '/operations', input)); return; }
-      const startsWork = !name.startsWith('conversations.') || ['conversations.fork','conversations.startDraft','conversations.create','conversations.createChild','conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.generateTitle'].includes(name);
+      const startsWork = !name.startsWith('conversations.') || ['conversations.warmup','conversations.fork','conversations.startDraft','conversations.create','conversations.createChild','conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.generateTitle'].includes(name);
       if (startsWork && !accepting) throw new AgentServiceError('agent_process_switching', '执行后台正在采用新版，本次新操作尚未受理。', 503);
       if (['conversations.startDraft','conversations.send'].includes(name) && pending?.runtime.digest !== undefined && pending.runtime.digest !== options.runtime.digest) throw new AgentServiceError('agent_process_switching','新版尚未就绪，可以提交待发送内容。',503);
       if (name === 'conversations.send' && await conversationBusy(input.args[0],input.args[1]) && !service.allowsReleasedContinuation(input.args[0],input.args[1],input.args[2])) throw new AgentServiceError('agent_conversation_busy','上一轮仍未释放，可以提交待发送内容。',409);

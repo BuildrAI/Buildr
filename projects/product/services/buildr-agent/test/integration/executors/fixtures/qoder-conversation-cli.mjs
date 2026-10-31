@@ -35,6 +35,7 @@ createInterface({ input: process.stdin }).on('line', line => {
   const m = JSON.parse(line);
   if (m.type === 'control_request') {
     const method = m.request.subtype ?? m.request.type;
+    fs.appendFileSync(path.join(config,'control-methods.jsonl'),JSON.stringify(method)+'\n');
     if (method === 'account_info') {
       const gate = path.join(config, 'hold-account');
       if (fs.existsSync(gate)) { fs.writeFileSync(path.join(config, 'account-held'), 'yes'); const timer = setInterval(() => { if (!fs.existsSync(gate)) { clearInterval(timer); ack(m.request_id, { userId: 'fixture' }); } }, 5); }
@@ -43,7 +44,7 @@ createInterface({ input: process.stdin }).on('line', line => {
     }
     if (method === 'get_models') { ack(m.request_id, { models }); return; }
     if (method === 'initialize') {
-      ack(m.request_id, { commands: [], agents: [], models, account: { userId: 'fixture' }, capabilities: ['background_tasks_v1'] });
+      ack(m.request_id, { commands: [], agents: [], models:fs.existsSync(path.join(config,'missing-model'))?[]:models, account: fs.existsSync(path.join(config,'missing-account'))?{}:{ userId: 'fixture' }, capabilities: ['background_tasks_v1'] });
       emit({ type: 'system', subtype: 'init', session_id: sid, uuid: randomUUID(), cwd, capabilities: ['background_tasks_v1'], tools: ['Read', 'Skill', 'AskUserQuestion'], mcp_servers: [], model: 'fixture-model', permissionMode: option('--permission-mode') ?? 'default', protocol_version: '1.5.0', qodercli_version: '1.1.75' });
     } else if (method === 'interrupt') { ack(m.request_id, { still_queued: [] }); emit({ type: 'result', subtype: 'success', is_error: true, terminal_reason: 'aborted', session_id: sid, uuid: randomUUID(), usage: {}, modelUsage: {}, permission_denials: [], result: '' }); }
     else ack(m.request_id, {});

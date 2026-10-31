@@ -4,6 +4,40 @@ import type {AgentConversationFixture} from './agent-conversation-fixture.ts';
 /** selection 场景使用独立准备的对话现场。 */
 export async function runSelectionScenarios(fixture:AgentConversationFixture){
   const {assertModelSummary,chooseAgent,chooseModel,chooseOption,closeModelSettings,expectedBrowserErrors,input,modelSettings,page,panel,preparedInputs,sentInputs,setHighEffort,step,workspaceId}=fixture;
+await step('选择Qoder与GPT后提前准备，发送采用同一身份且后台刷新不续期',async()=>{
+  const previous=fixture.sharedModels,beforeSends=fixture.sends,beforeCreates=fixture.creations;
+  const received:Array<{url:string;body:any}>=[];
+  const matcher='**/agent-conversations/**/warmup';
+  const route=async(r:any)=>{received.push({url:r.request().url(),body:r.request().postDataJSON()});await r.fulfill({json:{prepared:true}});};
+  const storage=await page.evaluate(()=>Object.fromEntries(Object.entries(localStorage).filter(([key])=>key.startsWith('buildr.agent-conversation'))));
+  try{
+    fixture.sharedModels=[{id:'warm-gpt',modelId:'fixture-gpt',label:'Warm GPT',accountId:'warm-codex',accountIdentity:'warm-account',accountRevision:'r1',accountLabel:'ChatGPT',provider:'codex',available:true,enabled:true,images:false,tools:true}];
+    await page.route(matcher,route);await page.reload();await input().waitFor();
+    await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().waitFor();await input().fill('');
+    await chooseAgent('Qoder');
+    const response=page.waitForResponse((r:any)=>r.url().endsWith('/warmup')&&r.request().postDataJSON()?.connectionId==='qoder'&&r.request().postDataJSON()?.model==='fixture-gpt');
+    await chooseModel('Warm GPT');await closeModelSettings();await response;
+    assert.equal(fixture.sends,beforeSends);assert.equal(fixture.creations,beforeCreates);
+    const prepared=received.findLast(x=>x.body.connectionId==='qoder'&&x.body.model==='fixture-gpt')!;
+    assert.equal(prepared.body.text,undefined);assert.equal(prepared.body.modelAccountIdentity,'warm-account');
+    const count=received.length,refresh=page.waitForResponse((r:any)=>r.url().endsWith('/model-catalog'));
+    await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await refresh;await page.waitForTimeout(500);
+    assert.equal(received.length,count,'ordinary refresh does not renew preparation');
+    await input().fill('first explicit work');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().locator('[data-run-status="running"]').waitFor();
+    assert.equal(sentInputs.at(-1).clientRequestId,prepared.body.clientRequestId);assert.equal(sentInputs.at(-1).connectionId,'qoder');
+    await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
+    const nextReady=page.waitForResponse((r:any)=>r.url().includes('/drafts/')&&r.url().endsWith('/warmup')&&r.request().postDataJSON()?.connectionId==='qoder');
+    await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().waitFor();await nextReady;
+    const next=received.findLast(x=>x.url.includes('/drafts/'))!;assert.notEqual(next.body.clientRequestId,prepared.body.clientRequestId,'new conversation gets a new submission identity');
+    await input().fill('second explicit conversation');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().locator('[data-run-status="running"]').waitFor();
+    assert.equal(sentInputs.at(-1).clientRequestId,next.body.clientRequestId);assert.equal(fixture.creations,beforeCreates+2);
+    await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
+  }finally{
+    await page.unroute(matcher,route);fixture.sharedModels=previous;
+    await page.evaluate((saved:Record<string,string>)=>{for(const key of Object.keys(localStorage))if(key.startsWith('buildr.agent-conversation'))localStorage.removeItem(key);for(const [key,value] of Object.entries(saved))localStorage.setItem(key,value);},storage);
+  }
+});
+
 await step('新对话跨工作空间恢复软件级选择，无关账号变化不造成假冲突且不改写执行模型记忆',async()=>{
       const storage=await page.evaluate(()=>{const profile=document.querySelector('meta[name="buildr-web-profile"]')?.getAttribute('content')||'local',suffix=encodeURIComponent(profile);const moduleKey='buildr.agent-conversation.preference:'+suffix,modelKey='buildr.agent-conversation.model-preference:'+suffix;return{moduleKey,modelKey,module:localStorage.getItem(moduleKey),model:localStorage.getItem(modelKey),execution:localStorage.getItem('buildr.execution-model'),workspaceName:document.querySelector('.workspace-switcher strong')?.textContent||''};});
       const previousModels=fixture.sharedModels;

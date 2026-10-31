@@ -16,7 +16,7 @@ export interface AgentOperations {
 
 const names = {
   connections: ['upgradeProgram','programUpdates','checkProgramUpdates','list','read','prepare','preparation','currentPreparation','cancelPreparation','connect','check','login','loginAttempt','cancelLogin','disconnect'],
-  conversations: ['readDraft','addDraftImage','removeDraftImage','readDraftImage','startDraft','lookupDraft','listAll','readEntry','markSeen','list','create','fork','createChild','listChildren','read','update','generateTitle','prepareHandoff','prepareSend','send','supplement','queueSend','cancelPendingSend','observe','observeRun','stop','reply','addAttachment','readAttachment','pending','lookupRequest'],
+  conversations: ['warmup','readDraft','addDraftImage','removeDraftImage','readDraftImage','startDraft','lookupDraft','listAll','readEntry','markSeen','list','create','fork','createChild','listChildren','read','update','generateTitle','prepareHandoff','prepareSend','send','supplement','queueSend','cancelPendingSend','observe','observeRun','stop','reply','addAttachment','readAttachment','pending','lookupRequest'],
   'models.accounts': ['list','read','preferences','add','login','attempt','cancelLogin','check','disconnect'],
   'models.catalog': ['list'],
 } as const;
@@ -26,6 +26,7 @@ const Constructor: any = Ajv2020;
 const ajv = new Constructor({ strict: true, allErrors: true, allowUnionTypes: true });
 const validators = new Map(Object.entries(AGENT_OPERATION_SCHEMAS).map(([name, schema]) => [name, ajv.compile(schema)]));
 const inputs: Record<string, [number, string]> = {
+  'conversations.warmup':[2,'warmup'],
   'conversations.startDraft':[2,'startDraft'], 'conversations.removeDraftImage':[2,'removeDraftImage'],
   'conversations.queueSend': [2, 'queueSend'], 'conversations.cancelPendingSend': [2, 'cancelPendingSend'],
   'connections.upgradeProgram':[1,'programUpgradeInput'],

@@ -174,6 +174,11 @@ class QoderRuntime implements AgentRuntime {
     input.onCreated(ref);
     return ref;
   }
+  async prepareContext(input: {contextRef: ContextRef; cwd: string; model?: string; reasoningEffort?: string; permissionMode?: PermissionMode}): Promise<void> {
+    this.reference(input.contextRef,input.cwd);
+    await this.assertNativeAccount();
+    await this.rpc.call('prepare', {...input, contextRef:undefined, contextId:input.contextRef.id, ...(this.gateway ? {model:gatewayModel(this.gateway,input.model).id,reasoningEffort:qoderGatewayPolicy(this.gateway,input.model,input.reasoningEffort).parameters.reasoningEffort}: {})},45000);
+  }
   async resumeContext({ contextRef, cwd }: { contextRef: ContextRef; cwd: string }): Promise<void> { this.reference(contextRef, cwd); await this.rpc.call('resume', { contextId: contextRef.id, cwd }); }
   async readHistory({ contextRef, cwd }: { contextRef: ContextRef; cwd: string }): Promise<ExecutorItem[]> { this.reference(contextRef, cwd); return await this.rpc.call('history', { contextId: contextRef.id, cwd }); }
   async send(input: ExecutorSendInput): Promise<void> {

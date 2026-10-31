@@ -87,7 +87,7 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       const isImageUpload = request.method === 'POST' && /^\/agent-conversations\/(?:drafts\/)?[a-f0-9-]{36}\/attachments$/.test(suffix);
       if (request.method === 'GET') authorizeRead(); else if (isImageUpload) authorizeMutation(); else authorizeWrite();
       const service = await resolve();
-      const draftRoute = suffix.match(/^\/agent-conversations\/drafts\/([a-f0-9-]{36})(?:\/(attachments|send|submissions)(?:\/([a-f0-9-]{36}))?)?$/);
+      const draftRoute = suffix.match(/^\/agent-conversations\/drafts\/([a-f0-9-]{36})(?:\/(attachments|send|submissions|warmup)(?:\/([a-f0-9-]{36}))?)?$/);
       if (draftRoute) {
         query(searchParams, []);
         const [, draftId, action, childId] = draftRoute;
@@ -104,6 +104,12 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
           return result('draftImages', await service.conversations.addDraftImage(workspaceId, draftId, { ...metadata, bytes: await readBinaryBody((metadata.mimeType.startsWith('video/')?32:8) * 1024 * 1024) }), 201);
         }
         if (request.method === 'DELETE' && action === 'attachments' && childId) return result('draftImages', await service.conversations.removeDraftImage(workspaceId, draftId, validate('removeDraftImage', { ...await readJsonBody(), attachmentId: childId })));
+        if (request.method === 'POST' && action === 'warmup' && !childId) {
+          const input=validate('warmup',await readJsonBody());
+          if(workspaceId==='@default'&&(input.cwd!==undefined||input.taskId!==undefined))throw inputError();
+          if(workspaceId==='@default')options.prepareDefaultWorkspace?.();
+          return result('warmed',await service.conversations.warmup(workspaceId,draftId,input,true));
+        }
         if (request.method === 'POST' && action === 'send' && !childId) {
           const input = validate('startDraft', await readJsonBody(128 * 1024));
           if (workspaceId === '@default' && (input.cwd !== undefined || input.taskId !== undefined)) throw inputError();
@@ -129,7 +135,7 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       }
       const detailMatch=suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})\/entry-detail\/([^/]+)$/);
       if(detailMatch&&request.method==='GET'){query(searchParams,['revision']);const revision=searchParams.get('revision');if(!revision||!(/^[a-f0-9]{64}$/).test(revision))throw inputError();let entryId:string;try{entryId=decodeURIComponent(detailMatch[2]);}catch{throw inputError();}if(!entryId||entryId.length>1024)throw inputError();return result('entry',await service.conversations.readEntry(workspaceId,detailMatch[1],entryId,revision));}
-      const match = suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})(?:\/(fork|prepare-send|send|supplement|pending-send|cancel-pending-send|generate-title|children|seen|observe|stop|events|entries|attachments|requests)(?:\/([a-f0-9-]{36})(?:\/(reply))?)?)?$/);
+      const match = suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})(?:\/(warmup|fork|prepare-send|send|supplement|pending-send|cancel-pending-send|generate-title|children|seen|observe|stop|events|entries|attachments|requests)(?:\/([a-f0-9-]{36})(?:\/(reply))?)?)?$/);
       if (!match) return null;
       const [, id, action, childId, reply] = match;
       if (request.method === 'GET') {
@@ -162,6 +168,7 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       }
       if (request.method !== 'POST') return null;
       if (action === 'children' && !childId) return result('conversation',await service.conversations.createChild(workspaceId,id,validate('createChild',await readJsonBody())),201);
+      if (action === 'warmup') return result('warmed',await service.conversations.warmup(workspaceId,id,validate('warmup',await readJsonBody())));
       if (action === 'prepare-send') return result('preview', await service.conversations.prepareHandoff(workspaceId, id, validate('draft', await readJsonBody(128 * 1024))));
       if (action === 'send') return result('sent', await service.conversations.send(workspaceId, id, validate('send', await readJsonBody(128 * 1024))), 202);
       if (action === 'pending-send') return result('conversation', await service.conversations.queueSend(workspaceId, id, validate('queueSend', await readJsonBody(128 * 1024))), 202);

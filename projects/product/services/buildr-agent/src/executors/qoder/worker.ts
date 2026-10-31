@@ -56,7 +56,7 @@ interface ConversationQuery {
   contextId: string; cwd: string; key: string; q: any; child?: ChildProcessWithoutNullStreams;
   state: LiveQuery; input: ConversationInput; knownTools: Set<string>; fullAccessConfirmed: boolean;
   resultIds: Set<string>; mirror: any[]; mirrorFailed: boolean; snapshot?: string; reusable: boolean;
-  closing?: Promise<void>; exited?: boolean; rounds: number;
+  closing?: Promise<void>; exited?: boolean; rounds: number; prepared?: boolean; initialized?: any; checkedAt?: number;
 }
 const live = new Map<string, LiveQuery>();
 const conversations = new Map<string, ConversationQuery>();
@@ -133,7 +133,7 @@ function options(cwd: string, state?: LiveQuery, onChild?: (child: ChildProcessW
       const current = owner?.state ?? originatingState;
       const parentToolId = typeof details?.agentID === 'string' ? [...current?.tools.values() ?? []].find(tool => tool.taskId === details.agentID)?.id : undefined;
       const child = Boolean(parentToolId);
-      if (!current || current.terminal && !(child && current.terminal === 'completed' && !owner?.closing) || current.stopping || owner && owner.rounds > 1 && !current.echoed) return { behavior: 'deny', message: 'No active user execution.' };
+      if (owner?.prepared || !current || current.terminal && !(child && current.terminal === 'completed' && !owner?.closing) || current.stopping || owner && owner.rounds > 1 && !current.echoed) return { behavior: 'deny', message: 'No active user execution.' };
       const state = current;
       if (!child) accepted(state);
       if (tool !== 'AskUserQuestion' && state.permissionMode === 'full-access' && owner?.fullAccessConfirmed && owner.knownTools.has(tool) && !details?.permissionKind && !details?.details?.type && !details?.signal?.aborted) return { behavior: 'allow', updatedInput: input };
@@ -205,19 +205,20 @@ async function generateTitle(requestId:string,description: string): Promise<stri
 async function workContent(params: any): Promise<any[]> {
   return [{ type: 'text', text: params.text }, ...await Promise.all((params.images ?? []).map(async (image: { path: string; mimeType: string }) => ({ type: 'image', source: { type: 'base64', media_type: image.mimeType, data: (await readFile(image.path)).toString('base64') } })))];
 }
-async function checkAccount(owner: ConversationQuery): Promise<void> {
+async function checkAccount(owner: ConversationQuery, initialized?: any): Promise<void> {
   if (!gateway || gateway.nativeModel) return;
   try {
-    const account = await bounded(owner.q.accountInfo(), 10000) as any;
+    const account = initialized?.account ?? await bounded(owner.q.accountInfo(), 10000) as any;
     if (!account?.userId && !account?.email && !account?.name) throw new Error('qoder_platform_login_required');
-    assertGatewayModel(await bounded(owner.q.getAvailableModels({ fetchStrategy: 'live' }), 10000));
+    assertGatewayModel(initialized?.models ?? await bounded(owner.q.getAvailableModels({ fetchStrategy: 'live' }), 10000));
+    owner.checkedAt = Date.now();
   } catch (error: any) {
     if (/^qoder_(?:platform_|gateway_|native_model_)/.test(error?.message ?? '')) throw error;
     const failure = qoderAccountFailure(error);
     throw new Error(failure.status === 'expired' ? 'qoder_platform_login_expired' : failure.status === 'not-authenticated' ? 'qoder_platform_login_required' : 'qoder_platform_auth_unavailable');
   }
 }
-async function execute(params: any): Promise<void> {
+async function execute(params: any, warmOnly = false): Promise<void> {
   const previous = live.get(params.contextId);
   assertPrevious(params.contextId, previous);
   const info = await getSessionInfo(params.contextId, { dir: params.cwd });
@@ -227,24 +228,25 @@ async function execute(params: any): Promise<void> {
   const permissionMode = resolvePermissionMode(params.permissionMode);
   const key = JSON.stringify([params.contextId, params.cwd, params.model ?? null, params.reasoningEffort ?? null, permissionMode]);
   let owner = conversations.get(params.contextId);
-  if (owner && (!owner.reusable || owner.key !== key || owner.closing || owner.exited)) { await closeConversation(owner); owner = undefined; }
+  if (owner && (!owner.prepared && !owner.reusable || owner.key !== key || owner.closing || owner.exited)) { await closeConversation(owner); owner = undefined; }
   let resolve!: () => void, reject!: (error: unknown) => void;
   const completion = new Promise<void>((yes, no) => { resolve = yes; reject = no; }); completion.catch(() => {});
   const state: LiveQuery = { id: params.clientRequestId, contextId: params.contextId, permissionMode, q: undefined, accepted: false, stopping: false, tools: new Map(), pending: new Map(), texts: new Map(), unownedTasks: new Set(), toolDetails: new Map(), completedMessages: new Set(), streamMessages: new Map(), inputAcks: new Map(), resolve, reject };
-  const content = await workContent(params);
+  const content = warmOnly ? [] : await workContent(params);
   if (owner) {
     // The caller has already re-read native history. An idle query must still prove its exact baseline.
-    await checkAccount(owner);
+    if (warmOnly && owner.prepared) return;
+    await checkAccount(owner, owner.prepared && Date.now() - (owner.checkedAt ?? 0) < 30_000 ? owner.initialized : undefined);
     assertPrevious(params.contextId, previous);
-    if (conversations.get(params.contextId) !== owner || owner.state !== previous || !owner.reusable || owner.closing || owner.exited || !settled(previous!)) throw new Error('agent_native_turn_active');
-    owner.state = state; owner.reusable = false; owner.rounds++;
+    if (conversations.get(params.contextId) !== owner || !owner.prepared && (owner.state !== previous || !owner.reusable || !settled(previous!)) || owner.closing || owner.exited) throw new Error('agent_native_turn_active');
+    owner.state = state; owner.prepared = false; owner.initialized = undefined; owner.reusable = false; owner.rounds++;
     state.owner = owner; state.q = owner.q; state.child = owner.child; live.set(params.contextId, state);
     owner.input.push({ type: 'user', message: { role: 'user', content }, parent_tool_use_id: null, uuid: state.id, session_id: state.contextId });
     return await completion;
   }
   assertPrevious(params.contextId, previous);
-  owner = { contextId: params.contextId, cwd: params.cwd, key, q: undefined, state, input: new ConversationInput(), knownTools: new Set(), fullAccessConfirmed: false, resultIds: new Set(), mirror: [], mirrorFailed: false, reusable: false, rounds: 1 };
-  state.owner = owner; live.set(params.contextId, state); conversations.set(params.contextId, owner);
+  owner = { contextId: params.contextId, cwd: params.cwd, key, q: undefined, state, input: new ConversationInput(), knownTools: new Set(), fullAccessConfirmed: false, resultIds: new Set(), mirror: [], mirrorFailed: false, reusable: false, rounds: warmOnly ? 0 : 1, prepared:warmOnly };
+  state.owner = owner; if (!warmOnly) live.set(params.contextId, state); conversations.set(params.contextId, owner);
   // Empty load retains the exact local native session; append observes post-commit records only.
   const mirror = new InMemorySessionStore();
   mirror.append = async (recordKey, entries) => { if (recordKey.sessionId === state.contextId && !recordKey.subpath) owner!.mirror.push(...entries); };
@@ -264,8 +266,10 @@ async function execute(params: any): Promise<void> {
     owner.q = state.q = query({ prompt: owner.input, options: opts });
     const initialized = await bounded(owner.q.initializationResult(), 30000) as any;
     owner.knownTools = new Set((initialized.tools ?? []).filter((tool: unknown) => typeof tool === 'string'));
-    await checkAccount(owner);
+    await checkAccount(owner, initialized);
+    owner.initialized = warmOnly ? initialized : undefined;
     void readConversation(owner);
+    if (warmOnly) return;
     owner.input.push({ type: 'user', message: { role: 'user', content }, parent_tool_use_id: null, uuid: state.id, session_id: state.contextId });
   } catch (error) { await closeConversation(owner); throw error; }
   return await completion;
@@ -317,6 +321,7 @@ async function readConversation(owner: ConversationQuery): Promise<void> {
         continue;
       }
       if (message.type === 'system' && message.subtype === 'mirror_error') { owner.mirrorFailed = true; owner.reusable = false; continue; }
+      if (owner.prepared) { if (message.type === 'system') continue; throw new Error('qoder_preparation_unexpected_work'); }
       if (primary && message.type === 'result' && owner.resultIds.has(message.uuid)) continue;
       if (message.type === 'system' && message.subtype === 'task_started' && !state.tools.has(message.tool_use_id)) {
         owner.reusable = false; state.ambiguous = true; state.diagnostic = 'qoder_task_owner_unconfirmed';
@@ -425,6 +430,7 @@ async function dispatch(method: string, params: any): Promise<any> {
   }
   if (method === 'resume') { await checkHistory(params.contextId, params.cwd); const info = await getSessionInfo(params.contextId, { dir: params.cwd }); if (!info || info.sessionId !== params.contextId || info.cwd && info.cwd !== params.cwd) throw new Error('qoder_context_not_found'); return {}; }
   if (method === 'history') return await history(params.contextId, params.cwd);
+  if (method === 'prepare') { await execute({...params,clientRequestId:randomUUID()},true); return {}; }
   if (method === 'send') { await execute(params); return {}; }
   if (method === 'supplement') {
     const state = live.get(params.contextId);

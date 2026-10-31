@@ -101,6 +101,10 @@ test('private conversations use authenticated HTTP and bounded binary input; str
   const conversations = `${url}/api/v1/workspaces/${workspaceId}/agent-conversations`;
   const headers = { origin: url, 'x-buildr-session': sessionToken, 'content-type': 'application/json' };
   const readHeaders = { 'x-buildr-session': sessionToken };
+  const warmEndpoint=conversations+'/drafts/00000000-0000-4000-8000-000000000001/warmup';
+  assert.equal((await fetch(warmEndpoint,{method:'POST',body:JSON.stringify({connectionId:'codex'})})).status,403);
+  assert.equal((await fetch(warmEndpoint,{method:'POST',headers,body:JSON.stringify({connectionId:'codex',text:'must not become work'})})).status,400);
+  assert.equal((await fetch(warmEndpoint,{method:'POST',headers:{...headers,origin:'https://foreign.example'},body:JSON.stringify({connectionId:'codex'})})).status,403);
   let response = await fetch(`${app}/connections`);
   assert.equal(response.status, 403);
   response = await fetch(`${app}/connections`, { headers: { ...readHeaders, origin: 'https://foreign.example' } }); assert.equal(response.status, 403);

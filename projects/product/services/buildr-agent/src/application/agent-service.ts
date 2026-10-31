@@ -168,6 +168,7 @@ export function createAgentService(options: AgentServiceOptions) {
       },
     },
     conversations: {
+      warmup: (scope:string,id:string,input:import('../contracts.ts').ConversationWarmupInput,draft=false)=>conversations.warmup(scope,id,input,draft),
       readDraft: (scope: string, id: string) => conversations.drafts.list(scope, id),
       addDraftImage: (scope: string, id: string, input: Parameters<typeof conversations.drafts.add>[2]) => conversations.drafts.add(scope, id, input),
       removeDraftImage: (scope: string, id: string, input: Parameters<typeof conversations.drafts.remove>[2]) => conversations.drafts.remove(scope, id, input),

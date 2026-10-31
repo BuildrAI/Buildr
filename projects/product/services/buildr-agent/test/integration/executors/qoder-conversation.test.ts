@@ -233,3 +233,35 @@ test('Qoder unmatched late task on a reused query remains unknown instead of bec
     assert.deepEqual(await f.runtime.canRelease!(control), { executionState: 'ended' });
   } finally { await f.close(); }
 });
+
+
+test('Qoder prepares a real connection with zero inputs and adopts it without duplicate account/model queries',async()=>{
+  const f=await fixture(true);
+  try {
+    await f.runtime.prepareContext!({contextRef:f.contextRef,cwd:f.cwd,model:'fixture-model',permissionMode:'default'});
+    assert.equal((await f.launches()).length,1);
+    assert.equal(existsSync(join(f.configRoot,'qoder-config/native-inputs.jsonl')),false);
+    let methods=(await readFile(join(f.configRoot,'qoder-config/control-methods.jsonl'),'utf8')).trim().split('\n').map(x=>JSON.parse(x));
+    assert.equal(methods.filter(x=>x==='initialize').length,1);
+    assert.equal(methods.filter(x=>x==='account_info'||x==='get_models').length,0,'initialization already supplies both observations');
+    const round=await f.send('first real input');
+    assert.equal((await f.launches()).length,1);
+    assert.equal(round.events.filter(event=>event.type==='accepted').length,1);
+    methods=(await readFile(join(f.configRoot,'qoder-config/control-methods.jsonl'),'utf8')).trim().split('\n').map(x=>JSON.parse(x));
+    assert.equal(methods.filter(x=>x==='get_models').length,0);
+    await f.send('second real input');
+    methods=(await readFile(join(f.configRoot,'qoder-config/control-methods.jsonl'),'utf8')).trim().split('\n').map(x=>JSON.parse(x));
+    assert.equal(methods.filter(x=>x==='get_models').length,1,'later rounds still inspect current model availability');
+  } finally {await f.close();}
+});
+
+
+test('Qoder initialization refuses invalid account/model observations before any work input',async()=>{
+ for(const [marker,diagnostic] of [['missing-account','qoder_platform_login_required'],['missing-model','qoder_gateway_model_unavailable']]){
+  const f=await fixture(true);try{
+   await writeFile(join(f.configRoot,'qoder-config',marker),'invalid');
+   await assert.rejects(f.runtime.prepareContext!({contextRef:f.contextRef,cwd:f.cwd,model:'fixture-model'}),new RegExp(diagnostic));
+   assert.equal(existsSync(join(f.configRoot,'qoder-config/native-inputs.jsonl')),false);
+  }finally{await f.close();}
+ }
+});

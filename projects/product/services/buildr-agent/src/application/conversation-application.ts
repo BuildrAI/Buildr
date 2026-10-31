@@ -1,3 +1,4 @@
+import {ConversationWarmups,CONNECTION_IDLE_MS,type PreparedSource} from './conversation-warmups.ts';
 import { answerAttachmentIds, resolveQuestionAnswer, questionAnswerDisplay } from '../domain/question-answer.ts';
 import { normalizeSendDraft } from '../domain/send-draft.ts';
 import { blocksExecution } from '../domain/interaction-policy.ts';
@@ -65,9 +66,15 @@ export class ConversationApplication {
       {kind:'reply',count:this.repliesInFlight.size},
       {kind:'observation',count:this.observations.size + this.releaseChecks.size},
       {kind:'source-resource',count:this.sourceRuntimes.size},
+      {kind:'prepared-resource',count:this.warmups.size},
       {kind:'fork',count:this.forks.active},
     ].filter(value=>value.count>0);
   }
+  private readonly warmups: ConversationWarmups;
+  private readonly sourceSlots = new Map<string,string>();
+  private readonly sourceTouched = new Map<string,number>();
+  private readonly idleTimer: ReturnType<typeof setInterval>;
+  private milliseconds() { return Date.parse(this.options.now()); }
   private readonly previewSecret = randomUUID();
   private readonly workers = new Map<string, Promise<void>>();
   private readonly observations = new Map<string, Promise<ConversationView>>();
@@ -109,6 +116,11 @@ export class ConversationApplication {
   };
   constructor(options: ConversationApplication['options']) {
     this.options = options;
+    this.warmups = new ConversationWarmups(async source => {
+      await options.connections.releaseGatewayRuntime(source.runtime);
+      if(source.leaseIdentity)options.modelAccess?.leases.release(source.leaseIdentity);
+    },()=>this.milliseconds());
+    this.idleTimer=setInterval(()=>{void this.collectIdle().catch(()=>{});},60_000);this.idleTimer.unref();
     this.media = new ConversationAttachments({ root: options.root, now: options.now, save: record => this.save(record) });
     this.forks = new ConversationForks({
       repository: options.repository, media: this.media, now: options.now,
@@ -146,7 +158,8 @@ export class ConversationApplication {
   }
   private get pendingSends() { return new PendingSendRepository(this.options.root); }
 
-  private async sourceRuntime(record: StoredConversation, participant: StoredParticipant): Promise<{runtime: AgentRuntime; model: string; leaseIdentity?:string}> {
+  private async sourceRuntime(record: StoredConversation, participant: StoredParticipant): Promise<PreparedSource> {
+    if(!this.sourceTouched.has(participant.id))this.sourceTouched.set(participant.id,this.milliseconds());
     const sourceRun=conversationRuns(record.view).find(run=>run.participantId===participant.id);
     if (!participant.modelAccountId) {
       this.sharedNativeContext = true;
@@ -164,11 +177,51 @@ export class ConversationApplication {
       if (this.sourceRuntimes.get(participant.id) === found) this.sourceRuntimes.delete(participant.id);
       const replacement = this.sourceRuntimes.get(participant.id); if (replacement) return replacement;
     }
-    const access = this.options.modelAccess; if (!access) fail('agent_model_source_unavailable', '模型套餐组件不可用。', 409);
-    const work = access.leases.create({ accountId: participant.modelAccountId, expectedIdentity: participant.modelAccountIdentity, modelId: participant.modelId!,serviceTier:participant.serviceTier, conversationId: record.view.id, agentId: participant.connectionId, runId: sourceRun?.id ?? 'observe' }).then(async lease => ({ runtime: await this.options.connections.runtime(participant.connectionId, { identity: lease.identity, baseUrl: lease.baseUrl, apiKey: lease.apiKey,
-      ...(lease.provider === 'native-qoder' && participant.connectionId === 'qoder' ? { nativeModel: { provider: 'qoder' as const, id: participant.modelId!, accountIdentity: participant.modelAccountIdentity! } } : {}),
-      models: [{id: lease.model, label: lease.offering.label, isDefault: true, reasoningEfforts: lease.offering.reasoningEfforts, defaultReasoningEffort: lease.offering.defaultReasoningEffort, contextWindow: lease.offering.contextWindow, maxOutputTokens: lease.offering.maxOutputTokens, vision: lease.offering.images, tools: lease.offering.tools}] }), model: lease.model, leaseIdentity:lease.identity })).catch(error => { if(this.sourceRuntimes.get(participant.id)===work){this.sourceRuntimes.delete(participant.id);this.sourceOwners.delete(participant.id);this.sourceConnections.delete(participant.id);} throw error; });
+    const work = this.openSource(record,participant,sourceRun?.id).catch(error => { if(this.sourceRuntimes.get(participant.id)===work){this.sourceRuntimes.delete(participant.id);this.sourceOwners.delete(participant.id);this.sourceConnections.delete(participant.id);} throw error; });
     this.sourceConnections.set(participant.id, participant.connectionId); this.sourceRuntimes.set(participant.id, work); return work;
+  }
+  private async openSource(record:StoredConversation,participant:StoredParticipant,runId?:string):Promise<PreparedSource> {
+    const access=this.options.modelAccess;if(!access)fail('agent_model_source_unavailable','模型套餐组件不可用。',409);
+    const lease=await access.leases.create({ accountId: participant.modelAccountId!, expectedIdentity: participant.modelAccountIdentity, modelId: participant.modelId!,serviceTier:participant.serviceTier, conversationId: record.view.id, agentId: participant.connectionId, runId: runId ?? 'prepare' });
+    try {const runtime=await this.options.connections.runtime(participant.connectionId, { identity: lease.identity, baseUrl: lease.baseUrl, apiKey: lease.apiKey,
+      ...(lease.provider === 'native-qoder' && participant.connectionId === 'qoder' ? { nativeModel: { provider: 'qoder' as const, id: participant.modelId!, accountIdentity: participant.modelAccountIdentity! } } : {}),
+      models: [{id: lease.model, label: lease.offering.label, isDefault: true, reasoningEfforts: lease.offering.reasoningEfforts, defaultReasoningEffort: lease.offering.defaultReasoningEffort, contextWindow: lease.offering.contextWindow, maxOutputTokens: lease.offering.maxOutputTokens, vision: lease.offering.images, tools: lease.offering.tools}] });return {runtime,model:lease.model,leaseIdentity:lease.identity};}
+    catch(error){access.leases.release(lease.identity);throw error;}
+  }
+  private warmSlot(record:StoredConversation,participant:StoredParticipant) {
+    return hash([record.view.workspaceId,record.view.id,participant.connectionId,participant.modelAccountId,participant.modelAccountIdentity,participant.modelId,participant.modelConfiguration,participant.serviceTier]);
+  }
+  private warmKey(record:StoredConversation,participant:StoredParticipant,input:{permissionMode?:string;reasoningEffort?:string}) {
+    const connection=this.options.connections.get(participant.connectionId);
+    return hash([record.view.workspaceId,record.view.id,record.view.cwd,connection.executable,this.options.connections.binding(connection.id),participant.connectionId,participant.modelAccountId,participant.modelAccountIdentity,participant.modelId,participant.serviceTier,participant.modelConfiguration,participant.contextRef?.id,input.permissionMode,input.reasoningEffort]);
+  }
+  async warmup(workspaceId:string,id:string,input:import('../contracts.ts').ConversationWarmupInput,draft=false):Promise<{prepared:boolean}> {
+    if(this.closing)fail('agent_service_closing','智能体服务正在退出。',503);
+    const record=draft?await this.candidate(workspaceId,input):this.load(workspaceId,id);
+    if(!draft&&conversationRuns(record.view).some(run=>!run.resourcesReleased&&(unfinishedRun(run)||this.options.generationAlive?.(run.generation)===true)))return {prepared:false};
+    if(draft)record.view.id=this.drafts.identity(workspaceId,id,nonempty(input.clientRequestId,'请求身份'));
+    // Validate the exact selection without staging or admitting any user input.
+    const prepared=this.prepare(record,{...input,text:'连接准备',expectedRevision:record.view.revision});
+    if(!prepared.draft.modelAccountId)return {prepared:false};
+    const existing=record.participants.find(value=>value.id===prepared.preview.participantId);
+    if(existing&&this.sourceRuntimes.has(existing.id))return {prepared:false};
+    const participant:StoredParticipant={id:randomUUID(),connectionId:prepared.draft.connectionId,provider:this.options.connections.get(prepared.draft.connectionId).provider,label:this.options.connections.get(prepared.draft.connectionId).label,modelAccountId:prepared.draft.modelAccountId,modelAccountIdentity:prepared.preview.modelAccountIdentity,modelId:prepared.draft.model,serviceTier:prepared.draft.serviceTier,modelConfiguration:prepared.configuration,bindingIdentity:'',deliveredThrough:0,contextRef:existing?.contextRef};
+    const key=this.warmKey(record,participant,prepared.draft);
+    const ready=await this.warmups.prepare(this.warmSlot(record,participant),key,participant.connectionId,async()=>{
+      const source=await this.openSource(record,participant);
+      try {
+        source.contextRef=existing?.contextRef??await source.runtime.createContext({cwd:record.view.cwd,permissionMode:prepared.draft.permissionMode});
+        await source.runtime.prepareContext?.({contextRef:source.contextRef,cwd:record.view.cwd,model:source.model,reasoningEffort:prepared.draft.reasoningEffort,permissionMode:prepared.draft.permissionMode});
+        return source;
+      }catch(error){await this.options.connections.releaseGatewayRuntime(source.runtime);if(source.leaseIdentity)this.options.modelAccess?.leases.release(source.leaseIdentity);throw error;}
+    });
+    return {prepared:ready};
+  }
+  async collectIdle():Promise<void> {
+    if(this.closing)return;
+    const idleBefore=this.milliseconds()-CONNECTION_IDLE_MS;
+    // A failed unused connection must not prevent independent conversation owners from releasing.
+    await Promise.allSettled([this.warmups.close(undefined,idleBefore),this.releaseIdleSources(undefined,idleBefore)]);
   }
   private sourceExecution(record: StoredConversation, participantId: string) {
     const run = conversationRuns(record.view).find(value => value.participantId === participantId);
@@ -177,9 +230,10 @@ export class ConversationApplication {
   }
   /** Retiring generations release only idle, conversation-specific runtimes.
    * Native contexts keep their writer until their owning process actually exits. */
-  releaseIdleSources(owner?: {workspaceId:string; id:string}): Promise<void> {
-    if (this.releasingIdleSources) return owner ? this.releasingIdleSources.then(() => this.releaseIdleSources(owner)) : this.releasingIdleSources;
+  releaseIdleSources(owner?: {workspaceId:string; id:string},idleBefore?:number): Promise<void> {
+    if (this.releasingIdleSources) return owner ? this.releasingIdleSources.then(() => this.releaseIdleSources(owner,idleBefore)) : this.releasingIdleSources;
     const work = (async () => {
+      if(idleBefore===undefined&&!owner)await this.warmups.close();
       for(const finish of [...this.sourceReleasePending.values()])await finish().catch(()=>false);
       const groups = new Map<AgentRuntime, Array<{id:string; leaseIdentity?:string; source:Promise<{runtime:AgentRuntime;model:string;leaseIdentity?:string}>}>>();
       for (const [id, source] of this.sourceRuntimes) {
@@ -187,6 +241,7 @@ export class ConversationApplication {
         const members=groups.get(value.runtime)??[];members.push({id,source,leaseIdentity:value.leaseIdentity});groups.set(value.runtime,members);
       }
       for (const [runtime,members] of groups) {
+        if(idleBefore!==undefined&&members.some(member=>(this.sourceTouched.get(member.id)??this.milliseconds())>idleBefore))continue;
         if(this.sourceReleasePending.has(runtime))continue;
         if(owner&&!members.some(({id})=>{const held=this.sourceOwners.get(id);return held?.workspaceId===owner.workspaceId&&held.id===owner.id;}))continue;
         const candidates:Array<{id:string;source:Promise<{runtime:AgentRuntime;model:string;leaseIdentity?:string}>;workspaceId:string;conversationId:string;runId:string;leaseIdentity?:string;proof?:()=>Promise<boolean|{executionState:'ended'|'unknown'}>}>=[];
@@ -220,7 +275,7 @@ export class ConversationApplication {
           const facts=new Map<string,'ended'|'unknown'>();
           for(const value of candidates){const proof=value.proof?await value.proof():true;if(!proof)return false;facts.set(value.id,proof===true?'ended':proof.executionState);}
           for(const value of candidates){
-            if(this.sourceRuntimes.get(value.id)===value.source){this.sourceRuntimes.delete(value.id);this.sourceOwners.delete(value.id);this.sourceConnections.delete(value.id);}
+            if(this.sourceRuntimes.get(value.id)===value.source){this.sourceRuntimes.delete(value.id);this.sourceOwners.delete(value.id);this.sourceConnections.delete(value.id);this.sourceTouched.delete(value.id);const slot=this.sourceSlots.get(value.id);if(slot)this.warmups.unclaim(slot);this.sourceSlots.delete(value.id);}
             const record=this.load(value.workspaceId,value.conversationId),run=conversationRuns(record.view).find(run=>run.id===value.runId);
             if(!run||run.id!==value.runId||run.participantId!==value.id||run.generation!==this.options.generation)continue;
             run.executionState=run.executionState==='ended'?'ended':facts.get(value.id)!;run.resourcesReleased=true;
@@ -730,6 +785,7 @@ export class ConversationApplication {
     return true;
   }
   private event(workspaceId: string, id: string, runId: string, event: ExecutorEvent): void {
+    if(event.type!=='observation'){const run=this.currentRun(workspaceId,id,runId)?.view.run;if(run)this.sourceTouched.set(run.participantId,this.milliseconds());}
     const record = this.load(workspaceId, id);
     const run = conversationRuns(record.view).find(value => value.id === runId && value.generation === this.options.generation);
     if (!run) return;
@@ -868,7 +924,11 @@ export class ConversationApplication {
       if (!fs.statSync(record.view.cwd, { throwIfNoEntry: false })?.isDirectory()) fail('agent_cwd_missing', '对话保存的工作目录已不可用。', 409);
       const startingParticipant = record.participants.find(value => value.id === record!.view.run!.participantId)!;
       if (startingParticipant.modelAccountId) await this.options.modelAccess!.leases.create({accountId:startingParticipant.modelAccountId, expectedIdentity:startingParticipant.modelAccountIdentity, modelId:startingParticipant.modelId!,serviceTier:startingParticipant.serviceTier,conversationId:record.view.id,agentId:startingParticipant.connectionId,runId});
-      const selectedRuntime = await this.sourceRuntime(record, startingParticipant);
+      this.sourceTouched.set(startingParticipant.id,this.milliseconds());
+      const slot=this.warmSlot(record,startingParticipant);this.sourceSlots.set(startingParticipant.id,slot);
+      const warmed=await this.warmups.take(slot,this.warmKey(record,startingParticipant,prepared.draft));
+      if(warmed){this.sourceOwners.set(startingParticipant.id,{workspaceId,id});this.sourceConnections.set(startingParticipant.id,startingParticipant.connectionId);this.sourceRuntimes.set(startingParticipant.id,Promise.resolve(warmed));}
+      const selectedRuntime = warmed ?? await this.sourceRuntime(record, startingParticipant);
       const runtime = selectedRuntime.runtime;
       record = this.currentRun(workspaceId, id, runId); if (!record) return;
       const participant = record.participants.find(value => value.id === record!.view.run!.participantId)!;
@@ -891,7 +951,7 @@ export class ConversationApplication {
         if (needsReview) fail('agent_history_changed', '原生记录有新变化，本次要求已保留；请核对后再继续。', 409);
       } else {
         creatingContext = true;
-        const ref = await runtime.createContext({ cwd: record.view.cwd, permissionMode: prepared.draft.permissionMode });
+        const ref = selectedRuntime.contextRef ?? await runtime.createContext({ cwd: record.view.cwd, permissionMode: prepared.draft.permissionMode });
         record = this.currentRun(workspaceId, id, runId); if (!record) return;
         const storedParticipant = record.participants.find(value => value.id === participant.id)!;
         storedParticipant.contextRef = ref; storedParticipant.bindingIdentity = runtime.bindingIdentity;
@@ -1407,6 +1467,7 @@ export class ConversationApplication {
     return this.options.events.subscribe({ type: 'snapshot', workspaceId, conversationId: id, revision: conversation.revision, payload: { conversation } }, event => event.workspaceId === workspaceId && event.conversationId === id);
   }
   async releaseForProgramUpgrade(connectionId: string): Promise<boolean> {
+    await this.warmups.close(connectionId);
     await this.releaseIdleSources();
     if ([...this.sourceConnections].some(([id, connection]) => connection === connectionId && this.sourceRuntimes.has(id))) return false;
     return !this.options.repository.listPendingStates(true).some(record => {
@@ -1415,6 +1476,7 @@ export class ConversationApplication {
   }
 
   async closeConnection(connectionId: string): Promise<void> {
+    await this.warmups.close(connectionId);
     for (const saved of this.options.repository.listPendingStates(true)) {
       for (const prior of conversationRuns(saved.view)) {
         const record = this.load(saved.view.workspaceId,saved.view.id);
@@ -1425,10 +1487,12 @@ export class ConversationApplication {
         catch { const latest=this.ownedRun(record.view.workspaceId,record.view.id,run.id);if(latest){latest.run.status='unknown';latest.run.diagnostic='断开时未能确认原生执行退出。';this.save(latest.record);} }
       }
     }
-    for (const [id, sourceConnection] of this.sourceConnections) if (!this.closing && sourceConnection === connectionId) { this.sourceRuntimes.delete(id); this.sourceOwners.delete(id); this.sourceConnections.delete(id); }
+    for (const [id, sourceConnection] of this.sourceConnections) if (!this.closing && sourceConnection === connectionId) { this.sourceRuntimes.delete(id); this.sourceOwners.delete(id); this.sourceConnections.delete(id); this.sourceTouched.delete(id); const slot=this.sourceSlots.get(id);if(slot)this.warmups.unclaim(slot);this.sourceSlots.delete(id); }
   }
   async close(): Promise<void> {
     this.closing = true;
+    clearInterval(this.idleTimer);
+    const warmClosing=this.warmups.shutdown();void warmClosing.catch(()=>{});
     for (const controller of this.retryWaits.values()) controller.abort();
     for (const record of this.options.repository.listPending(true)) if (record.view.run?.generation === this.options.generation && this.retryWaits.has(record.view.run.id)) {
       record.view.run.status = 'failed'; record.view.run.diagnostic = '宿主退出，自动重试已取消；工作记录已保留。'; this.save(record);
@@ -1444,6 +1508,7 @@ export class ConversationApplication {
     }
     const ids = new Set(this.options.repository.listPendingStates(true).flatMap(record => conversationRuns(record.view).filter(run=>run.generation===this.options.generation).flatMap(run=>record.participants.find(value=>value.id===run.participantId)?.connectionId??[])));
     await Promise.allSettled([...ids].map(id => this.closeConnection(id)));
+    await warmClosing;
     for(const item of interrupted){const record=this.load(item.workspaceId,item.id);if(record.view.run?.id===item.runId&&record.view.run&&['stopped','unknown','tools-active','stopping'].includes(record.view.run.status)){record.view.run.diagnostic=record.view.run.status==='stopped'?'宿主退出导致执行停止；这不是用户主动停止。':'宿主退出后原执行仍待核对，不能重复发送。';this.save(record);}}
   }
 }

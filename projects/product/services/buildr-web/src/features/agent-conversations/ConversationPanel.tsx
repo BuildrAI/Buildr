@@ -228,6 +228,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   const acceptFirst=async(submitted:FirstSubmission,result:ConversationView,selection:ConversationSelection,transferRemainder=false)=>{
     draft.acceptNewSubmitted(result.workspaceId,result.id,submitted.input.text,transferRemainder&&context.isSelectionCurrent(selection));
     firstSubmissions.clear(submitted.input.clientRequestId);setUnconfirmedFirst(undefined);
+    if(warmSubmission.current.requestId===submitted.input.clientRequestId){warmSubmission.current.requestId=crypto.randomUUID();preparedSelection.current='';}
     const createdScope={workspaceId:result.workspaceId,conversationId:result.id};
     setPermissionChoices(previous=>({...previous,[conversationPermissionKey(createdScope,'')]:submitted.input.permissionMode||'default'}));
     setChoices(previous=>({...previous,[result.id]:{connectionId:submitted.input.connectionId,model:submitted.input.model,modelAccountId:submitted.input.modelAccountId,modelAccountIdentity:submitted.input.modelAccountIdentity,serviceTier:submitted.input.serviceTier,reasoningEffort:submitted.input.reasoningEffort}}));
@@ -244,6 +245,21 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
     }).catch(failure=>{if(active)fail(failure);});
     return()=>{active=false;};
   },[context.api,firstSubmissions]);
+  const warmSubmission=useRef({draftId:'',requestId:crypto.randomUUID()});
+  if(warmSubmission.current.draftId!==newImages.id)warmSubmission.current={draftId:newImages.id,requestId:crypto.randomUUID()};
+  const preparedSelection=useRef('');
+  useEffect(()=>{
+    if(!(context.open||embedded)){preparedSelection.current='';return;}
+    if(firstSubmissions.read())return;
+    if(document.visibilityState!=='visible'||!connection?.enabled||connection.status!=='ready'||!choice.modelAccountId||!choice.model)return;
+    const scope=context.scope;
+    const workspace=scope?.workspaceId??draftWorkspaceId;
+    const id=scope?.conversationId??newImages.id;
+    const input={...choice,permissionMode,clientRequestId:warmSubmission.current.requestId,...(!scope&&draftWorkspaceId!=='@default'&&newCwd.trim()?{cwd:newCwd.trim()}:{}),...(!scope&&draftWorkspaceId!=='@default'&&boundTaskId?{taskId:boundTaskId}:{})};
+    const key=JSON.stringify([workspace,id,input]);if(preparedSelection.current===key)return;
+    const timer=setTimeout(()=>{preparedSelection.current=key;void context.api.warmup(workspace,id,input,!scope).catch(()=>{});},200);
+    return()=>clearTimeout(timer);
+  },[context.open,embedded,context.api,context.scope,connection?.enabled,connection?.status,choice.connectionId,choice.modelAccountId,choice.modelAccountIdentity,choice.model,choice.reasoningEffort,choice.serviceTier,permissionMode,draftWorkspaceId,newImages.id,newCwd,boundTaskId]);
   const sendFirst=async(operation:SendOperation)=>{
     let submitted=firstSubmissions.read();
     const fresh=!submitted;
@@ -257,7 +273,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
       if(!context.isSelectionCurrent(operation.selection))return;
       const expectedIds=images.map(image=>image.id);
       if(JSON.stringify(draftMaterialIds(snapshot.images))!==JSON.stringify(expectedIds))throw new Error('草稿图片已变化，请核对后重新发送。');
-      submitted=firstSubmissions.save({draftId:newImages.id,workspaceId:draftWorkspaceId,input:{connectionId:choice.connectionId,modelAccountId:choice.modelAccountId,modelAccountRevision:choice.modelAccountRevision,modelAccountIdentity:choice.modelAccountIdentity,model:choice.model,serviceTier:choice.serviceTier,reasoningEffort:choice.reasoningEffort,permissionMode,text:draft.text,attachmentIds:expectedIds as NonNullable<SendDraft['attachmentIds']>,expectedDraftRevision:snapshot.revision,clientRequestId:crypto.randomUUID(),...(draftWorkspaceId!=='@default'&&newCwd?{cwd:newCwd.trim()}:{}),...(boundTaskId?{taskId:boundTaskId}:{})}});
+      submitted=firstSubmissions.save({draftId:newImages.id,workspaceId:draftWorkspaceId,input:{connectionId:choice.connectionId,modelAccountId:choice.modelAccountId,modelAccountRevision:choice.modelAccountRevision,modelAccountIdentity:choice.modelAccountIdentity,model:choice.model,serviceTier:choice.serviceTier,reasoningEffort:choice.reasoningEffort,permissionMode,text:draft.text,attachmentIds:expectedIds as NonNullable<SendDraft['attachmentIds']>,expectedDraftRevision:snapshot.revision,clientRequestId:warmSubmission.current.requestId,...(draftWorkspaceId!=='@default'&&newCwd?{cwd:newCwd.trim()}:{}),...(boundTaskId?{taskId:boundTaskId}:{})}});
     }
     try{
       const result=await context.api.startDraft(submitted.workspaceId,submitted.draftId,submitted.input);

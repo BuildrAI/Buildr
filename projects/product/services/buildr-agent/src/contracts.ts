@@ -180,6 +180,8 @@ export interface AgentRuntime {
   beginLogin(onUpdate: (observation: LoginObservation) => void): Promise<void>;
   cancelLogin(): Promise<void>;
   createContext(input: { cwd: string; permissionMode?: PermissionMode }): Promise<ContextRef>;
+  /** Initialize this exact context without admitting work or inference. */
+  prepareContext?(input: { contextRef: ContextRef; cwd: string; model?: string; reasoningEffort?: string; permissionMode?: PermissionMode }): Promise<void>;
   forkContext?(input: ExecutorForkInput): Promise<ContextRef>;
   resumeContext(input: { contextRef: ContextRef; cwd: string; permissionMode?: PermissionMode }): Promise<void>;
   readHistory(input: { contextRef: ContextRef; cwd: string }): Promise<ExecutorItem[]>;
@@ -489,3 +491,5 @@ export interface AgentServiceOptions {
   /** Bounded host shutdown; chiefly useful for deterministic lifecycle tests. */
   shutdownTimeoutMs?: number;
 }
+
+export type ConversationWarmupInput = Pick<SendDraft,'connectionId'|'modelAccountId'|'modelAccountRevision'|'modelAccountIdentity'|'model'|'serviceTier'|'reasoningEffort'|'permissionMode'> & {cwd?:string;taskId?:string;clientRequestId?:string};

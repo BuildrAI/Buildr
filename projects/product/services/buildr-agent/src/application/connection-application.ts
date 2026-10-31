@@ -21,6 +21,7 @@ export class ConnectionApplication {
   private readonly modelEpochs = new Map<string, number>();
   private closing = false;
   private readonly programChanges = new Set<string>();
+  private readonly gatewayReleases = new Map<AgentRuntime,Promise<void>>();
   private readonly programRecovery = new Map<string, AgentRuntime[]>();
   private readonly programUses = new Map<string, number>();
   assertProgramAvailable(id: string): void {
@@ -232,6 +233,7 @@ export class ConnectionApplication {
     const existing = this.gatewayRuntimes.get(key);
     if (existing) {
       const runtime = await existing;
+      const releasing=this.gatewayReleases.get(runtime);if(releasing)await releasing;
       if (!runtime.closed) return runtime;
       if (this.gatewayRuntimes.get(key) === existing) this.gatewayRuntimes.delete(key);
       // Another observer may already have replaced this exact closed instance.
@@ -259,8 +261,10 @@ export class ConnectionApplication {
       if (!runtime.closed) fail('agent_runtime_release_unconfirmed', '原执行资源归属尚未确认，不能交接原对话。', 409);
       return;
     }
-    await runtime.close();
-    for (const {key,pending} of owned) if (this.gatewayRuntimes.get(key) === pending) this.gatewayRuntimes.delete(key);
+    const previous=this.gatewayReleases.get(runtime);if(previous){await previous;return;}
+    const closing=(async()=>{await runtime.close();for(const {key,pending} of owned)if(this.gatewayRuntimes.get(key)===pending)this.gatewayRuntimes.delete(key);this.gatewayReleases.delete(runtime);})();
+    this.gatewayReleases.set(runtime,closing);void closing.catch(()=>{});
+    await closing;
   }
   observeModels(id: string, bindingIdentity: string, models: ConnectionView['models']): ConnectionView {
     const record = this.stored(id);
@@ -382,6 +386,6 @@ export class ConnectionApplication {
     const runtimes = [...this.runtimes.values(), ...this.gatewayRuntimes.values(), ...[...this.programRecovery.values()].flat().map(runtime => Promise.resolve(runtime))]; this.runtimes.clear(); this.gatewayRuntimes.clear();
     await Promise.allSettled(runtimes.map(async runtime => (await runtime).close()));
   }
-  activity() { return [{kind:'connection-operation',count:this.opening.size+this.checking.size+this.programChanges.size},{kind:'native-login',count:this.list().filter(value=>['initializing','waiting-browser','checking'].includes(value.loginAttempt?.state??'')).length}].filter(value=>value.count>0); }
+  activity() { return [{kind:'connection-operation',count:this.opening.size+this.checking.size+this.programChanges.size},{kind:'runtime-release',count:this.gatewayReleases.size},{kind:'native-login',count:this.list().filter(value=>['initializing','waiting-browser','checking'].includes(value.loginAttempt?.state??'')).length}].filter(value=>value.count>0); }
   beginClosing(): void { this.closing = true; }
 }
