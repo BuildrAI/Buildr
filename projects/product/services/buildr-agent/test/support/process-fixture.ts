@@ -22,7 +22,7 @@ export const cleanup = (root: string) => phase('cleanup', () => fs.rmSync(root,{
 export const prepared=path.resolve(import.meta.dirname,'../../../buildr/node_modules/@buildr-ai/buildr-agent');
 export const isLive=(pid:number)=>{try{process.kill(pid,0);return true;}catch{return false;}};
 export async function until<T>(read:()=>Promise<T>,accept:(value:T)=>boolean):Promise<T>{let last:unknown;for(let n=0;n<200;n++){try{const value=await read();if(accept(value))return value;last=value;}catch(error){last=error;}await new Promise(resolve=>setTimeout(resolve,50));}let startup='';const observed=last as {identity?:{dataRoot?:string}};if(observed?.identity?.dataRoot?.startsWith(os.tmpdir())){try{startup='\nstartup log: '+fs.readFileSync(path.join(observed.identity.dataRoot,'agent-service/process/startup.log'),'utf8').slice(-8192);}catch{}}assert.fail('state did not settle: '+JSON.stringify(last)+startup);}
-export async function actor(options:{dataRoot:string;profileId:string;runtime:AgentRuntimeUnit;workspace:string}){
+export async function actor(options:{dataRoot:string;profileId:string;runtime:AgentRuntimeUnit;workspace:string;autoContinueInterrupted?:boolean;legacySourceId?:string}){
   const child=fork(path.join(import.meta.dirname,'../integration/fixtures/agent-host-process.mjs'),[path.join(options.runtime.directory,'build/index.js'),JSON.stringify(options)],{execPath:options.runtime.node,stdio:['ignore','pipe','pipe','ipc']});
   let output='';child.stderr?.on('data',value=>{output+=value;});
   const waiting=new Map<string,{resolve(value:any):void;reject(error:Error):void}>();

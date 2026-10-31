@@ -27,7 +27,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
   let abortStart: (() => Promise<void>) | undefined;
   try {
   const hosts = new AgentHostRegistry();
-  const service = createAgentService({ ...options.serviceOptions, dataRoot: options.dataRoot, legacySourceId: options.legacySourceId, autoContinueInterrupted: options.autoContinueInterrupted, host: hosts, conversationControl:(scope,id)=>conversationControlInstruction({dataRoot:options.dataRoot,profileId:options.profileId,sourceId:executionScopeRef(scope,options.legacySourceId).sourceId,scope,conversationId:id},options.runtime.node), generationAlive: generation => generationAlive(options.dataRoot, generation) });
+  const service = createAgentService({ ...options.serviceOptions, dataRoot: options.dataRoot, legacySourceId: options.legacySourceId, get autoContinueInterrupted() { return options.autoContinueInterrupted; }, host: hosts, conversationControl:(scope,id)=>conversationControlInstruction({dataRoot:options.dataRoot,profileId:options.profileId,sourceId:executionScopeRef(scope,options.legacySourceId).sourceId,scope,conversationId:id},options.runtime.node), generationAlive: generation => generationAlive(options.dataRoot, generation) });
   const repository = new ConversationRepository(path.join(options.dataRoot, 'agent-service'));
   service.models.startRefreshing();
   abortStart = () => service.close();
@@ -101,7 +101,10 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     if (req.url === '/host/attach') {
       if (closing) throw new AgentServiceError('agent_process_switching','执行后台正在退出，宿主尚未接入。',503);
       hosts.attach(input.peer);
-      if (!startedRecovery && !retiring) { startedRecovery = true; recovering = true; void service.conversations.recoverInterrupted().catch(() => {}).finally(() => { recovering = false; }); }
+      // A new owning host refreshes policy even when the old bootstrap launched this generation.
+      const enableRecovery=input.peer.sourceId===options.legacySourceId && input.autoContinueInterrupted===true && !options.autoContinueInterrupted;
+      if (input.peer.sourceId===options.legacySourceId && typeof input.autoContinueInterrupted==='boolean') options.autoContinueInterrupted=input.autoContinueInterrupted;
+      if ((!startedRecovery || enableRecovery) && !retiring && !recovering) { startedRecovery = true; recovering = true; void service.conversations.recoverInterrupted().catch(() => {}).finally(() => { recovering = false; }); }
       json(res, 200, { attached: true }); return;
     }
     if (req.url === '/host/detach') { hosts.detach(input.peerId); json(res, 200, { detached: true }); return; }

@@ -116,7 +116,7 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
       if (host) for (const candidate of readProcessInstances(options.dataRoot).filter(candidate=>!candidate.stopped&&live(candidate.identity.pid))) {
         matches(candidate.identity, options);
         if (attached.has(candidate.identity.instanceId)) continue;
-        try { await request(candidate.origin, candidate.token, '/host/attach', {peer:host.peer}, AbortSignal.timeout(3000)); attached.set(candidate.identity.instanceId,candidate); }
+        try { await request(candidate.origin, candidate.token, '/host/attach', {peer:host.peer,autoContinueInterrupted:options.autoContinueInterrupted}, AbortSignal.timeout(3000)); attached.set(candidate.identity.instanceId,candidate); }
         catch (error) { if (candidate.identity.instanceId===record.identity.instanceId) throw error; }
       }
       return record;

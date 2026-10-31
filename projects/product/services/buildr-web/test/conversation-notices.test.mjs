@@ -54,10 +54,10 @@ test('子任务消息只按可靠父工具来源隐藏，真实用户输入、�
  assert.deepEqual(visibleConversationEntries([{...child,parentToolId:undefined},main]).map(entry=>entry.id),['child','main']);
 });
 
-test('同组合独立接续表达新要求，真实换家和接收失败仍准确显示',()=>{
+test('同组合内部接续不产生交接提示，真实换家和接收失败仍准确显示',()=>{
  for(const agent of ['Qoder','DSH','Codex']){
   const entry={text:'旧文案',status:'accepted',handoff:{agent,changes:[]}};
-  assert.equal(conversationHandoffReceipt(entry),'继续处理新要求');
+  assert.equal(conversationHandoffReceipt(entry),'');
   assert.equal(conversationHandoffReceipt({...entry,status:'failed'}),'新要求未接收');
   assert.equal(conversationHandoffReceipt({...entry,status:'unknown'}),'新要求接收待确认');
  }

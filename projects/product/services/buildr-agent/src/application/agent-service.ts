@@ -97,7 +97,7 @@ export function createAgentService(options: AgentServiceOptions) {
     const diagnostic=discoveryDiagnostic||(failed?'部分模型账号核对失败或登录已失效，请在智能体与模型中查看。':undefined);
     return {...result,hasSnapshot,...(diagnostic?{diagnostic}:{})};
   };
-  const conversations = new ConversationApplication({ conversationControl:options.conversationControl, repository, connections, modelAccess: models, events, root, generation, now, host: new HostContext(options), autoContinueInterrupted: options.autoContinueInterrupted, generationAlive: options.generationAlive });
+  const conversations = new ConversationApplication({ conversationControl:options.conversationControl, repository, connections, modelAccess: models, events, root, generation, now, host: new HostContext(options), get autoContinueInterrupted() { return options.autoContinueInterrupted; }, generationAlive: options.generationAlive });
   const upgrades = new ProgramUpgrades({root,connections,programs:programManager,checks:programUpdates,release:id=>conversations.releaseForProgramUpgrade(id),now});
   const withUpgrades=(snapshot:ReturnType<typeof programUpdates.list>)=>({programs:snapshot.programs.map(program=>({...program,upgrade:(()=>{const job=upgrades.read(program.connectionId);return job&&(job.executable===program.executable||job.installedExecutable===program.executable)?job:undefined;})()}))});
   return {

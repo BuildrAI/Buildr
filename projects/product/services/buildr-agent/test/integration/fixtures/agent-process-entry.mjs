@@ -24,6 +24,16 @@ function executor(id){return{descriptor:{id,label:id,capabilities},async open({c
         state.status='unknown';state.tools=[{id:'unsettled',label:'one operation, result missing',status:'unknown'}];
         const item={id:'unsettled',kind:'tool',role:'system',name:'command',text:'operation may have happened; receipt missing',status:'running',executionId:executionRef.id};state.items.push(item);save(ref,state);input.onEvent({type:'item',item});return;
       }
+      if(workText==='goal-recovery'){
+        const output=path.join(bootstrap.dataRoot,'first-result');
+        if(fs.existsSync(output))throw new Error('original side effect replayed');
+        fs.writeFileSync(output,'already applied');state.status='unknown';save(ref,state);
+        throw new Error('dsh_execution_observation_lost');
+      }
+      if(workText.startsWith('系统自动恢复：')){
+        if(fs.readFileSync(path.join(bootstrap.dataRoot,'first-result'),'utf8')!=='already applied')throw new Error('missing original result');
+        fs.writeFileSync(path.join(bootstrap.dataRoot,'remaining-result'),'continued goal');
+      }
       if(workText==='lost-observation'){state.status='unknown';save(ref,state);throw new Error('dsh_execution_observation_lost');}
       if(workText==='question'){input.onEvent({type:'request',request:{id:'question',kind:'question',title:'Choose next work',questions:[{id:'scope',label:'Work scope',options:[{id:'later',label:'Later'},{id:'ok',label:'Accepted'}]}]}});}
       if(workText==='approval'){input.onEvent({type:'request',request:{id:'permit',kind:'approval',title:'Continue?',options:[{id:'allow',label:'Allow'}]}});}
@@ -41,7 +51,7 @@ function executor(id){return{descriptor:{id,label:id,capabilities},async open({c
     },
     async supplement(input){fs.appendFileSync(path.join(bootstrap.dataRoot,'native-inputs.jsonl'),JSON.stringify({text:input.text,version:marker.version})+'\n');const state=read(input.contextRef);if(state.executionRef.id!==input.executionRef.id)throw Error('wrong execution');const item={id:input.clientRequestId,clientRequestId:input.clientRequestId,kind:'message',role:'user',text:input.text,executionId:state.executionRef.id};state.items.push(item);save(input.contextRef,state);return{executionRef:state.executionRef,inputItemId:item.id};},
     observe:async({contextRef})=>{const value=read(contextRef);if(value.awaitingObservation){delete value.awaitingObservation;save(contextRef,value);}return{status:value.status,tools:value.tools,executionRef:value.executionRef};},
-    canRelease:async({contextRef,executionRef})=>{const state=read(contextRef);return !state.awaitingObservation&&state.executionRef.id===executionRef.id&&(state.kind==='uncertain-ended'?(fs.existsSync(path.join(bootstrap.dataRoot,'release-uncertain-resource'))?{executionState:'unknown'}:false):['idle','stopped'].includes(state.status)&&!state.tools.some(tool=>tool.status!=='completed'));},
+    canRelease:async({contextRef,executionRef})=>{const state=read(contextRef);return !state.awaitingObservation&&state.executionRef.id===executionRef.id&&(['uncertain-ended','goal-recovery'].includes(state.kind)?(fs.existsSync(path.join(bootstrap.dataRoot,'release-uncertain-resource'))?{executionState:'unknown'}:false):['idle','stopped'].includes(state.status)&&!state.tools.some(tool=>tool.status!=='completed'));},
     reply:async({contextRef})=>{fs.appendFileSync(path.join(bootstrap.dataRoot,'native-replies.jsonl'),'reply\n');const value=read(contextRef);value.approved=true;save(contextRef,value);},
     stop:async({contextRef})=>{const value=read(contextRef);if(value.kind==='hold:slow'&&!fs.existsSync(path.join(bootstrap.dataRoot,'finish-stop'))){value.stopRequested=true;value.status='tools-active';value.tools=[{id:'slow-tool',label:'正在停止的命令',status:'running',canStop:true}];}else{value.status='stopped';value.tools=[];}save(contextRef,value);return{status:value.status,tools:value.tools,executionRef:value.executionRef};},close:async()=>{if(fs.existsSync(path.join(bootstrap.dataRoot,'slow-close')))await new Promise(resolve=>setTimeout(resolve,800));},
   };

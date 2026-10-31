@@ -6,6 +6,27 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
   const {page,panel,run,step,update,input}=fixture;
   const notice=()=>panel().locator('.ac-stream-disconnect');
   const completed=()=>run('completed','codex',{executionState:'ended'});
+  await step('同组合内部恢复无交接，已释放历史不常驻输入区；真正切换与未知工具仍可核对',async()=>{
+    const saved=structuredClone(fixture.conversation),sends=fixture.sends;
+    try{
+      const handoff={agent:'Codex',model:'Fixture model',changes:[],rounds:[],body:'internal recovery source',sourceThrough:0,mode:'records'};
+      const entry={id:'internal-context',sequence:saved.entries.length+1,kind:'handoff',role:'system',text:'交接已接收',status:'accepted',handoff,createdAt:new Date().toISOString()};
+      const reply={id:'recovered-answer',sequence:saved.entries.length+2,kind:'message',role:'assistant',text:'原目标已核对并自动接续完成。',provider:'codex',runId:saved.run.id,status:'completed',createdAt:new Date().toISOString()};
+      update({run:{...saved.run,status:'completed',executionState:'ended'},requests:[],retainedRuns:[run('unknown','codex',{id:'released-history',resourcesReleased:true,tools:[]})],entries:[...saved.entries,entry,reply]});
+      await page.reload();await input().waitFor();await panel().locator('[data-run-status="completed"]').waitFor();
+      assert.equal(await panel().locator('[data-retained-work]').count(),0);
+      assert.equal(await panel().locator('.ac-handoff-receipt').count(),0);
+      assert.equal(await panel().getByRole('button',{name:'交接内容',exact:true}).count(),0);
+      await fixture.capture(page,'agent-transparent-recovery-completed.png');
+      update({retainedRuns:[run('unknown','codex',{id:'released-history',resourcesReleased:true,tools:[{id:'unknown-tool',label:'unknown operation',status:'unknown'}]})],entries:[...saved.entries,{...entry,handoff:{...handoff,changes:[{kind:'agent',label:'智能体',before:'Qoder',after:'Codex'}]}},reply]});
+      await page.reload();await input().waitFor();
+      await panel().locator('[data-retained-work]>summary').click();
+      await panel().locator('[data-retained-run="released-history"]').waitFor();
+      await panel().locator('.ac-handoff-receipt').getByRole('button',{name:'交接内容',exact:true}).waitFor();
+      assert.equal(fixture.sends,sends,'仅核对历史和恢复呈现不发送工作');
+      await fixture.capture(page,'agent-transparent-recovery-and-real-risk.png');
+    }finally{fixture.conversation=saved;await page.reload();await input().waitFor();}
+  });
   await step('状态未知时自动核对原执行，不重新发送工作',async()=>{
     const beforeSends=fixture.sends,beforeObserves=fixture.observes;fixture.recoverNextObserve=true;update({run:run('unknown')});await page.reload();await panel().locator('[data-run-status="completed"]').waitFor();assert.ok(fixture.observes>beforeObserves);assert.equal(fixture.sends,beforeSends,'自动恢复观察不创建新的执行');
   });
@@ -19,7 +40,7 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
       assert.equal(await state.getByRole('button',{name:'停止',exact:true}).count(),0);assert.equal(await state.locator('small,details').count(),0);
       for(let attempt=0;attempt<2;attempt++){
         const before=fixture.observes;
-        await state.getByRole('button',{name:'重新读取',exact:true}).click();
+        await state.getByRole('button',{name:/重新读取/}).click();
         await state.getByText('未读到结束记录，可继续发送',{exact:true}).waitFor();
         assert.ok(fixture.observes>before);assert.equal(fixture.sends,beforeSends);assert.equal(fixture.stops,beforeStops);assert.equal(fixture.conversation.run.status,'unknown');
         assert.equal(await panel().locator('.ac-compose-wrap>small[role="status"]').count(),0,'反馈保留在同一行');
@@ -29,6 +50,8 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
       assert.ok(geometry.height<=36&&geometry.overflow<=1,JSON.stringify(geometry));
       await fixture.capture(page,'agent-interrupted-reply-one-line.png');
       update({run:run('unknown','codex',{resourcesReleased:false})});await page.reload();await input().waitFor();await state.getByRole('button',{name:'停止',exact:true}).waitFor();
+    }catch(error){
+      process.stderr.write('[interrupted-reply-state] '+JSON.stringify({run:fixture.conversation.run,observes:fixture.observes,panel:await panel().innerText()})+'\n');throw error;
     }finally{fixture.conversation=saved;await page.setViewportSize(viewport);await page.reload();await input().waitFor();}
   });
   await step('已结束轮次打开只读取记录，后台刷新不订阅或轮询该轮',async()=>{

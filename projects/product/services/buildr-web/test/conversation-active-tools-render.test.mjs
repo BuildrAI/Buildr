@@ -65,13 +65,25 @@ test('已释放后台的未知命令只保留结果核对，不提供停止或�
  assert.doesNotMatch(html,/停止剩余执行|停止此命令|命令运行|已确认停止/);
 });
 
-test('保留执行按各自的资源释放事实展示，仍活动的执行保留停止',()=>{
+test('已释放且无未决工作的历史不常驻输入区，仍活动的执行保留停止',()=>{
  const conversation={participants:[{id:'p',label:'原执行方'}],requests:[],retainedRuns:[
   {id:'released',participantId:'p',status:'unknown',resourcesReleased:true,tools:[]},
   {id:'held',participantId:'p',status:'unknown',resourcesReleased:false,tools:[]},
  ]};
  const html=renderToStaticMarkup(React.createElement(ConversationRetainedWork,{conversation,busy(){return false;},onObserve(){},onStop(){}}));
- const released=html.split('data-retained-run="released"')[1].split('</section>')[0],held=html.split('data-retained-run="held"')[1].split('</section>')[0];
- assert.match(released,/原回复已中断，可继续发送/);assert.doesNotMatch(released,/停止原执行/);
+ assert.doesNotMatch(html,/data-retained-run="released"/);
+ const held=html.split('data-retained-run="held"')[1].split('</section>')[0];
  assert.match(held,/停止原执行/);assert.doesNotMatch(held,/后台连接已释放/);
+});
+
+test('后台已释放仍保留未知工具及必要问题，全部历史结束时不渲染提示',()=>{
+ const conversation={participants:[{id:'p',label:'原执行方'}],requests:[{id:'q',runId:'question',participantId:'p',title:'确认范围？'}],retainedRuns:[
+  {id:'tool',participantId:'p',status:'unknown',resourcesReleased:true,tools:[{id:'u',status:'unknown',label:'unconfirmed'}]},
+  {id:'question',participantId:'p',status:'unknown',resourcesReleased:true,tools:[]},
+ ]};
+ const props={conversation,busy(){return false;},onObserve(){},onStop(){}};
+ const html=renderToStaticMarkup(React.createElement(ConversationRetainedWork,props));
+ assert.match(html,/保留了 2 项原执行/);assert.match(html,/未回答：确认范围/);assert.match(html,/后台连接已释放/);
+ assert.doesNotMatch(html,/停止原执行/);
+ assert.equal(renderToStaticMarkup(React.createElement(ConversationRetainedWork,{...props,conversation:{...conversation,requests:[],retainedRuns:conversation.retainedRuns.map(run=>({...run,tools:[]}))}})), '');
 });

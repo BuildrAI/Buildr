@@ -14,7 +14,7 @@ type Props = {
 
 /** Old work stays visible and controllable, without becoming an input gate. */
 export function ConversationRetainedWork({conversation,busy,onObserve,onStop,renderRequest}:Props) {
-  const runs=conversation?.retainedRuns?.filter(run=>executionLocked(run)||run.tools.some(tool=>tool.status!=='completed'))??[];
+  const runs=conversation?.retainedRuns?.filter(run=>!run.resourcesReleased&&executionLocked(run)||run.tools.some(tool=>tool.status!=='completed')||conversation.requests.some(request=>request.runId===run.id))??[];
   if(!runs.length)return null;
   return <details className="ac-active-tools" data-retained-work>
     <summary>保留了 {runs.length} 项原执行，不影响继续对话</summary>

@@ -93,7 +93,7 @@ export class ConversationApplication {
   canAdoptParallel(): boolean { return !this.sharedNativeContext; }
   private closing = false;
   private recoveryWork?: Promise<void>;
-  private readonly recoveries = new Map<string, Promise<void>>();
+  private readonly recoveries = new Map<string, { runId?: string; work: Promise<void> }>();
   private readonly retryWaits = new Map<string, AbortController>();
   private readonly cancelledRetries = new Set<string>();
   private readonly handoffPreviews = new Map<string,{baseToken:string;prepared:ReturnType<ConversationApplication['prepare']>}>();
@@ -295,6 +295,7 @@ export class ConversationApplication {
             if(this.sourceRuntimes.get(value.id)===value.source){this.sourceRuntimes.delete(value.id);this.sourceOwners.delete(value.id);this.sourceConnections.delete(value.id);const slot=this.sourceSlots.get(value.id);if(slot)this.warmups.unclaim(slot);this.sourceSlots.delete(value.id);}
             const record=this.load(value.workspaceId,value.conversationId),run=conversationRuns(record.view).find(run=>run.id===value.runId);
             if(!run||run.id!==value.runId||run.participantId!==value.id||run.generation!==this.options.generation)continue;
+            const newlyReleased=!run.resourcesReleased;
             run.executionState=run.executionState==='ended'?'ended':facts.get(value.id)!;run.resourcesReleased=true;
             if(BUSY_STATES.has(run.status)){
               run.status='unknown';run.interrupted=true;
@@ -302,6 +303,9 @@ export class ConversationApplication {
               run.tools=run.tools.map(tool=>tool.status==='running'?{...tool,status:'unknown',canStop:false}:tool);
             }
             run.updatedAt=this.options.now();this.save(record);
+            if(newlyReleased && record.view.run?.id===run.id && record.interruption?.runId===run.id && !record.interruption.cancelled && !record.interruption.attempted && this.options.autoContinueInterrupted && !this.closing) {
+              queueMicrotask(()=>{void this.recoverOne(value.workspaceId,value.conversationId).catch(()=>{});});
+            }
           }
           this.sourceReleasePending.delete(runtime);return true;
         };
@@ -582,7 +586,12 @@ export class ConversationApplication {
     const participant = record.participants.find(value => !value.historical && !conversationRuns(record.view).some(run => run.participantId === value.id && (unfinishedRun(run) || run.generation !== this.options.generation && this.options.generationAlive?.(run.generation) === true && !run.resourcesReleased || record.view.requests.some(request => request.runId === run.id))) && value.connectionId === input.connectionId && value.modelAccountId === input.modelAccountId && value.modelId === input.model && (!input.modelAccountId || value.modelAccountIdentity === source?.identity && value.modelConfiguration===configuration));
     const through = record.view.entries.at(-1)?.sequence ?? record.view.childOf?.throughSequence ?? 0;
     const changes = handoffEntries([...(record.inheritedContext?.entries??[]),...record.view.entries],participant?.deliveredThrough??0);
-    const switching = record.participants.length > 0 && record.view.run?.participantId !== participant?.id;
+    const previous = record.participants.find(value=>value.id===record.view.run?.participantId) ?? record.participants.at(-1);
+    const previousRun = record.view.run;
+    // Native context identity governs control and history, never whether the user changed execution choice.
+    const switching = Boolean(previous && (previous.connectionId!==input.connectionId || previous.modelAccountId!==input.modelAccountId ||
+      previous.modelAccountIdentity!==source?.identity || previous.modelId!==input.model || previous.serviceTier!==input.serviceTier ||
+      previousRun && (previousRun.reasoningEffort!==input.reasoningEffort || (previousRun.permissionMode??'default')!==input.permissionMode)));
     const history = changes.map(entry => ({sequence:entry.sequence,role:entry.role,provider:entry.provider,text:entry.kind==='tool'?`${entry.name??'工具'} · ${entry.status??'结果未知'}（具体内容见本地来源）`:entry.text.length>4096?entry.text.slice(0,4096)+'…（完整原文见本地来源）':entry.text}));
     const maxInputBytes=receivingBudget(connection.capabilities.maxInputBytes,boundModel&&'contextWindow' in boundModel?boundModel.contextWindow:undefined,boundModel&&'maxOutputTokens' in boundModel?boundModel.maxOutputTokens:undefined);
     const localRounds=organizeHandoff(changes,{...record.inheritedContext?.outcomes,...record.runOutcomes,...(record.view.run?{[record.view.run.id]:record.view.run}:{})});
@@ -607,7 +616,6 @@ export class ConversationApplication {
     const fullText=controlInstruction + (changes.length||switching||waitingQuestions?`${handoffPrompt}\n工作位置与来源：${context}\n按轮次组织的本地记录：\n${formatHandoffRounds(rounds)}${suffix}`:input.text+materials.description);
     const needsCompression=Buffer.byteLength(fullText)>maxInputBytes;
     const text=needsCompression&&sources?`${controlInstruction}${handoffPrompt}\n工作位置与来源：${context}\n完整历史共有 ${rounds.length} 轮，记录 #${changes[0]?.sequence??0}–#${through}，超过内联容量。请先读取本地索引 ${sources.index}，按各轮路径读取用户要求、授权纠正、失败未知、成果和待办。正文没有省略来源，具体内容需按引用读取。${suffix}`:fullText;
-    const previous=record.participants.find(p=>p.id===record.view.run?.participantId);
     const difference:Array<{kind:'agent'|'model';label:string;before:string;after:string}>=[];
     if(previous&&previous.connectionId!==input.connectionId)difference.push({kind:'agent',label:'智能体',before:previous.label,after:connection.label});
     if(previous&&(record.view.run?.model!==input.model||previous.modelAccountId!==input.modelAccountId))difference.push({kind:'model',label:'模型',before:record.view.run?.model??'默认模型',after:boundModel?.label??input.model??'默认模型'});
@@ -732,7 +740,7 @@ export class ConversationApplication {
     const manualRecovery = Boolean(raw.continueRunId);
     append({ id: userEntryId, kind: systemRecovery || manualRecovery ? 'notice' : 'message', role: systemRecovery || manualRecovery ? 'system' : 'user', text: manualRecovery ? record.view.run?.accepted ? '已请求继续上次执行。' : '已请求重试上次未送达的要求。' : prepared.draft.text, participantId:participant.id, provider:participant.provider, runId: run.id, status: 'sending', attachments: prepared.draft.attachmentIds });
     const automaticRetry = systemRecovery ? record.attempts.find(value => value.runId === record.view.run?.id)?.automaticRetry : undefined;
-    record.attempts.push({ clientRequestId, inputDigest, runId: run.id, participantId: participant.id, through: record.view.entries.at(-1)!.sequence, userEntryId, accepted: false, ...(raw.continueRunId ? {continuationOf: raw.continueRunId} : {}), ...(automaticRetry ? {automaticRetry: {...automaticRetry}} : {}) });
+    record.attempts.push({ clientRequestId, inputDigest, runId: run.id, participantId: participant.id, through: record.view.entries.at(-1)!.sequence, userEntryId, accepted: false, ...(raw.continueRunId || systemRecovery && record.view.run ? {continuationOf: raw.continueRunId ?? record.view.run!.id} : {}), ...(automaticRetry ? {automaticRetry: {...automaticRetry}} : {}) });
     const previousRun=record.view.run;if(previousRun){record.runOutcomes??={};record.runOutcomes[previousRun.id]={status:previousRun.status,diagnostic:previousRun.diagnostic,model:previousRun.model,provider:previousRun.provider,updatedAt:previousRun.updatedAt};}
     if (!participant.modelAccountId) this.sharedNativeContext = true;
     delete record.interruption;
@@ -1005,7 +1013,7 @@ export class ConversationApplication {
       run.diagnostic = safeDiagnostic(error); run.updatedAt = this.options.now();
       const transportLost = error instanceof Error && ['codex_execution_observation_lost', 'codex_event_observation_lost', 'dsh_execution_observation_lost', 'dsh_event_observation_lost', 'qoder_execution_observation_lost', 'qoder_event_observation_lost'].includes(error.message);
       if (!this.closing && !userStopping && transportLost && run.accepted && run.status === 'unknown' && !record.interruption?.cancelled) {
-        record.interruption = { runId, reason: 'transport', awaitingUser: record.view.requests.some(request=>request.runId===runId), attempted: record.attempts.some(attempt => attempt.runId === runId && attempt.clientRequestId.startsWith('host-recovery:')) };
+        record.interruption = { runId, reason: 'transport', awaitingUser: record.view.requests.some(request=>request.runId===runId) };
         run.interrupted = true;
       }
       const attempt = record.attempts.find(value => value.runId === runId);
@@ -1235,24 +1243,27 @@ export class ConversationApplication {
       record.view.titleState={status:'failed',reason:'标题生成因服务重启中断，原有回复已保留，可显式重新生成。'};
       try{this.save(record);}catch{/* A concurrent newer record wins; do not block unrelated executions. */}
     }
-    const candidates=this.options.repository.listInterrupted().filter(record=>(record.view.run?.generation!==this.options.generation && !this.options.generationAlive?.(record.view.run?.generation ?? '')) || record.interruption?.reason==='transport');
+    const candidates=this.options.repository.listInterrupted().filter(record=>(record.view.run?.generation!==this.options.generation && !this.options.generationAlive?.(record.view.run?.generation ?? '')) || record.interruption?.runId===record.view.run?.id);
     const work=async()=>{
       let next=0;
       await Promise.all(Array.from({length:Math.min(2,candidates.length)},async()=>{
         while(next<candidates.length&&!this.closing){const candidate=candidates[next++]!;await this.recoverOne(candidate.view.workspaceId,candidate.view.id);}
       }));
     };
-    this.recoveryWork=work();return this.recoveryWork;
+    const recovery=work().finally(()=>{if(this.recoveryWork===recovery)this.recoveryWork=undefined;});
+    this.recoveryWork=recovery;return recovery;
   }
   private recoverOne(workspaceId: string, id: string): Promise<void> {
     const key = `${workspaceId}/${id}`;
-    const existing = this.recoveries.get(key); if (existing) return existing;
-    const work = this.recoverRun(workspaceId, id).finally(() => { if (this.recoveries.get(key) === work) this.recoveries.delete(key); this.scheduleSourceRelease(workspaceId, id); });
-    this.recoveries.set(key, work); return work;
+    const runId=this.load(workspaceId,id).view.run?.id;
+    const existing = this.recoveries.get(key);
+    if (existing) return existing.runId===runId ? existing.work : existing.work.then(()=>this.recoverOne(workspaceId,id));
+    const work = this.recoverRun(workspaceId, id).finally(() => { if (this.recoveries.get(key)?.work === work) this.recoveries.delete(key); this.scheduleSourceRelease(workspaceId, id); });
+    this.recoveries.set(key, {runId,work}); return work;
   }
   private async recoverRun(workspaceId:string,id:string):Promise<void>{
     let record=this.load(workspaceId,id),run=record.view.run;
-    if(!run || this.closing || (run.generation===this.options.generation && record.interruption?.reason!=='transport'))return;
+    if(!run || this.closing || (run.generation===this.options.generation && !record.interruption))return;
     if(!record.interruption){
       // Only an accepted active execution is attributable to an abrupt host loss.
       if (run.accepted && run.status === 'unknown') {
@@ -1264,7 +1275,9 @@ export class ConversationApplication {
       run.interrupted=true;run.diagnostic='服务重启导致执行中断，正在核对原执行。';this.save(record);
     }
     const originalId=run.id,marker=record.interruption;
-    if(marker.runId!==originalId||marker.cancelled||marker.attempted||['completed','failed'].includes(run.status))return;
+    if(marker.runId!==originalId||marker.cancelled||['completed','failed'].includes(run.status))return;
+    const requestId='host-recovery:'+originalId;
+    if(record.attempts.some(attempt=>attempt.clientRequestId===requestId))return;
     const unavailable=(reason:string)=>{
       if(this.closing)return;
       const current=this.load(workspaceId,id);
@@ -1281,23 +1294,35 @@ export class ConversationApplication {
         if (this.load(workspaceId,id).view.run?.status !== 'unknown') break;
       }
       record=this.load(workspaceId,id);run=record.view.run;
-      if(this.closing||!run||run.id!==originalId||!record.interruption||record.interruption.cancelled||record.interruption.attempted)return;
+      if(this.closing||!run||run.id!==originalId||!record.interruption||record.interruption.cancelled)return;
       if(run.status==='completed'||run.status==='failed')return;
       if(run.generation===this.options.generation&&run.status==='running'){
         delete record.interruption;run.interrupted=undefined;run.diagnostic=undefined;this.save(record);return;
       }
     if(!this.options.autoContinueInterrupted){unavailable('系统中断后执行未完成。工作记录已保留，你可以发送“继续”接着处理。');return;}
       if(marker.awaitingUser){unavailable('执行未完成：中断前有待确认的问题或授权，请查看原问题后继续。');return;}
-      if(run.generation!==this.options.generation||run.status!=='stopped'||run.tools.some(tool=>['running','unknown'].includes(tool.status))){unavailable('执行未完成：尚不能确认原执行和工具均已停止，已保留记录，避免重复操作。');return;}
+      const stopped=run.status==='stopped'&&run.tools.every(tool=>tool.status==='completed');
+      const released=run.resourcesReleased===true&&run.tools.every(tool=>tool.status!=='running');
+      if(run.generation!==this.options.generation||!stopped&&!released||record.view.requests.some(request=>request.runId===originalId)){unavailable('执行未完成：正在核对原执行及控制资源，已有操作结果保留，不重复操作。');return;}
       const participant=record.participants.find(value=>value.id===run!.participantId);
       if(!participant?.contextRef)throw new Error('agent_context_binding_mismatch');
-      const text='系统自动恢复：上次执行因 Buildr '+(marker.reason==='transport'?'执行观察中断':'服务重启')+'而中断，现已确认原执行停止。请先核对本地对话、当前工作成果与工具结果，继续完成用户尚未完成的目标。不要重新执行全部历史命令；不确定已生效的操作先核对，不扩大原有授权。若无法继续，请明确说明原因。';
+      const attempt=record.attempts.find(value=>value.runId===originalId)!;
+      const lineage=attempt.automaticRetry??{rootRunId:originalId,count:0};
+      if(!record.interruption.attempted && lineage.count>=RETRY_DELAYS.length){unavailable(`自动恢复已达上限（${RETRY_DELAYS.length} 次），已有成果保留；请核对持续失败的原因。`);return;}
+      if(!record.interruption.attempted && lineage.count>0){
+        await new Promise(resolve=>setTimeout(resolve,RETRY_DELAYS[lineage.count-1]));
+        record=this.load(workspaceId,id);run=record.view.run;
+        if(this.closing||run?.id!==originalId||!record.interruption||record.interruption.cancelled)return;
+      }
+      const unknown=run.tools.filter(tool=>tool.status==='unknown').map(tool=>tool.id);
+      const text='系统自动恢复：上次执行因 Buildr '+(marker.reason==='transport'?'执行观察中断':'服务重启')+'而中断，'+(released?'准确原控制资源已释放，原执行及独立操作结果仍可能未知。':'现已确认原执行停止。')+'请先核对本地对话、当前工作成果与工具结果，继续完成用户尚未完成的目标。不要重新执行全部历史命令，不重发原指令；不确定已生效的操作先核对，不扩大原有授权或代答问题。未知工具引用：'+(unknown.join('、')||'见原轮记录')+'。若需要真实用户决定，请明确提出。';
       const draft:SendDraft={expectedRevision:record.view.revision,connectionId:participant.connectionId,modelAccountId:participant.modelAccountId,modelAccountIdentity:participant.modelAccountIdentity,model:run.model,serviceTier:run.serviceTier,reasoningEffort:run.reasoningEffort,permissionMode:run.permissionMode,text,skipHandoffSummary:true};
       this.prepare(record,draft);
+      if(!record.interruption.attempted)record.attempts.find(value=>value.runId===originalId)!.automaticRetry={rootRunId:lineage.rootRunId,count:lineage.count+1};
       record.interruption.attempted=true;this.save(record);
       draft.expectedRevision=record.view.revision;
       const preview=this.prepareSend(workspaceId,id,draft);
-      this.send(workspaceId,id,{...draft,previewToken:preview.token,clientRequestId:'host-recovery:'+originalId},true);
+      this.send(workspaceId,id,{...draft,previewToken:preview.token,clientRequestId:requestId},true);
     }catch(error){unavailable('执行未完成，未能自动接续：'+safeDiagnostic(error));}
   }
 
@@ -1306,7 +1331,7 @@ export class ConversationApplication {
     const current = this.observations.get(key); if (current) return current;
     const work = this.reconcile(workspaceId, id).finally(() => { this.observations.delete(key); this.scheduleSourceRelease(workspaceId, id); }).then(view => {
       const marker = this.load(workspaceId, id).interruption;
-      if (!this.closing && !this.recoveries.has(key) && marker?.reason === 'transport' && !marker.cancelled && !marker.attempted && marker.runId === view.run?.id && view.run?.status === 'stopped') {
+      if (!this.closing && this.options.autoContinueInterrupted && !this.recoveries.has(key) && marker && !marker.cancelled && !marker.attempted && marker.runId === view.run?.id && (view.run?.status === 'stopped' || view.run?.resourcesReleased)) {
         // A later successful observation can release a previously uncertain recovery.
         queueMicrotask(() => { void this.recoverOne(workspaceId, id).catch(() => {}); });
       }

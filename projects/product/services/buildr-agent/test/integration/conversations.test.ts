@@ -1421,6 +1421,26 @@ test('live transport loss reopens the same binding and continues once without a 
   } finally { await f.close(); }
 });
 
+test('same executor and model rebuilds internal context without a user handoff after released unknown work',async()=>{
+  const native=fake('local',{disconnect:'unknown'}),f=fixture([native.executor]);
+  try{
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'local','preserve my goal');
+    const unknown=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='unknown');
+    const repository=new ConversationRepository(path.join(f.options.dataRoot,'agent-service'));
+    const record=repository.readConversation(chat.id)!,revision=record.view.revision;record.view.run!.resourcesReleased=true;record.view.revision=randomUUID();repository.saveConversation(record,revision);
+    const draft={expectedRevision:record.view.revision,connectionId:'local',text:'current status'};
+    const preview=f.service.conversations.prepareSend('workspace-one',chat.id,draft);
+    assert.equal(preview.participantId,undefined,'unknown original context cannot be reused');
+    assert.equal(preview.switching,false,'an internal context change is not a user handoff');
+    f.service.conversations.send('workspace-one',chat.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});
+    const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='completed');
+    assert.notEqual(native.sends[0]!.contextRef.id,native.sends[1]!.contextRef.id);
+    assert.equal(done.entries.filter(entry=>entry.kind==='handoff').length,0);
+    assert.equal(done.retainedRuns?.find(run=>run.id===unknown.run!.id)?.status,'unknown');
+  }finally{await f.close();}
+});
+
 test('live recovery never resends active work, unknown tools, pending decisions or release-profile work', async () => {
   for (const disconnectError of ['codex_execution_observation_lost','dsh_execution_observation_lost','qoder_execution_observation_lost']) for (const kind of ['running','unknown','tool','approval','release'] as const) {
     const native=fake('local',{disconnectError,disconnect:kind==='approval'||kind==='release'?'stopped':kind,request:kind==='approval'});
@@ -1450,14 +1470,37 @@ test('a user stop before transport loss cannot turn into automatic continuation'
 });
 
 
-test('a failed automatic continuation has no unbounded transport retry chain', async () => {
+test('a failed automatic continuation has a persistent bounded transport retry chain', async () => {
   const native=fake('local',{disconnect:'stopped',disconnectAlways:true}),f=fixture([native.executor],{autoContinueInterrupted:true});
   try {
     await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','work');
-    await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>native.sends.length===2&&v.run?.status==='unknown');
+    const deadline=Date.now()+20_000;
+    while(Date.now()<deadline&&native.sends.length<4)await new Promise(resolve=>setTimeout(resolve,20));
     await Promise.all([f.service.conversations.recoverInterrupted(),f.service.conversations.recoverInterrupted()]);
-    assert.equal(native.sends.length,2);
+    assert.equal(native.sends.length,4);
+    assert.equal(f.service.conversations.read('workspace-one',chat.id).entries.filter(entry=>entry.role==='user').length,1);
   }finally{await f.close();}
+});
+
+test('a persisted recovery intent before submission resumes the same request once after restart',async()=>{
+  const native=fake('local',{hold:true}),f=fixture([native.executor],{autoContinueInterrupted:true});
+  let cold:ReturnType<typeof createAgentService>|undefined;
+  try{
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'local','finish the original goal');
+    const running=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.accepted===true);
+    await f.service.close();
+    const repository=new ConversationRepository(path.join(f.options.dataRoot,'agent-service'));
+    const record=repository.readConversation(chat.id)!,revision=record.view.revision;
+    record.interruption={runId:running.run!.id,awaitingUser:false,attempted:true};
+    record.attempts.find(attempt=>attempt.runId===running.run!.id)!.automaticRetry={rootRunId:running.run!.id,count:1};
+    record.view.revision=randomUUID();repository.saveConversation(record,revision);
+    cold=createAgentService(f.options);
+    await Promise.all([cold.conversations.recoverInterrupted(),cold.conversations.recoverInterrupted()]);
+    await waitUntil(()=>native.sends.length,count=>count===2);
+    assert.equal(native.sends[1]!.clientRequestId,'host-recovery:'+running.run!.id);
+    assert.equal(cold.conversations.read('workspace-one',chat.id).entries.filter(entry=>entry.role==='user').length,1);
+  }finally{await cold?.close();await f.close();}
 });
 
 test('legacy accepted unknown runs are reconciled at startup without inventing continuation consent', async () => {
@@ -1817,8 +1860,8 @@ test('transport recovery preserves the temporary-failure retry budget instead of
     await connected(f.service, 'local'); const chat = await f.service.conversations.create('workspace-one', {});
     send(f.service, chat.id, 'local', 'finish');
     const ended = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => Boolean(view.run?.diagnostic?.includes('已达上限')));
-    assert.equal(native.sends.length, 5); // Original + three temporary-failure retries + one transport recovery.
-    assert.equal(native.sends.filter(input => input.clientRequestId.startsWith('automatic-retry:')).length, 3);
+    assert.equal(native.sends.length, 4); // Original + a shared budget of three recoveries/retries.
+    assert.equal(native.sends.filter(input => input.clientRequestId.startsWith('automatic-retry:')).length, 2);
     assert.equal(native.sends.filter(input => input.clientRequestId.startsWith('host-recovery:')).length, 1);
     assert.equal(ended.run?.status, 'failed');
   } finally {await f.close();}

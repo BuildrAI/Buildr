@@ -48,7 +48,7 @@ export function createAgentServiceModule(options: { readProductIdentity(): unkno
         if(closed)throw new AgentServiceError('agent_process_client_closed','本机主程序连接已释放。',503);
         if(!connection){
           const profile=options.resolveWebProfile(options.readProductIdentity());
-          connection=connectAgentProcess({dataRoot:profile.dataRoot,profileId:profile.profile??(profile.overridden?'preview':'released'),sourceId:'buildr',legacySourceId:'buildr',host,autoContinueInterrupted:profile.profile==='development'}).catch(error=>{connection=undefined;throw error;});
+          connection=connectAgentProcess({dataRoot:profile.dataRoot,profileId:profile.profile??(profile.overridden?'preview':'released'),sourceId:'buildr',legacySourceId:'buildr',host,autoContinueInterrupted:true}).catch(error=>{connection=undefined;throw error;});
         }
         return connection;
       };

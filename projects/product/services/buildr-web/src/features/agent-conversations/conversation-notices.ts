@@ -22,7 +22,7 @@ export function latestVisibleConversationMessage(entries:ConversationEntry[]):Co
 /** A new native context with unchanged choices is continuation, not a model takeover. */
 export function conversationHandoffReceipt(entry:Pick<ConversationEntry,'handoff'|'status'|'text'>):string {
   if(!entry.handoff)return entry.text;
-  if(!entry.handoff.changes.length)return entry.status==='accepted'?'继续处理新要求':entry.status==='failed'?'新要求未接收':'新要求接收待确认';
+  if(!entry.handoff.changes.length)return entry.status==='accepted'?'':entry.status==='failed'?'新要求未接收':'新要求接收待确认';
   const target=entry.handoff.changes.map(change=>change.after).join(' · ');
   return `${target} ${entry.status==='accepted'?'已接手':entry.status==='failed'?'未接收':'接收待确认'}`;
 }
