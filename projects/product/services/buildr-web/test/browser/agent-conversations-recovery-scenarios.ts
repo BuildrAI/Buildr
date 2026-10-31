@@ -10,11 +10,14 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
     const saved=structuredClone(fixture.conversation),sends=fixture.sends;
     try{
       const handoff={agent:'Codex',model:'Fixture model',changes:[],rounds:[],body:'internal recovery source',sourceThrough:0,mode:'records'};
-      const entry={id:'internal-context',sequence:saved.entries.length+1,kind:'handoff',role:'system',text:'交接已接收',status:'accepted',handoff,createdAt:new Date().toISOString()};
-      const reply={id:'recovered-answer',sequence:saved.entries.length+2,kind:'message',role:'assistant',text:'原目标已核对并自动接续完成。',provider:'codex',runId:saved.run.id,status:'completed',createdAt:new Date().toISOString()};
-      update({run:{...saved.run,status:'completed',executionState:'ended'},requests:[],retainedRuns:[run('unknown','codex',{id:'released-history',resourcesReleased:true,tools:[]})],entries:[...saved.entries,entry,reply]});
+      const recovery={id:'automatic-recovery',sequence:saved.entries.length+1,kind:'notice',role:'system',text:'系统自动恢复：准确原控制资源已释放，未知工具引用：previous。',status:'accepted',createdAt:new Date().toISOString()};
+      const entry={id:'internal-context',sequence:saved.entries.length+2,kind:'handoff',role:'system',text:'交接已接收',status:'accepted',handoff,createdAt:new Date().toISOString()};
+      const reply={id:'recovered-answer',sequence:saved.entries.length+3,kind:'message',role:'assistant',text:'原目标已核对并自动接续完成。',provider:'codex',runId:saved.run.id,status:'completed',createdAt:new Date().toISOString()};
+      update({run:{...saved.run,status:'completed',executionState:'ended'},requests:[],retainedRuns:[run('unknown','codex',{id:'released-history',resourcesReleased:true,tools:[]})],entries:[...saved.entries,recovery,entry,reply]});
       await page.reload();await input().waitFor();await panel().locator('[data-run-status="completed"]').waitFor();
       assert.equal(await panel().locator('[data-retained-work]').count(),0);
+      await panel().getByText('已自动接续上次工作。',{exact:true}).waitFor();
+      assert.doesNotMatch(await panel().innerText(),/准确原控制资源|未知工具引用/);
       assert.equal(await panel().locator('.ac-handoff-receipt').count(),0);
       assert.equal(await panel().getByRole('button',{name:'交接内容',exact:true}).count(),0);
       await fixture.capture(page,'agent-transparent-recovery-completed.png');

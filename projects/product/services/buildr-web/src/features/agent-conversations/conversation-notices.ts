@@ -37,3 +37,9 @@ export function conversationActionError(error: string, modelWarning: string | un
   if (!error || error === modelWarning || legacyModelWarnings.has(error)) return;
   return error;
 }
+
+/** Internal recovery instructions stay in source history; the page shows the actual receipt. */
+export function conversationSystemNoticeText(entry:Pick<ConversationEntry,'kind'|'role'|'text'|'status'>):string {
+  if(entry.kind!=='notice'||entry.role!=='system'||!entry.text.startsWith('系统自动恢复：'))return entry.text;
+  return entry.status==='accepted'?'已自动接续上次工作。':entry.status==='failed'?'自动恢复未能接续。':entry.status==='unknown'?'自动恢复是否接续仍待确认。':'正在自动核对并接续上次工作。';
+}

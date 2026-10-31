@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {visibleConversationEntries, latestVisibleConversationMessage, conversationModelWarning, conversationActionError, conversationHandoffReceipt} from '../src/features/agent-conversations/conversation-notices.ts';
+import {visibleConversationEntries, latestVisibleConversationMessage, conversationModelWarning, conversationActionError, conversationHandoffReceipt, conversationSystemNoticeText} from '../src/features/agent-conversations/conversation-notices.ts';
 
 const receipt=(id, extra={})=>({id,kind:'notice',role:'system',text:'已请求重试上次未送达的要求。',participantId:'codex',...extra});
 test('连续重试仅显示最后一条，保留原始记录与后续回复',()=>{
@@ -74,4 +74,15 @@ test('已读定位只选可见主消息，隐藏子消息和存档不遮蔽主�
  const reply={id:'reply-explicit',kind:'notice',role:'user',text:'我明确回答继续'};
  assert.equal(latestVisibleConversationMessage([main,reply,archive,child]),reply);
  assert.equal(latestVisibleConversationMessage([archive,childUser,child]),undefined);
+});
+
+test('系统恢复指令只呈现准确接收状态，原始记录与普通消息保持原样',()=>{
+  const raw=receipt('system',{text:'系统自动恢复：原控制资源已释放，先核对未知工具引用和当前成果。',status:'accepted'});
+  assert.equal(conversationSystemNoticeText(raw),'已自动接续上次工作。');
+  assert.equal(conversationSystemNoticeText({...raw,status:'sending'}),'正在自动核对并接续上次工作。');
+  assert.equal(conversationSystemNoticeText({...raw,status:'failed'}),'自动恢复未能接续。');
+  assert.equal(conversationSystemNoticeText({...raw,status:'unknown'}),'自动恢复是否接续仍待确认。');
+  assert.equal(conversationSystemNoticeText({...raw,kind:'message',role:'user'}),raw.text);
+  assert.equal(conversationSystemNoticeText({...raw,kind:'message',role:'assistant'}),raw.text);
+  assert.match(raw.text,/未知工具引用/);
 });
