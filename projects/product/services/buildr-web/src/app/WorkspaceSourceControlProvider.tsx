@@ -3,6 +3,7 @@ import { createCodeSourceSelectionStore, type CodeSourceSelectionStore } from '.
 import { codeApi } from '../features/code/api/code-api';
 import { createSourceControlObserver, type SourceControlObserver } from '../features/code/source-control-observer';
 import { createSourceControlRefreshLoader } from '../features/code/source-control-refresh';
+import { createSourceControlCache } from '../features/code/source-control-cache';
 
 export const WorkspaceSourceControlContext = createContext<{workspaceId: string; observer: SourceControlObserver; sourceSelection: CodeSourceSelectionStore} | null>(null);
 
@@ -10,11 +11,12 @@ export const WorkspaceSourceControlContext = createContext<{workspaceId: string;
 export function WorkspaceSourceControlProvider({workspaceId, children}: {workspaceId?: string | null; children: ReactNode}) {
   const value = useMemo(() => workspaceId ? {workspaceId, sourceSelection:createCodeSourceSelectionStore(), observer: createSourceControlObserver({
     workspaceId,
+    cache: createSourceControlCache(workspaceId),
     initialDelayMs: 750,
     load: (taskId, repositoryId, signal, onProgress, shared) => createSourceControlRefreshLoader({
       inventory:readSignal => codeApi.sourceControlInventory(workspaceId, {taskId}, readSignal),
-      repository:(id, readSignal) => codeApi.sourceControl(workspaceId, {taskId, repositoryId:id, ...(shared ? {observation:'shared' as const} : {})}, readSignal),
-    })(repositoryId, signal, onProgress),
+      repository:(id, readSignal, useShared) => codeApi.sourceControl(workspaceId, {taskId, repositoryId:id, ...(useShared ? {observation:'shared' as const} : {})}, readSignal),
+    })(repositoryId, signal, onProgress, shared),
     watch: (cursor, signal) => codeApi.watchSourceControl(workspaceId, cursor, signal),
   })} : null, [workspaceId]);
   useEffect(() => {

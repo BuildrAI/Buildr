@@ -9,6 +9,7 @@ type Options = {
   load(taskId: string | undefined, repositoryId: string | undefined, signal: AbortSignal, onProgress?: SourceControlProgress, shared?: boolean): Promise<CodeSourceControlResponse>;
   watch(cursor: string | undefined, signal: AbortSignal): Promise<CodeSourceControlWatchResponse>;
   subscribe?(listener: (notice: SourceControlChangeNotice) => void): () => void;
+  cache?: {read(): CodeSourceControlResponse | null; write(data: CodeSourceControlResponse): void};
   debounceMs?: number; fallbackMs?: number; retryMs?: number; concurrency?: number; initialDelayMs?: number;
 };
 type Job = {scope: string; repositoryId?: string; catalog: Catalog};
@@ -34,14 +35,25 @@ export function createSourceControlObserver(options: Options) {
   function getCatalog(taskId = '') {
     let entry = catalogs.get(taskId);
     if (!entry) {
-      entry = {catalog: createSourceControlCatalog((repositoryId, signal, onProgress, shared) => options.load(taskId || undefined, repositoryId, signal, onProgress, shared)), users: 0};
+      entry = {catalog: createSourceControlCatalog((repositoryId, signal, onProgress, shared) => options.load(taskId || undefined, repositoryId, signal, onProgress, shared), taskId ? null : options.cache?.read()), users: 0};
       catalogs.set(taskId, entry);
     }
     return entry.catalog;
   }
   const defaultCatalog = getCatalog();
+  let cacheTimer: ReturnType<typeof setTimeout> | undefined;
+  let cachedData = defaultCatalog.snapshot().data;
+  const saveCache = () => {
+    clearTimeout(cacheTimer); cacheTimer = undefined;
+    const snapshot = defaultCatalog.snapshot();
+    if (snapshot.data && snapshot.selectionReady && !snapshot.error && !Object.keys(snapshot.repositoryErrors).length && !snapshot.cachedRepositoryIds?.length && !snapshot.data.repositories.some(repository => repository.diagnostics.some(item => item.code === 'code_source_control_stale')) && snapshot.data !== cachedData) {
+      options.cache?.write(snapshot.data); cachedData = snapshot.data;
+    }
+  };
   const stopSharing = defaultCatalog.subscribe(() => {
-    for (const [scope, entry] of catalogs) if (scope) entry.catalog.adopt(defaultCatalog.snapshot());
+    const snapshot = defaultCatalog.snapshot();
+    for (const [scope, entry] of catalogs) if (scope) entry.catalog.adopt(snapshot);
+    if (options.cache && snapshot.data !== cachedData && snapshot.selectionReady && !snapshot.cachedRepositoryIds?.length && !cacheTimer) cacheTimer = setTimeout(saveCache, 250);
   });
   function scheduleDrain() {
     if (started && visible && !scheduled && !disposed) {
@@ -91,7 +103,7 @@ export function createSourceControlObserver(options: Options) {
   function reconcile(taskId?: string) {
     if (state.diagnostics.length) invalidateRefs();
     const scope = taskId || '';
-    if (!getCatalog(scope).snapshot().selectionReady && (queued.has(jobKey(scope)) || running.has(jobKey(scope)))) return;
+    if (queued.has(jobKey(scope)) || running.has(jobKey(scope))) return;
     check(taskId);
   }
   function scheduleFallback() {
@@ -165,7 +177,10 @@ export function createSourceControlObserver(options: Options) {
     check,
     checkAll,
     reconcile,
-    refresh: (repositoryId?: string) => defaultCatalog.refresh(repositoryId),
+    refresh: (repositoryId?: string) => {
+      queued.delete(jobKey('', repositoryId));
+      return defaultCatalog.refresh(repositoryId);
+    },
     setVisible,
     start(initialVisible = true) {
       if (started || disposed) return;
@@ -185,6 +200,7 @@ export function createSourceControlObserver(options: Options) {
     dispose() {
       disposed = true; watchController?.abort(); unsubscribe?.();
       clearTimeout(scheduled); clearTimeout(fallback); queued.clear();
+      saveCache();
       stopSharing();
       for (const entry of catalogs.values()) entry.catalog.dispose();
       catalogs.clear(); listeners.clear();

@@ -56,9 +56,9 @@ export function useSourceControl(workspaceId: string, taskId?: string, active = 
     sourceFile: (input, signal) => codeApi.sourceFile(workspaceId, input, signal),
   }), [workspaceId]);
   const refresh = useMemo(() => observer ? (repositoryId?: string) => observer.refresh(repositoryId) : catalog.refresh, [observer, catalog]);
-  const repositories = useMemo(() => state.data?.repositories.map(repository => ({...sourceControlRepository(repository), readVersion:String(state.versions[repository.id] || ''), refsVersion:String(state.refsVersions[repository.id] || ''),
+  const repositories = useMemo(() => state.data?.repositories.map(repository => ({...sourceControlRepository(repository), cached:state.cachedRepositoryIds?.includes(repository.id) || false, readVersion:String(state.versions[repository.id] || ''), refsVersion:String(state.refsVersions[repository.id] || ''),
     diagnostics:[...repository.diagnostics.filter(item => item.code !== 'code_source_control_pending').map(item => item.message), ...(state.repositoryErrors[repository.id] ? [state.repositoryErrors[repository.id]] : [])]})) || [], [state]);
   return { repositories, reader, readKey: workspaceId, selection: completedSelection.current?.catalog === catalog ? completedSelection.current.value : undefined, refresh,
-    observation: { loading: state.loading, error: state.error, readAt: state.data?.readAt || '',
+    observation: { loading: state.loading, error: state.error, readAt: state.cachedRepositoryIds?.length ? state.cachedReadAt || state.data?.readAt || '' : state.data?.readAt || '', cached:Boolean(state.cachedRepositoryIds?.length),
       diagnostics: [...watch.diagnostics, ...(state.data?.diagnostics.filter(item => item.code !== 'code_source_control_pending').map(item => item.message) || []), ...Object.entries(state.repositoryErrors).filter(([, error]) => error).map(([id, error]) => { const repository = state.data?.repositories.find(item => item.id === id); return (repository ? codeRepositoryLabel(repository) : id) + '：' + error; })], truncated: state.data?.coverage.truncated || false } };
 }

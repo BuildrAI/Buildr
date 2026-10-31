@@ -42,7 +42,7 @@ export type TreeProps = FoldProps & {
   onClone?(repositoryId: string): void;
   renderWorktreeControl?(repository: SourceControlRepository, worktree: SourceControlWorktree, ready: boolean, context: SourceControlRowContext): ReactNode;
   renderWorktreeActions?(repository: SourceControlRepository, worktree: SourceControlWorktree, ready: boolean, context: SourceControlRowContext): ReactNode;
-  syncAction?(repository: SourceControlRepository, worktree: SourceControlWorktree): {pending: boolean; run(): void};
+  syncAction?(repository: SourceControlRepository, worktree: SourceControlWorktree): {pending: boolean; run(): void} | undefined;
 };
 function RepositoryCloneControl({repository, onClone}: {repository: SourceControlRepository; onClone(repositoryId: string): void}) {
   const clone = repository.clone, label = codeRepositoryLabel(repository);
@@ -72,7 +72,7 @@ export function SourceControlRepositoryTree({repositories, ready, active, select
           <strong><span className="source-control-row-name-text">{repositoryCode}{repository.simulated && <small>模拟</small>}</span></strong>
         </button></WorktreeLocationCard>{main && worktreeControl(repository, main, branchVisible, active)}</div>
         <span className="source-control-row-shortcuts" aria-hidden={!shortcutsVisible || undefined} inert={!shortcutsVisible}><SourceControlWorktreeStatus worktree={main} name={repositoryLabel} visible={active && shortcutsVisible} syncAction={main && syncAction?.(repository, main)} /><TaskLink worktree={main} onOpenTask={onOpenTask} /></span>
-        {main ? worktreeActions(repository, main, branchVisible, active) : onClone && <span className="source-control-row-action-slot" onClick={event => event.stopPropagation()}><RepositoryCloneControl repository={repository} onClone={onClone} /></span>}
+        {main ? worktreeActions(repository, main, branchVisible, active) : onClone && !repository.cached && <span className="source-control-row-action-slot" onClick={event => event.stopPropagation()}><RepositoryCloneControl repository={repository} onClone={onClone} /></span>}
       </>}</SourceControlSourceRow>
       <div hidden={!isOpen} className="source-control-worktree-children">
         {children.map(worktree => <div key={worktree.worktreeId} data-source-worktree={worktree.worktreeId}>
@@ -106,8 +106,8 @@ export function SourceControlChanges({repositories, names, exact, selectedKey, o
           const pathHints = sourceControlFilePathHints(changes);
           return <div className="source-control-change-area" data-change-area="working">
             <div className="source-control-changes-heading"><button type="button" className="source-control-area-heading" data-area-toggle="working" aria-label={(open(fold.expanded, areaKey) ? '折叠' : '展开') + '更改 ' + worktreeLabel(worktree)} aria-expanded={open(fold.expanded, areaKey)} onClick={() => fold.onToggle(areaKey)}>{open(fold.expanded, areaKey) ? <DownOutlined /> : <RightOutlined />}更改<span>{changes.length}</span></button>
-            {onDiscard && <Tooltip title="丢弃所有更改"><Button className="source-control-discard-icon" size="small" type="text" loading={discardPending} disabled={discardPending || worktree.status !== 'ready'} icon={<UndoOutlined />} aria-label="丢弃所有更改" onClick={() => onDiscard(repository, worktree)} /></Tooltip>}</div>
-            <div hidden={!open(fold.expanded, areaKey)}><ChangedFileList compact selectable renderFileAction={onDiscard ? entry => { const file = changes.find(file => file.path === entry.path); return file && <Tooltip title="丢弃更改"><Button className="source-control-discard-icon" type="text" size="small" icon={<UndoOutlined />} disabled={discardPending || worktree.status !== 'ready'} aria-label={'丢弃 ' + file.path + ' 的更改'} onClick={() => onDiscard(repository, worktree, file)} /></Tooltip>; } : undefined} filePathHint={file => pathHints.get(file.path)} fileTooltipPath={file => sourceControlFileTooltip(worktree.location, file)} files={changes.map(file => layerFile(file))} expanded={null} selectedKey={selectedKey} onExpand={key => { const file = changes.find(entry => changedFileKey(layerFile(entry)) === key); if (file) onPick(sourceControlFileKey(file)); }} /></div>
+            {onDiscard && <Tooltip title="丢弃所有更改"><Button className="source-control-discard-icon" size="small" type="text" loading={discardPending} disabled={discardPending || repository.cached || worktree.status !== 'ready'} icon={<UndoOutlined />} aria-label="丢弃所有更改" onClick={() => onDiscard(repository, worktree)} /></Tooltip>}</div>
+            <div hidden={!open(fold.expanded, areaKey)}><ChangedFileList compact selectable renderFileAction={onDiscard ? entry => { const file = changes.find(file => file.path === entry.path); return file && <Tooltip title="丢弃更改"><Button className="source-control-discard-icon" type="text" size="small" icon={<UndoOutlined />} disabled={discardPending || repository.cached || worktree.status !== 'ready'} aria-label={'丢弃 ' + file.path + ' 的更改'} onClick={() => onDiscard(repository, worktree, file)} /></Tooltip>; } : undefined} filePathHint={file => pathHints.get(file.path)} fileTooltipPath={file => sourceControlFileTooltip(worktree.location, file)} files={changes.map(file => layerFile(file))} expanded={null} selectedKey={selectedKey} onExpand={key => { const file = changes.find(entry => changedFileKey(layerFile(entry)) === key); if (file) onPick(sourceControlFileKey(file)); }} /></div>
           </div>;
         })()}</div>
       </section>;

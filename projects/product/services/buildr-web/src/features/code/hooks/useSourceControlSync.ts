@@ -12,6 +12,7 @@ export type SourceControlSyncActions = {
 };
 /** Mirrors the per-row sync eligibility of useSourceControlBranches; skipped items keep the same real reason. */
 export function sourceControlSyncUnavailableReason(repository:SourceControlRepository, worktree:SourceControlWorktree): string | undefined {
+  if (repository.cached) return '正在核对上次结果，请稍后重试';
   if (!repository.gitId || !repository.checkoutId || repository.status === 'offline' || worktree.status === 'offline') return '当前来源尚未就绪，请刷新后重试';
   if (!worktree.branch) return '当前工作树没有可同步的本地分支';
   if (!worktree.head) return '当前分支还没有提交';
@@ -43,7 +44,7 @@ export function useSourceControlSync(workspaceId:string):SourceControlSyncAction
   }), [workspaceId, save]);
   const run = useCallback(async (repository:SourceControlRepository, worktree:SourceControlWorktree) => {
     const key = sourceControlWorktreeKey(repository.id, worktree.worktreeId), pendingKey = JSON.stringify([workspaceId, repository.id]);
-    if (!workspaceId || !active.current || inFlight.current.has(pendingKey)) return;
+    if (!workspaceId || !active.current || repository.cached || inFlight.current.has(pendingKey)) return;
     inFlight.current.add(pendingKey);
     const sequence = beginSourceControlSync(workspaceId, repository.id, worktree.worktreeId);
     const notice = {workspaceId, repositoryId:repository.id, worktreeId:worktree.worktreeId, syncSequence:sequence};

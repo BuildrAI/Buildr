@@ -58,6 +58,28 @@ test('task selection consumes complete observations in both response orders and 
   } finally {delete globalThis.__sourceControlApi;}
 });
 
+test('恢复缓存保留原时间并逐库表达未核对，不提前消费任务预选', async () => {
+  const {createSourceControlCatalog} = await import('../src/features/code/source-control-catalog.ts');
+  const cached = response(repository('other'), repository('task-repo'));
+  let finish;
+  const catalog = createSourceControlCatalog(() => new Promise(resolve => {finish = resolve;}), cached);
+  globalThis.__sourceControlContext = {workspaceId:'workspace', observer:{catalog:() => catalog, retain:() => () => {}, reconcile:() => {}, subscribe:() => () => {}, snapshot:() => ({diagnostics:[]})}};
+  const {useSourceControl} = await import('../src/features/code/hooks/useSourceControl.ts');
+  const view = harness();
+  try {
+    const restored = view.render(useSourceControl);
+    assert.equal(restored.observation.cached, true);
+    assert.equal(restored.observation.readAt, cached.readAt);
+    assert.ok(restored.repositories.every(repository => repository.cached));
+    assert.equal(restored.selection, undefined);
+    const check = catalog.check(); finish(cached); await check;
+    const confirmed = view.render(useSourceControl);
+    assert.equal(confirmed.observation.cached, false);
+    assert.ok(confirmed.repositories.every(repository => !repository.cached));
+    assert.deepEqual(confirmed.selection.worktrees, cached.selectedWorktrees);
+  } finally {view.dispose(); catalog.dispose(); delete globalThis.__sourceControlContext;}
+});
+
 test('共享静默初始观察不以spinner判断选择就绪，pending不告警且页激活仍复用observer', async () => {
   const {createSourceControlCatalog}=await import('../src/features/code/source-control-catalog.ts');
   let progress,finish,retains=0,reconciles=0;

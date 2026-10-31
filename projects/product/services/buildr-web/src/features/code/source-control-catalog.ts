@@ -3,7 +3,7 @@ import { sourceControlAfterBranchSwitch } from './source-control-branches.ts';
 import type { SourceControlLoader } from './source-control-refresh';
 
 // Observation timestamps are evidence of a check, not a new file/history version.
-const repositoryVersion = (repository: CodeSourceControlResponse['repositories'][number] | undefined) => JSON.stringify(repository, (key, value) => key === 'readAt' ? undefined : value);
+const repositoryVersion = (repository: CodeSourceControlResponse['repositories'][number] | undefined) => JSON.stringify(repository, (key, value) => key === 'readAt' ? undefined : value && typeof value === 'object' && !Array.isArray(value) ? Object.fromEntries(Object.keys(value).sort().map(field => [field, value[field]])) : value);
 const refsVersion = (repository: CodeSourceControlResponse['repositories'][number] | undefined) => JSON.stringify(repository?.worktrees.map(worktree => [worktree.worktreeId, worktree.branch, worktree.head, worktree.upstream, worktree.ahead, worktree.behind]));
 type Repository = CodeSourceControlResponse['repositories'][number];
 const sameRepository = (previous: Repository | undefined, repository: Repository) => previous?.id === repository.id && previous.location === repository.location && (!previous.gitId || !repository.gitId || previous.gitId === repository.gitId);
@@ -51,11 +51,13 @@ function combinedCatalog(base: CodeSourceControlResponse, repositories: CodeSour
 export type SourceControlCatalogState = {
   data: CodeSourceControlResponse | null; loading: boolean; error: string; selectionReady: boolean;
   repositoryErrors: Record<string, string>; versions: Record<string, number>; refsVersions: Record<string, number>;
+  cachedRepositoryIds?: string[]; cachedReadAt?: string;
 };
 
 /** Each catalog orders observations independently for every repository. */
-export function createSourceControlCatalog(loader: SourceControlLoader) {
-  let state: SourceControlCatalogState = {data:null, loading:false, error:'', selectionReady:false, repositoryErrors:{}, versions:{}, refsVersions:{}};
+export function createSourceControlCatalog(loader: SourceControlLoader, initialData: CodeSourceControlResponse | null = null) {
+  const initialVersions = Object.fromEntries(initialData?.repositories.map(repository => [repository.id, 0]) || []);
+  let state: SourceControlCatalogState = {data:initialData, loading:false, error:'', selectionReady:false, repositoryErrors:{}, versions:initialVersions, refsVersions:initialVersions, cachedRepositoryIds:initialData?.repositories.map(repository => repository.id) || [], cachedReadAt:initialData?.readAt};
   let serial = 0, disposed = false;
   let hasCompletedScope = false, fullRead: Promise<void> | undefined;
   const latest = new Map<string, number>(), pending = new Map<string, AbortController>();
@@ -99,7 +101,9 @@ export function createSourceControlCatalog(loader: SourceControlLoader) {
       const repositories = result.repositories.map(repository => retainUnavailable(previous?.repositories.find(item => item.id === repository.id), repository));
       const value = {...result, repositories, diagnostics:[...result.diagnostics, ...repositories.flatMap(repository => (repository.diagnostics || []).filter(item => item.code === 'code_source_control_stale'))]};
       const versions = {...state.versions}, refVersions = {...state.refsVersions}, errors = {...state.repositoryErrors};
+      const cached = new Set(state.cachedRepositoryIds);
       const updateError = (repository: Repository) => {
+        if (!repository.diagnostics.some(item => item.code === 'code_source_control_stale' || item.code === 'code_source_control_refresh_failed' || item.code === 'code_source_control_read_limit' || item.code === 'code_source_control_pending')) cached.delete(repository.id);
         const failure = repository.diagnostics?.find(item => item.code === 'code_source_control_refresh_failed');
         if (failure) errors[repository.id] = failure.message;
         else delete errors[repository.id];
@@ -137,7 +141,7 @@ export function createSourceControlCatalog(loader: SourceControlLoader) {
         ], readAt);
       }
       if (!target && !phase) hasCompletedScope = true;
-      publish({...state, data, versions, refsVersions:refVersions, repositoryErrors:errors, selectionReady:!target && !phase ? true : state.selectionReady});
+      publish({...state, data, versions, refsVersions:refVersions, repositoryErrors:errors, cachedRepositoryIds:data.repositories.filter(repository => cached.has(repository.id)).map(repository => repository.id), selectionReady:!target && !phase ? true : state.selectionReady});
     };
     try {
       const value = await loader(target, request.signal, apply, !force);
@@ -153,7 +157,7 @@ export function createSourceControlCatalog(loader: SourceControlLoader) {
   };
   const refresh = (repositoryId?: string, changed = false, force = true) => {
     // Retaining a page or returning focus before inventory arrives shares the initial read.
-    if (!force && !state.data && fullRead) return fullRead;
+    if (!force && (!repositoryId || !state.data) && fullRead) return fullRead;
     const full = !state.data || !repositoryId;
     const read = readCatalog(repositoryId, changed, force);
     if (full) {

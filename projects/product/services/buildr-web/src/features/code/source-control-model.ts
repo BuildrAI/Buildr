@@ -47,7 +47,7 @@ export type SourceControlChange = ChangedFileEntry & { worktreeId?: string | nul
 export type SourceControlCommit = Omit<TaskCommit, 'taskId' | 'taskTitle'> & { worktreeId?: string | null; files: SourceControlChange[]; branches: string[]; tags: string[]; taskId?: string | null; taskTitle?: string | null; taskDiagnostic?: string | null };
 export type SourceControlRepository = {
   id: string; code: string; name: string; location: string; taskLocation?: string; taskBranch?: string | null; readonly pending?: boolean;
-  gitId?: string | null; checkoutId?: string | null; readVersion?: string; refsVersion?: string;
+  gitId?: string | null; checkoutId?: string | null; readVersion?: string; refsVersion?: string; cached?: boolean;
   branch: string | null; branches: string[]; ahead: number | null; behind: number | null;
   status: 'ready' | 'clean' | 'offline' | 'partial'; simulated: boolean; services: string[];
   clone?: { state: 'cloning' | 'failed'; diagnostic: string | null; startedAt: string | null } | null;
@@ -82,7 +82,7 @@ export function sourceControlRepositoryHasChanges(repository: SourceControlRepos
     || repository.worktrees.some(worktree => (worktree.fileCount ?? 0) > 0 || worktree.changes.length > 0);
 }
 export type SourceControlFileTarget = { repositoryId: string; worktreeId?: string; path: string; location: string; commitHash?: string; taskId?: string; area?: CodeSourceControlInput['area']; expectedRevision?: string };
-export type SourceControlObservation = { loading: boolean; error: string; readAt: string; diagnostics: string[]; truncated?: boolean };
+export type SourceControlObservation = { loading: boolean; error: string; readAt: string; diagnostics: string[]; truncated?: boolean; cached?: boolean };
 export type SourceControlReader = {
   history(input: CodeSourceControlInput, signal: AbortSignal): Promise<CodeHistoryResponse>;
   commit(input: CodeSourceControlInput, signal: AbortSignal): Promise<CodeCommitResponse>;

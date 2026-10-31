@@ -11,7 +11,7 @@ export function useSourceControlDiscard(workspaceId: string, refresh: (repositor
   const dialog = useRef<{destroy(): void} | null>(null);
   useEffect(() => { const token = ++generation.current; busy.current = false; setPending(false); return () => { if (generation.current === token) ++generation.current; dialog.current?.destroy(); dialog.current = null; }; }, [workspaceId, active]);
   async function run(repository: SourceControlRepository, worktree: SourceControlWorktree, file?: SourceControlChange) {
-    if (!active || busy.current) return;
+    if (!active || busy.current || repository.cached) return;
     busy.current = true; setPending(true);
     const token = generation.current;
     const source = {workspaceId, repositoryId: repository.id, worktreeId: worktree.worktreeId, branch: worktree.branch};
