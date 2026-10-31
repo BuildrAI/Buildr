@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { INTEGRATION_PRIMARY_SLICES, verificationSteps } from '../verification/registry.ts';
 import { auditNodeTestFileOwnership, resolveNodeTestFiles } from '../verification/test-files.ts';
@@ -107,4 +108,140 @@ test('Web and DSH complete entries discover every service-owned test file exactl
   ];
   assert.ok(uiFiles.length > 0, 'the real Vitest entry must select a UI specification');
   assert.deepEqual(auditNodeTestFileOwnership(inventoryTests(path.join(pluginRoot, 'test')), claims).findings, []);
+});
+
+test('Agent integration groups conserve discovery and select their real boundaries exactly once', async () => {
+  const { agentIntegrationChecks } = await import('../../../buildr-agent/tools/testing/verification-checks.ts');
+  const { createVerificationPlan } = await import('../verification/planner.ts');
+  const { CANDIDATE_CI_SHARDS } = await import('../verification/registry.ts');
+  const agentRoot = path.resolve(serviceRoot, '../buildr-agent');
+  const inventory = resolveNodeTestFiles(agentRoot, ['test/integration/**/*.test.ts']);
+  const claims = agentIntegrationChecks.map(check => ({ id: check.id, files: resolveNodeTestFiles(agentRoot, check.testFiles) }));
+  assert.deepEqual(auditNodeTestFileOwnership(inventory, claims).findings, []);
+  for (const check of agentIntegrationChecks) {
+    const plan = createVerificationPlan({types:['Integration'],stepIds:[check.id]});
+    assert.deepEqual(plan.steps.map((step: any) => step.id), [check.id]);
+    const step = plan.steps[0];
+    assert.deepEqual(resolveNodeTestFiles(agentRoot, step.executor.discoveredFiles.map((file: string) => path.relative(agentRoot, path.resolve(serviceRoot,file)))), claims.find(claim => claim.id === check.id)!.files);
+    assert.ok(step.schedulingCostMs > 0);
+    if (check.id.includes('startup') || check.id.includes('handoff') || check.id.includes('recovery')) {
+      assert.equal(step.resourceDemand.workers, 1);
+      assert.deepEqual(step.resources, ['agent-process-tests']);
+    }
+  }
+  const candidate = CANDIDATE_CI_SHARDS.find((shard: any) => shard.id === 'agent-service-macos');
+  for (const check of agentIntegrationChecks) assert.equal(candidate.stepIds.filter((id: string) => id === check.id).length, 1);
+  assert.ok(!candidate.stepIds.includes('agent-service'));
+});
+
+test('Agent test safety ceiling honors smaller outer grants and rejects invalid budgets', async () => {
+  const { serviceTestArguments } = await import('../../tools/testing/run-service-tests.ts');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(),'agent-test-arguments-'));
+  try {
+    for (const name of ['one','two','three']) fs.writeFileSync(path.join(root,name+'.test.mjs'),'');
+    for (const [budget, expected] of [['1',1],['2',2],['8',2]] as const) {
+      const args = serviceTestArguments(['*.test.mjs'], {cwd:root,maximumWorkers:2,env:{BUILDR_VERIFICATION_WORKER_BUDGET:budget}});
+      assert.ok(args.includes(`--test-concurrency=${expected}`));
+      assert.equal(args.filter(file => file.endsWith('.test.mjs')).length,3);
+    }
+    for (const value of ['0','-1','1.5','many']) assert.throws(() => serviceTestArguments(['*.test.mjs'], {
+      cwd:root,maximumWorkers:2,env:{BUILDR_VERIFICATION_WORKER_BUDGET:value},
+    }), /worker budget/);
+  } finally { fs.rmSync(root,{recursive:true,force:true}); }
+});
+
+test('real Agent fixture cleanup after failure reaps only its own process and preserves a peer', {timeout: 60_000}, async () => {
+  const fixture = await import('../../../buildr-agent/test/support/process-fixture.ts');
+  const make = async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(),'agent-cleanup-isolation-'));
+    const dataRoot=path.join(root,'profile'), workspace=path.join(root,'work'), packageRoot=path.join(root,'package');
+    fs.mkdirSync(workspace); fixture.copyPackage(fixture.prepared,packageRoot);
+    const source=path.resolve(serviceRoot,'../buildr-agent/test/integration/fixtures/agent-process-entry.mjs');
+    fs.copyFileSync(source,path.join(packageRoot,'build/process-fixture.mjs'));
+    fs.writeFileSync(path.join(packageRoot,'build/fixture-version.json'),JSON.stringify({version:'cleanup-proof'}));
+    const runtime=fixture.prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'}), profileId='cleanup-isolation';
+    const host=await fixture.actor({dataRoot,workspace,runtime,profileId});
+    return {root,dataRoot,workspace,runtime,profileId,host};
+  };
+  const first=await make(); let peer: Awaited<ReturnType<typeof make>> | undefined;
+  try {
+    peer=await make(); const peerPid=peer.host.info.identity.pid, firstPid=first.host.info.identity.pid;
+    const view=await first.host.call('connections.read',['first']);
+    await first.host.call('connections.connect',['first',{expectedRevision:view.revision}]);
+    const observer=await fixture.connectAgentProcess({dataRoot:first.dataRoot,profileId:first.profileId,runtime:first.runtime,sourceId:'minimal'});
+    const uncertain={...observer,operations:{...observer.operations,connections:{...observer.operations.connections,
+      disconnect:async (...args: Parameters<typeof observer.operations.connections.disconnect>)=>{
+        await observer.operations.connections.disconnect(...args);
+        throw Object.assign(new Error('controlled lost revoke receipt'),{code:'agent_connection_release_unconfirmed'});
+      },
+    }}};
+    await assert.rejects(async () => {
+      try { throw new Error('controlled scenario assertion failure'); }
+      finally { await fixture.cleanupProcessFixture({...first,observer:uncertain}); }
+    }, /controlled scenario assertion failure/);
+    assert.equal(fixture.isLive(firstPid),false); assert.equal(fs.existsSync(first.root),false);
+    assert.equal(fixture.isLive(peerPid),true);
+    const peerView=await peer.host.call('conversations.create',[peer.host.info.scope,{}]);
+    assert.equal((await peer.host.call('conversations.read',[peer.host.info.scope,peerView.id])).id,peerView.id);
+    assert.ok(fs.existsSync(peer.runtime.entry));
+  } finally {
+    if (fs.existsSync(first.root)) await fixture.cleanupProcessFixture(first);
+    if (peer) await fixture.cleanupProcessFixture(peer);
+  }
+});
+
+test('service integration diagnostics identify a real timeout while the peer completes and cleanup runs', async t => {
+  const { spawnSync } = await import('node:child_process');
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-timeout-diagnostics-'));
+  t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  const directory=path.join(root,'test/integration');fs.mkdirSync(directory,{recursive:true});
+  fs.writeFileSync(path.join(directory,'timeout.test.mjs'),`import test from 'node:test';
+import { once } from 'node:events';import fs from 'node:fs';
+const marker=new URL('./owned-marker',import.meta.url);
+test('controlled timeout',{timeout:30},async t=>{fs.writeFileSync(marker,'owned');t.after(()=>fs.rmSync(marker,{force:true}));await new Promise(resolve=>setTimeout(resolve,150));});`);
+  fs.writeFileSync(path.join(directory,'peer.test.mjs'),`import test from 'node:test';
+import { once } from 'node:events';import fs from 'node:fs';
+test('peer completes',()=>fs.writeFileSync(new URL('./peer-result',import.meta.url),'preserved'));`);
+  const result=spawnSync(process.execPath,[path.join(serviceRoot,'tools/testing/run-service-tests.ts'),'test/integration/*.test.mjs'],{
+    cwd:root,env:{...process.env,NODE_TEST_CONTEXT:undefined,BUILDR_VERIFICATION_WORKER_BUDGET:'2'},encoding:'utf8',timeout:10_000,
+  });
+  assert.equal(result.status,1,result.stderr);
+  assert.match(result.stdout,/peer completes/);
+  const progress=result.stderr.split('\n').filter(line=>line.startsWith('[buildr-integration-progress] ')).map(line=>JSON.parse(line.slice('[buildr-integration-progress] '.length)));
+  assert.ok(progress.some(value=>value.file==='timeout.test.mjs'&&value.status==='started'));
+  assert.ok(progress.some(value=>value.name==='controlled timeout'&&value.error?.timeout===true));
+  assert.equal(fs.existsSync(path.join(directory,'owned-marker')),false);
+  assert.equal(fs.readFileSync(path.join(directory,'peer-result'),'utf8'),'preserved');
+});
+
+test('lost fixture shutdown response is settled only after the owned process actually exits', async t => {
+  const { fork } = await import('node:child_process');
+  const { shutdownFixtureProcess, isLive } = await import('../../../buildr-agent/test/support/process-fixture.ts');
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-shutdown-receipt-'));
+  t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  const entry=path.join(root,'server.mjs');
+  fs.writeFileSync(entry,`import {createServer} from 'node:http';
+const server=createServer((req,res)=>{res.destroy();server.close();setTimeout(()=>process.exit(0),100);});
+server.listen(0,'127.0.0.1',()=>process.send({origin:'http://127.0.0.1:'+server.address().port}));`);
+  const child=fork(entry,{stdio:['ignore','ignore','ignore','ipc'],env:{...process.env,NODE_TEST_CONTEXT:undefined}});
+  t.after(()=>{if(child.exitCode===null&&child.signalCode===null)child.kill('SIGKILL');});
+  const [message]=await once(child,'message');
+  assert.equal(isLive(child.pid!),true);
+  await shutdownFixtureProcess({origin:message.origin,token:'fixture',identity:{pid:child.pid!,generation:'fixture'}} as any);
+  assert.equal(isLive(child.pid!),false);
+});
+
+test('complete Agent entry follows every registered group and explicit checks select only the requested group', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const { agentIntegrationChecks } = await import('../../../buildr-agent/tools/testing/verification-checks.ts');
+  const entry=path.resolve(serviceRoot,'../buildr-agent/tools/testing/run-integration.ts');
+  for (const requested of [[],['--check','agent-integration-recovery']]) {
+    const result=spawnSync(process.execPath,[entry,...requested,'--json'],{
+      env:{...process.env,NODE_TEST_CONTEXT:undefined},encoding:'utf8',timeout:10_000,
+    });
+    assert.equal(result.status,0,result.stderr);
+    const plan=JSON.parse(result.stdout);
+    assert.deepEqual(plan.steps.map((step: any)=>step.id).sort(),
+      requested.length ? ['agent-integration-recovery'] : agentIntegrationChecks.map(check=>check.id).sort());
+  }
 });

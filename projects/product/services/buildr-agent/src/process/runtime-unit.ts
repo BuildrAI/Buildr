@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomUUID, type Hash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import type { AgentRuntimeUnit } from '../execution-contracts.ts';
@@ -20,9 +20,23 @@ function files(root: string): string[] {
     }
   }; visit(root); return result;
 }
+function updateFileHash(digest: Hash, file: string, buffer: Buffer): void {
+  const fd = fs.openSync(file, 'r');
+  try {
+    let count: number;
+    while ((count = fs.readSync(fd, buffer, 0, buffer.length, null)) > 0) digest.update(buffer.subarray(0, count));
+  } finally { fs.closeSync(fd); }
+}
 function digestTree(root: string, names: string[], node: string, entry: string): string {
-  const digest = createHash('sha256'); digest.update(JSON.stringify({ entry, node: createHash('sha256').update(fs.readFileSync(node)).digest('hex') }));
-  for (const name of names) { const file = path.join(root, name); digest.update(JSON.stringify([name, fs.statSync(file).mode & 0o111])); digest.update(fs.readFileSync(file)); }
+  // One bounded buffer for the entire tree, including the retained Node binary.
+  // Every byte is still read on every validation; no digest cache weakens tamper detection.
+  const buffer = Buffer.allocUnsafe(1024 * 1024), nodeDigest = createHash('sha256');
+  updateFileHash(nodeDigest, node, buffer);
+  const digest = createHash('sha256'); digest.update(JSON.stringify({ entry, node: nodeDigest.digest('hex') }));
+  for (const name of names) {
+    const file = path.join(root, name); digest.update(JSON.stringify([name, fs.statSync(file).mode & 0o111]));
+    updateFileHash(digest, file, buffer);
+  }
   return digest.digest('hex');
 }
 /** Materialize the already prepared private package; no source or global installation fallback. */
@@ -42,8 +56,8 @@ export function prepareAgentRuntime(input: { dataRoot: string; packageRoot?: str
   if (fs.existsSync(directory)) { validateAgentRuntime(input.dataRoot, descriptor); return descriptor; }
   const stage = path.join(units, '.stage-' + randomUUID()); privateDirectory(stage);
   try {
-    for (const name of names) { const target = path.join(stage, name); fs.mkdirSync(path.dirname(target), { recursive: true }); fs.copyFileSync(path.join(packageRoot, name), target); }
-    fs.copyFileSync(node, path.join(stage, path.basename(descriptor.node))); fs.chmodSync(path.join(stage, path.basename(descriptor.node)), 0o700);
+    for (const name of names) { const target = path.join(stage, name); fs.mkdirSync(path.dirname(target), { recursive: true }); fs.copyFileSync(path.join(packageRoot, name), target, fs.constants.COPYFILE_FICLONE); }
+    fs.copyFileSync(node, path.join(stage, path.basename(descriptor.node)), fs.constants.COPYFILE_FICLONE); fs.chmodSync(path.join(stage, path.basename(descriptor.node)), 0o700);
     writePrivate(path.join(stage, 'runtime.json'), { ...descriptor, files: names });
     try { fs.renameSync(stage, directory); } catch (error) { if (!fs.existsSync(directory)) throw error; }
     validateAgentRuntime(input.dataRoot, descriptor); return descriptor;

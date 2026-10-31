@@ -79,7 +79,7 @@ test('the real complete unit executor obeys granted workers without an unbounded
   fs.copyFileSync(path.join(serviceRoot, 'test/register-development-entry.ts'), path.join(root, 'test/register-development-entry.ts'));
   fs.mkdirSync(path.join(root, 'tools/development'), { recursive: true });
   fs.copyFileSync(path.join(serviceRoot, 'tools/development/isolated-workspace-state.ts'), path.join(root, 'tools/development/isolated-workspace-state.ts'));
-  for (const file of ['tools/testing/run-service-tests.ts', 'test/verification/worker-budget.ts']) {
+  for (const file of ['tools/testing/run-service-tests.ts', 'test/verification/worker-budget.ts', 'test/verification/test-files.ts']) {
     fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
     fs.copyFileSync(path.join(serviceRoot, file), path.join(root, file));
   }

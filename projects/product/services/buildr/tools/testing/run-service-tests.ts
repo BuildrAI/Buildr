@@ -1,16 +1,29 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 import { resolveVerificationWorkerBudget } from '../../test/verification/worker-budget.ts';
+import { resolveNodeTestFiles } from '../../test/verification/test-files.ts';
 
-/** Execute exactly the service-owned file selection supplied by the project catalogue. */
-const selectors = process.argv.slice(2);
-if (selectors.length === 0) throw new Error('Provide at least one service-relative test selector.');
-const files = [...new Set(selectors.flatMap(selector => fs.globSync(selector, { cwd: process.cwd() })))].sort();
-if (files.length === 0) throw new Error(`No tests matched: ${selectors.join(', ')}`);
-const workers = Math.min(files.length, resolveVerificationWorkerBudget({ fallback: 1, maximum: Number.MAX_SAFE_INTEGER, label: 'Service tests' }));
-const args = ['--test', `--test-concurrency=${workers}`, ...files.map(file => path.resolve(file))];
-const result = spawnSync(process.execPath, args, { cwd: process.cwd(), env: process.env, stdio: 'inherit' });
-if (result.error) throw result.error;
-process.exitCode = result.status ?? 1;
+/** Service-owned discovery and execution share exactly the same selectors. */
+export function serviceTestArguments(selectors: readonly string[], { cwd = process.cwd(), maximumWorkers = Number.MAX_SAFE_INTEGER, env = process.env } = {}) {
+  const files: string[] = resolveNodeTestFiles(cwd, selectors, 'Service tests');
+  const budget = resolveVerificationWorkerBudget({ env, fallback: 1, maximum: Number.MAX_SAFE_INTEGER, label: 'Service tests' });
+  const workers = Math.min(files.length, maximumWorkers, budget);
+  const integration = files.some(file => file.includes(`${path.sep}test${path.sep}integration${path.sep}`));
+  const reporters = integration ? ['--test-reporter=spec', '--test-reporter-destination=stdout',
+    `--test-reporter=${pathToFileURL(path.resolve(import.meta.dirname, '../../test/verification/integration-progress-reporter.ts')).href}`,
+    '--test-reporter-destination=stderr'] : [];
+  return ['--test', `--test-concurrency=${workers}`, ...reporters, ...files];
+}
+
+export function runServiceTests(selectors: readonly string[], options: { cwd?: string; maximumWorkers?: number; env?: NodeJS.ProcessEnv } = {}) {
+  const args = serviceTestArguments(selectors, options);
+  const result = spawnSync(process.execPath, args, { cwd: options.cwd ?? process.cwd(), env: options.env ?? process.env, stdio: 'inherit' });
+  if (result.error) throw result.error;
+  return result.status ?? 1;
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === import.meta.filename) {
+  process.exitCode = runServiceTests(process.argv.slice(2));
+}

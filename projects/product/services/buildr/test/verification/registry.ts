@@ -432,12 +432,16 @@ const packageVerifier: any = (selector: any) => {
 const concurrency: any = (global: any, workspaceHeavy: any, workspaceSaturating: any, innerConcurrency: any, capacities: any) => Object.freeze({
   global,
   classes: Object.freeze({ default: global, 'cpu-heavy': 2, 'workspace-heavy': workspaceHeavy, network: 2, exclusive: 1 }),
-  resources: Object.freeze({ 'workspace-saturating': workspaceSaturating, 'task-lifecycle-heavy': 1, 'app-runtime': 1, 'browser-runtime': 2 }),
+  resources: Object.freeze({ 'workspace-saturating': workspaceSaturating, 'task-lifecycle-heavy': 1, 'app-runtime': 1, 'browser-runtime': 2, 'agent-process-tests': 2 }),
   innerConcurrency: Object.freeze(innerConcurrency),
   capacities: Object.freeze(capacities),
 });
 
 export const VERIFICATION_RESOURCE_CONTRACTS: any = Object.freeze({
+  'agent-process-tests': Object.freeze({
+    requiredFootprints: Object.freeze(['filesystem', 'cli']), isolation: 'unique-temporary-root',
+    resetBurdens: Object.freeze(['single-cleanup']),
+  }),
   'workspace-saturating': Object.freeze({
     requiredFootprints: Object.freeze(['workspace-lifecycle']),
     isolation: 'unique-temporary-root',
@@ -885,9 +889,10 @@ const serviceSteps = serviceSets.flatMap(([service, checks]) => checks.map((chec
   const footprints = ['Static', 'Unit'].includes(check.type) ? [] : ['filesystem', 'cli'];
   return Object.freeze({
     dependsOn: [], groups: [], profiles: inherited?.profiles ?? (service === 'dsh-plugin' ? [] : ['candidate']),
-    contexts: [], resources: [], developmentRunners: [], platformScope: COMMON_PLATFORM_SCOPE,
+    contexts: [], resources: check.resources ?? [], developmentRunners: [], platformScope: COMMON_PLATFORM_SCOPE,
     isolationMode: footprints.length ? 'sandbox' : 'none', resetStrategy: footprints.length ? 'recreate' : 'none',
-    parallelSafety: 'worker-safe', concurrencyClass: 'cpu-heavy', resourceDemand: inherited?.resourceDemand ?? { workers: 1, processes: 1 },
+    parallelSafety: 'worker-safe', concurrencyClass: 'cpu-heavy', resourceDemand: check.resourceDemand ?? inherited?.resourceDemand ?? { workers: 1, processes: 1 },
+    ...(check.schedulingCostMs ? { schedulingCostMs: check.schedulingCostMs } : {}),
     id: check.id, name: check.name, service, serviceRoot: root, serviceOwned: true, testFiles: check.testFiles ?? [], target: 'source',
     ...(check.selection ? { selection: check.selection } : {}),
     inputs: [...new Set([...(inherited?.inputs ?? []), ...(check.sourcePaths ?? ['src/**']).map(input), ...(check.testFiles ?? []).map(input), input('tools/testing/verification-checks.ts')])],
@@ -905,7 +910,10 @@ const serviceSteps = serviceSets.flatMap(([service, checks]) => checks.map((chec
   });
 }));
 const replacedServiceIds = new Set([...serviceSteps.map((step: any) => step.id), ...serviceSets.flatMap(([, checks]) => checks.flatMap((check: any) => check.replaces ?? []))]);
-const serviceReplacements = new Map<string, string[]>(serviceSets.flatMap(([, checks]) => checks.flatMap((check: any) => (check.replaces ?? []).map((id: string) => [id, [check.id]]))));
+const serviceReplacements = new Map<string, string[]>();
+for (const [, checks] of serviceSets) for (const check of checks) for (const id of check.replaces ?? []) {
+  serviceReplacements.set(id, [...(serviceReplacements.get(id) ?? []), check.id]);
+}
 // Successful local observations are scheduling estimates, never admission thresholds.
 const browserSchedulingCostMs: Record<string, number> = {"task": 181000, "code-explorer": 175000, "code": 228000};
 const browserSteps = BROWSER_SELECTORS.map((selector: string) => Object.freeze({
