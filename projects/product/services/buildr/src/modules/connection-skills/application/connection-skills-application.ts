@@ -17,6 +17,7 @@ import { BrowserAuthorization } from '../../browser-authorization/application/br
 type Catalog = ReturnType<typeof createConnectionCatalog>;
 type ProgramAvailability = Record<string, { ready: boolean; diagnostics: string[] }>;
 type ConnectionObservation = { catalog: ConnectionCatalogResult; programs: Map<ConnectionCatalogEntry, ProgramAvailability> };
+type RunOptions = { id: string; expectedRevision: string; program?: string; args: string[]; contexts?: Record<string, { id: string; revision: string }>; input?: string | Buffer; timeoutMs?: number };
 function requireDefinitionObservation(expected: Expected): void {
   if (typeof expected.definitionRevision !== 'string' || !expected.definitionRevision) throw failure('connection_skill_revision_required', '必须提供已观察的接入声明版本。', 400);
 }
@@ -248,9 +249,51 @@ export class ConnectionSkillsApplication {
       return this.getObserved(scope, id, currentObservation);
     });
   }
-  async authorize(root: string, id: string, raw: unknown, options: { signal?: AbortSignal } = {}) {
+  /** Prepare authentication only. Never executes, retries or resumes a business operation. */
+  async ensureAuthentication(root: string, id: string, raw: unknown, options: { signal?: AbortSignal } = {}) {
+    const input = object(raw), expected = object(input.expected) as Expected;
+    if (Object.keys(input).some(key => !['expected', 'parameters', 'browserMode'].includes(key)) || Object.keys(expected).some(key => !['teamRevision', 'localRevision', 'definitionRevision'].includes(key))) throw failure('connection_skill_authorization_input_invalid', '会话准备只接收准确观察、声明参数及可选browserMode。', 400);
+    if (input.browserMode !== undefined && !['headless', 'interactive'].includes(input.browserMode as string)) throw failure('connection_skill_authorization_input_invalid', '浏览器模式不合法。', 400);
+    requireDefinitionObservation(expected);
+    if (typeof expected.teamRevision !== 'string' || typeof expected.localRevision !== 'string') throw failure('connection_skill_revision_required', '必须提供准确的连接及个人认证观察。', 400);
+    const scope = this.resolveScope(root), initial = this.observedAuthentication(scope, identifier(id), expected), authorization = initial.entry.definition.authentication.authorization;
+    if (!authorization?.sessionCheck || !authorization.identityFields?.length) throw failure('connection_skill_session_preparation_unavailable', '此方法尚未声明安全的会话检查与稳定身份字段。');
+    if (!initial.instance.enabled || !initial.entry.enabled) throw failure('connection_skill_disabled', '此连接已停用。');
+    const parameterFields = authorization.parameters || [];
+    const parameters = validateConfig(parameterFields, input.parameters ?? {}, { requiredFields: new Set([...parameterFields.filter(field => field.required).map(field => field.key), ...(authorization.sessionCheck.requiredParameters || [])]) });
+    const assertCurrent = (observed: Expected) => {
+      if (options.signal?.aborted) throw failure('connection_skill_authorization_cancelled', '会话准备已取消。');
+      const current = this.resolveScope(root);
+      if (current.rootPath !== scope.rootPath || current.workspaceId !== scope.workspaceId) throw failure('connection_skill_context_changed', '工作空间身份已变化。');
+      this.observedAuthentication(scope, id, observed);
+    };
+    const check = async (instance: ReturnType<ConnectionSkillsApplication['get']>['instance']) => {
+      const observed = { teamRevision: instance.teamRevision, localRevision: instance.localRevision, definitionRevision: instance.definitionRevision };
+      assertCurrent(observed);
+      const result = await this.runSelected(root, { id, expectedRevision: instance.revision, program: authorization.sessionCheck!.program, args: authorization.sessionCheck!.args, timeoutMs: 45000 }, parameters);
+      assertCurrent(observed);
+      let output: Record<string, unknown>;
+      try { output = object(JSON.parse(result.stdout)); } catch { throw failure('connection_skill_session_check_unknown', '会话检查未返回有效结果；不会自动登录。'); }
+      if (result.status !== 'exited' || result.exitCode !== 0 || Object.keys(output).length !== 1 || typeof output.sessionStatus !== 'string' || !['valid', 'expired', 'unknown', 'identity-mismatch'].includes(output.sessionStatus)) throw failure('connection_skill_session_check_unknown', '会话检查结果不能确认；不会自动登录。');
+      if (output.sessionStatus === 'unknown') throw failure('connection_skill_session_check_unknown', '无法确认会话状态；不会自动登录。');
+      if (output.sessionStatus === 'identity-mismatch') throw failure('connection_skill_authorization_identity_changed', '站点返回的身份与本人认证不符；不会自动切换身份。');
+      return output.sessionStatus;
+    };
+    assertCurrent(expected);
+    if (initial.local.present) {
+      // Invalid or differently bound personal groups require explicit recovery, not fallback.
+      this.group(scope, initial.instance, initial.entry, initial.local.group);
+      const current = this.getObserved(scope, id).instance;
+      if (await check(current) === 'valid') return { status: 'success' as const, renewed: false, instance: current };
+    }
+    assertCurrent(expected);
+    const authorized = await this.authorize(root, id, input, { signal: options.signal, sameIdentity: true });
+    if (await check(authorized.instance) !== 'valid') throw Object.assign(failure('connection_skill_session_not_ready', '新认证已保存但目标会话尚未就绪；请先调查，不自动重试。'), { details: { authenticationSaved: true } });
+    return { status: 'success' as const, renewed: true, instance: authorized.instance };
+  }
+  async authorize(root: string, id: string, raw: unknown, options: { signal?: AbortSignal; sameIdentity?: boolean } = {}) {
     const scope = this.resolveScope(root), input = object(raw), expected = object(input.expected) as Expected;
-    if (Object.keys(input).some(key => !['expected', 'browserMode'].includes(key)) || Object.keys(expected).some(key => !['teamRevision', 'localRevision', 'definitionRevision'].includes(key))) throw failure('connection_skill_authorization_input_invalid', '授权只接收准确的三项当前观察及可选browserMode。', 400);
+    if (Object.keys(input).some(key => !['expected', 'browserMode', 'parameters'].includes(key)) || Object.keys(expected).some(key => !['teamRevision', 'localRevision', 'definitionRevision'].includes(key))) throw failure('connection_skill_authorization_input_invalid', '授权只接收准确观察、声明参数及可选browserMode。', 400);
     if (input.browserMode !== undefined && !['headless', 'interactive'].includes(input.browserMode as string)) throw failure('connection_skill_authorization_input_invalid', 'browserMode必须为headless或interactive。', 400);
     identifier(id); requireDefinitionObservation(expected);
     if (typeof expected.teamRevision !== 'string' || typeof expected.localRevision !== 'string') throw failure('connection_skill_revision_required', '授权必须提供连接和本机个人认证的当前观察。', 400);
@@ -258,6 +301,12 @@ export class ConnectionSkillsApplication {
     if (!authorization) throw failure('connection_skill_authorization_unavailable', '此接入未声明个人授权程序。', 404);
     if (!initial.instance.enabled || !initial.entry.enabled) throw failure('connection_skill_disabled', '此连接已停用。');
     this.assertSource(initial.entry, 'personal');
+    const parameters = validateConfig(authorization.parameters || [], input.parameters ?? {});
+    let previous: Values | undefined;
+    if (initial.local.present && (authorization.reuseFields?.length || options.sameIdentity)) {
+      try { previous = this.group(scope, initial.instance, initial.entry, initial.local.group); }
+      catch (cause) { if (options.sameIdentity) throw cause; }
+    }
     const requiredFields = new Set([...initial.entry.definition.authentication.targetFields, ...(authorization.inputs || []).map(reference => reference.slice('config.'.length))]);
     const config = validateConfig(initial.entry.definition.config.fields, initial.instance.config, { requiredFields });
     const program = resolveProgram(scope.rootPath, initial.entry, authorization.program), checked = checkProgram(program);
@@ -279,6 +328,8 @@ export class ConnectionSkillsApplication {
       protocolVersion: CONNECTION_AUTHORIZATION_PROTOCOL, callId: crypto.randomUUID(), workspace: { id: scope.workspaceId, root: scope.rootPath },
       definition: { skillAssetIdentity: initial.entry.skill.assetIdentity, definitionId: initial.entry.definition.definitionId, revision: initial.entry.revision },
       connection: { id, config, revisions: { teamRevision: expected.teamRevision, localRevision: expected.localRevision, definitionRevision: expected.definitionRevision } }, privateStateRoot: directory,
+      ...(authorization.parameters ? { authorizationParameters: parameters } : {}),
+      ...(previous && authorization.reuseFields ? { reusableAuthentication: Object.fromEntries(authorization.reuseFields.map(key => [key, previous![key]])) } : {}),
     };
     let response: { status: 'success'; instance: ReturnType<ConnectionSkillsApplication['get']>['instance']; accountLabel?: string; warnings?: string[] } | undefined;
     let authorizationError: unknown;
@@ -291,6 +342,7 @@ export class ConnectionSkillsApplication {
       let values: Values;
       try { values = validateAuthentication(initial.entry.definition.authentication.fields, rawValues); }
       catch { throw failure('connection_skill_authorization_result_invalid', '授权程序未返回声明要求的完整认证组；未替换个人认证。'); }
+      if (options.sameIdentity && previous && authorization.identityFields?.some(key => JSON.stringify(values[key]) !== JSON.stringify(previous![key]))) throw failure('connection_skill_authorization_identity_changed', '共享登录身份与原本人认证不同；未替换原认证。');
       response = this.files.lock(scope, id, () => {
         const current = reobserve();
         const group = { targetBinding: this.target(scope, current.instance, current.entry, values), values };
@@ -447,7 +499,8 @@ export class ConnectionSkillsApplication {
     const scope = this.resolveScope(root), observation = this.observe(scope), view = this.getObserved(scope, id, observation).instance, entry = this.entry(scope, view.binding, undefined, false, observation), resolved = resolveProgram(scope.rootPath, entry, program);
     return runProgram(resolved, resolved.declaration.helpArgs || ['--help'], { timeoutMs: 5000 });
   }
-  async run(root: string, options: { id: string; expectedRevision: string; program?: string; args: string[]; contexts?: Record<string, { id: string; revision: string }>; input?: string | Buffer; timeoutMs?: number }) {
+  async run(root: string, options: RunOptions) { return this.runSelected(root, options); }
+  private async runSelected(root: string, options: RunOptions, authorizationParameters?: Values) {
     if (typeof options.expectedRevision !== 'string') throw failure('connection_skill_revision_required', '运行必须提供所观察的连接版本。', 400);
     const scope = this.resolveScope(root), observation = this.observe(scope), selected = this.selected(scope, identifier(options.id), options.expectedRevision, observation), programId = options.program || 'cli';
     const selections = { primary: selected, ...Object.fromEntries(Object.entries(options.contexts || {}).map(([name, value]) => {
@@ -461,7 +514,7 @@ export class ConnectionSkillsApplication {
     const program = resolveProgram(scope.rootPath, selected.entry, programId);
     if (program.declaration.contextProtocol === CONNECTION_AUTHORIZATION_PROTOCOL) throw failure('connection_skill_program_protocol', '授权专用程序不能接收普通连接认证，请使用明确的授权入口。', 400);
     const check = checkProgram(program); if (!check.ready) throw failure('connection_skill_dependency_version', check.diagnostics.join(' '));
-    const context = { protocolVersion: 'buildr.connection-context/v1', callId: crypto.randomUUID(), workspace: { id: scope.workspaceId, root: scope.rootPath }, definition: { skillAssetIdentity: selected.entry.skill.assetIdentity, definitionId: selected.entry.definition.definitionId, revision: selected.entry.revision }, connections: Object.fromEntries(Object.entries(selections).map(([name, value]) => [name, value.context])), privateStateRoot: this.files.privateState(scope, selected.entry.skill.assetIdentity) };
+    const context = { protocolVersion: 'buildr.connection-context/v1', callId: crypto.randomUUID(), workspace: { id: scope.workspaceId, root: scope.rootPath }, definition: { skillAssetIdentity: selected.entry.skill.assetIdentity, definitionId: selected.entry.definition.definitionId, revision: selected.entry.revision }, connections: Object.fromEntries(Object.entries(selections).map(([name, value]) => [name, value.context])), privateStateRoot: this.files.privateState(scope, selected.entry.skill.assetIdentity), ...(authorizationParameters === undefined ? {} : { authorizationParameters }) };
     const revalidate = () => {
       const currentScope = this.resolveScope(root); if (currentScope.rootPath !== scope.rootPath || currentScope.workspaceId !== scope.workspaceId) throw failure('connection_skill_context_changed', '工作空间身份已变化。');
       const currentObservation = this.observe(scope);

@@ -21,7 +21,7 @@ export interface ConnectionProgram {
 }
 export type ConnectionFieldReference = `config.${string}` | `authentication.${string}`;
 export type AuthenticationSource = 'team' | 'personal';
-export interface ConnectionAuthorization { program: string; args?: string[]; inputs?: `config.${string}`[]; label: string; reauthorizeLabel: string; timeoutMs?: number; accountLabelField?: string; browserProfile?: string }
+export interface ConnectionAuthorization { program: string; args?: string[]; inputs?: `config.${string}`[]; label: string; reauthorizeLabel: string; timeoutMs?: number; accountLabelField?: string; browserProfile?: string; parameters?: ConnectionField[]; reuseFields?: string[]; identityFields?: string[]; sessionCheck?: { program: string; args: string[]; effect: 'read'; requiredParameters?: string[] } }
 export interface ConnectionPresentationGroup { id: string; title: string; fields: ConnectionFieldReference[]; collapsed?: boolean }
 export interface ConnectionHook { program: string; args: string[]; effect: 'read'; inputs?: ConnectionFieldReference[] }
 export interface ConnectionDefinition {
@@ -127,7 +127,7 @@ export function parseConnectionDefinition(content: string): ConnectionDefinition
   }
   if (value.authentication.authorization !== undefined) {
     const authorization = value.authentication.authorization;
-    closed(authorization, ['program', 'args', 'inputs', 'label', 'reauthorizeLabel', 'timeoutMs', 'accountLabelField', 'browserProfile'], 'authentication.authorization');
+    closed(authorization, ['program', 'args', 'inputs', 'label', 'reauthorizeLabel', 'timeoutMs', 'accountLabelField', 'browserProfile', 'parameters', 'reuseFields', 'identityFields', 'sessionCheck'], 'authentication.authorization');
     if (authorization.browserProfile !== undefined) ensure(typeof authorization.browserProfile === 'string' && /^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(authorization.browserProfile), 'authentication.authorization.browserProfile', '共享浏览器配置必须使用明确的合法编号。');
     ensure(value.authentication.allowedSources?.length === 1 && value.authentication.allowedSources[0] === 'personal', 'authentication.authorization', '授权程序只允许本机个人认证。');
     ensure(key(authorization.program) && Object.hasOwn(value.programs, authorization.program), 'authentication.authorization.program', '授权必须引用已声明程序。');
@@ -141,6 +141,28 @@ export function parseConnectionDefinition(content: string): ConnectionDefinition
     }
     if (authorization.timeoutMs !== undefined) ensure(Number.isSafeInteger(authorization.timeoutMs) && authorization.timeoutMs >= 1000 && authorization.timeoutMs <= 300_000, 'authentication.authorization.timeoutMs', '授权等待须为 1000 到 300000 毫秒。');
     if (authorization.accountLabelField !== undefined) ensure(value.authentication.fields.some((field: ConnectionField) => field.key === authorization.accountLabelField && field.type !== 'secret'), 'authentication.authorization.accountLabelField', '账号展示只能引用已声明的非秘密认证字段。');
+    if (authorization.parameters !== undefined) {
+      authorization.parameters = fields(authorization.parameters, false);
+      ensure(authorization.parameters.length <= 16 && authorization.parameters.every((field: ConnectionField) => !field.optionsFrom && !field.dependsOn), 'authentication.authorization.parameters', '授权参数必须为有限的独立非秘密字段。');
+    }
+    for (const name of ['reuseFields', 'identityFields']) if (authorization[name] !== undefined) {
+      const selected = authorization[name];
+      strings(selected, `authentication.authorization.${name}`);
+      ensure(selected.length > 0 && selected.length <= 32 && new Set(selected).size === selected.length && selected.every((key: string) => value.authentication.fields.some((field: ConnectionField) => field.key === key && (name !== 'identityFields' || field.type !== 'secret' && field.required))), `authentication.authorization.${name}`, '复用字段必须已声明；稳定身份必须是必填非秘密认证字段。');
+    }
+    if (authorization.sessionCheck !== undefined) {
+      closed(authorization.sessionCheck, ['program', 'args', 'effect', 'requiredParameters'], 'authentication.authorization.sessionCheck');
+      const checker = value.programs[authorization.sessionCheck.program];
+      ensure(key(authorization.sessionCheck.program) && checker && checker.contextProtocol !== CONNECTION_AUTHORIZATION_PROTOCOL, 'authentication.authorization.sessionCheck', '会话检查必须引用普通私有程序。');
+      strings(authorization.sessionCheck.args, 'authentication.authorization.sessionCheck.args');
+      ensure(authorization.sessionCheck.effect === 'read', 'authentication.authorization.sessionCheck.effect', '会话检查必须声明只读。');
+      if (authorization.sessionCheck.requiredParameters !== undefined) {
+        const required = authorization.sessionCheck.requiredParameters;
+        strings(required, 'authentication.authorization.sessionCheck.requiredParameters');
+        ensure(new Set(required).size === required.length && required.every((key: string) => authorization.parameters?.some((field: ConnectionField) => field.key === key)), 'authentication.authorization.sessionCheck.requiredParameters', '检查必填参数必须引用已声明参数且不重复。');
+      }
+      ensure(authorization.identityFields?.length > 0, 'authentication.authorization.identityFields', '按需续期必须声明稳定身份字段。');
+    }
   }
   if (value.hooks !== undefined) {
     ensure(object(value.hooks) && Object.keys(value.hooks).length <= 32, 'hooks', '槽位必须是有界声明对象。');

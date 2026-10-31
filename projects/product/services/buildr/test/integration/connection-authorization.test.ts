@@ -72,6 +72,129 @@ process.on('message', async message => {
   return { root, workspace, directory, declaration, script, definition, writeDefinition, app, instance, expected, read, old, authorize, started, changeSource: () => { sourceIdentity = 'source:changed'; } };
 }
 
+function readinessFixture(t: { after(fn: () => void): void }, mode = 'expired') {
+  const f = fixture(t, mode);
+  Object.assign(f.definition.authentication.authorization, {
+    parameters: [{ key: 'environment', label: '环境', type: 'enum', values: ['qa', 'prod'] }],
+    reuseFields: ['password'], identityFields: ['username'],
+    sessionCheck: { program: 'cli', args: ['session-status'], effect: 'read', requiredParameters: ['environment'] },
+  });
+  f.writeDefinition();
+  fs.writeFileSync(path.join(f.directory, 'scripts/client.mjs'), `
+process.on('message', m => {
+ if(m.type !== 'buildr.connection-context')return;
+ const c=m.context, p=c.connections.primary;
+ const mode=p.config.mode;
+ let sessionStatus=mode==='invalid-check'?['expired']:mode==='unknown'?'unknown':mode==='mismatch'?'identity-mismatch':mode==='always-expired'?'expired':p.authentication.values.password==='new-secret'||mode==='valid'?'valid':'expired';
+ if(c.authorizationParameters.environment!=='qa' && c.authorizationParameters.environment!=='prod')process.exit(19);
+ console.log(JSON.stringify({sessionStatus}));process.disconnect();
+});`);
+  fs.writeFileSync(f.script, `
+import fs from 'node:fs';
+process.on('message', m => {
+ if(m.type !== 'buildr.connection-authorization-context')return;
+ const c=m.context;
+ if(c.authorizationParameters.environment!=='qa')process.exit(12);
+ if(c.reusableAuthentication && Object.keys(c.reusableAuthentication).join(',')!=='password')process.exit(13);
+ if('authentication' in c.connection)process.exit(14);
+ fs.appendFileSync(c.workspace.root+'/attempts','1');
+ const values={username:c.connection.config.mode==='switch-user'?'another-user':'old-user',password:'new-secret'};
+ process.send({type:'buildr.connection-auth-result',callId:c.callId,status:'success',values},()=>process.disconnect());
+});`);
+  const ensure = (parameters = { environment: 'qa' }, signal?: AbortSignal) => f.app.ensureAuthentication(f.workspace, f.instance.id, { expected: f.expected(), parameters }, { signal });
+  return { ...f, ensure, attempts: () => fs.existsSync(path.join(f.workspace, 'attempts')) ? fs.readFileSync(path.join(f.workspace, 'attempts'), 'utf8').length : 0 };
+}
+
+test('按需会话：有效复用、缺失首次获取、过期单次续期，无业务动作', async t => {
+  for (const mode of ['valid', 'expired', 'missing']) {
+    const f = readinessFixture(t, mode);
+    if (mode !== 'missing') f.old();
+    const result = await f.ensure();
+    assert.equal(result.renewed, mode !== 'valid');
+    assert.equal(f.attempts(), mode === 'valid' ? 0 : 1);
+    assert.equal(f.read().group?.values.username, 'old-user');
+    assert.ok(!JSON.stringify(result).includes('new-secret'));
+    assert.ok(!fs.existsSync(path.join(f.workspace, 'business-write')));
+  }
+});
+test('未知、身份不符和参数错误不自动登录，失败只影响当前目标', async t => {
+  for (const mode of ['unknown', 'invalid-check', 'mismatch']) {
+    const f = readinessFixture(t, mode); f.old();
+    await assert.rejects(f.ensure(), { code: mode === 'mismatch' ? 'connection_skill_authorization_identity_changed' : 'connection_skill_session_check_unknown' });
+    assert.equal(f.attempts(), 0); assert.equal(f.read().group?.values.password, 'old-secret');
+  }
+  const f = readinessFixture(t); f.old();
+  await assert.rejects(f.ensure({ environment: 'other' }), { code: 'connection_field_invalid' });
+  await assert.rejects(f.app.ensureAuthentication(f.workspace, f.instance.id, { expected: f.expected() }), { code: 'connection_field_required' });
+  assert.equal(f.attempts(), 0);
+});
+test('自动续期身份切换不保存；新组已保存但仍过期不重试', async t => {
+  const f = readinessFixture(t, 'switch-user'); f.old();
+  await assert.rejects(f.ensure(), { code: 'connection_skill_authorization_identity_changed' });
+  assert.equal(f.read().group?.values.username, 'old-user'); assert.equal(f.read().group?.values.password, 'old-secret'); assert.equal(f.attempts(), 1);
+  const other = readinessFixture(t, 'always-expired'); other.old();
+  await assert.rejects(other.ensure(), { code: 'connection_skill_session_not_ready' });
+  assert.equal(other.read().group?.values.password, 'new-secret'); assert.equal(other.attempts(), 1);
+});
+test('会话准备仍要求准确观察、取消保护和显式声明，不修复旧绑定', async t => {
+  const f = readinessFixture(t); f.old();
+  const stale = f.expected(); f.old();
+  await assert.rejects(f.app.ensureAuthentication(f.workspace, f.instance.id, { expected: stale, parameters: { environment: 'qa' } }));
+  const controller = new AbortController(); controller.abort();
+  await assert.rejects(f.ensure({ environment: 'qa' }, controller.signal), { code: 'connection_skill_authorization_cancelled' });
+  assert.equal(f.attempts(), 0);
+  const old = fixture(t);
+  await assert.rejects(old.app.ensureAuthentication(old.workspace, old.instance.id, { expected: old.expected() }), { code: 'connection_skill_session_preparation_unavailable' });
+});
+test('声明拒绝秘密参数、未知复用字段、秘密身份与非只读检查', t => {
+  const f = readinessFixture(t);
+  for (const change of [
+    (a: any) => { a.parameters[0].type = 'secret'; },
+    (a: any) => { a.reuseFields = ['unknown']; },
+    (a: any) => { a.identityFields = ['password']; },
+    (a: any) => { a.sessionCheck.effect = 'write'; },
+    (a: any) => { a.sessionCheck.program = 'authorize'; },
+    (a: any) => { a.sessionCheck.requiredParameters = ['unknown']; },
+  ]) { const d = structuredClone(f.definition); change(d.authentication.authorization); assert.throws(() => parseConnectionDefinition(YAML.stringify(d))); }
+});
+test('新增旧字段接收方或扩大复用字段需要重新绑定，默认授权程序仍不接收旧组', async t => {
+  const f = fixture(t); f.old();
+  const before = f.read();
+  f.definition.authentication.authorization.reuseFields = ['password']; f.writeDefinition();
+  const current = f.app.get(f.workspace, f.instance.id).instance;
+  assert.throws(() => f.app.useSelected(f.workspace, { id: current.id, expectedRevision: current.revision }, () => assert.fail('旧组不能交给新增接收方')));
+  assert.deepEqual(f.read(), before);
+  // Explicit authorization may start without reusing the now-incompatible old group.
+  await f.authorize();
+  const after = f.app.get(f.workspace, f.instance.id).instance;
+  f.app.useSelected(f.workspace, { id: after.id, expectedRevision: after.revision }, ({ connection }) => assert.equal(connection.authentication.values.password, 'new-secret'));
+  f.definition.authentication.authorization.reuseFields.push('username'); f.writeDefinition();
+  const expanded = f.app.get(f.workspace, f.instance.id).instance;
+  assert.throws(() => f.app.useSelected(f.workspace, { id: expanded.id, expectedRevision: expanded.revision }, () => assert.fail('扩大旧字段交付范围不能静默沿用旧授权')));
+});
+test('CLI与HTTP的ensure共用应用，返回新观察而不派发专业动作', async t => {
+  const f = readinessFixture(t, 'valid'); f.old();
+  const input = { expected: f.expected(), parameters: { environment: 'qa' } }, file = path.join(f.workspace, 'ensure.json');
+  fs.writeFileSync(file, JSON.stringify(input));
+  const cli = createConnectionSkillsCli(f.app)[0]!, before = process.stdout.write;
+  let output = '';
+  process.stdout.write = ((...args: Parameters<typeof process.stdout.write>) => {
+    const value = args[0];
+    if (typeof value === 'string' && value.startsWith('{\n  "schemaVersion": "buildr.connection-skill-result/v1"')) { output += value; return true; }
+    return before.apply(process.stdout, args);
+  }) as typeof process.stdout.write;
+  try { await cli.run(null, { argv: ['node', 'buildr', 'connection-skill', 'auth', 'ensure', '--target', f.workspace, '--connection', f.instance.id, '--file', file] }); }
+  finally { process.stdout.write = before; }
+  assert.equal(JSON.parse(output).renewed, false);
+  const http = await createConnectionSkillsHttp(f.app).handle({
+    root: f.workspace, suffix: `/connection-skills/instances/${f.instance.id}/auth/ensure`, searchParams: new URLSearchParams(),
+    request: { method: 'POST' }, authorizeWrite() {}, readJsonBody: async () => input,
+  });
+  assert.equal(http?.status, 200);
+  assert.equal((http?.body as any).renewed, false);
+  assert.equal(f.attempts(), 0);
+});
+
 test('声明拒绝不兼容授权来源、普通协议、认证输入、秘密标签和非法时限', t => {
   const f = fixture(t);
   for (const change of [

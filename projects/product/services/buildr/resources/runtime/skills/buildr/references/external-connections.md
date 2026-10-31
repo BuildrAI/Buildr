@@ -8,6 +8,8 @@
 
 声明 `authentication.authorization` 的方法通过明确的授权或重新授权动作接收个人会话，使用 `auth authorize --connection <id> --file <含expected的文件>`；不要要求用户复制内部编号或令牌。首次可先保存必要非秘密配置，再授权和发现业务范围。取消、超时或提交前失败保留原组，重新读取后再判断；保存后持久化待核验不等于旧组仍在，不能盲目重授权。环境展示被方法隐藏时，业务操作仍需明确目标环境。
 
+方法同时声明 `sessionCheck` 和 `identityFields` 时，正常使用前由智能体自动调用 `connection-skill auth ensure --connection <id> --file <含expected及声明parameters的文件>`，而不是要求用户逐连接点授权。有效会话直接复用，缺失或明确过期时后台取得一次，再返回最新公开实例与观察版本。只有明确需要本人交互时才提供 `browserMode: interactive`。网络、权限和身份错误不自动登录；会话准备不执行或重放专业操作，实际动作仍需自己的授权与写前保护。旧方法未声明此能力时不能假称自动续期已支持。
+
 | 目标 | 使用方法 |
 | --- | --- |
 | MySQL 连接测试、数据库发现或受控变更 | 加载绑定的 `mysql-connection`，核对随包程序 `buildr-mysql`；结构浏览、只读查询及本机偏好使用独立 `buildr mysql-query --help`。变更只经连接程序在非生产环境执行（标记为生产时拒绝），查询工具始终只读。 |

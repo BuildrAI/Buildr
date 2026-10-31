@@ -21,7 +21,7 @@ export function createConnectionSkillsCli(application: ConnectionSkillsApplicati
       'run 的标准输入完整交给专业程序；多个上下文分别明确编号和观察版本。',
       'help 来自所选程序，不交付认证；list/get 仅返回遮蔽认证的观察，源已登记不代表程序已安装或连接已验证。',
       'auth migrate 仅在进程内转移完整组；auth relocate 将本 profile 的旧个人密文迁入工作空间 .buildr/local，均以 --file 提供准确观察，不输出秘密。',
-      'auth authorize --connection <id> --file <json-file|-> 明确启动所声明授权程序；输入 {expected:{teamRevision,localRevision,definitionRevision},browserMode?:headless|interactive}；共享浏览器默认headless，新认证只经私有通道保存。',
+      'auth authorize|ensure --connection <id> --file <json-file|-> 输入 {expected:{teamRevision,localRevision,definitionRevision},parameters?:{声明参数},browserMode?:headless|interactive}；ensure只准备认证，不执行或重放业务动作。',
       'browser list|inspect|create|adopt|reset --file <json-file|->：共享配置本机管理，输入{id,expectedRevision,directory?}；重置整个共享配置还须confirmSharedReset:true。',
     ], match: ({ domain }: { domain?: string }) => domain === 'connection-skill',
     async run(_runtime: unknown, context: { argv: string[] }) {
@@ -33,7 +33,7 @@ export function createConnectionSkillsCli(application: ConnectionSkillsApplicati
         definitions: ['--asset', '--definition'], list: [], get: ['--connection'], create: ['--file'], update: ['--connection', '--file'], remove: ['--connection', '--file', '--expected-revision'],
         browser: ['--file'], auth: ['--connection', '--file'], check: ['--connection', '--program'], help: ['--connection', '--program'], test: ['--connection', '--file'], discover: ['--connection', '--file', '--hook'], run: ['--connection', '--expected-revision', '--program', '--context', '--timeout-ms'],
       };
-      if (!actionFlags[action] || action === 'definitions' && !['list', 'inspect'].includes(subaction || '') || action === 'auth' && !['authorize', 'set', 'clear', 'use-team', 'migrate', 'relocate'].includes(subaction || '')) throw failure('connection_skill_cli_invalid', '未知连接技能动作。', 400);
+      if (!actionFlags[action] || action === 'definitions' && !['list', 'inspect'].includes(subaction || '') || action === 'auth' && !['authorize', 'ensure', 'set', 'clear', 'use-team', 'migrate', 'relocate'].includes(subaction || '')) throw failure('connection_skill_cli_invalid', '未知连接技能动作。', 400);
       if (action === 'browser' && !['list', 'inspect', 'create', 'adopt', 'reset'].includes(subaction || '')) throw failure('connection_skill_cli_invalid', '未知共享浏览器动作。', 400);
       const allowed = ['--target', '--json', ...actionFlags[action]!];
       while (args.length) {
@@ -72,10 +72,10 @@ export function createConnectionSkillsCli(application: ConnectionSkillsApplicati
       else if (action === 'update') result = application.save(root, id, input);
       else if (action === 'remove') result = application.remove(root, id, input);
       else if (action === 'auth') {
-        if (subaction === 'authorize') {
+        if (subaction === 'authorize' || subaction === 'ensure') {
           const controller = new AbortController(), abort = () => controller.abort();
           process.once('SIGINT', abort); process.once('SIGTERM', abort);
-          try { result = await application.authorize(root, id, input, { signal: controller.signal }); }
+          try { result = await (subaction === 'ensure' ? application.ensureAuthentication(root, id, input, { signal: controller.signal }) : application.authorize(root, id, input, { signal: controller.signal })); }
           finally { process.removeListener('SIGINT', abort); process.removeListener('SIGTERM', abort); }
         }
         else if (subaction === 'migrate') result = application.migrateAuth(root, id, input);
