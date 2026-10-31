@@ -11,10 +11,11 @@ import { useWorkspacePaneHost } from '../../../app/WorkspacePaneContext';
 import { workspaceHref } from '../../../lib/labels';
 import { createConnectionSkillsClient } from '../api/connection-skills-api';
 import type { CatalogEntry, ConnectionInstance } from '../connection-skill-types';
-import { categoryLabel, connectionEnvironmentHidden, diagnosticText, websiteHref } from '../connection-skill-form';
+import { categoryLabel, connectionEnvironmentHidden, diagnosticText } from '../connection-skill-form';
 import { connectionSummaryLines } from '../connection-skill-summary';
 import { sortConnectionInstances } from '../connection-skill-list';
 import { ConnectionSkillEditDrawer } from '../components/ConnectionSkillEditDrawer';
+import { ConnectionWebsiteLinks } from '../components/ConnectionWebsiteLinks';
 import { MySqlQuery, createMySqlQueryClient, mysqlQueryTarget, type MySqlQueryTarget } from '../../mysql-query';
 import '../connection-skills.css';
 
@@ -83,11 +84,11 @@ export function ConnectionSkillsPage() {
         { title: '环境 / 状态', width: 180, render: (_, instance) => <>{!connectionEnvironmentHidden(instance.definition) && <Tag>{instance.environment || '未填写环境'}</Tag>}<Tag>{instance.enabled ? '已启用' : '已停用'}</Tag><Tag color={instance.availability.ready ? undefined : 'orange'}>{instance.availability.ready ? '已配置' : '需检查'}</Tag></> },
         { title: '地址 / 默认范围', width: 320, render: (_, instance) => <div className="buildr-connection-skill-summary">{connectionSummaryLines(instance).map((line, index) => <span key={index}>{line}</span>)}{instance.availability.diagnostics.map((item, index) => <small key={index}>{item}</small>)}</div> },
         { title: '认证', width: 150, render: (_, instance) => <><Tag>{instance.authentication.source === 'personal' ? '本机个人' : '团队'}</Tag><small>{instance.authentication[instance.authentication.source].configured ? '已配置 · 未验证' : '不可用'}</small></> },
-      ]} actionWidth={180} rowActions={instance => { const website = websiteHref(instance.websiteUrl); return <>
+      ]} actionWidth={180} rowActions={instance => <>
         {mysqlQueryTarget(instance) && <Button type="text" onClick={() => openQuery(instance)}>查询</Button>}
-        {website && <a href={website} target="_blank" rel="noopener noreferrer">打开网站</a>}
+        <ConnectionWebsiteLinks instance={instance} />
         <Button type="text" onClick={() => setEditing(instance)}>编辑</Button>
         <Dropdown trigger={['click']} menu={{ items: [{ key: 'delete', label: '删除实例', danger: true, disabled: removing === instance.id }], onClick: () => modal.confirm({ title: '删除这个连接实例？', content: '删除团队实例文件，不操作外部系统。', okText: '删除', cancelText: '取消', onOk: () => remove(instance) }) }}><Button type="text" loading={removing === instance.id} aria-label={`更多操作：${instance.name}`} icon={<MoreOutlined />} /></Dropdown>
-      </>; }} />
+      </>} />
   </WorkspaceStage>{editing !== undefined && <ConnectionSkillEditDrawer key={`${workspaceId}:${editing?.id || 'new'}`} instance={editing || undefined} definitions={definitions} client={client} onClose={() => setEditing(undefined)} onSaved={saved} />}</>;
 }

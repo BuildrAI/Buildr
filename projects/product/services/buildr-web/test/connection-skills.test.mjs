@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createApiClient } from '../src/api/client.ts';
 import { createConnectionSkillsClient } from '../src/features/connection-skills/api/connection-skills-api.ts';
-import { afterPersonalSave, afterTeamSave, authenticationDraftsAfterRead, authenticationSourceAllowed, authorizationAccountLabel, bindingFor, bindingKey, categoryLabel, connectionDraftChanged, connectionEnvironmentHidden, connectionSystems, createDraftRequestScope, draftHookInput, draftObservations, fieldDefaults, hooksAvailable, personalAuthenticationOnly, personalDraftDirty, personalDraftFor, validateFields, websiteHref, withFieldValue } from '../src/features/connection-skills/connection-skill-form.ts';
+import { afterPersonalSave, afterTeamSave, authenticationDraftsAfterRead, authenticationSourceAllowed, authorizationAccountLabel, bindingFor, bindingKey, categoryLabel, connectionDraftChanged, connectionEnvironmentHidden, connectionSystems, createDraftRequestScope, draftHookInput, draftObservations, fieldDefaults, hooksAvailable, personalAuthenticationOnly, personalDraftDirty, personalDraftFor, validateFields, connectionWebsiteLinks, websiteHref, withFieldValue } from '../src/features/connection-skills/connection-skill-form.ts';
 import { tabForPath } from '../src/app/workspace-pages.ts';
 import { connectionFieldLabel, connectionSummaryLines, displayFieldLabels, fieldLabelsAfterRead } from '../src/features/connection-skills/connection-skill-summary.ts';
 import { sortConnectionInstances } from '../src/features/connection-skills/connection-skill-list.ts';
@@ -375,4 +375,13 @@ test('授权请求只传准确实例观察并支持取消，不把内部认证�
   assert.equal(requests[0].init.method, 'POST'); assert.equal(requests[0].init.signal, controller.signal);
   assert.deepEqual(JSON.parse(requests[0].init.body), { expected });
   assert.equal(requests.length, 1);
+});
+
+test('具名网站再次过滤不安全地址且保持名称、顺序和无默认选择', () => {
+  const links = [{ id: 'first', label: '主门户', url: 'https://first.example.invalid/#/' }, { id: 'second', label: '另一门户', url: 'https://second.example.invalid/' }];
+  assert.deepEqual(connectionWebsiteLinks({ websiteLinks: links }), links);
+  for (const url of ['javascript:alert(1)', 'https://user:password@example.invalid/', 'https://example.invalid/?token=secret', 'https://example.invalid/#/?access_token=secret']) assert.deepEqual(connectionWebsiteLinks({ websiteLinks: [links[0], { ...links[1], url }] }), [links[0]]);
+  assert.deepEqual(connectionWebsiteLinks({}), []);
+  assert.deepEqual(connectionWebsiteLinks({ websiteLinks: [] }), []);
+  assert.deepEqual(connectionWebsiteLinks({ websiteLinks: [{ ...links[0], label: ' ' }] }), []);
 });

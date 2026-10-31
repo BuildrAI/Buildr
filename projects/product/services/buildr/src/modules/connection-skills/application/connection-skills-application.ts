@@ -25,6 +25,7 @@ type AuthIntent = { intent: 'keep' | 'replace' | 'remove'; values?: Values };
 type TeamInput = { id?: string; name: string; environment?: string; enabled?: boolean; binding: ConnectionBinding; config: Values; fieldLabels?: unknown; authentication: AuthIntent; expected: Expected };
 function publicWebsite(definition: ConnectionDefinition | undefined, config: Values): string | null {
   const presentation = definition?.presentation;
+  if (presentation?.websites !== undefined) return null;
   const valueFor = (key: string | undefined) => key ? Object.hasOwn(config, key) ? config[key] : definition?.config.fields.find(field => field.key === key)?.default : undefined;
   const primary = valueFor(presentation?.websiteField);
   const key = primary === undefined || typeof primary === 'string' && !primary.trim() ? presentation?.websiteFallbackField : presentation?.websiteField;
@@ -34,6 +35,17 @@ function publicWebsite(definition: ConnectionDefinition | undefined, config: Val
     const value = validateConfig([field], { [key]: valueFor(key) })[key];
     return typeof value === 'string' ? value : null;
   } catch { return null; }
+}
+function publicWebsiteLinks(definition: ConnectionDefinition | undefined, config: Values): Array<{ id: string; label: string; url: string }> {
+  return (definition?.presentation?.websites ?? []).flatMap(website => {
+    const field = definition?.config.fields.find(field => field.key === website.field);
+    if (field?.type !== 'url') return [];
+    try {
+      const raw = Object.hasOwn(config, field.key) ? config[field.key] : field.default;
+      const url = validateConfig([field], { [field.key]: raw })[field.key];
+      return typeof url === 'string' ? [{ id: website.id, label: website.label, url }] : [];
+    } catch { return []; }
+  });
 }
 export class ConnectionSkillsApplication {
   async browserProfiles(root: string, action: string, input: Record<string, unknown> = {}) {
@@ -143,10 +155,10 @@ export class ConnectionSkillsApplication {
     } catch {
       if (!observationDiagnostic) diagnostics.push('本机观察版本不可用；连接源内容已保留，需恢复本机观察能力后才能执行或修改。');
     }
-    const websiteUrl = publicWebsite(entry?.definition, instance.config);
+    const websiteUrl = publicWebsite(entry?.definition, instance.config), websiteLinks = publicWebsiteLinks(entry?.definition, instance.config);
     return { ...instance, config: publicConfig, fieldLabels, sourcePath, revision, teamRevision, localRevision: local.revision, definitionRevision,
       authentication: { source: local.present || entry?.definition.authentication.allowedSources?.every(source => source === 'personal') ? 'personal' as const : 'team' as const, team: teamAuthentication, personal: personalAuthentication },
-      availability: { ready: diagnostics.length === 0, diagnostics }, programAvailability, definition: entry, websiteUrl };
+      availability: { ready: diagnostics.length === 0, diagnostics }, programAvailability, definition: entry, websiteUrl, websiteLinks };
   }
   list(root: string) {
     return this.listObserved(this.resolveScope(root));

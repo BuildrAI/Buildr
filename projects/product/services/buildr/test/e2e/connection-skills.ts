@@ -7,6 +7,8 @@ import YAML from 'yaml';
 import { createRuntime, runtimeProvide } from '../../src/bootstrap/runtime.ts';
 import { WORKSPACE_APPLICATION } from '../../src/modules/workspace/module.ts';
 import { CONNECTION_SKILLS_APPLICATION } from '../../src/modules/connection-skills/module.ts';
+import { AGENT_SERVICE_APPLICATION } from '../../src/modules/agent-service/module.ts';
+import { stopAgentProcess } from '@buildr-ai/buildr-agent';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { launchTestBrowser } from './browser-launch.ts';
 
@@ -1042,9 +1044,66 @@ try {
   assert.equal(connections.get(workspaceRoot, managedInstance.id).instance.localRevision, originalManagedRevision);
   await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'connection-skills-browser-authorization.png') });
   await page.locator('#close-connection-skill-editor').click();
+  journeyScene = 'named-website-menu';
+  const websiteDefinition = structuredClone(definition) as any;
+  websiteDefinition.config.fields.push({ key: 'secondaryPortal', label: '另一门户', type: 'url', default: 'https://portal-secondary.example.invalid/' });
+  websiteDefinition.presentation.websites = [{ id: 'primary', label: '主门户', field: 'endpoint' }, { id: 'secondary', label: '另一门户', field: 'secondaryPortal' }];
+  fs.writeFileSync(path.join(skillRoot, 'assets/connection.yml'), YAML.stringify(websiteDefinition));
+  await page.goto(`${base}/connection-skills`, { waitUntil: 'domcontentloaded' });
+  const websiteButton = page.locator(`[data-connection-websites="${created.id}"]`);
+  await websiteButton.waitFor();
+  const beforeWebsite = connections.get(workspaceRoot, created.id).instance;
+  assert.equal(beforeWebsite.websiteUrl, null);
+  assert.equal(beforeWebsite.websiteLinks.length, 2);
+  let websiteWrites = 0;
+  page.on('request', request => { if (request.method() !== 'GET' && new URL(request.url()).pathname.includes('/connection-skills/')) websiteWrites++; });
+  const readsBeforeWebsite = { ...reads };
+  await page.context().route('https://portal-secondary.example.invalid/**', route => route.fulfill({ contentType: 'text/html', body: '<title>Offline portal</title>' }));
+  await websiteButton.click();
+  const secondaryLink = page.getByRole('menuitem').getByRole('link', { name: '另一门户', exact: true });
+  await secondaryLink.waitFor();
+  await page.waitForFunction(() => {
+    const popup = document.querySelector<HTMLElement>('.ant-dropdown:not(.ant-dropdown-hidden)');
+    return popup && getComputedStyle(popup).opacity === '1' && popup.getAnimations({ subtree: true }).every(animation => animation.playState === 'finished');
+  });
+  assert.equal(await secondaryLink.getAttribute('href'), 'https://portal-secondary.example.invalid/');
+  assert.equal(await secondaryLink.getAttribute('rel'), 'noopener noreferrer');
+  await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'connection-skills-named-websites.png') });
+  const [portal] = await Promise.all([page.context().waitForEvent('page'), secondaryLink.click()]);
+  try {
+    await portal.waitForURL('https://portal-secondary.example.invalid/');
+    await portal.waitForLoadState('domcontentloaded');
+    assert.equal(await portal.evaluate(() => window.opener === null), true);
+  } finally { await portal.close(); }
+  assert.equal(websiteWrites, 0, 'Opening a portal never calls authorization, tests or professional actions.');
+  assertReads(readsBeforeWebsite, 'Opening a website never reloads connection state.');
+  assert.equal(connections.get(workspaceRoot, created.id).instance.teamRevision, beforeWebsite.teamRevision);
+  assert.equal(connections.get(workspaceRoot, created.id).instance.localRevision, beforeWebsite.localRevision);
+  websiteDefinition.presentation.websites = [websiteDefinition.presentation.websites[1]];
+  fs.writeFileSync(path.join(skillRoot, 'assets/connection.yml'), YAML.stringify(websiteDefinition));
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await websiteButton.click();
+  assert.equal(await page.getByRole('menuitem').getByRole('link', { name: '另一门户', exact: true }).count(), 1, 'A single named entry keeps its explicit label.');
+  assert.equal(await page.getByRole('menuitem').getByRole('link', { name: '主门户', exact: true }).count(), 0);
+  await page.keyboard.press('Escape');
+  websiteDefinition.presentation.websites = [];
+  fs.writeFileSync(path.join(skillRoot, 'assets/connection.yml'), YAML.stringify(websiteDefinition));
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await originalEdit().waitFor();
+  assert.equal(await websiteButton.count(), 0, 'An explicit empty list does not revive the legacy default website.');
+  process.stdout.write(JSON.stringify({ check: 'named-websites-explicit-target-and-no-side-effects', status: 'passed' }) + '\n');
   assert.deepEqual(browserErrors, []);
   process.stdout.write(JSON.stringify({ schemaVersion: 'buildr.workspace-smoke-scenario/v1', status: 'passed', checks: ['category-order-initial-search-refresh-local-updates', 'website-fallback-and-explicit-override', 'system-and-explicit-method-selection', 'dependency-ordered-discovery', 'progressive-fields-and-authentication', 'explicit-production-flag', 'legacy-route-redirect', 'legacy-tabs-merge', 'single-connection-navigation', 'no-legacy-api-requests', 'mysql-query-ui-fixture', 'mysql-query-schema-browser-expand-and-decouple', 'mysql-query-schema-browser-local-error-retry', 'mysql-query-schema-browser-refresh-clears', 'mysql-query-schema-browser-narrow-layout', 'mysql-database-picker-search-and-hidden-selection', 'mysql-database-picker-close-save-once', 'mysql-database-picker-unchanged-no-write', 'mysql-database-picker-current-cleared', 'mysql-database-picker-refresh-and-close-discard', 'mysql-database-picker-reopen-and-viewport', 'query-observed-revision-and-original-sql', 'query-precision-display', 'separate-save', 'unsaved-switch', 'explicit-candidate', 'failed-test-save-independent', 'independent-draft-revisions', 'revision-conflict', 'narrow-and-keyboard', 'missing-skill-personal-removal', 'main-save-closes-and-updates-row', 'failed-save-retains-draft', 'main-save-preserves-personal-draft', 'reread-authentication-identity', 'optional-program-failure-isolated', 'nacos-api-and-website-distinct', 'focus-and-retained-page-no-read', 'test-discovery-check-no-directory-read', 'explicit-refresh-only', 'local-save-delete', 'interrupted-first-read-retried', 'late-list-cannot-rollback-save', 'combined-directory-and-local-diagnostics', 'failed-or-malformed-directory-retains-snapshot', 'personal-only-new-discovery-and-test', 'personal-two-step-partial-save-preserves-draft', 'explicit-personal-secret-reveal-no-store-and-keyboard', 'revealed-secret-close-and-late-response-discard', 'personal-upgrade-preserves-and-migrates-old-group', 'browser-authorization-hidden-environment-and-internal-fields', 'browser-authorization-explicit-create-save-closes-without-auth', 'browser-authorization-explicit-create-and-edit-failures-retain-draft', 'browser-authorization-main-save-and-reopened-edit-close-update-row', 'browser-authorization-partial-shell-save-and-safe-private-result', 'browser-reauthorization-saved-config-cancel-close-and-late-response'], realExternalSystem: false, queryBackend: 'intercepted-ui-fixture' }) + '\n');
 } catch (error) {
   if (page) { process.stderr.write(JSON.stringify({ body: (await page.locator('body').innerText()).slice(-5000) }) + '\n'); await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'connection-skills-failure.png') }); }
   throw error;
-} finally { await browser.close(); await host.shutdown(); }
+} finally {
+  try { await browser.close(); } finally {
+    // This direct HTTP fixture owns its callback bridge and isolated daemon.
+    // Closing browser pages alone cannot release the daemon's host connection.
+    try { await runtimeProvide(runtime, AGENT_SERVICE_APPLICATION).close(); } finally {
+      try { await stopAgentProcess({ dataRoot: path.join(smokeRoot, 'app-data'), mode: 'stop-owned' }); }
+      finally { await host.shutdown(); }
+    }
+  }
+}

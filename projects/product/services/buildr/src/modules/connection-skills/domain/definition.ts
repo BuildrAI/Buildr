@@ -23,6 +23,7 @@ export type ConnectionFieldReference = `config.${string}` | `authentication.${st
 export type AuthenticationSource = 'team' | 'personal';
 export interface ConnectionAuthorization { program: string; args?: string[]; inputs?: `config.${string}`[]; label: string; reauthorizeLabel: string; timeoutMs?: number; accountLabelField?: string; browserProfile?: string; parameters?: ConnectionField[]; reuseFields?: string[]; identityFields?: string[]; sessionCheck?: { program: string; args: string[]; effect: 'read'; requiredParameters?: string[] } }
 export interface ConnectionPresentationGroup { id: string; title: string; fields: ConnectionFieldReference[]; collapsed?: boolean }
+export interface ConnectionWebsite { id: string; label: string; field: string }
 export interface ConnectionHook { program: string; args: string[]; effect: 'read'; inputs?: ConnectionFieldReference[] }
 export interface ConnectionDefinition {
   schemaVersion: typeof CONNECTION_DEFINITION_SCHEMA; definitionId: string; name: string; description: string;
@@ -30,7 +31,7 @@ export interface ConnectionDefinition {
   config: { fields: ConnectionField[] };
   authentication: { fields: ConnectionField[]; targetFields: string[]; allowedSources?: AuthenticationSource[]; authorization?: ConnectionAuthorization };
   programs: Record<string, ConnectionProgram>; hooks?: Record<string, ConnectionHook>;
-  presentation?: { summaryFields: string[]; websiteField?: string; websiteFallbackField?: string; categoryLabel?: string; methodLabel?: string; groups?: ConnectionPresentationGroup[]; environment?: 'hidden' };
+  presentation?: { summaryFields: string[]; websiteField?: string; websiteFallbackField?: string; websites?: ConnectionWebsite[]; categoryLabel?: string; methodLabel?: string; groups?: ConnectionPresentationGroup[]; environment?: 'hidden' };
 }
 export interface ConnectionBinding { skillAssetIdentity: string; definitionId: string; sourceIdentity: string; configVersion: number }
 export function connectionError(code: string, message: string, field?: string): Error & ConnectionDiagnostic & { status: number; statusCode: number } {
@@ -170,10 +171,21 @@ export function parseConnectionDefinition(content: string): ConnectionDefinition
   }
   for (const field of value.config.fields) if (field.optionsFrom) ensure(Object.hasOwn(value.hooks || {}, field.optionsFrom), field.key, '动态选项必须引用已声明槽位。');
   if (value.presentation !== undefined) {
-    closed(value.presentation, ['summaryFields', 'websiteField', 'websiteFallbackField', 'categoryLabel', 'methodLabel', 'groups', 'environment'], 'presentation'); value.presentation.summaryFields ??= []; strings(value.presentation.summaryFields, 'presentation.summaryFields');
+    closed(value.presentation, ['summaryFields', 'websiteField', 'websiteFallbackField', 'websites', 'categoryLabel', 'methodLabel', 'groups', 'environment'], 'presentation'); value.presentation.summaryFields ??= []; strings(value.presentation.summaryFields, 'presentation.summaryFields');
     ensure(value.presentation.environment === undefined || value.presentation.environment === 'hidden', 'presentation.environment', '环境展示声明只支持 hidden；省略保持原行为。');
     ensure(new Set(value.presentation.summaryFields).size === value.presentation.summaryFields.length && value.presentation.summaryFields.every((name: string) => configuration.has(name)), 'presentation.summaryFields', '摘要只能引用非秘密配置字段。');
     for (const name of ['websiteField', 'websiteFallbackField']) if (value.presentation[name] !== undefined) ensure(configuration.get(value.presentation[name])?.type === 'url', `presentation.${name}`, '网站入口必须引用网址字段。');
+    if (value.presentation.websites !== undefined) {
+      const location = 'presentation.websites', seen = new Set<string>();
+      ensure(Array.isArray(value.presentation.websites) && value.presentation.websites.length <= 16, location, '网站入口必须是最多16项的数组。');
+      for (const [index, website] of value.presentation.websites.entries()) {
+        const item = `${location}[${index}]`;
+        closed(website, ['id', 'label', 'field'], item);
+        ensure(key(website.id) && !seen.has(website.id), `${item}.id`, '网站入口编号非法或重复。'); seen.add(website.id);
+        ensure(typeof website.label === 'string' && website.label.trim() && website.label.length <= 120, `${item}.label`, '网站名称必须是非空且不超过120字符的文本。');
+        ensure(configuration.get(website.field)?.type === 'url', `${item}.field`, '网站入口必须引用非秘密网址配置字段。');
+      }
+    }
     for (const name of ['categoryLabel', 'methodLabel']) if (value.presentation[name] !== undefined) ensure(typeof value.presentation[name] === 'string' && value.presentation[name].trim(), `presentation.${name}`, '展示名称必须是非空文本。');
     if (value.presentation.groups !== undefined) {
       ensure(Array.isArray(value.presentation.groups) && value.presentation.groups.length <= 32, 'presentation.groups', '展示分组必须是有界数组。');

@@ -210,3 +210,13 @@ test('真实公开源读取保留合法连接，非法扩展字段只影响所�
   manifest.skills[1]!.connectionDefinitions = ['assets/missing.yml']; fs.writeFileSync(file, YAML.stringify(manifest)); result = catalog.list(root); assert.equal(result.definitions.length, 1); assert.equal(result.diagnostics.length, 1);
   manifest.skills[1]!.connectionDefinitions = Array.from({ length: 33 }, (_, index) => `assets/${index}.yml`); fs.writeFileSync(file, YAML.stringify(manifest)); result = catalog.list(root); assert.equal(result.definitions.length, 1); assert.equal(result.diagnostics[0]?.code, 'connection_definition_invalid');
 });
+
+test('具名网站只引用网址配置，编号唯一、名称有界并兼容旧声明', () => {
+  const valid = [{ id: 'primary', label: '主门户', field: 'website' }];
+  const parse = (websites: unknown) => { const value = sample(); Object.assign(value.presentation, { websites }); return parseConnectionDefinition(YAML.stringify(value)); };
+  assert.deepEqual(parse(valid).presentation?.websites, valid);
+  assert.deepEqual(parse([]).presentation?.websites, []);
+  assert.equal(parseConnectionDefinition(YAML.stringify(sample())).presentation?.websites, undefined);
+  for (const websites of [null, {}, 'website', Array.from({ length: 17 }, (_, index) => ({ ...valid[0], id: `site${index}` })), [valid[0], valid[0]]]) assert.throws(() => parse(websites), { code: 'connection_definition_invalid' });
+  for (const website of [{ ...valid[0], id: 'bad id' }, { ...valid[0], id: '__proto__' }, { ...valid[0], label: ' ' }, { ...valid[0], label: 'x'.repeat(121) }, { ...valid[0], label: 1 }, { ...valid[0], field: 'password' }, { ...valid[0], field: 'authentication.password' }, { ...valid[0], field: 'note' }, { ...valid[0], field: 'missing' }, { ...valid[0], extra: 'unsupported' }, null]) assert.throws(() => parse([website]), { code: 'connection_definition_invalid' });
+});
