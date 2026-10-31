@@ -34,13 +34,17 @@ async function fixture(){
  const start=async(text='goal')=>{const revision=service.conversations.readDraft('workspace',draftId).revision;const result=await service.conversations.startDraft('workspace',draftId,{...choice,text,expectedDraftRevision:revision});await flush();return result.conversation;};
  return {service,root,choice,draftId,start,sent,preparedContexts,advance:(ms:number)=>clock+=ms,finish:()=>finish?.(),breakFirstClose:()=>{failFirstClose=true;},fail:()=>{failPreparation=true;},counts:()=>({opens,closed,prepared,inferred}),close:async()=>{finish?.();await service.close();await rm(root,{recursive:true,force:true});}};
 }
-test('a selection prepares without an empty conversation or inference and exact first submission adopts it',async()=>{
- const f=await fixture();try{
+test('selection is adopted once, promptly reclaimed after use and can be prepared again',async t=>{
+ t.mock.timers.enable({apis:['setInterval']});const f=await fixture();try{
   await Promise.all([f.service.conversations.warmup('workspace',f.draftId,f.choice,true),f.service.conversations.warmup('workspace',f.draftId,f.choice,true)]);
   assert.equal(f.service.conversations.list('workspace',{}).conversations.length,0);
   assert.deepEqual(f.counts(),{opens:1,closed:0,prepared:1,inferred:0});assert.equal(f.sent.length,0);
-  await f.start();assert.equal(f.counts().opens,1);assert.equal(f.sent.length,1);assert.equal(f.sent[0].contextRef.id,f.preparedContexts[0]);
- }finally{await f.close();}
+  const chat=await f.start();assert.equal(f.counts().opens,1);assert.equal(f.sent.length,1);assert.equal(f.sent[0].contextRef.id,f.preparedContexts[0]);
+  t.mock.timers.tick(60_000);await flush();assert.equal(f.counts().closed,1);
+  assert.equal(f.service.conversations.read('workspace',chat.id).run?.resourcesReleased,true);
+  assert.equal((await f.service.conversations.warmup('workspace',chat.id,f.choice)).prepared,true,'release transfers the slot back to speculative preparation');
+  assert.equal(f.counts().opens,2);assert.equal(f.sent.length,1);
+ }finally{await f.close();t.mock.timers.reset();}
 });
 test('selection permission changes close the old unadopted owner before preparing another',async()=>{
  const f=await fixture();try{
@@ -56,14 +60,13 @@ test('failed speculative preparation closes its owner and ordinary sending can c
   assert.equal(f.counts().closed,1);await f.start();assert.equal(f.sent.length,1);assert.equal(f.counts().opens,2);
  }finally{await f.close();}
 });
-test('the real maintenance timer expires unused selections and completed work but protects a long active input',async t=>{
+test('unused selections retain 30 minutes while completed work releases promptly and long active input stays owned',async t=>{
  t.mock.timers.enable({apis:['setInterval']});const g=await fixture();try{
   await g.service.conversations.warmup('workspace',g.draftId,g.choice,true);
   g.advance(CONNECTION_IDLE_MS-1);t.mock.timers.tick(60_000);await flush();assert.equal(g.counts().closed,0);
   g.advance(1);t.mock.timers.tick(60_000);await flush();assert.equal(g.counts().closed,1);
   const chat=await g.start('hold');g.advance(CONNECTION_IDLE_MS*2);t.mock.timers.tick(60_000);await flush();assert.equal(g.counts().closed,1,'active work stays owned');
-  g.finish();await flush();g.advance(CONNECTION_IDLE_MS-1);t.mock.timers.tick(60_000);await flush();assert.equal(g.counts().closed,1,'idle age starts after completion');
-  g.advance(1);t.mock.timers.tick(60_000);await flush();assert.equal(g.counts().closed,2);assert.equal(g.service.conversations.read('workspace',chat.id).run?.resourcesReleased,true);
+  g.finish();await flush();t.mock.timers.tick(60_000);await flush();assert.equal(g.counts().closed,2,'completed work does not retain the 30-minute selection cache');assert.equal(g.service.conversations.read('workspace',chat.id).run?.resourcesReleased,true);
  }finally{await g.close();t.mock.timers.reset();}
 });
 

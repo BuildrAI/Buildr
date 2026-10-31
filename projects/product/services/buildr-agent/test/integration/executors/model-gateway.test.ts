@@ -111,6 +111,7 @@ test('Qoder preserves SDK login expiration even when no auth-expired callback is
   try {
     const executable = join(root, 'qoder.mjs');
     const source = (await readFile(new URL('./fixtures/qoder-cli.mjs', import.meta.url), 'utf8'))
+      .replace("models:[{value:'fixture-model',displayName:'Fixture model'}],account:", 'account:')
       .replace("if(t==='get_models'){", `if(t==='get_models'){emit({type:'control_response',response:{subtype:'error',request_id:m.request_id,error:'Local login has expired. Run "qodercli login" to refresh.'}});return;`);
     await writeFile(executable, source);
     runtime = await createQoderExecutor().open({ connectionId: 'qoder', configRoot: root, executable, environment: { PATH: process.env.PATH ?? '' }, gateway: lease });

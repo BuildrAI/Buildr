@@ -50,6 +50,8 @@ export interface AgentLifecycleContract {
   identity(): Promise<AgentProcessIdentity>;
   status(): Promise<AgentProcessStatus>;
   requestRuntime(input: { expectedGeneration: string; runtime: AgentRuntimeUnit }): Promise<AgentProcessStatus>;
+  /** Register the target and resolve only after its exact server accepts work. */
+  activateRuntime(input: { expectedGeneration: string; runtime: AgentRuntimeUnit; timeoutMs?: number }): Promise<AgentProcessStatus>;
   shutdown(input: { expectedGeneration: string; mode: 'if-idle' | 'stop-owned' }): Promise<void>;
 }
 

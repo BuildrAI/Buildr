@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { AgentHostCapabilities, AgentLifecycleContract, AgentProcessIdentity, AgentRuntimeUnit } from '../execution-contracts.ts';
+import type { AgentHostCapabilities, AgentLifecycleContract, AgentProcessIdentity, AgentProcessStatus, AgentRuntimeUnit } from '../execution-contracts.ts';
 import { AGENT_EXECUTION_CONTRACTS } from '../execution-contracts.ts';
 import type { ServiceEvent } from '../contracts.ts';
 import { AgentServiceError } from '../domain/agent-state.ts';
@@ -24,6 +24,9 @@ export interface AgentProcessConnectionOptions {
   runtime?: AgentRuntimeUnit;
   autoContinueInterrupted?: boolean;
   legacySourceId?: string;
+  /** Activation owners wait; ordinary clients retain old-run controls during an update. */
+  requireRuntime?: boolean;
+  activationTimeoutMs?: number;
 }
 const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 function matches(identity: AgentProcessIdentity, options: Pick<AgentProcessConnectionOptions, 'dataRoot' | 'profileId'>): void {
@@ -120,6 +123,27 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
     })().finally(() => { connecting = undefined; });
     return connecting;
   }
+  async function awaitRuntime(runtime: AgentRuntimeUnit, timeoutMs = 30_000): Promise<AgentProcessStatus> {
+    const deadline = Date.now() + Math.max(1, Math.min(timeoutMs, 120_000));
+    while (!closed) {
+      try {
+        const current = await connected();
+        const status: AgentProcessStatus = await request(current.origin, current.token, '/status', undefined, AbortSignal.timeout(Math.max(1, Math.min(3_000, deadline - Date.now()))));
+        matches(status.identity, options);
+        if (status.identity.instanceId !== current.identity.instanceId || status.identity.runtime.digest !== current.identity.runtime.digest) throw new AgentServiceError('agent_process_identity_mismatch', '新版启用观察身份不匹配。', 409);
+        if (status.identity.runtime.digest === runtime.digest && status.accepting && !status.retiring && !status.pendingRuntime) return status;
+        if (status.pendingRuntime && status.pendingRuntime.digest !== runtime.digest) throw new AgentServiceError('agent_process_activation_superseded', '启用目标已被另一版本替换，请核对当前目标。', 409);
+        if (status.pendingRuntime?.digest === runtime.digest && status.diagnostic) throw new AgentServiceError('agent_process_activation_failed', status.diagnostic, 503);
+      } catch (error) {
+        if (error instanceof AgentServiceError && error.code !== 'agent_process_switching') throw error;
+        // Only repeat read-only readiness observations across the handoff gap.
+        reconnect = true;
+      }
+      if (Date.now() >= deadline) throw new AgentServiceError('agent_process_activation_pending', '目标版本尚未确认启用，旧工作与待发送内容已保留。', 503);
+      await pause(Math.min(100, Math.max(1, deadline - Date.now())));
+    }
+    throw new AgentServiceError('agent_process_client_closed', '本机主程序连接已释放。', 503);
+  }
   try {
     record = await ensure(options); await connected();
     const retired = readPrivate<string[]>(path.join(controlRoot(options.dataRoot),'retired-runtimes.json')) ?? [];
@@ -127,6 +151,7 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
     if (record.identity.runtime.digest !== options.runtime.digest && !retired.includes(options.runtime.digest) && !retainedOlder) {
       try { await request(record.origin, record.token, '/runtime', { expectedGeneration: record.identity.generation, runtime: options.runtime }); requestedDigest=options.runtime.digest; }
       catch (error) { if (!(error instanceof AgentServiceError) || error.code !== 'agent_process_switching') throw error; }
+      if (options.requireRuntime) await awaitRuntime(options.runtime, options.activationTimeoutMs);
     }
   } catch (error) { await host?.close(); throw error; }
   async function call(route: string, value?: unknown, signal?: AbortSignal): Promise<any> {
@@ -210,6 +235,10 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
   const lifecycle: AgentLifecycleContract = {
     identity: () => call('/identity'), status: () => call('/status'),
     requestRuntime: async value => {const result=await call('/runtime', value);requestedDigest=value.runtime.digest;return result;},
+    async activateRuntime(value) {
+      await lifecycle.requestRuntime(value);
+      return awaitRuntime(value.runtime, value.timeoutMs);
+    },
     async shutdown(value) { await call('/shutdown', value); },
   };
   return { operations, lifecycle, async disconnect() {

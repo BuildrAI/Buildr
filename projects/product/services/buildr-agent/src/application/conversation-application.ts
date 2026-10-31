@@ -72,7 +72,6 @@ export class ConversationApplication {
   }
   private readonly warmups: ConversationWarmups;
   private readonly sourceSlots = new Map<string,string>();
-  private readonly sourceTouched = new Map<string,number>();
   private readonly idleTimer: ReturnType<typeof setInterval>;
   private milliseconds() { return Date.parse(this.options.now()); }
   private readonly previewSecret = randomUUID();
@@ -87,6 +86,7 @@ export class ConversationApplication {
   private readonly sourceReleases = new Map<AgentRuntime,Promise<void>>();
   private readonly sourceOwners = new Map<string, {workspaceId: string; id: string}>();
   private releasingIdleSources?: Promise<void>;
+  private readonly idleReleaseTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly releaseChecks = new Map<string,Promise<boolean>>();
   private readonly releasedRuns = new Set<string>();
   private sharedNativeContext = false;
@@ -159,7 +159,6 @@ export class ConversationApplication {
   private get pendingSends() { return new PendingSendRepository(this.options.root); }
 
   private async sourceRuntime(record: StoredConversation, participant: StoredParticipant): Promise<PreparedSource> {
-    if(!this.sourceTouched.has(participant.id))this.sourceTouched.set(participant.id,this.milliseconds());
     const sourceRun=conversationRuns(record.view).find(run=>run.participantId===participant.id);
     if (!participant.modelAccountId) {
       this.sharedNativeContext = true;
@@ -220,8 +219,22 @@ export class ConversationApplication {
   async collectIdle():Promise<void> {
     if(this.closing)return;
     const idleBefore=this.milliseconds()-CONNECTION_IDLE_MS;
-    // A failed unused connection must not prevent independent conversation owners from releasing.
-    await Promise.allSettled([this.warmups.close(undefined,idleBefore),this.releaseIdleSources(undefined,idleBefore)]);
+    // Unused selections keep their TTL; completed/observed owners do not.
+    await Promise.allSettled([this.warmups.close(undefined,idleBefore),this.releaseIdleSources(undefined,true)]);
+  }
+  /** Reclaim only owned sources after the caller has dropped its work marker.
+   * Native/tool proof may settle later; retry the retained owner with backoff. */
+  private scheduleSourceRelease(workspaceId: string, id: string, delay = 100): void {
+    const key = `${workspaceId}/${id}`;
+    if (this.closing || this.idleReleaseTimers.has(key) || ![...this.sourceOwners].some(([participant, owner]) => this.sourceRuntimes.has(participant) && owner.workspaceId === workspaceId && owner.id === id)) return;
+    const timer = setTimeout(() => {
+      this.idleReleaseTimers.delete(key);
+      if (this.closing) return;
+      void this.releaseIdleSources({workspaceId, id}).catch(() => {}).finally(() => {
+        this.scheduleSourceRelease(workspaceId, id, Math.min(delay * 2, 5_000));
+      });
+    }, delay);
+    timer.unref(); this.idleReleaseTimers.set(key, timer);
   }
   private sourceExecution(record: StoredConversation, participantId: string) {
     const run = conversationRuns(record.view).find(value => value.participantId === participantId);
@@ -230,10 +243,10 @@ export class ConversationApplication {
   }
   /** Retiring generations release only idle, conversation-specific runtimes.
    * Native contexts keep their writer until their owning process actually exits. */
-  releaseIdleSources(owner?: {workspaceId:string; id:string},idleBefore?:number): Promise<void> {
-    if (this.releasingIdleSources) return owner ? this.releasingIdleSources.then(() => this.releaseIdleSources(owner,idleBefore)) : this.releasingIdleSources;
+  releaseIdleSources(owner?: {workspaceId:string; id:string},keepPrepared=false): Promise<void> {
+    if (this.releasingIdleSources) return owner ? this.releasingIdleSources.then(() => this.releaseIdleSources(owner,keepPrepared)) : this.releasingIdleSources;
     const work = (async () => {
-      if(idleBefore===undefined&&!owner)await this.warmups.close();
+      if(!keepPrepared&&!owner)await this.warmups.close();
       for(const finish of [...this.sourceReleasePending.values()])await finish().catch(()=>false);
       const groups = new Map<AgentRuntime, Array<{id:string; leaseIdentity?:string; source:Promise<{runtime:AgentRuntime;model:string;leaseIdentity?:string}>}>>();
       for (const [id, source] of this.sourceRuntimes) {
@@ -241,7 +254,6 @@ export class ConversationApplication {
         const members=groups.get(value.runtime)??[];members.push({id,source,leaseIdentity:value.leaseIdentity});groups.set(value.runtime,members);
       }
       for (const [runtime,members] of groups) {
-        if(idleBefore!==undefined&&members.some(member=>(this.sourceTouched.get(member.id)??this.milliseconds())>idleBefore))continue;
         if(this.sourceReleasePending.has(runtime))continue;
         if(owner&&!members.some(({id})=>{const held=this.sourceOwners.get(id);return held?.workspaceId===owner.workspaceId&&held.id===owner.id;}))continue;
         const candidates:Array<{id:string;source:Promise<{runtime:AgentRuntime;model:string;leaseIdentity?:string}>;workspaceId:string;conversationId:string;runId:string;leaseIdentity?:string;proof?:()=>Promise<boolean|{executionState:'ended'|'unknown'}>}>=[];
@@ -249,6 +261,9 @@ export class ConversationApplication {
         for(const member of members){
           const held=this.sourceOwners.get(member.id);
           if(!held||this.sourceRuntimes.get(member.id)!==member.source||member.leaseIdentity&&this.options.modelAccess?.leases.hasActiveRequests(member.leaseIdentity)){safe=false;break;}
+          const key=`${held.workspaceId}/${held.id}`;
+          const state=this.options.repository.readState(held.id);
+          if(!state||state.view.workspaceId!==held.workspaceId||conversationRuns(state.view).some(run=>this.workers.has(run.id))||this.recoveries.has(key)||this.observations.has(key)||this.earlyTitles.has(held.id)||this.titleWork.has(held.id)){safe=false;break;}
           const record=this.load(held.workspaceId,held.id),{run,attempt,id:runId}=this.sourceExecution(record,member.id);
           // A finished fork has durable history but has never admitted a work
           // prompt. Its private reader/import process is idle, not an unknown run.
@@ -266,16 +281,18 @@ export class ConversationApplication {
           if(exactProof?!await runtime.canRelease!({contextRef:participant!.contextRef!,executionRef:attempt!.executionRef!}).catch(()=>false):!settled){safe=false;break;}
           candidates.push({...member,workspaceId:held.workspaceId,conversationId:held.id,runId,...(exactProof?{proof:()=>runtime.canRelease!({contextRef:participant!.contextRef!,executionRef:attempt!.executionRef!}).catch(()=>false)}:{})});
         }
-        if(!safe)continue;
+        if(!safe || this.forks.active)continue;
         // Recheck after asynchronous native proof, then freeze reuse before close.
-        if(candidates.some(value=>value.leaseIdentity&&this.options.modelAccess?.leases.hasActiveRequests(value.leaseIdentity)||this.sourceRuntimes.get(value.id)!==value.source||this.sourceExecution(this.load(value.workspaceId,value.conversationId),value.id).id!==value.runId||this.workers.has(value.runId)||this.observations.has(`${value.workspaceId}/${value.conversationId}`)||this.recoveries.has(value.runId)||this.earlyTitles.has(value.conversationId)||this.titleWork.has(value.conversationId)||this.load(value.workspaceId,value.conversationId).view.requests.some(request=>request.participantId===value.id))||this.supplements.size||this.repliesInFlight.size)continue;
+        if(this.forks.active || candidates.some(value=>value.leaseIdentity&&this.options.modelAccess?.leases.hasActiveRequests(value.leaseIdentity)||this.sourceRuntimes.get(value.id)!==value.source||this.sourceExecution(this.load(value.workspaceId,value.conversationId),value.id).id!==value.runId||this.workers.has(value.runId)||this.observations.has(`${value.workspaceId}/${value.conversationId}`)||this.recoveries.has(`${value.workspaceId}/${value.conversationId}`)||this.earlyTitles.has(value.conversationId)||this.titleWork.has(value.conversationId)||this.load(value.workspaceId,value.conversationId).view.requests.some(request=>request.participantId===value.id))||this.supplements.size||this.repliesInFlight.size)continue;
         const finish=async()=>{
           if(candidates.some(value=>value.leaseIdentity&&this.options.modelAccess?.leases.hasActiveRequests(value.leaseIdentity)))return false;
           await this.options.connections.releaseGatewayRuntime(runtime);
           const facts=new Map<string,'ended'|'unknown'>();
           for(const value of candidates){const proof=value.proof?await value.proof():true;if(!proof)return false;facts.set(value.id,proof===true?'ended':proof.executionState);}
+          if(candidates.some(value=>value.leaseIdentity&&this.options.modelAccess?.leases.hasActiveRequests(value.leaseIdentity)))return false;
           for(const value of candidates){
-            if(this.sourceRuntimes.get(value.id)===value.source){this.sourceRuntimes.delete(value.id);this.sourceOwners.delete(value.id);this.sourceConnections.delete(value.id);this.sourceTouched.delete(value.id);const slot=this.sourceSlots.get(value.id);if(slot)this.warmups.unclaim(slot);this.sourceSlots.delete(value.id);}
+            if(value.leaseIdentity)this.options.modelAccess?.leases.release(value.leaseIdentity);
+            if(this.sourceRuntimes.get(value.id)===value.source){this.sourceRuntimes.delete(value.id);this.sourceOwners.delete(value.id);this.sourceConnections.delete(value.id);const slot=this.sourceSlots.get(value.id);if(slot)this.warmups.unclaim(slot);this.sourceSlots.delete(value.id);}
             const record=this.load(value.workspaceId,value.conversationId),run=conversationRuns(record.view).find(run=>run.id===value.runId);
             if(!run||run.id!==value.runId||run.participantId!==value.id||run.generation!==this.options.generation)continue;
             run.executionState=run.executionState==='ended'?'ended':facts.get(value.id)!;run.resourcesReleased=true;
@@ -438,7 +455,9 @@ export class ConversationApplication {
     return this.view(record);
   }
   fork(workspaceId: string, id: string, input: ConversationForkInput): Promise<ConversationView> {
-    return this.forks.fork(workspaceId, id, input);
+    return this.forks.fork(workspaceId, id, input).finally(() => {
+      for (const owner of this.sourceOwners.values()) this.scheduleSourceRelease(owner.workspaceId, owner.id);
+    });
   }
   private async candidate(workspaceId: string, input: { cwd?: string; taskId?: string; title?: string }): Promise<StoredConversation> {
     const workspace = await this.options.host.resolve(workspaceId);
@@ -726,7 +745,7 @@ export class ConversationApplication {
     }
     record.view.run = run;
     this.save(record, initial);
-    const work = this.execute(workspaceId, id, run.id, prepared).finally(() => { this.workers.delete(run.id); this.cancelledRetries.delete(run.id); });
+    const work = this.execute(workspaceId, id, run.id, prepared).finally(() => { this.workers.delete(run.id); this.cancelledRetries.delete(run.id); this.scheduleSourceRelease(workspaceId, id); });
     this.workers.set(run.id, work);
     return { run: structuredClone(run), conversation: this.read(workspaceId, id) };
   }
@@ -785,7 +804,6 @@ export class ConversationApplication {
     return true;
   }
   private event(workspaceId: string, id: string, runId: string, event: ExecutorEvent): void {
-    if(event.type!=='observation'){const run=this.currentRun(workspaceId,id,runId)?.view.run;if(run)this.sourceTouched.set(run.participantId,this.milliseconds());}
     const record = this.load(workspaceId, id);
     const run = conversationRuns(record.view).find(value => value.id === runId && value.generation === this.options.generation);
     if (!run) return;
@@ -924,7 +942,6 @@ export class ConversationApplication {
       if (!fs.statSync(record.view.cwd, { throwIfNoEntry: false })?.isDirectory()) fail('agent_cwd_missing', '对话保存的工作目录已不可用。', 409);
       const startingParticipant = record.participants.find(value => value.id === record!.view.run!.participantId)!;
       if (startingParticipant.modelAccountId) await this.options.modelAccess!.leases.create({accountId:startingParticipant.modelAccountId, expectedIdentity:startingParticipant.modelAccountIdentity, modelId:startingParticipant.modelId!,serviceTier:startingParticipant.serviceTier,conversationId:record.view.id,agentId:startingParticipant.connectionId,runId});
-      this.sourceTouched.set(startingParticipant.id,this.milliseconds());
       const slot=this.warmSlot(record,startingParticipant);this.sourceSlots.set(startingParticipant.id,slot);
       const warmed=await this.warmups.take(slot,this.warmKey(record,startingParticipant,prepared.draft));
       if(warmed){this.sourceOwners.set(startingParticipant.id,{workspaceId,id});this.sourceConnections.set(startingParticipant.id,startingParticipant.connectionId);this.sourceRuntimes.set(startingParticipant.id,Promise.resolve(warmed));}
@@ -965,7 +982,7 @@ export class ConversationApplication {
       dispatched = true;
       const early = this.titleAtRunStart(workspaceId, id, runId, runtime).catch(() => {});
       this.earlyTitles.set(id, early);
-      void early.finally(() => { if (this.earlyTitles.get(id) === early) this.earlyTitles.delete(id); });
+      void early.finally(() => { if (this.earlyTitles.get(id) === early) this.earlyTitles.delete(id); this.scheduleSourceRelease(workspaceId, id); });
       await runtime.send({ contextRef: participant.contextRef!, cwd: record.view.cwd, text: prepared.text, images: prepared.images, model: prepared.draft.modelAccountId ? selectedRuntime.model : prepared.draft.model, reasoningEffort: prepared.draft.reasoningEffort, permissionMode: prepared.draft.permissionMode, clientRequestId: record.attempts.find(value => value.runId === runId)!.clientRequestId, onEvent: event => this.event(workspaceId, id, runId, event) });
       await this.observe(workspaceId, id);
       const ended = this.currentRun(workspaceId, id, runId);
@@ -1112,7 +1129,7 @@ export class ConversationApplication {
       controller.abort();
       this.recordTitleFailure(workspaceId, id, runId, 'early', error);
     }
-    finally { clearTimeout(timeout); if (this.titleWork.get(id) === controller) this.titleWork.delete(id); }
+    finally { clearTimeout(timeout); if (this.titleWork.get(id) === controller) this.titleWork.delete(id); this.scheduleSourceRelease(workspaceId, id); }
   }
   private recordTitleFailure(workspaceId: string, id: string, runId: string, phase: 'early'|'completion'|'manual', error: unknown): void {
     const current = this.currentRun(workspaceId, id, runId);
@@ -1206,7 +1223,7 @@ export class ConversationApplication {
       controller.abort();
       this.recordTitleFailure(workspaceId, id, runId, explicit ? 'manual' : 'completion', error);
       if (explicit) { if (error && typeof error === 'object' && 'code' in error) throw error; fail('agent_title_failed', '标题生成未完成，原有标题与工作结果已保留。', 502); }
-    } finally { clearTimeout(timeout); if (this.titleWork.get(id) === controller) this.titleWork.delete(id); }
+    } finally { clearTimeout(timeout); if (this.titleWork.get(id) === controller) this.titleWork.delete(id); this.scheduleSourceRelease(workspaceId, id); }
   }
 
   /** Startup scans executions, never task status. No browser subscription is required. */
@@ -1230,7 +1247,7 @@ export class ConversationApplication {
   private recoverOne(workspaceId: string, id: string): Promise<void> {
     const key = `${workspaceId}/${id}`;
     const existing = this.recoveries.get(key); if (existing) return existing;
-    const work = this.recoverRun(workspaceId, id).finally(() => { if (this.recoveries.get(key) === work) this.recoveries.delete(key); });
+    const work = this.recoverRun(workspaceId, id).finally(() => { if (this.recoveries.get(key) === work) this.recoveries.delete(key); this.scheduleSourceRelease(workspaceId, id); });
     this.recoveries.set(key, work); return work;
   }
   private async recoverRun(workspaceId:string,id:string):Promise<void>{
@@ -1287,7 +1304,7 @@ export class ConversationApplication {
   async observe(workspaceId: string, id: string): Promise<ConversationView> {
     const key = `${workspaceId}/${id}`;
     const current = this.observations.get(key); if (current) return current;
-    const work = this.reconcile(workspaceId, id).finally(() => this.observations.delete(key)).then(view => {
+    const work = this.reconcile(workspaceId, id).finally(() => { this.observations.delete(key); this.scheduleSourceRelease(workspaceId, id); }).then(view => {
       const marker = this.load(workspaceId, id).interruption;
       if (!this.closing && !this.recoveries.has(key) && marker?.reason === 'transport' && !marker.cancelled && !marker.attempted && marker.runId === view.run?.id && view.run?.status === 'stopped') {
         // A later successful observation can release a previously uncertain recovery.
@@ -1450,7 +1467,7 @@ export class ConversationApplication {
     const record = owned?.record;
     if (record && owned) { const answer=record.view.entries.find(e=>e.id===replyId);if(answer)answer.status='accepted';delete record.requests[requestId]; record.view.requests = record.view.requests.filter(value => value.id !== requestId); if (['waiting-approval', 'waiting-question'].includes(owned.run.status)) owned.run.status = this.waitingStatus(record, owned.run.id) ?? 'running'; this.save(record); }
     return this.read(workspaceId, id);
-    } finally { this.repliesInFlight.delete(requestId); }
+    } finally { this.repliesInFlight.delete(requestId); this.scheduleSourceRelease(workspaceId, id); }
   }
 
   addAttachment(workspaceId: string, id: string, input: AttachmentInput) {
@@ -1487,12 +1504,14 @@ export class ConversationApplication {
         catch { const latest=this.ownedRun(record.view.workspaceId,record.view.id,run.id);if(latest){latest.run.status='unknown';latest.run.diagnostic='断开时未能确认原生执行退出。';this.save(latest.record);} }
       }
     }
-    for (const [id, sourceConnection] of this.sourceConnections) if (!this.closing && sourceConnection === connectionId) { this.sourceRuntimes.delete(id); this.sourceOwners.delete(id); this.sourceConnections.delete(id); this.sourceTouched.delete(id); const slot=this.sourceSlots.get(id);if(slot)this.warmups.unclaim(slot);this.sourceSlots.delete(id); }
+    for (const [id, sourceConnection] of this.sourceConnections) if (!this.closing && sourceConnection === connectionId) { this.sourceRuntimes.delete(id); this.sourceOwners.delete(id); this.sourceConnections.delete(id);  const slot=this.sourceSlots.get(id);if(slot)this.warmups.unclaim(slot);this.sourceSlots.delete(id); }
   }
   async close(): Promise<void> {
     this.closing = true;
     clearInterval(this.idleTimer);
     const warmClosing=this.warmups.shutdown();void warmClosing.catch(()=>{});
+    for (const timer of this.idleReleaseTimers.values()) clearTimeout(timer);
+    this.idleReleaseTimers.clear();
     for (const controller of this.retryWaits.values()) controller.abort();
     for (const record of this.options.repository.listPending(true)) if (record.view.run?.generation === this.options.generation && this.retryWaits.has(record.view.run.id)) {
       record.view.run.status = 'failed'; record.view.run.diagnostic = '宿主退出，自动重试已取消；工作记录已保留。'; this.save(record);

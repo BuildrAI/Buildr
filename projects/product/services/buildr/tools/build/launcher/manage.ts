@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { activateAgentServiceRuntime } from '../../../src/modules/agent-service/application/activate-runtime.ts';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -299,6 +300,10 @@ export async function main(args: any = process.argv.slice(2)): Promise<any>  {
   const options: any = { platform: value('--platform', process.platform), channel: value('--channel', 'development'), installRoot: value('--target', undefined), stopInstance: !args.includes('--no-stop-instance') };
   if (action === 'install') await prepareDevelopmentWeb();
   const result: any = action === 'install' ? await installLauncher(options) : action === 'uninstall' ? await uninstallLauncher(options) : action === 'status' ? launcherStatus(options) : (() => { throw new Error(`Unknown launcher action: ${action}`); })();
+  if (action === 'install') {
+    const profile = resolveWebProfile({channel: 'development', runtime: {role: 'development'}});
+    result.agentService = await activateAgentServiceRuntime({dataRoot: profile.dataRoot, profileId: profile.profile ?? 'development'});
+  }
   console.log(JSON.stringify(result, null, 2));
 }
 if (import.meta.url === pathToFileURL(process.argv[1] || '').href) main().catch((error: any) => { console.error(error.message); process.exitCode = 1; });
