@@ -1337,6 +1337,62 @@ test('correcting a failed question response retains both user inputs and the acc
  }finally{await f.close();}
 });
 
+test('shutdown preserves a completed current turn even when released unknown history remains',async()=>{
+  const native=fake('local'),f=fixture([native.executor],{autoContinueInterrupted:true});
+  let cold:ReturnType<typeof createAgentService>|undefined;
+  try {
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'local','finish once');
+    const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
+    const repository=new ConversationRepository(path.join(f.options.dataRoot,'agent-service'));
+    const record=repository.readConversation(chat.id)!;
+    record.view.retainedRuns=[{...record.view.run!,id:'old-unknown',participantId:'old-participant',status:'unknown',resourcesReleased:true,executionState:'ended',interrupted:true}];
+    record.participants.push({...record.participants[0]!,id:'old-participant'});
+    repository.saveConversation(record,record.view.revision);
+    await f.service.close();
+    const saved=repository.readConversation(chat.id)!;
+    assert.equal(saved.view.run!.id,done.run!.id);assert.equal(saved.view.run!.status,'completed');
+    assert.equal(saved.interruption,undefined);assert.equal(saved.view.retainedRuns![0]!.status,'unknown');
+    cold=createAgentService(f.options);await cold.conversations.recoverInterrupted();
+    assert.equal(native.sends.length,1);assert.equal(cold.conversations.read('workspace-one',chat.id).run!.status,'completed');
+  } finally {await cold?.close();await f.close();}
+});
+
+test('stopping an unresolved submission without a native execution identity returns unknown and persists cancellation',async()=>{
+  const native=fake('local',{unknown:true}),f=fixture([native.executor],{autoContinueInterrupted:true});
+  let cold:ReturnType<typeof createAgentService>|undefined;
+  try {
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'local','do not replay this');
+    const before=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='unknown');
+    const run=before.run!;
+    const stopped=await f.service.conversations.stop('workspace-one',chat.id,{expectedRevision:before.revision,runId:run.id,participantId:run.participantId,generation:run.generation});
+    assert.equal(stopped.run!.status,'unknown');assert.notEqual(stopped.run!.resourcesReleased,true);
+    assert.match(stopped.run!.diagnostic!,/已取消.*自动接续.*未.*确认/);
+    await f.service.close();
+    const repository=new ConversationRepository(path.join(f.options.dataRoot,'agent-service'));
+    assert.equal(repository.readConversation(chat.id)!.interruption?.cancelled,true);
+    cold=createAgentService(f.options);await cold.conversations.recoverInterrupted();
+    assert.equal(native.sends.length,1);assert.equal(cold.conversations.read('workspace-one',chat.id).run!.status,'unknown');
+  } finally {await cold?.close();await f.close();}
+});
+
+test('shutdown never resets a cancelled recovery intent on an accepted unknown turn',async()=>{
+  const native=fake('local',{disconnect:'unknown'}),f=fixture([native.executor]);
+  try {
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'local','leave stopped');
+    await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='unknown');
+    const repository=new ConversationRepository(path.join(f.options.dataRoot,'agent-service')),record=repository.readConversation(chat.id)!;
+    record.interruption={runId:record.view.run!.id,awaitingUser:false,reason:'transport',cancelled:true,attempted:true};
+    repository.saveConversation(record,record.view.revision);
+    await f.service.close();
+    assert.equal(repository.readConversation(chat.id)!.interruption?.cancelled,true);
+    assert.equal(repository.readConversation(chat.id)!.interruption?.attempted,true);
+    assert.equal(native.sends.length,1);
+  } finally {await f.close();}
+});
+
 test('host shutdown records its own interruption without relabelling a user stop or replaying work',async()=>{
  for(const userStop of [false,true]){const native=fake('local',{hold:true}),f=fixture([native.executor]);try{
   await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','work once');

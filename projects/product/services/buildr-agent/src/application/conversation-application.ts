@@ -833,7 +833,8 @@ export class ConversationApplication {
     if (event.type === 'accepted') {
       attempt.accepted = true; attempt.executionRef = event.executionRef; attempt.nativeInputItemId = event.inputItemId;
       for(const receipt of record.view.entries.filter(e=>e.kind==='handoff'&&e.runId===runId))receipt.status='accepted';
-      run.accepted = true; if (run.status !== 'stopping') run.status = 'running';
+      run.accepted = true;
+      run.status = run.status === 'stopping' || record.interruption?.runId === runId && record.interruption.cancelled ? 'stopping' : 'running';
       participant.deliveredThrough = Math.max(participant.deliveredThrough, attempt.through);
       const entry = record.view.entries.find(value => value.id === attempt.userEntryId)!; entry.status = 'accepted';
       if (event.inputItemId) record.sources[`${participant.id}:message:${event.inputItemId}`] = entry.id;
@@ -1263,7 +1264,7 @@ export class ConversationApplication {
   }
   private async recoverRun(workspaceId:string,id:string):Promise<void>{
     let record=this.load(workspaceId,id),run=record.view.run;
-    if(!run || this.closing || (run.generation===this.options.generation && !record.interruption))return;
+    if(!run || !run.accepted || this.closing || (run.generation===this.options.generation && !record.interruption))return;
     if(!record.interruption){
       // Only an accepted active execution is attributable to an abrupt host loss.
       if (run.accepted && run.status === 'unknown') {
@@ -1417,6 +1418,18 @@ export class ConversationApplication {
   }
   async stop(workspaceId: string, id: string, input: { expectedRevision: string; runId: string; participantId: string; generation: string; toolId?: string }): Promise<ConversationView> {
     const pending=this.load(workspaceId,id);
+    const unbound=pending.view.run?.id===input.runId && pending.view.run.accepted===false && !pending.attempts.find(attempt=>attempt.runId===input.runId)?.executionRef && !pending.view.run.tools.length && !pending.view.requests.some(request=>request.runId===input.runId);
+    if(!this.closing&&!input.toolId&&unbound&&pending.view.run!.generation!==this.options.generation){
+      // The process router uses this only after the exact retained owner has
+      // returned its stop result and confirmed no in-flight send remains.
+      expected(pending.view.revision,input.expectedRevision);
+      const run=pending.view.run!;
+      if(run.participantId!==input.participantId||run.generation!==input.generation)fail('agent_control_stale','执行已变化，请重新核对。',409);
+      pending.interruption={runId:run.id,awaitingUser:false,cancelled:true};
+      run.status='unknown';run.canContinue=false;run.executionState='unknown';
+      run.diagnostic='已取消本轮自动接续；未能确认原生执行身份或停止结果，工作记录已保留。';
+      run.updatedAt=this.options.now();this.save(pending);return this.view(pending);
+    }
     if(!this.closing&&!input.toolId&&pending.interruption?.runId===input.runId&&pending.view.run?.id===input.runId&&pending.view.run?.generation!==this.options.generation){
       expected(pending.view.revision,input.expectedRevision);
       const run=pending.view.run;
@@ -1430,12 +1443,25 @@ export class ConversationApplication {
       control.run.status = 'stopped'; control.run.diagnostic = '已停止自动重试，工作记录已保留。';
       this.save(control.record); retry.abort(); this.retryWaits.delete(input.runId); return this.view(control.record);
     }
-    if(!this.closing && !input.toolId && control.record.interruption?.runId===input.runId){control.record.interruption.cancelled=true;this.save(control.record);}
+    if(!this.closing && !input.toolId && control.record.view.run?.id===input.runId){
+      // The user's stop survives a missing acceptance receipt and process restarts.
+      control.record.interruption={...(control.record.interruption?.runId===input.runId?control.record.interruption:{}),runId:input.runId,awaitingUser:false,cancelled:true};
+      this.save(control.record);
+    }
     if (control.run.resourcesReleased || !unfinishedRun(control.run)) return this.view(control.record);
     if (input.toolId) {
       if (control.run.tools.find(tool => tool.id === input.toolId)?.canStop !== true) fail('agent_tool_stop_unavailable', '此命令尚不支持单独停止，可停止本轮剩余执行。', 409);
     } else { control.run.status = 'stopping'; this.save(control.record); }
-    if (!control.executionRef || !control.participant.contextRef) return this.read(workspaceId, id);
+    if (!control.executionRef || !control.participant.contextRef) {
+      // An in-flight send can still return its exact identity, where accepted
+      // schedules the original stop. A settled lost receipt cannot do so.
+      if (!input.toolId && !this.workers.has(input.runId)) {
+        control.run.status='unknown';control.run.executionState='unknown';control.run.canContinue=false;
+        control.run.diagnostic='已取消本轮自动接续；未能确认原生执行身份或停止结果，工作记录已保留。';
+        control.run.updatedAt=this.options.now();this.save(control.record);
+      }
+      return this.read(workspaceId, id);
+    }
     const runtime = (await this.sourceRuntime(control.record, control.participant)).runtime;
     let observation: ExecutorObservation;
     try { observation = await runtime.stop({ contextRef: control.participant.contextRef, executionRef: control.executionRef, toolId: input.toolId }); }
@@ -1543,11 +1569,17 @@ export class ConversationApplication {
     }
     this.retryWaits.clear();
     for (const controller of this.titleWork.values()) controller.abort();
-    const owned = this.options.repository.listPending(true).filter(record => !this.options.generationAlive || record.view.run?.generation === this.options.generation);
+    // A retained unknown turn can keep the conversation in listPending even
+    // after its current turn has finished. Never turn that completion into a
+    // new host interruption, or reset an existing cancellation/recovery budget.
+    const owned = this.options.repository.listPending(true).filter(record => record.view.run && unfinishedRun(record.view.run) && !record.view.run.resourcesReleased && (!this.options.generationAlive || record.view.run.generation === this.options.generation));
     const interrupted=owned.map(record=>({workspaceId:record.view.workspaceId,id:record.view.id,runId:record.view.run?.id}));
     for (const record of owned) {
       if (record.view.run) {
-        if(record.view.run.status!=='stopping'){record.interruption={runId:record.view.run.id,awaitingUser:record.view.requests.some(request=>request.runId===record.view.run!.id)||['waiting-approval','waiting-question'].includes(record.view.run.status)};record.view.run.interrupted=true;}
+        if(record.view.run.accepted && ['running','waiting-approval','waiting-question','tools-active'].includes(record.view.run.status)){
+          if(record.interruption?.runId!==record.view.run.id)record.interruption={runId:record.view.run.id,awaitingUser:record.view.requests.some(request=>request.runId===record.view.run!.id)||['waiting-approval','waiting-question'].includes(record.view.run.status)};
+          record.view.run.interrupted=true;
+        }
         record.view.run.status = 'unknown'; record.view.run.diagnostic = '宿主正在退出，原生执行尚待确认。'; this.save(record); }
     }
     const ids = new Set(this.options.repository.listPendingStates(true).flatMap(record => conversationRuns(record.view).filter(run=>run.generation===this.options.generation).flatMap(run=>record.participants.find(value=>value.id===run.participantId)?.connectionId??[])));

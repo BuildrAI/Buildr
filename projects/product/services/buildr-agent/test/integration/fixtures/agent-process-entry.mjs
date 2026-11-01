@@ -5,6 +5,20 @@ import { startAgentExecutionServer } from './index.js';
 
 const bootstrap=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
 const marker=JSON.parse(fs.readFileSync(new URL('./fixture-version.json',import.meta.url),'utf8'));
+if(marker.version==='legacy-unbound-stop'){
+  // Emulate the retained binary's bug so the new router, rather than an already
+  // fixed old owner, must recover the stop result. This never runs in product.
+  const {ConversationApplication}=await import('./application/conversation-application.js');
+  const stop=ConversationApplication.prototype.stop;
+  ConversationApplication.prototype.stop=async function(scope,id,input){
+    const view=await stop.call(this,scope,id,input);
+    if(!input.toolId&&view.run?.id===input.runId&&view.run.accepted===false){
+      const record=this.load(scope,id);record.view.run.status='stopping';delete record.interruption;
+      this.save(record);return this.read(scope,id);
+    }
+    return view;
+  };
+}
 const capabilities={supplement:true,text:true,images:true,approval:true,questions:true,stop:true,resume:true,maxInputBytes:65536};
 function executor(id){return{descriptor:{id,label:id,capabilities},async open({configRoot}){
   fs.mkdirSync(configRoot,{recursive:true});
@@ -19,6 +33,7 @@ function executor(id){return{descriptor:{id,label:id,capabilities},async open({c
       const ref=input.contextRef,state=read(ref),executionRef={id:randomUUID()};
       state.executionRef=executionRef;state.status='running';state.kind=workText;state.stopRequested=false;state.tools=[];save(ref,state);
       fs.appendFileSync(path.join(bootstrap.dataRoot,'native-sends.jsonl'),JSON.stringify({id,text:workText,prompt:input.text,executionRef,version:marker.version})+'\n');
+      if(workText==='lost-before-accept'){state.status='unknown';delete state.executionRef;save(ref,state);throw new Error('acceptance receipt missing');}
       input.onEvent({type:'accepted',executionRef});
       if(workText==='uncertain-ended'){
         state.status='unknown';state.tools=[{id:'unsettled',label:'one operation, result missing',status:'unknown'}];

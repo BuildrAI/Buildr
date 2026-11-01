@@ -214,7 +214,22 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
         const ownsRun = controlGeneration ? controlGeneration === identity.generation : run?.generation === identity.generation;
         if (!ownsRun || ['conversations.warmup','conversations.readEntry','conversations.fork','conversations.createChild','conversations.listChildren','conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.queueSend','conversations.cancelPendingSend'].includes(name)) target = current;
       }
-      if (target) { json(res, 200, await forward(target, '/operations', input)); return; }
+      if (target) {
+        const result=await forward(target, '/operations', input);
+        // Legacy owners can leave a settled, unaccepted submission permanently
+        // "stopping" because there is no native execution identity to control.
+        // Cancel only its recovery intent; retain delivery and resource unknowns.
+        if(name==='conversations.stop'&&!input.args[2]?.toolId&&result.run?.id===input.args[2]?.runId&&result.run.accepted===false&&['stopping','unknown'].includes(result.run.status)){
+          const ownerStatus=await request(target.origin,target.token,'/status',undefined,AbortSignal.timeout(3000));
+          if(ownerStatus.identity?.generation===target.identity.generation && ownerStatus.retiring && !ownerStatus.accepting && !ownerStatus.activity.reasons.some((reason:{kind:string;count:number})=>['execution','input','recovery','reply'].includes(reason.kind)&&reason.count>0)){
+            const record=repository.readConversation(input.args[1]);
+            if(record && record.view.revision===result.revision && !record.attempts.find(attempt=>attempt.runId===result.run.id)?.executionRef){
+              json(res,200,await service.conversations.stop(input.args[0],input.args[1],{...input.args[2],expectedRevision:result.revision}));return;
+            }
+          }
+        }
+        json(res,200,result);return;
+      }
       const startsWork = !name.startsWith('conversations.') || ['conversations.warmup','conversations.fork','conversations.startDraft','conversations.create','conversations.createChild','conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.generateTitle'].includes(name);
       if (startsWork && !accepting) throw new AgentServiceError('agent_process_switching', '执行后台正在采用新版，本次新操作尚未受理。', 503);
       if (['conversations.startDraft','conversations.send'].includes(name) && pending?.runtime.digest !== undefined && pending.runtime.digest !== options.runtime.digest) throw new AgentServiceError('agent_process_switching','新版尚未就绪，可以提交待发送内容。',503);
