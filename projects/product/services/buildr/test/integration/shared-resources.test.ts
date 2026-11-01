@@ -41,8 +41,8 @@ test('共享收录保留完整能力资源，旧集迁移清理内部副本而�
   process.env.BUILDR_PRODUCT_DATA_DIR = path.join(root, 'data');
   t.after(() => { if (previous === undefined) delete process.env.BUILDR_PRODUCT_DATA_DIR; else process.env.BUILDR_PRODUCT_DATA_DIR = previous; });
   const product = path.join(root, 'product');
-  const shared = ['workspace/skills/buildr/example/SKILL.md', 'workspace/skills/buildr/example/templates/example.yml', 'workspace/skills/contracts/buildr/example/v1.md', 'runtime/skills/buildr/SKILL.md'];
-  const internal = ['workspace/AGENTS.md', 'workspace/projects/AGENTS.project.md', 'workspace/gitignore', 'workspace/commands/manifest.yml', 'workspace/components/example/component.yml', 'installation/launcher/Buildr.icns', 'contracts/bootstrap.yml', 'manifest.yml'];
+  const shared = ['workspace/skills/buildr/example/SKILL.md', 'workspace/skills/buildr/example/templates/example.yml', 'workspace/skills/contracts/buildr/example/v1.md', 'runtime/skills/buildr/SKILL.md', 'workspace/components/buildr/example/contributions/example.md'];
+  const internal = ['workspace/AGENTS.md', 'workspace/projects/AGENTS.project.md', 'workspace/gitignore', 'workspace/commands/manifest.yml', 'workspace/components/example/component.yml', 'workspace/components/buildr/example/component.yml', 'workspace/components/workspace/private/contributions/private.md', 'installation/launcher/Buildr.icns', 'contracts/bootstrap.yml', 'manifest.yml'];
   for (const relative of [...shared, ...internal]) {
     const file = path.join(product, 'resources', relative);
     fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, relative);
@@ -70,7 +70,7 @@ test('共享收录保留完整能力资源，旧集迁移清理内部副本而�
   assert.equal(inspectSharedResources().id, old.id);
   ensurePackageResources(product);
   assert.equal(inspectSharedResources().id, capabilityIdentity);
-  assert.deepEqual(fs.readdirSync(target).sort(), ['contracts', 'resource-set.json', 'skills']);
+  assert.deepEqual(fs.readdirSync(target).sort(), ['components', 'contracts', 'resource-set.json', 'skills']);
   for (const source of [...internal, ...shared]) assert.equal(fs.existsSync(path.join(product, 'resources', source)), true);
   for (const entry of desired.files) assert.equal(fs.readFileSync(path.join(target, entry.path), 'utf8'), entry.source);
 });

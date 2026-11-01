@@ -15,7 +15,9 @@ export type ResourceSet = { schemaVersion: 'buildr.shared-resources/v1'; id: str
 const digest = (value: string | Buffer) => crypto.createHash('sha256').update(value).digest('hex');
 // Only capability sources are shared. Initialization, launcher and package checks
 // keep reading their installation-owned resources instead of a second copy.
-const SHARED_SOURCE_ROOTS = ['workspace/skills/', 'runtime/skills/'];
+const SHARED_SOURCE_ROOTS = ['workspace/skills/', 'runtime/skills/', 'workspace/components/buildr/'];
+const isSharedSource = (source: string) => source.startsWith('workspace/skills/') || source.startsWith('runtime/skills/')
+  || /^workspace\/components\/buildr\/[^/]+\/contributions\//.test(source);
 const relativeFile = (value: string) => {
   if (!value || value.includes('\\') || value.includes('\0') || path.posix.normalize(value) !== value || value.startsWith('/') || value.split('/').includes('..')) throw new Error(`Invalid resource path: ${value}`);
   return value;
@@ -50,7 +52,7 @@ export function describePackageResources(product = resolveProductRoot()): Resour
       const source = path.relative(root, file).split(path.sep).join('/');
       if (stat.isDirectory()) {
         if (SHARED_SOURCE_ROOTS.some(prefix => prefix.startsWith(`${source}/`) || `${source}/`.startsWith(prefix))) scan(file);
-      } else if (SHARED_SOURCE_ROOTS.some(prefix => source.startsWith(prefix))) {
+      } else if (isSharedSource(source)) {
         files.push({ source, path: destination(source), sha256: digest(fs.readFileSync(file)), mode: stat.mode & 0o777 });
       }
     }

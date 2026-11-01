@@ -576,6 +576,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/service-registry-boundaries.test.ts',
     'test/integration/workspace-registry-boundaries.test.ts',
     'test/integration/shared-resources.test.ts',
+    'test/integration/shared-component-contributions.test.ts',
     'test/integration/shared-resource-coexistence.test.ts',
     'test/integration/workspace-agent-assets-http-contract.test.ts',
     'test/integration/workspace-composition.test.ts',
