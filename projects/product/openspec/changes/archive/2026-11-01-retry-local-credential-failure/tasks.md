@@ -20,4 +20,4 @@
 
 - [x] 4.1 `buildr-agent` 单元测试与静态检查通过。
 - [x] 4.2 补充集成用例：本机凭据失效后自动接续一次并完成，同因再次失败时停止且不产生多次发送，账号状态是过期观测时重新核对一次后接续，账号已不可用时不接续。
-- [ ] 4.3 在本机 Buildr Web 实际验证一次该失败类型的自动恢复（需先交付到本机应用）。
+- [x] 4.3 在本机 Buildr Web 实际验证一次该失败类型的自动恢复（需先交付到本机应用）。交付后重启的开发应用（生成 `e937b283-8135-4a5a-bf6e-c93925949210`、运行产物 `736c5bab…`）中新建对话 `49681e51-fe8e-47bf-b4f9-8e497fd3547c`，用账号 `native-codex`（`gpt-6.1-sol`）投递一轮，在模型调用进行时调用 `POST /revoke {"accountId":"native-codex"}`：运行 `bffdc9ac-06d6-4ec3-949b-b39ed4c4c64c` 以 `Codex · 本轮执行：unexpected status 401 Unauthorized: 模型调用的本机凭据已失效。, url: [地址已隐藏]` 失败并留在 `runOutcomes` 中，随后自动接续 `8baaec9f-6f2e-4dcf-8b35-e4924fd39de5`（`clientRequestId` 为 `automatic-retry:bffdc9ac-…:1`、`continuationOf` 为 `bffdc9ac-…`），在同一用户条目下以「系统自动重试：上次执行因本机模型凭据失效而结束，已重新准备执行环境并确认没有未结束的工具。」开始，`pwd` 与 `ls -1 | head -5` 两个工具结束后给出最终答复；账号在撤销后短暂为 `not-authenticated`，接续前重新核对回到 `ready`，全程只产生一次接续。
