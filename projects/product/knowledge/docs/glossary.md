@@ -47,10 +47,10 @@
 ## 规则（Rule）
 
 - 定义：表达价值观、权威与授权边界、约束和结果不变量的长期要求。
-- 适用范围：组织、项目（Project）及服务（Service）的适用规则（Rule）与受管核心规则（Rule）。
+- 适用范围：组织、项目（Project）及服务（Service）的适用规则（Rule），不要求存在 Buildr 默认规则区块。
 - 承载方式：规则正文位于对应作用域的 `AGENTS.md`，按组织根、项目到服务逐层读取；不再有独立的规则清单登记。
 - 避免混用：不承载命令序列、专业流程或当前任务（Task）状态；这些由方法与应用（Application）负责。
-- 来源：[核心规则](../../services/buildr/resources/workspace/AGENTS.md)。
+- 来源：[根规则](../../../../AGENTS.md)与[规则作用域规范](../../openspec/specs/root-organization-workspace/spec.md)；随包旧核心规则只作历史参照。
 
 ## 技能（Skill）
 
@@ -113,7 +113,7 @@
 - 定义：工作资产（Work Asset）、发现入口和运行时投射（Runtime Projection）共同形成的整体工作体验。
 - 适用范围：人和智能体（Agent）在同一工作空间（Workspace）中发现事实、约束和方法。
 - 避免混用：不是另一个智能体（Agent），也不替智能体（Agent）形成完整任务上下文（Task Context）。
-- 来源：[产品架构](overview.md#工作范围与资料怎样组织)。
+- 来源：[产品架构](overview.md#buildr-怎样组织工作)。
 
 ## 智能体软件（Agentic Software）
 
