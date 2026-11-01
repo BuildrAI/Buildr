@@ -2,7 +2,6 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { TextAreaRef } from 'antd/es/input/TextArea';
 import { Alert, Button, Dropdown, Input, Space, Spin, Tooltip } from 'antd';
 import { CheckOutlined, DownOutlined, InfoCircleOutlined } from '@ant-design/icons';
-import { useAgentConversationShell } from '../../agent-conversations/AgentConversationsContext';
 import { agentConversationsApi } from '../../agent-conversations/api/agent-conversations-api';
 import type { ExecutionModelSource } from '../../../lib/execution-model';
 import { AgentActionControl } from '../../../components/AgentActionControl';
@@ -21,7 +20,6 @@ const messageSelections = new WeakMap<SourceControlActions, Map<string, MessageS
 
 type Props = {active?: boolean; workspaceId: string; repository: SourceControlRepository; worktree: SourceControlWorktree; actions: SourceControlActions; version: string};
 export function SourceControlCommitPanel({active = true, workspaceId, repository, worktree, actions, version}: Props) {
-  const {setSettings} = useAgentConversationShell();
   const [modelCatalog, setModelCatalog] = useState<ExecutionModelSource[]>([]);
   const [modelsLoading, setModelsLoading] = useState(true);
   const [modelError, setModelError] = useState('');
@@ -86,7 +84,7 @@ export function SourceControlCommitPanel({active = true, workspaceId, repository
   const generationPhase = state.generation?.phase === 'cancelling' ? '正在取消…' : state.generation?.phase === 'running' ? '正在生成…' : '正在准备…';
   return <section className="source-control-commit-panel" aria-label="提交变更" data-source-commit-key={key}>
     <div className="source-control-message-input"><Input.TextArea key={key} ref={textarea} id="commit-message-text" aria-label="提交说明内容" title={provenance ? `${provenance}；${scope}` : scope} placeholder="提交说明" value={state.text} disabled={generating || writing} onChange={event => {actions.setText(source, event.target.value); setFeedback('');}} autoSize={{minRows: expandedMessage ? 6 : 1, maxRows: 12}} />
-      <AgentActionControl id="generate-commit-message" label={state.generatedBy ? '重新生成提交说明' : '生成提交说明'} executor={executor} options={options} disabled={!ready || noChanges || writing} pending={generating} onAction={() => {if (nextExecutor) void actions.generate(source, {id: nextExecutor.key, label: nextExecutor.label, modelAccountId: nextExecutor.accountId, modelId: nextExecutor.modelId, accountIdentity: nextExecutor.accountIdentity, accountRevision: nextExecutor.accountRevision, serviceTier: nextExecutor.serviceTier, reasoningEffort: nextExecutor.reasoningEffort});}} onOpenModels={() => setSettings(true)} />
+      <AgentActionControl id="generate-commit-message" label={state.generatedBy ? '重新生成提交说明' : '生成提交说明'} executor={executor} options={options} disabled={!ready || noChanges || writing} pending={generating} onAction={() => {if (nextExecutor) void actions.generate(source, {id: nextExecutor.key, label: nextExecutor.label, modelAccountId: nextExecutor.accountId, modelId: nextExecutor.modelId, accountIdentity: nextExecutor.accountIdentity, accountRevision: nextExecutor.accountRevision, serviceTier: nextExecutor.serviceTier, reasoningEffort: nextExecutor.reasoningEffort});}} />
     </div>
     {generating && <div className="source-control-generation-status" role="status"><Spin size="small" /><span>{generationPhase}</span><Button id="cancel-commit-message" size="small" type="text" onClick={() => void actions.cancel(source)}>{state.generation?.phase === 'cancelling' ? '重试取消' : '取消'}</Button></div>}
     <div className="source-control-commit-actions"><Space.Compact className="source-control-commit-split" size="small">
@@ -101,7 +99,7 @@ export function SourceControlCommitPanel({active = true, workspaceId, repository
     {(state.generationError || state.gitError) && <Alert type="warning" showIcon message={state.generationError || state.gitError} />}
     {state.generationWarning && <Alert id="commit-generation-cleanup-warning" type="warning" showIcon message={state.generationWarning} />}
     {state.stale && !state.generationError && <p className="source-control-action-note">变更已更新，请核对说明。</p>}
-    {!generating && !modelsLoading && !nextExecutor?.available && <p className="source-control-action-note">{nextExecutor ? '当前执行模型不可用，请重新选择' : '选择模型后可生成说明'}<Button type="link" size="small" onClick={() => setSettings(true)}>配置模型</Button></p>}
+    {!generating && !modelsLoading && !nextExecutor?.available && <p className="source-control-action-note">{nextExecutor ? '当前执行模型不可用，请重新选择' : '选择模型后可生成说明'}</p>}
     {modelError && <p className="source-control-action-note" role="status">{modelError}</p>}
     {feedback && <p className="source-control-action-note" role="status">{feedback}</p>}
   </section>;

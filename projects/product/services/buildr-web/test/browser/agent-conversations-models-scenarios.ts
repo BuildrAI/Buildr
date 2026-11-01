@@ -6,14 +6,37 @@ export async function runModelsScenarios(fixture:AgentConversationFixture){
   const {assertModelSummary,capture,chooseAgent,chooseModel,chooseOption,closeConversation,closeModelSettings,input,modelSettings,modelTrigger,openModelSettings,page,panel,preparedInputs,reopen,run,sentInputs,setHighEffort,step,update,workspaceId}=fixture;
 await step('模型名称选择器仅在悬停时显示外形',async()=>{
       await openModelSettings();const picker=modelSettings().locator('.ac-model-picker.ant-select');await picker.waitFor();await modelSettings().getByRole('slider',{name:'思考深度',exact:true}).focus();await page.mouse.move(4,4);await page.waitForTimeout(250);
+      assert.equal(await modelSettings().getByRole('button',{name:'配置模型',exact:true}).count(),0,'公共模型弹层不提供配置入口');
+      assert.equal(await picker.locator('.ant-select-arrow').count(),0,'内部模型名称不带下拉箭头');
+      const geometry=await modelSettings().evaluate((node:HTMLElement)=>{const popup=node.closest('.ant-popover')!.getBoundingClientRect(),trigger=document.querySelector('.ac-model-trigger[aria-expanded="true"]')!.getBoundingClientRect(),row=node.querySelector('.ac-model-top-row')!.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(node.querySelector('.ant-select-selection-item')!);const text=range.getBoundingClientRect();return{bottom:popup.bottom,triggerTop:trigger.top,center:Math.abs(text.left+text.right-row.left-row.right)/2};});
+      assert.ok(geometry.bottom<=geometry.triggerTop+1,'对话模型弹层仍向上展开：'+JSON.stringify(geometry));
+      assert.ok(geometry.center<=2,'内部模型名相对整行居中：'+JSON.stringify(geometry));
+      await capture(page,'agent-model-settings-layout.png');
       const read=()=>picker.evaluate((node:HTMLElement)=>{const style=getComputedStyle(node);return{background:style.backgroundColor,border:style.borderTopColor,width:style.borderTopWidth,text:node.textContent?.trim()??''};});
       const idle=await read();assert.equal(idle.width,'1px');assert.equal(idle.background,'rgba(0, 0, 0, 0)');assert.equal(idle.border,'rgba(0, 0, 0, 0)');assert.ok(idle.text.length>0,'模型名称在未悬停时仍可读');
       const box=await picker.boundingBox();assert.ok(box);await page.mouse.move(box.x+box.width/2,box.y+box.height/2);
       await page.waitForFunction(()=>{const node=document.querySelector<HTMLElement>('.ac-model-popover .ac-model-picker.ant-select');if(!node)return false;const style=getComputedStyle(node);return style.backgroundColor!=='rgba(0, 0, 0, 0)'&&style.borderTopColor!=='rgba(0, 0, 0, 0)';});
       const hovered=await read();assert.notEqual(hovered.background,'rgba(0, 0, 0, 0)');assert.notEqual(hovered.border,'rgba(0, 0, 0, 0)');
+      const hoveredCenter=await modelSettings().evaluate((node:HTMLElement)=>{const row=node.querySelector('.ac-model-top-row')!.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(node.querySelector('.ant-select-selection-item')!);const text=range.getBoundingClientRect();return Math.abs(text.left+text.right-row.left-row.right)/2;});assert.ok(hoveredCenter<=2,'悬停不改变模型名居中：'+hoveredCenter);
       await page.mouse.move(4,4);
       await page.waitForFunction(()=>{const node=document.querySelector<HTMLElement>('.ac-model-popover .ac-model-picker.ant-select');if(!node)return false;const style=getComputedStyle(node);return style.backgroundColor==='rgba(0, 0, 0, 0)'&&style.borderTopColor==='rgba(0, 0, 0, 0)';});
       await closeModelSettings();
+    });
+
+await step('模型名与推理强度保持2px间隙，长名称在390px下仍可读且不溢出',async()=>{
+      const readTrigger=()=>modelTrigger().evaluate((node:HTMLElement)=>{const label=document.createRange(),effort=document.createRange();label.selectNodeContents(node.querySelector('.ac-model-label')!);effort.selectNodeContents(node.querySelector('.ac-model-effort')!);const fragments=Array.from(label.getClientRects()),last=fragments.at(-1)!,depth=effort.getBoundingClientRect(),button=node.getBoundingClientRect();return{gap:depth.left-last.right,sameLine:Math.abs(depth.bottom-last.bottom)<8,effort:node.querySelector('.ac-model-effort')!.textContent,readable:depth.width>0&&depth.height>0&&depth.left>=button.left-1&&depth.right<=button.right+1&&depth.top>=button.top-1&&depth.bottom<=button.bottom+1,overflow:node.scrollWidth>node.clientWidth+1,button:button.toJSON()};});
+      const regular=await readTrigger();assert.ok(regular.sameLine&&Math.abs(regular.gap-2)<=0.5,'普通模型名与强度实际间隙为2px：'+JSON.stringify(regular));
+      if(process.env.BUILDR_SCREENSHOT_DIR)await modelTrigger().screenshot({path:process.env.BUILDR_SCREENSHOT_DIR+'/model-label-effort-gap.png'});
+      const previousModels=fixture.sharedModels,longLabel='Long model name for readable reasoning depth';
+      try{
+        fixture.sharedModels=[...previousModels,{id:'gap-long-model',accountId:'gap-fixture',accountIdentity:'gap-identity',accountRevision:'gap-r1',accountLabel:'Gap fixture',provider:'fixture',modelId:'gap-long-model',label:longLabel,available:true,enabled:true,reasoningEfforts:[{id:'medium',label:'中'},{id:'high',label:'高'}],defaultReasoningEffort:'high'}];
+        await page.reload();await input().waitFor();await chooseModel(longLabel);await closeModelSettings();
+        await page.setViewportSize({width:390,height:844});await modelTrigger().waitFor();
+        const long=await readTrigger();assert.equal(long.effort,'高');assert.ok(long.readable&&!long.overflow&&long.button.left>=-1&&long.button.right<=390+1,'窄屏长模型名仍显示完整强度且按钮不溢出：'+JSON.stringify(long));
+        assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true,'长模型名不产生页面横向溢出');
+        if(process.env.BUILDR_SCREENSHOT_DIR)await modelTrigger().screenshot({path:process.env.BUILDR_SCREENSHOT_DIR+'/model-label-effort-gap-long-mobile.png'});
+        process.stderr.write('[model-label-effort-gap] '+JSON.stringify({regular,long})+'\n');
+      }finally{fixture.sharedModels=previousModels;await page.setViewportSize({width:1600,height:1000});await page.reload();await input().waitFor();await chooseModel('Fixture model');await setHighEffort();await closeModelSettings();}
     });
 
 await step('单项停止只对原生明确可停止的命令开放，旧记录与不支持者不误给按钮',async()=>{

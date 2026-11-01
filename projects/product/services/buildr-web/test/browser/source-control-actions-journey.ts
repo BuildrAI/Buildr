@@ -75,6 +75,12 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
         await panel.locator('#generate-commit-message-model-menu').click();
         await capture(page,'source-control-model-choice.png');
         const settings=page.getByRole('dialog',{name:'模型与推理强度设置',exact:true}),combo=settings.getByRole('combobox',{name:'执行模型',exact:true});
+        await settings.waitFor();
+        assert.equal(await settings.getByRole('button',{name:'配置模型',exact:true}).count(),0,'公共模型弹层不提供配置入口');
+        assert.equal(await settings.locator('.ac-model-picker .ant-select-arrow').count(),0,'内部模型名称不带下拉箭头');
+        const geometry=await settings.evaluate((node:HTMLElement)=>{const popup=node.closest('.ant-popover')!.getBoundingClientRect(),trigger=document.querySelector('#generate-commit-message-model-menu')!.getBoundingClientRect(),row=node.querySelector('.ac-model-top-row')!.getBoundingClientRect(),item=node.querySelector('.ant-select-selection-item')!,range=document.createRange();range.selectNodeContents(item);const text=range.getBoundingClientRect();return{top:popup.top,triggerBottom:trigger.bottom,left:popup.left,triggerLeft:trigger.left,right:popup.right,triggerRight:trigger.right,center:Math.abs(text.left+text.right-row.left-row.right)/2};});
+        assert.ok(geometry.top>=geometry.triggerBottom-1&&Math.abs(geometry.left-geometry.triggerLeft)<=2&&geometry.right>geometry.triggerRight,'紧凑弹层位于按钮下方且向右展开：'+JSON.stringify(geometry));
+        assert.ok(geometry.center<=2,'内部模型名相对整行居中：'+JSON.stringify(geometry));
         await combo.focus();await combo.press('ArrowDown');
         const modelList=page.locator('.ac-model-list-popup:visible');
         await modelList.getByRole('navigation',{name:'模型来源快速定位',exact:true}).waitFor();
@@ -84,7 +90,23 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
         await modelList.getByText('Browser Model',{exact:true}).click();
         const slider=settings.getByRole('slider',{name:'思考深度',exact:true});await slider.press('End');assert.equal(await slider.getAttribute('aria-valuetext'),'高');
         await settings.getByRole('button',{name:'切换服务档位',exact:true}).click();assert.equal(await slider.getAttribute('aria-valuetext'),'高');
+        const assertCentered=async()=>{const delta=await settings.evaluate((node:HTMLElement)=>{const row=node.querySelector('.ac-model-top-row')!.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(node.querySelector('.ant-select-selection-item')!);const text=range.getBoundingClientRect();return Math.abs(text.left+text.right-row.left-row.right)/2;});assert.ok(delta<=2,'选中模型并收起列表后文字仍居中：'+delta);};
+        await assertCentered();await settings.locator('.ac-model-picker').hover();await assertCentered();
         await capture(page,'source-control-model-settings.png');
+        await combo.focus();await combo.press('Escape');await settings.waitFor({state:'hidden'});
+        await page.setViewportSize({width:390,height:420});
+        await panel.locator('#generate-commit-message-model-menu').click();await settings.waitFor();
+        try{await page.waitForFunction(()=>{const node=document.querySelector('.ac-model-popover:not(.ant-popover-hidden)');if(!node)return false;const box=node.getBoundingClientRect();return box.width>100&&box.height>30&&getComputedStyle(node).opacity==='1'&&!/(?:enter|appear)-active/.test(node.className)&&box.left>=-1&&box.top>=-1&&box.right<=innerWidth+1&&box.bottom<=innerHeight+1;});}catch(error){const bounds=await page.evaluate(()=>({viewport:[innerWidth,innerHeight],trigger:document.querySelector('#generate-commit-message-model-menu')?.getBoundingClientRect().toJSON(),popups:[...document.querySelectorAll('.ac-model-popover')].map(node=>({class:node.className,rect:node.getBoundingClientRect().toJSON()}))}));await capture(page,'source-control-model-settings-narrow-failure.png');throw new Error('窄视口模型弹层不可见或溢出：'+JSON.stringify(bounds),{cause:error});}
+        if(process.env.BUILDR_SCREENSHOT_DIR)await page.screenshot({path:process.env.BUILDR_SCREENSHOT_DIR+'/source-control-model-settings-narrow.png',fullPage:false});
+        await combo.focus();await combo.press('ArrowDown');await combo.fill('Browser');
+        await modelList.getByText('Browser Model',{exact:true}).waitFor();
+        assert.equal(await modelList.getByText('Offline Model',{exact:true}).count(),0,'窄视口仍可搜索模型');
+        await page.waitForFunction(()=>{const node=document.querySelector('.ac-model-list-popup:not(.ant-select-dropdown-hidden)');if(!node)return false;const box=node.getBoundingClientRect();return box.width>100&&box.height>30&&getComputedStyle(node).opacity==='1'&&!/(?:enter|appear)-active/.test(node.className)&&box.left>=-1&&box.top>=-1&&box.right<=innerWidth+1&&box.bottom<=innerHeight+1;});
+        if(process.env.BUILDR_SCREENSHOT_DIR)await page.screenshot({path:process.env.BUILDR_SCREENSHOT_DIR+'/source-control-model-list-narrow.png',fullPage:false});
+        await combo.press('Escape');await modelList.waitFor({state:'hidden'});assert.equal(await settings.isVisible(),true,'首个Escape仅关闭模型列表');
+        await combo.press('Escape');await settings.waitFor({state:'hidden'});
+        await page.setViewportSize({width:1440,height:900});
+        await panel.locator('#generate-commit-message-model-menu').click();await settings.waitFor();
         assert.equal(await panel.locator('.ac-context-trigger').count(),0,'提交生成控件不带对话上下文用量');
         assert.equal(await settings.locator('.ac-context-trigger').count(),0,'提交生成弹层不带对话上下文用量');
         await combo.focus();await page.keyboard.press('Escape');await settings.waitFor({state:'hidden'});
