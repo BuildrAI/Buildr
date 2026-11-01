@@ -165,3 +165,10 @@ test('cancelled session refresh cannot resend a restart request', async t => {
   await assert.rejects(api('/api/v1/app/restart', { method: 'POST', body: '{}', signal: controller.signal }), error => error.name === 'AbortError');
   assert.equal(requests, 1);
 });
+
+test('internal HTTP error keeps a safe correlation reference without retrying mutation',async t=>{
+ let calls=0;const requestId='11111111-2222-3333-4444-555555555555';
+ t.mock.method(globalThis,'fetch',async()=>{calls++;return new Response(JSON.stringify({error:{code:'internal_error',message:'Buildr Web 处理请求失败。',details:{requestId}}}),{status:500});});
+ const client=createApiClient({getWorkspaceId:()=>null,sessionAdapter:{writeHeaders:()=>({})}});
+ await assert.rejects(client('/api/v1/app/agent-service/conversations/id/requests/q/reply',{method:'POST',body:'{}'}),error=>error.status===500&&error.message.includes(requestId));assert.equal(calls,1);
+});

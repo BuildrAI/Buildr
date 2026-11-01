@@ -17,7 +17,7 @@ function numberQuery(value: string | null): number | undefined { if (value === n
 
 export function createAgentServiceHttpContribution(resolve: () => AgentService | AgentOperations | Promise<AgentService | AgentOperations>, options: { defaultWorkspace?: () => { rootPath: string }; registeredWorkspaceIds?: () => string[]; runtimeStatus?: () => Promise<unknown>; prepareDefaultWorkspace?: () => void } = {}) {
   const { defaultWorkspace, registeredWorkspaceIds = () => [] } = options;
-  return {
+  const contribution = {
     id: 'agent-service.http', schemas: SCHEMAS, operations: AGENT_SERVICE_HTTP_OPERATIONS,
     async handleTopLevel(context: any) {
       const { request, pathname, searchParams, authorizeRead, authorizeWrite, readJsonBody } = context;
@@ -190,4 +190,13 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       return null;
     },
   };
+  // This service owns these public diagnostics; the host still masks unknown errors.
+  const handle = (method: 'handle' | 'handleTopLevel') => async (context: any) => {
+    try { return await contribution[method](context); }
+    catch (error) {
+      if (error instanceof AgentServiceError) return { status: error.status, body: { error: { code: error.code, message: error.message } } };
+      throw error;
+    }
+  };
+  return { ...contribution, handle: handle('handle'), handleTopLevel: handle('handleTopLevel') };
 }

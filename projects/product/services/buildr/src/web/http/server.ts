@@ -96,7 +96,7 @@ export function createLocalWorkspaceServer(runtime: any, {
   }
 
   const server = http.createServer((request: any, response: any) => {
-    Promise.resolve().then(() => routeRequest(request, response)).catch((error: any) => apiError(response, error));
+    Promise.resolve().then(() => routeRequest(request, response)).catch((error: any) => apiError(response, error, request));
   });
   routeRequest = createLocalWorkspaceRequestRouter({
     resolveRegisteredWorkspace,

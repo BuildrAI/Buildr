@@ -194,7 +194,11 @@ export function AgentConversationsProvider({children, client = agentConversation
         if (failures<5) {const delay=Math.min(5000,500*2**failures++);setReconnecting(true);retryTimer=setTimeout(()=>{void connect(true);},delay);return;}
         if(!await reconcile())return;
         setReconnecting(false);
-        setStreamError(failure instanceof Error ? failure.message : '暂时无法同步最新进展；已保留收到的消息，请重新连接。');
+        const diagnostic=failure instanceof Error?failure.message:'暂时无法接收实时进展。';
+        setStreamError(diagnostic+' 正在自动重连，后台工作仍会保留。');
+        // Continue low-frequency recovery while this exact execution needs observation.
+        // Reads can still discover progress; only valid events prove the stream recovered.
+        retryTimer=setTimeout(()=>{void connect(true);},15_000);
       }
     };
     void connect();

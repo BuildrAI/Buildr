@@ -4,6 +4,36 @@ import type {AgentConversationFixture} from './agent-conversation-fixture.ts';
 /** handoff 场景使用独立准备的对话现场。 */
 export async function runHandoffScenarios(fixture:AgentConversationFixture){
   const {assertFixed,assertModelSummary,capture,chooseAgent,chooseModel,closeConversation,closeModelSettings,connections,input,modelSettings,page,panel,preparedInputs,reopen,run,sentInputs,step,update,workspaceId}=fixture;
+await step('回答已接收但返回失败自动消除准确旧告警；无关更新不误报成功',async()=>{
+ const saved=structuredClone(fixture.conversation),before=fixture.replies;
+ const matcher=/\/agent-conversations\/[^/]+\/requests\/[^/]+\/reply$/;
+ const defaultMatcher='**/api/v1/app/agent-service/default-workspace';let defaultReads=0;
+ const unusedDefault=async(route:any)=>{defaultReads++;return route.fulfill({status:500,json:{error:{code:'internal_error',message:'不应读取默认目录'}}});};
+ await page.route(defaultMatcher,unusedDefault);
+ try {
+  for(const accepted of [false,true]){
+   const request={id:'reply-response-lost',conversationId:saved.id,workspaceId,participantId:'participant-codex',runId:'run-fixture',generation:'generation-fixture',kind:'question',title:'确认范围',questions:[{id:'scope',label:'回答范围'}]};
+   update({run:run('waiting-question','codex',{model:'fixture-model',permissionMode:'full-access'}),requests:[request],pendingSend:undefined,entries:[...saved.entries]});
+   await page.reload();await input().waitFor();await input().fill('独立草稿保留');
+   let calls=0;
+   const intercept=async(route:any)=>{
+    calls++;const answer=route.request().postDataJSON().answer;
+    if(accepted)update({run:{...fixture.conversation.run,status:'running'},requests:[],entries:[...fixture.conversation.entries,{id:'reply-'+request.id,kind:'notice',role:'user',participantId:request.participantId,runId:request.runId,status:'accepted',sequence:fixture.conversation.entries.length+1,text:JSON.stringify({请求标识:request.id,回答:answer}),createdAt:new Date().toISOString()}]});
+    else update({title:'仅更新标题'});
+    fixture.expectedBrowserErrors.add('503');return route.fulfill({status:503,json:{error:{code:'reply_response_lost',message:'回答返回暂不可用'}}});
+   };
+   await page.route(matcher,intercept);
+   try{
+    const card=panel().locator('[data-agent-request="reply-response-lost"]');await card.getByRole('textbox',{name:'回答范围',exact:true}).fill('确认本次范围');
+    await card.getByRole('button',{name:'回答并继续',exact:true}).click();
+    if(accepted){await card.waitFor({state:'hidden'});await panel().getByText('回答返回暂不可用',{exact:true}).waitFor({state:'hidden'});}
+    else {await panel().getByText('回答返回暂不可用',{exact:true}).waitFor();await card.waitFor();}
+    assert.equal(calls,1,'不能重发未知回答');assert.equal(await input().inputValue(),'独立草稿保留');assert.equal(fixture.replies,before);
+   }finally{await page.unroute(matcher,intercept);}
+  }
+  assert.equal(defaultReads,0,'已有对话不依赖默认目录读取');
+ }finally{await page.unroute(defaultMatcher,unusedDefault);fixture.conversation=saved;await page.reload();await input().waitFor();await input().fill('');}
+});
 await step('后台版本漂移自动恢复一次，真实变化与未知送达保留草稿',async()=>{
   const saved=structuredClone(fixture.conversation),savedSends=fixture.sends,savedPrepares=fixture.prepares,savedInputs=sentInputs.length;
   const matcher=/\/agent-conversations\/[^/]+\/(?:prepare-send|send)$/;
@@ -255,17 +285,17 @@ await step('问题自由回答共享完整视频输入，失败保留文字和�
         const replyEntry=fixture.conversation.entries.at(-1),reply=JSON.parse(replyEntry.text);assert.equal(reply.显示回答.scope,'录屏说明');assert.deepEqual(replyEntry.attachments,[originalId,'image-fixture-'+fixture.attachmentUploads]);assert.match(reply.回答.scope,/\/fixture\/attachments\//);assert.equal(fixture.conversation.run.id,'run-fixture');assert.equal(await input().inputValue(),'底部文字保留');assert.equal(fixture.replies,before+1);
       }finally{fixture.conversation=saved;await page.reload();await input().waitFor();await input().fill('');}
     });
-await step('等待问题不禁用新要求，定位回答保留草稿且不补造授权',async()=>{
+await step('等待问题只保留卡片和输入提示，保留草稿且不补造授权',async()=>{
       const saved=structuredClone(fixture.conversation),before=fixture.replies,supplements=fixture.supplementaryCalls,sends=fixture.sends,stops=fixture.stops,prepares=fixture.prepares;
       try{
         const request={id:'waiting-send-boundary',conversationId:saved.id,workspaceId,participantId:'participant-codex',runId:'run-fixture',generation:'generation-fixture',kind:'question',title:'当前问题',questions:[{id:'scope',label:'具体处理范围？'},{id:'confirm',label:'是否继续？',options:[{id:'yes',label:'继续处理'}]}]};
         update({run:run('waiting-question','codex',{model:'fixture-model',permissionMode:'full-access'}),requests:[request],pendingSend:undefined});
         await page.reload();await input().waitFor();await input().fill('保留底部独立草稿');
         const card=panel().locator('[data-agent-request="waiting-send-boundary"]'),send=panel().getByRole('button',{name:'发送对话',exact:true});
-        assert.equal(await send.isDisabled(),false,'原问题只约束依赖回答的动作');await panel().getByText('等待回答 · 可发送新要求',{exact:true}).waitFor();assert.equal(await panel().locator('.ac-question-send-notice').count(),0);
-        await panel().getByRole('button',{name:'前往回答',exact:true}).click();assert.equal(await card.getByRole('textbox',{name:'具体处理范围？',exact:true}).evaluate((node:HTMLElement)=>node===document.activeElement),true);
+        assert.equal(await send.isDisabled(),false,'原问题只约束依赖回答的动作');assert.equal(await panel().getByText('等待回答 · 可发送新要求',{exact:true}).count(),0);assert.equal(await panel().getByRole('button',{name:'前往回答',exact:true}).count(),0);assert.equal(await panel().getByRole('button',{name:'先讨论',exact:true}).count(),0);assert.equal(await panel().locator('.ac-question-send-notice').count(),0);
+        await card.getByRole('textbox',{name:'具体处理范围？',exact:true}).click();assert.equal(await card.getByRole('textbox',{name:'具体处理范围？',exact:true}).evaluate((node:HTMLElement)=>node===document.activeElement),true);
         assert.equal(await input().inputValue(),'保留底部独立草稿');assert.equal(fixture.prepares,prepares);assert.equal(fixture.sends,sends);assert.equal(fixture.supplementaryCalls,supplements);assert.equal(fixture.stops,stops);assert.equal(fixture.replies,before);assert.equal(fixture.conversation.pendingSend,undefined);
-        await page.setViewportSize({width:520,height:800});await panel().getByRole('button',{name:'前往回答',exact:true}).click();
+        await page.setViewportSize({width:520,height:800});await card.getByRole('textbox',{name:'具体处理范围？',exact:true}).click();
         assert.equal(await card.getByRole('textbox',{name:'具体处理范围？',exact:true}).evaluate((node:HTMLElement)=>node===document.activeElement),true);
         await card.getByRole('textbox',{name:'具体处理范围？',exact:true}).fill('先处理输入问题');assert.equal(await card.getByRole('button',{name:'回答并继续',exact:true}).isDisabled(),true,'多个问题不自动选择');
         fixture.unknownStop=true;await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="unknown"]').waitFor();
@@ -275,8 +305,8 @@ await step('等待问题不禁用新要求，定位回答保留草稿且不补�
         await send.click();await panel().locator('[data-run-status="running"]').waitFor();assert.equal(fixture.sends,sends+1);assert.equal(sentInputs.at(-1).continueRunId,undefined);assert.equal(sentInputs.at(-1).waitingHandoff,undefined);assert.equal(fixture.replies,before);
       }finally{fixture.unknownStop=false;fixture.conversation=saved;fixture.sends=sends;fixture.stops=stops;await page.setViewportSize({width:1280,height:900});await page.reload();await input().waitFor();await input().fill('');}
     });
-await step('统一非阻塞问题不锁住执行；先讨论只提交原组合的明确意图',async()=>{
-      const saved=structuredClone(fixture.conversation),beforeReplies=fixture.replies,beforeStops=fixture.stops;
+await step('统一非阻塞问题不锁住执行；普通发送可讨论且不代答',async()=>{
+      const saved=structuredClone(fixture.conversation),beforeReplies=fixture.replies,beforeStops=fixture.stops,beforeSends=fixture.sends;
       try{
         const request={id:'interaction-question',conversationId:saved.id,workspaceId,participantId:'participant-codex',runId:'run-fixture',generation:'generation-fixture',kind:'question',blocking:false,title:'需要补充信息',questions:[{id:'scope',label:'需要补充的范围'}]};
         update({participants:[{id:'participant-codex',connectionId:'codex',provider:'codex',label:'Codex',model:'fixture-model',contextId:'native',deliveredThrough:0}],run:run('running','codex',{model:'fixture-model',permissionMode:'full-access'}),requests:[request],pendingSend:undefined});
@@ -291,22 +321,18 @@ await step('统一非阻塞问题不锁住执行；先讨论只提交原组合�
         assert.doesNotMatch(await card.innerText(),/执行仍在进行/);
         update({run:run('waiting-question','codex',{model:'fixture-model',permissionMode:'full-access'}),requests:[{...request,blocking:true}]});
         await page.reload();await input().waitFor();
-        await panel().getByRole('button',{name:'先讨论',exact:true}).waitFor();
+        assert.equal(await panel().getByRole('button',{name:'先讨论',exact:true}).count(),0);
         await input().fill('为什么推荐 A？请先解释依据。');
         await capture(page,'agent-interaction-discussion.png');
-        await panel().getByRole('button',{name:'先讨论',exact:true}).click();
-        await panel().locator('[data-pending-send-state="waiting"]').waitFor();
-        const pending=fixture.conversation.pendingSend;
-        assert.equal(pending.draft.connectionId,'codex');assert.equal(pending.draft.model,'fixture-model');
-        assert.equal(pending.draft.text,'为什么推荐 A？请先解释依据。');
-        assert.equal(pending.draft.waitingHandoff.intent,'discussion');
-        assert.deepEqual(pending.draft.waitingHandoff.requestIds,[request.id]);
-        assert.equal(pending.draft.waitingHandoff.answers,undefined);
+        await panel().getByRole('button',{name:'发送对话',exact:true}).click();
+        await panel().locator('[data-run-status="running"]').waitFor();
+        assert.equal(fixture.sends,beforeSends+1);
+        const submitted=sentInputs.at(-1)!;
+        assert.equal(submitted.connectionId,'codex');assert.equal(submitted.model,'fixture-model');
+        assert.equal(submitted.text,'为什么推荐 A？请先解释依据。');
+        assert.equal(submitted.waitingHandoff,undefined,'普通新要求不补造问题回答或特殊讨论授权');
         assert.equal(fixture.replies,beforeReplies);assert.equal(fixture.stops,beforeStops);
-        await panel().getByRole('button',{name:'取消待发送',exact:true}).click();
-        await panel().locator('[data-pending-send-state]').waitFor({state:'hidden'});
-        assert.equal(await input().inputValue(),'为什么推荐 A？请先解释依据。');
-        await card.waitFor();
+        assert.equal(await input().inputValue(),'');
       }finally{fixture.conversation=saved;await page.reload();await input().waitFor();await input().fill('');}
     });
 await step('等待问题时可以回答后交接，也可以只发送新要求；预览与取消保持原问题',async()=>{

@@ -1,4 +1,5 @@
 import {ConversationFirstSubmissionNotice} from './ConversationFirstSubmissionNotice';
+import { confirmedConversationReply, type ConversationReplyAttempt } from './conversation-reply';
 import { ConversationForkAction } from './ConversationForkAction';
 import { withConversationSendRecovery, sameConversationSendPreview, refreshedConversationConflictMessage, type ConversationSendRecovery } from './conversation-send-recovery';
 import { ConversationForkOrigin } from './ConversationForkOrigin';
@@ -63,8 +64,9 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   const [modelPreference,setModelPreference]=useState(readConversationModelPreference);
   const draft=useConversationDraft(context.scope?.workspaceId||defaultWorkspaceId||'@default',context.scope?.conversationId||null);
   const draftWorkspaceId=context.draftScope?.workspaceId||draft.workspaceId;
-  const [defaultRoot,setDefaultRoot]=useState('');
-  useEffect(()=>{const controller=new AbortController();void context.api.defaultWorkspace(controller.signal).then(value=>setDefaultRoot(value.rootPath)).catch(failure=>{if(!controller.signal.aborted)setError(failure instanceof Error?failure.message:'无法读取默认工作空间目录。');});return()=>controller.abort();},[context.api]);
+  const [defaultRoot,setDefaultRoot]=useState(''),[defaultRootError,setDefaultRootError]=useState('');
+  const needsDefaultRoot=!context.scope&&draftWorkspaceId==='@default';
+  useEffect(()=>{if(!needsDefaultRoot)return;const controller=new AbortController();setDefaultRootError('');void context.api.defaultWorkspace(controller.signal).then(value=>{if(!controller.signal.aborted){setDefaultRoot(value.rootPath);setDefaultRootError('');}}).catch(failure=>{if(!controller.signal.aborted)setDefaultRootError(failure instanceof Error?failure.message:'无法读取默认工作空间目录。');});return()=>controller.abort();},[context.api,needsDefaultRoot]);
   const newCwd=draftWorkspaceId==='@default'?defaultRoot:workspaces.find(item=>item.id===draftWorkspaceId)?.rootPath||'';
   // 新建入口始终恢复同一份草稿；权限继续按工作空间保存。
   const draftSlot=context.scope?.conversationId||'new';
@@ -102,6 +104,9 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   const images=context.scope?(attachments[attachmentKey]||[]):newImages.images;
   const [preparing,setPreparing]=useState(false);
   const [sending,setSending]=useState(false),[error,setError]=useState(''),[feedback,setFeedback]=useState('');
+  const [replyFailure,setReplyFailure]=useState<{attempt:ConversationReplyAttempt;message:string}|null>(null);
+  useEffect(()=>{setReplyFailure(current=>current&&confirmedConversationReply(chat,current.attempt)?null:current);},[chat]);
+  useEffect(()=>{setReplyFailure(null);},[context.selectionGeneration]);
   useEffect(()=>{setFeedback('');},[chat?.workspaceId,chat?.id,chat?.run?.id]);
   const [,setActionVersion]=useState(0);
   const [actions]=useState(()=>createConversationActions(()=>setActionVersion(value=>value+1)));
@@ -131,13 +136,6 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   const executionChanged=Boolean(chat?.run&&(lastParticipant?.connectionId!==choice.connectionId||chat.run.model!==effectiveModel||chat.run.modelAccountId!==choice.modelAccountId||chat.run.serviceTier!==choice.serviceTier));
   const waitingHandoffAvailable=Boolean(executionChanged&&chat?.run?.status==='waiting-question'&&handoffSelections[choiceKey]===chat.run.id&&currentConversationRequests(chat).length&&currentConversationRequests(chat).every(request=>request.kind==='question'&&request.runId===chat.run!.id&&request.participantId===chat.run!.participantId&&request.generation===chat.run!.generation)&&!chat.pendingSend);
   const waitingQuestions=currentConversationRequests(chat).filter(request=>request.kind==='question');
-  const discussionAvailable=Boolean(chat?.run?.status==='waiting-question'&&!executionChanged&&!chat.pendingSend&&currentConversationRequests(chat).length&&currentConversationRequests(chat).every(request=>request.kind==='question')&&(chat.run.permissionMode||'default')===permissionMode);
-  const locateAnswer=()=>{
-    const card=Array.from(stream.current?.querySelectorAll<HTMLElement>('[data-agent-request]')??[]).find(node=>node.dataset.agentRequest===waitingQuestions[0]?.id);
-    if(!card)return;card.scrollIntoView({block:'center',behavior:'auto'});
-    const inputs=Array.from(card.querySelectorAll<HTMLElement>('textarea,input:not([type=file]),button'));
-    (inputs.find(node=>node.matches('textarea')&&node.getClientRects().length&&!node.hasAttribute('disabled'))??inputs.find(node=>node.getClientRects().length&&!node.hasAttribute('disabled')))?.focus({preventScroll:true});
-  };
   const waitingHandoffLabel=draft.text.trim()||images.length?'交接并发送':'交接并继续';
   const sendText=conversationContinuationText(chat,executionChanged,draft.text,images.length);
   const recovery=conversationRecoveryAction(chat);
@@ -308,23 +306,6 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
       return result;
     }catch(failure){if((failure as ApiError)?.code==='agent_revision_conflict'){clearPendingSubmission(permissionProfile+':'+current.workspaceId,current.id,storage);if(pendingAttempt.current?.value.clientRequestId===submission.clientRequestId)pendingAttempt.current=undefined;}throw failure;}
   };
-  const discuss=async()=>{
-    if(!chat?.run||!discussionAvailable||activeSend.current||!canSend)return;
-    if(!draft.text.trim()){setError('请先在输入框填写想了解或讨论的内容，再点击“先讨论”。');return;}
-    const operation:SendOperation={selection:context.getSelection()};
-    activeSend.current=operation;setSending(true);setError('');
-    try{
-      await queue(chat,{
-        expectedRevision:chat.revision,connectionId:choice.connectionId,
-        modelAccountId:choice.modelAccountId,modelAccountRevision:choice.modelAccountRevision,modelAccountIdentity:choice.modelAccountIdentity,
-        model:chat.run.model,serviceTier:chat.run.serviceTier,reasoningEffort:chat.run.reasoningEffort,permissionMode:chat.run.permissionMode||'default',
-        text:draft.text,attachmentIds:images.map(image=>image.id) as NonNullable<SendDraft['attachmentIds']>,skipHandoffSummary:true,
-        waitingHandoff:{intent:'discussion',runId:chat.run.id,participantId:chat.run.participantId,generation:chat.run.generation,requestIds:currentConversationRequests(chat).map(request=>request.id) as NonNullable<SendDraft['waitingHandoff']>['requestIds']},
-      });
-      void context.refreshPending().catch(()=>{});
-    }catch(failure){if(context.isSelectionCurrent(operation.selection))fail(failure);}
-    finally{if(activeSend.current===operation){activeSend.current=null;setSending(false);}}
-  };
   const commit=async(value:Prepared,continuing?:SendOperation)=>{
     if(!value.preview.fits||!context.isSelectionCurrent(value.selection)||(!continuing&&activeSend.current))return;
     const operation=continuing??{selection:value.selection};activeSend.current=operation;
@@ -447,8 +428,9 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   const reply=async(requestId:string,answer:unknown)=>{
     const request=chat?.requests.find(request=>request.id===requestId);
     if(waitingHandoffAvailable&&request?.runId===chat?.run?.id){await prepare(false,false,undefined,false,{requestId,answer});return;}
-    if(!chat)return;const key=actionKey(chat,'reply',requestId);if(!actions.begin(key))return;const selection=context.getSelection();setError('');
-    try{const owner=[...(chat.run?[chat.run]:[]),...(chat.retainedRuns??[])].find(run=>run.id===request?.runId&&run.participantId===request.participantId&&run.generation===request.generation);if(!owner)throw new Error('原问题归属已变化，请重新核对。');context.apply(await context.api.reply({...chat,run:owner},requestId,{answer}),chat.revision);void context.refreshPending().catch(()=>{});}catch(failure){if(context.isSelectionCurrent(selection)){fail(failure);void context.refresh().catch(()=>{});}}finally{actions.finish(key);}
+    if(!chat)return;const key=actionKey(chat,'reply',requestId);if(!actions.begin(key))return;const selection=context.getSelection();setError('');setReplyFailure(null);
+    const attempt:ConversationReplyAttempt|undefined=request?{workspaceId:chat.workspaceId,conversationId:chat.id,request,answer,previousEntries:chat.entries.filter(entry=>entry.id==='reply-'+requestId||entry.id.startsWith('reply-'+requestId+'-')).map(entry=>({id:entry.id,status:entry.status,text:entry.text}))}:undefined;
+    try{const owner=[...(chat.run?[chat.run]:[]),...(chat.retainedRuns??[])].find(run=>run.id===request?.runId&&run.participantId===request.participantId&&run.generation===request.generation);if(!owner)throw new Error('原问题归属已变化，请重新核对。');context.apply(await context.api.reply({...chat,run:owner},requestId,{answer}),chat.revision);void context.refreshPending().catch(()=>{});}catch(failure){if(context.isSelectionCurrent(selection)){if(attempt)setReplyFailure({attempt,message:failure instanceof Error?failure.message:'回答是否接收仍待确认，请核对原问题。'});else fail(failure);void context.refresh().catch(()=>{});}}finally{actions.finish(key);}
   };
   const renderQuestion=(request:ConversationView['requests'][number])=><ConversationRequest key={request.id} request={request} run={[...(chat?.run?[chat.run]:[]),...(chat?.retainedRuns??[])].find(run=>run.id===request.runId)} provider={chat?.participants.find(item=>item.id===request.participantId)?.provider||'codex'} handoffTarget={waitingHandoffAvailable&&request.runId===chat?.run?.id?effectiveModelLabel:undefined} onUpload={uploadAnswerMaterials} busy={sending||stopping||uploading||Boolean(chat?.pendingSend?.draft.waitingHandoff)||actions.has(actionKey(chat!,'reply',request.id))} onRevealAnswer={revealAnswer} onReply={answer=>void reply(request.id,answer)}/>;
   const uploadAnswerMaterials=async(files:File[],accept:(image:DraftImage)=>void)=>{
@@ -526,8 +508,8 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   const transcript=groupConversationStream(visibleEntries,chat?.run,chat?.retainedRuns);
   const liveToolId=chat?.run?.status==='running'?[...visibleEntries].reverse().find(entry=>entry.kind==='tool'&&entry.runId===chat.run!.id)?.id??null:null;
   const modelWarning=conversationModelWarning(context.modelCatalogReady,choice.modelAccountId,selectedSourceModel);
-  const actionError=conversationActionError(error,modelWarning);
-  const connectionWarning=context.streamError&&needsConversationObservation(chat)&&run?.status!=='unknown'&&<Alert className="ac-stream-disconnect" type="warning" showIcon message="对话连接已中断" description={context.streamError.replace(/^对话连接已中断[；;]\s*/,'')} action={<Button type="text" size="small" loading={observing} onClick={()=>void observe()}>重新连接并核对</Button>}/>;
+  const actionError=conversationActionError(error||(replyFailure&&!confirmedConversationReply(chat,replyFailure.attempt)?replyFailure.message:'')||(needsDefaultRoot?defaultRootError:''),modelWarning);
+  const connectionWarning=context.streamError&&needsConversationObservation(chat)&&run?.status!=='unknown'&&<Alert className="ac-stream-disconnect" type="warning" showIcon message="实时连接正在恢复" description={context.streamError.replace(/^对话连接已中断[；;]\s*/,'')} action={<Button type="text" size="small" loading={observing} onClick={()=>void observe()}>重新连接并核对</Button>}/>;
   const turns=conversationStreamTurns(transcript);
   const turnIdentity=(entry:ConversationEntry|undefined)=>{
     if(!entry)return '';
@@ -624,7 +606,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
       <div className="ac-compose-wrap">{fileError}
 
         {run?.status==='tools-active'&&<ConversationActiveToolsNotice key={run.id} tools={run.tools} resourcesReleased={run.resourcesReleased} feedback={feedback} diagnostic={run.diagnostic} canContinue observing={observing} stopping={stopping} onObserve={()=>void observe()} onStop={toolId=>void stop(toolId)}/>}
-        {run?.status==='unknown'&&<ConversationExecutionNotice feedback={feedback} resourcesReleased={run.resourcesReleased} diagnostic={[run.diagnostic,context.streamError].filter(Boolean).join('\n')} observing={observing} stopping={stopping} onObserve={()=>void observe()} onStop={()=>void stop()}/>}{run&&locked&&run.status!=='unknown'&&run.status!=='tools-active'&&<div className="ac-execution-statusbar" role="status" data-execution-state={run.status}>{waitingQuestions.length>0?<><span>等待回答 · 可发送新要求</span><Button type="link" size="small" className="ac-question-locate" onClick={locateAnswer}>前往回答</Button>{discussionAvailable&&<Button type="link" size="small" disabled={!canSend||stopping} title="保留原轮并先讨论，不提交问题答案" onClick={()=>void discuss()}>先讨论</Button>}</>:run.status!=='running'&&<span>{statusLabels[run.status]}</span>}{!run.resourcesReleased&&<Button className="ac-stop-button" type="text" icon={<StopOutlined/>} aria-label="停止本次执行" title="停止本次执行" loading={stopping} disabled={run.status==='stopping'} onClick={()=>void stop()}>{stopping||run.status==='stopping'?'正在停止…':'停止'}</Button>}</div>}{!chat&&newImages.error&&<Alert type="warning" message={newImages.error} action={<Button size="small" onClick={()=>void newImages.refresh().catch(fail)}>重新读取图片</Button>}/>} {!chat&&unconfirmedFirst&&<ConversationFirstSubmissionNotice submission={unconfirmedFirst} busy={sending} onRetry={()=>void prepare(false,false,undefined,true)}/>}{run&&run.status!=='running'&&run.status!=='completed'&&run.status!=='unknown'&&run.status!=='tools-active'&&(!locked||Boolean(run.diagnostic))&&<div className="ac-run-status" role="status" data-run-status={run.status}>{!locked&&<>{run.interrupted?'执行未完成':statusLabels[run.status]}{runIdentity&&` · ${runIdentity}`} · {permissionModeLabels[run.permissionMode||'default']}</>}{run.diagnostic&&<p>{run.diagnostic}</p>}</div>} {connectionWarning}{modelWarning&&<Alert type="warning" showIcon message={modelWarning}/>}{earlier.error&&<Alert type="warning" showIcon message={earlier.error}/>} {actionError&&<Alert type="warning" showIcon message={actionError} closable onClose={()=>setError('')}/>} {feedback&&run?.status!=='unknown'&&run?.status!=='tools-active'&&<small role="status">{feedback}</small>}{(!draft.available||!attachmentsAvailable)&&<Alert type="warning" message="浏览器存储不可用，刷新后无法恢复未发送草稿。"/>}
+        {run?.status==='unknown'&&<ConversationExecutionNotice feedback={feedback} resourcesReleased={run.resourcesReleased} diagnostic={[run.diagnostic,context.streamError].filter(Boolean).join('\n')} observing={observing} stopping={stopping} onObserve={()=>void observe()} onStop={()=>void stop()}/>}{run&&locked&&run.status!=='unknown'&&run.status!=='tools-active'&&<div className="ac-execution-statusbar" role="status" data-execution-state={run.status}>{!waitingQuestions.length&&run.status!=='running'&&<span>{statusLabels[run.status]}</span>}{!run.resourcesReleased&&<Button className="ac-stop-button" type="text" icon={<StopOutlined/>} aria-label="停止本次执行" title="停止本次执行" loading={stopping} disabled={run.status==='stopping'} onClick={()=>void stop()}>{stopping||run.status==='stopping'?'正在停止…':'停止'}</Button>}</div>}{!chat&&newImages.error&&<Alert type="warning" message={newImages.error} action={<Button size="small" onClick={()=>void newImages.refresh().catch(fail)}>重新读取图片</Button>}/>} {!chat&&unconfirmedFirst&&<ConversationFirstSubmissionNotice submission={unconfirmedFirst} busy={sending} onRetry={()=>void prepare(false,false,undefined,true)}/>}{run&&run.status!=='running'&&run.status!=='completed'&&run.status!=='unknown'&&run.status!=='tools-active'&&(!locked||Boolean(run.diagnostic))&&<div className="ac-run-status" role="status" data-run-status={run.status}>{!locked&&<>{run.interrupted?'执行未完成':statusLabels[run.status]}{runIdentity&&` · ${runIdentity}`} · {permissionModeLabels[run.permissionMode||'default']}</>}{run.diagnostic&&<p>{run.diagnostic}</p>}</div>} {connectionWarning}{modelWarning&&<Alert type="warning" showIcon message={modelWarning}/>}{earlier.error&&<Alert type="warning" showIcon message={earlier.error}/>} {actionError&&<Alert type="warning" showIcon message={actionError} closable onClose={()=>{setError('');setReplyFailure(null);setDefaultRootError('');}}/>} {feedback&&run?.status!=='unknown'&&run?.status!=='tools-active'&&<small role="status">{feedback}</small>}{(!draft.available||!attachmentsAvailable)&&<Alert type="warning" message="浏览器存储不可用，刷新后无法恢复未发送草稿。"/>}
         {recovery&&!chat?.pendingSend&&run?.status!=='unknown'&&run?.status!=='tools-active'&&<div className="ac-recovery-action" data-recovery-kind={recovery.kind}>{!run?.diagnostic&&<span>{recovery.kind==='observe'?'原执行状态仍待核对。':'上次执行未正常答复。'}</span>}<Button type="text" size="small" icon={<ReloadOutlined/>} autoInsertSpace={false} aria-label={recovery.kind==='recover'&&executionChanged?'继续':recovery.label} disabled={!canSend||observing} loading={recovery.kind==='observe'?observing:sending} onClick={()=>recovery.kind==='observe'?void observe():void prepare(false,false,chat!.run!.id)}>{recovery.kind==='recover'&&executionChanged?'继续':recovery.label}</Button>{recovery.kind==='recover'&&executionChanged&&<><span className="ac-recovery-target">接下来使用 {effectiveModelLabel} 继续处理</span><Button type="link" size="small" disabled={!canSend} onClick={()=>void prepare(true,false,chat!.run!.id)}>交接内容</Button></>}</div>}
         {!connection?.enabled&&<div className="ac-connect-notice"><span>{connection?`${providerNames[connection.provider]} 尚未就绪`:'请先接入智能体'}</span><Button type="link" size="small" onClick={()=>context.setSettings(true)}>智能体与模型</Button></div>}
         {chat?.run&&recovery?.kind!=='recover'&&!waitingHandoffAvailable&&(lastParticipant?.connectionId!==choice.connectionId||chat.run.model!==effectiveModel||chat.run.modelAccountId!==choice.modelAccountId)?<div className="ac-transfer-notice"><span>{lastParticipant?.connectionId!==choice.connectionId?`接下来由 ${connection?providerNames[connection.provider]||connection.label:''}${chat.run.model!==effectiveModel||chat.run.modelAccountId!==choice.modelAccountId?' · '+(effectiveModelLabel):''} 继续处理`:`接下来使用 ${effectiveModelLabel} 继续处理`}</span><Button type="link" size="small" disabled={!canSend} loading={sending} onClick={()=>void prepare(true)}>交接内容</Button></div>:null}

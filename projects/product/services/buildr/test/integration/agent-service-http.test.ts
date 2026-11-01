@@ -9,14 +9,14 @@ import test from 'node:test';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
-import { createAgentService, type AgentRuntime, type ExecutorItem } from '@buildr-ai/buildr-agent';
+import { AgentServiceError, createAgentService, type AgentRuntime, type ExecutorItem } from '@buildr-ai/buildr-agent';
 import { createRuntime, runtimeContributions } from '../helpers/runtime-harness.ts';
 import { taskRecordFixture } from '../helpers/task-record-system-fixture.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { createAgentServiceHttpContribution } from '../../src/modules/agent-service/interfaces/http/agent-service-http.ts';
 import { AGENT_SERVICE_HTTP_OPERATIONS } from '../../src/modules/agent-service/interfaces/http/agent-service-http-contracts.ts';
 import { inspectHttpOperationCoverage } from '../../src/web/http/http-operation-coverage.ts';
-import { eventStreamResponse } from '../../src/web/http/responses.ts';
+import { apiError, eventStreamResponse } from '../../src/web/http/responses.ts';
 import { stopOwnedChildProcess } from '../verification/support/owned-process.ts';
 
 test('program preparation is authenticated, schema checked and independently observable/cancellable', { timeout: 30_000 }, async t => {
@@ -589,4 +589,20 @@ test('tool detail reads preserve full history, enforce content revisions and rem
   response=await fetch(detail.replace(page.entries[0].detail.revision,'0'.repeat(64)),{headers});assert.equal(response.status,409);
   response=await fetch(detail.replace('/workspaces/'+workspaceId,'/workspaces/00000000-0000-0000-0000-000000000001'),{headers});assert.equal(response.status,400);
   assert.deepEqual(JSON.parse((db.prepare('SELECT body FROM conversations WHERE id=?').get(created.id) as {body:string}).body).view.entries,[full]);
+});
+
+
+test('agent HTTP keeps public service failures while unknown failures get safe correlated diagnostics',async()=>{
+ const context={request:{method:'GET'},pathname:'/api/v1/app/agent-service/connections',searchParams:new URLSearchParams(),authorizeRead(){},authorizeWrite(){}};
+ const known=createAgentServiceHttpContribution(()=>{throw new AgentServiceError('agent_process_switching','执行后台正在切换，请稍后重试。',503);});
+ assert.deepEqual(await known.handleTopLevel(context),{status:503,body:{error:{code:'agent_process_switching',message:'执行后台正在切换，请稍后重试。'}}});
+ const secret='private-native-token';
+ const unknown=createAgentServiceHttpContribution(()=>{throw Object.assign(new Error(secret),{code:'SQLITE_BUSY'});});
+ await assert.rejects(unknown.handleTopLevel(context),{message:secret});
+ let body='',status:number|undefined;const logs:string[]=[];const original=console.error;console.error=value=>logs.push(value);
+ try { apiError({writeHead(value:number){status=value;},end(value:string){body=value;}},Object.assign(new Error(secret),{code:'SQLITE_BUSY',details:{token:secret}}),{method:'GET',url:'/api/v1/app/agent-service/connections?token='+secret}); }
+ finally {console.error=original;}
+ assert.equal(status,500);const result=JSON.parse(body);assert.match(result.error.details.requestId,/^[a-f0-9-]{36}$/);
+ assert.equal(JSON.parse(logs[0]).requestId,result.error.details.requestId);assert.equal(JSON.parse(logs[0]).code,'SQLITE_BUSY');
+ assert.equal(JSON.parse(logs[0]).pathname,'/api/v1/app/agent-service/connections');assert.doesNotMatch(body+logs.join(''),new RegExp(secret));
 });

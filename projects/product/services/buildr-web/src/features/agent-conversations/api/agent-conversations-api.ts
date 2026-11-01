@@ -121,9 +121,19 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
       return response.blob();
     },
     async subscribe(workspaceId: string, id: string, signal: AbortSignal, onEvent: (event: ConversationEvent) => void, cursor?: number) {
-      const headers = {...session.writeHeaders(), accept:'text/event-stream', ...(cursor ? {'last-event-id':String(cursor)} : {})};
-      const response = await fetcher(path(workspaceId, id) + '/events', {cache:'no-store', signal, headers});
-      if (!response.ok || !response.body) { const error: ApiError = new Error('对话事件连接未建立，请重新核对执行状态。'); error.status = response.status; throw error; }
+      const send=()=>fetcher(path(workspaceId,id)+'/events',{cache:'no-store',signal,headers:{...session.writeHeaders(),accept:'text/event-stream',...(cursor?{'last-event-id':String(cursor)}:{})}});
+      let response=await send();
+      if(response.status===403&&session.refreshSession){
+        const body=await response.clone().json().catch(()=>null);
+        if(body?.error?.code==='session_forbidden'&&await session.refreshSession(signal)){signal.throwIfAborted();response=await send();}
+      }
+      if (!response.ok || !response.body) {
+        const body=await response.json().catch(()=>null);
+        const reference=body?.error?.details?.requestId;
+        const requestId=typeof reference==='string'&&/^[a-f0-9-]{36}$/.test(reference)?`（错误编号：${reference}）`:'';
+        const error: ApiError = new Error((body?.error?.message||'实时连接暂不可用。')+requestId);
+        error.status=response.status;error.code=body?.error?.code;throw error;
+      }
       const reader = response.body.getReader(), decoder = new TextDecoder(); let buffer = '';
       try { while (!signal.aborted) { const {value, done} = await reader.read(); if (done) break; buffer = (buffer + decoder.decode(value, {stream:true})).replace(/\r\n/g, '\n'); if (buffer.length > 8 * 1024 * 1024) throw new Error('事件缓冲超限，需要重新读取对话。'); let boundary; while ((boundary = buffer.indexOf('\n\n')) >= 0) { const frame = parseEventFrame(buffer.slice(0,boundary)); buffer = buffer.slice(boundary + 2); if (frame.data) onEvent(JSON.parse(frame.data) as ConversationEvent); } } } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
       if (!signal.aborted) throw new Error('对话连接已中断；暂时无法同步最新进展，已收到的消息仍保留。');

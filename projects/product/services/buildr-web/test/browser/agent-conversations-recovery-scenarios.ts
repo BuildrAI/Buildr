@@ -104,11 +104,11 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
     await page.reload();await panel().locator('[data-run-status="running"]').waitFor();await page.waitForTimeout(200);assert.equal(await notice().count(),0,'首次断线不告警');
     await panel().locator('[data-run-status="completed"]').waitFor();assert.equal(fixture.eventStreams,streams+3);assert.equal(await notice().count(),0);
   });
-  await step('未结束轮次重试五次耗尽才提示连接问题，不宣称工作失败或重发',async()=>{
+  await step('未结束轮次首批重试耗尽后低频恢复，不宣称工作失败或重发',async()=>{
     update({run:run('running')});fixture.dropEventStreams=20;const streams=fixture.eventStreams,sends=fixture.sends;
     await page.reload();await panel().locator('[data-run-status="running"]').waitFor();await page.waitForTimeout(1000);assert.equal(await notice().count(),0);
     await notice().waitFor({timeout:20000});assert.equal(fixture.eventStreams,streams+6,'首次连接加五次退避重试');assert.equal(fixture.sends,sends);
-    assert.match(await notice().innerText(),/暂时无法同步最新进展/);assert.doesNotMatch(await notice().innerText(),/原执行状态尚未确认/);assert.equal(await panel().locator('[data-run-status="running"]').count(),1);
+    assert.match(await notice().innerText(),/正在自动重连/);assert.doesNotMatch(await notice().innerText(),/原执行状态尚未确认/);assert.equal(await panel().locator('[data-run-status="running"]').count(),1);
     // Reproduce the two independent warnings together; changing selection never sends work.
     const previousModels=fixture.sharedModels;
     const offering={id:'alignment-offering',modelId:'alignment-model',label:'对齐检查模型',accountId:'alignment-account',accountIdentity:'alignment-identity',accountRevision:'alignment-r1',accountLabel:'对齐检查账号',provider:'fixture',available:true,enabled:true,images:true,tools:true,contextWindow:128000};
@@ -140,7 +140,9 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
     }finally{
       await page.setViewportSize({width:1600,height:1000});fixture.sharedModels=previousModels;await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await fixture.chooseModel('Fixture model');await fixture.closeModelSettings();
     }
-    fixture.dropEventStreams=0;const reads=fixture.conversationReads;update({run:completed()});await panel().locator('[data-run-status="completed"]').waitFor({timeout:10000});assert.ok(fixture.conversationReads>reads,'重试耗尽后全局活动仍可发现完成');assert.equal(await notice().count(),0);
+    fixture.dropEventStreams=0;fixture.connectionEventProbe=true;const recoveryStreams=fixture.eventStreams;
+    await notice().waitFor({state:'hidden',timeout:20000});assert.ok(fixture.eventStreams>recoveryStreams,'未结束轮次自动继续重连并清除旧告警');assert.equal(fixture.sends,sends);
+    const reads=fixture.conversationReads;update({run:completed()});await panel().locator('[data-run-status="completed"]').waitFor({timeout:10000});assert.ok(fixture.conversationReads>reads,'重试耗尽后全局活动仍可发现完成');assert.equal(await notice().count(),0);
   });
   await step('已结束对话收到下一轮受理后重新建立连接，不复用旧告警',async()=>{
     const streams=fixture.eventStreams,sends=fixture.sends;const subscribed=page.waitForRequest((request:any)=>new URL(request.url()).pathname.endsWith('/events'));await input().fill('下一轮');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().locator('[data-run-status="running"]').waitFor();
