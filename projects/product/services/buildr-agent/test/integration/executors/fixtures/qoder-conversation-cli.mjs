@@ -86,6 +86,12 @@ createInterface({ input: process.stdin }).on('line', line => {
   }
   persist([record('user', m.uuid, m.message)]);
   emit({ ...m, isReplay: true });
+  if (text === 'stream-burst') {
+    const id = randomUUID(); stream(id, 'x');
+    for(let i=1;i<5000;i++)emit({type:'stream_event',session_id:sid,parent_tool_use_id:null,uuid:randomUUID(),event:{type:'content_block_delta',delta:{type:'text_delta',text:'x'}}});
+    emit({type:'stream_event',session_id:sid,parent_tool_use_id:null,uuid:randomUUID(),event:{type:'message_stop'}});
+    const answer=record('assistant',randomUUID(),{role:'assistant',id,content:[{type:'text',text:'x'.repeat(5000)}]});persist([answer]);emit({...answer,session_id:sid,parent_tool_use_id:null});result();return;
+  }
   if (text?.includes('background-continue-error')) {
     const assistant = record('assistant', randomUUID(), { role: 'assistant', id: randomUUID(), content: [{ type: 'tool_use', id: 'continued-tool', name: 'Bash', input: { run_in_background: true } }] }); persist([assistant]);
     emit({ ...assistant, session_id: sid, parent_tool_use_id: null });

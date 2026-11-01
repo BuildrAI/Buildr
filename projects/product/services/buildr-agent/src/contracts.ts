@@ -467,7 +467,7 @@ export interface SupplementInput {
 }
 export interface SupplementResult {
   conversation: ConversationView;
-  delivery: 'accepted' | 'unknown' | 'rejected';
+  delivery: 'accepted' | 'unknown' | 'rejected' | 'continued';
 }
 export interface SendPreview {
   handoff?: HandoffMaterial;

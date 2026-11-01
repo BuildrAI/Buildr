@@ -23,6 +23,16 @@ async function fixture(externalModel = false) {
 }
 async function eventually(check: () => unknown) { for (let i = 0; i < 400; i++) { if (check()) return; await new Promise(resolve => setTimeout(resolve, 5)); } assert.fail('native conversation did not settle'); }
 
+test('Qoder burst output retains full text without flooding durable consumers before the terminal state',async()=>{
+  const f=await fixture();try{
+    const round=await f.send('stream-burst');
+    const text=round.events.filter(event=>event.type==='item'&&event.item.role==='assistant');
+    assert.ok(text.length<100,'5000 native deltas must not become 5000 persistence callbacks');
+    assert.ok(text.some(event=>event.type==='item'&&event.item.text==='x'.repeat(5000)));
+    assert.ok(round.events.some(event=>event.type==='observation'&&event.observation.status==='idle'));
+  }finally{await f.close();}
+});
+
 for (const input of ['background-continue-error', 'background-continue-error-array']) test('Qoder foreground error retains native background continuation and converges after its final result: ' + input, async () => {
   const f = await fixture();
   try {

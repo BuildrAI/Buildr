@@ -112,6 +112,8 @@ export interface StoredConversation {
     nativeInputItemId?: string;
     accepted: boolean;
     supplement?: boolean;
+    /** Stable independently admitted request after a proven non-delivery to an ended round. */
+    continuedBy?: string;
     supersededStopRequested?: boolean;
     automaticRetry?: { rootRunId: string; count: number };
     continuationOf?: string;

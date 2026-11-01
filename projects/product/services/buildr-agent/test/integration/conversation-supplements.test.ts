@@ -4,12 +4,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { ExecutorEventStream } from '../../src/executors/event-stream.ts';
 import { createAgentService, ExecutorInputRejected, type AgentExecutor, type AgentRuntime, type ExecutorEvent, type ExecutorItem, type ExecutorObservation, type ExecutorSupplementInput } from '../../build/index.js';
 
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5EsAAAAASUVORK5CYII=', 'base64');
 function gate() { let resolve!: () => void; const promise = new Promise<void>(done => { resolve = done; }); return { promise, resolve }; }
 async function wait(read: () => boolean) { for (let i = 0; i < 400; i++) { if (read()) return; await new Promise(resolve => setTimeout(resolve, 2)); } assert.fail('state did not settle'); }
-async function fixture(options: { beforeSupplement?: Promise<void>; delivery?: 'rejected' | 'unknown'; supported?: boolean } = {}) {
+async function fixture(options: { beforeSupplement?: Promise<void>; delivery?: 'rejected' | 'unknown'; supported?: boolean; historyReceipt?: boolean; historyClientId?: string; beforeObserve?: Promise<void>; endOnReject?: boolean } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-supplement-')), ending = gate();
   const calls: ExecutorSupplementInput[] = [], items: ExecutorItem[] = []; let emit: (event: ExecutorEvent) => void = () => {};
   let observation: ExecutorObservation = { status: 'idle', tools: [] };
@@ -18,19 +19,19 @@ async function fixture(options: { beforeSupplement?: Promise<void>; delivery?: '
     capabilities, bindingIdentity: 'fixture-binding', async inspectAccount() { return { status: 'ready' }; }, async models() { return [{ id: 'fixture-model', label: 'Fixture model' }]; }, async beginLogin() {}, async cancelLogin() {},
     async createContext() { return { id: 'native-context' }; }, async resumeContext() {}, async readHistory() { return structuredClone(items); },
     async send(input) {
-      emit = input.onEvent; observation = { status: 'running', executionRef: { id: 'native-run' }, tools: [] };
+      const notify = input.onEvent; emit = notify; observation = { status: 'running', executionRef: { id: 'native-run' }, tools: [] };
       emit({ type: 'accepted', executionRef: observation.executionRef!, inputItemId: input.clientRequestId });
       const item: ExecutorItem = { id: input.clientRequestId, clientRequestId: input.clientRequestId, kind: 'message', role: 'user', text: input.text, executionId: 'native-run' }; items.push(item); emit({ type: 'item', item });
       await ending.promise; observation = { status: 'idle', executionRef: { id: 'native-run' }, tools: [] }; emit({ type: 'completed', status: 'completed' });
     },
     async supplement(input) {
       calls.push(input); await options.beforeSupplement;
-      if (options.delivery === 'rejected') throw new ExecutorInputRejected('proven rejection');
-      if (options.delivery === 'unknown') throw new Error('receipt lost');
+      if (options.delivery === 'rejected') { if(options.endOnReject)observation={status:'idle',executionRef:input.executionRef,tools:[]}; throw new ExecutorInputRejected('proven rejection'); }
+      if (options.delivery === 'unknown' && !options.historyReceipt) throw new Error('receipt lost');
       const item: ExecutorItem = { id: 'native-' + input.clientRequestId, clientRequestId: input.clientRequestId, kind: 'message', role: 'user', text: input.text, executionId: input.executionRef.id };
-      items.push(item); emit({ type: 'item', item }); return { executionRef: input.executionRef, inputItemId: item.id };
+      items.push(item); if(options.historyReceipt){if(options.historyClientId)item.clientRequestId=options.historyClientId;throw new Error('receipt lost');} emit({ type: 'item', item }); return { executionRef: input.executionRef, inputItemId: item.id };
     },
-    async observe() { return structuredClone(observation); }, async reply() {}, async stop() { observation = { status: 'stopped', tools: [] }; ending.resolve(); return observation; }, async close() { ending.resolve(); },
+    async observe() { await options.beforeObserve; return structuredClone(observation); }, async reply() {}, async stop() { observation = { status: 'stopped', tools: [] }; ending.resolve(); return observation; }, async close() { ending.resolve(); },
   };
   const executor: AgentExecutor = { descriptor: { id: 'fixture', label: 'Fixture', capabilities }, async open() { return runtime; } };
   const service = createAgentService({ dataRoot: path.join(root, 'private'), executors: [executor], modelProviders: [], resolveWorkspace() { return { rootPath: root }; } });
@@ -42,7 +43,7 @@ async function fixture(options: { beforeSupplement?: Promise<void>; delivery?: '
   await wait(() => service.conversations.read('workspace', view.id).run?.status === 'running');
   const read = () => service.conversations.read('workspace', view.id);
   const input = (text: string, clientRequestId = randomUUID()) => { const run = read().run!; return { runId: run.id, participantId: run.participantId, generation: run.generation, text, clientRequestId }; };
-  return { service, read, input, calls, emit: (event: ExecutorEvent) => emit(event), async close() { ending.resolve(); await service.close(); fs.rmSync(root, { recursive: true, force: true }); } };
+  return { historyReceipt:(item:ExecutorItem)=>items.push(item), setObservation:(value:ExecutorObservation)=>{observation=value;}, service, read, input, calls, emit: (event: ExecutorEvent) => emit(event), async close() { ending.resolve(); await service.close(); fs.rmSync(root, { recursive: true, force: true }); } };
 }
 
 test('multiple supplementary inputs retain exact identity, ordering and idempotency within one execution', async () => {
@@ -87,6 +88,112 @@ test('wrong execution and unavailable capability reject without appending or dis
     await assert.rejects(async () => f.service.conversations.supplement('workspace', f.read().id, f.input('unsupported')), /尚不支持/);
     assert.equal(f.calls.length, 0); assert.equal(f.read().entries.length, 1);
   } finally { await f.close(); }
+});
+
+test('an exactly ended native round continues the submitted input once without sending to the old round',async()=>{
+  const f=await fixture();try{
+    const input=f.input('continue after native end'),originalRun=f.read().run!,original=originalRun.id;
+    f.setObservation({status:'idle',executionRef:{id:'native-run'},tools:[]});
+    const result=await f.service.conversations.supplement('workspace',f.read().id,input);
+    assert.equal(result.delivery,'continued');assert.notEqual(result.conversation.run!.id,original);assert.equal(f.calls.length,0);
+    for(const field of ['model','modelAccountId','modelAccountIdentity','serviceTier','reasoningEffort','permissionMode'] as const)assert.equal(result.conversation.run![field],originalRun[field],field);
+    await wait(()=>f.read().entries.filter(entry=>entry.text===input.text&&entry.status==='accepted').length===1);
+    assert.equal((await f.service.conversations.supplement('workspace',f.read().id,input)).delivery,'continued');
+    assert.equal(f.read().entries.filter(entry=>entry.text===input.text&&entry.status==='accepted').length,1);
+  }finally{await f.close();}
+});
+
+test('a proven end after rejection can continue, while a lost receipt is reconciled only by exact native input identity',async()=>{
+  const ended=await fixture({delivery:'rejected',endOnReject:true});try{
+    const input=ended.input('end during admission');
+    assert.equal((await ended.service.conversations.supplement('workspace',ended.read().id,input)).delivery,'continued');
+    assert.equal(ended.calls.length,1);
+  }finally{await ended.close();}
+  const f=await fixture({delivery:'unknown',historyReceipt:true});try{
+    const input=f.input('lost receipt'),run=f.read().run!.id;
+    assert.equal((await f.service.conversations.supplement('workspace',f.read().id,input)).delivery,'accepted');
+    assert.equal(f.read().run!.id,run);assert.equal(f.calls.length,1);
+    assert.equal((await f.service.conversations.supplement('workspace',f.read().id,input)).delivery,'accepted');
+    assert.equal(f.calls.length,1);
+  }finally{await f.close();}
+});
+
+test('unknown or mismatched native execution is not dispatched or silently continued',async()=>{
+  for(const observation of [{status:'unknown',tools:[]},{status:'idle',executionRef:{id:'other-native'},tools:[]}] as ExecutorObservation[]){
+    const f=await fixture();try{
+      const input=f.input('retain input'),run=f.read().run!.id;f.setObservation(observation);
+      assert.equal((await f.service.conversations.supplement('workspace',f.read().id,input)).delivery,'rejected');
+      assert.equal(f.calls.length,0);assert.equal(f.read().run!.id,run);
+      if(observation.status==='unknown')assert.equal(f.read().run!.status,'unknown');
+    }finally{await f.close();}
+  }
+});
+
+test('an explicit user stop prevents a delayed supplement from automatically starting another round',async()=>{
+  const f=await fixture();try{
+    const before=f.read(),input=f.input('do not restart after stop'),run=before.run!;
+    await f.service.conversations.stop('workspace',before.id,{expectedRevision:before.revision,runId:run.id,participantId:run.participantId,generation:run.generation});
+    f.setObservation({status:'stopped',executionRef:{id:'native-run'},tools:[]});
+    assert.equal((await f.service.conversations.supplement('workspace',before.id,input)).delivery,'rejected');
+    assert.equal(f.read().run!.id,run.id);assert.equal(f.calls.length,0);
+  }finally{await f.close();}
+});
+
+test('a newer independently submitted requirement wins over an in-flight old supplement observation',async()=>{
+  const observed=gate(),f=await fixture({beforeObserve:observed.promise});try{
+    const input=f.input('old supplementary input'),pending=f.service.conversations.supplement('workspace',f.read().id,input);
+    await wait(()=>f.read().entries.some(entry=>entry.text===input.text));
+    const before=f.read(),draft={expectedRevision:before.revision,connectionId:'fixture',text:'new independent requirement'};
+    const preview=f.service.conversations.prepareSend('workspace',before.id,draft);
+    const newer=f.service.conversations.send('workspace',before.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});
+    observed.resolve();assert.equal((await pending).delivery,'rejected');
+    assert.equal(f.read().run!.id,newer.run.id);assert.equal(f.calls.length,0);
+  }finally{observed.resolve();await f.close();}
+});
+
+test('identical text under another native request identity cannot confirm the missing receipt',async()=>{
+  const f=await fixture({delivery:'unknown',historyReceipt:true,historyClientId:'another-request'});try{
+    const input=f.input('same body is not a receipt');
+    assert.equal((await f.service.conversations.supplement('workspace',f.read().id,input)).delivery,'unknown');
+    assert.equal(f.calls.length,1);assert.equal(f.read().entries.at(-1)!.status,'unknown');
+  }finally{await f.close();}
+});
+
+test('rechecking a persisted unknown request reconciles a later native receipt without another dispatch',async()=>{
+  const f=await fixture({delivery:'unknown'});try{
+    const input=f.input('receipt arrives later');
+    assert.equal((await f.service.conversations.supplement('workspace',f.read().id,input)).delivery,'unknown');
+    f.historyReceipt({id:'late-native-receipt',clientRequestId:input.clientRequestId,kind:'message',role:'user',executionId:'native-run',text:input.text});
+    const result=await f.service.conversations.supplement('workspace',f.read().id,input);
+    assert.equal(result.delivery,'accepted');assert.equal(f.calls.length,1);
+    assert.equal(result.conversation.entries.filter(entry=>entry.text===input.text).length,1);
+    assert.equal(result.conversation.entries.at(-1)!.deliveryDiagnostic,undefined);
+  }finally{await f.close();}
+});
+
+test('a native failed-input record is not promoted to confirmed delivery',async()=>{
+  const f=await fixture({delivery:'unknown'});try{
+    const input=f.input('native did not accept');
+    await f.service.conversations.supplement('workspace',f.read().id,input);
+    f.historyReceipt({id:'failed-receipt',clientRequestId:input.clientRequestId,kind:'message',role:'user',executionId:'native-run',status:'failed',text:input.text});
+    assert.equal((await f.service.conversations.supplement('workspace',f.read().id,input)).delivery,'unknown');
+    assert.equal(f.calls.length,1);
+  }finally{await f.close();}
+});
+
+test('a multi-megabyte durable history receives the latest burst text and terminal control with bounded writes',async(t)=>{
+  const f=await fixture();try{
+    for(let i=0;i<12;i++)f.emit({type:'item',item:{id:'large-history-'+i,executionId:'native-run',kind:'tool',role:'system',status:'completed',text:'h'.repeat(200000)}});
+    let deliveries=0;const started=performance.now();
+    const stream=new ExecutorEventStream(event=>{deliveries++;f.emit(event);},()=>()=>{});
+    const observation:ExecutorEvent={type:'observation',observation:{status:'running',executionRef:{id:'native-run'},tools:[]}};
+    stream.push(observation);
+    for(let i=0;i<5000;i++){stream.push({type:'item',item:{id:'burst',executionId:'native-run',kind:'message',role:'assistant',status:'running',text:'latest '+i}});stream.push(observation);}
+    stream.push({type:'item',item:{id:'burst',executionId:'native-run',kind:'message',role:'assistant',status:'completed',text:'latest 4999'}});
+    stream.push({type:'observation',observation:{status:'idle',executionRef:{id:'native-run'},tools:[]}});
+    t.diagnostic(JSON.stringify({historyBytes:2400000,nativeEvents:10002,consumerEvents:deliveries,burstAndTerminalMs:Math.round(performance.now()-started)}));
+    assert.ok(deliveries<=4);assert.equal(f.read().run!.status,'completed');assert.equal(f.read().entries.at(-1)!.text,'latest 4999');
+  }finally{await f.close();}
 });
 test('supplementing while approval is pending does not answer or replace the request', async () => {
   const f = await fixture(); try {

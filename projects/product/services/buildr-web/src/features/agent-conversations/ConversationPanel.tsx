@@ -105,10 +105,11 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   const images=context.scope?(attachments[attachmentKey]||[]):newImages.images;
   const [preparing,setPreparing]=useState(false);
   const [sending,setSending]=useState(false),[error,setError]=useState(''),[feedback,setFeedback]=useState('');
+  const feedbackRun = useRef<string | undefined>(undefined);
   const [replyFailure,setReplyFailure]=useState<{attempt:ConversationReplyAttempt;message:string}|null>(null);
   useEffect(()=>{setReplyFailure(current=>current&&confirmedConversationReply(chat,current.attempt)?null:current);},[chat]);
   useEffect(()=>{setReplyFailure(null);},[context.selectionGeneration]);
-  useEffect(()=>{setFeedback('');},[chat?.workspaceId,chat?.id,chat?.run?.id]);
+  useEffect(()=>{if(feedbackRun.current!==chat?.run?.id)setFeedback('');feedbackRun.current=undefined;},[chat?.workspaceId,chat?.id,chat?.run?.id]);
   const [,setActionVersion]=useState(0);
   const [actions]=useState(()=>createConversationActions(()=>setActionVersion(value=>value+1)));
   const actionKey=(value:ConversationView,action:string,identity=value.run?.id||'')=>conversationActionKey({workspaceId:value.workspaceId,conversationId:value.id},action,identity);
@@ -361,6 +362,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
     const attempt=inputAttempts.begin(chat,text,images);activeSend.current=operation;setSending(true);setError('');
     try{
       const result=await context.api.supplement({...chat,run:{...chat.run,...{id:attempt.runId,participantId:attempt.participantId,generation:attempt.generation}}},{text,attachmentIds:ids as NonNullable<SendDraft['attachmentIds']>,clientRequestId:attempt.clientRequestId});
+      if(result.delivery==='continued')feedbackRun.current=result.conversation.run?.id;
       context.apply(result.conversation,chat.revision);inputAttempts.finish(chat,attempt.clientRequestId);
       if(result.delivery!=='rejected'){
         draft.clearSubmitted(chat.workspaceId,chat.id,text);
@@ -368,6 +370,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
       }
       if(context.isSelectionCurrent(operation.selection)){
         if(result.delivery==='rejected')setError('这条消息未发送成功，文字与图片已保留。');
+        if(result.delivery==='continued')setFeedback('原轮已结束，这条要求已接续到新一轮。');
         await context.refresh();
       }
       void context.refreshPending().catch(()=>{});

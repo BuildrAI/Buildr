@@ -355,8 +355,20 @@ await step('连续工具默认汇总折叠，明确展开在追加时保持，�
       await capture(page,'conversation-live-process-flat.png');await handle?.dispose();fixture.conversation=previous;await page.reload();await input().waitFor();
     });
 
+await step('原轮结束时已提交的补充接续新轮，清理草稿并说明真实投递结果',async()=>{
+  const saved=structuredClone(fixture.conversation),delivery=fixture.supplementaryDelivery;
+  try{
+    const at=new Date().toISOString();
+    update({participants:[{id:'participant-codex',connectionId:'codex',provider:'codex',label:'Codex',model:'fixture-model',contextId:'native',deliveredThrough:0}],entries:[{id:'admission-original',sequence:1,kind:'message',role:'user',text:'原要求',runId:'run-fixture',createdAt:at}],run:run('running','codex',{model:'fixture-model',reasoningEffort:'high',permissionMode:'full-access'}),requests:[]});
+    fixture.supplementaryDelivery='continued';await page.reload();await input().waitFor();const calls=fixture.supplementaryCalls;
+    await input().fill('结束边界提交的补充');await panel().getByRole('button',{name:'发送对话',exact:true}).click();
+    await panel().getByText('原轮已结束，这条要求已接续到新一轮。',{exact:true}).first().waitFor();
+    await panel().locator('.ac-turn[data-run-id^="continued-"] .ac-turn-prompt').filter({hasText:'结束边界提交的补充'}).waitFor();
+    assert.equal(await input().inputValue(),'');assert.equal(fixture.supplementaryCalls,calls+1);await capture(page,'supplement-continued.png');
+  }finally{fixture.conversation=saved;fixture.supplementaryDelivery=delivery;await page.reload();await input().waitFor();}
+});
 await step('执行中图文普通发送、固定上下文和长输入，失败未知与独立停止',async()=>{
-      const previous=structuredClone(fixture.conversation),previousUploads=fixture.attachmentUploads,startedAt=new Date(Date.now()-125000).toISOString();
+      const previous=structuredClone(fixture.conversation),previousUploads=fixture.attachmentUploads,previousSupplementCalls=fixture.supplementaryCalls,startedAt=new Date(Date.now()-125000).toISOString();
       const entry=(id:string,sequence:number,role:string,text:string)=>({id,sequence,kind:'message',role,text,provider:'codex',participantId:'participant-codex',runId:'run-fixture',createdAt:new Date().toISOString(),status:'completed'});
       const long=Array.from({length:25},(_,i)=>`${i+1}. 保留完整用户要求，展开后在固定区域阅读。`).join('\n');
       update({participants:[{id:'participant-codex',connectionId:'codex',provider:'codex',label:'Codex',model:'fixture-model',contextId:'native',deliveredThrough:0}],entries:[entry('long-user',1,'user',long),entry('live-narration',2,'assistant',Array.from({length:40},(_,i)=>'自然执行过程 '+i).join('\n\n'))],run:run('running','codex',{startedAt,model:'fixture-model'}),requests:[]});await page.reload();await input().fill('');
@@ -372,7 +384,7 @@ await step('执行中图文普通发送、固定上下文和长输入，失败�
 assert.equal(await input().inputValue(),'');assert.deepEqual(supplementaryInputs.at(-1).attachmentIds,['image-fixture-'+(previousUploads+1)]);
       fixture.supplementaryDelivery='rejected';await input().fill('保留失败草稿');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().getByText('这条消息未发送成功，文字与图片已保留。',{exact:true}).waitFor();assert.equal(await input().inputValue(),'保留失败草稿');
       fixture.supplementaryDelivery='unknown';await input().fill('接收待确认');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().getByText('消息已保存，是否送达仍待确认，请勿重复发送。',{exact:true}).waitFor();assert.equal(await input().inputValue(),'');
-      fixture.supplementaryDelivery='accepted';fixture.holdSupplement=true;const waiting=new Promise<void>(resolve=>{fixture.supplementStarted=resolve;});await input().fill('发送等待时可以停止');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await waiting;await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();const admitted=page.waitForResponse((r:any)=>r.url().endsWith('/supplement'));fixture.releaseSupplement!();await admitted;assert.equal(fixture.supplementaryCalls,4);await panel().getByRole('button',{name:'发送对话',exact:true}).waitFor();
+      fixture.supplementaryDelivery='accepted';fixture.holdSupplement=true;const waiting=new Promise<void>(resolve=>{fixture.supplementStarted=resolve;});await input().fill('发送等待时可以停止');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await waiting;await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();const admitted=page.waitForResponse((r:any)=>r.url().endsWith('/supplement'));fixture.releaseSupplement!();await admitted;assert.equal(fixture.supplementaryCalls,previousSupplementCalls+4);await panel().getByRole('button',{name:'发送对话',exact:true}).waitFor();
       fixture.conversation=previous;fixture.attachmentUploads=previousUploads;await page.reload();await input().fill('下一轮仍是草稿');
     });
 

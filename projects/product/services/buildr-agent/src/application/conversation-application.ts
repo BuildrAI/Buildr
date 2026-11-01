@@ -147,6 +147,20 @@ export class ConversationApplication {
     });
     this.supplements = new ConversationSupplements({ generation: options.generation, now: options.now, closing: () => this.closing,
       load: (workspaceId, id) => this.load(workspaceId, id), save: record => this.save(record), view: record => this.view(record),
+      observe: (record, runId, observation) => {
+        const run = conversationRuns(record.view).find(value => value.id === runId);
+        if (run) { this.applyObservation(record, observation, run); this.save(record); }
+      },
+      continue: (record, input, requestId) => {
+        const run = record.view.run;
+        if (!run || run.id !== input.runId || run.stopRequested || !['completed','stopped'].includes(run.status) || record.view.requests.some(request => request.runId === run.id)) fail('agent_supplement_stale', '原执行已变化，输入已保留。', 409);
+        const participant = record.participants.find(value => value.id === run.participantId)!;
+        const draft: SendDraft = { expectedRevision: record.view.revision, connectionId: participant.connectionId,
+          model: run.model, modelAccountId: run.modelAccountId, modelAccountIdentity: run.modelAccountIdentity, serviceTier: run.serviceTier,
+          reasoningEffort: run.reasoningEffort, permissionMode: run.permissionMode, text: input.text, attachmentIds: input.attachmentIds };
+        const prepared = this.prepare(record, draft);
+        return this.submit(record, { ...draft, previewToken: prepared.preview.token, clientRequestId: requestId }).conversation;
+      },
       runtime: async (record, participant) => {
         if (!options.connections.get(participant.connectionId).enabled) fail('agent_connection_disabled', '接入已断开，输入已保留。', 409);
         return (await this.sourceRuntime(record, participant)).runtime;
