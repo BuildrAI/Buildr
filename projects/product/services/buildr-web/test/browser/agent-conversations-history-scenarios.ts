@@ -37,6 +37,39 @@ await step('交错执行按归属合组，旧问题存档和子报告不打断�
     assert.equal(await older.locator('.ac-step-tool').count(),2);await capture(page,'conversation-unified-interleaved-work.png');
   }finally{fixture.conversation=saved;await page.reload();await input().waitFor();}
 });
+await step('发送后始终展示最新信息，布局滚动不误加载更早记录',async()=>{
+  const previous=structuredClone(fixture.conversation),at=new Date().toISOString();
+  const entry=(id:string,sequence:number,role:string,text:string)=>({id,sequence,kind:'message',role,text,provider:'codex',participantId:'participant-codex',runId:'run-fixture',status:'completed',createdAt:at});
+  const settle=()=>page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
+  const readingAnswer=(prefix:string,count:number,repeat:number)=>Array.from({length:count},(_,i)=>`${prefix} ${i}：`+'这是一段用于验证信息流贴底与向上翻阅行为的较长说明。'.repeat(repeat)).join('\n\n');
+  try{
+    update({participants:[{id:'participant-codex',connectionId:'codex',provider:'codex',label:'Codex',model:'fixture-model',contextId:'native',deliveredThrough:0}],entries:[entry('latest-pin-user',1,'user','检查发送后的最新信息'),entry('latest-pin-answer',2,'assistant',readingAnswer('用于保持阅读位置的历史答复',12,5))],nextEntryCursor:undefined,run:run('completed','codex',{model:'fixture-model'}),requests:[]});
+    await page.reload();await input().waitFor();
+    const stream=panel().locator('.ac-stream'),distance=()=>stream.evaluate((node:HTMLElement)=>Math.round(node.scrollHeight-node.scrollTop-node.clientHeight));
+    await page.waitForFunction(()=>{const node=document.querySelector<HTMLElement>('#agent-conversation-panel .ac-stream');return Boolean(node&&node.scrollHeight-node.scrollTop-node.clientHeight<2);});
+    await stream.evaluate((node:HTMLElement)=>{node.scrollTop=0;node.dispatchEvent(new Event('scroll'));});await settle();
+    const reading=await stream.evaluate((node:HTMLElement)=>({top:node.scrollTop,max:Math.round(node.scrollHeight-node.clientHeight)}));assert.ok(reading.max>80&&await distance()>24,'先离开最新位置阅读旧内容 '+JSON.stringify(reading));
+    await input().fill('发送后应看到这条最新指令');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().locator('.ac-turn-prompt').filter({hasText:'发送后应看到这条最新指令'}).waitFor();
+    await page.waitForFunction(()=>{const node=document.querySelector<HTMLElement>('#agent-conversation-panel .ac-stream');return Boolean(node&&node.scrollHeight-node.scrollTop-node.clientHeight<2);});
+    assert.equal(await panel().getByRole('button',{name:'向下到底',exact:true}).count(),0,'本地发送后回到最新信息');
+    update({entries:[entry('clamp-user',1,'user','输入区收缩时的贴底'),entry('clamp-answer',2,'assistant',readingAnswer('输入区收缩时的答复',10,3))],nextEntryCursor:1,run:run('completed','codex',{model:'fixture-model'}),requests:[]});
+    historyPages.set(1,{...fixture.conversation,entries:[entry('latest-pin-older',0,'user','更早的历史要求')],nextEntryCursor:undefined});
+    await page.reload();await input().waitFor();
+    await page.waitForFunction(()=>{const node=document.querySelector<HTMLElement>('#agent-conversation-panel .ac-stream');return Boolean(node&&node.scrollHeight-node.scrollTop-node.clientHeight<2);});
+    const scrollable=await stream.evaluate((node:HTMLElement)=>Math.round(node.scrollHeight-node.clientHeight));
+    assert.ok(scrollable>24&&scrollable<=800,'夹具内容应形成可测试的贴底距离 '+scrollable);
+    const readsBefore=fixture.entryReads;
+    await stream.evaluate((node:HTMLElement)=>{node.scrollTop=node.scrollHeight;node.dispatchEvent(new Event('scroll'));});
+    await stream.evaluate((node:HTMLElement)=>{node.scrollTop=Math.max(0,node.scrollTop-8);node.dispatchEvent(new Event('scroll'));});await settle();
+    assert.equal(fixture.entryReads,readsBefore,'输入区收缩造成的贴底滚动不读取更早记录');
+    assert.equal(await panel().getByRole('button',{name:'向下到底',exact:true}).count(),0,'贴底滚动事件不弹出到底按钮');
+    assert.ok(await distance()<24,'布局滚动后仍保持贴底');
+    await stream.evaluate((node:HTMLElement)=>{node.scrollTop=0;node.dispatchEvent(new Event('scroll'));});
+    await panel().locator('[data-entry-id="latest-pin-older"]').waitFor({state:'attached'});
+    assert.ok(fixture.entryReads>readsBefore,'用户继续向上翻阅仍加载更早记录');
+  }finally{fixture.conversation=previous;historyPages.delete(1);await page.reload();await input().waitFor();}
+});
+
 await step('主答复后的隐藏子消息不阻止真实已读确认',async()=>{
   const saved=structuredClone(fixture.conversation),at=new Date().toISOString(),version=900001;
   try{

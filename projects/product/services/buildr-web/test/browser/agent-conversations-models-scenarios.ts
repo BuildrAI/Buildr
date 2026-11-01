@@ -4,6 +4,18 @@ import type {AgentConversationFixture} from './agent-conversation-fixture.ts';
 /** models 场景使用独立准备的对话现场。 */
 export async function runModelsScenarios(fixture:AgentConversationFixture){
   const {assertModelSummary,capture,chooseAgent,chooseModel,chooseOption,closeConversation,closeModelSettings,input,modelSettings,modelTrigger,openModelSettings,page,panel,preparedInputs,reopen,run,sentInputs,setHighEffort,step,update,workspaceId}=fixture;
+await step('模型名称选择器仅在悬停时显示外形',async()=>{
+      await openModelSettings();const picker=modelSettings().locator('.ac-model-picker.ant-select');await picker.waitFor();await modelSettings().getByRole('slider',{name:'思考深度',exact:true}).focus();await page.mouse.move(4,4);await page.waitForTimeout(250);
+      const read=()=>picker.evaluate((node:HTMLElement)=>{const style=getComputedStyle(node);return{background:style.backgroundColor,border:style.borderTopColor,width:style.borderTopWidth,text:node.textContent?.trim()??''};});
+      const idle=await read();assert.equal(idle.width,'1px');assert.equal(idle.background,'rgba(0, 0, 0, 0)');assert.equal(idle.border,'rgba(0, 0, 0, 0)');assert.ok(idle.text.length>0,'模型名称在未悬停时仍可读');
+      const box=await picker.boundingBox();assert.ok(box);await page.mouse.move(box.x+box.width/2,box.y+box.height/2);
+      await page.waitForFunction(()=>{const node=document.querySelector<HTMLElement>('.ac-model-popover .ac-model-picker.ant-select');if(!node)return false;const style=getComputedStyle(node);return style.backgroundColor!=='rgba(0, 0, 0, 0)'&&style.borderTopColor!=='rgba(0, 0, 0, 0)';});
+      const hovered=await read();assert.notEqual(hovered.background,'rgba(0, 0, 0, 0)');assert.notEqual(hovered.border,'rgba(0, 0, 0, 0)');
+      await page.mouse.move(4,4);
+      await page.waitForFunction(()=>{const node=document.querySelector<HTMLElement>('.ac-model-popover .ac-model-picker.ant-select');if(!node)return false;const style=getComputedStyle(node);return style.backgroundColor==='rgba(0, 0, 0, 0)'&&style.borderTopColor==='rgba(0, 0, 0, 0)';});
+      await closeModelSettings();
+    });
+
 await step('单项停止只对原生明确可停止的命令开放，旧记录与不支持者不误给按钮',async()=>{
       const rawCommand='node /isolated/very-long-command.mjs\n'+Array.from({length:80},(_,i)=>'步骤 '+i+'：'+('long-argument-without-spaces-'.repeat(12))).join('\n');
       const tools=[{id:'native-exact',label:rawCommand,status:'running',canStop:true},{id:'native-unsupported',label:'厂家不支持单独停止',status:'running',canStop:false},{id:'native-legacy',label:'旧命令未声明能力',status:'unknown'},{id:'native-done',label:'已经完成的命令',status:'completed',canStop:true}];

@@ -69,9 +69,17 @@ export function useEarlierConversationEntries(props:Props){
   if(distance<24)bottom.current=true;
   else if(upward)bottom.current=false;
   else if(bottom.current)node.scrollTop=node.scrollHeight;
-  if(upward)readEarlier();
+  // A shrinking composer clamps the viewport to the new bottom; that upward
+  // scroll event is layout, not a request to read older entries.
+  if(upward&&distance>=24)readEarlier();
  };
- return {loading,error,onScroll,
+ const pinLatest=()=>{
+  anchor.current=null;touch.current=null;
+  active.current?.abort();active.current=null;setLoading(false);setError('');
+  const node=stream.current;bottom.current=true;
+  if(node){node.scrollTop=node.scrollHeight;position.current=node.scrollTop;}
+ };
+ return {loading,error,onScroll,pinLatest,
   onWheel:(event:{deltaY:number})=>{anchor.current=null;if(event.deltaY<0)readEarlier();},
   onTouchStart:(event:{touches:ArrayLike<{clientY:number}>})=>{anchor.current=null;touch.current=event.touches[0]?.clientY??null;},
   onTouchMove:(event:{touches:ArrayLike<{clientY:number}>})=>{const y=event.touches[0]?.clientY;if(y===undefined)return;if(touch.current!==null&&y>touch.current)readEarlier();touch.current=y;},

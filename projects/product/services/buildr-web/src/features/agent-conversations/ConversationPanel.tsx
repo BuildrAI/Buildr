@@ -181,7 +181,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   };
   useEffect(()=>{setError('');setFeedback('');setFileLinkFailure(null);setImageLink(null);setExpandedToolGroups({});const active=activeSend.current;if(!active||!context.isSelectionCurrent(active.selection)){activeSend.current=null;setSending(false);setPreparing(false);setPrepared(null);setSelectedHandoff(null);setPreviewOpen(false);}bottom.current=true;setAtBottom(true);},[context.selectionGeneration,context.scope?.workspaceId,context.scope?.conversationId,context.isSelectionCurrent]);
   useEffect(()=>{setMoreOpen(false);setLocationOpen(false);},[context.selectionGeneration,context.open,context.side,context.full,context.view]);
-  useEffect(()=>{if(bottom.current)stream.current?.scrollTo({top:stream.current.scrollHeight});},[chat?.id,chat?.entries.length,chat?.entries.at(-1)?.text,chat?.requests.length,chat?.run?.status]);
+  useEffect(()=>{if(bottom.current)stream.current?.scrollTo({top:stream.current.scrollHeight});},[chat?.id,chat?.entries.length,chat?.entries.at(-1)?.text,chat?.requests.length,chat?.run?.status,chat?.pendingSend?.id]);
   useLayoutEffect(()=>{if(stream.current?.getClientRects().length)stream.current.scrollTop=bottom.current?stream.current.scrollHeight:readPosition.current;},[portalTarget,context.view,context.open]);
   const hasMessageList=Boolean(chat?.entries.length)&&!context.loading&&!context.error;
   useEffect(()=>{
@@ -304,6 +304,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
     const selection=context.getSelection();
     let storage:Pick<Storage,'getItem'|'setItem'|'removeItem'>={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
     try{storage=sessionStorage;}catch{/* Keep a stable same-page identity. */}
+    earlier.pinLatest();
     const prior=pendingAttempt.current;
     const submission=pendingSubmission(permissionProfile+':'+current.workspaceId,current.id,input,storage,prior?.workspaceId===current.workspaceId&&prior.conversationId===current.id?prior.value:undefined);
     pendingAttempt.current={workspaceId:current.workspaceId,conversationId:current.id,value:submission};
@@ -321,6 +322,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   const commit=async(value:Prepared,continuing?:SendOperation)=>{
     if(!value.preview.fits||!context.isSelectionCurrent(value.selection)||(!continuing&&activeSend.current))return;
     const operation=continuing??{selection:value.selection};activeSend.current=operation;
+    earlier.pinLatest();
     setSending(true);setError('');
     try{
       if(value.input.waitingHandoff){await queue(value.conversation,value.input);void context.refreshPending().catch(()=>{});return;}
@@ -353,6 +355,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   };
   const supplement=async()=>{
     if(!chat?.run||activeSend.current||!canSend||(!draft.text.trim()&&!images.length))return;
+    earlier.pinLatest();
     const operation:SendOperation={selection:context.getSelection()},text=draft.text,ids=images.map(image=>image.id);
     const attempt=inputAttempts.begin(chat,text,images);activeSend.current=operation;setSending(true);setError('');
     try{
