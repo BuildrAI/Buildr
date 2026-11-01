@@ -91,7 +91,7 @@ export function validateAgentRuntime(dataRoot: string, runtime: AgentRuntimeUnit
   const database = path.join(dataRoot, 'agent-service/conversations.sqlite');
   if (fs.existsSync(database)) {
     const db = new DatabaseSync(database, { readOnly: true });
-    try { if ((db.prepare('PRAGMA user_version').get() as {user_version:number}).user_version > compatibility.storageVersion) throw new AgentServiceError('agent_storage_newer', '当前资料版本较新，未采用不兼容的执行后台。', 409); }
+    try { db.exec('PRAGMA busy_timeout=2000'); if ((db.prepare('PRAGMA user_version').get() as {user_version:number}).user_version > compatibility.storageVersion) throw new AgentServiceError('agent_storage_newer', '当前资料版本较新，未采用不兼容的执行后台。', 409); }
     finally { db.close(); }
   }
 }

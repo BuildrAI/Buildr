@@ -262,6 +262,13 @@ export class ConnectionApplication {
     this.gatewayRuntimes.set(key, promise); return promise;
   }
   binding(id: string): string | undefined { return this.stored(id).bindingIdentity; }
+  async readPersistedExecution(id: string, input: Omit<Parameters<NonNullable<AgentExecutor['readPersistedExecution']>>[0], 'configRoot'|'executable'|'programSource'>) {
+    const executor = this.executors.get(id), record = this.stored(id);
+    if (!executor?.readPersistedExecution || !record.view.executable) return;
+    const base = path.join(this.options.root, 'connections', id);
+    const configRoot = input.gatewayIdentity ? path.join(base, 'model-bindings', createHash('sha256').update(input.gatewayIdentity).digest('hex')) : base;
+    return executor.readPersistedExecution({ ...input, configRoot, executable: record.view.executable, programSource: record.programSource });
+  }
   async releaseGatewayRuntime(runtime: AgentRuntime): Promise<void> {
     const owned = [];
     for (const [key, pending] of this.gatewayRuntimes) {

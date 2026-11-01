@@ -1,4 +1,10 @@
+import { createHash } from 'node:crypto';
 import {ModelAccessError,type ModelOffering,type ModelPreference} from './contracts.ts';
+
+/** Stable private configuration identity, independent of a live gateway or account refresh. */
+export function modelLeaseIdentity(accountId:string,accountIdentity:string,modelId:string,conversationId:string,agentId:string,configuration:string):string {
+  return createHash('sha256').update(JSON.stringify([accountId,accountIdentity,modelId,conversationId,agentId,configuration])).digest('hex');
+}
 
 export function effectiveModel(model:ModelOffering,preference:ModelPreference|undefined):ModelOffering {
   const reported=model.reportedContextWindow??model.contextWindow;

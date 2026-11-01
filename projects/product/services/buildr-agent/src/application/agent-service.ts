@@ -124,6 +124,7 @@ export function createAgentService(options: AgentServiceOptions) {
     },
     resumeMetadata() { connections.freezeMetadata(false); models.freezeMetadata(false); startRefreshing(); },
     conversationBusy: (scope: string, id: string) => conversations.busy(scope, id),
+    reconcilePersisted: (scope:string,id:string,control?:{expectedRevision:string;runId:string;participantId:string;generation:string}) => conversations.reconcilePersisted(scope,id,control),
     allowsReleasedContinuation: (scope: string, id: string, input: SendDraft) => conversations.allowsReleasedContinuation(scope, id, input),
     conversationInputBusy: (scope: string, id: string) => conversations.inputBusy(scope, id),
     retainsConversationSource: (scope:string,id:string) => conversations.retainsConversationSource(scope,id),

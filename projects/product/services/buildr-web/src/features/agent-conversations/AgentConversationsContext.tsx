@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { ConnectionDiscovery, type ConnectionDiscoveryState } from './connection-discovery';
 import { agentConversationsApi, type ConversationPage, type AgentConversationsClient } from './api/agent-conversations-api';
 import { conversationObservationKey, needsConversationObservation, nextConversationPanel, createdConversationVisibility, isCurrentConversationEvent, mergeConversationView, prependConversationEntries, rememberContextReport, sameConversationSelection, type ConversationContextReport, type ConversationSelection } from './conversation-state';
 import { readOptionalPreference, writeOptionalPreference } from '../../lib/optional-preferences';
@@ -21,6 +22,7 @@ export type AgentConversationsContextValue = {
   refreshActivity():Promise<void>;loadMoreActivity():Promise<void>;markSeen(value:ConversationView):Promise<void>;
 
   api: AgentConversationsClient; reconnecting:boolean; recovering:boolean; open: boolean; side: 'left' | 'right'; full: boolean; view: 'conversation' | 'history';
+  connectionsReady?:boolean; connectionsLoading?:boolean; connectionsError?:string;
   scope: Scope | null; draftScope: DraftScope | null; conversation: ConversationView | null; connections: ConnectionView[]; pending: PendingConversation[];
   /** Latest real context-usage report retained for the open conversation; optional for isolated view providers. */
   contextReport?: ConversationContextReport | null;
@@ -108,7 +110,16 @@ export function AgentConversationsProvider({children, client = agentConversation
     conversationRef.current=next;setConversation(next);
   },[]);
   const connectionReadGeneration=useRef(0);
-  const refreshConnections = useCallback(async () => {const generation=++connectionReadGeneration.current;const result=await client.connections();if(connectionReadGeneration.current===generation)setConnections(result.connections);},[client]);
+  const [connectionState,setConnectionState]=useState<ConnectionDiscoveryState>({ready:false,loading:false,error:''});
+  const discovery=useMemo(()=>{
+    let generation=0;
+    return new ConnectionDiscovery(async()=>{
+      generation=++connectionReadGeneration.current;
+      return (await client.connections()).connections;
+    },rows=>{if(generation===connectionReadGeneration.current)setConnections(rows);},setConnectionState);
+  },[client]);
+  useEffect(()=>{discovery.start();return()=>discovery.stop();},[discovery]);
+  const refreshConnections=useCallback(()=>discovery.refresh(),[discovery]);
   const refreshPending = useCallback(async () => { void refreshActivity(); const result = await client.pending(); setPending(result.conversations); }, [client,refreshActivity]);
   const updateConnection = useCallback((value: ConnectionView) => {++connectionReadGeneration.current;setConnections(previous=>previous.some(item=>item.id===value.id)?previous.map(item=>item.id===value.id?value:item):[...previous,value]);},[]);
   useEffect(() => { let active = true; const refresh = () => { void refreshModelCatalog().catch(()=>{});void refreshConnections().catch(() => {}); void refreshPending().catch(() => {}); }; refresh(); const interval = setInterval(() => {if (active && document.visibilityState === 'visible') void refreshPending().catch(() => {});}, 5000); window.addEventListener('focus', refresh); return () => { active = false; ++activityGeneration.current; clearInterval(interval); window.removeEventListener('focus', refresh); }; }, [refreshConnections, refreshPending,refreshModelCatalog]);
@@ -282,7 +293,7 @@ export function AgentConversationsProvider({children, client = agentConversation
   const toggleView=useCallback((target:'conversation'|'history')=>{const next=nextConversationPanel(open,view,target);if(target==='history'&&next.open)setHistoryWorkspaceId(null);setView(next.view);setOpen(next.open);},[open,view,setOpen]);
   const toggle=useCallback(()=>setOpen(!open),[open,setOpen]);
   const shell=useMemo(()=>({open,view,full,pending,openGlobal,toggle,toggleView,setSettings}),[open,view,full,pending,openGlobal,toggle,toggleView]);
-  return <ShellContext.Provider value={shell}><Context.Provider value={{activityCounts,activityStats,activityRows,activityTotal,activityCursor,activityError,activityTick,historyWorkspaceId,openHistory,refreshActivity,loadMoreActivity,markSeen,api:client,reconnecting,recovering, modelCatalog,modelCatalogReady,modelCatalogError,refreshModelCatalog,open,side,full,view,scope,draftScope,conversation,contextReport,connections,pending,loading,error,streamError,settings,setSettings,setOpen,setFull,setView,move:() => setSide(current => { const next = current === 'right' ? 'left' : 'right'; writeOptionalPreference('buildr.agent-conversation-side',next); return next; }),openGlobal,toggle,toggleView,openConversation,newConversation,refresh,refreshConnections,refreshPending,apply,prependEntries,updateConnection,create,selectionGeneration,getSelection,isSelectionCurrent,productActionPending,productActionError,firstSubmissionStore,startTextConversation}}>{children}</Context.Provider></ShellContext.Provider>;
+  return <ShellContext.Provider value={shell}><Context.Provider value={{activityCounts,activityStats,activityRows,activityTotal,activityCursor,activityError,activityTick,historyWorkspaceId,openHistory,refreshActivity,loadMoreActivity,markSeen,api:client,reconnecting,recovering, modelCatalog,modelCatalogReady,modelCatalogError,refreshModelCatalog,open,side,full,view,scope,draftScope,conversation,contextReport,connections,connectionsReady:connectionState.ready,connectionsLoading:connectionState.loading,connectionsError:connectionState.error,pending,loading,error,streamError,settings,setSettings,setOpen,setFull,setView,move:() => setSide(current => { const next = current === 'right' ? 'left' : 'right'; writeOptionalPreference('buildr.agent-conversation-side',next); return next; }),openGlobal,toggle,toggleView,openConversation,newConversation,refresh,refreshConnections,refreshPending,apply,prependEntries,updateConnection,create,selectionGeneration,getSelection,isSelectionCurrent,productActionPending,productActionError,firstSubmissionStore,startTextConversation}}>{children}</Context.Provider></ShellContext.Provider>;
 }
 export function useAgentConversations() { const value = useContext(Context); if (!value) throw new Error('AgentConversationsProvider 未提供。'); return value; }
 export function useOptionalAgentConversations() { return useContext(Context); }

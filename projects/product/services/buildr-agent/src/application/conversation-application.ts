@@ -1,4 +1,5 @@
 import { presentedFilesForEntry, normalizePresentedFiles } from '../domain/presented-files.ts';
+import { modelLeaseIdentity } from '../model-access/model-preferences.ts';
 import {ConversationWarmups,CONNECTION_IDLE_MS,type PreparedSource} from './conversation-warmups.ts';
 import { answerAttachmentIds, resolveQuestionAnswer, questionAnswerDisplay, normalizeQuestionCapabilities } from '../domain/question-answer.ts';
 import { normalizeSendDraft } from '../domain/send-draft.ts';
@@ -831,6 +832,10 @@ export class ConversationApplication {
     const run = conversationRuns(record.view).find(run => run.id === runId && run.generation === this.options.generation);
     return run ? {record, run} : undefined;
   }
+  private hasPersistedEnd(record:StoredConversation,run:RunView):boolean {
+    const attempt=record.attempts.find(value=>value.runId===run.id);
+    return Boolean(attempt?.persistedEnd&&attempt.persistedEnd===attempt.executionRef?.id&&run.executionState==='ended'&&!unfinishedRun(run));
+  }
   private applyItem(record: StoredConversation, participant: StoredParticipant, item: ExecutorItem, runId?: string): boolean {
     if (Buffer.byteLength(item.text) > MAX_ITEM_BYTES) fail('agent_native_item_too_large', '原生条目超出安全展示容量，原记录保留于准确原生会话。', 413);
     const source = `${participant.id}:${item.kind}:${item.id}`;
@@ -894,6 +899,9 @@ export class ConversationApplication {
     if (!run) return;
     const participant = record.participants.find(value => value.id === run.participantId)!;
     const attempt = record.attempts.find(value => value.runId === runId)!;
+    // A late transport failure cannot negate an exact settled execution.
+    if(this.hasPersistedEnd(record,run)&&
+      ['observation','diagnostic','completed'].includes(event.type))return;
     if (event.type === 'item' && event.item.kind === 'tool' && event.item.executionId && attempt.executionRef?.id !== event.item.executionId) {
       const owner = record.attempts.find(value => value.participantId === participant.id && value.executionRef?.id === event.item.executionId);
       if (owner && this.applyItem(record, participant, event.item, owner.runId)) this.save(record);
@@ -963,6 +971,7 @@ export class ConversationApplication {
   }
   private applyObservation(record: StoredConversation, observation: ExecutorObservation, run = record.view.run): void {
     if (!run) return;
+    if(this.hasPersistedEnd(record,run))return;
     const requests = record.view.requests.filter(request => request.runId === run.id);
     if(run.resourcesReleased&&(!['idle','stopped'].includes(observation.status)||observation.tools.some(tool=>tool.status!=='completed')))return;
     const attempt=record.attempts.find(value=>value.runId===run.id);
@@ -1091,6 +1100,7 @@ export class ConversationApplication {
         return;
       }
       const run = record.view.run!;
+      if(run.status==='completed'&&run.executionState==='ended'&&run.tools.every(tool=>tool.status==='completed'))return;
       const rejectedBeforeInput = !run.accepted && (error instanceof ExecutorInputRejected || error instanceof AgentServiceError && ['agent_permission_invalid', 'agent_permission_unavailable', 'agent_permission_unverified', 'agent_reasoning_unavailable'].includes(error.code));
       const userStopping = run.status === 'stopping';
       const possiblyDelivered = dispatched && !rejectedBeforeInput;
@@ -1360,11 +1370,18 @@ export class ConversationApplication {
       record.view.titleState={status:'failed',reason:'标题生成因服务重启中断，原有回复已保留，可显式重新生成。'};
       try{this.save(record);}catch{/* A concurrent newer record wins; do not block unrelated executions. */}
     }
-    const candidates=this.options.repository.listInterrupted().filter(record=>(record.view.run?.generation!==this.options.generation && !this.options.generationAlive?.(record.view.run?.generation ?? '')) || record.interruption?.runId===record.view.run?.id);
+    const candidates=this.options.repository.listInterrupted();
     const work=async()=>{
       let next=0;
       await Promise.all(Array.from({length:Math.min(2,candidates.length)},async()=>{
-        while(next<candidates.length&&!this.closing){const candidate=candidates[next++]!;await this.recoverOne(candidate.view.workspaceId,candidate.view.id);}
+        while(next<candidates.length&&!this.closing){
+          const candidate=candidates[next++]!,{workspaceId,id}=candidate.view;
+          try{
+            await this.reconcilePersisted(workspaceId,id);
+            const current=this.load(workspaceId,id);
+            if((current.view.run?.generation!==this.options.generation&&!this.options.generationAlive?.(current.view.run?.generation??''))||current.interruption?.runId===current.view.run?.id)await this.recoverOne(workspaceId,id);
+          }catch{/* One unreadable or concurrently changed conversation must not block the rest. */}
+        }
       }));
     };
     const recovery=work().finally(()=>{if(this.recoveryWork===recovery)this.recoveryWork=undefined;});
@@ -1443,7 +1460,58 @@ export class ConversationApplication {
     }catch(error){unavailable('执行未完成，未能自动接续：'+safeDiagnostic(error));}
   }
 
+  /** Terminal facts do not require a live vendor channel or ownership of its controls. */
+  async reconcilePersisted(workspaceId:string,id:string,control?:{expectedRevision:string;runId:string;participantId:string;generation:string}):Promise<boolean>{
+    let record=this.load(workspaceId,id);
+    const confirmed=new Set<string>();
+    if(control){
+      expected(record.view.revision,control.expectedRevision);
+      const run=conversationRuns(record.view).find(value=>value.id===control.runId);
+      if(!run||run.participantId!==control.participantId||run.generation!==control.generation)fail('agent_control_stale','原执行身份已变化，请重新读取。',409);
+    }
+    for(const run of conversationRuns(record.view)){
+      if(control&&control.runId!==run.id||!run.accepted)continue;
+      if(this.hasPersistedEnd(record,run)){confirmed.add(run.id);continue;}
+      if(!BUSY_STATES.has(run.status)&&run.status!=='completed')continue;
+      const participant=record.participants.find(value=>value.id===run.participantId);
+      const attempt=record.attempts.find(value=>value.runId===run.id);
+      if(!participant?.contextRef||!participant.bindingIdentity||!attempt?.executionRef)continue;
+      const revision=record.view.revision;
+      const gatewayIdentity=participant.modelAccountId&&participant.modelAccountIdentity&&participant.modelId&&participant.modelConfiguration!==undefined
+        ?modelLeaseIdentity(participant.modelAccountId,participant.modelAccountIdentity,participant.modelId,id,participant.connectionId,participant.modelConfiguration):undefined;
+      if(participant.modelAccountId&&!gatewayIdentity)continue;
+      let evidence;
+      try{evidence=await this.options.connections.readPersistedExecution(participant.connectionId,{bindingIdentity:participant.bindingIdentity,contextRef:participant.contextRef,executionRef:attempt.executionRef,cwd:record.view.cwd,gatewayIdentity});}
+      catch{continue; /* Native observation remains available; unsafe evidence never overrides it. */}
+      if(!evidence||!['idle','stopped'].includes(evidence.observation.status)||evidence.observation.tools.some(tool=>tool.status!=='completed')||evidence.observation.executionRef?.id!==attempt.executionRef.id)continue;
+      record=this.load(workspaceId,id);
+      if(record.view.revision!==revision)return false;
+      const current=conversationRuns(record.view).find(value=>value.id===run.id);
+      const currentParticipant=record.participants.find(value=>value.id===participant.id);
+      if(!current||!currentParticipant||current.participantId!==participant.id||!BUSY_STATES.has(current.status)&&current.status!=='completed')continue;
+      let changed=false;
+      for(const item of evidence.items)if(item.executionId===attempt.executionRef.id)changed=this.applyItem(record,currentParticipant,item,current.id)||changed;
+      if(BUSY_STATES.has(current.status)){
+        this.applyObservation(record,evidence.observation,current);
+        current.updatedAt=this.options.now();
+        if(record.interruption?.runId===current.id)delete record.interruption;
+        delete current.interrupted;
+        changed=true;
+      }
+      const currentAttempt=record.attempts.find(value=>value.runId===current.id)!;
+      if(currentAttempt.persistedEnd!==currentAttempt.executionRef?.id){currentAttempt.persistedEnd=currentAttempt.executionRef!.id;changed=true;}
+      if(changed)this.save(record);
+      confirmed.add(current.id);
+    }
+    const selected=control?conversationRuns(record.view).find(run=>run.id===control.runId):record.view.run;
+    // No evidence is not a successful read. Other providers must retain their
+    // normal history reconciliation, including legacy identity repair.
+    return Boolean(selected&&confirmed.has(selected.id)&&!unfinishedRun(selected)&&
+      (control||conversationRuns(record.view).every(run=>!unfinishedRun(run))));
+  }
+
   async observe(workspaceId: string, id: string): Promise<ConversationView> {
+    if(await this.reconcilePersisted(workspaceId,id))return this.read(workspaceId,id);
     const key = `${workspaceId}/${id}`;
     const current = this.observations.get(key); if (current) return current;
     const work = this.reconcile(workspaceId, id).finally(() => { this.observations.delete(key); this.scheduleSourceRelease(workspaceId, id); }).then(view => {

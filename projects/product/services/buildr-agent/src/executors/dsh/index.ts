@@ -1,6 +1,7 @@
 import { readFile, writeFile, rm } from 'node:fs/promises';
 import { interactionPolicy } from '../../domain/interaction-policy.ts';
 import {pausePreviousDshGoal} from './goals.ts';
+import { readDshPersistedExecution } from './durable-history.ts';
 import { errorDiagnostic, NativeObservationError } from '../../domain/error-diagnostic.ts';
 import { isCompatibleProgram, nativeProgramPolicy } from '../program-policy.ts';
 import { fileURLToPath } from 'node:url';
@@ -41,7 +42,7 @@ export async function writeGatewayPatch(directory: string, gateway: ExecutorGate
   return filename;
 }
 interface ActiveTurn { lineage: DshExecutionLineage; accepted?: boolean; lastSeq?: number; inputIds?: Set<string>; restoring?: Promise<void>; reconnects?: number; retryTimer?: ReturnType<typeof setTimeout>; reject?: (error: Error) => void; observationDiagnostic?: string; observationLost?: boolean; stopRequested?: boolean; stopConfirmed?:boolean; stopping?:Promise<ExecutorObservation>; cancellation?: Promise<void>; supplementInputs?: Set<string>; supplementAdmissions?: number; supplementUnknown?: boolean; pendingEnd?: any; finish?: () => void; id: string; input: ExecutorSendInput; nativeTurn?: number; contextWindow?: number; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown' }>; pending: Map<string, { request: ExecutorRequest; resolve?: (value: string) => void; answer?: (value: { answers: any[] }) => void; reject?: (error: Error) => void; wait?: any }>; stream?: any; pump?: Promise<void>; streamAttempt?: { id: string; turn: number; step: number; nextIndex: number; text: string }; }
-export function createDshExecutor(): AgentExecutor { return { storage: { transientDirectories: ['home/.npm/_cacache'] }, descriptor: { id: 'dsh', label: 'DSH', capabilities }, open: options => DshRuntime.open(options) }; }
+export function createDshExecutor(): AgentExecutor { return { readPersistedExecution: readDshPersistedExecution, storage: { transientDirectories: ['home/.npm/_cacache'] }, descriptor: { id: 'dsh', label: 'DSH', capabilities }, open: options => DshRuntime.open(options) }; }
 export class DshRuntime implements AgentRuntime {
   readonly capabilities = { ...capabilities, permissionModes: ['default'] as PermissionMode[] };
   private disposed = false;

@@ -6,6 +6,28 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
   const {page,panel,run,step,update,input}=fixture;
   const notice=()=>panel().locator('.ac-stream-disconnect');
   const completed=()=>run('completed','codex',{executionState:'ended'});
+  await step('接入列表瞬断自动恢复，不误报未接入或空交接目标，也不发送工作',async()=>{
+    const sends=fixture.sends,errors=fixture.expectedBrowserErrors;
+    let reads=0;
+    const pattern='**/api/v1/app/agent-service/connections';
+    const handler=async(route:any)=>{
+      if(++reads<=2){errors?.add(route.request().url());return route.fulfill({status:503,json:{error:{code:'fixture_restarting',message:'后台切换中'}}});}
+      return route.fallback();
+    };
+    try{
+      await page.route(pattern,handler);
+      const recovered=page.waitForResponse((response:any)=>new URL(response.url()).pathname==='/api/v1/app/agent-service/connections'&&response.status()===200);
+      await page.reload();await input().waitFor();
+      assert.equal(await panel().getByText('请先接入智能体',{exact:true}).count(),0);
+      assert.doesNotMatch(await panel().innerText(),/接下来由\s*继续处理/);
+      await recovered;
+      await panel().getByRole('combobox',{name:'下一位智能体',exact:true}).waitFor();
+      assert.ok(reads>=3,'失败后无需点击即可重读');
+      assert.equal(await panel().getByText('请先接入智能体',{exact:true}).count(),0);
+      assert.doesNotMatch(await panel().innerText(),/接下来由\s*继续处理/);
+      assert.equal(fixture.sends,sends);
+    }finally{await page.unroute(pattern,handler);await page.reload();await input().waitFor();}
+  });
   await step('阶段说明及后台工作不出现最终答复操作栏，准确结束后恢复',async()=>{
     const saved=structuredClone(fixture.conversation),sends=fixture.sends;
     try{
@@ -25,7 +47,7 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
       await fixture.capture(page,'agent-goal-stage-ended-actions.png');
     }finally{fixture.conversation=saved;await page.reload();await input().waitFor();}
   });
-  await step('同组合内部恢复无交接，已释放历史不常驻输入区；真正切换与未知工具仍可核对',async()=>{
+  await step('同组合内部恢复无交接，切换遗留静默保留；真正切换内容仍可核对',async()=>{
     const saved=structuredClone(fixture.conversation),sends=fixture.sends;
     try{
       const handoff={agent:'Codex',model:'Fixture model',changes:[],rounds:[],body:'internal recovery source',sourceThrough:0,mode:'records'};
@@ -40,10 +62,10 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
       assert.equal(await panel().locator('.ac-handoff-receipt').count(),0);
       assert.equal(await panel().getByRole('button',{name:'交接内容',exact:true}).count(),0);
       await fixture.capture(page,'agent-transparent-recovery-completed.png');
-      update({retainedRuns:[run('unknown','codex',{id:'released-history',resourcesReleased:true,tools:[{id:'unknown-tool',label:'unknown operation',status:'unknown'}]})],entries:[...saved.entries,{...entry,handoff:{...handoff,changes:[{kind:'agent',label:'智能体',before:'Qoder',after:'Codex'}]}},reply]});
+      update({retainedRuns:[run('unknown','codex',{id:'released-history',supersededBy:saved.run.id,resourcesReleased:true,tools:[{id:'unknown-tool',label:'unknown operation',status:'unknown'}]})],entries:[...saved.entries,{...entry,handoff:{...handoff,changes:[{kind:'agent',label:'智能体',before:'Qoder',after:'Codex'}]}},reply]});
       await page.reload();await input().waitFor();
-      await panel().locator('[data-retained-work]>summary').click();
-      await panel().locator('[data-retained-run="released-history"]').waitFor();
+      assert.equal(await panel().locator('[data-retained-work]').count(),0,'已确认切换的内部遗留不常驻输入区');
+      assert.equal(fixture.conversation.retainedRuns[0].tools[0].status,'unknown','静默呈现不伪造未知操作的结果');
       await panel().locator('.ac-handoff-receipt').getByRole('button',{name:'交接内容',exact:true}).waitFor();
       assert.equal(fixture.sends,sends,'仅核对历史和恢复呈现不发送工作');
       await fixture.capture(page,'agent-transparent-recovery-and-real-risk.png');

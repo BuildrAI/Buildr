@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { once } from 'node:events';
 import { lstatSync, readFileSync } from 'node:fs';
 import { ModelAccessError, type CatalogModel, type ModelAccessOptions, type ModelAccountView, type ModelGatewayLease, type ModelLeaseInput, type ModelOffering, type ModelProtocol, type ModelProviderRuntime, type ProtocolJson } from './contracts.ts';
-import { effectiveModel, selectedOffering, modelConfiguration } from './model-preferences.ts';
+import { effectiveModel, selectedOffering, modelConfiguration, modelLeaseIdentity } from './model-preferences.ts';
 import type {ModelPreference,ModelPreferenceUpdate} from './contracts.ts';
 import { translateRequest, translateResponse, type OpaqueReasoning } from './protocols.ts';
 import { modelFailure, upstreamFailure } from './errors.ts';
@@ -305,7 +305,7 @@ export class ModelAccessApplication {
     const offering=model?selectedOffering(model,input.serviceTier):undefined; if (!offering) throw new ModelAccessError('model_unavailable', '所选模型不在账号当前目录中。');
     const quotaFailure = modelQuotaFailure(account, offering, Date.parse(this.now)); if (quotaFailure) throw quotaFailure;
     if (!input.agentId || !input.conversationId || !input.runId) throw new ModelAccessError('model_binding_invalid','模型绑定缺少准确执行身份。',400);
-    const identity = digest(JSON.stringify([account.id,account.identity,input.modelId,input.conversationId,input.agentId,modelConfiguration(offering,input.serviceTier)]));
+    const identity = modelLeaseIdentity(account.id,account.identity,input.modelId,input.conversationId,input.agentId,modelConfiguration(offering,input.serviceTier));
     const existing = this.leasesByIdentity.get(identity); if (existing) { this.updateRun(identity,input.runId); return structuredClone(existing.view); }
     const baseUrl = await this.start(), token = randomBytes(32).toString('base64url'); await this.encryptionKey();
     const view: ModelGatewayLease = { identity, baseUrl: baseUrl + '/v1', apiKey: token, model: `buildr-${identity.slice(0,32)}`, offering: structuredClone(offering), accountId: account.id, accountLabel: account.accountLabel || account.label, provider: account.provider };

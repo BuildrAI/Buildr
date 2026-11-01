@@ -20,7 +20,15 @@ if(marker.version==='legacy-unbound-stop'){
   };
 }
 const capabilities={supplement:true,text:true,images:true,approval:true,questions:true,stop:true,resume:true,maxInputBytes:65536};
-function executor(id){return{descriptor:{id,label:id,capabilities},async open({configRoot}){
+function executor(id){return{descriptor:{id,label:id,capabilities},
+  async readPersistedExecution({configRoot,contextRef,executionRef}){
+    const file=path.join(configRoot,contextRef.id+'.json');
+    if(!fs.existsSync(file))return;
+    const value=JSON.parse(fs.readFileSync(file,'utf8'));
+    if(!value.durable||value.executionRef?.id!==executionRef.id)return;
+    return {items:value.items,observation:{status:value.status,tools:value.tools,executionRef}};
+  },
+  async open({configRoot}){
   fs.mkdirSync(configRoot,{recursive:true});
   const read=ref=>JSON.parse(fs.readFileSync(path.join(configRoot,ref.id+'.json'),'utf8'));
   const save=(ref,value)=>fs.writeFileSync(path.join(configRoot,ref.id+'.json'),JSON.stringify(value));
@@ -65,7 +73,7 @@ function executor(id){return{descriptor:{id,label:id,capabilities},async open({c
       current.status=current.status==='stopped'?'stopped':'idle';save(ref,current);input.onEvent({type:'completed',status:current.status==='stopped'?'stopped':'completed'});
     },
     async supplement(input){fs.appendFileSync(path.join(bootstrap.dataRoot,'native-inputs.jsonl'),JSON.stringify({text:input.text,version:marker.version})+'\n');const state=read(input.contextRef);if(state.executionRef.id!==input.executionRef.id)throw Error('wrong execution');const item={id:input.clientRequestId,clientRequestId:input.clientRequestId,kind:'message',role:'user',text:input.text,executionId:state.executionRef.id};state.items.push(item);save(input.contextRef,state);return{executionRef:state.executionRef,inputItemId:item.id};},
-    observe:async({contextRef})=>{const value=read(contextRef);if(value.awaitingObservation){delete value.awaitingObservation;save(contextRef,value);}return{status:value.status,tools:value.tools,executionRef:value.executionRef};},
+    observe:async({contextRef})=>{const value=read(contextRef);if(value.durable)throw Error('old observation channel unavailable');if(value.awaitingObservation){delete value.awaitingObservation;save(contextRef,value);}return{status:value.status,tools:value.tools,executionRef:value.executionRef};},
     canRelease:async({contextRef,executionRef})=>{const state=read(contextRef);return !state.awaitingObservation&&state.executionRef.id===executionRef.id&&(['uncertain-ended','goal-recovery'].includes(state.kind)?(fs.existsSync(path.join(bootstrap.dataRoot,'release-uncertain-resource'))?{executionState:'unknown'}:false):['idle','stopped'].includes(state.status)&&!state.tools.some(tool=>tool.status!=='completed'));},
     reply:async({contextRef})=>{fs.appendFileSync(path.join(bootstrap.dataRoot,'native-replies.jsonl'),'reply\n');const value=read(contextRef);value.approved=true;save(contextRef,value);},
     stop:async({contextRef})=>{const value=read(contextRef);if(value.kind==='hold:slow'&&!fs.existsSync(path.join(bootstrap.dataRoot,'finish-stop'))){value.stopRequested=true;value.status='tools-active';value.tools=[{id:'slow-tool',label:'正在停止的命令',status:'running',canStop:true}];}else{value.status='stopped';value.tools=[];}save(contextRef,value);return{status:value.status,tools:value.tools,executionRef:value.executionRef};},close:async()=>{if(fs.existsSync(path.join(bootstrap.dataRoot,'slow-close')))await new Promise(resolve=>setTimeout(resolve,800));},

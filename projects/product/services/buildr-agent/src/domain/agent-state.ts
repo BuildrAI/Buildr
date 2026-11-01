@@ -107,6 +107,8 @@ export interface StoredConversation {
     through: number;
     userEntryId: string;
     executionRef?: ExecutionRef;
+    /** Exact execution whose durable terminal evidence was reconciled, not model text. */
+    persistedEnd?: string;
     nativeInputItemId?: string;
     accepted: boolean;
     supplement?: boolean;

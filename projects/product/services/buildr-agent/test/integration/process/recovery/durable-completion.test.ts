@@ -1,0 +1,53 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {randomUUID} from 'node:crypto';
+import {executionScopeKey,type AgentProcessConnection} from '../../../../src/index.ts';
+import {isLive,until,actor,prepareAgentRuntime,connectAgentProcess,copyPackage,prepared,cleanupProcessFixture} from '../../../support/process-fixture.ts';
+
+test('new process reads exact terminal evidence before routing to a live but unavailable old observer',{timeout:60000},async t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-durable-route-')),dataRoot=path.join(root,'profile'),workspace=path.join(root,'work'),packageRoot=path.join(root,'package');
+  fs.mkdirSync(workspace);copyPackage(prepared,packageRoot);
+  fs.copyFileSync(path.join(import.meta.dirname,'../../fixtures/agent-process-entry.mjs'),path.join(packageRoot,'build/process-fixture.mjs'));
+  const marker=path.join(packageRoot,'build/fixture-version.json');fs.writeFileSync(marker,JSON.stringify({version:'old'}));
+  const runtime=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'}),profileId='durable-route',scope=executionScopeKey({sourceId:'minimal',id:'directory'});
+  let main:Awaited<ReturnType<typeof actor>>|undefined,observer:AgentProcessConnection|undefined;
+  t.after(()=>cleanupProcessFixture({root,dataRoot,profileId,host:main,observer}));
+  main=await actor({dataRoot,profileId,runtime,workspace});observer=await connectAgentProcess({dataRoot,profileId,runtime,sourceId:'minimal'});
+  const old=await observer.lifecycle.identity(),connection=await main.call('connections.read',['first']),executable=path.join(root,'dummy-native');
+  fs.writeFileSync(executable,'// never executed');fs.chmodSync(executable,0o700);
+  await main.call('connections.connect',['first',{expectedRevision:connection.revision,executable}]);
+  const account=await main.call('models.accounts.add',[{provider:'fixture-model'}]),checked=await main.call('models.accounts.check',[account.id]);
+  await main.call('models.accounts.preferences',[account.id,{expectedRevision:checked.revision,models:[{id:'fixture',enabled:true}]}]);
+  const choice={connectionId:'first',modelAccountId:account.id,model:'fixture'};
+  const start=async(text:string)=>{
+    const chat=await main!.call('conversations.create',[scope,{}]),draft={...choice,text,expectedRevision:chat.revision},preview=await main!.call('conversations.prepareSend',[scope,chat.id,draft]);
+    await main!.call('conversations.send',[scope,chat.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()}]);
+    return until(()=>observer!.operations.conversations.read(scope,chat.id),view=>view.run?.accepted===true);
+  };
+  let target=await start('lost-observation');const other=await start('hold:other');
+  target=await until(()=>observer!.operations.conversations.read(scope,target.id),view=>view.run?.status==='unknown');
+  const original=target.run!;
+  fs.writeFileSync(marker,JSON.stringify({version:'new'}));const next=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'});
+  await observer.lifecycle.requestRuntime({expectedGeneration:old.generation,runtime:next});
+  await until(()=>observer!.lifecycle.status(),value=>value.identity.runtime.digest===next.digest);
+  target=await main.call('conversations.read',[scope,target.id]);
+  // Append native completion only after startup; explicit reads must bypass the old channel.
+  const walk=(dir:string):string[]=>fs.readdirSync(dir,{withFileTypes:true}).flatMap(entry=>entry.isDirectory()?walk(path.join(dir,entry.name)):[path.join(dir,entry.name)]);
+  const file=walk(path.join(dataRoot,'agent-service/connections')).find(file=>{try{return JSON.parse(fs.readFileSync(file,'utf8')).kind==='lost-observation';}catch{return false;}})!;
+  assert.ok(file);const native=JSON.parse(fs.readFileSync(file,'utf8'));
+  native.status='idle';native.tools=[];native.durable=true;native.awaitingObservation=true;
+  native.items.push({id:'durable-final',kind:'message',role:'assistant',text:'Completed before restart.',status:'completed',executionId:native.executionRef.id});
+  fs.writeFileSync(file,JSON.stringify(native));
+  target=await observer.operations.conversations.observeRun(scope,target.id,{expectedRevision:target.revision,runId:original.id,participantId:original.participantId,generation:original.generation});
+  assert.equal(target.run?.status,'completed');assert.equal(target.run?.generation,old.generation);assert.equal(target.run?.executionState,'ended');
+  assert.ok(target.entries.some(entry=>entry.text==='Completed before restart.'));
+  target=await observer.operations.conversations.observe(scope,target.id);
+  assert.equal(target.entries.filter(entry=>entry.text==='Completed before restart.').length,1);
+  assert.ok(isLive(old.pid),'reading terminal facts does not stop the old process');
+  assert.equal((await observer.operations.conversations.read(scope,other.id)).run?.status,'running');
+  const sends=fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').trim().split('\n').map(row=>JSON.parse(row));
+  assert.equal(sends.length,2);assert.equal(sends.filter(row=>row.text==='lost-observation').length,1);
+});

@@ -50,5 +50,5 @@ await startAgentExecutionServer({...input,serviceOptions:{executors:[],modelProv
   assert.equal(adopted.currentDigest,next.digest);assert.notEqual(adopted.generation,first.generation);assert.notEqual(adopted.pid,first.pid);
   fs.writeFileSync(path.join(packageRoot,'build/activation-broken.mjs'),"throw Error('fixture startup failure');\n");
   const broken=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/activation-broken.mjs'});
-  await assert.rejects(activateAgentServiceRuntime({dataRoot,profileId,runtime:broken}),{code:'agent_process_activation_failed'});
+  await assert.rejects(activateAgentServiceRuntime({dataRoot,profileId,runtime:broken}),(error:any)=>{assert.equal(error.code,'agent_process_activation_failed');assert.equal(error.stage,'connect');assert.match(error.message,/connect.*agent_process_activation_failed/);return true;});
 });

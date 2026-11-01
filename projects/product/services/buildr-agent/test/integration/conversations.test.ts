@@ -2705,3 +2705,47 @@ test('unknown retained stop is local to that execution and never replays or ends
     assert.equal(f.service.conversationBusy('workspace-one',chat.id),true);assert.equal(f.service.conversationInputBusy('workspace-one',chat.id),false);
   }finally{await f.close();}
 });
+
+for(const terminalStatus of ['idle','stopped'] as const)for(const liveOldGeneration of [false,true])test(`durable completion repairs missing receipts and final reply without opening or replaying native work; oldAlive=${liveOldGeneration}; terminal=${terminalStatus}`,async()=>{
+ const native=fake('dsh',{hold:true,noAnswer:true}),f=fixture([native.executor]);let observer:ReturnType<typeof createAgentService>|undefined;
+ try{
+  const executable=path.join(f.root,'dsh.mjs');fs.writeFileSync(executable,'// fake native executable');fs.chmodSync(executable,0o700);
+  await f.service.connections.connect('dsh',{expectedRevision:f.service.connections.read('dsh').revision,executable});
+  const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'dsh','finish once');
+  const before=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.accepted===true);
+  const count=native.opens.length;
+  await assert.rejects(f.service.reconcilePersisted('workspace-one',chat.id,{expectedRevision:'stale',runId:before.run!.id,participantId:before.run!.participantId,generation:before.run!.generation}),{code:'agent_revision_conflict'});
+  native.executor.readPersistedExecution=async input=>({observation:{status:terminalStatus,executionRef:input.executionRef,tools:[{id:'missing-tool',label:'bash',status:'completed'}]},items:[{id:'missing-tool',kind:'tool',role:'system',name:'bash',text:'already delivered',executionId:input.executionRef.id,status:'completed'},{id:'missing-final',kind:'message',role:'assistant',text:'Everything delivered once.',executionId:input.executionRef.id,status:'completed'}]});
+  observer=createAgentService({...f.options,generationAlive:()=>liveOldGeneration});
+  if(!liveOldGeneration)await observer.conversations.recoverInterrupted();
+  else assert.equal(await observer.reconcilePersisted('workspace-one',chat.id,{expectedRevision:before.revision,runId:before.run!.id,participantId:before.run!.participantId,generation:before.run!.generation}),true);
+  const after=observer.conversations.read('workspace-one',chat.id);
+  assert.equal(after.run?.status,terminalStatus==='idle'?'completed':'stopped');assert.equal(after.run?.executionState,'ended');assert.equal(after.run?.generation,before.run?.generation,'reading evidence does not acquire old controls');
+  assert.ok(after.entries.some(e=>e.text==='Everything delivered once.'));assert.ok(after.entries.some(e=>e.text==='already delivered'));
+  const again=await observer.conversations.observe('workspace-one',chat.id);assert.equal(again.entries.filter(e=>e.text==='Everything delivered once.').length,1);
+  native.sends[0]!.onEvent({type:'diagnostic',message:'late stream closure'});
+  native.sends[0]!.onEvent({type:'observation',observation:{status:'unknown',tools:[],executionRef:{id:'lost'}}});
+  native.sends[0]!.onEvent({type:'completed',status:'failed',diagnostic:'late failure'});
+  const settled=f.service.conversations.read('workspace-one',chat.id);
+  assert.equal(settled.run?.status,after.run?.status);assert.equal(settled.run?.diagnostic,after.run?.diagnostic);
+  assert.equal(native.sends.length,1);assert.equal(native.opens.length,count);
+ }finally{await observer?.close();await f.close();}
+});
+
+test('persisted evidence cannot overwrite a conversation changed during the read',async()=>{
+ const native=fake('dsh',{hold:true,noAnswer:true}),f=fixture([native.executor]);
+ try{
+  const executable=path.join(f.root,'dsh.mjs');fs.writeFileSync(executable,'// never executed');fs.chmodSync(executable,0o700);
+  await f.service.connections.connect('dsh',{expectedRevision:f.service.connections.read('dsh').revision,executable});
+  const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'dsh','one operation');
+  await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.accepted===true);
+  native.executor.readPersistedExecution=async input=>{
+   const current=f.service.conversations.read('workspace-one',chat.id);
+   await f.service.conversations.update('workspace-one',chat.id,{expectedRevision:current.revision,title:'A newer title'});
+   return {observation:{status:'idle',executionRef:input.executionRef,tools:[]},items:[{id:'stale-final',kind:'message',role:'assistant',text:'Stale answer',executionId:input.executionRef.id}]};
+  };
+  assert.equal(await f.service.reconcilePersisted('workspace-one',chat.id),false);
+  const after=f.service.conversations.read('workspace-one',chat.id);
+  assert.equal(after.title,'A newer title');assert.notEqual(after.run?.status,'completed');assert.equal(after.entries.some(entry=>entry.text==='Stale answer'),false);assert.equal(native.sends.length,1);
+ }finally{await f.close();}
+});
