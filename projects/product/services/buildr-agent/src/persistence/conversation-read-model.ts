@@ -1,3 +1,4 @@
+import { presentedFilesForEntry } from '../domain/presented-files.ts';
 import { createHash } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import type { ConversationEntry } from '../contracts.ts';
@@ -82,7 +83,7 @@ export class ConversationReadModel {
   static compact(entry: ConversationEntry, revision = digest(JSON.stringify(entry))): ConversationEntry {
     if (entry.kind !== 'tool' || Buffer.byteLength(entry.text) + Buffer.byteLength(entry.input ?? '') <= 16 * 1024) return entry;
     // Keep a bounded, explicit preview; the original invocation and output remain separately readable.
-    return {...entry, text: entry.text.slice(0, 512), input: entry.input && entry.input.length <= 4096 ? entry.input : undefined, detail: {revision}};
+    return {...entry, ...(presentedFilesForEntry(entry).length?{presentedFiles:presentedFilesForEntry(entry)}:{}), text: entry.text.slice(0, 512), input: entry.input && entry.input.length <= 4096 ? entry.input : undefined, detail: {revision}};
   }
   static page(db: DatabaseSync, id: string, before?: number, limit?: number, compact = false): ConversationReadState | undefined {
     const row = db.prepare('SELECT state FROM conversation_read_states WHERE id=? AND message_revision=revision').get(id) as {state: string} | undefined;

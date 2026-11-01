@@ -1,3 +1,4 @@
+import {createAgentService} from '../../src/application/agent-service.ts';
 import assert from 'node:assert/strict';
 import {test,type TestContext} from 'node:test';
 import fs from 'node:fs';
@@ -70,4 +71,23 @@ test('seen updates from new and retained writers reach projected pages and obser
  const version=r.view.activity!.version;repo.markSeen('ws',r.view.id,version);assert.equal(repo.readPage(r.view.id)!.view.activity!.seenThrough,version);assert.equal(repo.readRevision(r.view.id)!.seenThrough,version);
  const db=new DatabaseSync(repo.filename);t.after(()=>db.close());const summary=JSON.parse((db.prepare('SELECT summary FROM conversations WHERE id=?').get(r.view.id) as any).summary);summary.activity.seenThrough=0;db.prepare('UPDATE conversations SET summary=? WHERE id=?').run(JSON.stringify(summary),r.view.id);assert.equal(repo.readRevision(r.view.id)!.seenThrough,0);assert.equal(repo.readPage(r.view.id)!.view.activity!.seenThrough,0);
  db.exec('DROP TRIGGER conversation_read_legacy_1;DROP INDEX conversations_list_summary;');db.prepare('UPDATE conversations SET body=?').run('unreadable original');assert.equal(repo.readPage(r.view.id)!.view.entries[0].text,'new message');assert.equal(repo.readRevision(r.view.id)!.seenThrough,0);
+});
+
+
+test('legacy present files survive compact paging without rewriting history or starting native work',async t=>{
+ const base=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-presented-files-'));t.after(()=>fs.rmSync(base,{recursive:true,force:true}));
+ const repo=new ConversationRepository(path.join(base,'agent-service')),r=record('presented');
+ r.view.run={...run(),provider:'dsh'};
+ const tool:any={id:'native-present',sequence:1,kind:'tool',role:'system',provider:'dsh',runId:'run',participantId:'p',name:'present',status:'completed',input:JSON.stringify({files:[{path:'/workspace/release-process.md',description:'发布记录'}],padding:'x'.repeat(20000)}),text:'Presented /workspace/release-process.md',createdAt:'now'};
+ r.view.entries=[tool,{id:'reply',sequence:2,kind:'message',role:'assistant',runId:'run',participantId:'p',text:'已提供文件。',createdAt:'now',status:'completed'}];repo.saveConversation(r);
+ const db=new DatabaseSync(repo.filename);t.after(()=>db.close());const original=db.prepare('SELECT body FROM conversations WHERE id=?').get(r.view.id)!.body;
+ const compact=JSON.parse(db.prepare('SELECT compact FROM conversation_read_entries WHERE id=?').get(tool.id)!.compact as string);delete compact.presentedFiles;
+ db.prepare('UPDATE conversation_read_entries SET compact=? WHERE id=?').run(JSON.stringify(compact),tool.id);
+ const service=createAgentService({dataRoot:base,executors:[],resolveWorkspace:()=>({rootPath:'/workspace'}),assertTask(){}});t.after(()=>service.close());
+ const view=service.conversations.read('ws','presented',{compactTools:true});
+ assert.deepEqual(view.entries[0].presentedFiles,[{path:'/workspace/release-process.md',description:'发布记录'}]);
+ assert.equal(view.entries[0].input,undefined);assert.ok(view.entries[0].detail);
+ assert.deepEqual(service.conversations.read('ws','presented').entries[0].presentedFiles,view.entries[0].presentedFiles);
+ assert.equal(db.prepare('SELECT body FROM conversations WHERE id=?').get(r.view.id)!.body,original);
+ assert.equal(service.conversations.read('ws','presented').run?.status,'completed');
 });

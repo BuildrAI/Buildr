@@ -381,3 +381,14 @@ test('a filename-only line citation is local, not a custom URL protocol',async()
   const view=renderMarkdown('[来源](README.md:1)',{allowRelativeLinks:true});
   const link=view.querySelector('a');assert.ok(link);assert.equal(link.textContent,'来源');assert.equal(link.getAttribute('href'),'./README.md:1');assert.equal(link.getAttribute('data-markdown-href'),'README.md:1');
 });
+
+test('angle destinations are parsed before safe link resolution and opener callbacks',async()=>{
+ const {renderMarkdown}:any=await loadRenderer();
+ const root=renderMarkdown('[记录](<.buildr/local/记录 文档 (新版).md>) [行号](</work/a.md:12>) [安全](<https://example.com/a>) [拒绝](<javascript:alert>) [不完整](<bad.md)',{allowRelativeLinks:true,allowAbsoluteFileLinks:true});
+ const links:any[]=[...root.querySelectorAll('a')];assert.equal(links.length,3);
+ assert.equal(links[0].getAttribute('href'),'.buildr/local/记录 文档 (新版).md');
+ assert.equal(links[0].getAttribute('data-markdown-href'),'.buildr/local/记录 文档 (新版).md');
+ assert.equal(links[1].getAttribute('data-markdown-href'),'/work/a.md:12');
+ assert.equal(links[2].getAttribute('target'),'_blank');
+ assert.match(textOf(root),/拒绝/);assert.match(textOf(root),/不完整/);
+});

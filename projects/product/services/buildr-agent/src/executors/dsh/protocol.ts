@@ -1,3 +1,4 @@
+import { dshPresentedFiles } from '../../domain/presented-files.ts';
 import type { ExecutorItem } from '../../contracts.ts';
 import { visibleText, nativePreview } from '../native-process.ts';
 // DSH also carries model-only context in user/message envelopes.
@@ -66,7 +67,7 @@ export function dshItem(event: any): ExecutorItem[] {
   if (event?.type === 'user/message' && !isUserInput(event)) return [];
   if (event?.type === 'assistant/message') { const text = visibleText(data.message?.content); return text ? [{ id: `assistant:${data.turn}:${data.step}`, kind: 'message', role: 'assistant', text, status: 'completed' }] : []; }
   if (event?.type === 'user/message') { const text = visibleText(data.content); return text || data.content?.some((part: any) => part.type === 'image') ? [{ id: data.id ?? id, kind: 'message', role: 'user', text, clientRequestId: data.source?.rpcId, executionId: data.source?.rpcId, status: 'completed' }] : []; }
-  if (event?.type === 'tool/call') return [{ id: data.callId, kind: 'tool', role: 'system', name: typeof data.name === 'string' && data.name ? data.name : undefined, input: nativePreview(String(data.arguments ?? '')), text: String(data.name ?? '工具') + '\n' + nativePreview(String(data.arguments ?? '')), status: 'running' }];
+  if (event?.type === 'tool/call') return [{ id: data.callId, kind: 'tool', role: 'system', presentedFiles:dshPresentedFiles(data.name,data.arguments), name: typeof data.name === 'string' && data.name ? data.name : undefined, input: nativePreview(String(data.arguments ?? '')), text: String(data.name ?? '工具') + '\n' + nativePreview(String(data.arguments ?? '')), status: 'running' }];
   if (event?.type === 'tool/result') return [{ id: data.message?.toolCallId ?? id, kind: 'tool', role: 'system', text: nativePreview(visibleText(data.message?.content)), status: dshToolOutcomeUnknown(event)?'unknown':data.message?.isError ? 'failed' : 'completed' }];
   return [];
 }

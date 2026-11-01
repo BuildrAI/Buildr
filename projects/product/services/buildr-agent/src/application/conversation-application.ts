@@ -1,3 +1,4 @@
+import { presentedFilesForEntry, normalizePresentedFiles } from '../domain/presented-files.ts';
 import {ConversationWarmups,CONNECTION_IDLE_MS,type PreparedSource} from './conversation-warmups.ts';
 import { answerAttachmentIds, resolveQuestionAnswer, questionAnswerDisplay } from '../domain/question-answer.ts';
 import { normalizeSendDraft } from '../domain/send-draft.ts';
@@ -375,6 +376,17 @@ export class ConversationApplication {
     }
     // Historical tool output can be large; clone only the page that will be sent.
     const view = structuredClone({ ...record.view, entries: entries.slice(start), nextEntryCursor: start > 0 ? entries[start]!.sequence : record.view.nextEntryCursor });
+    view.entries=view.entries.map(entry=>{
+      // Legacy compact projections may omit a large present invocation. Read only
+      // this exact tool revision; never replay the native tool or rewrite history.
+      let source=entry;
+      if(entry.kind==='tool'&&entry.provider==='dsh'&&entry.name==='present'&&entry.status==='completed'&&entry.detail&&!entry.input&&!entry.presentedFiles){
+        source=this.options.repository.readEntry(view.id,entry.id,entry.detail.revision)??entry;
+      }
+      const presentedFiles=presentedFilesForEntry(source);
+      const result={...entry};delete result.presentedFiles;
+      return presentedFiles.length?{...result,presentedFiles}:result;
+    });
     view.requests = view.requests.filter(request => conversationRuns(view).some(run => request.runId === run.id && request.participantId === run.participantId && request.generation === run.generation));
     view.attachmentRevision = hash(record.attachments ?? {});
     view.titleState??={status:'unknown'};
@@ -797,10 +809,12 @@ export class ConversationApplication {
       if (entry.kind === 'tool' && ['completed', 'failed'].includes(entry.status ?? '') && (!item.status || item.status === 'running' || entry.status==='completed'&&item.status==='unknown')) return originChanged;
       const nameChanged = item.name !== undefined && entry.name !== item.name;
       const inputChanged = item.input !== undefined && entry.input !== item.input;
-      if (entry.text === item.text && entry.status === item.status && !nameChanged && !inputChanged) return originChanged;
-      entry.text = item.text; entry.status = item.status; if (nameChanged) entry.name = item.name; if (inputChanged) entry.input = item.input; return true;
+      const files=item.presentedFiles===undefined?undefined:normalizePresentedFiles(item.presentedFiles);
+      const filesChanged=files!==undefined&&JSON.stringify(entry.presentedFiles)!==JSON.stringify(files);
+      if (entry.text === item.text && entry.status === item.status && !nameChanged && !inputChanged && !filesChanged) return originChanged;
+      entry.text = item.text; entry.status = item.status; if (nameChanged) entry.name = item.name; if (inputChanged) entry.input = item.input; if(filesChanged)entry.presentedFiles=files; return true;
     }
-    entry = { id: randomUUID(), sequence: (record.view.entries.at(-1)?.sequence ?? record.view.childOf?.throughSequence ?? 0) + 1, createdAt: this.options.now(), kind: item.kind, role: item.role, text: item.text, name: item.name, input: item.input, parentToolId: item.parentToolId, participantId: participant.id, provider: participant.provider, runId:runId??record.attempts.find(a=>a.participantId===participant.id&&(a.executionRef?.id===item.executionId||a.clientRequestId===item.executionId))?.runId, status: item.status };
+    entry = { id: randomUUID(), sequence: (record.view.entries.at(-1)?.sequence ?? record.view.childOf?.throughSequence ?? 0) + 1, createdAt: this.options.now(), kind: item.kind, role: item.role, text: item.text, name: item.name, input: item.input, ...(item.presentedFiles?{presentedFiles:normalizePresentedFiles(item.presentedFiles)}:{}), parentToolId: item.parentToolId, participantId: participant.id, provider: participant.provider, runId:runId??record.attempts.find(a=>a.participantId===participant.id&&(a.executionRef?.id===item.executionId||a.clientRequestId===item.executionId))?.runId, status: item.status };
     record.view.entries.push(entry); record.sources[source] = entry.id;
     // A late native projection is known to this participant; intervening foreign
     // work and an input still awaiting acceptance are not. Never skip that gap.

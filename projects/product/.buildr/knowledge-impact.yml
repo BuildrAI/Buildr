@@ -1,25 +1,22 @@
 schemaVersion: buildr.knowledge-impact/v1
-task: conversation-activity-cleanup
+task: conversation-file-cards
 operation: reconcile
 impacts:
   - type: reference
     target: knowledge/code-map/technical-layers.md
-    reason: ConversationActivityFilters.tsx 已删除，原条目移除；入口单角标与未知执行由条目徽标、入口说明表达的事实并入 ConversationActivityEntry.tsx 描述。
+    reason: 增加已展示文件声明与历史兼容、独立文件卡片、目的地语法解析的实际职责和源码引用。
     status: updated
     sourceIdentities:
-      - services/buildr-web/src/features/agent-conversations/ConversationHistory.tsx
-      - services/buildr-web/src/features/agent-conversations/ConversationActivityEntry.tsx
+      - services/buildr-agent/src/domain/presented-files.ts
+      - services/buildr-agent/src/application/conversation-application.ts
+      - services/buildr-web/src/features/agent-conversations/ConversationPresentedFiles.tsx
+      - services/buildr-web/src/lib/markdownDestination.ts
   - type: reference
     target: knowledge/docs/architecture/agent-integration.md
-    reason: 完整列表不再保留常驻分类筛选与按智能体、模型的执行统计，改为移除分类统计栏与未知提示条、保留执行分布筛选与搜索空间行为。
+    reason: 补充明确成功文件输出、旧记录只读兼容及已登记来源读取边界，不把助手声称或文件声明当作任意读取授权。
     status: updated
     sourceIdentities:
-      - openspec/changes/conversation-activity-cleanup/specs/agent-conversations/spec.md
-      - services/buildr-web/src/features/agent-conversations/ConversationHistory.tsx
-  - type: reference
-    target: knowledge/docs/overview.md
-    reason: 概览未描述对话列表分类统计栏或未知提示条，不需要修改。
-    status: not-applicable
-    sourceIdentities:
-      - openspec/changes/conversation-activity-cleanup/proposal.md
+      - openspec/specs/agent-conversations/spec.md
+      - services/buildr-agent/src/domain/presented-files.ts
+      - services/buildr-web/src/features/agent-conversations/ConversationPanel.tsx
 unresolvedItems: []

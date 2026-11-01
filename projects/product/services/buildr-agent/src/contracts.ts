@@ -71,6 +71,7 @@ export interface LoginObservation {
 export interface ExecutorImage { id: string; path: string; mimeType: string }
 export interface VideoAttachment { duration: number; frames: Array<{ id: string; time: number }> }
 export interface AttachmentInput { expectedRevision?: string; expectedAttachmentRevision?: string; mimeType: string; bytes: Uint8Array; video?: VideoAttachment }
+export interface PresentedFile { path:string; description?:string }
 export interface ExecutorItem {
   id: string;
   /** Native parent tool identity; absence does not imply an inferred child relationship. */
@@ -83,6 +84,8 @@ export interface ExecutorItem {
   name?: string;
   /** Original tool invocation input; retained when a later result replaces text. */
   input?: string;
+  /** Explicit native file declaration; visible only after successful completion. */
+  presentedFiles?: PresentedFile[];
   executionId?: string;
   status?: 'running' | 'completed' | 'failed' | 'unknown';
 }
@@ -306,6 +309,8 @@ export interface ConversationEntry {
   name?: string;
   /** Original tool invocation input; retained when a later result replaces text. */
   input?: string;
+  /** Explicit native file declaration; visible only after successful completion. */
+  presentedFiles?: PresentedFile[];
   participantId?: string;
   provider?: ProviderId;
   runId?: string;

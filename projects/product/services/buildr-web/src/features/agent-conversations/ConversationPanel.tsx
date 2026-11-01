@@ -1,3 +1,4 @@
+import {ConversationPresentedFiles} from './ConversationPresentedFiles';
 import {ConversationFirstSubmissionNotice} from './ConversationFirstSubmissionNotice';
 import { confirmedConversationReply, type ConversationReplyAttempt } from './conversation-reply';
 import { ConversationForkAction } from './ConversationForkAction';
@@ -6,7 +7,7 @@ import { ConversationForkOrigin } from './ConversationForkOrigin';
 import { finalReplyIds, forkableReplyIds } from './conversation-fork';
 import { currentConversationRequests } from './conversation-state';
 import { conversationModelLabel } from './conversation-model-label';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, Fragment, type ReactNode } from 'react';
 import { Alert, Button, Dropdown, Input, Modal, Popover, Select, Spin, Tag } from 'antd';
 import { ArrowDownOutlined, ArrowUpOutlined, CommentOutlined, EllipsisOutlined, MenuOutlined, MinusOutlined, PlusOutlined, ReloadOutlined, SafetyCertificateOutlined, StopOutlined, TeamOutlined } from '@ant-design/icons';
 import { MarkdownHost } from '../../components/MarkdownHost';
@@ -195,18 +196,30 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
     return()=>observer.disconnect();
   },[chat?.id,hasMessageList,context.view,context.open]);
   const fail=(failure:unknown)=>{setError(failure instanceof Error?failure.message:'操作未完成。');};
-  const openProcessFile=async(path:string)=>{
+  const resolvePresentedFile=async(path:string,signal?:AbortSignal,literal=false)=>{
+    if(!chat||chat.workspaceId==='@default')throw new Error('此文件没有已登记的代码来源，请复制原路径核对。');
+    const reference=literal?{path}:conversationFileReference(path);
+    if(!reference)throw new Error('来源路径或行号无效，请复制原路径核对。');
+    const catalog=await codeApi.repositories(chat.workspaceId,chat.taskId,signal);
+    const file=conversationFileTarget(chat.cwd,reference.path,catalog);
+    if(!file)throw new Error('无法确认这个文件的原工作目录，请复制原路径核对。');
+    return {file,reference};
+  };
+  const readPresentedFile=async(path:string,signal:AbortSignal)=>{
+    if(!chat)throw new Error('原对话已变化。');
+    const {file}=await resolvePresentedFile(path,signal,true);
+    return codeApi.file(chat.workspaceId,file,signal);
+  };
+  const openProcessFile=async(path:string,literal=false)=>{
     if(!chat)return;
     const selection=context.getSelection();
     try{
-      const image=conversationImageLinkSource(chat.cwd,path);
+      const image=literal?null:conversationImageLinkSource(chat.cwd,path);
       if(image){setFileLinkFailure(null);setImageLink({selection,reference:path,href:image.href});return;}
-      const reference=conversationFileReference(path);
-      if(!reference)throw new Error('来源路径或行号无效，请复制原路径核对。');
-      const catalog=await codeApi.repositories(chat.workspaceId,chat.taskId);
+      const {file,reference}=await resolvePresentedFile(path,undefined,literal);
+      // An invalid destination must not populate editor tabs and expand its parents.
+      await codeApi.file(chat.workspaceId,file);
       if(!context.isSelectionCurrent(selection))return;
-      const file=conversationFileTarget(chat.cwd,reference.path,catalog);
-      if(!file)throw new Error('无法确认这个文件的原工作目录，请从代码目录选择实际位置。调用记录已保留。');
       context.setFull(false);
       navigate(`/workspaces/${encodeURIComponent(chat.workspaceId)}/code/explorer`,{state:{codeEntry:{file:{...file,...(reference.line?{line:reference.line}:{})},from:{pathname:location.pathname,search:location.search,hash:location.hash,state:location.state}}}});
       setFileLinkFailure(null);
@@ -593,7 +606,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
               {turn.items.map(item=>{
                 if(item.type==='entry')return renderEntry(item.entry);
                 const key=processBlockKey(item.entries);
-                return <ConversationProcessBlock loadEntry={loadToolEntry} markdownOptions={markdownOptions} headerless key={key} groupsOpen={expandedToolGroups} onGroupToggle={(ids,open)=>setExpandedToolGroups(previous=>({...previous,...Object.fromEntries(ids.map(id=>['tool-group:'+id,open]))}))} toolsOpen={expandedToolGroups} onToolToggle={(id,open)=>setExpandedToolGroups(previous=>({...previous,['tool:'+id]:open}))} blockKey={key} entries={item.entries} active={item.active} liveToolId={liveToolId} finishedAt={item.finishedAt} onOpenFile={path=>void openProcessFile(path)} open={expandedToolGroups[key]??false} onToggle={(name,open)=>setExpandedToolGroups(previous=>({...previous,[name]:open}))}/>;
+                return <Fragment key={key}><ConversationProcessBlock loadEntry={loadToolEntry} markdownOptions={markdownOptions} headerless groupsOpen={expandedToolGroups} onGroupToggle={(ids,open)=>setExpandedToolGroups(previous=>({...previous,...Object.fromEntries(ids.map(id=>['tool-group:'+id,open]))}))} toolsOpen={expandedToolGroups} onToolToggle={(id,open)=>setExpandedToolGroups(previous=>({...previous,['tool:'+id]:open}))} blockKey={key} entries={item.entries} active={item.active} liveToolId={liveToolId} finishedAt={item.finishedAt} onOpenFile={path=>void openProcessFile(path)} open={expandedToolGroups[key]??false} onToggle={(name,open)=>setExpandedToolGroups(previous=>({...previous,[name]:open}))}/><ConversationPresentedFiles key={chat.id+':'+key} entries={item.entries} read={readPresentedFile} onOpen={path=>void openProcessFile(path,true)}/></Fragment>;
               })}
             </ConversationTurn>;
           })}

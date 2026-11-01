@@ -606,3 +606,26 @@ test('agent HTTP keeps public service failures while unknown failures get safe c
  assert.equal(JSON.parse(logs[0]).requestId,result.error.details.requestId);assert.equal(JSON.parse(logs[0]).code,'SQLITE_BUSY');
  assert.equal(JSON.parse(logs[0]).pathname,'/api/v1/app/agent-service/connections');assert.doesNotMatch(body+logs.join(''),new RegExp(secret));
 });
+
+test('historical native file presentations reach authenticated HTTP without replaying work',async t=>{
+ const {base,root}=taskRecordFixture(t,'agent-presented-file-http');
+ const previous=process.env.BUILDR_APP_DATA_DIR;process.env.BUILDR_APP_DATA_DIR=path.join(base,'private-app');
+ t.after(()=>{if(previous===undefined)delete process.env.BUILDR_APP_DATA_DIR;else process.env.BUILDR_APP_DATA_DIR=previous;});
+ const runtime=createRuntime(),dataRoot=path.join(base,'agent-profile');
+ const service=createAgentService({dataRoot,executors:[],resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
+ const contributions=runtimeContributions(runtime,'http').filter((item:{id:string})=>item.id!=='agent-service.http');contributions.push(createAgentServiceHttpContribution(()=>service));
+ const server=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions});
+ const {url,initialWorkspaceId:workspaceId,sessionToken}=await server.ready;
+ t.after(async()=>{await service.close();server.server.closeAllConnections();await new Promise<void>(resolve=>server.server.close(()=>resolve()));});
+ const chat=await service.conversations.create(workspaceId,{title:'已交付文件'});
+ const filename=path.join(root,'.buildr/local/record.md');fs.mkdirSync(path.dirname(filename),{recursive:true});fs.writeFileSync(filename,'# 发布记录\n正文仍在。\n');
+ const db=new DatabaseSync(path.join(dataRoot,'agent-service/conversations.sqlite'));
+ const stored=JSON.parse((db.prepare('SELECT body FROM conversations WHERE id=?').get(chat.id) as {body:string}).body);
+ stored.view.revision='presented-v2';stored.view.entries=[{id:'presented-tool',sequence:1,createdAt:'now',kind:'tool',role:'system',provider:'dsh',participantId:'p',runId:'run',name:'present',input:JSON.stringify({files:[{path:filename,description:'发布记录'}]}),text:'Presented '+filename,status:'completed'}];
+ const body=JSON.stringify(stored);db.prepare('UPDATE conversations SET revision=?,body=? WHERE id=?').run(stored.view.revision,body,chat.id);
+ const endpoint=`${url}/api/v1/workspaces/${workspaceId}/agent-conversations/${chat.id}`;
+ let response=await fetch(endpoint);assert.equal(response.status,403);
+ response=await fetch(endpoint,{headers:{origin:url,'x-buildr-session':sessionToken}});assert.equal(response.status,200);
+ assert.deepEqual((await response.json()).entries[0].presentedFiles,[{path:filename,description:'发布记录'}]);
+ assert.equal((db.prepare('SELECT body FROM conversations WHERE id=?').get(chat.id) as {body:string}).body,body);db.close();
+});

@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { markdownDestination } from './lib/markdownDestination.ts';
 import { copyText } from './lib/copyText.ts';
 import { cachedDiagramSvg, setDiagramSvg } from './lib/markdownDiagramSvg.ts';
 /** Failed destinations stay textual across re-renders; a new document load starts with a clean view. */
@@ -21,7 +22,7 @@ export type MarkdownRenderOptions = {
 };
 
 function resolveSafeHref(href, { allowRelativeLinks = false, allowParentRelativeLinks = false, allowAbsoluteFileLinks = false } = {}) {
-  const value = String(href ?? '').trim();
+  const value = markdownDestination(String(href ?? ''));
   if (!value) return null;
 
   if (/^https?:\/\//i.test(value)) {
@@ -77,13 +78,13 @@ function imageFallback(doc, alt) {
 }
 
 function appendInline(parent, text, doc, linkOptions) {
-  const pattern = /!\[([^\]]*)\]\(([^)]+)\)|(\`+)([^\`]+?)\3|\*\*([^*]+)\*\*|\*([^*]+)\*|\[([^\]]+)\]\(([^)]+)\)|(https?:\/\/[^\s<>"']+)/g;
+  const pattern = /!\[([^\]]*)\]\((<[^<>\r\n]*>|[^)]+)\)|(\`+)([^\`]+?)\3|\*\*([^*]+)\*\*|\*([^*]+)\*|\[([^\]]+)\]\((<[^<>\r\n]*>|[^)]+)\)|(https?:\/\/[^\s<>"']+)/g;
   let lastIndex = 0;
   let match;
   while ((match = pattern.exec(text)) !== null) {
     if (match.index > lastIndex) parent.append(doc.createTextNode(text.slice(lastIndex, match.index)));
     if (match[1] !== undefined) {
-      const resolved = linkOptions.imageResolver?.(match[2]);
+      const resolved = linkOptions.imageResolver?.(markdownDestination(match[2])??'');
       if (resolved?.href && !failedMarkdownImages.has(resolved.href)) {
         const alt = match[1];
         const image = doc.createElement('img');
@@ -156,7 +157,7 @@ function appendInline(parent, text, doc, linkOptions) {
           link.setAttribute('target', '_blank');
         } else {
           link.className = 'markdown-relative-link';
-          link.setAttribute('data-markdown-href', match[8]);
+          link.setAttribute('data-markdown-href', markdownDestination(match[8]));
           link.setAttribute('title', `相对路径：${resolved.href}`);
         }
         link.textContent = label;
@@ -190,7 +191,7 @@ export function markdownHeadingCounts(markdown: string, initial: Record<string, 
     if (fenced) continue;
     const heading = line.match(/^#{1,6}\s+(.+)$/)?.[1]?.trim();
     if (!heading) continue;
-    const text = heading.replace(/(\`+)([^\`]+?)\1|\*\*([^*]+)\*\*|\*([^*]+)\*|\[([^\]]+)\]\(([^)]+)\)/g,
+    const text = heading.replace(/(\`+)([^\`]+?)\1|\*\*([^*]+)\*\*|\*([^*]+)\*|\[([^\]]+)\]\((<[^<>\r\n]*>|[^)]+)\)/g,
       (_all, _ticks, code, strong, em, label) => code ?? strong ?? em ?? label);
     const slug = markdownHeadingSlug(text);
     counts[slug] = (counts[slug] || 0) + 1;

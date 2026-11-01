@@ -1,9 +1,42 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import assert from 'node:assert/strict';
 import type {AgentConversationFixture} from './agent-conversation-fixture.ts';
 
 /** handoff 场景使用独立准备的对话现场。 */
 export async function runHandoffScenarios(fixture:AgentConversationFixture){
   const {assertFixed,assertModelSummary,capture,chooseAgent,chooseModel,closeConversation,closeModelSettings,connections,input,modelSettings,page,panel,preparedInputs,reopen,run,sentInputs,step,update,workspaceId}=fixture;
+await step('文件卡片在收起过程和刷新后可见，预览与打开使用准确文件并隔离缺失',async()=>{
+ const saved=structuredClone(fixture.conversation),beforeSends=fixture.sends,originalUrl=page.url();
+ const catalog=await page.evaluate(async(workspaceId:string)=>{const response=await fetch('/api/v1/workspaces/'+workspaceId+'/code/repositories',{headers:{'x-buildr-session':document.querySelector('meta[name="buildr-session"]')!.getAttribute('content')!}});if(!response.ok)throw new Error('catalog unavailable');return response.json();},workspaceId);
+ const checkout=catalog.worktrees.find((item:any)=>item.available);assert.ok(checkout);
+ const directory=path.join(checkout.path,'.buildr/local/presented-file-test');fs.mkdirSync(directory,{recursive:true});
+ const filename=path.join(directory,'记录 文档 (新版).md'),textFile=path.join(directory,'notes #%20.txt'),imageFile=path.join(directory,'image.png'),missing=path.join(directory,'missing.md');
+ fs.writeFileSync(filename,'# 发布过程记录\n\n这份记录来自准确文件卡片。\n');fs.writeFileSync(textFile,'原样文本');fs.writeFileSync(imageFile,Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5EsAAAAASUVORK5CYII=','base64'));
+ const responses:Array<{url:string;status:number}>=[];
+ const recordResponse=(response:any)=>{if(/\/code\/(?:file|editor-file|directory)\?/.test(response.url()))responses.push({url:response.url(),status:response.status()});};page.on('response',recordResponse);
+ try{
+  const tool={id:'presented-files-tool',sequence:saved.entries.length+1,kind:'tool',role:'system',provider:'codex',participantId:'participant-codex',runId:'run-fixture',name:'present',status:'completed',text:'文件已提供',createdAt:new Date().toISOString(),presentedFiles:[{path:filename,description:'完整发布记录'},{path:textFile},{path:imageFile},{path:missing}]};
+  const reply={id:'presented-files-reply',sequence:tool.sequence+1,kind:'message',role:'assistant',provider:'codex',participantId:'participant-codex',runId:'run-fixture',status:'completed',text:'请查看[完整记录](<'+filename+'>)。',createdAt:new Date().toISOString()};
+  update({entries:[...saved.entries,tool,reply],run:run('completed','codex'),requests:[]});await page.reload();await input().waitFor();
+  const card=panel().locator('[data-presented-file]').filter({hasText:'记录 文档 (新版).md'}),modal=page.getByRole('dialog');
+  await card.waitFor();assert.equal(await panel().getByRole('button',{name:'收起处理过程',exact:true}).count(),0,'卡片不依赖展开过程');
+  await card.getByRole('button',{name:'预览',exact:true}).click();await modal.getByRole('heading',{name:'发布过程记录',exact:true}).waitFor();await capture(page,'conversation-file-card-preview-desktop.png');
+  await modal.getByRole('button',{name:'打开文件',exact:true}).click();await modal.waitFor({state:'hidden'});await page.getByRole('tab',{name:'记录 文档 (新版).md',exact:true}).waitFor();
+  await panel().locator('[data-presented-file]').filter({hasText:'notes #%20.txt'}).getByRole('button',{name:'预览',exact:true}).click();await modal.getByText('原样文本',{exact:true}).waitFor();await modal.getByRole('button',{name:/Close|关闭/,exact:true}).click();
+  await panel().locator('[data-presented-file]').filter({hasText:'image.png'}).getByRole('button',{name:'预览',exact:true}).click();await modal.getByRole('img',{name:'image.png',exact:true}).waitFor();await modal.getByRole('button',{name:/Close|关闭/,exact:true}).click();
+  await page.setViewportSize({width:375,height:800});await card.getByRole('button',{name:'预览',exact:true}).click();await modal.getByRole('heading',{name:'发布过程记录',exact:true}).waitFor();await capture(page,'conversation-file-card-preview-mobile.png');await modal.getByRole('button',{name:/Close|关闭/,exact:true}).click();
+  await modal.waitFor({state:'hidden'});await capture(page,'conversation-file-cards-mobile.png');await page.setViewportSize({width:1280,height:900});
+  await card.getByRole('button',{name:'打开',exact:true}).click();await page.getByRole('tab',{name:'记录 文档 (新版).md',exact:true}).waitFor();
+  assert.ok(responses.every(value=>value.status<400),'已存在文件预览和打开不得制造失败');assert.ok(responses.every(value=>!/[<>]/.test(new URL(value.url).searchParams.get('filePath')??'')));
+  // The authored angle link must resolve to exactly the same existing file.
+  await panel().getByRole('link',{name:'完整记录',exact:true}).click();await page.getByRole('tab',{name:'记录 文档 (新版).md',exact:true}).waitFor();assert.ok(responses.every(value=>value.status<400));
+  const oldUrl=page.url(),before=responses.length;fixture.expectedBrowserErrors.add('404');
+  await panel().locator('[data-presented-file]').filter({hasText:'missing.md'}).getByRole('button',{name:'预览',exact:true}).click();await modal.getByText('所选目录或文件不存在，或当前不可读取。',{exact:true}).waitFor();await modal.getByRole('button',{name:/Close|关闭/,exact:true}).click();
+  assert.equal(responses.slice(before).filter(value=>value.status===404).length,1,'缺失文件仅一次读取，不级联加载父目录');assert.equal(page.url(),oldUrl);assert.equal(fixture.sends,beforeSends);
+  await page.reload();await input().waitFor();await card.waitFor();
+ }catch(error){await capture(page,'conversation-file-card-failure.png');process.stderr.write('[file-card-ui] '+JSON.stringify({cards:await panel().locator('[data-presented-file]').allTextContents(),dialogs:await page.getByRole('dialog').allTextContents(),responses})+'\n');throw error;}finally{page.off('response',recordResponse);fixture.conversation=saved;fs.rmSync(directory,{recursive:true,force:true});await page.setViewportSize({width:1280,height:900});await page.goto(originalUrl);await input().waitFor();}
+});
 await step('回答已接收但返回失败自动消除准确旧告警；无关更新不误报成功',async()=>{
  const saved=structuredClone(fixture.conversation),before=fixture.replies;
  const matcher=/\/agent-conversations\/[^/]+\/requests\/[^/]+\/reply$/;
