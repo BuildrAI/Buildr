@@ -12,6 +12,8 @@
 # 3. 验证
 
 - [x] 3.1 适用的检查通过：buildr-agent `typecheck` 与单元测试（143 通过）、buildr-web `typecheck`、完整测试（923 通过）、`test:static` 与正式构建 `build:web` 均通过；OpenSpec 变更 `openspec validate --strict` 通过。
-- [ ] 3.2 在本机 Buildr Web 用原本显示「思考」的会话验证：处理过程只剩工具调用与最终答复，没有思考正文。需先把本任务改动交付到本机应用。
-  - 已完成的替代验证：用 `1d5c9b88-2a13-3709-a552-5872bdd5f17e` 的真实读模型条目（157 条，含 37 条思考标记、115 条工具）直接渲染 `ConversationProcessBlock`，结果无 `ac-process-thinking` / 思考正文（英文推理文本未出现），5 处助手说明、3 个工具组（115 次工具调用），与预期一致。
-  - 阻塞：本机 Buildr Web Dev 入口（`:4458`）当前由并行会话启动的实例占用，其 `HOME` 被智能体沙箱隔离，工作空间 registry 为空，无法在该入口看到真实会话；需入口按真实用户环境重启后再做窗口级验收。
+- [x] 3.2 在本机 Buildr Web 用原本显示「思考」的会话验证：处理过程只剩工具调用与最终答复，没有思考正文。
+  - 入口：`http://127.0.0.1:4458`（Buildr Web Dev，`buildr-web-profile=development`，`web-dist` 为本次改动后的正式构建）。
+  - 会话：`1d5c9b88-2a13-3709-a552-5872bdd5f17e`（「排查对话标题未生成原因」，已空闲）。本次加载的读模型范围为 112 条（`sequence` 46–157），其中 37 条带思考标记、71 条工具、40 条助手文字，思考条目分布在整段区间，最后一页即含 23 条。
+  - 结果：展开三个轮次的处理过程后，DOM 有 3 个工具组、115 条工具行、2 条助手答复；`.ac-process-thinking` 计数为 0，37 条思考条目的正文（如 `The session was continued…`、`Clear pattern:`）在页面文本中一处未出现，「思考」字样不存在。滚动到思考最密集的中段仍是连续工具行 + 助手答复，无英文推理段落。
+  - 自动化方式：headless Chromium 注入 `sessionStorage['buildr.agent-conversation.panel:development']` 打开该会话，通过 `meta[name="buildr-session"]` 取得页面 session 调用读接口对齐条目数，再展开全部轮次与工具组断言上述计数；无窗口焦点依赖。
