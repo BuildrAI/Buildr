@@ -5,6 +5,49 @@ import type {AgentConversationFixture} from './agent-conversation-fixture.ts';
 /** setup 场景使用独立准备的对话现场。 */
 export async function runSetupScenarios(fixture:AgentConversationFixture){
   const {assertFixed,assertModelSummary,assertNavigationHighlight,assertReminderGap,capture,chooseAgent,chooseModel,chooseOption,closeConversation,closeModelSettings,connections,expectedBrowserErrors,input,modelSettings,openDesktopConversation,openModelSettings,page,panel,preferenceBodies,preparedInputs,programAttempts,reset,run,sentInputs,setHighEffort,step,workspaceId}=fixture;
+await step('新对话欢迎内容在高矮视口居中，空间不足时仍可完整滚动阅读',async()=>{
+  await reset();const viewport=page.viewportSize();await openDesktopConversation();
+  const stream=panel().locator('.ac-stream'),welcome=stream.locator('.ac-welcome');await welcome.waitFor();
+  const settle=()=>page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
+  let focused=false;
+  const setFocused=async(value:boolean)=>{
+    if(value===focused)return;
+    await panel().getByRole('button',{name:'更多对话操作',exact:true}).click();
+    await page.getByRole('menuitem',{name:value?'专注对话':'恢复分屏',exact:true}).click();focused=value;
+    await page.locator('.has-full-conversation').waitFor({state:value?'visible':'hidden'});await settle();
+  };
+  try{
+    for(const {width,height,full} of [{width:1600,height:1000,full:false},{width:1600,height:1000,full:true},{width:1280,height:640,full:false},{width:1280,height:420,full:false}]){
+      await page.setViewportSize({width,height});await setFocused(full);await settle();
+      await stream.evaluate((node:HTMLElement)=>{node.scrollTop=0;});await settle();
+      // Measure the actual content, not just a stretched .ac-welcome background.
+      const bounds=await welcome.evaluate((node:HTMLElement)=>{
+        const stream=node.closest('.ac-stream')!,s=stream.getBoundingClientRect(),w=node.getBoundingClientRect();
+        const children=[...node.children].map(child=>child.getBoundingClientRect()).filter(rect=>rect.height>0);
+        return{streamTop:s.top,streamBottom:s.top+stream.clientHeight,streamHeight:stream.clientHeight,streamWidth:stream.clientWidth,streamScrollWidth:stream.scrollWidth,
+          welcomeHeight:w.height,contentTop:Math.min(...children.map(rect=>rect.top)),contentBottom:Math.max(...children.map(rect=>rect.bottom)),
+          contentLeft:Math.min(...children.map(rect=>rect.left)),contentRight:Math.max(...children.map(rect=>rect.right)),streamLeft:s.left};
+      });
+      const diagnostic=JSON.stringify({width,height,full,...bounds});
+      assert.ok(bounds.streamHeight>0&&bounds.streamScrollWidth<=bounds.streamWidth+1,diagnostic);
+      assert.ok(Math.abs((bounds.contentLeft+bounds.contentRight)/2-(bounds.streamLeft+bounds.streamWidth/2))<=2,'欢迎内容水平居中：'+diagnostic);
+      if(height===1000)assert.ok(bounds.welcomeHeight<=bounds.streamHeight+1,'高视口能完整容纳欢迎区：'+diagnostic);
+      if(bounds.welcomeHeight<=bounds.streamHeight+1){
+        assert.ok(Math.abs((bounds.contentTop+bounds.contentBottom)/2-(bounds.streamTop+bounds.streamBottom)/2)<=2,'欢迎内容与滚动视口垂直中心一致：'+diagnostic);
+        assert.ok(bounds.contentBottom<=bounds.streamBottom+1,'欢迎内容不被输入区遮挡：'+diagnostic);
+      }
+      assert.ok(bounds.contentTop>=bounds.streamTop-1,'顶部内容不能因居中溢出而无法读到：'+diagnostic);
+      await stream.evaluate((node:HTMLElement)=>{node.scrollTop=node.scrollHeight;});await settle();
+      const end=await welcome.evaluate((node:HTMLElement)=>{
+        const stream=node.closest('.ac-stream')!,s=stream.getBoundingClientRect(),last=node.lastElementChild!.getBoundingClientRect();
+        return{bottom:last.bottom,streamBottom:s.top+stream.clientHeight,remaining:stream.scrollHeight-stream.clientHeight-stream.scrollTop};
+      });
+      assert.ok(end.remaining<=1&&end.bottom<=end.streamBottom+1,'矮视口下最后一项仍可滚动到完整可见：'+JSON.stringify({height,...end}));
+      await capture(page,'agent-conversation-welcome-'+height+(full?'-focused':'-sidebar')+'.png');
+    }
+    assert.equal(fixture.creations,0,'查看和调整欢迎区不创建对话');assert.equal(fixture.sends,0);
+  }finally{await setFocused(false);if(viewport)await page.setViewportSize(viewport);await closeConversation();}
+});
 await step('智能体设置自定义内容在桌面与窄屏保留留白，长程序路径完整换行',async()=>{
   await reset();const viewport=page.viewportSize(),matcher='**/api/v1/app/agent-service/program-updates';
   const executable='/opt/buildr-fixture/Application Support/Buildr Dev/'+('long-program-directory/').repeat(12)+'bin/codex';

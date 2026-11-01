@@ -390,7 +390,13 @@ await step('向上接近历史自动单批加载，阅读定位与展开保持�
         const process=panel().locator('[data-run-id="history-round-217"] .ac-process'),group=process.locator('.ac-step-group').first();
         await panel().locator('[data-run-id="history-round-217"]').getByRole('button',{name:'展开处理过程',exact:true}).evaluate((node:HTMLElement)=>node.click());await group.locator(':scope>summary').evaluate((node:HTMLElement)=>node.click());await group.locator('.ac-step>summary').first().evaluate((node:HTMLElement)=>node.click());
         assert.equal(await process.getAttribute('data-expanded'),'true');assert.equal(await group.getAttribute('open'),'');
+        assert.equal(await stream.locator('.ac-welcome').count(),0,'普通长消息不再使用欢迎布局');
+        const beforeScroll=await stream.evaluate((node:HTMLElement)=>({top:node.scrollTop,height:node.clientHeight,total:node.scrollHeight,listTop:node.querySelector('.ac-message-list')!.getBoundingClientRect().top}));
+        assert.ok(beforeScroll.height>0&&beforeScroll.total>beforeScroll.height+1200,'长答复应保留受约束且可滚动的消息视口：'+JSON.stringify(beforeScroll));
         await moveTo(1200);assert.equal(fixture.entryReads,readsBefore,'距离顶部大于800像素不预取');
+        const afterScroll=await stream.evaluate((node:HTMLElement)=>({top:node.scrollTop,listTop:node.querySelector('.ac-message-list')!.getBoundingClientRect().top}));
+        assert.ok(Math.abs(afterScroll.top-1200)<=1,'消息视口可实际滚动到指定阅读位置：'+JSON.stringify(afterScroll));
+        assert.ok(Math.abs((afterScroll.listTop-beforeScroll.listTop)+(afterScroll.top-beforeScroll.top))<=2,'长消息随外层视口滚动，不被欢迎布局固定或截断');
         const scrollLatest=panel().getByRole('button',{name:'向下到底',exact:true});
         await scrollLatest.waitFor();
         assert.ok(await stream.evaluate((node:HTMLElement)=>node.scrollHeight-node.scrollTop-node.clientHeight>80));
