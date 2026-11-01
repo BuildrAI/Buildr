@@ -23,6 +23,8 @@ export function verificationOnlyPath(file: string): boolean {
   // Changing that workflow requires its own fresh infrastructure acceptance.
   if (/^projects\/product\/(?:knowledge|openspec|tasks)\//u.test(file)) return true;
   if (file.startsWith('skills/buildr-release/')) return !releaseBuildInputPaths.has(file);
+  // The Web Service's test fixtures are verifier inputs, not Vite or package inputs.
+  if (file.startsWith('projects/product/services/buildr-web/test/')) return true;
   if (!file.startsWith(prefix)) return false;
   const relative = file.slice(prefix.length);
   // Test Context is itself a public package export; the package producer and

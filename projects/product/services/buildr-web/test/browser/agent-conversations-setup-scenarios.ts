@@ -7,7 +7,7 @@ export async function runSetupScenarios(fixture:AgentConversationFixture){
   const {assertFixed,assertModelSummary,assertNavigationHighlight,assertReminderGap,capture,chooseAgent,chooseModel,chooseOption,closeConversation,closeModelSettings,connections,expectedBrowserErrors,input,modelSettings,openDesktopConversation,openModelSettings,page,panel,preferenceBodies,preparedInputs,programAttempts,reset,run,sentInputs,setHighEffort,step,workspaceId}=fixture;
 await step('智能体设置自定义内容在桌面与窄屏保留留白，长程序路径完整换行',async()=>{
   await reset();const viewport=page.viewportSize(),matcher='**/api/v1/app/agent-service/program-updates';
-  const executable='/Users/fixture/Library/Application Support/Buildr Dev/'+('long-program-directory/').repeat(12)+'bin/codex';
+  const executable='/opt/buildr-fixture/Application Support/Buildr Dev/'+('long-program-directory/').repeat(12)+'bin/codex';
   const route=async(intercept:any)=>intercept.fulfill({json:{programs:connections.map(connection=>({connectionId:connection.id,provider:connection.provider,label:connection.label,revision:connection.revision,executable,status:'unchecked',managed:true,versionKind:'program',packageName:connection.id,updateUrl:'https://fixture.invalid'}))}});
   await page.route(matcher,route);
   const drawer=page.getByRole('dialog',{name:/^智能体与模型/});

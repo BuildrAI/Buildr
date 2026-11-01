@@ -80,11 +80,31 @@ test('real source binding preserves producer identity for test repair and reject
   const step = (file: string) => ({ id: file, executor: { type: 'node-test', files: [file] } });
   assert.equal(candidateCheckInputIdentity(repo, original, step('test/first.test.ts')), candidateCheckInputIdentity(repo, repaired, step('test/first.test.ts')));
   assert.notEqual(candidateCheckInputIdentity(repo, original, step('test/second.test.ts')), candidateCheckInputIdentity(repo, repaired, step('test/second.test.ts')));
-  for (const file of ['src/index.ts', 'package-lock.json', 'test/context/public.ts', '../../../../skills/buildr-release/scripts/release-artifact.ts', '../../../../skills/buildr-release/scripts/application-payload.ts']) {
+  for (const file of ['src/index.ts', 'package-lock.json', 'test/context/public.ts', '../buildr-web/src/App.tsx', '../buildr-web/package-lock.json', '../buildr-web/vite.config.ts', '../../../../skills/buildr-release/scripts/release-artifact.ts', '../../../../skills/buildr-release/scripts/application-payload.ts']) {
     write(prefix + file, 'changed build input\n'); const changed = commit();
     assert.throws(() => createCandidateSourceBinding(repo, repaired, changed), (error: any) => error.code === 'candidate-build-inputs-changed' && error.changedPaths.includes(path.posix.normalize(prefix + file)));
     git('revert', '--no-commit', changed); commit();
   }
+});
+
+test('Web browser fixture repair retains the exact original package producer', t => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'candidate-web-fixture-binding-'));
+  t.after(() => fs.rmSync(repo, { recursive: true, force: true }));
+  const git = (...args: string[]) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  const write = (name: string, text: string) => { const file = path.join(repo, name); fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, text); };
+  const commit = () => { git('add', '.'); git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.com', '-c', 'commit.gpgSign=false', 'commit', '-m', 'fixture'); return git('rev-parse', 'HEAD'); };
+  const fixture = 'projects/product/services/buildr-web/test/browser/fixture.ts';
+  git('init', '--initial-branch=main');
+  write('projects/product/services/buildr/package.json', '{"name":"@buildr-ai/buildr","version":"1.0.0"}\n');
+  write(fixture, 'const path = "fixture-original";\n');
+  const original = commit();
+  write(fixture, 'const path = "fixture-repaired";\n');
+  const repaired = commit(), binding = createCandidateSourceBinding(repo, original, repaired);
+  assert.equal(verificationOnlyPath(fixture), true);
+  assert.equal(binding.productSource, original);
+  assert.equal(binding.verificationSource, repaired);
+  assert.notEqual(binding.productTree, binding.verificationTree);
+  assert.doesNotThrow(() => assertCandidateSourceBinding(repo, binding));
 });
 
 test('candidate repair provenance coexists with protected publisher recovery without granting verifier authority', t => {
