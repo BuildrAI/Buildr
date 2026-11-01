@@ -218,9 +218,12 @@ export function conversationStreamTurns(items:readonly ConversationStreamItem[])
   const turns:ConversationTurnItems[]=[], owners=new Map<string,ConversationTurnItems>();
   for(const item of items){
     const entry=item.type==='entry'?item.entry:item.entries[0];
-    if(item.type==='entry'&&entry.kind==='message'&&entry.role==='user'){
+    const inputOwner=entry.runId?owners.get(entry.runId):undefined;
+    const sameExecution=inputOwner&&(inputOwner.prompt?inputOwner.prompt.runId===entry.runId:
+      inputOwner.key==='run:'+entry.runId||inputOwner.key==='history:'+entry.runId||inputOwner.items.some(value=>value.type==='process-block'&&value.entries[0].runId===entry.runId));
+    if(item.type==='entry'&&entry.kind==='message'&&entry.role==='user'&&!sameExecution){
       const turn={key:entry.id,prompt:entry,items:[]};turns.push(turn);
-      // Supplementary inputs in the same execution start a new visible segment.
+      // Only the first input owns the turn header; later inputs stay in its body.
       if(entry.runId)owners.set(entry.runId,turn);
     }else{
       if(!turns.length)turns.push({key:'earlier',items:[]});

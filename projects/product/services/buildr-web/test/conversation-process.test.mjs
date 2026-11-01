@@ -147,8 +147,9 @@ test('同一执行被补充分段后只保留整轮最后一份答复，授权�
  const entries=[message('u','开始','r1','user'),message('n1','先检查'),tool('t1'),message('extra','补充图文','r1','user'),{...message('approval','允许','r1','user'),kind:'notice'},message('n2','继续检查'),tool('t2'),message('final','完成')];
  const items=groupConversationStream(entries,{id:'r1',status:'completed'});
  assert.deepEqual(items.filter(item=>item.type==='entry'&&item.entry.role==='assistant').map(item=>item.entry.id),['final']);
- const turns=conversationStreamTurns(items);assert.equal(turns.length,2);assert.equal(turns[1].prompt.id,'extra');
- assert.equal(turns[0].items[0].entries[0].id,'n1');assert.equal(turns[1].items.at(-1).entry.id,'final');
+ const turns=conversationStreamTurns(items);assert.equal(turns.length,1);assert.equal(turns[0].prompt.id,'u');
+ assert.equal(turns[0].items[1].entry.id,'extra');
+ assert.equal(turns[0].items[0].entries[0].id,'n1');assert.equal(turns[0].items.at(-1).entry.id,'final');
  assert.deepEqual(groupConversationStream(entries,{id:'r1',status:'running'}).filter(item=>item.type==='entry'&&item.entry.role==='assistant'),[]);
 });
 
@@ -198,10 +199,9 @@ test('交错到达的执行先归属再合组，同轮用户补充保持分段',
  const grouped=groupConversationStream(entries,{id:'new',status:'completed'});
  const original=structuredClone(grouped);
  const turns=conversationStreamTurns(grouped);
- assert.deepEqual(turns.map(turn=>turn.prompt?.id),['old-u','new-u','extra']);
+ assert.deepEqual(turns.map(turn=>turn.prompt?.id),['old-u','new-u']);
  assert.deepEqual(turns[0].items.map(item=>item.entries.map(entry=>entry.id)),[['old-one','old-two','old-three']]);
- assert.deepEqual(turns[1].items.map(item=>item.entries.map(entry=>entry.id)),[['new-one','new-two']]);
- assert.deepEqual(turns[2].items.map(item=>item.type==='process-block'?item.entries.map(entry=>entry.id):item.entry.id),[['after-extra'],'answer']);
+ assert.deepEqual(turns[1].items.map(item=>item.type==='process-block'?item.entries.map(entry=>entry.id):item.entry.id),[['new-one','new-two'],'extra',['after-extra'],'answer']);
  assert.deepEqual(grouped,original,'归属合组不修改原始分段或持久顺序');
 });
 
@@ -240,4 +240,20 @@ test('可见主线分页后保留展开选择，隐藏子报告不能改变过�
   const carried=carryExpandedProcessBlocks(visibleConversationEntries(current),visibleConversationEntries(added),{[key]:open});
   assert.equal(carried[processBlockKey([added[0],current[1]])],open);
  }
+});
+
+test('多次同轮补充保持首条输入与稳定轮次，缺少身份或独立执行不合并',()=>{
+ const prompt=message('u','开始','one','user'),extra=message('extra','补充','one','user');
+ const initial=conversationStreamTurns(groupConversationStream([prompt,tool('t',{runId:'one'})]));
+ const turns=conversationStreamTurns(groupConversationStream([prompt,tool('t',{runId:'one'}),extra,message('again','再次补充','one','user'),message('new','另一个执行','two','user'),message('late-extra','旧执行补充','one','user')]));
+ assert.equal(turns[0].key,initial[0].key);assert.equal(turns[0].prompt.id,'u');assert.equal(turns.length,2);
+ assert.deepEqual(turns[0].items.filter(item=>item.type==='entry').map(item=>item.entry.id),['extra','again','late-extra']);
+ const legacy=conversationStreamTurns(groupConversationStream([message('legacy1','第一轮',undefined,'user'),message('legacy2','第二轮',undefined,'user')].map(entry=>({...entry,runId:undefined}))));
+ assert.equal(legacy.length,2);
+});
+
+test('首条输入前的交接回执不能冒充原用户输入',()=>{
+ const receipt={...message('receipt','接续','new','system'),kind:'handoff'};
+ const turns=conversationStreamTurns(groupConversationStream([receipt,message('first','新要求','new','user'),message('extra','补充','new','user')]));
+ assert.equal(turns.at(-1).prompt.id,'first');assert.equal(turns.at(-1).items[0].entry.id,'extra');
 });

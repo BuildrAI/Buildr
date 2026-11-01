@@ -24,17 +24,34 @@ await step('交错执行按归属合组，旧问题存档和子报告不打断�
       entry('unified-child-report',11,'run-fixture','message','assistant','子任务独立报告不应重复出现',{parentToolId:'unified-current-last'}),
     ]});
     await page.reload();await input().waitFor();
-    const older=panel().locator('[data-turn-id="unified-old-user"]'),beforeExtra=panel().locator('[data-turn-id="unified-user"]'),afterExtra=panel().locator('[data-turn-id="unified-extra"]');
-    await afterExtra.waitFor();
-    await older.getByRole('button',{name:'展开处理过程',exact:true}).click();
+    const older=panel().locator('[data-turn-id="unified-old-user"]'),beforeExtra=panel().locator('[data-turn-id="unified-user"]');
+    await beforeExtra.locator('[data-entry-id="unified-extra"]').waitFor();
+    assert.equal(await panel().locator('[data-turn-id="unified-extra"]').count(),0,'补充沿用原轮起点');
     assert.equal(await older.locator('.ac-step-group').count(),1,'另一执行插入的工具与接续回执不切碎旧工具组');
-    assert.equal(await beforeExtra.locator('.ac-step-group').count(),1);assert.equal(await afterExtra.locator('.ac-step-group').count(),1,'用户补充保留独立分段');
-    assert.equal(await panel().locator('.ac-step-group.is-live').count(),1);assert.equal(await afterExtra.locator('.ac-step-group.is-live').count(),1);
-    await panel().getByText('继续处理新要求',{exact:true}).waitFor();
+    assert.equal(await beforeExtra.locator('.ac-step-group').count(),2,'用户补充前后保留两个工具分段');
+    assert.equal(await panel().locator('.ac-step-group.is-live').count(),1);assert.equal(await beforeExtra.locator('.ac-step-group.is-live').count(),1);
+    assert.equal(await panel().locator('.ac-handoff-receipt').count(),0,'相同选择的已接收回执遵循现有静默呈现');
     assert.equal(await panel().locator('[data-entry-id="retired-question-unified"],[data-entry-id="unified-child-report"]').count(),0);
     await older.locator('.ac-step-group>summary').click();
     await older.locator('[data-entry-id="unified-old-two"]').waitFor();
     assert.equal(await older.locator('.ac-step-tool').count(),2);await capture(page,'conversation-unified-interleaved-work.png');
+  }finally{fixture.conversation=saved;await page.reload();await input().waitFor();}
+});
+await step('同轮补充在原展示行下按序展开，完成后与过程一起折叠',async()=>{
+  const saved=structuredClone(fixture.conversation),at=new Date().toISOString();
+  const entry=(id:string,sequence:number,role:string,text:string)=>({id,sequence,kind:'message',role,text,runId:'run-fixture',participantId:'participant-codex',createdAt:at,status:'completed'});
+  try{
+    update({entries:[entry('fold-user',1,'user','最初要求'),entry('fold-before',2,'assistant','补充前的处理'),entry('fold-extra',3,'user','补充说明'),entry('fold-after',4,'assistant','补充后的处理'),entry('fold-extra-two',5,'user','第二条补充'),entry('fold-answer',6,'assistant','最终答复')],run:run('completed'),requests:[]});
+    await page.reload();await input().waitFor();
+    const turn=panel().locator('[data-turn-id="fold-user"]'),extra=turn.locator('[data-entry-id="fold-extra"]');
+    assert.equal(await panel().locator('.ac-turn').count(),1);await turn.locator('[data-entry-id="fold-answer"]').waitFor();assert.equal(await extra.count(),0);
+    await turn.getByRole('button',{name:'展开处理过程',exact:true}).click();await extra.waitFor();
+    assert.deepEqual(await turn.locator('[data-entry-id]').evaluateAll((nodes:HTMLElement[])=>nodes.map(node=>node.dataset.entryId)),['fold-user','fold-before','fold-extra','fold-after','fold-extra-two','fold-answer']);
+    await capture(page,'conversation-supplement-expanded.png');
+    await turn.getByRole('button',{name:'收起处理过程',exact:true}).click();assert.equal(await extra.count(),0);await turn.locator('[data-entry-id="fold-answer"]').waitFor();
+    await page.reload();await turn.waitFor();assert.equal(await extra.count(),0);await turn.getByRole('button',{name:'展开处理过程',exact:true}).click();await extra.waitFor();
+    await turn.getByRole('button',{name:'收起处理过程',exact:true}).click();update({entries:[entry('fold-earlier',0,'user','更早的原始要求'),...fixture.conversation!.entries]});await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+    const earlier=panel().locator('[data-turn-id="fold-earlier"]');await earlier.waitFor();assert.equal(await earlier.locator('[data-entry-id="fold-extra"]').count(),0,'补回更早输入后保留同一执行的明确折叠选择');
   }finally{fixture.conversation=saved;await page.reload();await input().waitFor();}
 });
 await step('发送后始终展示最新信息，布局滚动不误加载更早记录',async()=>{
@@ -249,12 +266,12 @@ await step('首个回复前使用本轮实际智能体和模型，切换草稿�
       update({participants,entries,run:run('starting','codex',{accepted:false,model:'fixture-model'}),requests:[]});await page.reload();await input().waitFor();
       const current=()=>panel().locator('[data-turn-id="awaiting-prompt"] .ac-turn-identity-link');
       const old=()=>panel().locator('[data-turn-id="old-prompt"] .ac-turn-identity-link');
-      assert.equal(await current().innerText(),'Codex · Fixture model','启动中按执行编号识别没有参与方字段的用户输入');
+      assert.equal((await current().innerText()).split('\n')[0],'Codex · Fixture model','启动中按执行编号识别没有参与方字段的用户输入');
       assert.equal(await old().innerText(),'DSH · Fast model','历史名称来自历史参与方而非当前执行');
-      update({run:run('running','codex',{model:'fixture-model'})});await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await panel().locator('.ac-turn.is-executing').waitFor();assert.equal(await current().innerText(),'Codex · Fixture model');
-      await chooseAgent('Qoder');await chooseModel('Fast model');await closeModelSettings();assert.equal(await current().innerText(),'Codex · Fixture model','输入区下一轮选择不能重标当前执行');assert.equal(await old().innerText(),'DSH · Fast model');
-      await page.reload();await input().waitFor();assert.equal(await current().innerText(),'Codex · Fixture model','刷新后仍从执行记录恢复名称');
-      update({entries:[...entries,{id:'first-reply',sequence:4,kind:'message',role:'assistant',text:'开始处理',runId:'run-fixture',participantId:'participant-codex',provider:'codex',createdAt}]});await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await panel().locator('[data-entry-id="first-reply"]').waitFor();assert.equal(await current().innerText(),'Codex · Fixture model','首条回复到达前后名称一致');
+      update({run:run('running','codex',{model:'fixture-model'})});await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await panel().locator('.ac-turn.is-executing').waitFor();assert.equal((await current().innerText()).split('\n')[0],'Codex · Fixture model');
+      await chooseAgent('Qoder');await chooseModel('Fast model');await closeModelSettings();assert.equal((await current().innerText()).split('\n')[0],'Codex · Fixture model','输入区下一轮选择不能重标当前执行');assert.equal(await old().innerText(),'DSH · Fast model');
+      await page.reload();await input().waitFor();assert.equal((await current().innerText()).split('\n')[0],'Codex · Fixture model','刷新后仍从执行记录恢复名称');
+      update({entries:[...entries,{id:'first-reply',sequence:4,kind:'message',role:'assistant',text:'开始处理',runId:'run-fixture',participantId:'participant-codex',provider:'codex',createdAt}]});await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await panel().locator('[data-entry-id="first-reply"]').waitFor();assert.equal((await current().innerText()).split('\n')[0],'Codex · Fixture model','首条回复到达前后名称一致');
       const streamForPin=panel().locator('.ac-stream');
       await streamForPin.evaluate((node:HTMLElement)=>{node.scrollTop=node.scrollHeight;const grow=document.createElement('div');grow.id='late-growth';grow.style.height='240px';document.querySelector('.ac-compose-wrap')?.appendChild(grow);});
       await page.waitForTimeout(300);
@@ -346,7 +363,13 @@ await step('执行中图文普通发送、固定上下文和长输入，失败�
       assert.equal(await panel().getByRole('button',{name:'发送对话',exact:true}).isDisabled(),true);assert.equal(await panel().locator('.ac-compose-wrap').getByRole('button',{name:'停止本次执行',exact:true}).count(),1);assert.equal(await panel().locator('.ac-thread-actions').getByRole('button',{name:'停止本次执行',exact:true}).count(),0);
       const stream=panel().locator('.ac-stream');await stream.evaluate((node:HTMLElement)=>node.scrollTop=300);const stickyHead=panel().locator('.ac-turn.is-executing>.ac-turn-head');const sticky=await stickyHead.evaluate((node:HTMLElement)=>({top:node.getBoundingClientRect().top,stream:node.closest('.ac-stream')!.getBoundingClientRect().top,position:getComputedStyle(node).position}));assert.equal(sticky.position,'sticky');assert.ok(Math.abs(sticky.top-sticky.stream)<2,JSON.stringify(sticky));assert.equal(await panel().locator('.ac-turn.is-executing>.ac-turn-head>.ac-turn-context').evaluate((node:HTMLElement)=>getComputedStyle(node).position),'static','气泡自身不吸顶，随吸顶头一起固定');
       await panel().getByRole('button',{name:'展开内容',exact:true}).first().click();assert.equal(await panel().locator('.ac-turn-prompt-content').first().evaluate((node:HTMLElement)=>getComputedStyle(node).overflowY),'auto');await panel().getByRole('button',{name:'收起内容',exact:true}).click();assert.match(await panel().locator('.ac-turn-identity').first().innerText(),/Codex · Fixture model/);assert.ok(await panel().locator('.ac-turn-identity .ac-execution-indicator').first().innerText()!=='0:00');
-      const png={name:'live.png',mimeType:'image/png',buffer:Buffer.from('89504e470d0a1a0a','hex')};await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles(png);await panel().getByRole('button',{name:'移除图片 live.png',exact:true}).waitFor();await input().fill('执行中补充图文');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().locator('.ac-turn-prompt').filter({hasText:'执行中补充图文'}).waitFor();assert.equal(await input().inputValue(),'');assert.deepEqual(supplementaryInputs.at(-1).attachmentIds,['image-fixture-'+(previousUploads+1)]);
+      const png={name:'live.png',mimeType:'image/png',buffer:Buffer.from('89504e470d0a1a0a','hex')};await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles(png);await panel().getByRole('button',{name:'移除图片 live.png',exact:true}).waitFor();await input().fill('执行中补充图文');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().locator('.ac-turn-content .ac-message.is-user').filter({hasText:'执行中补充图文'}).waitFor();
+      assert.equal(await panel().locator('.ac-turn').count(),1,'同轮补充不能新建展示轮次');assert.equal(await panel().locator('.ac-turn-prompt').getAttribute('data-entry-id'),'long-user');
+      const supplement=panel().locator('.ac-turn-content .ac-message.is-user').filter({hasText:'执行中补充图文'});
+      await panel().getByRole('button',{name:'收起处理过程',exact:true}).click();await supplement.waitFor({state:'hidden'});assert.equal(await panel().locator('.ac-process-narration').count(),0);
+      await panel().getByRole('button',{name:'展开处理过程',exact:true}).click();await supplement.waitFor();await supplement.scrollIntoViewIfNeeded();await supplement.locator('img').waitFor();assert.equal(await supplement.locator('img').count(),1);
+      await page.reload();await supplement.waitFor();assert.equal(await panel().locator('.ac-turn').count(),1);
+assert.equal(await input().inputValue(),'');assert.deepEqual(supplementaryInputs.at(-1).attachmentIds,['image-fixture-'+(previousUploads+1)]);
       fixture.supplementaryDelivery='rejected';await input().fill('保留失败草稿');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().getByText('这条消息未发送成功，文字与图片已保留。',{exact:true}).waitFor();assert.equal(await input().inputValue(),'保留失败草稿');
       fixture.supplementaryDelivery='unknown';await input().fill('接收待确认');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().getByText('消息已保存，是否送达仍待确认，请勿重复发送。',{exact:true}).waitFor();assert.equal(await input().inputValue(),'');
       fixture.supplementaryDelivery='accepted';fixture.holdSupplement=true;const waiting=new Promise<void>(resolve=>{fixture.supplementStarted=resolve;});await input().fill('发送等待时可以停止');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await waiting;await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();const admitted=page.waitForResponse((r:any)=>r.url().endsWith('/supplement'));fixture.releaseSupplement!();await admitted;assert.equal(fixture.supplementaryCalls,4);await panel().getByRole('button',{name:'发送对话',exact:true}).waitFor();
