@@ -50,16 +50,15 @@ test('DSH flat user event maps request identity to all corresponding turn items'
     { type: 'tool/call', seq: 5, data: { turn: 7, callId: 'tool-native', name: 'read', arguments: '{}' } },
     { type: 'tool/result', seq: 6, data: { turn: 7, message: { toolCallId: 'tool-native', content: [{ type: 'text', text: '文件结果' }] } } },
   ]);
-  assert.equal(items.length, 4); assert.equal(items[0].id, 'u-native'); assert.equal(items[0].executionId, 'client-exact');
-  // Thinking is its own process-only item; visible text keeps the plain step identity.
-  assert.deepEqual(items[1], { id: 'assistant:7:1:reasoning', kind: 'message', role: 'assistant', text: 'hidden', thinking: true, status: 'completed', executionId: 'client-exact' });
-  assert.equal(items[2].id, 'assistant:7:1'); assert.equal(items[2].executionId, 'client-exact'); assert.equal(items[2].text, '完成');
-  assert.equal(items[3].status, 'completed'); assert.equal(items[3].name, 'read'); assert.equal(items[3].input, '{}');
-  assert.ok(!items.filter(item => !item.thinking).some(item => JSON.stringify(item).includes('hidden')));
+  assert.equal(items.length, 3); assert.equal(items[0].id, 'u-native'); assert.equal(items[0].executionId, 'client-exact');
+  // 模型思考不是对话条目：只有可见文字成为助手消息，且保持该步的原始身份。
+  assert.equal(items[1].id, 'assistant:7:1'); assert.equal(items[1].executionId, 'client-exact'); assert.equal(items[1].text, '完成');
+  assert.equal(items[2].status, 'completed'); assert.equal(items[2].name, 'read'); assert.equal(items[2].input, '{}');
+  assert.ok(!JSON.stringify(items).includes('hidden'));
 });
-test('DSH reasoning-only steps keep thinking without inventing a reply', () => {
+test('DSH reasoning-only steps produce no conversation item', () => {
   const items = dshItem({ type: 'assistant/message', data: { turn: 3, step: 2, message: { content: [{ type: 'reasoning', text: '  plan  ' }, { type: 'reasoning', text: 'check' }] } } });
-  assert.deepEqual(items, [{ id: 'assistant:3:2:reasoning', kind: 'message', role: 'assistant', text: 'plan\n\ncheck', thinking: true, status: 'completed' }]);
+  assert.deepEqual(items, []);
 });
 test('Qoder durable snapshots collapse by native message ID, preserving exact user UUIDs', () => {
   const messages = [

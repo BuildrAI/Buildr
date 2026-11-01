@@ -2,8 +2,6 @@
 .ac-process.is-flow{font-size: var(--font-size-body);color:var(--soft-ink,#252a31);margin-bottom:14px}
 .ac-process.is-flow>.ac-process-timeline{margin:0;padding:0;border:0}
 .ac-process.is-flow .ac-process-narration{margin:0 0 15px}
-.ac-process.is-flow .ac-process-thinking{margin:0 0 15px}
-.ac-process.is-flow .ac-process-thinking>summary{font-size: var(--font-size-body)}
 .ac-process.is-flow .ac-process-narration .markdown-body{font-size: var(--font-size-reading);line-height:1.85;color:var(--soft-ink,#252a31)}
 .ac-process.is-flow .ac-step{margin:3px 0 12px}
 .ac-process.is-flow .ac-step>summary{padding:3px 4px 3px 0;min-height:29px;font-size: var(--font-size-body)}

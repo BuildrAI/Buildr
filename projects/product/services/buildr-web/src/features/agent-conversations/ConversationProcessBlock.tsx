@@ -90,30 +90,19 @@ function ToolGroup({entries,active,onOpenFile,open,onToggle,toolsOpen,onToolTogg
     {open&&<button type="button" className="ac-process-collapse" onClick={event=>{const details=event.currentTarget.closest('details')!;onToggle(false);requestAnimationFrame(()=>{const summary=details.querySelector('summary');if(summary)locateConversationContent(summary);});}}>收起工具调用</button>}
   </details>;
 }
-type TimelineItem={type:'tools';entries:ConversationEntry[]}|{type:'narration';entry:ConversationEntry}|{type:'thinking';entry:ConversationEntry};
+type TimelineItem={type:'tools';entries:ConversationEntry[]}|{type:'narration';entry:ConversationEntry};
 function processTimeline(entries:readonly ConversationEntry[]):TimelineItem[]{
   const items:TimelineItem[]=[];
   for(const entry of entries){
+    // 模型思考不进入处理过程，只展示助手实际输出文字与工具调用。
+    if(entry.thinking)continue;
     const last=items[items.length-1];
     if(entry.kind==='tool'){
       if(last?.type==='tools')last.entries.push(entry);
       else items.push({type:'tools',entries:[entry]});
-    }else if(entry.thinking)items.push({type:'thinking',entry});
-    else items.push({type:'narration',entry});
+    }else items.push({type:'narration',entry});
   }
   return items;
-}
-/** Model thinking stays process content: visible while running, folded after. */
-function ThinkingStep({entry,active,markdownOptions}:{entry:ConversationEntry;active:boolean;markdownOptions?:MarkdownRenderOptions}){
-  const [manual,setManual]=useState<boolean|undefined>(undefined);
-  const expanded=manual??active;
-  return <details className="ac-process-thinking" data-entry-id={entry.id} data-thinking="true" open={expanded} onToggle={event=>{
-    if(event.target!==event.currentTarget)return;
-    if(event.currentTarget.open!==expanded)setManual(event.currentTarget.open);
-  }}>
-    <summary><span className="ac-thinking-node" aria-hidden="true"/><span className="ac-step-action">思考</span><RightOutlined className="ac-step-chevron" aria-hidden="true"/></summary>
-    {expanded&&<div className="ac-process-thinking-body"><MarkdownHost markdown={entry.text} className="markdown-body" options={markdownOptions}/></div>}
-  </details>;
 }
 function durationLabel(startedAt:string,finishedAt:string):string {
   const seconds=Math.max(0,Math.round((Date.parse(finishedAt)-Date.parse(startedAt))/1000));
@@ -129,9 +118,7 @@ export function ConversationProcessBlock({markdownOptions,headerless,blockKey,en
   const tools=entries.filter(entry=>entry.kind==='tool');
   const duration=active?'':durationLabel(summary.startedAt,finishedAt||summary.finishedAt);
   const lastToolId=liveToolId===undefined?tools.at(-1)?.id:liveToolId;
-  const timeline=active||open||visited?<div className="ac-process-timeline">{processTimeline(entries).map(item=>item.type==='thinking'
-    ?<ThinkingStep key={item.entry.id} entry={item.entry} active={active} markdownOptions={markdownOptions}/>
-    :item.type==='narration'
+  const timeline=active||open||visited?<div className="ac-process-timeline">{processTimeline(entries).map(item=>item.type==='narration'
     ?<div key={item.entry.id} className="ac-process-narration" data-entry-id={item.entry.id}><MarkdownHost markdown={item.entry.text} className="markdown-body" options={markdownOptions}/></div>
     :<ToolGroup loadEntry={loadEntry} key={item.entries[0].id} entries={item.entries} active={active} onOpenFile={onOpenFile} toolsOpen={toolsOpen} onToolToggle={onToolToggle} liveForce={active&&item.entries.some(entry=>entry.id===lastToolId)} open={item.entries.map(entry=>groupsOpen['tool-group:'+entry.id]).find(value=>value!==undefined)??false} onToggle={value=>onGroupToggle?.(item.entries.map(entry=>entry.id),value)}/> )}</div>:null;
     if(active)return <div className="ac-process is-flow" data-process-state="live">{timeline}</div>;

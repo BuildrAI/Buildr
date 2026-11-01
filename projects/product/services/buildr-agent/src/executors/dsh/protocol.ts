@@ -81,13 +81,9 @@ export function dshItem(event: any): ExecutorItem[] {
   if (event?.type === 'user/message' && !isUserInput(event)) return [];
   if (event?.type === 'assistant/message') {
     const content = data.message?.content;
-    // Thinking stays a separate process-only item: a step may carry both kinds,
-    // and only visible text may become the final reply or model history.
-    const thinking = (Array.isArray(content) ? content : []).filter((part: any) => part?.type === 'reasoning' && typeof part.text === 'string').map((part: any) => part.text.trim()).filter(Boolean).join('\n\n');
-    const text = visibleText(content); const items: ExecutorItem[] = [];
-    if (thinking) items.push({ id: `assistant:${data.turn}:${data.step}:reasoning`, kind: 'message', role: 'assistant', text: thinking, thinking: true, status: 'completed' });
-    if (text) items.push({ id: `assistant:${data.turn}:${data.step}`, kind: 'message', role: 'assistant', text, status: 'completed' });
-    return items;
+    // 只投影可见助手文字：模型思考（reasoning）属于模型内部过程，不进入对话处理过程。
+    const text = visibleText(content);
+    return text ? [{ id: `assistant:${data.turn}:${data.step}`, kind: 'message', role: 'assistant', text, status: 'completed' }] : [];
   }
   if (event?.type === 'user/message') { const text = visibleText(data.content); return text || data.content?.some((part: any) => part.type === 'image') ? [{ id: data.id ?? id, kind: 'message', role: 'user', text, clientRequestId: data.source?.rpcId, executionId: data.source?.rpcId, status: 'completed' }] : []; }
   if (event?.type === 'tool/call') return [{ id: data.callId, kind: 'tool', role: 'system', presentedFiles:dshPresentedFiles(data.name,data.arguments), name: typeof data.name === 'string' && data.name ? data.name : undefined, input: nativePreview(String(data.arguments ?? '')), text: String(data.name ?? '工具') + '\n' + nativePreview(String(data.arguments ?? '')), status: 'running' }];
