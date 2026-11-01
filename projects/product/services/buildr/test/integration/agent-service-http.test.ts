@@ -404,7 +404,7 @@ test('the real web CLI discovers host interruptions on listening without a brows
     assert.equal(child.exitCode,null,output);await new Promise(resolve=>setTimeout(resolve,50));
   }
   const startupLog=path.join(dataRoot,'agent-service/process/startup.log');
-  assert.match(diagnostic,/执行未完成.*尚不能确认/,JSON.stringify({output,startupLog:fs.existsSync(startupLog)?fs.readFileSync(startupLog,'utf8').slice(-6000):null}));
+  assert.match(diagnostic,/执行未完成.*核对原执行及控制资源.*不重复操作/,JSON.stringify({output,startupLog:fs.existsSync(startupLog)?fs.readFileSync(startupLog,'utf8').slice(-6000):null}));
 });
 
 
