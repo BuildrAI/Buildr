@@ -2370,6 +2370,30 @@ test('service supplies its interaction policy through the public contract to any
   } finally { await f.close(); }
 });
 
+test('a proven continuation after a question answer retains the original run and accepts its next decision',async()=>{
+  const native=fake('local',{question:true,toolSurvives:true}),f=fixture([native.executor]);
+  try{
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'local','repair then release');
+    const read=()=>f.service.conversations.read('workspace-one',chat.id);
+    const waiting=await waitUntil(read,value=>value.run?.status==='waiting-question');
+    const control=(view:ReturnType<typeof read>)=>({expectedRevision:view.revision,runId:view.run!.id,participantId:view.run!.participantId,generation:view.run!.generation});
+    await f.service.conversations.reply('workspace-one',chat.id,waiting.requests[0].id,{...control(waiting),answer:{scope:'yes'}});
+    const stage=await waitUntil(read,value=>value.run?.status==='tools-active');
+    const input=native.sends[0],context=native.contexts.get(input.contextRef.id)!;
+    context.observation={status:'running',executionRef:context.observation.executionRef,tools:[]};
+    input.onEvent({type:'observation',observation:context.observation});
+    input.onEvent({type:'item',item:{id:'continuation-tool',kind:'tool',role:'system',name:'read',text:'repair evidence',executionId:context.observation.executionRef!.id,status:'completed'}});
+    input.onEvent({type:'request',request:{id:'release-decision',kind:'question',title:'发布范围',questions:[{id:'scope',label:'发布范围',options:[{id:'yes',label:'继续'}]}]}});
+    const followup=read();assert.equal(followup.run!.id,stage.run!.id);assert.equal(followup.run!.status,'waiting-question');
+    assert.equal(followup.requests.length,1);assert.ok(followup.entries.some(entry=>entry.name==='read'&&entry.runId===stage.run!.id));
+    await f.service.conversations.reply('workspace-one',chat.id,followup.requests[0].id,{...control(followup),answer:{scope:'yes'}});
+    assert.equal(read().run!.status,'running');assert.equal(native.sends.length,1);assert.equal(native.replies.length,2);
+    context.observation={status:'idle',executionRef:context.observation.executionRef,tools:[]};input.onEvent({type:'observation',observation:context.observation});
+    assert.equal(read().run!.status,'completed');
+  }finally{await f.close();}
+});
+
 test('request snapshots require exact execution identity and preserve public request bindings', async () => {
   const native = fake('local', { question: true }), f = fixture([native.executor]);
   try {

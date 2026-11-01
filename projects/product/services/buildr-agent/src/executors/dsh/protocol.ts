@@ -8,6 +8,59 @@ function isUserInput(event: any): boolean {
 export function dshToolOutcomeUnknown(event:any):boolean {
   return event?.type==='tool/result'&&event.data?.error?.code==='TOOL_OUTCOME_UNKNOWN';
 }
+
+/** Native provenance, never assistant prose, connects autonomous follow-up turns. */
+export class DshExecutionLineage {
+  currentTurn?: number;
+  readonly turns = new Map<number, string>();
+  private children = new Map<string, string>();
+  private pendingChildren = new Map<string, { owner: string; label: string }>();
+  private jobs = new Map<string, { owner: string; label: string }>();
+  private settledJobs = new Map<string, string>();
+  private uncertain = new Set<string>();
+  private contextId?: string;
+  constructor(contextId?: string) { this.contextId = contextId; }
+  record(event: any): string | undefined {
+    const data = event.data ?? {};
+    if (event.type === 'turn/start') { this.currentTurn = data.turn; return; }
+    const nativeTurn = data.turn ?? this.currentTurn;
+    const source = data.source;
+    if (event.type === 'user/message' && nativeTurn !== undefined) {
+      let owner: string | undefined;
+      if (isUserInput(event) && typeof source?.rpcId === 'string') owner = source.rpcId;
+      else if (source?.kind === 'subagent-settled') {
+        owner = this.children.get(source.senderSessionId);
+        if (owner) this.pendingChildren.delete(source.senderSessionId);
+      } else if (source?.kind === 'tool-jobs') {
+        owner = this.settledJobs.get(source.jobId);
+        if (owner) this.settledJobs.delete(source.jobId);
+        // Older DSH notices omit the job identity. Preserve uncertainty rather
+        // than borrowing a nearby job's owner or parsing assistant-visible prose.
+        else if (!this.turns.has(nativeTurn)) for (const candidate of this.settledJobs.values()) this.uncertain.add(candidate);
+      }
+      if (owner && !this.turns.has(nativeTurn)) this.turns.set(nativeTurn, owner);
+    }
+    const owner = nativeTurn === undefined ? undefined : this.turns.get(nativeTurn);
+    if (event.type === 'subagent/catalog' && owner && typeof data.childId === 'string') {
+      this.children.set(data.childId, owner);
+      this.pendingChildren.set(data.childId, { owner, label: String(data.label ?? 'DSH 辅助工作') });
+    }
+    if (event.type === 'job/registered' && owner && typeof data.jobId === 'string' && (!this.contextId || data.owner === this.contextId)) {
+      this.jobs.set(data.jobId, { owner, label: 'DSH 后台工作' });
+    }
+    if (event.type === 'job/settled' && this.jobs.has(data.jobId)) {
+      this.settledJobs.set(data.jobId, this.jobs.get(data.jobId)!.owner);
+      this.jobs.delete(data.jobId);
+    }
+    return owner;
+  }
+  background(owners: ReadonlySet<string>): Array<{ id: string; label: string; status: 'running' | 'unknown' }> {
+    const running = [...[...this.pendingChildren].map(([id, value]) => ['dsh-child:' + id, value] as const),
+      ...[...this.jobs].map(([id, value]) => ['dsh-job:' + id, value] as const)]
+      .filter(([, value]) => owners.has(value.owner)).map(([id, value]) => ({ id, label: value.label, status: 'running' as const }));
+    return [...running, ...[...this.uncertain].filter(owner => owners.has(owner)).map(owner => ({ id: 'dsh-continuation:' + owner, label: 'DSH 接续归属待确认', status: 'unknown' as const }))];
+  }
+}
 export function dshItem(event: any): ExecutorItem[] {
   const data = event?.data ?? {}; const id = `event:${event?.seq}`;
   if (event?.type === 'user/message' && !isUserInput(event)) return [];
@@ -20,15 +73,12 @@ export function dshItem(event: any): ExecutorItem[] {
 
 /** Native request UUIDs provide exact source identity across cold history reads. */
 export function dshHistoryItems(events: any[]): ExecutorItem[] {
-  const turnRequests = new Map<number, string>(); let currentTurn: number | undefined;
+  const lineage = new DshExecutionLineage();
+  for (const event of events) lineage.record(event);
+  let currentTurn: number | undefined; const result: ExecutorItem[] = [];
   for (const event of events) {
     if (event.type === 'turn/start') currentTurn = event.data.turn;
-    if (isUserInput(event) && currentTurn !== undefined && !turnRequests.has(currentTurn) && typeof event.data?.source?.rpcId === 'string') turnRequests.set(currentTurn, event.data.source.rpcId);
-  }
-  currentTurn = undefined; const result: ExecutorItem[] = [];
-  for (const event of events) {
-    if (event.type === 'turn/start') currentTurn = event.data.turn;
-    for (const item of dshItem(event)) result.push({ ...item, executionId: event.data?.source?.rpcId ?? turnRequests.get(event.data?.turn ?? currentTurn) });
+    for (const item of dshItem(event)) result.push({ ...item, executionId: event.data?.source?.rpcId ?? lineage.turns.get(event.data?.turn ?? currentTurn!) });
   }
   const latest = new Map<string, ExecutorItem>();
   for (const item of result) latest.set(item.id, { ...latest.get(item.id), ...item });
@@ -37,20 +87,21 @@ export function dshHistoryItems(events: any[]): ExecutorItem[] {
 
 /** A cold read answers only for the turn containing this exact client request. */
 export function dshExecutionObservation(events: any[], requestId: string, knownItems:readonly ExecutorItem[]=[]): import('../../contracts.ts').ExecutorObservation {
-  let currentTurn: number | undefined; let targetTurn: number | undefined;
-  for (const event of events) {
-    if (event.type === 'turn/start') currentTurn = event.data.turn;
-    if (isUserInput(event) && event.data?.source?.rpcId === requestId) targetTurn = currentTurn;
-  }
+  const lineage = new DshExecutionLineage();
+  for (const event of events) lineage.record(event);
+  const owned = [...lineage.turns].filter(([, owner]) => owner === requestId).map(([turn]) => turn);
+  const targetTurn = owned.at(-1);
   if (targetTurn === undefined) return { status: 'unknown', tools: [], diagnostic: 'dsh_exact_execution_not_found' };
   const received=new Set(knownItems.filter(item=>item.kind==='tool'&&item.executionId===requestId&&item.status==='completed').map(item=>item.id));
   const tools = new Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown' }>(); let end: string | undefined;
   for (const event of events) {
-    if (event.data?.turn !== targetTurn) continue;
+    if (!owned.includes(event.data?.turn)) continue;
     if (event.type === 'tool/call') tools.set(event.data.callId, { id: event.data.callId, label: String(event.data.name ?? '工具'), status: 'unknown' });
     if (event.type === 'tool/result' && tools.has(event.data.message?.toolCallId)) tools.get(event.data.message.toolCallId)!.status = dshToolOutcomeUnknown(event)&&!received.has(event.data.message.toolCallId)?'unknown':'completed';
-    if (event.type === 'turn/end') end = event.data.reason?.kind;
+    if (event.type === 'turn/end' && event.data.turn === targetTurn) end = event.data.reason?.kind;
   }
+  for (const tool of lineage.background(new Set([requestId]))) tools.set(tool.id, tool);
+  if ([...tools.values()].some(tool => tool.status === 'running')) return { status: 'tools-active', executionRef: { id: requestId }, tools: [...tools.values()] };
   if (end && !['completed','aborted','cancelled','interrupted'].includes(end)) return {status:'unknown',executionRef:{id:requestId},tools:[...tools.values()],diagnostic:'dsh_native_execution_failed'};
   return { status: [...tools.values()].some(tool => tool.status === 'unknown') ? 'unknown' : !end ? 'unknown' : ['aborted', 'cancelled', 'interrupted'].includes(end) ? 'stopped' : 'idle', executionRef: { id: requestId }, tools: [...tools.values()] };
 }

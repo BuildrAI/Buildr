@@ -117,7 +117,7 @@ test('DSH confirmed cancellation remains authoritative after a lost supplementar
  const streams:Stream[]=[],visible:ExecutorEvent[]=[],cwd='/synthetic/workspace',ok=(value:any)=>({ok:true,value});let sequence=0;
  const publish=(event:any)=>{event.seq=++sequence;for(const stream of streams)stream.push({type:'event',event});};
  const remote={permissionPresets:{catalog:async()=>ok({defaultPreset:'workspace-write',options:[{value:'workspace-write'}]})},commands:{list:async()=>ok([{name:'permission',definitionId:'@deepseek-ai/dsh-permission-presets'}]),execute:async()=>ok({result:{kind:'success'}})},session:{create:async()=>ok({sessionId:'unknown-input'}),follow:()=>{const stream=new Stream();streams.push(stream);stream.push({type:'snapshot',header:{id:'unknown-input',cwd},cursor:0,records:[],projections:{values:{permissions:{currentValue:'workspace-write'}}}});return stream;},prompt:async(input:any)=>{
-  if(input.mode==='steer')throw Error('receipt lost');queueMicrotask(()=>publish({type:'turn/start',data:{turn:1}}));return ok({accepted:true});
+  if(input.mode==='steer')throw Error('receipt lost');queueMicrotask(()=>{publish({type:'turn/start',data:{turn:1}});publish({type:'user/message',data:{id:'initial',source:{rpcId:input.requestId},content:input.content}});});return ok({accepted:true});
  },cancel:async()=>{publish({type:'turn/end',data:{turn:1,reason:{kind:'aborted'}}});return ok({accepted:true});},projections:async()=>ok({kind:'sequenced',values:{inbox:{'next-step':[{id:'queued-input',source:{rpcId:'unknown'},content:[{type:'text',text:'extra'}]}],'next-turn':[{id:'unrelated',source:{rpcId:'other-owner'},content:[{type:'text',text:'retain'}]}]}}}),updateQueue:async(input:any)=>{assert.equal(input.itemId,'queued-input');assert.equal(input.action.kind,'remove');return ok({accepted:true});}}};
  const runtime=Reflect.construct(DshRuntime,['binding-unknown',{close:async()=>{for(const stream of streams)await stream.dispose();}},{remote,close:async()=>{},ctx:{}}]) as AgentRuntime;
  try{
@@ -132,7 +132,7 @@ test('DSH stop holds admission and cancels a native turn started by a late suppl
  const streams:Stream[]=[],visible:ExecutorEvent[]=[],cwd='/synthetic/workspace',ok=(value:any)=>({ok:true,value});let sequence=0,native=1,cancels=0,release!:()=>void;
  const admission=new Promise<void>(resolve=>{release=resolve;});const publish=(event:any)=>{event.seq=++sequence;for(const stream of streams)stream.push({type:'event',event});};
  const remote={permissionPresets:{catalog:async()=>ok({defaultPreset:'workspace-write',options:[{value:'workspace-write'}]})},commands:{list:async()=>ok([{name:'permission',definitionId:'@deepseek-ai/dsh-permission-presets'}]),execute:async()=>ok({result:{kind:'success'}})},session:{create:async()=>ok({sessionId:'late-input'}),follow:()=>{const stream=new Stream();streams.push(stream);stream.push({type:'snapshot',header:{id:'late-input',cwd},cursor:0,records:[],projections:{values:{permissions:{currentValue:'workspace-write'}}}});return stream;},prompt:async(input:any)=>{
-  if(input.mode==='queue'){queueMicrotask(()=>publish({type:'turn/start',data:{turn:1}}));return ok({accepted:true});}
+  if(input.mode==='queue'){queueMicrotask(()=>{publish({type:'turn/start',data:{turn:1}});publish({type:'user/message',data:{id:'initial',source:{rpcId:input.requestId},content:input.content}});});return ok({accepted:true});}
   await admission;native=2;publish({type:'turn/start',data:{turn:2}});publish({type:'user/message',data:{id:'extra',content:input.content,source:{rpcId:input.requestId}}});return ok({accepted:true});
  },cancel:async()=>{cancels++;publish({type:'turn/end',data:{turn:native,reason:{kind:'aborted'}}});return ok({accepted:true});},projections:async()=>ok({kind:'sequenced',values:{inbox:{'next-step':[],'next-turn':[]}}})}};
  const runtime=Reflect.construct(DshRuntime,['binding-late',{close:async()=>{for(const stream of streams)await stream.dispose();}},{remote,close:async()=>{},ctx:{}}]) as AgentRuntime;
@@ -151,8 +151,9 @@ test('DSH reports the native context window and input-token usage', async () => 
     permissionPresets:{catalog:async()=>ok({defaultPreset:'workspace-write',options:[{value:'workspace-write'}]})},
     commands:{list:async()=>ok([{name:'permission',definitionId:'@deepseek-ai/dsh-permission-presets'}]),execute:async()=>ok({result:{kind:'success'}})},
     session:{create:async()=>ok({sessionId:'usage-session'}),follow:()=>{const stream=new Stream();streams.push(stream);stream.push({type:'snapshot',header:{id:'usage-session',cwd},cursor:0,records:[],projections:{values:{permissions:{currentValue:'workspace-write'}}}});return stream;},
-      prompt:async(_input:any)=>{queueMicrotask(()=>{
+      prompt:async(input:any)=>{queueMicrotask(()=>{
         publish({type:'turn/start',data:{turn:1}});
+        publish({type:'user/message',data:{id:'usage-input',source:{rpcId:input.requestId},content:input.content}});
         publish({type:'request/context',data:{provider:'buildr-models',model:'qoder-deepseek-flash',contextWindow:500000}});
         publish({type:'assistant/message',data:{turn:1,step:1,usage:{inputTokens:23190,outputTokens:137,totalTokens:23327},message:{content:[{type:'text',text:'完成'}]}}});
         publish({type:'turn/end',data:{turn:1,reason:{kind:'completed'}}});
@@ -198,7 +199,7 @@ function reconnectFixture() {
       follow:()=>{const stream=new Stream();streams.push(stream);stream.push({type:'snapshot',header:{id:'live-reconnect',cwd},cursor:events.length,records:events.slice(-2).map(event=>({event})),hasMore:events.length>2,projections:{values:{permissions:{currentValue:'workspace-write'}}},assistantStream:{revision:1,activeAttempt:{attemptId:'partial',turn:1,step:2,nextIndex:5,stream:[{type:'reasoning-chunks',index:0,time0:1,dt:[0],texts:['hidden reasoning']},{type:'text-chunks',index:1,time0:1,dt:[0],texts:['已补回']}]}}});return stream;},
       page:async(input:any)=>{const records=events.filter(event=>event.seq<=input.throughSeq&&(input.beforeSeq===undefined||event.seq<input.beforeSeq));return ok({records:records.slice(-2).map(event=>({event})),hasMore:records.length>2});},
       prompt:async(input:any)=>{sends++;publish({type:'turn/start',data:{turn:1}});publish({type:'user/message',data:{id:'original',source:{kind:'user',rpcId:input.requestId},content:input.content}});return ok({accepted:true});},
-      cancel:async()=>{publish({type:'turn/end',data:{turn:1,reason:{kind:'cancelled'}}});return ok({});},
+      cancel:async()=>{publish({type:'turn/end',data:{turn:events.findLast(event=>event.type==='turn/start')?.data.turn??1,reason:{kind:'cancelled'}}});return ok({});},
     },
   };
   const runtime=Reflect.construct(DshRuntime,['live-binding',{close:async()=>{for(const stream of streams)await stream.dispose();}},{remote,close:async()=>{},ctx:{}}]) as AgentRuntime;
@@ -272,5 +273,103 @@ test('DSH close settles an accepted send even when no more native frames arrive'
     const failed=assert.rejects(sending,/agent_native_process_closed/);
     await eventually(()=>f.visible.some(event=>event.type==='accepted'));await f.runtime.close();await failed;
     assert.equal(f.runtime.closed,true);assert.equal(f.streams.filter(stream=>stream.active).length,0);
+  }finally{await f.runtime.close();}
+});
+
+test('DSH tracks a native child wakeup after a stage reply, including tools, questions and exact stop',async()=>{
+  const f=reconnectFixture();
+  try{
+    const contextRef=await f.runtime.createContext({cwd:f.cwd}),executionRef={id:'goal-request'};
+    const sending=f.runtime.send({contextRef,cwd:f.cwd,text:'release after repair',images:[],clientRequestId:executionRef.id,onEvent:event=>f.visible.push(event)});
+    await eventually(()=>f.visible.some(event=>event.type==='accepted'));
+    f.publish({type:'subagent/catalog',data:{childId:'repair-child',mode:'continuable',label:'repair'}});
+    f.publish({type:'assistant/message',data:{turn:1,step:1,message:{content:[{type:'text',text:'修复后继续发布。'}]}}});
+    f.publish({type:'turn/end',data:{turn:1,reason:{kind:'completed'}}});await sending;
+    const waiting=await f.runtime.observe({contextRef,executionRef});
+    assert.equal(waiting.status,'tools-active');
+    assert.ok(waiting.tools.some(tool=>tool.status==='running'));
+
+    f.publish({type:'turn/start',data:{turn:2}});
+    f.publish({type:'user/message',data:{id:'child-notice',source:{kind:'subagent-settled',senderSessionId:'repair-child'},content:[{type:'text',text:'Child failed without results.'}]}});
+    f.publish({type:'tool/call',data:{turn:2,callId:'repair-tool',name:'read',arguments:'{}'}});
+    f.publish({type:'tool/result',data:{turn:2,message:{toolCallId:'repair-tool',content:[{type:'text',text:'current repair results'}]}}});
+    await eventually(()=>f.visible.some(event=>event.type==='item'&&event.item.id==='repair-tool'&&event.item.status==='completed'));
+    assert.equal((await f.runtime.observe({contextRef,executionRef})).status,'running');
+    const answer=(f.runtime as any).question({agent:{id:contextRef.id},questions:[{id:'release',question:'确认公开？',options:[{label:'暂缓'}]}],wait:{callId:'followup-question'}});
+    await eventually(()=>f.visible.some(event=>event.type==='request'&&event.request.id==='followup-question'));
+    assert.equal((await f.runtime.observe({contextRef,executionRef})).status,'waiting');
+    await f.runtime.reply({contextRef,executionRef,requestId:'followup-question',answer:{release:'暂缓'}});
+    assert.deepEqual(await answer,{answers:[{id:'release',selected:['暂缓']}]});
+    await f.runtime.stop({contextRef,executionRef});
+    await eventually(()=>f.visible.some(event=>event.type==='completed'&&event.status==='stopped'));
+    assert.equal((await f.runtime.observe({contextRef,executionRef})).status,'stopped');
+    assert.equal(f.sends,1);
+    assert.ok(!f.visible.some(event=>event.type==='item'&&event.item.role==='user'&&event.item.text.includes('Child failed')));
+  }finally{await f.runtime.close();}
+});
+
+test('DSH reconnects a child continuation after the original native turn ended without resending the goal',async()=>{
+  const f=reconnectFixture();
+  try{
+    const contextRef=await f.runtime.createContext({cwd:f.cwd}),executionRef={id:'reconnect-goal'};
+    const sending=f.runtime.send({contextRef,cwd:f.cwd,text:'goal',images:[],clientRequestId:executionRef.id,onEvent:event=>f.visible.push(event)});
+    await eventually(()=>f.visible.some(event=>event.type==='accepted'));
+    f.publish({type:'subagent/catalog',data:{childId:'child',label:'repair'}});
+    f.publish({type:'turn/end',data:{turn:1,reason:{kind:'completed'}}});await sending;
+    await f.streams.find(stream=>stream.active)!.dispose();
+    await eventually(()=>f.visible.some(event=>event.type==='observation'&&event.observation.status==='unknown'));
+    f.publish({type:'turn/start',data:{turn:2}});
+    f.publish({type:'user/message',data:{id:'wake',source:{kind:'subagent-settled',senderSessionId:'child'},content:[{type:'text',text:'done'}]}});
+    f.publish({type:'tool/call',data:{turn:2,callId:'gap-followup',name:'read'}});
+    f.publish({type:'tool/result',data:{turn:2,message:{toolCallId:'gap-followup',content:[{type:'text',text:'followup result'}]}}});
+    await f.runtime.observe({contextRef,executionRef});
+    assert.equal((await f.runtime.observe({contextRef,executionRef})).status,'running');
+    assert.ok(f.visible.some(event=>event.type==='item'&&event.item.id==='gap-followup'&&event.item.status==='completed'&&event.item.executionId===executionRef.id));
+    f.publish({type:'turn/end',data:{turn:2,reason:{kind:'completed'}}});
+    await eventually(()=>f.visible.filter(event=>event.type==='completed').length===2);
+    assert.equal((await f.runtime.observe({contextRef,executionRef})).status,'idle');
+    const history=await f.runtime.readHistory({contextRef,cwd:f.cwd});
+    assert.equal(history.find(item=>item.id==='gap-followup')?.executionId,executionRef.id);
+    assert.equal(f.streams.filter(stream=>stream.active).length,1);assert.equal(f.sends,1);
+  }finally{await f.runtime.close();}
+});
+
+test('DSH ignores foreign native turns in durable and streaming output after completion',async()=>{
+  const f=reconnectFixture();
+  try{
+    const contextRef=await f.runtime.createContext({cwd:f.cwd}),executionRef={id:'original-goal'};
+    const sending=f.runtime.send({contextRef,cwd:f.cwd,text:'goal',images:[],clientRequestId:executionRef.id,onEvent:event=>f.visible.push(event)});
+    await eventually(()=>f.visible.some(event=>event.type==='accepted'));
+    f.publish({type:'turn/end',data:{turn:1,reason:{kind:'completed'}}});await sending;
+    for(const source of [{kind:'user',rpcId:'foreign'},{kind:'subagent-settled',senderSessionId:'unknown'}]){
+      const turn=source.kind==='user'?2:3;
+      f.publish({type:'turn/start',data:{turn}});
+      f.publish({type:'user/message',data:{id:'foreign-'+turn,source,content:[{type:'text',text:'foreign input'}]}});
+      const stream=f.streams.find(stream=>stream.active)!;
+      stream.push({type:'assistant-stream',frame:{type:'start',attemptId:'foreign-'+turn,turn,step:1}});
+      stream.push({type:'assistant-stream',frame:{type:'chunk',attemptId:'foreign-'+turn,index:0,chunk:{type:'text-delta',text:'foreign streamed result'}}});
+      f.publish({type:'tool/call',data:{turn,callId:'foreign-tool-'+turn,name:'read'}});
+      f.publish({type:'assistant/message',data:{turn,step:1,message:{content:[{type:'text',text:'foreign durable result'}]}}});
+      f.publish({type:'turn/end',data:{turn,reason:{kind:'completed'}}});
+    }
+    await new Promise(resolve=>setTimeout(resolve,5));
+    assert.ok(!f.visible.some(event=>event.type==='item'&&(event.item.text.includes('foreign')||event.item.id.includes('foreign'))));
+    assert.equal((await f.runtime.observe({contextRef,executionRef})).status,'idle');assert.equal(f.sends,1);
+  }finally{await f.runtime.close();}
+});
+
+test('DSH replays a terminal whose event consumer failed after the native state changed',async()=>{
+  const f=reconnectFixture();let failOnce=true;
+  try{
+    const contextRef=await f.runtime.createContext({cwd:f.cwd}),executionRef={id:'terminal-write-failed'};
+    const sending=f.runtime.send({contextRef,cwd:f.cwd,text:'goal',images:[],clientRequestId:executionRef.id,onEvent:event=>{
+      if(failOnce&&event.type==='completed'){failOnce=false;throw new Error('local save failed');}
+      f.visible.push(event);
+    }});
+    const failed=assert.rejects(sending,/dsh_event_observation_lost/);
+    await eventually(()=>f.visible.some(event=>event.type==='accepted'));
+    f.publish({type:'turn/end',data:{turn:1,reason:{kind:'completed'}}});await failed;
+    assert.equal((await f.runtime.observe({contextRef,executionRef})).status,'idle');
+    assert.ok(f.visible.some(event=>event.type==='completed'&&event.status==='completed'));assert.equal(f.sends,1);
   }finally{await f.runtime.close();}
 });

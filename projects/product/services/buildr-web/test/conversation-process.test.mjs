@@ -25,6 +25,21 @@ test('当前轮未结束时说明仍在过程，完成后才显示最终答复',
   }
   assert.equal(groupConversationStream(entries,{id:'r1',status:'completed'})[1].entry.id,'n');
 });
+
+test('后台可继续输入、保留旧执行和终态与执行事实冲突时，阶段说明不提升为最终答复',()=>{
+  const entries=[tool('t'),message('stage','已开始修复，稍后继续')];
+  const pending={id:'r1',status:'tools-active',canContinue:true,tools:[{id:'child',status:'running'}],executionState:'active'};
+  for(const run of [pending,{...pending,status:'completed'},{...pending,status:'completed',tools:[],executionState:'unknown'}]){
+    const grouped=groupConversationStream(entries,run);
+    assert.equal(grouped.length,1);assert.equal(grouped[0].type,'process-block');assert.equal(grouped[0].active,true);
+  }
+  assert.equal(groupConversationStream(entries,{id:'new',status:'running'},[pending]).filter(item=>item.type==='entry').length,0);
+  const turn=conversationStreamTurns(groupConversationStream(entries,pending))[0];
+  assert.deepEqual(conversationTurnExecution(turn,pending),{current:true,active:true,waiting:'仍有工作在进行'});
+  assert.equal(conversationTurnExecution(turn,{...pending,resourcesReleased:true}).active,false);
+  const ended=groupConversationStream(entries,{...pending,status:'completed',executionState:'ended',tools:[]});
+  assert.equal(ended.at(-1).entry.id,'stage');
+});
 test('普通无工具回答不生成空过程；没有助手答复时不伪造结论',()=>{
   assert.deepEqual(groupConversationStream([message('a','答复')]).map(item=>item.type),['entry']);
   assert.deepEqual(groupConversationStream([tool('t')]).map(item=>item.type),['process-block']);

@@ -1,5 +1,5 @@
 import {createConversationInputAttempts} from '../src/features/agent-conversations/conversation-actions.ts';
-import {forkableReplyIds} from '../src/features/agent-conversations/conversation-fork.ts';
+import {finalReplyIds,forkableReplyIds} from '../src/features/agent-conversations/conversation-fork.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {needsConversationObservation,conversationObservationKey} from '../src/features/agent-conversations/conversation-state.ts';
@@ -588,6 +588,24 @@ test('只在每轮最终答复提供分叉，后续执行不遮蔽较早答复',
   assert.deepEqual([...forkableReplyIds(view)],['final']);
   assert.deepEqual([...forkableReplyIds({...view,run:{id:'new',status:'completed'}})],['final','running']);
   assert.equal(forkableReplyIds({...view,forkState:{status:'failed'}}).size,0);
+});
+
+test('答复操作栏同时遵守当前与保留执行事实，输入可继续不等于本轮结束',()=>{
+  const final={id:'stage',runId:'current',role:'assistant',kind:'message',status:'completed'};
+  const view={...conversation,requests:[],entries:[final],run:{id:'current',status:'tools-active',canContinue:true,tools:[{id:'child',status:'running'}]}};
+  for(const status of ['running','waiting-question','waiting-approval','unknown','tools-active']){
+    const current={...view,run:{...view.run,status}};
+    assert.equal(finalReplyIds(current).size,0);assert.equal(forkableReplyIds(current).size,0);
+    const retained={...current,run:{id:'new',status:'completed',tools:[]},retainedRuns:[current.run]};
+    assert.equal(finalReplyIds(retained).size,0);assert.equal(forkableReplyIds(retained).size,0);
+  }
+  const done={...view,run:{id:'current',status:'completed',executionState:'ended',tools:[]}};
+  assert.deepEqual([...finalReplyIds(done)],['stage']);assert.deepEqual([...forkableReplyIds(done)],['stage']);
+  for(const executionState of ['active','unknown'])assert.equal(finalReplyIds({...done,run:{...done.run,executionState}}).size,0);
+  assert.equal(finalReplyIds({...done,requests:[{runId:'current'}]}).size,0);
+  assert.deepEqual([...finalReplyIds({...done,forkState:{status:'failed'}})],['stage']);
+  assert.equal(forkableReplyIds({...done,forkState:{status:'failed'}}).size,0);
+  assert.equal(finalReplyIds({...done,entries:[final,{...final,id:'streaming',status:'running'}]}).size,0);
 });
 
 test('子任务报告不能分叉或遮蔽同轮主助手的最终答复',()=>{

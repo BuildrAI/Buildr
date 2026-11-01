@@ -91,7 +91,7 @@ test('DSH native model observation updates its real default and provider title s
     page: async () => ok({ records: events.map(event => ({ event })), hasMore: false }),
     selectModel: async (input: any) => { selected = input.model; effort = input.reasoningEffort; return ok({}); },
     modelCatalog: async () => ok({ default: { provider: 'official', model: selected, reasoningEffort: effort }, groups: [{ id: 'official', models: ['a', 'b'].map(id => ({ id, reasoning: { efforts: [{ id: 'light', name: 'Light' }, { id: 'deep', name: 'Deep' }], defaultEffort: 'light' } })) }] }),
-    prompt: async () => { setTimeout(() => { publish({ type: 'turn/start', data: { turn: 1 } }); publish({ type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } }); }, 1); return ok({}); },
+    prompt: async (input: any) => { setTimeout(() => { publish({ type: 'turn/start', data: { turn: 1 } }); publish({ type: 'user/message', data: { id: 'title-work-input', source: { kind: 'user', rpcId: input.requestId }, content: input.content } }); publish({ type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } }); }, 1); return ok({}); },
   } };
   const host = { close: async () => { for (const stream of streams) await stream.dispose(); } };
   const runtime = Reflect.construct(DshRuntime, ['fixture-binding', host, { remote }]) as AgentRuntime;

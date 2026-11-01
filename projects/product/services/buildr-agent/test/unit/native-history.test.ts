@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { dshHistoryItems, dshItem } from '../../src/executors/dsh/protocol.ts';
+import { DshExecutionLineage, dshExecutionObservation, dshHistoryItems, dshItem } from '../../src/executors/dsh/protocol.ts';
 import { qoderHistoryItems, qoderResultOutcome, qoderInterruptionIds, qoderInterruptedObservation } from '../../src/executors/qoder/protocol.ts';
 
 test('Qoder native task notifications preserve the original execution in history without inventing user input', () => {
@@ -183,4 +183,47 @@ test('DSH native synthetic repair cannot turn an unknown side effect into a comp
  assert.equal(dshExecutionObservation(events,'request',[{id:'operation',kind:'tool',role:'system',text:'another execution',executionId:'other',status:'completed'}]).status,'unknown');
  result.data.error={code:'TOOL_NOT_STARTED',name:'ToolNotStartedError'};assert.equal(dshExecutionObservation(events,'request').status,'stopped');
  result.data.error={code:'KNOWN_TOOL_FAILURE',name:'ToolError'};assert.equal(dshExecutionObservation(events,'request').status,'stopped');assert.equal(dshHistoryItems(events).find(item=>item.id==='operation')?.status,'failed');
+});
+
+test('DSH cold history follows proven child settlement and isolates foreign requests and unknown notices',()=>{
+  const start=(turn:number)=>({type:'turn/start',data:{turn}});
+  const end=(turn:number)=>({type:'turn/end',data:{turn,reason:{kind:'completed'}}});
+  const user=(id:string,source:any)=>({type:'user/message',data:{id,source,content:[{type:'text',text:id}]}});
+  const message=(turn:number,text:string)=>({type:'assistant/message',data:{turn,step:1,message:{content:[{type:'text',text}]}}});
+  const events:any[]=[start(1),user('original',{kind:'user',rpcId:'release'}),{type:'subagent/catalog',data:{childId:'repair',label:'repair'}},end(1)];
+  assert.equal(dshExecutionObservation(events,'release').status,'tools-active');
+  events.push(start(2),user('wakeup',{kind:'subagent-settled',senderSessionId:'repair'}),message(2,'continuing'));
+  assert.equal(dshExecutionObservation(events,'release').status,'unknown');
+  events.push({type:'tool/call',data:{turn:2,callId:'repair-check',name:'read'}},{type:'tool/result',data:{turn:2,message:{toolCallId:'repair-check',content:[{type:'text',text:'verified'}]}}},end(2));
+  assert.equal(dshExecutionObservation(events,'release').status,'idle');
+  assert.equal(dshExecutionObservation(events,'release').tools[0].id,'repair-check');
+  const items=dshHistoryItems(events);
+  assert.equal(items.find(item=>item.text==='continuing')?.executionId,'release');
+  assert.equal(items.find(item=>item.id==='repair-check')?.executionId,'release');
+  assert.ok(!items.some(item=>item.text==='wakeup'));
+  events.push(start(3),user('foreign',{kind:'user',rpcId:'other'}),message(3,'foreign result'),end(3));
+  events.push(start(4),user('unknown',{kind:'subagent-settled',senderSessionId:'unknown-child'}),message(4,'unknown result'),end(4));
+  assert.equal(dshHistoryItems(events).find(item=>item.text==='foreign result')?.executionId,'other');
+  assert.equal(dshHistoryItems(events).find(item=>item.text==='unknown result')?.executionId,undefined);
+  assert.equal(dshExecutionObservation(events,'release').status,'idle');
+  assert.equal(dshExecutionObservation(events,'other').status,'idle');
+});
+
+test('DSH maps background job wakeups only from known session-owned jobs and rejects ambiguous provenance',()=>{
+  const lineage=new DshExecutionLineage('session');
+  const root=(turn:number,id:string)=>{lineage.record({type:'turn/start',data:{turn}});lineage.record({type:'user/message',data:{source:{kind:'user',rpcId:id}}});};
+  root(1,'release');lineage.record({type:'job/registered',data:{owner:'session',jobId:'job'}});
+  lineage.record({type:'job/registered',data:{owner:'foreign-session',jobId:'foreign-job'}});
+  assert.deepEqual(lineage.background(new Set(['release'])).map(tool=>tool.id),['dsh-job:job']);
+  lineage.record({type:'job/settled',data:{jobId:'job'}});
+  lineage.record({type:'turn/start',data:{turn:2}});
+  assert.equal(lineage.record({type:'user/message',data:{source:{kind:'tool-jobs',jobId:'job'}}}),'release');
+  assert.equal(lineage.background(new Set(['release'])).length,0);
+  root(3,'one');lineage.record({type:'job/registered',data:{owner:'session',jobId:'one'}});
+  root(4,'two');lineage.record({type:'job/registered',data:{owner:'session',jobId:'two'}});
+  for(const jobId of ['one','two'])lineage.record({type:'job/settled',data:{jobId}});
+  lineage.record({type:'turn/start',data:{turn:5}});
+  assert.equal(lineage.record({type:'user/message',data:{source:{kind:'tool-jobs'}}}),undefined);
+  assert.equal(lineage.background(new Set(['one','two'])).length,2);
+  assert.ok(lineage.background(new Set(['one','two'])).every(tool=>tool.status==='unknown'));
 });

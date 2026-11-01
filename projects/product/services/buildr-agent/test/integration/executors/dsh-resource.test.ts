@@ -66,6 +66,23 @@ test('DSH job observation failure holds release while ordinary execution still w
  }finally{await f.close();}
 });
 
+test('DSH retains exact control for a child between native turns even with an empty job roster',{skip:process.platform==='win32'},async()=>{
+ const f=await fixture();try{
+  const rt=f.runtime(),run=await f.start(rt);
+  f.publish(run.contextRef.id,{type:'subagent/catalog',data:{childId:'owned-child',label:'repair'}});
+  f.finish(run.contextRef);await run.sending;
+  assert.equal(f.jobs.length,0);assert.equal(await rt.canRelease(run),false);
+  assert.equal((await rt.observe(run)).status,'tools-active');
+  f.publish(run.contextRef.id,{type:'turn/start',data:{turn:2}});
+  f.publish(run.contextRef.id,{type:'user/message',data:{source:{kind:'subagent-settled',senderSessionId:'owned-child'},content:[{type:'text',text:'done'}]}});
+  await f.wait(()=>run.visible.some(event=>event.type==='observation'&&event.observation.status==='running'));
+  assert.equal(await rt.canRelease(run),false);
+  f.publish(run.contextRef.id,{type:'turn/end',data:{turn:2,reason:{kind:'completed'}}});
+  await f.wait(()=>run.visible.filter(event=>event.type==='completed').length===2);
+  assert.deepEqual(await rt.canRelease(run),{executionState:'ended'});assert.equal(f.sent.length,1);
+ }finally{await f.close();}
+});
+
 test('DSH retains another active native context on the same control resource',{skip:process.platform==='win32'},async()=>{
  const f=await fixture();try{
   const rt=f.runtime(),first=await f.start(rt),other=await f.start(rt);f.finish(first.contextRef);await first.sending;

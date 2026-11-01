@@ -6,6 +6,25 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
   const {page,panel,run,step,update,input}=fixture;
   const notice=()=>panel().locator('.ac-stream-disconnect');
   const completed=()=>run('completed','codex',{executionState:'ended'});
+  await step('阶段说明及后台工作不出现最终答复操作栏，准确结束后恢复',async()=>{
+    const saved=structuredClone(fixture.conversation),sends=fixture.sends;
+    try{
+      const pending=run('tools-active','codex',{canContinue:true,executionState:'active',resourcesReleased:false,tools:[{id:'repair-child',label:'修复工作',status:'running'}]});
+      const entry={id:'goal-stage-reply',sequence:saved.entries.length+1,kind:'message',role:'assistant',text:'已开始修复，完成后继续发布准备。',provider:'codex',runId:pending.id,status:'completed',createdAt:new Date().toISOString()};
+      update({run:pending,requests:[],retainedRuns:[],entries:[...saved.entries.filter((item:any)=>item.runId!==pending.id),entry]});
+      await page.reload();await input().waitFor();
+      const stage=panel().locator('[data-entry-id="goal-stage-reply"]');await stage.waitFor();
+      assert.equal(await stage.locator('.ac-reply-actions').count(),0);
+      assert.equal(await panel().locator('.ac-turn.is-executing').count(),1);
+      await panel().getByText('仍有工作在进行',{exact:true}).waitFor();
+      await fixture.capture(page,'agent-goal-stage-still-working.png');
+      update({run:{...pending,status:'completed',executionState:'ended',tools:[]}});
+      await page.reload();await input().waitFor();
+      await panel().locator('[data-entry-id="goal-stage-reply"]').getByRole('button',{name:'复制回复',exact:true}).waitFor();
+      assert.equal(await panel().locator('.ac-turn.is-executing').count(),0);assert.equal(fixture.sends,sends);
+      await fixture.capture(page,'agent-goal-stage-ended-actions.png');
+    }finally{fixture.conversation=saved;await page.reload();await input().waitFor();}
+  });
   await step('同组合内部恢复无交接，已释放历史不常驻输入区；真正切换与未知工具仍可核对',async()=>{
     const saved=structuredClone(fixture.conversation),sends=fixture.sends;
     try{

@@ -177,25 +177,36 @@ export function participantExecutionPairs(conversation:ConversationView|null):Ar
 
 // The visible stream interleaves conversation entries with per-run process blocks.
 export type ConversationStreamItem = {type:'entry';entry:ConversationEntry}|{type:'process-block';entries:ConversationEntry[];active:boolean;finishedAt?:string};
+/** Input admission and native execution completion are separate facts. */
+export function conversationRunSettled(run?:ConversationRun):boolean {
+  return !run||['completed','stopped','failed'].includes(run.status)&&
+    run.executionState!=='active'&&run.executionState!=='unknown'&&
+    !(run.tools??[]).some(tool=>tool.status!=='completed');
+}
 /** Legacy records have no message phase: the last assistant message of a settled
  * run is its visible reply, regardless of length. Never promote live narration. */
-export function groupConversationStream(entries:readonly ConversationEntry[],currentRun?:ConversationRun):ConversationStreamItem[] {
-  const items:ConversationStreamItem[]=[];
-  const isProcess=(entry:ConversationEntry)=>entry.kind==='tool'||entry.kind==='message'&&entry.role==='assistant';
-  const finals=new Map<string,ConversationEntry>(),keys=new Map<ConversationEntry,string>();let legacy=0;
+export function finalConversationReplyIds(entries:readonly ConversationEntry[],runs:readonly ConversationRun[]=[]):Set<string> {
+  const known=new Map(runs.map(run=>[run.id,run])),finals=new Map<string,string>();let legacy=0;
   for(const entry of entries){
     if(!entry.runId&&entry.kind==='message'&&entry.role==='user')legacy++;
-    const key=entry.runId||'legacy:'+legacy;keys.set(entry,key);
-    if(entry.kind==='message'&&entry.role==='assistant'&&!entry.parentToolId&&!(entry.runId===currentRun?.id&&executionLocked(currentRun)))finals.set(key,entry);
+    if(entry.kind!=='message'||entry.role!=='assistant'||entry.parentToolId)continue;
+    const key=entry.runId||'legacy:'+legacy;
+    finals.set(key,entry.status==='running'||!conversationRunSettled(entry.runId?known.get(entry.runId):undefined)?'':entry.id);
   }
+  return new Set([...finals.values()].filter(Boolean));
+}
+export function groupConversationStream(entries:readonly ConversationEntry[],currentRun?:ConversationRun,retainedRuns:readonly ConversationRun[]=[]):ConversationStreamItem[] {
+  const items:ConversationStreamItem[]=[];
+  const runs=[...retainedRuns,...(currentRun?[currentRun]:[])],known=new Map(runs.map(run=>[run.id,run]));
+  const finals=finalConversationReplyIds(entries,runs);
+  const isProcess=(entry:ConversationEntry)=>entry.kind==='tool'||entry.kind==='message'&&entry.role==='assistant';
   for(let index=0;index<entries.length;){
     const first=entries[index];
     if(!isProcess(first)){items.push({type:'entry',entry:first});index++;continue;}
     const run:ConversationEntry[]=[];
     while(index<entries.length&&isProcess(entries[index])&&entries[index].runId===first.runId)run.push(entries[index++]);
-    const active=Boolean(currentRun&&currentRun.id===first.runId&&executionLocked(currentRun));
-    const candidate=finals.get(keys.get(first)!);
-    const result=active?undefined:run.find(entry=>entry===candidate);
+    const active=!conversationRunSettled(first.runId?known.get(first.runId):undefined);
+    const result=active?undefined:run.find(entry=>finals.has(entry.id));
     const process=result?run.filter(entry=>entry!==result):run;
     if(process.length)items.push({type:'process-block',entries:process,active,finishedAt:result?.createdAt});
     if(result)items.push({type:'entry',entry:result});
@@ -242,9 +253,10 @@ export function conversationStreamTurns(items:readonly ConversationStreamItem[])
 export function conversationTurnExecution(turn:ConversationTurnItems,run?:ConversationRun):{current:boolean;active:boolean;waiting?:string}{
   const entries=[...(turn.prompt?[turn.prompt]:[]),...turn.items.flatMap(item=>item.type==='entry'?[item.entry]:item.entries)];
   const current=Boolean(run&&entries.some(entry=>entry.runId===run.id));
-  const active=current&&Boolean(run&&['starting','running'].includes(run.status));
+  const background=run?.status==='tools-active'&&!run.resourcesReleased&&(run.executionState==='active'||(run.tools??[]).some(tool=>tool.status==='running'));
+  const active=current&&Boolean(run&&(['starting','running'].includes(run.status)||background));
   const responded=Boolean(run&&entries.some(entry=>entry.runId===run.id&&(entry.role==='assistant'||entry.kind==='tool')));
-  return {current,active,...(active&&!responded?{waiting:run?.accepted?'已送达，等待智能体回应…':'正在准备连接并确认指令送达…'}:{})};
+  return {current,active,...(active&&background?{waiting:'仍有工作在进行'}:active&&!responded?{waiting:run?.accepted?'已送达，等待智能体回应…':'正在准备连接并确认指令送达…'}:{})};
 }
 export function toolEntryHeadline(entry:ConversationEntry):string {
   return entry.text.split('\n',1)[0].trim();
