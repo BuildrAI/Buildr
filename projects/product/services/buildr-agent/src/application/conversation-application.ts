@@ -8,7 +8,7 @@ import type { AttachmentInput } from '../contracts.ts';
 import { continuationDraft, releasedContinuation } from '../domain/conversation-continuation.ts';
 import { waitingHandoffQuestions, waitingQuestionText } from '../domain/waiting-question-handoff.ts';
 import { ConversationReadModel, type ConversationReadState } from '../persistence/conversation-read-model.ts';
-import { RETRY_DELAYS, transientFailure } from '../domain/transient-failure.ts';
+import { LOCAL_CREDENTIAL_RETRIES, RETRY_DELAYS, localCredentialFailure, transientFailure } from '../domain/transient-failure.ts';
 import { NativeRequestError } from '../domain/error-diagnostic.ts';
 import {selectedOffering,modelConfiguration} from '../model-access/model-preferences.ts';
 import type {ModelOffering} from '../model-access/contracts.ts';
@@ -189,6 +189,31 @@ export class ConversationApplication {
       ...(lease.provider === 'native-qoder' && participant.connectionId === 'qoder' ? { nativeModel: { provider: 'qoder' as const, id: participant.modelId!, accountIdentity: participant.modelAccountIdentity! } } : {}),
       models: [{id: lease.model, label: lease.offering.label, isDefault: true, reasoningEfforts: lease.offering.reasoningEfforts, defaultReasoningEffort: lease.offering.defaultReasoningEffort, contextWindow: lease.offering.contextWindow, maxOutputTokens: lease.offering.maxOutputTokens, vision: lease.offering.images, tools: lease.offering.tools}] });return {runtime,model:lease.model,leaseIdentity:lease.identity};}
     catch(error){access.leases.release(lease.identity);throw error;}
+  }
+  /** A process keeps the gateway key it started with, so a rejected key is only replaced
+   *  by releasing this participant's source. Returns false when release is unconfirmed. */
+  private async retireSource(participantId:string):Promise<boolean> {
+    const pending = this.sourceRuntimes.get(participantId);
+    if (!pending) return true;
+    const source = await pending.catch(() => undefined);
+    if (!source) {
+      if (this.sourceRuntimes.get(participantId) === pending) {
+        this.sourceRuntimes.delete(participantId); this.sourceOwners.delete(participantId); this.sourceConnections.delete(participantId);
+        const failedSlot = this.sourceSlots.get(participantId); if (failedSlot) this.warmups.unclaim(failedSlot); this.sourceSlots.delete(participantId);
+      }
+      return true;
+    }
+    const releasing = this.sourceReleases.get(source.runtime); if (releasing) await releasing.catch(() => {});
+    const pendingRelease = this.sourceReleasePending.get(source.runtime);
+    if (pendingRelease && !await pendingRelease().catch(() => false)) return false;
+    try { await this.options.connections.releaseGatewayRuntime(source.runtime); }
+    catch { return false; }
+    if (source.leaseIdentity) this.options.modelAccess?.leases.release(source.leaseIdentity);
+    if (this.sourceRuntimes.get(participantId) === pending) {
+      this.sourceRuntimes.delete(participantId); this.sourceOwners.delete(participantId); this.sourceConnections.delete(participantId);
+      const slot = this.sourceSlots.get(participantId); if (slot) this.warmups.unclaim(slot); this.sourceSlots.delete(participantId);
+    }
+    return true;
   }
   private warmSlot(record:StoredConversation,participant:StoredParticipant) {
     return hash([record.view.workspaceId,record.view.id,participant.connectionId,participant.modelAccountId,participant.modelAccountIdentity,participant.modelId,participant.modelConfiguration,participant.serviceTier]);
@@ -1071,8 +1096,14 @@ export class ConversationApplication {
     const account=record.view.run.modelAccountId?this.options.modelAccess?.accounts.snapshot(record.view.run.modelAccountId):undefined;
     const quotaFailure=account&&account.identity===record.view.run.modelAccountIdentity&&modelQuotaFailure(account,account.models.find(model=>model.id===record!.view.run!.model),Date.parse(this.options.now()));
     if(quotaFailure){record.view.run.diagnostic=quotaFailure.message;this.save(record);return;}
-    if(!transientFailure(reason))return;
-    if (count >= RETRY_DELAYS.length) { record.view.run.diagnostic = `自动重试已达上限（${RETRY_DELAYS.length} 次），工作记录已保留。${record.view.run.diagnostic ?? ''}`; this.save(record); return; }
+    const credential = localCredentialFailure(reason);
+    if(!transientFailure(reason) && !credential)return;
+    if (count >= (credential ? LOCAL_CREDENTIAL_RETRIES : RETRY_DELAYS.length)) {
+      record.view.run.diagnostic = credential
+        ? `本机模型凭据重新签发后仍被拒绝，已停止自动接续，工作记录已保留。${record.view.run.diagnostic ?? ''}`
+        : `自动重试已达上限（${RETRY_DELAYS.length} 次），工作记录已保留。${record.view.run.diagnostic ?? ''}`;
+      this.save(record); return;
+    }
     if (runtime) {
       const participant = record.participants.find(value => value.id === record!.view.run!.participantId)!;
       const executionRef = record.attempts.find(value => value.runId === runId)?.executionRef;
@@ -1082,18 +1113,44 @@ export class ConversationApplication {
       record = this.currentRun(workspaceId, id, runId);
       if (this.cancelledRetries.has(runId) || !record || record.view.run?.status !== 'failed' || record.view.requests.some(request=>request.runId===runId) || record.interruption?.cancelled) return;
     }
+    if (credential) {
+      // A revoked key is only worth replacing while the account is still usable. The refresh
+      // that revokes it also downgrades the row for a moment, so a stale row is re-inspected
+      // once instead of being trusted as "logged out".
+      const access = this.options.modelAccess;
+      if (!access || !record.view.run.modelAccountId) return;
+      let holder = access.accounts.snapshot(record.view.run.modelAccountId);
+      if (!holder?.enabled) return;
+      if (holder.status !== 'ready') {
+        await access.accounts.check(holder.id).catch(() => undefined);
+        record = this.currentRun(workspaceId, id, runId);
+        if (this.cancelledRetries.has(runId) || !record || record.view.run?.status !== 'failed' || record.view.requests.some(request=>request.runId===runId) || record.interruption?.cancelled) return;
+        holder = access.accounts.snapshot(holder.id);
+        if (!holder?.enabled || holder.status !== 'ready') return;
+      }
+    }
+    // The failed turn still holds this participant's source, so the rejected key is only
+    // replaced by releasing it here; the resend then opens a fresh lease and process.
+    if (credential && (!runtime || !await this.retireSource(record.view.run.participantId))) return;
+    if (credential) {
+      record = this.currentRun(workspaceId, id, runId);
+      if (this.cancelledRetries.has(runId) || !record || record.view.run?.status !== 'failed' || record.view.requests.some(request=>request.runId===runId) || record.interruption?.cancelled) return;
+    }
+    const delay = credential ? RETRY_DELAYS[0] : RETRY_DELAYS[count];
     const diagnostic = record.view.run!.diagnostic;
     const attempt = record.attempts.find(value => value.runId === runId)!;
     attempt.automaticRetry = {rootRunId, count: count + 1};
     const controller = new AbortController();
     this.retryWaits.set(runId, controller);
     record.view.run!.status = 'starting';
-    record.view.run!.diagnostic = `暂时未完成，${RETRY_DELAYS[count] / 1000} 秒后自动重试（${count + 1}/${RETRY_DELAYS.length}）。${diagnostic ?? ''}`;
+    record.view.run!.diagnostic = credential
+      ? `本机模型凭据已失效，正在重新准备执行环境，${delay / 1000} 秒后自动接续一次。${diagnostic ?? ''}`
+      : `暂时未完成，${delay / 1000} 秒后自动重试（${count + 1}/${RETRY_DELAYS.length}）。${diagnostic ?? ''}`;
     this.save(record);
     try {
       await new Promise<void>(resolve => {
         const finish = () => { clearTimeout(timer); controller.signal.removeEventListener('abort', finish); resolve(); };
-        const timer = setTimeout(finish, RETRY_DELAYS[count]);
+        const timer = setTimeout(finish, delay);
         controller.signal.addEventListener('abort', finish, { once: true });
       });
       record = this.currentRun(workspaceId, id, runId);
@@ -1105,7 +1162,7 @@ export class ConversationApplication {
       if(latestQuotaFailure){record.view.run.diagnostic=latestQuotaFailure.message;this.save(record);return;}
       // Preparation rechecks source identity, current model, permission and saved revision.
       const draft: SendDraft = { ...prepared.draft, continueRunId: undefined, expectedRevision: record.view.revision, skipHandoffSummary: true,
-        ...(runtime ? { text: '系统自动重试：上次执行因临时服务故障明确结束，已确认没有未结束的工具。请核对原对话、当前成果及工具结果，继续完成用户尚未完成的目标；不要重放全部历史命令，不扩大原有授权。' } : {}) };
+        ...(runtime ? { text: credential ? '系统自动重试：上次执行因本机模型凭据失效而结束，已重新准备执行环境并确认没有未结束的工具。请核对原对话、当前成果及工具结果，继续完成用户尚未完成的目标；不要重放全部历史命令，不扩大原有授权。' : '系统自动重试：上次执行因临时服务故障明确结束，已确认没有未结束的工具。请核对原对话、当前成果及工具结果，继续完成用户尚未完成的目标；不要重放全部历史命令，不扩大原有授权。' } : {}) };
       const preview = this.prepareSend(workspaceId, id, draft);
       if (runtime) this.send(workspaceId, id, { ...draft, previewToken: preview.token, clientRequestId: `automatic-retry:${rootRunId}:${count + 1}` }, true);
       else {

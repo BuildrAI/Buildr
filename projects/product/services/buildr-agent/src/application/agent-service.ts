@@ -80,7 +80,7 @@ export function createAgentService(options: AgentServiceOptions) {
     discoveryTimer=setInterval(refreshInBackground,60_000);discoveryTimer.unref();
   };
   linkedChanged=connection=>{
-    if(!connection.enabled||['not-authenticated','expired'].includes(connection.status)||connection.loginAttempt&&['initializing','waiting-browser'].includes(connection.loginAttempt.state))models.invalidate('native-'+connection.id);
+    if(!connection.enabled||['not-authenticated','expired'].includes(connection.status)||connection.loginAttempt&&['initializing','waiting-browser'].includes(connection.loginAttempt.state))models.invalidate('native-'+connection.id,{abortActive:false});
     // Login completion must not wait for an unrelated source's discovery.
     if(discoveryTimer&&connection.enabled&&!connection.loginAttempt?.state.match(/^(initializing|waiting-browser|checking)$/))void models.accounts.check('native-'+connection.id).catch(()=>{});
   };

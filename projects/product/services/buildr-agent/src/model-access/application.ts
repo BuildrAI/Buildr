@@ -161,11 +161,12 @@ export class ModelAccessApplication {
       await this.save();
     }
   }
-  invalidate(id:string) {
+  /** Status-only downgrade keeps an in-flight lease alive; explicit revocation still ends it. */
+  invalidate(id:string,input:{abortActive?:boolean}={}) {
     const row=this.rows.get(id); if(!row)return;
     this.operations.set(id,(this.operations.get(id)??0)+1);
     row.status='not-authenticated';row.models=[];delete row.quota;delete row.accountLabel;delete row.observedAt;
-    for(const lease of [...this.leasesByIdentity.values()])if(lease.input.accountId===id)this.release(lease.view.identity);
+    for(const lease of [...this.leasesByIdentity.values()])if(lease.input.accountId===id&&!(input.abortActive===false&&lease.requests.size>0))this.release(lease.view.identity);
   }
   list() { if (this.storageError) throw this.storageError; return { accounts: [...this.rows.values()].map(row => this.view(row)), providers: [...this.providers.values()].filter(provider=>!provider.connectionId).map(provider => ({ id: provider.id, label: provider.label })) }; }
   read(id: string) { return this.view(this.current(id)); }
@@ -407,7 +408,7 @@ export class ModelAccessApplication {
 export function createModelAccess(options: ModelAccessOptions) {
   const application = new ModelAccessApplication(options);
   return {
-    ensureLinked: () => application.ensureLinked(), invalidate: (id:string) => application.invalidate(id),
+    ensureLinked: () => application.ensureLinked(), invalidate: (id:string,input?:{abortActive?:boolean}) => application.invalidate(id,input),
     accounts: { list: () => application.list(), read: (id: string) => application.read(id), snapshot: (id:string) => application.read(id), preferences:(id:string,input:ModelPreferenceUpdate)=>application.updatePreferences(id,input), add: (input: {provider:string;label?:string}) => application.add(input), login: (id:string,input:{expectedRevision:string}) => application.login(id,input), attempt: (id:string,attemptId:string) => application.attempt(id,attemptId), cancelLogin: (id:string,attemptId:string,input:{expectedRevision:string}) => application.cancelLogin(id,attemptId,input), check: (id:string,input:{expectedRevision?:string}={}) => application.check(id,input), disconnect: (id:string,input:{expectedRevision:string}) => application.disconnect(id,input) },
     catalog: { list: () => application.catalog() },
     activity: () => application.activity(),

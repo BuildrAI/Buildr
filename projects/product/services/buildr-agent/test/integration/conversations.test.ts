@@ -1819,6 +1819,97 @@ test('capacity failure continues the exact context as a system retry and retains
   } finally { await f.close(); }
 });
 
+const gatewayProviders: AgentServiceOptions['modelProviders'] = [{id:'fixture',label:'Fixture',async open(){return{protocol:'chat-completions',async inspect(){return{status:'ready',models:[{id:'test-model',label:'Test',images:false,tools:true}]};},async beginLogin(){},async cancelLogin(){},async infer(){throw Error('unused');},async close(){}};}}];
+async function sharedAccount(f: ReturnType<typeof fixture>) {
+  const account = await f.service.models.accounts.add({provider: 'fixture'}), checked = await f.service.models.accounts.check(account.id);
+  await f.service.models.accounts.preferences(account.id, {expectedRevision: checked.revision, models: [{id: 'test-model', enabled: true}]});
+  return account;
+}
+function sendWithAccount(f: ReturnType<typeof fixture>, conversationId: string, accountId: string, text: string) {
+  const draft = {expectedRevision: f.service.conversations.read('workspace-one', conversationId).revision, connectionId: 'codex', modelAccountId: accountId, model: 'test-model', text};
+  const preview = f.service.conversations.prepareSend('workspace-one', conversationId, draft);
+  return f.service.conversations.send('workspace-one', conversationId, {...draft, previewToken: preview.token, clientRequestId: randomUUID()});
+}
+
+test('a rejected local gateway credential is reissued once and continues the exact context', async t => {
+  fastRetries(t);
+  const native = fake('codex', {failure: n => n === 1 ? '模型调用的本机凭据已失效。' : undefined}), f = fixture([native.executor], {modelProviders: gatewayProviders});
+  try {
+    await connected(f.service, 'codex'); const account = await sharedAccount(f);
+    const chat = await f.service.conversations.create('workspace-one', {}), initial = sendWithAccount(f, chat.id, account.id, 'finish the change');
+    const done = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => view.run?.status === 'completed');
+    assert.equal(native.sends.length, 2);
+    const gateways = native.opens.filter(input => input.gateway);
+    assert.equal(gateways.length, 2, 'the rejected key is replaced by a new process');
+    assert.notEqual(gateways[0].gateway!.apiKey, gateways[1].gateway!.apiKey, 'the new process starts with a freshly issued key');
+    assert.equal(gateways[0].gateway!.identity, gateways[1].gateway!.identity);
+    assert.equal(gateways[0].configRoot, gateways[1].configRoot);
+    assert.equal(native.sends[0].contextRef.id, native.sends[1].contextRef.id);
+    assert.equal(native.sends[0].model, native.sends[1].model); assert.equal(native.sends[0].permissionMode, native.sends[1].permissionMode);
+    assert.match(native.sends[1].text, /系统自动重试/); assert.match(native.sends[1].text, /本机模型凭据失效/);
+    assert.equal(done.run?.modelAccountId, account.id);
+    assert.equal(done.entries.filter(entry => entry.role === 'user').length, 1);
+    assert.ok(done.entries.some(entry => entry.role === 'system' && entry.kind === 'notice' && entry.status === 'accepted'));
+    assert.equal(new ConversationRepository(path.join(f.options.dataRoot, 'agent-service')).readConversation(chat.id)?.runOutcomes?.[initial.run.id]?.status, 'failed');
+  } finally { await f.close(); }
+});
+
+test('a reissued local credential that is rejected again stops instead of reissuing forever', async t => {
+  fastRetries(t);
+  const native = fake('codex', {failure: '模型调用的本机凭据已失效。'}), f = fixture([native.executor], {modelProviders: gatewayProviders});
+  try {
+    await connected(f.service, 'codex'); const account = await sharedAccount(f);
+    const chat = await f.service.conversations.create('workspace-one', {}); sendWithAccount(f, chat.id, account.id, 'finish');
+    const ended = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => native.sends.length === 2 && view.run?.status === 'failed');
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(native.sends.length, 2, 'the second identical rejection ends the run');
+    assert.equal(native.opens.filter(input => input.gateway).length, 2, 'a rejected reissue is not replaced a second time');
+    assert.match(ended.run?.diagnostic ?? '', /本机模型凭据重新签发后仍被拒绝/);
+    assert.doesNotMatch(ended.run?.diagnostic ?? '', /自动重试已达上限/);
+  } finally { await f.close(); }
+});
+
+test('a stale account row is re-inspected once before the rejected key is replaced', async t => {
+  fastRetries(t);
+  let stale = false, inspections = 0;
+  const providers: AgentServiceOptions['modelProviders'] = [{ id: 'fixture', label: 'Fixture', async open() { return { protocol: 'chat-completions', async inspect() { inspections++; return stale ? { status: 'not-authenticated' as const, models: [] } : { status: 'ready' as const, models: [{ id: 'test-model', label: 'Test', images: false, tools: true }] }; }, async beginLogin() {}, async cancelLogin() {}, async infer() { throw Error('unused'); }, async close() {} }; } }];
+  const native = fake('codex', { hold: true, failure: n => n === 1 ? '模型调用的本机凭据已失效。' : undefined }), f = fixture([native.executor], { modelProviders: providers });
+  try {
+    await connected(f.service, 'codex'); const account = await sharedAccount(f);
+    const chat = await f.service.conversations.create('workspace-one', {}); sendWithAccount(f, chat.id, account.id, 'finish the change');
+    const held = await waitUntil(() => [...native.contexts.values()][0], context => Boolean(context?.unblock));
+    stale = true; await f.service.models.accounts.check(account.id); stale = false;
+    assert.equal(f.service.models.accounts.snapshot(account.id)?.status, 'not-authenticated', 'the refresh leaves a downgraded row behind');
+    const first = held!.unblock!; first();
+    const retried = await waitUntil(() => [...native.contexts.values()][0], context => Boolean(context?.unblock) && context!.unblock !== first);
+    retried!.unblock!();
+    const done = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => view.run?.status === 'completed');
+    assert.equal(native.sends.length, 2, 'one re-inspection is enough to continue');
+    assert.equal(native.opens.filter(input => input.gateway).length, 2);
+    assert.equal(inspections, 3, 'only the stale row is re-inspected once');
+    assert.equal(done.run?.modelAccountId, account.id);
+  } finally { await f.close(); }
+});
+
+test('a rejected local credential stops when the account is no longer usable', async t => {
+  fastRetries(t);
+  const native = fake('codex', { hold: true, failure: '模型调用的本机凭据已失效。' }), f = fixture([native.executor], { modelProviders: gatewayProviders });
+  try {
+    await connected(f.service, 'codex'); const account = await sharedAccount(f);
+    const chat = await f.service.conversations.create('workspace-one', {}); sendWithAccount(f, chat.id, account.id, 'finish');
+    const held = await waitUntil(() => [...native.contexts.values()][0], context => Boolean(context?.unblock));
+    await f.service.models.accounts.disconnect(account.id, { expectedRevision: f.service.models.accounts.snapshot(account.id)!.revision });
+    held!.unblock!();
+    await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => view.run?.status === 'failed');
+    await new Promise(resolve => setTimeout(resolve, 50));
+    const ended = f.service.conversations.read('workspace-one', chat.id);
+    assert.equal(native.sends.length, 1, 'an unusable account is not retried');
+    assert.equal(native.opens.filter(input => input.gateway).length, 1, 'the rejected key is kept when there is nothing to reissue');
+    assert.match(ended.run?.diagnostic ?? '', /本机凭据已失效/);
+    assert.doesNotMatch(ended.run?.diagnostic ?? '', /正在重新准备执行环境/);
+  } finally { await f.close(); }
+});
+
 test('persistent capacity errors stop after three automatic attempts', async t => {
   fastRetries(t);
   const native = fake('local', {failure: 'Selected model is at capacity.'}), f = fixture([native.executor]);
