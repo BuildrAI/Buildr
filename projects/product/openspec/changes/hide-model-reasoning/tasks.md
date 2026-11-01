@@ -13,3 +13,5 @@
 
 - [x] 3.1 适用的检查通过：buildr-agent `typecheck` 与单元测试（143 通过）、buildr-web `typecheck`、完整测试（923 通过）、`test:static` 与正式构建 `build:web` 均通过；OpenSpec 变更 `openspec validate --strict` 通过。
 - [ ] 3.2 在本机 Buildr Web 用原本显示「思考」的会话验证：处理过程只剩工具调用与最终答复，没有思考正文。需先把本任务改动交付到本机应用。
+  - 已完成的替代验证：用 `1d5c9b88-2a13-3709-a552-5872bdd5f17e` 的真实读模型条目（157 条，含 37 条思考标记、115 条工具）直接渲染 `ConversationProcessBlock`，结果无 `ac-process-thinking` / 思考正文（英文推理文本未出现），5 处助手说明、3 个工具组（115 次工具调用），与预期一致。
+  - 阻塞：本机 Buildr Web Dev 入口（`:4458`）当前由并行会话启动的实例占用，其 `HOME` 被智能体沙箱隔离，工作空间 registry 为空，无法在该入口看到真实会话；需入口按真实用户环境重启后再做窗口级验收。
