@@ -15,9 +15,9 @@ const digest = (value: string | Buffer) => crypto.createHash('sha256').update(va
 async function scenario() {
   const root = process.env.BUILDR_SMOKE_ROOT!;
   assert.ok(root, 'Use the isolated workspace runner.');
-  const run = (args: string[], success = true) => {
+  const run = (args: string[], success = true, environment: Record<string, string> = {}) => {
     const result = spawnSync(process.execPath, [path.join(service, 'bin/buildr.mjs'), ...args], {
-      cwd: service, env: process.env, encoding: 'utf8', timeout: 60_000, maxBuffer: 4 * 1024 * 1024,
+      cwd: service, env: { ...process.env, ...environment }, encoding: 'utf8', timeout: 60_000, maxBuffer: 4 * 1024 * 1024,
     });
     if (success) assert.equal(result.status, 0, args.join(' ') + '\n' + result.stdout + result.stderr);
     else assert.notEqual(result.status, 0, args.join(' ') + ' unexpectedly succeeded');
@@ -30,10 +30,11 @@ async function scenario() {
   for (const workspace of spaces) {
     run(['init', '--agent', 'codex', '--target', workspace, '--name', path.basename(workspace), '--profile', 'personal', '--description', 'Isolated shared contributions migration']);
     const definition = read(workspace);
-    assert.equal(Object.keys(definition.memberResources).length, 6);
+    assert.equal(Object.keys(definition.memberResources).length, 7);
     assert.equal(fs.existsSync(path.join(workspace, 'components/buildr/openspec/contributions')), false);
+    assert.equal(fs.existsSync(path.join(workspace, 'commands/buildr/openspec/manifest.yml')), false);
     // Reconstruct a genuine pre-migration local component, including its receipt.
-    for (const member of definition.members.skillContributions) {
+    for (const member of [...definition.members.skillContributions, ...definition.members.commandCollections]) {
       const target = path.join(workspace, member);
       fs.mkdirSync(path.dirname(target), { recursive: true });
       fs.copyFileSync(path.join(service, 'resources/workspace', member), target);
@@ -41,6 +42,16 @@ async function scenario() {
     delete definition.memberResources;
     write(workspace, definition);
   }
+  const commandMember = 'commands/buildr/openspec/manifest.yml';
+  const oldCommand = path.join(spaces[0]!, commandMember), commandBytes = fs.readFileSync(oldCommand);
+  const oldDefinition = fs.readFileSync(definitionPath(spaces[0]!));
+  run(['sync', 'codex', '--target', spaces[0]!], false, { BUILDR_FAULT_AFTER_MUTATION_WRITE: '1' });
+  assert.deepEqual(fs.readFileSync(oldCommand), commandBytes, 'Failed migration restores the local command definition.');
+  assert.deepEqual(fs.readFileSync(definitionPath(spaces[0]!)), oldDefinition);
+  fs.appendFileSync(oldCommand, '\n# User command customization.\n');
+  run(['sync', 'codex', '--target', spaces[0]!], false);
+  assert.match(fs.readFileSync(oldCommand, 'utf8'), /User command customization/);
+  fs.writeFileSync(oldCommand, commandBytes);
   const fragment = read(spaces[0]!).members.skillContributions[0];
   const custom = path.join(spaces[0]!, fragment), original = fs.readFileSync(custom);
   fs.appendFileSync(custom, '\nUser customization.\n');
@@ -60,9 +71,13 @@ async function scenario() {
   for (const workspace of spaces) {
     run(['sync', 'codex', '--target', workspace]);
     const definition = read(workspace);
-    assert.equal(Object.keys(definition.memberResources).length, 6);
+    assert.equal(Object.keys(definition.memberResources).length, 7);
     for (const member of definition.members.skillContributions) assert.equal(fs.existsSync(path.join(workspace, member)), false);
     sources.push(componentMemberSource(workspace, fragment, definition));
+    assert.equal(fs.existsSync(path.join(workspace, commandMember)), false);
+    const commands = JSON.parse(run(['commands', 'check', '--target', workspace, '--json']));
+    assert.ok(commands.catalog.definitions.find((item: any) => item.id === 'openspec').sources.includes(commandMember));
+    assert.equal(commands.manifests.find((item: any) => item.path === commandMember).source, componentMemberSource(workspace, commandMember, definition));
     assert.match(fs.readFileSync(path.join(workspace, '.agents/skills/openspec-explore/SKILL.md'), 'utf8'), /Buildr Terminology Sidebar/);
     const check = JSON.parse(run(['component', 'check', 'openspec', '--target', workspace, '--json']));
     assert.equal(check.ok, true, JSON.stringify(check));
@@ -100,17 +115,38 @@ async function scenario() {
   ]) assert.ok(validateComponentMemberResources(invalid).length);
   const local = path.join(root, 'private.md'); fs.writeFileSync(local, 'private');
   assert.equal(componentMemberSource(root, 'private.md', { source: 'workspace' }), fs.realpathSync(local));
+  const sharedCommand = componentMemberSource(spaces[0]!, commandMember, definition);
+  const sharedCommandBytes = fs.readFileSync(sharedCommand);
+  run(['commands', 'add', 'local-node', '--executable', 'node', '--purpose', 'Local workspace tool', '--target', spaces[0]!]);
+  fs.appendFileSync(sharedCommand, '\n# Shared command tampering.\n');
+  const brokenCommands = JSON.parse(run(['commands', 'check', '--target', spaces[0]!, '--json'], false));
+  assert.ok(brokenCommands.findings.some((item: any) => item.path === commandMember && item.code === 'commands.manifest_invalid'));
+  assert.ok(brokenCommands.catalog.definitions.some((item: any) => item.id === 'local-node'), 'Independent local catalog remains visible.');
+  fs.writeFileSync(sharedCommand, sharedCommandBytes);
+  run(['project', 'create', 'needs-openspec', '--target', spaces[0]!]);
+  const requirements = path.join(spaces[0]!, 'projects/needs-openspec/commands.yml');
+  fs.writeFileSync(requirements, YAML.stringify({ schemaVersion: 'buildr.project-commands/v1', requirements: [{ id: 'openspec', required: false }] }));
+  run(['component', 'uninstall', 'openspec', '--agent', 'codex', '--target', spaces[0]!], false);
+  assert.equal(read(spaces[0]!).id, 'openspec');
+  fs.writeFileSync(requirements, YAML.stringify({ schemaVersion: 'buildr.project-commands/v1', requirements: [] }));
   const before = fs.readFileSync(shared);
   run(['component', 'uninstall', 'openspec', '--agent', 'codex', '--target', spaces[0]!]);
   assert.deepEqual(fs.readFileSync(shared), before, 'Uninstall cannot remove the shared source.');
+  assert.deepEqual(fs.readFileSync(sharedCommand), sharedCommandBytes);
   run(['sync', 'codex', '--target', spaces[1]!]);
   assert.equal(JSON.parse(run(['component', 'check', 'openspec', '--target', spaces[1]!, '--json'])).ok, true);
+  const currentDefinition = definitionPath(spaces[1]!), currentBytes = fs.readFileSync(currentDefinition);
+  const externalDefinition = path.join(root, 'external-definition.yml'); fs.writeFileSync(externalDefinition, currentBytes);
+  fs.unlinkSync(currentDefinition); fs.symlinkSync(externalDefinition, currentDefinition);
+  const linkedDefinition = JSON.parse(run(['commands', 'check', '--target', spaces[1]!, '--json'], false));
+  assert.ok(linkedDefinition.findings.some((item: any) => item.path === commandMember && /symbolic link/.test(item.message)));
+  fs.unlinkSync(currentDefinition); fs.writeFileSync(currentDefinition, currentBytes);
 }
 
 if (process.argv.includes('--shared-contributions-scenario')) await scenario();
-else test('官方组件补充原文共享：三空间迁移、定制/链接保护、当前共享采用、损坏及卸载隔离', { timeout: 240_000 }, () => {
+else test('官方组件原文共享：三空间补充/命令迁移、定制保护、回滚、目录发现、引用及卸载隔离', { timeout: 300_000 }, () => {
   const result = spawnSync(process.execPath, [path.join(service, 'tools/development/run-isolated-workspace-check.ts'), '--script', fileURLToPath(import.meta.url), '--', '--shared-contributions-scenario'], {
-    cwd: service, env: process.env, encoding: 'utf8', timeout: 235_000, maxBuffer: 4 * 1024 * 1024,
+    cwd: service, env: process.env, encoding: 'utf8', timeout: 295_000, maxBuffer: 4 * 1024 * 1024,
   });
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.match(result.stdout, /"status":"passed"/);

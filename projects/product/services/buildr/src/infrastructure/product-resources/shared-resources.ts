@@ -15,9 +15,10 @@ export type ResourceSet = { schemaVersion: 'buildr.shared-resources/v1'; id: str
 const digest = (value: string | Buffer) => crypto.createHash('sha256').update(value).digest('hex');
 // Only capability sources are shared. Initialization, launcher and package checks
 // keep reading their installation-owned resources instead of a second copy.
-const SHARED_SOURCE_ROOTS = ['workspace/skills/', 'runtime/skills/', 'workspace/components/buildr/'];
+const SHARED_SOURCE_ROOTS = ['workspace/skills/', 'runtime/skills/', 'workspace/components/buildr/', 'workspace/commands/buildr/'];
 const isSharedSource = (source: string) => source.startsWith('workspace/skills/') || source.startsWith('runtime/skills/')
-  || /^workspace\/components\/buildr\/[^/]+\/contributions\//.test(source);
+  || /^workspace\/components\/buildr\/[^/]+\/contributions\//.test(source)
+  || /^workspace\/commands\/buildr\/[^/]+\/manifest\.yml$/.test(source);
 const relativeFile = (value: string) => {
   if (!value || value.includes('\\') || value.includes('\0') || path.posix.normalize(value) !== value || value.startsWith('/') || value.split('/').includes('..')) throw new Error(`Invalid resource path: ${value}`);
   return value;

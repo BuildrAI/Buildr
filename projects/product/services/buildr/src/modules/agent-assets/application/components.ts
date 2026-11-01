@@ -155,6 +155,33 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
     return componentInventory(targetRoot).ownership.get(member) || null;
   }
 
+  /** Catalog readers keep workspace identities and attribute source errors per collection. */
+  function sharedCommandCollections(targetRoot: string): Array<{ path: string; source?: string; error?: string }> {
+    const sources: Array<{ path: string; source?: string; error?: string }> = [];
+    let entries: any[];
+    try { entries = readComponentsManifestForWrite(targetRoot).components; }
+    catch (error: any) { return [{ path: 'components/manifest.yml', error: error.message }]; }
+    for (const entry of entries) {
+      if (entry.source !== 'buildr' || entry.enabled === false || entry.state === 'uninstalled') continue;
+      try {
+        const link = workspaceSymlinkSegment(targetRoot, `${entry.path}/component.yml`);
+        if (link) throw new Error(`Component definition path crosses a symbolic link: ${link}`);
+        const definition = readComponentDefinition(componentDefinitionFile(targetRoot, entry), entry.id);
+        for (const member of definition.members.commandCollections) {
+          if (!definition.memberResources?.[member]) continue;
+          try {
+            const source = memberSource(targetRoot, member, definition);
+            if (assetIntegrity(source) !== componentIntegrityMap(definition).get(member)) throw new Error(`Component member integrity mismatch: ${member}`);
+            sources.push({ path: member, source });
+          } catch (error: any) { sources.push({ path: member, error: error.message }); }
+        }
+      } catch (error: any) {
+        sources.push({ path: `commands/buildr/${entry.id}/manifest.yml`, error: error.message });
+      }
+    }
+    return sources;
+  }
+
   function packageComponentEntry(manifest: any, id: any): any  {
     return manifest.components.find((entry: any) => entry.id === id) || null;
   }
@@ -290,7 +317,7 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
     const desiredDefinition = structuredClone(record.definition);
     const memberResources: Record<string, string> = {};
     const nextIntegrity = componentIntegrityMap(record.definition);
-    for (const member of record.definition.members.skillContributions) {
+    for (const member of [...record.definition.members.skillContributions, ...record.definition.members.commandCollections]) {
       const resource = `resources/workspace/${member}`;
       const source = resolveSharedResource(targetRoot, resource);
       memberResources[member] = resource;
@@ -330,17 +357,17 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
       const live = assetIntegrity(memberSource(targetRoot, member, oldDefinition));
       if (live && live !== oldIntegrity.get(member)) issues.push(`Removed Component member is modified: ${member}.`);
     }
-    issues.push(...commandCollectionReferenceIssues(targetRoot, [...oldMembers].filter((member: any) => !nextMembers.has(member) && member.startsWith('commands/'))));
+    issues.push(...commandCollectionReferenceIssues(targetRoot, [...oldMembers].filter((member: any) => !nextMembers.has(member) && member.startsWith('commands/')), oldDefinition));
     const receiptPath = `components/buildr/${record.entry.id}/component.yml`;
     const receiptSymlink = workspaceSymlinkSegment(targetRoot, receiptPath);
     if (receiptSymlink) issues.push(`Component receipt path crosses a symbolic link: ${receiptSymlink}.`);
     return { registry, existingEntry, oldDefinition, desiredDefinition, restoring, issues, nextMembers, oldMembers };
   }
 
-  function commandCollectionReferenceIssues(targetRoot: any, members: any): any  {
+  function commandCollectionReferenceIssues(targetRoot: any, members: any, definition: any): any  {
     const issues: any[] = [];
     for (const member of members) {
-      const file = path.join(targetRoot, member);
+      const file = memberSource(targetRoot, member, definition);
       if (!existsFile(file)) continue;
       let manifest;
       try {
@@ -358,7 +385,7 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
         // A legacy workspace default stored on the Component-owned definition
         // disappears with that definition. Component lifecycle only needs to
         // protect independent Project references (and unverifiable contexts).
-        const blockers = commandRemovalBlockers(targetRoot, command.id, [file])
+        const blockers = commandRemovalBlockers(targetRoot, command.id, [path.join(targetRoot, member)])
           .filter((item: any) => item.kind !== 'workspace-default');
         if (blockers.length) issues.push(`Command definition ${command.id} from ${member} is still referenced or cannot be safely checked: ${blockers.map((item: any) => {
           if (item.kind === 'project') return `Project ${item.project} (${item.path})`;
@@ -405,7 +432,6 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
 
   function installComponentMember(targetRoot: any, packageManifest: any, definition: any, member: any, skillsManifest: any, changed: any): any  {
     const { kind, builtin } = componentBuiltinForMember(packageManifest, definition, member);
-    const source = packageComponentSourcePath(member);
     const target = path.join(targetRoot, member);
     if (kind === 'skill') {
       if (existsDirectory(target)) fs.rmSync(target, { recursive: true, force: true });
@@ -415,8 +441,7 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
       if (index === -1) skillsManifest.push(desired);
       else skillsManifest[index] = desired;
     } else if (kind === 'commandCollection') {
-      ensureDirectory(path.dirname(target));
-      fs.copyFileSync(source, target);
+      removeComponentMember(targetRoot, packageManifest, definition, member, skillsManifest, changed);
     } else if (kind === 'skillContribution') {
       // The locked reconcile plan has checked legacy bytes against the previous
       // receipt. Remove only that member; unknown siblings are never swept away.
@@ -833,7 +858,7 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
     const integrity = componentIntegrityMap(definition);
     const modified = componentMemberPaths(definition).filter((member: any) => assetIntegrity(memberSource(targetRoot, member, definition)) !== integrity.get(member));
     if (modified.length) throw new Error(`Component ${id} has modified or missing members and cannot be uninstalled:\n- ${modified.join('\n- ')}`);
-    const commandReferenceIssues = commandCollectionReferenceIssues(targetRoot, componentMemberPaths(definition).filter((member: any) => member.startsWith('commands/')));
+    const commandReferenceIssues = commandCollectionReferenceIssues(targetRoot, componentMemberPaths(definition).filter((member: any) => member.startsWith('commands/')), definition);
     if (commandReferenceIssues.length) throw new Error(`Component ${id} cannot be uninstalled while Command definitions are referenced:\n- ${commandReferenceIssues.join('\n- ')}`);
     const packageManifest = readPackageManifest();
     const affected: any[] = [
@@ -864,6 +889,7 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
     readComponentDefinition,
     componentDefinitionFile,
     componentOwnerForMember,
+    sharedCommandCollections,
     packageComponentDefinition,
     packageComponentSourcePath,
     validatePackageComponentMembers,

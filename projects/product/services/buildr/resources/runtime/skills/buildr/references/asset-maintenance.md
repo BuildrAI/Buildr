@@ -73,7 +73,7 @@
 
 ## Components
 - Component 是 workspace 级统一生命周期单元；当前不支持 Project/Service Component。registry 为 `components/manifest.yml`，成员由 installed `component.yml` 唯一声明。
-- 官方组件（Component）的补充内容（Contributions）原文与官方技能（Skill）、能力契约（Contract）共同存放于 `~/.buildr/resources/`；已安装 `component.yml` 通过 `memberResources` 保存可移植引用，采用及完整性记录、命令（Command）配置仍留在工作空间（Workspace）。普通同步在校验旧回执后清理未修改官方副本及空目录；定制、未知文件和自有组件正文保留。迁移后使用支持该引用的 Buildr，不用旧版管理。
+- 官方组件（Component）的补充内容（Contributions）和官方命令目录（Command Catalog）原文与官方技能（Skill）、能力契约（Contract）共同存放于 `~/.buildr/resources/`；已安装 `component.yml` 通过 `memberResources` 保存可移植引用，采用及完整性记录、根命令选择、项目要求（Project Requirements）及本机观察仍留在工作空间（Workspace）。普通同步在校验旧回执后清理未修改官方副本及空目录；定制、未知文件和自有组件正文保留。迁移后使用支持该引用的 Buildr，不用旧版管理。
 - Component 必须自证 definition、全部成员 integrity、唯一 ownership 和 Skill Contribution 完整性；不能注册或注入 runtime adapter、runtime hook、可执行 member 或 registry patch。验证通过的 Contribution 只作为通用 runtime source input。
 - Sidebar 是对外部能力的独立、可卸载增强；Skill Contribution 是其 runtime 组合机制。外部 Skill 源必须保持上游正文，Buildr 增强只进入 Agent runtime 派生版本，不在 `skills/buildr/` 维护外部 fork。
 - 用户明确说“作为 Component”时，即使只有一个成员也走 Component；用户明确要单项 Skill 或 Command 时走单项入口。

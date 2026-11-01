@@ -239,6 +239,7 @@ export function createAgentAssetsModule(infrastructure: AgentAssetsInfrastructur
       const commands: ReturnType<typeof registerDomainsCommands> = registerDomainsCommands({
         workspaceSymlinkSegment: infrastructure.workspaceSymlinkSegment,
         componentOwnerForMember: components.componentOwnerForMember,
+        sharedCommandCollections: components.sharedCommandCollections,
         isValidAssetId: (...args: Parameters<CommandsDependencies['isValidAssetId']>) => packageAssets.isValidAssetId(...args),
         assertName: runtimeApplication.assertName,
         normalizeRelativePathForBuildr: (...args: Parameters<CommandsDependencies['normalizeRelativePathForBuildr']>) => skills.normalizeRelativePathForBuildr(...args),

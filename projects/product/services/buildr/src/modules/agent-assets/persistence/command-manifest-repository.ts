@@ -15,6 +15,7 @@ type Dependencies = {
   quoteYaml(value: unknown): string;
   toPosixRelative(root: string, file: string): string;
   workspaceSymlinkSegment(root: string, relative: string): string | null;
+  sharedCommandCollections?(root: string): Array<{ path: string; source?: string; error?: string }>;
 };
 
 function isPlainObject(value: unknown): value is Record<string, any> {
@@ -42,7 +43,6 @@ export function createCommandManifestRepository(dependencies: Dependencies) {
 
   function listCommandsManifestPaths(targetRoot: string): string[] {
     const root = path.join(targetRoot, 'commands');
-    if (!dependencies.existsDirectory(root)) return [];
     const files: string[] = [];
     const visit = (directory: string) => {
       for (const entry of fs.readdirSync(directory, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name))) {
@@ -52,9 +52,18 @@ export function createCommandManifestRepository(dependencies: Dependencies) {
         else if (entry.isFile() && entry.name === 'manifest.yml') files.push(absolute);
       }
     };
-    visit(root);
+    if (dependencies.existsDirectory(root)) visit(root);
+    for (const entry of dependencies.sharedCommandCollections?.(targetRoot) || []) files.push(path.join(targetRoot, entry.path));
     const rootManifest = commandsManifestPath(targetRoot);
-    return files.sort((left, right) => left === rootManifest ? -1 : right === rootManifest ? 1 : left.localeCompare(right));
+    return [...new Set(files)].sort((left, right) => left === rootManifest ? -1 : right === rootManifest ? 1 : left.localeCompare(right));
+  }
+
+  function commandManifestSource(targetRoot: string, manifestPath: string): string {
+    assertSafeCommandCollectionTarget(targetRoot, manifestPath);
+    const relative = dependencies.toPosixRelative(targetRoot, manifestPath);
+    const shared = dependencies.sharedCommandCollections?.(targetRoot).find(entry => entry.path === relative);
+    if (shared?.error) throw new Error(shared.error);
+    return shared?.source || manifestPath;
   }
 
   function parseCommandsManifestYaml(content: string): any {
@@ -164,9 +173,9 @@ export function createCommandManifestRepository(dependencies: Dependencies) {
 
   function readCommandsManifestForWrite(targetRoot: string, collection: string | null = null): any {
     const file = commandsManifestPath(targetRoot, collection);
-    assertSafeCommandCollectionTarget(targetRoot, file);
-    if (!dependencies.existsFile(file)) return { schemaVersion: 'buildr.commands/v1', commands: [] };
-    const manifest = parseCommandsManifestYaml(fs.readFileSync(file, 'utf8'));
+    const source = commandManifestSource(targetRoot, file);
+    if (!dependencies.existsFile(source)) return { schemaVersion: 'buildr.commands/v1', commands: [] };
+    const manifest = parseCommandsManifestYaml(fs.readFileSync(source, 'utf8'));
     const errors = validateCommandsManifest(manifest);
     if (errors.length) throw new Error(`${dependencies.toPosixRelative(targetRoot, file)} is invalid:\n- ${errors.join('\n- ')}`);
     return manifest;
@@ -179,5 +188,5 @@ export function createCommandManifestRepository(dependencies: Dependencies) {
     return file;
   }
 
-  return Object.freeze({ PROJECT_COMMANDS_SCHEMA, normalizeCommandCollection, commandsManifestPath, projectCommandsPath, assertSafeCommandCollectionTarget, listCommandsManifestPaths, parseCommandsManifestYaml, parseProjectCommandsYaml, validateProjectCommandsDocument, renderProjectCommandsYaml, validateCommandsManifest, renderCommandsManifestYaml, readCommandsManifestForWrite, writeCommandsManifest });
+  return Object.freeze({ PROJECT_COMMANDS_SCHEMA, normalizeCommandCollection, commandsManifestPath, projectCommandsPath, assertSafeCommandCollectionTarget, listCommandsManifestPaths, commandManifestSource, parseCommandsManifestYaml, parseProjectCommandsYaml, validateProjectCommandsDocument, renderProjectCommandsYaml, validateCommandsManifest, renderCommandsManifestYaml, readCommandsManifestForWrite, writeCommandsManifest });
 }
