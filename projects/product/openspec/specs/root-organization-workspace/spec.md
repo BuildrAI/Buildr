@@ -61,7 +61,7 @@ Buildr MUST 使用 `.buildr/workspace.yml` 持久化 Workspace 的 UUID `id`、`
 - **AND** `components/manifest.yml` MUST declare `schemaVersion: buildr.components/v1`
 - **AND** `projects/manifest.yml` MUST declare `schemaVersion: buildr.projects/v2`
 - **AND** 空的全局 `services/manifest.yml` 与 `repositories/manifest.yml` MUST 分别使用 `buildr.services/v3` 与 `buildr.repositories/v1`；已有布局继续遵循显式迁移与恢复边界，不以初始化补齐半完成全局清单
-- **AND** Buildr MUST create root `AGENTS.md` required block 并内联随包核心规则正文
+- **AND** Buildr MUST NOT 为默认规则创建根 `AGENTS.md`，也 MUST NOT 向已有文件插入、替换或修复默认区块
 - **AND** Buildr MUST be able to render initial Agent runtime for supported adapters
 
 #### Scenario: 初始化 Codex runtime
@@ -135,12 +135,12 @@ Buildr MUST NOT 将 `organizations/<org>/` 作为产品主线、兼容路径或�
 - **THEN** Buildr MUST 报告该 scope 不受支持，并提示使用 `projects/shop`
 
 ### Requirement: 默认 workspace 规则路由工具型资产维护
-默认工作空间（Workspace）规则（Rule）MUST 保护源资产权威、所有权和授权边界；Buildr 技能（Skill）MUST 负责工具型资产维护的发现、方法、命令与恢复指引，规则（Rule）MUST NOT 复制这些执行流程。
+用户自行维护工作空间（Workspace）规则（Rule）；Buildr MUST NOT 默认生成通用规则；Buildr 技能（Skill）MUST 负责工具型资产维护的发现、方法、命令与恢复指引，规则（Rule）MUST NOT 复制这些执行流程。
 
 #### Scenario: Agent 读取默认规则
-- **WHEN** 智能体（Agent）读取 `buildr init` 生成的 `AGENTS.md`
-- **THEN** 规则（Rule）MUST 说明 Buildr 管理长期源资产和可重建投射
-- **AND** MUST 说明运行时（Runtime）、本机状态、凭证和临时提示词不是源资产
+- **WHEN** 智能体（Agent）需要理解 Buildr 资产维护边界
+- **THEN** Buildr 技能（Skill）MUST 说明其管理的长期源资产和可重建投射，不要求默认根规则
+- **AND** Buildr 技能（Skill）MUST 说明运行时（Runtime）、本机状态、凭证和临时提示词不是源资产
 
 #### Scenario: 用户要求维护 manifest-backed 工具型资产
 - **WHEN** 用户要求新增、修改或删除可复用技能（Skill）或命令（Command）
@@ -151,7 +151,7 @@ Buildr MUST NOT 将 `organizations/<org>/` 作为产品主线、兼容路径或�
 - **WHEN** 用户要求维护组织根规则（Rule）或项目（Project）、服务（Service）规则（Rule）
 - **THEN** Buildr 技能（Skill）MUST 引导 Agent 直接维护组织根、项目或服务目录的 `AGENTS.md` 正文
 - **AND** MUST 说明规则适用性由 `AGENTS.md` 层级与作用域决定，不再使用 `rules/manifest.yml` 或 `rules add/remove`
-- **AND** MUST 保留受管区块（Managed Block）所有权和用户正文，仅由正式维护入口更新受管区块（Managed Block）
+- **AND** MUST 保留用户正文；旧默认区块不得由同步自动恢复，显式清理继续要求用户授权
 
 #### Scenario: Agent 不确定如何维护资产
 - **WHEN** 智能体（Agent）不确定如何维护工具型资产
@@ -188,15 +188,15 @@ Buildr MUST 支持已有 Buildr workspace 兼容内置能力和 adapter render �
 
 #### Scenario: 已有 AGENTS
 - **WHEN** 已有 workspace 中存在 `AGENTS.md`
-- **THEN** Buildr MUST 只检查并修复 Buildr required block
+- **THEN** Buildr MUST 保留整个 `AGENTS.md`，不插入、替换或修复旧默认区块
 - **AND** Buildr MUST NOT 覆盖用户正文
 
 #### Scenario: 旧版规则迁入
 - **WHEN** 已有 workspace 使用旧版 package baseline rules 或 `rules/manifest.yml`
-- **THEN** Buildr MUST 将核心规则内联到根 `AGENTS.md` 受管区块
+- **THEN** Buildr MUST NOT 将旧版核心规则自动写入根 `AGENTS.md`
 - **AND** 其他专业规则 MUST 由组织根、项目、服务目录的 `AGENTS.md` 层级承载
 - **AND** Buildr MUST NOT 自动删除或改写已有 `rules/manifest.yml` 与 `rules/*.md`
-- **AND** Buildr MUST 将旧 `runtime.md` 语义内化进根 `AGENTS.md` 受管区块
+- **AND** Buildr MUST NOT 将旧 `runtime.md` 的语义自动写入根 `AGENTS.md`
 
 #### Scenario: 已有 Rules 资产不阻断升级
 - **WHEN** 已有 workspace 包含 `rules/manifest.yml` 或 `rules/*.md`
@@ -272,7 +272,7 @@ Buildr MUST 以 `AGENTS.md` 层级作为唯一当前规则来源，并 MUST 停�
 #### Scenario: 新建 workspace 不生成 Rule 资产
 - **WHEN** Agent 在空目录执行 `buildr init`
 - **THEN** 初始化结果 MUST NOT 包含 `rules/` 目录或 `rules/manifest.yml`
-- **AND** 根 `AGENTS.md` MUST 继续包含内联核心规则的受管区块
+- **AND** Buildr MUST NOT 自动创建根 `AGENTS.md` 或插入默认规则区块
 
 #### Scenario: Rule manifest 命令退役
 - **WHEN** Agent 执行 `buildr rules add` 或 `buildr rules remove`

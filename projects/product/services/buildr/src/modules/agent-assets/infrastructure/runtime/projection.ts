@@ -131,7 +131,7 @@ function rootIndexBridgeContent(repoRoot: any, discovery: any, adapter: any): an
     `${ADAPTER_RULE_MARKER} ${adapter.id}; type: root-index-reference. Do not edit. -->`,
     '# Buildr Rules Bridge',
     '',
-    '执行任何 workspace 任务前，必须先读取并遵循根 `AGENTS.md`。',
+    '执行任务前，读取并遵循当前作用域内实际存在的 `AGENTS.md`；不要求根规则文件。',
     '每当读取、分析或修改某个文件或目录时，必须再读取从 workspace root 到该路径之间所有存在的 `AGENTS.md`，按由宽到窄的顺序应用；不得读取不相关兄弟目录的规则。',
     '下列索引仅用于发现规则文件，普通 Markdown 链接不代表内容已经自动加载：',
     '',
@@ -207,9 +207,8 @@ function assembleRules(repoRoot: any, targetRoot: any, scopeInfo: any, adapter: 
     ...discovery.warnings.map((message: any) => ruleFinding('warning', scopeInfo.scope, message, { code: 'runtime.scope_legacy', canonicalScope: scopeInfo.scope })),
     ...discovery.boundaries.map((boundary: any) => ruleFinding('info', boundary.path, `Rules discovery skipped boundary: ${boundary.reason}.`, { code: 'runtime.rules_discovery_boundary', boundaryReason: boundary.reason, userActionRequired: false })),
   ];
-  const diagnostics = adapter.traits.rules.diagnostics;
   if (discovery.files.length === 0) {
-    findings.push(ruleFinding(diagnostics.missingStatus, diagnostics.missingPath, `No AGENTS.md files found for scope: ${scopeInfo.scope}.`, { code: diagnostics.missingCode }));
+    findings.push(ruleFinding('info', 'AGENTS.md', `No user rule files found for scope: ${scopeInfo.scope}; no default rules are required.`, { code: 'runtime.rules_not_configured', userActionRequired: false }));
   }
   const implementation = selectAdapterImplementation(adapter, 'rules', RULE_IMPLEMENTATIONS);
   return implementation({ repoRoot, targetRoot, scopeInfo, discovery, findings, adapter });

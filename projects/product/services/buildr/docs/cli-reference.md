@@ -361,7 +361,7 @@ resolved `skill-url` 默认具有有限请求时间。维护者可设置：
 
 输入可选 `mode: metadata|content`，默认 `content` 保持独立读取兼容。`metadata` 返回身份、定位、版本、片段范围和依据，`current` 为 `null`、`observed` 不含正文。DSH 当次来源采集（Capture）以实际读取摘要调用此模式，不发送普通用户正文；保存后的查看路径直接读取原事件来源及片段，不调用本接口反查历史。
 
-输出版本为 `buildr.agent-asset-source-result/v1`，按项返回 `detected`、`unknown`、`conflict` 或 `error`，以及对象身份、实际来源作用域（Scope）、`providedBy`、`managedBy`、当前正文及摘要值（Digest）、观察版本、依据和局部诊断。`historical: matched-current` 仅表示观察文本或摘要值（Digest）与当前权威内容相符，不证明当时治理状态、模型采纳、规则遵循或任务完成；无历史证据时是 `unknown`。核心规则（Rule）只确认精确受管区块（Managed Block），混合文件保留区块外内容的独立关系。投射技能（Skill）需实际定位器与当前回执逐文件摘要匹配。
+输出版本为 `buildr.agent-asset-source-result/v1`，按项返回 `detected`、`unknown`、`conflict` 或 `error`，以及对象身份、实际来源作用域（Scope）、`providedBy`、`managedBy`、当前正文及摘要值（Digest）、观察版本、依据和局部诊断。`historical: matched-current` 仅表示观察文本或摘要值（Digest）与当前权威内容相符，不证明当时治理状态、模型采纳、规则遵循或任务完成；无历史证据时是 `unknown`。历史核心规则（Rule）只确认精确匹配旧原文的区块；混合文件保留区块外内容的独立关系。根文件没有旧区块时返回未知，不要求生成或恢复默认规则。投射技能（Skill）需实际定位器与当前回执逐文件摘要匹配。
 
 一次最多 32 项，输入与返回正文分别限 2 MiB，完整 JSON 输出（含包装和换行）限 2 MiB，单份文本限 512 KiB；标准输入等待和查询检查有 5 秒边界。路径越界、秘密、符号链接、特殊文件和局部回执冲突仅影响相关项。当前只读取明确目标工作空间（Workspace）内的源和投射；用户层或其他工作空间（Workspace）的技能（Skill）位置不因同名被自动授权。本来源观察入口仅返回 Buildr 自身方法与能力内容；`task-brief` 与 `task-material` 返回 `unknown` 和 `source_user_material_excluded`，不调用正文读者。经 Buildr 能力访问资料时仅关联调用和必要对象引用；普通任务（Task）及资料读取接口保持原行为。普通产品源码不是方法来源。
 

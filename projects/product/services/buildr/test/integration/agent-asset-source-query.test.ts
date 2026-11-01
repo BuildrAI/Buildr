@@ -16,11 +16,11 @@ function fixture(t: { after(fn: () => void): void }) {
  t.after(() => { assert.ok(root.startsWith(fs.realpathSync(os.tmpdir()) + path.sep)); fs.rmSync(root, { recursive: true }); });
  fs.mkdirSync(path.join(root, '.buildr'), { recursive: true }); fs.writeFileSync(path.join(root, '.buildr/workspace.yml'), 'workspace: fixture\n');
  const skills = [{ id: 'review', path: 'buildr/review', assetIdentity: 'buildr:skill:review', sourceIdentity: 'package:skills/buildr/review', source: 'buildr', enabled: true }];
- let materialReads = 0;
- const query = createSourceQuery({ assets: { readSkills: () => skills, readContracts: () => [], requiredBlock: () => required }, workspace: { resolveSourceWorkspaceRoot: () => root, getWorkspace: () => ({ workspace: { id: uuid }, rootPath: root }), readProjectRegistryRecord: () => ({ projects: {} }) }, task: { readTaskBrief: () => { materialReads++; assert.fail('source observations must not read user briefs'); } }, materials: { inspectTaskMaterial: () => { materialReads++; assert.fail('source observations must not read user materials'); } } });
+ let materialReads = 0, requiredReads = 0;
+ const query = createSourceQuery({ assets: { readSkills: () => skills, readContracts: () => [], requiredBlock: () => { requiredReads++; return required; } }, workspace: { resolveSourceWorkspaceRoot: () => root, getWorkspace: () => ({ workspace: { id: uuid }, rootPath: root }), readProjectRegistryRecord: () => ({ projects: {} }) }, task: { readTaskBrief: () => { materialReads++; assert.fail('source observations must not read user briefs'); } }, materials: { inspectTaskMaterial: () => { materialReads++; assert.fail('source observations must not read user materials'); } } });
  const write = (relative: string, content: string) => { const p = path.join(root, relative); fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, content); };
  const inspect = (observations: unknown[], options = {}) => query.inspect(root, { schemaVersion: SOURCE_OBSERVATIONS_SCHEMA, observations }, options);
- return { root, write, inspect, skills, query, materialReads: () => materialReads };
+ return { root, write, inspect, skills, query, materialReads: () => materialReads, requiredReads: () => requiredReads };
 }
 test('only exact managed block is Buildr; suffix is mixed; missing observed version stays unknown', t => {
  const f = fixture(t), content = `# AGENTS.md\n\n${required}\n\nWorkspace suffix\n`; f.write('AGENTS.md', content);
@@ -128,4 +128,11 @@ test('public single-material reader loads no sibling body and rejects secret sel
  assert.equal(application.inspectTaskMaterial(f.root, 'task', 'safe')?.content, 'safe selected');
  assert.throws(() => application.inspectTaskMaterial(f.root, 'task', 'secret'), /秘密/);
  assert.equal(application.inspectTaskMaterial(f.root, 'task', 'missing'), null);
+});
+
+test('workspace-owned root rules without legacy block stay unknown and unchanged', t => {
+ const f = fixture(t), content = '# Things 开发约定\n用户自己维护的规则\n'; f.write('AGENTS.md', content);
+ const result = f.inspect([{ id: 'own', type: 'file', locator: { path: 'AGENTS.md' }, observedContent: content }]);
+ assert.equal(result.items[0].status, 'unknown'); assert.deepEqual(result.items[0].objects, []); assert.equal(f.requiredReads(), 0);
+ assert.deepEqual(result.effects, []); assert.equal(fs.readFileSync(path.join(f.root, 'AGENTS.md'), 'utf8'), content);
 });

@@ -11,7 +11,7 @@ import {
   renderClaudeCodeRules,
   resolveRuleScope,
 } from '../../src/modules/agent-assets/infrastructure/runtime/rule-projection.ts';
-import { BUILDR_REQUIRED_BLOCK_START, GENERATED_USER_REGISTRY_RESOURCE_SOURCES, LEGACY_PACKAGE_PATHS, PACKAGE_RUNTIME_TARGET, RESOURCE_WORKSPACE_ROOT } from '../../src/infrastructure/product-layout.ts';
+import { GENERATED_USER_REGISTRY_RESOURCE_SOURCES, LEGACY_PACKAGE_PATHS, PACKAGE_RUNTIME_TARGET, RESOURCE_WORKSPACE_ROOT } from '../../src/infrastructure/product-layout.ts';
 import { SUPPORTED_AGENT_IDS, getRuntimeAdapter } from '../../src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts';
 import { createPackageRuntimeChecks } from './package-check/runtime-checks.ts';
 import { createPackageStaticValidator } from './package-check/static-validation.ts';
@@ -98,8 +98,6 @@ export function runPackageCheck(runtime: any) {
     runPackageAggregateIntegration,
     validatePackageSupportTools,
   } = createPackageRuntimeChecks({
-    rootRequiredBlockStatus: runtime.rootRequiredBlockStatus,
-    BUILDR_REQUIRED_BLOCK_START,
     buildRuleDiscoveryPlan,
     checkClaudeCodeRuntime,
     checkRuntimeAdapter,

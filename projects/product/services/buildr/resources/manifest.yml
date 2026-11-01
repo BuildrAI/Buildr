@@ -8,6 +8,8 @@ include:
   - docs/known-limitations.md
   - resources/installation/launcher/
   - resources/runtime/
+  # Retained only as read-only proof of historical injected rules.
+  - resources/workspace/AGENTS.md
   - resources/browser-authorization/
   - resources/workspace/skills/connections/nacos-connection/
   - resources/workspace/skills/connections/mysql-connection/
@@ -464,7 +466,6 @@ workspaceDirectories:
   - skills
 
 workspaceFiles:
-  - resources/workspace/AGENTS.md => AGENTS.md render
   - resources/workspace/gitattributes => .gitattributes copy
   - resources/workspace/gitignore => .gitignore copy
   - resources/workspace/skills/contracts/buildr/git-operations/v1.md => skills/contracts/buildr/git-operations/v1.md copy

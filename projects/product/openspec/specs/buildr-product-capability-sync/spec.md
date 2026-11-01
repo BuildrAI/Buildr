@@ -17,7 +17,7 @@ Buildr MUST 在每个 Buildr workspace 中支持由产品管理的 Rules、Skill
 #### Scenario: 内置能力分 required 和 optional
 - **WHEN** Buildr 提供内置 Rules、Skills 或 Commands
 - **THEN** Buildr MUST 支持 `required: true` 和 `required: false`
-- **AND** 根 `AGENTS.md` 受管区块 MUST 是必读入口，不再登记或安装独立 `buildr-core` 规则
+- **AND** Buildr MUST NOT 要求根默认区块，也不得登记或安装独立 `buildr-core` 规则
 - **AND** optional 内置能力 MUST 支持显式卸载
 
 #### Scenario: 内置能力状态跟踪
@@ -99,13 +99,13 @@ Buildr MUST 通过 sync 支持已有 Buildr workspace 升级到内置能力和 a
 
 #### Scenario: 修复根 AGENTS required block
 - **WHEN** 已有 workspace 的根 `AGENTS.md` 缺少或破坏 Buildr required block
-- **THEN** Buildr sync MUST 恢复 required block，使其正文与随包内联规则一致
+- **THEN** Buildr sync MUST 保留文件原状，不恢复、替换或插入 required block
 - **AND** Buildr MUST NOT 覆盖 `AGENTS.md` 的用户正文
 
 #### Scenario: 迁入产品 baseline 规则
 - **WHEN** 已有 workspace 使用旧版 package baseline rules
-- **THEN** Buildr sync MUST 将核心规则内联到根 `AGENTS.md`，其他专业规则仍使用通用规则清单
-- **AND** `runtime.md` 的语义 MUST 内化进 根 `AGENTS.md` 受管区块
+- **THEN** Buildr sync MUST NOT 将核心规则写入根 `AGENTS.md`，用户规则按实际存在的 `AGENTS.md` 发现
+- **AND** Buildr MUST NOT 将 `runtime.md` 语义自动写入根 `AGENTS.md`
 
 #### Scenario: 清单引用的旧共享资源不可解析
 - **WHEN** workspace 清单中的官方 `resource:` 引用在当前共享集及退役封存中均不可解析
@@ -220,7 +220,7 @@ Buildr MUST将当前产品 `resources/workspace` 与 `resources/runtime` 视为�
 #### Scenario: 保留 workspace 自有内容
 - **WHEN** init/sync 向 Workspace 物化产品管理资产
 - **THEN** Buildr MUST继续保留用户或自举 Workspace 自有的 `AGENTS.md` 正文和未由资源 manifest 管理的资产
-- **AND** Buildr MUST只修复 required block 和 manifest 声明的产品管理资产
+- **AND** Buildr MUST只修复 manifest 声明的产品管理资产，根 `AGENTS.md` MUST 保持原状
 
 ### Requirement: Sync 聚合 Component 与 runtime 状态
 Buildr sync MUST 在 workspace 产品能力同步阶段处理 Components，并在没有待决冲突时将其有效 Rules 和 Skills 投射到指定 Agent runtime。

@@ -52,7 +52,6 @@ export interface PackageMaintenanceDependencies {
   toPosixRelative: (...args: any[]) => any;
   existsDirectory: (file: string) => boolean;
   existsFile: (file: string) => boolean;
-  ensureRootRequiredBlock: typeof import('../../../infrastructure/filesystem/required-block.ts').ensureRootRequiredBlock;
   copyFileIfChanged: (...args: any[]) => any;
   copyDirectoryIfChanged: (...args: any[]) => any;
   removePath: (...args: any[]) => any;
@@ -96,7 +95,6 @@ export function registerApplicationPackageMaintenance(dependencies: PackageMaint
     toPosixRelative,
     existsDirectory,
     existsFile,
-    ensureRootRequiredBlock,
     copyFileIfChanged,
     copyDirectoryIfChanged,
     removePath,
@@ -149,7 +147,6 @@ export function registerApplicationPackageMaintenance(dependencies: PackageMaint
     };
 
     if (!checkOnly) {
-      ensureRootRequiredBlock(targetRoot, changed);
       changed.push(...convergeRegistryManifests(targetRoot));
       if (appendGitignoreEntries(path.join(targetRoot, '.gitignore'), [...WORKSPACE_ROOT_GITIGNORE_ENTRIES])) {
         changed.push('.gitignore');

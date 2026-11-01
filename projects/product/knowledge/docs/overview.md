@@ -79,7 +79,7 @@ Buildr 当前以本机工作为主。文件资料可以通过 Git 共享，任�
 - [工作对象与代码关系](architecture/project-service-repositories.md)：判断怎样组织项目（Project）与实现、共享和修改会影响哪里。
 - [阅读目录](README.md)：按需查找协作方式、技术说明和故障参考。准备开发 Buildr 时，从[技术架构](architecture/technical.md)进入。
 
-本页结合[产品定位规范](../../openspec/specs/agent-first-product-positioning/spec.md)、[核心规则](../../services/buildr/resources/workspace/AGENTS.md)及上述专项说明，解释当前产品的用途、协作方式和使用边界；具体行为以正式规范与实际实现为准。
+本页结合[产品定位规范](../../openspec/specs/agent-first-product-positioning/spec.md)、[历史核心规则原文（仅作来源参照）](../../services/buildr/resources/workspace/AGENTS.md)及上述专项说明，解释当前产品的用途、协作方式和使用边界；历史原文不再自动写入用户根 `AGENTS.md`，也不作为用户项目的必装约定。具体行为以正式规范与实际实现为准。
 
 ## 后续方向
 

@@ -5,7 +5,7 @@
 - Workspace 是 Buildr 组织（Organization/Root）源资产根；`--target` 始终指向 Buildr workspace root，不指向 Service 代码仓。
 - 工作空间（Workspace）必须完成 `buildr init`；身份已知时运行 `buildr init --agent <agent> --target <dir> --name <name> --profile <personal|team|company>` 一次完成源资产、运行时（Runtime）文件和最终诊断（Doctor）。身份未知可省略 `--agent`，保留唯一既有受管方式，无既有方式时默认 `agents-standard`；多个不等价方式要求明确选择。仅源资产使用 `init --source-only`，不能与 `--agent` 或 `--adapter` 混用，执行失败也不退回纯源流程。完整初始化的最终诊断（Doctor）通过后继续首次使用交接，而不是默认让用户执行 `project create`：用普通语言说明工作空间（Workspace）承载共同事实，项目（Project）承载业务目标，服务（Service）承担实现职责，代码库实例（Repository Instance）定位实际代码；多个服务可共用一份代码。没有 Project 时询问要管理的业务、产品、系统、长期工作或已有 repo；唯一 Project 没有 Service 时说明 Service 只在代码仓、应用、模块或可执行资产存在时需要，并询问接入还是直接开始；唯一范围时直接邀请第一项工作目标；多个候选时只问消除范围歧义的最少问题。不要创建 `WELCOME.md`、持久 checklist 或固定教学 Rule。用户已经给出明确目标时连续推进，不为展示教学中断工作。
 - 普通初始化在源资产准备完成后，默认登记到当前产品对应的本机 Buildr Web，再执行运行时（Runtime）准备；已有登记直接复用，不启动网页或转移另一渠道的归属。`init --source-only` 不登记本机列表或建立网页管理归属。登记失败保留源资产，按具体原因修复后重试原初始化；后续运行时（Runtime）失败保留已成立登记，使用输出的 `sync` 指引接续，不要求重复初始化或手动添加。用户需要网页配置时，打开已登记的工作空间（Workspace），先选择工作空间（Workspace），再在“项目”“服务”“代码库”页面维护相应范围；用户只在智能体（Agent）工具中工作时无需打开网页。
-- 根 `AGENTS.md` 是规则入口，其受管区块（Managed Block）内联核心规则；专业规则通过组织根、项目或服务的 `AGENTS.md` 按作用域发现，`projects/manifest.yml` 是项目清单（Project Registry）。
+- 实际存在的 `AGENTS.md` 是用户自有规则入口，按组织根、项目或服务作用域发现；Buildr 初始化、更新和同步不创建根规则文件，也不插入或恢复默认段。`projects/manifest.yml` 是项目清单（Project Registry）。
 
 ## Project
 
@@ -66,7 +66,7 @@
 
 ## Builtins
 
-- 核心规则位于根 `AGENTS.md` 受管区块，不是独立内置项；专业规则（Rule）、技能（Skill）和命令（Command）仍由各自清单管理。
+- 不再安装通用核心规则或要求根默认区块；规则（Rule）由用户通过实际 `AGENTS.md` 维护，技能（Skill）和命令（Command）继续按各自清单管理。
 - 查看 workspace 内置能力状态：`buildr builtin list --target <dir> --json` 或最终 doctor。
 - 卸载 optional 内置能力：`buildr builtin uninstall <id> --target <dir>`；required 能力不能卸载。
 - 恢复 optional 内置能力：`buildr builtin restore <id> --target <dir>`。该命令表示用户已确认放弃此 Builtin 的本地修改；若当前 Builtin 声明 predecessor，只能接管 manifest 可证明为 Buildr-managed 且路径匹配 package 声明的旧 identity，ownership 不明或目标冲突时仍须停止。replacement source 恢复后继续运行 `buildr sync <agent> --target <dir>` 收敛当前 Agent runtime，不要求用户手工移动 Skill 目录。
@@ -90,7 +90,7 @@
 - Rules 控制 Agent 的价值观、边界和约束；Skills 封装可复用的专业动作和操作流程。
 - Rule 和 Skill 不以“是否必须加载”作为本质区分；Rule 描述是 Agent 判断规则语义相关性的索引，不是路径或角色路由表。
 - Agent runtime adapter 按“scope 祖先链 + scope 子树”发现和投射 `AGENTS.md`，不替 Agent 判断 optional Rule 与任务的语义相关性，也不使用预设 role/path 路由。
-- 新增或修改规则直接编辑对应 scope 的 `AGENTS.md`；受管区块（Managed Block）内的核心规则由 Buildr 维护，不得手工改写。
+- 新增或修改规则直接编辑对应作用域（Scope）的 `AGENTS.md`。旧默认区块不会被同步修复或删除；仅在用户明确授权清理时移除，并保留需要的自有约定。
 - root/Organization、Project 与 Service 规则都通过各自目录的 `AGENTS.md` 维护；更具体作用域的规则补充而不削弱上层。
 - 既有 `rules/manifest.yml` 与 `rules/*.md` 只保留为兼容文件，不再被登记、加载或删除；doctor 会提示迁移到 `AGENTS.md`，不阻断其他工作。
 - 需要投射到智能体运行时（Agent Runtime）时，运行 `buildr rules render <agent> --scope <workspace-relative-path> --target <dir>`；身份未知可省略。标准适配器（Adapter）原生使用 `AGENTS.md`，Claude Code 使用逐源桥接，Cursor/Qoder/TRAE 使用作用域内厂商规则（Rule），TRAE Work/WorkBuddy 使用根引用桥接。本机查询与诊断见[运行时维护](runtime.md)；具体路径、刷新前置条件和兼容依据见[在线适配参考](https://github.com/BuildrAI/Buildr/blob/main/projects/product/services/buildr/docs/agent-runtime-adapters.md)。文件准备不证明当前会话加载，不维护品牌通过等级或历史冒烟状态。

@@ -7,7 +7,6 @@ export { acquireExclusiveFileLock, releaseExclusiveFileLock, withExclusiveFileLo
 import { parseYamlDocument, parseYamlValue, quoteYaml } from './yaml.ts';
 export { parseYamlDocument, parseYamlValue, quoteYaml } from './yaml.ts';
 import { atomicWriteFile, atomicWriteJson } from './atomic-files.ts';
-import { ensureRootRequiredBlock, rootRequiredBlockStatus } from './required-block.ts';
 import { assertInitializedBuildrWorkspace, buildrWorkspaceIdentity, isInitializedBuildrWorkspace } from './workspace-identity.ts';
 import { addDoctorFinding } from '../contracts/diagnostic-finding.ts';
 import { createWorkspaceMutation } from './workspace-mutation.ts';
@@ -143,6 +142,6 @@ export function registerWorkspaceInfrastructure(runtime: any): any  {
 
 
 
-  Object.assign(runtime, { ensureDirectory, copyDirectory, removePath, collectFiles, atomicWriteFile, atomicWriteJson, parseYamlDocument, quoteYaml, parseYamlValue, mutationStateRoot, mutationLockPath, mutationRecoveryReceiptPath, pathIsEqualOrInside, assertSafeAssetTarget, workspaceSymlinkSegment, normalizedGitIdentity, sameGitIdentity, snapshotMutationPath, removeMutationRestoreTarget, mutationPathFingerprint, prepareMutationRestore, restoreMutationSnapshot, withWorkspaceMutation, productRoot, resourcesRoot, resourceWorkspaceRoot, bootstrapContractPath, developmentWorkspaceRoot, renderTemplate, writeIfMissing, trackWrite, writeMappedFileIfMissing, appendGitignoreEntries, toPosixRelative, existsDirectory, existsFile, ensureRootRequiredBlock, rootRequiredBlockStatus, writeFileIfChanged, copyFileIfChanged, copyDirectoryIfChanged, buildrWorkspaceIdentity, isInitializedBuildrWorkspace, assertInitializedBuildrWorkspace, addDoctorFinding });
+  Object.assign(runtime, { ensureDirectory, copyDirectory, removePath, collectFiles, atomicWriteFile, atomicWriteJson, parseYamlDocument, quoteYaml, parseYamlValue, mutationStateRoot, mutationLockPath, mutationRecoveryReceiptPath, pathIsEqualOrInside, assertSafeAssetTarget, workspaceSymlinkSegment, normalizedGitIdentity, sameGitIdentity, snapshotMutationPath, removeMutationRestoreTarget, mutationPathFingerprint, prepareMutationRestore, restoreMutationSnapshot, withWorkspaceMutation, productRoot, resourcesRoot, resourceWorkspaceRoot, bootstrapContractPath, developmentWorkspaceRoot, renderTemplate, writeIfMissing, trackWrite, writeMappedFileIfMissing, appendGitignoreEntries, toPosixRelative, existsDirectory, existsFile, writeFileIfChanged, copyFileIfChanged, copyDirectoryIfChanged, buildrWorkspaceIdentity, isInitializedBuildrWorkspace, assertInitializedBuildrWorkspace, addDoctorFinding });
   return runtime;
 }

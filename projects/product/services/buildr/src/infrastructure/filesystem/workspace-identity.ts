@@ -15,9 +15,8 @@ export function buildrWorkspaceIdentity(targetRoot: string) {
     metadataFile: existsFile(path.join(targetRoot, '.buildr', 'workspace.yml')),
     rootOrganization: existsDirectory(path.join(targetRoot, 'projects')),
   };
-  const required = ['AGENTS.md', '.buildr/workspace.yml', 'projects'];
+  const required = ['.buildr/workspace.yml', 'projects'];
   const missing = [
-    ...(!assets.agentsFile ? ['AGENTS.md'] : []),
     ...(!assets.metadataFile ? ['.buildr/workspace.yml'] : []),
     ...(!assets.rootOrganization ? ['projects'] : []),
   ];

@@ -101,9 +101,11 @@ export function createSourceObjectRepository(assets: SourceAssetRead) {
       if (!observation.locator?.path) return { objects: [] };
       const relative = sourceRelativePath(root, observation.locator.path);
       if (relative === 'AGENTS.md') {
-        const current = readSkillText(root, relative, { requireRootProof: true }); const currentBlock = block(current.content); const expected = assets.requiredBlock();
+        const current = readSkillText(root, relative, { requireRootProof: true }); const currentBlock = block(current.content);
+        if (!currentBlock) return { objects: [] };
+        const expected = assets.requiredBlock();
         const observed = observedVersion(observation); const observedBlock = observed.content === undefined ? null : block(observed.content);
-        if (!currentBlock || currentBlock.text !== expected) throw sourceError('source_required_block_conflict', '核心受管区块与当前随包模板不一致。');
+        if (currentBlock.text !== expected) throw sourceError('source_required_block_conflict', '核心受管区块与当前随包模板不一致。');
         if (observed.content !== undefined && (!observedBlock || observedBlock.text !== expected)) throw sourceError('source_observation_conflict', '当次正文中的受管区块不能由当前模板证明。');
         const selected = observedBlock || currentBlock;
         const value = object(workspaceId, '.', 'rule', `workspace:${workspaceId}:managed-block:buildr:required`, { managedBlock: 'buildr:required', relativePath: relative }, currentBlock.text, { ...observation, observedContent: observedBlock?.text, observedDigest: observedBlock ? sourceDigest(observedBlock.text) : observed.digest === current.digest ? sourceDigest(currentBlock.text) : undefined }, 'buildr', 'buildr', [{ authority: 'buildr:required-template', locator: 'resources/workspace/AGENTS.md', digest: sourceDigest(expected) }]);

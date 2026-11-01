@@ -120,7 +120,7 @@ Buildr 内置技能 MUST 引导 Agent 使用 Buildr 源资产维护 `AGENTS.md` 
 #### Scenario: 维护规则
 - **WHEN** 用户要求新增、修改或删除需要沉淀或复用的组织根、项目或服务规则
 - **THEN** Buildr 技能 MUST 引导 Agent 直接维护对应作用域目录的 `AGENTS.md` 正文
-- **AND** Buildr 技能 MUST 保留 Buildr 受管区块所有权和用户正文
+- **AND** Buildr 技能 MUST 尊重用户自有规则；不得要求插入或恢复旧默认区块，显式清理必须有用户授权
 - **AND** Buildr 技能 MUST NOT 引导 Agent 使用 `rules add/remove` 或维护 `rules/manifest.yml`
 - **AND** Buildr 技能 MUST 引导 Agent 在需要时运行 doctor、runtime check 或 rules render
 
