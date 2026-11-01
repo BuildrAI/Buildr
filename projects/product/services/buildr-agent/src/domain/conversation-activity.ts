@@ -21,11 +21,12 @@ export function userActivityAt(record: StoredConversation): string | undefined {
 export function summaryView(record: StoredConversation, version: number, seenThrough: number, updatedAt: string): ConversationView {
   const view = record.view;
   const pending=(run:NonNullable<ConversationView['run']>)=>!run.supersededBy&&((!run.resourcesReleased&&BUSY_STATES.has(run.status))||run.tools.some(tool=>tool.status!=='completed'));
+  const awaiting=view.requests.some(request=>![view.run,...view.retainedRuns??[]].some(run=>run&&run.id===request.runId&&run.supersededBy));
   return {
     ...view, titleState:view.titleState??{status:'unknown'}, entries: [], requests: [], nextEntryCursor: undefined,
     retainedRuns:view.retainedRuns?.map(run=>({...run,tools:[]})),
     run: view.run ? {...view.run, tools: []} : undefined,
     participants: record.participants.map(p => ({id:p.id,provider:p.provider as ConversationView['participants'][number]['provider'],connectionId:p.connectionId,label:p.label,model:p.modelId,modelAccountId:p.modelAccountId,deliveredThrough:p.deliveredThrough,contextId:''})),
-    activity: {version, seenThrough, updatedAt, active: (Boolean(view.retainedRuns?.some(pending)) || !(view.hidden && view.run?.executionState === 'ended' && view.run.resourcesReleased && view.run.status === 'unknown')) && (Boolean(view.run&&pending(view.run)) || view.retainedRuns?.some(pending) || view.requests.length > 0 || version > seenThrough)},
+    activity: {version, seenThrough, updatedAt, active: (Boolean(view.retainedRuns?.some(pending)) || !(view.hidden && view.run?.executionState === 'ended' && view.run.resourcesReleased && view.run.status === 'unknown')) && (Boolean(view.run&&pending(view.run)) || view.retainedRuns?.some(pending) || awaiting || version > seenThrough)},
   };
 }

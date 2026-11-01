@@ -73,7 +73,7 @@ function fake(id = 'local', options: { hold?: boolean; disconnect?: 'stopped'|'r
   } };
   return { executor, contexts, sends, replies, opens, loginUpdate: () => loginUpdate };
 }
-function fixture(executors: AgentExecutor[], settings: { modelProviders?: AgentServiceOptions['modelProviders']; autoContinueInterrupted?: boolean; shutdownTimeoutMs?: number; now?: () => Date } = {}) {
+function fixture(executors: AgentExecutor[], settings: { modelProviders?: AgentServiceOptions['modelProviders']; autoContinueInterrupted?: boolean; shutdownTimeoutMs?: number; now?: () => Date; controlSupersededRun?: AgentServiceOptions['controlSupersededRun'] } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-agent-core-'));
   const workspace = path.join(root, 'workspace'); fs.mkdirSync(workspace);
   const options = { ...settings, dataRoot: path.join(root, 'profile'), executors, resolveWorkspace(id: string) { assert.equal(id, 'workspace-one'); return { rootPath: workspace }; }, assertTask(_id: string, taskId: string) { assert.equal(taskId, 'task-one'); } };
@@ -2650,6 +2650,37 @@ for (const exact of [false, true]) test('a resolved request cannot be resurrecte
     assert.equal(current.requests.length, 0);
     assert.equal(native.replies.length, 0);
   } finally { release(); await f.close(); }
+});
+
+for(const previouslyStopped of [false,true])test('startup reconciles legacy accepted switches without stopping current work or replaying an uncertain stop ('+previouslyStopped+')',async()=>{
+  const old=fake('local',{question:true}),other=fake('other',{hold:true}),controls:Array<{runId:string;action:string}>=[];
+  const f=fixture([old.executor,other.executor],{controlSupersededRun:async(_scope,_id,input,action)=>{controls.push({runId:input.runId,action});}});
+  try{
+    await connected(f.service,'local');await connected(f.service,'other');
+    const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','old goal');
+    const before=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.requests.length===1);
+    send(f.service,chat.id,'other','new goal');
+    const next=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.id!==before.run!.id&&view.run?.status==='running'&&controls.length===1);
+    const repository=new ConversationRepository(path.join(f.options.dataRoot,'agent-service')),record=repository.readConversation(chat.id)!;
+    // An upgrade sees the pre-marker format, including the unanswered binding.
+    record.view.retainedRuns![0]=structuredClone(before.run!);
+    if(previouslyStopped)record.view.retainedRuns![0]!.stopRequested=true;
+    delete record.attempts.find(attempt=>attempt.runId===before.run!.id)!.supersededStopRequested;
+    record.view.requests=structuredClone(before.requests);
+    record.requests[before.requests[0]!.id]={nativeId:'question-one',executionRef:record.attempts.find(attempt=>attempt.runId===before.run!.id)!.executionRef!};
+    repository.saveConversation(record,record.view.revision);controls.length=0;
+    await f.service.conversations.recoverInterrupted();
+    await waitUntil(()=>controls.length,value=>value===1);
+    let current=f.service.conversations.read('workspace-one',chat.id);
+    assert.equal(current.requests.length,0);assert.equal(current.retainedRuns![0]!.supersededBy,next.run!.id);
+    assert.deepEqual(current.run,next.run,'the active current run is untouched');
+    assert.deepEqual(controls,[{runId:before.run!.id,action:previouslyStopped?'observe':'stop'}]);
+    old.sends[0]!.onEvent({type:'request',request:{id:'late-question',kind:'question',title:'过期问题'}});
+    current=f.service.conversations.read('workspace-one',chat.id);assert.equal(current.requests.length,0);
+    assert.equal(old.replies.length,0);assert.equal(other.sends.length,1);
+    await f.service.conversations.recoverInterrupted();await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(controls.filter(value=>value.action==='stop').length,previouslyStopped?0:1);
+  }finally{await f.close();}
 });
 
 for(const replacement of ['local','other'])test('retained tools allow a new instruction with '+replacement+' and preserve exact old stop',async()=>{

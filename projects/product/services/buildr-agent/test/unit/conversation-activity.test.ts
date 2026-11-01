@@ -3,6 +3,11 @@ import assert from 'node:assert/strict';
 import { summaryView } from '../../src/domain/conversation-activity.ts';
 import type { StoredConversation } from '../../src/domain/agent-state.ts';
 
+test('legacy requests without a run identity remain pending rather than crashing discovery',()=>{
+ const record={view:{requests:[{id:'pending'}]},participants:[]} as unknown as StoredConversation;
+ assert.equal(summaryView(record,0,0,'now').activity!.active,true);
+});
+
 test('released historical unknown rounds do not keep a stopped conversation active; unresolved tools still do',()=>{
  const run={id:'old',status:'unknown',resourcesReleased:true,executionState:'unknown',tools:[]} as any;
  const record={view:{run:{id:'cancelled',status:'stopped',resourcesReleased:true,tools:[]},retainedRuns:[run],requests:[],hidden:false},participants:[]} as unknown as StoredConversation;
@@ -16,6 +21,8 @@ test('confirmed replacement keeps uncertain resources internal and does not crea
  const old={id:'old',status:'unknown',supersededBy:'new',tools:[{id:'uncertain',status:'unknown'}]} as any;
  const record={view:{run:{id:'new',status:'completed',tools:[]},retainedRuns:[old],requests:[],hidden:false},participants:[]} as unknown as StoredConversation;
  assert.equal(summaryView(record,3,3,'now').activity!.active,false);
+ record.view.requests=[{id:'late',runId:'old'} as any];
+ assert.equal(summaryView(record,3,3,'now').activity!.active,false,'a legacy owner cannot recreate user attention with a retired request');
  assert.equal(summaryView(record,4,3,'now').activity!.active,true,'unread new answers still require attention');
  assert.equal(record.view.retainedRuns![0]!.tools[0]!.status,'unknown','physical facts remain preserved');
 });

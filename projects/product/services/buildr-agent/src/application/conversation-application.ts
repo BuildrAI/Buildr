@@ -3,6 +3,7 @@ import { modelLeaseIdentity } from '../model-access/model-preferences.ts';
 import {ConversationWarmups,CONNECTION_IDLE_MS,type PreparedSource} from './conversation-warmups.ts';
 import { answerAttachmentIds, resolveQuestionAnswer, questionAnswerDisplay, normalizeQuestionCapabilities } from '../domain/question-answer.ts';
 import { normalizeSendDraft } from '../domain/send-draft.ts';
+import { reconcileLegacySupersededRuns } from '../domain/superseded-runs.ts';
 import { blocksExecution } from '../domain/interaction-policy.ts';
 import { ConversationAttachments, MAX_IMAGE_BYTES, MAX_VISUAL_INPUTS } from './conversation-attachments.ts';
 import type { AttachmentInput } from '../contracts.ts';
@@ -1363,7 +1364,21 @@ export class ConversationApplication {
   /** Startup scans executions, never task status. No browser subscription is required. */
   recoverInterrupted(): Promise<void> {
     if(this.recoveryWork)return this.recoveryWork;
-    for(const record of this.options.repository.listPending(true))if(conversationRuns(record.view).some(run=>run.supersededBy))void this.cleanupSuperseded(record.view.workspaceId,record.view.id).catch(()=>{});
+    for(const candidate of this.options.repository.listPending(true)) {
+      // Backfill only durable accepted switches. The current run and its owner
+      // remain untouched, including when an older backend is still executing.
+      try {
+        this.retryRecordUpdate(()=>{
+          const record=this.load(candidate.view.workspaceId,candidate.view.id);
+          const changed=reconcileLegacySupersededRuns(record);
+          const requests=record.view.requests.filter(request=>record.view.retainedRuns?.some(run=>run.id===request.runId&&run.supersededBy));
+          if(requests.length)this.retireQuestions(record,requests);
+          if(changed||requests.length)this.save(record);
+        });
+        const record=this.load(candidate.view.workspaceId,candidate.view.id);
+        if(conversationRuns(record.view).some(run=>run.supersededBy))void this.cleanupSuperseded(record.view.workspaceId,record.view.id).catch(()=>{});
+      } catch { /* A local conflict must not prevent recovery of unrelated work. */ }
+    }
     for(const record of this.options.repository.listInterruptedTitles(this.options.generation)){
       if(record.view.run && this.options.generationAlive?.(record.view.run.generation))continue;
       if(record.titleOrigin!=='default')continue;
