@@ -8,7 +8,7 @@ import {renderToStaticMarkup} from 'react-dom/server';
 registerHooks({
   resolve(specifier, context, next) {
     if (!context.parentURL?.endsWith('/TaskConversationEntry.tsx')) return next(specifier, context);
-    if (specifier === 'react') return {url:'data:text/javascript,'+encodeURIComponent('export const useState=initial=>globalThis.__taskEntryState(initial);export const useEffect=()=>{};export const useContext=()=>true;'),shortCircuit:true};
+    if (specifier === 'react') return {url:'data:text/javascript,'+encodeURIComponent('export const useState=initial=>globalThis.__taskEntryState(initial);export const useEffect=()=>{};export const useContext=()=>true;export const useRef=initial=>({current:initial});'),shortCircuit:true};
     if (specifier.endsWith('/pageTabs')) return {url:'data:text/javascript,export const WorkspaceViewActiveContext={};',shortCircuit:true};
     if (specifier === './AgentConversationsContext') return {url:'data:text/javascript,export const useOptionalAgentConversations=()=>globalThis.__taskEntryContext;',shortCircuit:true};
     return next(specifier, context);
@@ -21,7 +21,7 @@ registerHooks({
 const {TaskConversationEntry}=await import('../src/features/agent-conversations/TaskConversationEntry.tsx');
 
 function markup({rows=[],loading=false,error=''}={}) {
-  const states=[rows,loading,error,false];let index=0;
+  const states=[rows,loading,error,false,0];let index=0;
   globalThis.__taskEntryState=()=>[states[index++],()=>{}];
   globalThis.__taskEntryContext={api:{},openConversation(){},newConversation(){}};
   try {return renderToStaticMarkup(TaskConversationEntry({workspaceId:'workspace',taskId:'task'}));}

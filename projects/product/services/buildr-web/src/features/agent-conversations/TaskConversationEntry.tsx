@@ -1,4 +1,4 @@
-import { useContext, useEffect, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
 import { Alert, Button, Popover } from 'antd';
 import { CommentOutlined, PlusOutlined } from '@ant-design/icons';
 import { WorkspaceViewActiveContext } from '../../app/pageTabs';
@@ -8,8 +8,30 @@ import type { ConversationSummary } from './types';
 // 新对话不立即创建会话；草稿按工作空间共享，首次发送时才建立服务端对话。
 export function TaskConversationEntry({workspaceId,taskId}:{workspaceId:string;taskId:string}){
   const context=useOptionalAgentConversations(),viewActive=useContext(WorkspaceViewActiveContext);
-  const [rows,setRows]=useState<ConversationSummary[]>([]),[loading,setLoading]=useState(false),[error,setError]=useState(''),[open,setOpen]=useState(false);
-  useEffect(()=>{if(!context||!viewActive)return;const controller=new AbortController();setLoading(true);void context.api.list(workspaceId,{taskId,signal:controller.signal}).then(result=>{if(!controller.signal.aborted){setRows(result.conversations);setError('');}}).catch(failure=>{if(!controller.signal.aborted)setError(failure instanceof Error?failure.message:'读取任务对话失败。');}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});return()=>controller.abort();},[context?.api,workspaceId,taskId,viewActive,context?.conversation?.id]);
+  const [rows,setRows]=useState<ConversationSummary[]>([]),[loading,setLoading]=useState(false),[error,setError]=useState(''),[open,setOpen]=useState(false),[reload,setReload]=useState(0);
+  const reading=useRef<AbortController|null>(null),queued=useRef(false),generation=useRef(0);
+  // 绑定变化只排队补读，不中断在途读取：中断会让浏览器把请求记为失败（net::ERR_ABORTED），并把已成功的结果丢掉。
+  const boundToThisTask=context?.conversation?.taskId===taskId;
+  useEffect(()=>{
+    if(!context||!viewActive)return;
+    if(reading.current){queued.current=true;return;}
+    const controller=new AbortController(),current=++generation.current;
+    reading.current=controller;setLoading(true);
+    void context.api.list(workspaceId,{taskId,signal:controller.signal}).then(result=>{
+      if(current!==generation.current)return;
+      setRows(result.conversations);setError('');
+    }).catch(failure=>{
+      if(current!==generation.current||controller.signal.aborted)return;
+      setError(failure instanceof Error?failure.message:'读取任务对话失败。');
+    }).finally(()=>{
+      if(reading.current===controller)reading.current=null;
+      if(current!==generation.current)return;
+      setLoading(false);
+      if(queued.current){queued.current=false;setReload(value=>value+1);}
+    });
+  },[context?.api,workspaceId,taskId,viewActive,boundToThisTask,reload]);
+  // 只有离开任务页才中断读取；过期结果由代次判断丢弃。
+  useEffect(()=>()=>{generation.current+=1;reading.current?.abort();reading.current=null;},[]);
   if(!context)return null;
   const startDraft=()=>{context.newConversation({scope:{workspaceId,taskId}});setOpen(false);};
   const openEntry=()=>{if(error){setOpen(true);return;}if(rows.length===0){startDraft();return;}if(rows.length===1){void context.openConversation(workspaceId,rows[0].id);return;}setOpen(true);};
