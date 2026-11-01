@@ -17,3 +17,10 @@
 
 - [x] 4.1 四服务静态检查与单元测试通过，buildr-web 正式构建通过。buildr / buildr-agent / buildr-web 全部通过；dsh-plugin 未改动，单元测试通过，两项 static 检查需已准备的 DSH SDK 而未运行。
 - [ ] 4.2 在本机 Buildr Web 用一条 DSH 对话实际验证思考节点可见、结束后折叠、最终答复不变。需先把本任务改动交付到本机应用，再由人工或浏览器验证；本环境无浏览器自动化，暂以界面渲染测试作为证据。
+
+# 5. 网关思考可见
+
+- [x] 5.1 Responses 输出与 Responses 重放共用同一 reasoning 条目生成逻辑：明文思考写入 `summary`，`encrypted_content` 保留，签名型推理保持空摘要。
+- [x] 5.2 补模型网关集成用例：chat-completions 上游的 `reasoning_content` 在 Responses 响应中可见、加密载荷不含明文、重放仍还原签名；只有签名时摘要为空。
+- [ ] 5.3 运行中的本机网关实测：Responses 请求返回非空 `summary`，`encrypted_content` 仍可回放。
+

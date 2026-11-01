@@ -17,7 +17,15 @@
 - 备选二：只在前端按文本前缀识别思考。依赖文本格式，历史记录无法区分，放弃。
 - 备选三：思考默认常显于主线。会让对话主线被模型内部推理占据，与「对话用于表达和解释」的定位冲突，放弃；默认折叠在处理过程内，需要时展开。
 
+## 网关层：让 Responses 客户端看见明文思考
+
+- 现状：`protocols.ts` 在 Responses 输出与 Responses 重放两条路径上都输出 `summary: []`，把内部 reasoning 块整体 `opaque.encode(...)`。DSH 通过 pi-ai 只从 `item.summary` 取思考文本，因此即使上游 chat-completions 给了 `reasoning_content`，思考也是空的。
+- 改为：内部 reasoning 块若带明文（`thinking` 字段），输出 `summary: [{type:'summary_text', text}]`，`encrypted_content` 保留原有不透明载荷。签名回放、跨账号绑定校验与「同一助手消息只允许一个签名」的既有规则不变。
+- 签名型推理（只有 `reasoning_signature`、没有明文）继续输出空摘要：上游没有可读文本，不能凭空生成。
+- 流式与非流式共用同一 reasoning 条目生成逻辑，保证 `response.output_item.done` 里的条目带摘要；前端与 DSH 会话日志因此能同时看到文本。
+
 ## 风险
 
 - 思考文本可能很长：只进入处理过程，默认折叠，且不进入模型历史，成本可控。
 - 历史记录没有思考条目：读取侧按缺省处理，不需要迁移。
+- 明文思考进入 Responses 客户端会增加响应体积与本地留存；这来自产品目标（展示思考），且文本量受模型单步思考长度约束，不额外缓存。

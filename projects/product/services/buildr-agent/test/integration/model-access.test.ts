@@ -128,12 +128,32 @@ test('Responses tool output returns to the exact source call; signed reasoning i
   try {
     const added=await access.accounts.add({provider:'fixture'}),ready=await checkEnabled(access,added.id);const lease=await access.leases.create({accountId:ready.id,modelId:model.id,agentId:'codex',conversationId:'a',runId:'1'});
     const request=async(body:ProtocolJson,key=lease.apiKey)=>await fetch(lease.baseUrl+'/responses',{method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},body:JSON.stringify({model:lease.model,...body})});
-    const response=await (await request({input:'read'})).json();const reasoning=response.output.find((item:ProtocolJson)=>item.type==='reasoning');assert.ok(reasoning.encrypted_content.startsWith('buildr-v1.'));assert.ok(!reasoning.encrypted_content.includes('private reasoning'));
+    const response=await (await request({input:'read'})).json();const reasoning=response.output.find((item:ProtocolJson)=>item.type==='reasoning');assert.ok(reasoning.encrypted_content.startsWith('buildr-v1.'));assert.ok(!reasoning.encrypted_content.includes('private reasoning'));assert.deepEqual(reasoning.summary,[{type:'summary_text',text:'private reasoning'}]);
     const tool=response.output.find((item:ProtocolJson)=>item.type==='function_call');assert.equal(tool.call_id,'call-source');
     await request({input:[...response.output,{type:'function_call_output',call_id:'call-source',output:'file result'}]});
     const messages=inputs[1].body.messages as ProtocolJson[];assert.ok(messages.some(item=>item.tool_call_id==='call-source'&&item.content==='file result'));assert.ok(messages.some(item=>item.reasoning_signature==='signed-by-source'));
     const other=await access.leases.create({accountId:ready.id,modelId:model.id,agentId:'codex',conversationId:'b',runId:'2'});
     const foreign=await fetch(other.baseUrl+'/responses',{method:'POST',headers:{Authorization:'Bearer '+other.apiKey,'Content-Type':'application/json'},body:JSON.stringify({model:other.model,input:[reasoning]})});assert.equal(foreign.status,400);assert.equal(inputs.length,2);
+  } finally {await access.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('Responses clients receive readable reasoning summaries while opaque replay stays source bound',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'buildr-model-reasoning-summary-'));
+  const source=provider(async()=>chat({content:'done',reasoning_content:'先确认目录，再回答。',reasoning_signature:'signed'}));
+  const access=createModelAccess({root,providers:[source]});
+  try {
+    const added=await access.accounts.add({provider:'fixture'}),ready=await checkEnabled(access,added.id);
+    const lease=await access.leases.create({accountId:ready.id,modelId:model.id,agentId:'dsh',conversationId:'summary',runId:'1'});
+    const response=await (await fetch(lease.baseUrl+'/responses',{method:'POST',headers:{Authorization:'Bearer '+lease.apiKey,'Content-Type':'application/json'},body:JSON.stringify({model:lease.model,input:'check'})})).json();
+    const reasoning=response.output.find((item:ProtocolJson)=>item.type==='reasoning');
+    assert.deepEqual(reasoning.summary,[{type:'summary_text',text:'先确认目录，再回答。'}]);
+    assert.ok(reasoning.encrypted_content.startsWith('buildr-v1.')&&!reasoning.encrypted_content.includes('先确认目录'));
+    const replay=translateRequest({model:'m',input:[reasoning]},'responses','chat-completions',noOpaque),messages=replay.messages as ProtocolJson[];
+    assert.ok(messages.some(message=>message.reasoning_content==='先确认目录，再回答。'&&message.reasoning_signature==='signed'));
+    const streamed=await translateResponse(frames([{choices:[{delta:{reasoning_content:'先确认'}}]},{choices:[{delta:{content:'ok'},finish_reason:'stop'}]}]),'chat-completions','responses',{model:'route',stream:true,request:{},opaque:noOpaque,signal:new AbortController().signal});
+    const events=(await streamed.text()).split('\n').filter(line=>line.startsWith('data: ')).map(line=>JSON.parse(line.slice(6)));
+    const done=events.find(item=>item.type==='response.output_item.done'&&item.item.type==='reasoning');
+    assert.deepEqual(done.item.summary,[{type:'summary_text',text:'先确认'}]);
   } finally {await access.close();await rm(root,{recursive:true,force:true});}
 });
 
@@ -215,7 +235,7 @@ test('Messages cross-protocol stream closes each content block before opening th
 
 test('Messages effort and tool selection survive translation including signature-only replies',async()=>{
   for(const [type,expected]of [['auto','auto'],['none','none'],['any','required']]) {const body=translateRequest({messages:[],tool_choice:{type,disable_parallel_tool_use:true},output_config:{effort:'high'}},'anthropic-messages','chat-completions',noOpaque);assert.equal(body.tool_choice,expected);assert.equal(body.reasoning_effort,'high');assert.equal(body.parallel_tool_calls,false);}
-  const result=await translateResponse(chat({content:'ok',reasoning_signature:'only-signature'}),'chat-completions','responses',{model:'m',stream:false,request:{},opaque:noOpaque,signal:new AbortController().signal});const data=await result.json();assert.equal(JSON.parse(data.output.find((item:ProtocolJson)=>item.type==='reasoning').encrypted_content).signature,'only-signature');
+  const result=await translateResponse(chat({content:'ok',reasoning_signature:'only-signature'}),'chat-completions','responses',{model:'m',stream:false,request:{},opaque:noOpaque,signal:new AbortController().signal});const data=await result.json();const reasoning=data.output.find((item:ProtocolJson)=>item.type==='reasoning');assert.equal(JSON.parse(reasoning.encrypted_content).signature,'only-signature');assert.deepEqual(reasoning.summary,[],'签名型推理没有可读文本，摘要必须为空');
 });
 
 test('Codex namespace tools flatten reversibly through Chat requests, streamed calls and history',async()=>{
