@@ -72,10 +72,10 @@ export function dshItem(event: any): ExecutorItem[] {
   const data = event?.data ?? {}; const id = `event:${event?.seq}`;
   if (event?.type === 'user/message' && !isUserInput(event)) return [];
   if (event?.type === 'assistant/message') {
-    const content = Array.isArray(data.message?.content) ? data.message.content : [];
+    const content = data.message?.content;
     // Thinking stays a separate process-only item: a step may carry both kinds,
     // and only visible text may become the final reply or model history.
-    const thinking = content.filter((part: any) => part?.type === 'reasoning' && typeof part.text === 'string').map((part: any) => part.text.trim()).filter(Boolean).join('\n\n');
+    const thinking = (Array.isArray(content) ? content : []).filter((part: any) => part?.type === 'reasoning' && typeof part.text === 'string').map((part: any) => part.text.trim()).filter(Boolean).join('\n\n');
     const text = visibleText(content); const items: ExecutorItem[] = [];
     if (thinking) items.push({ id: `assistant:${data.turn}:${data.step}:reasoning`, kind: 'message', role: 'assistant', text: thinking, thinking: true, status: 'completed' });
     if (text) items.push({ id: `assistant:${data.turn}:${data.step}`, kind: 'message', role: 'assistant', text, status: 'completed' });
