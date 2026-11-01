@@ -1,6 +1,7 @@
 import {qoderTitleBudget} from './title.ts';
 import { interactionPolicy } from '../../domain/interaction-policy.ts';
 import { qoderAccountFailure } from '../../model-access/providers/qoder-auth.ts';
+import { qoderFailureDiagnostic } from './failure-diagnostic.ts';
 /** A dedicated process keeps SDK auth/history discovery out of the Buildr host environment. */
 import { createInterface } from 'node:readline';
 import { readFile } from 'node:fs/promises';
@@ -40,6 +41,7 @@ class ConversationInput implements AsyncIterableIterator<any> {
   close(): void { this.ended = true; this.values = []; this.waiter?.({ done: true, value: undefined }); this.waiter = undefined; }
 }
 interface LiveQuery {
+  startedAt: number;
   dispatched?:boolean;
   startupFailure?:string;
   owner?: ConversationQuery;
@@ -235,7 +237,7 @@ async function execute(params: any, warmOnly = false): Promise<void> {
   if (owner && (!owner.prepared && !owner.reusable || owner.key !== key || owner.closing || owner.exited)) { await closeConversation(owner); owner = undefined; }
   let resolve!: () => void, reject!: (error: unknown) => void;
   const completion = new Promise<void>((yes, no) => { resolve = yes; reject = no; }); completion.catch(() => {});
-  const state: LiveQuery = { id: params.clientRequestId, contextId: params.contextId, permissionMode, q: undefined, accepted: false, stopping: false, tools: new Map(), pending: new Map(), texts: new Map(), unownedTasks: new Set(), toolDetails: new Map(), completedMessages: new Set(), streamMessages: new Map(), inputAcks: new Map(), resolve, reject };
+  const state: LiveQuery = { startedAt: Date.now(), id: params.clientRequestId, contextId: params.contextId, permissionMode, q: undefined, accepted: false, stopping: false, tools: new Map(), pending: new Map(), texts: new Map(), unownedTasks: new Set(), toolDetails: new Map(), completedMessages: new Set(), streamMessages: new Map(), inputAcks: new Map(), resolve, reject };
   const content = warmOnly ? [] : await workContent(params);
   if (owner) {
     // The caller has already re-read native history. An idle query must still prove its exact baseline.
@@ -298,6 +300,11 @@ async function endRound(owner: ConversationQuery, message: any): Promise<void> {
   const state = owner.state; state.settling = true;
   owner.resultIds.add(message.uuid);
   const outcome = qoderResultOutcome(message, state.stopping, gateway ? [gateway.apiKey] : []);
+  if (outcome.status === 'failed' && !state.diagnostic) {
+    const reason = await qoderFailureDiagnostic({ configRoot: process.env.QODER_CONFIG_DIR, sessionId: state.contextId, pid: owner.child?.pid, startedAt: state.startedAt, errors: message.errors, secrets: gateway ? [gateway.apiKey] : [] });
+    if (reason) outcome.diagnostic = `Qoder · 本轮执行：${reason}`;
+  }
+  if (state.stopping) { outcome.status = 'stopped'; outcome.diagnostic = undefined; }
   state.terminal = outcome.status; state.ambiguous = state.unownedTasks.size > 0;
   state.diagnostic = outcome.status === 'failed' || state.unownedTasks.size ? state.diagnostic ?? outcome.diagnostic : outcome.diagnostic;
   for (const ack of state.inputAcks.values()) { state.supplementUnknown = true; ack.reject(new Error('agent_supplement_unknown')); }

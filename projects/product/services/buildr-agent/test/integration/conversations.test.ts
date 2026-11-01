@@ -1922,6 +1922,29 @@ test('persistent capacity errors stop after three automatic attempts', async t =
   } finally { await f.close(); }
 });
 
+test('Qoder network failure automatically resumes the goal with preserved cause and selection', async t => {
+  fastRetries(t);
+  const reason='Qoder · 本轮执行：Network attempt failed at response_headers · ECONNRESET · Client network socket disconnected before secure TLS connection was established';
+  const native=fake('qoder',{failure:n=>n===1?reason:undefined}),f=fixture([native.executor]);
+  try {
+    await connected(f.service,'qoder');const chat=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'qoder','finish the existing changes and verify the results');
+    const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='completed');
+    assert.equal(native.sends.length,2);
+    const [original,resumed]=native.sends;
+    assert.match(resumed!.clientRequestId,/^automatic-retry:/);
+    assert.match(resumed!.text,/核对原对话、当前成果及工具结果/);
+    assert.match(resumed!.text,/不要重放全部历史命令/);
+    for(const key of ['model','permissionMode','reasoningEffort','serviceTier'] as const)assert.equal(resumed![key],original![key]);
+    assert.equal(resumed!.contextRef.id,original!.contextRef.id);
+    assert.equal(done.entries.filter(entry=>entry.role==='user'&&entry.kind==='message').length,1);
+    const saved=new ConversationRepository(path.join(f.options.dataRoot,'agent-service')).readConversation(chat.id)!;
+    const originalRun=saved.attempts[0]!.runId;
+    assert.equal(saved.runOutcomes?.[originalRun]?.status,'failed');
+    assert.equal(saved.runOutcomes?.[originalRun]?.diagnostic,reason);
+  } finally {await f.close();}
+});
+
 test('stop cancels a retry wait and concurrent observations do not start a second execution', async () => {
   const native = fake('local', {failure: 'Selected model is at capacity.'}), f = fixture([native.executor]);
   try {

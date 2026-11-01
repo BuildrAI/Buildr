@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { createQoderExecutor } from '../../../src/executors/qoder/index.ts';
 import { safeDiagnostic } from '../../../src/domain/agent-state.ts';
 import type { AgentRuntime, ExecutorEvent, ModelGatewayConfiguration } from '../../../src/contracts.ts';
+import { qoderFailureDiagnostic } from '../../../src/executors/qoder/failure-diagnostic.ts';
 
 const fixture = await readFile(new URL('./fixtures/qoder-cli.mjs', import.meta.url), 'utf8');
 const fingerprint = (user: string) => createHash('sha256').update('qoder:' + user).digest('hex');
@@ -66,5 +67,29 @@ test('Qoder preserves the specific model policy failure when the CLI returns onl
     assert.match(completed?.diagnostic??'',/所选模型不在 Qoder 当前原生模型目录/);
     assert.ok(!completed?.diagnostic?.includes('Sorry'));
     assert.match(safeDiagnostic(new Error('qoder_gateway_model_unavailable')),/未开放所选外部模型通道/);
+  } finally {await runtime?.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('Qoder generic terminal failure is enriched from its exact native process log only', {timeout:20000}, async () => {
+  const root = await mkdtemp(join(tmpdir(),'buildr-qoder-network-error-'));
+  let runtime: AgentRuntime | undefined;
+  try {
+    const owner = join(root,'account'), config = join(owner,'qoder-config'); await login(config,'user');
+    const generic = 'Sorry, something went wrong. Please try again. Report Issue (input /feedback)';
+    const executable = join(root,'qoder.mjs');
+    const script = fixture.replace("import{createInterface}", "import fs from'node:fs';import path from'node:path';import{createInterface}")
+      .replace("if(m.type==='user'){input=m;", `if(m.type==='user'){sid=m.session_id;const generic=${JSON.stringify(generic)};const dir=path.join(process.env.QODER_CONFIG_DIR,'logs','sessions','fixture',sid,'segments');fs.mkdirSync(dir,{recursive:true});const base={ts:new Date().toISOString(),turn_id:'exact-turn',request_id:'last-request'};fs.writeFileSync(path.join(dir,'current-p'+process.pid+'.jsonl'),[JSON.stringify({...base,type:'model.request.attempt_failed',data:{error_message:'Network attempt failed at response_headers',error_cause_chain:[{code:'ECONNRESET',message:'Client network socket disconnected before secure TLS connection was established api_key="private-key"'}],retryable:true,will_retry:false}}),JSON.stringify({...base,type:'turn.finished',data:{reason:'error',error:generic}})].join('\\n')+'\\n');emit({type:'result',subtype:'error_during_execution',is_error:true,errors:[generic],session_id:sid,uuid:'end',num_turns:1,usage:{},modelUsage:{},permission_denials:[],result:''});return;input=m;`);
+    await writeFile(executable,script);
+    runtime = await createQoderExecutor().open({connectionId:'qoder',configRoot:join(root,'binding'),nativeAccountConfigRoot:owner,executable,environment:{PATH:process.env.PATH??''}});
+    const contextRef = await runtime.createContext({cwd:root}), events: ExecutorEvent[] = [];
+    await runtime.send({contextRef,cwd:root,text:'keep the exact network source',images:[],model:'fixture-model',clientRequestId:randomUUID(),onEvent:event=>events.push(event)});
+    const completed = events.find(event=>event.type==='completed');
+    assert.equal(completed?.status,'failed');
+    assert.match(completed?.diagnostic??'',/ECONNRESET.*before secure TLS/);
+    assert.doesNotMatch(completed?.diagnostic??'',/private-key|Sorry/);
+    const observation = await runtime.observe({contextRef});
+    assert.equal(observation.status,'idle');
+    assert.equal(await qoderFailureDiagnostic({configRoot:config,sessionId:contextRef.id,pid:1,startedAt:0,errors:[generic]}),undefined,'another process cannot supply retry evidence');
+    assert.equal(await qoderFailureDiagnostic({configRoot:config,sessionId:'another-session',pid:process.pid,startedAt:0,errors:[generic]}),undefined,'another session cannot supply retry evidence');
   } finally {await runtime?.close();await rm(root,{recursive:true,force:true});}
 });
