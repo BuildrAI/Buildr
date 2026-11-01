@@ -16,7 +16,7 @@ export class DshExecutionLineage {
   readonly turns = new Map<number, string>();
   private children = new Map<string, string>();
   private pendingChildren = new Map<string, { owner: string; label: string }>();
-  private jobs = new Map<string, { owner: string; label: string }>();
+  private jobs = new Map<string, { owner: string; label: string; callId?: string }>();
   private settledJobs = new Map<string, string>();
   private goals = new Map<string,string>();
   private uncertain = new Set<string>();
@@ -53,7 +53,7 @@ export class DshExecutionLineage {
       this.pendingChildren.set(data.childId, { owner, label: String(data.label ?? 'DSH 辅助工作') });
     }
     if (event.type === 'job/registered' && owner && typeof data.jobId === 'string' && (!this.contextId || data.owner === this.contextId)) {
-      this.jobs.set(data.jobId, { owner, label: 'DSH 后台工作' });
+      this.jobs.set(data.jobId, { owner, label: 'DSH 后台工作', ...(typeof data.toolCall?.callId === 'string' ? { callId: data.toolCall.callId } : {}) });
     }
     if (event.type === 'job/settled' && this.jobs.has(data.jobId)) {
       this.settledJobs.set(data.jobId, this.jobs.get(data.jobId)!.owner);
@@ -66,6 +66,17 @@ export class DshExecutionLineage {
       ...[...this.jobs].map(([id, value]) => ['dsh-job:' + id, value] as const)]
       .filter(([, value]) => owners.has(value.owner)).map(([id, value]) => ({ id, label: value.label, status: 'running' as const }));
     return [...running, ...[...this.uncertain].filter(owner => owners.has(owner)).map(owner => ({ id: 'dsh-continuation:' + owner, label: 'DSH 接续归属待确认', status: 'unknown' as const }))];
+  }
+  /** One native command can have both a tool receipt and an active job. */
+  mergeTools(tools: Array<{ id: string; label: string; status: 'running' | 'completed' | 'unknown' }>, owners: ReadonlySet<string>): typeof tools {
+    const result = new Map(tools.map(tool => [tool.id, { ...tool }]));
+    for (const background of this.background(owners)) {
+      const job = this.jobs.get(background.id.replace(/^dsh-job:/, ''));
+      const linked = job?.callId ? result.get(job.callId) : undefined;
+      if (linked) linked.status = 'running';
+      else result.set(background.id, background);
+    }
+    return [...result.values()];
   }
   stopped(owners:ReadonlySet<string>):void {
     for(const [id,value]of this.pendingChildren)if(owners.has(value.owner))this.pendingChildren.delete(id);
@@ -120,7 +131,8 @@ export function dshExecutionObservation(events: any[], requestId: string, knownI
     if (event.type === 'tool/result' && tools.has(event.data.message?.toolCallId)) tools.get(event.data.message.toolCallId)!.status = dshToolOutcomeUnknown(event)&&!received.has(event.data.message.toolCallId)?'unknown':'completed';
     if (event.type === 'turn/end' && event.data.turn === targetTurn) end = event.data.reason?.kind;
   }
-  for (const tool of lineage.background(new Set([requestId]))) tools.set(tool.id, tool);
+  const merged = lineage.mergeTools([...tools.values()], new Set([requestId]));
+  tools.clear(); for (const tool of merged) tools.set(tool.id, tool);
   if ([...tools.values()].some(tool => tool.status === 'running')) return { status: 'tools-active', executionRef: { id: requestId }, tools: [...tools.values()] };
   if (end && !['completed','aborted','cancelled','interrupted'].includes(end)) return {status:'unknown',executionRef:{id:requestId},tools:[...tools.values()],diagnostic:'dsh_native_execution_failed'};
   return { status: [...tools.values()].some(tool => tool.status === 'unknown') ? 'unknown' : !end ? 'unknown' : ['aborted', 'cancelled', 'interrupted'].includes(end) ? 'stopped' : 'idle', executionRef: { id: requestId }, tools: [...tools.values()] };

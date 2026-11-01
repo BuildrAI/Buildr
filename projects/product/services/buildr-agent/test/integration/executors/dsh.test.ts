@@ -174,7 +174,7 @@ test('DSH lost follow recovers only the exact durable terminal, never a differen
   try{
     (remote.session as any).page=async()=>ok({records:events.map(event=>({event})),hasMore:false});
     const contextRef=await runtime.createContext({cwd});const sending=runtime.send({contextRef,cwd,text:'work',images:[],permissionMode:'default',clientRequestId:'original-request',onEvent:e=>visible.push(e)});
-    const failed=assert.rejects(sending,/dsh_execution_observation_lost/);await eventually(()=>visible.some(e=>e.type==='accepted'));await streams.at(-1)!.dispose();await failed;
+    sending.catch(()=>{});await eventually(()=>visible.some(e=>e.type==='accepted'));await streams.at(-1)!.dispose();
     events.push({type:'turn/start',seq:3,data:{turn:2}},{type:'user/message',seq:4,data:{id:'other',source:{kind:'user',rpcId:'other-request'},content:[{type:'text',text:'other'}]}},{type:'turn/end',seq:5,data:{turn:2,reason:{kind:'completed'}}});
     const executionRef={id:'original-request'};assert.notEqual((await runtime.observe({contextRef,executionRef})).status,'idle');
     await streams.at(-1)!.dispose();
@@ -210,8 +210,9 @@ test('DSH reconnects one live follow, repairs paged gaps and resumes partial tex
   try{
     const contextRef=await f.runtime.createContext({cwd:f.cwd}),executionRef={id:'live-request'};
     const sending=f.runtime.send({contextRef,cwd:f.cwd,text:'work',images:[],clientRequestId:executionRef.id,onEvent:event=>f.visible.push(event)});
-    const failed=assert.rejects(sending,/dsh_execution_observation_lost/);
-    await eventually(()=>f.visible.some(event=>event.type==='accepted'));await f.streams.at(-1)!.dispose();await failed;
+    sending.catch(()=>{});
+    await eventually(()=>f.visible.some(event=>event.type==='accepted'));await f.streams.at(-1)!.dispose();
+    await eventually(()=>(f.runtime as any).turns.get(contextRef.id)?.observationLost);
     f.publish({type:'tool/call',data:{turn:1,callId:'gap-tool',name:'read'}});
     f.publish({type:'tool/result',data:{turn:1,message:{toolCallId:'gap-tool',content:[{type:'text',text:'gap repaired'}]}}});
     await Promise.all([f.runtime.observe({contextRef,executionRef}),f.runtime.observe({contextRef,executionRef})]);
@@ -225,7 +226,7 @@ test('DSH reconnects one live follow, repairs paged gaps and resumes partial tex
     assert.equal((await f.runtime.observe({contextRef,executionRef})).status,'idle');assert.equal(f.sends,1);
   }finally{await f.runtime.close();}
 });
-test('DSH projection errors preserve the native turn and retain a sanitized failure cause',async()=>{
+test('DSH repairs a transient projection failure without ending the native turn',async()=>{
   const f=reconnectFixture();let failOnce=true;
   try{
     const contextRef=await f.runtime.createContext({cwd:f.cwd}),executionRef={id:'projection-request'};
@@ -233,9 +234,9 @@ test('DSH projection errors preserve the native turn and retain a sanitized fail
       if(failOnce&&event.type==='item'&&event.item.id==='failed-local-write'){failOnce=false;throw new Error('database is locked; Authorization: Bearer private-secret https://private.example/path');}
       f.visible.push(event);
     }});
-    const failed=assert.rejects(sending,(error:any)=>error.message==='dsh_event_observation_lost'&&error.diagnostic.includes('database is locked')&&!error.diagnostic.includes('private-secret')&&!error.diagnostic.includes('private.example'));
+    sending.catch(()=>{});
     await eventually(()=>f.visible.some(event=>event.type==='accepted'));
-    f.publish({type:'tool/call',data:{turn:1,callId:'failed-local-write',name:'read'}});await failed;
+    f.publish({type:'tool/call',data:{turn:1,callId:'failed-local-write',name:'read'}});await eventually(()=>(f.runtime as any).turns.get(contextRef.id)?.observationLost);
     f.publish({type:'tool/result',data:{turn:1,message:{toolCallId:'failed-local-write',content:[{type:'text',text:'kept native output'}]}}});
     await f.runtime.observe({contextRef,executionRef});
     assert.equal(f.sends,1);assert.equal(f.streams.filter(stream=>stream.active).length,1);
@@ -251,17 +252,23 @@ test('DSH automatically restores a lost live follow and bounds repeated reconnec
   try{
     const contextRef=await f.runtime.createContext({cwd:f.cwd}),executionRef={id:'automatic-request'};
     const sending=f.runtime.send({contextRef,cwd:f.cwd,text:'work',images:[],clientRequestId:executionRef.id,onEvent:event=>f.visible.push(event)});
-    const failed=assert.rejects(sending,/dsh_execution_observation_lost/);
-    await eventually(()=>f.visible.some(event=>event.type==='accepted'));await f.streams.at(-1)!.dispose();await failed;
+    sending.catch(()=>{});
+    await eventually(()=>f.visible.some(event=>event.type==='accepted'));await f.streams.at(-1)!.dispose();
     await eventually(()=>f.streams.filter(stream=>stream.active).length===1);
     f.publish({type:'tool/call',data:{turn:1,callId:'after-auto-restore',name:'read'}});
     await eventually(()=>f.visible.some(event=>event.type==='item'&&event.item.id==='after-auto-restore'));
     assert.equal(f.sends,1);
+    f.publish({type:'tool/call',data:{turn:1,callId:'unfinished',name:'bash'}});
+    await eventually(()=>f.visible.some(event=>event.type==='item'&&event.item.id==='unfinished'));
     let attempts=0;(f.remote.session as any).follow=()=>{attempts++;throw new Error('native transport unavailable');};
     await f.streams.find(stream=>stream.active)!.dispose();
     const deadline=Date.now()+3000;
     while(attempts<3&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,5));
     assert.equal(attempts,3);assert.equal(f.sends,1);
+    await assert.rejects(sending,/dsh_execution_observation_lost/);
+    assert.ok(f.visible.some(event=>event.type==='observation'&&event.observation.status==='unknown'));
+    const unknown=f.visible.filter(event=>event.type==='observation'&&event.observation.status==='unknown').at(-1);
+    assert.ok(unknown?.type==='observation'&&unknown.observation.tools.every(tool=>tool.status!=='running'));
     await new Promise(resolve=>setTimeout(resolve,1050));assert.equal(attempts,3);
   }finally{await f.runtime.close();}
 });
@@ -317,7 +324,7 @@ test('DSH reconnects a child continuation after the original native turn ended w
     f.publish({type:'subagent/catalog',data:{childId:'child',label:'repair'}});
     f.publish({type:'turn/end',data:{turn:1,reason:{kind:'completed'}}});await sending;
     await f.streams.find(stream=>stream.active)!.dispose();
-    await eventually(()=>f.visible.some(event=>event.type==='observation'&&event.observation.status==='unknown'));
+    assert.ok(!f.visible.some(event=>event.type==='observation'&&event.observation.status==='unknown'));
     f.publish({type:'turn/start',data:{turn:2}});
     f.publish({type:'user/message',data:{id:'wake',source:{kind:'subagent-settled',senderSessionId:'child'},content:[{type:'text',text:'done'}]}});
     f.publish({type:'tool/call',data:{turn:2,callId:'gap-followup',name:'read'}});
@@ -366,10 +373,40 @@ test('DSH replays a terminal whose event consumer failed after the native state 
       if(failOnce&&event.type==='completed'){failOnce=false;throw new Error('local save failed');}
       f.visible.push(event);
     }});
-    const failed=assert.rejects(sending,/dsh_event_observation_lost/);
+    sending.catch(()=>{});
     await eventually(()=>f.visible.some(event=>event.type==='accepted'));
-    f.publish({type:'turn/end',data:{turn:1,reason:{kind:'completed'}}});await failed;
+    f.publish({type:'turn/end',data:{turn:1,reason:{kind:'completed'}}});await eventually(()=>(f.runtime as any).turns.get(contextRef.id)?.observationLost);
     assert.equal((await f.runtime.observe({contextRef,executionRef})).status,'idle');
     assert.ok(f.visible.some(event=>event.type==='completed'&&event.status==='completed'));assert.equal(f.sends,1);
+  }finally{await f.runtime.close();}
+});
+
+
+test('DSH silently repairs one linked command and final reply completed during a lost follow',async()=>{
+  const f=reconnectFixture();
+  try{
+    const contextRef=await f.runtime.createContext({cwd:f.cwd}),executionRef={id:'silent-repair'};
+    let settled=false;
+    const sending=f.runtime.send({contextRef,cwd:f.cwd,text:'goal',images:[],clientRequestId:executionRef.id,onEvent:event=>f.visible.push(event)}).finally(()=>{settled=true;});
+    sending.catch(()=>{});
+    await eventually(()=>f.visible.some(event=>event.type==='accepted'));
+    f.publish({type:'tool/call',data:{turn:1,callId:'command',name:'bash'}});
+    f.publish({type:'job/registered',data:{jobId:'job',owner:contextRef.id,label:'test command',toolCall:{callId:'command'}}});
+    await eventually(()=>f.visible.some(event=>event.type==='observation'&&event.observation.tools.length===1));
+    const active=await f.runtime.observe({contextRef,executionRef});
+    assert.equal(active.tools.filter(tool=>tool.status==='running').length,1);
+    assert.deepEqual((f.runtime as any).turns.get(contextRef.id).lineage.stopTargets(new Set([executionRef.id])).jobIds,['job']);
+    await f.streams.find(stream=>stream.active)!.dispose();
+    f.publish({type:'job/settled',data:{jobId:'job',status:'completed'}});
+    f.publish({type:'tool/result',data:{turn:1,message:{toolCallId:'command',content:[{type:'text',text:'tests passed'}]}}});
+    f.publish({type:'assistant/message',data:{turn:1,step:3,message:{content:[{type:'text',text:'final result'}]}}});
+    f.publish({type:'turn/end',data:{turn:1,reason:{kind:'completed'}}});
+    assert.equal(settled,false);
+    await sending;
+    assert.equal(f.sends,1);
+    assert.ok(!f.visible.some(event=>event.type==='observation'&&event.observation.status==='unknown'));
+    assert.ok(f.visible.some(event=>event.type==='item'&&event.item.text==='tests passed'));
+    assert.ok(f.visible.some(event=>event.type==='item'&&event.item.text==='final result'));
+    assert.equal((await f.runtime.observe({contextRef,executionRef})).status,'idle');
   }finally{await f.runtime.close();}
 });

@@ -232,3 +232,18 @@ test('DSH maps background job wakeups only from known session-owned jobs and rej
   assert.equal(lineage.background(new Set(['one','two'])).length,2);
   assert.ok(lineage.background(new Set(['one','two'])).every(tool=>tool.status==='unknown'));
 });
+
+
+test('DSH merges only explicitly linked jobs and keeps native job controls',()=>{
+  const lineage=new DshExecutionLineage('session');
+  lineage.record({type:'turn/start',data:{turn:1}});
+  lineage.record({type:'user/message',data:{turn:1,source:{kind:'user',rpcId:'request'}}});
+  lineage.record({type:'job/registered',data:{owner:'session',jobId:'linked',toolCall:{callId:'call'}}});
+  lineage.record({type:'job/registered',data:{owner:'session',jobId:'independent'}});
+  const owners=new Set(['request']);
+  const tools=lineage.mergeTools([{id:'call',label:'bash',status:'completed'}],owners);
+  assert.deepEqual(tools.map(tool=>[tool.id,tool.status]),[['call','running'],['dsh-job:independent','running']]);
+  assert.deepEqual(lineage.stopTargets(owners).jobIds,['linked','independent']);
+  lineage.record({type:'job/settled',data:{jobId:'linked'}});
+  assert.equal(lineage.mergeTools([{id:'call',label:'bash',status:'completed'}],owners)[0].status,'completed');
+});

@@ -322,11 +322,16 @@ export class DshRuntime implements AgentRuntime {
     const error = cause instanceof NativeObservationError ? cause
       : new NativeObservationError('dsh_execution_observation_lost', cause, this.gateway ? [this.gateway.apiKey] : []);
     if (this.disposed) return;
-    const changed = !turn.observationLost || turn.observationDiagnostic !== error.diagnostic;
     turn.observationLost = true; turn.observationDiagnostic = error.diagnostic;
-    if (changed) try { turn.input.onEvent({ type: 'observation', observation: this.activeObservation(turn) }); } catch { /* Keep the native execution and its pending controls. */ }
-    turn.reject?.(error);
-    if (!turn.accepted || this.closed || (turn.reconnects ?? 0) >= 3 || turn.retryTimer) return;
+    const recoverable = turn.accepted && !this.closed && (turn.reconnects ?? 0) < 3;
+    // A lost observer does not end the native turn. Keep its original waiter
+    // alive while repairing the same stream; only exhausted recovery is visible.
+    if (!recoverable) {
+      try { turn.input.onEvent({ type: 'observation', observation: this.activeObservation(turn) }); } catch { /* Preserve native controls if persistence is unavailable. */ }
+      turn.reject?.(error);
+      return;
+    }
+    if (turn.retryTimer) return;
     const delays = [250, 500, 1000];
     turn.retryTimer = setTimeout(() => {
       turn.retryTimer = undefined;
@@ -587,7 +592,7 @@ export class DshRuntime implements AgentRuntime {
     turn.cancellation=work;return work;
   }
   private activeObservation(turn: ActiveTurn): ExecutorObservation {
-    const tools = [...turn.tools.values(), ...turn.lineage.background(turn.inputIds ?? new Set([turn.id]))].map(tool => ({ ...tool, canStop: false })); return { status: turn.observationLost || turn.supplementUnknown ? 'unknown' : turn.terminal ? tools.some(tool => tool.status === 'running') ? 'tools-active' : tools.some(tool=>tool.status==='unknown')?'unknown': turn.terminal === 'stopped' ? 'stopped' : 'idle' : turn.pending.size ? 'waiting' : 'running', executionRef: this.executionReference(turn.id,turn.input.contextRef.id), tools, requests: [...turn.pending.values()].map(value => value.request), ...(turn.stopRequested&&turn.diagnostic?{diagnostic:turn.diagnostic}:turn.observationLost ? { diagnostic: 'DSH 执行观察中断，正在核对原执行。' + (turn.observationDiagnostic ? ' 原因：' + turn.observationDiagnostic : '') } : turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) };
+    const tools = turn.lineage.mergeTools([...turn.tools.values()], turn.inputIds ?? new Set([turn.id])).map(tool => ({ ...tool, canStop: false })); return { status: turn.observationLost || turn.supplementUnknown ? 'unknown' : turn.terminal ? tools.some(tool => tool.status === 'running') ? 'tools-active' : tools.some(tool=>tool.status==='unknown')?'unknown': turn.terminal === 'stopped' ? 'stopped' : 'idle' : turn.pending.size ? 'waiting' : 'running', executionRef: this.executionReference(turn.id,turn.input.contextRef.id), tools: turn.observationLost ? tools.map(tool => ({ ...tool, status: tool.status === 'running' ? 'unknown' as const : tool.status })) : tools, requests: [...turn.pending.values()].map(value => value.request), ...(turn.stopRequested&&turn.diagnostic?{diagnostic:turn.diagnostic}:turn.observationLost ? { diagnostic: '无法确认 DSH 原执行状态，自动恢复未成功。' + (turn.observationDiagnostic ? ' 原因：' + turn.observationDiagnostic : '') } : turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) };
   }
   async observe({ contextRef, executionRef,knownItems=[] }: { contextRef: ContextRef; executionRef?: ExecutionRef;knownItems?:readonly ExecutorItem[] }): Promise<ExecutorObservation> {
     this.reference(contextRef); const turn = this.turns.get(contextRef.id);
