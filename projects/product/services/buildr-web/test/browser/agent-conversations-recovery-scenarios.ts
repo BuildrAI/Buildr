@@ -63,7 +63,7 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
       for(let attempt=0;attempt<2;attempt++){
         const before=fixture.observes;
         await state.getByRole('button',{name:/重新读取/}).click();
-        await state.getByText('未读到结束记录，可继续发送',{exact:true}).waitFor();
+        await state.getByText('读取完成：后台连接已释放，但未读到本轮结束记录。可发送新要求继续，不会重做原操作。',{exact:true}).waitFor();
         assert.ok(fixture.observes>before);assert.equal(fixture.sends,beforeSends);assert.equal(fixture.stops,beforeStops);assert.equal(fixture.conversation.run.status,'unknown');
         assert.equal(await panel().locator('.ac-compose-wrap>small[role="status"]').count(),0,'反馈保留在同一行');
       }
@@ -72,9 +72,18 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
       assert.ok(geometry.height<=36&&geometry.overflow<=1,JSON.stringify(geometry));
       await fixture.capture(page,'agent-interrupted-reply-one-line.png');
       update({run:run('unknown','codex',{resourcesReleased:false})});await page.reload();await input().waitFor();await state.getByRole('button',{name:'停止',exact:true}).waitFor();
+      fixture.unknownStop=true;fixture.holdStop=true;
+      const stopStarted=new Promise<void>(resolve=>{fixture.stopStarted=resolve;});
+      await state.getByRole('button',{name:'停止',exact:true}).click();await stopStarted;
+      await state.getByText('正在停止本轮及派生工作…',{exact:true}).waitFor();
+      const pendingStop=state.getByRole('button',{name:/正在停止…/});
+      assert.equal(await pendingStop.isDisabled(),true);await pendingStop.evaluate((button:HTMLButtonElement)=>button.click());
+      assert.equal(fixture.stops,beforeStops+1,'重复点击只投递一次停止');assert.equal(fixture.sends,beforeSends);
+      fixture.releaseStop!();await state.getByText('停止请求已处理：仍无法读取原执行状态，记录已保留。可发送新要求，不会重做原操作。',{exact:true}).waitFor();
+      assert.equal(fixture.sends,beforeSends,'停止未确认不得自动重试');
     }catch(error){
       process.stderr.write('[interrupted-reply-state] '+JSON.stringify({run:fixture.conversation.run,observes:fixture.observes,panel:await panel().innerText()})+'\n');throw error;
-    }finally{fixture.conversation=saved;await page.setViewportSize(viewport);await page.reload();await input().waitFor();}
+    }finally{fixture.unknownStop=false;fixture.holdStop=false;fixture.releaseStop?.();fixture.conversation=saved;await page.setViewportSize(viewport);await page.reload();await input().waitFor();}
   });
   await step('已结束轮次打开只读取记录，后台刷新不订阅或轮询该轮',async()=>{
     for(const status of ['completed','stopped','failed']){

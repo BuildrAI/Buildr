@@ -1,12 +1,18 @@
 import { createServer } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
+import {stopDshSessionTree} from './stop-control.ts';
 
 export const inject = ['sessionPersistence'];
 /** Private native-to-native storage transfer. No session payload enters the public protocol. */
 export async function apply(ctx: any, config: { addressFile: string }): Promise<void> {
   const key = process.env.BUILDR_DSH_FORK_KEY;
   if (!key) throw new Error('dsh_fork_key_missing');
+  let stopTree:((sessionId:string,children:string[],jobs:string[])=>Promise<{stopped:boolean;scopes:string[]}>)|undefined;
+  if(typeof ctx.inject==='function')ctx.inject(['sessionPersistence','agents','jobs','subagents','goals'],(owner:any)=>{
+    const current=(sessionId:string,children:string[],jobs:string[])=>stopDshSessionTree(owner,sessionId,children,jobs);
+    stopTree=current;owner.on('dispose',()=>{if(stopTree===current)stopTree=undefined;});
+  });
   const server = createServer(async (request, response) => {
     const actual = Buffer.from(request.headers.authorization ?? ''), expected = Buffer.from('Bearer ' + key);
     if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) { response.writeHead(401).end(); return; }
@@ -19,7 +25,17 @@ export async function apply(ctx: any, config: { addressFile: string }): Promise<
       }
       const input = JSON.parse(Buffer.concat(chunks).toString('utf8'));
       if (request.method !== 'POST' || !/^session-[a-f0-9-]{36}$/.test(input.sessionId)) { response.writeHead(400).end(); return; }
-      if (request.url === '/export') {
+      if(request.url==='/stop-tree'){
+        if(!Array.isArray(input.childIds)||!Array.isArray(input.jobIds)||[...input.childIds,...input.jobIds].some(id=>typeof id!=='string'||!id||id.length>256)){response.writeHead(400).end();return;}
+        try{
+          if(!stopTree)throw new Error('dsh_stop_capability_unavailable');
+          const result=await stopTree(input.sessionId,input.childIds,input.jobIds);
+          response.setHeader('content-type','application/json');response.end(JSON.stringify(result));
+        }catch(error){
+          const code=error instanceof Error&&/^dsh_[a-z0-9_]+$/.test(error.message)?error.message:'dsh_stop_native_unavailable';
+          response.writeHead(409,{'content-type':'application/json'}).end(JSON.stringify({error:{code}}));
+        }
+      } else if (request.url === '/export') {
         const handle = await ctx.sessionPersistence.open(input.sessionId, 'read');
         try {
           const { events } = await handle.read();

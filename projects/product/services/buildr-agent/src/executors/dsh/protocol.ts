@@ -67,6 +67,14 @@ export class DshExecutionLineage {
       .filter(([, value]) => owners.has(value.owner)).map(([id, value]) => ({ id, label: value.label, status: 'running' as const }));
     return [...running, ...[...this.uncertain].filter(owner => owners.has(owner)).map(owner => ({ id: 'dsh-continuation:' + owner, label: 'DSH 接续归属待确认', status: 'unknown' as const }))];
   }
+  stopped(owners:ReadonlySet<string>):void {
+    for(const [id,value]of this.pendingChildren)if(owners.has(value.owner))this.pendingChildren.delete(id);
+    for(const [id,value]of this.jobs)if(owners.has(value.owner)){this.settledJobs.set(id,value.owner);this.jobs.delete(id);}
+    for(const owner of owners)this.uncertain.delete(owner);
+  }
+  stopTargets(owners:ReadonlySet<string>):{childIds:string[];jobIds:string[]} {
+    return {childIds:[...this.pendingChildren].filter(([,value])=>owners.has(value.owner)).map(([id])=>id),jobIds:[...this.jobs].filter(([,value])=>owners.has(value.owner)).map(([id])=>id)};
+  }
 }
 export function dshItem(event: any): ExecutorItem[] {
   const data = event?.data ?? {}; const id = `event:${event?.seq}`;

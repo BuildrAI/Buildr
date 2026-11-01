@@ -302,7 +302,7 @@ async function* decodeRawEvents(response: Response, protocol: ModelProtocol): As
   }
   if (!response.body) throw new ModelAccessError('model_stream_empty', '模型流没有响应正文。', 502);
   for await (const body of sse(response.body)) {
-    if (body.error || body.type === 'error' || body.type === 'response.failed') throw upstreamFailure(body.error ?? record(body.response).error);
+    if (body.error || body.type === 'error' || body.type === 'response.failed') throw upstreamFailure(body.error ?? record(body.response).error ?? body);
     if (protocol === 'chat-completions') {
       const choice = record(list(body.choices)[0]), delta = record(choice.delta);
       if (delta.content) yield { type: 'text', delta: string(delta.content) };

@@ -14,6 +14,38 @@ function provider(infer:(input:ProviderInferenceInput)=>Promise<Response>,protoc
 }
 const chat=(message:ProtocolJson)=>Response.json({choices:[{message,finish_reason:message.tool_calls?'tool_calls':'stop'}],usage:{prompt_tokens:12,completion_tokens:4}});
 
+test('stopping a round aborts only its model calls and rejects late calls until an explicit next round',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'buildr-stop-model-')),active=new Map<string,AbortSignal>();let calls=0;
+ const access=createModelAccess({root,providers:[provider(async input=>{calls++;active.set(input.context.conversationId,input.signal);return new Promise<Response>((_,reject)=>input.signal.addEventListener('abort',()=>reject(Error('cancelled')),{once:true}));})]});
+ try{
+  const added=await access.accounts.add({provider:'fixture'}),account=await checkEnabled(access,added.id);
+  const leaseInput={accountId:account.id,modelId:model.id,agentId:'dsh',conversationId:'one',runId:'r1'};
+  const one=await access.leases.create(leaseInput),two=await access.leases.create({...leaseInput,conversationId:'two',runId:'r2'});
+  const request=(lease:typeof one)=>fetch(lease.baseUrl+'/chat/completions',{method:'POST',headers:{Authorization:'Bearer '+lease.apiKey,'Content-Type':'application/json'},body:JSON.stringify({model:lease.model,messages:[],stream:true})});
+  const first=request(one),other=request(two);
+  for(let i=0;i<100&&active.size<2;i++)await new Promise(r=>setTimeout(r,5));assert.equal(active.size,2);
+  access.leases.stopRun('one','r1');await first;
+  assert.equal(active.get('one')?.aborted,true);assert.equal(active.get('two')?.aborted,false);
+  const late=await request(one);assert.equal(late.status,409);assert.equal((await late.json()).error.code,'model_run_stopped');assert.equal(calls,2);
+  const same=await access.leases.create(leaseInput);assert.equal((await request(same)).status,409,'reopening the stopped round cannot remove its stop intent');
+  access.leases.stopRun('two','r2');await other;
+  access.leases.updateRun(one.identity,'r3');const next=request(one);for(let i=0;i<100&&calls<3;i++)await new Promise(r=>setTimeout(r,5));assert.equal(calls,3);
+  const oldSignal=active.get('one');access.leases.updateRun(one.identity,'r4');const newer=request(one);for(let i=0;i<100&&calls<4;i++)await new Promise(r=>setTimeout(r,5));assert.equal(calls,4);
+  access.leases.stopRun('one','r3');await next;assert.equal(oldSignal?.aborted,true);assert.equal(active.get('one')?.aborted,false,'late stop of an old round must not cancel a newer model call');
+  access.leases.stopRun('one','r4');await newer;
+ }finally{await access.close();await rm(root,{recursive:true,force:true});}
+});
+
+for(const downstream of ['responses','chat/completions'])test('abnormal tool arguments abort upstream through the real gateway; downstream='+downstream,async()=>{
+ const root=await mkdtemp(join(tmpdir(),'buildr-stream-flood-'));let aborted=false;
+ const access=createModelAccess({root,providers:[provider(async input=>{input.signal.addEventListener('abort',()=>{aborted=true;},{once:true});let sent=0;const body=new ReadableStream<Uint8Array>({pull(c){if(sent++>500){c.close();return;}c.enqueue(new TextEncoder().encode('data: '+JSON.stringify({type:'response.function_call_arguments.delta',item_id:'call',delta:' '.repeat(128)})+'\n\n'));}},{highWaterMark:0});return new Response(body,{headers:{'content-type':'text/event-stream'}});},'responses')]});
+ try{
+  const added=await access.accounts.add({provider:'fixture'}),account=await checkEnabled(access,added.id),lease=await access.leases.create({accountId:account.id,modelId:model.id,agentId:'dsh',conversationId:'one',runId:'run'});
+  const response=await fetch(lease.baseUrl+'/'+downstream,{method:'POST',headers:{Authorization:'Bearer '+lease.apiKey,'Content-Type':'application/json'},body:JSON.stringify({model:lease.model,stream:true,...(downstream==='responses'?{input:[]}:{messages:[]})})});const text=await response.text();
+  assert.equal(aborted,true);assert.ok(text.includes('model_tool_arguments_stalled'));assert.ok(!text.includes('response.completed'));assert.match(access.leases.streamFailure('one','run')!,/异常空白/);
+ }finally{await access.close();await rm(root,{recursive:true,force:true});}
+});
+
 test('fresh quota exhaustion rejects new leases and retained gateway calls, without affecting another account',async()=>{
  const root=await mkdtemp(join(tmpdir(),'buildr-model-quota-'));let exhausted:string|undefined,calls=0,stale=false;
  const source:ModelProvider={id:'fixture',label:'Fixture',async open({accountId}){return{protocol:'chat-completions',inspect:async()=>({status:'ready',models:[model],quota:{available:true,observedAt:new Date().toISOString(),remainingPercent:exhausted===accountId?0:50,stale}}),beginLogin:async()=>{},cancelLogin:async()=>{},infer:async()=>{calls++;return chat({content:'ok'});},close:async()=>{}};}};
@@ -139,7 +171,8 @@ test('Responses tool output returns to the exact source call; signed reasoning i
 
 test('Responses clients receive readable reasoning summaries while opaque replay stays source bound',async()=>{
   const root=await mkdtemp(join(tmpdir(),'buildr-model-reasoning-summary-'));
-  const source=provider(async()=>chat({content:'done',reasoning_content:'先确认目录，再回答。',reasoning_signature:'signed'}));
+  const inputs:ProtocolJson[]=[];
+  const source=provider(async input=>{inputs.push(input.body);return chat({content:'done',reasoning_content:'先确认目录，再回答。',reasoning_signature:'signed'});});
   const access=createModelAccess({root,providers:[source]});
   try {
     const added=await access.accounts.add({provider:'fixture'}),ready=await checkEnabled(access,added.id);
@@ -148,7 +181,9 @@ test('Responses clients receive readable reasoning summaries while opaque replay
     const reasoning=response.output.find((item:ProtocolJson)=>item.type==='reasoning');
     assert.deepEqual(reasoning.summary,[{type:'summary_text',text:'先确认目录，再回答。'}]);
     assert.ok(reasoning.encrypted_content.startsWith('buildr-v1.')&&!reasoning.encrypted_content.includes('先确认目录'));
-    const replay=translateRequest({model:'m',input:[reasoning]},'responses','chat-completions',noOpaque),messages=replay.messages as ProtocolJson[];
+    const replay=await fetch(lease.baseUrl+'/responses',{method:'POST',headers:{Authorization:'Bearer '+lease.apiKey,'Content-Type':'application/json'},body:JSON.stringify({model:lease.model,input:[reasoning]})});
+    assert.equal(replay.status,200);await replay.arrayBuffer();
+    const messages=inputs.at(-1)!.messages as ProtocolJson[];
     assert.ok(messages.some(message=>message.reasoning_content==='先确认目录，再回答。'&&message.reasoning_signature==='signed'));
     const streamed=await translateResponse(frames([{choices:[{delta:{reasoning_content:'先确认'}}]},{choices:[{delta:{content:'ok'},finish_reason:'stop'}]}]),'chat-completions','responses',{model:'route',stream:true,request:{},opaque:noOpaque,signal:new AbortController().signal});
     const events=(await streamed.text()).split('\n').filter(line=>line.startsWith('data: ')).map(line=>JSON.parse(line.slice(6)));

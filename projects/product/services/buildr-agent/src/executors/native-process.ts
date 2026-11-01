@@ -73,6 +73,21 @@ export class OwnedControlResource {
   executionRef(id: string, contextId: string, binding: string, backgroundWork = false): ExecutionRef {
     return { id, ...(process.platform !== 'win32' && this.child.pid ? { data: { resourceGroup: this.child.pid, resourceContext: contextId, resourceBinding: binding, backgroundWork } } : {}) };
   }
+  async stopExecution(ref:ExecutionRef,contextId:string,binding:string):Promise<boolean> {
+    const data=ref.data,group=this.child.pid;
+    if(!data||data.resourceContext!==contextId||data.resourceBinding!==binding||data.resourceGroup!==group||!group||process.platform==='win32')return false;
+    const exited=()=>this.child.exitCode!==null||this.child.signalCode!==null;
+    // A previously exited child grants observation only, never a new kill by PID.
+    if(exited())return ownedProcessGroupIdle(group);
+    const signal=(name:NodeJS.Signals)=>{try{process.kill(-group,name);}catch(error){if((error as NodeJS.ErrnoException).code!=='ESRCH')throw error;}};
+    if(!exited()){
+      const ended=new Promise<void>(resolve=>this.child.once('exit',()=>resolve()));
+      signal('SIGTERM');
+      try{await bounded(ended,1000);}catch{signal('SIGKILL');await bounded(ended,1000);}
+    }
+    if(!await ownedProcessGroupIdle(group)){signal('SIGKILL');}
+    return exited()&&await ownedProcessGroupIdle(group);
+  }
   async canReleaseExecution(ref: ExecutionRef, contextId: string, binding: string, ended: boolean, channelClosed = false): Promise<boolean> {
     const data = ref.data;
     if (!data || data.resourceContext !== contextId || data.resourceBinding !== binding || data.backgroundWork !== false || !Number.isSafeInteger(data.resourceGroup)) return false;

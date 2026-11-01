@@ -10,6 +10,7 @@ import type {ModelPreference,ModelPreferenceUpdate} from './contracts.ts';
 import { translateRequest, translateResponse, type OpaqueReasoning } from './protocols.ts';
 import { modelFailure, upstreamFailure } from './errors.ts';
 import { modelQuotaFailure } from './quota.ts';
+import {guardToolArgumentStream} from './tool-stream-guard.ts';
 
 const object = (value: unknown): ProtocolJson => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as ProtocolJson : {};
 const safeId = (value: string) => /^[a-zA-Z0-9_-]{1,100}$/.test(value);
@@ -27,7 +28,7 @@ const selectionModels = (models: ModelOffering[]) => models.map(model => ({
 })).sort(byId);
 function conflict(actual: string, expected: string | undefined) { if (expected !== undefined && expected !== actual) throw new ModelAccessError('model_revision_conflict', '模型账号已变化，请刷新后重试。'); }
 interface Stored { version: 1; accounts: ModelAccountView[]; preferences?:Record<string,Record<string,ModelPreference>> }
-interface LeaseRecord { view: ModelGatewayLease; input: ModelLeaseInput; tokenHash: string; requests: Set<AbortController> }
+interface LeaseRecord { view: ModelGatewayLease; input: ModelLeaseInput; tokenHash: string; requests: Map<AbortController,string>; cancelledRun?:string; streamFailure?:{code:string;message:string;runId:string} }
 
 /** Owns metadata and local routes. Upstream credentials stay inside provider runtimes. */
 export class ModelAccessApplication {
@@ -305,10 +306,10 @@ export class ModelAccessApplication {
     const quotaFailure = modelQuotaFailure(account, offering, Date.parse(this.now)); if (quotaFailure) throw quotaFailure;
     if (!input.agentId || !input.conversationId || !input.runId) throw new ModelAccessError('model_binding_invalid','模型绑定缺少准确执行身份。',400);
     const identity = digest(JSON.stringify([account.id,account.identity,input.modelId,input.conversationId,input.agentId,modelConfiguration(offering,input.serviceTier)]));
-    const existing = this.leasesByIdentity.get(identity); if (existing) { existing.input.runId = input.runId; return structuredClone(existing.view); }
+    const existing = this.leasesByIdentity.get(identity); if (existing) { this.updateRun(identity,input.runId); return structuredClone(existing.view); }
     const baseUrl = await this.start(), token = randomBytes(32).toString('base64url'); await this.encryptionKey();
     const view: ModelGatewayLease = { identity, baseUrl: baseUrl + '/v1', apiKey: token, model: `buildr-${identity.slice(0,32)}`, offering: structuredClone(offering), accountId: account.id, accountLabel: account.accountLabel || account.label, provider: account.provider };
-    const lease: LeaseRecord = { view, input: { ...input, expectedIdentity: account.identity }, tokenHash: digest(token), requests: new Set() }; this.leasesByToken.set(lease.tokenHash,lease); this.leasesByIdentity.set(identity,lease); return structuredClone(view);
+    const lease: LeaseRecord = { view, input: { ...input, expectedIdentity: account.identity }, tokenHash: digest(token), requests: new Map() }; this.leasesByToken.set(lease.tokenHash,lease); this.leasesByIdentity.set(identity,lease); return structuredClone(view);
   }
   async generate(input: ModelLeaseInput & { prompt: string; signal: AbortSignal }): Promise<string> {
     input.signal.throwIfAborted();
@@ -341,12 +342,21 @@ export class ModelAccessApplication {
     } finally { this.release(lease.identity); }
   }
   hasActiveRequests(identity:string):boolean{return (this.leasesByIdentity.get(identity)?.requests.size??0)>0;}
-  release(identity: string) { const lease = this.leasesByIdentity.get(identity); if (!lease) return; this.leasesByIdentity.delete(identity); this.leasesByToken.delete(lease.tokenHash); for (const request of lease.requests) request.abort(); }
-  updateRun(identity:string,runId:string) { const lease=this.leasesByIdentity.get(identity); if(!lease||!runId) throw new ModelAccessError('model_binding_missing','本次模型绑定已失效。'); lease.input.runId=runId; }
+  stopRun(conversationId:string,runId:string):void {
+    for(const lease of this.leasesByIdentity.values())if(lease.input.conversationId===conversationId){
+      if(lease.input.runId===runId)lease.cancelledRun=runId;
+      for(const [request,owner] of lease.requests)if(owner===runId)request.abort();
+    }
+  }
+  streamFailure(conversationId:string,runId:string):string|undefined {
+    return [...this.leasesByIdentity.values()].find(lease=>lease.input.conversationId===conversationId&&lease.streamFailure?.runId===runId)?.streamFailure?.message;
+  }
+  release(identity: string) { const lease = this.leasesByIdentity.get(identity); if (!lease) return; this.leasesByIdentity.delete(identity); this.leasesByToken.delete(lease.tokenHash); for (const request of lease.requests.keys()) request.abort(); }
+  updateRun(identity:string,runId:string) { const lease=this.leasesByIdentity.get(identity); if(!lease||!runId) throw new ModelAccessError('model_binding_missing','本次模型绑定已失效。'); if(lease.input.runId!==runId){delete lease.cancelledRun;delete lease.streamFailure;}lease.input.runId=runId; }
   private async body(req: IncomingMessage): Promise<ProtocolJson> { const chunks: Buffer[] = []; let size = 0; for await (const chunk of req) { const value = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk); size += value.length; if (size > 64 * 1024 * 1024) throw new ModelAccessError('model_request_too_large','模型输入超过本机限制。',413); chunks.push(value); } try { const value: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8')); if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error('object'); return value as ProtocolJson; } catch { throw new ModelAccessError('model_request_invalid','模型请求不是有效 JSON 对象。',400); } }
   private json(res: ServerResponse, status: number, value: unknown) { res.writeHead(status, {'Content-Type':'application/json','Cache-Control':'no-store'}); res.end(JSON.stringify(value)); }
   private async handle(req: IncomingMessage,res: ServerResponse) {
-    const controller = new AbortController(); let lease: LeaseRecord | undefined;
+    const controller = new AbortController(),upstreamController=new AbortController(); let lease: LeaseRecord | undefined;
     req.once('aborted',()=>controller.abort()); res.once('close',()=>{ if (!res.writableEnded) controller.abort(); });
     try {
       if (this.closed || !this.origin || req.headers.host !== new URL(this.origin).host || req.headers.origin) throw new ModelAccessError('model_gateway_forbidden','模型入口只接受已授权本机调用。',403);
@@ -361,13 +371,14 @@ export class ModelAccessApplication {
       const protocols: Record<string,ModelProtocol> = {'/v1/responses':'responses','/v1/chat/completions':'chat-completions','/v1/messages':'anthropic-messages'};
       const protocol = protocols[pathname]; if (req.method !== 'POST' || !protocol) throw new ModelAccessError('model_route_missing','模型接口不存在。',404);
       const body = await this.body(req); if (body.model !== lease.view.model) throw new ModelAccessError('model_binding_mismatch','本机凭据不允许调用所请求的模型。',403);
-      lease.requests.add(controller);
+      if(lease.cancelledRun===lease.input.runId)throw new ModelAccessError('model_run_stopped','本轮已停止，不再发出模型请求。',409);
+      const binding={...lease.input};lease.requests.set(controller,binding.runId);
       const runtime = await this.runtime(account.id), opaque = this.opaque(await this.encryptionKey(),lease.view.identity);
-      const binding={...lease.input};
+      controller.signal.throwIfAborted();
       const quotaFailure = modelQuotaFailure(account, lease.view.offering, Date.parse(this.now)); if (quotaFailure) throw quotaFailure;
       const translated = translateRequest(body,protocol,runtime.protocol,opaque); translated.model = binding.modelId;
       delete translated.service_tier;if(binding.serviceTier)translated.service_tier=binding.serviceTier;
-      const upstream = await runtime.infer({body:translated,modelId:binding.modelId,signal:controller.signal,context:{accountId:account.id,agentId:binding.agentId,conversationId:binding.conversationId,runId:binding.runId,requestId:randomUUID()}});
+      const upstream = await runtime.infer({body:translated,modelId:binding.modelId,signal:AbortSignal.any([controller.signal,upstreamController.signal]),context:{accountId:account.id,agentId:binding.agentId,conversationId:binding.conversationId,runId:binding.runId,requestId:randomUUID()}});
       if (!upstream.ok) {
         // Read only a bounded JSON error, never expose an arbitrary upstream body.
         let size = 0, body = ''; const reader = upstream.body?.getReader(), decoder = new TextDecoder();
@@ -376,7 +387,8 @@ export class ModelAccessApplication {
         let detail: unknown; try { if (size <= 8192) detail = object(JSON.parse(body)).error; } catch { /* Non-JSON error bodies stay private. */ }
         throw upstreamFailure(detail, upstream.status);
       }
-      const response = await translateResponse(upstream,runtime.protocol,protocol,{model:lease.view.model,stream:body.stream===true,request:body,opaque,signal:controller.signal});
+      const guarded=guardToolArgumentStream(upstream,runtime.protocol,error=>{lease!.streamFailure={...modelFailure(error),runId:binding.runId};upstreamController.abort();});
+      const response = await translateResponse(guarded,runtime.protocol,protocol,{model:lease.view.model,stream:body.stream===true,request:body,opaque,signal:controller.signal});
       if (!response.body) throw new ModelAccessError('model_response_empty','模型服务返回空响应。',502);
       res.writeHead(response.status,{'Content-Type':response.headers.get('content-type') || 'application/json','Cache-Control':'no-store'});
       const reader = response.body.getReader();
@@ -414,7 +426,7 @@ export function createModelAccess(options: ModelAccessOptions) {
     activity: () => application.activity(),
     freezeMetadata: (value = true) => application.freezeMetadata(value),
     generate: (input: ModelLeaseInput & {prompt:string;signal:AbortSignal}) => application.generate(input),
-    leases: { hasActiveRequests:(identity:string)=>application.hasActiveRequests(identity), create: (input:ModelLeaseInput) => application.createLease(input), release: (identity:string) => application.release(identity), updateRun:(identity:string,runId:string)=>application.updateRun(identity,runId) },
+    leases: { stopRun:(conversationId:string,runId:string)=>application.stopRun(conversationId,runId), streamFailure:(conversationId:string,runId:string)=>application.streamFailure(conversationId,runId), hasActiveRequests:(identity:string)=>application.hasActiveRequests(identity), create: (input:ModelLeaseInput) => application.createLease(input), release: (identity:string) => application.release(identity), updateRun:(identity:string,runId:string)=>application.updateRun(identity,runId) },
     close: () => application.close(),
   };
 }

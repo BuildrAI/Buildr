@@ -430,7 +430,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   };
   const stop=async(toolId?:string)=>{
     if(!chat)return;if(chat.run?.resourcesReleased){setFeedback(conversationObservationFeedback(chat.run));return;}const key=actionKey(chat,'stop');if(!actions.begin(key))return;const selection=context.getSelection();setError('');
-    try{const result=await context.api.stop(chat,toolId);context.apply(result,chat.revision);if(context.isSelectionCurrent(selection))setFeedback(result.run?.diagnostic||conversationObservationFeedback(result.run));void context.refreshPending().catch(()=>{});}catch(failure){if(context.isSelectionCurrent(selection))fail(failure);}finally{actions.finish(key);}
+    try{const result=await context.api.stop(chat,toolId);context.apply(result,chat.revision);if(context.isSelectionCurrent(selection))setFeedback(result.run?.diagnostic||'停止请求已处理：'+conversationObservationFeedback(result.run).replace(/^读取完成：/,''));void context.refreshPending().catch(()=>{});}catch(failure){if(context.isSelectionCurrent(selection))fail(failure);}finally{actions.finish(key);}
   };
   const reply=async(requestId:string,answer:unknown)=>{
     const request=chat?.requests.find(request=>request.id===requestId);

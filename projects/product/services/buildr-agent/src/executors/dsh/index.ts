@@ -40,7 +40,7 @@ export async function writeGatewayPatch(directory: string, gateway: ExecutorGate
   await writeFile(filename, JSON.stringify([{ id: 'llm-pi-ai', name: '@deepseek-ai/dsh-llm-pi-ai', config: { providers: { 'buildr-models': { displayName: 'Buildr', api: 'openai-responses', baseURL: gateway.baseUrl.replace(/\/$/, ''), apiKeyEnv: 'BUILDR_MODEL_GATEWAY_KEY', models } } } }]), { mode: 0o600 });
   return filename;
 }
-interface ActiveTurn { lineage: DshExecutionLineage; accepted?: boolean; lastSeq?: number; inputIds?: Set<string>; restoring?: Promise<void>; reconnects?: number; retryTimer?: ReturnType<typeof setTimeout>; reject?: (error: Error) => void; observationDiagnostic?: string; observationLost?: boolean; stopRequested?: boolean; cancellation?: Promise<void>; supplementInputs?: Set<string>; supplementAdmissions?: number; supplementUnknown?: boolean; pendingEnd?: any; finish?: () => void; id: string; input: ExecutorSendInput; nativeTurn?: number; contextWindow?: number; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown' }>; pending: Map<string, { request: ExecutorRequest; resolve?: (value: string) => void; answer?: (value: { answers: any[] }) => void; reject?: (error: Error) => void; wait?: any }>; stream?: any; pump?: Promise<void>; streamAttempt?: { id: string; turn: number; step: number; nextIndex: number; text: string }; }
+interface ActiveTurn { lineage: DshExecutionLineage; accepted?: boolean; lastSeq?: number; inputIds?: Set<string>; restoring?: Promise<void>; reconnects?: number; retryTimer?: ReturnType<typeof setTimeout>; reject?: (error: Error) => void; observationDiagnostic?: string; observationLost?: boolean; stopRequested?: boolean; stopConfirmed?:boolean; stopping?:Promise<ExecutorObservation>; cancellation?: Promise<void>; supplementInputs?: Set<string>; supplementAdmissions?: number; supplementUnknown?: boolean; pendingEnd?: any; finish?: () => void; id: string; input: ExecutorSendInput; nativeTurn?: number; contextWindow?: number; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown' }>; pending: Map<string, { request: ExecutorRequest; resolve?: (value: string) => void; answer?: (value: { answers: any[] }) => void; reject?: (error: Error) => void; wait?: any }>; stream?: any; pump?: Promise<void>; streamAttempt?: { id: string; turn: number; step: number; nextIndex: number; text: string }; }
 export function createDshExecutor(): AgentExecutor { return { storage: { transientDirectories: ['home/.npm/_cacache'] }, descriptor: { id: 'dsh', label: 'DSH', capabilities }, open: options => DshRuntime.open(options) }; }
 export class DshRuntime implements AgentRuntime {
   readonly capabilities = { ...capabilities, permissionModes: ['default'] as PermissionMode[] };
@@ -587,13 +587,13 @@ export class DshRuntime implements AgentRuntime {
     turn.cancellation=work;return work;
   }
   private activeObservation(turn: ActiveTurn): ExecutorObservation {
-    const tools = [...turn.tools.values(), ...turn.lineage.background(turn.inputIds ?? new Set([turn.id]))].map(tool => ({ ...tool, canStop: false })); return { status: turn.observationLost || turn.supplementUnknown ? 'unknown' : turn.terminal ? tools.some(tool => tool.status === 'running') ? 'tools-active' : tools.some(tool=>tool.status==='unknown')?'unknown': turn.terminal === 'stopped' ? 'stopped' : 'idle' : turn.pending.size ? 'waiting' : 'running', executionRef: this.executionReference(turn.id,turn.input.contextRef.id), tools, requests: [...turn.pending.values()].map(value => value.request), ...(turn.observationLost ? { diagnostic: 'DSH 执行观察中断，正在核对原执行。' + (turn.observationDiagnostic ? ' 原因：' + turn.observationDiagnostic : '') } : turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) };
+    const tools = [...turn.tools.values(), ...turn.lineage.background(turn.inputIds ?? new Set([turn.id]))].map(tool => ({ ...tool, canStop: false })); return { status: turn.observationLost || turn.supplementUnknown ? 'unknown' : turn.terminal ? tools.some(tool => tool.status === 'running') ? 'tools-active' : tools.some(tool=>tool.status==='unknown')?'unknown': turn.terminal === 'stopped' ? 'stopped' : 'idle' : turn.pending.size ? 'waiting' : 'running', executionRef: this.executionReference(turn.id,turn.input.contextRef.id), tools, requests: [...turn.pending.values()].map(value => value.request), ...(turn.stopRequested&&turn.diagnostic?{diagnostic:turn.diagnostic}:turn.observationLost ? { diagnostic: 'DSH 执行观察中断，正在核对原执行。' + (turn.observationDiagnostic ? ' 原因：' + turn.observationDiagnostic : '') } : turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) };
   }
   async observe({ contextRef, executionRef,knownItems=[] }: { contextRef: ContextRef; executionRef?: ExecutionRef;knownItems?:readonly ExecutorItem[] }): Promise<ExecutorObservation> {
     this.reference(contextRef); const turn = this.turns.get(contextRef.id);
     if (turn && executionRef?.id === turn.id && (turn.observationLost || turn.terminal && [...turn.tools.values()].some(tool => tool.status !== 'completed'))) await this.restoreObservation(turn);
     if(turn&&executionRef?.id===turn.id)for(const item of knownItems)if(item.kind==='tool'&&item.executionId===turn.id&&item.status==='completed'&&turn.tools.get(item.id)?.status==='unknown')turn.tools.get(item.id)!.status='completed';
-    if (turn && (!executionRef || turn.id === executionRef.id)) { if(turn.stopRequested&&!turn.terminal)await this.cancelSteering(turn).catch(()=>{turn.supplementUnknown=true;});return this.activeObservation(turn); }
+    if (turn && (!executionRef || turn.id === executionRef.id)) { if(turn.stopConfirmed)return this.activeObservation(turn);if(turn.stopRequested&&!turn.terminal)await this.cancelSteering(turn).catch(()=>{turn.supplementUnknown=true;});return this.activeObservation(turn); }
     const cwd = this.reference(contextRef);
     await this.readHistory({ contextRef, cwd });
     const events = this.historyEvents.get(contextRef.id) ?? [];
@@ -625,7 +625,8 @@ export class DshRuntime implements AgentRuntime {
     const observation=turn?this.activeObservation(turn):dshExecutionObservation(this.historyEvents.get(contextRef.id)??[],executionRef.id);
     const ended=Boolean(turn?.terminal)||['idle','stopped'].includes(observation.status);
     const executionState=['idle','stopped'].includes(observation.status)&&observation.tools.every(tool=>tool.status==='completed')?'ended':'unknown';
-    return this.host.control.releaseExecution(executionRef,contextRef.id,this.bindingIdentity,{ended,executionState,channelClosed:this.disposed});
+    const releasedRef=turn?.stopConfirmed&&executionRef.data?{...executionRef,data:{...executionRef.data,backgroundWork:false}}:executionRef;
+    return this.host.control.releaseExecution(releasedRef,contextRef.id,this.bindingIdentity,{ended,executionState,channelClosed:this.disposed});
   }
   async reply({ contextRef, executionRef, requestId, answer }: { contextRef: ContextRef; executionRef: ExecutionRef; requestId: string; answer: unknown }): Promise<void> {
     this.reference(contextRef); const turn = this.turns.get(contextRef.id); const pending = turn?.pending.get(requestId);
@@ -642,11 +643,47 @@ export class DshRuntime implements AgentRuntime {
   }
   async stop({ contextRef, executionRef, toolId }: { contextRef: ContextRef; executionRef: ExecutionRef; toolId?: string }): Promise<ExecutorObservation> {
     this.reference(contextRef); const turn = this.turns.get(contextRef.id);
-    if (!turn || turn.id !== executionRef.id) return { status: 'unknown', tools: [], diagnostic: 'dsh_exact_live_turn_unavailable' };
+    if (!turn || turn.id !== executionRef.id) throw new Error('停止尚未确认：当前连接未持有原轮执行，已保留原工具状态；请核对原执行。');
     if (toolId) throw new Error('dsh_individual_tool_stop_unsupported');
     turn.stopRequested=true;
-    if (!turn.terminal) await this.cancelSteering(turn).catch(()=>{turn.supplementUnknown=true;});
-    return this.activeObservation(turn);
+    if(turn.stopConfirmed)return this.activeObservation(turn);
+    if(turn.stopping)return turn.stopping;
+    const stopping=this.stopWholeTurn(turn,executionRef).finally(()=>{if(turn.stopping===stopping)turn.stopping=undefined;});
+    turn.stopping=stopping;return stopping;
+  }
+  private async stopWholeTurn(turn:ActiveTurn,executionRef:ExecutionRef):Promise<ExecutorObservation> {
+    const owners=turn.inputIds??new Set([turn.id]);
+    if(!this.forkBridge){
+      if(!turn.terminal)await this.cancelSteering(turn).catch(()=>{turn.supplementUnknown=true;});
+      return this.activeObservation(turn);
+    }
+    let confirmed=false;
+    try {
+      const address=JSON.parse(await readFile(this.forkBridge.addressFile,'utf8'));
+      if(!Number.isInteger(address.port)||address.port<1||address.port>65535)throw new Error('dsh_stop_bridge_unavailable');
+      const response=await fetch('http://127.0.0.1:'+address.port+'/stop-tree',{
+        method:'POST',headers:{authorization:'Bearer '+this.forkBridge.key,'content-type':'application/json'},
+        body:JSON.stringify({sessionId:turn.input.contextRef.id,...turn.lineage.stopTargets(owners)}),signal:AbortSignal.timeout(2000),redirect:'error',
+      });
+      try{if(response.ok)confirmed=(await response.json()).stopped===true;}finally{await response.body?.cancel().catch(()=>{});}
+    }catch{ /* A stuck native loop cannot service its cancellation channel. */ }
+    if(!confirmed){
+      const protectedWork=[...this.turns.values()].some(other=>other!==turn&&(!other.terminal||other.lineage.background(other.inputIds??new Set([other.id])).length));
+      // Gateway configuration is conversation-owned; a shared native account host
+      // is never terminated to stop just one conversation.
+      if(this.gateway&&!protectedWork&&!this.login&&this.host.control){
+        confirmed=await this.host.control.stopExecution(executionRef,turn.input.contextRef.id,this.bindingIdentity).catch(()=>false);
+        if(confirmed){await bounded(this.client.close(),1000).catch(()=>{});turn.diagnostic='原生停止未确认，已终止本轮独占控制资源；已完成成果保留，独立操作结果仍须核对。';}
+      }
+    }
+    if(!confirmed){turn.diagnostic='停止尚未确认：原生取消未完成，未终止共享主机或启动第二份执行。';turn.observationLost=true;return this.activeObservation(turn);}
+    turn.stopConfirmed=true;turn.terminal='stopped';turn.observationLost=false;turn.supplementUnknown=false;turn.pendingEnd=undefined;
+    turn.supplementInputs?.clear();turn.lineage.stopped(owners);
+    for(const tool of turn.tools.values())if(tool.status==='running')tool.status='unknown';
+    for(const [id,pending]of turn.pending){pending.resolve?.('cancelled');pending.reject?.(new Error('dsh_question_cancelled'));turn.input.onEvent({type:'request-resolved',requestId:id});}
+    turn.pending.clear();turn.finish?.();
+    turn.diagnostic??='本轮及其派生工作已停止，已完成结果保留；没有完成回执的操作仍待核对。';
+    return {...this.activeObservation(turn),requests:[]};
   }
   async close(): Promise<void> {
     const controlExited=Boolean(this.host.child&&(this.host.child.exitCode!==null||this.host.child.signalCode!==null));

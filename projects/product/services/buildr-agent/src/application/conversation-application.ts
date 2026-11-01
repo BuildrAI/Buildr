@@ -1066,7 +1066,7 @@ export class ConversationApplication {
       const userStopping = run.status === 'stopping';
       const possiblyDelivered = dispatched && !rejectedBeforeInput;
       if (!['stopped', 'completed'].includes(run.status)) run.status = possiblyDelivered ? 'unknown' : 'failed';
-      run.diagnostic = safeDiagnostic(error); run.updatedAt = this.options.now();
+      run.diagnostic = this.options.modelAccess?.leases.streamFailure(id,runId)??safeDiagnostic(error); run.updatedAt = this.options.now();
       const transportLost = error instanceof Error && ['codex_execution_observation_lost', 'codex_event_observation_lost', 'dsh_execution_observation_lost', 'dsh_event_observation_lost', 'qoder_execution_observation_lost', 'qoder_event_observation_lost'].includes(error.message);
       if (!this.closing && !userStopping && transportLost && run.accepted && run.status === 'unknown' && !record.interruption?.cancelled) {
         record.interruption = { runId, reason: 'transport', awaitingUser: record.view.requests.some(request=>request.runId===runId) };
@@ -1528,7 +1528,7 @@ export class ConversationApplication {
       pending.interruption.cancelled=true;run.diagnostic='已取消自动接续；原执行状态仍待核对。';this.save(pending);return this.view(pending);
     }
     const control = this.control(workspaceId, id, input);
-    if(!input.toolId){control.run.stopRequested=true;this.save(control.record);}
+    if(!input.toolId){control.run.stopRequested=true;this.save(control.record);this.options.modelAccess?.leases.stopRun(id,input.runId);}
     if (!input.toolId) this.cancelledRetries.add(input.runId);
     const retry = this.retryWaits.get(input.runId);
     if (retry && !input.toolId) {

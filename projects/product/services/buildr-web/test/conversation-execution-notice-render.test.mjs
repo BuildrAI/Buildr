@@ -38,6 +38,16 @@ test('缺少明确释放证明时保留停止，不把未知当作已释放',()=
 
 test('核对未得到新结果时在原行给出结论，不新增说明行或展开块',()=>{
  const html=renderToStaticMarkup(React.createElement(ConversationExecutionNotice,{resourcesReleased:true,feedback:'读取完成：未读到结束记录。',observing:false,stopping:false,onObserve(){},onStop(){}}));
- assert.match(html,/未读到结束记录，可继续发送/);assert.match(html,/title="[^"]*未读到结束记录/);
+ assert.match(html,/>读取完成：未读到结束记录。<\/span>/);assert.match(html,/title="[^"]*未读到结束记录/);
  assert.doesNotMatch(html,/<small|<details|>停止</);
+});
+
+test('停止期间说明整轮范围，返回后直接显示真实停止结果',()=>{
+ const base={resourcesReleased:false,observing:false,onObserve(){},onStop(){}};
+ const busy=renderToStaticMarkup(React.createElement(ConversationExecutionNotice,{...base,stopping:true}));
+ assert.match(busy,/正在停止本轮及派生工作/);
+ const feedback='已终止本轮独占控制资源；原操作结果仍待核对。';
+ const done=renderToStaticMarkup(React.createElement(ConversationExecutionNotice,{...base,resourcesReleased:true,stopping:false,feedback}));
+ assert.match(done,/>已终止本轮独占控制资源；原操作结果仍待核对。<\/span>/);
+ assert.doesNotMatch(done,/>停止<\/button>|执行成功/);
 });
