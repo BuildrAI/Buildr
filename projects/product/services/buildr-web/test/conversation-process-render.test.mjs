@@ -142,3 +142,18 @@ test('旧分组残留running或同轮补充分段不会产生多个实时指示'
  assert.doesNotMatch(earlierSegment,/ac-execution-light/);assert.match(earlierSegment,/1 次工具调用/);
  assert.equal((renderEntries([current],{active:true,liveToolId:'current'}).match(/ac-execution-light/g)||[]).length,1);
 });
+const thinking=(id,text='内部推理 '+id)=>({id,sequence:0,kind:'message',role:'assistant',text,thinking:true,createdAt:'2026-10-27T00:00:00Z'});
+test('思考节点按位置留在处理过程内，执行中展开、结束后随过程折叠',()=>{
+ const entries=[thinking('k1'),tool('t1'),narration('n1')];
+ const live=renderEntries(entries,{active:true,open:false});
+ assert.match(live,/class="ac-process-thinking" data-entry-id="k1" data-thinking="true" open=""/);
+ assert.match(live,/ac-process-thinking-body/);
+ assert.ok(live.indexOf('data-entry-id="k1"')<live.indexOf('ac-step-group'));
+ const settled=renderEntries(entries,{open:true});
+ assert.match(settled,/ac-process-title">查看处理过程<\/span><span class="ac-process-meta">1 次工具调用/);assert.doesNotMatch(settled,/2 次工具调用/);
+ assert.match(settled,/data-thinking="true"/);assert.doesNotMatch(settled,/ac-process-thinking" open/);assert.doesNotMatch(settled,/ac-process-thinking-body/);
+});
+test('只有思考没有可见文字时过程仍成立，思考不进入正文说明位',()=>{
+ const html=renderEntries([thinking('k1'),thinking('k2')],{active:true});
+ assert.equal((html.match(/class="ac-process-thinking"/g)||[]).length,2);assert.doesNotMatch(html,/ac-process-narration/);
+});

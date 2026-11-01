@@ -80,6 +80,8 @@ export interface ExecutorItem {
   kind: 'message' | 'tool' | 'notice';
   role: 'user' | 'assistant' | 'system';
   text: string;
+  /** Model thinking fragment: process-only content, never a final reply nor model history. */
+  thinking?: boolean;
   /** Stable tool-step name when the source provides one (e.g. command, file-change, read). */
   name?: string;
   /** Original tool invocation input; retained when a later result replaces text. */
@@ -310,6 +312,8 @@ export interface ConversationEntry {
   kind: 'message' | 'tool' | 'notice' | 'handoff';
   role: 'user' | 'assistant' | 'system';
   text: string;
+  /** Model thinking fragment: process-only content, never a final reply nor model history. */
+  thinking?: boolean;
   /** Stable tool-step name when the source provided one. */
   name?: string;
   /** Original tool invocation input; retained when a later result replaces text. */

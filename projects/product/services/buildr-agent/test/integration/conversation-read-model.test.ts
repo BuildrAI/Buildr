@@ -27,6 +27,12 @@ test('compact status exactly preserves pending semantics, including retained wor
  for(const active of [false,true])assert.deepEqual(repo.listPendingStates(active).map(r=>r.view.id).sort(),records.filter(r=>priorPending(r,active)).map(r=>r.view.id).sort(),'old writer status must match all pending cases');
 });
 
+test('thinking entries keep their process-only flag through the read model',t=>{
+ const repo=fixture(t),r=record();r.view.entries=[{id:'think',sequence:1,kind:'message',role:'assistant',text:'内部推理',thinking:true,createdAt:'now'},{id:'say',sequence:2,kind:'message',role:'assistant',text:'答复',createdAt:'now'}];repo.saveConversation(r);
+ const page=repo.readPage(r.view.id)!;
+ assert.deepEqual(page.view.entries.map(entry=>[entry.id,entry.thinking===true,entry.text]),[['think',true,'内部推理'],['say',false,'答复']]);
+});
+
 test('page reads retrieve a bounded suffix and every original entry remains reachable in order',t=>{
  const repo=fixture(t),r=record();r.view.entries=Array.from({length:1000},(_,i)=>({id:'e'+i,sequence:i+1,kind:i%2?'tool':'message',role:i%2?'system':'user',runId:'round'+Math.floor(i/10),text:'x'.repeat(i===999?100*1024:100),input:i===999?'command '+ 'a'.repeat(20000):undefined,createdAt:'now'}));repo.saveConversation(r);
  const compact=repo.readPage(r.view.id,undefined,undefined,true)!;assert.ok(compact.view.entries.length<=50);assert.ok(JSON.stringify(compact).length<256*1024);const last=compact.view.entries.at(-1)!;assert.ok(last.detail);assert.equal(repo.readEntry(r.view.id,last.id,last.detail!.revision)?.input,r.view.entries.at(-1)!.input);

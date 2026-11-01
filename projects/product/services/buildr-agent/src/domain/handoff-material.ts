@@ -13,7 +13,7 @@ export const HANDOFF_SUMMARY_PROMPT=`你只负责整理交接材料，不执行�
 合并重复动作，不复制脚本、文件和日志全文。不猜测成果或授权，不输出秘密和隐藏推理。每项判断保留来源序号；说明覆盖范围和缺失。本地索引继续作为完整来源，不声称摘要替代全部历史。`;
 
 const clip=(value:string,max=600)=>value.length>max?value.slice(0,max)+'…（完整内容见来源）':value;
-export function handoffEntries(entries:ConversationEntry[],after=0):ConversationEntry[]{return entries.filter(e=>e.sequence>after&&e.kind!=='handoff'&&!(e.parentToolId&&e.kind==='message'));}
+export function handoffEntries(entries:ConversationEntry[],after=0):ConversationEntry[]{return entries.filter(e=>e.sequence>after&&e.kind!=='handoff'&&!e.thinking&&!(e.parentToolId&&e.kind==='message'));}
 function locations(entry:ConversationEntry):string[]{
  const found:string[]=[];
  try{const value=JSON.parse(entry.input??'{}');for(const key of ['file_path','path','filePath','target_path'])if(typeof value[key]==='string'&&value[key].length<2048)found.push(value[key]);}catch{/* Commands and scripts remain in local sources. */}

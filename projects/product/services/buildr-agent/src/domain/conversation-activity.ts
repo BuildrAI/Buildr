@@ -4,7 +4,7 @@ import { BUSY_STATES, type StoredConversation } from './agent-state.ts';
 
 /** Only meaningful visible message changes advance activity, including streamed additions. */
 export function messageSignature(record: StoredConversation): string {
-  const messages = record.view.entries.filter(entry => !entry.parentToolId && (entry.kind === 'message' && ['user','assistant'].includes(entry.role) || entry.role === 'user' && entry.kind === 'notice' && entry.id.startsWith('reply-')) && entry.status !== 'failed')
+  const messages = record.view.entries.filter(entry => !entry.parentToolId && !entry.thinking && (entry.kind === 'message' && ['user','assistant'].includes(entry.role) || entry.role === 'user' && entry.kind === 'notice' && entry.id.startsWith('reply-')) && entry.status !== 'failed')
     .map(entry => [entry.id, entry.text, entry.attachments ?? []]);
   return createHash('sha256').update(JSON.stringify(messages)).digest('hex');
 }

@@ -5,7 +5,7 @@ export function conversationRecoveryAction(conversation: ConversationView | null
   if (run.status === 'tools-active' && run.canContinue) return null;
   if (run.status === 'unknown' || run.status === 'tools-active' || ['failed','stopped','completed'].includes(run.status) && run.tools.some(tool => tool.status !== 'completed')) return {kind:'observe',label:'核对状态'};
   if (executionLocked(run) || currentConversationRequests(conversation).length || run.tools.some(tool => tool.status !== 'completed')) return null;
-  const replied = conversation.entries.some(entry => !entry.parentToolId && entry.role === 'assistant' && entry.kind === 'message' && entry.text.trim() && (entry.runId === run.id || !entry.runId && entry.createdAt >= run.startedAt));
+  const replied = conversation.entries.some(entry => !entry.parentToolId && !entry.thinking && entry.role === 'assistant' && entry.kind === 'message' && entry.text.trim() && (entry.runId === run.id || !entry.runId && entry.createdAt >= run.startedAt));
   if (!['failed','stopped','completed'].includes(run.status) || run.status === 'completed' && replied) return null;
   return {kind:'recover',label:run.accepted?'继续':'重试'};
 }
@@ -189,7 +189,7 @@ export function finalConversationReplyIds(entries:readonly ConversationEntry[],r
   const known=new Map(runs.map(run=>[run.id,run])),finals=new Map<string,string>();let legacy=0;
   for(const entry of entries){
     if(!entry.runId&&entry.kind==='message'&&entry.role==='user')legacy++;
-    if(entry.kind!=='message'||entry.role!=='assistant'||entry.parentToolId)continue;
+    if(entry.kind!=='message'||entry.role!=='assistant'||entry.parentToolId||entry.thinking)continue;
     const key=entry.runId||'legacy:'+legacy;
     finals.set(key,entry.status==='running'||!conversationRunSettled(entry.runId?known.get(entry.runId):undefined)?'':entry.id);
   }

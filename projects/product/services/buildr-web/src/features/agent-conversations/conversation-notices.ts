@@ -16,7 +16,7 @@ export function visibleConversationEntries(entries: ConversationEntry[]): Conver
 
 /** Seen state follows the same primary messages the person can actually read. */
 export function latestVisibleConversationMessage(entries:ConversationEntry[]):ConversationEntry|undefined {
-  return visibleConversationEntries(entries).filter(entry=>!entry.parentToolId&&(entry.kind==='message'&&(entry.role==='user'||entry.role==='assistant')||entry.role==='user'&&entry.kind==='notice'&&entry.id.startsWith('reply-'))&&entry.status!=='failed').at(-1);
+  return visibleConversationEntries(entries).filter(entry=>!entry.parentToolId&&!entry.thinking&&(entry.kind==='message'&&(entry.role==='user'||entry.role==='assistant')||entry.role==='user'&&entry.kind==='notice'&&entry.id.startsWith('reply-'))&&entry.status!=='failed').at(-1);
 }
 
 /** A new native context with unchanged choices is continuation, not a model takeover. */

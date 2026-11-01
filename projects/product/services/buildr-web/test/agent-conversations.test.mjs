@@ -8,7 +8,7 @@ import { registerHooks } from 'node:module';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createApiClient } from '../src/api/client.ts';
-import { conversationRecoveryAction, conversationContinuationText, appendDraftAttachment, canGenerateConversationTitle, canStopConversationTool, conversationConflictNeedsRefresh, conversationTurnBinding, createdConversationVisibility, executionLocked, participantAgentIds, shouldSendOnKey, draftKey, readDraft, removeSubmittedAttachments, transferDraftText, writeDraft, applyConversationEvent, isCurrentConversationEvent, mergeConversationView, prependConversationEntries, parseEventFrame, sameConversationSelection, latestConversationParticipant } from '../src/features/agent-conversations/conversation-state.ts';
+import { conversationRecoveryAction, conversationContinuationText, appendDraftAttachment, canGenerateConversationTitle, canStopConversationTool, conversationConflictNeedsRefresh, conversationTurnBinding, createdConversationVisibility, executionLocked, participantAgentIds, shouldSendOnKey, draftKey, readDraft, removeSubmittedAttachments, transferDraftText, writeDraft, applyConversationEvent, isCurrentConversationEvent, mergeConversationView, prependConversationEntries, parseEventFrame, sameConversationSelection, latestConversationParticipant,groupConversationStream } from '../src/features/agent-conversations/conversation-state.ts';
 import {conversationPermissionKey,conversationPermissionStorageKey,conversationReasoningOptions,conversationRunIdentity,readConversationPermission,reasoningEffortLabel,selectedConversationModel,selectedConversationPermission,supportsConversationPermission,writeConversationPermission} from '../src/features/agent-conversations/conversation-options.ts';
 import {conversationImageSource,conversationImageLinkSource} from '../src/features/agent-conversations/conversation-markdown-images.ts';
 registerHooks({resolve(specifier,context,next){
@@ -27,6 +27,20 @@ test('准确可接续的命令不锁输入，仍持续观察；缺少证明时�
   assert.equal(executionLocked({...view.run,canContinue:false}),true);
   assert.equal(executionLocked({...view.run,canContinue:undefined}),true);
   assert.equal(executionLocked({...view.run,status:'unknown'}),true);
+});
+
+test('思考内容留在处理过程，不成为最终答复或分叉边界',()=>{
+  const entry=fields=>({kind:'message',role:'assistant',status:'completed',createdAt:'2026-10-23',runId:'run/1',...fields});
+  const entries=[{id:'user',sequence:1,kind:'message',role:'user',text:'要求',createdAt:'2026-10-23',runId:'run/1'},entry({id:'think',sequence:2,text:'内部推理',thinking:true}),entry({id:'final',sequence:3,text:'答复'})];
+  const settled={...conversation,requests:[],run:{...conversation.run,status:'completed',tools:[]},entries};
+  assert.deepEqual([...finalReplyIds(settled)],['final']);
+  assert.deepEqual([...forkableReplyIds(settled)],['final']);
+  const stream=groupConversationStream(entries,settled.run);
+  assert.deepEqual(stream.find(item=>item.type==='process-block').entries.map(item=>item.id),['think']);
+  assert.equal(stream.filter(item=>item.type==='entry').at(-1).entry.id,'final');
+  // A turn that only reasoned has no answer, so the user can still continue it.
+  assert.deepEqual(conversationRecoveryAction({...settled,entries:entries.slice(0,2)}),{kind:'recover',label:'重试'});
+  assert.equal(conversationRecoveryAction(settled),null);
 });
 
 test('读取/历史/登录状态以本机令牌访问，执行始终使用对话保存身份而非当前浏览空间',async t=>{

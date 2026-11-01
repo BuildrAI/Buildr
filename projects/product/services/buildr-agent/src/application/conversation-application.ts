@@ -826,10 +826,11 @@ export class ConversationApplication {
       const inputChanged = item.input !== undefined && entry.input !== item.input;
       const files=item.presentedFiles===undefined?undefined:normalizePresentedFiles(item.presentedFiles);
       const filesChanged=files!==undefined&&JSON.stringify(entry.presentedFiles)!==JSON.stringify(files);
-      if (entry.text === item.text && entry.status === item.status && !nameChanged && !inputChanged && !filesChanged) return originChanged;
-      entry.text = item.text; entry.status = item.status; if (nameChanged) entry.name = item.name; if (inputChanged) entry.input = item.input; if(filesChanged)entry.presentedFiles=files; return true;
+      const thinkingChanged=Boolean(item.thinking)&&!entry.thinking;
+      if (entry.text === item.text && entry.status === item.status && !nameChanged && !inputChanged && !filesChanged && !thinkingChanged) return originChanged;
+      entry.text = item.text; entry.status = item.status; if (item.thinking) entry.thinking = true; if (nameChanged) entry.name = item.name; if (inputChanged) entry.input = item.input; if(filesChanged)entry.presentedFiles=files; return true;
     }
-    entry = { id: randomUUID(), sequence: (record.view.entries.at(-1)?.sequence ?? record.view.childOf?.throughSequence ?? 0) + 1, createdAt: this.options.now(), kind: item.kind, role: item.role, text: item.text, name: item.name, input: item.input, ...(item.presentedFiles?{presentedFiles:normalizePresentedFiles(item.presentedFiles)}:{}), parentToolId: item.parentToolId, participantId: participant.id, provider: participant.provider, runId:runId??record.attempts.find(a=>a.participantId===participant.id&&(a.executionRef?.id===item.executionId||a.clientRequestId===item.executionId))?.runId, status: item.status };
+    entry = { id: randomUUID(), sequence: (record.view.entries.at(-1)?.sequence ?? record.view.childOf?.throughSequence ?? 0) + 1, createdAt: this.options.now(), kind: item.kind, role: item.role, text: item.text, ...(item.thinking?{thinking:true}:{}), name: item.name, input: item.input, ...(item.presentedFiles?{presentedFiles:normalizePresentedFiles(item.presentedFiles)}:{}), parentToolId: item.parentToolId, participantId: participant.id, provider: participant.provider, runId:runId??record.attempts.find(a=>a.participantId===participant.id&&(a.executionRef?.id===item.executionId||a.clientRequestId===item.executionId))?.runId, status: item.status };
     record.view.entries.push(entry); record.sources[source] = entry.id;
     // A late native projection is known to this participant; intervening foreign
     // work and an input still awaiting acceptance are not. Never skip that gap.
@@ -1205,7 +1206,7 @@ export class ConversationApplication {
     record.view.title = title; record.titleOrigin = 'generated'; record.view.titleState={status:'generated'}; return true;
   }
   private titleDescription(record: StoredConversation, requireAnswer = true): string | undefined {
-    const visible = record.view.entries.filter(entry => !entry.parentToolId && entry.sequence > (record.view.forkedFrom?.throughSequence ?? 0) && ['user', 'assistant'].includes(entry.role) && entry.kind === 'message' && entry.status !== 'failed' && entry.text.trim());
+    const visible = record.view.entries.filter(entry => !entry.parentToolId && entry.sequence > (record.view.forkedFrom?.throughSequence ?? 0) && ['user', 'assistant'].includes(entry.role) && entry.kind === 'message' && !entry.thinking && entry.status !== 'failed' && entry.text.trim());
     const users = visible.filter(entry => entry.role === 'user'); const answers = visible.filter(entry => entry.role === 'assistant');
     if (!users.length || requireAnswer && !answers.length) return;
     const selected = new Map((record.view.forkedFrom ? [users[0]] : [users[0], answers[0], users.at(-1), answers.at(-1)]).filter((entry): entry is NonNullable<typeof entry> => Boolean(entry)).map(entry => [entry.id, entry]));

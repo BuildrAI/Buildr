@@ -151,6 +151,35 @@ for (const provider of ['codex', 'dsh', 'qoder']) test(`${provider} preserves ch
   } finally {await f.close();}
 });
 
+test('reasoning fragments persist as marked process entries beside the visible step text', async () => {
+  const native = fake('dsh'), open = native.executor.open;
+  native.executor.open = async options => {
+    const runtime = await open(options), original = runtime.send.bind(runtime);
+    runtime.send = async input => {
+      await original(input);
+      const context = native.contexts.get(input.contextRef.id)!;
+      const executionId = context.observation.executionRef!.id;
+      const items: ExecutorItem[] = [
+        {id:'assistant:1:2:reasoning',kind:'message',role:'assistant',text:'内部推理',thinking:true,executionId,status:'completed'},
+        {id:'assistant:1:2',kind:'message',role:'assistant',text:'可见说明',executionId,status:'completed'},
+      ];
+      for (const item of items) { context.items.push(item); input.onEvent({type:'item', item}); }
+    };
+    return runtime;
+  };
+  const f = fixture([native.executor]);
+  try {
+    await connected(f.service,'dsh');
+    const chat = await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'dsh','开始');
+    const done = await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='completed');
+    assert.deepEqual(done.entries.filter(entry=>entry.thinking===true).map(entry=>entry.text),['内部推理']);
+    assert.equal(done.entries.find(entry=>entry.text==='内部推理')?.role,'assistant');
+    assert.equal(done.entries.find(entry=>entry.text==='可见说明')?.thinking,undefined);
+    assert.equal(done.entries.find(entry=>entry.text==='answer from dsh')?.thinking,undefined);
+  } finally { await f.close(); }
+});
+
 test('late history from a settled child does not block a new authorized input as a foreign user change',async()=>{
   const native=fake('local'),f=fixture([native.executor]);
   try {
