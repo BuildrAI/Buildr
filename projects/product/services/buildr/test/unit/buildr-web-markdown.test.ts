@@ -327,6 +327,38 @@ test('代码正文保留空行和缩进，完整Mermaid标记异步绘图，表�
   assert.equal(root.querySelector('table').parentNode.className, 'markdown-table-scroll');
 });
 
+test('波浪线代码围栏保留架构树的换行、空行、缩进和安全文本', async () => {
+  const { renderMarkdown } = await loadRenderer();
+  const source = '浏览器：things-web\n    │ HTTP + SSE\nThings 后端：things-server\n    ├─ SQLite：对话\n    └─ Buildr Agent service\n        └─ models.generate → 当前可用模型\n\n<script>不执行</script>';
+  const root = renderMarkdown('说明\n~~~text\n' + source + '\n~~~\n\n## 后续');
+  assert.equal(root.querySelector('pre code').textContent, source);
+  assert.equal(root.querySelector('pre code').getAttribute('data-language'), 'text');
+  assert.equal(root.querySelectorAll('script').length, 0);
+  assert.equal(root.querySelectorAll('button').length, 1);
+  assert.equal(root.querySelector('p').textContent, '说明');
+  assert.equal(root.querySelector('h2').textContent, '后续');
+});
+
+test('两类代码围栏按字符和最小长度闭合，内部标题不影响锚点计数', async () => {
+  const { renderMarkdown, markdownHeadingCounts } = await loadRenderer();
+  for (const marker of ['`', '~']) {
+    const source = '# 隐藏\n' + marker.repeat(3) + '\n' + (marker === '`' ? '~~~' : '```') + '\n  仍在代码中';
+    const text = '   ' + marker.repeat(4) + 'text extra\n' + source + '\n  ' + marker.repeat(5) + ' \t\n# 可见';
+    assert.equal(renderMarkdown(text).querySelector('pre code').textContent, source);
+    assert.deepEqual(markdownHeadingCounts(text), { '可见': 1 });
+  }
+});
+
+test('未闭合波浪线围栏保留剩余文本，图示只在正确闭合后绘制', async () => {
+  const { renderMarkdown } = await loadRenderer();
+  const source = 'graph LR\n  A --> B\n```';
+  const incomplete = renderMarkdown('~~~mermaid\n' + source);
+  assert.equal(incomplete.querySelector('pre code').textContent, source);
+  assert.equal(incomplete.querySelectorAll('div').find((node: any) => node.className.includes('markdown-diagram')).getAttribute('data-mermaid-state'), 'incomplete');
+  const complete = renderMarkdown('~~~mermaid\ngraph LR\n  A --> B\n~~~');
+  assert.equal(complete.querySelectorAll('div').find((node: any) => node.className.includes('markdown-diagram')).getAttribute('data-mermaid-source'), 'graph LR\n  A --> B');
+});
+
 test('未闭合Mermaid不进入绘图并保留完整源码，大小写语言标识一致', async () => {
   const { renderMarkdown } = await loadRenderer();
   const root = renderMarkdown('```Mermaid\ngraph LR\n  A -->');
@@ -391,4 +423,76 @@ test('angle destinations are parsed before safe link resolution and opener callb
  assert.equal(links[1].getAttribute('data-markdown-href'),'/work/a.md:12');
  assert.equal(links[2].getAttribute('target'),'_blank');
  assert.match(textOf(root),/拒绝/);assert.match(textOf(root),/不完整/);
+});
+
+test('通用语法支持引用内嵌套列表、复合强调、删除线、转义和硬换行', async () => {
+  const { renderMarkdown } = await loadRenderer();
+  const root = renderMarkdown('> 引用 **加粗内有 *斜体***\n>\n> - 第一项\n>   - ~~旧内容~~\n\n转义 \\*星号\\* &amp; &#x4e2d;  \n下一行');
+  assert.equal(root.querySelectorAll('blockquote').length, 1);
+  assert.equal(root.querySelector('blockquote strong em').textContent, '斜体');
+  assert.equal(root.querySelector('blockquote ul ul del').textContent, '旧内容');
+  assert.equal(root.querySelectorAll('br').length, 1);
+  assert.match(root.textContent, /转义 \*星号\* & 中/);
+});
+
+test('缩进代码与围栏等价显示，长围栏允许嵌入短围栏', async () => {
+  const { renderMarkdown } = await loadRenderer();
+  const root = renderMarkdown('    root\n      └─ child\n\n````text\n```js\nconst x = 1;\n```\n````');
+  const code = root.querySelectorAll('pre code');
+  assert.equal(code[0].textContent, 'root\n  └─ child');
+  assert.equal(code[1].textContent, '```js\nconst x = 1;\n```');
+  assert.equal(root.querySelectorAll('button').length, 2);
+});
+
+test('参考式链接及图片保留宿主策略，链接名称可以包含强调', async () => {
+  const { renderMarkdown } = await loadRenderer();
+  const root = renderMarkdown('[**指南**][guide] ![图片][image]\n\n[guide]: <./docs/记录 文档.md#章节> "指南"\n[image]: assets/view.png', {
+    allowRelativeLinks: true,
+    imageResolver: (href: string) => href === 'assets/view.png' ? { href: '/safe/view.png' } : null,
+  });
+  assert.equal(root.querySelector('a strong').textContent, '指南');
+  assert.equal(root.querySelector('a').getAttribute('data-markdown-href'), './docs/记录 文档.md#章节');
+  assert.equal(root.querySelector('img').getAttribute('src'), '/safe/view.png');
+  assert.doesNotMatch(root.textContent, /\[guide\]:/);
+});
+
+test('表格保留转义竖线、单元格内样式和列对齐', async () => {
+  const { renderMarkdown } = await loadRenderer();
+  const root = renderMarkdown('| 左列 | 右列 |\n| :--- | ---: |\n| a\\|b | **重点** |');
+  assert.equal(root.querySelectorAll('td').length, 2);
+  assert.equal(root.querySelector('td').textContent, 'a|b');
+  assert.equal(root.querySelectorAll('td')[1].getAttribute('style'), 'text-align: right');
+  assert.equal(root.querySelector('td strong').textContent, '重点');
+});
+
+test('Setext 标题与引用内标题共享显示和分块计数，代码不计标题', async () => {
+  const { renderMarkdown, markdownHeadingCounts } = await loadRenderer();
+  const first = '标题 &amp; `Name`\n===\n\n> ## 标题 &amp; `Name`\n\n    # 不计数';
+  assert.deepEqual(markdownHeadingCounts(first), { '标题--name': 2 });
+  const root = renderMarkdown('## 标题 &amp; `Name`', { headingCounts: markdownHeadingCounts(first) });
+  assert.equal(root.querySelector('h2').getAttribute('id'), '标题--name-2');
+  assert.equal(root.querySelector('h2').textContent, '标题 & Name');
+});
+
+test('标准语法不启用实体混淆协议、HTML或未授权图片，代码不解码实体', async () => {
+  const { renderMarkdown } = await loadRenderer();
+  const root = renderMarkdown('[混淆](java&#x73;cript:alert) [数据](data:text/html,test) ![外部](https://evil.invalid/x)\n\n<iframe src="https://evil.invalid"></iframe>\n\n`&amp; <script>`', { allowRelativeLinks: true });
+  assert.equal(root.querySelectorAll('a').length, 0);
+  assert.equal(root.querySelectorAll('img').length, 0);
+  assert.equal(root.querySelectorAll('iframe').length, 0);
+  assert.equal(root.querySelectorAll('script').length, 0);
+  assert.equal(root.querySelector('code').textContent, '&amp; <script>');
+  assert.match(root.textContent, /<iframe/);
+});
+
+test('任务列表的复合正文位于复用布局的单一内容区，有序列表保留起点', async () => {
+  const { renderMarkdown } = await loadRenderer();
+  const root = renderMarkdown('3. 第三步\n4. 第四步\n\n- [x] **完成**和[指南](guide.md)\n  - 子项', { allowRelativeLinks: true });
+  assert.equal(root.querySelector('ol').getAttribute('start'), '3');
+  const item = root.querySelectorAll('li').find((li: any) => li.className === 'task-list-item');
+  assert.equal(item.childNodes.length, 2);
+  assert.equal(item.childNodes[0].disabled, true);
+  assert.equal(item.childNodes[1].className, 'markdown-task-content');
+  assert.equal(item.childNodes[1].querySelector('strong').textContent, '完成');
+  assert.equal(item.childNodes[1].querySelector('ul li').textContent, '子项');
 });

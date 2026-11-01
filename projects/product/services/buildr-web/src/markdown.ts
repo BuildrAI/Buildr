@@ -1,4 +1,6 @@
 // @ts-nocheck
+import { Lexer, Marked } from 'marked';
+import { decodeHTML } from 'entities';
 import { markdownDestination } from './lib/markdownDestination.ts';
 import { copyText } from './lib/copyText.ts';
 import { cachedDiagramSvg, setDiagramSvg } from './lib/markdownDiagramSvg.ts';
@@ -59,16 +61,6 @@ function resolveSafeHref(href, { allowRelativeLinks = false, allowParentRelative
   return { href: `${citation ? './' : ''}${normalizedPath}${suffix}`, external: false };
 }
 
-function splitTableRow(line) {
-  const trimmed = line.trim().replace(/^\|/, '').replace(/\|$/, '');
-  return trimmed.split('|').map((cell) => cell.trim());
-}
-
-function isTableSeparator(line) {
-  const cells = splitTableRow(line);
-  return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
-}
-
 function imageFallback(doc, alt) {
   const fallback = doc.createElement('span');
   fallback.className = 'markdown-image-fallback';
@@ -77,125 +69,131 @@ function imageFallback(doc, alt) {
   return fallback;
 }
 
-function appendInline(parent, text, doc, linkOptions) {
-  const pattern = /!\[([^\]]*)\]\((<[^<>\r\n]*>|[^)]+)\)|(\`+)([^\`]+?)\3|\*\*([^*]+)\*\*|\*([^*]+)\*|\[([^\]]+)\]\((<[^<>\r\n]*>|[^)]+)\)|(https?:\/\/[^\s<>"']+)/g;
-  let lastIndex = 0;
-  let match;
-  while ((match = pattern.exec(text)) !== null) {
-    if (match.index > lastIndex) parent.append(doc.createTextNode(text.slice(lastIndex, match.index)));
-    if (match[1] !== undefined) {
-      const resolved = linkOptions.imageResolver?.(markdownDestination(match[2])??'');
-      if (resolved?.href && !failedMarkdownImages.has(resolved.href)) {
-        const alt = match[1];
-        const image = doc.createElement('img');
-        image.setAttribute('alt', alt);
-        image.setAttribute('loading', 'lazy');
-        image.setAttribute('referrerpolicy', 'no-referrer');
-        if (typeof image.addEventListener === 'function') image.addEventListener('error', () => {
-          failedMarkdownImages.add(resolved.href);
-          if (image.parentNode) image.replaceWith(imageFallback(doc, alt));
-        });
-        parent.append(image);
-        image.setAttribute('src', resolved.href);
-      } else {
-        parent.append(imageFallback(doc, match[1]));
-      }
-    } else if (match[3] !== undefined) {
-      const code = doc.createElement('code');
-      code.textContent = match[4];
-      const codeUrl = /^https?:\/\/[^\s]+$/i.test(match[4].trim()) ? resolveSafeHref(match[4].trim(), linkOptions) : null;
-      if (codeUrl) {
-        const codeLink = doc.createElement('a');
-        codeLink.setAttribute('href', codeUrl.href);
-        if (codeUrl.external) {
-          codeLink.setAttribute('rel', 'noopener noreferrer');
-          codeLink.setAttribute('target', '_blank');
-        }
-        codeLink.append(code);
-        parent.append(codeLink);
-      } else {
-        parent.append(code);
-      }
-    } else if (match[5] !== undefined) {
-      const strong = doc.createElement('strong');
-      strong.textContent = match[5];
-      parent.append(strong);
-    } else if (match[6] !== undefined) {
-      const em = doc.createElement('em');
-      em.textContent = match[6];
-      parent.append(em);
-    } else if (match[9] !== undefined) {
-      let url = match[9];
-      let trailing = '';
-      const trimmed = url.match(/[(.,;:!?\)\]'"，。；：！？、》）】」』]+$/);
-      if (trimmed) {
-        trailing = trimmed[0];
-        url = url.slice(0, url.length - trailing.length);
-      }
-      const resolved = resolveSafeHref(url, linkOptions);
-      if (resolved) {
-        const link = doc.createElement('a');
-        link.setAttribute('href', resolved.href);
-        if (resolved.external) {
-          link.setAttribute('rel', 'noopener noreferrer');
-          link.setAttribute('target', '_blank');
-        }
-        link.textContent = url;
-        parent.append(link);
-        if (trailing) parent.append(doc.createTextNode(trailing));
-      } else {
-        parent.append(doc.createTextNode(url + trailing));
-      }
-    } else {
-      const label = match[7];
-      const resolved = resolveSafeHref(match[8], linkOptions);
-      if (resolved) {
-        const link = doc.createElement('a');
-        link.setAttribute('href', resolved.href);
-        if (resolved.external) {
-          link.setAttribute('rel', 'noopener noreferrer');
-          link.setAttribute('target', '_blank');
-        } else {
-          link.className = 'markdown-relative-link';
-          link.setAttribute('data-markdown-href', markdownDestination(match[8]));
-          link.setAttribute('title', `相对路径：${resolved.href}`);
-        }
-        link.textContent = label;
-        parent.append(link);
-      } else {
-        parent.append(doc.createTextNode(`[${label}](${match[8]})`));
-      }
-    }
-    lastIndex = match.index + match[0].length;
-  }
-  if (lastIndex < text.length) parent.append(doc.createTextNode(text.slice(lastIndex)));
+// Parse syntax once; author content is only ever written as text or safe DOM nodes.
+function inlineText(tokens) {
+  return tokens.map(token => token.tokens ? inlineText(token.tokens) : ['codespan', 'html'].includes(token.type) ? token.text : decodeHTML(token.text || '')).join('');
 }
 
-function createParagraph(text, doc, linkOptions) {
-  const paragraph = doc.createElement('p');
-  appendInline(paragraph, text, doc, linkOptions);
-  return paragraph;
+function appendInline(parent, tokens, doc, linkOptions) {
+  for (const token of tokens) {
+    if (['strong', 'em', 'del'].includes(token.type)) {
+      const element = doc.createElement(token.type);
+      appendInline(element, token.tokens, doc, linkOptions);
+      parent.append(element);
+    } else if (token.type === 'link') {
+      const destination = decodeHTML(token.href);
+      const resolved = resolveSafeHref(destination, linkOptions);
+      if (!resolved) { parent.append(doc.createTextNode(token.raw)); continue; }
+      const link = doc.createElement('a');
+      link.setAttribute('href', resolved.href);
+      if (resolved.external) {
+        link.setAttribute('rel', 'noopener noreferrer');
+        link.setAttribute('target', '_blank');
+      } else {
+        link.className = 'markdown-relative-link';
+        link.setAttribute('data-markdown-href', destination);
+        link.setAttribute('title', `相对路径：${resolved.href}`);
+      }
+      appendInline(link, token.tokens, doc, linkOptions);
+      parent.append(link);
+    } else if (token.type === 'image') {
+      const destination = decodeHTML(token.href);
+      const resolved = linkOptions.imageResolver?.(markdownDestination(destination) ?? '');
+      const alt = token.tokens ? inlineText(token.tokens) : decodeHTML(token.text);
+      if (!resolved?.href || failedMarkdownImages.has(resolved.href)) {
+        parent.append(imageFallback(doc, alt)); continue;
+      }
+      const image = doc.createElement('img');
+      image.setAttribute('alt', alt);
+      image.setAttribute('loading', 'lazy');
+      image.setAttribute('referrerpolicy', 'no-referrer');
+      image.addEventListener?.('error', () => {
+        failedMarkdownImages.add(resolved.href);
+        if (image.parentNode) image.replaceWith(imageFallback(doc, alt));
+      });
+      parent.append(image);
+      image.setAttribute('src', resolved.href);
+    } else if (token.type === 'codespan') {
+      const code = doc.createElement('code');
+      code.textContent = token.text;
+      const resolved = /^https?:\/\/[^\s]+$/i.test(token.text.trim()) ? resolveSafeHref(token.text.trim(), linkOptions) : null;
+      if (resolved) {
+        const link = doc.createElement('a');
+        link.setAttribute('href', resolved.href);
+        link.setAttribute('rel', 'noopener noreferrer');
+        link.setAttribute('target', '_blank');
+        link.append(code);
+        parent.append(link);
+      } else parent.append(code);
+    } else if (token.type === 'br') {
+      parent.append(doc.createElement('br'));
+    } else if (token.tokens) {
+      appendInline(parent, token.tokens, doc, linkOptions);
+    } else {
+      // Raw HTML is intentionally literal, not a trusted markup surface.
+      parent.append(doc.createTextNode(token.type === 'html' ? token.text : decodeHTML(token.text || token.raw || '')));
+    }
+  }
 }
 
 export function markdownHeadingSlug(text: string) {
   return text.toLowerCase().replace(/[^\p{L}\p{N}_ -]/gu, '').replace(/ /g, '-');
 }
 
-/** Precompute each split block's starting counters, without sharing mutable render state. */
+// Use the same fence rules for rendering and split-document heading counters.
+function openingFence(line: string) {
+  const match = line.match(/^ {0,3}(`{3,}|~{3,})([^\r\n]*)$/);
+  if (!match || (match[1][0] === '`' && match[2].includes('`'))) return null;
+  return { marker: match[1][0], length: match[1].length, language: match[2].trim().split(/\s+/)[0] || '' };
+}
+
+function closesFence(line: string, fence: { marker: string; length: number }) {
+  const match = line.match(/^ {0,3}(`{3,}|~{3,})[ \t]*$/);
+  return Boolean(match && match[1][0] === fence.marker && match[1].length >= fence.length);
+}
+
+// Marked 16's closing-fence pattern accepts spaces but not trailing tabs.
+// Adapt only that valid spelling; leave all other syntax to its normal lexer.
+const markdownParser = new Marked({
+  gfm: true,
+  tokenizer: {
+    fences(source: string) {
+      const newline = source.indexOf('\n');
+      const fence = openingFence(newline < 0 ? source : source.slice(0, newline));
+      if (!fence || newline < 0) return false;
+      // Scan only this block, rather than splitting the remaining document for
+      // every code block in a long file.
+      for (let start = newline + 1; start < source.length;) {
+        const end = source.indexOf('\n', start);
+        const line = source.slice(start, end < 0 ? source.length : end);
+        const next = end < 0 ? source.length : end + 1;
+        if (closesFence(line, fence)) {
+          if (!line.includes('\t')) return false;
+          const raw = source.slice(0, next);
+          const normalized = source.slice(0, start) + line.replace(/\t/g, ' ') + '\n';
+          const token = Lexer.lex(normalized, { gfm: true })[0];
+          return { ...token, raw };
+        }
+        start = next;
+      }
+      return false;
+    },
+  },
+});
+
+/** Counts and displayed anchors use exactly the same parsed headings. */
 export function markdownHeadingCounts(markdown: string, initial: Record<string, number> = {}) {
   const counts = { ...initial };
-  let fenced = false;
-  for (const line of markdown.split('\n')) {
-    if (!fenced && /^```[\w-]*\s*$/.test(line)) { fenced = true; continue; }
-    if (fenced && /^```\s*$/.test(line)) { fenced = false; continue; }
-    if (fenced) continue;
-    const heading = line.match(/^#{1,6}\s+(.+)$/)?.[1]?.trim();
-    if (!heading) continue;
-    const text = heading.replace(/(\`+)([^\`]+?)\1|\*\*([^*]+)\*\*|\*([^*]+)\*|\[([^\]]+)\]\((<[^<>\r\n]*>|[^)]+)\)/g,
-      (_all, _ticks, code, strong, em, label) => code ?? strong ?? em ?? label);
-    const slug = markdownHeadingSlug(text);
-    counts[slug] = (counts[slug] || 0) + 1;
+  function visit(tokens) {
+    for (const token of tokens) {
+      if (token.type === 'heading') {
+        const slug = markdownHeadingSlug(inlineText(token.tokens));
+        counts[slug] = (counts[slug] || 0) + 1;
+      } else if (token.type === 'blockquote') visit(token.tokens);
+      else if (token.type === 'list') for (const item of token.items) visit(item.tokens);
+    }
   }
+  visit(markdownParser.lexer(markdown));
   return counts;
 }
 
@@ -204,71 +202,6 @@ export function markdownDocumentBody(markdown: string, omitTitle = false) {
   const title = omitTitle ? markdown.match(/^# [^\n]*\n/)?.[0] : undefined;
   const headingCounts = markdownHeadingCounts(title || '');
   return { content: title ? markdown.slice(title.length) : markdown, headingCounts, anchor: Object.keys(headingCounts)[0] };
-}
-
-function createHeading(level, text, doc, headingOffset, linkOptions) {
-  const heading = doc.createElement(`h${Math.min(Math.max(level + headingOffset, 1), 6)}`);
-  appendInline(heading, text, doc, linkOptions);
-  const slug = markdownHeadingSlug(String(heading.textContent));
-  const count = linkOptions.headings.get(slug) || 0;
-  linkOptions.headings.set(slug, count + 1);
-  heading.setAttribute('id', count ? `${slug}-${count}` : slug);
-  return heading;
-}
-
-function createList(ordered, items, doc, linkOptions) {
-  const list = doc.createElement(ordered ? 'ol' : 'ul');
-  let hasTask = false;
-  for (const item of items) {
-    const li = doc.createElement('li');
-    const task = String(item).match(/^\[([ xX])\]\s+(.+)$/);
-    if (task) {
-      hasTask = true;
-      li.className = 'task-list-item';
-      const checkbox = doc.createElement('input');
-      checkbox.type = 'checkbox';
-      checkbox.disabled = true;
-      checkbox.checked = task[1].toLowerCase() === 'x';
-      const label = doc.createElement('span');
-      appendInline(label, task[2], doc, linkOptions);
-      li.append(checkbox, label);
-    } else {
-      appendInline(li, item, doc, linkOptions);
-    }
-    list.append(li);
-  }
-  if (hasTask) list.className = `${list.className} task-list`.trim();
-  return list;
-}
-
-// Preserve native Markdown nesting so linked file trees remain ordinary documents.
-function listItem(line) {
-  const match = line?.match(/^([ \t]*)([-*]|\d+\.)\s+(.+)$/);
-  return match ? { indent: match[1].replace(/\t/g, '    ').length, ordered: /\d/.test(match[2]), text: match[3] } : null;
-}
-function readList(lines, start, doc, linkOptions) {
-  const first = listItem(lines[start]);
-  const list = doc.createElement(first.ordered ? 'ol' : 'ul');
-  let index = start;
-  while (index < lines.length) {
-    const item = listItem(lines[index]);
-    if (!item || item.indent !== first.indent || item.ordered !== first.ordered) break;
-    const single = createList(first.ordered, [item.text], doc, linkOptions);
-    const li = single.childNodes[0];
-    if (single.className.includes('task-list')) list.className = 'task-list';
-    list.append(li);
-    index++;
-    while (listItem(lines[index])?.indent > first.indent) {
-      const child = readList(lines, index, doc, linkOptions);
-      li.append(child.list);
-      index = child.index;
-    }
-  }
-  return { list, index };
-}
-
-function createHorizontalRule(doc) {
-  return doc.createElement('hr');
 }
 
 function createCodeBlock(language, code, doc, sourcePath, complete = true) {
@@ -325,27 +258,23 @@ function createCodeBlock(language, code, doc, sourcePath, complete = true) {
   return block;
 }
 
-function createTable(header, rows, doc, linkOptions) {
+function createTable(token, doc, linkOptions) {
   const table = doc.createElement('table');
-  const thead = doc.createElement('thead');
-  const headRow = doc.createElement('tr');
-  for (const cell of header) {
-    const th = doc.createElement('th');
-    appendInline(th, cell, doc, linkOptions);
-    headRow.append(th);
+  function row(cells, tag) {
+    const tr = doc.createElement('tr');
+    cells.forEach((cell, index) => {
+      const element = doc.createElement(tag);
+      if (token.align[index]) element.setAttribute('style', `text-align: ${token.align[index]}`);
+      appendInline(element, cell.tokens, doc, linkOptions);
+      tr.append(element);
+    });
+    return tr;
   }
-  thead.append(headRow);
+  const thead = doc.createElement('thead');
+  thead.append(row(token.header, 'th'));
   table.append(thead);
   const tbody = doc.createElement('tbody');
-  for (const row of rows) {
-    const tr = doc.createElement('tr');
-    for (const cell of row) {
-      const td = doc.createElement('td');
-      appendInline(td, cell, doc, linkOptions);
-      tr.append(td);
-    }
-    tbody.append(tr);
-  }
+  for (const cells of token.rows) tbody.append(row(cells, 'td'));
   table.append(tbody);
   const scroll = doc.createElement('div');
   scroll.className = 'markdown-table-scroll';
@@ -354,6 +283,67 @@ function createTable(header, rows, doc, linkOptions) {
   scroll.setAttribute('tabindex', '0');
   scroll.append(table);
   return scroll;
+}
+
+function completeCodeFence(token) {
+  const lines = token.raw.replace(/\r\n/g, '\n').trimEnd().split('\n');
+  const fence = openingFence(lines[0]);
+  return !fence || (lines.length > 1 && closesFence(lines.at(-1), fence));
+}
+
+function appendBlocks(parent, tokens, doc, options, linkOptions, tight = false) {
+  for (const token of tokens) {
+    if (token.type === 'space' || token.type === 'def') continue;
+    if (token.type === 'code') {
+      parent.append(createCodeBlock(token.lang?.split(/\s+/)[0] || '', token.text, doc, options.sourcePath, completeCodeFence(token)));
+    } else if (token.type === 'heading') {
+      const level = Math.min(Math.max(token.depth + (options.headingOffset || 0), 1), 6);
+      const heading = doc.createElement(`h${level}`);
+      appendInline(heading, token.tokens, doc, linkOptions);
+      const slug = markdownHeadingSlug(String(heading.textContent));
+      const count = linkOptions.headings.get(slug) || 0;
+      linkOptions.headings.set(slug, count + 1);
+      heading.setAttribute('id', count ? `${slug}-${count}` : slug);
+      parent.append(heading);
+    } else if (token.type === 'blockquote') {
+      const quote = doc.createElement('blockquote');
+      appendBlocks(quote, token.tokens, doc, options, linkOptions);
+      parent.append(quote);
+    } else if (token.type === 'list') {
+      const list = doc.createElement(token.ordered ? 'ol' : 'ul');
+      if (token.ordered && token.start !== 1) list.setAttribute('start', String(token.start));
+      if (token.items.some(item => item.task)) list.className = 'task-list';
+      for (const item of token.items) {
+        const li = doc.createElement('li');
+        let content = li;
+        if (item.task) {
+          li.className = 'task-list-item';
+          const checkbox = doc.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.disabled = true;
+          checkbox.checked = item.checked;
+          li.append(checkbox);
+          content = doc.createElement('div');
+          content.className = 'markdown-task-content';
+          li.append(content);
+        }
+        appendBlocks(content, item.tokens, doc, options, linkOptions, !token.loose);
+        list.append(li);
+      }
+      parent.append(list);
+    } else if (token.type === 'table') {
+      parent.append(createTable(token, doc, linkOptions));
+    } else if (token.type === 'hr') {
+      parent.append(doc.createElement('hr'));
+    } else if (token.type === 'paragraph' || token.type === 'text') {
+      const paragraph = tight ? parent : doc.createElement('p');
+      appendInline(paragraph, token.tokens || Lexer.lexInline(token.text, { gfm: true }), doc, linkOptions);
+      if (!tight) parent.append(paragraph);
+    } else {
+      // Includes block HTML: never use innerHTML for document authors' input.
+      parent.append(doc.createTextNode(token.raw || token.text || ''));
+    }
+  }
 }
 
 function normalizeRenderArgs(docOrOptions, maybeOptions) {
@@ -387,74 +377,7 @@ export function renderMarkdown(markdown: string, docOrOptions: Document | Markdo
   };
   const root = doc.createElement('div');
   root.className = 'markdown-body';
-  const lines = String(markdown ?? '').replace(/\r\n/g, '\n').split('\n');
-  let index = 0;
-
-  while (index < lines.length) {
-    const line = lines[index];
-    if (!line.trim()) {
-      index += 1;
-      continue;
-    }
-
-    const fence = line.match(/^```([\w-]+)?\s*$/);
-    if (fence) {
-      const language = fence[1] || '';
-      const codeLines = [];
-      index += 1;
-      while (index < lines.length && !/^```\s*$/.test(lines[index])) {
-        codeLines.push(lines[index]);
-        index += 1;
-      }
-      const complete = index < lines.length;
-      if (complete) index += 1;
-      root.append(createCodeBlock(language, codeLines.join('\n'), doc, options.sourcePath, complete));
-      continue;
-    }
-
-    if (line.includes('|') && index + 1 < lines.length && isTableSeparator(lines[index + 1])) {
-      const header = splitTableRow(line);
-      index += 2;
-      const rows = [];
-      while (index < lines.length && lines[index].includes('|') && lines[index].trim()) {
-        rows.push(splitTableRow(lines[index]));
-        index += 1;
-      }
-      root.append(createTable(header, rows, doc, linkOptions));
-      continue;
-    }
-
-    if (/^(-{3,}|\*{3,}|_{3,})\s*$/.test(line.trim())) {
-      root.append(createHorizontalRule(doc));
-      index += 1;
-      continue;
-    }
-
-    const heading = line.match(/^(#{1,6})\s+(.+)$/);
-    if (heading) {
-      root.append(createHeading(heading[1].length, heading[2].trim(), doc, headingOffset, linkOptions));
-      index += 1;
-      continue;
-    }
-
-    if (listItem(line)) {
-      const result = readList(lines, index, doc, linkOptions);
-      root.append(result.list);
-      index = result.index;
-      continue;
-    }
-
-    const paragraphLines = [line.trim()];
-    index += 1;
-    while (index < lines.length) {
-      const next = lines[index];
-      if (!next.trim()) break;
-      if (/^(#{1,6})\s+/.test(next) || /^[-*]\s+/.test(next) || /^\d+\.\s+/.test(next) || /^```/.test(next) || (next.includes('|') && index + 1 < lines.length && isTableSeparator(lines[index + 1]))) break;
-      paragraphLines.push(next.trim());
-      index += 1;
-    }
-    root.append(createParagraph(paragraphLines.join(' '), doc, linkOptions));
-  }
-
+  const tokens = markdownParser.lexer(String(markdown ?? ''));
+  appendBlocks(root, tokens, doc, { ...options, headingOffset }, linkOptions);
   return root;
 }
