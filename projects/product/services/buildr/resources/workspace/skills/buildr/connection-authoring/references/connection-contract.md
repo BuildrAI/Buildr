@@ -10,7 +10,7 @@
 
 完整个人组加密保存于规范工作空间（Workspace）的 `.buildr/local/connection-skills/` 当前本机应用身份目录，文件和目录只允许本人访问并忽略 Git；加密密钥仍在本机应用数据目录。旧本机路径只兼容读取，存储迁移和共享转个人必须显式执行、核对双方观察并保全目标，冲突不覆盖。相同认证目标的实例合并须由应用重新绑定个人组，不能复制旧密文或从其他来源借凭据。界面可显式查看本人当前已保存的单个秘密字段，普通列表/详情/诊断不返回秘密，查看不会自动更换认证。
 
-`authentication.authorization` 可选，适用于只允许 `[personal]` 的接入。它引用命名授权程序并可声明 `args/inputs/label/reauthorizeLabel/timeoutMs/accountLabelField`；`inputs` 只引用配置字段，账号展示字段只能引用非秘密认证字段。授权程序与普通业务程序使用不同上下文，不接收旧认证；完整字段声明仍用于宿主校验和密文保存，界面不显示这些字段的录入与令牌查看。首次新增先保存必要非秘密配置，再授权和发现范围；授权后才能确定的范围不应阻塞授权本身，业务命令另行要求准确目标。
+`authentication.authorization` 可选，适用于只允许 `[personal]` 的接入。它引用命名授权程序并可声明 `args/inputs/label/reauthorizeLabel/timeoutMs/accountLabelField`；`inputs` 只引用配置字段，账号展示字段只能引用非秘密认证字段。授权程序与普通业务程序使用不同上下文，默认不接收旧认证；显式有限复用、目标参数及按需准备见下方“按需站点会话”。完整字段声明仍用于宿主校验和密文保存，界面不显示这些字段的录入与令牌查看。首次新增先保存必要非秘密配置，再授权和发现范围；授权后才能确定的范围不应阻塞授权本身，业务命令另行要求准确目标。
 
 授权和重新授权均为明确动作，普通打开页面不执行。程序须使用本次独立浏览器会话或外部系统支持的安全回调交接，不从其他用户资料借用会话，不把秘密放进公开回调网址、普通输出或诊断。取消、超时、关闭浏览器、异常退出、无效结果及开始观察变化时，提交前失败保留原个人组并清理本次资源；新组已经替换后若持久化核验失败，准确报告待核验并重新读取，不虚构旧组仍在，也不盲目重授权。
 
@@ -26,13 +26,28 @@
 
 网站入口用 `presentation.websiteField` 引用已声明的 `url` 配置字段；双地址方法可另用 `websiteFallbackField` 显式引用基础地址字段。网站覆盖值缺失、为空文本或仅含空白时使用回落值，字段默认值仍按声明生效；非空覆盖值优先，非法时不改用另一目标。最终候选继续经过网址安全校验，整体配置问题仍单独诊断；该选择不修改实例配置、认证目标或程序上下文（Context）。未声明回落字段时不按常见字段名猜测基础地址。
 
+多网站入口使用 `presentation.websites: [{id, label, field}]`，最多16项，编号唯一，名称非空且不超过120字符，`field` 只引用非秘密的 `url` 配置字段。应用按声明顺序公开安全的 `websiteLinks: [{id,label,url}]`，逐项沿用网址安全校验及字段默认值；缺失或非法项不影响其他入口，也不自动改用另一目标。声明存在（含空数组）时优先于旧单入口，`websiteUrl` 为 `null`，不默认选择第一项。未声明时保留上述单入口与回落语义。网页使用具名菜单在新标签页打开，点击不触发认证、续期、测试或专业执行；打开网站不证明登录成功。不同环境的名称与字段由专业技能（Skill）声明，Buildr 不推断环境；旧产品不支持此字段时先保留当前有效声明，待配套产品可用后激活候选。
+
 `programs` 是命名程序对象：`bundled` 使用技能（Skill）目录相对 `entry` 和可选 `runtime`；`installed` 使用独立 `executable` 名称。二者可以声明参数数组、`helpArgs`、`dependencies` 和 `installHint`；版本检查使用 `version: {args, constraint}`。所有随附运行代码放在声明入口所属的同一附件树，通常为 `scripts/`，例如 `scripts/bin/client.mjs` 与 `scripts/lib/`；通用启动会观察该树的当前文件，文档与配置附件继续按各自职责保存。独立安装程序的内部依赖不由启动入口完整证明，应声明依赖及版本检查并由该方法自行核验实际可用性。只读测试与动态选择在 `hooks` 引用程序并声明 `effect: read`，不得借测试发布配置或部署。动态发现可使用 `inputs` 列出所需字段引用，让地址与认证齐备后先发现业务范围；只降低该发现动作对未给配置字段的必填要求，所有已给值仍校验，完整认证和认证目标边界不变。省略 `inputs` 沿用完整配置检查，连接测试始终检查完整配置。
 
 共享认证绑定的是声明接收方 `kind/entry/runtime/executable/args`，不保存本机程序绝对路径。目录返回 `declarationRevision`（声明文件摘要）、`programRecipients`（本机实际接收方位置或缺失）及当前 `revision`；后者同时观察声明与本机位置。输入 `expected.definitionRevision` 使用刚读到的 `revision`，不得用 `declarationRevision` 替代。目录读取只定位程序，不执行版本探测或登录；缺失程序仅影响使用它的动作。相同机器程序位置变化后重读当前接收方再继续；换机器在声明相同、依赖可用且没有个人组时使用团队组，不为路径差异改写团队文件。旧版独立程序的路径耦合认证若被诊断为失效，须明确重新录入该组，不能猜测迁移。
 
 ## 私有上下文与写前再核验
 
-个人授权程序须声明 `contextProtocol: buildr.connection-authorization-context/v1`。它不作为普通业务认证接收方，不用于只读槽位；新增此专用程序不改变既有业务程序的稳定认证接收集合，但仍进入定义与执行观察。宿主通过 `{type: 'buildr.connection-authorization-context', context}` 发送本次 `protocolVersion/callId/workspace/definition/connection/privateStateRoot`；`connection` 包含准确实例 `id`、有限前置配置 `config` 和三项 `revisions`，没有旧认证。授权程序只在本次受限 `privateStateRoot` 创建临时资源，收到父通道断开、终止或 `{type:'buildr.connection-authorization-cancel',callId}` 时关闭本次浏览器并清理。
+个人授权程序须声明 `contextProtocol: buildr.connection-authorization-context/v1`。它不作为普通业务认证接收方，不用于只读槽位；新增此专用程序不改变既有业务程序的稳定认证接收集合，但仍进入定义与执行观察。宿主通过 `{type: 'buildr.connection-authorization-context', context}` 发送本次 `protocolVersion/callId/workspace/definition/connection/privateStateRoot`；`connection` 包含准确实例 `id`、有限前置配置 `config` 和三项 `revisions`，默认没有旧认证。只有显式声明 `reuseFields` 时才另经 `context.reusableAuthentication` 私有交付本实例同一有效绑定的指定字段，其他实例及未声明字段不会交付。授权程序只在本次受限 `privateStateRoot` 创建临时资源，收到父通道断开、终止或 `{type:'buildr.connection-authorization-cancel',callId}` 时关闭本次浏览器并清理。
+
+## 按需站点会话
+
+已有个人共享浏览器基础时，不必要求用户逐连接点击授权。方法可在 `authentication.authorization` 声明：
+
+- `parameters`：最多16个独立非秘密字段，使用现有字段类型，不使用动态选项或条件。调用输入 `parameters` 经过校验，以 `context.authorizationParameters` 交付。
+- `reuseFields`：最多32个已声明认证字段；仅用于相同绑定的本实例本人组，默认不交付旧组。声明复用后，授权程序及其参数、允许字段集合纳入认证接收方绑定；首次增加或改变旧字段接收范围不能静默沿用旧组，需显式重新授权。程序仍交回完整新组，不自行保存凭证。不声明复用的原授权程序保持原绑定，避免破坏已有方法。
+- `identityFields`：必填非秘密认证字段，表达同一站点稳定本人身份，不能使用显示名冒充稳定身份。
+- `sessionCheck: {program,args,effect:read,requiredParameters?:[...]}`：引用普通私有程序。该程序只读检查准确参数目标，接收完整所选认证及 `authorizationParameters`，唯一输出 `{sessionStatus:"valid"|"expired"|"unknown"|"identity-mismatch"}`。权限拒绝、网络失败和模糊响应不能判为 expired；该声明需要 `identityFields`。`requiredParameters` 只能引用已声明参数，限定按需准备前必须给出的目标；显式手工授权仍遵循参数本身的 `required`，可保留原恢复入口而不让缺少自动目标触发全量登录。
+
+正常使用前由智能体调用 `auth ensure --connection <id> --file -`，输入 `{expected:{teamRevision,localRevision,definitionRevision},parameters?:{...},browserMode?:headless|interactive}`。有效则直接复用；个人组缺失或明确 expired 时最多后台授权一次，保存前比较稳定身份，之后再检查目标会话。返回最新公开 `instance` 及 `renewed`，后续动作须使用新 `instance.revision`。
+
+未知、身份变化、取消、版本冲突和保存待核验均不自动重试。只有明确 `interaction-required` 时才请求本人完成实时交互；不得把每个连接缺业务凭证都变成人工步骤。该动作不执行、重放或恢复业务写入。未声明此能力的旧方法保持原行为；新协议未可用前不覆盖旧方法。命令行接口（CLI）与 `POST /connection-skills/instances/<id>/auth/ensure` 共用同一应用。
 
 成功时发送唯一 `{type:'buildr.connection-auth-result',callId:context.callId,status:'success',values:<声明要求的完整认证组>}`，等待进程间通信（IPC）发送回调完成后断开并正常退出。不得把完整组写到标准输出（Standard Output）、标准错误（Standard Error）、文件回执或普通日志。宿主抑制授权输出，重新校验当前观察、认证组及目标后保存；单纯发送消息不等于保存成功。普通业务程序仍使用下述原上下文，不能接收或模拟授权上下文。
 

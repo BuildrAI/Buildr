@@ -12,7 +12,7 @@ export function createConnectionSkillsHttp(application: ConnectionSkillsApplicat
     if (request.method === 'GET' && subpath === '/directory') return { status: 200, body: context.submitTaskRead ? await application.directoryAsync(root, (source, signal) => context.submitTaskRead!('connection-catalog', 'connection-directory', { targetRoot: source }, signal)) : application.directory(root) };
     if (request.method === 'GET' && subpath === '/definitions') return { status: 200, body: application.definitions(root) };
     if (request.method === 'GET' && subpath === '/instances') return { status: 200, body: application.list(root) };
-    const match = subpath.match(/^\/instances\/([a-zA-Z0-9_-]+)(?:\/(auth(?:\/(?:reveal|migrate|relocate|authorize))?|check|help))?$/);
+    const match = subpath.match(/^\/instances\/([a-zA-Z0-9_-]+)(?:\/(auth(?:\/(?:reveal|migrate|relocate|authorize|ensure))?|check|help))?$/);
     if (request.method === 'GET' && match && !match[2]) return { status: 200, body: application.get(root, match[1]!) };
     if (!['POST', 'PATCH', 'PUT', 'DELETE'].includes(request.method || '')) return null;
     context.authorizeWrite();
@@ -26,10 +26,10 @@ export function createConnectionSkillsHttp(application: ConnectionSkillsApplicat
         if (request.method === 'PATCH' && !match[2]) return { status: 200, body: application.save(root, id, input) };
         if (request.method === 'DELETE' && !match[2]) return { status: 200, body: application.remove(root, id, input) };
         if (request.method === 'PUT' && match[2] === 'auth') return { status: 200, body: application.saveAuth(root, id, input) };
-        if (request.method === 'POST' && match[2] === 'auth/authorize') {
+        if (request.method === 'POST' && (match[2] === 'auth/authorize' || match[2] === 'auth/ensure')) {
           const controller = new AbortController(), abort = () => controller.abort();
           request.once?.('aborted', abort); request.socket?.once('close', abort);
-          try { return { status: 200, body: await application.authorize(root, id, input, { signal: controller.signal }) }; }
+          try { return { status: 200, body: await (match[2] === 'auth/ensure' ? application.ensureAuthentication(root, id, input, { signal: controller.signal }) : application.authorize(root, id, input, { signal: controller.signal })) }; }
           finally { request.removeListener?.('aborted', abort); request.socket?.removeListener('close', abort); }
         }
         if (request.method === 'POST' && match[2] === 'auth/reveal') return { status: 200, headers: { 'cache-control': 'no-store' }, body: application.revealPersonal(root, id, input) };

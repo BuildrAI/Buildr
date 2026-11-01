@@ -1,4 +1,5 @@
 import { readFile, writeFile, rm } from 'node:fs/promises';
+import { interactionPolicy } from '../../domain/interaction-policy.ts';
 import { errorDiagnostic, NativeObservationError } from '../../domain/error-diagnostic.ts';
 import { isCompatibleProgram, nativeProgramPolicy } from '../program-policy.ts';
 import { fileURLToPath } from 'node:url';
@@ -7,13 +8,16 @@ import { join } from 'node:path';
 import type { AgentExecutor, AgentRuntime, ContextRef, ExecutionRef, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorRequest, ExecutorSendInput, LoginObservation, PermissionMode } from '../../contracts.ts';
 import { nativeBinding, visibleText, bounded, findExecutable, inspectVersion, isolatedEnvironment, nativeHome, opaqueReference, parseReference, privateDirectories } from '../native-process.ts';
 import { launchDshHost, dshValue, type DshClient } from './client.ts';
+import { dshBalanceQuota } from './balance.ts';
 import { dshItem, dshHistoryItems, dshExecutionObservation, dshToolOutcomeUnknown } from './protocol.ts';
 import { modelOptions } from '../model-options.ts';
 import { applyDshPermissions, dshPermissionCatalog } from './permissions.ts';
 import { AgentServiceError } from '../../domain/agent-state.ts';
 import { ExecutorInputRejected, type ExecutorSupplementInput, type ExecutorInputReceipt } from '../../contracts.ts';
 import { checkedGateway, consumerBinding, gatewayModel, gatewayEffort, type ExecutorGateway } from '../model-gateway.ts';
-const capabilities = { supplement: true, text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
+import type { ExecutorForkInput, ExecutorTitleInput } from '../../contracts.ts';
+import { generateDshTitle } from './title.ts';
+const capabilities = { interaction: { policy: interactionPolicy.version, nonBlockingQuestions: false }, supplement: true, text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
 // @deepseek-ai/dsh-llm-pi-ai Config.reasoningEfforts uses these THINKING_LEVELS keys (0.2.1-rc.3).
 const dshReasoningEfforts = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
 export function dshGatewayModels(gateway: ExecutorGateway) {
@@ -54,6 +58,7 @@ export class DshRuntime implements AgentRuntime {
   private client: DshClient;
   private gateway?: ExecutorGateway;
   private modelBridge?: {key:string;addressFile:string};
+  private forkBridge?: {key:string;addressFile:string;patch:string};
   private constructor(bindingIdentity: string, host: Awaited<ReturnType<typeof launchDshHost>>, client: DshClient) {
     this.bindingIdentity=bindingIdentity;this.host=host;this.client=client;
     host.child?.once('exit',()=>{
@@ -72,16 +77,30 @@ export class DshRuntime implements AgentRuntime {
     const { home, temporary } = nativeHome(options.configRoot); const config = join(options.configRoot, 'dsh-home'); const agents = join(options.configRoot, 'dsh-agents-home');
     await privateDirectories(options.configRoot, home, temporary, config, agents);
     const modelBridge = !gateway&&!ownerPatch?{key:randomUUID(),addressFile:join(config,'model-bridge-'+randomUUID()+'.json')}:undefined;
-    const env = isolatedEnvironment(options.environment, home, temporary, { DSH_HOME: config, DSH_AGENTS_HOME: agents, DSH_TOOLS_MODE: 'native', ...(modelBridge?{BUILDR_DSH_OWNER_KEY:modelBridge.key}:{}), ...(ownerPatch ? { BUILDR_DSH_OWNER_KEY: options.environment.BUILDR_DSH_OWNER_KEY } : {}), ...(gateway ? { BUILDR_MODEL_GATEWAY_KEY: gateway.apiKey, NO_PROXY: '127.0.0.1,localhost,::1', no_proxy: '127.0.0.1,localhost,::1' } : {}) });
+    const forkBridge = {key:randomUUID(),addressFile:join(config,'fork-bridge-'+randomUUID()+'.json')};
+    const env = isolatedEnvironment(options.environment, home, temporary, { DSH_HOME: config, DSH_AGENTS_HOME: agents, DSH_TOOLS_MODE: 'native', BUILDR_DSH_FORK_KEY:forkBridge.key, ...(modelBridge?{BUILDR_DSH_OWNER_KEY:modelBridge.key}:{}), ...(ownerPatch ? { BUILDR_DSH_OWNER_KEY: options.environment.BUILDR_DSH_OWNER_KEY } : {}), ...(gateway ? { BUILDR_MODEL_GATEWAY_KEY: gateway.apiKey, NO_PROXY: '127.0.0.1,localhost,::1', no_proxy: '127.0.0.1,localhost,::1' } : {}) });
     const executable = await findExecutable(options.executable, ['dsh', 'dsh.exe'], env); const version = await inspectVersion(executable, env, options.signal);
     if (!isCompatibleProgram('dsh', version)) throw new Error(`dsh_version_unsupported: requires ${nativeProgramPolicy('dsh').compatibility}`);
     const binding = await consumerBinding('dsh', executable, version, config, options);
     let patch = gateway ? await writeGatewayPatch(config, gateway) : ownerPatch;
     if(modelBridge){patch=join(config,'buildr-native-model-owner.json');await writeFile(patch,JSON.stringify([{insert:[{id:'buildr-deepseek-model-owner',name:fileURLToPath(new URL(import.meta.url.endsWith('.ts')?'./model-source-plugin.ts':'./model-source-plugin.js',import.meta.url)),config:{addressFile:modelBridge.addressFile}}]}]),{mode:0o600});}
-    const host = await launchDshHost(executable, env, options.configRoot, options.signal, patch);
+    const forkPatch = join(config, 'buildr-fork-patch-'+randomUUID()+'.json');
+    const patches = patch ? JSON.parse(await readFile(patch, 'utf8')) : [];
+    patches.push({insert:[{id:'buildr-interaction',name:fileURLToPath(new URL(import.meta.url.endsWith('.ts')?'./interaction-plugin.ts':'./interaction-plugin.js',import.meta.url)),config:{instructions:(options.interaction??interactionPolicy).instructions}}]});
+    patches.push({insert:[{id:'buildr-fork-transfer',name:fileURLToPath(new URL(import.meta.url.endsWith('.ts')?'./fork-transfer-plugin.ts':'./fork-transfer-plugin.js',import.meta.url)),config:{addressFile:forkBridge.addressFile}}]});
+    await writeFile(forkPatch, JSON.stringify(patches), {mode:0o600});
+    patch = forkPatch;
+    let host: Awaited<ReturnType<typeof launchDshHost>>;
+    try { host = await launchDshHost(executable, env, options.configRoot, options.signal, patch); }
+    catch (error) {
+      await rm(forkBridge.addressFile,{force:true});
+      await rm(forkPatch,{force:true});
+      throw error;
+    }
     const runtime = new DshRuntime(binding.identity, host, host.client);
     runtime.bindingData = binding.data; runtime.metadata.version = version;
     runtime.gateway = gateway; runtime.modelBridge=modelBridge;
+    runtime.forkBridge={...forkBridge,patch:forkPatch};
     try {
       host.client.ctx.typert.contexts.registerClient('agent', {
         identity: (candidate: any) => candidate?.[runtime.scopeKey],
@@ -103,7 +122,7 @@ export class DshRuntime implements AgentRuntime {
       }
       options.signal?.throwIfAborted();
       return runtime;
-    } catch (error) { await host.close(); throw error; }
+    } catch (error) { await runtime.close(); throw error; }
   }
   private reference(context: ContextRef, cwd?: string): string {
     const saved = this.contexts.get(context.id) ?? (typeof context.data?.cwd === 'string' ? context.data.cwd : undefined);
@@ -120,6 +139,10 @@ export class DshRuntime implements AgentRuntime {
     return profile?.status === 'ready' ? { status: 'ready' as const, label: 'DeepSeek', loginMethod: 'DeepSeek 账号' } : { status: 'failed' as const, diagnostic: 'dsh_account_profile_unavailable' };
   }
   async modelIdentity():Promise<string> { const profile=dshValue(await this.client.remote.account.getProfile(this.metadata)); return 'dsh:'+String(profile?.value?.id??(()=>{throw new Error('dsh_account_identity_missing');})()); }
+  async modelQuota() {
+    try { return dshBalanceQuota(dshValue(await this.client.remote.account.getBalance(this.metadata))); }
+    catch { return dshBalanceQuota(undefined); }
+  }
   async requestModel(path:string,init:RequestInit={},expectedIdentity?:string):Promise<Response>{
     if(!this.modelBridge||!['/models','/anthropic/v1/messages'].includes(path))throw new Error('dsh_model_target_invalid');
     if(expectedIdentity&&createHash('sha256').update(await this.modelIdentity()).digest('hex')!==expectedIdentity)throw new Error('model_identity_conflict');
@@ -130,6 +153,23 @@ export class DshRuntime implements AgentRuntime {
     if (this.gateway) return structuredClone(this.gateway.models);
     const catalog = dshValue(await this.client.remote.session.modelCatalog());
     return (catalog.groups ?? []).flatMap((group: any) => (group.models ?? []).filter((model: any) => typeof model.id === 'string').map((model: any) => modelOptions({ id: `${group.id}::${model.id}`, label: String(model.label ?? model.name ?? model.id), ...(catalog.default?.provider === group.id && catalog.default?.model === model.id ? { isDefault: true } : {}) }, model.reasoning?.efforts?.map((effort: any) => ({ id: effort.id, label: effort.name ?? effort.id })), catalog.default?.provider === group.id && catalog.default?.model === model.id ? catalog.default.reasoningEffort ?? model.reasoning?.defaultEffort : model.reasoning?.defaultEffort)));
+  }
+  async generateTitle(input: ExecutorTitleInput): Promise<string | undefined> {
+    this.reference(input.contextRef,input.cwd);
+    // Ordinary native sessions already have a provider-generated title. Only
+    // forks require a fresh independent title, rather than a second routine call.
+    if(!input.freshInstruction)throw new Error('agent_title_unavailable');
+    if(this.gateway){
+      const model=gatewayModel(this.gateway);
+      return generateDshTitle(input,model.id,'chat-completions',init=>fetch(this.gateway!.baseUrl.replace(/\/$/,'')+'/chat/completions',{
+        ...init,headers:{...Object.fromEntries(new Headers(init.headers)),authorization:'Bearer '+this.gateway!.apiKey},redirect:'error',
+      }),Math.min(128,model.maxOutputTokens??128));
+    }
+    const selected=input.model??(await this.models()).find((model:{id:string;isDefault?:boolean})=>model.isDefault)?.id;
+    // The native account bridge is owned by DeepSeek. Never route another
+    // configured native provider's selection through that account by guessing.
+    if(!selected?.startsWith('deepseek::')||!this.modelBridge)throw new Error('agent_title_unavailable');
+    return generateDshTitle(input,selected.slice('deepseek::'.length),'anthropic-messages',init=>this.requestModel('/anthropic/v1/messages',init));
   }
   async beginLogin(update: (value: LoginObservation) => void): Promise<void> {
     if (this.gateway) { update({ state: 'failed', diagnostic: 'agent_gateway_login_managed_by_model_account' }); return; }
@@ -166,6 +206,43 @@ export class DshRuntime implements AgentRuntime {
   async createContext({ cwd }: { cwd: string }): Promise<ContextRef> {
     const created = dshValue(await this.client.remote.session.create({ cwd, agentPreset: 'standard' }));
     const context = this.context(created.sessionId, cwd); await this.resumeContext({ contextRef: context, cwd }); return context;
+  }
+  private async transferFork(action: 'export'|'import', sessionId: string, snapshot?: unknown): Promise<any> {
+    if (!this.forkBridge) throw new Error('dsh_fork_bridge_unavailable');
+    const address = JSON.parse(await readFile(this.forkBridge.addressFile, 'utf8'));
+    if (!Number.isSafeInteger(address.port) || address.port < 1 || address.port > 65535) throw new Error('dsh_fork_address_invalid');
+    const response = await fetch(`http://127.0.0.1:${address.port}/${action}`, {
+      method:'POST', headers:{authorization:'Bearer '+this.forkBridge.key,'content-type':'application/json'},
+      body:JSON.stringify({sessionId,snapshot}), signal:AbortSignal.timeout(30_000), redirect:'error',
+    });
+    if (!response.ok) { await response.body?.cancel(); throw new Error('dsh_fork_transfer_failed'); }
+    return await response.json();
+  }
+  async forkContext(input: ExecutorForkInput): Promise<ContextRef> {
+    const source = input.source;
+    if (!(source instanceof DshRuntime)) throw new Error('agent_context_binding_mismatch');
+    source.reference(input.contextRef, input.cwd);
+    const opening = await source.snapshot(input.contextRef.id);
+    if (opening.header.cwd !== input.cwd) throw new Error('agent_context_binding_mismatch');
+    const events = await source.historyAt(input.contextRef.id, opening.cursor);
+    const selected = events.find(event => dshItem(event).some(item => item.id === input.itemId && item.role === 'assistant'));
+    const nativeTurn = selected?.data?.turn;
+    const ending = events.find(event => event.type === 'turn/end' && event.data?.turn === nativeTurn);
+    const executions = new Set([input.executionRef.id, ...(input.inputItemIds ?? [])]);
+    if (!selected || !ending || !dshHistoryItems(events).some(item => item.id === input.itemId && executions.has(item.executionId!)))
+      throw new Error('agent_fork_boundary_unavailable');
+    const forked = dshValue(await source.client.remote.session.fork({sessionId:input.contextRef.id,atSeq:ending.seq}));
+    if (!forked.sessionId || forked.sessionId === input.contextRef.id) throw new Error('agent_fork_identity_invalid');
+    const ref = this.context(forked.sessionId, input.cwd);
+    input.onCreated(ref);
+    if (source !== this) {
+      // Use native persistence inside the two private Hosts, not a guessed file
+      // layout or a model lease belonging to the original conversation.
+      const snapshot = await source.transferFork('export', forked.sessionId);
+      await this.transferFork('import', forked.sessionId, snapshot);
+    }
+    await this.resumeContext({contextRef:ref,cwd:input.cwd});
+    return ref;
   }
   private async snapshot(id: string): Promise<any> {
     const stream = this.client.remote.session.follow({ address: { kind: 'session', sessionId: id }, maxMessages: 200 });
@@ -439,7 +516,7 @@ export class DshRuntime implements AgentRuntime {
     if (request.questions.some((question: any) => typeof question.id !== 'string' || typeof question.question !== 'string')) throw new Error('dsh_question_invalid');
     const id = typeof request.wait?.callId === 'string' ? request.wait.callId : randomUUID();
     if (turn.pending.has(id)) throw new Error('dsh_question_duplicate');
-    const safe: ExecutorRequest = { id, kind: 'question', title: '需要补充信息', questions: request.questions.map((question: any) => ({ id: question.id, label: question.question, options: question.options?.map((option: any) => ({ id: option.label, label: option.label, ...(typeof option.description === 'string' ? { description: option.description } : {}) })), multiple: Boolean(question.multiSelect) })) };
+    const safe: ExecutorRequest = { id, kind: 'question', blocking: true, title: '需要补充信息', questions: request.questions.map((question: any) => ({ id: question.id, label: question.question, options: question.options?.map((option: any) => ({ id: option.label, label: option.label, ...(typeof option.description === 'string' ? { description: option.description } : {}) })), multiple: Boolean(question.multiSelect) })) };
     const wait = request.wait?.timed ? this.client.remote.userQuestions.attachWait(contextId, id) : undefined;
     if (wait) void (async () => { try { for await (const _ of wait) { /* Hold only this native foreground timed claim. */ } } catch { /* Native cancellation resolves the exact pending request. */ } })();
     try {
@@ -564,5 +641,9 @@ export class DshRuntime implements AgentRuntime {
     }));
     await this.host.close();
     if(this.modelBridge)await rm(this.modelBridge.addressFile,{force:true});
+    if (this.forkBridge) {
+      await rm(this.forkBridge.addressFile,{force:true});
+      await rm(this.forkBridge.patch,{force:true});
+    }
   }
 }

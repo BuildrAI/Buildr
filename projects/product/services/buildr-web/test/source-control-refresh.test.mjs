@@ -195,6 +195,23 @@ test('实际读取证明Git身份或根路径已更换时，不把旧文件移�
   }
 });
 
+test('缓存来源核对失败保持缓存标记，真实身份替换不继承旧文件', async () => {
+  const requests = [], cached = response(repository('a'), repository('b'));
+  const catalog = createSourceControlCatalog((id, signal, onProgress) => new Promise(resolve => requests.push({id, signal, onProgress, resolve})), cached);
+  const refresh = catalog.check();
+  const failed = inventory('a'); failed.repositories[0].diagnostics = [{code:'code_source_control_refresh_failed', repositoryId:'a', message:'离线'}];
+  failed.diagnostics = failed.repositories[0].diagnostics;
+  requests[0].onProgress(failed, 'repository');
+  assert.deepEqual(catalog.snapshot().cachedRepositoryIds, ['a', 'b']);
+  assert.equal(catalog.snapshot().data.repositories[0].changes[0].path, 'a.ts');
+  const replacement = {...inventory('b').repositories[0], location:'/new/b', gitId:'new-git', diagnostics:[{code:'code_source_unavailable', repositoryId:'b', message:'替换来源不可读'}]};
+  requests[0].onProgress(response(replacement), 'repository');
+  assert.deepEqual(catalog.snapshot().cachedRepositoryIds, ['a']);
+  assert.deepEqual(catalog.snapshot().data.repositories[1].changes, []);
+  requests[0].resolve(response(failed.repositories[0], replacement)); await refresh;
+  assert.deepEqual(catalog.snapshot().cachedRepositoryIds, ['a']); catalog.dispose();
+});
+
 test('切换已确认但文件版本尚未重读时，后续全量失败仍保留分支与工作树身份', async () => {
   const reads = [];
   const catalog = createSourceControlCatalog((repositoryId, signal, onProgress) => {const read = {...deferred(), repositoryId, signal, onProgress}; reads.push(read); return read.promise;});

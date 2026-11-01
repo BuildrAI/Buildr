@@ -69,6 +69,13 @@ export function websiteHref(value: string | null | undefined): string | null {
     return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password && ![...url.searchParams.keys(), ...params.keys()].some(name => confidential.has(name.toLowerCase())) ? url.href : null;
   } catch { return null; }
 }
+export function connectionWebsiteLinks(instance: Pick<ConnectionInstance, 'websiteLinks'>): { id: string; label: string; url: string }[] {
+  return (instance.websiteLinks ?? []).flatMap(link => {
+    const url = websiteHref(link.url);
+    return url && typeof link.id === 'string' && typeof link.label === 'string' && link.label.trim()
+      ? [{ id: link.id, label: link.label, url }] : [];
+  });
+}
 export function withFieldValue(values: Record<string, unknown>, key: string, value: unknown): Record<string, unknown> {
   const next = { ...values };
   if (value === undefined || value === null) delete next[key]; else next[key] = value;

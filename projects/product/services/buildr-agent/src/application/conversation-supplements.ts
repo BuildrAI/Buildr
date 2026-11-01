@@ -83,7 +83,7 @@ export class ConversationSupplements {
       currentParticipant.deliveredThrough = Math.max(currentParticipant.deliveredThrough, attempt.through);
     } else {
       entry.status = delivery === 'rejected' ? 'failed' : 'unknown';
-      entry.deliveryDiagnostic = delivery === 'rejected' ? '这条消息未发送成功，文字与附件仍保留在输入框。' : '这条消息是否接收尚待确认，请先核对原执行，不要重复发送。';
+      entry.deliveryDiagnostic = delivery === 'rejected' ? '这条消息未发送成功，文字与附件仍保留在输入框。' : '消息已保存，是否送达仍待确认，请勿重复发送。';
     }
     this.ports.save(record);
     return { conversation: this.ports.view(record), delivery };

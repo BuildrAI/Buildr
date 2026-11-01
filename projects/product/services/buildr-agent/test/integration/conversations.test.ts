@@ -1,3 +1,4 @@
+import { interactionPolicy } from '../../src/domain/interaction-policy.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import fs from 'node:fs';
@@ -79,6 +80,23 @@ function fixture(executors: AgentExecutor[], settings: { modelProviders?: AgentS
   const service = createAgentService(options);
   return { root, workspace, options, service, async close() { await service.close(); fs.rmSync(root, { recursive: true, force: true }); } };
 }
+
+test('Qoder expired preparation retains the account-switch action for native and shared models', async () => {
+  const native=fake('qoder'),open=native.executor.open;
+  native.executor.open=async input=>({...await open(input),inspectAccount:async()=>({status:'expired'})});
+  const f=fixture([native.executor]);
+  try {
+    await f.service.connections.connect('qoder',{expectedRevision:'unconfigured'});
+    const conversation=await f.service.conversations.create('workspace-one',{});
+    for(const modelAccountId of [undefined,'shared-source']){
+      assert.throws(()=>f.service.conversations.prepareSend('workspace-one',conversation.id,{expectedRevision:conversation.revision,connectionId:'qoder',modelAccountId,model:'fixture-model',text:'preserve this draft'}),(error:any)=>{
+        assert.equal(error.code,'qoder_platform_login_expired');
+        assert.match(error.message,/团队账号额度已用尽.*更换有额度/);return true;
+      });
+    }
+    assert.equal(native.sends.length,0);
+  } finally {await f.close();}
+});
 async function connected(service: ReturnType<typeof createAgentService>, id: string) { return service.connections.connect(id, { expectedRevision: service.connections.read(id).revision }); }
 async function waitUntil<T>(read: () => T, predicate: (value: T) => boolean): Promise<T> {
   for (let i = 0; i < 500; i++) { const value = read(); if (predicate(value)) return value; await new Promise(resolve => setTimeout(resolve, 2)); }
@@ -90,6 +108,63 @@ function send(service: ReturnType<typeof createAgentService>, id: string, connec
   const preview = service.conversations.prepareSend('workspace-one', id, draft);
   return service.conversations.send('workspace-one', id, { ...draft, previewToken: preview.token, clientRequestId });
 }
+
+for (const provider of ['codex', 'dsh', 'qoder']) test(`${provider} preserves child provenance without admitting child input or handing off child reports as primary replies`, async () => {
+  const native = fake(provider), other = fake('other'), open = native.executor.open;
+  native.executor.open = async options => {
+    const runtime = await open(options), original = runtime.send.bind(runtime);
+    runtime.send = async input => {
+      await original(input);
+      const context = native.contexts.get(input.contextRef.id)!;
+      const executionId = context.observation.executionRef!.id;
+      const items: ExecutorItem[] = [
+        {id:'child-input',kind:'message',role:'user',text:'internal child instruction',parentToolId:'delegate',executionId,status:'completed'},
+        {id:'child-report',kind:'message',role:'assistant',text:'child report must not become primary',parentToolId:'delegate',executionId,status:'completed'},
+        {id:'child-read',kind:'tool',role:'system',name:'Read',input:'{"file_path":"probe.txt"}',text:'child tool output',parentToolId:'delegate',executionId,status:'completed'},
+      ];
+      for (const item of items) {context.items.push(item);input.onEvent({type:'item',item});}
+      // A replay with omitted ancestry must not erase the accurately observed source.
+      input.onEvent({type:'item',item:{...items[1]!,parentToolId:undefined}});
+    };
+    return runtime;
+  };
+  const f = fixture([native.executor, other.executor]);
+  try {
+    await connected(f.service,provider);await connected(f.service,'other');
+    const chat = await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,provider,'read a file');
+    const done = await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='completed');
+    for (const text of ['internal child instruction','child report must not become primary','child tool output']) assert.equal(done.entries.find(entry=>entry.text===text)?.parentToolId,'delegate');
+    const draft={expectedRevision:done.revision,connectionId:'other',text:'continue'};
+    const preview=f.service.conversations.prepareSend('workspace-one',chat.id,draft);
+    assert.ok(!preview.handoff?.body.includes('internal child instruction'));
+    assert.ok(!preview.handoff?.body.includes('child report must not become primary'));
+    assert.ok(preview.handoff?.body.includes(`answer from ${provider}`));
+    assert.equal(native.sends.length,1);assert.equal(other.sends.length,0);
+    await f.service.close();
+    const cold=createAgentService(f.options);
+    try {
+      const restored=cold.conversations.read('workspace-one',chat.id,{compactTools:true});
+      assert.equal(restored.entries.find(entry=>entry.text==='child report must not become primary')?.parentToolId,'delegate');
+      assert.equal(restored.entries.find(entry=>entry.text==='child tool output')?.parentToolId,'delegate');
+    } finally {await cold.close();}
+  } finally {await f.close();}
+});
+
+test('late history from a settled child does not block a new authorized input as a foreign user change',async()=>{
+  const native=fake('local'),f=fixture([native.executor]);
+  try {
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'local','first request');
+    await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='completed');
+    const context=[...native.contexts.values()][0]!;
+    context.items.push({id:'late-child-user',kind:'message',role:'user',parentToolId:'delegate',text:'late internal child instruction',executionId:context.observation.executionRef!.id,status:'completed'});
+    const next=send(f.service,chat.id,'local','new request');
+    const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.id===next.run.id&&view.run?.status==='completed');
+    assert.equal(native.sends.length,2);
+    assert.equal(done.entries.find(entry=>entry.text==='late internal child instruction')?.parentToolId,'delegate');
+  } finally {await f.close();}
+});
 
 test('a detailed model failure survives public reads, observation and a cold service restart without replay',async()=>{
   const diagnostic='DSH · 工具调用后：Devin · 工具结果接续 / 响应流：permission_denied: MCP configuration issue.';
@@ -166,7 +241,8 @@ test('acceptance loss remains unknown through process restart and never retries 
       await cold.conversations.observe('workspace-one', created.id);
       assert.equal(cold.conversations.read('workspace-one', created.id).run?.status, 'unknown');
       assert.equal(native.sends.length, 1);
-      assert.throws(() => send(cold, created.id, 'local', 'do it again'), { code: 'agent_conversation_busy' });
+      assert.equal(cold.conversations.prepareSend('workspace-one',created.id,{expectedRevision:cold.conversations.read('workspace-one',created.id).revision,connectionId:'local',text:'inspect a different issue'}).participantId,undefined);
+      assert.equal(native.sends.length,1,'preparing a new instruction never replays the unknown original');
     } finally { await cold.close(); }
   } finally { await f.close(); }
 });
@@ -177,7 +253,7 @@ test('stop and authorization respond while send is still waiting; concurrent con
     await connected(f.service, 'local'); const created = await f.service.conversations.create('workspace-one', {});
     send(f.service, created.id, 'local', 'permission');
     const waiting = await waitUntil(() => f.service.conversations.read('workspace-one', created.id), view => view.requests.length === 1);
-    assert.throws(() => f.service.conversations.prepareSend('workspace-one', created.id, { expectedRevision: waiting.revision, connectionId: 'local', text: 'next' }), { code: 'agent_conversation_busy' });
+    assert.equal(f.service.conversations.prepareSend('workspace-one', created.id, { expectedRevision: waiting.revision, connectionId: 'local', text: 'next' }).participantId,undefined);
     assert.equal(f.service.conversations.pending().conversations[0]!.id, created.id);
     await f.service.conversations.reply('workspace-one', created.id, waiting.requests[0]!.id, { expectedRevision: waiting.revision, runId: waiting.run!.id, participantId: waiting.run!.participantId, generation: waiting.run!.generation, answer: 'allow-once' });
     await waitUntil(() => f.service.conversations.read('workspace-one', created.id), view => view.run?.status === 'completed');
@@ -327,10 +403,39 @@ test('model completion does not count as stopped while the exact tool remains ac
     send(f.service, created.id, 'local', 'leave a command');
     const active = await waitUntil(() => f.service.conversations.read('workspace-one', created.id), view => view.run?.status === 'tools-active');
     assert.equal(active.run!.tools[0]!.id, 'own-tool');
-    assert.throws(() => send(f.service, created.id, 'local', 'switch'), { code: 'agent_conversation_busy' });
+    assert.equal(f.service.conversations.prepareSend('workspace-one',created.id,{expectedRevision:active.revision,connectionId:'local',text:'switch'}).participantId,undefined);
     const stopped = await f.service.conversations.stop('workspace-one', created.id, { expectedRevision: active.revision, runId: active.run!.id, participantId: active.run!.participantId, generation: active.run!.generation, toolId: 'own-tool' });
     assert.equal(stopped.run!.status, 'stopped');
   } finally { await f.close(); }
+});
+
+test('a late exact command receipt during next-turn preparation updates only the original history', async () => {
+  const native=fake('local',{toolSurvives:true,multipleModels:true});const f=fixture([native.executor]);
+  try {
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'local','first');
+    const before=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='tools-active');
+    const context=[...native.contexts.values()][0]!;
+    context.observation.canContinue=true;
+    const old=native.sends[0]!,executionId=context.observation.executionRef!.id;
+    const item:ExecutorItem={id:'old-command',kind:'tool',role:'system',text:'browser helper',executionId,status:'running'};
+    old.onEvent({type:'item',item});
+    await f.service.conversations.observe('workspace-one',chat.id);
+    const ready=f.service.conversations.read('workspace-one',chat.id);
+    assert.equal(f.service.conversations.prepareSend('workspace-one',chat.id,{expectedRevision:ready.revision,connectionId:'local',model:'other-model',text:'switch model'}).fits,true);
+    send(f.service,chat.id,'local','next');
+    const current=f.service.conversations.read('workspace-one',chat.id).run!;
+    old.onEvent({type:'item',item:{...item,status:'completed',text:'closed'}});
+    // Neither a stale terminal event nor a receipt for the wrong execution may
+    // alter the new round or overwrite the accepted exact command result.
+    old.onEvent({type:'completed',status:'failed',diagnostic:'old failure'});
+    old.onEvent({type:'item',item:{...item,executionId:'wrong',text:'wrong result',status:'completed'}});
+    const after=f.service.conversations.read('workspace-one',chat.id);
+    assert.equal(after.run!.id,current.id);assert.equal(after.run!.status,current.status);
+    const receipt=after.entries.find(entry=>entry.kind==='tool'&&entry.text==='closed')!;
+    assert.ok(receipt);assert.equal(receipt.runId,before.run!.id);assert.equal(receipt.status,'completed');
+    assert.equal(after.entries.some(entry=>entry.text==='wrong result'),false);
+  } finally {await f.close();}
 });
 
 test('shutdown releases the owned runtime and stream when a native stop never returns', { timeout: 2_000 }, async () => {
@@ -506,7 +611,7 @@ test('failure to persist native acceptance keeps delivery unknown and never repe
     assert.ok(unknown.participants[0]!.contextId); assert.equal(native.sends.length, 1);
     assert.equal(f.service.conversations.send('workspace-one', created.id, input).run.id, unknown.run!.id);
     assert.equal(native.sends.length, 1);
-    assert.throws(() => send(f.service, created.id, 'local', 'retry uncertain input'), { code: 'agent_conversation_busy' });
+    assert.equal(f.service.conversations.prepareSend('workspace-one',created.id,{expectedRevision:unknown.revision,connectionId:'local',text:'new issue without replay'}).participantId,undefined);assert.equal(native.sends.length,1);
   } finally { await f.close(); }
 });
 
@@ -526,7 +631,7 @@ test('cold recovery rejects prior-generation replies and cannot release an unkno
     const observed = await cold.conversations.observe('workspace-one', created.id);
     assert.equal(observed.run!.status, 'unknown');
     assert.deepEqual(observed.requests, [], 'old request handles must not be revived by a new service generation');
-    assert.throws(() => send(cold!, created.id, 'local', 'must wait'), { code: 'agent_conversation_busy' });
+    assert.equal(cold!.conversations.prepareSend('workspace-one',created.id,{expectedRevision:observed.revision,connectionId:'local',text:'new goal'}).participantId,undefined);
     assert.equal(native.sends.length, 1);
   } finally {
     for (const context of native.contexts.values()) { context.observation = { status: 'stopped', tools: [] }; context.unblock?.(); }
@@ -1041,7 +1146,7 @@ test('accepted or untyped reasoning errors remain ambiguous and cannot authorize
       await connected(f.service, 'local'); const chat = await f.service.conversations.create('workspace-one', {}); send(f.service, chat.id, 'local', 'possibly delivered input');
       const unknown = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), value => value.run?.status === 'unknown');
       assert.equal(unknown.run!.accepted, accepted); assert.equal(unknown.entries[0]!.status, accepted ? 'accepted' : 'unknown');
-      assert.throws(() => send(f.service, chat.id, 'local', 'do not resend uncertain input'), { code: 'agent_conversation_busy' });
+      assert.equal(f.service.conversations.prepareSend('workspace-one',chat.id,{expectedRevision:unknown.revision,connectionId:'local',text:'new issue, no replay'}).participantId,undefined);
     } finally { await f.close(); }
   });
 });
@@ -1211,7 +1316,7 @@ test('an uncertain handoff receipt stays uncertain and repeated submission never
   f.service.conversations.send('workspace-one',chat.id,input);const unknown=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='unknown');
   const receipt=unknown.entries.find(e=>e.kind==='handoff')!;assert.equal(receipt.status,'unknown');assert.equal(receipt.handoff!.body,b.sends[0]!.text);
   f.service.conversations.send('workspace-one',chat.id,input);assert.equal(b.sends.length,1);assert.equal(f.service.conversations.read('workspace-one',chat.id).run!.accepted,false);
-  assert.throws(()=>f.service.conversations.prepareSend('workspace-one',chat.id,{...draft,expectedRevision:unknown.revision}),{code:'agent_conversation_busy'});
+  assert.equal(f.service.conversations.prepareSend('workspace-one',chat.id,{...draft,expectedRevision:unknown.revision,text:'a different instruction'}).participantId,undefined);assert.equal(b.sends.length,1);
  }finally{await f.close();}
 });
 
@@ -1316,6 +1421,26 @@ test('live transport loss reopens the same binding and continues once without a 
   } finally { await f.close(); }
 });
 
+test('same executor and model rebuilds internal context without a user handoff after released unknown work',async()=>{
+  const native=fake('local',{disconnect:'unknown'}),f=fixture([native.executor]);
+  try{
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'local','preserve my goal');
+    const unknown=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='unknown');
+    const repository=new ConversationRepository(path.join(f.options.dataRoot,'agent-service'));
+    const record=repository.readConversation(chat.id)!,revision=record.view.revision;record.view.run!.resourcesReleased=true;record.view.revision=randomUUID();repository.saveConversation(record,revision);
+    const draft={expectedRevision:record.view.revision,connectionId:'local',text:'current status'};
+    const preview=f.service.conversations.prepareSend('workspace-one',chat.id,draft);
+    assert.equal(preview.participantId,undefined,'unknown original context cannot be reused');
+    assert.equal(preview.switching,false,'an internal context change is not a user handoff');
+    f.service.conversations.send('workspace-one',chat.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});
+    const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='completed');
+    assert.notEqual(native.sends[0]!.contextRef.id,native.sends[1]!.contextRef.id);
+    assert.equal(done.entries.filter(entry=>entry.kind==='handoff').length,0);
+    assert.equal(done.retainedRuns?.find(run=>run.id===unknown.run!.id)?.status,'unknown');
+  }finally{await f.close();}
+});
+
 test('live recovery never resends active work, unknown tools, pending decisions or release-profile work', async () => {
   for (const disconnectError of ['codex_execution_observation_lost','dsh_execution_observation_lost','qoder_execution_observation_lost']) for (const kind of ['running','unknown','tool','approval','release'] as const) {
     const native=fake('local',{disconnectError,disconnect:kind==='approval'||kind==='release'?'stopped':kind,request:kind==='approval'});
@@ -1345,14 +1470,37 @@ test('a user stop before transport loss cannot turn into automatic continuation'
 });
 
 
-test('a failed automatic continuation has no unbounded transport retry chain', async () => {
+test('a failed automatic continuation has a persistent bounded transport retry chain', async () => {
   const native=fake('local',{disconnect:'stopped',disconnectAlways:true}),f=fixture([native.executor],{autoContinueInterrupted:true});
   try {
     await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','work');
-    await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>native.sends.length===2&&v.run?.status==='unknown');
+    const deadline=Date.now()+20_000;
+    while(Date.now()<deadline&&native.sends.length<4)await new Promise(resolve=>setTimeout(resolve,20));
     await Promise.all([f.service.conversations.recoverInterrupted(),f.service.conversations.recoverInterrupted()]);
-    assert.equal(native.sends.length,2);
+    assert.equal(native.sends.length,4);
+    assert.equal(f.service.conversations.read('workspace-one',chat.id).entries.filter(entry=>entry.role==='user').length,1);
   }finally{await f.close();}
+});
+
+test('a persisted recovery intent before submission resumes the same request once after restart',async()=>{
+  const native=fake('local',{hold:true}),f=fixture([native.executor],{autoContinueInterrupted:true});
+  let cold:ReturnType<typeof createAgentService>|undefined;
+  try{
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'local','finish the original goal');
+    const running=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.accepted===true);
+    await f.service.close();
+    const repository=new ConversationRepository(path.join(f.options.dataRoot,'agent-service'));
+    const record=repository.readConversation(chat.id)!,revision=record.view.revision;
+    record.interruption={runId:running.run!.id,awaitingUser:false,attempted:true};
+    record.attempts.find(attempt=>attempt.runId===running.run!.id)!.automaticRetry={rootRunId:running.run!.id,count:1};
+    record.view.revision=randomUUID();repository.saveConversation(record,revision);
+    cold=createAgentService(f.options);
+    await Promise.all([cold.conversations.recoverInterrupted(),cold.conversations.recoverInterrupted()]);
+    await waitUntil(()=>native.sends.length,count=>count===2);
+    assert.equal(native.sends[1]!.clientRequestId,'host-recovery:'+running.run!.id);
+    assert.equal(cold.conversations.read('workspace-one',chat.id).entries.filter(entry=>entry.role==='user').length,1);
+  }finally{await cold?.close();await f.close();}
 });
 
 test('legacy accepted unknown runs are reconciled at startup without inventing continuation consent', async () => {
@@ -1712,8 +1860,8 @@ test('transport recovery preserves the temporary-failure retry budget instead of
     await connected(f.service, 'local'); const chat = await f.service.conversations.create('workspace-one', {});
     send(f.service, chat.id, 'local', 'finish');
     const ended = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => Boolean(view.run?.diagnostic?.includes('已达上限')));
-    assert.equal(native.sends.length, 5); // Original + three temporary-failure retries + one transport recovery.
-    assert.equal(native.sends.filter(input => input.clientRequestId.startsWith('automatic-retry:')).length, 3);
+    assert.equal(native.sends.length, 4); // Original + a shared budget of three recoveries/retries.
+    assert.equal(native.sends.filter(input => input.clientRequestId.startsWith('automatic-retry:')).length, 2);
     assert.equal(native.sends.filter(input => input.clientRequestId.startsWith('host-recovery:')).length, 1);
     assert.equal(ended.run?.status, 'failed');
   } finally {await f.close();}
@@ -2032,14 +2180,14 @@ for(const media of ['image','video'] as const)test('正式材料回答校验同�
     await f.service.conversations.reply('workspace-one',chat.id,request.id,{...input,answer:{scope:{text:'看截图',attachmentIds:[attachment.id]}}});
     const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='completed');
     assert.equal(done.requests.length,0);const reply=done.entries.find(entry=>entry.id==='reply-'+request.id)!;
-    assert.deepEqual(reply.attachments,[attachment.id]);const delivered=(native.replies[0] as any).scope;assert.match(delivered,/看截图/);
+    assert.deepEqual(reply.attachments,[attachment.id]);assert.deepEqual(JSON.parse(reply.text).显示回答,{scope:'看截图'});assert.match(JSON.parse(reply.text).回答.scope,/未读取不能声称看过/);const delivered=(native.replies[0] as any).scope;assert.match(delivered,/看截图/);
     const sources=JSON.parse(delivered.split('：\n')[1].split('\n\n')[0]);assert.equal(fs.readFileSync(sources[0].path).equals(bytes),true);assert.equal(reply.status,'accepted');assert.equal(done.run!.id,run.id);
     if(media==='video'){assert.match(delivered,/不含音轨/);assert.match(delivered,/不能据此声称连续观看/);const video=JSON.parse(delivered.split('：\n').at(-1)!)[0];assert.equal(video.id,attachment.id);assert.equal(video.frames[0].id,frame.id);assert.equal(video.frames[0].time,0);assert.equal(fs.statSync(video.path).size,24);}
     await assert.rejects(f.service.conversations.reply('workspace-one',chat.id,request.id,{...input,expectedRevision:done.revision,answer:{scope:'yes'}}),{code:'agent_request_stale'});assert.equal(native.replies.length,1);
   }finally{await f.close();}
 });
 
-test('准确原生观察已继续时移除旧等待卡片并保留未答事实，未知时不隐藏',async()=>{
+test('明确待答快照移除旧卡片；仅运行和未知观察不证明问题结束',async()=>{
   const native=fake('local',{question:true}),f=fixture([native.executor]);
   try{
     await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','检查');
@@ -2047,6 +2195,8 @@ test('准确原生观察已继续时移除旧等待卡片并保留未答事实�
     const context=[...native.contexts.values()][0]!;context.observation={...context.observation,status:'unknown'};
     const unknown=await f.service.conversations.observe('workspace-one',chat.id);assert.equal(unknown.requests.length,1);
     context.observation={...context.observation,status:'running'};
+    const running=await f.service.conversations.observe('workspace-one',chat.id);assert.equal(running.requests.length,1);
+    context.observation={...context.observation,requests:[]};
     const current=await f.service.conversations.observe('workspace-one',chat.id);assert.equal(current.requests.length,0);assert.equal(native.replies.length,0);
     assert.ok(current.entries.some(entry=>entry.id==='retired-question-'+waiting.requests[0]!.id&&entry.text.includes('不补造答复')));
     await assert.rejects(f.service.conversations.reply('workspace-one',chat.id,waiting.requests[0]!.id,{expectedRevision:current.revision,runId:current.run!.id,participantId:current.run!.participantId,generation:current.run!.generation,answer:{scope:'yes'}}),{code:'agent_request_stale'});
@@ -2066,4 +2216,257 @@ for(const visual of [true,false])test('正式材料回答的容量与能力失�
   assert.equal(native.replies.length,0);assert.equal(f.service.conversations.read('workspace-one',chat.id).requests.length,1);
   if(visual){await f.service.conversations.reply('workspace-one',chat.id,waiting.requests[0]!.id,{...input,answer:{scope:{text:'四份材料',attachmentIds:ids.slice(0,4)}}});assert.equal(native.replies.length,1);}
  }finally{await f.close();}
+});
+
+test('child conversations freeze all prior rounds and never replay inherited messages as new work',async()=>{
+  const native=fake(),f=fixture([native.executor]);
+  try{
+    await connected(f.service,'local');const parent=await f.service.conversations.create('workspace-one',{});
+    for(const text of ['早期决定：一次只展开一个','第二轮：使用右上角浮窗']){send(f.service,parent.id,'local',text);await waitUntil(()=>f.service.conversations.read('workspace-one',parent.id),v=>v.run?.status==='completed');}
+    const before=f.service.conversations.read('workspace-one',parent.id),calls=native.sends.length;
+    const input={expectedRevision:before.revision,clientRequestId:randomUUID()};
+    const child=await f.service.conversations.createChild('workspace-one',parent.id,input);
+    assert.deepEqual(f.service.conversations.read('workspace-one',parent.id),before);
+    assert.equal(native.sends.length,calls);assert.deepEqual(child.entries,[]);assert.deepEqual(child.participants,[]);assert.equal(child.run,undefined);
+    assert.equal(child.cwd,before.cwd,'creation inherits only the starting work location');
+    assert.equal(child.childOf?.throughSequence,before.entries.at(-1)!.sequence);
+    assert.equal(f.service.conversations.listChildren('workspace-one',parent.id).conversations[0]?.id,child.id);
+    send(f.service,parent.id,'local','创建后才出现的新消息');await waitUntil(()=>f.service.conversations.read('workspace-one',parent.id),v=>v.run?.status==='completed');
+    const untouched=f.service.conversations.read('workspace-one',parent.id);
+    const draft={expectedRevision:child.revision,connectionId:'local',text:'新建一个任务，使用独立工作树实现相关改动'};
+    const preview=f.service.conversations.prepareSend('workspace-one',child.id,draft);
+    assert.match(preview.handoff!.body,/早期决定：一次只展开一个/);assert.match(preview.handoff!.body,/第二轮：使用右上角浮窗/);
+    assert.doesNotMatch(preview.handoff!.body,/创建后才出现的新消息/);assert.match(preview.handoff!.body,/不要继续或重复执行主对话任务/);
+    assert.match(preview.handoff!.body,/后续任务.*本次用户要求及适用规则安排/);
+    assert.match(preview.handoff!.body,/需要时使用已有能力新建任务.*工作树/);
+    assert.doesNotMatch(preview.handoff!.body,/子对话不隔离实际文件/);
+    f.service.conversations.send('workspace-one',child.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});
+    const done=await waitUntil(()=>f.service.conversations.read('workspace-one',child.id),v=>v.run?.status==='completed');
+    assert.ok(native.sends.at(-1)!.text.includes('本次用户要求：\n'+draft.text),'the executor receives the new task/worktree instruction unchanged');
+    assert.equal(done.entries.filter(e=>e.role==='user').length,1);assert.ok(done.entries[0]!.sequence>before.entries.at(-1)!.sequence);
+    assert.notEqual(done.participants[0]?.contextId,before.participants[0]?.contextId);assert.deepEqual(f.service.conversations.read('workspace-one',parent.id),untouched);
+    const second=f.service.conversations.prepareSend('workspace-one',child.id,{expectedRevision:done.revision,connectionId:'local',text:'继续解释'});
+    assert.ok(!second.history.some(entry=>entry.text.includes('早期决定')),'same native participant already received inherited context');
+    await f.service.close();const cold=createAgentService(f.options);
+    try{assert.equal(cold.conversations.read('workspace-one',child.id).childOf?.conversationId,parent.id);assert.equal((await cold.conversations.createChild('workspace-one',parent.id,input)).id,child.id);assert.equal(native.sends.length,calls+2);}finally{await cold.close();}
+  }finally{await f.close();}
+});
+
+test('child creation from a waiting parent preserves the parent control and treats questions as background',async()=>{
+  const waiting=fake('parent',{question:true}),other=fake('child'),f=fixture([waiting.executor,other.executor]);
+  try{
+    for(const id of ['parent','child'])await connected(f.service,id);
+    const parent=await f.service.conversations.create('workspace-one',{});send(f.service,parent.id,'parent','先确认范围');
+    const before=await waitUntil(()=>f.service.conversations.read('workspace-one',parent.id),v=>v.run?.status==='waiting-question');
+    const child=await f.service.conversations.createChild('workspace-one',parent.id,{expectedRevision:before.revision,clientRequestId:randomUUID()});
+    assert.deepEqual(child.requests,[]);assert.equal(child.childOf?.state,'waiting-question');assert.deepEqual(waiting.replies,[]);
+    const preview=f.service.conversations.prepareSend('workspace-one',child.id,{expectedRevision:child.revision,connectionId:'child',text:'解释这个范围问题'});
+    assert.match(preview.handoff!.body,/具体范围/);assert.match(preview.handoff!.body,/waiting-question/);
+    send(f.service,child.id,'child','解释，不做选择');await waitUntil(()=>f.service.conversations.read('workspace-one',child.id),v=>v.run?.status==='completed');
+    assert.deepEqual(f.service.conversations.read('workspace-one',parent.id),before);assert.equal(waiting.replies.length,0);
+  }finally{await f.close();}
+});
+
+test('child creation is idempotent under concurrency and rejects a changed source version',async()=>{
+  const f=fixture([]);
+  try{
+    const parent=await f.service.conversations.create('workspace-one',{}),input={expectedRevision:parent.revision,clientRequestId:randomUUID()};
+    const children=await Promise.all(Array.from({length:4},()=>f.service.conversations.createChild('workspace-one',parent.id,input)));
+    assert.equal(new Set(children.map(row=>row.id)).size,1);assert.equal(f.service.conversations.listChildren('workspace-one',parent.id).conversations.length,1);
+    assert.equal(f.service.conversations.list('workspace-one').conversations.length,1,'an unsent child is discoverable, not a discarded draft');
+    const changed=await f.service.conversations.update('workspace-one',parent.id,{expectedRevision:parent.revision,title:'changed'});
+    await assert.rejects(f.service.conversations.createChild('workspace-one',parent.id,{...input,expectedRevision:changed.revision}),{code:'agent_request_conflict'});
+    await assert.rejects(f.service.conversations.createChild('workspace-one',parent.id,{...input,clientRequestId:randomUUID()}),{code:'agent_revision_conflict'});
+    assert.equal((await f.service.conversations.createChild('workspace-one',parent.id,input)).id,children[0]!.id);
+    assert.equal(f.service.conversations.read('workspace-one',children[0]!.id).childOf?.title,'新对话');
+    assert.throws(()=>f.service.conversations.listChildren('foreign',parent.id),{code:'agent_conversation_missing'});
+  }finally{await f.close();}
+});
+
+test('a child independently retains referenced video and frames but not unsent parent media',async()=>{
+  let now=new Date('2026-10-29T10:00:00Z');const native=fake('local',{images:true}),f=fixture([native.executor],{now:()=>now});
+  try{
+    await connected(f.service,'local');const parent=await f.service.conversations.create('workspace-one',{});
+    const png=Buffer.from('89504e470d0a1a0a','hex'),mp4=Buffer.from('000000186674797069736f6d0000020069736f6d69736f32','hex');
+    const upload=(mimeType:string,bytes:Buffer,video?:any)=>f.service.conversations.addAttachment('workspace-one',parent.id,{expectedRevision:f.service.conversations.read('workspace-one',parent.id).revision,mimeType,bytes,video});
+    const frame=upload('image/png',png),video=upload('video/mp4',mp4,{duration:1,frames:[{id:frame.id,time:0}]}),unsent=upload('image/png',png);
+    let before=f.service.conversations.read('workspace-one',parent.id);const draft={expectedRevision:before.revision,connectionId:'local',text:'看这个视频',attachmentIds:[video.id]};
+    const preview=f.service.conversations.prepareSend('workspace-one',parent.id,draft);f.service.conversations.send('workspace-one',parent.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});
+    before=await waitUntil(()=>f.service.conversations.read('workspace-one',parent.id),v=>v.run?.status==='completed');
+    const child=await f.service.conversations.createChild('workspace-one',parent.id,{expectedRevision:before.revision,clientRequestId:randomUUID()});
+    assert.deepEqual(f.service.conversations.readAttachment('workspace-one',child.id,frame.id).bytes,png);
+    assert.deepEqual(f.service.conversations.readAttachment('workspace-one',child.id,video.id).bytes,mp4);
+    assert.throws(()=>f.service.conversations.readAttachment('workspace-one',child.id,unsent.id),{code:'agent_attachment_missing'});
+    const directory=path.join(f.options.dataRoot,'agent-service','attachments');
+    assert.notEqual(fs.statSync(path.join(directory,parent.id,video.id)).ino,fs.statSync(path.join(directory,child.id,video.id)).ino);
+    fs.unlinkSync(path.join(directory,parent.id,video.id));assert.deepEqual(f.service.conversations.readAttachment('workspace-one',child.id,video.id).bytes,mp4);
+    now=new Date(now.getTime()+25*60*60*1000);
+    f.service.conversations.addAttachment('workspace-one',child.id,{expectedRevision:child.revision,mimeType:'image/png',bytes:png});
+    assert.deepEqual(f.service.conversations.readAttachment('workspace-one',child.id,frame.id).bytes,png);
+    const prepared=f.service.conversations.prepareSend('workspace-one',child.id,{expectedRevision:f.service.conversations.read('workspace-one',child.id).revision,connectionId:'local',text:'解释抽样限制'});
+    assert.match(prepared.handoff!.body,/不含音轨/);
+  }finally{await f.close();}
+});
+
+test('long inherited background keeps complete indexed sources and never silently narrows to the latest turn',async()=>{
+  const native=fake(),f=fixture([native.executor]);
+  try{
+    await connected(f.service,'local');const parent=await f.service.conversations.create('workspace-one',{});
+    const repository=new ConversationRepository(path.join(f.options.dataRoot,'agent-service')),record=repository.readConversation(parent.id)!;
+    record.view.entries=Array.from({length:8},(_,i)=>({id:randomUUID(),sequence:i+1,kind:'message',role:'user',text:`第${i}轮原始决定：`+'文'.repeat(16000),createdAt:'2026-10-29T00:00:00Z',runId:'round-'+i}));
+    repository.saveConversation(record,parent.revision);
+    const child=await f.service.conversations.createChild('workspace-one',parent.id,{expectedRevision:record.view.revision,clientRequestId:randomUUID()});
+    const preview=f.service.conversations.prepareSend('workspace-one',child.id,{expectedRevision:child.revision,connectionId:'local',text:'只解释第一轮决定'});
+    assert.equal(preview.handoff!.mode,'indexed');assert.equal(preview.fits,true);
+    assert.match(preview.handoff!.body,/后续任务.*本次用户要求及适用规则安排/);
+    const index=JSON.parse(fs.readFileSync(preview.handoff!.sourcePath!,'utf8'));assert.equal(index.rounds.length,8);
+    const first=JSON.parse(fs.readFileSync(index.rounds[0].path,'utf8'));assert.equal(first.records[0].text,record.view.entries[0]!.text);
+    assert.deepEqual(child.entries,[]);assert.equal(native.sends.length,0);
+  }finally{await f.close();}
+});
+
+test('missing inherited media rejects only child creation and paginated relation reads retain all children',async()=>{
+ const f=fixture([]);
+ try{
+  const parent=await f.service.conversations.create('workspace-one',{});
+  for(let n=0;n<3;n++)await f.service.conversations.createChild('workspace-one',parent.id,{expectedRevision:parent.revision,clientRequestId:'page-'+n});
+  const first=f.service.conversations.listChildren('workspace-one',parent.id,{limit:1});assert.equal(first.conversations.length,1);assert.ok(first.nextCursor);
+  const second=f.service.conversations.listChildren('workspace-one',parent.id,{limit:1,cursor:first.nextCursor});assert.notEqual(first.conversations[0]!.id,second.conversations[0]!.id);
+  const repository=new ConversationRepository(path.join(f.options.dataRoot,'agent-service')),record=repository.readConversation(parent.id)!;
+  record.view.entries.push({id:randomUUID(),sequence:1,kind:'message',role:'user',text:'附件必须可读',attachments:[randomUUID()],createdAt:new Date().toISOString()});
+  repository.saveConversation(record,parent.revision);
+  await assert.rejects(f.service.conversations.createChild('workspace-one',parent.id,{expectedRevision:record.view.revision,clientRequestId:'missing'}),{code:'agent_attachment_missing'});
+  assert.equal(f.service.conversations.listChildren('workspace-one',parent.id).conversations.length,3);assert.equal(f.service.conversations.read('workspace-one',parent.id).revision,record.view.revision);
+ }finally{await f.close();}
+});
+
+test('child discovery reflects current unread and seen activity without changing conversation revisions',async()=>{
+  const native=fake('local'),f=fixture([native.executor]);
+  try{
+    await connected(f.service,'local');
+    const parent=await f.service.conversations.create('workspace-one',{});
+    const child=await f.service.conversations.createChild('workspace-one',parent.id,{expectedRevision:parent.revision,clientRequestId:randomUUID()});
+    send(f.service,child.id,'local','独立说明');
+    const done=await waitUntil(()=>f.service.conversations.read('workspace-one',child.id),value=>value.run?.status==='completed');
+    assert.ok(done.activity!.version>done.activity!.seenThrough);
+    assert.deepEqual(f.service.conversations.listChildren('workspace-one',parent.id).conversations[0]!.activity,done.activity);
+    f.service.conversations.markSeen('workspace-one',child.id,{through:done.activity!.version});
+    const seen=f.service.conversations.read('workspace-one',child.id);
+    assert.equal(seen.revision,done.revision);
+    assert.equal(seen.activity!.seenThrough,seen.activity!.version);
+    assert.deepEqual(f.service.conversations.listChildren('workspace-one',parent.id).conversations[0]!.activity,seen.activity);
+    assert.deepEqual(f.service.conversations.list('workspace-one').conversations[0]!.activity,seen.activity);
+    assert.equal(f.service.conversations.read('workspace-one',parent.id).revision,parent.revision);
+  }finally{await f.close();}
+});
+
+
+test('service supplies its interaction policy through the public contract to any executor', async () => {
+  const native = fake('another-executor'), f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'another-executor');
+    assert.ok(native.opens.length > 0);
+    for (const opening of native.opens) assert.deepEqual(opening.interaction, interactionPolicy);
+  } finally { await f.close(); }
+});
+
+test('request snapshots require exact execution identity and preserve public request bindings', async () => {
+  const native = fake('local', { question: true }), f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local');
+    const chat = await f.service.conversations.create('workspace-one', {});
+    send(f.service, chat.id, 'local', '检查');
+    const waiting = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => view.requests.length === 1);
+    const input = native.sends[0], context = [...native.contexts.values()][0];
+    input.onEvent({ type: 'observation', observation: { status: 'running', tools: [], executionRef: { id: 'another-execution' }, requests: [] } });
+    assert.equal(f.service.conversations.read('workspace-one', chat.id).requests[0].id, waiting.requests[0].id);
+    input.onEvent({ type: 'observation', observation: { status: 'running', tools: [], executionRef: context.observation.executionRef, requests: [{ id: 'question-one', kind: 'question', title: '仍待回答', blocking: false, generation: 'foreign', runId: 'foreign' } as any] } });
+    const current = f.service.conversations.read('workspace-one', chat.id);
+    assert.equal(current.requests[0].id, waiting.requests[0].id);
+    assert.equal(current.requests[0].generation, current.run!.generation);
+    assert.equal(current.requests[0].runId, current.run!.id);
+    assert.equal(current.requests[0].blocking, false);
+    assert.equal(current.run!.status, 'running');
+  } finally { await f.close(); }
+});
+
+for (const exact of [false, true]) test('a resolved request cannot be resurrected by an older in-flight observation (exact=' + exact + ')', async () => {
+  const native = fake('local', { question: true }), open = native.executor.open;
+  let release!: () => void, captured!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const ready = new Promise<void>(resolve => { captured = resolve; });
+  native.executor.open = async options => {
+    const runtime = await open(options);
+    return { ...runtime, async observe(input) { const snapshot = await runtime.observe(input); captured(); await gate; return snapshot; } };
+  };
+  const f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local');
+    const chat = await f.service.conversations.create('workspace-one', {});
+    send(f.service, chat.id, 'local', '检查');
+    await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => view.requests.length === 1);
+    const context = [...native.contexts.values()][0];
+    context.observation.requests = [{ id: 'question-one', kind: 'question', title: '旧快照中的问题' }];
+    const waiting = f.service.conversations.read('workspace-one', chat.id);
+    const observing = exact ? f.service.conversations.observeRun('workspace-one', chat.id, {expectedRevision:waiting.revision,runId:waiting.run!.id,participantId:waiting.run!.participantId,generation:waiting.run!.generation}) : f.service.conversations.observe('workspace-one', chat.id);
+    await ready;
+    native.sends[0].onEvent({ type: 'request-resolved', requestId: 'question-one' });
+    release();
+    const current = await observing;
+    assert.equal(current.requests.length, 0);
+    assert.equal(native.replies.length, 0);
+  } finally { release(); await f.close(); }
+});
+
+for(const replacement of ['local','other'])test('retained tools allow a new instruction with '+replacement+' and preserve exact old stop',async()=>{
+  const old=fake('local',{toolSurvives:true}),other=fake('other');const f=fixture([old.executor,other.executor]);
+  try{
+    await connected(f.service,'local');await connected(f.service,'other');const chat=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'local','start helper');const before=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='tools-active');
+    send(f.service,chat.id,replacement,'handle the new requirement');
+    const next=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.id!==before.run!.id&&['completed','tools-active'].includes(view.run?.status??''));
+    assert.equal(next.retainedRuns?.[0]?.id,before.run!.id);assert.notEqual(next.run!.participantId,before.run!.participantId);
+    assert.equal(old.contexts.size,replacement==='local'?2:1,'new work cannot overwrite an unfinished native context');
+    assert.equal(next.retainedRuns?.[0]?.status,'tools-active');
+    await assert.rejects(f.service.conversations.stop('workspace-one',chat.id,{expectedRevision:before.revision,runId:before.run!.id,participantId:before.run!.participantId,generation:before.run!.generation}),{code:'agent_revision_conflict'});
+    const stopped=await f.service.conversations.stop('workspace-one',chat.id,{expectedRevision:next.revision,runId:before.run!.id,participantId:before.run!.participantId,generation:before.run!.generation,toolId:'own-tool'});
+    assert.equal(stopped.retainedRuns?.[0]?.status,'stopped');assert.equal(stopped.run!.id,next.run!.id);assert.equal(stopped.run!.status,next.run!.status);
+    assert.equal((replacement==='local'?old:other).sends.at(-1)!.text.includes('retainedExecutions'),true);
+    assert.equal(old.sends.filter(input=>input.text==='start helper').length,1);
+  }finally{await f.close();}
+});
+
+for(const waiting of ['question','approval'] as const)test('new same-selection goal retains an unanswered '+waiting+' without replying or stopping',async()=>{
+  const old=fake('local',{question:waiting==='question',request:waiting==='approval'}),f=fixture([old.executor]);
+  try{
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','old goal');
+    const before=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.requests.length===1);
+    send(f.service,chat.id,'local','new goal is not an answer');
+    const next=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.id!==before.run!.id&&view.requests.length===2);
+    assert.equal(old.replies.length,0);assert.equal(old.contexts.size,2);
+    assert.equal(next.retainedRuns?.[0]?.status,before.run!.status);
+    assert.ok(next.requests.some(request=>request.id===before.requests[0]!.id));
+    assert.match(old.sends[1]!.text,/unansweredRequests/);
+    old.sends[1]!.onEvent({type:'observation',observation:{status:'running',tools:[],executionRef:[...old.contexts.values()][1]!.observation.executionRef,requests:[]}});
+    const snapshotted=f.service.conversations.read('workspace-one',chat.id);
+    assert.ok(snapshotted.requests.some(request=>request.id===before.requests[0]!.id),'a current snapshot must not retire an older run request');
+    assert.equal(snapshotted.retainedRuns?.[0]?.status,before.run!.status);
+    const resolved=await f.service.conversations.reply('workspace-one',chat.id,before.requests[0]!.id,{expectedRevision:snapshotted.revision,runId:before.run!.id,participantId:before.run!.participantId,generation:before.run!.generation,answer:waiting==='approval'?'allow-once':{scope:'yes'}});
+    assert.equal(resolved.run!.id,next.run!.id);assert.equal(old.replies.length,1);
+    await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.retainedRuns?.[0]?.status==='completed');
+  }finally{await f.close();}
+});
+
+test('unknown retained stop is local to that execution and never replays or ends the new run',async()=>{
+  const old=fake('local',{toolSurvives:true}),other=fake('other'),open=old.executor.open;
+  old.executor.open=async input=>({...await open(input),async stop(){throw new Error('stop receipt lost');}});
+  const f=fixture([old.executor,other.executor]);try{
+    await connected(f.service,'local');await connected(f.service,'other');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','one operation');
+    const before=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='tools-active');
+    send(f.service,chat.id,'other','new direction');const next=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='completed');
+    await assert.rejects(f.service.conversations.stop('workspace-one',chat.id,{expectedRevision:next.revision,runId:before.run!.id,participantId:before.run!.participantId,generation:before.run!.generation}));
+    const after=f.service.conversations.read('workspace-one',chat.id);assert.equal(after.run!.id,next.run!.id);assert.equal(after.run!.status,'completed');assert.equal(after.retainedRuns?.[0]?.status,'unknown');
+    assert.equal(old.sends.length,1);assert.equal(other.sends.length,1);
+    assert.equal(f.service.conversationBusy('workspace-one',chat.id),true);assert.equal(f.service.conversationInputBusy('workspace-one',chat.id),false);
+  }finally{await f.close();}
 });

@@ -17,6 +17,46 @@ function fixture(options = {}) {
   return {observer,requests,watches,maximum:()=>maximum,notice:notice=>receive?.({workspaceId:'workspace',...notice})};
 }
 
+test('缓存恢复后被动激活合并在途核对，变化仍保留一次后续检查', async () => {
+  const saved = [], initial = response(repository('a'), repository('b'));
+  const f = fixture({cache:{read:() => initial, write:data => saved.push(data)}});
+  try {
+    assert.equal(f.observer.catalog().snapshot().data, initial);
+    assert.deepEqual(f.observer.catalog().snapshot().cachedRepositoryIds, ['a', 'b']);
+    f.observer.start();
+    await until(() => f.requests.length === 1);
+    for (let index = 0; index < 5; index++) f.observer.reconcile();
+    await new Promise(resolve => setTimeout(resolve, 15));
+    assert.equal(f.requests.length, 1);
+    assert.equal(f.requests[0].signal.aborted, false);
+    f.notice({repositoryId:'a', cause:'file-save'});
+    await until(() => f.requests.length === 2);
+    assert.equal(f.requests[1].repositoryId, 'a');
+    f.requests[1].resolve(response(repository('a', 'updated')));
+    f.requests[0].resolve(initial);
+    await until(() => f.observer.catalog().snapshot().selectionReady);
+    assert.equal(f.observer.catalog().snapshot().data.repositories[0].observedRevision, 'updated');
+  } finally {f.observer.dispose();}
+  assert.equal(saved.length, 1, '退出时合并保存最终已核对快照');
+  assert.equal(saved[0].repositories[0].observedRevision, 'updated');
+});
+
+test('失败保留的文件不以新读取时间覆盖已保存快照', async () => {
+  const saved = [], initial = response(repository('a'));
+  const f = fixture({cache:{read:() => null, write:data => saved.push(data)}});
+  try {
+    f.observer.start(); await until(() => f.requests.length === 1);
+    f.requests[0].resolve(initial); await until(() => saved.length === 1);
+    const manual = f.observer.refresh();
+    const before = repository('a');
+    const failed = {...before, status:'unavailable', worktreeCount:null, worktrees:[], gitId:null, source:null, diagnostics:[{code:'code_source_control_refresh_failed', repositoryId:'a', message:'离线'}]};
+    f.requests[1].resolve({...response(failed), readAt:'2026-10-15T10:01:00.000Z'}); await manual;
+    assert.equal(f.observer.catalog().snapshot().data.repositories[0].status, 'unavailable');
+  } finally {f.observer.dispose();}
+  assert.equal(saved.length, 1, '失败保留不能再次写入持久缓存');
+  assert.equal(saved[0].readAt, initial.readAt, '失败保留不能续新持久缓存的观察时间');
+});
+
 test('initial background scan yields to the page and watch initialization cannot bypass the delay', async t => {
   t.mock.timers.enable({apis:['setTimeout','Date'],now:1000});
   const f=fixture({initialDelayMs:750});

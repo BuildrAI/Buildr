@@ -1,0 +1,33 @@
+import type { ReactNode } from 'react';
+import { Button } from 'antd';
+import type { ConversationView, ConversationRun } from './types';
+import { executionLocked } from './conversation-state';
+import { ConversationActiveToolsNotice } from './ConversationActiveToolsNotice';
+
+type Props = {
+  conversation:ConversationView|null;
+  busy(run:ConversationRun,operation:'observe'|'stop'):boolean;
+  renderRequest?(request:ConversationView['requests'][number]):ReactNode;
+  onObserve(run:ConversationRun):void;
+  onStop(run:ConversationRun,toolId?:string):void;
+};
+
+/** Old work stays visible and controllable, without becoming an input gate. */
+export function ConversationRetainedWork({conversation,busy,onObserve,onStop,renderRequest}:Props) {
+  const runs=conversation?.retainedRuns?.filter(run=>!run.resourcesReleased&&executionLocked(run)||run.tools.some(tool=>tool.status!=='completed')||conversation.requests.some(request=>request.runId===run.id))??[];
+  if(!runs.length)return null;
+  return <details className="ac-active-tools" data-retained-work>
+    <summary>保留了 {runs.length} 项原执行，不影响继续对话</summary>
+    {runs.map(run=><section key={run.id} data-retained-run={run.id}>
+      <strong>{conversation?.participants.find(participant=>participant.id===run.participantId)?.label} · {run.model||'默认模型'}</strong>
+      {run.tools.some(tool=>tool.status!=='completed')?
+        <ConversationActiveToolsNotice tools={run.tools} resourcesReleased={run.resourcesReleased} diagnostic={run.diagnostic} canContinue observing={busy(run,'observe')} stopping={busy(run,'stop')} onObserve={()=>onObserve(run)} onStop={toolId=>onStop(run,toolId)}/>:
+        <div role="status">
+          <span title={run.diagnostic}>{run.resourcesReleased?'原回复已中断，可继续发送':run.status==='unknown'?'暂时无法读取原执行状态':run.status==='waiting-question'||run.status==='waiting-approval'?'原执行仍在等待决定，新的要求不算回答':'原执行尚未结束'}</span>
+          <Button type="text" size="small" loading={busy(run,'observe')} onClick={()=>onObserve(run)}>重新读取</Button>
+          {!run.resourcesReleased&&<Button type="text" size="small" loading={busy(run,'stop')} onClick={()=>onStop(run)}>停止原执行</Button>}
+        </div>}
+      {conversation?.requests.filter(request=>request.runId===run.id&&request.participantId===run.participantId&&request.generation===run.generation).map(request=><div key={request.id}>{renderRequest?renderRequest(request):<p>未回答：{request.title}</p>}</div>)}
+    </section>)}
+  </details>;
+}

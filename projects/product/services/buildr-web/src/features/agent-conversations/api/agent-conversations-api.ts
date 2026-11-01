@@ -1,9 +1,10 @@
+import type { ProgramUpdatesView, ProgramUpgradeView } from '../types';
 import type { AgentDraftImagesDraftImages, AgentDraftStartStartDraft } from '../../../../build/generated/agent-service-http-dto';
 import type { ActivityCounts, ActivityFilter } from '../conversation-activity';
 import { createApiClient, LocalSessionAdapter } from '../../../api';
 import type { ApiClient, ApiError, SessionAdapter } from '../../../api';
 import { parseEventFrame } from '../conversation-state';
-import type { ModelAccount, CatalogModel, AttachmentView, ConnectionView, ConversationEvent, ConversationSummary, ConversationView, PendingConversation, PreparationView, ProviderId, SendInput, SendPreview, SupplementInput, SupplementResult } from '../types';
+import type { ModelAccount, CatalogModel, AttachmentView, ConnectionView, ConversationEvent, ConversationSummary, ConversationEntry, ConversationView, PendingConversation, PreparationView, ProviderId, SendInput, SendPreview, SupplementInput, SupplementResult } from '../types';
 
 export type DraftImages = AgentDraftImagesDraftImages;
 export type StartDraftInput = AgentDraftStartStartDraft;
@@ -38,6 +39,9 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
     modelAccountAction(account:ModelAccount,action:'check'|'disconnect'|'login-attempts') {return changeModels<ModelAccount>(appPath+'/model-accounts/'+account.id+'/'+action,post({expectedRevision:account.revision}));},
     modelLoginAttempt(accountId:string,attemptId:string,signal?:AbortSignal) {return changeModels<ModelAccount>(appPath+'/model-accounts/'+accountId+'/login-attempts/'+attemptId,{signal});},
     cancelModelLogin(account:ModelAccount) {return changeModels<ModelAccount>(appPath+'/model-accounts/'+account.id+'/login-attempts/'+account.loginAttempt!.id+'/cancel',post({expectedRevision:account.revision}));},
+    upgradeProgram(id: string, input: {expectedRevision: string; expectedVersion: string}) { return request<ProgramUpgradeView>(`${appPath}/connections/${encodeURIComponent(id)}/program-upgrades`, post(input)); },
+    programUpdates(signal?: AbortSignal) { return request<ProgramUpdatesView>(appPath + '/program-updates', {signal}); },
+    checkProgramUpdates(connectionId?: string) { return request<ProgramUpdatesView>(appPath + '/program-updates/check', post(connectionId ? {connectionId} : {})); },
     connections(signal?: AbortSignal) { return request<{connections: ConnectionView[]}>(appPath + '/connections', {signal}); },
     prepareConnection(connection: ConnectionView, options: {executable?: string; install?: boolean} = {}) { return request<PreparationView>(`${appPath}/connections/${encodeURIComponent(connection.id)}/preparation-attempts`, post({expectedRevision: connection.revision, ...options})); },
     currentPreparation(connectionId: string, signal?: AbortSignal) { return request<{attempt: PreparationView|null}>(`${appPath}/connections/${encodeURIComponent(connectionId)}/preparation-attempts`, {signal}); },
@@ -55,6 +59,7 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
     list(workspaceId: string, options: {taskId?: string; cursor?: string; hidden?: boolean; query?: string; signal?: AbortSignal} = {}) { const params = new URLSearchParams(); if (options.taskId) params.set('taskId', options.taskId); if (options.cursor) params.set('cursor', options.cursor); if (options.hidden) params.set('hidden', 'true'); if (options.query) params.set('query', options.query); return request<{conversations: ConversationSummary[]; nextCursor?: string}>(path(workspaceId) + (params.size ? '?' + params : ''), {signal: options.signal}); },
     draftImages(id:string) {return request<DraftImages>(path('@default')+'/drafts/'+encodeURIComponent(id));},
     removeDraftImage(id:string,expectedRevision:string,imageId:string) {return request<DraftImages>(path('@default')+'/drafts/'+encodeURIComponent(id)+'/attachments/'+encodeURIComponent(imageId),{method:'DELETE',body:JSON.stringify({expectedRevision})});},
+    warmup(workspaceId:string,id:string,input:Omit<StartDraftInput,'text'|'attachmentIds'|'expectedDraftRevision'>,draft:boolean) {return request<{prepared:boolean}>(path(workspaceId)+(draft?'/drafts/':'/')+encodeURIComponent(id)+'/warmup',post(input));},
     startDraft(workspaceId:string,id:string,input:StartDraftInput) {return request<{conversation:ConversationView}>(path(workspaceId)+'/drafts/'+encodeURIComponent(id)+'/send',post(input));},
     lookupDraft(workspaceId:string,id:string,requestId:string) {return request<{found:boolean;conversation?:ConversationView}>(path(workspaceId)+'/drafts/'+encodeURIComponent(id)+'/submissions/'+encodeURIComponent(requestId));},
     async uploadDraftImage(id:string,revision:string,file:File,metadata?:{frame?:boolean;video?:{duration:number;frames:Array<{id:string;time:number}>}}) {
@@ -75,8 +80,12 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
     },
     create(input: {workspaceId: string; cwd?: string; taskId?: string}) { return request<ConversationView>(path(input.workspaceId), post({cwd: input.cwd, taskId: input.taskId})); },
     read(workspaceId: string, id: string, signal?: AbortSignal) { return request<ConversationView>(path(workspaceId, id), {signal}); },
+    entry(workspaceId:string,id:string,entry:ConversationEntry,signal?:AbortSignal) {return request<ConversationEntry>(path(workspaceId,id)+'/entry-detail/'+encodeURIComponent(entry.id)+'?'+new URLSearchParams({revision:entry.detail!.revision}),{signal});},
     entries(workspaceId: string, id: string, cursor: number, signal?: AbortSignal) { return request<ConversationView>(path(workspaceId, id) + '/entries?' + new URLSearchParams({before: String(cursor)}), {signal}); },
     update(conversation: ConversationView, input: {title?: string; hidden?: boolean; taskId?: string | null}) { return request<ConversationView>(path(conversation.workspaceId, conversation.id), {method: 'PATCH', body: JSON.stringify({...input, expectedRevision: conversation.revision})}); },
+    fork(conversation:ConversationView,entryId:string,clientRequestId:string) {return request<ConversationView>(path(conversation.workspaceId,conversation.id)+'/fork',post({expectedRevision:conversation.revision,entryId,clientRequestId}));},
+    createChild(conversation:ConversationView,input:{expectedRevision:string;clientRequestId:string}) {return request<ConversationView>(path(conversation.workspaceId,conversation.id)+'/children',post(input));},
+    children(workspaceId:string,id:string,options:{cursor?:string;signal?:AbortSignal}={}) {return request<ConversationPage>(path(workspaceId,id)+'/children'+(options.cursor?'?'+new URLSearchParams({cursor:options.cursor}):''),{signal:options.signal});},
     generateTitle(conversation:ConversationView) {return request<ConversationView>(path(conversation.workspaceId,conversation.id)+'/generate-title',post({expectedRevision:conversation.revision}));},
     prepare(conversation: ConversationView, input: SendInput) { return request<SendPreview>(path(conversation.workspaceId, conversation.id) + '/prepare-send', post(input)); },
     send(conversation: ConversationView, input: SendInput & {previewToken: string; clientRequestId: string}) { return request<{conversation: ConversationView}>(path(conversation.workspaceId, conversation.id) + '/send', post(input)); },
@@ -88,6 +97,7 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
       return request<SupplementResult>(path(conversation.workspaceId,conversation.id)+'/supplement',post({...input,runId:run.id,participantId:run.participantId,generation:run.generation}));
     },
     stop(conversation: ConversationView, toolId?: string) { const run = conversation.run; if (!run) return Promise.reject(new Error('没有可以停止的执行。')); return request<ConversationView>(path(conversation.workspaceId, conversation.id) + '/stop', post({expectedRevision: conversation.revision, runId: run.id, participantId: run.participantId, generation: run.generation, toolId})); },
+    observeRun(conversation:ConversationView) { const run=conversation.run;if(!run)return Promise.reject(new Error('没有可以核对的执行。'));return request<ConversationView>(path(conversation.workspaceId,conversation.id)+'/observe-run',post({expectedRevision:conversation.revision,runId:run.id,participantId:run.participantId,generation:run.generation})); },
     observe(conversation: ConversationView) { return request<ConversationView>(path(conversation.workspaceId, conversation.id) + '/observe', post({})); },
     reply(conversation: ConversationView, requestId: string, input: {answer: unknown}) { const pending = conversation.requests.find(item => item.id === requestId); if (!pending) return Promise.reject(new Error('原请求已经变化，请重新读取。')); return request<ConversationView>(path(conversation.workspaceId, conversation.id) + `/requests/${encodeURIComponent(requestId)}/reply`, post({...input, expectedRevision: conversation.revision, runId: pending.runId, participantId: pending.participantId, generation: pending.generation})); },
     async upload(conversation: ConversationView, file: File, video?: { duration: number; frames: Array<{ id: string; time: number }> }) {

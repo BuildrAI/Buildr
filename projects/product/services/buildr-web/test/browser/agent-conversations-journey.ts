@@ -9,6 +9,7 @@ import {runModelsScenarios} from './agent-conversations-models-scenarios.ts';
 import {runRecoveryScenarios} from './agent-conversations-recovery-scenarios.ts';
 import {runSelectionScenarios} from './agent-conversations-selection-scenarios.ts';
 import {runVideoScenarios} from './agent-conversations-video-scenarios.ts';
+import {runChildConversationScenarios} from './agent-conversations-children-scenarios.ts';
 
 const scenarios:Record<AgentConversationGroup,(fixture:Awaited<ReturnType<typeof createAgentConversationFixture>>)=>Promise<void>>={
   setup:runSetupScenarios,
@@ -19,6 +20,7 @@ const scenarios:Record<AgentConversationGroup,(fixture:Awaited<ReturnType<typeof
   recovery:runRecoveryScenarios,
   selection:runSelectionScenarios,
   video:runVideoScenarios,
+  children:runChildConversationScenarios,
 };
 
 /** 保留完整对话入口；各场景组复用唯一夹具，独立执行时重新准备现场。 */

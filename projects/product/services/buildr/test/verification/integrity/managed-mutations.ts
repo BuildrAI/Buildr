@@ -104,6 +104,11 @@ const allowed: any = new Map([
   ['src/modules/connection-skills/application/connection-skills-application.ts', new Set(['authorize'])],
   // relocateLocal exclusively writes the guarded personal-record destination and confirms durability before source removal.
   ['src/modules/connection-skills/persistence/files.ts', new Set(['key', 'writeTeam', 'writeLocal', 'relocateLocal'])],
+  // Only local browser metadata is published under the per-profile lock.
+  // create requires absent state and exclusive directory ownership; reset rechecks
+  // revision, inode and managed/external owners before clearing the selected profile.
+  ['src/modules/browser-authorization/application/browser-authorization-application.ts', new Set(['acquire'])],
+  ['src/modules/browser-authorization/persistence/profiles.ts', new Set(['create', 'reset'])],
   // cleanArtifacts re-reads each registry record and re-observes its live disposal state immediately before removing only that recorded scratch path.
   ['src/modules/artifact-lifecycle/application/artifact-application.ts', new Set(['cleanArtifacts'])],
 ]);

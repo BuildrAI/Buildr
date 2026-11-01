@@ -9,6 +9,10 @@ export default defineConfig({
     assetsDir: 'assets',
     chunkSizeWarningLimit: 1024,
     rollupOptions: {
+      input: {
+        main: 'index.html',
+        mermaid: 'mermaid-renderer.html',
+      },
       output: {
         manualChunks: {
           react: ['react', 'react-dom', 'react-router-dom'],

@@ -8,6 +8,11 @@ const base = '/api/v1/app/agent-service';
 const workspace = '/api/v1/workspaces/:workspaceId/agent-conversations';
 const operation = (id: string, method: string, path: string, input: keyof typeof AGENT_SERVICE_HTTP_SCHEMAS, output: keyof typeof AGENT_SERVICE_HTTP_SCHEMAS, responseKind = 'json') => ({ id: `agent-service.${id}`, owner: 'agent-service', method, path, disposition: responseKind === 'json' ? 'migrated-json' : responseKind === 'binary' ? 'migrated-binary' : 'migrated-stream', responseKind, requestSchemaId: AGENT_SERVICE_HTTP_SCHEMAS[input].$id, successSchemaId: responseKind === 'binary' ? null : AGENT_SERVICE_HTTP_SCHEMAS[output].$id, errorSchemaId: 'https://schemas.buildr.ai/http/local-app/error/response/v1' });
 export const AGENT_SERVICE_HTTP_OPERATIONS = [
+  operation('warm-draft','POST',`${workspace}/drafts/:draftId/warmup`,'warmup','warmed'),
+  operation('warm-conversation','POST',`${workspace}/:conversationId/warmup`,'warmup','warmed'),
+  operation('upgrade-program', 'POST', `${base}/connections/:connectionId/program-upgrades`, 'programUpgradeInput', 'programUpgrade'),
+  operation('program-updates', 'GET', `${base}/program-updates`, 'empty', 'programUpdates'),
+  operation('check-program-updates', 'POST', `${base}/program-updates/check`, 'programUpdateCheck', 'programUpdates'),
   operation('runtime', 'GET', `${base}/runtime`, 'empty', 'runtimeStatus'),
   operation('model-accounts', 'GET', `${base}/model-accounts`, 'empty', 'modelAccounts'),
   operation('add-model-account', 'POST', `${base}/model-accounts`, 'addModelAccount', 'modelAccount'),
@@ -37,6 +42,7 @@ export const AGENT_SERVICE_HTTP_OPERATIONS = [
   operation('seen','POST',`${workspace}/:conversationId/seen`,'seen','seenResult'),
   operation('list', 'GET', workspace, 'empty', 'conversations'),
   operation('create', 'POST', workspace, 'create', 'conversation'),
+  operation('fork', 'POST', `${workspace}/:conversationId/fork`, 'fork', 'conversation'),
   operation('draft-images','GET',`${workspace}/drafts/:draftId`,'empty','draftImages'),
   operation('draft-image-upload','POST',`${workspace}/drafts/:draftId/attachments`,'draftImage','draftImages'),
   operation('draft-image-read','GET',`${workspace}/drafts/:draftId/attachments/:attachmentId`,'empty','draftImages','binary'),
@@ -45,6 +51,9 @@ export const AGENT_SERVICE_HTTP_OPERATIONS = [
   operation('draft-lookup','GET',`${workspace}/drafts/:draftId/submissions/:clientRequestId`,'empty','draftLookup'),
   operation('read', 'GET', `${workspace}/:conversationId`, 'empty', 'conversation'),
   operation('update', 'PATCH', `${workspace}/:conversationId`, 'update', 'conversation'),
+  operation('child-list','GET',`${workspace}/:conversationId/children`,'empty','conversations'),
+  operation('child-create','POST',`${workspace}/:conversationId/children`,'createChild','conversation'),
+  operation('entry-detail','GET',`${workspace}/:conversationId/entry-detail/:entryId`,'empty','entry'),
   operation('entries', 'GET', `${workspace}/:conversationId/entries`, 'empty', 'conversation'),
   operation('prepare-send', 'POST', `${workspace}/:conversationId/prepare-send`, 'draft', 'preview'),
   operation('send', 'POST', `${workspace}/:conversationId/send`, 'send', 'sent'),
@@ -53,6 +62,7 @@ export const AGENT_SERVICE_HTTP_OPERATIONS = [
   operation('supplement', 'POST', `${workspace}/:conversationId/supplement`, 'supplement', 'supplemented'),
   operation('generate-title', 'POST', `${workspace}/:conversationId/generate-title`, 'revision', 'conversation'),
   operation('observe', 'POST', `${workspace}/:conversationId/observe`, 'empty', 'conversation'),
+  operation('observe-run','POST',`${workspace}/:conversationId/observe-run`,'control','conversation'),
   operation('stop', 'POST', `${workspace}/:conversationId/stop`, 'stop', 'conversation'),
   operation('reply', 'POST', `${workspace}/:conversationId/requests/:requestId/reply`, 'reply', 'conversation'),
   operation('attachment', 'POST', `${workspace}/:conversationId/attachments`, 'attachment', 'attachmentResult'),

@@ -90,21 +90,23 @@ test('service close cancels installation without starting a native runtime',asyn
   f.manager.install=async({signal})=>{await new Promise<void>(resolve=>signal.addEventListener('abort',()=>{interrupted=true;resolve();},{once:true}));signal.throwIfAborted();return f.executable;};
   const attempt=f.begin({install:true});await settled(f.service,attempt.id,'installing');await f.service.close();assert.equal(interrupted,true);assert.equal(f.opens,0);
 });
-test('native discovery deduplicates real paths, rejects unsupported versions and honors explicit missing paths',async t=>{
+test('new discovery ignores desktop and PATH programs while existing bindings remain inspectable',async t=>{
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-program-discovery-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
   const bin=path.join(root,'bin');fs.mkdirSync(bin);const program=path.join(bin,'codex.js');fs.writeFileSync(program,"console.log('codex-cli 0.163.0-alpha.11.2');\n");fs.symlinkSync(program,path.join(bin,'codex'));
   const manager=new NativeProgramManager(path.join(root,'private'),{PATH:[bin,bin].join(path.delimiter),HOME:root});
   const signal=new AbortController().signal;
   const actual=fs.realpathSync(program);
-  const found=await manager.discover({provider:'codex',signal});assert.equal(found.candidates.filter(item=>item.executable===actual).length,1);assert.equal(found.candidates.find(item=>item.executable===actual)?.compatible,true);
-  const missing=await manager.discover({provider:'codex',executable:path.join(bin,'missing'),signal});assert.equal(missing.candidates.length,1);assert.equal(missing.candidates[0]?.compatible,false);
+  const found=await manager.discover({provider:'codex',signal});assert.equal(found.candidates.length,0);
+  await assert.rejects(manager.discover({provider:'codex',executable:actual,signal}),{code:'agent_program_not_managed'});
+  const existing=await manager.discover({provider:'codex',boundExecutable:actual,signal});assert.equal(existing.candidates[0]?.compatible,true);
+  const missing=await manager.discover({provider:'codex',boundExecutable:path.join(bin,'missing'),signal});assert.equal(missing.candidates.length,1);assert.equal(missing.candidates[0]?.compatible,false);
   for (const [provider,version] of [['codex','0.164.0-alpha.11.1'],['dsh','0.3.0-rc.1'],['qoder','1.2.0']]) {
     fs.writeFileSync(program,`console.log('${provider} ${version}');\n`);
-    const updated=await manager.discover({provider,executable:program,signal});
+    const updated=await manager.discover({provider,boundExecutable:program,signal});
     assert.equal(updated.candidates[0]?.compatible,true);assert.equal(updated.candidates[0]?.version,version);
     assert.equal(updated.candidates[0]?.diagnostic,undefined);
   }
-  fs.writeFileSync(program,"console.log('codex-cli 9.9.9');\n");const unsupported=await manager.discover({provider:'codex',executable:program,signal});assert.equal(unsupported.candidates[0]?.compatible,false);
+  fs.writeFileSync(program,"console.log('codex-cli 9.9.9');\n");const unsupported=await manager.discover({provider:'codex',boundExecutable:program,signal});assert.equal(unsupported.candidates[0]?.compatible,false);
   assert.equal(isCompatibleProgram('codex','0.163.0-alpha.11.3'),true);
 });
 test('admission follows each major including minor upgrades and prereleases, independently of download pins',()=>{
@@ -121,7 +123,7 @@ test('admission follows each major including minor upgrades and prereleases, ind
 test('fixed package installer uses an isolated prefix, verifies its result and reuses it',async t=>{
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-program-install-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
   const bin=path.join(root,'bin');fs.mkdirSync(bin);const script=path.join(bin,'npm-cli.js');
-  fs.writeFileSync(script,`const fs=require('node:fs'),path=require('node:path');const args=process.argv.slice(2);if(!args.includes('@openai/codex@0.163.0')||!args.includes('--registry=https://registry.npmjs.org/'))process.exit(2);const prefix=args[args.indexOf('--prefix')+1];if(process.env.CODEX_HOME||process.env.OPENAI_API_KEY||!process.env.HOME.startsWith(prefix))process.exit(3);const file=path.join(prefix,'node_modules/@openai/codex/bin/codex.js');fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,"console.log('codex-cli 0.163.0');");`);
+  fs.writeFileSync(script,`const fs=require('node:fs'),path=require('node:path');const args=process.argv.slice(2);if(!args.includes('@openai/codex@0.163.0')||!args.includes('--registry=https://registry.npmjs.org/'))process.exit(2);const prefix=args[args.indexOf('--prefix')+1];if(process.env.CODEX_HOME||process.env.OPENAI_API_KEY||!process.env.HOME.startsWith(prefix))process.exit(3);const file=path.join(prefix,'node_modules/@openai/codex/bin/codex.js');fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,"console.log('codex-cli 0.163.0');");fs.writeFileSync(path.join(prefix,'node_modules/@openai/codex/package.json'),JSON.stringify({name:'@openai/codex',version:'0.163.0'}));`);
   fs.symlinkSync(script,path.join(bin,'npm'));
   const manager=new NativeProgramManager(path.join(root,'profile'),{PATH:bin,HOME:root,OPENAI_API_KEY:'not-inherited'}),signal=new AbortController().signal;
   const progress:string[]=[];const executable=await manager.install({provider:'codex',signal,progress:message=>progress.push(message)});
@@ -167,4 +169,18 @@ test('cancelling a real installer reaps its owned process group and removes only
   for(let i=0;i<100;i++){try{process.kill(pid,0);}catch{break;}await new Promise(resolve=>setTimeout(resolve,10));}
   assert.throws(()=>process.kill(pid,0));assert.equal(fs.readFileSync(outside,'utf8'),'preserve');
   assert.equal(fs.readdirSync(path.join(profile,'programs/codex')).some(name=>name.startsWith('.prepare-')),false);
+});
+
+test('exact releases install side by side; Qoder verifies package and program versions separately',async t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-program-releases-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  const bin=path.join(root,'bin');fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin,'npm-cli.js'),`const fs=require('node:fs'),path=require('node:path');const args=process.argv.slice(2),spec=args.at(-1),split=spec.lastIndexOf('@'),name=spec.slice(0,split),version=spec.slice(split+1),prefix=args[args.indexOf('--prefix')+1];const entries={'@openai/codex':'bin/codex.js','@deepseek-ai/dsh':'lib/bin.js','@qoder-ai/qoder-agent-sdk':'dist/_bundled/qodercli'};if(!entries[name])process.exit(3);const dir=path.join(prefix,'node_modules',name),file=path.join(dir,entries[name]);fs.mkdirSync(path.dirname(file),{recursive:true});const actual=name==='@qoder-ai/qoder-agent-sdk'?'1.1.76':version==='0.166.0'?'0.165.0':version;fs.writeFileSync(file,(name==='@qoder-ai/qoder-agent-sdk'?'#!/usr/bin/env node\\n':'')+"console.log('program "+actual+"');");fs.chmodSync(file,0o755);fs.writeFileSync(path.join(dir,'package.json'),JSON.stringify({name,version}));`);
+  const profile=path.join(root,'profile'),manager=new NativeProgramManager(profile,{PATH:bin+path.delimiter+path.dirname(process.execPath),HOME:root}),signal=new AbortController().signal;
+  const install=(provider:string,version:string)=>manager.install({provider,version,signal,progress:()=>{}});
+  const first=await install('codex','0.164.0'),next=await install('codex','0.165.0');assert.notEqual(first,next);assert.ok(fs.existsSync(first));assert.equal(await install('codex','0.164.0'),first);
+  const dsh=await install('dsh','0.2.1-rc.3');assert.ok(fs.existsSync(dsh));
+  const qoder=await install('qoder','1.0.56');assert.equal((await manager.discover({provider:'qoder',boundExecutable:qoder,signal})).candidates[0].version,'1.1.76');
+  await assert.rejects(install('codex','0.166.0'),{code:'agent_install_version_mismatch'});assert.ok(fs.existsSync(first));
+  await assert.rejects(install('codex','latest'),{code:'agent_install_version_invalid'});
+  assert.equal(fs.readdirSync(path.join(profile,'programs','codex')).some(name=>name.startsWith('.prepare-')||name.startsWith('package-0.166.0')),false);
 });

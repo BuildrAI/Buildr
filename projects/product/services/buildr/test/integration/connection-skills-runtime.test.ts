@@ -695,3 +695,29 @@ test('async directory refuses a replaced source root even when its path and work
   fs.renameSync(f.workspace, f.workspace + '-previous'); fs.mkdirSync(f.workspace);
   release(); await assert.rejects(pending, { code: 'connection_skill_context_changed' });
 });
+
+test('具名网站逐项安全投影、不选默认环境、不修改配置或认证', t => {
+  const f = fixture(t), created = f.create(), file = path.join(f.workspace, created.sourcePath);
+  const definition: any = structuredClone(f.definition);
+  definition.config.fields.push({ key: 'secondary', label: '另一门户', type: 'url' });
+  definition.presentation = { summaryFields: ['site'], websiteField: 'site', websites: [{ id: 'first', label: '主门户', field: 'site' }, { id: 'second', label: '另一门户', field: 'secondary' }] };
+  fs.writeFileSync(f.declaration, YAML.stringify(definition));
+  const saved = YAML.parse(fs.readFileSync(file, 'utf8'));
+  const first = 'https://primary.example.invalid/#/login', second = 'https://secondary.example.invalid/app/';
+  const observe = (config: Record<string, unknown>) => {
+    fs.writeFileSync(file, YAML.stringify({ ...saved, config }));
+    const before = fs.readFileSync(file), view = f.app.get(f.workspace, created.id).instance;
+    assert.deepEqual(fs.readFileSync(file), before, '观察网站不修改配置或团队认证');
+    assert.equal(view.websiteUrl, null, '显式多入口不暴露单个默认目标');
+    return view;
+  };
+  assert.deepEqual(observe({ site: first, secondary: second }).websiteLinks, [{ id: 'first', label: '主门户', url: first }, { id: 'second', label: '另一门户', url: second }]);
+  const unsafe = ['javascript:alert(1)', 'file:///private', 'https://reader:secret@example.invalid/', 'https://example.invalid/?access_token=secret', 'https://example.invalid/#/app?token=secret', 'not a url', '', ' ', 1];
+  for (const secondary of unsafe) assert.deepEqual(observe({ site: first, secondary }).websiteLinks, [{ id: 'first', label: '主门户', url: first }]);
+  assert.deepEqual(observe({ site: 'javascript:alert(1)', secondary: second }).websiteLinks, [{ id: 'second', label: '另一门户', url: second }]);
+  assert.deepEqual(observe({ site: 'invalid', secondary: 'invalid' }).websiteLinks, []);
+  definition.config.fields[1].default = second; fs.writeFileSync(f.declaration, YAML.stringify(definition));
+  assert.equal(observe({ site: first }).websiteLinks[1]?.url, second, '声明默认值生效');
+  definition.presentation.websites = []; fs.writeFileSync(f.declaration, YAML.stringify(definition));
+  assert.deepEqual(observe({ site: first }).websiteLinks, [], '空数组不回落旧单入口');
+});

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { resolveProductResource } from '../../infrastructure/product-resources/index.ts';
-import { binaryResponse, textResponse } from './responses.ts';
+import { binaryResponse, textResponse, mermaidRendererResponse } from './responses.ts';
 
 const DEFAULT_STATIC_ROOT = resolveProductResource('product/web-dist');
 const STATIC_CONTENT_TYPES = new Map([
@@ -58,6 +58,10 @@ export function serveDistAsset(response: any, pathname: any, staticRoot: any = D
   const filePath = resolveDistFile(pathname, staticRoot);
   if (!filePath || !fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) return false;
   const contentType = STATIC_CONTENT_TYPES.get(path.extname(filePath).toLowerCase()) || 'application/octet-stream';
+  if (filePath === path.join(path.resolve(staticRoot || DEFAULT_STATIC_ROOT), 'mermaid-renderer.html')) {
+    mermaidRendererResponse(response, fs.readFileSync(filePath, 'utf8'));
+    return true;
+  }
   if (contentType.startsWith('text/') || contentType.includes('json') || contentType.includes('javascript') || contentType.includes('svg')) {
     textResponse(response, 200, fs.readFileSync(filePath, 'utf8'), contentType);
   } else {

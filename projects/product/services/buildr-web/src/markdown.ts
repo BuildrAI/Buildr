@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { copyText } from './lib/copyText.ts';
+import { cachedDiagramSvg, setDiagramSvg } from './lib/markdownDiagramSvg.ts';
 /** Failed destinations stay textual across re-renders; a new document load starts with a clean view. */
 const failedMarkdownImages = new Set<string>();
 
@@ -269,7 +270,7 @@ function createHorizontalRule(doc) {
   return doc.createElement('hr');
 }
 
-function createCodeBlock(language, code, doc, sourcePath) {
+function createCodeBlock(language, code, doc, sourcePath, complete = true) {
   const block = doc.createElement('div');
   block.className = 'markdown-code-block';
   const copy = doc.createElement('button');
@@ -286,10 +287,25 @@ function createCodeBlock(language, code, doc, sourcePath) {
     restore = setTimeout(() => { copy.dataset.copied = ''; copy.textContent = '复制代码'; }, 3000);
   });
   block.append(copy);
-  if (language.toLowerCase() === 'mermaid') {
+  const diagram = language.toLowerCase() === 'mermaid';
+  const cached = diagram && complete ? cachedDiagramSvg(code) : undefined;
+  if (diagram) {
+    block.className += ' markdown-diagram';
+    if (complete && !cached) block.setAttribute('data-mermaid-source', code);
+    block.setAttribute('data-mermaid-state', cached ? 'rendered' : complete ? 'pending' : 'incomplete');
+    const graph = doc.createElement('div');
+    graph.className = 'markdown-diagram-view';
+    graph.setAttribute('role', 'img');
+    graph.setAttribute('aria-label', 'Mermaid 图示');
+    graph.setAttribute('tabindex', '0');
+    graph.hidden = !cached;
+    if (cached) setDiagramSvg(graph, cached);
+    block.append(graph);
     const note = doc.createElement('p');
     note.className = 'markdown-render-note';
-    note.textContent = `当前阅读器显示 Mermaid 源码，尚未渲染图示。可复制源码${sourcePath ? `；原文件：${sourcePath}` : '，或查看原文'}。`;
+    note.setAttribute('role', 'status');
+    note.hidden = Boolean(cached);
+    note.textContent = `${complete ? '正在绘制图示，当前可查看 Mermaid 源码' : '图示尚未完整输出，当前显示 Mermaid 源码'}${sourcePath ? `；原文件：${sourcePath}` : ''}。`;
     block.append(note);
   }
   const pre = doc.createElement('pre');
@@ -297,7 +313,14 @@ function createCodeBlock(language, code, doc, sourcePath) {
   if (language) codeNode.setAttribute('data-language', language);
   codeNode.textContent = code;
   pre.append(codeNode);
-  block.append(pre);
+  if (diagram) {
+    const details = doc.createElement('details');
+    details.open = !cached;
+    const summary = doc.createElement('summary');
+    summary.textContent = '查看源码';
+    details.append(summary, pre);
+    block.append(details);
+  } else block.append(pre);
   return block;
 }
 
@@ -382,8 +405,9 @@ export function renderMarkdown(markdown: string, docOrOptions: Document | Markdo
         codeLines.push(lines[index]);
         index += 1;
       }
-      if (index < lines.length) index += 1;
-      root.append(createCodeBlock(language, codeLines.join('\n'), doc, options.sourcePath));
+      const complete = index < lines.length;
+      if (complete) index += 1;
+      root.append(createCodeBlock(language, codeLines.join('\n'), doc, options.sourcePath, complete));
       continue;
     }
 

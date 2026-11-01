@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { conversationControlInstruction } from './conversation-control.ts';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
@@ -9,7 +10,7 @@ import type { AgentProcessIdentity, AgentProcessStatus, AgentRuntimeUnit } from 
 import { AgentServiceError } from '../domain/agent-state.ts';
 import { AgentHostRegistry } from './host-channel.ts';
 import { dispatchOperation, validateOperation } from './operations.ts';
-import { authorize, body, json, listen, request, privateToken } from './transport.ts';
+import { authorize, body, json, listen, request, privateToken, keepEventStreamAlive } from './transport.ts';
 import { claim, clearProcessRecord, controlRoot, readPrivate, writePrivate, readProcessRecord, readProcessInstances, writeProcessInstance, generationAlive, live, readLock } from './ownership.ts';
 import type { ProcessBootstrap, ProcessRecord } from './ownership.ts';
 import { validateAgentRuntime, canRunParallel } from './runtime-unit.ts';
@@ -26,7 +27,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
   let abortStart: (() => Promise<void>) | undefined;
   try {
   const hosts = new AgentHostRegistry();
-  const service = createAgentService({ ...options.serviceOptions, dataRoot: options.dataRoot, legacySourceId: options.legacySourceId, autoContinueInterrupted: options.autoContinueInterrupted, host: hosts, generationAlive: generation => generationAlive(options.dataRoot, generation) });
+  const service = createAgentService({ ...options.serviceOptions, dataRoot: options.dataRoot, legacySourceId: options.legacySourceId, get autoContinueInterrupted() { return options.autoContinueInterrupted; }, host: hosts, conversationControl:(scope,id)=>conversationControlInstruction({dataRoot:options.dataRoot,profileId:options.profileId,sourceId:executionScopeRef(scope,options.legacySourceId).sourceId,scope,conversationId:id},options.runtime.node), generationAlive: generation => generationAlive(options.dataRoot, generation) });
   const repository = new ConversationRepository(path.join(options.dataRoot, 'agent-service'));
   service.models.startRefreshing();
   abortStart = () => service.close();
@@ -46,7 +47,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     return { identity, activity, accepting, retiring, instances: readProcessInstances(options.dataRoot).filter(record => !record.stopped && live(record.identity.pid)).map(record => ({generation:record.identity.generation,runtimeDigest:record.identity.runtime.digest,retiring:Boolean(record.retiring)})), ...(pending && pending.runtime.digest !== options.runtime.digest ? { pendingRuntime: pending.runtime, diagnostic: pending.diagnostic } : {}) };
   }
   async function recipient(scope: string, id: string, generation?: string): Promise<ProcessRecord | undefined> {
-    const conversation = repository.readConversation(id)?.view;
+    const conversation = repository.readState(id)?.view;
     const run = conversation?.run;
     const ownerGeneration = generation ?? run?.generation;
     if (!ownerGeneration || ownerGeneration === identity.generation) return;
@@ -54,10 +55,10 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     if (!record || !live(record.identity.pid)) return;
     if (record.identity.profileId !== options.profileId) throw new AgentServiceError('agent_process_identity_mismatch', '执行所属配置域不匹配。', 409);
     if (generation) return record;
-    // The owning generation persists this acknowledgement only after closing the
-    // exact native resources. Historical contexts retained by that process do
-    // not own this ended round; unknown results and unfinished tools still wait.
-    if (run?.resourcesReleased && run.executionState === 'ended' && ['completed','failed','stopped'].includes(run.status) && !conversation!.requests.length && run.tools.every(tool=>tool.status==='completed')) return;
+    // This acknowledges release of the exact old controls, independently of
+    // operation results. A new observer still resumes the exact native context;
+    // native writer conflicts fail there rather than replaying uncertain work.
+    if (run?.resourcesReleased && !conversation!.requests.length) return;
     let state = await request(record.origin, record.token, '/conversation-state', { scope, id }, AbortSignal.timeout(3000)).catch(error => {
       if (error instanceof AgentServiceError) throw error;
       throw new AgentServiceError('agent_process_state_unconfirmed', '上一轮后台状态尚未确认，指令已保存并继续等待。', 503);
@@ -71,8 +72,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     return state.busy ? record : undefined;
   }
   async function conversationBusy(scope: string, id: string): Promise<boolean> {
-    if (await recipient(scope, id)) return true;
-    return service.conversationBusy(scope, id);
+    return service.conversationInputBusy(scope, id);
   }
   async function forward(record: ProcessRecord, route: string, input: any): Promise<any> {
     const visited: string[] = input.forwarded ?? [];
@@ -80,28 +80,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     try { return await request(record.origin, record.token, route, {...input,forwarded:[...visited,identity.instanceId]}); }
     catch (error) { if (error instanceof AgentServiceError) throw error; throw new AgentServiceError('agent_operation_result_unknown', '原后台操作结果尚待核对，不会自动重发。', 503); }
   }
-  const sends = new PendingSends({dataRoot:options.dataRoot,service,active:()=>!closing&&accepting&&!retiring&&(!pending||pending.runtime.digest===options.runtime.digest)&&readProcessRecord(options.dataRoot)?.identity.instanceId===instanceId,generationAlive:generation=>generationAlive(options.dataRoot,generation),conversationBusy,stopWaitingHandoff:async(row,alreadyRequested)=>{
-    service.checkWaitingHandoff(row.scope,row.conversationId,row.id);
-    const view=service.conversations.read(row.scope,row.conversationId), run=view.run!;
-    if(['stopped','failed','completed'].includes(run.status)&&!view.requests.length&&run.tools.every(tool=>tool.status==='completed'))return;
-    const stop=run.status==='waiting-question'&&!alreadyRequested;
-    const operation=stop?'conversations.stop':'conversations.observe';
-    const control={expectedRevision:view.revision,runId:run.id,participantId:run.participantId,generation:run.generation};
-    const target=await recipient(row.scope,row.conversationId,run.generation);
-    try {
-      if(target)await forward(target,'/operations',{contract:AGENT_EXECUTION_CONTRACTS.operations,sourceId:executionScopeRef(row.scope,options.legacySourceId).sourceId,operation,args:stop?[row.scope,row.conversationId,control]:[row.scope,row.conversationId]});
-      else if(stop)await service.conversations.stop(row.scope,row.conversationId,control);
-      else await service.conversations.observe(row.scope,row.conversationId);
-    }catch(error){
-      const latest=service.conversations.read(row.scope,row.conversationId).run;
-      if(latest?.id===run.id&&['unknown','stopping'].includes(latest.status))throw new AgentServiceError('agent_process_state_unconfirmed',latest.diagnostic??'停止尚未确认，交接内容已保存，正在核对原执行。',409);
-      throw error;
-    }
-    service.checkWaitingHandoff(row.scope,row.conversationId,row.id);
-    const latest=service.conversations.read(row.scope,row.conversationId).run!;
-    if(latest.status==='waiting-question')throw new AgentServiceError('agent_handoff_stop_unconfirmed','原轮仍在等待回答，尚未确认停止。交接内容已保留，可修改后重试或取消。',409);
-    if(latest.status==='unknown')throw new AgentServiceError('agent_process_state_unconfirmed',latest.diagnostic??'原轮停止结果尚未确认，正在核对，未发送给新模型。',409);
-  }});
+  const sends = new PendingSends({dataRoot:options.dataRoot,service,active:()=>!closing&&accepting&&!retiring&&(!pending||pending.runtime.digest===options.runtime.digest)&&readProcessRecord(options.dataRoot)?.identity.instanceId===instanceId,generationAlive:generation=>generationAlive(options.dataRoot,generation),conversationBusy});
   function scope(sourceId: string, key: unknown): void {
     if (typeof key !== 'string' || !key || executionScopeRef(key, options.legacySourceId).sourceId !== sourceId) throw new AgentServiceError('agent_host_source_mismatch', '执行范围不属于当前接入来源。', 409);
   }
@@ -122,7 +101,10 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     if (req.url === '/host/attach') {
       if (closing) throw new AgentServiceError('agent_process_switching','执行后台正在退出，宿主尚未接入。',503);
       hosts.attach(input.peer);
-      if (!startedRecovery && !retiring) { startedRecovery = true; recovering = true; void service.conversations.recoverInterrupted().catch(() => {}).finally(() => { recovering = false; }); }
+      // A new owning host refreshes policy even when the old bootstrap launched this generation.
+      const enableRecovery=input.peer.sourceId===options.legacySourceId && input.autoContinueInterrupted===true && !options.autoContinueInterrupted;
+      if (input.peer.sourceId===options.legacySourceId && typeof input.autoContinueInterrupted==='boolean') options.autoContinueInterrupted=input.autoContinueInterrupted;
+      if ((!startedRecovery || enableRecovery) && !retiring && !recovering) { startedRecovery = true; recovering = true; void service.conversations.recoverInterrupted().catch(() => {}).finally(() => { recovering = false; }); }
       json(res, 200, { attached: true }); return;
     }
     if (req.url === '/host/detach') { hosts.detach(input.peerId); json(res, 200, { detached: true }); return; }
@@ -158,17 +140,19 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     if (req.url === '/cancel-generation') { generations.get(input.requestId)?.abort(); json(res, 200, { cancelled: true }); return; }
     if (req.url === '/events') {
       scope(input.sourceId, input.scope);
-      const subscription = service.conversations.subscribe(input.scope, input.id);
+      const subscription = service.conversations.subscribe(input.scope, input.id,{compactTools:true});
       res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store' });
+      res.flushHeaders();
+      const stopHeartbeat = keepEventStreamAlive(res);
       const controller = new AbortController();
       let signature = '', relayCursor = 0;
       const refresh = () => {
         if (res.destroyed || controller.signal.aborted) return;
         try {
-          const conversation = service.conversations.read(input.scope, input.id);
-          const next = [conversation.revision,conversation.pendingSend?.revision,conversation.activity?.seenThrough].join(':');
+          const next = service.conversations.observationVersion(input.scope,input.id);
           if (next === signature) return;
-          signature = next;
+          const conversation = service.conversations.read(input.scope, input.id,{compactTools:true});
+          signature = [conversation.revision,conversation.activity?.seenThrough,conversation.pendingSend?.revision].join(':');
           if (res.writableLength > 8 * 1024 * 1024) { res.destroy(); return; }
           res.write('data: ' + JSON.stringify({type:'conversation',generation:identity.generation,cursor:++relayCursor,workspaceId:input.scope,conversationId:input.id,revision:conversation.revision,payload:{conversation}}) + '\n\n');
         } catch { /* Preserve the last observed snapshot on a transient read conflict. */ }
@@ -176,14 +160,14 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       // Shared snapshots also cover another retained generation and pending-only
       // changes; they do not resume native contexts or trigger an execution.
       const poll = setInterval(refresh, 500); poll.unref();
-      const stop = () => { controller.abort(); subscription.close(); clearInterval(poll); }; res.once('close', stop);
+      const stop = () => { controller.abort(); subscription.close(); clearInterval(poll); stopHeartbeat(); }; res.once('close', stop);
       try { for await (const event of subscription.events) {
         if (res.destroyed) break;
-        const conversation = service.conversations.read(input.scope, input.id);
-        signature = [conversation.revision,conversation.pendingSend?.revision,conversation.activity?.seenThrough].join(':');
+        const conversation = service.conversations.read(input.scope, input.id,{compactTools:true});
+        signature = [conversation.revision,conversation.activity?.seenThrough,conversation.pendingSend?.revision].join(':');
         if (!res.write('data: ' + JSON.stringify({...event,cursor:++relayCursor,revision:conversation.revision,payload:{conversation}}) + '\n\n')) await once(res, 'drain', {signal:controller.signal});
       } }
-      finally { res.removeListener('close', stop); clearInterval(poll); controller.abort(); subscription.close(); if (!res.destroyed) res.end(); }
+      finally { res.removeListener('close', stop); clearInterval(poll); stopHeartbeat(); controller.abort(); subscription.close(); if (!res.destroyed) res.end(); }
       return;
     }
     inflight++;
@@ -204,10 +188,12 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       validateOperation(input.operation, input.args);
       const name: string = input.operation;
       let target: ProcessRecord | undefined;
+      let controlGeneration:string|undefined;
       const perConversation = name.startsWith('conversations.') && !/Draft/.test(name) && typeof input.args[0] === 'string' && typeof input.args[1] === 'string';
-      if (perConversation && !['conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.queueSend','conversations.cancelPendingSend'].includes(name)) {
-        const control = ['conversations.stop','conversations.supplement'].includes(name) ? input.args[2] : name === 'conversations.reply' ? input.args[3] : undefined;
-        target = await recipient(input.args[0], input.args[1], control?.generation);
+      if (perConversation && !['conversations.warmup','conversations.readEntry','conversations.fork','conversations.createChild','conversations.listChildren','conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.queueSend','conversations.cancelPendingSend'].includes(name)) {
+        const control = ['conversations.stop','conversations.observeRun','conversations.supplement'].includes(name) ? input.args[2] : name === 'conversations.reply' ? input.args[3] : undefined;
+        controlGeneration=control?.generation;
+        target = await recipient(input.args[0], input.args[1], controlGeneration);
       }
       if (target && name==='conversations.observe') {
         const run=repository.readConversation(input.args[1])?.view.run;
@@ -219,15 +205,15 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       }
       const current = readProcessRecord(options.dataRoot);
       if (!target && retiring && current && current.identity.instanceId !== instanceId) {
-        const run = perConversation ? repository.readConversation(input.args[1])?.view.run : undefined;
-        const ownsRun = run?.generation === identity.generation;
-        if (!ownsRun || ['conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.queueSend','conversations.cancelPendingSend'].includes(name)) target = current;
+        const run = perConversation ? repository.readState(input.args[1])?.view.run : undefined;
+        const ownsRun = controlGeneration ? controlGeneration === identity.generation : run?.generation === identity.generation;
+        if (!ownsRun || ['conversations.warmup','conversations.readEntry','conversations.fork','conversations.createChild','conversations.listChildren','conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.queueSend','conversations.cancelPendingSend'].includes(name)) target = current;
       }
       if (target) { json(res, 200, await forward(target, '/operations', input)); return; }
-      const startsWork = !name.startsWith('conversations.') || ['conversations.startDraft','conversations.create','conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.generateTitle'].includes(name);
+      const startsWork = !name.startsWith('conversations.') || ['conversations.warmup','conversations.fork','conversations.startDraft','conversations.create','conversations.createChild','conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.generateTitle'].includes(name);
       if (startsWork && !accepting) throw new AgentServiceError('agent_process_switching', '执行后台正在采用新版，本次新操作尚未受理。', 503);
       if (['conversations.startDraft','conversations.send'].includes(name) && pending?.runtime.digest !== undefined && pending.runtime.digest !== options.runtime.digest) throw new AgentServiceError('agent_process_switching','新版尚未就绪，可以提交待发送内容。',503);
-      if (name === 'conversations.send' && await conversationBusy(input.args[0],input.args[1])) throw new AgentServiceError('agent_conversation_busy','上一轮仍未释放，可以提交待发送内容。',409);
+      if (name === 'conversations.send' && await conversationBusy(input.args[0],input.args[1]) && !service.allowsReleasedContinuation(input.args[0],input.args[1],input.args[2])) throw new AgentServiceError('agent_conversation_busy','上一轮仍未释放，可以提交待发送内容。',409);
       if (name === 'conversations.send' && new PendingSendRepository(path.join(options.dataRoot,'agent-service')).read(input.args[0],input.args[1])) throw new AgentServiceError('agent_pending_conflict','已有待发送内容，请等待、修改或取消。',409);
       let result: any = await dispatchOperation(service, input.operation, input.args);
       if (name === 'connections.disconnect' || name === 'models.accounts.disconnect') {

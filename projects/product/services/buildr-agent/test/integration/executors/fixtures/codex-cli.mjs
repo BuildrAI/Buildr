@@ -8,7 +8,7 @@ let state=fs.existsSync(file)?JSON.parse(fs.readFileSync(file)):{};
 let active;
 const reply=(id,result)=>process.stdout.write(JSON.stringify({id,result})+'\n');
 const event=(method,params)=>process.stdout.write(JSON.stringify({method,params})+'\n');
-const save=()=>{for(const t of Object.values(state)){t.path=path.join(process.env.CODEX_HOME,'sessions',t.id+'.jsonl');fs.mkdirSync(path.dirname(t.path),{recursive:true});const rows=[{type:'session_meta',payload:{id:t.id}}];for(const turn of t.turns){rows.push({type:'event_msg',payload:{type:'task_started',turn_id:turn.id}});for(const item of turn.items??[]){if(item.type!=='commandExecution')continue;rows.push({type:'response_item',payload:{type:'function_call',call_id:item.id,name:'exec_command'}});if(item.status==='completed')rows.push({type:'response_item',payload:{type:'function_call_output',call_id:item.id,output:'done'}});}}fs.writeFileSync(t.path,rows.map(row=>JSON.stringify(row)).join('\n')+'\n');}fs.writeFileSync(file,JSON.stringify(state));};
+const save=()=>{for(const t of Object.values(state)){t.path=path.join(process.env.CODEX_HOME,'sessions',t.id+'.jsonl');fs.mkdirSync(path.dirname(t.path),{recursive:true});const rows=[{type:'session_meta',payload:{id:t.id,fixtureThread:{id:t.id,cwd:t.cwd,turns:t.turns}}}];for(const turn of t.turns){rows.push({type:'event_msg',payload:{type:'task_started',turn_id:turn.id}});for(const item of turn.items??[]){if(item.type!=='commandExecution')continue;rows.push({type:'response_item',payload:{type:'function_call',call_id:item.id,name:'exec_command'}});if(item.status==='completed')rows.push({type:'response_item',payload:{type:'function_call_output',call_id:item.id,output:'done'}});}}fs.writeFileSync(t.path,rows.map(row=>JSON.stringify(row)).join('\n')+'\n');}fs.writeFileSync(file+'.next',JSON.stringify(state));fs.renameSync(file+'.next',file);};
 r.on('line',l=>{const m=JSON.parse(l);
 if(m.method==='initialize'){if(process.env.OPENAI_API_KEY||process.env.CODEX_APP_SERVER_TOKEN)throw Error('credential leak');
 reply(m.id,{userAgent:'fixture'});
@@ -30,7 +30,15 @@ return;
 if(m.method==='thread/resume'||m.method==='thread/read'){reply(m.id,{thread:state[m.params.threadId]});
 return;
 }
+if(m.method==='thread/fork'){
+const p=m.params,source=p.path?JSON.parse(fs.readFileSync(p.path,'utf8').split('\n')[0]).payload.fixtureThread:state[p.threadId];
+const boundary=source.turns.findIndex(turn=>turn.id===p.lastTurnId);
+const t={...structuredClone(source),id:'fork-'+Date.now()+'-'+Object.keys(state).length,turns:structuredClone(source.turns.slice(0,boundary+1))};
+state[t.id]=t;save();reply(m.id,{thread:t});return;
+}
 if(m.method==='turn/start'){const p=m.params;
+const originalText=p.input.find(part=>part.type==='text')?.text??'';const workText=originalText.includes('\n\n本次用户要求：\n')?originalText.slice(originalText.lastIndexOf('\n\n本次用户要求：\n')+'\n\n本次用户要求：\n'.length):originalText;
+if(p.input.some(part=>part.text?.includes('[reject-start]'))){process.stdout.write(JSON.stringify({id:m.id,error:{code:-32600,message:'start rejected'}})+'\n');return;}
 const id='turn-'+state[p.threadId].turns.length;
 const user={id:p.clientUserMessageId??'user-'+id,type:'userMessage',content:p.input};
 active={id,threadId:p.threadId,status:'inProgress',items:[user]};
@@ -39,6 +47,11 @@ save();
 reply(m.id,{turn:active});
 setTimeout(()=>{event('item/started',{threadId:p.threadId,turnId:id,item:user});
 event('item/agentMessage/delta',{threadId:p.threadId,turnId:id,itemId:'assistant-'+id,delta:'你好'});
+if(workText.includes('[retain-command]')||workText.includes('[finish]')){
+if(workText.includes('[retain-command]')){const item={id:'command-'+id,type:'commandExecution',command:'synthetic retained command',status:'inProgress',processId:'native-process-'+id};active.items.push(item);event('item/started',{threadId:p.threadId,turnId:id,item});}
+const answer={id:'assistant-'+id,type:'agentMessage',text:'正常答复',phase:'final_answer'};active.items.push(answer);event('item/completed',{threadId:p.threadId,turnId:id,item:answer});
+active.status='completed';save();event('turn/completed',{threadId:p.threadId,turn:active});return;
+}
 process.stdout.write(JSON.stringify({id:'request-'+id,method:'item/tool/requestUserInput',params:{threadId:p.threadId,turnId:id,questions:[{id:'color',question:'颜色',options:[{label:'蓝'}]}]}})+'\n');
 },10);
 return;
@@ -61,15 +74,19 @@ const p=m.params;
 if(!active||active.status!=='inProgress'||p.expectedTurnId!==active.id||p.threadId!==active.threadId){process.stdout.write(JSON.stringify({id:m.id,error:{code:-32600,message:'inactive turn'}})+'\n');return;}
 const user={id:'native-'+p.clientUserMessageId,clientId:p.clientUserMessageId,type:'userMessage',content:p.input};active.items.push(user);save();reply(m.id,{turnId:active.id});event('item/completed',{threadId:active.threadId,turnId:active.id,item:user});return;
 }
-if(m.method==='thread/backgroundTerminals/list'){reply(m.id,{data:active?.items.filter(i=>i.type==='commandExecution'&&i.status!=='completed').map(i=>({itemId:i.id,processId:i.processId}))??[],nextCursor:null});
+if(m.method==='thread/backgroundTerminals/list'){
+if(fs.existsSync(path.join(process.env.CODEX_HOME,'fail-terminal-observation'))){process.stdout.write(JSON.stringify({id:m.id,error:{code:-32603,message:'observation unavailable'}})+'\n');return;}
+reply(m.id,{data:(state[m.params.threadId]?.turns??[]).flatMap(turn=>turn.items.filter(i=>i.type==='commandExecution'&&i.status!=='completed').map(i=>({itemId:i.id,processId:i.processId}))),nextCursor:null});
 return;
 }
-if(m.method==='thread/backgroundTerminals/terminate'){if(m.params.processId!=='native-process-'+active.id)throw Error('wrong process');
-const item=active.items.find(i=>i.type==='commandExecution');
+if(m.method==='thread/backgroundTerminals/terminate'){
+if(fs.existsSync(path.join(process.env.CODEX_HOME,'fail-terminal-stop'))){process.stdout.write(JSON.stringify({id:m.id,error:{code:-32603,message:'stop unavailable'}})+'\n');return;}
+const owner=state[m.params.threadId]?.turns.find(turn=>turn.items.some(i=>i.processId===m.params.processId));if(!owner)throw Error('wrong process');
+const item=owner.items.find(i=>i.processId===m.params.processId);
 item.status='completed';
 save();
 reply(m.id,{});
-event('item/completed',{threadId:active.threadId,turnId:active.id,item});
+event('item/completed',{threadId:owner.threadId,turnId:owner.id,item});
 return;
 }reply(m.id,{});
 });

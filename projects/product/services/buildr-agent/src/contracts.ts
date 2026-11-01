@@ -7,6 +7,8 @@ export type ContextRef = { id: string; data?: Record<string, unknown> };
 export type ExecutionRef = { id: string; data?: Record<string, unknown> };
 
 export interface AgentCapabilities {
+  /** Supported Buildr contract, not a claim about model compliance. */
+  interaction?: { policy: 'buildr-interaction/v1'; nonBlockingQuestions: boolean };
   /** Admission into an already active execution; absence means unavailable. */
   supplement?: boolean;
   text: boolean;
@@ -46,8 +48,12 @@ export interface ModelGatewayConfiguration {
   nativeModel?: { provider: 'qoder'; id: string; accountIdentity: string };
 }
 export interface ExecutorOpenOptions {
+  /** Service-owned instructions supplied to every executor, including future providers. */
+  interaction?: { version: 'buildr-interaction/v1'; instructions: string };
   gateway?: ModelGatewayConfiguration;
   nativeAccountConfigRoot?: string;
+  /** Trusted original source identity, set only by an explicit verified program upgrade. */
+  programSource?: string;
   connectionId: string;
   configRoot: string;
   executable?: string;
@@ -65,6 +71,8 @@ export interface VideoAttachment { duration: number; frames: Array<{ id: string;
 export interface AttachmentInput { expectedRevision?: string; expectedAttachmentRevision?: string; mimeType: string; bytes: Uint8Array; video?: VideoAttachment }
 export interface ExecutorItem {
   id: string;
+  /** Native parent tool identity; absence does not imply an inferred child relationship. */
+  parentToolId?: string;
   clientRequestId?: string;
   kind: 'message' | 'tool' | 'notice';
   role: 'user' | 'assistant' | 'system';
@@ -78,18 +86,25 @@ export interface ExecutorItem {
 }
 export interface ExecutorRequest {
   id: string;
+  /** Present only when native request and task identity prove its parent tool. */
+  parentToolId?: string;
   kind: 'approval' | 'question';
+  /** Missing means blocking for compatibility. Approvals always block. */
+  blocking?: boolean;
   title: string;
   description?: string;
   options?: Array<{ id: string; label: string; description?: string }>;
   questions?: Array<{ id: string; label: string; options?: Array<{ id: string; label: string; description?: string }>; multiple?: boolean; allowOther?: boolean }>;
 }
 export interface ExecutorObservation {
+  /** The native model ended normally; retained commands remain controllable in this context. */
+  canContinue?: boolean;
   /** Native SDK background work, distinct from missing historical tool results. */
   backgroundWork?: boolean;
   status: 'idle' | 'running' | 'waiting' | 'stopped' | 'tools-active' | 'unknown';
   executionRef?: ExecutionRef;
   tools: Array<{ id: string; label: string; status: 'running' | 'completed' | 'unknown'; canStop?: boolean }>;
+  /** Complete live-request snapshot for executionRef; omission says nothing about absence. */
   requests?: ExecutorRequest[];
   diagnostic?: string;
 }
@@ -104,7 +119,28 @@ export type ExecutorEvent =
   | { type: 'observation'; observation: ExecutorObservation }
   | { type: 'completed'; status: 'completed' | 'stopped' | 'failed'; diagnostic?: string }
   | { type: 'diagnostic'; message: string };
-export interface ExecutorTitleInput { contextRef: ContextRef; cwd: string; description: string; model?: string; signal: AbortSignal }
+export interface ExecutorTitleInput { contextRef: ContextRef; cwd: string; description: string; model?: string; freshInstruction?: boolean; signal: AbortSignal }
+/** In-process only: the source validates its own binding; the destination owns the new context. */
+export interface ExecutorForkInput {
+  source: AgentRuntime;
+  contextRef: ContextRef;
+  cwd: string;
+  executionRef: ExecutionRef;
+  itemId: string;
+  /** Exact admitted inputs, including supplements, belonging to the selected round. */
+  inputItemIds?: readonly string[];
+  onCreated(contextRef: ContextRef): void;
+}
+export interface ConversationForkInput { expectedRevision: string; entryId: string; clientRequestId: string }
+export interface ConversationForkOrigin {
+  conversationId: string;
+  workspaceId: string;
+  entryId: string;
+  runId: string;
+  throughSequence: number;
+  title: string;
+  forkedAt: string;
+}
 export interface ExecutorSendInput {
   contextRef: ContextRef;
   cwd: string;
@@ -140,9 +176,13 @@ export interface AgentRuntime {
   /** Private fixed-upstream model bridge; never exposed over host HTTP. */
   requestModel?(path: string, init?: RequestInit, expectedIdentity?: string): Promise<Response>;
   modelIdentity?(): Promise<string>;
+  modelQuota?(): Promise<import('./model-access/contracts.ts').ModelQuotaObservation>;
   beginLogin(onUpdate: (observation: LoginObservation) => void): Promise<void>;
   cancelLogin(): Promise<void>;
   createContext(input: { cwd: string; permissionMode?: PermissionMode }): Promise<ContextRef>;
+  /** Initialize this exact context without admitting work or inference. */
+  prepareContext?(input: { contextRef: ContextRef; cwd: string; model?: string; reasoningEffort?: string; permissionMode?: PermissionMode }): Promise<void>;
+  forkContext?(input: ExecutorForkInput): Promise<ContextRef>;
   resumeContext(input: { contextRef: ContextRef; cwd: string; permissionMode?: PermissionMode }): Promise<void>;
   readHistory(input: { contextRef: ContextRef; cwd: string }): Promise<ExecutorItem[]>;
   /** Resolves at terminal observation. Control requests must stay independent. */
@@ -182,6 +222,34 @@ export interface ConnectionView {
   capabilities: AgentCapabilities;
   loginAttempt?: LoginAttemptView;
 }
+export interface ProgramUpgradeInput { expectedRevision: string; expectedVersion: string }
+export interface ProgramUpgradeView {
+  id: string; connectionId: string; expectedVersion: string; executable: string;
+  state: 'downloading' | 'waiting' | 'restarting' | 'completed' | 'failed' | 'interrupted';
+  message: string; updatedAt: string; installedExecutable?: string; currentVersion?: string;
+}
+
+export interface ProgramUpdateView {
+  connectionId: string;
+  revision: string;
+  provider: string;
+  label: string;
+  executable?: string;
+  managed?: boolean;
+  upgrade?: ProgramUpgradeView;
+  status: 'unchecked' | 'not-connected' | 'available' | 'latest' | 'ahead' | 'unknown' | 'stale';
+  versionKind: 'program' | 'package';
+  packageName: string;
+  updateUrl: string;
+  currentVersion?: string;
+  currentReleaseVersion?: string;
+  latestVersion?: string;
+  releaseSource?: string;
+  compatible?: boolean;
+  checkedAt?: string;
+  diagnostic?: string;
+}
+
 export interface ProgramCandidate {
   executable: string;
   source: 'configured' | 'selected' | 'path' | 'managed' | 'application' | 'sdk';
@@ -196,7 +264,8 @@ export interface ProgramCatalog {
 }
 export interface AgentProgramManager {
   discover(input: { provider: string; executable?: string; boundExecutable?: string; signal: AbortSignal }): Promise<ProgramCatalog>;
-  install(input: { provider: string; signal: AbortSignal; progress(message: string): void }): Promise<string>;
+  install(input: { provider: string; version?: string; signal: AbortSignal; progress(message: string): void }): Promise<string>;
+  isManaged?(provider: string, executable: string): boolean;
 }
 export type PreparationState = 'discovering' | 'selection-required' | 'installation-required' | 'installing' | 'connecting' | 'waiting-login' | 'ready' | 'failed' | 'cancelled';
 export interface PreparationView {
@@ -213,7 +282,11 @@ export interface PreparationInput { expectedRevision: string; executable?: strin
 export type RunStatus = 'starting' | 'running' | 'waiting-approval' | 'waiting-question' | 'stopping' | 'stopped' | 'tools-active' | 'unknown' | 'completed' | 'failed';
 export interface ParticipantView { modelAccountId?: string; model?: string; id: string; provider: ProviderId; connectionId: string; label: string; deliveredThrough: number; contextId: string }
 export interface ConversationEntry {
+  /** Bounded tool preview; fetch the exact content revision when expanded. */
+  detail?: {revision: string};
   id: string;
+  /** Native child output stays attached to its parent tool, retaining its original role. */
+  parentToolId?: string;
   sequence: number;
   kind: 'message' | 'tool' | 'notice' | 'handoff';
   role: 'user' | 'assistant' | 'system';
@@ -232,6 +305,8 @@ export interface ConversationEntry {
   createdAt: string;
 }
 export interface RunView {
+  /** Same-context input is allowed; this does not release command control resources. */
+  canContinue?: boolean;
   /** Physical execution/resource facts never imply that the user's goal succeeded. */
   executionState?: 'active' | 'ended' | 'unknown';
   /** This backend no longer holds the original control resources; independent command outcomes may remain unknown. */
@@ -264,6 +339,14 @@ export interface PendingRequestView extends ExecutorRequest {
   generation: string;
 }
 export interface ConversationView {
+  /** Immutable direct-parent provenance, independent of current titles and UI state. */
+  forkedFrom?: ConversationForkOrigin;
+  forkState?: { status: 'creating' | 'ready' | 'failed'; reason?: string };
+  /** Frozen provenance only; it never grants control over the parent execution. */
+  childOf?: {
+    conversationId: string; workspaceId: string; title: string; createdAt: string;
+    sourceRevision: string; throughSequence: number; state?: RunStatus;
+  };
   pendingSend?: PendingSendView;
   /** Independent observation version for append-only image admission. */
   attachmentRevision?: string;
@@ -280,6 +363,8 @@ export interface ConversationView {
   participants: ParticipantView[];
   entries: ConversationEntry[];
   run?: RunView;
+  /** Unfinished prior executions retain their original context and owner. */
+  retainedRuns?: RunView[];
   requests: PendingRequestView[];
   nextEntryCursor?: number;
 }
@@ -301,6 +386,8 @@ export interface HandoffMaterial {
 export interface SendDraft {
   /** Explicitly end this waiting question round before handing work to a different selection. */
   waitingHandoff?: {
+    /** Explicitly stop the wait and discuss using the same execution selection. */
+    intent?: 'discussion';
     runId: string; participantId: string; generation: string; requestIds: string[];
     answers?: Array<{ requestId: string; answer: unknown }>;
   };
@@ -381,6 +468,8 @@ export interface ServiceEvent {
   payload: { conversation?: ConversationView; connection?: ConnectionView };
 }
 export interface AgentServiceOptions {
+  /** Process-owned local control instructions; never includes authentication secrets. */
+  conversationControl?: (scope:string,id:string)=>string;
   /** Other accurately discovered process generations must not be recovered. */
   generationAlive?: (generation: string) => boolean;
   /** Trusted host profile only; released installations default to manual continuation. */
@@ -391,6 +480,7 @@ export interface AgentServiceOptions {
   environment?: Record<string, string | undefined>;
   /** Native program discovery/install port; credentials remain in executor-owned configs. */
   programManager?: AgentProgramManager;
+  programRelease?: (provider: string, executable: string, signal: AbortSignal) => Promise<{latestVersion: string; currentReleaseVersion?: string; source: string}>;
   /** Product-independent host authority; source identity survives connection replacement. */
   host?: AgentHostCapabilities;
   legacySourceId?: string;
@@ -401,3 +491,5 @@ export interface AgentServiceOptions {
   /** Bounded host shutdown; chiefly useful for deterministic lifecycle tests. */
   shutdownTimeoutMs?: number;
 }
+
+export type ConversationWarmupInput = Pick<SendDraft,'connectionId'|'modelAccountId'|'modelAccountRevision'|'modelAccountIdentity'|'model'|'serviceTier'|'reasoningEffort'|'permissionMode'> & {cwd?:string;taskId?:string;clientRequestId?:string};

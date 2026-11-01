@@ -62,8 +62,8 @@ export function CodeSourceControlPage() {
         void observation.refresh(repositoryId);
       }).catch(error => { message.error(error instanceof Error ? error.message : '克隆请求未能完成。'); void observation.refresh(repositoryId); }); }) : undefined}
       catalogActions={<Dropdown open={viewActive && catalogMenuOpen} onOpenChange={setCatalogMenuOpen} trigger={['click']} placement="bottomRight" menu={{'aria-label':'源代码管理操作菜单', items:[
-        {key:'sync', icon:<SyncOutlined aria-hidden spin={syncing} />, label:syncing ? '正在同步…' : '全部同步', disabled:fetching || syncing || !observation.repositories.length},
-        {key:'fetch', icon:<CloudDownloadOutlined aria-hidden spin={fetching} />, label:fetching ? '正在获取远程…' : '全部获取远程', disabled:fetching || syncing || !observation.repositories.length},
+        {key:'sync', icon:<SyncOutlined aria-hidden spin={syncing} />, label:syncing ? '正在同步…' : '全部同步', disabled:fetching || syncing || !observation.repositories.some(repository => !repository.cached)},
+        {key:'fetch', icon:<CloudDownloadOutlined aria-hidden spin={fetching} />, label:fetching ? '正在获取远程…' : '全部获取远程', disabled:fetching || syncing || !observation.repositories.some(repository => !repository.cached)},
       ], onClick:({key}) => {setCatalogMenuOpen(false); if (key === 'sync') void syncActions.runAll(observation.repositories); else void fetchActions.run(observation.repositories);}}}><Button type="text" size="small" icon={<MoreOutlined rotate={90} />} loading={fetching || syncing} aria-label="源代码管理操作菜单" title="源代码管理操作菜单" aria-expanded={catalogMenuOpen} aria-haspopup="menu" /></Dropdown>}
       scene={scene} onScene={setScene} onOpenTask={openTask}
       task={entry ? {id: entry.taskId, title: entry.taskTitle || entry.taskId} : undefined}

@@ -1,7 +1,7 @@
 import { InstallationInfoDialog } from '../features/installation/components/InstallationInfoDialog';
 import { WorkspacePreparationNotice } from '../features/workspace/components/WorkspacePreparationNotice';
 import { AgentConversationsProvider, useAgentConversationShell } from '../features/agent-conversations/AgentConversationsContext';
-import { ConversationPanel } from '../features/agent-conversations/ConversationPanel';
+import { ConversationWorkspace } from '../features/agent-conversations/ConversationWorkspace';
 import { ConversationActivity } from '../features/agent-conversations/ConversationActivity';
 import { CommentOutlined } from '@ant-design/icons';
 import { AgentConnectionSettings } from '../features/agent-conversations/AgentConnectionSettings';
@@ -533,7 +533,7 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
       <WorkspaceSettingsDrawer open={settingsOpen} workspaceId={settingsWorkspaceId}
         onClose={() => setSettingsOpen(false)} onSaved={workspaceSettingsSaved} />
     </WorkbenchPreferencesProvider>
-    <ConversationPanel portalTarget={conversationMount} defaultWorkspaceId={workspaceId} workspaces={[{id:'@default',name:'默认工作空间',rootPath:''},...registry.flatMap(entry => entry.workspace ? [{id:entry.workspace.id,name:entry.workspace.name,rootPath:entry.rootPath}] : [])]} />
+    <ConversationWorkspace portalTarget={conversationMount} defaultWorkspaceId={workspaceId} workspaces={[{id:'@default',name:'默认工作空间',rootPath:''},...registry.flatMap(entry => entry.workspace ? [{id:entry.workspace.id,name:entry.workspace.name,rootPath:entry.rootPath}] : [])]} />
     </WorkspaceReadCacheProvider>
     </WorkspaceSourceControlProvider>
     </AppShellContext.Provider>

@@ -52,6 +52,62 @@ test('Qoder discovers supported context windows separately from the default',asy
  const observation=await runtime.inspect();assert.equal(observation.models[0].contextWindow,200000);assert.equal(observation.models[0].reportedContextWindow,1000000);await runtime.close();
 });
 
+test('account refreshes coalesce, but login invalidation starts a new observation and removes old team quota', async () => {
+ const root=await mkdtemp(join(tmpdir(),'buildr-login-refresh-'));
+ let calls=0,account='team',hold=false,release=()=>{};
+ let gate=Promise.resolve();
+ const app=createModelAccess({root,providers:[{id:'native-qoder',connectionId:'qoder',label:'Qoder',async open(){return{
+  protocol:'chat-completions',async inspect(){calls++;const identity=account;const waiting=gate;if(hold)await waiting;return{status:'ready',identity,models:[offering],quota:identity==='team'?{available:true,observedAt:new Date().toISOString(),planLabel:'Teams',remainingPercent:0}:{available:false,observedAt:new Date().toISOString()}};},
+  beginLogin:async()=>{},cancelLogin:async()=>{},infer:async()=>Response.json({}),close:async()=>{},
+ };}}]});
+ try{
+  await app.ensureLinked();await app.accounts.check('native-qoder');
+  assert.equal(app.accounts.read('native-qoder').quota?.planLabel,'Teams');
+  hold=true;gate=new Promise<void>(resolve=>{release=resolve;});
+  const first=app.accounts.check('native-qoder'),duplicate=app.accounts.check('native-qoder');
+  await new Promise<void>(resolve=>setImmediate(resolve));
+  assert.equal(calls,2,'two simultaneous observers use one upstream check');
+  app.invalidate('native-qoder');
+  assert.equal(app.accounts.read('native-qoder').quota,undefined);
+  account='personal';hold=false;
+  const personal=await app.accounts.check('native-qoder');
+  assert.equal(calls,3,'the new login does not wait for the older observation');
+  assert.equal(personal.status,'ready');assert.equal(personal.quota?.available,false);
+  assert.equal(personal.quota?.planLabel,undefined);
+  release();await Promise.all([first,duplicate]);
+  assert.equal(app.accounts.read('native-qoder').identity,personal.identity);
+  assert.equal(app.accounts.read('native-qoder').quota?.available,false);
+ }finally{release();await app.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('native login completion refreshes its own source while unrelated discovery is still waiting', async () => {
+ const root=await mkdtemp(join(tmpdir(),'buildr-login-source-'));
+ let identity='team',hold=false,release=()=>{},started=()=>{};
+ const gate=new Promise<void>(resolve=>{release=resolve;});
+ const capabilities={text:true,images:false,stop:true,resume:true,approval:false,questions:false,maxInputBytes:1000};
+ const executor:AgentExecutor={descriptor:{id:'qoder',label:'Qoder',capabilities},async open(){return{
+  bindingIdentity:'qoder',capabilities,inspectAccount:async()=>({status:'ready'}),models:async()=>[offering],
+  async beginLogin(update){identity='personal';update({state:'completed'});},cancelLogin:async()=>{},
+  createContext:async()=>({id:'context'}),resumeContext:async()=>{},readHistory:async()=>[],send:async()=>{},observe:async()=>({status:'idle',tools:[]}),reply:async()=>{},stop:async()=>({status:'stopped',tools:[]}),close:async()=>{},
+ };}};
+ const providers=['native-qoder','slow'].map(id=>({id,label:id,...(id==='native-qoder'?{connectionId:'qoder'}:{}),async open(){return{
+  protocol:'chat-completions' as const,async inspect(){if(id==='slow'&&hold){started();await gate;}return{status:'ready' as const,identity:id==='native-qoder'?identity:id,models:[offering]};},
+  beginLogin:async()=>{},cancelLogin:async()=>{},infer:async()=>Response.json({}),close:async()=>{},
+ };}}));
+ const service=createAgentService({dataRoot:root,executors:[executor],modelProviders:providers,resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
+ try{
+  await service.connections.connect('qoder',{expectedRevision:'unconfigured'});
+  await service.models.catalog.list({refresh:true});
+  const initial=service.models.accounts.read('native-qoder');
+  const slow=await service.models.accounts.add({provider:'slow'});await service.models.accounts.check(slow.id);
+  hold=true;const waiting=new Promise<void>(resolve=>{started=resolve;});service.models.startRefreshing();await waiting;
+  service.connections.login('qoder',{expectedRevision:service.connections.read('qoder').revision});
+  let updated=false;
+  for(let i=0;i<200;i++){const account=service.models.accounts.read('native-qoder');if(account.status==='ready'&&account.identity!==initial.identity){updated=true;break;}await new Promise(resolve=>setTimeout(resolve,1));}
+  assert.equal(updated,true,'new login must become visible without releasing the slow unrelated source');
+ }finally{release();await service.close();await rm(root,{recursive:true,force:true});}
+});
+
 test('Qoder reports credits quota and per-model credit factor without blocking the catalog',async()=>{
  const requests:string[]=[];let usage='{"userId":"u","userType":"teams","usageType":"credits","totalUsagePercentage":0.07,"expiresAt":1793347662000,"userQuota":{"total":3000,"used":206,"remaining":2794,"percentage":0.07,"unit":"credits"},"orgResourcePackage":{"available":false}}';
  const runtime=await createQoderModelProvider({inspect:async()=>({status:'ready'}),identity:async()=>'user',request:async(path:string)=>{requests.push(path);return path==='/usage'?new Response(usage):Response.json({chat:[{key:'model',enable:true,price_factor:0.5,display_name:'Auto'},{key:'free',enable:true,price_factor:0},{key:'other',enable:true}]});}}).open({accountId:'native-qoder',configRoot:'unused',environment:{}});

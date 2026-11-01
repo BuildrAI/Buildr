@@ -705,6 +705,14 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, b
       pendingSuccessor = parents.length === 2 && parents[1] === beforeRemote && (matchesIdentity || matchesLegacyTask) && trailers.includes(`Buildr-Activation-Delivery: ${deliveredRef}`);
       if (!pendingSuccessor) throw closeoutError('self-bootstrap-closeout.remote-drift', '保留分支与远端不同，且不是本次激活尚未推送的后继提交。');
     }
+    // The first Product CLI import already consumes the private Agent package.
+    // Prepare it before sync, not only during the later application install:
+    // newly delivered HTTP declarations may require a newly added Agent schema.
+    const preparation = path.join(root, SERVICE_ROOT, 'tools/development/prepare-development-agent.ts');
+    requirePassed(command(execute, nodeExecutable, [preparation], root, 'prepare-agent-package', active,
+      { kind: 'product-preparation', script: preparation }), 'self-bootstrap-closeout.agent-preparation-failed',
+    '产品命令入口的智能体服务包准备失败；尚未同步或停止开发应用。');
+    assertHead(head);
     markPassed(active, deliveredRef, head, resume ? [{ type: 'workspace-sync-resume', inputIdentity: resume.inputIdentity, paths: resume.paths, expectedHead: resume.expectedHead }] : []);
     successor = head;
     let ownedPaths = resume?.paths || [];

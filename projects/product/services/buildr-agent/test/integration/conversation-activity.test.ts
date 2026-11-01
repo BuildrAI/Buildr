@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { ConversationRepository } from '../../src/persistence/conversation-repository.ts';
+import { CONVERSATION_SCHEMA_VERSION, ConversationRepository } from '../../src/persistence/conversation-repository.ts';
 import type { StoredConversation } from '../../src/domain/agent-state.ts';
 
 function fixture(t:TestContext) {
@@ -31,6 +31,19 @@ test('reads never create storage; new messages and streaming advance activity, m
   save(repo,r,r=>{r.view.entries[0].text+=' streamed';});assert.equal(r.view.activity?.version,2);
   save(repo,r,r=>message(r,'reply-request','answer','notice'));assert.equal(r.view.activity?.version,3);
   save(repo,r,()=>{});assert.equal(r.view.activity?.version,3);
+});
+
+test('native child messages preserve provenance without becoming user activity or unread primary replies',t=>{
+  const repo=fixture(t),r=record();repo.saveConversation(r);
+  save(repo,r,row=>message(row,'primary-user','authorized request'));
+  const version=r.view.activity!.version,userAt=repo.querySummaries(['w1'],{limit:10}).conversations[0]!.activity!.userInputAt;
+  save(repo,r,row=>{
+    message(row,'child-user','delegated instruction');row.view.entries.at(-1)!.parentToolId='delegate';
+    message(row,'child-answer','child report','message','assistant');row.view.entries.at(-1)!.parentToolId='delegate';
+  });
+  assert.equal(r.view.activity!.version,version);
+  assert.equal(repo.querySummaries(['w1'],{limit:10}).conversations[0]!.activity!.userInputAt,userAt);
+  assert.equal(repo.readConversation(r.view.id)!.view.entries.at(-1)!.parentToolId,'delegate');
 });
 test('seen is monotonic, revision independent, cannot acknowledge future output or another workspace',t=>{
   const repo=fixture(t),r=record();repo.saveConversation(r);save(repo,r,r=>message(r,'a','one'));
@@ -67,6 +80,56 @@ test('legacy reads are zero-write, upgrade establishes seen baseline, then count
   const before=fs.readFileSync(repo.filename);assert.equal(repo.querySummaries(['w1'],{limit:10}).conversations[0].activity?.version,0);assert.equal(repo.querySummaries(['w1'],{limit:10}).conversations[0].titleState?.status??'unknown','unknown');assert.deepEqual(fs.readFileSync(repo.filename),before);
   save(repo,r,r=>{r.view.title='upgraded';});assert.equal(r.view.activity?.version,0);assert.equal(r.view.activity?.active,false);
   save(repo,r,r=>message(r,'new','new'));assert.equal(r.view.activity?.version,1);
+});
+
+test('waiting and unseen outrank newer running input across all pages, filters and seen transitions',t=>{
+  const repo=fixture(t);
+  const make=(id:string,status:NonNullable<StoredConversation['view']['run']>['status'],at:string,seen=false,workspaceId='w1')=>{
+    const r=record(id,workspaceId);r.view.updatedAt=at;
+    message(r,'input-'+id,'input '+id);
+    r.view.run={id:'run-'+id,participantId:'p',provider:'codex',generation:'g',status,accepted:true,tools:[],model:'m',startedAt:at,updatedAt:at};
+    repo.saveConversation(r);
+    save(repo,r,row=>message(row,'answer-'+id,'answer','message','assistant'));
+    if(seen)repo.markSeen(workspaceId,id,r.view.activity!.version);
+    return r;
+  };
+  const waiting=make('waiting','waiting-question','2026-10-27T01:00:00Z',false,'w2');
+  const unseen=make('unseen','completed','2026-10-27T02:00:00Z');
+  const running=make('running','running','2026-10-27T03:00:00Z');
+  make('running-tie','running','2026-10-27T03:00:00Z');
+  make('unknown','unknown','2026-10-27T04:00:00Z');
+  make('history','completed','2026-10-27T05:00:00Z',true);
+  const read=(options:Parameters<ConversationRepository['querySummaries']>[1])=>repo.querySummaries(['w1','w2'],options);
+  const ids=(options:Parameters<ConversationRepository['querySummaries']>[1])=>read(options).conversations.map(row=>row.id);
+  const expected=['unseen','waiting','unknown','running-tie','running','history'];
+  assert.deepEqual(ids({limit:20}),expected);
+  for(const limit of [1,2,3,4]){
+    const found:string[]=[];let cursor:string|undefined;
+    do {const page=read({limit,cursor});found.push(...page.conversations.map(row=>row.id));cursor=page.nextCursor;}while(cursor);
+    assert.deepEqual(found,expected,'分页容量 '+limit);
+  }
+  assert.deepEqual(ids({limit:20,activeOnly:true}),expected.slice(0,-1));
+  assert.deepEqual(ids({limit:20,workspaceId:'w1'}),expected.filter(id=>id!=='waiting'));
+  assert.deepEqual(ids({limit:20,activityState:'attention'}),['unseen','waiting','unknown']);
+  assert.deepEqual(ids({limit:20,model:'m'}),['running-tie','running']);
+  assert.deepEqual(ids({limit:20,query:'running'}),['running-tie','running']);
+  const first=read({limit:1}),old=JSON.parse(Buffer.from(first.nextCursor!,'base64url').toString());
+  delete old.priority;old.active=1;
+  assert.throws(()=>read({limit:1,cursor:Buffer.from(JSON.stringify(old)).toString('base64url')}),/顺序/);
+  const userAt=read({limit:20}).conversations.find(row=>row.id==='running')!.activity!.userInputAt;
+  save(repo,running,r=>{r.view.updatedAt='2026-10-27T06:00:00Z';message(r,'new-input','newest user input');});
+  assert.deepEqual(ids({limit:20}),['unseen','waiting','running','unknown','running-tie','history']);
+  assert.notEqual(read({limit:20}).conversations.find(row=>row.id==='running')!.activity!.userInputAt,userAt);
+  const latestUserAt=read({limit:20}).conversations.find(row=>row.id==='running')!.activity!.userInputAt;
+  save(repo,running,r=>{message(r,'output','background response','message','assistant');});
+  assert.equal(read({limit:20}).conversations.find(row=>row.id==='running')!.activity!.userInputAt,latestUserAt);
+  assert.deepEqual(ids({limit:20}).slice(0,3),['unseen','waiting','running']);
+  const cursor=read({limit:1}).nextCursor;
+  repo.markSeen('w1','unseen',unseen.view.activity!.version);
+  assert.throws(()=>read({limit:1,cursor}),/顺序/);
+  assert.deepEqual(ids({limit:20}),['waiting','running','unknown','running-tie','history','unseen']);
+  repo.markSeen('w2','waiting',waiting.view.activity!.version);
+  assert.equal(ids({limit:20})[0],'waiting','等待明确决定不会被已读降级');
 });
 
 test('execution overview is full-scope, independent from search/page/filter and counts only actual current runs',t=>{
@@ -191,4 +254,132 @@ test('hidden unknown outcomes stop reminding only after execution and resources 
  const quiet=repo.querySummaries(['w1'],{activeOnly:true,limit:10});assert.equal(quiet.total,0);assert.equal(quiet.activityCounts.unknown,0);assert.equal(quiet.stats.modelExecutions.length,0);
  const archived=repo.querySummaries(['w1'],{hidden:true,limit:10});assert.equal(archived.total,1);assert.equal(archived.conversations[0].run?.status,'unknown');assert.equal(repo.readConversation(r.view.id)?.view.run?.tools[0].status,'unknown');
  save(repo,r,r=>{r.view.hidden=false;});assert.equal(repo.querySummaries(['w1'],{activeOnly:true,limit:10}).activityCounts.unknown,1,'an unhidden historical doubt is still discoverable');
+});
+
+test('the rebuildable list index preserves storage compatibility and follows older body-only writes',t=>{
+  const repo=fixture(t),draft=record('legacy-writer');
+  repo.saveConversation(draft);
+  const db=new DatabaseSync(repo.filename);
+  try{
+    assert.equal(db.prepare('PRAGMA user_version').get()!.user_version,CONVERSATION_SCHEMA_VERSION);
+    assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE name='conversations_list_summary'").get());
+    assert.equal(repo.querySummaries(['w1'],{limit:5}).total,0);
+
+    // Retained writers do not know about the index. SQLite must maintain its
+    // membership even if only the history changes and the summary is unchanged.
+    message(draft,'sent','sent by an older writer');
+    const write=db.prepare('UPDATE conversations SET body=? WHERE id=?');
+    write.run(JSON.stringify(draft),draft.view.id);
+    assert.equal(repo.querySummaries(['w1'],{limit:5}).total,1);
+    assert.equal(repo.listConversations('w1',{limit:5}).length,1);
+    draft.view.entries=[];
+    write.run(JSON.stringify(draft),draft.view.id);
+    assert.equal(repo.querySummaries(['w1'],{limit:5}).total,0);
+
+    db.exec('DROP INDEX conversations_list_summary');
+    const before=fs.readFileSync(repo.filename);
+    assert.equal(repo.querySummaries(['w1'],{limit:5}).total,0);
+    assert.deepEqual(fs.readFileSync(repo.filename),before,'reads must not create the optional index');
+    assert.equal(db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name='conversations_list_summary'").get()!.n,0);
+    save(repo,draft,()=>{});
+    assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE name='conversations_list_summary'").get());
+    assert.equal(db.prepare('PRAGMA user_version').get()!.user_version,CONVERSATION_SCHEMA_VERSION);
+  }finally{db.close();}
+});
+
+test('ordinary summary reads use the compact index without loading history and share one overview scan',t=>{
+  const repo=fixture(t),item=record('large-history');
+  message(item,'input','history-only-search-token '+ 'x'.repeat(1024*1024));
+  item.view.run={id:'run',participantId:'p',provider:'codex',generation:'g',status:'running',accepted:true,tools:[],model:'m',startedAt:item.view.updatedAt,updatedAt:item.view.updatedAt};
+  repo.saveConversation(item);
+  const statements:Array<{sql:string;args:unknown[]}>=[];
+  const prepare=DatabaseSync.prototype.prepare;
+  t.mock.method(DatabaseSync.prototype,'prepare',function(this:DatabaseSync,sql:string){
+    const statement=prepare.call(this,sql);
+    if(sql.includes('json_array_length(json_extract(body') && /^(SELECT|WITH)\b/.test(sql)){
+      for(const method of ['all','get'] as const){
+        const invoke=statement[method];
+        t.mock.method(statement,method,function(...args:unknown[]){
+          statements.push({sql,args});
+          return Reflect.apply(invoke,statement,args);
+        });
+      }
+    }
+    return statement;
+  });
+  const result=repo.querySummaries(['w1'],{limit:5,generation:'g'},()=>false);
+  assert.equal(result.total,1);
+  assert.equal(result.conversations[0].entries.length,0);
+  assert.deepEqual(result.stats.models,[{label:'m',count:1}]);
+  assert.equal(statements.length,4,'generation, overview, total and page are the only scoped reads');
+  assert.equal(statements.filter(row=>row.sql.includes('AS MATERIALIZED')).length,1);
+
+  const db=new DatabaseSync(repo.filename,{readOnly:true});
+  try{
+    const root=db.prepare("SELECT rootpage FROM sqlite_master WHERE name='conversations'").get()!.rootpage;
+    const bodyColumn=db.prepare('PRAGMA table_info(conversations)').all().find(row=>row.name==='body')!.cid;
+    for(const {sql,args} of statements){
+      const queryPlan=prepare.call(db,'EXPLAIN QUERY PLAN '+sql);
+      const plan=Reflect.apply(queryPlan.all,queryPlan,args) as Array<{detail:string}>;
+      assert.ok(plan.some(row=>row.detail.includes('conversations_list_summary')),JSON.stringify(plan));
+      const explain=prepare.call(db,'EXPLAIN '+sql);
+      const operations=Reflect.apply(explain.all,explain,args) as Array<{opcode:string;p1:number;p2:number}>;
+      const tableCursors=new Set(operations.filter(row=>row.opcode==='OpenRead'&&row.p2===root).map(row=>row.p1));
+      assert.equal(operations.filter(row=>row.opcode==='Column'&&tableCursors.has(row.p1)&&row.p2===bodyColumn).length,0,'normal list reads must not load the full body');
+    }
+  }finally{db.close();}
+  assert.equal(repo.querySummaries(['w1'],{limit:5,query:'history-only-search-token'}).total,1,'explicit search still includes full history');
+});
+
+test('combined overview retains empty-scope results and account label aggregation across executors',t=>{
+  const repo=fixture(t);
+  for(const [id,provider,label] of [['a','codex','A'],['b','qoder','Z']] as const){
+    const item=record(id);message(item,'input','work');
+    item.view.run={id:'run-'+id,participantId:'p',provider,generation:'g',status:'running',accepted:true,tools:[],model:'same',modelAccountId:'account',modelSourceLabel:label,startedAt:item.view.updatedAt,updatedAt:item.view.updatedAt};
+    repo.saveConversation(item);
+  }
+  const page=repo.querySummaries(['w1'],{limit:1,query:'no result',activityState:'waiting'});
+  assert.equal(page.total,0);
+  assert.deepEqual(page.activityCounts,{active:2,running:2,waiting:0,unseen:0,unknown:0,attention:0});
+  assert.deepEqual(page.stats.modelExecutions,[{accountId:'account',accountLabel:'Z',model:'same',count:2}]);
+  assert.deepEqual(page.stats.executions,[{provider:'codex',model:'same',count:1},{provider:'qoder',model:'same',count:1}]);
+  const empty=repo.querySummaries(['other'],{limit:1});
+  assert.deepEqual(empty.activityCounts,{active:0,running:0,waiting:0,unseen:0,unknown:0,attention:0});
+  assert.deepEqual(empty.stats,{agents:[],models:[],executions:[],modelExecutions:[]});
+});
+
+test('optional index construction cannot make an unrelated damaged history block a valid scope',t=>{
+  const repo=fixture(t),good=record('good'),damaged=record('damaged','other');
+  message(good,'input','valid work');
+  repo.saveConversation(good);repo.saveConversation(damaged);
+  const db=new DatabaseSync(repo.filename);
+  try{
+    db.exec('DROP INDEX conversations_list_summary');
+    db.prepare('UPDATE conversations SET body=? WHERE id=?').run('damaged historical JSON',damaged.view.id);
+  }finally{db.close();}
+  save(repo,good,r=>{r.view.title='still writable';});
+  const page=repo.querySummaries(['w1'],{limit:5,generation:'current'},()=>false);
+  assert.equal(page.total,1);
+  assert.equal(page.conversations[0].title,'still writable');
+  const check=new DatabaseSync(repo.filename,{readOnly:true});
+  try{
+    assert.equal(check.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name='conversations_list_summary'").get()!.n,0);
+    assert.equal(check.prepare('SELECT body FROM conversations WHERE id=?').get(damaged.view.id)!.body,'damaged historical JSON','unrelated content stays untouched');
+  }finally{check.close();}
+});
+
+test('retained work remains discoverable after the latest response is read and cannot be hidden as a released current outcome',t=>{
+ const repo=fixture(t),r=record('retained');
+ message(r,'input','new instruction');
+ const at=r.view.updatedAt;
+ r.view.run={id:'new',participantId:'new-p',provider:'codex',generation:'g',status:'completed',accepted:true,tools:[],startedAt:at,updatedAt:at};
+ r.view.retainedRuns=[{...r.view.run,id:'old',participantId:'old-p',status:'unknown',tools:[{id:'helper',label:'helper',status:'unknown'}]}];
+ repo.saveConversation(r);save(repo,r,row=>message(row,'reply','done','message','assistant'));
+ assert.equal(repo.markSeen('w1',r.view.id,r.view.activity!.version).active,true);
+ assert.equal(repo.hasUnfinishedWork(),true);assert.equal(repo.listPending(true)[0]?.view.retainedRuns?.[0]?.id,'old');
+ assert.equal(repo.querySummaries(['w1'],{limit:10,activeOnly:true}).total,1);
+ save(repo,r,row=>{row.view.hidden=true;Object.assign(row.view.run!,{status:'unknown',executionState:'ended',resourcesReleased:true});});
+ assert.equal(repo.readConversation(r.view.id)?.view.activity?.active,true,'hiding the latest released result cannot hide unfinished prior work');
+ save(repo,r,row=>{row.view.run!.status='stopped';Object.assign(row.view.retainedRuns![0],{status:'stopped',executionState:'ended',tools:[]});});
+ assert.equal(repo.hasUnfinishedWork(),false);
 });

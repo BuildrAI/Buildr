@@ -11,6 +11,37 @@ const setup = async () => {
   return {catalog, requests};
 };
 
+test('缓存立即展示、逐库确认且相同内容不重复失效，手动刷新仍强制读取', async () => {
+  const cached = response(repository('a'), repository('b')), requests = [];
+  const catalog = createSourceControlCatalog((repositoryId, signal, onProgress, shared) => new Promise(resolve => requests.push({repositoryId, signal, onProgress, shared, resolve})), cached);
+  assert.equal(catalog.snapshot().data, cached);
+  assert.deepEqual(catalog.snapshot().cachedRepositoryIds, ['a', 'b']);
+  assert.equal(catalog.snapshot().selectionReady, false);
+  const initial = catalog.check();
+  assert.equal(catalog.check(), initial, '有缓存时重复全量被动核对仍共享在途读取');
+  assert.equal(requests.length, 1); assert.equal(requests[0].shared, true);
+  const same = Object.fromEntries(Object.entries(repository('a', 'main', '2026-10-13T10:00:01.000Z')).reverse());
+  requests[0].onProgress(response(same), 'repository');
+  assert.deepEqual(catalog.snapshot().cachedRepositoryIds, ['b']);
+  assert.equal(catalog.snapshot().versions.a, 0, '字段顺序及观察时间不同不构成内容变化');
+  requests[0].resolve(response(same, repository('b'))); await initial;
+  assert.deepEqual(catalog.snapshot().cachedRepositoryIds, []);
+  assert.deepEqual(catalog.snapshot().versions, {a:0, b:0});
+  const manual = catalog.refresh(); assert.equal(requests[1].shared, false);
+  requests[1].resolve(response(repository('a'), repository('b'))); await manual;
+  assert.ok(catalog.snapshot().versions.a > 0); catalog.dispose();
+});
+
+test('缓存初次核对失败保留原观察时间与待核对标记', async () => {
+  const cached = response(repository('a'));
+  const catalog = createSourceControlCatalog(async () => {throw Error('离线');}, cached);
+  await catalog.check();
+  assert.equal(catalog.snapshot().data, cached);
+  assert.equal(catalog.snapshot().cachedReadAt, cached.readAt);
+  assert.deepEqual(catalog.snapshot().cachedRepositoryIds, ['a']);
+  assert.equal(catalog.snapshot().error, '离线'); catalog.dispose();
+});
+
 test('静默首次核对共享在途清单，渐进骨架与首个完成库都不提前确认任务预选',async()=>{
   const requests=[];
   const catalog=createSourceControlCatalog((repositoryId,signal,onProgress)=>new Promise(resolve=>requests.push({repositoryId,signal,onProgress,resolve})));

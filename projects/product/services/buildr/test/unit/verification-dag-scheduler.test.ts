@@ -277,7 +277,7 @@ test('受限 CI 将真实 App 与适配器重型检查互斥，轻量检查仍�
   assert.equal(results[1].scheduling.grant.workers, 2);
 });
 
-test('真实发布效果检查独占执行，结束后其他 owner 恢复并行', async () => {
+test('隔离的发布效果检查与其他 owner 在现有预算内重叠', async () => {
   const ids = ['integration-candidate-release-effects', 'docs-quality', 'managed-mutations'];
   const steps = ids.map(id => verificationSteps.find((item: any) => item.id === id));
   const executionProfile = resolveVerificationExecutionProfile('ci-workspace-limited');
@@ -302,16 +302,15 @@ test('真实发布效果检查独占执行，结束后其他 owner 恢复并行'
   let results: any;
   try {
     await new Promise<void>(resolve => setImmediate(resolve));
-    assert.deepEqual([...started], [ids[0]], '发布效果检查占用期间其他 owner 必须排队');
-    releaseEffects();
-    await new Promise<void>(resolve => setImmediate(resolve));
-    assert.deepEqual([...active], ids.slice(1), '独占检查结束后不应串行化其他 owner');
+    assert.deepEqual([...started], ids, '隔离的发布效果检查不应独占所有工作位');
+    assert.deepEqual([...active], ids, '三个检查均应受现有工作位与资源预算约束');
   } finally {
     releaseEffects(); releaseOthers();
     results = await execution;
   }
-  assert.equal(effectsOverlap, false);
+  assert.equal(effectsOverlap, true);
   assert.equal(otherOwnersOverlap, true);
+  assert.equal(results[0].scheduling.grant.workers, 1);
   assert.deepEqual(results.map((item: any) => [item.id, item.status]), ids.map(id => [id, 'passed']));
 });
 

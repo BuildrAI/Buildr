@@ -9,7 +9,7 @@ import test from 'node:test';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
-import { createAgentService } from '@buildr-ai/buildr-agent';
+import { createAgentService, type AgentRuntime, type ExecutorItem } from '@buildr-ai/buildr-agent';
 import { createRuntime, runtimeContributions } from '../helpers/runtime-harness.ts';
 import { taskRecordFixture } from '../helpers/task-record-system-fixture.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
@@ -45,6 +45,42 @@ test('program preparation is authenticated, schema checked and independently obs
   response=await fetch(`${endpoint}/${attempt.id}/cancel`,{method:'POST',headers,body:'{}'});assert.equal(response.status,200);assert.equal((await response.json()).state,'cancelled');
   response=await fetch(endpoint,{headers});assert.equal((await response.json()).attempt.state,'cancelled');
   assert.equal(service.connections.read('codex').enabled,false);
+  const upgrade=`${url}/api/v1/app/agent-service/connections/codex/program-upgrades`;
+  response=await fetch(upgrade,{method:'POST',headers:{'content-type':'application/json'},body:'{}'});assert.equal(response.status,403);
+  response=await fetch(upgrade,{method:'POST',headers,body:JSON.stringify({expectedRevision:'unconfigured',expectedVersion:'0.164.0',package:'arbitrary'})});assert.equal(response.status,400);
+  response=await fetch(upgrade,{method:'POST',headers,body:JSON.stringify({expectedRevision:'unconfigured',expectedVersion:'0.164.0'})});assert.equal(response.status,409);
+  const updates=`${url}/api/v1/app/agent-service/program-updates`;
+  response=await fetch(updates);assert.equal(response.status,403);
+  response=await fetch(updates,{headers});assert.equal(response.status,200);
+  assert.equal((await response.json()).programs[0].status,'not-connected');
+  response=await fetch(updates+'/check',{method:'POST',headers:{...headers,origin:'https://foreign.example'},body:'{}'});assert.equal(response.status,403);
+  response=await fetch(updates+'/check',{method:'POST',headers,body:'{"install":true}'});assert.equal(response.status,400);
+  response=await fetch(updates+'/check',{method:'POST',headers,body:'{"connectionId":"missing"}'});assert.equal(response.status,404);
+  response=await fetch(updates+'/check',{method:'POST',headers,body:'{"connectionId":"codex"}'});assert.equal(response.status,200);
+  assert.equal((await response.json()).programs[0].status,'not-connected');
+  assert.equal(service.connections.read('codex').enabled,false);
+
+});
+
+test('explicit program upgrade returns accepted work and observes the restarted binding over HTTP', {timeout:30_000}, async t=>{
+  const {base,root}=taskRecordFixture(t,'agent-upgrade-http'),runtime=createRuntime();
+  const original=path.join(base,'original.js'),installed=path.join(base,'new.js');fs.writeFileSync(original,'old');fs.writeFileSync(installed,'new');
+  let opens=0,closes=0,installs=0;
+  const capabilities={text:true,images:false,approval:false,questions:false,stop:true,resume:true,maxInputBytes:65536};
+  const native:AgentRuntime={capabilities,bindingIdentity:'upgrade-fixture',bindingData:{executable:original},async inspectAccount(){return{status:'ready',label:'saved'};},async models(){return[];},async beginLogin(){assert.fail('upgrade cannot log in');},async cancelLogin(){},async createContext(){assert.fail('upgrade cannot create work');},async resumeContext(){},async readHistory(){return[];},async send(){assert.fail('upgrade cannot send');},async observe(){return{status:'idle',tools:[]};},async reply(){},async stop(){assert.fail('upgrade cannot stop work');},async close(){closes++;}};
+  const service=createAgentService({dataRoot:path.join(base,'agent-profile'),executors:[{descriptor:{id:'codex',label:'Codex',capabilities},async open(){opens++;return{...native};}}],programManager:{isManaged:(_,file)=>file===installed,async discover(input){return{candidates:[{executable:input.boundExecutable!,label:'fixture',source:'configured',compatible:true,version:input.boundExecutable===installed?'0.164.0':'0.163.0'}],installation:{label:'fixture',url:'https://fixture.invalid',version:'0.163.0',canInstall:true}};},async install(input){assert.equal(input.version,'0.164.0');installs++;return installed;}},programRelease:async()=>({latestVersion:'0.164.0',source:'https://registry.npmjs.org/%40openai%2Fcodex/latest'}),resolveWorkspace:()=>({rootPath:root}),assertTask:()=>{}});
+  const contributions=runtimeContributions(runtime,'http').filter((item:{id:string})=>item.id!=='agent-service.http');contributions.push(createAgentServiceHttpContribution(()=>service));
+  const server=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions}),{url,sessionToken}=await server.ready;
+  t.after(async()=>{await service.close();server.server.closeAllConnections();await new Promise<void>(resolve=>server.server.close(()=>resolve()));});
+  const connection=await service.connections.connect('codex',{expectedRevision:'unconfigured',executable:original}),headers={origin:url,'x-buildr-session':sessionToken,'content-type':'application/json'},endpoint=url+'/api/v1/app/agent-service/connections/codex/program-upgrades';
+  let response=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:connection.revision,expectedVersion:'0.164.0'})});assert.equal(response.status,202);assert.equal((await response.json()).state,'downloading');
+  let completed=false;
+  for(let n=0;n<200;n++){
+    response=await fetch(url+'/api/v1/app/agent-service/program-updates',{headers});assert.equal(response.status,200);const row=(await response.json()).programs[0];
+    if(row.upgrade?.state==='completed'){assert.equal(row.executable,installed);assert.equal(row.upgrade.currentVersion,'0.164.0');completed=true;break;}
+    assert.notEqual(row.upgrade?.state,'failed',row.upgrade?.message);await new Promise(resolve=>setTimeout(resolve,10));
+  }
+  assert.ok(completed);assert.equal(installs,1);assert.equal(opens,2);assert.equal(closes,1);assert.equal(fs.readFileSync(original,'utf8'),'old');
 });
 
 test('private conversations use authenticated HTTP and bounded binary input; streams are observation only', { timeout: 30_000 }, async t => {
@@ -65,6 +101,10 @@ test('private conversations use authenticated HTTP and bounded binary input; str
   const conversations = `${url}/api/v1/workspaces/${workspaceId}/agent-conversations`;
   const headers = { origin: url, 'x-buildr-session': sessionToken, 'content-type': 'application/json' };
   const readHeaders = { 'x-buildr-session': sessionToken };
+  const warmEndpoint=conversations+'/drafts/00000000-0000-4000-8000-000000000001/warmup';
+  assert.equal((await fetch(warmEndpoint,{method:'POST',body:JSON.stringify({connectionId:'codex'})})).status,403);
+  assert.equal((await fetch(warmEndpoint,{method:'POST',headers,body:JSON.stringify({connectionId:'codex',text:'must not become work'})})).status,400);
+  assert.equal((await fetch(warmEndpoint,{method:'POST',headers:{...headers,origin:'https://foreign.example'},body:JSON.stringify({connectionId:'codex'})})).status,403);
   let response = await fetch(`${app}/connections`);
   assert.equal(response.status, 403);
   response = await fetch(`${app}/connections`, { headers: { ...readHeaders, origin: 'https://foreign.example' } }); assert.equal(response.status, 403);
@@ -148,6 +188,84 @@ test('private conversations use authenticated HTTP and bounded binary input; str
   assert.equal((await response.json() as { taskId?: string }).taskId, undefined);
   const coverage = inspectHttpOperationCoverage([AGENT_SERVICE_HTTP_OPERATIONS], []);
   assert.equal(coverage.status, 'aligned', JSON.stringify(coverage));
+});
+
+test('fork HTTP validates authentication and observations, preserves provenance and never sends work', { timeout: 15_000 }, async t => {
+  const { base, root } = taskRecordFixture(t, 'agent-fork-http');
+  const capabilities = { text: true, images: false, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 65536 };
+  const history: ExecutorItem[] = [];
+  let sends = 0, forks = 0;
+  const executor: AgentRuntime = {
+    bindingIdentity: 'fork-http-binding', capabilities,
+    async inspectAccount() { return { status: 'ready' }; }, async models() { return [{ id: 'fixture-model', label: 'Fixture model', isDefault: true }]; },
+    async beginLogin() {}, async cancelLogin() {},
+    async createContext() { return { id: 'source-native' }; }, async resumeContext() {},
+    async readHistory() { return history; },
+    async forkContext(input) {
+      forks++;
+      assert.equal(input.contextRef.id, 'source-native');
+      assert.equal(input.executionRef.id, 'native-turn');
+      assert.equal(input.itemId, 'native-answer');
+      const child = { id: 'child-native' };
+      input.onCreated(child);
+      return child;
+    },
+    async send(input) {
+      sends++;
+      input.onEvent({ type: 'accepted', executionRef: { id: 'native-turn' }, inputItemId: input.clientRequestId });
+      const answer: ExecutorItem = { id: 'native-answer', kind: 'message', role: 'assistant', text: 'Final answer', executionId: 'native-turn', status: 'completed' };
+      history.push(answer);
+      input.onEvent({ type: 'item', item: answer });
+      input.onEvent({ type: 'completed', status: 'completed' });
+    },
+    async observe({ executionRef }) { return { status: 'idle', executionRef, tools: [] }; }, async reply() {},
+    async stop() { return { status: 'stopped', tools: [] }; }, async close() {},
+  };
+  const service = createAgentService({
+    dataRoot: path.join(base, 'agent-profile'), modelProviders: [],
+    executors: [{ descriptor: { id: 'fixture', label: 'Fixture', capabilities }, async open() { return executor; } }],
+    resolveWorkspace: () => ({ rootPath: root }),
+  });
+  const runtime = createRuntime(), contributions = runtimeContributions(runtime, 'http').filter((item: { id: string }) => item.id !== 'agent-service.http');
+  contributions.push(createAgentServiceHttpContribution(() => service));
+  const server = createLocalWorkspaceServer(runtime, { targetRoot: root, httpContributions: contributions });
+  t.after(async () => { await service.close(); server.server.closeAllConnections(); await new Promise<void>(resolve => server.server.close(() => resolve())); });
+  const { url, initialWorkspaceId: workspaceId, sessionToken } = await server.ready;
+  await service.connections.connect('fixture', { expectedRevision: 'unconfigured' });
+  const source = await service.conversations.create(workspaceId, { title: 'Original title' });
+  const draft = { expectedRevision: source.revision, connectionId: 'fixture', text: 'Original instruction' };
+  const preview = service.conversations.prepareSend(workspaceId, source.id, draft);
+  service.conversations.send(workspaceId, source.id, { ...draft, previewToken: preview.token, clientRequestId: 'source-input' });
+  for (let n = 0; n < 100 && service.conversations.read(workspaceId, source.id).run?.status !== 'completed'; n++) await new Promise(resolve => setTimeout(resolve, 2));
+  const before = service.conversations.read(workspaceId, source.id);
+  assert.equal(before.run?.status, 'completed', JSON.stringify(before.run));
+  const answer = before.entries.findLast(entry => entry.role === 'assistant')!;
+  const endpoint = `${url}/api/v1/workspaces/${workspaceId}/agent-conversations/${source.id}/fork`;
+  const headers = { origin: url, 'x-buildr-session': sessionToken, 'content-type': 'application/json' };
+  const input = { expectedRevision: before.revision, entryId: answer.id, clientRequestId: 'fork-http-request' };
+  const post = (body: unknown, auth = headers) => fetch(endpoint, { method: 'POST', headers: auth, body: JSON.stringify(body) });
+  assert.equal((await post(input, { ...headers, 'x-buildr-session': 'invalid' })).status, 403);
+  assert.equal((await post({ ...input, untrusted: true })).status, 400);
+  assert.equal((await post({ expectedRevision: before.revision, entryId: answer.id })).status, 400);
+  assert.equal((await post({ ...input, expectedRevision: 'stale' })).status, 409);
+  assert.equal(forks, 0);
+  const response = await post(input);
+  assert.equal(response.status, 201);
+  const child = await response.json();
+  assert.notEqual(child.id, source.id);
+  assert.deepEqual(child.forkedFrom, { conversationId: source.id, workspaceId, entryId: answer.id, runId: answer.runId, throughSequence: before.entries.at(-1)!.sequence, title: source.title, forkedAt: child.forkedFrom.forkedAt });
+  assert.equal(child.forkState.status, 'ready');
+  assert.equal(child.run, undefined);
+  assert.deepEqual(child.requests, []);
+  const repeated = await post(input);
+  assert.equal(repeated.status, 201);
+  assert.equal((await repeated.json()).id, child.id);
+  const read = await fetch(endpoint.replace(`${source.id}/fork`, child.id), { headers });
+  assert.equal(read.status, 200);
+  assert.deepEqual((await read.json()).forkedFrom, child.forkedFrom);
+  assert.equal(service.conversations.read(workspaceId, source.id).revision, before.revision);
+  assert.equal(forks, 1);
+  assert.equal(sends, 1);
 });
 
 test('a valid large initial snapshot drains before subsequent live events instead of disconnecting', { timeout: 10_000 }, async t => {
@@ -286,7 +404,7 @@ test('the real web CLI discovers host interruptions on listening without a brows
     assert.equal(child.exitCode,null,output);await new Promise(resolve=>setTimeout(resolve,50));
   }
   const startupLog=path.join(dataRoot,'agent-service/process/startup.log');
-  assert.match(diagnostic,/执行未完成.*尚不能确认/,JSON.stringify({output,startupLog:fs.existsSync(startupLog)?fs.readFileSync(startupLog,'utf8').slice(-6000):null}));
+  assert.match(diagnostic,/执行未完成.*核对原执行及控制资源.*不重复操作/,JSON.stringify({output,startupLog:fs.existsSync(startupLog)?fs.readFileSync(startupLog,'utf8').slice(-6000):null}));
 });
 
 
@@ -423,4 +541,52 @@ test('draft image HTTP is authenticated and never creates a conversation or bind
   response=await fetch(endpoint+'/attachments/'+original.id,{headers:readHeaders});assert.equal(response.status,200);assert.equal(response.headers.get('content-type'),'video/mp4');assert.deepEqual(Buffer.from(await response.arrayBuffer()),recording);
   response=await fetch(endpoint+'/attachments/'+original.id,{method:'DELETE',headers:{...readHeaders,origin:url,'content-type':'application/json'},body:JSON.stringify({expectedRevision:video.revision})});assert.equal(response.status,200);assert.deepEqual((await response.json()).images,[]);
   assert.equal(fs.existsSync(path.join(base,'agent-profile/agent-service/conversations.sqlite')),false);
+});
+
+test('child creation and discovery preserve provenance through authenticated HTTP without starting work',{timeout:30000},async t=>{
+  const {base,root}=taskRecordFixture(t,'agent-child-http'),previous=process.env.BUILDR_APP_DATA_DIR;
+  process.env.BUILDR_APP_DATA_DIR=path.join(base,'private-app');
+  t.after(()=>{if(previous===undefined)delete process.env.BUILDR_APP_DATA_DIR;else process.env.BUILDR_APP_DATA_DIR=previous;});
+  const runtime=createRuntime();let workspaceId:string;
+  const service=createAgentService({dataRoot:path.join(base,'profile'),executors:[],resolveWorkspace:id=>{assert.equal(id,workspaceId);return {rootPath:root};},assertTask:()=>{}});
+  const contributions=runtimeContributions(runtime,'http').filter((item:{id:string})=>item.id!=='agent-service.http');
+  contributions.push(createAgentServiceHttpContribution(()=>service));
+  const server=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions});
+  const {url,initialWorkspaceId,sessionToken}=await server.ready;workspaceId=initialWorkspaceId;
+  t.after(async()=>{await service.close();server.server.closeAllConnections();await new Promise<void>(resolve=>server.server.close(()=>resolve()));});
+  const headers={origin:url,'x-buildr-session':sessionToken,'content-type':'application/json'},endpoint=`${url}/api/v1/workspaces/${workspaceId}/agent-conversations`;
+  let response=await fetch(endpoint,{method:'POST',headers,body:'{}'});assert.equal(response.status,201);const parent=await response.json();
+  const input={expectedRevision:parent.revision,clientRequestId:'one-child-request'},children=`${endpoint}/${parent.id}/children`;
+  response=await fetch(children,{method:'POST',headers:{...headers,'x-buildr-session':'invalid'},body:JSON.stringify(input)});assert.equal(response.status,403);
+  response=await fetch(children,{method:'POST',headers,body:JSON.stringify({...input,cwd:'/unrelated'})});assert.equal(response.status,400);
+  response=await fetch(children,{method:'POST',headers,body:JSON.stringify(input)});assert.equal(response.status,201);const child=await response.json();
+  assert.equal(child.childOf.conversationId,parent.id);assert.equal(child.childOf.sourceRevision,parent.revision);assert.deepEqual(child.entries,[]);assert.equal(child.run,undefined);
+  response=await fetch(children,{method:'POST',headers,body:JSON.stringify(input)});assert.equal((await response.json()).id,child.id);
+  response=await fetch(children+'?limit=1',{headers});assert.equal(response.status,200);assert.equal((await response.json()).conversations[0].childOf.conversationId,parent.id);
+  response=await fetch(children+'?unknown=yes',{headers});assert.equal(response.status,400);
+  response=await fetch(`${endpoint}/${child.id}`,{headers});assert.equal((await response.json()).childOf.conversationId,parent.id);
+  response=await fetch(`${endpoint}/${parent.id}`,{headers});assert.equal((await response.json()).revision,parent.revision);
+});
+
+test('tool detail reads preserve full history, enforce content revisions and remain scoped/authenticated',async t=>{
+  const {base,root}=taskRecordFixture(t,'agent-entry-detail');
+  const runtime=createRuntime();const profile=path.join(base,'agent-profile');
+  const service=createAgentService({dataRoot:profile,executors:[],resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
+  const contributions=runtimeContributions(runtime,'http').filter((item:{id:string})=>item.id!=='agent-service.http');contributions.push(createAgentServiceHttpContribution(()=>service));
+  const server=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions});const {url,sessionToken}=await server.ready;
+  t.after(async()=>{await service.close();server.server.closeAllConnections();await new Promise<void>(resolve=>server.server.close(()=>resolve()));});
+  const workspaceId=(await server.ready).initialWorkspaceId;
+  const created=await service.conversations.create(workspaceId,{});
+  const filename=path.join(profile,'agent-service/conversations.sqlite'),db=new DatabaseSync(filename);t.after(()=>db.close());
+  const raw=JSON.parse((db.prepare('SELECT body FROM conversations WHERE id=?').get(created.id) as {body:string}).body);
+  const full={id:'tool/http-id',sequence:1,kind:'tool',role:'system',name:'command',text:'complete output\n'+'x'.repeat(50000),input:JSON.stringify({cmd:'read result'}),createdAt:created.updatedAt};raw.view.entries=[full];raw.view.revision='seed-large';
+  db.prepare('UPDATE conversations SET body=?,revision=? WHERE id=?').run(JSON.stringify(raw),raw.view.revision,created.id);
+  const headers={'x-buildr-session':sessionToken};const endpoint=`${url}/api/v1/workspaces/${workspaceId}/agent-conversations/${created.id}`;
+  let response=await fetch(endpoint,{headers});assert.equal(response.status,200);const page=await response.json();assert.ok(page.entries[0].detail);assert.ok(page.entries[0].text.length<full.text.length);
+  const detail=endpoint+'/entry-detail/'+encodeURIComponent(full.id)+'?revision='+page.entries[0].detail.revision;
+  response=await fetch(detail);assert.equal(response.status,403);
+  response=await fetch(detail,{headers});assert.equal(response.status,200);assert.deepEqual(await response.json(),full);
+  response=await fetch(detail.replace(page.entries[0].detail.revision,'0'.repeat(64)),{headers});assert.equal(response.status,409);
+  response=await fetch(detail.replace('/workspaces/'+workspaceId,'/workspaces/00000000-0000-0000-0000-000000000001'),{headers});assert.equal(response.status,400);
+  assert.deepEqual(JSON.parse((db.prepare('SELECT body FROM conversations WHERE id=?').get(created.id) as {body:string}).body).view.entries,[full]);
 });

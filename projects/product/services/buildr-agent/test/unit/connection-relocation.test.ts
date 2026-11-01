@@ -146,3 +146,15 @@ test('来源数据根之外的系统程序保持只读引用', (t) => {
   assert.equal(record.bindingData.executable, executable);
   assert.equal(fs.existsSync(path.join(targetRoot, 'agent-service', 'programs')), false);
 });
+
+test('升级后的来源别名不再依赖原桌面文件，重定位仍核对实际独立程序', t=>{
+  const fixture=seed(t),source=new DatabaseSync(fixture.sourceDatabase),alias=path.join(fixture.root,'removed.app','qodercli');
+  const row=source.prepare("SELECT body FROM connections WHERE id='qoder'").get() as {body:string},record=JSON.parse(row.body);
+  record.programSource=alias;record.bindingData.executable=alias;
+  source.prepare("UPDATE connections SET body=? WHERE id='qoder'").run(JSON.stringify(record));source.close();
+  assert.deepEqual(listConnectionExecutables({sourceRoot:fixture.sourceRoot}),[fixture.executable]);
+  assert.deepEqual(relocateConnections({sourceRoot:fixture.sourceRoot,targetRoot:fixture.targetRoot}),{relocated:['qoder'],failed:[]});
+  const target=new DatabaseSync(fixture.targetDatabase,{readOnly:true});
+  const updated=JSON.parse((target.prepare("SELECT body FROM connections WHERE id='qoder'").get() as {body:string}).body);target.close();
+  assert.equal(updated.programSource,alias);assert.equal(updated.bindingData.executable,alias);assert.ok(fs.existsSync(updated.view.executable));assert.equal(fs.existsSync(alias),false);
+});

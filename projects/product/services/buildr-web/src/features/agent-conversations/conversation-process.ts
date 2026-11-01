@@ -1,7 +1,7 @@
 import type { ConversationEntry } from './types';
 import type { CodeCatalog } from '../code/api/code-api';
 
-export type ProcessToolKind = 'command'|'read'|'write'|'edit'|'search'|'fetch'|'directory'|'tool';
+export type ProcessToolKind = 'command'|'read'|'write'|'edit'|'search'|'fetch'|'directory'|'image'|'tool';
 export type ProcessTool = {kind:ProcessToolKind;action:string;description:string;paths:string[];command?:string;input?:string;output:string};
 const shell=/^(?:\/\S*\/)?(?:zsh|bash|sh|pwsh|powershell|cmd)(?:\.exe)?(?:\s|$)/i;
 function argumentsOf(entry:ConversationEntry):Record<string,unknown> {
@@ -16,8 +16,8 @@ export function processTool(entry:ConversationEntry):ProcessTool {
   const args=argumentsOf(entry),headline=entry.text.split('\n',1)[0].trim();
   const kind:ProcessToolKind=['command','commandexecution','bash','shell','exec_command'].includes(name)||!name&&shell.test(headline)?'command':
     ['read','read_file','readfile'].includes(name)?'read':['write','write_file','writefile'].includes(name)?'write':
-    ['edit','edit_file','file-change'].includes(name)?'edit':['grep','glob','web_search','search'].includes(name)?'search':
-    ['web_fetch','web_fetch_url'].includes(name)?'fetch':name==='ls'?'directory':'tool';
+    ['edit','edit_file','editfile','file-change','apply_patch','multiedit'].includes(name)?'edit':['grep','glob','web_search','search'].includes(name)?'search':
+    ['web_fetch','web_fetch_url'].includes(name)?'fetch':name==='ls'?'directory':['view-image','view_image','imageview'].includes(name)?'image':'tool';
   const path=['read','write','edit'].includes(kind)?stringField(args,'file_path','filePath','path'):undefined;
   const paths=path?[path]:name==='file-change'?entry.text.split('\n').slice(1).map(value=>value.trim()).filter(Boolean):[];
   const command=kind==='command'?(stringField(args,'command','cmd')||entry.input||headline):undefined;
@@ -25,9 +25,10 @@ export function processTool(entry:ConversationEntry):ProcessTool {
   let output=entry.text;
   if(command&&output.startsWith(command))output=output.slice(command.length).replace(/^\n/,'');
   else if(entry.input&&output===`${entry.name}\n${entry.input}`)output='';
-  const action={command:'运行命令',read:'读取文件',write:'写入文件',edit:'编辑文件',search:'搜索',fetch:'获取网页',directory:'查看目录',tool:entry.name||'调用工具'}[kind];
+  const action={command:'运行命令',read:'读取文件',write:'写入文件',edit:'编辑文件',search:'搜索',fetch:'获取网页',directory:'查看目录',image:'查看图片',tool:entry.name||'调用工具'}[kind];
+  const imagePath=kind==='image'?stringField(args,'file_path','filePath','path'):undefined;
   const description=paths.length?paths[0].split(/[\\/]/).at(-1)+(paths.length>1?` 等 ${paths.length} 个文件`:''):
-    commandPreview||stringField(args,'pattern','query','url')||headline;
+    imagePath?imagePath.split(/[\\/]/).at(-1)!:commandPreview||stringField(args,'pattern','query','url')||(kind==='image'&&headline===action?'':headline);
   return {kind,action,description,paths,command,input:entry.input,output};
 }
 function normalizedPath(value:string):string|null {

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { renderMarkdown } from '../../../markdown';
+import { renderMarkdownDiagrams } from '../../../lib/markdownDiagrams';
 import { publicationAssetUrl, readingContent } from '../publication-model';
 
 export type ArticleHeading = { text: string; index: number; level: number };
@@ -35,6 +36,7 @@ export function ArticleBody({ content, workspaceId, projectCode, publicationId, 
       }
     }
     ref.current.replaceChildren(rendered);
+    return renderMarkdownDiagrams(rendered);
   }, [content, workspaceId, projectCode, publicationId, sourceTaskId]);
   return <div ref={ref} className="publication-body" data-view="rendered" />;
 }

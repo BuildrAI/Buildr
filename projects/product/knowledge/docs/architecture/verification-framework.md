@@ -58,6 +58,16 @@ Buildr 产品使用四类检查：静态检查（Static Check）、单元测试�
 
 实际工作进程数量和资源必须有界，完整集合的耗时与资源成本需观察并优化，不设统一三十秒门槛，不借无限并发掩盖消耗。发现慢检查先判断范围与实现效率，不仅因慢而改名，也不为达到预算删掉必要断言。
 
+智能体服务（Agent Service）的完整集成入口是从 `services/buildr-agent` 运行 `../buildr/tools/development/run-development-npm run test:integration`；它按[服务检查登记](../../../services/buildr-agent/tools/testing/verification-checks.ts)发现全部组，项目完整入口也消费同一登记。`agent-integration` 覆盖本机存储和对话，`agent-integration-native` 覆盖厂商协议；重型独立进程按启动与归属、跨版本交接、观察与恢复分别归入 `agent-integration-startup`、`agent-integration-handoff`、`agent-integration-recovery`。使用 `--check` 选择其中一组不能宣称完整智能体覆盖。
+
+重型组每组申请一个工作位，统一资源协调器（Resource Coordinator）以 `agent-process-tests` 限制同机最多两组；组内文件依照外层 `BUILDR_VERIFICATION_WORKER_BUDGET` 串行执行。直接诊断可运行 `node tools/testing/run-integration.ts --group all` 或指定同一检查标识，也服从该预算，最多并行两个文件。准备包由一次执行共享准备；每个用例的可写包、数据库和进程身份独立。
+
+支持的平台使用写时复制（Copy-on-Write）克隆包。完整运行由[只读输入提供者](../../../services/buildr-agent/test/support/immutable-process-inputs.ts)保有一份只读 Node.js 副本，测试运行单元通过硬链接（Hard Link）共用相同程序字节，仍保留独立路径和编译包。可写内容不建立硬链接（Hard Link）。不同 Node.js 字节、跨卷及不支持的平台退回独立副本；Windows 暂不启用硬链接（Hard Link）共用。输入持有者只在运行单元链接全部释放后清理，异常时保留诊断。
+
+生产运行单元继续真实物化并在每次校验时读取全部字节，摘要使用同一个有界缓冲区（Buffer）分块计算，不缓存旧摘要。
+
+重型用例的清理先撤销本用例的原生连接，再关闭宿主并要求后台停止，核对所观察进程已经退出后删除目录；断言失败仍执行同样的清理，退出未确认作为失败报告。默认输出包复制、运行准备、启动、停止、进程退出及目录清理的开始与完成记录；`BUILDR_TEST_PHASE_TIMING=1` 另记录逐次交互耗时；服务集成执行器（Executor）保留逐文件开始、完成和失败类型。外层总限时取消与产品断言失败分别判断。
+
 运行中不改被测源码，一轮收集无依赖的失败，修复后补失败及受影响项。复用须核对内容、配方、依赖、工具和必要环境仍适用，保留实际来源；推送前完整集合的证明不可由仅执行相关部分替代。缺少测试、环境不可用、未执行、失败及待授权分别报告。
 
 ## 发布与真实环境

@@ -13,8 +13,8 @@ export function ConversationActivityEntry(props:Props) {
   const [localOpen,setLocalOpen]=useState(false),dismissed=useRef(false),pointerFocus=useRef(false),entry=useRef<HTMLButtonElement>(null);
   const open=!props.active&&(props.open??localOpen);
   const setOpen=(value:boolean)=>{const next=value&&!props.active;setLocalOpen(next);props.onOpenChange?.(next);};
-  const priority=(item:ActivityItem)=>item.state==='waiting'||item.state==='unseen'?0:item.state==='unknown'?1:2;
-  const items=[...props.items].sort((a,b)=>priority(a)-priority(b)||(a.userInputAt&&b.userInputAt?b.userInputAt.localeCompare(a.userInputAt):0));
+  const priority=(item:ActivityItem)=>item.state==='waiting'||item.state==='unseen'?0:1;
+  const items=[...props.items].sort((a,b)=>priority(a)-priority(b)||(a.userInputAt&&b.userInputAt?b.userInputAt.localeCompare(a.userInputAt)||b.id.localeCompare(a.id):0));
   const renderRows=(items:ActivityItem[])=>{
     const groups=groupConversationWorkspaces(items);
     return [...groups].map(([key,rows])=>{const workspaceId=rows[0].workspaceId;return <section className="ac-activity-workspace" key={key} data-activity-workspace={workspaceId} aria-label={props.workspaces.find(row=>row.id===workspaceId)?.name||workspaceId}>

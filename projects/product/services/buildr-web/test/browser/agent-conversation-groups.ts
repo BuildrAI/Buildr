@@ -1,5 +1,5 @@
 /** 逻辑分组保持可单独选择；完整运行可在隔离页面中复用较重的运行现场。 */
-export const AGENT_CONVERSATION_GROUPS = Object.freeze(["setup","history","handoff","tasks","models","recovery","selection","video"] as const);
+export const AGENT_CONVERSATION_GROUPS = Object.freeze(["setup","history","handoff","tasks","models","recovery","selection","video","children"] as const);
 export type AgentConversationGroup = typeof AGENT_CONVERSATION_GROUPS[number];
 export const AGENT_CONVERSATION_WORKERS = 2;
 

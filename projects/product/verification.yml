@@ -107,6 +107,12 @@ testing:
     selection:
       - 完整入口以实际登记和发现集合运行本类全部检查，不按旧目录名推定分类，不在地图复制成员。
       - 所有公开入口支持 --plan 查看选择，使用 --check <id> 显式指定检查；计划和选择成功不等于实际验证通过。
+      - 智能体服务（Agent Service）的完整入口由自身检查登记发现全部组；可用 --check 精确选择
+        agent-integration、agent-integration-native、agent-integration-startup、agent-integration-handoff
+        或 agent-integration-recovery。
+      - 重型独立进程组使用统一资源预算，每组申请一个工作位，由 agent-process-tests 限制同机最多两组；直接诊断入口也受
+        BUILDR_VERIFICATION_WORKER_BUDGET
+        约束，最多两个文件并行。数据库、可写包、运行目录与进程身份各自隔离；同次完整运行仅共用只读 Node.js 程序输入，仍逐次执行完整摘要校验。
       - 任务开发按用户请求、目标、真实改动及调用边界选齐相关四类，使用 test:related 或明确指定的现有检查，不要求正式任务或比较基线。
       - 发布或明确要求时按所需范围执行；任务已涉及的必要真实边界在开发完成前验证，不因发布阶段命名而推迟。
       - 仅在内容、配方、依赖、工具与必要环境仍适用时复用有效结果，保留实际来源；缺失、失败和未覆盖如实报告。

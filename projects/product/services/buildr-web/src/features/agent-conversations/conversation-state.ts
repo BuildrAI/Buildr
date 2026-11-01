@@ -2,11 +2,22 @@ import type { ConversationView, ConversationEntry, ConversationEvent, Conversati
 
 export function conversationRecoveryAction(conversation: ConversationView | null): {kind:'recover'|'observe';label:string} | null {
   const run = conversation?.run; if (!conversation || !run) return null;
+  if (run.status === 'tools-active' && run.canContinue) return null;
   if (run.status === 'unknown' || run.status === 'tools-active' || ['failed','stopped','completed'].includes(run.status) && run.tools.some(tool => tool.status !== 'completed')) return {kind:'observe',label:'核对状态'};
-  if (executionLocked(run) || conversation.requests.length || run.tools.some(tool => tool.status !== 'completed')) return null;
-  const replied = conversation.entries.some(entry => entry.role === 'assistant' && entry.kind === 'message' && entry.text.trim() && (entry.runId === run.id || !entry.runId && entry.createdAt >= run.startedAt));
+  if (executionLocked(run) || currentConversationRequests(conversation).length || run.tools.some(tool => tool.status !== 'completed')) return null;
+  const replied = conversation.entries.some(entry => !entry.parentToolId && entry.role === 'assistant' && entry.kind === 'message' && entry.text.trim() && (entry.runId === run.id || !entry.runId && entry.createdAt >= run.startedAt));
   if (!['failed','stopped','completed'].includes(run.status) || run.status === 'completed' && replied) return null;
   return {kind:'recover',label:run.accepted?'继续':'重试'};
+}
+
+/** A successful observation may confirm that the result is still unknown. */
+export function conversationObservationFeedback(run?: ConversationRun): string {
+  if (!run) return '读取完成：当前没有待处理的执行。';
+  if (run.resourcesReleased && (run.status === 'unknown' || run.status === 'tools-active' || run.tools.some(tool => tool.status !== 'completed'))) return '读取完成：后台连接已释放，但未读到本轮结束记录。可发送新要求继续，不会重做原操作。';
+  if (run.status === 'unknown') return '读取完成：仍无法读取原执行状态，记录已保留。可发送新要求，不会重做原操作。';
+  if (run.status === 'tools-active' || run.tools.some(tool => tool.status !== 'completed')) return '读取完成：尚未取得部分命令的结束记录，请查看命令状态。';
+  const labels: Record<ConversationRun['status'], string> = {starting:'正在准备执行',running:'仍在执行','waiting-approval':'仍在等待授权','waiting-question':'仍在等待你的回答',stopping:'正在停止',stopped:'已确认停止',completed:'本轮已结束',failed:'本轮执行失败',unknown:'执行状态待确认','tools-active':'仍有命令尚未确认结束'};
+  return '读取完成：' + labels[run.status] + '。';
 }
 
 /** A changed execution choice may continue existing work after an explicit send. */
@@ -15,13 +26,21 @@ export function conversationContinuationText(conversation: ConversationView | nu
   return '继续当前工作。请核对已有对话、尚未交付的用户要求和当前成果，接着完成未完成的目标；不要重复执行已完成的操作，不扩大原有授权。';
 }
 
+/** Only an unchanged, live execution can receive a supplement. Every other
+ * ordinary input starts a new turn; old work is not an input admission gate. */
+export function canSupplementConversation(conversation:ConversationView|null,choice:{connectionId?:string;model?:string;modelAccountId?:string;serviceTier?:string;permissionMode?:string;reasoningEffort?:string},supported:boolean):boolean {
+  const run=conversation?.run,participant=conversation?.participants.find(value=>value.id===run?.participantId);
+  return Boolean(supported&&run?.accepted&&run.status==='running'&&participant?.connectionId===choice.connectionId&&run.model===choice.model&&run.modelAccountId===choice.modelAccountId&&run.serviceTier===choice.serviceTier&&(run.permissionMode??'default')===(choice.permissionMode??'default')&&run.reasoningEffort===choice.reasoningEffort);
+}
+
 export function executionLocked(run?: ConversationRun): boolean {
+  if (run?.status === 'tools-active' && run.canContinue) return false;
   return Boolean(run && ['starting', 'running', 'waiting-approval', 'waiting-question', 'stopping', 'tools-active', 'unknown'].includes(run.status));
 }
 /** Execution completion, not transport health or final-reply wording, ends observation. */
 export function needsConversationObservation(conversation: ConversationView | null): boolean {
   if (!conversation) return false;
-  if (conversation.pendingSend || conversation.requests.length) return true;
+  if (conversation.pendingSend || conversation.requests.length || conversation.retainedRuns?.some(run=>executionLocked(run)||run.tools.some(tool=>tool.status!=='completed'))) return true;
   const run = conversation.run;
   return Boolean(run && (executionLocked(run) || run.tools.some(tool => tool.status !== 'completed') ||
     run.executionState === 'active' || run.executionState === 'unknown'));
@@ -41,6 +60,7 @@ export function canStopConversationTool(tool:ConversationRun['tools'][number]):b
   return tool.canStop===true&&tool.status!=='completed';
 }
 export function needsAttention(run?: ConversationRun): boolean {
+  if (run?.status === 'tools-active' && run.canContinue) return false;
   return Boolean(run && ['waiting-approval', 'waiting-question', 'tools-active', 'unknown'].includes(run.status));
 }
 export function canGenerateConversationTitle(conversation:ConversationView|null):boolean {
@@ -166,7 +186,7 @@ export function groupConversationStream(entries:readonly ConversationEntry[],cur
   for(const entry of entries){
     if(!entry.runId&&entry.kind==='message'&&entry.role==='user')legacy++;
     const key=entry.runId||'legacy:'+legacy;keys.set(entry,key);
-    if(entry.kind==='message'&&entry.role==='assistant'&&!(entry.runId===currentRun?.id&&executionLocked(currentRun)))finals.set(key,entry);
+    if(entry.kind==='message'&&entry.role==='assistant'&&!entry.parentToolId&&!(entry.runId===currentRun?.id&&executionLocked(currentRun)))finals.set(key,entry);
   }
   for(let index=0;index<entries.length;){
     const first=entries[index];
@@ -199,7 +219,20 @@ export function conversationStreamTurns(items:readonly ConversationStreamItem[])
         // to the latest input merely because it was projected later.
         owner={key:'history:'+entry.runId,items:[]};turns.unshift(owner);
       }
-      owner??=turns.at(-1)!;owner.items.push(item);
+      owner??=turns.at(-1)!;
+      let previous:ConversationStreamItem|undefined;
+      for(let index=owner.items.length-1;index>=0;index--){
+        const candidate=owner.items[index];
+        const source=candidate.type==='entry'?candidate.entry:candidate.entries[0];
+        if(!entry.runId||!source.runId||source.runId===entry.runId){previous=candidate;break;}
+      }
+      // Arrival order can interleave other runs. Once ownership is known,
+      // reconnect only adjacent process pieces within this visible segment.
+      if(item.type==='process-block'&&previous?.type==='process-block'&&previous.entries[0].runId===entry.runId){
+        previous.entries.push(...item.entries);
+        previous.active ||= item.active;
+        previous.finishedAt=item.finishedAt??previous.finishedAt;
+      }else owner.items.push(item.type==='process-block'?{...item,entries:[...item.entries]}:item);
       if(entry.runId)owners.set(entry.runId,owner);
     }
   }
@@ -249,13 +282,13 @@ export function processBlockKey(entries:readonly ConversationEntry[]):string {
 /** Prepending steps can change a block's first entry; keep explicit open/closed choices on overlapping blocks. */
 export function carryExpandedProcessBlocks(current:readonly ConversationEntry[],added:readonly ConversationEntry[],expanded:Record<string,boolean>,run?:ConversationRun):Record<string,boolean>{
  const marks=new Map<string,boolean>();
- for(const item of groupConversationStream(current,run))if(item.type==='process-block'){
+ for(const item of conversationStreamTurns(groupConversationStream(current,run)).flatMap(turn=>turn.items))if(item.type==='process-block'){
    const value=expanded[processBlockKey(item.entries)];
    if(value!==undefined)for(const entry of item.entries)marks.set(entry.id,value);
  }
  if(!marks.size)return expanded;
  const entries=[...new Map([...added,...current].map(e=>[e.id,e])).values()].sort((a,b)=>a.sequence-b.sequence),next={...expanded};
- for(const item of groupConversationStream(entries,run))if(item.type==='process-block'){
+ for(const item of conversationStreamTurns(groupConversationStream(entries,run)).flatMap(turn=>turn.items))if(item.type==='process-block'){
    const value=item.entries.map(e=>marks.get(e.id)).find((v):v is boolean=>v!==undefined);
    if(value!==undefined)next[processBlockKey(item.entries)]=value;
  }

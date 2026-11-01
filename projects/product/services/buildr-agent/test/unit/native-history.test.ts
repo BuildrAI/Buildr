@@ -3,6 +3,19 @@ import assert from 'node:assert/strict';
 import { dshHistoryItems, dshItem } from '../../src/executors/dsh/protocol.ts';
 import { qoderHistoryItems, qoderResultOutcome, qoderInterruptionIds, qoderInterruptedObservation } from '../../src/executors/qoder/protocol.ts';
 
+test('Qoder native task notifications preserve the original execution in history without inventing user input', () => {
+  const input = (uuid: string, text: string) => ({ type: 'user', uuid, session_id: 's', message: { content: [{ type: 'text', text }] } });
+  const answer = { type: 'assistant', uuid: 'answer', session_id: 's', message: { id: 'answer', content: [{ type: 'text', text: 'final' }] } };
+  const records = [{ type: 'user', uuid: 'notification', sessionId: 's', isSidechain: false, origin: { kind: 'task-notification' } }];
+  const items = qoderHistoryItems([input('original', 'work'), input('notification', 'native report'), answer], 's', new Set(), records);
+  assert.deepEqual(items.filter(item => item.role === 'user').map(item => item.id), ['original']);
+  assert.equal(items.at(-1)?.executionId, 'original');
+  // A human copying notification text, or a receipt from another session, cannot change provenance.
+  for (const raw of [[], [{ ...records[0], sessionId: 'other' }]]) {
+    assert.equal(qoderHistoryItems([input('original', 'work'), input('notification', 'native report'), answer], 's', new Set(), raw).at(-1)?.executionId, 'notification');
+  }
+});
+
 test('DSH context envelopes are not user inputs and steering keeps the original execution owner',()=>{
   const user=(id:string,rpcId:string)=>({type:'user/message',data:{id,source:{kind:'user',rpcId},content:[{type:'text',text:'继续'}]}});
   const contexts=['time-context','runtime-context','agent-instructions','tool-jobs'].map((kind,index)=>({type:'user/message',seq:index+10,data:{id:'context-'+index,source:{kind,rpcId:'internal-request'},content:[{type:'text',text:'private runtime context'}]}}));
@@ -58,6 +71,35 @@ test('Qoder durable snapshots collapse by native message ID, preserving exact us
   assert.throws(() => qoderHistoryItems(messages, 'different-session'), /identity_mismatch/);
 });
 
+test('Qoder history preserves child roles and parent tools without treating child inputs as a new user execution', () => {
+  const messages = [
+    { type: 'user', uuid: 'main-input', session_id: 's', message: { content: [{ type: 'text', text: 'work' }] } },
+    { type: 'assistant', uuid: 'child-output', session_id: 's', parent_tool_use_id: 'delegate', message: { id: 'child-output', content: [{ type: 'text', text: 'child report' }, { type: 'tool_use', id: 'child-tool', name: 'Read', input: { file_path: '/file' } }] } },
+    { type: 'user', uuid: 'child-input', session_id: 's', parent_tool_use_id: 'delegate', message: { content: [{ type: 'text', text: 'child instruction' }] } },
+    { type: 'user', uuid: 'child-tool-output', session_id: 's', parent_tool_use_id: 'delegate', message: { content: [{ type: 'tool_result', tool_use_id: 'child-tool', content: 'read result' }] } },
+    { type: 'assistant', uuid: 'main-output', session_id: 's', message: { id: 'main-output', content: [{ type: 'text', text: 'main reply' }] } },
+  ];
+  const items = qoderHistoryItems(messages, 's');
+  assert.equal(items.filter(item => item.role === 'user').length, 1);
+  assert.equal(items.find(item => item.text === 'child report')?.role, 'assistant');
+  assert.equal(items.find(item => item.text === 'child report')?.parentToolId, 'delegate');
+  assert.equal(items.find(item => item.id === 'child-tool')?.parentToolId, 'delegate');
+  assert.ok(items.every(item => item.executionId === 'main-input'));
+  assert.equal(items.at(-1)?.parentToolId, undefined);
+});
+
+test('Qoder task completion preserves the launch receipt and exact native report facts in the parent tool history', () => {
+  const items = qoderHistoryItems([
+    { type: 'user', uuid: 'input', session_id: 's', message: { content: [{ type: 'text', text: 'work' }] } },
+    { type: 'assistant', uuid: 'agent', session_id: 's', message: { content: [{ type: 'tool_use', id: 'delegate', name: 'Agent', input: {} }] } },
+    { type: 'user', uuid: 'launch', session_id: 's', message: { content: [{ type: 'tool_result', tool_use_id: 'delegate', content: 'started native child' }] } },
+    { type: 'system', subtype: 'task_notification', session_id: 's', tool_use_id: 'delegate', status: 'completed', summary: 'actual child report', output_file: '/exact/native/output.md' },
+  ], 's');
+  const tool = items.find(item => item.id === 'delegate'); assert.equal(tool?.status, 'completed');
+  assert.match(tool!.text, /started native child/); assert.match(tool!.text, /actual child report/); assert.match(tool!.text, /\/exact\/native\/output\.md/);
+  assert.equal(items.filter(item => item.role === 'assistant').length, 0);
+});
+
 test('DSH cold stop observation cannot borrow another completed turn as success', async () => {
   const { dshExecutionObservation } = await import('../../src/executors/dsh/protocol.ts');
   const events = [
@@ -108,6 +150,17 @@ test('Qoder crash recovery holds incomplete, failed and background side effects 
   assert.equal(qoderInterruptedObservation(background, background, 'qoder-session', 'exact-request').status, 'unknown');
   const metadata = interruptedQoder(); (metadata[2] as any).toolUseResult = { backgroundTaskId: 'native-job' };
   assert.equal(qoderInterruptedObservation(metadata, metadata, 'qoder-session', 'exact-request').status, 'unknown');
+});
+
+test('Qoder lost terminal result retains only the exact durably identified input, without claiming completion', () => {
+  const messages = interruptedQoder().slice(0, -1);
+  const observed = qoderInterruptedObservation(messages, messages, 'qoder-session', 'exact-request');
+  assert.equal(observed.status, 'unknown');
+  assert.equal(observed.executionRef?.id, 'exact-request');
+  for (const records of [[], messages.map(message => ({ ...message, sessionId: 'other' })), messages.map(message => ({ ...message, isSidechain: true }))]) {
+    assert.equal(qoderInterruptedObservation(messages, records, 'qoder-session', 'exact-request').executionRef, undefined);
+  }
+  assert.equal(qoderInterruptedObservation(messages, messages, 'qoder-session', 'other').executionRef, undefined);
 });
 
 test('Qoder distinguishes an explicit failed tool receipt from an interrupted tool with unknown effects', () => {

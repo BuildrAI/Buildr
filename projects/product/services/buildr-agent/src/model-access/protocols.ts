@@ -202,7 +202,58 @@ export function translateRequest(body: ProtocolJson, from: ModelProtocol, to: Mo
   return serializeRequest(parseRequest(body, from, opaque), to, opaque);
 }
 
-type Event = { type: 'text'; delta: string } | { type: 'reasoning'; delta?: string; signature?: string; opaque?: ProtocolJson } | { type: 'tool'; key: string; id?: string; name?: string; delta?: string } | { type: 'usage'; input: number; output: number; cache?: number } | { type: 'finish'; reason: string };
+type ToolEvent = { type: 'tool'; key: string; id?: string; name?: string; nameDelta?: string; delta?: string; arguments?: string; complete?: boolean };
+type Event = { type: 'text'; delta: string } | { type: 'reasoning'; delta?: string; signature?: string; opaque?: ProtocolJson } | ToolEvent | { type: 'usage'; input: number; output: number; cache?: number } | { type: 'finish'; reason: string };
+const MAX_MODEL_STREAM_BUFFER_BYTES = 8 * 1024 * 1024;
+function inconsistentTool(): never { throw new ModelAccessError('model_tool_stream_inconsistent', '模型工具调用的身份或完整参数与已接收内容不一致。', 502); }
+
+/** A tool is executable data. Validate its complete identity and snapshots before
+ * publishing it, retaining the source order of text and parallel calls. */
+async function* decodeEvents(response: Response, protocol: ModelProtocol): AsyncGenerator<Event> {
+  const tools = new Map<string, { item: ToolEvent; completeArguments?: string; completeName?: string }>();
+  const identities = new Map<string, string>();
+  let held: Event[] | undefined, heldBytes = 0;
+  const reserve = (bytes: number) => { heldBytes += bytes; if (heldBytes > MAX_MODEL_STREAM_BUFFER_BYTES) throw new ModelAccessError('model_stream_too_large', '模型工具响应超过缓冲限制。', 502); };
+  for await (const event of decodeRawEvents(response, protocol)) {
+    if (event.type !== 'tool') { if (held) { reserve(Buffer.byteLength(JSON.stringify(event))); held.push(event); } else yield event; continue; }
+    held ??= [];
+    let tool = tools.get(event.key);
+    if (!tool) { reserve(Buffer.byteLength(event.key) + 128); tool = { item: { type: 'tool', key: event.key, id: '', name: '', delta: '' } }; tools.set(event.key, tool); held.push(tool.item); }
+    const item = tool.item;
+    if (event.id) {
+      if (item.id && item.id !== event.id || identities.has(event.id) && identities.get(event.id) !== event.key) inconsistentTool();
+      reserve(Buffer.byteLength(event.id) - Buffer.byteLength(item.id!));
+      item.id = event.id; identities.set(event.id, event.key);
+    }
+    if (event.name) {
+      if (tool.completeName && tool.completeName !== event.name || !event.name.startsWith(item.name!)) inconsistentTool();
+      reserve(Buffer.byteLength(event.name) - Buffer.byteLength(item.name!));
+      item.name = event.name;
+    }
+    if (event.nameDelta) {
+      if (tool.completeName) inconsistentTool();
+      reserve(Buffer.byteLength(event.nameDelta));
+      item.name += event.nameDelta;
+    }
+    if (event.delta) {
+      if (tool.completeArguments !== undefined) inconsistentTool();
+      reserve(Buffer.byteLength(event.delta));
+      item.delta += event.delta;
+    }
+    if (event.arguments !== undefined) {
+      if (tool.completeArguments !== undefined && tool.completeArguments !== event.arguments || !event.arguments.startsWith(item.delta!)) inconsistentTool();
+      reserve(Buffer.byteLength(event.arguments) - Buffer.byteLength(item.delta!));
+      item.delta = event.arguments;
+      if (event.complete) tool.completeArguments = event.arguments;
+    }
+    if (event.complete && event.name) tool.completeName = event.name;
+  }
+  for (const { item } of tools.values()) {
+    if (!item.id || !item.name) throw new ModelAccessError('model_tool_identity_incomplete', '模型工具调用缺少完整身份或名称。', 502);
+    parseArguments(item.delta!);
+  }
+  if (held) yield* held;
+}
 async function* sse(body: ReadableStream<Uint8Array>): AsyncGenerator<ProtocolJson> {
   const reader = body.getReader(), decoder = new TextDecoder(); let buffer = '';
   try {
@@ -211,13 +262,14 @@ async function* sse(body: ReadableStream<Uint8Array>): AsyncGenerator<ProtocolJs
       let at: number;
       while ((at = buffer.indexOf('\n\n')) >= 0) { const frame = buffer.slice(0, at); buffer = buffer.slice(at + 2); const data = frame.split('\n').filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n'); if (!data || data === '[DONE]') continue; let value: unknown; try { value = JSON.parse(data); } catch { throw new ModelAccessError('model_stream_invalid', '模型流返回了无效数据。', 502); } yield record(value); }
       if (chunk.done) break;
-      if (buffer.length > 8 * 1024 * 1024) throw new ModelAccessError('model_stream_too_large', '模型单个流事件超过限制。', 502);
+      if (Buffer.byteLength(buffer) > MAX_MODEL_STREAM_BUFFER_BYTES) throw new ModelAccessError('model_stream_too_large', '模型单个流事件超过限制。', 502);
     }
     if (buffer.trim() && !buffer.trim().startsWith(':')) throw new ModelAccessError('model_stream_incomplete', '模型流在事件结束前断开。', 502);
   } finally { reader.releaseLock(); }
 }
-async function* decodeEvents(response: Response, protocol: ModelProtocol): AsyncGenerator<Event> {
+async function* decodeRawEvents(response: Response, protocol: ModelProtocol): AsyncGenerator<Event> {
   const streaming = response.headers.get('content-type')?.includes('text/event-stream');
+  const anthropicTools = new Map<string, { explicitEmptyInput: boolean; hasJsonDelta: boolean }>();
   let finished = false;
   if (!streaming) {
     const body = record(await response.json());
@@ -246,21 +298,47 @@ async function* decodeEvents(response: Response, protocol: ModelProtocol): Async
       const choice = record(list(body.choices)[0]), delta = record(choice.delta);
       if (delta.content) yield { type: 'text', delta: string(delta.content) };
       if (delta.reasoning_content || delta.reasoning_signature) yield { type: 'reasoning', delta: string(delta.reasoning_content), signature: string(delta.reasoning_signature) };
-      for (const raw of list(delta.tool_calls)) { const call = record(raw), fn = record(call.function); yield { type: 'tool', key: String(call.index ?? 0), id: string(call.id) || undefined, name: string(fn.name) || undefined, delta: string(fn.arguments) }; }
+      for (const raw of list(delta.tool_calls)) { const call = record(raw), fn = record(call.function); yield { type: 'tool', key: String(call.index ?? 0), id: string(call.id) || undefined, nameDelta: string(fn.name) || undefined, delta: string(fn.arguments) }; }
       if (body.usage) { const u = record(body.usage); yield { type: 'usage', input: number(u.prompt_tokens), output: number(u.completion_tokens), cache: number(record(u.prompt_tokens_details).cached_tokens) }; }
       if (choice.finish_reason) { finished = true; yield { type: 'finish', reason: string(choice.finish_reason) }; }
     } else if (protocol === 'anthropic-messages') {
       if (body.type === 'message_start') { const u = record(record(body.message).usage); yield { type: 'usage', input: number(u.input_tokens), output: number(u.output_tokens), cache: number(u.cache_read_input_tokens) }; }
-      if (body.type === 'content_block_start') { const p = record(body.content_block); if (p.type === 'tool_use') yield { type: 'tool', key: String(body.index), id: string(p.id), name: string(p.name), ...(Object.keys(record(p.input)).length ? { delta: JSON.stringify(p.input) } : {}) }; if (p.type === 'thinking' || p.type === 'redacted_thinking') yield { type: 'reasoning', opaque: p }; if (p.type === 'text' && p.text) yield { type: 'text', delta: string(p.text) }; }
-      if (body.type === 'content_block_delta') { const d = record(body.delta); if (d.type === 'text_delta') yield { type: 'text', delta: string(d.text) }; if (d.type === 'input_json_delta') yield { type: 'tool', key: String(body.index), delta: string(d.partial_json) }; if (d.type === 'thinking_delta') yield { type: 'reasoning', delta: string(d.thinking) }; if (d.type === 'signature_delta') yield { type: 'reasoning', signature: string(d.signature) }; }
+      if (body.type === 'content_block_start') {
+        const p = record(body.content_block);
+        if (p.type === 'tool_use') {
+          anthropicTools.set(String(body.index), { explicitEmptyInput: p.input !== null && typeof p.input === 'object' && !Array.isArray(p.input) && Object.keys(record(p.input)).length === 0, hasJsonDelta: false });
+          yield { type: 'tool', key: String(body.index), id: string(p.id), name: string(p.name), ...(Object.keys(record(p.input)).length ? { delta: JSON.stringify(p.input) } : {}) };
+        }
+        if (p.type === 'thinking' || p.type === 'redacted_thinking') yield { type: 'reasoning', opaque: p };
+        if (p.type === 'text' && p.text) yield { type: 'text', delta: string(p.text) };
+      }
+      if (body.type === 'content_block_delta') {
+        const d = record(body.delta);
+        if (d.type === 'text_delta') yield { type: 'text', delta: string(d.text) };
+        if (d.type === 'input_json_delta') {
+          const tool = anthropicTools.get(String(body.index)); if (tool && string(d.partial_json)) tool.hasJsonDelta = true;
+          yield { type: 'tool', key: String(body.index), delta: string(d.partial_json) };
+        }
+        if (d.type === 'thinking_delta') yield { type: 'reasoning', delta: string(d.thinking) };
+        if (d.type === 'signature_delta') yield { type: 'reasoning', signature: string(d.signature) };
+      }
+      if (body.type === 'content_block_stop') {
+        const key = String(body.index), tool = anthropicTools.get(key);
+        // An explicit empty input is also the streaming placeholder. Only the
+        // closed block with no JSON deltas proves an actual no-argument call.
+        if (tool?.explicitEmptyInput && !tool.hasJsonDelta) yield { type: 'tool', key, arguments: '{}', complete: true };
+        anthropicTools.delete(key);
+      }
       if (body.type === 'message_delta') { const u = record(body.usage); yield { type: 'usage', input: number(u.input_tokens), output: number(u.output_tokens) }; if (record(body.delta).stop_reason) yield { type: 'finish', reason: string(record(body.delta).stop_reason) }; }
       if (body.type === 'message_stop') finished = true;
     } else {
       if (body.type === 'response.output_text.delta') yield { type: 'text', delta: string(body.delta) };
-      if (body.type === 'response.output_item.added') { const item = record(body.item); if (item.type === 'function_call') yield { type: 'tool', key: string(item.id) || String(body.output_index), id: string(item.call_id), name: string(item.name) }; }
+      if (body.type === 'response.output_item.added') { const item = record(body.item); if (item.type === 'function_call') yield { type: 'tool', key: string(item.id) || String(body.output_index), id: string(item.call_id), name: string(item.name), ...(typeof item.arguments === 'string' && item.arguments ? { arguments: item.arguments } : {}) }; }
       if (body.type === 'response.function_call_arguments.delta') yield { type: 'tool', key: string(body.item_id) || String(body.output_index), delta: string(body.delta) };
+      if (body.type === 'response.function_call_arguments.done') yield { type: 'tool', key: string(body.item_id) || String(body.output_index), ...(typeof body.arguments === 'string' ? { arguments: body.arguments } : {}), complete: true };
+      if (body.type === 'response.output_item.done' && record(body.item).type === 'function_call') { const item = record(body.item); yield { type: 'tool', key: string(item.id) || String(body.output_index), id: string(item.call_id), name: string(item.name), ...(typeof item.arguments === 'string' ? { arguments: item.arguments } : {}), complete: true }; }
       if (body.type === 'response.output_item.done' && record(body.item).type === 'reasoning') yield { type: 'reasoning', opaque: { type: 'responses-reasoning', item: body.item } };
-      if (body.type === 'response.completed' || body.type === 'response.incomplete') { const r = record(body.response), u = record(r.usage); yield { type: 'usage', input: number(u.input_tokens), output: number(u.output_tokens) }; finished = true; yield { type: 'finish', reason: body.type === 'response.incomplete' ? 'length' : 'stop' }; }
+      if (body.type === 'response.completed' || body.type === 'response.incomplete') { const r = record(body.response), u = record(r.usage); for (const [index, raw] of list(r.output).entries()) { const item = record(raw); if (item.type === 'function_call') yield { type: 'tool', key: string(item.id) || String(index), id: string(item.call_id), name: string(item.name), ...(typeof item.arguments === 'string' ? { arguments: item.arguments } : {}), complete: true }; } yield { type: 'usage', input: number(u.input_tokens), output: number(u.output_tokens) }; finished = true; yield { type: 'finish', reason: body.type === 'response.incomplete' ? 'length' : 'stop' }; }
     }
   }
   if (!finished) throw new ModelAccessError('model_stream_incomplete', '模型流结束但没有完成标记。', 502);

@@ -1,9 +1,11 @@
 import { codexUnsettledTools } from './recovery.ts';
+import { interactionPolicy, blocksExecution } from '../../domain/interaction-policy.ts';
 import {createHash} from 'node:crypto';
 import { errorDiagnostic, NativeObservationError } from '../../domain/error-diagnostic.ts';
 import { isCompatibleProgram, nativeProgramPolicy } from '../program-policy.ts';
-import { join } from 'node:path';
-import { lstat, readFile, writeFile } from 'node:fs/promises';
+import { join, relative, sep, isAbsolute } from 'node:path';
+import { lstat, readFile, writeFile, copyFile, realpath, chmod } from 'node:fs/promises';
+import { constants } from 'node:fs';
 import type { AgentExecutor, AgentRuntime, ContextRef, ExecutionRef, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorRequest, ExecutorSendInput, ExecutorTitleInput, LoginObservation, PermissionMode } from '../../contracts.ts';
 import { NativeRpc, nativePreview, nativeBinding, bounded, findExecutable, inspectVersion, isolatedEnvironment, nativeCommand, nativeHome, opaqueReference, parseReference, privateDirectories, visibleText, type RpcMessage } from '../native-process.ts';
 import { modelOptions } from '../model-options.ts';
@@ -11,12 +13,13 @@ import { generateCodexTitle } from './title.ts';
 import { codexThreadPermissions, codexTurnPermissions } from './permissions.ts';
 import { ExecutorInputRejected, type ExecutorSupplementInput, type ExecutorInputReceipt } from '../../contracts.ts';
 import { checkedGateway, consumerBinding, gatewayModel, gatewayEffort, type ExecutorGateway } from '../model-gateway.ts';
+import type { ExecutorForkInput } from '../../contracts.ts';
 
-const capabilities = { supplement: true, permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
+const capabilities = { interaction: { policy: interactionPolicy.version, nonBlockingQuestions: true }, supplement: true, permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
 // Work-thread overrides also apply on resume; auxiliary title/summary threads stay tool-free.
 const conversationInteraction = {
   config: { features: { default_mode_request_user_input: true } },
-  developerInstructions: '在 Buildr 工作对话中，当缺少用户的必要决定或信息而不能继续时，使用 request_user_input 发起明确问题并等待用户回答，再继续依赖该决定的工作。不要只在过程文字中询问后继续，也不要自行假定用户选择。已有明确授权继续有效，不重复提问；完全访问不代表可以代答业务问题，工具权限继续使用原生审批。普通补充消息不代替待答问题的正式回答。',
+  developerInstructions: interactionPolicy.instructions + '\n必要提问使用 request_user_input。收到新要求时按最新指示调整工作；上轮保留的辅助命令仍可接续，需要的继续使用，不再需要的安全关闭并核对结果。不因命令等待输入而要求用户另开对话；不强停结果未知的业务操作，不重放已生效或结果未知的操作。',
 };
 function codexEffort(value?: string): string | undefined {
   if (value === 'off') return 'none';
@@ -38,7 +41,7 @@ function codexGatewayCatalog(gateway: ExecutorGateway) {
     truncation_policy: { mode: 'tokens', limit: 10000 },
   })) };
 }
-interface ActiveTurn { contextId: string; id: string; input: ExecutorSendInput; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown'; processId?: string }>; pending: Map<string, { nativeId: string | number; method: string; params: any }>; texts: Map<string, string>; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string; done: () => void; reject: (error: Error) => void; accepted: boolean; buffered: RpcMessage[] }
+interface ActiveTurn { contextId: string; id: string; input: ExecutorSendInput; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown'; processId?: string; executionId: string }>; pending: Map<string, { nativeId: string | number; method: string; params: any }>; texts: Map<string, string>; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string; done: () => void; reject: (error: Error) => void; accepted: boolean; buffered: RpcMessage[] }
 export function createCodexExecutor(): AgentExecutor {
   return { descriptor: { id: 'codex', label: 'Codex', capabilities }, async open(options) { return await CodexRuntime.open(options); } };
 }
@@ -50,6 +53,7 @@ class CodexRuntime implements AgentRuntime {
   readonly bindingIdentity: string;
   bindingData?: Record<string, unknown>;
   private rpc: NativeRpc;
+  private interaction = conversationInteraction;
   get closed(): boolean { return this.rpc.closed; }
   private readonly titleDirectory: string;
   private readonly auxiliary = new Set<string>();
@@ -78,6 +82,7 @@ class CodexRuntime implements AgentRuntime {
     }
     const rpc = new NativeRpc(launch.command, [...launch.prefix, 'app-server', '--listen', 'stdio://', '-c', 'cli_auth_credentials_store="file"', ...overrides], { cwd: options.configRoot, env });
     const runtime = new CodexRuntime(binding.identity, rpc, join(temporary, 'title-requests'));
+    runtime.interaction = { ...conversationInteraction, developerInstructions: (options.interaction ?? interactionPolicy).instructions + '\n必要提问使用 request_user_input。' };
     runtime.bindingData = binding.data;
     runtime.gateway = gateway; runtime.modelConfig = config;
     let abortedClose: Promise<void> | undefined; const abort = () => { abortedClose ??= rpc.close(); };
@@ -152,13 +157,54 @@ class CodexRuntime implements AgentRuntime {
     login.update({ state: 'cancelled' }); login.done();
   }
   async createContext({ cwd, permissionMode }: { cwd: string; permissionMode?: PermissionMode }): Promise<ContextRef> {
-    const result = await this.rpc.call('thread/start', { cwd, ephemeral: false, ...conversationInteraction, ...codexThreadPermissions(permissionMode) });
+    const result = await this.rpc.call('thread/start', { cwd, ephemeral: false, ...this.interaction, ...codexThreadPermissions(permissionMode) });
     if (!result.thread?.id || result.thread.cwd !== cwd) throw new Error('codex_context_identity_mismatch');
     return this.context(result.thread.id, cwd);
   }
+  async forkContext(input: ExecutorForkInput): Promise<ContextRef> {
+    const source = input.source;
+    if (!(source instanceof CodexRuntime)) throw new Error('agent_context_binding_mismatch');
+    source.reference(input.contextRef, input.cwd);
+    const observed = await source.rpc.call('thread/read', { threadId: input.contextRef.id, includeTurns: true });
+    const turns = observed.thread?.turns ?? [];
+    const selected = turns.find((turn: any) => turn.id === input.executionRef.id);
+    if (observed.thread?.id !== input.contextRef.id || observed.thread.cwd !== input.cwd || !selected || selected.status === 'inProgress') throw new Error('agent_fork_boundary_unavailable');
+    // A paginated Codex store cannot resolve a foreign CODEX_HOME's thread from
+    // path alone. Copy the native-owned opaque rollout into the destination's
+    // private store first; Codex, not Buildr, interprets and slices that history.
+    // Never link or mutate the original; the imported snapshot is not used for work.
+    let importPath: string | undefined;
+    if (source !== this) {
+      if (typeof observed.thread.path !== 'string' || !source.modelConfig || !this.modelConfig) throw new Error('agent_fork_unavailable');
+      const filename = await realpath(observed.thread.path), root = await realpath(source.modelConfig);
+      const local = relative(root, filename);
+      if (!local || isAbsolute(local) || local.startsWith('..' + sep) || !['sessions','archived_sessions'].includes(local.split(sep)[0]!)) throw new Error('agent_context_binding_mismatch');
+      const info = await lstat(filename);
+      if (!info.isFile() || info.isSymbolicLink()) throw new Error('agent_context_binding_mismatch');
+      const parts = local.split(sep).slice(1);
+      let directory = join(this.modelConfig, 'sessions');
+      await privateDirectories(directory);
+      for (const part of parts.slice(0,-1)) { directory = join(directory, part); await privateDirectories(directory); }
+      importPath = join(directory, parts.at(-1)!);
+      await copyFile(filename, importPath, constants.COPYFILE_EXCL);
+      await chmod(importPath, 0o600);
+    }
+    const forked = await this.rpc.call('thread/fork', {
+      threadId: input.contextRef.id, ...(importPath ? { path: importPath } : {}),
+      lastTurnId: input.executionRef.id, cwd: input.cwd, ephemeral: false, deferGoalContinuation: true, ...this.interaction,
+      ...(this.gateway ? { model: gatewayModel(this.gateway).id, modelProvider: 'buildr-models' } : {}),
+    });
+    if (!forked.thread?.id || forked.thread.id === input.contextRef.id || forked.thread.cwd !== input.cwd) throw new Error('agent_fork_identity_invalid');
+    const ref = this.context(forked.thread.id, input.cwd);
+    input.onCreated(ref);
+    // Older servers can ignore unknown fields. Never accept a whole-history fork.
+    const result = await this.rpc.call('thread/read', { threadId: ref.id, includeTurns: true });
+    if (result.thread?.turns?.at(-1)?.id !== input.executionRef.id) throw new Error('agent_fork_boundary_unavailable');
+    return ref;
+  }
   async resumeContext({ contextRef, cwd, permissionMode }: { contextRef: ContextRef; cwd: string; permissionMode?: PermissionMode }): Promise<void> {
     this.reference(contextRef, cwd);
-    const result = await this.rpc.call('thread/resume', { threadId: contextRef.id, cwd, ...conversationInteraction, ...(permissionMode === undefined ? {} : codexThreadPermissions(permissionMode)) });
+    const result = await this.rpc.call('thread/resume', { threadId: contextRef.id, cwd, ...this.interaction, ...(permissionMode === undefined ? {} : codexThreadPermissions(permissionMode)) });
     if (result.thread?.id !== contextRef.id || result.thread.cwd !== cwd) throw new Error('codex_context_identity_mismatch');
   }
   async readHistory({ contextRef, cwd }: { contextRef: ContextRef; cwd: string }): Promise<ExecutorItem[]> {
@@ -191,19 +237,21 @@ class CodexRuntime implements AgentRuntime {
       input = { ...input, model: gatewayModel(this.gateway, input.model).id, reasoningEffort: codexEffort(effort) };
     }
     if (this.turns.get(input.contextRef.id)?.terminal === undefined && this.turns.has(input.contextRef.id)) throw new Error('agent_native_turn_active');
+    const previous = this.turns.get(input.contextRef.id);
     let done!: () => void; let reject!: (error: Error) => void;
     const ended = new Promise<void>((resolve, fail) => { done = resolve; reject = fail; }); ended.catch(() => {});
-    const turn: ActiveTurn = { contextId: input.contextRef.id, id: '', input, tools: new Map(), pending: new Map(), texts: new Map(), done, reject, accepted: false, buffered: [] };
+    const turn: ActiveTurn = { contextId: input.contextRef.id, id: '', input, tools: new Map([...(previous?.tools ?? [])].filter(([,tool]) => tool.status !== 'completed')), pending: new Map(), texts: new Map(), done, reject, accepted: false, buffered: [] };
     this.turns.set(turn.contextId, turn);
     try {
       const response = await this.rpc.call('turn/start', { threadId: turn.contextId, clientUserMessageId: input.clientRequestId, input: [{ type: 'text', text: input.text }, ...input.images.map(image => ({ type: 'localImage', path: image.path }))], ...(input.model ? { model: input.model } : {}), effort: input.reasoningEffort ?? null, ...codexTurnPermissions(input.permissionMode, input.cwd) });
       if (!response.turn?.id) throw new Error('codex_turn_identity_missing');
       turn.id = response.turn.id;
-      input.onEvent({ type: 'accepted', executionRef: this.rpc.executionRef(turn.id, turn.contextId, this.bindingIdentity), inputItemId: response.turn.items?.find((item: any) => item.type === 'userMessage')?.id });
+      input.onEvent({ type: 'accepted', executionRef: this.rpc.executionRef(turn.id, turn.contextId, this.bindingIdentity, turn.tools.size > 0), inputItemId: response.turn.items?.find((item: any) => item.type === 'userMessage')?.id });
       turn.accepted = true;
+      if (turn.tools.size) input.onEvent({ type: 'observation', observation: this.activeObservation(turn) });
       for (const message of turn.buffered.splice(0)) this.turnMessage(turn, message);
       await ended;
-    } catch (error) { if (!turn.accepted) { this.turns.delete(turn.contextId); } throw error; }
+    } catch (error) { if (!turn.accepted) { if (previous) this.turns.set(turn.contextId, previous); else this.turns.delete(turn.contextId); } throw error; }
   }
   async supplement(input: ExecutorSupplementInput): Promise<ExecutorInputReceipt> {
     this.reference(input.contextRef, input.cwd);
@@ -238,7 +286,17 @@ class CodexRuntime implements AgentRuntime {
     const p = message.params ?? {}; const emit = turn.input.onEvent;
     if(message.method==='thread/tokenUsage/updated'){const usage=p.tokenUsage;const used=usage?.last?.totalTokens;const window=usage?.modelContextWindow;if(Number.isSafeInteger(used)&&used>=0)emit({type:'context-usage',usedTokens:used,...(Number.isSafeInteger(window)&&window>0?{windowTokens:window}:{})});return;}
     if (message.method === 'thread/name/updated') { if (typeof p.threadName === 'string') emit({ type: 'title', title: p.threadName }); return; }
-    if (p.turnId && p.turnId !== turn.id || p.turn?.id && p.turn.id !== turn.id) return;
+    if (p.turnId && p.turnId !== turn.id || p.turn?.id && p.turn.id !== turn.id) {
+      // A prior command belongs to the same native context, not to this model
+      // turn. Keep its exact receipt without letting an old turn end this one.
+      const tool = p.item?.id ? turn.tools.get(p.item.id) : undefined;
+      if (message.method === 'item/completed' && tool?.processId && tool.executionId === p.turnId) {
+        tool.status = 'completed';
+        for (const item of codexItem(p.item, tool.executionId, 'completed')) emit({ type: 'item', item });
+        emit({ type: 'observation', observation: this.activeObservation(turn) });
+      }
+      return;
+    }
     if (message.method === 'serverRequest/resolved') {
       if ((typeof p.requestId === 'string' || typeof p.requestId === 'number') && turn.pending.delete(String(p.requestId))) {
         emit({ type: 'request-resolved', requestId: String(p.requestId) });
@@ -258,8 +316,8 @@ class CodexRuntime implements AgentRuntime {
     }
     if (message.method === 'item/started' || message.method === 'item/completed') {
       const item = p.item;
-      if (item?.type === 'commandExecution') turn.tools.set(item.id, { id: item.id, label: String(item.command ?? '命令'), status: message.method === 'item/completed' ? 'completed' : 'running', processId: item.processId });
-      else if (item?.type === 'fileChange' || item?.type === 'mcpToolCall') turn.tools.set(item.id, { id: item.id, label: item.type === 'fileChange' ? '修改文件' : String(item.tool ?? '工具'), status: message.method === 'item/completed' ? 'completed' : 'running' });
+      if (item?.type === 'commandExecution') turn.tools.set(item.id, { id: item.id, label: String(item.command ?? '命令'), status: message.method === 'item/completed' ? 'completed' : 'running', processId: item.processId, executionId: turn.id });
+      else if (item?.type === 'fileChange' || item?.type === 'mcpToolCall') turn.tools.set(item.id, { id: item.id, label: item.type === 'fileChange' ? '修改文件' : String(item.tool ?? '工具'), status: message.method === 'item/completed' ? 'completed' : 'running', executionId: turn.id });
       for (const safe of codexItem(item, turn.id, message.method === 'item/completed' ? 'completed' : 'inProgress')) emit({ type: 'item', item: safe });
       emit({ type: 'observation', observation: this.activeObservation(turn) });
     }
@@ -278,8 +336,10 @@ class CodexRuntime implements AgentRuntime {
     }
   }
   private activeObservation(turn: ActiveTurn): ExecutorObservation {
-    const tools = [...turn.tools.values()].map(({ processId, ...tool }) => ({ ...tool, canStop: Boolean(processId) && tool.status === 'running' }));
-    return { status: turn.terminal ? tools.some(tool => tool.status === 'running') ? 'tools-active' : turn.terminal === 'stopped' ? 'stopped' : 'idle' : turn.pending.size ? 'waiting' : 'running', executionRef: this.rpc.executionRef(turn.id, turn.contextId, this.bindingIdentity, [...turn.tools.values()].some(tool => Boolean(tool.processId) && tool.status !== 'completed')), tools, ...(turn.terminal === 'failed' && turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) };
+    const tools = [...turn.tools.values()].map(({ processId, executionId, ...tool }) => ({ ...tool, canStop: Boolean(processId) && tool.status === 'running' }));
+    const requests = [...turn.pending].flatMap(([id, pending]) => codexRequest(id, pending.method, pending.params) ?? []);
+    const canContinue = turn.terminal === 'completed' && !turn.pending.size && tools.some(tool => tool.status === 'running') && [...turn.tools.values()].every(tool => tool.status === 'completed' || tool.status === 'running' && Boolean(tool.processId));
+    return { canContinue, status: turn.terminal ? tools.some(tool => tool.status === 'running') ? 'tools-active' : tools.some(tool => tool.status === 'unknown') ? 'unknown' : turn.terminal === 'stopped' ? 'stopped' : 'idle' : requests.some(blocksExecution) ? 'waiting' : 'running', executionRef: this.rpc.executionRef(turn.id, turn.contextId, this.bindingIdentity, [...turn.tools.values()].some(tool => Boolean(tool.processId) && tool.status !== 'completed')), tools, requests, ...(turn.terminal === 'failed' && turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) };
   }
   async observe({ contextRef, executionRef, knownItems }: { contextRef: ContextRef; executionRef?: ExecutionRef; knownItems?: readonly ExecutorItem[] }): Promise<ExecutorObservation> {
     this.reference(contextRef);
@@ -292,10 +352,13 @@ class CodexRuntime implements AgentRuntime {
     if (exact.status === 'interrupted') {
       try { unsettled = await codexUnsettledTools(history.thread.path, this.modelConfig!, contextRef.id, exact.id);
         const received = new Set((knownItems ?? []).filter(item => item.kind === 'tool' && item.executionId === exact.id && ['completed', 'failed'].includes(item.status ?? '') && !/Process running with session ID/.test(item.text)).map(item => item.id));
+        for (const item of exact.items ?? []) {
+          if (['commandExecution', 'fileChange', 'mcpToolCall'].includes(item.type) && ['completed', 'failed', 'declined'].includes(item.status)) received.add(item.id);
+        }
         unsettled = unsettled.filter(tool => !received.has(tool.id)); }
       catch { return { status: 'unknown', executionRef: { id: exact.id }, tools: [], diagnostic: 'codex_recovery_history_unconfirmed' }; }
     }
-    return { status: exact.status === 'inProgress' ? 'unknown' : exact.status === 'interrupted' ? 'stopped' : 'idle', executionRef: executionRef ?? { id: exact.id }, tools: [...new Map([...unsettled, ...(exact.items ?? []).filter((item: any) => ['commandExecution', 'fileChange', 'mcpToolCall'].includes(item.type) && !['completed', 'declined'].includes(item.status)).map((item: any) => ({ id: item.id, label: String(item.command ?? '命令'), status: 'unknown' as const, canStop: false }))].map(tool => [tool.id, tool])).values()] };
+    return { status: exact.status === 'inProgress' ? 'unknown' : exact.status === 'interrupted' ? 'stopped' : 'idle', executionRef: executionRef ?? { id: exact.id }, tools: [...new Map([...unsettled, ...(exact.items ?? []).filter((item: any) => ['commandExecution', 'fileChange', 'mcpToolCall'].includes(item.type) && !['completed', 'failed', 'declined'].includes(item.status)).map((item: any) => ({ id: item.id, label: String(item.command ?? '命令'), status: 'unknown' as const, canStop: false }))].map(tool => [tool.id, tool])).values()] };
   }
   async canRelease({contextRef,executionRef}:{contextRef:ContextRef;executionRef:ExecutionRef}):Promise<boolean|{executionState:'ended'|'unknown'}>{
     this.reference(contextRef);
@@ -335,8 +398,12 @@ class CodexRuntime implements AgentRuntime {
   }
   async stop({ contextRef, executionRef, toolId }: { contextRef: ContextRef; executionRef: ExecutionRef; toolId?: string }): Promise<ExecutorObservation> {
     this.reference(contextRef); const turn = this.turns.get(contextRef.id);
-    if (!turn || turn.id !== executionRef.id) return { status: 'unknown', tools: [], diagnostic: 'codex_exact_live_turn_unavailable' };
+    if (!turn || turn.id !== executionRef.id) {
+      if (toolId) return { status: 'unknown', tools: [], diagnostic: 'codex_exact_live_turn_unavailable' };
+      return this.observe({ contextRef, executionRef });
+    }
     if (!turn.terminal && !toolId) await this.rpc.call('turn/interrupt', { threadId: contextRef.id, turnId: turn.id }, 5000);
+    if (turn.terminal && !toolId) turn.terminal = 'stopped'; // An unconfirmed whole-run stop must not release queued input.
     await this.refreshTerminals(turn);
     const selected = [...turn.tools.values()].filter(tool => tool.status === 'running' && (!toolId || tool.id === toolId));
     if (toolId && !selected.some(tool => tool.processId)) throw new Error('codex_exact_tool_stop_unavailable');
@@ -381,7 +448,7 @@ function codexItem(item: any, executionId: string, status: string): ExecutorItem
   return [];
 }
 function codexRequest(id: string, method: string, params: any): ExecutorRequest | undefined {
-  if (method === 'item/tool/requestUserInput') return { id, kind: 'question', title: '需要你的回复', questions: (params.questions ?? []).map((question: any) => ({ id: question.id, label: String(question.question ?? question.header ?? ''), allowOther: Boolean(question.isOther), options: question.options?.map((option: any) => ({ id: option.label, label: option.label, ...(typeof option.description === 'string' ? { description: option.description } : {}) })) })) };
+  if (method === 'item/tool/requestUserInput') return { id, kind: 'question', blocking: params.isBlocking !== false, title: '需要你的回复', questions: (params.questions ?? []).map((question: any) => ({ id: question.id, label: String(question.question ?? question.header ?? ''), allowOther: Boolean(question.isOther), options: question.options?.map((option: any) => ({ id: option.label, label: option.label, ...(typeof option.description === 'string' ? { description: option.description } : {}) })) })) };
   if (method === 'item/permissions/requestApproval') return { id, kind: 'approval', title: '允许本轮所列权限？', description: String(params.reason ?? '') + '\n' + JSON.stringify(params.permissions ?? {}), options: [{ id: 'approve', label: '允许本轮所列权限' }, { id: 'deny', label: '拒绝' }] };
   if (method === 'item/commandExecution/requestApproval' || method === 'item/fileChange/requestApproval') return { id, kind: 'approval', title: method === 'item/fileChange/requestApproval' ? '允许修改文件？' : '允许运行命令？', description: String(params.command ?? params.reason ?? ''), options: [{ id: 'approve', label: '允许本次' }, { id: 'deny', label: '拒绝' }] };
   return undefined;

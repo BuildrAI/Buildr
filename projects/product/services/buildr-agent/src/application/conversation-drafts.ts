@@ -29,7 +29,7 @@ export class ConversationDrafts {
     const image = this.images.read(this.ports.source(scope), id, attachmentId);
     return { bytes: Buffer.from(image.bytes), mimeType: image.mimeType };
   }
-  private identity(scope: string, id: string, requestId: string): string {
+  identity(scope: string, id: string, requestId: string): string {
     if (![id, requestId].every(value => /^[a-f0-9-]{36}$/.test(value))) fail('agent_draft_invalid', '草稿或提交身份无效。');
     const value = digest([this.ports.source(scope), id, requestId]);
     return `${value.slice(0,8)}-${value.slice(8,12)}-${value.slice(12,16)}-${value.slice(16,20)}-${value.slice(20,32)}`;

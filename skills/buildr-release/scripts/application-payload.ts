@@ -168,6 +168,7 @@ async function buildApplicationPayload(output: any, sourceCommit: any, options: 
         'resources/runtime/read-worker': WORKER_ENTRY,
         'resources/runtime/write-worker': WRITE_WORKER_ENTRY,
         'resources/runtime/upstream-openspec-worker': UPSTREAM_OPENSPEC_WORKER_ENTRY,
+        'resources/runtime/browser-authorization-worker': path.join(serviceRoot, 'src/modules/browser-authorization/infrastructure/worker.ts'),
       },
       outdir: destination,
       outExtension: { '.js': '.cjs' },

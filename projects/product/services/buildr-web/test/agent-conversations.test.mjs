@@ -1,4 +1,5 @@
 import {createConversationInputAttempts} from '../src/features/agent-conversations/conversation-actions.ts';
+import {forkableReplyIds} from '../src/features/agent-conversations/conversation-fork.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {needsConversationObservation,conversationObservationKey} from '../src/features/agent-conversations/conversation-state.ts';
@@ -17,6 +18,16 @@ registerHooks({resolve(specifier,context,next){
 const {createAgentConversationsClient}=await import('../src/features/agent-conversations/api/agent-conversations-api.ts');
 const session={writeHeaders:()=>({'x-buildr-session':'native-test-session','content-type':'application/json'})};
 const conversation={id:'chat/id',workspaceId:'saved/ws',revision:'r1',cwd:'/saved/root',title:'Work',hidden:false,updatedAt:'2026-10-23',participants:[],entries:[],requests:[{id:'approval/id',runId:'run/1',participantId:'original-codex',generation:'generation-1',kind:'approval',title:'Allow?'}],run:{id:'run/1',participantId:'original-codex',generation:'generation-1',provider:'codex',status:'running'}};
+
+test('准确可接续的命令不锁输入，仍持续观察；缺少证明时保持保护',()=>{
+  const view={...conversation,requests:[],run:{...conversation.run,status:'tools-active',canContinue:true,tools:[{id:'old',label:'browser',status:'running',canStop:true}]}};
+  assert.equal(executionLocked(view.run),false);
+  assert.equal(conversationRecoveryAction(view),null);
+  assert.equal(needsConversationObservation(view),true);
+  assert.equal(executionLocked({...view.run,canContinue:false}),true);
+  assert.equal(executionLocked({...view.run,canContinue:undefined}),true);
+  assert.equal(executionLocked({...view.run,status:'unknown'}),true);
+});
 
 test('读取/历史/登录状态以本机令牌访问，执行始终使用对话保存身份而非当前浏览空间',async t=>{
   const requests=[];t.mock.method(globalThis,'fetch',async(url,init)=>{requests.push({url,init});return new Response(JSON.stringify({connections:[],conversations:[]}));});
@@ -476,10 +487,12 @@ test('异常恢复入口只取决于原执行状态，与选择模型或智能�
   assert.deepEqual(conversationRecoveryAction(view('completed')),{kind:'recover',label:'继续'});
   const reply={kind:'message',role:'assistant',runId:base.run.id,text:'已完成并答复',createdAt:'2026-10-28T00:00:01Z'};
   assert.equal(conversationRecoveryAction(view('completed',true,[reply])),null);
+  assert.deepEqual(conversationRecoveryAction(view('completed',true,[{...reply,parentToolId:'agent-tool'}])),{kind:'recover',label:'继续'},'子报告不代替缺失的主答复');
   assert.deepEqual(conversationRecoveryAction(view('unknown')),{kind:'observe',label:'核对状态'});
   for(const status of ['starting','running','stopping','waiting-approval','waiting-question']) assert.equal(conversationRecoveryAction(view(status)),null);
-  assert.equal(conversationRecoveryAction({...view('failed'),requests:[{id:'pending'}]}),null);
+  assert.equal(conversationRecoveryAction({...view('failed'),requests:[{id:'pending',runId:base.run.id,participantId:base.run.participantId,generation:base.run.generation}]}),null);
   assert.deepEqual(conversationRecoveryAction({...view('failed'),run:{...view('failed').run,tools:[{status:'unknown'}]}}),{kind:'observe',label:'核对状态'});
+  assert.deepEqual(conversationRecoveryAction({...view('failed'),requests:[{id:'old-question',runId:'retained'}]}),{kind:'recover',label:'继续'});
   assert.equal(conversationRecoveryAction(null),null);
 });
 
@@ -555,4 +568,81 @@ test('收到结束快照后取消订阅，流关闭不再报断联且不继续�
   let received=0;
   await api.subscribe(conversation.workspaceId,conversation.id,controller.signal,()=>{received++;controller.abort();});
   assert.equal(received,1);assert.equal(controller.signal.aborted,true);
+});
+
+test('分叉请求绑定所选答复、来源对话和已观察版本，不发送新的工作指令',async()=>{
+  const calls=[];
+  const api=createAgentConversationsClient(async(url,init)=>{calls.push({url,body:JSON.parse(init.body)});return {...conversation,id:'child',forkedFrom:{conversationId:conversation.id}};},session);
+  const child=await api.fork(conversation,'answer-id','stable-fork-request');
+  assert.equal(calls.length,1);assert.equal(calls[0].url,'/api/v1/workspaces/saved%2Fws/agent-conversations/chat%2Fid/fork');
+  assert.deepEqual(calls[0].body,{expectedRevision:conversation.revision,entryId:'answer-id',clientRequestId:'stable-fork-request'});
+  assert.equal(child.forkedFrom.conversationId,conversation.id);
+});
+
+test('只在每轮最终答复提供分叉，后续执行不遮蔽较早答复',()=>{
+  const view={...conversation,run:{id:'new',status:'running'},entries:[
+    {id:'note',runId:'old',role:'assistant',kind:'message'},
+    {id:'final',runId:'old',role:'assistant',kind:'message'},
+    {id:'running',runId:'new',role:'assistant',kind:'message'},
+  ]};
+  assert.deepEqual([...forkableReplyIds(view)],['final']);
+  assert.deepEqual([...forkableReplyIds({...view,run:{id:'new',status:'completed'}})],['final','running']);
+  assert.equal(forkableReplyIds({...view,forkState:{status:'failed'}}).size,0);
+});
+
+test('子任务报告不能分叉或遮蔽同轮主助手的最终答复',()=>{
+  const main={id:'main-answer',runId:'completed',role:'assistant',kind:'message',status:'completed'};
+  const child={id:'child-answer',runId:'completed',role:'assistant',kind:'message',status:'completed',parentToolId:'agent-tool'};
+  const view={...conversation,run:{id:'completed',status:'completed'},entries:[main,child]};
+  assert.deepEqual([...forkableReplyIds(view)],['main-answer']);
+  assert.deepEqual([...forkableReplyIds({...view,entries:[child]})],[]);
+  assert.deepEqual([...forkableReplyIds({...view,entries:[main,{...child,status:'running'}]})],['main-answer']);
+});
+
+
+test('程序更新使用共用认证客户端，只读观察与主动检查不调用连接或安装入口',async()=>{
+  const calls=[];
+  const api=createAgentConversationsClient(async(url,init)=>{calls.push({url,init});return{programs:[]};},session);
+  await api.programUpdates();await api.checkProgramUpdates();await api.checkProgramUpdates('codex');
+  assert.deepEqual(calls.map(item=>item.url),['/api/v1/app/agent-service/program-updates','/api/v1/app/agent-service/program-updates/check','/api/v1/app/agent-service/program-updates/check']);
+  assert.equal(calls[0].init.method,undefined);assert.deepEqual(JSON.parse(calls[1].init.body),{});assert.deepEqual(JSON.parse(calls[2].init.body),{connectionId:'codex'});
+  assert.ok(calls.every(item=>item.init.headers['x-buildr-session']==='native-test-session'));
+});
+
+test('更新程序只提交已观察接入修订与精确发布版本，使用统一认证',async()=>{
+  const calls=[];
+  const api=createAgentConversationsClient(async(url,init)=>{calls.push({url,init});return{state:'downloading'};},session);
+  await api.upgradeProgram('codex',{expectedRevision:'r-observed',expectedVersion:'0.164.0'});
+  assert.equal(calls[0].url,'/api/v1/app/agent-service/connections/codex/program-upgrades');
+  assert.equal(calls[0].init.method,'POST');assert.equal(calls[0].init.headers['x-buildr-session'],'native-test-session');
+  assert.deepEqual(JSON.parse(calls[0].init.body),{expectedRevision:'r-observed',expectedVersion:'0.164.0'});
+});
+
+test('新要求不等待旧执行，只有相同选择的正常执行使用同轮补充',async()=>{
+ const {canSupplementConversation}=await import('../src/features/agent-conversations/conversation-state.ts');
+ const choice={connectionId:'codex',model:'model',permissionMode:'default'};
+ const current={participants:[{id:'p',connectionId:'codex'}],run:{id:'r',participantId:'p',accepted:true,status:'running',model:'model',tools:[]}};
+ assert.equal(canSupplementConversation(current,choice,true),true);
+ for(const status of ['waiting-question','waiting-approval','unknown','tools-active','stopping','starting','completed'])assert.equal(canSupplementConversation({...current,run:{...current.run,status}},choice,true),false,status+' must use ordinary new-turn delivery, never wait for the old work');
+ assert.equal(canSupplementConversation(current,choice,false),false);
+ for(const change of [{connectionId:'qoder'},{model:'new'},{modelAccountId:'different'},{serviceTier:'fast'},{permissionMode:'full-access'},{reasoningEffort:'high'}])assert.equal(canSupplementConversation(current,{...choice,...change},true),false);
+});
+
+test('工具完整内容读取绑定保存的对话、条目和已观察内容版本',async()=>{
+ const calls=[];const api=createAgentConversationsClient(async(url,init)=>{calls.push({url,init});return {id:'tool/id',text:'complete'};},session);
+ const controller=new AbortController();const entry={id:'tool/id',detail:{revision:'version-1'}};
+ const result=await api.entry('saved/ws','chat/id',entry,controller.signal);
+ assert.equal(calls[0].url,'/api/v1/workspaces/saved%2Fws/agent-conversations/chat%2Fid/entry-detail/tool%2Fid?revision=version-1');assert.equal(calls[0].init.signal,controller.signal);assert.equal(result.text,'complete');
+});
+
+
+test('核对完成必须明确反馈未知、已释放与真实终态，不能把请求成功当作执行成功',async()=>{
+ const {conversationObservationFeedback}=await import('../src/features/agent-conversations/conversation-state.ts');
+ const unknown={status:'unknown',tools:[],resourcesReleased:true};
+ assert.match(conversationObservationFeedback(unknown),/读取完成.*后台连接已释放.*未读到.*结束记录/);
+ assert.doesNotMatch(conversationObservationFeedback(unknown),/已确认停止|执行成功/);
+ assert.match(conversationObservationFeedback({...unknown,resourcesReleased:false}),/仍无法读取原执行状态/);
+ assert.match(conversationObservationFeedback({status:'running',tools:[]}),/仍在执行/);
+ assert.match(conversationObservationFeedback({status:'stopped',tools:[]}),/已确认停止/);
+ assert.match(conversationObservationFeedback({status:'completed',tools:[]}),/本轮已结束/);
 });

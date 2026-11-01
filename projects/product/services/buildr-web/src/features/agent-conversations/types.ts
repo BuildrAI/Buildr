@@ -1,3 +1,7 @@
+import type { AgentProgramUpgradeProgramUpgrade } from '../../../build/generated/agent-service-http-dto';
+export type ProgramUpgradeView = AgentProgramUpgradeProgramUpgrade;
+import type { AgentProgramUpdatesProgramUpdates } from '../../../build/generated/agent-service-http-dto';
+export type ProgramUpdatesView = AgentProgramUpdatesProgramUpdates;
 import type { AgentModelAccountModelAccount, AgentModelCatalogModelCatalog } from '../../../build/generated/agent-service-http-dto';
 export type ModelAccount = AgentModelAccountModelAccount;
 export type CatalogModel = AgentModelCatalogModelCatalog['models'][number];

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { renderMarkdown, type MarkdownRenderOptions } from '../markdown';
 import { resolveTaskBriefReference, taskBriefHref } from '../lib/taskBriefLinks';
+import { renderMarkdownDiagrams } from '../lib/markdownDiagrams';
 
 type Props = {
   markdown: string;
@@ -58,6 +59,7 @@ export function MarkdownHost({ markdown, className, options, fragment, renderVer
     }
     host.replaceChildren(view);
     if (fragment) requestAnimationFrame(() => scrollMarkdownFragment(view, fragment));
+    return renderMarkdownDiagrams(view);
   }, [markdown, className, fragment, renderVersion, options?.taskLinkPathname, options?.imageResolver, JSON.stringify(options?.headingCounts)]);
 
   return <div ref={ref} />;

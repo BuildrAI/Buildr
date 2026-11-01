@@ -31,7 +31,7 @@ export type SourceControlBranchExtension = {
   selection?: {key: string; repositoryId: string; worktreeId: string; scene: 'changes' | 'history'};
   rowControl(repository: SourceControlRepository, worktree: SourceControlWorktree, ready: boolean, context: SourceControlRowContext): ReactNode;
   rowActions?(repository: SourceControlRepository, worktree: SourceControlWorktree, ready: boolean, context: SourceControlRowContext): ReactNode;
-  syncAction?(repository: SourceControlRepository, worktree: SourceControlWorktree): {pending: boolean; run(): void};
+  syncAction?(repository: SourceControlRepository, worktree: SourceControlWorktree): {pending: boolean; run(): void} | undefined;
   historyControls(repository: SourceControlRepository, worktree: SourceControlWorktree, controls: {query: string; active?: boolean; clearSearch(): void}): ReactNode;
 };
 
@@ -331,7 +331,7 @@ export function SourceControlWorkbench({ active = true, repositories, defaultRep
         </>}
       </div>
 </div>} />
-      <footer className="source-control-observed">{observation.readAt ? "读取时间 · " + formatShortDateTime(observation.readAt) : observation.loading ? "正在读取…" : "尚未取得记录"}<span>本机记录</span></footer>
+      <footer className="source-control-observed" data-source-control-cached={observation.cached || undefined}>{observation.readAt ? (observation.cached ? '上次读取 · ' : '读取时间 · ') + formatShortDateTime(observation.readAt) : observation.loading ? '正在读取…' : '尚未取得记录'}<span role={observation.cached ? 'status' : undefined}>{observation.cached ? observation.error || observation.diagnostics.length ? '上次结果 · 待核对' : '上次结果 · 正在核对' : '本机记录'}</span></footer>
     </aside>} second={<section className="source-control-reader" data-prototype-position="scm-reader">
       <div className="source-control-reader-tabs"><ObjectTabStrip panelId={readerPanelId} className="source-control-view-tabs" label="源代码管理视图" closable={false} active={history ? 'history' : 'changes'} onActivate={key => changeScene(key === 'history' ? 'history' : 'changes')} tabs={[{key:'changes',kind:'chg',title:'未提交变更'},{key:'history',kind:'doc',title:'提交历史'}]} />{(currentFile || (history && selectedCommit) || readingExpanded) && <ReadingToggle iconOnly className="source-control-reading-toggle" expanded={readingExpanded} onToggle={() => setReadingExpanded(value => !value)} />}</div>
       <div className="source-control-reader-body" id={readerPanelId} role="tabpanel" aria-labelledby={tabElementId(readerPanelId, history ? 'history' : 'changes')}>

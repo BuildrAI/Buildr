@@ -5,11 +5,13 @@ import { fileURLToPath } from 'node:url';
 import type { AccountObservation, LoginObservation } from '../../contracts.ts';
 import { privateDirectories, bounded } from '../native-process.ts';
 import { DshRuntime } from './index.ts';
+import type { ModelQuotaObservation } from '../../model-access/contracts.ts';
 
 export interface DeepSeekAccountOwner {
   inspect(): Promise<AccountObservation>;
   beginLogin(update: (observation: LoginObservation) => void): Promise<void>;
   cancelLogin(): Promise<void>;
+  quota(): Promise<ModelQuotaObservation>;
   request(url: string, init?: RequestInit): Promise<Response>;
   close(): Promise<void>;
 }
@@ -44,6 +46,7 @@ export function createDeepSeekAccountOwner(options: { configRoot: string; execut
     async inspect() { return await (await runtime()).inspectAccount(); },
     async beginLogin(update) { await (await runtime()).beginLogin(update); },
     async cancelLogin() { if (opening) await (await opening).cancelLogin(); },
+    async quota() { return (await runtime()).modelQuota(); },
     async request(value, init = {}) {
       const url = new URL(value), method = (init.method ?? 'GET').toUpperCase();
       if (url.origin !== 'https://api.deepseek.com' || url.search || url.hash || url.username || url.password || !(method === 'GET' && url.pathname === '/models' || method === 'POST' && url.pathname === '/anthropic/v1/messages')) throw new Error('dsh_owner_target_invalid');

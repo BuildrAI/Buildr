@@ -48,7 +48,8 @@ export async function runPublicationJourney({ t, page, runtime, workspaceRoot, w
     const base = new URL(apiBase), prefix = `${base.pathname}/knowledge/project/`;
     assert.equal(await entry.count(), 1, `来源 ${sourceId} 必须有唯一可点击入口`);
     await entry.waitFor({ state: 'visible' });
-    await entry.scrollIntoViewIfNeeded();
+    // click() scrolls and retries against the current DOM. A separate scroll
+    // action can fail on a replaced Markdown view before the click even begins.
     const requested: string[] = [];
     const observe = (request: Request) => {
       const url = new URL(request.url());
@@ -410,6 +411,8 @@ export async function runPublicationJourney({ t, page, runtime, workspaceRoot, w
     await page.goto(`${workspaceUrl}/articles/browser-article`);
     await visible().locator('#publication-title').waitFor({ state: 'visible' });
     assert.equal(await visible().locator('#publication-title').innerText(), '浏览器测试文章');
+    await visible().locator('.publication-body .markdown-diagram-view svg').waitFor();
+    assert.match(await visible().locator('.publication-body .markdown-diagram-view').innerText(), /本地文章图示/);
     const image = visible().locator('.publication-body img');
     await image.waitFor({ state: 'visible' });
     await page.waitForFunction(() => {
@@ -690,6 +693,7 @@ function writeReadingFixture(workspaceRoot: string) {
   const guideLink = 'services/buildr/resources/workspace/skills/buildr/current-knowledge-maintenance/references/architecture-knowledge.md';
   const put = (file: string, content: string) => { const target = path.join(projectRoot, file); fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, content); };
   fs.appendFileSync(path.join(projectRoot, 'docs/publications/article.md'), '\n' + Array.from({ length: 80 }, (_, i) => `段落 ${i + 1}：阅读位置需要在展开、编辑和返回后保持。${'这是一段用于验证长文阅读布局的内容。'.repeat(8)}\n`).join('\n'));
+  fs.appendFileSync(path.join(projectRoot, 'docs/publications/article.md'), '\n```mermaid\nflowchart LR\nA[本地文章图示] --> B[共享安全渲染]\n```\n');
   put('README.md', '# 来源说明\n\n这是真实来源说明。\n');
   put('knowledge/docs/details.md', '# 深入阅读说明\n\n这是子主题的独立说明。\n');
   put('knowledge/docs/explanation.md', `# 浏览器知识说明\n\n[引用来源](../../README.md)\n\n[建设指引](../../${guideLink})\n\n![测试技术图](../archify/diagram.html)\n\n![测试地图](../code-map/implementation.md)\n`);

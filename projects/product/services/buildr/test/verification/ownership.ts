@@ -153,6 +153,8 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "integration-connections": {
     "inputs": [
+      "src/modules/browser-authorization/**",
+      "resources/browser-authorization/**",
       "src/modules/connection-skills/**",
       "src/modules/mysql-query/**",
       "src/modules/agent-assets/application/connection-skill-source.ts",

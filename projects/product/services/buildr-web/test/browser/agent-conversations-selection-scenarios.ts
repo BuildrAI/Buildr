@@ -4,6 +4,40 @@ import type {AgentConversationFixture} from './agent-conversation-fixture.ts';
 /** selection 场景使用独立准备的对话现场。 */
 export async function runSelectionScenarios(fixture:AgentConversationFixture){
   const {assertModelSummary,chooseAgent,chooseModel,chooseOption,closeModelSettings,expectedBrowserErrors,input,modelSettings,page,panel,preparedInputs,sentInputs,setHighEffort,step,workspaceId}=fixture;
+await step('选择Qoder与GPT后提前准备，发送采用同一身份且后台刷新不续期',async()=>{
+  const previous=fixture.sharedModels,beforeSends=fixture.sends,beforeCreates=fixture.creations;
+  const received:Array<{url:string;body:any}>=[];
+  const matcher='**/agent-conversations/**/warmup';
+  const route=async(r:any)=>{received.push({url:r.request().url(),body:r.request().postDataJSON()});await r.fulfill({json:{prepared:true}});};
+  const storage=await page.evaluate(()=>Object.fromEntries(Object.entries(localStorage).filter(([key])=>key.startsWith('buildr.agent-conversation'))));
+  try{
+    fixture.sharedModels=[{id:'warm-gpt',modelId:'fixture-gpt',label:'Warm GPT',accountId:'warm-codex',accountIdentity:'warm-account',accountRevision:'r1',accountLabel:'ChatGPT',provider:'codex',available:true,enabled:true,images:false,tools:true}];
+    await page.route(matcher,route);await page.reload();await input().waitFor();
+    await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().waitFor();await input().fill('');
+    await chooseAgent('Qoder');
+    const response=page.waitForResponse((r:any)=>r.url().endsWith('/warmup')&&r.request().postDataJSON()?.connectionId==='qoder'&&r.request().postDataJSON()?.model==='fixture-gpt');
+    await chooseModel('Warm GPT');await closeModelSettings();await response;
+    assert.equal(fixture.sends,beforeSends);assert.equal(fixture.creations,beforeCreates);
+    const prepared=received.findLast(x=>x.body.connectionId==='qoder'&&x.body.model==='fixture-gpt')!;
+    assert.equal(prepared.body.text,undefined);assert.equal(prepared.body.modelAccountIdentity,'warm-account');
+    const count=received.length,refresh=page.waitForResponse((r:any)=>r.url().endsWith('/model-catalog'));
+    await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await refresh;await page.waitForTimeout(500);
+    assert.equal(received.length,count,'ordinary refresh does not renew preparation');
+    await input().fill('first explicit work');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().locator('[data-run-status="running"]').waitFor();
+    assert.equal(sentInputs.at(-1).clientRequestId,prepared.body.clientRequestId);assert.equal(sentInputs.at(-1).connectionId,'qoder');
+    await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
+    const nextReady=page.waitForResponse((r:any)=>r.url().includes('/drafts/')&&r.url().endsWith('/warmup')&&r.request().postDataJSON()?.connectionId==='qoder');
+    await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().waitFor();await nextReady;
+    const next=received.findLast(x=>x.url.includes('/drafts/'))!;assert.notEqual(next.body.clientRequestId,prepared.body.clientRequestId,'new conversation gets a new submission identity');
+    await input().fill('second explicit conversation');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().locator('[data-run-status="running"]').waitFor();
+    assert.equal(sentInputs.at(-1).clientRequestId,next.body.clientRequestId);assert.equal(fixture.creations,beforeCreates+2);
+    await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
+  }finally{
+    await page.unroute(matcher,route);fixture.sharedModels=previous;
+    await page.evaluate((saved:Record<string,string>)=>{for(const key of Object.keys(localStorage))if(key.startsWith('buildr.agent-conversation'))localStorage.removeItem(key);for(const [key,value] of Object.entries(saved))localStorage.setItem(key,value);},storage);
+  }
+});
+
 await step('新对话跨工作空间恢复软件级选择，无关账号变化不造成假冲突且不改写执行模型记忆',async()=>{
       const storage=await page.evaluate(()=>{const profile=document.querySelector('meta[name="buildr-web-profile"]')?.getAttribute('content')||'local',suffix=encodeURIComponent(profile);const moduleKey='buildr.agent-conversation.preference:'+suffix,modelKey='buildr.agent-conversation.model-preference:'+suffix;return{moduleKey,modelKey,module:localStorage.getItem(moduleKey),model:localStorage.getItem(modelKey),execution:localStorage.getItem('buildr.execution-model'),workspaceName:document.querySelector('.workspace-switcher strong')?.textContent||''};});
       const previousModels=fixture.sharedModels;
@@ -78,6 +112,31 @@ await step('lost first-send reply recovers the accepted conversation after refre
       assert.equal(fixture.sends,beforeSends+1);assert.equal(fixture.creations,beforeCreations+1);const acceptedId=fixture.conversation.id;
       await page.reload();await page.locator('#agent-conversation-panel[data-conversation-id="'+acceptedId+'"]').waitFor();await panel().locator('[data-run-status="running"]').waitFor();assert.equal(fixture.sends,beforeSends+1);assert.equal(fixture.creations,beforeCreations+1);
       await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
+    });
+
+await step('后台升级明确拒绝首轮后保留提示，刷新和重试沿用原文字与附件',async()=>{
+      await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().waitFor();await chooseAgent('Codex');
+      await input().fill('upgrade preserved original');
+      await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles({name:'upgrade.png',mimeType:'image/png',buffer:Buffer.from([137,80,78,71,13,10,26,10])});await panel().getByRole('button',{name:'移除图片 upgrade.png',exact:true}).waitFor();
+      const beforeSends=fixture.sends,beforeCreations=fixture.creations,attempts:any[]=[];
+      let updating=true;
+      const match=/\/agent-(?:service\/conversations|conversations)\/drafts\/[^/]+\/send$/;
+      const rejectWhileUpdating=async(route:any)=>{attempts.push(route.request().postDataJSON());if(!updating)return route.fallback();expectedBrowserErrors?.add(route.request().url());return route.fulfill({status:503,json:{error:{code:'agent_process_switching',message:'switching'}}});};
+      await page.route(match,rejectWhileUpdating);
+      try{
+        await panel().getByRole('button',{name:'发送对话',exact:true}).click();
+        const retry=()=>panel().getByRole('button',{name:'检查升级并重试原提交',exact:true});await retry().waitFor();
+        assert.match(await panel().locator('.ant-alert-info').innerText(),/上次发送尚未受理.*执行后台正在升级.*新后台尚未就绪/s);
+        assert.equal(fixture.sends,beforeSends);assert.equal(fixture.creations,beforeCreations);assert.equal(await panel().getAttribute('data-conversation-id'),null);
+        await page.reload();await retry().waitFor();assert.equal(attempts.length,1,'刷新只核对，不自动重发');
+        await fixture.capture(page,'agent-conversation-backend-upgrade-notice.png');
+        await input().fill('later edited draft');updating=false;await retry().click();await panel().locator('[data-run-status="running"]').waitFor();
+        assert.equal(fixture.sends,beforeSends+1);assert.equal(fixture.creations,beforeCreations+1);assert.equal(attempts.length,2);
+        assert.equal(attempts[1].clientRequestId,attempts[0].clientRequestId);assert.equal(sentInputs.at(-1).text,'upgrade preserved original');assert.deepEqual(sentInputs.at(-1).attachmentIds,attempts[0].attachmentIds);assert.equal(attempts[0].attachmentIds.length,1);
+        assert.equal(await retry().count(),0);
+        await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
+        await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().waitFor();assert.equal(await input().inputValue(),'later edited draft','后来编辑的文字仍保留在共享新草稿中');
+      }finally{await page.unroute(match,rejectWhileUpdating);}
     });
 
 await step('默认工作空间走应用会话路由，空草稿不列出且首轮模式一致',async()=>{

@@ -1,3 +1,5 @@
+import { pathToFileURL } from 'node:url';
+import { resolveProductResource } from '../../../infrastructure/product-resources/index.ts';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -10,10 +12,12 @@ import { ConnectionDirectoryReads } from './directory-reads.ts';
 import { createConnectionCatalog, type ConnectionCatalogEntry, type ConnectionCatalogResult } from './catalog.ts';
 import { checkProgram, programRecipient, resolveProgram, runProgram } from '../infrastructure/program.ts';
 import { runAuthorizationProgram } from '../infrastructure/authorization-program.ts';
+import { BrowserAuthorization } from '../../browser-authorization/application/browser-authorization-application.ts';
 
 type Catalog = ReturnType<typeof createConnectionCatalog>;
 type ProgramAvailability = Record<string, { ready: boolean; diagnostics: string[] }>;
 type ConnectionObservation = { catalog: ConnectionCatalogResult; programs: Map<ConnectionCatalogEntry, ProgramAvailability> };
+type RunOptions = { id: string; expectedRevision: string; program?: string; args: string[]; contexts?: Record<string, { id: string; revision: string }>; input?: string | Buffer; timeoutMs?: number };
 function requireDefinitionObservation(expected: Expected): void {
   if (typeof expected.definitionRevision !== 'string' || !expected.definitionRevision) throw failure('connection_skill_revision_required', '必须提供已观察的接入声明版本。', 400);
 }
@@ -21,6 +25,7 @@ type AuthIntent = { intent: 'keep' | 'replace' | 'remove'; values?: Values };
 type TeamInput = { id?: string; name: string; environment?: string; enabled?: boolean; binding: ConnectionBinding; config: Values; fieldLabels?: unknown; authentication: AuthIntent; expected: Expected };
 function publicWebsite(definition: ConnectionDefinition | undefined, config: Values): string | null {
   const presentation = definition?.presentation;
+  if (presentation?.websites !== undefined) return null;
   const valueFor = (key: string | undefined) => key ? Object.hasOwn(config, key) ? config[key] : definition?.config.fields.find(field => field.key === key)?.default : undefined;
   const primary = valueFor(presentation?.websiteField);
   const key = primary === undefined || typeof primary === 'string' && !primary.trim() ? presentation?.websiteFallbackField : presentation?.websiteField;
@@ -31,7 +36,30 @@ function publicWebsite(definition: ConnectionDefinition | undefined, config: Val
     return typeof value === 'string' ? value : null;
   } catch { return null; }
 }
+function publicWebsiteLinks(definition: ConnectionDefinition | undefined, config: Values): Array<{ id: string; label: string; url: string }> {
+  return (definition?.presentation?.websites ?? []).flatMap(website => {
+    const field = definition?.config.fields.find(field => field.key === website.field);
+    if (field?.type !== 'url') return [];
+    try {
+      const raw = Object.hasOwn(config, field.key) ? config[field.key] : field.default;
+      const url = validateConfig([field], { [field.key]: raw })[field.key];
+      return typeof url === 'string' ? [{ id: website.id, label: website.label, url }] : [];
+    } catch { return []; }
+  });
+}
 export class ConnectionSkillsApplication {
+  async browserProfiles(root: string, action: string, input: Record<string, unknown> = {}) {
+    if (Object.keys(input).some(key => !['id', 'expectedRevision', 'directory', 'confirmSharedReset'].includes(key))) throw failure('browser_authorization_input_invalid', '共享配置输入包含未知字段。', 400);
+    const browser = new BrowserAuthorization(this.resolveScope(root).rootPath), profiles = browser.profiles;
+    if (action === 'list') return profiles.list();
+    if (typeof input.id !== 'string') throw failure('browser_authorization_profile_invalid', '必须提供准确浏览器配置编号。', 400);
+    if (action === 'inspect') return browser.inspect(input.id);
+    if (typeof input.expectedRevision !== 'string') throw failure('browser_authorization_revision_required', '必须提供当前浏览器配置观察版本。', 400);
+    if (action === 'create') return profiles.create(input.id, input.expectedRevision);
+    if (action === 'adopt' && typeof input.directory === 'string') return profiles.create(input.id, input.expectedRevision, input.directory);
+    if (action === 'reset' && input.confirmSharedReset === true) return profiles.reset(input.id, input.expectedRevision);
+    throw failure('browser_authorization_input_invalid', '未知动作；接管须提供目录，重置须明确confirmSharedReset。', 400);
+  }
   readonly files: ConnectionFiles;
   readonly catalog: Catalog;
   readonly resolveScope: (root: string) => ConnectionScope;
@@ -127,10 +155,10 @@ export class ConnectionSkillsApplication {
     } catch {
       if (!observationDiagnostic) diagnostics.push('本机观察版本不可用；连接源内容已保留，需恢复本机观察能力后才能执行或修改。');
     }
-    const websiteUrl = publicWebsite(entry?.definition, instance.config);
+    const websiteUrl = publicWebsite(entry?.definition, instance.config), websiteLinks = publicWebsiteLinks(entry?.definition, instance.config);
     return { ...instance, config: publicConfig, fieldLabels, sourcePath, revision, teamRevision, localRevision: local.revision, definitionRevision,
       authentication: { source: local.present || entry?.definition.authentication.allowedSources?.every(source => source === 'personal') ? 'personal' as const : 'team' as const, team: teamAuthentication, personal: personalAuthentication },
-      availability: { ready: diagnostics.length === 0, diagnostics }, programAvailability, definition: entry, websiteUrl };
+      availability: { ready: diagnostics.length === 0, diagnostics }, programAvailability, definition: entry, websiteUrl, websiteLinks };
   }
   list(root: string) {
     return this.listObserved(this.resolveScope(root));
@@ -233,15 +261,64 @@ export class ConnectionSkillsApplication {
       return this.getObserved(scope, id, currentObservation);
     });
   }
-  async authorize(root: string, id: string, raw: unknown, options: { signal?: AbortSignal } = {}) {
+  /** Prepare authentication only. Never executes, retries or resumes a business operation. */
+  async ensureAuthentication(root: string, id: string, raw: unknown, options: { signal?: AbortSignal } = {}) {
+    const input = object(raw), expected = object(input.expected) as Expected;
+    if (Object.keys(input).some(key => !['expected', 'parameters', 'browserMode'].includes(key)) || Object.keys(expected).some(key => !['teamRevision', 'localRevision', 'definitionRevision'].includes(key))) throw failure('connection_skill_authorization_input_invalid', '会话准备只接收准确观察、声明参数及可选browserMode。', 400);
+    if (input.browserMode !== undefined && !['headless', 'interactive'].includes(input.browserMode as string)) throw failure('connection_skill_authorization_input_invalid', '浏览器模式不合法。', 400);
+    requireDefinitionObservation(expected);
+    if (typeof expected.teamRevision !== 'string' || typeof expected.localRevision !== 'string') throw failure('connection_skill_revision_required', '必须提供准确的连接及个人认证观察。', 400);
+    const scope = this.resolveScope(root), initial = this.observedAuthentication(scope, identifier(id), expected), authorization = initial.entry.definition.authentication.authorization;
+    if (!authorization?.sessionCheck || !authorization.identityFields?.length) throw failure('connection_skill_session_preparation_unavailable', '此方法尚未声明安全的会话检查与稳定身份字段。');
+    if (!initial.instance.enabled || !initial.entry.enabled) throw failure('connection_skill_disabled', '此连接已停用。');
+    const parameterFields = authorization.parameters || [];
+    const parameters = validateConfig(parameterFields, input.parameters ?? {}, { requiredFields: new Set([...parameterFields.filter(field => field.required).map(field => field.key), ...(authorization.sessionCheck.requiredParameters || [])]) });
+    const assertCurrent = (observed: Expected) => {
+      if (options.signal?.aborted) throw failure('connection_skill_authorization_cancelled', '会话准备已取消。');
+      const current = this.resolveScope(root);
+      if (current.rootPath !== scope.rootPath || current.workspaceId !== scope.workspaceId) throw failure('connection_skill_context_changed', '工作空间身份已变化。');
+      this.observedAuthentication(scope, id, observed);
+    };
+    const check = async (instance: ReturnType<ConnectionSkillsApplication['get']>['instance']) => {
+      const observed = { teamRevision: instance.teamRevision, localRevision: instance.localRevision, definitionRevision: instance.definitionRevision };
+      assertCurrent(observed);
+      const result = await this.runSelected(root, { id, expectedRevision: instance.revision, program: authorization.sessionCheck!.program, args: authorization.sessionCheck!.args, timeoutMs: 45000 }, parameters);
+      assertCurrent(observed);
+      let output: Record<string, unknown>;
+      try { output = object(JSON.parse(result.stdout)); } catch { throw failure('connection_skill_session_check_unknown', '会话检查未返回有效结果；不会自动登录。'); }
+      if (result.status !== 'exited' || result.exitCode !== 0 || Object.keys(output).length !== 1 || typeof output.sessionStatus !== 'string' || !['valid', 'expired', 'unknown', 'identity-mismatch'].includes(output.sessionStatus)) throw failure('connection_skill_session_check_unknown', '会话检查结果不能确认；不会自动登录。');
+      if (output.sessionStatus === 'unknown') throw failure('connection_skill_session_check_unknown', '无法确认会话状态；不会自动登录。');
+      if (output.sessionStatus === 'identity-mismatch') throw failure('connection_skill_authorization_identity_changed', '站点返回的身份与本人认证不符；不会自动切换身份。');
+      return output.sessionStatus;
+    };
+    assertCurrent(expected);
+    if (initial.local.present) {
+      // Invalid or differently bound personal groups require explicit recovery, not fallback.
+      this.group(scope, initial.instance, initial.entry, initial.local.group);
+      const current = this.getObserved(scope, id).instance;
+      if (await check(current) === 'valid') return { status: 'success' as const, renewed: false, instance: current };
+    }
+    assertCurrent(expected);
+    const authorized = await this.authorize(root, id, input, { signal: options.signal, sameIdentity: true });
+    if (await check(authorized.instance) !== 'valid') throw Object.assign(failure('connection_skill_session_not_ready', '新认证已保存但目标会话尚未就绪；请先调查，不自动重试。'), { details: { authenticationSaved: true } });
+    return { status: 'success' as const, renewed: true, instance: authorized.instance };
+  }
+  async authorize(root: string, id: string, raw: unknown, options: { signal?: AbortSignal; sameIdentity?: boolean } = {}) {
     const scope = this.resolveScope(root), input = object(raw), expected = object(input.expected) as Expected;
-    if (Object.keys(input).some(key => key !== 'expected') || Object.keys(expected).some(key => !['teamRevision', 'localRevision', 'definitionRevision'].includes(key))) throw failure('connection_skill_authorization_input_invalid', '授权只接收准确的三项当前观察。', 400);
+    if (Object.keys(input).some(key => !['expected', 'browserMode', 'parameters'].includes(key)) || Object.keys(expected).some(key => !['teamRevision', 'localRevision', 'definitionRevision'].includes(key))) throw failure('connection_skill_authorization_input_invalid', '授权只接收准确观察、声明参数及可选browserMode。', 400);
+    if (input.browserMode !== undefined && !['headless', 'interactive'].includes(input.browserMode as string)) throw failure('connection_skill_authorization_input_invalid', 'browserMode必须为headless或interactive。', 400);
     identifier(id); requireDefinitionObservation(expected);
     if (typeof expected.teamRevision !== 'string' || typeof expected.localRevision !== 'string') throw failure('connection_skill_revision_required', '授权必须提供连接和本机个人认证的当前观察。', 400);
     const initial = this.observedAuthentication(scope, id, expected), authorization = initial.entry.definition.authentication.authorization;
     if (!authorization) throw failure('connection_skill_authorization_unavailable', '此接入未声明个人授权程序。', 404);
     if (!initial.instance.enabled || !initial.entry.enabled) throw failure('connection_skill_disabled', '此连接已停用。');
     this.assertSource(initial.entry, 'personal');
+    const parameters = validateConfig(authorization.parameters || [], input.parameters ?? {});
+    let previous: Values | undefined;
+    if (initial.local.present && (authorization.reuseFields?.length || options.sameIdentity)) {
+      try { previous = this.group(scope, initial.instance, initial.entry, initial.local.group); }
+      catch (cause) { if (options.sameIdentity) throw cause; }
+    }
     const requiredFields = new Set([...initial.entry.definition.authentication.targetFields, ...(authorization.inputs || []).map(reference => reference.slice('config.'.length))]);
     const config = validateConfig(initial.entry.definition.config.fields, initial.instance.config, { requiredFields });
     const program = resolveProgram(scope.rootPath, initial.entry, authorization.program), checked = checkProgram(program);
@@ -263,14 +340,21 @@ export class ConnectionSkillsApplication {
       protocolVersion: CONNECTION_AUTHORIZATION_PROTOCOL, callId: crypto.randomUUID(), workspace: { id: scope.workspaceId, root: scope.rootPath },
       definition: { skillAssetIdentity: initial.entry.skill.assetIdentity, definitionId: initial.entry.definition.definitionId, revision: initial.entry.revision },
       connection: { id, config, revisions: { teamRevision: expected.teamRevision, localRevision: expected.localRevision, definitionRevision: expected.definitionRevision } }, privateStateRoot: directory,
+      ...(authorization.parameters ? { authorizationParameters: parameters } : {}),
+      ...(previous && authorization.reuseFields ? { reusableAuthentication: Object.fromEntries(authorization.reuseFields.map(key => [key, previous![key]])) } : {}),
     };
     let response: { status: 'success'; instance: ReturnType<ConnectionSkillsApplication['get']>['instance']; accountLabel?: string; warnings?: string[] } | undefined;
     let authorizationError: unknown;
+    let browser: Awaited<ReturnType<BrowserAuthorization['acquire']>> | undefined;
     try {
-      const rawValues = await runAuthorizationProgram(program, authorization.args || [], context, { signal: options.signal, timeoutMs: authorization.timeoutMs ?? 180_000 });
+      if (authorization.browserProfile) browser = await new BrowserAuthorization(scope.rootPath).acquire(authorization.browserProfile, options.signal, input.browserMode as 'headless' | 'interactive' | undefined);
+      const rawValues = await runAuthorizationProgram(program, authorization.args || [], {
+        ...context, ...(browser ? { browser: { protocolVersion: 'buildr.browser-authorization/v1', profileId: authorization.browserProfile, mode: browser.mode, clientModule: pathToFileURL(resolveProductResource('browser-authorization/client.mjs', { developmentFallback: 'resources/browser-authorization/client.mjs' })).href } } : {}),
+      }, { signal: options.signal, timeoutMs: authorization.timeoutMs ?? 180_000, browser });
       let values: Values;
       try { values = validateAuthentication(initial.entry.definition.authentication.fields, rawValues); }
       catch { throw failure('connection_skill_authorization_result_invalid', '授权程序未返回声明要求的完整认证组；未替换个人认证。'); }
+      if (options.sameIdentity && previous && authorization.identityFields?.some(key => JSON.stringify(values[key]) !== JSON.stringify(previous![key]))) throw failure('connection_skill_authorization_identity_changed', '共享登录身份与原本人认证不同；未替换原认证。');
       response = this.files.lock(scope, id, () => {
         const current = reobserve();
         const group = { targetBinding: this.target(scope, current.instance, current.entry, values), values };
@@ -288,13 +372,16 @@ export class ConnectionSkillsApplication {
       authorizationError = cause;
       throw cause;
     } finally {
+      if (browser) try { await browser.close(); } catch {
+        if (response) (response.warnings ??= []).push('本次浏览器使用权释放尚未确认；共享配置保留，已保存认证事实不变。');
+      }
       let cleaned = false;
       try {
         const current = fs.lstatSync(directory, { throwIfNoEntry: false });
         if (!current) cleaned = true;
         else if (current.isDirectory() && !current.isSymbolicLink() && current.dev === directoryIdentity.dev && current.ino === directoryIdentity.ino) { fs.rmSync(directory, { recursive: true }); cleaned = true; }
       } catch { /* Retain changed or in-use state, never remove an unverified path. */ }
-      if (!cleaned && response) response.warnings = ['本次授权临时目录尚未清理；已保存个人认证的事实保持，需核对本机浏览器是否退出。'];
+      if (!cleaned && response) (response.warnings ??= []).push('本次授权临时目录尚未清理；已保存个人认证的事实保持，需核对本机浏览器是否退出。');
       if (!cleaned && authorizationError && typeof authorizationError === 'object') Object.assign(authorizationError, { details: { ...('details' in authorizationError && typeof authorizationError.details === 'object' ? authorizationError.details : {}), cleanup: 'unconfirmed' } });
     }
   }
@@ -424,7 +511,8 @@ export class ConnectionSkillsApplication {
     const scope = this.resolveScope(root), observation = this.observe(scope), view = this.getObserved(scope, id, observation).instance, entry = this.entry(scope, view.binding, undefined, false, observation), resolved = resolveProgram(scope.rootPath, entry, program);
     return runProgram(resolved, resolved.declaration.helpArgs || ['--help'], { timeoutMs: 5000 });
   }
-  async run(root: string, options: { id: string; expectedRevision: string; program?: string; args: string[]; contexts?: Record<string, { id: string; revision: string }>; input?: string | Buffer; timeoutMs?: number }) {
+  async run(root: string, options: RunOptions) { return this.runSelected(root, options); }
+  private async runSelected(root: string, options: RunOptions, authorizationParameters?: Values) {
     if (typeof options.expectedRevision !== 'string') throw failure('connection_skill_revision_required', '运行必须提供所观察的连接版本。', 400);
     const scope = this.resolveScope(root), observation = this.observe(scope), selected = this.selected(scope, identifier(options.id), options.expectedRevision, observation), programId = options.program || 'cli';
     const selections = { primary: selected, ...Object.fromEntries(Object.entries(options.contexts || {}).map(([name, value]) => {
@@ -438,7 +526,7 @@ export class ConnectionSkillsApplication {
     const program = resolveProgram(scope.rootPath, selected.entry, programId);
     if (program.declaration.contextProtocol === CONNECTION_AUTHORIZATION_PROTOCOL) throw failure('connection_skill_program_protocol', '授权专用程序不能接收普通连接认证，请使用明确的授权入口。', 400);
     const check = checkProgram(program); if (!check.ready) throw failure('connection_skill_dependency_version', check.diagnostics.join(' '));
-    const context = { protocolVersion: 'buildr.connection-context/v1', callId: crypto.randomUUID(), workspace: { id: scope.workspaceId, root: scope.rootPath }, definition: { skillAssetIdentity: selected.entry.skill.assetIdentity, definitionId: selected.entry.definition.definitionId, revision: selected.entry.revision }, connections: Object.fromEntries(Object.entries(selections).map(([name, value]) => [name, value.context])), privateStateRoot: this.files.privateState(scope, selected.entry.skill.assetIdentity) };
+    const context = { protocolVersion: 'buildr.connection-context/v1', callId: crypto.randomUUID(), workspace: { id: scope.workspaceId, root: scope.rootPath }, definition: { skillAssetIdentity: selected.entry.skill.assetIdentity, definitionId: selected.entry.definition.definitionId, revision: selected.entry.revision }, connections: Object.fromEntries(Object.entries(selections).map(([name, value]) => [name, value.context])), privateStateRoot: this.files.privateState(scope, selected.entry.skill.assetIdentity), ...(authorizationParameters === undefined ? {} : { authorizationParameters }) };
     const revalidate = () => {
       const currentScope = this.resolveScope(root); if (currentScope.rootPath !== scope.rootPath || currentScope.workspaceId !== scope.workspaceId) throw failure('connection_skill_context_changed', '工作空间身份已变化。');
       const currentObservation = this.observe(scope);

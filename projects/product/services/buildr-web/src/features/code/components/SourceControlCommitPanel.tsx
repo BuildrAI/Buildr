@@ -40,7 +40,7 @@ export function SourceControlCommitPanel({active = true, workspaceId, repository
   const [feedback, setFeedback] = useState(''), [menuOpen, setMenuOpen] = useState(false);
   useEffect(()=>{if(active)void models.refreshModelCatalog().catch(()=>{});},[active,models.refreshModelCatalog]);
   const context = state.context, generating = Boolean(state.generation), writing = Boolean(state.gitPending);
-  useEffect(() => { if (active) { void actions.observe(source); setFeedback(''); } }, [active, actions, key, version]);
+  useEffect(() => { if (active && !repository.cached) { void actions.observe(source); setFeedback(''); } }, [active, actions, key, version, repository.cached]);
   const options = useMemo(() => executionModelOptions(models.modelCatalog), [models.modelCatalog]);
   const nextExecutor = useExecutionModelChoice(options);
   const executor = state.generation ? {key: state.generation.modelKey, label: state.generation.label, available: true} : nextExecutor;
@@ -48,7 +48,7 @@ export function SourceControlCommitPanel({active = true, workspaceId, repository
   const provenance = state.generatedBy ? '由 ' + state.generatedBy.label + ' 生成' : '';
   const pushScope = scope + ' 推送包含当前分支此前所有未推送提交。' + (context?.push.target ? `目标：${context.push.target}。` : '未设置可核实上游时，只完成提交并停止推送，不猜测目标。');
   const syncScope = scope + ' 提交后获取（Fetch）固定上游，必要时快进（Fast-forward）或变基（Rebase），再普通推送（Push）；包含当前分支此前所有未推送提交。' + (context?.push.target ? `目标：${context.push.target}。` : '未设置可核实上游时，只完成提交并停止同步，不猜测目标。');
-  const ready = Boolean(context && !state.contextLoading && !state.contextError), noChanges = !context?.hasChanges;
+  const ready = Boolean(!repository.cached && context && !state.contextLoading && !state.contextError), noChanges = !context?.hasChanges;
   const disabledCommit = !ready || noChanges || !state.text.trim() || generating || writing || state.unknownCommit;
   useEffect(() => { setMenuOpen(false); }, [key, active, disabledCommit]);
   const commit = (nextMode: CommitMode) => {

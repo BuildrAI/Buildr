@@ -67,6 +67,3 @@
 .ac-waiting-handoff > div > span, .ac-question-handoff-target { font-size:var(--font-size-secondary); color:var(--soft-muted,#65766f); }
 .ac-cancelled-send { margin:8px 0; color:var(--soft-muted,#65766f); font-size:var(--font-size-secondary); }
 .ac-cancelled-send pre { white-space:pre-wrap; overflow-wrap:anywhere; }
-
-.ac-question-send-notice{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;margin:4px 0 8px;color:var(--soft-muted,#65766f);font-size:var(--font-size-secondary)}
-.ac-question-send-notice .ant-btn{padding-inline:0;height:auto}

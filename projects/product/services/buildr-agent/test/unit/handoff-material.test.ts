@@ -23,3 +23,22 @@ test('successful repeated operations collapse while failures, unknowns, decision
  const text=formatHandoffRounds(rounds);assert.match(text,/100 次执行结束/);assert.match(text,/quota failed/);assert.match(text,/结果未确认/);assert.match(text,/不要改配置/);assert.match(text,/#102/);assert.ok(!text.includes('file body must not travel'));assert.ok(!text.includes('"action"'));
  assert.ok(Buffer.byteLength(text)<Buffer.byteLength(JSON.stringify(records.map(e=>({action:e.name,result:'执行结束，具体结果见来源',location:'a.ts'}))))/3);
 });
+
+test('an active source round never promotes completed commentary into a final reply',()=>{
+ const records=[entry(1,{text:'尚在进行的主任务'}),entry(2,{role:'assistant',text:'先解释当前发现',status:'completed'})];
+ for(const status of ['running','waiting-question','waiting-approval','unknown','tools-active'] as const){
+  const round=organizeHandoff(records,{one:{status,provider:"local",updatedAt:"2026-10-29T00:00:00Z"}})[0]!;
+  assert.equal(round.finalReply,undefined);assert.deepEqual(round.assistantNotes,['先解释当前发现']);assert.equal(round.state,status);
+ }
+});
+
+test('child inputs and reports stay out of primary handoff while child tool evidence remains attributable',()=>{
+ const records=[entry(1,{text:'primary request'}),entry(2,{role:'assistant',text:'primary final',status:'completed'}),entry(3,{role:'user',text:'child instruction',parentToolId:'delegate'}),entry(4,{role:'assistant',text:'child report',parentToolId:'delegate',status:'completed'})];
+ const round=organizeHandoff(records)[0]!;
+ assert.deepEqual(round.userInputs,['primary request']);assert.equal(round.finalReply,'primary final');
+ assert.deepEqual(round.assistantNotes,[]);assert.equal(handoffEntries(records).length,2);
+ const tool=entry(5,{kind:'tool',role:'system',name:'Read',parentToolId:'delegate',text:'observed child output',status:'completed'});
+ assert.equal(handoffEntries([...records,tool]).at(-1),tool);
+ assert.equal(organizeHandoff([...records,tool])[0]!.finalReply,'primary final');
+ assert.equal(organizeHandoff([...records,{...tool,status:'running'}])[0]!.finalReply,undefined);
+});
