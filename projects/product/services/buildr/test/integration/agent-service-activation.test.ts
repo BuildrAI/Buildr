@@ -3,7 +3,7 @@ import test from 'node:test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { prepareAgentRuntime, stopAgentProcess } from '@buildr-ai/buildr-agent';
+import { connectAgentProcess, prepareAgentRuntime, stopAgentProcess } from '@buildr-ai/buildr-agent';
 import { activateAgentServiceRuntime } from '../../src/modules/agent-service/application/activate-runtime.ts';
 
 // The same activation owner used after launcher installation, with real private
@@ -16,6 +16,15 @@ test('activation reports the exact ready server and rejects an installed target 
   const old=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/activation-fixture.mjs'});
   const first=await activateAgentServiceRuntime({dataRoot,profileId,runtime:old});
   assert.equal(first.status,'ready');assert.equal(first.targetDigest,old.digest);assert.equal(first.currentDigest,old.digest);assert.equal(first.accepting,true);
+  const connection=await connectAgentProcess({dataRoot,profileId,runtime:old,sourceId:'buildr',legacySourceId:'buildr',host:{
+    resolveExecutionScope:async({ref})=>({ref,revision:'fixture',rootPath:root}),
+    verifyWorkObject:async()=>{throw Error('unused');},
+    listExecutionScopes:async()=>({refs:[{sourceId:'buildr',id:'workspace'}],revision:'fixture'}),
+  }});
+  try{
+    const conversation=await connection.operations.conversations.create('workspace',{cwd:root,title:'activation conversation check'});
+    assert.equal(conversation.workspaceId,'workspace','the activated backend must accept the same scope identity as the Web host');
+  }finally{await connection.disconnect();}
   fs.writeFileSync(path.join(packageRoot,'build/activation-marker.json'),'{"version":"new"}\n');
   const next=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/activation-fixture.mjs'});
   const adopted=await activateAgentServiceRuntime({dataRoot,profileId,runtime:next});

@@ -111,6 +111,9 @@ export class OwnedControlResource {
 export class NativeRpc {
   private sequence = 0;
   private buffer = '';
+  private draining = false;
+  private drainTask?: NodeJS.Immediate;
+  private transportEnd?: string;
   private decoder = new StringDecoder('utf8');
   private pending = new Map<string | number, { resolve: (value: any) => void; reject: (error: Error) => void }>();
   private listeners = new Set<(message: RpcMessage) => void>();
@@ -129,17 +132,33 @@ export class NativeRpc {
     this.child.stdout.on('data', chunk => this.read(this.decoder.write(chunk)));
     this.child.stdin.on('error', () => this.fail('agent_native_process_closed'));
     this.child.once('error', () => this.fail('agent_native_process_failed'));
-    this.child.once('exit', () => this.fail('agent_native_process_closed'));
+    this.child.once('exit', () => { this.transportEnd='agent_native_process_closed'; if(!this.draining&&!this.drainTask)this.drain(); });
   }
   executionRef(id:string,contextId:string,binding:string,backgroundWork=false):ExecutionRef{return this.control.executionRef(id,contextId,binding,backgroundWork);}
   canReleaseExecution(ref:ExecutionRef,contextId:string,binding:string,ended:boolean):Promise<boolean>{return this.control.canReleaseExecution(ref,contextId,binding,ended,this.closed);}
   onMessage(listener: (message: RpcMessage) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
   private read(chunk: string): void {
+    if(this.disposed)return;
     this.buffer += chunk;
     if (Buffer.byteLength(this.buffer) > 16 * 1024 * 1024) { this.fail('agent_native_frame_too_large'); this.child.kill('SIGTERM'); return; }
+    if(!this.draining&&!this.drainTask)this.drain();
+  }
+  private drain():void {
+    if(this.disposed)return;
+    this.draining=true;
+    const started=performance.now();let handled=0;
+    try{
     for (;;) {
       const end = this.buffer.indexOf('\n');
-      if (end < 0) return;
+      if (end < 0) break;
+      // Persistence/projection can be costly. Yield without changing wire order,
+      // and apply backpressure so control HTTP/timers can run between batches.
+      if(handled>=8||performance.now()-started>=8){
+        this.child.stdout.pause();
+        this.drainTask=setImmediate(()=>{this.drainTask=undefined;this.drain();});
+        return;
+      }
+      handled++;
       const line = this.buffer.slice(0, end); this.buffer = this.buffer.slice(end + 1);
       if (!line.trim()) continue;
       let message: RpcMessage;
@@ -156,7 +175,11 @@ export class NativeRpc {
           try { listener({ method: 'buildr/eventConsumerFailed', params: { threadId: message.params?.threadId, contextId: message.params?.contextId, diagnostic: errorDiagnostic(error instanceof Error ? error.message : undefined, this.diagnosticSecrets) } }); } catch { /* Preserve native execution even if the diagnostic consumer also fails. */ }
         }
       }
+      if(this.disposed)return;
     }
+    this.child.stdout.resume();
+    if(this.transportEnd)this.fail(this.transportEnd);
+    }finally{this.draining=false;}
   }
   private fail(code: string): void { for (const pending of this.pending.values()) pending.reject(new Error(code)); this.pending.clear(); if (!this.failed) { this.failed = true; for (const listener of this.listeners) { try { listener({ method: 'buildr/transportClosed', params: { code } }); } catch { /* Consumer errors cannot escape a process event handler. */ } } } }
   write(message: RpcMessage): void {
@@ -169,7 +192,7 @@ export class NativeRpc {
     try { this.write({ id, method, params }); return await bounded(result, timeoutMs); }
     finally { this.pending.delete(id); }
   }
-  async close(): Promise<void> { if (this.disposed) return; this.disposed = true; this.fail('agent_native_process_closed'); await closeOwnedProcess(this.child, 1000); this.listeners.clear(); }
+  async close(): Promise<void> { if (this.disposed) return; this.disposed = true; if(this.drainTask)clearImmediate(this.drainTask);this.drainTask=undefined;this.buffer='';this.fail('agent_native_process_closed'); await closeOwnedProcess(this.child, 1000); this.listeners.clear(); }
 }
 export function opaqueReference(provider: string, nativeSessionId: string, cwd: string, bindingIdentity: string): string {
   return JSON.stringify({ version: 1, provider, nativeSessionId, cwd, bindingIdentity });
