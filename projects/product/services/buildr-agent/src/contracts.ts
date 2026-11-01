@@ -126,7 +126,7 @@ export type ExecutorEvent =
   | { type: 'observation'; observation: ExecutorObservation }
   | { type: 'completed'; status: 'completed' | 'stopped' | 'failed'; diagnostic?: string }
   | { type: 'diagnostic'; message: string };
-export interface ExecutorTitleInput { contextRef: ContextRef; cwd: string; description: string; model?: string; freshInstruction?: boolean; signal: AbortSignal }
+export interface ExecutorTitleInput { contextRef: ContextRef; cwd: string; description: string; /** Exact user input admitted for the current run, when already known. */ userText?: string; model?: string; freshInstruction?: boolean; signal: AbortSignal }
 /** In-process only: the source validates its own binding; the destination owns the new context. */
 export interface ExecutorForkInput {
   source: AgentRuntime;

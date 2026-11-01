@@ -922,10 +922,21 @@ test('a running run already receives its generated title while the first round i
     await connected(f.service, 'local'); const view = await f.service.conversations.create('workspace-one', {}); send(f.service, view.id, 'local', '请在执行开始时就给出名字');
     await waitUntil(() => native.sends[0]?.contextRef && native.contexts.get(native.sends[0].contextRef.id), Boolean);
     const running = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'running' && value.title === '执行中已回填的标题');
-    assert.equal(titles.length, 1); assert.deepEqual(JSON.parse(titles[0].description), { messages: [{ role: 'user', text: '请在执行开始时就给出名字' }] });
+    assert.equal(titles.length, 1); assert.deepEqual(JSON.parse(titles[0].description), { messages: [{ role: 'user', text: '请在执行开始时就给出名字' }] }); assert.equal(titles[0].userText, '请在执行开始时就给出名字');
     for (const context of native.contexts.values()) context.unblock?.();
     const done = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed');
     assert.equal(done.title, '执行中已回填的标题'); assert.equal(titles.length, 1);
+  } finally { await f.close(); }
+});
+
+test('a mixed technical provider title within the 64-character limit is accepted', async () => {
+  const native = fake(); const open = native.executor.open;
+  native.executor.open = async input => ({ ...await open(input), async generateTitle() { return '排查 agent-conversations 接口报错'; } });
+  const f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local'); const view = await f.service.conversations.create('workspace-one', {}); send(f.service, view.id, 'local', '排查标题生成');
+    const named = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.title === '排查 agent-conversations 接口报错' && value.run?.status === 'completed');
+    assert.equal(named.title, '排查 agent-conversations 接口报错'); assert.equal(named.titleState?.status, 'generated');
   } finally { await f.close(); }
 });
 
@@ -994,7 +1005,7 @@ test('explicit title action summarizes a legacy/manual name with exact revision 
 
 test('oversized or failed title inference preserves the neutral name and reserves automatic budget across restart', async () => {
   const native = fake(); const open = native.executor.open; let calls = 0;
-  native.executor.open = async input => ({ ...await open(input), async generateTitle() { calls++; return '这是一段超过二十四个汉字的冗长描述标题而不是精短标题必须拒绝'; } });
+  native.executor.open = async input => ({ ...await open(input), async generateTitle() { calls++; return '这是一段超过六十四个字符的冗长描述标题而不是精短标题'.repeat(3); } });
   const f = fixture([native.executor]);
   try {
     await connected(f.service, 'local'); const view = await f.service.conversations.create('workspace-one', {}); send(f.service, view.id, 'local', 'first');

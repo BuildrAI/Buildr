@@ -1070,7 +1070,7 @@ export class ConversationApplication {
       if (beforeDispatch.view.run!.status === 'stopping') { beforeDispatch.view.run!.status = 'stopped'; this.save(beforeDispatch); return; }
       if (!this.options.connections.get(prepared.draft.connectionId).enabled) fail('agent_connection_disabled', '接入已断开，本次输入尚未交付。', 409);
       dispatched = true;
-      const early = this.titleAtRunStart(workspaceId, id, runId, runtime).catch(() => {});
+      const early = this.titleAtRunStart(workspaceId, id, runId, runtime, prepared.text).catch(() => {});
       this.earlyTitles.set(id, early);
       void early.finally(() => { if (this.earlyTitles.get(id) === early) this.earlyTitles.delete(id); this.scheduleSourceRelease(workspaceId, id); });
       await runtime.send({ contextRef: participant.contextRef!, cwd: record.view.cwd, text: prepared.text, images: prepared.images, model: prepared.draft.modelAccountId ? selectedRuntime.model : prepared.draft.model, reasoningEffort: prepared.draft.reasoningEffort, permissionMode: prepared.draft.permissionMode, clientRequestId: record.attempts.find(value => value.runId === runId)!.clientRequestId, onEvent: event => this.event(workspaceId, id, runId, event) });
@@ -1228,7 +1228,7 @@ export class ConversationApplication {
     return record.titleAttemptsByParticipant[participantId]??={};
   }
   /** Backfill the neutral name as soon as execution starts; the completed-run path stays the fallback. */
-  private async titleAtRunStart(workspaceId: string, id: string, runId: string, runtime: AgentRuntime): Promise<void> {
+  private async titleAtRunStart(workspaceId: string, id: string, runId: string, runtime: AgentRuntime, userText?: string): Promise<void> {
     const previous=this.earlyTitles.get(id);
     if (this.titleWork.has(id) && previous) await previous.catch(()=>{});
     const record = this.currentRun(workspaceId, id, runId);
@@ -1244,7 +1244,7 @@ export class ConversationApplication {
     const controller = new AbortController(); this.titleWork.set(id, controller);
     const timeout = setTimeout(() => controller.abort(), TITLE_TIMEOUT_MS + 2_000); timeout.unref();
     try {
-      const title = await within(runtime.generateTitle({ contextRef: participant.contextRef, cwd: record.view.cwd, description, model: record.view.run?.model, freshInstruction: Boolean(record.view.forkedFrom), signal: controller.signal }), TITLE_TIMEOUT_MS, 'agent_title_timeout', controller.signal);
+      const title = await within(runtime.generateTitle({ contextRef: participant.contextRef, cwd: record.view.cwd, description, ...(userText ? { userText } : {}), model: record.view.run?.model, freshInstruction: Boolean(record.view.forkedFrom), signal: controller.signal }), TITLE_TIMEOUT_MS, 'agent_title_timeout', controller.signal);
       const current = this.currentRun(workspaceId, id, runId);
       if (!current || controller.signal.aborted) return;
       if (!this.titleEligible(current)) return;
@@ -1287,8 +1287,7 @@ export class ConversationApplication {
   private acceptTitle(record: StoredConversation, raw: string | undefined, explicit = false): boolean {
     if (!raw || this.closing || !explicit && !this.titleEligible(record)) return false;
     const title = raw.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/g, '').replace(/\s+/g, ' ').trim();
-    // Chinese titles stay glanceable; English needs slightly more characters for a short phrase.
-    if (!title || [...title].length > (/\p{Script=Han}/u.test(title) ? 24 : 64)) return false;
+    if (!title || [...title].length > 64) return false;
     record.view.title = title; record.titleOrigin = 'generated'; record.view.titleState={status:'generated'}; return true;
   }
   private titleDescription(record: StoredConversation, requireAnswer = true): string | undefined {

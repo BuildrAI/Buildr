@@ -141,7 +141,7 @@ class QoderRuntime implements AgentRuntime {
   async generateTitle(input: ExecutorTitleInput): Promise<string | undefined> {
     this.reference(input.contextRef, input.cwd); input.signal.throwIfAborted();
     await this.assertNativeAccount();
-    return await generateQoderTitle(this.rpc,input.description,input.signal);
+    return await generateQoderTitle(this.rpc,input.contextRef.id,input.cwd,input.description,input.userText,input.signal);
   }
   async beginLogin(update: (value: LoginObservation) => void): Promise<void> {
     await this.cancelLogin(); update({ state: 'initializing' });
