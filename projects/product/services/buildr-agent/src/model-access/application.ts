@@ -311,15 +311,18 @@ export class ModelAccessApplication {
     const view: ModelGatewayLease = { identity, baseUrl: baseUrl + '/v1', apiKey: token, model: `buildr-${identity.slice(0,32)}`, offering: structuredClone(offering), accountId: account.id, accountLabel: account.accountLabel || account.label, provider: account.provider };
     const lease: LeaseRecord = { view, input: { ...input, expectedIdentity: account.identity }, tokenHash: digest(token), requests: new Map() }; this.leasesByToken.set(lease.tokenHash,lease); this.leasesByIdentity.set(identity,lease); return structuredClone(view);
   }
-  async generate(input: ModelLeaseInput & { prompt: string; signal: AbortSignal }): Promise<string> {
+  async generate(input: ModelLeaseInput & { prompt: string; signal: AbortSignal; reasoningEffort?: string }): Promise<string> {
     input.signal.throwIfAborted();
     const lease = await this.createLease(input);
     try {
       input.signal.throwIfAborted();
       const efforts = lease.offering.reasoningEfforts;
       const ranks: Record<string, number> = {off:0,none:0,disabled:0,minimal:1,low:2,medium:3,high:4,xhigh:5,max:6,ultra:7};
-      const effort = efforts?.length && efforts.every(value => ranks[value.id] !== undefined)
-        ? [...efforts].sort((a,b) => ranks[a.id]! - ranks[b.id]!)[0]?.id : undefined;
+      if (input.reasoningEffort !== undefined && !efforts?.some(value => value.id === input.reasoningEffort)) {
+        throw new ModelAccessError('model_reasoning_effort_invalid', '所选推理强度不适用于当前模型与服务档位，请重新选择。', 400);
+      }
+      const effort = input.reasoningEffort ?? (efforts?.length && efforts.every(value => ranks[value.id] !== undefined)
+        ? [...efforts].sort((a,b) => ranks[a.id]! - ranks[b.id]!)[0]?.id : undefined);
       const response = await fetch(lease.baseUrl + '/chat/completions', {
         method: 'POST', signal: input.signal,
         headers: {'Content-Type':'application/json',Authorization:'Bearer ' + lease.apiKey},
@@ -425,7 +428,7 @@ export function createModelAccess(options: ModelAccessOptions) {
     catalog: { list: () => application.catalog() },
     activity: () => application.activity(),
     freezeMetadata: (value = true) => application.freezeMetadata(value),
-    generate: (input: ModelLeaseInput & {prompt:string;signal:AbortSignal}) => application.generate(input),
+    generate: (input: ModelLeaseInput & {prompt:string;signal:AbortSignal;reasoningEffort?:string}) => application.generate(input),
     leases: { stopRun:(conversationId:string,runId:string)=>application.stopRun(conversationId,runId), streamFailure:(conversationId:string,runId:string)=>application.streamFailure(conversationId,runId), hasActiveRequests:(identity:string)=>application.hasActiveRequests(identity), create: (input:ModelLeaseInput) => application.createLease(input), release: (identity:string) => application.release(identity), updateRun:(identity:string,runId:string)=>application.updateRun(identity,runId) },
     close: () => application.close(),
   };

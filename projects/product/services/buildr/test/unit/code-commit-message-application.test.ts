@@ -48,6 +48,17 @@ test('generation supplies bounded materials once with no tool environment and re
   assert.ok(options.length >= 3); for (const option of options) assert.deepEqual(option, { includeDiff: false });
 });
 
+test('HTTP and commit application preserve selected tier and reasoning at the generation boundary', async () => {
+  let captured: GenerationInput | undefined;
+  const app = createCodeCommitMessageApplication({commitSnapshot:snapshot,commitGuidance:()=>environment(),commitMaterial:material,startGeneration:input=>{captured=input;return run;}});
+  const contribution=createCodeGenerationHttpContribution(app,new CodeGeneration(async()=>{throw Error('unused');}));
+  const base={request:{method:'POST'},suffix:'/code/commit-message',searchParams:new URLSearchParams(),root:'/workspace',authorizeWrite:()=>{}};
+  const body={...location,...selection,expectedRevision:snapshot().revision,serviceTier:'fast:128',reasoningEffort:'high'};
+  assert.deepEqual(await contribution.handle({...base,readJsonBody:async()=>body}),{status:202,body:run});
+  assert.equal(captured?.serviceTier,'fast:128');assert.equal(captured?.reasoningEffort,'high');
+  for(const reasoningEffort of [42,{},['high'],'']) await assert.rejects(contribution.handle({...base,readJsonBody:async()=>({...body,reasoningEffort})}),{code:'code_generation_invalid'});
+});
+
 test('the 16 KiB UTF-8 budget includes instructions and material delimiters without rejecting large source content', async () => {
   let current = snapshot(), calls = 0, captured: GenerationInput | undefined, budget = 0;
   const app = createCodeCommitMessageApplication({ commitSnapshot: () => current, commitGuidance: () => environment(), commitMaterial: (value, guidance, maxBytes) => {budget = maxBytes; return {...material(value, guidance), text: '界'.repeat(Math.floor(maxBytes / 3)) + 'a'.repeat(maxBytes % 3)};}, startGeneration: input => { calls++; captured = input; return run; } });

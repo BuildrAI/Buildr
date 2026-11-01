@@ -1,3 +1,5 @@
+import {reasoningEffortLabel,reasoningEffortRank,sortReasoningEfforts,modelSourceName,tierReasoningEffort} from '../../lib/model-picker.ts';
+export {reasoningEffortLabel,reasoningEffortRank,sortReasoningEfforts,modelSourceName,nextServiceTier,tierReasoningEffort} from '../../lib/model-picker.ts';
 import type {ConnectionView, ConversationRun, SendDraft, CatalogModel} from './types';
 
 export type ConversationChoice = Pick<SendDraft,'connectionId'|'model'|'reasoningEffort'|'serviceTier'|'modelAccountId'|'modelAccountRevision'|'modelAccountIdentity'>;
@@ -64,45 +66,11 @@ export function conversationReasoningSelection(connection:ConnectionView|undefin
   return {options,index,ordered,inherited:choice.reasoningEffort===undefined,label:index>=0?reasoningEffortLabel(options[index]!):choice.reasoningEffort||'默认'};
 }
 
-export function reasoningEffortLabel(effort:{id:string;label:string}) {
-  const labels:Record<string,string>={minimal:'最小',low:'低',medium:'中',high:'高',xhigh:'极高',max:'最高',ultra:'极致',none:'无',off:'关闭',disabled:'关闭',auto:'自动',adaptive:'自适应'};
-  return labels[effort.id]||effort.label;
-}
-
-/** Rank only explicit depth values. Auto/adaptive/unknown choices are not depth steps. */
-export function reasoningEffortRank(id:string):number|undefined {
-  const ranks:Record<string,number>={off:0,none:0,disabled:0,minimal:1,low:2,medium:3,high:4,xhigh:5,max:6,ultra:7};
-  return ranks[id.toLowerCase()];
-}
-export function sortReasoningEfforts<T extends {id:string}>(options:readonly T[]):T[]{
-  return options.map((value,index)=>({value,index,rank:reasoningEffortRank(value.id)})).sort((a,b)=>(a.rank??Infinity)-(b.rank??Infinity)||a.index-b.index).map(item=>item.value);
-}
-
-export function modelSourceName(provider:string):string {
-  const id=provider.replace(/^native-/, '');
-  return ({codex:'Codex',dsh:'DSH',deepseek:'DeepSeek',qoder:'Qoder',devin:'Devin'} as Record<string,string>)[id]??provider;
-}
-
 /** 状态行表达执行身份（智能体与模型）；来源账号只保留在模型设置和发送预览。 */
 export function conversationRunIdentity(run:ConversationRun,connection:ConnectionView|undefined,catalog:CatalogModel[]):string {
   const shared=catalog.find(model=>model.accountId===run.modelAccountId&&model.modelId===run.model);
   const model=shared?modelSourceName(shared.provider)+' / '+shared.label:selectedConversationModel(connection,run.model)?.label||run.model;
   return [modelSourceName(run.provider),model].filter(Boolean).join(' · ');
-}
-
-/** Cycle only among tiers the selected model actually offers. */
-export function nextServiceTier(tiers:ReadonlyArray<{id:string}>|undefined,current:string|undefined,fallback:string|undefined):string|undefined {
-  if(!tiers?.length)return current;
-  const selected=current??fallback??tiers[0]!.id;
-  const index=tiers.findIndex(tier=>tier.id===selected);
-  return tiers[(index+1+tiers.length)%tiers.length]!.id;
-}
-
-/** 切换档位保留已选推理强度；目标档位不提供该强度时回落继承，不发送无效值。 */
-export function tierReasoningEffort(tier:{reasoningEfforts?:ReadonlyArray<{id:string}>}|undefined,fallback:ReadonlyArray<{id:string}>|undefined,effort:string|undefined):string|undefined {
-  if(!effort)return effort;
-  const options=tier?.reasoningEfforts??fallback;
-  return options?.some(option=>option.id===effort)?effort:undefined;
 }
 
 /** A legacy native choice must bind its own catalog source before selecting a tier. */

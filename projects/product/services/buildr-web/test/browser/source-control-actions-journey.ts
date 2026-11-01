@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { codeRepositoryLabel } from '../../src/features/code/code-source-labels.ts';
 import { selectSourceControlView } from './source-control-view-controls.ts';
+import {createAgentConversationFixture} from './agent-conversation-fixture.ts';
 
 /** Model protocol is an external collaborator; catalog, exact context and Git writes use production HTTP. */
 export async function runSourceControlActionsJourney({t, page, workspaceUrl, capture, fixture, expectedBrowserErrors, scenario = (name: string, action: () => Promise<void>) => t.test(name, action)}: any) {
@@ -46,7 +47,8 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
   };
   const model = async (available: boolean) => {
     let counter = 0; const cancelled = new Set<string>(), starts: unknown[] = [];
-    const selected={id:'account::model',modelId:'model',accountId:'account',accountIdentity:'identity',accountRevision:'v1',accountLabel:'Fixture',provider:'fixture',label:'Browser Model',images:false,tools:false,available:true,enabled:true};
+    const efforts=[{id:'low',label:'低'},{id:'high',label:'高'}];
+    const selected={id:'account::model',modelId:'model',accountId:'account',accountIdentity:'identity',accountRevision:'v1',accountLabel:'Fixture',provider:'fixture',label:'Browser Model',images:false,tools:false,available:true,enabled:true,defaultServiceTier:'standard',reasoningEfforts:efforts,defaultReasoningEffort:'low',serviceTiers:[{id:'standard',label:'标准',reasoningEfforts:efforts,defaultReasoningEffort:'low'},{id:'fast',label:'快速',reasoningEfforts:efforts,defaultReasoningEffort:'low'}]};
     const disabled={...selected,modelId:'disabled-model',label:'Disabled Model',enabled:false};
     const offline={...selected,modelId:'offline-model',label:'Offline Model',available:false};
     const run=(id:string,status:string)=>({id,modelAccountId:'account',modelId:'model',accountRevision:'v1',label:'Fixture / Browser Model',status,output:status==='succeeded'?{commitMessage:'feat: 浏览器生成提交说明\n\n验证生成结果可继续编辑。'}:null,error:null});
@@ -55,28 +57,50 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
     await add('**/code/commit-message', async route => {starts.push(route.request().postDataJSON()); await route.fulfill({status: 202, contentType: 'application/json', body: JSON.stringify(run('browser-run-' + ++counter, 'running'))});});
     await add('**/code/commit-message-runs?*', async route => {const id = new URL(route.request().url()).searchParams.get('runId')!, status = cancelled.has(id) ? 'cancelled' : 'succeeded'; await route.fulfill({status: 200, contentType: 'application/json', body: JSON.stringify(run(id, status))});});
     await add('**/code/commit-message-cancel', async route => {const id = route.request().postDataJSON().runId; cancelled.add(id); await route.fulfill({status: 200, contentType: 'application/json', body: JSON.stringify(run(id, 'cancelled'))});});
-    return {starts, cancelled, dispose: () => page.unrouteAll({behavior:'wait'})};
+    return {starts, cancelled, selected, dispose: () => page.unrouteAll({behavior:'wait'})};
   };
 
   await scenario('统一生成控件刷新与取消保留说明，生成后手改并提交只改变原工作树', async () => {
     await fixture.withBranches(async (branches: any) => {
       branches.configureAuthor({name: '浏览器提交', email: 'commit-browser@example.com'});
-      const protocol = await model(true);
+      const conversation=await createAgentConversationFixture({t,page,workspaceUrl,capture,expectedBrowserErrors});
+      const protocol = await model(true);conversation.sharedModels=[protocol.selected];
       try {
         await page.setViewportSize({width: 1440, height: 900}); const {tree} = await open(branches);
         assert.equal(await page.locator('#global-agents-entry').count(),0);
+        await conversation.openDesktopConversation();await conversation.input().fill('隔离偏好草稿');
+        await conversation.chooseModel('Browser Model');
+        await conversation.openModelSettings();await conversation.modelSettings().getByRole('slider',{name:'思考深度',exact:true}).press('Home');await conversation.closeModelSettings();await conversation.closeConversation();
         const panel = root().locator('.source-control-commit-panel'), input = panel.getByRole('textbox', {name: '提交说明内容', exact: true});
         await panel.locator('#generate-commit-message-model-menu').click();
         await capture(page,'source-control-model-choice.png');
-        const modelMenu=page.getByRole('menu');
-        assert.equal(await modelMenu.getByRole('menuitem',{name:'Fixture / Disabled Model',exact:true}).count(),0,'未启用模型不出现在执行模型菜单');
-        assert.equal(await modelMenu.getByRole('menuitem',{name:'Fixture / Offline Model',exact:true}).isDisabled(),true,'已启用但来源不可用的模型保留且禁选');
-        await modelMenu.getByRole('menuitem',{name:'Fixture / Browser Model',exact:true}).click();
-        await page.getByRole('menu').filter({has:page.getByRole('menuitem',{name:'配置模型',exact:true})}).waitFor({state:'hidden'});
+        const settings=page.getByRole('dialog',{name:'模型与推理强度设置',exact:true}),combo=settings.getByRole('combobox',{name:'执行模型',exact:true});
+        await combo.focus();await combo.press('ArrowDown');
+        const modelList=page.locator('.ac-model-list-popup:visible');
+        await modelList.getByRole('navigation',{name:'模型来源快速定位',exact:true}).waitFor();
+        assert.equal(await modelList.getByText('Disabled Model',{exact:true}).count(),0,'未启用模型不出现在执行模型菜单');
+        assert.match(await modelList.locator('.ant-select-item-option').filter({hasText:'Offline Model'}).getAttribute('class'),/ant-select-item-option-disabled/,'已启用但来源不可用的模型保留且禁选');
+        await combo.fill('Browser');assert.equal(await modelList.getByText('Offline Model',{exact:true}).count(),0,'公共选择器真实搜索过滤');
+        await modelList.getByText('Browser Model',{exact:true}).click();
+        const slider=settings.getByRole('slider',{name:'思考深度',exact:true});await slider.press('End');assert.equal(await slider.getAttribute('aria-valuetext'),'高');
+        await settings.getByRole('button',{name:'切换服务档位',exact:true}).click();assert.equal(await slider.getAttribute('aria-valuetext'),'高');
+        await capture(page,'source-control-model-settings.png');
+        assert.equal(await panel.locator('.ac-context-trigger').count(),0,'提交生成控件不带对话上下文用量');
+        assert.equal(await settings.locator('.ac-context-trigger').count(),0,'提交生成弹层不带对话上下文用量');
+        await combo.focus();await page.keyboard.press('Escape');await settings.waitFor({state:'hidden'});
         await page.reload(); await open(branches);
         const restoredPanel = root().locator('.source-control-commit-panel');
         await page.waitForFunction(() => document.querySelector('#generate-commit-message')?.getAttribute('aria-label') === '生成提交说明 · Fixture / Browser Model');
         assert.equal(await restoredPanel.locator('#generate-commit-message').getAttribute('aria-label'),'生成提交说明 · Fixture / Browser Model','刷新后仍记住执行模型');
+        await restoredPanel.locator('#generate-commit-message-model-menu').click();
+        await settings.getByRole('slider',{name:'思考深度',exact:true}).waitFor();assert.equal(await settings.getByRole('slider',{name:'思考深度',exact:true}).getAttribute('aria-valuetext'),'高','刷新恢复执行推理强度');assert.equal(await settings.getByRole('button',{name:'切换服务档位',exact:true}).getAttribute('aria-pressed'),'true');
+        await combo.focus();await combo.press('ArrowDown');await combo.fill('commit-only-unmatched-search');await combo.press('Escape');await combo.press('Escape');await settings.waitFor({state:'hidden'});
+        await conversation.openDesktopConversation();await conversation.assertModelSummary('fixture / Browser Model','低');assert.equal(await conversation.input().inputValue(),'隔离偏好草稿');
+        await conversation.openModelSettings();const conversationCombo=conversation.modelSettings().getByRole('combobox',{name:'执行模型',exact:true});await conversationCombo.focus();await conversationCombo.press('ArrowDown');assert.equal(await conversationCombo.inputValue(),'','临时搜索不从提交生成泄漏到对话');await page.keyboard.press('Escape');
+        assert.equal(await conversation.modelSettings().getByRole('button',{name:'切换服务档位',exact:true}).getAttribute('aria-pressed'),'false','执行档位不覆盖对话偏好');
+        await conversation.modelSettings().getByRole('slider',{name:'思考深度',exact:true}).press('End');await conversation.chooseModel('Fixture model');await conversation.closeModelSettings();await conversation.closeConversation();
+        await restoredPanel.locator('#generate-commit-message-model-menu').click();assert.equal(await settings.getByRole('button',{name:'切换服务档位',exact:true}).getAttribute('aria-pressed'),'true','对话变更不反向覆盖执行档位');await combo.focus();await page.keyboard.press('Escape');await settings.waitFor({state:'hidden'});
+        assert.equal(conversation.sends,0,'选择配置和草稿隔离不发送对话');
         const height = await panel.evaluate((element: HTMLElement) => element.getBoundingClientRect().height); assert.ok(height >= 65 && height <= 120, '默认说明区保持紧凑：' + height);
         await assertCommitSplitAtWidths(panel);
         assert.equal(await panel.locator('#commit-changes').isDisabled(), true, '说明为空时主按钮禁用');
@@ -101,6 +125,7 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
         await page.waitForFunction(() => (document.querySelector('#commit-message-text')?.getBoundingClientRect().height || 0) >= 120);
         await assertCommitSplitAtWidths(panel);
         assert.equal((protocol.starts[0] as {worktreeId: string}).worktreeId, tree.worktreeId);
+        for(const request of protocol.starts as any[]) assert.deepEqual([request.modelAccountId,request.modelId,request.accountIdentity,request.accountRevision,request.serviceTier,request.reasoningEffort],['account','model','identity','v1','fast','high'],'生成请求绑定执行选择而不是对话偏好');
         await capture(page,'source-control-model-generated.png');
         await input.fill(['feat: 说明阅读高度', '', ...Array.from({length: 16}, (_, index) => '说明第 ' + (index + 1) + ' 行')].join('\n'));
         await page.waitForFunction(() => {const input = document.querySelector<HTMLTextAreaElement>('#commit-message-text'); return input && input.getBoundingClientRect().height >= 120 && input.getBoundingClientRect().height <= 252 && input.scrollHeight > input.clientHeight && getComputedStyle(input).overflowY === 'auto';});
@@ -120,7 +145,7 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
         assert.equal(branches.observe(branches.location).head, result.commit.hash); assert.equal(branches.observe(branches.location).status, ''); assert.deepEqual(branches.otherPositions(branches.location), otherPositions);
         await selectSourceControlView(root(), 'history'); await root().getByText('feat: 用户修改生成说明后提交', {exact: true}).waitFor();
         await capture(page, 'source-control-real-agent-message-commit.png');
-      } finally {await protocol.dispose();}
+      } finally {await conversation.dispose();await protocol.dispose();}
     });
   });
 

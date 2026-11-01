@@ -7,7 +7,7 @@ const text={type:'string',minLength:1,maxLength:200};
 const schema=(title:string,properties:Record<string,unknown>,required=Object.keys(properties))=>({$schema:'https://json-schema.org/draft/2020-12/schema',$id:'https://schemas.buildr.ai/http/code-generation/'+title,title,type:'object',additionalProperties:false,properties,required});
 const request=schema('CodeCommitMessageRequest',{
   repositoryId:text,worktreeId:{type:'string',pattern:'^checkout-[a-f0-9]{64}$'},expectedRevision:text,
-  modelAccountId:text,modelId:text,accountIdentity:text,accountRevision:text,label:text,serviceTier:text,
+  modelAccountId:text,modelId:text,accountIdentity:text,accountRevision:text,label:text,serviceTier:text,reasoningEffort:{type:'string',minLength:1,maxLength:80},
 },['repositoryId','worktreeId','expectedRevision','modelAccountId','modelId','accountIdentity','accountRevision','label']);
 const run=schema('CodeCommitMessageRun',{id:text,modelAccountId:text,modelId:text,label:text,accountRevision:text,
   status:{enum:['running','succeeded','failed','cancelled']},output:{},

@@ -320,6 +320,25 @@ test('single generation uses the selected account without tools or persistent co
  }finally{await access.close();await rm(root,{recursive:true,force:true});}
 });
 
+test('single generation honors explicit reasoning in the selected tier and rejects unsupported effort before inference',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'buildr-model-generate-reasoning-')),inputs:ProviderInferenceInput[]=[];
+ const offering:ModelOffering={...model,reasoningEfforts:[{id:'high',label:'高'},{id:'low',label:'低'}],defaultServiceTier:'standard',serviceTiers:[
+  {id:'standard',label:'标准',reasoningEfforts:[{id:'high',label:'高'},{id:'low',label:'低'}]},
+  {id:'fast',label:'快速',reasoningEfforts:[{id:'medium',label:'中'}]}]};
+ const source:ModelProvider={id:'fixture',label:'Fixture',async open(){return{protocol:'chat-completions',async inspect(){return{status:'ready',models:[offering]};},async beginLogin(){},async cancelLogin(){},async infer(input){inputs.push(input);return chat({content:'ok'});},async close(){}};}};
+ const access=createModelAccess({root,providers:[source]});
+ try{
+  const added=await access.accounts.add({provider:'fixture'}),ready=await checkEnabled(access,added.id);
+  const base={accountId:ready.id,modelId:model.id,expectedIdentity:ready.identity,expectedRevision:ready.revision,agentId:'commit-message',conversationId:'temporary-reasoning',runId:'run-reasoning',prompt:'given material',signal:new AbortController().signal};
+  await access.generate({...base,serviceTier:'standard',reasoningEffort:'high'});assert.equal(inputs.at(-1)!.body.reasoning_effort,'high');assert.deepEqual(inputs.at(-1)!.body.tools,[]);
+  await access.generate({...base,serviceTier:'standard'});assert.equal(inputs.at(-1)!.body.reasoning_effort,'low','omitting effort keeps the existing minimum-cost default, not the previous explicit choice');
+  await access.generate({...base,serviceTier:'fast',reasoningEffort:'medium'});assert.equal(inputs.at(-1)!.body.reasoning_effort,'medium');
+  const before=inputs.length;
+  for(const [serviceTier,reasoningEffort] of [['fast','high'],['standard','medium'],['standard','invented']]) await assert.rejects(access.generate({...base,serviceTier,reasoningEffort}),{code:'model_reasoning_effort_invalid'});
+  assert.equal(inputs.length,before,'invalid tier reasoning must not reach the provider');
+ }finally{await access.close();await rm(root,{recursive:true,force:true});}
+});
+
 test('single generation rejects unsolicited tool calls and abort propagates to only that request',async()=>{
  const root=await mkdtemp(join(tmpdir(),'buildr-model-generate-cancel-'));let started!:()=>void;const start=new Promise<void>(resolve=>{started=resolve;});let signal:AbortSignal|undefined;
  let mode='tool';const access=createModelAccess({root,providers:[provider(async input=>{
