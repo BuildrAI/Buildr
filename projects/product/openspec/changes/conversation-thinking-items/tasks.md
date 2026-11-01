@@ -22,5 +22,5 @@
 
 - [x] 5.1 Responses 输出与 Responses 重放共用同一 reasoning 条目生成逻辑：明文思考写入 `summary`，`encrypted_content` 保留，签名型推理保持空摘要。
 - [x] 5.2 补模型网关集成用例：chat-completions 上游的 `reasoning_content` 在 Responses 响应中可见、加密载荷不含明文、重放仍还原签名；只有签名时摘要为空。
-- [ ] 5.3 运行中的本机网关实测：Responses 请求返回非空 `summary`，`encrypted_content` 仍可回放。
+- [x] 5.3 用本次重建的开发运行产物实测网关：HTTP `POST /responses` 返回 `summary: [{type:"summary_text", text:"先读目录，再回答。"}]`，`encrypted_content` 仍为 `buildr-v1.` 且不含明文。长驻的开发应用进程仍加载上一份运行产物，需应用下次启动后才走新代码。
 
