@@ -12,9 +12,28 @@ test('activation reports the exact ready server and rejects an installed target 
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-activation-')),dataRoot=path.join(root,'profile'),packageRoot=path.join(root,'package'),profileId='activation-integration';
   t.after(async()=>{await stopAgentProcess({dataRoot,profileId,mode:'stop-owned'});fs.rmSync(root,{recursive:true,force:true});});
   fs.cpSync(path.resolve(import.meta.dirname,'../../node_modules/@buildr-ai/buildr-agent'),packageRoot,{recursive:true,mode:fs.constants.COPYFILE_FICLONE});
-  fs.writeFileSync(path.join(packageRoot,'build/activation-fixture.mjs'),"import fs from 'node:fs';import {startAgentExecutionServer} from './index.js';const input=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));await startAgentExecutionServer({...input,serviceOptions:{executors:[],modelProviders:[]}});\n");
+  fs.writeFileSync(path.join(packageRoot,'build/activation-fixture.mjs'),`import fs from 'node:fs';import {startAgentExecutionServer} from './index.js';
+const input=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+const provider={id:'fixture',label:'fixture',open:async()=>({protocol:'chat-completions',inspect:async()=>({status:'ready',models:[{id:'m',label:'m',images:false,tools:false}]}),beginLogin:async()=>{},cancelLogin:async()=>{},close:async()=>{},infer:async({signal})=>new Promise((_,reject)=>signal.addEventListener('abort',()=>reject(Error('cancelled')),{once:true}))})};
+await startAgentExecutionServer({...input,serviceOptions:{executors:[],modelProviders:[provider]}});\n`);
   const old=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/activation-fixture.mjs'});
+  const legacy=await connectAgentProcess({dataRoot,profileId,runtime:old,sourceId:'local'});
+  const legacyStatus=await legacy.lifecycle.status();
+  const added=await legacy.operations.models.accounts.add({provider:'fixture'});
+  const checked=await legacy.operations.models.accounts.check(added.id);
+  const account=await legacy.operations.models.accounts.preferences(added.id,{expectedRevision:checked.revision,models:[{id:'m',enabled:true}]});
+  const abort=new AbortController();
+  const generating=legacy.operations.models.generate({accountId:account.id,modelId:'m',agentId:'codex',conversationId:'activation-busy',runId:'busy',prompt:'fixture',signal:abort.signal});generating.catch(()=>{});
+  try{
+    for(let attempt=0;attempt<100&&!(await legacy.lifecycle.status()).activity.busy;attempt++)await new Promise(resolve=>setTimeout(resolve,10));
+    assert.equal((await legacy.lifecycle.status()).activity.busy,true);
+    await assert.rejects(activateAgentServiceRuntime({dataRoot,profileId,runtime:old}),{code:'agent_process_busy'});
+    assert.equal((await legacy.lifecycle.identity()).generation,legacyStatus.identity.generation,'busy old backend must not be stopped to repair source identity');
+  }finally{abort.abort();await generating.catch(()=>{});}
+  for(let attempt=0;attempt<100&&(await legacy.lifecycle.status()).activity.busy;attempt++)await new Promise(resolve=>setTimeout(resolve,10));
+  await legacy.disconnect();
   const first=await activateAgentServiceRuntime({dataRoot,profileId,runtime:old});
+  assert.notEqual(first.generation,legacyStatus.identity.generation,'an idle backend with inherited missing source identity must be rebuilt');
   assert.equal(first.status,'ready');assert.equal(first.targetDigest,old.digest);assert.equal(first.currentDigest,old.digest);assert.equal(first.accepting,true);
   const connection=await connectAgentProcess({dataRoot,profileId,runtime:old,sourceId:'buildr',legacySourceId:'buildr',host:{
     resolveExecutionScope:async({ref})=>({ref,revision:'fixture',rootPath:root}),
