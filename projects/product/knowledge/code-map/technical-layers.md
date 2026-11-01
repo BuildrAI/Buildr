@@ -200,3 +200,5 @@ Buildr Web 页面内的分阶段更新由[更新任务应用](../../services/bui
 任务协作记录保存在 SQLite，恢复、迁移与边界见[任务地图](task-system.md)与[数据设计](../docs/architecture/buildr-data-design.md)。工程包检查仍在 `tools/verification/`，不归资产应用或诊断所有。
 
 对话文件输出由智能体服务（Agent Service）的 [presented-files.ts](../../services/buildr-agent/src/domain/presented-files.ts) 校验有界声明及旧成功调用来源，[DSH 协议适配](../../services/buildr-agent/src/executors/dsh/protocol.ts)保留新声明；[对话应用](../../services/buildr-agent/src/application/conversation-application.ts)生成兼容视图，紧凑历史保持文件信息。前端 [ConversationPresentedFiles.tsx](../../services/buildr-web/src/features/agent-conversations/ConversationPresentedFiles.tsx)负责独立卡片及按需预览，对话面板复用代码来源读取和打开，不增加任意路径读取接口。共享 [markdownDestination.ts](../../services/buildr-web/src/lib/markdownDestination.ts)仅解释目的地语法，安全判断仍由渲染及来源读取各自承担。
+
+Qoder [配套库解析](../../services/buildr-agent/src/executors/qoder/sdk-pair.ts)核对执行程序所属安装包并提供准确库入口，[独立工作进程](../../services/buildr-agent/src/executors/qoder/worker.ts)执行隔离升级对话验证。DSH [目标控制](../../services/buildr-agent/src/executors/dsh/goals.ts)在新输入前暂停旧目标自动续行，[协议归属](../../services/buildr-agent/src/executors/dsh/protocol.ts)保持目标轮次的原请求身份。

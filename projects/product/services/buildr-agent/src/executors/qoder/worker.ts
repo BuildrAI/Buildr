@@ -8,7 +8,8 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import type { ExecutorEvent, ExecutorItem, ExecutorObservation, ExecutorRequest, PermissionMode } from '../../contracts.ts';
 import { bounded, closeOwnedProcess, visibleText, nativePreview } from '../native-process.ts';
-import { query, qodercliAuth, ProcessTransport, getSessionInfo, getSessionMessages, InMemorySessionStore, importSessionToStore, forkSession } from '@qoder-ai/qoder-agent-sdk';
+import * as embeddedSdk from '@qoder-ai/qoder-agent-sdk';
+let { query, qodercliAuth, ProcessTransport, getSessionInfo, getSessionMessages, InMemorySessionStore, importSessionToStore, forkSession } = embeddedSdk;
 import { qoderHistoryItems, qoderResultOutcome, qoderInterruptionIds, qoderInterruptedObservation, qoderParentTool, qoderTaskResult, qoderTaskNotificationIds } from './protocol.ts';
 import { qoderModel } from '../model-options.ts';
 import { resolvePermissionMode } from '../../domain/permission-mode.ts';
@@ -39,6 +40,8 @@ class ConversationInput implements AsyncIterableIterator<any> {
   close(): void { this.ended = true; this.values = []; this.waiter?.({ done: true, value: undefined }); this.waiter = undefined; }
 }
 interface LiveQuery {
+  dispatched?:boolean;
+  startupFailure?:string;
   owner?: ConversationQuery;
   echoed?: boolean;
   settling?: boolean;
@@ -121,7 +124,7 @@ function options(cwd: string, state?: LiveQuery, onChild?: (child: ChildProcessW
     } } : {}),
     spawnQoderCLIProcess: (input: any) => {
       const child = spawn(input.command, input.args, { cwd: input.cwd, env: input.env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
-      child.stderr.on('data', () => {}); if (state) state.child = child;
+      child.stderr.on('data', chunk => { if(state&&chunk.toString().includes('sdk_worker_removed'))state.startupFailure='qoder_sdk_worker_removed'; }); if (state) state.child = child;
       if (owner) owner.child = child;
       child.once('exit', () => {
         if (owner) { owner.exited = true; owner.reusable = false; }
@@ -243,6 +246,7 @@ async function execute(params: any, warmOnly = false): Promise<void> {
     owner.state = state; owner.prepared = false; owner.initialized = undefined; owner.reusable = false; owner.rounds++;
     owner.commandIds.add(state.id);
     state.owner = owner; state.q = owner.q; state.child = owner.child; live.set(params.contextId, state);
+    state.dispatched=true;
     owner.input.push({ type: 'user', message: { role: 'user', content }, parent_tool_use_id: null, uuid: state.id, session_id: state.contextId });
     return await completion;
   }
@@ -272,6 +276,7 @@ async function execute(params: any, warmOnly = false): Promise<void> {
     owner.initialized = warmOnly ? initialized : undefined;
     void readConversation(owner);
     if (warmOnly) return;
+    state.dispatched=true;
     owner.input.push({ type: 'user', message: { role: 'user', content }, parent_tool_use_id: null, uuid: state.id, session_id: state.contextId });
   } catch (error) { await closeConversation(owner); throw error; }
   return await completion;
@@ -428,7 +433,15 @@ async function readConversation(owner: ConversationQuery): Promise<void> {
   }
 }
 async function dispatch(method: string, params: any): Promise<any> {
-  if (method === 'initialize') { executable = params.executable; workInstructions = params.interaction?.instructions ?? interactionPolicy.instructions; gateway = checkedGateway(params.gateway); return {}; }
+  if (method === 'initialize') {
+    if(params.sdkModule){
+      const sdk=await import(params.sdkModule);
+      for(const key of ['query','qodercliAuth','getSessionInfo','getSessionMessages','InMemorySessionStore','importSessionToStore','forkSession'])if(typeof sdk[key]!=='function')throw new Error('qoder_sdk_pair_mismatch');
+      if(!sdk.ProcessTransport)throw new Error('qoder_sdk_pair_mismatch');
+      ({query,qodercliAuth,ProcessTransport,getSessionInfo,getSessionMessages,InMemorySessionStore,importSessionToStore,forkSession}=sdk);
+    }
+    executable = params.executable; workInstructions = params.interaction?.instructions ?? interactionPolicy.instructions; gateway = checkedGateway(params.gateway); return {};
+  }
   if (!executable) throw new Error('qoder_worker_not_initialized');
   if (method === 'account') return await accountQuery(params.cwd, 'account');
   if (method === 'models') return await accountQuery(params.cwd, 'models');
@@ -458,7 +471,31 @@ async function dispatch(method: string, params: any): Promise<any> {
   if (method === 'resume') { await checkHistory(params.contextId, params.cwd); const info = await getSessionInfo(params.contextId, { dir: params.cwd }); if (!info || info.sessionId !== params.contextId || info.cwd && info.cwd !== params.cwd) throw new Error('qoder_context_not_found'); return {}; }
   if (method === 'history') return await history(params.contextId, params.cwd);
   if (method === 'prepare') { await execute({...params,clientRequestId:randomUUID()},true); return {}; }
-  if (method === 'send') { await execute(params); return {}; }
+  if(method==='verify-upgrade') {
+    const id=randomUUID();const owner:TitleQuery={q:undefined,release(){},cancel(){}};
+    titleQueries.set(id,owner);
+    try {
+      const base=options(process.cwd(),undefined,child=>{owner.child=child;});
+      owner.q=query({prompt:'Reply with a short greeting. Do not use tools.',options:{...base,persistSession:false,settingSources:[],skills:[],tools:[],mcpServers:{},maxTurns:1,canUseTool:async()=>({behavior:'deny',message:'Upgrade validation cannot use tools.'})}});
+      await bounded(owner.q.initializationResult(),15_000,'qoder_upgrade_conversation_failed');
+      await bounded((async()=>{
+        let replied=false;
+        for await(const message of owner.q){
+          if(message.type==='assistant'&&visibleText(message.message?.content).trim())replied=true;
+          if(message.type==='result'){
+            if(message.is_error||!replied)throw new Error('qoder_upgrade_conversation_failed');
+            return;
+          }
+        }
+        throw new Error('qoder_upgrade_conversation_failed');
+      })(),30_000,'qoder_upgrade_conversation_failed');
+      return {verified:true};
+    }finally{await closeTitle(owner);titleQueries.delete(id);}
+  }
+  if (method === 'send') {
+    try{await execute(params);return {};}
+    catch(error){const state=live.get(params.contextId);if(state&&state.id===params.clientRequestId&&!state.dispatched&&!state.accepted){if(error instanceof Error&&/^(?:qoder_|agent_)[a-z0-9_]+$/.test(error.message))throw error;throw new Error(state.startupFailure??'qoder_initialization_failed');}throw error;}
+  }
   if (method === 'supplement') {
     const state = live.get(params.contextId);
     if (!state?.accepted || state.terminal || state.stopping || state.id !== params.executionId) throw new Error('agent_supplement_rejected');
@@ -473,6 +510,12 @@ async function dispatch(method: string, params: any): Promise<any> {
       return await bounded(received, 10000, 'agent_supplement_unknown');
     } catch (error) { state.supplementUnknown = true; if (state.owner) state.owner.reusable = false; throw error; }
     finally { if (state.inputAcks.get(params.clientRequestId) === ack) state.inputAcks.delete(params.clientRequestId); }
+  }
+  if (method === 'unaccepted-release-check') {
+    const state=live.get(params.contextId),owner=conversations.get(params.contextId);
+    if(titleQueries.size || state && (state.id!==params.clientRequestId || state.accepted || state.pending.size || state.tools.size || state.unownedTasks.size || state.settling) || !state && owner && !owner.prepared || [...live.values()].some(item=>item!==state&&!item.nativeExited&&!item.terminal))return {released:false};
+    if(owner)await closeConversation(owner);
+    return {released:!owner||Boolean(owner.exited)};
   }
   if (method === 'close') {
     await Promise.allSettled([...titleQueries.values()].map(async owner=>{owner.cancel();await closeTitle(owner);}));

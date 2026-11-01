@@ -1,5 +1,6 @@
 import { readFile, writeFile, rm } from 'node:fs/promises';
 import { interactionPolicy } from '../../domain/interaction-policy.ts';
+import {pausePreviousDshGoal} from './goals.ts';
 import { errorDiagnostic, NativeObservationError } from '../../domain/error-diagnostic.ts';
 import { isCompatibleProgram, nativeProgramPolicy } from '../program-policy.ts';
 import { fileURLToPath } from 'node:url';
@@ -276,6 +277,7 @@ export class DshRuntime implements AgentRuntime {
   }
   async send(input: ExecutorSendInput): Promise<void> {
     this.reference(input.contextRef, input.cwd);
+    await pausePreviousDshGoal(this.client.remote,input.contextRef.id,()=>this.snapshot(input.contextRef.id));
     const active = this.turns.get(input.contextRef.id);
     if (active && (!active.terminal || active.lineage.background(active.inputIds ?? new Set([active.id])).length)) throw new Error('agent_native_turn_active');
     const previous = this.turns.get(input.contextRef.id); if (previous?.stream) { await previous.stream.dispose(); await previous.pump; }

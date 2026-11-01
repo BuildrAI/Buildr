@@ -225,7 +225,12 @@ export function conversationStreamTurns(items:readonly ConversationStreamItem[])
     }else{
       if(!turns.length)turns.push({key:'earlier',items:[]});
       let owner=entry.runId?owners.get(entry.runId):undefined;
-      if(!owner&&item.type==='process-block'&&entry.runId&&turns.at(-1)!.prompt?.runId&&entry.runId!==turns.at(-1)!.prompt!.runId){
+      if(!owner&&entry.kind==='notice'&&entry.runId){
+        owner={key:'run:'+entry.runId,items:[]};turns.push(owner);owners.set(entry.runId,owner);
+      }
+      const latest=turns.at(-1)!,latestItem=latest.items.at(-1);
+      const latestRun=latest.prompt?.runId??(latestItem?.type==='entry'?latestItem.entry.runId:latestItem?.entries[0]?.runId);
+      if(!owner&&(item.type==='process-block'||entry.kind==='message')&&entry.runId&&latestRun&&entry.runId!==latestRun){
         // A replayed result may precede the loaded history page. It cannot belong
         // to the latest input merely because it was projected later.
         owner={key:'history:'+entry.runId,items:[]};turns.unshift(owner);

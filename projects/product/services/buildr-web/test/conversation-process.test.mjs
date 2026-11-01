@@ -182,6 +182,17 @@ test('重试通知在首条原生回应前即绑定当前执行与计时，旧�
  assert.equal(conversationTurnExecution(responded.at(-1),{...run,status:'completed'}).active,false);
 });
 
+test('重试后的答复与迟到的旧任务结论各归其轮，新输入保持最后一轮',()=>{
+ const prompt=message('u','新问题','failed','user'),retry={...message('retry','重试','retry','system'),kind:'notice'};
+ const answer=message('answer','新问题的答复','retry'),late=message('late','旧任务已经完成','old');
+ const turns=conversationStreamTurns(groupConversationStream([prompt,retry,answer,late,message('next','同意执行','next','user')]));
+ assert.equal(turns.at(-1).prompt.id,'next');
+ const retryTurn=turns.find(turn=>turn.key==='run:retry');
+ assert.ok(retryTurn.items.some(item=>item.type==='entry'&&item.entry.id==='answer'));
+ assert.ok(!retryTurn.items.some(item=>item.type==='entry'&&item.entry.id==='late'));
+ assert.ok(turns.find(turn=>turn.key==='history:old').items.some(item=>item.type==='entry'&&item.entry.id==='late'));
+});
+
 test('交错到达的执行先归属再合组，同轮用户补充保持分段',()=>{
  const entries=[message('old-u','旧要求','old','user'),tool('old-one',{runId:'old'}),message('new-u','新要求','new','user'),tool('new-one',{runId:'new'}),tool('old-two',{runId:'old'}),tool('new-two',{runId:'new'}),message('extra','补充','new','user'),tool('old-three',{runId:'old'}),tool('after-extra',{runId:'new'}),message('answer','完成','new')];
  const grouped=groupConversationStream(entries,{id:'new',status:'completed'});

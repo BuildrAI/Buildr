@@ -18,6 +18,7 @@ import { qoderLoginExpiredMessage } from '../model-access/providers/qoder-auth.t
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { ExecutorInputRejected } from '../contracts.ts';
 import type { AgentRuntime, AgentServiceOptions, ConversationEntry, ConversationView, ExecutorEvent, ExecutorImage, ExecutorItem, ExecutorObservation, RunView, SendDraft, SendPreview } from '../contracts.ts';
 import { AgentServiceError, BUSY_STATES, conversationRuns, unfinishedRun, expected, fail, nonempty, safeDiagnostic } from '../domain/agent-state.ts';
 import type { StoredConversation, StoredParticipant } from '../domain/agent-state.ts';
@@ -114,6 +115,7 @@ export class ConversationApplication {
     host: HostContext;
     autoContinueInterrupted?: boolean;
     generationAlive?: (generation: string) => boolean;
+    generationReleased?: (generation: string) => boolean;
   };
   constructor(options: ConversationApplication['options']) {
     this.options = options;
@@ -257,7 +259,7 @@ export class ConversationApplication {
       for (const [runtime,members] of groups) {
         if(this.sourceReleasePending.has(runtime))continue;
         if(owner&&!members.some(({id})=>{const held=this.sourceOwners.get(id);return held?.workspaceId===owner.workspaceId&&held.id===owner.id;}))continue;
-        const candidates:Array<{id:string;source:Promise<{runtime:AgentRuntime;model:string;leaseIdentity?:string}>;workspaceId:string;conversationId:string;runId:string;leaseIdentity?:string;proof?:()=>Promise<boolean|{executionState:'ended'|'unknown'}>}>=[];
+        const candidates:Array<{id:string;source:Promise<{runtime:AgentRuntime;model:string;leaseIdentity?:string}>;workspaceId:string;conversationId:string;runId:string;leaseIdentity?:string;proof?:()=>Promise<boolean|{executionState:'ended'|'unknown'}>;prepare?:()=>Promise<boolean|{executionState:'ended'|'unknown'}>}>=[];
         let safe=true;
         for(const member of members){
           const held=this.sourceOwners.get(member.id);
@@ -278,6 +280,12 @@ export class ConversationApplication {
           // Only its exact accepted native attempt can prove physical release.
           const settled=Boolean(run && (run.resourcesReleased||!this.busy(held.workspaceId,held.id)));
           if(!run&&!attempt?.accepted){safe=false;break;}
+          const cancelledUnaccepted=run?.generation===this.options.generation && run.accepted===false && !attempt?.executionRef && (run.stopRequested||record.interruption?.runId===run.id && record.interruption.cancelled) && !run.tools.length && participant?.contextRef && runtime.releaseUnaccepted;
+          if(cancelledUnaccepted){
+            const proof=()=>runtime.releaseUnaccepted!({contextRef:participant!.contextRef!,clientRequestId:attempt!.clientRequestId}).catch(()=>false);
+            if(!attempt){safe=false;break;}
+            candidates.push({...member,workspaceId:held.workspaceId,conversationId:held.id,runId,prepare:proof,proof});continue;
+          }
           const exactProof=participant?.contextRef&&attempt?.executionRef&&runtime.canRelease;
           if(exactProof?!await runtime.canRelease!({contextRef:participant!.contextRef!,executionRef:attempt!.executionRef!}).catch(()=>false):!settled){safe=false;break;}
           candidates.push({...member,workspaceId:held.workspaceId,conversationId:held.id,runId,...(exactProof?{proof:()=>runtime.canRelease!({contextRef:participant!.contextRef!,executionRef:attempt!.executionRef!}).catch(()=>false)}:{})});
@@ -287,6 +295,7 @@ export class ConversationApplication {
         if(this.forks.active || candidates.some(value=>value.leaseIdentity&&this.options.modelAccess?.leases.hasActiveRequests(value.leaseIdentity)||this.sourceRuntimes.get(value.id)!==value.source||this.sourceExecution(this.load(value.workspaceId,value.conversationId),value.id).id!==value.runId||this.workers.has(value.runId)||this.observations.has(`${value.workspaceId}/${value.conversationId}`)||this.recoveries.has(`${value.workspaceId}/${value.conversationId}`)||this.earlyTitles.has(value.conversationId)||this.titleWork.has(value.conversationId)||this.load(value.workspaceId,value.conversationId).view.requests.some(request=>request.participantId===value.id))||this.supplements.size||this.repliesInFlight.size)continue;
         const finish=async()=>{
           if(candidates.some(value=>value.leaseIdentity&&this.options.modelAccess?.leases.hasActiveRequests(value.leaseIdentity)))return false;
+          for(const value of candidates)if(value.prepare&&!await value.prepare())return false;
           await this.options.connections.releaseGatewayRuntime(runtime);
           const facts=new Map<string,'ended'|'unknown'>();
           for(const value of candidates){const proof=value.proof?await value.proof():true;if(!proof)return false;facts.set(value.id,proof===true?'ended':proof.executionState);}
@@ -298,7 +307,10 @@ export class ConversationApplication {
             if(!run||run.id!==value.runId||run.participantId!==value.id||run.generation!==this.options.generation)continue;
             const newlyReleased=!run.resourcesReleased;
             run.executionState=run.executionState==='ended'?'ended':facts.get(value.id)!;run.resourcesReleased=true;
-            if(BUSY_STATES.has(run.status)){
+            if(run.accepted===false && !record.attempts.find(attempt=>attempt.runId===run.id)?.executionRef && (run.stopRequested||record.interruption?.runId===run.id && record.interruption.cancelled) && !run.tools.length){
+              run.status='stopped';run.canContinue=false;
+              run.diagnostic='已停止本轮接续并释放后台连接；原输入是否送达仍未知，已有操作结果保留，不会重发。';
+            }else if(BUSY_STATES.has(run.status)){
               run.status='unknown';run.interrupted=true;
               run.diagnostic=run.executionState==='ended'?'原执行已结束、后台资源已释放；操作结果仍待核对，不会自动重发。':'原生控制资源已释放；独立命令及操作结果仍待核对，不会自动重发。';
               run.tools=run.tools.map(tool=>tool.status==='running'?{...tool,status:'unknown',canStop:false}:tool);
@@ -802,8 +814,11 @@ export class ConversationApplication {
     }
     if (entry) {
       record.sources[source] = entry.id;
+      const nativeOwner=item.executionId?record.attempts.find(attempt=>attempt.participantId===participant.id&&attempt.accepted&&(attempt.executionRef?.id===item.executionId||attempt.clientRequestId===item.executionId)):undefined;
+      const ownerChanged=Boolean(nativeOwner&&entry.role!=='user'&&entry.runId!==nativeOwner.runId);
+      if(ownerChanged)entry.runId=nativeOwner!.runId;
       if (entry.parentToolId && item.parentToolId && entry.parentToolId !== item.parentToolId) fail('agent_native_item_identity_changed', '原生条目的父工具来源发生冲突，已保留原记录。', 409);
-      const originChanged = item.parentToolId !== undefined && entry.parentToolId !== item.parentToolId;
+      const originChanged = ownerChanged || item.parentToolId !== undefined && entry.parentToolId !== item.parentToolId;
       if (originChanged) entry.parentToolId = item.parentToolId;
       if (entry.role === 'user' || entry.role === 'system' && entry.kind === 'notice') return originChanged;
       if (entry.kind === 'tool' && ['completed', 'failed'].includes(entry.status ?? '') && (!item.status || item.status === 'running' || entry.status==='completed'&&item.status==='unknown')) return originChanged;
@@ -1021,7 +1036,7 @@ export class ConversationApplication {
         return;
       }
       const run = record.view.run!;
-      const rejectedBeforeInput = !run.accepted && error instanceof AgentServiceError && ['agent_permission_invalid', 'agent_permission_unavailable', 'agent_permission_unverified', 'agent_reasoning_unavailable'].includes(error.code);
+      const rejectedBeforeInput = !run.accepted && (error instanceof ExecutorInputRejected || error instanceof AgentServiceError && ['agent_permission_invalid', 'agent_permission_unavailable', 'agent_permission_unverified', 'agent_reasoning_unavailable'].includes(error.code));
       const userStopping = run.status === 'stopping';
       const possiblyDelivered = dispatched && !rejectedBeforeInput;
       if (!['stopped', 'completed'].includes(run.status)) run.status = possiblyDelivered ? 'unknown' : 'failed';
@@ -1432,16 +1447,20 @@ export class ConversationApplication {
   }
   async stop(workspaceId: string, id: string, input: { expectedRevision: string; runId: string; participantId: string; generation: string; toolId?: string }): Promise<ConversationView> {
     const pending=this.load(workspaceId,id);
-    const unbound=pending.view.run?.id===input.runId && pending.view.run.accepted===false && !pending.attempts.find(attempt=>attempt.runId===input.runId)?.executionRef && !pending.view.run.tools.length && !pending.view.requests.some(request=>request.runId===input.runId);
-    if(!this.closing&&!input.toolId&&unbound&&pending.view.run!.generation!==this.options.generation){
+    const selected=conversationRuns(pending.view).find(run=>run.id===input.runId);
+    const unbound=selected?.accepted===false && !pending.attempts.find(attempt=>attempt.runId===input.runId)?.executionRef && !selected.tools.length && !pending.view.requests.some(request=>request.runId===input.runId);
+    if(!this.closing&&!input.toolId&&unbound&&selected!.generation!==this.options.generation){
       // The process router uses this only after the exact retained owner has
       // returned its stop result and confirmed no in-flight send remains.
       expected(pending.view.revision,input.expectedRevision);
-      const run=pending.view.run!;
+      const run=selected!;
       if(run.participantId!==input.participantId||run.generation!==input.generation)fail('agent_control_stale','执行已变化，请重新核对。',409);
-      pending.interruption={runId:run.id,awaitingUser:false,cancelled:true};
-      run.status='unknown';run.canContinue=false;run.executionState='unknown';
-      run.diagnostic='已取消本轮自动接续；未能确认原生执行身份或停止结果，工作记录已保留。';
+      run.stopRequested=true;
+      if(pending.view.run?.id===run.id)pending.interruption={runId:run.id,awaitingUser:false,cancelled:true};
+      const released=this.options.generationReleased?.(run.generation)===true;
+      run.status=released?'stopped':'unknown';run.canContinue=false;run.executionState='unknown';
+      if(released)run.resourcesReleased=true;
+      run.diagnostic=released?'已停止本轮接续，原后台已确认退出；原输入是否送达仍未知，已有操作结果保留，不会重发。':'已取消本轮自动接续；未能确认原生执行身份或停止结果，工作记录已保留。';
       run.updatedAt=this.options.now();this.save(pending);return this.view(pending);
     }
     if(!this.closing&&!input.toolId&&pending.interruption?.runId===input.runId&&pending.view.run?.id===input.runId&&pending.view.run?.generation!==this.options.generation){
@@ -1451,6 +1470,7 @@ export class ConversationApplication {
       pending.interruption.cancelled=true;run.diagnostic='已取消自动接续；原执行状态仍待核对。';this.save(pending);return this.view(pending);
     }
     const control = this.control(workspaceId, id, input);
+    if(!input.toolId){control.run.stopRequested=true;this.save(control.record);}
     if (!input.toolId) this.cancelledRetries.add(input.runId);
     const retry = this.retryWaits.get(input.runId);
     if (retry && !input.toolId) {
@@ -1473,6 +1493,8 @@ export class ConversationApplication {
         control.run.status='unknown';control.run.executionState='unknown';control.run.canContinue=false;
         control.run.diagnostic='已取消本轮自动接续；未能确认原生执行身份或停止结果，工作记录已保留。';
         control.run.updatedAt=this.options.now();this.save(control.record);
+        await this.releaseIdleSources({workspaceId,id});
+        this.scheduleSourceRelease(workspaceId,id);
       }
       return this.read(workspaceId, id);
     }

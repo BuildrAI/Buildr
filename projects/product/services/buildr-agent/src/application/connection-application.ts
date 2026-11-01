@@ -84,6 +84,10 @@ export class ConnectionApplication {
       this.runtimes.delete(id);
       for (const [key] of owned) this.gatewayRuntimes.delete(key);
       candidate = await open(original, executable, source);
+      if(original.view.provider==='qoder') {
+        if(!candidate.verifyUpgrade)fail('agent_program_update_verification_failed','Qoder 缺少配套对话验证，保留原接入。',409);
+        await candidate.verifyUpgrade();
+      }
       if (original.bindingIdentity && candidate.bindingIdentity !== original.bindingIdentity) fail('agent_binding_changed', '新版未能延续原上下文身份，已保留旧程序。', 409);
       const current = this.stored(id);
       if (current.view.executable !== original.view.executable || current.bindingIdentity !== original.bindingIdentity || current.view.enabled !== original.view.enabled || current.view.configPath !== original.view.configPath) fail('agent_revision_conflict', '程序绑定已变化，未覆盖当前接入。', 409);

@@ -28,7 +28,18 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
   let abortStart: (() => Promise<void>) | undefined;
   try {
   const hosts = new AgentHostRegistry();
-  const service = createAgentService({ ...options.serviceOptions, dataRoot: options.dataRoot, legacySourceId: options.legacySourceId, get autoContinueInterrupted() { return options.autoContinueInterrupted; }, host: hosts, conversationControl:(scope,id)=>conversationControlInstruction({dataRoot:options.dataRoot,profileId:options.profileId,sourceId:executionScopeRef(scope,options.legacySourceId).sourceId,scope,conversationId:id},options.runtime.node), generationAlive: generation => generationAlive(options.dataRoot, generation) });
+  const retainedOwners=new Map(readProcessInstances(options.dataRoot).map(record=>[record.identity.generation,record.identity]));
+  const service = createAgentService({ ...options.serviceOptions, dataRoot: options.dataRoot, legacySourceId: options.legacySourceId, get autoContinueInterrupted() { return options.autoContinueInterrupted; }, host: hosts, conversationControl:(scope,id)=>conversationControlInstruction({dataRoot:options.dataRoot,profileId:options.profileId,sourceId:executionScopeRef(scope,options.legacySourceId).sourceId,scope,conversationId:id},options.runtime.node), generationAlive: generation => generationAlive(options.dataRoot, generation), generationReleased:generation=>{
+    const prior=readProcessInstances(options.dataRoot).find(record=>record.identity.generation===generation);
+    if(prior)retainedOwners.set(generation,prior.identity);
+    const owner=prior?.identity??retainedOwners.get(generation);
+    if(!owner||live(owner.pid)||owner.dataRoot!==path.resolve(options.dataRoot)||owner.profileId!==options.profileId)return false;
+    if(prior?.stopped&&prior.confirmed)return true;
+    // Runtime housekeeping may remove a stopped instance before the next stop.
+    // Match its authenticated shutdown receipt to the previously observed owner.
+    const stopped=readPrivate<{instanceId:string;confirmed:boolean}>(path.join(controlRoot(options.dataRoot),'last-stop.json'));
+    return stopped?.instanceId===owner.instanceId&&stopped.confirmed===true;
+  } });
   const repository = new ConversationRepository(path.join(options.dataRoot, 'agent-service'));
   service.models.startRefreshing();
   abortStart = () => service.close();

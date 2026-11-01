@@ -179,6 +179,8 @@ export interface AgentRuntime {
   bindingData?: Record<string, unknown>;
   capabilities: AgentCapabilities;
   inspectAccount(): Promise<AccountObservation>;
+  /** Isolated, tool-free roundtrip before an upgraded binding may be adopted. */
+  verifyUpgrade?(): Promise<void>;
   models(): Promise<AgentModel[]>;
   /** Private fixed-upstream model bridge; never exposed over host HTTP. */
   requestModel?(path: string, init?: RequestInit, expectedIdentity?: string): Promise<Response>;
@@ -197,6 +199,9 @@ export interface AgentRuntime {
   supplement?(input: ExecutorSupplementInput): Promise<ExecutorInputReceipt>;
   observe(input: { contextRef: ContextRef; executionRef?: ExecutionRef; knownItems?: readonly ExecutorItem[] }): Promise<ExecutorObservation>;
   /** Exact backend control-resource proof. true also proves native execution ended; an object can preserve unknown independent commands. Neither asserts successful results. */
+  /** Release exact controls of a settled submission whose acceptance is unknown.
+   * This proves neither non-delivery nor success of independent operations. */
+  releaseUnaccepted?(input: { contextRef: ContextRef; clientRequestId: string }): Promise<false | {executionState:'unknown'}>;
   canRelease?(input: { contextRef: ContextRef; executionRef: ExecutionRef }): Promise<boolean | {executionState:'ended'|'unknown'}>;
   reply(input: { contextRef: ContextRef; executionRef: ExecutionRef; requestId: string; answer: unknown }): Promise<void>;
   stop(input: { contextRef: ContextRef; executionRef: ExecutionRef; toolId?: string }): Promise<ExecutorObservation>;
@@ -321,6 +326,8 @@ export interface ConversationEntry {
   createdAt: string;
 }
 export interface RunView {
+  /** User cancellation is independent from delivery and resource proof. */
+  stopRequested?:boolean;
   /** Same-context input is allowed; this does not release command control resources. */
   canContinue?: boolean;
   /** Physical execution/resource facts never imply that the user's goal succeeded. */
@@ -488,6 +495,8 @@ export interface AgentServiceOptions {
   conversationControl?: (scope:string,id:string)=>string;
   /** Other accurately discovered process generations must not be recovered. */
   generationAlive?: (generation: string) => boolean;
+  /** Exact prior owner completed authenticated shutdown; death alone is insufficient. */
+  generationReleased?: (generation: string) => boolean;
   /** Trusted host profile only; released installations default to manual continuation. */
   autoContinueInterrupted?: boolean;
   modelProviders?: ModelProvider[];

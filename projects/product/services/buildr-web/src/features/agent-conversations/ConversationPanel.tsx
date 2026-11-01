@@ -24,7 +24,6 @@ import { ConversationRequest } from './ConversationRequest';
 import { ConversationPendingSend } from './ConversationPendingSend';
 import type { DraftImage } from './ConversationImageInput';
 import { ConversationExecutionNotice } from './ConversationExecutionNotice';
-import { ConversationRetainedWork } from './ConversationRetainedWork';
 import { ConversationActiveToolsNotice } from './ConversationActiveToolsNotice';
 import { pendingSubmission, clearPendingSubmission } from './conversation-pending';
 import { ConversationAgentSelect, ConversationOptions } from './ConversationOptions';
@@ -431,12 +430,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   };
   const stop=async(toolId?:string)=>{
     if(!chat)return;if(chat.run?.resourcesReleased){setFeedback(conversationObservationFeedback(chat.run));return;}const key=actionKey(chat,'stop');if(!actions.begin(key))return;const selection=context.getSelection();setError('');
-    try{context.apply(await context.api.stop(chat,toolId),chat.revision);void context.refreshPending().catch(()=>{});}catch(failure){if(context.isSelectionCurrent(selection))fail(failure);}finally{actions.finish(key);}
-  };
-  const retainedControl=async(retained:NonNullable<ConversationView['run']>,operation:'observe'|'stop',toolId?:string)=>{
-    if(!chat)return;if(operation==='stop'&&retained.resourcesReleased){setFeedback(conversationObservationFeedback(retained));return;}const key=actionKey(chat,operation,retained.id);if(!actions.begin(key))return;const selection=context.getSelection();setError('');setFeedback('');
-    try{const bound={...chat,run:retained};const result=await (operation==='stop'?context.api.stop(bound,toolId):context.api.observeRun(bound));context.apply(result,chat.revision);if(operation==='observe'&&context.isSelectionCurrent(selection))setFeedback(conversationObservationFeedback([...(result.run?[result.run]:[]),...(result.retainedRuns??[])].find(run=>run.id===retained.id)));}
-    catch(failure){if(context.isSelectionCurrent(selection))fail(failure);}finally{actions.finish(key);}
+    try{const result=await context.api.stop(chat,toolId);context.apply(result,chat.revision);if(context.isSelectionCurrent(selection))setFeedback(result.run?.diagnostic||conversationObservationFeedback(result.run));void context.refreshPending().catch(()=>{});}catch(failure){if(context.isSelectionCurrent(selection))fail(failure);}finally{actions.finish(key);}
   };
   const reply=async(requestId:string,answer:unknown)=>{
     const request=chat?.requests.find(request=>request.id===requestId);
@@ -611,7 +605,6 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
             </ConversationTurn>;
           })}
         </div>}
-        <ConversationRetainedWork renderRequest={renderQuestion} conversation={chat} busy={(run,operation)=>Boolean(chat&&actions.has(actionKey(chat,operation,run.id)))} onObserve={run=>void retainedControl(run,'observe')} onStop={(run,toolId)=>void retainedControl(run,'stop',toolId)}/>
         <ConversationPendingSend conversation={chat} onCancelled={(cancelled,answers)=>{setError('');const text=[cancelled.text,answers].filter(Boolean).join('\n');if(text&&!draft.text.trim())draft.setText(text);if(cancelled.attachmentIds?.length&&chat)setAttachments(previous=>({...previous,[chat.id]:[...(previous[chat.id]||[]),...(previous['@pending:'+chat.id]||queuedImages.current[chat.id]||[]).filter(image=>cancelled.attachmentIds!.some(id=>id===image.id)&&!(previous[chat.id]||[]).some(value=>value.id===image.id))]}));setFeedback('已取消待发送，内容保留，可以重新发送或继续。');}}/>{currentConversationRequests(chat).map(renderQuestion)}
         </div>
       </div>

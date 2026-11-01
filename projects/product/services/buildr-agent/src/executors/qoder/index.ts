@@ -1,6 +1,7 @@
 import {generateQoderTitle} from './title.ts';
+import {qoderSdkPair} from './sdk-pair.ts';
 import { interactionPolicy } from '../../domain/interaction-policy.ts';
-import { NativeObservationError } from '../../domain/error-diagnostic.ts';
+import { NativeObservationError, NativeRequestError } from '../../domain/error-diagnostic.ts';
 import { isCompatibleProgram, nativeProgramPolicy } from '../program-policy.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
@@ -30,6 +31,7 @@ class QoderRuntime implements AgentRuntime {
   private contexts = new Map<string, string>();
   private handlers = new Map<string, ExecutorSendInput['onEvent']>();
   private executionHandlers = new Map<string, ExecutorSendInput['onEvent']>();
+  private submissions = new Map<string, {contextId:string; settled:boolean; accepted:boolean; released?:boolean}>();
   private observations = new Map<string, ExecutorObservation>();
   private login?: { child: ChildProcessWithoutNullStreams; cancelled: boolean; update: (value: LoginObservation) => void };
   private gateway?: ExecutorGateway;
@@ -46,6 +48,7 @@ class QoderRuntime implements AgentRuntime {
         if (event.type === 'accepted') event.executionRef = this.rpc.executionRef(event.executionRef.id, contextId, this.bindingIdentity);
         if (event.type === 'observation' && event.observation.executionRef) event.observation.executionRef = this.rpc.executionRef(event.observation.executionRef.id, contextId, this.bindingIdentity, event.observation.backgroundWork === true);
         if (event.type === 'accepted') {
+          const submission=this.submissions.get(executionId);if(submission)submission.accepted=true;
           if (handler) this.handlers.set(contextId, handler);
           this.observations.set(contextId, { status: 'running', executionRef: event.executionRef, tools: [] });
         }
@@ -101,6 +104,7 @@ class QoderRuntime implements AgentRuntime {
     const executable = await findExecutable(options.executable, ['qodercli', 'qoder', 'qodercli.exe'], env); const version = await inspectVersion(executable, env, options.signal);
     if (!isCompatibleProgram('qoder', version)) throw new Error(`qoder_version_unsupported: requires ${nativeProgramPolicy('qoder').compatibility}`);
     const binding = await consumerBinding('qoder', executable, version, config, options);
+    const sdkModule=await qoderSdkPair(executable,version);
     const rpc = new NativeRpc(process.execPath, [fileURLToPath(new URL(import.meta.url.endsWith('.ts') ? './worker.ts' : './worker.js', import.meta.url))], { cwd: options.configRoot, env });
     const runtime = new QoderRuntime(binding.identity, rpc, executable, env, options.configRoot);
     runtime.bindingData = binding.data;
@@ -108,7 +112,7 @@ class QoderRuntime implements AgentRuntime {
     let abortedClose: Promise<void> | undefined; const abort = () => { abortedClose ??= rpc.close(); };
     options.signal?.addEventListener('abort', abort, { once: true }); if (options.signal?.aborted) abort();
     try {
-      await rpc.call('initialize', { executable, interaction: options.interaction ?? interactionPolicy, ...(gateway ? { gateway } : {}) });
+      await rpc.call('initialize', { executable, sdkModule, interaction: options.interaction ?? interactionPolicy, ...(gateway ? { gateway } : {}) });
       if (gateway) await runtime.assertNativeAccount();
       // Platform account and live model checks use the real query before its first input.
       options.signal?.throwIfAborted(); return runtime;
@@ -124,6 +128,9 @@ class QoderRuntime implements AgentRuntime {
   async inspectAccount(): Promise<AccountObservation> {
     try { return await this.rpc.call('account', { cwd: this.configRoot }, 40000); }
     catch { return { status: 'failed', diagnostic: 'qoder_account_not_observed' }; }
+  }
+  async verifyUpgrade():Promise<void> {
+    await this.rpc.call('verify-upgrade',{},60_000);
   }
   async modelIdentity():Promise<string> {return 'qoder:'+(await readQoderIdentity(join(this.configRoot,'qoder-config'))).userID;}
   async requestModel(path:string,init:RequestInit={},expectedIdentity?:string):Promise<Response> {
@@ -183,22 +190,44 @@ class QoderRuntime implements AgentRuntime {
   async readHistory({ contextRef, cwd }: { contextRef: ContextRef; cwd: string }): Promise<ExecutorItem[]> { this.reference(contextRef, cwd); return await this.rpc.call('history', { contextId: contextRef.id, cwd }); }
   async send(input: ExecutorSendInput): Promise<void> {
     this.reference(input.contextRef, input.cwd);
-    await this.assertNativeAccount();
-    if (this.gateway) input = { ...input, model: gatewayModel(this.gateway, input.model).id, reasoningEffort: qoderGatewayPolicy(this.gateway, input.model, input.reasoningEffort).parameters.reasoningEffort };
-    this.executionHandlers.set(input.clientRequestId, input.onEvent);
-    if (!this.handlers.has(input.contextRef.id)) this.handlers.set(input.contextRef.id, input.onEvent);
-    this.projectionFailures.delete(input.contextRef.id);
-    const observationFailed = new Promise<never>((_, reject) => this.observationWaits.set(input.contextRef.id, reject));
+    const submission:{contextId:string;settled:boolean;accepted:boolean;released?:boolean}={contextId:input.contextRef.id,settled:false,accepted:false};
+    if(this.submissions.get(input.clientRequestId)?.settled===false)throw new Error('agent_native_turn_active');
+    this.submissions.set(input.clientRequestId,submission);
     try {
-      await Promise.race([this.rpc.call('send', { contextId: input.contextRef.id, cwd: input.cwd, text: input.text, images: input.images, model: input.model, reasoningEffort: input.reasoningEffort, permissionMode: input.permissionMode, clientRequestId: input.clientRequestId }, 24 * 60 * 60 * 1000), observationFailed]);
-    } catch (error) {
-      if (error instanceof Error && error.message === 'agent_native_turn_active') this.executionHandlers.delete(input.clientRequestId);
-      if (this.closed) throw new NativeObservationError('qoder_execution_observation_lost', error, this.gateway ? [this.gateway.apiKey] : []);
-      throw error;
-    } finally {
-      this.observationWaits.delete(input.contextRef.id);
-      if (this.closed) { this.handlers.delete(input.contextRef.id); this.executionHandlers.delete(input.clientRequestId); }
+      await this.assertNativeAccount();
+      if (this.gateway) input = { ...input, model: gatewayModel(this.gateway, input.model).id, reasoningEffort: qoderGatewayPolicy(this.gateway, input.model, input.reasoningEffort).parameters.reasoningEffort };
+      this.executionHandlers.set(input.clientRequestId, input.onEvent);
+      if (!this.handlers.has(input.contextRef.id)) this.handlers.set(input.contextRef.id, input.onEvent);
+      this.projectionFailures.delete(input.contextRef.id);
+      const observationFailed = new Promise<never>((_, reject) => this.observationWaits.set(input.contextRef.id, reject));
+      try {
+        await Promise.race([this.rpc.call('send', { contextId: input.contextRef.id, cwd: input.cwd, text: input.text, images: input.images, model: input.model, reasoningEffort: input.reasoningEffort, permissionMode: input.permissionMode, clientRequestId: input.clientRequestId }, 24 * 60 * 60 * 1000), observationFailed]);
+      } catch (error) {
+        const code=error instanceof NativeRequestError?error.diagnostic:error instanceof Error?error.message:'';
+        if(['qoder_sdk_worker_removed','qoder_initialization_failed'].includes(code))throw new ExecutorInputRejected(code);
+        if (error instanceof Error && error.message === 'agent_native_turn_active') this.executionHandlers.delete(input.clientRequestId);
+        if (this.closed) throw new NativeObservationError('qoder_execution_observation_lost', error, this.gateway ? [this.gateway.apiKey] : []);
+        throw error;
+      } finally {
+        this.observationWaits.delete(input.contextRef.id);
+        if (this.closed) { this.handlers.delete(input.contextRef.id); this.executionHandlers.delete(input.clientRequestId); }
+      }
+    } finally { submission.settled=true; }
+  }
+
+  async releaseUnaccepted({contextRef,clientRequestId}:{contextRef:ContextRef;clientRequestId:string}):Promise<false|{executionState:'unknown'}> {
+    this.reference(contextRef);
+    const submission=this.submissions.get(clientRequestId);
+    if(!submission||submission.contextId!==contextRef.id||!submission.settled||submission.accepted||[...this.submissions.values()].some(other=>other!==submission&&!other.settled))return false;
+    if(!submission.released){
+      if(this.rpc.closed)return false;
+      const proof=await this.rpc.call('unaccepted-release-check',{contextId:contextRef.id,clientRequestId},7000);
+      if(!proof.released||submission.accepted)return false;
+      submission.released=true;
     }
+    const ref=this.rpc.executionRef(clientRequestId,contextRef.id,this.bindingIdentity);
+    const released=await this.rpc.control.releaseExecution(ref,contextRef.id,this.bindingIdentity,{ended:true,executionState:'unknown',channelClosed:this.rpc.closed});
+    return released?{executionState:'unknown'}:false;
   }
 
   private async assertNativeAccount(): Promise<void> {

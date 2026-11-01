@@ -7,6 +7,8 @@ import { randomUUID } from 'node:crypto';
 import { executionScopeKey } from '../../../../src/index.ts';
 import type { AgentProcessConnection } from '../../../../src/index.ts';
 import { isLive, until, actor, prepareAgentRuntime, connectAgentProcess, copyPackage, prepared, cleanupProcessFixture } from '../../../support/process-fixture.ts';
+import { readProcessInstances, removeProcessInstance } from '../../../../src/process/ownership.ts';
+import { request } from '../../../../src/process/transport.ts';
 import { ConversationRepository } from '../../../../src/persistence/conversation-repository.ts';
 
 test('a new backend cancels a retained unaccepted stop without claiming release or resending work',{timeout:60000},async t=>{
@@ -33,6 +35,17 @@ test('a new backend cancels a retained unaccepted stop without claiming release 
  assert.match(target.run!.diagnostic!,/已取消.*自动接续/);
  const repository=new ConversationRepository(path.join(dataRoot,'agent-service'));
  assert.equal(repository.readConversation(chat.id)!.interruption?.cancelled,true);
+ assert.equal(fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').trim().split('\n').length,1);
+ const prior=readProcessInstances(dataRoot).find(value=>value.identity.generation===old.generation)!;
+ await request(prior.origin,prior.token,'/revoke',{connectionId:'first'},AbortSignal.timeout(5000));
+ await until(async()=>isLive(old.pid),value=>!value);
+ assert.equal((await main.call('connections.read',['first'])).enabled,true,'retiring revocation releases controls without disabling the current binding');
+ const stoppedOwner=readProcessInstances(dataRoot).find(value=>value.identity.generation===old.generation);
+ if(stoppedOwner){assert.ok(stoppedOwner.stopped&&stoppedOwner.confirmed);removeProcessInstance(dataRoot,stoppedOwner);}
+ assert.equal(JSON.parse(fs.readFileSync(path.join(dataRoot,'agent-service/process/last-stop.json'),'utf8')).instanceId,old.instanceId);
+ target=await observer.operations.conversations.read(scope,chat.id);
+ target=await observer.operations.conversations.stop(scope,chat.id,{expectedRevision:target.revision,runId:run.id,participantId:run.participantId,generation:run.generation});
+ assert.equal(target.run!.status,'stopped');assert.equal(target.run!.resourcesReleased,true);assert.equal(target.run!.executionState,'unknown');assert.equal(target.entries.find(entry=>entry.role==='user')!.status,'unknown');
  assert.equal(fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').trim().split('\n').length,1);
 });
 

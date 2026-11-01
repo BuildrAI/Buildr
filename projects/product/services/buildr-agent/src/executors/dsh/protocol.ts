@@ -18,6 +18,7 @@ export class DshExecutionLineage {
   private pendingChildren = new Map<string, { owner: string; label: string }>();
   private jobs = new Map<string, { owner: string; label: string }>();
   private settledJobs = new Map<string, string>();
+  private goals = new Map<string,string>();
   private uncertain = new Set<string>();
   private contextId?: string;
   constructor(contextId?: string) { this.contextId = contextId; }
@@ -26,9 +27,14 @@ export class DshExecutionLineage {
     if (event.type === 'turn/start') { this.currentTurn = data.turn; return; }
     const nativeTurn = data.turn ?? this.currentTurn;
     const source = data.source;
+    if(event.type==='goal/change'&&typeof data.goal?.id==='string') {
+      const owner=nativeTurn===undefined?undefined:this.turns.get(nativeTurn);
+      if(owner&&['create','edit'].includes(data.operation))this.goals.set(data.goal.id,owner);
+    }
     if (event.type === 'user/message' && nativeTurn !== undefined) {
       let owner: string | undefined;
       if (isUserInput(event) && typeof source?.rpcId === 'string') owner = source.rpcId;
+      else if(source?.kind==='goal')owner=this.goals.get(source.goalId);
       else if (source?.kind === 'subagent-settled') {
         owner = this.children.get(source.senderSessionId);
         if (owner) this.pendingChildren.delete(source.senderSessionId);
