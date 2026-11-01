@@ -48,6 +48,8 @@ export interface ModelGatewayConfiguration {
   nativeModel?: { provider: 'qoder'; id: string; accountIdentity: string };
 }
 export interface ExecutorOpenOptions {
+  /** Service-owned regenerable caches; never a native session/config HOME. */
+  cacheRoot?: string;
   /** Service-owned instructions supplied to every executor, including future providers. */
   interaction?: { version: 'buildr-interaction/v1'; instructions: string };
   gateway?: ModelGatewayConfiguration;
@@ -165,6 +167,8 @@ export interface ExecutorInputReceipt { executionRef: ExecutionRef; inputItemId?
 /** Only a proven pre-admission rejection may leave input safe to send again. */
 export class ExecutorInputRejected extends Error {}
 export interface AgentRuntime {
+  /** True only after owned native controls have exited; independent command results stay unknown. */
+  canReclaimStorage?(): Promise<boolean>;
   /** True only when this owned transport is no longer usable; absence is not failure. */
   readonly closed?: boolean;
   /** Stable for compatible program updates at the verified source and config. */
@@ -201,6 +205,13 @@ export interface AgentRuntime {
   close(): Promise<void>;
 }
 export interface AgentExecutor {
+  /** Adapter-owned cache knowledge, applied by the shared service lifecycle. */
+  storage?: {
+    transientDirectories: readonly string[];
+    canReclaim?(configRoot: string, relative: string): boolean;
+    /** Immutable seed copied into private working directories; never a shared native HOME. */
+    snapshots?: ReadonlyArray<{ relative: string; key: string; identity(directory: string): string | undefined }>;
+  };
   descriptor: ExecutorDescriptor;
   open(options: ExecutorOpenOptions): Promise<AgentRuntime>;
 }

@@ -1,4 +1,5 @@
 import { codexUnsettledTools } from './recovery.ts';
+import { codexCacheReclaimable, codexCuratedIdentity } from './storage.ts';
 import { interactionPolicy, blocksExecution } from '../../domain/interaction-policy.ts';
 import {createHash} from 'node:crypto';
 import { errorDiagnostic, NativeObservationError } from '../../domain/error-diagnostic.ts';
@@ -7,7 +8,7 @@ import { join, relative, sep, isAbsolute } from 'node:path';
 import { lstat, readFile, writeFile, copyFile, realpath, chmod } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import type { AgentExecutor, AgentRuntime, ContextRef, ExecutionRef, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorRequest, ExecutorSendInput, ExecutorTitleInput, LoginObservation, PermissionMode } from '../../contracts.ts';
-import { NativeRpc, nativePreview, nativeBinding, bounded, findExecutable, inspectVersion, isolatedEnvironment, nativeCommand, nativeHome, opaqueReference, parseReference, privateDirectories, visibleText, type RpcMessage } from '../native-process.ts';
+import { NativeRpc, nativePreview, nativeBinding, bounded, findExecutable, inspectVersion, isolatedEnvironment, ownedProcessGroupIdle, nativeCommand, nativeHome, opaqueReference, parseReference, privateDirectories, visibleText, type RpcMessage } from '../native-process.ts';
 import { modelOptions } from '../model-options.ts';
 import { generateCodexTitle } from './title.ts';
 import { codexThreadPermissions, codexTurnPermissions } from './permissions.ts';
@@ -43,7 +44,7 @@ function codexGatewayCatalog(gateway: ExecutorGateway) {
 }
 interface ActiveTurn { contextId: string; id: string; input: ExecutorSendInput; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown'; processId?: string; executionId: string }>; pending: Map<string, { nativeId: string | number; method: string; params: any }>; texts: Map<string, string>; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string; done: () => void; reject: (error: Error) => void; accepted: boolean; buffered: RpcMessage[] }
 export function createCodexExecutor(): AgentExecutor {
-  return { descriptor: { id: 'codex', label: 'Codex', capabilities }, async open(options) { return await CodexRuntime.open(options); } };
+  return { storage: { transientDirectories: ['home/.npm/_cacache', 'codex-home/.tmp/plugins'], canReclaim: codexCacheReclaimable, snapshots: [{ relative: 'codex-home/.tmp/plugins', key: 'curated-plugins', identity: codexCuratedIdentity }] }, descriptor: { id: 'codex', label: 'Codex', capabilities }, async open(options) { return await CodexRuntime.open(options); } };
 }
 class CodexRuntime implements AgentRuntime {
   readonly capabilities = capabilities;
@@ -66,7 +67,7 @@ class CodexRuntime implements AgentRuntime {
     const { home, temporary } = nativeHome(options.configRoot);
     const config = join(options.configRoot, 'codex-home');
     await privateDirectories(options.configRoot, home, temporary, config);
-    const env = isolatedEnvironment(options.environment, home, temporary, { CODEX_HOME: config, ...(gateway ? { BUILDR_MODEL_GATEWAY_KEY: gateway.apiKey, NO_PROXY: '127.0.0.1,localhost,::1', no_proxy: '127.0.0.1,localhost,::1' } : {}) });
+    const env = isolatedEnvironment(options.environment, home, temporary, { CODEX_HOME: config, ...(gateway ? { BUILDR_MODEL_GATEWAY_KEY: gateway.apiKey, NO_PROXY: '127.0.0.1,localhost,::1', no_proxy: '127.0.0.1,localhost,::1' } : {}) }, options.cacheRoot);
     const executable = await findExecutable(options.executable, ['codex', 'codex.exe'], env);
     const version = await inspectVersion(executable, env, options.signal);
     if (!isCompatibleProgram('codex', version)) throw new Error(`codex_version_unsupported: requires ${nativeProgramPolicy('codex').compatibility}`);
@@ -425,6 +426,10 @@ class CodexRuntime implements AgentRuntime {
         tool.status = live ? 'running' : 'completed';
       }
     } catch { for (const tool of ownCommands) tool.status = 'unknown'; }
+  }
+  async canReclaimStorage(): Promise<boolean> {
+    const pid = this.rpc.child.pid;
+    return Boolean(this.rpc.closed && pid && await ownedProcessGroupIdle(pid));
   }
   async close(): Promise<void> {
     await this.cancelLogin();

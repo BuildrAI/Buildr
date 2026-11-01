@@ -48,6 +48,26 @@ Codex、Qoder 和 DSH 共用 `OwnedControlResource` 保存准确控制归属及�
 
 通过既有认证入口 `GET /api/v1/app/agent-service/runtime` 可观察准确实例、代次、当前/待采用内容摘要及忙闲原因。普通主程序退出不会停止后台；预览停止才按其准确所有权停止后台，退出或工具释放未确认时不清理资料。模型目录沿用、连接重定位等离线维护与后台启动共用持有锁，不能旁路覆盖活动配置。首次从同进程版本升级必须等旧执行和待回应结束并关闭旧版，再启用独立后台。旧版缺少原子暂停接收契约（Contract），自动交接发现既有智能体（Agent）资料仍由旧主程序持有时保留旧实例并提示先退出，不用磁盘空闲快照冒充原子迁移。
 
+
+### 可重建缓存与旧运行时
+
+磁盘生命周期由统一智能体服务（Agent Service）管理。执行器（Executor）声明可重建临时目录及控制资源退出证明；共享存储能力负责路径归属、文件观察身份、系统进程占用与条件删除。不同 Agent 和模型继续作为独立工具接入，同一可见对话和各方原生上下文的关系保持不变。
+
+同一执行器接入的 npm 下载缓存使用 `agent-service/connections/<id>/cache/npm`，跨对话复用。可核对的插件市场检出保留一份缓存种子，通过文件系统写时复制（Copy-on-Write）物化成各上下文可独立修改的副本；回收私有临时副本不要求下一轮重新下载整套插件。文件系统不支持安全克隆时保留原缓存作为兼容回退。`HOME`、原生配置、账号和会话不合并。Codex 的插件临时副本位于各自 `codex-home/.tmp/plugins`，目录仍是干净的 Git 临时检出、未发现本地插件登记，且准确控制进程组退出、没有其他进程引用该环境后才可回收；恢复所需的会话、状态库和账号文件继续保留。未采用预热连接的连续闲置策略与工作结束后的进程释放，不等于删除整个环境。
+
+正常确认退出的旧后台继续及时回收；后台另每十分钟对账已闲置的可重建缓存，以及确认缺失和无回执的保留运行时（Runtime Unit），首次对账延后以避免启动时扫描。当前、待采用、存活或被系统进程打开的版本受保护；已使用不足一天的内容保留，另保留最近一份完整旧版本。超过保留期且内容完整、无实际引用的目录，可在退出确认缺失或无实例回执时回收。新增文件、内容修改、符号链接或观察失败形成保留理由；物化与回收使用同一窄存储锁。
+
+公开私有包入口提供 `inspectAgentStorage({ dataRoot })` 和 `collectAgentStorage(plan)`。前者默认零写入，返回每个对象的观察身份、大小、候选状态与原因；后者重新盘点，只处理原计划中仍符合条件且身份相同的对象。Linux/Windows 或权限不足无法取得完整进程文件观察时，维护保留内容并返回诊断。计划不能作为后续长期删除授权，也不能把目录大小当作 APFS 独占空间。
+
+```js
+import { inspectAgentStorage, collectAgentStorage } from '@buildr-ai/buildr-agent';
+const plan = inspectAgentStorage({ dataRoot: profileDataRoot });
+// 智能体核对具体候选和已有用户授权后，才调用执行能力。
+const result = collectAgentStorage(plan);
+```
+
+实现入口：[连接存储生命周期](../../../services/buildr-agent/src/application/executor-storage.ts)、[维护计划与条件执行](../../../services/buildr-agent/src/application/storage-maintenance.ts)、[文件与系统占用](../../../services/buildr-agent/src/storage/files.ts)、[运行时回收](../../../services/buildr-agent/src/process/cleanup.ts)。本机具体清理结果属于维护操作证据，不写入长期产品知识。
+
 ## 账号与配置怎样接入
 
 “准备并连接”依次发现本机程序、选择准确来源、核对兼容性、准备独立配置，程序准备完成后不自动发起模型账号登录；用户在“模型”页按需登录并启用模型。多个可用来源需要选择；指定程序或原绑定程序缺失不静默回退。Codex 优先引导安装含 Codex 的官方 ChatGPT App，核验应用标识、官方签名和内附程序版本，也允许独立安装 CLI。DSH 准备固定官方 CLI；Qoder 优先解析 SDK 配套程序，缺少时准备固定配套版本，用户无需手动安装 SDK 或单独下载 App Server。

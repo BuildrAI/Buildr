@@ -1,3 +1,4 @@
+import { ExecutorStorage } from './executor-storage.ts';
 import { interactionPolicy } from '../domain/interaction-policy.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
@@ -8,6 +9,7 @@ import type { StoredConnection } from '../domain/agent-state.ts';
 import type { ConversationRepository } from '../persistence/conversation-repository.ts';
 
 export class ConnectionApplication {
+  private readonly storage: ExecutorStorage;
   private metadataReadOnly = false;
   freezeMetadata(value = true): void { this.metadataReadOnly = value; }
   private readonly executors: Map<string, AgentExecutor>;
@@ -59,7 +61,7 @@ export class ConnectionApplication {
     const source = original.programSource ?? (typeof original.bindingData?.executable === 'string' ? original.bindingData.executable : original.view.executable && fs.realpathSync(original.view.executable));
     const configRoot = path.join(this.options.root, 'connections', id);
     const executor = this.executors.get(id)!;
-    const open = (record: StoredConnection, selected: string, programSource?: string) => executor.open({interaction: interactionPolicy, connectionId:id,configRoot,executable:selected,environment:this.options.environment,programSource,...(record.bindingIdentity ? {binding:{identity:record.bindingIdentity,data:record.bindingData,executable:record.view.executable,configRoot:record.view.configPath}} : {})});
+    const open = (record: StoredConnection, selected: string, programSource?: string) => this.openExecutor(executor, {interaction: interactionPolicy, connectionId:id,configRoot,executable:selected,environment:this.options.environment,programSource,...(record.bindingIdentity ? {binding:{identity:record.bindingIdentity,data:record.bindingData,executable:record.view.executable,configRoot:record.view.configPath}} : {})});
     const owned = [...this.gatewayRuntimes].filter(([key]) => key.startsWith(id + ':'));
     const previous = this.runtimes.get(id);
     let oldReleased = false;
@@ -123,11 +125,16 @@ export class ConnectionApplication {
   };
   constructor(options: ConnectionApplication['options']) {
     this.options = options;
+    this.storage = new ExecutorStorage(options.root);
     this.executors = new Map(options.executors.map(executor => {
       if (!/^[a-z][a-z0-9-]*$/.test(executor.descriptor.id)) fail('agent_provider_invalid', '执行者标识无效。');
       return [executor.descriptor.id, executor];
     }));
     if (this.executors.size !== options.executors.length) fail('agent_provider_duplicate', '执行者标识重复。');
+  }
+
+  private async openExecutor(executor: AgentExecutor, options: import('../contracts.ts').ExecutorOpenOptions): Promise<AgentRuntime> {
+    return this.storage.opened(await executor.open(this.storage.options(executor, options)), executor, options.configRoot);
   }
 
   private stored(id: string): StoredConnection {
@@ -209,7 +216,7 @@ export class ConnectionApplication {
       const executor = this.executors.get(id)!;
       const lifecycle = this.lifecycles.get(id);
       const opening = new AbortController(); this.opening.set(id, opening);
-      promise = executor.open({ interaction: interactionPolicy, connectionId: id, configRoot, executable: record.view.executable, programSource: record.programSource, environment: this.options.environment, signal: opening.signal,
+      promise = this.openExecutor(executor, { interaction: interactionPolicy, connectionId: id, configRoot, executable: record.view.executable, programSource: record.programSource, environment: this.options.environment, signal: opening.signal,
         ...(record.bindingIdentity ? { binding: { identity: record.bindingIdentity, data: record.bindingData, executable: record.view.executable, configRoot: record.view.configPath } } : {}),
       }).then(async runtime => {
         if (this.closing || opening.signal.aborted || this.lifecycles.get(id) !== lifecycle) { await runtime.close(); fail('agent_service_closing', '接入已断开或智能体服务正在退出。', 503); }
@@ -244,7 +251,7 @@ export class ConnectionApplication {
     const configRoot = path.join(this.options.root, 'connections', id, 'model-bindings', createHash('sha256').update(gateway.identity).digest('hex'));
     const lifecycle = this.lifecycles.get(id);
     const opening = new AbortController(); this.opening.set(key, opening);
-    const promise = this.executors.get(id)!.open({ interaction: interactionPolicy, connectionId: id, configRoot, executable: record.view.executable, programSource: record.programSource, environment: this.options.environment, signal: opening.signal, gateway, nativeAccountConfigRoot: record.view.configPath ?? path.join(this.options.root, 'connections', id) }).then(async runtime => {
+    const promise = this.openExecutor(this.executors.get(id)!, { interaction: interactionPolicy, connectionId: id, configRoot, executable: record.view.executable, programSource: record.programSource, environment: this.options.environment, signal: opening.signal, gateway, nativeAccountConfigRoot: record.view.configPath ?? path.join(this.options.root, 'connections', id) }).then(async runtime => {
       if (this.closing || opening.signal.aborted || this.lifecycles.get(id) !== lifecycle) { await runtime.close(); fail('agent_connection_disabled', '接入已断开。', 409); }
       return runtime;
     }).catch(error => { if (this.gatewayRuntimes.get(key) === promise) this.gatewayRuntimes.delete(key); throw error; }).finally(() => { this.opening.delete(key); });
@@ -262,7 +269,7 @@ export class ConnectionApplication {
       return;
     }
     const previous=this.gatewayReleases.get(runtime);if(previous){await previous;return;}
-    const closing=(async()=>{await runtime.close();for(const {key,pending} of owned)if(this.gatewayRuntimes.get(key)===pending)this.gatewayRuntimes.delete(key);this.gatewayReleases.delete(runtime);})();
+    const closing=(async()=>{await runtime.close();await this.storage.released(runtime).catch(()=>{});for(const {key,pending} of owned)if(this.gatewayRuntimes.get(key)===pending)this.gatewayRuntimes.delete(key);this.gatewayReleases.delete(runtime);})();
     this.gatewayReleases.set(runtime,closing);void closing.catch(()=>{});
     await closing;
   }

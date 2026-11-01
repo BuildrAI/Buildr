@@ -14,3 +14,6 @@ export type { ConnectionRelocationFailure, ConnectionRelocationResult } from './
 
 export { createAgentService } from './application/agent-service.ts';
 export type { AgentService } from './application/agent-service.ts';
+
+export { inspectAgentStorage, collectAgentStorage } from './application/storage-maintenance.ts';
+export type { AgentStoragePlan } from './application/storage-maintenance.ts';

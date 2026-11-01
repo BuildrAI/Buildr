@@ -6,7 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type { AgentRuntimeUnit } from '../execution-contracts.ts';
 import { AGENT_EXECUTION_CONTRACTS } from '../execution-contracts.ts';
 import { AgentServiceError } from '../domain/agent-state.ts';
-import { controlRoot, privateDirectory, readPrivate, writePrivate } from './ownership.ts';
+import { claimStorage, controlRoot, privateDirectory, readPrivate, writePrivate } from './ownership.ts';
 
 function files(root: string): string[] {
   const result: string[] = [];
@@ -50,10 +50,12 @@ export function prepareAgentRuntime(input: { dataRoot: string; packageRoot?: str
   names.push('package.json');
   const digest = digestTree(packageRoot, names.sort(), node, entry);
   const compatibility = readPrivate<{ parallelCompatibility?: 1 | 2 | 3 }>(path.join(packageRoot, 'build/runtime-contracts.json'));
+  const lock = claimStorage(input.dataRoot);
+  try {
   const units = path.join(controlRoot(input.dataRoot), 'runtimes'); privateDirectory(units);
   const directory = path.join(units, digest);
   const descriptor: AgentRuntimeUnit = { schemaVersion: 1, digest, directory, entry: path.join(directory, entry), node: path.join(directory, process.platform === 'win32' ? 'node.exe' : 'node'), ...([1,2,3].includes(compatibility?.parallelCompatibility ?? 0) ? { parallelCompatibility: compatibility!.parallelCompatibility } : {}) };
-  if (fs.existsSync(directory)) { validateAgentRuntime(input.dataRoot, descriptor); return descriptor; }
+  if (fs.existsSync(directory)) { validateAgentRuntime(input.dataRoot, descriptor); const now = new Date(); fs.utimesSync(directory, now, now); return descriptor; }
   const stage = path.join(units, '.stage-' + randomUUID()); privateDirectory(stage);
   try {
     for (const name of names) { const target = path.join(stage, name); fs.mkdirSync(path.dirname(target), { recursive: true }); fs.copyFileSync(path.join(packageRoot, name), target, fs.constants.COPYFILE_FICLONE); }
@@ -62,6 +64,7 @@ export function prepareAgentRuntime(input: { dataRoot: string; packageRoot?: str
     try { fs.renameSync(stage, directory); } catch (error) { if (!fs.existsSync(directory)) throw error; }
     validateAgentRuntime(input.dataRoot, descriptor); return descriptor;
   } finally { if (fs.existsSync(stage)) fs.rmSync(stage, { recursive: true }); }
+  } finally { lock.release(); }
 }
 export function canRunParallel(current: AgentRuntimeUnit, target: AgentRuntimeUnit): boolean {
   // v1 shares storage but retains idle native writers. Its upgrade must drain
@@ -71,12 +74,18 @@ export function canRunParallel(current: AgentRuntimeUnit, target: AgentRuntimeUn
   const right = readPrivate<{parallelCompatibility?:number;storageVersion:number}>(path.join(target.directory, 'build/runtime-contracts.json'));
   return left?.parallelCompatibility === 3 && right?.parallelCompatibility === 3 && left.storageVersion === right.storageVersion;
 }
-export function validateAgentRuntime(dataRoot: string, runtime: AgentRuntimeUnit): void {
+export function validateRuntimeContents(dataRoot: string, runtime: AgentRuntimeUnit): void {
   const expected = path.join(controlRoot(dataRoot), 'runtimes', runtime.digest);
   if (runtime.schemaVersion !== 1 || !/^[a-f0-9]{64}$/.test(runtime.digest) || runtime.directory !== expected || fs.lstatSync(expected).isSymbolicLink() || runtime.node !== path.join(expected, process.platform === 'win32' ? 'node.exe' : 'node') || !runtime.entry.startsWith(expected + path.sep + 'build' + path.sep) || path.relative(expected, runtime.entry).split(path.sep).includes('..')) throw new AgentServiceError('agent_runtime_identity_invalid', '执行运行单元身份不匹配。', 409);
   const manifest = readPrivate<AgentRuntimeUnit & { files: string[] }>(path.join(expected, 'runtime.json'));
   if (!manifest || !Array.isArray(manifest.files) || manifest.entry !== runtime.entry || manifest.digest !== runtime.digest || manifest.files.some(name => path.isAbsolute(name) || name.split(/[\\/]/).includes('..'))) throw new AgentServiceError('agent_runtime_manifest_invalid', '执行运行单元清单无效。', 409);
+  const expectedFiles = [...manifest.files, path.basename(runtime.node), 'runtime.json'].sort();
+  if (JSON.stringify(files(expected).sort()) !== JSON.stringify(expectedFiles)) throw new AgentServiceError('agent_runtime_changed', '执行运行单元含未登记文件，已保留。', 409);
   if (digestTree(expected, manifest.files, runtime.node, path.relative(expected, runtime.entry)) !== runtime.digest) throw new AgentServiceError('agent_runtime_changed', '执行运行单元内容已变化。', 409);
+}
+export function validateAgentRuntime(dataRoot: string, runtime: AgentRuntimeUnit): void {
+  validateRuntimeContents(dataRoot, runtime);
+  const expected = runtime.directory;
   const compatibility = readPrivate<{ contracts: typeof AGENT_EXECUTION_CONTRACTS; storageVersion: number }>(path.join(expected, 'build/runtime-contracts.json'));
   if (!compatibility || Object.entries(AGENT_EXECUTION_CONTRACTS).some(([key,value]) => compatibility.contracts?.[key as keyof typeof AGENT_EXECUTION_CONTRACTS] !== value)) throw new AgentServiceError('agent_runtime_contract_incompatible', '新版执行契约不兼容，旧后台继续保留。', 409);
   const database = path.join(dataRoot, 'agent-service/conversations.sqlite');

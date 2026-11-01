@@ -110,7 +110,11 @@ test('parallel versions retain old controls, dispatch durable next instructions 
     }finally{await stale.disconnect();}
     fs.writeFileSync(path.join(dataRoot,'release-second'),'yes');
     await until(()=>observer!.operations.conversations.read(scope,second.id),value=>value.run?.status==='completed');
-    await until(async()=>!isLive(firstIdentity.pid)&&!fs.existsSync(runtime.directory),Boolean);
+    await until(async()=>!isLive(firstIdentity.pid),Boolean);
+    assert.ok(fs.existsSync(runtime.directory),'the old host still executes the retained Node, even after its backend drains');
+    await main.close(); main=undefined;
+    if(process.platform==='darwin')await until(async()=>!fs.existsSync(runtime.directory),Boolean);
+    else assert.ok(fs.existsSync(runtime.directory),'incomplete system file observation retains disk resources');
     assert.ok(fs.existsSync(next.entry));assert.ok(fs.existsSync(path.join(dataRoot,'agent-service/conversations.sqlite')));
     assert.equal(fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').split('\n').filter(line=>line.includes('cancel this')).length,0);
   }});

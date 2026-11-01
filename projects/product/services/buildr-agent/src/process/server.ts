@@ -11,7 +11,7 @@ import { AgentServiceError } from '../domain/agent-state.ts';
 import { AgentHostRegistry } from './host-channel.ts';
 import { dispatchOperation, validateOperation } from './operations.ts';
 import { authorize, body, json, listen, request, privateToken, keepEventStreamAlive } from './transport.ts';
-import { claim, clearProcessRecord, controlRoot, readPrivate, writePrivate, readProcessRecord, readProcessInstances, writeProcessInstance, generationAlive, live, readLock } from './ownership.ts';
+import { claim, claimStorage, clearProcessRecord, controlRoot, readPrivate, writePrivate, readProcessRecord, readProcessInstances, writeProcessInstance, generationAlive, live, readLock } from './ownership.ts';
 import type { ProcessBootstrap, ProcessRecord } from './ownership.ts';
 import { validateAgentRuntime, canRunParallel } from './runtime-unit.ts';
 import { launchAgentProcess } from './handoff.ts';
@@ -19,6 +19,7 @@ import { ConversationRepository } from '../persistence/conversation-repository.t
 import { PendingSends } from './pending-sends.ts';
 import { PendingSendRepository } from '../persistence/pending-send-repository.ts';
 import { cleanupStoppedProcesses } from './cleanup.ts';
+import { inspectAgentStorage, collectAgentStorage } from '../application/storage-maintenance.ts';
 
 interface PendingRuntime { runtime: AgentRuntimeUnit; state: 'waiting' | 'switching' | 'parallel-starting' | 'failed'; coordinatorPid?: number; handoffFile?: string; diagnostic?: string }
 export async function startAgentExecutionServer(options: ProcessBootstrap & { serviceOptions?: Pick<AgentServiceOptions, 'executors' | 'modelProviders' | 'programManager'> }) {
@@ -32,11 +33,15 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
   service.models.startRefreshing();
   abortStart = () => service.close();
   const instanceId = randomUUID(), pendingFile = path.join(controlRoot(options.dataRoot), 'pending.json');
+  function savePending(value: unknown): void {
+    const storage = claimStorage(options.dataRoot);
+    try { writePrivate(pendingFile, value); } finally { storage.release(); }
+  }
   const identity: AgentProcessIdentity = { contracts: AGENT_EXECUTION_CONTRACTS, instanceId, generation: service.generation, profileId: options.profileId, dataRoot: path.resolve(options.dataRoot), pid: process.pid, runtime: options.runtime, parallelCompatibility: options.runtime.parallelCompatibility };
   let accepting = true, closing = false, recovering = false, startedRecovery = false, inflight = 0;
   let retiring = false, adopting: Promise<void> | undefined;
   let pending = readPrivate<PendingRuntime>(pendingFile);
-  if (pending?.runtime.digest === options.runtime.digest) { pending = undefined; writePrivate(pendingFile, { runtime: options.runtime, state: 'adopted' }); }
+  if (pending?.runtime.digest === options.runtime.digest) { pending = undefined; savePending({ runtime: options.runtime, state: 'adopted' }); }
   if (pending?.state === 'switching') pending = { ...pending, state: 'failed', diagnostic: '上次切换尚未确认，请核对实际运行版本。' };
   const generations = new Map<string, AbortController>();
   function status(): AgentProcessStatus {
@@ -129,7 +134,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       if (input.expectedGeneration !== identity.generation) throw new AgentServiceError('agent_control_stale', '执行后台代次已变化。', 409);
       validateAgentRuntime(options.dataRoot, input.runtime);
       pending = input.runtime.digest === options.runtime.digest ? undefined : { runtime: input.runtime, state: 'waiting' };
-      writePrivate(pendingFile, pending ?? { runtime: options.runtime, state: 'adopted' });
+      savePending(pending ?? { runtime: options.runtime, state: 'adopted' });
       json(res, 200, status()); return;
     }
     if (req.url === '/shutdown') {
@@ -261,7 +266,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       writeProcessInstance(options.dataRoot, processRecord());
       writePrivate(path.join(controlRoot(options.dataRoot),'instance.json'),processRecord());
       owner.release(); ownsMetadata = false;
-      pending = {runtime:target,state:'parallel-starting'}; writePrivate(pendingFile,pending);
+      pending = {runtime:target,state:'parallel-starting'}; savePending(pending);
       pid = launchAgentProcess({...options,runtime:target,token:privateToken()});
       for (let attempt=0;attempt<200;attempt++) {
         const current = readProcessRecord(options.dataRoot);
@@ -291,9 +296,10 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
         pending={runtime:target,state:'failed',diagnostic:'新版后台未确认就绪，原工作和待发送内容已保留。'};
         sends.waiting('新版执行后台尚未就绪，指令已保存；恢复后将自动接续。');
       }
-      writePrivate(pendingFile,pending);
+      savePending(pending);
     } finally { startup?.release(); }
   }
+  let lastStorageCollection = Date.now(), lastConfirmedCollection = 0;
   const timer = setInterval(() => {
     if (closing || adopting) return;
     if (retiring) {
@@ -302,7 +308,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       }).catch(() => { /* Keep the exact old owner until native release is confirmed. */ }).finally(() => { adopting=undefined; });
       return;
     }
-    if (accepting) { void sends.pump().catch(()=>{}); try { cleanupStoppedProcesses(options.dataRoot,options.runtime); } catch { /* Unknown resources remain retained. */ } }
+    if (accepting) { void sends.pump().catch(()=>{}); try { const now = Date.now(), reconcile = now - lastStorageCollection >= 10 * 60_000; if (reconcile || now - lastConfirmedCollection >= 5000) { if (reconcile) lastStorageCollection = now; lastConfirmedCollection = now; if (reconcile) collectAgentStorage(inspectAgentStorage({dataRoot:options.dataRoot})); else cleanupStoppedProcesses(options.dataRoot,options.runtime); } } catch { /* Unknown resources remain retained. */ } }
     if (pending?.state==='waiting' && canRunParallel(options.runtime,pending.runtime) && service.canAdoptParallel() && !inflight && !recovering && !sends.busy) {
       const target=pending.runtime;
       adopting=adoptParallel(target).finally(()=>{adopting=undefined;});
@@ -314,13 +320,13 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     accepting = false;
     if (status().activity.busy) { accepting = true; return; }
     const target = pending.runtime;
-    pending = { runtime: target, state: 'switching' }; writePrivate(pendingFile, pending);
+    pending = { runtime: target, state: 'switching' }; savePending(pending);
     const handoff = path.join(controlRoot(options.dataRoot), 'handoff-' + instanceId + '.json');
     writePrivate(handoff, { bootstrap: options, expectedInstanceId: instanceId, target });
     // The short-lived successor coordinator owns the handoff after this process exits.
     const child = spawn(options.runtime.node, [path.join(options.runtime.directory, 'build/process/handoff.js'), handoff], { detached: true, stdio: 'ignore', windowsHide: true });
-    child.once('error', () => { pending = { runtime: target, state: 'failed', diagnostic: '无法启动版本交接程序，旧后台已保留。' }; writePrivate(pendingFile, pending); accepting = true; });
-    child.once('spawn', () => { pending = { runtime: target, state: 'switching', coordinatorPid: child.pid, handoffFile:handoff }; writePrivate(pendingFile, pending); child.unref(); void close().finally(() => { process.exitCode = 0; }); });
+    child.once('error', () => { pending = { runtime: target, state: 'failed', diagnostic: '无法启动版本交接程序，旧后台已保留。' }; savePending(pending); accepting = true; });
+    child.once('spawn', () => { pending = { runtime: target, state: 'switching', coordinatorPid: child.pid, handoffFile:handoff }; savePending(pending); child.unref(); void close().finally(() => { process.exitCode = 0; }); });
   }, 250);
   timer.unref();
   return { identity, origin: channel.origin, status, close };

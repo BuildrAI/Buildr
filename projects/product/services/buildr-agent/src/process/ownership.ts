@@ -31,8 +31,20 @@ export function live(pid: number): boolean {
   if (!Number.isSafeInteger(pid) || pid < 1) return false;
   try { process.kill(pid, 0); return true; } catch (error) { return (error as NodeJS.ErrnoException).code !== 'ESRCH'; }
 }
+
+/** Only preparation waits for another process's short storage mutation; never wait on ourselves. */
+export function claimStorage(dataRoot: string): { release(): void } {
+  const deadline = Date.now() + 5000, sleeper = new Int32Array(new SharedArrayBuffer(4));
+  for (;;) {
+    try { return claim(dataRoot, 'storage'); }
+    catch (error) {
+      if (!(error instanceof AgentServiceError) || error.code !== 'agent_process_owned' || readLock(dataRoot, 'storage')?.pid === process.pid || Date.now() >= deadline) throw error;
+      Atomics.wait(sleeper, 0, 0, 10);
+    }
+  }
+}
 interface LockIdentity { pid: number; nonce: string }
-export function readLock(dataRoot: string, name: 'owner' | 'startup'): LockIdentity | undefined {
+export function readLock(dataRoot: string, name: 'owner' | 'startup' | 'storage'): LockIdentity | undefined {
   const filename = path.join(controlRoot(dataRoot), name + '.lock');
   const info = fs.lstatSync(filename, {throwIfNoEntry:false});
   if (!info) return;
@@ -42,7 +54,7 @@ export function readLock(dataRoot: string, name: 'owner' | 'startup'): LockIdent
   if (!identity || !Number.isSafeInteger(identity.pid) || identity.pid < 1 || typeof identity.nonce !== 'string') throw new AgentServiceError('agent_process_record_invalid', '执行持有记录不完整，原内容已保留。', 409);
   return identity;
 }
-export function claim(dataRoot: string, name: 'owner' | 'startup'): { release(): void } {
+export function claim(dataRoot: string, name: 'owner' | 'startup' | 'storage'): { release(): void } {
   const directory = controlRoot(dataRoot); privateDirectory(directory);
   const filename = path.join(directory, name + '.lock');
   const value = { pid: process.pid, nonce: randomUUID() };
