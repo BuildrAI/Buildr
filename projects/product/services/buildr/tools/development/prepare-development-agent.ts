@@ -7,6 +7,16 @@ import { withExclusiveFileLock } from '../../src/infrastructure/filesystem/exclu
 
 const buildrRoot = path.resolve(import.meta.dirname, '../..');
 
+/** Staging garbage is not the published package; cleanup must not revoke a valid adoption. */
+function cleanupPreparationTree(directory: string): void {
+  try { fs.rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); }
+  catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    process.stderr.write(`${JSON.stringify({ code: 'agent_preparation_cleanup_retained', directory,
+      ...(typeof code === 'string' && /^[A-Z_]+$/.test(code) ? { internalCode: code } : {}) })}\n`);
+  }
+}
+
 function sameRuntimeTree(left: string, right: string): boolean {
   const expected = fs.lstatSync(left);
   const current = fs.lstatSync(right, { throwIfNoEntry: false });
@@ -128,9 +138,9 @@ function materializeDevelopmentAgent({ serviceRoot, agentRoot, build }: { servic
     if (fs.existsSync(finalDestination)) fs.renameSync(finalDestination, previous);
     try { fs.renameSync(destination, finalDestination); }
     catch (error) { if (fs.existsSync(previous)) fs.renameSync(previous, finalDestination); throw error; }
-    fs.rmSync(previous, { recursive: true, force: true });
+    cleanupPreparationTree(previous);
     return finalDestination;
-  } finally { fs.rmSync(destination, { recursive: true, force: true }); }
+  } finally { cleanupPreparationTree(destination); }
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === import.meta.filename) {

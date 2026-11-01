@@ -14,6 +14,34 @@ import { acquireExclusiveFileLock, releaseExclusiveFileLock } from '../../src/in
 
 const serviceRoot = path.resolve(import.meta.dirname, '../..');
 
+test('old staging cleanup failure does not revoke the newly published complete runtime', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-agent-cleanup-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const host = path.join(root, 'host'), agent = path.join(root, 'agent');
+  fs.mkdirSync(path.join(agent, 'build'), { recursive: true });
+  fs.writeFileSync(path.join(agent, 'package.json'), JSON.stringify({ name: '@buildr-ai/buildr-agent', version: '0.1.0', private: true, dependencies: {} }));
+  fs.writeFileSync(path.join(agent, 'LICENSE'), 'fixture');
+  fs.writeFileSync(path.join(agent, 'build/index.js'), 'export const ready = "old";\n');
+  const destination = prepareDevelopmentAgent({ serviceRoot: host, agentRoot: agent, build: false });
+  fs.writeFileSync(path.join(agent, 'build/index.js'), 'export const ready = "new";\n');
+  const remove = fs.rmSync, diagnostics: string[] = [];
+  let retained: string | undefined;
+  t.mock.method(process.stderr, 'write', (text: string) => { diagnostics.push(String(text)); return true; });
+  t.mock.method(fs, 'rmSync', (file: fs.PathLike, options?: fs.RmOptions) => {
+    if (String(file).startsWith(path.join(host, 'node_modules/@buildr-ai/.buildr-agent-stage-')) && String(file).endsWith('-previous')) {
+      assert.equal(options?.maxRetries, 5);
+      retained = String(file);
+      throw Object.assign(new Error('temporary directory not empty'), { code: 'ENOTEMPTY' });
+    }
+    return remove(file, options);
+  });
+  assert.equal(prepareDevelopmentAgent({ serviceRoot: host, agentRoot: agent, build: false }), destination);
+  assert.equal(fs.readFileSync(path.join(destination, 'build/index.js'), 'utf8'), 'export const ready = "new";\n');
+  assert.ok(retained && fs.existsSync(retained));
+  assert.ok(diagnostics.some(line => line.includes('agent_preparation_cleanup_retained') && line.includes('ENOTEMPTY')));
+  assert.equal(prepareDevelopmentAgent({ serviceRoot: host, agentRoot: agent, build: false }), destination, 'retry preserves the published package');
+});
+
 test('concurrent source preparations wait for their owner and publish a complete public package', async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-agent-prepare-concurrent-'));
   const children: ReturnType<typeof spawn>[] = [];
