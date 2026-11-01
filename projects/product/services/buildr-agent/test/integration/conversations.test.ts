@@ -2650,7 +2650,8 @@ for(const replacement of ['local','other'])test('retained tools allow a new inst
     const next=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.id!==before.run!.id&&['completed','tools-active'].includes(view.run?.status??''));
     assert.equal(next.retainedRuns?.[0]?.id,before.run!.id);assert.notEqual(next.run!.participantId,before.run!.participantId);
     assert.equal(old.contexts.size,replacement==='local'?2:1,'new work cannot overwrite an unfinished native context');
-    assert.equal(next.retainedRuns?.[0]?.status,'tools-active');
+    assert.equal(next.retainedRuns?.[0]?.status,replacement==='local'?'tools-active':'stopped');
+    assert.equal(Boolean(next.retainedRuns?.[0]?.supersededBy),replacement!=='local');
     await assert.rejects(f.service.conversations.stop('workspace-one',chat.id,{expectedRevision:before.revision,runId:before.run!.id,participantId:before.run!.participantId,generation:before.run!.generation}),{code:'agent_revision_conflict'});
     const stopped=await f.service.conversations.stop('workspace-one',chat.id,{expectedRevision:next.revision,runId:before.run!.id,participantId:before.run!.participantId,generation:before.run!.generation,toolId:'own-tool'});
     assert.equal(stopped.retainedRuns?.[0]?.status,'stopped');assert.equal(stopped.run!.id,next.run!.id);assert.equal(stopped.run!.status,next.run!.status);

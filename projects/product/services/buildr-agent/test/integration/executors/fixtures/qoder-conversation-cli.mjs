@@ -56,8 +56,10 @@ createInterface({ input: process.stdin }).on('line', line => {
   }
   if (m.type === 'control_response') {
     if (m.response.request_id === 'child-question-request') {
-      if (m.response.response.updatedInput?.answers?.choose !== 'yes') throw Error('wrong child answer');
-      emit({ type: 'assistant', session_id: sid, parent_tool_use_id: 'background-tool', uuid: randomUUID(), message: { id: randomUUID(), content: [{ type: 'text', text: 'child answered yes' }] } });
+      const answer=m.response.response.updatedInput?.answers?.choose;
+      const expected=fs.existsSync(path.join(config,'expected-child-answer'))?fs.readFileSync(path.join(config,'expected-child-answer'),'utf8'):'yes';
+      if (answer !== expected) throw Error('wrong child answer');
+      emit({ type: 'assistant', session_id: sid, parent_tool_use_id: 'background-tool', uuid: randomUUID(), message: { id: randomUUID(), content: [{ type: 'text', text: 'child answered '+answer }] } });
       emit({ type: 'user', session_id: sid, parent_tool_use_id: null, uuid: randomUUID(), message: { content: [{ type: 'tool_result', tool_use_id: 'background-tool', content: 'child finished' }] } });
       emit({ type: 'system', subtype: 'task_notification', session_id: sid, uuid: randomUUID(), task_id: 'background-task', tool_use_id: 'background-tool' });
       return;

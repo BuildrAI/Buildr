@@ -559,6 +559,9 @@ test('结束轮次退出观察，未知/工具/待回应/待发送保持观察�
   }
   for(const status of ['starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown'])assert.equal(needsConversationObservation({...ended,run:{...ended.run,status,resourcesReleased:true}}),true,status);
   for(const status of ['running','unknown'])assert.equal(needsConversationObservation({...ended,run:{...ended.run,tools:[{id:'tool',status}]}}),true,status);
+  const old={...conversation.run,status:'unknown',tools:[{id:'uncertain',status:'unknown'}]};
+  assert.equal(needsConversationObservation({...ended,retainedRuns:[old]}),true);
+  assert.equal(needsConversationObservation({...ended,retainedRuns:[{...old,supersededBy:ended.run.id}]}),false,'系统善后不维持前端观察循环');
   assert.equal(needsConversationObservation({...ended,requests:conversation.requests}),true);
   assert.equal(needsConversationObservation({...ended,pendingSend:{id:'queued',state:'waiting'}}),true);
   assert.equal(needsConversationObservation({...ended,entries:[{role:'assistant',text:'完成了'}],run:{...ended.run,status:'running'}}),true,'最后一段文字不是结束事实');

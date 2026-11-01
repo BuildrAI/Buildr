@@ -1,6 +1,15 @@
 import type { PendingRequestView, ExecutorImage } from '../contracts.ts';
 import { fail } from './agent-state.ts';
 
+/** Older DSH/Qoder records omitted a capability their native text protocols already support. */
+export function normalizeQuestionCapabilities(record: {view: {requests: PendingRequestView[]};participants:Array<{id:string;provider:string}>}):void {
+  const providers=new Map(record.participants.map(participant=>[participant.id,participant.provider]));
+  for(const request of record.view.requests){
+    if(request.kind!=='question'||!['dsh','qoder'].includes(providers.get(request.participantId)??''))continue;
+    for(const question of request.questions??[])question.allowOther??=true;
+  }
+}
+
 export type MaterialAnswer = { text: string; attachmentIds: string[] };
 export function isMaterialAnswer(value: unknown): value is MaterialAnswer {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;

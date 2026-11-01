@@ -94,6 +94,15 @@ test('DSH stream shows accumulated text, answers the native question and observe
     await runtime.reply({ contextRef, executionRef: accepted.executionRef, requestId: request.request.id, answer: { color: '蓝' } });
     await eventually(() => visible.some(event => event.type === 'item' && event.item.id === 'bash-dsh'));
     assert.deepEqual(nativeAnswer, { answers: [{ id: 'color', selected: ['蓝'] }] });
+    assert.equal(request.request.questions?.[0]?.allowOther,true);
+    const custom=(runtime as any).question({agent:{id:'native-dsh'},questions:[{id:'mix',question:'自定义颜色',multiSelect:true,options:[{label:'蓝'}]}],wait:{callId:'custom-question'}});
+    await eventually(()=>visible.some(event=>event.type==='request'&&event.request.id==='custom-question'));
+    await runtime.reply({contextRef,executionRef:accepted.executionRef,requestId:'custom-question',answer:{mix:['蓝','紫色也可以']}});
+    assert.deepEqual(await custom,{answers:[{id:'mix',selected:['蓝'],custom:'紫色也可以'}]});
+    const customOnly=(runtime as any).question({agent:{id:'native-dsh'},questions:[{id:'free',question:'自定义',options:[{label:'蓝'}]}],wait:{callId:'custom-only'}});
+    await eventually(()=>visible.some(event=>event.type==='request'&&event.request.id==='custom-only'));
+    await runtime.reply({contextRef,executionRef:accepted.executionRef,requestId:'custom-only',answer:{free:'绿色'}});
+    assert.deepEqual(await customOnly,{answers:[{id:'free',selected:[],custom:'绿色'}]});
     const abort = new AbortController();
     const cancelled = (runtime as any).question({ agent: { id: 'native-dsh' }, signal: abort.signal, questions: [{ id: 'later', question: '继续？' }], wait: { callId: 'cancelled-question' } });
     const rejected = assert.rejects(cancelled, /dsh_question_cancelled/); abort.abort(); await rejected;

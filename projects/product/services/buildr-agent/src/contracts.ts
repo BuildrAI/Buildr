@@ -330,6 +330,8 @@ export interface ConversationEntry {
   createdAt: string;
 }
 export interface RunView {
+  /** Replaced by a confirmed new execution; cleanup is system-owned. */
+  supersededBy?:string;
   /** User cancellation is independent from delivery and resource proof. */
   stopRequested?:boolean;
   /** Same-context input is allowed; this does not release command control resources. */
@@ -497,6 +499,7 @@ export interface ServiceEvent {
 export interface AgentServiceOptions {
   /** Process-owned local control instructions; never includes authentication secrets. */
   conversationControl?: (scope:string,id:string)=>string;
+  controlSupersededRun?: (scope:string,id:string,input:{expectedRevision:string;runId:string;participantId:string;generation:string},action:'stop'|'observe')=>Promise<unknown>;
   /** Other accurately discovered process generations must not be recovered. */
   generationAlive?: (generation: string) => boolean;
   /** Exact prior owner completed authenticated shutdown; death alone is insufficient. */

@@ -11,3 +11,11 @@ test('released historical unknown rounds do not keep a stopped conversation acti
  run.tools=[{id:'uncertain-operation',status:'unknown'}];assert.equal(summaryView(record,3,3,'now').activity!.active,true);
  run.tools=[];run.resourcesReleased=false;assert.equal(summaryView(record,3,3,'now').activity!.active,true,'unreleased work remains visible');
 });
+
+test('confirmed replacement keeps uncertain resources internal and does not create user attention',()=>{
+ const old={id:'old',status:'unknown',supersededBy:'new',tools:[{id:'uncertain',status:'unknown'}]} as any;
+ const record={view:{run:{id:'new',status:'completed',tools:[]},retainedRuns:[old],requests:[],hidden:false},participants:[]} as unknown as StoredConversation;
+ assert.equal(summaryView(record,3,3,'now').activity!.active,false);
+ assert.equal(summaryView(record,4,3,'now').activity!.active,true,'unread new answers still require attention');
+ assert.equal(record.view.retainedRuns![0]!.tools[0]!.status,'unknown','physical facts remain preserved');
+});

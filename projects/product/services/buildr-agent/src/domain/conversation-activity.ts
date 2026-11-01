@@ -20,7 +20,7 @@ export function userActivityAt(record: StoredConversation): string | undefined {
 }
 export function summaryView(record: StoredConversation, version: number, seenThrough: number, updatedAt: string): ConversationView {
   const view = record.view;
-  const pending=(run:NonNullable<ConversationView['run']>)=>(!run.resourcesReleased&&BUSY_STATES.has(run.status))||run.tools.some(tool=>tool.status!=='completed');
+  const pending=(run:NonNullable<ConversationView['run']>)=>!run.supersededBy&&((!run.resourcesReleased&&BUSY_STATES.has(run.status))||run.tools.some(tool=>tool.status!=='completed'));
   return {
     ...view, titleState:view.titleState??{status:'unknown'}, entries: [], requests: [], nextEntryCursor: undefined,
     retainedRuns:view.retainedRuns?.map(run=>({...run,tools:[]})),

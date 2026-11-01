@@ -176,6 +176,8 @@ test('Qoder exact release covers a slow idle native close without a false RPC ti
 test('Qoder child question after the main result keeps its exact parent and can still receive a real answer', { timeout: 10000 }, async () => {
   const f = await fixture();
   try {
+    await mkdir(join(f.configRoot,'qoder-config'),{recursive:true});
+    await writeFile(join(f.configRoot,'qoder-config/expected-child-answer'),'自定义决定');
     const round = await f.send('child-question', 'full-access');
     await eventually(() => round.events.some(event => event.type === 'request'));
     const request = round.events.find(event => event.type === 'request'), accepted = round.events.find(event => event.type === 'accepted');
@@ -185,8 +187,8 @@ test('Qoder child question after the main result keeps its exact parent and can 
     const waiting = await f.runtime.observe(control);
     assert.equal(waiting.status, 'waiting'); assert.equal(waiting.requests?.[0].id, request.request.id); assert.equal(waiting.requests?.[0].parentToolId, 'background-tool');
     assert.equal(await f.runtime.canRelease!(control), false);
-    await f.runtime.reply({ ...control, requestId: request.request.id, answer: { '0': 'yes' } });
-    await eventually(() => round.events.some(event => event.type === 'item' && event.item.text === 'child answered yes' && event.item.parentToolId === 'background-tool'));
+    await f.runtime.reply({ ...control, requestId: request.request.id, answer: { '0': '自定义决定' } });
+    await eventually(() => round.events.some(event => event.type === 'item' && event.item.text === 'child answered 自定义决定' && event.item.parentToolId === 'background-tool'));
     await eventually(() => round.events.some(event => event.type === 'item' && event.item.id === 'background-tool' && event.item.status === 'completed'));
     assert.deepEqual(await f.runtime.canRelease!(control), { executionState: 'ended' });
   } finally { await f.close(); }
@@ -202,6 +204,7 @@ test('Qoder full-access allows only advertised ordinary tools and still asks bus
       const sending = f.runtime.send({ contextRef: f.contextRef, cwd: f.cwd, text, images: [], permissionMode: 'full-access', clientRequestId, onEvent: event => events.push(event) }); sending.catch(() => {});
       await eventually(() => events.some(event => event.type === 'request'));
       assert.equal(events.find(event => event.type === 'request')?.request.kind, kind);
+      if(kind==='question')assert.equal(events.find(event=>event.type==='request')?.request.questions?.[0]?.allowOther,true);
       const accepted = events.find(event => event.type === 'accepted'); assert.equal(accepted?.type, 'accepted');
       await f.runtime.stop({ contextRef: f.contextRef, executionRef: accepted.executionRef }); await sending;
     }

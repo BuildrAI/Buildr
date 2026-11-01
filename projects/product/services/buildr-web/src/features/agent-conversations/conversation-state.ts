@@ -40,7 +40,7 @@ export function executionLocked(run?: ConversationRun): boolean {
 /** Execution completion, not transport health or final-reply wording, ends observation. */
 export function needsConversationObservation(conversation: ConversationView | null): boolean {
   if (!conversation) return false;
-  if (conversation.pendingSend || conversation.requests.length || conversation.retainedRuns?.some(run=>executionLocked(run)||run.tools.some(tool=>tool.status!=='completed'))) return true;
+  if (conversation.pendingSend || conversation.requests.length || conversation.retainedRuns?.some(run=>!run.supersededBy&&(executionLocked(run)||run.tools.some(tool=>tool.status!=='completed')))) return true;
   const run = conversation.run;
   return Boolean(run && (executionLocked(run) || run.tools.some(tool => tool.status !== 'completed') ||
     run.executionState === 'active' || run.executionState === 'unknown'));

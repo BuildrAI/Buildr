@@ -110,6 +110,7 @@ export interface StoredConversation {
     nativeInputItemId?: string;
     accepted: boolean;
     supplement?: boolean;
+    supersededStopRequested?: boolean;
     automaticRetry?: { rootRunId: string; count: number };
     continuationOf?: string;
   }>;

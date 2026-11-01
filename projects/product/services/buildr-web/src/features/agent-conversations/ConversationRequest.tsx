@@ -28,12 +28,17 @@ type Question=NonNullable<RequestView['questions']>[number];
 function QuestionInput({question,value,busy,onChange,onUpload,onExpand,actions}:{question:Question;value:AnswerValue|undefined;busy:boolean;onUpload?:AnswerMaterialUpload;onChange:(value:AnswerValue)=>void;onExpand:()=>void;actions?:ReactNode}){
   const [other,setOther]=useState(false),[otherAnswer,setOtherAnswer]=useState<AnswerValue>('');
   const options=question.options?.map(option=>({value:option.id,label:<span className="ac-question-option"><span>{option.label}</span>{option.description&&<small>{option.description}</small>}</span>}))||[];
+  const selected=Array.isArray(value)?value.filter(item=>question.options?.some(option=>option.id===item)):[];
+  const customText=typeof otherAnswer==='string'?otherAnswer:'';
+  const multipleAnswer=(choices:string[],text:string)=>[...choices,...(text.trim()?[text]:[])];
   return <div className="ac-question"><strong>{question.label}</strong>
     {options.length?question.multiple?
-      <Checkbox.Group options={options} value={Array.isArray(value)?value:[]} onChange={selected=>onChange(selected.map(String))}/>:
+      <><div className="ac-question-options" role="group" aria-label={question.label}>{options.map(option=><Checkbox key={option.value} checked={selected.includes(option.value)} disabled={busy} onChange={event=>{const next=event.target.checked?[...selected,option.value]:selected.filter(value=>value!==option.value);onChange(multipleAnswer(next,other?customText:''));}}>{option.label}</Checkbox>)}</div>
+      {question.allowOther&&<Checkbox checked={other} disabled={busy} onChange={event=>{const custom=event.target.checked;setOther(custom);onChange(multipleAnswer(selected,custom?customText:''));if(custom)onExpand();}}>其他</Checkbox>}</>:
       <Radio.Group aria-label={question.label} options={[...options,...(question.allowOther?[{value:0,label:<span>其他</span>}]:[])]} value={other?0:value} onChange={event=>{const custom=event.target.value===0;setOther(custom);onChange(custom?otherAnswer:String(event.target.value));if(custom)onExpand();}}/>:
       <ConversationAnswerInput actions={actions} label={question.label} busy={busy} value={typeof value==='string'?value:value&&!Array.isArray(value)?value.text:''} onUpload={onUpload} onChange={(text,images)=>onChange(images.length?{text,attachmentIds:images.map(image=>image.id)}:text)}/>}
+    {options.length>0&&question.multiple&&question.allowOther&&other&&<ConversationAnswerInput actions={actions} label={question.label+'：其他回答'} busy={busy} value={customText} onChange={text=>{setOtherAnswer(text);onChange(multipleAnswer(selected,text));}}/>}
     {options.length>0&&!question.multiple&&question.allowOther&&<div hidden={!other}><ConversationAnswerInput actions={other?actions:undefined} label={question.label+'：其他回答'} busy={busy} value={typeof otherAnswer==='string'?otherAnswer:!Array.isArray(otherAnswer)?otherAnswer.text:''} onUpload={onUpload} onChange={(text,images)=>{const next=images.length?{text,attachmentIds:images.map(image=>image.id)}:text;setOtherAnswer(next);if(other)onChange(next);}}/></div>}
-    {options.length>0&&(!other||question.multiple)&&actions}
+    {options.length>0&&(!other||!question.allowOther)&&actions}
   </div>;
 }

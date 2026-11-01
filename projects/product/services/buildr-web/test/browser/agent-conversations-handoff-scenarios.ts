@@ -259,6 +259,20 @@ await step('用户决定复用问题卡片，选项说明与其他回答可用�
       await submit.click();await card.waitFor({state:'hidden'});
       assert.equal(fixture.replies,before+2);assert.deepEqual(JSON.parse(fixture.conversation.entries.at(-1).text).回答,{direction:'先说明影响，暂不修改'});
       assert.equal(fixture.conversation.run.id,'run-fixture');
+      const multi=decision('decision-multiple');Object.assign(multi,{participantId:'participant-dsh'});Object.assign(multi.questions[0],{multiple:true});
+      update({run:run('waiting-question','dsh'),requests:[multi]});await page.reload();await input().waitFor();
+      card=panel().locator('[data-agent-request="decision-multiple"]');await card.waitFor();
+      await card.getByRole('checkbox',{name:'其他',exact:true}).check();
+      const multiSubmit=card.getByRole('button',{name:'回答并继续',exact:true});
+      assert.equal(await multiSubmit.isDisabled(),true,'只有空的其他回答不能提交');
+      const multiText=card.getByRole('textbox',{name:'接下来选择哪个方向？：其他回答',exact:true});
+      await multiText.fill('先确认影响范围');await card.getByRole('checkbox',{name:/先看效果/}).check();
+      await capture(page,'agent-question-multiple-other.png');
+      await card.getByRole('checkbox',{name:'其他',exact:true}).uncheck();await multiText.waitFor({state:'hidden'});
+      await card.getByRole('checkbox',{name:'其他',exact:true}).check();assert.equal(await multiText.inputValue(),'先确认影响范围');
+      await multiSubmit.click();await card.waitFor({state:'hidden'});
+      assert.deepEqual(JSON.parse(fixture.conversation.entries.at(-1).text).回答,{direction:['preview','先确认影响范围']});
+
       update({run:run('waiting-question','codex',{permissionMode:'full-access'}),requests:[decision('decision-images')]});
       await page.reload();await input().waitFor();await input().fill('底部未发送草稿，不能夹带');
       card=panel().locator('[data-agent-request="decision-images"]');await card.getByRole('radio',{name:'其他',exact:true}).check();
@@ -275,17 +289,26 @@ await step('用户决定复用问题卡片，选项说明与其他回答可用�
       await card.getByRole('button',{name:'移除图片 问题截图.png',exact:true}).waitFor();
       await imageAnswer.fill('按截图核对后继续');
       await card.getByRole('button',{name:'回答并继续',exact:true}).click();await card.waitFor({state:'hidden'});
-      assert.equal(fixture.replies,before+3);const imageReply=JSON.parse(fixture.conversation.entries.at(-1).text);
+      assert.equal(fixture.replies,before+4);const imageReply=JSON.parse(fixture.conversation.entries.at(-1).text);
       assert.equal(imageReply.显示回答.direction,'按截图核对后继续');assert.match(imageReply.回答.direction,/\/fixture\/attachments\//);
       const materialMessage=panel().locator('[data-entry-id="reply-decision-images"]');await materialMessage.locator('.ac-image-thumbnail').waitFor();assert.match(await materialMessage.innerText(),/按截图核对后继续/);assert.doesNotMatch(await materialMessage.innerText(),/fixture\/attachments|未读取不能声称|attachmentIds/);await capture(page,'agent-question-answer-materials-display.png');
       const legacy={...imageReply};delete legacy.显示回答;fixture.conversation.entries.at(-1).text=JSON.stringify(legacy);update({entries:[...fixture.conversation.entries]});await page.reload();await input().waitFor();await materialMessage.locator('.ac-image-thumbnail').waitFor();assert.doesNotMatch(await materialMessage.innerText(),/fixture\/attachments|未读取不能声称/);
       assert.equal(await input().inputValue(),'底部未发送草稿，不能夹带');await input().fill('');
       update({run:run('running','codex',{id:'new-run-after-instruction'}),requests:[decision('stale-old-question')]});await page.reload();await input().waitFor();
       assert.equal(await panel().locator('[data-agent-request]').count(),0,'新一轮不显示旧轮可答卡片');
-      assert.equal(fixture.replies,before+3,'新指令不自动回答旧问题');
+      assert.equal(fixture.replies,before+4,'新指令不自动回答旧问题');
       update({run:run('running','codex'),requests:[]});await page.reload();await input().waitFor();
       assert.doesNotMatch(await input().getAttribute('placeholder')||'',/粘贴截图|粘贴图片|粘贴.*视频/);
     });
+await step('确认切换后的旧执行善后默认静默，保留准确历史',async()=>{
+ const saved=structuredClone(fixture.conversation),beforeSends=fixture.sends,beforeStops=fixture.stops;
+ try{
+  update({run:run('completed','codex'),requests:[],retainedRuns:[run('unknown','dsh',{id:'superseded-old',supersededBy:'run-fixture',stopRequested:true,tools:[{id:'uncertain',label:'旧操作',status:'unknown'}]})]});
+  await page.reload();await input().waitFor();
+  assert.equal(await panel().locator('[data-retained-work]').count(),0,'系统善后不要求用户处理旧执行');
+  assert.equal(fixture.sends,beforeSends);assert.equal(fixture.stops,beforeStops,'页面不重复停止或发送');
+ }finally{fixture.conversation=saved;await page.reload();await input().waitFor();}
+});
 await step('问题自由回答共享完整视频输入，失败保留文字和已上传材料',async()=>{
       const saved=structuredClone(fixture.conversation),before=fixture.replies;
       try{

@@ -29,7 +29,11 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
   try {
   const hosts = new AgentHostRegistry();
   const retainedOwners=new Map(readProcessInstances(options.dataRoot).map(record=>[record.identity.generation,record.identity]));
-  const service = createAgentService({ ...options.serviceOptions, dataRoot: options.dataRoot, legacySourceId: options.legacySourceId, get autoContinueInterrupted() { return options.autoContinueInterrupted; }, host: hosts, conversationControl:(scope,id)=>conversationControlInstruction({dataRoot:options.dataRoot,profileId:options.profileId,sourceId:executionScopeRef(scope,options.legacySourceId).sourceId,scope,conversationId:id},options.runtime.node), generationAlive: generation => generationAlive(options.dataRoot, generation), generationReleased:generation=>{
+  const service = createAgentService({ ...options.serviceOptions, dataRoot: options.dataRoot, legacySourceId: options.legacySourceId, get autoContinueInterrupted() { return options.autoContinueInterrupted; }, host: hosts, controlSupersededRun:async(scope,id,control,action)=>{
+    const target=await recipient(scope,id,control.generation);
+    if(target)return forward(target,'/operations',{contract:AGENT_EXECUTION_CONTRACTS.operations,sourceId:executionScopeRef(scope,options.legacySourceId).sourceId,operation:action==='stop'?'conversations.stop':'conversations.observeRun',args:[scope,id,control]});
+    return action==='stop'?service.conversations.stop(scope,id,control):service.conversations.observeRun(scope,id,control);
+  }, conversationControl:(scope,id)=>conversationControlInstruction({dataRoot:options.dataRoot,profileId:options.profileId,sourceId:executionScopeRef(scope,options.legacySourceId).sourceId,scope,conversationId:id},options.runtime.node), generationAlive: generation => generationAlive(options.dataRoot, generation), generationReleased:generation=>{
     const prior=readProcessInstances(options.dataRoot).find(record=>record.identity.generation===generation);
     if(prior)retainedOwners.set(generation,prior.identity);
     const owner=prior?.identity??retainedOwners.get(generation);

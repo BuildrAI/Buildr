@@ -1,6 +1,6 @@
 import { presentedFilesForEntry, normalizePresentedFiles } from '../domain/presented-files.ts';
 import {ConversationWarmups,CONNECTION_IDLE_MS,type PreparedSource} from './conversation-warmups.ts';
-import { answerAttachmentIds, resolveQuestionAnswer, questionAnswerDisplay } from '../domain/question-answer.ts';
+import { answerAttachmentIds, resolveQuestionAnswer, questionAnswerDisplay, normalizeQuestionCapabilities } from '../domain/question-answer.ts';
 import { normalizeSendDraft } from '../domain/send-draft.ts';
 import { blocksExecution } from '../domain/interaction-policy.ts';
 import { ConversationAttachments, MAX_IMAGE_BYTES, MAX_VISUAL_INPUTS } from './conversation-attachments.ts';
@@ -66,7 +66,7 @@ export class ConversationApplication {
       {kind:'title',count:this.titleWork.size + this.earlyTitles.size},
       {kind:'recovery',count:this.recoveries.size},
       {kind:'reply',count:this.repliesInFlight.size},
-      {kind:'observation',count:this.observations.size + this.releaseChecks.size},
+      {kind:'observation',count:this.observations.size + this.releaseChecks.size + this.supersededCleanups.size},
       {kind:'source-resource',count:this.sourceRuntimes.size},
       {kind:'prepared-resource',count:this.warmups.size},
       {kind:'fork',count:this.forks.active},
@@ -79,6 +79,7 @@ export class ConversationApplication {
   private readonly previewSecret = randomUUID();
   private readonly workers = new Map<string, Promise<void>>();
   private readonly observations = new Map<string, Promise<ConversationView>>();
+  private readonly supersededCleanups = new Map<string,Promise<void>>();
   private readonly repliesInFlight = new Set<string>();
   private readonly titleWork = new Map<string, AbortController>();
   private readonly earlyTitles = new Map<string, Promise<void>>();
@@ -105,6 +106,7 @@ export class ConversationApplication {
   private readonly children: ConversationChildren;
   private readonly options: {
     conversationControl?: (scope:string,id:string)=>string;
+    controlSupersededRun?: AgentServiceOptions['controlSupersededRun'];
     repository: ConversationRepository;
     connections: ConnectionApplication;
     modelAccess?: ModelAccess;
@@ -383,9 +385,11 @@ export class ConversationApplication {
     const record = this.options.repository.readConversation(nonempty(id, '对话身份'));
     if (!record || record.view.workspaceId !== workspaceId) fail('agent_conversation_missing', '该工作空间中没有此对话。', 404);
     record.attachments ??= {};
+    normalizeQuestionCapabilities(record);
     return record;
   }
   private view(record: ConversationReadState, before?: number, limit?: number): ConversationView {
+    normalizeQuestionCapabilities(record);
     const entries = record.view.entries.filter(entry => before === undefined || entry.sequence < before);
     const count = limit === undefined ? undefined : bounded(limit, PAGE_SIZE, 200);
     let inferredRound = {id:'legacy:0'};
@@ -424,7 +428,7 @@ export class ConversationApplication {
       const result={...entry};delete result.presentedFiles;
       return presentedFiles.length?{...result,presentedFiles}:result;
     });
-    view.requests = view.requests.filter(request => conversationRuns(view).some(run => request.runId === run.id && request.participantId === run.participantId && request.generation === run.generation));
+    view.requests = view.requests.filter(request => conversationRuns(view).some(run => !run.supersededBy && request.runId === run.id && request.participantId === run.participantId && request.generation === run.generation));
     view.attachmentRevision = hash(record.attachments ?? {});
     view.titleState??={status:'unknown'};
     view.participants = record.participants.map(participant => ({
@@ -800,8 +804,17 @@ export class ConversationApplication {
       const retry=this.retryWaits.get(previousRun.id);
       if(retry){previousRun.status='failed';previousRun.diagnostic='新的要求已接续，已取消原轮自动重试。';retry.abort();}
     }
+    if (prepared.preview.switching && !systemRecovery) {
+      for (const old of conversationRuns(record.view)) {
+        const attempt=record.attempts.find(value=>value.runId===old.id);
+        if (!attempt || old.supersededBy) continue;
+        old.supersededBy=run.id;
+        this.retireQuestions(record,record.view.requests.filter(request=>request.runId===old.id));
+      }
+    }
     record.view.run = run;
     this.save(record, initial);
+    if (prepared.preview.switching && !systemRecovery) queueMicrotask(()=>{void this.cleanupSuperseded(workspaceId,id).catch(()=>{});});
     const work = this.execute(workspaceId, id, run.id, prepared).finally(() => { this.workers.delete(run.id); this.cancelledRetries.delete(run.id); this.scheduleSourceRelease(workspaceId, id); });
     this.workers.set(run.id, work);
     return { run: structuredClone(run), conversation: this.read(workspaceId, id) };
@@ -867,6 +880,15 @@ export class ConversationApplication {
     return true;
   }
   private event(workspaceId: string, id: string, runId: string, event: ExecutorEvent): void {
+    this.retryRecordUpdate(()=>this.applyEvent(workspaceId,id,runId,event));
+  }
+  /** Reapply only a local deterministic mutation after an explicit rejected write. */
+  private retryRecordUpdate<T>(apply:()=>T):T {
+    for(let attempt=0;;attempt++){
+      try{return apply();}catch(error){if(attempt>=2||!(error instanceof AgentServiceError)||error.code!=='agent_revision_conflict')throw error;}
+    }
+  }
+  private applyEvent(workspaceId: string, id: string, runId: string, event: ExecutorEvent): void {
     const record = this.load(workspaceId, id);
     const run = conversationRuns(record.view).find(value => value.id === runId && value.generation === this.options.generation);
     if (!run) return;
@@ -896,6 +918,7 @@ export class ConversationApplication {
     } else if (event.type === 'item') {
       if (!this.applyItem(record, participant, event.item, runId)) return;
     } else if (event.type === 'request') {
+      if (run.supersededBy) return;
       if (!attempt.executionRef) fail('agent_native_request_unbound', '原生交互尚未取得执行身份，不能安全回应。', 409);
       const existing = record.view.requests.find(request => record.requests[request.id]?.nativeId === event.request.id && request.runId === runId);
       if (!existing) {
@@ -920,8 +943,8 @@ export class ConversationApplication {
     if (event.type === 'accepted' && run.status === 'stopping') {
       // Stop may arrive before the vendor has returned its execution identity.
       queueMicrotask(() => {
-        const current = this.currentRun(workspaceId, id, runId);
-        if (current?.view.run?.status === 'stopping') void this.stop(workspaceId, id, { expectedRevision: current.view.revision, runId, participantId: run.participantId, generation: run.generation }).catch(() => {});
+        const current = this.ownedRun(workspaceId, id, runId);
+        if (current?.run.status === 'stopping') void this.stop(workspaceId, id, { expectedRevision: current.record.view.revision, runId, participantId: run.participantId, generation: run.generation }).catch(() => {});
       });
     }
   }
@@ -953,7 +976,7 @@ export class ConversationApplication {
     if (observation.requests && attempt?.executionRef && observation.executionRef?.id === attempt.executionRef.id) {
       const ids = new Set(observation.requests.map(request => request.id));
       this.retireQuestions(record, record.view.requests.filter(request => request.runId === run.id && !ids.has(record.requests[request.id]?.nativeId)));
-      if (attempt?.executionRef && ['running', 'waiting'].includes(observation.status)) {
+      if (attempt?.executionRef && !run.supersededBy && ['running', 'waiting'].includes(observation.status)) {
         for (const request of observation.requests) {
           const existing = record.view.requests.find(value => value.runId === run.id && record.requests[value.id]?.nativeId === request.id);
           if (existing) {
@@ -1033,10 +1056,13 @@ export class ConversationApplication {
       } else {
         creatingContext = true;
         const ref = selectedRuntime.contextRef ?? await runtime.createContext({ cwd: record.view.cwd, permissionMode: prepared.draft.permissionMode });
-        record = this.currentRun(workspaceId, id, runId); if (!record) return;
-        const storedParticipant = record.participants.find(value => value.id === participant.id)!;
-        storedParticipant.contextRef = ref; storedParticipant.bindingIdentity = runtime.bindingIdentity;
-        participant.contextRef = ref; this.save(record);
+        this.retryRecordUpdate(()=>{
+          const current=this.currentRun(workspaceId,id,runId);if(!current)return;
+          const storedParticipant=current.participants.find(value=>value.id===participant.id)!;
+          storedParticipant.contextRef=ref;storedParticipant.bindingIdentity=runtime.bindingIdentity;this.save(current);
+        });
+        record = this.currentRun(workspaceId,id,runId);if(!record)return;
+        participant.contextRef = ref;
         creatingContext = false;
       }
       const beforeDispatch = this.currentRun(workspaceId, id, runId); if (!beforeDispatch) return;
@@ -1048,7 +1074,10 @@ export class ConversationApplication {
       this.earlyTitles.set(id, early);
       void early.finally(() => { if (this.earlyTitles.get(id) === early) this.earlyTitles.delete(id); this.scheduleSourceRelease(workspaceId, id); });
       await runtime.send({ contextRef: participant.contextRef!, cwd: record.view.cwd, text: prepared.text, images: prepared.images, model: prepared.draft.modelAccountId ? selectedRuntime.model : prepared.draft.model, reasoningEffort: prepared.draft.reasoningEffort, permissionMode: prepared.draft.permissionMode, clientRequestId: record.attempts.find(value => value.runId === runId)!.clientRequestId, onEvent: event => this.event(workspaceId, id, runId, event) });
-      await this.observe(workspaceId, id);
+      // An old stop may already be observing this conversation. Its snapshot
+      // cannot stand in for the just-finished new execution.
+      const settled=this.ownedRun(workspaceId,id,runId);
+      if(settled)await this.observeRun(workspaceId,id,{expectedRevision:settled.record.view.revision,runId,participantId:settled.run.participantId,generation:settled.run.generation});
       const ended = this.currentRun(workspaceId, id, runId);
       if (ended?.view.run?.status === 'failed') await this.retryFailure(workspaceId, id, runId, prepared, retries, rootRunId, ended.view.run.diagnostic ?? '', runtime);
       void this.generateAutomaticTitle(workspaceId, id, runId, runtime).catch(() => {});
@@ -1325,6 +1354,7 @@ export class ConversationApplication {
   /** Startup scans executions, never task status. No browser subscription is required. */
   recoverInterrupted(): Promise<void> {
     if(this.recoveryWork)return this.recoveryWork;
+    for(const record of this.options.repository.listPending(true))if(conversationRuns(record.view).some(run=>run.supersededBy))void this.cleanupSuperseded(record.view.workspaceId,record.view.id).catch(()=>{});
     for(const record of this.options.repository.listInterruptedTitles(this.options.generation)){
       if(record.view.run && this.options.generationAlive?.(record.view.run.generation))continue;
       if(record.titleOrigin!=='default')continue;
@@ -1495,12 +1525,14 @@ export class ConversationApplication {
     const items = await runtime.readHistory({contextRef:control.participant.contextRef,cwd:control.record.view.cwd});
     const observedRequests = hash(this.load(workspaceId,id).view.requests);
     const observation = await runtime.observe({contextRef:control.participant.contextRef,executionRef:control.executionRef});
-    const latest = this.ownedRun(workspaceId,id,input.runId);
-    if (latest) {
-      if (observation.executionRef?.id !== control.executionRef.id) fail('agent_control_stale','观察未匹配原执行，保留原状态。',409);
-      for (const item of items) this.applyItem(latest.record,control.participant,item);
-      this.applyObservation(latest.record,hash(latest.record.view.requests) === observedRequests ? observation : {...observation,requests:undefined},latest.run); this.save(latest.record);
-    }
+    this.retryRecordUpdate(()=>{
+      const latest = this.ownedRun(workspaceId,id,input.runId);
+      if (latest) {
+        if (observation.executionRef?.id !== control.executionRef!.id) fail('agent_control_stale','观察未匹配原执行，保留原状态。',409);
+        for (const item of items) this.applyItem(latest.record,control.participant,item);
+        this.applyObservation(latest.record,hash(latest.record.view.requests) === observedRequests ? observation : {...observation,requests:undefined},latest.run); this.save(latest.record);
+      }
+    });
     return this.read(workspaceId,id);
   }
   async stop(workspaceId: string, id: string, input: { expectedRevision: string; runId: string; participantId: string; generation: string; toolId?: string }): Promise<ConversationView> {
@@ -1565,10 +1597,50 @@ export class ConversationApplication {
       if(latest&&!latest.run.resourcesReleased){latest.run.status='unknown';latest.run.executionState='unknown';latest.run.diagnostic='停止尚未确认：'+safeDiagnostic(error);latest.run.updatedAt=this.options.now();this.save(latest.record);}
       throw error;
     }
-    const record = this.ownedRun(workspaceId, id, input.runId);
-    if (record) { this.applyObservation(record.record, observation, record.run); this.save(record.record); }
+    try{this.retryRecordUpdate(()=>{
+      const record=this.ownedRun(workspaceId,id,input.runId);
+      if(record){this.applyObservation(record.record,observation,record.run);this.save(record.record);}
+    });}catch{fail('agent_stop_result_unknown','停止请求已发出，记录结果尚未确认；不会自动重发。',503);}
     if (observation.status === 'running' || observation.status === 'unknown' || observation.status === 'tools-active') this.pollStop(workspaceId, id, input.runId);
     return this.read(workspaceId, id);
+  }
+  /** Persist intent before native effects. A restart observes an uncertain stop, never replays it. */
+  private cleanupSuperseded(workspaceId:string,id:string):Promise<void> {
+    const key=workspaceId+'/'+id,existing=this.supersededCleanups.get(key);
+    if(existing)return existing;
+    const work=(async()=>{
+      const handled=new Set<string>();
+      for(;;){
+        if(this.closing)return;
+        let record=this.load(workspaceId,id),run=conversationRuns(record.view).find(value=>value.supersededBy&&!handled.has(value.id));
+        if(!run)return;
+        const runId=run.id;handled.add(runId);
+        const attempt=record.attempts.find(value=>value.runId===runId);
+        if(!run?.supersededBy||!attempt||run.resourcesReleased||!unfinishedRun(run))continue;
+        const action=attempt.supersededStopRequested||run.stopRequested?'observe':'stop';
+        if(action==='stop')this.retryRecordUpdate(()=>{
+          record=this.load(workspaceId,id);run=conversationRuns(record.view).find(value=>value.id===runId);
+          if(!run?.supersededBy)return;
+          const latestAttempt=record.attempts.find(value=>value.runId===runId)!;
+          latestAttempt.supersededStopRequested=true;this.save(record);
+        });
+        if(!run?.supersededBy)continue;
+        const control=()=>({expectedRevision:record.view.revision,runId,participantId:run!.participantId,generation:run!.generation});
+        const invoke=()=>this.options.controlSupersededRun
+          ?this.options.controlSupersededRun(workspaceId,id,control(),action)
+          :action==='stop'?this.stop(workspaceId,id,control()):this.observeRun(workspaceId,id,control());
+        try{await invoke();}
+        catch(error){
+          // Re-read the same owner. An admitted stop can throw a revision conflict
+          // from its event consumer after the native effect; never repeat it.
+          if(error instanceof AgentServiceError&&error.code==='agent_revision_conflict'){
+            record=this.load(workspaceId,id);const latest=conversationRuns(record.view).find(value=>value.id===runId);
+            if(latest?.participantId===run.participantId&&latest.generation===run.generation&&(action==='observe'||latest.stopRequested!==true)){run=latest;try{await invoke();}catch{/* Preserve the exact unknown; never resend a possible effect. */}}
+          }
+        }
+      }
+    })().finally(()=>{this.supersededCleanups.delete(key);this.scheduleSourceRelease(workspaceId,id);});
+    this.supersededCleanups.set(key,work);return work;
   }
   private pollStop(workspaceId: string, id: string, runId: string): void {
     const deadline = Date.now() + 10_000;
@@ -1593,7 +1665,7 @@ export class ConversationApplication {
     // Recheck after asynchronous connection setup before causing a native effect.
     const fresh = this.load(workspaceId, id);
     if (this.pendingSends.read(workspaceId,id)?.draft.waitingHandoff) fail('agent_handoff_pending', '已保存交接，请先取消后再回应原轮。', 409);
-    if (!fresh.requests[requestId] || !conversationRuns(fresh.view).some(run => run.id === input.runId)) fail('agent_request_stale', '此交互已变化。', 409);
+    if (!fresh.requests[requestId] || conversationRuns(fresh.view).some(run=>run.id===input.runId&&run.supersededBy) || !conversationRuns(fresh.view).some(run => run.id === input.runId)) fail('agent_request_stale', '此交互已变化。', 409);
     const resolved = resolveQuestionAnswer(request,input.answer,ids=>this.media.expand(fresh,ids));
     if(resolved.attachmentIds.length){
       const connection=this.options.connections.get(control.participant.connectionId);
@@ -1653,6 +1725,7 @@ export class ConversationApplication {
   }
   async close(): Promise<void> {
     this.closing = true;
+    await Promise.allSettled(this.supersededCleanups.values());
     clearInterval(this.idleTimer);
     const warmClosing=this.warmups.shutdown();void warmClosing.catch(()=>{});
     for (const timer of this.idleReleaseTimers.values()) clearTimeout(timer);

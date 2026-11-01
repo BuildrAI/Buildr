@@ -14,7 +14,7 @@ export function conversationControlInstruction(binding:Binding,node:string):stri
   return `Buildr 本对话工作控制：\n${command} read\n` +
     `用同一命令将 read 换成 observe 可核对当前状态，observe '<JSON>' 可按同样的准确身份核对某个原执行；停止原执行时使用 stop '<JSON>'，JSON 必须从刚读取的记录取 expectedRevision、runId、participantId、generation，可选 toolId。` +
     `read 返回当前轮、retainedRuns 和未回答问题；这些执行仍归原上下文控制，不要向新厂商传递旧厂商的进程内标识。` +
-    `接续时和答复前核对本轮及遗留工作，按本次目标决定保留或准确停止；保留时说明用途或待核对原因。不要放任遗留工作，也不要因它阻塞新要求。未知结果不重放，普通消息不是原问题回答或审批。停止失败只报告该项未知，不自动重试停止或强杀。\n\n`;
+    `用户确认切换后的旧问题关闭和旧执行停止由系统自动善后，未回答不构成同意。接续时只核对与当前目标相关的成果和未知副作用；不要重复停止已请求停止的旧执行，不因历史未知阻塞独立工作。内部善后、过期卡片和旧执行状态默认静默，不在进展或最终回复追加说明；仅实际影响当前目标且需要用户决定时说明具体影响。未知结果不重放，普通消息不是原问题回答或审批，不自动重试停止或强杀。\n\n`;
 }
 
 export async function controlConversation(binding:Binding,action:string,input?:unknown):Promise<unknown> {
