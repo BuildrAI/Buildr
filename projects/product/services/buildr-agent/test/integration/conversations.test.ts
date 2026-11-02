@@ -1292,7 +1292,7 @@ test('tool result updates preserve original invocation input and name across his
 });
 
 
-test('only long material invokes isolated old-model summarization; payload and receipt freeze the same body',async()=>{
+test('long handoff uses local index without auxiliary summary; payload and receipt freeze the same body',async()=>{
  let calls=0;const a=fake('a',{summary:async()=>{calls++;return 'unique auxiliary summary: verify the directory';}}),b=fake('b'),c=fake('c');
  b.executor.descriptor.capabilities.maxInputBytes=8192;
  const f=fixture([a.executor,b.executor,c.executor]);
@@ -1303,14 +1303,14 @@ test('only long material invokes isolated old-model summarization; payload and r
   const draft={expectedRevision:done.revision,connectionId:'b',text:'continue'};
   const skipped=await f.service.conversations.prepareHandoff('workspace-one',chat.id,{...draft,skipHandoffSummary:true});assert.equal(skipped.handoff!.mode,'indexed');assert.equal(calls,0);
   const preview=await f.service.conversations.prepareHandoff('workspace-one',chat.id,draft);
-  assert.equal(preview.handoff!.mode,'summary');assert.equal(calls,1);assert.equal(a.sends.length,1,'summary must not enter the work context');
+  assert.equal(preview.handoff!.mode,'indexed');assert.equal(calls,0);assert.equal(a.sends.length,1,'summary must not enter the work context');
   f.service.conversations.send('workspace-one',chat.id,{...draft,previewToken:preview.token,clientRequestId:'summarized'});
   const second=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
   assert.equal(b.sends[0]!.text,preview.handoff!.body);assert.equal(second.entries.find(e=>e.kind==='handoff')!.handoff!.body,b.sends[0]!.text);
-  assert.equal(second.entries.find(e=>e.kind==='handoff')!.status,'accepted');assert.equal(calls,1);
+  assert.equal(second.entries.find(e=>e.kind==='handoff')!.status,'accepted');assert.equal(calls,0);
   const next=await f.service.conversations.prepareHandoff('workspace-one',chat.id,{expectedRevision:second.revision,connectionId:'c',text:'continue again'});
   assert.ok(!next.handoff!.body.includes('unique auxiliary summary'),'next material must derive from local originals, not the previous packet');
-  assert.equal(calls,1);
+  assert.equal(calls,0);
  }finally{await f.close();}
 });
 
@@ -1321,7 +1321,7 @@ test('quota failure preserves long local source records and still permits handof
   await connected(f.service,'a');await connected(f.service,'b');const chat=await f.service.conversations.create('workspace-one',{});
   send(f.service,chat.id,'a','user original '.repeat(1500));const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
   const draft={expectedRevision:done.revision,connectionId:'b',text:'continue'};const preview=await f.service.conversations.prepareHandoff('workspace-one',chat.id,draft);
-  assert.equal(preview.handoff!.mode,'indexed');assert.equal(preview.fits,true);assert.equal(calls,1);
+  assert.equal(preview.handoff!.mode,'indexed');assert.equal(preview.fits,true);assert.equal(calls,0);
   const index=JSON.parse(fs.readFileSync(preview.handoff!.sourcePath!,'utf8'));const source=JSON.parse(fs.readFileSync(index.rounds[0].path,'utf8'));
   assert.equal(source.records[0].text,'user original '.repeat(1500));
   f.service.conversations.send('workspace-one',chat.id,{...draft,previewToken:preview.token,clientRequestId:'quota-fallback'});
@@ -1329,19 +1329,19 @@ test('quota failure preserves long local source records and still permits handof
  }finally{await f.close();}
 });
 
-test('a delayed summary cannot bypass a changed conversation revision',async()=>{
- let release!:(text:string)=>void;let entered!:()=>void;const started=new Promise<void>(resolve=>entered=resolve);
- const a=fake('a',{summary:async()=>{entered();return new Promise(resolve=>release=resolve);}}),b=fake('b');b.executor.descriptor.capabilities.maxInputBytes=8192;
+test('a stale explicit preview cannot bypass a changed conversation revision',async()=>{
+ const a=fake('a'),b=fake('b');b.executor.descriptor.capabilities.maxInputBytes=8192;
  const f=fixture([a.executor,b.executor]);
  try{
   await connected(f.service,'a');await connected(f.service,'b');const chat=await f.service.conversations.create('workspace-one',{});
   send(f.service,chat.id,'a','x'.repeat(12000));const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
-  const pending=f.service.conversations.prepareHandoff('workspace-one',chat.id,{expectedRevision:done.revision,connectionId:'b',text:'continue'});
-  await started;await f.service.conversations.update('workspace-one',chat.id,{expectedRevision:done.revision,title:'new title'});release('summary');
-  await assert.rejects(pending,{code:'agent_revision_conflict'});assert.equal(b.sends.length,0);
+  const draft={expectedRevision:done.revision,connectionId:'b',text:'continue'};
+  const preview=await f.service.conversations.prepareHandoff('workspace-one',chat.id,draft);
+  const changed=await f.service.conversations.update('workspace-one',chat.id,{expectedRevision:done.revision,title:'new title'});
+  assert.throws(()=>f.service.conversations.send('workspace-one',chat.id,{...draft,expectedRevision:changed.revision,previewToken:preview.token,clientRequestId:'stale'}),{code:'agent_preview_stale'});
+  assert.equal(b.sends.length,0);
  }finally{await f.close();}
 });
-
 
 test('answers retain the original question and run when another executor takes over',async()=>{
  const a=fake('a',{request:true}),b=fake('b'),f=fixture([a.executor,b.executor]);
@@ -2912,5 +2912,25 @@ test('early naming prefers a trusted native title without a duplicate independen
   await connected(f.service,'local');const view=await f.service.conversations.create('workspace-one',{});send(f.service,view.id,'local','检查原生摘要优先');
   const named=await waitUntil(()=>f.service.conversations.read('workspace-one',view.id),v=>v.title==='可信原生摘要');
   assert.equal(named.titleState?.status,'generated');assert.equal(generated,0);assert.equal(native.sends.length,1);
+ }finally{await f.close();}
+});
+
+test('direct ordinary sends preserve identity, capacity and revision checks without preparing history files',async()=>{
+ const a=fake('a'),f=fixture([a.executor]);
+ try{
+  await connected(f.service,'a');const chat=await f.service.conversations.create('workspace-one',{});
+  const first={expectedRevision:chat.revision,connectionId:'a',text:'first',clientRequestId:'direct-first'};
+  const accepted=f.service.conversations.send('workspace-one',chat.id,first);
+  const repeat=f.service.conversations.send('workspace-one',chat.id,first);
+  assert.equal(repeat.run.id,accepted.run.id);
+  let done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
+  const materialRoot=path.join(f.options.dataRoot,'agent-service','handoff-materials',chat.id);
+  const before=fs.existsSync(materialRoot)?fs.readdirSync(materialRoot):[];
+  assert.throws(()=>f.service.conversations.send('workspace-one',chat.id,{...first,clientRequestId:'stale-direct'}),{code:'agent_revision_conflict'});
+  assert.throws(()=>f.service.conversations.send('workspace-one',chat.id,{...first,expectedRevision:done.revision,text:'x'.repeat(200000),clientRequestId:'large-direct'}),{code:'agent_input_too_large'});
+  f.service.conversations.send('workspace-one',chat.id,{expectedRevision:done.revision,connectionId:'a',text:'second',clientRequestId:'direct-second'});
+  done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
+  assert.equal(a.contexts.size,1);assert.equal(a.sends.length,2);assert.equal(a.sends[1]!.text,'second');
+  assert.deepEqual(fs.existsSync(materialRoot)?fs.readdirSync(materialRoot):[],before);
  }finally{await f.close();}
 });

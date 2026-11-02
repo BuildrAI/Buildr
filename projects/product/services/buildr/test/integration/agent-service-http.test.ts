@@ -381,6 +381,16 @@ test('HTTP handoff exposes the exact bounded body, local sources and confirmed r
   const after=await completed(),receipt=after.entries.find(entry=>entry.kind==='handoff')!;
   assert.equal(sent[1],prepared.handoff.body);assert.equal(receipt.handoff!.body,prepared.handoff.body);assert.equal(receipt.status,'accepted');
   response=await fetch(endpoint,{headers});assert.equal(response.status,200);assert.equal((await response.json()).entries.find((entry:any)=>entry.kind==='handoff').handoff.body,sent[1]);
+  // Ordinary HTTP admission requires no preview request or token, but remains idempotent.
+  const ordinary={expectedRevision:after.revision,connectionId:'b',text:'ordinary follow-up',clientRequestId:'direct-http'};
+  const start=performance.now();
+  response=await fetch(endpoint+'/send',{method:'POST',headers,body:JSON.stringify(ordinary)});assert.equal(response.status,202);
+  const admitted=await response.json(),admissionMs=performance.now()-start;
+  response=await fetch(endpoint+'/send',{method:'POST',headers,body:JSON.stringify(ordinary)});assert.equal(response.status,202);
+  assert.equal((await response.json()).run.id,admitted.run.id);
+  await completed();assert.equal(sent.length,3);assert.equal(sent[2],'ordinary follow-up');
+  t.diagnostic('Local fake-executor HTTP admission: '+admissionMs.toFixed(1)+'ms; through native completion: '+(performance.now()-start).toFixed(1)+'ms (not a live-model latency measurement)');
+
 });
 
 

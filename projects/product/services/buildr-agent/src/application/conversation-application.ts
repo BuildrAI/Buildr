@@ -31,7 +31,7 @@ import type { StoredConversation, StoredParticipant } from '../domain/agent-stat
 import type { ConversationRepository } from '../persistence/conversation-repository.ts';
 import type { ConnectionApplication } from './connection-application.ts';
 import type { ConversationEvents } from './conversation-events.ts';
-import {HANDOFF_PROMPT,HANDOFF_SUMMARY_PROMPT,handoffEntries,organizeHandoff,displayRounds,receivingBudget,formatHandoffRounds} from '../domain/handoff-material.ts';
+import {HANDOFF_PROMPT,handoffEntries,organizeHandoff,displayRounds,receivingBudget,formatHandoffRounds} from '../domain/handoff-material.ts';
 import {handoffSources} from './handoff-sources.ts';
 import { resolvePermissionMode } from '../domain/permission-mode.ts';
 import type { HostContext } from './host-context.ts';
@@ -105,7 +105,6 @@ export class ConversationApplication {
   private readonly recoveries = new Map<string, { runId?: string; work: Promise<void> }>();
   private readonly retryWaits = new Map<string, AbortController>();
   private readonly cancelledRetries = new Set<string>();
-  private readonly handoffPreviews = new Map<string,{baseToken:string;prepared:ReturnType<ConversationApplication['prepare']>}>();
   private readonly supplements: ConversationSupplements;
   private readonly media: ConversationAttachments;
   private readonly forks: ConversationForks;
@@ -705,7 +704,7 @@ export class ConversationApplication {
       previousRun && (previousRun.reasoningEffort!==input.reasoningEffort || (previousRun.permissionMode??'default')!==input.permissionMode)));
     const history = changes.map(entry => ({sequence:entry.sequence,role:entry.role,provider:entry.provider,text:entry.kind==='tool'?`${entry.name??'工具'} · ${entry.status??'结果未知'}（具体内容见本地来源）`:entry.text.length>4096?entry.text.slice(0,4096)+'…（完整原文见本地来源）':entry.text}));
     const maxInputBytes=receivingBudget(connection.capabilities.maxInputBytes,boundModel&&'contextWindow' in boundModel?boundModel.contextWindow:undefined,boundModel&&'maxOutputTokens' in boundModel?boundModel.maxOutputTokens:undefined);
-    const localRounds=organizeHandoff(changes,{...record.inheritedContext?.outcomes,...record.runOutcomes,...(record.view.run?{[record.view.run.id]:record.view.run}:{})});
+    const localRounds=changes.length ? organizeHandoff(changes,{...record.inheritedContext?.outcomes,...record.runOutcomes,...(record.view.run?{[record.view.run.id]:record.view.run}:{})}) : [];
     const historicalImages=[...new Set(changes.flatMap(e=>e.attachments??[]))].map(id=>{try{const image=this.media.describe(record,id);return {...image,available:true};}catch{return {id,available:false};}});
     const sources=changes.length?handoffSources(this.options.root,record.view.id,changes,localRounds,historicalImages):undefined;
     const rounds=sources?.rounds??localRounds;
@@ -740,46 +739,11 @@ export class ConversationApplication {
   prepareSend(workspaceId: string, id: string, input: SendDraft): SendPreview { return this.prepare(this.load(workspaceId, id), input).preview; }
 
   async prepareHandoff(workspaceId:string,id:string,input:SendDraft):Promise<SendPreview>{
-    const record=this.load(workspaceId,id),prepared=this.prepare(record,input);
-    if(input.waitingHandoff||input.skipHandoffSummary||!prepared.needsCompression||!prepared.preview.handoff)return prepared.preview;
-    for(const cached of this.handoffPreviews.values())if(cached.baseToken===prepared.preview.token)return cached.prepared.preview;
-    const previous=record.participants.find(p=>p.id===record.view.run?.participantId);
-    const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),12_000);
-    try{
-      // The local source index always survives; an auxiliary model never replaces it.
-      if(!previous) return prepared.preview;
-      const selected:typeof prepared.preview.handoff.rounds=[];let size=0;
-      for(const round of [...prepared.preview.handoff.rounds].reverse()){const bytes=Buffer.byteLength(JSON.stringify(round));if(size+bytes>32*1024)break;selected.unshift(round);size+=bytes;}
-      if(!selected.length)return prepared.preview;
-      const prompt=HANDOFF_SUMMARY_PROMPT+'\n本次摘要仅覆盖以下轮次 #'+selected[0]!.from+'–#'+selected.at(-1)!.through+'；其余历史请通过完整索引读取。\n'+JSON.stringify(selected);
-      let summary:string|undefined;
-      if(previous.modelAccountId&&this.options.modelAccess){
-        const source=this.options.modelAccess.accounts.snapshot(previous.modelAccountId);
-        const quota=source.quota;
-        if(source.identity!==previous.modelAccountIdentity||!source.enabled||source.status!=='ready'||quota?.available&&quota.remainingPercent===0)return prepared.preview;
-        summary=await within(this.options.modelAccess.generate({accountId:previous.modelAccountId,expectedIdentity:previous.modelAccountIdentity,modelId:previous.modelId!,serviceTier:previous.serviceTier,conversationId:id,agentId:previous.connectionId,runId:'handoff-'+randomUUID(),prompt,signal:controller.signal}),12_000,'agent_handoff_summary_timeout');
-      }else if(previous.contextRef){
-        const runtime=await within(this.options.connections.runtime(previous.connectionId),3_000,'agent_handoff_source_timeout');
-        if(runtime.bindingIdentity!==previous.bindingIdentity||!runtime.summarizeHandoff)return prepared.preview;
-        summary=await within(runtime.summarizeHandoff({contextRef:previous.contextRef,cwd:record.view.cwd,description:prompt,model:previous.modelId,signal:controller.signal}),12_000,'agent_handoff_summary_timeout');
-      }
-      if(!summary?.trim()||Buffer.byteLength(summary)>24*1024)return prepared.preview;
-      const current=this.prepare(this.load(workspaceId,id),input);
-      if(current.preview.token!==prepared.preview.token)fail('agent_preview_stale','交接来源已变化，请重新读取；草稿保留。',409);
-      const text=prepared.text+'\n\n原模型整理的辅助摘要（仅覆盖提供的轮次摘录，完整资料请读取本地索引；来源截至 #'+prepared.preview.sourceThrough+'）：\n'+summary;
-      if(Buffer.byteLength(text)>prepared.preview.maxInputBytes)return prepared.preview;
-      const baseToken=prepared.preview.token;
-      prepared.text=text;prepared.preview={...prepared.preview,token:createHmac('sha256',this.previewSecret).update(baseToken+text).digest('hex'),inputBytes:Buffer.byteLength(text),handoff:{...prepared.preview.handoff,body:text,mode:'summary'}};
-      if(this.handoffPreviews.size>=32)this.handoffPreviews.delete(this.handoffPreviews.keys().next().value!);
-      prepared.fullText='';this.handoffPreviews.set(prepared.preview.token,{baseToken,prepared});return prepared.preview;
-    }catch(error){
-      if(error instanceof AgentServiceError&&['agent_revision_conflict','agent_preview_stale','agent_model_source_changed'].includes(error.code))throw error;
-      // No work input was submitted, so local-source fallback is safe after failure.
-      expected(this.load(workspaceId,id).view.revision,input.expectedRevision);return prepared.preview;
-    }finally{clearTimeout(timer);controller.abort();}
+    // Local records and their index are sufficient; optional model summaries must not delay submission.
+    return this.prepare(this.load(workspaceId,id),input).preview;
   }
 
-  send(workspaceId: string, id: string, raw: SendDraft & { previewToken: string; clientRequestId: string }, systemRecovery = false): { run: RunView; conversation: ConversationView } {
+  send(workspaceId: string, id: string, raw: SendDraft & { previewToken?: string; clientRequestId: string }, systemRecovery = false): { run: RunView; conversation: ConversationView } {
     if (raw.waitingHandoff) fail('agent_handoff_queue_required', '等待回答时请保存交接内容，系统会保留原执行并投递新要求。', 409);
     return this.submit(this.load(workspaceId, id), raw, systemRecovery);
   }
@@ -820,7 +784,7 @@ export class ConversationApplication {
     const preview=this.prepare(record,draft,answerMaterials).preview;
     return this.submit(record,{...draft,previewToken:preview.token,clientRequestId:requestId},false,false,answerMaterials);
   }
-  private submit(record: StoredConversation, raw: SendDraft & { previewToken: string; clientRequestId: string }, systemRecovery = false, initial = false, answerMaterials: string[] = []): { run: RunView; conversation: ConversationView } {
+  private submit(record: StoredConversation, raw: SendDraft & { previewToken?: string; clientRequestId: string }, systemRecovery = false, initial = false, answerMaterials: string[] = []): { run: RunView; conversation: ConversationView } {
     const { workspaceId, id } = record.view;
     const clientRequestId = nonempty(raw.clientRequestId, '请求身份', 200);
     const inputDigest = hash({ ...this.draft(raw), expectedRevision: undefined });
@@ -832,10 +796,9 @@ export class ConversationApplication {
       return { run: structuredClone(record.view.run), conversation: this.view(record) };
     }
     const baseline = this.prepare(record, raw, answerMaterials);
-    const cached=this.handoffPreviews.get(raw.previewToken);
-    const prepared=cached?.baseToken===baseline.preview.token?cached.prepared:baseline;
+    const prepared=baseline;
     const a = Buffer.from(prepared.preview.token); const b = Buffer.from(String(raw.previewToken));
-    if (a.length !== b.length || !timingSafeEqual(a, b)) fail('agent_preview_stale', '发送预览已变化，请重新核对后发送。', 409);
+    if (raw.previewToken !== undefined && (a.length !== b.length || !timingSafeEqual(a, b))) fail('agent_preview_stale', '发送预览已变化，请重新核对后发送。', 409);
     if (!prepared.preview.fits) fail('agent_handoff_capacity', prepared.preview.diagnostic!, 413);
     let participant = record.participants.find(value=>value.id===prepared.preview.participantId);
     const connection = this.options.connections.get(prepared.draft.connectionId);

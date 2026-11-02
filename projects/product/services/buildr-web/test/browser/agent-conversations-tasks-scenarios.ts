@@ -30,6 +30,8 @@ await step('关联数量浮层零一多、跨空间同码前缀搜索及双向�
   await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
   const originalId=fixture.conversation.id,cwd=fixture.conversation.cwd;
   await conversationButton().hover();await popup().getByText('已关联任务',{exact:true}).waitFor();
+  // Measure the final popup position, not its entering transform.
+  await page.waitForFunction(([body,trigger]:HTMLElement[])=>body.getBoundingClientRect().bottom<=trigger.getBoundingClientRect().top+10,[await popup().elementHandle(),await conversationButton().elementHandle()],{timeout:10_000});
   const triggerBox=await conversationButton().boundingBox(),popupBox=await popup().boundingBox();assert.ok(popupBox!.y+popupBox!.height<=triggerBox!.y+10,'底部入口向上展开');
   const taskMatcher='**/api/v1/workspaces/'+workspaceId+'/tasks?**';let taskSearchPages=0;
   const taskPager=async(route:any)=>{
@@ -107,7 +109,7 @@ await step('原生暂忙时保存待发送内容，刷新保留、仅可取消�
       fixture.prepareError={code:'agent_process_switching',message:'原生服务正在切换。'};
       await input().fill('上一轮结束后继续修复');await input().press('Enter');
       await panel().getByText('新指令已保存，尚未发送',{exact:true}).waitFor();
-      assert.equal(fixture.sends,before);assert.equal(fixture.prepares,previewsBefore+1,'待发送依据真实服务占用，界面不只按状态名称决定');assert.equal(await input().inputValue(),'');
+      assert.equal(fixture.sends,before);assert.equal(fixture.prepares,previewsBefore,'直接提交返回真实服务占用，不先请求预览');assert.equal(await input().inputValue(),'');
       assert.equal(fixture.conversation.pendingSend.draft.text,'上一轮结束后继续修复');
       await page.reload();await panel().getByText('新指令已保存，尚未发送',{exact:true}).waitFor();
       assert.deepEqual(await panel().locator('.ac-pending-send-actions button').allTextContents(),['取消']);
@@ -155,7 +157,12 @@ await step('A的停止等待不阻断B，A的迟到回执不改B状态',async()=
     });
 
 await step('迟到的预览与创建不得跨到另一段对话或新草稿，也不能自动执行',async()=>{
-      const sentBefore=fixture.sends;await input().fill('旧会话等待预览');fixture.holdPrepare=true;const preparedStarted=new Promise<void>(resolve=>{fixture.prepareStarted=resolve;});await panel().getByRole('button',{name:'发送对话',exact:true}).click();await preparedStarted;
+      // This scenario owns the primary source; the preceding stop test leaves B selected.
+      if(await panel().getAttribute('data-conversation-id')!==fixture.conversation.id){
+        await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();
+        await page.locator('.ac-history-row-main[data-conversation-id="'+fixture.conversation.id+'"]').click();await input().waitFor();
+      }
+      const sentBefore=fixture.sends;await chooseAgent('Qoder');await input().fill('旧会话等待预览');fixture.holdPrepare=true;const preparedStarted=new Promise<void>(resolve=>{fixture.prepareStarted=resolve;});await panel().locator('.ac-transfer-notice,.ac-recovery-action').getByRole('button',{name:'交接内容',exact:true}).click();await preparedStarted;
       await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().fill('新草稿需要保留');const previewResponse=page.waitForResponse((response:any)=>response.url().endsWith('/prepare-send'));fixture.releasePrepare!();await previewResponse;await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>resolve())));assert.equal(fixture.sends,sentBefore);assert.equal(await page.getByRole('dialog',{name:'确认发送与接续范围',exact:true}).count(),0);assert.equal(await panel().getAttribute('data-conversation-id'),null);assert.equal(await input().inputValue(),'新草稿需要保留');assert.equal(await panel().getByRole('button',{name:'发送对话',exact:true}).isEnabled(),true);
       fixture.holdCreate=true;const createdStarted=new Promise<void>(resolve=>{fixture.createStarted=resolve;});await panel().getByRole('button',{name:'发送对话',exact:true}).click();await createdStarted;await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().fill('同为新对话，但已经是另一份草稿');const createResponse=page.waitForResponse((response:any)=>response.request().method()==='POST'&&response.url().includes('/drafts/')&&response.url().endsWith('/send'));fixture.releaseCreate!();await createResponse;await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>resolve())));assert.equal(fixture.sends,sentBefore+1);assert.equal(await panel().getAttribute('data-conversation-id'),null);assert.equal(await input().inputValue(),'同为新对话，但已经是另一份草稿');assert.equal(await page.getByRole('dialog',{name:'确认发送与接续范围',exact:true}).count(),0);
     });

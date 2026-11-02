@@ -71,7 +71,7 @@ await step('后台版本漂移自动恢复一次，真实变化与未知送达�
   const saved=structuredClone(fixture.conversation),savedSends=fixture.sends,savedPrepares=fixture.prepares,savedInputs=sentInputs.length;
   const matcher=/\/agent-conversations\/[^/]+\/(?:prepare-send|send)$/;
   try{
-    for(const scene of ['prepare','send','changed','twice','unknown']){
+    for(const scene of ['send','changed','twice','unknown']){
       fixture.conversation=structuredClone(saved);
       update({run:run('completed','codex',{model:'fixture-model'}),requests:[]});
       await page.reload();await input().waitFor();
@@ -83,7 +83,7 @@ await step('后台版本漂移自动恢复一次，真实变化与未知送达�
         if(scene==='unknown'&&action==='send'){
           fixture.expectedBrowserErrors.add(request.url());return route.abort('failed');
         }
-        if(scene!=='unknown'&&action===(scene==='send'?'send':'prepare-send')&&(rejected===0||scene==='twice')){
+        if(scene!=='unknown'&&action==='send'&&(rejected===0||scene==='twice')){
           rejected++;fixture.expectedBrowserErrors.add('409');fixture.expectedBrowserErrors.add('Conflict');
           update({title:'后台生成标题 '+rejected,run:{...fixture.conversation.run,contextUsage:{usedTokens:rejected*100}},
             ...(scene==='changed'?{entries:fixture.conversation.entries.map((entry:any,index:number)=>index===0?{...entry,text:entry.text+' 已更改'}:entry)}:{})});
@@ -96,7 +96,7 @@ await step('后台版本漂移自动恢复一次，真实变化与未知送达�
         await panel().getByRole('button',{name:'发送对话',exact:true}).click();
         if(scene==='prepare'||scene==='send'){
           await page.waitForFunction(()=>document.querySelector<HTMLTextAreaElement>('#agent-conversation-input')?.value==='');
-          assert.equal(calls.filter(call=>call.action==='prepare-send').length,2);
+          assert.equal(calls.filter(call=>call.action==='prepare-send').length,0);
           const sends=calls.filter(call=>call.action==='send');
           assert.equal(sends.length,scene==='send'?2:1);
           if(scene==='send')assert.equal(sends[0].body.clientRequestId,sends[1].body.clientRequestId);
@@ -106,8 +106,8 @@ await step('后台版本漂移自动恢复一次，真实变化与未知送达�
           if(scene==='unknown')await panel().getByText(/Failed to fetch|送达|Load failed/).first().waitFor();
           else await panel().getByText('对话状态已更新，请核对后重新发送。草稿保留。',{exact:true}).waitFor();
           assert.equal(await input().inputValue(),text);
-          assert.equal(calls.filter(call=>call.action==='prepare-send').length,scene==='twice'?2:1);
-          assert.equal(calls.filter(call=>call.action==='send').length,scene==='unknown'?1:0);
+          assert.equal(calls.filter(call=>call.action==='prepare-send').length,0);
+          assert.equal(calls.filter(call=>call.action==='send').length,scene==='twice'?2:1);
           if(scene==='changed')await capture(page,'conversation-real-conflict-draft-retained.png');
         }
       }finally{await page.unroute(matcher,intercept);}
@@ -141,7 +141,7 @@ await step('异常结束直接继续或重试，草稿保留，换模型与执�
           const actionBox=await action.boundingBox(),buttonBox=await action.getByRole('button',{name:label,exact:true}).boundingBox();
           assert.ok(actionBox&&buttonBox&&buttonBox.x-actionBox.x<10,'恢复动作紧邻左侧异常，不漂到输入区右端');
           assert.equal(await action.getByRole('button',{name:label,exact:true}).innerText(),label,'两个字不插入额外间距');
-          fixture.holdSend=true;const started=new Promise<void>(resolve=>{fixture.sendStarted=resolve;});if(mode==='same'){fixture.holdPrepare=true;const preparing=new Promise<void>(resolve=>{fixture.prepareStarted=resolve;});await action.getByRole('button',{name:label,exact:true}).click();await preparing;await panel().getByRole('button',{name:'跳过资料精简',exact:true}).click();await started;fixture.releasePrepare!();}else{await action.getByRole('button',{name:label,exact:true}).click();await started;}
+          fixture.holdSend=true;const started=new Promise<void>(resolve=>{fixture.sendStarted=resolve;});if(mode==='same'){fixture.holdPrepare=true;const preparing=new Promise<void>(resolve=>{fixture.prepareStarted=resolve;});await action.getByRole('button',{name:label,exact:true}).click();await preparing;assert.equal(await panel().getByRole('button',{name:'跳过资料精简',exact:true}).count(),0);fixture.releasePrepare!();await started;}else{await action.getByRole('button',{name:label,exact:true}).click();await started;}
           assert.equal(fixture.sends,before+1);assert.equal(sentInputs.at(-1).continueRunId,'run-fixture');assert.equal(sentInputs.at(-1).text,'');assert.deepEqual(sentInputs.at(-1).attachmentIds,[]);
           assert.equal(fixture.conversation.entries.filter((entry:any)=>entry.role==='user').length,users);
           if(mode==='model')assert.equal(sentInputs.at(-1).model,'fixture-fast');if(mode==='executor')assert.equal(sentInputs.at(-1).connectionId,'dsh');
@@ -155,17 +155,17 @@ await step('异常结束直接继续或重试，草稿保留，换模型与执�
       }finally{fixture.holdSend=false;fixture.releaseSend?.();fixture.conversation=saved;fixture.sends=savedSends;fixture.prepares=savedPrepares;fixture.stops=savedStops;sentInputs.splice(savedSentLength);await page.reload();await input().waitFor();await input().fill('');}
     });
 
-await step('交接准备可取消且不发送，容量问题直接引导选择模型',async()=>{
-      const original=await input().inputValue(),before=fixture.sends;await input().fill('保留这份未发送草稿');
+await step('显式交接预览可取消，直接发送的容量问题引导选择模型',async()=>{
+      const original=await input().inputValue(),before=fixture.sends;await chooseAgent(fixture.conversation.run.provider==='codex'?'DSH':'Codex');await input().fill('保留这份未发送草稿');
       fixture.holdPrepare=true;const started=new Promise<void>(resolve=>{fixture.prepareStarted=resolve;});
-      await panel().getByRole('button',{name:'发送对话',exact:true}).click();await started;
+      await panel().locator('.ac-transfer-notice').getByRole('button',{name:'交接内容',exact:true}).click();await started;
       await panel().getByRole('button',{name:'取消发送',exact:true}).click();
       const response=page.waitForResponse((r:any)=>r.url().endsWith('/prepare-send'));fixture.releasePrepare!();await response;
       assert.equal(fixture.sends,before);assert.equal(await input().inputValue(),'保留这份未发送草稿');
       fixture.forceCapacity=true;await panel().getByRole('button',{name:'发送对话',exact:true}).click();
       const drawer=panel().locator('.ac-handoff-drawer');await drawer.getByText(/必要交接资料仍超出接收容量/).waitFor();
       assert.equal(fixture.sends,before);await drawer.getByRole('button',{name:'选择模型',exact:true}).click();
-      await modelSettings().waitFor();await closeModelSettings();fixture.forceCapacity=false;await input().fill(original);
+      await modelSettings().waitFor();await closeModelSettings();fixture.forceCapacity=false;await chooseAgent(fixture.conversation.run.provider==='codex'?'Codex':'DSH');await input().fill(original);
     });
 
 await step('暂看历史与恢复不固定，对话滚动在收起、暂看、固定间保留',async()=>{

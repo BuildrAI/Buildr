@@ -75,7 +75,7 @@ export const AGENT_OPERATION_SCHEMAS = {
   create: named('AgentConversationCreateRequest', closed({ cwd: text, taskId: text, taskLinks:list(taskLink), title: text }, [])),
   update: named('AgentConversationUpdateRequest', closed({ expectedRevision: text, title: text, hidden: boolean, taskLinks:list(taskLink), taskIds: list(text), taskId: { anyOf: [text, { type: 'null' }] } }, ['expectedRevision'])),
   draft: named('AgentConversationDraftRequest', closed(draftFields, ['expectedRevision', 'connectionId', 'text'])),
-  send: named('AgentConversationSendRequest', closed({ ...draftFields, previewToken: text, clientRequestId: text }, ['expectedRevision', 'connectionId', 'text', 'previewToken', 'clientRequestId'])),
+  send: named('AgentConversationSendRequest', closed({ ...draftFields, previewToken: text, clientRequestId: text }, ['expectedRevision', 'connectionId', 'text', 'clientRequestId'])),
   queueSend: named('AgentConversationQueueSendRequest', closed({...draftFields,clientRequestId:text,expectedPendingRevision:text,previousRunId:text},['expectedRevision','connectionId','text','clientRequestId'])),
   cancelPendingSend: named('AgentConversationCancelPendingSendRequest',closed({expectedPendingRevision:text})),
   control: named('AgentConversationControl', closed(controlFields)),

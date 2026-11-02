@@ -403,7 +403,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
     if(unavailable){setError(unavailable);return;}
     if(activeSend.current||(!canSend&&!skipSummary)||(!continueRunId&&!show&&!sendText.trim()&&!images.length))return;
     setSelectedHandoff(null);
-    const operation:SendOperation={selection:context.getSelection(),continueRunId};activeSend.current=operation;setSending(true);setPreparing(true);setError('');
+    const operation:SendOperation={selection:context.getSelection(),continueRunId};activeSend.current=operation;setSending(true);setPreparing(show||Boolean(continueRunId)||Boolean(waitingHandoff));setError('');
     try{
       if(!chat){await sendFirst(operation);return;}
       let current=chat;
@@ -419,6 +419,40 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
       if(activeSend.current!==operation||!context.isSelectionCurrent(operation.selection))return;
       let input:SendDraft={expectedRevision:current.revision,connectionId:choice.connectionId,modelAccountId:choice.modelAccountId,modelAccountRevision:choice.modelAccountRevision,modelAccountIdentity:choice.modelAccountIdentity,model:choice.model,serviceTier:choice.serviceTier,reasoningEffort:choice.reasoningEffort,skipHandoffSummary:skipSummary,permissionMode,...(waitingHandoff?{waitingHandoff}:{}),...(continueRunId?{continueRunId}:{}),text:continueRunId?'':skipSummary&&!sendText.trim()&&!requestImages.length?'继续当前工作。':sendText,attachmentIds:requestImages.map(item=>item.id) as NonNullable<SendDraft['attachmentIds']>};
       const recovery:ConversationSendRecovery={enabled:!show&&!continueRunId&&!waitingHandoff&&!executionLocked(current.run),used:false};
+      if(!show&&!continueRunId&&!waitingHandoff){
+        // Ordinary sends are validated and admitted atomically by the server.
+        // The preview endpoint is reserved for an explicit inspection.
+        earlier.pinLatest();
+        let storage:Pick<Storage,'getItem'|'setItem'|'removeItem'>={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
+        try{storage=sessionStorage;}catch{/* Retain the same-page attempt below. */}
+        const prior=pendingAttempt.current;
+        const submission=pendingSubmission(permissionProfile+':direct:'+current.workspaceId,current.id,input,storage,prior?.workspaceId===current.workspaceId&&prior.conversationId===current.id?prior.value:undefined);
+        pendingAttempt.current={workspaceId:current.workspaceId,conversationId:current.id,value:submission};
+        const submitted=await withConversationSendRecovery(current,recovery,{
+          isCurrent:()=>activeSend.current===operation&&context.isSelectionCurrent(operation.selection),
+          read:()=>context.api.read(current.workspaceId,current.id),apply:context.apply,
+          perform:value=>{current=value;return context.api.send(value,{...input,expectedRevision:value.revision,clientRequestId:submission.clientRequestId});},
+        }).catch(async(failure:unknown)=>{
+          if(activeSend.current!==operation||!context.isSelectionCurrent(operation.selection))throw failure;
+          const code=(failure as ApiError)?.code||'';
+          if(['agent_process_switching','agent_conversation_busy'].includes(code)){await queue(current,input);return;}
+          if(code==='agent_handoff_capacity'){
+            const preview=await context.api.prepare(current,{...input,expectedRevision:current.revision});
+            if(activeSend.current!==operation||!context.isSelectionCurrent(operation.selection))return;
+            setPrepared({conversation:current,input,preview,clientRequestId:submission.clientRequestId,selection:operation.selection,recovery});
+            setPreviewOpen(true);return;
+          }
+          throw failure;
+        });
+        if(!submitted?.value)return;
+        context.apply(submitted.value.conversation,submitted.conversation.revision);
+        clearPendingSubmission(permissionProfile+':direct:'+current.workspaceId,current.id,storage);
+        if(pendingAttempt.current?.value.clientRequestId===submission.clientRequestId)pendingAttempt.current=undefined;
+        draft.clearSubmitted(current.workspaceId,current.id,input.text);
+        setAttachments(previous=>({...previous,[current.id]:removeSubmittedAttachments(previous[current.id]||[],input.attachmentIds||[])}));
+        void context.refreshPending().catch(()=>{});
+        return;
+      }
       let preview:SendPreview;
       try{
         const result=await withConversationSendRecovery(current,recovery,{
@@ -646,7 +680,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
         <ConversationConnectionNotice ready={context.connectionsReady} loading={context.connectionsLoading} error={context.connectionsError} connection={connection} onSettings={()=>context.setSettings(true)}/>
         {connection?.enabled&&chat?.run&&recovery?.kind!=='recover'&&!waitingHandoffAvailable&&(lastParticipant?.connectionId!==choice.connectionId||chat.run.model!==effectiveModel||chat.run.modelAccountId!==choice.modelAccountId)?<div className="ac-transfer-notice"><span>{lastParticipant?.connectionId!==choice.connectionId?`接下来由 ${connection?providerNames[connection.provider]||connection.label:''}${chat.run.model!==effectiveModel||chat.run.modelAccountId!==choice.modelAccountId?' · '+(effectiveModelLabel):''} 继续处理`:`接下来使用 ${effectiveModelLabel} 继续处理`}</span><Button type="link" size="small" disabled={!canSend} loading={sending} onClick={()=>void prepare(true)}>交接内容</Button></div>:null}
         {waitingHandoffAvailable&&<div className="ac-waiting-handoff" role="status"><div><strong>交给 {effectiveModelLabel} 继续处理</strong><span>你可以在上方回答后交接，也可以发送新的要求。原执行仍会保留，新的要求不算对原问题的回答。</span></div><Button type="primary" disabled={!canSend} loading={sending} onClick={()=>void prepare(false)}>{waitingHandoffLabel}</Button><Button type="link" size="small" disabled={!canSend} onClick={()=>void prepare(true)}>交接内容</Button></div>}
-        {preparing&&<div className="ac-notice" role="status">正在准备发送… <Button type="link" size="small" title="跳过模型精简，使用本地记录与按需读取" onClick={()=>{const continueRunId=activeSend.current?.continueRunId;activeSend.current=null;setSending(false);setPreparing(false);void prepare(false,true,continueRunId);}}>跳过资料精简</Button><Button type="text" size="small" onClick={()=>{activeSend.current=null;setSending(false);setPreparing(false);}}>取消发送</Button></div>}
+        {preparing&&<div className="ac-notice" role="status">正在准备发送… <Button type="text" size="small" onClick={()=>{activeSend.current=null;setSending(false);setPreparing(false);}}>取消发送</Button></div>}
         {choice.connectionId&&!permissionAvailable&&<Alert type="warning" showIcon message={"当前执行者不支持"+permissionModeLabels[permissionMode]} description="已保留所选权限。请选择可用权限或切换执行者后再发送，草稿保留。"/>}{images.length>0&&!connection?.capabilities.images&&<Alert type="warning" message="当前执行者不支持图片或视频画面。请移除附件或选择支持图片的执行者。"/>}
         <ConversationComposer images={images} materialDisabled={sending||uploading||context.loading||Boolean(context.scope&&!chat)} addDisabled={sending||context.loading||Boolean(context.scope&&!chat)} uploading={uploading} onAdd={upload} onBlocked={()=>setError('当前正在发送或上传，请稍后再添加图片或视频。')} onRemove={id=>{if(!chat){void newImages.remove(id).catch(fail);}else setAttachments(previous=>({...previous,[attachmentKey]:(previous[attachmentKey]||[]).filter(item=>item.id!==id)}));setPrepared(null);setPreviewOpen(false);}}
           input={{id:embedded?'agent-child-conversation-input-'+chat?.id:'agent-conversation-input','aria-label':embedded?'子对话输入':'对话输入',disabled:context.loading||Boolean(context.scope&&!chat),placeholder:waitingHandoffAvailable?'输入新要求，将与已有记录一起交给所选模型…':waitingQuestions.length?'可发送新要求；回答原问题请用上方卡片…':supplementing?'继续补充要求':locked?'可发送新要求或更换选择，原执行仍会保留…':'提出问题，或描述想完成的工作',value:draft.text,onChange:event=>{draft.setText(event.target.value);setPrepared(null);},autoSize:{minRows:2,maxRows:8},onCompositionStart:()=>{composing.current=true;},onCompositionEnd:()=>{composing.current=false;},onKeyDown:event=>{if(shouldSendOnKey({key:event.key,shiftKey:event.shiftKey,isComposing:composing.current||event.nativeEvent.isComposing,keyCode:event.nativeEvent.keyCode})){event.preventDefault();if(canSend)void prepare(false);}}}}
