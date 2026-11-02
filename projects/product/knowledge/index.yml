@@ -4053,7 +4053,7 @@ sources:
     path: SKILL.md
     skillId: git-operations
     link: services/buildr/resources/workspace/skills/buildr/git-operations/SKILL.md
-    summary: 精确执行已授权 Git 操作，明确正式任务时写入唯一任务尾注，分别确认真实提交与任务侧关联；读取失败不否认提交成功。
+    summary: 精确执行已授权 Git 操作，在隔离 HOME 下按真实主目录核对作者与凭据来源；明确正式任务时写入唯一任务尾注，分别确认真实提交与任务侧关联；读取失败不否认提交成功。
   - id: prototype-reader-layout
     title: 原型统一阅读布局
     kind: code

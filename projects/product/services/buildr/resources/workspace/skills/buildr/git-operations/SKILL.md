@@ -51,16 +51,24 @@ consumer 可以在选择 rebase 时同时明确授权冲突后的有界 `rebase 
 
 `delete-remote-ref` 只有在 consumer 已明确选择该 operation 并提供实际 repository、remote、精确 ref、已观察远端提交（Commit）与允许的远端 effect 时才能执行。provider 在写远端前重新读取实际远端 tip，仍等于已观察提交才删除该引用，删除后回读远端确认不存在；tip 漂移、远端无法可靠观察或授权不完整时在远端零写入状态返回 `blocked`，不得改用无条件删除。返回错误或响应丢失时先核对实际远端状态再报告 effects。本 operation 不隐含对其他引用的任何动作，也不判断归属或业务保留理由——归属、保全与活动用途由 consumer 核验后作为授权输入提供。
 
-## 3. 精确暂存与 commit
+## 3. Git 身份与用户主目录
 
-1. 分别检查 staged、unstaged 和 untracked facts，并识别 scope 外 dirty。
+任务执行的 `HOME` 是智能体私有目录，用户级 `~/.gitconfig`、`credential.helper`、SSH 配置和 `gh auth git-credential` 都不在其中；这是隔离设计，不是用户未配置。真实用户主目录由 `BUILDR_HOST_HOME` 指向。
+
+提交或推送前先用 `git config --list --show-origin` 确认用户级配置是否参与求值，再用 `git var GIT_AUTHOR_IDENT` 核对作者。缺少用户级配置时，`git var` 仍可能返回系统自动推断的姓名或本机邮箱；不得把这种回退身份当作已确认作者。只有当前命令需要用户级身份时，才对该命令显式指向真实配置，例如 `GIT_CONFIG_GLOBAL="$BUILDR_HOST_HOME/.gitconfig" git ...` 或 `HOME="$BUILDR_HOST_HOME" git ...`，并从真实返回核对作者身份；确认凭据帮助器可用时只判断是否有可用凭据，不输出、不保存凭据内容。不得把配置复制到私有 `HOME`，不得改仓库 `user.*`、远端或账号来“修复”环境。
+
+作者身份缺失时停止提交，说明隔离事实与已核对结果，向用户取得身份或明确授权；不得猜造姓名、邮箱或冒用他人身份。凭据缺失仍按第 6 节处理：只有真实主目录与帮助器都核对过，才能报告“缺少凭据”。
+
+## 4. 精确暂存与 commit
+
+1. 先按第 3 节核对实际作者身份，再分别检查 staged、unstaged 和 untracked facts，并识别 scope 外 dirty。
 2. 只 stage consumer 已确认归属的精确 paths；同一文件混有不同归属时，只有 hunk 边界清晰且可复核才分段 stage，否则 `blocked`。
 3. 禁止使用 `git add -A` 代替 scope 判断；保留全部无关 dirty 与 scope 外 staged 内容，不 unstage、不 stash、不 reset、不回滚或覆盖无关改动。若当前 Git 方式不能在不改变这些 index facts 的前提下生成精确 commit，则返回 `blocked`。
 4. commit 前复核实际将提交的 diff，只包含授权内容；披露纳入/排除项和 commit message。
 
 同一 Task 在两次 push 之间默认只维护一个尚未共享的可变 commit。只有能够证明当前 commit 未 push、未共享、归属相同 scope 且本次 commit operation 允许时才 amend；无法证明时创建新 commit或 `blocked`。push 或其他共享会冻结 commit；后续变化创建新 commit。撤销共享 commit 默认由 caller 明确选择新的 revert operation，不改写原历史。
 
-## 4. Commit message
+## 5. Commit message
 
 默认 subject 使用 `<type>(<scope>): <subject>`，scope 可选。type 从 `feat`、`fix`、`docs`、`style`、`refactor`、`perf`、`test`、`build`、`ci`、`chore`、`revert` 中按实际内容选择；不猜测 scope。
 
@@ -80,7 +88,7 @@ Buildr-Task: 2026-09-27-task-git-commits
 
 实际提交成功与任务侧关联确认分别报告。查询不可用、失败或未覆盖本次提交时，保留 Git 成功事实并说明任务侧尚未确认，不改任务状态，不阻止无关的已授权交付。不得为了补任务编码安装强制钩子（Hook）、自动修改提交（Amend）、变基（Rebase）或改写既有历史；真实说明不符时报告差异，由原调用者依据实际目标与授权处理，不把关联检查变为通用提交门禁。
 
-## 5. Push 必须检查完整 range
+## 6. Push 必须检查完整 range
 
 上游智能体（Agent）同时负责按具体项目政策核对推送前检查，并由 `project-verification` 交付真实证据；本提供者（Provider）继续只核对授权、Git 对象、完整范围和副作用，不另设测试计划、不选择检查或重复运行验证。缺少检查声明时交回对应维护者，不猜测所有项目都采用同一政策。
 
@@ -90,9 +98,9 @@ push 前重新观察实际 remote、source ref、destination ref 和 destination
 
 普通 push 被拒绝时停止；不自动 force push、不改写共享历史、不切换目标或策略。只有 caller/Agent 重新核验事实并取得所需决定后才能重试。
 
-远端访问失败（`could not read Username`、`Permission denied (publickey)`、凭据帮助器（Credential Helper）无输出）先核对身份解析环境，再下"无凭据"结论：用 `git config --list --show-origin` 确认实际参与求值的配置文件——缺少用户级 `~/.gitconfig` 说明 `HOME` 或 `GIT_CONFIG_GLOBAL` 未指向真实用户主目录；执行环境可能把 `HOME`、钥匙串（Keychain）或 SSH 代理（SSH Agent）隔离到绑定目录，而 `gh auth git-credential`、自定义 `credential.helper` 与 SSH 配置都按 `HOME` 定位，在真实 `HOME` 下重新解析（如 `HOME=<真实主目录> git credential fill`）并验证帮助器实际返回。环境与帮助器核对后仍无凭据才按缺失处理：请求凭据、改用已授权凭据或交还用户推送，不得因此切换 remote、账号或目标。本诊断同样适用于 fetch 与 `ls-remote` 等需要远端认证的只读观察。
+远端访问失败（`could not read Username`、`Permission denied (publickey)`、凭据帮助器（Credential Helper）无输出）先按第 3 节核对身份与配置来源，再下“无凭据”结论：`gh auth git-credential`、自定义 `credential.helper` 与 SSH 配置都按 `HOME` 定位，在真实 `HOME` 下重新解析（如 `HOME="$BUILDR_HOST_HOME" git credential fill`）并验证帮助器实际返回可用凭据（不输出、不保存凭据内容）。环境与帮助器核对后仍无凭据才按缺失处理：请求凭据、改用已授权凭据或交还用户推送，不得因此切换 remote、账号或目标。本诊断同样适用于 fetch 与 `ls-remote` 等需要远端认证的只读观察。
 
-## 6. 最小 Result 与部分失败
+## 7. 最小 Result 与部分失败
 
 每次 operation 只报告适用字段：
 
@@ -114,11 +122,11 @@ currentFacts: <repository facts after success or failure>
 
 任何失败都必须保留并报告已经发生的 effects。尤其是 commit 成功而后续 push 被拒绝时，commit Result 仍是成功，push Result 是 `blocked`；local history 已改变、remote 未改变。明确授权且核验恢复 identity 的 `rebase --abort` 必须作为可见 effect 报告；除此之外不得静默 stash/reset/回滚、换策略，或把部分成功报告为零 effect。
 
-## 7. Workspace tree transition
+## 8. Workspace tree transition
 
 普通 fetch、commit、push 不改变已检出 tree，返回 `treeChanged: false`。当前已选 operation 若成功改变 checkout，返回 `treeChanged: true`；所在 Buildr workspace 的 consumer 随即遵守产品入口 Buildr Skill 的 workspace transition 约束。Git Operations 不复制 sync/Doctor 手册，也不判断 Review 或 Verification 是否仍有效。
 
-## 8. 停止并交还决定
+## 9. 停止并交还决定
 
 以下情况 fail closed：输入或授权不完整、ownership 无法分离、完整 push range 越界、remote/ref 漂移、push rejection、dirty/divergence/冲突需要选择策略、共享历史需要改写，或失败后的恢复方式不唯一。
 
