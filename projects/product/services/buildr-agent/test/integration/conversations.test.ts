@@ -73,10 +73,10 @@ function fake(id = 'local', options: { hold?: boolean; disconnect?: 'stopped'|'r
   } };
   return { executor, contexts, sends, replies, opens, loginUpdate: () => loginUpdate };
 }
-function fixture(executors: AgentExecutor[], settings: { modelProviders?: AgentServiceOptions['modelProviders']; autoContinueInterrupted?: boolean; shutdownTimeoutMs?: number; now?: () => Date; controlSupersededRun?: AgentServiceOptions['controlSupersededRun'] } = {}) {
+function fixture(executors: AgentExecutor[], settings: { taskIds?: string[]; modelProviders?: AgentServiceOptions['modelProviders']; autoContinueInterrupted?: boolean; shutdownTimeoutMs?: number; now?: () => Date; controlSupersededRun?: AgentServiceOptions['controlSupersededRun'] } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-agent-core-'));
   const workspace = path.join(root, 'workspace'); fs.mkdirSync(workspace);
-  const options = { ...settings, dataRoot: path.join(root, 'profile'), executors, resolveWorkspace(id: string) { assert.equal(id, 'workspace-one'); return { rootPath: workspace }; }, assertTask(_id: string, taskId: string) { assert.equal(taskId, 'task-one'); } };
+  const options = { ...settings, dataRoot: path.join(root, 'profile'), executors, resolveWorkspace(id: string) { assert.equal(id, 'workspace-one'); return { rootPath: workspace }; }, assertTask(_id: string, taskId: string) { assert.ok((settings.taskIds ?? ['task-one']).includes(taskId), '任务不存在'); } };
   const service = createAgentService(options);
   return { root, workspace, options, service, async close() { await service.close(); fs.rmSync(root, { recursive: true, force: true }); } };
 }
@@ -2779,4 +2779,34 @@ test('persisted evidence cannot overwrite a conversation changed during the read
   const after=f.service.conversations.read('workspace-one',chat.id);
   assert.equal(after.title,'A newer title');assert.notEqual(after.run?.status,'completed');assert.equal(after.entries.some(entry=>entry.text==='Stale answer'),false);assert.equal(native.sends.length,1);
  }finally{await f.close();}
+});
+
+
+test('many-to-many task associations persist, filter both directions and reject stale or invalid changes', async () => {
+  const native = fake(), f = fixture([native.executor], {taskIds:['task-one','task-two']});
+  try {
+    await connected(f.service, 'local');
+    const created = await f.service.conversations.create('workspace-one', {taskId:'task-one'});
+    let current = await f.service.conversations.update('workspace-one', created.id, {expectedRevision:created.revision,taskIds:['task-one','task-two','task-one']});
+    assert.deepEqual(current.taskIds,['task-one','task-two']);
+    assert.equal(current.taskId,'task-one');
+    send(f.service, current.id, 'local', 'work on shared result');
+    current=await waitUntil(()=>f.service.conversations.read('workspace-one',created.id),value=>value.run?.status==='completed');
+    for (const taskId of ['task-one','task-two']) assert.equal(f.service.conversations.list('workspace-one',{taskId}).conversations[0]?.id,created.id);
+    assert.deepEqual(f.service.conversations.read('workspace-one',created.id).taskIds,['task-one','task-two']);
+    await assert.rejects(f.service.conversations.update('workspace-one',created.id,{expectedRevision:current.revision,taskIds:['task-two','missing']}));
+    assert.deepEqual(f.service.conversations.read('workspace-one',created.id).taskIds,['task-one','task-two']);
+    const old=current;
+    current=await f.service.conversations.update('workspace-one',created.id,{expectedRevision:current.revision,taskIds:['task-two']});
+    await assert.rejects(f.service.conversations.update('workspace-one',created.id,{expectedRevision:old.revision,taskIds:[]}),{code:'agent_revision_conflict'});
+    assert.equal(f.service.conversations.list('workspace-one',{taskId:'task-one'}).conversations.length,0);
+    assert.equal(f.service.conversations.list('workspace-one',{taskId:'task-two'}).conversations.length,1);
+    const another=await f.service.conversations.create('workspace-one',{taskId:'task-two'});
+    send(f.service,another.id,'local','another task conversation');
+    await waitUntil(()=>f.service.conversations.read('workspace-one',another.id),value=>value.run?.status==='completed');
+    assert.equal(f.service.conversations.list('workspace-one',{taskId:'task-two'}).conversations.length,2);
+    current=await f.service.conversations.update('workspace-one',created.id,{expectedRevision:current.revision,taskIds:[]});
+    assert.equal(current.taskId,undefined);assert.deepEqual(current.taskIds,[]);
+    assert.equal(f.service.conversations.list('workspace-one',{taskId:'task-two'}).conversations.length,1);
+  } finally {await f.close();}
 });

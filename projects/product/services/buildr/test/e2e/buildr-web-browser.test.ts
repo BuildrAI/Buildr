@@ -256,7 +256,10 @@ function createSelectedFixture(root: any): any  {
   const selector: any = [...SELECTORS][0];
   if (selector === 'core') createCoreFixture(root);
   else if (selector === 'shell') createShellFixture(root);
-  else if (selector === 'workbench' || selector === 'agent-conversations') createShellFixture(root);
+  else if (selector === 'workbench' || selector === 'agent-conversations') {
+    createShellFixture(root);
+    if (selector === 'agent-conversations') runBuildr(['task','create','browser-associated-task','--title','另一个关联任务','--intent','验证同一对话关联多个任务及双向跳转','--project','demo','--target',root]);
+  }
   else if (selector === 'code') {
     createShellFixture(root, true);
     const source=path.join(root,'projects/demo/services/api');fs.mkdirSync(path.join(source,'src'),{recursive:true});

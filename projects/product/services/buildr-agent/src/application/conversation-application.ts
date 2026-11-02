@@ -401,10 +401,12 @@ export class ConversationApplication {
     const record = this.options.repository.readConversation(nonempty(id, '对话身份'));
     if (!record || record.view.workspaceId !== workspaceId) fail('agent_conversation_missing', '该工作空间中没有此对话。', 404);
     record.attachments ??= {};
+    record.view.taskIds ??= record.view.taskId ? [record.view.taskId] : [];
     normalizeQuestionCapabilities(record);
     return record;
   }
   private view(record: ConversationReadState, before?: number, limit?: number): ConversationView {
+    record.view.taskIds ??= record.view.taskId ? [record.view.taskId] : [];
     normalizeQuestionCapabilities(record);
     const entries = record.view.entries.filter(entry => before === undefined || entry.sequence < before);
     const count = limit === undefined ? undefined : bounded(limit, PAGE_SIZE, 200);
@@ -546,12 +548,18 @@ export class ConversationApplication {
     }, hostScope: workspace, titleOrigin: input.title ? 'manual' : 'default', participants: [], sources: {}, attempts: [], requests: {}, attachments: {} };
     return record;
   }
-  async update(workspaceId: string, id: string, input: { expectedRevision: string; title?: string; hidden?: boolean; taskId?: string | null }): Promise<ConversationView> {
+  async update(workspaceId: string, id: string, input: { expectedRevision: string; title?: string; hidden?: boolean; taskId?: string | null; taskIds?: string[] }): Promise<ConversationView> {
     const record = this.load(workspaceId, id); expected(record.view.revision, input.expectedRevision);
     if (input.title !== undefined) { record.view.title = nonempty(input.title, '对话标题', 160); record.titleOrigin = 'manual'; record.view.titleState={status:'manual'}; }
-    if (input.taskId !== undefined) {
-      if (input.taskId === null) record.view.taskId = undefined;
-      else { const taskId = nonempty(input.taskId, '任务身份'); await this.options.host.verify(workspaceId, taskId); record.view.taskId = taskId; }
+    if (input.taskIds !== undefined && input.taskId !== undefined) fail('agent_input_invalid', '不能同时提交 taskId 和 taskIds。');
+    if (input.taskIds !== undefined || input.taskId !== undefined) {
+      const values = input.taskIds ?? (input.taskId === null ? [] : [input.taskId!]);
+      if (!Array.isArray(values) || values.length > 100) fail('agent_input_invalid', '任务关联必须为不超过 100 项的数组。');
+      const ids = [...new Set(values.map(value => nonempty(value, '任务身份')))];
+      const previous = record.view.taskIds ?? (record.view.taskId ? [record.view.taskId] : []);
+      for (const taskId of ids) if (!previous.includes(taskId)) await this.options.host.verify(workspaceId, taskId);
+      record.view.taskIds = ids;
+      record.view.taskId = ids[0];
     }
     if (input.hidden !== undefined) { if (typeof input.hidden !== 'boolean') fail('agent_input_invalid', '隐藏状态无效。'); record.view.hidden = input.hidden; }
     this.save(record); return this.view(record);
@@ -675,7 +683,7 @@ export class ConversationApplication {
     const ids=[...new Set([...priorImages,...currentImages])];
     const materials = this.media.expand(record, ids);
     const images = materials.images;
-    const context=JSON.stringify({childOf:record.view.childOf,inheritedPendingQuestions:record.inheritedContext?.pendingQuestions,conversationId:record.view.id,workspaceId:record.view.workspaceId,cwd:record.view.cwd,conversationTitle:record.view.title,taskId:record.view.taskId,sourceThrough:through,permissionMode:input.permissionMode,executionState:record.view.run?.status??'idle',retainedExecutions:conversationRuns(record.view).filter(unfinishedRun).map(run=>({id:run.id,participantId:run.participantId,generation:run.generation,status:run.status,executionState:run.executionState,resourcesReleased:run.resourcesReleased,toolCount:run.tools.filter(tool=>tool.status!=='completed').length})),unansweredRequests:record.view.requests.map(request=>({id:request.id,runId:request.runId,participantId:request.participantId,generation:request.generation,kind:request.kind,title:request.title.slice(0,200)})),sourceIndex:sources?.index,imageInputIds:ids,currentImageIds:currentImages,currentImages:images.filter(image=>currentImages.includes(image.id)),historicalImages:historicalImages.slice(-4),historicalImageCount:historicalImages.length,historicalImageNotice:historicalImages.length?'历史图片的全部准确引用见本地索引；此处只列最近四张。没有作为图像输入发送的部分须按需读取，不能假装已看到。历史视频只提供带时间点的抽样画面，不含音轨，不能声称连续观看。':undefined});
+    const context=JSON.stringify({childOf:record.view.childOf,inheritedPendingQuestions:record.inheritedContext?.pendingQuestions,conversationId:record.view.id,workspaceId:record.view.workspaceId,cwd:record.view.cwd,conversationTitle:record.view.title,taskId:record.view.taskId,taskIds:record.view.taskIds,sourceThrough:through,permissionMode:input.permissionMode,executionState:record.view.run?.status??'idle',retainedExecutions:conversationRuns(record.view).filter(unfinishedRun).map(run=>({id:run.id,participantId:run.participantId,generation:run.generation,status:run.status,executionState:run.executionState,resourcesReleased:run.resourcesReleased,toolCount:run.tools.filter(tool=>tool.status!=='completed').length})),unansweredRequests:record.view.requests.map(request=>({id:request.id,runId:request.runId,participantId:request.participantId,generation:request.generation,kind:request.kind,title:request.title.slice(0,200)})),sourceIndex:sources?.index,imageInputIds:ids,currentImageIds:currentImages,currentImages:images.filter(image=>currentImages.includes(image.id)),historicalImages:historicalImages.slice(-4),historicalImageCount:historicalImages.length,historicalImageNotice:historicalImages.length?'历史图片的全部准确引用见本地索引；此处只列最近四张。没有作为图像输入发送的部分须按需读取，不能假装已看到。历史视频只提供带时间点的抽样画面，不含音轨，不能声称连续观看。':undefined});
     const questionEntries = changes.filter(entry=>entry.kind==='notice'&&entry.runId===record.view.run?.id);
     const hasHandoffAnswers = questionEntries.some(entry=>entry.id.startsWith('waiting-handoff-'));
     const unanswered = questionEntries.filter(entry=>entry.role==='system'&&entry.id.startsWith(hasHandoffAnswers?'waiting-handoff-':'waiting-question-')).map(entry=>entry.text);

@@ -13,12 +13,25 @@ await step('任务对话入口零一多：绑定跟随草稿，发送才建会�
       await entry.getByText('任务对话',{exact:true}).waitFor();assert.equal(await taskConversationLink.isEnabled(),true);assert.equal(await taskConversationLink.getAttribute('aria-busy'),'false');
       const before=fixture.creations,sendsBefore=fixture.sends;await taskConversationLink.click();await panel().locator('.ac-location-meta').filter({hasText:'关联任务：'}).waitFor();assert.equal(fixture.creations,before,'打开任务对话只进入草稿，不创建会话');assert.equal(await panel().getAttribute('data-conversation-id'),null);assert.equal(await page.locator('.pane-left:visible').count(),1);assert.equal(await page.locator('.pane-right:visible').count(),1);
       await input().fill('从任务详情继续的工作');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().locator('[data-run-status="running"]').waitFor();assert.equal(fixture.creations,before+1,'首次发送才创建任务会话');assert.equal(fixture.sends,sendsBefore+1);assert.ok(fixture.conversation.taskId);assert.equal(await panel().getAttribute('data-conversation-id'),fixture.conversation.id);assert.ok((await panel().locator('.ac-location-meta').innerText()).includes('关联任务：'+fixture.conversation.taskId));await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();await capture(page,'agent-conversation-task.png');
+      const originalTask=fixture.conversation.taskId;
+      await panel().getByRole('button',{name:'管理关联任务',exact:true}).click();
+      const second=page.locator('.ac-task-associate:visible button[aria-pressed="false"]').first();
+      await second.waitFor();const secondTask=(await second.locator('small').innerText()).trim();await second.click();
+      await panel().locator('[data-associated-task="'+secondTask+'"]').waitFor();
+      assert.deepEqual(fixture.conversation.taskIds,[originalTask,secondTask]);
+      await page.reload();await panel().locator('[data-associated-task="'+secondTask+'"]').waitFor();
+      await panel().locator('[data-associated-task="'+secondTask+'"]').click();
+      await page.locator('[data-task-internal-conversations="'+secondTask+'"]:visible').waitFor();
+      await closeConversation();await page.locator('[data-task-internal-conversations="'+secondTask+'"]:visible').getByRole('button',{name:'任务对话',exact:true}).click();
+      await panel().waitFor();assert.equal(await panel().getAttribute('data-conversation-id'),fixture.conversation.id);
+      await panel().locator('[data-associated-task="'+originalTask+'"]').click();
+      await page.locator('[data-task-internal-conversations="'+originalTask+'"]:visible').waitFor();
       await closeConversation();await taskConversationLink.click();await panel().waitFor();assert.equal(fixture.creations,before+1,'已有一条时直接恢复，不另建');
       fixture.additionalConversations=[{...fixture.conversation,id:'task-second',workspaceId:workspaceId,title:'另一段任务对话',entries:[],participants:[],activity:undefined}];await page.reload();await page.locator('[data-task-internal-conversations]:visible').getByText('任务对话 · 2',{exact:false}).waitFor();await closeConversation();await page.locator('[data-task-internal-conversations]:visible').getByRole('button',{name:'任务对话',exact:true}).click();await page.getByText('另一段任务对话',{exact:true}).click();await page.locator('#agent-conversation-panel[data-conversation-id="task-second"]').waitFor();assert.equal(await panel().getAttribute('data-conversation-id'),'task-second');await page.locator('.ant-popover:visible').waitFor({state:'hidden'});
       // 绑定跟随工作空间草稿：入口提出绑定后，跨入口新建不丢绑定，移除后发送不带任务
       await taskConversationLink.click();await page.locator('.ac-task-picker:visible').getByRole('button',{name:'新建任务对话',exact:true}).click();await panel().waitFor();await panel().locator('.ac-location-meta').filter({hasText:'关联任务：'}).waitFor();assert.equal(fixture.creations,before+1,'任务入口新对话仍是草稿');assert.equal(await panel().getAttribute('data-conversation-id'),null);
       await input().fill('绑定跟随草稿的工作');await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().waitFor();assert.equal(await input().inputValue(),'绑定跟随草稿的工作','全局新建沿用同一工作空间草稿');await panel().locator('.ac-location-meta').filter({hasText:'关联任务：'}).waitFor();
-      await panel().getByRole('button',{name:'更换或解除任务关联',exact:true}).click();await page.locator('.ac-task-associate:visible').getByRole('button',{name:'解除关联',exact:true}).click();assert.equal(await panel().locator('.ac-location-meta').filter({hasText:'关联任务：'}).count(),0,'移除绑定后草稿不再带任务');assert.equal(await input().inputValue(),'绑定跟随草稿的工作','移除绑定保留草稿文本');
+      await panel().getByRole('button',{name:'管理关联任务',exact:true}).click();await page.locator('.ac-task-associate:visible').getByRole('button',{name:/^解除关联 /}).click();assert.equal(await panel().locator('.ac-location-meta').filter({hasText:'关联任务：'}).count(),0,'移除绑定后草稿不再带任务');assert.equal(await input().inputValue(),'绑定跟随草稿的工作','移除绑定保留草稿文本');
       await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().locator('[data-run-status="running"]').waitFor();assert.equal(fixture.creations,before+2,'解除绑定后发送仍只建一次会话');assert.ok(!fixture.conversation.taskId,'解除绑定后发送不关联任务');await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();assert.equal(fixture.sends,sendsBefore+2);
     });
 

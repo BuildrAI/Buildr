@@ -390,6 +390,8 @@ export interface ConversationView {
   workspaceId: string;
   cwd: string;
   taskId?: string;
+  /** Complete task association set; absent on legacy records. */
+  taskIds?: string[];
   title: string;
   revision: string;
   hidden: boolean;

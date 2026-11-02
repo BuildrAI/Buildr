@@ -163,7 +163,7 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       query(searchParams, []);
       if (request.method === 'PATCH' && !action) {
         const input = validate('update', await readJsonBody());
-        if (workspaceId === '@default' && input.taskId !== undefined) throw inputError();
+        if (workspaceId === '@default' && (input.taskId !== undefined || input.taskIds !== undefined)) throw inputError();
         return result('conversation', await service.conversations.update(workspaceId, id, input));
       }
       if (request.method !== 'POST') return null;

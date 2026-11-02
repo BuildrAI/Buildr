@@ -62,6 +62,7 @@ export class ConversationForks {
       through = following.sequence;
     }
     const child = await this.options.candidate(scope, { cwd: source.view.cwd, taskId: source.view.taskId });
+    child.view.taskIds = [...(source.view.taskIds ?? (source.view.taskId ? [source.view.taskId] : []))];
     child.view.id = childId;
     child.view.forkedFrom = { conversationId: id, workspaceId: scope, entryId: entry.id, runId, throughSequence: through, title: source.view.title, forkedAt: this.options.now() };
     child.view.entries = structuredClone(source.view.entries.filter(value => value.sequence <= through));
@@ -123,6 +124,7 @@ export class ConversationForks {
         record.view.titleState = current.view.titleState;
         record.view.hidden = current.view.hidden;
         record.view.taskId = current.view.taskId;
+        record.view.taskIds = current.view.taskIds;
         record.titleOrigin = current.titleOrigin;
         record.attachments = { ...current.attachments, ...record.attachments };
       }

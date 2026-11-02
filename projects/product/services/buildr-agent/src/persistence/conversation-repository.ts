@@ -225,7 +225,7 @@ export class ConversationRepository {
       // 已创建但从未发出内容的草稿不属于对话历史。
       where.push(HAS_WORK);
       if (!options.includeHidden) where.push('hidden=0');
-      if (options.taskId) { where.push('task_id=?'); values.push(options.taskId); }
+      if (options.taskId) { where.push("((json_type(body,'$.view.taskIds') IS NULL AND task_id=?) OR EXISTS(SELECT 1 FROM json_each(body,'$.view.taskIds') WHERE value=?))"); values.push(options.taskId, options.taskId); }
       if (options.parentConversationId) { where.push("json_extract(body,'$.view.childOf.conversationId')=?"); values.push(options.parentConversationId); }
       if (options.query) {
         where.push("(instr(lower(json_extract(body,'$.view.title')),lower(?))>0 OR EXISTS(SELECT 1 FROM json_each(body,'$.view.entries') AS entry WHERE instr(lower(json_extract(entry.value,'$.text')),lower(?))>0))");
