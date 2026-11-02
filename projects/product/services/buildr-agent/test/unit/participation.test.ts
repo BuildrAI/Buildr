@@ -33,6 +33,19 @@ test('result replaces measurement without duplicating action; delayed start cann
   const repeated=mergeParticipation(done,nativeParticipation('buildr task list',undefined,'pending'))!;
   assert.equal(repeated.matches.length,1);assert.equal(repeated.outcome,'succeeded');assert.equal(repeated.output?.utf8Bytes,2);
 });
+test('real native literal shell wrapper is parsed without evaluating dynamic or compound input',()=>{
+  const path='.agents/skills/buildr/SKILL.md';
+  assert.deepEqual(participationRequests('command',`/bin/zsh -lc 'cat ${path}'`),participationRequests('Read',JSON.stringify({path})));
+  assert.equal(participationRequests('command',`/bin/bash -lc 'cat "${path}"'`)[0]?.locator,path);
+  for(const command of [
+    `/bin/zsh -lc 'cat ${path}; echo done'`,
+    `/bin/zsh -lc 'cat ${path} && echo done'`,
+    `/bin/zsh -lc 'cat "$HOME/skills/buildr/SKILL.md"'`,
+    `/bin/zsh -lc 'cat ${path}' extra`,
+    `/bin/zsh -lc 'cat ${path}' > out`,
+    `/bin/zsh -lc 'cat ${path}\\\\'`,
+  ]) assert.deepEqual(participationRequests('command',command),[],command);
+});
 test('summary excludes unknown outcomes from failure denominator and binds pagination to revision',()=>{
   const facts=['succeeded','failed','unknown'].map((outcome,i)=>({identity:'cli',name:'Buildr',kind:'cli',providedBy:'buildr',status:'confirmed',action:'requested',outcome,conversationId:'c',runId:'r'+i,participantId:'p',startedAt:'2026-11-01T00:00:00.000Z',evidence:{entryId:'t'+i}})) as any;
   const projection={revision:'v1',runs:[],gaps:[],facts};

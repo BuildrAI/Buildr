@@ -66,7 +66,12 @@ export function participationRequests(name: string | undefined, input: string | 
     const kind = /(?:^|[/\\])AGENTS\.md$/.test(path) ? 'rule' : /(?:^|[/\\])contracts[/\\]/.test(path) ? 'capability' : /(?:^|[/\\])(?:skills|references)[/\\]/.test(path) ? 'skill' : undefined;
     return kind ? [{ identity: 'unproven:file:' + digest(path), name: path.split(/[/\\]/).at(-1)!, locator: path, kind, providedBy: 'unknown', status: 'candidate', action: 'requested' }] : [];
   }
-  const command = typeof args.command === 'string' ? args.command : typeof args.cmd === 'string' ? args.cmd : input;
+  let command = typeof args.command === 'string' ? args.command : typeof args.cmd === 'string' ? args.cmd : input;
+  // Native Codex exposes one literal login-shell wrapper. Unwrap only this
+  // closed shape; never evaluate shell text or accept nested/compound commands.
+  const wrapped = /^(?:\/bin\/)?(?:zsh|bash|sh) -lc '([^']*)'$/.exec(command);
+  if (wrapped) command = wrapped[1]!;
+  if (command.includes('\\')) return [];
   if (!name || !/^(command|bash|functions.exec_command|exec_command|shell)$/i.test(name) || /[;&|<>`$\n\r]/.test(command)) return [];
   const tokens = command.match(/"[^"]*"|'[^']*'|[^\s]+/g)?.map(t => t.replace(/^(['"])(.*)\1$/, '$2')) ?? [];
   if (!tokens.length) return [];
