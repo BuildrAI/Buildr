@@ -1,7 +1,7 @@
 import {useEffect,useRef,useState,type ReactNode} from 'react';
-import {Popover,Input,Alert,Button} from 'antd';
+import {Popover,AutoComplete,Alert,Button} from 'antd';
 import {DeleteOutlined,LinkOutlined,CommentOutlined} from '@ant-design/icons';
-import {associationKey,type AssociationItem,type AssociationResult} from './conversation-associations';
+import {associationKey,associationQueryReady,ASSOCIATION_SEARCH_LIMIT,type AssociationItem,type AssociationResult} from './conversation-associations';
 import './conversation-associations.css';
 
 /** Shared only by the two ends of the conversation/task relation. */
@@ -36,18 +36,17 @@ export function AssociationRows({items,names,saving,onOpen,onRemove,kind='task'}
 }
 
 export function AssociationSearch({kind,names,selected,saving,search,onAdd}:{kind:'task'|'conversation';names:Record<string,string>;selected:Set<string>;saving:boolean;search:(query:string,signal:AbortSignal)=>Promise<AssociationResult>;onAdd:(item:AssociationItem)=>void}){
-  const [query,setQuery]=useState(''),[result,setResult]=useState<AssociationResult>({items:[],errors:[]}),[loading,setLoading]=useState(false);
+  const [query,setQuery]=useState(''),[focused,setFocused]=useState(false),[state,setState]=useState<{query:string;result:AssociationResult;loading:boolean}>({query:'',result:{items:[],errors:[]},loading:false});
+  const ready=associationQueryReady(query),current=state.query===query;
+  const result=current?state.result:{items:[],errors:[]},loading=!current||state.loading;
   useEffect(()=>{
-    const controller=new AbortController();setResult({items:[],errors:[]});
-    if(!query.trim()){setLoading(false);return()=>controller.abort();}
-    setLoading(true);
-    const timer=setTimeout(()=>{void search(query.trim(),controller.signal).then(value=>{if(!controller.signal.aborted)setResult(value);}).catch(failure=>{if(!controller.signal.aborted)setResult({items:[],errors:[failure instanceof Error?failure.message:'搜索暂时不可用。']});}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});},250);
+    const controller=new AbortController();
+    setState({query,result:{items:[],errors:[]},loading:ready});
+    if(!ready)return()=>controller.abort();
+    const timer=setTimeout(()=>{void search(query.trim(),controller.signal).then(result=>{if(!controller.signal.aborted)setState({query,result,loading:false});}).catch(failure=>{if(!controller.signal.aborted)setState({query,result:{items:[],errors:[failure instanceof Error?failure.message:'搜索暂时不可用。']},loading:false});});},250);
     return()=>{controller.abort();clearTimeout(timer);};
-  },[query,search]);
-  return <section className="ac-association-search"><strong>新增关联</strong><Input aria-label={kind==='task'?'精确搜索任务':'精确搜索对话'} placeholder={kind==='task'?'输入完整任务名称或编码':'输入完整对话标题或标识'} value={query} onChange={event=>setQuery(event.target.value)} allowClear/>
-    {loading&&<small role="status">正在精确查找…</small>}
-    {result.errors.map((error,index)=><Alert key={index} type="warning" showIcon message={error}/>)}
-    {!loading&&query.trim()&&!result.items.length&&<small>{result.errors.length?'已读取范围中暂无精确匹配，部分空间尚未确认。':'没有精确匹配。'}</small>}
-    <div className="ac-association-rows">{result.items.map(item=>{const linked=selected.has(associationKey(item));return <button className="ac-association-candidate" key={associationKey(item)} disabled={saving||linked} onClick={()=>onAdd(item)}><strong>{item.title}{linked?' · 已关联':''}</strong><small>{names[item.workspaceId]||item.workspaceId} · {item.id}</small></button>;})}</div>
-  </section>;
+  },[query,ready,search]);
+  const items=result.items.slice(0,ASSOCIATION_SEARCH_LIMIT);
+  const options=items.map(item=>{const linked=selected.has(associationKey(item));return {value:associationKey(item),disabled:saving||linked,label:<div className="ac-association-candidate"><strong>{item.title}{linked?' · 已关联':''}</strong><small>{names[item.workspaceId]||item.workspaceId} · {item.id}</small></div>};});
+  return <section className="ac-association-search"><strong>新增关联</strong><AutoComplete aria-label={kind==='task'?'搜索任务':'搜索对话'} placeholder={kind==='task'?'输入至少 2 个字符，匹配名称或编码前缀':'输入至少 2 个字符，匹配标题或标识前缀'} allowClear value={query} options={options.length?options:[{value:"__empty__",disabled:true,label:<div className="ac-association-search-hint">{result.errors.length?'已读取范围中暂无匹配，部分空间尚未确认。':'没有前缀匹配。'}</div>}]} open={focused&&ready&&!loading} onFocus={()=>setFocused(true)} onBlur={()=>setFocused(false)} onChange={value=>{if(!items.some(item=>associationKey(item)===value))setQuery(value);}} onSelect={value=>{const item=items.find(item=>associationKey(item)===value);if(item&&!saving&&!selected.has(value))onAdd(item);}} getPopupContainer={trigger=>trigger.parentElement!} classNames={{popup:{root:'ac-association-options'}}} notFoundContent={<div className="ac-association-search-hint">{result.errors.length?'已读取范围中暂无匹配，部分空间尚未确认。':'没有前缀匹配。'}</div>} popupRender={menu=><>{menu}{result.errors.map((error,index)=><Alert key={index} type="warning" showIcon message={error}/>)}</>}/></section>;
 }

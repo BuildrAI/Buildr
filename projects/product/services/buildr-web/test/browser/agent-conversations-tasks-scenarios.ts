@@ -4,7 +4,7 @@ import type {AgentConversationFixture} from './agent-conversation-fixture.ts';
 /** tasks 场景使用独立准备的对话现场。 */
 export async function runTasksScenarios(fixture:AgentConversationFixture){
   const {assertFixed,capture,chooseAgent,chooseOption,closeConversation,connections,input,openDesktopConversation,page,panel,reopen,run,sentInputs,step,update,workspaceId,workspaceUrl}=fixture;
-await step('关联数量浮层零一多、跨空间同码精确搜索及双向导航',async()=>{
+await step('关联数量浮层零一多、跨空间同码前缀搜索及双向导航',async()=>{
   const taskId='browser-associated-task',remote=fixture.otherWorkspaceId;
   assert.ok(remote,'夹具必须提供第二个真实登记空间');
   const popup=()=>page.locator('.ac-association-popup.is-open:visible .ac-association-body');
@@ -36,14 +36,21 @@ await step('关联数量浮层零一多、跨空间同码精确搜索及双向�
     await route.fulfill({json:cursor?body:{...body,tasks:[],hasMore:true,nextCursor:'association-next'}});
   };
   await page.route(taskMatcher,taskPager);
-  const search=popup().getByRole('textbox',{name:'精确搜索任务',exact:true});await search.fill(taskId);
+  const search=popup().getByRole('combobox',{name:'搜索任务',exact:true});await search.focus();
+  const stableBox=await popup().boundingBox();
+  await search.fill('b');await page.waitForTimeout(350);assert.equal(taskSearchPages,0,'单字符不请求搜索');
+  await search.fill('browser-associated');
   await page.waitForFunction(()=>document.querySelectorAll('.ac-association-popup .ac-association-candidate').length===2);
-  assert.ok(taskSearchPages>=2,'精确搜索必须读取包含匹配的后续页');await page.unroute(taskMatcher,taskPager);
+  const matchedBox=await popup().boundingBox();assert.equal(Math.round(matchedBox!.height),Math.round(stableBox!.height),'候选不撑大外层浮窗');
+  assert.equal(await popup().locator('.ac-association-options').evaluate((node:any)=>getComputedStyle(node).borderTopStyle),'solid');
+  assert.equal(await popup().getByText('正在读取任务信息…',{exact:true}).count(),0);
+  const metaBoxes=await panel().locator('.ac-location-meta>span').evaluateAll((nodes:any[])=>nodes.map(node=>{const r=node.getBoundingClientRect();return {top:r.top,height:r.height};}));assert.ok(Math.abs(metaBoxes[0].top+metaBoxes[0].height/2-metaBoxes[1].top-metaBoxes[1].height/2)<2,'工作空间与关联任务横向对齐');
+  assert.ok(taskSearchPages>=2,'前缀搜索必须读取包含匹配的后续页');await page.unroute(taskMatcher,taskPager);
   const candidate=popup().locator('.ac-association-candidate').filter({hasText:'other-workspace'});await candidate.click();
   await page.waitForFunction(()=>document.querySelector('#agent-conversation-panel .ac-association-trigger')?.textContent?.includes('2'));
   assert.deepEqual(fixture.conversation.taskLinks,[{workspaceId,taskId},{workspaceId:remote,taskId}]);
   assert.equal(fixture.conversation.cwd,cwd);assert.equal(fixture.conversation.workspaceId,workspaceId);assert.equal(fixture.sends,sends+1);
-  assert.equal(await popup().isVisible(),true,'新增后保持浮层打开');await search.fill('browser-associated');await popup().getByText('没有精确匹配。',{exact:true}).waitFor();
+  assert.equal(await popup().isVisible(),true,'新增后保持浮层打开');await search.fill('不存在的前缀');await popup().getByText('没有前缀匹配。',{exact:true}).waitFor();
   await page.keyboard.press('Escape');await popup().waitFor({state:'hidden'});await conversationButton().click();
   await linkedRow(remote).locator('.ac-association-open').click();await page.waitForURL('**/workspaces/'+remote+'/tasks/'+taskId);
   await taskButton().waitFor();await closeConversation();await taskButton().click();await popup().locator('[data-associated-conversation="'+originalId+'"]').click();
@@ -52,7 +59,7 @@ await step('关联数量浮层零一多、跨空间同码精确搜索及双向�
   await page.waitForFunction(()=>document.querySelector('#agent-conversation-panel .ac-association-trigger')?.textContent?.includes('1'));
   assert.equal(await popup().isVisible(),true);assert.deepEqual(fixture.conversation.taskLinks,[{workspaceId,taskId}]);await page.keyboard.press('Escape');
   await closeConversation();await taskButton().click();await popup().getByText('暂无关联对话。',{exact:true}).waitFor();
-  await popup().getByRole('textbox',{name:'精确搜索对话',exact:true}).fill(fixture.conversation.title);
+  await popup().getByRole('combobox',{name:'搜索对话',exact:true}).fill(fixture.conversation.title);
   await popup().locator('.ac-association-candidate').filter({hasText:originalId}).click();
   await popup().locator('[data-associated-conversation="'+originalId+'"]').waitFor();assert.equal(await popup().isVisible(),true,'任务侧新增不关闭');
   await popup().locator('[data-associated-conversation="'+originalId+'"]').click();await input().waitFor();

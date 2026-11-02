@@ -17,7 +17,15 @@ export async function associationPages<T>(load:(cursor?:string)=>Promise<{items:
   }while(cursor);
   return items;
 }
-export function exactAssociationMatches(items:AssociationItem[],query:string):AssociationItem[]{
-  const text=query.trim();return text?items.filter(item=>item.id===text||item.title===text):[];
+export const ASSOCIATION_SEARCH_MIN_LENGTH=2;
+export const ASSOCIATION_SEARCH_LIMIT=5;
+export function associationQueryReady(query:string):boolean{return Array.from(query.trim()).length>=ASSOCIATION_SEARCH_MIN_LENGTH;}
+export function prefixAssociationMatches(items:AssociationItem[],query:string):AssociationItem[]{
+  const text=query.trim();return associationQueryReady(text)?items.filter(item=>item.id.startsWith(text)||item.title.startsWith(text)):[];
 }
 export function conversationAssociationItem(row:ConversationSummary):AssociationItem{return {workspaceId:row.workspaceId,id:row.id,title:row.title};}
+
+/** Keep the same ordering and cap across both association endpoints. */
+export function associationCandidates(items:AssociationItem[]):AssociationItem[]{
+  return [...new Map(items.map(item=>[associationKey(item),item])).values()].slice(0,ASSOCIATION_SEARCH_LIMIT);
+}

@@ -381,7 +381,8 @@ await step('历史工具失败不改变当前执行图形的状态',async()=>{
       const color=(locator:any)=>locator.evaluate((node:HTMLElement)=>getComputedStyle(node).color);
       const currentColor=await color(group.locator('[data-entry-id="current-tool"]>summary>.ac-step-node'));
       const failedColor=await color(group.locator('[data-entry-id="earlier-failed"]>summary>.ac-step-node'));
-      assert.equal(await color(summary.locator(':scope>.ac-step-node')),currentColor,'实时图形只反映当前工具本身的状态');
+      if(status==='failed')assert.notEqual(await color(summary.locator(':scope>.ac-step-node')),failedColor,'工具组左侧保持正常图标，失败由详情表达');
+      else assert.equal(await color(summary.locator(':scope>.ac-step-node')),currentColor,'正常工具保持原图标颜色');
       if(status==='failed')assert.equal(currentColor,failedColor);
       else assert.notEqual(currentColor,failedColor,'历史失败不能给正常执行的图形染色');
       assert.match(await group.locator('[data-entry-id="earlier-failed"]>summary').innerText(),/失败/);
@@ -392,8 +393,8 @@ await step('历史工具失败不改变当前执行图形的状态',async()=>{
     const settled=panel().locator('.ac-step-group:not(.is-live)');
     assert.match(await settled.locator(':scope>summary').innerText(),/2 项失败/);
     await settled.locator(':scope>summary').click();
-    assert.equal(await settled.locator(':scope>summary>.ac-step-node').evaluate((node:HTMLElement)=>getComputedStyle(node).color),
-      await settled.locator('[data-entry-id="earlier-failed"]>summary>.ac-step-node').evaluate((node:HTMLElement)=>getComputedStyle(node).color),'结束后的组汇总仍提示历史失败');
+    assert.notEqual(await settled.locator(':scope>summary>.ac-step-node').evaluate((node:HTMLElement)=>getComputedStyle(node).color),
+      await settled.locator('[data-entry-id="earlier-failed"]>summary>.ac-step-node').evaluate((node:HTMLElement)=>getComputedStyle(node).color),'折叠组保持正常工具图标，失败仍由右侧计数提示');
   }finally{fixture.conversation=saved;await page.reload();await input().waitFor();}
 });
 

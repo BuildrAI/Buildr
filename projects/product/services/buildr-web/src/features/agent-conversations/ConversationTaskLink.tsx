@@ -33,7 +33,7 @@ export function ConversationTaskLink({taskLinks,onAssign,onNavigate}:Props){
   return <ConversationAssociationPopover kind="task" count={taskLinks.length} loading={loading} onOpenChange={setOpen}>
     <strong>已关联任务</strong>{error&&<Alert type="warning" message={error}/>}
     {catalogError&&<Alert type="warning" message={catalogError}/>}
-    {!visible.length&&<small>暂无关联任务。</small>}{loading&&<small role="status">正在读取任务信息…</small>}
+    {!visible.length&&<small>暂无关联任务。</small>}
     <AssociationRows items={visible} names={names} saving={saving} onOpen={item=>{onNavigate?.();navigate(`/workspaces/${encodeURIComponent(item.workspaceId)}/tasks/${encodeURIComponent(item.id)}`);}} onRemove={item=>void change(taskLinks.filter(link=>taskLinkKey(link)!==associationKey(item)))}/>
     <AssociationSearch kind="task" names={names} selected={new Set(taskLinks.map(taskLinkKey))} saving={saving} search={search} onAdd={item=>void change([...taskLinks,{workspaceId:item.workspaceId,taskId:item.id}])}/>
   </ConversationAssociationPopover>;

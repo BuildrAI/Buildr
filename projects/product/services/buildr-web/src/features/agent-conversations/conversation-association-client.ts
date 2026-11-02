@@ -1,6 +1,6 @@
 import {taskApi} from '../task/api/task-api';
 import {workspaceApi} from '../workspace/api/workspace-api';
-import {associationPages,exactAssociationMatches,associationKey,conversationAssociationItem,type AssociationItem,type AssociationResult} from './conversation-associations';
+import {associationCandidates,associationQueryReady,associationPages,prefixAssociationMatches,conversationAssociationItem,type AssociationItem,type AssociationResult} from './conversation-associations';
 import type {ConversationTaskLink} from './types';
 import type {AgentConversationsClient} from './api/agent-conversations-api';
 
@@ -18,18 +18,20 @@ export async function linkedTaskItems(links:ConversationTaskLink[],signal:AbortS
 }
 export async function searchTaskAssociations(workspaces:AssociationWorkspace[],query:string,signal:AbortSignal):Promise<AssociationResult>{
   const result:AssociationResult={items:[],errors:[]};
+  if(!associationQueryReady(query))return result;
   for(const workspace of workspaces){
     try{
-      await associationPages(async cursor=>{const page=await taskApi.list({status:'all',pageSize:'100',cursor},{signal},workspace.id);return {items:page.tasks,nextCursor:page.nextCursor};},signal,rows=>result.items.push(...exactAssociationMatches(rows.map(({record})=>({workspaceId:workspace.id,id:record.taskId,title:record.title})),query)));
+      await associationPages(async cursor=>{const page=await taskApi.list({status:'all',pageSize:'100',cursor},{signal},workspace.id);return {items:page.tasks,nextCursor:page.nextCursor};},signal,rows=>result.items.push(...prefixAssociationMatches(rows.map(({record})=>({workspaceId:workspace.id,id:record.taskId,title:record.title})),query)));
     }catch(failure){signal.throwIfAborted();result.errors.push(`${workspace.name}：${failure instanceof Error?failure.message:'读取失败。'}`);}
   }
-  return {...result,items:[...new Map(result.items.map(item=>[associationKey(item),item])).values()]};
+  return {...result,items:associationCandidates(result.items)};
 }
 export async function searchConversationAssociations(api:AgentConversationsClient,query:string,signal:AbortSignal):Promise<AssociationResult>{
   const rows:AssociationItem[]=[],errors:string[]=[];
+  if(!associationQueryReady(query))return {items:[],errors:[]};
   for(const hidden of [false,true]){
     try{await associationPages(async cursor=>{const page=await api.listAll({hidden,cursor,limit:100,signal});return {items:page.conversations,nextCursor:page.nextCursor};},signal,page=>rows.push(...page.map(conversationAssociationItem)));}
     catch(failure){signal.throwIfAborted();errors.push(`${hidden?'隐藏':'普通'}对话：${failure instanceof Error?failure.message:'读取失败。'}`);}
   }
-  return {items:[...new Map(exactAssociationMatches(rows,query).map(item=>[associationKey(item),item])).values()],errors};
+  return {items:associationCandidates(prefixAssociationMatches(rows,query)),errors};
 }
