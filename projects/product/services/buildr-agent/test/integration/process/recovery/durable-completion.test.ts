@@ -38,11 +38,12 @@ test('new process reads exact terminal evidence before routing to a live but una
   const walk=(dir:string):string[]=>fs.readdirSync(dir,{withFileTypes:true}).flatMap(entry=>entry.isDirectory()?walk(path.join(dir,entry.name)):[path.join(dir,entry.name)]);
   const file=walk(path.join(dataRoot,'agent-service/connections')).find(file=>{try{return JSON.parse(fs.readFileSync(file,'utf8')).kind==='lost-observation';}catch{return false;}})!;
   assert.ok(file);const native=JSON.parse(fs.readFileSync(file,'utf8'));
-  native.status='idle';native.tools=[];native.durable=true;native.awaitingObservation=true;
+  native.status='idle';native.tools=[];native.durable=true;native.awaitingObservation=true;native.endedAt=new Date(Date.parse(original.startedAt)+1).toISOString();
   native.items.push({id:'durable-final',kind:'message',role:'assistant',text:'Completed before restart.',status:'completed',executionId:native.executionRef.id});
   fs.writeFileSync(file,JSON.stringify(native));
   target=await observer.operations.conversations.observeRun(scope,target.id,{expectedRevision:target.revision,runId:original.id,participantId:original.participantId,generation:original.generation});
   assert.equal(target.run?.status,'completed');assert.equal(target.run?.generation,old.generation);assert.equal(target.run?.executionState,'ended');
+  assert.equal(target.run?.updatedAt,native.endedAt,'recovery preserves the native end time instead of extending execution to observation time');
   assert.ok(target.entries.some(entry=>entry.text==='Completed before restart.'));
   target=await observer.operations.conversations.observe(scope,target.id);
   assert.equal(target.entries.filter(entry=>entry.text==='Completed before restart.').length,1);

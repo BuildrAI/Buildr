@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { ConversationView } from '../contracts.ts';
-import { BUSY_STATES, type StoredConversation } from './agent-state.ts';
+import { BUSY_STATES, conversationRuns, type StoredConversation } from './agent-state.ts';
 
 /** Only meaningful visible message changes advance activity, including streamed additions. */
 export function messageSignature(record: StoredConversation): string {
@@ -35,6 +35,12 @@ export function pendingDecisionCount(view: Pick<ConversationView, 'requests'|'ru
       (!request.generation || request.generation === run.generation);
   }).length;
 }
+/** Closing attention preserves unknown outcomes; it never hides a live owner. */
+export function hiddenReleasedOutcome(view: Pick<ConversationView, 'hidden'|'requests'|'run'|'retainedRuns'|'pendingSend'>): boolean {
+  return Boolean(view.hidden && !view.pendingSend && conversationRuns(view).some(run => !run.supersededBy && run.status === 'unknown' && run.resourcesReleased) && !pendingDecisionCount(view) &&
+    conversationRuns(view).every(run => run.supersededBy || run.executionState !== 'active' && !run.tools.some(tool => tool.status === 'running') &&
+      (run.status === 'unknown' ? run.resourcesReleased : !BUSY_STATES.has(run.status) && (run.resourcesReleased || run.tools.every(tool => tool.status === 'completed')))));
+}
 export function summaryView(record: StoredConversation, version: number, seenThrough: number, updatedAt: string): ConversationView {
   const view = record.view;
   const pending=(run:NonNullable<ConversationView['run']>)=>!run.supersededBy&&((!run.resourcesReleased&&BUSY_STATES.has(run.status))||run.tools.some(tool=>tool.status!=='completed'));
@@ -44,6 +50,6 @@ export function summaryView(record: StoredConversation, version: number, seenThr
     retainedRuns:view.retainedRuns?.map(run=>({...run,tools:[]})),
     run: view.run ? {...view.run, tools: []} : undefined,
     participants: record.participants.map(p => ({id:p.id,provider:p.provider as ConversationView['participants'][number]['provider'],connectionId:p.connectionId,label:p.label,model:p.modelId,modelAccountId:p.modelAccountId,deliveredThrough:p.deliveredThrough,contextId:''})),
-    activity: {version, seenThrough, updatedAt, pendingDecisionCount:decisions, active: decisions > 0 || (Boolean(view.retainedRuns?.some(pending)) || !(view.hidden && view.run?.executionState === 'ended' && view.run.resourcesReleased && view.run.status === 'unknown')) && (Boolean(view.run&&pending(view.run)) || view.retainedRuns?.some(pending) || version > seenThrough)},
+    activity: {version, seenThrough, updatedAt, pendingDecisionCount:decisions, active: decisions > 0 || !hiddenReleasedOutcome(view) && (Boolean(view.run&&pending(view.run)) || view.retainedRuns?.some(pending) || version > seenThrough)},
   };
 }

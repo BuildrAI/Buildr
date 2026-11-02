@@ -867,6 +867,7 @@ export class ConversationApplication {
       }
     }
     record.view.run = run;
+    record.view.hidden = false;
     this.save(record, initial);
     if (prepared.preview.switching && !systemRecovery) queueMicrotask(()=>{void this.cleanupSuperseded(workspaceId,id).catch(()=>{});});
     const work = this.execute(workspaceId, id, run.id, prepared).finally(() => { this.workers.delete(run.id); this.cancelledRetries.delete(run.id); this.scheduleSourceRelease(workspaceId, id); });
@@ -1597,7 +1598,8 @@ export class ConversationApplication {
       for(const item of evidence.items)if(item.executionId===attempt.executionRef.id)changed=this.applyItem(record,currentParticipant,item,current.id)||changed;
       if(BUSY_STATES.has(current.status)){
         this.applyObservation(record,evidence.observation,current);
-        current.updatedAt=this.options.now();
+        const endedAt=evidence.endedAt,now=this.options.now();
+        current.updatedAt=endedAt&&Date.parse(endedAt)>=Date.parse(current.startedAt)&&Date.parse(endedAt)<=Date.parse(now)?endedAt:now;
         if(record.interruption?.runId===current.id)delete record.interruption;
         delete current.interrupted;
         changed=true;

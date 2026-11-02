@@ -21,7 +21,7 @@ import { useAgentConversations } from './AgentConversationsContext';
 import {useEarlierConversationEntries} from './useEarlierConversationEntries';
 import {conversationImageSource,conversationImageLinkSource} from './conversation-markdown-images';
 import { ConversationImagePreview } from './ConversationImagePreview';
-import {needsConversationObservation, conversationObservationFeedback, carryExpandedProcessBlocks, conversationContinuationText, conversationRecoveryAction} from './conversation-state';
+import {needsConversationObservation, conversationObservationFeedback, carryExpandedProcessBlocks, conversationContinuationText, conversationRecoveryAction, canCloseUncertainConversation, canContinueReleasedConversation} from './conversation-state';
 import { ConversationHistory, type ConversationWorkspace } from './ConversationHistory';
 import { ConversationRequest } from './ConversationRequest';
 import { ConversationPendingSend } from './ConversationPendingSend';
@@ -119,6 +119,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   const uploadKey=chat?actionKey(chat,'upload',''):conversationActionKey({workspaceId:draftWorkspaceId,conversationId:'new'},'upload');
   const stopping=Boolean(chat&&actions.has(actionKey(chat,'stop'))),observing=Boolean(chat&&actions.has(actionKey(chat,'observe'))),uploading=actions.has(uploadKey);
   const generatingTitle=Boolean(chat&&actions.has(actionKey(chat,'generate-title','')));
+  const closingConversation=Boolean(chat&&actions.has(actionKey(chat,'close')));
   const [selectedHandoff,setSelectedHandoff]=useState<ConversationEntry|null>(null),[prepared,setPrepared]=useState<Prepared|null>(null),[previewOpen,setPreviewOpen]=useState(false),[rename,setRename]=useState(false),[title,setTitle]=useState('');
   const viewedHandoff=selectedHandoff?(chat?.entries.find(entry=>entry.id===selectedHandoff.id)??selectedHandoff):null;
   const [moreOpen,setMoreOpen]=useState(false),[locationOpen,setLocationOpen]=useState(false);
@@ -386,7 +387,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
     const waitingHandoff:SendDraft['waitingHandoff']=waitingHandoffAvailable&&chat?.run?{runId:chat.run.id,participantId:chat.run.participantId,generation:chat.run.generation,requestIds:currentConversationRequests(chat).map(request=>request.id) as NonNullable<SendDraft['waitingHandoff']>['requestIds'],...(handoffAnswer?{answers:[handoffAnswer]}:{})}:undefined;
     if(handoffAnswer&&!waitingHandoff){setError('原问题或模型选择已变化，请核对后重新提交；回答保留。');return;}
     const continueRunId=recoveryRunId??(waitingHandoff&&(handoffAnswer||!draft.text.trim()&&!images.length)?chat?.run?.id:!draft.text.trim()&&!images.length&&recovery?.kind==='recover'?chat?.run?.id:undefined);
-    if(continueRunId&&locked&&!waitingHandoff)return;
+    if(continueRunId&&locked&&!waitingHandoff&&!canContinueReleasedConversation(chat))return;
     const requestImages=continueRunId?[]:images;
     if(!chat&&firstSubmissions.read()){
       if(activeSend.current)return;
@@ -410,7 +411,8 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
         if(activeSend.current!==operation||!context.isSelectionCurrent(operation.selection))return;
         context.apply(current,chat.revision);
         if(current.run?.id!==continueRunId)throw new Error('原执行已变化，请核对当前记录后继续。');
-        if(executionLocked(current.run)||currentConversationRequests(current).length||current.run.tools.some(tool=>tool.status!=='completed'))throw new Error(current.run.diagnostic||'原执行或工具仍未结束，请先核对或停止相关工作。');
+        if(!conversationRecoveryAction(current)){setFeedback(conversationObservationFeedback(current.run)+' 可以直接提出新的要求。');await context.refresh();return;}
+        if(!canContinueReleasedConversation(current)&&(executionLocked(current.run)||currentConversationRequests(current).length||current.run.tools.some(tool=>tool.status!=='completed')))throw new Error(current.run.diagnostic||'原执行或工具仍未结束，请先核对或停止相关工作。');
       }
       operation.selection={...operation.selection,scope:{workspaceId:current.workspaceId,conversationId:current.id}};
       if(activeSend.current!==operation||!context.isSelectionCurrent(operation.selection))return;
@@ -475,6 +477,11 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
     }catch(failure){if(context.isSelectionCurrent(selection))fail(failure);}finally{actions.finish(key);}
   };
   const updateMetadata=async(input:{title?:string;hidden?:boolean;taskId?:string|null;taskIds?:string[];taskLinks?:TaskLink[]})=>{if(!chat)return;const selection=context.getSelection();try{context.apply(await context.api.update(chat,input),chat.revision);if(context.isSelectionCurrent(selection)){setRename(false);if(input.hidden!==undefined)context.setView('history');}return true;}catch(failure){if(context.isSelectionCurrent(selection))fail(failure);return false;}};
+  const closeConversation=async()=>{
+    if(!chat||!canCloseUncertainConversation(chat))return;
+    const key=actionKey(chat,'close');if(!actions.begin(key))return;
+    try{if(await updateMetadata({hidden:true}))await context.refresh();}finally{actions.finish(key);}
+  };
   const assignTask=async(links:TaskLink[]):Promise<boolean>=>{
     if(chat)return Boolean(await updateMetadata({taskLinks:links}));
     const local=links.find(link=>link.workspaceId===draftWorkspaceId)?.taskId;
@@ -575,7 +582,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
             {type:'divider' as const},
             {key:'generate-title',label:generatingTitle?'正在生成标题…':'生成简短标题',disabled:generatingTitle||!canGenerateConversationTitle(chat)},
             {key:'rename',label:'重命名',disabled:!chat},
-            {key:'hide',label:chat?.hidden?'恢复到最近对话':'从最近对话隐藏',disabled:!chat}
+            {key:'hide',label:chat?.hidden?'恢复到最近对话':canCloseUncertainConversation(chat)?'关闭对话':'从最近对话隐藏',disabled:!chat}
           ].filter(item=>!embedded||!['full','side','hide'].includes(item.key||'')),onClick:({key})=>{
             setMoreOpen(false);
             if(key==='collapse')context.setOpen(false);
@@ -584,7 +591,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
             else if(key==='create-child')onCreateChild?.();
             else if(key==='generate-title')void generateTitle();
             else if(key==='rename'&&chat){setTitle(chat.title);setRename(true);}
-            else if(key==='hide'&&chat)void updateMetadata({hidden:!chat.hidden});
+            else if(key==='hide'&&chat){if(!chat.hidden&&canCloseUncertainConversation(chat))void closeConversation();else void updateMetadata({hidden:!chat.hidden});}
           }}}><Button type="text" icon={<EllipsisOutlined/>} aria-label="更多对话操作" title="更多"/></Dropdown>
         </div>
       </header>
@@ -626,7 +633,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
       <div className="ac-compose-wrap">{fileError}
 
         {run?.status==='tools-active'&&<ConversationActiveToolsNotice key={run.id} tools={run.tools} resourcesReleased={run.resourcesReleased} feedback={feedback} diagnostic={run.diagnostic} canContinue observing={observing} stopping={stopping} onObserve={()=>void observe()} onStop={toolId=>void stop(toolId)}/>}
-        {run?.status==='unknown'&&<ConversationExecutionNotice feedback={feedback} resourcesReleased={run.resourcesReleased} diagnostic={[run.diagnostic,context.streamError].filter(Boolean).join('\n')} observing={observing} stopping={stopping} onObserve={()=>void observe()} onStop={()=>void stop()}/>}{run&&locked&&run.status!=='unknown'&&run.status!=='tools-active'&&<div className="ac-execution-statusbar" role="status" data-execution-state={run.status}>{!waitingQuestions.length&&run.status!=='running'&&<span>{statusLabels[run.status]}</span>}{!run.resourcesReleased&&<Button className="ac-stop-button" type="text" icon={<StopOutlined/>} aria-label="停止本次执行" title="停止本次执行" loading={stopping} disabled={run.status==='stopping'} onClick={()=>void stop()}>{stopping||run.status==='stopping'?'正在停止…':'停止'}</Button>}</div>}{!chat&&newImages.error&&<Alert type="warning" message={newImages.error} action={<Button size="small" onClick={()=>void newImages.refresh().catch(fail)}>重新读取图片</Button>}/>} {!chat&&unconfirmedFirst&&<ConversationFirstSubmissionNotice submission={unconfirmedFirst} busy={sending} onRetry={()=>void prepare(false,false,undefined,true)}/>}{run&&run.status!=='running'&&run.status!=='completed'&&run.status!=='unknown'&&run.status!=='tools-active'&&(!locked||Boolean(run.diagnostic))&&<div className="ac-run-status" role="status" data-run-status={run.status}>{!locked&&<>{run.interrupted?'执行未完成':statusLabels[run.status]}{runIdentity&&` · ${runIdentity}`} · {permissionModeLabels[run.permissionMode||'default']}</>}{run.status==='failed'&&<p>{conversationFailureImpact(run)}</p>}{run.diagnostic&&(run.status==='failed'?<details><summary>技术详情</summary><p>{run.diagnostic}</p></details>:<p>{run.diagnostic}</p>)}</div>} {connectionWarning}{modelWarning&&<Alert type="warning" showIcon message={modelWarning}/>}{earlier.error&&<Alert type="warning" showIcon message={earlier.error}/>} {actionError&&<Alert type="warning" showIcon message={actionError} closable onClose={()=>{setError('');setReplyFailure(null);setDefaultRootError('');}}/>} {feedback&&run?.status!=='unknown'&&run?.status!=='tools-active'&&<small role="status">{feedback}</small>}{(!draft.available||!attachmentsAvailable)&&<Alert type="warning" message="浏览器存储不可用，刷新后无法恢复未发送草稿。"/>}
+        {run?.status==='unknown'&&<ConversationExecutionNotice feedback={feedback} closed={chat?.hidden} closing={closingConversation} continuing={sending} continueDisabled={!canSend} onContinue={canContinueReleasedConversation(chat)&&!executionChanged?()=>void prepare(false,false,run.id):undefined} onClose={canCloseUncertainConversation(chat)?()=>void closeConversation():undefined} resourcesReleased={run.resourcesReleased} diagnostic={[run.diagnostic,context.streamError].filter(Boolean).join('\n')} observing={observing} stopping={stopping} onObserve={()=>void observe()} onStop={()=>void stop()}/>}{run&&locked&&run.status!=='unknown'&&run.status!=='tools-active'&&<div className="ac-execution-statusbar" role="status" data-execution-state={run.status}>{!waitingQuestions.length&&run.status!=='running'&&<span>{statusLabels[run.status]}</span>}{!run.resourcesReleased&&<Button className="ac-stop-button" type="text" icon={<StopOutlined/>} aria-label="停止本次执行" title="停止本次执行" loading={stopping} disabled={run.status==='stopping'} onClick={()=>void stop()}>{stopping||run.status==='stopping'?'正在停止…':'停止'}</Button>}</div>}{!chat&&newImages.error&&<Alert type="warning" message={newImages.error} action={<Button size="small" onClick={()=>void newImages.refresh().catch(fail)}>重新读取图片</Button>}/>} {!chat&&unconfirmedFirst&&<ConversationFirstSubmissionNotice submission={unconfirmedFirst} busy={sending} onRetry={()=>void prepare(false,false,undefined,true)}/>}{run&&run.status!=='running'&&run.status!=='completed'&&run.status!=='unknown'&&run.status!=='tools-active'&&(!locked||Boolean(run.diagnostic))&&<div className="ac-run-status" role="status" data-run-status={run.status}>{!locked&&<>{run.interrupted?'执行未完成':statusLabels[run.status]}{runIdentity&&` · ${runIdentity}`} · {permissionModeLabels[run.permissionMode||'default']}</>}{run.status==='failed'&&<p>{conversationFailureImpact(run)}</p>}{run.diagnostic&&(run.status==='failed'?<details><summary>技术详情</summary><p>{run.diagnostic}</p></details>:<p>{run.diagnostic}</p>)}</div>} {connectionWarning}{modelWarning&&<Alert type="warning" showIcon message={modelWarning}/>}{earlier.error&&<Alert type="warning" showIcon message={earlier.error}/>} {actionError&&<Alert type="warning" showIcon message={actionError} closable onClose={()=>{setError('');setReplyFailure(null);setDefaultRootError('');}}/>} {feedback&&run?.status!=='unknown'&&run?.status!=='tools-active'&&<small role="status">{feedback}</small>}{(!draft.available||!attachmentsAvailable)&&<Alert type="warning" message="浏览器存储不可用，刷新后无法恢复未发送草稿。"/>}
         {recovery&&!chat?.pendingSend&&run?.status!=='unknown'&&run?.status!=='tools-active'&&<div className="ac-recovery-action" data-recovery-kind={recovery.kind}>{!run?.diagnostic&&<span>{recovery.kind==='observe'?'原执行状态仍待核对。':'上次执行未正常答复。'}</span>}<Button type="text" size="small" icon={<ReloadOutlined/>} autoInsertSpace={false} aria-label={recovery.kind==='recover'&&executionChanged?'继续':recovery.label} disabled={!canSend||observing} loading={recovery.kind==='observe'?observing:sending} onClick={()=>recovery.kind==='observe'?void observe():void prepare(false,false,chat!.run!.id)}>{recovery.kind==='recover'&&executionChanged?'继续':recovery.label}</Button>{recovery.kind==='recover'&&executionChanged&&<><span className="ac-recovery-target">接下来使用 {effectiveModelLabel} 继续处理</span><Button type="link" size="small" disabled={!canSend} onClick={()=>void prepare(true,false,chat!.run!.id)}>交接内容</Button></>}</div>}
         <ConversationConnectionNotice ready={context.connectionsReady} loading={context.connectionsLoading} error={context.connectionsError} connection={connection} onSettings={()=>context.setSettings(true)}/>
         {connection?.enabled&&chat?.run&&recovery?.kind!=='recover'&&!waitingHandoffAvailable&&(lastParticipant?.connectionId!==choice.connectionId||chat.run.model!==effectiveModel||chat.run.modelAccountId!==choice.modelAccountId)?<div className="ac-transfer-notice"><span>{lastParticipant?.connectionId!==choice.connectionId?`接下来由 ${connection?providerNames[connection.provider]||connection.label:''}${chat.run.model!==effectiveModel||chat.run.modelAccountId!==choice.modelAccountId?' · '+(effectiveModelLabel):''} 继续处理`:`接下来使用 ${effectiveModelLabel} 继续处理`}</span><Button type="link" size="small" disabled={!canSend} loading={sending} onClick={()=>void prepare(true)}>交接内容</Button></div>:null}

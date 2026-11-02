@@ -534,6 +534,28 @@ test('异常恢复入口只取决于原执行状态，与选择模型或智能�
   assert.equal(conversationRecoveryAction(null),null);
 });
 
+test('已释放的未知对话允许继续和关闭，关闭不放过其他在途轮次或明确活动工具',async()=>{
+ const {canCloseUncertainConversation,canContinueReleasedConversation}=await import('../src/features/agent-conversations/conversation-state.ts');
+ const view={...conversation,requests:[],retainedRuns:[],run:{...conversation.run,accepted:true,status:'unknown',executionState:'unknown',resourcesReleased:true,tools:[{id:'missing-result',status:'unknown'}]}};
+ assert.equal(canCloseUncertainConversation(view),true);assert.equal(canContinueReleasedConversation(view),true);
+ assert.equal(needsConversationObservation({...view,hidden:true}),false,'closing attention also stops background observation of the released doubt');
+ const finishedWithHistory={...view,run:{...view.run,status:'completed',tools:[]},retainedRuns:[{...view.run,id:'earlier'}]};
+ assert.equal(canCloseUncertainConversation(finishedWithHistory),true);assert.equal(canContinueReleasedConversation(finishedWithHistory),false);assert.equal(needsConversationObservation({...finishedWithHistory,hidden:true}),false);
+ assert.deepEqual(conversationRecoveryAction(view),{kind:'recover',label:'继续工作'});
+ const snapshot=structuredClone(view);canCloseUncertainConversation(view);assert.deepEqual(view,snapshot,'availability does not alter execution facts');
+ for(const retained of [{...view.run,resourcesReleased:false},{...view.run,executionState:'active'},
+  {...view.run,tools:[{id:'live-tool',status:'running'}]},{...view.run,status:'running'}]){
+  const protectedView={...view,retainedRuns:[{...retained,id:'other'}]};
+  assert.equal(canCloseUncertainConversation(protectedView),false);assert.equal(canContinueReleasedConversation(protectedView),false);
+  assert.equal(needsConversationObservation({...protectedView,hidden:true}),true,'hidden retained work remains observed');
+ }
+ assert.equal(canCloseUncertainConversation({...view,run:{...view.run,resourcesReleased:false}}),false);
+ assert.equal(canCloseUncertainConversation({...view,pendingSend:{id:'submitted-next'}}),false);
+ assert.equal(canContinueReleasedConversation({...view,run:{...view.run,accepted:false}}),false);
+ const pending={...view,retainedRuns:[{...view.run,id:'pending',status:'waiting-question',resourcesReleased:false}],requests:[{id:'question',kind:'question',runId:'pending',participantId:view.run.participantId,generation:view.run.generation}]};
+ assert.equal(canCloseUncertainConversation(pending),false);
+});
+
 test('草稿图片入口独立于工作空间，首次发送和观察保持同一请求身份',async()=>{
   const calls=[],wire=[];
   const api=createAgentConversationsClient(async(url,init)=>{calls.push({url,body:init.body&&JSON.parse(init.body)});return {revision:'images-1',images:[]};},session,async(url,init)=>{wire.push({url,init});return new Response(JSON.stringify({revision:'images-2',images:[]}));});

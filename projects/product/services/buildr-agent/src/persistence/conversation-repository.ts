@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { summaryView, messageSignature, messageActivityAt, userActivityAt, pendingDecisionCount } from '../domain/conversation-activity.ts';
+import { summaryView, messageSignature, messageActivityAt, userActivityAt, pendingDecisionCount, hiddenReleasedOutcome } from '../domain/conversation-activity.ts';
 import type { ConversationView } from '../contracts.ts';
 import { BUSY_STATES, conversationRuns, unfinishedRun } from '../domain/agent-state.ts';
 import { DatabaseSync } from 'node:sqlite';
@@ -303,7 +303,7 @@ export class ConversationRepository {
       const retained = input.generation && generationAlive ? (db.prepare(`SELECT DISTINCT json_extract(summary,'$.run.generation') AS generation FROM ${storedSource} WHERE ${indexed?`${HAS_WORK} AND `:''}${status} IN ('starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown')`).all() as Array<{generation:string|null}>).map(row=>row.generation).filter((generation):generation is string=>Boolean(generation&&generation!==input.generation&&generationAlive(generation))) : [];
       const generations = input.generation ? [...new Set([input.generation,...retained])].sort() : [];
       const effectiveStatus = generations.length ? `CASE WHEN coalesce(json_extract(summary,'$.run.generation'),'') NOT IN (${generations.map(()=>'?').join(',')}) AND ${status} IN ('starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown') THEN 'unknown' ELSE ${status} END` : status;
-      const state = `CASE WHEN pending_decision_count>0 THEN 'waiting' WHEN hidden=1 AND json_extract(summary,'$.run.executionState')='ended' AND json_extract(summary,'$.run.resourcesReleased')=1 AND effective_status='unknown' THEN NULL WHEN effective_status='unknown' THEN 'unknown' WHEN effective_status IN ('waiting-approval','waiting-question') THEN 'waiting' WHEN effective_status IN ('starting','running','stopping','tools-active') THEN 'running' WHEN activity_version>seen_version THEN 'unseen' ELSE NULL END`;
+      const state = `CASE WHEN pending_decision_count>0 THEN 'waiting' WHEN hidden=1 AND is_active=0 THEN NULL WHEN effective_status='unknown' THEN 'unknown' WHEN effective_status IN ('waiting-approval','waiting-question') THEN 'waiting' WHEN effective_status IN ('starting','running','stopping','tools-active') THEN 'running' WHEN activity_version>seen_version THEN 'unseen' ELSE NULL END`;
       const source=`(SELECT *,CASE WHEN activity_state IN ('waiting','unseen') THEN 2 WHEN is_active=1 THEN 1 ELSE 0 END AS sort_priority FROM (SELECT *,${state} AS activity_state FROM (SELECT *,${effectiveStatus} AS effective_status FROM ${withDecisions})))`;
       // Resolved generations can change outside this scope. Any effect on the
       // actual filtered list is already captured by its membership/order keys.
@@ -392,7 +392,7 @@ export class ConversationRepository {
       if(!Number.isSafeInteger(through)||through<0||through>row.activity_version)fail('agent_seen_invalid','查看位置不属于已观察的消息。',409);
       const view=JSON.parse(row.summary) as ConversationView;
       const seen=Math.max(row.seen_version,through);
-      const activity={...view.activity!,version:row.activity_version,seenThrough:seen,active:(view.activity?.pendingDecisionCount??0)>0||conversationRuns(view).some(unfinishedRun)||row.activity_version>seen};
+      const activity={...view.activity!,version:row.activity_version,seenThrough:seen,active:(view.activity?.pendingDecisionCount??0)>0||!hiddenReleasedOutcome(view)&&(conversationRuns(view).some(unfinishedRun)||row.activity_version>seen)};
       if(seen!==row.seen_version){
         view.activity=activity;
         db.prepare('UPDATE conversations SET seen_version=?,is_active=?,summary=? WHERE id=?').run(seen,Number(activity.active),JSON.stringify(view),id);

@@ -26,7 +26,7 @@ function executor(id){return{descriptor:{id,label:id,capabilities},
     if(!fs.existsSync(file))return;
     const value=JSON.parse(fs.readFileSync(file,'utf8'));
     if(!value.durable||value.executionRef?.id!==executionRef.id)return;
-    return {items:value.items,observation:{status:value.status,tools:value.tools,executionRef}};
+    return {items:value.items,endedAt:value.endedAt,observation:{status:value.status,tools:value.tools,executionRef}};
   },
   async open({configRoot}){
   fs.mkdirSync(configRoot,{recursive:true});

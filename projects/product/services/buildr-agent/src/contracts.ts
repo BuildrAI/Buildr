@@ -219,9 +219,9 @@ export interface AgentRuntime {
 export interface AgentExecutor {
   /** Read exact durable terminal evidence without opening a native process or taking its controls. */
   readPersistedExecution?(input: {
-    configRoot: string; executable: string; programSource?: string; gatewayIdentity?: string;
+    configRoot: string; nativeAccountConfigRoot?: string; executable: string; programSource?: string; gatewayIdentity?: string;
     bindingIdentity: string; contextRef: ContextRef; executionRef: ExecutionRef; cwd: string;
-  }): Promise<{ items: ExecutorItem[]; observation: ExecutorObservation } | undefined>;
+  }): Promise<{ items: ExecutorItem[]; observation: ExecutorObservation; endedAt?: string } | undefined>;
   /** Adapter-owned cache knowledge, applied by the shared service lifecycle. */
   storage?: {
     transientDirectories: readonly string[];

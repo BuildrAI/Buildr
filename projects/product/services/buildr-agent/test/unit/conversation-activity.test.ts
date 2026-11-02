@@ -17,6 +17,20 @@ test('released historical unknown rounds do not keep a stopped conversation acti
  run.tools=[];run.resourcesReleased=false;assert.equal(summaryView(record,3,3,'now').activity!.active,true,'unreleased work remains visible');
 });
 
+test('closing a released unknown result preserves facts and cannot mute retained live work',()=>{
+ const run={id:'released',status:'unknown',executionState:'unknown',resourcesReleased:true,tools:[{id:'missing',status:'unknown'}]} as any;
+ const record={view:{hidden:true,run,requests:[]},participants:[]} as unknown as StoredConversation;
+ assert.equal(summaryView(record,4,1,'now').activity!.active,false);
+ assert.equal(record.view.run?.tools[0].status,'unknown');assert.equal(record.view.run?.executionState,'unknown');
+ record.view.pendingSend={} as any;assert.equal(summaryView(record,4,1,'now').activity!.active,true,'an already submitted next request cannot be closed away');delete record.view.pendingSend;
+ record.view.retainedRuns=[run];record.view.run={...run,id:'finished',status:'completed',tools:[]};
+ assert.equal(summaryView(record,4,1,'now').activity!.active,false,'a completed latest round can close attention to released historical unknowns');record.view.run=run;
+ for(const retained of [{...run,id:'live',resourcesReleased:false},{...run,id:'known-active',executionState:'active'},
+   {...run,id:'running-tool',tools:[{id:'working',status:'running'}]}]){
+  record.view.retainedRuns=[retained];assert.equal(summaryView(record,4,1,'now').activity!.active,true);
+ }
+});
+
 test('confirmed replacement keeps uncertain resources internal and does not create user attention',()=>{
  const old={id:'old',status:'unknown',supersededBy:'new',tools:[{id:'uncertain',status:'unknown'}]} as any;
  const record={view:{run:{id:'new',status:'completed',tools:[]},retainedRuns:[old],requests:[],hidden:false},participants:[]} as unknown as StoredConversation;

@@ -1,8 +1,22 @@
 import type { ConversationView, ConversationEntry, ConversationEvent, ConversationRun, ConversationTaskLink, CatalogModel } from './types';
 
+/** Closing only dismisses a released historical doubt, never a protected owner. */
+export function canCloseUncertainConversation(conversation: ConversationView | null): boolean {
+  if (!conversation) return false;
+  const runs = [...(conversation.run ? [conversation.run] : []), ...conversation.retainedRuns ?? []];
+  return Boolean(!conversation.pendingSend && runs.some(run => !run.supersededBy && run.status === 'unknown' && run.resourcesReleased) && !currentConversationRequests(conversation).length &&
+    runs.every(run => run.supersededBy || run.executionState !== 'active' && !run.tools.some(tool => tool.status === 'running') &&
+      (run.status === 'unknown' ? run.resourcesReleased : !['starting','running','waiting-approval','waiting-question','stopping','tools-active'].includes(run.status) && (run.resourcesReleased || run.tools.every(tool => tool.status === 'completed')))));
+}
+
+export function canContinueReleasedConversation(conversation: ConversationView | null): boolean {
+  return Boolean(conversation?.run?.status === 'unknown' && conversation.run.accepted && canCloseUncertainConversation(conversation));
+}
+
 export function conversationRecoveryAction(conversation: ConversationView | null): {kind:'recover'|'observe';label:string} | null {
   const run = conversation?.run; if (!conversation || !run) return null;
   if (run.status === 'tools-active' && run.canContinue) return null;
+  if (canContinueReleasedConversation(conversation)) return {kind:'recover',label:'继续工作'};
   if (run.status === 'unknown' || run.status === 'tools-active' || ['failed','stopped','completed'].includes(run.status) && run.tools.some(tool => tool.status !== 'completed')) return {kind:'observe',label:'核对状态'};
   if (executionLocked(run) || currentConversationRequests(conversation).length || run.tools.some(tool => tool.status !== 'completed')) return null;
   const replied = conversation.entries.some(entry => !entry.parentToolId && !entry.thinking && entry.role === 'assistant' && entry.kind === 'message' && entry.text.trim() && (entry.runId === run.id || !entry.runId && entry.createdAt >= run.startedAt));
@@ -37,9 +51,10 @@ export function executionLocked(run?: ConversationRun): boolean {
   if (run?.status === 'tools-active' && run.canContinue) return false;
   return Boolean(run && ['starting', 'running', 'waiting-approval', 'waiting-question', 'stopping', 'tools-active', 'unknown'].includes(run.status));
 }
-/** Execution completion, not transport health or final-reply wording, ends observation. */
+/** Completion or explicitly closing a released doubt ends automatic observation. */
 export function needsConversationObservation(conversation: ConversationView | null): boolean {
   if (!conversation) return false;
+  if (conversation.hidden && canCloseUncertainConversation(conversation)) return false;
   if (conversation.pendingSend || conversation.requests.length || conversation.retainedRuns?.some(run=>!run.supersededBy&&(executionLocked(run)||run.tools.some(tool=>tool.status!=='completed')))) return true;
   const run = conversation.run;
   return Boolean(run && (executionLocked(run) || run.tools.some(tool => tool.status !== 'completed') ||

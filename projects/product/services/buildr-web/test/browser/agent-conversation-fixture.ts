@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {canCloseUncertainConversation} from '../../src/features/agent-conversations/conversation-state.ts';
 import {resolveQuestionAnswer,questionAnswerDisplay} from '../../../buildr-agent/src/domain/question-answer.ts';
 import type {ConnectionView} from '../../src/features/agent-conversations/types.ts';
 
@@ -63,16 +64,17 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
     }
     if(url.pathname==='/api/v1/app/agent-service/connections'){connectionReads++;const observed=JSON.parse(JSON.stringify(connections));if(holdConnections){holdConnections=false;await new Promise<void>(resolve=>{releaseConnections=resolve;connectionsStarted?.();});}return route.fulfill({json:{connections:observed}});}
     if(['/api/v1/app/agent-service/pending-requests','/api/v1/app/agent-service/pending-summary'].includes(url.pathname)){
-      const rows=[...(conversation&&['waiting-approval','waiting-question','unknown','tools-active'].includes(conversation.run?.status)?[conversation]:[]),...additionalPending];
+      const rows=[...(conversation&&!(conversation.hidden&&canCloseUncertainConversation(conversation))&&['waiting-approval','waiting-question','unknown','tools-active'].includes(conversation.run?.status)?[conversation]:[]),...additionalPending];
       return route.fulfill({json:{conversations:url.pathname.endsWith('/pending-summary')?rows.map(item=>({conversationId:item.id,workspaceId:item.workspaceId,title:item.title,status:item.run?.status??'unknown',count:item.requests.length})):rows}});
     }
     if(url.pathname==='/api/v1/app/agent-service/conversations'&&method==='GET'){
       // 全空间列表夹具按服务端语义过滤：活动判断与 conversation-activity 的 activityState 一致。
-      const active=(item:any)=>Boolean(item.activity?.active||(item.activity&&item.activity.version>item.activity.seenThrough)||['starting','running','stopping','tools-active','waiting-approval','waiting-question','unknown'].includes(item.run?.status));
+      const dismissed=(item:any)=>Boolean(item.hidden&&canCloseUncertainConversation(item));
+      const active=(item:any)=>!dismissed(item)&&Boolean(item.activity?.active||(item.activity&&item.activity.version>item.activity.seenThrough)||['starting','running','stopping','tools-active','waiting-approval','waiting-question','unknown'].includes(item.run?.status));
       let rows=[...(conversation&&(conversation.entries.length||conversation.run)?[conversation]:[]),...additionalConversations,...additionalPending];
       const workspaceIdFilter=url.searchParams.get('workspaceId'),scoped=workspaceIdFilter?rows.filter(item=>item.workspaceId===workspaceIdFilter):rows;
       const statGroup=(field:string)=>{const counts=new Map<string,number>();for(const row of scoped){if(!['starting','running','stopping','tools-active'].includes(row.run?.status))continue;const key=row.run?.[field]||'未指定';counts.set(key,(counts.get(key)||0)+1);}return [...counts].map(([label,count])=>({label,count}));};
-      const state=(item:any)=>item.run?.status==='unknown'?'unknown':['waiting-approval','waiting-question'].includes(item.run?.status)?'waiting':['starting','running','stopping','tools-active'].includes(item.run?.status)?'running':item.activity&&item.activity.version>item.activity.seenThrough?'unseen':null;
+      const state=(item:any)=>dismissed(item)?null:item.run?.status==='unknown'?'unknown':['waiting-approval','waiting-question'].includes(item.run?.status)?'waiting':['starting','running','stopping','tools-active'].includes(item.run?.status)?'running':item.activity&&item.activity.version>item.activity.seenThrough?'unseen':null;
       const activityCounts={active:0,running:0,waiting:0,unseen:0,unknown:0,attention:0};
       for(const row of scoped){const key=state(row) as 'running'|'waiting'|'unseen'|'unknown'|null;if(key){activityCounts[key]++;activityCounts.active++;if(key!=='running')activityCounts.attention++;}}
       const executions=[...new Set(scoped.filter(row=>state(row)==='running').map(row=>JSON.stringify([row.run?.provider||'未指定',row.run?.model||'未指定'])))].map(key=>{const [provider,model]=JSON.parse(key);return {provider,model,count:scoped.filter(row=>state(row)==='running'&&(row.run?.provider||'未指定')===provider&&(row.run?.model||'未指定')===model).length};});

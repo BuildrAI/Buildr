@@ -73,7 +73,9 @@ export function qoderInterruptedObservation(messages: any[], records: any[], con
   const interruptions = qoderInterruptionIds(messages, records, contextId);
   const items = qoderHistoryItems(messages, contextId, interruptions, records);
   const owned = items.filter(item => item.executionId === executionId), tools = owned.filter(item => item.kind === 'tool');
-  const confirmedFailures = new Set(records.flatMap(record => typeof record.toolUseResult?.errorType === 'string' && !/interrupt|abort|cancel/i.test(record.toolUseResult.errorType) && record.sourceToolAssistantUUID && record.promptId ? (Array.isArray(record.message?.content) ? record.message.content : []).filter((part: any) => part.type === 'tool_result' && part.is_error).map((part: any) => part.tool_use_id) : []));
+  const confirmedFailures = new Set(records.flatMap(record => (typeof record.toolUseResult?.errorType === 'string' && !/interrupt|abort|cancel/i.test(record.toolUseResult.errorType) ||
+    record.toolUseResult?.kind === 'completed' && Number.isInteger(record.toolUseResult.exitCode) && record.toolUseResult.interrupted === false && !record.toolUseResult.signal) &&
+    record.sourceToolAssistantUUID && record.promptId ? (Array.isArray(record.message?.content) ? record.message.content : []).filter((part: any) => part.type === 'tool_result' && part.is_error).map((part: any) => part.tool_use_id) : []));
   const settled = (item: ExecutorItem) => item.status === 'completed' || item.status === 'failed' && confirmedFailures.has(item.id);
   const exactInput = executionId && items.some(item => item.role === 'user' && item.id === executionId) && records.some(record => record.sessionId === contextId && record.isSidechain === false && record.type === 'user' && record.uuid === executionId);
   // A known input identity survives a lost result. Physical release still requires the old control group to be gone.

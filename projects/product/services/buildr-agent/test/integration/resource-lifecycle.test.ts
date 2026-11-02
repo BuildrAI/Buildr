@@ -94,6 +94,24 @@ test('explicit same-selection continuation preserves released unknown work and c
  }finally{await f.close();}
 });
 
+test('closing released unknown work keeps its records and a new request reopens it without replay',async()=>{
+ const f=await fixture({executionUnknown:true});try{
+  let chat=await f.start('uncertain');const original=chat.run!.id;
+  f.contexts.get(chat.participants[0].contextId)!.idle=true;await f.service.releaseIdleSources();chat=f.service.conversations.read('workspace',chat.id);
+  const revision=chat.revision,oldRun=structuredClone(chat.run),oldEntries=structuredClone(chat.entries);
+  chat=await f.service.conversations.update('workspace',chat.id,{expectedRevision:revision,hidden:true});
+  assert.equal(chat.hidden,true);assert.deepEqual(chat.run,oldRun);assert.deepEqual(chat.entries,oldEntries);
+  assert.equal(f.service.conversations.listAll(['workspace'],{activeOnly:true}).total,0);assert.deepEqual(f.sent,['uncertain']);
+  await assert.rejects(f.service.conversations.update('workspace',chat.id,{expectedRevision:revision,hidden:false}),{code:'agent_revision_conflict'});
+  const input={expectedRevision:chat.revision,connectionId:'local',text:'a new request; verify existing results'};
+  const preview=f.service.conversations.prepareSend('workspace',chat.id,input);
+  f.service.conversations.send('workspace',chat.id,{...input,previewToken:preview.token,clientRequestId:randomUUID()});
+  await f.wait(()=>f.service.conversations.read('workspace',chat.id).run?.status==='completed');
+  const next=f.service.conversations.read('workspace',chat.id);assert.equal(next.hidden,false);
+  assert.equal(next.retainedRuns?.find(run=>run.id===original)?.status,'unknown');assert.equal(f.sent.length,2);assert.equal(f.sent[0],'uncertain');assert.ok(f.sent[1].endsWith(input.text),'only the new request is sent, with the preserved local history');
+ }finally{await f.close();}
+});
+
 test('one unknown result releases independently while another exact source keeps executing',async()=>{
  const f=await fixture();try{
   const unknown=await f.start('uncertain');f.contexts.get(unknown.participants[0].contextId)!.idle=true;
