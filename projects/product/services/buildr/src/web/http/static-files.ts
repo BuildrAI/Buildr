@@ -1,8 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { readFile, stat } from 'node:fs/promises';
 
 import { resolveProductResource } from '../../infrastructure/product-resources/index.ts';
-import { binaryResponse, textResponse, mermaidRendererResponse } from './responses.ts';
+import { mermaidRendererResponse } from './responses.ts';
 
 const DEFAULT_STATIC_ROOT = resolveProductResource('product/web-dist');
 const STATIC_CONTENT_TYPES = new Map([
@@ -54,18 +55,44 @@ export function injectedIndexHtml(sessionToken: any, previewIdentity: any, webPr
     .replace('__BUILDR_WEB_PROFILE__', profile);
 }
 
-export function serveDistAsset(response: any, pathname: any, staticRoot: any = DEFAULT_STATIC_ROOT) {
+/** Explicit coding preferences win over wildcards; q=0 must never be selected. */
+export function acceptedAssetEncodings(value = ''): string[] {
+  const weights = new Map(value.toLowerCase().split(',').map(part => {
+    const [coding, ...parameters] = part.trim().split(';');
+    const q = parameters.map(parameter => parameter.trim()).find(parameter => parameter.startsWith('q='));
+    const weight = q ? Number(q.slice(2)) : 1;
+    return [coding, Number.isFinite(weight) && weight >= 0 && weight <= 1 ? weight : 0] as const;
+  }));
+  return ['br', 'gzip'].map(coding => ({coding, q: weights.get(coding) ?? weights.get('*') ?? 0}))
+    .filter(item => item.q > 0).sort((a, b) => b.q - a.q).map(item => item.coding);
+}
+
+export async function serveDistAsset(response: any, pathname: any, staticRoot: any = DEFAULT_STATIC_ROOT, request?: { headers: Record<string, string | string[] | undefined> }) {
   const filePath = resolveDistFile(pathname, staticRoot);
-  if (!filePath || !fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) return false;
+  // Compression sidecars are representations, never standalone public resources.
+  if (!filePath || /\.(?:br|gz)$/.test(filePath)) return false;
+  try { if (!(await stat(filePath)).isFile()) return false; }
+  catch (error: any) { if (['ENOENT', 'ENOTDIR'].includes(error.code)) return false; throw error; }
   const contentType = STATIC_CONTENT_TYPES.get(path.extname(filePath).toLowerCase()) || 'application/octet-stream';
   if (filePath === path.join(path.resolve(staticRoot || DEFAULT_STATIC_ROOT), 'mermaid-renderer.html')) {
-    mermaidRendererResponse(response, fs.readFileSync(filePath, 'utf8'));
-    return true;
+    mermaidRendererResponse(response, await readFile(filePath, 'utf8')); return true;
   }
-  if (contentType.startsWith('text/') || contentType.includes('json') || contentType.includes('javascript') || contentType.includes('svg')) {
-    textResponse(response, 200, fs.readFileSync(filePath, 'utf8'), contentType);
-  } else {
-    binaryResponse(response, 200, fs.readFileSync(filePath), contentType);
+  const immutable = /^\/assets\/(?:[^/]+\/)*[^/]+-[A-Za-z0-9_-]{8,}\.[a-z0-9]+$/.test(pathname);
+  let content: Buffer | undefined, encoding: string | undefined;
+  if (immutable) for (const coding of acceptedAssetEncodings(String(request?.headers['accept-encoding'] || ''))) {
+    try { content = await readFile(filePath + (coding === 'br' ? '.br' : '.gz')); encoding = coding; break; }
+    catch (error: any) { if (!['ENOENT', 'ENOTDIR'].includes(error.code)) throw error; }
   }
-  return true;
+  content ??= await readFile(filePath);
+  response.writeHead(200, {
+    'content-type': contentType,
+    'cache-control': immutable ? 'public, max-age=31536000, immutable' : 'no-store',
+    'content-length': content.length,
+    'x-content-type-options': 'nosniff',
+    ...(immutable ? {vary: 'Accept-Encoding'} : {}),
+    ...(encoding ? {'content-encoding': encoding} : {}),
+    'content-security-policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob: https: http://127.0.0.1:* http://localhost:*; media-src 'self' blob:; base-uri 'none'; frame-ancestors 'none'",
+    'referrer-policy': 'no-referrer', 'x-frame-options': 'DENY',
+  });
+  response.end(content); return true;
 }

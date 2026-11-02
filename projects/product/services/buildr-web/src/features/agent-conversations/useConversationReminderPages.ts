@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ConversationPage, createAgentConversationsClient } from './api/agent-conversations-api';
+import type { ConversationPage, AgentConversationsClient } from './api/agent-conversations-api';
 
-type Client=ReturnType<typeof createAgentConversationsClient>;
+type Client=AgentConversationsClient;
 type Group='attention'|'running';
 type Pages=Partial<Record<Group,ConversationPage>>;
 /** Independent group cursors keep later pending conversations visible beside busy runs. */

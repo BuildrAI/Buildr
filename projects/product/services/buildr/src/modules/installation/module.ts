@@ -101,7 +101,7 @@ export function createSystemInstallationModule(runtime: any) {
             ...createInstallationCliContributions(application),
             ...createLauncherCliContributions(application),
           ]),
-          http: Object.freeze([createReleaseAwarenessHttpContribution(application), createUpdateFlowHttpContribution(application, createResourceLocation({ productRoot: runtime.productRoot }))]),
+          http: Object.freeze([createReleaseAwarenessHttpContribution(application, runtime.productRoot), createUpdateFlowHttpContribution(application, createResourceLocation({ productRoot: runtime.productRoot }))]),
           diagnostics: Object.freeze([Object.freeze({ id: 'system-installation.diagnostics', readModel: application })]),
         },
       });

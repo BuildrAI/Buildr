@@ -248,3 +248,15 @@ test('工作空间和任务两批full都等待慢库时仍保留有界local名�
     assert.deepEqual(observer.catalog('task').snapshot().data.selectedWorktrees,[{repositoryId:'fast',worktreeId:'fast-main'}]);assert.equal(inventories.length,2);
   } finally {release();observer.dispose();}
 });
+
+test('首次无游标监听握手不重复扫描，后续真实变化仍安排校准',async()=>{
+  const f=fixture();try{
+    f.observer.start();await until(()=>f.requests.length===1&&f.watches.length===1);
+    f.watches[0].resolve({cursor:'epoch:0',repositoryIds:[],refreshAll:true});
+    await until(()=>f.watches.length===2);f.requests[0].resolve(response(repository('a')));
+    await until(()=>f.observer.catalog().snapshot().selectionReady);
+    await new Promise(resolve=>setTimeout(resolve,15));assert.equal(f.requests.length,1);
+    f.watches[1].resolve({cursor:'epoch:1',repositoryIds:['a'],refreshAll:false});
+    await until(()=>f.requests.length===2);assert.equal(f.requests[1].repositoryId,'a');f.requests[1].resolve(response(repository('a','changed')));
+  }finally{f.observer.dispose();}
+});

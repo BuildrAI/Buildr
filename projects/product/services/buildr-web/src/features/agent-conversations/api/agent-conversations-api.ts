@@ -15,14 +15,16 @@ const appPath = '/api/v1/app/agent-service';
 const path = (workspaceId: string, conversationId?: string) => `${workspaceId === '@default' ? appPath + '/conversations' : '/api/v1/workspaces/' + encodeURIComponent(workspaceId) + '/agent-conversations'}${conversationId ? '/' + encodeURIComponent(conversationId) : ''}`;
 const post = (body: unknown): RequestInit => ({method: 'POST', body: JSON.stringify(body)});
 export function createAgentConversationsClient(client: ApiClient, session: SessionAdapter, fetcher: typeof fetch = fetch) {
+  let activityReadGeneration=0;
+  let activitySnapshot:(ConversationPage & {revision:string;pending:PendingConversation[]})|undefined;
   const request = async <T,>(url: string, init: RequestInit = {}): Promise<T> => {
     const mutation = init.method && !['GET','HEAD'].includes(init.method.toUpperCase());
-    if (mutation) read.invalidate();
+    if (mutation) {read.invalidate();activitySnapshot=undefined;activityReadGeneration++;}
     const send = () => client(url, { ...init, headers: {...session.writeHeaders(), ...Object.fromEntries(new Headers(init.headers))} }) as Promise<T>;
     try { return await send(); } catch (failure) {
       if ((failure as ApiError)?.code !== 'session_forbidden' || !session.refreshSession || !await session.refreshSession()) throw failure;
       return await send();
-    } finally { if (mutation) read.invalidate(); }
+    } finally { if (mutation) {read.invalidate();activitySnapshot=undefined;activityReadGeneration++;} }
   };
   const read = sharedConversationRead(<T,>(url:string,signal:AbortSignal) => request<T>(url,{signal}));
   let catalogRead:Promise<{models:CatalogModel[];diagnostic?:string;hasSnapshot?:boolean}>|undefined;
@@ -58,6 +60,15 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
     login(connection: ConnectionView) { return request<ConnectionView>(`${appPath}/connections/${encodeURIComponent(connection.id)}/login-attempts`, post({expectedRevision: connection.revision})); },
     loginAttempt(connectionId: string, id: string, signal?: AbortSignal) { return request<ConnectionView>(`${appPath}/connections/${encodeURIComponent(connectionId)}/login-attempts/${encodeURIComponent(id)}`, {signal}); },
     cancelLogin(connection: ConnectionView, id: string) { return request<ConnectionView>(`${appPath}/connections/${encodeURIComponent(connection.id)}/login-attempts/${encodeURIComponent(id)}/cancel`, post({expectedRevision:connection.revision})); },
+    async activitySummary(signal?:AbortSignal):Promise<ConversationPage & {pending:PendingConversation[]}> {
+      const generation=activityReadGeneration,previous=activitySnapshot;
+      const result=await read<(ConversationPage & {revision:string;pending:PendingConversation[]})|{revision:string;unchanged:true}>(appPath+'/activity-summary'+(previous?'?revision='+previous.revision:''),signal);
+      if ('unchanged' in result) {
+        if (!previous || previous.revision!==result.revision) throw new Error('活动摘要版本不可复用，请重试。');
+        return previous;
+      }
+      if(generation===activityReadGeneration)activitySnapshot=result; return result;
+    },
     pending(signal?: AbortSignal) { return read<{conversations: PendingConversation[]}>(appPath + '/pending-summary', signal); },
     listAll(options:{workspaceId?:string;activeOnly?:boolean;hidden?:boolean;query?:string;agent?:string;model?:string;activityState?:Exclude<ActivityFilter,null>;cursor?:string;limit?:number;signal?:AbortSignal}={}) {const params=new URLSearchParams();for(const [key,value] of Object.entries(options))if(key!=='signal'&&value!==undefined)params.set(key,String(value));return read<ConversationPage>(appPath+'/conversations'+(params.size?'?'+params:''),options.signal);},
     seen(conversation:ConversationView,through:number) {return request<{activity:NonNullable<ConversationView['activity']>}>(path(conversation.workspaceId,conversation.id)+'/seen',post({through}));},
@@ -147,4 +158,5 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
 }
 const session = new LocalSessionAdapter();
 export const agentConversationsApi = createAgentConversationsClient(createApiClient({sessionAdapter: {writeHeaders: () => session.writeHeaders()}, getWorkspaceId: () => null}), session);
-export type AgentConversationsClient = ReturnType<typeof createAgentConversationsClient>;
+type Client = ReturnType<typeof createAgentConversationsClient>;
+export type AgentConversationsClient = Omit<Client,'activitySummary'> & Partial<Pick<Client,'activitySummary'>>;

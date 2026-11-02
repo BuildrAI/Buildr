@@ -15,8 +15,12 @@ export function createAgentServiceModule(options: { readProductIdentity(): unkno
     create(requires: Record<string, any>) {
       let connection: Promise<AgentProcessConnection> | undefined;
       let closed = false;
+      // The process connection and its default scope must share one profile binding.
+      // Directory identity is still checked on every use below.
+      let boundProfile: ReturnType<typeof options.resolveWebProfile> | undefined;
+      const profile = () => boundProfile ??= options.resolveWebProfile(options.readProductIdentity());
       const defaultWorkspace = () => {
-        const rootPath = defaultWorkspaceRoot(options.resolveWebProfile(options.readProductIdentity()));
+        const rootPath = defaultWorkspaceRoot(profile());
         return { rootPath: fs.existsSync(rootPath) ? fs.realpathSync(rootPath) : rootPath };
       };
       // 默认工作空间的对话同样落在私有交互库中，纳入全空间查询范围。
@@ -47,8 +51,8 @@ export function createAgentServiceModule(options: { readProductIdentity(): unkno
       const connect = () => {
         if(closed)throw new AgentServiceError('agent_process_client_closed','本机主程序连接已释放。',503);
         if(!connection){
-          const profile=options.resolveWebProfile(options.readProductIdentity());
-          connection=connectAgentProcess({dataRoot:profile.dataRoot,profileId:profile.profile??(profile.overridden?'preview':'released'),sourceId:'buildr',legacySourceId:'buildr',host,autoContinueInterrupted:true}).catch(error=>{connection=undefined;throw error;});
+          const bound=profile();
+          connection=connectAgentProcess({dataRoot:bound.dataRoot,profileId:bound.profile??(bound.overridden?'preview':'released'),sourceId:'buildr',legacySourceId:'buildr',host,autoContinueInterrupted:true}).catch(error=>{connection=undefined;throw error;});
         }
         return connection;
       };

@@ -59,3 +59,20 @@ test('设置冲突保留服务端错误码和最新版本供界面重新判断',
     return true;
   });
 });
+
+test('目录并发共享，独立取消、失败重试和写后新观察',async()=>{
+  const requests=[],releases=[];
+  const client=createWorkspaceClient((url,options)=>{
+    requests.push({url,options});
+    if(options.method)return Promise.resolve({revision:'written'});
+    return new Promise((resolve,reject)=>releases.push({resolve,reject}));
+  });
+  const tick=()=>new Promise(resolve=>setTimeout(resolve,5));
+  const controller=new AbortController(),first=client.listRegistered({signal:controller.signal}),second=client.listRegistered();
+  await tick();assert.equal(requests.length,1);controller.abort();await assert.rejects(first);assert.equal(requests[0].options.signal.aborted,false);
+  releases[0].resolve({revision:'before'});assert.equal((await second).revision,'before');
+  const old=client.listRegistered();await tick();await client.register({rootPath:'/new',revision:'before'});
+  const fresh=client.listRegistered();await tick();assert.equal(releases.length,3);
+  releases[1].resolve({revision:'stale'});releases[2].reject(Error('offline'));await old;await assert.rejects(fresh,/offline/);
+  const retry=client.listRegistered();await tick();releases[3].resolve({revision:'latest'});assert.equal((await retry).revision,'latest');
+});

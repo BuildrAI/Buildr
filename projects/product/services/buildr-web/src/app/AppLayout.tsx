@@ -18,7 +18,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Alert, Button, Dropdown, Drawer, Tooltip, Typography } from 'antd';
 import { AppstoreOutlined, CheckOutlined, CloseCircleOutlined, EllipsisOutlined, InfoCircleOutlined, MenuOutlined, PlusOutlined, PoweroffOutlined, SettingOutlined, SyncOutlined } from '@ant-design/icons';
-import { api, setWorkspaceId } from '../api';
+import { setWorkspaceId } from '../api';
 import { AppShellContext, type WorkspaceShellInfo } from './AppShellContext';
 import { AppNavigation } from './AppNavigation';
 import { navigationState } from './navigation';
@@ -234,8 +234,8 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
     const controller = new AbortController();
     void (async () => {
       try {
-        const data = await api('/api/v1/workspaces', { signal: controller.signal }) as { workspaces: WorkspaceEntry[] };
-        if (!controller.signal.aborted) setRegistry(data.workspaces || []);
+        const data = await workspaceApi.listRegistered({ signal: controller.signal });
+        if (!controller.signal.aborted) setRegistry((data.workspaces || []).map(entry=>({...entry,workspace:entry.workspace??undefined})));
       } catch {
         if (!controller.signal.aborted) setRegistry([]);
       }

@@ -25,3 +25,16 @@ test('other denials do not refresh; repeated expired-session rejection is bounde
   assert.equal(refreshes,code==='session_forbidden'?1:0);assert.equal(calls,code==='session_forbidden'?2:1);
  }
 });
+
+test('联合活动观察复用相同版本，失败保留摘要，写后重新取完整观察',async()=>{
+  const calls=[],snapshot={revision:'a'.repeat(64),conversations:[],pending:[],total:0};let fail=false;
+  const client=createAgentConversationsClient(async(url,init)=>{
+    calls.push(url);if(init.method)return {};
+    if(fail){fail=false;throw Error('offline');}
+    return url.includes('?revision=')?{revision:snapshot.revision,unchanged:true}:snapshot;
+  },{writeHeaders:()=>({})});
+  assert.equal(await client.activitySummary(),snapshot);assert.equal(await client.activitySummary(),snapshot);
+  fail=true;await assert.rejects(client.activitySummary(),/offline/);assert.equal(await client.activitySummary(),snapshot);
+  await client.connect('codex');assert.equal(await client.activitySummary(),snapshot);
+  assert.equal(calls.at(-1),'/api/v1/app/agent-service/activity-summary');assert.ok(calls[1].endsWith('?revision='+snapshot.revision));
+});

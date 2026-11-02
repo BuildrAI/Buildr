@@ -1,3 +1,4 @@
+import { agentActivitySummary } from './agent-activity-summary.ts';
 import type { AgentService, AgentOperations } from '@buildr-ai/buildr-agent';
 import { conversationEventEncoder, AgentServiceError } from '@buildr-ai/buildr-agent';
 import { AGENT_SERVICE_HTTP_OPERATIONS, AGENT_SERVICE_HTTP_SCHEMAS as SCHEMAS, AGENT_SERVICE_HTTP_VALIDATORS } from './agent-service-http-contracts.ts';
@@ -29,6 +30,17 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
         for(const key of ['activeOnly','hidden'])if(searchParams.has(key)&&!['true','false'].includes(searchParams.get(key)!))throw inputError();
         if(searchParams.has('activityState')&&!['running','waiting','unseen','unknown','attention'].includes(searchParams.get('activityState')!))throw inputError();
         return result('conversations',await (await resolve()).conversations.listAll(registeredWorkspaceIds(),{workspaceId:searchParams.get('workspaceId')??undefined,cursor:searchParams.get('cursor')??undefined,limit:numberQuery(searchParams.get('limit')),hidden:searchParams.get('hidden')==='true',activeOnly:searchParams.get('activeOnly')==='true',query:searchParams.get('query')??undefined,agent:searchParams.get('agent')??undefined,model:searchParams.get('model')??undefined,activityState:searchParams.get('activityState')??undefined}));
+      }
+      if (pathname === prefix + '/activity-summary' && request.method === 'GET') {
+        authorizeRead(); query(searchParams, ['revision']);
+        const revision = searchParams.get('revision') ?? undefined;
+        if (revision !== undefined && !/^[a-f0-9]{64}$/.test(revision)) throw inputError();
+        const service = await resolve();
+        const [page, pending] = await Promise.all([
+          service.conversations.listAll(registeredWorkspaceIds(), {activeOnly:true,limit:100}),
+          service.conversations.pendingSummary(),
+        ]);
+        return result('activitySummary', agentActivitySummary(page, pending.conversations, revision));
       }
       // 任务按空间的默认工作空间列表沿用单空间入口；其余默认工作空间对话操作同样委派。
       if (pathname === `${prefix}/conversations` || pathname.startsWith(`${prefix}/conversations/`)) {

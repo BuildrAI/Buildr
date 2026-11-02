@@ -55,6 +55,12 @@ export function createLocalWorkspaceRequestRouter({
   const workspaceAppRoute = new RegExp(`^/workspaces/${WORKSPACE_ID}(?:/codex|/code(?:/(?:explorer|source-control))?|/overview|/workspace-overview|/connections|/connection-skills|/settings|/knowledge/(?:project|service)/[A-Za-z0-9][A-Za-z0-9._-]*|/skills(?:/[A-Za-z0-9%][A-Za-z0-9%._-]*)?|/repositories(?:/[A-Za-z0-9][A-Za-z0-9._-]*)?|/articles(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/${taskIdPattern})?(?:/edit)?)?|/tasks(?:/${taskIdPattern}(?:/prototypes|/document|/changes/[A-Za-z0-9][A-Za-z0-9._-]*/${taskIdPattern})?)?|/projects(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?|/services(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?)?)?/?$`);
 
   return async function routeLocalWorkspaceRequest(request: any, response: any) {
+    const began = performance.now();
+    const writeHead = response.writeHead;
+    response.writeHead = function (...args: any[]) {
+      response.setHeader('server-timing', `app;dur=${(performance.now() - began).toFixed(1)}`);
+      return writeHead.apply(this, args);
+    };
     const trustedOrigin = origin();
     assertRequestHost(request, trustedOrigin);
     const requestUrl = new URL(request.url || '/', trustedOrigin);
@@ -68,7 +74,7 @@ export function createLocalWorkspaceRequestRouter({
       textResponse(response, 200, injectedIndexHtml(sessionToken, previewIdentity, webProfile, staticRoot), 'text/html; charset=utf-8');
       return;
     }
-    if (request.method === 'GET' && serveDistAsset(response, pathname, staticRoot)) return;
+    if (request.method === 'GET' && !pathname.startsWith('/api/') && await serveDistAsset(response, pathname, staticRoot, request)) return;
     if (request.method === 'GET' && pathname === '/api/v1/health') {
       if (request.headers['x-buildr-instance'] !== healthSecret) {
         jsonResponse(response, 403, { error: { code: 'instance_forbidden', message: 'Buildr instance secret 无效。' } });
@@ -126,6 +132,7 @@ export function createLocalWorkspaceRequestRouter({
         authorizeMutation: () => assertMutationRequest(request, trustedOrigin, sessionToken),
         readBinaryBody: (maxBytes: number) => readBinaryBody(request, maxBytes),
         pickWorkspaceDirectory,
+        submitApplicationRead: (operation:string,root:string,id:string) => submitTaskRead(request,response,operation,root,id),
         previewIdentity,
         respond: contributionRespond(response),
       });
