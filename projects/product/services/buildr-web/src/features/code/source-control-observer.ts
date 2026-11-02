@@ -122,13 +122,14 @@ export function createSourceControlObserver(options: Options) {
     while (!signal.aborted && !disposed && visible) {
       const began = Date.now();
       try {
+        const initialHandshake = cursor === undefined;
         const value = await options.watch(cursor, signal);
         if (signal.aborted || disposed) return;
         const advanced = value.cursor !== cursor;
         cursor = value.cursor;
         if (advanced && value.refsRepositoryIds?.length) invalidateRefs(value.refsRepositoryIds);
         diagnostics(value.diagnostics || []);
-        if (value.refreshAll || reconnect) { invalidateRefs(); checkAll(); }
+        if (value.refreshAll && !initialHandshake || reconnect) { invalidateRefs(); checkAll(); }
         else if (value.repositoryIds.length) checkAll(value.repositoryIds);
         reconnect = false; retry = options.retryMs ?? 1000;
         // A healthy server holds empty requests. Protect against an immediate empty response loop.

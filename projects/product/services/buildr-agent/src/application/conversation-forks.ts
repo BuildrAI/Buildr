@@ -1,3 +1,4 @@
+import {conversationTaskLinks,setConversationTaskLinks} from '../domain/conversation-task-links.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import type { AgentRuntime, ConversationForkInput, ConversationView } from '../contracts.ts';
 import { expected, fail, nonempty, safeDiagnostic, type StoredConversation, type StoredParticipant } from '../domain/agent-state.ts';
@@ -35,12 +36,12 @@ export class ConversationForks {
     let source = this.options.load(scope, id);
     expected(source.view.revision, input.expectedRevision);
     if (source.view.forkState && source.view.forkState.status !== 'ready') fail('agent_fork_unavailable', '此分叉尚未完成，不能继续分叉。', 409);
-    const entry = source.view.entries.find(value => value.id === input.entryId && !value.parentToolId && value.role === 'assistant' && value.kind === 'message');
+    const entry = source.view.entries.find(value => value.id === input.entryId && !value.parentToolId && !value.thinking && value.role === 'assistant' && value.kind === 'message');
     const runId = entry?.runId;
     const outcome = runId === source.view.run?.id ? source.view.run : runId ? source.runOutcomes?.[runId] : undefined;
     const round = source.view.entries.filter(value => value.runId === runId);
     if (!entry || entry.status === 'running' || !runId || !outcome || !['completed','stopped','failed'].includes(outcome.status) ||
-        round.filter(value => !value.parentToolId && value.role === 'assistant' && value.kind === 'message').at(-1)?.id !== entry.id)
+        round.filter(value => !value.parentToolId && !value.thinking && value.role === 'assistant' && value.kind === 'message').at(-1)?.id !== entry.id)
       fail('agent_fork_boundary_unavailable', '请选择已结束轮次的最后一条答复；旧记录缺少准确轮次时不能安全分叉。', 409);
     let nativeSource = source;
     const visited = new Set([id]);
@@ -62,6 +63,7 @@ export class ConversationForks {
       through = following.sequence;
     }
     const child = await this.options.candidate(scope, { cwd: source.view.cwd, taskId: source.view.taskId });
+    setConversationTaskLinks(child.view,structuredClone(conversationTaskLinks(source.view)));
     child.view.id = childId;
     child.view.forkedFrom = { conversationId: id, workspaceId: scope, entryId: entry.id, runId, throughSequence: through, title: source.view.title, forkedAt: this.options.now() };
     child.view.entries = structuredClone(source.view.entries.filter(value => value.sequence <= through));
@@ -123,6 +125,8 @@ export class ConversationForks {
         record.view.titleState = current.view.titleState;
         record.view.hidden = current.view.hidden;
         record.view.taskId = current.view.taskId;
+        record.view.taskIds = current.view.taskIds;
+        record.view.taskLinks = current.view.taskLinks;
         record.titleOrigin = current.titleOrigin;
         record.attachments = { ...current.attachments, ...record.attachments };
       }

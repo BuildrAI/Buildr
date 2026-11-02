@@ -6,6 +6,8 @@ export function toolEnvironment(source: NodeJS.ProcessEnv, platform: NodeJS.Plat
   const home = platform === 'win32' ? source.USERPROFILE || source.HOME : source.HOME || source.USERPROFILE;
   const result: NodeJS.ProcessEnv = {};
   if (home && isAbsolute(home)) result.BUILDR_HOST_HOME = home;
+  // Preserve the declared product location, not any provider credentials.
+  if (source.BUILDR_PRODUCT_DATA_DIR !== undefined) result.BUILDR_PRODUCT_DATA_DIR = source.BUILDR_PRODUCT_DATA_DIR;
   // Keep the official override, including "0" (Playwright's hermetic install).
   if (source.PLAYWRIGHT_BROWSERS_PATH !== undefined) result.PLAYWRIGHT_BROWSERS_PATH = source.PLAYWRIGHT_BROWSERS_PATH;
   else if (home && isAbsolute(home)) {

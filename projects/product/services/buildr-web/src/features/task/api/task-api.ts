@@ -90,8 +90,9 @@ export function createTaskClient(client: ApiClient) {
       const prefix = workspaceId ? `/api/v1/workspaces/${encodeURIComponent(workspaceId)}` : '/api/v1';
       return typed(client(`${prefix}/tasks${queryString(input)}`, options));
     },
-    detail(taskId: string, options: ReadOptions = {}): Promise<TaskDetailResponse> {
-      return typed(client(`/api/v1/tasks/${encodeURIComponent(taskId)}`, options));
+    detail(taskId: string, options: ReadOptions = {}, workspaceId?:string): Promise<TaskDetailResponse> {
+      const prefix=workspaceId?`/api/v1/workspaces/${encodeURIComponent(workspaceId)}`:'/api/v1';
+      return typed(client(`${prefix}/tasks/${encodeURIComponent(taskId)}`, options));
     },
     materials(taskId: string, options: ReadOptions = {}, workspaceId?: string | null): Promise<TaskMaterialsResult> {
       const prefix = workspaceId ? `/api/v1/workspaces/${encodeURIComponent(workspaceId)}` : '/api/v1';

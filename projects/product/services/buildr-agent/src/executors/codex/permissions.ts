@@ -1,7 +1,7 @@
 import type { PermissionMode } from '../../contracts.ts';
 import { resolvePermissionMode } from '../../domain/permission-mode.ts';
 
-/** Buildr default is deliberately workspace-write/on-request, rather than a sticky native default. */
+/** Explicit default uses workspace-write/on-request, never a sticky native default. */
 export function codexThreadPermissions(mode: PermissionMode | undefined) {
   return resolvePermissionMode(mode) === 'full-access'
     ? { sandbox: 'danger-full-access', approvalPolicy: 'never' }

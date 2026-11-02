@@ -217,23 +217,6 @@ export function createPackageStaticValidator(deps: any): any  {
   }
 
   function validateWorkspaceRulesBaseline(root: any, problems: any): any  {
-    const baselinePairs: any[] = [
-      ['AGENTS.md', 'AGENTS.md'],
-    ];
-
-    for (const [rootRelative, packageRelative] of baselinePairs) {
-      const rootFile = path.join(root, rootRelative);
-      const packageFile = path.join(resourceWorkspaceRoot(), packageRelative);
-      if (existsFile(rootFile) && existsFile(packageFile)) {
-        const rootContent = fs.readFileSync(rootFile, 'utf8');
-        const packageContent = fs.readFileSync(packageFile, 'utf8');
-        const block = (content: any) => content.match(/<!-- buildr:required begin -->[\s\S]*?<!-- buildr:required end -->/)?.[0];
-        if (!block(rootContent) || block(rootContent) !== block(packageContent)) {
-          problems.push(`Root ${rootRelative} differs from ${RESOURCE_WORKSPACE_ROOT}/${packageRelative}.`);
-        }
-      }
-    }
-
     for (const legacyRule of ['rules/AGENTS.workspace.md', 'rules/AGENTS.project.md']) {
       if (existsFile(path.join(root, legacyRule))) {
         problems.push(`Legacy workspace rule source must not remain in root: ${legacyRule}`);
@@ -689,7 +672,8 @@ export function createPackageStaticValidator(deps: any): any  {
     const workspaceSourceRoot = resourceWorkspaceRoot();
     for (const workspaceFile of collectFiles(workspaceSourceRoot)) {
       const relativeFile = toPosixRelative(root, workspaceFile);
-      if (!mappedSources.has(relativeFile) && !componentOwnedWorkspaceFiles.has(relativeFile)
+      if (relativeFile !== `${RESOURCE_WORKSPACE_ROOT}/AGENTS.md`
+        && !mappedSources.has(relativeFile) && !componentOwnedWorkspaceFiles.has(relativeFile)
         && !builtinSkillOwnsSourceFile(relativeFile, manifest.builtins.skills, RESOURCE_WORKSPACE_ROOT, manifest.include)) {
         problems.push(`Package workspace source file must be explicitly mapped in resources/manifest.yml: ${relativeFile}`);
       }

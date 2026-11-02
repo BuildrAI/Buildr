@@ -1,0 +1,23 @@
+.ac-association-popup:not(.is-open){visibility:hidden;pointer-events:none}
+.ac-association-trigger{display:inline-flex;align-items:center;gap:5px;padding:2px 0;border:0;background:transparent;color:var(--ant-color-primary,#527c6b);font:inherit;cursor:pointer;white-space:nowrap}
+.ac-association-trigger:focus-visible{outline:2px solid var(--ant-color-primary,#527c6b);outline-offset:3px;border-radius:3px}
+.ac-association-body{width:min(360px,calc(100vw - 48px));overflow:visible;display:flex;flex-direction:column;gap:10px}
+.ac-association-body>strong,.ac-association-search>strong{font-size:var(--font-size-body)}
+.ac-association-body small{display:block;font-size:var(--font-size-meta);color:var(--ant-color-text-secondary,#75817b);overflow-wrap:anywhere}
+.ac-association-rows{display:flex;flex-direction:column;gap:4px;max-height:260px;overflow:auto;overscroll-behavior:contain}
+.ac-association-row{display:flex;align-items:center;gap:6px;border-radius:6px}
+.ac-association-open,.ac-association-candidate{display:block;text-align:left;padding:8px;border:0;background:transparent;border-radius:6px;color:inherit;font:inherit;cursor:pointer;min-width:0}
+.ac-association-open{flex:1}
+.ac-association-open strong,.ac-association-candidate strong{display:block;font-weight:500;overflow-wrap:anywhere}
+.ac-association-open:hover,.ac-association-candidate:hover{background:var(--ant-color-fill-tertiary,#f3f6f4)}
+.ac-association-candidate:disabled{cursor:default;opacity:.65}
+.ac-association-search{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--soft-line,#e2e9e5);padding-top:10px}
+
+.ac-association-popup .ant-popover-inner{border:1px solid var(--ant-color-border-secondary,#e2e9e5)}
+.ac-association-search{position:relative}
+.ac-association-options{border:1px solid var(--ant-color-border-secondary,#e2e9e5);border-radius:8px}
+.ac-association-options .ac-association-candidate{padding:3px 0;white-space:normal}
+.ac-association-options small{display:block;color:var(--ant-color-text-secondary,#75817b);font-size:var(--font-size-meta);overflow-wrap:anywhere}
+.ac-association-search-hint{padding:8px 12px;color:var(--ant-color-text-secondary,#75817b);font-size:var(--font-size-meta)}
+
+.ac-association-search>.ant-select{width:100%;height:32px;flex:none}

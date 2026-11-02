@@ -1,11 +1,25 @@
-import type { ConversationView, ConversationEntry, ConversationEvent, ConversationRun, CatalogModel } from './types';
+import type { ConversationView, ConversationEntry, ConversationEvent, ConversationRun, ConversationTaskLink, CatalogModel } from './types';
+
+/** Closing only dismisses a released historical doubt, never a protected owner. */
+export function canCloseUncertainConversation(conversation: ConversationView | null): boolean {
+  if (!conversation) return false;
+  const runs = [...(conversation.run ? [conversation.run] : []), ...conversation.retainedRuns ?? []];
+  return Boolean(!conversation.pendingSend && runs.some(run => !run.supersededBy && run.status === 'unknown' && run.resourcesReleased) && !currentConversationRequests(conversation).length &&
+    runs.every(run => run.supersededBy || run.executionState !== 'active' && !run.tools.some(tool => tool.status === 'running') &&
+      (run.status === 'unknown' ? run.resourcesReleased : !['starting','running','waiting-approval','waiting-question','stopping','tools-active'].includes(run.status) && (run.resourcesReleased || run.tools.every(tool => tool.status === 'completed')))));
+}
+
+export function canContinueReleasedConversation(conversation: ConversationView | null): boolean {
+  return Boolean(conversation?.run?.status === 'unknown' && conversation.run.accepted && canCloseUncertainConversation(conversation));
+}
 
 export function conversationRecoveryAction(conversation: ConversationView | null): {kind:'recover'|'observe';label:string} | null {
   const run = conversation?.run; if (!conversation || !run) return null;
   if (run.status === 'tools-active' && run.canContinue) return null;
+  if (canContinueReleasedConversation(conversation)) return {kind:'recover',label:'继续工作'};
   if (run.status === 'unknown' || run.status === 'tools-active' || ['failed','stopped','completed'].includes(run.status) && run.tools.some(tool => tool.status !== 'completed')) return {kind:'observe',label:'核对状态'};
   if (executionLocked(run) || currentConversationRequests(conversation).length || run.tools.some(tool => tool.status !== 'completed')) return null;
-  const replied = conversation.entries.some(entry => !entry.parentToolId && entry.role === 'assistant' && entry.kind === 'message' && entry.text.trim() && (entry.runId === run.id || !entry.runId && entry.createdAt >= run.startedAt));
+  const replied = conversation.entries.some(entry => !entry.parentToolId && !entry.thinking && entry.role === 'assistant' && entry.kind === 'message' && entry.text.trim() && (entry.runId === run.id || !entry.runId && entry.createdAt >= run.startedAt));
   if (!['failed','stopped','completed'].includes(run.status) || run.status === 'completed' && replied) return null;
   return {kind:'recover',label:run.accepted?'继续':'重试'};
 }
@@ -37,10 +51,11 @@ export function executionLocked(run?: ConversationRun): boolean {
   if (run?.status === 'tools-active' && run.canContinue) return false;
   return Boolean(run && ['starting', 'running', 'waiting-approval', 'waiting-question', 'stopping', 'tools-active', 'unknown'].includes(run.status));
 }
-/** Execution completion, not transport health or final-reply wording, ends observation. */
+/** Completion or explicitly closing a released doubt ends automatic observation. */
 export function needsConversationObservation(conversation: ConversationView | null): boolean {
   if (!conversation) return false;
-  if (conversation.pendingSend || conversation.requests.length || conversation.retainedRuns?.some(run=>executionLocked(run)||run.tools.some(tool=>tool.status!=='completed'))) return true;
+  if (conversation.hidden && canCloseUncertainConversation(conversation)) return false;
+  if (conversation.pendingSend || conversation.requests.length || conversation.retainedRuns?.some(run=>!run.supersededBy&&(executionLocked(run)||run.tools.some(tool=>tool.status!=='completed')))) return true;
   const run = conversation.run;
   return Boolean(run && (executionLocked(run) || run.tools.some(tool => tool.status !== 'completed') ||
     run.executionState === 'active' || run.executionState === 'unknown'));
@@ -103,15 +118,15 @@ export function draftKey(profile: string, workspaceId: string | null, conversati
     ? `buildr.agent-conversation.draft:${encodeURIComponent(profile)}:new`
     : `buildr.agent-conversation.draft:${encodeURIComponent(profile)}:${encodeURIComponent(workspaceId || 'unselected')}:${encodeURIComponent(conversationId)}`;
 }
-export function readDraft(key: string, storage: Pick<Storage, 'getItem'>): {text: string; taskId?: string; workspaceId?: string; available: boolean} {
+export function readDraft(key: string, storage: Pick<Storage, 'getItem'>): {text: string; taskId?: string; workspaceId?: string; taskLinks?:ConversationTaskLink[]; available: boolean} {
   try {
     const saved=storage.getItem(key)||'';
-    if(saved.startsWith('{')){const parsed=JSON.parse(saved);return {text:typeof parsed.text==='string'?parsed.text:'',taskId:typeof parsed.taskId==='string'&&parsed.taskId?parsed.taskId:undefined,...(typeof parsed.workspaceId==='string'&&parsed.workspaceId?{workspaceId:parsed.workspaceId}:{}),available:true};}
+    if(saved.startsWith('{')){const parsed=JSON.parse(saved);return {text:typeof parsed.text==='string'?parsed.text:'',taskId:typeof parsed.taskId==='string'&&parsed.taskId?parsed.taskId:undefined,...(typeof parsed.workspaceId==='string'&&parsed.workspaceId?{workspaceId:parsed.workspaceId}:{}),...(Array.isArray(parsed.taskLinks)?{taskLinks:parsed.taskLinks.filter((link:any)=>typeof link?.workspaceId==='string'&&typeof link?.taskId==='string')}:{}),available:true};}
     return { text: saved, taskId: undefined, available: true };
   } catch { return { text: '', taskId: undefined, available: false }; }
 }
-export function writeDraft(key: string, text: string, storage: Pick<Storage, 'setItem' | 'removeItem'>, taskId?: string, workspaceId?: string): boolean {
-  try { if (text || workspaceId) storage.setItem(key, taskId || workspaceId ? JSON.stringify({ text, taskId, workspaceId }) : text); else storage.removeItem(key); return true; } catch { return false; }
+export function writeDraft(key: string, text: string, storage: Pick<Storage, 'setItem' | 'removeItem'>, taskId?: string, workspaceId?: string,taskLinks?:ConversationTaskLink[]): boolean {
+  try { if (text || workspaceId) storage.setItem(key, taskId || workspaceId ? JSON.stringify({ text, taskId, workspaceId,taskLinks }) : text); else storage.removeItem(key); return true; } catch { return false; }
 }
 export function transferDraftText(source:string,target:string,read:(key:string)=>{text:string;taskId?:string},save:(key:string,text:string,taskId?:string)=>boolean):{text:string;taskId?:string;available:boolean} {
   const {text,taskId}=read(source);
@@ -177,25 +192,36 @@ export function participantExecutionPairs(conversation:ConversationView|null):Ar
 
 // The visible stream interleaves conversation entries with per-run process blocks.
 export type ConversationStreamItem = {type:'entry';entry:ConversationEntry}|{type:'process-block';entries:ConversationEntry[];active:boolean;finishedAt?:string};
+/** Input admission and native execution completion are separate facts. */
+export function conversationRunSettled(run?:ConversationRun):boolean {
+  return !run||['completed','stopped','failed'].includes(run.status)&&
+    run.executionState!=='active'&&run.executionState!=='unknown'&&
+    !(run.tools??[]).some(tool=>tool.status!=='completed');
+}
 /** Legacy records have no message phase: the last assistant message of a settled
  * run is its visible reply, regardless of length. Never promote live narration. */
-export function groupConversationStream(entries:readonly ConversationEntry[],currentRun?:ConversationRun):ConversationStreamItem[] {
-  const items:ConversationStreamItem[]=[];
-  const isProcess=(entry:ConversationEntry)=>entry.kind==='tool'||entry.kind==='message'&&entry.role==='assistant';
-  const finals=new Map<string,ConversationEntry>(),keys=new Map<ConversationEntry,string>();let legacy=0;
+export function finalConversationReplyIds(entries:readonly ConversationEntry[],runs:readonly ConversationRun[]=[]):Set<string> {
+  const known=new Map(runs.map(run=>[run.id,run])),finals=new Map<string,string>();let legacy=0;
   for(const entry of entries){
     if(!entry.runId&&entry.kind==='message'&&entry.role==='user')legacy++;
-    const key=entry.runId||'legacy:'+legacy;keys.set(entry,key);
-    if(entry.kind==='message'&&entry.role==='assistant'&&!entry.parentToolId&&!(entry.runId===currentRun?.id&&executionLocked(currentRun)))finals.set(key,entry);
+    if(entry.kind!=='message'||entry.role!=='assistant'||entry.parentToolId||entry.thinking)continue;
+    const key=entry.runId||'legacy:'+legacy;
+    finals.set(key,entry.status==='running'||!conversationRunSettled(entry.runId?known.get(entry.runId):undefined)?'':entry.id);
   }
+  return new Set([...finals.values()].filter(Boolean));
+}
+export function groupConversationStream(entries:readonly ConversationEntry[],currentRun?:ConversationRun,retainedRuns:readonly ConversationRun[]=[]):ConversationStreamItem[] {
+  const items:ConversationStreamItem[]=[];
+  const runs=[...retainedRuns,...(currentRun?[currentRun]:[])],known=new Map(runs.map(run=>[run.id,run]));
+  const finals=finalConversationReplyIds(entries,runs);
+  const isProcess=(entry:ConversationEntry)=>entry.kind==='tool'||entry.kind==='message'&&entry.role==='assistant';
   for(let index=0;index<entries.length;){
     const first=entries[index];
     if(!isProcess(first)){items.push({type:'entry',entry:first});index++;continue;}
     const run:ConversationEntry[]=[];
     while(index<entries.length&&isProcess(entries[index])&&entries[index].runId===first.runId)run.push(entries[index++]);
-    const active=Boolean(currentRun&&currentRun.id===first.runId&&executionLocked(currentRun));
-    const candidate=finals.get(keys.get(first)!);
-    const result=active?undefined:run.find(entry=>entry===candidate);
+    const active=!conversationRunSettled(first.runId?known.get(first.runId):undefined);
+    const result=active?undefined:run.find(entry=>finals.has(entry.id));
     const process=result?run.filter(entry=>entry!==result):run;
     if(process.length)items.push({type:'process-block',entries:process,active,finishedAt:result?.createdAt});
     if(result)items.push({type:'entry',entry:result});
@@ -203,18 +229,35 @@ export function groupConversationStream(entries:readonly ConversationEntry[],cur
   return items;
 }
 export type ConversationTurnItems={key:string;prompt?:ConversationEntry;items:ConversationStreamItem[]};
+/** Time the entire owned turn, including a final answer and an unsettled process block. */
+export function conversationTurnTiming(turn:ConversationTurnItems,runs:readonly ConversationRun[]=[]):{startedAt?:string;finishedAt?:string}{
+  const entries=[...(turn.prompt?[turn.prompt]:[]),...turn.items.flatMap(item=>item.type==='entry'?[item.entry]:item.entries)];
+  const runId=turn.prompt?.runId??entries.find(entry=>entry.runId)?.runId;
+  const run=runs.find(value=>value.id===runId);
+  const owned=runId?entries.filter(entry=>entry.runId===runId):entries;
+  const times=[...owned.map(entry=>entry.createdAt),...(run?[run.updatedAt]:[])].filter(value=>Number.isFinite(Date.parse(value)));
+  return {startedAt:run?.startedAt??turn.prompt?.createdAt??owned[0]?.createdAt,finishedAt:times.sort((a,b)=>Date.parse(a)-Date.parse(b)).at(-1)};
+}
 export function conversationStreamTurns(items:readonly ConversationStreamItem[]):ConversationTurnItems[]{
   const turns:ConversationTurnItems[]=[], owners=new Map<string,ConversationTurnItems>();
   for(const item of items){
     const entry=item.type==='entry'?item.entry:item.entries[0];
-    if(item.type==='entry'&&entry.kind==='message'&&entry.role==='user'){
+    const inputOwner=entry.runId?owners.get(entry.runId):undefined;
+    const sameExecution=inputOwner&&(inputOwner.prompt?inputOwner.prompt.runId===entry.runId:
+      inputOwner.key==='run:'+entry.runId||inputOwner.key==='history:'+entry.runId||inputOwner.items.some(value=>value.type==='process-block'&&value.entries[0].runId===entry.runId));
+    if(item.type==='entry'&&entry.kind==='message'&&entry.role==='user'&&!sameExecution){
       const turn={key:entry.id,prompt:entry,items:[]};turns.push(turn);
-      // Supplementary inputs in the same execution start a new visible segment.
+      // Only the first input owns the turn header; later inputs stay in its body.
       if(entry.runId)owners.set(entry.runId,turn);
     }else{
       if(!turns.length)turns.push({key:'earlier',items:[]});
       let owner=entry.runId?owners.get(entry.runId):undefined;
-      if(!owner&&item.type==='process-block'&&entry.runId&&turns.at(-1)!.prompt?.runId&&entry.runId!==turns.at(-1)!.prompt!.runId){
+      if(!owner&&entry.kind==='notice'&&entry.runId){
+        owner={key:'run:'+entry.runId,items:[]};turns.push(owner);owners.set(entry.runId,owner);
+      }
+      const latest=turns.at(-1)!,latestItem=latest.items.at(-1);
+      const latestRun=latest.prompt?.runId??(latestItem?.type==='entry'?latestItem.entry.runId:latestItem?.entries[0]?.runId);
+      if(!owner&&(item.type==='process-block'||entry.kind==='message')&&entry.runId&&latestRun&&entry.runId!==latestRun){
         // A replayed result may precede the loaded history page. It cannot belong
         // to the latest input merely because it was projected later.
         owner={key:'history:'+entry.runId,items:[]};turns.unshift(owner);
@@ -242,9 +285,10 @@ export function conversationStreamTurns(items:readonly ConversationStreamItem[])
 export function conversationTurnExecution(turn:ConversationTurnItems,run?:ConversationRun):{current:boolean;active:boolean;waiting?:string}{
   const entries=[...(turn.prompt?[turn.prompt]:[]),...turn.items.flatMap(item=>item.type==='entry'?[item.entry]:item.entries)];
   const current=Boolean(run&&entries.some(entry=>entry.runId===run.id));
-  const active=current&&Boolean(run&&['starting','running'].includes(run.status));
+  const background=run?.status==='tools-active'&&!run.resourcesReleased&&(run.executionState==='active'||(run.tools??[]).some(tool=>tool.status==='running'));
+  const active=current&&Boolean(run&&(['starting','running'].includes(run.status)||background));
   const responded=Boolean(run&&entries.some(entry=>entry.runId===run.id&&(entry.role==='assistant'||entry.kind==='tool')));
-  return {current,active,...(active&&!responded?{waiting:run?.accepted?'已送达，等待智能体回应…':'正在准备连接并确认指令送达…'}:{})};
+  return {current,active,...(active&&background?{waiting:'模型已结束，后台作业仍在运行'}:active&&!responded?{waiting:run?.accepted?'已送达，等待智能体回应…':'正在准备连接并确认指令送达…'}:{})};
 }
 export function toolEntryHeadline(entry:ConversationEntry):string {
   return entry.text.split('\n',1)[0].trim();

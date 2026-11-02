@@ -19,11 +19,17 @@ export function expected(actual: string, supplied: unknown): void {
   if (actual !== supplied) fail('agent_revision_conflict', '内容已变化，请刷新后重试。', 409);
 }
 export function safeDiagnostic(error: unknown): string {
+  if(error instanceof Error&&error.message==='qoder_sdk_worker_removed')return 'Qoder 程序与接入库不配套，工作会话启动被拒绝，本次输入尚未送达。请通过配套升级修复接入。';
+  if(error instanceof Error&&error.message==='qoder_initialization_failed')return 'Qoder 工作会话启动失败，本次输入尚未送达，原输入已保留。';
   // Do not expose raw vendor errors, which can contain headers, URLs or credentials.
   if (error instanceof AgentServiceError || error instanceof ModelAccessError) return error.message;
   if (error instanceof NativeRequestError) return error.diagnostic;
   const code = error instanceof Error ? error.message.split(':')[0] : '';
   const messages: Record<string, string> = {
+    qoder_sdk_pair_mismatch: 'Qoder 程序与配套接入库版本不一致，已保留原接入。',
+    qoder_sdk_pair_required: '当前 Qoder 程序缺少配套接入库，已保留原接入。',
+    qoder_upgrade_conversation_failed: 'Qoder 新版未通过对话验证，已保留旧版接入。',
+    dsh_goal_pause_unconfirmed: '尚未确认旧目标自动续行已暂停，本次新输入未送达，原内容已保留。',
     qoder_platform_login_required: 'Qoder 程序需要先完成基础平台登录；不要求购买或选择 Qoder 模型套餐。',
     qoder_platform_login_expired: qoderLoginExpiredMessage,
     qoder_platform_auth_unavailable: 'Qoder 账号检查未完成，请检查网络或程序连接后重试；当前不能确定登录是否失效。',
@@ -63,6 +69,7 @@ export interface StoredConnection {
 }
 export interface StoredParticipant {
   historical?: boolean;
+  participationContext?: {id:string; configuredAt:string; instruction:import('../participation-contracts.ts').ParticipationMatch};
   modelAccountId?: string; modelAccountIdentity?: string; modelId?: string; serviceTier?:string;modelConfiguration?:string;
   id: string;
   connectionId: string;
@@ -73,6 +80,8 @@ export interface StoredParticipant {
   deliveredThrough: number;
 }
 export interface StoredConversation {
+  /** Optional metadata keyed by original tool id; public legacy entry DTOs stay unchanged. */
+  participationTools?: Record<string,import('../participation-contracts.ts').ParticipationObservation & {entryRevision?:string}>;
   forkRequest?: { digest: string; clientRequestId: string };
   /** Immutable, visible source records, separate from this conversation's own messages. */
   inheritedContext?: {
@@ -83,8 +92,8 @@ export interface StoredConversation {
   initialDraft?: { id: string; requestId: string; digest: string };
   view: ConversationView;
   hostScope?: import('../execution-contracts.ts').ExecutionScope;
-  interruption?: { runId: string; awaitingUser: boolean; reason?: 'transport'; attempted?: boolean; cancelled?: boolean };
-  runOutcomes?: Record<string,Pick<RunView,'status'|'diagnostic'|'model'|'provider'|'updatedAt'>>;
+  interruption?: { runId: string; awaitingUser: boolean; reason?: 'transport' | 'execution-fault'; attempted?: boolean; cancelled?: boolean };
+  runOutcomes?: Record<string,Pick<RunView,'status'|'diagnostic'|'model'|'provider'|'contextUsage'|'updatedAt'> & {generation?:string}>;
   titleOrigin?: 'default' | 'generated' | 'manual';
   titleAttempted?: boolean;
   earlyTitleAttempted?: boolean;
@@ -96,14 +105,20 @@ export interface StoredConversation {
   attempts: Array<{
     clientRequestId: string;
     inputDigest: string;
+    participation?: import('../participation-contracts.ts').ParticipationInput;
     runId: string;
     participantId: string;
     through: number;
     userEntryId: string;
     executionRef?: ExecutionRef;
+    /** Exact execution whose durable terminal evidence was reconciled, not model text. */
+    persistedEnd?: string;
     nativeInputItemId?: string;
     accepted: boolean;
     supplement?: boolean;
+    /** Stable independently admitted request after a proven non-delivery to an ended round. */
+    continuedBy?: string;
+    supersededStopRequested?: boolean;
     automaticRetry?: { rootRunId: string; count: number };
     continuationOf?: string;
   }>;

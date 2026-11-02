@@ -34,6 +34,7 @@ export function normalizedCommandSignature(command: any): any  {
 export interface CommandsDependencies {
   workspaceSymlinkSegment: typeof import('../../../infrastructure/filesystem/workspace-path.ts').workspaceSymlinkSegment;
   componentOwnerForMember: ReturnType<typeof import('./components.ts').registerDomainsComponents>['componentOwnerForMember'];
+  sharedCommandCollections?: ReturnType<typeof import('./components.ts').registerDomainsComponents>['sharedCommandCollections'];
   isValidAssetId: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['isValidAssetId'];
   assertName: ReturnType<typeof import('./runtime.ts').registerDomainsRuntime>['assertName'];
   normalizeRelativePathForBuildr: ReturnType<typeof import('./skills.ts').registerDomainsSkills>['normalizeRelativePathForBuildr'];
@@ -70,12 +71,13 @@ export function registerDomainsCommands(dependencies: CommandsDependencies) {
 
   const {
     commandsManifestPath, projectCommandsPath,
-    listCommandsManifestPaths, parseCommandsManifestYaml,
+    listCommandsManifestPaths, commandManifestSource, parseCommandsManifestYaml,
     parseProjectCommandsYaml, validateProjectCommandsDocument, renderProjectCommandsYaml,
     validateCommandsManifest, renderCommandsManifestYaml, readCommandsManifestForWrite, writeCommandsManifest,
   } = createCommandManifestRepository({
     atomicWriteFile, existsDirectory, existsFile, isValidAssetId, normalizeRelativePathForBuildr,
     parseYamlDocument, quoteYaml, toPosixRelative, workspaceSymlinkSegment,
+    sharedCommandCollections: dependencies.sharedCommandCollections,
   });
 
 
@@ -243,7 +245,7 @@ export function registerDomainsCommands(dependencies: CommandsDependencies) {
     const removed: any = new Set(removedManifestPaths.map((file: any) => path.resolve(file)));
     const remaining = listCommandsManifestPaths(targetRoot).filter((file: any) => !removed.has(path.resolve(file))).some((file: any) => {
       try {
-        const manifest = parseCommandsManifestYaml(fs.readFileSync(file, 'utf8'));
+        const manifest = parseCommandsManifestYaml(fs.readFileSync(commandManifestSource(targetRoot, file), 'utf8'));
         return validateCommandsManifest(manifest).length === 0 && manifest.commands.some((command: any) => command.id === commandId && command.enabled !== false && command.state !== 'uninstalled');
       } catch {
         return false;
@@ -258,9 +260,10 @@ export function registerDomainsCommands(dependencies: CommandsDependencies) {
     }
     for (const record of records.filter((item: any) => item.id === commandId)) blockers.push({ kind: 'project', project: record.project, path: record.source });
     for (const file of removed) {
-      if (!existsFile(file)) continue;
       try {
-        const manifest = parseCommandsManifestYaml(fs.readFileSync(file, 'utf8'));
+        const source = commandManifestSource(targetRoot, file);
+        if (!existsFile(source)) continue;
+        const manifest = parseCommandsManifestYaml(fs.readFileSync(source, 'utf8'));
         for (const command of manifest.commands.filter((item: any) => item.id === commandId && (item.required !== undefined || item.version?.constraint))) {
           blockers.push({ kind: 'workspace-default', path: toPosixRelative(targetRoot, file) });
         }
@@ -314,7 +317,9 @@ export function registerDomainsCommands(dependencies: CommandsDependencies) {
       const record: any = { path: relative, exists: true, valid: false, schemaVersion: null, commandCount: 0 };
       result.manifests.push(record);
       try {
-        const manifest = parseCommandsManifestYaml(fs.readFileSync(manifestPath, 'utf8'));
+        const source = commandManifestSource(targetRoot, manifestPath);
+        record.source = source;
+        const manifest = parseCommandsManifestYaml(fs.readFileSync(source, 'utf8'));
         record.schemaVersion = manifest.schemaVersion;
         const validationErrors = validateCommandsManifest(manifest);
         if (validationErrors.length) {

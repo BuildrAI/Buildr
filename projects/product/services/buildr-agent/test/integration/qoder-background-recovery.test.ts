@@ -29,6 +29,30 @@ async function fixture() {
   return { root, executable, open };
 }
 
+test('Qoder normal completion survives automatic source release and reopening without replay', { timeout: 15000 }, async () => {
+  const { root, executable, open } = await fixture(), service = open();
+  let reader: ReturnType<typeof open> | undefined;
+  try {
+    await service.connections.connect('qoder', { expectedRevision: 'unconfigured', executable });
+    const added = await service.models.accounts.add({ provider: 'fixture' }), checked = await service.models.accounts.check(added.id);
+    await service.models.accounts.preferences(added.id, { expectedRevision: checked.revision, models: [{ id: 'fixture-model', enabled: true }] });
+    const chat = await service.conversations.create('workspace', {});
+    const draft = { expectedRevision: chat.revision, connectionId: 'qoder', modelAccountId: added.id, model: 'fixture-model', text: 'one' };
+    const preview = service.conversations.prepareSend('workspace', chat.id, draft);
+    service.conversations.send('workspace', chat.id, { ...draft, previewToken: preview.token, clientRequestId: randomUUID() });
+    const final = await until(() => service.conversations.read('workspace', chat.id), value => value.run?.resourcesReleased === true);
+    assert.equal(final.run!.status, 'completed');
+    assert.equal(final.run!.executionState, 'ended');
+    assert.equal(final.run!.diagnostic, undefined);
+    await service.close(); reader = open();
+    const reopened = await reader.conversations.observe('workspace', chat.id);
+    assert.equal(reopened.run!.status, 'completed');
+    assert.equal(reopened.run!.updatedAt, final.run!.updatedAt, 'reading historical output cannot restart or extend the clock');
+    const inputs = (await readFile(join(root, 'agent-service/connections/qoder/qoder-config/native-inputs.jsonl'), 'utf8')).trim().split('\n');
+    assert.equal(inputs.length, 1);
+  } finally { await reader?.close(); await service.close(); await rm(root, { recursive: true, force: true }); }
+});
+
 test('Qoder native background continuation converges through conversation storage and automatic exact resource release', { timeout: 15000 }, async () => {
   const { root, executable, open } = await fixture(), service = open();
   try {

@@ -1,13 +1,23 @@
+import { mergeParticipation, instructionParticipation, applyParticipationSources, participationSource, validParticipationSource, normalizeParticipation, participationGaps, PARTICIPATION_LIMITS } from '../domain/participation.ts';
+import { singleParticipation, summarizeParticipation } from '../domain/participation-record.ts';
+import type { ParticipationInput, ParticipationSummaryInput, ParticipationMatch } from '../participation-contracts.ts';
+import { NativeObservationError } from '../domain/error-diagnostic.ts';
+import { pendingConversationSummary } from '../domain/pending-summary.ts';
+import {conversationTaskLinks,setConversationTaskLinks,sameTaskLink} from '../domain/conversation-task-links.ts';
+import type {ConversationTaskLink} from '../contracts.ts';
+import { presentedFilesForEntry, normalizePresentedFiles } from '../domain/presented-files.ts';
+import { modelLeaseIdentity } from '../model-access/model-preferences.ts';
 import {ConversationWarmups,CONNECTION_IDLE_MS,type PreparedSource} from './conversation-warmups.ts';
-import { answerAttachmentIds, resolveQuestionAnswer, questionAnswerDisplay } from '../domain/question-answer.ts';
+import { answerAttachmentIds, resolveQuestionAnswer, questionAnswerDisplay, normalizeQuestionCapabilities } from '../domain/question-answer.ts';
 import { normalizeSendDraft } from '../domain/send-draft.ts';
+import { reconcileLegacySupersededRuns } from '../domain/superseded-runs.ts';
 import { blocksExecution } from '../domain/interaction-policy.ts';
 import { ConversationAttachments, MAX_IMAGE_BYTES, MAX_VISUAL_INPUTS } from './conversation-attachments.ts';
 import type { AttachmentInput } from '../contracts.ts';
 import { continuationDraft, releasedContinuation } from '../domain/conversation-continuation.ts';
 import { waitingHandoffQuestions, waitingQuestionText } from '../domain/waiting-question-handoff.ts';
 import { ConversationReadModel, type ConversationReadState } from '../persistence/conversation-read-model.ts';
-import { RETRY_DELAYS, transientFailure } from '../domain/transient-failure.ts';
+import { LOCAL_CREDENTIAL_RETRIES, RETRY_DELAYS, localCredentialFailure, transientFailure } from '../domain/transient-failure.ts';
 import { NativeRequestError } from '../domain/error-diagnostic.ts';
 import {selectedOffering,modelConfiguration} from '../model-access/model-preferences.ts';
 import type {ModelOffering} from '../model-access/contracts.ts';
@@ -17,15 +27,15 @@ import { qoderLoginExpiredMessage } from '../model-access/providers/qoder-auth.t
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { ExecutorInputRejected } from '../contracts.ts';
 import type { AgentRuntime, AgentServiceOptions, ConversationEntry, ConversationView, ExecutorEvent, ExecutorImage, ExecutorItem, ExecutorObservation, RunView, SendDraft, SendPreview } from '../contracts.ts';
 import { AgentServiceError, BUSY_STATES, conversationRuns, unfinishedRun, expected, fail, nonempty, safeDiagnostic } from '../domain/agent-state.ts';
 import type { StoredConversation, StoredParticipant } from '../domain/agent-state.ts';
 import type { ConversationRepository } from '../persistence/conversation-repository.ts';
 import type { ConnectionApplication } from './connection-application.ts';
 import type { ConversationEvents } from './conversation-events.ts';
-import {HANDOFF_PROMPT,HANDOFF_SUMMARY_PROMPT,handoffEntries,organizeHandoff,displayRounds,receivingBudget,formatHandoffRounds} from '../domain/handoff-material.ts';
+import {HANDOFF_PROMPT,handoffEntries,organizeHandoff,displayRounds,receivingBudget,formatHandoffRounds} from '../domain/handoff-material.ts';
 import {handoffSources} from './handoff-sources.ts';
-import { resolvePermissionMode } from '../domain/permission-mode.ts';
 import type { HostContext } from './host-context.ts';
 import { PendingSendRepository } from '../persistence/pending-send-repository.ts';
 import { ConversationSupplements } from './conversation-supplements.ts';
@@ -64,7 +74,7 @@ export class ConversationApplication {
       {kind:'title',count:this.titleWork.size + this.earlyTitles.size},
       {kind:'recovery',count:this.recoveries.size},
       {kind:'reply',count:this.repliesInFlight.size},
-      {kind:'observation',count:this.observations.size + this.releaseChecks.size},
+      {kind:'observation',count:this.observations.size + this.releaseChecks.size + this.supersededCleanups.size},
       {kind:'source-resource',count:this.sourceRuntimes.size},
       {kind:'prepared-resource',count:this.warmups.size},
       {kind:'fork',count:this.forks.active},
@@ -77,6 +87,7 @@ export class ConversationApplication {
   private readonly previewSecret = randomUUID();
   private readonly workers = new Map<string, Promise<void>>();
   private readonly observations = new Map<string, Promise<ConversationView>>();
+  private readonly supersededCleanups = new Map<string,Promise<void>>();
   private readonly repliesInFlight = new Set<string>();
   private readonly titleWork = new Map<string, AbortController>();
   private readonly earlyTitles = new Map<string, Promise<void>>();
@@ -96,13 +107,15 @@ export class ConversationApplication {
   private readonly recoveries = new Map<string, { runId?: string; work: Promise<void> }>();
   private readonly retryWaits = new Map<string, AbortController>();
   private readonly cancelledRetries = new Set<string>();
-  private readonly handoffPreviews = new Map<string,{baseToken:string;prepared:ReturnType<ConversationApplication['prepare']>}>();
   private readonly supplements: ConversationSupplements;
   private readonly media: ConversationAttachments;
   private readonly forks: ConversationForks;
   private readonly children: ConversationChildren;
+  private readonly participationWork = new Set<string>();
   private readonly options: {
+    backendChange?: AgentServiceOptions['backendChange'];
     conversationControl?: (scope:string,id:string)=>string;
+    controlSupersededRun?: AgentServiceOptions['controlSupersededRun'];
     repository: ConversationRepository;
     connections: ConnectionApplication;
     modelAccess?: ModelAccess;
@@ -113,6 +126,7 @@ export class ConversationApplication {
     host: HostContext;
     autoContinueInterrupted?: boolean;
     generationAlive?: (generation: string) => boolean;
+    generationReleased?: (generation: string) => boolean;
   };
   constructor(options: ConversationApplication['options']) {
     this.options = options;
@@ -140,6 +154,20 @@ export class ConversationApplication {
     });
     this.supplements = new ConversationSupplements({ generation: options.generation, now: options.now, closing: () => this.closing,
       load: (workspaceId, id) => this.load(workspaceId, id), save: record => this.save(record), view: record => this.view(record),
+      observe: (record, runId, observation) => {
+        const run = conversationRuns(record.view).find(value => value.id === runId);
+        if (run) { this.applyObservation(record, observation, run); this.save(record); }
+      },
+      continue: (record, input, requestId) => {
+        const run = record.view.run;
+        if (!run || run.id !== input.runId || run.stopRequested || !['completed','stopped'].includes(run.status) || record.view.requests.some(request => request.runId === run.id)) fail('agent_supplement_stale', '原执行已变化，输入已保留。', 409);
+        const participant = record.participants.find(value => value.id === run.participantId)!;
+        const draft: SendDraft = { expectedRevision: record.view.revision, connectionId: participant.connectionId,
+          model: run.model, modelAccountId: run.modelAccountId, modelAccountIdentity: run.modelAccountIdentity, serviceTier: run.serviceTier,
+          reasoningEffort: run.reasoningEffort, permissionMode: run.permissionMode ?? 'default', text: input.text, attachmentIds: input.attachmentIds };
+        const prepared = this.prepare(record, draft);
+        return this.submit(record, { ...draft, previewToken: prepared.preview.token, clientRequestId: requestId }).conversation;
+      },
       runtime: async (record, participant) => {
         if (!options.connections.get(participant.connectionId).enabled) fail('agent_connection_disabled', '接入已断开，输入已保留。', 409);
         return (await this.sourceRuntime(record, participant)).runtime;
@@ -186,6 +214,31 @@ export class ConversationApplication {
       ...(lease.provider === 'native-qoder' && participant.connectionId === 'qoder' ? { nativeModel: { provider: 'qoder' as const, id: participant.modelId!, accountIdentity: participant.modelAccountIdentity! } } : {}),
       models: [{id: lease.model, label: lease.offering.label, isDefault: true, reasoningEfforts: lease.offering.reasoningEfforts, defaultReasoningEffort: lease.offering.defaultReasoningEffort, contextWindow: lease.offering.contextWindow, maxOutputTokens: lease.offering.maxOutputTokens, vision: lease.offering.images, tools: lease.offering.tools}] });return {runtime,model:lease.model,leaseIdentity:lease.identity};}
     catch(error){access.leases.release(lease.identity);throw error;}
+  }
+  /** A process keeps the gateway key it started with, so a rejected key is only replaced
+   *  by releasing this participant's source. Returns false when release is unconfirmed. */
+  private async retireSource(participantId:string):Promise<boolean> {
+    const pending = this.sourceRuntimes.get(participantId);
+    if (!pending) return true;
+    const source = await pending.catch(() => undefined);
+    if (!source) {
+      if (this.sourceRuntimes.get(participantId) === pending) {
+        this.sourceRuntimes.delete(participantId); this.sourceOwners.delete(participantId); this.sourceConnections.delete(participantId);
+        const failedSlot = this.sourceSlots.get(participantId); if (failedSlot) this.warmups.unclaim(failedSlot); this.sourceSlots.delete(participantId);
+      }
+      return true;
+    }
+    const releasing = this.sourceReleases.get(source.runtime); if (releasing) await releasing.catch(() => {});
+    const pendingRelease = this.sourceReleasePending.get(source.runtime);
+    if (pendingRelease && !await pendingRelease().catch(() => false)) return false;
+    try { await this.options.connections.releaseGatewayRuntime(source.runtime); }
+    catch { return false; }
+    if (source.leaseIdentity) this.options.modelAccess?.leases.release(source.leaseIdentity);
+    if (this.sourceRuntimes.get(participantId) === pending) {
+      this.sourceRuntimes.delete(participantId); this.sourceOwners.delete(participantId); this.sourceConnections.delete(participantId);
+      const slot = this.sourceSlots.get(participantId); if (slot) this.warmups.unclaim(slot); this.sourceSlots.delete(participantId);
+    }
+    return true;
   }
   private warmSlot(record:StoredConversation,participant:StoredParticipant) {
     return hash([record.view.workspaceId,record.view.id,participant.connectionId,participant.modelAccountId,participant.modelAccountIdentity,participant.modelId,participant.modelConfiguration,participant.serviceTier]);
@@ -256,7 +309,7 @@ export class ConversationApplication {
       for (const [runtime,members] of groups) {
         if(this.sourceReleasePending.has(runtime))continue;
         if(owner&&!members.some(({id})=>{const held=this.sourceOwners.get(id);return held?.workspaceId===owner.workspaceId&&held.id===owner.id;}))continue;
-        const candidates:Array<{id:string;source:Promise<{runtime:AgentRuntime;model:string;leaseIdentity?:string}>;workspaceId:string;conversationId:string;runId:string;leaseIdentity?:string;proof?:()=>Promise<boolean|{executionState:'ended'|'unknown'}>}>=[];
+        const candidates:Array<{id:string;source:Promise<{runtime:AgentRuntime;model:string;leaseIdentity?:string}>;workspaceId:string;conversationId:string;runId:string;leaseIdentity?:string;proof?:()=>Promise<boolean|{executionState:'ended'|'unknown'}>;prepare?:()=>Promise<boolean|{executionState:'ended'|'unknown'}>}>=[];
         let safe=true;
         for(const member of members){
           const held=this.sourceOwners.get(member.id);
@@ -277,8 +330,18 @@ export class ConversationApplication {
           // Only its exact accepted native attempt can prove physical release.
           const settled=Boolean(run && (run.resourcesReleased||!this.busy(held.workspaceId,held.id)));
           if(!run&&!attempt?.accepted){safe=false;break;}
+          const cancelledUnaccepted=run?.generation===this.options.generation && run.accepted===false && !attempt?.executionRef && (run.stopRequested||record.interruption?.runId===run.id && record.interruption.cancelled) && !run.tools.length && participant?.contextRef && runtime.releaseUnaccepted;
+          if(cancelledUnaccepted){
+            const proof=()=>runtime.releaseUnaccepted!({contextRef:participant!.contextRef!,clientRequestId:attempt!.clientRequestId}).catch(()=>false);
+            if(!attempt){safe=false;break;}
+            candidates.push({...member,workspaceId:held.workspaceId,conversationId:held.id,runId,prepare:proof,proof});continue;
+          }
           const exactProof=participant?.contextRef&&attempt?.executionRef&&runtime.canRelease;
-          if(exactProof?!await runtime.canRelease!({contextRef:participant!.contextRef!,executionRef:attempt!.executionRef!}).catch(()=>false):!settled){safe=false;break;}
+          const releaseInput=exactProof?{contextRef:participant!.contextRef!,executionRef:attempt!.executionRef!}:undefined;
+          // A native SDK can retain an idle daemon until its runtime is closed.
+          // Logical quiescence permits that close, never substitutes for the
+          // physical group proof below. Legacy executors keep their old check.
+          if(exactProof?!await (runtime.prepareRelease?runtime.prepareRelease(releaseInput!):runtime.canRelease!(releaseInput!)).catch(()=>false):!settled){safe=false;break;}
           candidates.push({...member,workspaceId:held.workspaceId,conversationId:held.id,runId,...(exactProof?{proof:()=>runtime.canRelease!({contextRef:participant!.contextRef!,executionRef:attempt!.executionRef!}).catch(()=>false)}:{})});
         }
         if(!safe || this.forks.active)continue;
@@ -286,6 +349,7 @@ export class ConversationApplication {
         if(this.forks.active || candidates.some(value=>value.leaseIdentity&&this.options.modelAccess?.leases.hasActiveRequests(value.leaseIdentity)||this.sourceRuntimes.get(value.id)!==value.source||this.sourceExecution(this.load(value.workspaceId,value.conversationId),value.id).id!==value.runId||this.workers.has(value.runId)||this.observations.has(`${value.workspaceId}/${value.conversationId}`)||this.recoveries.has(`${value.workspaceId}/${value.conversationId}`)||this.earlyTitles.has(value.conversationId)||this.titleWork.has(value.conversationId)||this.load(value.workspaceId,value.conversationId).view.requests.some(request=>request.participantId===value.id))||this.supplements.size||this.repliesInFlight.size)continue;
         const finish=async()=>{
           if(candidates.some(value=>value.leaseIdentity&&this.options.modelAccess?.leases.hasActiveRequests(value.leaseIdentity)))return false;
+          for(const value of candidates)if(value.prepare&&!await value.prepare())return false;
           await this.options.connections.releaseGatewayRuntime(runtime);
           const facts=new Map<string,'ended'|'unknown'>();
           for(const value of candidates){const proof=value.proof?await value.proof():true;if(!proof)return false;facts.set(value.id,proof===true?'ended':proof.executionState);}
@@ -296,13 +360,18 @@ export class ConversationApplication {
             const record=this.load(value.workspaceId,value.conversationId),run=conversationRuns(record.view).find(run=>run.id===value.runId);
             if(!run||run.id!==value.runId||run.participantId!==value.id||run.generation!==this.options.generation)continue;
             const newlyReleased=!run.resourcesReleased;
+            const executionEnded=run.executionState==='ended'&&!unfinishedRun(run);
             run.executionState=run.executionState==='ended'?'ended':facts.get(value.id)!;run.resourcesReleased=true;
-            if(BUSY_STATES.has(run.status)){
+            if(run.accepted===false && !record.attempts.find(attempt=>attempt.runId===run.id)?.executionRef && (run.stopRequested||record.interruption?.runId===run.id && record.interruption.cancelled) && !run.tools.length){
+              run.status='stopped';run.canContinue=false;
+              run.diagnostic='已停止本轮接续并释放后台连接；原输入是否送达仍未知，已有操作结果保留，不会重发。';
+            }else if(BUSY_STATES.has(run.status)){
               run.status='unknown';run.interrupted=true;
               run.diagnostic=run.executionState==='ended'?'原执行已结束、后台资源已释放；操作结果仍待核对，不会自动重发。':'原生控制资源已释放；独立命令及操作结果仍待核对，不会自动重发。';
               run.tools=run.tools.map(tool=>tool.status==='running'?{...tool,status:'unknown',canStop:false}:tool);
             }
-            run.updatedAt=this.options.now();this.save(record);
+            // Resource bookkeeping is not additional execution time.
+            if(!executionEnded)run.updatedAt=this.options.now();this.save(record);
             if(newlyReleased && record.view.run?.id===run.id && record.interruption?.runId===run.id && !record.interruption.cancelled && !record.interruption.attempted && this.options.autoContinueInterrupted && !this.closing) {
               queueMicrotask(()=>{void this.recoverOne(value.workspaceId,value.conversationId).catch(()=>{});});
             }
@@ -345,9 +414,13 @@ export class ConversationApplication {
     const record = this.options.repository.readConversation(nonempty(id, '对话身份'));
     if (!record || record.view.workspaceId !== workspaceId) fail('agent_conversation_missing', '该工作空间中没有此对话。', 404);
     record.attachments ??= {};
+    setConversationTaskLinks(record.view,conversationTaskLinks(record.view));
+    normalizeQuestionCapabilities(record);
     return record;
   }
   private view(record: ConversationReadState, before?: number, limit?: number): ConversationView {
+    setConversationTaskLinks(record.view,conversationTaskLinks(record.view));
+    normalizeQuestionCapabilities(record);
     const entries = record.view.entries.filter(entry => before === undefined || entry.sequence < before);
     const count = limit === undefined ? undefined : bounded(limit, PAGE_SIZE, 200);
     let inferredRound = {id:'legacy:0'};
@@ -375,7 +448,18 @@ export class ConversationApplication {
     }
     // Historical tool output can be large; clone only the page that will be sent.
     const view = structuredClone({ ...record.view, entries: entries.slice(start), nextEntryCursor: start > 0 ? entries[start]!.sequence : record.view.nextEntryCursor });
-    view.requests = view.requests.filter(request => conversationRuns(view).some(run => request.runId === run.id && request.participantId === run.participantId && request.generation === run.generation));
+    view.entries=view.entries.map(entry=>{
+      // Legacy compact projections may omit a large present invocation. Read only
+      // this exact tool revision; never replay the native tool or rewrite history.
+      let source=entry;
+      if(entry.kind==='tool'&&entry.provider==='dsh'&&entry.name==='present'&&entry.status==='completed'&&entry.detail&&!entry.input&&!entry.presentedFiles){
+        source=this.options.repository.readEntry(view.id,entry.id,entry.detail.revision)??entry;
+      }
+      const presentedFiles=presentedFilesForEntry(source);
+      const result={...entry};delete result.presentedFiles;
+      return presentedFiles.length?{...result,presentedFiles}:result;
+    });
+    view.requests = view.requests.filter(request => conversationRuns(view).some(run => !run.supersededBy && request.runId === run.id && request.participantId === run.participantId && request.generation === run.generation));
     view.attachmentRevision = hash(record.attachments ?? {});
     view.titleState??={status:'unknown'};
     view.participants = record.participants.map(participant => ({
@@ -390,7 +474,7 @@ export class ConversationApplication {
   }
   private save(record: StoredConversation, initial = false): void {
     if(record.view.run?.status==='completed'){record.view.run.interrupted=undefined;delete record.interruption;}
-    for(const observed of conversationRuns(record.view))if(['completed','failed','stopped','unknown','tools-active'].includes(observed.status)){record.runOutcomes??={};record.runOutcomes[observed.id]={status:observed.status,diagnostic:observed.diagnostic,model:observed.model,provider:observed.provider,updatedAt:observed.updatedAt};}
+    for(const observed of conversationRuns(record.view))if(['completed','failed','stopped','unknown','tools-active'].includes(observed.status)){record.runOutcomes??={};record.runOutcomes[observed.id]={status:observed.status,diagnostic:observed.diagnostic,model:observed.model,provider:observed.provider,contextUsage:observed.contextUsage,generation:observed.generation,updatedAt:observed.updatedAt};}
     const prior = record.view.revision;
     record.view.revision = randomUUID(); record.view.updatedAt = this.options.now();
     this.options.repository.saveConversation(record, initial ? undefined : prior);
@@ -418,16 +502,26 @@ export class ConversationApplication {
     if(!current)fail('agent_conversation_missing','该工作空间中没有此对话。',404);
     return [current.revision,current.seenThrough,this.pendingSends.read(workspaceId,id)?.revision].join(':');
   }
-  list(workspaceId: string, input: { taskId?: string; cursor?: string; limit?: number; hidden?: boolean; query?: string } = {}): { conversations: ConversationView[]; nextCursor?: string } {
+  list(workspaceId: string, input: { taskId?: string; workspaceIds?:string[]; cursor?: string; limit?: number; hidden?: boolean; query?: string } = {}): { conversations: ConversationView[]; nextCursor?: string } {
     const limit = bounded(input.limit, 30, 100);
-    const records = this.options.repository.listConversations(workspaceId, { taskId: input.taskId, before: input.cursor, limit: limit + 1, includeHidden: input.hidden, query: input.query?.trim().slice(0, 200) });
+    const records = this.options.repository.listConversations(workspaceId, { taskId: input.taskId, workspaceIds:input.workspaceIds, before: input.cursor, limit: limit + 1, includeHidden: input.hidden, query: input.query?.trim().slice(0, 200) });
     const chosen = records.slice(0, limit);
     return { conversations: chosen.map(record => ({ ...this.view(record, undefined, 1), entries: [] })), nextCursor: records.length > limit ? `${chosen.at(-1)!.view.updatedAt}/${chosen.at(-1)!.view.id}` : undefined };
+  }
+  participation(workspaceId:string,id:string,input:{runId:string}) {
+    if(!input || Object.keys(input).some(key=>key!=='runId') || typeof input.runId!=='string')fail('agent_participation_query_invalid','需要准确runId。');
+    return singleParticipation(this.load(workspaceId,id),input.runId);
+  }
+  async participationSummary(workspaceId:string,input:ParticipationSummaryInput={}) {
+    await this.options.host.resolve(workspaceId);
+    const {projections,incomplete}=this.options.repository.participationProjections(workspaceId);
+    return summarizeParticipation(workspaceId,projections,input,this.options.now(),incomplete);
   }
   lookupRequest(workspaceId:string,id:string,clientRequestId:string) {
     const record=this.load(workspaceId,id),attempt=record.attempts.find(value=>value.clientRequestId===clientRequestId);
     return attempt ? {found:true,runId:attempt.runId,accepted:attempt.accepted,conversation:this.view(record)} : {found:false};
   }
+  pendingSummary() { return { conversations: this.options.repository.listPendingStates().map(record => pendingConversationSummary(this.view(record, undefined, 1))) }; }
   pending(): { conversations: ConversationView[] } { return { conversations: this.options.repository.listPendingStates().map(record => ({ ...this.view(record, undefined, 1), entries: [] })) }; }
   listAll(workspaceIds:string[],input:{workspaceId?:string;activeOnly?:boolean;hidden?:boolean;query?:string;agent?:string;model?:string;activityState?:string;cursor?:string;limit?:number}={}) {
     if(input.workspaceId&&!workspaceIds.includes(input.workspaceId))fail('agent_workspace_missing','工作空间未登记。',404);
@@ -452,7 +546,7 @@ export class ConversationApplication {
     const chosen=records.slice(0,limit);
     return {conversations:chosen.map(record=>({...this.view(record,undefined,1),entries:[]})),nextCursor:records.length>limit?`${chosen.at(-1)!.view.updatedAt}/${chosen.at(-1)!.view.id}`:undefined};
   }
-  async create(workspaceId: string, input: { cwd?: string; taskId?: string; title?: string }): Promise<ConversationView> {
+  async create(workspaceId: string, input: { cwd?: string; taskId?: string; taskLinks?:ConversationTaskLink[]; title?: string }): Promise<ConversationView> {
     const record = await this.candidate(workspaceId, input);
     this.options.repository.saveConversation(record);
     this.options.events.publish({ type: 'conversation', workspaceId, conversationId: record.view.id, revision: record.view.revision, payload: { conversation: this.view(record) } });
@@ -463,9 +557,10 @@ export class ConversationApplication {
       for (const owner of this.sourceOwners.values()) this.scheduleSourceRelease(owner.workspaceId, owner.id);
     });
   }
-  private async candidate(workspaceId: string, input: { cwd?: string; taskId?: string; title?: string }): Promise<StoredConversation> {
+  private async candidate(workspaceId: string, input: { cwd?: string; taskId?: string; taskLinks?:ConversationTaskLink[]; title?: string }): Promise<StoredConversation> {
     const workspace = await this.options.host.resolve(workspaceId);
-    if (input.taskId) await this.options.host.verify(workspaceId, nonempty(input.taskId, '任务身份'));
+    if(input.taskLinks!==undefined&&input.taskId!==undefined)fail('agent_input_invalid','不能同时提交 taskId 和 taskLinks。');
+    const links=await this.verifyTaskLinks(workspaceId,input.taskLinks??(input.taskId?[{workspaceId,taskId:input.taskId}]:[]));
     const selected = input.cwd ?? workspace.rootPath;
     if (!path.isAbsolute(selected)) fail('agent_cwd_invalid', '请选择准确的绝对工作目录。');
     let cwd: string;
@@ -475,14 +570,32 @@ export class ConversationApplication {
       id: randomUUID(), workspaceId, cwd, taskId: input.taskId, title: input.title ? nonempty(input.title, '对话标题', 160) : '新对话', titleState:{status:input.title?'manual':'pending'},
       revision: randomUUID(), hidden: false, updatedAt: this.options.now(), participants: [], entries: [], requests: [],
     }, hostScope: workspace, titleOrigin: input.title ? 'manual' : 'default', participants: [], sources: {}, attempts: [], requests: {}, attachments: {} };
+    setConversationTaskLinks(record.view,links);
     return record;
   }
-  async update(workspaceId: string, id: string, input: { expectedRevision: string; title?: string; hidden?: boolean; taskId?: string | null }): Promise<ConversationView> {
+  private async verifyTaskLinks(workspaceId:string,values:unknown,previous:ConversationTaskLink[]=[]):Promise<ConversationTaskLink[]> {
+    if(!Array.isArray(values)||values.length>100)fail('agent_input_invalid','任务关联必须为不超过100项的数组。');
+    const links:ConversationTaskLink[]=[];
+    for(const value of values){
+      if(!value||typeof value!=='object'||Array.isArray(value))fail('agent_input_invalid','任务引用无效。');
+      const link={workspaceId:nonempty(value.workspaceId,'任务工作空间'),taskId:nonempty(value.taskId,'任务身份')};
+      if(links.some(item=>sameTaskLink(item,link)))continue;
+      if(this.options.host.ref(workspaceId).sourceId!==this.options.host.ref(link.workspaceId).sourceId)fail('agent_input_invalid','不能跨宿主来源关联任务。');
+      if(!previous.some(item=>sameTaskLink(item,link)))await this.options.host.verify(link.workspaceId,link.taskId);
+      links.push(link);
+    }
+    return links;
+  }
+  async update(workspaceId: string, id: string, input: { expectedRevision: string; title?: string; hidden?: boolean; taskId?: string | null; taskIds?: string[]; taskLinks?:ConversationTaskLink[] }): Promise<ConversationView> {
     const record = this.load(workspaceId, id); expected(record.view.revision, input.expectedRevision);
     if (input.title !== undefined) { record.view.title = nonempty(input.title, '对话标题', 160); record.titleOrigin = 'manual'; record.view.titleState={status:'manual'}; }
-    if (input.taskId !== undefined) {
-      if (input.taskId === null) record.view.taskId = undefined;
-      else { const taskId = nonempty(input.taskId, '任务身份'); await this.options.host.verify(workspaceId, taskId); record.view.taskId = taskId; }
+    if([input.taskId,input.taskIds,input.taskLinks].filter(value=>value!==undefined).length>1)fail('agent_input_invalid','不能同时提交多种任务关联字段。');
+    if(input.taskLinks!==undefined||input.taskIds!==undefined||input.taskId!==undefined){
+      const previous=conversationTaskLinks(record.view);
+      const local=input.taskIds??(input.taskId===null?[]:[input.taskId!]);
+      if(input.taskLinks===undefined&&(!Array.isArray(local)||local.length>100))fail('agent_input_invalid','任务关联必须为不超过100项的数组。');
+      const values=input.taskLinks??[...previous.filter(link=>link.workspaceId!==workspaceId),...local.map(taskId=>({workspaceId,taskId}))];
+      setConversationTaskLinks(record.view,await this.verifyTaskLinks(workspaceId,values,previous));
     }
     if (input.hidden !== undefined) { if (typeof input.hidden !== 'boolean') fail('agent_input_invalid', '隐藏状态无效。'); record.view.hidden = input.hidden; }
     this.save(record); return this.view(record);
@@ -545,8 +658,17 @@ export class ConversationApplication {
     this.options.events.publish({ type: 'conversation', workspaceId, conversationId: id, revision: view.revision, payload: { conversation: view } });
     return view;
   }
-  private draft(input: SendDraft): SendDraft { return normalizeSendDraft(input); }
-  private prepare(record: StoredConversation, raw: SendDraft, answerMaterials: string[] = []): { preview: SendPreview; text: string; images: ExecutorImage[]; draft: SendDraft;configuration?:string;needsCompression:boolean;fullText:string } {
+  private draft(input: SendDraft): SendDraft {
+    const draft = normalizeSendDraft(input);
+    // Only an omitted selection may fall back; explicit full-access must never be downgraded.
+    // Queued drafts may wait for a connection that is not installed yet.
+    // Admission still validates it in prepare; normalization must not discard it.
+    const connection = input.permissionMode === undefined ? this.options.connections.list().find(value => value.id === draft.connectionId) : undefined;
+    const modes = connection?.capabilities.permissionModes ?? (connection ? ['default'] : []);
+    if (input.permissionMode === undefined && !modes.includes('full-access') && modes.includes('default')) draft.permissionMode = 'default';
+    return draft;
+  }
+  private prepare(record: StoredConversation, raw: SendDraft, answerMaterials: string[] = []): { preview: SendPreview; text: string; images: ExecutorImage[]; draft: SendDraft;configuration?:string;needsCompression:boolean;fullText:string;participationSegments:ParticipationMatch[] } {
     this.options.connections.assertProgramAvailable(raw.connectionId);
     let input = this.draft(raw); expected(record.view.revision, input.expectedRevision);
     const waitingQuestions = input.waitingHandoff ? waitingHandoffQuestions(record, input) : undefined;
@@ -583,7 +705,16 @@ export class ConversationApplication {
     if (input.reasoningEffort && !boundModel?.reasoningEfforts?.some(effort => effort.id === input.reasoningEffort)) fail('agent_reasoning_unavailable', '该思考深度不在所选模型的可用目录中。', 409);
     if (!connection.capabilities.text) fail('agent_capability_unavailable', '此接入尚不支持文本输入。', 409);
     if (record.view.forkState && record.view.forkState.status !== 'ready') fail('agent_fork_pending', '此分叉尚未完成，不能发送新指令；原对话不受影响。', 409);
-    const participant = record.participants.find(value => !value.historical && !conversationRuns(record.view).some(run => run.participantId === value.id && (unfinishedRun(run) || run.generation !== this.options.generation && this.options.generationAlive?.(run.generation) === true && !run.resourcesReleased || record.view.requests.some(request => request.runId === run.id))) && value.connectionId === input.connectionId && value.modelAccountId === input.modelAccountId && value.modelId === input.model && (!input.modelAccountId || value.modelAccountIdentity === source?.identity && value.modelConfiguration===configuration));
+    const latest = record.participants.findLast(value => !value.historical && value.connectionId === input.connectionId && value.modelAccountId === input.modelAccountId && value.modelId === input.model && (!input.modelAccountId || value.modelAccountIdentity === source?.identity && value.modelConfiguration===configuration));
+    // Released historical outcomes are not native ownership. Keep the latest
+    // uncertain context isolated, and never let a held context block new input:
+    // the independent-participant path below preserves its exact old controls.
+    const held = latest && !releasedContinuation(record,input) && conversationRuns(record.view).some(run => run.participantId === latest.id && (
+      record.view.requests.some(request => request.runId === run.id) ||
+      run.id === record.view.run?.id && unfinishedRun(run) ||
+      !run.resourcesReleased && (unfinishedRun(run) || run.generation !== this.options.generation && this.options.generationAlive?.(run.generation) === true)
+    ));
+    const participant = held ? undefined : latest;
     const through = record.view.entries.at(-1)?.sequence ?? record.view.childOf?.throughSequence ?? 0;
     const changes = handoffEntries([...(record.inheritedContext?.entries??[]),...record.view.entries],participant?.deliveredThrough??0);
     const previous = record.participants.find(value=>value.id===record.view.run?.participantId) ?? record.participants.at(-1);
@@ -594,7 +725,7 @@ export class ConversationApplication {
       previousRun && (previousRun.reasoningEffort!==input.reasoningEffort || (previousRun.permissionMode??'default')!==input.permissionMode)));
     const history = changes.map(entry => ({sequence:entry.sequence,role:entry.role,provider:entry.provider,text:entry.kind==='tool'?`${entry.name??'工具'} · ${entry.status??'结果未知'}（具体内容见本地来源）`:entry.text.length>4096?entry.text.slice(0,4096)+'…（完整原文见本地来源）':entry.text}));
     const maxInputBytes=receivingBudget(connection.capabilities.maxInputBytes,boundModel&&'contextWindow' in boundModel?boundModel.contextWindow:undefined,boundModel&&'maxOutputTokens' in boundModel?boundModel.maxOutputTokens:undefined);
-    const localRounds=organizeHandoff(changes,{...record.inheritedContext?.outcomes,...record.runOutcomes,...(record.view.run?{[record.view.run.id]:record.view.run}:{})});
+    const localRounds=changes.length ? organizeHandoff(changes,{...record.inheritedContext?.outcomes,...record.runOutcomes,...(record.view.run?{[record.view.run.id]:record.view.run}:{})}) : [];
     const historicalImages=[...new Set(changes.flatMap(e=>e.attachments??[]))].map(id=>{try{const image=this.media.describe(record,id);return {...image,available:true};}catch{return {id,available:false};}});
     const sources=changes.length?handoffSources(this.options.root,record.view.id,changes,localRounds,historicalImages):undefined;
     const rounds=sources?.rounds??localRounds;
@@ -606,7 +737,7 @@ export class ConversationApplication {
     const ids=[...new Set([...priorImages,...currentImages])];
     const materials = this.media.expand(record, ids);
     const images = materials.images;
-    const context=JSON.stringify({childOf:record.view.childOf,inheritedPendingQuestions:record.inheritedContext?.pendingQuestions,conversationId:record.view.id,workspaceId:record.view.workspaceId,cwd:record.view.cwd,conversationTitle:record.view.title,taskId:record.view.taskId,sourceThrough:through,permissionMode:input.permissionMode,executionState:record.view.run?.status??'idle',retainedExecutions:conversationRuns(record.view).filter(unfinishedRun).map(run=>({id:run.id,participantId:run.participantId,generation:run.generation,status:run.status,executionState:run.executionState,resourcesReleased:run.resourcesReleased,toolCount:run.tools.filter(tool=>tool.status!=='completed').length})),unansweredRequests:record.view.requests.map(request=>({id:request.id,runId:request.runId,participantId:request.participantId,generation:request.generation,kind:request.kind,title:request.title.slice(0,200)})),sourceIndex:sources?.index,imageInputIds:ids,currentImageIds:currentImages,currentImages:images.filter(image=>currentImages.includes(image.id)),historicalImages:historicalImages.slice(-4),historicalImageCount:historicalImages.length,historicalImageNotice:historicalImages.length?'历史图片的全部准确引用见本地索引；此处只列最近四张。没有作为图像输入发送的部分须按需读取，不能假装已看到。历史视频只提供带时间点的抽样画面，不含音轨，不能声称连续观看。':undefined});
+    const context=JSON.stringify({childOf:record.view.childOf,inheritedPendingQuestions:record.inheritedContext?.pendingQuestions,conversationId:record.view.id,workspaceId:record.view.workspaceId,cwd:record.view.cwd,conversationTitle:record.view.title,taskId:record.view.taskId,taskIds:record.view.taskIds,taskLinks:conversationTaskLinks(record.view),sourceThrough:through,permissionMode:input.permissionMode,executionState:record.view.run?.status??'idle',retainedExecutions:conversationRuns(record.view).filter(unfinishedRun).map(run=>({id:run.id,participantId:run.participantId,generation:run.generation,status:run.status,executionState:run.executionState,resourcesReleased:run.resourcesReleased,toolCount:run.tools.filter(tool=>tool.status!=='completed').length})),unansweredRequests:record.view.requests.map(request=>({id:request.id,runId:request.runId,participantId:request.participantId,generation:request.generation,kind:request.kind,title:request.title.slice(0,200)})),sourceIndex:sources?.index,imageInputIds:ids,currentImageIds:currentImages,currentImages:images.filter(image=>currentImages.includes(image.id)),historicalImages:historicalImages.slice(-4),historicalImageCount:historicalImages.length,historicalImageNotice:historicalImages.length?'历史图片的全部准确引用见本地索引；此处只列最近四张。没有作为图像输入发送的部分须按需读取，不能假装已看到。历史视频只提供带时间点的抽样画面，不含音轨，不能声称连续观看。':undefined});
     const questionEntries = changes.filter(entry=>entry.kind==='notice'&&entry.runId===record.view.run?.id);
     const hasHandoffAnswers = questionEntries.some(entry=>entry.id.startsWith('waiting-handoff-'));
     const unanswered = questionEntries.filter(entry=>entry.role==='system'&&entry.id.startsWith(hasHandoffAnswers?'waiting-handoff-':'waiting-question-')).map(entry=>entry.text);
@@ -624,51 +755,16 @@ export class ConversationApplication {
     const imageBytes = images.reduce((total, image) => total + record.attachments[image.id]!.size, 0);
     const fits = inputBytes <= maxInputBytes && images.length <= MAX_VISUAL_INPUTS && imageBytes <= 32 * 1024 * 1024 && images.every(image => record.attachments[image.id]!.size <= (connection.capabilities.maxImageBytes ?? MAX_IMAGE_BYTES)) && (!images.length || (connection.capabilities.images && (!source || Boolean(selectedModel && 'images' in selectedModel && selectedModel.images))));
     const token = createHmac('sha256', this.previewSecret).update(JSON.stringify({ id: record.view.id, input, sourceRevision: source?.revision, through, text, ids })).digest('hex');
-    return { preview: { handoff, token, conversationId: record.view.id, revision: record.view.revision, connectionId: input.connectionId, modelAccountId: input.modelAccountId, modelAccountIdentity: source?.identity, modelAccountRevision: source?.revision, modelSourceLabel: source?.accountLabel ?? source?.label, model: input.model, serviceTier:input.serviceTier,reasoningEffort: input.reasoningEffort, permissionMode: input.permissionMode!, participantId: participant?.id, cwd: record.view.cwd, taskId: record.view.taskId, text: input.text, history, sourceThrough: through, inputBytes, maxInputBytes, fits, switching, diagnostic: fits ? undefined : images.length && !canAttachHistory ? '所选执行方或模型无法接收这些图片，请选择支持图片的执行组合；草稿已保留。' : '必要交接资料仍超出接收容量，请选择容量更大的模型；草稿与本地资料保留。' }, text, images, draft: input,configuration,needsCompression,fullText };
+    return { preview: { handoff, token, conversationId: record.view.id, revision: record.view.revision, connectionId: input.connectionId, modelAccountId: input.modelAccountId, modelAccountIdentity: source?.identity, modelAccountRevision: source?.revision, modelSourceLabel: source?.accountLabel ?? source?.label, model: input.model, serviceTier:input.serviceTier,reasoningEffort: input.reasoningEffort, permissionMode: input.permissionMode!, participantId: participant?.id, cwd: record.view.cwd, taskId: record.view.taskId, text: input.text, history, sourceThrough: through, inputBytes, maxInputBytes, fits, switching, diagnostic: fits ? undefined : images.length && !canAttachHistory ? '所选执行方或模型无法接收这些图片，请选择支持图片的执行组合；草稿已保留。' : '必要交接资料仍超出接收容量，请选择容量更大的模型；草稿与本地资料保留。' }, text, images, draft: input,configuration,needsCompression,fullText,participationSegments:[...(controlInstruction?[instructionParticipation('conversation-control',controlInstruction)]:[]),...(changes.length||switching||waitingQuestions?[instructionParticipation('handoff-instructions',handoffPrompt)]:[])] };
   }
   prepareSend(workspaceId: string, id: string, input: SendDraft): SendPreview { return this.prepare(this.load(workspaceId, id), input).preview; }
 
   async prepareHandoff(workspaceId:string,id:string,input:SendDraft):Promise<SendPreview>{
-    const record=this.load(workspaceId,id),prepared=this.prepare(record,input);
-    if(input.waitingHandoff||input.skipHandoffSummary||!prepared.needsCompression||!prepared.preview.handoff)return prepared.preview;
-    for(const cached of this.handoffPreviews.values())if(cached.baseToken===prepared.preview.token)return cached.prepared.preview;
-    const previous=record.participants.find(p=>p.id===record.view.run?.participantId);
-    const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),12_000);
-    try{
-      // The local source index always survives; an auxiliary model never replaces it.
-      if(!previous) return prepared.preview;
-      const selected:typeof prepared.preview.handoff.rounds=[];let size=0;
-      for(const round of [...prepared.preview.handoff.rounds].reverse()){const bytes=Buffer.byteLength(JSON.stringify(round));if(size+bytes>32*1024)break;selected.unshift(round);size+=bytes;}
-      if(!selected.length)return prepared.preview;
-      const prompt=HANDOFF_SUMMARY_PROMPT+'\n本次摘要仅覆盖以下轮次 #'+selected[0]!.from+'–#'+selected.at(-1)!.through+'；其余历史请通过完整索引读取。\n'+JSON.stringify(selected);
-      let summary:string|undefined;
-      if(previous.modelAccountId&&this.options.modelAccess){
-        const source=this.options.modelAccess.accounts.snapshot(previous.modelAccountId);
-        const quota=source.quota;
-        if(source.identity!==previous.modelAccountIdentity||!source.enabled||source.status!=='ready'||quota?.available&&quota.remainingPercent===0)return prepared.preview;
-        summary=await within(this.options.modelAccess.generate({accountId:previous.modelAccountId,expectedIdentity:previous.modelAccountIdentity,modelId:previous.modelId!,serviceTier:previous.serviceTier,conversationId:id,agentId:previous.connectionId,runId:'handoff-'+randomUUID(),prompt,signal:controller.signal}),12_000,'agent_handoff_summary_timeout');
-      }else if(previous.contextRef){
-        const runtime=await within(this.options.connections.runtime(previous.connectionId),3_000,'agent_handoff_source_timeout');
-        if(runtime.bindingIdentity!==previous.bindingIdentity||!runtime.summarizeHandoff)return prepared.preview;
-        summary=await within(runtime.summarizeHandoff({contextRef:previous.contextRef,cwd:record.view.cwd,description:prompt,model:previous.modelId,signal:controller.signal}),12_000,'agent_handoff_summary_timeout');
-      }
-      if(!summary?.trim()||Buffer.byteLength(summary)>24*1024)return prepared.preview;
-      const current=this.prepare(this.load(workspaceId,id),input);
-      if(current.preview.token!==prepared.preview.token)fail('agent_preview_stale','交接来源已变化，请重新读取；草稿保留。',409);
-      const text=prepared.text+'\n\n原模型整理的辅助摘要（仅覆盖提供的轮次摘录，完整资料请读取本地索引；来源截至 #'+prepared.preview.sourceThrough+'）：\n'+summary;
-      if(Buffer.byteLength(text)>prepared.preview.maxInputBytes)return prepared.preview;
-      const baseToken=prepared.preview.token;
-      prepared.text=text;prepared.preview={...prepared.preview,token:createHmac('sha256',this.previewSecret).update(baseToken+text).digest('hex'),inputBytes:Buffer.byteLength(text),handoff:{...prepared.preview.handoff,body:text,mode:'summary'}};
-      if(this.handoffPreviews.size>=32)this.handoffPreviews.delete(this.handoffPreviews.keys().next().value!);
-      prepared.fullText='';this.handoffPreviews.set(prepared.preview.token,{baseToken,prepared});return prepared.preview;
-    }catch(error){
-      if(error instanceof AgentServiceError&&['agent_revision_conflict','agent_preview_stale','agent_model_source_changed'].includes(error.code))throw error;
-      // No work input was submitted, so local-source fallback is safe after failure.
-      expected(this.load(workspaceId,id).view.revision,input.expectedRevision);return prepared.preview;
-    }finally{clearTimeout(timer);controller.abort();}
+    // Local records and their index are sufficient; optional model summaries must not delay submission.
+    return this.prepare(this.load(workspaceId,id),input).preview;
   }
 
-  send(workspaceId: string, id: string, raw: SendDraft & { previewToken: string; clientRequestId: string }, systemRecovery = false): { run: RunView; conversation: ConversationView } {
+  send(workspaceId: string, id: string, raw: SendDraft & { previewToken?: string; clientRequestId: string }, systemRecovery = false): { run: RunView; conversation: ConversationView } {
     if (raw.waitingHandoff) fail('agent_handoff_queue_required', '等待回答时请保存交接内容，系统会保留原执行并投递新要求。', 409);
     return this.submit(this.load(workspaceId, id), raw, systemRecovery);
   }
@@ -709,22 +805,21 @@ export class ConversationApplication {
     const preview=this.prepare(record,draft,answerMaterials).preview;
     return this.submit(record,{...draft,previewToken:preview.token,clientRequestId:requestId},false,false,answerMaterials);
   }
-  private submit(record: StoredConversation, raw: SendDraft & { previewToken: string; clientRequestId: string }, systemRecovery = false, initial = false, answerMaterials: string[] = []): { run: RunView; conversation: ConversationView } {
+  private submit(record: StoredConversation, raw: SendDraft & { previewToken?: string; clientRequestId: string }, systemRecovery = false, initial = false, answerMaterials: string[] = []): { run: RunView; conversation: ConversationView } {
     const { workspaceId, id } = record.view;
     const clientRequestId = nonempty(raw.clientRequestId, '请求身份', 200);
     const inputDigest = hash({ ...this.draft(raw), expectedRevision: undefined });
     const repeated = record.attempts.find(attempt => attempt.clientRequestId === clientRequestId);
     if (repeated) {
       const legacyDigest = hash({ ...this.draft(raw), permissionMode: undefined, expectedRevision: undefined });
-      if (repeated.inputDigest !== inputDigest && !(resolvePermissionMode(raw.permissionMode) === 'default' && repeated.inputDigest === legacyDigest)) fail('agent_request_conflict', '相同请求身份对应不同输入，已拒绝重复执行。', 409);
+      if (repeated.inputDigest !== inputDigest && !(raw.permissionMode === 'default' && repeated.inputDigest === legacyDigest)) fail('agent_request_conflict', '相同请求身份对应不同输入，已拒绝重复执行。', 409);
       if (record.view.run?.id !== repeated.runId) fail('agent_request_already_accepted', '该请求已受理，请读取其原有历史。', 409);
       return { run: structuredClone(record.view.run), conversation: this.view(record) };
     }
     const baseline = this.prepare(record, raw, answerMaterials);
-    const cached=this.handoffPreviews.get(raw.previewToken);
-    const prepared=cached?.baseToken===baseline.preview.token?cached.prepared:baseline;
+    const prepared=baseline;
     const a = Buffer.from(prepared.preview.token); const b = Buffer.from(String(raw.previewToken));
-    if (a.length !== b.length || !timingSafeEqual(a, b)) fail('agent_preview_stale', '发送预览已变化，请重新核对后发送。', 409);
+    if (raw.previewToken !== undefined && (a.length !== b.length || !timingSafeEqual(a, b))) fail('agent_preview_stale', '发送预览已变化，请重新核对后发送。', 409);
     if (!prepared.preview.fits) fail('agent_handoff_capacity', prepared.preview.diagnostic!, 413);
     let participant = record.participants.find(value=>value.id===prepared.preview.participantId);
     const connection = this.options.connections.get(prepared.draft.connectionId);
@@ -741,7 +836,7 @@ export class ConversationApplication {
     append({ id: userEntryId, kind: systemRecovery || manualRecovery ? 'notice' : 'message', role: systemRecovery || manualRecovery ? 'system' : 'user', text: manualRecovery ? record.view.run?.accepted ? '已请求继续上次执行。' : '已请求重试上次未送达的要求。' : prepared.draft.text, participantId:participant.id, provider:participant.provider, runId: run.id, status: 'sending', attachments: prepared.draft.attachmentIds });
     const automaticRetry = systemRecovery ? record.attempts.find(value => value.runId === record.view.run?.id)?.automaticRetry : undefined;
     record.attempts.push({ clientRequestId, inputDigest, runId: run.id, participantId: participant.id, through: record.view.entries.at(-1)!.sequence, userEntryId, accepted: false, ...(raw.continueRunId || systemRecovery && record.view.run ? {continuationOf: raw.continueRunId ?? record.view.run!.id} : {}), ...(automaticRetry ? {automaticRetry: {...automaticRetry}} : {}) });
-    const previousRun=record.view.run;if(previousRun){record.runOutcomes??={};record.runOutcomes[previousRun.id]={status:previousRun.status,diagnostic:previousRun.diagnostic,model:previousRun.model,provider:previousRun.provider,updatedAt:previousRun.updatedAt};}
+    const previousRun=record.view.run;if(previousRun){record.runOutcomes??={};record.runOutcomes[previousRun.id]={status:previousRun.status,diagnostic:previousRun.diagnostic,model:previousRun.model,provider:previousRun.provider,contextUsage:previousRun.contextUsage,generation:previousRun.generation,updatedAt:previousRun.updatedAt};}
     if (!participant.modelAccountId) this.sharedNativeContext = true;
     delete record.interruption;
     if (previousRun && (unfinishedRun(previousRun) || record.view.requests.some(request => request.runId === previousRun.id) || previousRun.participantId!==participant.id && !previousRun.resourcesReleased && (this.sourceRuntimes.has(previousRun.participantId) || this.options.generationAlive?.(previousRun.generation)===true))) {
@@ -751,8 +846,18 @@ export class ConversationApplication {
       const retry=this.retryWaits.get(previousRun.id);
       if(retry){previousRun.status='failed';previousRun.diagnostic='新的要求已接续，已取消原轮自动重试。';retry.abort();}
     }
+    if (prepared.preview.switching && !systemRecovery) {
+      for (const old of conversationRuns(record.view)) {
+        const attempt=record.attempts.find(value=>value.runId===old.id);
+        if (!attempt || old.supersededBy) continue;
+        old.supersededBy=run.id;
+        this.retireQuestions(record,record.view.requests.filter(request=>request.runId===old.id));
+      }
+    }
     record.view.run = run;
+    record.view.hidden = false;
     this.save(record, initial);
+    if (prepared.preview.switching && !systemRecovery) queueMicrotask(()=>{void this.cleanupSuperseded(workspaceId,id).catch(()=>{});});
     const work = this.execute(workspaceId, id, run.id, prepared).finally(() => { this.workers.delete(run.id); this.cancelledRetries.delete(run.id); this.scheduleSourceRelease(workspaceId, id); });
     this.workers.set(run.id, work);
     return { run: structuredClone(run), conversation: this.read(workspaceId, id) };
@@ -768,6 +873,10 @@ export class ConversationApplication {
     const record = this.load(workspaceId, id);
     const run = conversationRuns(record.view).find(run => run.id === runId && run.generation === this.options.generation);
     return run ? {record, run} : undefined;
+  }
+  private hasPersistedEnd(record:StoredConversation,run:RunView):boolean {
+    const attempt=record.attempts.find(value=>value.runId===run.id);
+    return Boolean(attempt?.persistedEnd&&attempt.persistedEnd===attempt.executionRef?.id&&run.executionState==='ended'&&!unfinishedRun(run));
   }
   private applyItem(record: StoredConversation, participant: StoredParticipant, item: ExecutorItem, runId?: string): boolean {
     if (Buffer.byteLength(item.text) > MAX_ITEM_BYTES) fail('agent_native_item_too_large', '原生条目超出安全展示容量，原记录保留于准确原生会话。', 413);
@@ -790,17 +899,28 @@ export class ConversationApplication {
     }
     if (entry) {
       record.sources[source] = entry.id;
+      const nativeOwner=item.executionId?record.attempts.find(attempt=>attempt.participantId===participant.id&&attempt.accepted&&(attempt.executionRef?.id===item.executionId||attempt.clientRequestId===item.executionId)):undefined;
+      const ownerChanged=Boolean(nativeOwner&&entry.role!=='user'&&entry.runId!==nativeOwner.runId);
+      if(ownerChanged)entry.runId=nativeOwner!.runId;
       if (entry.parentToolId && item.parentToolId && entry.parentToolId !== item.parentToolId) fail('agent_native_item_identity_changed', '原生条目的父工具来源发生冲突，已保留原记录。', 409);
-      const originChanged = item.parentToolId !== undefined && entry.parentToolId !== item.parentToolId;
+      const originChanged = ownerChanged || item.parentToolId !== undefined && entry.parentToolId !== item.parentToolId;
       if (originChanged) entry.parentToolId = item.parentToolId;
+      if(originChanged&&record.participationTools?.[entry.id])record.participationTools[entry.id]!.entryRevision=createHash('sha256').update(JSON.stringify(entry)).digest('hex');
       if (entry.role === 'user' || entry.role === 'system' && entry.kind === 'notice') return originChanged;
       if (entry.kind === 'tool' && ['completed', 'failed'].includes(entry.status ?? '') && (!item.status || item.status === 'running' || entry.status==='completed'&&item.status==='unknown')) return originChanged;
+      const priorParticipation=record.participationTools?.[entry.id]??entry.participation;
+      const participation = entry.kind==='tool' ? mergeParticipation(item.input!==undefined&&item.input!==entry.input&&priorParticipation?{...priorParticipation,matches:[]}:priorParticipation,item.participation,item.name??entry.name,item.input??entry.input) : undefined;
+      const participationChanged=JSON.stringify(participation)!==JSON.stringify(normalizeParticipation(priorParticipation));
       const nameChanged = item.name !== undefined && entry.name !== item.name;
       const inputChanged = item.input !== undefined && entry.input !== item.input;
-      if (entry.text === item.text && entry.status === item.status && !nameChanged && !inputChanged) return originChanged;
-      entry.text = item.text; entry.status = item.status; if (nameChanged) entry.name = item.name; if (inputChanged) entry.input = item.input; return true;
+      const files=item.presentedFiles===undefined?undefined:normalizePresentedFiles(item.presentedFiles);
+      const filesChanged=files!==undefined&&JSON.stringify(entry.presentedFiles)!==JSON.stringify(files);
+      const thinkingChanged=Boolean(item.thinking)&&!entry.thinking;
+      if (entry.text === item.text && entry.status === item.status && !nameChanged && !inputChanged && !filesChanged && !thinkingChanged && !participationChanged) return originChanged;
+      if(participationChanged&&participation)(record.participationTools??={})[entry.id]={...participation,entryRevision:record.participationTools?.[entry.id]?.entryRevision};
+      entry.text = item.text; entry.status = item.status; if (item.thinking) entry.thinking = true; if (nameChanged) entry.name = item.name; if (inputChanged) entry.input = item.input; if(filesChanged)entry.presentedFiles=files; if(item.participation&&participation)(record.participationTools??={})[entry.id]={...participation,entryRevision:createHash('sha256').update(JSON.stringify(entry)).digest('hex')}; return true;
     }
-    entry = { id: randomUUID(), sequence: (record.view.entries.at(-1)?.sequence ?? record.view.childOf?.throughSequence ?? 0) + 1, createdAt: this.options.now(), kind: item.kind, role: item.role, text: item.text, name: item.name, input: item.input, parentToolId: item.parentToolId, participantId: participant.id, provider: participant.provider, runId:runId??record.attempts.find(a=>a.participantId===participant.id&&(a.executionRef?.id===item.executionId||a.clientRequestId===item.executionId))?.runId, status: item.status };
+    entry = { id: randomUUID(), sequence: (record.view.entries.at(-1)?.sequence ?? record.view.childOf?.throughSequence ?? 0) + 1, createdAt: this.options.now(), kind: item.kind, role: item.role, text: item.text, ...(item.thinking?{thinking:true}:{}), ...(item.kind==='tool'?{participation:mergeParticipation(undefined,item.participation,item.name,item.input)}:{}), name: item.name, input: item.input, ...(item.presentedFiles?{presentedFiles:normalizePresentedFiles(item.presentedFiles)}:{}), parentToolId: item.parentToolId, participantId: participant.id, provider: participant.provider, runId:runId??record.attempts.find(a=>a.participantId===participant.id&&(a.executionRef?.id===item.executionId||a.clientRequestId===item.executionId))?.runId, status: item.status };
     record.view.entries.push(entry); record.sources[source] = entry.id;
     // A late native projection is known to this participant; intervening foreign
     // work and an input still awaiting acceptance are not. Never skip that gap.
@@ -812,11 +932,23 @@ export class ConversationApplication {
     return true;
   }
   private event(workspaceId: string, id: string, runId: string, event: ExecutorEvent): void {
+    this.retryRecordUpdate(()=>this.applyEvent(workspaceId,id,runId,event));
+  }
+  /** Reapply only a local deterministic mutation after an explicit rejected write. */
+  private retryRecordUpdate<T>(apply:()=>T):T {
+    for(let attempt=0;;attempt++){
+      try{return apply();}catch(error){if(attempt>=2||!(error instanceof AgentServiceError)||error.code!=='agent_revision_conflict')throw error;}
+    }
+  }
+  private applyEvent(workspaceId: string, id: string, runId: string, event: ExecutorEvent): void {
     const record = this.load(workspaceId, id);
     const run = conversationRuns(record.view).find(value => value.id === runId && value.generation === this.options.generation);
     if (!run) return;
     const participant = record.participants.find(value => value.id === run.participantId)!;
     const attempt = record.attempts.find(value => value.runId === runId)!;
+    // A late transport failure cannot negate an exact settled execution.
+    if(this.hasPersistedEnd(record,run)&&
+      ['observation','diagnostic','completed'].includes(event.type))return;
     if (event.type === 'item' && event.item.kind === 'tool' && event.item.executionId && attempt.executionRef?.id !== event.item.executionId) {
       const owner = record.attempts.find(value => value.participantId === participant.id && value.executionRef?.id === event.item.executionId);
       if (owner && this.applyItem(record, participant, event.item, owner.runId)) this.save(record);
@@ -833,13 +965,15 @@ export class ConversationApplication {
     if (event.type === 'accepted') {
       attempt.accepted = true; attempt.executionRef = event.executionRef; attempt.nativeInputItemId = event.inputItemId;
       for(const receipt of record.view.entries.filter(e=>e.kind==='handoff'&&e.runId===runId))receipt.status='accepted';
-      run.accepted = true; if (run.status !== 'stopping') run.status = 'running';
+      run.accepted = true;
+      run.status = run.status === 'stopping' || record.interruption?.runId === runId && record.interruption.cancelled ? 'stopping' : 'running';
       participant.deliveredThrough = Math.max(participant.deliveredThrough, attempt.through);
       const entry = record.view.entries.find(value => value.id === attempt.userEntryId)!; entry.status = 'accepted';
       if (event.inputItemId) record.sources[`${participant.id}:message:${event.inputItemId}`] = entry.id;
     } else if (event.type === 'item') {
       if (!this.applyItem(record, participant, event.item, runId)) return;
     } else if (event.type === 'request') {
+      if (run.supersededBy) return;
       if (!attempt.executionRef) fail('agent_native_request_unbound', '原生交互尚未取得执行身份，不能安全回应。', 409);
       const existing = record.view.requests.find(request => record.requests[request.id]?.nativeId === event.request.id && request.runId === runId);
       if (!existing) {
@@ -857,17 +991,51 @@ export class ConversationApplication {
     else if (event.type === 'diagnostic') run.diagnostic = event.message;
     else if (event.type === 'completed') {
       // A model terminal event alone does not prove that tools have stopped.
-      if (event.status === 'failed') { run.status = 'failed'; run.diagnostic = event.diagnostic ?? '原生执行失败。'; }
+      if (event.status === 'failed') { run.status = 'failed'; run.fault = event.fault; run.diagnostic = event.diagnostic ?? '原生执行失败。'; }
       else { run.diagnostic = event.diagnostic; }
     }
     run.updatedAt = this.options.now(); this.save(record);
+    if(event.type==='item'&&event.item.kind==='tool')this.enrichParticipation(workspaceId,id,participant.id,event.item.id);
     if (event.type === 'accepted' && run.status === 'stopping') {
       // Stop may arrive before the vendor has returned its execution identity.
       queueMicrotask(() => {
-        const current = this.currentRun(workspaceId, id, runId);
-        if (current?.view.run?.status === 'stopping') void this.stop(workspaceId, id, { expectedRevision: current.view.revision, runId, participantId: run.participantId, generation: run.generation }).catch(() => {});
+        const current = this.ownedRun(workspaceId, id, runId);
+        if (current?.run.status === 'stopping') void this.stop(workspaceId, id, { expectedRevision: current.record.view.revision, runId, participantId: run.participantId, generation: run.generation }).catch(() => {});
       });
     }
+  }
+  private discoverParticipation(workspaceId:string,id:string,runId:string):void {
+    const observe=this.options.host.capabilities.observeParticipation;
+    if(!observe)return;
+    const request={ref:this.options.host.ref(workspaceId),observations:[],discover:true,provider:this.load(workspaceId,id).view.run?.provider};
+    void within(Promise.resolve().then(()=>observe.call(this.options.host.capabilities,request)),PARTICIPATION_LIMITS.timeoutMs,'participation-timeout').then(result=>{
+      if(this.closing||result.version!==1)return;
+      this.retryRecordUpdate(()=>{const record=this.load(workspaceId,id),attempt=record.attempts.find(a=>a.runId===runId);if(!attempt?.participation)return;
+        const available=result.sources.filter(validParticipationSource).map(participationSource);
+        if(Buffer.byteLength(JSON.stringify(available))>PARTICIPATION_LIMITS.snapshotBytes){attempt.participation.gaps=['discovery-limit'];}
+        else{attempt.participation.available=available;attempt.participation.gaps=[...participationGaps(result.gaps),'implicit-consumption-unavailable'];}
+        this.save(record);
+      });
+    }).catch(()=>{
+      if(this.closing)return;
+      this.retryRecordUpdate(()=>{const current=this.load(workspaceId,id),attempt=current.attempts.find(value=>value.runId===runId);if(!attempt?.participation)return;attempt.participation.gaps=[...attempt.participation.gaps.filter(gap=>gap!=='source-discovery-pending'),'source-discovery-unavailable'];this.save(current);});
+    }).catch(()=>{});
+  }
+  private enrichParticipation(workspaceId:string,id:string,participantId:string,nativeId:string):void {
+    const observe=this.options.host.capabilities.observeParticipation;
+    if(!observe)return;
+    const key=id+':'+participantId+':'+nativeId;if(this.participationWork.has(key))return;
+    const record=this.load(workspaceId,id),entry=record.view.entries.find(e=>e.id===record.sources[participantId+':tool:'+nativeId]);
+    const observation=entry&&(record.participationTools?.[entry.id]??entry.participation);
+    if(!entry||!observation?.matches.some(m=>m.status!=='confirmed'))return;
+    const input=entry.input,entryId=entry.id;this.participationWork.add(key);
+    const request={ref:this.options.host.ref(workspaceId),observations:observation.matches.map((m,i)=>({id:String(i),kind:m.kind,path:m.locator,name:m.name}))};
+    void within(Promise.resolve().then(()=>observe.call(this.options.host.capabilities,request)),PARTICIPATION_LIMITS.timeoutMs,'participation-timeout').then(result=>{
+      if(this.closing||result.version!==1)return;
+      this.retryRecordUpdate(()=>{const current=this.load(workspaceId,id),item=current.view.entries.find(e=>e.id===entryId);const observed=item&&(current.participationTools?.[item.id]??item.participation);if(!item||!observed||item.input!==input)return;
+        (current.participationTools??={})[item.id]={...applyParticipationSources(observed,result),entryRevision:current.participationTools?.[item.id]?.entryRevision};this.save(current);
+      });
+    }).catch(()=>{}).finally(()=>this.participationWork.delete(key));
   }
   private retireQuestions(record: StoredConversation, requests = record.view.requests.filter(request => request.runId === record.view.run?.id)): void {
     for (const request of requests) {
@@ -884,6 +1052,7 @@ export class ConversationApplication {
   }
   private applyObservation(record: StoredConversation, observation: ExecutorObservation, run = record.view.run): void {
     if (!run) return;
+    if(this.hasPersistedEnd(record,run))return;
     const requests = record.view.requests.filter(request => request.runId === run.id);
     if(run.resourcesReleased&&(!['idle','stopped'].includes(observation.status)||observation.tools.some(tool=>tool.status!=='completed')))return;
     const attempt=record.attempts.find(value=>value.runId===run.id);
@@ -897,7 +1066,7 @@ export class ConversationApplication {
     if (observation.requests && attempt?.executionRef && observation.executionRef?.id === attempt.executionRef.id) {
       const ids = new Set(observation.requests.map(request => request.id));
       this.retireQuestions(record, record.view.requests.filter(request => request.runId === run.id && !ids.has(record.requests[request.id]?.nativeId)));
-      if (attempt?.executionRef && ['running', 'waiting'].includes(observation.status)) {
+      if (attempt?.executionRef && !run.supersededBy && ['running', 'waiting'].includes(observation.status)) {
         for (const request of observation.requests) {
           const existing = record.view.requests.find(value => value.runId === run.id && record.requests[value.id]?.nativeId === request.id);
           if (existing) {
@@ -911,6 +1080,7 @@ export class ConversationApplication {
       }
     }
     run.canContinue = observation.canContinue === true && run.status !== 'stopping' && !record.view.requests.some(request => request.runId === run.id);
+    if (observation.fault) run.fault = observation.fault;
     if (observation.diagnostic) run.diagnostic = observation.diagnostic;
     if (observation.status === 'tools-active' || observation.tools.some(tool => tool.status === 'running') && !['running', 'waiting'].includes(observation.status)) run.status = 'tools-active';
     else if (observation.status === 'unknown' || observation.tools.some(tool => tool.status === 'unknown')) run.status = 'unknown';
@@ -920,7 +1090,7 @@ export class ConversationApplication {
     }
     else if (observation.status === 'idle') {
       if (!run.accepted) { if (run.status !== 'starting' && run.status !== 'stopping') run.status = 'unknown'; return; }
-      run.status = run.status === 'stopping' ? 'stopped' : run.status === 'failed' ? 'failed' : 'completed';
+      run.status = run.status === 'stopping' ? 'stopped' : run.status === 'failed' || record.interruption?.runId === run.id && record.interruption.reason === 'execution-fault' ? 'failed' : 'completed';
       if (run.status==='completed' && !observation.diagnostic) delete run.diagnostic;
       this.retireQuestions(record, requests);
     } else if (observation.status === 'running') {
@@ -936,6 +1106,7 @@ export class ConversationApplication {
     const attempt = this.currentRun(workspaceId, id, runId)?.attempts.find(value => value.runId === runId);
     const request = attempt?.clientRequestId ?? '';
     const lineage = /^automatic-retry:([^:]+):(\d+)$/.exec(request);
+    const internalRecovery = Boolean(attempt?.continuationOf && (request.startsWith('host-recovery:') || lineage));
     const retries = retryCount ?? attempt?.automaticRetry?.count ?? Number(lineage?.[2] ?? 0);
     const rootRunId = attempt?.automaticRetry?.rootRunId ?? lineage?.[1] ?? runId;
     let dispatched = false;
@@ -963,38 +1134,91 @@ export class ConversationApplication {
       if (participant.contextRef) {
         await runtime.resumeContext({ contextRef: participant.contextRef, cwd: record.view.cwd, permissionMode: prepared.draft.permissionMode });
         const history = await runtime.readHistory({ contextRef: participant.contextRef, cwd: record.view.cwd });
-        let changed = false, needsReview = false;
-        for (const item of history) {
-          if (!this.applyItem(record, participant, item)) continue;
-          changed = true;
-          const sourceEntryId = record.sources[`${participant.id}:${item.kind}:${item.id}`];
-          const entry = record.view.entries.find(value => value.id === sourceEntryId);
-          const outcome = entry?.runId ? record.runOutcomes?.[entry.runId] : undefined;
-          if (item.role === 'user' && !item.parentToolId || !outcome || !['completed', 'stopped', 'failed'].includes(outcome.status) || item.kind === 'tool' && !['completed', 'failed'].includes(item.status ?? '')) needsReview = true;
-        }
-        if (changed) this.save(record);
+        let needsReview = false;
+        // Native reads are asynchronous: a retained generation may update its
+        // own round meanwhile. Reapply only the observed history to fresh state;
+        // never retry resumeContext/send or overwrite unrelated metadata.
+        this.retryRecordUpdate(() => {
+          const current = this.currentRun(workspaceId, id, runId);
+          if (!current) return;
+          record = current;
+          const currentParticipant = current.participants.find(value => value.id === participant.id)!;
+          let changed = false;
+          needsReview = false;
+          for (const item of history) {
+            if (!this.applyItem(current, currentParticipant, item)) continue;
+            changed = true;
+            const sourceEntryId = current.sources[`${participant.id}:${item.kind}:${item.id}`];
+            const entry = current.view.entries.find(value => value.id === sourceEntryId);
+            const outcome = entry?.runId ? current.runOutcomes?.[entry.runId] : undefined;
+            if (item.role === 'user' && !item.parentToolId || !outcome || !['completed', 'stopped', 'failed'].includes(outcome.status) || item.kind === 'tool' && !['completed', 'failed'].includes(item.status ?? '')) needsReview = true;
+          }
+          if (changed) this.save(current);
+        });
         if (needsReview) fail('agent_history_changed', '原生记录有新变化，本次要求已保留；请核对后再继续。', 409);
       } else {
         creatingContext = true;
         const ref = selectedRuntime.contextRef ?? await runtime.createContext({ cwd: record.view.cwd, permissionMode: prepared.draft.permissionMode });
-        record = this.currentRun(workspaceId, id, runId); if (!record) return;
-        const storedParticipant = record.participants.find(value => value.id === participant.id)!;
-        storedParticipant.contextRef = ref; storedParticipant.bindingIdentity = runtime.bindingIdentity;
-        participant.contextRef = ref; this.save(record);
+        this.retryRecordUpdate(()=>{
+          const current=this.currentRun(workspaceId,id,runId);if(!current)return;
+          const storedParticipant=current.participants.find(value=>value.id===participant.id)!;
+          storedParticipant.contextRef=ref;storedParticipant.bindingIdentity=runtime.bindingIdentity;this.save(current);
+        });
+        record = this.currentRun(workspaceId,id,runId);if(!record)return;
+        participant.contextRef = ref;
         creatingContext = false;
       }
       const beforeDispatch = this.currentRun(workspaceId, id, runId); if (!beforeDispatch) return;
       record = beforeDispatch;
+      const previousAttempt = record.attempts.findLast(value=>value.runId!==runId);
+      const previousParticipant = record.participants.find(value=>value.id===previousAttempt?.participantId);
+      const previousRun = conversationRuns(record.view).find(value=>value.id===previousAttempt?.runId);
+      const previousGeneration = previousRun?.generation ?? (previousAttempt ? record.runOutcomes?.[previousAttempt.runId]?.generation : undefined);
+      const fromContext = previousParticipant?.contextRef?.id;
+      const toContext = participant.contextRef!.id;
+      // Persist identity only after native resume/create succeeded. Acceptance
+      // remains a separate receipt, so a failed dispatch is never called a handoff success.
+      if (!internalRecovery && previousParticipant && (fromContext!==toContext || previousGeneration && previousGeneration!==this.options.generation)) {
+        const reason = fromContext===toContext ? 'backend-adoption' as const : 'session-replacement' as const;
+        this.retryRecordUpdate(()=>{
+          const current=this.currentRun(workspaceId,id,runId);if(!current)return;
+          if(current.view.entries.some(entry=>entry.id==='native-session-'+runId))return;
+          current.view.entries.push({
+          id:'native-session-'+runId, sequence:(current.view.entries.at(-1)?.sequence??0)+1,
+          createdAt:this.options.now(), kind:'handoff', role:'system', runId, participantId:participant.id,
+          provider:participant.provider, status:'sending',
+          text:reason==='backend-adoption'?'后台已接管原生会话，等待本轮受理。':'执行选择或可用上下文变化，已准备新的原生会话，等待本轮受理。',
+          nativeSession:{reason,...(this.options.backendChange?.fromGeneration===previousGeneration?{backendChange:this.options.backendChange}:{}),description:reason==='backend-adoption'?'原轮控制已释放，新后台复用原生会话':prepared.preview.switching?'用户执行选择变化':previousRun&&unfinishedRun(previousRun)?'原轮仍有在途工作，新要求使用独立会话':previousRun&&!previousRun.resourcesReleased&&previousGeneration!==this.options.generation?'原会话控制资源尚未释放，新要求使用独立会话':'原上下文不可复用，使用新的原生会话',from:{contextId:fromContext,generation:previousGeneration},to:{contextId:toContext,generation:this.options.generation}},
+          });
+          this.save(current);
+        });
+        const latest=this.currentRun(workspaceId,id,runId);if(!latest)return;
+        record=latest;
+      }
       if (beforeDispatch.view.run!.status === 'stopping') { beforeDispatch.view.run!.status = 'stopped'; this.save(beforeDispatch); return; }
       if (!this.options.connections.get(prepared.draft.connectionId).enabled) fail('agent_connection_disabled', '接入已断开，本次输入尚未交付。', 409);
+      const inputAttempt=record.attempts.find(value=>value.runId===runId)!;
+      const storedParticipant=record.participants.find(value=>value.id===participant.id)??participant;
+      const priorContext=storedParticipant.participationContext;
+      const contextId=participant.contextRef!.id;
+      const instruction=runtime.participationInstruction;
+      const sameContext=priorContext?.id===contextId&&priorContext?.instruction.observedVersion===instruction?.observedVersion;
+      if(!sameContext && instruction)storedParticipant.participationContext={id:contextId,configuredAt:this.options.now(),instruction};
+      inputAttempt.participation={version:1,submittedAt:this.options.now(),segments:[...prepared.participationSegments,...(!sameContext && instruction?[instruction]:[])],available:[],coverage:'partial',gaps:['implicit-consumption-unavailable',this.options.host.capabilities.observeParticipation?'source-discovery-pending':'source-discovery-unavailable'],context:instruction||priorContext?.instruction?{id:contextId,inherited:!!sameContext}:undefined};
+      this.save(record);
+      this.discoverParticipation(workspaceId,id,runId);
       dispatched = true;
-      const early = this.titleAtRunStart(workspaceId, id, runId, runtime).catch(() => {});
+      const early = this.titleAtRunStart(workspaceId, id, runId, runtime, prepared.text).catch(() => {});
       this.earlyTitles.set(id, early);
       void early.finally(() => { if (this.earlyTitles.get(id) === early) this.earlyTitles.delete(id); this.scheduleSourceRelease(workspaceId, id); });
       await runtime.send({ contextRef: participant.contextRef!, cwd: record.view.cwd, text: prepared.text, images: prepared.images, model: prepared.draft.modelAccountId ? selectedRuntime.model : prepared.draft.model, reasoningEffort: prepared.draft.reasoningEffort, permissionMode: prepared.draft.permissionMode, clientRequestId: record.attempts.find(value => value.runId === runId)!.clientRequestId, onEvent: event => this.event(workspaceId, id, runId, event) });
-      await this.observe(workspaceId, id);
+      // An old stop may already be observing this conversation. Its snapshot
+      // cannot stand in for the just-finished new execution.
+      const settled=this.ownedRun(workspaceId,id,runId);
+      if(settled)await this.observeRun(workspaceId,id,{expectedRevision:settled.record.view.revision,runId,participantId:settled.run.participantId,generation:settled.run.generation});
       const ended = this.currentRun(workspaceId, id, runId);
-      if (ended?.view.run?.status === 'failed') await this.retryFailure(workspaceId, id, runId, prepared, retries, rootRunId, ended.view.run.diagnostic ?? '', runtime);
+      if (ended?.view.run?.fault && ['failed','unknown'].includes(ended.view.run.status)) await this.recoverExecutionFailure(workspaceId,id,runId);
+      else if (ended?.view.run?.status === 'failed') await this.retryFailure(workspaceId, id, runId, prepared, retries, rootRunId, ended.view.run.diagnostic ?? '', runtime);
       void this.generateAutomaticTitle(workspaceId, id, runId, runtime).catch(() => {});
     } catch (error) {
       const record = this.currentRun(workspaceId, id, runId);
@@ -1006,11 +1230,13 @@ export class ConversationApplication {
         return;
       }
       const run = record.view.run!;
-      const rejectedBeforeInput = !run.accepted && error instanceof AgentServiceError && ['agent_permission_invalid', 'agent_permission_unavailable', 'agent_permission_unverified', 'agent_reasoning_unavailable'].includes(error.code);
+      if(run.status==='completed'&&run.executionState==='ended'&&run.tools.every(tool=>tool.status==='completed')&&!(error instanceof NativeRequestError&&error.fault))return;
+      const rejectedBeforeInput = !run.accepted && (error instanceof ExecutorInputRejected || error instanceof AgentServiceError && ['agent_permission_invalid', 'agent_permission_unavailable', 'agent_permission_unverified', 'agent_reasoning_unavailable'].includes(error.code));
       const userStopping = run.status === 'stopping';
       const possiblyDelivered = dispatched && !rejectedBeforeInput;
-      if (!['stopped', 'completed'].includes(run.status)) run.status = possiblyDelivered ? 'unknown' : 'failed';
-      run.diagnostic = safeDiagnostic(error); run.updatedAt = this.options.now();
+      if (run.status !== 'stopped' && (run.status !== 'completed' || error instanceof NativeRequestError && error.fault)) run.status = possiblyDelivered ? 'unknown' : 'failed';
+      run.diagnostic = this.options.modelAccess?.leases.streamFailure(id,runId)??safeDiagnostic(error); run.updatedAt = this.options.now();
+      if (error instanceof NativeRequestError || error instanceof NativeObservationError) run.fault = error.fault;
       const transportLost = error instanceof Error && ['codex_execution_observation_lost', 'codex_event_observation_lost', 'dsh_execution_observation_lost', 'dsh_event_observation_lost', 'qoder_execution_observation_lost', 'qoder_event_observation_lost'].includes(error.message);
       if (!this.closing && !userStopping && transportLost && run.accepted && run.status === 'unknown' && !record.interruption?.cancelled) {
         record.interruption = { runId, reason: 'transport', awaitingUser: record.view.requests.some(request=>request.runId===runId) };
@@ -1022,6 +1248,7 @@ export class ConversationApplication {
       if(!run.accepted)for(const receipt of record.view.entries.filter(e=>e.kind==='handoff'&&e.runId===runId))receipt.status=possiblyDelivered?'unknown':'failed';
       try { this.save(record); } catch { return; /* Preserve existing DB and native state. */ }
       if (record.interruption?.reason === 'transport' && !this.closing) await this.recoverOne(workspaceId, id);
+      else if (!userStopping && run.accepted && run.fault) await this.recoverExecutionFailure(workspaceId,id,runId);
       else if (!dispatched && !userStopping && (!creatingContext || error instanceof NativeRequestError)) await this.retryFailure(workspaceId, id, runId, prepared, retries, rootRunId, error instanceof Error && transientFailure(error.message) ? error.message : safeDiagnostic(error), undefined);
     } finally {
       if (!dispatched) {
@@ -1033,6 +1260,15 @@ export class ConversationApplication {
     }
   }
 
+  /** All executors share the existing exact-observation, release and persisted-budget path. */
+  private async recoverExecutionFailure(workspaceId:string,id:string,runId:string):Promise<boolean> {
+    const record=this.currentRun(workspaceId,id,runId),run=record?.view.run;
+    if(!record||!run?.fault||!run.accepted||!['failed','unknown'].includes(run.status)||this.closing||record.interruption?.cancelled||this.cancelledRetries.has(runId))return false;
+    record.interruption??={runId,reason:'execution-fault',awaitingUser:record.view.requests.some(request=>request.runId===runId)};
+    run.interrupted=true;this.save(record);
+    await this.recoverOne(workspaceId,id);return true;
+  }
+
   private async retryFailure(workspaceId: string, id: string, runId: string, prepared: ReturnType<ConversationApplication['prepare']>, count: number, rootRunId: string, reason: string, runtime?: AgentRuntime): Promise<void> {
     if (this.closing || this.cancelledRetries.has(runId)) return;
     let record = this.currentRun(workspaceId, id, runId);
@@ -1040,8 +1276,14 @@ export class ConversationApplication {
     const account=record.view.run.modelAccountId?this.options.modelAccess?.accounts.snapshot(record.view.run.modelAccountId):undefined;
     const quotaFailure=account&&account.identity===record.view.run.modelAccountIdentity&&modelQuotaFailure(account,account.models.find(model=>model.id===record!.view.run!.model),Date.parse(this.options.now()));
     if(quotaFailure){record.view.run.diagnostic=quotaFailure.message;this.save(record);return;}
-    if(!transientFailure(reason))return;
-    if (count >= RETRY_DELAYS.length) { record.view.run.diagnostic = `自动重试已达上限（${RETRY_DELAYS.length} 次），工作记录已保留。${record.view.run.diagnostic ?? ''}`; this.save(record); return; }
+    const credential = localCredentialFailure(reason);
+    if(!transientFailure(reason) && !credential)return;
+    if (count >= (credential ? LOCAL_CREDENTIAL_RETRIES : RETRY_DELAYS.length)) {
+      record.view.run.diagnostic = credential
+        ? `本机模型凭据重新签发后仍被拒绝，已停止自动接续，工作记录已保留。${record.view.run.diagnostic ?? ''}`
+        : `自动重试已达上限（${RETRY_DELAYS.length} 次），工作记录已保留。${record.view.run.diagnostic ?? ''}`;
+      this.save(record); return;
+    }
     if (runtime) {
       const participant = record.participants.find(value => value.id === record!.view.run!.participantId)!;
       const executionRef = record.attempts.find(value => value.runId === runId)?.executionRef;
@@ -1051,18 +1293,44 @@ export class ConversationApplication {
       record = this.currentRun(workspaceId, id, runId);
       if (this.cancelledRetries.has(runId) || !record || record.view.run?.status !== 'failed' || record.view.requests.some(request=>request.runId===runId) || record.interruption?.cancelled) return;
     }
+    if (credential) {
+      // A revoked key is only worth replacing while the account is still usable. The refresh
+      // that revokes it also downgrades the row for a moment, so a stale row is re-inspected
+      // once instead of being trusted as "logged out".
+      const access = this.options.modelAccess;
+      if (!access || !record.view.run.modelAccountId) return;
+      let holder = access.accounts.snapshot(record.view.run.modelAccountId);
+      if (!holder?.enabled) return;
+      if (holder.status !== 'ready') {
+        await access.accounts.check(holder.id).catch(() => undefined);
+        record = this.currentRun(workspaceId, id, runId);
+        if (this.cancelledRetries.has(runId) || !record || record.view.run?.status !== 'failed' || record.view.requests.some(request=>request.runId===runId) || record.interruption?.cancelled) return;
+        holder = access.accounts.snapshot(holder.id);
+        if (!holder?.enabled || holder.status !== 'ready') return;
+      }
+    }
+    // The failed turn still holds this participant's source, so the rejected key is only
+    // replaced by releasing it here; the resend then opens a fresh lease and process.
+    if (credential && (!runtime || !await this.retireSource(record.view.run.participantId))) return;
+    if (credential) {
+      record = this.currentRun(workspaceId, id, runId);
+      if (this.cancelledRetries.has(runId) || !record || record.view.run?.status !== 'failed' || record.view.requests.some(request=>request.runId===runId) || record.interruption?.cancelled) return;
+    }
+    const delay = credential ? RETRY_DELAYS[0] : RETRY_DELAYS[count];
     const diagnostic = record.view.run!.diagnostic;
     const attempt = record.attempts.find(value => value.runId === runId)!;
     attempt.automaticRetry = {rootRunId, count: count + 1};
     const controller = new AbortController();
     this.retryWaits.set(runId, controller);
     record.view.run!.status = 'starting';
-    record.view.run!.diagnostic = `暂时未完成，${RETRY_DELAYS[count] / 1000} 秒后自动重试（${count + 1}/${RETRY_DELAYS.length}）。${diagnostic ?? ''}`;
+    record.view.run!.diagnostic = credential
+      ? `本机模型凭据已失效，正在重新准备执行环境，${delay / 1000} 秒后自动接续一次。${diagnostic ?? ''}`
+      : `暂时未完成，${delay / 1000} 秒后自动重试（${count + 1}/${RETRY_DELAYS.length}）。${diagnostic ?? ''}`;
     this.save(record);
     try {
       await new Promise<void>(resolve => {
         const finish = () => { clearTimeout(timer); controller.signal.removeEventListener('abort', finish); resolve(); };
-        const timer = setTimeout(finish, RETRY_DELAYS[count]);
+        const timer = setTimeout(finish, delay);
         controller.signal.addEventListener('abort', finish, { once: true });
       });
       record = this.currentRun(workspaceId, id, runId);
@@ -1074,7 +1342,7 @@ export class ConversationApplication {
       if(latestQuotaFailure){record.view.run.diagnostic=latestQuotaFailure.message;this.save(record);return;}
       // Preparation rechecks source identity, current model, permission and saved revision.
       const draft: SendDraft = { ...prepared.draft, continueRunId: undefined, expectedRevision: record.view.revision, skipHandoffSummary: true,
-        ...(runtime ? { text: '系统自动重试：上次执行因临时服务故障明确结束，已确认没有未结束的工具。请核对原对话、当前成果及工具结果，继续完成用户尚未完成的目标；不要重放全部历史命令，不扩大原有授权。' } : {}) };
+        ...(runtime ? { text: credential ? '系统自动重试：上次执行因本机模型凭据失效而结束，已重新准备执行环境并确认没有未结束的工具。请核对原对话、当前成果及工具结果，继续完成用户尚未完成的目标；不要重放全部历史命令，不扩大原有授权。' : '系统自动重试：上次执行因临时服务故障明确结束，已确认没有未结束的工具。请核对原对话、当前成果及工具结果，继续完成用户尚未完成的目标；不要重放全部历史命令，不扩大原有授权。' } : {}) };
       const preview = this.prepareSend(workspaceId, id, draft);
       if (runtime) this.send(workspaceId, id, { ...draft, previewToken: preview.token, clientRequestId: `automatic-retry:${rootRunId}:${count + 1}` }, true);
       else {
@@ -1111,7 +1379,7 @@ export class ConversationApplication {
     return record.titleAttemptsByParticipant[participantId]??={};
   }
   /** Backfill the neutral name as soon as execution starts; the completed-run path stays the fallback. */
-  private async titleAtRunStart(workspaceId: string, id: string, runId: string, runtime: AgentRuntime): Promise<void> {
+  private async titleAtRunStart(workspaceId: string, id: string, runId: string, runtime: AgentRuntime, userText?: string): Promise<void> {
     const previous=this.earlyTitles.get(id);
     if (this.titleWork.has(id) && previous) await previous.catch(()=>{});
     const record = this.currentRun(workspaceId, id, runId);
@@ -1127,7 +1395,12 @@ export class ConversationApplication {
     const controller = new AbortController(); this.titleWork.set(id, controller);
     const timeout = setTimeout(() => controller.abort(), TITLE_TIMEOUT_MS + 2_000); timeout.unref();
     try {
-      const title = await within(runtime.generateTitle({ contextRef: participant.contextRef, cwd: record.view.cwd, description, model: record.view.run?.model, freshInstruction: Boolean(record.view.forkedFrom), signal: controller.signal }), TITLE_TIMEOUT_MS, 'agent_title_timeout', controller.signal);
+      let title: string | undefined;
+      if (runtime.readTitle && !record.view.forkedFrom) title = await within(runtime.readTitle({contextRef:participant.contextRef,cwd:record.view.cwd}),2_000,'agent_title_timeout').catch(()=>undefined);
+      const observed=this.currentRun(workspaceId,id,runId);
+      if(!observed || !this.titleEligible(observed) || controller.signal.aborted)return;
+      if(this.acceptTitle(observed,title)){this.save(observed);return;}
+      title = await within(runtime.generateTitle({ contextRef: participant.contextRef, cwd: record.view.cwd, description, ...(userText ? { userText } : {}), model: record.view.run?.model, freshInstruction: Boolean(record.view.forkedFrom), signal: controller.signal }), TITLE_TIMEOUT_MS, 'agent_title_timeout', controller.signal);
       const current = this.currentRun(workspaceId, id, runId);
       if (!current || controller.signal.aborted) return;
       if (!this.titleEligible(current)) return;
@@ -1170,12 +1443,11 @@ export class ConversationApplication {
   private acceptTitle(record: StoredConversation, raw: string | undefined, explicit = false): boolean {
     if (!raw || this.closing || !explicit && !this.titleEligible(record)) return false;
     const title = raw.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/g, '').replace(/\s+/g, ' ').trim();
-    // Chinese titles stay glanceable; English needs slightly more characters for a short phrase.
-    if (!title || [...title].length > (/\p{Script=Han}/u.test(title) ? 24 : 64)) return false;
+    if (!title || [...title].length > 64) return false;
     record.view.title = title; record.titleOrigin = 'generated'; record.view.titleState={status:'generated'}; return true;
   }
   private titleDescription(record: StoredConversation, requireAnswer = true): string | undefined {
-    const visible = record.view.entries.filter(entry => !entry.parentToolId && entry.sequence > (record.view.forkedFrom?.throughSequence ?? 0) && ['user', 'assistant'].includes(entry.role) && entry.kind === 'message' && entry.status !== 'failed' && entry.text.trim());
+    const visible = record.view.entries.filter(entry => !entry.parentToolId && entry.sequence > (record.view.forkedFrom?.throughSequence ?? 0) && ['user', 'assistant'].includes(entry.role) && entry.kind === 'message' && !entry.thinking && entry.status !== 'failed' && entry.text.trim());
     const users = visible.filter(entry => entry.role === 'user'); const answers = visible.filter(entry => entry.role === 'assistant');
     if (!users.length || requireAnswer && !answers.length) return;
     const selected = new Map((record.view.forkedFrom ? [users[0]] : [users[0], answers[0], users.at(-1), answers.at(-1)]).filter((entry): entry is NonNullable<typeof entry> => Boolean(entry)).map(entry => [entry.id, entry]));
@@ -1237,17 +1509,39 @@ export class ConversationApplication {
   /** Startup scans executions, never task status. No browser subscription is required. */
   recoverInterrupted(): Promise<void> {
     if(this.recoveryWork)return this.recoveryWork;
+    for(const candidate of this.options.repository.listPending(true)) {
+      // Backfill only durable accepted switches. The current run and its owner
+      // remain untouched, including when an older backend is still executing.
+      try {
+        this.retryRecordUpdate(()=>{
+          const record=this.load(candidate.view.workspaceId,candidate.view.id);
+          const changed=reconcileLegacySupersededRuns(record);
+          const requests=record.view.requests.filter(request=>record.view.retainedRuns?.some(run=>run.id===request.runId&&run.supersededBy));
+          if(requests.length)this.retireQuestions(record,requests);
+          if(changed||requests.length)this.save(record);
+        });
+        const record=this.load(candidate.view.workspaceId,candidate.view.id);
+        if(conversationRuns(record.view).some(run=>run.supersededBy))void this.cleanupSuperseded(record.view.workspaceId,record.view.id).catch(()=>{});
+      } catch { /* A local conflict must not prevent recovery of unrelated work. */ }
+    }
     for(const record of this.options.repository.listInterruptedTitles(this.options.generation)){
       if(record.view.run && this.options.generationAlive?.(record.view.run.generation))continue;
       if(record.titleOrigin!=='default')continue;
       record.view.titleState={status:'failed',reason:'标题生成因服务重启中断，原有回复已保留，可显式重新生成。'};
       try{this.save(record);}catch{/* A concurrent newer record wins; do not block unrelated executions. */}
     }
-    const candidates=this.options.repository.listInterrupted().filter(record=>(record.view.run?.generation!==this.options.generation && !this.options.generationAlive?.(record.view.run?.generation ?? '')) || record.interruption?.runId===record.view.run?.id);
+    const candidates=this.options.repository.listInterrupted();
     const work=async()=>{
       let next=0;
       await Promise.all(Array.from({length:Math.min(2,candidates.length)},async()=>{
-        while(next<candidates.length&&!this.closing){const candidate=candidates[next++]!;await this.recoverOne(candidate.view.workspaceId,candidate.view.id);}
+        while(next<candidates.length&&!this.closing){
+          const candidate=candidates[next++]!,{workspaceId,id}=candidate.view;
+          try{
+            await this.reconcilePersisted(workspaceId,id);
+            const current=this.load(workspaceId,id);
+            if((current.view.run?.generation!==this.options.generation&&!this.options.generationAlive?.(current.view.run?.generation??''))||current.interruption?.runId===current.view.run?.id)await this.recoverOne(workspaceId,id);
+          }catch{/* One unreadable or concurrently changed conversation must not block the rest. */}
+        }
       }));
     };
     const recovery=work().finally(()=>{if(this.recoveryWork===recovery)this.recoveryWork=undefined;});
@@ -1263,7 +1557,7 @@ export class ConversationApplication {
   }
   private async recoverRun(workspaceId:string,id:string):Promise<void>{
     let record=this.load(workspaceId,id),run=record.view.run;
-    if(!run || this.closing || (run.generation===this.options.generation && !record.interruption))return;
+    if(!run || !run.accepted || this.closing || (run.generation===this.options.generation && !record.interruption))return;
     if(!record.interruption){
       // Only an accepted active execution is attributable to an abrupt host loss.
       if (run.accepted && run.status === 'unknown') {
@@ -1275,7 +1569,7 @@ export class ConversationApplication {
       run.interrupted=true;run.diagnostic='服务重启导致执行中断，正在核对原执行。';this.save(record);
     }
     const originalId=run.id,marker=record.interruption;
-    if(marker.runId!==originalId||marker.cancelled||['completed','failed'].includes(run.status))return;
+    if(marker.runId!==originalId||marker.cancelled||run.status==='completed'||run.status==='failed'&&marker.reason!=='execution-fault')return;
     const requestId='host-recovery:'+originalId;
     if(record.attempts.some(attempt=>attempt.clientRequestId===requestId))return;
     const unavailable=(reason:string)=>{
@@ -1295,7 +1589,7 @@ export class ConversationApplication {
       }
       record=this.load(workspaceId,id);run=record.view.run;
       if(this.closing||!run||run.id!==originalId||!record.interruption||record.interruption.cancelled)return;
-      if(run.status==='completed'||run.status==='failed')return;
+      if(run.status==='completed'||run.status==='failed'&&marker.reason!=='execution-fault')return;
       if(run.generation===this.options.generation&&run.status==='running'){
         delete record.interruption;run.interrupted=undefined;run.diagnostic=undefined;this.save(record);return;
       }
@@ -1315,8 +1609,8 @@ export class ConversationApplication {
         if(this.closing||run?.id!==originalId||!record.interruption||record.interruption.cancelled)return;
       }
       const unknown=run.tools.filter(tool=>tool.status==='unknown').map(tool=>tool.id);
-      const text='系统自动恢复：上次执行因 Buildr '+(marker.reason==='transport'?'执行观察中断':'服务重启')+'而中断，'+(released?'准确原控制资源已释放，原执行及独立操作结果仍可能未知。':'现已确认原执行停止。')+'请先核对本地对话、当前工作成果与工具结果，继续完成用户尚未完成的目标。不要重新执行全部历史命令，不重发原指令；不确定已生效的操作先核对，不扩大原有授权或代答问题。未知工具引用：'+(unknown.join('、')||'见原轮记录')+'。若需要真实用户决定，请明确提出。';
-      const draft:SendDraft={expectedRevision:record.view.revision,connectionId:participant.connectionId,modelAccountId:participant.modelAccountId,modelAccountIdentity:participant.modelAccountIdentity,model:run.model,serviceTier:run.serviceTier,reasoningEffort:run.reasoningEffort,permissionMode:run.permissionMode,text,skipHandoffSummary:true};
+      const text='系统自动恢复：上次执行因 Buildr '+(marker.reason==='execution-fault'?'执行协议或运行通道异常':marker.reason==='transport'?'执行观察中断':'服务重启')+'而中断，'+(released?'准确原控制资源已释放，原执行及独立操作结果仍可能未知。':'现已确认原执行停止。')+'请先核对本地对话、当前工作成果与工具结果，继续完成用户尚未完成的目标。不要重新执行全部历史命令，不重发原指令；不确定已生效的操作先核对，不扩大原有授权或代答问题。未知工具引用：'+(unknown.join('、')||'见原轮记录')+'。若需要真实用户决定，请明确提出。';
+      const draft:SendDraft={expectedRevision:record.view.revision,connectionId:participant.connectionId,modelAccountId:participant.modelAccountId,modelAccountIdentity:participant.modelAccountIdentity,model:run.model,serviceTier:run.serviceTier,reasoningEffort:run.reasoningEffort,permissionMode:run.permissionMode??'default',text,skipHandoffSummary:true};
       this.prepare(record,draft);
       if(!record.interruption.attempted)record.attempts.find(value=>value.runId===originalId)!.automaticRetry={rootRunId:lineage.rootRunId,count:lineage.count+1};
       record.interruption.attempted=true;this.save(record);
@@ -1326,7 +1620,88 @@ export class ConversationApplication {
     }catch(error){unavailable('执行未完成，未能自动接续：'+safeDiagnostic(error));}
   }
 
+  /** Missing old process metadata and changed login do not erase exact control-resource evidence. */
+  private async reconcileReleasedControls(workspaceId:string,id:string,control?:{expectedRevision:string;runId:string;participantId:string;generation:string}):Promise<void>{
+    let record=this.load(workspaceId,id);
+    if(control){
+      expected(record.view.revision,control.expectedRevision);
+      const run=conversationRuns(record.view).find(run=>run.id===control.runId);
+      if(!run||run.participantId!==control.participantId||run.generation!==control.generation)fail('agent_control_stale','原执行身份已变化，请重新读取。',409);
+    }
+    for(const saved of conversationRuns(record.view)){
+      if(control&&saved.id!==control.runId||saved.resourcesReleased||!saved.accepted||saved.generation===this.options.generation||!this.options.generationAlive||this.options.generationAlive(saved.generation)||record.view.requests.some(request=>request.runId===saved.id)||this.workers.has(saved.id)||this.sourceRuntimes.has(saved.participantId))continue;
+      const participant=record.participants.find(p=>p.id===saved.participantId),attempt=record.attempts.find(a=>a.runId===saved.id),revision=record.view.revision;
+      if(!participant?.contextRef||!participant.bindingIdentity||!attempt?.executionRef)continue;
+      const released=await this.options.connections.readReleasedControl(participant.connectionId,{bindingIdentity:participant.bindingIdentity,contextRef:participant.contextRef,executionRef:attempt.executionRef,cwd:record.view.cwd}).catch(()=>false);
+      record=this.load(workspaceId,id);
+      if(record.view.revision!==revision)return;
+      if(!released||this.options.generationAlive(saved.generation)||this.workers.has(saved.id)||this.sourceRuntimes.has(saved.participantId))continue;
+      const run=conversationRuns(record.view).find(run=>run.id===saved.id)!;
+      run.resourcesReleased=true;
+      if(run.executionState!=='ended')run.executionState='unknown';
+      if(BUSY_STATES.has(run.status)){
+        run.status='unknown';run.canContinue=false;
+        run.tools=run.tools.map(tool=>tool.status==='running'?{...tool,status:'unknown',canStop:false}:tool);
+        run.diagnostic='准确原控制进程组已退出，控制资源已释放；原操作结果仍待核对，不会重发。';
+      }
+      this.save(record);
+    }
+  }
+
+  /** Terminal facts do not require a live vendor channel or ownership of its controls. */
+  async reconcilePersisted(workspaceId:string,id:string,control?:{expectedRevision:string;runId:string;participantId:string;generation:string}):Promise<boolean>{
+    let record=this.load(workspaceId,id);
+    const confirmed=new Set<string>();
+    if(control){
+      expected(record.view.revision,control.expectedRevision);
+      const run=conversationRuns(record.view).find(value=>value.id===control.runId);
+      if(!run||run.participantId!==control.participantId||run.generation!==control.generation)fail('agent_control_stale','原执行身份已变化，请重新读取。',409);
+    }
+    for(const run of conversationRuns(record.view)){
+      if(control&&control.runId!==run.id||!run.accepted)continue;
+      if(this.hasPersistedEnd(record,run)){confirmed.add(run.id);continue;}
+      if(!BUSY_STATES.has(run.status)&&run.status!=='completed')continue;
+      const participant=record.participants.find(value=>value.id===run.participantId);
+      const attempt=record.attempts.find(value=>value.runId===run.id);
+      if(!participant?.contextRef||!participant.bindingIdentity||!attempt?.executionRef)continue;
+      const revision=record.view.revision;
+      const gatewayIdentity=participant.modelAccountId&&participant.modelAccountIdentity&&participant.modelId&&participant.modelConfiguration!==undefined
+        ?modelLeaseIdentity(participant.modelAccountId,participant.modelAccountIdentity,participant.modelId,id,participant.connectionId,participant.modelConfiguration):undefined;
+      if(participant.modelAccountId&&!gatewayIdentity)continue;
+      let evidence;
+      try{evidence=await this.options.connections.readPersistedExecution(participant.connectionId,{bindingIdentity:participant.bindingIdentity,contextRef:participant.contextRef,executionRef:attempt.executionRef,cwd:record.view.cwd,gatewayIdentity});}
+      catch{continue; /* Native observation remains available; unsafe evidence never overrides it. */}
+      if(!evidence||!['idle','stopped'].includes(evidence.observation.status)||evidence.observation.tools.some(tool=>tool.status!=='completed')||evidence.observation.executionRef?.id!==attempt.executionRef.id)continue;
+      record=this.load(workspaceId,id);
+      if(record.view.revision!==revision)return false;
+      const current=conversationRuns(record.view).find(value=>value.id===run.id);
+      const currentParticipant=record.participants.find(value=>value.id===participant.id);
+      if(!current||!currentParticipant||current.participantId!==participant.id||!BUSY_STATES.has(current.status)&&current.status!=='completed')continue;
+      let changed=false;
+      for(const item of evidence.items)if(item.executionId===attempt.executionRef.id)changed=this.applyItem(record,currentParticipant,item,current.id)||changed;
+      if(BUSY_STATES.has(current.status)){
+        this.applyObservation(record,evidence.observation,current);
+        const endedAt=evidence.endedAt,now=this.options.now();
+        current.updatedAt=endedAt&&Date.parse(endedAt)>=Date.parse(current.startedAt)&&Date.parse(endedAt)<=Date.parse(now)?endedAt:now;
+        if(record.interruption?.runId===current.id)delete record.interruption;
+        delete current.interrupted;
+        changed=true;
+      }
+      const currentAttempt=record.attempts.find(value=>value.runId===current.id)!;
+      if(currentAttempt.persistedEnd!==currentAttempt.executionRef?.id){currentAttempt.persistedEnd=currentAttempt.executionRef!.id;changed=true;}
+      if(changed)this.save(record);
+      confirmed.add(current.id);
+    }
+    const selected=control?conversationRuns(record.view).find(run=>run.id===control.runId):record.view.run;
+    // No evidence is not a successful read. Other providers must retain their
+    // normal history reconciliation, including legacy identity repair.
+    return Boolean(selected&&confirmed.has(selected.id)&&!unfinishedRun(selected)&&
+      (control||conversationRuns(record.view).every(run=>!unfinishedRun(run))));
+  }
+
   async observe(workspaceId: string, id: string): Promise<ConversationView> {
+    await this.reconcileReleasedControls(workspaceId,id);
+    if(await this.reconcilePersisted(workspaceId,id))return this.read(workspaceId,id);
     const key = `${workspaceId}/${id}`;
     const current = this.observations.get(key); if (current) return current;
     const work = this.reconcile(workspaceId, id).finally(() => { this.observations.delete(key); this.scheduleSourceRelease(workspaceId, id); }).then(view => {
@@ -1401,22 +1776,53 @@ export class ConversationApplication {
     return { record, participant, run, executionRef: record.attempts.find(value => value.runId === input.runId)?.executionRef };
   }
   async observeRun(workspaceId: string, id: string, input: {expectedRevision:string;runId:string;participantId:string;generation:string}): Promise<ConversationView> {
-    const control = this.control(workspaceId,id,input);
+    await this.reconcileReleasedControls(workspaceId,id,input);
+    const released=this.load(workspaceId,id);
+    if(conversationRuns(released.view).find(run=>run.id===input.runId)?.resourcesReleased)return this.view(released);
+    const control = this.control(workspaceId,id,{...input,expectedRevision:released.view.revision});
     if (!control.executionRef || !control.participant.contextRef || control.run.resourcesReleased || !unfinishedRun(control.run)) return this.view(control.record);
     const runtime = (await this.sourceRuntime(control.record,control.participant)).runtime;
     const items = await runtime.readHistory({contextRef:control.participant.contextRef,cwd:control.record.view.cwd});
     const observedRequests = hash(this.load(workspaceId,id).view.requests);
     const observation = await runtime.observe({contextRef:control.participant.contextRef,executionRef:control.executionRef});
-    const latest = this.ownedRun(workspaceId,id,input.runId);
-    if (latest) {
-      if (observation.executionRef?.id !== control.executionRef.id) fail('agent_control_stale','观察未匹配原执行，保留原状态。',409);
-      for (const item of items) this.applyItem(latest.record,control.participant,item);
-      this.applyObservation(latest.record,hash(latest.record.view.requests) === observedRequests ? observation : {...observation,requests:undefined},latest.run); this.save(latest.record);
-    }
+    this.retryRecordUpdate(()=>{
+      const latest = this.ownedRun(workspaceId,id,input.runId);
+      if (latest) {
+        if (observation.executionRef?.id !== control.executionRef!.id) fail('agent_control_stale','观察未匹配原执行，保留原状态。',409);
+        for (const item of items) this.applyItem(latest.record,control.participant,item);
+        this.applyObservation(latest.record,hash(latest.record.view.requests) === observedRequests ? observation : {...observation,requests:undefined},latest.run); this.save(latest.record);
+      }
+    });
     return this.read(workspaceId,id);
   }
   async stop(workspaceId: string, id: string, input: { expectedRevision: string; runId: string; participantId: string; generation: string; toolId?: string }): Promise<ConversationView> {
+    if(!input.toolId){
+      await this.reconcileReleasedControls(workspaceId,id,input);
+      const released=this.load(workspaceId,id),run=conversationRuns(released.view).find(run=>run.id===input.runId);
+      if(run?.resourcesReleased){
+        run.stopRequested=true;
+        if(released.view.run?.id===run.id)released.interruption={runId:run.id,awaitingUser:false,cancelled:true};
+        this.save(released);return this.view(released);
+      }
+      input={...input,expectedRevision:released.view.revision};
+    }
     const pending=this.load(workspaceId,id);
+    const selected=conversationRuns(pending.view).find(run=>run.id===input.runId);
+    const unbound=selected?.accepted===false && !pending.attempts.find(attempt=>attempt.runId===input.runId)?.executionRef && !selected.tools.length && !pending.view.requests.some(request=>request.runId===input.runId);
+    if(!this.closing&&!input.toolId&&unbound&&selected!.generation!==this.options.generation){
+      // The process router uses this only after the exact retained owner has
+      // returned its stop result and confirmed no in-flight send remains.
+      expected(pending.view.revision,input.expectedRevision);
+      const run=selected!;
+      if(run.participantId!==input.participantId||run.generation!==input.generation)fail('agent_control_stale','执行已变化，请重新核对。',409);
+      run.stopRequested=true;
+      if(pending.view.run?.id===run.id)pending.interruption={runId:run.id,awaitingUser:false,cancelled:true};
+      const released=this.options.generationReleased?.(run.generation)===true;
+      run.status=released?'stopped':'unknown';run.canContinue=false;run.executionState='unknown';
+      if(released)run.resourcesReleased=true;
+      run.diagnostic=released?'已停止本轮接续，原后台已确认退出；原输入是否送达仍未知，已有操作结果保留，不会重发。':'已取消本轮自动接续；未能确认原生执行身份或停止结果，工作记录已保留。';
+      run.updatedAt=this.options.now();this.save(pending);return this.view(pending);
+    }
     if(!this.closing&&!input.toolId&&pending.interruption?.runId===input.runId&&pending.view.run?.id===input.runId&&pending.view.run?.generation!==this.options.generation){
       expected(pending.view.revision,input.expectedRevision);
       const run=pending.view.run;
@@ -1424,18 +1830,34 @@ export class ConversationApplication {
       pending.interruption.cancelled=true;run.diagnostic='已取消自动接续；原执行状态仍待核对。';this.save(pending);return this.view(pending);
     }
     const control = this.control(workspaceId, id, input);
+    if(!input.toolId){control.run.stopRequested=true;this.save(control.record);this.options.modelAccess?.leases.stopRun(id,input.runId);}
     if (!input.toolId) this.cancelledRetries.add(input.runId);
     const retry = this.retryWaits.get(input.runId);
     if (retry && !input.toolId) {
       control.run.status = 'stopped'; control.run.diagnostic = '已停止自动重试，工作记录已保留。';
       this.save(control.record); retry.abort(); this.retryWaits.delete(input.runId); return this.view(control.record);
     }
-    if(!this.closing && !input.toolId && control.record.interruption?.runId===input.runId){control.record.interruption.cancelled=true;this.save(control.record);}
+    if(!this.closing && !input.toolId && control.record.view.run?.id===input.runId){
+      // The user's stop survives a missing acceptance receipt and process restarts.
+      control.record.interruption={...(control.record.interruption?.runId===input.runId?control.record.interruption:{}),runId:input.runId,awaitingUser:false,cancelled:true};
+      this.save(control.record);
+    }
     if (control.run.resourcesReleased || !unfinishedRun(control.run)) return this.view(control.record);
     if (input.toolId) {
       if (control.run.tools.find(tool => tool.id === input.toolId)?.canStop !== true) fail('agent_tool_stop_unavailable', '此命令尚不支持单独停止，可停止本轮剩余执行。', 409);
     } else { control.run.status = 'stopping'; this.save(control.record); }
-    if (!control.executionRef || !control.participant.contextRef) return this.read(workspaceId, id);
+    if (!control.executionRef || !control.participant.contextRef) {
+      // An in-flight send can still return its exact identity, where accepted
+      // schedules the original stop. A settled lost receipt cannot do so.
+      if (!input.toolId && !this.workers.has(input.runId)) {
+        control.run.status='unknown';control.run.executionState='unknown';control.run.canContinue=false;
+        control.run.diagnostic='已取消本轮自动接续；未能确认原生执行身份或停止结果，工作记录已保留。';
+        control.run.updatedAt=this.options.now();this.save(control.record);
+        await this.releaseIdleSources({workspaceId,id});
+        this.scheduleSourceRelease(workspaceId,id);
+      }
+      return this.read(workspaceId, id);
+    }
     const runtime = (await this.sourceRuntime(control.record, control.participant)).runtime;
     let observation: ExecutorObservation;
     try { observation = await runtime.stop({ contextRef: control.participant.contextRef, executionRef: control.executionRef, toolId: input.toolId }); }
@@ -1445,10 +1867,50 @@ export class ConversationApplication {
       if(latest&&!latest.run.resourcesReleased){latest.run.status='unknown';latest.run.executionState='unknown';latest.run.diagnostic='停止尚未确认：'+safeDiagnostic(error);latest.run.updatedAt=this.options.now();this.save(latest.record);}
       throw error;
     }
-    const record = this.ownedRun(workspaceId, id, input.runId);
-    if (record) { this.applyObservation(record.record, observation, record.run); this.save(record.record); }
+    try{this.retryRecordUpdate(()=>{
+      const record=this.ownedRun(workspaceId,id,input.runId);
+      if(record){this.applyObservation(record.record,observation,record.run);this.save(record.record);}
+    });}catch{fail('agent_stop_result_unknown','停止请求已发出，记录结果尚未确认；不会自动重发。',503);}
     if (observation.status === 'running' || observation.status === 'unknown' || observation.status === 'tools-active') this.pollStop(workspaceId, id, input.runId);
     return this.read(workspaceId, id);
+  }
+  /** Persist intent before native effects. A restart observes an uncertain stop, never replays it. */
+  private cleanupSuperseded(workspaceId:string,id:string):Promise<void> {
+    const key=workspaceId+'/'+id,existing=this.supersededCleanups.get(key);
+    if(existing)return existing;
+    const work=(async()=>{
+      const handled=new Set<string>();
+      for(;;){
+        if(this.closing)return;
+        let record=this.load(workspaceId,id),run=conversationRuns(record.view).find(value=>value.supersededBy&&!handled.has(value.id));
+        if(!run)return;
+        const runId=run.id;handled.add(runId);
+        const attempt=record.attempts.find(value=>value.runId===runId);
+        if(!run?.supersededBy||!attempt||run.resourcesReleased||!unfinishedRun(run))continue;
+        const action=attempt.supersededStopRequested||run.stopRequested?'observe':'stop';
+        if(action==='stop')this.retryRecordUpdate(()=>{
+          record=this.load(workspaceId,id);run=conversationRuns(record.view).find(value=>value.id===runId);
+          if(!run?.supersededBy)return;
+          const latestAttempt=record.attempts.find(value=>value.runId===runId)!;
+          latestAttempt.supersededStopRequested=true;this.save(record);
+        });
+        if(!run?.supersededBy)continue;
+        const control=()=>({expectedRevision:record.view.revision,runId,participantId:run!.participantId,generation:run!.generation});
+        const invoke=()=>this.options.controlSupersededRun
+          ?this.options.controlSupersededRun(workspaceId,id,control(),action)
+          :action==='stop'?this.stop(workspaceId,id,control()):this.observeRun(workspaceId,id,control());
+        try{await invoke();}
+        catch(error){
+          // Re-read the same owner. An admitted stop can throw a revision conflict
+          // from its event consumer after the native effect; never repeat it.
+          if(error instanceof AgentServiceError&&error.code==='agent_revision_conflict'){
+            record=this.load(workspaceId,id);const latest=conversationRuns(record.view).find(value=>value.id===runId);
+            if(latest?.participantId===run.participantId&&latest.generation===run.generation&&(action==='observe'||latest.stopRequested!==true)){run=latest;try{await invoke();}catch{/* Preserve the exact unknown; never resend a possible effect. */}}
+          }
+        }
+      }
+    })().finally(()=>{this.supersededCleanups.delete(key);this.scheduleSourceRelease(workspaceId,id);});
+    this.supersededCleanups.set(key,work);return work;
   }
   private pollStop(workspaceId: string, id: string, runId: string): void {
     const deadline = Date.now() + 10_000;
@@ -1473,7 +1935,7 @@ export class ConversationApplication {
     // Recheck after asynchronous connection setup before causing a native effect.
     const fresh = this.load(workspaceId, id);
     if (this.pendingSends.read(workspaceId,id)?.draft.waitingHandoff) fail('agent_handoff_pending', '已保存交接，请先取消后再回应原轮。', 409);
-    if (!fresh.requests[requestId] || !conversationRuns(fresh.view).some(run => run.id === input.runId)) fail('agent_request_stale', '此交互已变化。', 409);
+    if (!fresh.requests[requestId] || conversationRuns(fresh.view).some(run=>run.id===input.runId&&run.supersededBy) || !conversationRuns(fresh.view).some(run => run.id === input.runId)) fail('agent_request_stale', '此交互已变化。', 409);
     const resolved = resolveQuestionAnswer(request,input.answer,ids=>this.media.expand(fresh,ids));
     if(resolved.attachmentIds.length){
       const connection=this.options.connections.get(control.participant.connectionId);
@@ -1533,6 +1995,7 @@ export class ConversationApplication {
   }
   async close(): Promise<void> {
     this.closing = true;
+    await Promise.allSettled(this.supersededCleanups.values());
     clearInterval(this.idleTimer);
     const warmClosing=this.warmups.shutdown();void warmClosing.catch(()=>{});
     for (const timer of this.idleReleaseTimers.values()) clearTimeout(timer);
@@ -1543,11 +2006,17 @@ export class ConversationApplication {
     }
     this.retryWaits.clear();
     for (const controller of this.titleWork.values()) controller.abort();
-    const owned = this.options.repository.listPending(true).filter(record => !this.options.generationAlive || record.view.run?.generation === this.options.generation);
+    // A retained unknown turn can keep the conversation in listPending even
+    // after its current turn has finished. Never turn that completion into a
+    // new host interruption, or reset an existing cancellation/recovery budget.
+    const owned = this.options.repository.listPending(true).filter(record => record.view.run && unfinishedRun(record.view.run) && !record.view.run.resourcesReleased && (!this.options.generationAlive || record.view.run.generation === this.options.generation));
     const interrupted=owned.map(record=>({workspaceId:record.view.workspaceId,id:record.view.id,runId:record.view.run?.id}));
     for (const record of owned) {
       if (record.view.run) {
-        if(record.view.run.status!=='stopping'){record.interruption={runId:record.view.run.id,awaitingUser:record.view.requests.some(request=>request.runId===record.view.run!.id)||['waiting-approval','waiting-question'].includes(record.view.run.status)};record.view.run.interrupted=true;}
+        if(record.view.run.accepted && ['running','waiting-approval','waiting-question','tools-active'].includes(record.view.run.status)){
+          if(record.interruption?.runId!==record.view.run.id)record.interruption={runId:record.view.run.id,awaitingUser:record.view.requests.some(request=>request.runId===record.view.run!.id)||['waiting-approval','waiting-question'].includes(record.view.run.status)};
+          record.view.run.interrupted=true;
+        }
         record.view.run.status = 'unknown'; record.view.run.diagnostic = '宿主正在退出，原生执行尚待确认。'; this.save(record); }
     }
     const ids = new Set(this.options.repository.listPendingStates(true).flatMap(record => conversationRuns(record.view).filter(run=>run.generation===this.options.generation).flatMap(run=>record.participants.find(value=>value.id===run.participantId)?.connectionId??[])));

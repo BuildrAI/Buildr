@@ -42,8 +42,14 @@ for(const legacy of [false,true])test('observe releases a durably finished old r
     const walk=(dir:string):string[]=>fs.readdirSync(dir,{withFileTypes:true}).flatMap(e=>e.isDirectory()?walk(path.join(dir,e.name)):[path.join(dir,e.name)]);
     const filename=walk(path.join(dataRoot,'agent-service','connections')).find(file=>{try{const v=JSON.parse(fs.readFileSync(file,'utf8'));return v.kind==='lost-observation'&&v.executionRef;}catch{return false;}});assert.ok(filename);
     const native=JSON.parse(fs.readFileSync(filename,'utf8'));native.status='idle';native.items.push({id:'finished-answer',kind:'message',role:'assistant',text:'original result retained',executionId:native.executionRef.id,status:'completed'});fs.writeFileSync(filename,JSON.stringify(native));
-    const retainedRun=target.retainedRuns!.find(run=>run.id===originalRun)!;
-    await observer.operations.conversations.observeRun(scope,target.id,{expectedRevision:target.revision,runId:retainedRun.id,participantId:retainedRun.participantId,generation:retainedRun.generation});
+    // Background completion may advance the revision between read and observe.
+    // A 409 proves no write: re-read and retry only that exact retained run.
+    for(let attempt=0;;attempt++){
+      target=await observer.operations.conversations.read(scope,target.id);
+      const retainedRun=target.retainedRuns!.find(run=>run.id===originalRun)!;
+      try { await observer.operations.conversations.observeRun(scope,target.id,{expectedRevision:target.revision,runId:retainedRun.id,participantId:retainedRun.participantId,generation:retainedRun.generation});break; }
+      catch(error){if(attempt>=4||(error as {code?:string}).code!=='agent_revision_conflict')throw error;}
+    }
     target=await until(()=>observer!.operations.conversations.read(scope,target.id),v=>v.run?.generation===adopted.identity.generation&&v.run?.status==='completed'&&!v.pendingSend);
     await Promise.all([observer.operations.conversations.observe(scope,target.id),observer.operations.conversations.observe(scope,target.id)]);
     assert.ok(target.entries.some(e=>e.text==='original result retained'));

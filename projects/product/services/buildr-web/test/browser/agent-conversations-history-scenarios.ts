@@ -3,9 +3,28 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type {AgentConversationFixture} from './agent-conversation-fixture.ts';
 
+type ConversationScrollSample={at:number;top:number;height:number;viewport:number;visible:boolean;entries:number;listBottom:number|null;streamBottom:number|null};
+
 /** history 场景使用独立准备的对话现场。 */
 export async function runHistoryScenarios(fixture:AgentConversationFixture){
   const {capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,supplementaryInputs,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
+await step('Buildr 参与两个入口暂时隐藏且不请求参与数据',async()=>{
+  const saved=structuredClone(fixture.conversation),at=new Date().toISOString();
+  let reads=0;
+  const intercept=async(route:any)=>{reads++;await route.fulfill({status:500,json:{message:'隐藏时不应请求'}});};
+  const patterns=['**/participation?*','**/participation-summary?*'];
+  try{
+    for(const pattern of patterns)await page.route(pattern,intercept);
+    update({run:run('completed'),requests:[],entries:[{id:'participation-user',sequence:1,runId:'run-fixture',kind:'message',role:'user',text:'观察参与',createdAt:at},{id:'participation-answer',sequence:2,runId:'run-fixture',kind:'message',role:'assistant',text:'已完成',status:'completed',createdAt:at}]});
+    await page.reload();await input().waitFor();
+    assert.equal(await panel().getByRole('button',{name:'Buildr 参与',exact:true}).count(),0);
+    await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();
+    await panel().locator('.ac-history-toolbar').waitFor();
+    assert.equal(await panel().getByRole('button',{name:'Buildr 参与汇总',exact:true}).count(),0);
+    assert.equal(reads,0,'隐藏入口不得请求参与查询');
+    await capture(page,'buildr-participation-entries-hidden.png');
+  }finally{for(const pattern of patterns)await page.unroute(pattern,intercept);update(saved);}
+});
 await step('交错执行按归属合组，旧问题存档和子报告不打断主线',async()=>{
   const saved=structuredClone(fixture.conversation),at=new Date().toISOString();
   const entry=(id:string,sequence:number,runId:string,kind:string,role:string,text:string,extra:any={})=>({id,sequence,runId,kind,role,text,status:'completed',createdAt:at,...extra});
@@ -24,19 +43,170 @@ await step('交错执行按归属合组，旧问题存档和子报告不打断�
       entry('unified-child-report',11,'run-fixture','message','assistant','子任务独立报告不应重复出现',{parentToolId:'unified-current-last'}),
     ]});
     await page.reload();await input().waitFor();
-    const older=panel().locator('[data-turn-id="unified-old-user"]'),beforeExtra=panel().locator('[data-turn-id="unified-user"]'),afterExtra=panel().locator('[data-turn-id="unified-extra"]');
-    await afterExtra.waitFor();
-    await older.getByRole('button',{name:'展开处理过程',exact:true}).click();
+    const older=panel().locator('[data-turn-id="unified-old-user"]'),beforeExtra=panel().locator('[data-turn-id="unified-user"]');
+    await beforeExtra.locator('[data-entry-id="unified-extra"]').waitFor();
+    assert.equal(await panel().locator('[data-turn-id="unified-extra"]').count(),0,'补充沿用原轮起点');
     assert.equal(await older.locator('.ac-step-group').count(),1,'另一执行插入的工具与接续回执不切碎旧工具组');
-    assert.equal(await beforeExtra.locator('.ac-step-group').count(),1);assert.equal(await afterExtra.locator('.ac-step-group').count(),1,'用户补充保留独立分段');
-    assert.equal(await panel().locator('.ac-step-group.is-live').count(),1);assert.equal(await afterExtra.locator('.ac-step-group.is-live').count(),1);
-    await panel().getByText('继续处理新要求',{exact:true}).waitFor();
+    assert.equal(await beforeExtra.locator('.ac-step-group').count(),2,'用户补充前后保留两个工具分段');
+    assert.equal(await panel().locator('.ac-step-group.is-live').count(),1);assert.equal(await beforeExtra.locator('.ac-step-group.is-live').count(),1);
+    assert.equal(await panel().locator('.ac-handoff-receipt').count(),0,'相同选择的已接收回执遵循现有静默呈现');
     assert.equal(await panel().locator('[data-entry-id="retired-question-unified"],[data-entry-id="unified-child-report"]').count(),0);
     await older.locator('.ac-step-group>summary').click();
     await older.locator('[data-entry-id="unified-old-two"]').waitFor();
     assert.equal(await older.locator('.ac-step-tool').count(),2);await capture(page,'conversation-unified-interleaved-work.png');
   }finally{fixture.conversation=saved;await page.reload();await input().waitFor();}
 });
+await step('同轮补充在原展示行下按序展开，完成后与过程一起折叠',async()=>{
+  const saved=structuredClone(fixture.conversation),at=new Date().toISOString();
+  const entry=(id:string,sequence:number,role:string,text:string)=>({id,sequence,kind:'message',role,text,runId:'run-fixture',participantId:'participant-codex',createdAt:at,status:'completed'});
+  try{
+    update({entries:[entry('fold-user',1,'user','最初要求'),entry('fold-before',2,'assistant','补充前的处理'),entry('fold-extra',3,'user','补充说明'),entry('fold-after',4,'assistant','补充后的处理'),entry('fold-extra-two',5,'user','第二条补充'),entry('fold-answer',6,'assistant','最终答复')],run:run('completed'),requests:[]});
+    await page.reload();await input().waitFor();
+    const turn=panel().locator('[data-turn-id="fold-user"]'),extra=turn.locator('[data-entry-id="fold-extra"]');
+    assert.equal(await panel().locator('.ac-turn').count(),1);await turn.locator('[data-entry-id="fold-answer"]').waitFor();assert.equal(await extra.count(),0);
+    await turn.getByRole('button',{name:'展开处理过程',exact:true}).click();await extra.waitFor();
+    assert.deepEqual(await turn.locator('[data-entry-id]').evaluateAll((nodes:HTMLElement[])=>nodes.map(node=>node.dataset.entryId)),['fold-user','fold-before','fold-extra','fold-after','fold-extra-two','fold-answer']);
+    await capture(page,'conversation-supplement-expanded.png');
+    await turn.getByRole('button',{name:'收起处理过程',exact:true}).click();assert.equal(await extra.count(),0);await turn.locator('[data-entry-id="fold-answer"]').waitFor();
+    await page.reload();await turn.waitFor();assert.equal(await extra.count(),0);await turn.getByRole('button',{name:'展开处理过程',exact:true}).click();await extra.waitFor();
+    await turn.getByRole('button',{name:'收起处理过程',exact:true}).click();update({entries:[entry('fold-earlier',0,'user','更早的原始要求'),...fixture.conversation!.entries]});await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+    const earlier=panel().locator('[data-turn-id="fold-earlier"]');await earlier.waitFor();assert.equal(await earlier.locator('[data-entry-id="fold-extra"]').count(),0,'补回更早输入后保留同一执行的明确折叠选择');
+  }finally{fixture.conversation=saved;await page.reload();await input().waitFor();}
+});
+await step('发送后始终展示最新信息，布局滚动不误加载更早记录',async()=>{
+  const previous=structuredClone(fixture.conversation),at=new Date().toISOString();
+  const entry=(id:string,sequence:number,role:string,text:string)=>({id,sequence,kind:'message',role,text,provider:'codex',participantId:'participant-codex',runId:'run-fixture',status:'completed',createdAt:at});
+  const settle=()=>page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
+  const readingAnswer=(prefix:string,count:number,repeat:number)=>Array.from({length:count},(_,i)=>`${prefix} ${i}：`+'这是一段用于验证信息流贴底与向上翻阅行为的较长说明。'.repeat(repeat)).join('\n\n');
+  try{
+    update({participants:[{id:'participant-codex',connectionId:'codex',provider:'codex',label:'Codex',model:'fixture-model',contextId:'native',deliveredThrough:0}],entries:[entry('latest-pin-user',1,'user','检查发送后的最新信息'),entry('latest-pin-answer',2,'assistant',readingAnswer('用于保持阅读位置的历史答复',12,5))],nextEntryCursor:undefined,run:run('completed','codex',{model:'fixture-model'}),requests:[]});
+    await page.reload();await input().waitFor();
+    const stream=panel().locator('.ac-stream'),distance=()=>stream.evaluate((node:HTMLElement)=>Math.round(node.scrollHeight-node.scrollTop-node.clientHeight));
+    await page.waitForFunction(()=>{const node=document.querySelector<HTMLElement>('#agent-conversation-panel .ac-stream');return Boolean(node&&node.scrollHeight-node.scrollTop-node.clientHeight<2);});
+    await stream.evaluate((node:HTMLElement)=>{node.scrollTop=0;node.dispatchEvent(new Event('scroll'));});await settle();
+    const reading=await stream.evaluate((node:HTMLElement)=>({top:node.scrollTop,max:Math.round(node.scrollHeight-node.clientHeight)}));assert.ok(reading.max>80&&await distance()>24,'先离开最新位置阅读旧内容 '+JSON.stringify(reading));
+    await input().fill('发送后应看到这条最新指令');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().locator('.ac-turn-prompt').filter({hasText:'发送后应看到这条最新指令'}).waitFor();
+    await page.waitForFunction(()=>{const node=document.querySelector<HTMLElement>('#agent-conversation-panel .ac-stream');return Boolean(node&&node.scrollHeight-node.scrollTop-node.clientHeight<2);});
+    assert.equal(await panel().getByRole('button',{name:'向下到底',exact:true}).count(),0,'本地发送后回到最新信息');
+    update({entries:[entry('clamp-user',1,'user','输入区收缩时的贴底'),entry('clamp-answer',2,'assistant',readingAnswer('输入区收缩时的答复',10,3))],nextEntryCursor:1,run:run('completed','codex',{model:'fixture-model'}),requests:[]});
+    historyPages.set(1,{...fixture.conversation,entries:[entry('latest-pin-older',0,'user','更早的历史要求')],nextEntryCursor:undefined});
+    await page.reload();await input().waitFor();
+    await page.waitForFunction(()=>{const node=document.querySelector<HTMLElement>('#agent-conversation-panel .ac-stream');return Boolean(node&&node.scrollHeight-node.scrollTop-node.clientHeight<2);});
+    const scrollable=await stream.evaluate((node:HTMLElement)=>Math.round(node.scrollHeight-node.clientHeight));
+    assert.ok(scrollable>24&&scrollable<=800,'夹具内容应形成可测试的贴底距离 '+scrollable);
+    const readsBefore=fixture.entryReads;
+    await stream.evaluate((node:HTMLElement)=>{node.scrollTop=node.scrollHeight;node.dispatchEvent(new Event('scroll'));});
+    await stream.evaluate((node:HTMLElement)=>{node.scrollTop=Math.max(0,node.scrollTop-8);node.dispatchEvent(new Event('scroll'));});await settle();
+    assert.equal(fixture.entryReads,readsBefore,'输入区收缩造成的贴底滚动不读取更早记录');
+    assert.equal(await panel().getByRole('button',{name:'向下到底',exact:true}).count(),0,'贴底滚动事件不弹出到底按钮');
+    assert.ok(await distance()<24,'布局滚动后仍保持贴底');
+    await stream.evaluate((node:HTMLElement)=>{node.scrollTop=0;node.dispatchEvent(new Event('scroll'));});
+    await panel().locator('[data-entry-id="latest-pin-older"]').waitFor({state:'attached'});
+    assert.ok(fixture.entryReads>readsBefore,'用户继续向上翻阅仍加载更早记录');
+  }finally{fixture.conversation=previous;historyPages.delete(1);await page.reload();await input().waitFor();}
+});
+
+await step('从列表打开长对话时首帧直接位于最新位置，正文出现后不跳到下方',async()=>{
+  const previous=structuredClone(fixture.conversation),additional=fixture.additionalConversations,at=new Date().toISOString();
+  const targetId='first-paint-target';
+  const answer='打开后先只读取到这一条最新答复。';
+  const older=Array.from({length:12},(_,i)=>[
+    {id:'first-paint-older-'+i+'-user',sequence:i*2+1,runId:'first-paint-older-'+i,kind:'message',role:'user',text:`更早要求 ${i}`,status:'completed',createdAt:at},
+    {id:'first-paint-older-'+i+'-answer',sequence:i*2+2,runId:'first-paint-older-'+i,kind:'message',role:'assistant',text:Array.from({length:8},(_,paragraph)=>`更早记录 ${i}-${paragraph}：用于确认首屏补页期间最新答复仍然稳定停在底部。`).join('\n\n'),status:'completed',createdAt:at},
+  ]).flat();
+  const target={...structuredClone(previous),id:targetId,title:'首帧定位验证',revision:'first-paint-r1',hidden:false,updatedAt:at,participants:[{id:'participant-codex',connectionId:'codex',provider:'codex',label:'Codex',model:'fixture-model',contextId:'native',deliveredThrough:0}],entries:[
+    {id:'first-paint-user',sequence:101,runId:'first-paint-run',kind:'message',role:'user',text:'打开后应该直接看到最新答复',status:'completed',createdAt:at},
+    {id:'first-paint-answer',sequence:102,runId:'first-paint-run',kind:'message',role:'assistant',text:answer,status:'completed',createdAt:at},
+  ],nextEntryCursor:100,run:run('completed','codex',{id:'first-paint-run',model:'fixture-model'}),requests:[],pendingSend:undefined};
+  historyPages.set(100,{...target,entries:older,nextEntryCursor:undefined});
+  try{
+    fixture.additionalConversations=[target];
+    await page.reload();await input().waitFor();
+    await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();
+    const row=panel().locator('.ac-history-list button[data-conversation-id="'+targetId+'"]');
+    await row.waitFor();
+    fixture.holdEntryRead=true;
+    const entryReadStarted=new Promise<void>(resolve=>{fixture.entryReadStarted=resolve;});
+    await page.evaluate(()=>{
+      const trace:ConversationScrollSample[]=[];
+      (window as any).__conversationScrollTrace=trace;
+      let frames=0;
+      const sample=()=>{
+        const stream=document.querySelector<HTMLElement>('#agent-conversation-panel .ac-stream');
+        const list=stream?.querySelector<HTMLElement>('.ac-message-list');
+        const entries=stream?[...stream.querySelectorAll<HTMLElement>('[data-entry-id]')].filter(node=>node.getClientRects().length).length:0;
+        trace.push({at:performance.now(),top:stream?.scrollTop??0,height:stream?.scrollHeight??0,viewport:stream?.clientHeight??0,visible:Boolean(stream?.getClientRects().length&&list),entries,listBottom:list?.getBoundingClientRect().bottom??null,streamBottom:stream?.getBoundingClientRect().bottom??null});
+        if(++frames<240)requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    });
+    await row.click();
+    await page.locator('#agent-conversation-panel[data-conversation-id="'+targetId+'"]').waitFor();
+    await panel().locator('[data-entry-id="first-paint-answer"]').waitFor();
+    await entryReadStarted;
+    await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
+    const beforeFill:ConversationScrollSample[]=await page.evaluate(()=>(window as any).__conversationScrollTrace as ConversationScrollSample[]);
+    const visible=beforeFill.filter(sample=>sample.visible&&sample.entries>0);
+    assert.ok(visible.length,'首批最新记录应在补页请求挂起时可见');
+    const misplaced=visible.find(sample=>sample.listBottom===null||sample.streamBottom===null||sample.streamBottom-sample.listBottom>96);
+    assert.equal(misplaced,undefined,'补页期间短内容不能先露在信息流顶部：'+JSON.stringify(visible.slice(-8)));
+    fixture.releaseEntryRead!();
+    await panel().locator('[data-entry-id="first-paint-older-11-answer"]').waitFor({state:'attached'});
+    await panel().locator('[data-entry-id="first-paint-older-11-answer"] .markdown-body').waitFor();
+    await page.waitForFunction(()=>{const node=document.querySelector<HTMLElement>('#agent-conversation-panel .ac-stream');return Boolean(node&&node.scrollHeight-node.scrollTop-node.clientHeight<2);});
+    await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
+    const samples:ConversationScrollSample[]=await page.evaluate(()=>(window as any).__conversationScrollTrace as ConversationScrollSample[]);
+    const afterFill=samples.filter(sample=>sample.visible&&sample.entries>0);
+    const afterFirstScrollable=afterFill.findIndex(sample=>sample.height>sample.viewport+1);
+    const geometry=await panel().locator('.ac-stream').evaluate((node:HTMLElement)=>({scrollHeight:node.scrollHeight,clientHeight:node.clientHeight,scrollTop:node.scrollTop,contentHeight:node.querySelector<HTMLElement>('.ac-stream-content')?.getBoundingClientRect().height,listHeight:node.querySelector<HTMLElement>('.ac-message-list')?.getBoundingClientRect().height,entryCount:node.querySelectorAll('[data-entry-id]').length}));
+    assert.ok(afterFirstScrollable>=0,'补页后应形成可滚动信息流：'+JSON.stringify({geometry,samples:afterFill.slice(-8)}));
+    const jump=afterFill.slice(afterFirstScrollable).find(sample=>sample.height-sample.top-sample.viewport>=2);
+    assert.equal(jump,undefined,'补页后不能先停在旧位置再跳到底部：'+JSON.stringify(afterFill.slice(Math.max(0,afterFirstScrollable-2),afterFirstScrollable+8)));
+  }finally{
+    fixture.releaseEntryRead?.();fixture.holdEntryRead=false;fixture.entryReadStarted=undefined;historyPages.delete(100);
+    fixture.additionalConversations=additional;fixture.conversation=previous;
+    await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();
+    await panel().locator('.ac-history-list button[data-conversation-id="'+previous.id+'"]').click();
+    await page.locator('#agent-conversation-panel[data-conversation-id="'+previous.id+'"]').waitFor();
+    await page.reload();await input().waitFor();
+  }
+});
+
+await step('补完不足一屏的历史后仍位于最新位置，不反向跳到顶部',async()=>{
+  const previous=structuredClone(fixture.conversation),additional=fixture.additionalConversations,at=new Date().toISOString();
+  const targetId='short-history-first-paint';
+  const target={...structuredClone(previous),id:targetId,title:'短历史首帧验证',revision:'short-history-r1',hidden:false,updatedAt:at,participants:[{id:'participant-codex',connectionId:'codex',provider:'codex',label:'Codex',model:'fixture-model',contextId:'native',deliveredThrough:0}],entries:[
+    {id:'short-history-user',sequence:11,runId:'short-history-run',kind:'message',role:'user',text:'打开后应该仍看到最新答复',status:'completed',createdAt:at},
+    {id:'short-history-answer',sequence:12,runId:'short-history-run',kind:'message',role:'assistant',text:'补完更早记录后，这段短对话仍贴在输入区上方。',status:'completed',createdAt:at},
+  ],nextEntryCursor:10,run:run('completed','codex',{id:'short-history-run',model:'fixture-model'}),requests:[],pendingSend:undefined};
+  historyPages.set(10,{...target,entries:[
+    {id:'short-history-older',sequence:1,runId:'short-history-older-run',kind:'message',role:'user',text:'一条更早的短要求',status:'completed',createdAt:at},
+  ],nextEntryCursor:undefined});
+  try{
+    fixture.additionalConversations=[target];
+    await page.reload();await input().waitFor();
+    await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();
+    const row=panel().locator('.ac-history-list button[data-conversation-id="'+targetId+'"]');
+    await row.waitFor();await row.click();
+    await page.locator('#agent-conversation-panel[data-conversation-id="'+targetId+'"]').waitFor();
+    await panel().locator('[data-entry-id="short-history-older"]').waitFor({state:'attached'});
+    await panel().locator('[data-entry-id="short-history-answer"] .markdown-body').waitFor();
+    await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
+    const geometry=await panel().locator('.ac-stream').evaluate((node:HTMLElement)=>{
+      const list=node.querySelector<HTMLElement>('.ac-message-list')!;
+      return {scrollTop:node.scrollTop,scrollHeight:node.scrollHeight,clientHeight:node.clientHeight,streamBottom:node.getBoundingClientRect().bottom,listBottom:list.getBoundingClientRect().bottom};
+    });
+    assert.ok(geometry.scrollHeight<=geometry.clientHeight+1,'短历史补完后不应形成滚动区域：'+JSON.stringify(geometry));
+    assert.ok(geometry.streamBottom-geometry.listBottom<=2,'短历史补完后不能从底部跳到顶部：'+JSON.stringify(geometry));
+  }finally{
+    historyPages.delete(10);fixture.additionalConversations=additional;fixture.conversation=previous;
+    await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();
+    await panel().locator('.ac-history-list button[data-conversation-id="'+previous.id+'"]').click();
+    await page.locator('#agent-conversation-panel[data-conversation-id="'+previous.id+'"]').waitFor();
+    await page.reload();await input().waitFor();
+  }
+});
+
 await step('主答复后的隐藏子消息不阻止真实已读确认',async()=>{
   const saved=structuredClone(fixture.conversation),at=new Date().toISOString(),version=900001;
   try{
@@ -54,6 +224,65 @@ await step('主答复后的隐藏子消息不阻止真实已读确认',async()=>
     assert.equal((await seen).status(),200);assert.equal(fixture.conversation.activity.seenThrough,version);
     assert.equal(await panel().locator('[data-entry-id="seen-child-input"],[data-entry-id="seen-child-answer"],[data-entry-id="retired-question-seen"]').count(),0);
   }finally{fixture.conversation=saved;await page.reload();await input().waitFor();}
+});
+await step('刷新布局跟随最新，滚动条接管后不被延迟锚点拉回',async()=>{
+  const saved=structuredClone(fixture.conversation),at=new Date().toISOString();
+  const entry=(id:string,sequence:number,text:string)=>({id,sequence,kind:'message',role:'assistant',text,runId:'scroll-'+id,status:'completed',createdAt:at});
+  const long=Array.from({length:60},(_,i)=>`第 ${i} 段，用于核对可见阅读位置。`).join('\n\n');
+  const settle=()=>page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())))));
+  const stream=panel().locator('.ac-stream');
+  try{
+    update({entries:[entry('scroll-current',100,long)],nextEntryCursor:100,run:run('completed'),requests:[]});
+    historyPages.set(100,{...fixture.conversation,entries:[entry('scroll-earlier',50,long)],nextEntryCursor:undefined});
+    await page.reload();await input().waitFor();
+    await page.waitForFunction(()=>{const n=document.querySelector<HTMLElement>('#agent-conversation-panel .ac-stream');return Boolean(n&&n.scrollTop>100&&n.scrollHeight-n.scrollTop-n.clientHeight<2);});
+    const reads=fixture.entryReads;
+    // Content growth can queue a scroll event before the resize observer.
+    await stream.evaluate((node:HTMLElement)=>{
+      // Clicking the background alone is not a request to leave latest.
+      node.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));
+      const spacer=document.createElement('div');spacer.id='scroll-layout-spacer';spacer.style.height='120px';node.querySelector('.ac-stream-content')!.append(spacer);
+      // Growth preserves the old top (a viewport enlargement may clamp it).
+      // An arbitrary move away from that position is reader intent, not layout.
+      node.dispatchEvent(new Event('scroll'));
+    });
+    await settle();
+    assert.ok(await stream.evaluate((n:HTMLElement)=>n.scrollHeight-n.scrollTop-n.clientHeight<2),'布局变化不能取消刷新后的最新跟随');
+    assert.equal(fixture.entryReads,reads,'布局变化不是向前续读');
+    // A scrollbar drag must win even if latest-follow was active before it.
+    await stream.evaluate((node:HTMLElement)=>{
+      node.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));
+      node.scrollTop-=160;node.dispatchEvent(new Event('scroll'));
+      node.scrollTop+=40;node.dispatchEvent(new Event('scroll'));
+      (window as any).__scrollExpected=node.scrollTop;
+    });
+    await settle();
+    assert.ok(await stream.evaluate((n:HTMLElement)=>Math.abs(n.scrollTop-(window as any).__scrollExpected)<2),'向下拖动以当前可见位置为准，不强制到底');
+    await panel().getByRole('button',{name:'向下到底',exact:true}).click();await settle();
+    assert.ok(await stream.evaluate((n:HTMLElement)=>n.scrollHeight-n.scrollTop-n.clientHeight<2),'显式回到最新仍有效');
+    fixture.holdEntryRead=true;
+    const started=new Promise<void>(resolve=>{fixture.entryReadStarted=resolve;});
+    await stream.evaluate((node:HTMLElement)=>{node.scrollTop=600;node.dispatchEvent(new Event('scroll'));});await started;
+    await stream.evaluate((node:HTMLElement)=>{
+      const observer=new MutationObserver(()=>{
+        if(!node.querySelector('[data-entry-id="scroll-earlier"]'))return;
+        observer.disconnect();
+        queueMicrotask(()=>{
+          // Move after the first compensation but before its animation frames.
+          node.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));
+          node.scrollTop+=160;node.dispatchEvent(new Event('scroll'));
+          (window as any).__scrollExpected=node.scrollTop;
+        });
+      });
+      observer.observe(node,{childList:true,subtree:true});
+    });
+    fixture.releaseEntryRead!();await panel().locator('[data-entry-id="scroll-earlier"]').waitFor();await settle();
+    assert.ok(await stream.evaluate((n:HTMLElement)=>Math.abs(n.scrollTop-(window as any).__scrollExpected)<2),'补页期间继续向下滚动，不被旧锚点重新定位');
+    await capture(page,'conversation-scroll-stable.png');
+  }finally{
+    fixture.releaseEntryRead?.();fixture.holdEntryRead=false;historyPages.delete(100);fixture.conversation=saved;
+    await page.evaluate(()=>{delete (window as any).__scrollExpected;});await page.reload();await input().waitFor();
+  }
 });
 await step('大工具记录仅在展开明细时读取完整内容并按内容版本复用',async()=>{
   const saved=structuredClone(fixture.conversation);let reads=0,release:(()=>void)|undefined;
@@ -164,13 +393,15 @@ await step('顶部正文输入与列表共用最大宽度，宽屏居中且窄�
 
 await step('列表手动从末条加载，整行折叠与拖动互不干扰',async()=>{
   const original=fixture.additionalConversations,requests:Array<{workspaceId:string|null;query:string|null;limit:number;cursor:string|null}>=[];
-  let fail=false,stale=false,release:(()=>void)|undefined,started:(()=>void)|undefined;
+  let fail=false,stale=false,release:(()=>void)|undefined,started:(()=>void)|undefined,holdExpand=false,releaseExpand:(()=>void)|undefined,expandStarted:(()=>void)|undefined;
   const held=new Promise<void>(resolve=>{started=resolve;});
+  const expandHeld=new Promise<void>(resolve=>{expandStarted=resolve;});
   const matcher='**/api/v1/app/agent-service/conversations?*';
   const intercept=async(route:any)=>{
     const url=new URL(route.request().url()),space=url.searchParams.get('workspaceId'),limit=Number(url.searchParams.get('limit'));
     requests.push({workspaceId:space,query:url.searchParams.get('query'),limit,cursor:url.searchParams.get('cursor')});
     if(url.searchParams.get('query')==='迟到现场'&&space===workspaceId){started?.();await new Promise<void>(resolve=>{release=resolve;});}
+    if(holdExpand&&space===workspaceId&&limit===5){holdExpand=false;expandStarted?.();await new Promise<void>(resolve=>{releaseExpand=resolve;});}
     if((fail||stale)&&space===workspaceId&&limit===10)return route.fulfill({status:stale?409:503,json:{error:{code:stale?'agent_cursor_stale':'fixture_unavailable',message:stale?'列表位置已变化，请刷新后继续。':'分组暂不可用'}}});
     await route.fallback();
   };
@@ -197,16 +428,69 @@ await step('列表手动从末条加载，整行折叠与拖动互不干扰',asy
     assert.equal(await group.getByRole('button',{name:'收起',exact:true}).count(),0);
     for(const n of [15,25,26]){await group.getByRole('button',{name:/加载更多/}).click();await count(n);}
     assert.deepEqual(groupCalls().slice(-3).map(row=>({limit:row.limit,cursor:row.cursor})),[{limit:10,cursor:'5'},{limit:10,cursor:'15'},{limit:10,cursor:'25'}]);assert.equal(await group.getByRole('button',{name:/加载更多/}).count(),0);
-    await header.click();await count(0);assert.equal(await header.getAttribute('aria-expanded'),'false');await header.press('Enter');await count(5);assert.equal(groupCalls().at(-1)!.limit,5);assert.equal(groupCalls().at(-1)!.cursor,null);
+    await header.click();await count(0);assert.equal(await header.getAttribute('aria-expanded'),'false');assert.equal(await panel().getByText('没有匹配的对话',{exact:true}).count(),0,'折叠的单个分组不产生假空态');
+    holdExpand=true;await header.press('Enter');await count(5);
+    const expandMore=group.getByRole('button',{name:/加载更多/});await expandMore.waitFor();
+    assert.equal(await expandMore.isDisabled(),true,'折叠后重新展开的首帧就显示加载更多，游标返回前不可点');
+    await expandHeld;assert.deepEqual({limit:groupCalls().at(-1)!.limit,cursor:groupCalls().at(-1)!.cursor},{limit:5,cursor:null});releaseExpand?.();releaseExpand=undefined;
+    await page.waitForFunction(({id}:any)=>{const button=[...document.querySelectorAll('[data-history-workspace="'+id+'"] button')].find(node=>node.textContent?.includes('加载更多')) as HTMLButtonElement|undefined;return Boolean(button&&!button.disabled);},{id:workspaceId});
+    assert.equal(await expandMore.isDisabled(),false,'续读游标返回后按钮可继续加载');
     await defaults.getByRole('button',{name:/加载更多/}).click();await page.waitForFunction(()=>document.querySelectorAll('[data-history-workspace="@default"] .ac-history-row').length===8);
     fixture.expectedBrowserErrors.add('503');fixture.expectedBrowserErrors.add('Service Unavailable');fail=true;await group.getByRole('button',{name:/加载更多/}).click();await group.getByText('分组暂不可用',{exact:true}).waitFor();await count(5);fail=false;await group.getByRole('button',{name:/重\s*试/}).click();await count(15);
-    fixture.expectedBrowserErrors.add('409');fixture.expectedBrowserErrors.add('Conflict');stale=true;await group.getByRole('button',{name:/加载更多/}).click();await group.getByText('列表位置已变化，请刷新后继续。',{exact:true}).waitFor();await count(15);stale=false;await group.getByRole('button',{name:'刷新列表',exact:true}).click();await count(5);
-    await search.fill('迟到现场');await held;await search.fill('分批现场');await count(5);release?.();await page.waitForTimeout(100);await count(5);
+    fixture.expectedBrowserErrors.add('409');fixture.expectedBrowserErrors.add('Conflict');stale=true;await group.getByRole('button',{name:/加载更多/}).click();await group.getByText('列表位置已变化，请刷新后继续。',{exact:true}).waitFor();await count(15);stale=false;await group.getByRole('button',{name:'刷新列表',exact:true}).click();await count(15);
+    await search.fill('迟到现场');await held;await search.fill('分批现场');await count(15);release?.();await page.waitForTimeout(100);await count(15);
     await capture(page,'conversation-history-manual-controls.png');
   }finally{
-    release?.();fail=false;stale=false;fixture.additionalConversations=original;await page.unroute(matcher,intercept);
+    release?.();releaseExpand?.();fail=false;stale=false;fixture.additionalConversations=original;await page.unroute(matcher,intercept);
     const back=panel().getByRole('button',{name:'返回当前对话',exact:true});if(await back.isVisible())await back.click();await input().waitFor();
   }
+});
+
+await step('搜索只匹配标题与用户/助手消息，展示片段且统计读取不随关键词重发',async()=>{
+  const saved=structuredClone(fixture.conversation),additional=fixture.additionalConversations,at=new Date().toISOString();
+  const requests:Array<{limit:number;query:string|null}>=[];
+  const matcher='**/api/v1/app/agent-service/conversations?*';
+  const intercept=async(route:any)=>{const url=new URL(route.request().url());requests.push({limit:Number(url.searchParams.get('limit')),query:url.searchParams.get('query')});await route.fallback();};
+  try{
+    fixture.additionalConversations=[
+      {...structuredClone(saved),id:'search-message',title:'普通历史',revision:'search-message',updatedAt:at,entries:[{id:'search-message',sequence:1,kind:'message',role:'assistant',text:'这里有片段关键词和上下文',status:'completed',createdAt:at}],participants:[],run:run('completed'),requests:[],activity:undefined},
+      {...structuredClone(saved),id:'search-tool',title:'工具现场',revision:'search-tool',updatedAt:at,entries:[{id:'search-tool',sequence:1,kind:'tool',role:'system',text:'工具输出包含片段关键词',status:'completed',createdAt:at,name:'Bash'}],participants:[],run:run('completed'),requests:[],activity:undefined},
+    ];
+    update({title:'当前对话',run:run('completed'),requests:[],entries:[]});
+    await page.route(matcher,intercept);
+    await page.reload();await input().waitFor();
+    await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();
+    const search=panel().getByRole('textbox',{name:'搜索对话',exact:true});await search.fill('片段关键词');
+    await panel().locator('[data-conversation-id="search-message"] .ac-history-row-snippet').waitFor();
+    await page.waitForFunction(()=>!document.querySelector('[data-conversation-id="search-tool"]'));
+    assert.equal(await panel().locator('[data-conversation-id="search-tool"]').count(),0,'工具日志不参与搜索');
+    assert.ok((await panel().locator('[data-conversation-id="search-message"] .ac-history-row-snippet').textContent())?.includes('片段关键词'));
+    assert.equal(requests.filter(row=>row.limit===1&&row.query==='片段关键词').length,0,'统计读取不随搜索关键词重发');
+    await search.fill('完全不存在的关键词');
+    await panel().getByText('没有匹配的对话',{exact:true}).waitFor();
+  }finally{await page.unroute(matcher,intercept);fixture.additionalConversations=additional;fixture.conversation=saved;await page.reload();await input().waitFor();}
+});
+
+await step('完整列表的模型统计项可点击筛选并恢复',async()=>{
+  const saved=structuredClone(fixture.conversation),additional=fixture.additionalConversations,models:string[]=[];
+  let filteredStarted!:(()=>void);const filtered=new Promise<void>(resolve=>filteredStarted=resolve);
+  const matcher='**/api/v1/app/agent-service/conversations?*';
+  const intercept=async(route:any)=>{const model=new URL(route.request().url()).searchParams.get('model');if(model){models.push(model);if(model==='filter-model')filteredStarted();}await route.fallback();};
+  try{
+    fixture.additionalConversations=[];
+    update({title:'筛选现场',run:run('running','qoder',{model:'filter-model',modelAccountId:'filter-account'}),requests:[],entries:[]});
+    await page.route(matcher,intercept);
+    await page.reload();await input().waitFor();
+    await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();
+    const chip=panel().locator('.ac-execution-summary button').first();await chip.waitFor();
+    await chip.click();
+    await filtered;
+    await page.waitForFunction(()=>document.querySelector('.ac-execution-summary button')?.getAttribute('aria-pressed')==='true');
+    assert.ok(models.includes('filter-model'),'点击模型统计项应带模型条件读取列表');
+    await chip.click();
+    await page.waitForFunction(()=>!document.querySelector('.ac-execution-filter'));
+    await page.waitForFunction(()=>document.querySelector('.ac-execution-summary button')?.getAttribute('aria-pressed')==='false');
+  }finally{await page.unroute(matcher,intercept);fixture.additionalConversations=additional;fixture.conversation=saved;await page.reload();await input().waitFor();}
 });
 
 await step('首个回复前使用本轮实际智能体和模型，切换草稿或刷新不改写历史',async()=>{
@@ -216,12 +500,12 @@ await step('首个回复前使用本轮实际智能体和模型，切换草稿�
       update({participants,entries,run:run('starting','codex',{accepted:false,model:'fixture-model'}),requests:[]});await page.reload();await input().waitFor();
       const current=()=>panel().locator('[data-turn-id="awaiting-prompt"] .ac-turn-identity-link');
       const old=()=>panel().locator('[data-turn-id="old-prompt"] .ac-turn-identity-link');
-      assert.equal(await current().innerText(),'Codex · Fixture model','启动中按执行编号识别没有参与方字段的用户输入');
+      assert.equal((await current().innerText()).split('\n')[0],'Codex · Fixture model','启动中按执行编号识别没有参与方字段的用户输入');
       assert.equal(await old().innerText(),'DSH · Fast model','历史名称来自历史参与方而非当前执行');
-      update({run:run('running','codex',{model:'fixture-model'})});await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await panel().locator('.ac-turn.is-executing').waitFor();assert.equal(await current().innerText(),'Codex · Fixture model');
-      await chooseAgent('Qoder');await chooseModel('Fast model');await closeModelSettings();assert.equal(await current().innerText(),'Codex · Fixture model','输入区下一轮选择不能重标当前执行');assert.equal(await old().innerText(),'DSH · Fast model');
-      await page.reload();await input().waitFor();assert.equal(await current().innerText(),'Codex · Fixture model','刷新后仍从执行记录恢复名称');
-      update({entries:[...entries,{id:'first-reply',sequence:4,kind:'message',role:'assistant',text:'开始处理',runId:'run-fixture',participantId:'participant-codex',provider:'codex',createdAt}]});await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await panel().locator('[data-entry-id="first-reply"]').waitFor();assert.equal(await current().innerText(),'Codex · Fixture model','首条回复到达前后名称一致');
+      update({run:run('running','codex',{model:'fixture-model'})});await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await panel().locator('.ac-turn.is-executing').waitFor();assert.equal((await current().innerText()).split('\n')[0],'Codex · Fixture model');
+      await chooseAgent('Qoder');await chooseModel('Fast model');await closeModelSettings();assert.equal((await current().innerText()).split('\n')[0],'Codex · Fixture model','输入区下一轮选择不能重标当前执行');assert.equal(await old().innerText(),'DSH · Fast model');
+      await page.reload();await input().waitFor();assert.equal((await current().innerText()).split('\n')[0],'Codex · Fixture model','刷新后仍从执行记录恢复名称');
+      update({entries:[...entries,{id:'first-reply',sequence:4,kind:'message',role:'assistant',text:'开始处理',runId:'run-fixture',participantId:'participant-codex',provider:'codex',createdAt}]});await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await panel().locator('[data-entry-id="first-reply"]').waitFor();assert.equal((await current().innerText()).split('\n')[0],'Codex · Fixture model','首条回复到达前后名称一致');
       const streamForPin=panel().locator('.ac-stream');
       await streamForPin.evaluate((node:HTMLElement)=>{node.scrollTop=node.scrollHeight;const grow=document.createElement('div');grow.id='late-growth';grow.style.height='240px';document.querySelector('.ac-compose-wrap')?.appendChild(grow);});
       await page.waitForTimeout(300);
@@ -272,7 +556,8 @@ await step('历史工具失败不改变当前执行图形的状态',async()=>{
       const color=(locator:any)=>locator.evaluate((node:HTMLElement)=>getComputedStyle(node).color);
       const currentColor=await color(group.locator('[data-entry-id="current-tool"]>summary>.ac-step-node'));
       const failedColor=await color(group.locator('[data-entry-id="earlier-failed"]>summary>.ac-step-node'));
-      assert.equal(await color(summary.locator(':scope>.ac-step-node')),currentColor,'实时图形只反映当前工具本身的状态');
+      if(status==='failed')assert.notEqual(await color(summary.locator(':scope>.ac-step-node')),failedColor,'工具组左侧保持正常图标，失败由详情表达');
+      else assert.equal(await color(summary.locator(':scope>.ac-step-node')),currentColor,'正常工具保持原图标颜色');
       if(status==='failed')assert.equal(currentColor,failedColor);
       else assert.notEqual(currentColor,failedColor,'历史失败不能给正常执行的图形染色');
       assert.match(await group.locator('[data-entry-id="earlier-failed"]>summary').innerText(),/失败/);
@@ -283,8 +568,35 @@ await step('历史工具失败不改变当前执行图形的状态',async()=>{
     const settled=panel().locator('.ac-step-group:not(.is-live)');
     assert.match(await settled.locator(':scope>summary').innerText(),/2 项失败/);
     await settled.locator(':scope>summary').click();
-    assert.equal(await settled.locator(':scope>summary>.ac-step-node').evaluate((node:HTMLElement)=>getComputedStyle(node).color),
-      await settled.locator('[data-entry-id="earlier-failed"]>summary>.ac-step-node').evaluate((node:HTMLElement)=>getComputedStyle(node).color),'结束后的组汇总仍提示历史失败');
+    assert.notEqual(await settled.locator(':scope>summary>.ac-step-node').evaluate((node:HTMLElement)=>getComputedStyle(node).color),
+      await settled.locator('[data-entry-id="earlier-failed"]>summary>.ac-step-node').evaluate((node:HTMLElement)=>getComputedStyle(node).color),'折叠组保持正常工具图标，失败仍由右侧计数提示');
+  }finally{fixture.conversation=saved;await page.reload();await input().waitFor();}
+});
+
+await step('整轮计时包含最后答复，过程折叠向右、展开向下',async()=>{
+  const saved=structuredClone(fixture.conversation);
+  try{
+    const startedAt='2026-11-02T05:11:24.000Z',updatedAt='2026-11-02T05:17:21.000Z';
+    const entries=[
+      {id:'timed-input',sequence:1,kind:'message',role:'user',runId:'run-fixture',text:'排查对话搜索',createdAt:startedAt},
+      {id:'timed-narration',sequence:2,kind:'message',role:'assistant',runId:'run-fixture',text:'开始排查',createdAt:'2026-11-02T05:11:32.000Z',status:'completed'},
+      {id:'timed-tool',sequence:3,kind:'tool',role:'system',runId:'run-fixture',name:'command',text:'已核对实现',createdAt:'2026-11-02T05:16:56.000Z',status:'completed'},
+      {id:'timed-answer',sequence:4,kind:'message',role:'assistant',runId:'run-fixture',text:'排查结论已保存',createdAt:'2026-11-02T05:17:14.000Z',status:'completed'},
+    ];
+    for(const status of ['completed','unknown']){
+      update({entries,run:run(status,'qoder',{startedAt,updatedAt,resourcesReleased:true,executionState:status==='completed'?'ended':'unknown'}),requests:[]});
+      await page.reload();await input().waitFor();
+      assert.equal(await panel().locator('.ac-execution-indicator time').first().innerText(),'00:05:57');
+      const initial=panel().locator('.ac-turn-identity-toggle');
+      if(await initial.getAttribute('aria-expanded')==='true')await initial.click();
+      const expand=panel().getByRole('button',{name:'展开处理过程',exact:true});
+      await expand.waitFor();assert.equal(await expand.locator('.ac-turn-identity-caret svg').getAttribute('data-icon'),'right');
+      await expand.click();
+      const collapse=panel().getByRole('button',{name:'收起处理过程',exact:true});
+      assert.equal(await collapse.locator('.ac-turn-identity-caret svg').getAttribute('data-icon'),'down');
+      await collapse.click();assert.equal(await expand.locator('.ac-turn-identity-caret svg').getAttribute('data-icon'),'right');
+      if(status==='completed')await capture(page,'conversation-whole-turn-time.png');
+    }
   }finally{fixture.conversation=saved;await page.reload();await input().waitFor();}
 });
 
@@ -305,18 +617,36 @@ await step('连续工具默认汇总折叠，明确展开在追加时保持，�
       await capture(page,'conversation-live-process-flat.png');await handle?.dispose();fixture.conversation=previous;await page.reload();await input().waitFor();
     });
 
+await step('原轮结束时已提交的补充接续新轮，清理草稿并说明真实投递结果',async()=>{
+  const saved=structuredClone(fixture.conversation),delivery=fixture.supplementaryDelivery;
+  try{
+    const at=new Date().toISOString();
+    update({participants:[{id:'participant-codex',connectionId:'codex',provider:'codex',label:'Codex',model:'fixture-model',contextId:'native',deliveredThrough:0}],entries:[{id:'admission-original',sequence:1,kind:'message',role:'user',text:'原要求',runId:'run-fixture',createdAt:at}],run:run('running','codex',{model:'fixture-model',reasoningEffort:'high',permissionMode:'full-access'}),requests:[]});
+    fixture.supplementaryDelivery='continued';await page.reload();await input().waitFor();const calls=fixture.supplementaryCalls;
+    await input().fill('结束边界提交的补充');await panel().getByRole('button',{name:'发送对话',exact:true}).click();
+    await panel().getByText('原轮已结束，这条要求已接续到新一轮。',{exact:true}).first().waitFor();
+    await panel().locator('.ac-turn[data-run-id^="continued-"] .ac-turn-prompt').filter({hasText:'结束边界提交的补充'}).waitFor();
+    assert.equal(await input().inputValue(),'');assert.equal(fixture.supplementaryCalls,calls+1);await capture(page,'supplement-continued.png');
+  }finally{fixture.conversation=saved;fixture.supplementaryDelivery=delivery;await page.reload();await input().waitFor();}
+});
 await step('执行中图文普通发送、固定上下文和长输入，失败未知与独立停止',async()=>{
-      const previous=structuredClone(fixture.conversation),previousUploads=fixture.attachmentUploads,startedAt=new Date(Date.now()-125000).toISOString();
+      const previous=structuredClone(fixture.conversation),previousUploads=fixture.attachmentUploads,previousSupplementCalls=fixture.supplementaryCalls,startedAt=new Date(Date.now()-125000).toISOString();
       const entry=(id:string,sequence:number,role:string,text:string)=>({id,sequence,kind:'message',role,text,provider:'codex',participantId:'participant-codex',runId:'run-fixture',createdAt:new Date().toISOString(),status:'completed'});
       const long=Array.from({length:25},(_,i)=>`${i+1}. 保留完整用户要求，展开后在固定区域阅读。`).join('\n');
       update({participants:[{id:'participant-codex',connectionId:'codex',provider:'codex',label:'Codex',model:'fixture-model',contextId:'native',deliveredThrough:0}],entries:[entry('long-user',1,'user',long),entry('live-narration',2,'assistant',Array.from({length:40},(_,i)=>'自然执行过程 '+i).join('\n\n'))],run:run('running','codex',{startedAt,model:'fixture-model'}),requests:[]});await page.reload();await input().fill('');
       assert.equal(await panel().getByRole('button',{name:'发送对话',exact:true}).isDisabled(),true);assert.equal(await panel().locator('.ac-compose-wrap').getByRole('button',{name:'停止本次执行',exact:true}).count(),1);assert.equal(await panel().locator('.ac-thread-actions').getByRole('button',{name:'停止本次执行',exact:true}).count(),0);
       const stream=panel().locator('.ac-stream');await stream.evaluate((node:HTMLElement)=>node.scrollTop=300);const stickyHead=panel().locator('.ac-turn.is-executing>.ac-turn-head');const sticky=await stickyHead.evaluate((node:HTMLElement)=>({top:node.getBoundingClientRect().top,stream:node.closest('.ac-stream')!.getBoundingClientRect().top,position:getComputedStyle(node).position}));assert.equal(sticky.position,'sticky');assert.ok(Math.abs(sticky.top-sticky.stream)<2,JSON.stringify(sticky));assert.equal(await panel().locator('.ac-turn.is-executing>.ac-turn-head>.ac-turn-context').evaluate((node:HTMLElement)=>getComputedStyle(node).position),'static','气泡自身不吸顶，随吸顶头一起固定');
       await panel().getByRole('button',{name:'展开内容',exact:true}).first().click();assert.equal(await panel().locator('.ac-turn-prompt-content').first().evaluate((node:HTMLElement)=>getComputedStyle(node).overflowY),'auto');await panel().getByRole('button',{name:'收起内容',exact:true}).click();assert.match(await panel().locator('.ac-turn-identity').first().innerText(),/Codex · Fixture model/);assert.ok(await panel().locator('.ac-turn-identity .ac-execution-indicator').first().innerText()!=='0:00');
-      const png={name:'live.png',mimeType:'image/png',buffer:Buffer.from('89504e470d0a1a0a','hex')};await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles(png);await panel().getByRole('button',{name:'移除图片 live.png',exact:true}).waitFor();await input().fill('执行中补充图文');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().locator('.ac-turn-prompt').filter({hasText:'执行中补充图文'}).waitFor();assert.equal(await input().inputValue(),'');assert.deepEqual(supplementaryInputs.at(-1).attachmentIds,['image-fixture-'+(previousUploads+1)]);
+      const png={name:'live.png',mimeType:'image/png',buffer:Buffer.from('89504e470d0a1a0a','hex')};await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles(png);await panel().getByRole('button',{name:'移除图片 live.png',exact:true}).waitFor();await input().fill('执行中补充图文');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().locator('.ac-turn-content .ac-message.is-user').filter({hasText:'执行中补充图文'}).waitFor();
+      assert.equal(await panel().locator('.ac-turn').count(),1,'同轮补充不能新建展示轮次');assert.equal(await panel().locator('.ac-turn-prompt').getAttribute('data-entry-id'),'long-user');
+      const supplement=panel().locator('.ac-turn-content .ac-message.is-user').filter({hasText:'执行中补充图文'});
+      await panel().getByRole('button',{name:'收起处理过程',exact:true}).click();await supplement.waitFor({state:'hidden'});assert.equal(await panel().locator('.ac-process-narration').count(),0);
+      await panel().getByRole('button',{name:'展开处理过程',exact:true}).click();await supplement.waitFor();await supplement.scrollIntoViewIfNeeded();await supplement.locator('img').waitFor();assert.equal(await supplement.locator('img').count(),1);
+      await page.reload();await supplement.waitFor();assert.equal(await panel().locator('.ac-turn').count(),1);
+assert.equal(await input().inputValue(),'');assert.deepEqual(supplementaryInputs.at(-1).attachmentIds,['image-fixture-'+(previousUploads+1)]);
       fixture.supplementaryDelivery='rejected';await input().fill('保留失败草稿');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().getByText('这条消息未发送成功，文字与图片已保留。',{exact:true}).waitFor();assert.equal(await input().inputValue(),'保留失败草稿');
       fixture.supplementaryDelivery='unknown';await input().fill('接收待确认');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().getByText('消息已保存，是否送达仍待确认，请勿重复发送。',{exact:true}).waitFor();assert.equal(await input().inputValue(),'');
-      fixture.supplementaryDelivery='accepted';fixture.holdSupplement=true;const waiting=new Promise<void>(resolve=>{fixture.supplementStarted=resolve;});await input().fill('发送等待时可以停止');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await waiting;await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();const admitted=page.waitForResponse((r:any)=>r.url().endsWith('/supplement'));fixture.releaseSupplement!();await admitted;assert.equal(fixture.supplementaryCalls,4);await panel().getByRole('button',{name:'发送对话',exact:true}).waitFor();
+      fixture.supplementaryDelivery='accepted';fixture.holdSupplement=true;const waiting=new Promise<void>(resolve=>{fixture.supplementStarted=resolve;});await input().fill('发送等待时可以停止');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await waiting;await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();const admitted=page.waitForResponse((r:any)=>r.url().endsWith('/supplement'));fixture.releaseSupplement!();await admitted;assert.equal(fixture.supplementaryCalls,previousSupplementCalls+4);await panel().getByRole('button',{name:'发送对话',exact:true}).waitFor();
       fixture.conversation=previous;fixture.attachmentUploads=previousUploads;await page.reload();await input().fill('下一轮仍是草稿');
     });
 
@@ -370,6 +700,55 @@ await step('仅当前运行段悬浮，历史无嵌套卡片，结束失败停�
       await capture(page,'conversation-running-context-history.png');fixture.conversation=previous;await page.reload();await input().waitFor();
     });
 
+await step('刷新异步排版与输入框增高始终贴底，主动上翻保留阅读位置',async()=>{
+  const saved=structuredClone(fixture.conversation),viewport=page.viewportSize();
+  const stream=panel().locator('.ac-stream'),latest=panel().getByRole('button',{name:'向下到底',exact:true});
+  const settle=()=>page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())))));
+  const assertPinned=async()=>{
+    await settle();
+    const gap=await stream.evaluate((node:HTMLElement)=>node.scrollHeight-node.scrollTop-node.clientHeight);
+    assert.ok(gap<2,'应准确贴底：'+gap);assert.equal(await latest.count(),0,'跟随最新时不显示向下到底按钮');
+  };
+  try{
+    update({entries:[{id:'pin-user',sequence:1,kind:'message',role:'user',text:'检查贴底',createdAt:new Date().toISOString()},
+      {id:'pin-answer',sequence:2,kind:'message',role:'assistant',text:Array.from({length:48},(_,i)=>'刷新后应能完整看到最新内容 '+i).join('\n\n'),status:'completed',createdAt:new Date().toISOString()}],nextEntryCursor:undefined,run:run('completed')});
+    for(const width of [1280,390]){
+      await page.setViewportSize({width,height:900});await page.reload();await panel().locator('[data-entry-id="pin-answer"]').waitFor();await assertPinned();
+      // A late markdown/image layout pass after the initial scroll.
+      await panel().locator('[data-entry-id="pin-answer"]').evaluate((node:HTMLElement)=>{node.style.paddingBottom='47px';});await assertPinned();
+      const before=await stream.evaluate((node:HTMLElement)=>node.clientHeight);
+      await input().fill(Array.from({length:7},(_,i)=>'输入框增高 '+i).join('\n'));await assertPinned();
+      assert.ok(await stream.evaluate((node:HTMLElement)=>node.clientHeight)<before,'输入框实际占用了信息流可视高度');
+      await input().fill('');await assertPinned();
+      await stream.evaluate((node:HTMLElement)=>{node.scrollTop-=240;});await settle();await latest.waitFor();
+      const reading=await stream.evaluate((node:HTMLElement)=>node.scrollTop);
+      await input().fill('阅读历史时\n继续编辑\n不拉回底部');await settle();
+      assert.ok(Math.abs(await stream.evaluate((node:HTMLElement)=>node.scrollTop)-reading)<2,'编辑输入框不抢走历史阅读位置');
+      await input().fill('');await latest.click();await assertPinned();
+    }
+  }finally{fixture.conversation=saved;await input().fill('');await page.setViewportSize(viewport);await page.reload();await input().waitFor();}
+});
+
+await step('打开和刷新时补足首屏，折叠过程不占高度也能继续补页，填满即停止',async()=>{
+  const saved=structuredClone(fixture.conversation),reads=fixture.entryReads;
+  const entry=(sequence:number,runId:string,kind:string,role:string,text:string)=>({id:'fill-'+sequence,sequence,runId,kind,role,text,status:'completed',createdAt:new Date().toISOString()});
+  try{
+    update({entries:[entry(201,'fill-latest','tool','system','最后的工具'),entry(202,'fill-latest','message','assistant','最终答复')],nextEntryCursor:201,run:run('completed','codex',{id:'fill-latest'})});
+    historyPages.set(201,{...fixture.conversation,entries:[entry(180,'fill-latest','tool','system','仍属于折叠过程')],nextEntryCursor:180});
+    historyPages.set(180,{...fixture.conversation,entries:[entry(160,'fill-previous','message','user','之前的要求'),entry(161,'fill-previous','message','assistant',Array.from({length:36},(_,i)=>'上一轮可阅读的答复内容 '+i).join('\n\n')),entry(170,'fill-latest','message','user','最新要求')],nextEntryCursor:160});
+    historyPages.set(160,{...fixture.conversation,entries:[entry(140,'fill-earlier','message','user','不应自动读到这里')],nextEntryCursor:140});
+    for(let opened=1;opened<=2;opened++){
+      await page.reload();await panel().locator('[data-entry-id="fill-161"]').waitFor();
+      await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())))));
+      const view=await panel().locator('.ac-stream').evaluate((node:HTMLElement)=>({height:node.scrollHeight,viewport:node.clientHeight,gap:node.scrollHeight-node.scrollTop-node.clientHeight}));
+      assert.ok(view.height>view.viewport,JSON.stringify(view));assert.ok(view.gap<2,JSON.stringify(view));
+      assert.equal(fixture.entryReads,reads+opened*2,'只补两批，不读取已经足够一屏之外的历史');
+      assert.equal(await panel().locator('[data-run-id="fill-latest"] .ac-turn-identity-toggle').getAttribute('aria-expanded'),'false');
+    }
+    await capture(page,'conversation-viewport-filled.png');
+  }finally{fixture.conversation=saved;historyPages.clear();await page.reload();await input().waitFor();}
+});
+
 await step('向上接近历史自动单批加载，阅读定位与展开保持，键盘触摸及失败重试隔离',async()=>{
       const previous=structuredClone(fixture.conversation),oldViewport=page.viewportSize(),readsBefore=fixture.entryReads;
       const entry=(sequence:number,kind:string,role:string,round:number)=>({id:'history-'+sequence,sequence,kind,role,runId:'history-round-'+round,name:kind==='tool'?'read':undefined,text:kind==='tool'?'读取 a.ts':role==='user'?'更早的用户要求 '+sequence:Array.from({length:10},(_,i)=>`第 ${round} 轮答复的阅读内容 ${i}`).join('\n\n'),input:kind==='tool'?'{}':undefined,status:'completed',createdAt:new Date().toISOString()});
@@ -390,7 +769,13 @@ await step('向上接近历史自动单批加载，阅读定位与展开保持�
         const process=panel().locator('[data-run-id="history-round-217"] .ac-process'),group=process.locator('.ac-step-group').first();
         await panel().locator('[data-run-id="history-round-217"]').getByRole('button',{name:'展开处理过程',exact:true}).evaluate((node:HTMLElement)=>node.click());await group.locator(':scope>summary').evaluate((node:HTMLElement)=>node.click());await group.locator('.ac-step>summary').first().evaluate((node:HTMLElement)=>node.click());
         assert.equal(await process.getAttribute('data-expanded'),'true');assert.equal(await group.getAttribute('open'),'');
+        assert.equal(await stream.locator('.ac-welcome').count(),0,'普通长消息不再使用欢迎布局');
+        const beforeScroll=await stream.evaluate((node:HTMLElement)=>({top:node.scrollTop,height:node.clientHeight,total:node.scrollHeight,listTop:node.querySelector('.ac-message-list')!.getBoundingClientRect().top}));
+        assert.ok(beforeScroll.height>0&&beforeScroll.total>beforeScroll.height+1200,'长答复应保留受约束且可滚动的消息视口：'+JSON.stringify(beforeScroll));
         await moveTo(1200);assert.equal(fixture.entryReads,readsBefore,'距离顶部大于800像素不预取');
+        const afterScroll=await stream.evaluate((node:HTMLElement)=>({top:node.scrollTop,listTop:node.querySelector('.ac-message-list')!.getBoundingClientRect().top}));
+        assert.ok(Math.abs(afterScroll.top-1200)<=1,'消息视口可实际滚动到指定阅读位置：'+JSON.stringify(afterScroll));
+        assert.ok(Math.abs((afterScroll.listTop-beforeScroll.listTop)+(afterScroll.top-beforeScroll.top))<=2,'长消息随外层视口滚动，不被欢迎布局固定或截断');
         const scrollLatest=panel().getByRole('button',{name:'向下到底',exact:true});
         await scrollLatest.waitFor();
         assert.ok(await stream.evaluate((node:HTMLElement)=>node.scrollHeight-node.scrollTop-node.clientHeight>80));
@@ -436,19 +821,24 @@ await step('向上接近历史自动单批加载，阅读定位与展开保持�
       }
     });
 
-await step('不足一屏不自动耗尽历史，滚轮触摸与键盘可自然向上续读',async()=>{
+await step('首屏补页预算耗尽后，滚轮触摸与键盘仍可自然向上续读',async()=>{
       const previous=structuredClone(fixture.conversation),stream=panel().locator('.ac-stream');
       const entry=(sequence:number,role:string)=>({id:'short-'+sequence,sequence,kind:'message',role,text:role==='user'?'更早的用户要求':'短答复',runId:'short-run-'+sequence,createdAt:new Date().toISOString()});
       try{
         for(const gesture of ['wheel','touch','keyboard']){
-          const readsBefore=fixture.entryReads;update({entries:[entry(201,'assistant')],nextEntryCursor:201});historyPages.set(201,{...fixture.conversation,entries:[entry(180,'user')],nextEntryCursor:180});historyPages.set(180,{...fixture.conversation,entries:[entry(160,'user')],nextEntryCursor:undefined});
-          await page.reload();await panel().locator('[data-entry-id="short-201"]').waitFor();await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
-          assert.ok(await stream.evaluate((node:HTMLElement)=>node.scrollHeight<=node.clientHeight+1));assert.equal(fixture.entryReads,readsBefore,'不足一屏也等待阅读动作');
+          const readsBefore=fixture.entryReads;update({entries:[entry(201,'assistant')],nextEntryCursor:201});
+          for(const [before,after] of [[201,180],[180,160],[160,140],[140,120]])historyPages.set(before,{...fixture.conversation,entries:[{...entry(after,'system'),kind:'tool',runId:'short-run-201'}],nextEntryCursor:after});
+          historyPages.set(120,{...fixture.conversation,entries:[entry(100,'user')],nextEntryCursor:100});historyPages.set(100,{...fixture.conversation,entries:[entry(80,'user')],nextEntryCursor:undefined});
+          const filled=page.waitForResponse((response:any)=>{const url=new URL(response.url());return url.pathname.endsWith('/entries')&&url.searchParams.get('before')==='140';});
+          await page.reload();await filled;await panel().locator('[data-entry-id="short-201"]').waitFor();await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
+          assert.ok(await stream.evaluate((node:HTMLElement)=>node.scrollHeight<=node.clientHeight+1));assert.equal(fixture.entryReads,readsBefore+4,'首屏填充预算有界');
+          const shortLayout=await stream.evaluate((node:HTMLElement)=>{const list=node.querySelector<HTMLElement>('.ac-message-list')!;return {top:list.getBoundingClientRect().top-node.getBoundingClientRect().top,height:list.getBoundingClientRect().height,viewport:node.clientHeight};});
+          assert.ok(shortLayout.height<shortLayout.viewport,'该用例确实不足一屏');assert.ok(Math.abs(shortLayout.top)<2,'不足一屏且仍有历史时从顶部显示：'+JSON.stringify(shortLayout));
           if(gesture==='wheel'){const box=await stream.boundingBox();await page.mouse.move(box!.x+box!.width/2,box!.y+80);await page.mouse.wheel(0,-120);}
           else if(gesture==='keyboard'){await stream.focus();await stream.press('PageUp');}
           else await stream.evaluate((node:HTMLElement)=>{for(const [type,y] of [['touchstart',100],['touchmove',140],['touchend',undefined]] as const){const point=y===undefined?undefined:new Touch({identifier:1,target:node,clientX:40,clientY:y});node.dispatchEvent(new TouchEvent(type,{bubbles:true,touches:point?[point]:[],changedTouches:point?[point]:[]}));}});
-          await panel().locator('[data-entry-id="short-180"]').waitFor();await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
-          assert.equal(await stream.evaluate((node:HTMLElement)=>node.scrollTop),0,'不足一屏补页保留顶部');assert.equal(fixture.entryReads,readsBefore+1,gesture+'只加载所需一批');assert.equal(await panel().locator('[data-entry-id="short-160"]').count(),0,'不自动继续耗尽历史');
+          await panel().locator('[data-entry-id="short-100"]').waitFor();await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
+          assert.equal(await stream.evaluate((node:HTMLElement)=>node.scrollTop),0,'不足一屏补页保留顶部');assert.equal(fixture.entryReads,readsBefore+5,gesture+'只加载所需一批');assert.equal(await panel().locator('[data-entry-id="short-80"]').count(),0,'不自动继续耗尽历史');
         }
       }finally{historyPages.clear();fixture.conversation=previous;await page.reload();await panel().locator('[data-run-status="stopped"]').waitFor();}
     });

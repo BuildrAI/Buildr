@@ -10,6 +10,19 @@ import { createBuiltinReceipts } from '../../src/modules/agent-assets/applicatio
 import { collectFiles } from '../../src/infrastructure/filesystem/tree-files.ts';
 import { describePackageResources, publishPackageResources as ensurePackageResources, inspectSharedResources, sharedResourcesRoot } from '../../src/infrastructure/product-resources/shared-resources.ts';
 
+test('共享命令登记损坏定位来源，独立本地命令目录继续可见', async t => {
+  const { createRuntime } = await import('../helpers/runtime-harness.ts');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-shared-command-diagnostics-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'commands')); fs.mkdirSync(path.join(root, 'components'));
+  fs.writeFileSync(path.join(root, 'commands/manifest.yml'), 'schemaVersion: buildr.commands/v1\ncommands: [{id: local, executable: node, purpose: local}]\n');
+  fs.writeFileSync(path.join(root, 'components/manifest.yml'), 'schemaVersion: broken\ncomponents: []\n');
+  const result = createRuntime().runCommandsCheck(root);
+  assert.equal(result.ok, false);
+  assert.ok(result.catalog.definitions.some((entry: any) => entry.id === 'local'));
+  assert.ok(result.findings.some((entry: any) => entry.path === 'components/manifest.yml' && entry.code === 'commands.manifest_invalid'));
+});
+
 test('技能目录内Finder文件既不是定制修改也不是入口附件，真实附件修改仍被发现', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-skill-finder-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -41,8 +54,8 @@ test('共享收录保留完整能力资源，旧集迁移清理内部副本而�
   process.env.BUILDR_PRODUCT_DATA_DIR = path.join(root, 'data');
   t.after(() => { if (previous === undefined) delete process.env.BUILDR_PRODUCT_DATA_DIR; else process.env.BUILDR_PRODUCT_DATA_DIR = previous; });
   const product = path.join(root, 'product');
-  const shared = ['workspace/skills/buildr/example/SKILL.md', 'workspace/skills/buildr/example/templates/example.yml', 'workspace/skills/contracts/buildr/example/v1.md', 'runtime/skills/buildr/SKILL.md'];
-  const internal = ['workspace/AGENTS.md', 'workspace/projects/AGENTS.project.md', 'workspace/gitignore', 'workspace/commands/manifest.yml', 'workspace/components/example/component.yml', 'installation/launcher/Buildr.icns', 'contracts/bootstrap.yml', 'manifest.yml'];
+  const shared = ['workspace/skills/buildr/example/SKILL.md', 'workspace/skills/buildr/example/templates/example.yml', 'workspace/skills/contracts/buildr/example/v1.md', 'runtime/skills/buildr/SKILL.md', 'workspace/components/buildr/example/contributions/example.md', 'workspace/commands/buildr/example/manifest.yml'];
+  const internal = ['workspace/AGENTS.md', 'workspace/projects/AGENTS.project.md', 'workspace/gitignore', 'workspace/commands/manifest.yml', 'workspace/components/example/component.yml', 'workspace/components/buildr/example/component.yml', 'workspace/components/workspace/private/contributions/private.md', 'installation/launcher/Buildr.icns', 'contracts/bootstrap.yml', 'manifest.yml'];
   for (const relative of [...shared, ...internal]) {
     const file = path.join(product, 'resources', relative);
     fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, relative);
@@ -70,7 +83,7 @@ test('共享收录保留完整能力资源，旧集迁移清理内部副本而�
   assert.equal(inspectSharedResources().id, old.id);
   ensurePackageResources(product);
   assert.equal(inspectSharedResources().id, capabilityIdentity);
-  assert.deepEqual(fs.readdirSync(target).sort(), ['contracts', 'resource-set.json', 'skills']);
+  assert.deepEqual(fs.readdirSync(target).sort(), ['commands', 'components', 'contracts', 'resource-set.json', 'skills']);
   for (const source of [...internal, ...shared]) assert.equal(fs.existsSync(path.join(product, 'resources', source)), true);
   for (const entry of desired.files) assert.equal(fs.readFileSync(path.join(target, entry.path), 'utf8'), entry.source);
 });

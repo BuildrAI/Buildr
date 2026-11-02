@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { resolveQuestionAnswer, isMaterialAnswer } from '../../src/domain/question-answer.ts';
+import { resolveQuestionAnswer, isMaterialAnswer, normalizeQuestionCapabilities } from '../../src/domain/question-answer.ts';
 import { waitingQuestionText } from '../../src/domain/waiting-question-handoff.ts';
 import type { PendingRequestView } from '../../src/contracts.ts';
 const request:PendingRequestView={id:'request',conversationId:'chat',workspaceId:'workspace',participantId:'agent',runId:'run',generation:'gen',kind:'question',title:'范围',questions:[{id:'scope',label:'处理范围',allowOther:true,options:[{id:'yes',label:'确认'}]}]};
@@ -35,4 +35,14 @@ test('多个问题共用材料时按唯一画面核对容量，不重复计算�
  const questions=Array.from({length:5},(_,index)=>({id:'q'+index,label:'问题'+index}));
  const result=resolveQuestionAnswer({...request,questions},Object.fromEntries(questions.map(question=>[question.id,{text:'',attachmentIds:['video']}])),()=>({images:Array.from({length:8},(_,index)=>image('frame'+index)),description:'抽样画面，不含音轨'}));
  assert.deepEqual(result.attachmentIds,['video']);assert.equal(result.images.length,8);assert.equal(Object.keys(result.answer as object).length,5);
+});
+
+test('legacy native question capabilities expose supported Other without changing approvals or Codex declarations',()=>{
+ for(const provider of ['dsh','qoder','codex']){
+  const legacy=structuredClone(request);delete legacy.questions![0]!.allowOther;
+  const record={view:{requests:[legacy]},participants:[{id:request.participantId,provider}]};
+  normalizeQuestionCapabilities(record);assert.equal(legacy.questions![0]!.allowOther,provider==='codex'?undefined:true);
+  legacy.questions![0]!.allowOther=false;normalizeQuestionCapabilities(record);assert.equal(legacy.questions![0]!.allowOther,false);
+  legacy.kind='approval';delete legacy.questions![0]!.allowOther;normalizeQuestionCapabilities(record);assert.equal(legacy.questions![0]!.allowOther,undefined);
+ }
 });

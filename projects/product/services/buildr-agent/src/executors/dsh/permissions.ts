@@ -14,7 +14,8 @@ export async function applyDshPermissions(remote: any, contextId: string, mode: 
   const permissionMode = resolvePermissionMode(mode);
   try {
     const catalog = await dshPermissionCatalog(remote);
-    const selected = permissionMode === 'full-access' ? 'danger-full-access' : catalog.defaultPreset;
+    const fullAccess = catalog.options.some(option => option.value === 'danger-full-access');
+    const selected = permissionMode === 'full-access' && (mode !== undefined || fullAccess) ? 'danger-full-access' : catalog.defaultPreset;
     if (!catalog.options.some(option => option.value === selected) || selected.length > 160 || /[\r\n\x00]/.test(selected)) fail('agent_permission_unavailable', '此原生接入未提供所选权限预设。', 409);
     const commands = dshValue(await bounded(remote.commands.list(contextId), 5_000));
     if (!commands.some((command: any) => command.name === 'permission' && command.definitionId === '@deepseek-ai/dsh-permission-presets')) fail('agent_permission_unavailable', '当前原生会话没有可验证的权限切换命令。', 409);

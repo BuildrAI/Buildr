@@ -8,6 +8,15 @@ const string = (v: unknown): string => typeof v === 'string' ? v : '';
 const number = (v: unknown): number => typeof v === 'number' && Number.isFinite(v) ? v : 0;
 const id = () => randomUUID().replaceAll('-', '');
 export interface OpaqueReasoning { encode(value: ProtocolJson): string; decode(value: string): ProtocolJson }
+function reasoningSummary(value: ProtocolJson): ProtocolJson[] {
+  const text = string(record(value).thinking).trim();
+  return text ? [{ type: 'summary_text', text }] : [];
+}
+function responsesReasoningItem(value: ProtocolJson, opaque: OpaqueReasoning): ProtocolJson {
+  const native = value.type === 'responses-reasoning' ? record(record(value).item) : {};
+  const summary = value.type === 'responses-reasoning' ? list(native.summary) : reasoningSummary(value);
+  return { ...native, type: 'reasoning', summary, encrypted_content: opaque.encode(value) };
+}
 type Part = { type: 'text'; text: string } | { type: 'image'; url: string } | { type: 'tool'; id: string; name: string; arguments: string; custom?: boolean } | { type: 'result'; id: string; content: unknown } | { type: 'reasoning'; value: ProtocolJson };
 interface Message { role: string; parts: Part[] }
 interface Parsed { messages: Message[]; tools: ProtocolJson[]; customTools: Set<string>; parameters: ProtocolJson }
@@ -185,7 +194,7 @@ function serializeRequest(parsed: Parsed, protocol: ModelProtocol, opaque: Opaqu
       for (const p of message.parts) {
         if (p.type === 'text') content.push({ type: message.role === 'assistant' ? 'output_text' : 'input_text', text: p.text });
         else if (p.type === 'image') content.push({ type: 'input_image', image_url: p.url });
-        else { flush(); if (p.type === 'tool') input.push(p.custom ? { type: 'custom_tool_call', call_id: p.id, name: p.name, input: string(record(parseArguments(p.arguments)).input) } : { type: 'function_call', call_id: p.id, name: p.name, arguments: p.arguments }); if (p.type === 'result') input.push({ type: 'function_call_output', call_id: p.id, output: resultContent(p.content,protocol) }); if (p.type === 'reasoning') input.push(p.value.type==='responses-reasoning' ? record(p.value.item) : { type: 'reasoning', summary: [], encrypted_content: opaque.encode(p.value) }); }
+        else { flush(); if (p.type === 'tool') input.push(p.custom ? { type: 'custom_tool_call', call_id: p.id, name: p.name, input: string(record(parseArguments(p.arguments)).input) } : { type: 'function_call', call_id: p.id, name: p.name, arguments: p.arguments }); if (p.type === 'result') input.push({ type: 'function_call_output', call_id: p.id, output: resultContent(p.content,protocol) }); if (p.type === 'reasoning') input.push(p.value.type==='responses-reasoning' ? record(p.value.item) : responsesReasoningItem(p.value, opaque)); }
       }
       flush();
     }
@@ -293,7 +302,7 @@ async function* decodeRawEvents(response: Response, protocol: ModelProtocol): As
   }
   if (!response.body) throw new ModelAccessError('model_stream_empty', '模型流没有响应正文。', 502);
   for await (const body of sse(response.body)) {
-    if (body.error || body.type === 'error' || body.type === 'response.failed') throw upstreamFailure(body.error ?? record(body.response).error);
+    if (body.error || body.type === 'error' || body.type === 'response.failed') throw upstreamFailure(body.error ?? record(body.response).error ?? body);
     if (protocol === 'chat-completions') {
       const choice = record(list(body.choices)[0]), delta = record(choice.delta);
       if (delta.content) yield { type: 'text', delta: string(delta.content) };
@@ -439,7 +448,7 @@ class Output {
     const output: Array<{ index: number; item: ProtocolJson }> = [];
     for(const message of this.messages) output.push({index:message.index,item:{id:message.id,type:'message',role:'assistant',status:'completed',content:[{type:'output_text',text:message.text,annotations:[]}]}});
     for (const tool of this.tools.values()) output.push({ index: tool.outputIndex, item: this.toolItem(tool) });
-    for(const block of this.reasoningBlocks) output.push({index:block.index,item:{id:block.id,type:'reasoning',summary:[],encrypted_content:this.opaque.encode(block.value)}});
+    for(const block of this.reasoningBlocks) output.push({index:block.index,item:{...responsesReasoningItem(block.value,this.opaque),id:block.id}});
     return output.sort((a,b) => a.index - b.index).map(value => value.item);
   }
   json(): ProtocolJson {

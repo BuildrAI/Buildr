@@ -134,3 +134,42 @@ test('对话图片通过路径作用域 cookie 读取本机文件并拒绝非图
   assert.equal((await fetch(`${url}/api/v1/conversation-image?path=${encodeURIComponent(path.join(base, 'missing.png'))}`, { headers })).status, 404);
   assert.equal(sessionToken.length > 20, true);
 });
+
+test('哈希静态资源压缩协商、缓存与 HTML 会话隔离', async t => {
+  const {base,root}=fixture(t,'web-asset-transfer');
+  const previous=process.env.BUILDR_APP_DATA_DIR;process.env.BUILDR_APP_DATA_DIR=path.join(base,'app-data');t.after(()=>{if(previous===undefined)delete process.env.BUILDR_APP_DATA_DIR;else process.env.BUILDR_APP_DATA_DIR=previous;});
+  const assets=path.join(base,'dist');fs.mkdirSync(path.join(assets,'assets'),{recursive:true});
+  const content='export const value = "可缓存资源";\n'.repeat(500),file=path.join(assets,'assets/main-abcdefgh.js');
+  const {gzipSync,brotliCompressSync}=await import('node:zlib');
+  fs.writeFileSync(file,content);fs.writeFileSync(file+'.gz',gzipSync(content));fs.writeFileSync(file+'.br',brotliCompressSync(content));
+  fs.writeFileSync(path.join(assets,'index.html'),'<meta name="buildr-session" content="__BUILDR_SESSION_TOKEN__">');
+  const instance=createLocalWorkspaceServer(createRuntime(),{targetRoot:root,staticRoot:assets});
+  const {url}=await instance.ready;t.after(()=>new Promise<void>(resolve=>instance.server.close(()=>resolve())));
+  for(const [accept,encoding]of [['br, gzip','br'],['br;q=0, gzip;q=0.5','gzip'],['br;q=0,gzip;q=0',''],['identity','']] as const){
+    const response=await fetch(url+'/assets/main-abcdefgh.js',{headers:{'accept-encoding':accept}});
+    assert.equal(response.status,200);assert.equal(response.headers.get('content-encoding')??'',encoding);
+    assert.equal(response.headers.get('vary'),'Accept-Encoding');assert.match(response.headers.get('cache-control')!,/immutable/);
+    assert.equal(await response.text(),content);assert.match(response.headers.get('server-timing')!,/^app;dur=\d/);
+    if(encoding)assert.ok(Number(response.headers.get('content-length'))<Buffer.byteLength(content)/2);
+  }
+  assert.equal((await fetch(url+'/')).headers.get('cache-control'),'no-store');
+  assert.equal((await fetch(url+'/assets/main-abcdefgh.js.br')).status,404);
+  fs.unlinkSync(file+'.br');fs.unlinkSync(file+'.gz');
+  assert.equal(await (await fetch(url+'/assets/main-abcdefgh.js',{headers:{'accept-encoding':'br,gzip'}})).text(),content);
+});
+
+test('发布提示等待现有工作池时独立 HTML 先完成，保留原协议',async t=>{
+  const {base,root}=fixture(t,'release-awareness-background');
+  const previous=process.env.BUILDR_APP_DATA_DIR;process.env.BUILDR_APP_DATA_DIR=path.join(base,'app-data');t.after(()=>{if(previous===undefined)delete process.env.BUILDR_APP_DATA_DIR;else process.env.BUILDR_APP_DATA_DIR=previous;});
+  const runtime=createRuntime(),httpContributions=runtimeContributions(runtime,'http').filter((item:any)=>item.id!=='system-installation.release-awareness.http');
+  httpContributions.push(createReleaseAwarenessHttpContribution({releaseAwareness:()=>assert.fail('不能在 HTTP 主线程查询')},()=>root));
+  let release!:(value:unknown)=>void,started!:()=>void;
+  const began=new Promise<void>(resolve=>{started=resolve;});
+  const readExecutor={run:(operation:string,input:any)=>{assert.equal(operation,'release-awareness');assert.equal(input.targetRoot,root);started();return new Promise(resolve=>{release=resolve;});}};
+  const instance=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions,readExecutor});const {url}=await instance.ready;
+  t.after(()=>new Promise<void>(resolve=>instance.server.close(()=>resolve())));
+  const pending=fetch(url+'/api/v1/release-awareness');await began;
+  const html=await fetch(url+'/');assert.equal(html.status,200);await html.text();
+  release({current:{version:'fixture'},tracks:{},notices:[],blockingReasons:[],nextActions:[]});
+  const response=await pending;assert.equal(response.status,200);assert.equal((await response.json()).current.version,'fixture');
+});

@@ -1,3 +1,6 @@
+import { createAgentCliContributions } from './interfaces/cli/agent.ts';
+import { createParticipationSourceObserver } from './application/participation-source.ts';
+import { AGENT_ASSETS_SOURCE_QUERY } from '../agent-assets/source/module.ts';
 import fs from 'node:fs';
 import { createHash } from 'node:crypto';
 import { connectAgentProcess, AgentServiceError } from '@buildr-ai/buildr-agent';
@@ -9,14 +12,18 @@ import { createAgentServiceHttpContribution } from './interfaces/http/agent-serv
 
 export const AGENT_SERVICE_APPLICATION = 'agent-service.application';
 
-export function createAgentServiceModule(options: { readProductIdentity(): unknown; resolveWebProfile(identity: unknown): { dataRoot: string; profile?: string; overridden?: boolean } }) {
+export function createAgentServiceModule(options: { readLocalInstance?(): unknown; readProductIdentity(): unknown; resolveWebProfile(identity: unknown): { dataRoot: string; profile?: string; overridden?: boolean } }) {
   return {
-    id: 'agent-service', requires: [WORKSPACE_APPLICATION, TASK_QUERY_APPLICATION],
+    id: 'agent-service', requires: [WORKSPACE_APPLICATION, TASK_QUERY_APPLICATION, AGENT_ASSETS_SOURCE_QUERY],
     create(requires: Record<string, any>) {
       let connection: Promise<AgentProcessConnection> | undefined;
       let closed = false;
+      // The process connection and its default scope must share one profile binding.
+      // Directory identity is still checked on every use below.
+      let boundProfile: ReturnType<typeof options.resolveWebProfile> | undefined;
+      const profile = () => boundProfile ??= options.resolveWebProfile(options.readProductIdentity());
       const defaultWorkspace = () => {
-        const rootPath = defaultWorkspaceRoot(options.resolveWebProfile(options.readProductIdentity()));
+        const rootPath = defaultWorkspaceRoot(profile());
         return { rootPath: fs.existsSync(rootPath) ? fs.realpathSync(rootPath) : rootPath };
       };
       // 默认工作空间的对话同样落在私有交互库中，纳入全空间查询范围。
@@ -42,13 +49,17 @@ export function createAgentServiceModule(options: { readProductIdentity(): unkno
           if(expectedRevision && revision !== expectedRevision)throw new AgentServiceError('agent_work_object_changed','关联对象已变化。',409);
           return { ref, revision };
         },
+        observeParticipation:createParticipationSourceObserver({
+          root(ref){assertSource(ref.sourceId);return (ref.id==='@default'?defaultWorkspace():requires[WORKSPACE_APPLICATION].resolveRegisteredWorkspace(ref.id)).rootPath;},
+          query:requires[AGENT_ASSETS_SOURCE_QUERY],identity:options.readProductIdentity,
+        }),
         async listExecutionScopes({ sourceId }) { assertSource(sourceId); const refs=registeredWorkspaceIds().map(id=>({sourceId,id}));return {refs,revision:digest(refs)}; },
       };
       const connect = () => {
         if(closed)throw new AgentServiceError('agent_process_client_closed','本机主程序连接已释放。',503);
         if(!connection){
-          const profile=options.resolveWebProfile(options.readProductIdentity());
-          connection=connectAgentProcess({dataRoot:profile.dataRoot,profileId:profile.profile??(profile.overridden?'preview':'released'),sourceId:'buildr',legacySourceId:'buildr',host,autoContinueInterrupted:true}).catch(error=>{connection=undefined;throw error;});
+          const bound=profile();
+          connection=connectAgentProcess({dataRoot:bound.dataRoot,profileId:bound.profile??(bound.overridden?'preview':'released'),sourceId:'buildr',legacySourceId:'buildr',host,autoContinueInterrupted:true}).catch(error=>{connection=undefined;throw error;});
         }
         return connection;
       };
@@ -59,7 +70,7 @@ export function createAgentServiceModule(options: { readProductIdentity(): unkno
         return {instanceId:status.identity.instanceId,generation:status.identity.generation,pid:status.identity.pid,currentDigest:status.identity.runtime.digest,pendingDigest:status.pendingRuntime?.digest,busy:status.activity.busy,accepting:status.accepting,reasons:status.activity.reasons,diagnostic:status.diagnostic};
       };
       const close = async () => { closed=true;const active=connection;connection=undefined;await active?.then(value=>value.disconnect()); };
-      return { provides: { [AGENT_SERVICE_APPLICATION]: { start, close, status:async()=>(await connect()).lifecycle.status(), generate: async (input: Parameters<AgentOperations['models']['generate']>[0]) => (await resolve()).models.generate(input) } }, contributions: { http: [createAgentServiceHttpContribution(resolve, { defaultWorkspace, registeredWorkspaceIds, runtimeStatus, prepareDefaultWorkspace: () => {fs.mkdirSync(defaultWorkspace().rootPath,{recursive:true});} })] }, lifecycle: { start: async () => { void start().catch(() => { console.warn('执行后台连接未完成，已有工作记录保留。'); }); }, stop: close } };
+      return { provides: { [AGENT_SERVICE_APPLICATION]: { start, close, status:async()=>(await connect()).lifecycle.status(), generate: async (input: Parameters<AgentOperations['models']['generate']>[0]) => (await resolve()).models.generate(input) } }, contributions: { cli: createAgentCliContributions(options.readLocalInstance), http: [createAgentServiceHttpContribution(resolve, { defaultWorkspace, registeredWorkspaceIds, runtimeStatus, prepareDefaultWorkspace: () => {fs.mkdirSync(defaultWorkspace().rootPath,{recursive:true});} })] }, lifecycle: { start: async () => { void start().catch(() => { console.warn('执行后台连接未完成，已有工作记录保留。'); }); }, stop: close } };
     },
   };
 }

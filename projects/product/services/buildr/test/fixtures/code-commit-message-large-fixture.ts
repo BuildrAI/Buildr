@@ -43,6 +43,7 @@ export function largeCommitMessageFixture(t: TestContext) {
     repository = catalog.repositories.find((item: {code: string}) => item.code === 'large-context');
   }
   assert.ok(repository);
+  fs.writeFileSync(path.join(root, 'AGENTS.md'), '# Fixture rules\n\nCommit messages describe the actual bounded changes.\n');
   git(root, ['add', '-A']); git(root, ['commit', '-qm', 'chore: large generation baseline']);
   const location = path.join(base, 'large-source-worktree');
   git(root, ['worktree', 'add', '-b', 'fixture/large-context', location, 'HEAD']);

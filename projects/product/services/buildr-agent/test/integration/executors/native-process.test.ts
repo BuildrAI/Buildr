@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { NativeRpc, bindingFingerprint, nativeBinding, isolatedEnvironment, opaqueReference, parseReference } from '../../../build/executors/native-process.js';
+import { executorEnvironment as executorEnvForTest } from '../../../build/application/executor-environment.js';
 import { toolEnvironment } from '../../../build/executors/tool-environment.js';
 
 test('native environment isolates credentials while retaining actual proxy settings', () => {
@@ -41,6 +42,16 @@ test('three private provider processes can reuse a browser cache across restart 
     }
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+test('explicit product location survives private tool environments without changing HOME or copying credentials',()=>{
+  const source={HOME:'/host',BUILDR_PRODUCT_DATA_DIR:'/configured/product',OPENAI_API_KEY:'secret',DSH_TOKEN:'secret'};
+  const input=executorEnvForTest(source);
+  for(const key of ['CODEX_HOME','DSH_HOME','QODER_CONFIG_DIR']){
+    const env=isolatedEnvironment(input,'/private/home','/private/tmp',{[key]:'/private/config'});
+    assert.equal(env.HOME,'/private/home');assert.equal(env.BUILDR_HOST_HOME,'/host');assert.equal(env.BUILDR_PRODUCT_DATA_DIR,'/configured/product');
+    assert.equal(env.OPENAI_API_KEY,undefined);assert.equal(env.DSH_TOKEN,undefined);
+  }
+});
+
 test('native context binding rejects another provider, directory or configuration', () => {
   const ref = opaqueReference('codex', 'thread-1', '/work/a', 'binding-a');
   assert.equal(parseReference(ref, 'codex', '/work/a', 'binding-a').nativeSessionId, 'thread-1');
@@ -174,4 +185,21 @@ test('a cold observer with a broken channel must actually exit before release is
   observer.child.stdin.destroy();assert.equal(observer.child.exitCode,null);assert.equal(await observer.canReleaseExecution(ref,'context','binding',false),false);
   await observer.close();assert.equal(await observer.canReleaseExecution(ref,'context','binding',false),true);
  }finally{await original.close();await observer.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('cold control proof validates original binding and protects live groups without starting an observer',async()=>{
+ const {spawn}=await import('node:child_process');
+ const {releasedNativeControl}=await import('../../../build/executors/native-process.js');
+ const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore'});
+ await new Promise<void>(resolve=>child.once('spawn',resolve));
+ const contextRef={id:'original-context',data:{native:opaqueReference('qoder','original-context','/workspace','original-binding')}};
+ const executionRef={id:'original-run',data:{resourceGroup:child.pid!,resourceContext:contextRef.id,resourceBinding:'original-binding',backgroundWork:false}};
+ const input={contextRef,executionRef,bindingIdentity:'original-binding',cwd:'/workspace'};
+ try{
+  assert.equal(await releasedNativeControl('qoder',input),false);
+  const exited=new Promise<void>(resolve=>child.once('exit',()=>resolve()));child.kill();await exited;
+  assert.equal(await releasedNativeControl('qoder',input),true);
+  for(const changed of [{bindingIdentity:'different'},{cwd:'/other'},{contextRef:{...contextRef,id:'other'}},{executionRef:{...executionRef,data:{...executionRef.data,backgroundWork:true}}},{executionRef:{...executionRef,data:{...executionRef.data,resourceGroup:0}}}])assert.equal(await releasedNativeControl('qoder',{...input,...changed}),false);
+  assert.equal(await releasedNativeControl('codex',input),false);
+ }finally{if(child.exitCode===null&&child.signalCode===null)child.kill();}
 });

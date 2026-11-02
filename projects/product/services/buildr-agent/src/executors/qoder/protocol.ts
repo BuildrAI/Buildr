@@ -1,3 +1,4 @@
+import { nativeParticipation, mergeParticipation } from '../../domain/participation.ts';
 import type { ExecutorItem, ExecutorObservation } from '../../contracts.ts';
 import { errorDiagnostic } from '../../domain/error-diagnostic.ts';
 import { visibleText, nativePreview } from '../native-process.ts';
@@ -47,11 +48,11 @@ export function qoderHistoryItems(messages: any[], contextId: string, interrupti
     if (isOrdinaryInput) executionId = message.uuid;
     if (text && message.type === 'assistant' || isOrdinaryInput) items.push({ id: message.type === 'assistant' ? `message:${message.message?.id ?? message.uuid}` : message.uuid, ...parent, ...(isOrdinaryInput ? { clientRequestId: message.uuid } : {}), kind: 'message', role: message.type === 'assistant' ? 'assistant' : 'user', text, executionId, status: 'completed' });
     for (const part of Array.isArray(content) ? content : []) {
-      if (part.type === 'tool_use') items.push({ id: part.id, ...parent, kind: 'tool', role: 'system', name: typeof part.name === 'string' && part.name ? part.name : undefined, input: nativePreview(JSON.stringify(part.input ?? {})), text: String(part.name ?? '工具') + '\n' + nativePreview(JSON.stringify(part.input ?? {})), executionId, status: 'running' });
-      if (part.type === 'tool_result') items.push({ id: part.tool_use_id, ...parent, kind: 'tool', role: 'system', text: nativePreview(visibleText(part.content)), executionId, status: part.is_error ? 'failed' : 'completed' });
+      if (part.type === 'tool_use') items.push({ id: part.id, ...parent, kind: 'tool', role: 'system', name: typeof part.name === 'string' && part.name ? part.name : undefined, participation: nativeParticipation(part.input===undefined?undefined:JSON.stringify(part.input),undefined,'pending'), input: nativePreview(JSON.stringify(part.input ?? {})), text: String(part.name ?? '工具') + '\n' + nativePreview(JSON.stringify(part.input ?? {})), executionId, status: 'running' });
+      if (part.type === 'tool_result') items.push({ id: part.tool_use_id, ...parent, kind: 'tool', role: 'system', participation: nativeParticipation(undefined,part.content===undefined?undefined:visibleText(part.content),part.is_error?'failed':'unknown'), text: nativePreview(visibleText(part.content)), executionId, status: part.is_error ? 'failed' : 'completed' });
     }
   }
-  const latest = new Map<string, ExecutorItem>(); for (const item of items) latest.set(item.id, { ...latest.get(item.id), ...item }); return [...latest.values()];
+  const latest = new Map<string, ExecutorItem>(); for (const item of items) { const prior=latest.get(item.id);latest.set(item.id, { ...prior, ...item, ...(item.kind==='tool'?{participation:mergeParticipation(prior?.participation,item.participation,item.name??prior?.name,item.input??prior?.input)}:{}) }); } return [...latest.values()];
 }
 
 /** The SDK projection omits origin metadata. Match only native primary-chain receipts, never user text alone. */
@@ -73,7 +74,9 @@ export function qoderInterruptedObservation(messages: any[], records: any[], con
   const interruptions = qoderInterruptionIds(messages, records, contextId);
   const items = qoderHistoryItems(messages, contextId, interruptions, records);
   const owned = items.filter(item => item.executionId === executionId), tools = owned.filter(item => item.kind === 'tool');
-  const confirmedFailures = new Set(records.flatMap(record => typeof record.toolUseResult?.errorType === 'string' && !/interrupt|abort|cancel/i.test(record.toolUseResult.errorType) && record.sourceToolAssistantUUID && record.promptId ? (Array.isArray(record.message?.content) ? record.message.content : []).filter((part: any) => part.type === 'tool_result' && part.is_error).map((part: any) => part.tool_use_id) : []));
+  const confirmedFailures = new Set(records.flatMap(record => (typeof record.toolUseResult?.errorType === 'string' && !/interrupt|abort|cancel/i.test(record.toolUseResult.errorType) ||
+    record.toolUseResult?.kind === 'completed' && Number.isInteger(record.toolUseResult.exitCode) && record.toolUseResult.interrupted === false && !record.toolUseResult.signal) &&
+    record.sourceToolAssistantUUID && record.promptId ? (Array.isArray(record.message?.content) ? record.message.content : []).filter((part: any) => part.type === 'tool_result' && part.is_error).map((part: any) => part.tool_use_id) : []));
   const settled = (item: ExecutorItem) => item.status === 'completed' || item.status === 'failed' && confirmedFailures.has(item.id);
   const exactInput = executionId && items.some(item => item.role === 'user' && item.id === executionId) && records.some(record => record.sessionId === contextId && record.isSidechain === false && record.type === 'user' && record.uuid === executionId);
   // A known input identity survives a lost result. Physical release still requires the old control group to be gone.

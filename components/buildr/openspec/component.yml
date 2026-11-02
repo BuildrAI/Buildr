@@ -1,8 +1,8 @@
 schemaVersion: buildr.component/v1
-id: openspec
-kind: integration
+id: "openspec"
+kind: "integration"
 version: "1.13.0+buildr.6"
-source: buildr
+source: "buildr"
 upstream:
   name: "@fission-ai/openspec"
   version: "1.13.0"
@@ -13,42 +13,36 @@ members:
 contributions:
   skillFragments: ["openspec-explore@prepend=components/buildr/openspec/contributions/openspec-explore-terminology.md","openspec-propose@prepend=components/buildr/openspec/contributions/openspec-propose-sidebar.md","openspec-update-change@prepend=components/buildr/openspec/contributions/openspec-update-sidebar.md","openspec-apply-change@prepend=components/buildr/openspec/contributions/openspec-apply-sidebar.md","openspec-sync-specs@prepend=components/buildr/openspec/contributions/openspec-sync-converge.md","openspec-archive-change@prepend=components/buildr/openspec/contributions/openspec-archive-converge.md"]
   skillDependencies:
-    - skill: openspec-explore
-      capability: buildr.terminology-governance
+    - skill: "openspec-explore"
+      capability: "buildr.terminology-governance"
       version: 1
-      mode: optional
-    - skill: openspec-propose
-      capability: buildr.task-record
+      mode: "optional"
+    - skill: "openspec-propose"
+      capability: "buildr.task-record"
       version: 4
-      mode: required
-    - skill: openspec-propose
-      capability: buildr.current-knowledge-maintenance
+      mode: "required"
+    - skill: "openspec-propose"
+      capability: "buildr.current-knowledge-maintenance"
       version: 4
-      mode: required
-    - skill: openspec-update-change
-      capability: buildr.current-knowledge-maintenance
+      mode: "required"
+    - skill: "openspec-update-change"
+      capability: "buildr.current-knowledge-maintenance"
       version: 4
-      mode: required
-    - skill: openspec-apply-change
-      capability: buildr.task-record
+      mode: "required"
+    - skill: "openspec-apply-change"
+      capability: "buildr.task-record"
       version: 4
-      mode: required
-    - skill: openspec-apply-change
-      capability: buildr.current-knowledge-maintenance
+      mode: "required"
+    - skill: "openspec-apply-change"
+      capability: "buildr.current-knowledge-maintenance"
       version: 4
-      mode: required
-integrity:
-  - skills/openspec/openspec-explore=sha256-500fca4e0ae48c58f11af0467d0ec6adc48912e2236cbd4d7eda6d63771f7754
-  - skills/openspec/openspec-propose=sha256-45600f776574c2e4f653c0c483f5c4c3f2c9698a800a5b1eb01e9b745d8082d6
-  - skills/openspec/openspec-update-change=sha256-ccfbfe61f4d64cafed50a6652c46a19491106dbd9d8df25a3b65b5fae24616a5
-  - skills/openspec/openspec-apply-change=sha256-3784f26f0ff6008e677e0262d5549e26c7b16f8856e5d32e0bf9452bee64e1ff
-  - skills/openspec/openspec-sync-specs=sha256-f6bb88404830058a17feb7e261a1aeab884a6fb89bdee4cf1a9ad33000064e1e
-  - skills/openspec/openspec-archive-change=sha256-917e77290f5cc266f4e881cda18e527b69ed7b4d0e4cfbaf4ce710f4b763a8de
-  - skills/buildr/openspec-contract-guard=sha256-420b5dff453b4077ff25a06c2518a9b9137f924926a8f4cd8e06aa8619a3a3e9
-  - commands/buildr/openspec/manifest.yml=sha256-34633130abe5ef0e88d83ab205ce3cd46f962c3cc93fba4019b49fd3ae939ec0
-  - components/buildr/openspec/contributions/openspec-explore-terminology.md=sha256-ca6a33bc8afad93f80865c2147832b214159639fca774568e8736959f009b66c
-  - components/buildr/openspec/contributions/openspec-propose-sidebar.md=sha256-d856eea379af1cde80bda2ec4661f073ad0148b5c3ebf23edae789c6ec92c88f
-  - components/buildr/openspec/contributions/openspec-update-sidebar.md=sha256-72712ca8e2e0b8174aeb9add20c3fe137cb62062b02e6ed1e2ea7d104fcc75b8
-  - components/buildr/openspec/contributions/openspec-apply-sidebar.md=sha256-8a27c791ac2caf0e0135b01c34a46df219a883f34959be72b9d53f39eaa8ec85
-  - components/buildr/openspec/contributions/openspec-sync-converge.md=sha256-1760391d98dc6d2217d25e9dd588d6a748919047b0008e1cae92b5e98f74cc75
-  - components/buildr/openspec/contributions/openspec-archive-converge.md=sha256-7ca921d1f7dab522aa6e51dc63a968c333627777489bc9d2e2388e27f17436ac
+      mode: "required"
+memberResources:
+  "components/buildr/openspec/contributions/openspec-explore-terminology.md": "resources/workspace/components/buildr/openspec/contributions/openspec-explore-terminology.md"
+  "components/buildr/openspec/contributions/openspec-propose-sidebar.md": "resources/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md"
+  "components/buildr/openspec/contributions/openspec-update-sidebar.md": "resources/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md"
+  "components/buildr/openspec/contributions/openspec-apply-sidebar.md": "resources/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md"
+  "components/buildr/openspec/contributions/openspec-sync-converge.md": "resources/workspace/components/buildr/openspec/contributions/openspec-sync-converge.md"
+  "components/buildr/openspec/contributions/openspec-archive-converge.md": "resources/workspace/components/buildr/openspec/contributions/openspec-archive-converge.md"
+  "commands/buildr/openspec/manifest.yml": "resources/workspace/commands/buildr/openspec/manifest.yml"
+integrity: ["skills/openspec/openspec-explore=sha256-500fca4e0ae48c58f11af0467d0ec6adc48912e2236cbd4d7eda6d63771f7754","skills/openspec/openspec-propose=sha256-45600f776574c2e4f653c0c483f5c4c3f2c9698a800a5b1eb01e9b745d8082d6","skills/openspec/openspec-update-change=sha256-ccfbfe61f4d64cafed50a6652c46a19491106dbd9d8df25a3b65b5fae24616a5","skills/openspec/openspec-apply-change=sha256-3784f26f0ff6008e677e0262d5549e26c7b16f8856e5d32e0bf9452bee64e1ff","skills/openspec/openspec-sync-specs=sha256-f6bb88404830058a17feb7e261a1aeab884a6fb89bdee4cf1a9ad33000064e1e","skills/openspec/openspec-archive-change=sha256-917e77290f5cc266f4e881cda18e527b69ed7b4d0e4cfbaf4ce710f4b763a8de","skills/buildr/openspec-contract-guard=sha256-420b5dff453b4077ff25a06c2518a9b9137f924926a8f4cd8e06aa8619a3a3e9","commands/buildr/openspec/manifest.yml=sha256-34633130abe5ef0e88d83ab205ce3cd46f962c3cc93fba4019b49fd3ae939ec0","components/buildr/openspec/contributions/openspec-explore-terminology.md=sha256-ca6a33bc8afad93f80865c2147832b214159639fca774568e8736959f009b66c","components/buildr/openspec/contributions/openspec-propose-sidebar.md=sha256-d856eea379af1cde80bda2ec4661f073ad0148b5c3ebf23edae789c6ec92c88f","components/buildr/openspec/contributions/openspec-update-sidebar.md=sha256-72712ca8e2e0b8174aeb9add20c3fe137cb62062b02e6ed1e2ea7d104fcc75b8","components/buildr/openspec/contributions/openspec-apply-sidebar.md=sha256-8a27c791ac2caf0e0135b01c34a46df219a883f34959be72b9d53f39eaa8ec85","components/buildr/openspec/contributions/openspec-sync-converge.md=sha256-1760391d98dc6d2217d25e9dd588d6a748919047b0008e1cae92b5e98f74cc75","components/buildr/openspec/contributions/openspec-archive-converge.md=sha256-7ca921d1f7dab522aa6e51dc63a968c333627777489bc9d2e2388e27f17436ac"]

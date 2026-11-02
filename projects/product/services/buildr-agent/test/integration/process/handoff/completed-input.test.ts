@@ -1,0 +1,66 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {randomUUID} from 'node:crypto';
+import {executionScopeKey} from '../../../../src/index.ts';
+import type {AgentProcessConnection,ConversationView} from '../../../../src/index.ts';
+import {isLive,until,actor,prepareAgentRuntime,connectAgentProcess,copyPackage,prepared,cleanupProcessFixture} from '../../../support/process-fixture.ts';
+
+test('a completed retained generation cannot block a new queued instruction or duplicate it after reconnect',{timeout:90_000},async t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-completed-input-'));
+  const dataRoot=path.join(root,'profile'),workspace=path.join(root,'work'),packageRoot=path.join(root,'package');
+  fs.mkdirSync(workspace);copyPackage(prepared,packageRoot);
+  fs.copyFileSync(path.join(import.meta.dirname,'../../fixtures/agent-process-entry.mjs'),path.join(packageRoot,'build/process-fixture.mjs'));
+  const marker=path.join(packageRoot,'build/fixture-version.json');fs.writeFileSync(marker,JSON.stringify({version:'old'}));
+  const runtime=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'});
+  const profileId='completed-input-test',scope=executionScopeKey({sourceId:'minimal',id:'directory'});
+  let main:Awaited<ReturnType<typeof actor>>|undefined,observer:AgentProcessConnection|undefined;
+  t.after(async()=>{
+    if(fs.existsSync(dataRoot))fs.writeFileSync(path.join(dataRoot,'release-completed-control'),'release exact test owner');
+    await cleanupProcessFixture({root,dataRoot,profileId,host:main,observer});
+  });
+  main=await actor({dataRoot,profileId,runtime,workspace});
+  observer=await connectAgentProcess({dataRoot,profileId,runtime,sourceId:'minimal'});
+  const old=await observer.lifecycle.identity(),connection=await main.call('connections.read',['first']);
+  await main.call('connections.connect',['first',{expectedRevision:connection.revision}]);
+  const account=await main.call('models.accounts.add',[{provider:'fixture-model'}]);
+  const checked=await main.call('models.accounts.check',[account.id]);
+  await main.call('models.accounts.preferences',[account.id,{expectedRevision:checked.revision,models:[{id:'fixture',enabled:true}]}]);
+  const selection={connectionId:'first',modelAccountId:account.id,model:'fixture',skipHandoffSummary:true};
+  let chat:ConversationView=await main.call('conversations.create',[scope,{}]);
+  const first={...selection,expectedRevision:chat.revision,text:'held-completed'};
+  const preview=await main.call('conversations.prepareSend',[scope,chat.id,first]);
+  await main.call('conversations.send',[scope,chat.id,{...first,previewToken:preview.token,clientRequestId:randomUUID()}]);
+  chat=await until(()=>observer!.operations.conversations.read(scope,chat.id),value=>value.run?.status==='completed');
+  const original=chat.run!,originalContext=chat.participants.at(-1)!.contextId;
+  assert.notEqual(original.resourcesReleased,true);
+  fs.writeFileSync(marker,JSON.stringify({version:'new'}));
+  const next=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'});
+  await observer.lifecycle.requestRuntime({expectedGeneration:old.generation,runtime:next});
+  const adopted=await until(()=>observer!.lifecycle.status(),value=>value.identity.runtime.digest===next.digest);
+  assert.notEqual(adopted.identity.generation,old.generation);assert.ok(isLive(old.pid));
+  // The new receiver needs a live environment provider, just like the updated
+  // Web host. Retaining native work does not transfer an old host's callback.
+  await main.close();
+  main=await actor({dataRoot,profileId,runtime:next,workspace});
+  chat=await observer.operations.conversations.read(scope,chat.id);
+  const requestId=randomUUID(),draft={...selection,expectedRevision:chat.revision,text:'explain the latest result',clientRequestId:requestId};
+  await observer.operations.conversations.queueSend(scope,chat.id,draft);
+  chat=await until(()=>observer!.operations.conversations.read(scope,chat.id),value=>value.run?.id!==original.id&&value.run?.status==='completed');
+  assert.equal(chat.run?.generation,adopted.identity.generation);assert.equal(chat.pendingSend,undefined);
+  const retained=chat.retainedRuns?.find(run=>run.id===original.id);
+  assert.equal(retained?.status,'completed');assert.equal(retained?.generation,old.generation);assert.notEqual(retained?.resourcesReleased,true);
+  const event=chat.entries.find(entry=>entry.runId===chat.run!.id&&entry.nativeSession);
+  assert.equal(event?.nativeSession?.reason,'session-replacement');
+  assert.equal(event?.nativeSession?.from.contextId,originalContext);
+  assert.notEqual(event?.nativeSession?.to.contextId,originalContext);assert.equal(event?.status,'accepted');
+  await observer.disconnect();
+  observer=await connectAgentProcess({dataRoot,profileId,runtime:next,sourceId:'minimal'});
+  await observer.operations.conversations.queueSend(scope,chat.id,draft);
+  assert.equal((await observer.operations.conversations.lookupRequest(scope,chat.id,requestId)).runId,chat.run!.id);
+  const sends=fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').trim().split('\n').map(line=>JSON.parse(line));
+  assert.deepEqual(sends.map(send=>send.text),['held-completed','explain the latest result']);
+  assert.ok(isLive(old.pid),'new input never force-stops the retained owner');
+});

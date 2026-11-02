@@ -5,6 +5,49 @@ import type {AgentConversationFixture} from './agent-conversation-fixture.ts';
 /** setup 场景使用独立准备的对话现场。 */
 export async function runSetupScenarios(fixture:AgentConversationFixture){
   const {assertFixed,assertModelSummary,assertNavigationHighlight,assertReminderGap,capture,chooseAgent,chooseModel,chooseOption,closeConversation,closeModelSettings,connections,expectedBrowserErrors,input,modelSettings,openDesktopConversation,openModelSettings,page,panel,preferenceBodies,preparedInputs,programAttempts,reset,run,sentInputs,setHighEffort,step,workspaceId}=fixture;
+await step('新对话欢迎内容在高矮视口居中，空间不足时仍可完整滚动阅读',async()=>{
+  await reset();const viewport=page.viewportSize();await openDesktopConversation();
+  const stream=panel().locator('.ac-stream'),welcome=stream.locator('.ac-welcome');await welcome.waitFor();
+  const settle=()=>page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
+  let focused=false;
+  const setFocused=async(value:boolean)=>{
+    if(value===focused)return;
+    await panel().getByRole('button',{name:'更多对话操作',exact:true}).click();
+    await page.getByRole('menuitem',{name:value?'专注对话':'恢复分屏',exact:true}).click();focused=value;
+    await page.locator('.has-full-conversation').waitFor({state:value?'visible':'hidden'});await settle();
+  };
+  try{
+    for(const {width,height,full} of [{width:1600,height:1000,full:false},{width:1600,height:1000,full:true},{width:1280,height:640,full:false},{width:1280,height:420,full:false}]){
+      await page.setViewportSize({width,height});await setFocused(full);await settle();
+      await stream.evaluate((node:HTMLElement)=>{node.scrollTop=0;});await settle();
+      // Measure the actual content, not just a stretched .ac-welcome background.
+      const bounds=await welcome.evaluate((node:HTMLElement)=>{
+        const stream=node.closest('.ac-stream')!,s=stream.getBoundingClientRect(),w=node.getBoundingClientRect();
+        const children=[...node.children].map(child=>child.getBoundingClientRect()).filter(rect=>rect.height>0);
+        return{streamTop:s.top,streamBottom:s.top+stream.clientHeight,streamHeight:stream.clientHeight,streamWidth:stream.clientWidth,streamScrollWidth:stream.scrollWidth,
+          welcomeHeight:w.height,contentTop:Math.min(...children.map(rect=>rect.top)),contentBottom:Math.max(...children.map(rect=>rect.bottom)),
+          contentLeft:Math.min(...children.map(rect=>rect.left)),contentRight:Math.max(...children.map(rect=>rect.right)),streamLeft:s.left};
+      });
+      const diagnostic=JSON.stringify({width,height,full,...bounds});
+      assert.ok(bounds.streamHeight>0&&bounds.streamScrollWidth<=bounds.streamWidth+1,diagnostic);
+      assert.ok(Math.abs((bounds.contentLeft+bounds.contentRight)/2-(bounds.streamLeft+bounds.streamWidth/2))<=2,'欢迎内容水平居中：'+diagnostic);
+      if(height===1000)assert.ok(bounds.welcomeHeight<=bounds.streamHeight+1,'高视口能完整容纳欢迎区：'+diagnostic);
+      if(bounds.welcomeHeight<=bounds.streamHeight+1){
+        assert.ok(Math.abs((bounds.contentTop+bounds.contentBottom)/2-(bounds.streamTop+bounds.streamBottom)/2)<=2,'欢迎内容与滚动视口垂直中心一致：'+diagnostic);
+        assert.ok(bounds.contentBottom<=bounds.streamBottom+1,'欢迎内容不被输入区遮挡：'+diagnostic);
+      }
+      assert.ok(bounds.contentTop>=bounds.streamTop-1,'顶部内容不能因居中溢出而无法读到：'+diagnostic);
+      await stream.evaluate((node:HTMLElement)=>{node.scrollTop=node.scrollHeight;});await settle();
+      const end=await welcome.evaluate((node:HTMLElement)=>{
+        const stream=node.closest('.ac-stream')!,s=stream.getBoundingClientRect(),last=node.lastElementChild!.getBoundingClientRect();
+        return{bottom:last.bottom,streamBottom:s.top+stream.clientHeight,remaining:stream.scrollHeight-stream.clientHeight-stream.scrollTop};
+      });
+      assert.ok(end.remaining<=1&&end.bottom<=end.streamBottom+1,'矮视口下最后一项仍可滚动到完整可见：'+JSON.stringify({height,...end}));
+      await capture(page,'agent-conversation-welcome-'+height+(full?'-focused':'-sidebar')+'.png');
+    }
+    assert.equal(fixture.creations,0,'查看和调整欢迎区不创建对话');assert.equal(fixture.sends,0);
+  }finally{await setFocused(false);if(viewport)await page.setViewportSize(viewport);await closeConversation();}
+});
 await step('智能体设置自定义内容在桌面与窄屏保留留白，长程序路径完整换行',async()=>{
   await reset();const viewport=page.viewportSize(),matcher='**/api/v1/app/agent-service/program-updates';
   const executable='/opt/buildr-fixture/Application Support/Buildr Dev/'+('long-program-directory/').repeat(12)+'bin/codex';
@@ -77,7 +120,7 @@ await step('账号入口悬停与聚焦显示所有已登录账号的真实额�
     assert.equal(await overview.isVisible(),false,'按下后待触发的悬停不能重新打开浮窗');
     await page.mouse.up();
     const drawer=page.getByRole('dialog',{name:/^智能体与模型/});await drawer.waitFor();await overview.waitFor({state:'hidden'});
-    await drawer.getByText('账户余额 CNY 123.45600000000000（充值 120.00600000000000 · 赠送 3.45）',{exact:true}).waitFor();
+    await drawer.getByText('账户余额 CNY 123.46（充值 120.01 · 赠送 3.45）',{exact:true}).waitFor();
     await drawer.getByRole('button',{name:'关闭智能体账号与配置',exact:true}).click();await drawer.waitFor({state:'hidden'});
     await page.waitForTimeout(650);assert.equal(await overview.isVisible(),false,'设置关闭后恢复焦点不得重开额度预览');
     await leaveQuota();
@@ -184,29 +227,45 @@ await step('智能体与模型分开管理，程序准备、取消与刷新恢�
     });
 
 await step('全局对话保留草稿与执行位置，左右停靠到一级导航外侧，刷新不发送',async()=>{
+      await page.setViewportSize({width:1600,height:1000});await reset();
       assert.equal(await page.locator('#global-conversations-entry').isHidden(),true,'桌面顶部不重复提供对话主按钮');await openDesktopConversation();await panel().waitFor();assert.equal(await panel().locator('.ac-location-settings .ant-select-selection-item').innerText(),await page.locator('.workspace-switcher strong').innerText(),'首次新建默认当前页面工作空间');await input().fill('草稿只保存，不自动执行');
       await assertFixed(true);assert.equal(await panel().locator('.ac-thread-header .ant-btn').count(),3,'顶部只保留历史、新建和更多三个图标动作');await closeConversation();await panel().waitFor({state:'hidden'});await assertFixed(false);await page.getByRole('complementary',{name:'当前对话与所有对话',exact:true}).getByRole('button',{name:'展开当前对话',exact:true}).click();await input().waitFor();assert.equal(await input().inputValue(),'草稿只保存，不自动执行');await assertFixed(true);
       await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();await panel().locator('.ac-history').waitFor();await closeConversation();await panel().waitFor({state:'hidden'});assert.match(await page.evaluate(()=>document.activeElement?.getAttribute('aria-label')),/^所有对话，/,'边界收起后焦点回到刚使用的历史入口');await page.locator('.ac-collapsed-rail').getByRole('button',{name:/^所有对话，/}).focus();await page.locator('.ac-collapsed-rail').getByRole('button',{name:/^所有对话，/}).press('Enter');await panel().locator('.ac-history').waitFor();assert.match(await page.evaluate(()=>document.activeElement?.getAttribute('aria-label')),/^所有对话，/,'边界展开后焦点留在同一入口');await panel().getByRole('button',{name:'返回当前对话',exact:true}).click();assert.equal(await input().inputValue(),'草稿只保存，不自动执行');
       fixture.additionalPending=[{id:'attention-other',workspaceId:workspaceId,cwd:'/isolated/attention',title:'另一段待回应对话',revision:'attention-r1',hidden:false,updatedAt:new Date().toISOString(),participants:[],entries:[],requests:[],run:run('waiting-question'),activity:{version:1,seenThrough:0,active:true,updatedAt:new Date().toISOString()}}];await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
       const railActivity=page.locator('.ac-collapsed-rail').getByRole('button',{name:/^所有对话，/}),activityBadge=page.locator('.ac-collapsed-rail').getByLabel('1 个待处理对话',{exact:true}),activityMenu=()=>page.locator('.ac-activity-menu:visible');
-      await activityBadge.waitFor();await page.locator('.ac-collapsed-rail').getByLabel('1 个待处理对话',{exact:true}).waitFor();assert.equal(await panel().locator('.ac-activity-count').count(),0,'活动数量只在侧边入口显示');await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();await panel().locator('.ac-history').waitFor();assert.equal(await panel().locator('.ac-activity-filters,.ac-activity-unknown-notice').count(),0,'完整列表移除分类统计栏与未知提示条');await panel().locator('.ac-history-workspace').getByText('另一段待回应对话',{exact:true}).waitFor();await closeConversation();await panel().waitFor({state:'hidden'});
+      await activityBadge.waitFor();await page.locator('.ac-collapsed-rail').getByLabel('1 个待处理对话',{exact:true}).waitFor();assert.equal(await panel().locator('.ac-activity-count').count(),0,'活动数量只在侧边入口显示');await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();await panel().locator('.ac-history').waitFor();assert.equal(await panel().locator('.ac-activity-filters,.ac-activity-unknown-notice').count(),0,'完整列表移除分类统计栏与未知提示条');await panel().locator('.ac-history-workspace').getByText('另一段待回应对话',{exact:true}).waitFor();
+      await page.waitForFunction(()=>!document.querySelector('.ac-history-workspace[aria-busy="true"]'));
+      const groupReads:string[]=[],trackGroupRead=(request:any)=>{const url=new URL(request.url());if(request.method()==='GET'&&url.pathname==='/api/v1/app/agent-service/conversations'&&url.searchParams.has('workspaceId'))groupReads.push(url.searchParams.get('workspaceId')!);};
+      const originalAttention=fixture.additionalPending[0];page.on('request',trackGroupRead);
+      try{
+        fixture.additionalPending=[{...originalAttention,title:'另一段待回应对话已更新',revision:'attention-r2'}];
+        await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+        await panel().locator('.ac-history-workspace').getByText('另一段待回应对话已更新',{exact:true}).waitFor();
+        await page.waitForFunction(()=>!document.querySelector('.ac-history-workspace[aria-busy="true"]'));
+        assert.ok(groupReads.includes(workspaceId),'变化空间重读自己的列表');
+        assert.deepEqual([...new Set(groupReads)],[workspaceId],'一个空间变化不连带重读其他空间');
+      }finally{page.off('request',trackGroupRead);fixture.additionalPending=[originalAttention];}
+      await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+      await panel().locator('.ac-history-workspace').getByText('另一段待回应对话',{exact:true}).waitFor();await closeConversation();await panel().waitFor({state:'hidden'});
       await activityBadge.waitFor();await page.getByRole('complementary',{name:'当前对话与所有对话',exact:true}).getByRole('button',{name:'展开当前对话',exact:true}).hover();await input().waitFor();assert.equal(await panel().locator('.ac-activity-count').count(),0,'暂看时仅侧边保留活动徽标');await openDesktopConversation();await input().waitFor();assert.equal(await panel().getAttribute('data-conversation-id'),null,'侧边普通展开不因另一段活动而切换当前草稿');assert.equal(await input().inputValue(),'草稿只保存，不自动执行');
+      const reminderReadsBefore=fixture.reminderReads;
       await railActivity.hover();await activityMenu().locator('button[data-activity-id="attention-other"]').waitFor();
+      assert.equal(fixture.reminderReads,reminderReadsBefore,'完整活动快照打开提醒不再额外读取两个分类列表');
       assert.equal(await activityMenu().locator('button[data-activity-id="attention-other"] .ac-activity-id').innerText(),'attention-other','提醒只显示标识本身，不重复 ID 字样');
       const activityCopyOrder=await activityMenu().locator('button[data-activity-id="attention-other"]').evaluate((node:HTMLElement)=>{const parent=node.parentElement!,copy=parent.querySelector('.ac-activity-row-copy')!,id=node.querySelector('.ac-activity-id')!;const a=copy.getBoundingClientRect(),b=id.getBoundingClientRect();return{copyLeft:a.left,copyRight:a.right,idLeft:b.left,copyMid:a.top+a.height/2,idMid:b.top+b.height/2};});
       assert.ok(activityCopyOrder.copyRight<=activityCopyOrder.idLeft&&Math.abs(activityCopyOrder.copyMid-activityCopyOrder.idMid)<4,JSON.stringify(activityCopyOrder));
       assert.equal(await activityMenu().locator('.ac-activity-filters,.ac-stats-groups').count(),0,'浮窗移除分类及重复维度统计');
-      await railActivity.focus();const groups=activityMenu().locator('.ac-reminder-section');await groups.waitFor();assert.equal(await groups.count(),1);assert.equal(await groups.getAttribute('aria-label'),'活动中');
+      await railActivity.focus();const groups=activityMenu().locator('.ac-reminder-section');await groups.waitFor();assert.equal(await groups.count(),1);assert.equal(await groups.getAttribute('aria-label'),'活动中对话');
       assert.equal(await railActivity.locator('[data-count-kind]').count(),1,'入口只保留一个角标');
       await assertReminderGap();await capture(page,'agent-conversation-attention-counts.png');
       const originalPending=fixture.additionalPending;
-      const activityRow=(id:string,state:string,time:string)=>({...originalPending[0],id,title:id,run:run(state),activity:{version:2,seenThrough:state==='completed'?0:2,active:true,updatedAt:'2026-10-28T00:00:00Z',userInputAt:time}});
+      const activityRow=(id:string,state:string,time:string)=>({...originalPending[0],id,title:id,run:run(state),activity:{version:2,seenThrough:state==='completed'?0:2,active:true,updatedAt:time,userInputAt:time}});
       const ordered=[activityRow('run-old','running','2026-10-28T00:01:00Z'),activityRow('pending-old','waiting-question','2026-10-28T00:02:00Z'),activityRow('run-new','running','2026-10-28T00:04:00Z'),activityRow('pending-new','completed','2026-10-28T00:03:00Z')];
       const assertActivityOrder=async(ids:string[])=>{await page.waitForFunction((expected:string[])=>JSON.stringify([...document.querySelectorAll<HTMLElement>('.ac-activity-menu [data-activity-id]')].filter(node=>node.getClientRects().length).map(node=>node.dataset.activityId))===JSON.stringify(expected),ids);};
       fixture.additionalPending=ordered;await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await assertActivityOrder(['pending-new','pending-old','run-new','run-old']);
-      ordered[0].updatedAt='2026-10-29T00:00:00Z';ordered[0].activity.updatedAt='2026-10-29T00:00:00Z';fixture.additionalPending=[...ordered].reverse();
-      await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await assertActivityOrder(['pending-new','pending-old','run-new','run-old']);
-      ordered[0].activity.userInputAt='2026-10-29T00:00:00Z';await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await assertActivityOrder(['pending-new','pending-old','run-old','run-new']);
+      fixture.additionalPending=[...ordered].reverse();await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await assertActivityOrder(['pending-new','pending-old','run-new','run-old']);
+      ordered[0].activity.updatedAt='2026-10-29T00:00:00Z';await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await assertActivityOrder(['pending-new','pending-old','run-new','run-old']);
+      ordered[0].activity.userInputAt='2026-10-30T00:00:00Z';await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await assertActivityOrder(['pending-new','pending-old','run-old','run-new']);
       fixture.additionalPending=originalPending;
 
       fixture.additionalPending=[...originalPending,{...originalPending[0],id:'unknown-reminder',title:'需要核实的执行',run:run('unknown')}];

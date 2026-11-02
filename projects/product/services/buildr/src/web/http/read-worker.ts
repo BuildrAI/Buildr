@@ -1,5 +1,6 @@
 import { parentPort } from 'node:worker_threads';
 import path from 'node:path';
+import { resolveProductRoot } from '../../infrastructure/product-resources/index.ts';
 import { createConnectionCatalog } from '../../modules/connection-skills/application/catalog.ts';
 import { readConnectionSkillSources, readConnectionSkillFile, readConnectionSkillFiles } from '../../modules/agent-assets/application/connection-skill-source.ts';
 
@@ -21,7 +22,14 @@ workerPort.on('message', async (message: any) => {
   active++;
   try {
     let value;
-    if (message?.operation === 'connection-catalog') {
+    if (message?.operation === 'release-awareness') {
+      const allowed = new Set(['id', 'operation', 'targetRoot', 'taskId']);
+      if (message.targetRoot !== resolveProductRoot() || message.taskId !== 'release-awareness' || Object.keys(message).some(field => !allowed.has(field))) {
+        throw Object.assign(new Error('Buildr Web product read input invalid.'), {code:'local_app_read_input_invalid',status:400});
+      }
+      const { registerApplicationCliUpdate } = await import('../../modules/installation/application/cli-update.ts');
+      value = registerApplicationCliUpdate({productRoot:resolveProductRoot}).releaseAwareness({allowDevelopmentQuery:false,persistState:true,notify:true});
+    } else if (message?.operation === 'connection-catalog') {
       const allowed = new Set(['id', 'operation', 'targetRoot', 'taskId']);
       if (typeof message.targetRoot !== 'string' || !path.isAbsolute(message.targetRoot) || message.taskId !== 'connection-directory' || Object.keys(message).some(field => !allowed.has(field))) {
         throw Object.assign(new Error('Buildr Web read Worker input invalid.'), { code: 'local_app_read_input_invalid', status: 400 });

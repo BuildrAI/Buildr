@@ -1,3 +1,6 @@
+import type { AgentParticipationParticipation, AgentParticipationSummaryParticipationSummary, AgentParticipationSummaryQueryParticipationSummaryQuery } from '../../../../build/generated/agent-service-http-dto';
+import { sharedConversationRead } from './shared-conversation-read.ts';
+import { conversationTransferDecoder } from './conversation-transfer.ts';
 import type { ProgramUpdatesView, ProgramUpgradeView } from '../types';
 import type { AgentDraftImagesDraftImages, AgentDraftStartStartDraft } from '../../../../build/generated/agent-service-http-dto';
 import type { ActivityCounts, ActivityFilter } from '../conversation-activity';
@@ -13,19 +16,26 @@ const appPath = '/api/v1/app/agent-service';
 const path = (workspaceId: string, conversationId?: string) => `${workspaceId === '@default' ? appPath + '/conversations' : '/api/v1/workspaces/' + encodeURIComponent(workspaceId) + '/agent-conversations'}${conversationId ? '/' + encodeURIComponent(conversationId) : ''}`;
 const post = (body: unknown): RequestInit => ({method: 'POST', body: JSON.stringify(body)});
 export function createAgentConversationsClient(client: ApiClient, session: SessionAdapter, fetcher: typeof fetch = fetch) {
+  let activityReadGeneration=0;
+  let activitySnapshot:(ConversationPage & {revision:string;pending:PendingConversation[]})|undefined;
   const request = async <T,>(url: string, init: RequestInit = {}): Promise<T> => {
+    const mutation = init.method && !['GET','HEAD'].includes(init.method.toUpperCase());
+    if (mutation) {read.invalidate();activitySnapshot=undefined;activityReadGeneration++;}
     const send = () => client(url, { ...init, headers: {...session.writeHeaders(), ...Object.fromEntries(new Headers(init.headers))} }) as Promise<T>;
     try { return await send(); } catch (failure) {
       if ((failure as ApiError)?.code !== 'session_forbidden' || !session.refreshSession || !await session.refreshSession()) throw failure;
-      return send();
-    }
+      return await send();
+    } finally { if (mutation) {read.invalidate();activitySnapshot=undefined;activityReadGeneration++;} }
   };
+  const read = sharedConversationRead(<T,>(url:string,signal:AbortSignal) => request<T>(url,{signal}));
   let catalogRead:Promise<{models:CatalogModel[];diagnostic?:string;hasSnapshot?:boolean}>|undefined;
   const changeModels=async<T,>(url:string,init:RequestInit={}):Promise<T>=>{
     catalogRead=undefined;
     try{return await request<T>(url,init);}finally{catalogRead=undefined;}
   };
   return {
+    participation(workspaceId:string,conversationId:string,runId:string,signal?:AbortSignal) { return read<AgentParticipationParticipation>(path(workspaceId,conversationId)+'/participation?runId='+encodeURIComponent(runId),signal); },
+    participationSummary(workspaceId:string,input:AgentParticipationSummaryQueryParticipationSummaryQuery={},signal?:AbortSignal) { const query=new URLSearchParams(Object.entries(input).filter(([,v])=>v!==undefined&&v!=='').map(([k,v])=>[k,String(v)])); return read<AgentParticipationSummaryParticipationSummary>(path(workspaceId)+'/participation-summary?'+query,signal); },
     defaultWorkspace(signal?: AbortSignal) { return request<{rootPath: string}>(appPath+'/default-workspace', {signal}); },
     modelAccounts(signal?:AbortSignal) {return request<{accounts:ModelAccount[];providers:Array<{id:string;label:string}>}>(appPath+'/model-accounts',{signal});},
     modelCatalog(signal?:AbortSignal) {
@@ -53,10 +63,19 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
     login(connection: ConnectionView) { return request<ConnectionView>(`${appPath}/connections/${encodeURIComponent(connection.id)}/login-attempts`, post({expectedRevision: connection.revision})); },
     loginAttempt(connectionId: string, id: string, signal?: AbortSignal) { return request<ConnectionView>(`${appPath}/connections/${encodeURIComponent(connectionId)}/login-attempts/${encodeURIComponent(id)}`, {signal}); },
     cancelLogin(connection: ConnectionView, id: string) { return request<ConnectionView>(`${appPath}/connections/${encodeURIComponent(connection.id)}/login-attempts/${encodeURIComponent(id)}/cancel`, post({expectedRevision:connection.revision})); },
-    pending(signal?: AbortSignal) { return request<{conversations: ConversationView[]}>(appPath + '/pending-requests', {signal}).then(result => ({conversations: result.conversations.map(item => ({conversationId:item.id,workspaceId:item.workspaceId,title:item.title,status:item.run?.status || 'unknown',count:item.requests.length}) as PendingConversation)})); },
-    listAll(options:{workspaceId?:string;activeOnly?:boolean;hidden?:boolean;query?:string;agent?:string;model?:string;activityState?:Exclude<ActivityFilter,null>;cursor?:string;limit?:number;signal?:AbortSignal}={}) {const params=new URLSearchParams();for(const [key,value] of Object.entries(options))if(key!=='signal'&&value!==undefined)params.set(key,String(value));return request<ConversationPage>(appPath+'/conversations'+(params.size?'?'+params:''),{signal:options.signal});},
+    async activitySummary(signal?:AbortSignal):Promise<ConversationPage & {pending:PendingConversation[]}> {
+      const generation=activityReadGeneration,previous=activitySnapshot;
+      const result=await read<(ConversationPage & {revision:string;pending:PendingConversation[]})|{revision:string;unchanged:true}>(appPath+'/activity-summary'+(previous?'?revision='+previous.revision:''),signal);
+      if ('unchanged' in result) {
+        if (!previous || previous.revision!==result.revision) throw new Error('活动摘要版本不可复用，请重试。');
+        return previous;
+      }
+      if(generation===activityReadGeneration)activitySnapshot=result; return result;
+    },
+    pending(signal?: AbortSignal) { return read<{conversations: PendingConversation[]}>(appPath + '/pending-summary', signal); },
+    listAll(options:{workspaceId?:string;activeOnly?:boolean;hidden?:boolean;query?:string;agent?:string;model?:string;activityState?:Exclude<ActivityFilter,null>;cursor?:string;limit?:number;signal?:AbortSignal}={}) {const params=new URLSearchParams();for(const [key,value] of Object.entries(options))if(key!=='signal'&&value!==undefined)params.set(key,String(value));return read<ConversationPage>(appPath+'/conversations'+(params.size?'?'+params:''),options.signal);},
     seen(conversation:ConversationView,through:number) {return request<{activity:NonNullable<ConversationView['activity']>}>(path(conversation.workspaceId,conversation.id)+'/seen',post({through}));},
-    list(workspaceId: string, options: {taskId?: string; cursor?: string; hidden?: boolean; query?: string; signal?: AbortSignal} = {}) { const params = new URLSearchParams(); if (options.taskId) params.set('taskId', options.taskId); if (options.cursor) params.set('cursor', options.cursor); if (options.hidden) params.set('hidden', 'true'); if (options.query) params.set('query', options.query); return request<{conversations: ConversationSummary[]; nextCursor?: string}>(path(workspaceId) + (params.size ? '?' + params : ''), {signal: options.signal}); },
+    list(workspaceId: string, options: {taskId?: string; cursor?: string; hidden?: boolean; query?: string; signal?: AbortSignal} = {}) { const params = new URLSearchParams(); if (options.taskId) params.set('taskId', options.taskId); if (options.cursor) params.set('cursor', options.cursor); if (options.hidden) params.set('hidden', 'true'); if (options.query) params.set('query', options.query); return read<{conversations: ConversationSummary[]; nextCursor?: string}>(path(workspaceId) + (params.size ? '?' + params : ''), options.signal); },
     draftImages(id:string) {return request<DraftImages>(path('@default')+'/drafts/'+encodeURIComponent(id));},
     removeDraftImage(id:string,expectedRevision:string,imageId:string) {return request<DraftImages>(path('@default')+'/drafts/'+encodeURIComponent(id)+'/attachments/'+encodeURIComponent(imageId),{method:'DELETE',body:JSON.stringify({expectedRevision})});},
     warmup(workspaceId:string,id:string,input:Omit<StartDraftInput,'text'|'attachmentIds'|'expectedDraftRevision'>,draft:boolean) {return request<{prepared:boolean}>(path(workspaceId)+(draft?'/drafts/':'/')+encodeURIComponent(id)+'/warmup',post(input));},
@@ -78,17 +97,18 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
       if(!response.ok)throw new Error('草稿图片读取失败，请重新添加或稍后重试。');
       return response.blob();
     },
-    create(input: {workspaceId: string; cwd?: string; taskId?: string}) { return request<ConversationView>(path(input.workspaceId), post({cwd: input.cwd, taskId: input.taskId})); },
+    create(input: {workspaceId: string; cwd?: string; taskId?: string; taskLinks?:{workspaceId:string;taskId:string}[]}) { return request<ConversationView>(path(input.workspaceId), post({cwd: input.cwd, taskId: input.taskId,taskLinks:input.taskLinks})); },
     read(workspaceId: string, id: string, signal?: AbortSignal) { return request<ConversationView>(path(workspaceId, id), {signal}); },
+    entryReference(workspaceId:string,id:string,entryId:string,revision:string,signal?:AbortSignal) { return read<ConversationEntry>(path(workspaceId,id)+'/entry-detail/'+encodeURIComponent(entryId)+'?'+new URLSearchParams({revision}),signal); },
     entry(workspaceId:string,id:string,entry:ConversationEntry,signal?:AbortSignal) {return request<ConversationEntry>(path(workspaceId,id)+'/entry-detail/'+encodeURIComponent(entry.id)+'?'+new URLSearchParams({revision:entry.detail!.revision}),{signal});},
     entries(workspaceId: string, id: string, cursor: number, signal?: AbortSignal) { return request<ConversationView>(path(workspaceId, id) + '/entries?' + new URLSearchParams({before: String(cursor)}), {signal}); },
-    update(conversation: ConversationView, input: {title?: string; hidden?: boolean; taskId?: string | null}) { return request<ConversationView>(path(conversation.workspaceId, conversation.id), {method: 'PATCH', body: JSON.stringify({...input, expectedRevision: conversation.revision})}); },
+    update(conversation: ConversationView, input: {title?: string; hidden?: boolean; taskId?: string | null; taskIds?: string[];taskLinks?:{workspaceId:string;taskId:string}[]}) { return request<ConversationView>(path(conversation.workspaceId, conversation.id), {method: 'PATCH', body: JSON.stringify({...input, expectedRevision: conversation.revision})}); },
     fork(conversation:ConversationView,entryId:string,clientRequestId:string) {return request<ConversationView>(path(conversation.workspaceId,conversation.id)+'/fork',post({expectedRevision:conversation.revision,entryId,clientRequestId}));},
     createChild(conversation:ConversationView,input:{expectedRevision:string;clientRequestId:string}) {return request<ConversationView>(path(conversation.workspaceId,conversation.id)+'/children',post(input));},
-    children(workspaceId:string,id:string,options:{cursor?:string;signal?:AbortSignal}={}) {return request<ConversationPage>(path(workspaceId,id)+'/children'+(options.cursor?'?'+new URLSearchParams({cursor:options.cursor}):''),{signal:options.signal});},
+    children(workspaceId:string,id:string,options:{cursor?:string;signal?:AbortSignal}={}) {return read<ConversationPage>(path(workspaceId,id)+'/children'+(options.cursor?'?'+new URLSearchParams({cursor:options.cursor}):''),options.signal);},
     generateTitle(conversation:ConversationView) {return request<ConversationView>(path(conversation.workspaceId,conversation.id)+'/generate-title',post({expectedRevision:conversation.revision}));},
     prepare(conversation: ConversationView, input: SendInput) { return request<SendPreview>(path(conversation.workspaceId, conversation.id) + '/prepare-send', post(input)); },
-    send(conversation: ConversationView, input: SendInput & {previewToken: string; clientRequestId: string}) { return request<{conversation: ConversationView}>(path(conversation.workspaceId, conversation.id) + '/send', post(input)); },
+    send(conversation: ConversationView, input: SendInput & {previewToken?: string; clientRequestId: string}) { return request<{conversation: ConversationView}>(path(conversation.workspaceId, conversation.id) + '/send', post(input)); },
     queueSend(conversation: ConversationView, input: SendInput & {clientRequestId: string; expectedPendingRevision?: string; previousRunId?: string}) { return request<ConversationView>(path(conversation.workspaceId, conversation.id) + '/pending-send', post(input)); },
     cancelPendingSend(conversation: ConversationView, expectedPendingRevision: string) { return request<ConversationView>(path(conversation.workspaceId, conversation.id) + '/cancel-pending-send', post({expectedPendingRevision})); },
     supplement(conversation: ConversationView, input: Pick<SupplementInput,'text'|'attachmentIds'|'clientRequestId'>) {
@@ -121,15 +141,26 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
       return response.blob();
     },
     async subscribe(workspaceId: string, id: string, signal: AbortSignal, onEvent: (event: ConversationEvent) => void, cursor?: number) {
-      const headers = {...session.writeHeaders(), accept:'text/event-stream', ...(cursor ? {'last-event-id':String(cursor)} : {})};
-      const response = await fetcher(path(workspaceId, id) + '/events', {cache:'no-store', signal, headers});
-      if (!response.ok || !response.body) { const error: ApiError = new Error('对话事件连接未建立，请重新核对执行状态。'); error.status = response.status; throw error; }
-      const reader = response.body.getReader(), decoder = new TextDecoder(); let buffer = '';
-      try { while (!signal.aborted) { const {value, done} = await reader.read(); if (done) break; buffer = (buffer + decoder.decode(value, {stream:true})).replace(/\r\n/g, '\n'); if (buffer.length > 8 * 1024 * 1024) throw new Error('事件缓冲超限，需要重新读取对话。'); let boundary; while ((boundary = buffer.indexOf('\n\n')) >= 0) { const frame = parseEventFrame(buffer.slice(0,boundary)); buffer = buffer.slice(boundary + 2); if (frame.data) onEvent(JSON.parse(frame.data) as ConversationEvent); } } } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+      const send=()=>fetcher(path(workspaceId,id)+'/events',{cache:'no-store',signal,headers:{...session.writeHeaders(),accept:'text/event-stream','x-buildr-conversation-transfer':'delta-v1',...(cursor?{'last-event-id':String(cursor)}:{})}});
+      let response=await send();
+      if(response.status===403&&session.refreshSession){
+        const body=await response.clone().json().catch(()=>null);
+        if(body?.error?.code==='session_forbidden'&&await session.refreshSession(signal)){signal.throwIfAborted();response=await send();}
+      }
+      if (!response.ok || !response.body) {
+        const body=await response.json().catch(()=>null);
+        const reference=body?.error?.details?.requestId;
+        const requestId=typeof reference==='string'&&/^[a-f0-9-]{36}$/.test(reference)?`（错误编号：${reference}）`:'';
+        const error: ApiError = new Error((body?.error?.message||'实时连接暂不可用。')+requestId);
+        error.status=response.status;error.code=body?.error?.code;throw error;
+      }
+      const reader = response.body.getReader(), decoder = new TextDecoder(), decodeEvent=conversationTransferDecoder(workspaceId,id); let buffer = '';
+      try { while (!signal.aborted) { const {value, done} = await reader.read(); if (done) break; buffer = (buffer + decoder.decode(value, {stream:true})).replace(/\r\n/g, '\n'); if (buffer.length > 8 * 1024 * 1024) throw new Error('事件缓冲超限，需要重新读取对话。'); let boundary; while ((boundary = buffer.indexOf('\n\n')) >= 0) { const frame = parseEventFrame(buffer.slice(0,boundary)); buffer = buffer.slice(boundary + 2); if (frame.data) onEvent(decodeEvent(JSON.parse(frame.data) as ConversationEvent)); } } } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
       if (!signal.aborted) throw new Error('对话连接已中断；暂时无法同步最新进展，已收到的消息仍保留。');
     },
   };
 }
 const session = new LocalSessionAdapter();
 export const agentConversationsApi = createAgentConversationsClient(createApiClient({sessionAdapter: {writeHeaders: () => session.writeHeaders()}, getWorkspaceId: () => null}), session);
-export type AgentConversationsClient = ReturnType<typeof createAgentConversationsClient>;
+type Client = ReturnType<typeof createAgentConversationsClient>;
+export type AgentConversationsClient = Omit<Client,'activitySummary'> & Partial<Pick<Client,'activitySummary'>>;

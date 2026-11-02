@@ -5,7 +5,7 @@ import {readFileSync,existsSync} from 'node:fs';
 import ts from 'typescript';
 import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
-import {groupConversationWorkspaces,activityBadge,activityReminder,activityState} from '../src/features/agent-conversations/conversation-activity.ts';
+import {groupConversationWorkspaces,orderActivityItems,activityBadge,activityReminder,activityState,isExecuting,conversationMetadata,reminderFallbackRows,completeActivitySnapshot} from '../src/features/agent-conversations/conversation-activity.ts';
 import {conversationTierChoice} from '../src/features/agent-conversations/conversation-options.ts';
 
 registerHooks({
@@ -38,6 +38,25 @@ test('单角标优先待决策加待查看，不从一页条目推算，也不�
   assert.deepEqual(activityBadge(counts),{kind:'attention',count:4,label:'待处理'});
   assert.equal(activityState({run:{status:'running'},activity:{version:2,seenThrough:0}}),'running');
   assert.equal(activityState({run:{status:'waiting-question'},activity:{version:2,seenThrough:2}}),'waiting');
+});
+test('非阻塞问题在运行时仍为待决策，列表和提醒共享双状态展示',()=>{
+  const row={run:{status:'running'},activity:{version:2,seenThrough:2,pendingDecisionCount:1}};
+  assert.equal(activityState(row),'waiting');
+  const status=renderToStaticMarkup(React.createElement(ConversationActivityStatus,{state:activityState(row),executing:true}));
+  assert.match(status,/待决策 · 执行中/);
+  const html=render({items:[{id:'question',workspaceId:'a',title:'等待决定',state:'waiting',executing:true,meta:'模型'}],workspaces:[{id:'a',name:'空间'}],counts:{active:1,running:1,waiting:1,unseen:0,unknown:0,attention:1}});
+  assert.match(html,/1 个待处理对话/);assert.match(html,/待决策 1、待查看 0），执行中 1/);
+  assert.equal(activityState({...row,activity:{...row.activity,pendingDecisionCount:0}}),'running');
+  assert.equal(activityState({run:{status:'running'},requests:[{blocking:false}]}),'waiting','legacy full views retain their question');
+});
+test('提醒组内按用户输入而非后台回复排序，待决策仍优先',()=>{
+  const items=[
+    {id:'older-input',workspaceId:'a',title:'刚收到回复',state:'running',meta:'模型',userInputAt:'2026-11-01',updatedAt:'2026-11-03'},
+    {id:'newer-input',workspaceId:'a',title:'之前的对话',state:'running',meta:'模型',userInputAt:'2026-11-02',updatedAt:'2026-11-02'},
+    {id:'pending',workspaceId:'a',title:'需要回答',state:'waiting',meta:'模型',updatedAt:'2026-11-01'}
+  ];
+  assert.deepEqual(orderActivityItems(items).map(item=>item.id),['pending','newer-input','older-input']);
+  assert.equal(items[0].id,'older-input','sorting does not mutate shared rows');
 });
 test('没有待处理时显示执行中，静默与未知执行都不产生角标',()=>{
   const running={...counts,waiting:0,unseen:0};
@@ -79,6 +98,18 @@ test('工作空间只分一组，混合状态保留组内优先顺序',()=>{
   assert.deepEqual(groupConversationWorkspaces([]).size,0);
   assert.equal(items.length,3);
 });
+test('浮窗首帧只选提醒分组内的行，历史未知保留执行不闪现',()=>{
+  const running={id:'running',title:'执行中',run:{status:'running'},activity:{version:4,seenThrough:4}};
+  const decided={id:'decided',title:'待决策',run:{status:'running'},activity:{version:2,seenThrough:2,pendingDecisionCount:1}};
+  const unseen={id:'unseen',title:'待查看',run:{status:'completed'},activity:{version:6,seenThrough:5}};
+  const unknown={id:'unknown',title:'未知执行',run:{status:'unknown'},activity:{version:3,seenThrough:3}};
+  const stale={id:'stale',title:'历史未知保留执行',run:{status:'completed'},retainedRuns:[{id:'old',status:'unknown'}],activity:{version:7,seenThrough:7,active:true}};
+  assert.equal(activityState(stale),null,'活动快照仍会返回只剩历史未知保留执行的行');
+  const fallback=reminderFallbackRows([stale,unseen,decided,running,unknown]);
+  assert.deepEqual(fallback.running.map(row=>row.id),['decided','running']);
+  assert.deepEqual(fallback.pending.map(row=>row.id),['unseen','decided','unknown']);
+  assert.equal([...fallback.pending,...fallback.running].some(row=>row.id==='stale'),false,'首帧不能先显示随后被分组结果替换的行');
+});
 test('入口悬停提示固定，未知执行只保留条目徽标与入口说明',()=>{
   assert.match(render({active:true}),/title="对话列表"/);
   assert.match(render({counts:undefined}),/title="对话列表"/);
@@ -87,4 +118,24 @@ test('入口悬停提示固定，未知执行只保留条目徽标与入口说�
   assert.doesNotMatch(html,/个对话的执行状态需确认|暂时无法确认|查看对话|返回全部/);
   const status=renderToStaticMarkup(React.createElement(ConversationActivityStatus,{state:'unknown'}));
   assert.match(status,/状态待确认/);
+});
+
+test('完整快照覆盖提醒组，截断、重复和失败快照不能替代独立分页',()=>{
+  const rows=[{id:'a',workspaceId:'one',run:{status:'running'},activity:{pendingDecisionCount:1}},{id:'b',workspaceId:'two',activity:{version:2,seenThrough:0}}];
+  assert.equal(completeActivitySnapshot(rows,2,undefined,counts,''),true);
+  const groups=reminderFallbackRows(rows);
+  assert.deepEqual(groups.pending.map(row=>row.id),['a','b']);assert.deepEqual(groups.running.map(row=>row.id),['a']);
+  assert.equal(completeActivitySnapshot(rows,101,'more',counts,''),false);
+  assert.equal(completeActivitySnapshot(rows,3,undefined,counts,''),false);
+  assert.equal(completeActivitySnapshot([rows[0],rows[0]],2,undefined,counts,''),false);
+  assert.equal(completeActivitySnapshot(rows,2,undefined,counts,'failed'),false);
+  assert.equal(completeActivitySnapshot([],0,undefined,undefined,''),false);
+  assert.equal(completeActivitySnapshot([],0,undefined,{...counts,active:0},''),true);
+});
+
+test('模型结束仅后台作业时不显示执行中，历史仍可辨认后台工作且未读继续提醒',()=>{
+ const row={id:'bg',workspaceId:'w',run:{status:'tools-active',provider:'dsh',model:'m'},activity:{active:false,version:2,seenThrough:2}};
+ assert.equal(isExecuting(row),false);assert.equal(activityState(row),null);assert.match(conversationMetadata(row),/后台作业运行中/);
+ assert.equal(activityState({...row,activity:{...row.activity,version:3}}),'unseen');assert.equal(isExecuting({...row,run:{...row.run,status:'running'}}),true);
+ const html=renderToStaticMarkup(React.createElement(ConversationActivityStatus,{state:activityState(row),executing:isExecuting(row)}));assert.doesNotMatch(html,/执行中/);
 });

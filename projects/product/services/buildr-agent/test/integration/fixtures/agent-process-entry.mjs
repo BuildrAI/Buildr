@@ -5,8 +5,30 @@ import { startAgentExecutionServer } from './index.js';
 
 const bootstrap=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
 const marker=JSON.parse(fs.readFileSync(new URL('./fixture-version.json',import.meta.url),'utf8'));
+if(marker.version==='legacy-unbound-stop'){
+  // Emulate the retained binary's bug so the new router, rather than an already
+  // fixed old owner, must recover the stop result. This never runs in product.
+  const {ConversationApplication}=await import('./application/conversation-application.js');
+  const stop=ConversationApplication.prototype.stop;
+  ConversationApplication.prototype.stop=async function(scope,id,input){
+    const view=await stop.call(this,scope,id,input);
+    if(!input.toolId&&view.run?.id===input.runId&&view.run.accepted===false){
+      const record=this.load(scope,id);record.view.run.status='stopping';delete record.interruption;
+      this.save(record);return this.read(scope,id);
+    }
+    return view;
+  };
+}
 const capabilities={supplement:true,text:true,images:true,approval:true,questions:true,stop:true,resume:true,maxInputBytes:65536};
-function executor(id){return{descriptor:{id,label:id,capabilities},async open({configRoot}){
+function executor(id){return{descriptor:{id,label:id,capabilities},
+  async readPersistedExecution({configRoot,contextRef,executionRef}){
+    const file=path.join(configRoot,contextRef.id+'.json');
+    if(!fs.existsSync(file))return;
+    const value=JSON.parse(fs.readFileSync(file,'utf8'));
+    if(!value.durable||value.executionRef?.id!==executionRef.id)return;
+    return {items:value.items,endedAt:value.endedAt,observation:{status:value.status,tools:value.tools,executionRef}};
+  },
+  async open({configRoot}){
   fs.mkdirSync(configRoot,{recursive:true});
   const read=ref=>JSON.parse(fs.readFileSync(path.join(configRoot,ref.id+'.json'),'utf8'));
   const save=(ref,value)=>fs.writeFileSync(path.join(configRoot,ref.id+'.json'),JSON.stringify(value));
@@ -19,6 +41,7 @@ function executor(id){return{descriptor:{id,label:id,capabilities},async open({c
       const ref=input.contextRef,state=read(ref),executionRef={id:randomUUID()};
       state.executionRef=executionRef;state.status='running';state.kind=workText;state.stopRequested=false;state.tools=[];save(ref,state);
       fs.appendFileSync(path.join(bootstrap.dataRoot,'native-sends.jsonl'),JSON.stringify({id,text:workText,prompt:input.text,executionRef,version:marker.version})+'\n');
+      if(workText==='lost-before-accept'){state.status='unknown';delete state.executionRef;save(ref,state);throw new Error('acceptance receipt missing');}
       input.onEvent({type:'accepted',executionRef});
       if(workText==='uncertain-ended'){
         state.status='unknown';state.tools=[{id:'unsettled',label:'one operation, result missing',status:'unknown'}];
@@ -50,8 +73,8 @@ function executor(id){return{descriptor:{id,label:id,capabilities},async open({c
       current.status=current.status==='stopped'?'stopped':'idle';save(ref,current);input.onEvent({type:'completed',status:current.status==='stopped'?'stopped':'completed'});
     },
     async supplement(input){fs.appendFileSync(path.join(bootstrap.dataRoot,'native-inputs.jsonl'),JSON.stringify({text:input.text,version:marker.version})+'\n');const state=read(input.contextRef);if(state.executionRef.id!==input.executionRef.id)throw Error('wrong execution');const item={id:input.clientRequestId,clientRequestId:input.clientRequestId,kind:'message',role:'user',text:input.text,executionId:state.executionRef.id};state.items.push(item);save(input.contextRef,state);return{executionRef:state.executionRef,inputItemId:item.id};},
-    observe:async({contextRef})=>{const value=read(contextRef);if(value.awaitingObservation){delete value.awaitingObservation;save(contextRef,value);}return{status:value.status,tools:value.tools,executionRef:value.executionRef};},
-    canRelease:async({contextRef,executionRef})=>{const state=read(contextRef);return !state.awaitingObservation&&state.executionRef.id===executionRef.id&&(['uncertain-ended','goal-recovery'].includes(state.kind)?(fs.existsSync(path.join(bootstrap.dataRoot,'release-uncertain-resource'))?{executionState:'unknown'}:false):['idle','stopped'].includes(state.status)&&!state.tools.some(tool=>tool.status!=='completed'));},
+    observe:async({contextRef})=>{const value=read(contextRef);if(value.durable)throw Error('old observation channel unavailable');if(value.awaitingObservation){delete value.awaitingObservation;save(contextRef,value);}return{status:value.status,tools:value.tools,executionRef:value.executionRef};},
+    canRelease:async({contextRef,executionRef})=>{const state=read(contextRef);if(state.kind==='held-completed'&&!fs.existsSync(path.join(bootstrap.dataRoot,'release-completed-control')))return false;return !state.awaitingObservation&&state.executionRef.id===executionRef.id&&(['uncertain-ended','goal-recovery'].includes(state.kind)?(fs.existsSync(path.join(bootstrap.dataRoot,'release-uncertain-resource'))?{executionState:'unknown'}:false):['idle','stopped'].includes(state.status)&&!state.tools.some(tool=>tool.status!=='completed'));},
     reply:async({contextRef})=>{fs.appendFileSync(path.join(bootstrap.dataRoot,'native-replies.jsonl'),'reply\n');const value=read(contextRef);value.approved=true;save(contextRef,value);},
     stop:async({contextRef})=>{const value=read(contextRef);if(value.kind==='hold:slow'&&!fs.existsSync(path.join(bootstrap.dataRoot,'finish-stop'))){value.stopRequested=true;value.status='tools-active';value.tools=[{id:'slow-tool',label:'正在停止的命令',status:'running',canStop:true}];}else{value.status='stopped';value.tools=[];}save(contextRef,value);return{status:value.status,tools:value.tools,executionRef:value.executionRef};},close:async()=>{if(fs.existsSync(path.join(bootstrap.dataRoot,'slow-close')))await new Promise(resolve=>setTimeout(resolve,800));},
   };

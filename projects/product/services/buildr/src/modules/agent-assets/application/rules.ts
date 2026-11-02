@@ -2,7 +2,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 export interface RulesDependencies {
-  rootRequiredBlockStatus: typeof import('../../../infrastructure/filesystem/required-block.ts').rootRequiredBlockStatus;
   addDoctorFinding: typeof import('../../../infrastructure/contracts/diagnostic-finding.ts').addDoctorFinding;
   parseYamlDocument: typeof import('../../../infrastructure/filesystem/yaml.ts').parseYamlDocument;
   toPosixRelative: (root: string, file: string) => string;
@@ -11,7 +10,6 @@ export interface RulesDependencies {
 
 export function registerDomainsRules(dependencies: RulesDependencies) {
   const {
-    rootRequiredBlockStatus,
     addDoctorFinding,
     parseYamlDocument,
     toPosixRelative,
@@ -61,15 +59,6 @@ export function registerDomainsRules(dependencies: RulesDependencies) {
   }
 
   function diagnoseRules(result: any, targetRoot: string): void {
-    const requiredStatus = rootRequiredBlockStatus(targetRoot);
-    result.workspace.requiredBlock = requiredStatus;
-    if (!requiredStatus.valid) {
-      addDoctorFinding(result, 'warning', 'rules.required_block_invalid', '根 AGENTS.md 缺少或破坏 Buildr required block。', {
-        path: 'AGENTS.md',
-        suggestion: '运行 buildr update 或 buildr sync 恢复 required block；该操作只修复 Buildr block，不覆盖用户正文。',
-      });
-    }
-
     const retired = inspectRetiredRuleAssets(targetRoot);
     result.rules = {
       retired: true,

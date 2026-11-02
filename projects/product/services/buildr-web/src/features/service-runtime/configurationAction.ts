@@ -1,9 +1,16 @@
 import type { TextConversationActionInput, TextConversationActionResult } from '../agent-conversations/AgentConversationsContext';
+import type { ConversationView } from '../agent-conversations/types';
+import type { RuntimeDefinitionView } from './api/service-runtime-api';
 import { runtimeConfigurationPrompt } from './configurationPrompt.ts';
 
-export type RuntimeConfigurationTarget = { code: string; name: string };
+export type RuntimeConfigurationTarget = {
+  code: string;
+  name: string;
+  /** 打开交接时 Buildr 已读到的运行定义；没有定义表示首次配置。 */
+  definition?: RuntimeDefinitionView | null;
+};
 export type RuntimeConfigurationActionResult =
-  | { status: 'started' }
+  | { status: 'started'; conversation: ConversationView }
   | { status: 'recovering'; message: string }
   | { status: 'busy'; message: string }
   | { status: 'copy'; tone: 'info' | 'warning' | 'error'; message: string };
@@ -24,7 +31,7 @@ export async function executeRuntimeConfiguration({
   if (!workspaceId || !text) return { status: 'copy', tone: 'error', message: '当前工作空间或服务身份尚未读取，暂时无法准备配置请求。' };
   if (!start) return { status: 'copy', tone: 'info', message: '当前没有可用的内部智能体。复制指令后，发送给你正在使用的智能体。' };
   const result = await start({ workspaceId, cwd: workspace!.rootPath.trim(), text });
-  if (result.status === 'started') return { status: 'started' };
+  if (result.status === 'started') return { status: 'started', conversation: result.conversation };
   if (result.status === 'recovering') return { status: 'recovering', message: result.message };
   if (result.status === 'busy') return { status: 'busy', message: result.message };
   return { status: 'copy', tone: result.status === 'failed' ? 'error' : 'warning', message: result.message };

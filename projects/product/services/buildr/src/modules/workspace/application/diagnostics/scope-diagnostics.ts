@@ -146,7 +146,7 @@ export function createScopeDiagnostics(deps: any) {
     };
   }
 
-  function projectBaselineStatus(projectRoot: any) {
+  function projectBaselineStatus(projectRoot: any, metadataPath: any = servicesManifestPath(projectRoot)) {
     return {
       agentsFile: existsFile(path.join(projectRoot, 'AGENTS.md')),
       openspecSpecs: existsDirectory(path.join(projectRoot, 'openspec', 'specs')),
@@ -154,7 +154,7 @@ export function createScopeDiagnostics(deps: any) {
       openspecChanges: existsDirectory(path.join(projectRoot, 'openspec', 'changes')),
       capabilities: existsFile(path.join(projectRoot, 'capabilities.yml')),
       commandsContext: existsFile(path.join(projectRoot, 'commands.yml')),
-      servicesMetadata: existsFile(servicesManifestPath(projectRoot)),
+      servicesMetadata: existsFile(metadataPath),
       servicesDirectory: existsDirectory(path.join(projectRoot, 'services')),
     };
   }
@@ -376,6 +376,10 @@ export function createScopeDiagnostics(deps: any) {
 
       if (!item.project) continue;
 
+      const effectiveMetadataPath = registry?.schemaVersion === 'buildr.projects/v3'
+        ? servicesManifestPath(targetRoot)
+        : metadataPath;
+
       const project: any = {
         org: item.org,
         id: registryEntry?.id || null,
@@ -387,9 +391,9 @@ export function createScopeDiagnostics(deps: any) {
         registered: Boolean(registryEntry),
         source: registryEntry?.source || null,
         exists: existsDirectory(projectRoot),
-        servicesMetadata: toPosixRelative(targetRoot, metadataPath),
+        servicesMetadata: toPosixRelative(targetRoot, effectiveMetadataPath),
         servicesDirectory: toPosixRelative(targetRoot, servicesRoot),
-        baseline: projectBaselineStatus(projectRoot),
+        baseline: projectBaselineStatus(projectRoot, effectiveMetadataPath),
         openspec: existsDirectory(path.join(projectRoot, 'openspec')),
       };
       result.projects.push(project);

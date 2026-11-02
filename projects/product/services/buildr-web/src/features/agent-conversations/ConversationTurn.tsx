@@ -1,4 +1,4 @@
-import { DownOutlined, UpOutlined } from '@ant-design/icons';
+import { DownOutlined, RightOutlined } from '@ant-design/icons';
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { ConversationExecutionIndicator } from './ConversationExecutionIndicator';
 import { locateConversationContent } from './conversation-reading';
@@ -60,7 +60,7 @@ export function ConversationTurn({ id, runId, prompt, identity, executing = fals
           {canToggleProcess ? <button type="button" className="ac-message-identity ac-turn-identity-link ac-turn-identity-toggle" aria-label={identityActionLabel} title={identityActionLabel} aria-expanded={identityExpanded} onClick={handleIdentityClick}>
             <span className="ac-turn-identity-name">{identity||'助手'}</span>
             {showExecutionIndicator && startedAt && <ConversationExecutionIndicator startedAt={startedAt} active={executing} finishedAt={finishedAt} />}
-            {identityExpanded ? <UpOutlined className="ac-turn-identity-caret" /> : <DownOutlined className="ac-turn-identity-caret" />}
+            {identityExpanded ? <DownOutlined className="ac-turn-identity-caret" /> : <RightOutlined className="ac-turn-identity-caret" />}
           </button> : <>
             <button type="button" className="ac-message-identity ac-turn-identity-link" aria-label={identityActionLabel} title={identityActionLabel} onClick={handleIdentityClick}>{identity||'助手'}</button>
             {showExecutionIndicator && startedAt && <ConversationExecutionIndicator startedAt={startedAt} active={executing} finishedAt={finishedAt} />}

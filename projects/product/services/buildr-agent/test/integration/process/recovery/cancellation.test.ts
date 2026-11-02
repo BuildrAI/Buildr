@@ -7,6 +7,47 @@ import { randomUUID } from 'node:crypto';
 import { executionScopeKey } from '../../../../src/index.ts';
 import type { AgentProcessConnection } from '../../../../src/index.ts';
 import { isLive, until, actor, prepareAgentRuntime, connectAgentProcess, copyPackage, prepared, cleanupProcessFixture } from '../../../support/process-fixture.ts';
+import { readProcessInstances, removeProcessInstance } from '../../../../src/process/ownership.ts';
+import { request } from '../../../../src/process/transport.ts';
+import { ConversationRepository } from '../../../../src/persistence/conversation-repository.ts';
+
+test('a new backend cancels a retained unaccepted stop without claiming release or resending work',{timeout:60000},async t=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-unbound-stop-')),dataRoot=path.join(root,'profile'),workspace=path.join(root,'work'),packageRoot=path.join(root,'package');
+ fs.mkdirSync(workspace);copyPackage(prepared,packageRoot);fs.copyFileSync(path.join(import.meta.dirname,'../../fixtures/agent-process-entry.mjs'),path.join(packageRoot,'build/process-fixture.mjs'));
+ const marker=path.join(packageRoot,'build/fixture-version.json');fs.writeFileSync(marker,JSON.stringify({version:'legacy-unbound-stop'}));
+ const runtime=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'}),profileId='unbound-stop',scope=executionScopeKey({sourceId:'minimal',id:'directory'});
+ let main:Awaited<ReturnType<typeof actor>>|undefined,observer:AgentProcessConnection|undefined;
+ t.after(()=>cleanupProcessFixture({root,dataRoot,profileId,host:main,observer}));
+ main=await actor({dataRoot,profileId,runtime,workspace});observer=await connectAgentProcess({dataRoot,profileId,runtime,sourceId:'minimal'});
+ const old=await observer.lifecycle.identity(),connection=await main.call('connections.read',['first']);await main.call('connections.connect',['first',{expectedRevision:connection.revision}]);
+ const added=await main.call('models.accounts.add',[{provider:'fixture-model'}]),checked=await main.call('models.accounts.check',[added.id]);await main.call('models.accounts.preferences',[added.id,{expectedRevision:checked.revision,models:[{id:'fixture',enabled:true}]}]);
+ const choice={connectionId:'first',modelAccountId:added.id,model:'fixture'};
+ const chat=await main.call('conversations.create',[scope,{}]),draft={...choice,text:'lost-before-accept',expectedRevision:chat.revision},preview=await main.call('conversations.prepareSend',[scope,chat.id,draft]);
+ await main.call('conversations.send',[scope,chat.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()}]);
+ let target=await until(()=>observer!.operations.conversations.read(scope,chat.id),v=>v.run?.status==='unknown');
+ assert.equal(target.run!.accepted,false);
+ fs.writeFileSync(marker,JSON.stringify({version:'new'}));const next=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'});
+ await observer.lifecycle.requestRuntime({expectedGeneration:old.generation,runtime:next});
+ await until(()=>observer!.lifecycle.status(),v=>v.identity.runtime.digest===next.digest);
+ target=await observer.operations.conversations.read(scope,chat.id);const run=target.run!;
+ target=await observer.operations.conversations.stop(scope,chat.id,{expectedRevision:target.revision,runId:run.id,participantId:run.participantId,generation:run.generation});
+ assert.equal(target.run!.status,'unknown');assert.equal(target.run!.generation,old.generation);assert.notEqual(target.run!.resourcesReleased,true);
+ assert.match(target.run!.diagnostic!,/已取消.*自动接续/);
+ const repository=new ConversationRepository(path.join(dataRoot,'agent-service'));
+ assert.equal(repository.readConversation(chat.id)!.interruption?.cancelled,true);
+ assert.equal(fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').trim().split('\n').length,1);
+ const prior=readProcessInstances(dataRoot).find(value=>value.identity.generation===old.generation)!;
+ await request(prior.origin,prior.token,'/revoke',{connectionId:'first'},AbortSignal.timeout(5000));
+ await until(async()=>isLive(old.pid),value=>!value);
+ assert.equal((await main.call('connections.read',['first'])).enabled,true,'retiring revocation releases controls without disabling the current binding');
+ const stoppedOwner=readProcessInstances(dataRoot).find(value=>value.identity.generation===old.generation);
+ if(stoppedOwner){assert.ok(stoppedOwner.stopped&&stoppedOwner.confirmed);removeProcessInstance(dataRoot,stoppedOwner);}
+ assert.equal(JSON.parse(fs.readFileSync(path.join(dataRoot,'agent-service/process/last-stop.json'),'utf8')).instanceId,old.instanceId);
+ target=await observer.operations.conversations.read(scope,chat.id);
+ target=await observer.operations.conversations.stop(scope,chat.id,{expectedRevision:target.revision,runId:run.id,participantId:run.participantId,generation:run.generation});
+ assert.equal(target.run!.status,'stopped');assert.equal(target.run!.resourcesReleased,true);assert.equal(target.run!.executionState,'unknown');assert.equal(target.entries.find(entry=>entry.role==='user')!.status,'unknown');
+ assert.equal(fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').trim().split('\n').length,1);
+});
 
 test('cancelled next input can continue a terminal old round after automatic exact release, without stopping another conversation',{timeout:90000},async t=>{
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-cancel-continue-')),dataRoot=path.join(root,'profile'),workspace=path.join(root,'work'),packageRoot=path.join(root,'package');

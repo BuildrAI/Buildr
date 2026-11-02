@@ -193,16 +193,16 @@ Buildr doctor MUST 报告已退役 Rule 资产的迁移提示，以及 Skills �
 - **AND** `skills/buildr/` 下未登记目录 MUST 使用更高优先级 warning
 
 ### Requirement: doctor 报告 AGENTS required block
-Buildr doctor MUST 报告根 `AGENTS.md` 是否保留 Buildr required block。
+Buildr doctor MUST NOT 将根 `AGENTS.md` 或旧默认区块作为必需资产。
 
 #### Scenario: required block 缺失或损坏
-- **WHEN** 根 `AGENTS.md` 缺少或破坏 Buildr required block
-- **THEN** doctor MUST 报告 warning
-- **AND** doctor MUST 说明 update/sync 会只恢复 required block，不覆盖用户正文
+- **WHEN** 根文件不存在、没有旧区块、区块已编辑或标记不完整
+- **THEN** doctor MUST NOT 发出 `rules.required_block_invalid` 或要求恢复默认规则
+- **AND** doctor MUST 继续诊断其他资产和运行时（Runtime）状态
 
 #### Scenario: Codex runtime 当前有效
-- **WHEN** 根 `AGENTS.md` 的 required block 有效且 Codex Skills runtime 投射为最新
-- **THEN** doctor MUST 报告 Codex runtime 为 up to date
+- **WHEN** Codex 技能（Skill）投射为最新且其他适用检查有效
+- **THEN** doctor MUST 不因根默认区块缺失而否定运行时（Runtime）状态
 
 ### Requirement: doctor filters runtime checks by Agent
 Buildr doctor MUST 支持 Agent-readable 诊断按当前 Agent runtime 过滤 runtime checks。
@@ -361,7 +361,7 @@ Buildr doctor MUST 检查 workspace mutation lock、transaction metadata、stagi
 Buildr doctor MUST 使用 canonical workspace 必要资产判断 workspace validity，并区分有效、不完整与不存在。
 
 #### Scenario: canonical workspace identity 有效
-- **WHEN** 根 `AGENTS.md`、`.buildr/workspace.yml` 和 `projects/` 均存在
+- **WHEN** `.buildr/workspace.yml` 和 `projects/` 均存在，无论根 `AGENTS.md` 是否存在
 - **THEN** doctor MUST 将 workspace identity 报告为 `valid`
 - **AND** `workspace.initialized` MUST 为 true
 
@@ -375,6 +375,10 @@ Buildr doctor MUST 使用 canonical workspace 必要资产判断 workspace valid
 - **WHEN** 目标目录不存在任何 canonical Buildr workspace 痕迹
 - **THEN** doctor MUST 将 workspace identity 报告为 `absent`
 - **AND** doctor MUST 报告 workspace 未初始化
+
+#### Scenario: 只有用户自有根规则
+- **WHEN** 目录只有用户自有 `AGENTS.md`，没有工作空间元数据和项目目录
+- **THEN** doctor MUST 将 Buildr 身份报告为 `absent`，不得将普通规则文件视为初始化痕迹
 
 ### Requirement: doctor 分离兼容成功状态与 readiness
 Buildr doctor MUST保留`ok`的既有无error语义，并独立报告workspace validity、兼容readiness、action requirement与domain health；每个finding MUST声明domain、scope、affected actions和ownership unit。聚合`health.ready`只表示本次Doctor profile没有actionable finding，MUST NOT被任何consumer解释为通用工作许可。

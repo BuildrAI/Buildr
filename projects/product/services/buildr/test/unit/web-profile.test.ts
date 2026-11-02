@@ -1,3 +1,4 @@
+import { createAgentServiceModule } from '../../src/modules/agent-service/module.ts';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import test from 'node:test';
@@ -86,4 +87,15 @@ test('Development Launcher必须绑定当前protocol、checkout与Host Node', ()
     () => assertLauncherWebProfile({ ...launcher, developmentRuntime: { ...launcher.developmentRuntime, version: '0.0.0' } }, profile, { productIdentity, productRoot: sourceRoot }),
     (error: any) => error.code === 'web_launcher_profile_mismatch',
   );
+});
+
+
+test('默认工作目录和连接复用同一运行配置绑定，读取不重复观察产品 Git 身份',async()=>{
+  let observations=0;
+  const module=createAgentServiceModule({readProductIdentity:()=>{observations++;return {id:'development'};},resolveWebProfile:()=>({dataRoot:'/isolated/profile',overridden:true})});
+  const instance=module.create({});
+  const contribution=instance.contributions.http[0];
+  const context={request:{method:'GET'},pathname:'/api/v1/app/agent-service/default-workspace',searchParams:new URLSearchParams(),authorizeRead:()=>{}};
+  const first=await contribution.handleTopLevel(context),second=await contribution.handleTopLevel(context);
+  assert.equal(observations,1);assert.deepEqual(first,second);assert.equal(first.body.rootPath,path.resolve('/isolated/profile','default-workspace'));
 });

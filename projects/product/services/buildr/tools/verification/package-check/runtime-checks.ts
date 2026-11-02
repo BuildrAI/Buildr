@@ -16,7 +16,6 @@ export function createBuildrSelfInvoker({ currentProductInvocation, productInvoc
 
 export function createPackageRuntimeChecks(deps: any): any  {
   const {
-    BUILDR_REQUIRED_BLOCK_START,
     buildRuleDiscoveryPlan,
     checkClaudeCodeRuntime,
     checkRuntimeAdapter,
@@ -32,7 +31,6 @@ export function createPackageRuntimeChecks(deps: any): any  {
     parseProjectCommandsYaml,
     parseManifestFileEntry,
     parseProjectsYaml,
-    rootRequiredBlockStatus,
     path,
     readSkillManifest,
     renderClaudeCodeRules,
@@ -49,6 +47,7 @@ export function createPackageRuntimeChecks(deps: any): any  {
     try {
       buildrSelf.exec(['init', '--target', recursiveRoot, '--name', 'recursive', '--profile', 'team'], { cwd: root, stdio: 'ignore' });
       buildrSelf.exec(['project', 'create', 'demo', '--target', recursiveRoot], { cwd: root, stdio: 'ignore' });
+      fs.writeFileSync(path.join(recursiveRoot, 'AGENTS.md'), '# User root rules\n', 'utf8');
       const recursiveProjectRoot = path.join(recursiveRoot, 'projects', 'demo');
       const apiRoot = path.join(recursiveProjectRoot, 'services', 'api');
       const webRoot = path.join(recursiveProjectRoot, 'services', 'web');
@@ -189,6 +188,8 @@ export function createPackageRuntimeChecks(deps: any): any  {
   function verifyWorkspaceAssetLifecycle(context: any, tempRoot: any, kind: any, finalize: any = true): any  {
     const { root, manifest, problems, parseJsonOutput } = context;
     if (kind === 'runtime') {
+    // Bridge metadata requires explicit user rules; init no longer injects them.
+    fs.writeFileSync(path.join(tempRoot, 'AGENTS.md'), '# User workspace rules\n');
     buildrSelf.exec(['rules', 'render', 'claude-code', '--scope', 'projects/demo', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
     const oldReferenceBlock = [
       '<!-- BEGIN Buildr managed Claude Code rules bridge; hash: 0000000000000000000000000000000000000000000000000000000000000000 -->',
@@ -466,8 +467,8 @@ export function createPackageRuntimeChecks(deps: any): any  {
       fs.writeFileSync(existingAgents, '# Existing root entry\n');
       buildrSelf.exec(['init', '--target', compatRoot, '--name', 'demo', '--profile', 'team'], { cwd: root, stdio: 'ignore' });
       const existingContent = fs.readFileSync(existingAgents, 'utf8');
-      if (!existingContent.includes('# Existing root entry') || !existingContent.includes(BUILDR_REQUIRED_BLOCK_START) || !rootRequiredBlockStatus(compatRoot).valid) {
-        problems.push('buildr init must preserve existing root AGENTS.md body and add only the Buildr required block.');
+      if (existingContent !== '# Existing root entry\n') {
+        problems.push('buildr init must preserve the complete existing root AGENTS.md without inserting default rules.');
       }
       if (existsFile(path.join(compatRoot, 'AGENTS.workspace.md'))) {
         problems.push('buildr init must not write AGENTS.workspace.md for existing root AGENTS.md.');

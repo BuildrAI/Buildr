@@ -296,48 +296,75 @@ export async function runServiceRuntimeJourney({ page, runtime, workspaceRoot, w
     assert.equal(await configuration.locator('.runtime-configuration-title .runtime-configuration-verification').count(), 1);
     assert.match(await configuration.innerText(), /测试环境/); assert.deepEqual(await configuration.locator('.runtime-configuration-connections dd').allInnerTexts(), ['沿已验证配置']);
     await configuration.getByRole('button', { name: /配置启动与连接$/ }).click();
-    const discoveryDrawer = page.locator('#service-runtime-discovery-drawer'); await discoveryDrawer.waitFor({ state: 'visible' });
-    configurationStep('copy drawer opened');
-    assert.match(await discoveryDrawer.innerText(), /尚未执行配置/);
-    assert.equal(await discoveryDrawer.locator('details.discovery-prompt[open]').count(), 0);
-    assert.match(await discoveryDrawer.innerText(), /本次允许的影响/);
-    await discoveryDrawer.locator('details.discovery-prompt summary').click();
-    const fallbackPrompt = await discoveryDrawer.getByRole('textbox', { name: '运行配置指令', exact: true }).inputValue();
+    const configurationDrawer = page.locator('#service-runtime-configuration-drawer'); await configurationDrawer.waitFor({ state: 'visible' });
+    configurationStep('configuration confirmation opened');
+    assert.match(await configurationDrawer.innerText(), /尚未执行配置/);
+    assert.match(await configurationDrawer.innerText(), /确认后才会创建对话并提交配置请求/);
+    assert.equal(await configurationDrawer.locator('details.discovery-prompt[open]').count(), 0);
+    assert.match(await configurationDrawer.innerText(), /本次允许的影响/);
+    assert.match(await configurationDrawer.innerText(), /工作空间/);
+    assert.equal(await agent.creations, 0, '确认前不创建对话');
+    assert.equal(await agent.sends, 0, '确认前不提交请求');
+    await configurationDrawer.locator('details.discovery-prompt summary').click();
+    const fallbackPrompt = await configurationDrawer.getByRole('textbox', { name: '运行配置指令', exact: true }).inputValue();
     assert.match(fallbackPrompt, /references\/local-services\.md/); assert.doesNotMatch(fallbackPrompt, /portOverride|expectedRoutingDigest/);
-    await capture(page, 'service-runtime-configuration-copy.png');
+    await capture(page, 'service-runtime-configuration-confirm.png');
     await page.setViewportSize({ width: 390, height: 844 });
-    assert.equal(await discoveryDrawer.evaluate(element => element.scrollWidth <= element.clientWidth + 1), true, '窄屏展开指令不撑宽抽屉');
+    assert.equal(await configurationDrawer.evaluate(element => element.scrollWidth <= element.clientWidth + 1), true, '窄屏展开指令不撑宽抽屉');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
-    await capture(page, 'service-runtime-configuration-copy-mobile.png');
-    await discoveryDrawer.getByRole('button', { name: '关闭', exact: true }).click(); await discoveryDrawer.waitFor({ state: 'hidden' });
+    await capture(page, 'service-runtime-configuration-confirm-mobile.png');
+    // Cancel before confirmation creates nothing.
+    await configurationDrawer.getByRole('button', { name: /取\s*消/ }).click(); await configurationDrawer.waitFor({ state: 'hidden' });
+    assert.equal(agent.creations, 0); assert.equal(agent.sends, 0);
     await page.setViewportSize({ width: 1680, height: 1000 });
-    // Ready internal connections use the existing conversation instead of another execution surface.
+    // Without a ready internal connection, the same drawer keeps the copy handoff and stays unexecuted.
+    await configuration.getByRole('button', { name: /配置启动与连接$/ }).click();
+    await configurationDrawer.waitFor({ state: 'visible' });
+    await configurationDrawer.getByRole('button', { name: '开始配置', exact: true }).click();
+    await configurationDrawer.getByRole('button', { name: '复制指令', exact: true }).waitFor({ state: 'visible' });
+    assert.match(await configurationDrawer.innerText(), /当前没有.*智能体/);
+    assert.equal(await agent.creations, 0); assert.equal(await agent.sends, 0);
+    await capture(page, 'service-runtime-configuration-copy.png');
+    await configurationDrawer.getByRole('button', { name: /取\s*消/ }).click(); await configurationDrawer.waitFor({ state: 'hidden' });
+    // Ready internal connections use the existing conversation, but only after explicit confirmation.
     for (const connection of agent.connections) { connection.enabled = true; connection.status = 'ready'; }
     const createPaused = new Promise<void>(resolve => { agent.createStarted = resolve; });
     agent.holdCreate = true;
-    configurationStep('direct submission click');
     await configuration.getByRole('button', { name: /配置启动与连接$/ }).click();
+    await configurationDrawer.waitFor({ state: 'visible' });
+    assert.equal(agent.creations, 0, '打开交接不创建对话');
+    configurationStep('confirmed submission click');
+    await configurationDrawer.getByRole('button', { name: '开始配置', exact: true }).click();
     const creationObserved = await Promise.race([createPaused.then(() => true), page.waitForTimeout(5000).then(() => false)]);
     if (!creationObserved) {
-      const drawerText = await discoveryDrawer.innerText().catch(() => '');
+      const drawerText = await configurationDrawer.innerText().catch(() => '');
       const bodyText = await page.locator('body').innerText();
       await capture(page, 'service-runtime-configuration-direct-stalled.png');
-      throw new Error(`直接提交未进入创建：${JSON.stringify({ creations: agent.creations, sends: agent.sends, drawerText, bodyText: bodyText.slice(-5000) })}`);
+      throw new Error(`确认提交未进入创建：${JSON.stringify({ creations: agent.creations, sends: agent.sends, drawerText, bodyText: bodyText.slice(-5000) })}`);
     }
-    configurationStep('direct creation paused');
+    configurationStep('confirmed creation paused');
     assert.equal(agent.creations, 1); assert.equal(agent.sends, 0);
-    assert.equal(await discoveryDrawer.count(), 0, '已接入不再打开复制抽屉');
-    const pendingConfiguration = configuration.getByRole('button', { name: /配置启动与连接$/ });
-    await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent?.includes('配置启动与连接') && button.classList.contains('ant-btn-loading')));
-    await pendingConfiguration.click({ force: true });
-    assert.equal(agent.creations, 1, '重复点击仍只创建一个请求');
+    assert.equal(await configurationDrawer.getByRole('button', { name: /取\s*消/ }).isDisabled(), true, '提交中不能取消');
+    await configurationDrawer.locator('button.ant-btn-primary.ant-btn-loading').waitFor({ state: 'visible' });
     agent.releaseCreate?.(); await agent.input().waitFor({ state: 'visible' });
-    configurationStep('direct submission accepted');
+    await configurationDrawer.waitFor({ state: 'hidden' });
+    configurationStep('confirmed submission accepted');
     assert.equal(agent.sends, 1);
     assert.match(agent.sentInputs[0].text, new RegExp(frontend.code));
     assert.match(agent.sentInputs[0].text, /references\/local-services\.md/);
     assert.doesNotMatch(agent.sentInputs[0].text, /portOverride|expectedRoutingDigest/);
     assert.equal(agent.sentInputs[0].cwd, fs.realpathSync(workspaceRoot));
+    // Completion feedback: the run must end and the runtime definition must be readable.
+    const liveDefinition = YAML.parse(fs.readFileSync(before.service.definition.path, 'utf8'));
+    assert.ok(liveDefinition.local);
+    fs.writeFileSync(before.service.definition.path, YAML.stringify({ ...liveDefinition, verifiedAt: new Date(Date.now() + 60_000).toISOString() }));
+    assert.ok(agent.conversation.run);
+    agent.update({ run: { ...agent.conversation.run, status: 'completed' } });
+    const completedNotice = page.locator('.ant-notification-notice').filter({ hasText: '运行配置已完成' });
+    await completedNotice.waitFor({ state: 'visible', timeout: 15_000 });
+    await completedNotice.locator('.ant-notification-notice-close').click().catch(() => undefined);
+    configurationStep('configuration completion observed');
+    await capture(page, 'service-runtime-configuration-complete.png');
     await capture(page, 'service-runtime-configuration-direct.png');
     await agent.closeConversation();
     configurationStep('direct conversation closed');
@@ -358,10 +385,14 @@ export async function runServiceRuntimeJourney({ page, runtime, workspaceRoot, w
     // A lost response is looked up under the original identity, never copied or submitted again.
     agent.loseFirstResponse = true;
     await definitionDrawer.getByRole('button', { name: /交给智能体（Agent）检查配置/ }).click();
+    await configurationDrawer.waitFor({ state: 'visible' });
+    await definitionDrawer.waitFor({ state: 'hidden' });
+    assert.equal(agent.creations, 1, '打开交接不等于提交');
+    await configurationDrawer.getByRole('button', { name: '开始配置', exact: true }).click();
     await agent.input().waitFor({ state: 'visible' });
     configurationStep('lost response recovered');
     assert.equal(agent.creations, 2); assert.equal(agent.sends, 2);
-    assert.equal(await discoveryDrawer.count(), 0);
+    await configurationDrawer.waitFor({ state: 'hidden' });
     assert.match(agent.sentInputs[1].text, new RegExp(frontend.code));
     await agent.closeConversation();
     configurationStep('recovery conversation closed');
@@ -560,21 +591,38 @@ export async function runServiceRuntimeJourney({ page, runtime, workspaceRoot, w
     const frontendDefinitionContent = fs.readFileSync(frontendDefinition, 'utf8');
     fs.rmSync(frontendDefinition);
     try {
-      // Directory and task entries share the same direct submission behavior when definition is absent.
+      // Directory and task entries open the same confirmation before creating anything.
       await page.goto(`${workspaceUrl}/services?project=demo`);
-      await directoryAction(/运行配置/).waitFor({ state: 'visible' });
-      await directoryAction(/运行配置/).click(); await agent.input().waitFor({ state: 'visible' });
+      await directoryAction(/开始配置/).waitFor({ state: 'visible' });
+      await directoryAction(/开始配置/).click();
+      await configurationDrawer.waitFor({ state: 'visible' });
+      assert.equal(agent.creations, 2, '目录入口先说明后执行');
+      await configurationDrawer.getByRole('button', { name: '开始配置', exact: true }).click();
+      await agent.input().waitFor({ state: 'visible' });
       configurationStep('directory submission accepted');
       assert.equal(agent.creations, 3); assert.equal(agent.sends, 3);
+      await page.waitForFunction(code => Boolean(document.querySelector(`[data-service-runtime-status="${code}"][data-service-runtime-configuring="true"]`)), frontend.code);
+      assert.ok(agent.conversation.run);
+      agent.update({ run: { ...agent.conversation.run, status: 'completed' } });
+      const incompleteNotice = page.locator('.ant-notification-notice').filter({ hasText: '运行配置尚未完成' });
+      await incompleteNotice.waitFor({ state: 'visible', timeout: 15_000 });
+      await incompleteNotice.locator('.ant-notification-notice-close').click().catch(() => undefined);
+      configurationStep('configuration incomplete observed');
+      await capture(page, 'service-runtime-configuration-incomplete.png');
+      await page.waitForFunction(code => !document.querySelector(`[data-service-runtime-status="${code}"][data-service-runtime-configuring]`), frontend.code);
       await agent.closeConversation();
       await openTask();
-      const taskConfiguration = taskPanel().getByRole('button', { name: '运行配置', exact: true });
-      await taskConfiguration.waitFor({ state: 'visible' }); await taskConfiguration.click(); await agent.input().waitFor({ state: 'visible' });
+      const taskConfiguration = taskPanel().getByRole('button', { name: '开始配置', exact: true });
+      await taskConfiguration.waitFor({ state: 'visible' }); await taskConfiguration.click();
+      await configurationDrawer.waitFor({ state: 'visible' });
+      assert.equal(agent.creations, 3, '任务入口先说明后执行');
+      await configurationDrawer.getByRole('button', { name: '开始配置', exact: true }).click();
+      await agent.input().waitFor({ state: 'visible' });
       configurationStep('task submission accepted');
       assert.equal(agent.creations, 4); assert.equal(agent.sends, 4);
       assert.match(agent.sentInputs[3].text, new RegExp(frontend.code));
       await agent.closeConversation();
-      await taskConfiguration.waitFor({ state: 'visible' });
+      await taskPanel().getByRole('button', { name: '配置中', exact: true }).waitFor({ state: 'visible' });
       assert.equal((await detail()).service.definition, null, '请求受理不能生成配置成功事实');
     } finally {
       fs.writeFileSync(frontendDefinition, frontendDefinitionContent);

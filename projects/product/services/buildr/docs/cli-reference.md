@@ -361,7 +361,7 @@ resolved `skill-url` 默认具有有限请求时间。维护者可设置：
 
 输入可选 `mode: metadata|content`，默认 `content` 保持独立读取兼容。`metadata` 返回身份、定位、版本、片段范围和依据，`current` 为 `null`、`observed` 不含正文。DSH 当次来源采集（Capture）以实际读取摘要调用此模式，不发送普通用户正文；保存后的查看路径直接读取原事件来源及片段，不调用本接口反查历史。
 
-输出版本为 `buildr.agent-asset-source-result/v1`，按项返回 `detected`、`unknown`、`conflict` 或 `error`，以及对象身份、实际来源作用域（Scope）、`providedBy`、`managedBy`、当前正文及摘要值（Digest）、观察版本、依据和局部诊断。`historical: matched-current` 仅表示观察文本或摘要值（Digest）与当前权威内容相符，不证明当时治理状态、模型采纳、规则遵循或任务完成；无历史证据时是 `unknown`。核心规则（Rule）只确认精确受管区块（Managed Block），混合文件保留区块外内容的独立关系。投射技能（Skill）需实际定位器与当前回执逐文件摘要匹配。
+输出版本为 `buildr.agent-asset-source-result/v1`，按项返回 `detected`、`unknown`、`conflict` 或 `error`，以及对象身份、实际来源作用域（Scope）、`providedBy`、`managedBy`、当前正文及摘要值（Digest）、观察版本、依据和局部诊断。`historical: matched-current` 仅表示观察文本或摘要值（Digest）与当前权威内容相符，不证明当时治理状态、模型采纳、规则遵循或任务完成；无历史证据时是 `unknown`。历史核心规则（Rule）只确认精确匹配旧原文的区块；混合文件保留区块外内容的独立关系。根文件没有旧区块时返回未知，不要求生成或恢复默认规则。投射技能（Skill）需实际定位器与当前回执逐文件摘要匹配。
 
 一次最多 32 项，输入与返回正文分别限 2 MiB，完整 JSON 输出（含包装和换行）限 2 MiB，单份文本限 512 KiB；标准输入等待和查询检查有 5 秒边界。路径越界、秘密、符号链接、特殊文件和局部回执冲突仅影响相关项。当前只读取明确目标工作空间（Workspace）内的源和投射；用户层或其他工作空间（Workspace）的技能（Skill）位置不因同名被自动授权。本来源观察入口仅返回 Buildr 自身方法与能力内容；`task-brief` 与 `task-material` 返回 `unknown` 和 `source_user_material_excluded`，不调用正文读者。经 Buildr 能力访问资料时仅关联调用和必要对象引用；普通任务（Task）及资料读取接口保持原行为。普通产品源码不是方法来源。
 
@@ -372,3 +372,31 @@ resolved `skill-url` 默认具有有限请求时间。维护者可设置：
 Nacos 的专业接口地址与可选网站明确分开，配置版本 1 保留为不兼容事实，不隐式迁移认证。完整方法由所选技能（Skill）说明，通用入口不猜测专业目标。
 
 专业程序提供 `--result-file` 时，按帮助使用受限本机新文件接续准确结果。Nacos 的授权范围及原文位置从该文件读取；普通展示可能遮蔽业务标识，不能作为准确机器输入。文件保存失败不撤销已发生的外部效果，先调查真实目标，不盲目重发。
+
+## Agent service 对话
+
+`agent` 包含六个命令，统一使用本机 Agent service HTTP 接口，不维护任务数据：
+
+```bash
+buildr agent send '请检查当前代码' --target /path/to/workspace --connection codex --json
+buildr agent read <conversation-id> --target /path/to/workspace --limit 50 --json
+buildr agent stop <conversation-id> --target /path/to/workspace --json
+```
+
+`--target` 默认当前工作空间目录；也可用 `--workspace-id <id>` 指定当前本机实例中已登记的空间，两者互斥。需先运行对应配置的 Buildr Web；命令不启动服务、不接受远程 URL、不生成访问令牌。`send` 可指定 `--model` 和 `--permission-mode default|full-access`。省略权限时使用 `full-access`；接入未声明支持时使用其原生 `default`，显式选择不受支持的模式仍报错。省略 `--connection` 时仅自动选择唯一已启用且就绪的连接；多连接时必须明确指定。连接与模型仍由服务端校验。
+
+`send` 创建新对话后依次预发送、发送，不向已有对话追加消息。失败时若已创建对话会保留并报告 ID；超时或冲突不会自动重发，应先用 `read` 核对。`read` 核对状态后读取 entries，支持 `--before <sequence>` 和 `--limit <count>`，保留服务分页信息，不标记已读、不回答待处理问题。`stop` 使用刚观察到的版本与执行身份；没有执行、已终止或已请求停止时只返回当前结果。冲突不自动重放，也不会强杀进程。
+
+
+```bash
+buildr agent list --target /path/to/workspace
+buildr agent list --query '关键词' --limit 100 --json
+buildr agent reply <conversation-id> <request-id> '用户明确给出的回答' --target /path/to/workspace
+buildr agent continue <conversation-id> '继续检查' --target /path/to/workspace
+```
+
+`list` 默认遍历 conversations 接口全部分页（包含隐藏对话），以中文表头显示对话标识、标题、状态和最后更新时间；`--query` 使用服务端文本过滤，`--limit` 指定每页数量而非总条数，`--json` 返回原始对话数组。范围遵循服务端列表语义：没有消息或工作的空白对话不在列表中。不直接读取数据库，避免依赖内部存储结构、锁和迁移状态，也保留统一的工作空间隔离。
+
+`reply` 先 observe，再从当前待处理请求取得原执行身份，携带当前版本调用 `requests/:requestId/reply`。回复文字原样作为 `answer` 提交，不解析 JSON、不映射审批选项、不默认同意；具体问题可接受的回答格式仍由服务及原执行者校验。不支持以该命令构造多问题结构化回答。请求不存在、已处理或冲突时报错，不重试。
+
+`continue` 先 observe，只在对话空闲、没有未结束的保留执行、待回答问题及排队消息时，沿用原参与者的连接、模型及已有执行配置，调用 prepare-send 和 send。对话标识保持不变，不调用 create。运行中或状态未知时报错，不自动转为 supplement 或 pending-send；需先核对状态并等待空闲，或由用户明确停止执行后再继续。所有命令拒绝缺失或无效工作空间标识；失败和超时均不盲目重试。

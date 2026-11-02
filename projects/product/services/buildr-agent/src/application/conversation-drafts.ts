@@ -10,7 +10,7 @@ import { DraftImageRepository } from '../persistence/draft-image-repository.ts';
 
 type Ports = {
   root: string; repository: ConversationRepository; source(scope: string): string;
-  candidate(scope: string, input: { cwd?: string; taskId?: string }): Promise<StoredConversation>;
+  candidate(scope: string, input: { cwd?: string; taskId?: string; taskLinks?:StartConversationDraft['taskLinks'] }): Promise<StoredConversation>;
   prepare(record: StoredConversation, input: SendDraft): SendPreview;
   submit(record: StoredConversation, input: SendDraft & { previewToken: string; clientRequestId: string }): { run: RunView; conversation: ConversationView };
   read(scope: string, id: string): ConversationView;
@@ -43,7 +43,7 @@ export class ConversationDrafts {
   start(scope: string, id: string, input: StartConversationDraft): Promise<{ conversation: ConversationView }> {
     const target = this.identity(scope, id, input.clientRequestId);
     const normalized = normalizeSendDraft({ ...input, expectedRevision: 'new' });
-    const signature = digest({ scope, cwd: input.cwd, taskId: input.taskId, input: normalized });
+    const signature = digest({ scope, cwd: input.cwd, taskId: input.taskId, taskLinks:input.taskLinks, input: normalized });
     const previous = this.ports.repository.readConversation(target);
     if (previous) {
       if (previous.initialDraft?.digest !== signature) fail('agent_request_conflict', '同一提交身份对应不同内容，已拒绝重复创建。', 409);
@@ -95,7 +95,7 @@ export class ConversationDrafts {
         }
         for (const image of selected) record.attachments[image.id] = { mimeType: image.mimeType, size: image.size, createdAt: new Date().toISOString(), ...(image.video ? {video:image.video} : {}) };
       }
-      const draft = { ...normalized, expectedRevision: record.view.revision };
+      const draft = { ...normalized, permissionMode: input.permissionMode, expectedRevision: record.view.revision };
       const preview = this.ports.prepare(record, draft);
       const result = this.ports.submit(record, { ...draft, previewToken: preview.token, clientRequestId: input.clientRequestId });
       this.clearSubmitted(scope, id, ids);

@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 export function jsonResponse(response: any, status: any, value: any) {
   response.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
@@ -91,14 +93,20 @@ function isolatedHtmlResponse(response: any, content: any, downloads = false) {
 export function uiPrototypeHtmlResponse(response: any, content: any) { isolatedHtmlResponse(response, content); }
 export function diagramHtmlResponse(response: any, content: any) { isolatedHtmlResponse(response, content, true); }
 
-export function apiError(response: any, error: any) {
+export function apiError(response: any, error: any, request?: { method?: string; url?: string }) {
   if (response.destroyed || response.writableEnded) return;
   const status = Number.isInteger(error.status) ? error.status : 500;
+  const requestId = status >= 500 ? randomUUID() : undefined;
+  if (requestId) {
+    // No query string, request body, credentials or raw vendor exception message.
+    const code = typeof error.code === 'string' && /^[a-zA-Z0-9_-]{1,100}$/.test(error.code) ? error.code : 'internal_error';
+    console.error(JSON.stringify({ event: 'http-request-failed', requestId, method: request?.method, pathname: request?.url?.split('?')[0], status, code }));
+  }
   jsonResponse(response, status, {
     error: {
       code: error.code || 'internal_error',
       message: status >= 500 ? 'Buildr Web 处理请求失败。' : error.message,
-      ...(error.details === undefined ? {} : { details: error.details }),
+      ...(requestId ? { details: { requestId } } : error.details === undefined ? {} : { details: error.details }),
     },
   });
 }

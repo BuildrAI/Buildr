@@ -36,7 +36,7 @@ type WorkspaceOperationMethod =
   | 'atomicWriteJson' | 'mutationStateRoot' | 'mutationLockPath' | 'mutationRecoveryReceiptPath'
   | 'prepareMutationRestore' | 'restoreMutationSnapshot' | 'removeMutationRestoreTarget'
   | 'writeMappedFileIfMissing' | 'appendGitignoreEntries' | 'toPosixRelative'
-  | 'existsDirectory' | 'existsFile' | 'ensureRootRequiredBlock'
+  | 'existsDirectory' | 'existsFile'
   | 'addDoctorFinding' | 'createWorkspaceId';
 
 export type WorkspaceOperationsRuntime = Record<WorkspaceOperationMethod, (...args: any[]) => any> & {
@@ -76,7 +76,6 @@ export function registerWorkspaceOperations(runtime: WorkspaceOperationsRuntime)
   const toPosixRelative = (...args: any[]) => runtime.toPosixRelative(...args);
   const existsDirectory = (...args: any[]) => runtime.existsDirectory(...args);
   const existsFile = (...args: any[]) => runtime.existsFile(...args);
-  const ensureRootRequiredBlock = (...args: any[]) => runtime.ensureRootRequiredBlock(...args);
   const addDoctorFinding = (...args: any[]) => runtime.addDoctorFinding(...args);
   const createWorkspaceId = (...args: any[]) => runtime.createWorkspaceId(...args);
   const renderWorkspaceManifest = runtime.workspaceRepository.renderWorkspaceManifest;
@@ -211,7 +210,6 @@ export function registerWorkspaceOperations(runtime: WorkspaceOperationsRuntime)
       workspace: { id: workspaceId, name, description },
       compatibility: { kind: 'organization', profile },
     }), created);
-    ensureRootRequiredBlock(targetRoot, changed);
     if (firstInitialization) {
       const emptyCatalog = renderAssetCatalog({ projects: [], services: [], repositories: [] });
       for (const file of CATALOG_FILES) trackWrite(targetRoot, path.join(targetRoot, file), emptyCatalog[file], created);

@@ -7,8 +7,20 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createQoderExecutor } from '../../../build/executors/qoder/index.js';
 import type { ExecutorEvent, AgentRuntime } from '../../../src/contracts.ts';
+import {ExecutorInputRejected} from '../../../build/contracts.js';
 
 const cli = readFileSync(new URL('./fixtures/qoder-cli.mjs', import.meta.url), 'utf8');
+
+test('Qoder rejects a removed SDK worker before delivery instead of reporting unknown acceptance',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'qoder-preinput-'));let runtime:AgentRuntime|undefined;
+ try{
+  const executable=join(root,'qoder.mjs');await writeFile(executable,cli.replace("if(t==='initialize'){","if(t==='initialize'){process.stderr.write('sdk_worker_removed');process.exit(42);"));
+  runtime=await createQoderExecutor().open({connectionId:'qoder',configRoot:join(root,'config'),executable,environment:{PATH:process.env.PATH??''}});
+  const contextRef=await runtime.createContext({cwd:root}),events:ExecutorEvent[]=[];
+  await assert.rejects(runtime.send({contextRef,cwd:root,text:'must not deliver',images:[],clientRequestId:'startup-failure',onEvent:event=>events.push(event)}),error=>error instanceof ExecutorInputRejected&&error.message==='qoder_sdk_worker_removed');
+  assert.ok(!events.some(event=>event.type==='accepted'));
+ }finally{await runtime?.close();await rm(root,{recursive:true,force:true});}
+});
 async function eventually(condition: () => unknown, timeout = 3000) { const end = Date.now() + timeout; while (!condition()) { if (Date.now() > end) throw new Error('condition timeout'); await new Promise(resolve => setTimeout(resolve, 10)); } }
 test('Qoder SDK worker keeps control responsive and binds native input UUID while send waits', { timeout: 15000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'buildr-executor-qoder-')); const workspace = join(root, 'workspace'); await mkdir(workspace);
@@ -30,6 +42,7 @@ test('Qoder SDK worker keeps control responsive and binds native input UUID whil
     assert.ok(events.some(event => event.type === 'item' && event.item.clientRequestId === supplement.inputItemId));
     assert.equal((await runtime.observe({contextRef,executionRef:accepted.executionRef})).requests?.[0].id,request.request.id);
     await assert.rejects(runtime.supplement!({contextRef,executionRef:{id:'other'},cwd:workspace,text:'wrong execution',images:[],clientRequestId:'wrong'}), /rejected/);
+    assert.equal(await runtime.releaseUnaccepted!({contextRef,clientRequestId:accepted.executionRef.id}),false,'accepted work keeps its exact native controls');
     await runtime.reply({ contextRef, executionRef: accepted.executionRef, requestId: request.request.id, answer: { '0': '蓝' } });
     await eventually(() => events.some(event => event.type === 'item' && event.item.text.includes('已收到蓝色')));
     await runtime.stop({ contextRef, executionRef: accepted.executionRef }); await sending;
@@ -173,5 +186,23 @@ for(const confirmed of [true,false])test('Qoder whole-run stop cancels owned nat
   const calls=(await import('node:fs/promises')).readFile(log,'utf8');const methods=(await calls).trim().split('\n').map(line=>JSON.parse(line)).filter(call=>call.type==='control_request').map(call=>call.request.subtype??call.request.type);
   assert.ok(methods.indexOf('stop_task')>=0&&methods.indexOf('stop_task')<methods.indexOf('interrupt'),JSON.stringify(methods));
   const observed=await runtime.observe({contextRef,executionRef:accepted.executionRef});assert.equal(observed.status,confirmed?'stopped':'unknown');assert.equal(observed.tools[0].status,confirmed?'completed':'unknown');
+ }finally{await runtime?.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('Qoder unaccepted release requires the original settled submission and checks its owned worker', {timeout:15000}, async()=>{
+ const root=await mkdtemp(join(tmpdir(),'buildr-qoder-unaccepted-')),workspace=join(root,'work');await mkdir(workspace);
+ const executable=join(root,'qoder.mjs');await writeFile(executable,cli);let runtime:AgentRuntime|undefined;
+ try{
+  runtime=await createQoderExecutor().open({connectionId:'qoder',configRoot:join(root,'config'),executable,environment:{PATH:process.env.PATH??''}});
+  const contextRef=await runtime.createContext({cwd:workspace}),foreign=await runtime.createContext({cwd:workspace}),rpc=(runtime as any).rpc,call=rpc.call.bind(rpc),clientRequestId='lost-unaccepted-input';
+  let rejectSend!:(error:Error)=>void;
+  rpc.call=(method:string,...args:any[])=>method==='send'?new Promise((_,reject)=>{rejectSend=reject;}):call(method,...args);
+  const sending=runtime.send({contextRef,cwd:workspace,text:'work once',images:[],clientRequestId,onEvent:()=>{}});const failed=assert.rejects(sending,/missing receipt/);
+  await eventually(()=>Boolean(rejectSend));
+  assert.equal(await runtime.releaseUnaccepted!({contextRef,clientRequestId}),false,'an in-flight send retains its controls');
+  rejectSend(Error('missing receipt'));await failed;
+  assert.equal(await runtime.releaseUnaccepted!({contextRef:foreign,clientRequestId}),false);assert.equal(await runtime.releaseUnaccepted!({contextRef,clientRequestId:'foreign-request'}),false);
+  assert.deepEqual(await runtime.releaseUnaccepted!({contextRef,clientRequestId}),{executionState:'unknown'});
+  await runtime.close();assert.deepEqual(await runtime.releaseUnaccepted!({contextRef,clientRequestId}),{executionState:'unknown'},'release proof survives exact owned close');
  }finally{await runtime?.close();await rm(root,{recursive:true,force:true});}
 });

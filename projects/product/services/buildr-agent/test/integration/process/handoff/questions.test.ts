@@ -47,5 +47,7 @@ for(const answer of [false,true])test('waiting question handoff crosses retained
     await observer.operations.conversations.queueSend(scope,target.id,{...draft,clientRequestId:requestId});
     const sent=fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').trim().split('\n').map(line=>JSON.parse(line));
     assert.equal(sent.filter(value=>value.version==='new').length,1);assert.match(sent.find(value=>value.version==='new').prompt,answer?/"回答":\{"scope":"later"\}/:/未回答/);
-    assert.equal((await observer.operations.conversations.read(scope,other.id)).run?.status,'running');assert.ok(isLive(old.pid));
+    const otherState=await observer.operations.conversations.read(scope,other.id);assert.equal(otherState.run?.status,'running',JSON.stringify(otherState.run));assert.ok(isLive(old.pid));
+    assert.equal(target.requests.length,0);
+    await until(()=>observer!.operations.conversations.read(scope,target.id),view=>view.retainedRuns?.find(run=>run.id===original.id)?.stopRequested===true);
   }});

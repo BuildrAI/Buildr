@@ -47,7 +47,7 @@ Buildr 把资料、团队方法和系统入口衔接起来，供人和智能体�
 
 ### 围绕任务（Task）保留目标、进展与成果
 
-任务（Task）承载具体工作的目标、说明、进展和结果，会话（Session）提供沟通与执行入口。同一任务（Task）可以关联多个会话（Session）；切换对话或参与者后，重新读取任务（Task）和实际成果，就能核对当前情况并继续推进。详细说明见[从讨论到交付](architecture/task-system.md)。
+任务（Task）承载具体工作的目标、说明、进展和结果，会话（Session）提供沟通与执行入口。同一任务（Task）可以关联多段内部对话（Conversation），同一对话也可以关联多个任务；智能体在对话中创建或明确接续本轮实际执行任务后维护关联，不要求人逐项点击。关联用于查找和接续，不替代任务状态与执行授权；切换对话或参与者后，重新读取任务（Task）和实际成果，就能核对当前情况并继续推进。详细说明见[从讨论到交付](architecture/task-system.md)。
 
 ### 让人和智能体（Agent）面对同一份实际成果
 
@@ -79,7 +79,7 @@ Buildr 当前以本机工作为主。文件资料可以通过 Git 共享，任�
 - [工作对象与代码关系](architecture/project-service-repositories.md)：判断怎样组织项目（Project）与实现、共享和修改会影响哪里。
 - [阅读目录](README.md)：按需查找协作方式、技术说明和故障参考。准备开发 Buildr 时，从[技术架构](architecture/technical.md)进入。
 
-本页结合[产品定位规范](../../openspec/specs/agent-first-product-positioning/spec.md)、[核心规则](../../services/buildr/resources/workspace/AGENTS.md)及上述专项说明，解释当前产品的用途、协作方式和使用边界；具体行为以正式规范与实际实现为准。
+本页结合[产品定位规范](../../openspec/specs/agent-first-product-positioning/spec.md)、[历史核心规则原文（仅作来源参照）](../../services/buildr/resources/workspace/AGENTS.md)及上述专项说明，解释当前产品的用途、协作方式和使用边界；历史原文不再自动写入用户根 `AGENTS.md`，也不作为用户项目的必装约定。具体行为以正式规范与实际实现为准。
 
 ## 后续方向
 

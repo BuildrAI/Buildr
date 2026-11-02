@@ -11,6 +11,48 @@ import type { AgentExecutor, AgentRuntime, AgentServiceOptions, ContextRef, Conv
 import { NativeRequestError } from '../../src/domain/error-diagnostic.ts';
 import { ConversationRepository } from '../../src/persistence/conversation-repository.ts';
 
+test('resuming history preserves a concurrent metadata update without failing the new input', async () => {
+  const native = fake('local'), open = native.executor.open;
+  let onHistory: (() => void) | undefined;
+  native.executor.open = async options => {
+    const runtime = await open(options), history = runtime.readHistory.bind(runtime);
+    runtime.readHistory = async input => {
+      const items = await history(input);
+      if (onHistory) {
+        const callback = onHistory; onHistory = undefined; callback();
+        const answer = items.find(item => item.role === 'assistant');
+        if (answer) answer.text = 'refreshed completed answer';
+        const stored = native.contexts.get(input.contextRef.id)!.items.find(item => item.role === 'assistant');
+        if (stored) stored.text = 'refreshed completed answer';
+      }
+      return items;
+    };
+    return runtime;
+  };
+  const f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local');
+    const chat = await f.service.conversations.create('workspace-one', {});
+    send(f.service, chat.id, 'local', 'first');
+    await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => view.run?.status === 'completed');
+    onHistory = () => {
+      const repository = new ConversationRepository(path.join(f.options.dataRoot, 'agent-service'));
+      const record = repository.readConversation(chat.id)!;
+      const prior = record.view.revision;
+      record.view.title = 'concurrently renamed';
+      record.view.revision = randomUUID();
+      repository.saveConversation(record, prior);
+    };
+    send(f.service, chat.id, 'local', 'second');
+    const done = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id),
+      view => ['completed', 'failed', 'unknown'].includes(view.run?.status ?? ''));
+    assert.equal(done.run?.status, 'completed', done.run?.diagnostic);
+    assert.equal(done.title, 'concurrently renamed');
+    assert.equal(native.sends.length, 2);
+    assert.ok(done.entries.some(entry => entry.text === 'refreshed completed answer'));
+  } finally { await f.close(); }
+});
+
 type Context = { items: ExecutorItem[]; observation: ExecutorObservation; unblock?: () => void };
 function fake(id = 'local', options: { hold?: boolean; disconnect?: 'stopped'|'running'|'unknown'|'tool'; disconnectError?: string; beforeDisconnect?: Promise<void>; disconnectAlways?: boolean; disconnectOn?: number; beforeResume?: Promise<void>; unknown?: boolean; images?: boolean; noAnswer?: boolean; multipleModels?: boolean; request?: boolean; question?: boolean; coldUnknown?: boolean; beforeAccepted?: Promise<void>; replyAfterTerminal?: boolean; toolSurvives?: boolean; toolInput?: boolean; failure?: string | ((attempt: number) => string | undefined); prepareFailures?: number; unknownCreate?: boolean; beforeObservation?: Promise<void>; wrongObservation?: boolean; summary?:(input:ExecutorTitleInput)=>Promise<string|undefined> } = {}) {
   const contexts = new Map<string, Context>(); const sends: ExecutorSendInput[] = []; const replies: unknown[] = []; const opens: ExecutorOpenOptions[] = [];
@@ -73,10 +115,10 @@ function fake(id = 'local', options: { hold?: boolean; disconnect?: 'stopped'|'r
   } };
   return { executor, contexts, sends, replies, opens, loginUpdate: () => loginUpdate };
 }
-function fixture(executors: AgentExecutor[], settings: { modelProviders?: AgentServiceOptions['modelProviders']; autoContinueInterrupted?: boolean; shutdownTimeoutMs?: number; now?: () => Date } = {}) {
+function fixture(executors: AgentExecutor[], settings: { taskIds?: string[]; modelProviders?: AgentServiceOptions['modelProviders']; autoContinueInterrupted?: boolean; shutdownTimeoutMs?: number; now?: () => Date; controlSupersededRun?: AgentServiceOptions['controlSupersededRun'] } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-agent-core-'));
   const workspace = path.join(root, 'workspace'); fs.mkdirSync(workspace);
-  const options = { ...settings, dataRoot: path.join(root, 'profile'), executors, resolveWorkspace(id: string) { assert.equal(id, 'workspace-one'); return { rootPath: workspace }; }, assertTask(_id: string, taskId: string) { assert.equal(taskId, 'task-one'); } };
+  const options = { ...settings, dataRoot: path.join(root, 'profile'), executors, resolveWorkspace(id: string) { assert.equal(id, 'workspace-one'); return { rootPath: workspace }; }, assertTask(_id: string, taskId: string) { assert.ok((settings.taskIds ?? ['task-one']).includes(taskId), '任务不存在'); } };
   const service = createAgentService(options);
   return { root, workspace, options, service, async close() { await service.close(); fs.rmSync(root, { recursive: true, force: true }); } };
 }
@@ -149,6 +191,35 @@ for (const provider of ['codex', 'dsh', 'qoder']) test(`${provider} preserves ch
       assert.equal(restored.entries.find(entry=>entry.text==='child tool output')?.parentToolId,'delegate');
     } finally {await cold.close();}
   } finally {await f.close();}
+});
+
+test('reasoning fragments persist as marked process entries beside the visible step text', async () => {
+  const native = fake('dsh'), open = native.executor.open;
+  native.executor.open = async options => {
+    const runtime = await open(options), original = runtime.send.bind(runtime);
+    runtime.send = async input => {
+      await original(input);
+      const context = native.contexts.get(input.contextRef.id)!;
+      const executionId = context.observation.executionRef!.id;
+      const items: ExecutorItem[] = [
+        {id:'assistant:1:2:reasoning',kind:'message',role:'assistant',text:'内部推理',thinking:true,executionId,status:'completed'},
+        {id:'assistant:1:2',kind:'message',role:'assistant',text:'可见说明',executionId,status:'completed'},
+      ];
+      for (const item of items) { context.items.push(item); input.onEvent({type:'item', item}); }
+    };
+    return runtime;
+  };
+  const f = fixture([native.executor]);
+  try {
+    await connected(f.service,'dsh');
+    const chat = await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'dsh','开始');
+    const done = await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='completed');
+    assert.deepEqual(done.entries.filter(entry=>entry.thinking===true).map(entry=>entry.text),['内部推理']);
+    assert.equal(done.entries.find(entry=>entry.text==='内部推理')?.role,'assistant');
+    assert.equal(done.entries.find(entry=>entry.text==='可见说明')?.thinking,undefined);
+    assert.equal(done.entries.find(entry=>entry.text==='answer from dsh')?.thinking,undefined);
+  } finally { await f.close(); }
 });
 
 test('late history from a settled child does not block a new authorized input as a foreign user change',async()=>{
@@ -778,7 +849,9 @@ test('large native items remain durable while the handoff carries actions and re
     const db = new DatabaseSync(path.join(f.options.dataRoot, 'agent-service/conversations.sqlite'), { readOnly: true });
     try {
       const row = db.prepare('SELECT body FROM conversations WHERE id=?').get(created.id) as { body: string };
-      assert.deepEqual(JSON.parse(row.body).view.entries, pages, 'pagination must not truncate the durable record');
+      assert.deepEqual(JSON.parse(row.body).view.entries, [], 'the header must not duplicate durable entry bodies');
+      const repository = new ConversationRepository(path.join(f.options.dataRoot, 'agent-service'));
+      assert.deepEqual(repository.readConversation(created.id)!.view.entries, pages, 'pagination must not truncate the durable record');
     } finally { db.close(); }
     const subscription = f.service.conversations.subscribe('workspace-one', created.id);
     const iterator = subscription.events[Symbol.asyncIterator]();
@@ -893,10 +966,21 @@ test('a running run already receives its generated title while the first round i
     await connected(f.service, 'local'); const view = await f.service.conversations.create('workspace-one', {}); send(f.service, view.id, 'local', '请在执行开始时就给出名字');
     await waitUntil(() => native.sends[0]?.contextRef && native.contexts.get(native.sends[0].contextRef.id), Boolean);
     const running = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'running' && value.title === '执行中已回填的标题');
-    assert.equal(titles.length, 1); assert.deepEqual(JSON.parse(titles[0].description), { messages: [{ role: 'user', text: '请在执行开始时就给出名字' }] });
+    assert.equal(titles.length, 1); assert.deepEqual(JSON.parse(titles[0].description), { messages: [{ role: 'user', text: '请在执行开始时就给出名字' }] }); assert.equal(titles[0].userText, '请在执行开始时就给出名字');
     for (const context of native.contexts.values()) context.unblock?.();
     const done = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed');
     assert.equal(done.title, '执行中已回填的标题'); assert.equal(titles.length, 1);
+  } finally { await f.close(); }
+});
+
+test('a mixed technical provider title within the 64-character limit is accepted', async () => {
+  const native = fake(); const open = native.executor.open;
+  native.executor.open = async input => ({ ...await open(input), async generateTitle() { return '排查 agent-conversations 接口报错'; } });
+  const f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local'); const view = await f.service.conversations.create('workspace-one', {}); send(f.service, view.id, 'local', '排查标题生成');
+    const named = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.title === '排查 agent-conversations 接口报错' && value.run?.status === 'completed');
+    assert.equal(named.title, '排查 agent-conversations 接口报错'); assert.equal(named.titleState?.status, 'generated');
   } finally { await f.close(); }
 });
 
@@ -965,7 +1049,7 @@ test('explicit title action summarizes a legacy/manual name with exact revision 
 
 test('oversized or failed title inference preserves the neutral name and reserves automatic budget across restart', async () => {
   const native = fake(); const open = native.executor.open; let calls = 0;
-  native.executor.open = async input => ({ ...await open(input), async generateTitle() { calls++; return '这是一段超过二十四个汉字的冗长描述标题而不是精短标题必须拒绝'; } });
+  native.executor.open = async input => ({ ...await open(input), async generateTitle() { calls++; return '这是一段超过六十四个字符的冗长描述标题而不是精短标题'.repeat(3); } });
   const f = fixture([native.executor]);
   try {
     await connected(f.service, 'local'); const view = await f.service.conversations.create('workspace-one', {}); send(f.service, view.id, 'local', 'first');
@@ -1058,7 +1142,7 @@ test('permission intent is preview-bound, capability-gated and persisted; switch
   const f = fixture([a.executor, b.executor]);
   try {
     await connected(f.service, 'a'); await connected(f.service, 'b'); const chat = await f.service.conversations.create('workspace-one', {});
-    const first = { expectedRevision: chat.revision, connectionId: 'a', text: 'first', permissionMode: 'full-access' as const };
+    const first = { expectedRevision: chat.revision, connectionId: 'a', text: 'first' };
     const preview = f.service.conversations.prepareSend('workspace-one', chat.id, first); assert.equal(preview.permissionMode, 'full-access');
     assert.throws(() => f.service.conversations.prepareSend('workspace-one', chat.id, { ...first, permissionMode: 'silent' as any }), { code: 'agent_permission_invalid' });
     assert.throws(() => f.service.conversations.send('workspace-one', chat.id, { ...first, permissionMode: 'default', previewToken: preview.token, clientRequestId: 'mode-request' }), { code: 'agent_preview_stale' }); assert.equal(a.sends.length, 0);
@@ -1071,13 +1155,16 @@ test('permission intent is preview-bound, capability-gated and persisted; switch
     const switchDraft = { expectedRevision: done.revision, connectionId: 'b', text: 'switch', permissionMode: done.run!.permissionMode };
     const switched = f.service.conversations.prepareSend('workspace-one', chat.id, switchDraft); f.service.conversations.send('workspace-one', chat.id, { ...switchDraft, previewToken: switched.token, clientRequestId: randomUUID() });
     done = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), value => value.run?.status === 'completed'); assert.equal(b.sends[0]!.permissionMode, 'full-access');
-    const newChat = await f.service.conversations.create('workspace-one', {}); assert.equal(f.service.conversations.prepareSend('workspace-one', newChat.id, { expectedRevision: newChat.revision, connectionId: 'a', text: 'fresh' }).permissionMode, 'default');
+    const newChat = await f.service.conversations.create('workspace-one', {}); assert.equal(f.service.conversations.prepareSend('workspace-one', newChat.id, { expectedRevision: newChat.revision, connectionId: 'a', text: 'fresh' }).permissionMode, 'full-access');
+    f.service.conversations.send('workspace-one', newChat.id, { expectedRevision: newChat.revision, connectionId: 'b', text: 'direct omitted mode', clientRequestId: randomUUID() });
+    const freshDone = await waitUntil(() => f.service.conversations.read('workspace-one', newChat.id), value => value.run?.status === 'completed');
+    assert.equal(freshDone.run!.permissionMode, 'full-access');
     await f.service.close(); const restored = createAgentService(f.options);
     try {
       assert.equal(restored.conversations.read('workspace-one', chat.id).run!.permissionMode, 'full-access');
       const observationStart = resumes.length; done = await restored.conversations.observe('workspace-one', chat.id);
       assert.equal(done.run!.permissionMode, 'full-access'); assert.deepEqual(resumes.slice(observationStart), [{ provider: 'a', permissionMode: undefined }, { provider: 'b', permissionMode: undefined }]);
-      const defaultDraft = { expectedRevision: done.revision, connectionId: 'a', text: 'default again' }; const reset = restored.conversations.prepareSend('workspace-one', chat.id, defaultDraft); assert.equal(reset.permissionMode, 'default');
+      const defaultDraft = { expectedRevision: done.revision, connectionId: 'a', text: 'default again', permissionMode: 'default' as const }; const reset = restored.conversations.prepareSend('workspace-one', chat.id, defaultDraft); assert.equal(reset.permissionMode, 'default');
       restored.conversations.send('workspace-one', chat.id, { ...defaultDraft, previewToken: reset.token, clientRequestId: randomUUID() });
       done = await waitUntil(() => restored.conversations.read('workspace-one', chat.id), value => value.run?.status === 'completed'); assert.equal(done.run!.permissionMode, 'default'); assert.equal(a.sends[1]!.permissionMode, 'default'); assert.equal(a.sends[1]!.contextRef.id, a.sends[0]!.contextRef.id);
       assert.ok(resumes.some(value => value.provider === 'a' && value.permissionMode === 'default'));
@@ -1177,6 +1264,7 @@ test('legacy runs and accepted request digests without a mode stay default-compa
       record.attempts[0].inputDigest = createHash('sha256').update(JSON.stringify({ connectionId: 'local', text: 'legacy accepted input', attachmentIds: [] })).digest('hex');
       db.prepare('UPDATE conversations SET body=? WHERE id=?').run(JSON.stringify(record), chat.id);
     } finally { db.close(); }
+    assert.throws(() => f.service.conversations.send('workspace-one', chat.id, { expectedRevision: done.revision, connectionId: 'local', text: 'legacy accepted input', clientRequestId: 'legacy-mode-request' }), { code: 'agent_request_conflict' });
     const repeated = f.service.conversations.send('workspace-one', chat.id, { expectedRevision: done.revision, connectionId: 'local', text: 'legacy accepted input', permissionMode: 'default', previewToken: 'not-used-for-an-already-accepted-request', clientRequestId: 'legacy-mode-request' });
     assert.equal(repeated.run.id, done.run!.id); assert.equal(repeated.run.permissionMode, undefined); assert.equal(native.sends.length, 1);
     const preview = f.service.conversations.prepareSend('workspace-one', chat.id, { expectedRevision: done.revision, connectionId: 'local', text: 'new input' }); assert.equal(preview.permissionMode, 'default');
@@ -1210,7 +1298,7 @@ test('tool result updates preserve original invocation input and name across his
 });
 
 
-test('only long material invokes isolated old-model summarization; payload and receipt freeze the same body',async()=>{
+test('long handoff uses local index without auxiliary summary; payload and receipt freeze the same body',async()=>{
  let calls=0;const a=fake('a',{summary:async()=>{calls++;return 'unique auxiliary summary: verify the directory';}}),b=fake('b'),c=fake('c');
  b.executor.descriptor.capabilities.maxInputBytes=8192;
  const f=fixture([a.executor,b.executor,c.executor]);
@@ -1221,14 +1309,14 @@ test('only long material invokes isolated old-model summarization; payload and r
   const draft={expectedRevision:done.revision,connectionId:'b',text:'continue'};
   const skipped=await f.service.conversations.prepareHandoff('workspace-one',chat.id,{...draft,skipHandoffSummary:true});assert.equal(skipped.handoff!.mode,'indexed');assert.equal(calls,0);
   const preview=await f.service.conversations.prepareHandoff('workspace-one',chat.id,draft);
-  assert.equal(preview.handoff!.mode,'summary');assert.equal(calls,1);assert.equal(a.sends.length,1,'summary must not enter the work context');
+  assert.equal(preview.handoff!.mode,'indexed');assert.equal(calls,0);assert.equal(a.sends.length,1,'summary must not enter the work context');
   f.service.conversations.send('workspace-one',chat.id,{...draft,previewToken:preview.token,clientRequestId:'summarized'});
   const second=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
   assert.equal(b.sends[0]!.text,preview.handoff!.body);assert.equal(second.entries.find(e=>e.kind==='handoff')!.handoff!.body,b.sends[0]!.text);
-  assert.equal(second.entries.find(e=>e.kind==='handoff')!.status,'accepted');assert.equal(calls,1);
+  assert.equal(second.entries.find(e=>e.kind==='handoff')!.status,'accepted');assert.equal(calls,0);
   const next=await f.service.conversations.prepareHandoff('workspace-one',chat.id,{expectedRevision:second.revision,connectionId:'c',text:'continue again'});
   assert.ok(!next.handoff!.body.includes('unique auxiliary summary'),'next material must derive from local originals, not the previous packet');
-  assert.equal(calls,1);
+  assert.equal(calls,0);
  }finally{await f.close();}
 });
 
@@ -1239,7 +1327,7 @@ test('quota failure preserves long local source records and still permits handof
   await connected(f.service,'a');await connected(f.service,'b');const chat=await f.service.conversations.create('workspace-one',{});
   send(f.service,chat.id,'a','user original '.repeat(1500));const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
   const draft={expectedRevision:done.revision,connectionId:'b',text:'continue'};const preview=await f.service.conversations.prepareHandoff('workspace-one',chat.id,draft);
-  assert.equal(preview.handoff!.mode,'indexed');assert.equal(preview.fits,true);assert.equal(calls,1);
+  assert.equal(preview.handoff!.mode,'indexed');assert.equal(preview.fits,true);assert.equal(calls,0);
   const index=JSON.parse(fs.readFileSync(preview.handoff!.sourcePath!,'utf8'));const source=JSON.parse(fs.readFileSync(index.rounds[0].path,'utf8'));
   assert.equal(source.records[0].text,'user original '.repeat(1500));
   f.service.conversations.send('workspace-one',chat.id,{...draft,previewToken:preview.token,clientRequestId:'quota-fallback'});
@@ -1247,19 +1335,19 @@ test('quota failure preserves long local source records and still permits handof
  }finally{await f.close();}
 });
 
-test('a delayed summary cannot bypass a changed conversation revision',async()=>{
- let release!:(text:string)=>void;let entered!:()=>void;const started=new Promise<void>(resolve=>entered=resolve);
- const a=fake('a',{summary:async()=>{entered();return new Promise(resolve=>release=resolve);}}),b=fake('b');b.executor.descriptor.capabilities.maxInputBytes=8192;
+test('a stale explicit preview cannot bypass a changed conversation revision',async()=>{
+ const a=fake('a'),b=fake('b');b.executor.descriptor.capabilities.maxInputBytes=8192;
  const f=fixture([a.executor,b.executor]);
  try{
   await connected(f.service,'a');await connected(f.service,'b');const chat=await f.service.conversations.create('workspace-one',{});
   send(f.service,chat.id,'a','x'.repeat(12000));const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
-  const pending=f.service.conversations.prepareHandoff('workspace-one',chat.id,{expectedRevision:done.revision,connectionId:'b',text:'continue'});
-  await started;await f.service.conversations.update('workspace-one',chat.id,{expectedRevision:done.revision,title:'new title'});release('summary');
-  await assert.rejects(pending,{code:'agent_revision_conflict'});assert.equal(b.sends.length,0);
+  const draft={expectedRevision:done.revision,connectionId:'b',text:'continue'};
+  const preview=await f.service.conversations.prepareHandoff('workspace-one',chat.id,draft);
+  const changed=await f.service.conversations.update('workspace-one',chat.id,{expectedRevision:done.revision,title:'new title'});
+  assert.throws(()=>f.service.conversations.send('workspace-one',chat.id,{...draft,expectedRevision:changed.revision,previewToken:preview.token,clientRequestId:'stale'}),{code:'agent_preview_stale'});
+  assert.equal(b.sends.length,0);
  }finally{await f.close();}
 });
-
 
 test('answers retain the original question and run when another executor takes over',async()=>{
  const a=fake('a',{request:true}),b=fake('b'),f=fixture([a.executor,b.executor]);
@@ -1335,6 +1423,62 @@ test('correcting a failed question response retains both user inputs and the acc
   const replies=done.entries.filter(e=>e.id.startsWith('reply-'+req.id));assert.equal(replies.length,2);assert.equal(replies[0]!.status,'unknown');assert.equal(replies[1]!.status,'accepted');assert.ok(replies[1]!.text.includes('allow-once'));
   const next=f.service.conversations.prepareSend('workspace-one',chat.id,{expectedRevision:done.revision,connectionId:'b',text:'continue'});assert.equal(next.handoff!.rounds[0]!.userInputs.length,3);
  }finally{await f.close();}
+});
+
+test('shutdown preserves a completed current turn even when released unknown history remains',async()=>{
+  const native=fake('local'),f=fixture([native.executor],{autoContinueInterrupted:true});
+  let cold:ReturnType<typeof createAgentService>|undefined;
+  try {
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'local','finish once');
+    const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
+    const repository=new ConversationRepository(path.join(f.options.dataRoot,'agent-service'));
+    const record=repository.readConversation(chat.id)!;
+    record.view.retainedRuns=[{...record.view.run!,id:'old-unknown',participantId:'old-participant',status:'unknown',resourcesReleased:true,executionState:'ended',interrupted:true}];
+    record.participants.push({...record.participants[0]!,id:'old-participant'});
+    repository.saveConversation(record,record.view.revision);
+    await f.service.close();
+    const saved=repository.readConversation(chat.id)!;
+    assert.equal(saved.view.run!.id,done.run!.id);assert.equal(saved.view.run!.status,'completed');
+    assert.equal(saved.interruption,undefined);assert.equal(saved.view.retainedRuns![0]!.status,'unknown');
+    cold=createAgentService(f.options);await cold.conversations.recoverInterrupted();
+    assert.equal(native.sends.length,1);assert.equal(cold.conversations.read('workspace-one',chat.id).run!.status,'completed');
+  } finally {await cold?.close();await f.close();}
+});
+
+test('stopping an unresolved submission without a native execution identity returns unknown and persists cancellation',async()=>{
+  const native=fake('local',{unknown:true}),f=fixture([native.executor],{autoContinueInterrupted:true});
+  let cold:ReturnType<typeof createAgentService>|undefined;
+  try {
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'local','do not replay this');
+    const before=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='unknown');
+    const run=before.run!;
+    const stopped=await f.service.conversations.stop('workspace-one',chat.id,{expectedRevision:before.revision,runId:run.id,participantId:run.participantId,generation:run.generation});
+    assert.equal(stopped.run!.status,'unknown');assert.notEqual(stopped.run!.resourcesReleased,true);
+    assert.match(stopped.run!.diagnostic!,/已取消.*自动接续.*未.*确认/);
+    await f.service.close();
+    const repository=new ConversationRepository(path.join(f.options.dataRoot,'agent-service'));
+    assert.equal(repository.readConversation(chat.id)!.interruption?.cancelled,true);
+    cold=createAgentService(f.options);await cold.conversations.recoverInterrupted();
+    assert.equal(native.sends.length,1);assert.equal(cold.conversations.read('workspace-one',chat.id).run!.status,'unknown');
+  } finally {await cold?.close();await f.close();}
+});
+
+test('shutdown never resets a cancelled recovery intent on an accepted unknown turn',async()=>{
+  const native=fake('local',{disconnect:'unknown'}),f=fixture([native.executor]);
+  try {
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'local','leave stopped');
+    await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='unknown');
+    const repository=new ConversationRepository(path.join(f.options.dataRoot,'agent-service')),record=repository.readConversation(chat.id)!;
+    record.interruption={runId:record.view.run!.id,awaitingUser:false,reason:'transport',cancelled:true,attempted:true};
+    repository.saveConversation(record,record.view.revision);
+    await f.service.close();
+    assert.equal(repository.readConversation(chat.id)!.interruption?.cancelled,true);
+    assert.equal(repository.readConversation(chat.id)!.interruption?.attempted,true);
+    assert.equal(native.sends.length,1);
+  } finally {await f.close();}
 });
 
 test('host shutdown records its own interruption without relabelling a user stop or replaying work',async()=>{
@@ -1421,7 +1565,7 @@ test('live transport loss reopens the same binding and continues once without a 
   } finally { await f.close(); }
 });
 
-test('same executor and model rebuilds internal context without a user handoff after released unknown work',async()=>{
+test('same executor and model records native session replacement without claiming a model change after released unknown work',async()=>{
   const native=fake('local',{disconnect:'unknown'}),f=fixture([native.executor]);
   try{
     await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});
@@ -1436,7 +1580,11 @@ test('same executor and model rebuilds internal context without a user handoff a
     f.service.conversations.send('workspace-one',chat.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});
     const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='completed');
     assert.notEqual(native.sends[0]!.contextRef.id,native.sends[1]!.contextRef.id);
-    assert.equal(done.entries.filter(entry=>entry.kind==='handoff').length,0);
+    const transfer=done.entries.find(entry=>entry.nativeSession);
+    assert.equal(transfer?.nativeSession?.reason,'session-replacement');
+    assert.equal(transfer?.nativeSession?.from.contextId,native.sends[0]!.contextRef.id);
+    assert.equal(transfer?.nativeSession?.to.contextId,native.sends[1]!.contextRef.id);
+    assert.equal(transfer?.status,'accepted');
     assert.equal(done.retainedRuns?.find(run=>run.id===unknown.run!.id)?.status,'unknown');
   }finally{await f.close();}
 });
@@ -1734,6 +1882,97 @@ test('capacity failure continues the exact context as a system retry and retains
   } finally { await f.close(); }
 });
 
+const gatewayProviders: AgentServiceOptions['modelProviders'] = [{id:'fixture',label:'Fixture',async open(){return{protocol:'chat-completions',async inspect(){return{status:'ready',models:[{id:'test-model',label:'Test',images:false,tools:true}]};},async beginLogin(){},async cancelLogin(){},async infer(){throw Error('unused');},async close(){}};}}];
+async function sharedAccount(f: ReturnType<typeof fixture>) {
+  const account = await f.service.models.accounts.add({provider: 'fixture'}), checked = await f.service.models.accounts.check(account.id);
+  await f.service.models.accounts.preferences(account.id, {expectedRevision: checked.revision, models: [{id: 'test-model', enabled: true}]});
+  return account;
+}
+function sendWithAccount(f: ReturnType<typeof fixture>, conversationId: string, accountId: string, text: string) {
+  const draft = {expectedRevision: f.service.conversations.read('workspace-one', conversationId).revision, connectionId: 'codex', modelAccountId: accountId, model: 'test-model', text};
+  const preview = f.service.conversations.prepareSend('workspace-one', conversationId, draft);
+  return f.service.conversations.send('workspace-one', conversationId, {...draft, previewToken: preview.token, clientRequestId: randomUUID()});
+}
+
+test('a rejected local gateway credential is reissued once and continues the exact context', async t => {
+  fastRetries(t);
+  const native = fake('codex', {failure: n => n === 1 ? '模型调用的本机凭据已失效。' : undefined}), f = fixture([native.executor], {modelProviders: gatewayProviders});
+  try {
+    await connected(f.service, 'codex'); const account = await sharedAccount(f);
+    const chat = await f.service.conversations.create('workspace-one', {}), initial = sendWithAccount(f, chat.id, account.id, 'finish the change');
+    const done = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => view.run?.status === 'completed');
+    assert.equal(native.sends.length, 2);
+    const gateways = native.opens.filter(input => input.gateway);
+    assert.equal(gateways.length, 2, 'the rejected key is replaced by a new process');
+    assert.notEqual(gateways[0].gateway!.apiKey, gateways[1].gateway!.apiKey, 'the new process starts with a freshly issued key');
+    assert.equal(gateways[0].gateway!.identity, gateways[1].gateway!.identity);
+    assert.equal(gateways[0].configRoot, gateways[1].configRoot);
+    assert.equal(native.sends[0].contextRef.id, native.sends[1].contextRef.id);
+    assert.equal(native.sends[0].model, native.sends[1].model); assert.equal(native.sends[0].permissionMode, native.sends[1].permissionMode);
+    assert.match(native.sends[1].text, /系统自动重试/); assert.match(native.sends[1].text, /本机模型凭据失效/);
+    assert.equal(done.run?.modelAccountId, account.id);
+    assert.equal(done.entries.filter(entry => entry.role === 'user').length, 1);
+    assert.ok(done.entries.some(entry => entry.role === 'system' && entry.kind === 'notice' && entry.status === 'accepted'));
+    assert.equal(new ConversationRepository(path.join(f.options.dataRoot, 'agent-service')).readConversation(chat.id)?.runOutcomes?.[initial.run.id]?.status, 'failed');
+  } finally { await f.close(); }
+});
+
+test('a reissued local credential that is rejected again stops instead of reissuing forever', async t => {
+  fastRetries(t);
+  const native = fake('codex', {failure: '模型调用的本机凭据已失效。'}), f = fixture([native.executor], {modelProviders: gatewayProviders});
+  try {
+    await connected(f.service, 'codex'); const account = await sharedAccount(f);
+    const chat = await f.service.conversations.create('workspace-one', {}); sendWithAccount(f, chat.id, account.id, 'finish');
+    const ended = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => native.sends.length === 2 && view.run?.status === 'failed');
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(native.sends.length, 2, 'the second identical rejection ends the run');
+    assert.equal(native.opens.filter(input => input.gateway).length, 2, 'a rejected reissue is not replaced a second time');
+    assert.match(ended.run?.diagnostic ?? '', /本机模型凭据重新签发后仍被拒绝/);
+    assert.doesNotMatch(ended.run?.diagnostic ?? '', /自动重试已达上限/);
+  } finally { await f.close(); }
+});
+
+test('a stale account row is re-inspected once before the rejected key is replaced', async t => {
+  fastRetries(t);
+  let stale = false, inspections = 0;
+  const providers: AgentServiceOptions['modelProviders'] = [{ id: 'fixture', label: 'Fixture', async open() { return { protocol: 'chat-completions', async inspect() { inspections++; return stale ? { status: 'not-authenticated' as const, models: [] } : { status: 'ready' as const, models: [{ id: 'test-model', label: 'Test', images: false, tools: true }] }; }, async beginLogin() {}, async cancelLogin() {}, async infer() { throw Error('unused'); }, async close() {} }; } }];
+  const native = fake('codex', { hold: true, failure: n => n === 1 ? '模型调用的本机凭据已失效。' : undefined }), f = fixture([native.executor], { modelProviders: providers });
+  try {
+    await connected(f.service, 'codex'); const account = await sharedAccount(f);
+    const chat = await f.service.conversations.create('workspace-one', {}); sendWithAccount(f, chat.id, account.id, 'finish the change');
+    const held = await waitUntil(() => [...native.contexts.values()][0], context => Boolean(context?.unblock));
+    stale = true; await f.service.models.accounts.check(account.id); stale = false;
+    assert.equal(f.service.models.accounts.snapshot(account.id)?.status, 'not-authenticated', 'the refresh leaves a downgraded row behind');
+    const first = held!.unblock!; first();
+    const retried = await waitUntil(() => [...native.contexts.values()][0], context => Boolean(context?.unblock) && context!.unblock !== first);
+    retried!.unblock!();
+    const done = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => view.run?.status === 'completed');
+    assert.equal(native.sends.length, 2, 'one re-inspection is enough to continue');
+    assert.equal(native.opens.filter(input => input.gateway).length, 2);
+    assert.equal(inspections, 3, 'only the stale row is re-inspected once');
+    assert.equal(done.run?.modelAccountId, account.id);
+  } finally { await f.close(); }
+});
+
+test('a rejected local credential stops when the account is no longer usable', async t => {
+  fastRetries(t);
+  const native = fake('codex', { hold: true, failure: '模型调用的本机凭据已失效。' }), f = fixture([native.executor], { modelProviders: gatewayProviders });
+  try {
+    await connected(f.service, 'codex'); const account = await sharedAccount(f);
+    const chat = await f.service.conversations.create('workspace-one', {}); sendWithAccount(f, chat.id, account.id, 'finish');
+    const held = await waitUntil(() => [...native.contexts.values()][0], context => Boolean(context?.unblock));
+    await f.service.models.accounts.disconnect(account.id, { expectedRevision: f.service.models.accounts.snapshot(account.id)!.revision });
+    held!.unblock!();
+    await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => view.run?.status === 'failed');
+    await new Promise(resolve => setTimeout(resolve, 50));
+    const ended = f.service.conversations.read('workspace-one', chat.id);
+    assert.equal(native.sends.length, 1, 'an unusable account is not retried');
+    assert.equal(native.opens.filter(input => input.gateway).length, 1, 'the rejected key is kept when there is nothing to reissue');
+    assert.match(ended.run?.diagnostic ?? '', /本机凭据已失效/);
+    assert.doesNotMatch(ended.run?.diagnostic ?? '', /正在重新准备执行环境/);
+  } finally { await f.close(); }
+});
+
 test('persistent capacity errors stop after three automatic attempts', async t => {
   fastRetries(t);
   const native = fake('local', {failure: 'Selected model is at capacity.'}), f = fixture([native.executor]);
@@ -1744,6 +1983,29 @@ test('persistent capacity errors stop after three automatic attempts', async t =
     assert.equal(new Set(native.sends.map(input => input.clientRequestId)).size, 4);
     assert.equal(native.contexts.size, 1);
   } finally { await f.close(); }
+});
+
+test('Qoder network failure automatically resumes the goal with preserved cause and selection', async t => {
+  fastRetries(t);
+  const reason='Qoder · 本轮执行：Network attempt failed at response_headers · ECONNRESET · Client network socket disconnected before secure TLS connection was established';
+  const native=fake('qoder',{failure:n=>n===1?reason:undefined}),f=fixture([native.executor]);
+  try {
+    await connected(f.service,'qoder');const chat=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'qoder','finish the existing changes and verify the results');
+    const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='completed');
+    assert.equal(native.sends.length,2);
+    const [original,resumed]=native.sends;
+    assert.match(resumed!.clientRequestId,/^automatic-retry:/);
+    assert.match(resumed!.text,/核对原对话、当前成果及工具结果/);
+    assert.match(resumed!.text,/不要重放全部历史命令/);
+    for(const key of ['model','permissionMode','reasoningEffort','serviceTier'] as const)assert.equal(resumed![key],original![key]);
+    assert.equal(resumed!.contextRef.id,original!.contextRef.id);
+    assert.equal(done.entries.filter(entry=>entry.role==='user'&&entry.kind==='message').length,1);
+    const saved=new ConversationRepository(path.join(f.options.dataRoot,'agent-service')).readConversation(chat.id)!;
+    const originalRun=saved.attempts[0]!.runId;
+    assert.equal(saved.runOutcomes?.[originalRun]?.status,'failed');
+    assert.equal(saved.runOutcomes?.[originalRun]?.diagnostic,reason);
+  } finally {await f.close();}
 });
 
 test('stop cancels a retry wait and concurrent observations do not start a second execution', async () => {
@@ -2370,6 +2632,30 @@ test('service supplies its interaction policy through the public contract to any
   } finally { await f.close(); }
 });
 
+test('a proven continuation after a question answer retains the original run and accepts its next decision',async()=>{
+  const native=fake('local',{question:true,toolSurvives:true}),f=fixture([native.executor]);
+  try{
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'local','repair then release');
+    const read=()=>f.service.conversations.read('workspace-one',chat.id);
+    const waiting=await waitUntil(read,value=>value.run?.status==='waiting-question');
+    const control=(view:ReturnType<typeof read>)=>({expectedRevision:view.revision,runId:view.run!.id,participantId:view.run!.participantId,generation:view.run!.generation});
+    await f.service.conversations.reply('workspace-one',chat.id,waiting.requests[0].id,{...control(waiting),answer:{scope:'yes'}});
+    const stage=await waitUntil(read,value=>value.run?.status==='tools-active');
+    const input=native.sends[0],context=native.contexts.get(input.contextRef.id)!;
+    context.observation={status:'running',executionRef:context.observation.executionRef,tools:[]};
+    input.onEvent({type:'observation',observation:context.observation});
+    input.onEvent({type:'item',item:{id:'continuation-tool',kind:'tool',role:'system',name:'read',text:'repair evidence',executionId:context.observation.executionRef!.id,status:'completed'}});
+    input.onEvent({type:'request',request:{id:'release-decision',kind:'question',title:'发布范围',questions:[{id:'scope',label:'发布范围',options:[{id:'yes',label:'继续'}]}]}});
+    const followup=read();assert.equal(followup.run!.id,stage.run!.id);assert.equal(followup.run!.status,'waiting-question');
+    assert.equal(followup.requests.length,1);assert.ok(followup.entries.some(entry=>entry.name==='read'&&entry.runId===stage.run!.id));
+    await f.service.conversations.reply('workspace-one',chat.id,followup.requests[0].id,{...control(followup),answer:{scope:'yes'}});
+    assert.equal(read().run!.status,'running');assert.equal(native.sends.length,1);assert.equal(native.replies.length,2);
+    context.observation={status:'idle',executionRef:context.observation.executionRef,tools:[]};input.onEvent({type:'observation',observation:context.observation});
+    assert.equal(read().run!.status,'completed');
+  }finally{await f.close();}
+});
+
 test('request snapshots require exact execution identity and preserve public request bindings', async () => {
   const native = fake('local', { question: true }), f = fixture([native.executor]);
   try {
@@ -2418,6 +2704,37 @@ for (const exact of [false, true]) test('a resolved request cannot be resurrecte
   } finally { release(); await f.close(); }
 });
 
+for(const previouslyStopped of [false,true])test('startup reconciles legacy accepted switches without stopping current work or replaying an uncertain stop ('+previouslyStopped+')',async()=>{
+  const old=fake('local',{question:true}),other=fake('other',{hold:true}),controls:Array<{runId:string;action:string}>=[];
+  const f=fixture([old.executor,other.executor],{controlSupersededRun:async(_scope,_id,input,action)=>{controls.push({runId:input.runId,action});}});
+  try{
+    await connected(f.service,'local');await connected(f.service,'other');
+    const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','old goal');
+    const before=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.requests.length===1);
+    send(f.service,chat.id,'other','new goal');
+    const next=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.id!==before.run!.id&&view.run?.status==='running'&&controls.length===1);
+    const repository=new ConversationRepository(path.join(f.options.dataRoot,'agent-service')),record=repository.readConversation(chat.id)!;
+    // An upgrade sees the pre-marker format, including the unanswered binding.
+    record.view.retainedRuns![0]=structuredClone(before.run!);
+    if(previouslyStopped)record.view.retainedRuns![0]!.stopRequested=true;
+    delete record.attempts.find(attempt=>attempt.runId===before.run!.id)!.supersededStopRequested;
+    record.view.requests=structuredClone(before.requests);
+    record.requests[before.requests[0]!.id]={nativeId:'question-one',executionRef:record.attempts.find(attempt=>attempt.runId===before.run!.id)!.executionRef!};
+    repository.saveConversation(record,record.view.revision);controls.length=0;
+    await f.service.conversations.recoverInterrupted();
+    await waitUntil(()=>controls.length,value=>value===1);
+    let current=f.service.conversations.read('workspace-one',chat.id);
+    assert.equal(current.requests.length,0);assert.equal(current.retainedRuns![0]!.supersededBy,next.run!.id);
+    assert.deepEqual(current.run,next.run,'the active current run is untouched');
+    assert.deepEqual(controls,[{runId:before.run!.id,action:previouslyStopped?'observe':'stop'}]);
+    old.sends[0]!.onEvent({type:'request',request:{id:'late-question',kind:'question',title:'过期问题'}});
+    current=f.service.conversations.read('workspace-one',chat.id);assert.equal(current.requests.length,0);
+    assert.equal(old.replies.length,0);assert.equal(other.sends.length,1);
+    await f.service.conversations.recoverInterrupted();await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(controls.filter(value=>value.action==='stop').length,previouslyStopped?0:1);
+  }finally{await f.close();}
+});
+
 for(const replacement of ['local','other'])test('retained tools allow a new instruction with '+replacement+' and preserve exact old stop',async()=>{
   const old=fake('local',{toolSurvives:true}),other=fake('other');const f=fixture([old.executor,other.executor]);
   try{
@@ -2427,7 +2744,8 @@ for(const replacement of ['local','other'])test('retained tools allow a new inst
     const next=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.id!==before.run!.id&&['completed','tools-active'].includes(view.run?.status??''));
     assert.equal(next.retainedRuns?.[0]?.id,before.run!.id);assert.notEqual(next.run!.participantId,before.run!.participantId);
     assert.equal(old.contexts.size,replacement==='local'?2:1,'new work cannot overwrite an unfinished native context');
-    assert.equal(next.retainedRuns?.[0]?.status,'tools-active');
+    assert.equal(next.retainedRuns?.[0]?.status,replacement==='local'?'tools-active':'stopped');
+    assert.equal(Boolean(next.retainedRuns?.[0]?.supersededBy),replacement!=='local');
     await assert.rejects(f.service.conversations.stop('workspace-one',chat.id,{expectedRevision:before.revision,runId:before.run!.id,participantId:before.run!.participantId,generation:before.run!.generation}),{code:'agent_revision_conflict'});
     const stopped=await f.service.conversations.stop('workspace-one',chat.id,{expectedRevision:next.revision,runId:before.run!.id,participantId:before.run!.participantId,generation:before.run!.generation,toolId:'own-tool'});
     assert.equal(stopped.retainedRuns?.[0]?.status,'stopped');assert.equal(stopped.run!.id,next.run!.id);assert.equal(stopped.run!.status,next.run!.status);
@@ -2469,4 +2787,185 @@ test('unknown retained stop is local to that execution and never replays or ends
     assert.equal(old.sends.length,1);assert.equal(other.sends.length,1);
     assert.equal(f.service.conversationBusy('workspace-one',chat.id),true);assert.equal(f.service.conversationInputBusy('workspace-one',chat.id),false);
   }finally{await f.close();}
+});
+
+for(const terminalStatus of ['idle','stopped'] as const)for(const liveOldGeneration of [false,true])test(`durable completion repairs missing receipts and final reply without opening or replaying native work; oldAlive=${liveOldGeneration}; terminal=${terminalStatus}`,async()=>{
+ const native=fake('dsh',{hold:true,noAnswer:true}),f=fixture([native.executor]);let observer:ReturnType<typeof createAgentService>|undefined;
+ try{
+  const executable=path.join(f.root,'dsh.mjs');fs.writeFileSync(executable,'// fake native executable');fs.chmodSync(executable,0o700);
+  await f.service.connections.connect('dsh',{expectedRevision:f.service.connections.read('dsh').revision,executable});
+  const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'dsh','finish once');
+  const before=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.accepted===true);
+  const count=native.opens.length;
+  await assert.rejects(f.service.reconcilePersisted('workspace-one',chat.id,{expectedRevision:'stale',runId:before.run!.id,participantId:before.run!.participantId,generation:before.run!.generation}),{code:'agent_revision_conflict'});
+  native.executor.readPersistedExecution=async input=>({observation:{status:terminalStatus,executionRef:input.executionRef,tools:[{id:'missing-tool',label:'bash',status:'completed'}]},items:[{id:'missing-tool',kind:'tool',role:'system',name:'bash',text:'already delivered',executionId:input.executionRef.id,status:'completed'},{id:'missing-final',kind:'message',role:'assistant',text:'Everything delivered once.',executionId:input.executionRef.id,status:'completed'}]});
+  observer=createAgentService({...f.options,generationAlive:()=>liveOldGeneration});
+  if(!liveOldGeneration)await observer.conversations.recoverInterrupted();
+  else assert.equal(await observer.reconcilePersisted('workspace-one',chat.id,{expectedRevision:before.revision,runId:before.run!.id,participantId:before.run!.participantId,generation:before.run!.generation}),true);
+  const after=observer.conversations.read('workspace-one',chat.id);
+  assert.equal(after.run?.status,terminalStatus==='idle'?'completed':'stopped');assert.equal(after.run?.executionState,'ended');assert.equal(after.run?.generation,before.run?.generation,'reading evidence does not acquire old controls');
+  assert.ok(after.entries.some(e=>e.text==='Everything delivered once.'));assert.ok(after.entries.some(e=>e.text==='already delivered'));
+  const again=await observer.conversations.observe('workspace-one',chat.id);assert.equal(again.entries.filter(e=>e.text==='Everything delivered once.').length,1);
+  native.sends[0]!.onEvent({type:'diagnostic',message:'late stream closure'});
+  native.sends[0]!.onEvent({type:'observation',observation:{status:'unknown',tools:[],executionRef:{id:'lost'}}});
+  native.sends[0]!.onEvent({type:'completed',status:'failed',diagnostic:'late failure'});
+  const settled=f.service.conversations.read('workspace-one',chat.id);
+  assert.equal(settled.run?.status,after.run?.status);assert.equal(settled.run?.diagnostic,after.run?.diagnostic);
+  assert.equal(native.sends.length,1);assert.equal(native.opens.length,count);
+ }finally{await observer?.close();await f.close();}
+});
+
+test('persisted evidence cannot overwrite a conversation changed during the read',async()=>{
+ const native=fake('dsh',{hold:true,noAnswer:true}),f=fixture([native.executor]);
+ try{
+  const executable=path.join(f.root,'dsh.mjs');fs.writeFileSync(executable,'// never executed');fs.chmodSync(executable,0o700);
+  await f.service.connections.connect('dsh',{expectedRevision:f.service.connections.read('dsh').revision,executable});
+  const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'dsh','one operation');
+  await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.accepted===true);
+  native.executor.readPersistedExecution=async input=>{
+   const current=f.service.conversations.read('workspace-one',chat.id);
+   await f.service.conversations.update('workspace-one',chat.id,{expectedRevision:current.revision,title:'A newer title'});
+   return {observation:{status:'idle',executionRef:input.executionRef,tools:[]},items:[{id:'stale-final',kind:'message',role:'assistant',text:'Stale answer',executionId:input.executionRef.id}]};
+  };
+  assert.equal(await f.service.reconcilePersisted('workspace-one',chat.id),false);
+  const after=f.service.conversations.read('workspace-one',chat.id);
+  assert.equal(after.title,'A newer title');assert.notEqual(after.run?.status,'completed');assert.equal(after.entries.some(entry=>entry.text==='Stale answer'),false);assert.equal(native.sends.length,1);
+ }finally{await f.close();}
+});
+
+
+test('many-to-many task associations persist, filter both directions and reject stale or invalid changes', async () => {
+  const native = fake(), f = fixture([native.executor], {taskIds:['task-one','task-two']});
+  try {
+    await connected(f.service, 'local');
+    const created = await f.service.conversations.create('workspace-one', {taskId:'task-one'});
+    let current = await f.service.conversations.update('workspace-one', created.id, {expectedRevision:created.revision,taskIds:['task-one','task-two','task-one']});
+    assert.deepEqual(current.taskIds,['task-one','task-two']);
+    assert.equal(current.taskId,'task-one');
+    send(f.service, current.id, 'local', 'work on shared result');
+    current=await waitUntil(()=>f.service.conversations.read('workspace-one',created.id),value=>value.run?.status==='completed');
+    for (const taskId of ['task-one','task-two']) assert.equal(f.service.conversations.list('workspace-one',{taskId}).conversations[0]?.id,created.id);
+    assert.deepEqual(f.service.conversations.read('workspace-one',created.id).taskIds,['task-one','task-two']);
+    await assert.rejects(f.service.conversations.update('workspace-one',created.id,{expectedRevision:current.revision,taskIds:['task-two','missing']}));
+    assert.deepEqual(f.service.conversations.read('workspace-one',created.id).taskIds,['task-one','task-two']);
+    const old=current;
+    current=await f.service.conversations.update('workspace-one',created.id,{expectedRevision:current.revision,taskIds:['task-two']});
+    await assert.rejects(f.service.conversations.update('workspace-one',created.id,{expectedRevision:old.revision,taskIds:[]}),{code:'agent_revision_conflict'});
+    assert.equal(f.service.conversations.list('workspace-one',{taskId:'task-one'}).conversations.length,0);
+    assert.equal(f.service.conversations.list('workspace-one',{taskId:'task-two'}).conversations.length,1);
+    const another=await f.service.conversations.create('workspace-one',{taskId:'task-two'});
+    send(f.service,another.id,'local','another task conversation');
+    await waitUntil(()=>f.service.conversations.read('workspace-one',another.id),value=>value.run?.status==='completed');
+    assert.equal(f.service.conversations.list('workspace-one',{taskId:'task-two'}).conversations.length,2);
+    current=await f.service.conversations.update('workspace-one',created.id,{expectedRevision:current.revision,taskIds:[]});
+    assert.equal(current.taskId,undefined);assert.deepEqual(current.taskIds,[]);
+    assert.equal(f.service.conversations.list('workspace-one',{taskId:'task-two'}).conversations.length,1);
+  } finally {await f.close();}
+});
+
+test('cross-workspace task links keep composite identity, legacy writes and scoped reverse pagination',async()=>{
+  const native=fake(),f=fixture([native.executor],{taskIds:['task-one','task-two']});
+  try{
+    await connected(f.service,'local');
+    const created=await f.service.conversations.create('workspace-one',{taskId:'task-one'});
+    send(f.service,created.id,'local','cross workspace links');
+    let current=await waitUntil(()=>f.service.conversations.read('workspace-one',created.id),value=>value.run?.status==='completed');
+    const runId=current.run?.id,cwd=current.cwd;
+    const local={workspaceId:'workspace-one',taskId:'task-one'},remote={workspaceId:'workspace-two',taskId:'task-one'};
+    current=await f.service.conversations.update('workspace-one',created.id,{expectedRevision:current.revision,taskLinks:[local,remote,remote]});
+    assert.deepEqual(current.taskLinks,[local,remote]);assert.deepEqual(current.taskIds,['task-one']);
+    assert.equal(current.cwd,cwd);assert.equal(current.run?.id,runId);
+    assert.equal(f.service.conversations.list('workspace-two',{taskId:'task-one'}).conversations[0]?.id,created.id);
+    assert.equal(f.service.conversations.list('workspace-two',{taskId:'task-one',workspaceIds:['workspace-two']}).conversations.length,0,'unavailable conversation scope excluded');
+    assert.equal(f.service.conversations.list('workspace-two',{taskId:'task-one',workspaceIds:['workspace-one']}).conversations.length,1);
+    const stale=current;
+    current=await f.service.conversations.update('workspace-one',created.id,{expectedRevision:current.revision,taskIds:['task-two']});
+    assert.deepEqual(current.taskLinks,[remote,{workspaceId:'workspace-one',taskId:'task-two'}]);
+    assert.equal(f.service.conversations.list('workspace-one',{taskId:'task-one'}).conversations.length,0,'same ID in other workspace cannot match');
+    await assert.rejects(f.service.conversations.update('workspace-one',created.id,{expectedRevision:stale.revision,taskLinks:[]}),{code:'agent_revision_conflict'});
+    await assert.rejects(f.service.conversations.update('workspace-one',created.id,{expectedRevision:current.revision,taskLinks:[{workspaceId:'workspace-two',taskId:'missing'}]}));
+    await assert.rejects(f.service.conversations.update('workspace-one',created.id,{expectedRevision:current.revision,taskLinks:[],taskIds:[]}),{code:'agent_input_invalid'});
+    current=await f.service.conversations.update('workspace-one',created.id,{expectedRevision:current.revision,taskId:null});
+    assert.deepEqual(current.taskLinks,[remote]);assert.deepEqual(current.taskIds,[]);assert.equal(current.taskId,undefined);
+    current=await f.service.conversations.update('workspace-one',created.id,{expectedRevision:current.revision,taskLinks:[]});
+    assert.equal(f.service.conversations.list('workspace-two',{taskId:'task-one'}).conversations.length,0);
+  }finally{await f.close();}
+});
+
+test('archived run preserves context usage and generation after a new turn replaces it', async()=>{
+ let release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;});
+ const native=fake('local',{beforeAccepted:gate}),f=fixture([native.executor]);
+ try{
+  await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});
+  send(f.service,chat.id,'local','first usage');await waitUntil(()=>native.sends.length,n=>n===1);
+  native.sends[0]!.onEvent({type:'context-usage',usedTokens:1234,windowTokens:50000});release();
+  const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='completed');
+  send(f.service,chat.id,'local','next turn');await waitUntil(()=>native.sends.length,n=>n===2);
+  const db=new DatabaseSync(path.join(f.options.dataRoot,'agent-service/conversations.sqlite'));
+  try{
+   const row=db.prepare('SELECT body FROM conversations WHERE id=?').get(chat.id) as {body:string};
+   const record=JSON.parse(row.body);assert.deepEqual(record.runOutcomes[done.run!.id].contextUsage,{usedTokens:1234,windowTokens:50000});
+   assert.equal(record.runOutcomes[done.run!.id].generation,done.run!.generation);
+  }finally{db.close();}
+ }finally{release();await f.close();}
+});
+
+test('early naming prefers a trusted native title without a duplicate independent request',async()=>{
+ const native=fake('local',{hold:true}),open=native.executor.open;let generated=0;
+ native.executor.open=async input=>({...await open(input),async readTitle(){return '可信原生摘要';},async generateTitle(){generated++;return '不应重复生成';}});
+ const f=fixture([native.executor]);
+ try{
+  await connected(f.service,'local');const view=await f.service.conversations.create('workspace-one',{});send(f.service,view.id,'local','检查原生摘要优先');
+  const named=await waitUntil(()=>f.service.conversations.read('workspace-one',view.id),v=>v.title==='可信原生摘要');
+  assert.equal(named.titleState?.status,'generated');assert.equal(generated,0);assert.equal(native.sends.length,1);
+ }finally{await f.close();}
+});
+
+test('direct ordinary sends preserve identity, capacity and revision checks without preparing history files',async()=>{
+ const a=fake('a'),f=fixture([a.executor]);
+ try{
+  await connected(f.service,'a');const chat=await f.service.conversations.create('workspace-one',{});
+  const first={expectedRevision:chat.revision,connectionId:'a',text:'first',clientRequestId:'direct-first'};
+  const accepted=f.service.conversations.send('workspace-one',chat.id,first);
+  const repeat=f.service.conversations.send('workspace-one',chat.id,first);
+  assert.equal(repeat.run.id,accepted.run.id);
+  let done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
+  const materialRoot=path.join(f.options.dataRoot,'agent-service','handoff-materials',chat.id);
+  const before=fs.existsSync(materialRoot)?fs.readdirSync(materialRoot):[];
+  assert.throws(()=>f.service.conversations.send('workspace-one',chat.id,{...first,clientRequestId:'stale-direct'}),{code:'agent_revision_conflict'});
+  assert.throws(()=>f.service.conversations.send('workspace-one',chat.id,{...first,expectedRevision:done.revision,text:'x'.repeat(200000),clientRequestId:'large-direct'}),{code:'agent_input_too_large'});
+  f.service.conversations.send('workspace-one',chat.id,{expectedRevision:done.revision,connectionId:'a',text:'second',clientRequestId:'direct-second'});
+  done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
+  assert.equal(a.contexts.size,1);assert.equal(a.sends.length,2);assert.equal(a.sends[1]!.text,'second');
+  assert.deepEqual(fs.existsSync(materialRoot)?fs.readdirSync(materialRoot):[],before);
+ }finally{await f.close();}
+});
+
+for(const blocked of ['none','stop','live-owner','unreleased','conflict'] as const)test('cold old control release preserves unknown outcomes and clears hidden activity: '+blocked,async()=>{
+ const native=fake('local'),f=fixture([native.executor]);let observer:ReturnType<typeof createAgentService>|undefined;
+ try{
+  await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','finish');
+  await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
+  const repo=new ConversationRepository(path.join(f.options.dataRoot,'agent-service')),record=repo.readConversation(chat.id)!,prior=record.view.revision;
+  record.view.hidden=true;record.view.retainedRuns=[{...record.view.run!,id:'old-run',generation:'old-generation',status:'unknown',executionState:'unknown',resourcesReleased:false,tools:[]}];
+  record.attempts.push({...record.attempts[0]!,runId:'old-run'});record.view.revision=randomUUID();repo.saveConversation(record,prior);
+  const opens=native.opens.length,sends=native.sends.length;
+  native.executor.readReleasedControl=async()=>{
+   if(blocked==='conflict'){const changed=repo.readConversation(chat.id)!,revision=changed.view.revision;changed.view.title='concurrent rename';changed.view.revision=randomUUID();repo.saveConversation(changed,revision);}
+   return blocked!=='unreleased';
+  };
+  observer=createAgentService({...f.options,generationAlive:()=>blocked==='live-owner'});
+  const before=observer.conversations.read('workspace-one',chat.id),run=before.retainedRuns![0]!;
+  await assert.rejects(observer.conversations.observeRun('workspace-one',chat.id,{expectedRevision:'stale',runId:run.id,participantId:run.participantId,generation:run.generation}),{code:'agent_revision_conflict'});
+  const input={expectedRevision:before.revision,runId:run.id,participantId:run.participantId,generation:run.generation};
+  if(blocked==='none'||blocked==='stop'){
+   const after=blocked==='stop'?await observer.conversations.stop('workspace-one',chat.id,input):await observer.conversations.observeRun('workspace-one',chat.id,input);
+   assert.equal(after.retainedRuns![0]!.resourcesReleased,true);assert.equal(after.retainedRuns![0]!.status,'unknown');assert.equal(after.retainedRuns![0]!.executionState,'unknown');assert.equal(after.activity!.active,false);
+   const stopped=await observer.conversations.stop('workspace-one',chat.id,{...input,expectedRevision:after.revision});assert.equal(stopped.retainedRuns![0]!.stopRequested,true);
+  }else{
+   await assert.rejects(observer.conversations.observeRun('workspace-one',chat.id,input),{code:'agent_control_stale'});
+   assert.equal(observer.conversations.read('workspace-one',chat.id).retainedRuns![0]!.resourcesReleased,false);
+  }
+  assert.equal(native.opens.length,opens);assert.equal(native.sends.length,sends);
+ }finally{await observer?.close();await f.close();}
 });

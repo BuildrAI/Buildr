@@ -1,3 +1,4 @@
+import { ConversationEntryStore, type PreparedEntries } from './conversation-entry-store.ts';
 import { createHash } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import type { ConversationEntry } from '../contracts.ts';
@@ -11,7 +12,7 @@ const common = `(coalesce(json_array_length(NEW.body,'$.view.requests'),0)>0 OR 
 const header = `json_object('view',json_set(json_extract(NEW.body,'$.view'),'$.entries',json('[]')),'participants',json(coalesce(json_extract(NEW.body,'$.participants'),'[]')),'attachments',json(coalesce(json_extract(NEW.body,'$.attachments'),'{}')))`;
 const digest = (body: string) => createHash('sha256').update(body).digest('hex');
 
-/** Rebuildable read projections. Canonical records and the storage version stay compatible with retained writers. */
+/** Rebuildable header projections; version 5 entry positions and contents are canonical, not disposable caches. */
 export class ConversationReadModel {
   static available(db: DatabaseSync): boolean {
     return !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='conversation_read_states'").get();
@@ -50,7 +51,12 @@ export class ConversationReadModel {
       Number(Boolean(common || ['unknown', 'tools-active'].includes(view.run?.status ?? ''))),
       Number(Boolean(common || view.run && unfinishedRun(view.run))), Number(view.titleState?.status === 'generating'));
   }
-  static saveEntries(db: DatabaseSync, record: ConversationReadState): void {
+  static saveEntries(db: DatabaseSync, record: ConversationReadState, prepared?: PreparedEntries): void {
+    if (ConversationEntryStore.available(db)) {
+      ConversationEntryStore.save(db, record as StoredConversation, prepared);
+      db.prepare('UPDATE conversation_read_states SET message_revision=revision WHERE id=? AND revision=?').run(record.view.id, record.view.revision);
+      return;
+    }
     const prior = new Map((db.prepare('SELECT sequence,content_revision,round_id FROM conversation_read_entries WHERE conversation_id=?').all(record.view.id) as Array<{sequence: number; content_revision: string; round_id:string}>).map(row => [row.sequence, row]));
     const write = db.prepare(`INSERT INTO conversation_read_entries(conversation_id,sequence,id,round_id,content_revision,compact,body_bytes,compact_bytes,body) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(conversation_id,sequence) DO UPDATE SET id=excluded.id,round_id=excluded.round_id,content_revision=excluded.content_revision,body=excluded.body,compact=excluded.compact,body_bytes=excluded.body_bytes,compact_bytes=excluded.compact_bytes`);
     let round = {id: 'legacy:0'};
@@ -80,23 +86,32 @@ export class ConversationReadModel {
     db.prepare('UPDATE conversation_read_states SET message_revision=revision WHERE id=? AND revision=?').run(record.view.id, record.view.revision);
   }
   static compact(entry: ConversationEntry, revision = digest(JSON.stringify(entry))): ConversationEntry {
-    if (entry.kind !== 'tool' || Buffer.byteLength(entry.text) + Buffer.byteLength(entry.input ?? '') <= 16 * 1024) return entry;
-    // Keep a bounded, explicit preview; the original invocation and output remain separately readable.
-    return {...entry, text: entry.text.slice(0, 512), input: entry.input && entry.input.length <= 4096 ? entry.input : undefined, detail: {revision}};
+    return ConversationEntryStore.compact(entry, revision);
   }
+
   static page(db: DatabaseSync, id: string, before?: number, limit?: number, compact = false): ConversationReadState | undefined {
     const row = db.prepare('SELECT state FROM conversation_read_states WHERE id=? AND message_revision=revision').get(id) as {state: string} | undefined;
     if (!row) return;
     const record = JSON.parse(row.state) as ConversationReadState;
     const column = compact ? 'compact' : 'body', bytes = compact ? 'compact_bytes' : 'body_bytes';
     // Select only positions/sizes first. Large omitted bodies never cross the database boundary.
-    const positions = db.prepare(`SELECT sequence,round_id,${bytes} AS bytes FROM conversation_read_entries WHERE conversation_id=? AND sequence<? ORDER BY sequence DESC LIMIT ?`).all(id, before ?? Number.MAX_SAFE_INTEGER, (limit ?? 200) + 1) as Array<{sequence: number; round_id: string; bytes: number}>;
+    const normalized = ConversationEntryStore.available(db);
+    if (normalized) ConversationEntryStore.assertPositions(db, id);
+    const positions = db.prepare(`SELECT sequence,round_id,${bytes} AS bytes FROM conversation_read_entries WHERE conversation_id=? ${normalized ? "AND scope='main'" : ''} AND sequence<? ORDER BY sequence DESC LIMIT ?`).all(id, before ?? Number.MAX_SAFE_INTEGER, (limit ?? 200) + 1) as Array<{sequence: number; round_id: string; bytes: number}>;
     const rounds = new Set<string>(); let size = 2; const selected: number[] = [];
     for (const position of positions) {
       if (selected.length >= (limit ?? 200) || limit === undefined && !rounds.has(position.round_id) && rounds.size >= 5 || selected.length && size + position.bytes + 1 > (compact ? 256 * 1024 : 4 * 1024 * 1024)) break;
       selected.push(position.sequence); rounds.add(position.round_id); size += position.bytes + 1;
     }
-    record.view.entries = selected.length ? (db.prepare(`SELECT ${column} AS body FROM conversation_read_entries WHERE conversation_id=? AND sequence>=? AND sequence<? ORDER BY sequence`).all(id, selected.at(-1)!, before ?? Number.MAX_SAFE_INTEGER) as Array<{body: string}>).map(row => JSON.parse(row.body)) : [];
+    if (normalized) {
+      const rows = selected.length ? db.prepare(`SELECT e.id,e.compact,c.codec,c.body_bytes,${compact ? 'CASE WHEN e.compact IS NULL THEN c.body END' : 'c.body'} AS body,e.content_revision
+        FROM conversation_read_entries e LEFT JOIN conversation_entry_contents c
+        ON c.conversation_id=e.conversation_id AND c.content_revision=e.content_revision
+        WHERE e.conversation_id=? AND e.scope='main' AND e.sequence>=? AND e.sequence<? ORDER BY e.sequence`).all(id, selected.at(-1)!, before ?? Number.MAX_SAFE_INTEGER) : [];
+      record.view.entries = rows.map(row => compact && row.compact !== null ? JSON.parse(row.compact as string) : ConversationEntryStore.decode(row as any));
+    } else {
+      record.view.entries = selected.length ? (db.prepare(`SELECT ${column} AS body FROM conversation_read_entries WHERE conversation_id=? AND sequence>=? AND sequence<? ORDER BY sequence`).all(id, selected.at(-1)!, before ?? Number.MAX_SAFE_INTEGER) as Array<{body: string}>).map(row => JSON.parse(row.body)) : [];
+    }
     record.view.nextEntryCursor = positions.length > selected.length ? selected.at(-1) : undefined;
     return record;
   }

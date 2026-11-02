@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { dshHistoryItems, dshItem } from '../../src/executors/dsh/protocol.ts';
+import { DshExecutionLineage, dshExecutionObservation, dshHistoryItems, dshItem } from '../../src/executors/dsh/protocol.ts';
 import { qoderHistoryItems, qoderResultOutcome, qoderInterruptionIds, qoderInterruptedObservation } from '../../src/executors/qoder/protocol.ts';
 
 test('Qoder native task notifications preserve the original execution in history without inventing user input', () => {
@@ -51,9 +51,14 @@ test('DSH flat user event maps request identity to all corresponding turn items'
     { type: 'tool/result', seq: 6, data: { turn: 7, message: { toolCallId: 'tool-native', content: [{ type: 'text', text: '文件结果' }] } } },
   ]);
   assert.equal(items.length, 3); assert.equal(items[0].id, 'u-native'); assert.equal(items[0].executionId, 'client-exact');
-  assert.equal(items[1].id, 'assistant:7:1'); assert.equal(items[1].executionId, 'client-exact'); assert.equal(items[2].status, 'completed');
-  assert.equal(items[2].name, 'read'); assert.equal(items[2].input, '{}');
+  // 模型思考不是对话条目：只有可见文字成为助手消息，且保持该步的原始身份。
+  assert.equal(items[1].id, 'assistant:7:1'); assert.equal(items[1].executionId, 'client-exact'); assert.equal(items[1].text, '完成');
+  assert.equal(items[2].status, 'completed'); assert.equal(items[2].name, 'read'); assert.equal(items[2].input, '{}');
   assert.ok(!JSON.stringify(items).includes('hidden'));
+});
+test('DSH reasoning-only steps produce no conversation item', () => {
+  const items = dshItem({ type: 'assistant/message', data: { turn: 3, step: 2, message: { content: [{ type: 'reasoning', text: '  plan  ' }, { type: 'reasoning', text: 'check' }] } } });
+  assert.deepEqual(items, []);
 });
 test('Qoder durable snapshots collapse by native message ID, preserving exact user UUIDs', () => {
   const messages = [
@@ -183,4 +188,78 @@ test('DSH native synthetic repair cannot turn an unknown side effect into a comp
  assert.equal(dshExecutionObservation(events,'request',[{id:'operation',kind:'tool',role:'system',text:'another execution',executionId:'other',status:'completed'}]).status,'unknown');
  result.data.error={code:'TOOL_NOT_STARTED',name:'ToolNotStartedError'};assert.equal(dshExecutionObservation(events,'request').status,'stopped');
  result.data.error={code:'KNOWN_TOOL_FAILURE',name:'ToolError'};assert.equal(dshExecutionObservation(events,'request').status,'stopped');assert.equal(dshHistoryItems(events).find(item=>item.id==='operation')?.status,'failed');
+});
+
+test('DSH cold history follows proven child settlement and isolates foreign requests and unknown notices',()=>{
+  const start=(turn:number)=>({type:'turn/start',data:{turn}});
+  const end=(turn:number)=>({type:'turn/end',data:{turn,reason:{kind:'completed'}}});
+  const user=(id:string,source:any)=>({type:'user/message',data:{id,source,content:[{type:'text',text:id}]}});
+  const message=(turn:number,text:string)=>({type:'assistant/message',data:{turn,step:1,message:{content:[{type:'text',text}]}}});
+  const events:any[]=[start(1),user('original',{kind:'user',rpcId:'release'}),{type:'subagent/catalog',data:{childId:'repair',label:'repair'}},end(1)];
+  assert.equal(dshExecutionObservation(events,'release').status,'tools-active');
+  events.push(start(2),user('wakeup',{kind:'subagent-settled',senderSessionId:'repair'}),message(2,'continuing'));
+  assert.equal(dshExecutionObservation(events,'release').status,'unknown');
+  events.push({type:'tool/call',data:{turn:2,callId:'repair-check',name:'read'}},{type:'tool/result',data:{turn:2,message:{toolCallId:'repair-check',content:[{type:'text',text:'verified'}]}}},end(2));
+  assert.equal(dshExecutionObservation(events,'release').status,'idle');
+  assert.equal(dshExecutionObservation(events,'release').tools[0].id,'repair-check');
+  const items=dshHistoryItems(events);
+  assert.equal(items.find(item=>item.text==='continuing')?.executionId,'release');
+  assert.equal(items.find(item=>item.id==='repair-check')?.executionId,'release');
+  assert.ok(!items.some(item=>item.text==='wakeup'));
+  events.push(start(3),user('foreign',{kind:'user',rpcId:'other'}),message(3,'foreign result'),end(3));
+  events.push(start(4),user('unknown',{kind:'subagent-settled',senderSessionId:'unknown-child'}),message(4,'unknown result'),end(4));
+  assert.equal(dshHistoryItems(events).find(item=>item.text==='foreign result')?.executionId,'other');
+  assert.equal(dshHistoryItems(events).find(item=>item.text==='unknown result')?.executionId,undefined);
+  assert.equal(dshExecutionObservation(events,'release').status,'idle');
+  assert.equal(dshExecutionObservation(events,'other').status,'idle');
+});
+
+test('DSH maps background job wakeups only from known session-owned jobs and rejects ambiguous provenance',()=>{
+  const lineage=new DshExecutionLineage('session');
+  const root=(turn:number,id:string)=>{lineage.record({type:'turn/start',data:{turn}});lineage.record({type:'user/message',data:{source:{kind:'user',rpcId:id}}});};
+  root(1,'release');lineage.record({type:'job/registered',data:{owner:'session',jobId:'job'}});
+  lineage.record({type:'job/registered',data:{owner:'foreign-session',jobId:'foreign-job'}});
+  assert.deepEqual(lineage.background(new Set(['release'])).map(tool=>tool.id),['dsh-job:job']);
+  lineage.record({type:'job/settled',data:{jobId:'job'}});
+  lineage.record({type:'turn/start',data:{turn:2}});
+  assert.equal(lineage.record({type:'user/message',data:{source:{kind:'tool-jobs',jobId:'job'}}}),'release');
+  assert.equal(lineage.background(new Set(['release'])).length,0);
+  root(3,'one');lineage.record({type:'job/registered',data:{owner:'session',jobId:'one'}});
+  root(4,'two');lineage.record({type:'job/registered',data:{owner:'session',jobId:'two'}});
+  for(const jobId of ['one','two'])lineage.record({type:'job/settled',data:{jobId}});
+  lineage.record({type:'turn/start',data:{turn:5}});
+  assert.equal(lineage.record({type:'user/message',data:{source:{kind:'tool-jobs'}}}),undefined);
+  assert.equal(lineage.background(new Set(['one','two'])).length,2);
+  assert.ok(lineage.background(new Set(['one','two'])).every(tool=>tool.status==='unknown'));
+});
+
+
+test('DSH merges only explicitly linked jobs and keeps native job controls',()=>{
+  const lineage=new DshExecutionLineage('session');
+  lineage.record({type:'turn/start',data:{turn:1}});
+  lineage.record({type:'user/message',data:{turn:1,source:{kind:'user',rpcId:'request'}}});
+  lineage.record({type:'job/registered',data:{owner:'session',jobId:'linked',toolCall:{callId:'call'}}});
+  lineage.record({type:'job/registered',data:{owner:'session',jobId:'independent'}});
+  const owners=new Set(['request']);
+  const tools=lineage.mergeTools([{id:'call',label:'bash',status:'completed'}],owners);
+  assert.deepEqual(tools.map(tool=>[tool.id,tool.status]),[['call','running'],['dsh-job:independent','running']]);
+  assert.deepEqual(lineage.stopTargets(owners).jobIds,['linked','independent']);
+  lineage.record({type:'job/settled',data:{jobId:'linked'}});
+  assert.equal(lineage.mergeTools([{id:'call',label:'bash',status:'completed'}],owners)[0].status,'completed');
+});
+
+test('DSH individual stop resolves linked tool and synthetic job only within its owning execution',()=>{
+ const lineage=new DshExecutionLineage('session');
+ lineage.record({type:'turn/start',data:{turn:1}});
+ lineage.record({type:'user/message',data:{turn:1,source:{kind:'user',rpcId:'first'}}});
+ lineage.record({type:'job/registered',data:{turn:1,jobId:'preview',owner:'session',toolCall:{callId:'bash'}}});
+ lineage.record({type:'turn/start',data:{turn:2}});
+ lineage.record({type:'user/message',data:{turn:2,source:{kind:'user',rpcId:'second'}}});
+ lineage.record({type:'job/registered',data:{turn:2,jobId:'server',owner:'session',toolCall:{callId:'server-call'}}});
+ assert.deepEqual(lineage.toolJobs('bash',new Set(['first'])),['preview']);
+ assert.deepEqual(lineage.toolJobs('dsh-job:preview',new Set(['first'])),['preview']);
+ assert.deepEqual(lineage.toolJobs('server-call',new Set(['first'])),[]);
+ lineage.record({type:'job/settled',data:{jobId:'preview'}});
+ assert.deepEqual(lineage.toolJobs('bash',new Set(['first'])),[]);
+ assert.deepEqual(lineage.toolJobs('server-call',new Set(['second'])),['server']);
 });

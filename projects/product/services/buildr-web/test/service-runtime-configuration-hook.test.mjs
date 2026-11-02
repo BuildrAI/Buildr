@@ -18,8 +18,8 @@ registerHooks({
 });
 const { useRuntimeConfiguration } = await import('../src/features/service-runtime/hooks/useRuntimeConfiguration.ts');
 
-test('共享配置钩子防重复提交，恢复时明确提示且不打开复制抽屉', async () => {
-  const slots = [], warnings = [];
+test('共享配置钩子先展示交接，确认后才提交并保留待完成观察', async () => {
+  const slots = [], messages = [];
   let cursor = 0, calls = 0, release;
   const harness = globalThis.__configurationHarness = {
     useCallback: fn => fn,
@@ -29,27 +29,85 @@ test('共享配置钩子防重复提交，恢复时明确提示且不打开复�
       slots[index] ??= { value };
       return [slots[index].value, next => { slots[index].value = next; }];
     },
-    message: { warning: text => warnings.push(text), info() {}, error() {} },
+    message: {
+      warning: text => messages.push(['warning', text]),
+      info: text => messages.push(['info', text]),
+      error: text => messages.push(['error', text]),
+    },
     start: () => { calls++; return new Promise(resolve => { release = resolve; }); },
   };
   const render = () => { cursor = 0; return useRuntimeConfiguration(); };
   const service = { code: 'front', name: '前端' };
+  const definition = {
+    source: 'agent',
+    verifiedAt: '2026-11-02T00:00:00.000Z',
+    path: '/workspace/services/front/runtime.yml',
+    local: { command: ['node', 'server.mjs'], cwd: '.', profile: null, preferredPort: 3000, portOverride: null, readiness: { kind: 'log', pattern: 'ready' }, timeoutSeconds: 30 },
+  };
   try {
-    const action = render();
-    const pending = action.configure(service);
-    await action.configure(service);
+    render().open(service);
+    assert.equal(calls, 0, '打开交接不提交');
+    assert.deepEqual(render().target, service);
+    assert.equal(render().feedback, null);
+    assert.equal(render().submitting, false);
+    assert.equal(render().pending, null);
+
+    const submitting = render().submit();
     assert.equal(calls, 1);
-    assert.equal(render().pendingCode, 'front');
-    release({ status: 'recovering', reason: 'existing-submission', message: '先核对原请求，本次未重复发送。' });
-    await pending;
-    assert.deepEqual(warnings, ['先核对原请求，本次未重复发送。']);
-    assert.equal(render().discovery, null);
-    assert.equal(render().pendingCode, '');
-    harness.start = async () => ({ status: 'unavailable', message: '尚未接入' });
-    await render().configure(service);
-    assert.deepEqual(render().discovery, { ...service, tone: 'warning', message: '尚未接入' });
-    render().closeDiscovery();
-    assert.equal(render().discovery, null);
+    await render().submit();
+    assert.equal(calls, 1, '提交中重复确认不创建第二个请求');
+    assert.equal(render().submitting, true);
+    render().open({ code: 'other', name: '其他' });
+    render().close();
+    assert.deepEqual(render().target, service, '提交中不能切走或关闭交接');
+    release({ status: 'started', conversation: { id: 'conversation-one' } });
+    await submitting;
+    const pending = render().pending;
+    assert.equal(render().target, null);
+    assert.equal(render().submitting, false);
+    assert.equal(render().feedback, null);
+    assert.equal(pending.code, 'front');
+    assert.equal(pending.name, '前端');
+    assert.equal(pending.conversationId, 'conversation-one');
+    assert.equal(pending.baseline, null, '首次配置没有旧运行定义');
+    assert.ok(Date.parse(pending.startedAt), '记录交接时间');
+
+    render().open({ code: 'other', name: '其他' });
+    assert.deepEqual(messages.at(-1), ['info', '上一项运行配置仍在进行，请等待完成或查看原对话后再开始新的配置。']);
+    assert.deepEqual(render().target, null, '待完成时不打开第二项配置');
+    render().resolve();
+    assert.equal(render().pending, null);
+
+    harness.start = async () => ({ status: 'started', conversation: { id: 'conversation-two' } });
+    render().open({ ...service, definition });
+    await render().submit();
+    assert.equal(render().pending.conversationId, 'conversation-two');
+    assert.match(render().pending.baseline, /2026-11-02T00:00:00\.000Z/, '已有配置记录旧定义快照');
+    render().resolve();
+
+    harness.start = async () => ({ status: 'unavailable', message: '尚未接入内部智能体' });
+    render().open(service);
+    await render().submit();
+    assert.deepEqual(render().feedback, { tone: 'warning', message: '尚未接入内部智能体', copyFirst: true });
+    assert.deepEqual(render().target, service, '未接入时同一抽屉保留复制交接');
+    render().close();
+    assert.equal(render().target, null);
+    assert.equal(render().feedback, null);
+
+    harness.start = async () => ({ status: 'busy', message: '已有一项操作正在提交' });
+    render().open(service);
+    await render().submit();
+    assert.deepEqual(render().feedback, { tone: 'warning', message: '已有一项操作正在提交', copyFirst: false });
+    assert.deepEqual(render().target, service);
+    render().close();
+
+    harness.start = async () => ({ status: 'recovering', message: '先核对原请求，本次未重复发送。' });
+    render().open(service);
+    await render().submit();
+    assert.deepEqual(messages.at(-1), ['warning', '先核对原请求，本次未重复发送。']);
+    assert.equal(render().target, null, '已恢复原提交时关闭交接，由原对话展示状态');
+    assert.equal(render().feedback, null);
+    assert.equal(render().pending, null, '恢复路径不推断新的完成状态');
   } finally {
     delete globalThis.__configurationHarness;
   }

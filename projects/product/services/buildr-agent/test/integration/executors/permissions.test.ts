@@ -13,7 +13,7 @@ async function eventually(check: () => unknown) { for (let i = 0; i < 500; i++) 
 
 test('Codex thread and turn permissions explicitly reset full access to the fixed workspace default', () => {
   assert.deepEqual(codexThreadPermissions('full-access'), { sandbox: 'danger-full-access', approvalPolicy: 'never' });
-  assert.deepEqual(codexThreadPermissions(undefined), { sandbox: 'workspace-write', approvalPolicy: 'on-request' });
+  assert.deepEqual(codexThreadPermissions(undefined), { sandbox: 'danger-full-access', approvalPolicy: 'never' });
   assert.deepEqual(codexTurnPermissions('full-access', '/work'), { approvalPolicy: 'never', sandboxPolicy: { type: 'dangerFullAccess' } });
   assert.deepEqual(codexTurnPermissions('default', '/work'), { approvalPolicy: 'on-request', sandboxPolicy: { type: 'workspaceWrite', writableRoots: ['/work'], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false } });
   assert.throws(() => codexThreadPermissions('surprise' as PermissionMode), { code: 'agent_permission_invalid' });
@@ -28,8 +28,9 @@ test('DSH uses its native permission command and verifies the session selection;
   const snapshot = async () => ({ projections: { values: { permissions: { currentValue: current } } } });
   await applyDshPermissions(remote, 'exact-session', 'full-access', snapshot); assert.equal(current, 'danger-full-access');
   await applyDshPermissions(remote, 'exact-session', 'default', snapshot); assert.equal(current, 'workspace-write');
-  defaultPreset = 'custom-default'; await applyDshPermissions(remote, 'exact-session', undefined, snapshot); assert.equal(current, 'custom-default');
-  assert.deepEqual(calls, ['/permission danger-full-access', '/permission workspace-write', '/permission custom-default']);
+  defaultPreset = 'custom-default'; await applyDshPermissions(remote, 'exact-session', undefined, snapshot); assert.equal(current, 'danger-full-access');
+  await applyDshPermissions(remote, 'exact-session', 'default', snapshot); assert.equal(current, 'custom-default');
+  assert.deepEqual(calls, ['/permission danger-full-access', '/permission workspace-write', '/permission danger-full-access', '/permission custom-default']);
 });
 
 test('DSH unavailable preset, shadowed command or mismatched readback refuses before any work input', async t => {
@@ -84,13 +85,13 @@ test('Qoder full-access uses native bypass mode, preserves business questions an
   try {
     runtime = await createQoderExecutor().open({ connectionId: 'qoder', configRoot: path.join(root, 'profile'), executable, environment: { PATH: process.env.PATH ?? '' } });
     const contextRef = await runtime.createContext({ cwd: workspace });
-    for (const permissionMode of ['full-access', 'default'] as const) {
+    for (const permissionMode of [undefined, 'default'] as const) {
       const events: ExecutorEvent[] = []; const sending = runtime.send({ contextRef, cwd: workspace, text: 'business question', permissionMode, images: [], clientRequestId: '16b6514b-0d25-42cf-aef6-0f7ecd9bd719', onEvent: event => events.push(event) }); sending.catch(() => {});
       await eventually(() => events.some(event => event.type === 'request'));
       const request = events.find(event => event.type === 'request'); const accepted = events.find(event => event.type === 'accepted'); assert.equal(request?.type, 'request'); assert.equal(accepted?.type, 'accepted'); assert.equal(request.request.kind, 'question');
       await runtime.reply({ contextRef, executionRef: accepted.executionRef, requestId: request.request.id, answer: { '0': '蓝' } });
       await runtime.stop({ contextRef, executionRef: accepted.executionRef }); await sending;
-      if (permissionMode === 'full-access') await runtime.generateTitle!({ contextRef, cwd: workspace, description: '{\"messages\":[]}', signal: new AbortController().signal });
+      if (permissionMode === undefined) await runtime.generateTitle!({ contextRef, cwd: workspace, description: '{\"messages\":[]}', signal: new AbortController().signal });
     }
     const allCalls = (await fs.readFile(log, 'utf8')).trim().split('\n').map(line => JSON.parse(line)); const auxiliary = allCalls.find((args: string[]) => args.includes('--no-session-persistence')); assert.ok(auxiliary); assert.ok(!auxiliary.includes('--dangerously-skip-permissions')); const calls = allCalls.filter((args: string[]) => !args.includes('--no-session-persistence')); assert.equal(calls.length, 2);
     const option = (args: string[], name: string) => args[args.indexOf(name) + 1]; assert.equal(option(calls[0], '--permission-mode'), 'bypassPermissions'); assert.ok(calls[0].includes('--dangerously-skip-permissions')); assert.equal(option(calls[1], '--permission-mode'), 'default'); assert.ok(!calls[1].includes('--dangerously-skip-permissions'));

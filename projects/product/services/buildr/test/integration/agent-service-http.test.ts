@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { AGENT_SERVICE_APPLICATION } from '../../src/modules/agent-service/module.ts';
 import { stopAgentProcess } from '@buildr-ai/buildr-agent';
 import { runtimeProvide } from '../../src/bootstrap/runtime.ts';
@@ -9,14 +10,14 @@ import test from 'node:test';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
-import { createAgentService, type AgentRuntime, type ExecutorItem } from '@buildr-ai/buildr-agent';
+import { AgentServiceError, createAgentService, type AgentRuntime, type ExecutorItem } from '@buildr-ai/buildr-agent';
 import { createRuntime, runtimeContributions } from '../helpers/runtime-harness.ts';
 import { taskRecordFixture } from '../helpers/task-record-system-fixture.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { createAgentServiceHttpContribution } from '../../src/modules/agent-service/interfaces/http/agent-service-http.ts';
 import { AGENT_SERVICE_HTTP_OPERATIONS } from '../../src/modules/agent-service/interfaces/http/agent-service-http-contracts.ts';
 import { inspectHttpOperationCoverage } from '../../src/web/http/http-operation-coverage.ts';
-import { eventStreamResponse } from '../../src/web/http/responses.ts';
+import { apiError, eventStreamResponse } from '../../src/web/http/responses.ts';
 import { stopOwnedChildProcess } from '../verification/support/owned-process.ts';
 
 test('program preparation is authenticated, schema checked and independently observable/cancellable', { timeout: 30_000 }, async t => {
@@ -122,7 +123,7 @@ test('private conversations use authenticated HTTP and bounded binary input; str
   assert.equal(summaries.total,0);assert.deepEqual(summaries.conversations,[]);assert.deepEqual(summaries.stats.executions,[],'执行组合摘要穿过真实HTTP契约，不被丢弃');
   {
     const store=new DatabaseSync(path.join(base,'agent-profile','agent-service','conversations.sqlite'));
-    try{const row=store.prepare('SELECT body FROM conversations WHERE id=?').get(created.id) as {body:string};const record=JSON.parse(row.body);record.view.entries.push({id:'seed-entry',sequence:1,kind:'message',role:'user',text:'started work',createdAt:'2026-10-27T00:00:00Z'});store.prepare('UPDATE conversations SET body=? WHERE id=?').run(JSON.stringify(record),created.id);}finally{store.close();}
+    try{const row=store.prepare('SELECT body FROM conversations WHERE id=?').get(created.id) as {body:string};const record=JSON.parse(row.body);record.view.entries.push({id:'seed-entry',sequence:1,kind:'message',role:'user',text:'started work',createdAt:'2026-10-27T00:00:00Z'});seedConversation(store, record);}finally{store.close();}
   }
   response = await fetch(`${app}/conversations`, {headers:readHeaders}); assert.equal(response.status,200);
   summaries=await response.json();assert.equal(summaries.total,1);assert.equal(summaries.conversations[0].id,created.id);assert.deepEqual(summaries.conversations[0].entries,[]);
@@ -139,6 +140,7 @@ test('private conversations use authenticated HTTP and bounded binary input; str
   response=await fetch(`${conversations}/${created.id}/pending-send`,{method:'POST',headers,body:JSON.stringify({...permissionDraft,clientRequestId:'queued-http',unrecognized:true})});assert.equal(response.status,400);
   response=await fetch(`${conversations}/${created.id}/pending-send`,{method:'POST',headers,body:JSON.stringify({...permissionDraft,clientRequestId:'queued-http'})});assert.equal(response.status,202);
   const queued=await response.json();assert.equal(queued.pendingSend.state,'waiting');assert.equal(queued.pendingSend.draft.text,permissionDraft.text);
+  assert.equal(queued.pendingSend.draft.permissionMode,'full-access','unknown connection remains queued with the default, not admitted or downgraded');
   response=await fetch(`${conversations}/${created.id}`,{headers:readHeaders});assert.equal((await response.json()).pendingSend.id,'queued-http');
   response=await fetch(`${conversations}/${created.id}/cancel-pending-send`,{method:'POST',headers,body:JSON.stringify({expectedPendingRevision:'stale'})});assert.equal(response.status,409);
   response=await fetch(`${conversations}/${created.id}/cancel-pending-send`,{method:'POST',headers,body:JSON.stringify({expectedPendingRevision:queued.pendingSend.revision})});assert.equal(response.status,200);assert.equal((await response.json()).pendingSend,undefined);
@@ -182,8 +184,15 @@ test('private conversations use authenticated HTTP and bounded binary input; str
   response = await fetch(`${conversations}/${created.id}/prepare-send`, { method: 'POST', headers, body: JSON.stringify({ expectedRevision: attachment.revision, connectionId: 'not-registered', text: 'x'.repeat(129 * 1024) }) }); assert.equal(response.status, 413);
   response = await fetch(`${conversations}?hidden=true&query=updated`, { headers: readHeaders }); assert.equal(response.status, 200); assert.equal((await response.json()).conversations.length, 1);
   response = await fetch(`${conversations}/${created.id}`, { method: 'PATCH', headers, body: JSON.stringify({ expectedRevision: attachment.revision, taskId: 'task-http' }) }); assert.equal(response.status, 200);
-  const linked = await response.json() as { revision: string; taskId?: string };
+  let linked = await response.json() as { revision: string; taskId?: string; taskIds?: string[] };
+  assert.deepEqual(linked.taskIds,['task-http']);
+  response = await fetch(`${conversations}/${created.id}`, { method:'PATCH',headers,body:JSON.stringify({expectedRevision:linked.revision,taskIds:['task-http']}) });assert.equal(response.status,200);
+  linked=await response.json() as typeof linked;assert.deepEqual(linked.taskIds,['task-http']);
   assert.equal(linked.taskId, 'task-http');
+  const taskLinks=[{workspaceId,taskId:'task-http'},{workspaceId:'other-workspace',taskId:'task-http'}];
+  response=await fetch(`${conversations}/${created.id}`,{method:'PATCH',headers,body:JSON.stringify({expectedRevision:linked.revision,taskLinks})});assert.equal(response.status,200);
+  linked=await response.json() as typeof linked;assert.deepEqual((linked as any).taskLinks,taskLinks);assert.deepEqual(linked.taskIds,['task-http']);
+  response=await fetch(`${conversations}/${created.id}`,{method:'PATCH',headers,body:JSON.stringify({expectedRevision:linked.revision,taskLinks:[{workspaceId:'',taskId:'task-http'}]})});assert.equal(response.status,400);
   response = await fetch(`${conversations}/${created.id}`, { method: 'PATCH', headers, body: JSON.stringify({ expectedRevision: linked.revision, taskId: null }) }); assert.equal(response.status, 200);
   assert.equal((await response.json() as { taskId?: string }).taskId, undefined);
   const coverage = inspectHttpOperationCoverage([AGENT_SERVICE_HTTP_OPERATIONS], []);
@@ -374,6 +383,16 @@ test('HTTP handoff exposes the exact bounded body, local sources and confirmed r
   const after=await completed(),receipt=after.entries.find(entry=>entry.kind==='handoff')!;
   assert.equal(sent[1],prepared.handoff.body);assert.equal(receipt.handoff!.body,prepared.handoff.body);assert.equal(receipt.status,'accepted');
   response=await fetch(endpoint,{headers});assert.equal(response.status,200);assert.equal((await response.json()).entries.find((entry:any)=>entry.kind==='handoff').handoff.body,sent[1]);
+  // Ordinary HTTP admission requires no preview request or token, but remains idempotent.
+  const ordinary={expectedRevision:after.revision,connectionId:'b',text:'ordinary follow-up',clientRequestId:'direct-http'};
+  const start=performance.now();
+  response=await fetch(endpoint+'/send',{method:'POST',headers,body:JSON.stringify(ordinary)});assert.equal(response.status,202);
+  const admitted=await response.json(),admissionMs=performance.now()-start;
+  response=await fetch(endpoint+'/send',{method:'POST',headers,body:JSON.stringify(ordinary)});assert.equal(response.status,202);
+  assert.equal((await response.json()).run.id,admitted.run.id);
+  await completed();assert.equal(sent.length,3);assert.equal(sent[2],'ordinary follow-up');
+  t.diagnostic('Local fake-executor HTTP admission: '+admissionMs.toFixed(1)+'ms; through native completion: '+(performance.now()-start).toFixed(1)+'ms (not a live-model latency measurement)');
+
 });
 
 
@@ -453,13 +472,14 @@ test('default conversations use a stable application directory without a registe
       const row = store.prepare('SELECT body FROM conversations WHERE id=?').get(chat.id) as { body: string };
       const record = JSON.parse(row.body);
       record.view.entries.push({ id: 'seed-entry', sequence: 1, kind: 'message', role: 'user', text: 'started work', createdAt: '2026-10-27T00:00:00Z' });
-      store.prepare('UPDATE conversations SET body=? WHERE id=?').run(JSON.stringify(record), chat.id);
+      seedConversation(store, record);
     } finally { store.close(); }
   }
   const list2 = await fetch(endpoint, { headers });
   assert.ok((await list2.json() as { conversations: Array<{ id: string }> }).conversations.some(row => row.id === chat.id));
   assert.equal((await fetch(`${endpoint}/${chat.id}`, { method: 'PATCH', headers, body: JSON.stringify({ expectedRevision: chat.revision, cwd: root }) })).status, 400);
   assert.equal((await fetch(`${endpoint}/${chat.id}`, { method: 'PATCH', headers, body: JSON.stringify({ expectedRevision: chat.revision, taskId: 'some-task' }) })).status, 400);
+  assert.equal((await fetch(`${endpoint}/${chat.id}`, { method: 'PATCH', headers, body: JSON.stringify({ expectedRevision: chat.revision, taskIds: ['some-task'] }) })).status, 400);
 });
 
 test('changing the default workspace only affects new conversations and preserves existing files', async t => {
@@ -580,7 +600,7 @@ test('tool detail reads preserve full history, enforce content revisions and rem
   const filename=path.join(profile,'agent-service/conversations.sqlite'),db=new DatabaseSync(filename);t.after(()=>db.close());
   const raw=JSON.parse((db.prepare('SELECT body FROM conversations WHERE id=?').get(created.id) as {body:string}).body);
   const full={id:'tool/http-id',sequence:1,kind:'tool',role:'system',name:'command',text:'complete output\n'+'x'.repeat(50000),input:JSON.stringify({cmd:'read result'}),createdAt:created.updatedAt};raw.view.entries=[full];raw.view.revision='seed-large';
-  db.prepare('UPDATE conversations SET body=?,revision=? WHERE id=?').run(JSON.stringify(raw),raw.view.revision,created.id);
+  seedConversation(db, raw);
   const headers={'x-buildr-session':sessionToken};const endpoint=`${url}/api/v1/workspaces/${workspaceId}/agent-conversations/${created.id}`;
   let response=await fetch(endpoint,{headers});assert.equal(response.status,200);const page=await response.json();assert.ok(page.entries[0].detail);assert.ok(page.entries[0].text.length<full.text.length);
   const detail=endpoint+'/entry-detail/'+encodeURIComponent(full.id)+'?revision='+page.entries[0].detail.revision;
@@ -588,5 +608,128 @@ test('tool detail reads preserve full history, enforce content revisions and rem
   response=await fetch(detail,{headers});assert.equal(response.status,200);assert.deepEqual(await response.json(),full);
   response=await fetch(detail.replace(page.entries[0].detail.revision,'0'.repeat(64)),{headers});assert.equal(response.status,409);
   response=await fetch(detail.replace('/workspaces/'+workspaceId,'/workspaces/00000000-0000-0000-0000-000000000001'),{headers});assert.equal(response.status,400);
-  assert.deepEqual(JSON.parse((db.prepare('SELECT body FROM conversations WHERE id=?').get(created.id) as {body:string}).body).view.entries,[full]);
+  assert.deepEqual(JSON.parse((db.prepare('SELECT body FROM conversations WHERE id=?').get(created.id) as {body:string}).body).view.entries,[]);
+  assert.equal(db.prepare('SELECT count(*) AS n FROM conversation_entry_contents WHERE conversation_id=?').get(created.id)!.n,1);
+});
+
+
+test('agent HTTP keeps public service failures while unknown failures get safe correlated diagnostics',async()=>{
+ const context={request:{method:'GET'},pathname:'/api/v1/app/agent-service/connections',searchParams:new URLSearchParams(),authorizeRead(){},authorizeWrite(){}};
+ const known=createAgentServiceHttpContribution(()=>{throw new AgentServiceError('agent_process_switching','执行后台正在切换，请稍后重试。',503);});
+ assert.deepEqual(await known.handleTopLevel(context),{status:503,body:{error:{code:'agent_process_switching',message:'执行后台正在切换，请稍后重试。'}}});
+ const secret='private-native-token';
+ const unknown=createAgentServiceHttpContribution(()=>{throw Object.assign(new Error(secret),{code:'SQLITE_BUSY'});});
+ await assert.rejects(unknown.handleTopLevel(context),{message:secret});
+ let body='',status:number|undefined;const logs:string[]=[];const original=console.error;console.error=value=>logs.push(value);
+ try { apiError({writeHead(value:number){status=value;},end(value:string){body=value;}},Object.assign(new Error(secret),{code:'SQLITE_BUSY',details:{token:secret}}),{method:'GET',url:'/api/v1/app/agent-service/connections?token='+secret}); }
+ finally {console.error=original;}
+ assert.equal(status,500);const result=JSON.parse(body);assert.match(result.error.details.requestId,/^[a-f0-9-]{36}$/);
+ assert.equal(JSON.parse(logs[0]).requestId,result.error.details.requestId);assert.equal(JSON.parse(logs[0]).code,'SQLITE_BUSY');
+ assert.equal(JSON.parse(logs[0]).pathname,'/api/v1/app/agent-service/connections');assert.doesNotMatch(body+logs.join(''),new RegExp(secret));
+});
+
+test('historical native file presentations reach authenticated HTTP without replaying work',async t=>{
+ const {base,root}=taskRecordFixture(t,'agent-presented-file-http');
+ const previous=process.env.BUILDR_APP_DATA_DIR;process.env.BUILDR_APP_DATA_DIR=path.join(base,'private-app');
+ t.after(()=>{if(previous===undefined)delete process.env.BUILDR_APP_DATA_DIR;else process.env.BUILDR_APP_DATA_DIR=previous;});
+ const runtime=createRuntime(),dataRoot=path.join(base,'agent-profile');
+ const service=createAgentService({dataRoot,executors:[],resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
+ const contributions=runtimeContributions(runtime,'http').filter((item:{id:string})=>item.id!=='agent-service.http');contributions.push(createAgentServiceHttpContribution(()=>service));
+ const server=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions});
+ const {url,initialWorkspaceId:workspaceId,sessionToken}=await server.ready;
+ t.after(async()=>{await service.close();server.server.closeAllConnections();await new Promise<void>(resolve=>server.server.close(()=>resolve()));});
+ const chat=await service.conversations.create(workspaceId,{title:'已交付文件'});
+ const filename=path.join(root,'.buildr/local/record.md');fs.mkdirSync(path.dirname(filename),{recursive:true});fs.writeFileSync(filename,'# 发布记录\n正文仍在。\n');
+ const db=new DatabaseSync(path.join(dataRoot,'agent-service/conversations.sqlite'));
+ const stored=JSON.parse((db.prepare('SELECT body FROM conversations WHERE id=?').get(chat.id) as {body:string}).body);
+ stored.view.revision='presented-v2';stored.view.entries=[{id:'presented-tool',sequence:1,createdAt:'now',kind:'tool',role:'system',provider:'dsh',participantId:'p',runId:'run',name:'present',input:JSON.stringify({files:[{path:filename,description:'发布记录'}]}),text:'Presented '+filename,status:'completed'}];
+ seedConversation(db, stored);const body=(db.prepare('SELECT body FROM conversations WHERE id=?').get(chat.id) as {body:string}).body;
+ const endpoint=`${url}/api/v1/workspaces/${workspaceId}/agent-conversations/${chat.id}`;
+ let response=await fetch(endpoint);assert.equal(response.status,403);
+ response=await fetch(endpoint,{headers:{origin:url,'x-buildr-session':sessionToken}});assert.equal(response.status,200);
+ assert.deepEqual((await response.json()).entries[0].presentedFiles,[{path:filename,description:'发布记录'}]);
+ assert.equal((db.prepare('SELECT body FROM conversations WHERE id=?').get(chat.id) as {body:string}).body,body);db.close();
+});
+
+test('conversation stream negotiation preserves legacy snapshots and validates compact deltas',async()=>{
+ const id='00000000-0000-4000-8000-000000000001',workspaceId='workspace';
+ const initial:any={id,workspaceId,cwd:'/workspace',title:'work',revision:'r1',hidden:false,updatedAt:'now',participants:[],requests:[],entries:Array.from({length:20},(_,i)=>({id:'entry-'+i,sequence:i+1,kind:'message',role:'assistant',text:'history '.repeat(1000),createdAt:'now'}))};
+ const next={...initial,revision:'r2',title:'updated'};
+ const service:any={conversations:{subscribe:async()=>({close(){},events:(async function*(){yield{cursor:0,generation:'g',type:'snapshot',workspaceId,conversationId:id,revision:'r1',payload:{conversation:initial}};yield{cursor:1,generation:'g',type:'conversation',workspaceId,conversationId:id,revision:'r2',payload:{conversation:next}};})()})}};
+ const contribution=createAgentServiceHttpContribution(()=>service);let lastResponse:any;
+ const observe=async(headers:Record<string,string>)=>{
+  const output:any[]=[];
+  lastResponse=await contribution.handle({request:{method:'GET',headers},workspaceId,suffix:'/agent-conversations/'+id+'/events',searchParams:new URLSearchParams(),authorizeRead(){},respond:{async stream(subscription:any,map:any){for await(const event of subscription.events)output.push(map(event));return true;}}});
+  return output;
+ };
+ const legacy=await observe({});assert.deepEqual(legacy.map(event=>event.payload.conversation),[initial,next]);
+ const compact=await observe({'x-buildr-conversation-transfer':'delta-v1'});
+ assert.deepEqual(compact[0],legacy[0]);assert.equal(compact[1].payload.conversation,undefined);assert.equal(compact[1].payload.delta.baseCursor,0);assert.equal(compact[1].payload.delta.conversation.revision,'r2');assert.deepEqual(compact[1].payload.delta.entries,[]);
+ assert.ok(JSON.stringify(compact[1]).length<JSON.stringify(legacy[1]).length/20);
+ await observe({'x-buildr-conversation-transfer':'unsupported'});assert.equal(lastResponse.status,400);assert.equal(lastResponse.body.error.code,'agent_http_input_invalid');
+});
+
+test('联合活动摘要裁剪上下文并以内容版本返回未变化标记，旧接口兼容',async t=>{
+  const {base,root}=taskRecordFixture(t,'activity-summary-http'),runtime=createRuntime();
+  const previous=process.env.BUILDR_APP_DATA_DIR;process.env.BUILDR_APP_DATA_DIR=path.join(base,'app-data');t.after(()=>{if(previous===undefined)delete process.env.BUILDR_APP_DATA_DIR;else process.env.BUILDR_APP_DATA_DIR=previous;});
+  const row:any={id:'11111111-1111-4111-8111-111111111111',workspaceId:'22222222-2222-4222-8222-222222222222',cwd:root,title:'工作',revision:'r1',hidden:false,updatedAt:'now',participants:[{id:'p',provider:'codex',connectionId:'codex',label:'Codex',deliveredThrough:0,contextId:'private-context'}],entries:[],requests:[],activity:{version:1,seenThrough:0,active:true,updatedAt:'now',pendingDecisionCount:0},run:{id:'r',participantId:'p',provider:'codex',generation:'g',status:'running',accepted:true,tools:[],startedAt:'now',updatedAt:'now'},retainedRuns:[]};
+  const page={conversations:[row],total:1},pending={conversations:[{conversationId:row.id,workspaceId:row.workspaceId,title:row.title,status:'running',count:0}]};
+  const contribution=createAgentServiceHttpContribution(()=>({conversations:{listAll:()=>page,pendingSummary:()=>pending}} as any));
+  const contributions=runtimeContributions(runtime,'http').filter((item:any)=>item.id!=='agent-service.http');contributions.push(contribution);
+  const instance=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions});const {url,sessionToken}=await instance.ready;
+  t.after(()=>new Promise<void>(resolve=>instance.server.close(()=>resolve())));
+  const headers={'x-buildr-session':sessionToken},endpoint=url+'/api/v1/app/agent-service/activity-summary';
+  assert.equal((await fetch(endpoint)).status,403);
+  const response=await fetch(endpoint,{headers});assert.equal(response.status,200);assert.equal(response.headers.get('cache-control'),'no-store');
+  const first:any=await response.json();assert.deepEqual(first.conversations[0].participants,[]);assert.equal(first.conversations[0].retainedRuns,undefined);assert.equal(first.conversations[0].run.status,'running');assert.deepEqual(first.pending,pending.conversations);
+  const unchanged:any=await (await fetch(endpoint+'?revision='+first.revision,{headers})).json();assert.deepEqual(unchanged,{revision:first.revision,unchanged:true});assert.ok(JSON.stringify(unchanged).length<120);
+  row.title='更新标题';row.revision='r2';const changed:any=await (await fetch(endpoint+'?revision='+first.revision,{headers})).json();assert.notEqual(changed.revision,first.revision);assert.equal(changed.conversations[0].title,'更新标题');
+  const legacy:any=await (await fetch(url+'/api/v1/app/agent-service/conversations?activeOnly=true&limit=100',{headers})).json();assert.equal(legacy.conversations[0].participants[0].contextId,'private-context');
+  assert.equal((await fetch(endpoint+'?revision=invalid',{headers})).status,400);
+});
+
+/** Explicit v5 raw fixture; production writing and migration are tested by the service. */
+function seedConversation(db: DatabaseSync, record: any): void {
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    for (const entry of record.view.entries) {
+      const body=JSON.stringify(entry),revision=createHash('sha256').update(body).digest('hex');
+      const compact=entry.kind==='tool'&&body.length>16384?JSON.stringify({...entry,text:entry.text.slice(0,512),detail:{revision}}):null;
+      db.prepare('INSERT OR REPLACE INTO conversation_entry_contents VALUES(?,?,?,?,?)').run(record.view.id,revision,'raw',Buffer.byteLength(body),body);
+      db.prepare('INSERT OR REPLACE INTO conversation_read_entries VALUES(?,?,?,?,?,?,?,?,?,?)').run(record.view.id,'main',entry.sequence,entry.id,'legacy:fixture',revision,compact,Buffer.byteLength(body),Buffer.byteLength(compact??body),Number(entry.kind==='message'&&!entry.thinking));
+    }
+    const count=record.view.entries.length;
+    const header=JSON.stringify({...record,_bodyFormat:5,view:{...record.view,entries:[]}});
+    db.prepare('UPDATE conversations SET body=?,revision=?,entry_count=? WHERE id=?').run(header,record.view.revision,count,record.view.id);
+    db.exec('COMMIT');
+  } catch(error) { db.exec('ROLLBACK');throw error; }
+}
+test('participation HTTP is authenticated, workspace-bound and rejects scope replacement',async t=>{
+ const {base,root}=taskRecordFixture(t,'participation-http'),runtime=createRuntime();
+ const previous=process.env.BUILDR_APP_DATA_DIR;process.env.BUILDR_APP_DATA_DIR=path.join(base,'private');t.after(()=>{if(previous===undefined)delete process.env.BUILDR_APP_DATA_DIR;else process.env.BUILDR_APP_DATA_DIR=previous;});
+ const id='11111111-1111-4111-8111-111111111111',calls:any[]=[];
+ const service:any={conversations:{
+  participation:(workspaceId:string,conversationId:string,input:any)=>{calls.push([workspaceId,conversationId,input]);return {schemaVersion:'buildr.agent-participation/v1',contextConfiguration:'unknown',workspaceId,conversationId,runId:input.runId,revision:'r',coverage:'not-collected',gaps:['historical-not-collected'],items:[]};},
+  participationSummary:(workspaceId:string,input:any)=>{calls.push([workspaceId,input]);return {schemaVersion:'buildr.agent-participation-summary/v1',workspaceId,revision:'r',range:{from:'2026-11-01T00:00:00Z',to:'2026-11-02T00:00:00Z'},coverage:'not-collected',runs:0,collectedRuns:0,gaps:[],rows:[]};},
+ }};
+ const contributions=runtimeContributions(runtime,'http').filter((item:any)=>item.id!=='agent-service.http');contributions.push(createAgentServiceHttpContribution(()=>service));
+ const instance=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions});const {url,sessionToken,initialWorkspaceId}=await instance.ready;
+ t.after(async()=>{instance.server.closeAllConnections();await new Promise<void>(resolve=>instance.server.close(()=>resolve()));});
+ const headers={'x-buildr-session':sessionToken},endpoint=`${url}/api/v1/workspaces/${initialWorkspaceId}/agent-conversations/${id}/participation?runId=run`;
+ assert.equal((await fetch(endpoint)).status,403);assert.equal(calls.length,0);
+ let response=await fetch(endpoint,{headers});assert.equal(response.status,200);assert.equal((await response.json()).coverage,'not-collected');assert.deepEqual(calls[0],[initialWorkspaceId,id,{runId:'run'}]);
+ assert.equal((await fetch(endpoint+'&workspaceId=other',{headers})).status,400);
+ response=await fetch(`${url}/api/v1/app/agent-service/conversations/participation-summary?limit=50`,{headers});assert.equal(response.status,200);assert.equal((await response.json()).workspaceId,'@default');assert.deepEqual(calls[1],['@default',{limit:50}]);
+ assert.equal((await fetch(`${url}/api/v1/workspaces/missing/agent-conversations/participation-summary`,{headers})).status,404);
+ assert.equal((await fetch(`${url}/api/v1/app/agent-service/conversations/participation-summary?limit=201`,{headers})).status,400);
+});
+
+test('CLI target proof accepts only current authorized physical entry, not PATH names or same-content copies',async t=>{
+ const {observeParticipationCli}=await import('../../src/modules/agent-service/application/participation-cli-source.ts');
+ const {base}=taskRecordFixture(t,'participation-cli-source'),sourceRoot=path.join(base,'product/services/buildr'),entry=path.join(base,'product/buildr'),copy=path.join(base,'copy/buildr');
+ fs.mkdirSync(sourceRoot,{recursive:true});fs.mkdirSync(path.dirname(copy),{recursive:true});fs.writeFileSync(entry,'#!/bin/sh\necho buildr\n');fs.copyFileSync(entry,copy);
+ const identity={package:'@buildr-ai/buildr',channel:'development',sourceRoot};
+ assert.equal(observeParticipationCli(identity,'buildr'),undefined);assert.equal(observeParticipationCli(identity,copy),undefined);
+ const observed=observeParticipationCli(identity,entry)!;assert.equal(observed.status,'confirmed');assert.equal(observed.observedVersion,undefined);assert.match(observed.offeredVersion!,/^sha256-/);
+ assert.equal(observeParticipationCli({...identity,package:'untrusted'},entry),undefined);
 });

@@ -1,3 +1,4 @@
+import { ConversationWebhooks } from './conversation-webhooks.ts';
 import { conversationRuns, unfinishedRun } from '../domain/agent-state.ts';
 import { AgentServiceError } from '../domain/agent-state.ts';
 import { ProgramUpgrades } from './program-upgrades.ts';
@@ -31,7 +32,7 @@ export function createAgentService(options: AgentServiceOptions) {
   const root = path.join(options.dataRoot, 'agent-service');
   const repository = new ConversationRepository(root);
   repository.startReadModels();
-  const events = new ConversationEvents(generation);
+  const events = new ConversationEvents(generation, ConversationWebhooks.configure(options.environment ?? process.env));
   const now = () => (options.now?.() ?? new Date()).toISOString();
   let linkedChanged: ((connection:ConnectionView)=>void)|undefined;
   const connections = new ConnectionApplication({ repository, root, executors: options.executors ?? createNativeExecutors(), environment: executorEnvironment(options.environment ?? process.env), generation, now, changed: (connection: ConnectionView) => {events.publish({ type: 'connection', revision: connection.revision, payload: { connection } });linkedChanged?.(connection);} });
@@ -80,7 +81,7 @@ export function createAgentService(options: AgentServiceOptions) {
     discoveryTimer=setInterval(refreshInBackground,60_000);discoveryTimer.unref();
   };
   linkedChanged=connection=>{
-    if(!connection.enabled||['not-authenticated','expired'].includes(connection.status)||connection.loginAttempt&&['initializing','waiting-browser'].includes(connection.loginAttempt.state))models.invalidate('native-'+connection.id);
+    if(!connection.enabled||['not-authenticated','expired'].includes(connection.status)||connection.loginAttempt&&['initializing','waiting-browser'].includes(connection.loginAttempt.state))models.invalidate('native-'+connection.id,{abortActive:false});
     // Login completion must not wait for an unrelated source's discovery.
     if(discoveryTimer&&connection.enabled&&!connection.loginAttempt?.state.match(/^(initializing|waiting-browser|checking)$/))void models.accounts.check('native-'+connection.id).catch(()=>{});
   };
@@ -97,7 +98,7 @@ export function createAgentService(options: AgentServiceOptions) {
     const diagnostic=discoveryDiagnostic||(failed?'部分模型账号核对失败或登录已失效，请在智能体与模型中查看。':undefined);
     return {...result,hasSnapshot,...(diagnostic?{diagnostic}:{})};
   };
-  const conversations = new ConversationApplication({ conversationControl:options.conversationControl, repository, connections, modelAccess: models, events, root, generation, now, host: new HostContext(options), get autoContinueInterrupted() { return options.autoContinueInterrupted; }, generationAlive: options.generationAlive });
+  const conversations = new ConversationApplication({ backendChange:options.backendChange, conversationControl:options.conversationControl, controlSupersededRun:options.controlSupersededRun, repository, connections, modelAccess: models, events, root, generation, now, host: new HostContext(options), get autoContinueInterrupted() { return options.autoContinueInterrupted; }, generationAlive: options.generationAlive, generationReleased:options.generationReleased });
   const upgrades = new ProgramUpgrades({root,connections,programs:programManager,checks:programUpdates,release:id=>conversations.releaseForProgramUpgrade(id),now});
   const withUpgrades=(snapshot:ReturnType<typeof programUpdates.list>)=>({programs:snapshot.programs.map(program=>({...program,upgrade:(()=>{const job=upgrades.read(program.connectionId);return job&&(job.executable===program.executable||job.installedExecutable===program.executable)?job:undefined;})()}))});
   return {
@@ -124,6 +125,7 @@ export function createAgentService(options: AgentServiceOptions) {
     },
     resumeMetadata() { connections.freezeMetadata(false); models.freezeMetadata(false); startRefreshing(); },
     conversationBusy: (scope: string, id: string) => conversations.busy(scope, id),
+    reconcilePersisted: (scope:string,id:string,control?:{expectedRevision:string;runId:string;participantId:string;generation:string}) => conversations.reconcilePersisted(scope,id,control),
     allowsReleasedContinuation: (scope: string, id: string, input: SendDraft) => conversations.allowsReleasedContinuation(scope, id, input),
     conversationInputBusy: (scope: string, id: string) => conversations.inputBusy(scope, id),
     retainsConversationSource: (scope:string,id:string) => conversations.retainsConversationSource(scope,id),
@@ -185,6 +187,8 @@ export function createAgentService(options: AgentServiceOptions) {
       listChildren: (workspaceId:string,id:string,input:Parameters<ConversationApplication['listChildren']>[2]={}) => conversations.listChildren(workspaceId,id,input),
       create: (workspaceId: string, input: Parameters<ConversationApplication['create']>[1]) => conversations.create(workspaceId, input),
       read: (workspaceId: string, id: string, input: Parameters<ConversationApplication['read']>[2] = {}) => conversations.read(workspaceId, id, input),
+      participation: (workspaceId:string,id:string,input:{runId:string}) => conversations.participation(workspaceId,id,input),
+      participationSummary: (workspaceId:string,input:import('../participation-contracts.ts').ParticipationSummaryInput={}) => conversations.participationSummary(workspaceId,input),
       readEntry: (workspaceId:string,id:string,entryId:string,revision:string) => conversations.readEntry(workspaceId,id,entryId,revision),
       observationVersion: (workspaceId:string,id:string) => conversations.observationVersion(workspaceId,id),
       update: (workspaceId: string, id: string, input: Parameters<ConversationApplication['update']>[2]) => conversations.update(workspaceId, id, input),
@@ -203,6 +207,7 @@ export function createAgentService(options: AgentServiceOptions) {
       readAttachment: (workspaceId: string, id: string, attachmentId: string) => conversations.readAttachment(workspaceId, id, attachmentId),
       subscribe: (workspaceId: string, id: string, options:{compactTools?:boolean}={}) => conversations.subscribe(workspaceId, id,options),
       pending: () => conversations.pending(),
+      pendingSummary: () => conversations.pendingSummary(),
     },
     async close() {
       if (closed) return; closed = true; repository.stopReadModels(); programUpdates.close(); upgrades.beginClosing();

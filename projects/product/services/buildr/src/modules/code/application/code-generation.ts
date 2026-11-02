@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { codeFailure } from '../infrastructure/code-file-reader.ts';
 
-export type ModelSelection = {modelAccountId:string;modelId:string;accountIdentity:string;accountRevision:string;label:string;serviceTier?:string};
+export type ModelSelection = {modelAccountId:string;modelId:string;accountIdentity:string;accountRevision:string;label:string;serviceTier?:string;reasoningEffort?:string};
 export type GenerationRun = {id:string;modelAccountId:string;modelId:string;label:string;accountRevision:string;status:'running'|'succeeded'|'failed'|'cancelled';output:unknown;error:{code:string;message:string}|null};
 export type GenerationInput = ModelSelection & {root:string;prompt:string;timeoutMs:number;validateResult(output:unknown):Promise<void>};
-export type GenerateModel = (input:{accountId:string;modelId:string;expectedIdentity:string;expectedRevision:string;agentId:string;conversationId:string;runId:string;prompt:string;signal:AbortSignal;serviceTier?:string})=>Promise<string>;
+export type GenerateModel = (input:{accountId:string;modelId:string;expectedIdentity:string;expectedRevision:string;agentId:string;conversationId:string;runId:string;prompt:string;signal:AbortSignal;serviceTier?:string;reasoningEffort?:string})=>Promise<string>;
 
 /** Short-lived business requests; no persistent chat, default executor or vendor process. */
 export class CodeGeneration {
@@ -25,7 +25,7 @@ export class CodeGeneration {
     run.timer=timer;timer.unref?.();
     void (async()=>{
       try {
-        const text=await this.generate({accountId:input.modelAccountId,modelId:input.modelId,expectedIdentity:input.accountIdentity,expectedRevision:input.accountRevision,agentId:'commit-message',conversationId:id,runId:id,prompt:input.prompt,signal:controller.signal,...(input.serviceTier?{serviceTier:input.serviceTier}:{})});
+        const text=await this.generate({accountId:input.modelAccountId,modelId:input.modelId,expectedIdentity:input.accountIdentity,expectedRevision:input.accountRevision,agentId:'commit-message',conversationId:id,runId:id,prompt:input.prompt,signal:controller.signal,...(input.serviceTier?{serviceTier:input.serviceTier}:{}),...(input.reasoningEffort?{reasoningEffort:input.reasoningEffort}:{})});
         if(Date.now()>=deadline)expire();
         if(view.status!=='running')return;
         let output:unknown;try{output=JSON.parse(text);}catch{throw codeFailure('code_commit_message_output_invalid','生成结果不是有效 JSON，原说明已保留。',502);}

@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { AgentServiceError } from '../../src/domain/agent-state.ts';
 import { createAgentService } from '../../src/application/agent-service.ts';
 import { PendingSends } from '../../src/process/pending-sends.ts';
 import { PendingSendRepository } from '../../src/persistence/pending-send-repository.ts';
@@ -12,7 +13,7 @@ import type { AgentExecutor, ContextRef, ExecutorObservation, ExecutorSendInput,
 
 function executor(id:string, question=false) {
   const contexts=new Map<string,{observation:ExecutorObservation;finish?():void}>(),inputs:ExecutorSendInput[]=[],replies:unknown[]=[];
-  let stops=0,unknownStop=false;
+  let stops=0,unknownStop=false,stopError:Error|undefined;
   const capabilities={text:true,images:true,questions:true,approval:true,stop:true,resume:true,maxInputBytes:128*1024};
   const get=(ref:ContextRef)=>contexts.get(ref.id)!;
   const value:AgentExecutor={descriptor:{id,label:id,capabilities},async open(){return{
@@ -30,11 +31,11 @@ function executor(id:string, question=false) {
     },
     observe:async({contextRef})=>structuredClone(get(contextRef).observation),
     canRelease:async({contextRef})=>['stopped','idle'].includes(get(contextRef).observation.status),
-    async stop({contextRef}){stops++;const context=get(contextRef);context.observation={...context.observation,status:unknownStop?'unknown':'stopped',tools:[]};if(!unknownStop)context.finish?.();return context.observation;},
+    async stop({contextRef}){stops++;if(stopError)throw stopError;const context=get(contextRef);context.observation={...context.observation,status:unknownStop?'unknown':'stopped',tools:[]};if(!unknownStop)context.finish?.();return context.observation;},
     async reply({contextRef,answer}){replies.push(answer);const context=get(contextRef);context.observation={...context.observation,status:'idle'};context.finish?.();},
     close:async()=>{}
   };}};
-  return{value,inputs,replies,contexts,get stops(){return stops;},setUnknown(value:boolean){unknownStop=value;},finish(){for(const context of contexts.values()){context.observation={...context.observation,status:'stopped',tools:[]};context.finish?.();}}};
+  return{value,inputs,replies,contexts,get stops(){return stops;},setStopError(value:Error){stopError=value;},setUnknown(value:boolean){unknownStop=value;},finish(){for(const context of contexts.values()){context.observation={...context.observation,status:'stopped',tools:[]};context.finish?.();}}};
 }
 async function until<T>(read:()=>T|Promise<T>,check:(value:T)=>boolean):Promise<T>{for(let n=0;n<200;n++){const value=await read();if(check(value))return value;await new Promise(resolve=>setTimeout(resolve,2));}assert.fail('state did not settle: '+JSON.stringify(await read()).slice(-2000));}
 async function fixture(){
@@ -112,7 +113,7 @@ for(const mode of ['answer','instruction','continue'] as const)test('waiting han
     await assert.rejects(f.service.conversations.reply('scope',f.chat.id,f.chat.requests[0]!.id,{expectedRevision:queued.revision,runId:f.intent.runId,participantId:f.intent.participantId,generation:f.intent.generation,answer:{result:'later'}}),{code:'agent_handoff_pending'});
     const sends=f.pump();await sends.pump();await until(async()=>{await sends.pump();return f.service.conversations.read('scope',f.chat.id);},view=>view.run?.id!==f.intent.runId&&view.run?.status==='completed');
     await f.pump().pump();
-    assert.equal(f.next.inputs.length,1);assert.equal(f.old.stops,0);assert.equal(f.old.replies.length,0);
+    assert.equal(f.next.inputs.length,1);assert.equal(f.old.stops,1);assert.equal(f.old.replies.length,0);
     assert.match(f.next.inputs[0]!.text,/是否验收/);assert.match(f.next.inputs[0]!.text,mode==='answer'?/"回答":\{"result":"ok"\}/:/未回答/);
     const read=f.service.conversations.read('scope',f.chat.id);
     assert.equal(read.pendingSend,undefined);assert.equal(read.entries.filter(entry=>entry.id.startsWith('waiting-handoff-')).length,1);
@@ -216,8 +217,53 @@ for(const media of ['image','video'] as const)test('正式交接回答保全同�
   const preview=await f.service.conversations.prepareHandoff('scope',f.chat.id,draft);assert.equal(preview.fits,true);assert.equal(f.old.stops,0);assert.equal(f.old.replies.length,0);assert.equal(f.next.inputs.length,0);
   f.service.conversations.queueSend('scope',f.chat.id,{...draft,clientRequestId:randomUUID()});
   const sends=f.pump();await until(async()=>{await sends.pump();return f.service.conversations.read('scope',f.chat.id);},view=>view.run?.id!==f.intent.runId&&view.run?.status==='completed');
-  assert.equal(f.next.inputs.length,1);assert.equal(f.old.replies.length,0);assert.equal(f.old.stops,0);assert.ok(f.next.inputs[0]!.images.some(image=>image.id===frame.id));assert.match(f.next.inputs[0]!.text,/请核对材料/);
+  assert.equal(f.next.inputs.length,1);assert.equal(f.old.replies.length,0);assert.equal(f.old.stops,1);assert.ok(f.next.inputs[0]!.images.some(image=>image.id===frame.id));assert.match(f.next.inputs[0]!.text,/请核对材料/);
   const history=f.service.conversations.read('scope',f.chat.id).entries.find(entry=>entry.id.startsWith('waiting-handoff-'))!;assert.deepEqual(history.attachments,[original.id]);
   if(media==='video'){assert.match(f.next.inputs[0]!.text,/不含音轨/);assert.match(history.text,/不能据此声称连续观看/);assert.match(history.text,new RegExp(original.id));assert.match(history.text,new RegExp(frame.id));}
+ }finally{await f.close();}
+});
+
+for(const viaHandoff of [false,true])test('confirmed switch retires old questions atomically, stops once and rejects late native snapshots; handoff='+viaHandoff,async()=>{
+ const f=await fixture();try{
+  f.old.setUnknown(true);
+  const requestId=randomUUID(),draft=viaHandoff?f.queued('continue with this choice'):{expectedRevision:f.chat.revision,connectionId:'next',model:'a',text:'continue with this choice'};
+  f.service.conversations.queueSend('scope',f.chat.id,{...draft,clientRequestId:requestId});
+  const pump=f.pump();await until(async()=>{await pump.pump();return f.service.conversations.read('scope',f.chat.id);},view=>view.run?.status==='completed'&&view.run.id!==f.intent.runId);
+  assert.equal(f.old.stops,1);assert.equal(f.next.inputs.length,1);assert.deepEqual(f.old.replies,[]);
+  let current=f.service.conversations.read('scope',f.chat.id);
+  assert.equal(current.requests.length,0);assert.equal(current.retainedRuns?.find(run=>run.id===f.intent.runId)?.status,'unknown');
+  const oldInput=f.old.inputs[0]!,nativeRequest={id:'native-question',kind:'question' as const,title:'late question',questions:[{id:'result',label:'late'}]};
+  oldInput.onEvent({type:'request',request:nativeRequest});
+  oldInput.onEvent({type:'request',request:{...nativeRequest,id:'different-late-id'}});
+  oldInput.onEvent({type:'observation',observation:{status:'waiting',tools:[],executionRef:f.old.contexts.get(oldInput.contextRef.id)!.observation.executionRef,requests:[nativeRequest]}});
+  current=f.service.conversations.read('scope',f.chat.id);assert.equal(current.requests.length,0);
+  await assert.rejects(f.service.conversations.reply('scope',f.chat.id,f.intent.requestIds[0],{expectedRevision:current.revision,runId:f.intent.runId,participantId:f.intent.participantId,generation:f.intent.generation,answer:{result:'ok'}}),{code:'agent_request_stale'});
+  f.service.conversations.queueSend('scope',f.chat.id,{...draft,clientRequestId:requestId});await pump.pump();
+  assert.equal(f.old.stops,1);assert.equal(f.next.inputs.length,1);
+ }finally{await f.close();}
+});
+
+test('startup observes a previously requested automatic stop without repeating it',async()=>{
+ const f=await fixture();let resumed:ReturnType<typeof createAgentService>|undefined;
+ try{
+  f.old.setUnknown(true);f.service.conversations.queueSend('scope',f.chat.id,{...f.queued('continue'),clientRequestId:randomUUID()});
+  const pump=f.pump();await until(async()=>{await pump.pump();return f.service.conversations.read('scope',f.chat.id);},view=>view.run?.status==='completed'&&view.run.id!==f.intent.runId);
+  assert.equal(f.old.stops,1);
+  const calls:Array<{runId:string;action:string}>=[];
+  resumed=createAgentService({dataRoot:f.root,executors:[f.old.value,f.next.value],resolveWorkspace:()=>({rootPath:f.root}),generationAlive:generation=>generation===f.service.generation,controlSupersededRun:async(_scope,_id,input,action)=>{calls.push({runId:input.runId,action});}});
+  await resumed.conversations.recoverInterrupted();await until(()=>calls,value=>value.length===1);
+  assert.deepEqual(calls,[{runId:f.intent.runId,action:'observe'}]);assert.equal(f.old.stops,1);
+  assert.equal(resumed.conversations.read('scope',f.chat.id).requests.length,0);
+ }finally{await resumed?.close();await f.close();}
+});
+
+test('a revision conflict after stop admission is uncertain and never repeats the native stop',async()=>{
+ const f=await fixture();try{
+  f.old.setStopError(new AgentServiceError('agent_revision_conflict','native stop callback conflicted',409));
+  f.service.conversations.queueSend('scope',f.chat.id,{...f.queued('continue safely'),clientRequestId:randomUUID()});
+  const pump=f.pump();await until(async()=>{await pump.pump();return f.service.conversations.read('scope',f.chat.id);},view=>view.run?.status==='completed'&&view.run.id!==f.intent.runId);
+  assert.equal(f.old.stops,1);assert.equal(f.next.inputs.length,1);assert.equal(f.old.replies.length,0);
+  const current=f.service.conversations.read('scope',f.chat.id);assert.equal(current.requests.length,0);
+  assert.equal(current.retainedRuns?.find(run=>run.id===f.intent.runId)?.status,'unknown');
  }finally{await f.close();}
 });

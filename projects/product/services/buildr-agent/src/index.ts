@@ -1,4 +1,6 @@
 export * from './contracts.ts';
+export { conversationEventEncoder, conversationEventDecoder } from './domain/conversation-transfer.ts';
+export type { ConversationDelta, TransferEvent } from './domain/conversation-transfer.ts';
 export * from './execution-contracts.ts';
 export { AGENT_OPERATION_SCHEMAS } from './operation-schemas.ts';
 export { connectAgentProcess, stopAgentProcess } from './process/client.ts';
@@ -14,3 +16,6 @@ export type { ConnectionRelocationFailure, ConnectionRelocationResult } from './
 
 export { createAgentService } from './application/agent-service.ts';
 export type { AgentService } from './application/agent-service.ts';
+
+export { inspectAgentStorage, collectAgentStorage } from './application/storage-maintenance.ts';
+export type { AgentStoragePlan } from './application/storage-maintenance.ts';

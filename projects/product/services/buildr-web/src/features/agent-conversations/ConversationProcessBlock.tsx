@@ -94,6 +94,8 @@ type TimelineItem={type:'tools';entries:ConversationEntry[]}|{type:'narration';e
 function processTimeline(entries:readonly ConversationEntry[]):TimelineItem[]{
   const items:TimelineItem[]=[];
   for(const entry of entries){
+    // 模型思考不进入处理过程，只展示助手实际输出文字与工具调用。
+    if(entry.thinking)continue;
     const last=items[items.length-1];
     if(entry.kind==='tool'){
       if(last?.type==='tools')last.entries.push(entry);
@@ -108,8 +110,8 @@ function durationLabel(startedAt:string,finishedAt:string):string {
   const minutes=Math.floor(seconds/60),rest=seconds%60;
   return `${minutes?`${minutes} 分 `:''}${rest} 秒`;
 }
-type Props={loadEntry?:EntryLoader;markdownOptions?:MarkdownRenderOptions;headerless?:boolean;blockKey:string;entries:ConversationEntry[];active:boolean;liveToolId?:string|null;finishedAt?:string;open:boolean;onToggle:(key:string,open:boolean)=>void;onOpenFile:FileOpener;toolsOpen?:Record<string,boolean>;onToolToggle?:(id:string,open:boolean)=>void;groupsOpen?:Record<string,boolean>;onGroupToggle?:(ids:string[],open:boolean)=>void};
-export function ConversationProcessBlock({markdownOptions,headerless,blockKey,entries,active,liveToolId,finishedAt,open,onToggle,onOpenFile,toolsOpen,onToolToggle,groupsOpen={},onGroupToggle,loadEntry}:Props){
+type Props={hidden?:boolean;loadEntry?:EntryLoader;markdownOptions?:MarkdownRenderOptions;headerless?:boolean;blockKey:string;entries:ConversationEntry[];active:boolean;liveToolId?:string|null;finishedAt?:string;open:boolean;onToggle:(key:string,open:boolean)=>void;onOpenFile:FileOpener;toolsOpen?:Record<string,boolean>;onToolToggle?:(id:string,open:boolean)=>void;groupsOpen?:Record<string,boolean>;onGroupToggle?:(ids:string[],open:boolean)=>void};
+export function ConversationProcessBlock({hidden,markdownOptions,headerless,blockKey,entries,active,liveToolId,finishedAt,open,onToggle,onOpenFile,toolsOpen,onToolToggle,groupsOpen={},onGroupToggle,loadEntry}:Props){
   const [visited,setVisited]=useState(active||open);
   useEffect(()=>{if(active||open)setVisited(true);},[active,open]);
   const summary=processBlockSummary(entries);
@@ -119,6 +121,7 @@ export function ConversationProcessBlock({markdownOptions,headerless,blockKey,en
   const timeline=active||open||visited?<div className="ac-process-timeline">{processTimeline(entries).map(item=>item.type==='narration'
     ?<div key={item.entry.id} className="ac-process-narration" data-entry-id={item.entry.id}><MarkdownHost markdown={item.entry.text} className="markdown-body" options={markdownOptions}/></div>
     :<ToolGroup loadEntry={loadEntry} key={item.entries[0].id} entries={item.entries} active={active} onOpenFile={onOpenFile} toolsOpen={toolsOpen} onToolToggle={onToolToggle} liveForce={active&&item.entries.some(entry=>entry.id===lastToolId)} open={item.entries.map(entry=>groupsOpen['tool-group:'+entry.id]).find(value=>value!==undefined)??false} onToggle={value=>onGroupToggle?.(item.entries.map(entry=>entry.id),value)}/> )}</div>:null;
+    if(hidden&&active)return null;
     if(active)return <div className="ac-process is-flow" data-process-state="live">{timeline}</div>;
     if(headerless)return <div className="ac-process is-flow ac-process-inline" data-process-state="settled" data-expanded={open}>{open&&timeline}</div>;
     return <details className={'ac-process is-flow'+(summary.failed?' is-failed':'')} data-process-state="settled" open={open} onToggle={event=>{

@@ -1,4 +1,8 @@
+import { instructionParticipation } from '../../domain/participation.ts';
+import { nativeParticipation, participationRequests } from '../../domain/participation.ts';
+import { withExecutionFault } from '../../domain/execution-fault.ts';
 import { codexUnsettledTools } from './recovery.ts';
+import { codexCacheReclaimable, codexCuratedIdentity } from './storage.ts';
 import { interactionPolicy, blocksExecution } from '../../domain/interaction-policy.ts';
 import {createHash} from 'node:crypto';
 import { errorDiagnostic, NativeObservationError } from '../../domain/error-diagnostic.ts';
@@ -7,7 +11,7 @@ import { join, relative, sep, isAbsolute } from 'node:path';
 import { lstat, readFile, writeFile, copyFile, realpath, chmod } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import type { AgentExecutor, AgentRuntime, ContextRef, ExecutionRef, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorRequest, ExecutorSendInput, ExecutorTitleInput, LoginObservation, PermissionMode } from '../../contracts.ts';
-import { NativeRpc, nativePreview, nativeBinding, bounded, findExecutable, inspectVersion, isolatedEnvironment, nativeCommand, nativeHome, opaqueReference, parseReference, privateDirectories, visibleText, type RpcMessage } from '../native-process.ts';
+import { NativeRpc, nativePreview, nativeBinding, bounded, findExecutable, inspectVersion, isolatedEnvironment, ownedProcessGroupIdle, nativeCommand, nativeHome, opaqueReference, parseReference, privateDirectories, visibleText, type RpcMessage } from '../native-process.ts';
 import { modelOptions } from '../model-options.ts';
 import { generateCodexTitle } from './title.ts';
 import { codexThreadPermissions, codexTurnPermissions } from './permissions.ts';
@@ -43,9 +47,10 @@ function codexGatewayCatalog(gateway: ExecutorGateway) {
 }
 interface ActiveTurn { contextId: string; id: string; input: ExecutorSendInput; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown'; processId?: string; executionId: string }>; pending: Map<string, { nativeId: string | number; method: string; params: any }>; texts: Map<string, string>; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string; done: () => void; reject: (error: Error) => void; accepted: boolean; buffered: RpcMessage[] }
 export function createCodexExecutor(): AgentExecutor {
-  return { descriptor: { id: 'codex', label: 'Codex', capabilities }, async open(options) { return await CodexRuntime.open(options); } };
+  return { storage: { transientDirectories: ['tmp/node-compile-cache', 'cache/node-compile', 'home/.npm/_cacache', 'codex-home/.tmp/plugins'], canReclaim: codexCacheReclaimable, snapshots: [{ relative: 'codex-home/.tmp/plugins', key: 'curated-plugins', identity: codexCuratedIdentity }] }, descriptor: { id: 'codex', label: 'Codex', capabilities }, async open(options) { return await CodexRuntime.open(options); } };
 }
 class CodexRuntime implements AgentRuntime {
+  participationInstruction?: import('../../participation-contracts.ts').ParticipationMatch;
   readonly capabilities = capabilities;
   private turns = new Map<string, ActiveTurn>();
   private contexts = new Map<string, string>();
@@ -66,7 +71,7 @@ class CodexRuntime implements AgentRuntime {
     const { home, temporary } = nativeHome(options.configRoot);
     const config = join(options.configRoot, 'codex-home');
     await privateDirectories(options.configRoot, home, temporary, config);
-    const env = isolatedEnvironment(options.environment, home, temporary, { CODEX_HOME: config, ...(gateway ? { BUILDR_MODEL_GATEWAY_KEY: gateway.apiKey, NO_PROXY: '127.0.0.1,localhost,::1', no_proxy: '127.0.0.1,localhost,::1' } : {}) });
+    const env = isolatedEnvironment(options.environment, home, temporary, { CODEX_HOME: config, ...(gateway ? { BUILDR_MODEL_GATEWAY_KEY: gateway.apiKey, NO_PROXY: '127.0.0.1,localhost,::1', no_proxy: '127.0.0.1,localhost,::1' } : {}) }, options.cacheRoot);
     const executable = await findExecutable(options.executable, ['codex', 'codex.exe'], env);
     const version = await inspectVersion(executable, env, options.signal);
     if (!isCompatibleProgram('codex', version)) throw new Error(`codex_version_unsupported: requires ${nativeProgramPolicy('codex').compatibility}`);
@@ -83,6 +88,7 @@ class CodexRuntime implements AgentRuntime {
     const rpc = new NativeRpc(launch.command, [...launch.prefix, 'app-server', '--listen', 'stdio://', '-c', 'cli_auth_credentials_store="file"', ...overrides], { cwd: options.configRoot, env });
     const runtime = new CodexRuntime(binding.identity, rpc, join(temporary, 'title-requests'));
     runtime.interaction = { ...conversationInteraction, developerInstructions: (options.interaction ?? interactionPolicy).instructions + '\n必要提问使用 request_user_input。' };
+    runtime.participationInstruction = instructionParticipation('interaction-policy',runtime.interaction.developerInstructions);
     runtime.bindingData = binding.data;
     runtime.gateway = gateway; runtime.modelConfig = config;
     let abortedClose: Promise<void> | undefined; const abort = () => { abortedClose ??= rpc.close(); };
@@ -283,7 +289,7 @@ class CodexRuntime implements AgentRuntime {
     else if (message.id !== undefined && message.method) this.rpc.write({ id: message.id, error: { code: -32601, message: 'Unsupported or inactive Buildr request' } });
   }
   private turnMessage(turn: ActiveTurn, message: RpcMessage): void {
-    const p = message.params ?? {}; const emit = turn.input.onEvent;
+    const p = message.params ?? {}; const emit = (event: import('../../contracts.ts').ExecutorEvent) => turn.input.onEvent(withExecutionFault(event));
     if(message.method==='thread/tokenUsage/updated'){const usage=p.tokenUsage;const used=usage?.last?.totalTokens;const window=usage?.modelContextWindow;if(Number.isSafeInteger(used)&&used>=0)emit({type:'context-usage',usedTokens:used,...(Number.isSafeInteger(window)&&window>0?{windowTokens:window}:{})});return;}
     if (message.method === 'thread/name/updated') { if (typeof p.threadName === 'string') emit({ type: 'title', title: p.threadName }); return; }
     if (p.turnId && p.turnId !== turn.id || p.turn?.id && p.turn.id !== turn.id) {
@@ -426,6 +432,10 @@ class CodexRuntime implements AgentRuntime {
       }
     } catch { for (const tool of ownCommands) tool.status = 'unknown'; }
   }
+  async canReclaimStorage(): Promise<boolean> {
+    const pid = this.rpc.child.pid;
+    return Boolean(this.rpc.closed && pid && await ownedProcessGroupIdle(pid));
+  }
   async close(): Promise<void> {
     await this.cancelLogin();
     const active = [...this.turns.values()].filter(turn => !turn.terminal || [...turn.tools.values()].some(tool => tool.status === 'running'));
@@ -434,17 +444,22 @@ class CodexRuntime implements AgentRuntime {
     await this.rpc.close();
   }
 }
-function codexItem(item: any, executionId: string, status: string): ExecutorItem[] {
+export function codexItem(item: any, executionId: string, status: string): ExecutorItem[] {
   if (!item?.id) return [];
   // A stopped turn does not undo tools which already completed. Conversely,
   // an unfinished historical item is uncertain, not a live execution.
   const final: ExecutorItem['status'] = item.status === 'completed' ? 'completed' : item.status === 'failed' || item.status === 'declined' ? 'failed' : item.status === 'inProgress' ? status === 'inProgress' ? 'running' : undefined : status === 'completed' ? 'completed' : status === 'failed' ? 'failed' : status === 'interrupted' ? undefined : 'running';
   if (item.type === 'agentMessage') return [{ id: item.id, kind: 'message', role: 'assistant', text: String(item.text ?? ''), executionId, status: final }];
   if (item.type === 'userMessage') return [{ id: item.id, ...(typeof item.clientId === 'string' && item.clientId ? { clientRequestId: item.clientId } : {}), kind: 'message', role: 'user', text: visibleText(item.content), executionId, status: 'completed' }];
-  if (item.type === 'commandExecution') return [{ id: item.id, kind: 'tool', role: 'system', name: 'command', input: String(item.command ?? ''), text: String(item.command ?? '命令') + (item.aggregatedOutput ? '\n' + nativePreview(String(item.aggregatedOutput)) : ''), executionId, status: final }];
+  if (item.type === 'commandExecution') return [{ id: item.id, kind: 'tool', role: 'system', name: 'command', participation: nativeParticipation(item.command===undefined?undefined:String(item.command), item.aggregatedOutput === undefined ? undefined : String(item.aggregatedOutput), item.exitCode === 0 ? 'succeeded' : typeof item.exitCode === 'number' || item.status === 'failed' ? 'failed' : final === 'running' ? 'pending' : 'unknown', item.exitCode), input: String(item.command ?? ''), text: String(item.command ?? '命令') + (item.aggregatedOutput ? '\n' + nativePreview(String(item.aggregatedOutput)) : ''), executionId, status: final }];
   if (item.type === 'imageView') return [{ id: item.id, kind: 'tool', role: 'system', name: 'view-image', text: '查看图片\n' + String(item.path ?? ''), executionId, status: 'completed' }];
-  if (item.type === 'fileChange') return [{ id: item.id, kind: 'tool', role: 'system', name: 'file-change', text: '修改文件\n' + (item.changes ?? []).map((change: any) => String(change.path ?? '')).join('\n'), executionId, status: final }];
-  if (item.type === 'mcpToolCall') return [{ id: item.id, kind: 'tool', role: 'system', name: 'mcp-tool', input: item.arguments === undefined ? undefined : nativePreview(JSON.stringify(item.arguments)), text: String(item.tool ?? '工具'), executionId, status: final }];
+  if (item.type === 'fileChange') return [{ id: item.id, kind: 'tool', role: 'system', name: 'file-change', participation:nativeParticipation(item.changes===undefined?undefined:JSON.stringify(item.changes),undefined,item.status==='failed'?'failed':final==='running'?'pending':'unknown'), text: '修改文件\n' + (item.changes ?? []).map((change: any) => String(change.path ?? '')).join('\n'), executionId, status: final }];
+  if (item.type === 'mcpToolCall') {
+    const input=item.arguments===undefined?undefined:JSON.stringify(item.arguments);
+    const participation=nativeParticipation(input,item.result===undefined?undefined:typeof item.result==='string'||Array.isArray(item.result)?visibleText(item.result):Array.isArray(item.result?.content)?visibleText(item.result.content):undefined,item.error?'failed':final==='running'?'pending':'unknown');
+    participation.matches=participationRequests(item.tool,input);
+    return [{ id: item.id, kind: 'tool', role: 'system', name: 'mcp-tool', participation, input: input===undefined?undefined:nativePreview(input), text: String(item.tool ?? '工具'), executionId, status: final }];
+  }
   return [];
 }
 function codexRequest(id: string, method: string, params: any): ExecutorRequest | undefined {

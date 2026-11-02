@@ -7,6 +7,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { createAgentService } from '../../../src/application/agent-service.ts';
 import { createCodexExecutor } from '../../../src/executors/codex/index.ts';
 import type { ConversationView, PermissionMode } from '../../../src/contracts.ts';
+import { interactionPolicy } from '../../../src/domain/interaction-policy.ts';
 
 function replace(source: string, before: string, after: string) {
   assert.ok(source.includes(before), 'native fixture changed: '+before);
@@ -106,6 +107,7 @@ test('resuming a legacy Codex thread enables native questions without changing i
     const deadline=Date.now()+1500;while(!events.some(e=>e.type==='request')&&Date.now()<deadline)await delay(5);
     assert.ok(events.some(e=>e.type==='request'));
     const native=JSON.parse(await readFile(file,'utf8'));assert.deepEqual(Object.keys(native),[contextRef.id]);assert.match(native[contextRef.id].interaction.developerInstructions,/request_user_input/);
+    assert.ok(native[contextRef.id].interaction.developerInstructions.startsWith(interactionPolicy.instructions));
     await runtime.stop({contextRef,executionRef:events.find(e=>e.type==='accepted').executionRef});await sending;
   } finally {await runtime?.close();await rm(root,{recursive:true,force:true});}
 });

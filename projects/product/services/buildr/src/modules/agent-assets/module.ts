@@ -63,7 +63,7 @@ export type OpenSpecAssetSupport = {
   componentDefinitionFile(root: string, entry: OpenSpecComponentEntry): string;
   readComponentDefinition(file: string, id: string): { upstream?: { version?: string } };
   readComponentsManifestForWrite(root: string): { components: OpenSpecComponentEntry[] };
-  runCommandsCheck(root: string): { commands: Array<{ id: string; status: string; version?: { current?: string }; executablePath: string; installHint?: string }> };
+  runCommandsCheck(root: string): { commands: Array<{ id: string; status: string; version?: { current?: string }; executablePath: string; installHint?: string }>; findings?: Array<{ status: string; code: string; message: string }> };
 };
 
 const OPENSPEC_SUPPORT_METHODS = ['assertName', 'componentDefinitionFile', 'readComponentDefinition', 'readComponentsManifestForWrite', 'runCommandsCheck'] as const satisfies readonly (keyof OpenSpecAssetSupport)[];
@@ -157,7 +157,6 @@ export interface AgentAssetsInfrastructure {
   currentProductInvocation: typeof import('../../infrastructure/product-invocation/index.ts').currentProductInvocation;
   developmentWorkspaceRoot: () => string;
   ensureDirectory: (...args: any[]) => any;
-  ensureRootRequiredBlock: typeof import('../../infrastructure/filesystem/required-block.ts').ensureRootRequiredBlock;
   existsDirectory: (file: string) => boolean;
   existsFile: (file: string) => boolean;
   hasFlag: typeof import('../../infrastructure/cli-arguments.ts').hasFlag;
@@ -173,7 +172,6 @@ export interface AgentAssetsInfrastructure {
   removePath: (...args: any[]) => any;
   resourceWorkspaceRoot: () => string;
   resourcesRoot: () => string;
-  rootRequiredBlockStatus: typeof import('../../infrastructure/filesystem/required-block.ts').rootRequiredBlockStatus;
   toPosixRelative: (...args: any[]) => any;
   usage: (...args: any[]) => any;
   withResolvedTarget: typeof import('../../infrastructure/cli-arguments.ts').withResolvedTarget;
@@ -239,6 +237,7 @@ export function createAgentAssetsModule(infrastructure: AgentAssetsInfrastructur
       const commands: ReturnType<typeof registerDomainsCommands> = registerDomainsCommands({
         workspaceSymlinkSegment: infrastructure.workspaceSymlinkSegment,
         componentOwnerForMember: components.componentOwnerForMember,
+        sharedCommandCollections: components.sharedCommandCollections,
         isValidAssetId: (...args: Parameters<CommandsDependencies['isValidAssetId']>) => packageAssets.isValidAssetId(...args),
         assertName: runtimeApplication.assertName,
         normalizeRelativePathForBuildr: (...args: Parameters<CommandsDependencies['normalizeRelativePathForBuildr']>) => skills.normalizeRelativePathForBuildr(...args),
@@ -257,7 +256,6 @@ export function createAgentAssetsModule(infrastructure: AgentAssetsInfrastructur
         parseYamlDocument: infrastructure.parseYamlDocument,
         toPosixRelative: infrastructure.toPosixRelative,
         existsFile: infrastructure.existsFile,
-        rootRequiredBlockStatus: infrastructure.rootRequiredBlockStatus,
         addDoctorFinding: infrastructure.addDoctorFinding,
       });
       const skills: ReturnType<typeof registerDomainsSkills> = registerDomainsSkills({
@@ -314,7 +312,6 @@ export function createAgentAssetsModule(infrastructure: AgentAssetsInfrastructur
         toPosixRelative: infrastructure.toPosixRelative,
         existsDirectory: infrastructure.existsDirectory,
         existsFile: infrastructure.existsFile,
-        ensureRootRequiredBlock: infrastructure.ensureRootRequiredBlock,
         copyFileIfChanged: infrastructure.copyFileIfChanged,
         copyDirectoryIfChanged: infrastructure.copyDirectoryIfChanged,
         removePath: infrastructure.removePath,
@@ -529,7 +526,6 @@ export function createAgentAssetsModule(infrastructure: AgentAssetsInfrastructur
             toPosixRelative: infrastructure.toPosixRelative,
             existsDirectory: infrastructure.existsDirectory,
             existsFile: infrastructure.existsFile,
-            rootRequiredBlockStatus: infrastructure.rootRequiredBlockStatus,
             currentProductInvocation: infrastructure.currentProductInvocation,
             productInvocationArgs: infrastructure.productInvocationArgs,
           }),

@@ -11,12 +11,12 @@ import { errorDiagnostic, NativeRequestError } from '../domain/error-diagnostic.
 
 export type NativeEnvironment = NodeJS.ProcessEnv;
 /** Deliberately excludes desktop RPC credentials and default provider credentials. */
-export function isolatedEnvironment(input: NativeEnvironment, home: string, temporary: string, extra: NativeEnvironment = {}): NativeEnvironment {
+export function isolatedEnvironment(input: NativeEnvironment, home: string, temporary: string, extra: NativeEnvironment = {}, cacheRoot?: string): NativeEnvironment {
   const result: NativeEnvironment = {};
   for (const key of ['PATH', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'USER', 'LOGNAME', 'SYSTEMROOT', 'SystemRoot', 'WINDIR', 'COMSPEC', 'PATHEXT', 'SSL_CERT_FILE', 'SSL_CERT_DIR', 'NODE_EXTRA_CA_CERTS', 'HTTPS_PROXY', 'HTTP_PROXY', 'ALL_PROXY', 'NO_PROXY', 'https_proxy', 'http_proxy', 'all_proxy', 'no_proxy']) {
     if (input[key] !== undefined) result[key] = input[key];
   }
-  return { ...result, ...toolEnvironment(input), HOME: home, USERPROFILE: home, TMPDIR: temporary, TMP: temporary, TEMP: temporary, ...extra };
+  return { ...result, ...toolEnvironment(input), ...(cacheRoot ? { npm_config_cache: join(cacheRoot, 'npm'), NPM_CONFIG_CACHE: join(cacheRoot, 'npm'), NODE_COMPILE_CACHE: join(cacheRoot, 'node-compile') } : {}), HOME: home, USERPROFILE: home, TMPDIR: temporary, TMP: temporary, TEMP: temporary, ...extra };
 }
 export async function privateDirectories(...directories: string[]): Promise<void> {
   for (const directory of directories) {
@@ -64,6 +64,13 @@ export async function ownedProcessGroupIdle(group:number,controlPid?:number):Pro
   }catch{return false;}
   finally{if(observer.exitCode===null&&observer.signalCode===null)observer.kill();}
 }
+/** A cold observer only proves absence of the recorded group; it never signals a recovered PID. */
+export async function releasedNativeControl(provider:string,input:{bindingIdentity:string;contextRef:import('../contracts.ts').ContextRef;executionRef:ExecutionRef;cwd:string}):Promise<boolean>{
+  const {contextRef,executionRef,bindingIdentity,cwd}=input,data=executionRef.data;
+  if(!bindingIdentity||!contextRef.id||!executionRef.id||!data||data.resourceContext!==contextRef.id||data.resourceBinding!==bindingIdentity||data.backgroundWork!==false)return false;
+  try{if(parseReference(String(contextRef.data?.native??''),provider,cwd,bindingIdentity).nativeSessionId!==contextRef.id)return false;}catch{return false;}
+  return ownedProcessGroupIdle(data.resourceGroup as number);
+}
 /** Shared ownership and release proof for RPC and native HTTP control hosts. */
 export class OwnedControlResource {
   readonly child: ChildProcessWithoutNullStreams;
@@ -72,6 +79,21 @@ export class OwnedControlResource {
   }
   executionRef(id: string, contextId: string, binding: string, backgroundWork = false): ExecutionRef {
     return { id, ...(process.platform !== 'win32' && this.child.pid ? { data: { resourceGroup: this.child.pid, resourceContext: contextId, resourceBinding: binding, backgroundWork } } : {}) };
+  }
+  async stopExecution(ref:ExecutionRef,contextId:string,binding:string):Promise<boolean> {
+    const data=ref.data,group=this.child.pid;
+    if(!data||data.resourceContext!==contextId||data.resourceBinding!==binding||data.resourceGroup!==group||!group||process.platform==='win32')return false;
+    const exited=()=>this.child.exitCode!==null||this.child.signalCode!==null;
+    // A previously exited child grants observation only, never a new kill by PID.
+    if(exited())return ownedProcessGroupIdle(group);
+    const signal=(name:NodeJS.Signals)=>{try{process.kill(-group,name);}catch(error){if((error as NodeJS.ErrnoException).code!=='ESRCH')throw error;}};
+    if(!exited()){
+      const ended=new Promise<void>(resolve=>this.child.once('exit',()=>resolve()));
+      signal('SIGTERM');
+      try{await bounded(ended,1000);}catch{signal('SIGKILL');await bounded(ended,1000);}
+    }
+    if(!await ownedProcessGroupIdle(group)){signal('SIGKILL');}
+    return exited()&&await ownedProcessGroupIdle(group);
   }
   async canReleaseExecution(ref: ExecutionRef, contextId: string, binding: string, ended: boolean, channelClosed = false): Promise<boolean> {
     const data = ref.data;
@@ -96,6 +118,9 @@ export class OwnedControlResource {
 export class NativeRpc {
   private sequence = 0;
   private buffer = '';
+  private draining = false;
+  private drainTask?: NodeJS.Immediate;
+  private transportEnd?: string;
   private decoder = new StringDecoder('utf8');
   private pending = new Map<string | number, { resolve: (value: any) => void; reject: (error: Error) => void }>();
   private listeners = new Set<(message: RpcMessage) => void>();
@@ -114,17 +139,33 @@ export class NativeRpc {
     this.child.stdout.on('data', chunk => this.read(this.decoder.write(chunk)));
     this.child.stdin.on('error', () => this.fail('agent_native_process_closed'));
     this.child.once('error', () => this.fail('agent_native_process_failed'));
-    this.child.once('exit', () => this.fail('agent_native_process_closed'));
+    this.child.once('exit', () => { this.transportEnd='agent_native_process_closed'; if(!this.draining&&!this.drainTask)this.drain(); });
   }
   executionRef(id:string,contextId:string,binding:string,backgroundWork=false):ExecutionRef{return this.control.executionRef(id,contextId,binding,backgroundWork);}
   canReleaseExecution(ref:ExecutionRef,contextId:string,binding:string,ended:boolean):Promise<boolean>{return this.control.canReleaseExecution(ref,contextId,binding,ended,this.closed);}
   onMessage(listener: (message: RpcMessage) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
   private read(chunk: string): void {
+    if(this.disposed)return;
     this.buffer += chunk;
     if (Buffer.byteLength(this.buffer) > 16 * 1024 * 1024) { this.fail('agent_native_frame_too_large'); this.child.kill('SIGTERM'); return; }
+    if(!this.draining&&!this.drainTask)this.drain();
+  }
+  private drain():void {
+    if(this.disposed)return;
+    this.draining=true;
+    const started=performance.now();let handled=0;
+    try{
     for (;;) {
       const end = this.buffer.indexOf('\n');
-      if (end < 0) return;
+      if (end < 0) break;
+      // Persistence/projection can be costly. Yield without changing wire order,
+      // and apply backpressure so control HTTP/timers can run between batches.
+      if(handled>=8||performance.now()-started>=8){
+        this.child.stdout.pause();
+        this.drainTask=setImmediate(()=>{this.drainTask=undefined;this.drain();});
+        return;
+      }
+      handled++;
       const line = this.buffer.slice(0, end); this.buffer = this.buffer.slice(end + 1);
       if (!line.trim()) continue;
       let message: RpcMessage;
@@ -141,7 +182,11 @@ export class NativeRpc {
           try { listener({ method: 'buildr/eventConsumerFailed', params: { threadId: message.params?.threadId, contextId: message.params?.contextId, diagnostic: errorDiagnostic(error instanceof Error ? error.message : undefined, this.diagnosticSecrets) } }); } catch { /* Preserve native execution even if the diagnostic consumer also fails. */ }
         }
       }
+      if(this.disposed)return;
     }
+    this.child.stdout.resume();
+    if(this.transportEnd)this.fail(this.transportEnd);
+    }finally{this.draining=false;}
   }
   private fail(code: string): void { for (const pending of this.pending.values()) pending.reject(new Error(code)); this.pending.clear(); if (!this.failed) { this.failed = true; for (const listener of this.listeners) { try { listener({ method: 'buildr/transportClosed', params: { code } }); } catch { /* Consumer errors cannot escape a process event handler. */ } } } }
   write(message: RpcMessage): void {
@@ -154,7 +199,7 @@ export class NativeRpc {
     try { this.write({ id, method, params }); return await bounded(result, timeoutMs); }
     finally { this.pending.delete(id); }
   }
-  async close(): Promise<void> { if (this.disposed) return; this.disposed = true; this.fail('agent_native_process_closed'); await closeOwnedProcess(this.child, 1000); this.listeners.clear(); }
+  async close(): Promise<void> { if (this.disposed) return; this.disposed = true; if(this.drainTask)clearImmediate(this.drainTask);this.drainTask=undefined;this.buffer='';this.fail('agent_native_process_closed'); await closeOwnedProcess(this.child, 1000); this.listeners.clear(); }
 }
 export function opaqueReference(provider: string, nativeSessionId: string, cwd: string, bindingIdentity: string): string {
   return JSON.stringify({ version: 1, provider, nativeSessionId, cwd, bindingIdentity });
@@ -209,11 +254,15 @@ export async function bindingFingerprint(provider: string, executable: string, v
   return createHash('sha256').update(JSON.stringify({ provider, executable: await executableIdentity(executable), version, config, dev: info.dev, ino: info.ino })).digest('hex');
 }
 /** Program contents may change on a compatible update; source/config identity must not. */
-export async function nativeBinding(provider: string, executable: string, version: string, configRoot: string, prior?: ExecutorBinding, programSource?: string): Promise<Required<Pick<ExecutorBinding, 'identity' | 'data'>>> {
-  if (!isCompatibleProgram(provider, version)) throw new Error(`${provider}_version_unsupported`);
+export async function nativeBindingProvenance(provider: string, executable: string, configRoot: string, programSource?: string) {
   const source = await realpath(executable), config = await realpath(configRoot), info = await stat(config);
   // Keep the v2 namespace byte-for-byte: changing admission must not change old native IDs.
-  const provenance = { format: 'buildr-native-binding/v2', provider, executable: programSource ?? source, config, dev: info.dev, ino: info.ino, series: nativeProgramPolicy(provider).bindingSeries };
+  return { format: 'buildr-native-binding/v2', provider, executable: programSource ?? source, config, dev: info.dev, ino: info.ino, series: nativeProgramPolicy(provider).bindingSeries };
+}
+export async function nativeBinding(provider: string, executable: string, version: string, configRoot: string, prior?: ExecutorBinding, programSource?: string): Promise<Required<Pick<ExecutorBinding, 'identity' | 'data'>>> {
+  if (!isCompatibleProgram(provider, version)) throw new Error(`${provider}_version_unsupported`);
+  const provenance = await nativeBindingProvenance(provider, executable, configRoot, programSource);
+  const source = await realpath(executable);
   const data = { ...provenance, observedVersion: version };
   if (!prior) return { identity: createHash('sha256').update(JSON.stringify(provenance)).digest('hex'), data };
   if (prior.data !== undefined) {

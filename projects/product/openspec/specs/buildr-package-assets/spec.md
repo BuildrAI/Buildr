@@ -194,7 +194,7 @@ Buildr package assets MUST 将由任务意图触发的场景化流程指引发�
 
 #### Scenario: package 声明 invariant 指引
 - **WHEN** Buildr package 包含定义 workspace 模型、源资产边界、必读入口或常驻 invariant 的指引
-- **THEN** 该指引 MUST 位于根 `AGENTS.md` 受管区块
+- **THEN** 该指引 MUST 按需位于 Buildr 技能（Skill）或产品说明，不得强制写入用户根规则
 - **AND** Buildr MUST NOT 将其发布为独立内置 Rule 文件
 
 ### Requirement: 默认 baseline 排除场景化 Rules
@@ -255,32 +255,24 @@ Buildr package check 和 product MVP verification MUST 覆盖 recursive `AGENTS.
 - **AND** rendered adapters MUST report their target pattern
 
 ### Requirement: Required Core 暴露 Rule 消费协议
-Buildr package assets MUST 将基于 `AGENTS.md` 层级的规则消费协议与通用 Rule/Skill 权威边界保留在根 `AGENTS.md` 受管区块中（原核心规则，下文沿用 Core 名称），同时 MUST 将 task-triggered professional procedures 和专业状态事实保留在对应 Skills、capability bindings、Applications 或 Project declarations 中。
+Buildr MUST 按实际存在的 `AGENTS.md` 层级发现规则，不再向用户根文件强制写入通用规则消费协议；专业流程继续由对应技能（Skill）、能力绑定（Capability Binding）、应用（Application）和项目声明承担。
 
 #### Scenario: Package Core 声明 Rule 状态语义
-- **WHEN** Buildr packages or validates 根 `AGENTS.md` 受管区块
-- **THEN** required Core MUST state that Agent reads all applicable `AGENTS.md` from the organization root to the current target path
-- **AND** required Core MUST state that broader scope is applied before more specific scope and unrelated sibling directories are not read
-- **AND** required Core MUST NOT require or describe `rules/manifest.yml`、enabled、required、state 或 description 索引
+- **WHEN** 智能体（Agent）维护规则或查找 Buildr 使用方法
+- **THEN** Buildr MUST 通过技能（Skill）说明层级发现和资产边界，不以根默认区块作为前置条件
+- **AND** 用户 MUST 能自行决定项目规则与沟通约定
 
 #### Scenario: Package Core 限定 scope Rules 内容
-- **WHEN** required Core 说明 root、Project 或 Service `AGENTS.md` 可以增加的 scope-specific 内容
-- **THEN** Core MUST 将其限制为价值观、权威边界、授权边界、约束和结果不变量
-- **AND** Core MUST NOT 让这些 Rules 承担 Skill routing、命令序列、生命周期步骤、重跑/恢复策略、报告模板或专业 Result/status 副本
+- **WHEN** 用户编写根、项目或服务规则
+- **THEN** Buildr MUST 尊重用户自有约定，不自动插入内容限制或治理模板
 
 #### Scenario: Rule 只声明专业 owner
-- **WHEN** root、Project 或 Service Rule 需要约束某项专业动作不得被绕过
-- **THEN** required Core MUST allow the Rule to name the owning Skill、capability、Application or declaration and state the no-bypass invariant
-- **AND** Skill description MUST remain the user-intent discovery authority
-- **AND** capability binding MUST remain the provider-selection authority
-- **AND** the owning Skill/Application MUST remain the procedure and professional-result authority
-- **AND** the Rule MUST NOT copy that owner's playbook or current state
+- **WHEN** Buildr 技能说明专业职责
+- **THEN** 技能说明（Skill Description）MUST 继续承担意图发现，能力绑定（Capability Binding）继续选择提供者（Provider），专业流程与结果不依赖根默认段
 
 #### Scenario: Package Core 不承载操作手册
-- **WHEN** Buildr packages Rule consumption guidance
-- **THEN** required Core MUST NOT copy task-specific Git、OpenSpec、worktree or other operational procedures
-- **AND** required Core MUST NOT state that Project or Service Rules may own concrete task procedures
-- **AND** reusable task procedures MUST remain available through the corresponding Skills
+- **WHEN** Buildr 交付专业操作方法
+- **THEN** 可复用流程 MUST 通过对应技能（Skill）提供，不强制写入用户根文件
 
 ### Requirement: 产品验证覆盖提交信息资产边界
 Buildr product verification MUST 防止提交格式与 workspace 默认语言重新耦合到同一 Skill 生命周期。
@@ -1083,22 +1075,27 @@ Package static validation MUST继续拒绝v2 Skills、templates、authoring guid
 - **AND** active authoring docs、Skills与templates仍 MUST保持零v2指导
 
 ### Requirement: 唯一内联核心规则源
-Buildr MUST 只在随包工作空间 `AGENTS.md` 受管区块维护核心规则正文，保留已确认六条智能体优先原则的实质内容，新增以产物为核心组织协作的产品原则，并保留授权、真实事实、用户沟通、工作资产职责及产品边界。实现和适配器 MUST 消费该来源，不复制正文或继续要求独立 Core 文件。规则 MUST 区分智能体参与工作协作与参与产品交付的适用范围；未引入智能体的产品或功能不自动采用智能体优先架构，渐进引入时应用于相关部分。多入口原则 MUST 要求变化可发现、继续相关工作时核对当前事实并显式处理版本冲突；不固定通知技术或要求每次变化立即唤醒智能体。
+Buildr MUST 停止将随包历史核心规则作为所有用户工作空间（Workspace）的必装资产。旧原文只用于历史来源识别，不参与初始化、同步修复或诊断正文比较。
 
 #### Scenario: 发布与诊断消费同一规则源
-- **WHEN** 初始化、同步、更新或诊断工作空间
-- **THEN** 系统 MUST 使用同一随包区块生成或比较完整正文，而非仅检查旧文件引用
-- **AND** 发布物 MUST NOT 包含独立 `rules/buildr/core.md`、其他 `rules/buildr/` 内置 Rule 资产或 `builtins.rules` 声明
+- **WHEN** 执行初始化、更新、同步或诊断
+- **THEN** Buildr MUST NOT 创建、插入、替换或修复根默认规则
+- **AND** 已有正文（含旧区块）MUST 逐字保留
+- **AND** 发布物 MUST NOT 增加独立 `rules/buildr/` 内置规则
+
+#### Scenario: 识别历史来源
+- **WHEN** 观察到根 `AGENTS.md`
+- **THEN** 精确匹配随包历史正文的区块 MUST 允许只读来源识别
+- **AND** 普通自有规则没有该区块 MUST 不被判为来源冲突
+- **AND** Buildr MUST NOT 为证明来源而修复文件
 
 #### Scenario: 工作空间承载普通业务软件
-- **WHEN** 智能体帮助开发未引入智能体交付产品结果的软件
-- **THEN** 规则 MUST 约束智能体的工作协作，但不得仅因开发方式要求业务产品采用智能体优先架构
-- **AND** 既有业务规则、安全及授权边界 MUST 保留
+- **WHEN** 用户使用 Buildr 开发普通业务软件
+- **THEN** Buildr MUST NOT 通过默认规则强制产品架构、沟通风格或交付授权
 
 #### Scenario: 多入口接续产物
-- **WHEN** 人或智能体从一个入口修改产物，其他入口继续相关工作
-- **THEN** 规则 MUST 要求变化可被发现，继续判断或修改前核对当前事实，写入时保护已观察版本并显式处理冲突
-- **AND** 规则 MUST 将成果一致与目标验收区分，不把对话或一次执行作为唯一权威
+- **WHEN** 多个入口接续同一成果
+- **THEN** 相关能力 MUST 继续保护对象身份和版本，不依赖根默认规则声明
 
 ### Requirement: Package 必须完整退役 Task Development、Planning Identity 与旧 Finish 历史
 Package manifest、workspace resources、Application Payload、CLI/runtime route inventory和installed-layout MUST不包含Task Development Skill/contract/provider、Task Planning Identity或旧Finish/Terminal Delivery入口。

@@ -13,14 +13,13 @@ type Props = {
   disabled?: boolean;
   pending?: boolean;
   onAction(): void;
-  onOpenModels(): void;
 };
 
 /** Common action affordance; business state and provider protocols belong to the caller. */
-export function AgentActionControl({ id, label, executor, options, disabled = false, pending = false, onAction, onOpenModels }: Props) {
+export function AgentActionControl({ id, label, executor, options, disabled = false, pending = false, onAction }: Props) {
   const actionTitle = executor ? `${label} · ${executor.label}` : '选择模型后生成说明';
   return <div className="agent-action-control">
     <Tooltip title={actionTitle}><Button id={id} aria-label={actionTitle} type="text" size="small" icon={<RobotOutlined />} disabled={disabled || pending || !executor?.available} onClick={onAction} /></Tooltip>
-    <ExecutionModelSelect id={id} options={options} pending={pending} onOpenModels={onOpenModels} />
+    <ExecutionModelSelect id={id} options={options} pending={pending} />
   </div>;
 }

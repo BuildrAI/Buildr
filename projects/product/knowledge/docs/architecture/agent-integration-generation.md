@@ -6,7 +6,13 @@
 2. 人从现有模型（Model）目录选择来源。请求固定账号、模型、账号身份及观察版本，经公共客户端（Client）交给独立执行后台（Execution Backend）的统一模型能力执行一次，不提供工具，不创建持久对话。
 3. 模型返回后，业务核对结构、任务尾注、变更、规则与材料版本；界面再核对草稿版本，仍适用才回填。
 
-未选择可用模型时只禁用生成，仍可手写说明并提交。失败不切换账号、不自动重发；取消与 60 秒总预算只影响本次请求，迟到结果不会覆盖草稿。支持可排序推理深度的模型采用其声明的最低档，否则沿用该模型默认，不改账号设置。
+未选择可用模型时只禁用生成，仍可手写说明并提交。失败不切换账号、不自动重发；取消与 60 秒总预算只影响本次请求，迟到结果不会覆盖草稿。请求将明确选择的 `reasoningEffort` 和 `serviceTier` 传给统一模型调用，推理强度必须受当前模型及服务档位支持；不支持时明确失败，不静默改档。未指定推理强度时，全部选项具有已知排序的模型采用最低档，否则沿用模型默认，不改账号设置。
+
+## 公共选择界面与独立记忆
+
+提交生成与对话输入区复用同一公共模型选择组件（Model Picker），提供搜索、账号来源分组、可用状态、推理强度和服务档位交互。组件只接收候选、选择和操作回调，不读取对话上下文或保存偏好；提交区保留紧凑生成按钮，不显示对话上下文用量。
+
+提交入口独立读取同一账号与模型目录，维护自身的读取状态及取消，不消费对话目录缓存。模型选择保存在 `buildr.execution-model`；强度与档位按账号标识、账号身份及模型标识分别记忆，与对话的持久偏好和临时交互状态隔离。恢复时只使用当前能力仍支持的参数，浏览器存储不可用不阻止当前页面选择。没有显式强度偏好时，提交选择界面显示最低已知强度或“未设置”，对话原有默认行为保持不变。选择与刷新本身不创建对话、不发起生成或执行 Git 写入。
 
 说明生成与提交是独立动作。生成只回填可编辑草稿；提交、同步和推送仍由现有 Git 能力执行。已核验任务（Task）背景要求准确尾注，没有可靠关联时不猜测任务。
 
@@ -17,4 +23,7 @@
 - [进程接入](../../../services/buildr/src/modules/agent-service/module.ts)与[公共客户端](../../../services/buildr-agent/src/process/client.ts)：跨进程传递有界请求及取消，宿主断连取消其拥有的单次调用，不取消持久对话。
 - [统一模型调用](../../../services/buildr-agent/src/model-access/application.ts)：复用现有账号、目录、版本检查和协议转换，释放本次调用绑定。
 - [界面草稿保护](../../../services/buildr-web/src/features/code/source-control-actions.ts)：按来源保持草稿，隔离迟到结果与切换页面。
-- [生成入口](../../../services/buildr-web/src/features/code/components/SourceControlCommitPanel.tsx)：选模型、生成、取消及手写提交。
+- [生成入口](../../../services/buildr-web/src/features/code/components/SourceControlCommitPanel.tsx)：独立读取模型目录，选模型、生成、取消及手写提交。
+- [公共模型选择界面](../../../services/buildr-web/src/components/ModelPicker.tsx)与[共享映射](../../../services/buildr-web/src/lib/model-picker.ts)：搜索、来源分组、强度及档位交互，不持有业务上下文或偏好。
+- [执行模型选择](../../../services/buildr-web/src/components/ExecutionModelSelect.tsx)与[执行模型偏好映射](../../../services/buildr-web/src/lib/execution-model.ts)：提交场景独立选择与按账号身份隔离的强度、档位记忆。
+- [对话适配](../../../services/buildr-web/src/features/agent-conversations/ConversationOptions.tsx)：保留对话上下文用量及原有偏好，将模型操作交给同一公共界面。

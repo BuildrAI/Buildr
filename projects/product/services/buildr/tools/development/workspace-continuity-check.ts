@@ -17,8 +17,8 @@ const first=app.selectWorkspaceDirectory(root);assert.equal(first.status,'select
 app.prepareSelectedWorkspace({id:first.id,revision:first.revision,name:'生命周期验证'});
 async function wait(id:string){for(let i=0;i<150;i++){const result=app.workspacePreparation(id);if(result.status!=='preparing')return result;await new Promise(resolve=>setTimeout(resolve,200));}throw new Error('Preparation timed out.');}
 const ready=await wait(first.id);assert.equal(ready.status,'ready',ready.error);assert.ok(ready.workspaceId);
-assert.deepEqual(fs.readdirSync(sharedResourcesRoot()).sort(),['contracts','resource-set.json','skills']);
-assert.ok(fs.existsSync(path.join(root,'AGENTS.md')),'Initialization still reads its installation-owned source.');
+assert.deepEqual(fs.readdirSync(sharedResourcesRoot()).sort(),['commands','components','contracts','resource-set.json','skills']);
+assert.equal(fs.existsSync(path.join(root,'AGENTS.md')),false,'Initialization must not generate user root rules.');
 // Merely viewing an official source in Finder must not invalidate preparation or Doctor.
 fs.writeFileSync(path.join(sharedResourcesRoot(),'.DS_Store'),'Finder metadata');
 fs.writeFileSync(path.join(sharedResourcesRoot(),'skills/.DS_Store'),'Finder metadata');

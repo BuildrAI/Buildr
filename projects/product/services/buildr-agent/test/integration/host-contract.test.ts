@@ -71,3 +71,39 @@ test('authority loss after native acceptance does not cancel work or block its e
     await settled(()=>service.conversations.read(scope,view.id).run?.status==='stopped');assert.equal(sends.length,1);
   }finally{await service.close();fs.rmSync(root,{recursive:true,force:true});}
 });
+
+test('participation records only admitted sends, preserves policy context lineage, and optional source failure cannot fail work',async t=>{
+ const {instructionParticipation}=await import('../../src/domain/participation.ts');
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'participation-host-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+ const sends:ExecutorSendInput[]=[],base=executor('fixture',sends),policy=instructionParticipation('fixture-policy','exact configured text');
+ const adapter:AgentExecutor={...base,async open(options){return {...await base.open(options),participationInstruction:policy};}};
+ let observeCalls=0;
+ const host:AgentHostCapabilities={resolveExecutionScope:async({ref})=>({ref,rootPath:root,revision:'binding'}),verifyWorkObject:async({ref})=>({ref,revision:'one'}),listExecutionScopes:async({sourceId})=>({refs:[{sourceId,id:'scope'}],revision:'one'}),async observeParticipation(){observeCalls++;if(observeCalls===1)throw new Error('offline');return {version:1,coverage:'partial',gaps:['implicit-consumption-unavailable'],sources:[{identity:'buildr:skill:fixture',name:'fixture',kind:'skill',providedBy:'buildr',status:'confirmed',offeredVersion:'v1'}]};}};
+ const service=createAgentService({dataRoot:path.join(root,'data'),host,executors:[adapter],modelProviders:[]});t.after(()=>service.close());
+ const scope=executionScopeKey({sourceId:'fixture',id:'scope'});const chat=await service.conversations.create(scope,{});
+ await service.connections.connect('fixture',{expectedRevision:service.connections.read('fixture').revision});
+ const prepare=async()=>{const view=service.conversations.read(scope,chat.id),draft={expectedRevision:view.revision,connectionId:'fixture',text:'unchanged user text'};return {draft,preview:await service.conversations.prepareHandoff(scope,chat.id,draft)};};
+ const first=await prepare();assert.equal(sends.length,0);assert.equal(observeCalls,0);
+ service.conversations.send(scope,chat.id,{...first.draft,previewToken:first.preview.token,clientRequestId:randomUUID()});
+ await settled(()=>service.conversations.read(scope,chat.id).run?.status==='completed');const firstRun=service.conversations.read(scope,chat.id).run!.id;
+ const firstFacts=service.conversations.participation(scope,chat.id,{runId:firstRun});assert.equal(firstFacts.contextConfiguration,'new');assert.equal(firstFacts.items.filter(item=>item.identity===policy.identity).length,1);assert.equal(sends.length,1);assert.equal(sends[0]!.text,'unchanged user text');
+ const second=await prepare();service.conversations.send(scope,chat.id,{...second.draft,previewToken:second.preview.token,clientRequestId:randomUUID()});
+ await settled(()=>service.conversations.read(scope,chat.id).run?.status==='completed'&&service.conversations.read(scope,chat.id).run?.id!==firstRun);
+ const secondRun=service.conversations.read(scope,chat.id).run!.id;await settled(()=>service.conversations.participation(scope,chat.id,{runId:secondRun}).items.some(item=>item.action==='available'));
+ const facts=service.conversations.participation(scope,chat.id,{runId:secondRun});assert.equal(facts.contextConfiguration,'inherited');assert.equal(facts.items.filter(item=>item.identity===policy.identity).length,0);assert.equal(sends.length,2);
+});
+
+test('a later unmeasured legacy tool update invalidates earlier metrics without losing the private original revision',async t=>{
+ const {nativeParticipation}=await import('../../src/domain/participation.ts');
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'participation-legacy-update-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+ let emit:ExecutorSendInput['onEvent']|undefined;const executionRef={id:'native-fixture'};const base=executor('fixture',[]);
+ const adapter:AgentExecutor={...base,async open(options){return {...await base.open(options),async send(input){emit=input.onEvent;input.onEvent({type:'accepted',executionRef});input.onEvent({type:'item',item:{id:'t',kind:'tool',role:'system',name:'command',input:'buildr task list',text:'first output',status:'completed',executionId:executionRef.id,participation:nativeParticipation('buildr task list','first output','unknown')}});input.onEvent({type:'completed',status:'completed'});},observe:async()=>({status:'idle' as const,tools:[],executionRef})};}};
+ const service=createAgentService({dataRoot:path.join(root,'data'),executors:[adapter],resolveWorkspace:()=>({rootPath:root}),assertTask(){},modelProviders:[]});t.after(()=>service.close());
+ const chat=await service.conversations.create('scope',{});await service.connections.connect('fixture',{expectedRevision:service.connections.read('fixture').revision});
+ const draft={expectedRevision:chat.revision,connectionId:'fixture',text:'fixture'},preview=await service.conversations.prepareHandoff('scope',chat.id,draft);service.conversations.send('scope',chat.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});await settled(()=>service.conversations.read('scope',chat.id).run?.status==='completed');
+ const runId=service.conversations.read('scope',chat.id).run!.id;
+ assert.equal(service.conversations.participation('scope',chat.id,{runId}).items.filter(item=>item.action==='requested').length,1);
+ emit!({type:'item',item:{id:'t',kind:'tool',role:'system',text:'later native text without measurement',status:'completed',executionId:executionRef.id}});
+ const result=service.conversations.participation('scope',chat.id,{runId});assert.ok(result.gaps.includes('tool-observation-stale'));assert.equal(result.items.filter(item=>item.action==='requested').length,0);
+ assert.equal(service.conversations.read('scope',chat.id).entries.find(entry=>entry.kind==='tool')?.text,'later native text without measurement');
+});

@@ -2,34 +2,29 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
-import { registerWorkspaceInfrastructure } from '../../src/infrastructure/filesystem/index.ts';
 import { createRuntime } from '../helpers/runtime-harness.ts';
-import { block, principles, fixture, assertInline, legacy } from '../helpers/inline-core-fixture.ts';
+import { block, fixture, legacy } from '../helpers/inline-core-fixture.ts';
 
 
 
-test('managed block upgrades, detects drift, repairs markers and preserves outside bytes', (t: any) => {
-  const { workspace }: any = fixture(t);
-  const runtime: any = {};
-  registerWorkspaceInfrastructure(runtime);
-  const start: any = '<!-- buildr:required begin -->';
-  const end: any = '<!-- buildr:required end -->';
-  for (const [before, after] of [
-    ['  user\n\n', block + '\n  user\n\n'],
-    [`pre\n${start}old${end}\npost`, `pre\n${block}\npost`],
-    [`pre${start}one${end}mid${start}two${end}post`, `pre${block}midpost`],
-    [`pre${start}unknown\npost`, block + '\npreunknown\npost'],
-    [`pre${end}post`, block + '\nprepost'],
-  ]) {
-    fs.writeFileSync(path.join(workspace, 'AGENTS.md'), before);
-    assert.equal(runtime.rootRequiredBlockStatus(workspace).valid, false);
-    assert.equal(runtime.ensureRootRequiredBlock(workspace), true);
-    assert.equal(fs.readFileSync(path.join(workspace, 'AGENTS.md'), 'utf8'), after);
-    assert.equal(runtime.rootRequiredBlockStatus(workspace).valid, true);
-    assert.equal(runtime.ensureRootRequiredBlock(workspace), false);
+test('sync and doctor do not create or repair root rules', async (t: any) => {
+  for (const before of [null, '  用户自有规则\r\n\r\n', block, '<!-- buildr:required begin -->user edited legacy content', 'pre<!-- buildr:required end -->post']) {
+    await t.test(before === null ? 'absent' : before.slice(0, 40), (t: any) => {
+      const { workspace }: any = fixture(t, true);
+      const runtime = createRuntime();
+      const file = path.join(workspace, 'AGENTS.md');
+      fs.rmSync(file, { force: true });
+      if (before !== null) fs.writeFileSync(file, before);
+      for (let pass = 0; pass < 2; pass++) {
+        runtime.syncPackageBuiltins(workspace);
+        const doctor: any = runtime.doctor({ targetRoot: workspace, agent: 'codex' });
+        assert.equal(doctor.findings.some((finding: any) => finding.code === 'rules.required_block_invalid'), false);
+        assert.equal(Object.hasOwn(doctor.workspace, 'requiredBlock'), false);
+        if (before === null) assert.equal(fs.existsSync(file), false);
+        else assert.equal(fs.readFileSync(file, 'utf8'), before);
+      }
+    });
   }
-  fs.writeFileSync(path.join(workspace, 'AGENTS.md'), block.replace(principles[0], 'drift'));
-  assert.equal(runtime.rootRequiredBlockStatus(workspace).valid, false);
 });
 
 test('legacy rule assets survive sync and doctor reports non-blocking retirement warnings', async (t: any) => {
@@ -50,12 +45,13 @@ test('legacy rule assets survive sync and doctor reports non-blocking retirement
         fs.symlinkSync(path.join(root, 'outside.md'), file);
       }
       const before: any = {
-        agents: fs.readFileSync(path.join(workspace, 'AGENTS.md')),
+        agents: fs.existsSync(path.join(workspace, 'AGENTS.md')) ? fs.readFileSync(path.join(workspace, 'AGENTS.md')) : null,
         manifest: fs.readFileSync(rulesPath),
         file: options.missing ? null : fs.readFileSync(file),
       };
       runtime.syncPackageBuiltins(workspace);
-      assertInline(workspace);
+      if (before.agents === null) assert.equal(fs.existsSync(path.join(workspace, 'AGENTS.md')), false);
+      else assert.deepEqual(fs.readFileSync(path.join(workspace, 'AGENTS.md')), before.agents);
       assert.deepEqual(fs.readFileSync(rulesPath), before.manifest);
       if (options.missing) assert.equal(fs.existsSync(file), false);
       else assert.deepEqual(fs.readFileSync(file), before.file);

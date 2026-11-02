@@ -5,6 +5,7 @@ import { TASK_MATERIALS_APPLICATION } from '../../task/materials/module.ts';
 import { createSourceQuery, type SourceQueryDependencies } from '../application/source-query.ts';
 import { createSourceInspectCli } from '../interfaces/cli/source-inspect.ts';
 
+export type AgentAssetSourceQuery = ReturnType<typeof createSourceQuery>;
 export const AGENT_ASSETS_SOURCE_QUERY = 'agent-assets.source-query';
 /** Public source observation reader composed only from existing read applications. */
 export const AGENT_ASSETS_SOURCE_MODULE = Object.freeze({

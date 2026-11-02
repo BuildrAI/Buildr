@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {visibleConversationEntries, latestVisibleConversationMessage, conversationModelWarning, conversationActionError, conversationHandoffReceipt, conversationSystemNoticeText} from '../src/features/agent-conversations/conversation-notices.ts';
+import {conversationFailureImpact, visibleConversationEntries, latestVisibleConversationMessage, conversationModelWarning, conversationActionError, conversationHandoffReceipt, conversationSystemNoticeText} from '../src/features/agent-conversations/conversation-notices.ts';
 
 const receipt=(id, extra={})=>({id,kind:'notice',role:'system',text:'已请求重试上次未送达的要求。',participantId:'codex',...extra});
 test('连续重试仅显示最后一条，保留原始记录与后续回复',()=>{
@@ -85,4 +85,38 @@ test('系统恢复指令只呈现准确接收状态，原始记录与普通消�
   assert.equal(conversationSystemNoticeText({...raw,kind:'message',role:'user'}),raw.text);
   assert.equal(conversationSystemNoticeText({...raw,kind:'message',role:'assistant'}),raw.text);
   assert.match(raw.text,/未知工具引用/);
+});
+
+
+test('原生会话交接与后台接管始终显示身份和实际受理状态',()=>{
+ const nativeSession={reason:'backend-adoption',description:'原轮控制已释放',from:{contextId:'same-session',generation:'old'},to:{contextId:'same-session',generation:'new'}};
+ const entry={text:'内部准备',status:'sending',nativeSession};
+ assert.match(conversationHandoffReceipt(entry),/后台接管，原生会话保留/);
+ assert.match(conversationHandoffReceipt(entry),/same-session → same-session/);
+ assert.match(conversationHandoffReceipt(entry),/old → new/);
+ assert.match(conversationHandoffReceipt(entry),/等待本轮受理/);
+ assert.match(conversationHandoffReceipt({...entry,status:'accepted'}),/本轮已受理/);
+ assert.match(conversationHandoffReceipt({...entry,status:'failed'}),/本轮未送达/);
+ assert.match(conversationHandoffReceipt({...entry,status:'unknown'}),/本轮送达待确认/);
+ assert.match(conversationHandoffReceipt({...entry,nativeSession:{...nativeSession,reason:'session-replacement',to:{contextId:'next-session',generation:'new'}}}),/原生会话交接.*same-session → next-session/);
+});
+
+test('后台变化按内容证据展示，不猜提交或操作者，历史诚实降级',()=>{
+ const event={status:'accepted',text:'',nativeSession:{reason:'backend-adoption',description:'原会话复用',from:{contextId:'s',generation:'g1'},to:{contextId:'s',generation:'g2'},backendChange:{reason:'runtime-content-changed',detectedAt:'2026-11-02T00:00:00Z',fromGeneration:'g1',fromDigest:'before',toDigest:'after'}}};
+ assert.match(conversationHandoffReceipt(event),/运行内容变化.*2026-11-02.*before → after/);
+ assert.match(conversationHandoffReceipt({...event,nativeSession:{...event.nativeSession,backendChange:{...event.nativeSession.backendChange,reason:'process-restarted'}}}),/同一运行内容.*重启/);
+ assert.match(conversationHandoffReceipt({...event,nativeSession:{...event.nativeSession,backendChange:undefined}}),/历史未记录/);
+});
+
+test('失败提示不把未确认受理当未送达，也不把未知工具当结束',()=>{
+ const accepted={status:'failed',accepted:true,tools:[]};
+ assert.match(conversationFailureImpact(accepted),/已受理.*未完成/);
+ assert.match(conversationFailureImpact(accepted),/新的要求/);
+ const unconfirmed=conversationFailureImpact({...accepted,accepted:false});
+ assert.match(unconfirmed,/尚未确认/);assert.doesNotMatch(unconfirmed,/未送达|原操作未执行/);
+ for(const status of ['running','unknown']){
+  const text=conversationFailureImpact({...accepted,tools:[{id:'t',label:'work',status}]});
+  assert.match(text,/结果待确认/);assert.doesNotMatch(text,/可以发送新的要求/);
+ }
+ assert.equal(conversationFailureImpact({...accepted,status:'completed'}),undefined);
 });

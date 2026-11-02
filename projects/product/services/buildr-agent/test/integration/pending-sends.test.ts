@@ -52,3 +52,19 @@ test('an unconfirmed old conversation waits without blocking another conversatio
     unknown=false;await sends.pump();assert.deepEqual(accepted,['ready-request','old-request']);assert.equal(repository.list().length,0);
   }finally{fs.rmSync(root,{recursive:true,force:true});}
 });
+
+test('a background waiting reason invalidates an old observation but a fresh edit preserves the submission',()=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-pending-reason-'));
+  try{
+    const repository=new PendingSendRepository(root);
+    const draft={expectedRevision:'r1',connectionId:'codex',text:'original'};
+    const submitted=repository.submit('scope','conversation',draft,'request');
+    repository.finish(submitted,'waiting','host unavailable');
+    assert.throws(()=>repository.submit('scope','conversation',{...draft,text:'edited'},'request',submitted.revision),{code:'agent_pending_conflict'});
+    const current=repository.read('scope','conversation')!;
+    assert.equal(current.id,submitted.id);assert.deepEqual(current.draft,submitted.draft);
+    const edited=repository.submit('scope','conversation',{...draft,text:'edited'},'request',current.revision);
+    assert.equal(edited.id,submitted.id);assert.equal(edited.draft.text,'edited');
+    assert.throws(()=>repository.cancel('scope','conversation',current.revision),{code:'agent_pending_conflict'});
+  }finally{fs.rmSync(root,{recursive:true,force:true});}
+});

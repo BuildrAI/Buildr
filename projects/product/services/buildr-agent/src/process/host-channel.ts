@@ -4,7 +4,7 @@ import { AgentServiceError } from '../domain/agent-state.ts';
 import { authorize, body, json, listen, localOrigin, privateToken, request } from './transport.ts';
 
 export interface HostPeer { sourceId: string; peerId: string; origin: string; token: string }
-const methods = ['resolveExecutionScope','verifyWorkObject','listExecutionScopes'] as const;
+const methods = ['resolveExecutionScope','verifyWorkObject','listExecutionScopes','observeParticipation'] as const;
 type Method = typeof methods[number];
 export async function exposeAgentHost(sourceId: string, host: AgentHostCapabilities): Promise<{ peer: HostPeer; close(): Promise<void> }> {
   const token = privateToken();
@@ -13,7 +13,9 @@ export async function exposeAgentHost(sourceId: string, host: AgentHostCapabilit
     if (req.method !== 'POST' || req.url !== '/host') throw new AgentServiceError('agent_host_operation_invalid', '宿主操作无效。');
     const input = await body(req, 1024 * 1024);
     if (!methods.includes(input.method) || !input.input || typeof input.input !== 'object' || (input.input.ref?.sourceId ?? input.input.sourceId) !== sourceId) throw new AgentServiceError('agent_host_source_mismatch', '宿主来源不匹配。', 409);
-    const result = await host[input.method as Method](input.input);
+    const method = host[input.method as Method];
+    if (!method) throw new AgentServiceError('agent_host_capability_unavailable','宿主未提供参与来源观察。',503);
+    const result = await (method as (input: unknown) => Promise<unknown>).call(host,input.input);
     json(res, 200, result);
   });
   return { peer: { sourceId, peerId: randomUUID(), origin: channel.origin, token }, close: () => channel.close() };
@@ -35,6 +37,7 @@ export class AgentHostRegistry implements AgentHostCapabilities {
     }
     throw new AgentServiceError('agent_host_unavailable', '执行环境提供方暂时不可达；原执行和记录已保留。', 503);
   }
+  observeParticipation(input: import('../participation-contracts.ts').ParticipationSourceRequest): Promise<import('../participation-contracts.ts').ParticipationSourceResult> { return this.call('observeParticipation',input.ref.sourceId,input); }
   resolveExecutionScope(input: Parameters<AgentHostCapabilities['resolveExecutionScope']>[0]) { return this.call('resolveExecutionScope', input.ref.sourceId, input); }
   verifyWorkObject(input: Parameters<AgentHostCapabilities['verifyWorkObject']>[0]) { return this.call('verifyWorkObject', input.ref.sourceId, input); }
   listExecutionScopes(input: Parameters<AgentHostCapabilities['listExecutionScopes']>[0]) { return this.call('listExecutionScopes', input.sourceId, input); }

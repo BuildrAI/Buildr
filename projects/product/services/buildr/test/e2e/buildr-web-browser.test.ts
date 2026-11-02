@@ -256,7 +256,10 @@ function createSelectedFixture(root: any): any  {
   const selector: any = [...SELECTORS][0];
   if (selector === 'core') createCoreFixture(root);
   else if (selector === 'shell') createShellFixture(root);
-  else if (selector === 'workbench' || selector === 'agent-conversations') createShellFixture(root);
+  else if (selector === 'workbench' || selector === 'agent-conversations') {
+    createShellFixture(root);
+    if (selector === 'agent-conversations') runBuildr(['task','create','browser-associated-task','--title','另一个关联任务','--intent','验证同一对话关联多个任务及双向跳转','--project','demo','--target',root]);
+  }
   else if (selector === 'code') {
     createShellFixture(root, true);
     const source=path.join(root,'projects/demo/services/api');fs.mkdirSync(path.join(source,'src'),{recursive:true});
@@ -392,7 +395,7 @@ async function capture(page: any, name: any): Promise<any>  {
 
 // Dispatcher splits code into independent Explorer/SCM parents (240/900 seconds)
 // and reserves 15 seconds outside each parent for its isolated cleanup.
-test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeout: SELECTORS.has('code') && codeGroup ? codeGroup.nodeTimeoutMs : SELECTORS.has('code') || SELECTORS.has('task') ? 480_000 : SELECTORS.has('all') ? 300_000 : SELECTORS.has('agent-conversations') && process.env.BUILDR_AGENT_JOURNEY_QUEUE_ROOT ? 450_000 : SELECTORS.has('task-materials') ? 240_000 : SELECTORS.has('service') || SELECTORS.has('agent-conversations') ? 180_000 : SELECTORS.has('layout') || SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('project') ? 120_000 : 45_000 }, async (t: any) => {
+test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeout: SELECTORS.has('code') && codeGroup ? codeGroup.nodeTimeoutMs : SELECTORS.has('code') || SELECTORS.has('task') ? 480_000 : SELECTORS.has('all') ? 300_000 : SELECTORS.has('agent-conversations') && process.env.BUILDR_AGENT_JOURNEY_QUEUE_ROOT ? 450_000 : SELECTORS.has('task-materials') ? 240_000 : SELECTORS.has('service') ? 240_000 : SELECTORS.has('agent-conversations') ? 180_000 : SELECTORS.has('layout') || SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('project') ? 120_000 : 45_000 }, async (t: any) => {
   const requestedSmokeRoot: any = process.env.BUILDR_SMOKE_ROOT;
   const managedSmokeRoot: any = requestedSmokeRoot && fs.existsSync(path.join(requestedSmokeRoot, '.buildr-smoke-owner')) ? requestedSmokeRoot : null;
   const base: any = managedSmokeRoot || fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-browser-e2e-'));
@@ -428,6 +431,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
   process.stderr.write(`[buildr-browser] selector=${selectorLabel} fixture=${fixtureProfile} phase=fixture-ready\n`);
   const otherRoot: any = path.join(base, 'other-workspace');
   runBuildr(['init', '--target', otherRoot, '--name', 'other-workspace', '--description', '第二个浏览器工作空间']);
+  if(SELECTORS.has('agent-conversations')||SELECTORS.has('all'))runBuildr(['task','create','browser-associated-task','--title','跨空间同码任务','--intent','验证准确空间与任务身份','--status','active','--target',otherRoot]);
   const runtime: any = createRuntime();
   if (SELECTORS.has('layout') || SELECTORS.has('code')) {
     const catalog = runtime.assetCatalog(workspaceRoot);
@@ -767,7 +771,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
       runGroup: async (group: string) => {
         process.stderr.write(`[agent-conversation-group] group=${group} phase=isolated-page-ready\n`);
         try {
-          await runAgentConversationsJourney({t,page,workspaceUrl,workspaceRoot,capture,expectedBrowserErrors,group});
+          await runAgentConversationsJourney({t,page,workspaceUrl,workspaceRoot,otherWorkspaceId,capture,expectedBrowserErrors,group});
         } finally {
           try {
             while (pendingConversationRequests.size) await Promise.allSettled([...pendingConversationRequests]);

@@ -1,12 +1,15 @@
 import type { ServiceEvent } from '../contracts.ts';
+import type { ConversationWebhooks } from './conversation-webhooks.ts';
 
 /** Bounded live observation; durable conversation records remain the recovery authority. */
 export class ConversationEvents {
   private cursor = 0;
   private readonly observers = new Set<{ accept(event: ServiceEvent): void; close(): void }>();
   readonly generation: string;
-  constructor(generation: string) { this.generation = generation; }
+  private readonly webhooks?: ConversationWebhooks;
+  constructor(generation: string, webhooks?: ConversationWebhooks) { this.generation = generation; this.webhooks = webhooks; }
   publish(event: Omit<ServiceEvent, 'cursor' | 'generation'>): void {
+    this.webhooks?.publish(event);
     const value = { ...event, cursor: ++this.cursor, generation: this.generation };
     for (const observer of this.observers) observer.accept(value);
   }
@@ -51,5 +54,5 @@ export class ConversationEvents {
     };
     return { events, close };
   }
-  close(): void { for (const observer of this.observers) observer.close(); }
+  close(): void { this.webhooks?.close(); for (const observer of this.observers) observer.close(); }
 }

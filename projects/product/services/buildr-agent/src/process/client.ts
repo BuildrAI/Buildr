@@ -1,8 +1,9 @@
+import { pendingConversationSummary } from '../domain/pending-summary.ts';
+import { conversationEventDecoder, type TransferEvent } from '../domain/conversation-transfer.ts';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { AgentHostCapabilities, AgentLifecycleContract, AgentProcessIdentity, AgentProcessStatus, AgentRuntimeUnit } from '../execution-contracts.ts';
 import { AGENT_EXECUTION_CONTRACTS } from '../execution-contracts.ts';
-import type { ServiceEvent } from '../contracts.ts';
 import { AgentServiceError } from '../domain/agent-state.ts';
 import { exposeAgentHost } from './host-channel.ts';
 import { OPERATION_NAMES } from './operations.ts';
@@ -183,7 +184,7 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
         if(name==='conversations.cancelPendingSend')pendingSends.cancel(args[0],args[1],args[2].expectedPendingRevision);
         else{
           const {clientRequestId,expectedPendingRevision,previousRunId,...raw}=args[2];
-          const submitted=normalizeSendDraft(raw),existing=pendingSends.lookup(args[0],args[1],clientRequestId);
+          const submitted={...normalizeSendDraft(raw),permissionMode:raw.permissionMode},existing=pendingSends.lookup(args[0],args[1],clientRequestId);
           if(existing&&expectedPendingRevision===undefined)pendingSends.submit(args[0],args[1],submitted,clientRequestId);
           else{
             if(previousRunId!==undefined&&conversation.run?.id!==previousRunId)throw new AgentServiceError('agent_revision_conflict','上一轮执行已变化，草稿保留。',409);
@@ -197,7 +198,17 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
       if(requestedDigest&&current.identity.runtime.digest!==requestedDigest&&['conversations.startDraft','conversations.send','conversations.prepareSend','conversations.prepareHandoff'].includes(name))throw new AgentServiceError('agent_process_switching','新版尚未就绪，可以提交待发送内容。',503);
       if (name === 'conversations.addDraftImage') args[2] = { expectedRevision: args[2].expectedRevision, name: args[2].name, frame: args[2].frame, mimeType: args[2].mimeType, video: args[2].video, base64: Buffer.from(args[2].bytes).toString('base64') };
       if (name === 'conversations.addAttachment') args[2] = { expectedRevision: args[2].expectedRevision, expectedAttachmentRevision: args[2].expectedAttachmentRevision, mimeType: args[2].mimeType, video: args[2].video, base64: Buffer.from(args[2].bytes).toString('base64') };
-      const result = await call('/operations', { contract: AGENT_EXECUTION_CONTRACTS.operations, sourceId: options.sourceId, operation: name, args });
+      let result;
+      try { result = await call('/operations', { contract: AGENT_EXECUTION_CONTRACTS.operations, sourceId: options.sourceId, operation: name, args }); }
+      catch (error) {
+        // Legacy owners scope-check unknown conversation operations before
+        // validating their name. Only this argument-free global read may use
+        // the already-supported global pending projection in either case.
+        if (name !== 'conversations.pendingSummary' || args.length !== 0 || !(error instanceof AgentServiceError)
+          || !['agent_process_operation_invalid','agent_host_source_mismatch'].includes(error.code)) throw error;
+        const legacy = await call('/operations', { contract: AGENT_EXECUTION_CONTRACTS.operations, sourceId: options.sourceId, operation: 'conversations.pending', args: [] });
+        result = { conversations: legacy.conversations.map(pendingConversationSummary) };
+      }
       return ['conversations.readAttachment','conversations.readDraftImage'].includes(name) ? { bytes: Buffer.from(result.base64, 'base64'), mimeType: result.mimeType } : withPending(result);
     };
   }
@@ -214,20 +225,20 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
   operations.conversations.subscribe = async (scope: string, id: string): Promise<AgentSubscription> => {
     const current = await connected(), controller = new AbortController(); subscriptions.add(controller);
     let response: Response;
-    try { response = await fetch(current.origin + '/events', { method: 'POST', headers: { Authorization: 'Bearer ' + current.token, 'Content-Type': 'application/json' }, body: JSON.stringify({ sourceId: options.sourceId, scope, id }), signal: controller.signal }); }
+    try { response = await fetch(current.origin + '/events', { method: 'POST', headers: { Authorization: 'Bearer ' + current.token, 'Content-Type': 'application/json' }, body: JSON.stringify({ sourceId: options.sourceId, scope, id, transfer: 'delta-v1' }), signal: controller.signal }); }
     catch (error) { subscriptions.delete(controller); throw error; }
     if (!response.ok || !response.body) { subscriptions.delete(controller); await response.body?.cancel(); throw new AgentServiceError('agent_process_subscription_failed', '执行后台事件连接未建立。', response.status); }
     const stream = response.body;
     const close = () => { controller.abort(); subscriptions.delete(controller); };
     return { close, events: { async *[Symbol.asyncIterator]() {
-      const reader = stream.getReader(), decoder = new TextDecoder(); let buffered = '';
+      const reader = stream.getReader(), decoder = new TextDecoder(), decodeEvent = conversationEventDecoder(); let buffered = '';
       try {
         while (!controller.signal.aborted) {
           const part = await reader.read(); if (part.done) break;
           buffered += decoder.decode(part.value, { stream: true });
           if (buffered.length > 8 * 1024 * 1024) throw new Error('agent_process_event_too_large');
           let end: number;
-          while ((end = buffered.indexOf('\n\n')) >= 0) { const frame = buffered.slice(0, end); buffered = buffered.slice(end + 2); if (frame.startsWith('data: ')) { const event=JSON.parse(frame.slice(6)) as ServiceEvent;if(event.payload.conversation)event.payload.conversation=withPending(event.payload.conversation);yield event; } }
+          while ((end = buffered.indexOf('\n\n')) >= 0) { const frame = buffered.slice(0, end); buffered = buffered.slice(end + 2); if (frame.startsWith('data: ')) { const event=decodeEvent(JSON.parse(frame.slice(6)) as TransferEvent);if(event.payload.conversation)event.payload.conversation=withPending(event.payload.conversation);yield event; } }
         }
       } finally { close(); await reader.cancel().catch(() => {}); reader.releaseLock(); }
     } } };

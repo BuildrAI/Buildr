@@ -30,6 +30,8 @@
     "codemirror": "^6.0.2",
     "dayjs": "1.11.21",
     "dompurify": "3.4.17",
+    "entities": "7.0.0",
+    "marked": "16.4.2",
     "mermaid": "12.2.0",
     "node-sql-parser": "5.4.0",
     "react": "^19.1.0",

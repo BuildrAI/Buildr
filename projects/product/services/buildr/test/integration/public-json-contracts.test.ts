@@ -55,6 +55,8 @@ before(async () => {
   // A full runtime sync (not a bare render) completes the shared-resource entry check.
   fixtureRuntime.syncRuntime('codex', ['--target', fixtureContexts.codex]);
   fs.cpSync(fixtureContexts.codex, fixtureContexts.managed, { recursive: true });
+  // init no longer writes root rules; the claude-code bridge needs a user-authored AGENTS.md to reference.
+  fs.writeFileSync(path.join(fixtureContexts.managed, 'AGENTS.md'), '# json-contracts fixture rules\n');
   fixtureRuntime.syncRuntime('claude-code', ['--target', fixtureContexts.managed]);
 });
 
@@ -88,6 +90,7 @@ test('全部 workspace JSON command family 输出登记的 schemaVersion', async
     [['component', 'check', 'openspec', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.componentCheck],
     [['builtin', 'list', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.builtinList],
     [['task', 'create', 'json-task', '--title', 'JSON Task', '--intent', '验证公开 JSON family', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.taskRecordResult],
+    [['task', 'list', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.taskRecordList],
     [['task', 'changed-files', 'json-task', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.taskChangedFiles],
     [['task', 'commits', 'json-task', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.taskCommits],
     [['task', 'review', 'inspect', 'json-task', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.taskReviewOperationResult],
@@ -248,11 +251,10 @@ test('doctor 严格报告 workspace identity 与独立 readiness', async (t: any
   assert.equal(incomplete.health.actionRequired, true);
   assert.ok(incomplete.findings.some((finding: any) => finding.code === 'workspace.identity_incomplete'));
 
-  fs.rmSync(path.join(root, 'AGENTS.md'));
   fs.rmSync(path.join(root, 'projects'), { recursive: true, force: true });
   const absent: any = await run(['doctor', '--target', root, '--json', '--detail', 'full'], { expectedStatus: 1 });
   assert.equal(absent.workspace.identity.state, 'absent');
-  assert.deepEqual(absent.workspace.identity.missing, ['AGENTS.md', '.buildr/workspace.yml', 'projects']);
+  assert.deepEqual(absent.workspace.identity.missing, ['.buildr/workspace.yml', 'projects']);
   assert.ok(absent.findings.some((finding: any) => finding.code === 'workspace.not_initialized'));
 });
 
@@ -360,4 +362,15 @@ test('doctor 对未登记 Project 只报告登记根因并输出去重 repair pl
   assert.match(textReport, /Repair plan:/);
 });
 
+});
+
+
+test('task list v7 is a bounded list projection rather than a record envelope', async (t:any)=>{
+ const root=fixtureWorkspace(t,'plain');const env={...fixtureEnv,BUILDR_APP_DATA_DIR:path.join(root,'local-app')};
+ await run(['task','create','list-contract','--title','List contract','--intent','verify list identity','--target',root,'--json'],{env});
+ const value=await run(['task','list','--target',root,'--json'],{env});
+ assert.equal(value.schemaVersion,PUBLIC_JSON_SCHEMAS.taskRecordList);assert.equal(value.pageSize,20);assert.equal(value.filters.status,'open');
+ assert.ok(Array.isArray(value.tasks));assert.equal(typeof value.hasMore,'boolean');assert.equal(value.nextCursor,null);
+ assert.equal(value.tasks[0].record.taskId,'list-contract');assert.equal('brief' in value.tasks[0].record,false);
+ assert.equal('record' in value,false);assert.doesNotMatch(JSON.stringify(value),/workspace-sqlite|\.sqlite/);
 });

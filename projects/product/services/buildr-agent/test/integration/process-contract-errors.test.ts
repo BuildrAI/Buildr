@@ -84,3 +84,27 @@ test('first upgrade client saves and cancels pending instructions without asking
     assert.ok(operations.every(operation=>operation==='conversations.read'));
   }finally{await connection.disconnect();server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));fs.rmSync(root,{recursive:true,force:true});}
 });
+
+test('lightweight pending read falls back only on explicit unsupported operation from an old owner',async t=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-summary-compat-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+ const runtime:AgentRuntimeUnit={schemaVersion:1,digest:'a'.repeat(64),directory:root,entry:path.join(root,'entry.js'),node:process.execPath};
+ const identity:AgentProcessIdentity={contracts:AGENT_EXECUTION_CONTRACTS,instanceId:'fixture-summary-owner',generation:'fixture-summary-generation',profileId:'fixture',dataRoot:root,pid:process.pid,runtime};
+ const calls:string[]=[];let failure='agent_process_operation_invalid';
+ const server=createServer(async(req,res)=>{
+  if(req.url==='/identity'){res.end(JSON.stringify(identity));return;}
+  let raw='';for await(const part of req)raw+=part;const input=JSON.parse(raw);calls.push(input.operation);
+  if(input.operation==='conversations.pendingSummary'){res.writeHead(400);res.end(JSON.stringify({error:{code:failure,message:'explicit read failure'}}));return;}
+  res.end(JSON.stringify({conversations:[{id:'chat',workspaceId:'scope',title:'work',requests:[],entries:[],run:{status:'unknown',tools:[{label:'never transferred'}]}}]}));
+ });
+ server.listen(0,'127.0.0.1');await once(server,'listening');const address=server.address();assert.ok(address&&typeof address!=='string');
+ t.after(()=>new Promise<void>(resolve=>{server.closeAllConnections();server.close(()=>resolve());}));
+ writePrivate(path.join(controlRoot(root),'instance.json'),{identity,origin:`http://127.0.0.1:${address.port}`,token:'fixture-token'});
+ const connection=await connectAgentProcess({dataRoot:root,profileId:'fixture',sourceId:'minimal',runtime});t.after(()=>connection.disconnect());
+ assert.deepEqual(await connection.operations.conversations.pendingSummary(),{conversations:[{conversationId:'chat',workspaceId:'scope',title:'work',status:'unknown',count:0}]});
+ assert.deepEqual(calls,['conversations.pendingSummary','conversations.pending']);
+ failure='agent_host_source_mismatch';calls.length=0;
+ assert.equal((await connection.operations.conversations.pendingSummary()).conversations[0].conversationId,'chat');
+ assert.deepEqual(calls,['conversations.pendingSummary','conversations.pending']);
+ failure='agent_operation_result_unknown';calls.length=0;
+ await assert.rejects(connection.operations.conversations.pendingSummary(),{code:failure});assert.deepEqual(calls,['conversations.pendingSummary']);
+});

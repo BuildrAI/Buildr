@@ -419,7 +419,8 @@ test('worktree inspect 对 linked worktree 目标归一到同一证据身份', (
   // 真实 canonical workspace 的身份文件由 Git 跟踪，工作树内同样可见。
   fs.mkdirSync(path.join(checkout, '.buildr'), { recursive: true });
   fs.copyFileSync(path.join(root, '.buildr', 'workspace.yml'), path.join(checkout, '.buildr', 'workspace.yml'));
-  fs.copyFileSync(path.join(root, 'AGENTS.md'), path.join(checkout, 'AGENTS.md'));
+  // Root rules are optional; init deliberately does not create AGENTS.md.
+  if (fs.existsSync(path.join(root, 'AGENTS.md'))) fs.copyFileSync(path.join(root, 'AGENTS.md'), path.join(checkout, 'AGENTS.md'));
   fs.mkdirSync(path.join(checkout, 'projects'), { recursive: true });
 
   const fromCanonical = buildr(['worktree', 'inspect', taskId, '--target', root, '--json']);

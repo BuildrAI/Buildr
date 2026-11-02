@@ -34,6 +34,7 @@ const allowedCrossModulePorts: any = new Set([
   'web/application/restart-web-handoff.ts -> web/startup-context.ts',
   'modules/agent-service/module.ts -> modules/workspace/module.ts',
   'modules/agent-service/module.ts -> modules/task/module.ts',
+  'modules/agent-service/module.ts -> modules/agent-assets/source/module.ts',
   'modules/artifact-lifecycle/module.ts -> modules/task/module.ts',
   'modules/artifact-lifecycle/module.ts -> modules/workspace/module.ts',
   'modules/agent-assets/source/module.ts -> modules/agent-assets/module.ts',

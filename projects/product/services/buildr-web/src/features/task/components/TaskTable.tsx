@@ -1,5 +1,4 @@
 import { taskListScrollHost } from '../taskNavigation';
-import { TaskGoalPreview, compactGoal } from './TaskGoalSummary';
 import { TaskTypeBadge } from '../../../components/TaskTypeBadge';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -56,10 +55,7 @@ export function TaskTable({ activeTaskId, tasks, prefetchTaskId, projectNames, c
       const showGroup = grouped && (index === 0 || group !== taskProjectGroup(tasks[index - 1], projectNames));
       return <>
         {showGroup && <div className="task-project-group">{group}</div>}
-        <TaskGoalPreview goal={record.intent}>
           <div className="task-row-heading"><Link className="task-row-main" to={taskHref(record.taskId)} onClick={event => { event.stopPropagation(); if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); onOpen(record.taskId); }}><strong>{record.title}</strong></Link><TaskTypeBadge isParent={record.isParent} /></div>
-          <p className="task-row-summary">{compactGoal(record.intent)}</p>
-        </TaskGoalPreview>
       </>;
     } },
     ...(width >= 570 && !grouped ? [{ title: '项目', key: 'project', width: 120, ellipsis: true, render: (_value: unknown, item: TaskListItem) => {

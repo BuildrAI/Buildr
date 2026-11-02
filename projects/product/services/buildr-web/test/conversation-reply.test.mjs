@@ -1,5 +1,5 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
-import {conversationReplyText} from '../src/features/agent-conversations/conversation-reply.ts';
+import {conversationReplyText,confirmedConversationReply} from '../src/features/agent-conversations/conversation-reply.ts';
 test('response display resolves labels while source text is unchanged',()=>{const text=JSON.stringify({请求标识:'request',问题:'允许修改？',选项:[{id:'allow',label:'允许本次'}],回答:'allow',授权性质:'原请求范围'});assert.equal(conversationReplyText(text),'允许修改？\n答复：允许本次');assert.equal(JSON.parse(text).回答,'allow');});
 test('multiple question responses preserve order and selected option labels',()=>{const text=JSON.stringify({请求标识:'request',问题:'补充',问题列表:[{id:'scope',label:'范围',options:[{id:'local',label:'本地'}]}],回答:{scope:['local']}});assert.equal(conversationReplyText(text),'范围：本地');});
 test('ordinary prose and unrelated JSON are never reinterpreted',()=>{for(const text of ['ordinary input','{"问题":"sample","回答":"x"}','{"请求标识":"id","问题":"q","回答":"a","extra":"user data"}'])assert.equal(conversationReplyText(text),text);});
@@ -24,3 +24,20 @@ test('handoff question snapshots show their actual status and explicit answers k
 });
 
 test('当前可答请求只属于当前执行，旧轮和结束轮不再可答',async()=>{const {currentConversationRequests}=await import('../src/features/agent-conversations/conversation-state.ts');const question={id:'q',runId:'old',participantId:'p',generation:'g'};const chat={requests:[question],run:{id:'new',participantId:'p',generation:'g',status:'running'}};assert.deepEqual(currentConversationRequests(chat),[]);chat.run.id='old';assert.equal(currentConversationRequests(chat).length,1);chat.run.status='unknown';assert.equal(currentConversationRequests(chat).length,1);chat.run.status='stopped';assert.deepEqual(currentConversationRequests(chat),[]);});
+
+test('only a newly accepted receipt for the exact answer resolves a failed submission',()=>{
+ const request={id:'q',runId:'run',participantId:'p',generation:'g'};
+ const attempt={workspaceId:'w',conversationId:'c',request,answer:{scope:'yes'},previousEntries:[]};
+ const entry={id:'reply-q',kind:'notice',role:'user',status:'accepted',runId:'run',participantId:'p',text:JSON.stringify({请求标识:'q',回答:{scope:'yes'}})};
+ const chat={id:'c',workspaceId:'w',run:{id:'run',participantId:'p',generation:'g'},entries:[entry]};
+ assert.equal(confirmedConversationReply(chat,attempt),true);
+ for(const patch of [{status:'unknown'},{runId:'other'},{participantId:'other'},{text:JSON.stringify({请求标识:'q',回答:{scope:'no'}})}])assert.equal(confirmedConversationReply({...chat,entries:[{...entry,...patch}]},attempt),false);
+ assert.equal(confirmedConversationReply({...chat,entries:[],requests:[]},attempt),false,'question disappearance does not prove acceptance');
+ assert.equal(confirmedConversationReply(chat,{...attempt,previousEntries:[entry]}),false,'old accepted answer is not this submission');
+ assert.equal(confirmedConversationReply({...chat,run:{...chat.run,generation:'next'}},attempt),false);
+ assert.equal(confirmedConversationReply({...chat,workspaceId:'other'},attempt),false);
+ const media={...attempt,answer:{scope:{text:'see image',attachmentIds:['a']}}};
+ const accepted={...entry,attachments:['a'],text:JSON.stringify({请求标识:'q',显示回答:{scope:'see image'},回答:{scope:'native-path'}})};
+ assert.equal(confirmedConversationReply({...chat,entries:[accepted]},media),true);
+ assert.equal(confirmedConversationReply({...chat,entries:[{...accepted,attachments:['b']}]},media),false);
+});

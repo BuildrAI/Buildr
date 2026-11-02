@@ -1,42 +1,40 @@
-import { useEffect, useState } from 'react';
-import { Alert, Button, Popover } from 'antd';
-import { LinkOutlined } from '@ant-design/icons';
-import { taskApi } from '../task/api/task-api';
-import type { StoredTaskView } from '../../../build/generated/task-dto';
+import {useCallback,useEffect,useState} from 'react';
+import {Alert} from 'antd';
+import {useNavigate} from 'react-router-dom';
+import {ConversationAssociationPopover,AssociationRows,AssociationSearch} from './ConversationAssociationPopover';
+import {associationKey,taskLinkKey,type AssociationItem} from './conversation-associations';
+import {associationWorkspaces,linkedTaskItems,searchTaskAssociations,ASSOCIATIONS_CHANGED,type AssociationWorkspace} from './conversation-association-client';
+import type {ConversationTaskLink} from './types';
 
-const statusLabels: Record<string,string> = { todo: '待办', active: '进行中' };
-
-/** 对话侧的任务关联入口：列出同一工作空间未结束的任务，供建立、更换或解除引用。 */
-export function ConversationTaskLink({workspaceId, taskId, onAssign}:{workspaceId: string; taskId?: string; onAssign(taskId: string | undefined): void}) {
-  const [open, setOpen] = useState(false);
-  const [rows, setRows] = useState<StoredTaskView[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  useEffect(() => {
-    if (!open) return;
-    const controller = new AbortController();
-    setLoading(true);
-    void taskApi.list({status: 'open', pageSize: '50'}, {signal: controller.signal}, workspaceId)
-      .then(result => { if (!controller.signal.aborted) { setRows(result.tasks); setError(''); } })
-      .catch(failure => { if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : '读取任务列表失败。'); })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    return () => controller.abort();
-  }, [open, workspaceId]);
-  const choose = (next: string | undefined) => { setOpen(false); onAssign(next); };
-  const picker = <div className="ac-task-picker ac-task-associate">
-    {error && <Alert type="warning" message={error}/>}
-    {loading && !rows ? <small>正在读取任务…</small> : null}
-    {!loading && rows && !rows.length && !error ? <small>此工作空间还没有进行中的任务。</small> : null}
-    {(rows ?? []).map(row => {
-      const record = row.record, selected = record.taskId === taskId;
-      return <button key={record.taskId} type="button" className={selected ? 'is-selected' : ''} aria-current={selected || undefined} onClick={() => choose(record.taskId)}>
-        <strong>{record.title}</strong>
-        <small>{record.taskId}{statusLabels[record.status] ? ' · ' + statusLabels[record.status] : ''}</small>
-      </button>;
-    })}
-    {taskId ? <Button size="small" onClick={() => choose(undefined)}>解除关联</Button> : null}
-  </div>;
-  return <Popover rootClassName="ac-panel-popup" trigger="click" open={open} onOpenChange={setOpen} content={picker} placement="bottomLeft">
-    <button type="button" className="ac-task-associate-trigger" aria-label={taskId ? '更换或解除任务关联' : '关联任务'} title={taskId ? '更换或解除任务关联' : '关联任务'}><LinkOutlined aria-hidden/>{taskId ? '更换' : '关联任务'}</button>
-  </Popover>;
+type Props={taskLinks:ConversationTaskLink[];onAssign:(links:ConversationTaskLink[])=>Promise<boolean>;onNavigate?:()=>void};
+export function ConversationTaskLink({taskLinks,onAssign,onNavigate}:Props){
+  const navigate=useNavigate(),[open,setOpen]=useState(false),[rows,setRows]=useState<AssociationItem[]>([]),[workspaces,setWorkspaces]=useState<AssociationWorkspace[]>([]);
+  const [loading,setLoading]=useState(false),[saving,setSaving]=useState(false),[error,setError]=useState(''),[catalogError,setCatalogError]=useState('');
+  const linksKey=JSON.stringify(taskLinks);
+  useEffect(()=>{
+    if(!open)return;
+    const controller=new AbortController();setLoading(true);setError('');
+    void linkedTaskItems(taskLinks,controller.signal).then(value=>{if(!controller.signal.aborted)setRows(value);}).finally(()=>{if(!controller.signal.aborted)setLoading(false);}).catch(()=>{});
+    void associationWorkspaces(controller.signal).then(value=>{if(!controller.signal.aborted){setWorkspaces(value);setCatalogError('');}}).catch(failure=>{if(!controller.signal.aborted)setCatalogError(failure instanceof Error?failure.message:'工作空间读取失败。');});
+    return()=>controller.abort();
+  },[open,linksKey]);
+  const names=Object.fromEntries(workspaces.map(item=>[item.id,item.name]));
+  const search=useCallback(async(query:string,signal:AbortSignal)=>{
+    const scopes=await associationWorkspaces(signal);if(!signal.aborted)setWorkspaces(scopes);
+    return searchTaskAssociations(scopes,query,signal);
+  },[]);
+  const change=async(next:ConversationTaskLink[])=>{
+    if(saving)return;setSaving(true);setError('');
+    try{if(await onAssign(next))window.dispatchEvent(new Event(ASSOCIATIONS_CHANGED));else setError('关联未保存，请核对当前对话状态后重试。');}
+    catch(failure){setError(failure instanceof Error?failure.message:'关联保存失败。');}
+    finally{setSaving(false);}
+  };
+  const visible=taskLinks.map(link=>rows.find(row=>associationKey(row)===taskLinkKey(link))??{workspaceId:link.workspaceId,id:link.taskId,title:link.taskId});
+  return <ConversationAssociationPopover kind="task" count={taskLinks.length} loading={loading} onOpenChange={setOpen}>
+    <strong>已关联任务</strong>{error&&<Alert type="warning" message={error}/>}
+    {catalogError&&<Alert type="warning" message={catalogError}/>}
+    {!visible.length&&<small>暂无关联任务。</small>}
+    <AssociationRows items={visible} names={names} saving={saving} onOpen={item=>{onNavigate?.();navigate(`/workspaces/${encodeURIComponent(item.workspaceId)}/tasks/${encodeURIComponent(item.id)}`);}} onRemove={item=>void change(taskLinks.filter(link=>taskLinkKey(link)!==associationKey(item)))}/>
+    <AssociationSearch kind="task" names={names} selected={new Set(taskLinks.map(taskLinkKey))} saving={saving} search={search} onAdd={item=>void change([...taskLinks,{workspaceId:item.workspaceId,taskId:item.id}])}/>
+  </ConversationAssociationPopover>;
 }

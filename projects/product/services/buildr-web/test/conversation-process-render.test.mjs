@@ -142,3 +142,17 @@ test('旧分组残留running或同轮补充分段不会产生多个实时指示'
  assert.doesNotMatch(earlierSegment,/ac-execution-light/);assert.match(earlierSegment,/1 次工具调用/);
  assert.equal((renderEntries([current],{active:true,liveToolId:'current'}).match(/ac-execution-light/g)||[]).length,1);
 });
+const thinking=(id,text='内部推理 '+id)=>({id,sequence:0,kind:'message',role:'assistant',text,thinking:true,createdAt:'2026-10-27T00:00:00Z'});
+test('模型思考不进入处理过程，只展示助手可见说明与工具调用',()=>{
+ const entries=[thinking('k1'),tool('t1'),narration('n1')];
+ for(const active of [true,false]){
+  const html=renderEntries(entries,{active,open:true});
+  assert.doesNotMatch(html,/data-thinking|ac-process-thinking|内部推理/);
+  assert.equal((html.match(/ac-process-narration/g)||[]).length,1);
+  if(!active)assert.match(html,/1 次工具调用/);
+ }
+});
+test('只有模型思考时过程块不产生正文说明',()=>{
+ const html=renderEntries([thinking('k1'),thinking('k2')],{active:true});
+ assert.doesNotMatch(html,/ac-process-narration|内部推理|data-thinking/);
+});

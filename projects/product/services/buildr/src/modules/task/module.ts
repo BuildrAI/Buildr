@@ -249,6 +249,19 @@ export function createTaskCliContributions(application: TaskCommandRuntime | nul
       run: (runtime: TaskCommandRuntime, context: CliContext) => taskCommand(application || runtime, 'inspect', context.argv.slice(4)),
     },
     {
+      key: 'task list', surface: 'primary', summary: '只读返回canonical Workspace的轻量Task列表投影，默认status=open、pageSize=20，不返回brief正文，不暴露数据库路径。',
+      help: [
+        'Usage: buildr task list [--status <open|todo|active|completed|abandoned|all>] [--project <code>] [--service <project/service>] [--q <text>] [--page-size <1-100>] [--cursor <text>] [--target <canonical-workspace>] [--json]',
+        '',
+        '只读返回与HTTP GET /tasks同一Application query projection的buildr.task-record-list/v7；不返回brief正文，不扫描文件系统，不暴露数据库路径。',
+        '默认status=open、pageSize=20；实际生效的过滤在响应filters中回显，超出单页时由hasMore与nextCursor显式表达，不静默省略剩余结果。',
+        '需要全部状态用--status all，需要下一页用--cursor <nextCursor>。读取单个Task用buildr task inspect <task-id>；日常工作概览与关注偏好用buildr workbench。',
+        'list不接受<task-id>位置参数，也不创建、修改、激活、完成或放弃Task。',
+      ],
+      match: ({ domain, action }: CliMatch) => domain === 'task' && action === 'list',
+      run: (runtime: TaskCommandRuntime, context: CliContext) => taskCommand(application || runtime, 'list', context.argv.slice(4)),
+    },
+    {
       key: 'task update', surface: 'primary', summary: '按当前摘要修改任务事实；支持带原因的终态事实更正。',
       help: [
         'Usage: buildr task update <task-id> --expected-record <recordDigest> [--status todo|active|completed|abandoned] [--reason <text>] [--summary <text>] [--title <text>] [--intent <text>] [--brief-file <markdown-file> | --clear-brief] [--parent-task] [--parent <task-id> | --clear-parent] [--retrospective-state <pending-decision|decided> --retrospective-document-digest <sha256> | --clear-retrospective] [--add-project <code> ...] [--remove-project <code> ...] [--add-service <project/service> ...] [--remove-service <project/service> ...] [--add-change <project/change> ...] [--remove-change <project/change> ...] [--target <canonical-workspace>] [--json]',

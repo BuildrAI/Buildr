@@ -169,7 +169,7 @@ Buildr Service MUST 保持 `bin/buildr.mjs` 为稳定薄入口，并 MUST 由 `s
 
 #### Scenario: 注册 Task Record CLI命令
 - **WHEN** Bootstrap构建统一 `COMMAND_CATALOG`
-- **THEN** `task create|inspect|update|activate|complete|abandon` descriptors MUST来自Task模块公开入口
+- **THEN** `task create|inspect|list|update|activate|complete|abandon` descriptors MUST来自Task模块公开入口
 - **AND** Help、unknown-command candidates与Dispatch MUST继续消费同一合并目录
 - **AND** Task Record CLI Adapter MUST调用同一Task Record Application API
 

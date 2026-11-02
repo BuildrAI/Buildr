@@ -14,6 +14,7 @@ export const providerNames: Record<string,string> = {codex:'Codex',dsh:'DSH',qod
 export type ConnectionView = AgentServiceConnectionConnection;
 export type PreparationView = AgentServicePreparationPreparation;
 export type ConversationView = AgentConversationConversation;
+export type ConversationTaskLink = {workspaceId:string;taskId:string};
 export type ConversationRun = NonNullable<ConversationView['run']>;
 export type RunStatus = ConversationRun['status'];
 export type ConversationEntry = ConversationView['entries'][number];

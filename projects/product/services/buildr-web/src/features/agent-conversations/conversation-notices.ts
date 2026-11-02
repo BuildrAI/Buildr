@@ -1,4 +1,4 @@
-import type { ConversationEntry } from './types';
+import type { ConversationEntry, ConversationRun } from './types';
 
 const recoveryReceipts = new Set(['已请求重试上次未送达的要求。', '已请求继续上次执行。']);
 const legacyModelWarnings = new Set(['所选模型暂不可用，请重新选择。', '所选模型已停用或来源不可用，请重新选择。']);
@@ -16,15 +16,29 @@ export function visibleConversationEntries(entries: ConversationEntry[]): Conver
 
 /** Seen state follows the same primary messages the person can actually read. */
 export function latestVisibleConversationMessage(entries:ConversationEntry[]):ConversationEntry|undefined {
-  return visibleConversationEntries(entries).filter(entry=>!entry.parentToolId&&(entry.kind==='message'&&(entry.role==='user'||entry.role==='assistant')||entry.role==='user'&&entry.kind==='notice'&&entry.id.startsWith('reply-'))&&entry.status!=='failed').at(-1);
+  return visibleConversationEntries(entries).filter(entry=>!entry.parentToolId&&!entry.thinking&&(entry.kind==='message'&&(entry.role==='user'||entry.role==='assistant')||entry.role==='user'&&entry.kind==='notice'&&entry.id.startsWith('reply-'))&&entry.status!=='failed').at(-1);
 }
 
 /** A new native context with unchanged choices is continuation, not a model takeover. */
-export function conversationHandoffReceipt(entry:Pick<ConversationEntry,'handoff'|'status'|'text'>):string {
+export function conversationHandoffReceipt(entry:Pick<ConversationEntry,'handoff'|'nativeSession'|'status'|'text'>):string {
+  if(entry.nativeSession){
+    const {reason,description,from,to,backendChange}=entry.nativeSession;
+    const state=entry.status==='accepted'?'本轮已受理':entry.status==='failed'?'本轮未送达':entry.status==='unknown'?'本轮送达待确认':'等待本轮受理';
+    const cause=backendChange?`${backendChange.reason==='runtime-content-changed'?'检测到后台运行内容变化':'同一运行内容的后台进程重启'}（${backendChange.detectedAt}；运行内容 ${backendChange.fromDigest} → ${backendChange.toDigest}）`:from.generation!==to.generation?'后台变化来源：历史未记录':'';
+    return `${reason==='backend-adoption'?'后台接管，原生会话保留':'原生会话交接'}：${from.contextId??'无原生会话'} → ${to.contextId}；后台 ${from.generation??'历史未记录'} → ${to.generation}${cause?'；'+cause:''}；${description}；${state}`;
+  }
   if(!entry.handoff)return entry.text;
   if(!entry.handoff.changes.length)return entry.status==='accepted'?'':entry.status==='failed'?'新要求未接收':'新要求接收待确认';
   const target=entry.handoff.changes.map(change=>change.after).join(' · ');
   return `${target} ${entry.status==='accepted'?'已接手':entry.status==='failed'?'未接收':'接收待确认'}`;
+}
+
+/** Receipt and tool outcomes are independent. Failure alone never permits replay. */
+export function conversationFailureImpact(run: Pick<ConversationRun,'status'|'accepted'|'tools'>): string | undefined {
+  if(run.status!=='failed')return;
+  const delivery=run.accepted?'本轮已受理，但未完成。':'尚未确认原输入是否受理，请先核对执行记录。';
+  const work=run.tools.some(tool=>tool.status!=='completed')?'仍有工具未结束或结果待确认，请先核对，不要重复执行原操作。':run.accepted?'可以发送新的要求继续；不会自动重发原输入。':'不要直接重复发送可能已经执行的操作。';
+  return `${delivery}对话记录已保留。${work}`;
 }
 
 export function conversationModelWarning(ready: boolean, accountId: string | undefined, model: {available: boolean; enabled?: boolean} | undefined): string | undefined {

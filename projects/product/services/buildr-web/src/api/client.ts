@@ -43,7 +43,9 @@ export function createApiClient(options: {
       const response = await fetch(scopedResource(resource), { cache: 'no-store', ...init, headers });
       const body = await response.json() as { error?: { message?: string; code?: string; details?: unknown } };
       if (!response.ok) {
-        const error: ApiError = new Error(body.error?.message || 'Buildr 请求失败。');
+        const requestId = (body.error?.details as {requestId?:unknown}|undefined)?.requestId;
+        const reference = typeof requestId === 'string' && /^[a-f0-9-]{36}$/.test(requestId) ? `（错误编号：${requestId}）` : '';
+        const error: ApiError = new Error((body.error?.message || 'Buildr 请求失败。') + reference);
         error.code = body.error?.code;
         error.status = response.status;
         error.details = body.error?.details;

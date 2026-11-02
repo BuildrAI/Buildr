@@ -109,7 +109,7 @@ test('Task-scoped Change 详情直接展示标准产物，不要求专用变更�
   assert.doesNotMatch(reader, /change\.brief/);
   assert.match(taskApi, /export type ChangePayload/);
   assert.doesNotMatch(source, /brief\.content.*innerHTML|artifact\.content.*innerHTML|dangerouslySetInnerHTML/);
-  assert.doesNotMatch(markdown, /innerHTML/);
+  assert.doesNotMatch(markdown, /\.innerHTML\s*=|dangerouslySetInnerHTML/);
   assert.match(markdown, /headingOffset/);
   assert.match(markdown, /allowRelativeLinks/);
   assert.match(markdown, /resolveSafeHref/);

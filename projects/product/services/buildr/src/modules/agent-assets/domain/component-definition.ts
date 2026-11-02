@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { validateComponentMemberResources } from './component-member-resources.ts';
 
 import { capabilityKey, validateCapabilityIdentity } from './capability-identity.ts';
 
@@ -45,10 +46,14 @@ export function createComponentDefinitionDomain(dependencies: Dependencies) {
         for (const dependency of definition.contributions.skillDependencies) {
           lines.push(`    - skill: ${dependencies.quoteYaml(dependency.skill)}`);
           lines.push(`      capability: ${dependencies.quoteYaml(dependency.capability)}`);
-          lines.push(`      version: ${dependencies.quoteYaml(dependency.version)}`);
+          lines.push(`      version: ${dependency.version}`);
           lines.push(`      mode: ${dependencies.quoteYaml(dependency.mode)}`);
         }
       }
+    }
+    if (definition.memberResources && Object.keys(definition.memberResources).length) {
+      lines.push('memberResources:');
+      for (const [member, resource] of Object.entries(definition.memberResources)) lines.push(`  ${dependencies.quoteYaml(member)}: ${dependencies.quoteYaml(resource)}`);
     }
     lines.push(`integrity: ${dependencies.quoteYaml(definition.integrity || [])}`);
     return `${lines.join('\n')}\n`;
@@ -96,7 +101,7 @@ export function createComponentDefinitionDomain(dependencies: Dependencies) {
 
   function validateComponentDefinition(definition: any, expectedId: string | null = null): string[] {
     const errors: string[] = [];
-    const allowedTop = new Set(['schemaVersion', 'id', 'kind', 'version', 'source', 'upstream', 'members', 'contributions', 'integrity']);
+    const allowedTop = new Set(['schemaVersion', 'id', 'kind', 'version', 'source', 'upstream', 'members', 'contributions', 'integrity', 'memberResources']);
     const forbiddenExtensions = new Set(['adapter', 'adapters', 'adapterModule', 'runtimeHook', 'runtimeHooks', 'executable', 'executables', 'registryPatch', 'runtimeRegistry']);
     for (const key of Object.keys(definition)) {
       if (forbiddenExtensions.has(key)) errors.push(`component field cannot extend or execute runtime adapters: ${key}.`);
@@ -138,6 +143,7 @@ export function createComponentDefinitionDomain(dependencies: Dependencies) {
         if (!validSkill && !validCommands && !validContribution) errors.push(`component member path does not match its type: ${member}.`);
       } catch (error) { errors.push(error instanceof Error ? error.message : String(error)); }
     }
+    errors.push(...validateComponentMemberResources(definition));
     const contributions = definition.contributions || {};
     for (const key of Object.keys(contributions)) if (!['skillFragments', 'skillDependencies'].includes(key)) errors.push(`component contributions field is not supported: ${key}.`);
     const fragmentTargets = new Set<string>();

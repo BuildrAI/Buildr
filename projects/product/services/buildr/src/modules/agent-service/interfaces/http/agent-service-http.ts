@@ -1,5 +1,6 @@
+import { agentActivitySummary } from './agent-activity-summary.ts';
 import type { AgentService, AgentOperations } from '@buildr-ai/buildr-agent';
-import { AgentServiceError } from '@buildr-ai/buildr-agent';
+import { conversationEventEncoder, AgentServiceError } from '@buildr-ai/buildr-agent';
 import { AGENT_SERVICE_HTTP_OPERATIONS, AGENT_SERVICE_HTTP_SCHEMAS as SCHEMAS, AGENT_SERVICE_HTTP_VALIDATORS } from './agent-service-http-contracts.ts';
 
 const inputError = () => new AgentServiceError('agent_http_input_invalid', '智能体服务请求字段无效。');
@@ -17,7 +18,7 @@ function numberQuery(value: string | null): number | undefined { if (value === n
 
 export function createAgentServiceHttpContribution(resolve: () => AgentService | AgentOperations | Promise<AgentService | AgentOperations>, options: { defaultWorkspace?: () => { rootPath: string }; registeredWorkspaceIds?: () => string[]; runtimeStatus?: () => Promise<unknown>; prepareDefaultWorkspace?: () => void } = {}) {
   const { defaultWorkspace, registeredWorkspaceIds = () => [] } = options;
-  return {
+  const contribution = {
     id: 'agent-service.http', schemas: SCHEMAS, operations: AGENT_SERVICE_HTTP_OPERATIONS,
     async handleTopLevel(context: any) {
       const { request, pathname, searchParams, authorizeRead, authorizeWrite, readJsonBody } = context;
@@ -29,6 +30,17 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
         for(const key of ['activeOnly','hidden'])if(searchParams.has(key)&&!['true','false'].includes(searchParams.get(key)!))throw inputError();
         if(searchParams.has('activityState')&&!['running','waiting','unseen','unknown','attention'].includes(searchParams.get('activityState')!))throw inputError();
         return result('conversations',await (await resolve()).conversations.listAll(registeredWorkspaceIds(),{workspaceId:searchParams.get('workspaceId')??undefined,cursor:searchParams.get('cursor')??undefined,limit:numberQuery(searchParams.get('limit')),hidden:searchParams.get('hidden')==='true',activeOnly:searchParams.get('activeOnly')==='true',query:searchParams.get('query')??undefined,agent:searchParams.get('agent')??undefined,model:searchParams.get('model')??undefined,activityState:searchParams.get('activityState')??undefined}));
+      }
+      if (pathname === prefix + '/activity-summary' && request.method === 'GET') {
+        authorizeRead(); query(searchParams, ['revision']);
+        const revision = searchParams.get('revision') ?? undefined;
+        if (revision !== undefined && !/^[a-f0-9]{64}$/.test(revision)) throw inputError();
+        const service = await resolve();
+        const [page, pending] = await Promise.all([
+          service.conversations.listAll(registeredWorkspaceIds(), {activeOnly:true,limit:100}),
+          service.conversations.pendingSummary(),
+        ]);
+        return result('activitySummary', agentActivitySummary(page, pending.conversations, revision));
       }
       // 任务按空间的默认工作空间列表沿用单空间入口；其余默认工作空间对话操作同样委派。
       if (pathname === `${prefix}/conversations` || pathname.startsWith(`${prefix}/conversations/`)) {
@@ -61,6 +73,7 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       if (pathname === `${prefix}/program-updates` && request.method === 'GET') return result('programUpdates', await service.connections.programUpdates());
       if (pathname === `${prefix}/program-updates/check` && request.method === 'POST') return result('programUpdates', await service.connections.checkProgramUpdates(validate('programUpdateCheck', await readJsonBody())));
       if (pathname === `${prefix}/connections` && request.method === 'GET') return result('connections', await service.connections.list());
+      if (pathname === `${prefix}/pending-summary` && request.method === 'GET') return result('pendingSummary', await service.conversations.pendingSummary());
       if (pathname === `${prefix}/pending-requests` && request.method === 'GET') return result('conversations', await service.conversations.pending());
       const match = pathname.slice(prefix.length).match(/^\/connections\/([a-z][a-z0-9-]*)(?:\/(connect|check|disconnect|login-attempts|preparation-attempts|program-upgrades)(?:\/([a-f0-9-]{36})(?:\/(cancel))?)?)?$/);
       if (!match) return null;
@@ -122,7 +135,7 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
         if (request.method === 'GET') {
           query(searchParams, ['taskId', 'cursor', 'limit', 'hidden', 'query']);
           if (searchParams.has('hidden') && !['true', 'false'].includes(searchParams.get('hidden'))) throw inputError();
-          return result('conversations', await service.conversations.list(workspaceId, { taskId: searchParams.get('taskId') ?? undefined, cursor: searchParams.get('cursor') ?? undefined, limit: numberQuery(searchParams.get('limit')), hidden: searchParams.get('hidden') === 'true', query: searchParams.get('query') ?? undefined }));
+          return result('conversations', await service.conversations.list(workspaceId, { taskId: searchParams.get('taskId') ?? undefined, workspaceIds:[...new Set([...registeredWorkspaceIds(),workspaceId])], cursor: searchParams.get('cursor') ?? undefined, limit: numberQuery(searchParams.get('limit')), hidden: searchParams.get('hidden') === 'true', query: searchParams.get('query') ?? undefined }));
         }
         query(searchParams, []);
         if (request.method === 'POST') {
@@ -132,6 +145,17 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
           return result('conversation', await service.conversations.create(workspaceId, input), 201);
         }
         return null;
+      }
+      if (suffix==='/agent-conversations/participation-summary' && request.method==='GET') {
+        query(searchParams,['from','to','provider','model','kind','identity','version','cursor','limit']);
+        const input:Record<string,unknown>=Object.fromEntries(searchParams);
+        if(searchParams.has('limit'))input.limit=numberQuery(searchParams.get('limit'));
+        return result('participationSummary',await service.conversations.participationSummary(workspaceId,validate('participationSummaryQuery',input)));
+      }
+      const participationMatch=suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})\/participation$/);
+      if (participationMatch && request.method==='GET') {
+        query(searchParams,['runId']);
+        return result('participation',await service.conversations.participation(workspaceId,participationMatch[1],validate('participationQuery',{runId:searchParams.get('runId')})));
       }
       const detailMatch=suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})\/entry-detail\/([^/]+)$/);
       if(detailMatch&&request.method==='GET'){query(searchParams,['revision']);const revision=searchParams.get('revision');if(!revision||!(/^[a-f0-9]{64}$/).test(revision))throw inputError();let entryId:string;try{entryId=decodeURIComponent(detailMatch[2]);}catch{throw inputError();}if(!entryId||entryId.length>1024)throw inputError();return result('entry',await service.conversations.readEntry(workspaceId,detailMatch[1],entryId,revision));}
@@ -149,9 +173,12 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
         }
         if (action === 'events') {
           query(searchParams, ['cursor', 'generation']);
+          const transfer = request.headers['x-buildr-conversation-transfer'];
+          if (transfer !== undefined && transfer !== 'delta-v1') throw inputError();
           numberQuery(searchParams.get('cursor'));
           const subscription = await service.conversations.subscribe(workspaceId, id);
-          return respond.stream(subscription, (event: unknown) => validate('event', event, true));
+          const encode = conversationEventEncoder();
+          return respond.stream(subscription, (event: any) => validate('event', transfer === 'delta-v1' ? encode(event) : event, true));
         }
         if (action === 'attachments' && childId) {
           query(searchParams, []);
@@ -163,7 +190,7 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       query(searchParams, []);
       if (request.method === 'PATCH' && !action) {
         const input = validate('update', await readJsonBody());
-        if (workspaceId === '@default' && input.taskId !== undefined) throw inputError();
+        if (workspaceId === '@default' && (input.taskId !== undefined || input.taskIds !== undefined)) throw inputError();
         return result('conversation', await service.conversations.update(workspaceId, id, input));
       }
       if (request.method !== 'POST') return null;
@@ -190,4 +217,13 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       return null;
     },
   };
+  // This service owns these public diagnostics; the host still masks unknown errors.
+  const handle = (method: 'handle' | 'handleTopLevel') => async (context: any) => {
+    try { return await contribution[method](context); }
+    catch (error) {
+      if (error instanceof AgentServiceError) return { status: error.status, body: { error: { code: error.code, message: error.message } } };
+      throw error;
+    }
+  };
+  return { ...contribution, handle: handle('handle'), handleTopLevel: handle('handleTopLevel') };
 }

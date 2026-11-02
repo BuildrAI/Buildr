@@ -1,19 +1,51 @@
-import { useContext, useEffect, useState } from 'react';
-import { Alert, Button, Popover } from 'antd';
-import { CommentOutlined, PlusOutlined } from '@ant-design/icons';
-import { WorkspaceViewActiveContext } from '../../app/pageTabs';
-import { useOptionalAgentConversations } from './AgentConversationsContext';
-import type { ConversationSummary } from './types';
-// 任务对话只保留一个入口：无对话时进入绑定此任务的草稿，单个直接打开，多个在此选择。
-// 新对话不立即创建会话；草稿按工作空间共享，首次发送时才建立服务端对话。
+import {useCallback,useContext,useEffect,useRef,useState} from 'react';
+import {Alert,Button} from 'antd';
+import {PlusOutlined} from '@ant-design/icons';
+import {WorkspaceViewActiveContext} from '../../app/pageTabs';
+import {useOptionalAgentConversations} from './AgentConversationsContext';
+import {ConversationAssociationPopover,AssociationRows,AssociationSearch} from './ConversationAssociationPopover';
+import {associationPages,associationKey,conversationTaskLinks,conversationAssociationItem,type AssociationItem} from './conversation-associations';
+import {associationWorkspaces,searchConversationAssociations,ASSOCIATIONS_CHANGED} from './conversation-association-client';
+
+/** Both ends edit the conversation's versioned relation, never a task-side copy. */
 export function TaskConversationEntry({workspaceId,taskId}:{workspaceId:string;taskId:string}){
-  const context=useOptionalAgentConversations(),viewActive=useContext(WorkspaceViewActiveContext);
-  const [rows,setRows]=useState<ConversationSummary[]>([]),[loading,setLoading]=useState(false),[error,setError]=useState(''),[open,setOpen]=useState(false);
-  useEffect(()=>{if(!context||!viewActive)return;const controller=new AbortController();setLoading(true);void context.api.list(workspaceId,{taskId,signal:controller.signal}).then(result=>{if(!controller.signal.aborted){setRows(result.conversations);setError('');}}).catch(failure=>{if(!controller.signal.aborted)setError(failure instanceof Error?failure.message:'读取任务对话失败。');}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});return()=>controller.abort();},[context?.api,workspaceId,taskId,viewActive,context?.conversation?.id]);
+  const context=useOptionalAgentConversations(),active=useContext(WorkspaceViewActiveContext);
+  const [rows,setRows]=useState<AssociationItem[]>([]),[loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[error,setError]=useState(''),[reload,setReload]=useState(0),[names,setNames]=useState<Record<string,string>>({});
+  const scopeKey=JSON.stringify([workspaceId,taskId]),scope=useRef(scopeKey);scope.current=scopeKey;
+  const relations=JSON.stringify(context?.conversation?.taskLinks??context?.conversation?.taskIds??context?.conversation?.taskId);
+  useEffect(()=>{const refresh=()=>setReload(value=>value+1);window.addEventListener(ASSOCIATIONS_CHANGED,refresh);return()=>window.removeEventListener(ASSOCIATIONS_CHANGED,refresh);},[]);
+  useEffect(()=>{
+    if(!context||!active)return;
+    const controller=new AbortController();setLoading(true);setError('');
+    void associationPages(async cursor=>{const result=await context.api.list(workspaceId,{taskId,cursor,hidden:true,signal:controller.signal});return {items:result.conversations,nextCursor:result.nextCursor};},controller.signal).then(result=>{if(!controller.signal.aborted)setRows(result.map(conversationAssociationItem));}).catch(failure=>{if(!controller.signal.aborted)setError(failure instanceof Error?failure.message:'关联对话读取失败。');}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});
+    void associationWorkspaces(controller.signal).then(result=>{if(!controller.signal.aborted)setNames(Object.fromEntries([['@default','默认工作空间'],...result.map(item=>[item.id,item.name])]));}).catch(()=>{});
+    return()=>controller.abort();
+  },[context?.api,scopeKey,active,relations,reload]);
+  useEffect(()=>{setRows([]);setError('');setLoading(true);setSaving(false);},[scopeKey]);
+  const search=useCallback((query:string,signal:AbortSignal)=>context?searchConversationAssociations(context.api,query,signal):Promise.resolve({items:[],errors:['对话服务不可用。']}),[context?.api]);
   if(!context)return null;
-  const startDraft=()=>{context.newConversation({scope:{workspaceId,taskId}});setOpen(false);};
-  const openEntry=()=>{if(error){setOpen(true);return;}if(rows.length===0){startDraft();return;}if(rows.length===1){void context.openConversation(workspaceId,rows[0].id);return;}setOpen(true);};
-  const state=loading?'is-loading':error?'has-error':rows.length?'has-items':'is-empty';
-  const hint=loading?'正在读取任务对话…':error?'读取任务对话失败，点击查看详情':rows.length===0?'暂无关联对话，点击开始任务对话（首次发送时创建）':rows.length===1?'已有 1 段任务对话，点击继续':`已有 ${rows.length} 段任务对话，点击选择`;
-  return <section className="task-conversation-entry" data-task-internal-conversations={taskId}><Popover trigger="click" open={open&&viewActive} onOpenChange={value=>setOpen(value&&(rows.length>1||Boolean(error)))} content={<div className="ac-task-picker">{error&&<Alert type="warning" message={error}/>} {rows.map(item=><button key={item.id} onClick={()=>{void context.openConversation(workspaceId,item.id);setOpen(false);}}><strong>{item.title}</strong><small>{item.participants.length} 位参与者 · {new Date(item.updatedAt).toLocaleString()}</small></button>)}<Button size="small" aria-label="新建任务对话" icon={<PlusOutlined aria-hidden/>} onClick={startDraft}>新对话</Button></div>}><button type="button" className={`task-conversation-link ${state}`} aria-label="任务对话" title={hint} aria-busy={loading} disabled={loading} onClick={openEntry}><CommentOutlined/> 任务对话{loading?' · 读取中…':error?' · 未确认':rows.length?` · ${rows.length}`:<PlusOutlined className="task-conversation-add" aria-hidden/>}</button></Popover></section>;
+  const change=async(item:AssociationItem,add:boolean)=>{
+    if(saving)return;const observed=scopeKey;setSaving(true);setError('');
+    try{
+      const current=await context.api.read(item.workspaceId,item.id);
+      if(scope.current!==observed)return;
+      const previous=conversationTaskLinks(current),exists=previous.some(link=>link.workspaceId===workspaceId&&link.taskId===taskId);
+      const next=add?(exists?previous:[...previous,{workspaceId,taskId}]):previous.filter(link=>link.workspaceId!==workspaceId||link.taskId!==taskId);
+      const updated=await context.api.update(current,{taskLinks:next});context.apply(updated,current.revision);
+      if(scope.current!==observed)return;
+      setRows(previous=>add?[...previous.filter(row=>associationKey(row)!==associationKey(item)),item]:previous.filter(row=>associationKey(row)!==associationKey(item)));
+      window.dispatchEvent(new Event(ASSOCIATIONS_CHANGED));
+    }catch(failure){if(scope.current===observed)setError(failure instanceof Error?failure.message:'关联保存失败。');}
+    finally{if(scope.current===observed)setSaving(false);}
+  };
+  return <section className="task-conversation-entry" data-task-internal-conversations={taskId}>
+    <ConversationAssociationPopover key={scopeKey} kind="conversation" count={loading||error?null:rows.length} loading={loading} enabled={active}>
+      <strong>已关联对话</strong>{loading&&<small role="status">正在读取关联对话…</small>}
+      {error&&<Alert type="warning" message={error} action={<Button size="small" onClick={()=>setReload(value=>value+1)}>重试</Button>}/>}
+      {!loading&&!error&&!rows.length&&<small>暂无关联对话。</small>}
+      <AssociationRows kind="conversation" items={rows} names={names} saving={saving} onOpen={item=>{context.setFull(false);context.setOpen(true);context.setView('conversation');void context.openConversation(item.workspaceId,item.id);}} onRemove={item=>void change(item,false)}/>
+      <AssociationSearch kind="conversation" names={names} selected={new Set(rows.map(associationKey))} saving={saving} search={search} onAdd={item=>void change(item,true)}/>
+      <Button data-association-navigate size="small" icon={<PlusOutlined/>} aria-label="新建任务对话" onClick={()=>{context.setFull(false);context.newConversation({scope:{workspaceId,taskId}});}}>新对话</Button>
+    </ConversationAssociationPopover>
+  </section>;
 }

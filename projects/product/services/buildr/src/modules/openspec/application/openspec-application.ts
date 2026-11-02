@@ -140,9 +140,17 @@ export function registerOpenSpecApplication(runtime: OpenSpecRuntime, { projectQ
     }
     const commands = runCommandsCheck(targetRoot);
     const openspec = commands.commands.find((item) => item.id === 'openspec');
-    if (!openspec || openspec.status !== 'ok' || openspec.version?.current !== upstreamVersion) {
-      const actual = openspec?.version?.current || openspec?.status || '<missing>';
-      throw new Error(`OpenSpec CLI does not satisfy Component upstream version ${upstreamVersion}: ${actual}. ${openspec?.installHint || 'Install the declared OpenSpec CLI version; Buildr does not install it automatically.'}`);
+    if (!openspec) {
+      // A source-layer finding suppressed the machine observation; report the real cause instead of a version gap.
+      const causes = (commands.findings || []).filter((finding) => finding.status === 'error');
+      const detail = causes.length
+        ? causes.map((finding) => `${finding.code}: ${finding.message}`).join(' | ')
+        : 'the command catalog reported no openspec entry';
+      throw new Error(`OpenSpec CLI version was not observed, so Component upstream version ${upstreamVersion} cannot be confirmed. ${detail}`);
+    }
+    if (openspec.status !== 'ok' || openspec.version?.current !== upstreamVersion) {
+      const actual = openspec.version?.current || openspec.status;
+      throw new Error(`OpenSpec CLI does not satisfy Component upstream version ${upstreamVersion}: ${actual}. ${openspec.installHint || 'Install the declared OpenSpec CLI version; Buildr does not install it automatically.'}`);
     }
     if (!path.isAbsolute(openspec.executablePath || '') || !existsFile(openspec.executablePath)) {
       throw new Error('Unable to resolve the declared OpenSpec executable.');

@@ -1,4 +1,5 @@
-import { sharedSkillSource } from '../../shared-skill-source.ts';
+import { componentMemberSource } from '../../component-member-source.ts';
+import { validateComponentMemberResources } from '../../../domain/component-member-resources.ts';
 import { assetIntegrity } from '../../component-source.ts';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -40,7 +41,7 @@ function parseInstalledComponentsManifest(manifestPath: any): any  {
 
 function parseComponentContributions(definitionPath: any): any  {
   const definition = YAML.parse(fs.readFileSync(definitionPath, 'utf8')) || {};
-  const allowedTop: any = new Set(['schemaVersion', 'id', 'kind', 'version', 'source', 'upstream', 'members', 'contributions', 'integrity']);
+  const allowedTop: any = new Set(['schemaVersion', 'id', 'kind', 'version', 'source', 'upstream', 'members', 'contributions', 'integrity', 'memberResources']);
   for (const key of Object.keys(definition)) {
     if (!allowedTop.has(key)) throw new Error(`Component field is not supported and cannot extend runtime adapters: ${key}`);
   }
@@ -63,6 +64,8 @@ function parseComponentContributions(definitionPath: any): any  {
   definition.contributions.skillDependencies ||= [];
   if (!Array.isArray(definition.contributions.skillDependencies)) throw new Error('Component contributions.skillDependencies must be an array.');
   if (!Array.isArray(definition.integrity) || !definition.integrity.every((item: any) => typeof item === 'string')) throw new Error('Component integrity must be an array of strings.');
+  const resourceErrors = validateComponentMemberResources(definition);
+  if (resourceErrors.length) throw new Error(resourceErrors.join('\n'));
   return definition;
 }
 
@@ -99,8 +102,8 @@ function safeWorkspaceFile(organizationRoot: any, relativePath: any, label: any)
   return absolute;
 }
 
-function workspaceAssetIntegrity(organizationRoot: any, relativePath: any, label: any): any  {
-  const shared = sharedSkillSource(organizationRoot, relativePath);
+function workspaceAssetIntegrity(organizationRoot: any, relativePath: any, label: any, definition: any): any  {
+  const shared = componentMemberSource(organizationRoot, relativePath, definition);
   if (shared !== path.join(organizationRoot, relativePath)) return assetIntegrity(shared);
   const normalized = normalizeRelativePath(relativePath);
   const absolute = path.resolve(organizationRoot, normalized);
@@ -161,7 +164,7 @@ export function resolveComponentContributions(organizationRoot: any): any  {
       ownership.set(member, entry.id);
       const expected = integrity.get(member);
       if (!expected || !/^sha256-[a-f0-9]{64}$/.test(expected)) throw new Error(`Component member integrity is missing or invalid: ${member}`);
-      const actual = workspaceAssetIntegrity(organizationRoot, member, `Component ${entry.id} member`);
+      const actual = workspaceAssetIntegrity(organizationRoot, member, `Component ${entry.id} member`, definition);
       if (expected !== actual) throw new Error(`Component member integrity mismatch: ${member}`);
     }
     for (const member of integrity.keys()) if (!allMembers.includes(member)) throw new Error(`Component integrity references unknown member: ${member}`);
@@ -174,7 +177,9 @@ export function resolveComponentContributions(organizationRoot: any): any  {
       if (!members.has(declaration.fragment)) throw new Error(`Skill contribution is not a Component member: ${declaration.fragment}`);
       if (seenFragments.has(declaration.fragment)) throw new Error(`Skill contribution fragment is referenced more than once: ${declaration.fragment}`);
       seenFragments.add(declaration.fragment);
-      const fragmentFile = safeWorkspaceFile(organizationRoot, declaration.fragment, `Component ${entry.id} Skill contribution`);
+      const source = componentMemberSource(organizationRoot, declaration.fragment, definition);
+      const fragmentFile = definition.memberResources?.[declaration.fragment] ? source
+        : safeWorkspaceFile(organizationRoot, declaration.fragment, `Component ${entry.id} Skill contribution`);
       const content = fs.readFileSync(fragmentFile, 'utf8').trim();
       if (!content) throw new Error(`Skill contribution fragment is empty: ${declaration.fragment}`);
       fragments.push({

@@ -91,7 +91,7 @@ test('DSH native model observation updates its real default and provider title s
     page: async () => ok({ records: events.map(event => ({ event })), hasMore: false }),
     selectModel: async (input: any) => { selected = input.model; effort = input.reasoningEffort; return ok({}); },
     modelCatalog: async () => ok({ default: { provider: 'official', model: selected, reasoningEffort: effort }, groups: [{ id: 'official', models: ['a', 'b'].map(id => ({ id, reasoning: { efforts: [{ id: 'light', name: 'Light' }, { id: 'deep', name: 'Deep' }], defaultEffort: 'light' } })) }] }),
-    prompt: async () => { setTimeout(() => { publish({ type: 'turn/start', data: { turn: 1 } }); publish({ type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } }); }, 1); return ok({}); },
+    prompt: async (input: any) => { setTimeout(() => { publish({ type: 'turn/start', data: { turn: 1 } }); publish({ type: 'user/message', data: { id: 'title-work-input', source: { kind: 'user', rpcId: input.requestId }, content: input.content } }); publish({ type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } }); }, 1); return ok({}); },
   } };
   const host = { close: async () => { for (const stream of streams) await stream.dispose(); } };
   const runtime = Reflect.construct(DshRuntime, ['fixture-binding', host, { remote }]) as AgentRuntime;
@@ -106,36 +106,6 @@ test('DSH native model observation updates its real default and provider title s
     assert.equal(await runtime.readTitle!({ contextRef, cwd }), '供应商入驻审核流程梳理');
   } finally { await runtime.close(); }
   assert.ok(streams.every(stream => stream.closed));
-});
-
-test('Qoder title uses its dedicated nonpersistent control method; work reasoning applies only to main-purpose calls', { timeout: 15_000 }, async () => {
-  const { createQoderExecutor } = await import('../../../src/executors/qoder/index.ts');
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'buildr-qoder-title-')); const workspace = path.join(root, 'workspace'); await fs.mkdir(workspace);
-  const log = path.join(root, 'native-calls.jsonl'); const executable = path.join(root, 'fixture.mjs');
-  let source = await fs.readFile(new URL('./fixtures/qoder-cli.mjs', import.meta.url), 'utf8');
-  source = "import fs from 'node:fs';\n" + source;
-  source = source.replace("r.on('line',line=>{const m=JSON.parse(line);", `fs.appendFileSync(${JSON.stringify(log)},JSON.stringify({argv:process.argv,cwd:process.cwd()})+'\\n');
-let policies=0;
-r.on('line',line=>{const m=JSON.parse(line);fs.appendFileSync(${JSON.stringify(log)},JSON.stringify({message:m})+'\\n');
-if(m.type==='control_request'&&(m.request.type??m.request.subtype)==='generate_session_title'){ack(m.request_id,{title:'供应商入驻审核流程梳理'});return;}
-if(m.type==='user'){
-sid=m.session_id;for(const purpose of ['main','title'])emit({type:'control_request',request_id:'policy-'+purpose,request:{subtype:'get_model_policy',purpose,sessionId:sid,turnIndex:0,resolvedModel:'fixture-model',models:[{value:'fixture-model',displayName:'Fixture',efforts:['light','deep'],defaultEffort:'light'}]}});return;}
-if(m.type==='control_response'&&m.response.request_id.startsWith('policy-')){policies++;if(policies===2){emit({type:'assistant',uuid:'summary',session_id:sid,message:{id:'reply',content:[{type:'text',text:'work completed'}]}});emit({type:'result',subtype:'success',is_error:false,session_id:sid,uuid:'end',num_turns:1,usage:{},modelUsage:{},permission_denials:[],result:'work completed'});}return;}`);
-  await fs.writeFile(executable, source); let runtime: AgentRuntime | undefined;
-  try {
-    runtime = await createQoderExecutor().open({ connectionId: 'qoder', configRoot: path.join(root, 'profile'), executable, environment: { PATH: process.env.PATH ?? '' } });
-    const contextRef = await runtime.createContext({ cwd: workspace });
-    const title = await runtime.generateTitle!({ contextRef, cwd: workspace, description: '{"user":"quoted data","assistant":"visible reply"}', signal: new AbortController().signal });
-    assert.equal(title, '供应商入驻审核流程梳理');
-    let calls = (await fs.readFile(log, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
-    const auxiliary = calls.find(call => call.argv); assert.ok(auxiliary.argv.includes('--no-session-persistence')); assert.equal(auxiliary.cwd, await fs.realpath(path.join(root, 'profile'))); assert.ok(!auxiliary.argv.includes('--resume')); assert.ok(!auxiliary.argv.includes('--session-id'));
-    const titleRequests = calls.filter(call => call.message?.request?.type === 'generate_session_title' || call.message?.request?.subtype === 'generate_session_title');
-    assert.equal(titleRequests.length, 1); assert.equal(titleRequests[0].message.request.persist, false); assert.ok(!calls.some(call => call.message?.type === 'user'));
-    await runtime.send({ contextRef, cwd: workspace, text: 'do actual work', model: 'fixture-model', reasoningEffort: 'deep', images: [], clientRequestId: 'ed8b50cf-f8ea-4fc3-b5b5-9aba57458d94', onEvent() {} });
-    calls = (await fs.readFile(log, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
-    const policy = (id: string) => calls.find(call => call.message?.type === 'control_response' && call.message.response.request_id === id).message.response.response;
-    assert.equal(policy('policy-main').model, 'fixture-model'); assert.deepEqual(policy('policy-main').parameters, { reasoningEffort: 'deep' }); assert.equal(policy('policy-title').parameters, undefined); assert.equal(calls.filter(call => call.message?.type === 'user').length, 1);
-  } finally { await runtime?.close(); await fs.rm(root, { recursive: true, force: true }); }
 });
 
 test('Codex effort is explicit per turn and null clears a prior sticky native effort', async () => {
@@ -190,24 +160,4 @@ test('Codex malformed structured title has a stable diagnostic code',async()=>{
   try {const fixture=titleRpc(directory,{network:false,output:'invalid json'});
     await assert.rejects(generateCodexTitle(fixture.rpc,{contextRef:{id:'work'},cwd:'/work',description:'{}',signal:new AbortController().signal},directory,new Set()),/agent_title_output_invalid/);
   } finally {await fs.rm(directory,{recursive:true,force:true});}
-});
-
-test('Qoder title cancellation reaps only its auxiliary CLI and permits another title',async()=>{
-  const {createQoderExecutor}=await import('../../../src/executors/qoder/index.ts');const root=await fs.mkdtemp(path.join(os.tmpdir(),'qoder-title-cancel-')),workspace=path.join(root,'workspace');await fs.mkdir(workspace);
-  const log=path.join(root,'calls.jsonl'),executable=path.join(root,'fixture.mjs');let source=await fs.readFile(new URL('./fixtures/qoder-cli.mjs',import.meta.url),'utf8');
-  source="import fs from 'node:fs';\n"+source;
-  source=source.replace("r.on('line',line=>{const m=JSON.parse(line);",`r.on('line',line=>{const m=JSON.parse(line);fs.appendFileSync(${JSON.stringify(log)},JSON.stringify({pid:process.pid,message:m})+'\\n');if(m.type==='control_request'&&(m.request.type??m.request.subtype)==='generate_session_title'){if(JSON.stringify(m.request).includes('hang-title'))return;ack(m.request_id,{title:'独立标题仍可正常生成'});return;}`);
-  await fs.writeFile(executable,source);let runtime:AgentRuntime|undefined;const controller=new AbortController();
-  const records=async()=>{try{return(await fs.readFile(log,'utf8')).trim().split('\n').map(line=>JSON.parse(line));}catch{return[];}};
-  const until=async<T>(read:()=>Promise<T>,accept:(value:T)=>boolean)=>{for(let n=0;n<300;n++){const v=await read();if(accept(v))return v;await new Promise(resolve=>setTimeout(resolve,5));}throw new Error('auxiliary state did not settle');};
-  try{
-    runtime=await createQoderExecutor().open({connectionId:'qoder',configRoot:path.join(root,'profile'),executable,environment:{PATH:process.env.PATH??''}});const contextRef=await runtime.createContext({cwd:workspace});
-    const pending=runtime.generateTitle!({contextRef,cwd:workspace,description:'hang-title',signal:controller.signal});const failed=assert.rejects(pending,/agent_title_cancelled/);
-    const observed=await until(records,rows=>rows.some((row:any)=>JSON.stringify(row.message.request??{}).includes('hang-title')));const auxiliary=observed.find((row:any)=>JSON.stringify(row.message.request??{}).includes('hang-title'));
-    assert.equal(await runtime.generateTitle!({contextRef,cwd:workspace,description:'parallel title',signal:new AbortController().signal}),'独立标题仍可正常生成');
-    controller.abort();await failed;
-    await until(async()=>{try{process.kill(auxiliary.pid,0);return false;}catch{return true;}},Boolean);
-    assert.equal(await runtime.generateTitle!({contextRef,cwd:workspace,description:'after cancellation',signal:new AbortController().signal}),'独立标题仍可正常生成');
-    assert.ok(!(await records()).some((row:any)=>row.message.type==='user'));
-  }finally{controller.abort();await runtime?.close();await fs.rm(root,{recursive:true,force:true});}
 });

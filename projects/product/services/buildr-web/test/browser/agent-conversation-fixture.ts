@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
+import {canCloseUncertainConversation} from '../../src/features/agent-conversations/conversation-state.ts';
 import {resolveQuestionAnswer,questionAnswerDisplay} from '../../../buildr-agent/src/domain/question-answer.ts';
 import type {ConnectionView} from '../../src/features/agent-conversations/types.ts';
 
 /** Actual hosted UI; only the new HTTP transport is replaced with explicit fixtures. */
-export async function createAgentConversationFixture({t,page,workspaceUrl,workspaceRoot,capture:capturePage,expectedBrowserErrors}:any){
+export async function createAgentConversationFixture({t,page,workspaceUrl,workspaceRoot,otherWorkspaceId,capture:capturePage,expectedBrowserErrors}:any){
   const capture=async(target:any,name:string)=>{if(!process.env.BUILDR_AGENT_CAPTURE_FAILURE_ONLY||name.includes('failure'))await capturePage(target,name);};
-  let reminderPaging=false,reminderReadFailure=false;
+  let reminderPaging=false,reminderReadFailure=false,reminderReads=0;
   const taskRequests:Array<Record<string,unknown>>=[];
   const selectTrace:Array<Record<string,unknown>>=[];
   const taskRequest=(request:any)=>/\/api\/v1\/workspaces\/[^/]+\/(?:tasks|workspace|agent-conversations)|\/api\/v1\/workspaces\/[^/]+$/.test(request.url());
@@ -34,7 +36,7 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
   let holdStop=false,releaseStop:(()=>void)|undefined,stopStarted:(()=>void)|undefined;
   let holdTaskList=false,releaseTaskList:(()=>void)|undefined,taskListStarted:(()=>void)|undefined;
   let holdTitle=false,releaseTitle:(()=>void)|undefined,titleStarted:(()=>void)|undefined,titleGenerations=0;
-  let supplementaryCalls=0,holdSupplement=false,releaseSupplement:(()=>void)|undefined,supplementStarted:(()=>void)|undefined;let supplementaryDelivery:'accepted'|'rejected'|'unknown'='accepted';
+  let supplementaryCalls=0,holdSupplement=false,releaseSupplement:(()=>void)|undefined,supplementStarted:(()=>void)|undefined;let supplementaryDelivery:'accepted'|'rejected'|'unknown'|'continued'='accepted';
   const supplementaryInputs:any[]=[];
   const uploadedMedia=new Map<string,{mimeType:string;bytes:Buffer;video?:any}>();
   let attachmentUploads=0,holdUploadAt=0,releaseUpload:(()=>void)|undefined,uploadStarted:(()=>void)|undefined;
@@ -62,29 +64,56 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
       return route.fulfill({json:nativeAccounts().find(item=>item.id===account.id)});
     }
     if(url.pathname==='/api/v1/app/agent-service/connections'){connectionReads++;const observed=JSON.parse(JSON.stringify(connections));if(holdConnections){holdConnections=false;await new Promise<void>(resolve=>{releaseConnections=resolve;connectionsStarted?.();});}return route.fulfill({json:{connections:observed}});}
-    if(url.pathname==='/api/v1/app/agent-service/pending-requests')return route.fulfill({json:{conversations:[...(conversation&&['waiting-approval','waiting-question','unknown','tools-active'].includes(conversation.run?.status)?[conversation]:[]),...additionalPending]}});
-    if(url.pathname==='/api/v1/app/agent-service/conversations'&&method==='GET'){
+    if(['/api/v1/app/agent-service/pending-requests','/api/v1/app/agent-service/pending-summary'].includes(url.pathname)){
+      const rows=[...(conversation&&!(conversation.hidden&&canCloseUncertainConversation(conversation))&&['waiting-approval','waiting-question','unknown','tools-active'].includes(conversation.run?.status)?[conversation]:[]),...additionalPending];
+      return route.fulfill({json:{conversations:url.pathname.endsWith('/pending-summary')?rows.map(item=>({conversationId:item.id,workspaceId:item.workspaceId,title:item.title,status:item.run?.status??'unknown',count:item.requests.length})):rows}});
+    }
+    const activitySummary=url.pathname==='/api/v1/app/agent-service/activity-summary';
+    if((activitySummary||url.pathname==='/api/v1/app/agent-service/conversations')&&method==='GET'){
+      if(activitySummary){url.searchParams.set('activeOnly','true');url.searchParams.set('limit','100');}
       // 全空间列表夹具按服务端语义过滤：活动判断与 conversation-activity 的 activityState 一致。
-      const active=(item:any)=>Boolean(item.activity?.active||(item.activity&&item.activity.version>item.activity.seenThrough)||['starting','running','stopping','tools-active','waiting-approval','waiting-question','unknown'].includes(item.run?.status));
+      const dismissed=(item:any)=>Boolean(item.hidden&&canCloseUncertainConversation(item));
+      const active=(item:any)=>!dismissed(item)&&Boolean(item.activity?.active||(item.activity&&item.activity.version>item.activity.seenThrough)||['starting','running','stopping','waiting-approval','waiting-question','unknown'].includes(item.run?.status));
       let rows=[...(conversation&&(conversation.entries.length||conversation.run)?[conversation]:[]),...additionalConversations,...additionalPending];
       const workspaceIdFilter=url.searchParams.get('workspaceId'),scoped=workspaceIdFilter?rows.filter(item=>item.workspaceId===workspaceIdFilter):rows;
-      const statGroup=(field:string)=>{const counts=new Map<string,number>();for(const row of scoped){if(!['starting','running','stopping','tools-active'].includes(row.run?.status))continue;const key=row.run?.[field]||'未指定';counts.set(key,(counts.get(key)||0)+1);}return [...counts].map(([label,count])=>({label,count}));};
-      const state=(item:any)=>item.run?.status==='unknown'?'unknown':['waiting-approval','waiting-question'].includes(item.run?.status)?'waiting':['starting','running','stopping','tools-active'].includes(item.run?.status)?'running':item.activity&&item.activity.version>item.activity.seenThrough?'unseen':null;
+      const statGroup=(field:string)=>{const counts=new Map<string,number>();for(const row of scoped){if(!['starting','running','stopping'].includes(row.run?.status))continue;const key=row.run?.[field]||'未指定';counts.set(key,(counts.get(key)||0)+1);}return [...counts].map(([label,count])=>({label,count}));};
+      const state=(item:any)=>dismissed(item)?null:item.run?.status==='unknown'?'unknown':['waiting-approval','waiting-question'].includes(item.run?.status)?'waiting':['starting','running','stopping'].includes(item.run?.status)?'running':item.activity&&item.activity.version>item.activity.seenThrough?'unseen':null;
       const activityCounts={active:0,running:0,waiting:0,unseen:0,unknown:0,attention:0};
       for(const row of scoped){const key=state(row) as 'running'|'waiting'|'unseen'|'unknown'|null;if(key){activityCounts[key]++;activityCounts.active++;if(key!=='running')activityCounts.attention++;}}
       const executions=[...new Set(scoped.filter(row=>state(row)==='running').map(row=>JSON.stringify([row.run?.provider||'未指定',row.run?.model||'未指定'])))].map(key=>{const [provider,model]=JSON.parse(key);return {provider,model,count:scoped.filter(row=>state(row)==='running'&&(row.run?.provider||'未指定')===provider&&(row.run?.model||'未指定')===model).length};});
       const modelExecutions=[...new Set(scoped.filter(row=>state(row)==='running').map(row=>JSON.stringify([row.run?.modelAccountId||'fixture-account',row.run?.model||'未指定'])))].map(key=>{const [accountId,model]=JSON.parse(key);return {accountId,accountLabel:'测试账号',model,count:scoped.filter(row=>state(row)==='running'&&(row.run?.modelAccountId||'fixture-account')===accountId&&(row.run?.model||'未指定')===model).length};});
-      const category=url.searchParams.get('activityState');if(category)rows=rows.filter(row=>category==='attention'?['waiting','unseen','unknown'].includes(state(row)??''):state(row)===category);
+      const category=url.searchParams.get('activityState');if(category)reminderReads++;if(category)rows=rows.filter(row=>category==='attention'?['waiting','unseen','unknown'].includes(state(row)??''):state(row)===category);
       if(url.searchParams.get('activeOnly'))rows=rows.filter(active);
       else {const hidden=url.searchParams.get('hidden')==='true';rows=rows.filter(item=>active(item)||Boolean(item.hidden)===hidden);}
       if(url.searchParams.get('workspaceId'))rows=rows.filter(item=>item.workspaceId===url.searchParams.get('workspaceId'));
-      if(url.searchParams.get('query')){const query=url.searchParams.get('query')!.toLowerCase();rows=rows.filter(item=>String(item.title||'').toLowerCase().includes(query)||(item.entries||[]).some((entry:any)=>String(entry.text||'').toLowerCase().includes(query)));}
+      if(url.searchParams.get('agent')||url.searchParams.get('model')){
+        const agent=url.searchParams.get('agent'),model=url.searchParams.get('model');
+        rows=rows.filter(item=>['starting','running','stopping','tools-active'].includes(item.run?.status)&&(!agent||(item.run?.provider||'未指定')===agent)&&(!model||(item.run?.model||'未指定')===model));
+      }
+      const searchTerms=(url.searchParams.get('query')??'').trim().split(/\s+/).filter(Boolean).slice(0,6);
+      if(searchTerms.length){
+        const searchable=(entry:any,term:string)=>entry?.kind==='message'&&['user','assistant'].includes(entry.role)&&!entry.thinking&&String(entry.text||'').toLowerCase().includes(term);
+        rows=rows.filter(item=>searchTerms.every(term=>{const lower=term.toLowerCase();return String(item.title||'').toLowerCase().includes(lower)||(item.entries||[]).some((entry:any)=>searchable(entry,lower));}));
+      }
       if(reminderReadFailure&&category)return route.fulfill({status:503,json:{error:{code:'fixture_unavailable',message:'模拟分组读取失败'}}});
       const priority=(row:any)=>['waiting','unseen'].includes(state(row)??'')?2:active(row)?1:0;
       rows.sort((a:any,b:any)=>priority(b)-priority(a)||(b.activity?.userInputAt||b.updatedAt||'').localeCompare(a.activity?.userInputAt||a.updatedAt||'')||b.id.localeCompare(a.id));
       const total=rows.length,offset=Number(url.searchParams.get('cursor')||0),limit=Number(url.searchParams.get('limit')||(reminderPaging?100:30));
       const nextCursor=offset+limit<rows.length?String(offset+limit):undefined;
-      return route.fulfill({json:{conversations:rows.slice(offset,offset+limit),nextCursor,total,activityCounts,stats:{agents:statGroup('provider'),models:statGroup('model'),executions,modelExecutions}}});
+      const snippetRows=rows.map(item=>{
+        if(!searchTerms.length)return item;
+        const title=String(item.title||'').toLowerCase();
+        if(searchTerms.some(term=>title.includes(term.toLowerCase())))return item;
+        const match=(item.entries||[]).find((entry:any)=>searchTerms.some(term=>entry?.kind==='message'&&['user','assistant'].includes(entry.role)&&!entry.thinking&&String(entry.text||'').toLowerCase().includes(term.toLowerCase())));
+        return match?{...item,searchSnippet:String(match.text||'').replace(/\s+/g,' ').slice(0,120)}:item;
+      });
+      const result={conversations:snippetRows.slice(offset,offset+limit),nextCursor,total,activityCounts,stats:{agents:statGroup('provider'),models:statGroup('model'),executions,modelExecutions}};
+      if(activitySummary){
+        const pending=[...(conversation&&!(conversation.hidden&&canCloseUncertainConversation(conversation))&&['waiting-approval','waiting-question','unknown','tools-active'].includes(conversation.run?.status)?[conversation]:[]),...additionalPending].map(item=>({conversationId:item.id,workspaceId:item.workspaceId,title:item.title,status:item.run?.status??'unknown',count:item.requests.length}));
+        const payload={...result,pending},revision=createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+        return route.fulfill({json:url.searchParams.get('revision')===revision?{revision,unchanged:true}:{...payload,revision}});
+      }
+      return route.fulfill({json:result});
     }
     if(url.pathname.startsWith('/api/v1/app/agent-service/connections/')){
       const parts=url.pathname.split('/'),connection=connections.find(item=>item.id===parts[6]) as any;assert.ok(connection);
@@ -109,7 +138,8 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
       connection.revision='connection-'+(++revision);return route.fulfill({json:connection});
     }
     // 默认工作空间的会话端点与工作空间前缀同构，走同一套夹具。
-    const prefix=`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/agent-conversations`,appPrefix='/api/v1/app/agent-service/conversations';
+    const requestedWorkspaceId=decodeURIComponent(url.pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/agent-conversations/)?.[1]||'@default');
+    const prefix=`/api/v1/workspaces/${encodeURIComponent(requestedWorkspaceId)}/agent-conversations`,appPrefix='/api/v1/app/agent-service/conversations';
     const scoped=url.pathname.startsWith(prefix)?prefix:(url.pathname===appPrefix||url.pathname.startsWith(appPrefix+'/'))?appPrefix:'';
     if(!scoped)return route.fallback();
     const draftRoute=url.pathname.slice(scoped.length).match(/^\/drafts\/([^/]+)(?:\/(attachments|send|submissions)(?:\/([^/]+))?)?$/);
@@ -131,14 +161,14 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
         const body=request.postDataJSON(),previous=firstResponses.get(draftId+':'+body.clientRequestId);if(previous)return route.fulfill({json:previous});
         if(prepareError){const error=prepareError;prepareError=undefined;expectedBrowserErrors?.add(request.url());return route.fulfill({status:409,json:{error}});}
         assert.equal(body.expectedDraftRevision,snapshot().revision);creations++;
-        conversation={id:'internal-fixture-'+creations,workspaceId:scoped===appPrefix?'@default':workspaceId,cwd:body.cwd||'/isolated/default',taskId:body.taskId,title:'浏览器验证对话',revision:'r'+(++revision),hidden:false,updatedAt:new Date().toISOString(),participants:[],entries:[],requests:[]};latestPreview=undefined;
+        conversation={id:'internal-fixture-'+creations,workspaceId:scoped===appPrefix?'@default':requestedWorkspaceId,cwd:body.cwd||'/isolated/default',taskLinks:body.taskLinks,taskIds:body.taskLinks?.filter((link:any)=>link.workspaceId===requestedWorkspaceId).map((link:any)=>link.taskId)??(body.taskId?[body.taskId]:[]),taskId:body.taskLinks?.find((link:any)=>link.workspaceId===requestedWorkspaceId)?.taskId??body.taskId,title:'浏览器验证对话',revision:'r'+(++revision),hidden:false,updatedAt:new Date().toISOString(),participants:[],entries:[],requests:[]};latestPreview=undefined;
         if(holdCreate){holdCreate=false;await new Promise<void>(resolve=>{releaseCreate=resolve;createStarted?.();});}
         // Continue through the shared send fixture below; there is no separate create HTTP call.
       }else return route.fulfill({status:404,json:{error:{code:'fixture_missing',message:'draft route missing'}}});
     }
     if(url.pathname===scoped){
-      if(method==='GET'){if(holdTaskList&&url.searchParams.get('taskId')){holdTaskList=false;await new Promise<void>(resolve=>{releaseTaskList=resolve;taskListStarted?.();});}const rows=[...(conversation&&(conversation.entries.length||conversation.run)?[conversation]:[]),...additionalConversations];return route.fulfill({json:{conversations:rows.filter(item=>(scoped===appPrefix||item.workspaceId===workspaceId)&&(!url.searchParams.get('taskId')||item.taskId===url.searchParams.get('taskId')))}});}
-      const body=request.postDataJSON();creations++;conversation={id:'internal-fixture-'+creations,workspaceId:scoped===appPrefix?'@default':workspaceId,cwd:body.cwd||'/isolated/default',taskId:body.taskId,title:'浏览器验证对话',revision:'r'+(++revision),hidden:false,updatedAt:new Date().toISOString(),participants:[],entries:[],requests:[]};const created=conversation;if(holdCreate){holdCreate=false;await new Promise<void>(resolve=>{releaseCreate=resolve;createStarted?.();});}return route.fulfill({json:created});
+      if(method==='GET'){if(holdTaskList&&url.searchParams.get('taskId')){holdTaskList=false;await new Promise<void>(resolve=>{releaseTaskList=resolve;taskListStarted?.();});}const rows=[...(conversation&&(conversation.entries.length||conversation.run)?[conversation]:[]),...additionalConversations],taskId=url.searchParams.get('taskId');return route.fulfill({json:{conversations:rows.filter(item=>taskId?(item.taskLinks??(item.taskIds??(item.taskId?[item.taskId]:[])).map((id:string)=>({workspaceId:item.workspaceId,taskId:id}))).some((link:any)=>link.workspaceId===requestedWorkspaceId&&link.taskId===taskId):(scoped===appPrefix||item.workspaceId===requestedWorkspaceId))}});}
+      const body=request.postDataJSON();creations++;conversation={id:'internal-fixture-'+creations,workspaceId:scoped===appPrefix?'@default':requestedWorkspaceId,cwd:body.cwd||'/isolated/default',taskLinks:body.taskLinks,taskIds:body.taskLinks?.filter((link:any)=>link.workspaceId===requestedWorkspaceId).map((link:any)=>link.taskId)??(body.taskId?[body.taskId]:[]),taskId:body.taskLinks?.find((link:any)=>link.workspaceId===requestedWorkspaceId)?.taskId??body.taskId,title:'浏览器验证对话',revision:'r'+(++revision),hidden:false,updatedAt:new Date().toISOString(),participants:[],entries:[],requests:[]};const created=conversation;if(holdCreate){holdCreate=false;await new Promise<void>(resolve=>{releaseCreate=resolve;createStarted?.();});}return route.fulfill({json:created});
     }
     if(url.pathname.endsWith('/children')&&method==='GET')return route.fulfill({json:{conversations:[]}});
     if(url.pathname.endsWith('/entries')){entryReads++;assert.equal(url.searchParams.has('limit'),false,'历史请求使用服务端按轮默认分页');const value=historyPages.get(Number(url.searchParams.get('before')));assert.ok(value,'observed cursor resolves one fixture page');if(failEntryRead){failEntryRead=false;expectedBrowserErrors?.add(request.url());return route.fulfill({status:503,json:{error:{code:'history_fixture_unavailable',message:'更早记录暂时不可用'}}});}if(holdEntryRead){holdEntryRead=false;await new Promise<void>(resolve=>{releaseEntryRead=resolve;entryReadStarted?.();});}return route.fulfill({json:value});}
@@ -170,9 +200,16 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
       supplementaryCalls++;const body=request.postDataJSON();supplementaryInputs.push(body);assert.equal(body.runId,conversation.run.id);assert.equal(body.participantId,conversation.run.participantId);assert.equal(body.generation,conversation.run.generation);
       const entry={id:body.clientRequestId,sequence:conversation.entries.length+1,kind:'message',role:'user',text:body.text,attachments:body.attachmentIds,participantId:body.participantId,provider:conversation.run.provider,runId:body.runId,status:supplementaryDelivery==='accepted'?'accepted':supplementaryDelivery==='rejected'?'failed':'unknown',deliveryDiagnostic:supplementaryDelivery==='unknown'?'消息已保存，是否送达仍待确认，请勿重复发送。':supplementaryDelivery==='rejected'?'这条消息未发送成功，文字与图片仍保留在输入框。':undefined,createdAt:new Date().toISOString()};
       if(holdSupplement){holdSupplement=false;await new Promise<void>(resolve=>{releaseSupplement=resolve;supplementStarted?.();});}
-      update({entries:[...conversation.entries,entry]});return route.fulfill({json:{conversation,delivery:supplementaryDelivery}});
+      if(supplementaryDelivery==='continued'){
+        const previous={...conversation.run,status:'completed'},next={...conversation.run,id:'continued-'+body.clientRequestId,status:'running'};
+        entry.status='failed';entry.deliveryDiagnostic='原轮已结束，这条要求已接续到新一轮。';
+        update({entries:[...conversation.entries,entry,{...entry,id:'next-'+body.clientRequestId,sequence:entry.sequence+1,runId:next.id,status:'accepted',deliveryDiagnostic:undefined}],retainedRuns:[...(conversation.retainedRuns||[]),previous],run:next});
+      }else update({entries:[...conversation.entries,entry]});return route.fulfill({json:{conversation,delivery:supplementaryDelivery}});
     }
-    if(url.pathname.endsWith('/send')){sends++;const body=request.postDataJSON();sentInputs.push(body);const provider=body.connectionId;const model=connections.find(item=>item.id===provider)?.models.find(item=>body.model?item.id===body.model:item.isDefault);if(latestPreview?.switching)conversation.entries.push({id:'handoff-'+sends,sequence:conversation.entries.length+1,kind:'handoff',role:'system',text:'交接已接收',status:'accepted',handoff:latestPreview.handoff,createdAt:new Date().toISOString()});if(!conversation.participants.some((item:any)=>item.connectionId===provider))conversation.participants.push({id:'participant-'+provider,connectionId:provider,provider,label:provider,deliveredThrough:0,contextId:'native-'+provider});update({entries:[...conversation.entries,{id:'user-'+sends,sequence:conversation.entries.length+1,kind:body.continueRunId?'notice':'message',role:body.continueRunId?'system':'user',text:body.continueRunId?'已请求继续上次执行。':body.text,attachments:body.attachmentIds,provider,createdAt:new Date().toISOString()}],run:run('running',provider,{modelAccountId:body.modelAccountId,modelAccountRevision:body.modelAccountRevision,modelAccountIdentity:body.modelAccountIdentity,serviceTier:body.serviceTier,model:body.model||model?.id,reasoningEffort:body.reasoningEffort||model?.defaultReasoningEffort,permissionMode:body.permissionMode||'default'})});const response=JSON.parse(JSON.stringify({conversation,run:conversation.run}));if(draftRoute){firstResponses.set(draftRoute[1]+':'+body.clientRequestId,response);for(const id of body.attachmentIds??[]){const index=draftImages.findIndex(image=>image.id===id);if(index>=0)draftImages.splice(index,1);}draftImageRevision++;}if(holdSend){holdSend=false;await new Promise<void>(resolve=>{releaseSend=resolve;sendStarted?.();});}if(draftRoute&&loseFirstResponse){loseFirstResponse=false;expectedBrowserErrors?.add(request.url());return route.abort('failed');}return route.fulfill({json:response});}
+    if(url.pathname.endsWith('/send')){
+      if(prepareError){const error=prepareError;prepareError=undefined;expectedBrowserErrors?.add(request.url());return route.fulfill({status:409,json:{error}});}
+      if(forceCapacity){expectedBrowserErrors?.add(request.url());return route.fulfill({status:413,json:{error:{code:'agent_handoff_capacity',message:'必要交接资料仍超出接收容量，请选择容量更大的模型；草稿与本地资料保留。'}}});}
+      sends++;const body=request.postDataJSON();sentInputs.push(body);const provider=body.connectionId;const model=connections.find(item=>item.id===provider)?.models.find(item=>body.model?item.id===body.model:item.isDefault);if(latestPreview?.switching)conversation.entries.push({id:'handoff-'+sends,sequence:conversation.entries.length+1,kind:'handoff',role:'system',text:'交接已接收',status:'accepted',handoff:latestPreview.handoff,createdAt:new Date().toISOString()});if(!conversation.participants.some((item:any)=>item.connectionId===provider))conversation.participants.push({id:'participant-'+provider,connectionId:provider,provider,label:provider,deliveredThrough:0,contextId:'native-'+provider});update({entries:[...conversation.entries,{id:'user-'+sends,sequence:conversation.entries.length+1,kind:body.continueRunId?'notice':'message',role:body.continueRunId?'system':'user',text:body.continueRunId?'已请求继续上次执行。':body.text,attachments:body.attachmentIds,provider,createdAt:new Date().toISOString()}],run:run('running',provider,{modelAccountId:body.modelAccountId,modelAccountRevision:body.modelAccountRevision,modelAccountIdentity:body.modelAccountIdentity,serviceTier:body.serviceTier,model:body.model||model?.id,reasoningEffort:body.reasoningEffort||model?.defaultReasoningEffort,permissionMode:body.permissionMode||'default'})});const response=JSON.parse(JSON.stringify({conversation,run:conversation.run}));if(draftRoute){firstResponses.set(draftRoute[1]+':'+body.clientRequestId,response);for(const id of body.attachmentIds??[]){const index=draftImages.findIndex(image=>image.id===id);if(index>=0)draftImages.splice(index,1);}draftImageRevision++;}if(holdSend){holdSend=false;await new Promise<void>(resolve=>{releaseSend=resolve;sendStarted?.();});}if(draftRoute&&loseFirstResponse){loseFirstResponse=false;expectedBrowserErrors?.add(request.url());return route.abort('failed');}return route.fulfill({json:response});}
     if(url.pathname.endsWith('/stop')){stops++;let target=additionalConversations.find(item=>url.pathname.includes('/'+item.id+'/'))||conversation;const stopped=run(unknownStop?'unknown':'stopped',target.run.provider,{modelAccountId:target.run.modelAccountId,modelAccountRevision:target.run.modelAccountRevision,modelAccountIdentity:target.run.modelAccountIdentity,serviceTier:target.run.serviceTier,model:target.run.model,reasoningEffort:target.run.reasoningEffort,permissionMode:target.run.permissionMode||'default'});if(target===conversation)target=update({run:stopped,requests:unknownStop?target.requests:[]});else{target.run=stopped;if(!unknownStop)target.requests=[];target.revision='r'+(++revision);}const response=JSON.parse(JSON.stringify(target));if(holdStop){holdStop=false;await new Promise<void>(resolve=>{releaseStop=resolve;stopStarted?.();});}return route.fulfill({json:response});}
     if(url.pathname.includes('/requests/')&&url.pathname.endsWith('/reply')){replies++;const body=request.postDataJSON();assert.equal(body.participantId,conversation.requests[0].participantId);assert.equal(body.runId,conversation.requests[0].runId);const question=conversation.requests[0];const resolved=resolveQuestionAnswer(question,body.answer,ids=>({images:ids.map(id=>({id,path:'/fixture/attachments/'+id,mimeType:'image/png'})),description:''}));conversation.entries.push({id:'reply-'+question.id,sequence:conversation.entries.length+1,kind:'notice',role:'user',runId:body.runId,attachments:resolved.attachmentIds,text:JSON.stringify({请求标识:question.id,问题:question.title,问题列表:question.questions,选项:question.options,回答:resolved.answer,...(resolved.attachmentIds.length?{显示回答:questionAnswerDisplay(body.answer)}:{}),授权性质:'原请求范围'}),createdAt:new Date().toISOString()});update({run:run('running',conversation.run.provider,{permissionMode:conversation.run.permissionMode||'default'}),requests:[]});return route.fulfill({json:conversation});}
     if(url.pathname.endsWith('/observe')){observes++;if(recoverNextObserve){recoverNextObserve=false;update({run:run('completed',conversation.run.provider)});}return route.fulfill({json:conversation});}
@@ -184,7 +221,14 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
       additionalConversations.push(child);return route.fulfill({status:201,json:child});
     }
     if(url.pathname.endsWith('/generate-title')){assert.equal(request.postDataJSON().expectedRevision,conversation.revision);titleGenerations++;if(holdTitle){holdTitle=false;await new Promise<void>(resolve=>{releaseTitle=resolve;titleStarted?.();});}return route.fulfill({json:update({title:'服务停止与重试'})});}
-    if(method==='PATCH'){const body=request.postDataJSON();update({...('title'in body?{title:body.title}:{}),...('hidden'in body?{hidden:body.hidden}:{})});return route.fulfill({json:conversation});}
+    if(method==='PATCH'){
+      const body=request.postDataJSON(),target=additionalConversations.find(item=>url.pathname.endsWith('/'+item.id))||conversation,isCurrent=target===conversation;
+      if(body.expectedRevision!==target.revision){expectedBrowserErrors?.add(request.url());return route.fulfill({status:409,json:{error:{code:'agent_revision_conflict',message:'对话已变化，请重新读取。'}}});}
+      const links=body.taskLinks??(body.taskIds!==undefined?[...(target.taskLinks??[]).filter((link:any)=>link.workspaceId!==target.workspaceId),...body.taskIds.map((taskId:string)=>({workspaceId:target.workspaceId,taskId}))]:undefined);
+      const patch={...('title'in body?{title:body.title}:{}),...('hidden'in body?{hidden:body.hidden}:{}),...(links?{taskLinks:links,taskIds:links.filter((link:any)=>link.workspaceId===target.workspaceId).map((link:any)=>link.taskId),taskId:links.find((link:any)=>link.workspaceId===target.workspaceId)?.taskId}:{})};
+      if(isCurrent)update(patch);else Object.assign(target,patch,{revision:'r'+(++revision),updatedAt:new Date().toISOString()});
+      return route.fulfill({json:isCurrent?conversation:target});
+    }
     if(method==='POST'&&url.pathname.endsWith('/seen')){const body=request.postDataJSON();const target=[...additionalConversations,...additionalPending].find(item=>url.pathname.includes('/'+item.id+'/'))||conversation;const activity={version:Math.max(body.through,target?.activity?.version??body.through),seenThrough:body.through,updatedAt:new Date().toISOString(),active:target?.activity?.active??true};if(target)target.activity=activity;return route.fulfill({json:{activity}});}
     if(method==='GET'){conversationReads++;return route.fulfill({json:[...additionalConversations,...additionalPending].find(item=>url.pathname.endsWith('/'+item.id))||conversation});}
     return route.fallback();
@@ -249,7 +293,7 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
   };
   const dispose=async()=>{releaseEntryRead?.();releaseSend?.();releasePrepare?.();releaseCreate?.();releaseUpload?.();releaseConnections?.();releaseStop?.();releaseTaskList?.();releaseTitle?.();releaseSupplement?.();releaseConnectionProbe?.();await page.evaluate(()=>{(window as any).__releaseTaskSpinnerMotion?.();sessionStorage.removeItem('__buildrHoldTaskSpinnerMotion');}).catch(()=>{});await page.unroute('**/api/v1/app/agent-service/**',route);await page.unroute('**/api/v1/workspaces/*/agent-conversations**',route);await page.setViewportSize({width:1280,height:900});await page.evaluate(()=>sessionStorage.clear()).catch(()=>{});if(scenarioFocus.length)assert.ok(stepIndex>0,'BUILDR_AGENT_SCENARIO_FOCUS 没有匹配任何场景');};
   return {
-    quotaOverrides,
+    quotaOverrides,otherWorkspaceId,
     get additionalConversations(){return additionalConversations;}, set additionalConversations(value){additionalConversations=value;},
     get additionalPending(){return additionalPending;}, set additionalPending(value){additionalPending=value;},
     assertFixed,
@@ -325,6 +369,7 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
     get releaseTaskList(){return releaseTaskList;}, set releaseTaskList(value){releaseTaskList=value;},
     get releaseTitle(){return releaseTitle;}, set releaseTitle(value){releaseTitle=value;},
     get releaseUpload(){return releaseUpload;}, set releaseUpload(value){releaseUpload=value;},
+    get reminderReads(){return reminderReads;},
     get reminderPaging(){return reminderPaging;}, set reminderPaging(value){reminderPaging=value;},
     get reminderReadFailure(){return reminderReadFailure;}, set reminderReadFailure(value){reminderReadFailure=value;},
     reopen,

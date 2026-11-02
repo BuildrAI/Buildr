@@ -1,4 +1,9 @@
+import { readParticipationRun } from './participation-navigation';
+import { locateConversationContent } from './conversation-reading';
+import { retainObservation } from './retain-observation.ts';
+import { createConversationHistoryCache, conversationHistorySignature, activityWorkspaceSignatures, type ConversationHistoryCache } from './conversation-history-page';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { ConnectionDiscovery, type ConnectionDiscoveryState } from './connection-discovery';
 import { agentConversationsApi, type ConversationPage, type AgentConversationsClient } from './api/agent-conversations-api';
 import { conversationObservationKey, needsConversationObservation, nextConversationPanel, createdConversationVisibility, isCurrentConversationEvent, mergeConversationView, prependConversationEntries, rememberContextReport, sameConversationSelection, type ConversationContextReport, type ConversationSelection } from './conversation-state';
 import { readOptionalPreference, writeOptionalPreference } from '../../lib/optional-preferences';
@@ -8,7 +13,7 @@ import { firstConversationSubmissions } from './conversation-first-submission';
 import { readConversationModelPreference, readConversationModulePreference } from './conversation-preferences';
 
 type Scope = {workspaceId: string; conversationId: string};
-export type DraftScope = {workspaceId: string; taskId?: string};
+export type DraftScope = {workspaceId: string; taskId?: string;taskLinks?:{workspaceId:string;taskId:string}[]};
 type VisibilityOptions={preserveVisibility?:boolean};
 export type TextConversationActionInput = {workspaceId: string; cwd: string; text: string};
 export type TextConversationActionResult =
@@ -16,11 +21,13 @@ export type TextConversationActionResult =
   | {status: 'recovering'; reason: 'existing-submission' | 'submission-unknown'; conversation?: ConversationView; message: string}
   | {status: 'unavailable' | 'failed' | 'busy'; message: string};
 export type AgentConversationsContextValue = {
-  activityCounts:ConversationPage['activityCounts'];activityStats:ConversationPage['stats'];activityRows:ConversationView[];activityTotal:number;activityCursor?:string;activityError:string;activityTick:number;
+  activityCounts:ConversationPage['activityCounts'];activityStats:ConversationPage['stats'];activityRows:ConversationView[];activityTotal:number;activityCursor?:string;activityError:string;activityTick:number;activityWorkspaceTicks?:Record<string,number>;
   historyWorkspaceId:string|null|undefined;openHistory(workspaceId?:string|null):void;
+  historyCache?:ConversationHistoryCache;
   refreshActivity():Promise<void>;loadMoreActivity():Promise<void>;markSeen(value:ConversationView):Promise<void>;
 
   api: AgentConversationsClient; reconnecting:boolean; recovering:boolean; open: boolean; side: 'left' | 'right'; full: boolean; view: 'conversation' | 'history';
+  connectionsReady?:boolean; connectionsLoading?:boolean; connectionsError?:string;
   scope: Scope | null; draftScope: DraftScope | null; conversation: ConversationView | null; connections: ConnectionView[]; pending: PendingConversation[];
   /** Latest real context-usage report retained for the open conversation; optional for isolated view providers. */
   contextReport?: ConversationContextReport | null;
@@ -29,6 +36,7 @@ export type AgentConversationsContextValue = {
   setSettings(value: boolean): void; setOpen(value: boolean): void; setFull(value: boolean): void; setView(value: 'conversation' | 'history'): void; move(): void;
   openGlobal(): void; toggle(): void; toggleView(view:'conversation'|'history'):void; openConversation(workspaceId: string, conversationId: string,options?:VisibilityOptions): Promise<void>; newConversation(options?:VisibilityOptions&{scope?:DraftScope|null}): void;
   refresh(): Promise<void>; refreshConnections(): Promise<void>; refreshPending(): Promise<void>; apply(value: ConversationView, observedRevision?:string): void; prependEntries(value: ConversationView): void; updateConnection(value: ConnectionView): void;
+  locateParticipation?(workspaceId:string,conversationId:string,runId:string):Promise<void>;
   selectionGeneration:number; getSelection():ConversationSelection; isSelectionCurrent(selection:ConversationSelection):boolean;
   create(input: {workspaceId: string; cwd?: string; taskId?: string},selection?:ConversationSelection): Promise<ConversationView>;
   /** 产品动作入口在纯展示宿主中可选；真实宿主复用首条提交与恢复记录。 */
@@ -52,6 +60,7 @@ function savePanel(open: boolean, scope: Scope | null) {try {sessionStorage.setI
 
 export function AgentConversationsProvider({children, client = agentConversationsApi}: {children: ReactNode; client?: AgentConversationsClient}) {
   const [initialPanel] = useState(savedPanel);
+  const historyCache=useMemo(createConversationHistoryCache,[client]);
   const [open, setOpenState] = useState(initialPanel.open), [full, setFull] = useState(false), [view, setView] = useState<'conversation' | 'history'>('conversation');
   const visibility=useRef({open:initialPanel.open,version:0});
   const setVisibility=useCallback((value:boolean,explicit=true)=>{visibility.current={open:value,version:visibility.current.version+(explicit?1:0)};setOpenState(value);},[]);
@@ -69,14 +78,26 @@ export function AgentConversationsProvider({children, client = agentConversation
   const [activityStats,setActivityStats]=useState<ConversationPage['stats']>();
   const [activityRows,setActivityRows]=useState<ConversationView[]>([]),[activityTotal,setActivityTotal]=useState(0),[activityCursor,setActivityCursor]=useState<string>(),[activityError,setActivityError]=useState(''),[activityTick,setActivityTick]=useState(0),[historyWorkspaceId,setHistoryWorkspaceId]=useState<string|null|undefined>(undefined);
   const activityGeneration=useRef(0),activitySignature=useRef('');
-  const refreshActivity=useCallback(async()=>{if(!client.listAll)return;const generation=++activityGeneration.current;try{const result=await client.listAll({activeOnly:true,limit:100});if(generation!==activityGeneration.current)return;const signature=JSON.stringify([result.nextCursor,result.conversations.map(row=>[row.workspaceId,row.id,row.revision,row.title,row.run?.id,row.run?.status,row.run?.model,row.activity])]);if(signature!==activitySignature.current){setActivityRows(result.conversations);setActivityCursor(result.nextCursor);}setActivityCounts(result.activityCounts);setActivityStats(result.stats);setActivityTotal(result.total??result.conversations.length);setActivityError('');if(signature!==activitySignature.current){activitySignature.current=signature;setActivityTick(value=>value+1);}}catch(error){if(generation===activityGeneration.current)setActivityError(error instanceof Error?error.message:'活动对话尚未更新，保留上次结果。');}},[client]);
+  const [activityWorkspaceTicks,setActivityWorkspaceTicks]=useState<Record<string,number>|undefined>({});
+  const workspaceSignatures=useRef(new Map<string,string>());
+  const refreshActivity=useCallback(async()=>{if(!client.listAll)return;const generation=++activityGeneration.current;try{const result=client.activitySummary?await client.activitySummary():await client.listAll({activeOnly:true,limit:100});if(generation!==activityGeneration.current)return;if('pending' in result)setPending(current=>retainObservation(current,result.pending as PendingConversation[]));const signature=JSON.stringify([result.nextCursor,result.conversations.map(row=>[row.workspaceId,row.id,row.title,row.hidden,row.run?.id,row.run?.status,row.run?.model,row.run?.provider,row.run?.modelAccountId,row.run?.modelSourceLabel,row.activity?.updatedAt,row.activity?.userInputAt,row.activity?.active,row.activity?.pendingDecisionCount,Boolean(row.activity&&row.activity.version>row.activity.seenThrough)])]);if(signature!==activitySignature.current){
+      const next=activityWorkspaceSignatures(result.conversations),previous=workspaceSignatures.current;
+      setActivityWorkspaceTicks(current=>{
+        if(result.nextCursor)return undefined;
+        const ticks={...current};
+        for(const id of new Set([...previous.keys(),...next.keys()]))if(previous.get(id)!==next.get(id))ticks[id]=(ticks[id]??0)+1;
+        return ticks;
+      });
+      workspaceSignatures.current=next;
+      setActivityRows(result.conversations);setActivityCursor(result.nextCursor);
+    }setActivityCounts(current=>retainObservation(current,result.activityCounts));setActivityStats(current=>retainObservation(current,result.stats));setActivityTotal(result.total??result.conversations.length);setActivityError('');if(signature!==activitySignature.current){activitySignature.current=signature;setActivityTick(value=>value+1);}}catch(error){if(generation===activityGeneration.current)setActivityError(error instanceof Error?error.message:'活动对话尚未更新，保留上次结果。');}},[client]);
   const loadMoreActivity=useCallback(async()=>{if(!activityCursor)return;const generation=activityGeneration.current;try{const result=await client.listAll({activeOnly:true,limit:100,cursor:activityCursor});if(generation!==activityGeneration.current)return;setActivityRows(previous=>[...previous,...result.conversations.filter(row=>!previous.some(item=>item.id===row.id&&item.workspaceId===row.workspaceId))]);setActivityCursor(result.nextCursor);}catch{await refreshActivity();}},[client,activityCursor,refreshActivity]);
   const [modelCatalog,setModelCatalog]=useState<CatalogModel[]>([]);
   const [modelCatalogReady,setModelCatalogReady]=useState(false),[modelCatalogError,setModelCatalogError]=useState('');
   const modelReadGeneration=useRef(0);
   const refreshModelCatalog=useCallback(async()=>{
     const generation=++modelReadGeneration.current;
-    try{const result=await client.modelCatalog();if(generation===modelReadGeneration.current){setModelCatalog(result.models);setModelCatalogReady(result.hasSnapshot??true);setModelCatalogError(result.diagnostic||'');}}
+    try{const result=await client.modelCatalog();if(generation===modelReadGeneration.current){setModelCatalog(current=>retainObservation(current,result.models));setModelCatalogReady(result.hasSnapshot??true);setModelCatalogError(result.diagnostic||'');}}
     catch(error){if(generation===modelReadGeneration.current)setModelCatalogError('模型列表读取失败，已保留已有结果。');throw error;}
   },[client]);
   useEffect(()=>{
@@ -95,11 +116,17 @@ export function AgentConversationsProvider({children, client = agentConversation
   const serial = useRef(0), eventCursor = useRef<number | undefined>(undefined), [observation, setObservation] = useState(0);
   const getSelection=useCallback(()=>({generation:serial.current,scope:scopeRef.current}),[]);
   const isSelectionCurrent=useCallback((selection:ConversationSelection)=>sameConversationSelection(getSelection(),selection),[getSelection]);
-  const advanceSelection=useCallback(()=>{const generation=++serial.current;setSelectionGeneration(generation);return generation;},[]);
+  const participationNavigation=useRef<AbortController|null>(null);
+  useEffect(()=>{if(!open)participationNavigation.current?.abort();return()=>participationNavigation.current?.abort();},[open]);
+  const advanceSelection=useCallback(()=>{participationNavigation.current?.abort();const generation=++serial.current;setSelectionGeneration(generation);return generation;},[]);
   const apply = useCallback((next: ConversationView, observedRevision?:string) => { const current = scopeRef.current; if (current?.workspaceId === next.workspaceId && current.conversationId === next.id) {
     // Keep the observed fact synchronous: a stream can end in the same tick as
     // its completion event, before React commits the corresponding render.
     const merged=mergeConversationView(conversationRef.current,next,observedRevision);
+    if(conversationRef.current&&conversationHistorySignature(conversationRef.current)!==conversationHistorySignature(merged)){
+      setActivityTick(value=>value+1);
+      setActivityWorkspaceTicks(current=>current?{...current,[merged.workspaceId]:(current[merged.workspaceId]??0)+1}:current);
+    }
     conversationRef.current=merged;setConversation(merged);setError('');
   } }, []);
   const prependEntries = useCallback((page:ConversationView) => {
@@ -108,14 +135,36 @@ export function AgentConversationsProvider({children, client = agentConversation
     conversationRef.current=next;setConversation(next);
   },[]);
   const connectionReadGeneration=useRef(0);
-  const refreshConnections = useCallback(async () => {const generation=++connectionReadGeneration.current;const result=await client.connections();if(connectionReadGeneration.current===generation)setConnections(result.connections);},[client]);
-  const refreshPending = useCallback(async () => { void refreshActivity(); const result = await client.pending(); setPending(result.conversations); }, [client,refreshActivity]);
+  const [connectionState,setConnectionState]=useState<ConnectionDiscoveryState>({ready:false,loading:false,error:''});
+  const discovery=useMemo(()=>{
+    let generation=0;
+    return new ConnectionDiscovery(async()=>{
+      generation=++connectionReadGeneration.current;
+      return (await client.connections()).connections;
+    },rows=>{if(generation===connectionReadGeneration.current)setConnections(rows);},setConnectionState);
+  },[client]);
+  useEffect(()=>{discovery.start();return()=>discovery.stop();},[discovery]);
+  const refreshConnections=useCallback(()=>discovery.refresh(),[discovery]);
+  const refreshPending = useCallback(async () => { if(client.activitySummary){await refreshActivity();return;} void refreshActivity(); const result = await client.pending(); setPending(current=>retainObservation(current,result.conversations)); }, [client,refreshActivity]);
   const updateConnection = useCallback((value: ConnectionView) => {++connectionReadGeneration.current;setConnections(previous=>previous.some(item=>item.id===value.id)?previous.map(item=>item.id===value.id?value:item):[...previous,value]);},[]);
-  useEffect(() => { let active = true; const refresh = () => { void refreshModelCatalog().catch(()=>{});void refreshConnections().catch(() => {}); void refreshPending().catch(() => {}); }; refresh(); const interval = setInterval(() => {if (active && document.visibilityState === 'visible') void refreshPending().catch(() => {});}, 5000); window.addEventListener('focus', refresh); return () => { active = false; ++activityGeneration.current; clearInterval(interval); window.removeEventListener('focus', refresh); }; }, [refreshConnections, refreshPending,refreshModelCatalog]);
+  useEffect(() => { let active = true; const refresh = () => { void refreshModelCatalog().catch(()=>{});void refreshConnections().catch(() => {}); void refreshPending().catch(() => {}); }; refresh(); const interval = setInterval(() => {if (active && document.visibilityState === 'visible') void refreshPending().catch(() => {});}, 5000); const visible=()=>{if(document.visibilityState==='visible')refresh();}; document.addEventListener('visibilitychange',visible); window.addEventListener('focus', refresh); return () => { document.removeEventListener('visibilitychange',visible); active = false; ++activityGeneration.current; clearInterval(interval); window.removeEventListener('focus', refresh); }; }, [refreshConnections, refreshPending,refreshModelCatalog]);
   const openConversation = useCallback(async (workspaceId: string, conversationId: string,options:VisibilityOptions={}) => {
     const request = advanceSelection(); const nextScope = {workspaceId, conversationId}; scopeRef.current = nextScope; setScope(nextScope); setDraftScope(null); conversationRef.current=null; setConversation(null); setView('conversation'); if(!options.preserveVisibility)setVisibility(true); setLoading(true); setError(''); setStreamError(''); eventCursor.current = undefined; savePanel(visibility.current.open,nextScope);
     try { const next = await client.read(workspaceId, conversationId); if (request === serial.current && scopeRef.current?.conversationId === conversationId && scopeRef.current.workspaceId === workspaceId) apply(next); } catch (failure) { if (request === serial.current) setError(failure instanceof Error ? failure.message : '无法读取对话。'); } finally { if (request === serial.current) setLoading(false); }
   }, [client,advanceSelection,setVisibility,apply]);
+  const locateParticipation=useCallback(async(workspaceId:string,conversationId:string,runId:string)=>{
+    participationNavigation.current?.abort();
+    if(scopeRef.current?.workspaceId!==workspaceId||scopeRef.current.conversationId!==conversationId)await openConversation(workspaceId,conversationId,{preserveVisibility:true});
+    else setView('conversation');
+    const initial=conversationRef.current;if(!initial||initial.id!==conversationId||initial.workspaceId!==workspaceId)return;
+    const selection=getSelection(),controller=new AbortController();participationNavigation.current=controller;
+    try{
+      const result=await readParticipationRun({initial,runId,signal:controller.signal,current:()=>isSelectionCurrent(selection)&&visibility.current.open,read:(cursor,signal)=>client.entries(workspaceId,conversationId,cursor,signal),prepend:prependEntries});
+      if(result==='cancelled')return;
+      if(result!=='found'){setError(result==='limit'?'已打开原对话，自动定位达到分页预算；可继续向上阅读，或在参与明细按原版本查看原文。':'原执行正文缺失；未读取当前源文件补写历史。');return;}
+      requestAnimationFrame(()=>{if(controller.signal.aborted||!isSelectionCurrent(selection)||!visibility.current.open)return;const target=[...document.querySelectorAll<HTMLElement>('[data-run-id]')].find(node=>node.dataset.runId===runId);if(target)locateConversationContent(target,false);});
+    }catch(failure){if(!controller.signal.aborted&&isSelectionCurrent(selection))setError(failure instanceof Error?failure.message:'原执行定位失败');}
+  },[client,openConversation,getSelection,isSelectionCurrent,prependEntries]);
   useEffect(() => {const saved=initialPanel;if(saved.scope)void openConversation(saved.scope.workspaceId,saved.scope.conversationId,{preserveVisibility:true});},[openConversation]);
   const refresh = useCallback(async () => { const current = scopeRef.current; if (!current) return; const selection=getSelection(),observed=conversationRef.current?.revision; const result = await client.read(current.workspaceId, current.conversationId); if(!isSelectionCurrent(selection))return; apply(result,observed); setStreamError(''); setObservation(value => value + 1); void refreshPending().catch(() => {}); }, [client, apply, refreshPending,getSelection,isSelectionCurrent]);
   // Reuse global activity discovery instead of polling a finished run. List rows
@@ -194,7 +243,11 @@ export function AgentConversationsProvider({children, client = agentConversation
         if (failures<5) {const delay=Math.min(5000,500*2**failures++);setReconnecting(true);retryTimer=setTimeout(()=>{void connect(true);},delay);return;}
         if(!await reconcile())return;
         setReconnecting(false);
-        setStreamError(failure instanceof Error ? failure.message : '暂时无法同步最新进展；已保留收到的消息，请重新连接。');
+        const diagnostic=failure instanceof Error?failure.message:'暂时无法接收实时进展。';
+        setStreamError(diagnostic+' 正在自动重连，后台工作仍会保留。');
+        // Continue low-frequency recovery while this exact execution needs observation.
+        // Reads can still discover progress; only valid events prove the stream recovered.
+        retryTimer=setTimeout(()=>{void connect(true);},15_000);
       }
     };
     void connect();
@@ -278,7 +331,7 @@ export function AgentConversationsProvider({children, client = agentConversation
   const toggleView=useCallback((target:'conversation'|'history')=>{const next=nextConversationPanel(open,view,target);if(target==='history'&&next.open)setHistoryWorkspaceId(null);setView(next.view);setOpen(next.open);},[open,view,setOpen]);
   const toggle=useCallback(()=>setOpen(!open),[open,setOpen]);
   const shell=useMemo(()=>({open,view,full,pending,openGlobal,toggle,toggleView,setSettings}),[open,view,full,pending,openGlobal,toggle,toggleView]);
-  return <ShellContext.Provider value={shell}><Context.Provider value={{activityCounts,activityStats,activityRows,activityTotal,activityCursor,activityError,activityTick,historyWorkspaceId,openHistory,refreshActivity,loadMoreActivity,markSeen,api:client,reconnecting,recovering, modelCatalog,modelCatalogReady,modelCatalogError,refreshModelCatalog,open,side,full,view,scope,draftScope,conversation,contextReport,connections,pending,loading,error,streamError,settings,setSettings,setOpen,setFull,setView,move:() => setSide(current => { const next = current === 'right' ? 'left' : 'right'; writeOptionalPreference('buildr.agent-conversation-side',next); return next; }),openGlobal,toggle,toggleView,openConversation,newConversation,refresh,refreshConnections,refreshPending,apply,prependEntries,updateConnection,create,selectionGeneration,getSelection,isSelectionCurrent,productActionPending,productActionError,firstSubmissionStore,startTextConversation}}>{children}</Context.Provider></ShellContext.Provider>;
+  return <ShellContext.Provider value={shell}><Context.Provider value={{historyCache,activityCounts,activityStats,activityRows,activityTotal,activityCursor,activityError,activityTick,activityWorkspaceTicks,historyWorkspaceId,openHistory,refreshActivity,loadMoreActivity,markSeen,api:client,reconnecting,recovering, modelCatalog,modelCatalogReady,modelCatalogError,refreshModelCatalog,open,side,full,view,scope,draftScope,conversation,contextReport,connections,connectionsReady:connectionState.ready,connectionsLoading:connectionState.loading,connectionsError:connectionState.error,pending,loading,error,streamError,settings,setSettings,setOpen,setFull,setView,move:() => setSide(current => { const next = current === 'right' ? 'left' : 'right'; writeOptionalPreference('buildr.agent-conversation-side',next); return next; }),openGlobal,toggle,toggleView,openConversation,locateParticipation,newConversation,refresh,refreshConnections,refreshPending,apply,prependEntries,updateConnection,create,selectionGeneration,getSelection,isSelectionCurrent,productActionPending,productActionError,firstSubmissionStore,startTextConversation}}>{children}</Context.Provider></ShellContext.Provider>;
 }
 export function useAgentConversations() { const value = useContext(Context); if (!value) throw new Error('AgentConversationsProvider 未提供。'); return value; }
 export function useOptionalAgentConversations() { return useContext(Context); }

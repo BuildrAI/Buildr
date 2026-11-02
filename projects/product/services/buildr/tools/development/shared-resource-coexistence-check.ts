@@ -10,6 +10,8 @@ assert.ok(sandbox&&root,'Use the isolated check runner.');
 const service=path.resolve(import.meta.dirname,'../..');
 process.env.BUILDR_NPM_ENTRY_PATH=path.join(service,'bin/buildr.mjs');
 fs.mkdirSync(root,{recursive:true});root=fs.realpathSync(root);
+// Root rules belong to the user; initialization no longer injects AGENTS.md.
+fs.writeFileSync(path.join(root,'AGENTS.md'),'# 用户自有工作空间规则\n\n保留本文件，不用产品默认规则替换。\n');
 const initialized=spawnSync(process.execPath,[process.env.BUILDR_NPM_ENTRY_PATH,'init','--target',root,'--name','Resource coexistence','--description','Shared projection recovery'],{encoding:'utf8'});
 assert.equal(initialized.status,0,initialized.stderr||initialized.stdout);
 const candidate=path.join(sandbox,'resource-publisher');

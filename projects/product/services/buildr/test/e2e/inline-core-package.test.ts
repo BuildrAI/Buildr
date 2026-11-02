@@ -4,11 +4,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { source, fixture, assertInline, legacy } from '../helpers/inline-core-fixture.ts';
+import { source, fixture, legacy } from '../helpers/inline-core-fixture.ts';
 
 
 
-test('packed artifact contains the sole inline source and initializes and upgrades workspaces', async (t: any) => {
+test('packed artifact retains legacy proof but does not install root rules', async (t: any) => {
   const { root, workspace, run }: any = fixture(t);
   const shared = readSharedCandidatePackage();
   assert.ok(shared?.manifest, 'The original frozen package is required; this consumer never builds another package.');
@@ -20,13 +20,13 @@ test('packed artifact contains the sole inline source and initializes and upgrad
   assert.equal(fs.readFileSync(path.join(root, 'package/payload/product/resources/workspace/AGENTS.md'), 'utf8'), source);
   const cli: any = path.join(root, 'package/bin/buildr.mjs');
   run(['init', '--target', workspace, '--name', 'packed', '--profile', 'personal'], cli);
-  assertInline(workspace);
+  assert.equal(fs.existsSync(path.join(workspace, 'AGENTS.md')), false);
   assert.equal(fs.existsSync(path.join(workspace, 'rules')), false, 'init must not create a retired rules directory');
   legacy(workspace);
   const manifest: any = fs.readFileSync(path.join(workspace, 'rules/manifest.yml'));
   const file: any = fs.readFileSync(path.join(workspace, 'rules/buildr/core.md'));
   run(['sync', 'codex', '--target', workspace], cli);
-  assertInline(workspace);
+  assert.equal(fs.existsSync(path.join(workspace, 'AGENTS.md')), false);
   assert.deepEqual(fs.readFileSync(path.join(workspace, 'rules/manifest.yml')), manifest);
   assert.deepEqual(fs.readFileSync(path.join(workspace, 'rules/buildr/core.md')), file);
 });

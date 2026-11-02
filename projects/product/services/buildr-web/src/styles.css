@@ -1479,6 +1479,10 @@ button.table-action {
 .markdown-body ul.task-list { padding-left: 4px; list-style: none; }
 .markdown-body li.task-list-item { display: grid; grid-template-columns: 16px 1fr; gap: 8px; align-items: start; }
 .markdown-body li.task-list-item input[type="checkbox"] { margin: 4px 0 0; }
+.markdown-body blockquote { display:grid; gap:10px; min-width:0; margin:0; padding:4px 0 4px 16px; border-left:3px solid var(--soft-line); color:var(--soft-muted); }
+.markdown-body li > p + p, .markdown-body li > ul, .markdown-body li > ol, .markdown-task-content > ul, .markdown-task-content > ol { margin-top:6px; }
+.markdown-task-content { min-width:0; }
+.markdown-task-content > p + p { margin-top:6px; }
 .markdown-body hr { width: 100%; height: 1px; margin: 4px 0; border: 0; background: #d7e0da; }
 .markdown-body a { color: #1f6b4a; text-decoration: underline; text-underline-offset: 2px; }
 .markdown-body code { padding: 1px 5px; border-radius: 4px; background: #eef3f0; font: var(--font-size-code)/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }

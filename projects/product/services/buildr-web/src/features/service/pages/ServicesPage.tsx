@@ -5,7 +5,8 @@ import { ResourceDirectory } from '../../../components/ResourceDirectory';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from 'antd';
-import { CheckOutlined, PlayCircleOutlined, SettingOutlined, StarFilled, StarOutlined, UnorderedListOutlined } from '@ant-design/icons';
+import { CheckOutlined, CommentOutlined, PlayCircleOutlined, SettingOutlined, StarFilled, StarOutlined, UnorderedListOutlined } from '@ant-design/icons';
+import { useOptionalAgentConversations } from '../../agent-conversations/AgentConversationsContext';
 import { useAppShell } from '../../../app/AppShellContext';
 import { useWorkspacePageTabs } from '../../../app/pageTabs';
 import { WorkspaceStage } from '../../../components/WorkspaceStage';
@@ -14,7 +15,7 @@ import { useAssetCatalog } from '../../workspace/components/useAssetCatalog';
 import { AssetEditDrawer } from '../../workspace/components/AssetEditDrawer';
 import { assetCatalogApi, type ServiceDraft } from '../../workspace/api/asset-catalog-api';
 import { ServiceCreateDrawer } from '../../workspace/components/ServiceCreateDrawer';
-import { AgentDiscoveryDrawer } from '../../service-runtime/components/AgentDiscoveryDrawer';
+import { RuntimeConfigurationDrawer } from '../../service-runtime/components/RuntimeConfigurationDrawer';
 import { ServiceRuntimeStatusCell } from '../../service-runtime/components/ServiceRuntimeStatusCell';
 import { StartWorktreeModal } from '../../service-runtime/components/StartWorktreeModal';
 import { usePrepareServiceStart, useServiceRuntimeOverview } from '../../service-runtime/hooks/useServiceRuntime';
@@ -25,6 +26,7 @@ import '../../service-runtime/service-runtime.css';
 
 export function ServicesPage() {
   const { workspaceId } = useAppShell(), navigate = useNavigate(), tabs = useWorkspacePageTabs(workspaceId), listing = useAssetList('services');
+  const conversations = useOptionalAgentConversations();
   const { message } = App.useApp(), preferences = useWorkbenchPreferences(workspaceId);
   const prepareStart = usePrepareServiceStart(workspaceId), startSequence = useRef(0);
   const [editing, setEditing] = useState<string | null>(null), [creating, setCreating] = useState(false), [draft, setDraft] = useState<ServiceDraft>();
@@ -87,7 +89,7 @@ export function ServicesPage() {
           title: '本地运行', width: 280, render: (_, s) => {
             const summary = runtimeByCode.get(s.code);
             return summary
-              ? <ServiceRuntimeStatusCell service={summary} onOpenDetail={() => navigate(href(s.id) + '?view=runtime')} />
+              ? <ServiceRuntimeStatusCell service={summary} configuring={configuration.pending?.code === s.code} onOpenDetail={() => navigate(href(s.id) + '?view=runtime')} />
               : <span className="directory-muted">{runtime.error ? '状态不可用' : runtime.loading && !runtime.data ? '正在读取' : '未登记运行状态'}</span>;
           },
         },
@@ -95,12 +97,15 @@ export function ServicesPage() {
       actionWidth={224}
       rowActions={s => {
         const summary = runtimeByCode.get(s.code);
+        const pending = configuration.pending?.code === s.code ? configuration.pending : null;
         return <>
-          {activeRuns(summary).length
+          {pending
+            ? <Button type="text" icon={<CommentOutlined />} disabled={!conversations || !workspaceId} onClick={() => { if (conversations && workspaceId) void conversations.openConversation(workspaceId, pending.conversationId); }}>查看对话</Button>
+            : activeRuns(summary).length
             ? <Button type="text" icon={<UnorderedListOutlined />} onClick={() => navigate(href(s.id) + '?view=runtime')}>查看运行</Button>
             : summary?.definition
             ? <Button className="service-directory-start" icon={<PlayCircleOutlined />} loading={preparing === s.code} disabled={list?.migrationRequired} onPointerEnter={() => { void prepareStart(s.code).catch(() => undefined); }} onFocus={() => { void prepareStart(s.code).catch(() => undefined); }} onClick={() => void openStart({ code: s.code, name: s.name })}>启动</Button>
-            : <Button type="text" icon={<SettingOutlined />} loading={configuration.pendingCode === s.code} disabled={list?.migrationRequired} onClick={() => void configuration.configure({ code: s.code, name: s.name })}>运行配置</Button>}
+            : <Button type="text" icon={<SettingOutlined />} disabled={list?.migrationRequired} onClick={() => configuration.open({ code: s.code, name: s.name, definition: summary?.definition ?? null })}>开始配置</Button>}
           <Button type="text" disabled={list?.migrationRequired} onClick={() => setEditing(s.id)}>编辑</Button>
           <Button type="text" disabled={list?.migrationRequired} onClick={() => setDeleting(s.id)}>移除</Button>
         </>;
@@ -112,6 +117,6 @@ export function ServicesPage() {
     {data && editing && <AssetEditDrawer key={editing} catalog={data} kind="service" id={editing} onClose={() => setEditing(null)} />}
     {data && creating && <ServiceCreateDrawer catalog={data} initial={draft} onClose={d => { setDraft(d); setCreating(false); }} onSave={async service => { await assetCatalogApi.service({ revision: data.revision, service }); setDraft(undefined); setCreating(false); }} />}
     <StartWorktreeModal open={Boolean(starting)} serviceCode={starting?.code ?? null} serviceName={starting?.name} onClose={() => setStarting(null)} onStarted={() => void runtime.refresh({ silent: true })} />
-    <AgentDiscoveryDrawer open={Boolean(configuration.discovery)} serviceCode={configuration.discovery?.code ?? null} serviceName={configuration.discovery?.name} tone={configuration.discovery?.tone} reason={configuration.discovery?.message} onClose={configuration.closeDiscovery} />
+    <RuntimeConfigurationDrawer target={configuration.target} submitting={configuration.submitting} feedback={configuration.feedback} pending={configuration.pending} onSubmit={() => void configuration.submit()} onClose={configuration.close} onResolved={configuration.resolve} />
   </WorkspaceStage>;
 }

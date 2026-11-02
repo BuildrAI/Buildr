@@ -34,6 +34,32 @@ test('native identity changes and disconnect invalidate scoped leases while old 
   const next=await app.leases.create({accountId:provider.id,agentId:'dsh',conversationId:'a',runId:'b',modelId:'model'});app.invalidate(provider.id);assert.equal((await fetch(next.baseUrl+'/models',{headers:{authorization:'Bearer '+next.apiKey}})).status,401);
  }finally{await app.close();await rm(root,{recursive:true,force:true});}
 });
+test('a credential refresh keeps an in-flight lease but revocation still ends it',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'buildr-lease-inflight-'));
+ interface Gate{started:Promise<void>;release:()=>void;abort:()=>void}
+ const gates:Gate[]=[];
+ const next=async(index:number)=>{while(!gates[index])await new Promise(resolve=>setTimeout(resolve,2));return gates[index]!;};
+ const provider=(id:string,connectionId:string)=>({id,connectionId,label:id,async open(){return{protocol:'chat-completions' as const,inspect:async()=>({status:'ready' as const,identity:'same',models:[offering]}),beginLogin:async()=>{},cancelLogin:async()=>{},
+  infer:async({signal}:{signal?:AbortSignal})=>{let mark!:()=>void,release!:()=>void,cancel!:()=>void;const started=new Promise<void>(resolve=>{mark=resolve;});const wait=new Promise<Response>((resolve,reject)=>{release=()=>resolve(Response.json({choices:[{message:{content:'ok'}}]}));cancel=()=>reject(Error('model_request_cancelled'));signal?.addEventListener('abort',cancel,{once:true});});gates.push({started,release:()=>{mark();release();},abort:()=>{mark();cancel();}});mark();return wait;},close:async()=>{}};}});
+ const app=createModelAccess({root,providers:[provider('native-codex','codex'),provider('native-qoder','qoder')]});
+ const ask=(lease:any)=>fetch(lease.baseUrl+'/chat/completions',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+lease.apiKey},body:JSON.stringify({model:lease.model,messages:[{role:'user',content:'hi'}]})});
+ try{
+  await app.ensureLinked();await app.accounts.check('native-codex');await app.accounts.check('native-qoder');
+  for(const id of ['native-codex','native-qoder'])await app.accounts.preferences(id,{expectedRevision:app.accounts.read(id).revision,models:[{id:'model',enabled:true}]});
+  const refreshed=await app.leases.create({accountId:'native-codex',agentId:'codex',conversationId:'a',runId:'a',modelId:'model'});
+  const kept=ask(refreshed);const running=await next(0);await running.started;
+  app.invalidate('native-codex',{abortActive:false});running.release();
+  const keptResponse=await kept;assert.equal(keptResponse.status,200);assert.equal((await keptResponse.text()).includes('ok'),true,'the running request finishes on the key it already holds');
+  assert.equal(app.accounts.read('native-codex').status,'not-authenticated');
+  app.invalidate('native-codex',{abortActive:false});
+  const late=await fetch(refreshed.baseUrl+'/models',{headers:{authorization:'Bearer '+refreshed.apiKey}});
+  assert.equal(late.status,401);assert.match(await late.text(),/模型调用的本机凭据已失效/,'once idle the same lease is released');
+  const revoked=await app.leases.create({accountId:'native-qoder',agentId:'qoder',conversationId:'a',runId:'a',modelId:'model'});
+  const ended=ask(revoked);const revokedRun=await next(1);await revokedRun.started;
+  app.invalidate('native-qoder');revokedRun.abort();
+  assert.notEqual((await ended).status,200,'explicit revocation still ends the in-flight request');
+ }finally{for(const gate of gates)gate.abort();await app.close();await rm(root,{recursive:true,force:true});}
+});
 test('Qoder native private credentials are read only and fixed target signatures do not expose raw tokens',async()=>{
  const root=await mkdtemp(join(tmpdir(),'buildr-qoder-auth-'));await mkdir(join(root,'.auth'));const machine='1234567890123456-machine';const key=Buffer.from(machine.slice(0,16)),cipher=createCipheriv('aes-128-cbc',key,key);const user=Buffer.concat([cipher.update(JSON.stringify({uid:'user',security_oauth_token:'private-access',name:'Name'})),cipher.final()]).toString('base64');
  await writeFile(join(root,'.auth','user'),user);await writeFile(join(root,'.auth','machine_id'),machine);

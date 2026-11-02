@@ -1,25 +1,32 @@
 schemaVersion: buildr.knowledge-impact/v1
-task: conversation-activity-cleanup
+task: runtime-configuration-confirmation
+change: add-runtime-configuration-confirmation
 operation: reconcile
 impacts:
   - type: reference
     target: knowledge/code-map/technical-layers.md
-    reason: ConversationActivityFilters.tsx 已删除，原条目移除；入口单角标与未知执行由条目徽标、入口说明表达的事实并入 ConversationActivityEntry.tsx 描述。
+    reason: 运行配置入口先打开交接抽屉、确认后才提交；补充提交后的配置中状态，以及本次执行结束且运行定义可读时的完成反馈。
     status: updated
     sourceIdentities:
-      - services/buildr-web/src/features/agent-conversations/ConversationHistory.tsx
-      - services/buildr-web/src/features/agent-conversations/ConversationActivityEntry.tsx
+      - services/buildr-web/src/features/service-runtime/components/RuntimeConfigurationDrawer.tsx
+      - services/buildr-web/src/features/service-runtime/components/AgentDiscoveryContent.tsx
+      - services/buildr-web/src/features/service-runtime/hooks/useRuntimeConfiguration.ts
+      - services/buildr-web/src/features/service-runtime/configurationOutcome.ts
+      - services/buildr-web/src/features/service-runtime/components/RuntimeConfigurationOutcome.tsx
   - type: reference
     target: knowledge/docs/architecture/agent-integration.md
-    reason: 完整列表不再保留常驻分类筛选与按智能体、模型的执行统计，改为移除分类统计栏与未知提示条、保留执行分布筛选与搜索空间行为。
+    reason: 补充配置交接发生在提交之前，并在执行结束后按运行定义可读反馈完成或未完成；完成不等于服务启动或业务验证。
     status: updated
     sourceIdentities:
-      - openspec/changes/conversation-activity-cleanup/specs/agent-conversations/spec.md
-      - services/buildr-web/src/features/agent-conversations/ConversationHistory.tsx
+      - openspec/changes/add-runtime-configuration-confirmation/specs/service-runtime-operations/spec.md
+      - services/buildr-web/src/features/service-runtime/configurationAction.ts
+      - services/buildr-web/src/features/service-runtime/configurationOutcome.ts
   - type: reference
-    target: knowledge/docs/overview.md
-    reason: 概览未描述对话列表分类统计栏或未知提示条，不需要修改。
-    status: not-applicable
+    target: knowledge/index.yml
+    reason: 更新运行配置动作、钩子、交接正文与抽屉摘要，并登记完成判定和结果反馈源码。
+    status: updated
     sourceIdentities:
-      - openspec/changes/conversation-activity-cleanup/proposal.md
+      - services/buildr-web/src/features/service-runtime/components/RuntimeConfigurationDrawer.tsx
+      - services/buildr-web/src/features/service-runtime/configurationOutcome.ts
+      - services/buildr-web/src/features/service-runtime/components/RuntimeConfigurationOutcome.tsx
 unresolvedItems: []

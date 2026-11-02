@@ -8,7 +8,7 @@ const service = { code: 'front', name: '运营前端' };
 test('已接入时直接提交同一简短请求，不进入复制交接', async () => {
   const calls = [];
   const result = await executeRuntimeConfiguration({ workspaceId: 'workspace-one', workspace, service, start: async input => { calls.push(input); return { status: 'started', conversation: { id: 'conversation', workspaceId: 'workspace-one' } }; } });
-  assert.deepEqual(result, { status: 'started' });
+  assert.deepEqual(result, { status: 'started', conversation: { id: 'conversation', workspaceId: 'workspace-one' } });
   assert.equal(calls.length, 1);
   assert.equal(calls[0].workspaceId, 'workspace-one');
   assert.equal(calls[0].cwd, workspace.rootPath);

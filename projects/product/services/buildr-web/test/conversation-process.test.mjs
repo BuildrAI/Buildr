@@ -25,6 +25,21 @@ test('当前轮未结束时说明仍在过程，完成后才显示最终答复',
   }
   assert.equal(groupConversationStream(entries,{id:'r1',status:'completed'})[1].entry.id,'n');
 });
+
+test('后台可继续输入、保留旧执行和终态与执行事实冲突时，阶段说明不提升为最终答复',()=>{
+  const entries=[tool('t'),message('stage','已开始修复，稍后继续')];
+  const pending={id:'r1',status:'tools-active',canContinue:true,tools:[{id:'child',status:'running'}],executionState:'active'};
+  for(const run of [pending,{...pending,status:'completed'},{...pending,status:'completed',tools:[],executionState:'unknown'}]){
+    const grouped=groupConversationStream(entries,run);
+    assert.equal(grouped.length,1);assert.equal(grouped[0].type,'process-block');assert.equal(grouped[0].active,true);
+  }
+  assert.equal(groupConversationStream(entries,{id:'new',status:'running'},[pending]).filter(item=>item.type==='entry').length,0);
+  const turn=conversationStreamTurns(groupConversationStream(entries,pending))[0];
+  assert.deepEqual(conversationTurnExecution(turn,pending),{current:true,active:true,waiting:'模型已结束，后台作业仍在运行'});
+  assert.equal(conversationTurnExecution(turn,{...pending,resourcesReleased:true}).active,false);
+  const ended=groupConversationStream(entries,{...pending,status:'completed',executionState:'ended',tools:[]});
+  assert.equal(ended.at(-1).entry.id,'stage');
+});
 test('普通无工具回答不生成空过程；没有助手答复时不伪造结论',()=>{
   assert.deepEqual(groupConversationStream([message('a','答复')]).map(item=>item.type),['entry']);
   assert.deepEqual(groupConversationStream([tool('t')]).map(item=>item.type),['process-block']);
@@ -132,8 +147,9 @@ test('同一执行被补充分段后只保留整轮最后一份答复，授权�
  const entries=[message('u','开始','r1','user'),message('n1','先检查'),tool('t1'),message('extra','补充图文','r1','user'),{...message('approval','允许','r1','user'),kind:'notice'},message('n2','继续检查'),tool('t2'),message('final','完成')];
  const items=groupConversationStream(entries,{id:'r1',status:'completed'});
  assert.deepEqual(items.filter(item=>item.type==='entry'&&item.entry.role==='assistant').map(item=>item.entry.id),['final']);
- const turns=conversationStreamTurns(items);assert.equal(turns.length,2);assert.equal(turns[1].prompt.id,'extra');
- assert.equal(turns[0].items[0].entries[0].id,'n1');assert.equal(turns[1].items.at(-1).entry.id,'final');
+ const turns=conversationStreamTurns(items);assert.equal(turns.length,1);assert.equal(turns[0].prompt.id,'u');
+ assert.equal(turns[0].items[1].entry.id,'extra');
+ assert.equal(turns[0].items[0].entries[0].id,'n1');assert.equal(turns[0].items.at(-1).entry.id,'final');
  assert.deepEqual(groupConversationStream(entries,{id:'r1',status:'running'}).filter(item=>item.type==='entry'&&item.entry.role==='assistant'),[]);
 });
 
@@ -167,15 +183,25 @@ test('重试通知在首条原生回应前即绑定当前执行与计时，旧�
  assert.equal(conversationTurnExecution(responded.at(-1),{...run,status:'completed'}).active,false);
 });
 
+test('重试后的答复与迟到的旧任务结论各归其轮，新输入保持最后一轮',()=>{
+ const prompt=message('u','新问题','failed','user'),retry={...message('retry','重试','retry','system'),kind:'notice'};
+ const answer=message('answer','新问题的答复','retry'),late=message('late','旧任务已经完成','old');
+ const turns=conversationStreamTurns(groupConversationStream([prompt,retry,answer,late,message('next','同意执行','next','user')]));
+ assert.equal(turns.at(-1).prompt.id,'next');
+ const retryTurn=turns.find(turn=>turn.key==='run:retry');
+ assert.ok(retryTurn.items.some(item=>item.type==='entry'&&item.entry.id==='answer'));
+ assert.ok(!retryTurn.items.some(item=>item.type==='entry'&&item.entry.id==='late'));
+ assert.ok(turns.find(turn=>turn.key==='history:old').items.some(item=>item.type==='entry'&&item.entry.id==='late'));
+});
+
 test('交错到达的执行先归属再合组，同轮用户补充保持分段',()=>{
  const entries=[message('old-u','旧要求','old','user'),tool('old-one',{runId:'old'}),message('new-u','新要求','new','user'),tool('new-one',{runId:'new'}),tool('old-two',{runId:'old'}),tool('new-two',{runId:'new'}),message('extra','补充','new','user'),tool('old-three',{runId:'old'}),tool('after-extra',{runId:'new'}),message('answer','完成','new')];
  const grouped=groupConversationStream(entries,{id:'new',status:'completed'});
  const original=structuredClone(grouped);
  const turns=conversationStreamTurns(grouped);
- assert.deepEqual(turns.map(turn=>turn.prompt?.id),['old-u','new-u','extra']);
+ assert.deepEqual(turns.map(turn=>turn.prompt?.id),['old-u','new-u']);
  assert.deepEqual(turns[0].items.map(item=>item.entries.map(entry=>entry.id)),[['old-one','old-two','old-three']]);
- assert.deepEqual(turns[1].items.map(item=>item.entries.map(entry=>entry.id)),[['new-one','new-two']]);
- assert.deepEqual(turns[2].items.map(item=>item.type==='process-block'?item.entries.map(entry=>entry.id):item.entry.id),[['after-extra'],'answer']);
+ assert.deepEqual(turns[1].items.map(item=>item.type==='process-block'?item.entries.map(entry=>entry.id):item.entry.id),[['new-one','new-two'],'extra',['after-extra'],'answer']);
  assert.deepEqual(grouped,original,'归属合组不修改原始分段或持久顺序');
 });
 
@@ -214,4 +240,20 @@ test('可见主线分页后保留展开选择，隐藏子报告不能改变过�
   const carried=carryExpandedProcessBlocks(visibleConversationEntries(current),visibleConversationEntries(added),{[key]:open});
   assert.equal(carried[processBlockKey([added[0],current[1]])],open);
  }
+});
+
+test('多次同轮补充保持首条输入与稳定轮次，缺少身份或独立执行不合并',()=>{
+ const prompt=message('u','开始','one','user'),extra=message('extra','补充','one','user');
+ const initial=conversationStreamTurns(groupConversationStream([prompt,tool('t',{runId:'one'})]));
+ const turns=conversationStreamTurns(groupConversationStream([prompt,tool('t',{runId:'one'}),extra,message('again','再次补充','one','user'),message('new','另一个执行','two','user'),message('late-extra','旧执行补充','one','user')]));
+ assert.equal(turns[0].key,initial[0].key);assert.equal(turns[0].prompt.id,'u');assert.equal(turns.length,2);
+ assert.deepEqual(turns[0].items.filter(item=>item.type==='entry').map(item=>item.entry.id),['extra','again','late-extra']);
+ const legacy=conversationStreamTurns(groupConversationStream([message('legacy1','第一轮',undefined,'user'),message('legacy2','第二轮',undefined,'user')].map(entry=>({...entry,runId:undefined}))));
+ assert.equal(legacy.length,2);
+});
+
+test('首条输入前的交接回执不能冒充原用户输入',()=>{
+ const receipt={...message('receipt','接续','new','system'),kind:'handoff'};
+ const turns=conversationStreamTurns(groupConversationStream([receipt,message('first','新要求','new','user'),message('extra','补充','new','user')]));
+ assert.equal(turns.at(-1).prompt.id,'first');assert.equal(turns.at(-1).items[0].entry.id,'extra');
 });

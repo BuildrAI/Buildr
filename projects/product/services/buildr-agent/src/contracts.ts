@@ -1,3 +1,5 @@
+export * from './participation-contracts.ts';
+import type { ParticipationObservation } from './participation-contracts.ts';
 import type { ModelProvider } from './model-access/contracts.ts';
 import type { AgentHostCapabilities } from './execution-contracts.ts';
 /** Public executor protocol. Vendor credentials and opaque state never become UI state. */
@@ -48,6 +50,8 @@ export interface ModelGatewayConfiguration {
   nativeModel?: { provider: 'qoder'; id: string; accountIdentity: string };
 }
 export interface ExecutorOpenOptions {
+  /** Service-owned regenerable caches; never a native session/config HOME. */
+  cacheRoot?: string;
   /** Service-owned instructions supplied to every executor, including future providers. */
   interaction?: { version: 'buildr-interaction/v1'; instructions: string };
   gateway?: ModelGatewayConfiguration;
@@ -69,7 +73,9 @@ export interface LoginObservation {
 export interface ExecutorImage { id: string; path: string; mimeType: string }
 export interface VideoAttachment { duration: number; frames: Array<{ id: string; time: number }> }
 export interface AttachmentInput { expectedRevision?: string; expectedAttachmentRevision?: string; mimeType: string; bytes: Uint8Array; video?: VideoAttachment }
+export interface PresentedFile { path:string; description?:string }
 export interface ExecutorItem {
+  participation?: ParticipationObservation;
   id: string;
   /** Native parent tool identity; absence does not imply an inferred child relationship. */
   parentToolId?: string;
@@ -77,10 +83,14 @@ export interface ExecutorItem {
   kind: 'message' | 'tool' | 'notice';
   role: 'user' | 'assistant' | 'system';
   text: string;
+  /** Model thinking fragment: process-only content, never a final reply nor model history. */
+  thinking?: boolean;
   /** Stable tool-step name when the source provides one (e.g. command, file-change, read). */
   name?: string;
   /** Original tool invocation input; retained when a later result replaces text. */
   input?: string;
+  /** Explicit native file declaration; visible only after successful completion. */
+  presentedFiles?: PresentedFile[];
   executionId?: string;
   status?: 'running' | 'completed' | 'failed' | 'unknown';
 }
@@ -96,7 +106,9 @@ export interface ExecutorRequest {
   options?: Array<{ id: string; label: string; description?: string }>;
   questions?: Array<{ id: string; label: string; options?: Array<{ id: string; label: string; description?: string }>; multiple?: boolean; allowOther?: boolean }>;
 }
+export type ExecutionFault = { kind: 'protocol' | 'transport' | 'process' };
 export interface ExecutorObservation {
+  fault?: ExecutionFault;
   /** The native model ended normally; retained commands remain controllable in this context. */
   canContinue?: boolean;
   /** Native SDK background work, distinct from missing historical tool results. */
@@ -117,9 +129,9 @@ export type ExecutorEvent =
   | { type: 'request'; request: ExecutorRequest }
   | { type: 'request-resolved'; requestId: string }
   | { type: 'observation'; observation: ExecutorObservation }
-  | { type: 'completed'; status: 'completed' | 'stopped' | 'failed'; diagnostic?: string }
+  | { type: 'completed'; status: 'completed' | 'stopped' | 'failed'; diagnostic?: string; fault?: ExecutionFault }
   | { type: 'diagnostic'; message: string };
-export interface ExecutorTitleInput { contextRef: ContextRef; cwd: string; description: string; model?: string; freshInstruction?: boolean; signal: AbortSignal }
+export interface ExecutorTitleInput { contextRef: ContextRef; cwd: string; description: string; /** Exact user input admitted for the current run, when already known. */ userText?: string; model?: string; freshInstruction?: boolean; signal: AbortSignal }
 /** In-process only: the source validates its own binding; the destination owns the new context. */
 export interface ExecutorForkInput {
   source: AgentRuntime;
@@ -165,6 +177,10 @@ export interface ExecutorInputReceipt { executionRef: ExecutionRef; inputItemId?
 /** Only a proven pre-admission rejection may leave input safe to send again. */
 export class ExecutorInputRejected extends Error {}
 export interface AgentRuntime {
+  /** Exact adapter configuration metadata; absent means not observed, never inferred. */
+  readonly participationInstruction?: import('./participation-contracts.ts').ParticipationMatch;
+  /** True only after owned native controls have exited; independent command results stay unknown. */
+  canReclaimStorage?(): Promise<boolean>;
   /** True only when this owned transport is no longer usable; absence is not failure. */
   readonly closed?: boolean;
   /** Stable for compatible program updates at the verified source and config. */
@@ -172,6 +188,8 @@ export interface AgentRuntime {
   bindingData?: Record<string, unknown>;
   capabilities: AgentCapabilities;
   inspectAccount(): Promise<AccountObservation>;
+  /** Isolated, tool-free roundtrip before an upgraded binding may be adopted. */
+  verifyUpgrade?(): Promise<void>;
   models(): Promise<AgentModel[]>;
   /** Private fixed-upstream model bridge; never exposed over host HTTP. */
   requestModel?(path: string, init?: RequestInit, expectedIdentity?: string): Promise<Response>;
@@ -190,7 +208,12 @@ export interface AgentRuntime {
   supplement?(input: ExecutorSupplementInput): Promise<ExecutorInputReceipt>;
   observe(input: { contextRef: ContextRef; executionRef?: ExecutionRef; knownItems?: readonly ExecutorItem[] }): Promise<ExecutorObservation>;
   /** Exact backend control-resource proof. true also proves native execution ended; an object can preserve unknown independent commands. Neither asserts successful results. */
+  /** Release exact controls of a settled submission whose acceptance is unknown.
+   * This proves neither non-delivery nor success of independent operations. */
+  releaseUnaccepted?(input: { contextRef: ContextRef; clientRequestId: string }): Promise<false | {executionState:'unknown'}>;
   canRelease?(input: { contextRef: ContextRef; executionRef: ExecutionRef }): Promise<boolean | {executionState:'ended'|'unknown'}>;
+  /** Logical quiescence only. The owner must close the runtime and still prove physical release. */
+  prepareRelease?(input: { contextRef: ContextRef; executionRef: ExecutionRef }): Promise<boolean>;
   reply(input: { contextRef: ContextRef; executionRef: ExecutionRef; requestId: string; answer: unknown }): Promise<void>;
   stop(input: { contextRef: ContextRef; executionRef: ExecutionRef; toolId?: string }): Promise<ExecutorObservation>;
   /** Native generated/name metadata only; never a first-prompt preview or fallback. */
@@ -201,6 +224,21 @@ export interface AgentRuntime {
   close(): Promise<void>;
 }
 export interface AgentExecutor {
+  /** Observe exact abandoned control resources without login, opening a channel, or proving operation success. */
+  readReleasedControl?(input: {bindingIdentity:string;contextRef:ContextRef;executionRef:ExecutionRef;cwd:string}): Promise<boolean>;
+
+  /** Read exact durable terminal evidence without opening a native process or taking its controls. */
+  readPersistedExecution?(input: {
+    configRoot: string; nativeAccountConfigRoot?: string; executable: string; programSource?: string; gatewayIdentity?: string;
+    bindingIdentity: string; contextRef: ContextRef; executionRef: ExecutionRef; cwd: string;
+  }): Promise<{ items: ExecutorItem[]; observation: ExecutorObservation; endedAt?: string } | undefined>;
+  /** Adapter-owned cache knowledge, applied by the shared service lifecycle. */
+  storage?: {
+    transientDirectories: readonly string[];
+    canReclaim?(configRoot: string, relative: string): boolean;
+    /** Immutable seed copied into private working directories; never a shared native HOME. */
+    snapshots?: ReadonlyArray<{ relative: string; key: string; identity(directory: string): string | undefined }>;
+  };
   descriptor: ExecutorDescriptor;
   open(options: ExecutorOpenOptions): Promise<AgentRuntime>;
 }
@@ -282,6 +320,7 @@ export interface PreparationInput { expectedRevision: string; executable?: strin
 export type RunStatus = 'starting' | 'running' | 'waiting-approval' | 'waiting-question' | 'stopping' | 'stopped' | 'tools-active' | 'unknown' | 'completed' | 'failed';
 export interface ParticipantView { modelAccountId?: string; model?: string; id: string; provider: ProviderId; connectionId: string; label: string; deliveredThrough: number; contextId: string }
 export interface ConversationEntry {
+  participation?: ParticipationObservation;
   /** Bounded tool preview; fetch the exact content revision when expanded. */
   detail?: {revision: string};
   id: string;
@@ -291,10 +330,14 @@ export interface ConversationEntry {
   kind: 'message' | 'tool' | 'notice' | 'handoff';
   role: 'user' | 'assistant' | 'system';
   text: string;
+  /** Model thinking fragment: process-only content, never a final reply nor model history. */
+  thinking?: boolean;
   /** Stable tool-step name when the source provided one. */
   name?: string;
   /** Original tool invocation input; retained when a later result replaces text. */
   input?: string;
+  /** Explicit native file declaration; visible only after successful completion. */
+  presentedFiles?: PresentedFile[];
   participantId?: string;
   provider?: ProviderId;
   runId?: string;
@@ -302,15 +345,28 @@ export interface ConversationEntry {
   attachments?: string[];
   deliveryDiagnostic?: string;
   handoff?: HandoffMaterial;
+  /** Durable control transfer; native identity is not an execution-choice change. */
+  nativeSession?: {
+    backendChange?: BackendRuntimeChange;
+    reason: 'backend-adoption' | 'session-replacement';
+    description: string;
+    from: { contextId?: string; generation?: string };
+    to: { contextId: string; generation: string };
+  };
   createdAt: string;
 }
 export interface RunView {
+  /** Replaced by a confirmed new execution; cleanup is system-owned. */
+  supersededBy?:string;
+  /** User cancellation is independent from delivery and resource proof. */
+  stopRequested?:boolean;
   /** Same-context input is allowed; this does not release command control resources. */
   canContinue?: boolean;
   /** Physical execution/resource facts never imply that the user's goal succeeded. */
   executionState?: 'active' | 'ended' | 'unknown';
   /** This backend no longer holds the original control resources; independent command outcomes may remain unknown. */
   resourcesReleased?: boolean;
+  fault?: ExecutionFault;
   /** Host interruption is unfinished work, distinct from a user stop. */
   interrupted?: boolean;
   contextUsage?: {usedTokens:number;windowTokens?:number};
@@ -338,6 +394,7 @@ export interface PendingRequestView extends ExecutorRequest {
   runId: string;
   generation: string;
 }
+export interface ConversationTaskLink {workspaceId:string;taskId:string}
 export interface ConversationView {
   /** Immutable direct-parent provenance, independent of current titles and UI state. */
   forkedFrom?: ConversationForkOrigin;
@@ -350,12 +407,16 @@ export interface ConversationView {
   pendingSend?: PendingSendView;
   /** Independent observation version for append-only image admission. */
   attachmentRevision?: string;
-  activity?: { version: number; seenThrough: number; updatedAt: string; active: boolean; userInputAt?: string };
+  activity?: { version: number; seenThrough: number; updatedAt: string; active: boolean; userInputAt?: string; pendingDecisionCount?: number };
   titleState?: { status: 'pending' | 'generating' | 'generated' | 'manual' | 'failed' | 'unavailable' | 'unknown'; reason?: string };
   id: string;
   workspaceId: string;
   cwd: string;
   taskId?: string;
+  /** Compatibility projection for tasks in this conversation’s workspace. */
+  taskIds?: string[];
+  /** Complete cross-workspace association set; legacy fields project local links. */
+  taskLinks?: ConversationTaskLink[];
   title: string;
   revision: string;
   hidden: boolean;
@@ -367,6 +428,8 @@ export interface ConversationView {
   retainedRuns?: RunView[];
   requests: PendingRequestView[];
   nextEntryCursor?: number;
+  /** Bounded excerpt from a matching visible message; list observations only. */
+  searchSnippet?: string;
 }
 export interface HandoffRound {
   id: string; title: string; from: number; through: number;
@@ -420,6 +483,7 @@ export interface PendingSendView {
 export interface StartConversationDraft extends Omit<SendDraft, 'expectedRevision'> {
   cwd?: string;
   taskId?: string;
+  taskLinks?: ConversationTaskLink[];
   expectedDraftRevision: string;
   clientRequestId: string;
 }
@@ -433,7 +497,7 @@ export interface SupplementInput {
 }
 export interface SupplementResult {
   conversation: ConversationView;
-  delivery: 'accepted' | 'unknown' | 'rejected';
+  delivery: 'accepted' | 'unknown' | 'rejected' | 'continued';
 }
 export interface SendPreview {
   handoff?: HandoffMaterial;
@@ -467,11 +531,23 @@ export interface ServiceEvent {
   revision: string;
   payload: { conversation?: ConversationView; connection?: ConnectionView };
 }
+export interface BackendRuntimeChange {
+  reason: 'runtime-content-changed' | 'process-restarted';
+  detectedAt: string;
+  fromGeneration: string;
+  fromDigest: string;
+  toDigest: string;
+}
 export interface AgentServiceOptions {
+  /** Process-owned observation; never inferred from user messages or model choice. */
+  backendChange?: BackendRuntimeChange;
   /** Process-owned local control instructions; never includes authentication secrets. */
   conversationControl?: (scope:string,id:string)=>string;
+  controlSupersededRun?: (scope:string,id:string,input:{expectedRevision:string;runId:string;participantId:string;generation:string},action:'stop'|'observe')=>Promise<unknown>;
   /** Other accurately discovered process generations must not be recovered. */
   generationAlive?: (generation: string) => boolean;
+  /** Exact prior owner completed authenticated shutdown; death alone is insufficient. */
+  generationReleased?: (generation: string) => boolean;
   /** Trusted host profile only; released installations default to manual continuation. */
   autoContinueInterrupted?: boolean;
   modelProviders?: ModelProvider[];

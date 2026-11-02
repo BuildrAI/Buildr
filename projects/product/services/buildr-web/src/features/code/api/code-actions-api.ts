@@ -6,7 +6,7 @@ import type { CodeDiscardContextDiscardContext, CodeDiscardChangesDiscardChanges
 import type { CodeCommitMessageRunRun } from '../../../../build/generated/code-generation-http-dto';
 
 export type GenerationRun = CodeCommitMessageRunRun;
-export type ModelSelection = {id:string;label:string;modelAccountId:string;modelId:string;accountIdentity:string;accountRevision:string;serviceTier?:string};
+export type ModelSelection = {id:string;label:string;modelAccountId:string;modelId:string;accountIdentity:string;accountRevision:string;serviceTier?:string;reasoningEffort?:string};
 export type CommitContext = CodeCommitContextCommitContext;
 export type GitMutationResult = CodeGitMutationResultCommitChanges;
 export type CodeActionSource = { workspaceId: string; repositoryId: string; worktreeId: string; branch: string | null };
@@ -17,7 +17,7 @@ export function createCodeActionsClient(client: ApiClient, session?: Pick<Sessio
   const location = (source: CodeActionSource) => ({repositoryId: source.repositoryId, worktreeId: source.worktreeId});
   return {
     context(source: CodeActionSource, signal?: AbortSignal): Promise<CommitContext> { return client(resource(source, 'commit-context') + '?' + new URLSearchParams(location(source)), {signal}) as Promise<CommitContext>; },
-    generate(source: CodeActionSource, expectedRevision: string, model: ModelSelection): Promise<CodeCommitMessageRunRun> { return client(resource(source, 'commit-message'), {method: 'POST', body: JSON.stringify({...location(source), expectedRevision, modelAccountId:model.modelAccountId,modelId:model.modelId,accountIdentity:model.accountIdentity,accountRevision:model.accountRevision,label:model.label,serviceTier:model.serviceTier})}) as Promise<CodeCommitMessageRunRun>; },
+    generate(source: CodeActionSource, expectedRevision: string, model: ModelSelection): Promise<CodeCommitMessageRunRun> { return client(resource(source, 'commit-message'), {method: 'POST', body: JSON.stringify({...location(source), expectedRevision, modelAccountId:model.modelAccountId,modelId:model.modelId,accountIdentity:model.accountIdentity,accountRevision:model.accountRevision,label:model.label,serviceTier:model.serviceTier,reasoningEffort:model.reasoningEffort})}) as Promise<CodeCommitMessageRunRun>; },
     commit(source: CodeActionSource, expectedRevision: string, message: string, mode: CommitMode): Promise<GitMutationResult> { return client(resource(source, 'commit-changes'), {method: 'POST', body: JSON.stringify({...location(source), expectedRevision, message, mode})}) as Promise<GitMutationResult>; },
     push(source: CodeActionSource, retry: PushRetry): Promise<CodePushResultPush> { return client(resource(source, 'push'), {method: 'POST', body: JSON.stringify({...location(source), ...retry})}) as Promise<CodePushResultPush>; },
     discardContext(source: CodeActionSource, path?: string): Promise<CodeDiscardContextDiscardContext> { return client(resource(source, 'discard-context') + '?' + new URLSearchParams({...location(source), ...(path === undefined ? {} : {filePath: path})})) as Promise<CodeDiscardContextDiscardContext>; },
