@@ -18,6 +18,16 @@ export function useEarlierConversationEntries(props:Props){
   lastTop.current=node.scrollTop;position.current=node.scrollTop;
   size.current={height:node.scrollHeight,viewport:node.clientHeight};
  };
+ const layoutClampedTop=(node:HTMLDivElement)=>Math.min(lastTop.current,Math.max(0,node.scrollHeight-node.clientHeight));
+ const followLayout=()=>{
+  const node=stream.current;if(!node||!bottom.current)return;
+  // A resize can share a frame with scrollbar/native scrolling. Only the
+  // browser's actual clamp of our last position is layout-owned movement.
+  if(size.current.height>0&&Math.abs(node.scrollTop-layoutClampedTop(node))>1&&node.scrollHeight-node.scrollTop-node.clientHeight>=24){
+   anchor.current=null;bottom.current=false;remember();return;
+  }
+  node.scrollTop=node.scrollHeight;remember();
+ };
  useEffect(()=>()=>{active.current?.abort();active.current=null;anchor.current=null;},[]);
  useLayoutEffect(()=>{
   active.current?.abort();active.current=null;anchor.current=null;touch.current=null;lastTop.current=0;size.current={height:0,viewport:0};setLoading(false);setError('');
@@ -72,6 +82,7 @@ export function useEarlierConversationEntries(props:Props){
   const resized=node.scrollHeight!==size.current.height||node.clientHeight!==size.current.viewport;
   const upward=node.scrollTop<lastTop.current-1;
   const moved=Math.abs(node.scrollTop-lastTop.current)>1;
+  const layoutOnly=resized&&Math.abs(node.scrollTop-layoutClampedTop(node))<=1;
   // A queued scroll caused by our compensation already has this exact top.
   // Any other movement belongs to the reader, including scrollbar dragging.
   if(moved)anchor.current=null;
@@ -79,7 +90,7 @@ export function useEarlierConversationEntries(props:Props){
   const distance=node.scrollHeight-node.scrollTop-node.clientHeight;
   // Layout may clamp scrollTop before ResizeObserver runs. Do not turn that
   // into a request for history or disable the initial/latest follow.
-  if(bottom.current&&(resized||!moved))return;
+  if(bottom.current&&(layoutOnly||!moved))return;
   if(distance<24)bottom.current=true;
   else bottom.current=false;
   // A shrinking composer clamps the viewport to the new bottom; that upward
@@ -93,7 +104,7 @@ export function useEarlierConversationEntries(props:Props){
   if(node){node.scrollTop=node.scrollHeight;remember();}
  };
  const interrupt=()=>{anchor.current=null;};
- return {loading,error,onScroll,pinLatest,remember,
+ return {loading,error,onScroll,pinLatest,remember,followLayout,
   onPointerDown:interrupt,
   onWheel:(event:{deltaY:number})=>{interrupt();if(event.deltaY<0){bottom.current=false;readEarlier();}},
   onTouchStart:(event:{touches:ArrayLike<{clientY:number}>})=>{anchor.current=null;touch.current=event.touches[0]?.clientY??null;},

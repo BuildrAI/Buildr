@@ -194,7 +194,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
     if(!node?.getClientRects().length)return;
     // Layout settles after the first pin: the compose area grows and fonts or images reflow content.
     // While the reader sits at the bottom, follow every size change so refreshes land on the true bottom.
-    const observer=new ResizeObserver(()=>{if(bottom.current){node.scrollTop=node.scrollHeight;earlier.remember();}});
+    const observer=new ResizeObserver(()=>earlier.followLayout());
     observer.observe(node);
     if(list)observer.observe(list);
     return()=>observer.disconnect();

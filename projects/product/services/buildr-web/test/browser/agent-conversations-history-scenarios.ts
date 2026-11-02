@@ -117,12 +117,14 @@ await step('刷新布局跟随最新，滚动条接管后不被延迟锚点拉�
     await page.reload();await input().waitFor();
     await page.waitForFunction(()=>{const n=document.querySelector<HTMLElement>('#agent-conversation-panel .ac-stream');return Boolean(n&&n.scrollTop>100&&n.scrollHeight-n.scrollTop-n.clientHeight<2);});
     const reads=fixture.entryReads;
-    // Browser layout can queue an upward scroll before the resize observer.
+    // Content growth can queue a scroll event before the resize observer.
     await stream.evaluate((node:HTMLElement)=>{
       // Clicking the background alone is not a request to leave latest.
       node.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));
       const spacer=document.createElement('div');spacer.id='scroll-layout-spacer';spacer.style.height='120px';node.querySelector('.ac-stream-content')!.append(spacer);
-      node.scrollTop-=60;node.dispatchEvent(new Event('scroll'));
+      // Growth preserves the old top (a viewport enlargement may clamp it).
+      // An arbitrary move away from that position is reader intent, not layout.
+      node.dispatchEvent(new Event('scroll'));
     });
     await settle();
     assert.ok(await stream.evaluate((n:HTMLElement)=>n.scrollHeight-n.scrollTop-n.clientHeight<2),'布局变化不能取消刷新后的最新跟随');
