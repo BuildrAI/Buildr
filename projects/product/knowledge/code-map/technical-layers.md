@@ -210,7 +210,7 @@ Qoder [配套库解析](../../services/buildr-agent/src/executors/qoder/sdk-pair
 
 ## Buildr 参与观察候选的职责落点
 
-以下是当前候选源码的增量导航，行为承诺见 [参与观察设计](../../openspec/changes/observe-buildr-participation/design.md)，不表示候选已发布或全部验收。
+以下是当前候选源码的增量导航，行为承诺见 [参与观察设计](../../openspec/changes/archive/2026-11-03-observe-buildr-participation/design.md)，不表示候选已发布或全部验收。
 
 - **[`services/buildr-agent/src/`](../../services/buildr-agent/src/)**：执行事实与私有记录的唯一所有者。
   - [`participation-contracts.ts`](../../services/buildr-agent/src/participation-contracts.ts)、[`participation-schemas.ts`](../../services/buildr-agent/src/participation-schemas.ts)：可选元数据、版本化查询和封闭传输投影；不包含源正文。

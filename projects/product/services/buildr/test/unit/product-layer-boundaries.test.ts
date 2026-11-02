@@ -69,6 +69,8 @@ test('统一模型服务按独立模块分层，只登记代码场景的真实�
 test('Agent host assembly binds public ports and the shared SemVer value helper stays pure', () => {
   assert.equal(isAllowedProductLayerImport('modules/agent-service/module.ts', 'modules/workspace/module.ts'), true);
   assert.equal(isAllowedProductLayerImport('modules/agent-service/module.ts', 'modules/task/module.ts'), true);
+  assert.equal(isAllowedProductLayerImport('modules/agent-service/module.ts', 'modules/agent-assets/source/module.ts'), true);
+  assert.equal(isAllowedProductLayerImport('modules/agent-service/domain/participation.ts', 'modules/agent-assets/source/module.ts'), false);
   assert.equal(isAllowedProductLayerImport('modules/agent-service/application/value.ts', 'modules/task/interfaces/http/task-http.ts'), false);
   assert.equal(productLayerOf('infrastructure/semantic-version.ts'), 'domain');
   assert.equal(isAllowedProductLayerImport('modules/installation/domain/release-version.ts', 'infrastructure/semantic-version.ts'), true);

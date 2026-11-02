@@ -250,4 +250,4 @@ Buildr 隔离 DSH 的前台 shell 超时由原生执行器终止，默认层覆�
 
 宿主通过可选 `observeParticipation` 能力复用资产来源查询，提供有界规则／技能可发现观察，并核对当前安装或开发 CLI 入口。来源确认只确认对象归属；当前供给版本不反推历史观察版本，PATH 同名命令仍是候选。宿主离线或超时只形成观察缺口，不更改工作结果。
 
-单次 `conversations.participation` 与范围 `conversations.participationSummary` 共用原记录投影；SQLite 中的参与索引以对话修订校验，可删除重建，失效时返回部分覆盖。页面和准确绑定的对话控制脚本只读同一应用。汇总区分来源、动作、结果与版本依据，失败比例排除未知结果，字节不换算费用。隐式加载不可观察，统计只能为优化提供线索，不能自动判定资产无价值。详见 [候选设计](../../../openspec/changes/observe-buildr-participation/design.md)；候选实现及本机测试不等于已激活或真实账号验收。
+单次 `conversations.participation` 与范围 `conversations.participationSummary` 共用原记录投影；SQLite 中的参与索引以对话修订校验，可删除重建，失效时返回部分覆盖。页面和准确绑定的对话控制脚本只读同一应用。汇总区分来源、动作、结果与版本依据，失败比例排除未知结果，字节不换算费用。隐式加载不可观察，统计只能为优化提供线索，不能自动判定资产无价值。详见 [候选设计](../../../openspec/changes/archive/2026-11-03-observe-buildr-participation/design.md)；候选实现及本机测试不等于已激活或真实账号验收。
