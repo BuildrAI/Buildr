@@ -11,6 +11,9 @@ await step('关联数量浮层零一多、跨空间同码前缀搜索及双向�
   const taskEntry=()=>page.locator('[data-task-internal-conversations="'+taskId+'"]:visible');
   const taskButton=()=>taskEntry().getByRole('button',{name:'关联对话',exact:true});
   const conversationButton=()=>panel().getByRole('button',{name:'关联任务',exact:true});
+  const waitConversation=async(id:string)=>await page.waitForFunction((value:string)=>document.querySelector('#agent-conversation-panel')?.getAttribute('data-conversation-id')===value,id);
+  const waitTaskWorkspace=async(space:string)=>await page.waitForFunction((id:string)=>location.pathname.startsWith('/workspaces/'+id+'/tasks'),space);
+  const waitTaskDetail=async(id:string)=>await page.waitForFunction((value:string)=>document.querySelector('#task-detail-main')?.getAttribute('data-task-id')===value,id);
   const linkedRow=(space:string)=>popup().locator('.ac-association-row').filter({has:page.locator('[data-associated-workspace="'+space+'"][data-associated-task="'+taskId+'"]')});
   fixture.holdTaskList=true;const started=new Promise<void>(resolve=>{fixture.taskListStarted=resolve;});
   await page.goto(workspaceUrl+'/tasks/'+taskId);await started;await taskButton().waitFor();
@@ -37,11 +40,12 @@ await step('关联数量浮层零一多、跨空间同码前缀搜索及双向�
   };
   await page.route(taskMatcher,taskPager);
   const search=popup().getByRole('combobox',{name:'搜索任务',exact:true});await search.focus();
-  const stableBox=await popup().boundingBox();
+  const settledHeight=async()=>{let last=-1;for(let index=0;index<40;index+=1){const height=Math.round((await popup().boundingBox())!.height);if(height===last)return height;last=height;await page.waitForTimeout(50);}return last;};
+  const stableHeight=await settledHeight();
   await search.fill('b');await page.waitForTimeout(350);assert.equal(taskSearchPages,0,'单字符不请求搜索');
   await search.fill('browser-associated');
   await page.waitForFunction(()=>document.querySelectorAll('.ac-association-popup .ac-association-candidate').length===2);
-  const matchedBox=await popup().boundingBox();assert.equal(Math.round(matchedBox!.height),Math.round(stableBox!.height),'候选不撑大外层浮窗');
+  assert.equal(await settledHeight(),stableHeight,'候选不撑大外层浮窗');
   assert.equal(await popup().locator('.ac-association-options').evaluate((node:any)=>getComputedStyle(node).borderTopStyle),'solid');
   assert.equal(await popup().getByText('正在读取任务信息…',{exact:true}).count(),0);
   const metaBoxes=await panel().locator('.ac-location-meta>span').evaluateAll((nodes:any[])=>nodes.map(node=>{const r=node.getBoundingClientRect();return {top:r.top,height:r.height};}));assert.ok(Math.abs(metaBoxes[0].top+metaBoxes[0].height/2-metaBoxes[1].top-metaBoxes[1].height/2)<2,'工作空间与关联任务横向对齐');
@@ -52,9 +56,9 @@ await step('关联数量浮层零一多、跨空间同码前缀搜索及双向�
   assert.equal(fixture.conversation.cwd,cwd);assert.equal(fixture.conversation.workspaceId,workspaceId);assert.equal(fixture.sends,sends+1);
   assert.equal(await popup().isVisible(),true,'新增后保持浮层打开');await search.fill('不存在的前缀');await popup().getByText('没有前缀匹配。',{exact:true}).waitFor();
   await page.keyboard.press('Escape');await popup().waitFor({state:'hidden'});await conversationButton().click();
-  await linkedRow(remote).locator('.ac-association-open').click();await page.waitForURL('**/workspaces/'+remote+'/tasks/'+taskId);
+  await linkedRow(remote).locator('.ac-association-open').click();await waitTaskWorkspace(remote);await waitTaskDetail(taskId);
   await taskButton().waitFor();await closeConversation();await taskButton().click();await popup().locator('[data-associated-conversation="'+originalId+'"]').click();
-  await input().waitFor();assert.equal(await panel().getAttribute('data-conversation-id'),originalId,'异空间任务打开原空间对话');assert.equal(fixture.creations,before+1);
+  await input().waitFor();await waitConversation(originalId);assert.equal(await panel().getAttribute('data-conversation-id'),originalId,'异空间任务打开原空间对话');assert.equal(fixture.creations,before+1);
   await conversationButton().click();await linkedRow(remote).getByRole('button',{name:'解除关联 '+taskId,exact:true}).click();
   await page.waitForFunction(()=>document.querySelector('#agent-conversation-panel .ac-association-trigger')?.textContent?.includes('1'));
   assert.equal(await popup().isVisible(),true);assert.deepEqual(fixture.conversation.taskLinks,[{workspaceId,taskId}]);await page.keyboard.press('Escape');
@@ -71,9 +75,9 @@ await step('关联数量浮层零一多、跨空间同码前缀搜索及双向�
   // Leave the pre-existing multi-conversation fixture for the following independent controls.
   fixture.additionalConversations=[{...fixture.conversation,id:'task-second',title:'另一段任务对话',entries:[],participants:[],activity:undefined}];
   await page.reload();await input().waitFor();await taskButton().click();await popup().locator('[data-associated-conversation="task-second"]').waitFor();assert.match(await taskButton().innerText(),/2/);
-  await popup().locator('[data-associated-conversation="task-second"]').click();await input().waitFor();assert.equal(await panel().getAttribute('data-conversation-id'),'task-second');
+  await popup().locator('[data-associated-conversation="task-second"]').click();await input().waitFor();await page.waitForFunction(()=>document.querySelector('#agent-conversation-panel')?.getAttribute('data-conversation-id')==='task-second');
   // Return to the original task and original conversation without implicit selection.
-  await conversationButton().click();await linkedRow(workspaceId).locator('.ac-association-open').click();await page.waitForURL('**/workspaces/'+workspaceId+'/tasks/'+taskId);
+  await conversationButton().click();await linkedRow(workspaceId).locator('.ac-association-open').click();await waitTaskWorkspace(workspaceId);await waitTaskDetail(taskId);
   await closeConversation();await taskButton().click();await popup().locator('[data-associated-conversation="'+originalId+'"]').click();await input().waitFor();
 });
 
