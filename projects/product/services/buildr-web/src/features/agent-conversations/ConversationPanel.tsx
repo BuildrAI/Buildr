@@ -553,6 +553,13 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   const renderEntry=(entry:ConversationEntry)=>{
     if(entry.kind==='handoff'){
       const text=conversationHandoffReceipt(entry);
+      if(entry.nativeSession?.reason==='backend-adoption'){
+        const issue=entry.status==='failed'?'本轮未送达':entry.status==='unknown'?'本轮送达待确认':'';
+        return <details className={'ac-handoff-receipt ac-adoption-diagnostic'+(issue?' has-issue':'')} key={entry.id} data-native-session-event={entry.nativeSession.reason}>
+          <summary>{issue?`${issue} · 接续诊断`:'接续诊断'}</summary>
+          <p><time dateTime={entry.createdAt}>{new Date(entry.createdAt).toLocaleString('zh-CN',{hour12:false})} · </time>{text}</p>
+        </details>;
+      }
       return text?<div className="ac-handoff-receipt" key={entry.id} data-native-session-event={entry.nativeSession?.reason}><span>{entry.nativeSession&&<time dateTime={entry.createdAt}>{new Date(entry.createdAt).toLocaleString('zh-CN',{hour12:false})} · </time>}{text}</span>{Boolean(entry.handoff?.changes.length)&&<Button type="link" size="small" onClick={()=>{setSelectedHandoff(entry);setPreviewOpen(true);}}>交接内容</Button>}</div>:null;
     }
     return <article key={entry.id} className={'ac-message is-'+entry.role} data-entry-id={entry.id} data-message-provider={entry.provider}>{entry.role==='assistant'?<MarkdownHost markdown={entry.text} className="markdown-body" options={markdownOptions}/>:<p>{entry.kind==='notice'&&entry.id.startsWith('reply-')?conversationReplyText(entry.text):conversationSystemNoticeText(entry)}</p>}{entry.attachments?.length?<ConversationMessageImages conversation={chat!} ids={entry.attachments} read={context.api.readImage}/>:null}{entry.deliveryDiagnostic&&<small className="ac-input-diagnostic" role="status">{entry.deliveryDiagnostic}</small>}{entry.status==='unknown'&&<Tag color="warning">是否送达待确认</Tag>}{entry.role==='assistant'&&finalReplies.has(entry.id)&&<span className="ac-reply-actions"><CopyButton type="text" text={entry.text} ariaLabel="复制回复" failureMessage="复制失败，请手动选择文字。"/>{chat&&forkableReplies.has(entry.id)&&<ConversationForkAction conversation={chat} entryId={entry.id}/>}</span>}</article>;

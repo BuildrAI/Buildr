@@ -13,3 +13,7 @@
 @media(max-width:760px){.ac-panel{position:fixed}}
 
 .ac-hd-round-body p{white-space:pre-wrap}
+.ac-adoption-diagnostic{display:block;margin:4px 0 12px;padding:0;border:0;border-radius:0;background:transparent;line-height:1.8}
+.ac-adoption-diagnostic>summary{cursor:pointer;width:fit-content;max-width:100%;overflow-wrap:anywhere;font:inherit;color:inherit}
+.ac-adoption-diagnostic.has-issue>summary{color:var(--ac-attention-ink)}
+.ac-adoption-diagnostic>p{margin:6px 0 0;overflow-wrap:anywhere}

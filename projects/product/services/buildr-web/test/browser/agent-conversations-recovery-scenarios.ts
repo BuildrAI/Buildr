@@ -107,6 +107,50 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
       await fixture.capture(page,'agent-transparent-recovery-and-real-risk.png');
     }finally{fixture.conversation=saved;await page.reload();await input().waitFor();}
   });
+  await step('后台接管诊断默认折叠，展开保留身份与变化依据且不触发执行',async()=>{
+    const saved=structuredClone(fixture.conversation),viewport=page.viewportSize(),sends=fixture.sends,stops=fixture.stops;
+    try{
+      const entry={id:'native-session-adopted',sequence:saved.entries.length+1,kind:'handoff',role:'system',text:'后台已接管原生会话，等待本轮受理。',status:'accepted',runId:saved.run.id,createdAt:'2026-11-02T08:23:48.540Z',nativeSession:{reason:'backend-adoption',description:'原轮控制已释放，新后台复用原生会话',from:{contextId:'session-c91bb1b3-9790-45af-b3cc-82d883a1c83a',generation:'3e01adb5-df2a-4cc5-81e1-15028d50297d'},to:{contextId:'session-c91bb1b3-9790-45af-b3cc-82d883a1c83a',generation:'772961db-62f9-4236-82c2-898a811169e2'},backendChange:{reason:'runtime-content-changed',detectedAt:'2026-11-02T08:02:01.033Z',fromGeneration:'3e01adb5-df2a-4cc5-81e1-15028d50297d',fromDigest:'a'.repeat(64),toDigest:'b'.repeat(64)}}};
+      update({run:{...saved.run,status:'completed',executionState:'ended'},requests:[],retainedRuns:[],entries:[...saved.entries,entry]});
+      await page.reload();await input().waitFor();
+      const diagnostic=panel().locator('[data-native-session-event="backend-adoption"]'),summary=diagnostic.locator('summary'),body=diagnostic.locator('p');
+      await summary.waitFor();
+      assert.equal(await summary.innerText(),'接续诊断');assert.equal(await diagnostic.getAttribute('open'),null);
+      assert.equal(await body.isVisible(),false);assert.doesNotMatch(await panel().innerText(),/session-c91bb1b3|3e01adb5|772961db|后台变化来源|原轮控制已释放/);
+      await fixture.capture(page,'conversation-adoption-diagnostic-collapsed.png');
+      await summary.press('Enter');assert.equal(await body.isVisible(),true);
+      const text=await body.innerText();assert.match(text,/session-c91bb1b3.*→ session-c91bb1b3/);assert.match(text,/3e01adb5.*→ 772961db/);assert.match(text,/检测到后台运行内容变化.*2026-11-02T08:02:01.033Z/);assert.match(text,/本轮已受理/);assert.equal(await diagnostic.locator('time').getAttribute('datetime'),entry.createdAt);
+      await fixture.capture(page,'conversation-adoption-diagnostic-expanded.png');
+      await summary.click();assert.equal(await body.isVisible(),false);
+      await page.reload();await input().waitFor();await summary.waitFor();assert.equal(await diagnostic.getAttribute('open'),null);
+      assert.deepEqual(fixture.conversation.entries.at(-1),entry,'刷新和折叠不改写持久回执');
+      await page.setViewportSize({width:390,height:844});await summary.click();
+      assert.ok(await diagnostic.evaluate((node:HTMLElement)=>node.scrollWidth<=node.clientWidth+1),'窄屏长编号不溢出');
+      await fixture.capture(page,'conversation-adoption-diagnostic-mobile.png');
+      assert.equal(fixture.sends,sends);assert.equal(fixture.stops,stops);
+    }finally{fixture.conversation=saved;await page.setViewportSize(viewport);await page.reload();await input().waitFor();}
+  });
+  await step('接管异常在折叠摘要可见，旧记录及原生会话替换仍可追溯',async()=>{
+    const saved=structuredClone(fixture.conversation),sends=fixture.sends,stops=fixture.stops;
+    try{
+      const entry={id:'native-session-status',sequence:saved.entries.length+1,kind:'handoff',role:'system',text:'后台已接管原生会话，等待本轮受理。',runId:saved.run.id,createdAt:new Date().toISOString(),nativeSession:{reason:'backend-adoption',description:'原轮控制已释放，新后台复用原生会话',from:{contextId:'same-session',generation:'old-backend'},to:{contextId:'same-session',generation:'new-backend'}}};
+      for(const [status,summaryText,receipt] of [['sending','接续诊断','等待本轮受理'],['failed','本轮未送达 · 接续诊断','本轮未送达'],['unknown','本轮送达待确认 · 接续诊断','本轮送达待确认']]){
+        update({run:{...saved.run,status:'completed',executionState:'ended'},requests:[],retainedRuns:[],entries:[...saved.entries,{...entry,status}]});
+        await page.reload();await input().waitFor();
+        const diagnostic=panel().locator('[data-native-session-event="backend-adoption"]'),summary=diagnostic.locator('summary');await summary.waitFor();
+        assert.equal(await summary.innerText(),summaryText);assert.equal(await diagnostic.getAttribute('open'),null);
+        await summary.click();assert.match(await diagnostic.locator('p').innerText(),new RegExp(receipt));assert.match(await diagnostic.innerText(),/后台变化来源：历史未记录/);
+        if(status==='sending')assert.doesNotMatch(await diagnostic.innerText(),/本轮已受理/);
+      }
+      const replacement={...entry,status:'accepted',nativeSession:{...entry.nativeSession,reason:'session-replacement',description:'用户执行选择变化',to:{contextId:'new-session',generation:'new-backend'}}};
+      const switched={id:'model-switch-receipt',sequence:entry.sequence+1,kind:'handoff',role:'system',text:'交接已接收',status:'accepted',createdAt:entry.createdAt,handoff:{agent:'Codex',model:'Fixture model',changes:[{kind:'agent',label:'智能体',before:'Qoder',after:'Codex'}],rounds:[],body:'执行组合交接内容',sourceThrough:0,mode:'records'}};
+      update({entries:[...saved.entries,replacement,switched]});await page.reload();await input().waitFor();
+      const nativeReplacement=panel().locator('[data-native-session-event="session-replacement"]');await nativeReplacement.waitFor();assert.match(await nativeReplacement.innerText(),/原生会话交接.*same-session → new-session.*用户执行选择变化/);
+      const handoff=panel().locator('.ac-handoff-receipt').filter({has:page.getByRole('button',{name:'交接内容',exact:true})});
+      await handoff.getByRole('button',{name:'交接内容',exact:true}).click();await panel().getByRole('button',{name:'关闭交接内容',exact:true}).waitFor();
+      await panel().getByRole('button',{name:'关闭交接内容',exact:true}).click();assert.equal(fixture.sends,sends);assert.equal(fixture.stops,stops);
+    }finally{fixture.conversation=saved;await page.reload();await input().waitFor();}
+  });
   await step('状态未知时自动核对原执行，不重新发送工作',async()=>{
     const beforeSends=fixture.sends,beforeObserves=fixture.observes;fixture.recoverNextObserve=true;update({run:run('unknown')});await page.reload();await panel().locator('[data-run-status="completed"]').waitFor();assert.ok(fixture.observes>beforeObserves);assert.equal(fixture.sends,beforeSends,'自动恢复观察不创建新的执行');
   });
