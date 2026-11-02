@@ -49,7 +49,7 @@ test('正式包在独立目录消费完整接入资源、投射附件并运行�
   assert.equal(fs.existsSync(path.join(authoring, 'templates/deployment-adapter.mjs')), false);
   const template = parseConnectionDefinition(fs.readFileSync(path.join(authoring, 'templates/connection.yml'), 'utf8'));
   assert.deepEqual(Object.keys(template.programs), ['cli']);
-  assert.match(fs.readFileSync(path.join(workspace, 'AGENTS.md'), 'utf8'), /少即是多/);
+  assert.equal(fs.existsSync(path.join(workspace, 'AGENTS.md')), false, 'init does not inject user root rules');
   run(['skills', 'render', 'codex', '--target', workspace]);
   assert.equal(fs.readFileSync(path.join(workspace, '.agents/skills/nacos-connection/assets/connection.yml'), 'utf8'), fs.readFileSync(definitionPath, 'utf8'));
   if (process.platform !== 'win32') assert.equal(fs.statSync(path.join(workspace, '.agents/skills/nacos-connection/scripts/nacos-client.mjs')).mode & 0o100, fs.statSync(path.join(sourceRoot, 'scripts/nacos-client.mjs')).mode & 0o100);

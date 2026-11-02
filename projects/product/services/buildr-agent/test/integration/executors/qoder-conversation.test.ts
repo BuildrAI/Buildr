@@ -251,7 +251,7 @@ test('Qoder late child permission during warm account check preserves the old ex
     const config = join(f.configRoot, 'qoder-config'), gate = join(config, 'hold-account');
     await writeFile(gate, 'hold');
     const attempted: ExecutorEvent[] = [], nextId = randomUUID();
-    const blocked = f.runtime.send({ contextRef: f.contextRef, cwd: f.cwd, text: 'new work must not enter', images: [], clientRequestId: nextId, onEvent: event => attempted.push(event) }); blocked.catch(() => {});
+    const blocked = f.runtime.send({ contextRef: f.contextRef, cwd: f.cwd, text: 'new work must not enter', permissionMode: 'default', images: [], clientRequestId: nextId, onEvent: event => attempted.push(event) }); blocked.catch(() => {});
     await eventually(() => existsSync(join(config, 'account-held')));
     await writeFile(join(config, 'inject-child-question'), 'question');
     await eventually(() => first.events.some(event => event.type === 'request'));

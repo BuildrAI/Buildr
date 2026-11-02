@@ -345,7 +345,7 @@ test('git repository registration clones asynchronously; explicit request retrie
   const { root, runtime } = setup(t);
   let catalog = ready(runtime, root);
   const origin = makeOriginRepository(t, 'clone-origin');
-  catalog = runtime.createCatalogRepository(root, { revision: catalog.revision, code: 'cloned-code', url: `file://${origin}`, integrationBranch: 'main' });
+  catalog = runtime.createCatalogRepository(root, { revision: catalog.revision, code: 'cloned-code', url: new URL('file://' + origin.split(path.sep).map(encodeURIComponent).join('/')).href, integrationBranch: 'main' });
   const repositoryId = catalog.repositories.find((r: any) => r.code === 'cloned-code').id;
   await waitFor(() => runtime.repositoryCloneStatus(root, repositoryId).state === null, 'registration clone must complete before becoming ready');
   assert.equal(fs.readFileSync(path.join(root, 'repositories/cloned-code/README.md'), 'utf8'), '# demo\n');

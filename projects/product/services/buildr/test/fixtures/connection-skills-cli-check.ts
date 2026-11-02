@@ -64,7 +64,7 @@ const copied = command(['connection-skill', 'auth', 'migrate', '--connection', c
 assert.equal(copied.instance.authentication.source, 'personal'); assert.equal(copied.sourceRemoved, false); assert.ok(!JSON.stringify(copied).includes('local-fixture-password'));
 fs.writeFileSync(file, JSON.stringify({ expected: expected(copied.instance) }));
 assert.equal(command(['connection-skill', 'auth', 'relocate', '--connection', copiedTarget.id, '--file', file]).relocated, true);
-assert.ok(fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8').includes('少即是多'));
+assert.equal(fs.existsSync(path.join(root, 'AGENTS.md')), false, 'init does not inject user root rules');
 const assets = runtimeProvide(createRuntime(), AGENT_ASSETS_APPLICATION) as {
   skillsAdd(input: { targetRoot: string; sourceInput: string; explicitId: string; connectionDefinitions?: string[] }): unknown;
   skillRemoval(root: string, id: string): { revision: string; removable: boolean; impacts: Record<string, unknown>[] };

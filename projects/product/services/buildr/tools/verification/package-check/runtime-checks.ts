@@ -188,6 +188,8 @@ export function createPackageRuntimeChecks(deps: any): any  {
   function verifyWorkspaceAssetLifecycle(context: any, tempRoot: any, kind: any, finalize: any = true): any  {
     const { root, manifest, problems, parseJsonOutput } = context;
     if (kind === 'runtime') {
+    // Bridge metadata requires explicit user rules; init no longer injects them.
+    fs.writeFileSync(path.join(tempRoot, 'AGENTS.md'), '# User workspace rules\n');
     buildrSelf.exec(['rules', 'render', 'claude-code', '--scope', 'projects/demo', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
     const oldReferenceBlock = [
       '<!-- BEGIN Buildr managed Claude Code rules bridge; hash: 0000000000000000000000000000000000000000000000000000000000000000 -->',

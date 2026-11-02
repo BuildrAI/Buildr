@@ -97,7 +97,7 @@ try {
     renderedHelp = '';
     assert.equal(helpRuntime.isHelpRequest(topic.length === 0 ? [] : [...topic, '--help']), true);
     assert.equal(helpRuntime.printHelp(topic), true, `help topic is not registered: ${topic.join(' ')}`);
-    assert.match(renderedHelp, /Usage:/, `help missing Usage: buildr ${topic.join(' ')}`);
+    assert.match(renderedHelp, /Usage:|用法：/, `help missing Usage: buildr ${topic.join(' ')}`);
   }
 } finally {
   console.log = originalLog;
@@ -196,7 +196,7 @@ try {
   assert.equal(COMMAND_CATALOG.some((item: any) => item.key === 'app' || item.key.startsWith('app ')), false);
   const taskHelp: any = contract.taskHelp;
   assert.equal(taskHelp.status, 0, taskHelp.stderr);
-  assert.match(taskHelp.stdout, /create\|inspect\|update\|activate\|complete\|abandon/);
+  assert.match(taskHelp.stdout, /create\|inspect\|list\|update\|activate\|complete\|abandon/);
   assert.doesNotMatch(taskHelp.stdout, /复盘来源可重复|终态不可重开或继续修改/);
   const taskCreateHelp: any = contract.taskCreateHelp;
   assert.doesNotMatch(taskCreateHelp.stdout, /复盘来源可重复/);
