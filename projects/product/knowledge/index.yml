@@ -387,6 +387,10 @@ artifacts:
       - service-runtime-configuration-action-source
       - service-runtime-configuration-prompt-source
       - service-runtime-configuration-hook-source
+      - service-runtime-configuration-copy-source
+      - service-runtime-configuration-drawer-source
+      - service-runtime-configuration-outcome-source
+      - service-runtime-configuration-outcome-panel-source
       - agent-service-task-ui-source
       - agent-service-delivery-source
       - model-single-generation-source
@@ -557,6 +561,9 @@ artifacts:
       - service-runtime-configuration-prompt-source
       - service-runtime-configuration-hook-source
       - service-runtime-configuration-copy-source
+      - service-runtime-configuration-drawer-source
+      - service-runtime-configuration-outcome-source
+      - service-runtime-configuration-outcome-panel-source
       - product-reference-code-map
       - local-runtime-module
       - local-runtime-definition
@@ -2027,7 +2034,7 @@ sources:
     title: 服务运行配置统一交接
     kind: code
     path: services/buildr-web/src/features/service-runtime/configurationAction.ts
-    summary: 三个配置入口共用同一简短请求；已接入直接提交，尚未执行时才提供复制，受理不冒充配置成功。
+    summary: 三个配置入口共用同一简短请求；确认后才提交，尚未执行时才提供复制，受理不冒充配置成功。
   - id: service-runtime-configuration-prompt-source
     title: 服务运行配置简短请求
     kind: code
@@ -2037,12 +2044,27 @@ sources:
     title: 服务运行配置交接钩子（Hook）
     kind: code
     path: services/buildr-web/src/features/service-runtime/hooks/useRuntimeConfiguration.ts
-    summary: 装配当前工作空间与内部对话，统一提交中、复制抽屉、恢复提示及受理后的真实定义刷新。
+    summary: 持有待确认目标、提交与失败反馈；确认后才创建对话并记录待完成交接，完成后按对话结束与运行定义读取反馈。
   - id: service-runtime-configuration-copy-source
-    title: 运行配置复制交接正文
+    title: 运行配置交接正文
     kind: code
     path: services/buildr-web/src/features/service-runtime/components/AgentDiscoveryContent.tsx
-    summary: 先展示尚未执行、目标和授权影响，完整请求按需展开；复制不冒充执行或配置成功。
+    summary: 先展示尚未执行、目标、步骤、授权影响与完成标准，完整请求按需展开；复制不冒充执行或配置成功。
+  - id: service-runtime-configuration-drawer-source
+    title: 运行配置交接抽屉
+    kind: code
+    path: services/buildr-web/src/features/service-runtime/components/RuntimeConfigurationDrawer.tsx
+    summary: 三个入口先在这里说明目标和影响，单一“开始配置”确认后才提交；未接入时切换为复制，提交中不能关闭或重复提交。
+  - id: service-runtime-configuration-outcome-source
+    title: 运行配置完成判定
+    kind: code
+    path: services/buildr-web/src/features/service-runtime/configurationOutcome.ts
+    summary: 仅当本次执行结束且运行定义可读时判定完成；区分新配置、已保存未完成、检查未变化与尚未完成。
+  - id: service-runtime-configuration-outcome-panel-source
+    title: 运行配置结果反馈
+    kind: code
+    path: services/buildr-web/src/features/service-runtime/components/RuntimeConfigurationOutcome.tsx
+    summary: 观察原配置对话，执行结束后读取真实运行定义并通知结果；超时只停止观察，不伪造成功。
   - id: agent-service-ui-options-source
     title: 对话执行选项
     kind: code

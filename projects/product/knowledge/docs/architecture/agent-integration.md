@@ -44,11 +44,11 @@ Qoder 使用外部模型时，在实际工作连接初始化之后、首条输�
 
 ### 产品动作怎样交给内部智能体（Agent）
 
-服务“运行配置”是复用内部对话的产品动作：服务目录、服务详情与任务本地运行通过同一[配置动作](../../../services/buildr-web/src/features/service-runtime/configurationAction.ts)提交[简短请求](../../../services/buildr-web/src/features/service-runtime/configurationPrompt.ts)。请求携带规范工作空间（Workspace）与服务（Service）身份、技能入口和本次本地验证授权，不复制调查与命令教程。
+服务“运行配置”是复用内部对话的产品动作：服务目录、服务详情与任务本地运行先通过同一[交接抽屉](../../../services/buildr-web/src/features/service-runtime/components/RuntimeConfigurationDrawer.tsx)说明目标、步骤、授权影响和完成标准，用户确认“开始配置”后才由[配置动作](../../../services/buildr-web/src/features/service-runtime/configurationAction.ts)提交[简短请求](../../../services/buildr-web/src/features/service-runtime/configurationPrompt.ts)。请求携带规范工作空间（Workspace）与服务（Service）身份、技能入口和本次本地验证授权，不复制调查与命令教程。
 
-[共享对话上下文（Context）](../../../services/buildr-web/src/features/agent-conversations/AgentConversationsContext.tsx)的 `startTextConversation` 与[文本提交原语](../../../services/buildr-web/src/features/agent-conversations/conversation-product-action.ts)负责实时选择和首条请求去重：可用时直接打开现有对话，未接入或提交前读取失败才回退到复制交接；已有未确认请求或提交响应丢失时先核对原身份，不换通道再执行。它们复用手工发送的首条提交记录、模型（Model）、权限及恢复机制，不新增后台接口或服务专用执行状态。
+[共享对话上下文（Context）](../../../services/buildr-web/src/features/agent-conversations/AgentConversationsContext.tsx)的 `startTextConversation` 与[文本提交原语](../../../services/buildr-web/src/features/agent-conversations/conversation-product-action.ts)负责实时选择和首条请求去重：可用时直接打开现有对话，未接入或提交前读取失败时在同一交接抽屉内保留复制；已有未确认请求或提交响应丢失时先核对原身份，不换通道再执行。它们复用手工发送的首条提交记录、模型（Model）、权限及恢复机制，不新增后台接口或服务专用执行状态。
 
-调查、候选启动、验证及保存仍由[服务本地运行技能（Skill）](../../../services/buildr/resources/runtime/skills/buildr/references/local-services.md)指导智能体（Agent）完成。最终配置以 `services/<service-code>/runtime.yml` 及本地运行页面读回为准；对话受理或结束不生成“配置成功”，保存定义也不重启已有实例。现有刷新机制发现配置变化，本轮不建立服务与对话的持久关联。
+调查、候选启动、验证及保存仍由[服务本地运行技能（Skill）](../../../services/buildr/resources/runtime/skills/buildr/references/local-services.md)指导智能体（Agent）完成。提交成功后服务行显示“配置中”或“检查中”；[完成判定](../../../services/buildr-web/src/features/service-runtime/configurationOutcome.ts)只在本次配置对话执行正常结束且 `services/<service-code>/runtime.yml` 可读时提示“运行配置已完成”，执行结束但定义不可读时提示“配置尚未完成”，并由[结果反馈](../../../services/buildr-web/src/features/service-runtime/components/RuntimeConfigurationOutcome.tsx)通知。完成不代表服务已启动或业务验证通过；对话受理或结束不单独生成“配置成功”，保存定义也不重启已有实例。现有刷新机制发现配置变化，本轮不建立服务与对话的持久关联。
 
 ### 公共执行边界
 

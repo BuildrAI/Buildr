@@ -36,11 +36,17 @@ const render = (component, props) => renderToStaticMarkup(React.createElement(Me
 const elements = node => Array.isArray(node) ? node.flatMap(elements) : node && typeof node === 'object' ? [node, ...elements(node.props?.children)] : [];
 
 test('未接入复制抽屉先说明未执行与影响，完整指令默认收起', () => {
-  const html = render(AgentDiscoveryContent, { prompt: '配置请求', reason: '没有就绪连接', tone: 'warning' });
+  const html = render(AgentDiscoveryContent, { prompt: '配置请求', serviceCode: 'front', workspaceName: '演示工作空间', reason: '没有就绪连接', tone: 'warning' });
   assert.match(html, /尚未执行配置/);
   assert.match(html, /没有就绪连接/);
+  assert.match(html, /演示工作空间/);
   assert.match(html, /本次允许的影响/);
+  assert.match(html, /services\/front\/runtime\.yml/);
   assert.match(html, /远程业务写入/);
+  assert.match(html, /完成标志/);
+  assert.match(html, /配置完成不等于服务已启动或业务验证通过/);
+  const idle = render(AgentDiscoveryContent, { prompt: '配置请求', serviceCode: 'front' });
+  assert.match(idle, /确认后才会创建对话并提交配置请求/);
   assert.match(html, /复制指令不会执行配置/);
   assert.match(html, /<details class="discovery-prompt">/);
   assert.match(html, /查看完整指令/);
