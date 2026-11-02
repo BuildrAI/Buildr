@@ -332,3 +332,75 @@ test('CLI可显式更正终态并保留历史，随后仍能使用统一状态�
   const again: any = json(['task', 'update', 'correctable', '--status', 'completed', '--summary', '整体已完成', '--expected-record', reopened.recordDigest, '--target', root]);
   assert.equal(again.record.status, 'completed'); assert.equal(again.record.resultHistory.length, 1);
 });
+
+test('CLI task list 复用 v7 轻量列表投影，默认只返回未终结任务并显式表达分页与非法输入', (t: any) => {
+  const { root }: any = fixture(t, 'task-list-cli');
+  json(['task', 'create', 'list-open-one', '--title', '未终结一', '--intent', '验证默认过滤', '--target', root]);
+  json(['task', 'create', 'list-open-two', '--title', '未终结二', '--intent', '验证默认过滤', '--target', root]);
+  const done: any = json(['task', 'create', 'list-done', '--title', '已完成', '--intent', '验证状态过滤', '--target', root]);
+  json(['task', 'complete', 'list-done', '--summary', '已完成', '--expected-record', done.recordDigest, '--target', root]);
+  json(['task', 'create', 'list-todo', '--title', '待办意向', '--intent', '验证 open 覆盖 todo', '--status', 'todo', '--target', root]);
+
+  const listed: any = json(['task', 'list', '--target', root]);
+  assert.equal(listed.schemaVersion, 'buildr.task-record-list/v7');
+  assert.equal(listed.filters.status, 'open'); assert.equal(listed.pageSize, 20);
+  assert.equal(listed.totalTaskCount, 4); assert.equal(listed.matchingTaskCount, 3);
+  assert.equal(listed.hasMore, false); assert.equal(listed.nextCursor, null);
+  assert.deepEqual(listed.tasks.map((item: any) => item.record.taskId).sort(), ['list-open-one', 'list-open-two', 'list-todo']);
+  assert.equal('brief' in listed.tasks[0].record, false);
+  assert.doesNotMatch(JSON.stringify(listed), /brief|\.sqlite|workspace-sqlite/);
+
+  const all: any = json(['task', 'list', '--status', 'all', '--target', root]);
+  assert.equal(all.filters.status, 'all'); assert.equal(all.matchingTaskCount, 4);
+  const activeOnly: any = json(['task', 'list', '--status', 'active', '--target', root]);
+  assert.equal(activeOnly.matchingTaskCount, 2);
+
+  const empty: any = json(['task', 'list', '--q', 'zzzznomatch', '--target', root]);
+  assert.deepEqual(empty.tasks, []); assert.equal(empty.matchingTaskCount, 0); assert.equal(empty.totalTaskCount, 4);
+  assert.equal(empty.filters.q, 'zzzznomatch'); assert.equal(empty.hasMore, false);
+  const humanEmpty: any = run(['task', 'list', '--q', 'zzzznomatch', '--target', root]);
+  assert.match(humanEmpty.stdout, /过滤 status=open：匹配 0 \/ 共 4，本页 0/);
+
+  const pageOne: any = json(['task', 'list', '--status', 'all', '--page-size', '1', '--target', root]);
+  assert.equal(pageOne.tasks.length, 1); assert.equal(pageOne.hasMore, true); assert.match(pageOne.nextCursor, /.+/);
+  assert.notEqual(pageOne.filterOptions, null);
+  const pageTwo: any = json(['task', 'list', '--status', 'all', '--page-size', '1', '--cursor', pageOne.nextCursor, '--target', root]);
+  assert.equal(pageTwo.tasks.length, 1); assert.equal(pageTwo.filterOptions, null);
+  assert.notEqual(pageTwo.tasks[0].record.taskId, pageOne.tasks[0].record.taskId);
+
+  const human: any = run(['task', 'list', '--target', root]);
+  assert.match(human.stdout, /list-open-one\tactive\t未终结一/);
+  assert.match(human.stdout, /过滤 status=open：匹配 3 \/ 共 4，本页 3/);
+
+  const positional: any = json(['task', 'list', 'list-open-one', '--target', root], 2);
+  assert.equal(positional.schemaVersion, 'buildr.cli-error/v1');
+  assert.equal(positional.error.code, 'task_record_cli.syntax');
+  assert.match(positional.help, /buildr task list/);
+
+  const unknownArg: any = json(['task', 'list', '--nope', 'x', '--target', root], 2);
+  assert.equal(unknownArg.error.code, 'task_record_cli.syntax');
+  assert.match(unknownArg.error.message, /Unknown argument: --nope/);
+
+  const badPageSize: any = json(['task', 'list', '--page-size', '0', '--target', root], 1);
+  assert.equal(badPageSize.schemaVersion, 'buildr.task-record-result/v5');
+  assert.equal(badPageSize.status, 'blocked'); assert.equal(badPageSize.operation, 'list');
+  assert.equal(badPageSize.taskId, null); assert.equal(badPageSize.record, null);
+  assert.equal(badPageSize.diagnostic.code, 'task_record_filter_invalid');
+  assert.equal(badPageSize.diagnostic.details.field, 'pageSize');
+
+  const badStatus: any = json(['task', 'list', '--status', 'bogus', '--target', root], 1);
+  assert.equal(badStatus.status, 'blocked'); assert.equal(badStatus.diagnostic.code, 'task_record_filter_invalid');
+  assert.equal(badStatus.diagnostic.details.field, 'status');
+});
+
+
+test('CLI default task page stays bounded in a workspace with hundreds of tasks', (t:any)=>{
+ const {root}=fixture(t,'task-list-bounded');const runtime=createRuntime();
+ for(let i=0;i<240;i++)runtime.createTask(root,{taskId:'bounded-'+i,title:'Task '+i,intent:'bounded page',status:'todo',projects:[],services:[],changes:[]});
+ const first=json(['task','list','--target',root]);
+ assert.equal(first.tasks.length,20);assert.equal(first.totalTaskCount,240);assert.equal(first.matchingTaskCount,240);assert.equal(first.hasMore,true);assert.ok(first.nextCursor);
+ assert.ok(first.tasks.every((item:any)=>!('brief' in item.record)));
+ const second=json(['task','list','--target',root,'--cursor',first.nextCursor]);
+ assert.equal(second.tasks.length,20);assert.equal(second.filterOptions,null);
+ assert.ok(second.tasks.every((item:any)=>!first.tasks.some((old:any)=>old.record.taskId===item.record.taskId)));
+});

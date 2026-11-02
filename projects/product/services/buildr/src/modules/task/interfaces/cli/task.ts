@@ -6,9 +6,9 @@ import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../../infrastructure/
 import { TASK_BRIEF_MAX_BYTES } from '../../domain/task.ts';
 import { taskRecordError } from '../../application/task-validation.ts';
 import type { TaskRecord, TaskRecordBusinessError } from '../../application/task-dto.ts';
-import type { TaskAbandonInputDto, TaskActivateInputDto, TaskCompleteInputDto, TaskCreateInputDto, TaskUpdateInputDto } from '../../application/task-dto.ts';
+import type { TaskAbandonInputDto, TaskActivateInputDto, TaskCompleteInputDto, TaskCreateInputDto, TaskListInputDto, TaskListOutputDto, TaskUpdateInputDto } from '../../application/task-dto.ts';
 
-type TaskAction = 'create' | 'inspect' | 'update' | 'activate' | 'complete' | 'abandon';
+type TaskAction = 'create' | 'inspect' | 'list' | 'update' | 'activate' | 'complete' | 'abandon';
 type CliValue = string | true;
 type TaskCliResult = {
   status: string;
@@ -20,6 +20,7 @@ type TaskCliResult = {
 export type TaskCommandRuntime = {
   createTask(targetRoot: string, input: TaskCreateInputDto): TaskCliResult;
   inspectTask(targetRoot: string, taskId: string): TaskCliResult;
+  queryTasks(targetRoot: string, input: TaskListInputDto): TaskListOutputDto;
   updateTask(targetRoot: string, taskId: string, input: TaskUpdateInputDto): TaskCliResult;
   activateTask(targetRoot: string, taskId: string, input: TaskActivateInputDto): TaskCliResult;
   completeTask(targetRoot: string, taskId: string, input: TaskCompleteInputDto): TaskCliResult;
@@ -34,6 +35,7 @@ function parseTaskCli(action: TaskAction, args: string[]) {
   const usages = {
     create: 'buildr task create <task-id> --title <text> --intent <text> [--brief-file <markdown-file>] [--status <todo|active>] [--parent-task] [--parent <task-id>] [--project <code> ...] [--service <project/service> ...] [--change <project/change> ...] [--target <canonical-workspace>] [--json]',
     inspect: 'buildr task inspect <task-id> [--target <canonical-workspace>] [--json]',
+    list: 'buildr task list [--status <open|todo|active|completed|abandoned|all>] [--project <code>] [--service <project/service>] [--q <text>] [--page-size <1-100>] [--cursor <text>] [--target <canonical-workspace>] [--json]',
     update: 'buildr task update <task-id> --expected-record <recordDigest> [--status todo|active|completed|abandoned] [--reason <text>] [--summary <text>] [--parent-completion <json-file>] [--title <text>] [--intent <text>] [--brief-file <markdown-file> | --clear-brief] [--parent <task-id> | --clear-parent] [--retrospective-state <pending-decision|decided> --retrospective-document-digest <sha256>] [--clear-retrospective] [--add-project <code> ...] [--remove-project <code> ...] [--add-service <project/service> ...] [--remove-service <project/service> ...] [--add-change <project/change> ...] [--remove-change <project/change> ...] [--target <canonical-workspace>] [--json]',
     activate: 'buildr task activate <task-id> --expected-record <recordDigest> [--target <canonical-workspace>] [--json]',
     complete: 'buildr task complete <task-id> --summary <text> --expected-record <recordDigest> [--parent-completion <evidence.json>] [--target <canonical-workspace>] [--json]',
@@ -42,12 +44,14 @@ function parseTaskCli(action: TaskAction, args: string[]) {
   const allowedByAction = {
     create: new Set(['--title', '--intent', '--brief-file', '--status', '--parent-task', '--parent', '--project', '--service', '--change', '--target', '--json']),
     inspect: new Set(['--target', '--json']),
+    list: new Set(['--status', '--project', '--service', '--q', '--page-size', '--cursor', '--target', '--json']),
     update: new Set(['--status', '--reason', '--summary', '--parent-completion', '--title', '--intent', '--brief-file', '--clear-brief', '--parent', '--clear-parent', '--parent-task', '--expected-record', '--retrospective-state', '--retrospective-document-digest', '--clear-retrospective', '--add-project', '--remove-project', '--add-service', '--remove-service', '--add-change', '--remove-change', '--target', '--json']),
     activate: new Set(['--expected-record', '--target', '--json']),
     complete: new Set(['--summary', '--parent-completion', '--expected-record', '--target', '--json']),
     abandon: new Set(['--reason', '--expected-record', '--target', '--json']),
   };
-  const repeatable = new Set(['--project', '--service', '--change', '--add-project', '--remove-project', '--add-service', '--remove-service', '--add-change', '--remove-change']);
+  // list 的 --project/--service 是单值过滤条件，与 create/update 的可重复限定引用语义不同。
+  const repeatable = new Set(action === 'list' ? [] : ['--project', '--service', '--change', '--add-project', '--remove-project', '--add-service', '--remove-service', '--add-change', '--remove-change']);
   const boolean = new Set(['--json', '--clear-parent', '--parent-task', '--clear-retrospective', '--clear-brief']);
   const values = new Map<string, CliValue[]>();
   const positions: string[] = [];
@@ -66,17 +70,18 @@ function parseTaskCli(action: TaskAction, args: string[]) {
     }
     values.set(arg, list);
   }
-  if (positions.length !== 1) throw syntax(`${action} requires exactly one <task-id>.`, usages[action]);
+  if (action === 'list') { if (positions.length) throw syntax('list does not accept a <task-id> positional argument; read one task with buildr task inspect <task-id>.', usages[action]); }
+  else if (positions.length !== 1) throw syntax(`${action} requires exactly one <task-id>.`, usages[action]);
   const one = (name: string): CliValue | undefined => values.get(name)?.[0];
   const many = (name: string): string[] => (values.get(name) || []).filter((value): value is string => typeof value === 'string');
   if (action === 'create' && (!one('--title') || !one('--intent'))) throw syntax('create requires --title and --intent.', usages[action]);
   if (action === 'complete' && !one('--summary')) throw syntax('complete requires --summary.', usages[action]);
   if (action === 'abandon' && !one('--reason')) throw syntax('abandon requires --reason.', usages[action]);
-  if (action !== 'create' && action !== 'inspect' && !one('--expected-record')) throw syntax(`${action} requires --expected-record.`, usages[action]);
+  if (action !== 'create' && action !== 'inspect' && action !== 'list' && !one('--expected-record')) throw syntax(`${action} requires --expected-record.`, usages[action]);
   if (action === 'update' && one('--parent') && one('--clear-parent')) throw syntax('update cannot use --parent and --clear-parent together.', usages[action]);
   if (one('--brief-file') && one('--clear-brief')) throw syntax('update cannot use --brief-file and --clear-brief together.', usages[action]);
   const target = one('--target');
-  return { taskId: positions[0], targetRoot: path.resolve(typeof target === 'string' ? target : process.cwd()), json: Boolean(one('--json')), one, many };
+  return { taskId: positions[0] ?? '', targetRoot: path.resolve(typeof target === 'string' ? target : process.cwd()), json: Boolean(one('--json')), one, many };
 }
 
 function digestFromDetails(details: unknown): string | null {
@@ -86,7 +91,8 @@ function digestFromDetails(details: unknown): string | null {
 
 function blockedResult(runtime: TaskCommandRuntime, operation: TaskAction, taskId: string, targetRoot: string, error: TaskRecordBusinessError): TaskCliResult {
   let current: TaskCliResult | null = null;
-  try { current = runtime.inspectTask(targetRoot, taskId); } catch {}
+  // list 没有单任务身份，不能为一个列表查询回读某个 Task。
+  if (taskId) { try { current = runtime.inspectTask(targetRoot, taskId); } catch {} }
   return withJsonSchema(PUBLIC_JSON_SCHEMAS.taskRecordResult, {
     operation,
     status: 'blocked',
@@ -105,6 +111,33 @@ function printTaskResult(payload: TaskCliResult, json: boolean): TaskCliResult {
   else {
     console.log(`Task ${payload.taskId} ${payload.status}`);
     for (const action of payload.nextActions) console.log(`Next: ${action}`);
+  }
+  return payload;
+}
+
+function taskListInput(one: (name: string) => CliValue | undefined): TaskListInputDto {
+  const status = textValue(one('--status'));
+  const pageSize = textValue(one('--page-size'));
+  const project = textValue(one('--project'));
+  const service = textValue(one('--service'));
+  const q = textValue(one('--q'));
+  const cursor = textValue(one('--cursor'));
+  return {
+    status: (status || 'open') as TaskListInputDto['status'],
+    pageSize: pageSize || '20',
+    ...(project ? { project } : {}),
+    ...(service ? { service } : {}),
+    ...(q ? { q } : {}),
+    ...(cursor ? { cursor } : {}),
+  };
+}
+
+function printTaskListResult(payload: TaskListOutputDto, json: boolean): TaskListOutputDto {
+  if (json) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+  else {
+    for (const task of payload.tasks) console.log(`${task.record.taskId}\t${task.record.status}\t${task.record.title}`);
+    const nextPage = payload.hasMore && payload.nextCursor ? `，下一页 --cursor ${payload.nextCursor}` : '';
+    console.log(`过滤 status=${payload.filters.status}：匹配 ${payload.matchingTaskCount} / 共 ${payload.totalTaskCount}，本页 ${payload.tasks.length}${nextPage}`);
   }
   return payload;
 }
@@ -155,9 +188,10 @@ function changeValue(value: string): { project: string; change: string } {
   return { project, change };
 }
 
-export function taskCommand(runtime: TaskCommandRuntime, action: TaskAction, args: string[]): TaskCliResult {
+export function taskCommand(runtime: TaskCommandRuntime, action: TaskAction, args: string[]): TaskCliResult | TaskListOutputDto {
   const parsed = parseTaskCli(action, args);
   try {
+    if (action === 'list') return printTaskListResult(runtime.queryTasks(parsed.targetRoot, taskListInput(parsed.one)), parsed.json);
     let payload: TaskCliResult;
     if (action === 'create') payload = runtime.createTask(parsed.targetRoot, { taskId: parsed.taskId, title: textValue(parsed.one('--title')) || '', intent: textValue(parsed.one('--intent')) || '', brief: briefFile(parsed.one('--brief-file')), status: textValue(parsed.one('--status')) as TaskCreateInputDto['status'], ...(parsed.one('--parent-task') ? { isParent: true } : {}), parentTaskId: textValue(parsed.one('--parent')), projects: parsed.many('--project'), services: parsed.many('--service').map(serviceValue), changes: parsed.many('--change').map(changeValue) });
     else if (action === 'inspect') payload = runtime.inspectTask(parsed.targetRoot, parsed.taskId);

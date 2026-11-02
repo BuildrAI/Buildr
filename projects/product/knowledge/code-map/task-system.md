@@ -97,7 +97,7 @@
     - [application/workspace-query-application.ts](../../services/buildr/src/modules/workspace/application/workspace-query-application.ts) — 读取同一空间身份、项目、服务及登记事实
   - **`services/buildr/src/modules/task/`** — 后端任务事实与具体操作
     - `interfaces/` — 同一应用的多种入口
-      - [cli/task.ts](../../services/buildr/src/modules/task/interfaces/cli/task.ts) — 创建、查看、修订、完成和放弃任务
+      - [cli/task.ts](../../services/buildr/src/modules/task/interfaces/cli/task.ts) — 创建、查看、列举、修订、完成和放弃任务
       - [http/task-http.ts](../../services/buildr/src/modules/task/interfaces/http/task-http.ts) — 网页请求、输入转换与写入保护
     - `application/` — 组织任务用例
       - [task-query-application.ts](../../services/buildr/src/modules/task/application/task-query-application.ts) — 读取当前任务，以父任务身份限定直接子项及其范围装配，计算单任务版本及完成相关父子观察身份

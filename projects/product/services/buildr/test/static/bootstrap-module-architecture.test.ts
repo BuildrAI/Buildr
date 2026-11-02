@@ -199,7 +199,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     requires: [WORKSPACE_TASK_SUPPORT],
     provides: ['task.work-context-application', TASK_QUERY_APPLICATION, TASK_BRIEF_QUERY, TASK_COMMAND_APPLICATION, TASK_RUNTIME_PORT, TASK_CHANGE_BINDER],
     contributions: {
-      cli: ['task create', 'task inspect', 'task update', 'task activate', 'task complete', 'task abandon', 'task work-context inspect', 'task work-context record', 'task work-context respond'],
+      cli: ['task create', 'task inspect', 'task list', 'task update', 'task activate', 'task complete', 'task abandon', 'task work-context inspect', 'task work-context record', 'task work-context respond'],
       http: ['task-work-context.http', 'task.http'],
       diagnostics: ['task.diagnostics'],
     },
@@ -364,7 +364,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'skills add', 'skills remove', 'skills bind', 'skills unbind',
     'skill install', 'runtime check', 'skills render', 'rules render',
     'openspec converge', 'openspec convergence preflight', 'openspec convergence inspect',
-    'task create', 'task inspect', 'task update', 'task activate', 'task complete', 'task abandon',
+    'task create', 'task inspect', 'task list', 'task update', 'task activate', 'task complete', 'task abandon',
     'task work-context inspect', 'task work-context record', 'task work-context respond',
     'workbench',
     'worktree create', 'worktree cleanup', 'worktree inspect',

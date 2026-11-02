@@ -66,9 +66,10 @@ const COMMAND_GROUPS: any[] = [
     surface: "primary",
     summary: "Task Manager只管理Task Record；专业动作由对应Skill和Interface处理。",
     help: [
-      "Usage: buildr task <create|inspect|update|activate|complete|abandon> <task-id> ... [--target <canonical-workspace>] [--json]",
+      "Usage: buildr task <create|inspect|list|update|activate|complete|abandon> [<task-id>] ... [--target <canonical-workspace>] [--json]",
       "",
       "Task Manager只管理canonical Workspace中的Task Record；专业事实由各自Application读取。",
+      "list 不接受 <task-id>，默认 status=open、pageSize=20，只读返回不含 brief 的轻量列表投影 buildr.task-record-list/v7。",
       "它不执行开发、Review、Verification、Git、交付、cleanup或publication，也不接受完整next-state文档。",
       "Agent 和 Buildr Web 都调用同一个 Task Record Application；不要直接操作 Workspace SQLite，也不要把旧 task.yml 当作 Task authority。"
     ],

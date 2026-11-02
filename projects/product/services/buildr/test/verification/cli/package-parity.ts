@@ -127,6 +127,19 @@ try {
     assert.equal(packaged.stderr, checkout.stderr, `stderr differs: ${args.join(' ')}`);
   }
 
+  const listWorkspace=path.join(root,'task-list-parity');
+  const initList=runCheckout(['init','--source-only','--target',listWorkspace,'--name','list-parity','--description','list parity','--profile','team']);
+  assert.equal(initList.status,0,initList.stderr);
+  const createList=runCheckout(['task','create','parity-task','--title','Task','--intent','list parity','--target',listWorkspace,'--json']);
+  assert.equal(createList.status,0,createList.stderr);
+  const checkoutList=runCheckout(['task','list','--target',listWorkspace,'--json']);
+  const packagedList=runPackaged(['task','list','--target',listWorkspace,'--json']);
+  assert.equal(checkoutList.status,0,checkoutList.stderr);assert.equal(packagedList.status,0,packagedList.stderr);
+  assert.deepEqual(JSON.parse(packagedList.stdout),JSON.parse(checkoutList.stdout));
+  const listValue=JSON.parse(checkoutList.stdout);
+  assert.equal(listValue.schemaVersion,'buildr.task-record-list/v7');assert.equal(listValue.pageSize,20);
+  assert.equal('brief' in listValue.tasks[0].record,false);
+
   const checkoutIdentity: any = JSON.parse(runCheckout(['version', '--json']).stdout);
   const packagedIdentity: any = JSON.parse(runPackaged(['version', '--json']).stdout);
   for (const field of ['schemaVersion', 'package', 'version', 'protocolIdentity']) {

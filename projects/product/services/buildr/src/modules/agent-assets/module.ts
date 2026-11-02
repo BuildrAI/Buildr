@@ -63,7 +63,7 @@ export type OpenSpecAssetSupport = {
   componentDefinitionFile(root: string, entry: OpenSpecComponentEntry): string;
   readComponentDefinition(file: string, id: string): { upstream?: { version?: string } };
   readComponentsManifestForWrite(root: string): { components: OpenSpecComponentEntry[] };
-  runCommandsCheck(root: string): { commands: Array<{ id: string; status: string; version?: { current?: string }; executablePath: string; installHint?: string }> };
+  runCommandsCheck(root: string): { commands: Array<{ id: string; status: string; version?: { current?: string }; executablePath: string; installHint?: string }>; findings?: Array<{ status: string; code: string; message: string }> };
 };
 
 const OPENSPEC_SUPPORT_METHODS = ['assertName', 'componentDefinitionFile', 'readComponentDefinition', 'readComponentsManifestForWrite', 'runCommandsCheck'] as const satisfies readonly (keyof OpenSpecAssetSupport)[];

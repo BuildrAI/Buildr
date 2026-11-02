@@ -2885,3 +2885,21 @@ test('cross-workspace task links keep composite identity, legacy writes and scop
     assert.equal(f.service.conversations.list('workspace-two',{taskId:'task-one'}).conversations.length,0);
   }finally{await f.close();}
 });
+
+test('archived run preserves context usage and generation after a new turn replaces it', async()=>{
+ let release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;});
+ const native=fake('local',{beforeAccepted:gate}),f=fixture([native.executor]);
+ try{
+  await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});
+  send(f.service,chat.id,'local','first usage');await waitUntil(()=>native.sends.length,n=>n===1);
+  native.sends[0]!.onEvent({type:'context-usage',usedTokens:1234,windowTokens:50000});release();
+  const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='completed');
+  send(f.service,chat.id,'local','next turn');await waitUntil(()=>native.sends.length,n=>n===2);
+  const db=new DatabaseSync(path.join(f.options.dataRoot,'agent-service/conversations.sqlite'));
+  try{
+   const row=db.prepare('SELECT body FROM conversations WHERE id=?').get(chat.id) as {body:string};
+   const record=JSON.parse(row.body);assert.deepEqual(record.runOutcomes[done.run!.id].contextUsage,{usedTokens:1234,windowTokens:50000});
+   assert.equal(record.runOutcomes[done.run!.id].generation,done.run!.generation);
+  }finally{db.close();}
+ }finally{release();await f.close();}
+});
