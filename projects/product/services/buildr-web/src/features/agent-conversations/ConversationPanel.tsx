@@ -12,7 +12,7 @@ import { currentConversationRequests } from './conversation-state';
 import { conversationModelLabel } from './conversation-model-label';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, Fragment, type ReactNode } from 'react';
 import { Alert, Button, Dropdown, Input, Modal, Popover, Select, Spin, Tag } from 'antd';
-import { ArrowDownOutlined, ArrowUpOutlined, CommentOutlined, EllipsisOutlined, MenuOutlined, MinusOutlined, PlusOutlined, ReloadOutlined, SafetyCertificateOutlined, StopOutlined, TeamOutlined } from '@ant-design/icons';
+import { ArrowDownOutlined, ArrowUpOutlined, CommentOutlined, EllipsisOutlined, MinusOutlined, PlusOutlined, ReloadOutlined, SafetyCertificateOutlined, StopOutlined, TeamOutlined, UnorderedListOutlined } from '@ant-design/icons';
 import { MarkdownHost } from '../../components/MarkdownHost';
 import type { MarkdownRenderOptions } from '../../markdown';
 import type { ApiError } from '../../api';
@@ -554,7 +554,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   const panel=<section id={panelId} className={'ac-panel'+(context.full?' is-full':'')+(embedded?' ac-child-panel':'')} aria-label={embedded?'子对话':'内部对话'} data-dock={context.side} data-conversation-id={chat?.id}>
     {context.view==='history'?<ConversationHistory workspaces={workspaces} defaultWorkspaceId={defaultWorkspaceId}/>:<>
       <header className="ac-thread-header" data-run-status={run&&['running','completed'].includes(run.status)?run.status:undefined}>
-        {!embedded&&<Button type="text" icon={<MenuOutlined/>} aria-label="查看对话列表" title="对话列表" onClick={()=>context.setView('history')}/>}
+        {!embedded&&<Button type="text" icon={<UnorderedListOutlined/>} aria-label="查看对话列表" title="对话列表" onClick={()=>context.setView('history')}/>}
         <div className="ac-thread-heading">
         <Popover rootClassName="ac-panel-popup" title="工作空间" trigger="click" open={locationOpen} onOpenChange={setLocationOpen} content={settings}>
           <button type="button" className="ac-thread-title" aria-label="对话信息" title={chat?.title||'新对话'}>{chat?.title||'新对话'}</button>
