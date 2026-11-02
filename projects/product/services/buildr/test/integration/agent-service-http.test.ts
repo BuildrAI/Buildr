@@ -140,6 +140,7 @@ test('private conversations use authenticated HTTP and bounded binary input; str
   response=await fetch(`${conversations}/${created.id}/pending-send`,{method:'POST',headers,body:JSON.stringify({...permissionDraft,clientRequestId:'queued-http',unrecognized:true})});assert.equal(response.status,400);
   response=await fetch(`${conversations}/${created.id}/pending-send`,{method:'POST',headers,body:JSON.stringify({...permissionDraft,clientRequestId:'queued-http'})});assert.equal(response.status,202);
   const queued=await response.json();assert.equal(queued.pendingSend.state,'waiting');assert.equal(queued.pendingSend.draft.text,permissionDraft.text);
+  assert.equal(queued.pendingSend.draft.permissionMode,'full-access','unknown connection remains queued with the default, not admitted or downgraded');
   response=await fetch(`${conversations}/${created.id}`,{headers:readHeaders});assert.equal((await response.json()).pendingSend.id,'queued-http');
   response=await fetch(`${conversations}/${created.id}/cancel-pending-send`,{method:'POST',headers,body:JSON.stringify({expectedPendingRevision:'stale'})});assert.equal(response.status,409);
   response=await fetch(`${conversations}/${created.id}/cancel-pending-send`,{method:'POST',headers,body:JSON.stringify({expectedPendingRevision:queued.pendingSend.revision})});assert.equal(response.status,200);assert.equal((await response.json()).pendingSend,undefined);

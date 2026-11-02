@@ -661,7 +661,10 @@ export class ConversationApplication {
   private draft(input: SendDraft): SendDraft {
     const draft = normalizeSendDraft(input);
     // Only an omitted selection may fall back; explicit full-access must never be downgraded.
-    const modes = this.options.connections.get(draft.connectionId).capabilities.permissionModes ?? ['default'];
+    // Queued drafts may wait for a connection that is not installed yet.
+    // Admission still validates it in prepare; normalization must not discard it.
+    const connection = input.permissionMode === undefined ? this.options.connections.list().find(value => value.id === draft.connectionId) : undefined;
+    const modes = connection?.capabilities.permissionModes ?? (connection ? ['default'] : []);
     if (input.permissionMode === undefined && !modes.includes('full-access') && modes.includes('default')) draft.permissionMode = 'default';
     return draft;
   }
