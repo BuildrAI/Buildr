@@ -243,13 +243,13 @@ await step('全局对话保留草稿与执行位置，左右停靠到一级导�
       assert.equal(await railActivity.locator('[data-count-kind]').count(),1,'入口只保留一个角标');
       await assertReminderGap();await capture(page,'agent-conversation-attention-counts.png');
       const originalPending=fixture.additionalPending;
-      const activityRow=(id:string,state:string,time:string)=>({...originalPending[0],id,title:id,run:run(state),activity:{version:2,seenThrough:state==='completed'?0:2,active:true,updatedAt:'2026-10-28T00:00:00Z',userInputAt:time}});
+      const activityRow=(id:string,state:string,time:string)=>({...originalPending[0],id,title:id,run:run(state),activity:{version:2,seenThrough:state==='completed'?0:2,active:true,updatedAt:time,userInputAt:time}});
       const ordered=[activityRow('run-old','running','2026-10-28T00:01:00Z'),activityRow('pending-old','waiting-question','2026-10-28T00:02:00Z'),activityRow('run-new','running','2026-10-28T00:04:00Z'),activityRow('pending-new','completed','2026-10-28T00:03:00Z')];
       const assertActivityOrder=async(ids:string[])=>{await page.waitForFunction((expected:string[])=>JSON.stringify([...document.querySelectorAll<HTMLElement>('.ac-activity-menu [data-activity-id]')].filter(node=>node.getClientRects().length).map(node=>node.dataset.activityId))===JSON.stringify(expected),ids);};
       fixture.additionalPending=ordered;await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await assertActivityOrder(['pending-new','pending-old','run-new','run-old']);
-      ordered[0].updatedAt='2026-10-29T00:00:00Z';ordered[0].activity.updatedAt='2026-10-29T00:00:00Z';fixture.additionalPending=[...ordered].reverse();
-      await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await assertActivityOrder(['pending-new','pending-old','run-new','run-old']);
-      ordered[0].activity.userInputAt='2026-10-29T00:00:00Z';await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await assertActivityOrder(['pending-new','pending-old','run-old','run-new']);
+      fixture.additionalPending=[...ordered].reverse();await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await assertActivityOrder(['pending-new','pending-old','run-new','run-old']);
+      ordered[0].activity.updatedAt='2026-10-29T00:00:00Z';await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await assertActivityOrder(['pending-new','pending-old','run-old','run-new']);
+      ordered[2].activity.userInputAt='2026-10-30T00:00:00Z';await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await assertActivityOrder(['pending-new','pending-old','run-old','run-new']);
       fixture.additionalPending=originalPending;
 
       fixture.additionalPending=[...originalPending,{...originalPending[0],id:'unknown-reminder',title:'需要核实的执行',run:run('unknown')}];

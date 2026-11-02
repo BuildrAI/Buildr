@@ -309,8 +309,8 @@ await step('列表手动从末条加载，整行折叠与拖动互不干扰',asy
     await header.click();await count(0);assert.equal(await header.getAttribute('aria-expanded'),'false');await header.press('Enter');await count(5);assert.equal(groupCalls().at(-1)!.limit,5);assert.equal(groupCalls().at(-1)!.cursor,null);
     await defaults.getByRole('button',{name:/加载更多/}).click();await page.waitForFunction(()=>document.querySelectorAll('[data-history-workspace="@default"] .ac-history-row').length===8);
     fixture.expectedBrowserErrors.add('503');fixture.expectedBrowserErrors.add('Service Unavailable');fail=true;await group.getByRole('button',{name:/加载更多/}).click();await group.getByText('分组暂不可用',{exact:true}).waitFor();await count(5);fail=false;await group.getByRole('button',{name:/重\s*试/}).click();await count(15);
-    fixture.expectedBrowserErrors.add('409');fixture.expectedBrowserErrors.add('Conflict');stale=true;await group.getByRole('button',{name:/加载更多/}).click();await group.getByText('列表位置已变化，请刷新后继续。',{exact:true}).waitFor();await count(15);stale=false;await group.getByRole('button',{name:'刷新列表',exact:true}).click();await count(5);
-    await search.fill('迟到现场');await held;await search.fill('分批现场');await count(5);release?.();await page.waitForTimeout(100);await count(5);
+    fixture.expectedBrowserErrors.add('409');fixture.expectedBrowserErrors.add('Conflict');stale=true;await group.getByRole('button',{name:/加载更多/}).click();await group.getByText('列表位置已变化，请刷新后继续。',{exact:true}).waitFor();await count(15);stale=false;await group.getByRole('button',{name:'刷新列表',exact:true}).click();await count(15);
+    await search.fill('迟到现场');await held;await search.fill('分批现场');await count(15);release?.();await page.waitForTimeout(100);await count(15);
     await capture(page,'conversation-history-manual-controls.png');
   }finally{
     release?.();fail=false;stale=false;fixture.additionalConversations=original;await page.unroute(matcher,intercept);
