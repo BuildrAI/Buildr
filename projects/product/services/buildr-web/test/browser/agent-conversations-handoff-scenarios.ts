@@ -174,9 +174,10 @@ await step('暂看历史与恢复不固定，对话滚动在收起、暂看、�
     });
 
 await step('原生授权与问题回复绑定原请求，明确占用时保存待发送内容',async()=>{
+      const sendsBefore=fixture.sends;
       update({run:run('waiting-approval','dsh'),requests:[{id:'native-approval',conversationId:fixture.conversation.id,workspaceId:workspaceId,participantId:'participant-dsh',runId:'run-fixture',generation:'generation-fixture',kind:'approval',title:'允许这次写入吗？',options:[{id:'deny',label:'拒绝'},{id:'allow-once',label:'允许本次'}]}]});await reopen();await panel().getByRole('button',{name:'允许本次',exact:true}).click();assert.equal(fixture.replies,1);
       update({run:run('waiting-question','dsh'),requests:[{id:'native-question',conversationId:fixture.conversation.id,workspaceId:workspaceId,participantId:'participant-dsh',runId:'run-fixture',generation:'generation-fixture',kind:'question',title:'需要明确范围',questions:[{id:'scope',label:'这次处理范围'}]}]});await page.reload();await input().waitFor();await panel().getByRole('textbox',{name:'这次处理范围',exact:true}).fill('只调整本次目标');await panel().getByRole('button',{name:'回答并继续',exact:true}).click();assert.equal(fixture.replies,2);await panel().locator('.ac-message.is-user').filter({hasText:'这次处理范围：只调整本次目标'}).waitFor();
-      update({run:run('unknown','dsh'),requests:[]});await reopen();fixture.prepareError={code:'agent_conversation_busy',message:'原生上下文仍被占用。'};await input().fill('未知时保留输入');await input().press('Enter');await panel().getByText('新指令已保存，尚未发送',{exact:true}).waitFor();assert.equal(fixture.sends,2);assert.equal(await input().inputValue(),'');assert.equal(fixture.conversation.pendingSend.draft.text,'未知时保留输入');await capture(page,'agent-conversation-unknown.png');await panel().getByRole('button',{name:'取消待发送',exact:true}).click();await panel().locator('[data-pending-send-state]').waitFor({state:'hidden'});
+      update({run:run('unknown','dsh'),requests:[]});await reopen();fixture.prepareError={code:'agent_conversation_busy',message:'原生上下文仍被占用。'};await input().fill('未知时保留输入');await input().press('Enter');await panel().getByText('新指令已保存，尚未发送',{exact:true}).waitFor();assert.equal(fixture.sends,sendsBefore);assert.equal(await input().inputValue(),'');assert.equal(fixture.conversation.pendingSend.draft.text,'未知时保留输入');await capture(page,'agent-conversation-unknown.png');await panel().getByRole('button',{name:'取消',exact:true}).click();await panel().locator('[data-pending-send-state]').waitFor({state:'hidden'});
     });
 
 await step('问题卡片在专注、分屏和窄屏与输入内容列对齐，长说明不溢出',async()=>{
@@ -430,11 +431,11 @@ await step('等待问题时可以回答后交接，也可以只发送新要求�
           }else{assert.equal(marker.answers,undefined);assert.equal(pending.draft.text,mode==='instruction'?'先处理新的交互问题':'');}
           assert.equal(fixture.sends,beforeSends);assert.equal(fixture.replies,beforeReplies);assert.equal(fixture.stops,beforeStops,'页面只提交持久意图，后端负责准确停止');
           if(mode==='instruction'){await page.reload();await input().waitFor();await panel().locator('[data-pending-send-state="waiting"]').waitFor();}
-          await panel().getByRole('button',{name:'取消待发送',exact:true}).click();await panel().locator('[data-pending-send-state]').waitFor({state:'hidden'});
+          await panel().getByRole('button',{name:'取消',exact:true}).click();await panel().locator('[data-pending-send-state]').waitFor({state:'hidden'});
           if(mode==='instruction'){await panel().getByRole('button',{name:'移除图片 handoff.png',exact:true}).waitFor();await chooseModel('Fast model');await closeModelSettings();}
           assert.equal(fixture.conversation.requests.length,1);await card.getByRole('button',{name:'回答并交接',exact:true}).waitFor();
           if(mode==='instruction')assert.equal(await input().inputValue(),'先处理新的交互问题');
-          if(mode==='answer'||mode==='other')assert.equal(await input().inputValue(),'保留输入框的独立草稿');
+          if(mode==='answer'||mode==='other')assert.equal(await input().inputValue(),'保留输入框的独立草稿\n\n当前成果是否符合预期？：'+(mode==='answer'?'稍后确认':'验收稍后处理，先看新问题'));
           if(mode==='instruction'){await panel().locator('.ac-image-thumbnail[title=\"handoff.png\"]').hover();await panel().getByRole('button',{name:'移除图片 handoff.png',exact:true}).click();}
           await input().fill('');
         }

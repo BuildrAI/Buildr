@@ -686,11 +686,14 @@ export class ConversationApplication {
     if (!connection.capabilities.text) fail('agent_capability_unavailable', '此接入尚不支持文本输入。', 409);
     if (record.view.forkState && record.view.forkState.status !== 'ready') fail('agent_fork_pending', '此分叉尚未完成，不能发送新指令；原对话不受影响。', 409);
     const latest = record.participants.findLast(value => !value.historical && value.connectionId === input.connectionId && value.modelAccountId === input.modelAccountId && value.modelId === input.model && (!input.modelAccountId || value.modelAccountIdentity === source?.identity && value.modelConfiguration===configuration));
-    const held = latest && !releasedContinuation(record,input) && conversationRuns(record.view).some(run => run.participantId === latest.id && (unfinishedRun(run) || run.generation !== this.options.generation && this.options.generationAlive?.(run.generation) === true && !run.resourcesReleased || record.view.requests.some(request => request.runId === run.id)));
-    const current = record.participants.find(value=>value.id===record.view.run?.participantId);
-    if (held && latest?.id===current?.id && !waitingQuestions &&
-      record.view.run?.generation!==this.options.generation && ['completed','failed','stopped'].includes(record.view.run?.status??''))
-      fail('agent_conversation_busy', '原会话仍由上一轮后台持有，内容将等待安全释放后接续，不会另建会话。', 409);
+    // Released historical outcomes are not native ownership. Keep the latest
+    // uncertain context isolated, and never let a held context block new input:
+    // the independent-participant path below preserves its exact old controls.
+    const held = latest && !releasedContinuation(record,input) && conversationRuns(record.view).some(run => run.participantId === latest.id && (
+      record.view.requests.some(request => request.runId === run.id) ||
+      run.id === record.view.run?.id && unfinishedRun(run) ||
+      !run.resourcesReleased && (unfinishedRun(run) || run.generation !== this.options.generation && this.options.generationAlive?.(run.generation) === true)
+    ));
     const participant = held ? undefined : latest;
     const through = record.view.entries.at(-1)?.sequence ?? record.view.childOf?.throughSequence ?? 0;
     const changes = handoffEntries([...(record.inheritedContext?.entries??[]),...record.view.entries],participant?.deliveredThrough??0);
@@ -1162,7 +1165,7 @@ export class ConversationApplication {
           createdAt:this.options.now(), kind:'handoff', role:'system', runId, participantId:participant.id,
           provider:participant.provider, status:'sending',
           text:reason==='backend-adoption'?'后台已接管原生会话，等待本轮受理。':'执行选择或可用上下文变化，已准备新的原生会话，等待本轮受理。',
-          nativeSession:{reason,...(this.options.backendChange?.fromGeneration===previousGeneration?{backendChange:this.options.backendChange}:{}),description:reason==='backend-adoption'?'原轮控制已释放，新后台复用原生会话':prepared.preview.switching?'用户执行选择变化':previousRun&&unfinishedRun(previousRun)?'原轮仍有在途工作，新要求使用独立会话':'原上下文不可复用，使用新的原生会话',from:{contextId:fromContext,generation:previousGeneration},to:{contextId:toContext,generation:this.options.generation}},
+          nativeSession:{reason,...(this.options.backendChange?.fromGeneration===previousGeneration?{backendChange:this.options.backendChange}:{}),description:reason==='backend-adoption'?'原轮控制已释放，新后台复用原生会话':prepared.preview.switching?'用户执行选择变化':previousRun&&unfinishedRun(previousRun)?'原轮仍有在途工作，新要求使用独立会话':previousRun&&!previousRun.resourcesReleased&&previousGeneration!==this.options.generation?'原会话控制资源尚未释放，新要求使用独立会话':'原上下文不可复用，使用新的原生会话',from:{contextId:fromContext,generation:previousGeneration},to:{contextId:toContext,generation:this.options.generation}},
           });
           this.save(current);
         });

@@ -95,20 +95,19 @@ await step('窄工作区同时打开任务与对话时，内容标题栏填满�
       await page.setViewportSize({width:1600,height:1000});
     });
 
-await step('原生暂忙时保存待发送内容，刷新保留、可修改取消，并在新版开始后更新展示',async()=>{
+await step('原生暂忙时保存待发送内容，刷新保留、仅可取消，并在新版开始后更新展示',async()=>{
       update({run:run('stopping','dsh'),requests:[],pendingSend:undefined});await reopen();
       const before=fixture.sends,previewsBefore=fixture.prepares;
+      await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles({name:'cancel.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64')});
+      await panel().getByRole('button',{name:'移除图片 cancel.png',exact:true}).waitFor();
       fixture.prepareError={code:'agent_process_switching',message:'原生服务正在切换。'};
       await input().fill('上一轮结束后继续修复');await input().press('Enter');
       await panel().getByText('新指令已保存，尚未发送',{exact:true}).waitFor();
       assert.equal(fixture.sends,before);assert.equal(fixture.prepares,previewsBefore+1,'待发送依据真实服务占用，界面不只按状态名称决定');assert.equal(await input().inputValue(),'');
       assert.equal(fixture.conversation.pendingSend.draft.text,'上一轮结束后继续修复');
       await page.reload();await panel().getByText('新指令已保存，尚未发送',{exact:true}).waitFor();
-      await panel().getByRole('button',{name:'修改待发送内容',exact:true}).click();
-      const edit=page.getByRole('dialog',{name:'修改待发送指令',exact:true});
-      await edit.getByRole('textbox',{name:'待发送内容',exact:true}).fill('修改后的下一轮指令');
-      await edit.getByRole('button',{name:'保存并等待发送',exact:true}).click();await edit.waitFor({state:'hidden'});
-      await panel().locator('.ac-pending-send-text').filter({hasText:'修改后的下一轮指令'}).waitFor();assert.equal(fixture.sends,before);
+      assert.deepEqual(await panel().locator('.ac-pending-send-actions button').allTextContents(),['取消']);
+      assert.equal(await page.getByRole('dialog',{name:'修改待发送指令',exact:true}).count(),0);
       await capture(page,'agent-conversation-pending-send.png');
       const pending=structuredClone(fixture.conversation.pendingSend);
       update({pendingSend:{...pending,draft:{...pending.draft,text:'修改后的下一轮指令\n'+Array.from({length:30},(_,i)=>'完整保留的待发送内容 '+i).join('\n')}}});
@@ -118,12 +117,24 @@ await step('原生暂忙时保存待发送内容，刷新保留、可修改取�
       assert.match(await body.innerText(),/完整保留的待发送内容 29/);
       update({pendingSend:{...pending,state:'failed',reason:'原命令尚未确认退出，未发送下一轮。'}});await page.reload();
       await panel().locator('.ac-pending-send-reason').getByText('原命令尚未确认退出，未发送下一轮。',{exact:true}).waitFor();
-      assert.equal(await panel().getByRole('button',{name:'修改待发送内容',exact:true}).isEnabled(),true);
-      assert.equal(await panel().getByRole('button',{name:'取消待发送',exact:true}).isEnabled(),true);
+      assert.equal(await panel().getByRole('button',{name:'取消',exact:true}).isEnabled(),true);
       assert.equal(fixture.sends,before);
       await capture(page,'agent-conversation-pending-failure.png');
       update({pendingSend:pending});await page.reload();await panel().getByText('新指令已保存，尚未发送',{exact:true}).waitFor();
-      await panel().getByRole('button',{name:'取消待发送',exact:true}).click();await panel().locator('[data-pending-send-state]').waitFor({state:'hidden'});
+      await panel().getByRole('button',{name:'取消',exact:true}).click();await panel().locator('[data-pending-send-state]').waitFor({state:'hidden'});
+      assert.equal(await input().inputValue(),pending.draft.text);assert.equal(await input().evaluate((node:HTMLElement)=>document.activeElement===node),true);
+      assert.equal(await panel().getByRole('button',{name:'移除图片 cancel.png',exact:true}).count(),1);
+      const stopsBeforeCancel=fixture.stops;
+      update({pendingSend:pending});await page.reload();await input().fill('已有新草稿');
+      await panel().getByRole('button',{name:'取消',exact:true}).click();await panel().locator('[data-pending-send-state]').waitFor({state:'hidden'});
+      assert.equal(await input().inputValue(),'已有新草稿\n\n'+pending.draft.text);assert.equal(fixture.stops,stopsBeforeCancel);assert.equal(fixture.sends,before);
+      await page.reload();assert.equal(await input().inputValue(),'已有新草稿\n\n'+pending.draft.text);
+      update({pendingSend:pending});await page.reload();
+      const cancelRoute='**/cancel-pending-send';const rejectCancel=async(route:any)=>{fixture.expectedBrowserErrors?.add(route.request().url());await route.fulfill({status:409,json:{error:{code:'agent_pending_conflict',message:'待发送内容已经变化。'}}});};
+      await page.route(cancelRoute,rejectCancel);await panel().getByRole('button',{name:'取消',exact:true}).click();await panel().getByText('待发送内容已经变化。',{exact:true}).waitFor();
+      assert.equal(await panel().locator('[data-pending-send-state]').count(),1);assert.equal(await input().inputValue(),'已有新草稿\n\n'+pending.draft.text);
+      await page.unroute(cancelRoute,rejectCancel);await panel().getByRole('button',{name:'取消',exact:true}).click();await panel().locator('[data-pending-send-state]').waitFor({state:'hidden'});await input().fill('');
+      assert.equal(await panel().getByRole('button',{name:'移除图片 cancel.png',exact:true}).count(),1);await panel().getByRole('button',{name:'移除图片 cancel.png',exact:true}).focus();await page.keyboard.press('Enter');
       update({run:run('stopped','dsh'),requests:[]});await reopen();const observesBefore=fixture.observes;await panel().locator('.ac-recovery-action').getByRole('button',{name:'继续',exact:true}).click();await panel().locator('[data-run-status="running"]').waitFor();assert.equal(fixture.sends,before+1,'取消只撤回待发送，之后仍能继续原目标');assert.ok(fixture.observes>observesBefore,'继续会先核对原执行');assert.ok(fixture.sentInputs.at(-1).continueRunId);
       update({run:run('stopping','dsh')});await reopen();assert.equal(fixture.sends,before+1);
       fixture.prepareError={code:'agent_process_switching',message:'原生服务正在切换。'};await input().fill('自动交给新版');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().getByText('新指令已保存，尚未发送',{exact:true}).waitFor();

@@ -8,6 +8,8 @@ import {createAgentService} from '../../src/index.ts';
 import type {AgentExecutor,AgentRuntime,ExecutorObservation,AgentServiceOptions} from '../../src/contracts.ts';
 import type {ModelProvider} from '../../src/model-access/contracts.ts';
 import {ConversationRepository} from '../../src/persistence/conversation-repository.ts';
+import {PendingSendRepository} from '../../src/persistence/pending-send-repository.ts';
+import {PendingSends} from '../../src/process/pending-sends.ts';
 
 async function fixture({proof=true,shared=false,stopFails=false,closeStartsWork=false,executionUnknown=false,modelHold=false,upgrade=false,closeWait=false,unaccepted=false,unacceptedProof=true,daemon=false,oldOwnerAlive=false,rejectDispatch=false,backendChange=undefined as AgentServiceOptions['backendChange']}={}){
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-resource-lifecycle-'));
@@ -314,7 +316,7 @@ test('idle SDK daemon closes before physical release; post-close work still bloc
  }
 });
 
-test('same selection waits for live old owner, then adopts the exact released context',async()=>{
+test('same selection isolates a held old owner but still adopts the exact context after release',async()=>{
  const f=await fixture({oldOwnerAlive:true,backendChange:{reason:'runtime-content-changed',detectedAt:'time',fromGeneration:'old-generation',fromDigest:'before',toDigest:'after'}});try{
   let chat=await f.start('done');
   const repository=new ConversationRepository(path.join(f.root,'agent-service'));
@@ -324,7 +326,8 @@ test('same selection waits for live old owner, then adopts the exact released co
   chat=f.service.conversations.read('workspace',chat.id);
   const context=chat.participants.at(-1)!.contextId;
   const choice={connectionId:chat.participants.at(-1)!.connectionId,modelAccountId:chat.run!.modelAccountId,model:'model',text:'next'};
-  assert.throws(()=>f.service.conversations.prepareSend('workspace',chat.id,{...choice,expectedRevision:chat.revision}),{code:'agent_conversation_busy'});
+  assert.equal(f.service.conversations.prepareSend('workspace',chat.id,{...choice,expectedRevision:chat.revision}).participantId,undefined,'held controls require an independent context, not an input blockade');
+  assert.deepEqual(f.sent,['done'],'preparation never sends or stops old work');
   const released=repository.readConversation(chat.id)!;released.view.run!.resourcesReleased=true;repository.saveConversation(released,released.view.revision);
   chat=f.service.conversations.read('workspace',chat.id);
   const input={...choice,expectedRevision:chat.revision},preview=f.service.conversations.prepareSend('workspace',chat.id,input);
@@ -340,6 +343,57 @@ test('same selection waits for live old owner, then adopts the exact released co
  }finally{await f.close();}
 });
 
+for(const released of [true,false])test('historical unknown ownership is separated from the latest completed context; released='+released,async()=>{
+ const f=await fixture({oldOwnerAlive:true});try{
+  let chat=await f.start('done');await f.service.releaseIdleSources();
+  const repository=new ConversationRepository(path.join(f.root,'agent-service'));
+  const record=repository.readConversation(chat.id)!,participantId=record.view.run!.participantId;
+  record.view.run!.generation='old-generation';record.view.run!.resourcesReleased=true;
+  record.view.retainedRuns=[{...record.view.run!,id:'historical-unknown',status:'unknown',executionState:'unknown',resourcesReleased:released,
+   tools:[{id:'old-operation',label:'unknown side effect',status:'unknown',canStop:false}]}];
+  repository.saveConversation(record,record.view.revision);
+  chat=f.service.conversations.read('workspace',chat.id);
+  const input={expectedRevision:chat.revision,connectionId:'local',modelAccountId:chat.run!.modelAccountId,model:'model',text:'a genuinely new request'};
+  const preview=f.service.conversations.prepareSend('workspace',chat.id,input);
+  assert.equal(preview.participantId,released?participantId:undefined);
+  const submission={...input,previewToken:preview.token,clientRequestId:randomUUID()};
+  const next=f.service.conversations.send('workspace',chat.id,submission);
+  assert.equal(f.service.conversations.send('workspace',chat.id,submission).run?.id,next.run?.id,'repeated submission does not replay');
+  await f.wait(()=>f.service.conversations.read('workspace',chat.id).run?.status==='completed');
+  const saved=repository.readConversation(chat.id)!;
+  const history=saved.view.retainedRuns?.find(run=>run.id==='historical-unknown');
+  assert.equal(history?.status,'unknown');assert.equal(history?.resourcesReleased,released);assert.equal(history?.tools[0].status,'unknown');
+  assert.equal(f.sent.length,2);assert.equal(f.sent[0],'done');assert.ok(f.sent[1].endsWith('a genuinely new request'));
+ }finally{await f.close();}
+});
+
+test('a pending new request dispatches once while the completed old native context is still held',async()=>{
+ const f=await fixture({oldOwnerAlive:true});try{
+  let chat=await f.start('done');
+  const repository=new ConversationRepository(path.join(f.root,'agent-service'));
+  const record=repository.readConversation(chat.id)!,original=structuredClone(record.view.run!);
+  record.view.run!.generation='old-generation';delete record.view.run!.resourcesReleased;
+  repository.saveConversation(record,record.view.revision);
+  chat=f.service.conversations.read('workspace',chat.id);
+  const requestId=randomUUID(),draft={expectedRevision:chat.revision,connectionId:'local',modelAccountId:chat.run!.modelAccountId,model:'model',text:'new queued instruction',skipHandoffSummary:true};
+  f.service.conversations.queueSend('workspace',chat.id,{...draft,clientRequestId:requestId});
+  const pump=new PendingSends({dataRoot:f.root,service:f.service,active:()=>true,generationAlive:()=>true,conversationBusy:async()=>false});
+  await pump.pump();
+  await f.wait(()=>f.service.conversations.read('workspace',chat.id).run?.id!==original.id&&f.service.conversations.read('workspace',chat.id).run?.status==='completed');
+  await pump.pump();
+  assert.equal(f.sent.length,2);assert.equal(f.sent[0],'done');assert.ok(f.sent[1].endsWith('new queued instruction'));
+  assert.equal(new PendingSendRepository(path.join(f.root,'agent-service')).lookup('workspace',chat.id,requestId)?.state,'delivered');
+  chat=f.service.conversations.read('workspace',chat.id);
+  assert.equal(chat.participants.length,2);
+  const previous=chat.retainedRuns?.find(run=>run.id===original.id);
+  assert.equal(previous?.generation,'old-generation');assert.equal(previous?.status,'completed');assert.notEqual(previous?.resourcesReleased,true);
+  const event=chat.entries.find(entry=>entry.runId===chat.run!.id&&entry.nativeSession);
+  assert.equal(event?.nativeSession?.reason,'session-replacement');assert.equal(event?.nativeSession?.from.generation,'old-generation');
+  assert.notEqual(event?.nativeSession?.from.contextId,event?.nativeSession?.to.contextId);
+  assert.match(event?.nativeSession?.description??'',/控制资源尚未释放/);assert.equal(event?.status,'accepted');
+ }finally{await f.close();}
+});
+
 
 test('unrelated backend provenance is not attributed to this conversation',async()=>{
  const f=await fixture({oldOwnerAlive:true,backendChange:{reason:'runtime-content-changed',detectedAt:'time',fromGeneration:'unrelated-generation',fromDigest:'before',toDigest:'after'}});try{
@@ -351,7 +405,7 @@ test('unrelated backend provenance is not attributed to this conversation',async
   chat=f.service.conversations.read('workspace',chat.id);
   const context=chat.participants.at(-1)!.contextId;
   const choice={connectionId:chat.participants.at(-1)!.connectionId,modelAccountId:chat.run!.modelAccountId,model:'model',text:'next'};
-  assert.throws(()=>f.service.conversations.prepareSend('workspace',chat.id,{...choice,expectedRevision:chat.revision}),{code:'agent_conversation_busy'});
+  assert.equal(f.service.conversations.prepareSend('workspace',chat.id,{...choice,expectedRevision:chat.revision}).participantId,undefined);
   const released=repository.readConversation(chat.id)!;released.view.run!.resourcesReleased=true;repository.saveConversation(released,released.view.revision);
   chat=f.service.conversations.read('workspace',chat.id);
   const input={...choice,expectedRevision:chat.revision},preview=f.service.conversations.prepareSend('workspace',chat.id,input);
