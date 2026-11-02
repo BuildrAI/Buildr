@@ -127,12 +127,16 @@ test('runtime inventory handles crashed and orphaned immutable copies while reta
 test('real system observation protects files held by another process', { skip: process.platform !== 'darwin' }, async t => {
   const root = fixture(t), cache = path.join(root, 'cache'), held = path.join(cache, 'plugin.js'); file(held);
   const child = spawn(process.execPath, ['-e', "require('fs').openSync(process.argv[1],'r');process.stdout.write('ready');setInterval(()=>{},1000)", held], { stdio: ['ignore', 'pipe', 'pipe'] });
-  t.after(async () => { child.kill(); await once(child, 'exit'); });
+  t.after(async () => { if(child.exitCode===null&&child.signalCode===null){const exited=once(child,'exit');child.kill();await exited;} });
   await once(child.stdout!, 'data');
   const use = observeStorageUse(); assert.ok(use.complete);
   assert.equal(storageCandidate(root, 'cache', cache, cache, use, Infinity).reason, 'storage_in_use');
   const preview = storageCandidate(root, 'cache', cache, cache, unused, Infinity);
   assert.equal(removeStorageCandidate(root, preview), false); assert.ok(fs.existsSync(held));
+  const exited=once(child,'exit');child.kill();await exited;
+  assert.equal(removeStorageCandidate(root, storageCandidate(root,'cache',cache,cache,observeStorageUse(),Infinity)),true,
+    'after the exact holder exits, fresh system evidence permits collection');
+  assert.equal(fs.existsSync(cache),false);
 });
 
 test('closed-runtime maintenance requires native release proof and keeps session state', { skip: process.platform !== 'darwin' }, async t => {

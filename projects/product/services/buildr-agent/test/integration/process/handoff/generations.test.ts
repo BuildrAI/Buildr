@@ -7,6 +7,8 @@ import { randomUUID } from 'node:crypto';
 import { executionScopeKey } from '../../../../src/index.ts';
 import type { AgentProcessConnection, ConversationView } from '../../../../src/index.ts';
 import { canRunParallel } from '../../../../src/process/runtime-unit.ts';
+import { retainedRuntimeCandidates } from '../../../../src/process/cleanup.ts';
+import { observeStorageUse } from '../../../../src/storage/files.ts';
 import { isLive, until, actor, prepareAgentRuntime, connectAgentProcess, copyPackage, prepared, cleanupProcessFixture } from '../../../support/process-fixture.ts';
 
 test('parallel versions retain old controls, dispatch durable next instructions per conversation, and reap the drained runtime', {timeout:90000}, async t=>{
@@ -80,7 +82,19 @@ test('parallel versions retain old controls, dispatch durable next instructions 
     await observer.disconnect();observer=undefined;
     observer=await connectAgentProcess({dataRoot,profileId,runtime:next,sourceId:'minimal'});
     first=await observer.operations.conversations.read(scope,first.id);assert.equal(first.pendingSend?.id,requestId);
-    first=await observer.operations.conversations.queueSend(scope,first.id,{...draft,expectedRevision:first.revision,text:'queued revised',clientRequestId:requestId,expectedPendingRevision:first.pendingSend!.revision});
+    for(let attempt=0;;attempt++){
+      first=await observer.operations.conversations.read(scope,first.id);
+      assert.equal(first.pendingSend?.id,requestId);
+      assert.equal(first.pendingSend?.draft.text,'queued original','a background reason update is not an edit');
+      try{
+        first=await observer.operations.conversations.queueSend(scope,first.id,{...draft,expectedRevision:first.revision,text:'queued revised',clientRequestId:requestId,expectedPendingRevision:first.pendingSend!.revision});
+        break;
+      }catch(error){
+        // The no-host pump can update its reason after the observation. Retry
+        // only an explicitly rejected edit, never an uncertain send.
+        if(attempt>=2||!['agent_pending_conflict','agent_revision_conflict'].includes((error as {code?:string}).code??''))throw error;
+      }
+    }
     await assert.rejects(observer.operations.conversations.cancelPendingSend(scope,first.id,{expectedPendingRevision:queuedRevision}),{code:'agent_pending_conflict'});
     assert.equal(fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').split('\n').filter(line=>line.includes('queued')).length,0);
     main=await actor({dataRoot,profileId,runtime:next,workspace});
@@ -118,7 +132,20 @@ test('parallel versions retain old controls, dispatch durable next instructions 
     // The stable runner hard-links its immutable Node input across generations.
     // lsof then sees the live successor using the same underlying file: retain
     // ambiguous disk resources rather than weakening production cleanup proof.
-    if(process.platform==='darwin'&&!sharedNode)await until(async()=>!fs.existsSync(runtime.directory),Boolean);
+    if(process.platform==='darwin'&&!sharedNode){
+      try{await until(async()=>!fs.existsSync(runtime.directory),Boolean);}
+      catch(error){
+        const use=observeStorageUse();
+        const candidate=retainedRuntimeCandidates(dataRoot,use,next,Date.now(),true).find(item=>item.path===runtime.directory);
+        // Native release does not prove that unrelated system readers have
+        // closed these files. Do not demand deletion contrary to storage safety.
+        // The storage lifecycle test separately proves removal after release.
+        assert.equal(use.complete,true,JSON.stringify({error:String(error),diagnostic:use.diagnostic}));
+        assert.equal(candidate?.reason,'storage_in_use',JSON.stringify({error:String(error),candidate}));
+        assert.ok(use.paths.some(file=>file.startsWith(runtime.directory+path.sep)));
+        t.diagnostic('Drained runtime safely retained: system file observation still reports an open file.');
+      }
+    }
     else assert.ok(fs.existsSync(runtime.directory),'shared or incompletely observed runtime files stay protected');
     assert.ok(fs.existsSync(next.entry));assert.ok(fs.existsSync(path.join(dataRoot,'agent-service/conversations.sqlite')));
     assert.equal(fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').split('\n').filter(line=>line.includes('cancel this')).length,0);

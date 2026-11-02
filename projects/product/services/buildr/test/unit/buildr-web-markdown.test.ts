@@ -145,6 +145,23 @@ test('renderMarkdown 渲染标题、段落、列表与强调', async () => {
   assert.equal(root.querySelectorAll('ol li').length, 2);
 });
 
+test('renderMarkdown 兼容中文标点闭合加粗，不改写正文与字面量', async () => {
+  const { renderMarkdown } = await loadRenderer();
+  for (const input of ['**保留事项：**较宽', '**注意！**请检查', '[**保留事项：**较宽](https://example.com)']) {
+    const root = renderMarkdown(input);
+    assert.ok(root.querySelector('strong'));
+    assert.equal(root.textContent.includes('**'), false);
+  }
+  assert.equal(renderMarkdown('**保留事项：**较宽').textContent, '保留事项：较宽');
+  for (const input of ['`**保留事项：**较宽`', '```\n**保留事项：**较宽\n```', '\\*\\*保留事项：\\*\\*较宽', '**保留事项：较宽', '**plain:**text']) {
+    assert.equal(renderMarkdown(input).querySelector('strong'), null, input);
+  }
+  const normal = renderMarkdown('**保留事项**：较宽，**普通** 和 *强调*');
+  assert.equal(normal.querySelectorAll('strong').length, 2);
+  assert.equal(normal.querySelector('em')?.textContent, '强调');
+  assert.equal(renderMarkdown('**事项<script>：**较宽').querySelector('script'), null);
+});
+
 test('renderMarkdown 支持标题层级偏移，避免详情页重复 h1', async () => {
   const { renderMarkdown }: any = await loadRenderer();
   const root: any = renderMarkdown([

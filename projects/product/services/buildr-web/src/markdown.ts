@@ -156,6 +156,18 @@ function closesFence(line: string, fence: { marker: string; length: number }) {
 // Adapt only that valid spelling; leave all other syntax to its normal lexer.
 const markdownParser = new Marked({
   gfm: true,
+  extensions: [{
+    name: 'cjkStrong',
+    level: 'inline',
+    start(source) { return source.indexOf('**'); },
+    tokenizer(source) {
+      // A narrow compatibility spelling, not a rewrite of the source. Code,
+      // escapes and other emphasis remain under the normal Markdown lexer.
+      const match = /^\*\*(?!\*)([^\s*\\`\n][^*\\`\n]*[，。；：！？、）】》」』])\*\*(?=\p{Script=Han})/u.exec(source);
+      if (!match || !/\p{Script=Han}/u.test(match[1])) return;
+      return { type: 'strong', raw: match[0], text: match[1], tokens: this.lexer.inlineTokens(match[1]) };
+    },
+  }],
   tokenizer: {
     fences(source: string) {
       const newline = source.indexOf('\n');

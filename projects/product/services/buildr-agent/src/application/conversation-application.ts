@@ -1084,16 +1084,27 @@ export class ConversationApplication {
       if (participant.contextRef) {
         await runtime.resumeContext({ contextRef: participant.contextRef, cwd: record.view.cwd, permissionMode: prepared.draft.permissionMode });
         const history = await runtime.readHistory({ contextRef: participant.contextRef, cwd: record.view.cwd });
-        let changed = false, needsReview = false;
-        for (const item of history) {
-          if (!this.applyItem(record, participant, item)) continue;
-          changed = true;
-          const sourceEntryId = record.sources[`${participant.id}:${item.kind}:${item.id}`];
-          const entry = record.view.entries.find(value => value.id === sourceEntryId);
-          const outcome = entry?.runId ? record.runOutcomes?.[entry.runId] : undefined;
-          if (item.role === 'user' && !item.parentToolId || !outcome || !['completed', 'stopped', 'failed'].includes(outcome.status) || item.kind === 'tool' && !['completed', 'failed'].includes(item.status ?? '')) needsReview = true;
-        }
-        if (changed) this.save(record);
+        let needsReview = false;
+        // Native reads are asynchronous: a retained generation may update its
+        // own round meanwhile. Reapply only the observed history to fresh state;
+        // never retry resumeContext/send or overwrite unrelated metadata.
+        this.retryRecordUpdate(() => {
+          const current = this.currentRun(workspaceId, id, runId);
+          if (!current) return;
+          record = current;
+          const currentParticipant = current.participants.find(value => value.id === participant.id)!;
+          let changed = false;
+          needsReview = false;
+          for (const item of history) {
+            if (!this.applyItem(current, currentParticipant, item)) continue;
+            changed = true;
+            const sourceEntryId = current.sources[`${participant.id}:${item.kind}:${item.id}`];
+            const entry = current.view.entries.find(value => value.id === sourceEntryId);
+            const outcome = entry?.runId ? current.runOutcomes?.[entry.runId] : undefined;
+            if (item.role === 'user' && !item.parentToolId || !outcome || !['completed', 'stopped', 'failed'].includes(outcome.status) || item.kind === 'tool' && !['completed', 'failed'].includes(item.status ?? '')) needsReview = true;
+          }
+          if (changed) this.save(current);
+        });
         if (needsReview) fail('agent_history_changed', '原生记录有新变化，本次要求已保留；请核对后再继续。', 409);
       } else {
         creatingContext = true;

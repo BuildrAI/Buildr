@@ -11,6 +11,48 @@ import type { AgentExecutor, AgentRuntime, AgentServiceOptions, ContextRef, Conv
 import { NativeRequestError } from '../../src/domain/error-diagnostic.ts';
 import { ConversationRepository } from '../../src/persistence/conversation-repository.ts';
 
+test('resuming history preserves a concurrent metadata update without failing the new input', async () => {
+  const native = fake('local'), open = native.executor.open;
+  let onHistory: (() => void) | undefined;
+  native.executor.open = async options => {
+    const runtime = await open(options), history = runtime.readHistory.bind(runtime);
+    runtime.readHistory = async input => {
+      const items = await history(input);
+      if (onHistory) {
+        const callback = onHistory; onHistory = undefined; callback();
+        const answer = items.find(item => item.role === 'assistant');
+        if (answer) answer.text = 'refreshed completed answer';
+        const stored = native.contexts.get(input.contextRef.id)!.items.find(item => item.role === 'assistant');
+        if (stored) stored.text = 'refreshed completed answer';
+      }
+      return items;
+    };
+    return runtime;
+  };
+  const f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local');
+    const chat = await f.service.conversations.create('workspace-one', {});
+    send(f.service, chat.id, 'local', 'first');
+    await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => view.run?.status === 'completed');
+    onHistory = () => {
+      const repository = new ConversationRepository(path.join(f.options.dataRoot, 'agent-service'));
+      const record = repository.readConversation(chat.id)!;
+      const prior = record.view.revision;
+      record.view.title = 'concurrently renamed';
+      record.view.revision = randomUUID();
+      repository.saveConversation(record, prior);
+    };
+    send(f.service, chat.id, 'local', 'second');
+    const done = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id),
+      view => ['completed', 'failed', 'unknown'].includes(view.run?.status ?? ''));
+    assert.equal(done.run?.status, 'completed', done.run?.diagnostic);
+    assert.equal(done.title, 'concurrently renamed');
+    assert.equal(native.sends.length, 2);
+    assert.ok(done.entries.some(entry => entry.text === 'refreshed completed answer'));
+  } finally { await f.close(); }
+});
+
 type Context = { items: ExecutorItem[]; observation: ExecutorObservation; unblock?: () => void };
 function fake(id = 'local', options: { hold?: boolean; disconnect?: 'stopped'|'running'|'unknown'|'tool'; disconnectError?: string; beforeDisconnect?: Promise<void>; disconnectAlways?: boolean; disconnectOn?: number; beforeResume?: Promise<void>; unknown?: boolean; images?: boolean; noAnswer?: boolean; multipleModels?: boolean; request?: boolean; question?: boolean; coldUnknown?: boolean; beforeAccepted?: Promise<void>; replyAfterTerminal?: boolean; toolSurvives?: boolean; toolInput?: boolean; failure?: string | ((attempt: number) => string | undefined); prepareFailures?: number; unknownCreate?: boolean; beforeObservation?: Promise<void>; wrongObservation?: boolean; summary?:(input:ExecutorTitleInput)=>Promise<string|undefined> } = {}) {
   const contexts = new Map<string, Context>(); const sends: ExecutorSendInput[] = []; const replies: unknown[] = []; const opens: ExecutorOpenOptions[] = [];
