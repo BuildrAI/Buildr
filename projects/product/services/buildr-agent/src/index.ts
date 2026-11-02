@@ -1,4 +1,6 @@
 export * from './contracts.ts';
+export { conversationEventEncoder, conversationEventDecoder } from './domain/conversation-transfer.ts';
+export type { ConversationDelta, TransferEvent } from './domain/conversation-transfer.ts';
 export * from './execution-contracts.ts';
 export { AGENT_OPERATION_SCHEMAS } from './operation-schemas.ts';
 export { connectAgentProcess, stopAgentProcess } from './process/client.ts';

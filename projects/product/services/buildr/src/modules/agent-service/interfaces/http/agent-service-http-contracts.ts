@@ -37,6 +37,7 @@ export const AGENT_SERVICE_HTTP_OPERATIONS = [
   operation('login-attempt', 'GET', `${base}/connections/:connectionId/login-attempts/:attemptId`, 'empty', 'connection'),
   operation('cancel-login', 'POST', `${base}/connections/:connectionId/login-attempts/:attemptId/cancel`, 'revision', 'connection'),
   operation('default-workspace', 'GET', `${base}/default-workspace`, 'empty', 'defaultWorkspace'),
+  operation('pending-summary', 'GET', `${base}/pending-summary`, 'empty', 'pendingSummary'),
   operation('pending', 'GET', `${base}/pending-requests`, 'empty', 'conversations'),
   operation('global-conversations','GET',`${base}/conversations`,'empty','conversations'),
   operation('seen','POST',`${workspace}/:conversationId/seen`,'seen','seenResult'),

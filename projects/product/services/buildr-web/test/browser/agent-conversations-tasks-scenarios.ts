@@ -23,7 +23,7 @@ await step('任务对话入口零一多：绑定跟随草稿，发送才建会�
       await panel().locator('[data-associated-task="'+secondTask+'"]').click();
       await page.locator('[data-task-internal-conversations="'+secondTask+'"]:visible').waitFor();
       await closeConversation();await page.locator('[data-task-internal-conversations="'+secondTask+'"]:visible').getByRole('button',{name:'任务对话',exact:true}).click();
-      await panel().waitFor();assert.equal(await panel().getAttribute('data-conversation-id'),fixture.conversation.id);
+      await page.locator('#agent-conversation-panel[data-conversation-id="'+fixture.conversation.id+'"]').waitFor();assert.equal(await panel().getAttribute('data-conversation-id'),fixture.conversation.id);
       await panel().locator('[data-associated-task="'+originalTask+'"]').click();
       await page.locator('[data-task-internal-conversations="'+originalTask+'"]:visible').waitFor();
       await closeConversation();await taskConversationLink.click();await panel().waitFor();assert.equal(fixture.creations,before+1,'已有一条时直接恢复，不另建');

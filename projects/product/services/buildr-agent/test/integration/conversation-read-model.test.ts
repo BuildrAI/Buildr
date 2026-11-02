@@ -97,3 +97,21 @@ test('legacy present files survive compact paging without rewriting history or s
  assert.equal(db.prepare('SELECT body FROM conversations WHERE id=?').get(r.view.id)!.body,original);
  assert.equal(service.conversations.read('ws','presented').run?.status,'completed');
 });
+
+test('lightweight reminders equal legacy pending projection including filtered questions and interrupted runs',async t=>{
+ const base=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-reminder-summary-'));t.after(()=>fs.rmSync(base,{recursive:true,force:true}));
+ const repo=new ConversationRepository(path.join(base,'agent-service'));
+ const a=record('pending'),b=record('retained'),c=record('idle');
+ a.view.run=run('running',[{id:'tool',label:'private invocation '.repeat(2000),status:'unknown'}]);
+ a.view.requests=[{id:'valid',kind:'question',title:'private question',runId:'run',participantId:'p',generation:'g'},{id:'superseded',kind:'question',title:'old question',runId:'old',participantId:'p',generation:'g'}] as any;
+ a.view.entries=[{id:'body',sequence:1,kind:'message',role:'user',text:'private body '.repeat(20000),createdAt:'now'}];
+ b.view.run=run();b.view.retainedRuns=[{...run('completed',[{id:'old',label:'old tool',status:'running'}]),id:'retained'}];
+ for(const record of [a,b,c])repo.saveConversation(record);
+ const service=createAgentService({dataRoot:base,executors:[],resolveWorkspace:()=>({rootPath:'/workspace'}),assertTask(){}});t.after(()=>service.close());
+ const legacy=service.conversations.pending(),summary=service.conversations.pendingSummary();
+ assert.deepEqual(summary.conversations,legacy.conversations.map(view=>({conversationId:view.id,workspaceId:view.workspaceId,title:view.title,status:view.run?.status??'unknown',count:view.requests.length})));
+ assert.equal(summary.conversations.find(row=>row.conversationId==='pending')!.count,1);
+ assert.equal(summary.conversations.find(row=>row.conversationId==='pending')!.status,'unknown');
+ assert.ok(JSON.stringify(summary).length<JSON.stringify(legacy).length/20);
+ assert.doesNotMatch(JSON.stringify(summary),/private body|private invocation|private question|entries|tools/);
+});

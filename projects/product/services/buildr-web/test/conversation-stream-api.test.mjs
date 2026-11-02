@@ -12,7 +12,7 @@ test('event authentication refreshes only an explicitly expired session and pres
  const client=createAgentConversationsClient(()=>assert.fail('no mutation'),{writeHeaders:()=>({'x-buildr-session':token}),refreshSession:async signal=>{assert.equal(signal,controller.signal);refreshes++;token='new';return true;}},async(url,init)=>{
   calls.push({url,...init});
   if(calls.length===1)return new Response(JSON.stringify({error:{code:'session_forbidden'}}),{status:403});
-  return new Response('data: '+JSON.stringify({cursor:8,type:'snapshot'})+'\n\n',{headers:{'content-type':'text/event-stream'}});
+  return new Response('data: '+JSON.stringify({cursor:8,type:'snapshot',generation:'g',revision:'r',workspaceId:'space',conversationId:'chat',payload:{}})+'\n\n',{headers:{'content-type':'text/event-stream'}});
  });
  await client.subscribe('space','chat',controller.signal,event=>{events.push(event);controller.abort();},7);
  assert.equal(refreshes,1);assert.equal(calls.length,2);assert.equal(calls[0].headers['x-buildr-session'],'old');assert.equal(calls[1].headers['x-buildr-session'],'new');assert.equal(calls[1].headers['last-event-id'],'7');assert.equal(events.length,1);

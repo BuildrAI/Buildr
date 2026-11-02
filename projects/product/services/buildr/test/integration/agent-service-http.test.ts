@@ -633,3 +633,21 @@ test('historical native file presentations reach authenticated HTTP without repl
  assert.deepEqual((await response.json()).entries[0].presentedFiles,[{path:filename,description:'发布记录'}]);
  assert.equal((db.prepare('SELECT body FROM conversations WHERE id=?').get(chat.id) as {body:string}).body,body);db.close();
 });
+
+test('conversation stream negotiation preserves legacy snapshots and validates compact deltas',async()=>{
+ const id='00000000-0000-4000-8000-000000000001',workspaceId='workspace';
+ const initial:any={id,workspaceId,cwd:'/workspace',title:'work',revision:'r1',hidden:false,updatedAt:'now',participants:[],requests:[],entries:Array.from({length:20},(_,i)=>({id:'entry-'+i,sequence:i+1,kind:'message',role:'assistant',text:'history '.repeat(1000),createdAt:'now'}))};
+ const next={...initial,revision:'r2',title:'updated'};
+ const service:any={conversations:{subscribe:async()=>({close(){},events:(async function*(){yield{cursor:0,generation:'g',type:'snapshot',workspaceId,conversationId:id,revision:'r1',payload:{conversation:initial}};yield{cursor:1,generation:'g',type:'conversation',workspaceId,conversationId:id,revision:'r2',payload:{conversation:next}};})()})}};
+ const contribution=createAgentServiceHttpContribution(()=>service);let lastResponse:any;
+ const observe=async(headers:Record<string,string>)=>{
+  const output:any[]=[];
+  lastResponse=await contribution.handle({request:{method:'GET',headers},workspaceId,suffix:'/agent-conversations/'+id+'/events',searchParams:new URLSearchParams(),authorizeRead(){},respond:{async stream(subscription:any,map:any){for await(const event of subscription.events)output.push(map(event));return true;}}});
+  return output;
+ };
+ const legacy=await observe({});assert.deepEqual(legacy.map(event=>event.payload.conversation),[initial,next]);
+ const compact=await observe({'x-buildr-conversation-transfer':'delta-v1'});
+ assert.deepEqual(compact[0],legacy[0]);assert.equal(compact[1].payload.conversation,undefined);assert.equal(compact[1].payload.delta.baseCursor,0);assert.equal(compact[1].payload.delta.conversation.revision,'r2');assert.deepEqual(compact[1].payload.delta.entries,[]);
+ assert.ok(JSON.stringify(compact[1]).length<JSON.stringify(legacy[1]).length/20);
+ await observe({'x-buildr-conversation-transfer':'unsupported'});assert.equal(lastResponse.status,400);assert.equal(lastResponse.body.error.code,'agent_http_input_invalid');
+});

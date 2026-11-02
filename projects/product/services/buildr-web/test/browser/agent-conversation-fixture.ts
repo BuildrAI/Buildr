@@ -62,7 +62,10 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
       return route.fulfill({json:nativeAccounts().find(item=>item.id===account.id)});
     }
     if(url.pathname==='/api/v1/app/agent-service/connections'){connectionReads++;const observed=JSON.parse(JSON.stringify(connections));if(holdConnections){holdConnections=false;await new Promise<void>(resolve=>{releaseConnections=resolve;connectionsStarted?.();});}return route.fulfill({json:{connections:observed}});}
-    if(url.pathname==='/api/v1/app/agent-service/pending-requests')return route.fulfill({json:{conversations:[...(conversation&&['waiting-approval','waiting-question','unknown','tools-active'].includes(conversation.run?.status)?[conversation]:[]),...additionalPending]}});
+    if(['/api/v1/app/agent-service/pending-requests','/api/v1/app/agent-service/pending-summary'].includes(url.pathname)){
+      const rows=[...(conversation&&['waiting-approval','waiting-question','unknown','tools-active'].includes(conversation.run?.status)?[conversation]:[]),...additionalPending];
+      return route.fulfill({json:{conversations:url.pathname.endsWith('/pending-summary')?rows.map(item=>({conversationId:item.id,workspaceId:item.workspaceId,title:item.title,status:item.run?.status??'unknown',count:item.requests.length})):rows}});
+    }
     if(url.pathname==='/api/v1/app/agent-service/conversations'&&method==='GET'){
       // 全空间列表夹具按服务端语义过滤：活动判断与 conversation-activity 的 activityState 一致。
       const active=(item:any)=>Boolean(item.activity?.active||(item.activity&&item.activity.version>item.activity.seenThrough)||['starting','running','stopping','tools-active','waiting-approval','waiting-question','unknown'].includes(item.run?.status));

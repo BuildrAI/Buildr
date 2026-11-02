@@ -681,3 +681,32 @@ test('核对完成必须明确反馈未知、已释放与真实终态，不能�
  assert.match(conversationObservationFeedback({status:'stopped',tools:[]}),/已确认停止/);
  assert.match(conversationObservationFeedback({status:'completed',tools:[]}),/本轮已结束/);
 });
+
+test('提醒只读取摘要，列表消费者取消不取消共享网络且后续重新观察',async()=>{
+ const calls=[];let release;
+ const api=createAgentConversationsClient((url,init)=>{calls.push({url,init});return new Promise(resolve=>{release=resolve;});},session);
+ const firstController=new AbortController(),first=api.pending(firstController.signal),second=api.pending();
+ await new Promise(resolve=>setTimeout(resolve,5));assert.equal(calls.length,1);assert.match(calls[0].url,/\/pending-summary$/);
+ firstController.abort();await assert.rejects(first,{name:'AbortError'});assert.equal(calls[0].init.signal.aborted,false);
+ const result={conversations:[{conversationId:'chat',workspaceId:'workspace',title:'work',status:'unknown',count:2}]};release(result);assert.deepEqual(await second,result);
+});
+
+test('实时订阅协商增量并在客户端还原完整事件，重连不沿用旧基准',async()=>{
+ const first={cursor:0,generation:'g',type:'snapshot',workspaceId:conversation.workspaceId,conversationId:conversation.id,revision:'r1',payload:{conversation:{...conversation,entries:[{id:'e',sequence:1,kind:'message',role:'assistant',text:'old',createdAt:'now'}]}}};
+ const {entries,...metadata}=first.payload.conversation;
+ const next={cursor:1,generation:'g',type:'conversation',workspaceId:conversation.workspaceId,conversationId:conversation.id,revision:'r2',payload:{delta:{baseCursor:0,baseRevision:'r1',conversation:{...metadata,revision:'r2'},entryIds:['e'],entries:[{...entries[0],text:'new'}]}}};
+ let frames=[first,next],request;
+ const api=createAgentConversationsClient(async()=>({}),session,async(url,init)=>{request={url,init};return new Response(frames.map(event=>'data: '+JSON.stringify(event)+'\n\n').join(''));});
+ const events=[];await assert.rejects(api.subscribe(conversation.workspaceId,conversation.id,new AbortController().signal,event=>events.push(event)),/连接已中断/);
+ assert.equal(request.init.headers['x-buildr-conversation-transfer'],'delta-v1');assert.equal(events[1].payload.conversation.entries[0].text,'new');assert.equal(events[1].payload.delta,undefined);
+ frames=[next];await assert.rejects(api.subscribe(conversation.workspaceId,conversation.id,new AbortController().signal,()=>assert.fail('must not assemble old baseline')),/基准/);
+});
+
+test('写入完成后的列表读取不复用写入前的在途观察',async()=>{
+ const releases=[];let reads=0;
+ const api=createAgentConversationsClient((url,init)=>init.method?Promise.resolve(conversation):new Promise(resolve=>{reads++;releases.push(resolve);}),session);
+ const old=api.list('workspace',{taskId:'task'});await new Promise(resolve=>setTimeout(resolve,5));
+ await api.update(conversation,{title:'changed'});
+ const fresh=api.list('workspace',{taskId:'task'});await new Promise(resolve=>setTimeout(resolve,5));assert.equal(reads,2);
+ releases[0]({conversations:[]});await old;releases[1]({conversations:[conversation]});assert.equal((await fresh).conversations.length,1);
+});

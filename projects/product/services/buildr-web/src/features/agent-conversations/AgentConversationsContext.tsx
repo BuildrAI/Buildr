@@ -1,3 +1,4 @@
+import { retainObservation } from './retain-observation.ts';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ConnectionDiscovery, type ConnectionDiscoveryState } from './connection-discovery';
 import { agentConversationsApi, type ConversationPage, type AgentConversationsClient } from './api/agent-conversations-api';
@@ -71,14 +72,14 @@ export function AgentConversationsProvider({children, client = agentConversation
   const [activityStats,setActivityStats]=useState<ConversationPage['stats']>();
   const [activityRows,setActivityRows]=useState<ConversationView[]>([]),[activityTotal,setActivityTotal]=useState(0),[activityCursor,setActivityCursor]=useState<string>(),[activityError,setActivityError]=useState(''),[activityTick,setActivityTick]=useState(0),[historyWorkspaceId,setHistoryWorkspaceId]=useState<string|null|undefined>(undefined);
   const activityGeneration=useRef(0),activitySignature=useRef('');
-  const refreshActivity=useCallback(async()=>{if(!client.listAll)return;const generation=++activityGeneration.current;try{const result=await client.listAll({activeOnly:true,limit:100});if(generation!==activityGeneration.current)return;const signature=JSON.stringify([result.nextCursor,result.conversations.map(row=>[row.workspaceId,row.id,row.revision,row.title,row.run?.id,row.run?.status,row.run?.model,row.activity])]);if(signature!==activitySignature.current){setActivityRows(result.conversations);setActivityCursor(result.nextCursor);}setActivityCounts(result.activityCounts);setActivityStats(result.stats);setActivityTotal(result.total??result.conversations.length);setActivityError('');if(signature!==activitySignature.current){activitySignature.current=signature;setActivityTick(value=>value+1);}}catch(error){if(generation===activityGeneration.current)setActivityError(error instanceof Error?error.message:'活动对话尚未更新，保留上次结果。');}},[client]);
+  const refreshActivity=useCallback(async()=>{if(!client.listAll)return;const generation=++activityGeneration.current;try{const result=await client.listAll({activeOnly:true,limit:100});if(generation!==activityGeneration.current)return;const signature=JSON.stringify([result.nextCursor,result.conversations.map(row=>[row.workspaceId,row.id,row.revision,row.title,row.run?.id,row.run?.status,row.run?.model,row.activity])]);if(signature!==activitySignature.current){setActivityRows(result.conversations);setActivityCursor(result.nextCursor);}setActivityCounts(current=>retainObservation(current,result.activityCounts));setActivityStats(current=>retainObservation(current,result.stats));setActivityTotal(result.total??result.conversations.length);setActivityError('');if(signature!==activitySignature.current){activitySignature.current=signature;setActivityTick(value=>value+1);}}catch(error){if(generation===activityGeneration.current)setActivityError(error instanceof Error?error.message:'活动对话尚未更新，保留上次结果。');}},[client]);
   const loadMoreActivity=useCallback(async()=>{if(!activityCursor)return;const generation=activityGeneration.current;try{const result=await client.listAll({activeOnly:true,limit:100,cursor:activityCursor});if(generation!==activityGeneration.current)return;setActivityRows(previous=>[...previous,...result.conversations.filter(row=>!previous.some(item=>item.id===row.id&&item.workspaceId===row.workspaceId))]);setActivityCursor(result.nextCursor);}catch{await refreshActivity();}},[client,activityCursor,refreshActivity]);
   const [modelCatalog,setModelCatalog]=useState<CatalogModel[]>([]);
   const [modelCatalogReady,setModelCatalogReady]=useState(false),[modelCatalogError,setModelCatalogError]=useState('');
   const modelReadGeneration=useRef(0);
   const refreshModelCatalog=useCallback(async()=>{
     const generation=++modelReadGeneration.current;
-    try{const result=await client.modelCatalog();if(generation===modelReadGeneration.current){setModelCatalog(result.models);setModelCatalogReady(result.hasSnapshot??true);setModelCatalogError(result.diagnostic||'');}}
+    try{const result=await client.modelCatalog();if(generation===modelReadGeneration.current){setModelCatalog(current=>retainObservation(current,result.models));setModelCatalogReady(result.hasSnapshot??true);setModelCatalogError(result.diagnostic||'');}}
     catch(error){if(generation===modelReadGeneration.current)setModelCatalogError('模型列表读取失败，已保留已有结果。');throw error;}
   },[client]);
   useEffect(()=>{
@@ -120,7 +121,7 @@ export function AgentConversationsProvider({children, client = agentConversation
   },[client]);
   useEffect(()=>{discovery.start();return()=>discovery.stop();},[discovery]);
   const refreshConnections=useCallback(()=>discovery.refresh(),[discovery]);
-  const refreshPending = useCallback(async () => { void refreshActivity(); const result = await client.pending(); setPending(result.conversations); }, [client,refreshActivity]);
+  const refreshPending = useCallback(async () => { void refreshActivity(); const result = await client.pending(); setPending(current=>retainObservation(current,result.conversations)); }, [client,refreshActivity]);
   const updateConnection = useCallback((value: ConnectionView) => {++connectionReadGeneration.current;setConnections(previous=>previous.some(item=>item.id===value.id)?previous.map(item=>item.id===value.id?value:item):[...previous,value]);},[]);
   useEffect(() => { let active = true; const refresh = () => { void refreshModelCatalog().catch(()=>{});void refreshConnections().catch(() => {}); void refreshPending().catch(() => {}); }; refresh(); const interval = setInterval(() => {if (active && document.visibilityState === 'visible') void refreshPending().catch(() => {});}, 5000); window.addEventListener('focus', refresh); return () => { active = false; ++activityGeneration.current; clearInterval(interval); window.removeEventListener('focus', refresh); }; }, [refreshConnections, refreshPending,refreshModelCatalog]);
   const openConversation = useCallback(async (workspaceId: string, conversationId: string,options:VisibilityOptions={}) => {

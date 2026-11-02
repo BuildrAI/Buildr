@@ -204,6 +204,7 @@ export function createAgentService(options: AgentServiceOptions) {
       readAttachment: (workspaceId: string, id: string, attachmentId: string) => conversations.readAttachment(workspaceId, id, attachmentId),
       subscribe: (workspaceId: string, id: string, options:{compactTools?:boolean}={}) => conversations.subscribe(workspaceId, id,options),
       pending: () => conversations.pending(),
+      pendingSummary: () => conversations.pendingSummary(),
     },
     async close() {
       if (closed) return; closed = true; repository.stopReadModels(); programUpdates.close(); upgrades.beginClosing();

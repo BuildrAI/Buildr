@@ -1,5 +1,5 @@
 import type { AgentService, AgentOperations } from '@buildr-ai/buildr-agent';
-import { AgentServiceError } from '@buildr-ai/buildr-agent';
+import { conversationEventEncoder, AgentServiceError } from '@buildr-ai/buildr-agent';
 import { AGENT_SERVICE_HTTP_OPERATIONS, AGENT_SERVICE_HTTP_SCHEMAS as SCHEMAS, AGENT_SERVICE_HTTP_VALIDATORS } from './agent-service-http-contracts.ts';
 
 const inputError = () => new AgentServiceError('agent_http_input_invalid', '智能体服务请求字段无效。');
@@ -61,6 +61,7 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       if (pathname === `${prefix}/program-updates` && request.method === 'GET') return result('programUpdates', await service.connections.programUpdates());
       if (pathname === `${prefix}/program-updates/check` && request.method === 'POST') return result('programUpdates', await service.connections.checkProgramUpdates(validate('programUpdateCheck', await readJsonBody())));
       if (pathname === `${prefix}/connections` && request.method === 'GET') return result('connections', await service.connections.list());
+      if (pathname === `${prefix}/pending-summary` && request.method === 'GET') return result('pendingSummary', await service.conversations.pendingSummary());
       if (pathname === `${prefix}/pending-requests` && request.method === 'GET') return result('conversations', await service.conversations.pending());
       const match = pathname.slice(prefix.length).match(/^\/connections\/([a-z][a-z0-9-]*)(?:\/(connect|check|disconnect|login-attempts|preparation-attempts|program-upgrades)(?:\/([a-f0-9-]{36})(?:\/(cancel))?)?)?$/);
       if (!match) return null;
@@ -149,9 +150,12 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
         }
         if (action === 'events') {
           query(searchParams, ['cursor', 'generation']);
+          const transfer = request.headers['x-buildr-conversation-transfer'];
+          if (transfer !== undefined && transfer !== 'delta-v1') throw inputError();
           numberQuery(searchParams.get('cursor'));
           const subscription = await service.conversations.subscribe(workspaceId, id);
-          return respond.stream(subscription, (event: unknown) => validate('event', event, true));
+          const encode = conversationEventEncoder();
+          return respond.stream(subscription, (event: any) => validate('event', transfer === 'delta-v1' ? encode(event) : event, true));
         }
         if (action === 'attachments' && childId) {
           query(searchParams, []);

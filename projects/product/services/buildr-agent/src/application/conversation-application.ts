@@ -1,3 +1,4 @@
+import { pendingConversationSummary } from '../domain/pending-summary.ts';
 import { presentedFilesForEntry, normalizePresentedFiles } from '../domain/presented-files.ts';
 import { modelLeaseIdentity } from '../model-access/model-preferences.ts';
 import {ConversationWarmups,CONNECTION_IDLE_MS,type PreparedSource} from './conversation-warmups.ts';
@@ -503,6 +504,7 @@ export class ConversationApplication {
     const record=this.load(workspaceId,id),attempt=record.attempts.find(value=>value.clientRequestId===clientRequestId);
     return attempt ? {found:true,runId:attempt.runId,accepted:attempt.accepted,conversation:this.view(record)} : {found:false};
   }
+  pendingSummary() { return { conversations: this.options.repository.listPendingStates().map(record => pendingConversationSummary(this.view(record, undefined, 1))) }; }
   pending(): { conversations: ConversationView[] } { return { conversations: this.options.repository.listPendingStates().map(record => ({ ...this.view(record, undefined, 1), entries: [] })) }; }
   listAll(workspaceIds:string[],input:{workspaceId?:string;activeOnly?:boolean;hidden?:boolean;query?:string;agent?:string;model?:string;activityState?:string;cursor?:string;limit?:number}={}) {
     if(input.workspaceId&&!workspaceIds.includes(input.workspaceId))fail('agent_workspace_missing','工作空间未登记。',404);

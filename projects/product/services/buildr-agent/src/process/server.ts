@@ -1,3 +1,5 @@
+import type { ServiceEvent } from '../contracts.ts';
+import { conversationEventEncoder } from '../domain/conversation-transfer.ts';
 import path from 'node:path';
 import { conversationControlInstruction } from './conversation-control.ts';
 import { randomUUID } from 'node:crypto';
@@ -166,6 +168,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       const stopHeartbeat = keepEventStreamAlive(res);
       const controller = new AbortController();
       let signature = '', relayCursor = 0;
+      const encode = input.transfer === 'delta-v1' ? conversationEventEncoder() : (event: ServiceEvent) => event;
       const refresh = () => {
         if (res.destroyed || controller.signal.aborted) return;
         try {
@@ -174,7 +177,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
           const conversation = service.conversations.read(input.scope, input.id,{compactTools:true});
           signature = [conversation.revision,conversation.activity?.seenThrough,conversation.pendingSend?.revision].join(':');
           if (res.writableLength > 8 * 1024 * 1024) { res.destroy(); return; }
-          res.write('data: ' + JSON.stringify({type:'conversation',generation:identity.generation,cursor:++relayCursor,workspaceId:input.scope,conversationId:input.id,revision:conversation.revision,payload:{conversation}}) + '\n\n');
+          res.write('data: ' + JSON.stringify(encode({type:'conversation',generation:identity.generation,cursor:++relayCursor,workspaceId:input.scope,conversationId:input.id,revision:conversation.revision,payload:{conversation}})) + '\n\n');
         } catch { /* Preserve the last observed snapshot on a transient read conflict. */ }
       };
       // Shared snapshots also cover another retained generation and pending-only
@@ -185,7 +188,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
         if (res.destroyed) break;
         const conversation = service.conversations.read(input.scope, input.id,{compactTools:true});
         signature = [conversation.revision,conversation.activity?.seenThrough,conversation.pendingSend?.revision].join(':');
-        if (!res.write('data: ' + JSON.stringify({...event,cursor:++relayCursor,revision:conversation.revision,payload:{conversation}}) + '\n\n')) await once(res, 'drain', {signal:controller.signal});
+        if (!res.write('data: ' + JSON.stringify(encode({...event,cursor:++relayCursor,revision:conversation.revision,payload:{conversation}})) + '\n\n')) await once(res, 'drain', {signal:controller.signal});
       } }
       finally { res.removeListener('close', stop); clearInterval(poll); stopHeartbeat(); controller.abort(); subscription.close(); if (!res.destroyed) res.end(); }
       return;
