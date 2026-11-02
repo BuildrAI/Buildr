@@ -431,6 +431,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
   process.stderr.write(`[buildr-browser] selector=${selectorLabel} fixture=${fixtureProfile} phase=fixture-ready\n`);
   const otherRoot: any = path.join(base, 'other-workspace');
   runBuildr(['init', '--target', otherRoot, '--name', 'other-workspace', '--description', '第二个浏览器工作空间']);
+  if(SELECTORS.has('agent-conversations')||SELECTORS.has('all'))runBuildr(['task','create','browser-associated-task','--title','跨空间同码任务','--intent','验证准确空间与任务身份','--status','active','--target',otherRoot]);
   const runtime: any = createRuntime();
   if (SELECTORS.has('layout') || SELECTORS.has('code')) {
     const catalog = runtime.assetCatalog(workspaceRoot);
@@ -770,7 +771,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
       runGroup: async (group: string) => {
         process.stderr.write(`[agent-conversation-group] group=${group} phase=isolated-page-ready\n`);
         try {
-          await runAgentConversationsJourney({t,page,workspaceUrl,workspaceRoot,capture,expectedBrowserErrors,group});
+          await runAgentConversationsJourney({t,page,workspaceUrl,workspaceRoot,otherWorkspaceId,capture,expectedBrowserErrors,group});
         } finally {
           try {
             while (pendingConversationRequests.size) await Promise.allSettled([...pendingConversationRequests]);

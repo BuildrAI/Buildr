@@ -20,7 +20,7 @@
 
 ## 内部对话怎样关联任务？
 
-任务页[TaskConversationEntry.tsx](../../services/buildr-web/src/features/agent-conversations/TaskConversationEntry.tsx)是任务侧的对话入口：没有对话时进入绑定此任务的新对话草稿（发送才创建会话），一段时直接打开，多段时选择。反方向由对话内的[ConversationTaskLink.tsx](../../services/buildr-web/src/features/agent-conversations/ConversationTaskLink.tsx)承担：列出同一工作空间未结束任务，对已建对话经 PATCH 设置、更换或解除引用，对未发送草稿更新绑定字段。新对话按工作空间（Workspace）共享一份未发送草稿（文本、模型/权限、附件）；任务绑定是这份草稿的一个字段，跟随草稿跨入口共享，空草稿不留绑定，发送时才写入真实会话。任务只保存自身事实，对话及可见历史由独立 `buildr-agent` 服务（Service）保存；任务关联不是外部桌面会话（Session）的导航关系，也不会自动改变任务状态。
+任务页[TaskConversationEntry.tsx](../../services/buildr-web/src/features/agent-conversations/TaskConversationEntry.tsx)与对话内[ConversationTaskLink.tsx](../../services/buildr-web/src/features/agent-conversations/ConversationTaskLink.tsx)共用[数量浮层](../../services/buildr-web/src/features/agent-conversations/ConversationAssociationPopover.tsx)：零、一、多项均展开同一界面，点击已关联项导航，独立按钮解除，完整名称或编码/对话标识精确搜索后新增。任务侧的新对话仍只进入带任务引用的草稿，首次发送才创建。引用以空间和任务编码共同确定，允许跨登记空间；只有对话的 `taskLinks` 是完整关系来源，任务侧反查，不复制关系。`taskIds/taskId` 兼容字段只投影本空间部分。新对话共享一份未发送草稿，任务引用独立于文本保存，清空文本不解除关联；首次发送携带完整引用。任务只保存自身事实，对话与可见历史由独立 `buildr-agent` 服务保存；关联不改变任务状态、对话所属空间或原生执行目录。
 
 [宿主装配](../../services/buildr/src/modules/agent-service/module.ts)用任务查询能力核对身份，[对话应用](../../services/buildr-agent/src/application/conversation-application.ts)在创建时保存 `workspaceId`、`taskId` 与真实 `cwd`，创建后也可经同一更新动作按观察版本更换或解除任务引用。它不把任务全文或当前页面静默复制成模型输入；交付给执行方的工作上下文包含当前对话标题与任务引用，供后续创建任务保持一致命名，执行者仍须重读任务和实际成果。全局对话可以不关联任务，统一历史也不按 Codex、DSH、Qoder 分组。换执行方先分别恢复原生上下文，再交付未见可见记录，未知运行不重发；见[智能体接入](../docs/architecture/agent-integration.md)。
 

@@ -381,6 +381,7 @@ export interface PendingRequestView extends ExecutorRequest {
   runId: string;
   generation: string;
 }
+export interface ConversationTaskLink {workspaceId:string;taskId:string}
 export interface ConversationView {
   /** Immutable direct-parent provenance, independent of current titles and UI state. */
   forkedFrom?: ConversationForkOrigin;
@@ -399,8 +400,10 @@ export interface ConversationView {
   workspaceId: string;
   cwd: string;
   taskId?: string;
-  /** Complete task association set; absent on legacy records. */
+  /** Compatibility projection for tasks in this conversation’s workspace. */
   taskIds?: string[];
+  /** Complete cross-workspace association set; legacy fields project local links. */
+  taskLinks?: ConversationTaskLink[];
   title: string;
   revision: string;
   hidden: boolean;
@@ -465,6 +468,7 @@ export interface PendingSendView {
 export interface StartConversationDraft extends Omit<SendDraft, 'expectedRevision'> {
   cwd?: string;
   taskId?: string;
+  taskLinks?: ConversationTaskLink[];
   expectedDraftRevision: string;
   clientRequestId: string;
 }

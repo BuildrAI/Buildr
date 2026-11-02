@@ -83,11 +83,11 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
       if(!response.ok)throw new Error('草稿图片读取失败，请重新添加或稍后重试。');
       return response.blob();
     },
-    create(input: {workspaceId: string; cwd?: string; taskId?: string}) { return request<ConversationView>(path(input.workspaceId), post({cwd: input.cwd, taskId: input.taskId})); },
+    create(input: {workspaceId: string; cwd?: string; taskId?: string; taskLinks?:{workspaceId:string;taskId:string}[]}) { return request<ConversationView>(path(input.workspaceId), post({cwd: input.cwd, taskId: input.taskId,taskLinks:input.taskLinks})); },
     read(workspaceId: string, id: string, signal?: AbortSignal) { return request<ConversationView>(path(workspaceId, id), {signal}); },
     entry(workspaceId:string,id:string,entry:ConversationEntry,signal?:AbortSignal) {return request<ConversationEntry>(path(workspaceId,id)+'/entry-detail/'+encodeURIComponent(entry.id)+'?'+new URLSearchParams({revision:entry.detail!.revision}),{signal});},
     entries(workspaceId: string, id: string, cursor: number, signal?: AbortSignal) { return request<ConversationView>(path(workspaceId, id) + '/entries?' + new URLSearchParams({before: String(cursor)}), {signal}); },
-    update(conversation: ConversationView, input: {title?: string; hidden?: boolean; taskId?: string | null; taskIds?: string[]}) { return request<ConversationView>(path(conversation.workspaceId, conversation.id), {method: 'PATCH', body: JSON.stringify({...input, expectedRevision: conversation.revision})}); },
+    update(conversation: ConversationView, input: {title?: string; hidden?: boolean; taskId?: string | null; taskIds?: string[];taskLinks?:{workspaceId:string;taskId:string}[]}) { return request<ConversationView>(path(conversation.workspaceId, conversation.id), {method: 'PATCH', body: JSON.stringify({...input, expectedRevision: conversation.revision})}); },
     fork(conversation:ConversationView,entryId:string,clientRequestId:string) {return request<ConversationView>(path(conversation.workspaceId,conversation.id)+'/fork',post({expectedRevision:conversation.revision,entryId,clientRequestId}));},
     createChild(conversation:ConversationView,input:{expectedRevision:string;clientRequestId:string}) {return request<ConversationView>(path(conversation.workspaceId,conversation.id)+'/children',post(input));},
     children(workspaceId:string,id:string,options:{cursor?:string;signal?:AbortSignal}={}) {return read<ConversationPage>(path(workspaceId,id)+'/children'+(options.cursor?'?'+new URLSearchParams({cursor:options.cursor}):''),options.signal);},

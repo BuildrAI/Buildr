@@ -123,7 +123,7 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
         if (request.method === 'GET') {
           query(searchParams, ['taskId', 'cursor', 'limit', 'hidden', 'query']);
           if (searchParams.has('hidden') && !['true', 'false'].includes(searchParams.get('hidden'))) throw inputError();
-          return result('conversations', await service.conversations.list(workspaceId, { taskId: searchParams.get('taskId') ?? undefined, cursor: searchParams.get('cursor') ?? undefined, limit: numberQuery(searchParams.get('limit')), hidden: searchParams.get('hidden') === 'true', query: searchParams.get('query') ?? undefined }));
+          return result('conversations', await service.conversations.list(workspaceId, { taskId: searchParams.get('taskId') ?? undefined, workspaceIds:[...new Set([...registeredWorkspaceIds(),workspaceId])], cursor: searchParams.get('cursor') ?? undefined, limit: numberQuery(searchParams.get('limit')), hidden: searchParams.get('hidden') === 'true', query: searchParams.get('query') ?? undefined }));
         }
         query(searchParams, []);
         if (request.method === 'POST') {

@@ -218,14 +218,15 @@ export class ConversationRepository {
   private isPending(record:ConversationReadState,includeActive:boolean):boolean {
     return Boolean(record.view.requests.length || record.view.retainedRuns?.some(unfinishedRun) || record.view.run?.tools.some(tool=>tool.status!=='completed') || (includeActive ? ['starting','running','waiting-approval','waiting-question','stopping','unknown','tools-active'] : ['unknown','tools-active']).includes(record.view.run?.status ?? ''));
   }
-  listConversations(workspaceId: string, options: { parentConversationId?: string; taskId?: string; before?: string; limit: number; includeHidden?: boolean; query?: string }): StoredConversation[] {
+  listConversations(workspaceId: string, options: { parentConversationId?: string; taskId?: string; workspaceIds?:string[]; before?: string; limit: number; includeHidden?: boolean; query?: string }): StoredConversation[] {
     const db = this.open(false); if (!db) return [];
     try {
-      const where = ['workspace_id=?']; const values: Array<string | number> = [workspaceId];
+      const where: string[] = options.taskId?[]:['workspace_id=?']; const values: Array<string | number> = options.taskId?[]:[workspaceId];
+      if(options.taskId&&options.workspaceIds){if(!options.workspaceIds.length)return [];where.push(`workspace_id IN (${options.workspaceIds.map(()=>'?').join(',')})`);values.push(...options.workspaceIds);}
       // 已创建但从未发出内容的草稿不属于对话历史。
       where.push(HAS_WORK);
       if (!options.includeHidden) where.push('hidden=0');
-      if (options.taskId) { where.push("((json_type(body,'$.view.taskIds') IS NULL AND task_id=?) OR EXISTS(SELECT 1 FROM json_each(body,'$.view.taskIds') WHERE value=?))"); values.push(options.taskId, options.taskId); }
+      if (options.taskId) { where.push("(EXISTS(SELECT 1 FROM json_each(body,'$.view.taskLinks') WHERE json_extract(value,'$.workspaceId')=? AND json_extract(value,'$.taskId')=?) OR (json_type(body,'$.view.taskLinks') IS NULL AND workspace_id=? AND ((json_type(body,'$.view.taskIds') IS NULL AND task_id=?) OR EXISTS(SELECT 1 FROM json_each(body,'$.view.taskIds') WHERE value=?))))"); values.push(workspaceId,options.taskId,workspaceId,options.taskId,options.taskId); }
       if (options.parentConversationId) { where.push("json_extract(body,'$.view.childOf.conversationId')=?"); values.push(options.parentConversationId); }
       if (options.query) {
         where.push("(instr(lower(json_extract(body,'$.view.title')),lower(?))>0 OR EXISTS(SELECT 1 FROM json_each(body,'$.view.entries') AS entry WHERE instr(lower(json_extract(entry.value,'$.text')),lower(?))>0))");

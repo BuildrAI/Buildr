@@ -1,4 +1,4 @@
-import type { ConversationView, ConversationEntry, ConversationEvent, ConversationRun, CatalogModel } from './types';
+import type { ConversationView, ConversationEntry, ConversationEvent, ConversationRun, ConversationTaskLink, CatalogModel } from './types';
 
 export function conversationRecoveryAction(conversation: ConversationView | null): {kind:'recover'|'observe';label:string} | null {
   const run = conversation?.run; if (!conversation || !run) return null;
@@ -103,15 +103,15 @@ export function draftKey(profile: string, workspaceId: string | null, conversati
     ? `buildr.agent-conversation.draft:${encodeURIComponent(profile)}:new`
     : `buildr.agent-conversation.draft:${encodeURIComponent(profile)}:${encodeURIComponent(workspaceId || 'unselected')}:${encodeURIComponent(conversationId)}`;
 }
-export function readDraft(key: string, storage: Pick<Storage, 'getItem'>): {text: string; taskId?: string; workspaceId?: string; available: boolean} {
+export function readDraft(key: string, storage: Pick<Storage, 'getItem'>): {text: string; taskId?: string; workspaceId?: string; taskLinks?:ConversationTaskLink[]; available: boolean} {
   try {
     const saved=storage.getItem(key)||'';
-    if(saved.startsWith('{')){const parsed=JSON.parse(saved);return {text:typeof parsed.text==='string'?parsed.text:'',taskId:typeof parsed.taskId==='string'&&parsed.taskId?parsed.taskId:undefined,...(typeof parsed.workspaceId==='string'&&parsed.workspaceId?{workspaceId:parsed.workspaceId}:{}),available:true};}
+    if(saved.startsWith('{')){const parsed=JSON.parse(saved);return {text:typeof parsed.text==='string'?parsed.text:'',taskId:typeof parsed.taskId==='string'&&parsed.taskId?parsed.taskId:undefined,...(typeof parsed.workspaceId==='string'&&parsed.workspaceId?{workspaceId:parsed.workspaceId}:{}),...(Array.isArray(parsed.taskLinks)?{taskLinks:parsed.taskLinks.filter((link:any)=>typeof link?.workspaceId==='string'&&typeof link?.taskId==='string')}:{}),available:true};}
     return { text: saved, taskId: undefined, available: true };
   } catch { return { text: '', taskId: undefined, available: false }; }
 }
-export function writeDraft(key: string, text: string, storage: Pick<Storage, 'setItem' | 'removeItem'>, taskId?: string, workspaceId?: string): boolean {
-  try { if (text || workspaceId) storage.setItem(key, taskId || workspaceId ? JSON.stringify({ text, taskId, workspaceId }) : text); else storage.removeItem(key); return true; } catch { return false; }
+export function writeDraft(key: string, text: string, storage: Pick<Storage, 'setItem' | 'removeItem'>, taskId?: string, workspaceId?: string,taskLinks?:ConversationTaskLink[]): boolean {
+  try { if (text || workspaceId) storage.setItem(key, taskId || workspaceId ? JSON.stringify({ text, taskId, workspaceId,taskLinks }) : text); else storage.removeItem(key); return true; } catch { return false; }
 }
 export function transferDraftText(source:string,target:string,read:(key:string)=>{text:string;taskId?:string},save:(key:string,text:string,taskId?:string)=>boolean):{text:string;taskId?:string;available:boolean} {
   const {text,taskId}=read(source);

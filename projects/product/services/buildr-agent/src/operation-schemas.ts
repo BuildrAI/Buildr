@@ -1,5 +1,6 @@
 // Public transport-neutral JSON schemas. Browser routes remain in the product adapter.
 const text = { type: 'string', minLength: 1 };
+const taskLink = {type:'object',additionalProperties:false,properties:{workspaceId:text,taskId:text},required:['workspaceId','taskId']};
 const string = { type: 'string' };
 const integer = { type: 'integer', minimum: 0 };
 const boolean = { type: 'boolean' };
@@ -29,7 +30,7 @@ const pendingSend = closed({ waitingQuestions:list(request), id:text,revision:te
 const forkedFrom = closed({conversationId:text,workspaceId:text,entryId:text,runId:text,throughSequence:integer,title:text,forkedAt:text});
 const forkState = closed({status:{enum:['creating','ready','failed']},reason:string},['status']);
 const childOf=closed({conversationId:text,workspaceId:text,title:string,createdAt:text,sourceRevision:text,throughSequence:integer,state:run.properties.status},['conversationId','workspaceId','title','createdAt','sourceRevision','throughSequence']);
-const conversation = closed({ forkedFrom, forkState, childOf, attachmentRevision:text, pendingSend, activity,titleState, id: text, workspaceId: text, cwd: text, taskId: text, taskIds: list(text), title: text, revision: text, hidden: boolean, updatedAt: text, participants: list(participant), entries: list(entry), run, retainedRuns:list(run), requests: list(request), nextEntryCursor: integer }, ['id', 'workspaceId', 'cwd', 'title', 'revision', 'hidden', 'updatedAt', 'participants', 'entries', 'requests']);
+const conversation = closed({ forkedFrom, forkState, childOf, attachmentRevision:text, pendingSend, activity,titleState, id: text, workspaceId: text, cwd: text, taskId: text, taskIds: list(text), taskLinks: list(taskLink), title: text, revision: text, hidden: boolean, updatedAt: text, participants: list(participant), entries: list(entry), run, retainedRuns:list(run), requests: list(request), nextEntryCursor: integer }, ['id', 'workspaceId', 'cwd', 'title', 'revision', 'hidden', 'updatedAt', 'participants', 'entries', 'requests']);
 const connection = closed({ id: text, provider: text, label: text, revision: text, status: { enum: ['disconnected', 'connecting', 'not-authenticated', 'ready', 'expired', 'failed'] }, enabled: boolean, executable: text, configPath: text, account: closed({ label: string, loginMethod: string }, []), diagnostic: string, models: list(model), capabilities, loginAttempt: closed({ id: text, generation: text, state: { enum: ['initializing', 'waiting-browser', 'checking', 'completed', 'cancelled', 'expired', 'failed'] }, updatedAt: text, url: string, diagnostic: string }, ['id', 'generation', 'state', 'updatedAt']) }, ['id', 'provider', 'label', 'revision', 'status', 'enabled', 'models', 'capabilities']);
 const controlFields = { expectedRevision: text, runId: text, participantId: text, generation: text };
 const programCandidate = closed({ executable: text, source: { enum: ['configured', 'selected', 'path', 'managed', 'application', 'sdk'] }, label: text, version: text, compatible: boolean, diagnostic: string }, ['executable', 'source', 'label', 'compatible']);
@@ -70,8 +71,8 @@ export const AGENT_OPERATION_SCHEMAS = {
   fork: named('AgentConversationForkRequest', closed({expectedRevision:text,entryId:text,clientRequestId:text})),
   createChild: named('AgentConversationChildCreateRequest',closed({expectedRevision:text,clientRequestId:text})),
   entry: named('AgentConversationEntry',entry),
-  create: named('AgentConversationCreateRequest', closed({ cwd: text, taskId: text, title: text }, [])),
-  update: named('AgentConversationUpdateRequest', closed({ expectedRevision: text, title: text, hidden: boolean, taskIds: list(text), taskId: { anyOf: [text, { type: 'null' }] } }, ['expectedRevision'])),
+  create: named('AgentConversationCreateRequest', closed({ cwd: text, taskId: text, taskLinks:list(taskLink), title: text }, [])),
+  update: named('AgentConversationUpdateRequest', closed({ expectedRevision: text, title: text, hidden: boolean, taskLinks:list(taskLink), taskIds: list(text), taskId: { anyOf: [text, { type: 'null' }] } }, ['expectedRevision'])),
   draft: named('AgentConversationDraftRequest', closed(draftFields, ['expectedRevision', 'connectionId', 'text'])),
   send: named('AgentConversationSendRequest', closed({ ...draftFields, previewToken: text, clientRequestId: text }, ['expectedRevision', 'connectionId', 'text', 'previewToken', 'clientRequestId'])),
   queueSend: named('AgentConversationQueueSendRequest', closed({...draftFields,clientRequestId:text,expectedPendingRevision:text,previousRunId:text},['expectedRevision','connectionId','text','clientRequestId'])),
@@ -88,7 +89,7 @@ export const AGENT_OPERATION_SCHEMAS = {
   removeDraftImage: named('AgentDraftImageRemove', closed({ expectedRevision: text, attachmentId: text })),
   warmup: named('AgentConversationWarmupRequest',closed({...Object.fromEntries(Object.entries(draftFields).filter(([key])=>['connectionId','modelAccountId','modelAccountRevision','modelAccountIdentity','model','reasoningEffort','serviceTier','permissionMode'].includes(key))),cwd:text,taskId:text,clientRequestId:text},['connectionId'])),
   warmed: named('AgentConversationWarmupResult',closed({prepared:boolean})),
-  startDraft: named('AgentDraftStart', closed({ ...Object.fromEntries(Object.entries(draftFields).filter(([key]) => key !== 'expectedRevision')), cwd: text, taskId: text, expectedDraftRevision: text, clientRequestId: text }, ['connectionId','text','expectedDraftRevision','clientRequestId'])),
+  startDraft: named('AgentDraftStart', closed({ ...Object.fromEntries(Object.entries(draftFields).filter(([key]) => key !== 'expectedRevision')), cwd: text, taskId: text, taskLinks:list(taskLink), expectedDraftRevision: text, clientRequestId: text }, ['connectionId','text','expectedDraftRevision','clientRequestId'])),
   draftStarted: named('AgentDraftStarted', closed({ conversation })),
   draftLookup: named('AgentDraftLookup', closed({ found: boolean, conversation }, ['found'])),
   attachment: named('AgentConversationAttachmentRequest', { ...closed({ expectedRevision: text, expectedAttachmentRevision: text, mimeType: { enum: ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'video/mp4', 'video/webm', 'video/quicktime'] }, video: closed({ duration: { type: 'number', exclusiveMinimum: 0 }, frames: { type: 'array', minItems: 1, maxItems: 8, items: closed({ id: text, time: { type: 'number', minimum: 0 } }, ['id','time']) } }, ['duration','frames']) }, ['mimeType']), anyOf: [{properties:{expectedRevision:text},required:['expectedRevision']},{properties:{expectedAttachmentRevision:text},required:['expectedAttachmentRevision']}] }),

@@ -2856,3 +2856,32 @@ test('many-to-many task associations persist, filter both directions and reject 
     assert.equal(f.service.conversations.list('workspace-one',{taskId:'task-two'}).conversations.length,1);
   } finally {await f.close();}
 });
+
+test('cross-workspace task links keep composite identity, legacy writes and scoped reverse pagination',async()=>{
+  const native=fake(),f=fixture([native.executor],{taskIds:['task-one','task-two']});
+  try{
+    await connected(f.service,'local');
+    const created=await f.service.conversations.create('workspace-one',{taskId:'task-one'});
+    send(f.service,created.id,'local','cross workspace links');
+    let current=await waitUntil(()=>f.service.conversations.read('workspace-one',created.id),value=>value.run?.status==='completed');
+    const runId=current.run?.id,cwd=current.cwd;
+    const local={workspaceId:'workspace-one',taskId:'task-one'},remote={workspaceId:'workspace-two',taskId:'task-one'};
+    current=await f.service.conversations.update('workspace-one',created.id,{expectedRevision:current.revision,taskLinks:[local,remote,remote]});
+    assert.deepEqual(current.taskLinks,[local,remote]);assert.deepEqual(current.taskIds,['task-one']);
+    assert.equal(current.cwd,cwd);assert.equal(current.run?.id,runId);
+    assert.equal(f.service.conversations.list('workspace-two',{taskId:'task-one'}).conversations[0]?.id,created.id);
+    assert.equal(f.service.conversations.list('workspace-two',{taskId:'task-one',workspaceIds:['workspace-two']}).conversations.length,0,'unavailable conversation scope excluded');
+    assert.equal(f.service.conversations.list('workspace-two',{taskId:'task-one',workspaceIds:['workspace-one']}).conversations.length,1);
+    const stale=current;
+    current=await f.service.conversations.update('workspace-one',created.id,{expectedRevision:current.revision,taskIds:['task-two']});
+    assert.deepEqual(current.taskLinks,[remote,{workspaceId:'workspace-one',taskId:'task-two'}]);
+    assert.equal(f.service.conversations.list('workspace-one',{taskId:'task-one'}).conversations.length,0,'same ID in other workspace cannot match');
+    await assert.rejects(f.service.conversations.update('workspace-one',created.id,{expectedRevision:stale.revision,taskLinks:[]}),{code:'agent_revision_conflict'});
+    await assert.rejects(f.service.conversations.update('workspace-one',created.id,{expectedRevision:current.revision,taskLinks:[{workspaceId:'workspace-two',taskId:'missing'}]}));
+    await assert.rejects(f.service.conversations.update('workspace-one',created.id,{expectedRevision:current.revision,taskLinks:[],taskIds:[]}),{code:'agent_input_invalid'});
+    current=await f.service.conversations.update('workspace-one',created.id,{expectedRevision:current.revision,taskId:null});
+    assert.deepEqual(current.taskLinks,[remote]);assert.deepEqual(current.taskIds,[]);assert.equal(current.taskId,undefined);
+    current=await f.service.conversations.update('workspace-one',created.id,{expectedRevision:current.revision,taskLinks:[]});
+    assert.equal(f.service.conversations.list('workspace-two',{taskId:'task-one'}).conversations.length,0);
+  }finally{await f.close();}
+});

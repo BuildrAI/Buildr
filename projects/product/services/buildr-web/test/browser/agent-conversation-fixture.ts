@@ -3,7 +3,7 @@ import {resolveQuestionAnswer,questionAnswerDisplay} from '../../../buildr-agent
 import type {ConnectionView} from '../../src/features/agent-conversations/types.ts';
 
 /** Actual hosted UI; only the new HTTP transport is replaced with explicit fixtures. */
-export async function createAgentConversationFixture({t,page,workspaceUrl,workspaceRoot,capture:capturePage,expectedBrowserErrors}:any){
+export async function createAgentConversationFixture({t,page,workspaceUrl,workspaceRoot,otherWorkspaceId,capture:capturePage,expectedBrowserErrors}:any){
   const capture=async(target:any,name:string)=>{if(!process.env.BUILDR_AGENT_CAPTURE_FAILURE_ONLY||name.includes('failure'))await capturePage(target,name);};
   let reminderPaging=false,reminderReadFailure=false;
   const taskRequests:Array<Record<string,unknown>>=[];
@@ -112,7 +112,8 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
       connection.revision='connection-'+(++revision);return route.fulfill({json:connection});
     }
     // 默认工作空间的会话端点与工作空间前缀同构，走同一套夹具。
-    const prefix=`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/agent-conversations`,appPrefix='/api/v1/app/agent-service/conversations';
+    const requestedWorkspaceId=decodeURIComponent(url.pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/agent-conversations/)?.[1]||'@default');
+    const prefix=`/api/v1/workspaces/${encodeURIComponent(requestedWorkspaceId)}/agent-conversations`,appPrefix='/api/v1/app/agent-service/conversations';
     const scoped=url.pathname.startsWith(prefix)?prefix:(url.pathname===appPrefix||url.pathname.startsWith(appPrefix+'/'))?appPrefix:'';
     if(!scoped)return route.fallback();
     const draftRoute=url.pathname.slice(scoped.length).match(/^\/drafts\/([^/]+)(?:\/(attachments|send|submissions)(?:\/([^/]+))?)?$/);
@@ -134,14 +135,14 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
         const body=request.postDataJSON(),previous=firstResponses.get(draftId+':'+body.clientRequestId);if(previous)return route.fulfill({json:previous});
         if(prepareError){const error=prepareError;prepareError=undefined;expectedBrowserErrors?.add(request.url());return route.fulfill({status:409,json:{error}});}
         assert.equal(body.expectedDraftRevision,snapshot().revision);creations++;
-        conversation={id:'internal-fixture-'+creations,workspaceId:scoped===appPrefix?'@default':workspaceId,cwd:body.cwd||'/isolated/default',taskId:body.taskId,title:'浏览器验证对话',revision:'r'+(++revision),hidden:false,updatedAt:new Date().toISOString(),participants:[],entries:[],requests:[]};latestPreview=undefined;
+        conversation={id:'internal-fixture-'+creations,workspaceId:scoped===appPrefix?'@default':requestedWorkspaceId,cwd:body.cwd||'/isolated/default',taskLinks:body.taskLinks,taskIds:body.taskLinks?.filter((link:any)=>link.workspaceId===requestedWorkspaceId).map((link:any)=>link.taskId)??(body.taskId?[body.taskId]:[]),taskId:body.taskLinks?.find((link:any)=>link.workspaceId===requestedWorkspaceId)?.taskId??body.taskId,title:'浏览器验证对话',revision:'r'+(++revision),hidden:false,updatedAt:new Date().toISOString(),participants:[],entries:[],requests:[]};latestPreview=undefined;
         if(holdCreate){holdCreate=false;await new Promise<void>(resolve=>{releaseCreate=resolve;createStarted?.();});}
         // Continue through the shared send fixture below; there is no separate create HTTP call.
       }else return route.fulfill({status:404,json:{error:{code:'fixture_missing',message:'draft route missing'}}});
     }
     if(url.pathname===scoped){
-      if(method==='GET'){if(holdTaskList&&url.searchParams.get('taskId')){holdTaskList=false;await new Promise<void>(resolve=>{releaseTaskList=resolve;taskListStarted?.();});}const rows=[...(conversation&&(conversation.entries.length||conversation.run)?[conversation]:[]),...additionalConversations];return route.fulfill({json:{conversations:rows.filter(item=>(scoped===appPrefix||item.workspaceId===workspaceId)&&(!url.searchParams.get('taskId')||(item.taskIds??(item.taskId?[item.taskId]:[])).includes(url.searchParams.get('taskId'))))}});}
-      const body=request.postDataJSON();creations++;conversation={id:'internal-fixture-'+creations,workspaceId:scoped===appPrefix?'@default':workspaceId,cwd:body.cwd||'/isolated/default',taskId:body.taskId,title:'浏览器验证对话',revision:'r'+(++revision),hidden:false,updatedAt:new Date().toISOString(),participants:[],entries:[],requests:[]};const created=conversation;if(holdCreate){holdCreate=false;await new Promise<void>(resolve=>{releaseCreate=resolve;createStarted?.();});}return route.fulfill({json:created});
+      if(method==='GET'){if(holdTaskList&&url.searchParams.get('taskId')){holdTaskList=false;await new Promise<void>(resolve=>{releaseTaskList=resolve;taskListStarted?.();});}const rows=[...(conversation&&(conversation.entries.length||conversation.run)?[conversation]:[]),...additionalConversations],taskId=url.searchParams.get('taskId');return route.fulfill({json:{conversations:rows.filter(item=>taskId?(item.taskLinks??(item.taskIds??(item.taskId?[item.taskId]:[])).map((id:string)=>({workspaceId:item.workspaceId,taskId:id}))).some((link:any)=>link.workspaceId===requestedWorkspaceId&&link.taskId===taskId):(scoped===appPrefix||item.workspaceId===requestedWorkspaceId))}});}
+      const body=request.postDataJSON();creations++;conversation={id:'internal-fixture-'+creations,workspaceId:scoped===appPrefix?'@default':requestedWorkspaceId,cwd:body.cwd||'/isolated/default',taskLinks:body.taskLinks,taskIds:body.taskLinks?.filter((link:any)=>link.workspaceId===requestedWorkspaceId).map((link:any)=>link.taskId)??(body.taskId?[body.taskId]:[]),taskId:body.taskLinks?.find((link:any)=>link.workspaceId===requestedWorkspaceId)?.taskId??body.taskId,title:'浏览器验证对话',revision:'r'+(++revision),hidden:false,updatedAt:new Date().toISOString(),participants:[],entries:[],requests:[]};const created=conversation;if(holdCreate){holdCreate=false;await new Promise<void>(resolve=>{releaseCreate=resolve;createStarted?.();});}return route.fulfill({json:created});
     }
     if(url.pathname.endsWith('/children')&&method==='GET')return route.fulfill({json:{conversations:[]}});
     if(url.pathname.endsWith('/entries')){entryReads++;assert.equal(url.searchParams.has('limit'),false,'历史请求使用服务端按轮默认分页');const value=historyPages.get(Number(url.searchParams.get('before')));assert.ok(value,'observed cursor resolves one fixture page');if(failEntryRead){failEntryRead=false;expectedBrowserErrors?.add(request.url());return route.fulfill({status:503,json:{error:{code:'history_fixture_unavailable',message:'更早记录暂时不可用'}}});}if(holdEntryRead){holdEntryRead=false;await new Promise<void>(resolve=>{releaseEntryRead=resolve;entryReadStarted?.();});}return route.fulfill({json:value});}
@@ -191,7 +192,14 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
       additionalConversations.push(child);return route.fulfill({status:201,json:child});
     }
     if(url.pathname.endsWith('/generate-title')){assert.equal(request.postDataJSON().expectedRevision,conversation.revision);titleGenerations++;if(holdTitle){holdTitle=false;await new Promise<void>(resolve=>{releaseTitle=resolve;titleStarted?.();});}return route.fulfill({json:update({title:'服务停止与重试'})});}
-    if(method==='PATCH'){const body=request.postDataJSON();update({...('title'in body?{title:body.title}:{}),...('hidden'in body?{hidden:body.hidden}:{}),...('taskIds'in body?{taskIds:body.taskIds,taskId:body.taskIds[0]}:{})});return route.fulfill({json:conversation});}
+    if(method==='PATCH'){
+      const body=request.postDataJSON(),target=additionalConversations.find(item=>url.pathname.endsWith('/'+item.id))||conversation,isCurrent=target===conversation;
+      if(body.expectedRevision!==target.revision){expectedBrowserErrors?.add(request.url());return route.fulfill({status:409,json:{error:{code:'agent_revision_conflict',message:'对话已变化，请重新读取。'}}});}
+      const links=body.taskLinks??(body.taskIds!==undefined?[...(target.taskLinks??[]).filter((link:any)=>link.workspaceId!==target.workspaceId),...body.taskIds.map((taskId:string)=>({workspaceId:target.workspaceId,taskId}))]:undefined);
+      const patch={...('title'in body?{title:body.title}:{}),...('hidden'in body?{hidden:body.hidden}:{}),...(links?{taskLinks:links,taskIds:links.filter((link:any)=>link.workspaceId===target.workspaceId).map((link:any)=>link.taskId),taskId:links.find((link:any)=>link.workspaceId===target.workspaceId)?.taskId}:{})};
+      if(isCurrent)update(patch);else Object.assign(target,patch,{revision:'r'+(++revision),updatedAt:new Date().toISOString()});
+      return route.fulfill({json:isCurrent?conversation:target});
+    }
     if(method==='POST'&&url.pathname.endsWith('/seen')){const body=request.postDataJSON();const target=[...additionalConversations,...additionalPending].find(item=>url.pathname.includes('/'+item.id+'/'))||conversation;const activity={version:Math.max(body.through,target?.activity?.version??body.through),seenThrough:body.through,updatedAt:new Date().toISOString(),active:target?.activity?.active??true};if(target)target.activity=activity;return route.fulfill({json:{activity}});}
     if(method==='GET'){conversationReads++;return route.fulfill({json:[...additionalConversations,...additionalPending].find(item=>url.pathname.endsWith('/'+item.id))||conversation});}
     return route.fallback();
@@ -256,7 +264,7 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
   };
   const dispose=async()=>{releaseEntryRead?.();releaseSend?.();releasePrepare?.();releaseCreate?.();releaseUpload?.();releaseConnections?.();releaseStop?.();releaseTaskList?.();releaseTitle?.();releaseSupplement?.();releaseConnectionProbe?.();await page.evaluate(()=>{(window as any).__releaseTaskSpinnerMotion?.();sessionStorage.removeItem('__buildrHoldTaskSpinnerMotion');}).catch(()=>{});await page.unroute('**/api/v1/app/agent-service/**',route);await page.unroute('**/api/v1/workspaces/*/agent-conversations**',route);await page.setViewportSize({width:1280,height:900});await page.evaluate(()=>sessionStorage.clear()).catch(()=>{});if(scenarioFocus.length)assert.ok(stepIndex>0,'BUILDR_AGENT_SCENARIO_FOCUS 没有匹配任何场景');};
   return {
-    quotaOverrides,
+    quotaOverrides,otherWorkspaceId,
     get additionalConversations(){return additionalConversations;}, set additionalConversations(value){additionalConversations=value;},
     get additionalPending(){return additionalPending;}, set additionalPending(value){additionalPending=value;},
     assertFixed,

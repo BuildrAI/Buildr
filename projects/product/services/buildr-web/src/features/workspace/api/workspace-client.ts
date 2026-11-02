@@ -11,8 +11,8 @@ export function createWorkspaceClient(api: ApiClient) {
     workspaceCreatePrompt(input: { name: string; description: string; targetPath: string }): Promise<{ prompt: string }> {
       return api('/api/v1/prompts/workspace-create', { method: 'POST', body: JSON.stringify(input) }) as Promise<{ prompt: string }>;
     },
-    listRegistered(): Promise<WorkspaceRegistry> {
-      return api('/api/v1/workspaces') as Promise<WorkspaceRegistry>;
+    listRegistered(options:ReadOptions={}): Promise<WorkspaceRegistry> {
+      return api('/api/v1/workspaces',options) as Promise<WorkspaceRegistry>;
     },
     register(input: { rootPath: string; revision: string; open?: boolean }): Promise<WorkspaceRegistry> {
       return api('/api/v1/workspaces', { method: 'POST', body: JSON.stringify(input) }) as Promise<WorkspaceRegistry>;

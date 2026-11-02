@@ -10,7 +10,7 @@ import { firstConversationSubmissions } from './conversation-first-submission';
 import { readConversationModelPreference, readConversationModulePreference } from './conversation-preferences';
 
 type Scope = {workspaceId: string; conversationId: string};
-export type DraftScope = {workspaceId: string; taskId?: string};
+export type DraftScope = {workspaceId: string; taskId?: string;taskLinks?:{workspaceId:string;taskId:string}[]};
 type VisibilityOptions={preserveVisibility?:boolean};
 export type TextConversationActionInput = {workspaceId: string; cwd: string; text: string};
 export type TextConversationActionResult =

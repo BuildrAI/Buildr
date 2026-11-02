@@ -65,7 +65,7 @@ test('public Agent package remains synchronously loadable by the bundled CJS hos
 test('agent task adoption appends through the packaged bound control command with real storage and no execution', async () => {
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-task-link-')),token=privateToken();
   const tasks=new Set(['task-first']);
-  const service=createAgentService({dataRoot:path.join(root,'data'),executors:[],resolveWorkspace(scope){assert.equal(scope,'scope');return {rootPath:root};},assertTask(scope,taskId){assert.equal(scope,'scope');if(!tasks.has(taskId))throw new Error('task unavailable');}});
+  const service=createAgentService({dataRoot:path.join(root,'data'),executors:[],resolveWorkspace(scope){assert.equal(scope,'scope');return {rootPath:root};},assertTask(scope,taskId){assert.ok(['scope','remote-scope'].includes(scope));if(!tasks.has(taskId))throw new Error('task unavailable');}});
   const chat=await service.conversations.create('scope',{taskId:'task-first'});
   const identity={instanceId:randomUUID(),generation:randomUUID(),pid:process.pid,profileId:'task-link',dataRoot:root};
   const binding={dataRoot:root,profileId:identity.profileId,sourceId:'local',scope:'scope',conversationId:chat.id};
@@ -104,8 +104,13 @@ test('agent task adoption appends through the packaged bound control command wit
     assert.equal(service.conversations.read(binding.scope,chat.id).title,'concurrent rename');
     await invoke('link-task',{expectedRevision:current.revision,taskId:'task-third'});
     assert.deepEqual((await read()).taskIds,['task-first','task-second','task-third']);
+    current=JSON.parse((await invoke('link-task',{taskId:'task-first',workspaceId:'remote-scope'})).stdout);
+    assert.equal(current.taskLinks.length,4);assert.deepEqual(current.taskIds,['task-first','task-second','task-third']);
+    assert.deepEqual(current.taskLinks.at(-1),{workspaceId:'remote-scope',taskId:'task-first'});
+    const remoteRevision=current.revision;
+    await invoke('link-task',{taskId:'task-first',workspaceId:'remote-scope'});assert.equal((await read()).revision,remoteRevision);
     const before=calls.length;
-    for(const input of [{},{expectedRevision:current.revision,taskIds:[]},{expectedRevision:current.revision,taskId:'task-second',title:'not allowed'}])await assert.rejects(invoke('link-task',input));
+    for(const input of [{workspaceId:'',taskId:'task-first'},{},{expectedRevision:current.revision,taskIds:[]},{expectedRevision:current.revision,taskId:'task-second',title:'not allowed'}])await assert.rejects(invoke('link-task',input));
     assert.equal(calls.length,before,'invalid association input never reaches the application');
     const final=service.conversations.read(binding.scope,chat.id);assert.equal(final.run,undefined);assert.deepEqual(final.entries,[]);assert.equal(final.hidden,false);
   } finally {await channel.close();await service.close();fs.rmSync(root,{recursive:true,force:true});}

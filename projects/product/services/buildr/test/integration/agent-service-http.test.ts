@@ -187,6 +187,10 @@ test('private conversations use authenticated HTTP and bounded binary input; str
   response = await fetch(`${conversations}/${created.id}`, { method:'PATCH',headers,body:JSON.stringify({expectedRevision:linked.revision,taskIds:['task-http']}) });assert.equal(response.status,200);
   linked=await response.json() as typeof linked;assert.deepEqual(linked.taskIds,['task-http']);
   assert.equal(linked.taskId, 'task-http');
+  const taskLinks=[{workspaceId,taskId:'task-http'},{workspaceId:'other-workspace',taskId:'task-http'}];
+  response=await fetch(`${conversations}/${created.id}`,{method:'PATCH',headers,body:JSON.stringify({expectedRevision:linked.revision,taskLinks})});assert.equal(response.status,200);
+  linked=await response.json() as typeof linked;assert.deepEqual((linked as any).taskLinks,taskLinks);assert.deepEqual(linked.taskIds,['task-http']);
+  response=await fetch(`${conversations}/${created.id}`,{method:'PATCH',headers,body:JSON.stringify({expectedRevision:linked.revision,taskLinks:[{workspaceId:'',taskId:'task-http'}]})});assert.equal(response.status,400);
   response = await fetch(`${conversations}/${created.id}`, { method: 'PATCH', headers, body: JSON.stringify({ expectedRevision: linked.revision, taskId: null }) }); assert.equal(response.status, 200);
   assert.equal((await response.json() as { taskId?: string }).taskId, undefined);
   const coverage = inspectHttpOperationCoverage([AGENT_SERVICE_HTTP_OPERATIONS], []);

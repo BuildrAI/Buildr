@@ -1,4 +1,6 @@
 import { pendingConversationSummary } from '../domain/pending-summary.ts';
+import {conversationTaskLinks,setConversationTaskLinks,sameTaskLink} from '../domain/conversation-task-links.ts';
+import type {ConversationTaskLink} from '../contracts.ts';
 import { presentedFilesForEntry, normalizePresentedFiles } from '../domain/presented-files.ts';
 import { modelLeaseIdentity } from '../model-access/model-preferences.ts';
 import {ConversationWarmups,CONNECTION_IDLE_MS,type PreparedSource} from './conversation-warmups.ts';
@@ -406,12 +408,12 @@ export class ConversationApplication {
     const record = this.options.repository.readConversation(nonempty(id, '对话身份'));
     if (!record || record.view.workspaceId !== workspaceId) fail('agent_conversation_missing', '该工作空间中没有此对话。', 404);
     record.attachments ??= {};
-    record.view.taskIds ??= record.view.taskId ? [record.view.taskId] : [];
+    setConversationTaskLinks(record.view,conversationTaskLinks(record.view));
     normalizeQuestionCapabilities(record);
     return record;
   }
   private view(record: ConversationReadState, before?: number, limit?: number): ConversationView {
-    record.view.taskIds ??= record.view.taskId ? [record.view.taskId] : [];
+    setConversationTaskLinks(record.view,conversationTaskLinks(record.view));
     normalizeQuestionCapabilities(record);
     const entries = record.view.entries.filter(entry => before === undefined || entry.sequence < before);
     const count = limit === undefined ? undefined : bounded(limit, PAGE_SIZE, 200);
@@ -494,9 +496,9 @@ export class ConversationApplication {
     if(!current)fail('agent_conversation_missing','该工作空间中没有此对话。',404);
     return [current.revision,current.seenThrough,this.pendingSends.read(workspaceId,id)?.revision].join(':');
   }
-  list(workspaceId: string, input: { taskId?: string; cursor?: string; limit?: number; hidden?: boolean; query?: string } = {}): { conversations: ConversationView[]; nextCursor?: string } {
+  list(workspaceId: string, input: { taskId?: string; workspaceIds?:string[]; cursor?: string; limit?: number; hidden?: boolean; query?: string } = {}): { conversations: ConversationView[]; nextCursor?: string } {
     const limit = bounded(input.limit, 30, 100);
-    const records = this.options.repository.listConversations(workspaceId, { taskId: input.taskId, before: input.cursor, limit: limit + 1, includeHidden: input.hidden, query: input.query?.trim().slice(0, 200) });
+    const records = this.options.repository.listConversations(workspaceId, { taskId: input.taskId, workspaceIds:input.workspaceIds, before: input.cursor, limit: limit + 1, includeHidden: input.hidden, query: input.query?.trim().slice(0, 200) });
     const chosen = records.slice(0, limit);
     return { conversations: chosen.map(record => ({ ...this.view(record, undefined, 1), entries: [] })), nextCursor: records.length > limit ? `${chosen.at(-1)!.view.updatedAt}/${chosen.at(-1)!.view.id}` : undefined };
   }
@@ -529,7 +531,7 @@ export class ConversationApplication {
     const chosen=records.slice(0,limit);
     return {conversations:chosen.map(record=>({...this.view(record,undefined,1),entries:[]})),nextCursor:records.length>limit?`${chosen.at(-1)!.view.updatedAt}/${chosen.at(-1)!.view.id}`:undefined};
   }
-  async create(workspaceId: string, input: { cwd?: string; taskId?: string; title?: string }): Promise<ConversationView> {
+  async create(workspaceId: string, input: { cwd?: string; taskId?: string; taskLinks?:ConversationTaskLink[]; title?: string }): Promise<ConversationView> {
     const record = await this.candidate(workspaceId, input);
     this.options.repository.saveConversation(record);
     this.options.events.publish({ type: 'conversation', workspaceId, conversationId: record.view.id, revision: record.view.revision, payload: { conversation: this.view(record) } });
@@ -540,9 +542,10 @@ export class ConversationApplication {
       for (const owner of this.sourceOwners.values()) this.scheduleSourceRelease(owner.workspaceId, owner.id);
     });
   }
-  private async candidate(workspaceId: string, input: { cwd?: string; taskId?: string; title?: string }): Promise<StoredConversation> {
+  private async candidate(workspaceId: string, input: { cwd?: string; taskId?: string; taskLinks?:ConversationTaskLink[]; title?: string }): Promise<StoredConversation> {
     const workspace = await this.options.host.resolve(workspaceId);
-    if (input.taskId) await this.options.host.verify(workspaceId, nonempty(input.taskId, '任务身份'));
+    if(input.taskLinks!==undefined&&input.taskId!==undefined)fail('agent_input_invalid','不能同时提交 taskId 和 taskLinks。');
+    const links=await this.verifyTaskLinks(workspaceId,input.taskLinks??(input.taskId?[{workspaceId,taskId:input.taskId}]:[]));
     const selected = input.cwd ?? workspace.rootPath;
     if (!path.isAbsolute(selected)) fail('agent_cwd_invalid', '请选择准确的绝对工作目录。');
     let cwd: string;
@@ -552,20 +555,32 @@ export class ConversationApplication {
       id: randomUUID(), workspaceId, cwd, taskId: input.taskId, title: input.title ? nonempty(input.title, '对话标题', 160) : '新对话', titleState:{status:input.title?'manual':'pending'},
       revision: randomUUID(), hidden: false, updatedAt: this.options.now(), participants: [], entries: [], requests: [],
     }, hostScope: workspace, titleOrigin: input.title ? 'manual' : 'default', participants: [], sources: {}, attempts: [], requests: {}, attachments: {} };
+    setConversationTaskLinks(record.view,links);
     return record;
   }
-  async update(workspaceId: string, id: string, input: { expectedRevision: string; title?: string; hidden?: boolean; taskId?: string | null; taskIds?: string[] }): Promise<ConversationView> {
+  private async verifyTaskLinks(workspaceId:string,values:unknown,previous:ConversationTaskLink[]=[]):Promise<ConversationTaskLink[]> {
+    if(!Array.isArray(values)||values.length>100)fail('agent_input_invalid','任务关联必须为不超过100项的数组。');
+    const links:ConversationTaskLink[]=[];
+    for(const value of values){
+      if(!value||typeof value!=='object'||Array.isArray(value))fail('agent_input_invalid','任务引用无效。');
+      const link={workspaceId:nonempty(value.workspaceId,'任务工作空间'),taskId:nonempty(value.taskId,'任务身份')};
+      if(links.some(item=>sameTaskLink(item,link)))continue;
+      if(this.options.host.ref(workspaceId).sourceId!==this.options.host.ref(link.workspaceId).sourceId)fail('agent_input_invalid','不能跨宿主来源关联任务。');
+      if(!previous.some(item=>sameTaskLink(item,link)))await this.options.host.verify(link.workspaceId,link.taskId);
+      links.push(link);
+    }
+    return links;
+  }
+  async update(workspaceId: string, id: string, input: { expectedRevision: string; title?: string; hidden?: boolean; taskId?: string | null; taskIds?: string[]; taskLinks?:ConversationTaskLink[] }): Promise<ConversationView> {
     const record = this.load(workspaceId, id); expected(record.view.revision, input.expectedRevision);
     if (input.title !== undefined) { record.view.title = nonempty(input.title, '对话标题', 160); record.titleOrigin = 'manual'; record.view.titleState={status:'manual'}; }
-    if (input.taskIds !== undefined && input.taskId !== undefined) fail('agent_input_invalid', '不能同时提交 taskId 和 taskIds。');
-    if (input.taskIds !== undefined || input.taskId !== undefined) {
-      const values = input.taskIds ?? (input.taskId === null ? [] : [input.taskId!]);
-      if (!Array.isArray(values) || values.length > 100) fail('agent_input_invalid', '任务关联必须为不超过 100 项的数组。');
-      const ids = [...new Set(values.map(value => nonempty(value, '任务身份')))];
-      const previous = record.view.taskIds ?? (record.view.taskId ? [record.view.taskId] : []);
-      for (const taskId of ids) if (!previous.includes(taskId)) await this.options.host.verify(workspaceId, taskId);
-      record.view.taskIds = ids;
-      record.view.taskId = ids[0];
+    if([input.taskId,input.taskIds,input.taskLinks].filter(value=>value!==undefined).length>1)fail('agent_input_invalid','不能同时提交多种任务关联字段。');
+    if(input.taskLinks!==undefined||input.taskIds!==undefined||input.taskId!==undefined){
+      const previous=conversationTaskLinks(record.view);
+      const local=input.taskIds??(input.taskId===null?[]:[input.taskId!]);
+      if(input.taskLinks===undefined&&(!Array.isArray(local)||local.length>100))fail('agent_input_invalid','任务关联必须为不超过100项的数组。');
+      const values=input.taskLinks??[...previous.filter(link=>link.workspaceId!==workspaceId),...local.map(taskId=>({workspaceId,taskId}))];
+      setConversationTaskLinks(record.view,await this.verifyTaskLinks(workspaceId,values,previous));
     }
     if (input.hidden !== undefined) { if (typeof input.hidden !== 'boolean') fail('agent_input_invalid', '隐藏状态无效。'); record.view.hidden = input.hidden; }
     this.save(record); return this.view(record);
@@ -695,7 +710,7 @@ export class ConversationApplication {
     const ids=[...new Set([...priorImages,...currentImages])];
     const materials = this.media.expand(record, ids);
     const images = materials.images;
-    const context=JSON.stringify({childOf:record.view.childOf,inheritedPendingQuestions:record.inheritedContext?.pendingQuestions,conversationId:record.view.id,workspaceId:record.view.workspaceId,cwd:record.view.cwd,conversationTitle:record.view.title,taskId:record.view.taskId,taskIds:record.view.taskIds,sourceThrough:through,permissionMode:input.permissionMode,executionState:record.view.run?.status??'idle',retainedExecutions:conversationRuns(record.view).filter(unfinishedRun).map(run=>({id:run.id,participantId:run.participantId,generation:run.generation,status:run.status,executionState:run.executionState,resourcesReleased:run.resourcesReleased,toolCount:run.tools.filter(tool=>tool.status!=='completed').length})),unansweredRequests:record.view.requests.map(request=>({id:request.id,runId:request.runId,participantId:request.participantId,generation:request.generation,kind:request.kind,title:request.title.slice(0,200)})),sourceIndex:sources?.index,imageInputIds:ids,currentImageIds:currentImages,currentImages:images.filter(image=>currentImages.includes(image.id)),historicalImages:historicalImages.slice(-4),historicalImageCount:historicalImages.length,historicalImageNotice:historicalImages.length?'历史图片的全部准确引用见本地索引；此处只列最近四张。没有作为图像输入发送的部分须按需读取，不能假装已看到。历史视频只提供带时间点的抽样画面，不含音轨，不能声称连续观看。':undefined});
+    const context=JSON.stringify({childOf:record.view.childOf,inheritedPendingQuestions:record.inheritedContext?.pendingQuestions,conversationId:record.view.id,workspaceId:record.view.workspaceId,cwd:record.view.cwd,conversationTitle:record.view.title,taskId:record.view.taskId,taskIds:record.view.taskIds,taskLinks:conversationTaskLinks(record.view),sourceThrough:through,permissionMode:input.permissionMode,executionState:record.view.run?.status??'idle',retainedExecutions:conversationRuns(record.view).filter(unfinishedRun).map(run=>({id:run.id,participantId:run.participantId,generation:run.generation,status:run.status,executionState:run.executionState,resourcesReleased:run.resourcesReleased,toolCount:run.tools.filter(tool=>tool.status!=='completed').length})),unansweredRequests:record.view.requests.map(request=>({id:request.id,runId:request.runId,participantId:request.participantId,generation:request.generation,kind:request.kind,title:request.title.slice(0,200)})),sourceIndex:sources?.index,imageInputIds:ids,currentImageIds:currentImages,currentImages:images.filter(image=>currentImages.includes(image.id)),historicalImages:historicalImages.slice(-4),historicalImageCount:historicalImages.length,historicalImageNotice:historicalImages.length?'历史图片的全部准确引用见本地索引；此处只列最近四张。没有作为图像输入发送的部分须按需读取，不能假装已看到。历史视频只提供带时间点的抽样画面，不含音轨，不能声称连续观看。':undefined});
     const questionEntries = changes.filter(entry=>entry.kind==='notice'&&entry.runId===record.view.run?.id);
     const hasHandoffAnswers = questionEntries.some(entry=>entry.id.startsWith('waiting-handoff-'));
     const unanswered = questionEntries.filter(entry=>entry.role==='system'&&entry.id.startsWith(hasHandoffAnswers?'waiting-handoff-':'waiting-question-')).map(entry=>entry.text);

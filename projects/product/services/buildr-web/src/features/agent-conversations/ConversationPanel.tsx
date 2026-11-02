@@ -1,3 +1,5 @@
+import {conversationTaskLinks} from './conversation-associations';
+import type {ConversationTaskLink as TaskLink} from './types';
 import {ConversationConnectionNotice} from './ConversationConnectionNotice';
 import {ConversationPresentedFiles} from './ConversationPresentedFiles';
 import {ConversationFirstSubmissionNotice} from './ConversationFirstSubmissionNotice';
@@ -42,7 +44,7 @@ import { useConversationAttachments } from './useConversationAttachments';
 import { draftMaterialIds, firstConversationSubmissions, type FirstSubmission } from './conversation-first-submission';
 import { useConversationDraft } from './useConversationDraft';
 import { providerNames, type ConversationEntry, type ConversationView, type SendDraft, type SendPreview } from './types';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { codeApi } from '../code/api/code-api';
 import { conversationFileReference, conversationFileTarget } from './conversation-process';
 import {conversationReplyText} from './conversation-reply';
@@ -72,11 +74,12 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   // 新建入口始终恢复同一份草稿；权限继续按工作空间保存。
   const draftSlot=context.scope?.conversationId||'new';
   // 明确的入口意图优先；没有入口意图时跟随草稿自身已保存的绑定。
-  const boundTaskId=context.draftScope?(context.draftScope.taskId||''):(draft.taskId||'');
+  const boundTaskLinks:TaskLink[]=context.draftScope?(context.draftScope.taskLinks??(context.draftScope.taskId?[{workspaceId:draftWorkspaceId,taskId:context.draftScope.taskId}]:[])):(draft.taskLinks??(draft.taskId?[{workspaceId:draftWorkspaceId,taskId:draft.taskId}]:[]));
+  const boundTaskId=boundTaskLinks.find(link=>link.workspaceId===draftWorkspaceId)?.taskId||'';
   useEffect(()=>{
     if(context.scope||!context.draftScope||context.draftScope.workspaceId!==draftWorkspaceId)return;
-    if(draft.workspaceId===context.draftScope.workspaceId&&draft.taskId===context.draftScope.taskId)return;
-    draft.setWorkspace(context.draftScope.workspaceId,context.draftScope.taskId);
+    if(draft.workspaceId===context.draftScope.workspaceId&&draft.taskId===context.draftScope.taskId&&JSON.stringify(draft.taskLinks??[])===JSON.stringify(context.draftScope.taskLinks??[]))return;
+    draft.setWorkspace(context.draftScope.workspaceId,context.draftScope.taskId,context.draftScope.taskLinks);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[context.scope,context.draftScope,draftWorkspaceId,draft.workspaceId,draft.taskId]);
   const [choices,setChoices]=useState<Record<string,ConversationChoice>>({});
@@ -285,7 +288,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
       if(!context.isSelectionCurrent(operation.selection))return;
       const expectedIds=images.map(image=>image.id);
       if(JSON.stringify(draftMaterialIds(snapshot.images))!==JSON.stringify(expectedIds))throw new Error('草稿图片已变化，请核对后重新发送。');
-      submitted=firstSubmissions.save({draftId:newImages.id,workspaceId:draftWorkspaceId,input:{connectionId:choice.connectionId,modelAccountId:choice.modelAccountId,modelAccountRevision:choice.modelAccountRevision,modelAccountIdentity:choice.modelAccountIdentity,model:choice.model,serviceTier:choice.serviceTier,reasoningEffort:choice.reasoningEffort,permissionMode,text:draft.text,attachmentIds:expectedIds as NonNullable<SendDraft['attachmentIds']>,expectedDraftRevision:snapshot.revision,clientRequestId:warmSubmission.current.requestId,...(draftWorkspaceId!=='@default'&&newCwd?{cwd:newCwd.trim()}:{}),...(boundTaskId?{taskId:boundTaskId}:{})}});
+      submitted=firstSubmissions.save({draftId:newImages.id,workspaceId:draftWorkspaceId,input:{connectionId:choice.connectionId,modelAccountId:choice.modelAccountId,modelAccountRevision:choice.modelAccountRevision,modelAccountIdentity:choice.modelAccountIdentity,model:choice.model,serviceTier:choice.serviceTier,reasoningEffort:choice.reasoningEffort,permissionMode,text:draft.text,attachmentIds:expectedIds as NonNullable<SendDraft['attachmentIds']>,expectedDraftRevision:snapshot.revision,clientRequestId:warmSubmission.current.requestId,...(draftWorkspaceId!=='@default'&&newCwd?{cwd:newCwd.trim()}:{}),...(boundTaskLinks.length?{taskLinks:boundTaskLinks}:{})}});
     }
     try{
       const result=await context.api.startDraft(submitted.workspaceId,submitted.draftId,submitted.input);
@@ -471,12 +474,12 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
       if(context.isSelectionCurrent(selection))await context.refresh();
     }catch(failure){if(context.isSelectionCurrent(selection))fail(failure);}finally{actions.finish(key);}
   };
-  const updateMetadata=async(input:{title?:string;hidden?:boolean;taskId?:string|null;taskIds?:string[]})=>{if(!chat)return;const selection=context.getSelection();try{context.apply(await context.api.update(chat,input),chat.revision);if(context.isSelectionCurrent(selection)){setRename(false);if(input.hidden!==undefined)context.setView('history');}return true;}catch(failure){if(context.isSelectionCurrent(selection))fail(failure);return false;}};
-  const assignTask=async(ids:string[]):Promise<boolean>=>{
-    if(chat)return Boolean(await updateMetadata({taskIds:ids}));
-    const next=ids[0];
-    draft.setTaskId(next);setPrepared(null);
-    context.newConversation({preserveVisibility:true,scope:{workspaceId:draftWorkspaceId,...(next?{taskId:next}:{})}});
+  const updateMetadata=async(input:{title?:string;hidden?:boolean;taskId?:string|null;taskIds?:string[];taskLinks?:TaskLink[]})=>{if(!chat)return;const selection=context.getSelection();try{context.apply(await context.api.update(chat,input),chat.revision);if(context.isSelectionCurrent(selection)){setRename(false);if(input.hidden!==undefined)context.setView('history');}return true;}catch(failure){if(context.isSelectionCurrent(selection))fail(failure);return false;}};
+  const assignTask=async(links:TaskLink[]):Promise<boolean>=>{
+    if(chat)return Boolean(await updateMetadata({taskLinks:links}));
+    const local=links.find(link=>link.workspaceId===draftWorkspaceId)?.taskId;
+    draft.setTaskLinks(links);setPrepared(null);
+    context.newConversation({preserveVisibility:true,scope:{workspaceId:draftWorkspaceId,taskId:local,taskLinks:links}});
     return true;
   };
   const generateTitle=async()=>{
@@ -519,7 +522,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   const workspace=workspaces.find(item=>item.id===chat?.workspaceId);
   const titleStatus=chat?.titleState;
   const titleLabels={pending:'等待执行开始后生成标题，首轮结束后可补生成',generating:'正在生成标题',generated:'标题已自动生成',manual:'标题已手动设置',failed:'标题未能自动生成',unavailable:'当前无法自动生成标题',unknown:'旧对话未记录标题生成状态'};
-  const settings=<div className="ac-location-settings">{chat&&<><strong>标题</strong><span>{titleLabels[titleStatus?.status??'unknown']}</span>{titleStatus?.reason&&<small>{titleStatus.reason}</small>}{canGenerateConversationTitle(chat)&&<Button size="small" loading={generatingTitle} onClick={()=>void generateTitle()}>生成简短标题</Button>}</>}<strong>工作空间</strong>{chat?<><span>{workspace?.name||(chat.workspaceId==='@default'?'默认工作空间':chat.workspaceId)}</span><code>{chat.cwd}</code>{(chat.taskIds??(chat.taskId?[chat.taskId]:[])).length>0&&<small>关联任务：{(chat.taskIds??[chat.taskId]).join('、')}</small>}</>:<><Select classNames={{popup:{root:'ac-panel-popup'}}} aria-label="新对话工作空间" allowClear={draftWorkspaceId!=='@default'} value={draftWorkspaceId==='@default'?undefined:draftWorkspaceId} placeholder="默认工作空间" options={workspaces.filter(item=>item.id!=='@default').map(item=>({value:item.id,label:item.name}))} onChange={value=>{const workspaceId=value||'@default';draft.setWorkspace(workspaceId);context.newConversation({preserveVisibility:true,scope:{workspaceId}});setPrepared(null);}}/></>}</div>;
+  const settings=<div className="ac-location-settings">{chat&&<><strong>标题</strong><span>{titleLabels[titleStatus?.status??'unknown']}</span>{titleStatus?.reason&&<small>{titleStatus.reason}</small>}{canGenerateConversationTitle(chat)&&<Button size="small" loading={generatingTitle} onClick={()=>void generateTitle()}>生成简短标题</Button>}</>}<strong>工作空间</strong>{chat?<><span>{workspace?.name||(chat.workspaceId==='@default'?'默认工作空间':chat.workspaceId)}</span><code>{chat.cwd}</code></>:<><Select classNames={{popup:{root:'ac-panel-popup'}}} aria-label="新对话工作空间" allowClear={draftWorkspaceId!=='@default'} value={draftWorkspaceId==='@default'?undefined:draftWorkspaceId} placeholder="默认工作空间" options={workspaces.filter(item=>item.id!=='@default').map(item=>({value:item.id,label:item.name}))} onChange={value=>{const workspaceId=value||'@default';draft.setWorkspace(workspaceId);context.newConversation({preserveVisibility:true,scope:{workspaceId}});setPrepared(null);}}/></>}</div>;
   const visibleEntries=chat?visibleConversationEntries(chat.entries):[];
   const transcript=groupConversationStream(visibleEntries,chat?.run,chat?.retainedRuns);
   const liveToolId=chat?.run?.status==='running'?[...visibleEntries].reverse().find(entry=>entry.kind==='tool'&&entry.runId===chat.run!.id)?.id??null:null;
@@ -636,7 +639,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
           input={{id:embedded?'agent-child-conversation-input-'+chat?.id:'agent-conversation-input','aria-label':embedded?'子对话输入':'对话输入',disabled:context.loading||Boolean(context.scope&&!chat),placeholder:waitingHandoffAvailable?'输入新要求，将与已有记录一起交给所选模型…':waitingQuestions.length?'可发送新要求；回答原问题请用上方卡片…':supplementing?'继续补充要求':locked?'可发送新要求或更换选择，原执行仍会保留…':'提出问题，或描述想完成的工作',value:draft.text,onChange:event=>{draft.setText(event.target.value);setPrepared(null);},autoSize:{minRows:2,maxRows:8},onCompositionStart:()=>{composing.current=true;},onCompositionEnd:()=>{composing.current=false;},onKeyDown:event=>{if(shouldSendOnKey({key:event.key,shiftKey:event.shiftKey,isComposing:composing.current||event.nativeEvent.isComposing,keyCode:event.nativeEvent.keyCode})){event.preventDefault();if(canSend)void prepare(false);}}}}
           access={<><ConversationAgentSelect connections={context.connections} value={choice} disabled={sending} onChange={select}/><Select<PermissionMode> className="ac-choice ac-permission-select" aria-label="执行权限" placement="topLeft" variant="borderless" size="small" suffixIcon={null} labelRender={({label})=><span className="ac-permission-label"><SafetyCertificateOutlined/>{label}</span>} value={permissionMode} disabled={sending||uploading||context.loading||Boolean(context.scope&&!chat)} popupMatchSelectWidth={false} classNames={{popup:{root:'ac-panel-popup ac-choice-popup'}}} title="权限更改用于本对话下一轮。完全访问会跳过逐次工具审批；业务问题仍需回复，系统与厂家限制继续有效。" options={[{value:'default',label:'默认权限',disabled:!supportsConversationPermission(connection,'default')},{value:'full-access',label:'完全访问',disabled:!supportsConversationPermission(connection,'full-access')}]} onChange={selectPermission}/></>}
           execution={<><ConversationOptions showAgent={false} key={choiceKey+':'+context.side+':'+context.open} connections={context.connections} value={choice} disabled={sending} onChange={select}/><Button type="primary" shape="circle" icon={<ArrowUpOutlined/>} aria-label="发送对话" title={waitingHandoffAvailable?waitingHandoffLabel:'发送'} disabled={!canSend||(!waitingHandoffAvailable&&!sendText.trim()&&!images.length)} loading={sending} onClick={()=>void prepare(false)}/></>}/>
-        <div className="ac-location-meta"><span>所属工作空间：<span className="ac-location-name" title={(chat?.cwd||newCwd)||undefined}>{chat?(workspace?.name||(chat.workspaceId==='@default'?'默认工作空间':chat.workspaceId)):(workspaces.find(item=>item.id===draftWorkspaceId)?.name||'默认工作空间')}</span></span>{chat?chat.workspaceId!=='@default'&&<span>· {(chat.taskIds??(chat.taskId?[chat.taskId]:[])).length>0&&'关联任务：'}{(chat.taskIds??(chat.taskId?[chat.taskId]:[])).map(id=><Fragment key={id}><Link className="ac-task-link" data-associated-task={id} onClick={()=>context.setFull(false)} to={'/workspaces/'+encodeURIComponent(chat.workspaceId)+'/tasks/'+encodeURIComponent(id)} title={'打开关联任务 '+id}>{id}</Link> </Fragment>)}<ConversationTaskLink workspaceId={chat.workspaceId} taskIds={chat.taskIds??(chat.taskId?[chat.taskId]:[])} onAssign={assignTask}/></span>:draftWorkspaceId!=='@default'&&<span>· {boundTaskId&&<>关联任务：<Link className="ac-task-link" to={'/workspaces/'+encodeURIComponent(draftWorkspaceId)+'/tasks/'+encodeURIComponent(boundTaskId)} title={'打开关联任务 '+boundTaskId}>{boundTaskId}</Link> </>}<ConversationTaskLink workspaceId={draftWorkspaceId} taskId={boundTaskId||undefined} onAssign={assignTask}/></span>}<small className="ac-location-keys">Enter 发送 · Shift+Enter 换行</small></div>
+        <div className="ac-location-meta"><span>所属工作空间：<span className="ac-location-name" title={(chat?.cwd||newCwd)||undefined}>{chat?(workspace?.name||(chat.workspaceId==='@default'?'默认工作空间':chat.workspaceId)):(workspaces.find(item=>item.id===draftWorkspaceId)?.name||'默认工作空间')}</span></span><span>· <ConversationTaskLink key={chat?chat.workspaceId+':'+chat.id:'draft'} taskLinks={chat?conversationTaskLinks(chat):boundTaskLinks} onAssign={assignTask} onNavigate={()=>context.setFull(false)}/></span><small className="ac-location-keys">Enter 发送 · Shift+Enter 换行</small></div>
       </div>
     </>}
     <ConversationHandoffDrawer open={previewOpen} side={context.side} material={viewedHandoff?.handoff??prepared?.preview.handoff??null} onChooseModel={!viewedHandoff&&prepared&&!prepared.preview.fits?()=>{setPreviewOpen(false);requestAnimationFrame(()=>document.getElementById(panelId)?.querySelector<HTMLButtonElement>('.ac-model-trigger')?.click());}:undefined} onContinue={!viewedHandoff&&prepared&&prepared.preview.fits?()=>{if(prepared.input.continueRunId&&!prepared.input.waitingHandoff)void prepare(false,false,prepared.input.continueRunId);else void commit(prepared);}:undefined} continueLabel={prepared?.input.waitingHandoff?(prepared.input.waitingHandoff.answers?.length?'回答并交接':prepared.input.continueRunId?'交接并继续':'交接并发送'):undefined} continuing={sending} continueDisabled={!canSend||Boolean(chat?.pendingSend)} delivery={viewedHandoff&&viewedHandoff.status!=='accepted'?viewedHandoff.status==='failed'?'failed':'unknown':undefined} received={viewedHandoff?.status==='accepted'} issue={viewedHandoff&&viewedHandoff.status!=='accepted'?'尚未确认接收，请先核对原执行。':prepared&&!prepared.preview.fits?prepared.preview.diagnostic:undefined} onClose={()=>{setPreviewOpen(false);setSelectedHandoff(null);}}/>

@@ -4,36 +4,71 @@ import type {AgentConversationFixture} from './agent-conversation-fixture.ts';
 /** tasks 场景使用独立准备的对话现场。 */
 export async function runTasksScenarios(fixture:AgentConversationFixture){
   const {assertFixed,capture,chooseAgent,chooseOption,closeConversation,connections,input,openDesktopConversation,page,panel,reopen,run,sentInputs,step,update,workspaceId,workspaceUrl}=fixture;
-await step('任务对话入口零一多：绑定跟随草稿，发送才建会话，一条直接打开，多条明确选择',async()=>{
-      fixture.holdTaskList=true;const taskListRead=new Promise<void>(resolve=>{fixture.taskListStarted=resolve;});
-      await page.goto(workspaceUrl+'/tasks');await page.locator('#task-table-body tr.ant-table-row').first().click();await taskListRead;await page.locator('#task-detail-title:visible').waitFor();
-      const entry=page.locator('[data-task-internal-conversations]:visible'),taskConversationLink=entry.getByRole('button',{name:'任务对话',exact:true});
-      await entry.getByText('读取中…',{exact:false}).waitFor();await taskConversationLink.waitFor();assert.equal(await taskConversationLink.isDisabled(),true);assert.equal(await taskConversationLink.getAttribute('aria-busy'),'true');
-      fixture.releaseTaskList!();
-      await entry.getByText('任务对话',{exact:true}).waitFor();assert.equal(await taskConversationLink.isEnabled(),true);assert.equal(await taskConversationLink.getAttribute('aria-busy'),'false');
-      const before=fixture.creations,sendsBefore=fixture.sends;await taskConversationLink.click();await panel().locator('.ac-location-meta').filter({hasText:'关联任务：'}).waitFor();assert.equal(fixture.creations,before,'打开任务对话只进入草稿，不创建会话');assert.equal(await panel().getAttribute('data-conversation-id'),null);assert.equal(await page.locator('.pane-left:visible').count(),1);assert.equal(await page.locator('.pane-right:visible').count(),1);
-      await input().fill('从任务详情继续的工作');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().locator('[data-run-status="running"]').waitFor();assert.equal(fixture.creations,before+1,'首次发送才创建任务会话');assert.equal(fixture.sends,sendsBefore+1);assert.ok(fixture.conversation.taskId);assert.equal(await panel().getAttribute('data-conversation-id'),fixture.conversation.id);assert.ok((await panel().locator('.ac-location-meta').innerText()).includes('关联任务：'+fixture.conversation.taskId));await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();await capture(page,'agent-conversation-task.png');
-      const originalTask=fixture.conversation.taskId;
-      await panel().getByRole('button',{name:'管理关联任务',exact:true}).click();
-      const second=page.locator('.ac-task-associate:visible button[aria-pressed="false"]').first();
-      await second.waitFor();const secondTask=(await second.locator('small').innerText()).trim();await second.click();
-      await panel().locator('[data-associated-task="'+secondTask+'"]').waitFor();
-      assert.deepEqual(fixture.conversation.taskIds,[originalTask,secondTask]);
-      await page.reload();await panel().locator('[data-associated-task="'+secondTask+'"]').waitFor();
-      await panel().locator('[data-associated-task="'+secondTask+'"]').click();
-      await page.locator('[data-task-internal-conversations="'+secondTask+'"]:visible').waitFor();
-      await closeConversation();await page.locator('[data-task-internal-conversations="'+secondTask+'"]:visible').getByRole('button',{name:'任务对话',exact:true}).click();
-      await page.locator('#agent-conversation-panel[data-conversation-id="'+fixture.conversation.id+'"]').waitFor();assert.equal(await panel().getAttribute('data-conversation-id'),fixture.conversation.id);
-      await panel().locator('[data-associated-task="'+originalTask+'"]').click();
-      await page.locator('[data-task-internal-conversations="'+originalTask+'"]:visible').waitFor();
-      await closeConversation();await taskConversationLink.click();await panel().waitFor();assert.equal(fixture.creations,before+1,'已有一条时直接恢复，不另建');
-      fixture.additionalConversations=[{...fixture.conversation,id:'task-second',workspaceId:workspaceId,title:'另一段任务对话',entries:[],participants:[],activity:undefined}];await page.reload();await page.locator('[data-task-internal-conversations]:visible').getByText('任务对话 · 2',{exact:false}).waitFor();await closeConversation();await page.locator('[data-task-internal-conversations]:visible').getByRole('button',{name:'任务对话',exact:true}).click();await page.getByText('另一段任务对话',{exact:true}).click();await page.locator('#agent-conversation-panel[data-conversation-id="task-second"]').waitFor();assert.equal(await panel().getAttribute('data-conversation-id'),'task-second');await page.locator('.ant-popover:visible').waitFor({state:'hidden'});
-      // 绑定跟随工作空间草稿：入口提出绑定后，跨入口新建不丢绑定，移除后发送不带任务
-      await taskConversationLink.click();await page.locator('.ac-task-picker:visible').getByRole('button',{name:'新建任务对话',exact:true}).click();await panel().waitFor();await panel().locator('.ac-location-meta').filter({hasText:'关联任务：'}).waitFor();assert.equal(fixture.creations,before+1,'任务入口新对话仍是草稿');assert.equal(await panel().getAttribute('data-conversation-id'),null);
-      await input().fill('绑定跟随草稿的工作');await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().waitFor();assert.equal(await input().inputValue(),'绑定跟随草稿的工作','全局新建沿用同一工作空间草稿');await panel().locator('.ac-location-meta').filter({hasText:'关联任务：'}).waitFor();
-      await panel().getByRole('button',{name:'管理关联任务',exact:true}).click();await page.locator('.ac-task-associate:visible').getByRole('button',{name:/^解除关联 /}).click();assert.equal(await panel().locator('.ac-location-meta').filter({hasText:'关联任务：'}).count(),0,'移除绑定后草稿不再带任务');assert.equal(await input().inputValue(),'绑定跟随草稿的工作','移除绑定保留草稿文本');
-      await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().locator('[data-run-status="running"]').waitFor();assert.equal(fixture.creations,before+2,'解除绑定后发送仍只建一次会话');assert.ok(!fixture.conversation.taskId,'解除绑定后发送不关联任务');await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();assert.equal(fixture.sends,sendsBefore+2);
-    });
+await step('关联数量浮层零一多、跨空间同码精确搜索及双向导航',async()=>{
+  const taskId='browser-associated-task',remote=fixture.otherWorkspaceId;
+  assert.ok(remote,'夹具必须提供第二个真实登记空间');
+  const popup=()=>page.locator('.ac-association-popup.is-open:visible .ac-association-body');
+  const taskEntry=()=>page.locator('[data-task-internal-conversations="'+taskId+'"]:visible');
+  const taskButton=()=>taskEntry().getByRole('button',{name:'关联对话',exact:true});
+  const conversationButton=()=>panel().getByRole('button',{name:'关联任务',exact:true});
+  const linkedRow=(space:string)=>popup().locator('.ac-association-row').filter({has:page.locator('[data-associated-workspace="'+space+'"][data-associated-task="'+taskId+'"]')});
+  fixture.holdTaskList=true;const started=new Promise<void>(resolve=>{fixture.taskListStarted=resolve;});
+  await page.goto(workspaceUrl+'/tasks/'+taskId);await started;await taskButton().waitFor();
+  assert.match(await taskButton().innerText(),/未确认/);assert.equal(await taskButton().isEnabled(),true);
+  await taskButton().click();await popup().getByText('正在读取关联对话…',{exact:true}).waitFor();fixture.releaseTaskList!();
+  await popup().getByText('暂无关联对话。',{exact:true}).waitFor();assert.match(await taskButton().innerText(),/0/);
+  const before=fixture.creations,sends=fixture.sends;
+  assert.equal(fixture.creations,before,'展开零项浮层不创建对话');
+  await popup().getByRole('button',{name:'新建任务对话',exact:true}).click();await input().waitFor();
+  assert.equal(await panel().getAttribute('data-conversation-id'),null);assert.equal(fixture.creations,before);
+  assert.match(await conversationButton().innerText(),/1/);assert.equal((await panel().locator('.ac-location-meta').innerText()).includes(taskId),false,'主入口不常驻编码');
+  await input().fill('跨空间关联的实际工作');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().locator('[data-run-status="running"]').waitFor();
+  assert.equal(fixture.creations,before+1);assert.equal(fixture.conversation.taskId,taskId);
+  await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
+  const originalId=fixture.conversation.id,cwd=fixture.conversation.cwd;
+  await conversationButton().hover();await popup().getByText('已关联任务',{exact:true}).waitFor();
+  const triggerBox=await conversationButton().boundingBox(),popupBox=await popup().boundingBox();assert.ok(popupBox!.y+popupBox!.height<=triggerBox!.y+10,'底部入口向上展开');
+  const taskMatcher='**/api/v1/workspaces/'+workspaceId+'/tasks?**';let taskSearchPages=0;
+  const taskPager=async(route:any)=>{
+    const url=new URL(route.request().url());if(url.searchParams.get('status')!=='all'||url.searchParams.get('pageSize')!=='100')return route.fallback();
+    taskSearchPages++;const cursor=url.searchParams.get('cursor');url.searchParams.delete('cursor');
+    const response=await route.fetch({url:url.toString()}),body=await response.json();
+    await route.fulfill({json:cursor?body:{...body,tasks:[],hasMore:true,nextCursor:'association-next'}});
+  };
+  await page.route(taskMatcher,taskPager);
+  const search=popup().getByRole('textbox',{name:'精确搜索任务',exact:true});await search.fill(taskId);
+  await page.waitForFunction(()=>document.querySelectorAll('.ac-association-popup .ac-association-candidate').length===2);
+  assert.ok(taskSearchPages>=2,'精确搜索必须读取包含匹配的后续页');await page.unroute(taskMatcher,taskPager);
+  const candidate=popup().locator('.ac-association-candidate').filter({hasText:'other-workspace'});await candidate.click();
+  await page.waitForFunction(()=>document.querySelector('#agent-conversation-panel .ac-association-trigger')?.textContent?.includes('2'));
+  assert.deepEqual(fixture.conversation.taskLinks,[{workspaceId,taskId},{workspaceId:remote,taskId}]);
+  assert.equal(fixture.conversation.cwd,cwd);assert.equal(fixture.conversation.workspaceId,workspaceId);assert.equal(fixture.sends,sends+1);
+  assert.equal(await popup().isVisible(),true,'新增后保持浮层打开');await search.fill('browser-associated');await popup().getByText('没有精确匹配。',{exact:true}).waitFor();
+  await page.keyboard.press('Escape');await popup().waitFor({state:'hidden'});await conversationButton().click();
+  await linkedRow(remote).locator('.ac-association-open').click();await page.waitForURL('**/workspaces/'+remote+'/tasks/'+taskId);
+  await taskButton().waitFor();await closeConversation();await taskButton().click();await popup().locator('[data-associated-conversation="'+originalId+'"]').click();
+  await input().waitFor();assert.equal(await panel().getAttribute('data-conversation-id'),originalId,'异空间任务打开原空间对话');assert.equal(fixture.creations,before+1);
+  await conversationButton().click();await linkedRow(remote).getByRole('button',{name:'解除关联 '+taskId,exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('#agent-conversation-panel .ac-association-trigger')?.textContent?.includes('1'));
+  assert.equal(await popup().isVisible(),true);assert.deepEqual(fixture.conversation.taskLinks,[{workspaceId,taskId}]);await page.keyboard.press('Escape');
+  await closeConversation();await taskButton().click();await popup().getByText('暂无关联对话。',{exact:true}).waitFor();
+  await popup().getByRole('textbox',{name:'精确搜索对话',exact:true}).fill(fixture.conversation.title);
+  await popup().locator('.ac-association-candidate').filter({hasText:originalId}).click();
+  await popup().locator('[data-associated-conversation="'+originalId+'"]').waitFor();assert.equal(await popup().isVisible(),true,'任务侧新增不关闭');
+  await popup().locator('[data-associated-conversation="'+originalId+'"]').click();await input().waitFor();
+  assert.equal(fixture.conversation.taskLinks.length,2);assert.equal(fixture.sends,sends+1,'两端维护不发送消息');
+  await input().focus();await conversationButton().focus();await popup().waitFor();await page.keyboard.press('Escape');await popup().waitFor({state:'hidden'});
+  await page.setViewportSize({width:390,height:844});await conversationButton().click();await popup().waitFor();
+  await page.waitForFunction(()=>{const node=[...document.querySelectorAll<HTMLElement>('.ac-association-body')].find(item=>item.getClientRects().length);if(!node)return false;const r=node.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight;});await capture(page,'association-cross-workspace-mobile.png');
+  await page.keyboard.press('Escape');await page.setViewportSize({width:1600,height:1000});await conversationButton().click();await popup().waitFor();await capture(page,'association-cross-workspace-desktop.png');await page.keyboard.press('Escape');
+  // Leave the pre-existing multi-conversation fixture for the following independent controls.
+  fixture.additionalConversations=[{...fixture.conversation,id:'task-second',title:'另一段任务对话',entries:[],participants:[],activity:undefined}];
+  await page.reload();await input().waitFor();await taskButton().click();await popup().locator('[data-associated-conversation="task-second"]').waitFor();assert.match(await taskButton().innerText(),/2/);
+  await popup().locator('[data-associated-conversation="task-second"]').click();await input().waitFor();assert.equal(await panel().getAttribute('data-conversation-id'),'task-second');
+  // Return to the original task and original conversation without implicit selection.
+  await conversationButton().click();await linkedRow(workspaceId).locator('.ac-association-open').click();await page.waitForURL('**/workspaces/'+workspaceId+'/tasks/'+taskId);
+  await closeConversation();await taskButton().click();await popup().locator('[data-associated-conversation="'+originalId+'"]').click();await input().waitFor();
+});
 
 await step('窄工作区同时打开任务与对话时，内容标题栏填满边界且按钮不互相遮挡',async()=>{
       await page.setViewportSize({width:1068,height:820});
