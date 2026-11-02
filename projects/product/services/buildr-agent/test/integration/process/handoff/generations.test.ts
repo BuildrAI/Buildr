@@ -1,3 +1,4 @@
+import {readProcessInstances} from '../../../../src/process/ownership.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import fs from 'node:fs';
@@ -55,6 +56,8 @@ test('parallel versions retain old controls, dispatch durable next instructions 
     await observer.lifecycle.requestRuntime({expectedGeneration:firstIdentity.generation,runtime:next});
     const adopted=await until(()=>observer!.lifecycle.status(),value=>value.identity.runtime.digest===next.digest);
     assert.notEqual(adopted.identity.generation,firstIdentity.generation);
+    const changed=readProcessInstances(dataRoot).find(record=>record.identity.generation===adopted.identity.generation)?.backendChange;
+    assert.equal(changed?.reason,'runtime-content-changed');assert.equal(changed?.fromGeneration,firstIdentity.generation);assert.equal(changed?.fromDigest,runtime.digest);assert.equal(changed?.toDigest,next.digest);assert.ok(Number.isFinite(Date.parse(changed!.detectedAt)));
     assert.ok(isLive(firstIdentity.pid));assert.ok(fs.existsSync(runtime.entry));
     approval=await until(()=>main!.call('conversations.read',[scope,approval.id]),value=>value.requests.length===1);
     const activity=await observer.operations.conversations.listAll([scope],{activityState:'running'});

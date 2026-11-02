@@ -22,6 +22,7 @@ import { PendingSends } from './pending-sends.ts';
 import { PendingSendRepository } from '../persistence/pending-send-repository.ts';
 import { cleanupStoppedProcesses } from './cleanup.ts';
 import { inspectAgentStorage, collectAgentStorage } from '../application/storage-maintenance.ts';
+import { runtimeChange } from './runtime-change.ts';
 
 interface PendingRuntime { runtime: AgentRuntimeUnit; state: 'waiting' | 'switching' | 'parallel-starting' | 'failed'; coordinatorPid?: number; handoffFile?: string; diagnostic?: string }
 export async function startAgentExecutionServer(options: ProcessBootstrap & { serviceOptions?: Pick<AgentServiceOptions, 'executors' | 'modelProviders' | 'programManager'> }) {
@@ -30,8 +31,9 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
   let abortStart: (() => Promise<void>) | undefined;
   try {
   const hosts = new AgentHostRegistry();
+  const backendChange = runtimeChange(readProcessRecord(options.dataRoot), options.runtime.digest, new Date().toISOString());
   const retainedOwners=new Map(readProcessInstances(options.dataRoot).map(record=>[record.identity.generation,record.identity]));
-  const service = createAgentService({ ...options.serviceOptions, dataRoot: options.dataRoot, legacySourceId: options.legacySourceId, get autoContinueInterrupted() { return options.autoContinueInterrupted; }, host: hosts, controlSupersededRun:async(scope,id,control,action)=>{
+  const service = createAgentService({ ...options.serviceOptions, backendChange, dataRoot: options.dataRoot, legacySourceId: options.legacySourceId, get autoContinueInterrupted() { return options.autoContinueInterrupted; }, host: hosts, controlSupersededRun:async(scope,id,control,action)=>{
     const target=await recipient(scope,id,control.generation);
     if(target)return forward(target,'/operations',{contract:AGENT_EXECUTION_CONTRACTS.operations,sourceId:executionScopeRef(scope,options.legacySourceId).sourceId,operation:action==='stop'?'conversations.stop':'conversations.observeRun',args:[scope,id,control]});
     return action==='stop'?service.conversations.stop(scope,id,control):service.conversations.observeRun(scope,id,control);
@@ -273,7 +275,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     } finally { inflight--; }
   });
   abortStart = async () => { await channel.close(); await service.close(); };
-  const processRecord = (): ProcessRecord => ({identity,origin:channel.origin,token:options.token,retiring});
+  const processRecord = (): ProcessRecord => ({identity,origin:channel.origin,token:options.token,retiring,...(backendChange ? {backendChange} : {})});
   writeProcessInstance(options.dataRoot, processRecord());
   writePrivate(path.join(controlRoot(options.dataRoot), 'instance.json'), processRecord());
   let closeWork: Promise<void> | undefined;

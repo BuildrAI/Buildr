@@ -336,6 +336,7 @@ export interface ConversationEntry {
   handoff?: HandoffMaterial;
   /** Durable control transfer; native identity is not an execution-choice change. */
   nativeSession?: {
+    backendChange?: BackendRuntimeChange;
     reason: 'backend-adoption' | 'session-replacement';
     description: string;
     from: { contextId?: string; generation?: string };
@@ -516,7 +517,16 @@ export interface ServiceEvent {
   revision: string;
   payload: { conversation?: ConversationView; connection?: ConnectionView };
 }
+export interface BackendRuntimeChange {
+  reason: 'runtime-content-changed' | 'process-restarted';
+  detectedAt: string;
+  fromGeneration: string;
+  fromDigest: string;
+  toDigest: string;
+}
 export interface AgentServiceOptions {
+  /** Process-owned observation; never inferred from user messages or model choice. */
+  backendChange?: BackendRuntimeChange;
   /** Process-owned local control instructions; never includes authentication secrets. */
   conversationControl?: (scope:string,id:string)=>string;
   controlSupersededRun?: (scope:string,id:string,input:{expectedRevision:string;runId:string;participantId:string;generation:string},action:'stop'|'observe')=>Promise<unknown>;

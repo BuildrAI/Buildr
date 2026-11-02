@@ -110,6 +110,7 @@ export class ConversationApplication {
   private readonly forks: ConversationForks;
   private readonly children: ConversationChildren;
   private readonly options: {
+    backendChange?: AgentServiceOptions['backendChange'];
     conversationControl?: (scope:string,id:string)=>string;
     controlSupersededRun?: AgentServiceOptions['controlSupersededRun'];
     repository: ConversationRepository;
@@ -1158,7 +1159,7 @@ export class ConversationApplication {
           createdAt:this.options.now(), kind:'handoff', role:'system', runId, participantId:participant.id,
           provider:participant.provider, status:'sending',
           text:reason==='backend-adoption'?'后台已接管原生会话，等待本轮受理。':'执行选择或可用上下文变化，已准备新的原生会话，等待本轮受理。',
-          nativeSession:{reason,description:reason==='backend-adoption'?'原轮控制已释放，新后台复用原生会话':prepared.preview.switching?'用户执行选择变化':previousRun&&unfinishedRun(previousRun)?'原轮仍有在途工作，新要求使用独立会话':'原上下文不可复用，使用新的原生会话',from:{contextId:fromContext,generation:previousGeneration},to:{contextId:toContext,generation:this.options.generation}},
+          nativeSession:{reason,...(this.options.backendChange?.fromGeneration===previousGeneration?{backendChange:this.options.backendChange}:{}),description:reason==='backend-adoption'?'原轮控制已释放，新后台复用原生会话':prepared.preview.switching?'用户执行选择变化':previousRun&&unfinishedRun(previousRun)?'原轮仍有在途工作，新要求使用独立会话':'原上下文不可复用，使用新的原生会话',from:{contextId:fromContext,generation:previousGeneration},to:{contextId:toContext,generation:this.options.generation}},
           });
           this.save(current);
         });

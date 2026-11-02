@@ -5,11 +5,11 @@ import os from 'node:os';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {createAgentService} from '../../src/index.ts';
-import type {AgentExecutor,AgentRuntime,ExecutorObservation} from '../../src/contracts.ts';
+import type {AgentExecutor,AgentRuntime,ExecutorObservation,AgentServiceOptions} from '../../src/contracts.ts';
 import type {ModelProvider} from '../../src/model-access/contracts.ts';
 import {ConversationRepository} from '../../src/persistence/conversation-repository.ts';
 
-async function fixture({proof=true,shared=false,stopFails=false,closeStartsWork=false,executionUnknown=false,modelHold=false,upgrade=false,closeWait=false,unaccepted=false,unacceptedProof=true,daemon=false,oldOwnerAlive=false,rejectDispatch=false}={}){
+async function fixture({proof=true,shared=false,stopFails=false,closeStartsWork=false,executionUnknown=false,modelHold=false,upgrade=false,closeWait=false,unaccepted=false,unacceptedProof=true,daemon=false,oldOwnerAlive=false,rejectDispatch=false,backendChange=undefined as AgentServiceOptions['backendChange']}={}){
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-resource-lifecycle-'));
  const connection=upgrade?'codex':'local',original=path.join(root,'original'),installed=path.join(root,'installed');
  if(upgrade){fs.writeFileSync(original,'old');fs.writeFileSync(installed,'new');}
@@ -47,7 +47,7 @@ async function fixture({proof=true,shared=false,stopFails=false,closeStartsWork=
   };common=runtime;return runtime;
  }};
  const provider:ModelProvider={id:'fixture',label:'Fixture',async open(){return {protocol:'chat-completions',inspect:async()=>({status:'ready',models:[{id:'model',label:'Model',images:false,tools:true},{id:'other-model',label:'Other',images:false,tools:true}]}),beginLogin:async()=>{},cancelLogin:async()=>{},infer:async()=>{if(!modelHold)throw Error('paid model forbidden');modelStarted=true;await new Promise<void>(resolve=>{releaseModel=resolve;});return Response.json({id:'auxiliary',object:'chat.completion',choices:[{index:0,message:{role:'assistant',content:'finished'},finish_reason:'stop'}]});},close:async()=>{}};}};
- const service=createAgentService({dataRoot:root,generationAlive:()=>oldOwnerAlive,executors:[executor],modelProviders:[provider],...(upgrade?{programRelease:async()=>({latestVersion:'0.166.0',source:'https://fixture.invalid'}),programManager:{isManaged:(_provider:string,file:string)=>file===installed,async discover(input:{boundExecutable?:string}){const file=input.boundExecutable??original;return {candidates:[{executable:file,source:'managed' as const,label:'Fixture',version:file===installed?'0.166.0':'0.165.0',compatible:true}],installation:{label:'Fixture',version:'0.166.0',url:'https://fixture.invalid',canInstall:true}};},async install(){return installed;}}}:{}),resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
+ const service=createAgentService({backendChange,dataRoot:root,generationAlive:()=>oldOwnerAlive,executors:[executor],modelProviders:[provider],...(upgrade?{programRelease:async()=>({latestVersion:'0.166.0',source:'https://fixture.invalid'}),programManager:{isManaged:(_provider:string,file:string)=>file===installed,async discover(input:{boundExecutable?:string}){const file=input.boundExecutable??original;return {candidates:[{executable:file,source:'managed' as const,label:'Fixture',version:file===installed?'0.166.0':'0.165.0',compatible:true}],installation:{label:'Fixture',version:'0.166.0',url:'https://fixture.invalid',canInstall:true}};},async install(){return installed;}}}:{}),resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
  await service.connections.connect(connection,{expectedRevision:'unconfigured',...(upgrade?{executable:original}:{})});const account=await service.models.accounts.add({provider:'fixture'});const checked=await service.models.accounts.check(account.id);await service.models.accounts.preferences(account.id,{expectedRevision:checked.revision,models:[{id:'model',enabled:true},{id:'other-model',enabled:true}]});
  async function wait(predicate:()=>boolean){for(let n=0;n<300;n++){if(predicate())return;await new Promise(r=>setTimeout(r,5));}assert.fail('resource state did not settle');}
  async function start(text:string){const c=await service.conversations.create('workspace',{}),draft={expectedRevision:c.revision,connectionId:connection,modelAccountId:account.id,model:'model',text},preview=service.conversations.prepareSend('workspace',c.id,draft);service.conversations.send('workspace',c.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});await wait(()=>{const run=service.conversations.read('workspace',c.id).run;return unaccepted&&text==='no-receipt'?run?.status==='unknown':run?.accepted===true;});if(text!=='hold')await wait(()=>!service.activity().reasons.some(r=>['execution','title','recovery','observation'].includes(r.kind)));return service.conversations.read('workspace',c.id);}
@@ -297,7 +297,7 @@ test('idle SDK daemon closes before physical release; post-close work still bloc
 });
 
 test('same selection waits for live old owner, then adopts the exact released context',async()=>{
- const f=await fixture({oldOwnerAlive:true});try{
+ const f=await fixture({oldOwnerAlive:true,backendChange:{reason:'runtime-content-changed',detectedAt:'time',fromGeneration:'old-generation',fromDigest:'before',toDigest:'after'}});try{
   let chat=await f.start('done');
   const repository=new ConversationRepository(path.join(f.root,'agent-service'));
   const record=repository.readConversation(chat.id)!;
@@ -317,6 +317,34 @@ test('same selection waits for live old owner, then adopts the exact released co
   assert.equal(chat.participants.length,1);assert.equal(chat.participants[0].contextId,context);
   const event=chat.entries.find(entry=>entry.nativeSession);
   assert.equal(event?.nativeSession?.reason,'backend-adoption');assert.equal(event?.nativeSession?.from.generation,'old-generation');
+  assert.equal(event?.nativeSession?.backendChange?.fromDigest,'before');assert.equal(event?.nativeSession?.backendChange?.reason,'runtime-content-changed');
+  assert.equal(event?.nativeSession?.to.contextId,context);assert.equal(event?.status,'accepted');
+ }finally{await f.close();}
+});
+
+
+test('unrelated backend provenance is not attributed to this conversation',async()=>{
+ const f=await fixture({oldOwnerAlive:true,backendChange:{reason:'runtime-content-changed',detectedAt:'time',fromGeneration:'unrelated-generation',fromDigest:'before',toDigest:'after'}});try{
+  let chat=await f.start('done');
+  const repository=new ConversationRepository(path.join(f.root,'agent-service'));
+  const record=repository.readConversation(chat.id)!;
+  record.view.run!.generation='old-generation';delete record.view.run!.resourcesReleased;
+  repository.saveConversation(record,record.view.revision);
+  chat=f.service.conversations.read('workspace',chat.id);
+  const context=chat.participants.at(-1)!.contextId;
+  const choice={connectionId:chat.participants.at(-1)!.connectionId,modelAccountId:chat.run!.modelAccountId,model:'model',text:'next'};
+  assert.throws(()=>f.service.conversations.prepareSend('workspace',chat.id,{...choice,expectedRevision:chat.revision}),{code:'agent_conversation_busy'});
+  const released=repository.readConversation(chat.id)!;released.view.run!.resourcesReleased=true;repository.saveConversation(released,released.view.revision);
+  chat=f.service.conversations.read('workspace',chat.id);
+  const input={...choice,expectedRevision:chat.revision},preview=f.service.conversations.prepareSend('workspace',chat.id,input);
+  assert.equal(preview.participantId,chat.run!.participantId);
+  f.service.conversations.send('workspace',chat.id,{...input,previewToken:preview.token,clientRequestId:randomUUID()});
+  await f.wait(()=>f.service.conversations.read('workspace',chat.id).run?.status==='completed');
+  chat=f.service.conversations.read('workspace',chat.id);
+  assert.equal(chat.participants.length,1);assert.equal(chat.participants[0].contextId,context);
+  const event=chat.entries.find(entry=>entry.nativeSession);
+  assert.equal(event?.nativeSession?.reason,'backend-adoption');assert.equal(event?.nativeSession?.from.generation,'old-generation');
+  assert.equal(event?.nativeSession?.backendChange,undefined);
   assert.equal(event?.nativeSession?.to.contextId,context);assert.equal(event?.status,'accepted');
  }finally{await f.close();}
 });

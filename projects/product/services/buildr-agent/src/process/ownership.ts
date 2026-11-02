@@ -2,9 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { AgentProcessIdentity, AgentRuntimeUnit } from '../execution-contracts.ts';
+import type { BackendRuntimeChange } from '../contracts.ts';
 import { AgentServiceError } from '../domain/agent-state.ts';
 
-export interface ProcessRecord { identity: AgentProcessIdentity; origin: string; token: string; retiring?: boolean; stopped?: boolean; confirmed?: boolean }
+export interface ProcessRecord { identity: AgentProcessIdentity; origin: string; token: string; retiring?: boolean; stopped?: boolean; confirmed?: boolean; backendChange?: BackendRuntimeChange }
 export interface ProcessBootstrap { dataRoot: string; profileId: string; runtime: AgentRuntimeUnit; token: string; legacySourceId?: string; autoContinueInterrupted?: boolean }
 export const controlRoot = (dataRoot: string) => path.join(path.resolve(dataRoot), 'agent-service', 'process');
 export function privateDirectory(directory: string): void {
