@@ -10,13 +10,13 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import type { AccountObservation, AgentExecutor, AgentRuntime, ContextRef, ExecutionRef, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorSendInput, ExecutorTitleInput, LoginObservation, PermissionMode } from '../../contracts.ts';
-import { NativeRpc, nativeBinding, bounded, closeOwnedProcess, findExecutable, inspectVersion, isolatedEnvironment, nativeCommand, nativeHome, opaqueReference, parseReference, privateDirectories } from '../native-process.ts';
+import { NativeRpc, releasedNativeControl, nativeBinding, bounded, closeOwnedProcess, findExecutable, inspectVersion, isolatedEnvironment, nativeCommand, nativeHome, opaqueReference, parseReference, privateDirectories } from '../native-process.ts';
 import {readQoderIdentity,requestQoderModel,inspectQoderLogin} from '../../model-access/providers/qoder.ts';
 import { ExecutorInputRejected, type ExecutorSupplementInput, type ExecutorInputReceipt } from '../../contracts.ts';
 import { checkedGateway, consumerBinding, gatewayModel, qoderGatewayPolicy, type ExecutorGateway } from '../model-gateway.ts';
 import type { ExecutorForkInput } from '../../contracts.ts';
 const capabilities = { interaction: { policy: interactionPolicy.version, nonBlockingQuestions: false }, supplement: true, permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
-export function createQoderExecutor(): AgentExecutor { return { readPersistedExecution: readQoderPersistedExecution, storage: { transientDirectories: ['tmp/node-compile-cache', 'cache/node-compile', 'home/.npm/_cacache'] }, descriptor: { id: 'qoder', label: 'Qoder', capabilities }, open: options => QoderRuntime.open(options) }; }
+export function createQoderExecutor(): AgentExecutor { return { readReleasedControl: input => releasedNativeControl('qoder',input), readPersistedExecution: readQoderPersistedExecution, storage: { transientDirectories: ['tmp/node-compile-cache', 'cache/node-compile', 'home/.npm/_cacache'] }, descriptor: { id: 'qoder', label: 'Qoder', capabilities }, open: options => QoderRuntime.open(options) }; }
 class QoderRuntime implements AgentRuntime {
   participationInstruction?: import('../../participation-contracts.ts').ParticipationMatch;
   readonly capabilities = capabilities;

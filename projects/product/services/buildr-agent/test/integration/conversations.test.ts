@@ -2940,3 +2940,32 @@ test('direct ordinary sends preserve identity, capacity and revision checks with
   assert.deepEqual(fs.existsSync(materialRoot)?fs.readdirSync(materialRoot):[],before);
  }finally{await f.close();}
 });
+
+for(const blocked of ['none','stop','live-owner','unreleased','conflict'] as const)test('cold old control release preserves unknown outcomes and clears hidden activity: '+blocked,async()=>{
+ const native=fake('local'),f=fixture([native.executor]);let observer:ReturnType<typeof createAgentService>|undefined;
+ try{
+  await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','finish');
+  await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
+  const repo=new ConversationRepository(path.join(f.options.dataRoot,'agent-service')),record=repo.readConversation(chat.id)!,prior=record.view.revision;
+  record.view.hidden=true;record.view.retainedRuns=[{...record.view.run!,id:'old-run',generation:'old-generation',status:'unknown',executionState:'unknown',resourcesReleased:false,tools:[]}];
+  record.attempts.push({...record.attempts[0]!,runId:'old-run'});record.view.revision=randomUUID();repo.saveConversation(record,prior);
+  const opens=native.opens.length,sends=native.sends.length;
+  native.executor.readReleasedControl=async()=>{
+   if(blocked==='conflict'){const changed=repo.readConversation(chat.id)!,revision=changed.view.revision;changed.view.title='concurrent rename';changed.view.revision=randomUUID();repo.saveConversation(changed,revision);}
+   return blocked!=='unreleased';
+  };
+  observer=createAgentService({...f.options,generationAlive:()=>blocked==='live-owner'});
+  const before=observer.conversations.read('workspace-one',chat.id),run=before.retainedRuns![0]!;
+  await assert.rejects(observer.conversations.observeRun('workspace-one',chat.id,{expectedRevision:'stale',runId:run.id,participantId:run.participantId,generation:run.generation}),{code:'agent_revision_conflict'});
+  const input={expectedRevision:before.revision,runId:run.id,participantId:run.participantId,generation:run.generation};
+  if(blocked==='none'||blocked==='stop'){
+   const after=blocked==='stop'?await observer.conversations.stop('workspace-one',chat.id,input):await observer.conversations.observeRun('workspace-one',chat.id,input);
+   assert.equal(after.retainedRuns![0]!.resourcesReleased,true);assert.equal(after.retainedRuns![0]!.status,'unknown');assert.equal(after.retainedRuns![0]!.executionState,'unknown');assert.equal(after.activity!.active,false);
+   const stopped=await observer.conversations.stop('workspace-one',chat.id,{...input,expectedRevision:after.revision});assert.equal(stopped.retainedRuns![0]!.stopRequested,true);
+  }else{
+   await assert.rejects(observer.conversations.observeRun('workspace-one',chat.id,input),{code:'agent_control_stale'});
+   assert.equal(observer.conversations.read('workspace-one',chat.id).retainedRuns![0]!.resourcesReleased,false);
+  }
+  assert.equal(native.opens.length,opens);assert.equal(native.sends.length,sends);
+ }finally{await observer?.close();await f.close();}
+});

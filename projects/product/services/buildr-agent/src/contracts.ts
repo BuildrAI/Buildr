@@ -224,6 +224,9 @@ export interface AgentRuntime {
   close(): Promise<void>;
 }
 export interface AgentExecutor {
+  /** Observe exact abandoned control resources without login, opening a channel, or proving operation success. */
+  readReleasedControl?(input: {bindingIdentity:string;contextRef:ContextRef;executionRef:ExecutionRef;cwd:string}): Promise<boolean>;
+
   /** Read exact durable terminal evidence without opening a native process or taking its controls. */
   readPersistedExecution?(input: {
     configRoot: string; nativeAccountConfigRoot?: string; executable: string; programSource?: string; gatewayIdentity?: string;

@@ -1620,6 +1620,34 @@ export class ConversationApplication {
     }catch(error){unavailable('执行未完成，未能自动接续：'+safeDiagnostic(error));}
   }
 
+  /** Missing old process metadata and changed login do not erase exact control-resource evidence. */
+  private async reconcileReleasedControls(workspaceId:string,id:string,control?:{expectedRevision:string;runId:string;participantId:string;generation:string}):Promise<void>{
+    let record=this.load(workspaceId,id);
+    if(control){
+      expected(record.view.revision,control.expectedRevision);
+      const run=conversationRuns(record.view).find(run=>run.id===control.runId);
+      if(!run||run.participantId!==control.participantId||run.generation!==control.generation)fail('agent_control_stale','原执行身份已变化，请重新读取。',409);
+    }
+    for(const saved of conversationRuns(record.view)){
+      if(control&&saved.id!==control.runId||saved.resourcesReleased||!saved.accepted||saved.generation===this.options.generation||!this.options.generationAlive||this.options.generationAlive(saved.generation)||record.view.requests.some(request=>request.runId===saved.id)||this.workers.has(saved.id)||this.sourceRuntimes.has(saved.participantId))continue;
+      const participant=record.participants.find(p=>p.id===saved.participantId),attempt=record.attempts.find(a=>a.runId===saved.id),revision=record.view.revision;
+      if(!participant?.contextRef||!participant.bindingIdentity||!attempt?.executionRef)continue;
+      const released=await this.options.connections.readReleasedControl(participant.connectionId,{bindingIdentity:participant.bindingIdentity,contextRef:participant.contextRef,executionRef:attempt.executionRef,cwd:record.view.cwd}).catch(()=>false);
+      record=this.load(workspaceId,id);
+      if(record.view.revision!==revision)return;
+      if(!released||this.options.generationAlive(saved.generation)||this.workers.has(saved.id)||this.sourceRuntimes.has(saved.participantId))continue;
+      const run=conversationRuns(record.view).find(run=>run.id===saved.id)!;
+      run.resourcesReleased=true;
+      if(run.executionState!=='ended')run.executionState='unknown';
+      if(BUSY_STATES.has(run.status)){
+        run.status='unknown';run.canContinue=false;
+        run.tools=run.tools.map(tool=>tool.status==='running'?{...tool,status:'unknown',canStop:false}:tool);
+        run.diagnostic='准确原控制进程组已退出，控制资源已释放；原操作结果仍待核对，不会重发。';
+      }
+      this.save(record);
+    }
+  }
+
   /** Terminal facts do not require a live vendor channel or ownership of its controls. */
   async reconcilePersisted(workspaceId:string,id:string,control?:{expectedRevision:string;runId:string;participantId:string;generation:string}):Promise<boolean>{
     let record=this.load(workspaceId,id);
@@ -1672,6 +1700,7 @@ export class ConversationApplication {
   }
 
   async observe(workspaceId: string, id: string): Promise<ConversationView> {
+    await this.reconcileReleasedControls(workspaceId,id);
     if(await this.reconcilePersisted(workspaceId,id))return this.read(workspaceId,id);
     const key = `${workspaceId}/${id}`;
     const current = this.observations.get(key); if (current) return current;
@@ -1747,7 +1776,10 @@ export class ConversationApplication {
     return { record, participant, run, executionRef: record.attempts.find(value => value.runId === input.runId)?.executionRef };
   }
   async observeRun(workspaceId: string, id: string, input: {expectedRevision:string;runId:string;participantId:string;generation:string}): Promise<ConversationView> {
-    const control = this.control(workspaceId,id,input);
+    await this.reconcileReleasedControls(workspaceId,id,input);
+    const released=this.load(workspaceId,id);
+    if(conversationRuns(released.view).find(run=>run.id===input.runId)?.resourcesReleased)return this.view(released);
+    const control = this.control(workspaceId,id,{...input,expectedRevision:released.view.revision});
     if (!control.executionRef || !control.participant.contextRef || control.run.resourcesReleased || !unfinishedRun(control.run)) return this.view(control.record);
     const runtime = (await this.sourceRuntime(control.record,control.participant)).runtime;
     const items = await runtime.readHistory({contextRef:control.participant.contextRef,cwd:control.record.view.cwd});
@@ -1764,6 +1796,16 @@ export class ConversationApplication {
     return this.read(workspaceId,id);
   }
   async stop(workspaceId: string, id: string, input: { expectedRevision: string; runId: string; participantId: string; generation: string; toolId?: string }): Promise<ConversationView> {
+    if(!input.toolId){
+      await this.reconcileReleasedControls(workspaceId,id,input);
+      const released=this.load(workspaceId,id),run=conversationRuns(released.view).find(run=>run.id===input.runId);
+      if(run?.resourcesReleased){
+        run.stopRequested=true;
+        if(released.view.run?.id===run.id)released.interruption={runId:run.id,awaitingUser:false,cancelled:true};
+        this.save(released);return this.view(released);
+      }
+      input={...input,expectedRevision:released.view.revision};
+    }
     const pending=this.load(workspaceId,id);
     const selected=conversationRuns(pending.view).find(run=>run.id===input.runId);
     const unbound=selected?.accepted===false && !pending.attempts.find(attempt=>attempt.runId===input.runId)?.executionRef && !selected.tools.length && !pending.view.requests.some(request=>request.runId===input.runId);

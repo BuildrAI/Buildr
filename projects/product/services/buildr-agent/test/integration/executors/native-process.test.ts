@@ -186,3 +186,20 @@ test('a cold observer with a broken channel must actually exit before release is
   await observer.close();assert.equal(await observer.canReleaseExecution(ref,'context','binding',false),true);
  }finally{await original.close();await observer.close();await rm(root,{recursive:true,force:true});}
 });
+
+test('cold control proof validates original binding and protects live groups without starting an observer',async()=>{
+ const {spawn}=await import('node:child_process');
+ const {releasedNativeControl}=await import('../../../build/executors/native-process.js');
+ const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore'});
+ await new Promise<void>(resolve=>child.once('spawn',resolve));
+ const contextRef={id:'original-context',data:{native:opaqueReference('qoder','original-context','/workspace','original-binding')}};
+ const executionRef={id:'original-run',data:{resourceGroup:child.pid!,resourceContext:contextRef.id,resourceBinding:'original-binding',backgroundWork:false}};
+ const input={contextRef,executionRef,bindingIdentity:'original-binding',cwd:'/workspace'};
+ try{
+  assert.equal(await releasedNativeControl('qoder',input),false);
+  const exited=new Promise<void>(resolve=>child.once('exit',()=>resolve()));child.kill();await exited;
+  assert.equal(await releasedNativeControl('qoder',input),true);
+  for(const changed of [{bindingIdentity:'different'},{cwd:'/other'},{contextRef:{...contextRef,id:'other'}},{executionRef:{...executionRef,data:{...executionRef.data,backgroundWork:true}}},{executionRef:{...executionRef,data:{...executionRef.data,resourceGroup:0}}}])assert.equal(await releasedNativeControl('qoder',{...input,...changed}),false);
+  assert.equal(await releasedNativeControl('codex',input),false);
+ }finally{if(child.exitCode===null&&child.signalCode===null)child.kill();}
+});

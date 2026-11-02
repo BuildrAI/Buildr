@@ -262,6 +262,9 @@ export class ConnectionApplication {
     this.gatewayRuntimes.set(key, promise); return promise;
   }
   binding(id: string): string | undefined { return this.stored(id).bindingIdentity; }
+  async readReleasedControl(id:string,input:Parameters<NonNullable<AgentExecutor['readReleasedControl']>>[0]):Promise<boolean>{
+    return await this.executors.get(id)?.readReleasedControl?.(input)??false;
+  }
   async readPersistedExecution(id: string, input: Omit<Parameters<NonNullable<AgentExecutor['readPersistedExecution']>>[0], 'configRoot'|'nativeAccountConfigRoot'|'executable'|'programSource'>) {
     const executor = this.executors.get(id), record = this.stored(id);
     if (!executor?.readPersistedExecution || !record.view.executable) return;
