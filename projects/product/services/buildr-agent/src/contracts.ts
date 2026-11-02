@@ -103,7 +103,9 @@ export interface ExecutorRequest {
   options?: Array<{ id: string; label: string; description?: string }>;
   questions?: Array<{ id: string; label: string; options?: Array<{ id: string; label: string; description?: string }>; multiple?: boolean; allowOther?: boolean }>;
 }
+export type ExecutionFault = { kind: 'protocol' | 'transport' | 'process' };
 export interface ExecutorObservation {
+  fault?: ExecutionFault;
   /** The native model ended normally; retained commands remain controllable in this context. */
   canContinue?: boolean;
   /** Native SDK background work, distinct from missing historical tool results. */
@@ -124,7 +126,7 @@ export type ExecutorEvent =
   | { type: 'request'; request: ExecutorRequest }
   | { type: 'request-resolved'; requestId: string }
   | { type: 'observation'; observation: ExecutorObservation }
-  | { type: 'completed'; status: 'completed' | 'stopped' | 'failed'; diagnostic?: string }
+  | { type: 'completed'; status: 'completed' | 'stopped' | 'failed'; diagnostic?: string; fault?: ExecutionFault }
   | { type: 'diagnostic'; message: string };
 export interface ExecutorTitleInput { contextRef: ContextRef; cwd: string; description: string; /** Exact user input admitted for the current run, when already known. */ userText?: string; model?: string; freshInstruction?: boolean; signal: AbortSignal }
 /** In-process only: the source validates its own binding; the destination owns the new context. */
@@ -355,6 +357,7 @@ export interface RunView {
   executionState?: 'active' | 'ended' | 'unknown';
   /** This backend no longer holds the original control resources; independent command outcomes may remain unknown. */
   resourcesReleased?: boolean;
+  fault?: ExecutionFault;
   /** Host interruption is unfinished work, distinct from a user stop. */
   interrupted?: boolean;
   contextUsage?: {usedTokens:number;windowTokens?:number};

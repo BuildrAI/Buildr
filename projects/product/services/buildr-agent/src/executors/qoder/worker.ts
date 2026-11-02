@@ -1,3 +1,4 @@
+import { withExecutionFault } from '../../domain/execution-fault.ts';
 import {qoderTitleBudget,qoderTitleMatchText} from './title.ts';
 import { ExecutorEventStream } from '../event-stream.ts';
 import { interactionPolicy } from '../../domain/interaction-policy.ts';
@@ -107,7 +108,7 @@ const streams = new WeakMap<LiveQuery, ExecutorEventStream>();
 const emit = (state: LiveQuery, event: ExecutorEvent) => {
   let stream = streams.get(state);
   if (!stream) { stream = new ExecutorEventStream(value => send({ method: 'event', params: { contextId: state.contextId, executionId: state.id, event: value } })); streams.set(state, stream); }
-  stream.push(event);
+  stream.push(withExecutionFault(event));
 };
 const accepted = (state: LiveQuery) => { if (!state.accepted) { state.accepted = true; emit(state, { type: 'accepted', executionRef: { id: state.id }, inputItemId: state.id }); } };
 const observe = (state: LiveQuery): ExecutorObservation => ({ status: state.ambiguous ? 'unknown' : state.pending.size ? 'waiting' : state.nativeExited && !state.terminal ? state.blockedOnExit || [...state.tools.values()].some(tool => unresolvedTool(tool) || tool.taskId) ? 'unknown' : 'stopped' : state.terminal ? [...state.tools.values()].some(tool => tool.status === 'running' || tool.taskPending && tool.status !== 'unknown') ? 'tools-active' : [...state.tools.values()].some(tool => tool.status === 'unknown') ? 'unknown' : state.terminal === 'stopped' ? 'stopped' : 'idle' : state.pending.size ? 'waiting' : 'running', executionRef: { id: state.id }, tools: [...state.tools.values()].map(({ taskId, taskPending, ...tool }) => ({ ...tool, status: tool.status === 'unknown' ? 'unknown' : taskPending ? 'running' : tool.status, canStop: Boolean(taskId) && Boolean(taskPending || tool.status === 'running') })), backgroundWork: state.unownedTasks.size > 0 || [...state.tools.values()].some(tool => Boolean(tool.taskId) && unresolvedTool(tool)), requests: [...state.pending.values()].map(pending => pending.request), ...(state.diagnostic ? { diagnostic: state.diagnostic } : {}) });

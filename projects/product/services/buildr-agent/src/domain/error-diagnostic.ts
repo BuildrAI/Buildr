@@ -1,16 +1,22 @@
+import { executionFault } from './execution-fault.ts';
+import type { ExecutionFault } from '../contracts.ts';
 /** An explicit RPC rejection, distinct from a transport failure with unknown delivery. */
 export class NativeRequestError extends Error {
   readonly diagnostic: string;
+  readonly fault?: ExecutionFault;
   constructor(message?: string, secrets: readonly string[] = []) {
     super('agent_native_request_failed');
     this.diagnostic = errorDiagnostic(message, secrets) ?? '原生程序拒绝本次请求。';
+    this.fault = executionFault(this.diagnostic);
   }
 }
 /** Observation can fail while the exact native execution continues. */
 export class NativeObservationError extends Error {
   readonly diagnostic?: string;
+  readonly fault: ExecutionFault;
   constructor(code: string, cause?: unknown, secrets: readonly string[] = []) {
     super(code);
+    this.fault = executionFault(code) ?? {kind:'transport'};
     this.diagnostic = cause instanceof NativeObservationError ? cause.diagnostic
       : errorDiagnostic(cause instanceof Error ? cause.message : cause, secrets);
   }

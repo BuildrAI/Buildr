@@ -1,3 +1,4 @@
+import { withExecutionFault } from '../../domain/execution-fault.ts';
 import { readFile, writeFile, rm } from 'node:fs/promises';
 import { interactionPolicy } from '../../domain/interaction-policy.ts';
 import {pausePreviousDshGoal} from './goals.ts';
@@ -481,7 +482,7 @@ export class DshRuntime implements AgentRuntime {
     }
   }
   private event(turn: ActiveTurn, event: any): void {
-    const data = event.data ?? {}; const emit = turn.input.onEvent;
+    const data = event.data ?? {}; const emit = (event: import('../../contracts.ts').ExecutorEvent) => turn.input.onEvent(withExecutionFault(event));
     if (event.type === 'session/title') {
       if (data.source?.kind === 'provider' && typeof data.title === 'string') {
         const events = this.historyEvents.get(turn.input.contextRef.id) ?? []; events.push(event); this.historyEvents.set(turn.input.contextRef.id, events);

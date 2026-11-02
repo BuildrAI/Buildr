@@ -1,3 +1,4 @@
+import { NativeObservationError } from '../domain/error-diagnostic.ts';
 import { pendingConversationSummary } from '../domain/pending-summary.ts';
 import {conversationTaskLinks,setConversationTaskLinks,sameTaskLink} from '../domain/conversation-task-links.ts';
 import type {ConversationTaskLink} from '../contracts.ts';
@@ -998,7 +999,7 @@ export class ConversationApplication {
     else if (event.type === 'diagnostic') run.diagnostic = event.message;
     else if (event.type === 'completed') {
       // A model terminal event alone does not prove that tools have stopped.
-      if (event.status === 'failed') { run.status = 'failed'; run.diagnostic = event.diagnostic ?? '原生执行失败。'; }
+      if (event.status === 'failed') { run.status = 'failed'; run.fault = event.fault; run.diagnostic = event.diagnostic ?? '原生执行失败。'; }
       else { run.diagnostic = event.diagnostic; }
     }
     run.updatedAt = this.options.now(); this.save(record);
@@ -1053,6 +1054,7 @@ export class ConversationApplication {
       }
     }
     run.canContinue = observation.canContinue === true && run.status !== 'stopping' && !record.view.requests.some(request => request.runId === run.id);
+    if (observation.fault) run.fault = observation.fault;
     if (observation.diagnostic) run.diagnostic = observation.diagnostic;
     if (observation.status === 'tools-active' || observation.tools.some(tool => tool.status === 'running') && !['running', 'waiting'].includes(observation.status)) run.status = 'tools-active';
     else if (observation.status === 'unknown' || observation.tools.some(tool => tool.status === 'unknown')) run.status = 'unknown';
@@ -1062,7 +1064,7 @@ export class ConversationApplication {
     }
     else if (observation.status === 'idle') {
       if (!run.accepted) { if (run.status !== 'starting' && run.status !== 'stopping') run.status = 'unknown'; return; }
-      run.status = run.status === 'stopping' ? 'stopped' : run.status === 'failed' ? 'failed' : 'completed';
+      run.status = run.status === 'stopping' ? 'stopped' : run.status === 'failed' || record.interruption?.runId === run.id && record.interruption.reason === 'execution-fault' ? 'failed' : 'completed';
       if (run.status==='completed' && !observation.diagnostic) delete run.diagnostic;
       this.retireQuestions(record, requests);
     } else if (observation.status === 'running') {
@@ -1179,7 +1181,8 @@ export class ConversationApplication {
       const settled=this.ownedRun(workspaceId,id,runId);
       if(settled)await this.observeRun(workspaceId,id,{expectedRevision:settled.record.view.revision,runId,participantId:settled.run.participantId,generation:settled.run.generation});
       const ended = this.currentRun(workspaceId, id, runId);
-      if (ended?.view.run?.status === 'failed') await this.retryFailure(workspaceId, id, runId, prepared, retries, rootRunId, ended.view.run.diagnostic ?? '', runtime);
+      if (ended?.view.run?.fault && ['failed','unknown'].includes(ended.view.run.status)) await this.recoverExecutionFailure(workspaceId,id,runId);
+      else if (ended?.view.run?.status === 'failed') await this.retryFailure(workspaceId, id, runId, prepared, retries, rootRunId, ended.view.run.diagnostic ?? '', runtime);
       void this.generateAutomaticTitle(workspaceId, id, runId, runtime).catch(() => {});
     } catch (error) {
       const record = this.currentRun(workspaceId, id, runId);
@@ -1191,12 +1194,13 @@ export class ConversationApplication {
         return;
       }
       const run = record.view.run!;
-      if(run.status==='completed'&&run.executionState==='ended'&&run.tools.every(tool=>tool.status==='completed'))return;
+      if(run.status==='completed'&&run.executionState==='ended'&&run.tools.every(tool=>tool.status==='completed')&&!(error instanceof NativeRequestError&&error.fault))return;
       const rejectedBeforeInput = !run.accepted && (error instanceof ExecutorInputRejected || error instanceof AgentServiceError && ['agent_permission_invalid', 'agent_permission_unavailable', 'agent_permission_unverified', 'agent_reasoning_unavailable'].includes(error.code));
       const userStopping = run.status === 'stopping';
       const possiblyDelivered = dispatched && !rejectedBeforeInput;
-      if (!['stopped', 'completed'].includes(run.status)) run.status = possiblyDelivered ? 'unknown' : 'failed';
+      if (run.status !== 'stopped' && (run.status !== 'completed' || error instanceof NativeRequestError && error.fault)) run.status = possiblyDelivered ? 'unknown' : 'failed';
       run.diagnostic = this.options.modelAccess?.leases.streamFailure(id,runId)??safeDiagnostic(error); run.updatedAt = this.options.now();
+      if (error instanceof NativeRequestError || error instanceof NativeObservationError) run.fault = error.fault;
       const transportLost = error instanceof Error && ['codex_execution_observation_lost', 'codex_event_observation_lost', 'dsh_execution_observation_lost', 'dsh_event_observation_lost', 'qoder_execution_observation_lost', 'qoder_event_observation_lost'].includes(error.message);
       if (!this.closing && !userStopping && transportLost && run.accepted && run.status === 'unknown' && !record.interruption?.cancelled) {
         record.interruption = { runId, reason: 'transport', awaitingUser: record.view.requests.some(request=>request.runId===runId) };
@@ -1208,6 +1212,7 @@ export class ConversationApplication {
       if(!run.accepted)for(const receipt of record.view.entries.filter(e=>e.kind==='handoff'&&e.runId===runId))receipt.status=possiblyDelivered?'unknown':'failed';
       try { this.save(record); } catch { return; /* Preserve existing DB and native state. */ }
       if (record.interruption?.reason === 'transport' && !this.closing) await this.recoverOne(workspaceId, id);
+      else if (!userStopping && run.accepted && run.fault) await this.recoverExecutionFailure(workspaceId,id,runId);
       else if (!dispatched && !userStopping && (!creatingContext || error instanceof NativeRequestError)) await this.retryFailure(workspaceId, id, runId, prepared, retries, rootRunId, error instanceof Error && transientFailure(error.message) ? error.message : safeDiagnostic(error), undefined);
     } finally {
       if (!dispatched) {
@@ -1217,6 +1222,15 @@ export class ConversationApplication {
         }
       }
     }
+  }
+
+  /** All executors share the existing exact-observation, release and persisted-budget path. */
+  private async recoverExecutionFailure(workspaceId:string,id:string,runId:string):Promise<boolean> {
+    const record=this.currentRun(workspaceId,id,runId),run=record?.view.run;
+    if(!record||!run?.fault||!run.accepted||!['failed','unknown'].includes(run.status)||this.closing||record.interruption?.cancelled||this.cancelledRetries.has(runId))return false;
+    record.interruption??={runId,reason:'execution-fault',awaitingUser:record.view.requests.some(request=>request.runId===runId)};
+    run.interrupted=true;this.save(record);
+    await this.recoverOne(workspaceId,id);return true;
   }
 
   private async retryFailure(workspaceId: string, id: string, runId: string, prepared: ReturnType<ConversationApplication['prepare']>, count: number, rootRunId: string, reason: string, runtime?: AgentRuntime): Promise<void> {
@@ -1514,7 +1528,7 @@ export class ConversationApplication {
       run.interrupted=true;run.diagnostic='服务重启导致执行中断，正在核对原执行。';this.save(record);
     }
     const originalId=run.id,marker=record.interruption;
-    if(marker.runId!==originalId||marker.cancelled||['completed','failed'].includes(run.status))return;
+    if(marker.runId!==originalId||marker.cancelled||run.status==='completed'||run.status==='failed'&&marker.reason!=='execution-fault')return;
     const requestId='host-recovery:'+originalId;
     if(record.attempts.some(attempt=>attempt.clientRequestId===requestId))return;
     const unavailable=(reason:string)=>{
@@ -1534,7 +1548,7 @@ export class ConversationApplication {
       }
       record=this.load(workspaceId,id);run=record.view.run;
       if(this.closing||!run||run.id!==originalId||!record.interruption||record.interruption.cancelled)return;
-      if(run.status==='completed'||run.status==='failed')return;
+      if(run.status==='completed'||run.status==='failed'&&marker.reason!=='execution-fault')return;
       if(run.generation===this.options.generation&&run.status==='running'){
         delete record.interruption;run.interrupted=undefined;run.diagnostic=undefined;this.save(record);return;
       }
@@ -1554,7 +1568,7 @@ export class ConversationApplication {
         if(this.closing||run?.id!==originalId||!record.interruption||record.interruption.cancelled)return;
       }
       const unknown=run.tools.filter(tool=>tool.status==='unknown').map(tool=>tool.id);
-      const text='系统自动恢复：上次执行因 Buildr '+(marker.reason==='transport'?'执行观察中断':'服务重启')+'而中断，'+(released?'准确原控制资源已释放，原执行及独立操作结果仍可能未知。':'现已确认原执行停止。')+'请先核对本地对话、当前工作成果与工具结果，继续完成用户尚未完成的目标。不要重新执行全部历史命令，不重发原指令；不确定已生效的操作先核对，不扩大原有授权或代答问题。未知工具引用：'+(unknown.join('、')||'见原轮记录')+'。若需要真实用户决定，请明确提出。';
+      const text='系统自动恢复：上次执行因 Buildr '+(marker.reason==='execution-fault'?'执行协议或运行通道异常':marker.reason==='transport'?'执行观察中断':'服务重启')+'而中断，'+(released?'准确原控制资源已释放，原执行及独立操作结果仍可能未知。':'现已确认原执行停止。')+'请先核对本地对话、当前工作成果与工具结果，继续完成用户尚未完成的目标。不要重新执行全部历史命令，不重发原指令；不确定已生效的操作先核对，不扩大原有授权或代答问题。未知工具引用：'+(unknown.join('、')||'见原轮记录')+'。若需要真实用户决定，请明确提出。';
       const draft:SendDraft={expectedRevision:record.view.revision,connectionId:participant.connectionId,modelAccountId:participant.modelAccountId,modelAccountIdentity:participant.modelAccountIdentity,model:run.model,serviceTier:run.serviceTier,reasoningEffort:run.reasoningEffort,permissionMode:run.permissionMode,text,skipHandoffSummary:true};
       this.prepare(record,draft);
       if(!record.interruption.attempted)record.attempts.find(value=>value.runId===originalId)!.automaticRetry={rootRunId:lineage.rootRunId,count:lineage.count+1};
