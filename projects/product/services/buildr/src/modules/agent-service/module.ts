@@ -10,7 +10,7 @@ import { createAgentServiceHttpContribution } from './interfaces/http/agent-serv
 
 export const AGENT_SERVICE_APPLICATION = 'agent-service.application';
 
-export function createAgentServiceModule(options: { readProductIdentity(): unknown; resolveWebProfile(identity: unknown): { dataRoot: string; profile?: string; overridden?: boolean } }) {
+export function createAgentServiceModule(options: { readLocalInstance?(): unknown; readProductIdentity(): unknown; resolveWebProfile(identity: unknown): { dataRoot: string; profile?: string; overridden?: boolean } }) {
   return {
     id: 'agent-service', requires: [WORKSPACE_APPLICATION, TASK_QUERY_APPLICATION],
     create(requires: Record<string, any>) {
@@ -64,7 +64,7 @@ export function createAgentServiceModule(options: { readProductIdentity(): unkno
         return {instanceId:status.identity.instanceId,generation:status.identity.generation,pid:status.identity.pid,currentDigest:status.identity.runtime.digest,pendingDigest:status.pendingRuntime?.digest,busy:status.activity.busy,accepting:status.accepting,reasons:status.activity.reasons,diagnostic:status.diagnostic};
       };
       const close = async () => { closed=true;const active=connection;connection=undefined;await active?.then(value=>value.disconnect()); };
-      return { provides: { [AGENT_SERVICE_APPLICATION]: { start, close, status:async()=>(await connect()).lifecycle.status(), generate: async (input: Parameters<AgentOperations['models']['generate']>[0]) => (await resolve()).models.generate(input) } }, contributions: { cli: createAgentCliContributions(), http: [createAgentServiceHttpContribution(resolve, { defaultWorkspace, registeredWorkspaceIds, runtimeStatus, prepareDefaultWorkspace: () => {fs.mkdirSync(defaultWorkspace().rootPath,{recursive:true});} })] }, lifecycle: { start: async () => { void start().catch(() => { console.warn('执行后台连接未完成，已有工作记录保留。'); }); }, stop: close } };
+      return { provides: { [AGENT_SERVICE_APPLICATION]: { start, close, status:async()=>(await connect()).lifecycle.status(), generate: async (input: Parameters<AgentOperations['models']['generate']>[0]) => (await resolve()).models.generate(input) } }, contributions: { cli: createAgentCliContributions(options.readLocalInstance), http: [createAgentServiceHttpContribution(resolve, { defaultWorkspace, registeredWorkspaceIds, runtimeStatus, prepareDefaultWorkspace: () => {fs.mkdirSync(defaultWorkspace().rootPath,{recursive:true});} })] }, lifecycle: { start: async () => { void start().catch(() => { console.warn('执行后台连接未完成，已有工作记录保留。'); }); }, stop: close } };
     },
   };
 }

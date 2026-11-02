@@ -32,7 +32,7 @@ import {
   createParentCoordinationModule,
 } from '../modules/task/module.ts';
 import { createModuleRegistry } from './module-registry.ts';
-import { createWebModule, WEB_INSTANCE_LIFECYCLE } from '../web/module.ts';
+import { createWebModule, WEB_INSTANCE_LIFECYCLE, readLocalBuildrWebInstance } from '../web/module.ts';
 import { createWorkspaceModule, WORKSPACE_AGENT_ASSETS_BINDER, WORKSPACE_APPLICATION, WORKSPACE_QUERY } from '../modules/workspace/module.ts';
 import { createSystemInstallationModule, readCurrentProductIdentity, SYSTEM_INSTALLATION_APPLICATION, SYSTEM_INSTALLATION_WEB_BINDER } from '../modules/installation/module.ts';
 import { createSystemDoctorModule, SYSTEM_DOCTOR_APPLICATION } from '../modules/diagnostics/module.ts';
@@ -81,7 +81,7 @@ export function createRuntime(): any  {
   registry.install(createPublicationModule(runtime));
   registry.install(AGENT_ASSETS_SOURCE_MODULE);
   registry.install(createChangeModule(runtime));
-  registry.install(createAgentServiceModule({ readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile }));
+  registry.install(createAgentServiceModule({ readLocalInstance: readLocalBuildrWebInstance, readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile }));
   registry.install(CODE_MODULE);
   registry.install(createConnectionSkillsModule({ readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile }));
   registry.install(SERVICE_RUNTIME_MODULE);

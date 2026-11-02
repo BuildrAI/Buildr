@@ -1,3 +1,4 @@
+import { readLocalBuildrWebInstance } from '../../web/module.ts';
 import { createAgentCliContributions } from '../../modules/agent-service/interfaces/cli/agent.ts';
 import { createSourceInspectCli } from '../../modules/agent-assets/interfaces/cli/source-inspect.ts';
 import process from 'node:process';
@@ -163,7 +164,7 @@ function createCommandCatalog(commandRegistry: any): any  {
 }
 
 export const COMMAND_REGISTRY = createCommandRegistry([
-  ...createAgentCliContributions(),
+  ...createAgentCliContributions(readLocalBuildrWebInstance),
   ...createWorkspaceCliContributions(),
   ...createAgentAssetsCliContributions(),
   createSourceInspectCli(null),

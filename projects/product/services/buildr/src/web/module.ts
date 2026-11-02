@@ -13,6 +13,8 @@ import { handoffUpdatedBuildrWeb } from './application/update-web-handoff.ts';
 import type { WebInstanceLifecycleRuntime, WebLifecycleOptions } from './application/instance-lifecycle.ts';
 import { readBuildrWebInstance } from './infrastructure/instance-runtime.ts';
 
+export { readBuildrWebInstance as readLocalBuildrWebInstance };
+
 export const WEB_MODULE_ID = 'web-instance-lifecycle';
 export const WEB_INSTANCE_LIFECYCLE = 'web.instance-lifecycle';
 

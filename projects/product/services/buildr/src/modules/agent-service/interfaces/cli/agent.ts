@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { readBuildrWebInstance, assertUpdateHandoffInstanceAddress } from '../../../../web/infrastructure/instance-runtime.ts';
 import { parseWorkspaceManifest } from '../../../workspace/persistence/workspace-manifest-repository.ts';
 
 const usage = 'buildr agent <send|read|stop|list|reply|continue> [参数] [--target <workspace> | --workspace-id <id>] [--connection <id>] [--model <id>] [--before <sequence>] [--limit <count>] [--json]';
@@ -34,9 +33,11 @@ export function parseAgentArgs(action: string, args: string[]) {
   return { action, value, options, message, requestId: action === 'reply' ? values[1] : undefined };
 }
 
-export async function connectLocalAgentHttp(instance = readBuildrWebInstance(), fetcher: typeof fetch = fetch) {
+export async function connectLocalAgentHttp(instance: any = undefined, fetcher: typeof fetch = fetch) {
   if (!instance) fail('本机 Buildr Web 未运行，请先启动对应配置的 buildr web。', 'agent_cli_instance_unavailable');
-  const address = assertUpdateHandoffInstanceAddress(instance);
+  let address: URL;
+  try { address = new URL(instance.url); } catch { fail('本机实例地址无效。'); }
+  if (address.protocol !== 'http:' || address.hostname !== '127.0.0.1' || !address.port || address.username || address.password || address.pathname !== '/' || address.search || address.hash || !Number.isInteger(instance.pid) || instance.pid <= 0 || typeof instance.secret !== 'string' || !instance.secret) fail('仅接受具有准确身份的本机回环实例。');
   const origin = address.origin;
   const request = (route: string, init: RequestInit = {}) => fetcher(origin + route, { ...init, redirect: 'error', signal: AbortSignal.timeout(30000) });
   const health = await request('/api/v1/health', { headers: { 'x-buildr-instance': instance.secret } });
@@ -123,7 +124,7 @@ export async function executeAgentCommand(input: ReturnType<typeof parseAgentArg
   return request(route + '/stop', { expectedRevision: conversation.revision, runId: run.id, participantId: run.participantId, generation: run.generation });
 }
 
-export function createAgentCliContributions() {
+export function createAgentCliContributions(readLocalInstance: () => any = () => undefined) {
   return ['send', 'read', 'stop', 'list', 'reply', 'continue'].map(action => ({
     key: `agent ${action}`, surface: 'primary', summary: { send: '新建本机智能体对话并发送消息。', read: '读取对话状态与进展。', stop: '停止已观察到的对话执行。', list: '列出工作空间全部对话。', reply: '正式提交用户明确给出的回答。', continue: '在空闲的已有对话中继续发送消息。' }[action],
     help: [`用法：${usage}`, `命令格式：buildr agent ${action} ${{ send: '<message>', read: '<conversation-id>', stop: '<conversation-id>', list: '[--query <文字>] [--limit <每页数量>]', reply: '<conversation-id> <request-id> <message>', continue: '<conversation-id> <message>' }[action]}`, '', '只调用本机已有 HTTP 接口，不修改任务数据；list 默认显示中文列表，--json 输出原始数据。其余命令输出 JSON。', 'send 仅自动选择唯一就绪连接；reply 原样提交明确回复；continue 仅支持空闲对话，不自动补充或排队。'],
@@ -132,7 +133,7 @@ export function createAgentCliContributions() {
       const input = parseAgentArgs(action, context.rawArgs.slice(2));
       const workspaceId = input.options['--workspace-id'] || parseWorkspaceManifest(fs.readFileSync(path.join(path.resolve(input.options['--target'] || process.cwd()), '.buildr/workspace.yml'), 'utf8')).workspace.id;
       if (!workspaceId || !uuid.test(workspaceId)) fail('工作空间缺少有效身份，请指定已初始化的 --target 或 --workspace-id。');
-      const result = await executeAgentCommand(input, workspaceId, await connectLocalAgentHttp());
+      const result = await executeAgentCommand(input, workspaceId, await connectLocalAgentHttp(readLocalInstance()));
       console.log(action === 'list' && !input.options['--json'] ? formatAgentList(result.conversations) : JSON.stringify(result, null, 2));
       return result;
     },
