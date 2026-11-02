@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
-import { summaryView, messageSignature, messageActivityAt, userActivityAt, pendingDecisionCount, hiddenReleasedOutcome } from '../domain/conversation-activity.ts';
+import { summaryView, messageSignature, messageActivityAt, userActivityAt, pendingDecisionCount, conversationActive } from '../domain/conversation-activity.ts';
 import type { ConversationView } from '../contracts.ts';
-import { BUSY_STATES, conversationRuns, unfinishedRun } from '../domain/agent-state.ts';
+import { BUSY_STATES, unfinishedRun } from '../domain/agent-state.ts';
 import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -288,7 +288,9 @@ export class ConversationRepository {
       const compactDecisions="json_extract(summary,'$.activity.pendingDecisionCount')";
       // New summaries stay on the covering index. Only legacy/mismatched rows
       // need their current request header (or canonical legacy body) inspected.
-      const legacyDecisions=!modern || Boolean(db.prepare(`SELECT 1 FROM ${table} WHERE ${indexed?`${HAS_WORK} AND `:''}workspace_id IN (${ids.map(()=>'?').join(',')}) AND (${compactDecisions} IS NULL OR json_extract(summary,'$.revision')<>revision) LIMIT 1`).get(...ids));
+      const historicalCandidate="is_active=1 AND EXISTS(SELECT 1 FROM json_each(summary,'$.retainedRuns') AS historical WHERE json_extract(historical.value,'$.resourcesReleased')=1)";
+      const compatibility=modern?db.prepare(`SELECT max(${compactDecisions} IS NULL OR json_extract(summary,'$.revision')<>revision) AS decisions,max(${historicalCandidate}) AS historical FROM ${table} WHERE ${indexed?`${HAS_WORK} AND `:''}workspace_id IN (${ids.map(()=>'?').join(',')})`).get(...ids) as {decisions:number;historical:number}:undefined;
+      const legacyDecisions=!modern || Boolean(compatibility?.decisions);
       let decisionCount=compactDecisions;
       if(legacyDecisions){
         db.function('buildr_pending_decisions',{deterministic:true},value=>pendingDecisionCount(JSON.parse(String(value))));
@@ -296,7 +298,13 @@ export class ConversationRepository {
         const header=ConversationReadModel.available(db)?`coalesce((SELECT json_extract(state,'$.view') FROM conversation_read_states AS decision_header WHERE decision_header.id=scoped_record.id AND decision_header.revision=scoped_record.revision),${legacyView})`:legacyView;
         decisionCount=`CASE WHEN json_extract(summary,'$.revision')=revision AND ${compactDecisions} IS NOT NULL THEN ${compactDecisions} ELSE buildr_pending_decisions(${header}) END`;
       }
-      const withDecisions=`(SELECT scoped_record.*,${decisionCount} AS pending_decision_count FROM (SELECT * FROM ${storedSource}) AS scoped_record)`;
+      // Older writers may keep released historical uncertainty active. Reinterpret
+      // only these candidate rows using the version-matched tool-bearing header;
+      // never infer running tools from the compact summary (which omits them).
+      if(compatibility?.historical)db.function('buildr_conversation_active',{deterministic:true},(value,version,seen)=>Number(conversationActive(JSON.parse(String(value)),Number(version),Number(seen))));
+      const activityHeader=ConversationReadModel.available(db)?`coalesce((SELECT json_extract(state,'$.view') FROM conversation_read_states AS activity_header WHERE activity_header.id=scoped_record.id AND activity_header.revision=scoped_record.revision),json_remove(json_extract(body,'$.view'),'$.entries'))`:"json_remove(json_extract(body,'$.view'),'$.entries')";
+      const listActive=compatibility?.historical?`CASE WHEN ${historicalCandidate} THEN buildr_conversation_active(${activityHeader},activity_version,seen_version) ELSE is_active END`:'is_active';
+      const withDecisions=`(SELECT scoped_record.*,${decisionCount} AS pending_decision_count,${listActive} AS list_active FROM (SELECT * FROM ${storedSource}) AS scoped_record)`;
       const status = "json_extract(summary,'$.run.status')";
       // Parallel owners are still authoritative. Compute this from compact
       // summaries so activity counts and filters need not load full histories.
@@ -304,7 +312,7 @@ export class ConversationRepository {
       const generations = input.generation ? [...new Set([input.generation,...retained])].sort() : [];
       const effectiveStatus = generations.length ? `CASE WHEN coalesce(json_extract(summary,'$.run.generation'),'') NOT IN (${generations.map(()=>'?').join(',')}) AND ${status} IN ('starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown') THEN 'unknown' ELSE ${status} END` : status;
       const state = `CASE WHEN pending_decision_count>0 THEN 'waiting' WHEN hidden=1 AND is_active=0 THEN NULL WHEN effective_status='unknown' THEN 'unknown' WHEN effective_status IN ('waiting-approval','waiting-question') THEN 'waiting' WHEN effective_status IN ('starting','running','stopping','tools-active') THEN 'running' WHEN activity_version>seen_version THEN 'unseen' ELSE NULL END`;
-      const source=`(SELECT *,CASE WHEN activity_state IN ('waiting','unseen') THEN 2 WHEN is_active=1 THEN 1 ELSE 0 END AS sort_priority FROM (SELECT *,${state} AS activity_state FROM (SELECT *,${effectiveStatus} AS effective_status FROM ${withDecisions})))`;
+      const source=`(SELECT *,CASE WHEN activity_state IN ('waiting','unseen') THEN 2 WHEN list_active=1 THEN 1 ELSE 0 END AS sort_priority FROM (SELECT *,${state} AS activity_state FROM (SELECT *,${effectiveStatus} AS effective_status FROM ${withDecisions})))`;
       // Resolved generations can change outside this scope. Any effect on the
       // actual filtered list is already captured by its membership/order keys.
       const scope=createHash('sha256').update(JSON.stringify(['message-activity-first-v2',ids,{...input,cursor:undefined,limit:undefined}])).digest('hex');
@@ -356,8 +364,8 @@ export class ConversationRepository {
         where.push(input.activityState==='attention'?"activity_state IN ('waiting','unseen','unknown')":input.activityState==='running'?"effective_status IN ('starting','running','stopping','tools-active')":'activity_state=?');
         if(!['attention','running'].includes(input.activityState))values.push(input.activityState);
       }
-      if(input.activeOnly)where.push('(is_active=1 OR pending_decision_count>0)');
-      else {where.push('(is_active=1 OR pending_decision_count>0 OR hidden=?)');values.push(Number(input.hidden===true));}
+      if(input.activeOnly)where.push('(list_active=1 OR pending_decision_count>0)');
+      else {where.push('(list_active=1 OR pending_decision_count>0 OR hidden=?)');values.push(Number(input.hidden===true));}
       if(input.query){where.push("(instr(lower(json_extract(summary,'$.title')),lower(?))>0 OR EXISTS(SELECT 1 FROM json_each(body,'$.view.entries') AS e WHERE instr(lower(json_extract(e.value,'$.text')),lower(?))>0))");values.push(input.query,input.query);}
       if(input.agent||input.model)where.push("effective_status IN ('starting','running','stopping','tools-active')");
       if(input.agent){where.push("coalesce(nullif(json_extract(summary,'$.run.provider'),''),'未指定')=?");values.push(input.agent);}
@@ -378,9 +386,9 @@ export class ConversationRepository {
         if(!cursor||typeof cursor!=='object'||cursor.scope!==scope||cursor.epoch!==epoch||typeof cursor.at!=='string'||typeof cursor.id!=='string'||![0,1,2].includes(cursor.priority))fail('agent_cursor_stale','对话列表顺序已变化，请刷新后继续。',409);
         where.push('(sort_priority < ? OR (sort_priority=? AND (activity_at < ? OR (activity_at=? AND id < ?))))');values.push(cursor.priority,cursor.priority,cursor.at,cursor.at,cursor.id);
       }
-      const rows=db.prepare(`SELECT summary,sort_priority,user_at,activity_at,pending_decision_count,id FROM ${source} WHERE ${where.join(' AND ')} ORDER BY sort_priority DESC,activity_at DESC,id DESC LIMIT ?`).all(...values,input.limit+1) as Array<{summary:string;sort_priority:number;user_at:string;activity_at:string;pending_decision_count:number;id:string}>;
+      const rows=db.prepare(`SELECT summary,sort_priority,list_active,user_at,activity_at,pending_decision_count,id FROM ${source} WHERE ${where.join(' AND ')} ORDER BY sort_priority DESC,activity_at DESC,id DESC LIMIT ?`).all(...values,input.limit+1) as Array<{summary:string;sort_priority:number;list_active:number;user_at:string;activity_at:string;pending_decision_count:number;id:string}>;
       const chosen=rows.slice(0,input.limit),last=chosen.at(-1);
-      return {conversations:chosen.map(row=>{const view=JSON.parse(row.summary) as ConversationView;return {...view,activity:view.activity?{...view.activity,userInputAt:row.user_at,updatedAt:row.activity_at,pendingDecisionCount:row.pending_decision_count,active:view.activity.active||row.pending_decision_count>0}:undefined,entries:[],requests:[],run:view.run?{...view.run,tools:[]}:undefined,participants:view.participants.map(participant=>({...participant,contextId:''}))};}),total,activityCounts:{...counts},stats,nextCursor:rows.length>input.limit&&last?Buffer.from(JSON.stringify({scope,epoch,priority:last.sort_priority,at:last.activity_at,id:last.id})).toString('base64url'):undefined};
+      return {conversations:chosen.map(row=>{const view=JSON.parse(row.summary) as ConversationView;return {...view,activity:view.activity?{...view.activity,userInputAt:row.user_at,updatedAt:row.activity_at,pendingDecisionCount:row.pending_decision_count,active:Boolean(row.list_active)||row.pending_decision_count>0}:undefined,entries:[],requests:[],run:view.run?{...view.run,tools:[]}:undefined,participants:view.participants.map(participant=>({...participant,contextId:''}))};}),total,activityCounts:{...counts},stats,nextCursor:rows.length>input.limit&&last?Buffer.from(JSON.stringify({scope,epoch,priority:last.sort_priority,at:last.activity_at,id:last.id})).toString('base64url'):undefined};
     }finally{db.close();}
   }
   markSeen(workspaceId:string,id:string,through:number): NonNullable<ConversationView['activity']> {
@@ -391,9 +399,11 @@ export class ConversationRepository {
       if(!row)fail('agent_conversation_missing','该工作空间中没有此对话。',404);
       if(!Number.isSafeInteger(through)||through<0||through>row.activity_version)fail('agent_seen_invalid','查看位置不属于已观察的消息。',409);
       const view=JSON.parse(row.summary) as ConversationView;
+      const header=db.prepare("SELECT state FROM conversation_read_states WHERE id=? AND revision=(SELECT revision FROM conversations WHERE id=?)").get(id,id) as {state:string}|undefined;
+      const fullView=header?JSON.parse(header.state).view:JSON.parse((db.prepare('SELECT body FROM conversations WHERE id=?').get(id) as {body:string}).body).view;
       const seen=Math.max(row.seen_version,through);
-      const activity={...view.activity!,version:row.activity_version,seenThrough:seen,active:(view.activity?.pendingDecisionCount??0)>0||!hiddenReleasedOutcome(view)&&(conversationRuns(view).some(unfinishedRun)||row.activity_version>seen)};
-      if(seen!==row.seen_version){
+      const activity={...view.activity!,version:row.activity_version,seenThrough:seen,active:conversationActive(fullView,row.activity_version,seen)};
+      if(seen!==row.seen_version || activity.active!==view.activity?.active){
         view.activity=activity;
         db.prepare('UPDATE conversations SET seen_version=?,is_active=?,summary=? WHERE id=?').run(seen,Number(activity.active),JSON.stringify(view),id);
         db.exec('UPDATE conversation_epoch SET value=value+1 WHERE id=1');

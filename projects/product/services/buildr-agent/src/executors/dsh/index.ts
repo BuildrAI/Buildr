@@ -161,11 +161,10 @@ export class DshRuntime implements AgentRuntime {
   }
   async generateTitle(input: ExecutorTitleInput): Promise<string | undefined> {
     this.reference(input.contextRef,input.cwd);
-    // Ordinary native sessions already have a provider-generated title. Only
-    // forks require a fresh independent title, rather than a second routine call.
-    if(!input.freshInstruction)throw new Error('agent_title_unavailable');
+    // The caller prefers trusted native titles; missing native output must not
+    // disable the isolated fallback for ordinary conversations.
     if(this.gateway){
-      const model=gatewayModel(this.gateway);
+      const model=gatewayModel(this.gateway,input.model);
       return generateDshTitle(input,model.id,'chat-completions',init=>fetch(this.gateway!.baseUrl.replace(/\/$/,'')+'/chat/completions',{
         ...init,headers:{...Object.fromEntries(new Headers(init.headers)),authorization:'Bearer '+this.gateway!.apiKey},redirect:'error',
       }),Math.min(128,model.maxOutputTokens??128));

@@ -41,15 +41,24 @@ export function hiddenReleasedOutcome(view: Pick<ConversationView, 'hidden'|'req
     conversationRuns(view).every(run => run.supersededBy || run.executionState !== 'active' && !run.tools.some(tool => tool.status === 'running') &&
       (run.status === 'unknown' ? run.resourcesReleased : !BUSY_STATES.has(run.status) && (run.resourcesReleased || run.tools.every(tool => tool.status === 'completed')))));
 }
+/** Historical uncertainty is evidence, not proof of currently running work. */
+export function conversationActive(view: ConversationView, version: number, seenThrough: number): boolean {
+  const pending=(run:NonNullable<ConversationView['run']>, historical=false)=>{
+    if(run.supersededBy)return false;
+    if(historical && run.resourcesReleased && run.executionState!=='active' && !run.tools.some(tool=>tool.status==='running'))return false;
+    return run.executionState==='active' || (!run.resourcesReleased&&BUSY_STATES.has(run.status)) || run.tools.some(tool=>tool.status!=='completed');
+  };
+  return pendingDecisionCount(view)>0 || !hiddenReleasedOutcome(view) &&
+    (Boolean(view.run&&pending(view.run)) || Boolean(view.retainedRuns?.some(run=>pending(run,true))) || version>seenThrough);
+}
 export function summaryView(record: StoredConversation, version: number, seenThrough: number, updatedAt: string): ConversationView {
   const view = record.view;
-  const pending=(run:NonNullable<ConversationView['run']>)=>!run.supersededBy&&((!run.resourcesReleased&&BUSY_STATES.has(run.status))||run.tools.some(tool=>tool.status!=='completed'));
   const decisions=pendingDecisionCount(view);
   return {
     ...view, titleState:view.titleState??{status:'unknown'}, entries: [], requests: [], nextEntryCursor: undefined,
     retainedRuns:view.retainedRuns?.map(run=>({...run,tools:[]})),
     run: view.run ? {...view.run, tools: []} : undefined,
     participants: record.participants.map(p => ({id:p.id,provider:p.provider as ConversationView['participants'][number]['provider'],connectionId:p.connectionId,label:p.label,model:p.modelId,modelAccountId:p.modelAccountId,deliveredThrough:p.deliveredThrough,contextId:''})),
-    activity: {version, seenThrough, updatedAt, pendingDecisionCount:decisions, active: decisions > 0 || !hiddenReleasedOutcome(view) && (Boolean(view.run&&pending(view.run)) || view.retainedRuns?.some(pending) || version > seenThrough)},
+    activity: {version, seenThrough, updatedAt, pendingDecisionCount:decisions, active: conversationActive(view,version,seenThrough)},
   };
 }

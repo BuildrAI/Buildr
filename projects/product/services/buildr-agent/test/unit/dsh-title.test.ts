@@ -27,3 +27,28 @@ test('a cancelled DSH title never issues the auxiliary model request',async()=>{
   await assert.rejects(generateDshTitle({...input(),signal:controller.signal},'m','chat-completions',async()=>{calls++;return Response.json({});}));
   assert.equal(calls,0);
 });
+
+for(const failure of ['network',429,503] as const)test('DSH title retries transient failure then succeeds: '+failure,async()=>{
+  let calls=0;
+  const title=await generateDshTitle(input(),'m','chat-completions',async()=>{
+    if(++calls<3){if(failure==='network')throw new TypeError('fetch failed');return new Response('temporary',{status:failure});}
+    return Response.json({choices:[{message:{content:'{"title":"恢复标题"}'},finish_reason:'stop'}]});
+  });
+  assert.equal(title,'恢复标题');assert.equal(calls,3);
+});
+test('DSH title retry budget, nonretryable errors and cancellation are bounded',async()=>{
+  let calls=0;
+  await assert.rejects(generateDshTitle(input(),'m','chat-completions',async()=>{calls++;return new Response('',{status:503});}),/title_failed/);assert.equal(calls,3);
+  calls=0;await assert.rejects(generateDshTitle(input(),'m','chat-completions',async()=>{calls++;return new Response('',{status:401});}),/title_failed/);assert.equal(calls,1);
+  calls=0;const controller=new AbortController();
+  await assert.rejects(generateDshTitle({...input(),signal:controller.signal},'m','chat-completions',async()=>{calls++;controller.abort();return new Response('',{status:503});}));assert.equal(calls,1);
+});
+
+test('DSH title retries a dropped response body after releasing its reader',async()=>{
+ let calls=0;
+ const title=await generateDshTitle(input(),'m','chat-completions',async()=>{
+  if(++calls===1)return new Response(new ReadableStream({start(controller){controller.error(new TypeError('connection terminated'));}}));
+  return Response.json({choices:[{message:{content:'{"title":"读取恢复"}'},finish_reason:'stop'}]});
+ });
+ assert.equal(title,'读取恢复');assert.equal(calls,2);
+});

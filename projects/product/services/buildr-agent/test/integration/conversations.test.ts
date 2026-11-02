@@ -2903,3 +2903,14 @@ test('archived run preserves context usage and generation after a new turn repla
   }finally{db.close();}
  }finally{release();await f.close();}
 });
+
+test('early naming prefers a trusted native title without a duplicate independent request',async()=>{
+ const native=fake('local',{hold:true}),open=native.executor.open;let generated=0;
+ native.executor.open=async input=>({...await open(input),async readTitle(){return '可信原生摘要';},async generateTitle(){generated++;return '不应重复生成';}});
+ const f=fixture([native.executor]);
+ try{
+  await connected(f.service,'local');const view=await f.service.conversations.create('workspace-one',{});send(f.service,view.id,'local','检查原生摘要优先');
+  const named=await waitUntil(()=>f.service.conversations.read('workspace-one',view.id),v=>v.title==='可信原生摘要');
+  assert.equal(named.titleState?.status,'generated');assert.equal(generated,0);assert.equal(native.sends.length,1);
+ }finally{await f.close();}
+});

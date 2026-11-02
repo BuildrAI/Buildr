@@ -497,3 +497,38 @@ test('retained work remains discoverable after the latest response is read and c
  save(repo,r,row=>{row.view.run!.status='stopped';Object.assign(row.view.retainedRuns![0],{status:'stopped',executionState:'ended',tools:[]});});
  assert.equal(repo.hasUnfinishedWork(),false);
 });
+
+test('released retained uncertainty exits activity even with a legacy active summary, without mutating history',t=>{
+ const repo=fixture(t),r=record('released-history'),newer=record('newer-idle');
+ message(r,'input','finished work');message(newer,'input','newer work');
+ newer.view.entries[0].createdAt=new Date(Date.parse(r.view.updatedAt)+1000).toISOString();
+ const at=r.view.updatedAt;
+ r.view.run={id:'current',participantId:'p',provider:'codex',generation:'g',status:'completed',accepted:true,tools:[],startedAt:at,updatedAt:at};
+ r.view.retainedRuns=[{...r.view.run,id:'old',status:'unknown',executionState:'unknown',resourcesReleased:true,tools:[{id:'uncertain',label:'old command',status:'unknown'}]}];
+ repo.saveConversation(r);repo.saveConversation(newer);
+ const db=new DatabaseSync(repo.filename);
+ const original=db.prepare('SELECT body,revision FROM conversations WHERE id=?').get(r.view.id)!;
+ // A retained old writer saved the previous interpretation of activity.
+ db.prepare("UPDATE conversations SET is_active=1,summary=json_set(summary,'$.activity.active',json('true')) WHERE id=?").run(r.view.id);
+ db.close();
+ const restarted=new ConversationRepository(path.dirname(repo.filename));
+ assert.equal(restarted.querySummaries(['w1'],{activeOnly:true,limit:10}).total,0);
+ const page=restarted.querySummaries(['w1'],{limit:10});
+ assert.deepEqual(page.conversations.map(row=>row.id),[newer.view.id,r.view.id]);
+ assert.equal(page.conversations.find(row=>row.id===r.view.id)!.activity!.active,false);
+ assert.equal(restarted.markSeen('w1',r.view.id,r.view.activity!.version).active,false,'already-seen refresh also repairs the stale summary');
+ const after=new DatabaseSync(repo.filename,{readOnly:true});
+ assert.deepEqual(after.prepare('SELECT body,revision FROM conversations WHERE id=?').get(r.view.id),original,'unknown evidence and revision remain untouched');after.close();
+ assert.equal(new ConversationRepository(path.dirname(repo.filename)).querySummaries(['w1'],{activeOnly:true,limit:10}).total,0);
+});
+
+test('legacy summary correction preserves a retained running tool and known active execution',t=>{
+ const repo=fixture(t),r=record('retained-live');message(r,'input','context');const at=r.view.updatedAt;
+ r.view.run={id:'current',participantId:'p',provider:'codex',generation:'g',status:'completed',accepted:true,tools:[],startedAt:at,updatedAt:at};
+ r.view.retainedRuns=[{...r.view.run,id:'old',status:'unknown',resourcesReleased:true,executionState:'unknown',tools:[{id:'working',label:'worker',status:'running'}]}];
+ repo.saveConversation(r);
+ assert.equal(repo.querySummaries(['w1'],{activeOnly:true,limit:10}).total,1);
+ assert.equal(repo.markSeen('w1',r.view.id,r.view.activity!.version).active,true,'read receipt must use tool-bearing header, not stripped summary');
+ save(repo,r,row=>{row.view.retainedRuns![0].tools=[];row.view.retainedRuns![0].executionState='active';});
+ assert.equal(repo.querySummaries(['w1'],{activeOnly:true,limit:10}).total,1);
+});

@@ -1359,7 +1359,12 @@ export class ConversationApplication {
     const controller = new AbortController(); this.titleWork.set(id, controller);
     const timeout = setTimeout(() => controller.abort(), TITLE_TIMEOUT_MS + 2_000); timeout.unref();
     try {
-      const title = await within(runtime.generateTitle({ contextRef: participant.contextRef, cwd: record.view.cwd, description, ...(userText ? { userText } : {}), model: record.view.run?.model, freshInstruction: Boolean(record.view.forkedFrom), signal: controller.signal }), TITLE_TIMEOUT_MS, 'agent_title_timeout', controller.signal);
+      let title: string | undefined;
+      if (runtime.readTitle && !record.view.forkedFrom) title = await within(runtime.readTitle({contextRef:participant.contextRef,cwd:record.view.cwd}),2_000,'agent_title_timeout').catch(()=>undefined);
+      const observed=this.currentRun(workspaceId,id,runId);
+      if(!observed || !this.titleEligible(observed) || controller.signal.aborted)return;
+      if(this.acceptTitle(observed,title)){this.save(observed);return;}
+      title = await within(runtime.generateTitle({ contextRef: participant.contextRef, cwd: record.view.cwd, description, ...(userText ? { userText } : {}), model: record.view.run?.model, freshInstruction: Boolean(record.view.forkedFrom), signal: controller.signal }), TITLE_TIMEOUT_MS, 'agent_title_timeout', controller.signal);
       const current = this.currentRun(workspaceId, id, runId);
       if (!current || controller.signal.aborted) return;
       if (!this.titleEligible(current)) return;

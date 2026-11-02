@@ -26,8 +26,8 @@ test('DSH fork titles use an independent tool-free gateway request and do not pr
     assert.equal(requests.length,1);assert.equal(requests[0]!.url,'http://127.0.0.1:1234/v1/chat/completions');
     assert.equal(requests[0]!.body.model,'gateway-model');assert.deepEqual(requests[0]!.body.tools,[]);
     assert.ok(!JSON.stringify(requests[0]!.body).includes('work-context'));
-    await assert.rejects(runtime.generateTitle!({...input,freshInstruction:false}),/title_unavailable/);
-    assert.equal(requests.length,1,'ordinary DSH sessions keep their native title workflow without a duplicate model request');
+    assert.equal(await runtime.generateTitle!({...input,freshInstruction:false}),'新的分支方向');
+    assert.equal(requests.length,2,'ordinary DSH sessions have the same isolated fallback when native title is missing');
   }finally{await runtime.close();}
 });
 
