@@ -10,7 +10,12 @@ const providerNames:Record<string,string>={buildr:'Buildr',workspace:'工作空�
 const gapNames:Record<string,string>={'implicit-consumption-unavailable':'厂商隐式加载不可观察','historical-not-collected':'部分历史执行未采集','source-discovery-unavailable':'来源观察暂不可用','source-discovery-pending':'来源快照尚未返回','discovery-partial':'仅覆盖已核验的可发现对象','unsupported-source-form':'部分请求形式无法核对来源','index-building':'部分索引正在构建','tool-observation-stale':'部分原条目已被旧写入者更新，观察版本已失效','tool-not-collected':'部分工具缺少采集字段','partial-tool-observation':'部分工具观察不完整','projection-limit':'记录超过本次投影容量','metadata-limit':'元数据超过容量'};
 const resultNames:Record<string,string>={succeeded:'成功',failed:'失败',pending:'进行中',unknown:'结果未知'};
 /** On-demand metadata only. Closing or changing identity invalidates the observation. */
-export function BuildrParticipation({workspaceId,conversationId,runId}:Props) {
+// Temporary product visibility: keep collection and the implementation intact.
+const participationEntriesVisible = false;
+export function BuildrParticipation(props: Props) {
+  return participationEntriesVisible ? <ParticipationDetails {...props}/> : null;
+}
+function ParticipationDetails({workspaceId,conversationId,runId}:Props) {
   const context=useAgentConversations();
   const [open,setOpen]=useState(false),[days,setDays]=useState(7),[cursor,setCursor]=useState<string>(),[refresh,setRefresh]=useState(0),[cut,setCut]=useState(()=>new Date().toISOString());
   const [data,setData]=useState<AgentParticipationParticipation|AgentParticipationSummaryParticipationSummary>(),[error,setError]=useState(''),[loading,setLoading]=useState(false);

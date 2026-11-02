@@ -8,31 +8,22 @@ type ConversationScrollSample={at:number;top:number;height:number;viewport:numbe
 /** history 场景使用独立准备的对话现场。 */
 export async function runHistoryScenarios(fixture:AgentConversationFixture){
   const {capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,supplementaryInputs,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
-await step('Buildr 参与明细与汇总按需读取并明确候选和未知',async()=>{
+await step('Buildr 参与两个入口暂时隐藏且不请求参与数据',async()=>{
   const saved=structuredClone(fixture.conversation),at=new Date().toISOString();
-  let reads=0,details=0,summaries=0;
-  const source={identity:'unproven:cli:buildr',name:'Buildr CLI 候选',kind:'cli',providedBy:'unknown',status:'candidate',action:'requested',conversationId:saved.id,runId:'run-fixture',participantId:'participant-codex',startedAt:at,evidence:{entryId:'participation-tool',entryRevision:'a'.repeat(64)},outcome:'unknown'};
-  const intercept=async(route:any)=>{
-    const url=new URL(route.request().url());
-    if(url.pathname.endsWith('/participation')){reads++;await route.fulfill({json:{schemaVersion:'buildr.agent-participation/v1',contextConfiguration:'inherited',workspaceId,conversationId:saved.id,runId:'run-fixture',revision:'r',coverage:'partial',gaps:['implicit-consumption-unavailable'],items:Array.from({length:120},(_,i)=>({...source,identity:source.identity+':'+i,name:source.name+' '+i}))}});}
-    else if(url.pathname.includes('/entry-detail/')){details++;await route.fulfill({json:{id:'participation-tool',sequence:2,createdAt:at,kind:'tool',role:'system',text:'原记录正文，不是当前文件',input:'buildr task list',name:'command'}});}
-    else {summaries++;const offset=url.searchParams.has('cursor')?50:0;await route.fulfill({json:{schemaVersion:'buildr.agent-participation-summary/v1',workspaceId,revision:'r',range:{from:at,to:at},coverage:'partial',runs:3,collectedRuns:1,gaps:['historical-not-collected'],rows:Array.from({length:offset?10:50},(_,i)=>({identity:'summary-'+(offset+i),name:'汇总对象 '+(offset+i),kind:'cli',providedBy:'unknown',managedBy:null,status:'candidate',version:null,versionBasis:'unknown',runs:1,availableRuns:0,requestedAvailableRuns:0,observableUseRatio:null,submitted:0,requested:1,observed:0,succeeded:0,failed:0,pending:0,unknown:1,failureRatio:null,repeatedRequests:null,inputBytes:0,outputBytes:0,partialMeasures:0,unknownMeasures:2,evidence:[{conversationId:saved.id,runId:'participation-old-run',entryId:'older-participation-user',entryRevision:'b'.repeat(64)}]})),...(offset?{}:{nextCursor:'fixture-next'})}});}
-  };
-  const patterns=['**/participation?*','**/participation-summary?*','**/entry-detail/*'];
+  let reads=0;
+  const intercept=async(route:any)=>{reads++;await route.fulfill({status:500,json:{message:'隐藏时不应请求'}});};
+  const patterns=['**/participation?*','**/participation-summary?*'];
   try{
     for(const pattern of patterns)await page.route(pattern,intercept);
-    historyPages.set(1,{...saved,entries:[{id:'older-participation-user',sequence:0,runId:'participation-old-run',kind:'message',role:'user',text:'原记录较早执行',createdAt:at}],nextEntryCursor:undefined});
-    update({nextEntryCursor:1,run:run('completed'),requests:[],entries:[{id:'participation-user',sequence:1,runId:'run-fixture',kind:'message',role:'user',text:'观察参与',createdAt:at},{id:'participation-tool',sequence:2,runId:'run-fixture',kind:'tool',role:'system',name:'command',input:'buildr task list',text:'输出',status:'completed',createdAt:at},{id:'participation-answer',sequence:3,runId:'run-fixture',kind:'message',role:'assistant',text:'已完成测试现场\n\n'+('长答复用于覆盖读取视口。\n\n'.repeat(120)),status:'completed',createdAt:at}]});
-    await page.reload();await input().waitFor();assert.equal(reads,0,'未打开不查询');
-    await panel().getByRole('button',{name:'Buildr 参与',exact:true}).click();
-    const drawer=page.locator('.ant-drawer-content').filter({hasText:'本次执行的 Buildr 参与'});
-    await drawer.getByText('候选来源',{exact:false}).first().waitFor();await drawer.getByText('结果未知',{exact:true}).first().waitFor();await drawer.getByText('上下文配置：沿用原配置').waitFor();assert.equal(reads,1);
-    assert.equal(details,0);await drawer.getByRole('button',{name:'原文',exact:true}).first().click();await drawer.getByText('原记录正文，不是当前文件',{exact:false}).waitFor();assert.equal(details,1);
-    for(const width of [390,1280]){await page.setViewportSize({width,height:900});await drawer.locator('.ant-drawer-body').evaluate((node:HTMLElement)=>{node.scrollTop=node.scrollHeight;});const last=await drawer.locator('.ant-table-tbody tr').last().boundingBox(),body=await drawer.locator('.ant-drawer-body').boundingBox();assert.ok(last&&body&&last.y+last.height<=body.y+body.height+1,'长表格末行必须可达');assert.equal(await drawer.getByRole('button',{name:'关闭',exact:true}).count()+await drawer.getByRole('button',{name:'Close',exact:true}).count()>0,true);await capture(page,'buildr-participation-'+width+'.png');}
-    await drawer.locator('.ant-drawer-close').click();await drawer.waitFor({state:'hidden'});
-    await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();await panel().getByRole('button',{name:'Buildr 参与汇总',exact:true}).click();
-    const summary=page.locator('.ant-drawer-content').filter({hasText:'Buildr 参与汇总'});await summary.getByText('已知执行 3 次，采集到 1 次。').waitFor();assert.equal(summaries,1);await summary.getByRole('button',{name:'下一页',exact:true}).click();await summary.getByText('汇总对象 59',{exact:true}).waitFor();assert.equal(summaries,2);await summary.getByRole('button',{name:'执行 1',exact:true}).first().click();await panel().locator('[data-run-id="participation-old-run"]').waitFor();assert.equal(details,1,'导航和分页不重复请求原文');
-  }finally{for(const pattern of patterns)await page.unroute(pattern,intercept);historyPages.delete(1);update(saved);await page.setViewportSize({width:1280,height:900});}
+    update({run:run('completed'),requests:[],entries:[{id:'participation-user',sequence:1,runId:'run-fixture',kind:'message',role:'user',text:'观察参与',createdAt:at},{id:'participation-answer',sequence:2,runId:'run-fixture',kind:'message',role:'assistant',text:'已完成',status:'completed',createdAt:at}]});
+    await page.reload();await input().waitFor();
+    assert.equal(await panel().getByRole('button',{name:'Buildr 参与',exact:true}).count(),0);
+    await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();
+    await panel().locator('.ac-history-toolbar').waitFor();
+    assert.equal(await panel().getByRole('button',{name:'Buildr 参与汇总',exact:true}).count(),0);
+    assert.equal(reads,0,'隐藏入口不得请求参与查询');
+    await capture(page,'buildr-participation-entries-hidden.png');
+  }finally{for(const pattern of patterns)await page.unroute(pattern,intercept);update(saved);}
 });
 await step('交错执行按归属合组，旧问题存档和子报告不打断主线',async()=>{
   const saved=structuredClone(fixture.conversation),at=new Date().toISOString();

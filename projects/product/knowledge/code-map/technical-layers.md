@@ -220,3 +220,5 @@ Qoder [配套库解析](../../services/buildr-agent/src/executors/qoder/sdk-pair
   - [`persistence/conversation-repository.ts`](../../services/buildr-agent/src/persistence/conversation-repository.ts)：原记录持久化与修订匹配的派生索引重建。
 - **[`services/buildr/src/modules/agent-service/`](../../services/buildr/src/modules/agent-service/)**：通过公共 Agent 包装配宿主来源能力与认证 HTTP；[`application/participation-source.ts`](../../services/buildr/src/modules/agent-service/application/participation-source.ts)保持提供者、管理者与片段边界；[`application/participation-cli-source.ts`](../../services/buildr/src/modules/agent-service/application/participation-cli-source.ts)复用安装登记或当前开发身份核对精确入口，不维护命令白名单。
 - **[`services/buildr-web/src/features/agent-conversations/`](../../services/buildr-web/src/features/agent-conversations/)**：[`BuildrParticipation.tsx`](../../services/buildr-web/src/features/agent-conversations/BuildrParticipation.tsx)组织轮次明细、工作空间汇总和按需原证据；专属 API 客户端复用共享只读取消逻辑，不从当前已加载页面估算总量。
+
+当前“Buildr 参与”和“Buildr 参与汇总”两个界面入口暂时隐藏；自动采集、存储、只读查询及内部查看实现保留。隐藏状态不挂载面板、不自动请求参与数据。
