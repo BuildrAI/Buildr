@@ -127,6 +127,7 @@ test('a completed result does not authorize release while its managed source sti
   assert.equal(f.service.conversations.read('workspace',chat.id).run?.status,'completed');
   state.idle=true;await f.service.releaseIdleSources();const settled=f.service.conversations.read('workspace',chat.id);
   assert.equal(settled.run?.status,'completed');assert.equal(settled.run?.resourcesReleased,true);assert.equal(f.service.activity().busy,false);
+  assert.equal(settled.run?.updatedAt,chat.run?.updatedAt,'idle resource release must not extend the completed execution duration');
  }finally{await f.close();}
 });
 

@@ -109,6 +109,22 @@ test('Qoder reuses two proven normal rounds, preserves native history and releas
   } finally { await f.close(); }
 });
 
+test('Qoder idle resource shutdown preserves the exact completed observation without reporting a lost execution', async () => {
+  const f = await fixture();
+  try {
+    const round = await f.send('one');
+    const accepted = round.events.find(event => event.type === 'accepted'); assert.equal(accepted?.type, 'accepted');
+    const control = { contextRef: f.contextRef, executionRef: accepted.executionRef };
+    assert.equal((await f.runtime.observe(control)).status, 'idle');
+    assert.equal(await f.runtime.prepareRelease!(control), true);
+    const beforeClose = round.events.length;
+    await f.runtime.close();
+    assert.deepEqual(round.events.slice(beforeClose), [], 'closing the idle control channel must not revoke the native completion');
+    assert.deepEqual(await f.runtime.canRelease!(control), { executionState: 'unknown' });
+    assert.equal(round.events.filter(event => event.type === 'accepted').length, 1, 'shutdown never resends the input');
+  } finally { await f.close(); }
+});
+
 test('Qoder permission changes and external history invalidate idle reuse without changing the native context', async () => {
   const f = await fixture();
   try {

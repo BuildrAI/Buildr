@@ -39,7 +39,14 @@ class QoderRuntime implements AgentRuntime {
     this.bindingIdentity = bindingIdentity; this.rpc = rpc; this.executable = executable; this.environment = environment; this.configRoot = configRoot;
     rpc.onMessage(message => {
       if (message.method === 'buildr/transportClosed') {
-        for (const contextId of this.handlers.keys()) this.observationFailed(contextId, 'qoder_execution_observation_lost', message.params?.code);
+        for (const contextId of this.handlers.keys()) {
+          const observed = this.observations.get(contextId);
+          // Closing an idle control channel cannot revoke its exact native end.
+          // Unfinished tools, background work and missing history still need recovery.
+          if (observed?.executionRef && ['idle', 'stopped'].includes(observed.status) && observed.backgroundWork === false &&
+              observed.tools.every(tool => tool.status === 'completed') && !this.historyFailures.has(contextId) && !this.projectionFailures.has(contextId)) continue;
+          this.observationFailed(contextId, 'qoder_execution_observation_lost', message.params?.code);
+        }
         return;
       }
       if (message.method === 'event') {
@@ -248,8 +255,10 @@ class QoderRuntime implements AgentRuntime {
   async prepareRelease({contextRef,executionRef}:{contextRef:ContextRef;executionRef:ExecutionRef}):Promise<boolean>{
     this.reference(contextRef);
     const resource=executionRef.data;
-    if(!resource || resource.resourceGroup!==this.rpc.child.pid || resource.resourceContext!==contextRef.id ||
-      resource.resourceBinding!==this.bindingIdentity || resource.backgroundWork!==false || this.rpc.closed)return false;
+    if(!resource || resource.resourceContext!==contextRef.id || resource.resourceBinding!==this.bindingIdentity || resource.backgroundWork!==false)return false;
+    // A cold history reader has no live state for the old worker. Its exact
+    // process-group proof remains authoritative; never require a new-worker PID.
+    if(resource.resourceGroup!==this.rpc.child.pid || this.rpc.closed)return Boolean(await this.canRelease({contextRef,executionRef}));
     const proof=await this.rpc.call('release-check',{contextId:contextRef.id,executionId:executionRef.id},5000);
     return Boolean(proof.ended&&!proof.blocked);
   }

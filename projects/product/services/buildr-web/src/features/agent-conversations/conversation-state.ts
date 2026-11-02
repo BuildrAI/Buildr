@@ -214,6 +214,15 @@ export function groupConversationStream(entries:readonly ConversationEntry[],cur
   return items;
 }
 export type ConversationTurnItems={key:string;prompt?:ConversationEntry;items:ConversationStreamItem[]};
+/** Time the entire owned turn, including a final answer and an unsettled process block. */
+export function conversationTurnTiming(turn:ConversationTurnItems,runs:readonly ConversationRun[]=[]):{startedAt?:string;finishedAt?:string}{
+  const entries=[...(turn.prompt?[turn.prompt]:[]),...turn.items.flatMap(item=>item.type==='entry'?[item.entry]:item.entries)];
+  const runId=turn.prompt?.runId??entries.find(entry=>entry.runId)?.runId;
+  const run=runs.find(value=>value.id===runId);
+  const owned=runId?entries.filter(entry=>entry.runId===runId):entries;
+  const times=[...owned.map(entry=>entry.createdAt),...(run?[run.updatedAt]:[])].filter(value=>Number.isFinite(Date.parse(value)));
+  return {startedAt:run?.startedAt??turn.prompt?.createdAt??owned[0]?.createdAt,finishedAt:times.sort((a,b)=>Date.parse(a)-Date.parse(b)).at(-1)};
+}
 export function conversationStreamTurns(items:readonly ConversationStreamItem[]):ConversationTurnItems[]{
   const turns:ConversationTurnItems[]=[], owners=new Map<string,ConversationTurnItems>();
   for(const item of items){

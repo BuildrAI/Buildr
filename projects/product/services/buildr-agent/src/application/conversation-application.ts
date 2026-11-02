@@ -356,6 +356,7 @@ export class ConversationApplication {
             const record=this.load(value.workspaceId,value.conversationId),run=conversationRuns(record.view).find(run=>run.id===value.runId);
             if(!run||run.id!==value.runId||run.participantId!==value.id||run.generation!==this.options.generation)continue;
             const newlyReleased=!run.resourcesReleased;
+            const executionEnded=run.executionState==='ended'&&!unfinishedRun(run);
             run.executionState=run.executionState==='ended'?'ended':facts.get(value.id)!;run.resourcesReleased=true;
             if(run.accepted===false && !record.attempts.find(attempt=>attempt.runId===run.id)?.executionRef && (run.stopRequested||record.interruption?.runId===run.id && record.interruption.cancelled) && !run.tools.length){
               run.status='stopped';run.canContinue=false;
@@ -365,7 +366,8 @@ export class ConversationApplication {
               run.diagnostic=run.executionState==='ended'?'原执行已结束、后台资源已释放；操作结果仍待核对，不会自动重发。':'原生控制资源已释放；独立命令及操作结果仍待核对，不会自动重发。';
               run.tools=run.tools.map(tool=>tool.status==='running'?{...tool,status:'unknown',canStop:false}:tool);
             }
-            run.updatedAt=this.options.now();this.save(record);
+            // Resource bookkeeping is not additional execution time.
+            if(!executionEnded)run.updatedAt=this.options.now();this.save(record);
             if(newlyReleased && record.view.run?.id===run.id && record.interruption?.runId===run.id && !record.interruption.cancelled && !record.interruption.attempted && this.options.autoContinueInterrupted && !this.closing) {
               queueMicrotask(()=>{void this.recoverOne(value.workspaceId,value.conversationId).catch(()=>{});});
             }
@@ -1074,6 +1076,7 @@ export class ConversationApplication {
     const attempt = this.currentRun(workspaceId, id, runId)?.attempts.find(value => value.runId === runId);
     const request = attempt?.clientRequestId ?? '';
     const lineage = /^automatic-retry:([^:]+):(\d+)$/.exec(request);
+    const internalRecovery = Boolean(attempt?.continuationOf && (request.startsWith('host-recovery:') || lineage));
     const retries = retryCount ?? attempt?.automaticRetry?.count ?? Number(lineage?.[2] ?? 0);
     const rootRunId = attempt?.automaticRetry?.rootRunId ?? lineage?.[1] ?? runId;
     let dispatched = false;
@@ -1145,7 +1148,7 @@ export class ConversationApplication {
       const toContext = participant.contextRef!.id;
       // Persist identity only after native resume/create succeeded. Acceptance
       // remains a separate receipt, so a failed dispatch is never called a handoff success.
-      if (previousParticipant && (fromContext!==toContext || previousGeneration && previousGeneration!==this.options.generation)) {
+      if (!internalRecovery && previousParticipant && (fromContext!==toContext || previousGeneration && previousGeneration!==this.options.generation)) {
         const reason = fromContext===toContext ? 'backend-adoption' as const : 'session-replacement' as const;
         this.retryRecordUpdate(()=>{
           const current=this.currentRun(workspaceId,id,runId);if(!current)return;

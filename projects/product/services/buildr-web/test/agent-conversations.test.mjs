@@ -2,7 +2,7 @@ import {createConversationInputAttempts} from '../src/features/agent-conversatio
 import {finalReplyIds,forkableReplyIds} from '../src/features/agent-conversations/conversation-fork.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {needsConversationObservation,conversationObservationKey} from '../src/features/agent-conversations/conversation-state.ts';
+import {needsConversationObservation,conversationObservationKey,conversationTurnTiming,conversationStreamTurns} from '../src/features/agent-conversations/conversation-state.ts';
 import {conversationActionKey,createConversationActions} from '../src/features/agent-conversations/conversation-actions.ts';
 import { registerHooks } from 'node:module';
 import { existsSync } from 'node:fs';
@@ -18,6 +18,29 @@ registerHooks({resolve(specifier,context,next){
 const {createAgentConversationsClient}=await import('../src/features/agent-conversations/api/agent-conversations-api.ts');
 const session={writeHeaders:()=>({'x-buildr-session':'native-test-session','content-type':'application/json'})};
 const conversation={id:'chat/id',workspaceId:'saved/ws',revision:'r1',cwd:'/saved/root',title:'Work',hidden:false,updatedAt:'2026-10-23',participants:[],entries:[],requests:[{id:'approval/id',runId:'run/1',participantId:'original-codex',generation:'generation-1',kind:'approval',title:'Allow?'}],run:{id:'run/1',participantId:'original-codex',generation:'generation-1',provider:'codex',status:'running'}};
+
+test('整轮时间覆盖最后答复与未知过程，不截成首次说明的8秒',()=>{
+  const startedAt='2026-11-02T05:11:24.000Z',first='2026-11-02T05:11:32.000Z',finishedAt='2026-11-02T05:17:21.000Z';
+  const entries=[
+    {id:'input',runId:'run',kind:'message',role:'user',createdAt:startedAt,text:'排查'},
+    {id:'narration',runId:'run',kind:'message',role:'assistant',createdAt:first,text:'开始排查'},
+    {id:'tool',runId:'run',kind:'tool',role:'system',createdAt:'2026-11-02T05:16:56.000Z',text:'完成',status:'completed'},
+    {id:'answer',runId:'run',kind:'message',role:'assistant',createdAt:'2026-11-02T05:17:14.000Z',text:'结论',status:'completed'},
+  ];
+  for(const status of ['completed','unknown']){
+    const run={id:'run',status,executionState:status==='completed'?'ended':'unknown',tools:[],startedAt,updatedAt:finishedAt};
+    const [turn]=conversationStreamTurns(groupConversationStream(entries,run));
+    assert.deepEqual(conversationTurnTiming(turn,[run]),{startedAt,finishedAt});
+  }
+  const [historical]=conversationStreamTurns(groupConversationStream(entries));
+  assert.deepEqual(conversationTurnTiming(historical),{startedAt,finishedAt:entries.at(-1).createdAt},'无保留RunView的历史从原输入起计时，包含最终答复');
+});
+
+test('分段历史采用准确保留轮的时间，不借用其他轮或记录顺序',()=>{
+  const early='2026-11-02T05:00:00.000Z',end='2026-11-02T05:06:00.000Z';
+  const turn={key:'partial',items:[{type:'process-block',entries:[{id:'tool',runId:'old',kind:'tool',createdAt:'2026-11-02T05:05:00.000Z'},{id:'other',runId:'other',createdAt:'2026-11-02T06:00:00.000Z'}]}]};
+  assert.deepEqual(conversationTurnTiming(turn,[{id:'old',startedAt:early,updatedAt:end},{id:'other',startedAt:end,updatedAt:'2026-11-02T07:00:00.000Z'}]),{startedAt:early,finishedAt:end});
+});
 
 test('准确可接续的命令不锁输入，仍持续观察；缺少证明时保持保护',()=>{
   const view={...conversation,requests:[],run:{...conversation.run,status:'tools-active',canContinue:true,tools:[{id:'old',label:'browser',status:'running',canStop:true}]}};

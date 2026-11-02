@@ -398,6 +398,33 @@ await step('历史工具失败不改变当前执行图形的状态',async()=>{
   }finally{fixture.conversation=saved;await page.reload();await input().waitFor();}
 });
 
+await step('整轮计时包含最后答复，过程折叠向右、展开向下',async()=>{
+  const saved=structuredClone(fixture.conversation);
+  try{
+    const startedAt='2026-11-02T05:11:24.000Z',updatedAt='2026-11-02T05:17:21.000Z';
+    const entries=[
+      {id:'timed-input',sequence:1,kind:'message',role:'user',runId:'run-fixture',text:'排查对话搜索',createdAt:startedAt},
+      {id:'timed-narration',sequence:2,kind:'message',role:'assistant',runId:'run-fixture',text:'开始排查',createdAt:'2026-11-02T05:11:32.000Z',status:'completed'},
+      {id:'timed-tool',sequence:3,kind:'tool',role:'system',runId:'run-fixture',name:'command',text:'已核对实现',createdAt:'2026-11-02T05:16:56.000Z',status:'completed'},
+      {id:'timed-answer',sequence:4,kind:'message',role:'assistant',runId:'run-fixture',text:'排查结论已保存',createdAt:'2026-11-02T05:17:14.000Z',status:'completed'},
+    ];
+    for(const status of ['completed','unknown']){
+      update({entries,run:run(status,'qoder',{startedAt,updatedAt,resourcesReleased:true,executionState:status==='completed'?'ended':'unknown'}),requests:[]});
+      await page.reload();await input().waitFor();
+      assert.equal(await panel().locator('.ac-execution-indicator time').first().innerText(),'00:05:57');
+      const initial=panel().locator('.ac-turn-identity-toggle');
+      if(await initial.getAttribute('aria-expanded')==='true')await initial.click();
+      const expand=panel().getByRole('button',{name:'展开处理过程',exact:true});
+      await expand.waitFor();assert.equal(await expand.locator('.ac-turn-identity-caret svg').getAttribute('data-icon'),'right');
+      await expand.click();
+      const collapse=panel().getByRole('button',{name:'收起处理过程',exact:true});
+      assert.equal(await collapse.locator('.ac-turn-identity-caret svg').getAttribute('data-icon'),'down');
+      await collapse.click();assert.equal(await expand.locator('.ac-turn-identity-caret svg').getAttribute('data-icon'),'right');
+      if(status==='completed')await capture(page,'conversation-whole-turn-time.png');
+    }
+  }finally{fixture.conversation=saved;await page.reload();await input().waitFor();}
+});
+
 await step('连续工具默认汇总折叠，明确展开在追加时保持，结束折叠且展开后失败提醒靠右',async()=>{
       const previous=structuredClone(fixture.conversation);
       const tool=(id:string,status='completed')=>({id,sequence:id==='single-tool'?1:2,kind:'tool',role:'system',name:'command',text:'echo verify\ncommand output',status,runId:'run-fixture',createdAt:new Date().toISOString()});
@@ -498,6 +525,26 @@ await step('仅当前运行段悬浮，历史无嵌套卡片，结束失败停�
       await capture(page,'conversation-running-context-history.png');fixture.conversation=previous;await page.reload();await input().waitFor();
     });
 
+await step('打开和刷新时补足首屏，折叠过程不占高度也能继续补页，填满即停止',async()=>{
+  const saved=structuredClone(fixture.conversation),reads=fixture.entryReads;
+  const entry=(sequence:number,runId:string,kind:string,role:string,text:string)=>({id:'fill-'+sequence,sequence,runId,kind,role,text,status:'completed',createdAt:new Date().toISOString()});
+  try{
+    update({entries:[entry(201,'fill-latest','tool','system','最后的工具'),entry(202,'fill-latest','message','assistant','最终答复')],nextEntryCursor:201,run:run('completed','codex',{id:'fill-latest'})});
+    historyPages.set(201,{...fixture.conversation,entries:[entry(180,'fill-latest','tool','system','仍属于折叠过程')],nextEntryCursor:180});
+    historyPages.set(180,{...fixture.conversation,entries:[entry(160,'fill-previous','message','user','之前的要求'),entry(161,'fill-previous','message','assistant',Array.from({length:36},(_,i)=>'上一轮可阅读的答复内容 '+i).join('\n\n')),entry(170,'fill-latest','message','user','最新要求')],nextEntryCursor:160});
+    historyPages.set(160,{...fixture.conversation,entries:[entry(140,'fill-earlier','message','user','不应自动读到这里')],nextEntryCursor:140});
+    for(let opened=1;opened<=2;opened++){
+      await page.reload();await panel().locator('[data-entry-id="fill-161"]').waitFor();
+      await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())))));
+      const view=await panel().locator('.ac-stream').evaluate((node:HTMLElement)=>({height:node.scrollHeight,viewport:node.clientHeight,gap:node.scrollHeight-node.scrollTop-node.clientHeight}));
+      assert.ok(view.height>view.viewport,JSON.stringify(view));assert.ok(view.gap<2,JSON.stringify(view));
+      assert.equal(fixture.entryReads,reads+opened*2,'只补两批，不读取已经足够一屏之外的历史');
+      assert.equal(await panel().locator('[data-run-id="fill-latest"] .ac-turn-identity-toggle').getAttribute('aria-expanded'),'false');
+    }
+    await capture(page,'conversation-viewport-filled.png');
+  }finally{fixture.conversation=saved;historyPages.clear();await page.reload();await input().waitFor();}
+});
+
 await step('向上接近历史自动单批加载，阅读定位与展开保持，键盘触摸及失败重试隔离',async()=>{
       const previous=structuredClone(fixture.conversation),oldViewport=page.viewportSize(),readsBefore=fixture.entryReads;
       const entry=(sequence:number,kind:string,role:string,round:number)=>({id:'history-'+sequence,sequence,kind,role,runId:'history-round-'+round,name:kind==='tool'?'read':undefined,text:kind==='tool'?'读取 a.ts':role==='user'?'更早的用户要求 '+sequence:Array.from({length:10},(_,i)=>`第 ${round} 轮答复的阅读内容 ${i}`).join('\n\n'),input:kind==='tool'?'{}':undefined,status:'completed',createdAt:new Date().toISOString()});
@@ -570,19 +617,22 @@ await step('向上接近历史自动单批加载，阅读定位与展开保持�
       }
     });
 
-await step('不足一屏不自动耗尽历史，滚轮触摸与键盘可自然向上续读',async()=>{
+await step('首屏补页预算耗尽后，滚轮触摸与键盘仍可自然向上续读',async()=>{
       const previous=structuredClone(fixture.conversation),stream=panel().locator('.ac-stream');
       const entry=(sequence:number,role:string)=>({id:'short-'+sequence,sequence,kind:'message',role,text:role==='user'?'更早的用户要求':'短答复',runId:'short-run-'+sequence,createdAt:new Date().toISOString()});
       try{
         for(const gesture of ['wheel','touch','keyboard']){
-          const readsBefore=fixture.entryReads;update({entries:[entry(201,'assistant')],nextEntryCursor:201});historyPages.set(201,{...fixture.conversation,entries:[entry(180,'user')],nextEntryCursor:180});historyPages.set(180,{...fixture.conversation,entries:[entry(160,'user')],nextEntryCursor:undefined});
-          await page.reload();await panel().locator('[data-entry-id="short-201"]').waitFor();await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
-          assert.ok(await stream.evaluate((node:HTMLElement)=>node.scrollHeight<=node.clientHeight+1));assert.equal(fixture.entryReads,readsBefore,'不足一屏也等待阅读动作');
+          const readsBefore=fixture.entryReads;update({entries:[entry(201,'assistant')],nextEntryCursor:201});
+          for(const [before,after] of [[201,180],[180,160],[160,140],[140,120]])historyPages.set(before,{...fixture.conversation,entries:[{...entry(after,'system'),kind:'tool',runId:'short-run-201'}],nextEntryCursor:after});
+          historyPages.set(120,{...fixture.conversation,entries:[entry(100,'user')],nextEntryCursor:100});historyPages.set(100,{...fixture.conversation,entries:[entry(80,'user')],nextEntryCursor:undefined});
+          const filled=page.waitForResponse((response:any)=>{const url=new URL(response.url());return url.pathname.endsWith('/entries')&&url.searchParams.get('before')==='140';});
+          await page.reload();await filled;await panel().locator('[data-entry-id="short-201"]').waitFor();await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
+          assert.ok(await stream.evaluate((node:HTMLElement)=>node.scrollHeight<=node.clientHeight+1));assert.equal(fixture.entryReads,readsBefore+4,'首屏填充预算有界');
           if(gesture==='wheel'){const box=await stream.boundingBox();await page.mouse.move(box!.x+box!.width/2,box!.y+80);await page.mouse.wheel(0,-120);}
           else if(gesture==='keyboard'){await stream.focus();await stream.press('PageUp');}
           else await stream.evaluate((node:HTMLElement)=>{for(const [type,y] of [['touchstart',100],['touchmove',140],['touchend',undefined]] as const){const point=y===undefined?undefined:new Touch({identifier:1,target:node,clientX:40,clientY:y});node.dispatchEvent(new TouchEvent(type,{bubbles:true,touches:point?[point]:[],changedTouches:point?[point]:[]}));}});
-          await panel().locator('[data-entry-id="short-180"]').waitFor();await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
-          assert.equal(await stream.evaluate((node:HTMLElement)=>node.scrollTop),0,'不足一屏补页保留顶部');assert.equal(fixture.entryReads,readsBefore+1,gesture+'只加载所需一批');assert.equal(await panel().locator('[data-entry-id="short-160"]').count(),0,'不自动继续耗尽历史');
+          await panel().locator('[data-entry-id="short-100"]').waitFor();await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
+          assert.equal(await stream.evaluate((node:HTMLElement)=>node.scrollTop),0,'不足一屏补页保留顶部');assert.equal(fixture.entryReads,readsBefore+5,gesture+'只加载所需一批');assert.equal(await panel().locator('[data-entry-id="short-80"]').count(),0,'不自动继续耗尽历史');
         }
       }finally{historyPages.clear();fixture.conversation=previous;await page.reload();await panel().locator('[data-run-status="stopped"]').waitFor();}
     });
