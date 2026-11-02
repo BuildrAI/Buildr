@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { spawn, spawnSync } from 'node:child_process';
 import { useLegacyAssetCatalog } from '../helpers/legacy-asset-catalog.ts';
@@ -150,7 +151,7 @@ test('npm package uses only its compatible host Node for CLI and on-demand Build
       ['init', '-b', 'main'],
       ['add', '.'],
       ['-c', 'user.name=Buildr Test', '-c', 'user.email=buildr@example.com', 'commit', '-m', 'External service fixture'],
-      ['remote', 'add', 'origin', external],
+      ['remote', 'add', 'origin', pathToFileURL(external).href],
     ]) {
       const result = spawnSync('git', args, { cwd: external, encoding: 'utf8' });
       assert.equal(result.status, 0, result.stderr || result.stdout);
