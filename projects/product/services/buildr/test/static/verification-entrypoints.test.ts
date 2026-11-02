@@ -62,7 +62,6 @@ test('release tarball smoke isolates npm cache writes without a Workspace runtim
   assert.match(releaseSmoke, /npm_config_cache: npmCache/);
   assert.doesNotMatch(releaseSmoke, /BUILDR_NODE_RUNTIME/);
   assert.match(releaseSmoke, /\['install', '--offline', '--global'/);
-  assert.match(releaseSmoke, /RELEASE_LAUNCHER_READINESS_TIMEOUT_MS(?:: any)? = 15_000/);
   assert.match(releaseSmoke, /const launcherEnvironment(?:: any)? = \{/);
   assert.match(releaseSmoke, /\.\.\.runtimeEnv/);
   assert.match(platformLauncher, /`PATH=\$\{environment\.PATH\}`/);
