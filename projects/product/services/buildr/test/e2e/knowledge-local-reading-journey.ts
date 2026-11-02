@@ -149,7 +149,10 @@ export async function runKnowledgeLocalReadingJourney({ page, workspaceRoot, ser
     await reader().getByRole('button', { name: '查看原文', exact: true }).click();
     assert.match(await reader().locator('.markdown-reader-source').innerText(), /```mermaid/);
     await reader().getByRole('button', { name: '阅读模式', exact: true }).click();
-    await reader().getByText(/当前阅读器显示 Mermaid 源码，尚未渲染图示/).waitFor();
+    // 成功渲染后产品会隐藏 Mermaid 源码提示并插入 SVG；旧回退文案已移除。
+    const diagram = reader().locator('[data-mermaid-state="rendered"]');
+    await diagram.locator('.markdown-diagram-view svg').waitFor({ timeout: 20_000 });
+    assert.equal(await diagram.locator('.markdown-render-note').isVisible(), false);
     const image = reader().getByRole('img', { name: '本地阅读图片', exact: true });
     await image.waitFor();
     await image.evaluate((element: HTMLImageElement) => element.decode());
