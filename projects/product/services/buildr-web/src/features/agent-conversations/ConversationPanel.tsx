@@ -100,7 +100,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   const permissionStorageKey=conversationPermissionStorageKey(permissionProfile,context.scope,draftWorkspaceId);
   const savedPermission=(()=>{try{return readConversationPermission(permissionStorageKey,sessionStorage);}catch{return;}})();
   const rememberedPermission=context.scope&&(!chat?.childOf||chat.run)?undefined:modulePreference.permission?rememberedConversationPermission(modulePreference,draftWorkspaceId):savedPermission??rememberedConversationPermission(modulePreference,draftWorkspaceId);
-  const permissionMode=selectedConversationPermission(permissionChoices[permissionKey]??(context.scope&&(!chat?.childOf||chat.run)?savedPermission:savedPermission??rememberedPermission),chat?.run);
+  const permissionMode=selectedConversationPermission(permissionChoices[permissionKey]??(context.scope&&(!chat?.childOf||chat.run)?savedPermission:savedPermission??rememberedPermission),chat?.run,connection);
   const permissionAvailable=supportsConversationPermission(connection,permissionMode);
   const {attachments,setAttachments,available:attachmentsAvailable}=useConversationAttachments(context.api,chat,permissionProfile);
   const attachmentKey=draftSlot;

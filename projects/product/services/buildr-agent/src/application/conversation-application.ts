@@ -33,7 +33,6 @@ import type { ConnectionApplication } from './connection-application.ts';
 import type { ConversationEvents } from './conversation-events.ts';
 import {HANDOFF_PROMPT,handoffEntries,organizeHandoff,displayRounds,receivingBudget,formatHandoffRounds} from '../domain/handoff-material.ts';
 import {handoffSources} from './handoff-sources.ts';
-import { resolvePermissionMode } from '../domain/permission-mode.ts';
 import type { HostContext } from './host-context.ts';
 import { PendingSendRepository } from '../persistence/pending-send-repository.ts';
 import { ConversationSupplements } from './conversation-supplements.ts';
@@ -161,7 +160,7 @@ export class ConversationApplication {
         const participant = record.participants.find(value => value.id === run.participantId)!;
         const draft: SendDraft = { expectedRevision: record.view.revision, connectionId: participant.connectionId,
           model: run.model, modelAccountId: run.modelAccountId, modelAccountIdentity: run.modelAccountIdentity, serviceTier: run.serviceTier,
-          reasoningEffort: run.reasoningEffort, permissionMode: run.permissionMode, text: input.text, attachmentIds: input.attachmentIds };
+          reasoningEffort: run.reasoningEffort, permissionMode: run.permissionMode ?? 'default', text: input.text, attachmentIds: input.attachmentIds };
         const prepared = this.prepare(record, draft);
         return this.submit(record, { ...draft, previewToken: prepared.preview.token, clientRequestId: requestId }).conversation;
       },
@@ -646,7 +645,13 @@ export class ConversationApplication {
     this.options.events.publish({ type: 'conversation', workspaceId, conversationId: id, revision: view.revision, payload: { conversation: view } });
     return view;
   }
-  private draft(input: SendDraft): SendDraft { return normalizeSendDraft(input); }
+  private draft(input: SendDraft): SendDraft {
+    const draft = normalizeSendDraft(input);
+    // Only an omitted selection may fall back; explicit full-access must never be downgraded.
+    const modes = this.options.connections.get(draft.connectionId).capabilities.permissionModes ?? ['default'];
+    if (input.permissionMode === undefined && !modes.includes('full-access') && modes.includes('default')) draft.permissionMode = 'default';
+    return draft;
+  }
   private prepare(record: StoredConversation, raw: SendDraft, answerMaterials: string[] = []): { preview: SendPreview; text: string; images: ExecutorImage[]; draft: SendDraft;configuration?:string;needsCompression:boolean;fullText:string } {
     this.options.connections.assertProgramAvailable(raw.connectionId);
     let input = this.draft(raw); expected(record.view.revision, input.expectedRevision);
@@ -791,7 +796,7 @@ export class ConversationApplication {
     const repeated = record.attempts.find(attempt => attempt.clientRequestId === clientRequestId);
     if (repeated) {
       const legacyDigest = hash({ ...this.draft(raw), permissionMode: undefined, expectedRevision: undefined });
-      if (repeated.inputDigest !== inputDigest && !(resolvePermissionMode(raw.permissionMode) === 'default' && repeated.inputDigest === legacyDigest)) fail('agent_request_conflict', '相同请求身份对应不同输入，已拒绝重复执行。', 409);
+      if (repeated.inputDigest !== inputDigest && !(raw.permissionMode === 'default' && repeated.inputDigest === legacyDigest)) fail('agent_request_conflict', '相同请求身份对应不同输入，已拒绝重复执行。', 409);
       if (record.view.run?.id !== repeated.runId) fail('agent_request_already_accepted', '该请求已受理，请读取其原有历史。', 409);
       return { run: structuredClone(record.view.run), conversation: this.view(record) };
     }
@@ -1540,7 +1545,7 @@ export class ConversationApplication {
       }
       const unknown=run.tools.filter(tool=>tool.status==='unknown').map(tool=>tool.id);
       const text='系统自动恢复：上次执行因 Buildr '+(marker.reason==='execution-fault'?'执行协议或运行通道异常':marker.reason==='transport'?'执行观察中断':'服务重启')+'而中断，'+(released?'准确原控制资源已释放，原执行及独立操作结果仍可能未知。':'现已确认原执行停止。')+'请先核对本地对话、当前工作成果与工具结果，继续完成用户尚未完成的目标。不要重新执行全部历史命令，不重发原指令；不确定已生效的操作先核对，不扩大原有授权或代答问题。未知工具引用：'+(unknown.join('、')||'见原轮记录')+'。若需要真实用户决定，请明确提出。';
-      const draft:SendDraft={expectedRevision:record.view.revision,connectionId:participant.connectionId,modelAccountId:participant.modelAccountId,modelAccountIdentity:participant.modelAccountIdentity,model:run.model,serviceTier:run.serviceTier,reasoningEffort:run.reasoningEffort,permissionMode:run.permissionMode,text,skipHandoffSummary:true};
+      const draft:SendDraft={expectedRevision:record.view.revision,connectionId:participant.connectionId,modelAccountId:participant.modelAccountId,modelAccountIdentity:participant.modelAccountIdentity,model:run.model,serviceTier:run.serviceTier,reasoningEffort:run.reasoningEffort,permissionMode:run.permissionMode??'default',text,skipHandoffSummary:true};
       this.prepare(record,draft);
       if(!record.interruption.attempted)record.attempts.find(value=>value.runId===originalId)!.automaticRetry={rootRunId:lineage.rootRunId,count:lineage.count+1};
       record.interruption.attempted=true;this.save(record);

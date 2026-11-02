@@ -95,7 +95,7 @@ export class ConversationDrafts {
         }
         for (const image of selected) record.attachments[image.id] = { mimeType: image.mimeType, size: image.size, createdAt: new Date().toISOString(), ...(image.video ? {video:image.video} : {}) };
       }
-      const draft = { ...normalized, expectedRevision: record.view.revision };
+      const draft = { ...normalized, permissionMode: input.permissionMode, expectedRevision: record.view.revision };
       const preview = this.ports.prepare(record, draft);
       const result = this.ports.submit(record, { ...draft, previewToken: preview.token, clientRequestId: input.clientRequestId });
       this.clearSubmitted(scope, id, ids);

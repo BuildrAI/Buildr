@@ -1,3 +1,4 @@
+import { resolvePermissionMode } from './permission-mode.ts';
 import type { PendingRequestView, SendDraft } from '../contracts.ts';
 import { fail, nonempty, type StoredConversation } from './agent-state.ts';
 
@@ -37,7 +38,7 @@ export function waitingHandoffQuestions(record: StoredConversation, draft: SendD
   const run = record.view.run;
   if (!run || run.id !== intent.runId || run.participantId !== intent.participantId || run.generation !== intent.generation || draft.continueRunId && draft.continueRunId !== run.id) fail('agent_handoff_stale', '原执行身份已变化，交接内容保留，请核对后重新提交。', 409);
   const participant = record.participants.find(item => item.id === run.participantId);
-  const sameSelection = participant?.connectionId === draft.connectionId && run.model === draft.model && run.modelAccountId === draft.modelAccountId && run.serviceTier === draft.serviceTier && (run.permissionMode ?? 'default') === (draft.permissionMode ?? 'default') && run.reasoningEffort === draft.reasoningEffort;
+  const sameSelection = participant?.connectionId === draft.connectionId && run.model === draft.model && run.modelAccountId === draft.modelAccountId && run.serviceTier === draft.serviceTier && (run.permissionMode ?? 'default') === resolvePermissionMode(draft.permissionMode) && run.reasoningEffort === draft.reasoningEffort;
   if (intent.intent === 'discussion') {
     if (!sameSelection || !draft.text.trim() || draft.continueRunId) fail('agent_discussion_invalid', '先讨论需保持原执行组合并填写要讨论的内容。', 409);
   } else if (participant?.connectionId === draft.connectionId && run.model === draft.model && run.modelAccountId === draft.modelAccountId && run.serviceTier === draft.serviceTier) fail('agent_handoff_unchanged', '当前仍选择原执行组合，请直接回答原问题，或选择其他模型后交接。', 409);

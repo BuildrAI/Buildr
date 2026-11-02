@@ -1,3 +1,4 @@
+import { resolvePermissionMode } from './permission-mode.ts';
 import type { SendDraft } from '../contracts.ts';
 import { fail, type StoredConversation } from './agent-state.ts';
 
@@ -9,7 +10,7 @@ export function releasedContinuation(record: StoredConversation, input: SendDraf
     run.tools.every(tool => tool.status !== 'running') && input.connectionId === participant.connectionId &&
     input.modelAccountId === run.modelAccountId && input.modelAccountIdentity === run.modelAccountIdentity && input.model === run.model &&
     input.serviceTier === run.serviceTier && input.reasoningEffort === run.reasoningEffort &&
-    (input.permissionMode ?? 'default') === (run.permissionMode ?? 'default'));
+    resolvePermissionMode(input.permissionMode) === (run.permissionMode ?? 'default'));
 }
 
 /** Resolve the exact failed work from saved facts, never from a fresh user message. */

@@ -150,3 +150,13 @@ test('local HTTP server executes list reply and continue',async()=>{
     assert.equal(calls.length,6);assert.equal(calls[2].body.answer,'拒绝');assert.equal(calls[5].body.previewToken,'preview');assert.ok(calls.every(c=>!/supplement|pending-send|tasks/.test(c.url)));
   }finally{server.closeAllConnections();await new Promise<void>((resolve,reject)=>server.close(e=>e?reject(e):resolve()));}
 });
+
+test('send forwards explicit permission overrides and rejects invalid mode before effects', async () => {
+  assert.throws(() => parseAgentArgs('send', ['hi', '--permission-mode', 'invalid']));
+  for (const mode of ['default', 'full-access']) {
+    const m = mock([{connections:[{id:'codex',enabled:true,status:'ready'}]}, {id,revision:'r1'}, {fits:true,revision:'r2',token:'preview'}, {conversation:{id}}]);
+    await executeAgentCommand(parseAgentArgs('send', ['hi', '--permission-mode', mode]), id, m.request);
+    assert.equal(m.calls[2].body.permissionMode, mode);
+    assert.equal(m.calls[3].body.permissionMode, mode);
+  }
+});

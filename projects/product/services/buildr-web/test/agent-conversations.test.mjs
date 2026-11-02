@@ -307,7 +307,9 @@ test('权限模式按准确对话隔离，新草稿权限按工作空间共享�
   const first=conversationPermissionKey(null,'ws-a'),next=conversationPermissionKey(null,'ws-b');assert.notEqual(first,next);
   assert.equal(conversationPermissionKey(null,'ws-a'),conversationPermissionKey(null,'ws-a'),'同一工作空间的新对话共享一份权限选择');
   assert.notEqual(conversationPermissionKey({workspaceId:'a',conversationId:'same'},'x'),conversationPermissionKey({workspaceId:'b',conversationId:'same'},'x'));
-  assert.equal(selectedConversationPermission(undefined,undefined),'default');
+  assert.equal(selectedConversationPermission(undefined,undefined),'full-access');
+  assert.equal(selectedConversationPermission(undefined,undefined,{capabilities:{}}),'default');
+  assert.equal(selectedConversationPermission(undefined,undefined,{capabilities:{permissionModes:['default','full-access']}}),'full-access');
   assert.equal(selectedConversationPermission(undefined,conversation.run),'default');
   assert.equal(selectedConversationPermission(undefined,{...conversation.run,permissionMode:'full-access'}),'full-access');
   assert.equal(selectedConversationPermission('default',{...conversation.run,permissionMode:'full-access'}),'default');

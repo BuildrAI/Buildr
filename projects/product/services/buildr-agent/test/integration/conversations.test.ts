@@ -1142,7 +1142,7 @@ test('permission intent is preview-bound, capability-gated and persisted; switch
   const f = fixture([a.executor, b.executor]);
   try {
     await connected(f.service, 'a'); await connected(f.service, 'b'); const chat = await f.service.conversations.create('workspace-one', {});
-    const first = { expectedRevision: chat.revision, connectionId: 'a', text: 'first', permissionMode: 'full-access' as const };
+    const first = { expectedRevision: chat.revision, connectionId: 'a', text: 'first' };
     const preview = f.service.conversations.prepareSend('workspace-one', chat.id, first); assert.equal(preview.permissionMode, 'full-access');
     assert.throws(() => f.service.conversations.prepareSend('workspace-one', chat.id, { ...first, permissionMode: 'silent' as any }), { code: 'agent_permission_invalid' });
     assert.throws(() => f.service.conversations.send('workspace-one', chat.id, { ...first, permissionMode: 'default', previewToken: preview.token, clientRequestId: 'mode-request' }), { code: 'agent_preview_stale' }); assert.equal(a.sends.length, 0);
@@ -1155,13 +1155,16 @@ test('permission intent is preview-bound, capability-gated and persisted; switch
     const switchDraft = { expectedRevision: done.revision, connectionId: 'b', text: 'switch', permissionMode: done.run!.permissionMode };
     const switched = f.service.conversations.prepareSend('workspace-one', chat.id, switchDraft); f.service.conversations.send('workspace-one', chat.id, { ...switchDraft, previewToken: switched.token, clientRequestId: randomUUID() });
     done = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), value => value.run?.status === 'completed'); assert.equal(b.sends[0]!.permissionMode, 'full-access');
-    const newChat = await f.service.conversations.create('workspace-one', {}); assert.equal(f.service.conversations.prepareSend('workspace-one', newChat.id, { expectedRevision: newChat.revision, connectionId: 'a', text: 'fresh' }).permissionMode, 'default');
+    const newChat = await f.service.conversations.create('workspace-one', {}); assert.equal(f.service.conversations.prepareSend('workspace-one', newChat.id, { expectedRevision: newChat.revision, connectionId: 'a', text: 'fresh' }).permissionMode, 'full-access');
+    f.service.conversations.send('workspace-one', newChat.id, { expectedRevision: newChat.revision, connectionId: 'b', text: 'direct omitted mode', clientRequestId: randomUUID() });
+    const freshDone = await waitUntil(() => f.service.conversations.read('workspace-one', newChat.id), value => value.run?.status === 'completed');
+    assert.equal(freshDone.run!.permissionMode, 'full-access');
     await f.service.close(); const restored = createAgentService(f.options);
     try {
       assert.equal(restored.conversations.read('workspace-one', chat.id).run!.permissionMode, 'full-access');
       const observationStart = resumes.length; done = await restored.conversations.observe('workspace-one', chat.id);
       assert.equal(done.run!.permissionMode, 'full-access'); assert.deepEqual(resumes.slice(observationStart), [{ provider: 'a', permissionMode: undefined }, { provider: 'b', permissionMode: undefined }]);
-      const defaultDraft = { expectedRevision: done.revision, connectionId: 'a', text: 'default again' }; const reset = restored.conversations.prepareSend('workspace-one', chat.id, defaultDraft); assert.equal(reset.permissionMode, 'default');
+      const defaultDraft = { expectedRevision: done.revision, connectionId: 'a', text: 'default again', permissionMode: 'default' as const }; const reset = restored.conversations.prepareSend('workspace-one', chat.id, defaultDraft); assert.equal(reset.permissionMode, 'default');
       restored.conversations.send('workspace-one', chat.id, { ...defaultDraft, previewToken: reset.token, clientRequestId: randomUUID() });
       done = await waitUntil(() => restored.conversations.read('workspace-one', chat.id), value => value.run?.status === 'completed'); assert.equal(done.run!.permissionMode, 'default'); assert.equal(a.sends[1]!.permissionMode, 'default'); assert.equal(a.sends[1]!.contextRef.id, a.sends[0]!.contextRef.id);
       assert.ok(resumes.some(value => value.provider === 'a' && value.permissionMode === 'default'));
@@ -1261,6 +1264,7 @@ test('legacy runs and accepted request digests without a mode stay default-compa
       record.attempts[0].inputDigest = createHash('sha256').update(JSON.stringify({ connectionId: 'local', text: 'legacy accepted input', attachmentIds: [] })).digest('hex');
       db.prepare('UPDATE conversations SET body=? WHERE id=?').run(JSON.stringify(record), chat.id);
     } finally { db.close(); }
+    assert.throws(() => f.service.conversations.send('workspace-one', chat.id, { expectedRevision: done.revision, connectionId: 'local', text: 'legacy accepted input', clientRequestId: 'legacy-mode-request' }), { code: 'agent_request_conflict' });
     const repeated = f.service.conversations.send('workspace-one', chat.id, { expectedRevision: done.revision, connectionId: 'local', text: 'legacy accepted input', permissionMode: 'default', previewToken: 'not-used-for-an-already-accepted-request', clientRequestId: 'legacy-mode-request' });
     assert.equal(repeated.run.id, done.run!.id); assert.equal(repeated.run.permissionMode, undefined); assert.equal(native.sends.length, 1);
     const preview = f.service.conversations.prepareSend('workspace-one', chat.id, { expectedRevision: done.revision, connectionId: 'local', text: 'new input' }); assert.equal(preview.permissionMode, 'default');

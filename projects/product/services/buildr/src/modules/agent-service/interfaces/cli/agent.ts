@@ -3,7 +3,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { parseWorkspaceManifest } from '../../../workspace/persistence/workspace-manifest-repository.ts';
 
-const usage = 'buildr agent <send|read|stop|list|reply|continue> [参数] [--target <workspace> | --workspace-id <id>] [--connection <id>] [--model <id>] [--before <sequence>] [--limit <count>] [--json]';
+const usage = 'buildr agent <send|read|stop|list|reply|continue> [参数] [--target <workspace> | --workspace-id <id>] [--connection <id>] [--model <id>] [--permission-mode <default|full-access>] [--before <sequence>] [--limit <count>] [--json]';
 function fail(message: string, code = 'agent_cli_input_invalid'): never { throw Object.assign(new Error(message), { code, usage }); }
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 export function parseAgentArgs(action: string, args: string[]) {
@@ -18,7 +18,7 @@ export function parseAgentArgs(action: string, args: string[]) {
   const message = action === 'send' ? value : action === 'reply' ? values[2] : action === 'continue' ? values[1] : undefined;
   if (message && message.length > 65536) fail('消息超过 65536 字符。');
   const options: Record<string, string> = {};
-  const allowed = ['--target', '--workspace-id', '--json', ...(action === 'send' ? ['--connection', '--model'] : action === 'read' ? ['--before', '--limit'] : action === 'list' ? ['--query', '--limit'] : [])];
+  const allowed = ['--target', '--workspace-id', '--json', ...(action === 'send' ? ['--connection', '--model', '--permission-mode'] : action === 'read' ? ['--before', '--limit'] : action === 'list' ? ['--query', '--limit'] : [])];
   for (let i = 0; i < tail.length; i++) {
     const key = tail[i];
     if (!allowed.includes(key) || Object.hasOwn(options, key)) fail(`未知或重复参数：${key}`);
@@ -27,6 +27,7 @@ export function parseAgentArgs(action: string, args: string[]) {
     if (!option || option.startsWith('--')) fail(`缺少参数值：${key}`);
     options[key] = option;
   }
+  if (options['--permission-mode'] !== undefined && !['default', 'full-access'].includes(options['--permission-mode'])) fail('权限模式必须是 default 或 full-access。');
   if (options['--target'] && options['--workspace-id']) fail('--target 与 --workspace-id 不能同时使用。');
   if (options['--workspace-id'] && !uuid.test(options['--workspace-id'])) fail('工作空间标识必须是 UUID。');
   for (const key of ['--before', '--limit']) if (options[key] !== undefined && (!/^\d+$/.test(options[key]) || !Number.isSafeInteger(Number(options[key])) || (key === '--limit' && Number(options[key]) < 1))) fail(`无效分页值：${key}`);
@@ -83,7 +84,7 @@ export async function executeAgentCommand(input: ReturnType<typeof parseAgentArg
     const conversation = await request(base, {});
     try {
       const route = `${base}/${encodeURIComponent(conversation.id)}`;
-      const draft = { expectedRevision: conversation.revision, connectionId: ready[0].id, text: value, ...(options['--model'] ? { model: options['--model'] } : {}) };
+      const draft = { expectedRevision: conversation.revision, connectionId: ready[0].id, text: value, ...(options['--permission-mode'] ? { permissionMode: options['--permission-mode'] } : {}), ...(options['--model'] ? { model: options['--model'] } : {}) };
       const preview = await request(route + '/prepare-send', draft);
       if (!preview.fits) fail(preview.diagnostic || '消息超出连接输入限制。');
       return await request(route + '/send', { ...draft, expectedRevision: preview.revision, previewToken: preview.token, clientRequestId: randomUUID() });

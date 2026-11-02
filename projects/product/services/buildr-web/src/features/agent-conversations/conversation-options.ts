@@ -21,8 +21,8 @@ export function writeConversationPermission(key:string|null,value:PermissionMode
   if(!key)return false;
   try{storage.setItem(key,value);return true;}catch{return false;}
 }
-export function selectedConversationPermission(selected:PermissionMode|undefined,run:ConversationRun|undefined):PermissionMode {
-  return selected??run?.permissionMode??'default';
+export function selectedConversationPermission(selected:PermissionMode|undefined,run:ConversationRun|undefined,connection?:ConnectionView):PermissionMode {
+  return selected??(run ? run.permissionMode??'default' : connection&&!supportsConversationPermission(connection,'full-access')?'default':'full-access');
 }
 export function supportsConversationPermission(connection:ConnectionView|undefined,mode:PermissionMode):boolean {
   return (connection?.capabilities.permissionModes||['default']).includes(mode);

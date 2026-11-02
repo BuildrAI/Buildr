@@ -184,7 +184,7 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
         if(name==='conversations.cancelPendingSend')pendingSends.cancel(args[0],args[1],args[2].expectedPendingRevision);
         else{
           const {clientRequestId,expectedPendingRevision,previousRunId,...raw}=args[2];
-          const submitted=normalizeSendDraft(raw),existing=pendingSends.lookup(args[0],args[1],clientRequestId);
+          const submitted={...normalizeSendDraft(raw),permissionMode:raw.permissionMode},existing=pendingSends.lookup(args[0],args[1],clientRequestId);
           if(existing&&expectedPendingRevision===undefined)pendingSends.submit(args[0],args[1],submitted,clientRequestId);
           else{
             if(previousRunId!==undefined&&conversation.run?.id!==previousRunId)throw new AgentServiceError('agent_revision_conflict','上一轮执行已变化，草稿保留。',409);

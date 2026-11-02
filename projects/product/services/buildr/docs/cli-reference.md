@@ -383,7 +383,7 @@ buildr agent read <conversation-id> --target /path/to/workspace --limit 50 --jso
 buildr agent stop <conversation-id> --target /path/to/workspace --json
 ```
 
-`--target` 默认当前工作空间目录；也可用 `--workspace-id <id>` 指定当前本机实例中已登记的空间，两者互斥。需先运行对应配置的 Buildr Web；命令不启动服务、不接受远程 URL、不生成访问令牌。`send` 可指定 `--model`，省略 `--connection` 时仅自动选择唯一已启用且就绪的连接；多连接时必须明确指定。连接与模型仍由服务端校验。
+`--target` 默认当前工作空间目录；也可用 `--workspace-id <id>` 指定当前本机实例中已登记的空间，两者互斥。需先运行对应配置的 Buildr Web；命令不启动服务、不接受远程 URL、不生成访问令牌。`send` 可指定 `--model` 和 `--permission-mode default|full-access`。省略权限时使用 `full-access`；接入未声明支持时使用其原生 `default`，显式选择不受支持的模式仍报错。省略 `--connection` 时仅自动选择唯一已启用且就绪的连接；多连接时必须明确指定。连接与模型仍由服务端校验。
 
 `send` 创建新对话后依次预发送、发送，不向已有对话追加消息。失败时若已创建对话会保留并报告 ID；超时或冲突不会自动重发，应先用 `read` 核对。`read` 核对状态后读取 entries，支持 `--before <sequence>` 和 `--limit <count>`，保留服务分页信息，不标记已读、不回答待处理问题。`stop` 使用刚观察到的版本与执行身份；没有执行、已终止或已请求停止时只返回当前结果。冲突不自动重放，也不会强杀进程。
 

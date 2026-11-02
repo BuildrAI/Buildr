@@ -1,9 +1,9 @@
 import type { PermissionMode } from '../contracts.ts';
 import { fail } from './agent-state.ts';
 
-/** A mode is explicit user intent for this turn; history cannot grant it. */
+/** Resolve new-turn policy; historical missing fields still mean legacy default. */
 export function resolvePermissionMode(value: unknown): PermissionMode {
-  if (value === undefined) return 'default';
+  if (value === undefined) return 'full-access';
   if (value === 'default' || value === 'full-access') return value;
   fail('agent_permission_invalid', '权限模式无效，请重新选择。');
 }
