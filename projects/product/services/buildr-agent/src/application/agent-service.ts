@@ -1,3 +1,4 @@
+import { ConversationWebhooks } from './conversation-webhooks.ts';
 import { conversationRuns, unfinishedRun } from '../domain/agent-state.ts';
 import { AgentServiceError } from '../domain/agent-state.ts';
 import { ProgramUpgrades } from './program-upgrades.ts';
@@ -31,7 +32,7 @@ export function createAgentService(options: AgentServiceOptions) {
   const root = path.join(options.dataRoot, 'agent-service');
   const repository = new ConversationRepository(root);
   repository.startReadModels();
-  const events = new ConversationEvents(generation);
+  const events = new ConversationEvents(generation, ConversationWebhooks.configure(options.environment ?? process.env));
   const now = () => (options.now?.() ?? new Date()).toISOString();
   let linkedChanged: ((connection:ConnectionView)=>void)|undefined;
   const connections = new ConnectionApplication({ repository, root, executors: options.executors ?? createNativeExecutors(), environment: executorEnvironment(options.environment ?? process.env), generation, now, changed: (connection: ConnectionView) => {events.publish({ type: 'connection', revision: connection.revision, payload: { connection } });linkedChanged?.(connection);} });
