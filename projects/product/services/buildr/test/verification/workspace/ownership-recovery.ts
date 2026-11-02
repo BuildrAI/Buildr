@@ -27,7 +27,7 @@ try {
   assert.notEqual(requiredRemoval.status, 0);
   assert.match(requiredRemoval.combined, /Buildr builtin not found/);
   assert.equal(fs.existsSync(path.join(fixture.workspace, 'rules', 'buildr', 'core.md')), false);
-  assert.match(fs.readFileSync(path.join(fixture.workspace, 'AGENTS.md'), 'utf8'), /以目标驱动协作/);
+  assert.equal(fs.existsSync(path.join(fixture.workspace, 'AGENTS.md')), false, 'retired builtin must not inject root rules');
 
   runBuildr(['builtin', 'uninstall', 'git-operations', '--target', fixture.workspace, '--reason', 'Workspace E2E recovery']);
   assert.equal(readSkillEntry('git-operations')?.state, 'uninstalled');

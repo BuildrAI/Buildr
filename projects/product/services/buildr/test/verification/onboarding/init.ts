@@ -116,7 +116,7 @@ try {
   assert.match(workspace.id, /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu);
   assert.deepEqual(projects, { schemaVersion: 'buildr.projects/v2', projects: {} });
   assert.equal(fs.existsSync(path.join(sourceOnly, 'rules')), false, 'init must not create the retired rules directory');
-  assert.match(fs.readFileSync(path.join(sourceOnly, 'AGENTS.md'), 'utf8'), /以可信完成目标的效率衡量性能/);
+  assert.equal(fs.existsSync(path.join(sourceOnly, 'AGENTS.md')), false, 'source-only init does not inject root rules');
   assert.equal(skills.workspaceId, workspace.id);
   assert.equal(skills.skills.some((item: any) => item.id === 'task-triage' && item.state === 'installed'), true);
   assert.deepEqual(commands, { schemaVersion: 'buildr.commands/v1', commands: [] });
@@ -161,9 +161,7 @@ try {
   assert.match(result.stdout, /首次使用交接/);
   assert.match(result.stdout, /第一项真实工作/);
   assert.doesNotMatch(result.stdout, /下一步可按需创建 Project/);
-  const onboardedAgents: any = fs.readFileSync(path.join(onboarded, 'AGENTS.md'), 'utf8');
-  assert.match(onboardedAgents, /Git 提交信息默认使用中文/);
-  assert.match(onboardedAgents, /更具体作用域的约定优先于本默认规则/);
+  assert.equal(fs.existsSync(path.join(onboarded, 'AGENTS.md')), false, 'onboarding does not inject user root rules');
   assert.equal(fs.existsSync(path.join(onboarded, '.agents', 'skills', 'buildr', 'SKILL.md')), true);
 
   createFirstProject(onboarded, onboardedCatalog);

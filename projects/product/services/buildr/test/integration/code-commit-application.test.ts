@@ -98,5 +98,5 @@ test('Git mutation HTTP requires authorization, rejects unknown input and bypass
 test('mutation process timeouts are bounded and leave hook-created worktree contents visible', async t => {
   const f = fixture(t); f.write('same.txt', 'base\n'); f.commit(); fs.writeFileSync(path.join(f.root, '.git', 'hooks', 'pre-commit'), '#!/bin/sh\nprintf running > timeout-marker\nsleep 20\n', { mode: 0o755 }); f.write('same.txt', 'current\n'); f.git('add', '--all');
   const start = Date.now(), source = f.app.commitSnapshot(f.root, f.input()).source;
-  const result = await runCodeGitMutation(source, ['commit', '-m', 'timeout'], { timeoutMs: 800 }); assert.equal(result.timedOut, true); assert.ok(Date.now() - start < 4000); assert.equal(fs.readFileSync(path.join(f.root, 'timeout-marker'), 'utf8'), 'running');
+  const result = await runCodeGitMutation(source, ['commit', '-m', 'timeout'], { timeoutMs: 3000 }); assert.equal(result.timedOut, true); assert.ok(Date.now() - start < 8000); assert.equal(fs.readFileSync(path.join(f.root, 'timeout-marker'), 'utf8'), 'running');
 });

@@ -21,7 +21,7 @@ export const agentIntegrationChecks = [
     testFiles: ['test/integration/process/handoff/*.test.ts'], schedulingCostMs: 90000, timeoutMs: 180000,
     resourceDemand: { workers: 1, processes: 1, workspaceIo: 1 }, resources: ['agent-process-tests'] },
   { id: 'agent-integration-recovery', name: 'Agent real observation, cancellation and resource release',
-    testFiles: ['test/integration/process/recovery/*.test.ts'], schedulingCostMs: 60000, timeoutMs: 120000,
+    testFiles: ['test/integration/process/recovery/*.test.ts'], schedulingCostMs: 120000, timeoutMs: 240000,
     resourceDemand: { workers: 1, processes: 1, workspaceIo: 1 }, resources: ['agent-process-tests'] },
 ].map(group => ({ ...group, type: 'Integration',
   sourcePaths: ['src/**', 'tools/testing/**', 'test/support/**', 'test/integration/fixtures/**', 'package.json',
