@@ -4,6 +4,7 @@ import { RightOutlined } from '@ant-design/icons';
 import { useAgentConversations } from './AgentConversationsContext';
 import { useConversationHistoryPage } from './useConversationHistoryPage';
 import { HISTORY_GROUP_LIMIT } from './conversation-history-groups';
+import { collapseConversationHistory, createConversationHistoryCache } from './conversation-history-page';
 import type { ConversationSummary } from './types';
 
 type Props = {
@@ -12,9 +13,10 @@ type Props = {
   renderRow(row: ConversationSummary): ReactNode;
 };
 export function ConversationHistoryGroup({workspaceId, name, query, hidden, agent, model, headerProps, renderRow, ...section}: Props) {
-  const {api} = useAgentConversations();
-  const [expanded, setExpanded] = useState(true), dragged = useRef(false), contentId = useId();
-  const {page, busy, error, retry, retryLabel, loadMore} = useConversationHistoryPage(api, {workspaceId, query, hidden, agent, model}, HISTORY_GROUP_LIMIT, expanded);
+  const {api,historyCache:retainedCache,activityTick} = useAgentConversations();
+  const [localCache]=useState(createConversationHistoryCache),historyCache=retainedCache??localCache;
+  const [expanded, setExpanded] = useState(()=>!historyCache?.collapsed.has(workspaceId)), dragged = useRef(false), contentId = useId();
+  const {page, busy, error, retry, retryLabel, loadMore} = useConversationHistoryPage(api, {workspaceId, query, hidden, agent, model}, HISTORY_GROUP_LIMIT, expanded,historyCache,activityTick);
   const rows = page?.conversations ?? [];
   const total = page?.total ?? rows.length;
   const visible = rows;
@@ -24,7 +26,7 @@ export function ConversationHistoryGroup({workspaceId, name, query, hidden, agen
       onPointerDown={event=>{dragged.current=false;headerProps?.onPointerDown?.(event);}}
       onDragStart={event=>{dragged.current=true;headerProps?.onDragStart?.(event);}}
       onKeyDown={event=>{if(event.key==='Enter'||event.key===' ')dragged.current=false;headerProps?.onKeyDown?.(event);}}
-      onClick={()=>{if(dragged.current){dragged.current=false;return;}setExpanded(value=>!value);}}>
+      onClick={()=>{if(dragged.current){dragged.current=false;return;}if(expanded&&historyCache)collapseConversationHistory(historyCache,workspaceId);else historyCache?.collapsed.delete(workspaceId);setExpanded(value=>!value);}}>
       <span className="ac-history-group-name" title={name}>{name}</span><small>{page ? total : '…'}</small><RightOutlined aria-hidden="true" rotate={expanded?90:0}/>
     </button></h3>
     {expanded&&<div id={contentId}>

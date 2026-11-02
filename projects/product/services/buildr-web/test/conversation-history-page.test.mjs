@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readConversationHistoryPage } from '../src/features/agent-conversations/conversation-history-page.ts';
+import { createConversationHistoryCache, collapseConversationHistory, conversationHistorySignature, readConversationHistoryPage, readConversationHistoryWindow } from '../src/features/agent-conversations/conversation-history-page.ts';
 
 const fixture = total => {
   const calls = [], rows = Array.from({length:total},(_,i)=>({id:String(i),workspaceId:'w1'}));
@@ -9,6 +9,30 @@ const fixture = total => {
     return {total,conversations:chosen,nextCursor:offset+limit<total?'after:'+chosen.at(-1).id:undefined};
   }};
 };
+test('事件刷新保留已展开窗口，大于单页时只读取该窗口',async()=>{
+ const f=fixture(300),signal=new AbortController().signal;
+ const window=await readConversationHistoryWindow(f.read,150,signal);
+ assert.equal(window.conversations.length,150);assert.equal(window.nextCursor,'after:149');
+ assert.deepEqual(f.calls,[{limit:100,cursor:undefined},{limit:50,cursor:'after:99'}]);
+ await assert.rejects(readConversationHistoryWindow(f.read,Infinity,signal),/无效/);
+});
+test('明确折叠只重置该工作空间，其他空间加载窗口和数量保持',()=>{
+ const cache=createConversationHistoryCache(),key=id=>JSON.stringify([id,'',false,null,null,5]);
+ const page=id=>({conversations:Array.from({length:15},(_,i)=>({id:id+i,workspaceId:id})),total:30,nextCursor:'after:14'});
+ const a=page('a'),b=page('b');cache.pages.set(key('a'),{page:a,error:'',version:2});cache.pages.set(key('b'),{page:b,error:'',version:2});
+ collapseConversationHistory(cache,'a');
+ assert.equal(cache.pages.get(key('a')).page.conversations.length,5);assert.equal(cache.pages.get(key('a')).page.total,30);
+ assert.equal(cache.pages.get(key('a')).version,-1,'reopening obtains an accurate first-page cursor');
+ assert.equal(cache.pages.get(key('b')).page,b);assert.equal(cache.collapsed.has('b'),false);
+});
+test('只有真实消息和交互事实使列表失效，同一消息流式增长和工具日志不触发',()=>{
+ const view={title:'one',hidden:false,entries:[{id:'answer',kind:'message',role:'assistant',text:'first'}],requests:[],run:{id:'r',status:'running',model:'m'}};
+ const signature=conversationHistorySignature(view);
+ assert.equal(conversationHistorySignature({...view,entries:[{...view.entries[0],text:'first second'},{id:'tool',kind:'tool',role:'system'}]}),signature);
+ assert.notEqual(conversationHistorySignature({...view,title:'renamed'}),signature);
+ assert.notEqual(conversationHistorySignature({...view,requests:[{id:'question'}]}),signature);
+ assert.notEqual(conversationHistorySignature({...view,entries:[...view.entries,{id:'new-answer',kind:'message',role:'assistant'}]}),signature);
+});
 test('首批5条，用户每次续读仅请求末条游标后的10条，不重读前缀',async()=>{
  const f=fixture(1000),signal=new AbortController().signal;
  let page=await readConversationHistoryPage(f.read,5,signal);assert.equal(page.conversations.length,5);assert.equal(f.calls.length,1);

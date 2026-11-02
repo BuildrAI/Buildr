@@ -411,8 +411,9 @@ test('default workspace directory is read from the host without creating a conve
 
 test('活动主状态只显示一个静态结果，完成未查看仍属于活动',async()=>{
   const {activityState,isActiveConversation}=await import('../src/features/agent-conversations/conversation-activity.ts');
-  const row={...conversation,activity:{version:3,seenThrough:1,active:true,updatedAt:'2026-10-27'}};
+  const row={...conversation,requests:[],activity:{version:3,seenThrough:1,active:true,updatedAt:'2026-10-27'}};
   assert.equal(activityState(row),'running');
+  assert.equal(activityState({...row,requests:conversation.requests}),'waiting','valid approvals require a decision even while execution continues');
   assert.equal(activityState({...row,run:{...row.run,status:'waiting-question'}}),'waiting');
   assert.equal(activityState({...row,run:{...row.run,status:'unknown'}}),'unknown');
   assert.equal(activityState({...row,run:{...row.run,status:'completed'}}),'unseen');

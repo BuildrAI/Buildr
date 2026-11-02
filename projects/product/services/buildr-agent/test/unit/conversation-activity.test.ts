@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { summaryView } from '../../src/domain/conversation-activity.ts';
+import { summaryView, pendingDecisionCount } from '../../src/domain/conversation-activity.ts';
 import type { StoredConversation } from '../../src/domain/agent-state.ts';
 
 test('legacy requests without a run identity remain pending rather than crashing discovery',()=>{
@@ -25,4 +25,20 @@ test('confirmed replacement keeps uncertain resources internal and does not crea
  assert.equal(summaryView(record,3,3,'now').activity!.active,false,'a legacy owner cannot recreate user attention with a retired request');
  assert.equal(summaryView(record,4,3,'now').activity!.active,true,'unread new answers still require attention');
  assert.equal(record.view.retainedRuns![0]!.tools[0]!.status,'unknown','physical facts remain preserved');
+});
+
+test('nonblocking questions remain pending while execution and seen state are independent',()=>{
+ const run={id:'r',participantId:'p',generation:'g',status:'running',tools:[]} as any;
+ const request={id:'q',runId:'r',participantId:'p',generation:'g',kind:'question',blocking:false} as any;
+ const record={view:{run,requests:[request]},participants:[]} as unknown as StoredConversation;
+ const summary=summaryView(record,4,4,'now');
+ assert.equal(summary.activity!.pendingDecisionCount,1);
+ assert.equal(summary.activity!.active,true);
+ assert.equal(summary.run!.status,'running');
+ assert.deepEqual(summary.requests,[],'private question content stays out of summaries');
+ for(const change of [{supersededBy:'new'},{resourcesReleased:true},{status:'completed'},{status:'failed'},{status:'stopped'}]){
+  assert.equal(pendingDecisionCount({...record.view,run:{...run,...change}}),0);
+ }
+ assert.equal(pendingDecisionCount({...record.view,requests:[{...request,generation:'other'}]}),0);
+ assert.equal(pendingDecisionCount({...record.view,requests:[]}),0);
 });

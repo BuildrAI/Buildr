@@ -5,7 +5,7 @@ import { Alert, Button, Empty, Input, Select, Spin } from 'antd';
 import { ArrowLeftOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import { useAgentConversations } from './AgentConversationsContext';
 import { ConversationActivityStatus } from './ConversationActivityStatus';
-import { activityState, conversationMetadata } from './conversation-activity';
+import { activityState, conversationMetadata, isExecuting } from './conversation-activity';
 import type { ExecutionFilter } from './ConversationExecutionStats';
 import { CopyButton } from '../../components/CopyButton';
 import { DEFAULT_HISTORY_GROUP, historyGroupOrder, moveHistoryGroup, readHistoryGroupPreference, writeHistoryGroupPreference } from './conversation-history-groups';
@@ -23,14 +23,14 @@ export function ConversationHistory({workspaces,defaultWorkspaceId}:{workspaces:
   const [draggingGroup,setDraggingGroup]=useState(''),[dropGroup,setDropGroup]=useState(''),[dropAfter,setDropAfter]=useState(false);
   useEffect(()=>{if(context.historyWorkspaceId!==undefined){setWorkspaceId(context.historyWorkspaceId??'');setFilter(null);}},[context.historyWorkspaceId]);
   const agent=filter?.kind==='agent'?filter.value:undefined,model=filter?.kind==='model'?filter.value:undefined;
-  const {page, busy, error, retry}=useConversationHistoryPage(context.api,{workspaceId:workspaceId||undefined,query,hidden,agent,model},1);
+  const {page, busy, error, retry}=useConversationHistoryPage(context.api,{workspaceId:workspaceId||undefined,query,hidden,agent,model},1,true,context.historyCache,context.activityTick);
   const stats=page?.stats;
   const scopeKey=JSON.stringify([workspaceId,query,hidden,agent,model]);
   const modelName=(id:string)=>conversationModelLabel(id,context.connections,context.modelCatalog);
   const workspaceName=(id:string)=>id===DEFAULT_HISTORY_GROUP?'默认':workspaces.find(item=>item.id===id)?.name||id;
   const renderRow=(row:ConversationSummary)=><div key={row.workspaceId+':'+row.id} className={'ac-history-row'+(context.scope?.workspaceId===row.workspaceId&&context.scope.conversationId===row.id?' is-selected':'')}>
     <button type="button" className="ac-history-row-main" data-conversation-id={row.id} onClick={()=>void context.openConversation(row.workspaceId,row.id,{preserveVisibility:true})}>
-      <span className="ac-history-row-title"><strong title={row.title}>{row.title}</strong><ConversationActivityStatus state={activityState(row)}/></span>
+      <span className="ac-history-row-title"><strong title={row.title}>{row.title}</strong><ConversationActivityStatus state={activityState(row)} executing={isExecuting(row)}/></span>
       <small><span className="ac-history-id" title={row.id}>{row.id}</span><span className="ac-history-meta">{conversationMetadata(row,undefined,row.run?.model?conversationModelLabel(row.run.model,context.connections,context.modelCatalog,{modelAccountId:row.run.modelAccountId}):undefined)}</span></small>
     </button>
     <CopyButton type="text" className="ac-history-row-copy" text={row.id} ariaLabel="复制对话 ID" failureMessage="复制失败，请手动选择对话 ID 复制。"/>

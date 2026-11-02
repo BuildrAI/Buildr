@@ -97,6 +97,7 @@
 .ac-history-group-toggle{display:flex;align-items:center;gap:7px;width:100%;padding:8px 8px 4px;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
 .ac-history-group-toggle[draggable=true]{cursor:grab}
 .ac-history-group-toggle[draggable=true]:active{cursor:grabbing}
+.ac-history-group-toggle:hover{background:#f0f5f2;border-radius:6px}
 .ac-history-group-toggle:focus-visible{outline:1px solid var(--soft-primary);outline-offset:-1px;border-radius:4px}
 .ac-history-group-toggle>.ac-history-group-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ac-history-group-toggle>small{font-size:var(--font-size-meta);font-weight:400;color:#98a69d}

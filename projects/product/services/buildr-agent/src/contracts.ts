@@ -394,7 +394,7 @@ export interface ConversationView {
   pendingSend?: PendingSendView;
   /** Independent observation version for append-only image admission. */
   attachmentRevision?: string;
-  activity?: { version: number; seenThrough: number; updatedAt: string; active: boolean; userInputAt?: string };
+  activity?: { version: number; seenThrough: number; updatedAt: string; active: boolean; userInputAt?: string; pendingDecisionCount?: number };
   titleState?: { status: 'pending' | 'generating' | 'generated' | 'manual' | 'failed' | 'unavailable' | 'unknown'; reason?: string };
   id: string;
   workspaceId: string;

@@ -21,6 +21,45 @@ function save(repo:ConversationRepository,r:StoredConversation,change:(r:StoredC
 function message(r:StoredConversation,id:string,text:string,kind:'message'|'notice'='message',role:'user'|'assistant'|'system'='user') {
   r.view.entries.push({id,sequence:r.view.entries.length+1,text,kind,role,createdAt:r.view.updatedAt});
 }
+test('nonblocking pending decisions survive summary compatibility and count alongside actual execution',t=>{
+ const repo=fixture(t),pending=record('pending'),other=record('other');
+ message(pending,'user','question context');message(other,'user','newer conversation');
+ pending.view.run={id:'r',participantId:'p',provider:'codex',generation:'g',status:'running',accepted:true,tools:[],model:'m',modelAccountId:'account',startedAt:pending.view.updatedAt,updatedAt:pending.view.updatedAt};
+ pending.view.requests=[{id:'q',kind:'question',blocking:false,title:'private question',questions:[],conversationId:pending.view.id,workspaceId:'w1',runId:'r',participantId:'p',generation:'g'}];
+ repo.saveConversation(pending);repo.saveConversation(other);repo.markSeen('w1',pending.view.id,0);
+ const check=()=>{
+  const page=repo.querySummaries(['w1'],{limit:1});
+  assert.equal(page.conversations[0]!.id,'pending');
+  assert.equal(page.conversations[0]!.run!.status,'running');
+  assert.equal(page.conversations[0]!.activity!.pendingDecisionCount,1);
+  assert.deepEqual(page.conversations[0]!.requests,[]);
+  assert.deepEqual(page.activityCounts,{active:1,running:1,waiting:1,unseen:0,unknown:0,attention:1});
+  assert.equal(page.stats.modelExecutions[0]!.count,1);
+  assert.equal(repo.querySummaries(['w1'],{limit:1,activityState:'waiting'}).total,1);
+  assert.equal(repo.querySummaries(['w1'],{limit:1,activityState:'running'}).total,1);
+ };
+ check();
+ const db=new DatabaseSync(repo.filename);db.prepare("UPDATE conversations SET summary=json_remove(summary,'$.activity.pendingDecisionCount') WHERE id=?").run(pending.view.id);db.close();
+ const before=fs.readFileSync(repo.filename);check();assert.deepEqual(fs.readFileSync(repo.filename),before,'legacy summary compatibility reads stay zero-write');
+ save(repo,pending,r=>{r.view.requests=[];});
+ assert.equal(repo.querySummaries(['w1'],{limit:10}).activityCounts.waiting,0);
+ assert.equal(repo.querySummaries(['w1'],{limit:10}).activityCounts.running,1);
+});
+
+test('assistant replies move within their priority while tools and seen do not change message time',t=>{
+ const repo=fixture(t),older=record('older'),newer=record('newer');
+ message(older,'input','old input');newer.view.updatedAt='2026-10-27T01:00:00Z';message(newer,'input','new input');
+ repo.saveConversation(older);repo.saveConversation(newer);
+ const read=()=>repo.querySummaries(['w1'],{limit:20});
+ assert.deepEqual(read().conversations.map(row=>row.id),['newer','older']);
+ save(repo,older,r=>{r.view.updatedAt='2026-10-27T02:00:00Z';message(r,'answer','new reply','message','assistant');});
+ assert.deepEqual(read().conversations.map(row=>row.id),['older','newer']);
+ const at=read().conversations[0]!.activity!.updatedAt;
+ save(repo,older,r=>{message(r,'tool','log','notice','system');r.view.title='renamed';});
+ assert.equal(read().conversations[0]!.activity!.updatedAt,at);
+ repo.markSeen('w1',older.view.id,older.view.activity!.version);
+ assert.equal(read().conversations.find(row=>row.id==='older')!.activity!.updatedAt,at);
+});
 test('reads never create storage; new messages and streaming advance activity, metadata and tool notices do not',t=>{
   const repo=fixture(t);assert.equal(repo.querySummaries(['w1'],{limit:10}).total,0);assert.equal(fs.existsSync(repo.filename),false);
   const r=record();repo.saveConversation(r);
@@ -271,7 +310,7 @@ test('empty and attachment-only drafts stay readable but absent from every list;
  assert.equal(repo.querySummaries(['w1'],{limit:10}).total,3);
  assert.equal(repo.listConversations('w1',{limit:10,taskId:'task'}).length,1);
 });
-test('列表顺序只跟随用户输入，智能体输出与工具动作不改变位置',t=>{
+test('列表按真实新消息前移，工具与查看不更新消息时间',t=>{
   const repo=fixture(t),a=record('a'),b=record('b');
   repo.saveConversation(a);repo.saveConversation(b);
   const order=()=>repo.querySummaries(['w1'],{limit:10}).conversations.map(row=>row.id);
@@ -280,9 +319,13 @@ test('列表顺序只跟随用户输入，智能体输出与工具动作不改�
   assert.deepEqual(order(),['b','a']);
   save(repo,a,r=>{r.view.updatedAt='2026-10-27T00:03:00Z';message(r,'a-assistant','reply','message','assistant');message(r,'a-tool','tool output','notice','system');});
   assert.equal(a.view.activity?.version,2,'智能体回复仍推进活动提醒');
-  assert.deepEqual(order(),['b','a'],'回复与工具输出不改变列表顺序');
+  assert.deepEqual(order(),['a','b'],'新回复更新顺序');
+  const at=a.view.activity!.updatedAt;
+  save(repo,b,r=>{message(r,'b-tool','tool output','notice','system');});
+  assert.deepEqual(order(),['a','b'],'单独工具输出不改变顺序');
+  assert.equal(repo.querySummaries(['w1'],{limit:10}).conversations[0]!.activity!.updatedAt,at);
   save(repo,a,r=>{r.view.updatedAt='2026-10-27T00:04:00Z';message(r,'a2','next');});
-  assert.deepEqual(order(),['a','b'],'用户再次输入后才前移');
+  assert.deepEqual(order(),['a','b'],'用户输入也更新消息时间');
 });
 
 test('execution model and agent pairs aggregate full scope without guessing across pagination',t=>{
@@ -308,7 +351,8 @@ test('executing models aggregate by actual account across executors and expose u
   const before=repo.querySummaries(['w1'],{limit:10}).conversations;
   const item=repo.readConversation('a')!;item.view.updatedAt='2026-10-29T00:00:00Z';message(item,'answer','new assistant output','message','assistant');repo.saveConversation(item,item.view.revision);
   const after=repo.querySummaries(['w1'],{limit:10}).conversations;
-  assert.deepEqual(after.map(row=>row.id),before.map(row=>row.id));assert.deepEqual(after.map(row=>row.activity?.userInputAt),before.map(row=>row.activity?.userInputAt));
+  assert.equal(after[0]!.id,'a','new assistant reply moves the conversation');
+  assert.deepEqual(Object.fromEntries(after.map(row=>[row.id,row.activity?.userInputAt])),Object.fromEntries(before.map(row=>[row.id,row.activity?.userInputAt])),'user input timestamps remain independent');
 });
 
 
@@ -378,7 +422,7 @@ test('ordinary summary reads use the compact index without loading history and s
   assert.equal(result.total,1);
   assert.equal(result.conversations[0].entries.length,0);
   assert.deepEqual(result.stats.models,[{label:'m',count:1}]);
-  assert.equal(statements.length,4,'generation, overview, total and page are the only scoped reads');
+  assert.equal(statements.length,5,'compact compatibility probe, generation, overview, total and page are the only scoped reads');
   assert.equal(statements.filter(row=>row.sql.includes('AS MATERIALIZED')).length,1);
 
   const db=new DatabaseSync(repo.filename,{readOnly:true});

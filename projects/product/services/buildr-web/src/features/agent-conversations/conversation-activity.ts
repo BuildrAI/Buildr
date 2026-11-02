@@ -12,7 +12,17 @@ export function activityReminder(counts:ActivityCounts|undefined,stale=false):st
   return `待处理 ${counts.waiting+counts.unseen}（待决策 ${counts.waiting}、待查看 ${counts.unseen}），执行中 ${counts.running}${counts.unknown?`；${counts.unknown} 个执行状态需确认`:''}${stale?'（未更新，保留上次结果）':''}`;
 }
 export const isExecuting = (row:ConversationSummary) => ['starting','running','stopping','tools-active'].includes(row.run?.status??'');
+function pendingDecisions(row:ConversationSummary):number {
+  if(row.activity?.pendingDecisionCount!==undefined)return row.activity.pendingDecisionCount;
+  const runs=[row.run,...row.retainedRuns??[]];
+  return (row.requests??[]).filter(request=>{
+    const run=runs.find(run=>run&&run.id===request.runId);
+    return !run || !run.supersededBy&&!run.resourcesReleased&&!['completed','failed','stopped'].includes(run.status)&&
+      (!request.participantId||request.participantId===run.participantId)&&(!request.generation||request.generation===run.generation);
+  }).length;
+}
 export function activityState(row:ConversationSummary):ActivityState {
+  if(pendingDecisions(row)>0)return 'waiting';
   if(row.run?.status==='unknown')return 'unknown';
   if(['waiting-approval','waiting-question'].includes(row.run?.status??''))return 'waiting';
   if(isExecuting(row))return 'running';
@@ -20,6 +30,11 @@ export function activityState(row:ConversationSummary):ActivityState {
   return null;
 }
 export const isActiveConversation=(row:ConversationSummary)=>Boolean(row.activity?.active||activityState(row));
+export function orderActivityItems<T extends {id:string;state:ActivityState;updatedAt?:string;userInputAt?:string}>(items:readonly T[]):T[] {
+  const priority=(item:T)=>item.state==='waiting'||item.state==='unseen'?0:1;
+  const at=(item:T)=>item.updatedAt??item.userInputAt;
+  return [...items].sort((a,b)=>priority(a)-priority(b)||(at(a)&&at(b)?at(b)!.localeCompare(at(a)!)||b.id.localeCompare(a.id):0));
+}
 export function conversationMetadata(row:ConversationSummary,workspaceName?:string,modelLabel?:string) {
   const names:Record<string,string>={codex:'Codex',dsh:'DSH',qoder:'Qoder'};
   return [workspaceName, row.run?(names[row.run.provider]||row.run.provider):undefined,modelLabel??row.run?.model].filter(Boolean).join(' · ');
