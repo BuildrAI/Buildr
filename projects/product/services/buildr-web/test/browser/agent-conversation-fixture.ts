@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import {canCloseUncertainConversation} from '../../src/features/agent-conversations/conversation-state.ts';
 import {resolveQuestionAnswer,questionAnswerDisplay} from '../../../buildr-agent/src/domain/question-answer.ts';
 import type {ConnectionView} from '../../src/features/agent-conversations/types.ts';
@@ -6,7 +7,7 @@ import type {ConnectionView} from '../../src/features/agent-conversations/types.
 /** Actual hosted UI; only the new HTTP transport is replaced with explicit fixtures. */
 export async function createAgentConversationFixture({t,page,workspaceUrl,workspaceRoot,otherWorkspaceId,capture:capturePage,expectedBrowserErrors}:any){
   const capture=async(target:any,name:string)=>{if(!process.env.BUILDR_AGENT_CAPTURE_FAILURE_ONLY||name.includes('failure'))await capturePage(target,name);};
-  let reminderPaging=false,reminderReadFailure=false;
+  let reminderPaging=false,reminderReadFailure=false,reminderReads=0;
   const taskRequests:Array<Record<string,unknown>>=[];
   const selectTrace:Array<Record<string,unknown>>=[];
   const taskRequest=(request:any)=>/\/api\/v1\/workspaces\/[^/]+\/(?:tasks|workspace|agent-conversations)|\/api\/v1\/workspaces\/[^/]+$/.test(request.url());
@@ -67,7 +68,9 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
       const rows=[...(conversation&&!(conversation.hidden&&canCloseUncertainConversation(conversation))&&['waiting-approval','waiting-question','unknown','tools-active'].includes(conversation.run?.status)?[conversation]:[]),...additionalPending];
       return route.fulfill({json:{conversations:url.pathname.endsWith('/pending-summary')?rows.map(item=>({conversationId:item.id,workspaceId:item.workspaceId,title:item.title,status:item.run?.status??'unknown',count:item.requests.length})):rows}});
     }
-    if(url.pathname==='/api/v1/app/agent-service/conversations'&&method==='GET'){
+    const activitySummary=url.pathname==='/api/v1/app/agent-service/activity-summary';
+    if((activitySummary||url.pathname==='/api/v1/app/agent-service/conversations')&&method==='GET'){
+      if(activitySummary){url.searchParams.set('activeOnly','true');url.searchParams.set('limit','100');}
       // 全空间列表夹具按服务端语义过滤：活动判断与 conversation-activity 的 activityState 一致。
       const dismissed=(item:any)=>Boolean(item.hidden&&canCloseUncertainConversation(item));
       const active=(item:any)=>!dismissed(item)&&Boolean(item.activity?.active||(item.activity&&item.activity.version>item.activity.seenThrough)||['starting','running','stopping','tools-active','waiting-approval','waiting-question','unknown'].includes(item.run?.status));
@@ -79,7 +82,7 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
       for(const row of scoped){const key=state(row) as 'running'|'waiting'|'unseen'|'unknown'|null;if(key){activityCounts[key]++;activityCounts.active++;if(key!=='running')activityCounts.attention++;}}
       const executions=[...new Set(scoped.filter(row=>state(row)==='running').map(row=>JSON.stringify([row.run?.provider||'未指定',row.run?.model||'未指定'])))].map(key=>{const [provider,model]=JSON.parse(key);return {provider,model,count:scoped.filter(row=>state(row)==='running'&&(row.run?.provider||'未指定')===provider&&(row.run?.model||'未指定')===model).length};});
       const modelExecutions=[...new Set(scoped.filter(row=>state(row)==='running').map(row=>JSON.stringify([row.run?.modelAccountId||'fixture-account',row.run?.model||'未指定'])))].map(key=>{const [accountId,model]=JSON.parse(key);return {accountId,accountLabel:'测试账号',model,count:scoped.filter(row=>state(row)==='running'&&(row.run?.modelAccountId||'fixture-account')===accountId&&(row.run?.model||'未指定')===model).length};});
-      const category=url.searchParams.get('activityState');if(category)rows=rows.filter(row=>category==='attention'?['waiting','unseen','unknown'].includes(state(row)??''):state(row)===category);
+      const category=url.searchParams.get('activityState');if(category)reminderReads++;if(category)rows=rows.filter(row=>category==='attention'?['waiting','unseen','unknown'].includes(state(row)??''):state(row)===category);
       if(url.searchParams.get('activeOnly'))rows=rows.filter(active);
       else {const hidden=url.searchParams.get('hidden')==='true';rows=rows.filter(item=>active(item)||Boolean(item.hidden)===hidden);}
       if(url.searchParams.get('workspaceId'))rows=rows.filter(item=>item.workspaceId===url.searchParams.get('workspaceId'));
@@ -89,7 +92,13 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
       rows.sort((a:any,b:any)=>priority(b)-priority(a)||(b.activity?.userInputAt||b.updatedAt||'').localeCompare(a.activity?.userInputAt||a.updatedAt||'')||b.id.localeCompare(a.id));
       const total=rows.length,offset=Number(url.searchParams.get('cursor')||0),limit=Number(url.searchParams.get('limit')||(reminderPaging?100:30));
       const nextCursor=offset+limit<rows.length?String(offset+limit):undefined;
-      return route.fulfill({json:{conversations:rows.slice(offset,offset+limit),nextCursor,total,activityCounts,stats:{agents:statGroup('provider'),models:statGroup('model'),executions,modelExecutions}}});
+      const result={conversations:rows.slice(offset,offset+limit),nextCursor,total,activityCounts,stats:{agents:statGroup('provider'),models:statGroup('model'),executions,modelExecutions}};
+      if(activitySummary){
+        const pending=[...(conversation&&!(conversation.hidden&&canCloseUncertainConversation(conversation))&&['waiting-approval','waiting-question','unknown','tools-active'].includes(conversation.run?.status)?[conversation]:[]),...additionalPending].map(item=>({conversationId:item.id,workspaceId:item.workspaceId,title:item.title,status:item.run?.status??'unknown',count:item.requests.length}));
+        const payload={...result,pending},revision=createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+        return route.fulfill({json:url.searchParams.get('revision')===revision?{revision,unchanged:true}:{...payload,revision}});
+      }
+      return route.fulfill({json:result});
     }
     if(url.pathname.startsWith('/api/v1/app/agent-service/connections/')){
       const parts=url.pathname.split('/'),connection=connections.find(item=>item.id===parts[6]) as any;assert.ok(connection);
@@ -342,6 +351,7 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
     get releaseTaskList(){return releaseTaskList;}, set releaseTaskList(value){releaseTaskList=value;},
     get releaseTitle(){return releaseTitle;}, set releaseTitle(value){releaseTitle=value;},
     get releaseUpload(){return releaseUpload;}, set releaseUpload(value){releaseUpload=value;},
+    get reminderReads(){return reminderReads;},
     get reminderPaging(){return reminderPaging;}, set reminderPaging(value){reminderPaging=value;},
     get reminderReadFailure(){return reminderReadFailure;}, set reminderReadFailure(value){reminderReadFailure=value;},
     reopen,

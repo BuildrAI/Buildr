@@ -58,3 +58,13 @@ test('失败重试沿用相同游标，重复身份不会重复追加或覆盖�
  await assert.rejects(readConversationHistoryPage(read,10,signal,page),/unavailable/);assert.equal(page.conversations.length,5);
  const next=await readConversationHistoryPage(read,10,signal,page);assert.equal(next.conversations.length,15);assert.equal(calls,2);assert.equal(next.conversations[0],page.conversations[0]);
 });
+
+test('工作空间签名隔离其他分组，忽略正文增量并保留排序与状态变化',async()=>{
+  const {activityWorkspaceSignatures}=await import('../src/features/agent-conversations/conversation-history-page.ts');
+  const rows=[{id:'a',workspaceId:'one',title:'A',run:{status:'running'},activity:{updatedAt:'1'}},{id:'b',workspaceId:'two',title:'B'}];
+  const before=activityWorkspaceSignatures(rows);
+  assert.deepEqual(activityWorkspaceSignatures([{...rows[0],revision:'new',entries:[{text:'more'}]},rows[1]]),before);
+  const after=activityWorkspaceSignatures([{...rows[0],run:{status:'completed'},activity:{updatedAt:'2'}},rows[1]]);
+  assert.notEqual(after.get('one'),before.get('one'));assert.equal(after.get('two'),before.get('two'));
+  assert.equal(activityWorkspaceSignatures([rows[1]]).has('one'),false);
+});

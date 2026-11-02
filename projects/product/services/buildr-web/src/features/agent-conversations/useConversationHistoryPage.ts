@@ -5,7 +5,7 @@ import { HISTORY_GROUP_BATCH } from './conversation-history-groups';
 
 type Scope = {workspaceId?: string; query: string; hidden: boolean; agent?: string; model?: string};
 /** Initial read plus explicit continuation; activity updates have their own lifecycle. */
-export function useConversationHistoryPage(api: AgentConversationsClient, {workspaceId, query, hidden, agent, model}: Scope, count: number, enabled = true, retained?:ConversationHistoryCache, version=0) {
+export function useConversationHistoryPage(api: AgentConversationsClient, {workspaceId, query, hidden, agent, model}: Scope, count: number, enabled = true, retained?:ConversationHistoryCache, version:number|string=0) {
   const localCache=useRef<ConversationHistoryCache|undefined>(undefined);
   if(!localCache.current)localCache.current=createConversationHistoryCache();
   const cache=retained??localCache.current;

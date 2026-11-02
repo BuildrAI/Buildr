@@ -115,3 +115,28 @@ test('lightweight reminders equal legacy pending projection including filtered q
  assert.ok(JSON.stringify(summary).length<JSON.stringify(legacy).length/20);
  assert.doesNotMatch(JSON.stringify(summary),/private body|private invocation|private question|entries|tools/);
 });
+
+test('related lists preserve task scope, history search, header fallback and pagination',t=>{
+ const repo=fixture(t),a=record('child-a'),b=record('child-b'),foreign=record('foreign'),draft=record('draft');
+ for(const [i,r] of [a,b,foreign].entries()){
+   r.view.updatedAt=`2026-11-0${i+1}T00:00:00Z`;
+   r.view.entries=[{id:'large',sequence:1,kind:'message',role:'user',text:'history-token '+ 'x'.repeat(1024*1024),createdAt:'now'}];r.view.taskLinks=[{workspaceId:'ws',taskId:'task'}];
+ }
+ a.view.childOf={conversationId:'parent'} as any;b.view.childOf={conversationId:'parent'} as any;foreign.view.workspaceId='other';
+ for(const r of [a,b,foreign,draft])repo.saveConversation(r);
+ const first=repo.listConversations('ws',{parentConversationId:'parent',limit:1});assert.deepEqual(first.map(r=>r.view.id),['child-b']);assert.deepEqual(first[0].view.entries,[]);
+ assert.deepEqual(repo.listConversations('ws',{parentConversationId:'parent',limit:1,before:first[0].view.updatedAt+'/'+first[0].view.id}).map(r=>r.view.id),['child-a']);
+ assert.deepEqual(repo.listConversations('ws',{taskId:'task',workspaceIds:['ws','other'],limit:10}).map(r=>r.view.id),['foreign','child-b','child-a']);
+ assert.equal(repo.listConversations('ws',{taskId:'task',workspaceIds:['ws'],query:'history-token',limit:10}).length,2);
+ const db=new DatabaseSync(repo.filename);t.after(()=>db.close());db.prepare('DELETE FROM conversation_read_states WHERE id=?').run(a.view.id);
+ const before=fs.readFileSync(repo.filename);assert.equal(repo.listConversations('ws',{parentConversationId:'parent',limit:10})[1].view.id,'child-a');assert.deepEqual(fs.readFileSync(repo.filename),before);
+ db.prepare('UPDATE conversation_read_states SET revision=? WHERE id=?').run('stale',b.view.id);
+ assert.deepEqual(repo.listConversations('ws',{parentConversationId:'parent',limit:10}).map(r=>r.view.id),['child-b','child-a']);
+});
+
+test('projected related reads never parse canonical history for empty children or task links',t=>{
+ const repo=fixture(t),r=record('child');r.view.entries=[{id:'message',sequence:1,kind:'message',role:'user',text:'x'.repeat(1024*1024),createdAt:'now'}];
+ r.view.childOf={conversationId:'parent'} as any;r.view.taskLinks=[{workspaceId:'ws',taskId:'task'}];repo.saveConversation(r);
+ const parse=JSON.parse;JSON.parse=((value:string,...args:any[])=>{if(value.includes('x'.repeat(1024)))throw new Error('full history parsed');return parse(value,...args);}) as typeof JSON.parse;
+ try{assert.deepEqual(repo.listConversations('ws',{parentConversationId:'none',limit:10}),[]);assert.equal(repo.listConversations('ws',{parentConversationId:'parent',limit:10})[0].view.id,'child');assert.equal(repo.listConversations('ws',{taskId:'task',limit:10})[0].view.id,'child');}finally{JSON.parse=parse;}
+});

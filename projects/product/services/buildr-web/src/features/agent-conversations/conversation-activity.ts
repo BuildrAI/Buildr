@@ -56,3 +56,8 @@ export function groupConversationWorkspaces<T extends {workspaceId:string}>(item
   for(const item of items){const group=groups.get(item.workspaceId);if(group)group.push(item);else groups.set(item.workspaceId,[item]);}
   return groups;
 }
+
+/** A complete global snapshot already contains both reminder groups. Never infer completeness from a page count alone. */
+export function completeActivitySnapshot(rows:readonly ConversationSummary[],total:number,cursor:string|undefined,counts:ActivityCounts|undefined,error:string):boolean {
+  return Boolean(counts&&!error&&!cursor&&rows.length===total&&new Set(rows.map(row=>row.workspaceId+':'+row.id)).size===total);
+}

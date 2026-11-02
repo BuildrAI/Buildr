@@ -13,10 +13,10 @@ type Props = {
   renderRow(row: ConversationSummary): ReactNode;
 };
 export function ConversationHistoryGroup({workspaceId, name, query, hidden, agent, model, headerProps, renderRow, ...section}: Props) {
-  const {api,historyCache:retainedCache,activityTick} = useAgentConversations();
+  const {api,historyCache:retainedCache,activityTick,activityWorkspaceTicks} = useAgentConversations();
   const [localCache]=useState(createConversationHistoryCache),historyCache=retainedCache??localCache;
   const [expanded, setExpanded] = useState(()=>!historyCache?.collapsed.has(workspaceId)), dragged = useRef(false), contentId = useId();
-  const {page, busy, error, retry, retryLabel, loadMore} = useConversationHistoryPage(api, {workspaceId, query, hidden, agent, model}, HISTORY_GROUP_LIMIT, expanded,historyCache,activityTick);
+  const {page, busy, error, retry, retryLabel, loadMore} = useConversationHistoryPage(api, {workspaceId, query, hidden, agent, model}, HISTORY_GROUP_LIMIT, expanded,historyCache,activityWorkspaceTicks?'workspace:'+(activityWorkspaceTicks[workspaceId]??0):'global:'+activityTick);
   const rows = page?.conversations ?? [];
   const total = page?.total ?? rows.length;
   // The group already knows how many rows exist, so a reset window can show the

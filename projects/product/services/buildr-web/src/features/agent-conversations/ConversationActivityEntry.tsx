@@ -39,8 +39,8 @@ export function ConversationActivityEntry(props:Props) {
       {props.summary}
       {props.error&&<Alert type="warning" showIcon message={props.error}/>}
       {!props.counts&&<p className="ac-activity-counts-note">提醒数量尚未读取</p>}
-      <div className="ac-activity-items"><section className="ac-reminder-section" aria-label="活动中">
-        <h3>活动中<small>{props.counts?.active??'—'}</small></h3>
+      <div className="ac-activity-items"><section className="ac-reminder-section" aria-label="活动中对话">
+        <h3>活动中对话<small>{props.counts?.active??'—'}</small></h3>
         {renderRows(items)}
         {!items.length&&<p className="ac-reminder-empty">{props.counts?.active===0?'暂无活动对话':props.emptyDescription||'正在读取对话…'}</p>}
       </section>

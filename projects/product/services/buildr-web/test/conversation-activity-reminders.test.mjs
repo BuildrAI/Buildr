@@ -5,7 +5,7 @@ import {readFileSync,existsSync} from 'node:fs';
 import ts from 'typescript';
 import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
-import {groupConversationWorkspaces,orderActivityItems,activityBadge,activityReminder,activityState,reminderFallbackRows} from '../src/features/agent-conversations/conversation-activity.ts';
+import {groupConversationWorkspaces,orderActivityItems,activityBadge,activityReminder,activityState,reminderFallbackRows,completeActivitySnapshot} from '../src/features/agent-conversations/conversation-activity.ts';
 import {conversationTierChoice} from '../src/features/agent-conversations/conversation-options.ts';
 
 registerHooks({
@@ -118,4 +118,17 @@ test('入口悬停提示固定，未知执行只保留条目徽标与入口说�
   assert.doesNotMatch(html,/个对话的执行状态需确认|暂时无法确认|查看对话|返回全部/);
   const status=renderToStaticMarkup(React.createElement(ConversationActivityStatus,{state:'unknown'}));
   assert.match(status,/状态待确认/);
+});
+
+test('完整快照覆盖提醒组，截断、重复和失败快照不能替代独立分页',()=>{
+  const rows=[{id:'a',workspaceId:'one',run:{status:'running'},activity:{pendingDecisionCount:1}},{id:'b',workspaceId:'two',activity:{version:2,seenThrough:0}}];
+  assert.equal(completeActivitySnapshot(rows,2,undefined,counts,''),true);
+  const groups=reminderFallbackRows(rows);
+  assert.deepEqual(groups.pending.map(row=>row.id),['a','b']);assert.deepEqual(groups.running.map(row=>row.id),['a']);
+  assert.equal(completeActivitySnapshot(rows,101,'more',counts,''),false);
+  assert.equal(completeActivitySnapshot(rows,3,undefined,counts,''),false);
+  assert.equal(completeActivitySnapshot([rows[0],rows[0]],2,undefined,counts,''),false);
+  assert.equal(completeActivitySnapshot(rows,2,undefined,counts,'failed'),false);
+  assert.equal(completeActivitySnapshot([],0,undefined,undefined,''),false);
+  assert.equal(completeActivitySnapshot([],0,undefined,{...counts,active:0},''),true);
 });
