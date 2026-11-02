@@ -290,8 +290,9 @@ export class ConversationRepository {
       const state = `CASE WHEN hidden=1 AND json_extract(summary,'$.run.executionState')='ended' AND json_extract(summary,'$.run.resourcesReleased')=1 AND effective_status='unknown' THEN NULL WHEN effective_status='unknown' THEN 'unknown' WHEN effective_status IN ('waiting-approval','waiting-question') THEN 'waiting' WHEN effective_status IN ('starting','running','stopping','tools-active') THEN 'running' WHEN activity_version>seen_version THEN 'unseen' ELSE NULL END`;
       const source=`(SELECT *,CASE WHEN activity_state IN ('waiting','unseen') THEN 2 WHEN is_active=1 THEN 1 ELSE 0 END AS sort_priority FROM (SELECT *,${state} AS activity_state FROM (SELECT *,${effectiveStatus} AS effective_status FROM ${storedSource})))`;
       const ids=[...new Set(workspaceIds)].sort();
-      const scope=createHash('sha256').update(JSON.stringify(['attention-first-v1',ids,{...input,cursor:undefined,limit:undefined},generations])).digest('hex');
-      const epoch=modern?(db.prepare('SELECT value FROM conversation_epoch WHERE id=1').get() as {value:number}).value:0;
+      // Resolved generations can change outside this scope. Any effect on the
+      // actual filtered list is already captured by its membership/order keys.
+      const scope=createHash('sha256').update(JSON.stringify(['attention-first-v1',ids,{...input,cursor:undefined,limit:undefined}])).digest('hex');
       const where=[`workspace_id IN (${ids.map(()=>'?').join(',')})`];const values:Array<string|number>=[...generations,...ids];
       if(input.workspaceId){where.push('workspace_id=?');values.push(input.workspaceId);}
       where.push(HAS_WORK);
@@ -346,9 +347,18 @@ export class ConversationRepository {
       if(input.agent||input.model)where.push("effective_status IN ('starting','running','stopping','tools-active')");
       if(input.agent){where.push("coalesce(nullif(json_extract(summary,'$.run.provider'),''),'未指定')=?");values.push(input.agent);}
       if(input.model){where.push("coalesce(nullif(json_extract(summary,'$.run.model'),''),'未指定')=?");values.push(input.model);}
-      const total=(db.prepare(`SELECT count(*) AS n FROM ${source} WHERE ${where.join(' AND ')}`).get(...values) as {n:number}).n;
+      // A continuation protects the filtered membership and ordering, not every
+      // persisted message/metadata update. The global epoch also changes for
+      // streaming output and unrelated workspaces, making live lists unusable.
+      // Aggregate compact keys alongside the existing count in this read
+      // transaction; no full histories or server-side snapshots are retained.
+      const membership=db.prepare(`SELECT count(*) AS n,
+        json_group_array(json_array(id,sort_priority,user_at) ORDER BY id) AS keys
+        FROM ${source} WHERE ${where.join(' AND ')}`).get(...values) as {n:number;keys:string};
+      const total=membership.n;
+      const epoch=createHash('sha256').update(membership.keys).digest('hex');
       if(input.cursor){
-        let cursor:{scope:string;epoch:number;priority:number;at:string;id:string};
+        let cursor:{scope:string;epoch:string;priority:number;at:string;id:string};
         try{cursor=JSON.parse(Buffer.from(input.cursor,'base64url').toString('utf8'));}catch{fail('agent_cursor_invalid','对话列表位置无效，请刷新列表。',409);}
         if(!cursor||typeof cursor!=='object'||cursor.scope!==scope||cursor.epoch!==epoch||typeof cursor.at!=='string'||typeof cursor.id!=='string'||![0,1,2].includes(cursor.priority))fail('agent_cursor_stale','对话列表顺序已变化，请刷新后继续。',409);
         where.push('(sort_priority < ? OR (sort_priority=? AND (user_at < ? OR (user_at=? AND id < ?))))');values.push(cursor.priority,cursor.priority,cursor.at,cursor.at,cursor.id);

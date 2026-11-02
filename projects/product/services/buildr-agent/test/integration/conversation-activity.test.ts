@@ -82,6 +82,73 @@ test('legacy reads are zero-write, upgrade establishes seen baseline, then count
   save(repo,r,r=>message(r,'new','new'));assert.equal(r.view.activity?.version,1);
 });
 
+test('continuation survives streaming, metadata, same-priority seen and out-of-scope updates',t=>{
+  const repo=fixture(t);
+  const rows=Array.from({length:6},(_,i)=>{
+    const r=record('page-'+i);
+    message(r,'input','hello');
+    r.view.run={id:'run-'+i,participantId:'p',provider:'codex',generation:'g',status:'running',accepted:true,tools:[],startedAt:r.view.updatedAt,updatedAt:r.view.updatedAt};
+    repo.saveConversation(r);
+    save(repo,r,row=>message(row,'answer','first chunk','message','assistant'));
+    return r;
+  });
+  const outside=record('outside','private');message(outside,'input','private');repo.saveConversation(outside);
+  const read=(cursor?:string)=>repo.querySummaries(['w1'],{limit:1,cursor});
+  const expected=repo.querySummaries(['w1'],{limit:20}).conversations.map(row=>row.id);
+  let page=read();const found=page.conversations.map(row=>row.id);
+  const changes=[
+    ()=>save(repo,rows[0],r=>{r.view.entries[1].text+=' streamed chunk';}),
+    ()=>save(repo,rows[0],r=>{r.view.title='renamed';}),
+    ()=>save(repo,outside,r=>{r.view.title='outside renamed';}),
+    // Partial acknowledgement leaves this row unseen, so its priority is unchanged.
+    ()=>{save(repo,rows[0],r=>{r.view.entries[1].text+=' another chunk';});repo.markSeen('w1',rows[0].view.id,1);},
+    ()=>save(repo,rows[0],r=>{r.view.run!.status='tools-active';}),
+  ];
+  for(const change of changes){
+    assert.ok(page.nextCursor);change();
+    page=read(page.nextCursor);found.push(...page.conversations.map(row=>row.id));
+  }
+  assert.deepEqual(found,expected);
+  assert.equal(page.nextCursor,undefined);
+  // New readers reject legacy global-epoch cursors rather than mixing semantics.
+  const legacy=JSON.parse(Buffer.from(read().nextCursor!,'base64url').toString());
+  legacy.epoch=123;
+  assert.throws(()=>read(Buffer.from(JSON.stringify(legacy)).toString('base64url')),/顺序/);
+});
+
+test('continuation rejects changed membership and ordering, including search and execution filters',t=>{
+  const repo=fixture(t),a=record('a'),b=record('b'),c=record('c');
+  for(const r of [a,b,c]){
+    message(r,'input','matching');
+    r.view.run={id:'run-'+r.view.id,participantId:'p',provider:'codex',generation:'g',status:'running',accepted:true,tools:[],model:'m',startedAt:r.view.updatedAt,updatedAt:r.view.updatedAt};
+    repo.saveConversation(r);
+  }
+  const rejects=(options:Parameters<ConversationRepository['querySummaries']>[1],change:()=>void)=>{
+    const page=repo.querySummaries(['w1'],options);assert.ok(page.nextCursor);change();
+    assert.throws(()=>repo.querySummaries(['w1'],{...options,cursor:page.nextCursor}),/顺序/);
+  };
+  rejects({limit:1,query:'matching'},()=>save(repo,a,r=>{r.view.entries[0].text='no longer matches';}));
+  rejects({limit:1,model:'m'},()=>save(repo,a,r=>{r.view.run!.model='other';}));
+  rejects({limit:1},()=>save(repo,b,r=>{r.view.updatedAt='2026-10-27T01:00:00Z';message(r,'new-input','new input');}));
+  rejects({limit:1},()=>{const added=record('new');message(added,'input','new');repo.saveConversation(added);});
+  save(repo,c,r=>{r.view.run!.status='completed';});
+  rejects({limit:1},()=>save(repo,c,r=>{r.view.hidden=true;}));
+});
+
+test('retained generation changes outside the requested workspace do not invalidate continuation',t=>{
+  const repo=fixture(t);
+  for(const id of ['a','b']){const r=record(id);message(r,'input','hello');repo.saveConversation(r);}
+  const outside=record('outside','private');message(outside,'input','hello');
+  outside.view.run={id:'old-run',participantId:'p',provider:'codex',generation:'retained',status:'running',accepted:true,tools:[],startedAt:outside.view.updatedAt,updatedAt:outside.view.updatedAt};
+  repo.saveConversation(outside);
+  const read=(cursor?:string)=>repo.querySummaries(['w1'],{limit:1,generation:'current',cursor},()=>true);
+  const first=read();assert.ok(first.nextCursor);
+  save(repo,outside,r=>{r.view.run!.status='completed';});
+  const next=read(first.nextCursor);
+  assert.deepEqual([...first.conversations,...next.conversations].map(row=>row.id),['b','a']);
+  assert.equal(next.nextCursor,undefined);
+});
+
 test('waiting and unseen outrank newer running input across all pages, filters and seen transitions',t=>{
   const repo=fixture(t);
   const make=(id:string,status:NonNullable<StoredConversation['view']['run']>['status'],at:string,seen=false,workspaceId='w1')=>{
