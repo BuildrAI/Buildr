@@ -12,9 +12,15 @@ export function useEarlierConversationEntries(props:Props){
  const scope=useRef(selectionKey);scope.current=selectionKey;
  const active=useRef<AbortController|null>(null),anchor=useRef<Anchor|null>(null);
  const touch=useRef<number|null>(null),lastTop=useRef(0);
+ const size=useRef({height:0,viewport:0});
+ const remember=()=>{
+  const node=stream.current;if(!node)return;
+  lastTop.current=node.scrollTop;position.current=node.scrollTop;
+  size.current={height:node.scrollHeight,viewport:node.clientHeight};
+ };
  useEffect(()=>()=>{active.current?.abort();active.current=null;anchor.current=null;},[]);
  useLayoutEffect(()=>{
-  active.current?.abort();active.current=null;anchor.current=null;touch.current=null;lastTop.current=0;setLoading(false);setError('');
+  active.current?.abort();active.current=null;anchor.current=null;touch.current=null;lastTop.current=0;size.current={height:0,viewport:0};setLoading(false);setError('');
  },[selectionKey]);
  useLayoutEffect(()=>{
   const a=anchor.current,node=stream.current;
@@ -25,7 +31,7 @@ export function useEarlierConversationEntries(props:Props){
    const direct=a.attribute==='data-entry-id'?[...node.querySelectorAll<HTMLElement>('[data-entry-id]')].find(n=>n.dataset.entryId===a.id&&visible(n)):undefined;
    const item=direct??[...node.querySelectorAll<HTMLElement>('[data-entry-group]')].find(n=>JSON.parse(n.dataset.entryGroup!).includes(a.id)&&visible(n))??[...node.querySelectorAll<HTMLElement>('[data-run-id]')].find(n=>n.getAttribute(a.attribute)===a.id&&visible(n));
    node.scrollTop=a.fit?0:item?node.scrollTop+item.getBoundingClientRect().top-node.getBoundingClientRect().top-a.offset:a.top+node.scrollHeight-a.height;
-   lastTop.current=node.scrollTop;bottom.current=false;position.current=node.scrollTop;
+   remember();bottom.current=false;
   };
   restore();
   // MarkdownHost populates new content in an effect. Account for that DOM work
@@ -63,12 +69,19 @@ export function useEarlierConversationEntries(props:Props){
  };
  const onScroll=()=>{
   const node=stream.current;if(!node?.getClientRects().length)return;
+  const resized=node.scrollHeight!==size.current.height||node.clientHeight!==size.current.viewport;
   const upward=node.scrollTop<lastTop.current-1;
-  lastTop.current=node.scrollTop;position.current=node.scrollTop;
+  const moved=Math.abs(node.scrollTop-lastTop.current)>1;
+  // A queued scroll caused by our compensation already has this exact top.
+  // Any other movement belongs to the reader, including scrollbar dragging.
+  if(moved)anchor.current=null;
+  remember();
   const distance=node.scrollHeight-node.scrollTop-node.clientHeight;
+  // Layout may clamp scrollTop before ResizeObserver runs. Do not turn that
+  // into a request for history or disable the initial/latest follow.
+  if(bottom.current&&(resized||!moved))return;
   if(distance<24)bottom.current=true;
-  else if(upward)bottom.current=false;
-  else if(bottom.current)node.scrollTop=node.scrollHeight;
+  else bottom.current=false;
   // A shrinking composer clamps the viewport to the new bottom; that upward
   // scroll event is layout, not a request to read older entries.
   if(upward&&distance>=24)readEarlier();
@@ -77,17 +90,21 @@ export function useEarlierConversationEntries(props:Props){
   anchor.current=null;touch.current=null;
   active.current?.abort();active.current=null;setLoading(false);setError('');
   const node=stream.current;bottom.current=true;
-  if(node){node.scrollTop=node.scrollHeight;position.current=node.scrollTop;}
+  if(node){node.scrollTop=node.scrollHeight;remember();}
  };
- return {loading,error,onScroll,pinLatest,
-  onWheel:(event:{deltaY:number})=>{anchor.current=null;if(event.deltaY<0)readEarlier();},
+ const interrupt=()=>{anchor.current=null;};
+ return {loading,error,onScroll,pinLatest,remember,
+  onPointerDown:interrupt,
+  onWheel:(event:{deltaY:number})=>{interrupt();if(event.deltaY<0){bottom.current=false;readEarlier();}},
   onTouchStart:(event:{touches:ArrayLike<{clientY:number}>})=>{anchor.current=null;touch.current=event.touches[0]?.clientY??null;},
-  onTouchMove:(event:{touches:ArrayLike<{clientY:number}>})=>{const y=event.touches[0]?.clientY;if(y===undefined)return;if(touch.current!==null&&y>touch.current)readEarlier();touch.current=y;},
+  onTouchMove:(event:{touches:ArrayLike<{clientY:number}>})=>{const y=event.touches[0]?.clientY;if(y===undefined)return;interrupt();if(touch.current!==null&&y>touch.current){bottom.current=false;readEarlier();}touch.current=y;},
   onTouchEnd:()=>{touch.current=null;},
   onTouchCancel:()=>{touch.current=null;},
   onKeyDown:(event:{key:string;shiftKey:boolean;defaultPrevented:boolean;target:EventTarget|null})=>{
    if(event.defaultPrevented||event.target instanceof Element&&event.target.closest('input,textarea,select,[contenteditable="true"]'))return;
+   interrupt();
    if(['ArrowUp','PageUp','Home'].includes(event.key)||event.key===' '&&event.shiftKey){
+    bottom.current=false;
     // Let the native key scroll request its page through onScroll. Starting a
     // fetch before Home moves can race anchor restoration and fetch twice.
     // At the top there is no scroll event, so an explicit request is necessary.

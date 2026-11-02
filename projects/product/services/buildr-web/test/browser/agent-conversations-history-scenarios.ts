@@ -105,6 +105,63 @@ await step('主答复后的隐藏子消息不阻止真实已读确认',async()=>
     assert.equal(await panel().locator('[data-entry-id="seen-child-input"],[data-entry-id="seen-child-answer"],[data-entry-id="retired-question-seen"]').count(),0);
   }finally{fixture.conversation=saved;await page.reload();await input().waitFor();}
 });
+await step('刷新布局跟随最新，滚动条接管后不被延迟锚点拉回',async()=>{
+  const saved=structuredClone(fixture.conversation),at=new Date().toISOString();
+  const entry=(id:string,sequence:number,text:string)=>({id,sequence,kind:'message',role:'assistant',text,runId:'scroll-'+id,status:'completed',createdAt:at});
+  const long=Array.from({length:60},(_,i)=>`第 ${i} 段，用于核对可见阅读位置。`).join('\n\n');
+  const settle=()=>page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())))));
+  const stream=panel().locator('.ac-stream');
+  try{
+    update({entries:[entry('scroll-current',100,long)],nextEntryCursor:100,run:run('completed'),requests:[]});
+    historyPages.set(100,{...fixture.conversation,entries:[entry('scroll-earlier',50,long)],nextEntryCursor:undefined});
+    await page.reload();await input().waitFor();
+    await page.waitForFunction(()=>{const n=document.querySelector<HTMLElement>('#agent-conversation-panel .ac-stream');return Boolean(n&&n.scrollTop>100&&n.scrollHeight-n.scrollTop-n.clientHeight<2);});
+    const reads=fixture.entryReads;
+    // Browser layout can queue an upward scroll before the resize observer.
+    await stream.evaluate((node:HTMLElement)=>{
+      // Clicking the background alone is not a request to leave latest.
+      node.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));
+      const spacer=document.createElement('div');spacer.id='scroll-layout-spacer';spacer.style.height='120px';node.querySelector('.ac-stream-content')!.append(spacer);
+      node.scrollTop-=60;node.dispatchEvent(new Event('scroll'));
+    });
+    await settle();
+    assert.ok(await stream.evaluate((n:HTMLElement)=>n.scrollHeight-n.scrollTop-n.clientHeight<2),'布局变化不能取消刷新后的最新跟随');
+    assert.equal(fixture.entryReads,reads,'布局变化不是向前续读');
+    // A scrollbar drag must win even if latest-follow was active before it.
+    await stream.evaluate((node:HTMLElement)=>{
+      node.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));
+      node.scrollTop-=160;node.dispatchEvent(new Event('scroll'));
+      node.scrollTop+=40;node.dispatchEvent(new Event('scroll'));
+      (window as any).__scrollExpected=node.scrollTop;
+    });
+    await settle();
+    assert.ok(await stream.evaluate((n:HTMLElement)=>Math.abs(n.scrollTop-(window as any).__scrollExpected)<2),'向下拖动以当前可见位置为准，不强制到底');
+    await panel().getByRole('button',{name:'向下到底',exact:true}).click();await settle();
+    assert.ok(await stream.evaluate((n:HTMLElement)=>n.scrollHeight-n.scrollTop-n.clientHeight<2),'显式回到最新仍有效');
+    fixture.holdEntryRead=true;
+    const started=new Promise<void>(resolve=>{fixture.entryReadStarted=resolve;});
+    await stream.evaluate((node:HTMLElement)=>{node.scrollTop=600;node.dispatchEvent(new Event('scroll'));});await started;
+    await stream.evaluate((node:HTMLElement)=>{
+      const observer=new MutationObserver(()=>{
+        if(!node.querySelector('[data-entry-id="scroll-earlier"]'))return;
+        observer.disconnect();
+        queueMicrotask(()=>{
+          // Move after the first compensation but before its animation frames.
+          node.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));
+          node.scrollTop+=160;node.dispatchEvent(new Event('scroll'));
+          (window as any).__scrollExpected=node.scrollTop;
+        });
+      });
+      observer.observe(node,{childList:true,subtree:true});
+    });
+    fixture.releaseEntryRead!();await panel().locator('[data-entry-id="scroll-earlier"]').waitFor();await settle();
+    assert.ok(await stream.evaluate((n:HTMLElement)=>Math.abs(n.scrollTop-(window as any).__scrollExpected)<2),'补页期间继续向下滚动，不被旧锚点重新定位');
+    await capture(page,'conversation-scroll-stable.png');
+  }finally{
+    fixture.releaseEntryRead?.();fixture.holdEntryRead=false;historyPages.delete(100);fixture.conversation=saved;
+    await page.evaluate(()=>{delete (window as any).__scrollExpected;});await page.reload();await input().waitFor();
+  }
+});
 await step('大工具记录仅在展开明细时读取完整内容并按内容版本复用',async()=>{
   const saved=structuredClone(fixture.conversation);let reads=0,release:(()=>void)|undefined;
   const matcher='**/entry-detail/**';
