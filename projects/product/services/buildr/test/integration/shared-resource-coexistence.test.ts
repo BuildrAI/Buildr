@@ -5,6 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { spawnSync } from 'node:child_process';
 import YAML from 'yaml';
+import crypto from 'node:crypto';
 import { adoptPackageResources, ensurePackageResources, inspectSharedResources, publishPackageResources, readResourceAdoption, resolveSharedResource, sharedResourcesRoot } from '../../src/infrastructure/product-resources/shared-resources.ts';
 import { createWorkspacePreparation } from '../../src/modules/workspace/application/workspace-preparation.ts';
 import { WORKSPACE_HTTP_SCHEMAS, validateWorkspaceHttp } from '../../src/modules/workspace/interfaces/http/workspace-http-contracts.ts';
@@ -209,4 +210,37 @@ test('真实隔离进程：旧安装消费后，打开工作空间刷新当前�
   const result=spawnSync(process.execPath,[path.join(service,'tools/development/run-isolated-workspace-check.ts'),'--script',path.join(service,'tools/development/shared-resource-coexistence-check.ts')],{cwd:service,env:process.env,encoding:'utf8',timeout:85000,maxBuffer:4*1024*1024});
   assert.equal(result.status,0,result.stderr+result.stdout);
   assert.match(result.stdout,/"status":"passed"/);assert.match(result.stdout,/"cleanup":"cleaned"/);
+});
+
+
+test('隔离HOME按宿主线索读取同一共享索引，显式覆盖优先且不复制资源',t=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-host-resources-'));
+ t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+ const host=path.join(root,'host'),explicit=path.join(root,'explicit');
+ const files:unknown[]=[],version='1.0.0',id=version+'-'+crypto.createHash('sha256').update(JSON.stringify(files)).digest('hex');
+ for(const directory of [path.join(host,'.buildr/resources'),path.join(explicit,'resources')]){
+  fs.mkdirSync(directory,{recursive:true});fs.writeFileSync(path.join(directory,'resource-set.json'),JSON.stringify({schemaVersion:'buildr.shared-resources/v1',version,id,files}));
+ }
+ for(const provider of ['codex','dsh','qoder']){
+  const home=path.join(root,provider);fs.mkdirSync(home);
+  for(const override of [undefined,explicit]){
+   const env:NodeJS.ProcessEnv={...process.env,HOME:home,USERPROFILE:home,BUILDR_HOST_HOME:host};delete env.BUILDR_PRODUCT_DATA_DIR;
+   if(override)env.BUILDR_PRODUCT_DATA_DIR=override;
+   const script=`import {sharedResourcesRoot,readSharedResourceSet} from ${JSON.stringify(new URL('../../src/infrastructure/product-resources/shared-resources.ts',import.meta.url).href)};console.log(JSON.stringify({home:process.env.HOME,root:sharedResourcesRoot(),id:readSharedResourceSet().id}));`;
+   const result=spawnSync(process.execPath,['--input-type=module','-e',script],{env,encoding:'utf8'});
+   assert.equal(result.status,0,result.stderr);assert.deepEqual(JSON.parse(result.stdout),{home,root:override?path.join(explicit,'resources'):path.join(host,'.buildr/resources'),id});
+   assert.equal(fs.existsSync(path.join(home,'.buildr')),false);
+  }
+ }
+ assert.equal(sharedResourcesRoot({BUILDR_HOST_HOME:'relative'},'/fallback'),path.join('/fallback','.buildr/resources'));
+ assert.equal(sharedResourcesRoot({},'/fallback'),path.join('/fallback','.buildr/resources'));
+});
+
+
+test('无采用回执的任务检出可只读消费有效声明，损坏仍拒绝且不生成回执',t=>{
+ const {root,next}=fixture(t);const published=publishPackageResources(next);const checkout=path.join(root,'checkout');fs.mkdirSync(checkout);
+ const file=resolveSharedResource(checkout,'workspace/skills/example/SKILL.md');
+ assert.equal(fs.readFileSync(file,'utf8'),'new');assert.equal(readResourceAdoption(checkout),null);
+ fs.writeFileSync(file,'tampered');assert.throws(()=>resolveSharedResource(checkout,'workspace/skills/example/SKILL.md'),/damaged/);
+ assert.equal(fs.existsSync(path.join(checkout,'.buildr')),false);assert.ok(published.id);
 });

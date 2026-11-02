@@ -87,3 +87,12 @@ test('取消、切换及显式预览不自动重发；重读失败也不提交',
   assert.doesNotMatch(refreshedConversationConflictMessage(conflict()),/刷新/);
   assert.match(refreshedConversationConflictMessage({code:'agent_model_source_changed',message:'套餐来源变化。'}),/套餐来源变化/);
 });
+
+test('已结束同轮仅确认释放允许原请求有界恢复，未知工作和反向变化不允许',()=>{
+ const released=background();released.run.resourcesReleased=true;
+ assert.equal(sameConversationSendFacts(chat,released),true);
+ assert.equal(sameConversationSendFacts(released,chat),false);
+ assert.equal(sameConversationSendFacts({...chat,run:{...chat.run,status:'unknown'}},{...released,run:{...released.run,status:'unknown'}}),false);
+ assert.equal(sameConversationSendFacts({...chat,run:{...chat.run,tools:[{id:'t',status:'unknown'}]}},{...released,run:{...released.run,tools:[{id:'t',status:'unknown'}]}}),false);
+ assert.equal(sameConversationSendFacts(chat,{...released,run:{...released.run,generation:'new'}}),false);
+});

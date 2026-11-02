@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { createQoderExecutor } from '../../../src/executors/qoder/index.ts';
+import { NativeRpc } from '../../../src/executors/native-process.ts';
+import { pathToFileURL } from 'node:url';
 import type { ExecutorEvent, PermissionMode } from '../../../src/contracts.ts';
 
 async function fixture(externalModel = false) {
@@ -101,6 +103,8 @@ test('Qoder reuses two proven normal rounds, preserves native history and releas
       assert.ok(round.events.filter(event => event.type === 'item').every(event => event.type !== 'item' || event.item.executionId === round.clientRequestId));
     }
     const accepted = two.events.find(event => event.type === 'accepted'); assert.equal(accepted?.type, 'accepted');
+    assert.equal(await f.runtime.prepareRelease!({contextRef:f.contextRef,executionRef:{...accepted.executionRef,data:{...accepted.executionRef.data,resourceBinding:'wrong-binding'}}}),false);
+    assert.equal(await f.runtime.prepareRelease!({contextRef:f.contextRef,executionRef:accepted.executionRef}),true);
     assert.deepEqual(await f.runtime.canRelease!({ contextRef: f.contextRef, executionRef: accepted.executionRef }), { executionState: 'ended' });
   } finally { await f.close(); }
 });
@@ -195,6 +199,7 @@ test('Qoder child question after the main result keeps its exact parent and can 
     assert.equal(request.request.kind, 'question'); assert.equal(request.request.parentToolId, 'background-tool');
     const control = { contextRef: f.contextRef, executionRef: accepted.executionRef };
     const waiting = await f.runtime.observe(control);
+    assert.equal(await f.runtime.prepareRelease!(control),false,'a pending child question must protect its owner');
     assert.equal(waiting.status, 'waiting'); assert.equal(waiting.requests?.[0].id, request.request.id); assert.equal(waiting.requests?.[0].parentToolId, 'background-tool');
     assert.equal(await f.runtime.canRelease!(control), false);
     await f.runtime.reply({ ...control, requestId: request.request.id, answer: { '0': '自定义决定' } });
@@ -330,4 +335,19 @@ test('Qoder initialization refuses invalid account/model observations before any
    assert.equal(existsSync(join(f.configRoot,'qoder-config/native-inputs.jsonl')),false);
   }finally{await f.close();}
  }
+});
+
+
+test('Qoder worker shutdown closes the process-scoped SDK daemon, not only its sessions',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'qoder-daemon-close-')),module=join(root,'sdk.mjs'),receipt=join(root,'daemon-closed');
+ await writeFile(module,`import fs from 'node:fs';
+export const query=()=>{},qodercliAuth=()=>{},getSessionInfo=()=>{},getSessionMessages=()=>{},importSessionToStore=()=>{},forkSession=()=>{};
+export class InMemorySessionStore{};export class ProcessTransport{};
+export async function shutdownDaemon(){fs.writeFileSync(${JSON.stringify(receipt)},'closed');}
+`);
+ const rpc=new NativeRpc(process.execPath,[new URL('../../../build/executors/qoder/worker.js',import.meta.url).pathname],{cwd:root,env:{...process.env}});
+ try{
+  await rpc.call('initialize',{executable:'fixture',sdkModule:pathToFileURL(module).href});
+  await rpc.call('close',{});assert.equal(await readFile(receipt,'utf8'),'closed');
+ }finally{await rpc.close();await rm(root,{recursive:true,force:true});}
 });

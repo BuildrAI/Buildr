@@ -10,11 +10,17 @@ function stable(value: unknown): string {
 
 /** Ignore only known background metadata, never message bodies or execution identity. */
 export function sameConversationSendFacts(before: ConversationView, next: ConversationView): boolean {
+  // Confirming release of an already-ended control is background bookkeeping,
+  // not a changed user request. Never ignore active/unknown work or identity.
+  const releaseOnly = Boolean(before.run && next.run && !before.run.resourcesReleased && next.run.resourcesReleased &&
+    ['completed','failed','stopped'].includes(before.run.status) && before.run.status===next.run.status &&
+    before.run.tools.every(tool=>tool.status==='completed') && next.run.tools.every(tool=>tool.status==='completed') &&
+    !before.requests.length && !next.requests.length);
   const facts = (view: ConversationView) => {
     const { revision: _revision, title: _title, titleState: _titleState, updatedAt: _updatedAt,
       activity: _activity, nextEntryCursor: _cursor, entries: _entries, run, ...rest } = view;
-    const { contextUsage: _usage, updatedAt: _runUpdatedAt, ...execution } = run ?? {};
-    return { ...rest, run: run ? execution : undefined };
+    const { contextUsage: _usage, updatedAt: _runUpdatedAt, resourcesReleased, ...execution } = run ?? {};
+    return { ...rest, run: run ? {...execution,...(!releaseOnly&&resourcesReleased!==undefined?{resourcesReleased}:{})} : undefined };
   };
   if (stable(facts(before)) !== stable(facts(next))) return false;
   if (before.entries.at(-1)?.sequence !== next.entries.at(-1)?.sequence) return false;

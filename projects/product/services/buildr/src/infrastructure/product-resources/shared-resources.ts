@@ -23,8 +23,12 @@ const relativeFile = (value: string) => {
   if (!value || value.includes('\\') || value.includes('\0') || path.posix.normalize(value) !== value || value.startsWith('/') || value.split('/').includes('..')) throw new Error(`Invalid resource path: ${value}`);
   return value;
 };
-export function sharedResourcesRoot() {
-  return path.join(process.env.BUILDR_PRODUCT_DATA_DIR || path.join(os.homedir(), '.buildr'), 'resources');
+export function sharedResourcesRoot(environment: NodeJS.ProcessEnv = process.env, home = os.homedir()) {
+  // Tool processes keep a private HOME for credentials. The existing host-home
+  // hint locates shared capabilities only; it must not redirect native accounts.
+  const hostHome = environment.BUILDR_HOST_HOME;
+  const resourceHome = hostHome && path.isAbsolute(hostHome) ? hostHome : home;
+  return path.join(environment.BUILDR_PRODUCT_DATA_DIR || path.join(resourceHome, '.buildr'), 'resources');
 }
 function assertPlainPath(file: string) {
   let current = path.resolve(file);
@@ -226,7 +230,7 @@ export function adoptPackageResources(root: string, ready = false, expectedId?: 
   finally { fs.rmSync(temporary, { force: true }); }
   return resources;
 }
-export function resolveSharedResource(root: string, source: string): string {
+export function resolveSharedResource(_root: string, source: string): string {
   relativeFile(source);
   const normalizedSource = source.replace(/^resources\//, '');
   const base = sharedResourcesRoot(); assertPlainPath(base);
@@ -237,8 +241,9 @@ export function resolveSharedResource(root: string, source: string): string {
     if (!entry) throw new Error(`Archify 历史来源未声明：${source}`);
     return path.join(preserved.root, entry.path);
   }
-  const adoption = readResourceAdoption(root);
-  if (!adoption) throw new Error('工作空间资源尚未准备，请在 Buildr 中重试。');
+  // Adoption describes generated workspace entry points, not permission to
+  // read declared immutable sources. A checkout may legitimately lack that
+  // local receipt; descriptor, file identity and integrity remain mandatory.
   const entry = descriptor.files.find(item => item.source === normalizedSource);
   if (!entry) {
     // Retired shared skill sources stay resolvable from the preserved area so a

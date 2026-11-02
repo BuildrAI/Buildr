@@ -245,6 +245,14 @@ class QoderRuntime implements AgentRuntime {
     }
     catch { return { status: 'unknown', tools: this.observations.get(contextRef.id)?.tools ?? [], diagnostic: 'qoder_exact_execution_not_observed' }; }
   }
+  async prepareRelease({contextRef,executionRef}:{contextRef:ContextRef;executionRef:ExecutionRef}):Promise<boolean>{
+    this.reference(contextRef);
+    const resource=executionRef.data;
+    if(!resource || resource.resourceGroup!==this.rpc.child.pid || resource.resourceContext!==contextRef.id ||
+      resource.resourceBinding!==this.bindingIdentity || resource.backgroundWork!==false || this.rpc.closed)return false;
+    const proof=await this.rpc.call('release-check',{contextId:contextRef.id,executionId:executionRef.id},5000);
+    return Boolean(proof.ended&&!proof.blocked);
+  }
   async canRelease({contextRef,executionRef}:{contextRef:ContextRef;executionRef:ExecutionRef}):Promise<boolean|{executionState:'ended'|'unknown'}>{
     this.reference(contextRef);
     let ended=false,executionState:'ended'|'unknown'='unknown';

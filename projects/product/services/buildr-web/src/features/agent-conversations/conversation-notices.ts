@@ -20,7 +20,12 @@ export function latestVisibleConversationMessage(entries:ConversationEntry[]):Co
 }
 
 /** A new native context with unchanged choices is continuation, not a model takeover. */
-export function conversationHandoffReceipt(entry:Pick<ConversationEntry,'handoff'|'status'|'text'>):string {
+export function conversationHandoffReceipt(entry:Pick<ConversationEntry,'handoff'|'nativeSession'|'status'|'text'>):string {
+  if(entry.nativeSession){
+    const {reason,description,from,to}=entry.nativeSession;
+    const state=entry.status==='accepted'?'本轮已受理':entry.status==='failed'?'本轮未送达':entry.status==='unknown'?'本轮送达待确认':'等待本轮受理';
+    return `${reason==='backend-adoption'?'后台接管，原生会话保留':'原生会话交接'}：${from.contextId??'无原生会话'} → ${to.contextId}；后台 ${from.generation??'历史未记录'} → ${to.generation}；${description}；${state}`;
+  }
   if(!entry.handoff)return entry.text;
   if(!entry.handoff.changes.length)return entry.status==='accepted'?'':entry.status==='failed'?'新要求未接收':'新要求接收待确认';
   const target=entry.handoff.changes.map(change=>change.after).join(' · ');

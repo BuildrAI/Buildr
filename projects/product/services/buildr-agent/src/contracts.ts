@@ -205,6 +205,8 @@ export interface AgentRuntime {
    * This proves neither non-delivery nor success of independent operations. */
   releaseUnaccepted?(input: { contextRef: ContextRef; clientRequestId: string }): Promise<false | {executionState:'unknown'}>;
   canRelease?(input: { contextRef: ContextRef; executionRef: ExecutionRef }): Promise<boolean | {executionState:'ended'|'unknown'}>;
+  /** Logical quiescence only. The owner must close the runtime and still prove physical release. */
+  prepareRelease?(input: { contextRef: ContextRef; executionRef: ExecutionRef }): Promise<boolean>;
   reply(input: { contextRef: ContextRef; executionRef: ExecutionRef; requestId: string; answer: unknown }): Promise<void>;
   stop(input: { contextRef: ContextRef; executionRef: ExecutionRef; toolId?: string }): Promise<ExecutorObservation>;
   /** Native generated/name metadata only; never a first-prompt preview or fallback. */
@@ -332,6 +334,13 @@ export interface ConversationEntry {
   attachments?: string[];
   deliveryDiagnostic?: string;
   handoff?: HandoffMaterial;
+  /** Durable control transfer; native identity is not an execution-choice change. */
+  nativeSession?: {
+    reason: 'backend-adoption' | 'session-replacement';
+    description: string;
+    from: { contextId?: string; generation?: string };
+    to: { contextId: string; generation: string };
+  };
   createdAt: string;
 }
 export interface RunView {

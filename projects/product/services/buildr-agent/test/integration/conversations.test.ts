@@ -1517,7 +1517,7 @@ test('live transport loss reopens the same binding and continues once without a 
   } finally { await f.close(); }
 });
 
-test('same executor and model rebuilds internal context without a user handoff after released unknown work',async()=>{
+test('same executor and model records native session replacement without claiming a model change after released unknown work',async()=>{
   const native=fake('local',{disconnect:'unknown'}),f=fixture([native.executor]);
   try{
     await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});
@@ -1532,7 +1532,11 @@ test('same executor and model rebuilds internal context without a user handoff a
     f.service.conversations.send('workspace-one',chat.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});
     const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='completed');
     assert.notEqual(native.sends[0]!.contextRef.id,native.sends[1]!.contextRef.id);
-    assert.equal(done.entries.filter(entry=>entry.kind==='handoff').length,0);
+    const transfer=done.entries.find(entry=>entry.nativeSession);
+    assert.equal(transfer?.nativeSession?.reason,'session-replacement');
+    assert.equal(transfer?.nativeSession?.from.contextId,native.sends[0]!.contextRef.id);
+    assert.equal(transfer?.nativeSession?.to.contextId,native.sends[1]!.contextRef.id);
+    assert.equal(transfer?.status,'accepted');
     assert.equal(done.retainedRuns?.find(run=>run.id===unknown.run!.id)?.status,'unknown');
   }finally{await f.close();}
 });

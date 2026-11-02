@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { NativeRpc, bindingFingerprint, nativeBinding, isolatedEnvironment, opaqueReference, parseReference } from '../../../build/executors/native-process.js';
+import { executorEnvironment as executorEnvForTest } from '../../../build/application/executor-environment.js';
 import { toolEnvironment } from '../../../build/executors/tool-environment.js';
 
 test('native environment isolates credentials while retaining actual proxy settings', () => {
@@ -41,6 +42,16 @@ test('three private provider processes can reuse a browser cache across restart 
     }
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+test('explicit product location survives private tool environments without changing HOME or copying credentials',()=>{
+  const source={HOME:'/host',BUILDR_PRODUCT_DATA_DIR:'/configured/product',OPENAI_API_KEY:'secret',DSH_TOKEN:'secret'};
+  const input=executorEnvForTest(source);
+  for(const key of ['CODEX_HOME','DSH_HOME','QODER_CONFIG_DIR']){
+    const env=isolatedEnvironment(input,'/private/home','/private/tmp',{[key]:'/private/config'});
+    assert.equal(env.HOME,'/private/home');assert.equal(env.BUILDR_HOST_HOME,'/host');assert.equal(env.BUILDR_PRODUCT_DATA_DIR,'/configured/product');
+    assert.equal(env.OPENAI_API_KEY,undefined);assert.equal(env.DSH_TOKEN,undefined);
+  }
+});
+
 test('native context binding rejects another provider, directory or configuration', () => {
   const ref = opaqueReference('codex', 'thread-1', '/work/a', 'binding-a');
   assert.equal(parseReference(ref, 'codex', '/work/a', 'binding-a').nativeSessionId, 'thread-1');

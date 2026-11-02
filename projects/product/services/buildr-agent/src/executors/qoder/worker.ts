@@ -12,6 +12,7 @@ import type { ExecutorEvent, ExecutorItem, ExecutorObservation, ExecutorRequest,
 import { bounded, closeOwnedProcess, visibleText, nativePreview } from '../native-process.ts';
 import * as embeddedSdk from '@qoder-ai/qoder-agent-sdk';
 let { query, qodercliAuth, ProcessTransport, getSessionInfo, getSessionMessages, InMemorySessionStore, importSessionToStore, forkSession } = embeddedSdk;
+let shutdownDaemon = embeddedSdk.shutdownDaemon;
 import { qoderHistoryItems, qoderResultOutcome, qoderInterruptionIds, qoderInterruptedObservation, qoderParentTool, qoderTaskResult, qoderTaskNotificationIds } from './protocol.ts';
 import { qoderModel } from '../model-options.ts';
 import { resolvePermissionMode } from '../../domain/permission-mode.ts';
@@ -483,6 +484,7 @@ async function dispatch(method: string, params: any): Promise<any> {
       for(const key of ['query','qodercliAuth','getSessionInfo','getSessionMessages','InMemorySessionStore','importSessionToStore','forkSession'])if(typeof sdk[key]!=='function')throw new Error('qoder_sdk_pair_mismatch');
       if(!sdk.ProcessTransport)throw new Error('qoder_sdk_pair_mismatch');
       ({query,qodercliAuth,ProcessTransport,getSessionInfo,getSessionMessages,InMemorySessionStore,importSessionToStore,forkSession}=sdk);
+      shutdownDaemon=sdk.shutdownDaemon;
     }
     executable = params.executable; workInstructions = params.interaction?.instructions ?? interactionPolicy.instructions; gateway = checkedGateway(params.gateway); return {};
   }
@@ -566,13 +568,18 @@ async function dispatch(method: string, params: any): Promise<any> {
     await Promise.allSettled([...live.values()].map(async item => {
       item.stopping = true; for (const pending of item.pending.values()) pending.resolve({ behavior: 'deny', message: 'Host closed.' });
       if (item.owner) await closeConversation(item.owner); else await bounded(item.q.close(), 2000).catch(() => {}); if (item.child) await closeOwnedProcess(item.child, 1000);
-    })); return {};
+    }));
+    // Query.close() closes a session, not the SDK's process-scoped daemon.
+    // This worker owns the SDK instance; close its daemon before acknowledging
+    // runtime shutdown so the exact process-group release proof can converge.
+    if(shutdownDaemon)await bounded(Promise.resolve(shutdownDaemon()),2000);
+    return {};
   }
   const state = live.get(params.contextId);
   if (method === 'release-check') {
     if (!state || state.id !== params.executionId) return { ended: false, blocked: true };
     if (!state.settling && canClose(state) && state.owner) await closeConversation(state.owner);
-    return { ended: Boolean(state.nativeExited || state.terminal), executionState:state.terminal&&[...state.tools.values()].every(tool=>!unresolvedTool(tool))?'ended':'unknown', blocked: Boolean(state.settling || state.ambiguous) || state.pending.size > 0 || [...live.values()].some(item => item.id !== state.id && !item.nativeExited && !item.terminal) || [...state.tools.values()].some(tool => Boolean(tool.taskId) && unresolvedTool(tool)) || titleQueries.size > 0 };
+    return { ended: Boolean(state.nativeExited || state.terminal), executionState:state.terminal&&[...state.tools.values()].every(tool=>!unresolvedTool(tool))?'ended':'unknown', blocked: Boolean(state.settling || protectedWork(state)) || [...live.values()].some(item => item.id !== state.id && (!item.nativeExited && !item.terminal || protectedWork(item))) || titleQueries.size > 0 };
   }
   if (method === 'observe' && !state) {
     const { messages, records } = await transcript(params.contextId, params.cwd);

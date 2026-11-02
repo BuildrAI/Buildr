@@ -86,3 +86,17 @@ test('系统恢复指令只呈现准确接收状态，原始记录与普通消�
   assert.equal(conversationSystemNoticeText({...raw,kind:'message',role:'assistant'}),raw.text);
   assert.match(raw.text,/未知工具引用/);
 });
+
+
+test('原生会话交接与后台接管始终显示身份和实际受理状态',()=>{
+ const nativeSession={reason:'backend-adoption',description:'原轮控制已释放',from:{contextId:'same-session',generation:'old'},to:{contextId:'same-session',generation:'new'}};
+ const entry={text:'内部准备',status:'sending',nativeSession};
+ assert.match(conversationHandoffReceipt(entry),/后台接管，原生会话保留/);
+ assert.match(conversationHandoffReceipt(entry),/same-session → same-session/);
+ assert.match(conversationHandoffReceipt(entry),/old → new/);
+ assert.match(conversationHandoffReceipt(entry),/等待本轮受理/);
+ assert.match(conversationHandoffReceipt({...entry,status:'accepted'}),/本轮已受理/);
+ assert.match(conversationHandoffReceipt({...entry,status:'failed'}),/本轮未送达/);
+ assert.match(conversationHandoffReceipt({...entry,status:'unknown'}),/本轮送达待确认/);
+ assert.match(conversationHandoffReceipt({...entry,nativeSession:{...nativeSession,reason:'session-replacement',to:{contextId:'next-session',generation:'new'}}}),/原生会话交接.*same-session → next-session/);
+});

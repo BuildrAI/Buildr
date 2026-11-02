@@ -330,7 +330,11 @@ export class ConversationApplication {
             candidates.push({...member,workspaceId:held.workspaceId,conversationId:held.id,runId,prepare:proof,proof});continue;
           }
           const exactProof=participant?.contextRef&&attempt?.executionRef&&runtime.canRelease;
-          if(exactProof?!await runtime.canRelease!({contextRef:participant!.contextRef!,executionRef:attempt!.executionRef!}).catch(()=>false):!settled){safe=false;break;}
+          const releaseInput=exactProof?{contextRef:participant!.contextRef!,executionRef:attempt!.executionRef!}:undefined;
+          // A native SDK can retain an idle daemon until its runtime is closed.
+          // Logical quiescence permits that close, never substitutes for the
+          // physical group proof below. Legacy executors keep their old check.
+          if(exactProof?!await (runtime.prepareRelease?runtime.prepareRelease(releaseInput!):runtime.canRelease!(releaseInput!)).catch(()=>false):!settled){safe=false;break;}
           candidates.push({...member,workspaceId:held.workspaceId,conversationId:held.id,runId,...(exactProof?{proof:()=>runtime.canRelease!({contextRef:participant!.contextRef!,executionRef:attempt!.executionRef!}).catch(()=>false)}:{})});
         }
         if(!safe || this.forks.active)continue;
@@ -461,7 +465,7 @@ export class ConversationApplication {
   }
   private save(record: StoredConversation, initial = false): void {
     if(record.view.run?.status==='completed'){record.view.run.interrupted=undefined;delete record.interruption;}
-    for(const observed of conversationRuns(record.view))if(['completed','failed','stopped','unknown','tools-active'].includes(observed.status)){record.runOutcomes??={};record.runOutcomes[observed.id]={status:observed.status,diagnostic:observed.diagnostic,model:observed.model,provider:observed.provider,updatedAt:observed.updatedAt};}
+    for(const observed of conversationRuns(record.view))if(['completed','failed','stopped','unknown','tools-active'].includes(observed.status)){record.runOutcomes??={};record.runOutcomes[observed.id]={status:observed.status,diagnostic:observed.diagnostic,model:observed.model,provider:observed.provider,updatedAt:observed.updatedAt,generation:observed.generation};}
     const prior = record.view.revision;
     record.view.revision = randomUUID(); record.view.updatedAt = this.options.now();
     this.options.repository.saveConversation(record, initial ? undefined : prior);
@@ -660,7 +664,13 @@ export class ConversationApplication {
     if (input.reasoningEffort && !boundModel?.reasoningEfforts?.some(effort => effort.id === input.reasoningEffort)) fail('agent_reasoning_unavailable', '该思考深度不在所选模型的可用目录中。', 409);
     if (!connection.capabilities.text) fail('agent_capability_unavailable', '此接入尚不支持文本输入。', 409);
     if (record.view.forkState && record.view.forkState.status !== 'ready') fail('agent_fork_pending', '此分叉尚未完成，不能发送新指令；原对话不受影响。', 409);
-    const participant = record.participants.find(value => !value.historical && !conversationRuns(record.view).some(run => run.participantId === value.id && (unfinishedRun(run) || run.generation !== this.options.generation && this.options.generationAlive?.(run.generation) === true && !run.resourcesReleased || record.view.requests.some(request => request.runId === run.id))) && value.connectionId === input.connectionId && value.modelAccountId === input.modelAccountId && value.modelId === input.model && (!input.modelAccountId || value.modelAccountIdentity === source?.identity && value.modelConfiguration===configuration));
+    const latest = record.participants.findLast(value => !value.historical && value.connectionId === input.connectionId && value.modelAccountId === input.modelAccountId && value.modelId === input.model && (!input.modelAccountId || value.modelAccountIdentity === source?.identity && value.modelConfiguration===configuration));
+    const held = latest && !releasedContinuation(record,input) && conversationRuns(record.view).some(run => run.participantId === latest.id && (unfinishedRun(run) || run.generation !== this.options.generation && this.options.generationAlive?.(run.generation) === true && !run.resourcesReleased || record.view.requests.some(request => request.runId === run.id)));
+    const current = record.participants.find(value=>value.id===record.view.run?.participantId);
+    if (held && latest?.id===current?.id && !waitingQuestions &&
+      record.view.run?.generation!==this.options.generation && ['completed','failed','stopped'].includes(record.view.run?.status??''))
+      fail('agent_conversation_busy', '原会话仍由上一轮后台持有，内容将等待安全释放后接续，不会另建会话。', 409);
+    const participant = held ? undefined : latest;
     const through = record.view.entries.at(-1)?.sequence ?? record.view.childOf?.throughSequence ?? 0;
     const changes = handoffEntries([...(record.inheritedContext?.entries??[]),...record.view.entries],participant?.deliveredThrough??0);
     const previous = record.participants.find(value=>value.id===record.view.run?.participantId) ?? record.participants.at(-1);
@@ -818,7 +828,7 @@ export class ConversationApplication {
     append({ id: userEntryId, kind: systemRecovery || manualRecovery ? 'notice' : 'message', role: systemRecovery || manualRecovery ? 'system' : 'user', text: manualRecovery ? record.view.run?.accepted ? '已请求继续上次执行。' : '已请求重试上次未送达的要求。' : prepared.draft.text, participantId:participant.id, provider:participant.provider, runId: run.id, status: 'sending', attachments: prepared.draft.attachmentIds });
     const automaticRetry = systemRecovery ? record.attempts.find(value => value.runId === record.view.run?.id)?.automaticRetry : undefined;
     record.attempts.push({ clientRequestId, inputDigest, runId: run.id, participantId: participant.id, through: record.view.entries.at(-1)!.sequence, userEntryId, accepted: false, ...(raw.continueRunId || systemRecovery && record.view.run ? {continuationOf: raw.continueRunId ?? record.view.run!.id} : {}), ...(automaticRetry ? {automaticRetry: {...automaticRetry}} : {}) });
-    const previousRun=record.view.run;if(previousRun){record.runOutcomes??={};record.runOutcomes[previousRun.id]={status:previousRun.status,diagnostic:previousRun.diagnostic,model:previousRun.model,provider:previousRun.provider,updatedAt:previousRun.updatedAt};}
+    const previousRun=record.view.run;if(previousRun){record.runOutcomes??={};record.runOutcomes[previousRun.id]={status:previousRun.status,diagnostic:previousRun.diagnostic,model:previousRun.model,provider:previousRun.provider,updatedAt:previousRun.updatedAt,generation:previousRun.generation};}
     if (!participant.modelAccountId) this.sharedNativeContext = true;
     delete record.interruption;
     if (previousRun && (unfinishedRun(previousRun) || record.view.requests.some(request => request.runId === previousRun.id) || previousRun.participantId!==participant.id && !previousRun.resourcesReleased && (this.sourceRuntimes.has(previousRun.participantId) || this.options.generationAlive?.(previousRun.generation)===true))) {
@@ -1099,6 +1109,31 @@ export class ConversationApplication {
       }
       const beforeDispatch = this.currentRun(workspaceId, id, runId); if (!beforeDispatch) return;
       record = beforeDispatch;
+      const previousAttempt = record.attempts.findLast(value=>value.runId!==runId);
+      const previousParticipant = record.participants.find(value=>value.id===previousAttempt?.participantId);
+      const previousRun = conversationRuns(record.view).find(value=>value.id===previousAttempt?.runId);
+      const previousGeneration = previousRun?.generation ?? (previousAttempt ? record.runOutcomes?.[previousAttempt.runId]?.generation : undefined);
+      const fromContext = previousParticipant?.contextRef?.id;
+      const toContext = participant.contextRef!.id;
+      // Persist identity only after native resume/create succeeded. Acceptance
+      // remains a separate receipt, so a failed dispatch is never called a handoff success.
+      if (previousParticipant && (fromContext!==toContext || previousGeneration && previousGeneration!==this.options.generation)) {
+        const reason = fromContext===toContext ? 'backend-adoption' as const : 'session-replacement' as const;
+        this.retryRecordUpdate(()=>{
+          const current=this.currentRun(workspaceId,id,runId);if(!current)return;
+          if(current.view.entries.some(entry=>entry.id==='native-session-'+runId))return;
+          current.view.entries.push({
+          id:'native-session-'+runId, sequence:(current.view.entries.at(-1)?.sequence??0)+1,
+          createdAt:this.options.now(), kind:'handoff', role:'system', runId, participantId:participant.id,
+          provider:participant.provider, status:'sending',
+          text:reason==='backend-adoption'?'后台已接管原生会话，等待本轮受理。':'执行选择或可用上下文变化，已准备新的原生会话，等待本轮受理。',
+          nativeSession:{reason,description:reason==='backend-adoption'?'原轮控制已释放，新后台复用原生会话':prepared.preview.switching?'用户执行选择变化':previousRun&&unfinishedRun(previousRun)?'原轮仍有在途工作，新要求使用独立会话':'原上下文不可复用，使用新的原生会话',from:{contextId:fromContext,generation:previousGeneration},to:{contextId:toContext,generation:this.options.generation}},
+          });
+          this.save(current);
+        });
+        const latest=this.currentRun(workspaceId,id,runId);if(!latest)return;
+        record=latest;
+      }
       if (beforeDispatch.view.run!.status === 'stopping') { beforeDispatch.view.run!.status = 'stopped'; this.save(beforeDispatch); return; }
       if (!this.options.connections.get(prepared.draft.connectionId).enabled) fail('agent_connection_disabled', '接入已断开，本次输入尚未交付。', 409);
       dispatched = true;
