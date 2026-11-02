@@ -29,6 +29,16 @@ export function activityState(row:ConversationSummary):ActivityState {
   if(row.activity&&row.activity.version>row.activity.seenThrough)return 'unseen';
   return null;
 }
+/** The global activity snapshot keeps rows that are active only for an old unknown run; they belong to no reminder group. */
+export function reminderFallbackRows<T extends ConversationSummary>(rows:readonly T[]) {
+  const pending:T[]=[],running:T[]=[];
+  for(const row of rows){
+    if(isExecuting(row))running.push(row);
+    const state=activityState(row);
+    if(state==='waiting'||state==='unseen'||state==='unknown')pending.push(row);
+  }
+  return {pending,running};
+}
 export const isActiveConversation=(row:ConversationSummary)=>Boolean(row.activity?.active||activityState(row));
 export function orderActivityItems<T extends {id:string;state:ActivityState;updatedAt?:string;userInputAt?:string}>(items:readonly T[]):T[] {
   const priority=(item:T)=>item.state==='waiting'||item.state==='unseen'?0:1;

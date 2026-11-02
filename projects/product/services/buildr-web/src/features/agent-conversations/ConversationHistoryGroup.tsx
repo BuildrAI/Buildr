@@ -19,6 +19,9 @@ export function ConversationHistoryGroup({workspaceId, name, query, hidden, agen
   const {page, busy, error, retry, retryLabel, loadMore} = useConversationHistoryPage(api, {workspaceId, query, hidden, agent, model}, HISTORY_GROUP_LIMIT, expanded,historyCache,activityTick);
   const rows = page?.conversations ?? [];
   const total = page?.total ?? rows.length;
+  // The group already knows how many rows exist, so a reset window can show the
+  // entry immediately; only the continuation cursor still needs the fresh read.
+  const more = Boolean(page && (page.nextCursor || total > rows.length));
   const visible = rows;
   if (page && !total && !error) return null;
   return <section {...section} data-history-workspace={workspaceId} aria-label={name} aria-busy={busy}>
@@ -33,7 +36,7 @@ export function ConversationHistoryGroup({workspaceId, name, query, hidden, agen
       <div className="ac-history-list">{visible.map(renderRow)}</div>
       {error && <Alert type="warning" showIcon message={error} action={<Button size="small" onClick={retry}>{retryLabel}</Button>}/>}
       {busy && !page && <Spin size="small"/>}
-      {page?.nextCursor&&<div className="ac-history-group-actions"><Button type="text" size="small" className="ac-history-expand" disabled={busy} loading={busy} onClick={loadMore}>加载更多</Button></div>}
+      {more&&<div className="ac-history-group-actions"><Button type="text" size="small" className="ac-history-expand" disabled={busy||!page?.nextCursor} loading={busy} onClick={loadMore}>加载更多</Button></div>}
     </div>}
   </section>;
 }

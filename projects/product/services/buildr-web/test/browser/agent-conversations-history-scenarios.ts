@@ -273,13 +273,15 @@ await step('顶部正文输入与列表共用最大宽度，宽屏居中且窄�
 
 await step('列表手动从末条加载，整行折叠与拖动互不干扰',async()=>{
   const original=fixture.additionalConversations,requests:Array<{workspaceId:string|null;query:string|null;limit:number;cursor:string|null}>=[];
-  let fail=false,stale=false,release:(()=>void)|undefined,started:(()=>void)|undefined;
+  let fail=false,stale=false,release:(()=>void)|undefined,started:(()=>void)|undefined,holdExpand=false,releaseExpand:(()=>void)|undefined,expandStarted:(()=>void)|undefined;
   const held=new Promise<void>(resolve=>{started=resolve;});
+  const expandHeld=new Promise<void>(resolve=>{expandStarted=resolve;});
   const matcher='**/api/v1/app/agent-service/conversations?*';
   const intercept=async(route:any)=>{
     const url=new URL(route.request().url()),space=url.searchParams.get('workspaceId'),limit=Number(url.searchParams.get('limit'));
     requests.push({workspaceId:space,query:url.searchParams.get('query'),limit,cursor:url.searchParams.get('cursor')});
     if(url.searchParams.get('query')==='迟到现场'&&space===workspaceId){started?.();await new Promise<void>(resolve=>{release=resolve;});}
+    if(holdExpand&&space===workspaceId&&limit===5){holdExpand=false;expandStarted?.();await new Promise<void>(resolve=>{releaseExpand=resolve;});}
     if((fail||stale)&&space===workspaceId&&limit===10)return route.fulfill({status:stale?409:503,json:{error:{code:stale?'agent_cursor_stale':'fixture_unavailable',message:stale?'列表位置已变化，请刷新后继续。':'分组暂不可用'}}});
     await route.fallback();
   };
@@ -306,14 +308,20 @@ await step('列表手动从末条加载，整行折叠与拖动互不干扰',asy
     assert.equal(await group.getByRole('button',{name:'收起',exact:true}).count(),0);
     for(const n of [15,25,26]){await group.getByRole('button',{name:/加载更多/}).click();await count(n);}
     assert.deepEqual(groupCalls().slice(-3).map(row=>({limit:row.limit,cursor:row.cursor})),[{limit:10,cursor:'5'},{limit:10,cursor:'15'},{limit:10,cursor:'25'}]);assert.equal(await group.getByRole('button',{name:/加载更多/}).count(),0);
-    await header.click();await count(0);assert.equal(await header.getAttribute('aria-expanded'),'false');await header.press('Enter');await count(5);assert.equal(groupCalls().at(-1)!.limit,5);assert.equal(groupCalls().at(-1)!.cursor,null);
+    await header.click();await count(0);assert.equal(await header.getAttribute('aria-expanded'),'false');
+    holdExpand=true;await header.press('Enter');await count(5);
+    const expandMore=group.getByRole('button',{name:/加载更多/});await expandMore.waitFor();
+    assert.equal(await expandMore.isDisabled(),true,'折叠后重新展开的首帧就显示加载更多，游标返回前不可点');
+    await expandHeld;assert.deepEqual({limit:groupCalls().at(-1)!.limit,cursor:groupCalls().at(-1)!.cursor},{limit:5,cursor:null});releaseExpand?.();releaseExpand=undefined;
+    await page.waitForFunction(({id}:any)=>{const button=[...document.querySelectorAll('[data-history-workspace="'+id+'"] button')].find(node=>node.textContent?.includes('加载更多')) as HTMLButtonElement|undefined;return Boolean(button&&!button.disabled);},{id:workspaceId});
+    assert.equal(await expandMore.isDisabled(),false,'续读游标返回后按钮可继续加载');
     await defaults.getByRole('button',{name:/加载更多/}).click();await page.waitForFunction(()=>document.querySelectorAll('[data-history-workspace="@default"] .ac-history-row').length===8);
     fixture.expectedBrowserErrors.add('503');fixture.expectedBrowserErrors.add('Service Unavailable');fail=true;await group.getByRole('button',{name:/加载更多/}).click();await group.getByText('分组暂不可用',{exact:true}).waitFor();await count(5);fail=false;await group.getByRole('button',{name:/重\s*试/}).click();await count(15);
     fixture.expectedBrowserErrors.add('409');fixture.expectedBrowserErrors.add('Conflict');stale=true;await group.getByRole('button',{name:/加载更多/}).click();await group.getByText('列表位置已变化，请刷新后继续。',{exact:true}).waitFor();await count(15);stale=false;await group.getByRole('button',{name:'刷新列表',exact:true}).click();await count(15);
     await search.fill('迟到现场');await held;await search.fill('分批现场');await count(15);release?.();await page.waitForTimeout(100);await count(15);
     await capture(page,'conversation-history-manual-controls.png');
   }finally{
-    release?.();fail=false;stale=false;fixture.additionalConversations=original;await page.unroute(matcher,intercept);
+    release?.();releaseExpand?.();fail=false;stale=false;fixture.additionalConversations=original;await page.unroute(matcher,intercept);
     const back=panel().getByRole('button',{name:'返回当前对话',exact:true});if(await back.isVisible())await back.click();await input().waitFor();
   }
 });

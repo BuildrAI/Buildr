@@ -5,7 +5,7 @@ import {readFileSync,existsSync} from 'node:fs';
 import ts from 'typescript';
 import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
-import {groupConversationWorkspaces,orderActivityItems,activityBadge,activityReminder,activityState} from '../src/features/agent-conversations/conversation-activity.ts';
+import {groupConversationWorkspaces,orderActivityItems,activityBadge,activityReminder,activityState,reminderFallbackRows} from '../src/features/agent-conversations/conversation-activity.ts';
 import {conversationTierChoice} from '../src/features/agent-conversations/conversation-options.ts';
 
 registerHooks({
@@ -97,6 +97,18 @@ test('工作空间只分一组，混合状态保留组内优先顺序',()=>{
   assert.deepEqual(groups.get('a').map(item=>item.id),['unseen','running']);
   assert.deepEqual(groupConversationWorkspaces([]).size,0);
   assert.equal(items.length,3);
+});
+test('浮窗首帧只选提醒分组内的行，历史未知保留执行不闪现',()=>{
+  const running={id:'running',title:'执行中',run:{status:'running'},activity:{version:4,seenThrough:4}};
+  const decided={id:'decided',title:'待决策',run:{status:'running'},activity:{version:2,seenThrough:2,pendingDecisionCount:1}};
+  const unseen={id:'unseen',title:'待查看',run:{status:'completed'},activity:{version:6,seenThrough:5}};
+  const unknown={id:'unknown',title:'未知执行',run:{status:'unknown'},activity:{version:3,seenThrough:3}};
+  const stale={id:'stale',title:'历史未知保留执行',run:{status:'completed'},retainedRuns:[{id:'old',status:'unknown'}],activity:{version:7,seenThrough:7,active:true}};
+  assert.equal(activityState(stale),null,'活动快照仍会返回只剩历史未知保留执行的行');
+  const fallback=reminderFallbackRows([stale,unseen,decided,running,unknown]);
+  assert.deepEqual(fallback.running.map(row=>row.id),['decided','running']);
+  assert.deepEqual(fallback.pending.map(row=>row.id),['unseen','decided','unknown']);
+  assert.equal([...fallback.pending,...fallback.running].some(row=>row.id==='stale'),false,'首帧不能先显示随后被分组结果替换的行');
 });
 test('入口悬停提示固定，未知执行只保留条目徽标与入口说明',()=>{
   assert.match(render({active:true}),/title="对话列表"/);
