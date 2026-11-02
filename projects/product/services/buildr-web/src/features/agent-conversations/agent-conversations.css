@@ -230,6 +230,11 @@
 
 .ac-participant-history .ac-participants{max-width:320px;min-height:0;padding:0;border:0;gap:6px}
 .ac-stream-content{min-width:0;display:flow-root}
+/* Existing messages grow upward from the latest position. A short first page
+   stays above the composer while earlier history fills in, instead of showing
+   at the top and then jumping down when the viewport becomes scrollable. */
+.ac-stream-content.has-earlier-history:has(>.ac-message-list){min-height:100%;display:flex;flex-direction:column}
+.ac-stream-content.has-earlier-history:has(>.ac-message-list)>.ac-message-list{margin-top:auto;margin-bottom:0}
 .ac-request-submit{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px 14px;margin-top:12px}
 .ac-request-submit>small{flex:1 1 160px;min-width:0;color:var(--soft-muted,#65766f);font-size:var(--font-size-meta);line-height:1.5;overflow-wrap:anywhere}
 .ac-request-submit>.ant-btn{flex:none;margin-left:auto}
