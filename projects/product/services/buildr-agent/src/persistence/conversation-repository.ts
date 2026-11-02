@@ -102,9 +102,9 @@ export class ConversationRepository {
           // Keeping the list fields here avoids reading large history pages.
           try {
             const listIndex = db.prepare("SELECT sql FROM sqlite_master WHERE name='conversations_list_summary'").get() as {sql:string}|undefined;
-            if (listIndex && !listIndex.sql.includes('is_active DESC,activity_at DESC')) db.exec('DROP INDEX conversations_list_summary');
+            if (listIndex && !listIndex.sql.includes('is_active DESC,user_at DESC')) db.exec('DROP INDEX conversations_list_summary');
             db.exec(`CREATE INDEX IF NOT EXISTS conversations_list_summary
-              ON conversations(workspace_id,is_active DESC,activity_at DESC,id DESC,hidden,activity_version,seen_version,summary,user_at)
+              ON conversations(workspace_id,is_active DESC,user_at DESC,id DESC,hidden,activity_version,seen_version,summary,activity_at)
               WHERE ${HAS_WORK}`);
           } catch (error) {
             // An unrelated damaged history must not make this optional
@@ -388,7 +388,7 @@ export class ConversationRepository {
       // Aggregate compact keys alongside the existing count in this read
       // transaction; no full histories or server-side snapshots are retained.
       const membership=db.prepare(`SELECT count(*) AS n,
-        json_group_array(json_array(id,sort_priority,activity_at) ORDER BY id) AS keys
+        json_group_array(json_array(id,sort_priority,user_at) ORDER BY id) AS keys
         FROM ${source} WHERE ${where.join(' AND ')}`).get(...values) as {n:number;keys:string};
       const total=membership.n;
       const epoch=createHash('sha256').update(membership.keys).digest('hex');
@@ -396,13 +396,13 @@ export class ConversationRepository {
         let cursor:{scope:string;epoch:string;priority:number;at:string;id:string};
         try{cursor=JSON.parse(Buffer.from(input.cursor,'base64url').toString('utf8'));}catch{fail('agent_cursor_invalid','对话列表位置无效，请刷新列表。',409);}
         if(!cursor||typeof cursor!=='object'||cursor.scope!==scope||cursor.epoch!==epoch||typeof cursor.at!=='string'||typeof cursor.id!=='string'||![0,1,2].includes(cursor.priority))fail('agent_cursor_stale','对话列表顺序已变化，请刷新后继续。',409);
-        where.push('(sort_priority < ? OR (sort_priority=? AND (activity_at < ? OR (activity_at=? AND id < ?))))');values.push(cursor.priority,cursor.priority,cursor.at,cursor.at,cursor.id);
+        where.push('(sort_priority < ? OR (sort_priority=? AND (user_at < ? OR (user_at=? AND id < ?))))');values.push(cursor.priority,cursor.priority,cursor.at,cursor.at,cursor.id);
       }
       const snippet=terms.length?`, ${searchSnippet(terms)} AS search_snippet`:'';
       const snippetValues=terms.length?[...terms.flatMap(term=>[term,term]),...terms]:[];
-      const rows=db.prepare(`SELECT summary,sort_priority,list_active,user_at,activity_at,pending_decision_count,id${snippet} FROM ${source} WHERE ${where.join(' AND ')} ORDER BY sort_priority DESC,activity_at DESC,id DESC LIMIT ?`).all(...snippetValues,...values,input.limit+1) as Array<{summary:string;sort_priority:number;list_active:number;user_at:string;activity_at:string;pending_decision_count:number;id:string;search_snippet?:string|null}>;
+      const rows=db.prepare(`SELECT summary,sort_priority,list_active,user_at,activity_at,pending_decision_count,id${snippet} FROM ${source} WHERE ${where.join(' AND ')} ORDER BY sort_priority DESC,user_at DESC,id DESC LIMIT ?`).all(...snippetValues,...values,input.limit+1) as Array<{summary:string;sort_priority:number;list_active:number;user_at:string;activity_at:string;pending_decision_count:number;id:string;search_snippet?:string|null}>;
       const chosen=rows.slice(0,input.limit),last=chosen.at(-1);
-      return {conversations:chosen.map(row=>{const view=JSON.parse(row.summary) as ConversationView;const snippetText=row.search_snippet?.replace(/\s+/g,' ').trim();return {...view,...(snippetText?{searchSnippet:snippetText}:{}),activity:view.activity?{...view.activity,userInputAt:row.user_at,updatedAt:row.activity_at,pendingDecisionCount:row.pending_decision_count,active:Boolean(row.list_active)||row.pending_decision_count>0}:undefined,entries:[],requests:[],run:view.run?{...view.run,tools:[]}:undefined,participants:view.participants.map(participant=>({...participant,contextId:''}))};}),total,activityCounts:{...counts},stats,nextCursor:rows.length>input.limit&&last?Buffer.from(JSON.stringify({scope,epoch,priority:last.sort_priority,at:last.activity_at,id:last.id})).toString('base64url'):undefined};
+      return {conversations:chosen.map(row=>{const view=JSON.parse(row.summary) as ConversationView;const snippetText=row.search_snippet?.replace(/\s+/g,' ').trim();return {...view,...(snippetText?{searchSnippet:snippetText}:{}),activity:view.activity?{...view.activity,userInputAt:row.user_at,updatedAt:row.activity_at,pendingDecisionCount:row.pending_decision_count,active:Boolean(row.list_active)||row.pending_decision_count>0}:undefined,entries:[],requests:[],run:view.run?{...view.run,tools:[]}:undefined,participants:view.participants.map(participant=>({...participant,contextId:''}))};}),total,activityCounts:{...counts},stats,nextCursor:rows.length>input.limit&&last?Buffer.from(JSON.stringify({scope,epoch,priority:last.sort_priority,at:last.user_at,id:last.id})).toString('base64url'):undefined};
     }finally{db.close();}
   }
   markSeen(workspaceId:string,id:string,through:number): NonNullable<ConversationView['activity']> {

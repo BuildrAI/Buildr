@@ -42,7 +42,7 @@ export function reminderFallbackRows<T extends ConversationSummary>(rows:readonl
 export const isActiveConversation=(row:ConversationSummary)=>Boolean(row.activity?.active||activityState(row));
 export function orderActivityItems<T extends {id:string;state:ActivityState;updatedAt?:string;userInputAt?:string}>(items:readonly T[]):T[] {
   const priority=(item:T)=>item.state==='waiting'||item.state==='unseen'?0:1;
-  const at=(item:T)=>item.updatedAt??item.userInputAt;
+  const at=(item:T)=>item.userInputAt??item.updatedAt;
   return [...items].sort((a,b)=>priority(a)-priority(b)||(at(a)&&at(b)?at(b)!.localeCompare(at(a)!)||b.id.localeCompare(a.id):0));
 }
 export function conversationMetadata(row:ConversationSummary,workspaceName?:string,modelLabel?:string) {

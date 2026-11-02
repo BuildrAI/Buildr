@@ -54,7 +54,7 @@ export function activityWorkspaceSignatures(rows:readonly ConversationView[]):Ma
   const groups=new Map<string,unknown[]>();
   for(const row of rows){
     const group=groups.get(row.workspaceId)??[];
-    group.push([row.id,row.title,row.hidden,row.run?.id,row.run?.status,row.run?.model,row.run?.provider,row.run?.modelAccountId,row.run?.modelSourceLabel,row.activity?.updatedAt,row.activity?.active,row.activity?.pendingDecisionCount,Boolean(row.activity&&row.activity.version>row.activity.seenThrough)]);
+    group.push([row.id,row.title,row.hidden,row.run?.id,row.run?.status,row.run?.model,row.run?.provider,row.run?.modelAccountId,row.run?.modelSourceLabel,row.activity?.updatedAt,row.activity?.userInputAt,row.activity?.active,row.activity?.pendingDecisionCount,Boolean(row.activity&&row.activity.version>row.activity.seenThrough)]);
     groups.set(row.workspaceId,group);
   }
   return new Map([...groups].map(([id,values])=>[id,JSON.stringify(values)]));

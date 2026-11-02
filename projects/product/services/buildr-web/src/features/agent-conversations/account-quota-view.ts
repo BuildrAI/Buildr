@@ -1,17 +1,20 @@
 import type { ModelAccount } from './types';
 
 type Quota = NonNullable<ModelAccount['quota']>;
+function formatBalance(value: string): string {
+  const amount = Number(value);
+  return value.trim() && Number.isFinite(amount)
+    ? amount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : value;
+}
 export function balanceLines(balances: Quota['balances'], compact = false): string[] {
   return (balances ?? []).map(balance => {
-    if (compact) {
-      const amount = Number(balance.total);
-      return `${balance.currency} ${balance.total.trim() && Number.isFinite(amount) ? amount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : balance.total}`;
-    }
+    if (compact) return `${balance.currency} ${formatBalance(balance.total)}`;
     const details = [
-      balance.toppedUp !== undefined ? `充值 ${balance.toppedUp}` : '',
-      balance.granted !== undefined ? `赠送 ${balance.granted}` : '',
+      balance.toppedUp !== undefined ? `充值 ${formatBalance(balance.toppedUp)}` : '',
+      balance.granted !== undefined ? `赠送 ${formatBalance(balance.granted)}` : '',
     ].filter(Boolean);
-    return `账户余额 ${balance.currency} ${balance.total}${details.length ? `（${details.join(' · ')}）` : ''}`;
+    return `账户余额 ${balance.currency} ${formatBalance(balance.total)}${details.length ? `（${details.join(' · ')}）` : ''}`;
   });
 }
 export function accountQuotaView(account: ModelAccount, now = Date.now(), compact = false) {

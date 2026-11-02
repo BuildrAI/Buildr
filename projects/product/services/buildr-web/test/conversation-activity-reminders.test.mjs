@@ -49,13 +49,13 @@ test('非阻塞问题在运行时仍为待决策，列表和提醒共享双状�
   assert.equal(activityState({...row,activity:{...row.activity,pendingDecisionCount:0}}),'running');
   assert.equal(activityState({run:{status:'running'},requests:[{blocking:false}]}),'waiting','legacy full views retain their question');
 });
-test('提醒组内按最近消息而非用户输入排序，待决策仍优先',()=>{
+test('提醒组内按用户输入而非后台回复排序，待决策仍优先',()=>{
   const items=[
     {id:'older-input',workspaceId:'a',title:'刚收到回复',state:'running',meta:'模型',userInputAt:'2026-11-01',updatedAt:'2026-11-03'},
     {id:'newer-input',workspaceId:'a',title:'之前的对话',state:'running',meta:'模型',userInputAt:'2026-11-02',updatedAt:'2026-11-02'},
     {id:'pending',workspaceId:'a',title:'需要回答',state:'waiting',meta:'模型',updatedAt:'2026-11-01'}
   ];
-  assert.deepEqual(orderActivityItems(items).map(item=>item.id),['pending','older-input','newer-input']);
+  assert.deepEqual(orderActivityItems(items).map(item=>item.id),['pending','newer-input','older-input']);
   assert.equal(items[0].id,'older-input','sorting does not mutate shared rows');
 });
 test('没有待处理时显示执行中，静默与未知执行都不产生角标',()=>{

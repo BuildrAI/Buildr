@@ -127,7 +127,6 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   const [imageLink,setImageLink]=useState<{selection:ConversationSelection;reference:string;href:string}|null>(null);
   const [expandedToolGroups,setExpandedToolGroups]=useState<Record<string,boolean>>({});
   const [atBottom,setAtBottom]=useState(true);
-  const [earlierHistoryLayout,setEarlierHistoryLayout]=useState('');
   const stream=useRef<HTMLDivElement>(null),readPosition=useRef(0),bottom=useRef(true),composing=useRef(false);
   const streamContent=useRef<HTMLDivElement>(null);
   const revealAnswer=useCallback((element:HTMLElement)=>{
@@ -502,12 +501,6 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
     loadPage:(value,cursor,signal)=>context.api.entries(value.workspaceId,value.id,cursor,signal),
     prepend:page=>{if(chat)setExpandedToolGroups(previous=>carryExpandedProcessBlocks(visibleConversationEntries(chat.entries),visibleConversationEntries(page.entries),previous,chat.run));context.prependEntries(page);},
   });
-  const historyLayoutKey=chat?`${context.selectionGeneration}:${chat.workspaceId}:${chat.id}`:'';
-  // A partial first page starts at the latest position. Keep that layout for
-  // this conversation after the final page clears the cursor, otherwise a
-  // short transcript would flip from the bottom back to the top.
-  useLayoutEffect(()=>{if(chat?.nextEntryCursor!==undefined&&earlierHistoryLayout!==historyLayoutKey)setEarlierHistoryLayout(historyLayoutKey);},[chat?.nextEntryCursor,earlierHistoryLayout,historyLayoutKey]);
-  const pinEarlierHistory=Boolean(historyLayoutKey&&(chat?.nextEntryCursor!==undefined||earlierHistoryLayout===historyLayoutKey));
   const followBottom=()=>setAtBottom(previous=>previous===bottom.current?previous:bottom.current);
   const scrollToLatest=()=>{earlier.pinLatest();setAtBottom(true);};
   const seenAttempt=useRef('');
@@ -613,7 +606,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
       {chat&&<ConversationForkOrigin conversation={chat}/>}
       <div className="ac-stream" ref={stream} tabIndex={0} aria-label="对话记录" aria-busy={earlier.loading} onScroll={()=>{earlier.onScroll();followBottom();}} onPointerDown={earlier.onPointerDown} onWheel={earlier.onWheel} onKeyDown={earlier.onKeyDown} onTouchStart={earlier.onTouchStart} onTouchMove={earlier.onTouchMove} onTouchEnd={earlier.onTouchEnd} onTouchCancel={earlier.onTouchCancel}>
         {earlier.loading&&<div className="ac-history-loading" role="status" aria-label="正在加载更早记录"><Spin size="small"/></div>}
-        <div className={`ac-stream-content${pinEarlierHistory?' has-earlier-history':''}`} ref={streamContent}>
+        <div className="ac-stream-content" ref={streamContent}>
         {context.loading?<Spin/>:context.error?<Alert type="error" showIcon message={context.error} action={<Button onClick={()=>void context.refresh().catch(fail)}>重新读取</Button>}/>:!chat?.entries.length?<div className="ac-welcome"><CommentOutlined/><h1>{chat?.taskId||boundTaskId?'从这项任务继续':'今天想做什么？'}</h1><p>了解一个问题，或者交办一件事。</p>{!chat&&settings}</div>:<div className="ac-message-list">
           {turns.map((turn,index)=>{
             const first=turn.items.find(item=>item.type==='process-block'||item.type==='entry'&&item.entry.role==='assistant');

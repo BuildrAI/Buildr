@@ -66,3 +66,12 @@ for(const mode of ['empty','cursor','failure'])test('首屏补页遇到'+mode+'�
   const f=initialViewport(t,{page:before=>{if(mode==='failure')throw Error('page unavailable');return {entries:mode==='empty'?[]:[{id:'older'}],nextEntryCursor:mode==='cursor'?before:before-1};}});
   f.hook.followLayout();await f.flush();assert.equal(f.reads(),1);f.hook.followLayout();await f.flush();assert.equal(f.reads(),1);
 });
+
+test('不足一屏保持顶部，流式输出溢出后跟随最新',()=>{
+ const {node,bottom,position,hook}=fixture();
+ node.scrollHeight=180;node.clientHeight=600;node.scrollTop=0;hook.remember();
+ hook.followLayout();assert.equal(node.scrollTop,0);assert.equal(position.current,0);assert.equal(bottom.current,true);
+ node.scrollHeight=450;hook.followLayout();assert.equal(node.scrollTop,0);
+ node.scrollHeight=900;hook.followLayout();assert.equal(node.scrollTop,300);assert.equal(bottom.current,true);
+ node.scrollHeight=450;hook.followLayout();assert.equal(node.scrollTop,0);
+});

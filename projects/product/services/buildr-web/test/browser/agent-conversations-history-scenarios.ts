@@ -786,6 +786,8 @@ await step('首屏补页预算耗尽后，滚轮触摸与键盘仍可自然向�
           const filled=page.waitForResponse((response:any)=>{const url=new URL(response.url());return url.pathname.endsWith('/entries')&&url.searchParams.get('before')==='140';});
           await page.reload();await filled;await panel().locator('[data-entry-id="short-201"]').waitFor();await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
           assert.ok(await stream.evaluate((node:HTMLElement)=>node.scrollHeight<=node.clientHeight+1));assert.equal(fixture.entryReads,readsBefore+4,'首屏填充预算有界');
+          const shortLayout=await stream.evaluate((node:HTMLElement)=>{const list=node.querySelector<HTMLElement>('.ac-message-list')!;return {top:list.getBoundingClientRect().top-node.getBoundingClientRect().top,height:list.getBoundingClientRect().height,viewport:node.clientHeight};});
+          assert.ok(shortLayout.height<shortLayout.viewport,'该用例确实不足一屏');assert.ok(Math.abs(shortLayout.top)<2,'不足一屏且仍有历史时从顶部显示：'+JSON.stringify(shortLayout));
           if(gesture==='wheel'){const box=await stream.boundingBox();await page.mouse.move(box!.x+box!.width/2,box!.y+80);await page.mouse.wheel(0,-120);}
           else if(gesture==='keyboard'){await stream.focus();await stream.press('PageUp');}
           else await stream.evaluate((node:HTMLElement)=>{for(const [type,y] of [['touchstart',100],['touchmove',140],['touchend',undefined]] as const){const point=y===undefined?undefined:new Touch({identifier:1,target:node,clientX:40,clientY:y});node.dispatchEvent(new TouchEvent(type,{bubbles:true,touches:point?[point]:[],changedTouches:point?[point]:[]}));}});

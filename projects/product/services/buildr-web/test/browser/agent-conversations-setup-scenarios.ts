@@ -120,7 +120,7 @@ await step('账号入口悬停与聚焦显示所有已登录账号的真实额�
     assert.equal(await overview.isVisible(),false,'按下后待触发的悬停不能重新打开浮窗');
     await page.mouse.up();
     const drawer=page.getByRole('dialog',{name:/^智能体与模型/});await drawer.waitFor();await overview.waitFor({state:'hidden'});
-    await drawer.getByText('账户余额 CNY 123.45600000000000（充值 120.00600000000000 · 赠送 3.45）',{exact:true}).waitFor();
+    await drawer.getByText('账户余额 CNY 123.46（充值 120.01 · 赠送 3.45）',{exact:true}).waitFor();
     await drawer.getByRole('button',{name:'关闭智能体账号与配置',exact:true}).click();await drawer.waitFor({state:'hidden'});
     await page.waitForTimeout(650);assert.equal(await overview.isVisible(),false,'设置关闭后恢复焦点不得重开额度预览');
     await leaveQuota();
@@ -264,8 +264,8 @@ await step('全局对话保留草稿与执行位置，左右停靠到一级导�
       const assertActivityOrder=async(ids:string[])=>{await page.waitForFunction((expected:string[])=>JSON.stringify([...document.querySelectorAll<HTMLElement>('.ac-activity-menu [data-activity-id]')].filter(node=>node.getClientRects().length).map(node=>node.dataset.activityId))===JSON.stringify(expected),ids);};
       fixture.additionalPending=ordered;await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await assertActivityOrder(['pending-new','pending-old','run-new','run-old']);
       fixture.additionalPending=[...ordered].reverse();await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await assertActivityOrder(['pending-new','pending-old','run-new','run-old']);
-      ordered[0].activity.updatedAt='2026-10-29T00:00:00Z';await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await assertActivityOrder(['pending-new','pending-old','run-old','run-new']);
-      ordered[2].activity.userInputAt='2026-10-30T00:00:00Z';await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await assertActivityOrder(['pending-new','pending-old','run-old','run-new']);
+      ordered[0].activity.updatedAt='2026-10-29T00:00:00Z';await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await assertActivityOrder(['pending-new','pending-old','run-new','run-old']);
+      ordered[0].activity.userInputAt='2026-10-30T00:00:00Z';await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await assertActivityOrder(['pending-new','pending-old','run-old','run-new']);
       fixture.additionalPending=originalPending;
 
       fixture.additionalPending=[...originalPending,{...originalPending[0],id:'unknown-reminder',title:'需要核实的执行',run:run('unknown')}];

@@ -46,7 +46,7 @@ test('nonblocking pending decisions survive summary compatibility and count alon
  assert.equal(repo.querySummaries(['w1'],{limit:10}).activityCounts.running,1);
 });
 
-test('assistant replies move within their priority while tools and seen do not change message time',t=>{
+test('assistant unread priority remains independent from user ordering and message time',t=>{
  const repo=fixture(t),older=record('older'),newer=record('newer');
  message(older,'input','old input');newer.view.updatedAt='2026-10-27T01:00:00Z';message(newer,'input','new input');
  repo.saveConversation(older);repo.saveConversation(newer);
@@ -56,7 +56,7 @@ test('assistant replies move within their priority while tools and seen do not c
  assert.deepEqual(read().conversations.map(row=>row.id),['older','newer']);
  const at=read().conversations[0]!.activity!.updatedAt;
  save(repo,older,r=>{message(r,'tool','log','notice','system');r.view.title='renamed';});
- assert.equal(read().conversations[0]!.activity!.updatedAt,at);
+ assert.equal(read().conversations.find(row=>row.id==='older')!.activity!.updatedAt,at);
  repo.markSeen('w1',older.view.id,older.view.activity!.version);
  assert.equal(read().conversations.find(row=>row.id==='older')!.activity!.updatedAt,at);
 });
@@ -332,7 +332,7 @@ test('empty and attachment-only drafts stay readable but absent from every list;
  assert.equal(repo.querySummaries(['w1'],{limit:10}).total,3);
  assert.equal(repo.listConversations('w1',{limit:10,taskId:'task'}).length,1);
 });
-test('列表按真实新消息前移，工具与查看不更新消息时间',t=>{
+test('列表仅按用户新输入前移，助手与工具输出不改变排序',t=>{
   const repo=fixture(t),a=record('a'),b=record('b');
   repo.saveConversation(a);repo.saveConversation(b);
   const order=()=>repo.querySummaries(['w1'],{limit:10}).conversations.map(row=>row.id);
@@ -341,11 +341,11 @@ test('列表按真实新消息前移，工具与查看不更新消息时间',t=>
   assert.deepEqual(order(),['b','a']);
   save(repo,a,r=>{r.view.updatedAt='2026-10-27T00:03:00Z';message(r,'a-assistant','reply','message','assistant');message(r,'a-tool','tool output','notice','system');});
   assert.equal(a.view.activity?.version,2,'智能体回复仍推进活动提醒');
-  assert.deepEqual(order(),['a','b'],'新回复更新顺序');
+  assert.deepEqual(order(),['b','a'],'新回复不改变用户输入顺序');
   const at=a.view.activity!.updatedAt;
   save(repo,b,r=>{message(r,'b-tool','tool output','notice','system');});
-  assert.deepEqual(order(),['a','b'],'单独工具输出不改变顺序');
-  assert.equal(repo.querySummaries(['w1'],{limit:10}).conversations[0]!.activity!.updatedAt,at);
+  assert.deepEqual(order(),['b','a'],'单独工具输出不改变顺序');
+  assert.equal(repo.querySummaries(['w1'],{limit:10}).conversations.find(row=>row.id==='a')!.activity!.updatedAt,at);
   save(repo,a,r=>{r.view.updatedAt='2026-10-27T00:04:00Z';message(r,'a2','next');});
   assert.deepEqual(order(),['a','b'],'用户输入也更新消息时间');
 });
@@ -373,7 +373,7 @@ test('executing models aggregate by actual account across executors and expose u
   const before=repo.querySummaries(['w1'],{limit:10}).conversations;
   const item=repo.readConversation('a')!;item.view.updatedAt='2026-10-29T00:00:00Z';message(item,'answer','new assistant output','message','assistant');repo.saveConversation(item,item.view.revision);
   const after=repo.querySummaries(['w1'],{limit:10}).conversations;
-  assert.equal(after[0]!.id,'a','new assistant reply moves the conversation');
+  assert.deepEqual(after.map(row=>row.id),before.map(row=>row.id),'new assistant reply preserves user order');
   assert.deepEqual(Object.fromEntries(after.map(row=>[row.id,row.activity?.userInputAt])),Object.fromEntries(before.map(row=>[row.id,row.activity?.userInputAt])),'user input timestamps remain independent');
 });
 
@@ -553,4 +553,17 @@ test('legacy summary correction preserves a retained running tool and known acti
  assert.equal(repo.markSeen('w1',r.view.id,r.view.activity!.version).active,true,'read receipt must use tool-bearing header, not stripped summary');
  save(repo,r,row=>{row.view.retainedRuns![0].tools=[];row.view.retainedRuns![0].executionState='active';});
  assert.equal(repo.querySummaries(['w1'],{activeOnly:true,limit:10}).total,1);
+});
+
+test('后台新回复不改变同类分页边界，用户输入及有效答复更新排序',t=>{
+ const repo=fixture(t),a=record('a'),b=record('b');
+ repo.saveConversation(a);repo.saveConversation(b);
+ message(a,'a-input','first');b.view.updatedAt='2026-10-27T01:00:00Z';message(b,'b-input','second');
+ repo.saveConversation(a,a.view.revision);repo.saveConversation(b,b.view.revision);
+ const first=repo.querySummaries(['w1'],{limit:1});assert.equal(first.conversations[0].id,'b');
+ save(repo,a,r=>{r.view.updatedAt='2026-10-27T02:00:00Z';message(r,'assistant','new output','message','assistant');});
+ assert.equal(repo.querySummaries(['w1'],{limit:1,cursor:first.nextCursor}).conversations[0].id,'a');
+ save(repo,a,r=>{r.view.updatedAt='2026-10-27T03:00:00Z';message(r,'reply-question','answer','notice');});
+ assert.equal(repo.querySummaries(['w1'],{limit:1}).conversations[0].id,'a');
+ assert.throws(()=>repo.querySummaries(['w1'],{limit:1,cursor:first.nextCursor}),/顺序/);
 });
