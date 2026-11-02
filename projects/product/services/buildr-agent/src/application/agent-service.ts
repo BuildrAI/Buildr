@@ -187,6 +187,8 @@ export function createAgentService(options: AgentServiceOptions) {
       listChildren: (workspaceId:string,id:string,input:Parameters<ConversationApplication['listChildren']>[2]={}) => conversations.listChildren(workspaceId,id,input),
       create: (workspaceId: string, input: Parameters<ConversationApplication['create']>[1]) => conversations.create(workspaceId, input),
       read: (workspaceId: string, id: string, input: Parameters<ConversationApplication['read']>[2] = {}) => conversations.read(workspaceId, id, input),
+      participation: (workspaceId:string,id:string,input:{runId:string}) => conversations.participation(workspaceId,id,input),
+      participationSummary: (workspaceId:string,input:import('../participation-contracts.ts').ParticipationSummaryInput={}) => conversations.participationSummary(workspaceId,input),
       readEntry: (workspaceId:string,id:string,entryId:string,revision:string) => conversations.readEntry(workspaceId,id,entryId,revision),
       observationVersion: (workspaceId:string,id:string) => conversations.observationVersion(workspaceId,id),
       update: (workspaceId: string, id: string, input: Parameters<ConversationApplication['update']>[2]) => conversations.update(workspaceId, id, input),

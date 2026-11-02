@@ -112,7 +112,7 @@ documentSections:
       - location: scope
         path: knowledge/docs/architecture/agent-integration.md
         title: "接入方式与职责"
-        summary: "理解内部对话、独立配置和跨执行方接续，以及原有外部关联与一次生成。"
+        summary: "理解内部对话、独立配置、跨执行方接续与 Buildr 参与观察的来源和计量边界。"
       - location: scope
         path: knowledge/docs/architecture/agent-integration-generation.md
         title: "提交说明怎样生成"

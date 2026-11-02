@@ -69,6 +69,7 @@ export interface StoredConnection {
 }
 export interface StoredParticipant {
   historical?: boolean;
+  participationContext?: {id:string; configuredAt:string; instruction:import('../participation-contracts.ts').ParticipationMatch};
   modelAccountId?: string; modelAccountIdentity?: string; modelId?: string; serviceTier?:string;modelConfiguration?:string;
   id: string;
   connectionId: string;
@@ -79,6 +80,8 @@ export interface StoredParticipant {
   deliveredThrough: number;
 }
 export interface StoredConversation {
+  /** Optional metadata keyed by original tool id; public legacy entry DTOs stay unchanged. */
+  participationTools?: Record<string,import('../participation-contracts.ts').ParticipationObservation & {entryRevision?:string}>;
   forkRequest?: { digest: string; clientRequestId: string };
   /** Immutable, visible source records, separate from this conversation's own messages. */
   inheritedContext?: {
@@ -102,6 +105,7 @@ export interface StoredConversation {
   attempts: Array<{
     clientRequestId: string;
     inputDigest: string;
+    participation?: import('../participation-contracts.ts').ParticipationInput;
     runId: string;
     participantId: string;
     through: number;

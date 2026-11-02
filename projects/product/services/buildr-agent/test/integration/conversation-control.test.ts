@@ -25,7 +25,7 @@ test('packaged control subprocess reads, observes and precisely stops without ex
     if(req.url==='/identity'){json(res,200,identity);return;}
     assert.equal(req.url,'/operations');
     const input=await body(req);validateOperation(input.operation,input.args);
-    assert.equal(input.sourceId,binding.sourceId);assert.deepEqual(input.args.slice(0,2),[binding.scope,binding.conversationId]);
+    assert.equal(input.sourceId,binding.sourceId);if(input.operation==='conversations.participationSummary')assert.deepEqual(input.args,[binding.scope,{limit:50}]);else assert.deepEqual(input.args.slice(0,2),[binding.scope,binding.conversationId]);
     calls.push(input);
     if(input.operation==='conversations.stop'){
       const control=input.args[2];
@@ -47,10 +47,13 @@ test('packaged control subprocess reads, observes and precisely stops without ex
     await assert.rejects(invoke('send'));
     await assert.rejects(invoke('stop','{}'));
     assert.equal(calls.length,4,'invalid commands never reach the application');
+    await invoke('participation',JSON.stringify({runId:'old'}));
+    await invoke('participation-summary',JSON.stringify({limit:50}));
+    assert.deepEqual(calls.slice(4).map(call=>call.operation),['conversations.read','conversations.participation','conversations.read','conversations.participationSummary']);
     assert.equal(conversationControlInstruction(binding,process.execPath).includes(token),false);
     identity.instanceId=randomUUID();
     await assert.rejects(invoke('read'),/后台身份已变化/);
-    assert.equal(calls.length,4);
+    assert.equal(calls.length,8);
   }finally{await channel.close();fs.rmSync(root,{recursive:true,force:true});}
 });
 

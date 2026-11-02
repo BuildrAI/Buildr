@@ -1,3 +1,4 @@
+import { nativeParticipation } from '../../domain/participation.ts';
 import { withExecutionFault } from '../../domain/execution-fault.ts';
 import {qoderTitleBudget,qoderTitleMatchText} from './title.ts';
 import { ExecutorEventStream } from '../event-stream.ts';
@@ -420,7 +421,7 @@ async function readConversation(owner: ConversationQuery): Promise<void> {
         if (text) emit(state, { type: 'item', item: { id, ...parent, kind: 'message', role: 'assistant', text, executionId: state.id, status: 'completed' } });
         for (const part of message.message?.content ?? []) if (part.type === 'tool_use') {
           state.tools.set(part.id, { id: part.id, label: String(part.name ?? '工具'), status: 'running' });
-          emit(state, { type: 'item', item: { id: part.id, ...parent, kind: 'tool', role: 'system', name: part.name || undefined, input: nativePreview(JSON.stringify(part.input ?? {})), text: String(part.name ?? '工具') + '\n' + nativePreview(JSON.stringify(part.input ?? {})), executionId: state.id, status: 'running' } });
+          emit(state, { type: 'item', item: { id: part.id, ...parent, kind: 'tool', role: 'system', name: part.name || undefined, participation: nativeParticipation(part.input===undefined?undefined:JSON.stringify(part.input),undefined,'pending'), input: nativePreview(JSON.stringify(part.input ?? {})), text: String(part.name ?? '工具') + '\n' + nativePreview(JSON.stringify(part.input ?? {})), executionId: state.id, status: 'running' } });
         }
       }
       if (message.type === 'stream_event') {
@@ -450,7 +451,7 @@ async function readConversation(owner: ConversationQuery): Promise<void> {
           const taskId = receipt?.kind === 'backgrounded' ? receipt.taskId : receipt?.backgroundTaskId;
           if (tool && typeof taskId === 'string' && taskId) { tool.taskId = taskId; tool.taskPending = true; }
           const text = nativePreview(visibleText(part.content)); state.toolDetails.set(part.tool_use_id, text);
-          emit(state, { type: 'item', item: { id: part.tool_use_id, ...parent, kind: 'tool', role: 'system', text, executionId: state.id, status: part.is_error ? 'failed' : 'completed' } });
+          emit(state, { type: 'item', item: { id: part.tool_use_id, participation: nativeParticipation(undefined,part.content===undefined?undefined:visibleText(part.content),part.is_error?'failed':'unknown'), ...parent, kind: 'tool', role: 'system', text, executionId: state.id, status: part.is_error ? 'failed' : 'completed' } });
         }
       }
       if (message.type === 'system' && message.subtype === 'task_started') { const tool = state.tools.get(message.tool_use_id); if (tool) { tool.taskId = message.task_id; tool.taskPending = true; } }

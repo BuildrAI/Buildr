@@ -1,3 +1,4 @@
+import { BuildrParticipation } from './BuildrParticipation';
 import {conversationTaskLinks} from './conversation-associations';
 import type {ConversationTaskLink as TaskLink} from './types';
 import {ConversationConnectionNotice} from './ConversationConnectionNotice';
@@ -665,6 +666,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
                 const key=processBlockKey(item.entries);
                 return <Fragment key={key}><ConversationProcessBlock hidden={!turnExpanded} loadEntry={loadToolEntry} markdownOptions={markdownOptions} headerless groupsOpen={expandedToolGroups} onGroupToggle={(ids,open)=>setExpandedToolGroups(previous=>({...previous,...Object.fromEntries(ids.map(id=>['tool-group:'+id,open]))}))} toolsOpen={expandedToolGroups} onToolToggle={(id,open)=>setExpandedToolGroups(previous=>({...previous,['tool:'+id]:open}))} blockKey={key} entries={item.entries} active={item.active} liveToolId={liveToolId} finishedAt={item.finishedAt} onOpenFile={path=>void openProcessFile(path)} open={turnExpanded} onToggle={(name,open)=>setExpandedToolGroups(previous=>({...previous,[name]:open}))}/><ConversationPresentedFiles key={chat.id+':'+key} entries={item.entries} read={readPresentedFile} onOpen={path=>void openProcessFile(path,true)}/></Fragment>;
               })}
+              {(execution.current?run?.id:assistant?.runId||prompt?.runId)&&<BuildrParticipation workspaceId={chat.workspaceId} conversationId={chat.id} runId={execution.current?run?.id:assistant?.runId||prompt?.runId}/>}
             </ConversationTurn>;
           })}
         </div>}

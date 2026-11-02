@@ -254,7 +254,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }, {
     id: 'agent-service',
-    requires: [WORKSPACE_APPLICATION, TASK_QUERY_APPLICATION],
+    requires: [WORKSPACE_APPLICATION, TASK_QUERY_APPLICATION, AGENT_ASSETS_SOURCE_QUERY],
     provides: [AGENT_SERVICE_APPLICATION],
     contributions: { cli: ['agent send', 'agent read', 'agent stop', 'agent list', 'agent reply', 'agent continue'], http: ['agent-service.http'], diagnostics: [] },
     lifecycle: 'managed',

@@ -207,3 +207,16 @@ Buildr Web 页面内的分阶段更新由[更新任务应用](../../services/bui
 对话文件输出由智能体服务（Agent Service）的 [presented-files.ts](../../services/buildr-agent/src/domain/presented-files.ts) 校验有界声明及旧成功调用来源，[DSH 协议适配](../../services/buildr-agent/src/executors/dsh/protocol.ts)保留新声明；[对话应用](../../services/buildr-agent/src/application/conversation-application.ts)生成兼容视图，紧凑历史保持文件信息。前端 [ConversationPresentedFiles.tsx](../../services/buildr-web/src/features/agent-conversations/ConversationPresentedFiles.tsx)负责独立卡片及按需预览，对话面板复用代码来源读取和打开，不增加任意路径读取接口。共享 [markdownDestination.ts](../../services/buildr-web/src/lib/markdownDestination.ts)仅解释目的地语法，安全判断仍由渲染及来源读取各自承担。
 
 Qoder [配套库解析](../../services/buildr-agent/src/executors/qoder/sdk-pair.ts)核对执行程序所属安装包并提供准确库入口，[独立工作进程](../../services/buildr-agent/src/executors/qoder/worker.ts)执行隔离升级对话验证。DSH [目标控制](../../services/buildr-agent/src/executors/dsh/goals.ts)在新输入前暂停旧目标自动续行，[协议归属](../../services/buildr-agent/src/executors/dsh/protocol.ts)保持目标轮次的原请求身份。
+
+## Buildr 参与观察候选的职责落点
+
+以下是当前候选源码的增量导航，行为承诺见 [参与观察设计](../../openspec/changes/observe-buildr-participation/design.md)，不表示候选已发布或全部验收。
+
+- **[`services/buildr-agent/src/`](../../services/buildr-agent/src/)**：执行事实与私有记录的唯一所有者。
+  - [`participation-contracts.ts`](../../services/buildr-agent/src/participation-contracts.ts)、[`participation-schemas.ts`](../../services/buildr-agent/src/participation-schemas.ts)：可选元数据、版本化查询和封闭传输投影；不包含源正文。
+  - [`domain/participation.ts`](../../services/buildr-agent/src/domain/participation.ts)：原生文本计量、有界输入解析和安全元数据投影。
+  - [`domain/participation-record.ts`](../../services/buildr-agent/src/domain/participation-record.ts)：从原输入／工具身份产生单次与跨次事实，分开已知结果和覆盖缺口。
+  - [`application/conversation-application.ts`](../../services/buildr-agent/src/application/conversation-application.ts)：提交边界接线、异步可选来源核对及同身份保存；不执行命令消歧。
+  - [`persistence/conversation-repository.ts`](../../services/buildr-agent/src/persistence/conversation-repository.ts)：原记录持久化与修订匹配的派生索引重建。
+- **[`services/buildr/src/modules/agent-service/`](../../services/buildr/src/modules/agent-service/)**：通过公共 Agent 包装配宿主来源能力与认证 HTTP；[`application/participation-source.ts`](../../services/buildr/src/modules/agent-service/application/participation-source.ts)保持提供者、管理者与片段边界；[`application/participation-cli-source.ts`](../../services/buildr/src/modules/agent-service/application/participation-cli-source.ts)复用安装登记或当前开发身份核对精确入口，不维护命令白名单。
+- **[`services/buildr-web/src/features/agent-conversations/`](../../services/buildr-web/src/features/agent-conversations/)**：[`BuildrParticipation.tsx`](../../services/buildr-web/src/features/agent-conversations/BuildrParticipation.tsx)组织轮次明细、工作空间汇总和按需原证据；专属 API 客户端复用共享只读取消逻辑，不从当前已加载页面估算总量。

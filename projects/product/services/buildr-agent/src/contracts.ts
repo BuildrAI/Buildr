@@ -1,3 +1,5 @@
+export * from './participation-contracts.ts';
+import type { ParticipationObservation } from './participation-contracts.ts';
 import type { ModelProvider } from './model-access/contracts.ts';
 import type { AgentHostCapabilities } from './execution-contracts.ts';
 /** Public executor protocol. Vendor credentials and opaque state never become UI state. */
@@ -73,6 +75,7 @@ export interface VideoAttachment { duration: number; frames: Array<{ id: string;
 export interface AttachmentInput { expectedRevision?: string; expectedAttachmentRevision?: string; mimeType: string; bytes: Uint8Array; video?: VideoAttachment }
 export interface PresentedFile { path:string; description?:string }
 export interface ExecutorItem {
+  participation?: ParticipationObservation;
   id: string;
   /** Native parent tool identity; absence does not imply an inferred child relationship. */
   parentToolId?: string;
@@ -174,6 +177,8 @@ export interface ExecutorInputReceipt { executionRef: ExecutionRef; inputItemId?
 /** Only a proven pre-admission rejection may leave input safe to send again. */
 export class ExecutorInputRejected extends Error {}
 export interface AgentRuntime {
+  /** Exact adapter configuration metadata; absent means not observed, never inferred. */
+  readonly participationInstruction?: import('./participation-contracts.ts').ParticipationMatch;
   /** True only after owned native controls have exited; independent command results stay unknown. */
   canReclaimStorage?(): Promise<boolean>;
   /** True only when this owned transport is no longer usable; absence is not failure. */
@@ -312,6 +317,7 @@ export interface PreparationInput { expectedRevision: string; executable?: strin
 export type RunStatus = 'starting' | 'running' | 'waiting-approval' | 'waiting-question' | 'stopping' | 'stopped' | 'tools-active' | 'unknown' | 'completed' | 'failed';
 export interface ParticipantView { modelAccountId?: string; model?: string; id: string; provider: ProviderId; connectionId: string; label: string; deliveredThrough: number; contextId: string }
 export interface ConversationEntry {
+  participation?: ParticipationObservation;
   /** Bounded tool preview; fetch the exact content revision when expanded. */
   detail?: {revision: string};
   id: string;

@@ -1,3 +1,4 @@
+import { resolveRuntimeAdapter } from '../infrastructure/runtime/adapter-contract.ts';
 import { readSkillText } from '../persistence/skill-content-repository.ts';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -18,6 +19,16 @@ export interface SourceQueryDependencies {
 export function createSourceQuery(dependencies: SourceQueryDependencies) {
   const repository = createSourceObjectRepository(dependencies.assets);
   return {
+    discover(targetRoot:string,adapterId:string) {
+      const located=dependencies.workspace.resolveSourceWorkspaceRoot(path.resolve(targetRoot));
+      if(!located)throw sourceError('source_workspace_unknown','没有可证明的工作空间入口。');
+      const root=fs.realpathSync(located);
+      const adapter=resolveRuntimeAdapter(adapterId);
+      const runtimeRoot=adapter?.traits.skills?.root;
+      const skills=[...dependencies.assets.readSkills(root).filter(item=>item.enabled!==false),...(dependencies.assets.productSkills?.()??[])];
+      const paths=[...new Set(['AGENTS.md',...(runtimeRoot?skills.map(skill=>`${runtimeRoot}/skills/${'runtimePath' in skill&&skill.runtimePath||skill.id}/SKILL.md`):[])])];
+      return this.inspect(root,{schemaVersion:'buildr.agent-asset-source-observations/v1',mode:'metadata',observations:paths.slice(0,32).map((file,i)=>({id:String(i),type:'file',locator:{path:file}}))},{timeoutMs:250});
+    },
     inspect(targetRoot: string, value: unknown, options: { signal?: AbortSignal; timeoutMs?: number } = {}): SourceResult {
       const input = parseSourceInput(value);
       const locatedRoot = dependencies.workspace.resolveSourceWorkspaceRoot(path.resolve(targetRoot));

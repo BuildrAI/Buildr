@@ -1,3 +1,6 @@
+import { mergeParticipation, instructionParticipation, applyParticipationSources, participationSource, validParticipationSource, normalizeParticipation, participationGaps, PARTICIPATION_LIMITS } from '../domain/participation.ts';
+import { singleParticipation, summarizeParticipation } from '../domain/participation-record.ts';
+import type { ParticipationInput, ParticipationSummaryInput, ParticipationMatch } from '../participation-contracts.ts';
 import { NativeObservationError } from '../domain/error-diagnostic.ts';
 import { pendingConversationSummary } from '../domain/pending-summary.ts';
 import {conversationTaskLinks,setConversationTaskLinks,sameTaskLink} from '../domain/conversation-task-links.ts';
@@ -108,6 +111,7 @@ export class ConversationApplication {
   private readonly media: ConversationAttachments;
   private readonly forks: ConversationForks;
   private readonly children: ConversationChildren;
+  private readonly participationWork = new Set<string>();
   private readonly options: {
     backendChange?: AgentServiceOptions['backendChange'];
     conversationControl?: (scope:string,id:string)=>string;
@@ -504,6 +508,15 @@ export class ConversationApplication {
     const chosen = records.slice(0, limit);
     return { conversations: chosen.map(record => ({ ...this.view(record, undefined, 1), entries: [] })), nextCursor: records.length > limit ? `${chosen.at(-1)!.view.updatedAt}/${chosen.at(-1)!.view.id}` : undefined };
   }
+  participation(workspaceId:string,id:string,input:{runId:string}) {
+    if(!input || Object.keys(input).some(key=>key!=='runId') || typeof input.runId!=='string')fail('agent_participation_query_invalid','需要准确runId。');
+    return singleParticipation(this.load(workspaceId,id),input.runId);
+  }
+  async participationSummary(workspaceId:string,input:ParticipationSummaryInput={}) {
+    await this.options.host.resolve(workspaceId);
+    const {projections,incomplete}=this.options.repository.participationProjections(workspaceId);
+    return summarizeParticipation(workspaceId,projections,input,this.options.now(),incomplete);
+  }
   lookupRequest(workspaceId:string,id:string,clientRequestId:string) {
     const record=this.load(workspaceId,id),attempt=record.attempts.find(value=>value.clientRequestId===clientRequestId);
     return attempt ? {found:true,runId:attempt.runId,accepted:attempt.accepted,conversation:this.view(record)} : {found:false};
@@ -652,7 +665,7 @@ export class ConversationApplication {
     if (input.permissionMode === undefined && !modes.includes('full-access') && modes.includes('default')) draft.permissionMode = 'default';
     return draft;
   }
-  private prepare(record: StoredConversation, raw: SendDraft, answerMaterials: string[] = []): { preview: SendPreview; text: string; images: ExecutorImage[]; draft: SendDraft;configuration?:string;needsCompression:boolean;fullText:string } {
+  private prepare(record: StoredConversation, raw: SendDraft, answerMaterials: string[] = []): { preview: SendPreview; text: string; images: ExecutorImage[]; draft: SendDraft;configuration?:string;needsCompression:boolean;fullText:string;participationSegments:ParticipationMatch[] } {
     this.options.connections.assertProgramAvailable(raw.connectionId);
     let input = this.draft(raw); expected(record.view.revision, input.expectedRevision);
     const waitingQuestions = input.waitingHandoff ? waitingHandoffQuestions(record, input) : undefined;
@@ -739,7 +752,7 @@ export class ConversationApplication {
     const imageBytes = images.reduce((total, image) => total + record.attachments[image.id]!.size, 0);
     const fits = inputBytes <= maxInputBytes && images.length <= MAX_VISUAL_INPUTS && imageBytes <= 32 * 1024 * 1024 && images.every(image => record.attachments[image.id]!.size <= (connection.capabilities.maxImageBytes ?? MAX_IMAGE_BYTES)) && (!images.length || (connection.capabilities.images && (!source || Boolean(selectedModel && 'images' in selectedModel && selectedModel.images))));
     const token = createHmac('sha256', this.previewSecret).update(JSON.stringify({ id: record.view.id, input, sourceRevision: source?.revision, through, text, ids })).digest('hex');
-    return { preview: { handoff, token, conversationId: record.view.id, revision: record.view.revision, connectionId: input.connectionId, modelAccountId: input.modelAccountId, modelAccountIdentity: source?.identity, modelAccountRevision: source?.revision, modelSourceLabel: source?.accountLabel ?? source?.label, model: input.model, serviceTier:input.serviceTier,reasoningEffort: input.reasoningEffort, permissionMode: input.permissionMode!, participantId: participant?.id, cwd: record.view.cwd, taskId: record.view.taskId, text: input.text, history, sourceThrough: through, inputBytes, maxInputBytes, fits, switching, diagnostic: fits ? undefined : images.length && !canAttachHistory ? '所选执行方或模型无法接收这些图片，请选择支持图片的执行组合；草稿已保留。' : '必要交接资料仍超出接收容量，请选择容量更大的模型；草稿与本地资料保留。' }, text, images, draft: input,configuration,needsCompression,fullText };
+    return { preview: { handoff, token, conversationId: record.view.id, revision: record.view.revision, connectionId: input.connectionId, modelAccountId: input.modelAccountId, modelAccountIdentity: source?.identity, modelAccountRevision: source?.revision, modelSourceLabel: source?.accountLabel ?? source?.label, model: input.model, serviceTier:input.serviceTier,reasoningEffort: input.reasoningEffort, permissionMode: input.permissionMode!, participantId: participant?.id, cwd: record.view.cwd, taskId: record.view.taskId, text: input.text, history, sourceThrough: through, inputBytes, maxInputBytes, fits, switching, diagnostic: fits ? undefined : images.length && !canAttachHistory ? '所选执行方或模型无法接收这些图片，请选择支持图片的执行组合；草稿已保留。' : '必要交接资料仍超出接收容量，请选择容量更大的模型；草稿与本地资料保留。' }, text, images, draft: input,configuration,needsCompression,fullText,participationSegments:[...(controlInstruction?[instructionParticipation('conversation-control',controlInstruction)]:[]),...(changes.length||switching||waitingQuestions?[instructionParticipation('handoff-instructions',handoffPrompt)]:[])] };
   }
   prepareSend(workspaceId: string, id: string, input: SendDraft): SendPreview { return this.prepare(this.load(workspaceId, id), input).preview; }
 
@@ -889,17 +902,22 @@ export class ConversationApplication {
       if (entry.parentToolId && item.parentToolId && entry.parentToolId !== item.parentToolId) fail('agent_native_item_identity_changed', '原生条目的父工具来源发生冲突，已保留原记录。', 409);
       const originChanged = ownerChanged || item.parentToolId !== undefined && entry.parentToolId !== item.parentToolId;
       if (originChanged) entry.parentToolId = item.parentToolId;
+      if(originChanged&&record.participationTools?.[entry.id])record.participationTools[entry.id]!.entryRevision=createHash('sha256').update(JSON.stringify(entry)).digest('hex');
       if (entry.role === 'user' || entry.role === 'system' && entry.kind === 'notice') return originChanged;
       if (entry.kind === 'tool' && ['completed', 'failed'].includes(entry.status ?? '') && (!item.status || item.status === 'running' || entry.status==='completed'&&item.status==='unknown')) return originChanged;
+      const priorParticipation=record.participationTools?.[entry.id]??entry.participation;
+      const participation = entry.kind==='tool' ? mergeParticipation(item.input!==undefined&&item.input!==entry.input&&priorParticipation?{...priorParticipation,matches:[]}:priorParticipation,item.participation,item.name??entry.name,item.input??entry.input) : undefined;
+      const participationChanged=JSON.stringify(participation)!==JSON.stringify(normalizeParticipation(priorParticipation));
       const nameChanged = item.name !== undefined && entry.name !== item.name;
       const inputChanged = item.input !== undefined && entry.input !== item.input;
       const files=item.presentedFiles===undefined?undefined:normalizePresentedFiles(item.presentedFiles);
       const filesChanged=files!==undefined&&JSON.stringify(entry.presentedFiles)!==JSON.stringify(files);
       const thinkingChanged=Boolean(item.thinking)&&!entry.thinking;
-      if (entry.text === item.text && entry.status === item.status && !nameChanged && !inputChanged && !filesChanged && !thinkingChanged) return originChanged;
-      entry.text = item.text; entry.status = item.status; if (item.thinking) entry.thinking = true; if (nameChanged) entry.name = item.name; if (inputChanged) entry.input = item.input; if(filesChanged)entry.presentedFiles=files; return true;
+      if (entry.text === item.text && entry.status === item.status && !nameChanged && !inputChanged && !filesChanged && !thinkingChanged && !participationChanged) return originChanged;
+      if(participationChanged&&participation)(record.participationTools??={})[entry.id]={...participation,entryRevision:record.participationTools?.[entry.id]?.entryRevision};
+      entry.text = item.text; entry.status = item.status; if (item.thinking) entry.thinking = true; if (nameChanged) entry.name = item.name; if (inputChanged) entry.input = item.input; if(filesChanged)entry.presentedFiles=files; if(item.participation&&participation)(record.participationTools??={})[entry.id]={...participation,entryRevision:createHash('sha256').update(JSON.stringify(entry)).digest('hex')}; return true;
     }
-    entry = { id: randomUUID(), sequence: (record.view.entries.at(-1)?.sequence ?? record.view.childOf?.throughSequence ?? 0) + 1, createdAt: this.options.now(), kind: item.kind, role: item.role, text: item.text, ...(item.thinking?{thinking:true}:{}), name: item.name, input: item.input, ...(item.presentedFiles?{presentedFiles:normalizePresentedFiles(item.presentedFiles)}:{}), parentToolId: item.parentToolId, participantId: participant.id, provider: participant.provider, runId:runId??record.attempts.find(a=>a.participantId===participant.id&&(a.executionRef?.id===item.executionId||a.clientRequestId===item.executionId))?.runId, status: item.status };
+    entry = { id: randomUUID(), sequence: (record.view.entries.at(-1)?.sequence ?? record.view.childOf?.throughSequence ?? 0) + 1, createdAt: this.options.now(), kind: item.kind, role: item.role, text: item.text, ...(item.thinking?{thinking:true}:{}), ...(item.kind==='tool'?{participation:mergeParticipation(undefined,item.participation,item.name,item.input)}:{}), name: item.name, input: item.input, ...(item.presentedFiles?{presentedFiles:normalizePresentedFiles(item.presentedFiles)}:{}), parentToolId: item.parentToolId, participantId: participant.id, provider: participant.provider, runId:runId??record.attempts.find(a=>a.participantId===participant.id&&(a.executionRef?.id===item.executionId||a.clientRequestId===item.executionId))?.runId, status: item.status };
     record.view.entries.push(entry); record.sources[source] = entry.id;
     // A late native projection is known to this participant; intervening foreign
     // work and an input still awaiting acceptance are not. Never skip that gap.
@@ -974,6 +992,7 @@ export class ConversationApplication {
       else { run.diagnostic = event.diagnostic; }
     }
     run.updatedAt = this.options.now(); this.save(record);
+    if(event.type==='item'&&event.item.kind==='tool')this.enrichParticipation(workspaceId,id,participant.id,event.item.id);
     if (event.type === 'accepted' && run.status === 'stopping') {
       // Stop may arrive before the vendor has returned its execution identity.
       queueMicrotask(() => {
@@ -981,6 +1000,39 @@ export class ConversationApplication {
         if (current?.run.status === 'stopping') void this.stop(workspaceId, id, { expectedRevision: current.record.view.revision, runId, participantId: run.participantId, generation: run.generation }).catch(() => {});
       });
     }
+  }
+  private discoverParticipation(workspaceId:string,id:string,runId:string):void {
+    const observe=this.options.host.capabilities.observeParticipation;
+    if(!observe)return;
+    const request={ref:this.options.host.ref(workspaceId),observations:[],discover:true,provider:this.load(workspaceId,id).view.run?.provider};
+    void within(Promise.resolve().then(()=>observe.call(this.options.host.capabilities,request)),PARTICIPATION_LIMITS.timeoutMs,'participation-timeout').then(result=>{
+      if(this.closing||result.version!==1)return;
+      this.retryRecordUpdate(()=>{const record=this.load(workspaceId,id),attempt=record.attempts.find(a=>a.runId===runId);if(!attempt?.participation)return;
+        const available=result.sources.filter(validParticipationSource).map(participationSource);
+        if(Buffer.byteLength(JSON.stringify(available))>PARTICIPATION_LIMITS.snapshotBytes){attempt.participation.gaps=['discovery-limit'];}
+        else{attempt.participation.available=available;attempt.participation.gaps=[...participationGaps(result.gaps),'implicit-consumption-unavailable'];}
+        this.save(record);
+      });
+    }).catch(()=>{
+      if(this.closing)return;
+      this.retryRecordUpdate(()=>{const current=this.load(workspaceId,id),attempt=current.attempts.find(value=>value.runId===runId);if(!attempt?.participation)return;attempt.participation.gaps=[...attempt.participation.gaps.filter(gap=>gap!=='source-discovery-pending'),'source-discovery-unavailable'];this.save(current);});
+    }).catch(()=>{});
+  }
+  private enrichParticipation(workspaceId:string,id:string,participantId:string,nativeId:string):void {
+    const observe=this.options.host.capabilities.observeParticipation;
+    if(!observe)return;
+    const key=id+':'+participantId+':'+nativeId;if(this.participationWork.has(key))return;
+    const record=this.load(workspaceId,id),entry=record.view.entries.find(e=>e.id===record.sources[participantId+':tool:'+nativeId]);
+    const observation=entry&&(record.participationTools?.[entry.id]??entry.participation);
+    if(!entry||!observation?.matches.some(m=>m.status!=='confirmed'))return;
+    const input=entry.input,entryId=entry.id;this.participationWork.add(key);
+    const request={ref:this.options.host.ref(workspaceId),observations:observation.matches.map((m,i)=>({id:String(i),kind:m.kind,path:m.locator,name:m.name}))};
+    void within(Promise.resolve().then(()=>observe.call(this.options.host.capabilities,request)),PARTICIPATION_LIMITS.timeoutMs,'participation-timeout').then(result=>{
+      if(this.closing||result.version!==1)return;
+      this.retryRecordUpdate(()=>{const current=this.load(workspaceId,id),item=current.view.entries.find(e=>e.id===entryId);const observed=item&&(current.participationTools?.[item.id]??item.participation);if(!item||!observed||item.input!==input)return;
+        (current.participationTools??={})[item.id]={...applyParticipationSources(observed,result),entryRevision:current.participationTools?.[item.id]?.entryRevision};this.save(current);
+      });
+    }).catch(()=>{}).finally(()=>this.participationWork.delete(key));
   }
   private retireQuestions(record: StoredConversation, requests = record.view.requests.filter(request => request.runId === record.view.run?.id)): void {
     for (const request of requests) {
@@ -1142,6 +1194,16 @@ export class ConversationApplication {
       }
       if (beforeDispatch.view.run!.status === 'stopping') { beforeDispatch.view.run!.status = 'stopped'; this.save(beforeDispatch); return; }
       if (!this.options.connections.get(prepared.draft.connectionId).enabled) fail('agent_connection_disabled', '接入已断开，本次输入尚未交付。', 409);
+      const inputAttempt=record.attempts.find(value=>value.runId===runId)!;
+      const storedParticipant=record.participants.find(value=>value.id===participant.id)??participant;
+      const priorContext=storedParticipant.participationContext;
+      const contextId=participant.contextRef!.id;
+      const instruction=runtime.participationInstruction;
+      const sameContext=priorContext?.id===contextId&&priorContext?.instruction.observedVersion===instruction?.observedVersion;
+      if(!sameContext && instruction)storedParticipant.participationContext={id:contextId,configuredAt:this.options.now(),instruction};
+      inputAttempt.participation={version:1,submittedAt:this.options.now(),segments:[...prepared.participationSegments,...(!sameContext && instruction?[instruction]:[])],available:[],coverage:'partial',gaps:['implicit-consumption-unavailable',this.options.host.capabilities.observeParticipation?'source-discovery-pending':'source-discovery-unavailable'],context:instruction||priorContext?.instruction?{id:contextId,inherited:!!sameContext}:undefined};
+      this.save(record);
+      this.discoverParticipation(workspaceId,id,runId);
       dispatched = true;
       const early = this.titleAtRunStart(workspaceId, id, runId, runtime, prepared.text).catch(() => {});
       this.earlyTitles.set(id, early);

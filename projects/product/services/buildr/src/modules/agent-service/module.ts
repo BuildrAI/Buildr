@@ -1,4 +1,6 @@
 import { createAgentCliContributions } from './interfaces/cli/agent.ts';
+import { createParticipationSourceObserver } from './application/participation-source.ts';
+import { AGENT_ASSETS_SOURCE_QUERY } from '../agent-assets/source/module.ts';
 import fs from 'node:fs';
 import { createHash } from 'node:crypto';
 import { connectAgentProcess, AgentServiceError } from '@buildr-ai/buildr-agent';
@@ -12,7 +14,7 @@ export const AGENT_SERVICE_APPLICATION = 'agent-service.application';
 
 export function createAgentServiceModule(options: { readLocalInstance?(): unknown; readProductIdentity(): unknown; resolveWebProfile(identity: unknown): { dataRoot: string; profile?: string; overridden?: boolean } }) {
   return {
-    id: 'agent-service', requires: [WORKSPACE_APPLICATION, TASK_QUERY_APPLICATION],
+    id: 'agent-service', requires: [WORKSPACE_APPLICATION, TASK_QUERY_APPLICATION, AGENT_ASSETS_SOURCE_QUERY],
     create(requires: Record<string, any>) {
       let connection: Promise<AgentProcessConnection> | undefined;
       let closed = false;
@@ -47,6 +49,10 @@ export function createAgentServiceModule(options: { readLocalInstance?(): unknow
           if(expectedRevision && revision !== expectedRevision)throw new AgentServiceError('agent_work_object_changed','关联对象已变化。',409);
           return { ref, revision };
         },
+        observeParticipation:createParticipationSourceObserver({
+          root(ref){assertSource(ref.sourceId);return (ref.id==='@default'?defaultWorkspace():requires[WORKSPACE_APPLICATION].resolveRegisteredWorkspace(ref.id)).rootPath;},
+          query:requires[AGENT_ASSETS_SOURCE_QUERY],identity:options.readProductIdentity,
+        }),
         async listExecutionScopes({ sourceId }) { assertSource(sourceId); const refs=registeredWorkspaceIds().map(id=>({sourceId,id}));return {refs,revision:digest(refs)}; },
       };
       const connect = () => {

@@ -703,3 +703,32 @@ function seedConversation(db: DatabaseSync, record: any): void {
     db.exec('COMMIT');
   } catch(error) { db.exec('ROLLBACK');throw error; }
 }
+test('participation HTTP is authenticated, workspace-bound and rejects scope replacement',async t=>{
+ const {base,root}=taskRecordFixture(t,'participation-http'),runtime=createRuntime();
+ const previous=process.env.BUILDR_APP_DATA_DIR;process.env.BUILDR_APP_DATA_DIR=path.join(base,'private');t.after(()=>{if(previous===undefined)delete process.env.BUILDR_APP_DATA_DIR;else process.env.BUILDR_APP_DATA_DIR=previous;});
+ const id='11111111-1111-4111-8111-111111111111',calls:any[]=[];
+ const service:any={conversations:{
+  participation:(workspaceId:string,conversationId:string,input:any)=>{calls.push([workspaceId,conversationId,input]);return {schemaVersion:'buildr.agent-participation/v1',contextConfiguration:'unknown',workspaceId,conversationId,runId:input.runId,revision:'r',coverage:'not-collected',gaps:['historical-not-collected'],items:[]};},
+  participationSummary:(workspaceId:string,input:any)=>{calls.push([workspaceId,input]);return {schemaVersion:'buildr.agent-participation-summary/v1',workspaceId,revision:'r',range:{from:'2026-11-01T00:00:00Z',to:'2026-11-02T00:00:00Z'},coverage:'not-collected',runs:0,collectedRuns:0,gaps:[],rows:[]};},
+ }};
+ const contributions=runtimeContributions(runtime,'http').filter((item:any)=>item.id!=='agent-service.http');contributions.push(createAgentServiceHttpContribution(()=>service));
+ const instance=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions});const {url,sessionToken,initialWorkspaceId}=await instance.ready;
+ t.after(async()=>{instance.server.closeAllConnections();await new Promise<void>(resolve=>instance.server.close(()=>resolve()));});
+ const headers={'x-buildr-session':sessionToken},endpoint=`${url}/api/v1/workspaces/${initialWorkspaceId}/agent-conversations/${id}/participation?runId=run`;
+ assert.equal((await fetch(endpoint)).status,403);assert.equal(calls.length,0);
+ let response=await fetch(endpoint,{headers});assert.equal(response.status,200);assert.equal((await response.json()).coverage,'not-collected');assert.deepEqual(calls[0],[initialWorkspaceId,id,{runId:'run'}]);
+ assert.equal((await fetch(endpoint+'&workspaceId=other',{headers})).status,400);
+ response=await fetch(`${url}/api/v1/app/agent-service/conversations/participation-summary?limit=50`,{headers});assert.equal(response.status,200);assert.equal((await response.json()).workspaceId,'@default');assert.deepEqual(calls[1],['@default',{limit:50}]);
+ assert.equal((await fetch(`${url}/api/v1/workspaces/missing/agent-conversations/participation-summary`,{headers})).status,404);
+ assert.equal((await fetch(`${url}/api/v1/app/agent-service/conversations/participation-summary?limit=201`,{headers})).status,400);
+});
+
+test('CLI target proof accepts only current authorized physical entry, not PATH names or same-content copies',async t=>{
+ const {observeParticipationCli}=await import('../../src/modules/agent-service/application/participation-cli-source.ts');
+ const {base}=taskRecordFixture(t,'participation-cli-source'),sourceRoot=path.join(base,'product/services/buildr'),entry=path.join(base,'product/buildr'),copy=path.join(base,'copy/buildr');
+ fs.mkdirSync(sourceRoot,{recursive:true});fs.mkdirSync(path.dirname(copy),{recursive:true});fs.writeFileSync(entry,'#!/bin/sh\necho buildr\n');fs.copyFileSync(entry,copy);
+ const identity={package:'@buildr-ai/buildr',channel:'development',sourceRoot};
+ assert.equal(observeParticipationCli(identity,'buildr'),undefined);assert.equal(observeParticipationCli(identity,copy),undefined);
+ const observed=observeParticipationCli(identity,entry)!;assert.equal(observed.status,'confirmed');assert.equal(observed.observedVersion,undefined);assert.match(observed.offeredVersion!,/^sha256-/);
+ assert.equal(observeParticipationCli({...identity,package:'untrusted'},entry),undefined);
+});

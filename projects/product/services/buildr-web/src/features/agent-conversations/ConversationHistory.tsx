@@ -1,3 +1,4 @@
+import { BuildrParticipation } from './BuildrParticipation';
 import { ConversationExecutionSummary } from './ConversationExecutionSummary';
 import { conversationModelSourceLabel, conversationModelLabel } from './conversation-model-label';
 import { useCallback, useEffect, useState } from 'react';
@@ -77,6 +78,7 @@ export function ConversationHistory({workspaces,defaultWorkspaceId}:{workspaces:
     <header className="ac-thread-header"><Button type="text" icon={<ArrowLeftOutlined/>} aria-label="返回当前对话" onClick={()=>context.setView('conversation')}/><strong>对话列表</strong><Button type="text" icon={<PlusOutlined/>} aria-label="新建对话" onClick={()=>context.newConversation({preserveVisibility:true})}/></header>
     <div className="ac-history-body">
       <div className="ac-history-toolbar"><Input allowClear prefix={<SearchOutlined/>} aria-label="搜索对话" placeholder="搜索对话" value={query} onChange={event=>setQuery(event.target.value)}/><Select aria-label="对话列表工作空间" value={workspaceId} options={[{value:'',label:'全部工作空间'},...workspaces.map(item=>({value:item.id,label:item.name}))]} onChange={value=>{setWorkspaceId(value);setFilter(null);}}/></div>
+      <BuildrParticipation workspaceId={workspaceId||'@default'}/>
       <ConversationExecutionSummary stats={stats} stale={!!error} filter={filter} onFilter={setFilter} sourceLabel={id=>conversationModelSourceLabel(id,context.modelCatalog)} modelLabel={(id,accountId)=>conversationModelLabel(id,context.connections,context.modelCatalog,{modelAccountId:accountId})}/>
       {filter&&<div className="ac-execution-filter"><span>执行中 · {filter.kind==='model'?modelName(filter.value):filter.value}</span><Button type="link" size="small" onClick={()=>setFilter(null)}>清除筛选</Button></div>}
       {error&&<Alert type="warning" showIcon message={error} action={<Button size="small" onClick={retry}>重试</Button>}/>}

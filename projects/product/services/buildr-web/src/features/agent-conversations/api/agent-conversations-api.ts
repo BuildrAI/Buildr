@@ -1,3 +1,4 @@
+import type { AgentParticipationParticipation, AgentParticipationSummaryParticipationSummary, AgentParticipationSummaryQueryParticipationSummaryQuery } from '../../../../build/generated/agent-service-http-dto';
 import { sharedConversationRead } from './shared-conversation-read.ts';
 import { conversationTransferDecoder } from './conversation-transfer.ts';
 import type { ProgramUpdatesView, ProgramUpgradeView } from '../types';
@@ -33,6 +34,8 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
     try{return await request<T>(url,init);}finally{catalogRead=undefined;}
   };
   return {
+    participation(workspaceId:string,conversationId:string,runId:string,signal?:AbortSignal) { return read<AgentParticipationParticipation>(path(workspaceId,conversationId)+'/participation?runId='+encodeURIComponent(runId),signal); },
+    participationSummary(workspaceId:string,input:AgentParticipationSummaryQueryParticipationSummaryQuery={},signal?:AbortSignal) { const query=new URLSearchParams(Object.entries(input).filter(([,v])=>v!==undefined&&v!=='').map(([k,v])=>[k,String(v)])); return read<AgentParticipationSummaryParticipationSummary>(path(workspaceId)+'/participation-summary?'+query,signal); },
     defaultWorkspace(signal?: AbortSignal) { return request<{rootPath: string}>(appPath+'/default-workspace', {signal}); },
     modelAccounts(signal?:AbortSignal) {return request<{accounts:ModelAccount[];providers:Array<{id:string;label:string}>}>(appPath+'/model-accounts',{signal});},
     modelCatalog(signal?:AbortSignal) {
@@ -96,6 +99,7 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
     },
     create(input: {workspaceId: string; cwd?: string; taskId?: string; taskLinks?:{workspaceId:string;taskId:string}[]}) { return request<ConversationView>(path(input.workspaceId), post({cwd: input.cwd, taskId: input.taskId,taskLinks:input.taskLinks})); },
     read(workspaceId: string, id: string, signal?: AbortSignal) { return request<ConversationView>(path(workspaceId, id), {signal}); },
+    entryReference(workspaceId:string,id:string,entryId:string,revision:string,signal?:AbortSignal) { return read<ConversationEntry>(path(workspaceId,id)+'/entry-detail/'+encodeURIComponent(entryId)+'?'+new URLSearchParams({revision}),signal); },
     entry(workspaceId:string,id:string,entry:ConversationEntry,signal?:AbortSignal) {return request<ConversationEntry>(path(workspaceId,id)+'/entry-detail/'+encodeURIComponent(entry.id)+'?'+new URLSearchParams({revision:entry.detail!.revision}),{signal});},
     entries(workspaceId: string, id: string, cursor: number, signal?: AbortSignal) { return request<ConversationView>(path(workspaceId, id) + '/entries?' + new URLSearchParams({before: String(cursor)}), {signal}); },
     update(conversation: ConversationView, input: {title?: string; hidden?: boolean; taskId?: string | null; taskIds?: string[];taskLinks?:{workspaceId:string;taskId:string}[]}) { return request<ConversationView>(path(conversation.workspaceId, conversation.id), {method: 'PATCH', body: JSON.stringify({...input, expectedRevision: conversation.revision})}); },

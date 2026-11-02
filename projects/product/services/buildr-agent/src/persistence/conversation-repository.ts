@@ -1,3 +1,5 @@
+import { normalizeParticipation } from '../domain/participation.ts';
+import { projectParticipation, type ParticipationProjection } from '../domain/participation-record.ts';
 import { createHash } from 'node:crypto';
 import { summaryView, messageSignature, messageActivityAt, userActivityAt, pendingDecisionCount, conversationActive } from '../domain/conversation-activity.ts';
 import type { ConversationView } from '../contracts.ts';
@@ -105,6 +107,7 @@ export class ConversationRepository {
           ConversationReadModel.install(db);
           if (row.user_version < SCHEMA_VERSION) migrateConversationEntries(db);
           const HAS_WORK = hasWork(db);
+        db.exec('CREATE TABLE IF NOT EXISTS conversation_participation (id TEXT PRIMARY KEY, revision TEXT NOT NULL, body TEXT NOT NULL)');
           // Rebuildable acceleration, not a storage-version change. SQLite also
           // maintains this predicate when an older retained writer changes body.
           // Keeping the list fields here avoids reading large history pages.
@@ -152,6 +155,20 @@ export class ConversationRepository {
     } catch (error) { try { db.exec('ROLLBACK'); } catch {} throw error; }
     finally { db.close(); }
   }
+  participationProjections(workspaceId: string): {projections: ParticipationProjection[]; incomplete: boolean} {
+    const db=this.open(false); if(!db)return {projections:[],incomplete:false};
+    try {
+      if(!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='conversation_participation'").get())return {projections:[],incomplete:true};
+      const projections:ParticipationProjection[]=[];let incomplete=false,bytes=0,count=0;
+      for(const value of db.prepare('SELECT c.id,c.revision,p.revision AS indexed,p.body FROM conversations c LEFT JOIN conversation_participation p ON p.id=c.id WHERE c.workspace_id=? ORDER BY c.id').iterate(workspaceId)) {
+        const row=value as {id:string;revision:string;indexed?:string;body?:string};
+        if(++count>5000 || (bytes+=Buffer.byteLength(row.body??''))>16*1024*1024){incomplete=true;break;}
+        if(row.indexed!==row.revision || !row.body){incomplete=true;this.queueReadRepair(row.id);continue;}
+        try{const projection=JSON.parse(row.body) as ParticipationProjection;if(projection.version!==1||projection.parserVersion!==1)throw new Error('stale-participation-index');projections.push(projection);}catch{incomplete=true;this.queueReadRepair(row.id);}
+      }
+      return {projections,incomplete};
+    }finally{db.close();}
+  }
   readConversation(id: string): StoredConversation | undefined {
     const db = this.open(false); if (!db) return;
     try { const modern=(db.prepare('PRAGMA user_version').get() as {user_version:number}).user_version>=2; const row = db.prepare(`SELECT body${modern?',summary':''} FROM conversations WHERE id=?`).get(id) as {body:string;summary?:string}|undefined; if(!row)return;const record=ConversationEntryStore.hydrate(db,JSON.parse(row.body) as StoredConversation);if(row.summary)record.view.activity=JSON.parse(row.summary).activity;return record; }
@@ -162,7 +179,7 @@ export class ConversationRepository {
     if (!fs.existsSync(this.filename)) return;
     const db = this.open(true)!;
     try {
-      for (const row of db.prepare('SELECT c.id FROM conversations c LEFT JOIN conversation_read_states s ON c.id=s.id WHERE s.message_revision IS NULL OR s.message_revision<>c.revision').all() as Array<{id:string}>) this.queueReadRepair(row.id);
+      for (const row of db.prepare('SELECT c.id FROM conversations c LEFT JOIN conversation_read_states s ON c.id=s.id LEFT JOIN conversation_participation p ON p.id=c.id WHERE s.message_revision IS NULL OR s.message_revision<>c.revision OR p.revision IS NULL OR p.revision<>c.revision').all() as Array<{id:string}>) this.queueReadRepair(row.id);
     } finally { db.close(); }
   }
   stopReadModels(): void { this.stopped = true; this.repairs.clear(); }
@@ -187,7 +204,7 @@ export class ConversationRepository {
     try {
       db.exec('BEGIN IMMEDIATE');
       const current = db.prepare('SELECT revision FROM conversations WHERE id=?').get(id) as {revision:string}|undefined;
-      if (current?.revision === record.view.revision) { ConversationReadModel.saveHeader(db, record); ConversationReadModel.saveEntries(db, record); }
+      if (current?.revision === record.view.revision) { ConversationReadModel.saveHeader(db, record); ConversationReadModel.saveEntries(db, record); db.prepare('INSERT INTO conversation_participation(id,revision,body) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,body=excluded.body').run(id,record.view.revision,JSON.stringify(projectParticipation(record))); }
       else this.queueReadRepair(id);
       db.exec('COMMIT');
     } catch (error) { try { db.exec('ROLLBACK'); } catch {} throw error; } finally { db.close(); }
@@ -444,6 +461,8 @@ export class ConversationRepository {
     }catch(error){try{db.exec('ROLLBACK');}catch{}throw error;}finally{db.close();}
   }
   saveConversation(record: StoredConversation, priorRevision?: string): void {
+    // Preserve optional observations in the original private record, not strict legacy public DTOs.
+    for(const entry of record.view.entries)if(entry.participation){const value=normalizeParticipation(entry.participation);delete entry.participation;if(value)(record.participationTools??={})[entry.id]={...value,entryRevision:createHash('sha256').update(JSON.stringify(entry)).digest('hex')};}
     const db = this.open(true)!;
     try {
       const prepared=ConversationEntryStore.prepare(db,record);
@@ -468,6 +487,7 @@ export class ConversationRepository {
       const rank=(v:ConversationView|undefined)=>JSON.stringify([v?.title,v?.hidden,v?.run?.status,v?.activity,v?.run?.provider,v?.run?.model]);
       if(rank(before)!==rank(summary))db.exec('UPDATE conversation_epoch SET value=value+1 WHERE id=1');
       db.exec('COMMIT');
+      this.queueReadRepair(record.view.id);
     } catch (error) { try { db.exec('ROLLBACK'); } catch {} throw error; }
     finally { db.close(); }
   }

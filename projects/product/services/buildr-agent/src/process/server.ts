@@ -224,7 +224,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       let controlGeneration:string|undefined;
       const perConversation = name.startsWith('conversations.') && !/Draft/.test(name) && typeof input.args[0] === 'string' && typeof input.args[1] === 'string';
       // Metadata belongs to the current application schema, not the retained native run owner.
-      if (perConversation && !['conversations.update','conversations.read','conversations.warmup','conversations.readEntry','conversations.fork','conversations.createChild','conversations.listChildren','conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.queueSend','conversations.cancelPendingSend'].includes(name)) {
+      if (perConversation && !['conversations.participation','conversations.update','conversations.read','conversations.warmup','conversations.readEntry','conversations.fork','conversations.createChild','conversations.listChildren','conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.queueSend','conversations.cancelPendingSend'].includes(name)) {
         const control = ['conversations.stop','conversations.observeRun','conversations.supplement'].includes(name) ? input.args[2] : name === 'conversations.reply' ? input.args[3] : undefined;
         controlGeneration=control?.generation;
         target = await recipient(input.args[0], input.args[1], controlGeneration);

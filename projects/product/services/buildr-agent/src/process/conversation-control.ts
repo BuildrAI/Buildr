@@ -20,7 +20,7 @@ export function conversationControlInstruction(binding:Binding,node:string):stri
 }
 
 export async function controlConversation(binding:Binding,action:string,input?:unknown):Promise<unknown> {
-  if (!binding || ['dataRoot','profileId','sourceId','scope','conversationId'].some(key=>typeof binding[key as keyof Binding]!=='string'||!binding[key as keyof Binding]) || !['read','observe','stop','link-task'].includes(action)) throw new AgentServiceError('agent_control_invalid','仅支持本对话的 read、observe、stop、link-task。');
+  if (!binding || ['dataRoot','profileId','sourceId','scope','conversationId'].some(key=>typeof binding[key as keyof Binding]!=='string'||!binding[key as keyof Binding]) || !['read','observe','stop','link-task','participation','participation-summary'].includes(action)) throw new AgentServiceError('agent_control_invalid','仅支持本对话控制及只读参与查询。');
   let association: {expectedRevision?:string;taskId:string;workspaceId?:string} | undefined;
   if (action==='link-task') {
     const value=input as Record<string,unknown> | undefined;
@@ -32,6 +32,12 @@ export async function controlConversation(binding:Binding,action:string,input?:u
   const identity = await request(owner.origin,owner.token,'/identity',undefined,AbortSignal.timeout(3000));
   if (identity.instanceId!==owner.identity.instanceId || identity.generation!==owner.identity.generation || identity.profileId!==binding.profileId || identity.dataRoot!==owner.identity.dataRoot) throw new AgentServiceError('agent_control_stale','后台身份已变化，请重新读取。',409);
   const invoke = (operation:string,input?:unknown) => request(owner.origin,owner.token,'/operations',{contract:AGENT_EXECUTION_CONTRACTS.operations,sourceId:binding.sourceId,operation,args:[binding.scope,binding.conversationId,...(input!==undefined?[input]:[])]},AbortSignal.timeout(15000));
+  if (action==='participation' || action==='participation-summary') {
+    // Establish the exact conversation binding even for a workspace-wide summary.
+    await invoke('conversations.read');
+    if (action==='participation') return invoke('conversations.participation',input);
+    return request(owner.origin,owner.token,'/operations',{contract:AGENT_EXECUTION_CONTRACTS.operations,sourceId:binding.sourceId,operation:'conversations.participationSummary',args:[binding.scope,input??{}]},AbortSignal.timeout(15000));
+  }
   let result: any;
   if (association) {
     const current=await invoke('conversations.read');
@@ -48,7 +54,7 @@ export async function controlConversation(binding:Binding,action:string,input?:u
 
 async function runControlEntry(): Promise<void> {
   try {
-    if (process.argv.length<4 || process.argv.length>5) throw new AgentServiceError('agent_control_invalid','用法：conversation-control <绑定 JSON> read|observe|stop|link-task [控制 JSON]');
+    if (process.argv.length<4 || process.argv.length>5) throw new AgentServiceError('agent_control_invalid','用法：conversation-control <绑定 JSON> read|observe|stop|link-task|participation|participation-summary [控制 JSON]');
     const result = await controlConversation(JSON.parse(process.argv[2]!),process.argv[3]!,process.argv[4]?JSON.parse(process.argv[4]):undefined);
     process.stdout.write(JSON.stringify(result)+'\n');
   } catch(error) { process.stderr.write(safeDiagnostic(error)+'\n'); process.exitCode=1; }

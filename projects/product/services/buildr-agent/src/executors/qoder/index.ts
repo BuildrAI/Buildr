@@ -1,3 +1,4 @@
+import { instructionParticipation } from '../../domain/participation.ts';
 import {generateQoderTitle} from './title.ts';
 import {readQoderPersistedExecution} from './durable-history.ts';
 import {qoderSdkPair} from './sdk-pair.ts';
@@ -17,6 +18,7 @@ import type { ExecutorForkInput } from '../../contracts.ts';
 const capabilities = { interaction: { policy: interactionPolicy.version, nonBlockingQuestions: false }, supplement: true, permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
 export function createQoderExecutor(): AgentExecutor { return { readPersistedExecution: readQoderPersistedExecution, storage: { transientDirectories: ['tmp/node-compile-cache', 'cache/node-compile', 'home/.npm/_cacache'] }, descriptor: { id: 'qoder', label: 'Qoder', capabilities }, open: options => QoderRuntime.open(options) }; }
 class QoderRuntime implements AgentRuntime {
+  participationInstruction?: import('../../participation-contracts.ts').ParticipationMatch;
   readonly capabilities = capabilities;
   readonly bindingIdentity: string;
   bindingData?: Record<string, unknown>;
@@ -115,6 +117,7 @@ class QoderRuntime implements AgentRuntime {
     const sdkModule=await qoderSdkPair(executable,version);
     const rpc = new NativeRpc(process.execPath, [fileURLToPath(new URL(import.meta.url.endsWith('.ts') ? './worker.ts' : './worker.js', import.meta.url))], { cwd: options.configRoot, env });
     const runtime = new QoderRuntime(binding.identity, rpc, executable, env, options.configRoot);
+    runtime.participationInstruction = instructionParticipation('interaction-policy',(options.interaction ?? interactionPolicy).instructions);
     runtime.bindingData = binding.data;
     runtime.gateway = gateway;
     let abortedClose: Promise<void> | undefined; const abort = () => { abortedClose ??= rpc.close(); };

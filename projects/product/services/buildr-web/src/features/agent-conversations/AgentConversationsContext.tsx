@@ -1,3 +1,5 @@
+import { readParticipationRun } from './participation-navigation';
+import { locateConversationContent } from './conversation-reading';
 import { retainObservation } from './retain-observation.ts';
 import { createConversationHistoryCache, conversationHistorySignature, activityWorkspaceSignatures, type ConversationHistoryCache } from './conversation-history-page';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -34,6 +36,7 @@ export type AgentConversationsContextValue = {
   setSettings(value: boolean): void; setOpen(value: boolean): void; setFull(value: boolean): void; setView(value: 'conversation' | 'history'): void; move(): void;
   openGlobal(): void; toggle(): void; toggleView(view:'conversation'|'history'):void; openConversation(workspaceId: string, conversationId: string,options?:VisibilityOptions): Promise<void>; newConversation(options?:VisibilityOptions&{scope?:DraftScope|null}): void;
   refresh(): Promise<void>; refreshConnections(): Promise<void>; refreshPending(): Promise<void>; apply(value: ConversationView, observedRevision?:string): void; prependEntries(value: ConversationView): void; updateConnection(value: ConnectionView): void;
+  locateParticipation?(workspaceId:string,conversationId:string,runId:string):Promise<void>;
   selectionGeneration:number; getSelection():ConversationSelection; isSelectionCurrent(selection:ConversationSelection):boolean;
   create(input: {workspaceId: string; cwd?: string; taskId?: string},selection?:ConversationSelection): Promise<ConversationView>;
   /** 产品动作入口在纯展示宿主中可选；真实宿主复用首条提交与恢复记录。 */
@@ -113,7 +116,9 @@ export function AgentConversationsProvider({children, client = agentConversation
   const serial = useRef(0), eventCursor = useRef<number | undefined>(undefined), [observation, setObservation] = useState(0);
   const getSelection=useCallback(()=>({generation:serial.current,scope:scopeRef.current}),[]);
   const isSelectionCurrent=useCallback((selection:ConversationSelection)=>sameConversationSelection(getSelection(),selection),[getSelection]);
-  const advanceSelection=useCallback(()=>{const generation=++serial.current;setSelectionGeneration(generation);return generation;},[]);
+  const participationNavigation=useRef<AbortController|null>(null);
+  useEffect(()=>{if(!open)participationNavigation.current?.abort();return()=>participationNavigation.current?.abort();},[open]);
+  const advanceSelection=useCallback(()=>{participationNavigation.current?.abort();const generation=++serial.current;setSelectionGeneration(generation);return generation;},[]);
   const apply = useCallback((next: ConversationView, observedRevision?:string) => { const current = scopeRef.current; if (current?.workspaceId === next.workspaceId && current.conversationId === next.id) {
     // Keep the observed fact synchronous: a stream can end in the same tick as
     // its completion event, before React commits the corresponding render.
@@ -147,6 +152,19 @@ export function AgentConversationsProvider({children, client = agentConversation
     const request = advanceSelection(); const nextScope = {workspaceId, conversationId}; scopeRef.current = nextScope; setScope(nextScope); setDraftScope(null); conversationRef.current=null; setConversation(null); setView('conversation'); if(!options.preserveVisibility)setVisibility(true); setLoading(true); setError(''); setStreamError(''); eventCursor.current = undefined; savePanel(visibility.current.open,nextScope);
     try { const next = await client.read(workspaceId, conversationId); if (request === serial.current && scopeRef.current?.conversationId === conversationId && scopeRef.current.workspaceId === workspaceId) apply(next); } catch (failure) { if (request === serial.current) setError(failure instanceof Error ? failure.message : '无法读取对话。'); } finally { if (request === serial.current) setLoading(false); }
   }, [client,advanceSelection,setVisibility,apply]);
+  const locateParticipation=useCallback(async(workspaceId:string,conversationId:string,runId:string)=>{
+    participationNavigation.current?.abort();
+    if(scopeRef.current?.workspaceId!==workspaceId||scopeRef.current.conversationId!==conversationId)await openConversation(workspaceId,conversationId,{preserveVisibility:true});
+    else setView('conversation');
+    const initial=conversationRef.current;if(!initial||initial.id!==conversationId||initial.workspaceId!==workspaceId)return;
+    const selection=getSelection(),controller=new AbortController();participationNavigation.current=controller;
+    try{
+      const result=await readParticipationRun({initial,runId,signal:controller.signal,current:()=>isSelectionCurrent(selection)&&visibility.current.open,read:(cursor,signal)=>client.entries(workspaceId,conversationId,cursor,signal),prepend:prependEntries});
+      if(result==='cancelled')return;
+      if(result!=='found'){setError(result==='limit'?'已打开原对话，自动定位达到分页预算；可继续向上阅读，或在参与明细按原版本查看原文。':'原执行正文缺失；未读取当前源文件补写历史。');return;}
+      requestAnimationFrame(()=>{if(controller.signal.aborted||!isSelectionCurrent(selection)||!visibility.current.open)return;const target=[...document.querySelectorAll<HTMLElement>('[data-run-id]')].find(node=>node.dataset.runId===runId);if(target)locateConversationContent(target,false);});
+    }catch(failure){if(!controller.signal.aborted&&isSelectionCurrent(selection))setError(failure instanceof Error?failure.message:'原执行定位失败');}
+  },[client,openConversation,getSelection,isSelectionCurrent,prependEntries]);
   useEffect(() => {const saved=initialPanel;if(saved.scope)void openConversation(saved.scope.workspaceId,saved.scope.conversationId,{preserveVisibility:true});},[openConversation]);
   const refresh = useCallback(async () => { const current = scopeRef.current; if (!current) return; const selection=getSelection(),observed=conversationRef.current?.revision; const result = await client.read(current.workspaceId, current.conversationId); if(!isSelectionCurrent(selection))return; apply(result,observed); setStreamError(''); setObservation(value => value + 1); void refreshPending().catch(() => {}); }, [client, apply, refreshPending,getSelection,isSelectionCurrent]);
   // Reuse global activity discovery instead of polling a finished run. List rows
@@ -313,7 +331,7 @@ export function AgentConversationsProvider({children, client = agentConversation
   const toggleView=useCallback((target:'conversation'|'history')=>{const next=nextConversationPanel(open,view,target);if(target==='history'&&next.open)setHistoryWorkspaceId(null);setView(next.view);setOpen(next.open);},[open,view,setOpen]);
   const toggle=useCallback(()=>setOpen(!open),[open,setOpen]);
   const shell=useMemo(()=>({open,view,full,pending,openGlobal,toggle,toggleView,setSettings}),[open,view,full,pending,openGlobal,toggle,toggleView]);
-  return <ShellContext.Provider value={shell}><Context.Provider value={{historyCache,activityCounts,activityStats,activityRows,activityTotal,activityCursor,activityError,activityTick,activityWorkspaceTicks,historyWorkspaceId,openHistory,refreshActivity,loadMoreActivity,markSeen,api:client,reconnecting,recovering, modelCatalog,modelCatalogReady,modelCatalogError,refreshModelCatalog,open,side,full,view,scope,draftScope,conversation,contextReport,connections,connectionsReady:connectionState.ready,connectionsLoading:connectionState.loading,connectionsError:connectionState.error,pending,loading,error,streamError,settings,setSettings,setOpen,setFull,setView,move:() => setSide(current => { const next = current === 'right' ? 'left' : 'right'; writeOptionalPreference('buildr.agent-conversation-side',next); return next; }),openGlobal,toggle,toggleView,openConversation,newConversation,refresh,refreshConnections,refreshPending,apply,prependEntries,updateConnection,create,selectionGeneration,getSelection,isSelectionCurrent,productActionPending,productActionError,firstSubmissionStore,startTextConversation}}>{children}</Context.Provider></ShellContext.Provider>;
+  return <ShellContext.Provider value={shell}><Context.Provider value={{historyCache,activityCounts,activityStats,activityRows,activityTotal,activityCursor,activityError,activityTick,activityWorkspaceTicks,historyWorkspaceId,openHistory,refreshActivity,loadMoreActivity,markSeen,api:client,reconnecting,recovering, modelCatalog,modelCatalogReady,modelCatalogError,refreshModelCatalog,open,side,full,view,scope,draftScope,conversation,contextReport,connections,connectionsReady:connectionState.ready,connectionsLoading:connectionState.loading,connectionsError:connectionState.error,pending,loading,error,streamError,settings,setSettings,setOpen,setFull,setView,move:() => setSide(current => { const next = current === 'right' ? 'left' : 'right'; writeOptionalPreference('buildr.agent-conversation-side',next); return next; }),openGlobal,toggle,toggleView,openConversation,locateParticipation,newConversation,refresh,refreshConnections,refreshPending,apply,prependEntries,updateConnection,create,selectionGeneration,getSelection,isSelectionCurrent,productActionPending,productActionError,firstSubmissionStore,startTextConversation}}>{children}</Context.Provider></ShellContext.Provider>;
 }
 export function useAgentConversations() { const value = useContext(Context); if (!value) throw new Error('AgentConversationsProvider 未提供。'); return value; }
 export function useOptionalAgentConversations() { return useContext(Context); }

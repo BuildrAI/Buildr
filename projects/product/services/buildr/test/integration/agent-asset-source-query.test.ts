@@ -136,3 +136,13 @@ test('workspace-owned root rules without legacy block stay unknown and unchanged
  assert.equal(result.items[0].status, 'unknown'); assert.deepEqual(result.items[0].objects, []); assert.equal(f.requiredReads(), 0);
  assert.deepEqual(result.effects, []); assert.equal(fs.readFileSync(path.join(f.root, 'AGENTS.md'), 'utf8'), content);
 });
+
+test('participation host preserves provider/manager and fragment proof without attributing mixed user text',async t=>{
+ const {createParticipationSourceObserver}=await import('../../src/modules/agent-service/application/participation-source.ts');
+ const f=fixture(t);f.write('AGENTS.md',required+'\n\nPRIVATE USER SUFFIX\n');
+ const observe=createParticipationSourceObserver({root:()=>f.root,query:f.query,identity:()=>({})});
+ const result=await observe({ref:{sourceId:'buildr',id:uuid},observations:[{id:'rule',kind:'rule',path:'AGENTS.md'}]});
+ const rule=result.sources[0]!;assert.equal(rule.providedBy,'buildr');assert.equal(rule.managedBy,'buildr');assert.equal(rule.contentScope,'fragment');assert.equal(rule.observedVersion,undefined);assert.equal(rule.offeredVersion,sourceDigest(required));
+ assert.ok(!JSON.stringify(result).includes('PRIVATE USER SUFFIX'));assert.ok(!JSON.stringify(result).includes('Rule body'));
+ const available=await observe({ref:{sourceId:'buildr',id:uuid},provider:'codex',discover:true,observations:[]});assert.ok(available.sources.some(source=>source.contentScope==='fragment'));assert.equal(available.coverage,'partial');assert.equal(f.materialReads(),0);
+});

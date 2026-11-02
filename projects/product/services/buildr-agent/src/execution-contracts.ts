@@ -14,6 +14,7 @@ export interface WorkObjectObservation { ref: WorkObjectRef; revision: string }
 export interface AgentHostCapabilities {
   resolveExecutionScope(input: { ref: ExecutionScopeRef; expectedRevision?: string }): Promise<ExecutionScope>;
   verifyWorkObject(input: { ref: WorkObjectRef; expectedRevision?: string }): Promise<WorkObjectObservation>;
+  observeParticipation?(input: import('./participation-contracts.ts').ParticipationSourceRequest): Promise<import('./participation-contracts.ts').ParticipationSourceResult>;
   listExecutionScopes(input: { sourceId: string }): Promise<{ refs: ExecutionScopeRef[]; revision: string }>;
 }
 

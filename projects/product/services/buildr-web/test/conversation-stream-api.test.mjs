@@ -38,3 +38,13 @@ test('联合活动观察复用相同版本，失败保留摘要，写后重新�
   await client.connect('codex');assert.equal(await client.activitySummary(),snapshot);
   assert.equal(calls.at(-1),'/api/v1/app/agent-service/activity-summary');assert.ok(calls[1].endsWith('?revision='+snapshot.revision));
 });
+
+test('participation reads bind exact workspace/run and share only concurrent observations',async()=>{
+ const calls=[];let finish;
+ const client=createAgentConversationsClient(async(url,init)=>{calls.push({url,init});return new Promise(resolve=>{finish=resolve;});},{writeHeaders:()=>({})});
+ const one=client.participation('@default','chat/id','run/id');const two=client.participation('@default','chat/id','run/id');
+ await new Promise(resolve=>setTimeout(resolve,5));assert.equal(calls.length,1);assert.equal(calls[0].url,'/api/v1/app/agent-service/conversations/chat%2Fid/participation?runId=run%2Fid');
+ finish({coverage:'partial'});assert.deepEqual(await one,await two);
+ const abort=new AbortController();const pending=client.participationSummary('space/id',{limit:50},abort.signal);await new Promise(resolve=>setTimeout(resolve,5));abort.abort();await assert.rejects(pending);
+ assert.ok(calls[1].url.startsWith('/api/v1/workspaces/space%2Fid/agent-conversations/participation-summary?'));assert.equal(calls[1].init.signal.aborted,true);finish({});
+});
