@@ -46,6 +46,8 @@ test('all native executors reuse only their connection download cache while nati
     const env = isolatedEnvironment({}, first.configRoot, path.join(first.configRoot, 'tmp'), {}, first.cacheRoot);
     const peer = isolatedEnvironment({}, second.configRoot, path.join(second.configRoot, 'tmp'), {}, second.cacheRoot);
     assert.equal(env.npm_config_cache, peer.npm_config_cache);
+    assert.equal(env.NODE_COMPILE_CACHE, path.join(first.cacheRoot!, 'node-compile'));
+    assert.equal(env.NODE_COMPILE_CACHE, peer.NODE_COMPILE_CACHE);
     assert.notEqual(env.HOME, peer.HOME); assert.notEqual(env.TMPDIR, peer.TMPDIR);
     assert.equal(env.CODEX_HOME, undefined); assert.equal(env.DSH_HOME, undefined);
     caches.add(first.cacheRoot!);
@@ -88,6 +90,29 @@ test('adapter-declared cache cleanup preserves accounts and sessions, and reject
   assert.equal(fs.readFileSync(session, 'utf8'), 'history'); assert.equal(fs.readFileSync(account, 'utf8'), 'private-test-credential');
   fs.symlinkSync(path.dirname(root), cache);
   assert.equal(storageCandidate(root, 'cache', cache, config, unused, Infinity).eligible, false);
+});
+
+test('compile caches are declared narrowly and shared-cache removal respects every private consumer', t => {
+  const root = path.join(fixture(t), 'agent-service');
+  for (const executor of createNativeExecutors()) {
+    const connection = path.join(root, 'connections', executor.descriptor.id);
+    const config = path.join(connection, 'model-bindings', 'b'.repeat(64));
+    const legacy = path.join(config, 'tmp/node-compile-cache'), shared = path.join(connection, 'cache/node-compile');
+    const session = path.join(config, 'private-session'), account = path.join(config, 'private-account');
+    file(path.join(legacy, 'v24-cache/cache-entry')); file(path.join(shared, 'v24-cache/cache-entry'));
+    file(session, 'session'); file(account, 'account'); age(connection);
+    const candidate = executorCacheCandidates(root, executor, config, unused, Infinity).find(item => item.path === legacy)!;
+    assert.ok(candidate.eligible);
+    file(path.join(legacy, 'new-entry'));
+    assert.equal(removeStorageCandidate(root, candidate, () => unused), false);
+    const sharedCandidate = executorCacheCandidates(root, executor, connection, unused, Infinity).find(item => item.path === shared)!;
+    assert.ok(sharedCandidate.eligible);
+    assert.equal(removeStorageCandidate(root, sharedCandidate, () => ({ complete: true, paths: [session] })), false);
+    assert.equal(removeStorageCandidate(root, sharedCandidate, () => ({ complete: false, paths: [] })), false);
+    assert.equal(removeStorageCandidate(root, sharedCandidate, () => unused), true);
+    assert.equal(fs.readFileSync(session, 'utf8'), 'session'); assert.equal(fs.readFileSync(account, 'utf8'), 'account');
+    assert.ok(fs.existsSync(legacy), 'changed private cache was retained');
+  }
 });
 
 test('runtime inventory handles crashed and orphaned immutable copies while retaining current, pending, rollback, changed and opened versions', t => {

@@ -16,7 +16,7 @@ export function isolatedEnvironment(input: NativeEnvironment, home: string, temp
   for (const key of ['PATH', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'USER', 'LOGNAME', 'SYSTEMROOT', 'SystemRoot', 'WINDIR', 'COMSPEC', 'PATHEXT', 'SSL_CERT_FILE', 'SSL_CERT_DIR', 'NODE_EXTRA_CA_CERTS', 'HTTPS_PROXY', 'HTTP_PROXY', 'ALL_PROXY', 'NO_PROXY', 'https_proxy', 'http_proxy', 'all_proxy', 'no_proxy']) {
     if (input[key] !== undefined) result[key] = input[key];
   }
-  return { ...result, ...toolEnvironment(input), ...(cacheRoot ? { npm_config_cache: join(cacheRoot, 'npm'), NPM_CONFIG_CACHE: join(cacheRoot, 'npm') } : {}), HOME: home, USERPROFILE: home, TMPDIR: temporary, TMP: temporary, TEMP: temporary, ...extra };
+  return { ...result, ...toolEnvironment(input), ...(cacheRoot ? { npm_config_cache: join(cacheRoot, 'npm'), NPM_CONFIG_CACHE: join(cacheRoot, 'npm'), NODE_COMPILE_CACHE: join(cacheRoot, 'node-compile') } : {}), HOME: home, USERPROFILE: home, TMPDIR: temporary, TMP: temporary, TEMP: temporary, ...extra };
 }
 export async function privateDirectories(...directories: string[]): Promise<void> {
   for (const directory of directories) {

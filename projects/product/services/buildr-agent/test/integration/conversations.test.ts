@@ -849,7 +849,9 @@ test('large native items remain durable while the handoff carries actions and re
     const db = new DatabaseSync(path.join(f.options.dataRoot, 'agent-service/conversations.sqlite'), { readOnly: true });
     try {
       const row = db.prepare('SELECT body FROM conversations WHERE id=?').get(created.id) as { body: string };
-      assert.deepEqual(JSON.parse(row.body).view.entries, pages, 'pagination must not truncate the durable record');
+      assert.deepEqual(JSON.parse(row.body).view.entries, [], 'the header must not duplicate durable entry bodies');
+      const repository = new ConversationRepository(path.join(f.options.dataRoot, 'agent-service'));
+      assert.deepEqual(repository.readConversation(created.id)!.view.entries, pages, 'pagination must not truncate the durable record');
     } finally { db.close(); }
     const subscription = f.service.conversations.subscribe('workspace-one', created.id);
     const iterator = subscription.events[Symbol.asyncIterator]();

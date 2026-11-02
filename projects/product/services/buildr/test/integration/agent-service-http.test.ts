@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { AGENT_SERVICE_APPLICATION } from '../../src/modules/agent-service/module.ts';
 import { stopAgentProcess } from '@buildr-ai/buildr-agent';
 import { runtimeProvide } from '../../src/bootstrap/runtime.ts';
@@ -122,7 +123,7 @@ test('private conversations use authenticated HTTP and bounded binary input; str
   assert.equal(summaries.total,0);assert.deepEqual(summaries.conversations,[]);assert.deepEqual(summaries.stats.executions,[],'执行组合摘要穿过真实HTTP契约，不被丢弃');
   {
     const store=new DatabaseSync(path.join(base,'agent-profile','agent-service','conversations.sqlite'));
-    try{const row=store.prepare('SELECT body FROM conversations WHERE id=?').get(created.id) as {body:string};const record=JSON.parse(row.body);record.view.entries.push({id:'seed-entry',sequence:1,kind:'message',role:'user',text:'started work',createdAt:'2026-10-27T00:00:00Z'});store.prepare('UPDATE conversations SET body=? WHERE id=?').run(JSON.stringify(record),created.id);}finally{store.close();}
+    try{const row=store.prepare('SELECT body FROM conversations WHERE id=?').get(created.id) as {body:string};const record=JSON.parse(row.body);record.view.entries.push({id:'seed-entry',sequence:1,kind:'message',role:'user',text:'started work',createdAt:'2026-10-27T00:00:00Z'});seedConversation(store, record);}finally{store.close();}
   }
   response = await fetch(`${app}/conversations`, {headers:readHeaders}); assert.equal(response.status,200);
   summaries=await response.json();assert.equal(summaries.total,1);assert.equal(summaries.conversations[0].id,created.id);assert.deepEqual(summaries.conversations[0].entries,[]);
@@ -470,7 +471,7 @@ test('default conversations use a stable application directory without a registe
       const row = store.prepare('SELECT body FROM conversations WHERE id=?').get(chat.id) as { body: string };
       const record = JSON.parse(row.body);
       record.view.entries.push({ id: 'seed-entry', sequence: 1, kind: 'message', role: 'user', text: 'started work', createdAt: '2026-10-27T00:00:00Z' });
-      store.prepare('UPDATE conversations SET body=? WHERE id=?').run(JSON.stringify(record), chat.id);
+      seedConversation(store, record);
     } finally { store.close(); }
   }
   const list2 = await fetch(endpoint, { headers });
@@ -598,7 +599,7 @@ test('tool detail reads preserve full history, enforce content revisions and rem
   const filename=path.join(profile,'agent-service/conversations.sqlite'),db=new DatabaseSync(filename);t.after(()=>db.close());
   const raw=JSON.parse((db.prepare('SELECT body FROM conversations WHERE id=?').get(created.id) as {body:string}).body);
   const full={id:'tool/http-id',sequence:1,kind:'tool',role:'system',name:'command',text:'complete output\n'+'x'.repeat(50000),input:JSON.stringify({cmd:'read result'}),createdAt:created.updatedAt};raw.view.entries=[full];raw.view.revision='seed-large';
-  db.prepare('UPDATE conversations SET body=?,revision=? WHERE id=?').run(JSON.stringify(raw),raw.view.revision,created.id);
+  seedConversation(db, raw);
   const headers={'x-buildr-session':sessionToken};const endpoint=`${url}/api/v1/workspaces/${workspaceId}/agent-conversations/${created.id}`;
   let response=await fetch(endpoint,{headers});assert.equal(response.status,200);const page=await response.json();assert.ok(page.entries[0].detail);assert.ok(page.entries[0].text.length<full.text.length);
   const detail=endpoint+'/entry-detail/'+encodeURIComponent(full.id)+'?revision='+page.entries[0].detail.revision;
@@ -606,7 +607,8 @@ test('tool detail reads preserve full history, enforce content revisions and rem
   response=await fetch(detail,{headers});assert.equal(response.status,200);assert.deepEqual(await response.json(),full);
   response=await fetch(detail.replace(page.entries[0].detail.revision,'0'.repeat(64)),{headers});assert.equal(response.status,409);
   response=await fetch(detail.replace('/workspaces/'+workspaceId,'/workspaces/00000000-0000-0000-0000-000000000001'),{headers});assert.equal(response.status,400);
-  assert.deepEqual(JSON.parse((db.prepare('SELECT body FROM conversations WHERE id=?').get(created.id) as {body:string}).body).view.entries,[full]);
+  assert.deepEqual(JSON.parse((db.prepare('SELECT body FROM conversations WHERE id=?').get(created.id) as {body:string}).body).view.entries,[]);
+  assert.equal(db.prepare('SELECT count(*) AS n FROM conversation_entry_contents WHERE conversation_id=?').get(created.id)!.n,1);
 });
 
 
@@ -640,7 +642,7 @@ test('historical native file presentations reach authenticated HTTP without repl
  const db=new DatabaseSync(path.join(dataRoot,'agent-service/conversations.sqlite'));
  const stored=JSON.parse((db.prepare('SELECT body FROM conversations WHERE id=?').get(chat.id) as {body:string}).body);
  stored.view.revision='presented-v2';stored.view.entries=[{id:'presented-tool',sequence:1,createdAt:'now',kind:'tool',role:'system',provider:'dsh',participantId:'p',runId:'run',name:'present',input:JSON.stringify({files:[{path:filename,description:'发布记录'}]}),text:'Presented '+filename,status:'completed'}];
- const body=JSON.stringify(stored);db.prepare('UPDATE conversations SET revision=?,body=? WHERE id=?').run(stored.view.revision,body,chat.id);
+ seedConversation(db, stored);const body=(db.prepare('SELECT body FROM conversations WHERE id=?').get(chat.id) as {body:string}).body;
  const endpoint=`${url}/api/v1/workspaces/${workspaceId}/agent-conversations/${chat.id}`;
  let response=await fetch(endpoint);assert.equal(response.status,403);
  response=await fetch(endpoint,{headers:{origin:url,'x-buildr-session':sessionToken}});assert.equal(response.status,200);
@@ -684,3 +686,20 @@ test('联合活动摘要裁剪上下文并以内容版本返回未变化标记�
   const legacy:any=await (await fetch(url+'/api/v1/app/agent-service/conversations?activeOnly=true&limit=100',{headers})).json();assert.equal(legacy.conversations[0].participants[0].contextId,'private-context');
   assert.equal((await fetch(endpoint+'?revision=invalid',{headers})).status,400);
 });
+
+/** Explicit v5 raw fixture; production writing and migration are tested by the service. */
+function seedConversation(db: DatabaseSync, record: any): void {
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    for (const entry of record.view.entries) {
+      const body=JSON.stringify(entry),revision=createHash('sha256').update(body).digest('hex');
+      const compact=entry.kind==='tool'&&body.length>16384?JSON.stringify({...entry,text:entry.text.slice(0,512),detail:{revision}}):null;
+      db.prepare('INSERT OR REPLACE INTO conversation_entry_contents VALUES(?,?,?,?,?)').run(record.view.id,revision,'raw',Buffer.byteLength(body),body);
+      db.prepare('INSERT OR REPLACE INTO conversation_read_entries VALUES(?,?,?,?,?,?,?,?,?,?)').run(record.view.id,'main',entry.sequence,entry.id,'legacy:fixture',revision,compact,Buffer.byteLength(body),Buffer.byteLength(compact??body),Number(entry.kind==='message'&&!entry.thinking));
+    }
+    const count=record.view.entries.length;
+    const header=JSON.stringify({...record,_bodyFormat:5,view:{...record.view,entries:[]}});
+    db.prepare('UPDATE conversations SET body=?,revision=?,entry_count=? WHERE id=?').run(header,record.view.revision,count,record.view.id);
+    db.exec('COMMIT');
+  } catch(error) { db.exec('ROLLBACK');throw error; }
+}

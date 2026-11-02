@@ -8,22 +8,26 @@ import path from 'node:path';
 import { AgentServiceError, fail } from '../domain/agent-state.ts';
 import type { StoredConnection, StoredConversation } from '../domain/agent-state.ts';
 import { ConversationReadModel, type ConversationReadState } from './conversation-read-model.ts';
+import { ConversationEntryStore } from './conversation-entry-store.ts';
+import { beginConversationMigration, migrateConversationEntries } from './conversation-migration.ts';
 
-export const CONVERSATION_SCHEMA_VERSION = 4;
+export const CONVERSATION_SCHEMA_VERSION = 5;
 const SCHEMA_VERSION = CONVERSATION_SCHEMA_VERSION;
 // 附件准备不等于开始；已发送或结果未知的尝试仍必须可发现。
-const HAS_WORK = "(json_array_length(json_extract(body,'$.view.entries'))>0 OR json_array_length(json_extract(body,'$.attempts'))>0 OR json_type(body,'$.view.run')='object' OR json_type(body,'$.view.childOf')='object')";
+const LEGACY_HAS_WORK = "(json_array_length(json_extract(body,'$.view.entries'))>0 OR json_array_length(json_extract(body,'$.attempts'))>0 OR json_type(body,'$.view.run')='object' OR json_type(body,'$.view.childOf')='object')";
+const hasWork = (db: DatabaseSync) => ConversationEntryStore.available(db)
+  ? LEGACY_HAS_WORK.replace("json_array_length(json_extract(body,'$.view.entries'))", 'entry_count') : LEGACY_HAS_WORK;
 // Legacy/offline readers must inspect optional JSON fields without materializing a full record.
 const HAS_UNFINISHED = "EXISTS(SELECT 1 FROM json_each(body,'$.view.retainedRuns') AS retained WHERE json_extract(retained.value,'$.status') IN ('starting','running','waiting-approval','waiting-question','stopping','unknown','tools-active') OR EXISTS(SELECT 1 FROM json_each(retained.value,'$.tools') AS tool WHERE COALESCE(json_extract(tool.value,'$.status'),'unknown')<>'completed')) OR json_array_length(body,'$.view.requests')>0 OR json_extract(body,'$.view.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','unknown','tools-active') OR EXISTS(SELECT 1 FROM json_each(body,'$.view.run.tools') AS tool WHERE COALESCE(json_extract(tool.value,'$.status'),'unknown')<>'completed') OR json_extract(body,'$.view.titleState.status')='generating'";
 const SEARCH_TERM_LIMIT = 6;
 const SEARCH_ENTRY = "(json_extract(entry.value,'$.kind')='message' AND json_extract(entry.value,'$.role') IN ('user','assistant') AND coalesce(json_extract(entry.value,'$.thinking'),0)=0 AND instr(lower(json_extract(entry.value,'$.text')),lower(?))>0)";
 const searchTerms = (query?: string) => (query ?? '').trim().split(/\s+/).filter(Boolean).slice(0, SEARCH_TERM_LIMIT);
-const searchClause = (terms: string[], title: string, body: string) => terms.map(() => `(instr(lower(${title}),lower(?))>0 OR EXISTS(SELECT 1 FROM json_each(${body},'$.view.entries') AS entry WHERE ${SEARCH_ENTRY}))`).join(' AND ');
+const searchClause = (terms: string[], title: string, body: string) => terms.map(() => `(instr(lower(${title}),lower(?))>0 OR EXISTS(SELECT 1 FROM conversation_search_entries AS entry WHERE entry.owner_id=id AND ${SEARCH_ENTRY}))`).join(' AND ');
 const searchSnippet = (terms: string[]) => {
   const text = "json_extract(entry.value,'$.text')";
   const starts = terms.map(() => `CASE WHEN instr(lower(${text}),lower(?))>0 THEN instr(lower(${text}),lower(?)) ELSE 1000000 END`).join(',');
   const match = terms.map(() => `instr(lower(${text}),lower(?))>0`).join(' OR ');
-  return `(SELECT substr(${text},max(1,min(${starts},1000000)-40),120) FROM json_each(body,'$.view.entries') AS entry WHERE json_extract(entry.value,'$.kind')='message' AND json_extract(entry.value,'$.role') IN ('user','assistant') AND coalesce(json_extract(entry.value,'$.thinking'),0)=0 AND (${match}) ORDER BY entry.key LIMIT 1)`;
+  return `(SELECT substr(${text},max(1,min(${starts},1000000)-40),120) FROM conversation_search_entries AS entry WHERE entry.owner_id=id AND json_extract(entry.value,'$.kind')='message' AND json_extract(entry.value,'$.role') IN ('user','assistant') AND coalesce(json_extract(entry.value,'$.thinking'),0)=0 AND (${match}) ORDER BY entry.sequence LIMIT 1)`;
 };
 
 /** Sole owner of the application's private interaction database. Reads never initialize it. */
@@ -47,10 +51,12 @@ export class ConversationRepository {
         if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1) fail('agent_storage_unsafe', '私有交互库来源不安全。', 409);
       }
       const db = new DatabaseSync(this.filename, { readOnly: !write });
+      let migration: ReturnType<typeof beginConversationMigration> | undefined;
       try {
         db.exec('PRAGMA busy_timeout=2000');
         const row = db.prepare('PRAGMA user_version').get() as { user_version: number };
         if (row.user_version > SCHEMA_VERSION) fail('agent_storage_newer', '此交互库来自较新版本，请使用匹配的 Buildr。', 409);
+        if (write && row.user_version < SCHEMA_VERSION) migration = beginConversationMigration(db, this.directory);
         // Native tools may read/backup this same private database while events persist.
         // Readers must not turn a completed native operation into a failed observation.
         if (write && (db.prepare('PRAGMA journal_mode').get() as {journal_mode:string}).journal_mode !== 'wal') db.exec('PRAGMA journal_mode=WAL');
@@ -97,6 +103,8 @@ export class ConversationRepository {
         if (write && row.user_version < 4) db.exec('PRAGMA user_version=4');
         if (write) {
           ConversationReadModel.install(db);
+          if (row.user_version < SCHEMA_VERSION) migrateConversationEntries(db);
+          const HAS_WORK = hasWork(db);
           // Rebuildable acceleration, not a storage-version change. SQLite also
           // maintains this predicate when an older retained writer changes body.
           // Keeping the list fields here avoids reading large history pages.
@@ -113,8 +121,10 @@ export class ConversationRepository {
           }
           fs.chmodSync(this.filename, 0o600);
         }
+        ConversationEntryStore.installSearch(db);
+        migration?.complete();
         return db;
-      } catch (error) { db.close(); throw error; }
+      } catch (error) { db.close(); throw error; } finally { migration?.release(); }
     } catch (error) {
       if (error instanceof AgentServiceError) throw error;
       fail('agent_storage_unavailable', '私有交互库不可读写；原记录已保留，请检查目录权限或数据库状态。', 409);
@@ -144,7 +154,7 @@ export class ConversationRepository {
   }
   readConversation(id: string): StoredConversation | undefined {
     const db = this.open(false); if (!db) return;
-    try { const modern=(db.prepare('PRAGMA user_version').get() as {user_version:number}).user_version>=2; const row = db.prepare(`SELECT body${modern?',summary':''} FROM conversations WHERE id=?`).get(id) as {body:string;summary?:string}|undefined; if(!row)return;const record=JSON.parse(row.body) as StoredConversation;if(row.summary)record.view.activity=JSON.parse(row.summary).activity;return record; }
+    try { const modern=(db.prepare('PRAGMA user_version').get() as {user_version:number}).user_version>=2; const row = db.prepare(`SELECT body${modern?',summary':''} FROM conversations WHERE id=?`).get(id) as {body:string;summary?:string}|undefined; if(!row)return;const record=ConversationEntryStore.hydrate(db,JSON.parse(row.body) as StoredConversation);if(row.summary)record.view.activity=JSON.parse(row.summary).activity;return record; }
     finally { db.close(); }
   }
   /** Explicit startup maintenance; ordinary reads never initialize or migrate storage. */
@@ -199,8 +209,14 @@ export class ConversationRepository {
     try {
       if(ConversationReadModel.available(db)){
         db.exec('BEGIN');
+        if (ConversationEntryStore.available(db)) {
+          const header=db.prepare('SELECT 1 FROM conversation_read_states WHERE id=? AND message_revision=revision').get(id);
+          const row=header && ConversationEntryStore.content(db,id,entryId);
+          if(row){if(row.content_revision!==revision)fail('agent_entry_changed','工具记录已变化，请重新读取当前对话。',409);return ConversationEntryStore.decode(row);}
+        } else {
         const row=db.prepare('SELECT e.body,e.content_revision FROM conversation_read_entries e JOIN conversation_read_states s ON s.id=e.conversation_id AND s.message_revision=s.revision WHERE s.id=? AND e.id=?').get(id,entryId) as {body:string;content_revision:string}|undefined;
         if(row){if(row.content_revision!==revision)fail('agent_entry_changed','工具记录已变化，请重新读取当前对话。',409);return JSON.parse(row.body) as import('../contracts.ts').ConversationEntry;}
+        }
       }
     }finally{db.close();}
     const entry=this.readConversation(id)?.view.entries.find(entry=>entry.id===entryId);
@@ -234,6 +250,7 @@ export class ConversationRepository {
     const db = this.open(false); if (!db) return [];
     try {
       const modern=(db.prepare('PRAGMA user_version').get() as {user_version:number}).user_version>=2;
+      const HAS_WORK=hasWork(db);
       const indexed=!!db.prepare("SELECT 1 FROM sqlite_master WHERE type='index' AND name='conversations_list_summary'").get();
       const header=ConversationReadModel.available(db)?"coalesce((SELECT state FROM conversation_read_states s WHERE s.id=c.id AND s.revision=c.revision),json_set(c.body,'$.view.entries',json('[]')))":"json_set(c.body,'$.view.entries',json('[]'))";
       // The partial index proves HAS_WORK without parsing every historical body.
@@ -257,7 +274,7 @@ export class ConversationRepository {
   }
   listPending(includeActive = false): StoredConversation[] {
     const db = this.open(false); if (!db) return [];
-    try { const sql=ConversationReadModel.available(db)?`SELECT c.body FROM conversation_read_states s JOIN conversations c ON c.id=s.id WHERE s.${includeActive?'active':'pending'}=1 UNION ALL SELECT c.body FROM conversations c LEFT JOIN conversation_read_states s ON c.id=s.id WHERE s.id IS NULL`:'SELECT body FROM conversations ORDER BY updated_at DESC';return (db.prepare(sql).all() as {body:string}[]).map(row=>JSON.parse(row.body) as StoredConversation).filter(record=>this.isPending(record,includeActive)); }
+    try { const sql=ConversationReadModel.available(db)?`SELECT c.body FROM conversation_read_states s JOIN conversations c ON c.id=s.id WHERE s.${includeActive?'active':'pending'}=1 UNION ALL SELECT c.body FROM conversations c LEFT JOIN conversation_read_states s ON c.id=s.id WHERE s.id IS NULL`:'SELECT body FROM conversations ORDER BY updated_at DESC';return (db.prepare(sql).all() as {body:string}[]).map(row=>ConversationEntryStore.hydrate(db,JSON.parse(row.body) as StoredConversation)).filter(record=>this.isPending(record,includeActive)); }
     finally { db.close(); }
   }
   hasUnfinishedWork(): boolean {
@@ -273,12 +290,12 @@ export class ConversationRepository {
   }
   listInterruptedTitles(generation:string): StoredConversation[] {
     const db=this.open(false);if(!db)return [];
-    try{return (db.prepare("SELECT body FROM conversations WHERE json_extract(body,'$.view.titleState.status')='generating' AND json_extract(body,'$.view.run.generation')<>?").all(generation) as Array<{body:string}>).map(row=>JSON.parse(row.body));}finally{db.close();}
+    try{return (db.prepare("SELECT body FROM conversations WHERE json_extract(body,'$.view.titleState.status')='generating' AND json_extract(body,'$.view.run.generation')<>?").all(generation) as Array<{body:string}>).map(row=>ConversationEntryStore.hydrate(db,JSON.parse(row.body) as StoredConversation));}finally{db.close();}
   }
   listInterrupted(): StoredConversation[] {
     const db = this.open(false); if (!db) return [];
     try {
-      return (db.prepare(`SELECT body FROM conversations WHERE json_extract(body,'$.interruption.runId')=json_extract(body,'$.view.run.id') OR json_extract(body,'$.view.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','unknown','tools-active') ORDER BY updated_at DESC`).all() as {body:string}[]).map(row=>JSON.parse(row.body));
+      return (db.prepare(`SELECT body FROM conversations WHERE json_extract(body,'$.interruption.runId')=json_extract(body,'$.view.run.id') OR json_extract(body,'$.view.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','unknown','tools-active') ORDER BY updated_at DESC`).all() as {body:string}[]).map(row=>ConversationEntryStore.hydrate(db,JSON.parse(row.body) as StoredConversation));
     } finally { db.close(); }
   }
   querySummaries(workspaceIds: string[], input: {workspaceId?:string;activeOnly?:boolean;hidden?:boolean;query?:string;agent?:string;model?:string;activityState?:string;generation?:string;cursor?:string;limit:number}, generationAlive?: (generation:string)=>boolean): {conversations:ConversationView[];nextCursor?:string;total:number;stats:{modelExecutions:Array<{accountId:string;accountLabel:string;model:string;count:number}>;agents:Array<{label:string;count:number}>;models:Array<{label:string;count:number}>;executions:Array<{provider:string;model:string;count:number}>};activityCounts:{active:number;running:number;waiting:number;unseen:number;unknown:number;attention:number}} {
@@ -290,6 +307,7 @@ export class ConversationRepository {
       // Existing databases stay read-only until a normal write installs the
       // optional index. Prefer it explicitly: the narrower ordering index can
       // otherwise win the planner's estimate and force full-history reads.
+      const HAS_WORK=hasWork(db);
       const indexed=version>=3&&!!db.prepare("SELECT 1 FROM sqlite_master WHERE type='index' AND name='conversations_list_summary'").get();
       const table=indexed?'conversations INDEXED BY conversations_list_summary':'conversations';
       // Legacy reads remain zero-write and omit private records and full entries.
@@ -428,11 +446,12 @@ export class ConversationRepository {
   saveConversation(record: StoredConversation, priorRevision?: string): void {
     const db = this.open(true)!;
     try {
+      const prepared=ConversationEntryStore.prepare(db,record);
       db.exec('BEGIN IMMEDIATE');
       const prior = db.prepare('SELECT revision,summary,message_signature,activity_at,user_at,activity_version,seen_version FROM conversations WHERE id=?').get(record.view.id) as {revision:string;summary:string;message_signature:string;activity_at:string;user_at:string;activity_version:number;seen_version:number}|undefined;
       if ((prior?.revision ?? undefined) !== priorRevision) fail('agent_revision_conflict', '对话已变化，请重新读取。', 409);
       ConversationReadModel.saveHeader(db, record);
-      db.prepare('INSERT INTO conversations(id,workspace_id,task_id,hidden,updated_at,revision,body) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET task_id=excluded.task_id,hidden=excluded.hidden,updated_at=excluded.updated_at,revision=excluded.revision,body=excluded.body').run(record.view.id, record.view.workspaceId, record.view.taskId ?? null, Number(record.view.hidden), record.view.updatedAt, record.view.revision, JSON.stringify(record));
+      db.prepare('INSERT INTO conversations(id,workspace_id,task_id,hidden,updated_at,revision,body,entry_count,inherited_count) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET task_id=excluded.task_id,hidden=excluded.hidden,updated_at=excluded.updated_at,revision=excluded.revision,body=excluded.body,entry_count=excluded.entry_count,inherited_count=excluded.inherited_count').run(record.view.id, record.view.workspaceId, record.view.taskId ?? null, Number(record.view.hidden), record.view.updatedAt, record.view.revision, ConversationEntryStore.header(record), record.view.entries.length, record.inheritedContext?.entries.length ?? 0);
       const signature=messageSignature(record);
       const version=(prior?.activity_version??0)+(prior&&prior.message_signature!==signature?1:0);
       const messageAt=messageActivityAt(record);
@@ -443,7 +462,7 @@ export class ConversationRepository {
       const summary=summaryView(record,version,prior?.seen_version??0,activityAt);
       record.view.activity=summary.activity;
       ConversationReadModel.saveHeader(db, record);
-      ConversationReadModel.saveEntries(db, record);
+      ConversationReadModel.saveEntries(db, record, prepared);
       db.prepare('UPDATE conversations SET summary=?,message_signature=?,activity_at=?,user_at=?,activity_version=?,is_active=? WHERE id=?').run(JSON.stringify(summary),signature,activityAt,userAt,version,Number(summary.activity!.active),record.view.id);
       const before=prior?.summary?JSON.parse(prior.summary) as ConversationView:undefined;
       const rank=(v:ConversationView|undefined)=>JSON.stringify([v?.title,v?.hidden,v?.run?.status,v?.activity,v?.run?.provider,v?.run?.model]);

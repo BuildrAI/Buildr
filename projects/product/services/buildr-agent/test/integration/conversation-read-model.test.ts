@@ -7,6 +7,8 @@ import path from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {ConversationRepository,CONVERSATION_SCHEMA_VERSION} from '../../src/persistence/conversation-repository.ts';
 import {ConversationReadModel} from '../../src/persistence/conversation-read-model.ts';
+import {ConversationEntryStore} from '../../src/persistence/conversation-entry-store.ts';
+import {writeLegacyConversationDatabase} from '../support/legacy-conversation-database.ts';
 import {BUSY_STATES,unfinishedRun,type StoredConversation} from '../../src/domain/agent-state.ts';
 
 function fixture(t:TestContext){const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-read-model-'));const repo=new ConversationRepository(root);t.after(()=>{repo.stopReadModels();fs.rmSync(root,{recursive:true,force:true});});return repo;}
@@ -23,7 +25,7 @@ test('compact status exactly preserves pending semantics, including retained wor
  const db=new DatabaseSync(repo.filename,{readOnly:true});t.after(()=>db.close());
  for(const field of ['pending','active'])assert.match(JSON.stringify(db.prepare(`EXPLAIN QUERY PLAN SELECT state FROM conversation_read_states WHERE ${field}=1 ORDER BY updated_at DESC`).all()),/USING INDEX conversation_read_/);
  assert.equal(db.prepare('PRAGMA user_version').get()!.user_version,CONVERSATION_SCHEMA_VERSION);
- const old=new DatabaseSync(repo.filename);try{for(const r of records){r.view.revision+='-old';old.prepare('UPDATE conversations SET body=?,revision=? WHERE id=?').run(JSON.stringify(r),r.view.revision,r.view.id);}}finally{old.close();}
+ const old=new DatabaseSync(repo.filename);try{for(const r of records){r.view.revision+='-old';assert.throws(()=>old.prepare('UPDATE conversations SET body=?,revision=? WHERE id=?').run(JSON.stringify(r),r.view.revision,r.view.id),/agent_storage_writer_incompatible/);}}finally{old.close();}
  for(const active of [false,true])assert.deepEqual(repo.listPendingStates(active).map(r=>r.view.id).sort(),records.filter(r=>priorPending(r,active)).map(r=>r.view.id).sort(),'old writer status must match all pending cases');
 });
 
@@ -42,27 +44,28 @@ test('page reads retrieve a bounded suffix and every original entry remains reac
  assert.deepEqual(all,JSON.parse(JSON.stringify(r.view.entries)));assert.deepEqual(repo.readConversation(r.view.id)!.view.entries,JSON.parse(JSON.stringify(r.view.entries)));
 });
 
-test('old body-only writers update status atomically, invalidate pages and retain exact original content',t=>{
+test('normalized writers update positions atomically and stale pages retain revision protection',t=>{
  const repo=fixture(t),r=record();r.view.entries=[{id:'tool',sequence:1,kind:'tool',role:'system',text:'x'.repeat(17000),createdAt:'now'}];repo.saveConversation(r);const preview=repo.readPage(r.view.id,undefined,undefined,true)!.view.entries[0];
  const db=new DatabaseSync(repo.filename);t.after(()=>db.close());r.view.run=run('waiting-question');r.view.revision='old-writer-2';r.view.entries[0].text+='new result';
- db.exec('BEGIN IMMEDIATE');db.prepare('UPDATE conversations SET body=?,revision=? WHERE id=?').run(JSON.stringify(r),r.view.revision,r.view.id);
+ db.exec('BEGIN IMMEDIATE');ConversationEntryStore.save(db,r);db.prepare('UPDATE conversations SET body=?,revision=? WHERE id=?').run(ConversationEntryStore.header(r),r.view.revision,r.view.id);
  const separate=new ConversationRepository(path.dirname(repo.filename));assert.equal(separate.listPendingStates().length,0,'uncommitted old output is not visible');separate.stopReadModels();db.exec('COMMIT');
  assert.equal(repo.listPendingStates(true)[0].view.revision,'old-writer-2');assert.equal(repo.readPage(r.view.id),undefined,'stale projected messages must never escape');
  assert.throws(()=>repo.readEntry(r.view.id,'tool',preview.detail!.revision),{code:'agent_entry_changed'});
  repo.rebuildReadModel(r.view.id);assert.deepEqual(repo.readPage(r.view.id)!.view.entries,r.view.entries);assert.equal(repo.readConversation(r.view.id)!.view.run?.status,'waiting-question');
- r.view.revision='old-writer-3';r.view.run=run('completed');db.prepare('UPDATE conversations SET body=?,revision=? WHERE id=?').run(JSON.stringify(r),r.view.revision,r.view.id);assert.equal(repo.listPendingStates(true).length,0);
+ r.view.revision='old-writer-3';r.view.run=run('completed');db.prepare('UPDATE conversations SET body=?,revision=? WHERE id=?').run(ConversationEntryStore.header(r),r.view.revision,r.view.id);assert.equal(repo.listPendingStates(true).length,0);
 });
 
-test('migration preserves legacy bodies and user_version; plain legacy reads are zero-write',t=>{
- const repo=fixture(t),r=record();r.view.entries=[{id:'m',sequence:1,kind:'message',role:'user',text:'original',createdAt:'now'}];repo.saveConversation(r);
- const db=new DatabaseSync(repo.filename);db.exec('DROP TRIGGER conversation_read_legacy_0;DROP TRIGGER conversation_read_legacy_1;DROP TRIGGER conversation_read_delete;DROP TRIGGER conversation_read_activity;DROP TABLE conversation_read_states;DROP TABLE conversation_read_entries;');const body=db.prepare('SELECT body FROM conversations WHERE id=?').get(r.view.id)!.body;db.close();
+test('legacy reads are zero-write and verified migration preserves content before deleting its backup',t=>{
+ const repo=fixture(t),r=record();r.view.entries=[{id:'m',sequence:1,kind:'message',role:'user',text:'original',createdAt:'now'}];
+ writeLegacyConversationDatabase(repo.filename,[r]);
  const before=fs.readFileSync(repo.filename);assert.equal(repo.readPage(r.view.id),undefined);repo.listPendingStates();assert.deepEqual(fs.readFileSync(repo.filename),before);
- repo.rebuildReadModel(r.view.id);const check=new DatabaseSync(repo.filename,{readOnly:true});t.after(()=>check.close());assert.equal(check.prepare('SELECT body FROM conversations WHERE id=?').get(r.view.id)!.body,body);assert.equal(check.prepare('PRAGMA user_version').get()!.user_version,CONVERSATION_SCHEMA_VERSION);assert.deepEqual(repo.readPage(r.view.id)!.view.entries,r.view.entries);
+ repo.rebuildReadModel(r.view.id);const check=new DatabaseSync(repo.filename,{readOnly:true});t.after(()=>check.close());assert.equal(check.prepare('PRAGMA user_version').get()!.user_version,CONVERSATION_SCHEMA_VERSION);assert.deepEqual(repo.readPage(r.view.id)!.view.entries,r.view.entries);
+ assert.deepEqual(repo.readConversation(r.view.id)!.view.entries,r.view.entries);assert.equal(fs.readdirSync(path.dirname(repo.filename)).some(name=>name.startsWith('conversations.pre-v5-')),false);
 });
 
 test('status and projected pages do not parse canonical bodies, even when unrelated history is unreadable',t=>{
  const repo=fixture(t),r=record();r.view.entries=[{id:'m',sequence:1,kind:'message',role:'user',text:'visible',createdAt:'now'}];repo.saveConversation(r);const other=record('unrelated');repo.saveConversation(other);
- const db=new DatabaseSync(repo.filename);t.after(()=>db.close());db.exec('DROP TRIGGER conversation_read_legacy_1;DROP INDEX conversations_list_summary;');db.prepare('UPDATE conversations SET body=?').run('invalid original body');
+ const db=new DatabaseSync(repo.filename);t.after(()=>db.close());db.exec('DROP TRIGGER conversation_read_legacy_1;DROP TRIGGER conversation_body_format_update;DROP INDEX conversations_list_summary;');db.prepare('UPDATE conversations SET body=?').run('invalid original body');
  assert.deepEqual(repo.listPendingStates(),[]);assert.equal(repo.hasUnfinishedWork(),false);assert.equal(repo.readPage(r.view.id)!.view.entries[0].text,'visible');
 });
 
@@ -76,7 +79,7 @@ test('seen updates from new and retained writers reach projected pages and obser
  const repo=fixture(t),r=record();repo.saveConversation(r);const prior=r.view.revision;r.view.revision='r2';r.view.entries.push({id:'u',sequence:1,kind:'message',role:'user',text:'new message',createdAt:'now'});repo.saveConversation(r,prior);
  const version=r.view.activity!.version;repo.markSeen('ws',r.view.id,version);assert.equal(repo.readPage(r.view.id)!.view.activity!.seenThrough,version);assert.equal(repo.readRevision(r.view.id)!.seenThrough,version);
  const db=new DatabaseSync(repo.filename);t.after(()=>db.close());const summary=JSON.parse((db.prepare('SELECT summary FROM conversations WHERE id=?').get(r.view.id) as any).summary);summary.activity.seenThrough=0;db.prepare('UPDATE conversations SET summary=? WHERE id=?').run(JSON.stringify(summary),r.view.id);assert.equal(repo.readRevision(r.view.id)!.seenThrough,0);assert.equal(repo.readPage(r.view.id)!.view.activity!.seenThrough,0);
- db.exec('DROP TRIGGER conversation_read_legacy_1;DROP INDEX conversations_list_summary;');db.prepare('UPDATE conversations SET body=?').run('unreadable original');assert.equal(repo.readPage(r.view.id)!.view.entries[0].text,'new message');assert.equal(repo.readRevision(r.view.id)!.seenThrough,0);
+ db.exec('DROP TRIGGER conversation_read_legacy_1;DROP TRIGGER conversation_body_format_update;DROP INDEX conversations_list_summary;');db.prepare('UPDATE conversations SET body=?').run('unreadable original');assert.equal(repo.readPage(r.view.id)!.view.entries[0].text,'new message');assert.equal(repo.readRevision(r.view.id)!.seenThrough,0);
 });
 
 

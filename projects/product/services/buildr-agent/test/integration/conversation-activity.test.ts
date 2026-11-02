@@ -392,7 +392,7 @@ test('closing a released historical doubt dismisses attention while execution an
  save(repo,r,r=>{r.view.hidden=false;});assert.equal(repo.querySummaries(['w1'],{activeOnly:true,limit:10}).activityCounts.unknown,1,'an unhidden historical doubt is still discoverable');
 });
 
-test('the rebuildable list index preserves storage compatibility and follows older body-only writes',t=>{
+test('the rebuildable list index follows normalized writes and rejects incompatible body-only writes',t=>{
   const repo=fixture(t),draft=record('legacy-writer');
   repo.saveConversation(draft);
   const db=new DatabaseSync(repo.filename);
@@ -405,11 +405,11 @@ test('the rebuildable list index preserves storage compatibility and follows old
     // membership even if only the history changes and the summary is unchanged.
     message(draft,'sent','sent by an older writer');
     const write=db.prepare('UPDATE conversations SET body=? WHERE id=?');
-    write.run(JSON.stringify(draft),draft.view.id);
+    assert.throws(()=>write.run(JSON.stringify(draft),draft.view.id),/agent_storage_writer_incompatible/);
+    save(repo,draft,()=>{});
     assert.equal(repo.querySummaries(['w1'],{limit:5}).total,1);
     assert.equal(repo.listConversations('w1',{limit:5}).length,1);
-    draft.view.entries=[];
-    write.run(JSON.stringify(draft),draft.view.id);
+    save(repo,draft,r=>{r.view.entries=[];});
     assert.equal(repo.querySummaries(['w1'],{limit:5}).total,0);
 
     db.exec('DROP INDEX conversations_list_summary');
@@ -490,7 +490,7 @@ test('optional index construction cannot make an unrelated damaged history block
   repo.saveConversation(good);repo.saveConversation(damaged);
   const db=new DatabaseSync(repo.filename);
   try{
-    db.exec('DROP INDEX conversations_list_summary');
+    db.exec('DROP INDEX conversations_list_summary; DROP TRIGGER conversation_body_format_update');
     db.prepare('UPDATE conversations SET body=? WHERE id=?').run('damaged historical JSON',damaged.view.id);
   }finally{db.close();}
   save(repo,good,r=>{r.view.title='still writable';});

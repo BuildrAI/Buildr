@@ -21,7 +21,7 @@ export class ExecutorStorage {
     privateDirectory(connection);
     if (!safeStoragePath(this.root, connection)) throw new Error('agent_storage_path_unsafe');
     try {
-      for (const part of ['cache', 'cache/npm']) {
+      for (const part of ['cache', 'cache/npm', 'cache/node-compile']) {
         const directory = path.join(connection, part); privateDirectory(directory);
         if (!safeStoragePath(this.root, directory)) throw new Error('agent_storage_path_unsafe');
       }
