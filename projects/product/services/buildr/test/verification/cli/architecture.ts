@@ -246,7 +246,7 @@ if (fs.existsSync(registry)) {
   for (const descriptor of COMMAND_CATALOG) {
     if (!surfaces.has(descriptor.surface)) problems.push(`command has invalid surface: ${descriptor.key}`);
     if (!descriptor.summary?.trim()) problems.push(`command is missing summary: ${descriptor.key}`);
-    if (!Array.isArray(descriptor.help) || !descriptor.help.some((line: any) => line.startsWith('Usage:'))) problems.push(`command is missing canonical help: ${descriptor.key}`);
+    if (!Array.isArray(descriptor.help) || !descriptor.help.some((line: any) => /^(?:Usage:|用法：)/.test(line))) problems.push(`command is missing canonical help: ${descriptor.key}`);
     if (descriptor.executable && (typeof descriptor.match !== 'function' || typeof descriptor.run !== 'function')) problems.push(`executable command is missing match/run: ${descriptor.key}`);
     if (!descriptor.executable && (descriptor.match || descriptor.run)) problems.push(`aggregate command must not execute: ${descriptor.key}`);
   }

@@ -1,3 +1,4 @@
+import { createAgentCliContributions } from '../../modules/agent-service/interfaces/cli/agent.ts';
 import { createSourceInspectCli } from '../../modules/agent-assets/interfaces/cli/source-inspect.ts';
 import process from 'node:process';
 import { createRuntime, runtimeContributions } from '../runtime.ts';
@@ -61,6 +62,7 @@ const COMMAND_ROUTES: any[] = [
 ];
 
 const COMMAND_GROUPS: any[] = [
+  { key: "agent", surface: "primary", summary: "通过本机 Agent service 列出、发送、读取、回复、继续和停止对话。", help: ["用法：buildr agent <send|read|stop|list|reply|continue> [参数]", "", "使用 buildr help agent <子命令> 查看参数。"], executable: false },
   {
     key: "task",
     surface: "primary",
@@ -161,6 +163,7 @@ function createCommandCatalog(commandRegistry: any): any  {
 }
 
 export const COMMAND_REGISTRY = createCommandRegistry([
+  ...createAgentCliContributions(),
   ...createWorkspaceCliContributions(),
   ...createAgentAssetsCliContributions(),
   createSourceInspectCli(null),
