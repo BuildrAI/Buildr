@@ -419,6 +419,8 @@ export interface ConversationView {
   retainedRuns?: RunView[];
   requests: PendingRequestView[];
   nextEntryCursor?: number;
+  /** Bounded excerpt from a matching visible message; list observations only. */
+  searchSnippet?: string;
 }
 export interface HandoffRound {
   id: string; title: string; from: number; through: number;

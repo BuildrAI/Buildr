@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode } from 'react';
 import { Alert, Button, Spin } from 'antd';
 import { RightOutlined } from '@ant-design/icons';
 import { useAgentConversations } from './AgentConversationsContext';
@@ -11,12 +11,14 @@ type Props = {
   workspaceId: string; name: string; query: string; hidden: boolean; agent?: string; model?: string;
   headerProps?: ButtonHTMLAttributes<HTMLButtonElement>; className: string; onDragOver: HTMLAttributes<HTMLElement>['onDragOver']; onDrop: HTMLAttributes<HTMLElement>['onDrop'];
   renderRow(row: ConversationSummary): ReactNode;
+  onResult?(workspaceId:string,result:{total?:number;busy:boolean;error:boolean}):void;
 };
-export function ConversationHistoryGroup({workspaceId, name, query, hidden, agent, model, headerProps, renderRow, ...section}: Props) {
+export function ConversationHistoryGroup({workspaceId, name, query, hidden, agent, model, headerProps, renderRow, onResult, ...section}: Props) {
   const {api,historyCache:retainedCache,activityTick,activityWorkspaceTicks} = useAgentConversations();
   const [localCache]=useState(createConversationHistoryCache),historyCache=retainedCache??localCache;
   const [expanded, setExpanded] = useState(()=>!historyCache?.collapsed.has(workspaceId)), dragged = useRef(false), contentId = useId();
   const {page, busy, error, retry, retryLabel, loadMore} = useConversationHistoryPage(api, {workspaceId, query, hidden, agent, model}, HISTORY_GROUP_LIMIT, expanded,historyCache,activityWorkspaceTicks?'workspace:'+(activityWorkspaceTicks[workspaceId]??0):'global:'+activityTick);
+  useEffect(()=>{onResult?.(workspaceId,{total:page?.total,busy,error:Boolean(error)});},[onResult,workspaceId,page?.total,busy,error]);
   const rows = page?.conversations ?? [];
   const total = page?.total ?? rows.length;
   // The group already knows how many rows exist, so a reset window can show the

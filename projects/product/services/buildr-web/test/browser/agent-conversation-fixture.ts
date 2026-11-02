@@ -86,13 +86,28 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
       if(url.searchParams.get('activeOnly'))rows=rows.filter(active);
       else {const hidden=url.searchParams.get('hidden')==='true';rows=rows.filter(item=>active(item)||Boolean(item.hidden)===hidden);}
       if(url.searchParams.get('workspaceId'))rows=rows.filter(item=>item.workspaceId===url.searchParams.get('workspaceId'));
-      if(url.searchParams.get('query')){const query=url.searchParams.get('query')!.toLowerCase();rows=rows.filter(item=>String(item.title||'').toLowerCase().includes(query)||(item.entries||[]).some((entry:any)=>String(entry.text||'').toLowerCase().includes(query)));}
+      if(url.searchParams.get('agent')||url.searchParams.get('model')){
+        const agent=url.searchParams.get('agent'),model=url.searchParams.get('model');
+        rows=rows.filter(item=>['starting','running','stopping','tools-active'].includes(item.run?.status)&&(!agent||(item.run?.provider||'未指定')===agent)&&(!model||(item.run?.model||'未指定')===model));
+      }
+      const searchTerms=(url.searchParams.get('query')??'').trim().split(/\s+/).filter(Boolean).slice(0,6);
+      if(searchTerms.length){
+        const searchable=(entry:any,term:string)=>entry?.kind==='message'&&['user','assistant'].includes(entry.role)&&!entry.thinking&&String(entry.text||'').toLowerCase().includes(term);
+        rows=rows.filter(item=>searchTerms.every(term=>{const lower=term.toLowerCase();return String(item.title||'').toLowerCase().includes(lower)||(item.entries||[]).some((entry:any)=>searchable(entry,lower));}));
+      }
       if(reminderReadFailure&&category)return route.fulfill({status:503,json:{error:{code:'fixture_unavailable',message:'模拟分组读取失败'}}});
       const priority=(row:any)=>['waiting','unseen'].includes(state(row)??'')?2:active(row)?1:0;
       rows.sort((a:any,b:any)=>priority(b)-priority(a)||(b.activity?.userInputAt||b.updatedAt||'').localeCompare(a.activity?.userInputAt||a.updatedAt||'')||b.id.localeCompare(a.id));
       const total=rows.length,offset=Number(url.searchParams.get('cursor')||0),limit=Number(url.searchParams.get('limit')||(reminderPaging?100:30));
       const nextCursor=offset+limit<rows.length?String(offset+limit):undefined;
-      const result={conversations:rows.slice(offset,offset+limit),nextCursor,total,activityCounts,stats:{agents:statGroup('provider'),models:statGroup('model'),executions,modelExecutions}};
+      const snippetRows=rows.map(item=>{
+        if(!searchTerms.length)return item;
+        const title=String(item.title||'').toLowerCase();
+        if(searchTerms.some(term=>title.includes(term.toLowerCase())))return item;
+        const match=(item.entries||[]).find((entry:any)=>searchTerms.some(term=>entry?.kind==='message'&&['user','assistant'].includes(entry.role)&&!entry.thinking&&String(entry.text||'').toLowerCase().includes(term.toLowerCase())));
+        return match?{...item,searchSnippet:String(match.text||'').replace(/\s+/g,' ').slice(0,120)}:item;
+      });
+      const result={conversations:snippetRows.slice(offset,offset+limit),nextCursor,total,activityCounts,stats:{agents:statGroup('provider'),models:statGroup('model'),executions,modelExecutions}};
       if(activitySummary){
         const pending=[...(conversation&&!(conversation.hidden&&canCloseUncertainConversation(conversation))&&['waiting-approval','waiting-question','unknown','tools-active'].includes(conversation.run?.status)?[conversation]:[]),...additionalPending].map(item=>({conversationId:item.id,workspaceId:item.workspaceId,title:item.title,status:item.run?.status??'unknown',count:item.requests.length}));
         const payload={...result,pending},revision=createHash('sha256').update(JSON.stringify(payload)).digest('hex');

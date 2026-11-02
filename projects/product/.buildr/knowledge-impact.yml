@@ -1,22 +1,22 @@
 schemaVersion: buildr.knowledge-impact/v1
-task: conversation-file-cards
+task: conversation-search-refine
 operation: reconcile
 impacts:
   - type: reference
     target: knowledge/code-map/technical-layers.md
-    reason: 增加已展示文件声明与历史兼容、独立文件卡片、目的地语法解析的实际职责和源码引用。
+    reason: 更新对话搜索范围、命中片段、防抖、共享读取取消与模型统计筛选的实际职责和源码引用。
     status: updated
     sourceIdentities:
-      - services/buildr-agent/src/domain/presented-files.ts
-      - services/buildr-agent/src/application/conversation-application.ts
-      - services/buildr-web/src/features/agent-conversations/ConversationPresentedFiles.tsx
-      - services/buildr-web/src/lib/markdownDestination.ts
+      - services/buildr-agent/src/persistence/conversation-repository.ts
+      - services/buildr-web/src/features/agent-conversations/ConversationHistory.tsx
+      - services/buildr-web/src/features/agent-conversations/ConversationExecutionSummary.tsx
+      - services/buildr-web/src/api/shared-json-read.ts
   - type: reference
     target: knowledge/docs/architecture/agent-integration.md
-    reason: 补充明确成功文件输出、旧记录只读兼容及已登记来源读取边界，不把助手声称或文件声明当作任意读取授权。
+    reason: 说明搜索只匹配标题与用户/助手可见消息、命中片段、统计独立读取与模型筛选行为。
     status: updated
     sourceIdentities:
       - openspec/specs/agent-conversations/spec.md
-      - services/buildr-agent/src/domain/presented-files.ts
-      - services/buildr-web/src/features/agent-conversations/ConversationPanel.tsx
+      - openspec/specs/buildr-web-client/spec.md
+      - services/buildr-web/src/features/agent-conversations/ConversationHistory.tsx
 unresolvedItems: []

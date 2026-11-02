@@ -34,16 +34,17 @@ test('same-path readers share network, cancellation isolates a consumer and remo
   assert.equal(await next, 'new');
 });
 
-test('all active consumers leaving does not abort transport; new observer joins until completion', async () => {
-  let complete, signal, calls = 0;
-  const read = sharedConversationRead(async (_url, networkSignal) => {
-    calls++; signal = networkSignal; return new Promise(resolve => { complete = resolve; });
+test('last consumer leaving aborts transport; a new observer starts a fresh read', async () => {
+  const signals = [], releases = []; let calls = 0;
+  const read = sharedConversationRead((_url, networkSignal) => {
+    calls++; signals.push(networkSignal); return new Promise(resolve => releases.push(resolve));
   });
   const controller = new AbortController(), first = read('/same', controller.signal);
   await tick(); controller.abort(); await assert.rejects(first);
-  const next = read('/same');
-  assert.equal(signal.aborted, false); complete('new');
-  assert.equal(await next, 'new'); assert.equal(calls, 1);
+  assert.equal(signals[0].aborted, true);
+  const nextController = new AbortController(), next = read('/same', nextController.signal);
+  await tick(); assert.equal(calls, 2); assert.equal(signals[1].aborted, false);
+  nextController.abort(); await assert.rejects(next); assert.equal(signals[1].aborted, true);
 });
 
 test('different scope/query is never merged, failures are visible and not cached', async () => {

@@ -411,7 +411,7 @@ await step('列表手动从末条加载，整行折叠与拖动互不干扰',asy
     assert.equal(await group.getByRole('button',{name:'收起',exact:true}).count(),0);
     for(const n of [15,25,26]){await group.getByRole('button',{name:/加载更多/}).click();await count(n);}
     assert.deepEqual(groupCalls().slice(-3).map(row=>({limit:row.limit,cursor:row.cursor})),[{limit:10,cursor:'5'},{limit:10,cursor:'15'},{limit:10,cursor:'25'}]);assert.equal(await group.getByRole('button',{name:/加载更多/}).count(),0);
-    await header.click();await count(0);assert.equal(await header.getAttribute('aria-expanded'),'false');
+    await header.click();await count(0);assert.equal(await header.getAttribute('aria-expanded'),'false');assert.equal(await panel().getByText('没有匹配的对话',{exact:true}).count(),0,'折叠的单个分组不产生假空态');
     holdExpand=true;await header.press('Enter');await count(5);
     const expandMore=group.getByRole('button',{name:/加载更多/});await expandMore.waitFor();
     assert.equal(await expandMore.isDisabled(),true,'折叠后重新展开的首帧就显示加载更多，游标返回前不可点');
@@ -427,6 +427,53 @@ await step('列表手动从末条加载，整行折叠与拖动互不干扰',asy
     release?.();releaseExpand?.();fail=false;stale=false;fixture.additionalConversations=original;await page.unroute(matcher,intercept);
     const back=panel().getByRole('button',{name:'返回当前对话',exact:true});if(await back.isVisible())await back.click();await input().waitFor();
   }
+});
+
+await step('搜索只匹配标题与用户/助手消息，展示片段且统计读取不随关键词重发',async()=>{
+  const saved=structuredClone(fixture.conversation),additional=fixture.additionalConversations,at=new Date().toISOString();
+  const requests:Array<{limit:number;query:string|null}>=[];
+  const matcher='**/api/v1/app/agent-service/conversations?*';
+  const intercept=async(route:any)=>{const url=new URL(route.request().url());requests.push({limit:Number(url.searchParams.get('limit')),query:url.searchParams.get('query')});await route.fallback();};
+  try{
+    fixture.additionalConversations=[
+      {...structuredClone(saved),id:'search-message',title:'普通历史',revision:'search-message',updatedAt:at,entries:[{id:'search-message',sequence:1,kind:'message',role:'assistant',text:'这里有片段关键词和上下文',status:'completed',createdAt:at}],participants:[],run:run('completed'),requests:[],activity:undefined},
+      {...structuredClone(saved),id:'search-tool',title:'工具现场',revision:'search-tool',updatedAt:at,entries:[{id:'search-tool',sequence:1,kind:'tool',role:'system',text:'工具输出包含片段关键词',status:'completed',createdAt:at,name:'Bash'}],participants:[],run:run('completed'),requests:[],activity:undefined},
+    ];
+    update({title:'当前对话',run:run('completed'),requests:[],entries:[]});
+    await page.route(matcher,intercept);
+    await page.reload();await input().waitFor();
+    await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();
+    const search=panel().getByRole('textbox',{name:'搜索对话',exact:true});await search.fill('片段关键词');
+    await panel().locator('[data-conversation-id="search-message"] .ac-history-row-snippet').waitFor();
+    await page.waitForFunction(()=>!document.querySelector('[data-conversation-id="search-tool"]'));
+    assert.equal(await panel().locator('[data-conversation-id="search-tool"]').count(),0,'工具日志不参与搜索');
+    assert.ok((await panel().locator('[data-conversation-id="search-message"] .ac-history-row-snippet').textContent())?.includes('片段关键词'));
+    assert.equal(requests.filter(row=>row.limit===1&&row.query==='片段关键词').length,0,'统计读取不随搜索关键词重发');
+    await search.fill('完全不存在的关键词');
+    await panel().getByText('没有匹配的对话',{exact:true}).waitFor();
+  }finally{await page.unroute(matcher,intercept);fixture.additionalConversations=additional;fixture.conversation=saved;await page.reload();await input().waitFor();}
+});
+
+await step('完整列表的模型统计项可点击筛选并恢复',async()=>{
+  const saved=structuredClone(fixture.conversation),additional=fixture.additionalConversations,models:string[]=[];
+  let filteredStarted!:(()=>void);const filtered=new Promise<void>(resolve=>filteredStarted=resolve);
+  const matcher='**/api/v1/app/agent-service/conversations?*';
+  const intercept=async(route:any)=>{const model=new URL(route.request().url()).searchParams.get('model');if(model){models.push(model);if(model==='filter-model')filteredStarted();}await route.fallback();};
+  try{
+    fixture.additionalConversations=[];
+    update({title:'筛选现场',run:run('running','qoder',{model:'filter-model',modelAccountId:'filter-account'}),requests:[],entries:[]});
+    await page.route(matcher,intercept);
+    await page.reload();await input().waitFor();
+    await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();
+    const chip=panel().locator('.ac-execution-summary button').first();await chip.waitFor();
+    await chip.click();
+    await filtered;
+    await page.waitForFunction(()=>document.querySelector('.ac-execution-summary button')?.getAttribute('aria-pressed')==='true');
+    assert.ok(models.includes('filter-model'),'点击模型统计项应带模型条件读取列表');
+    await chip.click();
+    await page.waitForFunction(()=>!document.querySelector('.ac-execution-filter'));
+    await page.waitForFunction(()=>document.querySelector('.ac-execution-summary button')?.getAttribute('aria-pressed')==='false');
+  }finally{await page.unroute(matcher,intercept);fixture.additionalConversations=additional;fixture.conversation=saved;await page.reload();await input().waitFor();}
 });
 
 await step('首个回复前使用本轮实际智能体和模型，切换草稿或刷新不改写历史',async()=>{

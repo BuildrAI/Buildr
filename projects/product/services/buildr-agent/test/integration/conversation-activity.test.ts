@@ -112,6 +112,28 @@ test('global summary is scoped, active first by message time, paginated, and cur
   repo.markSeen('w1','a',a.view.activity!.version);assert.equal(repo.querySummaries(['w1','w2'],{limit:10}).total,1);
   assert.equal(repo.querySummaries(['w1','w2'],{limit:10,hidden:true}).total,2);
 });
+test('search matches titles and visible messages only, ANDs terms, and returns a bounded snippet',t=>{
+  const repo=fixture(t);
+  const entry=(r:StoredConversation,id:string,kind:'message'|'tool'|'notice',role:'user'|'assistant'|'system',text:string,extra:{thinking?:boolean}={})=>{
+    r.view.entries.push({id,sequence:r.view.entries.length+1,kind,role,text,createdAt:r.view.updatedAt,...extra});
+  };
+  const titleOnly=record('title-only');titleOnly.view.title='标题包含命中词和另一个词';entry(titleOnly,'title-only-entry','message','user','普通内容');
+  const visible=record('visible');visible.view.title='普通标题';entry(visible,'visible-message','message','user','这里包含命中词');
+  const both=record('both');both.view.title='普通标题二';entry(both,'both-message','message','assistant','这里同时包含命中词和另一个词');
+  const tool=record('tool');tool.view.title='工具现场';entry(tool,'tool-message','tool','system','命中词和另一个词');
+  const notice=record('notice');notice.view.title='通知现场';entry(notice,'notice-message','notice','system','命中词和另一个词');
+  const thinking=record('thinking');thinking.view.title='思考现场';entry(thinking,'thinking-message','message','assistant','命中词和另一个词',{thinking:true});
+  for(const r of [titleOnly,visible,both,tool,notice,thinking])repo.saveConversation(r);
+  const search=(query:string)=>repo.querySummaries(['w1'],{limit:10,query});
+  assert.deepEqual(search('命中词').conversations.map(row=>row.id).sort(),['both','title-only','visible']);
+  assert.deepEqual(search('命中词 另一个词').conversations.map(row=>row.id).sort(),['both','title-only']);
+  assert.deepEqual(search('缺乏第二个词').conversations.map(row=>row.id),[]);
+  assert.equal(search('命中词').conversations.find(row=>row.id==='title-only')?.searchSnippet,undefined);
+  const snippet=search('命中词').conversations.find(row=>row.id==='visible')?.searchSnippet;
+  assert.ok(snippet?.includes('命中词'));assert.ok(snippet!.length<=120);assert.ok(!snippet!.includes('另一个词'));
+  assert.deepEqual(repo.listConversations('w1',{limit:10,query:'命中词'}).map(r=>r.view.id).sort(),['both','title-only','visible']);
+});
+
 test('legacy reads are zero-write, upgrade establishes seen baseline, then counts only new messages',t=>{
   const repo=fixture(t),r=record();message(r,'old','historical');
   const db=new DatabaseSync(repo.filename);db.exec('CREATE TABLE connections(id TEXT PRIMARY KEY,provider TEXT,revision TEXT,body TEXT); CREATE TABLE conversations(id TEXT PRIMARY KEY,workspace_id TEXT,task_id TEXT,hidden INTEGER,updated_at TEXT,revision TEXT,body TEXT); PRAGMA user_version=1;');

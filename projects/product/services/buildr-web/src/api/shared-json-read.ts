@@ -1,5 +1,5 @@
 type Read = <T>(url: string, signal: AbortSignal) => Promise<T>;
-type Flight = { promise: Promise<unknown>; consumers: number; started: boolean };
+type Flight = { promise: Promise<unknown>; consumers: number; started: boolean; url: string; abort: AbortController };
 
 /** Only in-flight JSON observations are shared; never writes, blobs or streams. */
 export function sharedJsonRead(send: Read) {
@@ -8,13 +8,18 @@ export function sharedJsonRead(send: Read) {
     if (signal?.aborted) return Promise.reject(signal.reason);
     let flight = flights.get(url);
     if (!flight) {
-      const next: Flight = { consumers: 0, started: false, promise: Promise.resolve() };
+      const abort = new AbortController();
+      const timer = setTimeout(() => abort.abort(new DOMException('Read timed out', 'TimeoutError')), 15_000);
+      const next: Flight = { consumers: 0, started: false, promise: Promise.resolve(), url, abort };
       next.promise = new Promise<void>(resolve => setTimeout(resolve, 0)).then(async () => {
         // Effect cleanup (including StrictMode's probe) can finish before any I/O.
         if (!next.consumers) throw new DOMException('Read no longer observed', 'AbortError');
         next.started = true;
-        return send<T>(url, AbortSignal.timeout(15_000));
-      }).finally(() => { if (flights.get(url) === next) flights.delete(url); });
+        return send<T>(url, abort.signal);
+      }).finally(() => {
+        clearTimeout(timer);
+        if (flights.get(url) === next) flights.delete(url);
+      });
       flights.set(url, next);
       flight = next;
     }
@@ -27,8 +32,12 @@ export function sharedJsonRead(send: Read) {
         settled = true;
         signal?.removeEventListener('abort', abort);
         current.consumers--;
-        // A short-lived abandoned read must not poison a newly mounted consumer.
-        if (!current.consumers && !current.started && flights.get(url) === current) flights.delete(url);
+        // The last observer owns the request: abandon it so a cancelled search
+        // cannot keep scanning history in the background.
+        if (!current.consumers) {
+          if (flights.get(current.url) === current) flights.delete(current.url);
+          if (current.started) current.abort.abort(new DOMException('Read no longer observed', 'AbortError'));
+        }
         if (error) reject(value); else resolve(value as T);
       };
       const abort = () => finish(true, signal?.reason);

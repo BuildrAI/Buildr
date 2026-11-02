@@ -15,6 +15,16 @@ const SCHEMA_VERSION = CONVERSATION_SCHEMA_VERSION;
 const HAS_WORK = "(json_array_length(json_extract(body,'$.view.entries'))>0 OR json_array_length(json_extract(body,'$.attempts'))>0 OR json_type(body,'$.view.run')='object' OR json_type(body,'$.view.childOf')='object')";
 // Legacy/offline readers must inspect optional JSON fields without materializing a full record.
 const HAS_UNFINISHED = "EXISTS(SELECT 1 FROM json_each(body,'$.view.retainedRuns') AS retained WHERE json_extract(retained.value,'$.status') IN ('starting','running','waiting-approval','waiting-question','stopping','unknown','tools-active') OR EXISTS(SELECT 1 FROM json_each(retained.value,'$.tools') AS tool WHERE COALESCE(json_extract(tool.value,'$.status'),'unknown')<>'completed')) OR json_array_length(body,'$.view.requests')>0 OR json_extract(body,'$.view.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','unknown','tools-active') OR EXISTS(SELECT 1 FROM json_each(body,'$.view.run.tools') AS tool WHERE COALESCE(json_extract(tool.value,'$.status'),'unknown')<>'completed') OR json_extract(body,'$.view.titleState.status')='generating'";
+const SEARCH_TERM_LIMIT = 6;
+const SEARCH_ENTRY = "(json_extract(entry.value,'$.kind')='message' AND json_extract(entry.value,'$.role') IN ('user','assistant') AND coalesce(json_extract(entry.value,'$.thinking'),0)=0 AND instr(lower(json_extract(entry.value,'$.text')),lower(?))>0)";
+const searchTerms = (query?: string) => (query ?? '').trim().split(/\s+/).filter(Boolean).slice(0, SEARCH_TERM_LIMIT);
+const searchClause = (terms: string[], title: string, body: string) => terms.map(() => `(instr(lower(${title}),lower(?))>0 OR EXISTS(SELECT 1 FROM json_each(${body},'$.view.entries') AS entry WHERE ${SEARCH_ENTRY}))`).join(' AND ');
+const searchSnippet = (terms: string[]) => {
+  const text = "json_extract(entry.value,'$.text')";
+  const starts = terms.map(() => `CASE WHEN instr(lower(${text}),lower(?))>0 THEN instr(lower(${text}),lower(?)) ELSE 1000000 END`).join(',');
+  const match = terms.map(() => `instr(lower(${text}),lower(?))>0`).join(' OR ');
+  return `(SELECT substr(${text},max(1,min(${starts},1000000)-40),120) FROM json_each(body,'$.view.entries') AS entry WHERE json_extract(entry.value,'$.kind')='message' AND json_extract(entry.value,'$.role') IN ('user','assistant') AND coalesce(json_extract(entry.value,'$.thinking'),0)=0 AND (${match}) ORDER BY entry.key LIMIT 1)`;
+};
 
 /** Sole owner of the application's private interaction database. Reads never initialize it. */
 export class ConversationRepository {
@@ -234,10 +244,8 @@ export class ConversationRepository {
       if (!options.includeHidden) where.push('hidden=0');
       if (options.taskId) { where.push("(EXISTS(SELECT 1 FROM json_each(read_state,'$.view.taskLinks') WHERE json_extract(value,'$.workspaceId')=? AND json_extract(value,'$.taskId')=?) OR (json_type(read_state,'$.view.taskLinks') IS NULL AND workspace_id=? AND ((json_type(read_state,'$.view.taskIds') IS NULL AND task_id=?) OR EXISTS(SELECT 1 FROM json_each(read_state,'$.view.taskIds') WHERE value=?))))"); values.push(workspaceId,options.taskId,workspaceId,options.taskId,options.taskId); }
       if (options.parentConversationId) { where.push("json_extract(read_state,'$.view.childOf.conversationId')=?"); values.push(options.parentConversationId); }
-      if (options.query) {
-        where.push("(instr(lower(json_extract(read_state,'$.view.title')),lower(?))>0 OR EXISTS(SELECT 1 FROM json_each(body,'$.view.entries') AS entry WHERE instr(lower(json_extract(entry.value,'$.text')),lower(?))>0))");
-        values.push(options.query, options.query);
-      }
+      const terms = searchTerms(options.query);
+      if (terms.length) { where.push(searchClause(terms, "json_extract(read_state,'$.view.title')", 'body')); for (const term of terms) values.push(term, term); }
       if (options.before) { where.push('(updated_at || \'/\' || id) < ?'); values.push(options.before); }
       values.push(options.limit);
       return (db.prepare(`SELECT read_state${modern?',summary':''} FROM ${source} WHERE ${where.length?where.join(' AND '):'1'} ORDER BY updated_at DESC,id DESC LIMIT ?`).all(...values) as {read_state:string;summary?:string}[]).map(row=>{
@@ -369,7 +377,8 @@ export class ConversationRepository {
       }
       if(input.activeOnly)where.push('(list_active=1 OR pending_decision_count>0)');
       else {where.push('(list_active=1 OR pending_decision_count>0 OR hidden=?)');values.push(Number(input.hidden===true));}
-      if(input.query){where.push("(instr(lower(json_extract(summary,'$.title')),lower(?))>0 OR EXISTS(SELECT 1 FROM json_each(body,'$.view.entries') AS e WHERE instr(lower(json_extract(e.value,'$.text')),lower(?))>0))");values.push(input.query,input.query);}
+      const terms=searchTerms(input.query);
+      if(terms.length){where.push(searchClause(terms,"json_extract(summary,'$.title')",'body'));for(const term of terms)values.push(term,term);}
       if(input.agent||input.model)where.push("effective_status IN ('starting','running','stopping','tools-active')");
       if(input.agent){where.push("coalesce(nullif(json_extract(summary,'$.run.provider'),''),'未指定')=?");values.push(input.agent);}
       if(input.model){where.push("coalesce(nullif(json_extract(summary,'$.run.model'),''),'未指定')=?");values.push(input.model);}
@@ -389,9 +398,11 @@ export class ConversationRepository {
         if(!cursor||typeof cursor!=='object'||cursor.scope!==scope||cursor.epoch!==epoch||typeof cursor.at!=='string'||typeof cursor.id!=='string'||![0,1,2].includes(cursor.priority))fail('agent_cursor_stale','对话列表顺序已变化，请刷新后继续。',409);
         where.push('(sort_priority < ? OR (sort_priority=? AND (activity_at < ? OR (activity_at=? AND id < ?))))');values.push(cursor.priority,cursor.priority,cursor.at,cursor.at,cursor.id);
       }
-      const rows=db.prepare(`SELECT summary,sort_priority,list_active,user_at,activity_at,pending_decision_count,id FROM ${source} WHERE ${where.join(' AND ')} ORDER BY sort_priority DESC,activity_at DESC,id DESC LIMIT ?`).all(...values,input.limit+1) as Array<{summary:string;sort_priority:number;list_active:number;user_at:string;activity_at:string;pending_decision_count:number;id:string}>;
+      const snippet=terms.length?`, ${searchSnippet(terms)} AS search_snippet`:'';
+      const snippetValues=terms.length?[...terms.flatMap(term=>[term,term]),...terms]:[];
+      const rows=db.prepare(`SELECT summary,sort_priority,list_active,user_at,activity_at,pending_decision_count,id${snippet} FROM ${source} WHERE ${where.join(' AND ')} ORDER BY sort_priority DESC,activity_at DESC,id DESC LIMIT ?`).all(...snippetValues,...values,input.limit+1) as Array<{summary:string;sort_priority:number;list_active:number;user_at:string;activity_at:string;pending_decision_count:number;id:string;search_snippet?:string|null}>;
       const chosen=rows.slice(0,input.limit),last=chosen.at(-1);
-      return {conversations:chosen.map(row=>{const view=JSON.parse(row.summary) as ConversationView;return {...view,activity:view.activity?{...view.activity,userInputAt:row.user_at,updatedAt:row.activity_at,pendingDecisionCount:row.pending_decision_count,active:Boolean(row.list_active)||row.pending_decision_count>0}:undefined,entries:[],requests:[],run:view.run?{...view.run,tools:[]}:undefined,participants:view.participants.map(participant=>({...participant,contextId:''}))};}),total,activityCounts:{...counts},stats,nextCursor:rows.length>input.limit&&last?Buffer.from(JSON.stringify({scope,epoch,priority:last.sort_priority,at:last.activity_at,id:last.id})).toString('base64url'):undefined};
+      return {conversations:chosen.map(row=>{const view=JSON.parse(row.summary) as ConversationView;const snippetText=row.search_snippet?.replace(/\s+/g,' ').trim();return {...view,...(snippetText?{searchSnippet:snippetText}:{}),activity:view.activity?{...view.activity,userInputAt:row.user_at,updatedAt:row.activity_at,pendingDecisionCount:row.pending_decision_count,active:Boolean(row.list_active)||row.pending_decision_count>0}:undefined,entries:[],requests:[],run:view.run?{...view.run,tools:[]}:undefined,participants:view.participants.map(participant=>({...participant,contextId:''}))};}),total,activityCounts:{...counts},stats,nextCursor:rows.length>input.limit&&last?Buffer.from(JSON.stringify({scope,epoch,priority:last.sort_priority,at:last.activity_at,id:last.id})).toString('base64url'):undefined};
     }finally{db.close();}
   }
   markSeen(workspaceId:string,id:string,through:number): NonNullable<ConversationView['activity']> {
