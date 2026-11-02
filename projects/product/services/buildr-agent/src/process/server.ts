@@ -110,7 +110,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     if (name === 'conversations.listAll') {
       if (!Array.isArray(args[0])) throw new AgentServiceError('agent_process_input_invalid', '执行范围列表无效。');
       for (const key of args[0]) scope(sourceId, key);
-    } else if (name.startsWith('conversations.') && name !== 'conversations.pending') scope(sourceId, args[0]);
+    } else if (name.startsWith('conversations.') && !['conversations.pending','conversations.pendingSummary'].includes(name)) scope(sourceId, args[0]);
   }
   const channel = await listen(async (req, res) => {
     authorize(req, options.token);

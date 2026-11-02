@@ -102,6 +102,9 @@ test('lightweight pending read falls back only on explicit unsupported operation
  const connection=await connectAgentProcess({dataRoot:root,profileId:'fixture',sourceId:'minimal',runtime});t.after(()=>connection.disconnect());
  assert.deepEqual(await connection.operations.conversations.pendingSummary(),{conversations:[{conversationId:'chat',workspaceId:'scope',title:'work',status:'unknown',count:0}]});
  assert.deepEqual(calls,['conversations.pendingSummary','conversations.pending']);
+ failure='agent_host_source_mismatch';calls.length=0;
+ assert.equal((await connection.operations.conversations.pendingSummary()).conversations[0].conversationId,'chat');
+ assert.deepEqual(calls,['conversations.pendingSummary','conversations.pending']);
  failure='agent_operation_result_unknown';calls.length=0;
  await assert.rejects(connection.operations.conversations.pendingSummary(),{code:failure});assert.deepEqual(calls,['conversations.pendingSummary']);
 });

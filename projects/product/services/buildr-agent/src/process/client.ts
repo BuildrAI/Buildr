@@ -201,7 +201,11 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
       let result;
       try { result = await call('/operations', { contract: AGENT_EXECUTION_CONTRACTS.operations, sourceId: options.sourceId, operation: name, args }); }
       catch (error) {
-        if (name !== 'conversations.pendingSummary' || !(error instanceof AgentServiceError) || error.code !== 'agent_process_operation_invalid') throw error;
+        // Legacy owners scope-check unknown conversation operations before
+        // validating their name. Only this argument-free global read may use
+        // the already-supported global pending projection in either case.
+        if (name !== 'conversations.pendingSummary' || args.length !== 0 || !(error instanceof AgentServiceError)
+          || !['agent_process_operation_invalid','agent_host_source_mismatch'].includes(error.code)) throw error;
         const legacy = await call('/operations', { contract: AGENT_EXECUTION_CONTRACTS.operations, sourceId: options.sourceId, operation: 'conversations.pending', args: [] });
         result = { conversations: legacy.conversations.map(pendingConversationSummary) };
       }
