@@ -75,3 +75,20 @@ test('不足一屏保持顶部，流式输出溢出后跟随最新',()=>{
  node.scrollHeight=900;hook.followLayout();assert.equal(node.scrollTop,300);assert.equal(bottom.current,true);
  node.scrollHeight=450;hook.followLayout();assert.equal(node.scrollTop,0);
 });
+
+test('连续异步排版与输入框增高复用同一贴底记录，不误判为用户上翻',()=>{
+ const {node,bottom,position,hook}=fixture();
+ node.scrollHeight=4200;hook.followLayout();assert.equal(node.scrollTop,3700);
+ // The composer reduces the viewport before the previous scroll event arrives.
+ node.clientHeight=350;node.scrollHeight=4250;hook.followLayout();hook.onScroll();
+ assert.equal(node.scrollTop,3900);assert.equal(position.current,3900);assert.equal(bottom.current,true);
+ node.scrollHeight=4278;hook.followLayout();hook.onScroll();
+ assert.equal(node.scrollTop,3928);assert.equal(bottom.current,true);
+ node.clientHeight=500;node.scrollTop=3778;hook.onScroll();hook.followLayout();
+ assert.equal(node.scrollTop,3778);assert.equal(bottom.current,true);
+});
+test('用户已上翻时输入框增高和异步内容增长不会抢回底部',()=>{
+ const {node,bottom,hook}=fixture();node.scrollTop=1600;hook.onScroll();assert.equal(bottom.current,false);
+ node.clientHeight=300;node.scrollHeight=4300;hook.followLayout();
+ assert.equal(node.scrollTop,1600);assert.equal(bottom.current,false);
+});

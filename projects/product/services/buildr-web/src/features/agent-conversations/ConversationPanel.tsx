@@ -134,6 +134,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
     const overflow=element.getBoundingClientRect().bottom-node.getBoundingClientRect().bottom+12;
     if(overflow>0)node.scrollTop+=overflow;
     bottom.current=node.scrollHeight-node.scrollTop-node.clientHeight<=24;
+    earlier.remember();
     setAtBottom(bottom.current);
   },[]);
   const selectedSourceModel=context.modelCatalog.find(model=>model.accountId===choice.modelAccountId&&model.modelId===choice.model&&(!choice.modelAccountIdentity||model.accountIdentity===choice.modelAccountIdentity));
@@ -187,15 +188,15 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   };
   useLayoutEffect(()=>{setError('');setFeedback('');setFileLinkFailure(null);setImageLink(null);setExpandedToolGroups({});const active=activeSend.current;if(!active||!context.isSelectionCurrent(active.selection)){activeSend.current=null;setSending(false);setPreparing(false);setPrepared(null);setSelectedHandoff(null);setPreviewOpen(false);}bottom.current=true;readPosition.current=0;setAtBottom(true);},[context.selectionGeneration,context.scope?.workspaceId,context.scope?.conversationId,context.isSelectionCurrent]);
   useEffect(()=>{setMoreOpen(false);setLocationOpen(false);},[context.selectionGeneration,context.open,context.side,context.full,context.view]);
-  useEffect(()=>{if(bottom.current)stream.current?.scrollTo({top:stream.current.scrollHeight});},[chat?.id,chat?.entries.length,chat?.entries.at(-1)?.text,chat?.requests.length,chat?.run?.status,chat?.pendingSend?.id]);
-  useLayoutEffect(()=>{if(stream.current?.getClientRects().length)stream.current.scrollTop=bottom.current?stream.current.scrollHeight:readPosition.current;},[portalTarget,context.view,context.open]);
+  useEffect(()=>{earlier.followLayout();setAtBottom(bottom.current);},[chat?.id,chat?.entries.length,chat?.entries.at(-1)?.text,chat?.requests.length,chat?.run?.status,chat?.pendingSend?.id]);
+  useLayoutEffect(()=>{const node=stream.current;if(!node?.getClientRects().length)return;if(bottom.current)earlier.followLayout();else{node.scrollTop=readPosition.current;earlier.remember();}setAtBottom(bottom.current);},[portalTarget,context.view,context.open]);
   const hasMessageList=Boolean(chat?.entries.length)&&!context.loading&&!context.error;
   useEffect(()=>{
     const node=stream.current,list=streamContent.current;
     if(!node?.getClientRects().length)return;
     // Layout settles after the first pin: the compose area grows and fonts or images reflow content.
     // While the reader sits at the bottom, follow every size change so refreshes land on the true bottom.
-    const observer=new ResizeObserver(()=>earlier.followLayout());
+    const observer=new ResizeObserver(()=>{earlier.followLayout();setAtBottom(bottom.current);});
     observer.observe(node);
     if(list)observer.observe(list);
     return()=>observer.disconnect();

@@ -683,6 +683,35 @@ await step('仅当前运行段悬浮，历史无嵌套卡片，结束失败停�
       await capture(page,'conversation-running-context-history.png');fixture.conversation=previous;await page.reload();await input().waitFor();
     });
 
+await step('刷新异步排版与输入框增高始终贴底，主动上翻保留阅读位置',async()=>{
+  const saved=structuredClone(fixture.conversation),viewport=page.viewportSize();
+  const stream=panel().locator('.ac-stream'),latest=panel().getByRole('button',{name:'向下到底',exact:true});
+  const settle=()=>page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())))));
+  const assertPinned=async()=>{
+    await settle();
+    const gap=await stream.evaluate((node:HTMLElement)=>node.scrollHeight-node.scrollTop-node.clientHeight);
+    assert.ok(gap<2,'应准确贴底：'+gap);assert.equal(await latest.count(),0,'跟随最新时不显示向下到底按钮');
+  };
+  try{
+    update({entries:[{id:'pin-user',sequence:1,kind:'message',role:'user',text:'检查贴底',createdAt:new Date().toISOString()},
+      {id:'pin-answer',sequence:2,kind:'message',role:'assistant',text:Array.from({length:48},(_,i)=>'刷新后应能完整看到最新内容 '+i).join('\n\n'),status:'completed',createdAt:new Date().toISOString()}],nextEntryCursor:undefined,run:run('completed')});
+    for(const width of [1280,390]){
+      await page.setViewportSize({width,height:900});await page.reload();await panel().locator('[data-entry-id="pin-answer"]').waitFor();await assertPinned();
+      // A late markdown/image layout pass after the initial scroll.
+      await panel().locator('[data-entry-id="pin-answer"]').evaluate((node:HTMLElement)=>{node.style.paddingBottom='47px';});await assertPinned();
+      const before=await stream.evaluate((node:HTMLElement)=>node.clientHeight);
+      await input().fill(Array.from({length:7},(_,i)=>'输入框增高 '+i).join('\n'));await assertPinned();
+      assert.ok(await stream.evaluate((node:HTMLElement)=>node.clientHeight)<before,'输入框实际占用了信息流可视高度');
+      await input().fill('');await assertPinned();
+      await stream.evaluate((node:HTMLElement)=>{node.scrollTop-=240;});await settle();await latest.waitFor();
+      const reading=await stream.evaluate((node:HTMLElement)=>node.scrollTop);
+      await input().fill('阅读历史时\n继续编辑\n不拉回底部');await settle();
+      assert.ok(Math.abs(await stream.evaluate((node:HTMLElement)=>node.scrollTop)-reading)<2,'编辑输入框不抢走历史阅读位置');
+      await input().fill('');await latest.click();await assertPinned();
+    }
+  }finally{fixture.conversation=saved;await input().fill('');await page.setViewportSize(viewport);await page.reload();await input().waitFor();}
+});
+
 await step('打开和刷新时补足首屏，折叠过程不占高度也能继续补页，填满即停止',async()=>{
   const saved=structuredClone(fixture.conversation),reads=fixture.entryReads;
   const entry=(sequence:number,runId:string,kind:string,role:string,text:string)=>({id:'fill-'+sequence,sequence,runId,kind,role,text,status:'completed',createdAt:new Date().toISOString()});
