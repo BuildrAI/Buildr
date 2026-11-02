@@ -163,7 +163,7 @@ test('continuation survives streaming, metadata, same-priority seen and out-of-s
     ()=>save(repo,outside,r=>{r.view.title='outside renamed';}),
     // Partial acknowledgement leaves this row unseen, so its priority is unchanged.
     ()=>{save(repo,rows[0],r=>{r.view.entries[1].text+=' another chunk';});repo.markSeen('w1',rows[0].view.id,1);},
-    ()=>save(repo,rows[0],r=>{r.view.run!.status='tools-active';}),
+    ()=>save(repo,rows[0],r=>{r.view.run!.status='stopping';}),
   ];
   for(const change of changes){
     assert.ok(page.nextCursor);change();
@@ -270,12 +270,12 @@ test('execution overview is full-scope, independent from search/page/filter and 
     repo.saveConversation(r);
   }
   const all=repo.querySummaries(['w1','w2'],{limit:1});
-  assert.equal(all.conversations.length,1);assert.deepEqual(all.stats.agents,[{label:'codex',count:2}]);
-  assert.deepEqual(all.stats.executions,[{provider:'codex',model:'actual-model',count:1},{provider:'codex',model:'未指定',count:1}]);
+  assert.equal(all.conversations.length,1);assert.deepEqual(all.stats.agents,[{label:'codex',count:1}]);
+  assert.deepEqual(all.stats.executions,[{provider:'codex',model:'actual-model',count:1}]);
   const search=repo.querySummaries(['w1','w2'],{limit:1,query:'no matching text',model:'actual-model'});
   assert.equal(search.total,0);assert.deepEqual(search.stats,all.stats);
   const missing=repo.querySummaries(['w1','w2'],{limit:10,model:'未指定'});
-  assert.equal(missing.total,1);assert.equal(missing.conversations[0].workspaceId,'w2');
+  assert.equal(missing.total,0);
   assert.deepEqual(repo.querySummaries(['w1','w2'],{limit:1,workspaceId:'w1'}).stats.agents,[{label:'codex',count:1}]);
 });
 
@@ -291,7 +291,7 @@ test('activity counts are exclusive, full-scope and filter before pagination wit
       r.view.run={id:'run-'+i,participantId:'p',provider:'codex',generation:'g',status,accepted:true,tools:[],model:'m',startedAt:r.view.updatedAt,updatedAt:r.view.updatedAt};
     });
   }
-  const counts={active:8,running:3,waiting:2,unseen:2,unknown:1,attention:5};
+  const counts={active:8,running:2,waiting:2,unseen:3,unknown:1,attention:6};
   const first=repo.querySummaries(['w1','w2'],{limit:1,activeOnly:true});
   assert.deepEqual(first.activityCounts,counts);
   const search=repo.querySummaries(['w1','w2'],{limit:1,query:'no result',hidden:false,model:'m'});
@@ -301,14 +301,14 @@ test('activity counts are exclusive, full-scope and filter before pagination wit
   assert.deepEqual(waiting.activityCounts,counts);
   assert.equal(repo.querySummaries(['w1','w2'],{limit:1,activityState:'waiting',cursor:waiting.nextCursor}).conversations[0].run?.status,'waiting-approval');
   assert.throws(()=>repo.querySummaries(['w1','w2'],{limit:1,activityState:'unseen',cursor:waiting.nextCursor}),/位置|顺序/);
-  assert.equal(repo.querySummaries(['w1','w2'],{limit:10,activityState:'attention'}).total,5);
+  assert.equal(repo.querySummaries(['w1','w2'],{limit:10,activityState:'attention'}).total,6);
   assert.equal(repo.querySummaries(['w1','w2'],{limit:10,workspaceId:'w1'}).activityCounts.unknown,0);
   assert.throws(()=>repo.querySummaries(['w1'],{limit:1,activityState:'invalid'}),/分类/);
   assert.equal(repo.readConversation('counts-4')?.view.activity?.seenThrough,0);
   repo.markSeen('w1','counts-4',1);
   assert.equal(repo.querySummaries(['w1','w2'],{limit:1}).activityCounts.waiting,2,'viewing a question does not answer it');
   repo.markSeen('w1','counts-5',1);
-  assert.equal(repo.querySummaries(['w1','w2'],{limit:1}).activityCounts.unseen,1);
+  assert.equal(repo.querySummaries(['w1','w2'],{limit:1}).activityCounts.unseen,2);
   const stale=repo.querySummaries(['w1','w2'],{limit:1,generation:'new'});
   assert.deepEqual(stale.activityCounts,{active:7,running:0,waiting:0,unseen:1,unknown:6,attention:7});
   assert.deepEqual(stale.stats.agents,[]);
@@ -359,7 +359,7 @@ test('execution model and agent pairs aggregate full scope without guessing acro
   }
   const page=repo.querySummaries(['w1'],{limit:1,query:'no match',activityState:'waiting'});
   assert.equal(page.conversations.length,0);
-  assert.deepEqual(page.stats.executions,[{provider:'codex',model:'shared-model',count:2},{provider:'qoder',model:'shared-model',count:1}]);
+  assert.deepEqual(page.stats.executions,[{provider:'codex',model:'shared-model',count:1},{provider:'qoder',model:'shared-model',count:1}]);
 });
 
 test('executing models aggregate by actual account across executors and expose user input time independently of replies',t=>{
@@ -566,4 +566,17 @@ test('后台新回复不改变同类分页边界，用户输入及有效答复�
  save(repo,a,r=>{r.view.updatedAt='2026-10-27T03:00:00Z';message(r,'reply-question','answer','notice');});
  assert.equal(repo.querySummaries(['w1'],{limit:1}).conversations[0].id,'a');
  assert.throws(()=>repo.querySummaries(['w1'],{limit:1,cursor:first.nextCursor}),/顺序/);
+});
+
+test('background-only old summaries are reinterpreted without writes and preserve unread and real work',t=>{
+ const repo=fixture(t),r=record('background');message(r,'input','start a server');
+ r.view.run={id:'bg',participantId:'p',provider:'dsh',generation:'g',status:'tools-active',executionState:'active',accepted:true,tools:[{id:'server',label:'bash',status:'running',canStop:true}],model:'m',startedAt:r.view.updatedAt,updatedAt:r.view.updatedAt};
+ repo.saveConversation(r);repo.markSeen('w1',r.view.id,r.view.activity!.version);
+ const db=new DatabaseSync(repo.filename);db.prepare("UPDATE conversations SET is_active=1,summary=json_set(summary,'$.activity.active',json('true')) WHERE id=?").run(r.view.id);db.close();
+ const before=fs.readFileSync(repo.filename),page=repo.querySummaries(['w1'],{limit:10});
+ assert.equal(page.conversations[0].activity!.active,false);assert.equal(page.conversations[0].run!.status,'tools-active');
+ assert.equal(page.activityCounts.running,0);assert.deepEqual(page.stats.agents,[]);
+ assert.equal(repo.querySummaries(['w1'],{limit:10,activeOnly:true}).total,0);assert.deepEqual(fs.readFileSync(repo.filename),before);
+ save(repo,r,r=>message(r,'answer','server started','message','assistant'));
+ assert.equal(repo.querySummaries(['w1'],{limit:10,activeOnly:true}).total,1);assert.equal(repo.querySummaries(['w1'],{limit:10}).activityCounts.unseen,1);
 });

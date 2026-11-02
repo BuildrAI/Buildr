@@ -58,3 +58,15 @@ test('nonblocking questions remain pending while execution and seen state are in
  assert.equal(pendingDecisionCount({...record.view,requests:[{...request,generation:'other'}]}),0);
  assert.equal(pendingDecisionCount({...record.view,requests:[]}),0);
 });
+
+test('model-ended background jobs do not keep read conversations active but decisions, unread and another model do',()=>{
+ const background={id:'background',status:'tools-active',executionState:'active',tools:[{id:'job',status:'running'}]};
+ const record={view:{run:background,requests:[],retainedRuns:[]},participants:[]} as unknown as StoredConversation;
+ assert.equal(summaryView(record,3,3,'now').activity!.active,false);
+ assert.equal(summaryView(record,4,3,'now').activity!.active,true);
+ record.view.requests=[{id:'question',runId:'background'} as any];assert.equal(summaryView(record,3,3,'now').activity!.active,true);
+ record.view.requests=[];record.view.retainedRuns=[background as any];record.view.run={...background,id:'latest',status:'completed',executionState:'ended',tools:[]} as any;
+ assert.equal(summaryView(record,3,3,'now').activity!.active,false);
+ record.view.run={...background,id:'model',status:'running'} as any;assert.equal(summaryView(record,3,3,'now').activity!.active,true);
+ assert.equal(background.tools[0].status,'running','background physical facts are preserved');
+});

@@ -1,3 +1,4 @@
+import {createServer} from 'node:http';
 import {mkdtemp,writeFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -418,4 +419,35 @@ test('DSH silently repairs one linked command and final reply completed during a
     assert.ok(f.visible.some(event=>event.type==='item'&&event.item.text==='final result'));
     assert.equal((await f.runtime.observe({contextRef,executionRef})).status,'idle');
   }finally{await f.runtime.close();}
+});
+
+test('DSH individually stops only the exact background job and retains state when confirmation fails',async()=>{
+ const f=reconnectFixture(),dir=await mkdtemp(join(tmpdir(),'dsh-stop-job-'));
+ let confirmed=false;const requests:any[]=[];
+ const server=createServer(async(req,res)=>{let body='';for await(const chunk of req)body+=chunk;requests.push({url:req.url,body:JSON.parse(body),auth:req.headers.authorization});res.setHeader('content-type','application/json');res.end(JSON.stringify({stopped:confirmed}));});
+ await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
+ try{
+  const address=server.address();assert.ok(address&&typeof address!=='string');
+  const addressFile=join(dir,'address.json');await writeFile(addressFile,JSON.stringify({port:address.port}));
+  const runtime=f.runtime as any;runtime.forkBridge={key:'test-key',addressFile};
+  const contextRef=await f.runtime.createContext({cwd:f.cwd}),executionRef={id:'stop-preview'};
+  const sending=f.runtime.send({contextRef,cwd:f.cwd,text:'work',images:[],clientRequestId:executionRef.id,onEvent:event=>f.visible.push(event)});sending.catch(()=>{});
+  await eventually(()=>f.visible.some(event=>event.type==='accepted'));
+  for(const [callId,jobId] of [['preview','preview-job'],['server','server-job']]){
+   f.publish({type:'tool/call',data:{turn:1,callId,name:'bash'}});
+   f.publish({type:'tool/result',data:{turn:1,message:{toolCallId:callId,content:[]}}});
+   f.publish({type:'job/registered',data:{turn:1,jobId,owner:contextRef.id,toolCall:{callId}}});
+  }
+  await eventually(()=>runtime.turns.get(contextRef.id).lineage.toolJobs('preview',new Set([executionRef.id])).length);
+  assert.equal((await f.runtime.observe({contextRef,executionRef})).tools.find(t=>t.id==='preview')?.canStop,true);
+  await assert.rejects(f.runtime.stop({contextRef,executionRef,toolId:'preview'}),/unconfirmed/);
+  assert.equal((await f.runtime.observe({contextRef,executionRef})).tools.find(t=>t.id==='preview')?.status,'running');
+  confirmed=true;const result=await f.runtime.stop({contextRef,executionRef,toolId:'preview'});
+  assert.equal(result.tools.find(t=>t.id==='preview')?.status,'completed');
+  assert.equal(result.tools.find(t=>t.id==='server')?.status,'running');
+  assert.deepEqual(requests.map(r=>r.body.jobIds),[['preview-job'],['preview-job']]);assert.ok(requests.every(r=>r.url==='/stop-jobs'&&r.auth==='Bearer test-key'));
+  f.publish({type:'job/settled',data:{jobId:'server-job',status:'completed'}});
+  f.publish({type:'turn/end',data:{turn:1,reason:{kind:'completed'}}});await sending;
+  runtime.forkBridge=undefined;
+ }finally{await f.runtime.close();await new Promise<void>(resolve=>server.close(()=>resolve()));await rm(dir,{recursive:true,force:true});}
 });

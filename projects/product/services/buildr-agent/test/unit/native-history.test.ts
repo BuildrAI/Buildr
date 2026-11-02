@@ -247,3 +247,19 @@ test('DSH merges only explicitly linked jobs and keeps native job controls',()=>
   lineage.record({type:'job/settled',data:{jobId:'linked'}});
   assert.equal(lineage.mergeTools([{id:'call',label:'bash',status:'completed'}],owners)[0].status,'completed');
 });
+
+test('DSH individual stop resolves linked tool and synthetic job only within its owning execution',()=>{
+ const lineage=new DshExecutionLineage('session');
+ lineage.record({type:'turn/start',data:{turn:1}});
+ lineage.record({type:'user/message',data:{turn:1,source:{kind:'user',rpcId:'first'}}});
+ lineage.record({type:'job/registered',data:{turn:1,jobId:'preview',owner:'session',toolCall:{callId:'bash'}}});
+ lineage.record({type:'turn/start',data:{turn:2}});
+ lineage.record({type:'user/message',data:{turn:2,source:{kind:'user',rpcId:'second'}}});
+ lineage.record({type:'job/registered',data:{turn:2,jobId:'server',owner:'session',toolCall:{callId:'server-call'}}});
+ assert.deepEqual(lineage.toolJobs('bash',new Set(['first'])),['preview']);
+ assert.deepEqual(lineage.toolJobs('dsh-job:preview',new Set(['first'])),['preview']);
+ assert.deepEqual(lineage.toolJobs('server-call',new Set(['first'])),[]);
+ lineage.record({type:'job/settled',data:{jobId:'preview'}});
+ assert.deepEqual(lineage.toolJobs('bash',new Set(['first'])),[]);
+ assert.deepEqual(lineage.toolJobs('server-call',new Set(['second'])),['server']);
+});

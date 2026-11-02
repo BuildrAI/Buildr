@@ -1,3 +1,14 @@
+/** Stop only proven jobs; do not cancel the model, goals, children or other jobs. */
+export async function stopDshJobs(ctx:any,sessionId:string,jobIds:readonly string[]):Promise<{stopped:boolean}> {
+  if(!jobIds.length||!ctx.jobs?.list||!ctx.jobs?.kill)throw new Error('dsh_stop_jobs_unavailable');
+  const jobs=ctx.jobs.list(sessionId);
+  if(jobIds.some(id=>!jobs.some((job:any)=>job.id===id&&job.owner===sessionId)))throw new Error('dsh_stop_jobs_unconfirmed');
+  for(const id of jobIds){
+    const job=jobs.find((job:any)=>job.id===id);
+    if(['running','stopping'].includes(job.status))await ctx.jobs.kill(id,sessionId,'cancelled by the user');
+  }
+  return {stopped:jobIds.every(id=>ctx.jobs.list(sessionId).some((job:any)=>job.id===id&&job.owner===sessionId&&['completed','failed','killed'].includes(job.status)))};
+}
 /** Runs inside the native host: use its owning services, never kill by a supplied PID. */
 export async function stopDshSessionTree(ctx:any,sessionId:string,childIds:readonly string[],jobIds:readonly string[]):Promise<{stopped:boolean;scopes:string[]}> {
   const root=ctx.agents.get(sessionId);

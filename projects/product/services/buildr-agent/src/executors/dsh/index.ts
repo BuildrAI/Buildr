@@ -42,6 +42,11 @@ export async function writeGatewayPatch(directory: string, gateway: ExecutorGate
   await writeFile(filename, JSON.stringify([{ id: 'llm-pi-ai', name: '@deepseek-ai/dsh-llm-pi-ai', config: { providers: { 'buildr-models': { displayName: 'Buildr', api: 'openai-responses', baseURL: gateway.baseUrl.replace(/\/$/, ''), apiKeyEnv: 'BUILDR_MODEL_GATEWAY_KEY', models } } } }]), { mode: 0o600 });
   return filename;
 }
+/** Native foreground deadlines kill; only explicit background services outlive the wait. */
+export function dshCommandDeadlinePatch() {
+  return [{id:'tool-bash',name:'@deepseek-ai/dsh-tool-bash',config:{promoteOnTimeout:false}},
+    {id:'tool-pwsh',name:'@deepseek-ai/dsh-tool-pwsh',config:{promoteOnTimeout:false}}];
+}
 interface ActiveTurn { lineage: DshExecutionLineage; accepted?: boolean; lastSeq?: number; inputIds?: Set<string>; restoring?: Promise<void>; reconnects?: number; retryTimer?: ReturnType<typeof setTimeout>; reject?: (error: Error) => void; observationDiagnostic?: string; observationLost?: boolean; stopRequested?: boolean; stopConfirmed?:boolean; stopping?:Promise<ExecutorObservation>; cancellation?: Promise<void>; supplementInputs?: Set<string>; supplementAdmissions?: number; supplementUnknown?: boolean; pendingEnd?: any; finish?: () => void; id: string; input: ExecutorSendInput; nativeTurn?: number; contextWindow?: number; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown' }>; pending: Map<string, { request: ExecutorRequest; resolve?: (value: string) => void; answer?: (value: { answers: any[] }) => void; reject?: (error: Error) => void; wait?: any }>; stream?: any; pump?: Promise<void>; streamAttempt?: { id: string; turn: number; step: number; nextIndex: number; text: string }; }
 export function createDshExecutor(): AgentExecutor { return { readPersistedExecution: readDshPersistedExecution, storage: { transientDirectories: ['home/.npm/_cacache'] }, descriptor: { id: 'dsh', label: 'DSH', capabilities }, open: options => DshRuntime.open(options) }; }
 export class DshRuntime implements AgentRuntime {
@@ -91,6 +96,8 @@ export class DshRuntime implements AgentRuntime {
     if(modelBridge){patch=join(config,'buildr-native-model-owner.json');await writeFile(patch,JSON.stringify([{insert:[{id:'buildr-deepseek-model-owner',name:fileURLToPath(new URL(import.meta.url.endsWith('.ts')?'./model-source-plugin.ts':'./model-source-plugin.js',import.meta.url)),config:{addressFile:modelBridge.addressFile}}]}]),{mode:0o600});}
     const forkPatch = join(config, 'buildr-fork-patch-'+randomUUID()+'.json');
     const patches = patch ? JSON.parse(await readFile(patch, 'utf8')) : [];
+    patches.push(...dshCommandDeadlinePatch());
+    patches.push({insert:[{id:'buildr-command-deadline',name:fileURLToPath(new URL(import.meta.url.endsWith('.ts')?'./command-deadline-plugin.ts':'./command-deadline-plugin.js',import.meta.url))}]});
     patches.push({insert:[{id:'buildr-interaction',name:fileURLToPath(new URL(import.meta.url.endsWith('.ts')?'./interaction-plugin.ts':'./interaction-plugin.js',import.meta.url)),config:{instructions:(options.interaction??interactionPolicy).instructions}}]});
     patches.push({insert:[{id:'buildr-fork-transfer',name:fileURLToPath(new URL(import.meta.url.endsWith('.ts')?'./fork-transfer-plugin.ts':'./fork-transfer-plugin.js',import.meta.url)),config:{addressFile:forkBridge.addressFile}}]});
     await writeFile(forkPatch, JSON.stringify(patches), {mode:0o600});
@@ -593,7 +600,7 @@ export class DshRuntime implements AgentRuntime {
     turn.cancellation=work;return work;
   }
   private activeObservation(turn: ActiveTurn): ExecutorObservation {
-    const tools = turn.lineage.mergeTools([...turn.tools.values()], turn.inputIds ?? new Set([turn.id])).map(tool => ({ ...tool, canStop: false })); return { status: turn.observationLost || turn.supplementUnknown ? 'unknown' : turn.terminal ? tools.some(tool => tool.status === 'running') ? 'tools-active' : tools.some(tool=>tool.status==='unknown')?'unknown': turn.terminal === 'stopped' ? 'stopped' : 'idle' : turn.pending.size ? 'waiting' : 'running', executionRef: this.executionReference(turn.id,turn.input.contextRef.id), tools: turn.observationLost ? tools.map(tool => ({ ...tool, status: tool.status === 'running' ? 'unknown' as const : tool.status })) : tools, requests: [...turn.pending.values()].map(value => value.request), ...(turn.stopRequested&&turn.diagnostic?{diagnostic:turn.diagnostic}:turn.observationLost ? { diagnostic: '无法确认 DSH 原执行状态，自动恢复未成功。' + (turn.observationDiagnostic ? ' 原因：' + turn.observationDiagnostic : '') } : turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) };
+    const tools = turn.lineage.mergeTools([...turn.tools.values()], turn.inputIds ?? new Set([turn.id])).map(tool => ({ ...tool, canStop: Boolean(this.forkBridge && turn.lineage.toolJobs(tool.id,turn.inputIds ?? new Set([turn.id])).length) })); return { status: turn.observationLost || turn.supplementUnknown ? 'unknown' : turn.terminal ? tools.some(tool => tool.status === 'running') ? 'tools-active' : tools.some(tool=>tool.status==='unknown')?'unknown': turn.terminal === 'stopped' ? 'stopped' : 'idle' : turn.pending.size ? 'waiting' : 'running', executionRef: this.executionReference(turn.id,turn.input.contextRef.id), tools: turn.observationLost ? tools.map(tool => ({ ...tool, status: tool.status === 'running' ? 'unknown' as const : tool.status })) : tools, requests: [...turn.pending.values()].map(value => value.request), ...(turn.stopRequested&&turn.diagnostic?{diagnostic:turn.diagnostic}:turn.observationLost ? { diagnostic: '无法确认 DSH 原执行状态，自动恢复未成功。' + (turn.observationDiagnostic ? ' 原因：' + turn.observationDiagnostic : '') } : turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) };
   }
   async observe({ contextRef, executionRef,knownItems=[] }: { contextRef: ContextRef; executionRef?: ExecutionRef;knownItems?:readonly ExecutorItem[] }): Promise<ExecutorObservation> {
     this.reference(contextRef); const turn = this.turns.get(contextRef.id);
@@ -650,12 +657,28 @@ export class DshRuntime implements AgentRuntime {
   async stop({ contextRef, executionRef, toolId }: { contextRef: ContextRef; executionRef: ExecutionRef; toolId?: string }): Promise<ExecutorObservation> {
     this.reference(contextRef); const turn = this.turns.get(contextRef.id);
     if (!turn || turn.id !== executionRef.id) throw new Error('停止尚未确认：当前连接未持有原轮执行，已保留原工具状态；请核对原执行。');
-    if (toolId) throw new Error('dsh_individual_tool_stop_unsupported');
+    if (toolId) return this.stopToolJobs(turn,toolId);
     turn.stopRequested=true;
     if(turn.stopConfirmed)return this.activeObservation(turn);
     if(turn.stopping)return turn.stopping;
     const stopping=this.stopWholeTurn(turn,executionRef).finally(()=>{if(turn.stopping===stopping)turn.stopping=undefined;});
     turn.stopping=stopping;return stopping;
+  }
+  private async stopToolJobs(turn:ActiveTurn,toolId:string):Promise<ExecutorObservation> {
+    const jobIds=turn.lineage.toolJobs(toolId,turn.inputIds??new Set([turn.id]));
+    if(!this.forkBridge||!jobIds.length)throw new Error('dsh_individual_tool_stop_unsupported');
+    const address=JSON.parse(await readFile(this.forkBridge.addressFile,'utf8'));
+    if(!Number.isInteger(address.port)||address.port<1||address.port>65535)throw new Error('dsh_stop_bridge_unavailable');
+    const response=await fetch('http://127.0.0.1:'+address.port+'/stop-jobs',{
+      method:'POST',headers:{authorization:'Bearer '+this.forkBridge.key,'content-type':'application/json'},
+      body:JSON.stringify({sessionId:turn.input.contextRef.id,jobIds}),signal:AbortSignal.timeout(2000),redirect:'error',
+    });
+    try{if(!response.ok||(await response.json()).stopped!==true)throw new Error('dsh_stop_jobs_unconfirmed');}
+    finally{await response.body?.cancel().catch(()=>{});}
+    for(const jobId of jobIds)turn.lineage.record({type:'job/settled',data:{jobId,status:'killed'}});
+    const tool=turn.tools.get(toolId);
+    if(tool?.status==='running')tool.status='unknown';
+    return this.activeObservation(turn);
   }
   private async stopWholeTurn(turn:ActiveTurn,executionRef:ExecutionRef):Promise<ExecutorObservation> {
     const owners=turn.inputIds??new Set([turn.id]);

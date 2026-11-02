@@ -299,7 +299,7 @@ export class ConversationRepository {
       const compactDecisions="json_extract(summary,'$.activity.pendingDecisionCount')";
       // New summaries stay on the covering index. Only legacy/mismatched rows
       // need their current request header (or canonical legacy body) inspected.
-      const historicalCandidate="is_active=1 AND EXISTS(SELECT 1 FROM json_each(summary,'$.retainedRuns') AS historical WHERE json_extract(historical.value,'$.resourcesReleased')=1)";
+      const historicalCandidate="is_active=1 AND (json_extract(summary,'$.run.status')='tools-active' OR EXISTS(SELECT 1 FROM json_each(summary,'$.retainedRuns') AS historical WHERE json_extract(historical.value,'$.resourcesReleased')=1 OR json_extract(historical.value,'$.status')='tools-active'))";
       const compatibility=modern?db.prepare(`SELECT max(${compactDecisions} IS NULL OR json_extract(summary,'$.revision')<>revision) AS decisions,max(${historicalCandidate}) AS historical FROM ${table} WHERE ${indexed?`${HAS_WORK} AND `:''}workspace_id IN (${ids.map(()=>'?').join(',')})`).get(...ids) as {decisions:number;historical:number}:undefined;
       const legacyDecisions=!modern || Boolean(compatibility?.decisions);
       let decisionCount=compactDecisions;
@@ -322,7 +322,7 @@ export class ConversationRepository {
       const retained = input.generation && generationAlive ? (db.prepare(`SELECT DISTINCT json_extract(summary,'$.run.generation') AS generation FROM ${storedSource} WHERE ${indexed?`${HAS_WORK} AND `:''}workspace_id IN (${ids.map(()=>'?').join(',')}) AND ${status} IN ('starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown')`).all(...ids) as Array<{generation:string|null}>).map(row=>row.generation).filter((generation):generation is string=>Boolean(generation&&generation!==input.generation&&generationAlive(generation))) : [];
       const generations = input.generation ? [...new Set([input.generation,...retained])].sort() : [];
       const effectiveStatus = generations.length ? `CASE WHEN coalesce(json_extract(summary,'$.run.generation'),'') NOT IN (${generations.map(()=>'?').join(',')}) AND ${status} IN ('starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown') THEN 'unknown' ELSE ${status} END` : status;
-      const state = `CASE WHEN pending_decision_count>0 THEN 'waiting' WHEN hidden=1 AND is_active=0 THEN NULL WHEN effective_status='unknown' THEN 'unknown' WHEN effective_status IN ('waiting-approval','waiting-question') THEN 'waiting' WHEN effective_status IN ('starting','running','stopping','tools-active') THEN 'running' WHEN activity_version>seen_version THEN 'unseen' ELSE NULL END`;
+      const state = `CASE WHEN pending_decision_count>0 THEN 'waiting' WHEN hidden=1 AND is_active=0 THEN NULL WHEN effective_status='unknown' THEN 'unknown' WHEN effective_status IN ('waiting-approval','waiting-question') THEN 'waiting' WHEN effective_status IN ('starting','running','stopping') THEN 'running' WHEN activity_version>seen_version THEN 'unseen' ELSE NULL END`;
       const source=`(SELECT *,CASE WHEN activity_state IN ('waiting','unseen') THEN 2 WHEN list_active=1 THEN 1 ELSE 0 END AS sort_priority FROM (SELECT *,${state} AS activity_state FROM (SELECT *,${effectiveStatus} AS effective_status FROM ${withDecisions})))`;
       // Resolved generations can change outside this scope. Any effect on the
       // actual filtered list is already captured by its membership/order keys.
@@ -342,10 +342,10 @@ export class ConversationRepository {
         FROM ${source} WHERE ${statsWhere.join(' AND ')}
       ), executing AS MATERIALIZED (
         SELECT provider,model,account_id,account_label FROM scoped
-        WHERE effective_status IN ('starting','running','stopping','tools-active')
+        WHERE effective_status IN ('starting','running','stopping')
       ) SELECT
         (SELECT json_object('active',count(activity_state),
-          'running',coalesce(sum(effective_status IN ('starting','running','stopping','tools-active')),0),
+          'running',coalesce(sum(effective_status IN ('starting','running','stopping')),0),
           'waiting',coalesce(sum(activity_state='waiting'),0),
           'unseen',coalesce(sum(activity_state='unseen'),0),
           'unknown',coalesce(sum(activity_state='unknown'),0),
@@ -372,14 +372,14 @@ export class ConversationRepository {
       };
       if(input.activityState) {
         if(!['running','waiting','unseen','unknown','attention'].includes(input.activityState))fail('agent_activity_state_invalid','活动分类无效。',400);
-        where.push(input.activityState==='attention'?"activity_state IN ('waiting','unseen','unknown')":input.activityState==='running'?"effective_status IN ('starting','running','stopping','tools-active')":'activity_state=?');
+        where.push(input.activityState==='attention'?"activity_state IN ('waiting','unseen','unknown')":input.activityState==='running'?"effective_status IN ('starting','running','stopping')":'activity_state=?');
         if(!['attention','running'].includes(input.activityState))values.push(input.activityState);
       }
       if(input.activeOnly)where.push('(list_active=1 OR pending_decision_count>0)');
       else {where.push('(list_active=1 OR pending_decision_count>0 OR hidden=?)');values.push(Number(input.hidden===true));}
       const terms=searchTerms(input.query);
       if(terms.length){where.push(searchClause(terms,"json_extract(summary,'$.title')",'body'));for(const term of terms)values.push(term,term);}
-      if(input.agent||input.model)where.push("effective_status IN ('starting','running','stopping','tools-active')");
+      if(input.agent||input.model)where.push("effective_status IN ('starting','running','stopping')");
       if(input.agent){where.push("coalesce(nullif(json_extract(summary,'$.run.provider'),''),'未指定')=?");values.push(input.agent);}
       if(input.model){where.push("coalesce(nullif(json_extract(summary,'$.run.model'),''),'未指定')=?");values.push(input.model);}
       // A continuation protects the filtered membership and ordering, not every

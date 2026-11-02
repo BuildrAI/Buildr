@@ -80,6 +80,19 @@ await step('单项停止只对原生明确可停止的命令开放，旧记录�
       }finally{await page.unroute(matcher,intercept);await page.setViewportSize({width:1600,height:1000});}
     });
 
+await step('仅后台作业不占执行中模型且历史保留后台状态',async()=>{
+      const at=new Date().toISOString();
+      update({run:run('tools-active','codex',{canContinue:true,executionState:'active',tools:[{id:'background-server',label:'bash',status:'running',canStop:true}]}),pendingSend:undefined,requests:[],activity:{version:1,seenThrough:1,active:false,updatedAt:at},entries:[{id:'bg-input',sequence:1,runId:'run-fixture',kind:'message',role:'user',text:'启动服务',createdAt:at},{id:'bg-answer',sequence:2,runId:'run-fixture',kind:'message',role:'assistant',text:'服务已启动',createdAt:at}]});
+      await reopen();
+      await panel().getByText('模型已结束，后台作业仍在运行',{exact:true}).waitFor();
+      await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();
+      await page.locator('.ac-history-meta').filter({hasText:'后台作业运行中'}).first().waitFor();
+      assert.match(await page.locator('.ac-execution-summary strong').innerText(),/执行中模型\s*0/);
+      assert.equal(await page.locator('.ac-history-list .ac-activity-status.is-running').count(),0);
+      await capture(page,'agent-background-only-history.png');
+      await page.locator('.ac-history-list button').first().click();await input().waitFor();
+    });
+
 await step('390px下对话输入、停止、历史与关闭可达且无页面横向溢出',async()=>{
       const divider=page.getByRole('separator',{name:'调整对话宽度',exact:true});await divider.press('Home');
       await chooseAgent('Codex');await chooseModel('Fixture model');await setHighEffort();await closeModelSettings();

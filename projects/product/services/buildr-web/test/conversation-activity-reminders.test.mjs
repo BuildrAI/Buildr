@@ -5,7 +5,7 @@ import {readFileSync,existsSync} from 'node:fs';
 import ts from 'typescript';
 import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
-import {groupConversationWorkspaces,orderActivityItems,activityBadge,activityReminder,activityState,reminderFallbackRows,completeActivitySnapshot} from '../src/features/agent-conversations/conversation-activity.ts';
+import {groupConversationWorkspaces,orderActivityItems,activityBadge,activityReminder,activityState,isExecuting,conversationMetadata,reminderFallbackRows,completeActivitySnapshot} from '../src/features/agent-conversations/conversation-activity.ts';
 import {conversationTierChoice} from '../src/features/agent-conversations/conversation-options.ts';
 
 registerHooks({
@@ -131,4 +131,11 @@ test('完整快照覆盖提醒组，截断、重复和失败快照不能替代�
   assert.equal(completeActivitySnapshot(rows,2,undefined,counts,'failed'),false);
   assert.equal(completeActivitySnapshot([],0,undefined,undefined,''),false);
   assert.equal(completeActivitySnapshot([],0,undefined,{...counts,active:0},''),true);
+});
+
+test('模型结束仅后台作业时不显示执行中，历史仍可辨认后台工作且未读继续提醒',()=>{
+ const row={id:'bg',workspaceId:'w',run:{status:'tools-active',provider:'dsh',model:'m'},activity:{active:false,version:2,seenThrough:2}};
+ assert.equal(isExecuting(row),false);assert.equal(activityState(row),null);assert.match(conversationMetadata(row),/后台作业运行中/);
+ assert.equal(activityState({...row,activity:{...row.activity,version:3}}),'unseen');assert.equal(isExecuting({...row,run:{...row.run,status:'running'}}),true);
+ const html=renderToStaticMarkup(React.createElement(ConversationActivityStatus,{state:activityState(row),executing:isExecuting(row)}));assert.doesNotMatch(html,/执行中/);
 });

@@ -35,7 +35,7 @@ test('后台可继续输入、保留旧执行和终态与执行事实冲突时�
   }
   assert.equal(groupConversationStream(entries,{id:'new',status:'running'},[pending]).filter(item=>item.type==='entry').length,0);
   const turn=conversationStreamTurns(groupConversationStream(entries,pending))[0];
-  assert.deepEqual(conversationTurnExecution(turn,pending),{current:true,active:true,waiting:'仍有工作在进行'});
+  assert.deepEqual(conversationTurnExecution(turn,pending),{current:true,active:true,waiting:'模型已结束，后台作业仍在运行'});
   assert.equal(conversationTurnExecution(turn,{...pending,resourcesReleased:true}).active,false);
   const ended=groupConversationStream(entries,{...pending,status:'completed',executionState:'ended',tools:[]});
   assert.equal(ended.at(-1).entry.id,'stage');

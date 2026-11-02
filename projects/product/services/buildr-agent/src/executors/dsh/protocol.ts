@@ -86,6 +86,9 @@ export class DshExecutionLineage {
   stopTargets(owners:ReadonlySet<string>):{childIds:string[];jobIds:string[]} {
     return {childIds:[...this.pendingChildren].filter(([,value])=>owners.has(value.owner)).map(([id])=>id),jobIds:[...this.jobs].filter(([,value])=>owners.has(value.owner)).map(([id])=>id)};
   }
+  toolJobs(toolId:string,owners:ReadonlySet<string>):string[] {
+    return [...this.jobs].filter(([id,job])=>owners.has(job.owner)&&(toolId==='dsh-job:'+id||job.callId===toolId)).map(([id])=>id);
+  }
 }
 export function dshItem(event: any): ExecutorItem[] {
   const data = event?.data ?? {}; const id = `event:${event?.seq}`;

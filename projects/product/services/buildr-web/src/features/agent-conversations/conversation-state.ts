@@ -288,7 +288,7 @@ export function conversationTurnExecution(turn:ConversationTurnItems,run?:Conver
   const background=run?.status==='tools-active'&&!run.resourcesReleased&&(run.executionState==='active'||(run.tools??[]).some(tool=>tool.status==='running'));
   const active=current&&Boolean(run&&(['starting','running'].includes(run.status)||background));
   const responded=Boolean(run&&entries.some(entry=>entry.runId===run.id&&(entry.role==='assistant'||entry.kind==='tool')));
-  return {current,active,...(active&&background?{waiting:'仍有工作在进行'}:active&&!responded?{waiting:run?.accepted?'已送达，等待智能体回应…':'正在准备连接并确认指令送达…'}:{})};
+  return {current,active,...(active&&background?{waiting:'模型已结束，后台作业仍在运行'}:active&&!responded?{waiting:run?.accepted?'已送达，等待智能体回应…':'正在准备连接并确认指令送达…'}:{})};
 }
 export function toolEntryHeadline(entry:ConversationEntry):string {
   return entry.text.split('\n',1)[0].trim();

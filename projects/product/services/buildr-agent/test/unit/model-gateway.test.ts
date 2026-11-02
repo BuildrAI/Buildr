@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { qoderGatewayPolicy, qoderGatewaySettings, type ExecutorGateway } from '../../src/executors/model-gateway.ts';
-import { dshGatewayEffort, dshGatewayModels } from '../../src/executors/dsh/index.ts';
+import { dshGatewayEffort, dshGatewayModels, dshCommandDeadlinePatch } from '../../src/executors/dsh/index.ts';
 
 const lease: ExecutorGateway = { identity: 'source/account/model/conversation', baseUrl: 'http://127.0.0.1:8317/v1', apiKey: 'local-only-lease', models: [{ id: 'opaque-model-route', label: 'GPT · Devin', contextWindow: 200000, maxOutputTokens: 32000, vision: true, tools: true, reasoningEfforts: [{ id: 'high', label: 'High' }], defaultReasoningEffort: 'high' }] };
 
@@ -70,4 +70,10 @@ test('DSH does not silently replace an unsupported default or treat it as no rea
   gateway.models[0].reasoningEfforts = [];
   assert.deepEqual(dshGatewayModels(gateway)[0].reasoningEfforts, false);
   assert.equal(dshGatewayEffort(gateway), undefined);
+});
+
+test('isolated DSH foreground deadline policy keeps explicit background capability intact',()=>{
+ const patches=dshCommandDeadlinePatch();assert.equal(patches.length,2);
+ for(const patch of patches){assert.equal(patch.config.promoteOnTimeout,false);assert.equal('enableRunInBackground' in patch.config,false);}
+ assert.deepEqual(patches.map(p=>p.id),['tool-bash','tool-pwsh']);
 });
