@@ -325,9 +325,11 @@ export function AgentConversationsProvider({children, client = agentConversation
         const next={...previous,activity:previous.activity&&previous.activity.version>result.activity.version?{...previous.activity,seenThrough:Math.max(previous.activity.seenThrough,result.activity.seenThrough)}:result.activity};
         conversationRef.current=next;setConversation(next);
       }
-      await refreshActivity();
+      // The open view already holds the acknowledged activity; the shared
+      // 5-second observation reconciles list rows and counts. Rereading here
+      // added a full summary per streamed version without changing what users see.
     }catch(error){setActivityError(error instanceof Error?error.message:'查看状态尚未保存。');}finally{seenInFlight.current.delete(key);}
-  },[client,refreshActivity]);
+  },[client]);
   const toggleView=useCallback((target:'conversation'|'history')=>{const next=nextConversationPanel(open,view,target);if(target==='history'&&next.open)setHistoryWorkspaceId(null);setView(next.view);setOpen(next.open);},[open,view,setOpen]);
   const toggle=useCallback(()=>setOpen(!open),[open,setOpen]);
   const shell=useMemo(()=>({open,view,full,pending,openGlobal,toggle,toggleView,setSettings}),[open,view,full,pending,openGlobal,toggle,toggleView]);
