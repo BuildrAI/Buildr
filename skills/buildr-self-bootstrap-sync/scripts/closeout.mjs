@@ -804,19 +804,30 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, b
 
 /** The installed launcher must run the development host Node, so build and verify with
  *  the executable the instance declares; the Node running this script may be a copy. */
-export function resolveDevelopmentNodeExecutable({ requested, actualNodeExecutable = process.execPath, environment = process.env } = {}) {
+export function resolveDevelopmentNodeExecutable({ requested, workspaceRoot, actualNodeExecutable = process.execPath, environment = process.env } = {}) {
   if (requested) {
     const resolved = path.resolve(requested);
     if (!fs.statSync(resolved, { throwIfNoEntry: false })?.isFile()) throw closeoutError('self-bootstrap-closeout.node-executable-missing', `指定的 Node 不存在：${resolved}。`, { nodeExecutable: resolved });
     return resolved;
   }
   const declared = declaredDevelopmentNode(environment);
-  for (const candidate of [declared, environment.BUILDR_NODE, actualNodeExecutable]) {
+  // A pending development-web recovery keeps the Node that was healthy before the
+  // instance record disappeared; reuse it so the recovery can still match.
+  for (const candidate of [declared, recoveryDevelopmentNode(workspaceRoot), environment.BUILDR_NODE, actualNodeExecutable]) {
     if (!candidate) continue;
     const resolved = path.resolve(candidate);
     if (fs.statSync(resolved, { throwIfNoEntry: false })?.isFile()) return resolved;
   }
   throw closeoutError('self-bootstrap-closeout.node-identity-mismatch', '找不到可用的开发宿主 Node。', { declared: declared ?? null });
+}
+
+function recoveryDevelopmentNode(workspaceRoot) {
+  if (!workspaceRoot) return null;
+  try {
+    const state = JSON.parse(fs.readFileSync(path.join(workspaceRoot, '.buildr', 'local', 'self-bootstrap-development-web-recovery.json'), 'utf8'));
+    const executable = state?.nodeExecutable;
+    return typeof executable === 'string' && executable ? executable : null;
+  } catch { return null; }
 }
 
 function declaredDevelopmentNode(environment) {
@@ -833,7 +844,7 @@ export function runSelfBootstrapCloseoutCommand({ args = process.argv.slice(2), 
   for (let index = 0; index < args.length; index += 2) if (!allowed.has(args[index])) throw closeoutError('self-bootstrap-closeout.option-unknown', `不支持的选项：${args[index]}。`);
   const workspaceRoot = option(args, '--target');
   if (!workspaceRoot) throw closeoutError('self-bootstrap-closeout.arguments-incomplete', '需要明确的工作空间。');
-  const nodeExecutable = resolveDevelopmentNodeExecutable({ requested: option(args, '--node-executable'), actualNodeExecutable, environment });
+  const nodeExecutable = resolveDevelopmentNodeExecutable({ requested: option(args, '--node-executable'), workspaceRoot, actualNodeExecutable, environment });
   const detail = option(args, '--detail') || 'compact';
   if (!['compact', 'full'].includes(detail)) throw closeoutError('self-bootstrap-closeout.detail-invalid', 'detail 只支持 compact 或 full。');
   const restart = option(args, '--restart-development-web') || 'false';
