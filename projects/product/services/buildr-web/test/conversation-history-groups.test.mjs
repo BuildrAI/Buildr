@@ -43,3 +43,53 @@ test('活动顺序变化不影响空间顺序，完整偏好在筛选后仍保�
   assert.deepEqual(historyGroupOrder(['w2', 'w3', 'w1'], preferred), preferred);
   assert.deepEqual(historyGroupOrder(['w2', 'w1'], ['w2', 'w2']), ['w2', 'w1']);
 });
+
+test('同页排序实时通知浮窗，存储失败仍同步，取消订阅释放通知', async () => {
+  const {subscribeHistoryGroupPreference} = await import('../src/features/agent-conversations/conversation-history-groups.ts');
+  const received=[];
+  const stop=subscribeHistoryGroupPreference(order=>received.push(order));
+  try {
+    assert.equal(writeHistoryGroupPreference(['w2','w1'],storage()),true);
+    assert.deepEqual(received,[['w2','w1']]);
+    assert.equal(writeHistoryGroupPreference(['w1','w2'],{setItem(){throw Error('denied');}}),false);
+    assert.deepEqual(received.at(-1),['w1','w2']);
+    writeHistoryGroupPreference(['other'],storage(),'other-profile');
+    assert.equal(received.length,2);
+  } finally {stop();}
+  writeHistoryGroupPreference(['w3'],storage());assert.equal(received.length,2);
+});
+
+test('跨页签仅同步当前配置，清理存储及卸载订阅均正确处理', async () => {
+  const {subscribeHistoryGroupPreference}=await import('../src/features/agent-conversations/conversation-history-groups.ts');
+  const oldWindow=globalThis.window,oldStorage=globalThis.localStorage,target=new EventTarget(),store=storage(),received=[];
+  globalThis.window=target;globalThis.localStorage=store;
+  const stop=subscribeHistoryGroupPreference(order=>received.push(order));
+  const send=(key,storageArea=store)=>target.dispatchEvent(Object.assign(new Event('storage'),{key,storageArea}));
+  try {
+    store.setItem('buildr.agent-conversation.history-groups:local',JSON.stringify(['w2','w1']));
+    send('unrelated');send('buildr.agent-conversation.history-groups:other');send('buildr.agent-conversation.history-groups:local',storage());
+    assert.equal(received.length,0);
+    send('buildr.agent-conversation.history-groups:local');assert.deepEqual(received,[['w2','w1']]);
+    store.data.clear();send(null);assert.deepEqual(received.at(-1),[]);
+    stop();send(null);assert.equal(received.length,2);
+  } finally {
+    stop();
+    if(oldWindow===undefined)delete globalThis.window;else globalThis.window=oldWindow;
+    if(oldStorage===undefined)delete globalThis.localStorage;else globalThis.localStorage=oldStorage;
+  }
+});
+
+test('浮窗沿用列表组序、过滤空组并保留组内待处理及用户输入排序', async () => {
+  const {groupConversationWorkspaces,orderActivityItems}=await import('../src/features/agent-conversations/conversation-activity.ts');
+  const rows=[
+    {id:'new',workspaceId:'w2',state:'running',userInputAt:'2026-11-03T12:00:00Z'},
+    {id:'waiting',workspaceId:'w2',state:'waiting',userInputAt:'2026-11-03T10:00:00Z'},
+    {id:'old',workspaceId:'w2',state:'running',userInputAt:'2026-11-03T09:00:00Z'},
+    {id:'other',workspaceId:'w1',state:'running',userInputAt:'2026-11-03T08:00:00Z'},
+    {id:'default',workspaceId:'@default',state:'unseen',userInputAt:'2026-11-03T13:00:00Z'},
+  ];
+  const groups=groupConversationWorkspaces(orderActivityItems(rows));
+  assert.deepEqual(historyGroupOrder([...groups.keys()],['empty','w1','w2']),['w1','w2','@default']);
+  assert.deepEqual(groups.get('w2').map(row=>row.id),['waiting','new','old']);
+  assert.deepEqual(historyGroupOrder([...groups.keys()],['w2','w1']),['w2','w1','@default']);
+});

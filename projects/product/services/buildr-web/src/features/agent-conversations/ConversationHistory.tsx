@@ -9,7 +9,8 @@ import { ConversationActivityStatus } from './ConversationActivityStatus';
 import { activityState,sendActivity, conversationMetadata } from './conversation-activity';
 import type { ExecutionFilter } from './ConversationExecutionStats';
 import { CopyButton } from '../../components/CopyButton';
-import { DEFAULT_HISTORY_GROUP, historyGroupOrder, moveHistoryGroup, readHistoryGroupPreference, writeHistoryGroupPreference } from './conversation-history-groups';
+import { DEFAULT_HISTORY_GROUP, historyGroupOrder, moveHistoryGroup, writeHistoryGroupPreference } from './conversation-history-groups';
+import { useHistoryGroupPreference } from './useHistoryGroupPreference';
 import type { ConversationSummary } from './types';
 import { ConversationHistoryGroup } from './ConversationHistoryGroup';
 import { useConversationHistoryPage } from './useConversationHistoryPage';
@@ -22,7 +23,7 @@ export function ConversationHistory({workspaces,defaultWorkspaceId}:{workspaces:
   const initial=context.historyWorkspaceId===undefined?defaultWorkspaceId??'':context.historyWorkspaceId??'';
   const [workspaceId,setWorkspaceId]=useState(initial),[query,setQuery]=useState(''),[hidden,setHidden]=useState(false),[filter,setFilter]=useState<ExecutionFilter>(null);
   const searchQuery=useDebouncedValue(query,250);
-  const [groupOrder,setGroupOrder]=useState<string[]>(readHistoryGroupPreference);
+  const groupOrder=useHistoryGroupPreference();
   const [preferenceError,setPreferenceError]=useState('');
   const [draggingGroup,setDraggingGroup]=useState(''),[dropGroup,setDropGroup]=useState(''),[dropAfter,setDropAfter]=useState(false);
   const [groupResults,setGroupResults]=useState<{scope:string;values:Record<string,HistoryGroupResult>}>({scope:'',values:{}});
@@ -53,7 +54,7 @@ export function ConversationHistory({workspaces,defaultWorkspaceId}:{workspaces:
   </div>;
   const order=historyGroupOrder([...workspaces.map(item=>item.id),DEFAULT_HISTORY_GROUP],groupOrder);
   const movable=order.filter(id=>id!==DEFAULT_HISTORY_GROUP);
-  const reorder=(moved:string,target:string|'end')=>{const next=moveHistoryGroup(order,moved,target);setGroupOrder(next);setPreferenceError(writeHistoryGroupPreference(next)?'':'顺序已调整，但无法保存；刷新后可能恢复原顺序。');};
+  const reorder=(moved:string,target:string|'end')=>{const next=moveHistoryGroup(order,moved,target);setPreferenceError(writeHistoryGroupPreference(next)?'':'顺序已调整，但无法保存；刷新后可能恢复原顺序。');};
   const keyboardMove=(id:string,step:number)=>{
     const index=movable.indexOf(id);if(index<0)return;
     if(step<0){if(index>0)reorder(id,movable[index-1]);return;}

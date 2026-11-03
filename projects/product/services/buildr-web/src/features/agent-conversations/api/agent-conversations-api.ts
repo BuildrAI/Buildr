@@ -1,3 +1,4 @@
+import { timeAttachmentStage } from './attachment-timing.ts';
 import type {WebhookSettingsView,WebhookSettingsInput,WebhookDeliveryResult} from '../types';
 import type { AgentParticipationParticipation, AgentParticipationSummaryParticipationSummary, AgentParticipationSummaryQueryParticipationSummaryQuery } from '../../../../build/generated/agent-service-http-dto';
 import { sharedConversationRead } from './shared-conversation-read.ts';
@@ -86,8 +87,8 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
     startDraft(workspaceId:string,id:string,input:StartDraftInput) {return request<{conversation:ConversationView}>(path(workspaceId)+'/drafts/'+encodeURIComponent(id)+'/send',post(input));},
     lookupDraft(workspaceId:string,id:string,requestId:string) {return request<{found:boolean;conversation?:ConversationView}>(path(workspaceId)+'/drafts/'+encodeURIComponent(id)+'/submissions/'+encodeURIComponent(requestId));},
     async uploadDraftImage(id:string,revision:string,file:File,metadata?:{frame?:boolean;video?:{duration:number;frames:Array<{id:string;time:number}>}}) {
-      const bytes=await file.arrayBuffer();
-      const send=()=>fetcher(path('@default')+'/drafts/'+encodeURIComponent(id)+'/attachments',{method:'POST',cache:'no-store',headers:{...session.writeHeaders(),'content-type':file.type,'x-buildr-draft-revision':revision,'x-buildr-image-name':encodeURIComponent(file.name),...(metadata?.frame?{'x-buildr-frame':'true'}:{}),...(metadata?.video?{'x-buildr-video':JSON.stringify(metadata.video)}:{})},body:bytes});
+      const bytes=await timeAttachmentStage('read-file',()=>file.arrayBuffer());
+      const send=()=>timeAttachmentStage('request',()=>fetcher(path('@default')+'/drafts/'+encodeURIComponent(id)+'/attachments',{method:'POST',cache:'no-store',headers:{...session.writeHeaders(),'content-type':file.type,'x-buildr-draft-revision':revision,'x-buildr-image-name':encodeURIComponent(file.name),...(metadata?.frame?{'x-buildr-frame':'true'}:{}),...(metadata?.video?{'x-buildr-video':JSON.stringify(metadata.video)}:{})},body:bytes}));
       let response=await send();
       if(response.status===403&&session.refreshSession){const body=await response.clone().json().catch(()=>null);if(body?.error?.code==='session_forbidden'&&await session.refreshSession())response=await send();}
       const body=await response.json();
@@ -125,9 +126,9 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
     observe(conversation: ConversationView) { return request<ConversationView>(path(conversation.workspaceId, conversation.id) + '/observe', post({})); },
     reply(conversation: ConversationView, requestId: string, input: {answer: unknown}) { const pending = conversation.requests.find(item => item.id === requestId); if (!pending) return Promise.reject(new Error('原请求已经变化，请重新读取。')); return request<ConversationView>(path(conversation.workspaceId, conversation.id) + `/requests/${encodeURIComponent(requestId)}/reply`, post({...input, expectedRevision: conversation.revision, runId: pending.runId, participantId: pending.participantId, generation: pending.generation})); },
     async upload(conversation: ConversationView, file: File, video?: { duration: number; frames: Array<{ id: string; time: number }> }) {
-      const bytes = await file.arrayBuffer();
+      const bytes = await timeAttachmentStage('read-file',()=>file.arrayBuffer());
       const revisionHeader:Record<string,string>=conversation.attachmentRevision?{'x-buildr-attachment-revision':conversation.attachmentRevision}:{'x-buildr-conversation-revision':conversation.revision};
-      const send = () => fetcher(path(conversation.workspaceId,conversation.id) + '/attachments', {method:'POST',cache:'no-store',headers:{...session.writeHeaders(),'content-type':file.type,...revisionHeader,...(video?{'x-buildr-video':JSON.stringify(video)}:{})},body:bytes});
+      const send = () => timeAttachmentStage('request',()=>fetcher(path(conversation.workspaceId,conversation.id) + '/attachments', {method:'POST',cache:'no-store',headers:{...session.writeHeaders(),'content-type':file.type,...revisionHeader,...(video?{'x-buildr-video':JSON.stringify(video)}:{})},body:bytes}));
       let response = await send();
       if(response.status===403 && session.refreshSession){const body=await response.clone().json().catch(()=>null);if(body?.error?.code==='session_forbidden' && await session.refreshSession())response=await send();}
       const body=await response.json();

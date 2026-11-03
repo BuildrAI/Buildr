@@ -1,13 +1,62 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import type {AgentConversationFixture} from './agent-conversation-fixture.ts';
+import {createAgentConversationFixture,type AgentConversationFixture} from './agent-conversation-fixture.ts';
 
 type ConversationScrollSample={at:number;top:number;height:number;viewport:number;visible:boolean;entries:number;listBottom:number|null;streamBottom:number|null};
 
 /** history 场景使用独立准备的对话现场。 */
 export async function runHistoryScenarios(fixture:AgentConversationFixture){
   const {capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
+await step('隐藏对话释放观察连接，恢复核对且附件仍可上传',async()=>{
+  const saved=structuredClone(fixture.conversation),beforeSends=fixture.sends;
+  const otherPage=await page.context().newPage();
+  const other=await createAgentConversationFixture({page:otherPage,workspaceUrl,workspaceRoot,otherWorkspaceId:fixture.otherWorkspaceId,capture,expectedBrowserErrors:fixture.expectedBrowserErrors});
+  let otherHidden=0,otherSends=0;
+  const visibility=async(value:string)=>page.evaluate((value:string)=>{Object.defineProperty(document,'visibilityState',{configurable:true,get:()=>value});document.dispatchEvent(new Event('visibilitychange'));},value);
+  try{
+    await other.step('隐藏对话释放观察连接—第二页签',async()=>{
+      await other.initialize('history');other.update({run:other.run('running'),requests:[]});await otherPage.reload();await other.input().waitFor();
+      await otherPage.evaluate(()=>{Object.defineProperty(document,'visibilityState',{configurable:true,get:()=> 'hidden'});document.dispatchEvent(new Event('visibilitychange'));});
+      await otherPage.waitForTimeout(1800);otherHidden=other.eventStreams;otherSends=other.sends;
+    });
+    await page.bringToFront();update({run:run('running'),requests:[]});await page.reload();await input().waitFor();
+    const before=fixture.eventStreams;await visibility('hidden');
+    await page.waitForTimeout(1800);const hidden=fixture.eventStreams;await page.waitForTimeout(1800);assert.equal(fixture.eventStreams,hidden,'隐藏时不重连');
+    const reads=fixture.conversationReads;update({run:run('completed')});await visibility('visible');
+    await page.waitForFunction(()=>document.querySelector('[data-run-status="completed"]')!==null);assert.ok(fixture.conversationReads>reads,'恢复先核对当前事实');
+    assert.ok(hidden>=before);assert.equal(fixture.sends,beforeSends,'观察不发送工作输入');
+    await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles({name:'connection-probe.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64')});
+    await panel().getByRole('button',{name:'移除图片 connection-probe.png',exact:true}).waitFor();
+    assert.equal(other.eventStreams,otherHidden,'第二页签保持暂停且前台完成上传');assert.equal(other.sends,otherSends);
+    const spans=await page.evaluate(()=>performance.getEntriesByType('measure').filter(e=>e.name.startsWith('buildr.attachment.')).map(e=>({name:e.name,duration:e.duration})));
+    assert.ok(spans.some((e:{name:string;duration:number})=>e.name==='buildr.attachment.read-file'));assert.ok(spans.some((e:{name:string;duration:number})=>e.name==='buildr.attachment.request'));assert.ok(spans.every((e:{name:string;duration:number})=>e.duration>=0));
+    await capture(page,'conversation-upload-after-visibility.png');await panel().getByRole('button',{name:'移除图片 connection-probe.png',exact:true}).dispatchEvent('click');
+  }finally{await other.dispose();await otherPage.close();await page.evaluate(()=>{delete (document as any).visibilityState;document.dispatchEvent(new Event('visibilitychange'));});fixture.conversation=saved;await page.reload();await input().waitFor();}
+});
+await step('列表调整空间顺序立即同步活动浮窗',async()=>{
+  const saved=fixture.additionalConversations,at=new Date().toISOString();
+  const registry=await (await page.request.get(new URL('/api/v1/workspaces',workspaceUrl).href)).json();
+  const otherId=registry.workspaces.find((entry:any)=>entry.workspace?.id&&entry.workspace.id!==workspaceId)?.workspace.id;assert.ok(otherId);
+  const make=(id:string,space:string)=>({...fixture.conversation,id,workspaceId:space,title:id,entries:[],requests:[],retainedRuns:[],run:run('running'),activity:{active:true,version:1,seenThrough:1,pendingDecisionCount:0,userInputAt:at,updatedAt:at}});
+  const rows=[make('排序当前',workspaceId),make('排序其他',otherId),make('排序默认','@default')];
+  const pattern='**/api/v1/app/agent-service/activity-summary*';
+  const route=async(route:any)=>route.fulfill({status:200,json:{revision:'popup-order',conversations:rows,pending:[],total:3,activityCounts:{active:3,running:3,waiting:0,unseen:0,unknown:0,attention:0},stats:{agents:[],models:[],executions:[],modelExecutions:[]}}});
+  try{
+    fixture.additionalConversations=rows;await page.route(pattern,route);await page.reload();await input().waitFor();
+    const entry=page.locator('button[aria-label^="所有对话，"]:visible').last();
+    for(const direction of ['Alt+ArrowUp','Alt+ArrowDown']){
+      await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();
+      await panel().locator('.ac-history-toolbar .ant-select-selector').click();await page.locator('.ant-select-dropdown:visible .ant-select-item-option-content').filter({hasText:/^全部工作空间$/}).click();
+      const header=panel().locator('[data-history-workspace="'+workspaceId+'"] .ac-history-group-toggle');await header.waitFor();await header.press(direction);
+      const expected=await panel().locator('[data-history-workspace]').evaluateAll((nodes:HTMLElement[])=>nodes.map(node=>node.dataset.historyWorkspace));
+      await panel().getByRole('button',{name:'返回当前对话',exact:true}).click();await entry.hover();
+      const menu=page.locator('.ac-activity-menu:visible');await menu.waitFor();
+      assert.deepEqual(await menu.locator('[data-activity-workspace]').evaluateAll((nodes:HTMLElement[])=>nodes.map(node=>node.dataset.activityWorkspace)),expected.filter((id:string|undefined)=>[workspaceId,otherId,'@default'].includes(id!)));
+      await capture(page,'conversation-popup-shared-order-'+direction.slice(4)+'.png');await page.mouse.move(0,0);await input().focus();await page.keyboard.press('Escape');
+    }
+  }finally{fixture.additionalConversations=saved;await page.unroute(pattern,route);await page.reload();await input().waitFor();}
+});
 await step('Buildr 参与两个入口暂时隐藏且不请求参与数据',async()=>{
   const saved=structuredClone(fixture.conversation),at=new Date().toISOString();
   let reads=0;

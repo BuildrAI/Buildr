@@ -525,9 +525,10 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
   const blockedConversationWrites: string[] = [];
   const pendingConversationRequests = new Set<Promise<void>>();
   const newBrowserPage = async () => {
-    // browser.newPage creates a fresh BrowserContext; storage and route
-    // fixtures never carry over from the previous conversation group.
-    const nextPage = await browser.newPage({ locale: 'zh-CN' });
+    // Each group owns a fresh context, permitting multi-tab journeys while
+    // keeping storage and route fixtures isolated from previous groups.
+    const context = await browser.newContext({ locale: 'zh-CN' });
+    const nextPage = await context.newPage();
     nextPage.on('pageerror', (error: any) => browserErrors.push(`pageerror ${nextPage.url()}: ${error.message}`));
     nextPage.on('console', (message: any) => { if (message.type() === 'error') browserErrors.push(`console.error ${nextPage.url()} [${message.location().url}]: ${message.text()}`); });
     nextPage.setDefaultTimeout(10_000);

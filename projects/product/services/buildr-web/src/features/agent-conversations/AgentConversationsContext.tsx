@@ -1,3 +1,5 @@
+import { usePageVisibility } from './usePageVisibility';
+import { modelCatalogRefreshMs } from './page-visibility';
 import { readParticipationRun } from './participation-navigation';
 import { locateConversationContent } from './conversation-reading';
 import { retainObservation } from './retain-observation.ts';
@@ -92,6 +94,7 @@ export function AgentConversationsProvider({children, client = agentConversation
       setActivityRows(result.conversations);setActivityCursor(result.nextCursor);
     }setActivityCounts(current=>retainObservation(current,result.activityCounts));setActivityStats(current=>retainObservation(current,result.stats));setActivityTotal(result.total??result.conversations.length);setActivityError('');if(signature!==activitySignature.current){activitySignature.current=signature;setActivityTick(value=>value+1);}}catch(error){if(generation===activityGeneration.current)setActivityError(error instanceof Error?error.message:'活动对话尚未更新，保留上次结果。');}},[client]);
   const loadMoreActivity=useCallback(async()=>{if(!activityCursor)return;const generation=activityGeneration.current;try{const result=await client.listAll({activeOnly:true,limit:100,cursor:activityCursor});if(generation!==activityGeneration.current)return;setActivityRows(previous=>[...previous,...result.conversations.filter(row=>!previous.some(item=>item.id===row.id&&item.workspaceId===row.workspaceId))]);setActivityCursor(result.nextCursor);}catch{await refreshActivity();}},[client,activityCursor,refreshActivity]);
+  const pageVisible=usePageVisibility();
   const [modelCatalog,setModelCatalog]=useState<CatalogModel[]>([]);
   const [modelCatalogReady,setModelCatalogReady]=useState(false),[modelCatalogError,setModelCatalogError]=useState('');
   const modelReadGeneration=useRef(0);
@@ -102,7 +105,7 @@ export function AgentConversationsProvider({children, client = agentConversation
   },[client]);
   useEffect(()=>{
     if(!open&&!settings)return;
-    const timer=setInterval(()=>{if(document.visibilityState==='visible')void refreshModelCatalog().catch(()=>{});},5000);
+    const timer=setInterval(()=>{if(document.visibilityState==='visible')void refreshModelCatalog().catch(()=>{});},modelCatalogRefreshMs(settings));
     return()=>clearInterval(timer);
   },[open,settings,refreshModelCatalog]);
   const previousSettings=useRef(settings);
@@ -147,7 +150,7 @@ export function AgentConversationsProvider({children, client = agentConversation
   const refreshConnections=useCallback(()=>discovery.refresh(),[discovery]);
   const refreshPending = useCallback(async () => { if(client.activitySummary){await refreshActivity();return;} void refreshActivity(); const result = await client.pending(); setPending(current=>retainObservation(current,result.conversations)); }, [client,refreshActivity]);
   const updateConnection = useCallback((value: ConnectionView) => {++connectionReadGeneration.current;setConnections(previous=>previous.some(item=>item.id===value.id)?previous.map(item=>item.id===value.id?value:item):[...previous,value]);},[]);
-  useEffect(() => { let active = true; const refresh = () => { void refreshModelCatalog().catch(()=>{});void refreshConnections().catch(() => {}); void refreshPending().catch(() => {}); }; refresh(); const interval = setInterval(() => {if (active && document.visibilityState === 'visible') void refreshPending().catch(() => {});}, 5000); const visible=()=>{if(document.visibilityState==='visible')refresh();}; document.addEventListener('visibilitychange',visible); window.addEventListener('focus', refresh); return () => { document.removeEventListener('visibilitychange',visible); active = false; ++activityGeneration.current; clearInterval(interval); window.removeEventListener('focus', refresh); }; }, [refreshConnections, refreshPending,refreshModelCatalog]);
+  useEffect(() => { let active = true; const refresh = () => { if(document.visibilityState==='hidden')return;void refreshModelCatalog().catch(()=>{});void refreshConnections().catch(() => {}); void refreshPending().catch(() => {}); }; refresh(); const interval = setInterval(() => {if (active && document.visibilityState === 'visible') void refreshPending().catch(() => {});}, 5000); const visible=()=>{if(document.visibilityState==='visible')refresh();}; document.addEventListener('visibilitychange',visible); window.addEventListener('focus', refresh); return () => { document.removeEventListener('visibilitychange',visible); active = false; ++activityGeneration.current; clearInterval(interval); window.removeEventListener('focus', refresh); }; }, [refreshConnections, refreshPending,refreshModelCatalog]);
   const openConversation = useCallback(async (workspaceId: string, conversationId: string,options:VisibilityOptions={}) => {
     const request = advanceSelection(); const nextScope = {workspaceId, conversationId}; scopeRef.current = nextScope; setScope(nextScope); setDraftScope(null); conversationRef.current=null; setConversation(null); setView('conversation'); if(!options.preserveVisibility)setVisibility(true); setLoading(true); setError(''); setStreamError(''); eventCursor.current = undefined; savePanel(visibility.current.open,nextScope);
     try { const next = await client.read(workspaceId, conversationId); if (request === serial.current && scopeRef.current?.conversationId === conversationId && scopeRef.current.workspaceId === workspaceId) apply(next); } catch (failure) { if (request === serial.current) setError(failure instanceof Error ? failure.message : '无法读取对话。'); } finally { if (request === serial.current) setLoading(false); }
@@ -184,11 +187,11 @@ export function AgentConversationsProvider({children, client = agentConversation
   },[activityRows,streamError,client,apply,getSelection,isSelectionCurrent]);
   useEffect(()=>{
     const readCurrent=()=>{
-      const before=conversationRef.current;if(!before)return;
+      const before=conversationRef.current;if(!before||document.visibilityState==='hidden')return;
       const selection=getSelection();
       void client.read(before.workspaceId,before.id).then(next=>{if(isSelectionCurrent(selection))apply(next,before.revision);}).catch(()=>{});
     };
-    window.addEventListener('focus',readCurrent);return()=>window.removeEventListener('focus',readCurrent);
+    window.addEventListener('focus',readCurrent);document.addEventListener('visibilitychange',readCurrent);return()=>{window.removeEventListener('focus',readCurrent);document.removeEventListener('visibilitychange',readCurrent);};
   },[client,apply,getSelection,isSelectionCurrent]);
   const observationKey=conversationObservationKey(conversation);
   const previousObservationKey=useRef<string|null>(null);
@@ -196,7 +199,7 @@ export function AgentConversationsProvider({children, client = agentConversation
     setStreamError('');setReconnecting(false);
     if(previousObservationKey.current!==observationKey)eventCursor.current=undefined;
     previousObservationKey.current=observationKey;
-    if (!scope || !observationKey) return;
+    if (!scope || !observationKey || !pageVisible) return;
     const selection=getSelection();
     const controller = new AbortController(); let generation: string | undefined;
     let retryTimer: ReturnType<typeof setTimeout> | undefined, failures = 0;
@@ -250,10 +253,10 @@ export function AgentConversationsProvider({children, client = agentConversation
         retryTimer=setTimeout(()=>{void connect(true);},15_000);
       }
     };
-    void connect();
+    void connect(true);
     return () => { controller.abort(); if (retryTimer) clearTimeout(retryTimer);setReconnecting(false); };
     // Ordinary snapshot changes must not recreate the subscriber or lose its cursor.
-  }, [client, scope?.workspaceId, scope?.conversationId, observationKey, observation, refreshPending, refreshConnections,apply,getSelection,isSelectionCurrent]);
+  }, [client, scope?.workspaceId, scope?.conversationId, observationKey, pageVisible, observation, refreshPending, refreshConnections,apply,getSelection,isSelectionCurrent]);
   useEffect(()=>{
     if(!scope||conversation?.run?.status!=='unknown')return;
     const selection=getSelection(),key=conversationObservationKey(conversation);
