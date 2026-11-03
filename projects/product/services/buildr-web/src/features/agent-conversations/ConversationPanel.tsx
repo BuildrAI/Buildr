@@ -1,4 +1,4 @@
-import { conversationSendRoute, refreshConversationSend } from './conversation-send-route';
+import { conversationSendRoute, latestConversationSend } from './conversation-send-route';
 import { BuildrParticipation } from './BuildrParticipation';
 import {conversationTaskLinks} from './conversation-associations';
 import type {ConversationTaskLink as TaskLink} from './types';
@@ -40,7 +40,7 @@ import { imageSelectionError } from './conversation-images';
 import { uploadConversationMaterials } from './conversation-material-upload';
 import {conversationPermissionKey,conversationPermissionStorageKey,conversationRunIdentity,permissionModeLabels,readConversationPermission,selectedConversationModel,selectedConversationPermission,supportsConversationPermission,validConversationChoice,writeConversationPermission,type ConversationChoice,type PermissionMode} from './conversation-options';
 import { appendDraftAttachment, canGenerateConversationTitle, conversationConflictNeedsRefresh, conversationTurnBinding, executionLocked, groupConversationStream, conversationStreamTurns, conversationTurnExecution, conversationTurnTiming, participantExecutionPairs, removeSubmittedAttachments, shouldSendOnKey, latestConversationParticipant, processBlockKey, type ConversationSelection } from './conversation-state';
-import { conversationActionKey, createConversationActions, createConversationInputAttempts } from './conversation-actions';
+import { conversationActionKey, createConversationActions, createConversationInputAttempts, reconcileConversationInputAttempt } from './conversation-actions';
 import { useNewConversationImages } from './useNewConversationImages';
 import { useConversationAttachments } from './useConversationAttachments';
 import { draftMaterialIds, firstConversationSubmissions, type FirstSubmission } from './conversation-first-submission';
@@ -142,7 +142,8 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   const selectedSourceModel=context.modelCatalog.find(model=>model.accountId===choice.modelAccountId&&model.modelId===choice.model&&(!choice.modelAccountIdentity||model.accountIdentity===choice.modelAccountIdentity));
   const effectiveModel=choice.model??selectedConversationModel(connection,undefined)?.id;
   const effectiveModelLabel=selectedSourceModel?.label||selectedConversationModel(connection,effectiveModel)?.label||effectiveModel||'默认模型';
-  const executionChanged=Boolean(chat?.run&&(lastParticipant?.connectionId!==choice.connectionId||chat.run.model!==effectiveModel||chat.run.modelAccountId!==choice.modelAccountId||chat.run.serviceTier!==choice.serviceTier||chat.run.reasoningEffort!==choice.reasoningEffort||(chat.run.permissionMode??'default')!==permissionMode));
+  const executionChangedFor=(value:ConversationView|null|undefined)=>Boolean(value?.run&&(latestConversationParticipant(value)?.connectionId!==choice.connectionId||value.run.model!==effectiveModel||value.run.modelAccountId!==choice.modelAccountId||value.run.serviceTier!==choice.serviceTier||value.run.reasoningEffort!==choice.reasoningEffort||(value.run.permissionMode??'default')!==permissionMode));
+  const executionChanged=executionChangedFor(chat);
   const waitingHandoffAvailable=Boolean(executionChanged&&chat?.run?.status==='waiting-question'&&handoffSelections[choiceKey]===chat.run.id&&currentConversationRequests(chat).length&&currentConversationRequests(chat).every(request=>request.kind==='question'&&request.runId===chat.run!.id&&request.participantId===chat.run!.participantId&&request.generation===chat.run!.generation)&&!chat.pendingSend);
   const waitingQuestions=currentConversationRequests(chat).filter(request=>request.kind==='question');
   const waitingHandoffLabel=draft.text.trim()||images.length?'交接并发送':'交接并继续';
@@ -374,33 +375,56 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
     try{
       if(!chat){await sendFirst(operation);return;}
       let current=chat;
-      if(!show&&!continueRunId&&!executionChanged){
-        const refreshed=await refreshConversationSend(current,{
+      const refreshLatest=async()=>{
+        const refreshed=await latestConversationSend(current,{
+          read:()=>context.api.read(current.workspaceId,current.id),
           observe:context.api.observe,
           apply:context.apply,
           isCurrent:()=>activeSend.current===operation&&context.isSelectionCurrent(operation.selection),
         });
-        if(!refreshed)return;
+        if(!refreshed)return false;
         current=refreshed;
-      }
+        return true;
+      };
+      if(!continueRunId&&!await refreshLatest())return;
       const pendingInput=inputAttempts.read(current);
-      if(pendingInput&&pendingInput.runId!==current.run?.id)throw new Error('上条追加消息的送达结果仍需核对，请勿作为新一轮重复发送。');
-      const route=!show&&pendingInput&&pendingInput.text===sendText?'supplement':conversationSendRoute(current,executionChanged,show);
+      if(!show&&!continueRunId&&pendingInput){
+        const result=await reconcileConversationInputAttempt(pendingInput,{
+          reconcile:attempt=>context.api.supplement(current,{text:attempt.text,attachmentIds:attempt.images.map(image=>image.id) as NonNullable<SendDraft['attachmentIds']>,clientRequestId:attempt.clientRequestId,sameRunOnly:true},attempt),
+          finish:requestId=>inputAttempts.finish(current,requestId),
+          isCurrent:()=>activeSend.current===operation&&context.isSelectionCurrent(operation.selection),
+        });
+        if(!result)return;
+        if('conversation' in result){context.apply(result.conversation,current.revision);current=result.conversation;}
+        if(result.delivery==='unknown')throw new Error('消息是否送达仍待确认，请勿重复发送；输入已保留。');
+        if(result.delivery==='accepted'||result.delivery==='continued'){
+          if(pendingInput.text===sendText&&JSON.stringify(pendingInput.images.map(image=>image.id))===JSON.stringify(requestImages.map(image=>image.id))){
+            draft.clearSubmitted(current.workspaceId,current.id,pendingInput.text);
+            setAttachments(previous=>({...previous,[current.id]:removeSubmittedAttachments(previous[current.id]||[],pendingInput.images.map(image=>image.id))}));
+            setFeedback('上条追加消息已确认接收，无需重复发送。');return;
+          }
+        }
+        if(!await refreshLatest())return;
+      }
+      const route=conversationSendRoute(current,executionChangedFor(current),show);
       if(route==='pending')throw new Error('原轮仍在等待回答或授权，请在原卡片处理；输入已保留，不会另开会话。');
       if(!show&&!continueRunId){
         if(route==='unavailable')throw new Error('原轮暂不能接收追加消息，请稍后核对；输入已保留，不会另开会话。');
         if(route==='supplement'){
           earlier.pinLatest();
           const attempt=inputAttempts.begin(current,sendText,requestImages);
-          const result=await context.api.supplement(current,{text:sendText,attachmentIds:requestImages.map(item=>item.id) as NonNullable<SendDraft['attachmentIds']>,clientRequestId:attempt.clientRequestId,sameRunOnly:true});
-          context.apply(result.conversation,current.revision);
-          if(result.delivery==='accepted'){
-            inputAttempts.finish(current,attempt.clientRequestId);
+          const result=await reconcileConversationInputAttempt(attempt,{
+            reconcile:()=>context.api.supplement(current,{text:sendText,attachmentIds:requestImages.map(item=>item.id) as NonNullable<SendDraft['attachmentIds']>,clientRequestId:attempt.clientRequestId,sameRunOnly:true},attempt),
+            finish:requestId=>inputAttempts.finish(current,requestId),
+            isCurrent:()=>activeSend.current===operation&&context.isSelectionCurrent(operation.selection),
+          });
+          if(!result)return;
+          if('conversation' in result)context.apply(result.conversation,current.revision);
+          if(result.delivery==='accepted'||result.delivery==='continued'){
             draft.clearSubmitted(current.workspaceId,current.id,sendText);
             setAttachments(previous=>({...previous,[current.id]:removeSubmittedAttachments(previous[current.id]||[],requestImages.map(item=>item.id))}));
           }else {
-            if(result.delivery==='rejected')inputAttempts.finish(current,attempt.clientRequestId);
-            const refusal=result.conversation.entries.slice().reverse().find(entry=>entry.runId===attempt.runId&&entry.kind==='message'&&entry.role==='user'&&entry.status==='failed'&&entry.text===sendText)?.deliveryDiagnostic;
+            const refusal='conversation' in result?result.conversation.entries.slice().reverse().find(entry=>entry.runId===attempt.runId&&entry.kind==='message'&&entry.role==='user'&&entry.status==='failed'&&entry.text===sendText)?.deliveryDiagnostic:result.diagnostic;
             throw new Error(result.delivery==='unknown'?'消息是否送达仍待确认，请勿重复发送；输入已保留。':refusal||'原轮未接收这条消息；输入已保留，不会另开会话。');
           }
           return;

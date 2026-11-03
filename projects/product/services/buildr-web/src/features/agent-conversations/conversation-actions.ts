@@ -13,8 +13,31 @@ export function createConversationActions(changed:()=>void=()=>{}) {
 }
 
 import type { ConversationView } from './types';
+import type { SupplementResult } from './types';
 import type { DraftImage } from './ConversationImageInput';
-type InputAttempt={runId:string;participantId:string;generation:string;clientRequestId:string;text:string;images:Omit<DraftImage,'file'>[]};
+export type InputAttempt={runId:string;participantId:string;generation:string;clientRequestId:string;text:string;images:Omit<DraftImage,'file'>[]};
+
+/** Reconcile only the original idempotent request; unknown receipt never frees it. */
+export async function reconcileConversationInputAttempt(attempt:InputAttempt, options:{
+  reconcile(attempt:InputAttempt):Promise<SupplementResult>;
+  finish(requestId:string):void;
+  isCurrent():boolean;
+}):Promise<SupplementResult | {delivery:'rejected';diagnostic?:string} | undefined> {
+  if(!options.isCurrent())return;
+  try {
+    const result=await options.reconcile(attempt);
+    if(!options.isCurrent())return;
+    if(result.delivery!=='unknown')options.finish(attempt.clientRequestId);
+    return result;
+  } catch(failure) {
+    const error=failure as {status?:number;code?:string};
+    // These guards run before native dispatch. A transport failure proves nothing.
+    if(error.status!==409||!['agent_supplement_stale','agent_supplement_unavailable'].includes(error.code??''))throw failure;
+    if(!options.isCurrent())return;
+    options.finish(attempt.clientRequestId);
+    return {delivery:'rejected',diagnostic:(failure as Error).message};
+  }
+}
 /** Retain transport retry identities with the local draft, including across a reload. */
 export function createConversationInputAttempts(storage?:Pick<Storage,'getItem'|'setItem'|'removeItem'>,prefix='buildr.conversation-input:'){
   const memory=new Map<string,InputAttempt|null>();

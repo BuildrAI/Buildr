@@ -6,6 +6,35 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
   const {page,panel,run,step,update,input}=fixture;
   const notice=()=>panel().locator('.ac-stream-disconnect');
   const completed=()=>run('completed','codex',{executionState:'ended'});
+  await step('旧追加请求已拒绝时，保留的草稿读取最新轮次并作为新轮发送',async()=>{
+    const saved=structuredClone(fixture.conversation),beforeSends=fixture.sends,text='旧草稿按最新轮次发送';
+    const original={runId:saved.run.id,participantId:saved.run.participantId,generation:saved.run.generation,clientRequestId:crypto.randomUUID(),text,images:[]};
+    const pattern='**/agent-conversations/'+saved.id+'/supplement';let reconciliations=0;
+    const reject=async(route:any)=>{
+      reconciliations++;const body=route.request().postDataJSON();
+      assert.equal(body.clientRequestId,original.clientRequestId);assert.equal(body.generation,original.generation);assert.equal(body.sameRunOnly,true);
+      fixture.expectedBrowserErrors?.add(route.request().url());
+      await route.fulfill({status:409,json:{error:{code:'agent_supplement_stale',message:'原执行已变化，请核对后再发送；输入已保留。'}}});
+    };
+    try{
+      update({run:{...saved.run,status:'completed',executionState:'ended',resourcesReleased:true},requests:[]});
+      await page.evaluate(({conversation,attempt}:any)=>{
+        const profile=document.querySelector('meta[name="buildr-web-profile"]')?.getAttribute('content')||'local';
+        sessionStorage.setItem(profile+':conversation-input:'+JSON.stringify([conversation.workspaceId,conversation.id]),JSON.stringify(attempt));
+      },{conversation:saved,attempt:original});
+      await page.route(pattern,reject);await page.reload();await input().waitFor();await input().fill(text);
+      const sent=page.waitForResponse((response:any)=>response.request().method()==='POST'&&response.url().endsWith('/agent-conversations/'+saved.id+'/send'));
+      await panel().getByRole('button',{name:'发送对话',exact:true}).click();
+      assert.equal((await sent).status(),200);
+      await panel().getByText(text,{exact:true}).waitFor();
+      await page.waitForFunction(()=>document.querySelector<HTMLTextAreaElement>('textarea[aria-label="对话输入"]')?.value==='');
+      assert.equal(reconciliations,1);assert.equal(fixture.sends,beforeSends+1);assert.equal(await input().inputValue(),'');
+      assert.equal(await page.evaluate((conversation:any)=>{
+        const profile=document.querySelector('meta[name="buildr-web-profile"]')?.getAttribute('content')||'local';
+        return sessionStorage.getItem(profile+':conversation-input:'+JSON.stringify([conversation.workspaceId,conversation.id]));
+      },saved),null);
+    }finally{await page.unroute(pattern,reject);fixture.conversation=saved;await page.reload();await input().waitFor();}
+  });
   await step('关闭已释放待确认对话撤下提醒，历史保留且可恢复显示',async()=>{
     const saved=structuredClone(fixture.conversation),sends=fixture.sends,stops=fixture.stops;
     try{

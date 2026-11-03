@@ -13,6 +13,19 @@ export function conversationSendRoute(conversation: ConversationView, changed: b
   return 'send';
 }
 
+/** A draft has no execution owner until this explicit send reads current facts. */
+export async function latestConversationSend(
+  before: ConversationView,
+  options: Parameters<typeof refreshConversationSend>[1] & { read(): Promise<ConversationView> },
+): Promise<ConversationView | undefined> {
+  if (!options.isCurrent()) return;
+  const next = await options.read();
+  if (!options.isCurrent()) return;
+  if (next.id !== before.id || next.workspaceId !== before.workspaceId) throw new Error('对话身份已变化，草稿保留。');
+  options.apply(next, before.revision);
+  return refreshConversationSend(next, options);
+}
+
 /** Refresh stale execution facts once, without replaying input or changing its owner. */
 export async function refreshConversationSend(
   before: ConversationView,

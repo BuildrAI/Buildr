@@ -505,6 +505,16 @@ test('补充请求身份按对话保存，丢失回执刷新后复用，确认�
  reloaded.finish(conversation,one.clientRequestId);assert.notEqual(reloaded.begin(conversation,'text',images).clientRequestId,one.clientRequestId);
 });
 
+test('核对旧追加请求使用已保存的原轮身份，不替换成当前新轮参数',async()=>{
+ const calls=[];const api=createAgentConversationsClient(async(_url,init)=>{calls.push(JSON.parse(init.body));return {conversation,delivery:'rejected'};},session);
+ const latest={...conversation,run:{...conversation.run,id:'new-round',participantId:'new-participant',generation:'new-generation'}};
+ const owner={runId:'old-round',participantId:'old-participant',generation:'old-generation'};
+ await api.supplement(latest,{text:'draft',attachmentIds:['image'],clientRequestId:'original-request',sameRunOnly:true},owner);
+ assert.deepEqual(calls[0],{text:'draft',attachmentIds:['image'],clientRequestId:'original-request',sameRunOnly:true,...owner});
+ await api.supplement(latest,{text:'new draft',clientRequestId:'new-request',sameRunOnly:true});
+ assert.equal(calls[1].runId,'new-round');assert.equal(calls[1].generation,'new-generation');
+});
+
 
 test('空草稿只在有用户历史且明确切换执行组合后生成继续要求',()=>{
   const history={...conversation,entries:[{kind:'message',role:'user',text:'尚未完成的目标',status:'failed'}]};
