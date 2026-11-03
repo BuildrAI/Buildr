@@ -31,9 +31,9 @@ test('event outlet maps four types, deduplicates and sends only safe JSON', asyn
     events.publish(event); events.publish(event);
   }
   await setImmediate();
-  const legacy = sent.filter(init => JSON.parse(String(init.body)).eventType !== 'conversation_updated');
+  const legacy = sent.filter(init => ['completed','error','pending_question','pending_approval'].includes(JSON.parse(String(init.body)).eventType));
   assert.equal(legacy.length, 4);
-  assert.equal(sent.length, 9);
+  assert.equal(sent.length, 13);
   assert.deepEqual(legacy.map(init => JSON.parse(String(init.body)).eventType), ['completed', 'error', 'pending_question', 'pending_approval']);
   for (const init of sent) {
     assert.equal(init.method, 'POST'); assert.equal(init.redirect, 'error');
@@ -41,7 +41,7 @@ test('event outlet maps four types, deduplicates and sends only safe JSON', asyn
     const body = JSON.parse(String(init.body));
     assert.equal(body.workspaceId, 'workspace'); assert.equal(body.conversationId, 'conversation');
     assert.equal(body.timestamp, '2026-11-03T00:00:00.000Z'); assert.equal(body.eventId.length, 64);
-    if (body.eventType !== 'conversation_updated') assert.ok(!String(init.body).includes('sensitive')); assert.ok(!String(init.body).includes(env.BUILDR_AGENT_WEBHOOK_SECRET));
+    if (['completed','error','pending_question','pending_approval'].includes(body.eventType)) assert.ok(!String(init.body).includes('sensitive')); assert.ok(!String(init.body).includes(env.BUILDR_AGENT_WEBHOOK_SECRET));
   }
   events.close();
 });
@@ -81,7 +81,7 @@ test('all process revisions include run transitions, messages and card closure w
   const running = publish('running');
   running.payload.conversation!.entries = [
     {id:'goal',sequence:2,kind:'message',role:'user',text:'user goal',createdAt:new Date().toISOString()},
-    {id:'reply',sequence:3,kind:'message',role:'assistant',status:'running',text:'progress '+env.BUILDR_AGENT_WEBHOOK_SECRET,createdAt:new Date().toISOString()},
+    {id:'reply',sequence:3,kind:'message',role:'assistant',status:'completed',text:'progress '+env.BUILDR_AGENT_WEBHOOK_SECRET,createdAt:new Date().toISOString()},
     {id:'thinking',sequence:4,kind:'message',role:'assistant',thinking:true,text:'private thoughts',createdAt:new Date().toISOString()},
     {id:'tool',sequence:5,kind:'tool',role:'system',input:'private command',text:'private output',status:'running',createdAt:new Date().toISOString()},
   ];
@@ -107,21 +107,33 @@ test('all process revisions include run transitions, messages and card closure w
   hook.close();
 });
 
-test('streaming reply changes and same-status control changes are observable', async () => {
-  const sent: any[]=[];
+test('200 streaming fragments are coalesced; tool boundaries remain immediate', async () => {
+  const sent:any[]=[];
   const hook=ConversationWebhooks.configure(env,async(_url,init)=>{sent.push(JSON.parse(String(init!.body)));return new Response(null);})!;
-  const event=change('running');hook.publish(event);
-  event.payload.conversation!.entries=[{id:'reply',sequence:1,kind:'message',role:'assistant',text:'first',createdAt:new Date().toISOString()}];
-  event.payload.conversation!.revision='2';hook.publish(event);
-  event.payload.conversation!.entries[0]!.text='first second';
-  event.payload.conversation!.revision='3';hook.publish(event);
-  event.payload.conversation!.run!.stopRequested=true;
-  event.payload.conversation!.revision='4';hook.publish(event);
+  const event=change();hook.publish(event);
+  event.payload.conversation!.entries=[{id:'reply',runId:'run',sequence:1,kind:'message',role:'assistant',status:'running',text:'',createdAt:new Date().toISOString()}];
+  for(let i=0;i<200;i++) {event.payload.conversation!.entries[0]!.text+='x';event.payload.conversation!.revision=String(i);hook.publish(event);}
+  await setImmediate();assert.equal(sent.length,1);
+  event.payload.conversation!.run!.tools=[{id:'tool',status:'running',label:'tool'}];hook.publish(event);
+  event.payload.conversation!.run!.tools[0]!.status='completed';hook.publish(event);
+  event.payload.conversation!.entries[0]!.status='completed';hook.publish(event);hook.publish(event);
   await setImmediate();
-  assert.equal(sent[2].entries[0].text,'first second');
-  assert.equal(sent[3].runs[0].stopRequested,true);
-  assert.equal(sent[3].entries.length,0);
-  hook.close();
+  assert.equal(sent.filter(x=>x.eventType==='status_changed').length,2);
+  const replies=sent.filter(x=>x.eventType==='reply');assert.equal(replies.length,1);
+  assert.equal(replies[0].entries[0].text,'x'.repeat(200));
+  assert.equal(sent.filter(x=>x.eventType==='conversation_updated').length,4);
+  assert.ok(sent.filter(x=>x.eventType==='status_changed').every(x=>!x.entries));hook.close();
+});
+
+test('new run starts are classified and termination flushes the last reply', async () => {
+  const sent:any[]=[];
+  const hook=ConversationWebhooks.configure(env,async(_url,init)=>{sent.push(JSON.parse(String(init!.body)));return new Response(null);})!;
+  const event=change();delete event.payload.conversation!.run;hook.publish(event);
+  event.payload.conversation!.run={id:'new',status:'running'} as RunView;hook.publish(event);
+  event.payload.conversation!.entries=[{id:'r',runId:'new',sequence:1,kind:'message',role:'assistant',status:'running',text:'final',createdAt:new Date().toISOString()}];hook.publish(event);
+  event.payload.conversation!.run!.status='stopped';hook.publish(event);hook.publish(event);
+  await setImmediate();assert.equal(sent.filter(x=>x.eventType==='task_started').length,1);
+  assert.equal(sent.filter(x=>x.eventType==='reply').length,1);hook.close();
 });
 
 test('burst queue drains with bounded concurrency and drops only beyond capacity', async () => {
@@ -132,7 +144,7 @@ test('burst queue drains with bounded concurrency and drops only beyond capacity
     return new Promise<Response>(resolve=>{releases.push(()=>resolve(new Response(null)));});
   })!;
   for(let i=0;i<530;i++) {
-    const event=change('running');event.payload.conversation!.revision=String(i);hook.publish(event);
+    const event=change('running');event.payload.conversation!.revision=String(i);event.payload.conversation!.title=String(i);hook.publish(event);
   }
   assert.equal(bodies.length,16);
   for(let i=0;i<40;i++){releases.splice(0).forEach(release=>release());await setImmediate();}

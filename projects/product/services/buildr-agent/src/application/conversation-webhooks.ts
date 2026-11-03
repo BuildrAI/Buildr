@@ -15,7 +15,7 @@ export class ConversationWebhooks {
   private readonly generation = randomUUID();
   private sequence = 0;
   private readonly startedAt = new Date().toISOString();
-  private readonly conversations = new Map<string, { entries: Map<string, string>; requests: Set<string> }>();
+  private readonly conversations = new Map<string, { entries: Map<string, string>; requests: Set<string>; state?: string; runs?: string; runIds?: Set<string> }>();
   private readonly queue: string[] = [];
   private queuedBytes = 0;
   private readonly url: string;
@@ -59,8 +59,6 @@ export class ConversationWebhooks {
   }
 
   private processChange(view: ConversationView): void {
-    const eventId = createHash('sha256').update(JSON.stringify([this.generation, view.workspaceId, view.id, view.revision, view])).digest('hex');
-    if (this.seen.has(eventId)) return;
     const key = JSON.stringify([view.workspaceId, view.id]);
     let prior = this.conversations.get(key);
     const initial = !prior;
@@ -72,6 +70,11 @@ export class ConversationWebhooks {
     const entries: Array<Record<string, unknown>> = [];
     for (const entry of view.entries) {
       if (entry.thinking) continue;
+      // Keep unsent streaming text out of both the payload and semantic fingerprint.
+      const owner = entry.runId ? [view.run, ...(view.retainedRuns ?? [])].find(run => run?.id === entry.runId) : view.run;
+      const terminal = owner && ['completed', 'failed', 'stopped'].includes(owner.status);
+      if (entry.kind === 'message' && entry.role === 'assistant'
+        && !['completed', 'failed'].includes(entry.status ?? '') && !terminal) continue;
       const safe = { id: entry.id, sequence: entry.sequence, kind: entry.kind, role: entry.role,
         runId: entry.runId, participantId: entry.participantId, status: entry.status,
         createdAt: entry.createdAt, ...this.entryContent(entry) };
@@ -97,13 +100,32 @@ export class ConversationWebhooks {
       resourcesReleased: run.resourcesReleased, interrupted: run.interrupted, canContinue: run.canContinue,
       tools: run.tools?.map(tool => ({ id: tool.id, status: tool.status, canStop: tool.canStop })),
     }] : []);
-    this.enqueue(eventId, { eventId, conversationId: view.id, workspaceId: view.workspaceId,
-      eventType: 'conversation_updated', summary: '对话过程已更新', timestamp: view.updatedAt,
-      revision: view.revision, generation: this.generation, sequence: ++this.sequence,
-      conversation: { title: view.title, hidden: view.hidden, titleState: view.titleState?.status },
-      pendingSend: view.pendingSend ? { id: view.pendingSend.id, revision: view.pendingSend.revision,
-        state: view.pendingSend.state, text: view.pendingSend.draft.text } : null,
-      runs, requests, closedRequests, entries });
+    const conversation = { title: view.title, hidden: view.hidden, titleState: view.titleState?.status };
+    const pendingSend = view.pendingSend ? { id: view.pendingSend.id, revision: view.pendingSend.revision,
+      state: view.pendingSend.state, text: view.pendingSend.draft.text } : null;
+    const state = JSON.stringify({ conversation, pendingSend, runs, requests });
+    const runState = JSON.stringify(runs);
+    const changedRuns = prior.runs !== undefined && prior.runs !== runState;
+    const started = prior.runIds !== undefined && runs.some(run => !prior.runIds!.has(run.id)
+      && !['completed', 'failed', 'stopped'].includes(run.status));
+    const meaningful = prior.state !== state || entries.length > 0 || closedRequests.length > 0;
+    prior.state = state; prior.runs = runState; prior.runIds = new Set(runs.map(run => run.id));
+    if (!meaningful) return;
+    const sequence = ++this.sequence;
+    const eventId = createHash('sha256').update(JSON.stringify([this.generation, key, sequence])).digest('hex');
+    const base = { conversationId: view.id, workspaceId: view.workspaceId, timestamp: view.updatedAt,
+      revision: view.revision, generation: this.generation, sequence };
+    this.enqueue(eventId, { ...base, eventId, eventType: 'conversation_updated', summary: '对话过程已更新',
+      conversation, pendingSend, runs, requests, closedRequests, entries });
+    const classified = (eventType: string, content: Record<string, unknown>) => {
+      const id = createHash('sha256').update(JSON.stringify([eventId, eventType])).digest('hex');
+      this.enqueue(id, { ...base, eventId: id, eventType, ...content });
+    };
+    if (started) classified('task_started', { runs });
+    const tools = entries.filter(entry => entry.kind === 'tool');
+    if (changedRuns || tools.length) classified('status_changed', { runs, ...(tools.length ? { tools } : {}) });
+    const replies = entries.filter(entry => entry.kind === 'message' && entry.role === 'assistant');
+    if (replies.length) classified('reply', { entries: replies });
   }
 
   private entryContent(entry: ConversationView['entries'][number]): Record<string, unknown> {
