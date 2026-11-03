@@ -80,8 +80,24 @@ Buildr 隔离 DSH 的前台 shell 命令超时会真正终止，不会自动转�
 
 Agent Service 可把当前执行过程推给用户指定的可信接收端（例如 Grok Bot）。默认配置是宿主主目录 `~/.buildr-webhook.json`，一个 JSON 对象包含 `url` 和 `secret`；文件须属于当前服务用户、仅本人可读写（`0600`），不得使用符号链接。服务启动时读取，可用 `BUILDR_AGENT_WEBHOOK_CONFIG` 显式选择文件。缺省文件不存在才兼容 `BUILDR_AGENT_WEBHOOK_URL` 和 `BUILDR_AGENT_WEBHOOK_SECRET`；文件存在但无效时不回退到另一个目标。不要在命令参数、聊天、日志或源资产中填写真实秘密，不打印响应正文；迁移后核对文件内容与权限，不保留两份活动配置。
 
-`conversation_updated` 在统一视图每次实际变化时发送，包含进程 `generation`、递增 `sequence`、对话 `revision`、运行状态与停止/资源事实、待发送状态、问题卡片、关闭卡片身份及新增/更新消息。用户目标和助手可见回复正文、问题选项、正式卡片答复也会外发，必须属于用户授权的数据范围。流式回复携带相同条目标识和新正文，接收端应更新而不是拼接重复正文；内部思考、原始工具输入输出、审批命令正文及认证材料不转发，已知 webhook 地址和密钥会脱敏，但不能保证自动识别任意未知正文秘密。首次观察不补发服务启动前历史正文。
+公共通知只使用 task_started、status_changed、reply、pending_question、pending_approval、completed、error 七种事件。每条必带 eventId、conversationId、agent.name/id、machine、eventType、summary、timestamp；附加字段原样转发。agent.name 为 Buildr，id 为本实例持久 UUID，不同实例不同、重启不变；machine 是真实主机名，与 agent 并列，不用模型或执行器身份替代。
 
-旧 `completed`、`error`、`pending_question`、`pending_approval` 通知仍发送到同一地址。事件使用 POST JSON 与 Bearer 鉴权，禁止重定向，5 秒超时，最多 16 并发、512 等待项及 16 MiB 等待正文，无自动重试。接收端按 `eventId` 去重，按 `generation` 和 `sequence` 还原进程内顺序；并发请求到达顺序不保证。故障、容量满或退出可能丢事件，不把它描述为可靠消息服务。
+问题卡片、审批、完成和出错立即持久入队；reply 仅通知有新回复并提供 entryId 等位置，完整正文与流式片段不推，通过 `buildr agent read <conversation-id>` 按需拉取。问题通知有准确问题/选项 ID；审批命令、内部思考、原始工具正文不外发。关闭卡片不表示回答或同意。
 
-配置变更须在实际服务安全采用后才生效，合成模块测试不证明共享服务已采用。HTTP 2xx 只证明接收端接受，不证明 Bot 已处理。卡片关闭不等于用户已回答或同意；Webhook 是单向观察，不授予执行、回应或重放权限。涉及自举候选时遵守唯一激活入口，不为通知强停其他执行。
+发送端使用私有持久日志去重并负责补推；POST JSON、Bearer 鉴权、不跟随重定向、5秒超时、最多16并发，仅2xx确认。非2xx、断线和超时保留相同 eventId，从1秒指数退避至5分钟，服务恢复后自动补投。配置目标改变不自动转发旧事件。成功事件可使用 `buildr agent replay <conversation-id> <event-id> --target <workspace>` 原样重放，服务核对准确空间与对话；不重做模型或业务动作，不手改私有数据库。
+
+响应丢失时可能重复到达同一 eventId，不能宣称恰好一次。接收端只接收并原样转发附加字段，不承担业务判断、去重调度、重试或断线恢复。2xx仅证明接收端确认，不证明后续转发成功。候选测试不证明共享服务已采用；不得为采用候选自行重启共享服务。
+
+## CLI 卡片回答与同对话新轮次
+
+新建对话的 send 不接受 --connection，仅自动选择唯一 enabled 且 ready 连接；零个或多个时先核对设置，不猜选。先用 `buildr agent read <conversation-id> --target <workspace>` 核对当前 requests。正式回答结构化问题卡片时，用 `buildr agent reply <conversation-id> <request-id> --option '问题ID=选项ID' --other '问题ID=补充文本'`；两类参数可重复，使用准确 ID，单选一个值，多选可多个值，自由文本须符合 allowOther。也可互斥使用 `--answer-json '{"问题ID":["选项ID或文本"]}'`。不把默认选中、推荐或普通新消息当成回答；文本模式不会自动解析 JSON。
+
+用户明确放弃本次卡片回答并要求发新内容时，使用 `buildr agent send '新内容' --conversation <conversation-id> --skip-questions --target <workspace>`，在同一对话新起一轮；两个参数配对，沿用原连接、模型和权限，不能与配置覆盖混用。不创建新对话、不提交答案、不修改任务数据；旧问题保留未回答事实，仍缺必要业务决定时重新询问。预发送后通过持久待发送接口投递，返回保存成功不等于执行完成；用 read 核对。问题、版本变化或结果未知时不盲目重试，不自行重启服务。
+
+### 原执行补充与通知重放
+
+运行中的对话需要插入新内容时，用 `buildr agent supplement <conversation-id> '补充要求' --target <workspace>`。CLI 观察并使用原 runId、participantId、generation，不新建对话、不提交卡片答案；原执行不支持、已结束或状态未知时明确失败，不退化为新建对话。delivery=unknown 时先 read 核对，不重发。
+
+send 不接受 --connection 或 --model；已有对话跳过卡片沿用原执行配置，新建对话仅选择唯一 enabled 且 ready 连接。卡片正式答复使用 reply 的 --option/--other 或 --answer-json，不把普通文字输入视为批准。
+
+CLI supplement 显式使用 sameRunOnly=true，仅向原 runId 追加。挂起问题卡片时不接收该补充；需要放弃卡片并开启新轮时用 send --conversation <id> --skip-questions。投递过程中原轮已结束则返回 rejected 并保留内容，不自动转成新轮；delivery=unknown 仍须先读取核对，不能重发未知操作。

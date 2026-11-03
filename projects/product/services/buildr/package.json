@@ -57,6 +57,7 @@
     "README.md",
     "docs/agent-runtime-adapters.md",
     "docs/cli-reference.md",
+    "docs/agent-event-contract.md",
     "docs/skill-capability-contracts.md",
     "docs/cli-architecture.md",
     "docs/known-limitations.md",

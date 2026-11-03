@@ -169,6 +169,15 @@ export class ConversationRepository {
       return {projections,incomplete};
     }finally{db.close();}
   }
+  /** Bounded recovery of notification projections; no model or task operations. */
+  webhookRecoveryPage(after = '', limit = 100): ConversationView[] {
+    const db=this.open(false);if(!db)return [];
+    try {
+      const rows=db.prepare('SELECT id FROM conversations WHERE id>? ORDER BY id LIMIT ?').all(after,limit) as Array<{id:string}>;
+      return rows.flatMap(row=>{const record=this.readConversation(row.id);return record?[record.view]:[];});
+    } finally {db.close();}
+  }
+
   readConversation(id: string): StoredConversation | undefined {
     const db = this.open(false); if (!db) return;
     try { const modern=(db.prepare('PRAGMA user_version').get() as {user_version:number}).user_version>=2; const row = db.prepare(`SELECT body${modern?',summary':''} FROM conversations WHERE id=?`).get(id) as {body:string;summary?:string}|undefined; if(!row)return;const record=ConversationEntryStore.hydrate(db,JSON.parse(row.body) as StoredConversation);if(row.summary)record.view.activity=JSON.parse(row.summary).activity;return record; }

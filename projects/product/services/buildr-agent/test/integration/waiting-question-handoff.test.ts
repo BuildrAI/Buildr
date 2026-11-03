@@ -268,3 +268,31 @@ test('a revision conflict after stop admission is uncertain and never repeats th
   assert.equal(current.retainedRuns?.find(run=>run.id===f.intent.runId)?.status,'unknown');
  }finally{await f.close();}
 });
+
+test('new-turn abandons answering and starts a fresh context in the same conversation', async () => {
+  const f=await fixture();
+  try {
+    const draft:SendDraft={expectedRevision:f.chat.revision,connectionId:'old',model:'a',text:'跳过这次验收，检查另一个文件',waitingHandoff:{...f.intent,intent:'new-turn'}};
+    const preview=f.service.conversations.prepareSend('scope',f.chat.id,draft);
+    assert.equal(preview.fits,true);
+    assert.match(preview.handoff!.body,/放弃本次卡片回答/);
+    assert.doesNotMatch(preview.handoff!.body,/仅解释和调查/);
+    assert.throws(()=>f.service.conversations.prepareSend('scope',f.chat.id,{...draft,waitingHandoff:{...draft.waitingHandoff!,answers:[{requestId:f.chat.requests[0].id,answer:{result:'ok'}}]}}),{code:'agent_handoff_invalid'});
+    assert.throws(()=>f.service.conversations.prepareSend('scope',f.chat.id,{...draft,connectionId:'next'}),{code:'agent_new_turn_invalid'});
+    assert.throws(()=>f.service.conversations.prepareSend('scope',f.chat.id,{...draft,waitingHandoff:{...draft.waitingHandoff!,generation:'stale'}}),{code:'agent_handoff_stale'});
+    f.service.conversations.queueSend('scope',f.chat.id,{...draft,clientRequestId:randomUUID()});
+    const pump=f.pump();
+    await until(async()=>{await pump.pump();return f.old.inputs.length;},count=>count===2);
+    const current=await until(()=>f.service.conversations.read('scope',f.chat.id),view=>!view.requests.some(request=>f.intent.requestIds.includes(request.id)));
+    assert.equal(current.id,f.chat.id);
+    assert.equal(current.requests.some(request=>f.intent.requestIds.includes(request.id)),false);
+    assert.equal(current.retainedRuns?.find(run=>run.id===f.intent.runId)?.questionsEndedBy,current.run!.id);
+    await until(()=>f.old.stops,count=>count===1);
+    assert.notEqual(current.run!.id,f.intent.runId);
+    assert.notEqual(f.old.inputs[0].contextRef.id,f.old.inputs[1].contextRef.id);
+    assert.deepEqual(f.old.replies,[]);
+    assert.match(f.old.inputs[1].text,/未回答；用户放弃本次卡片回答/);
+    assert.equal(current.entries.some(entry=>entry.id.startsWith('reply-')),false);
+    await pump.pump();assert.equal(f.old.inputs.length,2);
+  } finally {await f.close();}
+});

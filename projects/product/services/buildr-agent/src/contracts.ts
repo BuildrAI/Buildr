@@ -457,7 +457,7 @@ export interface SendDraft {
   /** Explicitly end this waiting question round before handing work to a different selection. */
   waitingHandoff?: {
     /** Explicitly stop the wait and discuss using the same execution selection. */
-    intent?: 'discussion';
+    intent?: 'discussion' | 'new-turn';
     runId: string; participantId: string; generation: string; requestIds: string[];
     answers?: Array<{ requestId: string; answer: unknown }>;
   };
@@ -495,6 +495,8 @@ export interface StartConversationDraft extends Omit<SendDraft, 'expectedRevisio
   clientRequestId: string;
 }
 export interface SupplementInput {
+  /** Reject rather than start a new round if the observed execution ends during admission. */
+  sameRunOnly?: boolean;
   runId: string;
   participantId: string;
   generation: string;

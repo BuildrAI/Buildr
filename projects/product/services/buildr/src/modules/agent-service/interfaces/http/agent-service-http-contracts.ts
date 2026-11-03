@@ -63,6 +63,7 @@ export const AGENT_SERVICE_HTTP_OPERATIONS = [
   operation('send', 'POST', `${workspace}/:conversationId/send`, 'send', 'sent'),
   operation('queue-send', 'POST', `${workspace}/:conversationId/pending-send`, 'queueSend', 'conversation'),
   operation('cancel-pending-send', 'POST', `${workspace}/:conversationId/cancel-pending-send`, 'cancelPendingSend', 'conversation'),
+  operation('webhook-replay','POST',`${workspace}/:conversationId/webhook-replay`,'webhookReplay','webhookReplayed'),
   operation('supplement', 'POST', `${workspace}/:conversationId/supplement`, 'supplement', 'supplemented'),
   operation('generate-title', 'POST', `${workspace}/:conversationId/generate-title`, 'revision', 'conversation'),
   operation('observe', 'POST', `${workspace}/:conversationId/observe`, 'empty', 'conversation'),

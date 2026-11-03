@@ -33,7 +33,7 @@ export class ConversationSupplements {
     return { participant, execution };
   }
   send(workspaceId: string, id: string, raw: SupplementInput): Promise<SupplementResult> {
-    const input: SupplementInput = { runId: nonempty(raw.runId, '执行身份'), participantId: nonempty(raw.participantId, '参与者身份'), generation: nonempty(raw.generation, '服务代次'), clientRequestId: nonempty(raw.clientRequestId, '请求身份', 200), text: raw.text, attachmentIds: raw.attachmentIds ?? [] };
+    const input: SupplementInput = { ...(raw.sameRunOnly !== undefined ? {sameRunOnly:raw.sameRunOnly} : {}), runId: nonempty(raw.runId, '执行身份'), participantId: nonempty(raw.participantId, '参与者身份'), generation: nonempty(raw.generation, '服务代次'), clientRequestId: nonempty(raw.clientRequestId, '请求身份', 200), text: raw.text, attachmentIds: raw.attachmentIds ?? [] };
     if (typeof input.text !== 'string' || Buffer.byteLength(input.text) > 64 * 1024) fail('agent_input_too_large', '输入过长，请缩小本次指令。', 413);
     if (!Array.isArray(input.attachmentIds) || input.attachmentIds.length > 4 || input.attachmentIds.some(value => typeof value !== 'string')) fail('agent_attachments_invalid', '每次最多添加4份图片或视频。');
     if (!input.text.trim() && !input.attachmentIds.length) fail('agent_input_empty', '请填写内容或添加图片、视频。');
@@ -134,7 +134,7 @@ export class ConversationSupplements {
       entry.deliveryDiagnostic = delivery === 'rejected' ? '这条消息未发送成功，文字与附件仍保留在输入框。' : '消息已保存，是否送达仍待确认，请勿重复发送。';
     }
     this.ports.save(record);
-    if (delivery === 'rejected' && ended && record.view.run?.id === input.runId && !record.view.run.stopRequested && !record.view.requests.some(request => request.runId === input.runId)) {
+    if (!input.sameRunOnly && delivery === 'rejected' && ended && record.view.run?.id === input.runId && !record.view.run.stopRequested && !record.view.requests.some(request => request.runId === input.runId)) {
       const requestId = attempt.continuedBy ?? randomUUID();
       attempt.continuedBy = requestId; this.ports.save(record);
       try {

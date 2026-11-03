@@ -1,199 +1,51 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
-import { setImmediate } from 'node:timers/promises';
-import { ConversationWebhooks } from '../../src/application/conversation-webhooks.ts';
-import { ConversationEvents } from '../../src/application/conversation-events.ts';
-import type { ServiceEvent, RunView } from '../../src/contracts.ts';
-
-const env = { BUILDR_AGENT_WEBHOOK_URL: 'https://notify.example.test', BUILDR_AGENT_WEBHOOK_SECRET: 'private-test-key' };
-function change(status = 'running', request?: 'approval' | 'question'): Omit<ServiceEvent, 'cursor' | 'generation'> {
-  return { type: 'conversation', revision: '1', payload: { conversation: {
-    id: 'conversation', workspaceId: 'workspace', cwd: '/', title: 'sensitive title', revision: `${status}:${request ?? ''}`, hidden: false,
-    updatedAt: '2026-11-03T00:00:00.000Z', participants: [], entries: [],
-    run: { id: 'run', status } as RunView,
-    requests: request ? [{ id: 'request', kind: request, title: 'sensitive question', runId: 'run', conversationId: 'conversation', workspaceId: 'workspace', participantId: 'p', generation: 'g' }] : [],
-  } } };
-}
-
-test('configuration is opt-in and rejects unsafe URLs and invalid header secrets', () => {
-  for (const value of [{}, { ...env, BUILDR_AGENT_WEBHOOK_SECRET: '' }, { ...env, BUILDR_AGENT_WEBHOOK_URL: 'file:///tmp/test' },
-    { ...env, BUILDR_AGENT_WEBHOOK_URL: 'https://user:password@example.test' }, { ...env, BUILDR_AGENT_WEBHOOK_SECRET: 'key\r\nheader' }]) {
-    assert.equal(ConversationWebhooks.configure(value), undefined);
-  }
+import {test} from 'node:test';
+import {conversationNotifications, NOTIFICATION_TYPES, type NotificationSnapshot} from '../../src/domain/conversation-notifications.ts';
+import type {ConversationView,RunView} from '../../src/contracts.ts';
+const agent={name:'Buildr',id:'instance-a'};
+function view(status='running'):ConversationView{return{id:'conversation',workspaceId:'workspace',cwd:'/',title:'title',revision:'1',hidden:false,updatedAt:'2026-11-03T00:00:00Z',participants:[],entries:[],requests:[],run:{id:'run',status} as RunView};}
+test('all providers share seven canonical lightweight event types and required envelope',()=>{
+  const chat=view();let prior:NotificationSnapshot|undefined;const sent:any[]=[];
+  const publish=()=>{const result=conversationNotifications(chat,agent,'machine-a',prior);prior=result.snapshot;sent.push(...result.events);};
+  publish();chat.entries=[{id:'reply',runId:'run',sequence:1,kind:'message',role:'assistant',status:'completed',text:'private full reply',createdAt:'now'}];publish();
+  for(const kind of ['question','approval'] as const){chat.requests=[{id:kind,kind,title:'card',runId:'run',participantId:'p',generation:'g',conversationId:chat.id,workspaceId:chat.workspaceId}];publish();}
+  chat.run!.status='completed';publish();chat.run!.status='failed';publish();
+  assert.deepEqual([...new Set(sent.map(item=>item.eventType))].sort(),[...NOTIFICATION_TYPES].sort());
+  for(const item of sent){for(const key of ['eventId','conversationId','agent','machine','eventType','summary','timestamp'])assert.ok(item[key]);assert.deepEqual(item.agent,agent);assert.equal(item.machine,'machine-a');}
+  assert.ok(!JSON.stringify(sent).includes('private full reply'));
+  assert.deepEqual(sent.map(item=>item.sequence),sent.map((_item,index)=>index+1));
+  assert.equal(sent.find(item=>item.eventType==='reply').entrySequence,1);
+});
+test('streaming fragments and view-only revisions do not produce notifications',()=>{
+  const chat=view();let prior=conversationNotifications(chat,agent,'m').snapshot;
+  chat.entries=[{id:'reply',runId:'run',sequence:1,kind:'message',role:'assistant',status:'running',text:'',createdAt:'now'}];
+  for(let i=0;i<200;i++){chat.entries[0].text+='x';chat.revision=String(i);const next=conversationNotifications(chat,agent,'m',prior);assert.equal(next.events.length,0);prior=next.snapshot;}
+  chat.entries[0].status='completed';const done=conversationNotifications(chat,agent,'m',prior);assert.deepEqual(done.events.map(event=>event.eventType),['reply']);assert.ok(!JSON.stringify(done).includes('x'.repeat(200)));
+  assert.equal(conversationNotifications(chat,agent,'m',done.snapshot).events.length,0);
+});
+test('questions carry IDs/options immediately and closure never means answered',()=>{
+  const chat=view();const initial=conversationNotifications(chat,agent,'m');
+  chat.requests=[{id:'r',kind:'question',title:'choose',runId:'run',participantId:'p',generation:'g',conversationId:chat.id,workspaceId:chat.workspaceId,questions:[{id:'q',label:'choose',options:[{id:'a',label:'A'}]}]}];
+  const waiting=conversationNotifications(chat,agent,'m',initial.snapshot);
+  assert.equal((waiting.events.find(event=>event.eventType==='pending_question')!.request as any).questions[0].options[0].id,'a');
+  chat.requests=[];const closed=conversationNotifications(chat,agent,'m',waiting.snapshot);
+  assert.deepEqual(closed.events[0].closedRequests,[{runId:'run',requestId:'r',status:'closed'}]);assert.ok(!JSON.stringify(closed.events).includes('answer'));
+});
+test('thinking, tool payloads and approval command titles never leave the process',()=>{
+  const chat=view('completed');chat.entries=[{id:'t',sequence:1,kind:'message',role:'assistant',thinking:true,text:'hidden thought',createdAt:'now'},{id:'tool',sequence:2,kind:'tool',role:'system',text:'raw output',input:'raw command',createdAt:'now'}];
+  chat.requests=[{id:'r',kind:'approval',title:'dangerous command body',runId:'run',participantId:'p',generation:'g',conversationId:chat.id,workspaceId:chat.workspaceId}];
+  const sent=JSON.stringify(conversationNotifications(chat,agent,'m').events);
+  for(const secret of ['hidden thought','raw output','raw command','dangerous command body'])assert.ok(!sent.includes(secret));
+});
+test('changed runs/tools get status metadata; duplicate state is suppressed',()=>{
+  const chat=view();const first=conversationNotifications(chat,agent,'m');chat.run!.tools=[{id:'tool',label:'tool',status:'running'}];
+  const next=conversationNotifications(chat,agent,'m',first.snapshot);assert.deepEqual(next.events.map(event=>event.eventType),['status_changed']);
+  assert.equal(conversationNotifications(chat,agent,'m',next.snapshot).events.length,0);
 });
 
-test('event outlet maps four types, deduplicates and sends only safe JSON', async () => {
-  const sent: RequestInit[] = [];
-  const hook = ConversationWebhooks.configure(env, async (_url, init) => { sent.push(init!); return new Response(null, { status: 204 }); })!;
-  const events = new ConversationEvents('g', hook);
-  events.publish(change());
-  for (const event of [change('completed'), change('failed'), change('waiting-question', 'question'), change('waiting-approval', 'approval')]) {
-    events.publish(event); events.publish(event);
-  }
-  await setImmediate();
-  const legacy = sent.filter(init => ['completed','error','pending_question','pending_approval'].includes(JSON.parse(String(init.body)).eventType));
-  assert.equal(legacy.length, 4);
-  assert.equal(sent.length, 13);
-  assert.deepEqual(legacy.map(init => JSON.parse(String(init.body)).eventType), ['completed', 'error', 'pending_question', 'pending_approval']);
-  for (const init of sent) {
-    assert.equal(init.method, 'POST'); assert.equal(init.redirect, 'error');
-    assert.equal((init.headers as Record<string,string>).authorization, 'Bearer private-test-key');
-    const body = JSON.parse(String(init.body));
-    assert.deepEqual(body.agent, { name: 'Buildr', id: 'buildr' });
-    assert.ok(!('agentName' in body) && !('agentId' in body) && !('source' in body));
-    assert.equal(body.workspaceId, 'workspace'); assert.equal(body.conversationId, 'conversation');
-    assert.equal(body.timestamp, '2026-11-03T00:00:00.000Z'); assert.equal(body.eventId.length, 64);
-    if (['completed','error','pending_question','pending_approval'].includes(body.eventType)) assert.ok(!String(init.body).includes('sensitive')); assert.ok(!String(init.body).includes(env.BUILDR_AGENT_WEBHOOK_SECRET));
-  }
-  events.close();
-});
-
-test('transport failures and HTTP errors never escape or retry', async () => {
-  for (const transport of [async () => { throw new Error('private failure'); }, async () => new Response(null, { status: 500 })]) {
-    let attempts = 0;
-    const hook = ConversationWebhooks.configure(env, async () => { attempts++; return transport(); })!;
-    hook.publish(change('completed')); await setImmediate(); hook.publish(change('completed')); await setImmediate();
-    assert.equal(attempts, 2); hook.close();
-  }
-});
-
-test('concurrency is bounded and shutdown aborts active requests', () => {
-  const signals: AbortSignal[] = [];
-  const hook = ConversationWebhooks.configure(env, async (_url, init) => {
-    signals.push(init!.signal!); return new Promise<Response>((_resolve, reject) => init!.signal!.addEventListener('abort', () => reject(new Error('aborted'))));
-  })!;
-  for (let i = 0; i < 20; i++) { const event = change('completed'); event.payload.conversation!.run!.id = String(i); event.payload.conversation!.revision = String(i); hook.publish(event); }
-  assert.equal(signals.length, 16); hook.close(); assert.ok(signals.every(signal => signal.aborted));
-  hook.publish(change('failed')); assert.equal(signals.length, 16);
-});
-
-
-test('all process revisions include run transitions, messages and card closure without tool bodies', async () => {
-  const sent: any[] = [];
-  const hook = ConversationWebhooks.configure(env, async (_url, init) => { sent.push(JSON.parse(String(init!.body))); return new Response(null); })!;
-  let revision = 0;
-  const publish = (status: string, request?: 'question') => {
-    const event = change(status, request);
-    event.payload.conversation!.revision = String(++revision);
-    return event;
-  };
-  const first = publish('starting');
-  first.payload.conversation!.entries = [{id:'old',sequence:1,kind:'message',role:'assistant',text:'old history',createdAt:'2020-01-01'}];
-  hook.publish(first);
-  const running = publish('running');
-  running.payload.conversation!.entries = [
-    {id:'goal',sequence:2,kind:'message',role:'user',text:'user goal',createdAt:new Date().toISOString()},
-    {id:'reply',sequence:3,kind:'message',role:'assistant',status:'completed',text:'progress '+env.BUILDR_AGENT_WEBHOOK_SECRET,createdAt:new Date().toISOString()},
-    {id:'thinking',sequence:4,kind:'message',role:'assistant',thinking:true,text:'private thoughts',createdAt:new Date().toISOString()},
-    {id:'tool',sequence:5,kind:'tool',role:'system',input:'private command',text:'private output',status:'running',createdAt:new Date().toISOString()},
-  ];
-  hook.publish(running);hook.publish(running);
-  const waiting = publish('waiting-question','question');hook.publish(waiting);
-  const answered = publish('running');hook.publish(answered);
-  hook.publish(publish('stopping'));hook.publish(publish('stopped'));
-  await setImmediate();
-  const updates = sent.filter(item => item.eventType === 'conversation_updated');
-  assert.deepEqual(updates.map(item => item.runs[0].status), ['starting','running','waiting-question','running','stopping','stopped']);
-  assert.equal(updates[0].entries.length,0);
-  assert.equal(updates[1].entries.length,3);
-  assert.equal(updates[1].entries[0].text,'user goal');
-  assert.equal(updates[1].entries[1].text,'progress [REDACTED]');
-  assert.equal(updates[2].requests[0].title,'sensitive question');
-  assert.deepEqual(updates[3].closedRequests,[{runId:'run',requestId:'request',status:'closed'}]);
-  assert.deepEqual(updates.map(item => item.sequence),[1,2,3,4,5,6]);
-  assert.equal(new Set(updates.map(item => item.eventId)).size,6);
-  assert.ok(!JSON.stringify(sent).includes('private thoughts'));
-  assert.ok(!JSON.stringify(sent).includes('private command'));
-  assert.ok(!JSON.stringify(sent).includes('private output'));
-  assert.ok(!JSON.stringify(sent).includes(env.BUILDR_AGENT_WEBHOOK_SECRET));
-  hook.close();
-});
-
-test('200 streaming fragments are coalesced; tool boundaries remain immediate', async () => {
-  const sent:any[]=[];
-  const hook=ConversationWebhooks.configure(env,async(_url,init)=>{sent.push(JSON.parse(String(init!.body)));return new Response(null);})!;
-  const event=change();hook.publish(event);
-  event.payload.conversation!.entries=[{id:'reply',runId:'run',sequence:1,kind:'message',role:'assistant',status:'running',text:'',createdAt:new Date().toISOString()}];
-  for(let i=0;i<200;i++) {event.payload.conversation!.entries[0]!.text+='x';event.payload.conversation!.revision=String(i);hook.publish(event);}
-  await setImmediate();assert.equal(sent.length,1);
-  event.payload.conversation!.run!.tools=[{id:'tool',status:'running',label:'tool'}];hook.publish(event);
-  event.payload.conversation!.run!.tools[0]!.status='completed';hook.publish(event);
-  event.payload.conversation!.entries[0]!.status='completed';hook.publish(event);hook.publish(event);
-  await setImmediate();
-  assert.equal(sent.filter(x=>x.eventType==='status_changed').length,2);
-  const replies=sent.filter(x=>x.eventType==='reply');assert.equal(replies.length,1);
-  assert.equal(replies[0].entries[0].text,'x'.repeat(200));
-  assert.equal(sent.filter(x=>x.eventType==='conversation_updated').length,4);
-  assert.ok(sent.filter(x=>x.eventType==='status_changed').every(x=>!x.entries));hook.close();
-});
-
-test('new run starts are classified and termination flushes the last reply', async () => {
-  const sent:any[]=[];
-  const hook=ConversationWebhooks.configure(env,async(_url,init)=>{sent.push(JSON.parse(String(init!.body)));return new Response(null);})!;
-  const event=change();delete event.payload.conversation!.run;hook.publish(event);
-  event.payload.conversation!.run={id:'new',status:'running'} as RunView;hook.publish(event);
-  event.payload.conversation!.entries=[{id:'r',runId:'new',sequence:1,kind:'message',role:'assistant',status:'running',text:'final',createdAt:new Date().toISOString()}];hook.publish(event);
-  event.payload.conversation!.run!.status='stopped';hook.publish(event);hook.publish(event);
-  await setImmediate();assert.equal(sent.filter(x=>x.eventType==='task_started').length,1);
-  assert.equal(sent.filter(x=>x.eventType==='reply').length,1);hook.close();
-});
-
-test('burst queue drains with bounded concurrency and drops only beyond capacity', async () => {
-  const bodies: any[]=[];
-  const releases: Array<() => void>=[];
-  const hook=ConversationWebhooks.configure(env,async(_url,init)=>{
-    bodies.push(JSON.parse(String(init!.body)));
-    return new Promise<Response>(resolve=>{releases.push(()=>resolve(new Response(null)));});
-  })!;
-  for(let i=0;i<530;i++) {
-    const event=change('running');event.payload.conversation!.revision=String(i);event.payload.conversation!.title=String(i);hook.publish(event);
-  }
-  assert.equal(bodies.length,16);
-  for(let i=0;i<40;i++){releases.splice(0).forEach(release=>release());await setImmediate();}
-  assert.equal(bodies.length,528);
-  assert.equal(new Set(bodies.map(body=>body.eventId)).size,528);
-  hook.close();
-});
-
-
-test('formal card answers carry answer and acceptance, never copied approval commands', async () => {
-  const sent: any[]=[];
-  const hook=ConversationWebhooks.configure(env,async(_url,init)=>{sent.push(JSON.parse(String(init!.body)));return new Response(null);})!;
-  const event=change('running');hook.publish(event);
-  event.payload.conversation!.entries=[{id:'reply-request',sequence:1,kind:'notice',role:'user',status:'sending',
-    text:JSON.stringify({'请求标识':'request','回答':'chosen answer','问题':'private approval command'}),createdAt:new Date().toISOString()}];
-  event.payload.conversation!.revision='2';hook.publish(event);
-  event.payload.conversation!.entries[0]!.status='accepted';event.payload.conversation!.revision='3';hook.publish(event);
-  await setImmediate();
-  assert.equal(sent[1].entries[0].answer,'chosen answer');
-  assert.equal(sent[1].entries[0].requestId,'request');
-  assert.equal(sent[2].entries[0].status,'accepted');
-  assert.ok(!JSON.stringify(sent).includes('private approval command'));
-  hook.close();
-});
-
-
-test('independent pending-send revision changes are not swallowed by conversation revision dedup', async () => {
-  const sent: any[]=[];
-  const hook=ConversationWebhooks.configure(env,async(_url,init)=>{sent.push(JSON.parse(String(init!.body)));return new Response(null);})!;
-  const event=change('running');hook.publish(event);
-  event.payload.conversation!.pendingSend={id:'pending',revision:'pending-1',state:'waiting',draft:{text:'next user goal'},reason:'busy',createdAt:'now',updatedAt:'now'} as any;
-  hook.publish(event);hook.publish(event);
-  delete event.payload.conversation!.pendingSend;event.payload.conversation!.revision='new';hook.publish(event);
-  await setImmediate();
-  assert.equal(sent.length,3);assert.equal(sent[1].pendingSend.text,'next user goal');assert.equal(sent[2].pendingSend,null);
-  hook.close();
-});
-
-test('every event category carries canonical producer identity, not executor identity', async () => {
-  const sent: any[]=[];
-  const hook=ConversationWebhooks.configure(env,async(_url,init)=>{sent.push(JSON.parse(String(init!.body)));return new Response(null);})!;
-  const event=change();delete event.payload.conversation!.run;hook.publish(event);
-  event.payload.conversation!.run={id:'new',provider:'codex',status:'running'} as RunView;hook.publish(event);
-  event.payload.conversation!.entries=[{id:'reply',runId:'new',sequence:1,kind:'message',role:'assistant',status:'completed',text:'done',createdAt:new Date().toISOString()}];hook.publish(event);
-  for(const next of [change('waiting-question','question'),change('waiting-approval','approval'),change('completed'),change('failed')])hook.publish(next);
-  await setImmediate();
-  assert.deepEqual([...new Set(sent.map(body=>body.eventType))].sort(),['completed','conversation_updated','error','pending_approval','pending_question','reply','status_changed','task_started'].sort());
-  for(const body of sent){assert.deepEqual(body.agent,{name:'Buildr',id:'buildr'});assert.ok(!('agentName' in body)&&!('agentId' in body)&&!('source' in body));}
-  hook.close();
+test('late status metadata for an already announced reply never creates another reply notification',()=>{
+  const chat=view('completed');chat.entries=[{id:'r',runId:'run',sequence:1,kind:'message',role:'assistant',text:'done',createdAt:'now'}];
+  const first=conversationNotifications(chat,agent,'m');assert.equal(first.events.filter(event=>event.eventType==='reply').length,1);
+  chat.entries[0].status='completed';chat.entries[0].text+=' final';
+  const next=conversationNotifications(chat,agent,'m',first.snapshot);assert.equal(next.events.filter(event=>event.eventType==='reply').length,0);
 });

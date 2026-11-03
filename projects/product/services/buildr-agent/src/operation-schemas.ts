@@ -26,7 +26,7 @@ const participant = closed({ modelAccountId: text, model: text, id: text, provid
 const activity=closed({userInputAt:text,version:integer,seenThrough:integer,updatedAt:text,active:boolean,pendingDecisionCount:integer},['version','seenThrough','updatedAt','active']);
 const titleState=closed({status:{enum:['pending','generating','generated','manual','failed','unavailable','unknown']},reason:string},['status']);
 const stats=closed({modelExecutions:list(closed({accountId:text,accountLabel:text,model:text,count:integer})),agents:list(closed({label:text,count:integer})),models:list(closed({label:text,count:integer})),executions:list(closed({provider:text,model:text,count:integer}))},['agents','models']);
-const waitingHandoff = closed({intent:{enum:['discussion']},runId:text,participantId:text,generation:text,requestIds:{type:'array',minItems:1,maxItems:64,uniqueItems:true,items:text},answers:{type:'array',minItems:1,maxItems:64,items:closed({requestId:text,answer:{}})}},['runId','participantId','generation','requestIds']);
+const waitingHandoff = closed({intent:{enum:['discussion','new-turn']},runId:text,participantId:text,generation:text,requestIds:{type:'array',minItems:1,maxItems:64,uniqueItems:true,items:text},answers:{type:'array',minItems:1,maxItems:64,items:closed({requestId:text,answer:{}})}},['runId','participantId','generation','requestIds']);
 const draftFields = { waitingHandoff, continueRunId:text, skipHandoffSummary:boolean, expectedRevision: text, connectionId: text, text: { type: 'string', maxLength: 65536 }, model: text, modelAccountId: text, modelAccountIdentity: text, modelAccountRevision: text, modelSourceLabel: text, reasoningEffort: text, serviceTier: text, permissionMode, attachmentIds: { type: 'array', maxItems: 4, items: text }, handoffSummary: text };
 const pendingSend = closed({ waitingQuestions:list(request), id:text,revision:text,state:{enum:['waiting','dispatching','failed']},draft:closed(draftFields,['expectedRevision','connectionId','text']),reason:string,createdAt:text,updatedAt:text }, ['id','revision','state','draft','reason','createdAt','updatedAt']);
 const forkedFrom = closed({conversationId:text,workspaceId:text,entryId:text,runId:text,throughSequence:integer,title:text,forkedAt:text});
@@ -46,6 +46,8 @@ const modelAccount = closed({connectionId:text,id: text, identity: text, provide
 const catalogModel = {...offering, properties: {...offering.properties, accountId:text,accountIdentity:text,provider:text,accountLabel:text,modelId:text,accountRevision:text,available:boolean,observedAt:text}, required:[...offering.required,'accountId','accountIdentity','provider','accountLabel','modelId','accountRevision','available']};
 const programUpgrade = closed({id:text,connectionId:text,expectedVersion:text,executable:string,state:{enum:['downloading','waiting','restarting','completed','failed','interrupted']},message:string,updatedAt:text,installedExecutable:text,currentVersion:text},['id','connectionId','expectedVersion','executable','state','message','updatedAt']);
 export const AGENT_OPERATION_SCHEMAS = {
+  webhookReplay: named('AgentWebhookReplayRequest',closed({eventId:{type:'string',pattern:'^[a-f0-9]{64}$'}},['eventId'])),
+  webhookReplayed: named('AgentWebhookReplayResult',closed({eventId:text,queued:{const:true}},['eventId','queued'])),
   participation: named('AgentParticipation',participationViewSchema),
   participationSummary: named('AgentParticipationSummary',participationSummarySchema),
   participationQuery: named('AgentParticipationQuery', closed({runId:text})),
@@ -85,7 +87,7 @@ export const AGENT_OPERATION_SCHEMAS = {
   cancelPendingSend: named('AgentConversationCancelPendingSendRequest',closed({expectedPendingRevision:text})),
   control: named('AgentConversationControl', closed(controlFields)),
   sent: named('AgentConversationSendResult', closed({ run, conversation })),
-  supplement: named('AgentConversationSupplementRequest', closed({ runId: text, participantId: text, generation: text, clientRequestId: text, text: {type:'string',maxLength:65536}, attachmentIds: {type:'array',maxItems:4,items:text} }, ['runId','participantId','generation','clientRequestId','text'])),
+  supplement: named('AgentConversationSupplementRequest', closed({ sameRunOnly: boolean, runId: text, participantId: text, generation: text, clientRequestId: text, text: {type:'string',maxLength:65536}, attachmentIds: {type:'array',maxItems:4,items:text} }, ['runId','participantId','generation','clientRequestId','text'])),
   supplemented: named('AgentConversationSupplementResult', closed({ conversation, delivery: {enum:['accepted','unknown','rejected','continued']} })),
   stop: named('AgentConversationStopRequest', closed({ ...controlFields, toolId: text }, Object.keys(controlFields))),
   reply: named('AgentConversationReplyRequest', closed({ ...controlFields, answer: {} })),

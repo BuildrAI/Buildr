@@ -733,3 +733,17 @@ test('CLI target proof accepts only current authorized physical entry, not PATH 
  const observed=observeParticipationCli(identity,entry)!;assert.equal(observed.status,'confirmed');assert.equal(observed.observedVersion,undefined);assert.match(observed.offeredVersion!,/^sha256-/);
  assert.equal(observeParticipationCli({...identity,package:'untrusted'},entry),undefined);
 });
+
+test('webhook replay HTTP validates authentication, conversation scope and immutable event ID',async t=>{
+ const {base,root}=taskRecordFixture(t,'webhook-replay-http'),runtime=createRuntime();
+ const previous=process.env.BUILDR_APP_DATA_DIR;process.env.BUILDR_APP_DATA_DIR=path.join(base,'private');t.after(()=>{if(previous===undefined)delete process.env.BUILDR_APP_DATA_DIR;else process.env.BUILDR_APP_DATA_DIR=previous;});
+ const id='11111111-1111-4111-8111-111111111111',eventId='a'.repeat(64),calls:any[]=[];
+ const service:any={conversations:{replayWebhook:(scope:string,conversationId:string,input:any)=>{calls.push([scope,conversationId,input]);return{eventId:input.eventId,queued:true};}}};
+ const contributions=runtimeContributions(runtime,'http').filter((item:any)=>item.id!=='agent-service.http');contributions.push(createAgentServiceHttpContribution(()=>service));
+ const instance=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions});const {url,sessionToken,initialWorkspaceId}=await instance.ready;
+ t.after(async()=>{instance.server.closeAllConnections();await new Promise<void>(resolve=>instance.server.close(()=>resolve()));});
+ const headers={origin:url,'x-buildr-session':sessionToken,'content-type':'application/json'},endpoint=`${url}/api/v1/workspaces/${initialWorkspaceId}/agent-conversations/${id}/webhook-replay`;
+ assert.equal((await fetch(endpoint,{method:'POST',body:JSON.stringify({eventId})})).status,403);assert.equal(calls.length,0);
+ for(const body of [{eventId:'bad'},{eventId,workspaceId:'other'},{eventId,payload:{text:'arbitrary'}}])assert.equal((await fetch(endpoint,{method:'POST',headers,body:JSON.stringify(body)})).status,400);
+ const response=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({eventId})});assert.equal(response.status,200);assert.deepEqual(await response.json(),{eventId,queued:true});assert.deepEqual(calls,[[initialWorkspaceId,id,{eventId}]]);
+});

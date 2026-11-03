@@ -252,3 +252,13 @@ test('video supplement preserves one run and sends timed visual frames with orig
     const entry=f.read().entries.find(entry=>entry.attachments?.includes(video.id));assert.equal(entry?.text,'look at the recording');assert.deepEqual(entry?.attachments,[video.id]);assert.equal(f.read().run?.id,chat.run?.id);
   }finally{await f.close();}
 });
+
+test('sameRunOnly rejects ended admission without opening a new round or replaying the supplement',async()=>{
+  const f=await fixture({delivery:'rejected',endOnReject:true});try{
+    const original=f.read().run!.id,input={...f.input('only this round'),sameRunOnly:true};
+    const result=await f.service.conversations.supplement('workspace',f.read().id,input);
+    assert.equal(result.delivery,'rejected');assert.equal(result.conversation.run!.id,original);assert.equal(f.calls.length,1);
+    const repeated=await f.service.conversations.supplement('workspace',f.read().id,input);
+    assert.equal(repeated.delivery,'rejected');assert.equal(repeated.conversation.run!.id,original);assert.equal(f.calls.length,1);
+  }finally{await f.close();}
+});

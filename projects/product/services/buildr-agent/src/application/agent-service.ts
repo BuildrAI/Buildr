@@ -33,7 +33,9 @@ export function createAgentService(options: AgentServiceOptions) {
   const root = path.join(options.dataRoot, 'agent-service');
   const repository = new ConversationRepository(root);
   repository.startReadModels();
-  const events = new ConversationEvents(generation, ConversationWebhooks.configure(webhookConfiguration(options.environment ?? process.env)));
+  const webhooks = ConversationWebhooks.configure(webhookConfiguration(options.environment ?? process.env), fetch, {root});
+  const events = new ConversationEvents(generation, webhooks);
+  if(webhooks) setImmediate(()=>{void webhooks.recover(after=>repository.webhookRecoveryPage(after)).catch(()=>{});});
   const now = () => (options.now?.() ?? new Date()).toISOString();
   let linkedChanged: ((connection:ConnectionView)=>void)|undefined;
   const connections = new ConnectionApplication({ repository, root, executors: options.executors ?? createNativeExecutors(), environment: executorEnvironment(options.environment ?? process.env), generation, now, changed: (connection: ConnectionView) => {events.publish({ type: 'connection', revision: connection.revision, payload: { connection } });linkedChanged?.(connection);} });
@@ -199,6 +201,11 @@ export function createAgentService(options: AgentServiceOptions) {
       send: (workspaceId: string, id: string, input: Parameters<ConversationApplication['send']>[2]) => conversations.send(workspaceId, id, input),
       queueSend: (workspaceId: string, id: string, input: Parameters<ConversationApplication['queueSend']>[2]) => conversations.queueSend(workspaceId, id, input),
       cancelPendingSend: (workspaceId: string, id: string, input: Parameters<ConversationApplication['cancelPendingSend']>[2]) => conversations.cancelPendingSend(workspaceId, id, input),
+      replayWebhook: (workspaceId: string, id: string, input: {eventId:string}) => {
+        conversations.read(workspaceId,id);
+        if(!webhooks) throw new AgentServiceError('agent_webhook_unavailable','本实例未配置有效通知目标。',409);
+        return webhooks.replay(workspaceId,id,input.eventId);
+      },
       supplement: (workspaceId: string, id: string, input: Parameters<ConversationApplication['supplement']>[2]) => conversations.supplement(workspaceId, id, input),
       releaseQuestionWait: (workspaceId:string,id:string,input:Parameters<ConversationApplication['releaseQuestionWait']>[2]) => conversations.releaseQuestionWait(workspaceId,id,input),
       observeRun: (workspaceId:string,id:string,input:Parameters<ConversationApplication['observeRun']>[2]) => conversations.observeRun(workspaceId,id,input),

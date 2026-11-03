@@ -7,10 +7,11 @@ function mock(replies: any[]) {
   const calls: Array<{route: string; body?: any}> = [];
   return { calls, request: async (route: string, body?: any) => { calls.push({route, body}); const value = replies.shift(); if (value instanceof Error) throw value; return value; } };
 }
-test('agent exposes six commands and strictly parses arguments before effects', () => {
-  assert.deepEqual(createAgentCliContributions().map(item => item.key), ['agent send','agent read','agent stop','agent list','agent reply','agent continue']);
+test('agent exposes eight commands and strictly parses arguments before effects', () => {
+  assert.deepEqual(createAgentCliContributions().map(item => item.key), ['agent send','agent read','agent stop','agent list','agent reply','agent continue','agent supplement','agent replay']);
   for (const [action, args] of [['send', []], ['send', [' ']], ['read', ['bad']], ['stop', [id, '--connection', 'x']], ['send', ['hi', '--json', '--json']], ['read', [id, '--limit', '0']], ['send', ['hi', '--target', '.', '--workspace-id', id]], ['send', ['hi', 'extra']]] as Array<[string,string[]]>) assert.throws(() => parseAgentArgs(action,args));
-  assert.equal(parseAgentArgs('send',['你好','--connection','codex']).value,'你好');
+  assert.equal(parseAgentArgs('send',['你好']).value,'你好');
+  assert.throws(()=>parseAgentArgs('send',['你好','--connection','codex']));
 });
 test('send composes create, prepare, send with preview revision/token and request id; no task writes', async () => {
   const m = mock([{connections:[{id:'codex',enabled:true,status:'ready'}]}, {id,revision:'r1'}, {fits:true,revision:'r2',token:'preview'}, {conversation:{id}}]);
@@ -24,7 +25,7 @@ test('send composes create, prepare, send with preview revision/token and reques
 });
 test('ambiguous connection causes no create; failed send preserves conversation id without replay', async () => {
   const m = mock([{connections:['a','b'].map(id=>({id,enabled:true,status:'ready'}))}]);
-  await assert.rejects(executeAgentCommand(parseAgentArgs('send',['hi']),id,m.request),/--connection/);
+  await assert.rejects(executeAgentCommand(parseAgentArgs('send',['hi']),id,m.request),/多个/);
   assert.equal(m.calls.length,1);
   const failed = mock([{connections:[{id:'a',enabled:true,status:'ready'}]},{id,revision:'r'},new Error('timeout')]);
   await assert.rejects(executeAgentCommand(parseAgentArgs('send',['hi']),id,failed.request), error => (error as any).conversationId === id && String(error).includes(id));
@@ -159,4 +160,88 @@ test('send forwards explicit permission overrides and rejects invalid mode befor
     assert.equal(m.calls[2].body.permissionMode, mode);
     assert.equal(m.calls[3].body.permissionMode, mode);
   }
+});
+
+const card = { id, kind: 'question', runId: run.id, participantId: run.participantId, generation: run.generation,
+  questions: [{id:'plan',label:'方案',options:[{id:'a',label:'甲'},{id:'b',label:'乙'}]}, {id:'notes',label:'补充',allowOther:true,options:[{id:'later',label:'稍后'}]}] };
+test('reply submits explicit option IDs and other text as the native card answer', async () => {
+  for (const args of [ ['--option','plan=a','--other','notes=x=y'], ['--answer-json','{"plan":["a"],"notes":["x=y"]}'] ]) {
+    const m = mock([{revision:'r',requests:[card]}, {ok:true}]);
+    await executeAgentCommand(parseAgentArgs('reply',[id,id,...args]),id,m.request);
+    assert.deepEqual(m.calls[1].body,{expectedRevision:'r',runId:'run',participantId:'participant',generation:'generation',answer:{plan:['a'],notes:['x=y']}});
+  }
+});
+test('reply rejects mixed inputs and malformed JSON before HTTP', () => {
+  for (const args of [[],['text','--option','q=a'],['--answer-json','{'],['--answer-json','[]'],['--answer-json','null'],['--answer-json','{}','--other','q=x'],['--option','=a'],['--other','q= '],['--answer-json','{}','--answer-json','{}']]) assert.throws(()=>parseAgentArgs('reply',[id,id,...args]));
+});
+test('invalid card answers never call reply; text resembling JSON stays text for plain requests', async () => {
+  for (const args of [ ['text'], ['--option','plan=甲','--other','notes=x'], ['--option','plan=a'], ['--option','plan=a','--option','plan=b','--other','notes=x'], ['--other','plan=x','--other','notes=x'], ['--option','plan=a','--option','plan=a','--other','notes=x'], ['--answer-json','{"plan":"a","notes":"x","unknown":"x"}'], ['--answer-json','{"plan":"a","notes":[]}'] ]) {
+    const m=mock([{revision:'r',requests:[card]}]);
+    await assert.rejects(executeAgentCommand(parseAgentArgs('reply',[id,id,...args]),id,m.request));
+    assert.equal(m.calls.length,1);
+  }
+  const m=mock([{revision:'r',requests:[{...card,questions:undefined}]},{}]);
+  await executeAgentCommand(parseAgentArgs('reply',[id,id,'{"q":"a"}']),id,m.request);
+  assert.equal(m.calls[1].body.answer,'{"q":"a"}');
+});
+test('multiple selections and prototype-like question IDs remain explicit own values', async () => {
+  const m=mock([{revision:'r',requests:[{...card,questions:[{id:'__proto__',multiple:true,options:[{id:'a'},{id:'b'}]}]}]},{}]);
+  await executeAgentCommand(parseAgentArgs('reply',[id,id,'--option','__proto__=a','--option','__proto__=b']),id,m.request);
+  assert.deepEqual(m.calls[1].body.answer,JSON.parse('{"__proto__":["a","b"]}'));
+});
+test('send explicitly skips current cards in the same conversation with observed identities and original configuration', async () => {
+  const prior={...run,status:'waiting-question',model:'model',modelAccountId:'account',modelAccountIdentity:'identity',reasoningEffort:'high',serviceTier:'fast',permissionMode:'default'};
+  const m=mock([{revision:'r',run:prior,requests:[card],participants:[{id:run.participantId,connectionId:'codex',model:'model',modelAccountId:'account'}]}, {fits:true,revision:'preview-r',token:'token'}, {id,pendingSend:{state:'waiting'}}]);
+  const result=await executeAgentCommand(parseAgentArgs('send',['新内容','--conversation',id,'--skip-questions']),id,m.request);
+  assert.equal(result.id,id);
+  assert.deepEqual(m.calls.map(call=>call.route.split('/').at(-1)),['observe','prepare-send','pending-send']);
+  const draft=m.calls[1].body;
+  assert.deepEqual(draft.waitingHandoff,{intent:'new-turn',runId:'run',participantId:'participant',generation:'generation',requestIds:[id]});
+  assert.equal(draft.text,'新内容');assert.equal(draft.modelAccountIdentity,'identity');assert.equal(draft.permissionMode,'default');assert.equal(draft.reasoningEffort,'high');
+  assert.equal(m.calls[2].body.expectedRevision,'preview-r');
+  assert.equal(m.calls.some(call=>call.route.includes('/tasks')||call.route.includes('/reply')||call.route.endsWith('/stop')),false);
+});
+test('skip requires paired flags and refuses approvals, stale identities, idle runs and pending sends without writes', async () => {
+  for (const args of [['--skip-questions'],['--conversation',id],['--conversation','bad','--skip-questions'],['--conversation',id,'--skip-questions','--model','a']]) assert.throws(()=>parseAgentArgs('send',['hi',...args]));
+  for(const chat of [{run,requests:[card]}, {run:{...run,status:'waiting-question'},requests:[]}, {run:{...run,status:'waiting-question'},requests:[{...card,kind:'approval'}]}, {run:{...run,status:'waiting-question'},requests:[{...card,generation:'old'}]}, {run:{...run,status:'waiting-question'},requests:[card],pendingSend:{}}]) {
+    const m=mock([{revision:'r',...chat}]);
+    await assert.rejects(executeAgentCommand(parseAgentArgs('send',['hi','--conversation',id,'--skip-questions']),id,m.request));assert.equal(m.calls.length,1);
+  }
+});
+
+test('send selects only enabled ready connections and refuses zero usable connections before create', async () => {
+  const connections=[{id:'off',enabled:false,status:'ready'},{id:'waiting',enabled:true,status:'unconfigured'},{id:'only',enabled:true,status:'ready'}];
+  const m=mock([{connections},{id,revision:'r'},{fits:true,revision:'p',token:'t'},{}]);
+  await executeAgentCommand(parseAgentArgs('send',['hi']),id,m.request);
+  assert.equal(m.calls[2].body.connectionId,'only');
+  const empty=mock([{connections:connections.slice(0,2)}]);
+  await assert.rejects(executeAgentCommand(parseAgentArgs('send',['hi']),id,empty.request),/没有已启用且就绪/);
+  assert.equal(empty.calls.length,1);
+});
+test('skip reports preview failure and queue conflicts without retry or creating another conversation', async () => {
+  const observed={revision:'r',run:{...run,status:'waiting-question'},requests:[card],participants:[{id:run.participantId,connectionId:'codex'}]};
+  for(const replies of [[observed,{fits:false,diagnostic:'too large'}],[observed,{fits:true,revision:'p'},new Error('conflict')]]) {
+    const expectedCalls=replies.length;
+    const m=mock(replies);
+    await assert.rejects(executeAgentCommand(parseAgentArgs('send',['hi','--conversation',id,'--skip-questions']),id,m.request));
+    assert.equal(m.calls.length,expectedCalls);
+    assert.equal(m.calls[0].route.endsWith('/observe'),true);
+  }
+});
+
+test('supplement inserts into the observed running execution without creating a conversation or answering cards',async()=>{
+  const m=mock([{run:{...run,accepted:true}}, {delivery:'accepted'}]);
+  await executeAgentCommand(parseAgentArgs('supplement',[id,'补充内容']),id,m.request);
+  assert.equal(m.calls.length,2);assert.equal(m.calls[1].route.endsWith('/supplement'),true);
+  assert.deepEqual(m.calls[1].body,{sameRunOnly:true,runId:run.id,participantId:run.participantId,generation:run.generation,text:'补充内容',clientRequestId:m.calls[1].body.clientRequestId});
+  assert.equal(m.calls.some(call=>call.route.includes('/reply')||call.route.endsWith('/send')),false);
+  for(const current of [{...run,accepted:false},{...run,accepted:true,status:'unknown'},{...run,accepted:true,status:'completed'},{...run,accepted:true,status:'waiting-question'}]){
+    const blocked=mock([{run:current}]);await assert.rejects(executeAgentCommand(parseAgentArgs('supplement',[id,'hi']),id,blocked.request));assert.equal(blocked.calls.length,1);
+  }
+});
+test('replay uses exact saved eventId only and sends no model input',async()=>{
+  const eventId='a'.repeat(64),m=mock([{eventId,queued:true}]);
+  await executeAgentCommand(parseAgentArgs('replay',[id,eventId]),id,m.request);
+  assert.equal(m.calls.length,1);assert.equal(m.calls[0].route.endsWith('/webhook-replay'),true);assert.deepEqual(m.calls[0].body,{eventId});
+  assert.throws(()=>parseAgentArgs('replay',[id,'invalid']));assert.throws(()=>parseAgentArgs('send',['hi','--model','model']));
 });

@@ -16,7 +16,7 @@ test('unified private config takes precedence, fails closed and supports legacy 
     assert.deepEqual(webhookConfiguration({...legacy,BUILDR_AGENT_WEBHOOK_CONFIG:filename}),{});
     fs.writeFileSync(filename,JSON.stringify({url:'https://current.test',secret:'current-test-secret'}),{mode:0o600});
     assert.deepEqual(webhookConfiguration(legacy),{BUILDR_AGENT_WEBHOOK_URL:'https://current.test',BUILDR_AGENT_WEBHOOK_SECRET:'current-test-secret'});
-    assert.ok(ConversationWebhooks.configure(webhookConfiguration(legacy)));
+    const configured=ConversationWebhooks.configure(webhookConfiguration(legacy));assert.ok(configured);configured.close();
     assert.deepEqual(webhookConfiguration({...legacy,HOME:'/not-used',BUILDR_HOST_HOME:root}),webhookConfiguration(legacy));
     fs.chmodSync(filename,0o644);assert.deepEqual(webhookConfiguration(legacy),{});
     fs.chmodSync(filename,0o600);
@@ -51,8 +51,12 @@ test('service composition loads unified config and publishes actual conversation
     await service.conversations.update('workspace',chat.id,{expectedRevision:chat.revision,title:'updated'});
     await Promise.race([arrived,new Promise((_,reject)=>{const timer=setTimeout(()=>reject(new Error('webhook timeout')),2000);timer.unref();})]);
     assert.equal(received.length,2);
-    assert.ok(received.every(event=>event.eventType==='conversation_updated'&&event.conversationId===chat.id));
+    assert.ok(received.every(event=>event.eventType==='status_changed'&&event.conversationId===chat.id));
     assert.notEqual(received[0].revision,received[1].revision);
+    const original=received[0];
+    assert.deepEqual(service.conversations.replayWebhook('workspace',chat.id,{eventId:original.eventId}),{eventId:original.eventId,queued:true});
+    for(let i=0;i<100&&received.length<3;i++)await new Promise(resolve=>setTimeout(resolve,5));
+    assert.equal(received.length,3);assert.deepEqual(received[2],original);
   } finally {
     await service.close();server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));
     fs.rmSync(root,{recursive:true,force:true});

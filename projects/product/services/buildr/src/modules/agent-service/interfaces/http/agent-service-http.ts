@@ -159,7 +159,7 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       }
       const detailMatch=suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})\/entry-detail\/([^/]+)$/);
       if(detailMatch&&request.method==='GET'){query(searchParams,['revision']);const revision=searchParams.get('revision');if(!revision||!(/^[a-f0-9]{64}$/).test(revision))throw inputError();let entryId:string;try{entryId=decodeURIComponent(detailMatch[2]);}catch{throw inputError();}if(!entryId||entryId.length>1024)throw inputError();return result('entry',await service.conversations.readEntry(workspaceId,detailMatch[1],entryId,revision));}
-      const match = suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})(?:\/(warmup|fork|prepare-send|send|supplement|pending-send|cancel-pending-send|generate-title|children|seen|observe|stop|events|entries|attachments|requests)(?:\/([a-f0-9-]{36})(?:\/(reply))?)?)?$/);
+      const match = suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})(?:\/(webhook-replay|warmup|fork|prepare-send|send|supplement|pending-send|cancel-pending-send|generate-title|children|seen|observe|stop|events|entries|attachments|requests)(?:\/([a-f0-9-]{36})(?:\/(reply))?)?)?$/);
       if (!match) return null;
       const [, id, action, childId, reply] = match;
       if (request.method === 'GET') {
@@ -200,6 +200,7 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       if (action === 'send') return result('sent', await service.conversations.send(workspaceId, id, validate('send', await readJsonBody(128 * 1024))), 202);
       if (action === 'pending-send') return result('conversation', await service.conversations.queueSend(workspaceId, id, validate('queueSend', await readJsonBody(128 * 1024))), 202);
       if (action === 'cancel-pending-send') return result('conversation', await service.conversations.cancelPendingSend(workspaceId, id, validate('cancelPendingSend', await readJsonBody())));
+      if (action === 'webhook-replay') return result('webhookReplayed', await service.conversations.replayWebhook(workspaceId,id,validate('webhookReplay',await readJsonBody())));
       if (action === 'supplement') return result('supplemented', await service.conversations.supplement(workspaceId, id, validate('supplement', await readJsonBody(128 * 1024))), 202);
       if (action === 'seen') return result('seenResult',await service.conversations.markSeen(workspaceId,id,validate('seen',await readJsonBody())));
       if (action === 'observe') { validate('empty', await readJsonBody()); return result('conversation', await service.conversations.observe(workspaceId, id)); }

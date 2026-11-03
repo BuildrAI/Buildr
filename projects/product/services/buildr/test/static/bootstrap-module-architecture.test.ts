@@ -256,7 +256,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     id: 'agent-service',
     requires: [WORKSPACE_APPLICATION, TASK_QUERY_APPLICATION, AGENT_ASSETS_SOURCE_QUERY],
     provides: [AGENT_SERVICE_APPLICATION],
-    contributions: { cli: ['agent send', 'agent read', 'agent stop', 'agent list', 'agent reply', 'agent continue'], http: ['agent-service.http'], diagnostics: [] },
+    contributions: { cli: ['agent send', 'agent read', 'agent stop', 'agent list', 'agent reply', 'agent continue', 'agent supplement', 'agent replay'], http: ['agent-service.http'], diagnostics: [] },
     lifecycle: 'managed',
   }, {
     id: 'code',
@@ -371,7 +371,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'task commits', 'task changed-files',
     'task materials inspect', 'task materials record', 'task materials write', 'task brief migrate',
     'agent-assets source inspect',
-    'agent send', 'agent read', 'agent stop', 'agent list', 'agent reply', 'agent continue',
+    'agent send', 'agent read', 'agent stop', 'agent list', 'agent reply', 'agent continue', 'agent supplement', 'agent replay',
     'code repositories', 'code directory', 'code file', 'code search', 'code source-control','code source-control-inventory', 'code discard-context', 'code commit-context', 'code sync-context', 'code branches', 'code authors', 'code history', 'code commit', 'code diff', 'code source-file',
     'connection-skill', 'service-runtime', 'mysql-query',
     'project verification inspect', 'project verification validate', 'project verification update',
