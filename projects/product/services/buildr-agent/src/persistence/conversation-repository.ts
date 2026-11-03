@@ -3,8 +3,8 @@ import { normalizeParticipation } from '../domain/participation.ts';
 import { projectParticipation, type ParticipationProjection } from '../domain/participation-record.ts';
 import { createHash } from 'node:crypto';
 import { summaryView, messageSignature, messageActivityAt, userActivityAt, pendingDecisionCount, conversationActive } from '../domain/conversation-activity.ts';
-import type { ConversationView } from '../contracts.ts';
-import { BUSY_STATES, unfinishedRun } from '../domain/agent-state.ts';
+import type { ConversationView, RunView } from '../contracts.ts';
+import { unfinishedRun } from '../domain/agent-state.ts';
 import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -257,6 +257,51 @@ export class ConversationRepository {
     const db=this.open(false);if(!db)return;
     try{if(ConversationReadModel.available(db)){const row=db.prepare('SELECT state FROM conversation_read_states WHERE id=?').get(id) as {state:string}|undefined;if(row)return JSON.parse(row.state);}}finally{db.close();}
     return this.readConversation(id);
+  }
+  /** Canonical headers only: maintenance never loads message bodies or trusts optional read caches. */
+  storageDependencies(): { complete: boolean; contexts: string[] } {
+    let db: DatabaseSync | undefined;
+    try {
+      db = this.open(false);
+      if (!db) return { complete: false, contexts: [] };
+      db.exec('BEGIN');
+      const contexts = new Set<string>();
+      const needsEvidence = (run: RunView) => unfinishedRun(run) || run.resourcesReleased !== true || run.executionState === 'unknown' || run.executionState === 'active';
+      for (const row of db.prepare(`SELECT json_object(
+        'participants',json_extract(body,'$.participants'),'attempts',json_extract(body,'$.attempts'),
+        'outcomes',json_extract(body,'$.runOutcomes'),'run',json_extract(body,'$.view.run'),
+        'retainedRuns',json_extract(body,'$.view.retainedRuns'),'requests',json_extract(body,'$.view.requests')) AS header FROM conversations`).iterate()) {
+        const header = JSON.parse(row.header as string);
+        if (!Array.isArray(header.participants) || !Array.isArray(header.requests) || !Array.isArray(header.attempts) ||
+            !Array.isArray(header.retainedRuns ?? [])) throw new Error('invalid_storage_header');
+        const runs = [header.run, ...(header.retainedRuns ?? [])].filter(Boolean);
+        if ([...runs, ...header.attempts, ...header.requests].some(item =>
+          !header.participants.some((participant: {id: string}) => participant.id === item.participantId))) throw new Error('invalid_storage_participant');
+        for (const participant of header.participants) {
+          if (typeof participant.id !== 'string' || typeof participant.provider !== 'string') throw new Error('invalid_storage_participant');
+          const preserve = (context: unknown) => {
+            if (context === undefined) return; // Not all attempts reached native context creation.
+            if (typeof context !== 'string' || !context) throw new Error('invalid_storage_context');
+            contexts.add(`${participant.provider}:${context}`);
+          };
+          if (runs.some(run => run.participantId === participant.id && needsEvidence(run)) ||
+              header.requests.some((request: { participantId: string; runId: string }) => request.participantId === participant.id ||
+                runs.some(run => run.id === request.runId && run.participantId === participant.id))) {
+            preserve(participant.contextRef?.id);
+          }
+          for (const attempt of header.attempts.filter((attempt: {participantId: string}) => attempt.participantId === participant.id)) {
+            const run = runs.find(run => run.id === attempt.runId), outcome = header.outcomes?.[attempt.runId];
+            // Retained rounds can still refer to a replaced context; current participant state is insufficient.
+            if ((run ? needsEvidence(run) : !['completed', 'failed', 'stopped'].includes(outcome?.status)) ||
+                header.requests.some((request: {runId: string}) => request.runId === attempt.runId)) {
+              preserve(attempt.executionRef?.data?.resourceContext ?? participant.contextRef?.id);
+            }
+          }
+        }
+      }
+      return { complete: true, contexts: [...contexts] };
+    } catch { return { complete: false, contexts: [] }; }
+    finally { db?.close(); }
   }
   listPendingStates(includeActive=false): ConversationReadState[] {
     const db=this.open(false);if(!db)return [];

@@ -240,6 +240,8 @@ export interface AgentExecutor {
   /** Adapter-owned cache knowledge, applied by the shared service lifecycle. */
   storage?: {
     transientDirectories: readonly string[];
+    /** Private diagnostic resources only; the service owns dependency/occupancy checks and deletion. */
+    diagnostics?(configRoot: string): Array<{ relativePath: string; producerPid?: number; contextId?: string; reason?: string }>;
     canReclaim?(configRoot: string, relative: string): boolean;
     /** Immutable seed copied into private working directories; never a shared native HOME. */
     snapshots?: ReadonlyArray<{ relative: string; key: string; identity(directory: string): string | undefined }>;

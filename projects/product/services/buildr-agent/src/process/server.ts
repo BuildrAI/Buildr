@@ -21,7 +21,7 @@ import { ConversationRepository } from '../persistence/conversation-repository.t
 import { PendingSends } from './pending-sends.ts';
 import { PendingSendRepository } from '../persistence/pending-send-repository.ts';
 import { cleanupStoppedProcesses } from './cleanup.ts';
-import { inspectAgentStorage, collectAgentStorage } from '../application/storage-maintenance.ts';
+import { StorageMaintenance } from './storage-maintenance.ts';
 import { runtimeChange } from './runtime-change.ts';
 
 interface PendingRuntime { runtime: AgentRuntimeUnit; state: 'waiting' | 'switching' | 'parallel-starting' | 'failed'; coordinatorPid?: number; handoffFile?: string; diagnostic?: string }
@@ -282,6 +282,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
   function close(): Promise<void> {
     if (closeWork) return closeWork;
     closing = true; accepting = false;
+    storageMaintenance.close();
     let confirmed=false;
     closeWork = (async () => {
       try {
@@ -343,7 +344,8 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       savePending(pending);
     } finally { startup?.release(); }
   }
-  let lastStorageCollection = Date.now(), lastConfirmedCollection = 0;
+  const storageMaintenance = new StorageMaintenance(options.dataRoot, { enabled: () => accepting && !retiring && !closing });
+  let lastConfirmedCollection = 0;
   const timer = setInterval(() => {
     if (closing || adopting) return;
     if (retiring) {
@@ -352,7 +354,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       }).catch(() => { /* Keep the exact old owner until native release is confirmed. */ }).finally(() => { adopting=undefined; });
       return;
     }
-    if (accepting) { void sends.pump().catch(()=>{}); try { const now = Date.now(), reconcile = now - lastStorageCollection >= 10 * 60_000; if (reconcile || now - lastConfirmedCollection >= 5000) { if (reconcile) lastStorageCollection = now; lastConfirmedCollection = now; if (reconcile) collectAgentStorage(inspectAgentStorage({dataRoot:options.dataRoot})); else cleanupStoppedProcesses(options.dataRoot,options.runtime); } } catch { /* Unknown resources remain retained. */ } }
+    if (accepting) { void sends.pump().catch(()=>{}); try { const now = Date.now(); if (now - lastConfirmedCollection >= 5000) { lastConfirmedCollection = now; cleanupStoppedProcesses(options.dataRoot,options.runtime); } } catch { /* Unknown resources remain retained. */ } }
     if (pending?.state==='waiting' && canRunParallel(options.runtime,pending.runtime) && !inflight && !recovering && !sends.busy) {
       const target=pending.runtime;
       adopting=adoptParallel(target).finally(()=>{adopting=undefined;});

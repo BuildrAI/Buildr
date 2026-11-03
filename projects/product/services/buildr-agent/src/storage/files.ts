@@ -5,10 +5,12 @@ import { spawnSync } from 'node:child_process';
 
 export interface StorageUse { complete: boolean; paths: readonly string[]; diagnostic?: string }
 export interface StorageCandidate {
-  kind: 'cache' | 'runtime'; path: string; ownerRoot: string;
+  kind: 'cache' | 'runtime' | 'diagnostic'; path: string; ownerRoot: string;
   sizeBytes: number; identity?: string; eligible: boolean; reason: string;
+  rootChanged?: number;
+  diagnostic?: { provider: string; producerPid?: number; contextId?: string };
 }
-export interface StorageVersion { identity: string; sizeBytes: number; modified: number }
+export interface StorageVersion { identity: string; sizeBytes: number; modified: number; rootChanged: number }
 
 /** No file bodies, process environments or command arguments enter the maintenance result. */
 export function observeStorageUse(): StorageUse {
@@ -54,24 +56,37 @@ export function ensureStorageDirectory(root: string, target: string): void {
   }
 }
 
-export function storageVersion(directory: string): StorageVersion {
+/** Diagnostic files may be individual event segments. Never follow links or remove shared files. */
+export function safeStorageResource(root: string, target: string): boolean {
+  if (!safeStoragePath(root, path.dirname(target))) return false;
+  const walk = (file: string): boolean => {
+    const stat = fs.lstatSync(file);
+    if (stat.isSymbolicLink() || process.getuid && stat.uid !== process.getuid()) return false;
+    if (stat.isDirectory()) return fs.readdirSync(file).every(name => walk(path.join(file, name)));
+    return stat.isFile() && stat.nlink === 1;
+  };
+  try { return walk(target); } catch { return false; }
+}
+
+export function storageVersion(directory: string, renamedRootChanged?: number): StorageVersion {
   const hash = createHash('sha256'); let sizeBytes = 0, modified = 0;
+  const rootChanged = fs.lstatSync(directory).ctimeMs;
   const walk = (file: string) => {
     const stat = fs.lstatSync(file);
-    // Renaming the root for removal changes ctime, but not its contents or inode.
-    hash.update(JSON.stringify([path.relative(directory, file), stat.dev, stat.ino, stat.mode, stat.size, stat.mtimeMs, file === directory ? 0 : stat.ctimeMs]));
+    // Only the collector's own rename may normalize root ctime; previews include it to detect rewrites.
+    hash.update(JSON.stringify([path.relative(directory, file), stat.dev, stat.ino, stat.mode, stat.size, stat.mtimeMs, file === directory ? renamedRootChanged ?? stat.ctimeMs : stat.ctimeMs]));
     modified = Math.max(modified, stat.mtimeMs);
     if (stat.isDirectory()) for (const name of fs.readdirSync(file).sort()) walk(path.join(file, name));
     else sizeBytes += stat.blocks * 512;
   };
-  walk(directory); return { identity: hash.digest('hex'), sizeBytes, modified };
+  walk(directory); return { identity: hash.digest('hex'), sizeBytes, modified, rootChanged };
 }
 
 export function storageCandidate(root: string, kind: StorageCandidate['kind'], directory: string, ownerRoot: string, use: StorageUse, cutoff: number): StorageCandidate {
   const item: StorageCandidate = { kind, path: directory, ownerRoot, sizeBytes: 0, eligible: false, reason: 'storage_path_unsafe' };
   if (!safeStoragePath(root, directory) || !(ownerRoot === root || safeStoragePath(root, ownerRoot))) return item;
   try {
-    const version = storageVersion(directory); Object.assign(item, { identity: version.identity, sizeBytes: version.sizeBytes });
+    const version = storageVersion(directory); Object.assign(item, { identity: version.identity, sizeBytes: version.sizeBytes, rootChanged: version.rootChanged });
     item.reason = !use.complete ? 'storage_usage_unknown' : storageInUse(ownerRoot, use) ? 'storage_in_use' : version.modified > cutoff ? 'storage_recent' : 'unused_rebuildable';
     item.eligible = item.reason === 'unused_rebuildable';
   } catch { item.reason = 'storage_observation_failed'; }
@@ -80,13 +95,17 @@ export function storageCandidate(root: string, kind: StorageCandidate['kind'], d
 
 /** The caller holds the service storage lock; recheck immediately around the narrow rename. */
 export function removeStorageCandidate(root: string, item: StorageCandidate, observe = observeStorageUse, unreferenced = () => true): boolean {
-  if (!item.eligible || !item.identity || !safeStoragePath(root, item.path) || !unreferenced() || storageInUse(item.ownerRoot, observe())) return false;
+  const safe = () => item.kind === 'diagnostic' ? safeStorageResource(root, item.path) : safeStoragePath(root, item.path);
+  if (!item.eligible || !item.identity || !safe() || !unreferenced() || storageInUse(item.ownerRoot, observe())) return false;
   if (storageVersion(item.path).identity !== item.identity) return false;
   const retired = path.join(path.dirname(item.path), '.reclaim-' + randomUUID());
   fs.renameSync(item.path, retired);
   try {
+    const renamedRootChanged = fs.lstatSync(retired).ctimeMs;
     const use = observe();
-    if (!unreferenced() || !use.complete || storageInUse(item.ownerRoot, use) || storageInUse(retired, use) || storageVersion(retired).identity !== item.identity) {
+    const permitted = unreferenced(), version = storageVersion(retired, item.rootChanged);
+    if (!permitted || !use.complete || storageInUse(item.ownerRoot, use) || storageInUse(retired, use) ||
+        version.identity !== item.identity || version.rootChanged !== renamedRootChanged) {
       if (!fs.existsSync(item.path)) fs.renameSync(retired, item.path);
       return false;
     }
