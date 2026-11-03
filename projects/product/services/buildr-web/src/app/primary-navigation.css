@@ -1,9 +1,15 @@
-.primary-navigation{--primary-rail-width:52px;display:flex;flex:none;position:relative;z-index:8;min-height:0;background:#fff;border-right:1px solid var(--soft-line,#e1e5e9)}
+/* 一级导航是一段独立导航带：对话浮窗与主内容同为白色时，仍能看出这是一列导航而不是空白间隙。 */
+.primary-navigation{--primary-rail-width:52px;display:flex;flex:none;position:relative;z-index:8;min-height:0;background:var(--soft-sidebar,#f6f7f8);border-right:1px solid var(--soft-line,#e1e5e9)}
 .primary-navigation.is-pinned{border-right:0}
-.primary-navigation-rail{width:var(--primary-rail-width);flex:none;display:flex;flex-direction:column;gap:12px;padding:6px 5px 10px;align-items:center;border-right:1px solid var(--soft-line,#e1e5e9)}
+.primary-navigation-rail{width:var(--primary-rail-width);flex:none;display:flex;flex-direction:column;gap:8px;padding:4px 5px 10px;align-items:center;border-right:1px solid var(--soft-line,#e1e5e9)}
+/* 未固定时导轨就是最外层边界，容器已画 1px，这里不再叠加第二条线。 */
+.primary-navigation:not(.is-pinned)>.primary-navigation-rail{border-right:0}
 .primary-navigation-rail>div{width:100%}.primary-navigation-rail .shell-nav-item{position:relative;box-sizing:border-box;width:40px;height:40px;padding:0;margin:0;display:flex;align-items:center;justify-content:center;border:0;border-radius:8px;background:transparent;color:var(--soft-muted,#7e8a84);font:inherit;cursor:pointer}
 .primary-navigation-rail .shell-nav-item>span:not(.anticon){display:none}.primary-navigation-rail .shell-nav-item .anticon{font-size:var(--icon-size-navigation)}
-.primary-navigation-rail .primary-navigation-trigger[data-highlighted]{background:#e7efec;color:#306b62}
+/* 当前区域常驻主色底；指向别处时只用中性底色，避免两处同时泛绿。 */
+.primary-navigation-rail .primary-navigation-trigger[data-current]:not([data-fixed]){background:#e7efec;color:#306b62}
+.primary-navigation-rail .primary-navigation-trigger[data-current]:not([data-fixed]):hover{background:#dfeae5;color:#2a6157}
+.primary-navigation-rail .primary-navigation-trigger[data-highlighted]{background:#ebedf0;color:#3d4a45}
 .primary-navigation-trigger:focus-visible{outline:2px solid var(--soft-primary,#397d74);outline-offset:-2px}
 .primary-secondary-navigation{width:var(--primary-secondary-width,256px);box-sizing:border-box;flex:none;display:flex;flex-direction:column;min-height:0;background:#fafcfb;overflow:hidden}
 .primary-secondary-navigation[hidden]{display:none!important}
@@ -26,6 +32,6 @@
   .primary-navigation.is-pinned>.primary-navigation-resize{position:absolute;left:calc(var(--primary-rail-width) + var(--primary-secondary-width,256px));top:0;bottom:0;z-index:31}
 }
 
-.primary-navigation-rail .primary-navigation-trigger:hover{color:var(--soft-primary,#397d74);background:#edf4f0}.primary-navigation-rail .primary-navigation-trigger[data-fixed]:hover{color:var(--soft-muted,#7e8a84);background:transparent}
+.primary-navigation-rail .primary-navigation-trigger:hover{color:var(--soft-primary,#397d74);background:#ebedf0}.primary-navigation-rail .primary-navigation-trigger[data-fixed]:hover{color:var(--soft-muted,#7e8a84);background:transparent}
 
 .primary-navigation-rail .primary-navigation-trigger{box-shadow:none;border:0}.primary-navigation-rail .primary-navigation-trigger .anticon,.primary-navigation-rail .primary-navigation-trigger svg{color:inherit}.primary-navigation-rail .primary-navigation-trigger:not(:focus-visible){outline:none}.primary-navigation-rail .primary-navigation-trigger[data-fixed]:not(:hover){color:var(--soft-primary,#397d74);background:#edf4f0}

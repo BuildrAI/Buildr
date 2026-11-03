@@ -88,7 +88,7 @@ export function AppPrimaryNavigation(props: Props) {
         if (event.pointerType === 'mouse' && rail.current?.contains(document.activeElement)) (document.activeElement as HTMLElement).blur();
         peek.enter('rail', event.pointerType, event.currentTarget.querySelector('button') || undefined);
       }} onPointerLeave={event => peek.exit('rail', event.pointerType)}>
-        <button type="button" className="shell-nav-item primary-navigation-trigger" data-nav={item} data-fixed={pinned && fixedArea === item || undefined} data-highlighted={highlightedArea === item || undefined} title={labels[item]} aria-label={labels[item] + '导航'} aria-expanded={pinned && fixedArea === item || shown && preview === item} aria-controls={`${fixedPanelId} ${panelId}`}
+        <button type="button" className="shell-nav-item primary-navigation-trigger" data-nav={item} data-current={props.area === item || undefined} data-fixed={pinned && fixedArea === item || undefined} data-highlighted={highlightedArea === item || undefined} title={labels[item]} aria-label={labels[item] + '导航'} aria-expanded={pinned && fixedArea === item || shown && preview === item} aria-controls={`${fixedPanelId} ${panelId}`}
           onPointerDown={event => { if (event.pointerType === 'mouse' && event.button === 0) event.preventDefault(); }}
           onClick={event => {openExplicit(item,event.detail===0);if(event.detail>0)event.currentTarget.blur();}}
           onKeyDown={event => { if (event.key === 'ArrowRight') { event.preventDefault(); openExplicit(item, true); } }}>

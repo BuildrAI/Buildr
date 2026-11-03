@@ -1,4 +1,7 @@
 .ac-divider.split-divider{margin-inline:-4.5px;margin-top:43px;z-index:9}
+/* 左侧停靠时，分界与导轨右侧边界一样从上到底：不再保留页头内的短线与断口。 */
+.ac-divider.split-divider[data-dock=left]{margin-top:0}
+.ac-divider[data-dock=left] .split-divider-header-marker{display:none}
 .ac-panel[hidden]{display:none!important}
 .ac-collapsed-rail{display:flex;flex-direction:column;flex:none;justify-content:flex-start;align-items:center;box-sizing:border-box;width:52px;padding:6px 5px 10px;background:#fff;border-left:1px solid var(--soft-line)}
 .ac-collapsed-rail[data-dock=left]{order:-3;border-left:0;border-right:1px solid var(--soft-line)}
