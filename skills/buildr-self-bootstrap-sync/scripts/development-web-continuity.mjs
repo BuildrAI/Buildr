@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
 export const DEVELOPMENT_WEB_CONTINUITY_SCHEMA = 'buildr.development-web-continuity/v1';
@@ -134,6 +134,60 @@ function matchesDevelopmentOwner(instance, expected) {
     && samePath(source?.developmentRuntime?.executable, expected.nodeExecutable);
 }
 
+/** PIDs listening on the development port; ownership is decided by command line, not by name. */
+export function portListeners(port, platform = process.platform, run = spawnSync) {
+  const output = run(platform === 'win32' ? 'netstat' : 'lsof',
+    platform === 'win32' ? ['-ano'] : ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t'], { encoding: 'utf8' })?.stdout || '';
+  if (platform === 'win32') {
+    return output.split(/\r?\n/)
+      .filter(line => new RegExp(`[:.]${port}\\s`).test(line) && /LISTENING/i.test(line))
+      .map(line => Number(line.trim().split(/\s+/).pop()))
+      .filter(pid => Number.isInteger(pid) && pid > 0);
+  }
+  return output.split(/\s+/).map(Number).filter(pid => Number.isInteger(pid) && pid > 0);
+}
+
+export function processCommand(pid, platform = process.platform, run = spawnSync) {
+  const output = run(platform === 'win32' ? 'wmic' : 'ps',
+    platform === 'win32' ? ['process', 'where', `ProcessId=${pid}`, 'get', 'CommandLine', '/value'] : ['-o', 'command=', '-p', String(pid)],
+    { encoding: 'utf8' })?.stdout || '';
+  return output.trim();
+}
+
+/**
+ * A previous start can leave the port bound without an instance record (the app
+ * records itself only after it is healthy). Release it only when the command line
+ * proves it is this checkout's development entry and port; anything else is
+ * reported instead of stopped.
+ */
+export async function releaseCheckoutPort({ port, serviceRoot, platform = process.platform, run = spawnSync,
+  killProcess = process.kill.bind(process), wait = (duration) => new Promise(resolve => setTimeout(resolve, duration)), timeoutMs = 5000 }) {
+  const released = [];
+  for (const pid of portListeners(port, platform, run)) {
+    const command = processCommand(pid, platform, run);
+    const entry = path.join(serviceRoot, 'bin', 'buildr.mjs');
+    if (!command.includes(entry) || !command.includes(`--port ${port}`)) {
+      throw continuityError('port-occupied', `Port ${port} is held by a process this runner cannot prove: ${pid} ${command}`);
+    }
+    try { killProcess(pid, 'SIGTERM'); }
+    catch (error) { if (error.code !== 'ESRCH') throw error; continue; }
+    released.push(pid);
+  }
+  const deadline = Date.now() + timeoutMs;
+  for (const pid of released) {
+    for (;;) {
+      const alive = portListeners(port, platform, run).includes(pid);
+      if (!alive) break;
+      if (Date.now() >= deadline) {
+        try { killProcess(pid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+        break;
+      }
+      await wait(50);
+    }
+  }
+  return released;
+}
+
 function continuityError(code, message) {
   return Object.assign(new Error(message), { code: `development-web-continuity.${code}` });
 }
@@ -250,6 +304,11 @@ export async function restartDevelopmentInstance({
     }
     break;
   }
+  // A start that died before writing its receipt leaves the port bound with no
+  // record to authenticate. Release it only when the holder proves ownership.
+  const stalePort = fs.existsSync(instanceFile(dataRoot))
+    ? []
+    : await releaseCheckoutPort({ port, serviceRoot: path.join(path.dirname(projectBridge), 'services', 'buildr'), killProcess, wait });
   fs.mkdirSync(dataRoot, { recursive: true });
   const logRoot = path.join(dataRoot, 'logs');
   fs.mkdirSync(logRoot, { recursive: true });
@@ -284,6 +343,7 @@ export async function restartDevelopmentInstance({
       previous: { pid: previousPid, port: previousPort },
       instance,
       launcherIdentity: identity,
+      stalePort,
       cleanup: null,
     };
   } catch (error) {
