@@ -263,6 +263,9 @@ export async function restartDevelopmentInstance({
       stdio: ['ignore', log, log],
       env: {
         ...environment,
+        // The spawned app must record itself where continuity observes it, even
+        // when the caller runs under an isolated HOME.
+        BUILDR_APP_DATA_DIR: dataRoot,
         BUILDR_NODE: nodeExecutable,
         BUILDR_LAUNCHER_IDENTITY: launcherIdentityPath,
       },
