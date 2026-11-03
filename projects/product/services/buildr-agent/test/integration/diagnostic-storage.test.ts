@@ -73,13 +73,32 @@ test('slow system observation cannot consume a small diagnostic batch file-work 
 
 test('a public diagnostic batch drains hundreds of small logs and respects an item budget', {skip:process.platform!=='darwin'},t=>{
   const f=fixture(t);
+  for(let i=0;i<20;i++)f.run(deadPid,'small-directory-'+i);
   for(let i=0;i<320;i++){const name=path.join(f.logs,`sdk-daemon-${deadPid}-${i}.log`);file(name);fs.utimesSync(name,1,1);}
   const first=collectAgentStorage(inspectAgentStorage({dataRoot:f.dataRoot}),256,{budgetMs:10000});
   assert.equal(first.results.filter(item=>item.status==='removed').length,256);
   assert.ok(first.results.some(item=>item.reason==='storage_batch_deferred'));
   const next=collectAgentStorage(inspectAgentStorage({dataRoot:f.dataRoot}),256,{budgetMs:10000});
-  assert.equal(next.results.filter(item=>item.status==='removed').length,64);
-  assert.equal(fs.readdirSync(f.logs).length,0);
+  assert.equal(next.results.filter(item=>item.status==='removed').length,84);
+  assert.equal(f.candidates().length,0);
+});
+
+test('small diagnostic directories retain opened descendants and do not batch unbounded trees',t=>{
+  const f=fixture(t),held=f.run(deadPid,'held'),free=f.run(deadPid,'free'),late=f.run(deadPid,'late'),large=f.run(deadPid,'many');
+  for(let i=0;i<64;i++)file(path.join(large,'empty-'+i),'');
+  age(large);assert.equal(safeStorageResource(f.root,large,64),false);
+  const items=f.candidates();let observations=0;
+  const removed=removeDiagnosticFileBatch(f.root,items,()=>true,()=>{
+    observations++;const paths=[path.join(held,'qodercli.log')];
+    if(observations===2){
+      const renamed=fs.readdirSync(path.dirname(late)).find(name=>name.startsWith('.reclaim-')&&JSON.parse(fs.readFileSync(path.join(path.dirname(late),name,'manifest.json'),'utf8')).run_id===path.basename(late));
+      assert.ok(renamed);paths.push(path.join(path.dirname(late),renamed,'qodercli.log'));
+    }
+    return {complete:true,paths};
+  });
+  assert.equal(observations,2);assert.deepEqual(removed,[free]);
+  assert.ok(fs.existsSync(path.join(held,'qodercli.log')));assert.ok(fs.existsSync(path.join(late,'qodercli.log')));assert.ok(fs.existsSync(large));
+  assert.equal(fs.readdirSync(path.dirname(held)).some(name=>name.startsWith('.reclaim-')),false);
 });
 
 test('known closed diagnostics are separate from native history, credentials, unknown content and live producers', t => {

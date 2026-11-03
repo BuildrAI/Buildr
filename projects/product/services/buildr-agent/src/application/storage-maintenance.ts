@@ -4,7 +4,7 @@ import { createNativeExecutors } from '../executors/index.ts';
 import { ExecutorStorage, executorCacheCandidates } from './executor-storage.ts';
 import { claim } from '../process/ownership.ts';
 import { retainedRuntimeCandidates, retireRuntimeRecords, runtimeUnreferenced } from '../process/cleanup.ts';
-import { observeStorageUse, removeStorageCandidate, removeDiagnosticFileBatch, safeStoragePath, type StorageCandidate } from '../storage/files.ts';
+import { observeStorageUse, removeStorageCandidate, removeDiagnosticFileBatch, safeStoragePath, safeStorageResource, type StorageCandidate } from '../storage/files.ts';
 import { diagnosticCandidates, diagnosticUnreferenced } from '../storage/diagnostics.ts';
 import { ConversationRepository } from '../persistence/conversation-repository.ts';
 
@@ -64,13 +64,13 @@ export function collectAgentStorage(plan: AgentStoragePlan, maximumItems = 128, 
       results.push({ path: expected.path, status: 'retained', reason: 'storage_batch_deferred', sizeBytes: item?.sizeBytes ?? expected.sizeBytes }); continue;
     }
     if (item?.eligible && item.kind === expected.kind && item.identity === expected.identity) {
-      if(item.kind==='diagnostic'&&fs.lstatSync(item.path,{throwIfNoEntry:false})?.isFile()&&item.sizeBytes<=256*1024) {
+      if(item.kind==='diagnostic'&&item.sizeBytes<=256*1024&&safeStorageResource(root,item.path,64)) {
         const group:Array<{expected:StorageCandidate;item:StorageCandidate}>=[];
         for(const value of pending){
           if(group.length>=Math.min(256,limit-attempted))break;
           if(handled.has(value.path))continue;
           const candidate=candidates.get(value.path);
-          if(candidate?.eligible&&candidate.kind==='diagnostic'&&value.kind===candidate.kind&&candidate.identity===value.identity&&candidate.sizeBytes<=256*1024&&fs.lstatSync(candidate.path,{throwIfNoEntry:false})?.isFile())group.push({expected:value,item:candidate});
+          if(candidate?.eligible&&candidate.kind==='diagnostic'&&value.kind===candidate.kind&&candidate.identity===value.identity&&candidate.sizeBytes<=256*1024&&safeStorageResource(root,candidate.path,64))group.push({expected:value,item:candidate});
         }
         let groupLock:ReturnType<typeof claim>|undefined;let removed=new Set<string>();
         try {

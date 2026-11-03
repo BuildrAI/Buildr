@@ -57,9 +57,11 @@ export function ensureStorageDirectory(root: string, target: string): void {
 }
 
 /** Diagnostic files may be individual event segments. Never follow links or remove shared files. */
-export function safeStorageResource(root: string, target: string): boolean {
+export function safeStorageResource(root: string, target: string, maximumNodes=Infinity): boolean {
   if (!safeStoragePath(root, path.dirname(target))) return false;
+  let nodes=0;
   const walk = (file: string): boolean => {
+    if(++nodes>maximumNodes)return false;
     const stat = fs.lstatSync(file);
     if (stat.isSymbolicLink() || process.getuid && stat.uid !== process.getuid()) return false;
     if (stat.isDirectory()) return fs.readdirSync(file).every(name => walk(path.join(file, name)));
@@ -128,8 +130,9 @@ export function removeDiagnosticFileBatch(root: string, items: StorageCandidate[
     for(const item of items.slice(0,256)) {
       if(Date.now()>renameDeadline)break;
       try {
-        if(item.kind!=='diagnostic'||!item.eligible||!item.identity||!safeStorageResource(root,item.path)||storageInUse(item.ownerRoot,before)||!unreferenced(item))continue;
-        const info=fs.lstatSync(item.path);if(!info.isFile()||info.size>256*1024||storageVersion(item.path).identity!==item.identity)continue;
+        if(item.kind!=='diagnostic'||!item.eligible||!item.identity||!safeStorageResource(root,item.path,64)||storageInUse(item.ownerRoot,before)||!unreferenced(item))continue;
+        const info=fs.lstatSync(item.path),version=storageVersion(item.path);
+        if((!info.isFile()&&!info.isDirectory())||version.sizeBytes>256*1024||version.identity!==item.identity)continue;
         const retired=path.join(path.dirname(item.path),'.reclaim-'+randomUUID());fs.renameSync(item.path,retired);
         const moved={item,retired,changed:0};renamed.push(moved);moved.changed=fs.lstatSync(retired).ctimeMs;
       }catch{/* A changed or unavailable file is retained independently. */}
@@ -140,7 +143,7 @@ export function removeDiagnosticFileBatch(root: string, items: StorageCandidate[
       try {
         const version=storageVersion(retired,item.rootChanged);
         if(storageInUse(item.ownerRoot,after)||storageInUse(retired,after)||!unreferenced(item)||version.identity!==item.identity||version.rootChanged!==changed){restore(item,retired);continue;}
-        fs.unlinkSync(retired);removed.push(item.path);
+        fs.rmSync(retired,{recursive:true});removed.push(item.path);
       }catch{restore(item,retired);}
     }
   }finally{for(const{item,retired}of renamed)try{restore(item,retired);}catch{/* Keep the renamed file rather than overwrite a replacement. */}}
