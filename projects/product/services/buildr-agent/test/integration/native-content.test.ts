@@ -20,6 +20,7 @@ import { maintainNativeContent } from '../../src/application/native-content-main
 import { ConversationAttachments } from '../../src/application/conversation-attachments.ts';
 import { DatabaseSync } from 'node:sqlite';
 import { StorageMaintenance } from '../../src/process/storage-maintenance.ts';
+import { modelLeaseIdentity } from '../../src/model-access/model-preferences.ts';
 
 function conversation(t: test.TestContext, provider = 'qoder') {
   const f=fixture(t,provider), repo=new ConversationRepository(f.root), runId=randomUUID(), participantId=randomUUID(), binding='fixture-binding';
@@ -110,7 +111,7 @@ test('settled tools move once, preserve detail/history/search/fork bytes and kee
   const result=maintainNativeContent(f.dataRoot); assert.equal(result.diagnostic,undefined); assert.equal(result.tools,1); assert.ok(result.contentBytesSaved>1024);
   assert.equal(maintainNativeContent(f.dataRoot).tools,0);
   const db=new DatabaseSync(f.repo.filename);t.after(()=>db.close());
-  const content=db.prepare("SELECT * FROM conversation_entry_contents WHERE codec='native-v1'").get()!;
+  const content=db.prepare("SELECT * FROM conversation_entry_contents WHERE codec LIKE 'native-%'").get()!;
   assert.ok(content); assert.equal(Buffer.from(content.body as Uint8Array).includes(Buffer.from(f.output)),false);
   const revision=String(content.content_revision);
   const preview=f.repo.readPage(f.r.view.id,undefined,undefined,true)!.view.entries[0]; assert.equal(preview.detail!.revision,revision);
@@ -129,7 +130,7 @@ test('settled tools move once, preserve detail/history/search/fork bytes and kee
   stale.view.revision='r2';stale.view.title='控制字段仍可保存'; f.repo.saveConversation(stale,'r1');
   f.repo.rebuildReadModel(f.r.view.id);
   assert.equal(f.repo.readState(f.r.view.id)!.view.title,'控制字段仍可保存');
-  assert.equal(db.prepare("SELECT count(*) AS n FROM conversation_entry_contents WHERE codec='native-v1'").get()!.n,1,'save never replaces unavailable body with an empty preview');
+  assert.equal(db.prepare("SELECT count(*) AS n FROM conversation_entry_contents WHERE codec LIKE 'native-%'").get()!.n,1,'save never replaces unavailable body with an empty preview');
 });
 
 test('active/unknown contexts retain copies, become eligible later and stale physical conversions cannot overwrite new input',t=>{
@@ -150,9 +151,9 @@ test('v5 upgrade preserves normalized bodies and rejects a retained old writer b
   db.exec("DROP TRIGGER conversation_body_format_insert; DROP TRIGGER conversation_body_format_update; UPDATE conversations SET body=json_set(body,'$._bodyFormat',5); PRAGMA user_version=5");
   const original=f.repo.readPage(f.r.view.id)!.view.entries;
   assert.equal(maintainNativeContent(f.dataRoot).diagnostic,'native_content_maintenance_deferred','maintenance cannot silently upgrade an old live store');
-  f.repo.startReadModels();assert.equal(db.prepare('PRAGMA user_version').get()!.user_version,6);
+  f.repo.startReadModels();assert.equal(db.prepare('PRAGMA user_version').get()!.user_version,7);
   assert.deepEqual(f.repo.readPage(f.r.view.id)!.view.entries,original);
-  assert.equal(fs.readdirSync(f.root).some(name=>name.startsWith('conversations.pre-v6-')),false);
+  assert.equal(fs.readdirSync(f.root).some(name=>name.startsWith('conversations.pre-v7-')),false);
   assert.throws(()=>db.prepare("UPDATE conversations SET body=json_set(body,'$._bodyFormat',5)").run(),/agent_storage_writer_incompatible/);db.close();
 });
 
@@ -180,7 +181,7 @@ test('native image bytes serve directly, materialize only when needed, ignore le
 test('the existing automatic maintenance worker converts a settled copy without any model or CLI request',async t=>{
   const f=conversation(t), before=fs.readFileSync(f.file), maintenance=new StorageMaintenance(f.dataRoot,{initialMs:1,intervalMs:60000});t.after(()=>maintenance.close());
   const deadline=Date.now()+15000;let converted=false;
-  while(Date.now()<deadline){const db=new DatabaseSync(f.repo.filename,{readOnly:true});converted=!!db.prepare("SELECT 1 FROM conversation_entry_contents WHERE codec='native-v1'").get();db.close();if(converted)break;await new Promise(resolve=>setTimeout(resolve,50));}
+  while(Date.now()<deadline){const db=new DatabaseSync(f.repo.filename,{readOnly:true});converted=!!db.prepare("SELECT 1 FROM conversation_entry_contents WHERE codec LIKE 'native-%'").get();db.close();if(converted)break;await new Promise(resolve=>setTimeout(resolve,50));}
   assert.equal(converted,true);assert.deepEqual(fs.readFileSync(f.file),before);assert.deepEqual(f.repo.readPage(f.r.view.id)!.view.entries[0],f.entry);
 });
 
@@ -219,4 +220,165 @@ test('incremental maintenance physically returns free database pages within its 
   const after=fs.statSync(f.repo.filename).size;assert.equal(before-after,reclaimed);
   assert.deepEqual(f.repo.readPage(f.r.view.id)!.view.entries,f.r.view.entries);
   db.close();
+});
+
+test('Codex quoted inner JSON and partially persisted output keep only necessary residual bytes',t=>{
+  const f=conversation(t,'codex'),command='printf "quoted"\nprintf \'next\'\n',output=randomBytes(12000).toString('hex');
+  f.rows[1].payload.arguments=JSON.stringify({cmd:command});
+  f.rows[2].payload.output='Execution metadata\nOutput:\n'+output.slice(0,8000)+'\n[model omitted middle]\n'+output.slice(-2000);
+  fs.writeFileSync(f.file,f.rows.map(row=>JSON.stringify(row)+'\n').join(''));
+  f.entry.input='/bin/zsh -lc '+JSON.stringify(command);f.entry.text=f.entry.input+'\n'+nativePreview(output);
+  f.r.view.entries[0]={...f.entry};f.r.view.revision='r2';f.repo.saveConversation(f.r,'r1');
+  const before=fs.readFileSync(f.file),result=maintainNativeContent(f.dataRoot);
+  assert.equal(result.tools,1);assert.ok(result.localResidualBytes>0);assert.ok(result.localResidualBytes<Buffer.byteLength(f.entry.text));
+  assert.equal(result.reasons['codex:convertible_partial']!.items,1);
+  const db=new DatabaseSync(f.repo.filename);t.after(()=>db.close());
+  const row=db.prepare("SELECT * FROM conversation_entry_contents WHERE codec LIKE 'native-%'").get() as any;
+  const reference=ConversationEntryStore.reference(row)!;
+  assert.ok(reference.input!.some(part=>'source'in part&&part.jsonPointer?.includes('cmd')));
+  assert.deepEqual(f.repo.readEntry(f.r.view.id,f.entry.id,row.content_revision),f.entry);
+  assert.deepEqual(fs.readFileSync(f.file),before);
+  const metadata=f.repo.readConversation(f.r.view.id)!;metadata.view.entries[0]!.name='updated display name';metadata.view.revision='r3';
+  f.repo.saveConversation(metadata,'r2');
+  assert.equal(db.prepare("SELECT count(*) n FROM conversation_entry_contents WHERE codec LIKE 'native-%'").get()!.n,1,'late metadata does not recreate the full body');
+  const updated=f.repo.readPage(f.r.view.id,undefined,10,true)!.view.entries[0]!;
+  assert.equal(f.repo.readEntry(f.r.view.id,f.entry.id,updated.detail!.revision)!.name,'updated display name');
+  fs.unlinkSync(f.file);assert.throws(()=>f.repo.readEntry(f.r.view.id,f.entry.id,updated.detail!.revision),{code:'agent_native_content_unavailable'});
+});
+
+test('historical context remains eligible while a newer context of the same participant is protected',t=>{
+  const f=conversation(t),participant=f.r.participants[0]!,newer=randomUUID();
+  participant.contextRef={id:newer,data:{native:opaqueReference('qoder',newer,f.cwd,participant.bindingIdentity)}};
+  f.r.attempts.push({...f.r.attempts[0]!,runId:'newer-unknown',clientRequestId:'newer-request',executionRef:{id:'newer-execution',data:{resourceContext:newer,resourceBinding:participant.bindingIdentity}}});
+  f.r.view.revision='r2';f.repo.saveConversation(f.r,'r1');
+  assert.ok(f.repo.storageDependencies().contexts.includes('qoder:'+newer));
+  assert.equal(maintainNativeContent(f.dataRoot).tools,1);
+  assert.deepEqual(f.repo.readPage(f.r.view.id)!.view.entries[0],f.entry);
+});
+
+test('legacy missing context is located by its unique native tool id within the exact configuration',t=>{
+  const f=conversation(t),participant=f.r.participants[0]!,newer=randomUUID();
+  participant.contextRef={id:newer,data:{native:opaqueReference('qoder',newer,f.cwd,participant.bindingIdentity)}};
+  f.r.attempts[0]!.executionRef={id:'legacy-turn-without-context'};
+  const foreign=path.join(f.root,'connections/qoder/model-bindings','0'.repeat(64),'qoder-config/projects/bucket',path.basename(f.file));
+  fs.mkdirSync(path.dirname(foreign),{recursive:true});fs.copyFileSync(f.file,foreign);
+  f.r.view.revision='r2';f.repo.saveConversation(f.r,'r1');
+  assert.equal(maintainNativeContent(f.dataRoot).tools,1);
+  assert.deepEqual(f.repo.readPage(f.r.view.id)!.view.entries[0],f.entry);
+});
+
+test('a profitable tool below four KiB is converted using actual stored size',t=>{
+  const f=conversation(t),output=randomBytes(1450).toString('hex');
+  f.rows[1].message.content[0].content=output;fs.writeFileSync(f.file,f.rows.map(row=>JSON.stringify(row)+'\n').join(''));
+  f.entry.text=f.entry.input+'\n'+output;f.r.view.entries[0]={...f.entry};
+  assert.ok(Buffer.byteLength(JSON.stringify(f.entry))<4096);
+  f.r.view.revision='r2';f.repo.saveConversation(f.r,'r1');
+  assert.equal(maintainNativeContent(f.dataRoot).tools,1);
+  assert.deepEqual(f.repo.readPage(f.r.view.id)!.view.entries[0],f.entry);
+});
+
+test('unmatched contexts cannot permanently starve later convertible contexts',t=>{
+  const first=conversation(t);
+  for(let i=0;i<10;i++) {
+    const f=i===0?first:conversation(t);
+    if(i<8){f.rows[0].message.content[0].id='unmatched-'+i;f.rows[1].message.content[0].tool_use_id='unmatched-'+i;}
+    const file=path.join(first.root,path.relative(f.root,f.file));fs.mkdirSync(path.dirname(file),{recursive:true});
+    fs.writeFileSync(file,f.rows.map(row=>JSON.stringify(row)+'\n').join(''));
+    if(i)first.repo.saveConversation(f.r);
+  }
+  const initial=maintainNativeContent(first.dataRoot,{maximumItems:1024,budgetMs:60000});
+  assert.equal(initial.tools,0);assert.ok(initial.nextEntry>0);assert.equal(initial.reasons['qoder:native_tool_not_found']!.items,8);
+  const next=maintainNativeContent(first.dataRoot,{maximumItems:1024,budgetMs:60000});
+  assert.equal(next.tools,2);assert.equal(next.nextEntry,0);
+});
+
+test('v6 reference migration verifies persisted bytes even when the native source has gone',t=>{
+  const f=conversation(t);assert.equal(maintainNativeContent(f.dataRoot).tools,1);
+  const db=new DatabaseSync(f.repo.filename);t.after(()=>db.close());
+  const row=db.prepare("SELECT * FROM conversation_entry_contents WHERE codec LIKE 'native-%'").get() as any;
+  const reference=ConversationEntryStore.reference(row)!;reference.version=1;
+  db.prepare("UPDATE conversation_entry_contents SET codec='native-v1',body=? WHERE content_revision=?").run(JSON.stringify(reference),row.content_revision);
+  db.exec("DROP TRIGGER conversation_body_format_insert; DROP TRIGGER conversation_body_format_update; UPDATE conversations SET body=json_set(body,'$._bodyFormat',6); PRAGMA user_version=6");
+  fs.unlinkSync(f.file);f.repo.startReadModels();
+  assert.equal(db.prepare('PRAGMA user_version').get()!.user_version,7);
+  assert.equal(db.prepare("SELECT count(*) n FROM conversation_entry_contents WHERE codec='native-v1'").get()!.n,1);
+  assert.equal(fs.readdirSync(f.root).some(name=>name.startsWith('conversations.pre-v7-')),false,'verified migration backup does not retain another database copy');
+  assert.throws(()=>db.prepare("UPDATE conversations SET body=json_set(body,'$._bodyFormat',6)").run(),/agent_storage_writer_incompatible/);
+  assert.throws(()=>f.repo.readEntry(f.r.view.id,f.entry.id,row.content_revision),{code:'agent_native_content_unavailable'});
+});
+
+test('Codex legacy display ids use exact native command evidence without changing run identity',t=>{
+  const f=conversation(t,'codex'),run=f.entry.runId,command='printf "legacy exact command"';
+  f.rows.splice(1,0,{type:'turn_context',payload:{turn_id:'native-turn'}});
+  f.rows[2].payload.arguments=JSON.stringify({cmd:command});
+  fs.writeFileSync(f.file,f.rows.map(row=>JSON.stringify(row)+'\n').join(''));
+  f.entry.input='/bin/zsh -lc '+JSON.stringify(command);f.entry.text=f.entry.input+'\n'+nativePreview(f.output);f.r.view.entries[0]={...f.entry};
+  f.r.sources={[f.r.participants[0]!.id+':tool:legacy-display-id']:f.entry.id};
+  f.r.attempts[0]!.executionRef={id:'native-turn'};
+  f.r.view.revision='r2';f.repo.saveConversation(f.r,'r1');
+  assert.equal(maintainNativeContent(f.dataRoot).tools,1);
+  assert.deepEqual(f.repo.readPage(f.r.view.id)!.view.entries[0],f.entry);
+  assert.equal(f.repo.readConversation(f.r.view.id)!.attempts[0]!.runId,run);
+});
+
+test('inherited tool bytes resolve through their recorded parent without using child configuration',t=>{
+  const f=conversation(t),child=structuredClone(f.r);
+  child.view.id=randomUUID();child.view.entries=[];child.view.childOf={conversationId:f.r.view.id,workspaceId:'ws',title:'source',createdAt:'now',sourceRevision:'r1',throughSequence:2};
+  child.inheritedContext={entries:[structuredClone(f.entry)],outcomes:structuredClone(f.r.runOutcomes!),pendingQuestions:[]};
+  child.sources={};child.participants=[];child.attempts=[];child.runOutcomes={};
+  f.repo.saveConversation(child);
+  assert.equal(maintainNativeContent(f.dataRoot).tools,2);
+  assert.deepEqual(f.repo.readConversation(child.view.id)!.inheritedContext!.entries[0],f.entry);
+});
+
+test('permission-bound Codex configuration resolves only after its persisted digest verifies the gateway value',t=>{
+  const f=conversation(t,'codex'),p=f.r.participants[0]!,configuration=JSON.stringify(['standard:262000',262000]);
+  p.modelAccountId='account';p.modelAccountIdentity='account-identity';p.modelId='swe-2';p.serviceTier='standard:262000';
+  p.modelConfiguration=nativeContentHash(JSON.stringify({model:configuration,permission:'full-access'}));
+  const identity=modelLeaseIdentity(p.modelAccountId,p.modelAccountIdentity,p.modelId,f.r.view.id,p.connectionId,configuration);
+  const target=path.join(f.configRoot,'model-bindings',nativeContentHash(identity),path.relative(f.configRoot,f.file));
+  fs.mkdirSync(path.dirname(target),{recursive:true});fs.renameSync(f.file,target);
+  f.r.view.revision='r2';f.repo.saveConversation(f.r,'r1');
+  assert.equal(maintainNativeContent(f.dataRoot).tools,1);
+  assert.deepEqual(f.repo.readPage(f.r.view.id)!.view.entries[0],f.entry);
+});
+
+test('DSH persisted digest media deduplicates identical bytes and rejects a normalized or changed object',t=>{
+  const f=conversation(t,'dsh'),id=randomUUID(),bytes=randomBytes(2048),hash=nativeContentHash(bytes);
+  const filename=path.join(f.root,'attachments',f.r.view.id,id),object=path.join(f.configRoot,'dsh-home/attachments/v1/objects',hash.slice(0,2),hash);
+  for(const file of [filename,object]){fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,bytes);}
+  f.r.attachments[id]={size:bytes.length,mimeType:'image/png'};f.r.view.entries[1]!.attachments=[id];
+  fs.appendFileSync(f.file,zstdCompressSync(Buffer.from(JSON.stringify({seq:2,type:'user/message',data:{content:[{type:'image',attachment:{attachmentId:'sha256:'+hash,mediaType:'image/png',bytes:bytes.length}}]}})+'\n')));
+  f.r.view.revision='r2';f.repo.saveConversation(f.r,'r1');
+  assert.equal(f.read()!.images.length,1);
+  assert.equal(maintainNativeContent(f.dataRoot).attachments,1);assert.equal(fs.existsSync(filename),false);
+  const media=new ConversationAttachments({root:f.root,now:()=>new Date().toISOString(),save:()=>{}});
+  assert.deepEqual(media.read(f.repo.readConversation(f.r.view.id)!,id).bytes,bytes);
+  fs.writeFileSync(object,randomBytes(bytes.length));assert.equal(f.read()!.images.length,0);
+  assert.throws(()=>media.read(f.repo.readConversation(f.r.view.id)!,id),{code:'agent_native_content_unavailable'});
+});
+
+test('attachment lookup resumes inside historical contexts after its context budget',t=>{
+  const f=conversation(t),p=f.r.participants[0]!,id=randomUUID(),bytes=randomBytes(2048);
+  const filename=path.join(f.root,'attachments',f.r.view.id,id);fs.mkdirSync(path.dirname(filename),{recursive:true});fs.writeFileSync(filename,bytes);
+  f.r.attachments[id]={size:bytes.length,mimeType:'image/png'};f.r.view.entries[1]!.attachments=[id];
+  for(let i=0;i<9;i++){
+    const context=randomUUID(),runId=randomUUID(),file=path.join(path.dirname(f.file),context+'.jsonl');
+    fs.writeFileSync(file,JSON.stringify({sessionId:context,cwd:f.cwd,isSidechain:false,type:'user',message:{content:i===8?[{type:'image',source:{type:'base64',data:bytes.toString('base64')}}]:[]}})+'\n');
+    f.r.attempts.push({...f.r.attempts[0]!,runId,clientRequestId:runId,executionRef:{id:runId,data:{resourceContext:context,resourceBinding:p.bindingIdentity}}});
+    f.r.runOutcomes![runId]={status:'completed',updatedAt:'now',provider:p.provider};
+  }
+  f.r.view.revision='r2';f.repo.saveConversation(f.r,'r1');
+  const first=maintainNativeContent(f.dataRoot);assert.equal(first.attachments,0);assert.ok(first.nextAttachment.includes('#0.8'));
+  const second=maintainNativeContent(f.dataRoot);assert.equal(second.attachments,1);assert.equal(second.nextAttachment,'');
+  assert.equal(fs.existsSync(filename),false);
+});
+
+test('an unconfirmed original execution is protected even when its participant has moved to another context',t=>{
+  const f=conversation(t),p=f.r.participants[0]!,newer=randomUUID();
+  p.contextRef={id:newer,data:{native:opaqueReference('qoder',newer,f.cwd,p.bindingIdentity)}};
+  f.r.attempts[0]!.executionRef={id:'old-turn-without-context'};delete f.r.runOutcomes![f.entry.runId!];
+  f.r.view.revision='r2';f.repo.saveConversation(f.r,'r1');
+  const result=maintainNativeContent(f.dataRoot);assert.equal(result.tools,0);assert.equal(result.reasons['qoder:protected_execution']!.items,1);
+  assert.deepEqual(f.repo.readPage(f.r.view.id)!.view.entries[0],f.entry);
 });

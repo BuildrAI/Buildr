@@ -749,7 +749,7 @@ function seedConversation(db: DatabaseSync, record: any): void {
       db.prepare('INSERT OR REPLACE INTO conversation_read_entries VALUES(?,?,?,?,?,?,?,?,?,?)').run(record.view.id,'main',entry.sequence,entry.id,'legacy:fixture',revision,compact,Buffer.byteLength(body),Buffer.byteLength(compact??body),Number(entry.kind==='message'&&!entry.thinking));
     }
     const count=record.view.entries.length;
-    const header=JSON.stringify({...record,_bodyFormat:6,view:{...record.view,entries:[]}});
+    const header=JSON.stringify({...record,_bodyFormat:7,view:{...record.view,entries:[]}});
     db.prepare('UPDATE conversations SET body=?,revision=?,entry_count=? WHERE id=?').run(header,record.view.revision,count,record.view.id);
     db.exec('COMMIT');
   } catch(error) { db.exec('ROLLBACK');throw error; }

@@ -12,9 +12,22 @@ const maxDecoded = 128 * 1024 * 1024, cacheBudget = 32 * 1024 * 1024;
 const roots: Record<string, RegExp> = {
   codex: /^codex-home\/sessions\/.+\.jsonl$/,
   qoder: /^qoder-config\/projects\/.+\.jsonl$/,
-  dsh: /^dsh-home\/sessions\/.+\/(?:session\.v4\.jsonl(?:\.zstd)?|attachments\/.+)$/,
+  dsh: /^dsh-home\/(?:sessions\/.+\/(?:session\.v4\.jsonl(?:\.zstd)?|attachments\/.+)|attachments\/v1\/objects\/[a-f0-9]{2}\/[a-f0-9]{64})$/,
 };
 const unavailable = () => new AgentServiceError('agent_native_content_unavailable', '原生正文缺失、变化或不可安全读取；已保留来源引用，不会重发操作。', 409);
+
+/** Pure display transforms, never interpreted as executable shell input. */
+export function nativeValueText(value: unknown, format?: NativeContentValue['format']): string {
+  if (format === 'json') return JSON.stringify(value);
+  if (format === 'json-document') return JSON.stringify(JSON.parse(String(value)));
+  if (typeof value !== 'string') throw unavailable();
+  if (format === 'quoted') return JSON.stringify(value);
+  if (format === 'shell-double') return '"' + value.replace(/[\\"]/g, '\\$&') + '"';
+  if (format === 'shell-single') return "'" + value.replace(/'/g, "'\\''") + "'";
+  if (format === 'shell-posix') return "'" + value.replace(/'/g, "'\"'\"'") + "'";
+  if (format !== undefined && format !== 'base64') throw unavailable();
+  return value;
+}
 
 /** A stored address grants access only to a declared native content namespace. */
 export function nativeContentPath(root: string, provider: string, relative: string): string {
@@ -81,24 +94,28 @@ export class NativeContentReader {
   }
   private value(provider: string, reference: NativeContentValue): string | Buffer {
     let value = this.source(provider, reference.source);
-    if (!Array.isArray(reference.pointer) || reference.pointer.length > 64) throw unavailable();
-    for (const key of reference.pointer) {
+    const walk = (pointer: Array<string | number>) => {
+    if (!Array.isArray(pointer) || pointer.length > 64) throw unavailable();
+    for (const key of pointer) {
       if (typeof key !== 'string' && !Number.isSafeInteger(key) || ['__proto__', 'prototype', 'constructor'].includes(String(key)) ||
         value === null || typeof value !== 'object' || !Object.hasOwn(value, key)) throw unavailable();
       value = (value as Record<string, unknown>)[key];
     }
+    };
+    walk(reference.pointer);
+    if (reference.jsonPointer !== undefined) {
+      if (typeof value !== 'string' || Buffer.byteLength(value) > maxDecoded) throw unavailable();
+      value = JSON.parse(value); walk(reference.jsonPointer);
+    }
     if (Buffer.isBuffer(value)) return value;
-    let text: string;
-    if (reference.format === 'json') text = JSON.stringify(value);
-    else if (reference.format === 'json-document') text = JSON.stringify(JSON.parse(String(value)));
-    else { if (typeof value !== 'string') throw unavailable(); text = value; }
+    let text = nativeValueText(value, reference.format);
     const start = reference.start ?? 0, length = reference.length ?? text.length - start;
     if (!Number.isSafeInteger(start) || !Number.isSafeInteger(length) || start < 0 || length < 0 || start + length > text.length) throw unavailable();
     text = text.slice(start, start + length);
     return reference.format === 'base64' ? Buffer.from(text, 'base64') : text;
   }
   private text(provider: string, parts: NativeTextPart[], input?: string): string {
-    if (!Array.isArray(parts) || parts.length > 64) throw unavailable();
+    if (!Array.isArray(parts) || parts.length > 256) throw unavailable();
     const values = parts.map(part => {
       if ('literal' in part) { if (typeof part.literal !== 'string' || Buffer.byteLength(part.literal) > 512) throw unavailable(); return part.literal; }
       if ('input' in part) { if (part.input !== true || input === undefined) throw unavailable(); return input; }
@@ -109,7 +126,7 @@ export class NativeContentReader {
   }
   tool(reference: NativeToolContent, revision: string): ConversationEntry {
     try {
-      if (reference.version !== 1 || typeof reference.contextId !== 'string' || reference.entry.kind !== 'tool') throw unavailable();
+      if (![1, 2].includes(reference.version) || typeof reference.contextId !== 'string' || reference.entry.kind !== 'tool') throw unavailable();
       const entry = structuredClone(reference.entry);
       if (reference.input) entry.input = this.text(reference.provider, reference.input);
       entry.text = this.text(reference.provider, reference.text, entry.input);

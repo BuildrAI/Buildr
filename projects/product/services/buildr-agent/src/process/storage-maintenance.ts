@@ -5,9 +5,13 @@ import { inspectAgentStorage, collectAgentStorage } from '../application/storage
 /** One pass in a separate isolate: lsof, SQLite and directory scans never block conversation control. */
 if (!isMainThread && workerData?.kind === 'agent-storage-maintenance') {
   try {
-    const result = collectAgentStorage(inspectAgentStorage({ dataRoot: workerData.dataRoot }));
     const content = maintainNativeContent(workerData.dataRoot);
-    parentPort?.postMessage({ nativeContent: content, removedBytes: result.removedBytes, retained: result.results.filter(item => item.status === 'retained').length });
+    // Native deduplication gets its own budget before the potentially expensive
+    // diagnostic inventory. A backlog must not starve content or runtime adoption.
+    try {
+      const result = collectAgentStorage(inspectAgentStorage({ dataRoot: workerData.dataRoot }),8);
+      parentPort?.postMessage({ nativeContent: content, removedBytes: result.removedBytes, retained: result.results.filter(item => item.status === 'retained').length });
+    }catch{parentPort?.postMessage({nativeContent:content,diagnostic:'storage_collection_deferred'});}
   } catch { parentPort?.postMessage({ diagnostic: 'storage_collection_deferred' }); }
 }
 

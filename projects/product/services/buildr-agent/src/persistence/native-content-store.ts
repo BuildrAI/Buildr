@@ -15,7 +15,7 @@ export class NativeContentStore {
     this.db = new DatabaseSync(filename, { readOnly: !write });
     this.db.exec('PRAGMA busy_timeout=100');
     const version = Number(this.db.prepare('PRAGMA user_version').get()!.user_version);
-    if (version < (write ? 6 : 5) || version > 6) { this.db.close(); throw new Error('native_store_version'); }
+    if (version < (write ? 7 : 5) || version > 7) { this.db.close(); throw new Error('native_store_version'); }
     if (write) this.db.exec('CREATE TABLE IF NOT EXISTS conversation_storage_cursor(id INTEGER PRIMARY KEY CHECK(id=1),entry INTEGER NOT NULL,attachment TEXT NOT NULL); INSERT OR IGNORE INTO conversation_storage_cursor VALUES(1,0,\'\')');
   }
   /** Release at most 2 MiB per pass; a busy reader/writer merely defers reclamation. */
@@ -38,18 +38,20 @@ export class NativeContentStore {
   entries(after: number, limit: number) {
     return this.db.prepare(`SELECT c.rowid AS position,c.*,v.body AS header,v.revision AS conversation_revision
       FROM conversation_entry_contents c JOIN conversations v ON v.id=c.conversation_id
-      WHERE c.rowid>? AND c.codec IN ('raw','zstd') AND c.body_bytes>=4096 ORDER BY c.rowid LIMIT ?`).all(after, limit) as unknown as Array<Content & {position:number;conversation_id:string;header:string;conversation_revision:string}>;
+      WHERE c.rowid>? ORDER BY c.rowid LIMIT ?`).all(after, limit) as unknown as Array<Content & {position:number;conversation_id:string;header:string;conversation_revision:string}>;
   }
   attachments(after: string, limit: number) {
-    return this.db.prepare("SELECT id,body FROM conversations WHERE id>? AND json_extract(body,'$.attachments')<>'{}' ORDER BY id LIMIT ?").all(after, limit) as Array<{id:string;body:string}>;
+    const split=after.indexOf('#'),id=split<0?after:after.slice(0,split);
+    return this.db.prepare(`SELECT id,body FROM conversations WHERE id${split<0?'>':'>='}? AND json_extract(body,'$.attachments')<>'{}' ORDER BY id LIMIT ?`).all(id, limit) as Array<{id:string;body:string}>;
   }
   replaceTool(row: Content & {conversation_id:string;header:string}, reference: NativeToolContent, verify: () => boolean): boolean {
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const current = this.db.prepare('SELECT body FROM conversations WHERE id=?').get(row.conversation_id);
       if (current?.body !== row.header || !verify()) { this.db.exec('ROLLBACK'); return false; }
-      const result = this.db.prepare('UPDATE conversation_entry_contents SET codec=\'native-v1\',body=? WHERE conversation_id=? AND content_revision=? AND codec=? AND body=?')
-        .run(JSON.stringify(reference),row.conversation_id,row.content_revision,row.codec,row.body);
+      const encoded=ConversationEntryStore.encodeReference(reference);
+      const result = this.db.prepare('UPDATE conversation_entry_contents SET codec=?,body=? WHERE conversation_id=? AND content_revision=? AND codec=? AND body=?')
+        .run(encoded.codec,encoded.body,row.conversation_id,row.content_revision,row.codec,row.body);
       if (result.changes) {
         const compact = JSON.stringify(ConversationEntryStore.compact(ConversationEntryStore.decode(row),row.content_revision,true));
         this.db.prepare('UPDATE conversation_read_entries SET compact=?,compact_bytes=? WHERE conversation_id=? AND content_revision=?')

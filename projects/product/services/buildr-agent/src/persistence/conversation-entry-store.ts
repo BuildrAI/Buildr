@@ -41,22 +41,22 @@ export class ConversationEntryStore {
         DELETE FROM conversation_entry_contents WHERE conversation_id=OLD.id;
       END;
       CREATE TRIGGER conversation_body_format_insert BEFORE INSERT ON conversations
-        WHEN json_extract(NEW.body,'$._bodyFormat') IS NOT 6 OR json_array_length(NEW.body,'$.view.entries')>0 OR json_array_length(NEW.body,'$.inheritedContext.entries')>0
+        WHEN json_extract(NEW.body,'$._bodyFormat') IS NOT 7 OR json_array_length(NEW.body,'$.view.entries')>0 OR json_array_length(NEW.body,'$.inheritedContext.entries')>0
         BEGIN SELECT RAISE(ABORT,'agent_storage_writer_incompatible'); END;
       CREATE TRIGGER conversation_body_format_update BEFORE UPDATE OF body ON conversations
-        WHEN json_extract(NEW.body,'$._bodyFormat') IS NOT 6 OR json_array_length(NEW.body,'$.view.entries')>0 OR json_array_length(NEW.body,'$.inheritedContext.entries')>0
+        WHEN json_extract(NEW.body,'$._bodyFormat') IS NOT 7 OR json_array_length(NEW.body,'$.view.entries')>0 OR json_array_length(NEW.body,'$.inheritedContext.entries')>0
         BEGIN SELECT RAISE(ABORT,'agent_storage_writer_incompatible'); END;`);
   }
   static header(record: StoredConversation): string {
     return JSON.stringify({
-      ...record, _bodyFormat: 6, view: { ...record.view, entries: [] },
+      ...record, _bodyFormat: 7, view: { ...record.view, entries: [] },
       ...(record.inheritedContext ? { inheritedContext: { ...record.inheritedContext, entries: [] } } : {}),
     });
   }
   static compact(entry: ConversationEntry, revision = digest(JSON.stringify(entry)), force = false): ConversationEntry {
     if (entry.kind !== 'tool' || !force && Buffer.byteLength(entry.text) + Buffer.byteLength(entry.input ?? '') <= 16 * 1024) return entry;
     return { ...entry, ...(presentedFilesForEntry(entry).length ? { presentedFiles: presentedFilesForEntry(entry) } : {}),
-      text: entry.text.slice(0, 512), input: entry.input && entry.input.length <= 4096 ? entry.input : undefined, detail: { revision } };
+      text: entry.text.slice(0, 512), input: force ? entry.input?.slice(0,256) : entry.input && entry.input.length <= 4096 ? entry.input : undefined, detail: { revision } };
   }
   /** Prepare expensive compression before the ordinary write transaction. */
   static prepare(db: DatabaseSync, record: StoredConversation): PreparedEntries {
@@ -82,15 +82,25 @@ export class ConversationEntryStore {
           return;
         }
         const body = JSON.stringify(entry), revision = digest(body), bytes = Buffer.byteLength(body);
-        const preview = JSON.stringify(this.compact(entry, revision));
+        const preview = JSON.stringify(this.compact(entry, revision,!!lazy?.untouched()));
         let content: Content | undefined;
         if (!existing.has(revision)) {
+          if(lazy?.untouched()) {
+            const reference=this.reference(lazy.row);
+            if(reference) {
+              const skeleton={...entry,text:''};if(reference.input)skeleton.input='';
+              const encoded=this.encodeReference({...reference,entry:skeleton});
+              content={...encoded,content_revision:revision,body_bytes:bytes};
+            }
+          }
+          if(!content) {
           let stored: string | Uint8Array = body, codec = 'raw';
           if (entry.kind === 'tool' && ['completed', 'failed'].includes(entry.status ?? '') && bytes > 16 * 1024 && bytes <= maximumDecoded) {
             const compressed = zstdCompressSync(Buffer.from(body));
             if (compressed.length < bytes) { stored = compressed; codec = 'zstd'; }
           }
           content = { content_revision: revision, codec, body_bytes: bytes, body: stored };
+          }
           existing.add(revision);
         }
         result.push({ scope, entry, round: rounds[index]!.id, revision, compact: preview === body ? null : preview, bytes, compactBytes: Buffer.byteLength(preview), content });
@@ -118,9 +128,11 @@ export class ConversationEntryStore {
       SELECT 1 FROM conversation_read_entries e WHERE e.conversation_id=conversation_entry_contents.conversation_id AND e.content_revision=conversation_entry_contents.content_revision)`).run(record.view.id);
   }
   static decode(row: Content, reader?: NativeContentReader, lazy = false, compact?: string | null): ConversationEntry {
-    if (row.codec === 'native-v1') {
+    if (['native-v1','native-v2','native-v2-zstd'].includes(row.codec)) {
       let ref: NativeToolContent;
-      try { ref = JSON.parse(Buffer.from(row.body).toString('utf8')); if (ref.version !== 1 || ref.entry.kind !== 'tool' || !reader) throw new Error(); }
+      try {
+        ref=this.reference(row)!;if(!reader)throw new Error();
+      }
       catch { throw new AgentServiceError('agent_native_content_unavailable', '原生正文引用不可读；已保留记录，不会重发操作。', 409); }
       if (!lazy) return reader.tool(ref, row.content_revision);
       const entry = structuredClone(ref.entry); let resolved: ConversationEntry | undefined, changed = false;
@@ -143,6 +155,19 @@ export class ConversationEntryStore {
       if (bytes.length !== row.body_bytes || digest(bytes) !== row.content_revision) throw new Error('entry_digest_mismatch');
       return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as ConversationEntry;
     } catch { throw new AgentServiceError('agent_entry_corrupt', '消息正文损坏、编码不支持或超出解压预算；原记录已保留，不会重发操作。', 409); }
+  }
+  static encodeReference(reference: NativeToolContent): {codec:string;body:string|Uint8Array} {
+    const body=JSON.stringify(reference);
+    if(reference.version===1)return {codec:'native-v1',body};
+    const compressed=zstdCompressSync(Buffer.from(body));
+    return compressed.length<Buffer.byteLength(body)?{codec:'native-v2-zstd',body:compressed}:{codec:'native-v2',body};
+  }
+  static reference(row: Content): NativeToolContent|undefined {
+    if(!['native-v1','native-v2','native-v2-zstd'].includes(row.codec))return;
+    const bytes=row.codec==='native-v2-zstd'?zstdDecompressSync(Buffer.from(row.body),{maxOutputLength:maximumDecoded}):Buffer.from(row.body);
+    const reference=JSON.parse(bytes.toString('utf8')) as NativeToolContent;
+    if(![1,2].includes(reference.version)||reference.entry?.kind!=='tool')throw new Error('native_reference_invalid');
+    return reference;
   }
   static load(db: DatabaseSync, id: string, scope = 'main', reader?: NativeContentReader, lazy = false): ConversationEntry[] {
     this.assertPositions(db, id, scope);

@@ -36,7 +36,7 @@ export function beginConversationMigration(db: DatabaseSync, directory: string):
     let cleanup: (() => void) | undefined;
     const version = db.prepare('PRAGMA user_version').get()!.user_version as number;
     if (version > 0) {
-      const fingerprint = identity(db), filename = path.join(directory, `conversations.pre-v6-${fingerprint}.sqlite`);
+      const fingerprint = identity(db), filename = path.join(directory, `conversations.pre-v7-${fingerprint}.sqlite`);
       if (!fs.existsSync(filename)) {
         const fd = fs.openSync(filename, 'wx', 0o600); fs.closeSync(fd);
         try { db.prepare('VACUUM INTO ?').run(filename); }
@@ -53,18 +53,36 @@ export function beginConversationMigration(db: DatabaseSync, directory: string):
         let current: DatabaseSync | undefined, source: DatabaseSync | undefined;
         try {
           current = new DatabaseSync(path.join(directory, 'conversations.sqlite'), { readOnly: true });
-          if (current.prepare('PRAGMA user_version').get()!.user_version !== 6 ||
+          if (current.prepare('PRAGMA user_version').get()!.user_version !== 7 ||
               Object.values(current.prepare('PRAGMA integrity_check').get()!)[0] !== 'ok') return;
           source = new DatabaseSync(filename, { readOnly: true });
           if (identity(source) !== fingerprint) return;
           const count = (store: DatabaseSync) => store.prepare('SELECT count(*) AS n FROM conversations').get()!.n;
           if (count(current) !== count(source)) return;
           for (const row of source.prepare('SELECT id,body FROM conversations').iterate()) {
+            if(version>=5) {
+              const next=current.prepare('SELECT body FROM conversations WHERE id=?').get(row.id!);
+              if(!next)return;
+              const strip=(body:unknown)=>{const value=JSON.parse(body as string);delete value._bodyFormat;return JSON.stringify(value);};
+              if(strip(next.body)!==strip(row.body))return;
+              continue;
+            }
             const old = ConversationEntryStore.hydrate(source, JSON.parse(row.body as string) as StoredConversation);
             const next = current.prepare('SELECT body FROM conversations WHERE id=?').get(row.id!);
             if (!next) return;
             const restored = ConversationEntryStore.hydrate(current, JSON.parse(next.body as string));
             if (JSON.stringify(restored) !== JSON.stringify(old)) return;
+          }
+          if(version>=5)for(const table of ['conversation_entry_contents','conversation_read_entries']) {
+            if(source.prepare(`SELECT count(*) n FROM ${table}`).get()!.n!==current.prepare(`SELECT count(*) n FROM ${table}`).get()!.n)return;
+            const keys=table.endsWith('contents')?['conversation_id','content_revision']:['conversation_id','scope','sequence'];
+            const query=current.prepare(`SELECT * FROM ${table} WHERE ${keys.map(key=>key+'=?').join(' AND ')}`);
+            for(const row of source.prepare(`SELECT * FROM ${table}`).iterate()) {
+              const next=query.get(...keys.map(key=>row[key]!));if(!next)return;
+              // Compare persisted references as data: external source loss must
+              // not prevent a format-only upgrade or retain a duplicate backup.
+              if(JSON.stringify(row)!==JSON.stringify(next))return;
+            }
           }
           source.close(); source = undefined; current.close(); current = undefined;
           const observed = fs.lstatSync(filename);
