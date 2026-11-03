@@ -253,3 +253,10 @@ Buildr 隔离 DSH 的前台 shell 超时由原生执行器终止，默认层覆�
 单次 `conversations.participation` 与范围 `conversations.participationSummary` 共用原记录投影；SQLite 中的参与索引以对话修订校验，可删除重建，失效时返回部分覆盖。页面和准确绑定的对话控制脚本只读同一应用。汇总区分来源、动作、结果与版本依据，失败比例排除未知结果，字节不换算费用。隐式加载不可观察，统计只能为优化提供线索，不能自动判定资产无价值。详见 [候选设计](../../../openspec/changes/archive/2026-11-03-observe-buildr-participation/design.md)；候选实现及本机测试不等于已激活或真实账号验收。
 
 当前“Buildr 参与”和“Buildr 参与汇总”两个界面入口暂时隐藏；自动采集、存储、只读查询及内部查看实现保留。隐藏状态不挂载面板、不自动请求参与数据。
+
+
+## 对话过程通知（候选实现）
+
+统一视图的提交出口 `ConversationEvents` 将过程变化交给 `ConversationWebhooks`，不修改执行器或任务记录。除旧四类状态摘要外，`conversation_updated` 发布运行/停止/待发送状态、待回应卡片快照、卡片关闭身份和消息增量；包含已授权外发的用户目标、助手回复与卡片答复，排除内部思考及原始工具输入输出。卡片消失只表示关闭，不推断答复或同意。
+
+服务组合通过 `webhookConfiguration` 加载宿主私有 `~/.buildr-webhook.json`（`url`、`secret`），或显式 `BUILDR_AGENT_WEBHOOK_CONFIG`。仅默认文件不存在才兼容旧环境变量；无效私有文件不回退。配置不进入执行器环境或诊断。外发使用有界、无重试的尽力投递；并发到达可能乱序，接收端按进程代次、序号和事件标识处理。详细配置、内容边界与验收口径见产品 Buildr Skill 的 `references/agent-operations.md`。候选验证、共享服务采用和接收端处理是不同事实，不相互替代。

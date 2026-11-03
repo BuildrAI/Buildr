@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto';
-import type { ServiceEvent } from '../contracts.ts';
+import { createHash, randomUUID } from 'node:crypto';
+import type { ServiceEvent, ConversationView } from '../contracts.ts';
 
 type EventType = 'completed' | 'error' | 'pending_question' | 'pending_approval';
 const summaries: Record<EventType, string> = {
@@ -12,11 +12,18 @@ export class ConversationWebhooks {
   private readonly seen = new Set<string>();
   private readonly active = new Set<AbortController>();
   private closed = false;
+  private readonly generation = randomUUID();
+  private sequence = 0;
+  private readonly startedAt = new Date().toISOString();
+  private readonly conversations = new Map<string, { entries: Map<string, string>; requests: Set<string> }>();
+  private readonly queue: string[] = [];
+  private queuedBytes = 0;
   private readonly url: string;
   private readonly secret: string;
   private readonly transport: typeof fetch;
-  private constructor(url: string, secret: string, transport: typeof fetch) {
-    this.url = url; this.secret = secret; this.transport = transport;
+  private readonly sourceUrl: string;
+  private constructor(url: string, secret: string, transport: typeof fetch, sourceUrl: string = url) {
+    this.url = url; this.sourceUrl = sourceUrl; this.secret = secret; this.transport = transport;
   }
 
   static configure(environment: NodeJS.ProcessEnv, transport: typeof fetch = fetch): ConversationWebhooks | undefined {
@@ -26,7 +33,7 @@ export class ConversationWebhooks {
     try {
       const parsed = new URL(url);
       if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) return;
-      return new ConversationWebhooks(parsed.href, secret, transport);
+      return new ConversationWebhooks(parsed.href, secret, transport, url);
     } catch { return; }
   }
 
@@ -34,6 +41,7 @@ export class ConversationWebhooks {
     if (this.closed || event.type !== 'conversation') return;
     const view = event.payload.conversation;
     if (!view) return;
+    this.processChange(view);
     const notifications: Array<{ type: EventType; identity: string }> = [];
     for (const run of [view.run, ...(view.retainedRuns ?? [])]) {
       if (run?.status === 'completed' || run?.status === 'failed') {
@@ -45,31 +53,116 @@ export class ConversationWebhooks {
     }
     for (const notification of notifications) {
       const eventId = createHash('sha256').update(JSON.stringify([view.workspaceId, view.id, notification.type, notification.identity])).digest('hex');
-      if (this.seen.has(eventId)) continue;
-      this.seen.add(eventId);
-      if (this.seen.size > 10_000) this.seen.delete(this.seen.values().next().value!);
-      // Mark even dropped events: backpressure must never turn into delayed repeated attempts.
-      if (this.active.size >= 16) continue;
+      this.enqueue(eventId, { eventId, conversationId: view.id, workspaceId: view.workspaceId,
+        eventType: notification.type, summary: summaries[notification.type], timestamp: view.updatedAt });
+    }
+  }
+
+  private processChange(view: ConversationView): void {
+    const eventId = createHash('sha256').update(JSON.stringify([this.generation, view.workspaceId, view.id, view.revision, view])).digest('hex');
+    if (this.seen.has(eventId)) return;
+    const key = JSON.stringify([view.workspaceId, view.id]);
+    let prior = this.conversations.get(key);
+    const initial = !prior;
+    if (!prior) {
+      prior = { entries: new Map(), requests: new Set() };
+      this.conversations.set(key, prior);
+      if (this.conversations.size > 1000) this.conversations.delete(this.conversations.keys().next().value!);
+    }
+    const entries: Array<Record<string, unknown>> = [];
+    for (const entry of view.entries) {
+      if (entry.thinking) continue;
+      const safe = { id: entry.id, sequence: entry.sequence, kind: entry.kind, role: entry.role,
+        runId: entry.runId, participantId: entry.participantId, status: entry.status,
+        createdAt: entry.createdAt, ...this.entryContent(entry) };
+      const fingerprint = createHash('sha256').update(JSON.stringify(safe)).digest('hex');
+      if (prior.entries.get(entry.id) !== fingerprint && (!initial || entry.createdAt >= this.startedAt)) entries.push(safe);
+      prior.entries.set(entry.id, fingerprint);
+      if (prior.entries.size > 10000) prior.entries.delete(prior.entries.keys().next().value!);
+    }
+    const requests = view.requests.map(request => ({ id: request.id, runId: request.runId,
+      participantId: request.participantId, kind: request.kind, blocking: request.blocking,
+      ...(request.kind === 'question' ? { title: this.redact(request.title),
+        description: request.description && this.redact(request.description),
+        options: request.options, questions: request.questions } : {}) }));
+    const currentRequests = new Set(view.requests.map(request => JSON.stringify([request.runId, request.id])));
+    const closedRequests = [...prior.requests].filter(id => !currentRequests.has(id)).map(id => {
+      const [runId, requestId] = JSON.parse(id) as [string, string];
+      return { runId, requestId, status: 'closed' };
+    });
+    prior.requests = currentRequests;
+    const runs = [view.run, ...(view.retainedRuns ?? [])].flatMap(run => run ? [{
+      id: run.id, participantId: run.participantId, generation: run.generation, status: run.status,
+      executionState: run.executionState, stopRequested: run.stopRequested, accepted: run.accepted,
+      resourcesReleased: run.resourcesReleased, interrupted: run.interrupted, canContinue: run.canContinue,
+      tools: run.tools?.map(tool => ({ id: tool.id, status: tool.status, canStop: tool.canStop })),
+    }] : []);
+    this.enqueue(eventId, { eventId, conversationId: view.id, workspaceId: view.workspaceId,
+      eventType: 'conversation_updated', summary: '对话过程已更新', timestamp: view.updatedAt,
+      revision: view.revision, generation: this.generation, sequence: ++this.sequence,
+      conversation: { title: view.title, hidden: view.hidden, titleState: view.titleState?.status },
+      pendingSend: view.pendingSend ? { id: view.pendingSend.id, revision: view.pendingSend.revision,
+        state: view.pendingSend.state, text: view.pendingSend.draft.text } : null,
+      runs, requests, closedRequests, entries });
+  }
+
+  private entryContent(entry: ConversationView['entries'][number]): Record<string, unknown> {
+    if (entry.kind === 'message') return { text: this.redact(entry.text) };
+    // Formal answers are user notices, not ordinary messages. Export the answer,
+    // never the embedded approval command/title copied by the local audit record.
+    if (entry.kind === 'notice' && entry.role === 'user' && entry.id.startsWith('reply-')) {
+      try {
+        const reply = JSON.parse(entry.text);
+        if (reply && typeof reply === 'object' && typeof reply['请求标识'] === 'string') {
+          return { requestId: reply['请求标识'], answer: reply['回答'] };
+        }
+      } catch { /* Unknown notice format remains metadata-only. */ }
+    }
+    return {};
+  }
+
+  private redact(value: string): string {
+    return value.split(this.secret).join('[REDACTED]').split(this.url).join('[REDACTED]').split(this.sourceUrl).join('[REDACTED]');
+  }
+
+  private enqueue(eventId: string, value: unknown): void {
+    if (this.seen.has(eventId)) return;
+    this.seen.add(eventId);
+    if (this.seen.size > 10000) this.seen.delete(this.seen.values().next().value!);
+    if (this.queue.length >= 512) return;
+    // Recursive string sanitization also covers question labels/options and object identities.
+    const body = JSON.stringify(value, (_key, item: unknown) => typeof item === 'string' ? this.redact(item) : item);
+    if (this.queuedBytes + Buffer.byteLength(body) > 16 * 1024 * 1024) return;
+    this.queuedBytes += Buffer.byteLength(body);
+    this.queue.push(body);
+    this.drain();
+  }
+
+  private drain(): void {
+    while (!this.closed && this.active.size < 16 && this.queue.length) {
+      const body = this.queue.shift()!;
+      this.queuedBytes -= Buffer.byteLength(body);
       const controller = new AbortController();
       this.active.add(controller);
-      const timer = setTimeout(() => controller.abort(), 5_000);
+      const timer = setTimeout(() => controller.abort(), 5000);
       timer.unref();
-      const body = JSON.stringify({ eventId, conversationId: view.id, workspaceId: view.workspaceId,
-        eventType: notification.type, summary: summaries[notification.type], timestamp: view.updatedAt });
       void (async () => {
         try {
           const response = await this.transport(this.url, { method: 'POST', redirect: 'error',
             headers: { 'content-type': 'application/json', authorization: `Bearer ${this.secret}` },
             body, signal: controller.signal });
           await response.body?.cancel();
-        } catch { /* Failure, including non-delivery, never changes conversation execution. No retry. */ }
-        finally { clearTimeout(timer); this.active.delete(controller); }
+        } catch { /* Best effort: never log sensitive errors or retry unknown delivery. */ }
+        finally { clearTimeout(timer); this.active.delete(controller); this.drain(); }
       })();
     }
   }
 
   close(): void {
     this.closed = true;
+    this.queue.length = 0;
+    this.queuedBytes = 0;
+    this.conversations.clear();
     for (const controller of this.active) controller.abort();
   }
 }
