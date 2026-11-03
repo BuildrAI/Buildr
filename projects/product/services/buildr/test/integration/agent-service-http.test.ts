@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
-import { AGENT_SERVICE_APPLICATION } from '../../src/modules/agent-service/module.ts';
+import { AGENT_SERVICE_APPLICATION, createAgentServiceModule } from '../../src/modules/agent-service/module.ts';
+import { WORKSPACE_APPLICATION } from '../../src/modules/workspace/module.ts';
+import { TASK_QUERY_APPLICATION } from '../../src/modules/task/module.ts';
 import { stopAgentProcess } from '@buildr-ai/buildr-agent';
 import { runtimeProvide } from '../../src/bootstrap/runtime.ts';
 import assert from 'node:assert/strict';
@@ -24,6 +26,26 @@ import { stopOwnedChildProcess } from '../verification/support/owned-process.ts'
 function createAgentService(options: Parameters<typeof createService>[0]) {
   return createService({ ...options, environment: options.environment ?? { HOME: path.dirname(options.dataRoot) } });
 }
+
+test('linked task verification uses the authoritative summary without resolving full task diagnostics', {timeout:30_000}, async t => {
+  let instance:any, dataRoot:string;
+  t.after(async()=>{await instance?.provides[AGENT_SERVICE_APPLICATION].close();if(dataRoot)await stopAgentProcess({dataRoot});});
+  const {base,root}=taskRecordFixture(t,'agent-task-summary-host');dataRoot=path.join(base,'private-agent');
+  let summaries=0, wrongIdentity=false;
+  const module=createAgentServiceModule({readProductIdentity:()=>({}),resolveWebProfile:()=>({dataRoot,profile:'fixture'})});
+  instance=module.create({
+    [WORKSPACE_APPLICATION]:{resolveRegisteredWorkspace:()=>({rootPath:root}),listRegisteredWorkspaces:()=>({workspaces:[]})},
+    [TASK_QUERY_APPLICATION]:{
+      inspectTask:()=>assert.fail('full diagnostics must not run on the execution callback path'),
+      inspectTaskSummaryView:(_root:string,id:string)=>{summaries++;assert.equal(_root,root);return {record:{taskId:wrongIdentity?'another-task':id},recordDigest:'summary-revision'};},
+    },
+  });
+  const response=await instance.contributions.http[0].handle({request:{method:'POST'},suffix:'/agent-conversations',workspaceId:'fixture-workspace',searchParams:new URLSearchParams(),authorizeWrite:()=>{},readJsonBody:async()=>({taskId:'linked-task'})});
+  assert.equal(response.status,201,JSON.stringify(response.body));assert.equal(response.body.taskId,'linked-task');assert.equal(summaries,1);
+  wrongIdentity=true;
+  const rejected=await instance.contributions.http[0].handle({request:{method:'POST'},suffix:'/agent-conversations',workspaceId:'fixture-workspace',searchParams:new URLSearchParams(),authorizeWrite:()=>{},readJsonBody:async()=>({taskId:'linked-task'})});
+  assert.equal(rejected.status,404);assert.equal(rejected.body.error.code,'agent_task_missing');
+});
 
 test('HTTP service fixtures ignore host webhook configuration', async t => {
   const { base } = taskRecordFixture(t, 'agent-http-host-isolation');

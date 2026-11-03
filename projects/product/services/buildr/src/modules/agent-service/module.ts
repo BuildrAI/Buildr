@@ -43,8 +43,11 @@ export function createAgentServiceModule(options: { readLocalInstance?(): unknow
           assertSource(ref.sourceId);
           if(ref.kind !== 'work-item' || ref.scopeId === '@default')throw new AgentServiceError('agent_work_object_invalid','此范围不支持该关联对象。',409);
           const workspace = requires[WORKSPACE_APPLICATION].resolveRegisteredWorkspace(ref.scopeId);
-          const result = requires[TASK_QUERY_APPLICATION].inspectTask(workspace.rootPath, ref.id);
-          if(!result?.record || result.taskId !== ref.id)throw new AgentServiceError('agent_task_missing','任务身份不可用。',404);
+          // Identity verification needs the authoritative record and digest only.
+          // Full inspection also resolves project/change/worktree diagnostics,
+          // which can exceed the callback deadline and block unrelated execution.
+          const result = requires[TASK_QUERY_APPLICATION].inspectTaskSummaryView(workspace.rootPath, ref.id);
+          if(!result?.record || result.record.taskId !== ref.id)throw new AgentServiceError('agent_task_missing','任务身份不可用。',404);
           const revision = result.recordDigest ?? digest(result.record);
           if(expectedRevision && revision !== expectedRevision)throw new AgentServiceError('agent_work_object_changed','关联对象已变化。',409);
           return { ref, revision };
