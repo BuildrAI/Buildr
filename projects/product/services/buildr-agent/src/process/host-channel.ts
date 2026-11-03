@@ -26,16 +26,27 @@ export class AgentHostRegistry implements AgentHostCapabilities {
   private peers = new Map<string, HostPeer>();
   attach(value: HostPeer): void {
     if (!value || typeof value.sourceId !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/.test(value.sourceId) || typeof value.peerId !== 'string' || typeof value.token !== 'string' || value.token.length < 32) throw new AgentServiceError('agent_host_peer_invalid', '宿主连接身份无效。');
-    localOrigin(value.origin); this.peers.set(value.peerId, structuredClone(value));
+    localOrigin(value.origin);
+    // A refreshed live callback takes precedence over callbacks from old hosts.
+    this.peers.delete(value.peerId);
+    this.peers.set(value.peerId, structuredClone(value));
   }
   detach(peerId: string): void { this.peers.delete(peerId); }
   private async call(method: Method, sourceId: string, input: unknown): Promise<any> {
     const peers = [...this.peers.values()].filter(peer => peer.sourceId === sourceId).reverse();
+    let transportFailure: string | undefined;
     for (const peer of peers) {
       try { return await request(peer.origin, peer.token, '/host', { method, input }, AbortSignal.timeout(5000)); }
-      catch (error) { if (error instanceof AgentServiceError) throw error; /* Try another connection of the same authority only. */ }
+      catch (error) {
+        if (error instanceof AgentServiceError) throw error;
+        const failure = error as {name?:string;cause?:{code?:string}};
+        const code = failure.cause?.code ?? failure.name;
+        transportFailure = typeof code === 'string' && /^[a-zA-Z0-9_]{1,64}$/.test(code) ? code : 'transport_error';
+        // Try another connection of the same authority only. Never expose URLs,
+        // credentials or arbitrary response bodies in the failure diagnostic.
+      }
     }
-    throw new AgentServiceError('agent_host_unavailable', '执行环境提供方暂时不可达；原执行和记录已保留。', 503);
+    throw new AgentServiceError('agent_host_unavailable', `执行环境提供方暂时不可达（${method}；${peers.length ? transportFailure : 'no_registered_peer'}）；原执行和记录已保留。`, 503);
   }
   observeParticipation(input: import('../participation-contracts.ts').ParticipationSourceRequest): Promise<import('../participation-contracts.ts').ParticipationSourceResult> { return this.call('observeParticipation',input.ref.sourceId,input); }
   resolveExecutionScope(input: Parameters<AgentHostCapabilities['resolveExecutionScope']>[0]) { return this.call('resolveExecutionScope', input.ref.sourceId, input); }

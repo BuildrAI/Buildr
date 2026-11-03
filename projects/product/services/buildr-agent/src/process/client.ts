@@ -171,6 +171,10 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
   } catch (error) { await host?.close(); throw error; }
   async function call(route: string, value?: unknown, signal?: AbortSignal): Promise<any> {
     const current = await connected();
+    // Refresh the callback before an operation can resolve a workspace. The
+    // process being alive does not prove its in-memory peer registration survived.
+    // Registration is idempotent; never retry the operation itself.
+    if (host && route === '/operations') await request(current.origin, current.token, '/host/attach', {peer:host.peer,autoContinueInterrupted:options.autoContinueInterrupted}, AbortSignal.timeout(3000));
     try { return await request(current.origin, current.token, route, value, signal); }
     catch (error) {
       if (error instanceof AgentServiceError || signal?.aborted) throw error;
