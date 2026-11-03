@@ -5,7 +5,7 @@ import { inspectAgentStorage, collectAgentStorage } from '../application/storage
 /** One pass in a separate isolate: lsof, SQLite and directory scans never block conversation control. */
 if (!isMainThread && workerData?.kind === 'agent-storage-maintenance') {
   try {
-    const content = maintainNativeContent(workerData.dataRoot);
+    const content = maintainNativeContent(workerData.dataRoot,{maximumItems:512,budgetMs:1000});
     // Native deduplication gets its own budget before the potentially expensive
     // diagnostic inventory. A backlog must not starve content or runtime adoption.
     try {
@@ -19,6 +19,8 @@ export class StorageMaintenance {
   private worker?: Worker;
   private timer?: ReturnType<typeof setTimeout>;
   private closed = false;
+  private entryDone=false;
+  private attachmentDone=false;
   private readonly dataRoot: string;
   private readonly intervalMs: number;
   private readonly enabled: () => boolean;
@@ -36,10 +38,14 @@ export class StorageMaintenance {
     try {
       const worker = new Worker(new URL(import.meta.url), { workerData: { kind: 'agent-storage-maintenance', dataRoot: this.dataRoot } });
       let backlog=false;
-      worker.on('message',message=>{backlog=message?.backlog===true;});
+      worker.on('message',message=>{
+        const content=message?.nativeContent;
+        if(content&&!content.diagnostic){this.entryDone ||=content.nextEntry===0;this.attachmentDone ||=content.nextAttachment==='';}
+        backlog=message?.backlog===true||!!content&&!content.diagnostic&&(!this.entryDone||!this.attachmentDone);
+      });
       this.worker = worker; worker.unref();
       worker.on('error', () => { /* The next pass observes again; no model or input recovery. */ });
-      worker.once('exit', () => { if (this.worker === worker) this.worker = undefined; this.schedule(backlog?250:this.intervalMs); });
+      worker.once('exit', () => { if (this.worker === worker) this.worker = undefined;if(!backlog){this.entryDone=false;this.attachmentDone=false;}this.schedule(backlog?250:this.intervalMs); });
     } catch { this.schedule(this.intervalMs); }
   }
   /** Do not abort an in-flight narrow rename/delete; the worker is unreferenced and drains naturally. */

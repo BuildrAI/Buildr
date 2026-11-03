@@ -59,7 +59,7 @@ export class ConversationEntryStore {
       text: entry.text.slice(0, 512), input: force ? entry.input?.slice(0,256) : entry.input && entry.input.length <= 4096 ? entry.input : undefined, detail: { revision } };
   }
   /** Prepare expensive compression before the ordinary write transaction. */
-  static prepare(db: DatabaseSync, record: StoredConversation): PreparedEntries {
+  static prepare(db: DatabaseSync, record: StoredConversation, nativeTool?:(entry:ConversationEntry)=>NativeToolContent|undefined): PreparedEntries {
     const existing = new Set((db.prepare('SELECT content_revision FROM conversation_entry_contents WHERE conversation_id=?').all(record.view.id) as Array<{content_revision: string}>).map(row => row.content_revision));
     const result: PreparedEntries = [];
     for (const [scope, entries] of [['main', record.view.entries], ['inherited', record.inheritedContext?.entries ?? []]] as const) {
@@ -82,7 +82,7 @@ export class ConversationEntryStore {
           return;
         }
         const body = JSON.stringify(entry), revision = digest(body), bytes = Buffer.byteLength(body);
-        const preview = JSON.stringify(this.compact(entry, revision,!!lazy?.untouched()));
+        let preview = JSON.stringify(this.compact(entry, revision,!!lazy?.untouched()));
         let content: Content | undefined;
         if (!existing.has(revision)) {
           if(lazy?.untouched()) {
@@ -100,6 +100,12 @@ export class ConversationEntryStore {
             if (compressed.length < bytes) { stored = compressed; codec = 'zstd'; }
           }
           content = { content_revision: revision, codec, body_bytes: bytes, body: stored };
+          const reference=nativeTool?.(entry);
+          if(reference){
+            const encoded=this.encodeReference(reference),compact=JSON.stringify(this.compact(entry,revision,true));
+            const priorPreview=preview===body?0:Buffer.byteLength(preview);
+            if(Buffer.byteLength(stored)-Buffer.byteLength(encoded.body)-(Buffer.byteLength(compact)-priorPreview)>128){content={...encoded,content_revision:revision,body_bytes:bytes};preview=compact;}
+          }
           }
           existing.add(revision);
         }

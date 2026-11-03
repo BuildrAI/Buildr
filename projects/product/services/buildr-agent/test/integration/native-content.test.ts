@@ -17,6 +17,7 @@ import { ConversationRepository } from '../../src/persistence/conversation-repos
 import { ConversationEntryStore } from '../../src/persistence/conversation-entry-store.ts';
 import { NativeContentStore } from '../../src/persistence/native-content-store.ts';
 import { maintainNativeContent } from '../../src/application/native-content-maintenance.ts';
+import { NativeContentResolver } from '../../src/application/native-content-resolver.ts';
 import { ConversationAttachments } from '../../src/application/conversation-attachments.ts';
 import { DatabaseSync } from 'node:sqlite';
 import { StorageMaintenance } from '../../src/process/storage-maintenance.ts';
@@ -133,16 +134,17 @@ test('settled tools move once, preserve detail/history/search/fork bytes and kee
   assert.equal(db.prepare("SELECT count(*) AS n FROM conversation_entry_contents WHERE codec LIKE 'native-%'").get()!.n,1,'save never replaces unavailable body with an empty preview');
 });
 
-test('active/unknown contexts retain copies, become eligible later and stale physical conversions cannot overwrite new input',t=>{
+test('a stable tool can use native bytes in an unknown round while stale conversions cannot overwrite new input',t=>{
   const f=conversation(t); f.r.runOutcomes![f.entry.runId!]!.status='unknown';f.r.view.revision='r2';f.repo.saveConversation(f.r,'r1');
-  assert.equal(maintainNativeContent(f.dataRoot).tools,0);
+  assert.equal(maintainNativeContent(f.dataRoot).tools,1);
+  assert.equal(f.repo.readConversation(f.r.view.id)!.runOutcomes![f.entry.runId!]!.status,'unknown');
   f.r.runOutcomes![f.entry.runId!]!.status='completed';f.r.view.revision='r3';f.repo.saveConversation(f.r,'r2');
   const store=new NativeContentStore(f.repo.filename,true);t.after(()=>store.close());const row=store.entries(0,10)[0]!;
   const reference=nativeToolReference(f.root,'qoder',f.contextId,f.toolId,f.entry,f.read()!)!;
   let changed=false; assert.equal(store.replaceTool(row,reference,()=>false),false);
   f.r.view.entries.push({id:'new-input',sequence:3,kind:'message',role:'user',text:'new input retained',createdAt:'later'});f.r.view.revision='r4';f.repo.saveConversation(f.r,'r3');
   assert.equal(store.replaceTool(row,reference,()=>{changed=true;return true;}),false);assert.equal(changed,false);
-  assert.equal(maintainNativeContent(f.dataRoot).tools,1);
+  assert.equal(maintainNativeContent(f.dataRoot).tools,0);
   assert.equal(f.repo.readPage(f.r.view.id)!.view.entries.at(-1)!.text,'new input retained');
 });
 
@@ -174,8 +176,9 @@ test('native image bytes serve directly, materialize only when needed, ignore le
   assert.ok(f.repo.readState(record.view.id)!.attachments[id]!.nativeContent);assert.deepEqual(media.read(f.repo.readState(record.view.id)!,id).bytes,bytes);
   fs.writeFileSync(issued,materialized.path);
   const before=new Date(Date.now()-20*60_000);fs.utimesSync(materialized.path,before,before);maintainNativeContent(f.dataRoot);assert.equal(fs.existsSync(materialized.path),false,'legacy paths no longer prevent cold materialization reclamation');
-  const target=structuredClone(record);target.view.id=randomUUID();target.attachments={};media.inherit(record,target,[id]);assert.deepEqual(media.read(target,id).bytes,bytes);assert.equal(target.attachments[id]!.nativeContent,undefined);
-  fs.unlinkSync(f.file);assert.throws(()=>media.read(record,id),{code:'agent_native_content_unavailable'});assert.deepEqual(media.read(target,id).bytes,bytes);
+  const target=structuredClone(record);target.view.id=randomUUID();target.attachments={};media.inherit(record,target,[id]);assert.deepEqual(media.read(target,id).bytes,bytes);assert.ok(target.attachments[id]!.nativeContent);
+  assert.equal(fs.existsSync(path.join(f.root,'attachments',target.view.id,id)),false,'native inheritance does not copy image bytes');
+  fs.unlinkSync(f.file);assert.throws(()=>media.read(record,id),{code:'agent_native_content_unavailable'});assert.throws(()=>media.read(target,id),{code:'agent_native_content_unavailable'});
 });
 
 test('the existing automatic maintenance worker converts a settled copy without any model or CLI request',async t=>{
@@ -313,7 +316,7 @@ test('Codex legacy display ids use exact native command evidence without changin
   f.rows[2].payload.arguments=JSON.stringify({cmd:command});
   fs.writeFileSync(f.file,f.rows.map(row=>JSON.stringify(row)+'\n').join(''));
   f.entry.input='/bin/zsh -lc '+JSON.stringify(command);f.entry.text=f.entry.input+'\n'+nativePreview(f.output);f.r.view.entries[0]={...f.entry};
-  f.r.sources={[f.r.participants[0]!.id+':tool:legacy-display-id']:f.entry.id};
+  f.r.sources={[f.r.participants[0]!.id+':tool:exec_command:70#c26aad']:f.entry.id};
   f.r.attempts[0]!.executionRef={id:'native-turn'};
   f.r.view.revision='r2';f.repo.saveConversation(f.r,'r1');
   assert.equal(maintainNativeContent(f.dataRoot).tools,1);
@@ -341,6 +344,17 @@ test('permission-bound Codex configuration resolves only after its persisted dig
   f.r.view.revision='r2';f.repo.saveConversation(f.r,'r1');
   assert.equal(maintainNativeContent(f.dataRoot).tools,1);
   assert.deepEqual(f.repo.readPage(f.r.view.id)!.view.entries[0],f.entry);
+});
+
+test('new permission-bound participants retain the exact lease configuration without reversing a digest',t=>{
+  const f=conversation(t,'codex'),p=f.r.participants[0]!,configuration=JSON.stringify(['default',500000]);
+  p.modelAccountId='account';p.modelAccountIdentity='identity';p.modelId='model';p.serviceTier='default';
+  p.modelConfiguration=nativeContentHash(JSON.stringify({model:configuration,permission:'full-access'}));p.modelLeaseConfiguration=configuration;
+  const identity=modelLeaseIdentity(p.modelAccountId,p.modelAccountIdentity,p.modelId,f.r.view.id,p.connectionId,configuration);
+  const target=path.join(f.configRoot,'model-bindings',nativeContentHash(identity),path.relative(f.configRoot,f.file));fs.mkdirSync(path.dirname(target),{recursive:true});fs.renameSync(f.file,target);
+  f.r.view.revision='r2';f.repo.saveConversation(f.r,'r1');
+  const resolver=new NativeContentResolver(f.root);assert.ok(resolver.tool(f.r,f.entry));
+  p.modelLeaseConfiguration=JSON.stringify(['default',1]);assert.equal(resolver.tool(f.r,f.entry),undefined,'conflicting stored policy/config values are not a native address');
 });
 
 test('DSH persisted digest media deduplicates identical bytes and rejects a normalized or changed object',t=>{
@@ -374,11 +388,56 @@ test('attachment lookup resumes inside historical contexts after its context bud
   assert.equal(fs.existsSync(filename),false);
 });
 
-test('an unconfirmed original execution is protected even when its participant has moved to another context',t=>{
+test('an unconfirmed round keeps its state while its stable tool body can use a proven native source',t=>{
   const f=conversation(t),p=f.r.participants[0]!,newer=randomUUID();
   p.contextRef={id:newer,data:{native:opaqueReference('qoder',newer,f.cwd,p.bindingIdentity)}};
   f.r.attempts[0]!.executionRef={id:'old-turn-without-context'};delete f.r.runOutcomes![f.entry.runId!];
   f.r.view.revision='r2';f.repo.saveConversation(f.r,'r1');
-  const result=maintainNativeContent(f.dataRoot);assert.equal(result.tools,0);assert.equal(result.reasons['qoder:protected_execution']!.items,1);
+  const result=maintainNativeContent(f.dataRoot);assert.equal(result.tools,1);
+  assert.equal(f.repo.readConversation(f.r.view.id)!.runOutcomes![f.entry.runId!],undefined,'a byte reference is not a run outcome');
+  assert.deepEqual(f.repo.readPage(f.r.view.id)!.view.entries[0],f.entry);
+});
+
+test('normal persistence writes native references immediately and retries a not-yet-durable result later',t=>{
+  const f=conversation(t,'codex');
+  const resolver=new NativeContentResolver(f.root,id=>f.repo.readConversation(id));
+  const repo=new ConversationRepository(f.root,(record,entry)=>resolver.tool(record,entry));t.after(()=>repo.stopReadModels());
+  const record=repo.readConversation(f.r.view.id)!;
+  record.view.entries[0]={...f.entry,name:'saved from native first'};record.view.revision='r2';repo.saveConversation(record,'r1');
+  const db=new DatabaseSync(repo.filename);t.after(()=>db.close());
+  assert.equal(db.prepare("SELECT count(*) n FROM conversation_entry_contents WHERE codec LIKE 'native-%'").get()!.n,1);
+  assert.deepEqual(repo.readPage(record.view.id)!.view.entries[0],record.view.entries[0]);
+  const pending={...f.entry,id:randomUUID(),sequence:3,text:f.entry.input+'\n'+randomBytes(2048).toString('hex')};
+  record.sources[record.participants[0]!.id+':tool:delayed-native']=pending.id;record.view.entries.push(pending);
+  record.view.revision='r3';repo.saveConversation(record,'r2');
+  const current=db.prepare('SELECT c.* FROM conversation_entry_contents c JOIN conversation_read_entries e USING(conversation_id,content_revision) WHERE e.id=?').get(pending.id) as any;
+  assert.ok(!current.codec.startsWith('native-'),'not-yet-durable result remains temporarily readable');
+  fs.appendFileSync(f.file,JSON.stringify({type:'response_item',payload:{type:'function_call',call_id:'delayed-native',arguments:JSON.stringify({cmd:pending.input})}})+'\n'+JSON.stringify({type:'response_item',payload:{type:'function_call_output',call_id:'delayed-native',output:pending.text.slice(pending.input!.length+1)}})+'\n');
+  assert.equal(maintainNativeContent(f.dataRoot).tools,1);
+  assert.deepEqual(repo.readEntry(record.view.id,pending.id,current.content_revision),pending);
+});
+
+test('active image bytes promote to a native reference while the issued path remains temporary and stable',t=>{
+  const f=conversation(t),id=randomUUID(),bytes=randomBytes(2048),filename=path.join(f.root,'attachments',f.r.view.id,id),p=f.r.participants[0]!;
+  fs.mkdirSync(path.dirname(filename),{recursive:true});fs.writeFileSync(filename,bytes);
+  f.r.attachments[id]={size:bytes.length,mimeType:'image/png'};f.r.view.entries[1]!.attachments=[id];
+  f.r.view.run={id:f.entry.runId!,participantId:p.id,provider:p.provider,generation:'g',status:'running',accepted:true,tools:[],startedAt:'now',updatedAt:'now'};
+  fs.appendFileSync(f.file,JSON.stringify({sessionId:f.contextId,cwd:f.cwd,isSidechain:false,type:'user',message:{content:[{type:'image',source:{type:'base64',data:bytes.toString('base64')}}]}})+'\n');
+  f.r.view.revision='r2';f.repo.saveConversation(f.r,'r1');
+  const result=maintainNativeContent(f.dataRoot);assert.equal(result.attachmentReferences,1);assert.equal(result.attachments,0);assert.ok(fs.existsSync(filename));
+  const saved=f.repo.readConversation(f.r.view.id)!,media=new ConversationAttachments({root:f.root,now:()=>new Date().toISOString(),save:()=>{}});
+  assert.ok(saved.attachments[id]!.nativeContent);assert.equal(media.get(saved,id).path,filename);
+  saved.view.run!.status='completed';saved.view.run!.resourcesReleased=true;saved.view.revision='r3';f.repo.saveConversation(saved,'r2');
+  fs.utimesSync(filename,1,1);assert.equal(maintainNativeContent(f.dataRoot).attachments,1);assert.equal(fs.existsSync(filename),false);
+  assert.deepEqual(media.read(f.repo.readConversation(f.r.view.id)!,id).bytes,bytes);
+});
+
+test('unrelated incomplete recovery metadata cannot retain a proven stable tool body',t=>{
+  const f=conversation(t),other=structuredClone(f.r);other.view.id=randomUUID();
+  f.repo.saveConversation(other);
+  const db=new DatabaseSync(f.repo.filename);t.after(()=>db.close());
+  db.prepare("UPDATE conversations SET body=json_set(body,'$.attempts[0].participantId','missing-participant') WHERE id=?").run(other.view.id);
+  assert.equal(f.repo.storageDependencies().complete,false);
+  const result=maintainNativeContent(f.dataRoot);assert.equal(result.diagnostic,undefined);assert.equal(result.tools,1);
   assert.deepEqual(f.repo.readPage(f.r.view.id)!.view.entries[0],f.entry);
 });

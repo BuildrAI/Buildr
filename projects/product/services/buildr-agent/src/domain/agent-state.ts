@@ -70,7 +70,7 @@ export interface StoredConnection {
 export interface StoredParticipant {
   historical?: boolean;
   participationContext?: {id:string; configuredAt:string; instruction:import('../participation-contracts.ts').ParticipationMatch};
-  modelAccountId?: string; modelAccountIdentity?: string; modelId?: string; serviceTier?:string;modelConfiguration?:string;
+  modelAccountId?: string; modelAccountIdentity?: string; modelId?: string; serviceTier?:string;modelConfiguration?:string;modelLeaseConfiguration?:string;
   id: string;
   connectionId: string;
   provider: string;

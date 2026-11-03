@@ -189,7 +189,7 @@ function matchingText(text:string,candidates:TextCandidate[],command=false):Nati
 /** Content equality is the final authority; format differences keep the existing local body. */
 export function nativeToolReference(root: string, provider: string, contextId: string, nativeId: string, entry: ConversationEntry, inventory: NativeContentInventory, report?:(reason:string)=>void,executionId?:string): NativeToolContent | undefined {
   const records = inventory.records.filter(record => record.toolIds.includes(nativeId));
-  if(!records.length&&provider==='codex'&&executionId!==undefined&&entry.input&&entry.input.length>=8) {
+  if(!records.length&&provider==='codex'&&/^[^:#]+:\d+#[a-f0-9]+$/.test(nativeId)&&executionId!==undefined&&entry.input&&entry.input.length>=8) {
     const aliases=nativeCommandIndex(inventory,nativeCommandPrefix(entry.input),executionId).get(nativeContentHash(entry.input))??[];
     const matches:NativeToolContent[]=[];
     for(const alias of aliases) {

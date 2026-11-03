@@ -47,6 +47,7 @@
   - [`src/index.ts`](../../services/buildr-agent/src/index.ts) 与 [`src/contracts.ts`](../../services/buildr-agent/src/contracts.ts)：唯一公开应用入口、宿主（Host）依赖、视图、执行器（Executor）和独立控制契约；主包按包名消费。核心装配位于 [`application/agent-service.ts`](../../services/buildr-agent/src/application/agent-service.ts)，独立承载不反向导入公开入口。
   - [`src/execution-contracts.ts`](../../services/buildr-agent/src/execution-contracts.ts)、[`src/operation-schemas.ts`](../../services/buildr-agent/src/operation-schemas.ts)和[`src/process/`](../../services/buildr-agent/src/process/)：三组版本化契约（Contract）、唯一通用声明、公共客户端（Client）、独立承载、持有锁、保留运行单元（Runtime Unit）和空闲版本交接；Buildr 不直接持有执行核心。
   - [`src/application/connection-application.ts`](../../services/buildr-agent/src/application/connection-application.ts)：独立接入、官方登录尝试、账号和模型检查、程序及配置绑定与资源释放。
+  - [`src/application/native-content-resolver.ts`](../../services/buildr-agent/src/application/native-content-resolver.ts)：按准确原生上下文及模型租约配置提供有界正文引用，装配到持久化准备；后台维护复用其配置/上下文判断，数据库层不解析厂商格式。
   - [`src/application/preparation-application.ts`](../../services/buildr-agent/src/application/preparation-application.ts)：准备尝试、发现与选择、独立安装、登录接续及取消；刷新按准确尝试查询，不改绑已有上下文。
   - [`src/executors/program-manager.ts`](../../services/buildr-agent/src/executors/program-manager.ts) 与 [`program-policy.ts`](../../services/buildr-agent/src/executors/program-policy.ts)：本机来源发现、ChatGPT App 身份和签名、固定官方包独立安装及共享版本策略；浏览器工具不在此处安装。
   - [`src/application/conversation-application.ts`](../../services/buildr-agent/src/application/conversation-application.ts)：普通或任务对话、预览与受理、参与者接续、历史归并、状态观察及准确控制。

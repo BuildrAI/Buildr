@@ -24,6 +24,8 @@ export class ConversationAttachments {
     if (!meta || !/^[a-f0-9-]{36}$/.test(id)) fail('agent_attachment_missing', '附件不属于此对话。', 404);
     if (meta.nativeContent) {
       const bytes = new NativeContentReader(this.options.root).attachment(meta.nativeContent);
+      const issued=path.join(this.options.root,'attachments',record.view.id,id);
+      if(safeStorageResource(this.options.root,issued)&&fs.lstatSync(issued).size===bytes.length&&nativeContentHash(fs.readFileSync(issued))===meta.nativeContent.sha256){fs.utimesSync(issued,new Date(),new Date());return{id,path:issued,mimeType:meta.mimeType};}
       const directory = path.join(this.options.root,'attachment-cache',record.view.id);
       ensureStorageDirectory(this.options.root,directory);
       const filename = path.join(directory,id);
@@ -57,7 +59,7 @@ export class ConversationAttachments {
   describe(record: StoredConversation, id: string) {
     return { ...this.get(record, id), ...(record.attachments[id]!.video ? { video: { ...record.attachments[id]!.video, frames: record.attachments[id]!.video!.frames.map(frame => ({ ...this.get(record, frame.id), time: frame.time })) } } : {}) };
   }
-  /** Copy referenced media, not unsent drafts or native resource ownership. Safe to retry. */
+  /** Inherit native addresses directly; only unique local bytes need a copy. */
   inherit(source: StoredConversation, target: StoredConversation, ids: string[] = [...(target.inheritedContext?.entries??[]),...target.view.entries].flatMap(entry=>entry.attachments??[])): void {
     const selected = new Set(ids);
     for (const id of selected) for (const frame of source.attachments[id]?.video?.frames ?? []) selected.add(frame.id);
@@ -65,15 +67,15 @@ export class ConversationAttachments {
     for (const id of selected) this.read(source,id);
     const root = path.join(this.options.root, 'attachments');
     const directory = path.join(root, target.view.id);
-    for (const location of [root, path.join(root, source.view.id), directory]) {
-      if (location !== path.join(root, source.view.id)) fs.mkdirSync(location, {recursive:true,mode:0o700});
+    for (const location of [root, directory]) {
+      fs.mkdirSync(location, {recursive:true,mode:0o700});
       const stat = fs.lstatSync(location);
       if (!stat.isDirectory() || stat.isSymbolicLink()) fail('agent_attachment_unsafe', '附件目录来源不安全。', 409);
     }
     for (const id of selected) {
       const media = this.read(source, id);
       target.attachments[id] = structuredClone(source.attachments[id]!);
-      delete target.attachments[id]!.nativeContent;
+      if(target.attachments[id]!.nativeContent)continue;
       try { fs.writeFileSync(path.join(directory,id),media.bytes,{flag:'wx',mode:0o600}); }
       catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;

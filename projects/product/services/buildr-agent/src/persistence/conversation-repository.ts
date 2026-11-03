@@ -13,6 +13,8 @@ import { AgentServiceError, fail } from '../domain/agent-state.ts';
 import type { StoredConnection, StoredConversation } from '../domain/agent-state.ts';
 import { ConversationReadModel, type ConversationReadState } from './conversation-read-model.ts';
 import { ConversationEntryStore } from './conversation-entry-store.ts';
+import type { NativeToolContent } from '../native-content-contracts.ts';
+import type { ConversationEntry } from '../contracts.ts';
 import { beginConversationMigration, migrateConversationEntries } from './conversation-migration.ts';
 
 export const CONVERSATION_SCHEMA_VERSION = 7;
@@ -42,7 +44,8 @@ export class ConversationRepository {
   private repairScheduled = false;
   private stopped = false;
   private readonly nativeReader: NativeContentReader;
-  constructor(directory: string) { this.nativeReader = new NativeContentReader(directory); this.directory = directory; this.filename = path.join(directory, 'conversations.sqlite'); }
+  private readonly nativeTool?: (record:StoredConversation,entry:ConversationEntry)=>NativeToolContent|undefined;
+  constructor(directory: string,nativeTool?:(record:StoredConversation,entry:ConversationEntry)=>NativeToolContent|undefined) { this.nativeTool=nativeTool;this.nativeReader = new NativeContentReader(directory); this.directory = directory; this.filename = path.join(directory, 'conversations.sqlite'); }
 
   private open(write: boolean): DatabaseSync | undefined {
     if (!fs.existsSync(this.filename) && !write) return undefined;
@@ -549,7 +552,7 @@ export class ConversationRepository {
     for(const entry of record.view.entries)if(entry.participation){const value=normalizeParticipation(entry.participation);delete entry.participation;if(value)(record.participationTools??={})[entry.id]={...value,entryRevision:createHash('sha256').update(JSON.stringify(entry)).digest('hex')};}
     const db = this.open(true)!;
     try {
-      const prepared=ConversationEntryStore.prepare(db,record);
+      const prepared=ConversationEntryStore.prepare(db,record,this.nativeTool?entry=>this.nativeTool!(record,entry):undefined);
       db.exec('BEGIN IMMEDIATE');
       const prior = db.prepare('SELECT revision,summary,message_signature,activity_at,user_at,activity_version,seen_version FROM conversations WHERE id=?').get(record.view.id) as {revision:string;summary:string;message_signature:string;activity_at:string;user_at:string;activity_version:number;seen_version:number}|undefined;
       if ((prior?.revision ?? undefined) !== priorRevision) fail('agent_revision_conflict', '对话已变化，请重新读取。', 409);

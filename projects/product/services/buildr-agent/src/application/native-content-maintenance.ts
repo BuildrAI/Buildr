@@ -1,12 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { StoredConversation, StoredParticipant } from '../domain/agent-state.ts';
-import { unfinishedRun } from '../domain/agent-state.ts';
 import type { NativeContentInventory, NativeAttachmentContent } from '../native-content-contracts.ts';
 import { createNativeExecutors } from '../executors/index.ts';
 import { nativeToolReference, nativeContentFiles, nativeCommandIndex, nativeCommandPrefix } from '../executors/native-content.ts';
-import { parseReference } from '../executors/native-process.ts';
-import { modelLeaseIdentity } from '../model-access/model-preferences.ts';
 import { ConversationRepository } from '../persistence/conversation-repository.ts';
 import { ConversationEntryStore } from '../persistence/conversation-entry-store.ts';
 import { NativeContentStore } from '../persistence/native-content-store.ts';
@@ -14,58 +11,23 @@ import { claim } from '../process/ownership.ts';
 import { NativeContentReader, nativeContentHash } from '../storage/native-content.ts';
 import { observeStorageUse, safeStoragePath, safeStorageResource, storageInUse } from '../storage/files.ts';
 
+import { configRoot, originalContext } from './native-content-resolver.ts';
+
 const executors = createNativeExecutors();
-function configRoot(root: string, record: StoredConversation, participant: StoredParticipant): string | undefined {
-  if (participant.connectionId !== participant.provider) return;
-  try { if (participant.contextRef && parseReference(String(participant.contextRef.data?.native ?? ''),participant.provider,record.view.cwd,participant.bindingIdentity).nativeSessionId !== participant.contextRef.id) return; }
-  catch { return; }
-  const base = path.join(root,'connections',participant.provider);
-  if (!participant.modelAccountId || participant.provider==='qoder') return base;
-  if (!participant.modelAccountIdentity || !participant.modelId || participant.modelConfiguration === undefined) return;
-  let configuration=participant.modelConfiguration;
-  // Codex/Devin participant identity includes permission, but the gateway lease
-  // uses only the model configuration. A tier's numeric suffix is only a
-  // candidate: the persisted digest must prove the complete original value.
-  if(participant.provider==='codex'&&/^[a-f0-9]{64}$/.test(configuration)) {
-    const window=participant.serviceTier?.match(/:(\d+)$/)?.[1];
-    const candidates=[null,...(window?[Number(window)]:[])].flatMap(size=>['default','full-access'].map(permission=>({model:JSON.stringify([participant.serviceTier??'',size]),permission})));
-    const match=candidates.filter(candidate=>nativeContentHash(JSON.stringify(candidate))===configuration);
-    if(match.length!==1)return;
-    configuration=match[0]!.model;
-  }
-  const identity = modelLeaseIdentity(participant.modelAccountId,participant.modelAccountIdentity,participant.modelId,record.view.id,participant.connectionId,configuration);
-  return path.join(base,'model-bindings',nativeContentHash(identity));
-}
-
-function originalContext(record:StoredConversation,participant:StoredParticipant,runId?:string):{context?:string;reason?:string} {
-  if(!runId)return {reason:'historical_context_unproven'};
-  const attempts=record.attempts.filter(attempt=>attempt.runId===runId&&attempt.participantId===participant.id&&attempt.accepted);
-  if(!attempts.length)return {reason:'accepted_attempt_missing'};
-  const contexts=new Set<string>();
-  for(const attempt of attempts) {
-    const binding=attempt.executionRef?.data?.resourceBinding;
-    if(binding!==undefined&&binding!==participant.bindingIdentity)return {reason:'binding_mismatch'};
-    for(const context of [attempt.executionRef?.data?.resourceContext,attempt.participation?.context?.id])
-      if(typeof context==='string'&&context)contexts.add(context);
-  }
-  if(contexts.size>1)return {reason:'context_evidence_conflict'};
-  if(contexts.size===1)return {context:[...contexts][0]!};
-  return {reason:'historical_context_unproven'};
-}
-
 export interface NativeContentMaintenanceResult {
   inspected: number; tools: number; attachments: number; contentBytesSaved: number; attachmentBytesRemoved: number;
   deferred: number; databaseBytesReclaimed: number; diagnostic?: string;
   nextEntry: number; nextAttachment: string;
   reasons:Record<string,{items:number;storedBytes:number;logicalBytes:number}>;
   localResidualBytes:number;
+  attachmentReferences:number;
   attachmentReasons:Record<string,{items:number;storedBytes:number}>;
   entryItems:Array<{conversationId:string;revision:string;provider:string;reason:string;storedBytes:number;logicalBytes:number}>;
 }
 
 /** Runs only in the existing maintenance isolate. Never launches a native CLI or changes its files. */
 export function maintainNativeContent(dataRoot: string, options: {dryRun?:boolean; maximumItems?:number; budgetMs?:number;after?:number;afterAttachment?:string;details?:boolean} = {}): NativeContentMaintenanceResult {
-  const result: NativeContentMaintenanceResult = {inspected:0,tools:0,attachments:0,contentBytesSaved:0,attachmentBytesRemoved:0,deferred:0,databaseBytesReclaimed:0,nextEntry:options.after??0,nextAttachment:options.afterAttachment??'',reasons:{},attachmentReasons:{},localResidualBytes:0,entryItems:[]};
+  const result: NativeContentMaintenanceResult = {inspected:0,tools:0,attachments:0,attachmentReferences:0,contentBytesSaved:0,attachmentBytesRemoved:0,deferred:0,databaseBytesReclaimed:0,nextEntry:options.after??0,nextAttachment:options.afterAttachment??'',reasons:{},attachmentReasons:{},localResidualBytes:0,entryItems:[]};
   const root=path.join(dataRoot,'agent-service'), repository=new ConversationRepository(root), reader=new NativeContentReader(root);
   const deadline=Date.now()+Math.max(100,Math.min(options.budgetMs??10000,60000)), limit=Math.max(1,Math.min(options.maximumItems??128,1024));
   let store:NativeContentStore|undefined, lock:ReturnType<typeof claim>|undefined;
@@ -74,7 +36,6 @@ export function maintainNativeContent(dataRoot: string, options: {dryRun?:boolea
     if (!options.dryRun) lock=claim(dataRoot,'storage');
     store=new NativeContentStore(repository.filename,!options.dryRun);
     const dependencies=repository.storageDependencies();
-    if (!dependencies.complete) throw new Error('native_dependencies_unknown');
     const blocked=new Set(dependencies.contexts), inventories=new Map<string,NativeContentInventory|undefined>();let inventoryReason='';
     const indexes=new Map<string,Map<string,string[]>>();
     // Old releases did not persist a context on every attempt. The stable tool
@@ -110,7 +71,6 @@ export function maintainNativeContent(dataRoot: string, options: {dryRun?:boolea
       inventoryReason='';const config=configRoot(root,record,participant);
       if(!context){inventoryReason='native_context_missing';return;}
       if(!config){inventoryReason='configuration_unproven';return;}
-      if(blocked.has(participant.provider+':'+context)){inventoryReason='protected_context';return;}
       const key=JSON.stringify([config,context,record.view.cwd]);
       if (!inventories.has(key) && inventories.size>=8) {inventoryReason='context_budget';return;}
       if (!inventories.has(key)) inventories.set(key,executors.find(executor=>executor.descriptor.id===participant.provider)?.nativeContent?.({root,configRoot:config,contextId:context,cwd:record.view.cwd}));
@@ -150,8 +110,6 @@ export function maintainNativeContent(dataRoot: string, options: {dryRun?:boolea
         const source=sources[0]![0], split=source.indexOf(':tool:'); if (split<0){reason('source_identity_unavailable');continue;}
         const participant=origin.participants.find(value=>value.id===source.slice(0,split));
         if(!participant||entry.provider!==participant.provider){reason('participant_unavailable');continue;}
-        const run=[origin.view.run,...origin.view.retainedRuns??[]].find(value=>value?.id===entry.runId);
-        if(!entry.runId||(run?unfinishedRun(run)||run.resourcesReleased!==true||['active','unknown'].includes(run.executionState??''):!['completed','failed','stopped'].includes(origin.runOutcomes?.[entry.runId]?.status??''))){reason('protected_execution');continue;}
         const executionId=origin.attempts.find(attempt=>attempt.runId===entry.runId&&attempt.participantId===participant.id&&attempt.accepted)?.executionRef?.id;
         const original=originalContext(origin,participant,entry.runId);
         const location=original.context||original.reason!=='historical_context_unproven'?original:locate(origin,participant,source.slice(split+6),executionId,entry.input);
@@ -170,7 +128,7 @@ export function maintainNativeContent(dataRoot: string, options: {dryRun?:boolea
         const encoded=ConversationEntryStore.encodeReference(reference);
         const savings=Buffer.byteLength(row.body)-Buffer.byteLength(encoded.body)-(Buffer.byteLength(compact)*positions-(previousCompact??0));
         if (savings<=128){reason('insufficient_net_saving');continue;}
-        const verify=()=>{ const fresh=repository.storageDependencies(); return fresh.complete && !fresh.contexts.includes(participant.provider+':'+context) && !!reader.tool(reference,row.content_revision); };
+        const verify=()=>{ return !!reader.tool(reference,row.content_revision); };
         if (options.dryRun || store.replaceTool(row,reference,verify)) {
           result.tools++;result.contentBytesSaved+=savings;
           const residual=[...reference.input??[],...reference.text].reduce((sum,part)=>sum+('literal'in part&&part.residual?Buffer.byteLength(part.literal):0),0);
@@ -196,10 +154,10 @@ export function maintainNativeContent(dataRoot: string, options: {dryRun?:boolea
         if(Date.now()>deadline){attachmentCursor=row.id+'#'+itemIndex;break attachmentRows;}
         const filename=path.join(root,'attachments',record.view.id,id),local=fs.lstatSync(filename,{throwIfNoEntry:false});
         const note=(code:string)=>{const value=result.attachmentReasons[code]??={items:0,storedBytes:0};value.items++;value.storedBytes+=(local?.blocks??0)*512;};
-        if(record.view.requests.length||record.participants.some(participant=>participant.contextRef&&blocked.has(participant.provider+':'+participant.contextRef.id))){if(local)note('protected_context');continue;}
+        const protectedPath=!dependencies.complete||record.view.requests.length>0||record.participants.some(participant=>participant.contextRef&&blocked.has(participant.provider+':'+participant.contextRef.id));
         if(!ids.has(id)){if(local)note('unsent_or_unreferenced');continue;}
         if(meta.video||!meta.mimeType.startsWith('image/')||!/^[a-f0-9-]{36}$/.test(id)){if(local)note('unique_or_unsupported_media');continue;}
-        if (meta.nativeContent) {
+        if (meta.nativeContent && !protectedPath) {
           const cached=path.join(root,'attachment-cache',record.view.id,id);
           if (safeStorageResource(root,cached)) try {
             const before=fs.lstatSync(cached);
@@ -234,13 +192,18 @@ export function maintainNativeContent(dataRoot: string, options: {dryRun?:boolea
             if (reference) break;
           }
           if (!reference || !reader.attachment(reference).equals(bytes)) {note(images?'native_bytes_differ':available?'native_image_absent':'native_inventory_unavailable');continue;}
-          const use=observeStorageUse(); if (storageInUse(filename,use)) {note(use.complete?'local_source_in_use':'local_use_unknown');continue;}
-          const verify=()=>{ const fresh=repository.storageDependencies(); return fresh.complete && !fresh.contexts.includes(reference!.provider+':'+reference!.contextId) && reader.attachment(reference!).equals(bytes); };
-          if (options.dryRun) { result.attachments++; result.attachmentBytesRemoved+=before.blocks*512;note('convertible'); continue; }
-          if (!store.referenceAttachment(header,id,reference,verify)) { result.deferred++; continue; }
-          record.attachments[id]!.nativeContent=reference; header=JSON.stringify(record);
+          const verify=()=>reader.attachment(reference!).equals(bytes);
+          const held=storageInUse(filename,observeStorageUse()),warm=!!meta.nativeContent&&Date.now()-before.mtimeMs<15*60_000;
+          if (options.dryRun) {if(!meta.nativeContent)result.attachmentReferences++;if(!protectedPath&&!held&&!warm){result.attachments++;result.attachmentBytesRemoved+=before.blocks*512;}note(protectedPath?'native_materialization_active':held?'local_source_in_use':warm?'native_materialization_warm':'convertible');continue;}
+          if(!meta.nativeContent){
+            const sameFile=()=>{const now=fs.lstatSync(filename);return before.ino===now.ino&&before.dev===now.dev&&before.size===now.size&&before.mtimeMs===now.mtimeMs&&before.ctimeMs===now.ctimeMs&&verify();};
+            if (!store.referenceAttachment(header,id,reference,sameFile)) { result.deferred++; continue; }
+            result.attachmentReferences++;record.attachments[id]!.nativeContent=reference;header=JSON.stringify(record);
+          }
+          if(protectedPath||held||warm){note(protectedPath?'native_materialization_active':held?'local_source_in_use':'native_materialization_warm');continue;}
           const after=fs.lstatSync(filename);
-          if (before.dev===after.dev && before.ino===after.ino && before.size===after.size && before.mtimeMs===after.mtimeMs && before.ctimeMs===after.ctimeMs && verify() && !storageInUse(filename,observeStorageUse())) {
+          const fresh=repository.storageDependencies();
+          if (fresh.complete&&!fresh.contexts.includes(reference.provider+':'+reference.contextId)&&before.dev===after.dev && before.ino===after.ino && before.size===after.size && before.mtimeMs===after.mtimeMs && before.ctimeMs===after.ctimeMs && verify() && !storageInUse(filename,observeStorageUse())) {
             fs.unlinkSync(filename); result.attachments++; result.attachmentBytesRemoved+=before.blocks*512;note('converted');
           }
         } catch { result.deferred++;note('content_read_or_validation_failed'); }
