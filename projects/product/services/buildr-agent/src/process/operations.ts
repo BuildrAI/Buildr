@@ -18,7 +18,7 @@ export interface AgentOperations {
 const names = {
   webhooks: ['read','save','reveal','test'],
   connections: ['upgradeProgram','programUpdates','checkProgramUpdates','list','read','prepare','preparation','currentPreparation','cancelPreparation','connect','check','login','loginAttempt','cancelLogin','disconnect'],
-  conversations: ['replayWebhook','participation','participationSummary','warmup','readDraft','addDraftImage','removeDraftImage','readDraftImage','startDraft','lookupDraft','listAll','readEntry','markSeen','list','create','fork','createChild','listChildren','read','update','generateTitle','prepareHandoff','prepareSend','send','supplement','queueSend','cancelPendingSend','observe','observeRun','releaseQuestionWait','stop','reply','addAttachment','readAttachment','pending','pendingSummary','lookupRequest'],
+  conversations: ['replayWebhook','participation','participationSummary','readDraft','addDraftImage','removeDraftImage','readDraftImage','startDraft','lookupDraft','listAll','readEntry','markSeen','list','create','fork','createChild','listChildren','read','update','generateTitle','prepareHandoff','prepareSend','send','supplement','queueSend','cancelPendingSend','observe','observeRun','releaseQuestionWait','stop','reply','addAttachment','readAttachment','pending','pendingSummary','lookupRequest'],
   'models.accounts': ['list','read','preferences','add','login','attempt','cancelLogin','check','disconnect'],
   'models.catalog': ['list'],
 } as const;
@@ -31,7 +31,6 @@ const inputs: Record<string, [number, string]> = {
   'webhooks.save':[0,'webhookSettingsInput'], 'webhooks.reveal':[0,'revision'], 'webhooks.test':[0,'revision'],
   'conversations.replayWebhook':[2,'webhookReplay'],
   'conversations.participation':[2,'participationQuery'], 'conversations.participationSummary':[1,'participationSummaryQuery'],
-  'conversations.warmup':[2,'warmup'],
   'conversations.startDraft':[2,'startDraft'], 'conversations.removeDraftImage':[2,'removeDraftImage'],
   'conversations.queueSend': [2, 'queueSend'], 'conversations.cancelPendingSend': [2, 'cancelPendingSend'],
   'connections.upgradeProgram':[1,'programUpgradeInput'],

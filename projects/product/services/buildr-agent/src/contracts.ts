@@ -577,8 +577,6 @@ export interface AgentServiceOptions {
   shutdownTimeoutMs?: number;
 }
 
-export type ConversationWarmupInput = Pick<SendDraft,'connectionId'|'modelAccountId'|'modelAccountRevision'|'modelAccountIdentity'|'model'|'serviceTier'|'reasoningEffort'|'permissionMode'> & {cwd?:string;taskId?:string;clientRequestId?:string;discard?:boolean;preparationId?:string};
-
 export interface WebhookDeliveryResult { at: string; success: boolean; status?: number; kind: 'event' | 'test' }
 export interface WebhookSettingsView {
   revision: string;

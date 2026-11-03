@@ -33,9 +33,6 @@ for (const {modelBound,parallel,uncertain} of [{modelBound:true,parallel:true,un
   const oldText=uncertain?'uncertain-ended':'hold',oldStatus=uncertain?'unknown':'running';
   const held=await start(oldText);
   if(uncertain)await until(()=>observer!.operations.conversations.read(scope,held.id),view=>view.run?.status==='unknown');
-  const warmId=randomUUID(),warmInput={connectionId:'first',modelAccountId:account.id,model:'fixture',cwd:workspace,clientRequestId:randomUUID()};
-  assert.equal((await main.call('conversations.warmup',[scope,warmId,warmInput,true])).prepared,true);
-  assert.ok((await observer.lifecycle.status()).activity.reasons.some(reason=>reason.kind==='prepared-resource'));
   fs.writeFileSync(contractsFile,contracts);
   fs.writeFileSync(marker,JSON.stringify({version:'new'}));
   const gate=path.join(dataRoot,'allow-upgrade');
@@ -69,8 +66,6 @@ for (const {modelBound,parallel,uncertain} of [{modelBound:true,parallel:true,un
     fs.writeFileSync(gate,'yes');
     await assert.rejects(connectAgentProcess({dataRoot,profileId,runtime:next,sourceId:'minimal',requireRuntime:true,activationTimeoutMs:100}),{code:'agent_process_activation_pending'});
     assert.equal((await observer.lifecycle.identity()).generation,old.generation);assert.ok(isLive(old.pid));
-    await until(()=>observer!.lifecycle.status(),status=>!status.activity.reasons.some(reason=>reason.kind==='prepared-resource'));
-    assert.equal((await main.call('conversations.warmup',[scope,warmId,warmInput,true])).prepared,false,'upgrade must not recreate speculative owners');
     const ordinary=await connectAgentProcess({dataRoot,profileId,runtime:next,sourceId:'minimal',activationTimeoutMs:100});
     try {
       await assert.rejects(ordinary.operations.conversations.prepareSend(scope,held.id,{expectedRevision:held.revision,connectionId:'first',text:'must not send'}),{code:'agent_process_activation_pending'});

@@ -14,8 +14,6 @@ export const AGENT_SERVICE_HTTP_OPERATIONS = [
   operation('test-webhook','POST',`${base}/webhook-settings/test`,'revision','webhookTest'),
   operation('participation','GET',`${workspace}/:conversationId/participation`,'participationQuery','participation'),
   operation('participation-summary','GET',`${workspace}/participation-summary`,'participationSummaryQuery','participationSummary'),
-  operation('warm-draft','POST',`${workspace}/drafts/:draftId/warmup`,'warmup','warmed'),
-  operation('warm-conversation','POST',`${workspace}/:conversationId/warmup`,'warmup','warmed'),
   operation('upgrade-program', 'POST', `${base}/connections/:connectionId/program-upgrades`, 'programUpgradeInput', 'programUpgrade'),
   operation('program-updates', 'GET', `${base}/program-updates`, 'empty', 'programUpdates'),
   operation('check-program-updates', 'POST', `${base}/program-updates/check`, 'programUpdateCheck', 'programUpdates'),

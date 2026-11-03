@@ -62,7 +62,6 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
   let pending = readPrivate<PendingRuntime>(pendingFile);
   if (pending?.runtime.digest === options.runtime.digest) { pending = undefined; savePending({ runtime: options.runtime, state: 'adopted' }); }
   if (pending?.state === 'switching') pending = { ...pending, state: 'failed', diagnostic: '上次切换尚未确认，请核对实际运行版本。' };
-  service.setQoderIdleRetention(!pending);
   const generations = new Map<string, AbortController>();
   function status(): AgentProcessStatus {
     const activity = service.activity();
@@ -155,7 +154,6 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       validateAgentRuntime(options.dataRoot, input.runtime);
       pending = input.runtime.digest === options.runtime.digest ? undefined : { runtime: input.runtime, state: 'waiting' };
       savePending(pending ?? { runtime: options.runtime, state: 'adopted' });
-      service.setQoderIdleRetention(!pending);
       json(res, 200, status()); return;
     }
     if (req.url === '/shutdown') {
@@ -226,7 +224,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       let controlGeneration:string|undefined;
       const perConversation = name.startsWith('conversations.') && !/Draft/.test(name) && typeof input.args[0] === 'string' && typeof input.args[1] === 'string';
       // Metadata belongs to the current application schema, not the retained native run owner.
-      if (perConversation && !['conversations.replayWebhook','conversations.participation','conversations.update','conversations.read','conversations.warmup','conversations.readEntry','conversations.fork','conversations.createChild','conversations.listChildren','conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.queueSend','conversations.cancelPendingSend'].includes(name)) {
+      if (perConversation && !['conversations.replayWebhook','conversations.participation','conversations.update','conversations.read','conversations.readEntry','conversations.fork','conversations.createChild','conversations.listChildren','conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.queueSend','conversations.cancelPendingSend'].includes(name)) {
         const control = ['conversations.stop','conversations.observeRun','conversations.releaseQuestionWait','conversations.supplement'].includes(name) ? input.args[2] : name === 'conversations.reply' ? input.args[3] : undefined;
         controlGeneration=control?.generation;
         target = await recipient(input.args[0], input.args[1], controlGeneration);
@@ -243,7 +241,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       if (!target && retiring && current && current.identity.instanceId !== instanceId) {
         const run = perConversation ? repository.readState(input.args[1])?.view.run : undefined;
         const ownsRun = controlGeneration ? controlGeneration === identity.generation : run?.generation === identity.generation;
-        if (!ownsRun || ['conversations.replayWebhook','conversations.update','conversations.warmup','conversations.readEntry','conversations.fork','conversations.createChild','conversations.listChildren','conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.queueSend','conversations.cancelPendingSend'].includes(name)) target = current;
+        if (!ownsRun || ['conversations.replayWebhook','conversations.update','conversations.readEntry','conversations.fork','conversations.createChild','conversations.listChildren','conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.queueSend','conversations.cancelPendingSend'].includes(name)) target = current;
       }
       if (target) {
         const result=await forward(target, '/operations', input);
@@ -261,9 +259,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
         }
         json(res,200,result);return;
       }
-      // Speculative preparation must not keep an upgrade alive or recreate idle owners.
-      if (name === 'conversations.warmup' && pending && pending.runtime.digest !== options.runtime.digest) { json(res, 200, {prepared:false}); return; }
-      const startsWork = !name.startsWith('conversations.') || ['conversations.warmup','conversations.fork','conversations.startDraft','conversations.create','conversations.createChild','conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.generateTitle'].includes(name);
+      const startsWork = !name.startsWith('conversations.') || ['conversations.fork','conversations.startDraft','conversations.create','conversations.createChild','conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.generateTitle'].includes(name);
       if (startsWork && !accepting) throw new AgentServiceError('agent_process_switching', '执行后台正在采用新版，本次新操作尚未受理。', 503);
       if (['conversations.startDraft','conversations.send'].includes(name) && pending?.runtime.digest !== undefined && pending.runtime.digest !== options.runtime.digest) throw new AgentServiceError('agent_process_switching','新版尚未就绪，可以提交待发送内容。',503);
       if (name === 'conversations.send' && await conversationBusy(input.args[0],input.args[1]) && !service.allowsReleasedContinuation(input.args[0],input.args[1],input.args[2])) throw new AgentServiceError('agent_conversation_busy','上一轮仍未释放，可以提交待发送内容。',409);
@@ -357,18 +353,6 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       return;
     }
     if (accepting) { void sends.pump().catch(()=>{}); try { const now = Date.now(), reconcile = now - lastStorageCollection >= 10 * 60_000; if (reconcile || now - lastConfirmedCollection >= 5000) { if (reconcile) lastStorageCollection = now; lastConfirmedCollection = now; if (reconcile) collectAgentStorage(inspectAgentStorage({dataRoot:options.dataRoot})); else cleanupStoppedProcesses(options.dataRoot,options.runtime); } } catch { /* Unknown resources remain retained. */ } }
-    // Prepared selections are disposable, not unfinished user work. Drain them
-    // before the serial idle gate too (legacy native owners cannot run in parallel).
-    if (pending?.state === 'waiting' && accepting && !inflight && !recovering && !sends.busy &&
-        service.activity().reasons.some(reason => reason.kind === 'prepared-resource')) {
-      adopting = service.releaseIdleSources().catch(() => {
-        if (pending?.state === 'waiting') {
-          pending = {...pending, diagnostic:'升级前释放闲置预热资源失败，原工作与待发送内容已保留。'};
-          savePending(pending);
-        }
-      }).finally(() => { adopting = undefined; });
-      return;
-    }
     if (pending?.state==='waiting' && canRunParallel(options.runtime,pending.runtime) && !inflight && !recovering && !sends.busy) {
       const target=pending.runtime;
       adopting=adoptParallel(target).finally(()=>{adopting=undefined;});

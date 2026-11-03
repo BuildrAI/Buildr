@@ -2261,19 +2261,3 @@ Agent Service MUST 统一轮次与问题接续语义，Adapter MUST 只映射其
 #### Scenario: 取消或受理
 - **WHEN** 对应提交确认取消或受理
 - **THEN** 下一次读取 MUST 去除该派生状态，不重发指令，原执行或待决策 MUST 保留
-
-### Requirement: Qoder预热必须跟随当前选择并有界回收
-
-系统 MUST 保留Qoder首次选择的提前准备，正式发送 MUST 优先采用准确匹配的准备实例。未使用Qoder准备 MUST 在1分钟闲置后回收，选择离开 MUST 按原绑定取消未使用准备；新的Qoder选择 MUST 替换其他未使用Qoder准备。取消 MUST NOT 关闭已被正式发送采用的实例。
-
-#### Scenario: 连续追问复用
-- **WHEN** Qoder一轮安全结束后在5分钟内同选择继续发送
-- **THEN** 系统 MUST 复用仍可用的原实例与上下文，不重复启动，且重置其实际使用时间
-
-#### Scenario: 切走或过期
-- **WHEN** 用户离开Qoder选择或未使用准备已闲置1分钟
-- **THEN** 系统 MUST 回收未采用准备，不影响已受理执行
-
-#### Scenario: 迟到取消
-- **WHEN** 旧选择的取消晚于新选择准备或正式采用
-- **THEN** 系统 MUST 只作用于准确匹配且尚未采用的原准备

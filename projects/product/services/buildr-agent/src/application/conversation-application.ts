@@ -8,7 +8,6 @@ import {conversationTaskLinks,setConversationTaskLinks,sameTaskLink} from '../do
 import type {ConversationTaskLink} from '../contracts.ts';
 import { presentedFilesForEntry, normalizePresentedFiles } from '../domain/presented-files.ts';
 import { modelLeaseIdentity } from '../model-access/model-preferences.ts';
-import {ConversationWarmups,CONNECTION_IDLE_MS,QODER_IDLE_REUSE_MS,type PreparedSource} from './conversation-warmups.ts';
 import { answerAttachmentIds, resolveQuestionAnswer, questionAnswerDisplay, normalizeQuestionCapabilities } from '../domain/question-answer.ts';
 import { normalizeSendDraft } from '../domain/send-draft.ts';
 import { reconcileLegacySupersededRuns } from '../domain/superseded-runs.ts';
@@ -46,6 +45,7 @@ import { ConversationForks } from './conversation-forks.ts';
 import type { ConversationForkInput } from '../contracts.ts';
 import { ConversationChildren, type CreateChildInput } from './conversation-children.ts';
 
+type PreparedSource = { runtime: AgentRuntime; model: string; leaseIdentity?: string };
 const TITLE_TIMEOUT_MS = 45_000;
 const MAX_TEXT_BYTES = 64 * 1024;
 const MAX_ITEM_BYTES = 1024 * 1024;
@@ -77,12 +77,9 @@ export class ConversationApplication {
       {kind:'reply',count:this.repliesInFlight.size},
       {kind:'observation',count:this.observations.size + this.releaseChecks.size + this.supersededCleanups.size + this.questionReleases.size},
       {kind:'source-resource',count:this.sourceRuntimes.size},
-      {kind:'prepared-resource',count:this.warmups.size},
       {kind:'fork',count:this.forks.active},
     ].filter(value=>value.count>0);
   }
-  private readonly warmups: ConversationWarmups;
-  private readonly sourceSlots = new Map<string,string>();
   private readonly idleTimer: ReturnType<typeof setInterval>;
   private milliseconds() { return Date.parse(this.options.now()); }
   private readonly previewSecret = randomUUID();
@@ -97,8 +94,6 @@ export class ConversationApplication {
   private readonly sourceRuntimes = new Map<string, Promise<{runtime: AgentRuntime; model: string; leaseIdentity?:string}>>();
   private readonly sourceReleasePending = new Map<AgentRuntime,()=>Promise<boolean>>();
   private readonly sourceReleases = new Map<AgentRuntime,Promise<void>>();
-  private qoderIdleRetention = true;
-  private readonly qoderIdleSince = new Map<string,number>();
   private readonly sourceOwners = new Map<string, {workspaceId: string; id: string}>();
   private releasingIdleSources?: Promise<void>;
   private readonly idleReleaseTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -133,10 +128,6 @@ export class ConversationApplication {
   };
   constructor(options: ConversationApplication['options']) {
     this.options = options;
-    this.warmups = new ConversationWarmups(async source => {
-      await options.connections.releaseGatewayRuntime(source.runtime);
-      if(source.leaseIdentity)options.modelAccess?.leases.release(source.leaseIdentity);
-    },()=>this.milliseconds());
     this.idleTimer=setInterval(()=>{void this.collectIdle().catch(()=>{});},60_000);this.idleTimer.unref();
     this.media = new ConversationAttachments({ root: options.root, now: options.now, save: record => this.save(record) });
     this.forks = new ConversationForks({
@@ -226,8 +217,7 @@ export class ConversationApplication {
     const source = await pending.catch(() => undefined);
     if (!source) {
       if (this.sourceRuntimes.get(participantId) === pending) {
-        this.sourceRuntimes.delete(participantId);this.qoderIdleSince.delete(participantId); this.sourceOwners.delete(participantId); this.sourceConnections.delete(participantId);
-        const failedSlot = this.sourceSlots.get(participantId); if (failedSlot) this.warmups.unclaim(failedSlot); this.sourceSlots.delete(participantId);
+        this.sourceRuntimes.delete(participantId); this.sourceOwners.delete(participantId); this.sourceConnections.delete(participantId);
       }
       return true;
     }
@@ -238,76 +228,26 @@ export class ConversationApplication {
     catch { return false; }
     if (source.leaseIdentity) this.options.modelAccess?.leases.release(source.leaseIdentity);
     if (this.sourceRuntimes.get(participantId) === pending) {
-      this.sourceRuntimes.delete(participantId);this.qoderIdleSince.delete(participantId); this.sourceOwners.delete(participantId); this.sourceConnections.delete(participantId);
-      const slot = this.sourceSlots.get(participantId); if (slot) this.warmups.unclaim(slot); this.sourceSlots.delete(participantId);
+      this.sourceRuntimes.delete(participantId); this.sourceOwners.delete(participantId); this.sourceConnections.delete(participantId);
     }
     return true;
   }
-  private warmSlot(record:StoredConversation,participant:StoredParticipant) {
-    return hash([record.view.workspaceId,record.view.id,participant.connectionId,participant.modelAccountId,participant.modelAccountIdentity,participant.modelId,participant.modelConfiguration,participant.serviceTier]);
-  }
-  private warmKey(record:StoredConversation,participant:StoredParticipant,input:{permissionMode?:string;reasoningEffort?:string}) {
-    const connection=this.options.connections.get(participant.connectionId);
-    return hash([record.view.workspaceId,record.view.id,record.view.cwd,connection.executable,this.options.connections.binding(connection.id),participant.connectionId,participant.modelAccountId,participant.modelAccountIdentity,participant.modelId,participant.serviceTier,participant.modelConfiguration,participant.contextRef?.id,input.permissionMode,input.reasoningEffort]);
-  }
-  async warmup(workspaceId:string,id:string,input:import('../contracts.ts').ConversationWarmupInput,draft=false):Promise<{prepared:boolean}> {
-    if(this.closing)fail('agent_service_closing','智能体服务正在退出。',503);
-    const record=draft?await this.candidate(workspaceId,input):this.load(workspaceId,id);
-    if(!input.discard&&!draft&&conversationRuns(record.view).some(run=>!run.resourcesReleased&&(unfinishedRun(run)||this.options.generationAlive?.(run.generation)===true)))return {prepared:false};
-    if(draft)record.view.id=this.drafts.identity(workspaceId,id,nonempty(input.clientRequestId,'请求身份'));
-    // Validate the exact selection without staging or admitting any user input.
-    const prepared=this.prepare(record,{...input,text:'连接准备',expectedRevision:record.view.revision});
-    if(!prepared.draft.modelAccountId)return {prepared:false};
-    const existing=record.participants.find(value=>value.id===prepared.preview.participantId);
-    if(!input.discard&&existing&&this.sourceRuntimes.has(existing.id))return {prepared:false};
-    const participant:StoredParticipant={id:randomUUID(),connectionId:prepared.draft.connectionId,provider:this.options.connections.get(prepared.draft.connectionId).provider,label:this.options.connections.get(prepared.draft.connectionId).label,modelAccountId:prepared.draft.modelAccountId,modelAccountIdentity:prepared.preview.modelAccountIdentity,modelId:prepared.draft.model,serviceTier:prepared.draft.serviceTier,modelConfiguration:prepared.configuration,bindingIdentity:'',deliveredThrough:0,contextRef:existing?.contextRef};
-    const key=this.warmKey(record,participant,prepared.draft);
-    if(input.discard){await this.warmups.discard(this.warmSlot(record,participant),key,input.preparationId);return {prepared:false};}
-    const ready=await this.warmups.prepare(this.warmSlot(record,participant),key,participant.connectionId,async()=>{
-      const source=await this.openSource(record,participant);
-      try {
-        source.contextRef=existing?.contextRef??await source.runtime.createContext({cwd:record.view.cwd,permissionMode:prepared.draft.permissionMode});
-        await source.runtime.prepareContext?.({contextRef:source.contextRef,cwd:record.view.cwd,model:source.model,reasoningEffort:prepared.draft.reasoningEffort,permissionMode:prepared.draft.permissionMode});
-        return source;
-      }catch(error){await this.options.connections.releaseGatewayRuntime(source.runtime);if(source.leaseIdentity)this.options.modelAccess?.leases.release(source.leaseIdentity);throw error;}
-    },input.preparationId);
-    return {prepared:ready};
-  }
   async collectIdle():Promise<void> {
     if(this.closing)return;
-    const idleBefore=this.milliseconds()-CONNECTION_IDLE_MS;
-    // Unused selections keep their TTL; completed/observed owners do not.
-    await Promise.allSettled([this.warmups.close(undefined,idleBefore),this.releaseIdleSources(undefined,true,true)]);
-  }
-  setQoderIdleRetention(enabled:boolean):void {
-    this.qoderIdleRetention=enabled;
-    if(enabled)return;
-    const retained=[...this.qoderIdleSince.keys()];this.qoderIdleSince.clear();
-    for(const participant of retained){
-      const owner=this.sourceOwners.get(participant);if(!owner)continue;
-      const key=`${owner.workspaceId}/${owner.id}`,timer=this.idleReleaseTimers.get(key);
-      if(timer){clearTimeout(timer);this.idleReleaseTimers.delete(key);}
-      this.scheduleSourceRelease(owner.workspaceId,owner.id);
-    }
-  }
-  private rememberQoderIdle(id:string,runId:string,participant:StoredParticipant):void {
-    if(!this.qoderIdleRetention||participant.provider!=='qoder'||!this.sourceRuntimes.has(participant.id))return;
-    const completed=this.options.repository.readState(id)?.view;
-    if(completed?.run?.id===runId&&completed.run.status==='completed'&&!completed.requests.length&&completed.run.tools.every(tool=>tool.status==='completed'))this.qoderIdleSince.set(participant.id,this.milliseconds());
+    await this.releaseIdleSources();
   }
   /** Reclaim only owned sources after the caller has dropped its work marker.
    * Native/tool proof may settle later; retry the retained owner with backoff. */
   private scheduleSourceRelease(workspaceId: string, id: string, delay = 100): void {
     const key = `${workspaceId}/${id}`;
     if (this.closing || this.idleReleaseTimers.has(key) || ![...this.sourceOwners].some(([participant, owner]) => this.sourceRuntimes.has(participant) && owner.workspaceId === workspaceId && owner.id === id)) return;
-    const retainedUntil=Math.max(0,...[...this.sourceOwners].filter(([,owner])=>owner.workspaceId===workspaceId&&owner.id===id).map(([participant])=>(this.qoderIdleSince.get(participant)??-QODER_IDLE_REUSE_MS)+QODER_IDLE_REUSE_MS));
     const timer = setTimeout(() => {
       this.idleReleaseTimers.delete(key);
       if (this.closing) return;
-      void this.releaseIdleSources({workspaceId, id},false,true).catch(() => {}).finally(() => {
+      void this.releaseIdleSources({workspaceId, id}).catch(() => {}).finally(() => {
         this.scheduleSourceRelease(workspaceId, id, Math.min(delay * 2, 5_000));
       });
-    }, Math.max(delay,retainedUntil-this.milliseconds()));
+    }, delay);
     timer.unref(); this.idleReleaseTimers.set(key, timer);
   }
   private sourceExecution(record: StoredConversation, participantId: string) {
@@ -317,10 +257,9 @@ export class ConversationApplication {
   }
   /** Retiring generations release only idle, conversation-specific runtimes.
    * Native contexts keep their writer until their owning process actually exits. */
-  releaseIdleSources(owner?: {workspaceId:string; id:string},keepPrepared=false,preserveQoderIdle=false): Promise<void> {
-    if (this.releasingIdleSources) return this.releasingIdleSources.then(() => this.releaseIdleSources(owner,keepPrepared,preserveQoderIdle));
+  releaseIdleSources(owner?: {workspaceId:string; id:string}): Promise<void> {
+    if (this.releasingIdleSources) return this.releasingIdleSources.then(() => this.releaseIdleSources(owner));
     const work = (async () => {
-      if(!keepPrepared&&!owner)await this.warmups.close();
       for(const finish of [...this.sourceReleasePending.values()])await finish().catch(()=>false);
       const groups = new Map<AgentRuntime, Array<{id:string; leaseIdentity?:string; source:Promise<{runtime:AgentRuntime;model:string;leaseIdentity?:string}>}>>();
       for (const [id, source] of this.sourceRuntimes) {
@@ -330,7 +269,6 @@ export class ConversationApplication {
       for (const [runtime,members] of groups) {
         if(this.sourceReleasePending.has(runtime))continue;
         if(owner&&!members.some(({id})=>{const held=this.sourceOwners.get(id);return held?.workspaceId===owner.workspaceId&&held.id===owner.id;}))continue;
-        if(preserveQoderIdle && members.some(member=>{const at=this.qoderIdleSince.get(member.id);return at!==undefined&&this.milliseconds()-at<QODER_IDLE_REUSE_MS;}))continue;
         const candidates:Array<{id:string;source:Promise<{runtime:AgentRuntime;model:string;leaseIdentity?:string}>;workspaceId:string;conversationId:string;runId:string;leaseIdentity?:string;proof?:()=>Promise<boolean|{executionState:'ended'|'unknown'}>;prepare?:()=>Promise<boolean|{executionState:'ended'|'unknown'}>}>=[];
         let safe=true;
         for(const member of members){
@@ -378,7 +316,7 @@ export class ConversationApplication {
           if(candidates.some(value=>value.leaseIdentity&&this.options.modelAccess?.leases.hasActiveRequests(value.leaseIdentity)))return false;
           for(const value of candidates){
             if(value.leaseIdentity)this.options.modelAccess?.leases.release(value.leaseIdentity);
-            if(this.sourceRuntimes.get(value.id)===value.source){this.sourceRuntimes.delete(value.id);this.qoderIdleSince.delete(value.id);this.sourceOwners.delete(value.id);this.sourceConnections.delete(value.id);const slot=this.sourceSlots.get(value.id);if(slot)this.warmups.unclaim(slot);this.sourceSlots.delete(value.id);}
+            if(this.sourceRuntimes.get(value.id)===value.source){this.sourceRuntimes.delete(value.id);this.sourceOwners.delete(value.id);this.sourceConnections.delete(value.id);}
             const record=this.load(value.workspaceId,value.conversationId),run=conversationRuns(record.view).find(run=>run.id===value.runId);
             if(!run||run.id!==value.runId||run.participantId!==value.id||run.generation!==this.options.generation)continue;
             const newlyReleased=!run.resourcesReleased;
@@ -887,7 +825,7 @@ export class ConversationApplication {
     record.view.run = run;
     record.view.hidden = false;
     this.save(record, initial);
-    const work = this.execute(workspaceId, id, run.id, prepared).finally(() => { this.workers.delete(run.id); this.cancelledRetries.delete(run.id); this.rememberQoderIdle(id,run.id,participant); this.scheduleSourceRelease(workspaceId, id); });
+    const work = this.execute(workspaceId, id, run.id, prepared).finally(() => { this.workers.delete(run.id); this.cancelledRetries.delete(run.id); this.scheduleSourceRelease(workspaceId, id); });
     this.workers.set(run.id, work);
     return { run: structuredClone(run), conversation: this.read(workspaceId, id) };
   }
@@ -1166,10 +1104,7 @@ export class ConversationApplication {
         if (oldWork) await within(oldWork, 5000, 'agent_question_transition_unconfirmed');
       }
       if (startingParticipant.modelAccountId) await this.options.modelAccess!.leases.create({accountId:startingParticipant.modelAccountId, expectedIdentity:startingParticipant.modelAccountIdentity, modelId:startingParticipant.modelId!,serviceTier:startingParticipant.serviceTier,conversationId:record.view.id,agentId:startingParticipant.connectionId,runId});
-      const slot=this.warmSlot(record,startingParticipant);this.sourceSlots.set(startingParticipant.id,slot);
-      const warmed=await this.warmups.take(slot,this.warmKey(record,startingParticipant,prepared.draft));
-      if(warmed){this.sourceOwners.set(startingParticipant.id,{workspaceId,id});this.sourceConnections.set(startingParticipant.id,startingParticipant.connectionId);this.sourceRuntimes.set(startingParticipant.id,Promise.resolve(warmed));}
-      const selectedRuntime = warmed ?? await this.sourceRuntime(record, startingParticipant);
+      const selectedRuntime = await this.sourceRuntime(record, startingParticipant);
       const runtime = selectedRuntime.runtime;
       record = this.currentRun(workspaceId, id, runId); if (!record) return;
       const participant = record.participants.find(value => value.id === record!.view.run!.participantId)!;
@@ -1203,7 +1138,7 @@ export class ConversationApplication {
         if (needsReview) fail('agent_history_changed', '原生记录有新变化，本次要求已保留；请核对后再继续。', 409);
       } else {
         creatingContext = true;
-        const ref = selectedRuntime.contextRef ?? await runtime.createContext({ cwd: record.view.cwd, permissionMode: prepared.draft.permissionMode });
+        const ref = await runtime.createContext({ cwd: record.view.cwd, permissionMode: prepared.draft.permissionMode });
         this.retryRecordUpdate(()=>{
           const current=this.currentRun(workspaceId,id,runId);if(!current)return;
           const storedParticipant=current.participants.find(value=>value.id===participant.id)!;
@@ -2109,7 +2044,6 @@ export class ConversationApplication {
     return this.options.events.subscribe({ type: 'snapshot', workspaceId, conversationId: id, revision: conversation.revision, payload: { conversation } }, event => event.workspaceId === workspaceId && event.conversationId === id);
   }
   async releaseForProgramUpgrade(connectionId: string): Promise<boolean> {
-    await this.warmups.close(connectionId);
     await this.releaseIdleSources();
     if ([...this.sourceConnections].some(([id, connection]) => connection === connectionId && this.sourceRuntimes.has(id))) return false;
     return !this.options.repository.listPendingStates(true).some(record => {
@@ -2118,7 +2052,6 @@ export class ConversationApplication {
   }
 
   async closeConnection(connectionId: string): Promise<void> {
-    await this.warmups.close(connectionId);
     for (const saved of this.options.repository.listPendingStates(true)) {
       for (const prior of conversationRuns(saved.view)) {
         const record = this.load(saved.view.workspaceId,saved.view.id);
@@ -2129,13 +2062,12 @@ export class ConversationApplication {
         catch { const latest=this.ownedRun(record.view.workspaceId,record.view.id,run.id);if(latest){latest.run.status='unknown';latest.run.diagnostic='断开时未能确认原生执行退出。';this.save(latest.record);} }
       }
     }
-    for (const [id, sourceConnection] of this.sourceConnections) if (!this.closing && sourceConnection === connectionId) { this.sourceRuntimes.delete(id); this.sourceOwners.delete(id); this.sourceConnections.delete(id);  const slot=this.sourceSlots.get(id);if(slot)this.warmups.unclaim(slot);this.sourceSlots.delete(id); }
+    for (const [id, sourceConnection] of this.sourceConnections) if (!this.closing && sourceConnection === connectionId) { this.sourceRuntimes.delete(id); this.sourceOwners.delete(id); this.sourceConnections.delete(id); }
   }
   async close(): Promise<void> {
     this.closing = true;
     await Promise.allSettled([...this.supersededCleanups.values(), ...this.questionReleases.values()]);
     clearInterval(this.idleTimer);
-    const warmClosing=this.warmups.shutdown();void warmClosing.catch(()=>{});
     for (const timer of this.idleReleaseTimers.values()) clearTimeout(timer);
     this.idleReleaseTimers.clear();
     for (const controller of this.retryWaits.values()) controller.abort();
@@ -2159,7 +2091,6 @@ export class ConversationApplication {
     }
     const ids = new Set(this.options.repository.listPendingStates(true).flatMap(record => conversationRuns(record.view).filter(run=>run.generation===this.options.generation).flatMap(run=>record.participants.find(value=>value.id===run.participantId)?.connectionId??[])));
     await Promise.allSettled([...ids].map(id => this.closeConnection(id)));
-    await warmClosing;
     for(const item of interrupted){const record=this.load(item.workspaceId,item.id);if(record.view.run?.id===item.runId&&record.view.run&&['stopped','unknown','tools-active','stopping'].includes(record.view.run.status)){record.view.run.diagnostic=record.view.run.status==='stopped'?'宿主退出导致执行停止；这不是用户主动停止。':'宿主退出后原执行仍待核对，不能重复发送。';this.save(record);}}
   }
 }

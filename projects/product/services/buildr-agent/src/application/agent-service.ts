@@ -133,7 +133,6 @@ export function createAgentService(options: AgentServiceOptions) {
     retainsConversationSource: (scope:string,id:string) => conversations.retainsConversationSource(scope,id),
     releaseIdleSources: (owner?:{workspaceId:string;id:string}) => conversations.releaseIdleSources(owner),
     observeForRelease: (scope:string,id:string,runId:string,generation:string) => conversations.observeForRelease(scope,id,runId,generation),
-    setQoderIdleRetention: (enabled:boolean) => conversations.setQoderIdleRetention(enabled),
     verifyNext: (scope: string, id: string) => conversations.verifyNext(scope, id),
     validatePending: (scope: string, id: string, input: SendDraft) => conversations.validatePending(scope, id, input),
     checkWaitingHandoff: (scope:string,id:string,requestId:string) => conversations.checkWaitingHandoff(scope,id,requestId),
@@ -172,7 +171,6 @@ export function createAgentService(options: AgentServiceOptions) {
       },
     },
     conversations: {
-      warmup: (scope:string,id:string,input:import('../contracts.ts').ConversationWarmupInput,draft=false)=>conversations.warmup(scope,id,input,draft),
       readDraft: (scope: string, id: string) => conversations.drafts.list(scope, id),
       addDraftImage: (scope: string, id: string, input: Parameters<typeof conversations.drafts.add>[2]) => conversations.drafts.add(scope, id, input),
       removeDraftImage: (scope: string, id: string, input: Parameters<typeof conversations.drafts.remove>[2]) => conversations.drafts.remove(scope, id, input),
