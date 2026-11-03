@@ -88,6 +88,8 @@ async function ensure(options: AgentProcessConnectionOptions & {runtime:AgentRun
 export interface AgentProcessConnection {
   operations: AgentOperations;
   lifecycle: AgentLifecycleContract;
+  /** Runtime unit this client ships; a different running unit is a version-alignment window. */
+  runtime: AgentRuntimeUnit;
   disconnect(): Promise<void>;
 }
 export async function connectAgentProcess(input: AgentProcessConnectionOptions): Promise<AgentProcessConnection> {
@@ -264,7 +266,7 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
     },
     async shutdown(value) { await call('/shutdown', value); },
   };
-  return { operations, lifecycle, async disconnect() {
+  return { operations, lifecycle, runtime: options.runtime, async disconnect() {
     if (closed) return;
     closed = true;
     for (const controller of subscriptions) controller.abort();

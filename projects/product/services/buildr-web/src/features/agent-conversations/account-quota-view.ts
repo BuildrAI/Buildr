@@ -33,6 +33,10 @@ export function accountQuotaView(account: ModelAccount, now = Date.now(), compac
     observedLabel: Number.isFinite(observed) ? new Date(observed).toLocaleString() : '尚未读取',
   };
 }
+/** 缓存额度照常展示；只有账号本身待确认才额外说明，额度过期或诊断不另提示。 */
+export function accountQuotaWarning(account: ModelAccount): string|undefined {
+  return account.status === 'failed' ? '账号待确认' : undefined;
+}
 /** Failed observations with a previous authenticated snapshot remain explicitly unconfirmed. */
 export function quotaOverviewAccounts(accounts: ModelAccount[]): ModelAccount[] {
   return accounts.filter(account => account.status === 'ready' || account.status === 'failed' && !!account.observedAt && (!!account.quota || account.models.length > 0));

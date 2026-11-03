@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {accountQuotaView,quotaOverviewAccounts} from '../src/features/agent-conversations/account-quota-view.ts';
+import {accountQuotaView,accountQuotaWarning,quotaOverviewAccounts} from '../src/features/agent-conversations/account-quota-view.ts';
 import {modelSourceViews} from '../src/features/agent-conversations/account-model-view.ts';
 const now=Date.parse('2026-10-30T00:00:00Z');
 const account={id:'a',identity:'i',provider:'deepseek',label:'DeepSeek',accountLabel:'已登录账号',revision:'r',enabled:false,status:'ready',models:[],observedAt:new Date(now).toISOString()};
@@ -32,4 +32,13 @@ test('紧凑概览只显示适度精度的余额，详细视图同样保留两�
 test('详细余额保留两位小数，未知与空值不冒充零',()=>{
  const balances=[{currency:'CNY',total:'81.362111880000000',toppedUp:'81.362111880000000',granted:'0'},{currency:'USD',total:'12.999',toppedUp:'未知',granted:''}];
  assert.deepEqual(accountQuotaView({...account,quota:{available:true,balances}},now).lines.map(line=>line.text),['账户余额 CNY 81.36（充值 81.36 · 赠送 0.00）','账户余额 USD 13.00（充值 未知 · 赠送 ）']);
+});
+test('缓存额度直接展示，不额外提示非实时；只有账号待确认时说明',()=>{
+ const quota={available:true,observedAt:new Date(now-61000).toISOString(),windows:[{id:'week',label:'每周窗口',remainingPercent:84}]};
+ const cached={...account,quota};
+ assert.equal(accountQuotaView(cached,now).stale,true);
+ assert.equal(accountQuotaView(cached,now).lines[0].text,'每周窗口 · 剩余 84%');
+ assert.equal(accountQuotaWarning(cached),undefined);
+ assert.equal(accountQuotaWarning({...cached,status:'failed'}),'账号待确认');
+ assert.equal(accountQuotaWarning({...cached,quota:{...quota,diagnostic:'本次额度读取未完成，以下保留上次观察。'}}),undefined);
 });

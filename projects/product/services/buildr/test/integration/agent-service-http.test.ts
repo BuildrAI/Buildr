@@ -647,6 +647,19 @@ test('agent HTTP keeps public service failures while unknown failures get safe c
  assert.equal(JSON.parse(logs[0]).pathname,'/api/v1/app/agent-service/connections');assert.doesNotMatch(body+logs.join(''),new RegExp(secret));
 });
 
+test('契约违约在运行单元不一致时降级为版本对齐，同版本仍按违约暴露',async()=>{
+ const service:any={connections:{list:async()=>({connections:[{id:'codex'}]})}};
+ const context={request:{method:'GET'},pathname:'/api/v1/app/agent-service/connections',searchParams:new URLSearchParams(),authorizeRead(){},authorizeWrite(){}};
+ const mismatch=createAgentServiceHttpContribution(()=>service,{runtimeAligning:async()=>true});
+ assert.deepEqual(await mismatch.handleTopLevel(context),{status:503,body:{error:{code:'agent_service_aligning',message:'执行后台正在切换版本，连接状态暂不可用。'}}});
+ const aligned=createAgentServiceHttpContribution(()=>service,{runtimeAligning:async()=>false});
+ assert.deepEqual(await aligned.handleTopLevel(context),{status:500,body:{error:{code:'agent_http_response_invalid',message:'智能体服务返回结果不符合契约。'}}});
+ const unavailable=createAgentServiceHttpContribution(()=>service,{runtimeAligning:async()=>{throw new Error('status unavailable');}});
+ assert.equal((await unavailable.handleTopLevel(context)).status,500);
+ const plain=createAgentServiceHttpContribution(()=>service);
+ assert.equal((await plain.handleTopLevel(context)).status,500);
+});
+
 test('historical native file presentations reach authenticated HTTP without replaying work',async t=>{
  const {base,root}=taskRecordFixture(t,'agent-presented-file-http');
  const previous=process.env.BUILDR_APP_DATA_DIR;process.env.BUILDR_APP_DATA_DIR=path.join(base,'private-app');

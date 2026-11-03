@@ -52,7 +52,8 @@ for(const legacy of [false,true])test('observe releases a durably finished old r
     }
     target=await until(()=>observer!.operations.conversations.read(scope,target.id),v=>v.run?.generation===adopted.identity.generation&&v.run?.status==='completed'&&!v.pendingSend);
     await Promise.all([observer.operations.conversations.observe(scope,target.id),observer.operations.conversations.observe(scope,target.id)]);
-    assert.ok(target.entries.some(e=>e.text==='original result retained'));
+    // 并发观察的返回先后不固定，投影可能晚于完成状态；等待该原轮结果进入视图。
+    target=await until(()=>observer!.operations.conversations.read(scope,target.id),v=>v.entries.some(e=>e.text==='original result retained'));
     const sent=fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').trim().split('\n').map(line=>JSON.parse(line));assert.equal(sent.filter(v=>v.text==='continue saved work').length,1);assert.equal(sent.find(v=>v.text==='continue saved work').version,'new');
     other=await observer.operations.conversations.read(scope,other.id);assert.equal(other.run?.status,'running');assert.equal(other.run?.generation,old.generation);assert.ok(isLive(old.pid));
     fs.writeFileSync(path.join(dataRoot,'release-other'),'yes');await until(()=>observer!.operations.conversations.read(scope,other.id),v=>v.run?.status==='completed');

@@ -16,7 +16,7 @@ function query(input: URLSearchParams, allowed: string[]): void {
 }
 function numberQuery(value: string | null): number | undefined { if (value === null) return; if (!/^\d+$/.test(value)) throw inputError(); const number = Number(value); if (!Number.isSafeInteger(number)) throw inputError(); return number; }
 
-export function createAgentServiceHttpContribution(resolve: () => AgentService | AgentOperations | Promise<AgentService | AgentOperations>, options: { defaultWorkspace?: () => { rootPath: string }; registeredWorkspaceIds?: () => string[]; runtimeStatus?: () => Promise<unknown>; prepareDefaultWorkspace?: () => void } = {}) {
+export function createAgentServiceHttpContribution(resolve: () => AgentService | AgentOperations | Promise<AgentService | AgentOperations>, options: { defaultWorkspace?: () => { rootPath: string }; registeredWorkspaceIds?: () => string[]; runtimeStatus?: () => Promise<unknown>; runtimeAligning?: () => Promise<boolean>; prepareDefaultWorkspace?: () => void } = {}) {
   const { defaultWorkspace, registeredWorkspaceIds = () => [] } = options;
   const contribution = {
     id: 'agent-service.http', schemas: SCHEMAS, operations: AGENT_SERVICE_HTTP_OPERATIONS,
@@ -228,7 +228,13 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
   const handle = (method: 'handle' | 'handleTopLevel') => async (context: any) => {
     try { return await contribution[method](context); }
     catch (error) {
-      if (error instanceof AgentServiceError) return { status: error.status, body: { error: { code: error.code, message: error.message } } };
+      if (error instanceof AgentServiceError) {
+        // 运行单元不同的后台与本宿主校验的契约不同，属于版本对齐窗口而非违约；
+        // 真正与宿主同版本的违约仍按 500 暴露，避免掩盖缺陷。
+        if (error.code === 'agent_http_response_invalid' && options.runtimeAligning && await options.runtimeAligning().catch(() => false))
+          return { status: 503, body: { error: { code: 'agent_service_aligning', message: '执行后台正在切换版本，连接状态暂不可用。' } } };
+        return { status: error.status, body: { error: { code: error.code, message: error.message } } };
+      }
       throw error;
     }
   };

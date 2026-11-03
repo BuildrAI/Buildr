@@ -7,27 +7,37 @@ import { AgentServiceError } from '../domain/agent-state.ts';
 import type { WebhookEnvelope } from '../domain/conversation-notifications.ts';
 export type WebhookDelivery = { eventId: string; body: string; claim: string; attempts: number };
 
-/** Private notification data only. Transactions preserve projection and event identity together. */
+/** Private notification data only. Reads never initialize it; the first projection opens the store. */
 export class WebhookJournal {
-  private readonly db: DatabaseSync;
-  readonly instanceId: string;
-  constructor(root?: string) {
+  private opened?: { db: DatabaseSync; instanceId: string };
+  private readonly root?: string;
+  constructor(root?: string) { this.root = root; }
+  private open(): { db: DatabaseSync; instanceId: string } {
+    if (this.opened) return this.opened;
     let filename = ':memory:';
-    if (root) {
-      fs.mkdirSync(root, { recursive: true, mode: 0o700 });
-      filename = path.join(root, 'webhook-events.sqlite');
+    if (this.root) {
+      fs.mkdirSync(this.root, { recursive: true, mode: 0o700 });
+      filename = path.join(this.root, 'webhook-events.sqlite');
       const info = fs.lstatSync(filename, { throwIfNoEntry: false });
-      if (fs.lstatSync(root).isSymbolicLink() || info && (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1)) throw new AgentServiceError('agent_storage_unsafe', '通知存储来源不安全。', 409);
+      if (fs.lstatSync(this.root).isSymbolicLink() || info && (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1)) throw new AgentServiceError('agent_storage_unsafe', '通知存储来源不安全。', 409);
     }
-    this.db = new DatabaseSync(filename);
-    if (root) fs.chmodSync(filename, 0o600);
-    this.db.exec(`PRAGMA busy_timeout=2000;
+    const db = new DatabaseSync(filename);
+    if (this.root) fs.chmodSync(filename, 0o600);
+    db.exec(`PRAGMA busy_timeout=2000;
       CREATE TABLE IF NOT EXISTS identity(id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS projections(target TEXT NOT NULL,scope TEXT NOT NULL,id TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(target,scope,id));
       CREATE TABLE IF NOT EXISTS events(id TEXT PRIMARY KEY,target TEXT NOT NULL,scope TEXT NOT NULL,conversation TEXT NOT NULL,body TEXT NOT NULL,priority INTEGER NOT NULL,due INTEGER NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,delivered INTEGER NOT NULL DEFAULT 0,owner TEXT,claim TEXT,lease INTEGER NOT NULL DEFAULT 0);
       CREATE INDEX IF NOT EXISTS pending_webhooks ON events(target,delivered,due,lease,priority);`);
-    this.db.prepare('INSERT OR IGNORE INTO identity(id,value) VALUES(1,?)').run(randomUUID());
-    this.instanceId = (this.db.prepare('SELECT value FROM identity WHERE id=1').get() as {value:string}).value;
+    db.prepare('INSERT OR IGNORE INTO identity(id,value) VALUES(1,?)').run(randomUUID());
+    const instanceId = (db.prepare('SELECT value FROM identity WHERE id=1').get() as {value:string}).value;
+    return this.opened = { db, instanceId };
+  }
+  private get db(): DatabaseSync { return this.open().db; }
+  get instanceId(): string { return this.open().instanceId; }
+  /** Reads open only an existing store; a fresh profile must not gain private state. */
+  private available(): boolean {
+    if (this.opened) return true;
+    return !!this.root && fs.existsSync(path.join(this.root, 'webhook-events.sqlite'));
   }
   private transaction<T>(work: () => T): T {
     this.db.exec('BEGIN IMMEDIATE');
@@ -48,6 +58,7 @@ export class WebhookJournal {
     });
   }
   claim(target: string, owner: string, now: number): WebhookDelivery | undefined {
+    if (!this.available()) return undefined;
     return this.transaction(() => {
       const row=this.db.prepare('SELECT id,body,attempts FROM events WHERE target=? AND delivered=0 AND due<=? AND lease<=? ORDER BY priority,due,rowid LIMIT 1').get(target,now,now) as {id:string;body:string;attempts:number}|undefined;
       if (!row) return;
@@ -60,6 +71,7 @@ export class WebhookJournal {
     this.db.prepare('UPDATE events SET delivered=?,due=?,owner=NULL,claim=NULL,lease=0 WHERE id=? AND claim=?').run(success?1:0,due,item.eventId,item.claim);
   }
   next(target: string, now: number): number | undefined {
+    if (!this.available()) return undefined;
     const row=this.db.prepare('SELECT min(max(due,lease)) AS due FROM events WHERE target=? AND delivered=0').get(target) as {due:number|null};
     return row.due === null ? undefined : Math.max(now,row.due);
   }
@@ -72,7 +84,9 @@ export class WebhookJournal {
     });
   }
   close(owner: string): void {
-    try {this.db.prepare('UPDATE events SET owner=NULL,claim=NULL,lease=0 WHERE owner=? AND delivered=0').run(owner);}
-    finally {this.db.close();}
+    const opened = this.opened; this.opened = undefined;
+    if (!opened) return;
+    try {opened.db.prepare('UPDATE events SET owner=NULL,claim=NULL,lease=0 WHERE owner=? AND delivered=0').run(owner);}
+    finally {opened.db.close();}
   }
 }
