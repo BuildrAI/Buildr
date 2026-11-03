@@ -351,10 +351,7 @@ export async function restartDevelopmentInstance({
   dataRoot = developmentWebDataRoot(),
   environment = process.env,
   forceRestart = false,
-  // A successor that must adopt changed source runs the isolated development
-  // web preparation (contracts, agent package, frontend build) before it can
-  // serve a verified page; that preparation alone takes tens of seconds.
-  timeoutMs = 120000,
+  timeoutMs = 30000,
   fetchImpl = fetch,
   spawnImpl = spawn,
   killProcess = process.kill.bind(process),
