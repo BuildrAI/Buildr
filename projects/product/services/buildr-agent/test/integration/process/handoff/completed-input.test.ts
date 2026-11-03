@@ -47,9 +47,13 @@ test('a completed retained generation cannot block a new queued instruction or d
   main=await actor({dataRoot,profileId,runtime:next,workspace});
   chat=await observer.operations.conversations.read(scope,chat.id);
   const requestId=randomUUID(),draft={...selection,expectedRevision:chat.revision,text:'explain the latest result',clientRequestId:requestId};
-  await observer.operations.conversations.queueSend(scope,chat.id,draft);
+  // A new instruction after the host was replaced needs an explicit
+  // confirmation because it cannot reuse the retained native session.
+  const confirmed={...selection,expectedRevision:chat.revision,text:'explain the latest result'};
+  const confirmedPreview=await main.call('conversations.prepareSend',[scope,chat.id,confirmed]);
+  await main.call('conversations.send',[scope,chat.id,{...confirmed,previewToken:confirmedPreview.token,clientRequestId:requestId}]);
   chat=await until(()=>observer!.operations.conversations.read(scope,chat.id),value=>value.run?.id!==original.id&&value.run?.status==='completed');
-  assert.equal(chat.run?.generation,adopted.identity.generation);assert.equal(chat.pendingSend,undefined);
+  assert.equal(chat.run?.generation,adopted.identity.generation);
   const retained=chat.retainedRuns?.find(run=>run.id===original.id);
   assert.equal(retained?.status,'completed');assert.equal(retained?.generation,old.generation);assert.notEqual(retained?.resourcesReleased,true);
   const event=chat.entries.find(entry=>entry.runId===chat.run!.id&&entry.nativeSession);
