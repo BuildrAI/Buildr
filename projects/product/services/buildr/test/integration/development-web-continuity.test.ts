@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import test from 'node:test';
-import { inspectDevelopmentInstance, restartDevelopmentInstance, verifyDevelopmentPage } from '../../../../../../skills/buildr-self-bootstrap-sync/scripts/development-web-continuity.mjs';
+import { inspectDevelopmentInstance, restartDevelopmentInstance, verifyDevelopmentPage, releaseCheckoutPort } from '../../../../../../skills/buildr-self-bootstrap-sync/scripts/development-web-continuity.mjs';
 
 const proof = (digit: string) => `sha256-${digit.repeat(64)}`;
 
@@ -279,4 +279,39 @@ test('HTML tokenizer accepts real tags after raw text, comments and templates, i
     <DIV title="a > b" ID=root></DIV>${externalModule}</body></html>`;
   const result = await verifyDevelopmentPage({ url: 'http://127.0.0.1:1', fetchImpl: deliveryFetch({ '/': { body: html } }) });
   assert.equal(result.status, 'passed'); assert.equal(result.resourceCount, 1);
+});
+
+for (const alreadyStopping of [false, true]) test('continuity finishes only the authenticated exact Web that is stuck stopping: ' + alreadyStopping, async t => {
+  const f = fixture(t); let stopping=alreadyStopping, released=false;
+  const result=await restartDevelopmentInstance({...f.base,timeoutMs:10,killProcess:(_pid:number,signal?:string|number)=>{assert.equal(signal,0);return true;},
+    fetchImpl:async(url:any,init:any)=>{
+      if(init.method==='POST'){stopping=true;return new Response('{}',{status:202});}
+      const response=await f.base.fetchImpl(url,init);
+      if(new URL(url).pathname==='/api/v1/health'&&stopping&&!released){const body=await response.json();body.status='stopping';return new Response(JSON.stringify(body));}
+      return response;
+    },wait:async()=>new Promise(resolve=>setTimeout(resolve,5)),
+    releasePort:async(input:any)=>{assert.equal(input.expectedPid,100);assert.equal(JSON.parse(fs.readFileSync(f.file,'utf8')).pid,100);released=true;return[100];}});
+  assert.equal(released,true);assert.equal(result.instance?.pid,300);assert.equal(f.spawns(),1);
+});
+test('accepted quit without authenticated stopping proof does not force an exit',async t=>{
+  const f=fixture(t);let releases=0;
+  await assert.rejects(restartDevelopmentInstance({...f.base,timeoutMs:10,killProcess:(_pid:number,signal?:string|number)=>{assert.equal(signal,0);return true;},
+    fetchImpl:async(url:any,init:any)=>init.method==='POST'?new Response('{}',{status:202}):f.base.fetchImpl(url,init),
+    wait:async()=>new Promise(resolve=>setTimeout(resolve,5)),releasePort:async()=>{releases++;return[];}}),(error:any)=>error.code==='development-web-continuity.shutdown-timeout');
+  assert.equal(releases,0);assert.equal(f.spawns(),0);
+});
+test('owned-port release rejects a changed listener set before sending any signal',async()=>{
+  const signals:any[]=[];
+  await assert.rejects(releaseCheckoutPort({port:4458,serviceRoot:'/checkout/services/buildr',expectedPid:100,platform:'darwin',
+    run:(()=>({stdout:'100\n200\n'})) as any,killProcess:(...args:any[])=>{signals.push(args);return true;}}),
+    (error:any)=>error.code==='development-web-continuity.owner-mismatch');
+  assert.deepEqual(signals,[]);
+});
+
+test('stopping recovery preserves a receipt replaced during graceful waiting',async t=>{
+  const f=fixture(t);let releases=0;
+  await assert.rejects(restartDevelopmentInstance({...f.base,timeoutMs:10,killProcess:()=>true,
+    fetchImpl:async(url:any,init:any)=>init.method==='POST'?new Response('{}',{status:202}):f.base.fetchImpl(url,init),
+    wait:async()=>{f.write(200);},releasePort:async()=>{releases++;return[];}}),(error:any)=>error.code==='development-web-continuity.owner-mismatch');
+  assert.equal(releases,0);assert.equal(f.spawns(),0);assert.equal(JSON.parse(fs.readFileSync(f.file,'utf8')).pid,200);
 });

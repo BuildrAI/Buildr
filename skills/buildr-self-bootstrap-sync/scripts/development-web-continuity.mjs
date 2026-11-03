@@ -268,10 +268,12 @@ export function processCommand(pid, platform = process.platform, run = spawnSync
  * proves it is this checkout's development entry and port; anything else is
  * reported instead of stopped.
  */
-export async function releaseCheckoutPort({ port, serviceRoot, platform = process.platform, run = spawnSync,
+export async function releaseCheckoutPort({ port, serviceRoot, expectedPid = /** @type {number | undefined} */ (undefined), platform = process.platform, run = spawnSync,
   killProcess = process.kill.bind(process), wait = (duration) => new Promise(resolve => setTimeout(resolve, duration)), timeoutMs = 5000 }) {
   const released = [];
-  for (const pid of portListeners(port, platform, run)) {
+  const listeners = portListeners(port, platform, run);
+  if (expectedPid !== undefined && listeners.some(pid => pid !== expectedPid)) throw continuityError('owner-mismatch', 'The shutdown port owner changed; no process was stopped.');
+  for (const pid of listeners) {
     const command = processCommand(pid, platform, run);
     const entry = path.join(serviceRoot, 'bin', 'buildr.mjs');
     if (!command.includes(entry) || !command.includes(`--port ${port}`)) {
@@ -358,6 +360,7 @@ export async function restartDevelopmentInstance({
   releasePort = releaseCheckoutPort,
 }) {
   const started = now();
+  const shutdownReleased = [];
   let shutdownStarted = null, shutdownMs = null, startupStarted = null, priorPage = 'unknown';
   const timings = (recovered, pageVerification = null) => {
     const ended = now();
@@ -376,6 +379,29 @@ export async function restartDevelopmentInstance({
     if (!Number.isInteger(port) || port <= 0 || port > 65535 || port !== expectedPort) throw new Error(`Development Web continuity port must be ${expectedPort}: ${port}`);
     if (!Number.isInteger(previousPort) || previousPort <= 0 || previousPort > 65535) throw new Error(`Invalid previous Development Web port: ${previousPort}`);
     if (!Number.isInteger(previousPid) || previousPid <= 0) throw new Error(`Invalid previous Development Web PID: ${previousPid}`);
+    const finishShutdown = async (state) => {
+      const deadline = Date.now() + timeoutMs;
+      for (;;) {
+        if (!fs.existsSync(instanceFile(dataRoot))) return;
+        const current = readJson(instanceFile(dataRoot));
+        if (JSON.stringify(current) !== JSON.stringify(state)) throw continuityError('owner-mismatch', 'The development instance record changed during shutdown; it has been preserved.');
+        try { killProcess(state.pid, 0); }
+        catch (error) { if (error.code === 'ESRCH') return; throw error; }
+        if (Date.now() >= deadline) {
+          // A successful authenticated quit can hang while detaching an old
+          // bridge. Re-prove stopping, receipt and exact listener before the
+          // existing owned-port release; never signal an Agent process group.
+          const observed = await inspectDevelopmentInstance({dataRoot, fetchImpl});
+          if (observed.reason !== 'instance-stopping' || observed.instance?.pid !== state.pid ||
+            JSON.stringify(readJson(instanceFile(dataRoot))) !== JSON.stringify(state) || !matchesDevelopmentOwner(observed.instance, expected)) {
+            throw continuityError('shutdown-timeout', 'The previous Development Web did not confirm shutdown; it has been preserved.');
+          }
+          shutdownReleased.push(...await releasePort({port: loopbackPort(state.url), serviceRoot: path.join(path.dirname(projectBridge), 'services', 'buildr'), expectedPid: state.pid, killProcess, wait}));
+          return;
+        }
+        await wait(50);
+      }
+    };
     const coordinationDeadline = Date.now() + timeoutMs;
     let coordinated = false;
     while (true) {
@@ -388,6 +414,16 @@ export async function restartDevelopmentInstance({
         if (Date.now() >= coordinationDeadline) throw continuityError('restart-wait-timeout', 'The concurrent Development Web restart did not settle before timeout.');
         await wait(50);
         continue;
+      }
+      if (before.reason === 'instance-stopping') {
+        if (before.instance?.pid !== previousPid) throw continuityError('owner-mismatch', 'The stopping instance changed; it has been preserved.');
+        shutdownStarted = now();
+        const state = readJson(instanceFile(dataRoot));
+        if (state?.pid !== before.instance.pid || state?.url !== before.instance.url || !matchesDevelopmentOwner(state, expected) ||
+          ['launcherIdentity', 'productIdentity'].some(key => JSON.stringify(state[key] ?? null) !== JSON.stringify(before.instance[key] ?? null))) throw continuityError('owner-mismatch', 'The stopping instance changed; it has been preserved.');
+        await finishShutdown(state);
+        shutdownMs = Math.max(0, now() - shutdownStarted);
+        break;
       }
       if (before.status !== 'healthy-development') break;
       if ((!forceRestart || (coordinated && before.instance.pid !== previousPid)) && matchesRunningSource(before.instance, expected)) {
@@ -420,26 +456,15 @@ export async function restartDevelopmentInstance({
       if (response.status !== 202) throw Object.assign(new Error('Development Web rejected the authenticated shutdown request.'), { code: 'development-web-continuity.shutdown-rejected' });
       shutdownStarted = quitStarted;
       await response.arrayBuffer();
-      const deadline = Date.now() + timeoutMs;
-      while (true) {
-        // A transiently unreachable health endpoint does not prove exit. Wait
-        // for the exact receipt to be removed or for the observed process to die.
-        if (!fs.existsSync(instanceFile(dataRoot))) break;
-        const current = readJson(instanceFile(dataRoot));
-        if (!current || current.pid !== state.pid || current.secret !== state.secret) throw Object.assign(new Error('The development instance record changed during shutdown; it has been preserved.'), { code: 'development-web-continuity.owner-mismatch' });
-        try { killProcess(state.pid, 0); }
-        catch (error) { if (error.code === 'ESRCH') break; throw error; }
-        if (Date.now() >= deadline) throw Object.assign(new Error('The previous Development Web did not finish shutting down.'), { code: 'development-web-continuity.shutdown-timeout' });
-        await wait(50);
-      }
+      await finishShutdown(state);
       shutdownMs = Math.max(0, now() - shutdownStarted);
       break;
     }
     // A start that died before writing its receipt leaves the port bound with no
     // record to authenticate. Release it only when the holder proves ownership.
-    const stalePort = fs.existsSync(instanceFile(dataRoot))
+    const stalePort = [...shutdownReleased, ...(fs.existsSync(instanceFile(dataRoot))
       ? []
-      : await releasePort({ port, serviceRoot: path.join(path.dirname(projectBridge), 'services', 'buildr'), killProcess, wait });
+      : await releasePort({ port, serviceRoot: path.join(path.dirname(projectBridge), 'services', 'buildr'), killProcess, wait }))];
     fs.mkdirSync(dataRoot, { recursive: true });
     const logRoot = path.join(dataRoot, 'logs');
     fs.mkdirSync(logRoot, { recursive: true });
