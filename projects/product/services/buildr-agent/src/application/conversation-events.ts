@@ -6,8 +6,8 @@ export class ConversationEvents {
   private cursor = 0;
   private readonly observers = new Set<{ accept(event: ServiceEvent): void; close(): void }>();
   readonly generation: string;
-  private readonly webhooks?: ConversationWebhooks;
-  constructor(generation: string, webhooks?: ConversationWebhooks) { this.generation = generation; this.webhooks = webhooks; }
+  private readonly webhooks?: Pick<ConversationWebhooks, 'publish' | 'close'>;
+  constructor(generation: string, webhooks?: Pick<ConversationWebhooks, 'publish' | 'close'>) { this.generation = generation; this.webhooks = webhooks; }
   publish(event: Omit<ServiceEvent, 'cursor' | 'generation'>): void {
     this.webhooks?.publish(event);
     const value = { ...event, cursor: ++this.cursor, generation: this.generation };

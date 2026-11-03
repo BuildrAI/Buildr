@@ -17,6 +17,7 @@ export function webhookConfiguration(environment: NodeJS.ProcessEnv): NodeJS.Pro
     const value: unknown = JSON.parse(fs.readFileSync(descriptor, 'utf8'));
     if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
     const config = value as Record<string, unknown>;
+    if (config.enabled === false) return {};
     if (typeof config.url !== 'string' || typeof config.secret !== 'string') return {};
     return { BUILDR_AGENT_WEBHOOK_URL: config.url, BUILDR_AGENT_WEBHOOK_SECRET: config.secret };
   } catch (error) {

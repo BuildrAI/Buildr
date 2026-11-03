@@ -62,3 +62,67 @@ test('service composition loads unified config and publishes actual conversation
     fs.rmSync(root,{recursive:true,force:true});
   }
 });
+
+test('managed configuration is private, revision guarded, reveal-only and preserves secret on disable', async () => {
+  const {WebhookSettings}=await import('../../src/application/webhook-settings.ts');
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-webhook-settings-'));
+  const file=path.join(root,'.buildr-webhook.json');
+  const settings=new WebhookSettings({HOME:root});
+  try {
+    const initial=settings.view(); assert.equal(initial.state,'unconfigured'); assert.equal(initial.writable,true);
+    const enabled=settings.save({expectedRevision:initial.revision,enabled:true,url:'https://receiver.test/hook',secret:'private-test-key'});
+    assert.equal(enabled.state,'enabled'); assert.equal(enabled.hasSecret,true); assert.equal('secret' in enabled,false);
+    assert.equal(fs.statSync(file).mode&0o777,0o600);
+    assert.throws(()=>settings.save({expectedRevision:initial.revision,enabled:false,url:enabled.url}),{code:'agent_webhook_conflict'});
+    assert.deepEqual(settings.reveal({expectedRevision:enabled.revision}),{secret:'private-test-key'});
+    const disabled=settings.save({expectedRevision:enabled.revision,enabled:false,url:enabled.url,secret:''});
+    assert.equal(disabled.state,'disabled'); assert.deepEqual(webhookConfiguration({HOME:root}),{});
+    assert.equal(settings.reveal({expectedRevision:disabled.revision}).secret,'private-test-key');
+    assert.throws(()=>settings.reveal({expectedRevision:enabled.revision}),{code:'agent_webhook_conflict'});
+    for(const url of ['file:///tmp/file','https://user:pass@receiver.test','not-url'])assert.throws(()=>settings.save({expectedRevision:disabled.revision,enabled:true,url}),{code:'agent_webhook_invalid'});
+    const external=new WebhookSettings({HOME:root,BUILDR_AGENT_WEBHOOK_CONFIG:file});
+    assert.equal(external.view().source,'external-file');assert.equal(external.view().writable,false);
+    assert.throws(()=>external.save({expectedRevision:external.view().revision,enabled:true,url:enabled.url}),{code:'agent_webhook_readonly'});
+    fs.chmodSync(file,0o644);assert.equal(settings.view().state,'invalid');assert.equal(settings.view().writable,false);
+    fs.chmodSync(file,0o600);fs.unlinkSync(file);fs.symlinkSync(path.join(root,'other'),file);
+    assert.equal(settings.view().state,'invalid');assert.equal(settings.view().writable,false);
+    fs.unlinkSync(file);
+    const legacy=new WebhookSettings({HOME:root,BUILDR_AGENT_WEBHOOK_URL:'https://legacy.test',BUILDR_AGENT_WEBHOOK_SECRET:'legacy-key'});
+    assert.equal(legacy.view().source,'environment');assert.equal(legacy.view().writable,false);
+  } finally {fs.rmSync(root,{recursive:true,force:true});}
+});
+
+test('dynamic management enables, tests once, changes target and disables without restart or backlog transfer', async () => {
+  const {WebhookManagement}=await import('../../src/application/webhook-management.ts');
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-webhook-management-'));
+  const sent:Array<{url:string;init:RequestInit}>=[];
+  let status=503;
+  const transport:typeof fetch=async (url,init)=>{sent.push({url:String(url),init:init!});return new Response(null,{status});};
+  const manager=new WebhookManagement({HOME:root},path.join(root,'agent-service'),()=>[],transport);
+  const tick=()=>new Promise(resolve=>setTimeout(resolve,20));
+  try {
+    let view=manager.read();
+    view=manager.save({expectedRevision:view.revision,enabled:true,url:'https://first.test',secret:'test-one'});
+    assert.equal(view.state,'enabled');assert.equal(sent.length,0);
+    const failed=await manager.test({expectedRevision:view.revision});assert.equal(failed.success,false);assert.equal(failed.status,503);
+    assert.equal(sent.length,1);assert.equal(sent[0].init.redirect,'error');assert.equal(new Headers(sent[0].init.headers).get('authorization'),'Bearer test-one');assert.equal(JSON.parse(String(sent[0].init.body)).eventType,'test');assert.ok(JSON.parse(String(sent[0].init.body)).agent.id);
+    assert.equal(manager.read().lastDelivery?.success,false);
+    const {createAgentService}=await import('../../src/application/agent-service.ts');
+    const service=createAgentService({dataRoot:path.join(root,'other'),environment:{HOME:path.join(root,'other')},executors:[],modelProviders:[],resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
+    try {
+      const conversation=await service.conversations.create('workspace',{});
+      manager.publish({type:'conversation',workspaceId:'workspace',conversationId:conversation.id,revision:conversation.revision,payload:{conversation}});
+      await tick();assert.ok(sent.length>1);
+      const oldEvent=JSON.parse(String(sent.at(-1)!.init.body));
+      const before=sent.length;
+      view=manager.save({expectedRevision:view.revision,enabled:true,url:'https://second.test',secret:'test-two'});
+      await tick();assert.equal(sent.length,before,'old target backlog is not delivered to the new target');
+      assert.throws(()=>manager.replay('workspace',conversation.id,oldEvent.eventId),{code:'agent_webhook_event_missing'});
+      status=204;assert.equal((await manager.test({expectedRevision:view.revision})).success,true);
+      assert.equal(sent.at(-1)!.url,'https://second.test');
+      view=manager.save({expectedRevision:view.revision,enabled:false,url:view.url});
+      await assert.rejects(manager.test({expectedRevision:view.revision}),{code:'agent_webhook_unavailable'});
+      const count=sent.length;manager.publish({type:'conversation',workspaceId:'workspace',conversationId:conversation.id,revision:conversation.revision,payload:{conversation}});await tick();assert.equal(sent.length,count);
+    } finally {await service.close();}
+  } finally {manager.close();fs.rmSync(root,{recursive:true,force:true});}
+});

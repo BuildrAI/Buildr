@@ -9,12 +9,14 @@ export interface AgentSubscription { events: AsyncIterable<ServiceEvent>; close(
 /** Public asynchronous operations; native SDK objects never cross this boundary. */
 export interface AgentOperations {
   generation: string;
+  webhooks: RemoteMethods<AgentService['webhooks']>;
   connections: RemoteMethods<AgentService['connections']>;
   conversations: Omit<RemoteMethods<AgentService['conversations']>, 'subscribe' | 'recoverInterrupted' | 'observeForRelease' | 'retainsConversationSource'> & { subscribe(scope: string, id: string): Promise<AgentSubscription> };
   models: { accounts: Omit<RemoteMethods<AgentService['models']['accounts']>, 'snapshot'>; catalog: RemoteMethods<AgentService['models']['catalog']>; generate: AgentService['models']['generate'] };
 }
 
 const names = {
+  webhooks: ['read','save','reveal','test'],
   connections: ['upgradeProgram','programUpdates','checkProgramUpdates','list','read','prepare','preparation','currentPreparation','cancelPreparation','connect','check','login','loginAttempt','cancelLogin','disconnect'],
   conversations: ['replayWebhook','participation','participationSummary','warmup','readDraft','addDraftImage','removeDraftImage','readDraftImage','startDraft','lookupDraft','listAll','readEntry','markSeen','list','create','fork','createChild','listChildren','read','update','generateTitle','prepareHandoff','prepareSend','send','supplement','queueSend','cancelPendingSend','observe','observeRun','releaseQuestionWait','stop','reply','addAttachment','readAttachment','pending','pendingSummary','lookupRequest'],
   'models.accounts': ['list','read','preferences','add','login','attempt','cancelLogin','check','disconnect'],
@@ -26,6 +28,7 @@ const Constructor: any = Ajv2020;
 const ajv = new Constructor({ strict: true, allErrors: true, allowUnionTypes: true });
 const validators = new Map(Object.entries(AGENT_OPERATION_SCHEMAS).map(([name, schema]) => [name, ajv.compile(schema)]));
 const inputs: Record<string, [number, string]> = {
+  'webhooks.save':[0,'webhookSettingsInput'], 'webhooks.reveal':[0,'revision'], 'webhooks.test':[0,'revision'],
   'conversations.replayWebhook':[2,'webhookReplay'],
   'conversations.participation':[2,'participationQuery'], 'conversations.participationSummary':[1,'participationSummaryQuery'],
   'conversations.warmup':[2,'warmup'],

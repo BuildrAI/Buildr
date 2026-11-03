@@ -45,7 +45,12 @@ const quota = closed({balances:list(closed({currency:text,total:text,toppedUp:te
 const modelAccount = closed({connectionId:text,id: text, identity: text, provider: text, label: text, revision: text, enabled: boolean, status: {enum:['not-authenticated','ready','expired','failed','disconnected']}, accountLabel: text, models: list(offering), observedAt: text, quota, diagnostic: text, loginAttempt: closed({id: text, state: {enum:['initializing','waiting-browser','checking','completed','cancelled','expired','failed']},updatedAt:text,url:string,diagnostic:string},['id','state','updatedAt'])},['id','provider','label','revision','enabled','status','models']);
 const catalogModel = {...offering, properties: {...offering.properties, accountId:text,accountIdentity:text,provider:text,accountLabel:text,modelId:text,accountRevision:text,available:boolean,observedAt:text}, required:[...offering.required,'accountId','accountIdentity','provider','accountLabel','modelId','accountRevision','available']};
 const programUpgrade = closed({id:text,connectionId:text,expectedVersion:text,executable:string,state:{enum:['downloading','waiting','restarting','completed','failed','interrupted']},message:string,updatedAt:text,installedExecutable:text,currentVersion:text},['id','connectionId','expectedVersion','executable','state','message','updatedAt']);
+const webhookDelivery = closed({at:text,success:boolean,status:{type:'integer',minimum:100,maximum:599},kind:{enum:['event','test']}},['at','success','kind']);
 export const AGENT_OPERATION_SCHEMAS = {
+  webhookSettings: named('AgentWebhookSettings',closed({revision:text,source:{enum:['private-file','external-file','environment']},writable:boolean,state:{enum:['unconfigured','invalid','disabled','enabled']},url:string,hasSecret:boolean,lastDelivery:webhookDelivery},['revision','source','writable','state','url','hasSecret'])),
+  webhookSettingsInput: named('AgentWebhookSettingsInput',closed({expectedRevision:text,url:{type:'string',maxLength:8192},secret:{type:'string',maxLength:4096},enabled:boolean},['expectedRevision','url','enabled'])),
+  webhookSecret: named('AgentWebhookSecret',closed({secret:string})),
+  webhookTest: named('AgentWebhookTest',webhookDelivery),
   webhookReplay: named('AgentWebhookReplayRequest',closed({eventId:{type:'string',pattern:'^[a-f0-9]{64}$'}},['eventId'])),
   webhookReplayed: named('AgentWebhookReplayResult',closed({eventId:text,queued:{const:true}},['eventId','queued'])),
   participation: named('AgentParticipation',participationViewSchema),

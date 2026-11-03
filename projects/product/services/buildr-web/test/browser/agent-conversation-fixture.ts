@@ -233,7 +233,9 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
     if(method==='GET'){conversationReads++;return route.fulfill({json:[...additionalConversations,...additionalPending].find(item=>url.pathname.endsWith('/'+item.id))||conversation});}
     return route.fallback();
   };
+  const webhookRoute=async(route:any)=>route.fulfill({json:{revision:'fixture-webhook',source:'private-file',writable:true,state:'unconfigured',url:'',hasSecret:false}});
   await page.route('**/api/v1/app/agent-service/**',route);
+  await page.route('**/api/v1/app/agent-service/webhook-settings',webhookRoute);
   await page.route('**/api/v1/workspaces/*/agent-conversations**',route);
   const panel=()=>page.locator('#agent-conversation-panel');
   const input=()=>page.getByRole('textbox',{name:'对话输入',exact:true});
@@ -291,7 +293,7 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
       await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();await input().fill('下一轮仍是草稿');
     }
   };
-  const dispose=async()=>{releaseEntryRead?.();releaseSend?.();releasePrepare?.();releaseCreate?.();releaseUpload?.();releaseConnections?.();releaseStop?.();releaseTaskList?.();releaseTitle?.();releaseSupplement?.();releaseConnectionProbe?.();await page.evaluate(()=>{(window as any).__releaseTaskSpinnerMotion?.();sessionStorage.removeItem('__buildrHoldTaskSpinnerMotion');}).catch(()=>{});await page.unroute('**/api/v1/app/agent-service/**',route);await page.unroute('**/api/v1/workspaces/*/agent-conversations**',route);await page.setViewportSize({width:1280,height:900});await page.evaluate(()=>sessionStorage.clear()).catch(()=>{});if(scenarioFocus.length)assert.ok(stepIndex>0,'BUILDR_AGENT_SCENARIO_FOCUS 没有匹配任何场景');};
+  const dispose=async()=>{releaseEntryRead?.();releaseSend?.();releasePrepare?.();releaseCreate?.();releaseUpload?.();releaseConnections?.();releaseStop?.();releaseTaskList?.();releaseTitle?.();releaseSupplement?.();releaseConnectionProbe?.();await page.evaluate(()=>{(window as any).__releaseTaskSpinnerMotion?.();sessionStorage.removeItem('__buildrHoldTaskSpinnerMotion');}).catch(()=>{});await page.unroute('**/api/v1/app/agent-service/webhook-settings',webhookRoute);await page.unroute('**/api/v1/app/agent-service/**',route);await page.unroute('**/api/v1/workspaces/*/agent-conversations**',route);await page.setViewportSize({width:1280,height:900});await page.evaluate(()=>sessionStorage.clear()).catch(()=>{});if(scenarioFocus.length)assert.ok(stepIndex>0,'BUILDR_AGENT_SCENARIO_FOCUS 没有匹配任何场景');};
   return {
     quotaOverrides,otherWorkspaceId,
     get additionalConversations(){return additionalConversations;}, set additionalConversations(value){additionalConversations=value;},

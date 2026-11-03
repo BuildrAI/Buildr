@@ -1,3 +1,4 @@
+import type {WebhookSettingsView,WebhookSettingsInput,WebhookDeliveryResult} from '../types';
 import type { AgentParticipationParticipation, AgentParticipationSummaryParticipationSummary, AgentParticipationSummaryQueryParticipationSummaryQuery } from '../../../../build/generated/agent-service-http-dto';
 import { sharedConversationRead } from './shared-conversation-read.ts';
 import { conversationTransferDecoder } from './conversation-transfer.ts';
@@ -34,6 +35,10 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
     try{return await request<T>(url,init);}finally{catalogRead=undefined;}
   };
   return {
+    webhookSettings(signal?:AbortSignal) {return request<WebhookSettingsView>(appPath+'/webhook-settings',{signal});},
+    saveWebhookSettings(input:WebhookSettingsInput) {return request<WebhookSettingsView>(appPath+'/webhook-settings',post(input));},
+    revealWebhookSecret(expectedRevision:string) {return request<{secret:string}>(appPath+'/webhook-settings/reveal',post({expectedRevision}));},
+    testWebhook(expectedRevision:string) {return request<WebhookDeliveryResult>(appPath+'/webhook-settings/test',post({expectedRevision}));},
     participation(workspaceId:string,conversationId:string,runId:string,signal?:AbortSignal) { return read<AgentParticipationParticipation>(path(workspaceId,conversationId)+'/participation?runId='+encodeURIComponent(runId),signal); },
     participationSummary(workspaceId:string,input:AgentParticipationSummaryQueryParticipationSummaryQuery={},signal?:AbortSignal) { const query=new URLSearchParams(Object.entries(input).filter(([,v])=>v!==undefined&&v!=='').map(([k,v])=>[k,String(v)])); return read<AgentParticipationSummaryParticipationSummary>(path(workspaceId)+'/participation-summary?'+query,signal); },
     defaultWorkspace(signal?: AbortSignal) { return request<{rootPath: string}>(appPath+'/default-workspace', {signal}); },

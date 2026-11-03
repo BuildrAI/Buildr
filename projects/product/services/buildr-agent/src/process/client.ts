@@ -178,7 +178,7 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
       throw new AgentServiceError('agent_operation_result_unknown', '执行后台连接中断，操作结果尚待核对；不会自动重发。', 503);
     }
   }
-  const operations: any = { connections: {}, conversations: {}, models: { accounts: {}, catalog: {} } };
+  const operations: any = { webhooks: {}, connections: {}, conversations: {}, models: { accounts: {}, catalog: {} } };
   Object.defineProperty(operations, 'generation', { get: () => record.identity.generation });
   for (const name of OPERATION_NAMES) {
     const parts = name.split('.'), method = parts.pop()!; let owner = operations;

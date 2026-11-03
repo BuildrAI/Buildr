@@ -578,3 +578,15 @@ export interface AgentServiceOptions {
 }
 
 export type ConversationWarmupInput = Pick<SendDraft,'connectionId'|'modelAccountId'|'modelAccountRevision'|'modelAccountIdentity'|'model'|'serviceTier'|'reasoningEffort'|'permissionMode'> & {cwd?:string;taskId?:string;clientRequestId?:string};
+
+export interface WebhookDeliveryResult { at: string; success: boolean; status?: number; kind: 'event' | 'test' }
+export interface WebhookSettingsView {
+  revision: string;
+  source: 'private-file' | 'external-file' | 'environment';
+  writable: boolean;
+  state: 'unconfigured' | 'invalid' | 'disabled' | 'enabled';
+  url: string;
+  hasSecret: boolean;
+  lastDelivery?: WebhookDeliveryResult;
+}
+export interface WebhookSettingsInput { expectedRevision: string; enabled: boolean; url: string; secret?: string }

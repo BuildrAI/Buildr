@@ -747,3 +747,28 @@ test('webhook replay HTTP validates authentication, conversation scope and immut
  for(const body of [{eventId:'bad'},{eventId,workspaceId:'other'},{eventId,payload:{text:'arbitrary'}}])assert.equal((await fetch(endpoint,{method:'POST',headers,body:JSON.stringify(body)})).status,400);
  const response=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({eventId})});assert.equal(response.status,200);assert.deepEqual(await response.json(),{eventId,queued:true});assert.deepEqual(calls,[[initialWorkspaceId,id,{eventId}]]);
 });
+
+test('webhook settings require authentication, protect secret reads and reject stale saves', {timeout:30_000}, async t=>{
+  const {base,root}=taskRecordFixture(t,'webhook-settings-http');
+  const runtime=createRuntime();
+  const service=createAgentService({dataRoot:path.join(base,'agent-profile'),environment:{HOME:base},executors:[],modelProviders:[],resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
+  const contribution=createAgentServiceHttpContribution(()=>service);
+  const contributions=runtimeContributions(runtime,'http').filter((item:{id:string})=>item.id!=='agent-service.http');contributions.push(contribution);
+  const server=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions});
+  const {url,sessionToken}=await server.ready;
+  t.after(async()=>{await service.close();server.server.closeAllConnections();await new Promise<void>(resolve=>server.server.close(()=>resolve()));});
+  const endpoint=url+'/api/v1/app/agent-service/webhook-settings';
+  const headers={origin:url,'x-buildr-session':sessionToken,'content-type':'application/json'};
+  assert.equal((await fetch(endpoint)).status,403);
+  let response=await fetch(endpoint,{headers});assert.equal(response.status,200);
+  const initial=await response.json();assert.equal(initial.state,'unconfigured');assert.equal('secret' in initial,false);
+  response=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:initial.revision,url:'https://receiver.invalid/hook',secret:'http-secret-test',enabled:true,unexpected:true})});assert.equal(response.status,400);
+  response=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:initial.revision,url:'https://receiver.invalid/hook',secret:'http-secret-test',enabled:true})});assert.equal(response.status,200);
+  const saved=await response.json();assert.equal(saved.state,'enabled');assert.equal(JSON.stringify(saved).includes('http-secret-test'),false);
+  assert.equal((await fetch(endpoint+'/reveal',{method:'POST',headers:{...headers,origin:'https://foreign.invalid'},body:JSON.stringify({expectedRevision:saved.revision})})).status,403);
+  assert.equal((await fetch(endpoint+'/reveal',{headers})).status,404);
+  response=await fetch(endpoint+'/reveal',{method:'POST',headers,body:JSON.stringify({expectedRevision:saved.revision})});assert.equal(response.status,200);assert.equal(response.headers.get('cache-control'),'no-store');assert.deepEqual(await response.json(),{secret:'http-secret-test'});
+  response=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:initial.revision,url:saved.url,enabled:false})});assert.equal(response.status,409);
+  response=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:saved.revision,url:saved.url,enabled:false})});assert.equal(response.status,200);const disabled=await response.json();assert.equal(disabled.state,'disabled');
+  response=await fetch(endpoint+'/test',{method:'POST',headers,body:JSON.stringify({expectedRevision:disabled.revision})});assert.equal(response.status,409);
+});

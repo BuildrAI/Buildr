@@ -78,7 +78,9 @@ Buildr 隔离 DSH 的前台 shell 命令超时会真正终止，不会自动转�
 
 ## 对话过程出站 Webhook
 
-Agent Service 可把当前执行过程推给用户指定的可信接收端（例如 Grok Bot）。默认配置是宿主主目录 `~/.buildr-webhook.json`，一个 JSON 对象包含 `url` 和 `secret`；文件须属于当前服务用户、仅本人可读写（`0600`），不得使用符号链接。服务启动时读取，可用 `BUILDR_AGENT_WEBHOOK_CONFIG` 显式选择文件。缺省文件不存在才兼容 `BUILDR_AGENT_WEBHOOK_URL` 和 `BUILDR_AGENT_WEBHOOK_SECRET`；文件存在但无效时不回退到另一个目标。不要在命令参数、聊天、日志或源资产中填写真实秘密，不打印响应正文；迁移后核对文件内容与权限，不保留两份活动配置。
+Agent Service 可把当前执行过程推给用户指定的可信接收端（例如 Grok Bot）。默认配置是宿主主目录 `~/.buildr-webhook.json`，一个 JSON 对象包含 `url` 和 `secret`；文件须属于当前服务用户、仅本人可读写（`0600`），不得使用符号链接。配置保存后即时生效，保留进程也会重新核对；可用 `BUILDR_AGENT_WEBHOOK_CONFIG` 显式选择文件。缺省文件不存在才兼容 `BUILDR_AGENT_WEBHOOK_URL` 和 `BUILDR_AGENT_WEBHOOK_SECRET`；文件存在但无效时不回退到另一个目标。不要在命令参数、聊天、日志或源资产中填写真实秘密，不打印响应正文；迁移后核对文件内容与权限，不保留两份活动配置。
+
+人可在「智能体与模型 → 事件通知 / Webhook」管理当前本机服务的单一目标、启停与密钥，保存不自动发送。密钥默认遮罩，主动点击查看，再次隐藏或关闭设置后清除明文；不要代用户把明文抄入聊天。外部指定文件或旧环境来源明确只读，不在界面隐式接管。配置、查看和测试均沿用本机会话认证，写入与主动操作携带已观察版本，冲突先重读，不覆盖。测试按钮只发送独立的 `test` 通知，无业务正文、5秒超时且不自动重试；正常业务事件仍保持下述七类。最近投递显示当前服务进程观察到的时间、成败与 HTTP 状态，不展示响应正文。自动化回归必须显式绑定隔离配置（例如一个确认不存在的 `BUILDR_AGENT_WEBHOOK_CONFIG` 文件），不得继承真实接收端。
 
 公共通知只使用 task_started、status_changed、reply、pending_question、pending_approval、completed、error 七种事件。每条必带 eventId、conversationId、agent.name/id、machine、eventType、summary、timestamp；附加字段原样转发。agent.name 为 Buildr，id 为本实例持久 UUID，不同实例不同、重启不变；machine 是真实主机名，与 agent 并列，不用模型或执行器身份替代。
 

@@ -1,5 +1,4 @@
-import { webhookConfiguration } from './webhook-configuration.ts';
-import { ConversationWebhooks } from './conversation-webhooks.ts';
+import { WebhookManagement } from './webhook-management.ts';
 import { conversationRuns, unfinishedRun } from '../domain/agent-state.ts';
 import { AgentServiceError } from '../domain/agent-state.ts';
 import { ProgramUpgrades } from './program-upgrades.ts';
@@ -33,9 +32,8 @@ export function createAgentService(options: AgentServiceOptions) {
   const root = path.join(options.dataRoot, 'agent-service');
   const repository = new ConversationRepository(root);
   repository.startReadModels();
-  const webhooks = ConversationWebhooks.configure(webhookConfiguration(options.environment ?? process.env), fetch, {root});
+  const webhooks = new WebhookManagement(options.environment ?? process.env, root, after => repository.webhookRecoveryPage(after));
   const events = new ConversationEvents(generation, webhooks);
-  if(webhooks) setImmediate(()=>{void webhooks.recover(after=>repository.webhookRecoveryPage(after)).catch(()=>{});});
   const now = () => (options.now?.() ?? new Date()).toISOString();
   let linkedChanged: ((connection:ConnectionView)=>void)|undefined;
   const connections = new ConnectionApplication({ repository, root, executors: options.executors ?? createNativeExecutors(), environment: executorEnvironment(options.environment ?? process.env), generation, now, changed: (connection: ConnectionView) => {events.publish({ type: 'connection', revision: connection.revision, payload: { connection } });linkedChanged?.(connection);} });
@@ -106,6 +104,7 @@ export function createAgentService(options: AgentServiceOptions) {
   const withUpgrades=(snapshot:ReturnType<typeof programUpdates.list>)=>({programs:snapshot.programs.map(program=>({...program,upgrade:(()=>{const job=upgrades.read(program.connectionId);return job&&(job.executable===program.executable||job.installedExecutable===program.executable)?job:undefined;})()}))});
   return {
     generation,
+    webhooks: { read: () => webhooks.read(), save: (input: import('../contracts.ts').WebhookSettingsInput) => webhooks.save(input), reveal: (input: {expectedRevision:string}) => webhooks.reveal(input), test: (input: {expectedRevision:string}) => webhooks.test(input) },
     activity() {
       const reasons = [...conversations.activity(), ...preparations.activity(), ...connections.activity(), ...models.activity(), ...upgrades.activity()];
       if(discovery)reasons.push({kind:'model-discovery',count:1});

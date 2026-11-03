@@ -770,3 +770,13 @@ test('新轮未受理或失败时旧卡片仍可回答，问题结束标记不�
   assert.deepEqual(currentConversationRequests(ended).map(value=>value.id),['approval']);assert.equal(ended.retainedRuns[0].tools[0].status,'running');
  }
 });
+
+test('Webhook client keeps normal reads secret-free and sends reveal/test as explicit versioned mutations',async()=>{
+ const calls=[];
+ const api=createAgentConversationsClient(async(url,init)=>{calls.push({url,init});return url.endsWith('/reveal')?{secret:'test-key'}:{revision:'v1'};},session);
+ await api.webhookSettings();assert.equal(calls.length,1);assert.ok(calls[0].url.endsWith('/webhook-settings'));assert.equal(calls[0].init.method,undefined);
+ await api.revealWebhookSecret('v1');assert.equal(calls[1].init.method,'POST');assert.deepEqual(JSON.parse(calls[1].init.body),{expectedRevision:'v1'});
+ await api.saveWebhookSettings({expectedRevision:'v1',enabled:false,url:'https://receiver.test'});assert.equal('secret' in JSON.parse(calls[2].init.body),false);
+ await api.testWebhook('v2');assert.ok(calls[3].url.endsWith('/test'));assert.deepEqual(JSON.parse(calls[3].init.body),{expectedRevision:'v2'});
+ assert.ok(calls.every(call=>call.init.headers['x-buildr-session']==='native-test-session'));
+});

@@ -51,6 +51,12 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       if (pathname === `${prefix}/default-workspace` && request.method === 'GET' && defaultWorkspace) return result('defaultWorkspace', defaultWorkspace());
       if (pathname === `${prefix}/runtime` && request.method === 'GET' && options.runtimeStatus) return result('runtimeStatus', await options.runtimeStatus());
       const service = await resolve();
+      if (pathname === `${prefix}/webhook-settings`) {
+        if (request.method === 'GET') return result('webhookSettings', await service.webhooks.read());
+        if (request.method === 'POST') return result('webhookSettings', await service.webhooks.save(validate('webhookSettingsInput', await readJsonBody())));
+      }
+      if (pathname === `${prefix}/webhook-settings/reveal` && request.method === 'POST') return result('webhookSecret', await service.webhooks.reveal(validate('revision', await readJsonBody())));
+      if (pathname === `${prefix}/webhook-settings/test` && request.method === 'POST') return result('webhookTest', await service.webhooks.test(validate('revision', await readJsonBody())));
       if (pathname === `${prefix}/model-accounts`) {
         if (request.method === 'GET') return result('modelAccounts', await service.models.accounts.list({refresh:false}));
         if (request.method === 'POST') return result('modelAccount', await service.models.accounts.add(validate('addModelAccount', await readJsonBody())), 201);

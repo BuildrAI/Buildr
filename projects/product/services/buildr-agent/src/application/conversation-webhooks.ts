@@ -1,10 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
-import type { ServiceEvent, ConversationView } from '../contracts.ts';
+import type { ServiceEvent, ConversationView, WebhookDeliveryResult } from '../contracts.ts';
 import { WebhookJournal } from '../persistence/webhook-journal.ts';
 import { conversationNotifications, type NotificationSnapshot } from '../domain/conversation-notifications.ts';
 
-type Options = { root?:string; retryBaseMs?:number; now?:()=>number };
+type Options = { root?:string; retryBaseMs?:number; now?:()=>number; onDelivery?:(result:WebhookDeliveryResult)=>void };
 /** Durable at-least-once notifications; retries repeat only an immutable event, never agent work. */
 export class ConversationWebhooks {
   private readonly owner=randomUUID();
@@ -37,6 +37,7 @@ export class ConversationWebhooks {
     if (!['http:','https:'].includes(parsed.protocol)||parsed.username||parsed.password) return;
     try{return new ConversationWebhooks(parsed.href,secret,transport,options,url);}catch{console.warn('[agent_webhook_storage_unavailable] 通知存储不可用，未启用投递。');return;}
   }
+  get agentId(): string { return this.journal.instanceId; }
   publish(event:Omit<ServiceEvent,'cursor'|'generation'>):void {
     if(this.closed||event.type!=='conversation'||!event.payload.conversation)return;
     try {this.project(event.payload.conversation);this.drain();}catch{this.storageFailure();}
@@ -87,11 +88,12 @@ export class ConversationWebhooks {
       const controller=new AbortController();this.active.add(controller);
       const timeout=setTimeout(()=>controller.abort(),5000);timeout.unref();
       void(async()=>{
-        let success=false;
-        try {const response=await this.transport(this.url,{method:'POST',redirect:'error',headers:{'content-type':'application/json',authorization:`Bearer ${this.secret}`},body:item.body,signal:controller.signal});success=response.ok;await response.body?.cancel();}catch{/* Retry the same event, including uncertain delivery. */}
+        let success=false;let status:number|undefined;
+        try {const response=await this.transport(this.url,{method:'POST',redirect:'error',headers:{'content-type':'application/json',authorization:`Bearer ${this.secret}`},body:item.body,signal:controller.signal});success=response.ok;status=response.status;await response.body?.cancel();}catch{/* Retry the same event, including uncertain delivery. */}
         finally {
           clearTimeout(timeout);this.active.delete(controller);
           if(!this.closed){
+            this.options.onDelivery?.({at:new Date(this.clock()).toISOString(),success,kind:'event',...(status===undefined?{}:{status})});
             try {const delay=Math.min(300000,(this.options.retryBaseMs??1000)*2**Math.min(item.attempts-1,20));this.journal.settle(item,success,this.clock()+delay);this.drain();}catch{this.schedule(1000);}
           }
         }
