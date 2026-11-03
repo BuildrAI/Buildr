@@ -1,3 +1,6 @@
+import { registerEntryRevision } from '../domain/entry-revision.ts';
+import { NativeContentReader } from '../storage/native-content.ts';
+import type { NativeToolContent } from '../native-content-contracts.ts';
 import { createHash } from 'node:crypto';
 import { zstdCompressSync, zstdDecompressSync } from 'node:zlib';
 import type { DatabaseSync } from 'node:sqlite';
@@ -7,9 +10,12 @@ import { presentedFilesForEntry } from '../domain/presented-files.ts';
 
 const maximumDecoded = 64 * 1024 * 1024;
 const digest = (body: string | Uint8Array) => createHash('sha256').update(body).digest('hex');
-type Content = { content_revision: string; codec: string; body_bytes: number; body: string | Uint8Array };
+export type Content = { content_revision: string; codec: string; body_bytes: number; body: string | Uint8Array };
 type Position = { scope: string; entry: ConversationEntry; round: string; revision: string; compact: string | null; bytes: number; compactBytes: number; content?: Content };
 export type PreparedEntries = Position[];
+const lazyEntries = new WeakMap<ConversationEntry, { row: Content; compact: string; metadata: string; untouched(): boolean }>();
+const metadata = (entry: ConversationEntry) => JSON.stringify(Object.fromEntries(Object.entries(Object.getOwnPropertyDescriptors(entry)).filter(([key]) => key !== 'text' && key !== 'input').map(([key, descriptor]) => [key, descriptor.value])));
+
 
 /** The only persisted full entry bodies. Positions/previews are not another body store. */
 export class ConversationEntryStore {
@@ -35,20 +41,20 @@ export class ConversationEntryStore {
         DELETE FROM conversation_entry_contents WHERE conversation_id=OLD.id;
       END;
       CREATE TRIGGER conversation_body_format_insert BEFORE INSERT ON conversations
-        WHEN json_extract(NEW.body,'$._bodyFormat') IS NOT 5 OR json_array_length(NEW.body,'$.view.entries')>0 OR json_array_length(NEW.body,'$.inheritedContext.entries')>0
+        WHEN json_extract(NEW.body,'$._bodyFormat') IS NOT 6 OR json_array_length(NEW.body,'$.view.entries')>0 OR json_array_length(NEW.body,'$.inheritedContext.entries')>0
         BEGIN SELECT RAISE(ABORT,'agent_storage_writer_incompatible'); END;
       CREATE TRIGGER conversation_body_format_update BEFORE UPDATE OF body ON conversations
-        WHEN json_extract(NEW.body,'$._bodyFormat') IS NOT 5 OR json_array_length(NEW.body,'$.view.entries')>0 OR json_array_length(NEW.body,'$.inheritedContext.entries')>0
+        WHEN json_extract(NEW.body,'$._bodyFormat') IS NOT 6 OR json_array_length(NEW.body,'$.view.entries')>0 OR json_array_length(NEW.body,'$.inheritedContext.entries')>0
         BEGIN SELECT RAISE(ABORT,'agent_storage_writer_incompatible'); END;`);
   }
   static header(record: StoredConversation): string {
     return JSON.stringify({
-      ...record, _bodyFormat: 5, view: { ...record.view, entries: [] },
+      ...record, _bodyFormat: 6, view: { ...record.view, entries: [] },
       ...(record.inheritedContext ? { inheritedContext: { ...record.inheritedContext, entries: [] } } : {}),
     });
   }
-  static compact(entry: ConversationEntry, revision = digest(JSON.stringify(entry))): ConversationEntry {
-    if (entry.kind !== 'tool' || Buffer.byteLength(entry.text) + Buffer.byteLength(entry.input ?? '') <= 16 * 1024) return entry;
+  static compact(entry: ConversationEntry, revision = digest(JSON.stringify(entry)), force = false): ConversationEntry {
+    if (entry.kind !== 'tool' || !force && Buffer.byteLength(entry.text) + Buffer.byteLength(entry.input ?? '') <= 16 * 1024) return entry;
     return { ...entry, ...(presentedFilesForEntry(entry).length ? { presentedFiles: presentedFilesForEntry(entry) } : {}),
       text: entry.text.slice(0, 512), input: entry.input && entry.input.length <= 4096 ? entry.input : undefined, detail: { revision } };
   }
@@ -69,6 +75,12 @@ export class ConversationEntryStore {
         return round;
       });
       entries.forEach((entry, index) => {
+        const lazy = lazyEntries.get(entry);
+        if (lazy && lazy.untouched() && lazy.metadata === metadata(entry) && existing.has(lazy.row.content_revision)) {
+          result.push({ scope, entry, round: rounds[index]!.id, revision: lazy.row.content_revision, compact: lazy.compact,
+            bytes: lazy.row.body_bytes, compactBytes: Buffer.byteLength(lazy.compact) });
+          return;
+        }
         const body = JSON.stringify(entry), revision = digest(body), bytes = Buffer.byteLength(body);
         const preview = JSON.stringify(this.compact(entry, revision));
         let content: Content | undefined;
@@ -105,7 +117,23 @@ export class ConversationEntryStore {
     db.prepare(`DELETE FROM conversation_entry_contents WHERE conversation_id=? AND NOT EXISTS(
       SELECT 1 FROM conversation_read_entries e WHERE e.conversation_id=conversation_entry_contents.conversation_id AND e.content_revision=conversation_entry_contents.content_revision)`).run(record.view.id);
   }
-  static decode(row: Content): ConversationEntry {
+  static decode(row: Content, reader?: NativeContentReader, lazy = false, compact?: string | null): ConversationEntry {
+    if (row.codec === 'native-v1') {
+      let ref: NativeToolContent;
+      try { ref = JSON.parse(Buffer.from(row.body).toString('utf8')); if (ref.version !== 1 || ref.entry.kind !== 'tool' || !reader) throw new Error(); }
+      catch { throw new AgentServiceError('agent_native_content_unavailable', '原生正文引用不可读；已保留记录，不会重发操作。', 409); }
+      if (!lazy) return reader.tool(ref, row.content_revision);
+      const entry = structuredClone(ref.entry); let resolved: ConversationEntry | undefined, changed = false;
+      for (const key of ['text', ...(ref.input ? ['input'] : [])] as Array<'text' | 'input'>) {
+        Object.defineProperty(entry, key, { enumerable: true, configurable: true,
+          get: () => (resolved ??= reader.tool(ref, row.content_revision))[key],
+          set: value => { changed = true; resolved ??= reader.tool(ref, row.content_revision); resolved[key] = value; } });
+      }
+      const original = metadata(entry);
+      lazyEntries.set(entry, { row, compact: compact!, metadata: original, untouched: () => !changed });
+      registerEntryRevision(entry, () => !changed && metadata(entry) === original ? row.content_revision : undefined);
+      return entry;
+    }
     try {
       let bytes: Buffer;
       if (row.codec === 'raw') bytes = typeof row.body === 'string' ? Buffer.from(row.body) : Buffer.from(row.body);
@@ -116,22 +144,22 @@ export class ConversationEntryStore {
       return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as ConversationEntry;
     } catch { throw new AgentServiceError('agent_entry_corrupt', '消息正文损坏、编码不支持或超出解压预算；原记录已保留，不会重发操作。', 409); }
   }
-  static load(db: DatabaseSync, id: string, scope = 'main'): ConversationEntry[] {
+  static load(db: DatabaseSync, id: string, scope = 'main', reader?: NativeContentReader, lazy = false): ConversationEntry[] {
     this.assertPositions(db, id, scope);
-    return (db.prepare(`SELECT c.* FROM conversation_read_entries e LEFT JOIN conversation_entry_contents c
+    return (db.prepare(`SELECT c.*,e.compact FROM conversation_read_entries e LEFT JOIN conversation_entry_contents c
       ON c.conversation_id=e.conversation_id AND c.content_revision=e.content_revision
-      WHERE e.conversation_id=? AND e.scope=? ORDER BY e.sequence`).all(id, scope) as unknown as Content[]).map(row => this.decode(row));
+      WHERE e.conversation_id=? AND e.scope=? ORDER BY e.sequence`).all(id, scope) as unknown as (Content & {compact:string|null})[]).map(row => this.decode(row, reader, lazy, row.compact));
   }
   static assertPositions(db: DatabaseSync, id: string, scope = 'main'): void {
     const expected = db.prepare(`SELECT ${scope === 'main' ? 'entry_count' : 'inherited_count'} AS n FROM conversations WHERE id=?`).get(id);
     const actual = db.prepare('SELECT count(*) AS n FROM conversation_read_entries WHERE conversation_id=? AND scope=?').get(id, scope);
     if (!expected || expected.n !== actual!.n) throw new AgentServiceError('agent_entry_corrupt', '消息位置缺失或与对话不一致；原数据和备份已保留。', 409);
   }
-  static hydrate(db: DatabaseSync, record: StoredConversation): StoredConversation {
+  static hydrate(db: DatabaseSync, record: StoredConversation, reader?: NativeContentReader): StoredConversation {
     if (!this.available(db)) return record;
     delete (record as StoredConversation & { _bodyFormat?: number })._bodyFormat;
-    record.view.entries = this.load(db, record.view.id);
-    if (record.inheritedContext) record.inheritedContext.entries = this.load(db, record.view.id, 'inherited');
+    record.view.entries = this.load(db, record.view.id, 'main', reader, !!reader);
+    if (record.inheritedContext) record.inheritedContext.entries = this.load(db, record.view.id, 'inherited', reader, !!reader);
     return record;
   }
   /** Search is a read-only projection of visible raw messages, never compressed tools. */

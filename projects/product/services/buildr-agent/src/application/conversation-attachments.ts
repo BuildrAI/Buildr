@@ -1,3 +1,5 @@
+import { NativeContentReader, nativeContentHash } from '../storage/native-content.ts';
+import { ensureStorageDirectory, safeStorageResource } from '../storage/files.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
@@ -11,7 +13,7 @@ const TEMP_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_TEMP_BYTES = 256 * 1024 * 1024;
 const imageTypes = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
 const videoTypes = ['video/mp4', 'video/webm', 'video/quicktime'];
-const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+const hash = (value: StoredConversation['attachments']) => createHash('sha256').update(JSON.stringify(Object.fromEntries(Object.entries(value).map(([id,meta])=>{ const {nativeContent,...publicMeta}=meta; return [id,publicMeta]; })))).digest('hex');
 
 /** Private media files and their derived visual inputs share the conversation's save/version boundary. */
 export class ConversationAttachments {
@@ -20,6 +22,18 @@ export class ConversationAttachments {
   get(record: Pick<StoredConversation,'view'|'attachments'>, id: string): ExecutorImage {
     const meta = record.attachments[id];
     if (!meta || !/^[a-f0-9-]{36}$/.test(id)) fail('agent_attachment_missing', '附件不属于此对话。', 404);
+    if (meta.nativeContent) {
+      const bytes = new NativeContentReader(this.options.root).attachment(meta.nativeContent);
+      const directory = path.join(this.options.root,'attachment-cache',record.view.id);
+      ensureStorageDirectory(this.options.root,directory);
+      const filename = path.join(directory,id);
+      try { fs.writeFileSync(filename,bytes,{flag:'wx',mode:0o600}); }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST' || !safeStorageResource(this.options.root,filename) || nativeContentHash(fs.readFileSync(filename)) !== meta.nativeContent.sha256) fail('agent_attachment_changed','附件临时文件来源已变化。',409);
+      }
+      fs.utimesSync(filename,new Date(),new Date());
+      return {id,path:filename,mimeType:meta.mimeType};
+    }
     const filename = path.join(this.options.root, 'attachments', record.view.id, id);
     const stat = fs.lstatSync(filename, { throwIfNoEntry: false });
     if (!stat?.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || stat.size !== meta.size) fail('agent_attachment_changed', '附件来源已变化，请重新添加。', 409);
@@ -48,7 +62,7 @@ export class ConversationAttachments {
     const selected = new Set(ids);
     for (const id of selected) for (const frame of source.attachments[id]?.video?.frames ?? []) selected.add(frame.id);
     if (!selected.size) return;
-    for (const id of selected) this.get(source,id);
+    for (const id of selected) this.read(source,id);
     const root = path.join(this.options.root, 'attachments');
     const directory = path.join(root, target.view.id);
     for (const location of [root, path.join(root, source.view.id), directory]) {
@@ -59,6 +73,7 @@ export class ConversationAttachments {
     for (const id of selected) {
       const media = this.read(source, id);
       target.attachments[id] = structuredClone(source.attachments[id]!);
+      delete target.attachments[id]!.nativeContent;
       try { fs.writeFileSync(path.join(directory,id),media.bytes,{flag:'wx',mode:0o600}); }
       catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
@@ -121,6 +136,8 @@ export class ConversationAttachments {
     return { id, mimeType: input.mimeType, size: bytes.length, revision: record.view.revision, attachmentRevision: hash(record.attachments) };
   }
   read(record: Pick<StoredConversation,'view'|'attachments'>, id: string): { bytes: Buffer; mimeType: string } {
+    const meta=record.attachments[id];
+    if (meta?.nativeContent && /^[a-f0-9-]{36}$/.test(id)) return {bytes:new NativeContentReader(this.options.root).attachment(meta.nativeContent),mimeType:meta.mimeType};
     const attachment = this.get(record, id), limit = attachment.mimeType.startsWith('video/') ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
     const descriptor = fs.openSync(attachment.path, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
     try {

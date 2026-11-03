@@ -1,3 +1,4 @@
+import { maintainNativeContent } from '../application/native-content-maintenance.ts';
 import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
 import { inspectAgentStorage, collectAgentStorage } from '../application/storage-maintenance.ts';
 
@@ -5,7 +6,8 @@ import { inspectAgentStorage, collectAgentStorage } from '../application/storage
 if (!isMainThread && workerData?.kind === 'agent-storage-maintenance') {
   try {
     const result = collectAgentStorage(inspectAgentStorage({ dataRoot: workerData.dataRoot }));
-    parentPort?.postMessage({ removedBytes: result.removedBytes, retained: result.results.filter(item => item.status === 'retained').length });
+    const content = maintainNativeContent(workerData.dataRoot);
+    parentPort?.postMessage({ nativeContent: content, removedBytes: result.removedBytes, retained: result.results.filter(item => item.status === 'retained').length });
   } catch { parentPort?.postMessage({ diagnostic: 'storage_collection_deferred' }); }
 }
 

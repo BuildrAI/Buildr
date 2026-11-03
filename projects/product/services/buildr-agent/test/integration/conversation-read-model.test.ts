@@ -60,7 +60,7 @@ test('legacy reads are zero-write and verified migration preserves content befor
  writeLegacyConversationDatabase(repo.filename,[r]);
  const before=fs.readFileSync(repo.filename);assert.equal(repo.readPage(r.view.id),undefined);repo.listPendingStates();assert.deepEqual(fs.readFileSync(repo.filename),before);
  repo.rebuildReadModel(r.view.id);const check=new DatabaseSync(repo.filename,{readOnly:true});t.after(()=>check.close());assert.equal(check.prepare('PRAGMA user_version').get()!.user_version,CONVERSATION_SCHEMA_VERSION);assert.deepEqual(repo.readPage(r.view.id)!.view.entries,r.view.entries);
- assert.deepEqual(repo.readConversation(r.view.id)!.view.entries,r.view.entries);assert.equal(fs.readdirSync(path.dirname(repo.filename)).some(name=>name.startsWith('conversations.pre-v5-')),false);
+ assert.deepEqual(repo.readConversation(r.view.id)!.view.entries,r.view.entries);assert.equal(fs.readdirSync(path.dirname(repo.filename)).some(name=>name.startsWith('conversations.pre-v6-')),false);
 });
 
 test('status and projected pages do not parse canonical bodies, even when unrelated history is unreadable',t=>{

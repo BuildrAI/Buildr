@@ -1,0 +1,30 @@
+import type { ConversationEntry } from './contracts.ts';
+
+/** Private storage addresses, never part of a public conversation or model prompt. */
+export interface NativeContentSource {
+  path: string; offset: number; length: number; sha256: string;
+  codec: 'json' | 'json-zstd' | 'bytes'; line?: number;
+}
+export interface NativeContentValue {
+  source: NativeContentSource; pointer: Array<string | number>;
+  format?: 'json' | 'json-document' | 'base64'; start?: number; length?: number;
+}
+export type NativeTextPart = NativeContentValue | { literal: string } | { input: true };
+export interface NativeToolContent {
+  version: 1; provider: string; contextId: string;
+  entry: ConversationEntry; text: NativeTextPart[]; input?: NativeTextPart[];
+}
+export interface NativeAttachmentContent {
+  version: 1; provider: string; contextId: string;
+  value: NativeContentValue; sha256: string; size: number;
+}
+export interface NativeContentContext { root: string; configRoot: string; contextId: string; cwd: string }
+export interface NativeContentRecord {
+  source: NativeContentSource; value: unknown; toolIds: string[];
+}
+export interface NativeContentInventory {
+  records: NativeContentRecord[];
+  images: Array<{ value: NativeContentValue; mimeType?: string }>;
+  /** All source files used to rule out already-issued local path dependencies. */
+  sourcePaths: string[];
+}

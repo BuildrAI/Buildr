@@ -229,6 +229,8 @@ export interface AgentRuntime {
   close(): Promise<void>;
 }
 export interface AgentExecutor {
+  /** Locate durable native content without opening a runtime or making a model request. */
+  nativeContent?(input: import('./native-content-contracts.ts').NativeContentContext): import('./native-content-contracts.ts').NativeContentInventory | undefined;
   /** Observe exact abandoned control resources without login, opening a channel, or proving operation success. */
   readReleasedControl?(input: {bindingIdentity:string;contextRef:ContextRef;executionRef:ExecutionRef;cwd:string}): Promise<boolean>;
 
