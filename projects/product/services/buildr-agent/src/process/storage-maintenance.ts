@@ -9,8 +9,8 @@ if (!isMainThread && workerData?.kind === 'agent-storage-maintenance') {
     // Native deduplication gets its own budget before the potentially expensive
     // diagnostic inventory. A backlog must not starve content or runtime adoption.
     try {
-      const result = collectAgentStorage(inspectAgentStorage({ dataRoot: workerData.dataRoot }),8);
-      parentPort?.postMessage({ nativeContent: content, removedBytes: result.removedBytes, retained: result.results.filter(item => item.status === 'retained').length });
+      const result = collectAgentStorage(inspectAgentStorage({ dataRoot: workerData.dataRoot }),512,{budgetMs:3000});
+      parentPort?.postMessage({ nativeContent: content, removedBytes: result.removedBytes, backlog:result.removedBytes>0&&result.results.some(item=>item.reason==='storage_batch_deferred'), retained: result.results.filter(item => item.status === 'retained').length });
     }catch{parentPort?.postMessage({nativeContent:content,diagnostic:'storage_collection_deferred'});}
   } catch { parentPort?.postMessage({ diagnostic: 'storage_collection_deferred' }); }
 }
@@ -35,9 +35,11 @@ export class StorageMaintenance {
     if (!this.enabled()) { this.schedule(this.intervalMs); return; }
     try {
       const worker = new Worker(new URL(import.meta.url), { workerData: { kind: 'agent-storage-maintenance', dataRoot: this.dataRoot } });
+      let backlog=false;
+      worker.on('message',message=>{backlog=message?.backlog===true;});
       this.worker = worker; worker.unref();
       worker.on('error', () => { /* The next pass observes again; no model or input recovery. */ });
-      worker.once('exit', () => { if (this.worker === worker) this.worker = undefined; this.schedule(this.intervalMs); });
+      worker.once('exit', () => { if (this.worker === worker) this.worker = undefined; this.schedule(backlog?250:this.intervalMs); });
     } catch { this.schedule(this.intervalMs); }
   }
   /** Do not abort an in-flight narrow rename/delete; the worker is unreferenced and drains naturally. */

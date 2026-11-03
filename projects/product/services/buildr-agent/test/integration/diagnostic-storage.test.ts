@@ -10,7 +10,7 @@ import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 import { createQoderExecutor } from '../../src/executors/qoder/index.ts';
 import { diagnosticCandidates, diagnosticStabilityMs } from '../../src/storage/diagnostics.ts';
-import { removeStorageCandidate, safeStorageResource, type StorageUse } from '../../src/storage/files.ts';
+import { removeStorageCandidate, removeDiagnosticFileBatch, safeStorageResource, type StorageUse } from '../../src/storage/files.ts';
 import { ConversationRepository } from '../../src/persistence/conversation-repository.ts';
 import { inspectAgentStorage, collectAgentStorage } from '../../src/application/storage-maintenance.ts';
 import { StorageMaintenance } from '../../src/process/storage-maintenance.ts';
@@ -43,6 +43,32 @@ function fixture(t: test.TestContext) {
   const candidates = (dependencies = { complete: true, contexts: [] as string[] }, use: StorageUse = unused) => diagnosticCandidates(root, createQoderExecutor(), config, use, dependencies, Date.now());
   return { dataRoot, root, config, logs, repo, record, run, segment, candidates };
 }
+
+test('small diagnostic batches share observation while independently retaining held, changed and newly protected files',t=>{
+  const f=fixture(t),paths=Array.from({length:128},(_,i)=>path.join(f.logs,`sdk-daemon-${deadPid}-${i}.log`));
+  for(const name of paths){file(name);fs.utimesSync(name,1,1);}
+  const items=f.candidates();let observations=0;
+  const removed=removeDiagnosticFileBatch(f.root,items,item=>item.path!==paths[2],()=>{
+    observations++;
+    if(observations===1){fs.appendFileSync(paths[1]!, 'changed after inventory');return unused;}
+    const retired=fs.readdirSync(f.logs).filter(name=>name.startsWith('.reclaim-'));
+    return {complete:true,paths:[path.join(f.logs,retired[0]!)]};
+  });
+  assert.equal(observations,2,'observations are per batch, not per file');
+  assert.equal(removed.length,125);assert.ok(fs.existsSync(paths[1]!));assert.ok(fs.existsSync(paths[2]!));
+  assert.equal(fs.readdirSync(f.logs).some(name=>name.startsWith('.reclaim-')),false,'held renamed object is restored');
+});
+
+test('a public diagnostic batch drains hundreds of small logs and respects an item budget', {skip:process.platform!=='darwin'},t=>{
+  const f=fixture(t);
+  for(let i=0;i<320;i++){const name=path.join(f.logs,`sdk-daemon-${deadPid}-${i}.log`);file(name);fs.utimesSync(name,1,1);}
+  const first=collectAgentStorage(inspectAgentStorage({dataRoot:f.dataRoot}),256,{budgetMs:10000});
+  assert.equal(first.results.filter(item=>item.status==='removed').length,256);
+  assert.ok(first.results.some(item=>item.reason==='storage_batch_deferred'));
+  const next=collectAgentStorage(inspectAgentStorage({dataRoot:f.dataRoot}),256,{budgetMs:10000});
+  assert.equal(next.results.filter(item=>item.status==='removed').length,64);
+  assert.equal(fs.readdirSync(f.logs).length,0);
+});
 
 test('known closed diagnostics are separate from native history, credentials, unknown content and live producers', t => {
   const f = fixture(t), old = f.run(), live = f.run(process.pid, 'live'), events = f.segment();

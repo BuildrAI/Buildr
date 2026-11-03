@@ -112,3 +112,33 @@ export function removeStorageCandidate(root: string, item: StorageCandidate, obs
     fs.rmSync(retired, { recursive: true }); return true;
   } catch (error) { if (fs.existsSync(retired) && !fs.existsSync(item.path)) fs.renameSync(retired, item.path); throw error; }
 }
+
+/** Rename a bounded set of small diagnostic files, then observe all renamed
+ * paths together before unlinking. Every file keeps its own version/dependency
+ * checks; system observation is shared rather than spawned twice per file. */
+export function removeDiagnosticFileBatch(root: string, items: StorageCandidate[], unreferenced: (item:StorageCandidate)=>boolean,
+  observe=observeStorageUse, deadline=Date.now()+3000): string[] {
+  const before=observe(), renamed:Array<{item:StorageCandidate;retired:string;changed:number}>=[],removed:string[]=[];
+  const restore=(item:StorageCandidate,retired:string)=>{if(fs.existsSync(retired)&&!fs.existsSync(item.path))fs.renameSync(retired,item.path);};
+  try {
+    for(const item of items.slice(0,256)) {
+      if(Date.now()>deadline)break;
+      try {
+        if(item.kind!=='diagnostic'||!item.eligible||!item.identity||!safeStorageResource(root,item.path)||storageInUse(item.ownerRoot,before)||!unreferenced(item))continue;
+        const info=fs.lstatSync(item.path);if(!info.isFile()||info.size>256*1024||storageVersion(item.path).identity!==item.identity)continue;
+        const retired=path.join(path.dirname(item.path),'.reclaim-'+randomUUID());fs.renameSync(item.path,retired);
+        const moved={item,retired,changed:0};renamed.push(moved);moved.changed=fs.lstatSync(retired).ctimeMs;
+      }catch{/* A changed or unavailable file is retained independently. */}
+    }
+    if(!renamed.length)return removed;
+    const after=observe();
+    for(const {item,retired,changed} of renamed) {
+      try {
+        const version=storageVersion(retired,item.rootChanged);
+        if(storageInUse(item.ownerRoot,after)||storageInUse(retired,after)||!unreferenced(item)||version.identity!==item.identity||version.rootChanged!==changed){restore(item,retired);continue;}
+        fs.unlinkSync(retired);removed.push(item.path);
+      }catch{restore(item,retired);}
+    }
+  }finally{for(const{item,retired}of renamed)try{restore(item,retired);}catch{/* Keep the renamed file rather than overwrite a replacement. */}}
+  return removed;
+}
