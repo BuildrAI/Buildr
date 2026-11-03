@@ -267,3 +267,38 @@ test('sameRunOnly rejects ended admission without opening a new round or replayi
     assert.equal(repeated.delivery,'rejected');assert.equal(repeated.conversation.run!.id,original);assert.equal(f.calls.length,1);
   }finally{await f.close();}
 });
+
+for(const provider of ['codex','dsh','qoder'])test(provider+': a cached unknown round is verified natively and supplemented once',async()=>{
+ const f=await fixture({provider});try{
+  const before=f.read();
+  f.emit({type:'observation',observation:{status:'unknown',executionRef:{id:'native-run'},tools:[]}});
+  assert.equal(f.read().run!.status,'unknown');
+  const input={...f.input('authorized follow-up'),sameRunOnly:true};
+  assert.equal((await f.service.conversations.supplement('workspace',before.id,input)).delivery,'accepted');
+  assert.equal(f.read().run!.id,before.run!.id);assert.equal(f.read().run!.participantId,before.run!.participantId);
+  assert.equal(f.read().run!.status,'running');assert.equal(f.calls.length,1);
+  assert.equal((await f.service.conversations.supplement('workspace',before.id,input)).delivery,'accepted');assert.equal(f.calls.length,1);
+ }finally{await f.close();}
+});
+for(const observation of [
+ {status:'unknown',executionRef:{id:'native-run'},tools:[]},
+ {status:'running',executionRef:{id:'different'},tools:[]},
+ {status:'running',tools:[]},
+] as ExecutorObservation[])test('a cached unknown round still requires exact native confirmation: '+JSON.stringify(observation),async()=>{
+ const f=await fixture();try{
+  f.emit({type:'observation',observation:{status:'unknown',executionRef:{id:'native-run'},tools:[]}});f.setObservation(observation);
+  const before=f.read(),input={...f.input('keep this input'),sameRunOnly:true};
+  const result=await f.service.conversations.supplement('workspace',before.id,input);
+  assert.equal(result.delivery,'rejected');assert.equal(f.calls.length,0);assert.equal(f.read().run!.id,before.run!.id);
+  assert.match(f.read().entries.at(-1)!.deliveryDiagnostic!,/未发送|无法确认/);
+ }finally{await f.close();}
+});
+test('an unknown tool outcome does not block new input to an exactly active native round',async()=>{
+ const f=await fixture();try{
+  const observation:ExecutorObservation={status:'running',executionRef:{id:'native-run'},tools:[{id:'old-uncertain-tool',label:'old result unknown',status:'unknown'}]};
+  f.emit({type:'observation',observation});f.setObservation(observation);
+  assert.equal(f.read().run!.status,'unknown');
+  assert.equal((await f.service.conversations.supplement('workspace',f.read().id,{...f.input('inspect the current result'),sameRunOnly:true})).delivery,'accepted');
+  assert.equal(f.calls.length,1);assert.equal(f.read().run!.tools[0]!.status,'unknown');
+ }finally{await f.close();}
+});

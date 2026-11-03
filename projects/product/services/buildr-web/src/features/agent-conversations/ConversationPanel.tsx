@@ -1,4 +1,4 @@
-import { conversationSendRoute } from './conversation-send-route';
+import { conversationSendRoute, refreshConversationSend } from './conversation-send-route';
 import { BuildrParticipation } from './BuildrParticipation';
 import {conversationTaskLinks} from './conversation-associations';
 import type {ConversationTaskLink as TaskLink} from './types';
@@ -374,6 +374,15 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
     try{
       if(!chat){await sendFirst(operation);return;}
       let current=chat;
+      if(!show&&!continueRunId&&!executionChanged){
+        const refreshed=await refreshConversationSend(current,{
+          observe:context.api.observe,
+          apply:context.apply,
+          isCurrent:()=>activeSend.current===operation&&context.isSelectionCurrent(operation.selection),
+        });
+        if(!refreshed)return;
+        current=refreshed;
+      }
       const pendingInput=inputAttempts.read(current);
       if(pendingInput&&pendingInput.runId!==current.run?.id)throw new Error('上条追加消息的送达结果仍需核对，请勿作为新一轮重复发送。');
       const route=!show&&pendingInput&&pendingInput.text===sendText?'supplement':conversationSendRoute(current,executionChanged,show);
@@ -391,7 +400,8 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
             setAttachments(previous=>({...previous,[current.id]:removeSubmittedAttachments(previous[current.id]||[],requestImages.map(item=>item.id))}));
           }else {
             if(result.delivery==='rejected')inputAttempts.finish(current,attempt.clientRequestId);
-            throw new Error(result.delivery==='unknown'?'消息是否送达仍待确认，请勿重复发送；输入已保留。':'原轮未接收这条消息；输入已保留，不会另开会话。');
+            const refusal=result.conversation.entries.slice().reverse().find(entry=>entry.runId===attempt.runId&&entry.kind==='message'&&entry.role==='user'&&entry.status==='failed'&&entry.text===sendText)?.deliveryDiagnostic;
+            throw new Error(result.delivery==='unknown'?'消息是否送达仍待确认，请勿重复发送；输入已保留。':refusal||'原轮未接收这条消息；输入已保留，不会另开会话。');
           }
           return;
         }
