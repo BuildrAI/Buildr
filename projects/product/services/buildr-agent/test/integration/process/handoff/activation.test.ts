@@ -20,7 +20,8 @@ for (const modelBound of [true, false]) test(`activation proves the target while
   const old=await observer.lifecycle.identity(),connection=await main.call('connections.read',['first']);
   await main.call('connections.connect',['first',{expectedRevision:connection.revision}]);
   let selection={};
-  if(modelBound){const account=await main.call('models.accounts.add',[{provider:'fixture-model'}]),checked=await main.call('models.accounts.check',[account.id]);await main.call('models.accounts.preferences',[account.id,{expectedRevision:checked.revision,models:[{id:'fixture',enabled:true}]}]);selection={modelAccountId:account.id,model:'fixture'};}
+  const account=await main.call('models.accounts.add',[{provider:'fixture-model'}]),checked=await main.call('models.accounts.check',[account.id]);await main.call('models.accounts.preferences',[account.id,{expectedRevision:checked.revision,models:[{id:'fixture',enabled:true}]}]);
+  if(modelBound)selection={modelAccountId:account.id,model:'fixture'};
   const start=async(text:string)=>{
     const chat:ConversationView=await main!.call('conversations.create',[scope,{}]),draft={expectedRevision:chat.revision,connectionId:'first',...selection,text};
     const preview=await main!.call('conversations.prepareSend',[scope,chat.id,draft]);
@@ -28,6 +29,9 @@ for (const modelBound of [true, false]) test(`activation proves the target while
     return until(()=>observer!.operations.conversations.read(scope,chat.id),view=>view.run?.accepted===true);
   };
   const held=await start('hold');
+  const warmId=randomUUID(),warmInput={connectionId:'first',modelAccountId:account.id,model:'fixture',cwd:workspace,clientRequestId:randomUUID()};
+  assert.equal((await main.call('conversations.warmup',[scope,warmId,warmInput,true])).prepared,true);
+  assert.ok((await observer.lifecycle.status()).activity.reasons.some(reason=>reason.kind==='prepared-resource'));
   fs.writeFileSync(marker,JSON.stringify({version:'new'}));
   const gate=path.join(dataRoot,'allow-upgrade');
   fs.writeFileSync(path.join(packageRoot,'build/activate.mjs'),`import fs from 'node:fs';const b=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));if(!fs.existsSync(b.dataRoot+'/allow-upgrade'))throw Error('startup blocked');await import('./process-fixture.mjs');\n`);
@@ -39,11 +43,20 @@ for (const modelBound of [true, false]) test(`activation proves the target while
     try {
       assert.equal((await controls.operations.conversations.read(scope,held.id)).run?.status,'running','a failed activation must not block a new control client');
       await until(()=>controls.lifecycle.status(),status=>Boolean(status.diagnostic));
+      await assert.rejects(controls.operations.conversations.prepareSend(scope,held.id,{expectedRevision:held.revision,connectionId:'first',...selection,text:'must not send'}),{code:'agent_process_activation_failed'});
     } finally {await controls.disconnect();}
     fs.writeFileSync(gate,'yes');
-    const adopted=await observer.lifecycle.activateRuntime({expectedGeneration:old.generation,runtime:next});
+    const ordinary=await connectAgentProcess({dataRoot,profileId,runtime:next,sourceId:'minimal'});
+    let fresh:ConversationView;
+    try {
+      // A normal send through the existing host must observe readiness and route
+      // to the successor, without a separate activation or user retry.
+      const draftId=randomUUID(),draft=await ordinary.operations.conversations.readDraft(scope,draftId);
+      const result=await main!.call('conversations.startDraft',[scope,draftId,{connectionId:'first',...selection,text:'new work',clientRequestId:randomUUID(),expectedDraftRevision:draft.revision}]);
+      fresh=await until(()=>observer!.operations.conversations.read(scope,result.conversation.id),view=>view.run?.accepted===true);
+    } finally { await ordinary.disconnect(); }
+    const adopted=await observer.lifecycle.status();
     assert.equal(adopted.identity.runtime.digest,next.digest);assert.equal(adopted.accepting,true);assert.ok(isLive(old.pid));
-    const fresh=await start('new work');
     assert.equal(fresh.run?.generation,adopted.identity.generation);
     await until(()=>observer!.operations.conversations.read(scope,fresh.id),view=>view.run?.status==='completed'&&view.run.resourcesReleased===true);
     assert.equal((await observer.operations.conversations.read(scope,held.id)).run?.status,'running');
@@ -51,6 +64,12 @@ for (const modelBound of [true, false]) test(`activation proves the target while
     fs.writeFileSync(gate,'yes');
     await assert.rejects(connectAgentProcess({dataRoot,profileId,runtime:next,sourceId:'minimal',requireRuntime:true,activationTimeoutMs:100}),{code:'agent_process_activation_pending'});
     assert.equal((await observer.lifecycle.identity()).generation,old.generation);assert.ok(isLive(old.pid));
+    await until(()=>observer!.lifecycle.status(),status=>!status.activity.reasons.some(reason=>reason.kind==='prepared-resource'));
+    assert.equal((await main.call('conversations.warmup',[scope,warmId,warmInput,true])).prepared,false,'upgrade must not recreate speculative owners');
+    const ordinary=await connectAgentProcess({dataRoot,profileId,runtime:next,sourceId:'minimal',activationTimeoutMs:100});
+    try {
+      await assert.rejects(ordinary.operations.conversations.prepareSend(scope,held.id,{expectedRevision:held.revision,connectionId:'first',text:'must not send'}),{code:'agent_process_activation_pending'});
+    } finally {await ordinary.disconnect();}
   }
   fs.writeFileSync(path.join(dataRoot,'release'),'yes');
   const adopted=await until(()=>observer!.lifecycle.status(),value=>value.identity.runtime.digest===next.digest&&value.accepting);
@@ -59,5 +78,7 @@ for (const modelBound of [true, false]) test(`activation proves the target while
   await until(async()=>!isLive(old.pid),Boolean);
   const sent=fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').trim().split('\n').map(line=>JSON.parse(line));
   assert.equal(sent.filter(value=>value.text==='hold').length,1);
+  assert.equal(sent.filter(value=>value.text==='must not send').length,0);
+  if(modelBound)assert.equal(sent.filter(value=>value.text==='new work').length,1);
   if(modelBound)assert.equal(sent.find(value=>value.text==='new work')?.version,'new');
 });

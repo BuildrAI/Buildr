@@ -140,10 +140,22 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
         // Only repeat read-only readiness observations across the handoff gap.
         reconnect = true;
       }
-      if (Date.now() >= deadline) throw new AgentServiceError('agent_process_activation_pending', '目标版本尚未确认启用，旧工作与待发送内容已保留。', 503);
+      if (Date.now() >= deadline) throw new AgentServiceError('agent_process_activation_pending', '新版后台就绪核对超时，原工作与输入已保留，请核对新版后台启动状态。', 503);
       await pause(Math.min(100, Math.max(1, deadline - Date.now())));
     }
     throw new AgentServiceError('agent_process_client_closed', '本机主程序连接已释放。', 503);
+  }
+  function needsReadyCheck(current: ProcessRecord): boolean {
+    const pending = readPrivate<{runtime: AgentRuntimeUnit}>(path.join(controlRoot(options.dataRoot), 'pending.json'));
+    return Boolean(requestedDigest || pending && pending.runtime.digest !== current.identity.runtime.digest);
+  }
+  async function readyForNewWork(current: ProcessRecord): Promise<void> {
+    const status: AgentProcessStatus = await request(current.origin, current.token, '/status', undefined, AbortSignal.timeout(3000));
+    matches(status.identity, options);
+    if (status.identity.instanceId !== current.identity.instanceId || status.identity.generation !== current.identity.generation || status.identity.runtime.digest !== current.identity.runtime.digest) throw new AgentServiceError('agent_process_identity_mismatch', '新版就绪观察身份不匹配。', 409);
+    const target = status.pendingRuntime ?? (requestedDigest ? options.runtime : undefined);
+    if (target) await awaitRuntime(target, options.activationTimeoutMs);
+    else if (!status.accepting || status.retiring) throw new AgentServiceError('agent_process_activation_failed', status.diagnostic || '当前执行后台未就绪，输入已保留，请核对后台启动状态。', 503);
   }
   try {
     record = await ensure(options); await connected();
@@ -195,7 +207,7 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
         }
         return withPending(conversation);
       }
-      if(requestedDigest&&current.identity.runtime.digest!==requestedDigest&&['conversations.startDraft','conversations.send','conversations.prepareSend','conversations.prepareHandoff'].includes(name))throw new AgentServiceError('agent_process_switching','新版尚未就绪，可以提交待发送内容。',503);
+      if (['conversations.fork','conversations.create','conversations.createChild','conversations.startDraft','conversations.send','conversations.prepareSend','conversations.prepareHandoff'].includes(name) && needsReadyCheck(current)) await readyForNewWork(current);
       if (name === 'conversations.addDraftImage') args[2] = { expectedRevision: args[2].expectedRevision, name: args[2].name, frame: args[2].frame, mimeType: args[2].mimeType, video: args[2].video, base64: Buffer.from(args[2].bytes).toString('base64') };
       if (name === 'conversations.addAttachment') args[2] = { expectedRevision: args[2].expectedRevision, expectedAttachmentRevision: args[2].expectedAttachmentRevision, mimeType: args[2].mimeType, video: args[2].video, base64: Buffer.from(args[2].bytes).toString('base64') };
       let result;
