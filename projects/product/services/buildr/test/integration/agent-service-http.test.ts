@@ -10,7 +10,7 @@ import test from 'node:test';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
-import { AgentServiceError, createAgentService, type AgentRuntime, type ExecutorItem } from '@buildr-ai/buildr-agent';
+import { AgentServiceError, createAgentService as createService, type AgentRuntime, type ExecutorItem } from '@buildr-ai/buildr-agent';
 import { createRuntime, runtimeContributions } from '../helpers/runtime-harness.ts';
 import { taskRecordFixture } from '../helpers/task-record-system-fixture.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
@@ -19,6 +19,25 @@ import { AGENT_SERVICE_HTTP_OPERATIONS } from '../../src/modules/agent-service/i
 import { inspectHttpOperationCoverage } from '../../src/web/http/http-operation-coverage.ts';
 import { apiError, eventStreamResponse } from '../../src/web/http/responses.ts';
 import { stopOwnedChildProcess } from '../verification/support/owned-process.ts';
+
+// HTTP fixtures must not load host credentials or start host-configured notification delivery.
+function createAgentService(options: Parameters<typeof createService>[0]) {
+  return createService({ ...options, environment: options.environment ?? { HOME: path.dirname(options.dataRoot) } });
+}
+
+test('HTTP service fixtures ignore host webhook configuration', async t => {
+  const { base } = taskRecordFixture(t, 'agent-http-host-isolation');
+  const config = path.join(base, 'host-webhook.json');
+  fs.writeFileSync(config, JSON.stringify({ url: 'http://127.0.0.1:1/host-only', secret: 'fixture-only-secret' }), { mode: 0o600 });
+  const previous = process.env.BUILDR_AGENT_WEBHOOK_CONFIG;
+  process.env.BUILDR_AGENT_WEBHOOK_CONFIG = config;
+  t.after(() => { if (previous === undefined) delete process.env.BUILDR_AGENT_WEBHOOK_CONFIG; else process.env.BUILDR_AGENT_WEBHOOK_CONFIG = previous; });
+  const dataRoot = path.join(base, 'agent-profile');
+  const service = createAgentService({ dataRoot, executors: [], modelProviders: [] });
+  t.after(() => service.close());
+  assert.equal(service.webhooks.read().state, 'unconfigured');
+  assert.equal(fs.existsSync(dataRoot), false, 'host notification configuration must not initialize fixture storage');
+});
 
 test('program preparation is authenticated, schema checked and independently observable/cancellable', { timeout: 30_000 }, async t => {
   const { base, root } = taskRecordFixture(t, 'agent-program-http');
