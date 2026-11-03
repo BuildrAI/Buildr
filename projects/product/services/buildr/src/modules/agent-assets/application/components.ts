@@ -626,6 +626,31 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
     return result;
   }
 
+  /** Recompute declared member digests from workspace content. Only the integrity
+   *  (and optional version) line changes, so formatting and comments survive. */
+  function componentRecord(input: any): any {
+    const { targetRoot, id, version = null } = input;
+    assertWorkspaceComponentScope(input.scope);
+    assertInitializedBuildrWorkspace(targetRoot);
+    const inventory = componentInventory(targetRoot);
+    const item = inventory.components.find((candidate: any) => candidate.entry.id === id);
+    if (!item) throw new Error(`Component not found: ${id}`);
+    if (item.status === 'uninstalled' || item.entry.enabled === false) throw new Error(`Component is not installed: ${id}`);
+    const missing = item.members.find((member: any) => !member.actual);
+    if (missing) throw new Error(`Component member is missing: ${missing.path}`);
+    const file = componentDefinitionFile(targetRoot, item.entry);
+    const text = fs.readFileSync(file, 'utf8');
+    if (!/^integrity:.*$/m.test(text)) throw new Error(`Component definition has no integrity line: ${id}`);
+    const entries = item.members.map((member: any) => JSON.stringify(`${member.path}=${member.actual}`));
+    let next = text.replace(/^integrity:.*$/m, `integrity: [${entries.join(',')}]`);
+    if (version) {
+      if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version)) throw new Error(`Component version is invalid: ${version}`);
+      if (/^version:.*$/m.test(next)) next = next.replace(/^version:.*$/m, `version: "${version}"`);
+    }
+    if (next !== text) fs.writeFileSync(file, next);
+    return componentListOrCheck({ targetRoot, scope: input.scope, id, checkOnlyOne: true });
+  }
+
   function installWorkspaceComponent(targetRoot: any, id: any): any  {
     const registry = readComponentsManifestForWrite(targetRoot);
     const index = registry.components.findIndex((entry: any) => entry.id === id);
@@ -896,6 +921,7 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
     packageComponentsStatus,
     syncPackageComponents,
     componentListOrCheck,
+    componentRecord,
     managedRuntimeSkillOrphans,
     buildRuntimeOrphanRemovalPlan,
     componentInstall,

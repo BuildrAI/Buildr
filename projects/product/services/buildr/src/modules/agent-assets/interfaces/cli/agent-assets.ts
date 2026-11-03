@@ -115,6 +115,22 @@ function runComponentListOrCheck(application: any, args: string[], checkOnlyOne:
   return result;
 }
 
+function runComponentRecord(application: any, args: string[]) {
+  assertNoUnknownOptions(args, new Set(['--target', '--json', '--version']), new Set(['--json']));
+  const [id] = positionalArgs(args);
+  if (!id) throw new Error('Missing Component id.');
+  const targetRoot = path.resolve(optionValue(args, '--target', process.cwd()));
+  const result = application.componentRecord({ targetRoot, id, version: optionValue(args, '--version', null) });
+  if (hasFlag(args, '--json')) console.log(JSON.stringify(withJsonSchema(PUBLIC_JSON_SCHEMAS.componentCheck, { ...result, ownership: undefined }), null, 2));
+  else {
+    console.log(`已记录 Component ${id} 的成员摘要：${targetRoot}`);
+    for (const item of result.components) console.log(`[${item.status}] ${item.id}`);
+    for (const finding of result.findings) console.log(`[${finding.status}] ${finding.code} ${finding.member || finding.message || ''}`);
+  }
+  process.exitCode = result.ok ? 0 : 1;
+  return result;
+}
+
 function parseComponentMutation(args: string[], operation: 'install' | 'uninstall') {
   const allowed = new Set(['--target', '--agent', '--scope', ...(operation === 'uninstall' ? ['--reason'] : [])]);
   assertNoUnknownOptions(args, allowed);
@@ -340,6 +356,7 @@ export function createAgentAssetsCliContributions(): any  {
     ...[
       ['component list', '列出 workspace Components。当前不支持 Project 或 Service scope。', 'Usage: buildr component list [--target <dir>] [--json]', (runtime: any, context: any) => runComponentListOrCheck(runtime, context.argv.slice(4), false)],
       ['component check', '检查 Component definition、成员 integrity 和唯一所有权。', 'Usage: buildr component check [<id>] [--target <dir>] [--json]', (runtime: any, context: any) => runComponentListOrCheck(runtime, context.argv.slice(4), true)],
+      ['component record', '重算并记录 workspace Component 的成员 integrity 摘要。', 'Usage: buildr component record <id> [--version <semver>] [--target <dir>] [--json]', (runtime: any, context: any) => runComponentRecord(runtime, context.argv.slice(4))],
       ['component install', '安装 workspace Component，reconcile 指定 Agent runtime，并运行 doctor。', 'Usage: buildr component install <id> --agent <agent> [--target <dir>]', (runtime: any, context: any) => runComponentMutation(runtime, context.argv.slice(4), 'install')],
       ['component uninstall', '卸载 workspace Component 及其受管源资产；不会卸载外部 CLI，也不会删除 Project 内容。', 'Usage: buildr component uninstall <id> --agent <agent> [--target <dir>] [--reason <text>]', (runtime: any, context: any) => runComponentMutation(runtime, context.argv.slice(4), 'uninstall')],
     ].map(([key, summary, usage, run]: any) => route({ key, summary, usage, match: ({ domain, action }: any) => domain === 'component' && action === key.split(' ')[1], run })),

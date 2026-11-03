@@ -169,7 +169,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
       cli: [
         'package check', 'package build', 'runtime list',
         'commands check', 'commands add', 'commands remove',
-        'component list', 'component check', 'component install', 'component uninstall',
+        'component list', 'component check', 'component record', 'component install', 'component uninstall',
         'builtin list', 'builtin uninstall', 'builtin restore',
         'render', 'sync',
         'skills add', 'skills remove', 'skills bind', 'skills unbind',
@@ -358,7 +358,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'assets', 'init', 'mutation recover', 'project create', 'service create',
     'package check', 'package build', 'runtime list',
     'commands check', 'commands add', 'commands remove',
-    'component list', 'component check', 'component install', 'component uninstall',
+    'component list', 'component check', 'component record', 'component install', 'component uninstall',
     'builtin list', 'builtin uninstall', 'builtin restore',
     'render', 'sync',
     'skills add', 'skills remove', 'skills bind', 'skills unbind',
