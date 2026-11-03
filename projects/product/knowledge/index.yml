@@ -371,6 +371,7 @@ artifacts:
       - agent-service-preparation-source
       - agent-service-programs-source
       - agent-service-conversations-source
+      - agent-service-question-wait-source
       - agent-service-handoff-source
       - agent-service-handoff-storage-source
       - agent-service-handoff-ui-source
@@ -1957,6 +1958,11 @@ sources:
     kind: code
     path: services/buildr-agent/src/application/conversation-application.ts
     summary: 创建与预览、受理去重、参与者增量接续、原生历史归并及未知不重发。
+  - id: agent-service-question-wait-source
+    title: 问题等待的原生释放与服务兜底
+    kind: code
+    path: services/buildr-agent/src/application/question-wait-release.ts
+    summary: 适配器原生能力优先，无活动工具和后台工作时才释放纯问题等待；不补造回答或终止独立工作。
   - id: agent-service-handoff-source
     title: 本地轮次交接与接收预算
     kind: code

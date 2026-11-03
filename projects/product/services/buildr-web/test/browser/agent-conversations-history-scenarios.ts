@@ -7,7 +7,7 @@ type ConversationScrollSample={at:number;top:number;height:number;viewport:numbe
 
 /** history 场景使用独立准备的对话现场。 */
 export async function runHistoryScenarios(fixture:AgentConversationFixture){
-  const {capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,supplementaryInputs,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
+  const {capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
 await step('Buildr 参与两个入口暂时隐藏且不请求参与数据',async()=>{
   const saved=structuredClone(fixture.conversation),at=new Date().toISOString();
   let reads=0;
@@ -651,17 +651,43 @@ await step('连续工具默认汇总折叠，明确展开在追加时保持，�
       await capture(page,'conversation-live-process-flat.png');await handle?.dispose();fixture.conversation=previous;await page.reload();await input().waitFor();
     });
 
-await step('原轮结束时已提交的补充接续新轮，清理草稿并说明真实投递结果',async()=>{
-  const saved=structuredClone(fixture.conversation),delivery=fixture.supplementaryDelivery;
+await step('有待回答问题时输入新指令始终发送新轮，卡片不被当作回答',async()=>{
+  const saved=structuredClone(fixture.conversation),at=new Date().toISOString(),beforeReplies=fixture.replies,beforeSupplements=fixture.supplementaryCalls;
+  const pattern='**/agent-conversations/*/send';let received:any;
+  const admit=async(route:any)=>{
+    received=route.request().postDataJSON();const previous=fixture.conversation.run;
+    update({requests:[],retainedRuns:[{...previous,supersededBy:'new-input-turn'}],run:run('running','codex',{id:'new-input-turn',model:'fixture-model'}),entries:[...fixture.conversation.entries,{id:'new-input-entry',sequence:2,runId:'new-input-turn',kind:'message',role:'user',text:received.text,status:'accepted',createdAt:at}]});
+    await route.fulfill({json:{conversation:fixture.conversation,run:fixture.conversation.run}});
+  };
   try{
-    const at=new Date().toISOString();
-    update({participants:[{id:'participant-codex',connectionId:'codex',provider:'codex',label:'Codex',model:'fixture-model',contextId:'native',deliveredThrough:0}],entries:[{id:'admission-original',sequence:1,kind:'message',role:'user',text:'原要求',runId:'run-fixture',createdAt:at}],run:run('running','codex',{model:'fixture-model',reasoningEffort:'high',permissionMode:'full-access'}),requests:[]});
-    fixture.supplementaryDelivery='continued';await page.reload();await input().waitFor();const calls=fixture.supplementaryCalls;
-    await input().fill('结束边界提交的补充');await panel().getByRole('button',{name:'发送对话',exact:true}).click();
-    await panel().getByText('原轮已结束，这条要求已接续到新一轮。',{exact:true}).first().waitFor();
-    await panel().locator('.ac-turn[data-run-id^="continued-"] .ac-turn-prompt').filter({hasText:'结束边界提交的补充'}).waitFor();
-    assert.equal(await input().inputValue(),'');assert.equal(fixture.supplementaryCalls,calls+1);await capture(page,'supplement-continued.png');
-  }finally{fixture.conversation=saved;fixture.supplementaryDelivery=delivery;await page.reload();await input().waitFor();}
+    update({participants:[{id:'participant-codex',connectionId:'codex',provider:'codex',label:'Codex',model:'fixture-model',contextId:'native',deliveredThrough:0}],entries:[{id:'old-input-entry',sequence:1,runId:'run-fixture',kind:'message',role:'user',text:'原要求',createdAt:at}],run:run('running','codex',{model:'fixture-model',reasoningEffort:'high',permissionMode:'full-access'}),requests:[{id:'question-for-new-input',runId:'run-fixture',participantId:'participant-codex',generation:'generation-fixture',kind:'question',blocking:false,title:'是否允许重启？',questions:[{id:'restart',label:'是否允许重启？',options:[{id:'yes',label:'允许'},{id:'no',label:'不允许'}]}]}]});
+    await page.route(pattern,admit);await page.reload();await input().waitFor();
+    await input().fill('先讨论配置文件，不回答重启问题');await panel().getByRole('button',{name:'发送对话',exact:true}).click();
+    await panel().locator('.ac-turn[data-run-id="new-input-turn"] .ac-turn-prompt').filter({hasText:'先讨论配置文件'}).waitFor();
+    assert.equal(received.text,'先讨论配置文件，不回答重启问题');assert.equal(await input().inputValue(),'');
+    assert.equal(fixture.replies,beforeReplies);assert.equal(fixture.supplementaryCalls,beforeSupplements);assert.equal(fixture.conversation.requests.length,0);
+    await capture(page,'question-new-input-turn.png');
+  }finally{await page.unroute(pattern,admit);fixture.conversation=saved;await page.reload();await input().waitFor();}
+});
+await step('新轮尚未原生受理或启动失败时旧问题卡片保持可操作',async()=>{
+  const saved=structuredClone(fixture.conversation),at=new Date().toISOString(),beforeReplies=fixture.replies;
+  const request={id:'preserved-old-question',runId:'run-fixture',participantId:'participant-codex',generation:'generation-fixture',kind:'question',title:'是否重启？',questions:[{id:'restart',label:'是否重启？',options:[{id:'yes',label:'允许'}]}]};
+  const pattern='**/agent-conversations/*/send';
+  const submit=async(route:any)=>{
+    const body=route.request().postDataJSON(),old=fixture.conversation.run;
+    update({run:run('starting','codex',{id:'not-native-accepted',accepted:false,model:'fixture-model'}),retainedRuns:[old],requests:[request],entries:[...fixture.conversation.entries,{id:'not-accepted-input',sequence:2,runId:'not-native-accepted',kind:'message',role:'user',text:body.text,createdAt:at,status:'sending'}]});
+    await route.fulfill({json:{conversation:fixture.conversation,run:fixture.conversation.run}});
+  };
+  try{
+    update({participants:[{id:'participant-codex',connectionId:'codex',provider:'codex',label:'Codex',model:'fixture-model',contextId:'native',deliveredThrough:0}],entries:[{id:'preserved-old-input',sequence:1,runId:'run-fixture',kind:'message',role:'user',text:'原目标',createdAt:at}],run:run('waiting-question','codex',{model:'fixture-model',permissionMode:'full-access'}),requests:[request],pendingSend:undefined});
+    await page.route(pattern,submit);await page.reload();await input().waitFor();await input().fill('先讨论新要求');await panel().getByRole('button',{name:'发送对话',exact:true}).click();
+    await panel().locator('.ac-turn[data-run-id="not-native-accepted"]').waitFor();
+    const card=panel().locator('[data-agent-request="'+request.id+'"]');await card.waitFor();
+    update({run:{...fixture.conversation.run,status:'failed',diagnostic:'新轮未被原生受理'}});await page.reload();await input().waitFor();
+    await card.getByRole('radio',{name:'允许',exact:true}).check();assert.equal(await card.getByRole('button',{name:'回答并继续',exact:true}).isEnabled(),true);
+    assert.equal(fixture.replies,beforeReplies);assert.equal(fixture.conversation.run.accepted,false);assert.equal(fixture.conversation.requests[0].id,request.id);
+    await capture(page,'new-input-failure-preserves-old-question.png');
+  }finally{await page.unroute(pattern,submit);fixture.conversation=saved;await page.reload();await input().waitFor();}
 });
 await step('执行中图文普通发送、固定上下文和长输入，失败未知与独立停止',async()=>{
       const previous=structuredClone(fixture.conversation),previousUploads=fixture.attachmentUploads,previousSupplementCalls=fixture.supplementaryCalls,startedAt=new Date(Date.now()-125000).toISOString();
@@ -671,16 +697,13 @@ await step('执行中图文普通发送、固定上下文和长输入，失败�
       assert.equal(await panel().getByRole('button',{name:'发送对话',exact:true}).isDisabled(),true);assert.equal(await panel().locator('.ac-compose-wrap').getByRole('button',{name:'停止本次执行',exact:true}).count(),1);assert.equal(await panel().locator('.ac-thread-actions').getByRole('button',{name:'停止本次执行',exact:true}).count(),0);
       const stream=panel().locator('.ac-stream');await stream.evaluate((node:HTMLElement)=>node.scrollTop=300);const stickyHead=panel().locator('.ac-turn.is-executing>.ac-turn-head');const sticky=await stickyHead.evaluate((node:HTMLElement)=>({top:node.getBoundingClientRect().top,stream:node.closest('.ac-stream')!.getBoundingClientRect().top,position:getComputedStyle(node).position}));assert.equal(sticky.position,'sticky');assert.ok(Math.abs(sticky.top-sticky.stream)<2,JSON.stringify(sticky));assert.equal(await panel().locator('.ac-turn.is-executing>.ac-turn-head>.ac-turn-context').evaluate((node:HTMLElement)=>getComputedStyle(node).position),'static','气泡自身不吸顶，随吸顶头一起固定');
       await panel().getByRole('button',{name:'展开内容',exact:true}).first().click();assert.equal(await panel().locator('.ac-turn-prompt-content').first().evaluate((node:HTMLElement)=>getComputedStyle(node).overflowY),'auto');await panel().getByRole('button',{name:'收起内容',exact:true}).click();assert.match(await panel().locator('.ac-turn-identity').first().innerText(),/Codex · Fixture model/);assert.ok(await panel().locator('.ac-turn-identity .ac-execution-indicator').first().innerText()!=='0:00');
-      const png={name:'live.png',mimeType:'image/png',buffer:Buffer.from('89504e470d0a1a0a','hex')};await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles(png);await panel().getByRole('button',{name:'移除图片 live.png',exact:true}).waitFor();await input().fill('执行中补充图文');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().locator('.ac-turn-content .ac-message.is-user').filter({hasText:'执行中补充图文'}).waitFor();
-      assert.equal(await panel().locator('.ac-turn').count(),1,'同轮补充不能新建展示轮次');assert.equal(await panel().locator('.ac-turn-prompt').getAttribute('data-entry-id'),'long-user');
+      // Legacy supplementary entries remain readable; new input no longer creates them.
+      update({entries:[...fixture.conversation.entries,{...entry('legacy-supplement',3,'user','执行中补充图文'),attachments:[]}]});
+      await page.reload();await input().waitFor();
+      await panel().getByRole('button',{name:'展开处理过程',exact:true}).click();
       const supplement=panel().locator('.ac-turn-content .ac-message.is-user').filter({hasText:'执行中补充图文'});
-      await panel().getByRole('button',{name:'收起处理过程',exact:true}).click();await supplement.waitFor({state:'hidden'});assert.equal(await panel().locator('.ac-process-narration').count(),0);
-      await panel().getByRole('button',{name:'展开处理过程',exact:true}).click();await supplement.waitFor();await supplement.scrollIntoViewIfNeeded();await supplement.locator('img').waitFor();assert.equal(await supplement.locator('img').count(),1);
-      await page.reload();await supplement.waitFor();assert.equal(await panel().locator('.ac-turn').count(),1);
-assert.equal(await input().inputValue(),'');assert.deepEqual(supplementaryInputs.at(-1).attachmentIds,['image-fixture-'+(previousUploads+1)]);
-      fixture.supplementaryDelivery='rejected';await input().fill('保留失败草稿');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().getByText('这条消息未发送成功，文字与图片已保留。',{exact:true}).waitFor();assert.equal(await input().inputValue(),'保留失败草稿');
-      fixture.supplementaryDelivery='unknown';await input().fill('接收待确认');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().getByText('消息已保存，是否送达仍待确认，请勿重复发送。',{exact:true}).waitFor();assert.equal(await input().inputValue(),'');
-      fixture.supplementaryDelivery='accepted';fixture.holdSupplement=true;const waiting=new Promise<void>(resolve=>{fixture.supplementStarted=resolve;});await input().fill('发送等待时可以停止');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await waiting;await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();const admitted=page.waitForResponse((r:any)=>r.url().endsWith('/supplement'));fixture.releaseSupplement!();await admitted;assert.equal(fixture.supplementaryCalls,previousSupplementCalls+4);await panel().getByRole('button',{name:'发送对话',exact:true}).waitFor();
+      await supplement.waitFor();assert.equal(await panel().locator('.ac-turn').count(),1,'历史同轮补充仍在原轮展示');
+      assert.equal(fixture.supplementaryCalls,previousSupplementCalls);
       fixture.conversation=previous;fixture.attachmentUploads=previousUploads;await page.reload();await input().fill('下一轮仍是草稿');
     });
 

@@ -119,6 +119,9 @@ export interface StoredConversation {
     /** Stable independently admitted request after a proven non-delivery to an ended round. */
     continuedBy?: string;
     supersededStopRequested?: boolean;
+    /** Service-owned handoff; no provider identifiers cross model prompts. */
+    questionWaits?: Array<{ runId: string; requests: Array<{ id: string; nativeId: string }>; reuse?: boolean }>;
+    questionReleaseRequested?: boolean;
     automaticRetry?: { rootRunId: string; count: number };
     continuationOf?: string;
   }>;

@@ -9,6 +9,8 @@ export type ContextRef = { id: string; data?: Record<string, unknown> };
 export type ExecutionRef = { id: string; data?: Record<string, unknown> };
 
 export interface AgentCapabilities {
+  /** Adapter can safely end a question-only wait and reuse its native context. */
+  endQuestionWait?: boolean;
   /** Supported Buildr contract, not a claim about model compliance. */
   interaction?: { policy: 'buildr-interaction/v1'; nonBlockingQuestions: boolean };
   /** Admission into an already active execution; absence means unavailable. */
@@ -205,6 +207,9 @@ export interface AgentRuntime {
   readHistory(input: { contextRef: ContextRef; cwd: string }): Promise<ExecutorItem[]>;
   /** Resolves at terminal observation. Control requests must stay independent. */
   send(input: ExecutorSendInput): Promise<void>;
+  /** Must reject/refuse when tools, approvals or background work are active.
+   * Does not imply permission, success, or cancellation of independent work. */
+  endQuestionWait?(input: { contextRef: ContextRef; executionRef: ExecutionRef; requestIds: string[] }): Promise<ExecutorObservation | undefined>;
   supplement?(input: ExecutorSupplementInput): Promise<ExecutorInputReceipt>;
   observe(input: { contextRef: ContextRef; executionRef?: ExecutionRef; knownItems?: readonly ExecutorItem[] }): Promise<ExecutorObservation>;
   /** Exact backend control-resource proof. true also proves native execution ended; an object can preserve unknown independent commands. Neither asserts successful results. */
@@ -356,6 +361,8 @@ export interface ConversationEntry {
   createdAt: string;
 }
 export interface RunView {
+  /** Questions are no longer actionable; native controls and tools may still be retained. */
+  questionsEndedBy?: string;
   /** Replaced by a confirmed new execution; cleanup is system-owned. */
   supersededBy?:string;
   /** User cancellation is independent from delivery and resource proof. */
@@ -543,7 +550,7 @@ export interface AgentServiceOptions {
   backendChange?: BackendRuntimeChange;
   /** Process-owned local control instructions; never includes authentication secrets. */
   conversationControl?: (scope:string,id:string)=>string;
-  controlSupersededRun?: (scope:string,id:string,input:{expectedRevision:string;runId:string;participantId:string;generation:string},action:'stop'|'observe')=>Promise<unknown>;
+  controlSupersededRun?: (scope:string,id:string,input:{expectedRevision:string;runId:string;participantId:string;generation:string},action:'stop'|'observe'|'release-question-wait')=>Promise<unknown>;
   /** Other accurately discovered process generations must not be recovered. */
   generationAlive?: (generation: string) => boolean;
   /** Exact prior owner completed authenticated shutdown; death alone is insufficient. */

@@ -2718,6 +2718,9 @@ for(const previouslyStopped of [false,true])test('startup reconciles legacy acce
     record.view.retainedRuns![0]=structuredClone(before.run!);
     if(previouslyStopped)record.view.retainedRuns![0]!.stopRequested=true;
     delete record.attempts.find(attempt=>attempt.runId===before.run!.id)!.supersededStopRequested;
+    delete record.attempts.find(attempt=>attempt.runId===next.run!.id)!.questionWaits;
+    delete record.view.retainedRuns!.find(run=>run.id===before.run!.id)!.questionsEndedBy;
+    delete record.attempts.find(attempt=>attempt.runId===before.run!.id)!.questionReleaseRequested;
     record.view.requests=structuredClone(before.requests);
     record.requests[before.requests[0]!.id]={nativeId:'question-one',executionRef:record.attempts.find(attempt=>attempt.runId===before.run!.id)!.executionRef!};
     repository.saveConversation(record,record.view.revision);controls.length=0;
@@ -2744,8 +2747,8 @@ for(const replacement of ['local','other'])test('retained tools allow a new inst
     const next=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.id!==before.run!.id&&['completed','tools-active'].includes(view.run?.status??''));
     assert.equal(next.retainedRuns?.[0]?.id,before.run!.id);assert.notEqual(next.run!.participantId,before.run!.participantId);
     assert.equal(old.contexts.size,replacement==='local'?2:1,'new work cannot overwrite an unfinished native context');
-    assert.equal(next.retainedRuns?.[0]?.status,replacement==='local'?'tools-active':'stopped');
-    assert.equal(Boolean(next.retainedRuns?.[0]?.supersededBy),replacement!=='local');
+    assert.equal(next.retainedRuns?.[0]?.status,'tools-active');
+    assert.equal(Boolean(next.retainedRuns?.[0]?.supersededBy),false);
     await assert.rejects(f.service.conversations.stop('workspace-one',chat.id,{expectedRevision:before.revision,runId:before.run!.id,participantId:before.run!.participantId,generation:before.run!.generation}),{code:'agent_revision_conflict'});
     const stopped=await f.service.conversations.stop('workspace-one',chat.id,{expectedRevision:next.revision,runId:before.run!.id,participantId:before.run!.participantId,generation:before.run!.generation,toolId:'own-tool'});
     assert.equal(stopped.retainedRuns?.[0]?.status,'stopped');assert.equal(stopped.run!.id,next.run!.id);assert.equal(stopped.run!.status,next.run!.status);
@@ -2754,24 +2757,22 @@ for(const replacement of ['local','other'])test('retained tools allow a new inst
   }finally{await f.close();}
 });
 
-for(const waiting of ['question','approval'] as const)test('new same-selection goal retains an unanswered '+waiting+' without replying or stopping',async()=>{
+for(const waiting of ['question','approval'] as const)test('new same-selection goal cleans only ordinary questions and preserves approvals: '+waiting,async()=>{
   const old=fake('local',{question:waiting==='question',request:waiting==='approval'}),f=fixture([old.executor]);
   try{
     await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','old goal');
     const before=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.requests.length===1);
     send(f.service,chat.id,'local','new goal is not an answer');
-    const next=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.id!==before.run!.id&&view.requests.length===2);
-    assert.equal(old.replies.length,0);assert.equal(old.contexts.size,2);
-    assert.equal(next.retainedRuns?.[0]?.status,before.run!.status);
-    assert.ok(next.requests.some(request=>request.id===before.requests[0]!.id));
-    assert.match(old.sends[1]!.text,/unansweredRequests/);
-    old.sends[1]!.onEvent({type:'observation',observation:{status:'running',tools:[],executionRef:[...old.contexts.values()][1]!.observation.executionRef,requests:[]}});
-    const snapshotted=f.service.conversations.read('workspace-one',chat.id);
-    assert.ok(snapshotted.requests.some(request=>request.id===before.requests[0]!.id),'a current snapshot must not retire an older run request');
-    assert.equal(snapshotted.retainedRuns?.[0]?.status,before.run!.status);
-    const resolved=await f.service.conversations.reply('workspace-one',chat.id,before.requests[0]!.id,{expectedRevision:snapshotted.revision,runId:before.run!.id,participantId:before.run!.participantId,generation:before.run!.generation,answer:waiting==='approval'?'allow-once':{scope:'yes'}});
-    assert.equal(resolved.run!.id,next.run!.id);assert.equal(old.replies.length,1);
-    await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.retainedRuns?.[0]?.status==='completed');
+    const next=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.id!==before.run!.id&&view.run?.accepted===true&&view.requests.length===(waiting==='question'?1:2));
+    assert.equal(old.replies.length,0);assert.equal(old.contexts.size,2);assert.equal(next.retainedRuns?.[0]?.supersededBy,undefined);
+    assert.equal(next.requests.some(request=>request.id===before.requests[0]!.id),waiting==='approval');
+    assert.notEqual(old.sends[1]!.contextRef.id,old.sends[0]!.contextRef.id);
+    if(waiting==='question'){
+      old.sends[0]!.onEvent({type:'request',request:{id:'late-old-question',kind:'question',title:'late'}});
+      assert.equal(f.service.conversations.read('workspace-one',chat.id).requests.length,1);
+      await assert.rejects(f.service.conversations.reply('workspace-one',chat.id,before.requests[0]!.id,{expectedRevision:f.service.conversations.read('workspace-one',chat.id).revision,runId:before.run!.id,participantId:before.run!.participantId,generation:before.run!.generation,answer:{scope:'yes'}}));
+      assert.equal(old.replies.length,0);
+    }
   }finally{await f.close();}
 });
 

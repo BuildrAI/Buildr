@@ -35,8 +35,8 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
   const retainedOwners=new Map(readProcessInstances(options.dataRoot).map(record=>[record.identity.generation,record.identity]));
   const service = createAgentService({ ...options.serviceOptions, backendChange, dataRoot: options.dataRoot, legacySourceId: options.legacySourceId, get autoContinueInterrupted() { return options.autoContinueInterrupted; }, host: hosts, controlSupersededRun:async(scope,id,control,action)=>{
     const target=await recipient(scope,id,control.generation);
-    if(target)return forward(target,'/operations',{contract:AGENT_EXECUTION_CONTRACTS.operations,sourceId:executionScopeRef(scope,options.legacySourceId).sourceId,operation:action==='stop'?'conversations.stop':'conversations.observeRun',args:[scope,id,control]});
-    return action==='stop'?service.conversations.stop(scope,id,control):service.conversations.observeRun(scope,id,control);
+    if(target)return forward(target,'/operations',{contract:AGENT_EXECUTION_CONTRACTS.operations,sourceId:executionScopeRef(scope,options.legacySourceId).sourceId,operation:action==='stop'?'conversations.stop':action==='release-question-wait'?'conversations.releaseQuestionWait':'conversations.observeRun',args:[scope,id,control]});
+    return action==='stop'?service.conversations.stop(scope,id,control):action==='release-question-wait'?service.conversations.releaseQuestionWait(scope,id,control):service.conversations.observeRun(scope,id,control);
   }, conversationControl:(scope,id)=>conversationControlInstruction({dataRoot:options.dataRoot,profileId:options.profileId,sourceId:executionScopeRef(scope,options.legacySourceId).sourceId,scope,conversationId:id},options.runtime.node), generationAlive: generation => generationAlive(options.dataRoot, generation), generationReleased:generation=>{
     const prior=readProcessInstances(options.dataRoot).find(record=>record.identity.generation===generation);
     if(prior)retainedOwners.set(generation,prior.identity);
@@ -225,7 +225,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       const perConversation = name.startsWith('conversations.') && !/Draft/.test(name) && typeof input.args[0] === 'string' && typeof input.args[1] === 'string';
       // Metadata belongs to the current application schema, not the retained native run owner.
       if (perConversation && !['conversations.participation','conversations.update','conversations.read','conversations.warmup','conversations.readEntry','conversations.fork','conversations.createChild','conversations.listChildren','conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.queueSend','conversations.cancelPendingSend'].includes(name)) {
-        const control = ['conversations.stop','conversations.observeRun','conversations.supplement'].includes(name) ? input.args[2] : name === 'conversations.reply' ? input.args[3] : undefined;
+        const control = ['conversations.stop','conversations.observeRun','conversations.releaseQuestionWait','conversations.supplement'].includes(name) ? input.args[2] : name === 'conversations.reply' ? input.args[3] : undefined;
         controlGeneration=control?.generation;
         target = await recipient(input.args[0], input.args[1], controlGeneration);
       }

@@ -392,12 +392,12 @@ await step('统一非阻塞问题不锁住执行；普通发送可讨论且不�
         assert.equal(await input().inputValue(),'');
       }finally{fixture.conversation=saved;await page.reload();await input().waitFor();await input().fill('');}
     });
-await step('等待问题时可以回答后交接，也可以只发送新要求；预览与取消保持原问题',async()=>{
+await step('等待问题时新要求可交接；预览与取消保持原问题',async()=>{
       const saved=structuredClone(fixture.conversation),beforeSends=fixture.sends,beforeReplies=fixture.replies,beforeStops=fixture.stops,viewport=page.viewportSize();
       let activeMode='';
       try{
         await page.setViewportSize({width:1600,height:1000});
-        for(const mode of ['answer','other','instruction','continue']){
+        for(const mode of ['instruction','continue']){
           activeMode=mode;
           const request={id:'handoff-question-'+mode,conversationId:saved.id,workspaceId,participantId:'participant-codex',runId:'run-fixture',generation:'generation-fixture',kind:'question',title:'需要你的回复',questions:[{id:'decision',label:'当前成果是否符合预期？',allowOther:true,options:[{id:'later',label:'稍后确认',description:'保留验收，不影响其他工作。'},{id:'yes',label:'符合预期'}]}]};
           fixture.conversation=structuredClone(saved);update({run:run('waiting-question','codex',{model:'fixture-model',permissionMode:'full-access'}),requests:[request],pendingSend:undefined});
@@ -410,7 +410,7 @@ await step('等待问题时可以回答后交接，也可以只发送新要求�
           if(mode==='instruction'){await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles({name:'handoff.png',mimeType:'image/png',buffer:Buffer.from('89504e470d0a1a0a','hex')});await panel().getByRole('button',{name:'移除图片 handoff.png',exact:true}).waitFor();}
           await chooseModel('Fast model');await closeModelSettings();
           const card=panel().locator('[data-agent-request="'+request.id+'"]');
-          await card.getByRole('button',{name:'回答并交接',exact:true}).waitFor();assert.equal(await card.getByRole('button',{name:'回答并交接',exact:true}).isDisabled(),true);
+          await card.getByRole('button',{name:'回答并继续',exact:true}).waitFor();assert.equal(await card.getByRole('button',{name:'回答并继续',exact:true}).isDisabled(),true);
           await panel().locator('.ac-waiting-handoff').getByRole('button',{name:'交接内容',exact:true}).click();
           const drawer=panel().locator('.ac-handoff-drawer');await drawer.waitFor();assert.equal(fixture.sends,beforeSends);assert.equal(fixture.stops,beforeStops);assert.equal(fixture.replies,beforeReplies);
           if(mode==='continue')await drawer.getByRole('button',{name:'交接并继续',exact:true}).click();
@@ -419,7 +419,7 @@ await step('等待问题时可以回答后交接，也可以只发送新要求�
             if(mode==='other'){await card.getByRole('radio',{name:'其他',exact:true}).check();await card.getByRole('textbox',{name:'当前成果是否符合预期？：其他回答',exact:true}).fill('验收稍后处理，先看新问题');}
             else await card.getByRole('radio',{name:/稍后确认/}).check();
             await capture(page,'agent-waiting-handoff-'+mode+'.png');
-            if(mode==='instruction')await panel().locator('.ac-waiting-handoff').getByRole('button',{name:'交接并发送',exact:true}).click();else await card.getByRole('button',{name:'回答并交接',exact:true}).click();
+            if(mode==='instruction')await panel().locator('.ac-waiting-handoff').getByRole('button',{name:'交接并发送',exact:true}).click();else await card.getByRole('button',{name:'回答并继续',exact:true}).click();
           }
           await panel().locator('[data-pending-send-state="waiting"]').waitFor();
           const pending=fixture.conversation.pendingSend,marker=pending.draft.waitingHandoff;
@@ -433,7 +433,7 @@ await step('等待问题时可以回答后交接，也可以只发送新要求�
           if(mode==='instruction'){await page.reload();await input().waitFor();await panel().locator('[data-pending-send-state="waiting"]').waitFor();}
           await panel().getByRole('button',{name:'取消',exact:true}).click();await panel().locator('[data-pending-send-state]').waitFor({state:'hidden'});
           if(mode==='instruction'){await panel().getByRole('button',{name:'移除图片 handoff.png',exact:true}).waitFor();await chooseModel('Fast model');await closeModelSettings();}
-          assert.equal(fixture.conversation.requests.length,1);await card.getByRole('button',{name:'回答并交接',exact:true}).waitFor();
+          assert.equal(fixture.conversation.requests.length,1);await card.getByRole('button',{name:'回答并继续',exact:true}).waitFor();
           if(mode==='instruction')assert.equal(await input().inputValue(),'先处理新的交互问题');
           if(mode==='answer'||mode==='other')assert.equal(await input().inputValue(),'保留输入框的独立草稿\n\n当前成果是否符合预期？：'+(mode==='answer'?'稍后确认':'验收稍后处理，先看新问题'));
           if(mode==='instruction'){await panel().locator('.ac-image-thumbnail[title=\"handoff.png\"]').hover();await panel().getByRole('button',{name:'移除图片 handoff.png',exact:true}).click();}
@@ -445,4 +445,18 @@ await step('等待问题时可以回答后交接，也可以只发送新要求�
         await capture(page,'agent-waiting-handoff-failure-'+activeMode+'.png');throw failure;
       }finally{fixture.conversation=saved;if(viewport)await page.setViewportSize(viewport);await page.reload();await input().waitFor();await input().fill('');}
     });
+await step('切换模型后卡片回答仍继续原轮，不交接草稿',async()=>{
+  const saved=structuredClone(fixture.conversation),beforeReplies=fixture.replies,beforeSends=fixture.sends;
+  try{
+    const request={id:'reply-original-after-selection',conversationId:saved.id,workspaceId,participantId:'participant-codex',runId:'run-fixture',generation:'generation-fixture',kind:'question',title:'是否继续？',questions:[{id:'decision',label:'是否继续？',options:[{id:'yes',label:'继续'}]}]};
+    update({run:run('waiting-question','codex',{model:'fixture-model',permissionMode:'full-access'}),requests:[request],pendingSend:undefined});
+    await page.reload();await input().waitFor();await chooseAgent('Codex');await chooseModel('Fast model');await closeModelSettings();
+    await input().fill('这是尚未发送的新要求');const card=panel().locator('[data-agent-request="'+request.id+'"]');
+    await card.getByRole('radio',{name:'继续',exact:true}).check();await card.getByRole('button',{name:'回答并继续',exact:true}).click();
+    await card.waitFor({state:'hidden'});assert.equal(fixture.replies,beforeReplies+1);assert.equal(fixture.sends,beforeSends);
+    assert.equal(await input().inputValue(),'这是尚未发送的新要求');assert.equal(fixture.conversation.run.id,'run-fixture');
+    await capture(page,'card-answer-original-turn.png');
+  }finally{fixture.conversation=saved;await page.reload();await input().waitFor();await input().fill('');}
+});
+
 }

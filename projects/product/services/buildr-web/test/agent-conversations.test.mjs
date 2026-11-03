@@ -701,14 +701,14 @@ test('更新程序只提交已观察接入修订与精确发布版本，使用�
   assert.deepEqual(JSON.parse(calls[0].init.body),{expectedRevision:'r-observed',expectedVersion:'0.164.0'});
 });
 
-test('新要求不等待旧执行，只有相同选择的正常执行使用同轮补充',async()=>{
- const {canSupplementConversation}=await import('../src/features/agent-conversations/conversation-state.ts');
- const choice={connectionId:'codex',model:'model',permissionMode:'default'};
- const current={participants:[{id:'p',connectionId:'codex'}],run:{id:'r',participantId:'p',accepted:true,status:'running',model:'model',tools:[]}};
- assert.equal(canSupplementConversation(current,choice,true),true);
- for(const status of ['waiting-question','waiting-approval','unknown','tools-active','stopping','starting','completed'])assert.equal(canSupplementConversation({...current,run:{...current.run,status}},choice,true),false,status+' must use ordinary new-turn delivery, never wait for the old work');
- assert.equal(canSupplementConversation(current,choice,false),false);
- for(const change of [{connectionId:'qoder'},{model:'new'},{modelAccountId:'different'},{serviceTier:'fast'},{permissionMode:'full-access'},{reasoningEffort:'high'}])assert.equal(canSupplementConversation(current,{...choice,...change},true),false);
+test('输入框统一发送新轮，问题卡片始终回复原轮',async()=>{
+ const {readFileSync}=await import('node:fs');
+ const source=readFileSync(new URL('../src/features/agent-conversations/ConversationPanel.tsx',import.meta.url),'utf8');
+ assert.ok(source.includes('context.api.send('));
+ assert.ok(!source.includes('context.api.supplement('),'ordinary input must never steer an active turn');
+ const reply=source.slice(source.indexOf('const reply=async'),source.indexOf('const renderQuestion='));
+ assert.ok(reply.includes('context.api.reply('));
+ assert.ok(!reply.includes('prepare('),'card replies must not switch to a new turn when model selection changes');
 });
 
 test('工具完整内容读取绑定保存的对话、条目和已观察内容版本',async()=>{
@@ -757,4 +757,16 @@ test('写入完成后的列表读取不复用写入前的在途观察',async()=>
  await api.update(conversation,{title:'changed'});
  const fresh=api.list('workspace',{taskId:'task'});await new Promise(resolve=>setTimeout(resolve,5));assert.equal(reads,2);
  releases[0]({conversations:[]});await old;releases[1]({conversations:[conversation]});assert.equal((await fresh).conversations.length,1);
+});
+
+test('新轮未受理或失败时旧卡片仍可回答，问题结束标记不丢失工具控制',async()=>{
+ const {currentConversationRequests}=await import('../src/features/agent-conversations/conversation-state.ts');
+ const old={id:'old',participantId:'owner',generation:'generation',status:'waiting-question',tools:[{id:'tool',status:'running'}]};
+ const request={id:'question',kind:'question',runId:'old',participantId:'owner',generation:'generation'};
+ for(const status of ['starting','failed','unknown']){
+  const view={run:{id:'new',participantId:'new-owner',generation:'generation',status},retainedRuns:[old],requests:[request]};
+  assert.deepEqual(currentConversationRequests(view),[request]);
+  const ended={...view,retainedRuns:[{...old,questionsEndedBy:'new'}],requests:[request,{...request,id:'approval',kind:'approval'}]};
+  assert.deepEqual(currentConversationRequests(ended).map(value=>value.id),['approval']);assert.equal(ended.retainedRuns[0].tools[0].status,'running');
+ }
 });

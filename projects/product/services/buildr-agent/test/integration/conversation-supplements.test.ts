@@ -10,7 +10,7 @@ import { createAgentService, ExecutorInputRejected, type AgentExecutor, type Age
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5EsAAAAASUVORK5CYII=', 'base64');
 function gate() { let resolve!: () => void; const promise = new Promise<void>(done => { resolve = done; }); return { promise, resolve }; }
 async function wait(read: () => boolean) { for (let i = 0; i < 400; i++) { if (read()) return; await new Promise(resolve => setTimeout(resolve, 2)); } assert.fail('state did not settle'); }
-async function fixture(options: { beforeSupplement?: Promise<void>; delivery?: 'rejected' | 'unknown'; supported?: boolean; historyReceipt?: boolean; historyClientId?: string; beforeObserve?: Promise<void>; endOnReject?: boolean } = {}) {
+async function fixture(options: { beforeSupplement?: Promise<void>; delivery?: 'rejected' | 'unknown'; supported?: boolean; provider?: string; historyReceipt?: boolean; historyClientId?: string; beforeObserve?: Promise<void>; endOnReject?: boolean } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-supplement-')), ending = gate();
   const calls: ExecutorSupplementInput[] = [], items: ExecutorItem[] = []; let emit: (event: ExecutorEvent) => void = () => {};
   let observation: ExecutorObservation = { status: 'idle', tools: [] };
@@ -33,11 +33,11 @@ async function fixture(options: { beforeSupplement?: Promise<void>; delivery?: '
     },
     async observe() { await options.beforeObserve; return structuredClone(observation); }, async reply() {}, async stop() { observation = { status: 'stopped', tools: [] }; ending.resolve(); return observation; }, async close() { ending.resolve(); },
   };
-  const executor: AgentExecutor = { descriptor: { id: 'fixture', label: 'Fixture', capabilities }, async open() { return runtime; } };
+  const executor: AgentExecutor = { descriptor: { id: options.provider ?? 'fixture', label: 'Fixture', capabilities }, async open() { return runtime; } };
   const service = createAgentService({ dataRoot: path.join(root, 'private'), executors: [executor], modelProviders: [], resolveWorkspace() { return { rootPath: root }; } });
-  await service.connections.connect('fixture', { expectedRevision: service.connections.read('fixture').revision });
+  await service.connections.connect(options.provider ?? 'fixture', { expectedRevision: service.connections.read(options.provider ?? 'fixture').revision });
   let view = await service.conversations.create('workspace', {});
-  const draft = { expectedRevision: view.revision, connectionId: 'fixture', text: 'initial' };
+  const draft = { expectedRevision: view.revision, connectionId: options.provider ?? 'fixture', text: 'initial' };
   const preview = service.conversations.prepareSend('workspace', view.id, draft);
   service.conversations.send('workspace', view.id, { ...draft, previewToken: preview.token, clientRequestId: randomUUID() });
   await wait(() => service.conversations.read('workspace', view.id).run?.status === 'running');
@@ -194,6 +194,36 @@ test('a multi-megabyte durable history receives the latest burst text and termin
     t.diagnostic(JSON.stringify({historyBytes:2400000,nativeEvents:10002,consumerEvents:deliveries,burstAndTerminalMs:Math.round(performance.now()-started)}));
     assert.ok(deliveries<=4);assert.equal(f.read().run!.status,'completed');assert.equal(f.read().entries.at(-1)!.text,'latest 4999');
   }finally{await f.close();}
+});
+for (const provider of ['codex','dsh','qoder']) test(provider + ': question wait is replaced by an isolated new turn without a declared native primitive', async () => {
+  const f = await fixture({ provider }); try {
+    f.emit({ type: 'request', request: { id: 'native-question', kind: 'question', title: 'Restart?', blocking: false } });
+    const before = f.read();
+    assert.equal(before.run!.status, 'running');
+    await assert.rejects(f.service.conversations.supplement('workspace', before.id, f.input('Discuss configuration instead')), /待回答问题/);
+    assert.equal(f.calls.length, 0);
+    assert.deepEqual(f.read().requests, before.requests);
+    assert.equal(f.read().entries.length, before.entries.length);
+    const draft = { expectedRevision: f.read().revision, connectionId: provider, text: 'Discuss configuration instead' };
+    const preview = f.service.conversations.prepareSend('workspace', before.id, draft);
+    f.service.conversations.send('workspace', before.id, { ...draft, previewToken: preview.token, clientRequestId: randomUUID() });
+    await wait(() => f.read().run!.id !== before.run!.id && f.read().run!.accepted === true);
+    assert.notEqual(f.read().run!.participantId, before.run!.participantId, 'unsupported native reuse is isolated from submission');
+    assert.equal(f.read().requests.length, 0, 'new input ends the original question wait without replying');
+    assert.equal(f.read().retainedRuns?.find(run => run.id === before.run!.id)?.supersededBy, undefined);
+    assert.ok(f.read().retainedRuns?.some(run => run.id === before.run!.id));
+  } finally { await f.close(); }
+});
+test('a question arriving during native observation prevents supplementary dispatch', async () => {
+  const before = gate(), f = await fixture({ beforeObserve: before.promise }); try {
+    const result = f.service.conversations.supplement('workspace', f.read().id, f.input('new requirement'));
+    await wait(() => f.read().entries.some(entry => entry.text === 'new requirement'));
+    f.emit({ type: 'request', request: { id: 'late-question', kind: 'question', title: 'Restart?', blocking: false } });
+    before.resolve();
+    assert.equal((await result).delivery, 'rejected');
+    assert.equal(f.calls.length, 0);
+    assert.equal(f.read().requests.length, 1);
+  } finally { before.resolve(); await f.close(); }
 });
 test('supplementing while approval is pending does not answer or replace the request', async () => {
   const f = await fixture(); try {

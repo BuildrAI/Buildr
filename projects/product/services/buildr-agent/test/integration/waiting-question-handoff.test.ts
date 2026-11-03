@@ -22,7 +22,7 @@ function executor(id:string, question=false) {
     resumeContext:async()=>{},readHistory:async()=>[],
     async send(input){
       inputs.push(input);const context=get(input.contextRef),executionRef={id:randomUUID()};
-      context.observation={status:question?'waiting':'running',tools:[],executionRef};input.onEvent({type:'accepted',executionRef});
+      context.observation={status:question?'waiting':'running',tools:[],executionRef,...(question?{requests:[{id:'native-question',kind:'question' as const,title:'是否验收？'}]}:{})};input.onEvent({type:'accepted',executionRef});
       if(question){
         input.onEvent({type:'request',request:{id:'native-question',kind:'question',title:'是否验收？',questions:[{id:'result',label:'结果如何？',allowOther:true,options:[{id:'later',label:'稍后确认'},{id:'ok',label:'符合预期'}]}]}});
         await new Promise<void>(resolve=>{context.finish=resolve;});
@@ -31,7 +31,7 @@ function executor(id:string, question=false) {
     },
     observe:async({contextRef})=>structuredClone(get(contextRef).observation),
     canRelease:async({contextRef})=>['stopped','idle'].includes(get(contextRef).observation.status),
-    async stop({contextRef}){stops++;if(stopError)throw stopError;const context=get(contextRef);context.observation={...context.observation,status:unknownStop?'unknown':'stopped',tools:[]};if(!unknownStop)context.finish?.();return context.observation;},
+    async stop({contextRef}){stops++;if(stopError)throw stopError;const context=get(contextRef);context.observation={...context.observation,status:unknownStop?'unknown':'stopped',tools:[],requests:unknownStop?context.observation.requests:[]};if(!unknownStop)context.finish?.();return context.observation;},
     async reply({contextRef,answer}){replies.push(answer);const context=get(contextRef);context.observation={...context.observation,status:'idle'};context.finish?.();},
     close:async()=>{}
   };}};
@@ -53,7 +53,7 @@ async function fixture(){
   return{root,old,next,service,repository,chat,intent,queued,pump,async close(){old.finish();await service.close();fs.rmSync(root,{recursive:true,force:true});}};
 }
 
-test('explicit discussion retains the exact wait and uses a separate context without answering', async () => {
+test('explicit discussion starts a new turn and ends the old wait without answering', async () => {
   const f = await fixture();
   try {
     const draft: SendDraft = { expectedRevision: f.chat.revision, connectionId: 'old', model: 'a', text: '为什么推荐这个方案？先解释，不要验收。', waitingHandoff: { ...f.intent, intent: 'discussion' } };
@@ -67,13 +67,13 @@ test('explicit discussion retains the exact wait and uses a separate context wit
     f.service.conversations.queueSend('scope', f.chat.id, { ...draft, clientRequestId: requestId });
     const pump = f.pump();
     await until(async () => { await pump.pump(); return f.old.inputs.length; }, value => value === 2);
-    assert.equal(f.old.stops, 0);
+    assert.equal(f.old.stops, 1);
     assert.equal(f.next.inputs.length, 0);
     assert.deepEqual(f.old.replies, []);
     assert.notEqual(f.old.inputs[0].contextRef.id, f.old.inputs[1].contextRef.id);
     const current = f.service.conversations.read('scope', f.chat.id);
     assert.equal(current.retainedRuns?.[0]?.id, f.intent.runId);
-    assert.ok(current.requests.some(request => request.id === f.intent.requestIds[0]));
+    assert.ok(!current.requests.some(request => request.id === f.intent.requestIds[0]));
     assert.match(f.old.inputs[1].text, /先解释/);
     assert.match(f.old.inputs[1].text, /用户要求先讨论/);
     assert.match(f.old.inputs[1].text, /未回答/);
@@ -82,7 +82,7 @@ test('explicit discussion retains the exact wait and uses a separate context wit
   } finally { await f.close(); }
 });
 
-test('discussion does not call an unreliable old stop or block dispatch', async () => {
+test('discussion isolates a new native context when the exact old stop is unknown', async () => {
   const f = await fixture();
   try {
     f.old.setUnknown(true);
@@ -91,11 +91,12 @@ test('discussion does not call an unreliable old stop or block dispatch', async 
     f.service.conversations.queueSend('scope', f.chat.id, { ...draft, clientRequestId: requestId });
     const pump = f.pump();
     await until(async () => { await pump.pump(); return f.old.inputs.length; }, count => count === 2);
-    assert.equal(f.old.stops, 0);
+    assert.equal(f.old.stops, 1);
+    assert.notEqual(f.old.inputs[0].contextRef.id, f.old.inputs[1].contextRef.id);
     assert.equal(f.old.replies.length, 0);
     const current = f.service.conversations.read('scope', f.chat.id);
     assert.equal(current.retainedRuns?.[0]?.id, f.intent.runId);
-    assert.ok(current.requests.some(request => request.id === f.intent.requestIds[0]));
+    assert.ok(!current.requests.some(request => request.id === f.intent.requestIds[0]));
   } finally { await f.close(); }
 });
 
@@ -243,7 +244,7 @@ for(const viaHandoff of [false,true])test('confirmed switch retires old question
  }finally{await f.close();}
 });
 
-test('startup observes a previously requested automatic stop without repeating it',async()=>{
+test('startup preserves an already requested question release without replaying generic stop controls',async()=>{
  const f=await fixture();let resumed:ReturnType<typeof createAgentService>|undefined;
  try{
   f.old.setUnknown(true);f.service.conversations.queueSend('scope',f.chat.id,{...f.queued('continue'),clientRequestId:randomUUID()});
@@ -251,8 +252,8 @@ test('startup observes a previously requested automatic stop without repeating i
   assert.equal(f.old.stops,1);
   const calls:Array<{runId:string;action:string}>=[];
   resumed=createAgentService({dataRoot:f.root,executors:[f.old.value,f.next.value],resolveWorkspace:()=>({rootPath:f.root}),generationAlive:generation=>generation===f.service.generation,controlSupersededRun:async(_scope,_id,input,action)=>{calls.push({runId:input.runId,action});}});
-  await resumed.conversations.recoverInterrupted();await until(()=>calls,value=>value.length===1);
-  assert.deepEqual(calls,[{runId:f.intent.runId,action:'observe'}]);assert.equal(f.old.stops,1);
+  await resumed.conversations.recoverInterrupted();
+  assert.deepEqual(calls,[]);assert.equal(f.old.stops,1);
   assert.equal(resumed.conversations.read('scope',f.chat.id).requests.length,0);
  }finally{await resumed?.close();await f.close();}
 });
