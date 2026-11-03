@@ -31,12 +31,23 @@ for(const legacy of [false,true])test('observe releases a durably finished old r
     const originalRun=target.run!.id,requestId=randomUUID();
     fs.writeFileSync(serverFile,serverCode);fs.writeFileSync(marker,JSON.stringify({version:'new'}));const next=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'});
     await observer.lifecycle.requestRuntime({expectedGeneration:old.generation,runtime:next});const adopted=await until(()=>observer!.lifecycle.status(),v=>v.identity.runtime.digest===next.digest);
-    await observer.operations.conversations.queueSend(scope,target.id,{...choice,text:'continue saved work',expectedRevision:target.revision,clientRequestId:requestId,previousRunId:originalRun});
+    // The released context cannot take a new instruction, so it is delivered
+    // through an explicit confirmed replacement send. Background observation
+    // may advance the revision between read and prepare: retry only 409s.
+    for(let attempt=0;;attempt++){
+      const current=await observer.operations.conversations.read(scope,target.id);
+      const continueDraft={...choice,text:'continue saved work',expectedRevision:current.revision};
+      try{
+        const continuePreview=await main.call('conversations.prepareSend',[scope,target.id,continueDraft]);
+        await main.call('conversations.send',[scope,target.id,{...continueDraft,previewToken:continuePreview.token,clientRequestId:requestId}]);
+        break;
+      }catch(error){if(attempt>=4||(error as {code?:string}).code!=='agent_revision_conflict')throw error;}
+    }
     await main.call('conversations.read',[scope,target.id]); // Attach the live host to the adopted unit.
     const retained=readProcessInstances(dataRoot).find(v=>v.identity.generation===old.generation)!;
     if(legacy){const state=await request(retained.origin,retained.token,'/conversation-state',{sourceId:'minimal',scope,id:target.id,observe:true,runId:originalRun,generation:old.generation});assert.equal(state.observed,undefined);assert.equal(state.busy,true);}
     else await assert.rejects(request(retained.origin,retained.token,'/conversation-state',{sourceId:'minimal',scope,id:target.id,observe:true,runId:originalRun,generation:'wrong-generation'}),{code:'agent_control_stale'});
-    target=await until(()=>observer!.operations.conversations.read(scope,target.id),v=>v.run?.generation===adopted.identity.generation&&v.run?.status==='completed'&&!v.pendingSend);
+    target=await until(()=>observer!.operations.conversations.read(scope,target.id),v=>v.run?.generation===adopted.identity.generation&&v.run?.status==='completed');
     assert.equal(target.retainedRuns?.find(run=>run.id===originalRun)?.status,'unknown','the new instruction does not resolve or replay the old operation');
     // The fixture native store is authoritative; finish the exact request without an event.
     const walk=(dir:string):string[]=>fs.readdirSync(dir,{withFileTypes:true}).flatMap(e=>e.isDirectory()?walk(path.join(dir,e.name)):[path.join(dir,e.name)]);
@@ -50,9 +61,10 @@ for(const legacy of [false,true])test('observe releases a durably finished old r
       try { await observer.operations.conversations.observeRun(scope,target.id,{expectedRevision:target.revision,runId:retainedRun.id,participantId:retainedRun.participantId,generation:retainedRun.generation});break; }
       catch(error){if(attempt>=4||(error as {code?:string}).code!=='agent_revision_conflict')throw error;}
     }
-    target=await until(()=>observer!.operations.conversations.read(scope,target.id),v=>v.run?.generation===adopted.identity.generation&&v.run?.status==='completed'&&!v.pendingSend);
+    target=await until(()=>observer!.operations.conversations.read(scope,target.id),v=>v.run?.generation===adopted.identity.generation&&v.run?.status==='completed');
     await Promise.all([observer.operations.conversations.observe(scope,target.id),observer.operations.conversations.observe(scope,target.id)]);
-    assert.ok(target.entries.some(e=>e.text==='original result retained'));
+    // 并发观察的返回先后不固定，投影可能晚于完成状态；等待该原轮结果进入视图。
+    target=await until(()=>observer!.operations.conversations.read(scope,target.id),v=>v.entries.some(e=>e.text==='original result retained'));
     const sent=fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').trim().split('\n').map(line=>JSON.parse(line));assert.equal(sent.filter(v=>v.text==='continue saved work').length,1);assert.equal(sent.find(v=>v.text==='continue saved work').version,'new');
     other=await observer.operations.conversations.read(scope,other.id);assert.equal(other.run?.status,'running');assert.equal(other.run?.generation,old.generation);assert.ok(isLive(old.pid));
     fs.writeFileSync(path.join(dataRoot,'release-other'),'yes');await until(()=>observer!.operations.conversations.read(scope,other.id),v=>v.run?.status==='completed');

@@ -9,6 +9,8 @@ export type ContextRef = { id: string; data?: Record<string, unknown> };
 export type ExecutionRef = { id: string; data?: Record<string, unknown> };
 
 export interface AgentCapabilities {
+  /** Adapter can safely end a question-only wait and reuse its native context. */
+  endQuestionWait?: boolean;
   /** Supported Buildr contract, not a claim about model compliance. */
   interaction?: { policy: 'buildr-interaction/v1'; nonBlockingQuestions: boolean };
   /** Admission into an already active execution; absence means unavailable. */
@@ -205,6 +207,9 @@ export interface AgentRuntime {
   readHistory(input: { contextRef: ContextRef; cwd: string }): Promise<ExecutorItem[]>;
   /** Resolves at terminal observation. Control requests must stay independent. */
   send(input: ExecutorSendInput): Promise<void>;
+  /** Must reject/refuse when tools, approvals or background work are active.
+   * Does not imply permission, success, or cancellation of independent work. */
+  endQuestionWait?(input: { contextRef: ContextRef; executionRef: ExecutionRef; requestIds: string[] }): Promise<ExecutorObservation | undefined>;
   supplement?(input: ExecutorSupplementInput): Promise<ExecutorInputReceipt>;
   observe(input: { contextRef: ContextRef; executionRef?: ExecutionRef; knownItems?: readonly ExecutorItem[] }): Promise<ExecutorObservation>;
   /** Exact backend control-resource proof. true also proves native execution ended; an object can preserve unknown independent commands. Neither asserts successful results. */
@@ -224,6 +229,8 @@ export interface AgentRuntime {
   close(): Promise<void>;
 }
 export interface AgentExecutor {
+  /** Locate durable native content without opening a runtime or making a model request. */
+  nativeContent?(input: import('./native-content-contracts.ts').NativeContentContext): import('./native-content-contracts.ts').NativeContentInventory | undefined;
   /** Observe exact abandoned control resources without login, opening a channel, or proving operation success. */
   readReleasedControl?(input: {bindingIdentity:string;contextRef:ContextRef;executionRef:ExecutionRef;cwd:string}): Promise<boolean>;
 
@@ -235,6 +242,8 @@ export interface AgentExecutor {
   /** Adapter-owned cache knowledge, applied by the shared service lifecycle. */
   storage?: {
     transientDirectories: readonly string[];
+    /** Private diagnostic resources only; the service owns dependency/occupancy checks and deletion. */
+    diagnostics?(configRoot: string): Array<{ relativePath: string; producerPid?: number; contextId?: string; reason?: string }>;
     canReclaim?(configRoot: string, relative: string): boolean;
     /** Immutable seed copied into private working directories; never a shared native HOME. */
     snapshots?: ReadonlyArray<{ relative: string; key: string; identity(directory: string): string | undefined }>;
@@ -356,6 +365,8 @@ export interface ConversationEntry {
   createdAt: string;
 }
 export interface RunView {
+  /** Questions are no longer actionable; native controls and tools may still be retained. */
+  questionsEndedBy?: string;
   /** Replaced by a confirmed new execution; cleanup is system-owned. */
   supersededBy?:string;
   /** User cancellation is independent from delivery and resource proof. */
@@ -407,7 +418,7 @@ export interface ConversationView {
   pendingSend?: PendingSendView;
   /** Independent observation version for append-only image admission. */
   attachmentRevision?: string;
-  activity?: { version: number; seenThrough: number; updatedAt: string; active: boolean; userInputAt?: string; pendingDecisionCount?: number };
+  activity?: { version: number; seenThrough: number; updatedAt: string; active: boolean; userInputAt?: string; pendingDecisionCount?: number; pendingSend?: {state:'waiting'|'failed';reason:string;updatedAt:string} };
   titleState?: { status: 'pending' | 'generating' | 'generated' | 'manual' | 'failed' | 'unavailable' | 'unknown'; reason?: string };
   id: string;
   workspaceId: string;
@@ -450,7 +461,7 @@ export interface SendDraft {
   /** Explicitly end this waiting question round before handing work to a different selection. */
   waitingHandoff?: {
     /** Explicitly stop the wait and discuss using the same execution selection. */
-    intent?: 'discussion';
+    intent?: 'discussion' | 'new-turn';
     runId: string; participantId: string; generation: string; requestIds: string[];
     answers?: Array<{ requestId: string; answer: unknown }>;
   };
@@ -488,6 +499,8 @@ export interface StartConversationDraft extends Omit<SendDraft, 'expectedRevisio
   clientRequestId: string;
 }
 export interface SupplementInput {
+  /** Reject rather than start a new round if the observed execution ends during admission. */
+  sameRunOnly?: boolean;
   runId: string;
   participantId: string;
   generation: string;
@@ -543,7 +556,7 @@ export interface AgentServiceOptions {
   backendChange?: BackendRuntimeChange;
   /** Process-owned local control instructions; never includes authentication secrets. */
   conversationControl?: (scope:string,id:string)=>string;
-  controlSupersededRun?: (scope:string,id:string,input:{expectedRevision:string;runId:string;participantId:string;generation:string},action:'stop'|'observe')=>Promise<unknown>;
+  controlSupersededRun?: (scope:string,id:string,input:{expectedRevision:string;runId:string;participantId:string;generation:string},action:'stop'|'observe'|'release-question-wait')=>Promise<unknown>;
   /** Other accurately discovered process generations must not be recovered. */
   generationAlive?: (generation: string) => boolean;
   /** Exact prior owner completed authenticated shutdown; death alone is insufficient. */
@@ -568,4 +581,14 @@ export interface AgentServiceOptions {
   shutdownTimeoutMs?: number;
 }
 
-export type ConversationWarmupInput = Pick<SendDraft,'connectionId'|'modelAccountId'|'modelAccountRevision'|'modelAccountIdentity'|'model'|'serviceTier'|'reasoningEffort'|'permissionMode'> & {cwd?:string;taskId?:string;clientRequestId?:string};
+export interface WebhookDeliveryResult { at: string; success: boolean; status?: number; kind: 'event' | 'test' }
+export interface WebhookSettingsView {
+  revision: string;
+  source: 'private-file' | 'external-file' | 'environment';
+  writable: boolean;
+  state: 'unconfigured' | 'invalid' | 'disabled' | 'enabled';
+  url: string;
+  hasSecret: boolean;
+  lastDelivery?: WebhookDeliveryResult;
+}
+export interface WebhookSettingsInput { expectedRevision: string; enabled: boolean; url: string; secret?: string }

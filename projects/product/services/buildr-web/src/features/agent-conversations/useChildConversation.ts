@@ -1,3 +1,4 @@
+import { usePageVisibility } from './usePageVisibility';
 import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import type {AgentConversationsContextValue} from './AgentConversationsContext';
 import {conversationObservationKey,isCurrentConversationEvent,mergeConversationView,needsConversationObservation,prependConversationEntries,type ConversationSelection} from './conversation-state';
@@ -6,6 +7,7 @@ import type {ConversationView} from './types';
 /** Fixed data binding; only explicit navigation may ask the host to open another conversation. */
 export function useChildConversation(host:AgentConversationsContextValue,summary:ConversationView,visible:boolean,onClose:()=>void,onUpdate:(chat:ConversationView)=>void):AgentConversationsContextValue {
   const {api}=host;
+  const pageVisible=usePageVisibility();
   const scope=useMemo(()=>({workspaceId:summary.workspaceId,conversationId:summary.id}),[summary.workspaceId,summary.id]);
   const selection=useMemo<ConversationSelection>(()=>({generation:0,scope}),[scope]);
   const [chat,setChat]=useState<ConversationView|null>(null),current=useRef(chat);
@@ -38,12 +40,17 @@ export function useChildConversation(host:AgentConversationsContextValue,summary
   },[summary.revision,refresh]);
   const observationKey=conversationObservationKey(chat);
   useEffect(()=>{
-    if(!observationKey)return;
+    if(!observationKey||!visible||!pageVisible)return;
     const controller=new AbortController();
     let timer:ReturnType<typeof setTimeout>|undefined,generation:string|undefined,cursor:number|undefined;
     const connect=async()=>{
       generation=undefined;
       try{
+        const observed=current.current?.revision;
+        const latest=await api.read(scope.workspaceId,scope.conversationId,controller.signal);
+        if(controller.signal.aborted)return;
+        apply(latest,observed);
+        if(!needsConversationObservation(current.current))return;
         await api.subscribe(scope.workspaceId,scope.conversationId,controller.signal,event=>{
           if(controller.signal.aborted||!isCurrentConversationEvent(event,scope,generation,cursor))return;
           if(event.type==='snapshot')generation=event.generation;
@@ -63,7 +70,7 @@ export function useChildConversation(host:AgentConversationsContextValue,summary
     };
     void connect();
     return()=>{controller.abort();if(timer)clearTimeout(timer);};
-  },[observationKey,api,scope,apply,refresh]);
+  },[observationKey,visible,pageVisible,api,scope,apply,refresh]);
   const markSeen=useCallback(async(value:ConversationView)=>{
     const version=value.activity?.version;
     if(version===undefined||version<=(value.activity?.seenThrough??0))return;

@@ -16,7 +16,7 @@ function query(input: URLSearchParams, allowed: string[]): void {
 }
 function numberQuery(value: string | null): number | undefined { if (value === null) return; if (!/^\d+$/.test(value)) throw inputError(); const number = Number(value); if (!Number.isSafeInteger(number)) throw inputError(); return number; }
 
-export function createAgentServiceHttpContribution(resolve: () => AgentService | AgentOperations | Promise<AgentService | AgentOperations>, options: { defaultWorkspace?: () => { rootPath: string }; registeredWorkspaceIds?: () => string[]; runtimeStatus?: () => Promise<unknown>; prepareDefaultWorkspace?: () => void } = {}) {
+export function createAgentServiceHttpContribution(resolve: () => AgentService | AgentOperations | Promise<AgentService | AgentOperations>, options: { defaultWorkspace?: () => { rootPath: string }; registeredWorkspaceIds?: () => string[]; runtimeStatus?: () => Promise<unknown>; runtimeAligning?: () => Promise<boolean>; prepareDefaultWorkspace?: () => void } = {}) {
   const { defaultWorkspace, registeredWorkspaceIds = () => [] } = options;
   const contribution = {
     id: 'agent-service.http', schemas: SCHEMAS, operations: AGENT_SERVICE_HTTP_OPERATIONS,
@@ -51,6 +51,12 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       if (pathname === `${prefix}/default-workspace` && request.method === 'GET' && defaultWorkspace) return result('defaultWorkspace', defaultWorkspace());
       if (pathname === `${prefix}/runtime` && request.method === 'GET' && options.runtimeStatus) return result('runtimeStatus', await options.runtimeStatus());
       const service = await resolve();
+      if (pathname === `${prefix}/webhook-settings`) {
+        if (request.method === 'GET') return result('webhookSettings', await service.webhooks.read());
+        if (request.method === 'POST') return result('webhookSettings', await service.webhooks.save(validate('webhookSettingsInput', await readJsonBody())));
+      }
+      if (pathname === `${prefix}/webhook-settings/reveal` && request.method === 'POST') return result('webhookSecret', await service.webhooks.reveal(validate('revision', await readJsonBody())));
+      if (pathname === `${prefix}/webhook-settings/test` && request.method === 'POST') return result('webhookTest', await service.webhooks.test(validate('revision', await readJsonBody())));
       if (pathname === `${prefix}/model-accounts`) {
         if (request.method === 'GET') return result('modelAccounts', await service.models.accounts.list({refresh:false}));
         if (request.method === 'POST') return result('modelAccount', await service.models.accounts.add(validate('addModelAccount', await readJsonBody())), 201);
@@ -100,7 +106,7 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       const isImageUpload = request.method === 'POST' && /^\/agent-conversations\/(?:drafts\/)?[a-f0-9-]{36}\/attachments$/.test(suffix);
       if (request.method === 'GET') authorizeRead(); else if (isImageUpload) authorizeMutation(); else authorizeWrite();
       const service = await resolve();
-      const draftRoute = suffix.match(/^\/agent-conversations\/drafts\/([a-f0-9-]{36})(?:\/(attachments|send|submissions|warmup)(?:\/([a-f0-9-]{36}))?)?$/);
+      const draftRoute = suffix.match(/^\/agent-conversations\/drafts\/([a-f0-9-]{36})(?:\/(attachments|send|submissions)(?:\/([a-f0-9-]{36}))?)?$/);
       if (draftRoute) {
         query(searchParams, []);
         const [, draftId, action, childId] = draftRoute;
@@ -117,12 +123,6 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
           return result('draftImages', await service.conversations.addDraftImage(workspaceId, draftId, { ...metadata, bytes: await readBinaryBody((metadata.mimeType.startsWith('video/')?32:8) * 1024 * 1024) }), 201);
         }
         if (request.method === 'DELETE' && action === 'attachments' && childId) return result('draftImages', await service.conversations.removeDraftImage(workspaceId, draftId, validate('removeDraftImage', { ...await readJsonBody(), attachmentId: childId })));
-        if (request.method === 'POST' && action === 'warmup' && !childId) {
-          const input=validate('warmup',await readJsonBody());
-          if(workspaceId==='@default'&&(input.cwd!==undefined||input.taskId!==undefined))throw inputError();
-          if(workspaceId==='@default')options.prepareDefaultWorkspace?.();
-          return result('warmed',await service.conversations.warmup(workspaceId,draftId,input,true));
-        }
         if (request.method === 'POST' && action === 'send' && !childId) {
           const input = validate('startDraft', await readJsonBody(128 * 1024));
           if (workspaceId === '@default' && (input.cwd !== undefined || input.taskId !== undefined)) throw inputError();
@@ -159,7 +159,7 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       }
       const detailMatch=suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})\/entry-detail\/([^/]+)$/);
       if(detailMatch&&request.method==='GET'){query(searchParams,['revision']);const revision=searchParams.get('revision');if(!revision||!(/^[a-f0-9]{64}$/).test(revision))throw inputError();let entryId:string;try{entryId=decodeURIComponent(detailMatch[2]);}catch{throw inputError();}if(!entryId||entryId.length>1024)throw inputError();return result('entry',await service.conversations.readEntry(workspaceId,detailMatch[1],entryId,revision));}
-      const match = suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})(?:\/(warmup|fork|prepare-send|send|supplement|pending-send|cancel-pending-send|generate-title|children|seen|observe|stop|events|entries|attachments|requests)(?:\/([a-f0-9-]{36})(?:\/(reply))?)?)?$/);
+      const match = suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})(?:\/(webhook-replay|fork|prepare-send|send|supplement|pending-send|cancel-pending-send|generate-title|children|seen|observe|stop|events|entries|attachments|requests)(?:\/([a-f0-9-]{36})(?:\/(reply))?)?)?$/);
       if (!match) return null;
       const [, id, action, childId, reply] = match;
       if (request.method === 'GET') {
@@ -195,11 +195,11 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       }
       if (request.method !== 'POST') return null;
       if (action === 'children' && !childId) return result('conversation',await service.conversations.createChild(workspaceId,id,validate('createChild',await readJsonBody())),201);
-      if (action === 'warmup') return result('warmed',await service.conversations.warmup(workspaceId,id,validate('warmup',await readJsonBody())));
       if (action === 'prepare-send') return result('preview', await service.conversations.prepareHandoff(workspaceId, id, validate('draft', await readJsonBody(128 * 1024))));
       if (action === 'send') return result('sent', await service.conversations.send(workspaceId, id, validate('send', await readJsonBody(128 * 1024))), 202);
       if (action === 'pending-send') return result('conversation', await service.conversations.queueSend(workspaceId, id, validate('queueSend', await readJsonBody(128 * 1024))), 202);
       if (action === 'cancel-pending-send') return result('conversation', await service.conversations.cancelPendingSend(workspaceId, id, validate('cancelPendingSend', await readJsonBody())));
+      if (action === 'webhook-replay') return result('webhookReplayed', await service.conversations.replayWebhook(workspaceId,id,validate('webhookReplay',await readJsonBody())));
       if (action === 'supplement') return result('supplemented', await service.conversations.supplement(workspaceId, id, validate('supplement', await readJsonBody(128 * 1024))), 202);
       if (action === 'seen') return result('seenResult',await service.conversations.markSeen(workspaceId,id,validate('seen',await readJsonBody())));
       if (action === 'observe') { validate('empty', await readJsonBody()); return result('conversation', await service.conversations.observe(workspaceId, id)); }
@@ -221,7 +221,13 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
   const handle = (method: 'handle' | 'handleTopLevel') => async (context: any) => {
     try { return await contribution[method](context); }
     catch (error) {
-      if (error instanceof AgentServiceError) return { status: error.status, body: { error: { code: error.code, message: error.message } } };
+      if (error instanceof AgentServiceError) {
+        // 运行单元不同的后台与本宿主校验的契约不同，属于版本对齐窗口而非违约；
+        // 真正与宿主同版本的违约仍按 500 暴露，避免掩盖缺陷。
+        if (error.code === 'agent_http_response_invalid' && options.runtimeAligning && await options.runtimeAligning().catch(() => false))
+          return { status: 503, body: { error: { code: 'agent_service_aligning', message: '执行后台正在切换版本，连接状态暂不可用。' } } };
+        return { status: error.status, body: { error: { code: error.code, message: error.message } } };
+      }
       throw error;
     }
   };

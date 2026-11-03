@@ -109,6 +109,8 @@ function normalizedSteps(results: any): any  {
     ...(result.phases?.length ? { phases: result.phases } : {}),
     ...(result.testContextRuntime ? { testContextRuntime: result.testContextRuntime } : {}),
     ...(result.preparations ? { preparations: result.preparations } : {}),
+    ...(result.totalFiles != null ? { fileCoverage: { total: result.totalFiles, executed: result.executedFiles, reused: result.reusedFiles,
+      passedFiles: result.roundFiles?.map((file: any) => ({ file: file.file, origin: file.origin, durationMs: file.durationMs })) ?? [] } } : {}),
   }));
 }
 
@@ -140,6 +142,7 @@ export function createVerificationTimingSummary(options: any): any  {
     },
     summaryPath: path.resolve(options.timingOutput),
     ...(options.contextLifecycle ? { contextLifecycle: options.contextLifecycle } : {}),
+    ...(options.timings ? { timings: options.timings } : {}),
     ...(options.evidenceLifecycle ? { evidenceLifecycle: options.evidenceLifecycle } : {}),
   };
   if (options.totalBudgetMs != null) {

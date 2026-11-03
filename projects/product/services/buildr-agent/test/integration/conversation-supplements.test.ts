@@ -10,7 +10,7 @@ import { createAgentService, ExecutorInputRejected, type AgentExecutor, type Age
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5EsAAAAASUVORK5CYII=', 'base64');
 function gate() { let resolve!: () => void; const promise = new Promise<void>(done => { resolve = done; }); return { promise, resolve }; }
 async function wait(read: () => boolean) { for (let i = 0; i < 400; i++) { if (read()) return; await new Promise(resolve => setTimeout(resolve, 2)); } assert.fail('state did not settle'); }
-async function fixture(options: { beforeSupplement?: Promise<void>; delivery?: 'rejected' | 'unknown'; supported?: boolean; historyReceipt?: boolean; historyClientId?: string; beforeObserve?: Promise<void>; endOnReject?: boolean } = {}) {
+async function fixture(options: { beforeSupplement?: Promise<void>; delivery?: 'rejected' | 'unknown'; supported?: boolean; provider?: string; historyReceipt?: boolean; historyClientId?: string; beforeObserve?: Promise<void>; endOnReject?: boolean } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-supplement-')), ending = gate();
   const calls: ExecutorSupplementInput[] = [], items: ExecutorItem[] = []; let emit: (event: ExecutorEvent) => void = () => {};
   let observation: ExecutorObservation = { status: 'idle', tools: [] };
@@ -33,11 +33,11 @@ async function fixture(options: { beforeSupplement?: Promise<void>; delivery?: '
     },
     async observe() { await options.beforeObserve; return structuredClone(observation); }, async reply() {}, async stop() { observation = { status: 'stopped', tools: [] }; ending.resolve(); return observation; }, async close() { ending.resolve(); },
   };
-  const executor: AgentExecutor = { descriptor: { id: 'fixture', label: 'Fixture', capabilities }, async open() { return runtime; } };
+  const executor: AgentExecutor = { descriptor: { id: options.provider ?? 'fixture', label: 'Fixture', capabilities }, async open() { return runtime; } };
   const service = createAgentService({ dataRoot: path.join(root, 'private'), executors: [executor], modelProviders: [], resolveWorkspace() { return { rootPath: root }; } });
-  await service.connections.connect('fixture', { expectedRevision: service.connections.read('fixture').revision });
+  await service.connections.connect(options.provider ?? 'fixture', { expectedRevision: service.connections.read(options.provider ?? 'fixture').revision });
   let view = await service.conversations.create('workspace', {});
-  const draft = { expectedRevision: view.revision, connectionId: 'fixture', text: 'initial' };
+  const draft = { expectedRevision: view.revision, connectionId: options.provider ?? 'fixture', text: 'initial' };
   const preview = service.conversations.prepareSend('workspace', view.id, draft);
   service.conversations.send('workspace', view.id, { ...draft, previewToken: preview.token, clientRequestId: randomUUID() });
   await wait(() => service.conversations.read('workspace', view.id).run?.status === 'running');
@@ -139,15 +139,15 @@ test('an explicit user stop prevents a delayed supplement from automatically sta
   }finally{await f.close();}
 });
 
-test('a newer independently submitted requirement wins over an in-flight old supplement observation',async()=>{
+test('an independent same-selection send cannot supersede an in-flight supplement',async()=>{
   const observed=gate(),f=await fixture({beforeObserve:observed.promise});try{
     const input=f.input('old supplementary input'),pending=f.service.conversations.supplement('workspace',f.read().id,input);
     await wait(()=>f.read().entries.some(entry=>entry.text===input.text));
     const before=f.read(),draft={expectedRevision:before.revision,connectionId:'fixture',text:'new independent requirement'};
     const preview=f.service.conversations.prepareSend('workspace',before.id,draft);
-    const newer=f.service.conversations.send('workspace',before.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});
-    observed.resolve();assert.equal((await pending).delivery,'rejected');
-    assert.equal(f.read().run!.id,newer.run.id);assert.equal(f.calls.length,0);
+    assert.throws(()=>f.service.conversations.send('workspace',before.id,{...draft,clientRequestId:randomUUID()}),/原生追加/);
+    observed.resolve();assert.equal((await pending).delivery,'accepted');
+    assert.equal(f.read().run!.id,before.run!.id);assert.equal(f.calls.length,1);
   }finally{observed.resolve();await f.close();}
 });
 
@@ -195,6 +195,41 @@ test('a multi-megabyte durable history receives the latest burst text and termin
     assert.ok(deliveries<=4);assert.equal(f.read().run!.status,'completed');assert.equal(f.read().entries.at(-1)!.text,'latest 4999');
   }finally{await f.close();}
 });
+for (const provider of ['codex','dsh','qoder']) for (const kind of ['question','approval'] as const) test(provider + ': '+kind+' wait remains in the original round', async () => {
+  const f = await fixture({ provider }); try {
+    f.emit({ type: 'request', request: { id: 'native-request', kind, title: 'Restart?', blocking: false } });
+    const before = f.read();
+    if(kind==='question')await assert.rejects(f.service.conversations.supplement('workspace', before.id, f.input('More context')), /待回答问题或授权/);
+    const draft = { expectedRevision: before.revision, connectionId: provider, text: 'More context' };
+    const preview = f.service.conversations.prepareSend('workspace', before.id, draft);
+    for (const token of [undefined, preview.token]) assert.throws(() => f.service.conversations.send('workspace', before.id, { ...draft, previewToken: token, clientRequestId: randomUUID() }), /原轮仍在等待回答或授权/);
+    assert.equal(f.calls.length, 0);
+    assert.deepEqual(f.read().run, before.run);
+    assert.deepEqual(f.read().requests, before.requests);
+    assert.equal(f.read().entries.length, before.entries.length);
+  } finally { await f.close(); }
+});
+for (const provider of ['codex','dsh','qoder']) test(provider+': ordinary send cannot replace a running same-selection round without explicit confirmation', async () => {
+  const f=await fixture({provider});try{
+    const before=f.read(),draft={expectedRevision:before.revision,connectionId:provider,text:'additional request'};
+    const preview=f.service.conversations.prepareSend('workspace',before.id,draft);
+    assert.throws(()=>f.service.conversations.send('workspace',before.id,{...draft,clientRequestId:randomUUID()}),/原生追加/);
+    assert.equal(f.read().run!.id,before.run!.id);assert.equal(f.read().run!.participantId,before.run!.participantId);
+    assert.equal((await f.service.conversations.supplement('workspace',before.id,{...f.input('additional request'),sameRunOnly:true})).delivery,'accepted');
+    assert.equal(f.read().run!.id,before.run!.id);assert.equal(f.calls.length,1);
+  }finally{await f.close();}
+});
+test('a question arriving during native observation prevents supplementary dispatch', async () => {
+  const before = gate(), f = await fixture({ beforeObserve: before.promise }); try {
+    const result = f.service.conversations.supplement('workspace', f.read().id, f.input('new requirement'));
+    await wait(() => f.read().entries.some(entry => entry.text === 'new requirement'));
+    f.emit({ type: 'request', request: { id: 'late-question', kind: 'question', title: 'Restart?', blocking: false } });
+    before.resolve();
+    assert.equal((await result).delivery, 'rejected');
+    assert.equal(f.calls.length, 0);
+    assert.equal(f.read().requests.length, 1);
+  } finally { before.resolve(); await f.close(); }
+});
 test('supplementing while approval is pending does not answer or replace the request', async () => {
   const f = await fixture(); try {
     f.emit({ type: 'request', request: { id: 'native-approval', kind: 'approval', title: 'Allow write?' } }); const pending = f.read().requests[0];
@@ -221,4 +256,49 @@ test('video supplement preserves one run and sends timed visual frames with orig
     assert.equal(result.delivery,'accepted');assert.equal(f.calls[0].images[0].id,frame.id);assert.match(f.calls[0].text,/不含音轨/);assert.ok(f.calls[0].text.includes(video.id));
     const entry=f.read().entries.find(entry=>entry.attachments?.includes(video.id));assert.equal(entry?.text,'look at the recording');assert.deepEqual(entry?.attachments,[video.id]);assert.equal(f.read().run?.id,chat.run?.id);
   }finally{await f.close();}
+});
+
+test('sameRunOnly rejects ended admission without opening a new round or replaying the supplement',async()=>{
+  const f=await fixture({delivery:'rejected',endOnReject:true});try{
+    const original=f.read().run!.id,input={...f.input('only this round'),sameRunOnly:true};
+    const result=await f.service.conversations.supplement('workspace',f.read().id,input);
+    assert.equal(result.delivery,'rejected');assert.equal(result.conversation.run!.id,original);assert.equal(f.calls.length,1);
+    const repeated=await f.service.conversations.supplement('workspace',f.read().id,input);
+    assert.equal(repeated.delivery,'rejected');assert.equal(repeated.conversation.run!.id,original);assert.equal(f.calls.length,1);
+  }finally{await f.close();}
+});
+
+for(const provider of ['codex','dsh','qoder'])test(provider+': a cached unknown round is verified natively and supplemented once',async()=>{
+ const f=await fixture({provider});try{
+  const before=f.read();
+  f.emit({type:'observation',observation:{status:'unknown',executionRef:{id:'native-run'},tools:[]}});
+  assert.equal(f.read().run!.status,'unknown');
+  const input={...f.input('authorized follow-up'),sameRunOnly:true};
+  assert.equal((await f.service.conversations.supplement('workspace',before.id,input)).delivery,'accepted');
+  assert.equal(f.read().run!.id,before.run!.id);assert.equal(f.read().run!.participantId,before.run!.participantId);
+  assert.equal(f.read().run!.status,'running');assert.equal(f.calls.length,1);
+  assert.equal((await f.service.conversations.supplement('workspace',before.id,input)).delivery,'accepted');assert.equal(f.calls.length,1);
+ }finally{await f.close();}
+});
+for(const observation of [
+ {status:'unknown',executionRef:{id:'native-run'},tools:[]},
+ {status:'running',executionRef:{id:'different'},tools:[]},
+ {status:'running',tools:[]},
+] as ExecutorObservation[])test('a cached unknown round still requires exact native confirmation: '+JSON.stringify(observation),async()=>{
+ const f=await fixture();try{
+  f.emit({type:'observation',observation:{status:'unknown',executionRef:{id:'native-run'},tools:[]}});f.setObservation(observation);
+  const before=f.read(),input={...f.input('keep this input'),sameRunOnly:true};
+  const result=await f.service.conversations.supplement('workspace',before.id,input);
+  assert.equal(result.delivery,'rejected');assert.equal(f.calls.length,0);assert.equal(f.read().run!.id,before.run!.id);
+  assert.match(f.read().entries.at(-1)!.deliveryDiagnostic!,/未发送|无法确认/);
+ }finally{await f.close();}
+});
+test('an unknown tool outcome does not block new input to an exactly active native round',async()=>{
+ const f=await fixture();try{
+  const observation:ExecutorObservation={status:'running',executionRef:{id:'native-run'},tools:[{id:'old-uncertain-tool',label:'old result unknown',status:'unknown'}]};
+  f.emit({type:'observation',observation});f.setObservation(observation);
+  assert.equal(f.read().run!.status,'unknown');
+  assert.equal((await f.service.conversations.supplement('workspace',f.read().id,{...f.input('inspect the current result'),sameRunOnly:true})).delivery,'accepted');
+  assert.equal(f.calls.length,1);assert.equal(f.read().run!.tools[0]!.status,'unknown');
+ }finally{await f.close();}
 });

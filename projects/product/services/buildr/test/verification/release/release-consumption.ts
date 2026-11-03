@@ -159,7 +159,12 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       const { releaseContextIdentity } = await import('../../../../../../../skills/buildr-release/scripts/release-readiness.ts');
       if (releaseContextIdentity(aggregate) !== context.candidate.aggregateIdentity) throw new Error('Frozen Candidate aggregate identity mismatches.');
       process.stdout.write('Release consumption coverage and immutable bytes passed.\n');
-    } else if (['platform', 'host', 'registry', 'metadata', 'publisher', 'browser-core'].includes(action || '')) process.stdout.write(`${JSON.stringify(runReleaseConsumer(action as 'platform' | 'host' | 'registry' | 'metadata' | 'publisher' | 'browser-core'))}\n`);
+    } else if (['platform', 'host', 'registry', 'metadata', 'publisher', 'browser-core'].includes(action || '')) {
+      const result = runReleaseConsumer(action as 'platform' | 'host' | 'registry' | 'metadata' | 'publisher' | 'browser-core');
+      // The immutable manifest retains inventory; normal logs need only its identity.
+      const artifact = result.artifact && Object.fromEntries(['version', 'filename', 'sha256', 'integrity', 'sourceCommit'].map(key => [key, result.artifact[key]]));
+      process.stdout.write(`${JSON.stringify({ ...result, ...(artifact ? { artifact } : {}) })}\n`);
+    }
     else throw new Error('Usage: release-consumption.ts <plan|metadata|platform|host|publisher|registry|browser-core|verify>');
   } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);

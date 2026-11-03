@@ -6,10 +6,11 @@ import { Alert, Button, Empty, Input, Select } from 'antd';
 import { ArrowLeftOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import { useAgentConversations } from './AgentConversationsContext';
 import { ConversationActivityStatus } from './ConversationActivityStatus';
-import { activityState, conversationMetadata, isExecuting } from './conversation-activity';
+import { activityState,sendActivity, conversationMetadata } from './conversation-activity';
 import type { ExecutionFilter } from './ConversationExecutionStats';
 import { CopyButton } from '../../components/CopyButton';
-import { DEFAULT_HISTORY_GROUP, historyGroupOrder, moveHistoryGroup, readHistoryGroupPreference, writeHistoryGroupPreference } from './conversation-history-groups';
+import { DEFAULT_HISTORY_GROUP, historyGroupOrder, moveHistoryGroup, writeHistoryGroupPreference } from './conversation-history-groups';
+import { useHistoryGroupPreference } from './useHistoryGroupPreference';
 import type { ConversationSummary } from './types';
 import { ConversationHistoryGroup } from './ConversationHistoryGroup';
 import { useConversationHistoryPage } from './useConversationHistoryPage';
@@ -22,7 +23,7 @@ export function ConversationHistory({workspaces,defaultWorkspaceId}:{workspaces:
   const initial=context.historyWorkspaceId===undefined?defaultWorkspaceId??'':context.historyWorkspaceId??'';
   const [workspaceId,setWorkspaceId]=useState(initial),[query,setQuery]=useState(''),[hidden,setHidden]=useState(false),[filter,setFilter]=useState<ExecutionFilter>(null);
   const searchQuery=useDebouncedValue(query,250);
-  const [groupOrder,setGroupOrder]=useState<string[]>(readHistoryGroupPreference);
+  const groupOrder=useHistoryGroupPreference();
   const [preferenceError,setPreferenceError]=useState('');
   const [draggingGroup,setDraggingGroup]=useState(''),[dropGroup,setDropGroup]=useState(''),[dropAfter,setDropAfter]=useState(false);
   const [groupResults,setGroupResults]=useState<{scope:string;values:Record<string,HistoryGroupResult>}>({scope:'',values:{}});
@@ -44,7 +45,8 @@ export function ConversationHistory({workspaces,defaultWorkspaceId}:{workspaces:
   const workspaceName=(id:string)=>id===DEFAULT_HISTORY_GROUP?'默认':workspaces.find(item=>item.id===id)?.name||id;
   const renderRow=(row:ConversationSummary)=><div key={row.workspaceId+':'+row.id} className={'ac-history-row'+(context.scope?.workspaceId===row.workspaceId&&context.scope.conversationId===row.id?' is-selected':'')}>
     <button type="button" className="ac-history-row-main" data-conversation-id={row.id} onClick={()=>void context.openConversation(row.workspaceId,row.id,{preserveVisibility:true})}>
-      <span className="ac-history-row-title"><strong title={row.title}>{row.title}</strong><ConversationActivityStatus state={activityState(row)} executing={isExecuting(row)}/></span>
+      <span className="ac-history-row-title"><strong title={row.title}>{row.title}</strong><ConversationActivityStatus state={activityState(row)}/></span>
+      {sendActivity(row)?.reason&&<span className="ac-send-reason">{sendActivity(row)?.reason}</span>}
       {row.searchSnippet&&<span className="ac-history-row-snippet" title={row.searchSnippet}>{row.searchSnippet}</span>}
       <small><span className="ac-history-id" title={row.id}>{row.id}</span><span className="ac-history-meta">{conversationMetadata(row,undefined,row.run?.model?conversationModelLabel(row.run.model,context.connections,context.modelCatalog,{modelAccountId:row.run.modelAccountId}):undefined)}</span></small>
     </button>
@@ -52,7 +54,7 @@ export function ConversationHistory({workspaces,defaultWorkspaceId}:{workspaces:
   </div>;
   const order=historyGroupOrder([...workspaces.map(item=>item.id),DEFAULT_HISTORY_GROUP],groupOrder);
   const movable=order.filter(id=>id!==DEFAULT_HISTORY_GROUP);
-  const reorder=(moved:string,target:string|'end')=>{const next=moveHistoryGroup(order,moved,target);setGroupOrder(next);setPreferenceError(writeHistoryGroupPreference(next)?'':'顺序已调整，但无法保存；刷新后可能恢复原顺序。');};
+  const reorder=(moved:string,target:string|'end')=>{const next=moveHistoryGroup(order,moved,target);setPreferenceError(writeHistoryGroupPreference(next)?'':'顺序已调整，但无法保存；刷新后可能恢复原顺序。');};
   const keyboardMove=(id:string,step:number)=>{
     const index=movable.indexOf(id);if(index<0)return;
     if(step<0){if(index>0)reorder(id,movable[index-1]);return;}

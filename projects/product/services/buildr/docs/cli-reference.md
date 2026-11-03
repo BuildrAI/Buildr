@@ -375,17 +375,17 @@ Nacos 的专业接口地址与可选网站明确分开，配置版本 1 保留�
 
 ## Agent service 对话
 
-`agent` 包含六个命令，统一使用本机 Agent service HTTP 接口，不维护任务数据：
+`agent` 包含八个命令，统一使用本机 Agent service HTTP 接口，不维护任务数据：
 
 ```bash
-buildr agent send '请检查当前代码' --target /path/to/workspace --connection codex --json
+buildr agent send '请检查当前代码' --target /path/to/workspace --json
 buildr agent read <conversation-id> --target /path/to/workspace --limit 50 --json
 buildr agent stop <conversation-id> --target /path/to/workspace --json
 ```
 
-`--target` 默认当前工作空间目录；也可用 `--workspace-id <id>` 指定当前本机实例中已登记的空间，两者互斥。需先运行对应配置的 Buildr Web；命令不启动服务、不接受远程 URL、不生成访问令牌。`send` 可指定 `--model` 和 `--permission-mode default|full-access`。省略权限时使用 `full-access`；接入未声明支持时使用其原生 `default`，显式选择不受支持的模式仍报错。省略 `--connection` 时仅自动选择唯一已启用且就绪的连接；多连接时必须明确指定。连接与模型仍由服务端校验。
+`--target` 默认当前工作空间目录；也可用 `--workspace-id <id>` 指定当前本机实例中已登记的空间，两者互斥。需先运行对应配置的 Buildr Web；命令不启动服务、不接受远程 URL、不生成访问令牌。`send` 不接受 `--connection` 或 `--model`，可指定 `--permission-mode default|full-access`。省略权限时使用 `full-access`；接入未声明支持时使用其原生 `default`，显式选择不受支持的模式仍报错。`send` 不接受 `--connection`，只自动选择唯一已启用且就绪的连接；零个或多个连接时明确报错，不创建对话。连接与模型仍由服务端校验。
 
-`send` 创建新对话后依次预发送、发送，不向已有对话追加消息。失败时若已创建对话会保留并报告 ID；超时或冲突不会自动重发，应先用 `read` 核对。`read` 核对状态后读取 entries，支持 `--before <sequence>` 和 `--limit <count>`，保留服务分页信息，不标记已读、不回答待处理问题。`stop` 使用刚观察到的版本与执行身份；没有执行、已终止或已请求停止时只返回当前结果。冲突不自动重放，也不会强杀进程。
+`send` 默认创建新对话后依次预发送、发送，显式使用 `--conversation <id> --skip-questions` 时在指定对话开启新一轮。失败时若已创建对话会保留并报告 ID；超时或冲突不会自动重发，应先用 `read` 核对。`read` 核对状态后读取 entries，支持 `--before <sequence>` 和 `--limit <count>`，保留服务分页信息，不标记已读、不回答待处理问题。`stop` 使用刚观察到的版本与执行身份；没有执行、已终止或已请求停止时只返回当前结果。冲突不自动重放，也不会强杀进程。
 
 
 ```bash
@@ -397,6 +397,27 @@ buildr agent continue <conversation-id> '继续检查' --target /path/to/workspa
 
 `list` 默认遍历 conversations 接口全部分页（包含隐藏对话），以中文表头显示对话标识、标题、状态和最后更新时间；`--query` 使用服务端文本过滤，`--limit` 指定每页数量而非总条数，`--json` 返回原始对话数组。范围遵循服务端列表语义：没有消息或工作的空白对话不在列表中。不直接读取数据库，避免依赖内部存储结构、锁和迁移状态，也保留统一的工作空间隔离。
 
-`reply` 先 observe，再从当前待处理请求取得原执行身份，携带当前版本调用 `requests/:requestId/reply`。回复文字原样作为 `answer` 提交，不解析 JSON、不映射审批选项、不默认同意；具体问题可接受的回答格式仍由服务及原执行者校验。不支持以该命令构造多问题结构化回答。请求不存在、已处理或冲突时报错，不重试。
+`reply` 先 observe，再从当前待处理请求取得原执行身份，携带当前版本调用 `requests/:requestId/reply`。文本回答原样作为 `answer` 提交，即使像 JSON 也不自动解析。结构化问题使用可重复的 `--option 问题ID=选项ID`、`--other 问题ID=补充文本`，或 `--answer-json '{"问题ID":["选项ID或自由文本"]}'`。三种输入方式互斥；问题与选项均使用 `read` 返回的准确 ID，不能用显示顺序或标签代替。单选只能有一个值；多选可重复指定同一问题；仅允许自由回答的问题可以提交补充文本。CLI 核对完整问题集合、选项、单选/多选和 allowOther 后提交原生结构化 `answer`。请求不存在、已处理或冲突时报错，不重试。
+
+```bash
+buildr agent reply <conversation-id> <request-id> --option 'plan=a' --other 'notes=补充说明'
+buildr agent reply <conversation-id> <request-id> --answer-json '{"plan":["a"],"notes":["补充说明"]}'
+buildr agent send '新的要求' --conversation <conversation-id> --skip-questions
+```
+
+`send --conversation <id> --skip-questions` 在同一个 `conversationId` 下跳过当前挂起的问题卡片、开启新一轮，保留历史且不生成卡片答案。两个参数必须一起使用；沿用当前连接、账号、模型、档位、推理和权限，不接受覆盖配置。CLI 先 observe，以当前版本、原执行身份和完整问题集合预发送，再调用 `pending-send` 持久投递；返回待发送状态不代表已完成执行，应使用 `read` 核对。仅接受当前执行的完整问题卡片集合，不处理审批、旧轮问题或已有待发送内容；问题或版本变化时拒绝，不自动新建对话、不重放未知投递。服务记录旧卡片未回答，由现有机制保留并善后旧执行。跳过不代表同意；新一轮仍缺必要业务决定时必须重新询问。
 
 `continue` 先 observe，只在对话空闲、没有未结束的保留执行、待回答问题及排队消息时，沿用原参与者的连接、模型及已有执行配置，调用 prepare-send 和 send。对话标识保持不变，不调用 create。运行中或状态未知时报错，不自动转为 supplement 或 pending-send；需先核对状态并等待空闲，或由用户明确停止执行后再继续。所有命令拒绝缺失或无效工作空间标识；失败和超时均不盲目重试。
+
+### 运行中补充与事件重放
+
+```bash
+buildr agent supplement <conversation-id> '补充要求' --target /path/to/workspace
+buildr agent replay <conversation-id> <event-id> --target /path/to/workspace
+```
+
+`supplement` 先观察原执行，再以准确 runId、participantId、generation 调用既有 supplement。沿用原连接，不新建对话、不把新内容当作卡片回答；未受理、已结束、未知状态、已有待发送内容或原执行器不支持时明确报错。返回 delivery=unknown 时先 read 核对，不盲目重发。
+
+`replay` 只重放已保存的 Webhook 事件，不重发模型输入。eventId 必须为完整 64 位十六进制；服务核对事件所属 workspace 和 conversation 及配置目标，原样保留 payload、eventId 与 timestamp。未知事件、错误作用域或不同通知目标均拒绝。通知的自动补推由发送端负责，不需要接收端调度。公共事件格式见 [智能体事件契约](agent-event-contract.md)。
+
+CLI supplement 显式使用 sameRunOnly=true，仅向原 runId 追加。挂起问题卡片时不接收该补充；需要放弃卡片并开启新轮时用 send --conversation <id> --skip-questions。投递过程中原轮已结束则返回 rejected 并保留内容，不自动转成新轮；delivery=unknown 仍须先读取核对，不能重发未知操作。

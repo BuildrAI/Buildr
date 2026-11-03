@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
-import { AGENT_SERVICE_APPLICATION } from '../../src/modules/agent-service/module.ts';
+import { AGENT_SERVICE_APPLICATION, createAgentServiceModule } from '../../src/modules/agent-service/module.ts';
+import { WORKSPACE_APPLICATION } from '../../src/modules/workspace/module.ts';
+import { TASK_QUERY_APPLICATION } from '../../src/modules/task/module.ts';
 import { stopAgentProcess } from '@buildr-ai/buildr-agent';
 import { runtimeProvide } from '../../src/bootstrap/runtime.ts';
 import assert from 'node:assert/strict';
@@ -10,7 +12,7 @@ import test from 'node:test';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
-import { AgentServiceError, createAgentService, type AgentRuntime, type ExecutorItem } from '@buildr-ai/buildr-agent';
+import { AgentServiceError, createAgentService as createService, type AgentRuntime, type ExecutorItem } from '@buildr-ai/buildr-agent';
 import { createRuntime, runtimeContributions } from '../helpers/runtime-harness.ts';
 import { taskRecordFixture } from '../helpers/task-record-system-fixture.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
@@ -19,6 +21,45 @@ import { AGENT_SERVICE_HTTP_OPERATIONS } from '../../src/modules/agent-service/i
 import { inspectHttpOperationCoverage } from '../../src/web/http/http-operation-coverage.ts';
 import { apiError, eventStreamResponse } from '../../src/web/http/responses.ts';
 import { stopOwnedChildProcess } from '../verification/support/owned-process.ts';
+
+// HTTP fixtures must not load host credentials or start host-configured notification delivery.
+function createAgentService(options: Parameters<typeof createService>[0]) {
+  return createService({ ...options, environment: options.environment ?? { HOME: path.dirname(options.dataRoot) } });
+}
+
+test('linked task verification uses the authoritative summary without resolving full task diagnostics', {timeout:30_000}, async t => {
+  let instance:any, dataRoot:string;
+  t.after(async()=>{await instance?.provides[AGENT_SERVICE_APPLICATION].close();if(dataRoot)await stopAgentProcess({dataRoot});});
+  const {base,root}=taskRecordFixture(t,'agent-task-summary-host');dataRoot=path.join(base,'private-agent');
+  let summaries=0, wrongIdentity=false;
+  const module=createAgentServiceModule({readProductIdentity:()=>({}),resolveWebProfile:()=>({dataRoot,profile:'fixture'})});
+  instance=module.create({
+    [WORKSPACE_APPLICATION]:{resolveRegisteredWorkspace:()=>({rootPath:root}),listRegisteredWorkspaces:()=>({workspaces:[]})},
+    [TASK_QUERY_APPLICATION]:{
+      inspectTask:()=>assert.fail('full diagnostics must not run on the execution callback path'),
+      inspectTaskSummaryView:(_root:string,id:string)=>{summaries++;assert.equal(_root,root);return {record:{taskId:wrongIdentity?'another-task':id},recordDigest:'summary-revision'};},
+    },
+  });
+  const response=await instance.contributions.http[0].handle({request:{method:'POST'},suffix:'/agent-conversations',workspaceId:'fixture-workspace',searchParams:new URLSearchParams(),authorizeWrite:()=>{},readJsonBody:async()=>({taskId:'linked-task'})});
+  assert.equal(response.status,201,JSON.stringify(response.body));assert.equal(response.body.taskId,'linked-task');assert.equal(summaries,1);
+  wrongIdentity=true;
+  const rejected=await instance.contributions.http[0].handle({request:{method:'POST'},suffix:'/agent-conversations',workspaceId:'fixture-workspace',searchParams:new URLSearchParams(),authorizeWrite:()=>{},readJsonBody:async()=>({taskId:'linked-task'})});
+  assert.equal(rejected.status,404);assert.equal(rejected.body.error.code,'agent_task_missing');
+});
+
+test('HTTP service fixtures ignore host webhook configuration', async t => {
+  const { base } = taskRecordFixture(t, 'agent-http-host-isolation');
+  const config = path.join(base, 'host-webhook.json');
+  fs.writeFileSync(config, JSON.stringify({ url: 'http://127.0.0.1:1/host-only', secret: 'fixture-only-secret' }), { mode: 0o600 });
+  const previous = process.env.BUILDR_AGENT_WEBHOOK_CONFIG;
+  process.env.BUILDR_AGENT_WEBHOOK_CONFIG = config;
+  t.after(() => { if (previous === undefined) delete process.env.BUILDR_AGENT_WEBHOOK_CONFIG; else process.env.BUILDR_AGENT_WEBHOOK_CONFIG = previous; });
+  const dataRoot = path.join(base, 'agent-profile');
+  const service = createAgentService({ dataRoot, executors: [], modelProviders: [] });
+  t.after(() => service.close());
+  assert.equal(service.webhooks.read().state, 'unconfigured');
+  assert.equal(fs.existsSync(dataRoot), false, 'host notification configuration must not initialize fixture storage');
+});
 
 test('program preparation is authenticated, schema checked and independently observable/cancellable', { timeout: 30_000 }, async t => {
   const { base, root } = taskRecordFixture(t, 'agent-program-http');
@@ -102,10 +143,6 @@ test('private conversations use authenticated HTTP and bounded binary input; str
   const conversations = `${url}/api/v1/workspaces/${workspaceId}/agent-conversations`;
   const headers = { origin: url, 'x-buildr-session': sessionToken, 'content-type': 'application/json' };
   const readHeaders = { 'x-buildr-session': sessionToken };
-  const warmEndpoint=conversations+'/drafts/00000000-0000-4000-8000-000000000001/warmup';
-  assert.equal((await fetch(warmEndpoint,{method:'POST',body:JSON.stringify({connectionId:'codex'})})).status,403);
-  assert.equal((await fetch(warmEndpoint,{method:'POST',headers,body:JSON.stringify({connectionId:'codex',text:'must not become work'})})).status,400);
-  assert.equal((await fetch(warmEndpoint,{method:'POST',headers:{...headers,origin:'https://foreign.example'},body:JSON.stringify({connectionId:'codex'})})).status,403);
   let response = await fetch(`${app}/connections`);
   assert.equal(response.status, 403);
   response = await fetch(`${app}/connections`, { headers: { ...readHeaders, origin: 'https://foreign.example' } }); assert.equal(response.status, 403);
@@ -628,6 +665,19 @@ test('agent HTTP keeps public service failures while unknown failures get safe c
  assert.equal(JSON.parse(logs[0]).pathname,'/api/v1/app/agent-service/connections');assert.doesNotMatch(body+logs.join(''),new RegExp(secret));
 });
 
+test('契约违约在运行单元不一致时降级为版本对齐，同版本仍按违约暴露',async()=>{
+ const service:any={connections:{list:async()=>({connections:[{id:'codex'}]})}};
+ const context={request:{method:'GET'},pathname:'/api/v1/app/agent-service/connections',searchParams:new URLSearchParams(),authorizeRead(){},authorizeWrite(){}};
+ const mismatch=createAgentServiceHttpContribution(()=>service,{runtimeAligning:async()=>true});
+ assert.deepEqual(await mismatch.handleTopLevel(context),{status:503,body:{error:{code:'agent_service_aligning',message:'执行后台正在切换版本，连接状态暂不可用。'}}});
+ const aligned=createAgentServiceHttpContribution(()=>service,{runtimeAligning:async()=>false});
+ assert.deepEqual(await aligned.handleTopLevel(context),{status:500,body:{error:{code:'agent_http_response_invalid',message:'智能体服务返回结果不符合契约。'}}});
+ const unavailable=createAgentServiceHttpContribution(()=>service,{runtimeAligning:async()=>{throw new Error('status unavailable');}});
+ assert.equal((await unavailable.handleTopLevel(context)).status,500);
+ const plain=createAgentServiceHttpContribution(()=>service);
+ assert.equal((await plain.handleTopLevel(context)).status,500);
+});
+
 test('historical native file presentations reach authenticated HTTP without replaying work',async t=>{
  const {base,root}=taskRecordFixture(t,'agent-presented-file-http');
  const previous=process.env.BUILDR_APP_DATA_DIR;process.env.BUILDR_APP_DATA_DIR=path.join(base,'private-app');
@@ -688,7 +738,7 @@ test('联合活动摘要裁剪上下文并以内容版本返回未变化标记�
   assert.equal((await fetch(endpoint+'?revision=invalid',{headers})).status,400);
 });
 
-/** Explicit v5 raw fixture; production writing and migration are tested by the service. */
+/** Explicit v6 raw fixture; production writing and migration are tested by the service. */
 function seedConversation(db: DatabaseSync, record: any): void {
   db.exec('BEGIN IMMEDIATE');
   try {
@@ -699,7 +749,7 @@ function seedConversation(db: DatabaseSync, record: any): void {
       db.prepare('INSERT OR REPLACE INTO conversation_read_entries VALUES(?,?,?,?,?,?,?,?,?,?)').run(record.view.id,'main',entry.sequence,entry.id,'legacy:fixture',revision,compact,Buffer.byteLength(body),Buffer.byteLength(compact??body),Number(entry.kind==='message'&&!entry.thinking));
     }
     const count=record.view.entries.length;
-    const header=JSON.stringify({...record,_bodyFormat:5,view:{...record.view,entries:[]}});
+    const header=JSON.stringify({...record,_bodyFormat:7,view:{...record.view,entries:[]}});
     db.prepare('UPDATE conversations SET body=?,revision=?,entry_count=? WHERE id=?').run(header,record.view.revision,count,record.view.id);
     db.exec('COMMIT');
   } catch(error) { db.exec('ROLLBACK');throw error; }
@@ -732,4 +782,43 @@ test('CLI target proof accepts only current authorized physical entry, not PATH 
  assert.equal(observeParticipationCli(identity,'buildr'),undefined);assert.equal(observeParticipationCli(identity,copy),undefined);
  const observed=observeParticipationCli(identity,entry)!;assert.equal(observed.status,'confirmed');assert.equal(observed.observedVersion,undefined);assert.match(observed.offeredVersion!,/^sha256-/);
  assert.equal(observeParticipationCli({...identity,package:'untrusted'},entry),undefined);
+});
+
+test('webhook replay HTTP validates authentication, conversation scope and immutable event ID',async t=>{
+ const {base,root}=taskRecordFixture(t,'webhook-replay-http'),runtime=createRuntime();
+ const previous=process.env.BUILDR_APP_DATA_DIR;process.env.BUILDR_APP_DATA_DIR=path.join(base,'private');t.after(()=>{if(previous===undefined)delete process.env.BUILDR_APP_DATA_DIR;else process.env.BUILDR_APP_DATA_DIR=previous;});
+ const id='11111111-1111-4111-8111-111111111111',eventId='a'.repeat(64),calls:any[]=[];
+ const service:any={conversations:{replayWebhook:(scope:string,conversationId:string,input:any)=>{calls.push([scope,conversationId,input]);return{eventId:input.eventId,queued:true};}}};
+ const contributions=runtimeContributions(runtime,'http').filter((item:any)=>item.id!=='agent-service.http');contributions.push(createAgentServiceHttpContribution(()=>service));
+ const instance=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions});const {url,sessionToken,initialWorkspaceId}=await instance.ready;
+ t.after(async()=>{instance.server.closeAllConnections();await new Promise<void>(resolve=>instance.server.close(()=>resolve()));});
+ const headers={origin:url,'x-buildr-session':sessionToken,'content-type':'application/json'},endpoint=`${url}/api/v1/workspaces/${initialWorkspaceId}/agent-conversations/${id}/webhook-replay`;
+ assert.equal((await fetch(endpoint,{method:'POST',body:JSON.stringify({eventId})})).status,403);assert.equal(calls.length,0);
+ for(const body of [{eventId:'bad'},{eventId,workspaceId:'other'},{eventId,payload:{text:'arbitrary'}}])assert.equal((await fetch(endpoint,{method:'POST',headers,body:JSON.stringify(body)})).status,400);
+ const response=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({eventId})});assert.equal(response.status,200);assert.deepEqual(await response.json(),{eventId,queued:true});assert.deepEqual(calls,[[initialWorkspaceId,id,{eventId}]]);
+});
+
+test('webhook settings require authentication, protect secret reads and reject stale saves', {timeout:30_000}, async t=>{
+  const {base,root}=taskRecordFixture(t,'webhook-settings-http');
+  const runtime=createRuntime();
+  const service=createAgentService({dataRoot:path.join(base,'agent-profile'),environment:{HOME:base},executors:[],modelProviders:[],resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
+  const contribution=createAgentServiceHttpContribution(()=>service);
+  const contributions=runtimeContributions(runtime,'http').filter((item:{id:string})=>item.id!=='agent-service.http');contributions.push(contribution);
+  const server=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions});
+  const {url,sessionToken}=await server.ready;
+  t.after(async()=>{await service.close();server.server.closeAllConnections();await new Promise<void>(resolve=>server.server.close(()=>resolve()));});
+  const endpoint=url+'/api/v1/app/agent-service/webhook-settings';
+  const headers={origin:url,'x-buildr-session':sessionToken,'content-type':'application/json'};
+  assert.equal((await fetch(endpoint)).status,403);
+  let response=await fetch(endpoint,{headers});assert.equal(response.status,200);
+  const initial=await response.json();assert.equal(initial.state,'unconfigured');assert.equal('secret' in initial,false);
+  response=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:initial.revision,url:'https://receiver.invalid/hook',secret:'http-secret-test',enabled:true,unexpected:true})});assert.equal(response.status,400);
+  response=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:initial.revision,url:'https://receiver.invalid/hook',secret:'http-secret-test',enabled:true})});assert.equal(response.status,200);
+  const saved=await response.json();assert.equal(saved.state,'enabled');assert.equal(JSON.stringify(saved).includes('http-secret-test'),false);
+  assert.equal((await fetch(endpoint+'/reveal',{method:'POST',headers:{...headers,origin:'https://foreign.invalid'},body:JSON.stringify({expectedRevision:saved.revision})})).status,403);
+  assert.equal((await fetch(endpoint+'/reveal',{headers})).status,404);
+  response=await fetch(endpoint+'/reveal',{method:'POST',headers,body:JSON.stringify({expectedRevision:saved.revision})});assert.equal(response.status,200);assert.equal(response.headers.get('cache-control'),'no-store');assert.deepEqual(await response.json(),{secret:'http-secret-test'});
+  response=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:initial.revision,url:saved.url,enabled:false})});assert.equal(response.status,409);
+  response=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:saved.revision,url:saved.url,enabled:false})});assert.equal(response.status,200);const disabled=await response.json();assert.equal(disabled.state,'disabled');
+  response=await fetch(endpoint+'/test',{method:'POST',headers,body:JSON.stringify({expectedRevision:disabled.revision})});assert.equal(response.status,409);
 });

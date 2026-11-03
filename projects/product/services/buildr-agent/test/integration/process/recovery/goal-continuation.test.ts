@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import type { AgentProcessConnection, ConversationView } from '../../../../src/index.ts';
 import { actor, until, prepareAgentRuntime, connectAgentProcess, copyPackage, prepared, cleanupProcessFixture } from '../../../support/process-fixture.ts';
 
-for(const releasedBeforeAttach of [false,true])test('a replacement owning host activates goal recovery without a new user message; alreadyReleased='+releasedBeforeAttach, {timeout:60000}, async t => {
+for(const releasedBeforeAttach of [false,true])test('a replacement owning host keeps interrupted work observable and continues only when the user says so; alreadyReleased='+releasedBeforeAttach, {timeout:90000}, async t => {
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-process-goal-')),dataRoot=path.join(root,'profile'),workspace=path.join(root,'work'),packageRoot=path.join(root,'package');
   fs.mkdirSync(workspace);copyPackage(prepared,packageRoot);
   fs.copyFileSync(path.join(import.meta.dirname,'../../fixtures/agent-process-entry.mjs'),path.join(packageRoot,'build/process-fixture.mjs'));
@@ -37,12 +37,15 @@ for(const releasedBeforeAttach of [false,true])test('a replacement owning host a
   main=await actor({dataRoot,profileId,runtime,workspace,legacySourceId:'minimal',autoContinueInterrupted:true});
   assert.equal(main.info.identity.generation,identity.generation,'policy refresh must not interrupt the existing backend');
   fs.writeFileSync(path.join(dataRoot,'release-uncertain-resource'),'yes');
-  const done=await until(()=>observer!.operations.conversations.read(scope,chat.id),view=>view.run?.status==='completed');
-  assert.equal(fs.readFileSync(path.join(dataRoot,'remaining-result'),'utf8'),'continued goal');
-  const sends=fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').trim().split('\n').map(line=>JSON.parse(line));
-  assert.equal(sends.length,2);assert.equal(sends.filter(value=>value.text==='goal-recovery').length,1);
-  assert.match(sends[1].prompt,/系统自动恢复/);
-  assert.equal(done.entries.filter(entry=>entry.kind==='message'&&entry.role==='user').length,1);
-  assert.equal(done.entries.filter(entry=>entry.kind==='handoff').length,0);
-  assert.equal(done.retainedRuns?.find(run=>run.id===interrupted.run!.id)?.status,'unknown');
+  // Automatic recovery may not open a replacement native session, so the
+  // interrupted goal stays unknown and observable instead of being replayed.
+  const settled=await until(()=>observer!.operations.conversations.read(scope,chat.id),view=>Boolean(view.run?.diagnostic)||view.run?.status!=='unknown');
+  assert.equal(settled.run?.status,'unknown');
+  assert.equal(fs.existsSync(path.join(dataRoot,'remaining-result')),false);
+  const automatic=fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').trim().split('\n').map(line=>JSON.parse(line));
+  assert.equal(automatic.length,1);assert.equal(automatic[0].text,'goal-recovery');
+  // A later user message is a separate explicit request; this scan must not
+  // have created a replacement session or replayed the interrupted command.
+  assert.equal(settled.run?.id,interrupted.run!.id);
+  assert.equal(settled.entries.some(entry=>entry.kind==='handoff'&&entry.nativeSession),false);
 });

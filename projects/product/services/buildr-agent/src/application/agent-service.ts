@@ -1,4 +1,4 @@
-import { ConversationWebhooks } from './conversation-webhooks.ts';
+import { WebhookManagement } from './webhook-management.ts';
 import { conversationRuns, unfinishedRun } from '../domain/agent-state.ts';
 import { AgentServiceError } from '../domain/agent-state.ts';
 import { ProgramUpgrades } from './program-upgrades.ts';
@@ -17,6 +17,7 @@ import process from 'node:process';
 import { randomUUID } from 'node:crypto';
 import type { AgentServiceOptions, ConnectionView, PreparationInput, ProgramUpgradeInput, SendDraft } from '../contracts.ts';
 import { ConversationRepository } from '../persistence/conversation-repository.ts';
+import { NativeContentResolver } from './native-content-resolver.ts';
 import { ConnectionApplication } from '../application/connection-application.ts';
 import { ConversationApplication } from '../application/conversation-application.ts';
 import { ConversationEvents } from '../application/conversation-events.ts';
@@ -30,9 +31,11 @@ import { HostContext } from '../application/host-context.ts';
 export function createAgentService(options: AgentServiceOptions) {
   const generation = randomUUID();
   const root = path.join(options.dataRoot, 'agent-service');
-  const repository = new ConversationRepository(root);
+  const resolver=new NativeContentResolver(root,id=>repository.readConversation(id));
+  const repository:ConversationRepository = new ConversationRepository(root,(record,entry)=>resolver.tool(record,entry));
   repository.startReadModels();
-  const events = new ConversationEvents(generation, ConversationWebhooks.configure(options.environment ?? process.env));
+  const webhooks = new WebhookManagement(options.environment ?? process.env, root, after => repository.webhookRecoveryPage(after));
+  const events = new ConversationEvents(generation, webhooks);
   const now = () => (options.now?.() ?? new Date()).toISOString();
   let linkedChanged: ((connection:ConnectionView)=>void)|undefined;
   const connections = new ConnectionApplication({ repository, root, executors: options.executors ?? createNativeExecutors(), environment: executorEnvironment(options.environment ?? process.env), generation, now, changed: (connection: ConnectionView) => {events.publish({ type: 'connection', revision: connection.revision, payload: { connection } });linkedChanged?.(connection);} });
@@ -103,6 +106,7 @@ export function createAgentService(options: AgentServiceOptions) {
   const withUpgrades=(snapshot:ReturnType<typeof programUpdates.list>)=>({programs:snapshot.programs.map(program=>({...program,upgrade:(()=>{const job=upgrades.read(program.connectionId);return job&&(job.executable===program.executable||job.installedExecutable===program.executable)?job:undefined;})()}))});
   return {
     generation,
+    webhooks: { read: () => webhooks.read(), save: (input: import('../contracts.ts').WebhookSettingsInput) => webhooks.save(input), reveal: (input: {expectedRevision:string}) => webhooks.reveal(input), test: (input: {expectedRevision:string}) => webhooks.test(input) },
     activity() {
       const reasons = [...conversations.activity(), ...preparations.activity(), ...connections.activity(), ...models.activity(), ...upgrades.activity()];
       if(discovery)reasons.push({kind:'model-discovery',count:1});
@@ -131,7 +135,6 @@ export function createAgentService(options: AgentServiceOptions) {
     retainsConversationSource: (scope:string,id:string) => conversations.retainsConversationSource(scope,id),
     releaseIdleSources: (owner?:{workspaceId:string;id:string}) => conversations.releaseIdleSources(owner),
     observeForRelease: (scope:string,id:string,runId:string,generation:string) => conversations.observeForRelease(scope,id,runId,generation),
-    canAdoptParallel: () => conversations.canAdoptParallel(),
     verifyNext: (scope: string, id: string) => conversations.verifyNext(scope, id),
     validatePending: (scope: string, id: string, input: SendDraft) => conversations.validatePending(scope, id, input),
     checkWaitingHandoff: (scope:string,id:string,requestId:string) => conversations.checkWaitingHandoff(scope,id,requestId),
@@ -170,7 +173,6 @@ export function createAgentService(options: AgentServiceOptions) {
       },
     },
     conversations: {
-      warmup: (scope:string,id:string,input:import('../contracts.ts').ConversationWarmupInput,draft=false)=>conversations.warmup(scope,id,input,draft),
       readDraft: (scope: string, id: string) => conversations.drafts.list(scope, id),
       addDraftImage: (scope: string, id: string, input: Parameters<typeof conversations.drafts.add>[2]) => conversations.drafts.add(scope, id, input),
       removeDraftImage: (scope: string, id: string, input: Parameters<typeof conversations.drafts.remove>[2]) => conversations.drafts.remove(scope, id, input),
@@ -198,7 +200,13 @@ export function createAgentService(options: AgentServiceOptions) {
       send: (workspaceId: string, id: string, input: Parameters<ConversationApplication['send']>[2]) => conversations.send(workspaceId, id, input),
       queueSend: (workspaceId: string, id: string, input: Parameters<ConversationApplication['queueSend']>[2]) => conversations.queueSend(workspaceId, id, input),
       cancelPendingSend: (workspaceId: string, id: string, input: Parameters<ConversationApplication['cancelPendingSend']>[2]) => conversations.cancelPendingSend(workspaceId, id, input),
+      replayWebhook: (workspaceId: string, id: string, input: {eventId:string}) => {
+        conversations.read(workspaceId,id);
+        if(!webhooks) throw new AgentServiceError('agent_webhook_unavailable','本实例未配置有效通知目标。',409);
+        return webhooks.replay(workspaceId,id,input.eventId);
+      },
       supplement: (workspaceId: string, id: string, input: Parameters<ConversationApplication['supplement']>[2]) => conversations.supplement(workspaceId, id, input),
+      releaseQuestionWait: (workspaceId:string,id:string,input:Parameters<ConversationApplication['releaseQuestionWait']>[2]) => conversations.releaseQuestionWait(workspaceId,id,input),
       observeRun: (workspaceId:string,id:string,input:Parameters<ConversationApplication['observeRun']>[2]) => conversations.observeRun(workspaceId,id,input),
       observe: (workspaceId: string, id: string) => conversations.observe(workspaceId, id),
       stop: (workspaceId: string, id: string, input: Parameters<ConversationApplication['stop']>[2]) => conversations.stop(workspaceId, id, input),

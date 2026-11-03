@@ -3,6 +3,7 @@ export const HISTORY_GROUP_LIMIT = 5;
 export const HISTORY_GROUP_BATCH = 10;
 type Reader = Pick<Storage, 'getItem'>;
 type Writer = Pick<Storage, 'setItem'>;
+const preferenceListeners = new Set<(order: string[]) => void>();
 
 const profileName = () => typeof document === 'undefined' ? 'local' : document.querySelector('meta[name="buildr-web-profile"]')?.getAttribute('content') || 'local';
 const storageKey = (profile: string) => `buildr.agent-conversation.history-groups:${encodeURIComponent(profile || 'local')}`;
@@ -36,5 +37,21 @@ export function readHistoryGroupPreference(storage: Reader | undefined = browser
 }
 
 export function writeHistoryGroupPreference(order: string[], storage: Writer | undefined = browserStorage(), profile = profileName()): boolean {
-  try { storage?.setItem(storageKey(profile), JSON.stringify(order.filter(id => id !== DEFAULT_HISTORY_GROUP))); return Boolean(storage); } catch { return false; }
+  let saved = false;
+  try { storage?.setItem(storageKey(profile), JSON.stringify(order.filter(id => id !== DEFAULT_HISTORY_GROUP))); saved = Boolean(storage); } catch { /* Keep this page in sync even when persistence fails. */ }
+  if (profile === profileName()) for (const listener of preferenceListeners) listener([...order]);
+  return saved;
+}
+
+/** 同页写入与同配置跨页签变更共享订阅，卸载时释放监听。 */
+export function subscribeHistoryGroupPreference(listener: (order: string[]) => void): () => void {
+  preferenceListeners.add(listener);
+  const onStorage = (event: StorageEvent) => {
+    if ((event.key === null || event.key === storageKey(profileName())) && event.storageArea === browserStorage()) listener(readHistoryGroupPreference());
+  };
+  if (typeof window !== 'undefined') window.addEventListener('storage', onStorage);
+  return () => {
+    preferenceListeners.delete(listener);
+    if (typeof window !== 'undefined') window.removeEventListener('storage', onStorage);
+  };
 }

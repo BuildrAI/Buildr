@@ -13,28 +13,28 @@ function replace(source: string, before: string, after: string) {
   assert.ok(source.includes(before), 'native fixture changed: '+before);
   return source.replace(before, after);
 }
-async function questionFixture(twoQuestions = false, blocking = true) {
+async function questionFixture(twoQuestions = false, blocking = true, autoResolveMs = 0) {
   let source = await readFile(new URL('./fixtures/codex-cli.mjs', import.meta.url), 'utf8');
   source = replace(source, 'state[t.id]=t;', 't.interaction={config:m.params.config,developerInstructions:m.params.developerInstructions};state[t.id]=t;');
   source = replace(source, "if(m.method==='thread/resume'||m.method==='thread/read'){", "if(m.method==='thread/resume'){state[m.params.threadId].interaction={config:m.params.config,developerInstructions:m.params.developerInstructions};save();}if(m.method==='thread/resume'||m.method==='thread/read'){");
   source = replace(source, "{id:'color',question:'颜色',options:[{label:'蓝'}]}", "{id:'color',question:'颜色',isOther:true,options:[{label:'蓝',description:'使用蓝色方案'},{label:'绿',description:'使用绿色方案'}]}");
   const emission = source.split('\n').find(line => line.startsWith("process.stdout.write(JSON.stringify({id:'request-'+id"))!;
   // Model the native collaborator's feature gate, rather than unconditionally exposing a question.
-  source = replace(source, emission, "if(state[p.threadId].interaction?.config?.features?.default_mode_request_user_input){"+emission+(twoQuestions ? emission.replace("id:'request-'+id", "id:'second-'+id") : '')+'}');
+  const emitted = emission + (twoQuestions ? emission.replace("id:'request-'+id", "id:'second-'+id") : '') + (autoResolveMs > 0 ? `\nsetTimeout(()=>event('serverRequest/resolved',{threadId:p.threadId,requestId:'request-'+id}),${autoResolveMs});` : '');
+  source = replace(source, emission, "if(state[p.threadId].interaction?.config?.features?.default_mode_request_user_input){"+emitted+'}');
   source = replace(source, "m.id?.startsWith('request-')", "/^(request|second)-/.test(String(m.id))");
   source = replace(source, "if(m.result.answers.color.answers[0]!=='蓝')throw Error('wrong answer');", 'state[active.threadId].lastAnswer=m.result.answers;save();');
-  source = replace(source, "const user={id:'native-'+p.clientUserMessageId", "if(p.input[0]?.text==='cancel-first'){event('serverRequest/resolved',{threadId:p.threadId,requestId:'request-'+active.id});event('serverRequest/resolved',{threadId:p.threadId,requestId:'unknown'});event('serverRequest/resolved',{threadId:'another-thread',requestId:'second-'+active.id});}const user={id:'native-'+p.clientUserMessageId");
   if (!blocking) source = source.replaceAll('questions:[{', 'isBlocking:false,autoResolutionMs:1,questions:[{');
   return source;
 }
-async function eventually(read: () => ConversationView, predicate: (view: ConversationView) => boolean) {
-  const deadline = Date.now()+2000;
+async function eventually(read: () => ConversationView, predicate: (view: ConversationView) => boolean, budget = 2000) {
+  const deadline = Date.now()+budget;
   while (Date.now()<deadline) { const view=read(); if (predicate(view)) return view; await delay(5); }
   assert.fail('question state was not observed: '+JSON.stringify(read().run));
 }
-async function fixture(mode: PermissionMode, twoQuestions = false, blocking = true) {
+async function fixture(mode: PermissionMode, twoQuestions = false, blocking = true, autoResolveMs = 0) {
   const root = await mkdtemp(join(tmpdir(), 'buildr-codex-decisions-'));
-  const executable=join(root,'codex.mjs');await writeFile(executable,await questionFixture(twoQuestions, blocking));
+  const executable=join(root,'codex.mjs');await writeFile(executable,await questionFixture(twoQuestions, blocking, autoResolveMs));
   const service=createAgentService({dataRoot:join(root,'profile'),executors:[createCodexExecutor()],modelProviders:[],environment:{PATH:process.env.PATH??''},resolveWorkspace:()=>({rootPath:root})});
   await service.connections.connect('codex',{expectedRevision:service.connections.read('codex').revision,executable});
   const chat=await service.conversations.create('workspace',{});
@@ -55,7 +55,8 @@ for (const mode of ['default','full-access'] as const) test('Codex '+mode+' wait
     assert.equal(question.questions![0].options![0].description,'使用蓝色方案');
     assert.equal(f.read().requests[0].id,question.id,'reopening reads the same pending question');
     assert.equal(waiting.entries.some(e=>e.name==='command'),false,'dependent work has not started');
-    await f.service.conversations.supplement('workspace',f.chat.id,{...f.control(),text:'补充说明，尚未决定。',clientRequestId:'supplement'});
+    // 输入框按新语义开启新轮，等待回答时不再作为原轮的补充投递。
+    await assert.rejects(f.service.conversations.supplement('workspace',f.chat.id,{...f.control(),text:'补充说明，尚未决定。',clientRequestId:'supplement'}),{code:'agent_supplement_unavailable'});
     assert.equal(f.read().requests[0].id,question.id);assert.equal(f.read().run!.status,'waiting-question');
     assert.equal(f.read().entries.some(e=>e.name==='command'),false);
     await f.service.conversations.reply('workspace',f.chat.id,question.id,{...f.control(),answer:{color:'自定义颜色'}});
@@ -70,11 +71,11 @@ for (const mode of ['default','full-access'] as const) test('Codex '+mode+' wait
 });
 
 test('Codex cancellation removes only the exact question and rejects its late answer',async()=>{
-  const f=await fixture('full-access',true);
+  // 原生主动解除其中一个问题；旧触发依赖同轮补充，同轮补充已不属于新语义。
+  const f=await fixture('full-access',true,true,800);
   try {
     const waiting=await eventually(f.read,v=>v.requests.length===2),cancelled=waiting.requests[0],retained=waiting.requests[1];
-    await f.service.conversations.supplement('workspace',f.chat.id,{...f.control(),text:'cancel-first',clientRequestId:'cancel'});
-    const current=await eventually(f.read,v=>v.requests.length===1);
+    const current=await eventually(f.read,v=>v.requests.length===1,6000);
     assert.equal(current.requests[0].id,retained.id);assert.equal(current.run!.status,'waiting-question');
     await assert.rejects(f.service.conversations.reply('workspace',f.chat.id,cancelled.id,{...f.control(),answer:{color:'蓝'}}),/失效|变化/);
     assert.equal(f.read().entries.some(e=>e.name==='command'),false);

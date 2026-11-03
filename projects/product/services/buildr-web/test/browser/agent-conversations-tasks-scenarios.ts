@@ -101,6 +101,24 @@ await step('窄工作区同时打开任务与对话时，内容标题栏填满�
       await page.setViewportSize({width:1600,height:1000});
     });
 
+await step('已提交未受理和失败只显示两个状态并保留在活动浮窗',async()=>{
+  const at=new Date().toISOString(),base=structuredClone(fixture.conversation);
+  const make=(id:string,state:'waiting'|'failed',reason:string)=>({...base,id,title:id,entries:[],requests:[],run:undefined,retainedRuns:[],activity:{active:true,version:1,seenThrough:1,updatedAt:at,pendingDecisionCount:0,pendingSend:{state,reason,updatedAt:at}}});
+  const pattern='**/api/v1/app/agent-service/activity-summary*';
+  const route=async(route:any)=>route.fulfill({status:200,json:{revision:'pending-display',conversations:[make('待发送测试','waiting','等待准确接收后台就绪'),make('发送失败测试','failed','明确的发送错误')],pending:[],total:2,activityCounts:{active:2,running:0,waiting:0,unseen:0,unknown:0,attention:0,pendingSend:2},stats:{agents:[],models:[],executions:[],modelExecutions:[]}}});
+  try{
+    await page.route(pattern,route);await page.reload();await input().waitFor();
+    const entry=page.locator('button[aria-label^="所有对话，"]:visible').last();
+    await entry.getByLabel('2 个活动中对话',{exact:true}).waitFor();await entry.hover();
+    const menu=page.locator('.ac-activity-menu:visible');
+    await menu.getByText('等待发送',{exact:true}).waitFor();await menu.hover();await menu.getByText('发送失败',{exact:true}).waitFor();
+    await menu.getByText('等待准确接收后台就绪',{exact:true}).waitFor();await menu.getByText('明确的发送错误',{exact:true}).waitFor();
+    assert.match(await menu.locator('.ac-execution-summary').innerText(),/执行中模型\s*0/);
+    assert.equal(await menu.locator('[data-activity-id]').count(),2);
+    await capture(page,'conversation-pending-activity.png');
+  }finally{await page.unroute(pattern,route);await page.reload();await input().waitFor();}
+});
+
 await step('原生暂忙时保存待发送内容，刷新保留、仅可取消，并在新版开始后更新展示',async()=>{
       update({run:run('stopping','dsh'),requests:[],pendingSend:undefined});await reopen();
       const before=fixture.sends,previewsBefore=fixture.prepares;
@@ -108,10 +126,10 @@ await step('原生暂忙时保存待发送内容，刷新保留、仅可取消�
       await panel().getByRole('button',{name:'移除图片 cancel.png',exact:true}).waitFor();
       fixture.prepareError={code:'agent_process_switching',message:'原生服务正在切换。'};
       await input().fill('上一轮结束后继续修复');await input().press('Enter');
-      await panel().getByText('新指令已保存，尚未发送',{exact:true}).waitFor();
+      await panel().getByText('等待发送',{exact:true}).waitFor();
       assert.equal(fixture.sends,before);assert.equal(fixture.prepares,previewsBefore,'直接提交返回真实服务占用，不先请求预览');assert.equal(await input().inputValue(),'');
       assert.equal(fixture.conversation.pendingSend.draft.text,'上一轮结束后继续修复');
-      await page.reload();await panel().getByText('新指令已保存，尚未发送',{exact:true}).waitFor();
+      await page.reload();await panel().getByText('等待发送',{exact:true}).waitFor();
       assert.deepEqual(await panel().locator('.ac-pending-send-actions button').allTextContents(),['取消']);
       assert.equal(await page.getByRole('dialog',{name:'修改待发送指令',exact:true}).count(),0);
       await capture(page,'agent-conversation-pending-send.png');
@@ -121,12 +139,14 @@ await step('原生暂忙时保存待发送内容，刷新保留、仅可取消�
       const body=panel().locator('.ac-pending-send-text');
       assert.equal(await body.evaluate((node:HTMLElement)=>node.scrollHeight>node.clientHeight),true,'长内容有界但保留完整正文');
       assert.match(await body.innerText(),/完整保留的待发送内容 29/);
+      update({pendingSend:{...pending,state:'dispatching'}});await page.reload();await panel().getByText('等待发送',{exact:true}).waitFor();assert.equal(await panel().getByRole('button',{name:'取消',exact:true}).isEnabled(),false);
       update({pendingSend:{...pending,state:'failed',reason:'原命令尚未确认退出，未发送下一轮。'}});await page.reload();
+      await panel().getByText('发送失败',{exact:true}).waitFor();
       await panel().locator('.ac-pending-send-reason').getByText('原命令尚未确认退出，未发送下一轮。',{exact:true}).waitFor();
       assert.equal(await panel().getByRole('button',{name:'取消',exact:true}).isEnabled(),true);
       assert.equal(fixture.sends,before);
       await capture(page,'agent-conversation-pending-failure.png');
-      update({pendingSend:pending});await page.reload();await panel().getByText('新指令已保存，尚未发送',{exact:true}).waitFor();
+      update({pendingSend:pending});await page.reload();await panel().getByText('等待发送',{exact:true}).waitFor();
       await panel().getByRole('button',{name:'取消',exact:true}).click();await panel().locator('[data-pending-send-state]').waitFor({state:'hidden'});
       assert.equal(await input().inputValue(),pending.draft.text);assert.equal(await input().evaluate((node:HTMLElement)=>document.activeElement===node),true);
       assert.equal(await panel().getByRole('button',{name:'移除图片 cancel.png',exact:true}).count(),1);
@@ -143,7 +163,7 @@ await step('原生暂忙时保存待发送内容，刷新保留、仅可取消�
       assert.equal(await panel().getByRole('button',{name:'移除图片 cancel.png',exact:true}).count(),1);await panel().getByRole('button',{name:'移除图片 cancel.png',exact:true}).focus();await page.keyboard.press('Enter');
       update({run:run('stopped','dsh'),requests:[]});await reopen();const observesBefore=fixture.observes;await panel().locator('.ac-recovery-action').getByRole('button',{name:'继续',exact:true}).click();await panel().locator('[data-run-status="running"]').waitFor();assert.equal(fixture.sends,before+1,'取消只撤回待发送，之后仍能继续原目标');assert.ok(fixture.observes>observesBefore,'继续会先核对原执行');assert.ok(fixture.sentInputs.at(-1).continueRunId);
       update({run:run('stopping','dsh')});await reopen();assert.equal(fixture.sends,before+1);
-      fixture.prepareError={code:'agent_process_switching',message:'原生服务正在切换。'};await input().fill('自动交给新版');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().getByText('新指令已保存，尚未发送',{exact:true}).waitFor();
+      fixture.prepareError={code:'agent_process_switching',message:'原生服务正在切换。'};await input().fill('自动交给新版');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().getByText('等待发送',{exact:true}).waitFor();
       const submitted=fixture.conversation.pendingSend.draft;
       update({pendingSend:undefined,entries:[...fixture.conversation.entries,{id:'auto-new-version',sequence:fixture.conversation.entries.length+1,kind:'message',role:'user',text:submitted.text,createdAt:new Date().toISOString()}],run:run('running','dsh',{generation:'new-service-generation',permissionMode:submitted.permissionMode,model:submitted.model,modelAccountId:submitted.modelAccountId})});
       await panel().getByText('自动交给新版',{exact:true}).waitFor();await panel().locator('[data-pending-send-state]').waitFor({state:'hidden'});

@@ -21,9 +21,22 @@ for(const newInstruction of [true,false])test('retiring process preserves unknow
   let uncertain=await start('uncertain-ended');const other=await start('hold:other');uncertain=await until(()=>observer!.operations.conversations.read(scope,uncertain.id),v=>v.run?.status==='unknown');
   const original=uncertain.run!;
   fs.writeFileSync(marker,JSON.stringify({version:'new'}));const next=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'});await observer.lifecycle.requestRuntime({expectedGeneration:old.generation,runtime:next});await until(()=>observer!.lifecycle.status(),v=>v.identity.runtime.digest===next.digest);
-  if(newInstruction)uncertain=await observer.operations.conversations.queueSend(scope,uncertain.id,{expectedRevision:uncertain.revision,...choice,text:'NEW_INSTRUCTION',clientRequestId:randomUUID(),previousRunId:uncertain.run!.id});
+  // Unknown work whose owner is gone stays observable. A new instruction is
+  // either delivered once through an explicit confirmed replacement or kept
+  // with a reason; it is never replayed or silently merged into the old round.
   await main.call('conversations.read',[scope,uncertain.id]);assert.ok(isLive(old.pid));
-  if(newInstruction)uncertain=await until(()=>observer!.operations.conversations.read(scope,uncertain.id),v=>v.run?.id!==original.id&&v.run?.status==='completed'&&!v.pendingSend);
+  if(newInstruction){
+    for(let attempt=0;;attempt++){
+      const current=await observer.operations.conversations.read(scope,uncertain.id);
+      const confirmed={expectedRevision:current.revision,...choice,text:'NEW_INSTRUCTION'};
+      try{
+        const preview=await observer.operations.conversations.prepareSend(scope,uncertain.id,confirmed);
+        await observer.operations.conversations.send(scope,uncertain.id,{...confirmed,previewToken:preview.token,clientRequestId:randomUUID()});
+        break;
+      }catch(error){if(attempt>=4||(error as {code?:string}).code!=='agent_revision_conflict')throw error;}
+    }
+  }
+  if(newInstruction)uncertain=await until(()=>observer!.operations.conversations.read(scope,uncertain.id),v=>v.run?.id!==original.id&&v.run?.status==='completed');
   fs.writeFileSync(path.join(dataRoot,'release-uncertain-resource'),'yes');
   uncertain=await until(()=>observer!.operations.conversations.read(scope,uncertain.id),v=>(newInstruction?v.retainedRuns?.find(run=>run.id===original.id):v.run)?.resourcesReleased===true);
   const retainedRun=(newInstruction?uncertain.retainedRuns!.find(run=>run.id===original.id):uncertain.run)!;

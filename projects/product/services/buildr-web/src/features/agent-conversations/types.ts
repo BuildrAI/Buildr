@@ -28,3 +28,5 @@ export type ConversationSummary = Omit<ConversationView,'entries'|'requests'> & 
 export type PendingConversation = {conversationId:string;workspaceId:string;title:string;status:RunStatus;count?:number};
 
 export type { AgentConversationSupplementRequestSupplement as SupplementInput, AgentConversationSupplementResultSupplemented as SupplementResult } from '../../../build/generated/agent-service-http-dto';
+
+export type { AgentWebhookSettingsWebhookSettings as WebhookSettingsView, AgentWebhookSettingsInputWebhookSettingsInput as WebhookSettingsInput, AgentWebhookTestWebhookTest as WebhookDeliveryResult } from '../../../build/generated/agent-service-http-dto';

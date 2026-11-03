@@ -25,7 +25,9 @@ const platformLauncherIntegration: any = process.argv.includes('--platform-launc
 
 export const RELEASE_ARTIFACT_MANIFEST_ENV: any = 'BUILDR_RELEASE_ARTIFACT_MANIFEST';
 export const RELEASE_PACKAGE_SPEC_ENV: any = 'BUILDR_RELEASE_PACKAGE_SPEC';
-export const RELEASE_LAUNCHER_READINESS_TIMEOUT_MS: any = 15_000;
+// Cold Windows workers can spend more than 15s loading the installed bundle.
+// Keep the ready health check authoritative and align with the platform budget.
+export const RELEASE_LAUNCHER_READINESS_TIMEOUT_MS: any = process.platform === 'win32' ? 45_000 : 15_000;
 /** 平台 Launcher 真实链路（.lnk→wscript→vbs→cmd→Host Node→web）比直启多数段
  * 串行进程创建与首扫成本，共享 Windows runner 上需要更宽的就绪预算。 */
 export const RELEASE_PLATFORM_LAUNCHER_READINESS_TIMEOUT_MS: any = 45_000;

@@ -17,7 +17,7 @@ function fixture(){
 }
 for(const callback of ['onScroll','followLayout'])test(callback+' respects a reading move in the same frame as layout growth',()=>{
   const {node,bottom,position,hook}=fixture();
-  node.scrollHeight=4200;node.scrollTop=1200;hook[callback]();
+  hook.onPointerDown();node.scrollHeight=4200;node.scrollTop=1200;hook[callback]();
   assert.equal(node.scrollTop,1200);assert.equal(position.current,1200);assert.equal(bottom.current,false);
   hook.followLayout();assert.equal(node.scrollTop,1200);
 });
@@ -91,4 +91,14 @@ test('用户已上翻时输入框增高和异步内容增长不会抢回底部',
  const {node,bottom,hook}=fixture();node.scrollTop=1600;hook.onScroll();assert.equal(bottom.current,false);
  node.clientHeight=300;node.scrollHeight=4300;hook.followLayout();
  assert.equal(node.scrollTop,1600);assert.equal(bottom.current,false);
+});
+
+for(const callback of ['onScroll','followLayout'])test('发送重排期间先钳制再增长不被'+callback+'误判为上翻',()=>{
+ const {node,bottom,position,hook}=fixture();
+ // Old-turn collapse/Markdown replacement clamps the viewport; content and
+ // the cleared composer settle before the queued scroll/resize callback.
+ node.scrollHeight=1800;node.scrollTop=1300;
+ node.scrollHeight=4600;node.clientHeight=600;hook[callback]();
+ assert.equal(bottom.current,true);hook.followLayout();
+ assert.equal(node.scrollTop,4000);assert.equal(position.current,4000);
 });

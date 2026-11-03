@@ -151,7 +151,7 @@ test('release smoke readiness fails on an independent wall-clock budget with pro
       return true;
     },
   );
-  assert.equal(RELEASE_LAUNCHER_READINESS_TIMEOUT_MS, 15_000);
+  assert.equal(RELEASE_LAUNCHER_READINESS_TIMEOUT_MS, process.platform === 'win32' ? 45_000 : 15_000);
 });
 
 test('release smoke preserves redacted Launcher evidence beside phase diagnostics before cleanup', (t: any) => {

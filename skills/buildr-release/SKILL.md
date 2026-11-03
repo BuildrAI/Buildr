@@ -13,15 +13,15 @@ description: 准备、检查、发布或恢复 Buildr 主包、DSH 插件或联�
 
 发布代码的唯一源是所选源码检出位置的 `skills/buildr-release/scripts/`。从该位置的 `projects/product/services/buildr/` 使用 `tools/development/run-development-node ../../../../skills/buildr-release/scripts/release-orchestration-runner.ts --help` 查看当前参数，再调用 `prepare`、`inspect`、`publish --authorized` 或 `resume`。投射到智能体的技能副本用于发现和指引；不要从投射目录运行绑定源码的脚本。工作流（Workflow）也调用同一源码脚本。
 
-正常准备和接续使用 `--wait`，由程序等待同一远端运行，每次状态变化只返回简短进度；默认最多等待 30 分钟，可用 `--wait-timeout-ms` 调整。默认输出摘要；需要原始证据时使用 `--output <file>`，仅诊断具体问题时使用 `--detail full`。等待期间不反复调用 `inspect` 或读取全部日志；真实失败、缺少本机证明或授权时，程序返回对应缺项。
+正常准备和接续使用 `--wait`，由程序等待同一远端运行，每次状态或远端步骤变化返回进度，区分本机回读工作、休眠和远端可证明的阶段耗时；默认最多等待 30 分钟，可用 `--wait-timeout-ms` 调整。默认输出摘要；需要原始证据时使用 `--output <file>`，仅诊断具体问题时使用 `--detail full`。等待期间不反复调用 `inspect` 或读取全部日志；真实失败、缺少本机证明或授权时，程序返回对应缺项。
 
-冻结所选包、独立版本、分支（Branch）、准确提交（Commit）、源码树和准确对端，正常准备不跟随 `dev`。全部检查及结果汇总交给产品既有验证框架；先查看本轮普通日志中的成功、失败、未执行项和耗时，再只执行失败及未执行部分。不要因阶段切换重复执行仍有效的检查；一轮集中收集互不依赖的失败，经用户同意修复后只补失败及未执行项。同一发布轮内源码输入变化时，使用 `source.ts --invalidate <step-id,...>` 只重跑受影响步骤，其余通过记录继续采用；新候选轮次（新版本或新选择）从头完整执行。修复确认并提交版本材料后，直接以本次 selectionId/roundId 运行源码轮并写入候选 round 路径，使该轮成为候选证据；不要先跑一套独立全量再重复候选全量。本机能充分证明的在本机完成，GitHub 只补真实平台、干净环境或受保护执行边界。相关开发检查在改动交付前完成，避免到发布时才修过时检查。不要在检查运行时改变其源码或共享 Git 比较事实。
+冻结所选包、独立版本、分支（Branch）、准确提交（Commit）、源码树和准确对端，正常准备不跟随 `dev`。全部检查及结果汇总交给产品既有验证框架；先查看本轮普通日志中的成功、失败、未执行项和耗时，再只执行失败及未执行部分。不要因阶段切换重复执行仍有效的检查；一轮集中收集互不依赖的失败，经用户同意修复后只补失败及未执行项。同一发布轮内源码输入变化时，使用 `source.ts --invalidate <step-id,...>` 只重跑受影响步骤，其余通过记录继续采用；失败 Node 节点在普通 round 结果内保留完整文件成功，按真实输入只补失败、新增或失效文件；共享实现／夹具变化扩大补验范围。缺少事件、信号中断、清理失败不能成为成功；日志会报告执行、复用和完整成员数量。显式失效节点不采用其旧文件证明。新候选轮次（新版本或新选择）从头完整执行。修复确认并提交版本材料后，直接以本次 selectionId/roundId 运行源码轮并写入候选 round 路径，使该轮成为候选证据；不要先跑一套独立全量再重复候选全量。本机能充分证明的在本机完成，GitHub 只补真实平台、干净环境或受保护执行边界。相关开发检查在改动交付前完成，避免到发布时才修过时检查。不要在检查运行时改变其源码或共享 Git 比较事实。
 
 通用产品逻辑与功能只有一套，不按系统重复。操作系统相关的源码和原包检查是独立节点：本机是 macOS 就本机完成 macOS、远端补 Windows；本机是 Windows 则交换。源码入口 `test/verification/source.ts --round <selection-id> --output <round-log.json> --scope common|platform|all` 使用同一检查登记；默认先满足本机源码，远端补另一系统源码，全部通过后 GitHub 生产唯一原包。
 
 README 固定标题、章节和编辑表达不作发布门槛。检查失败先判断是否保护功能、安全或交付正确性，无独立价值的措辞检查直接删除；必要的文档链接、渲染、资源引用和敏感信息检查按实际影响选择，不因文档改动追加整组快速检查，也不为技能（Skill）正文另写措辞断言。架构及规范静态检查留在相关开发检查中，不加入候选必跑集合。插件本机源码预检使用 `tools/verify-source.ts`（可用 `--round <selection-id> --output <round-log.json> --invalidate <step-id,...>` 保存普通结果），无需准备软件开发工具包（SDK）或旧主包对端；准确候选配对仍保留完整检查。
 
-新准备把通用原包检查与本机系统验包留给本机。制包上传后，下载同一原包，与另一系统的远端验包并行；使用实际 Node `24.15.0` 运行 `tools/development/run-development-node test/verification/artifact.ts --artifact-dir <原包目录> --output <证据目录>`，默认一次检查通用原包、本机启动和最低 Node，不另跑当前版本。`--scope common` 只检查通用原包，`--scope platform` 只检查本机系统；macOS 和 Windows 对称选择，互不附带另一系统或已完成的通用检查。实际程序与系统随结果保留。`local-artifact-verification-required` 或远端 `incomplete` 表示仍等本机缺项，不是完整候选通过；完成后继续原 `prepare --artifact-verification <证据目录>`，仅采用原包与有效结果、补缺项和完整汇总，不重新产包。远端发布始终另需准确授权。
+新准备把通用原包检查与本机系统验包留给本机。制包上传且同轮原包可校验后，`prepare --wait` 自动下载并立即返回 `local-artifact-verification-required`，无需等远端终态；与另一系统的远端验包并行；使用实际 Node `24.15.0` 运行 `tools/development/run-development-node test/verification/artifact.ts --artifact-dir <原包目录> --output <证据目录>`，默认一次检查通用原包、本机启动和最低 Node，不另跑当前版本。`--scope common` 只检查通用原包，`--scope platform` 只检查本机系统；macOS 和 Windows 对称选择，互不附带另一系统或已完成的通用检查。实际程序与系统随结果保留。`local-artifact-verification-required` 或远端 `incomplete` 表示仍等本机缺项，不是完整候选通过；完成后继续原 `prepare --artifact-verification <证据目录>`，仅采用原包与有效结果、补缺项和完整汇总，不重新产包。远端发布始终另需准确授权。
 
 主包产包入口是 `scripts/candidate-package.ts`，插件发布代码在 `scripts/dsh-plugin/`；一般构建和验证工具仍归相应服务。每个包只生产一份准确原包，测试或汇总修复不默认重打；产品及真实构建输入变化才使相关原包和证明失效。正式补验绑定独立验证来源，不授予补验代码公开权限。
 

@@ -62,7 +62,9 @@ const allowed: any = new Map([
   ['src/modules/project-testing/application/verification-application.ts', new Set(['withRetainedControllerPlanArgs'])],
   ['src/bootstrap/cli/task-finish-bootstrap.ts', new Set(['atomicWriteFile'])],
   ['src/modules/agent-assets/application/skills.ts', new Set(['copySupportedSkillSource', 'skillsRemoveUnsafe'])],
-  ['src/modules/agent-assets/application/components.ts', new Set(['removeComponentMember', 'installComponentMember'])],
+  // Recording recomputes declared digests of workspace Component members; the
+  // command is the only supported repair for a stale component.yml integrity line.
+  ['src/modules/agent-assets/application/components.ts', new Set(['removeComponentMember', 'installComponentMember', 'componentRecord'])],
   ['src/modules/workspace/application/registry-maintenance.ts', new Set(['convergeServiceManifest', 'convergeRegistryManifests'])],
   ['src/modules/agent-assets/application/package-maintenance.ts', new Set(['syncPackageBuiltins'])],
   ['src/modules/agent-assets/application/package-maintenance/builtin-lifecycle.ts', new Set(['builtinUninstallUnsafe'])],

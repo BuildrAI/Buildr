@@ -1,3 +1,4 @@
+import { entryContentRevision } from './entry-revision.ts';
 import { createHash } from 'node:crypto';
 import type { StoredConversation } from './agent-state.ts';
 import { conversationRuns, fail } from './agent-state.ts';
@@ -37,7 +38,7 @@ export function projectParticipation(record: StoredConversation): ParticipationP
     const requests=new Map<string,Set<string>>();
     for (const entry of tools) {
       const attachment=record.participationTools?.[entry.id];
-      const entryRevision=createHash('sha256').update(JSON.stringify(entry)).digest('hex');
+      const entryRevision=entryContentRevision(entry);
       if(attachment?.entryRevision&&attachment.entryRevision!==entryRevision){gaps.add('tool-observation-stale');continue;}
       const observed = normalizeParticipation(record.participationTools?.[entry.id]??entry.participation);
       if (!observed) { gaps.add('tool-not-collected'); continue; }
@@ -46,9 +47,9 @@ export function projectParticipation(record: StoredConversation): ParticipationP
       // A single tool may mention multiple actions: never divide its mixed output.
       for (const match of observed.matches) {
         let repeated:boolean|undefined;
-        if(match.action==='requested'&&entry.input!==undefined&&observed.input?.completeness==='complete'&&Buffer.byteLength(entry.input)===observed.input.utf8Bytes){
+        try { if(match.action==='requested'&&entry.input!==undefined&&observed.input?.completeness==='complete'&&Buffer.byteLength(entry.input)===observed.input.utf8Bytes){
           const key=JSON.stringify([match.identity,match.action]);const prior=requests.get(key)??new Set<string>();repeated=prior.has(entry.input);prior.add(entry.input);requests.set(key,prior);
-        }
+        } } catch { gaps.add('tool-input-unavailable'); }
         facts.push({ ...match, ...base,...(repeated===undefined?{}:{repeated}), evidence: {entryId: entry.id,entryRevision}, outcome: observed.outcome,
         ...(observed.matches.length === 1 && match.contentScope!=='fragment' ? { input: match.input ?? observed.input, output: match.output ?? observed.output } : {}) });
       }

@@ -1,75 +1,111 @@
-import { createHash } from 'node:crypto';
-import type { ServiceEvent } from '../contracts.ts';
+import { createHash, randomUUID } from 'node:crypto';
+import { hostname } from 'node:os';
+import type { ServiceEvent, ConversationView, WebhookDeliveryResult } from '../contracts.ts';
+import { WebhookJournal } from '../persistence/webhook-journal.ts';
+import { conversationNotifications, type NotificationSnapshot } from '../domain/conversation-notifications.ts';
 
-type EventType = 'completed' | 'error' | 'pending_question' | 'pending_approval';
-const summaries: Record<EventType, string> = {
-  completed: '对话执行已完成', error: '对话执行出错',
-  pending_question: '对话等待问题回答', pending_approval: '对话等待审批',
-};
-
-/** Best-effort, process-local notification. Never log configuration or transport errors. */
+type Options = { root?:string; retryBaseMs?:number; now?:()=>number; onDelivery?:(result:WebhookDeliveryResult)=>void };
+/** Durable at-least-once notifications; retries repeat only an immutable event, never agent work. */
 export class ConversationWebhooks {
-  private readonly seen = new Set<string>();
-  private readonly active = new Set<AbortController>();
-  private closed = false;
-  private readonly url: string;
-  private readonly secret: string;
-  private readonly transport: typeof fetch;
-  private constructor(url: string, secret: string, transport: typeof fetch) {
-    this.url = url; this.secret = secret; this.transport = transport;
+  private readonly owner=randomUUID();
+  private readonly active=new Set<AbortController>();
+  private readonly journal:WebhookJournal;
+  private readonly target:string;
+  private timer?:ReturnType<typeof setTimeout>;
+  private closed=false;
+  private readonly clock:()=>number;
+  private readonly url:string;
+  private readonly secret:string;
+  private readonly transport:typeof fetch;
+  private readonly options:Options;
+  private readonly sourceUrl:string;
+  private storageFailed=false;
+  private recoveryPage?: (after?:string)=>ConversationView[];
+  private recoveryTimer?:ReturnType<typeof setTimeout>;
+  private constructor(url:string,secret:string,transport:typeof fetch,options:Options,sourceUrl:string) {
+    this.url=url;this.secret=secret;this.transport=transport;this.options=options;this.sourceUrl=sourceUrl;
+    this.clock=options.now??Date.now;
+    this.target=createHash('sha256').update(JSON.stringify([url,secret])).digest('hex');
+    this.journal=new WebhookJournal(options.root);
+    this.schedule(0);
   }
-
-  static configure(environment: NodeJS.ProcessEnv, transport: typeof fetch = fetch): ConversationWebhooks | undefined {
-    const url = environment.BUILDR_AGENT_WEBHOOK_URL;
-    const secret = environment.BUILDR_AGENT_WEBHOOK_SECRET;
-    if (!url || !secret || !secret.trim() || /[^\x21-\x7e]/.test(secret)) return;
-    try {
-      const parsed = new URL(url);
-      if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) return;
-      return new ConversationWebhooks(parsed.href, secret, transport);
-    } catch { return; }
+  static configure(environment:NodeJS.ProcessEnv,transport:typeof fetch=fetch,options:Options={}):ConversationWebhooks|undefined {
+    const url=environment.BUILDR_AGENT_WEBHOOK_URL,secret=environment.BUILDR_AGENT_WEBHOOK_SECRET;
+    if (!url||!secret||!secret.trim()||/[^\x21-\x7e]/.test(secret)) return;
+    let parsed:URL;
+    try {parsed=new URL(url);}catch{return;}
+    if (!['http:','https:'].includes(parsed.protocol)||parsed.username||parsed.password) return;
+    try{return new ConversationWebhooks(parsed.href,secret,transport,options,url);}catch{console.warn('[agent_webhook_storage_unavailable] 通知存储不可用，未启用投递。');return;}
   }
-
-  publish(event: Omit<ServiceEvent, 'cursor' | 'generation'>): void {
-    if (this.closed || event.type !== 'conversation') return;
-    const view = event.payload.conversation;
-    if (!view) return;
-    const notifications: Array<{ type: EventType; identity: string }> = [];
-    for (const run of [view.run, ...(view.retainedRuns ?? [])]) {
-      if (run?.status === 'completed' || run?.status === 'failed') {
-        notifications.push({ type: run.status === 'completed' ? 'completed' : 'error', identity: run.id });
-      }
+  get agentId(): string { return this.journal.instanceId; }
+  publish(event:Omit<ServiceEvent,'cursor'|'generation'>):void {
+    if(this.closed||event.type!=='conversation'||!event.payload.conversation)return;
+    try {this.project(event.payload.conversation);this.drain();}catch{this.storageFailure();}
+  }
+  private project(view:ConversationView):void {
+    this.journal.project<NotificationSnapshot>(this.target,view.workspaceId,view.id,prior=>{
+      const next=conversationNotifications(view,{name:'Buildr',id:this.journal.instanceId},hostname(),prior);
+      next.events=next.events.map(event=>JSON.parse(JSON.stringify(event,(_key,value:unknown)=>typeof value==='string'?value.split(this.secret).join('[REDACTED]').split(this.url).join('[REDACTED]').split(this.sourceUrl).join('[REDACTED]'):value)));
+      return next;
+    });
+  }
+  /** Startup recovery is paged and only reads the committed local conversation authority. */
+  async recover(page:(after?:string)=>ConversationView[]):Promise<void> {
+    this.recoveryPage=page;
+    let after:string|undefined;
+    try {while(!this.closed){
+      const views=page(after);if(!views.length)return;
+      for(const view of views){if(this.closed)return;this.project(view);}
+      after=views.at(-1)!.id;this.drain();
+      await new Promise<void>(resolve=>setImmediate(resolve));
+    }}catch{this.storageFailure();}
+  }
+  replay(scope:string,id:string,eventId:string):{eventId:string;queued:true} {
+    const result=this.journal.replay(this.target,scope,id,eventId);this.drain();return result;
+  }
+  private schedule(delay:number):void {
+    if(this.closed)return;
+    clearTimeout(this.timer);
+    this.timer=setTimeout(()=>{this.timer=undefined;this.drain();},delay);this.timer.unref();
+  }
+  private storageFailure():void {
+    if(this.closed)return;
+    if(!this.storageFailed)console.warn('[agent_webhook_storage_unavailable] 通知存储暂不可用，保留既有记录并等待恢复。');
+    this.storageFailed=true;
+    if(this.recoveryPage&&!this.recoveryTimer){
+      this.recoveryTimer=setTimeout(()=>{this.recoveryTimer=undefined;void this.recover(this.recoveryPage!);},1000);this.recoveryTimer.unref();
     }
-    for (const request of view.requests) {
-      notifications.push({ type: request.kind === 'approval' ? 'pending_approval' : 'pending_question', identity: `${request.runId}:${request.id}` });
-    }
-    for (const notification of notifications) {
-      const eventId = createHash('sha256').update(JSON.stringify([view.workspaceId, view.id, notification.type, notification.identity])).digest('hex');
-      if (this.seen.has(eventId)) continue;
-      this.seen.add(eventId);
-      if (this.seen.size > 10_000) this.seen.delete(this.seen.values().next().value!);
-      // Mark even dropped events: backpressure must never turn into delayed repeated attempts.
-      if (this.active.size >= 16) continue;
-      const controller = new AbortController();
-      this.active.add(controller);
-      const timer = setTimeout(() => controller.abort(), 5_000);
-      timer.unref();
-      const body = JSON.stringify({ eventId, conversationId: view.id, workspaceId: view.workspaceId,
-        eventType: notification.type, summary: summaries[notification.type], timestamp: view.updatedAt });
-      void (async () => {
-        try {
-          const response = await this.transport(this.url, { method: 'POST', redirect: 'error',
-            headers: { 'content-type': 'application/json', authorization: `Bearer ${this.secret}` },
-            body, signal: controller.signal });
-          await response.body?.cancel();
-        } catch { /* Failure, including non-delivery, never changes conversation execution. No retry. */ }
-        finally { clearTimeout(timer); this.active.delete(controller); }
+  }
+  private drain():void {
+    if(this.closed)return;
+    try{this.dispatch();this.storageFailed=false;}catch{this.storageFailure();this.schedule(1000);}
+  }
+  private dispatch():void {
+    if(this.closed)return;
+    clearTimeout(this.timer);this.timer=undefined;
+    while(this.active.size<16){
+      const item=this.journal.claim(this.target,this.owner,this.clock());if(!item)break;
+      const controller=new AbortController();this.active.add(controller);
+      const timeout=setTimeout(()=>controller.abort(),5000);timeout.unref();
+      void(async()=>{
+        let success=false;let status:number|undefined;
+        try {const response=await this.transport(this.url,{method:'POST',redirect:'error',headers:{'content-type':'application/json',authorization:`Bearer ${this.secret}`},body:item.body,signal:controller.signal});success=response.ok;status=response.status;await response.body?.cancel();}catch{/* Retry the same event, including uncertain delivery. */}
+        finally {
+          clearTimeout(timeout);this.active.delete(controller);
+          if(!this.closed){
+            this.options.onDelivery?.({at:new Date(this.clock()).toISOString(),success,kind:'event',...(status===undefined?{}:{status})});
+            try {const delay=Math.min(300000,(this.options.retryBaseMs??1000)*2**Math.min(item.attempts-1,20));this.journal.settle(item,success,this.clock()+delay);this.drain();}catch{this.schedule(1000);}
+          }
+        }
       })();
     }
+    const due=this.journal.next(this.target,this.clock());
+    // Poll also discovers events published by a retained process sharing this instance journal.
+    this.schedule(due===undefined?30000:this.active.size>=16?1000:Math.max(1,Math.min(30000,due-this.clock())));
   }
-
-  close(): void {
-    this.closed = true;
-    for (const controller of this.active) controller.abort();
+  close():void {
+    if(this.closed)return;this.closed=true;clearTimeout(this.timer);clearTimeout(this.recoveryTimer);
+    for(const controller of this.active)controller.abort();
+    try{this.journal.close(this.owner);}catch{console.warn('[agent_webhook_storage_unavailable] 通知租约未能释放，恢复后按租约期限核对。');}
   }
 }

@@ -257,3 +257,20 @@ test('continuous release times out with the original run identity and can be dis
   assert.equal(calls, 4);
   await assert.rejects(runReleaseOperationUntilSettled({ waitTimeoutMs: NaN }, dependencies), /invalid/u);
 });
+
+
+test('candidate repair and main adoption remain waiting; readback work is not sleep time', async () => {
+  const { runReleaseOperationUntilSettled, compactReleaseOperation } = await import('../../../../../../skills/buildr-release/scripts/release-orchestration-runner.ts');
+  let now = 0;
+  const statuses = ['candidate-repair-dispatch-unconfirmed', 'candidate-repair-readback-required', 'main-merge-pending', 'local-artifact-verification-required'];
+  const value = await runReleaseOperationUntilSettled({ action: 'prepare', wait: true, waitIntervalMs: 10, waitTimeoutMs: 100 }, {
+    now: () => now, sleep: async (ms: number) => { now += ms; },
+    runReleaseOperation: async () => { now += 2; return { status: statuses.shift(), run: { id: 42 }, effects: [] }; },
+  });
+  assert.equal(statuses.length, 0);
+  assert.equal(value.waiting.status, 'settled');
+  assert.deepEqual(value.waiting, { status: 'settled', polls: 4, durationMs: 38, pollWorkMs: 8, sleepMs: 30 });
+  const compact = compactReleaseOperation({ ...value, localArtifact: { runId: 42, artifactId: 3, artifact: { sha256: 'a' }, checks: [{ node: '24.15.0' }] } });
+  assert.equal(compact.localArtifact.runId, 42);
+  assert.equal(compact.localArtifact.sha256, 'a');
+});

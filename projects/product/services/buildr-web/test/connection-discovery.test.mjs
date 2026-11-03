@@ -15,3 +15,10 @@ test('refresh failures preserve the last ready snapshot; stopped views cannot be
  await discovery.refresh();reject=true;await discovery.refresh();assert.equal(rows.length,1);assert.equal(states.at(-1).ready,true);assert.equal(states.at(-1).error,'');discovery.stop();t.mock.timers.tick(5000);assert.equal(rows.length,1);
  const late=new ConnectionDiscovery(()=>new Promise(resolve=>{release=resolve;}),v=>rows.push(v),()=>{});const pending=late.refresh();await Promise.resolve();late.stop();release([]);await pending;assert.equal(rows.length,1);
 });
+test('版本对齐按已知状态提示并保留上次快照，恢复后清除',async t=>{
+ t.mock.timers.enable({apis:['setTimeout']});let aligning=false;const rows=[],states=[];
+ const discovery=new ConnectionDiscovery(async()=>{if(aligning)throw Object.assign(new Error('aligning'),{code:'agent_service_aligning',status:503});return [{id:'codex',enabled:true}];},v=>rows.push(v),v=>states.push(v));t.after(()=>discovery.stop());
+ await discovery.refresh();assert.equal(states.at(-1).error,'');assert.equal(rows.length,1);
+ aligning=true;await discovery.refresh();assert.equal(rows.length,1,'对齐期间保留上次快照');assert.equal(states.at(-1).error,'执行后台正在切换版本，连接状态稍后自动恢复。');
+ aligning=false;t.mock.timers.tick(1000);await discovery.refresh();assert.equal(states.at(-1).error,'');assert.equal(states.at(-1).ready,true);
+});

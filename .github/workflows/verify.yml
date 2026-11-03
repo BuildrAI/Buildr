@@ -961,7 +961,7 @@ jobs:
   candidate-artifact-consumers:
     name: Candidate artifact (${{ matrix.shard }})
     needs: [candidate-plan, candidate-bootstrap]
-    if: needs.candidate-plan.outputs.buildr == 'true' && needs.candidate-plan.outputs.artifact_required == 'true'
+    if: always() && needs.candidate-plan.result == 'success' && needs.candidate-bootstrap.result == 'success' && needs.candidate-plan.outputs.buildr == 'true' && needs.candidate-plan.outputs.artifact_required == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -977,7 +977,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
-          node-version: '24.x'
+          node-version: '24.15.0'
           cache: npm
           cache-dependency-path: projects/product/services/buildr/package-lock.json
       - name: Read formal repair plan
@@ -1018,7 +1018,7 @@ jobs:
   candidate-host-node:
     name: Candidate Host Node (${{ matrix.id }})
     needs: [candidate-plan, candidate-bootstrap]
-    if: needs.candidate-plan.outputs.buildr == 'true' && needs.candidate-plan.outputs.host_required == 'true'
+    if: always() && needs.candidate-plan.result == 'success' && needs.candidate-bootstrap.result == 'success' && needs.candidate-plan.outputs.buildr == 'true' && needs.candidate-plan.outputs.host_required == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:

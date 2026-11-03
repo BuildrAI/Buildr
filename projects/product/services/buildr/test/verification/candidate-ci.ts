@@ -387,7 +387,18 @@ if (action === 'plan') {
     reusedSourceShards: reuse.reusedShards.map(item => item.shard.id), reusedStepIds: reuse.reusedStepIds,
     reusedArtifactIds: [...adoptedIds], deferredIds,
     shards: CANDIDATE_CI_SHARDS, hostNodeTuples: CANDIDATE_CI_HOST_NODE_TUPLES }, null, 2)}\n`);
-} else if (action === 'run' && id) await runShard(id);
+} else if (action === 'run' && id) {
+  try { await runShard(id); }
+  catch (error) {
+    // Preserve the finalization error even when large forwarded child output
+    // exceeds the hosted step's console stream or is truncated on exit.
+    if (process.env.BUILDR_DIAGNOSTICS_OUTPUT) {
+      fs.mkdirSync(process.env.BUILDR_DIAGNOSTICS_OUTPUT, { recursive: true });
+      fs.writeFileSync(path.join(process.env.BUILDR_DIAGNOSTICS_OUTPUT, 'candidate-finalization-error.txt'), error instanceof Error ? error.stack || error.message : String(error));
+    }
+    throw error;
+  }
+}
 else if (action === 'host' && id) runHostNode(id);
 else if (action === 'aggregate') aggregate();
 else {

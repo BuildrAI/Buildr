@@ -25,14 +25,15 @@ export class ConversationSupplements {
     const run = record.view.run;
     if (this.ports.closing()) fail('agent_service_closing', '智能体服务正在退出，输入已保留。', 503);
     if (!run || run.id !== input.runId || run.participantId !== input.participantId || run.generation !== input.generation || run.generation !== this.ports.generation) fail('agent_supplement_stale', '原执行已变化，请核对后再发送；输入已保留。', 409);
-    if (!run.accepted || !(allowEnded ? ['running', 'waiting-approval', 'waiting-question','completed','stopped','failed'] : ['running', 'waiting-approval', 'waiting-question']).includes(run.status)) fail('agent_supplement_unavailable', '当前执行尚不能接收新消息，请核对执行状态；输入已保留。', 409);
+    if (record.view.requests.some(request => request.runId === run.id && request.kind === 'question')) fail('agent_supplement_unavailable', '原执行仍有待回答问题或授权，请在原卡片处理；输入已保留，不会另开会话。', 409);
+    if (!run.accepted || (!allowEnded && run.stopRequested) || !(allowEnded ? ['running', 'waiting-approval', 'waiting-question','unknown','completed','stopped','failed'] : ['running', 'waiting-approval', 'waiting-question','unknown']).includes(run.status)) fail('agent_supplement_unavailable', '当前执行尚不能接收新消息，请核对执行状态；输入已保留。', 409);
     const participant = record.participants.find(item => item.id === input.participantId);
     const execution = record.attempts.find(item => item.runId === input.runId && !item.supplement)?.executionRef;
     if (!participant?.contextRef || !execution) fail('agent_supplement_unavailable', '尚未确认原生执行身份，输入已保留。', 409);
     return { participant, execution };
   }
   send(workspaceId: string, id: string, raw: SupplementInput): Promise<SupplementResult> {
-    const input: SupplementInput = { runId: nonempty(raw.runId, '执行身份'), participantId: nonempty(raw.participantId, '参与者身份'), generation: nonempty(raw.generation, '服务代次'), clientRequestId: nonempty(raw.clientRequestId, '请求身份', 200), text: raw.text, attachmentIds: raw.attachmentIds ?? [] };
+    const input: SupplementInput = { ...(raw.sameRunOnly !== undefined ? {sameRunOnly:raw.sameRunOnly} : {}), runId: nonempty(raw.runId, '执行身份'), participantId: nonempty(raw.participantId, '参与者身份'), generation: nonempty(raw.generation, '服务代次'), clientRequestId: nonempty(raw.clientRequestId, '请求身份', 200), text: raw.text, attachmentIds: raw.attachmentIds ?? [] };
     if (typeof input.text !== 'string' || Buffer.byteLength(input.text) > 64 * 1024) fail('agent_input_too_large', '输入过长，请缩小本次指令。', 413);
     if (!Array.isArray(input.attachmentIds) || input.attachmentIds.length > 4 || input.attachmentIds.some(value => typeof value !== 'string')) fail('agent_attachments_invalid', '每次最多添加4份图片或视频。');
     if (!input.text.trim() && !input.attachmentIds.length) fail('agent_input_empty', '请填写内容或添加图片、视频。');
@@ -87,7 +88,7 @@ export class ConversationSupplements {
     record.view.entries.push({ id: userEntryId, sequence, createdAt: this.ports.now(), kind: 'message', role: 'user', text: input.text, attachments: input.attachmentIds, runId: input.runId, participantId: participant.id, provider: participant.provider, status: 'sending' });
     record.attempts.push({ clientRequestId: input.clientRequestId, inputDigest: digest, runId: input.runId, participantId: participant.id, through: sequence, userEntryId, executionRef: execution, accepted: false, supplement: true });
     this.ports.save(record);
-    let delivery: SupplementResult['delivery'] = 'accepted', nativeId: string | undefined, dispatched = false, ended = false;
+    let delivery: SupplementResult['delivery'] = 'accepted', nativeId: string | undefined, dispatched = false, ended = false, refusal: string | undefined;
     const observe = async () => {
       const observed = await runtime.observe({ contextRef: participant.contextRef!, executionRef: execution });
       const exact = observed.executionRef?.id === execution.id;
@@ -101,9 +102,19 @@ export class ConversationSupplements {
     };
     try {
       const observed = await observe();
-      if (ended || !['running','waiting'].includes(observed.status) || observed.executionRef && observed.executionRef.id !== execution.id) throw new ExecutorInputRejected('agent_supplement_unavailable');
+      if (ended || observed.requests?.some(request => request.kind === 'question') || !['running','waiting'].includes(observed.status) || observed.executionRef?.id !== execution.id) {
+        refusal = ended ? '原轮已结束，这条追加尚未发送；输入已保留，不会自动另开会话。'
+          : observed.requests?.some(request => request.kind === 'question') ? '原轮仍有待回答问题，请在原卡片处理；追加内容已保留。'
+          : observed.executionRef?.id !== execution.id ? '尚未核对到准确的原生执行身份，追加内容未发送。'
+          : '已自动核对，但原生执行状态仍无法确认；追加内容未发送，不会另开会话。';
+        throw new ExecutorInputRejected('agent_supplement_unavailable');
+      }
       // The observation itself is asynchronous; never target a superseded input.
       this.current(this.ports.load(workspaceId, id), input);
+      const verified = this.ports.load(workspaceId, id);
+      // A native running snapshot must not erase a concurrently pending approval.
+      if (!verified.view.requests.some(request => request.runId === input.runId))
+        this.ports.observe(verified, input.runId, { ...observed, requests: undefined });
       dispatched = true;
       const receipt = await runtime.supplement({ contextRef: participant.contextRef!, executionRef: execution, cwd: record.view.cwd, text, images, clientRequestId: input.clientRequestId });
       if (receipt.executionRef.id !== execution.id) throw new Error('agent_supplement_receipt_mismatch');
@@ -130,10 +141,10 @@ export class ConversationSupplements {
       currentParticipant.deliveredThrough = Math.max(currentParticipant.deliveredThrough, attempt.through);
     } else {
       entry.status = delivery === 'rejected' ? 'failed' : 'unknown';
-      entry.deliveryDiagnostic = delivery === 'rejected' ? '这条消息未发送成功，文字与附件仍保留在输入框。' : '消息已保存，是否送达仍待确认，请勿重复发送。';
+      entry.deliveryDiagnostic = delivery === 'rejected' ? refusal ?? '这条消息未发送成功，文字与附件仍保留在输入框。' : '消息已保存，是否送达仍待确认，请勿重复发送。';
     }
     this.ports.save(record);
-    if (delivery === 'rejected' && ended && record.view.run?.id === input.runId && !record.view.run.stopRequested && !record.view.requests.some(request => request.runId === input.runId)) {
+    if (!input.sameRunOnly && delivery === 'rejected' && ended && record.view.run?.id === input.runId && !record.view.run.stopRequested && !record.view.requests.some(request => request.runId === input.runId)) {
       const requestId = attempt.continuedBy ?? randomUUID();
       attempt.continuedBy = requestId; this.ports.save(record);
       try {

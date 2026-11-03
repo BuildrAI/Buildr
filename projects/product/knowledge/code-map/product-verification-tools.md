@@ -15,8 +15,8 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
   - [source.ts](../../services/buildr/test/verification/source.ts) — 本机源码入口，分别选择通用检查与当前系统的原生源码检查；按本轮普通结果保留成功，只准备和执行失败及未执行项，不生产或消费最终原包
   - [artifact.ts](../../services/buildr/test/verification/artifact.ts) — 本机原包入口，显式读取同一原包目录；通用原包与本机平台分别选择，按依赖档位排序并在准备后重新判断有效结果；不回退制包
   - [candidate-artifact-reuse.ts](../../services/buildr/test/verification/candidate-artifact-reuse.ts) — 原包证明的有界交接、原字节及真实平台核验、暂留本机缺项及原始来源保留；同原包成功子项不按配方或依赖摘要失效
-  - [candidate-round.ts](../../services/buildr/test/verification/candidate-round.ts) — 读写本轮普通日志，按检查编号及实际平台保留成功、选择失败和未执行项；不比较文件、配方和依赖摘要
-  - [verification-reuse.ts](../../services/buildr/test/verification/verification-reuse.ts) — 非候选入口保留的历史摘要缓存；候选路径由 candidate-round.ts 独立接续，不消费该缓存的失效判定
+  - [candidate-round.ts](../../services/buildr/test/verification/candidate-round.ts) — 读写本轮普通日志，保留完整成功；失败 Node 节点以共享输入选择、环境身份和完整发现实现文件级补验，清理后保存原来源
+  - [verification-reuse.ts](../../services/buildr/test/verification/verification-reuse.ts) — 普通验证的输入身份与历史缓存；向候选轮次共享文件发现、输入身份和结构化完成事件解析，但不共享跨轮缓存
   - [verification-inputs.ts](../../services/buildr/test/verification/verification-inputs.ts) — 已核验运行检查的产品与配方输入分离、静态依赖及子脚本读取；未知输入保守回退
   - [verification-source-inputs.ts](../../services/buildr/test/verification/verification-source-inputs.ts) — 本机与正式补验共享的源码读取、字节与权限规范化、范围及逐项输入；准确提交只读 Git 对象，不切换工作目录
   - [local-source-verification.ts](../../services/buildr/test/verification/local-source-verification.ts) — 发布派发前读取同轮主包及插件普通日志，失败或未执行项只返回补齐动作
@@ -62,6 +62,7 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
   - [agent-conversations-video-scenarios.ts](../../services/buildr-web/test/browser/agent-conversations-video-scenarios.ts) — 视频输入、发送、播放与错误处理
 - **`skills/buildr-release/scripts/`（工作空间根）** — 发布协调、产包及恢复；检查仍由验证框架承担
   - [release-orchestration-runner.ts](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/release-orchestration-runner.ts) — 正常准备、只读逐包运行观察、授权公开及恢复入口
+  - [candidate-run-observation.ts](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/candidate-run-observation.ts) — 同轮原包就绪、准确字节交接及远端作业／步骤耗时投影；未知只观察，不产包或派发
   - [candidate-package.ts](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/candidate-package.ts) — 生产主包原字节，供后续检查共同消费
   - [candidate-source-binding.ts](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/candidate-source-binding.ts) — 原产包与验证提交的真实构建输入比较；调用共享输入实现形成检查身份，旧算法只核验历史结果；另行保护发布工具检出
   - [candidate-repair-operation.ts](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/candidate-repair-operation.ts) — 在原承载引用请求正式补验，未知请求回读，保留原包和运行指针
@@ -106,6 +107,8 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
   - `static/`
     - [verification-entrypoints.test.ts](../../services/buildr/test/static/verification-entrypoints.test.ts) — 测试族（Testing Family）的完整入口与声明范围对应，包括四服务及四类检查的完整范围
   - `integration/`
+    - [source-control-observations.test.ts](../../services/buildr/test/integration/source-control-observations.test.ts) — 真实 Git／文件与受控监听传输的归属、忽略和批处理矩阵
+    - [source-control-native-observations.test.ts](../../services/buildr/test/integration/source-control-native-observations.test.ts) — 独立真实原生事件通道，追踪并原样转发回调，绝不注入通知
     - [project-verification-map.test.ts](../../services/buildr/test/integration/project-verification-map.test.ts) — 多服务位置解析、局部不可用诊断、版本冲突与安全保存，不执行用户声明的测试
     - [application-payload-source.test.ts](../../services/buildr/test/integration/application-payload-source.test.ts) — 源码构建、载荷确定性及受控进程边界，进入源码完整集成检查
     - [application-payload-artifact.test.ts](../../services/buildr/test/integration/application-payload-artifact.test.ts) — 准确原包的文件与公共测试导出协议，消费候选包

@@ -102,15 +102,22 @@ test('parallel versions retain old controls, dispatch durable next instructions 
     assert.equal(fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').split('\n').filter(line=>line.includes('queued')).length,0);
     main=await actor({dataRoot,profileId,runtime:next,workspace});
     await main.call('conversations.read',[scope,first.id]);
-    first=await until(()=>observer!.operations.conversations.read(scope,first.id),value=>value.run?.generation===adopted.identity.generation&&value.run?.status==='completed'&&!value.pendingSend);
+    // The retained old control cannot take the queued instruction, so the
+    // saved draft is withdrawn and delivered through an explicit confirmed
+    // send instead of opening a replacement session silently.
+    first=await observer.operations.conversations.read(scope,first.id);
+    if(first.pendingSend)await observer.operations.conversations.cancelPendingSend(scope,first.id,{expectedPendingRevision:first.pendingSend.revision});
+    const confirmed={expectedRevision:first.revision,connectionId:'first',...sourceChoice,text:'queued revised'};
+    const confirmedPreview=await main.call('conversations.prepareSend',[scope,first.id,confirmed]);
+    await main.call('conversations.send',[scope,first.id,{...confirmed,previewToken:confirmedPreview.token,clientRequestId:randomUUID()}]);
+    first=await until(()=>observer!.operations.conversations.read(scope,first.id),value=>value.run?.generation===adopted.identity.generation&&value.run?.status==='completed');
     const sent=fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').trim().split('\n').map(line=>JSON.parse(line));
     assert.equal(sent.filter(value=>value.text==='queued revised').length,1);assert.equal(sent.find(value=>value.text==='queued revised').version,'new');
     assert.equal(sent.filter(value=>value.text==='queued original').length,0);
     assert.equal(first.retainedRuns?.find(run=>run.id===original.id)?.status,'tools-active','delivery must not wait for the old stop');
     fs.writeFileSync(path.join(dataRoot,'finish-stop'),'yes');
-    // A response lost before the edit must not recreate its initial submission.
-    await observer.operations.conversations.queueSend(scope,first.id,{...draft,clientRequestId:requestId});
-    assert.equal((await observer.operations.conversations.lookupRequest(scope,first.id,requestId)).runId,first.run!.id);
+    // Withdrawing the saved instruction never replays it behind the explicit send.
+    assert.equal((await observer.operations.conversations.lookupRequest(scope,first.id,requestId)).runId,undefined);
     second=await observer.operations.conversations.read(scope,second.id);
     assert.equal(second.run?.generation,firstIdentity.generation);assert.equal(second.run?.status,'running');assert.ok(isLive(firstIdentity.pid));
     second=await observer.operations.conversations.queueSend(scope,second.id,{expectedRevision:second.revision,connectionId:'first',...sourceChoice,text:'cancel this',clientRequestId:randomUUID(),previousRunId:second.run!.id});

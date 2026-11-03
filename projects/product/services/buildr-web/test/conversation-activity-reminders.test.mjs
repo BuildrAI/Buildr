@@ -5,7 +5,7 @@ import {readFileSync,existsSync} from 'node:fs';
 import ts from 'typescript';
 import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
-import {groupConversationWorkspaces,orderActivityItems,activityBadge,activityReminder,activityState,isExecuting,conversationMetadata,reminderFallbackRows,completeActivitySnapshot} from '../src/features/agent-conversations/conversation-activity.ts';
+import {groupConversationWorkspaces,orderActivityItems,activityBadge,activityReminder,activityState,pendingSendReason,isExecuting,conversationMetadata,reminderFallbackRows,completeActivitySnapshot} from '../src/features/agent-conversations/conversation-activity.ts';
 import {conversationTierChoice} from '../src/features/agent-conversations/conversation-options.ts';
 
 registerHooks({
@@ -39,11 +39,13 @@ test('单角标优先待决策加待查看，不从一页条目推算，也不�
   assert.equal(activityState({run:{status:'running'},activity:{version:2,seenThrough:0}}),'running');
   assert.equal(activityState({run:{status:'waiting-question'},activity:{version:2,seenThrough:2}}),'waiting');
 });
-test('非阻塞问题在运行时仍为待决策，列表和提醒共享双状态展示',()=>{
+test('非阻塞问题在运行时仍为待决策，列表和提醒只展示待决策且保留执行统计',()=>{
   const row={run:{status:'running'},activity:{version:2,seenThrough:2,pendingDecisionCount:1}};
   assert.equal(activityState(row),'waiting');
   const status=renderToStaticMarkup(React.createElement(ConversationActivityStatus,{state:activityState(row),executing:true}));
-  assert.match(status,/待决策 · 执行中/);
+  assert.match(status,/待决策/);assert.doesNotMatch(status,/执行中/);
+  const running=renderToStaticMarkup(React.createElement(ConversationActivityStatus,{state:'running'}));
+  assert.match(running,/执行中/);assert.doesNotMatch(running,/待决策/);
   const html=render({items:[{id:'question',workspaceId:'a',title:'等待决定',state:'waiting',executing:true,meta:'模型'}],workspaces:[{id:'a',name:'空间'}],counts:{active:1,running:1,waiting:1,unseen:0,unknown:0,attention:1}});
   assert.match(html,/1 个待处理对话/);assert.match(html,/待决策 1、待查看 0），执行中 1/);
   assert.equal(activityState({...row,activity:{...row.activity,pendingDecisionCount:0}}),'running');
@@ -138,4 +140,24 @@ test('模型结束仅后台作业时不显示执行中，历史仍可辨认后�
  assert.equal(isExecuting(row),false);assert.equal(activityState(row),null);assert.match(conversationMetadata(row),/后台作业运行中/);
  assert.equal(activityState({...row,activity:{...row.activity,version:3}}),'unseen');assert.equal(isExecuting({...row,run:{...row.run,status:'running'}}),true);
  const html=renderToStaticMarkup(React.createElement(ConversationActivityStatus,{state:activityState(row),executing:isExecuting(row)}));assert.doesNotMatch(html,/执行中/);
+});
+
+
+test('waiting and failed submissions remain active without pretending to execute or need a decision',()=>{
+ const pending={state:'waiting',reason:'Waiting for backend',updatedAt:'2026-11-03'};
+ const row={id:'send',workspaceId:'w',activity:{active:true,version:1,seenThrough:1,pendingDecisionCount:0,pendingSend:pending}};
+ assert.equal(activityState(row),'send-waiting');assert.equal(isExecuting(row),false);
+ assert.deepEqual(reminderFallbackRows([row]).pending,[row]);assert.deepEqual(reminderFallbackRows([row]).running,[]);
+ const failed={...row,activity:{...row.activity,pendingSend:{...pending,state:'failed'}}};assert.equal(activityState(failed),'send-failed');
+ for(const [item,label] of [[row,'等待发送'],[failed,'发送失败']]){
+  const html=renderToStaticMarkup(React.createElement(ConversationActivityStatus,{state:activityState(item),executing:false}));
+  assert.match(html,new RegExp(label));assert.doesNotMatch(html,/执行中|待决策|正在发送/);
+ }
+ assert.equal(activityState({pendingSend:{...pending,state:'dispatching'}}),'send-waiting');
+ assert.equal(pendingSendReason({...pending,state:'dispatching'}),'正在投递，尚未确认受理。');
+ assert.equal(pendingSendReason({...pending,state:'failed'}),pending.reason);
+ assert.equal(activityState({...row,pendingSend:{...pending,state:'failed'}}),'send-failed','current full view overrides an older display snapshot');
+ assert.equal(activityState({...row,activity:{...row.activity,pendingSend:undefined}}),null);
+ assert.equal(activityState({...row,run:{status:'running'},activity:{...row.activity,pendingSend:undefined}}),'running');
+ assert.deepEqual(activityBadge({active:1,running:0,waiting:0,unseen:0,unknown:0,attention:0,pendingSend:1}),{kind:'active',count:1,label:'活动中'});
 });

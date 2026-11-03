@@ -206,3 +206,20 @@ test('Qoder unaccepted release requires the original settled submission and chec
   await runtime.close();assert.deepEqual(await runtime.releaseUnaccepted!({contextRef,clientRequestId}),{executionState:'unknown'},'release proof survives exact owned close');
  }finally{await runtime?.close();await rm(root,{recursive:true,force:true});}
 });
+
+ test('qoder: unanswered question can end and a distinct turn starts in the same native conversation', {timeout:15000}, async()=>{
+  const root=await mkdtemp(join(tmpdir(),'buildr-qoder-question-next-'));let runtime:AgentRuntime|undefined;
+  try{
+    const executable=join(root,'qoder.mjs');await writeFile(executable,cli);
+    runtime=await createQoderExecutor().open({connectionId:'qoder',configRoot:join(root,'config'),executable,environment:{PATH:process.env.PATH??''}});
+    const contextRef=await runtime.createContext({cwd:root});const first:ExecutorEvent[]=[],second:ExecutorEvent[]=[];
+    const sending=runtime.send({contextRef,cwd:root,text:'wait for user',images:[],clientRequestId:'first-question',onEvent:event=>first.push(event)});sending.catch(()=>{});
+    await eventually(()=>first.some(event=>event.type==='request'));const accepted=first.find(event=>event.type==='accepted');assert.equal(accepted?.type,'accepted');
+    const request=first.find(event=>event.type==='request');assert.equal(request?.type,'request');
+    await runtime.stop({contextRef,executionRef:accepted.executionRef});await sending;
+    await assert.rejects(runtime.reply({contextRef,executionRef:accepted.executionRef,requestId:request.request.id,answer:{color:'蓝'}}));
+    const next=runtime.send({contextRef,cwd:root,text:'next requirement',images:[],clientRequestId:'second-instruction',onEvent:event=>second.push(event)});next.catch(()=>{});
+    await eventually(()=>second.some(event=>event.type==='accepted'));const started=second.find(event=>event.type==='accepted');assert.equal(started?.type,'accepted');assert.notEqual(started.executionRef.id,accepted.executionRef.id);
+    await runtime.stop({contextRef,executionRef:started.executionRef});await next;
+  }finally{await runtime?.close();await rm(root,{recursive:true,force:true});}
+ });

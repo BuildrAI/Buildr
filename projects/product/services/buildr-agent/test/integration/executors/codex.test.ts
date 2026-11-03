@@ -63,7 +63,7 @@ test('unknown observations and unconfirmed whole-run stops revoke continuation w
   } finally { await runtime?.close();await rm(root,{recursive:true,force:true}); }
 });
 
-test('queued new-context input dispatches once while old command resources and receipt ownership survive', async () => {
+test('queued input cannot confirm a new context; explicit handoff preserves old receipt ownership', async () => {
   const root=await mkdtemp(join(tmpdir(),'buildr-codex-queued-retained-'));
   const dataRoot=join(root,'profile');let service:ReturnType<typeof createAgentService>|undefined;
   try {
@@ -82,6 +82,13 @@ test('queued new-context input dispatches once while old command resources and r
     service.conversations.queueSend('workspace',id,{expectedRevision:before.revision,connectionId:'codex',text:'[finish]',clientRequestId:'queued-next'});
     const pump=new PendingSends({dataRoot,service,active:()=>true,generationAlive:()=>true,conversationBusy:async(scope,id)=>service!.conversationInputBusy(scope,id)});
     await pump.pump();
+    const refused=service.conversations.read('workspace',id);
+    assert.equal(refused.run!.id,ownerRunId);assert.equal(refused.pendingSend?.state,'failed');
+    assert.equal(refused.entries.some(entry=>entry.role==='user'&&entry.text==='[finish]'),false,'no native input is admitted by the queue');
+    service.conversations.cancelPendingSend('workspace',id,{expectedPendingRevision:refused.pendingSend!.revision});
+    const confirmed={expectedRevision:service.conversations.read('workspace',id).revision,connectionId:'codex',text:'[finish]'};
+    const confirmation=service.conversations.prepareSend('workspace',id,confirmed);
+    service.conversations.send('workspace',id,{...confirmed,previewToken:confirmation.token,clientRequestId:'queued-next'});
     await eventually(()=>service!.conversations.read('workspace',id).run?.id!==ownerRunId && service!.conversations.read('workspace',id).run?.status==='completed');
     await pump.pump();
     const after=service.conversations.read('workspace',id);
@@ -128,19 +135,19 @@ test('Codex supplementary native identities repair legacy history and allow a ne
   const options={dataRoot:join(root,'profile'),executors:[createCodexExecutor()],modelProviders:[],environment:{PATH:process.env.PATH??''},resolveWorkspace(){return {rootPath:root};}};
   let service:ReturnType<typeof createAgentService>|undefined;
   try {
-    const executable=join(root,'codex.mjs');await writeFile(executable,source);
+    const executable=join(root,'codex.mjs');await writeFile(executable,source.replace("process.stdout.write(JSON.stringify({id:'request-'+id,method:'item/tool/requestUserInput'", "if(workText==='initial')return;\nprocess.stdout.write(JSON.stringify({id:'request-'+id,method:'item/tool/requestUserInput'"));
     service=createAgentService(options);
     await service.connections.connect('codex',{expectedRevision:service.connections.read('codex').revision,executable});
     const view=await service.conversations.create('workspace',{}),id=view.id;
     const send=(text:string,clientRequestId:string)=>{const draft={expectedRevision:service!.conversations.read('workspace',id).revision,connectionId:'codex',text};const preview=service!.conversations.prepareSend('workspace',id,draft);return service!.conversations.send('workspace',id,{...draft,previewToken:preview.token,clientRequestId});};
     send('initial','initial-request');
-    await eventually(()=>service!.conversations.read('workspace',id).run?.status==='waiting-question');
+    await eventually(()=>service!.conversations.read('workspace',id).run?.status==='running');
     const run=service.conversations.read('workspace',id).run!;
     // Identical content must still match the two explicit client identities.
     for(const clientRequestId of ['extra-one','extra-two']){
       assert.equal((await service.conversations.supplement('workspace',id,{runId:run.id,participantId:run.participantId,generation:run.generation,text:'same text',clientRequestId})).delivery,'accepted');
     }
-    assert.equal(service.conversations.read('workspace',id).run?.status,'waiting-question');
+    assert.equal(service.conversations.read('workspace',id).run?.status,'running');
     await service.conversations.stop('workspace',id,{expectedRevision:service.conversations.read('workspace',id).revision,runId:run.id,participantId:run.participantId,generation:run.generation});
     await service.close();service=undefined;
     // The old adapter saved the client id as the native id and never indexed
@@ -369,3 +376,22 @@ test('Codex image viewing appears once in both live flow and durable history', a
     await runtime.stop({ contextRef, executionRef: accepted.executionRef }); await sending;
   } finally { await runtime?.close(); await rm(root, { recursive: true, force: true }); }
 });
+
+ test('codex: unanswered question can end and a distinct turn starts in the same native conversation', {timeout:15000}, async()=>{
+  const root=await mkdtemp(join(tmpdir(),'buildr-codex-question-next-'));let runtime:AgentRuntime|undefined;
+  try{
+    const executable=join(root,'codex.mjs');await writeFile(executable,source);
+    runtime=await createCodexExecutor().open({connectionId:'codex',configRoot:join(root,'config'),executable,environment:{PATH:process.env.PATH??''}});
+    const contextRef=await runtime.createContext({cwd:root});const first:ExecutorEvent[]=[],second:ExecutorEvent[]=[];
+    const sending=runtime.send({contextRef,cwd:root,text:'wait for user',images:[],clientRequestId:'first-question',onEvent:event=>first.push(event)});sending.catch(()=>{});
+    await eventually(()=>first.some(event=>event.type==='request'));const accepted=first.find(event=>event.type==='accepted');assert.equal(accepted?.type,'accepted');
+    const request=first.find(event=>event.type==='request');assert.equal(request?.type,'request');
+    assert.equal(await runtime.endQuestionWait!({contextRef,executionRef:accepted.executionRef,requestIds:['wrong-request']}),undefined);
+    const released=await runtime.endQuestionWait!({contextRef,executionRef:accepted.executionRef,requestIds:[request.request.id]});
+    assert.equal(released?.status,'stopped');await sending;
+    await assert.rejects(runtime.reply({contextRef,executionRef:accepted.executionRef,requestId:request.request.id,answer:{color:'蓝'}}));
+    const next=runtime.send({contextRef,cwd:root,text:'[finish]',images:[],clientRequestId:'second-instruction',onEvent:event=>second.push(event)});next.catch(()=>{});
+    await eventually(()=>second.some(event=>event.type==='accepted'));const started=second.find(event=>event.type==='accepted');assert.equal(started?.type,'accepted');assert.notEqual(started.executionRef.id,accepted.executionRef.id);
+    await runtime.stop({contextRef,executionRef:started.executionRef});await next;
+  }finally{await runtime?.close();await rm(root,{recursive:true,force:true});}
+ });

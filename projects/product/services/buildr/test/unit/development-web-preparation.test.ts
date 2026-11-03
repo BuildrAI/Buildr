@@ -22,12 +22,61 @@ test('development Web preparation generates DTOs before building the ignored dis
     },
   });
   assert.deepEqual(events, ['prepare-agent', 'generate-dtos', 'build:/tmp/buildr-development-web-output']);
-  assert.deepEqual(result, {
+  assert.deepEqual(result.timings.stages.map(stage => [stage.id, stage.status]), [['prepare-agent', 'passed'], ['generate-dtos', 'passed'], ['build-web', 'passed']]);
+  assert.ok(result.timings.durationMs >= 0);
+  const { timings, ...payload } = result;
+  assert.deepEqual(payload, {
     schemaVersion: 'buildr.development-web-preparation/v1',
     status: 'passed',
     root: '/tmp/buildr-development-web-output',
     generatedDtos: ['/generated/dto.ts'],
   });
+});
+
+test('development Web preparation emits each stage before execution and records monotonic timing', async () => {
+  let clock = 0;
+  const events: Record<string, unknown>[] = [];
+  const result = await prepareDevelopmentWeb({
+    now: () => clock++, progress: event => { events.push(event); },
+    prepareAgent: () => { assert.equal(events.at(-1)?.event, 'stage-start'); return '/agent'; },
+    generateDtos: async () => { assert.equal(events.at(-1)?.stage, 'generate-dtos'); return []; },
+    build: root => { assert.equal(events.at(-1)?.stage, 'build-web'); return root; },
+  });
+  assert.equal(events.length, 6);
+  assert.deepEqual(result.timings.stages.map(stage => stage.durationMs), [1, 1, 1]);
+  assert.ok(result.timings.durationMs > 0);
+  assert.ok(events.every(event => !Object.hasOwn(event, 'args') && !Object.hasOwn(event, 'environment')));
+});
+
+test('failed preparation retains stage timing without running later stages or leaking errors in progress', async () => {
+  const events: Record<string, unknown>[] = [];
+  await assert.rejects(prepareDevelopmentWeb({
+    progress: event => { events.push(event); },
+    prepareAgent: () => '/agent',
+    generateDtos: async () => { throw new Error('private-raw-value'); },
+    build: () => { throw new Error('must not run'); },
+  }), (error: any) => {
+    assert.equal(error.message, 'private-raw-value');
+    assert.deepEqual(error.timings.stages.map((stage: any) => [stage.id, stage.status]), [['prepare-agent', 'passed'], ['generate-dtos', 'failed']]);
+    return true;
+  });
+  assert.equal(JSON.stringify(events).includes('private-raw-value'), false);
+});
+
+test('broken progress output does not replace the actual preparation outcome', async () => {
+  const result = await prepareDevelopmentWeb({
+    progress: () => { throw new Error('log closed'); }, prepareAgent: () => '/agent',
+    generateDtos: async () => [], build: root => root,
+  });
+  assert.equal(result.status, 'passed');
+});
+
+test('development Web preparation keeps the failing stage and code visible', async () => {
+  await assert.rejects(prepareDevelopmentWeb({
+    prepareAgent: () => '/prepared/agent',
+    generateDtos: async () => [],
+    build: () => { throw Object.assign(new Error('Exact Node does not provide an npm CLI'), { code: 'web_dist_npm_missing' }); },
+  }), (error: any) => error.stage === 'prepare-web' && error.internalCode === 'web_dist_npm_missing' && /npm CLI/.test(error.message));
 });
 
 test('development Web preparation does not build when DTO generation fails', async () => {

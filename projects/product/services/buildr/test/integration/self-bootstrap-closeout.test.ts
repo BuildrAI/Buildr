@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { runDirectSelfBootstrapCloseout, runSelfBootstrapCloseoutCommand, SELF_BOOTSTRAP_SYNC_RESUME_SCHEMA } from '../../../../../../skills/buildr-self-bootstrap-sync/scripts/closeout.mjs';
+import { defaultExecute, runDirectSelfBootstrapCloseout, runSelfBootstrapCloseoutCommand, SELF_BOOTSTRAP_SYNC_RESUME_SCHEMA } from '../../../../../../skills/buildr-self-bootstrap-sync/scripts/closeout.mjs';
 import { DEFAULT_DEVELOPMENT_WEB_PORT, restartDevelopmentInstance, inspectDevelopmentInstance } from '../../../../../../skills/buildr-self-bootstrap-sync/scripts/development-web-continuity.mjs';
 import { parseTaskCommitTrailer } from '../../src/modules/task/commits/domain/task-commit.ts';
 import { readDevelopmentRuntimeIdentity } from '../../src/modules/installation/infrastructure/development-runtime-inputs.ts';
@@ -230,6 +230,7 @@ function executor(root: any, options: any = {}): any  {
             action: 'inspect',
             status: healthy ? 'healthy-development' : (options.continuityStatus || 'not-running'),
             reason: healthy ? null : (options.continuityStatus || 'instance-record-absent'),
+            pageVerification: healthy ? { status: options.badDevelopmentPage ? 'failed' : 'passed', reason: options.badDevelopmentPage ? 'invalid-html' : null, resourceCount: 1, durationMs: 1 } : null,
             instance: healthy ? {
               url: `http://127.0.0.1:${developmentPort}`,
               port: developmentPort,
@@ -739,6 +740,7 @@ test('a projected closeout script loads runtime policy from the explicit product
   const f = fixture(t), projected = path.join(path.dirname(f.root), 'agent-runtime', 'closeout.mjs');
   fs.mkdirSync(path.dirname(projected), { recursive: true });
   fs.copyFileSync(path.resolve(import.meta.dirname, '../../../../../../skills/buildr-self-bootstrap-sync/scripts/closeout.mjs'), projected);
+  fs.copyFileSync(path.resolve(import.meta.dirname, '../../../../../../skills/buildr-self-bootstrap-sync/scripts/development-web-continuity.mjs'), path.join(path.dirname(projected), 'development-web-continuity.mjs'));
   const { runDirectSelfBootstrapCloseout: runProjected } = await import((await import('node:url')).pathToFileURL(projected).href);
   fs.writeFileSync(path.join(f.root, 'README.md'), 'documentation\n');
   git(f.root, 'add', '.'); git(f.root, 'commit', '-m', 'documentation'); git(f.root, 'push', 'origin', 'dev');
@@ -781,6 +783,27 @@ for (const [options, code] of [
     assert.partialDeepStrictEqual(result.diagnostic, { details: { developmentWebRecovery: { instance: { pid: 71173 } } } });
     assert.equal(calls.some(args => args.includes('restart')), false);
     assert.equal(fs.existsSync(f.pending), false);
+  });
+}
+
+for (const badDevelopmentPage of [true, 'missing']) {
+  test(`failed installation cannot clear pending on healthy identity with ${badDevelopmentPage} page evidence`, t => {
+    const f = runtimeRecoveryFixture(t);
+    const perform = executor(f.root, { runningDevelopmentInstance: true, failLauncherInstall: true, badDevelopmentPage: true });
+    const result = runDirectSelfBootstrapCloseout({ ...f.input, execute: (executable: string, args: string[], context: any) => {
+      const output = perform(executable, args, context);
+      if (badDevelopmentPage === 'missing' && args[1] === 'inspect') {
+        const payload = JSON.parse(output.stdout); delete payload.pageVerification; output.stdout = JSON.stringify(payload);
+      }
+      return output;
+    } });
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.diagnostic?.code, 'self-bootstrap-closeout.local-app-install-failed');
+    assert.partialDeepStrictEqual(result.diagnostic, { details: { developmentWebRecovery: {
+      status: 'failed', code: 'self-bootstrap-closeout.development-web-recovery-page-failed', pending: path.join(fs.realpathSync(f.root), '.buildr/local/self-bootstrap-development-web-recovery.json'),
+    } } });
+    assert.equal(fs.existsSync(f.pending), true);
+    assert.doesNotMatch(result.diagnostic!.message, /已确认运行/);
   });
 }
 
@@ -881,6 +904,16 @@ for (const failFirstStart of [false, true]) {
       const config = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
       const file = path.join(config.dataRoot, 'instance.json'), secret = 'isolated-secret';
       const server = http.createServer((request, response) => {
+        if (request.url === '/') {
+          if (request.headers['x-buildr-instance']) { response.writeHead(403).end(); return; }
+          response.setHeader('content-type', 'text/html');
+          response.end('<html><head><link rel="stylesheet" href="/assets/app.css"></head><body><div id="root"></div><script type="module" src="/assets/app.js"></script></body></html>'); return;
+        }
+        if (request.url === '/assets/app.js' || request.url === '/assets/app.css') {
+          if (request.headers['x-buildr-instance']) { response.writeHead(403).end(); return; }
+          response.setHeader('content-type', request.url.endsWith('.js') ? 'text/javascript' : 'text/css');
+          response.end(request.url.endsWith('.js') ? 'export {};' : 'body {}'); return;
+        }
         if (request.headers['x-buildr-instance'] !== secret) { response.writeHead(403).end(); return; }
         if (request.url === '/api/v1/app/quit-instance' && request.method === 'POST') {
           response.writeHead(202).end(); setImmediate(() => server.close(() => {
@@ -911,15 +944,18 @@ for (const failFirstStart of [false, true]) {
     assert.equal(fs.existsSync(instanceFile), true);
     // Only this isolated receipt is routed to its ephemeral HTTP listener.
     // The everyday development port is never contacted or occupied.
-    const fetchImpl: typeof fetch = (url: any, options: any) => {
+    const fetchImpl: typeof fetch = async (url: any, options: any) => {
       const state = JSON.parse(fs.readFileSync(instanceFile, 'utf8'));
-      return fetch(new URL(new URL(url).pathname, state.testingUrl), options);
+      const response = await fetch(new URL(new URL(url).pathname, state.testingUrl), options);
+      // The explicit test transport maps the logical instance origin to its
+      // ephemeral listener; do not present that mapping as a server redirect.
+      return new Response(response.body, { status: response.status, headers: response.headers });
     };
     configure(newProof);
     let attempts = 0;
     const input = { projectBridge: path.join(directory, 'buildr'), launcherIdentityPath: identityFile,
       expectedSourceRoot: sourceRoot, expectedHead: identity.checkout.head, expectedRuntimeIdentity: newProof,
-      nodeExecutable: process.execPath, previousPid: previous.pid, dataRoot, fetchImpl,
+      nodeExecutable: process.execPath, previousPid: previous.pid, dataRoot, fetchImpl, releasePort: async () => [],
       spawnImpl: (_program: any, args: any) => {
         assert.deepEqual(args, ['web', '--port', '4458', '--no-open']);
         attempts++;
@@ -1068,6 +1104,90 @@ test('the real closeout CLI transfers ownership before parsing and returns the w
 });
 
 
+test('file-backed command capture parses complete large JSON and preserves binary, failure and signal evidence', () => {
+  const output: any = defaultExecute(process.execPath, ['-e', `
+    const fs = require('node:fs');
+    if (process.platform !== 'win32' && [1,2].some(fd => (fs.fstatSync(fd).mode & 0o777) !== 0o600)) process.exit(9);
+    process.stdout.write(JSON.stringify({ value: 'x'.repeat(3 * 1024 * 1024) }));
+    process.stderr.write('e'.repeat(2 * 1024 * 1024));
+  `], { cwd: process.cwd() });
+  assert.equal(output.status, 0); assert.equal(output.signal, null);
+  assert.equal(JSON.parse(output.stdout).value.length, 3 * 1024 * 1024);
+  assert.equal(output.stderr.length, 2 * 1024 * 1024);
+  const binary = defaultExecute(process.execPath, ['-e', 'process.stdout.write(Buffer.from([0,255,1]))'], { cwd: process.cwd(), binary: true });
+  assert.deepEqual(binary.stdout, Buffer.from([0,255,1]));
+  const failed = defaultExecute(process.execPath, ['-e', 'process.exit(23)'], { cwd: process.cwd() });
+  assert.equal(failed.status, 23);
+  const missing = defaultExecute(path.join(os.tmpdir(), 'buildr-nonexistent-executable'), [], { cwd: process.cwd() });
+  assert.equal(missing.status, 1); assert.equal(missing.errorCode, 'ENOENT');
+  if (process.platform !== 'win32') {
+    const killed = defaultExecute(process.execPath, ['-e', "process.kill(process.pid, 'SIGTERM')"], { cwd: process.cwd() });
+    assert.equal(killed.status, 1); assert.equal(killed.signal, 'SIGTERM');
+  }
+});
+
+test('phase and operation timing remains nonnegative with a regressing wall clock and summaries stay bounded', t => {
+  const f = directFixture(t), perform = executor(f.root);
+  const originalNow = Date.now; let wall = originalNow();
+  Date.now = () => wall -= 100000;
+  let result: any;
+  try {
+    result = runDirectSelfBootstrapCloseout({ ...f.input, execute: (executable: string, args: string[], context: any) => {
+      const output = perform(executable, args, context);
+      if (args[0]?.endsWith('/prepare-development-agent.ts')) output.stdout = 'x'.repeat(3 * 1024 * 1024);
+      return output;
+    } });
+  } finally { Date.now = originalNow; }
+  assert.equal(result.status, 'passed');
+  assert.ok(result.durationMs > 0, 'a regressing wall clock must not clamp real execution duration to zero');
+  assert.ok(result.phases.some((stage: any) => stage.durationMs > 0));
+  for (const item of [result, ...result.phases, ...result.phases.flatMap((stage: any) => stage.operations)]) {
+    assert.equal(Number.isNaN(Date.parse(item.startedAt)), false);
+    assert.equal(Number.isNaN(Date.parse(item.finishedAt)), false);
+    assert.ok(Number.isFinite(item.durationMs) && item.durationMs >= 0);
+  }
+  for (const item of result.phases.flatMap((stage: any) => stage.operations)) {
+    assert.ok(item.stdout.length <= 2000); assert.ok(item.stderr.length <= 2000);
+  }
+});
+
+test('worker log exposes fixed phase and operation start before a synchronous child completes without secrets', async t => {
+  const f = directFixture(t), directory = path.dirname(f.root), runnerModule = path.join(directory, 'progress-runner.mjs');
+  const ready = path.join(directory, 'synchronous-child-ready'), release = path.join(directory, 'release-child');
+  const helper = path.resolve(import.meta.dirname, '../../../../../../skills/buildr-self-bootstrap-sync/scripts/closeout.mjs');
+  fs.writeFileSync(runnerModule, `
+    import fs from 'node:fs';
+    import { runDirectSelfBootstrapCloseout, defaultExecute } from ${JSON.stringify(helper)};
+    export function runSelfBootstrapCloseoutCommand({args}) {
+      return runDirectSelfBootstrapCloseout({ ...JSON.parse(args[0]), execute(executable, argv, options) {
+        if (argv[0]?.endsWith('/prepare-development-agent.ts')) return defaultExecute(process.execPath, ['-e',
+          ${JSON.stringify(`const fs = require('node:fs'); if (process.env.BUILDR_DEVELOPMENT_PROGRESS_FD !== '3') process.exit(13); fs.writeSync(3, JSON.stringify({schemaVersion:'buildr.self-bootstrap-progress/v1',scope:'phase',event:'started',id:'nested-web-preparation',phaseId:null,status:null,startedAt:new Date().toISOString(),finishedAt:null,durationMs:null}) + '\\n'); process.stdout.write('secret-raw-output'); process.stderr.write('secret-raw-stderr'); fs.writeFileSync(${JSON.stringify(ready)}, 'ready'); while (!fs.existsSync(${JSON.stringify(release)})) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 15);`)}, 'secret-argument'], { ...options, env: { ...options.env, SECRET_ENV: 'secret-environment' } });
+        return defaultExecute(executable, argv, options);
+      } });
+    }
+  `);
+  let handoff: any;
+  const pending = runDetachedCloseout({ args: [JSON.stringify(f.input)], runnerModule, onHandoff(value: any) { handoff = value; } });
+  try {
+    await waitForExecutionFile(ready);
+    const log = fs.readFileSync(handoff.logFile, 'utf8');
+    const events = log.trim().split('\n').map(line => JSON.parse(line));
+    assert.ok(events.some(event => event.scope === 'phase' && event.event === 'started' && event.id === 'preflight'));
+    assert.ok(events.some(event => event.scope === 'operation' && event.event === 'started' && event.id === 'prepare-agent-package'));
+    assert.ok(events.some(event => event.scope === 'phase' && event.event === 'started' && event.id === 'nested-web-preparation'));
+    assert.equal(events.some(event => event.event === 'finished' && event.id === 'prepare-agent-package'), false);
+    assert.doesNotMatch(log, /secret-argument|secret-environment|secret-raw-output|secret-raw-stderr|SECRET_ENV/);
+    for (const event of events) assert.deepEqual(Object.keys(event).sort(), ['schemaVersion','scope','event','id','phaseId','status','startedAt','finishedAt','durationMs'].sort());
+  } finally {
+    fs.writeFileSync(release, 'continue');
+    await pending;
+    if (handoff) t.after(() => fs.rmSync(path.dirname(handoff.resultFile), { recursive: true, force: true }));
+  }
+  const finalLog = fs.readFileSync(handoff.logFile, 'utf8');
+  assert.doesNotMatch(finalLog, /secret-argument|secret-environment|secret-raw-output|secret-raw-stderr|SECRET_ENV/);
+  assert.ok(finalLog.includes('"event":"finished","id":"prepare-agent-package"'));
+});
+
 test('explicit restart reaches the owned continuity path even without runtime changes', t => {
   const f=fixture(t),calls: any[]=[];
   const perform=executor(f.root,{runningDevelopmentInstance:true});
@@ -1079,5 +1199,5 @@ test('explicit restart reaches the owned continuity path even without runtime ch
   assert.ok(result.phases.some((p: any)=>p.id==='install-buildr-web'));
   const restart=calls.find(args=>args[0].endsWith('development-web-continuity.mjs')&&args[1]==='restart');
   assert.ok(restart);assert.deepEqual(restart.slice(-2),['--force-restart','true']);
-  assert.throws(()=>runSelfBootstrapCloseoutCommand({args:['--node-executable',process.execPath,'--restart-development-web','yes']}), (e: any)=>e.code==='self-bootstrap-closeout.restart-value-invalid');
+  assert.throws(()=>runSelfBootstrapCloseoutCommand({args:['--target',f.root,'--node-executable',process.execPath,'--restart-development-web','yes']}), (e: any)=>e.code==='self-bootstrap-closeout.restart-value-invalid');
 });

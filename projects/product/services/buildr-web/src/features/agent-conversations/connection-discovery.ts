@@ -26,10 +26,12 @@ export class ConnectionDiscovery {
     const work=Promise.resolve().then(this.read).then(rows=>{
       if(this.stopped)return;
       this.failures=0;this.publish(rows);this.state={ready:true,loading:false,error:''};this.status(this.state);
-    },()=>{
+    },(failure:unknown)=>{
       if(this.stopped)return;
       this.failures++;
-      this.state={...this.state,loading:false,error:this.failures>=3?'智能体列表暂未更新，正在自动恢复连接。':''};this.status(this.state);
+      // 版本对齐是已知的升级窗口，按可恢复状态提示，不当成连接故障。
+      const aligning=(failure as {code?:string}|undefined)?.code==='agent_service_aligning';
+      this.state={...this.state,loading:false,error:aligning?'执行后台正在切换版本，连接状态稍后自动恢复。':this.failures>=3?'智能体列表暂未更新，正在自动恢复连接。':''};this.status(this.state);
       this.timer=setTimeout(()=>{void this.refresh();},this.retryDelay(this.failures));
     }).finally(()=>{if(this.pending===work)this.pending=undefined;});
     this.pending=work;return work;

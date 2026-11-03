@@ -336,6 +336,16 @@ test('default repair preparation verifies real package bytes, retains partial pr
   const adoptedMatrices = materializeCandidateRepair(adoptedPlan, path.join(output, 'adopted'), workflow);
   assert.equal(adoptedMatrices.host.length, 0, 'same original package and measured exact host environment are adopted before preparation');
   assert.equal(adoptedMatrices.source.some((item: any) => item.shard === failedShard.id), false, 'fully adopted local repairs do not install a redundant source job');
+  const artifactOnly = structuredClone(adoptedPlan);
+  const missingConsumer = artifactOnly.checks.find((check: any) => check.id === 'runtime-windows');
+  missingConsumer.steps = missingConsumer.steps.map(({ proof, ...step }: any) => ({ ...step, disposition: 'execute', reason: 'missing-final-evidence' }));
+  const artifactOnlyDirectory = path.join(output, 'artifact-only');
+  const artifactOnlyMatrices = materializeCandidateRepair(artifactOnly, artifactOnlyDirectory, workflow);
+  assert.deepEqual(artifactOnlyMatrices.artifact.map((item: any) => item.shard), ['runtime-windows']);
+  assert.deepEqual(artifactOnlyMatrices.source, [], 'artifact repair never creates a proof-only source job');
+  for (const check of artifactOnly.checks.filter((item: any) => item.steps.every((step: any) => step.disposition === 'reuse'))) {
+    assert.equal(fs.existsSync(path.join(artifactOnlyDirectory, 'candidate-ci-evidence-' + check.id + '.json')), true);
+  }
   const adoptedSource = readCandidateCiEvidenceFiles(path.join(output, 'adopted')).find((item: any) => item.id === failedShard.id);
   assert.equal(adoptedSource.results.find((result: any) => result.id === failedId).candidateProof.origin.kind, 'local');
   const retained = readCandidateCiEvidenceFiles(path.join(output, 'reused'));

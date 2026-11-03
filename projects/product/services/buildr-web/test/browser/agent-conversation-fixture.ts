@@ -52,7 +52,6 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
   const run=(status:string,provider='codex',options:any={})=>({id:'run-fixture',participantId:'participant-'+provider,provider,generation:'generation-fixture',status,accepted:true,permissionMode:'default',tools:[],startedAt:new Date().toISOString(),updatedAt:new Date().toISOString(),...options});
   const route=async(route:any)=>{
     const request=route.request(),url=new URL(request.url()),method=request.method();
-    if(url.pathname.endsWith('/warmup'))return route.fulfill({json:{prepared:true}});
     if(url.pathname.startsWith('/api/v1/app/agent-service/program-updates'))return route.fulfill({json:{programs:connections.map(connection=>({connectionId:connection.id,provider:connection.provider,label:connection.label,revision:connection.revision,executable:connection.enabled?'/isolated/'+connection.id:undefined,status:connection.enabled?'unchecked':'not-connected',managed:true,versionKind:'program',packageName:connection.id,updateUrl:'https://fixture.invalid'}))}});
     if(url.pathname==='/api/v1/app/agent-service/model-catalog'){return route.fulfill({json:{models:sharedModels,hasSnapshot:sharedModels.length>0,...(catalogDiagnostic?{diagnostic:catalogDiagnostic}:{})}});}
     if(url.pathname==='/api/v1/app/agent-service/model-accounts')return route.fulfill({json:{accounts:nativeAccounts(),providers:[]}});
@@ -233,7 +232,9 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
     if(method==='GET'){conversationReads++;return route.fulfill({json:[...additionalConversations,...additionalPending].find(item=>url.pathname.endsWith('/'+item.id))||conversation});}
     return route.fallback();
   };
+  const webhookRoute=async(route:any)=>route.fulfill({json:{revision:'fixture-webhook',source:'private-file',writable:true,state:'unconfigured',url:'',hasSecret:false}});
   await page.route('**/api/v1/app/agent-service/**',route);
+  await page.route('**/api/v1/app/agent-service/webhook-settings',webhookRoute);
   await page.route('**/api/v1/workspaces/*/agent-conversations**',route);
   const panel=()=>page.locator('#agent-conversation-panel');
   const input=()=>page.getByRole('textbox',{name:'对话输入',exact:true});
@@ -291,7 +292,7 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
       await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();await input().fill('下一轮仍是草稿');
     }
   };
-  const dispose=async()=>{releaseEntryRead?.();releaseSend?.();releasePrepare?.();releaseCreate?.();releaseUpload?.();releaseConnections?.();releaseStop?.();releaseTaskList?.();releaseTitle?.();releaseSupplement?.();releaseConnectionProbe?.();await page.evaluate(()=>{(window as any).__releaseTaskSpinnerMotion?.();sessionStorage.removeItem('__buildrHoldTaskSpinnerMotion');}).catch(()=>{});await page.unroute('**/api/v1/app/agent-service/**',route);await page.unroute('**/api/v1/workspaces/*/agent-conversations**',route);await page.setViewportSize({width:1280,height:900});await page.evaluate(()=>sessionStorage.clear()).catch(()=>{});if(scenarioFocus.length)assert.ok(stepIndex>0,'BUILDR_AGENT_SCENARIO_FOCUS 没有匹配任何场景');};
+  const dispose=async()=>{releaseEntryRead?.();releaseSend?.();releasePrepare?.();releaseCreate?.();releaseUpload?.();releaseConnections?.();releaseStop?.();releaseTaskList?.();releaseTitle?.();releaseSupplement?.();releaseConnectionProbe?.();await page.evaluate(()=>{(window as any).__releaseTaskSpinnerMotion?.();sessionStorage.removeItem('__buildrHoldTaskSpinnerMotion');}).catch(()=>{});await page.unroute('**/api/v1/app/agent-service/webhook-settings',webhookRoute);await page.unroute('**/api/v1/app/agent-service/**',route);await page.unroute('**/api/v1/workspaces/*/agent-conversations**',route);await page.setViewportSize({width:1280,height:900});await page.evaluate(()=>sessionStorage.clear()).catch(()=>{});if(scenarioFocus.length)assert.ok(stepIndex>0,'BUILDR_AGENT_SCENARIO_FOCUS 没有匹配任何场景');};
   return {
     quotaOverrides,otherWorkspaceId,
     get additionalConversations(){return additionalConversations;}, set additionalConversations(value){additionalConversations=value;},

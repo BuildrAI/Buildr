@@ -113,3 +113,22 @@ test('durable Qoder reads reject truncated, ambiguous, symlinked and oversized e
   assert.equal(await readQoderPersistedExecution(f.input), undefined); await rm(f.transcript); await f.write();
   await writeFile(f.log, ' '.repeat(32 * 1024 * 1024 + 1)); assert.equal(await readQoderPersistedExecution(f.input), undefined);
 });
+
+test('diagnostic reclamation preserves exact end evidence while recovery is unresolved and never rewrites native history', async t => {
+  const f = await fixture(t);
+  const { rename, utimes, readFile } = await import('node:fs/promises');
+  const { createQoderExecutor } = await import('../../../src/executors/qoder/index.ts');
+  const { diagnosticCandidates } = await import('../../../src/storage/diagnostics.ts');
+  const { removeStorageCandidate } = await import('../../../src/storage/files.ts');
+  const log = join(f.config, 'logs/sessions/namespace', f.input.contextRef.id, 'segments/2026-11-03T00-00-00-000+08-00-recovery-p2000000000.jsonl');
+  await rename(f.log, log); await utimes(log, 1, 1);
+  const original = await readFile(f.transcript), use = { complete: true, paths: [] };
+  const held = diagnosticCandidates(f.root, createQoderExecutor(), f.input.nativeAccountConfigRoot, use,
+    { complete: true, contexts: ['qoder:' + f.input.contextRef.id] }, Date.now());
+  assert.equal(held.find(item => item.path === log)?.reason, 'diagnostic_recovery_evidence');
+  assert.equal(removeStorageCandidate(f.root, held.find(item => item.path === log)!, () => use), false);
+  assert.equal((await readQoderPersistedExecution(f.input))?.endedAt, '2026-11-02T01:00:01.000Z');
+  const released = diagnosticCandidates(f.root, createQoderExecutor(), f.input.nativeAccountConfigRoot, use, { complete: true, contexts: [] }, Date.now());
+  assert.equal(removeStorageCandidate(f.root, released.find(item => item.path === log)!, () => use), true);
+  assert.deepEqual(await readFile(f.transcript), original);
+});

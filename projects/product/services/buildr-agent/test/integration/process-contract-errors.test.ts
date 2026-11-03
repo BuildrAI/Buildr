@@ -9,6 +9,41 @@ import { AGENT_EXECUTION_CONTRACTS, connectAgentProcess, withAgentDataOffline, a
 import { claim, controlRoot, writePrivate } from '../../src/process/ownership.ts';
 import { ConversationRepository } from '../../src/persistence/conversation-repository.ts';
 import type { AgentProcessIdentity, AgentRuntimeUnit } from '../../src/index.ts';
+import { AgentHostRegistry, exposeAgentHost } from '../../src/process/host-channel.ts';
+
+test('a refreshed host takes precedence and missing registration has a useful safe diagnostic', async t => {
+  const registry = new AgentHostRegistry(), ref = {sourceId:'minimal',id:'directory'};
+  const host = (rootPath:string) => ({resolveExecutionScope:async()=>({ref,revision:'one',rootPath}),verifyWorkObject:async({ref}:any)=>({ref,revision:'one'}),listExecutionScopes:async()=>({refs:[ref],revision:'one'})});
+  const first = await exposeAgentHost('minimal',host('/first')), second = await exposeAgentHost('minimal',host('/second'));
+  t.after(async()=>{await first.close();await second.close();});
+  registry.attach(first.peer);registry.attach(second.peer);registry.attach(first.peer);
+  assert.equal((await registry.resolveExecutionScope({ref})).rootPath,'/first');
+  await assert.rejects(registry.resolveExecutionScope({ref:{...ref,sourceId:'other'}}),{code:'agent_host_unavailable',message:/resolveExecutionScope.*no_registered_peer/});
+});
+
+test('a live client restores forgotten host registration before an operation without replay', async t => {
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-host-refresh-'));
+  const runtime:AgentRuntimeUnit={schemaVersion:1,digest:'f'.repeat(64),directory:root,entry:path.join(root,'entry.js'),node:process.execPath};
+  const identity:AgentProcessIdentity={contracts:AGENT_EXECUTION_CONTRACTS,instanceId:'host-refresh',generation:'host-refresh-generation',profileId:'fixture',dataRoot:root,pid:process.pid,runtime};
+  let attached=false, operations=0;
+  const server=createServer(async(req,res)=>{
+    if(req.url==='/identity'){res.end(JSON.stringify(identity));return;}
+    let input='';for await(const chunk of req)input+=chunk;const value=JSON.parse(input);
+    if(req.url==='/host/attach'){attached=true;res.end('{}');return;}
+    if(req.url==='/host/detach'){res.end('{}');return;}
+    operations++;
+    if(!attached){res.writeHead(503);res.end(JSON.stringify({error:{code:'agent_host_unavailable',message:'forgotten callback'}}));return;}
+    res.end(JSON.stringify({available:true}));
+  });
+  server.listen(0,'127.0.0.1');await once(server,'listening');const address=server.address();assert.ok(address&&typeof address!=='string');
+  writePrivate(path.join(controlRoot(root),'instance.json'),{identity,origin:`http://127.0.0.1:${address.port}`,token:'fixture-host-refresh-token'});
+  const host={resolveExecutionScope:async({ref}:any)=>({ref,revision:'one',rootPath:root}),verifyWorkObject:async({ref}:any)=>({ref,revision:'one'}),listExecutionScopes:async()=>({refs:[],revision:'one'})};
+  const connection=await connectAgentProcess({dataRoot:root,profileId:'fixture',sourceId:'minimal',runtime,host});
+  t.after(async()=>{await connection.disconnect();server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));fs.rmSync(root,{recursive:true,force:true});});
+  attached=false;
+  assert.deepEqual(await connection.operations.conversations.read('scope','conversation'),{available:true});
+  assert.equal(operations,1,'callback refresh must not replay the operation');
+});
 
 test('lost transport never replays an operation; original request identity remains queryable', async () => {
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-result-unknown-'));

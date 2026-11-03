@@ -1,6 +1,6 @@
 {
   "name": "@buildr-ai/buildr",
-  "version": "0.1.0-rc.54",
+  "version": "0.1.0-rc.55",
   "buildrCompatibility": {
     "schemaVersion": "buildr.package-compatibility/v1",
     "provides": [
@@ -57,6 +57,7 @@
     "README.md",
     "docs/agent-runtime-adapters.md",
     "docs/cli-reference.md",
+    "docs/agent-event-contract.md",
     "docs/skill-capability-contracts.md",
     "docs/cli-architecture.md",
     "docs/known-limitations.md",
@@ -79,7 +80,7 @@
     "artifacts:prepare": "npm run agent:prepare && npm run contracts:prepare && npm run test-context:generate",
     "candidate:prepare": "node tools/verification/candidate-environment.ts prepare",
     "typecheck": "node tools/testing/run-types.ts --project tsconfig.json",
-    "build:web": "npm run contracts:prepare && npm run contracts:check && npm run contracts:check:workspace && node tools/development/run-development-npm.ts --prefix ../buildr-web run build",
+    "build:web": "npm run contracts:prepare && npm run contracts:check && npm run contracts:check:workspace && node tools/build/web-dist.ts",
     "dev:web": "npm --prefix ../buildr-web run dev",
     "benchmark:task-query-million": "node tools/performance/task-query-million.ts",
     "install:development": "./tools/development/install-buildr-development",

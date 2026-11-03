@@ -381,6 +381,7 @@ export function createAgentAssetsModule(infrastructure: AgentAssetsInfrastructur
         commandsRemove: commands.commandsRemove,
         commandsCheck: commands.commandsCheck,
         componentListOrCheck: components.componentListOrCheck,
+        componentRecord: components.componentRecord,
         componentInstall: components.componentInstall,
         componentUninstall: components.componentUninstall,
         builtinList: packageMaintenance.builtinList,

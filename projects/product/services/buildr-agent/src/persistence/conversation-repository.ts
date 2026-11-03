@@ -1,9 +1,11 @@
+import { NativeContentReader } from '../storage/native-content.ts';
+import { PendingSendRepository } from './pending-send-repository.ts';
 import { normalizeParticipation } from '../domain/participation.ts';
 import { projectParticipation, type ParticipationProjection } from '../domain/participation-record.ts';
 import { createHash } from 'node:crypto';
 import { summaryView, messageSignature, messageActivityAt, userActivityAt, pendingDecisionCount, conversationActive } from '../domain/conversation-activity.ts';
-import type { ConversationView } from '../contracts.ts';
-import { BUSY_STATES, unfinishedRun } from '../domain/agent-state.ts';
+import type { ConversationView, RunView } from '../contracts.ts';
+import { unfinishedRun } from '../domain/agent-state.ts';
 import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -11,9 +13,11 @@ import { AgentServiceError, fail } from '../domain/agent-state.ts';
 import type { StoredConnection, StoredConversation } from '../domain/agent-state.ts';
 import { ConversationReadModel, type ConversationReadState } from './conversation-read-model.ts';
 import { ConversationEntryStore } from './conversation-entry-store.ts';
+import type { NativeToolContent } from '../native-content-contracts.ts';
+import type { ConversationEntry } from '../contracts.ts';
 import { beginConversationMigration, migrateConversationEntries } from './conversation-migration.ts';
 
-export const CONVERSATION_SCHEMA_VERSION = 5;
+export const CONVERSATION_SCHEMA_VERSION = 7;
 const SCHEMA_VERSION = CONVERSATION_SCHEMA_VERSION;
 // 附件准备不等于开始；已发送或结果未知的尝试仍必须可发现。
 const LEGACY_HAS_WORK = "(json_array_length(json_extract(body,'$.view.entries'))>0 OR json_array_length(json_extract(body,'$.attempts'))>0 OR json_type(body,'$.view.run')='object' OR json_type(body,'$.view.childOf')='object')";
@@ -39,7 +43,9 @@ export class ConversationRepository {
   private repairs = new Set<string>();
   private repairScheduled = false;
   private stopped = false;
-  constructor(directory: string) { this.directory = directory; this.filename = path.join(directory, 'conversations.sqlite'); }
+  private readonly nativeReader: NativeContentReader;
+  private readonly nativeTool?: (record:StoredConversation,entry:ConversationEntry)=>NativeToolContent|undefined;
+  constructor(directory: string,nativeTool?:(record:StoredConversation,entry:ConversationEntry)=>NativeToolContent|undefined) { this.nativeTool=nativeTool;this.nativeReader = new NativeContentReader(directory); this.directory = directory; this.filename = path.join(directory, 'conversations.sqlite'); }
 
   private open(write: boolean): DatabaseSync | undefined {
     if (!fs.existsSync(this.filename) && !write) return undefined;
@@ -59,6 +65,7 @@ export class ConversationRepository {
         const row = db.prepare('PRAGMA user_version').get() as { user_version: number };
         if (row.user_version > SCHEMA_VERSION) fail('agent_storage_newer', '此交互库来自较新版本，请使用匹配的 Buildr。', 409);
         if (write && row.user_version < SCHEMA_VERSION) migration = beginConversationMigration(db, this.directory);
+        if (write && row.user_version===0) db.exec('PRAGMA auto_vacuum=INCREMENTAL');
         // Native tools may read/backup this same private database while events persist.
         // Readers must not turn a completed native operation into a failed observation.
         if (write && (db.prepare('PRAGMA journal_mode').get() as {journal_mode:string}).journal_mode !== 'wal') db.exec('PRAGMA journal_mode=WAL');
@@ -105,7 +112,28 @@ export class ConversationRepository {
         if (write && row.user_version < 4) db.exec('PRAGMA user_version=4');
         if (write) {
           ConversationReadModel.install(db);
-          if (row.user_version < SCHEMA_VERSION) migrateConversationEntries(db);
+          if (row.user_version < 5) migrateConversationEntries(db);
+          if (row.user_version < 6) {
+            // The migration owner excludes incompatible writers. Enable incremental
+            // reclamation once here, so normal maintenance never needs a full VACUUM.
+            if (Number(db.prepare('PRAGMA auto_vacuum').get()!.auto_vacuum)!==2) {
+              db.exec('PRAGMA auto_vacuum=INCREMENTAL; VACUUM');
+            }
+            db.exec(`BEGIN IMMEDIATE; DROP TRIGGER IF EXISTS conversation_body_format_insert; DROP TRIGGER IF EXISTS conversation_body_format_update;
+              UPDATE conversations SET body=json_set(body,'$._bodyFormat',6);
+              ${['INSERT','UPDATE OF body'].map((op,index) => `CREATE TRIGGER conversation_body_format_${index ? 'update' : 'insert'} BEFORE ${op} ON conversations
+                WHEN json_extract(NEW.body,'$._bodyFormat') IS NOT 6 OR json_array_length(NEW.body,'$.view.entries')>0 OR json_array_length(NEW.body,'$.inheritedContext.entries')>0
+                BEGIN SELECT RAISE(ABORT,'agent_storage_writer_incompatible'); END;`).join('\n')}
+              PRAGMA user_version=6; COMMIT;`);
+          }
+          if(row.user_version<7) {
+            db.exec(`BEGIN IMMEDIATE; DROP TRIGGER IF EXISTS conversation_body_format_insert; DROP TRIGGER IF EXISTS conversation_body_format_update;
+              UPDATE conversations SET body=json_set(body,'$._bodyFormat',7);
+              ${['INSERT','UPDATE OF body'].map((op,index)=>`CREATE TRIGGER conversation_body_format_${index?'update':'insert'} BEFORE ${op} ON conversations
+                WHEN json_extract(NEW.body,'$._bodyFormat') IS NOT 7 OR json_array_length(NEW.body,'$.view.entries')>0 OR json_array_length(NEW.body,'$.inheritedContext.entries')>0
+                BEGIN SELECT RAISE(ABORT,'agent_storage_writer_incompatible'); END;`).join('\n')}
+              PRAGMA user_version=7; COMMIT;`);
+          }
           const HAS_WORK = hasWork(db);
         db.exec('CREATE TABLE IF NOT EXISTS conversation_participation (id TEXT PRIMARY KEY, revision TEXT NOT NULL, body TEXT NOT NULL)');
           // Rebuildable acceleration, not a storage-version change. SQLite also
@@ -169,9 +197,18 @@ export class ConversationRepository {
       return {projections,incomplete};
     }finally{db.close();}
   }
+  /** Bounded recovery of notification projections; no model or task operations. */
+  webhookRecoveryPage(after = '', limit = 100): ConversationView[] {
+    const db=this.open(false);if(!db)return [];
+    try {
+      const rows=db.prepare('SELECT id FROM conversations WHERE id>? ORDER BY id LIMIT ?').all(after,limit) as Array<{id:string}>;
+      return rows.flatMap(row=>{const record=this.readConversation(row.id);return record?[record.view]:[];});
+    } finally {db.close();}
+  }
+
   readConversation(id: string): StoredConversation | undefined {
     const db = this.open(false); if (!db) return;
-    try { const modern=(db.prepare('PRAGMA user_version').get() as {user_version:number}).user_version>=2; const row = db.prepare(`SELECT body${modern?',summary':''} FROM conversations WHERE id=?`).get(id) as {body:string;summary?:string}|undefined; if(!row)return;const record=ConversationEntryStore.hydrate(db,JSON.parse(row.body) as StoredConversation);if(row.summary)record.view.activity=JSON.parse(row.summary).activity;return record; }
+    try { const modern=(db.prepare('PRAGMA user_version').get() as {user_version:number}).user_version>=2; const row = db.prepare(`SELECT body${modern?',summary':''} FROM conversations WHERE id=?`).get(id) as {body:string;summary?:string}|undefined; if(!row)return;const record=ConversationEntryStore.hydrate(db,JSON.parse(row.body) as StoredConversation,this.nativeReader);if(row.summary)record.view.activity=JSON.parse(row.summary).activity;return record; }
     finally { db.close(); }
   }
   /** Explicit startup maintenance; ordinary reads never initialize or migrate storage. */
@@ -214,7 +251,7 @@ export class ConversationRepository {
     try {
       if (ConversationReadModel.available(db)) {
         db.exec('BEGIN');
-        const page=ConversationReadModel.page(db,id,before,limit,compactTools);
+        const page=ConversationReadModel.page(db,id,before,limit,compactTools,this.nativeReader);
         if(page)return page;
         this.queueReadRepair(id);
       }
@@ -229,7 +266,7 @@ export class ConversationRepository {
         if (ConversationEntryStore.available(db)) {
           const header=db.prepare('SELECT 1 FROM conversation_read_states WHERE id=? AND message_revision=revision').get(id);
           const row=header && ConversationEntryStore.content(db,id,entryId);
-          if(row){if(row.content_revision!==revision)fail('agent_entry_changed','工具记录已变化，请重新读取当前对话。',409);return ConversationEntryStore.decode(row);}
+          if(row){if(row.content_revision!==revision)fail('agent_entry_changed','工具记录已变化，请重新读取当前对话。',409);return ConversationEntryStore.decode(row,this.nativeReader);}
         } else {
         const row=db.prepare('SELECT e.body,e.content_revision FROM conversation_read_entries e JOIN conversation_read_states s ON s.id=e.conversation_id AND s.message_revision=s.revision WHERE s.id=? AND e.id=?').get(id,entryId) as {body:string;content_revision:string}|undefined;
         if(row){if(row.content_revision!==revision)fail('agent_entry_changed','工具记录已变化，请重新读取当前对话。',409);return JSON.parse(row.body) as import('../contracts.ts').ConversationEntry;}
@@ -247,6 +284,51 @@ export class ConversationRepository {
     const db=this.open(false);if(!db)return;
     try{if(ConversationReadModel.available(db)){const row=db.prepare('SELECT state FROM conversation_read_states WHERE id=?').get(id) as {state:string}|undefined;if(row)return JSON.parse(row.state);}}finally{db.close();}
     return this.readConversation(id);
+  }
+  /** Canonical headers only: maintenance never loads message bodies or trusts optional read caches. */
+  storageDependencies(): { complete: boolean; contexts: string[] } {
+    let db: DatabaseSync | undefined;
+    try {
+      db = this.open(false);
+      if (!db) return { complete: false, contexts: [] };
+      db.exec('BEGIN');
+      const contexts = new Set<string>();
+      const needsEvidence = (run: RunView) => unfinishedRun(run) || run.resourcesReleased !== true || run.executionState === 'unknown' || run.executionState === 'active';
+      for (const row of db.prepare(`SELECT json_object(
+        'participants',json_extract(body,'$.participants'),'attempts',json_extract(body,'$.attempts'),
+        'outcomes',json_extract(body,'$.runOutcomes'),'run',json_extract(body,'$.view.run'),
+        'retainedRuns',json_extract(body,'$.view.retainedRuns'),'requests',json_extract(body,'$.view.requests')) AS header FROM conversations`).iterate()) {
+        const header = JSON.parse(row.header as string);
+        if (!Array.isArray(header.participants) || !Array.isArray(header.requests) || !Array.isArray(header.attempts) ||
+            !Array.isArray(header.retainedRuns ?? [])) throw new Error('invalid_storage_header');
+        const runs = [header.run, ...(header.retainedRuns ?? [])].filter(Boolean);
+        if ([...runs, ...header.attempts, ...header.requests].some(item =>
+          !header.participants.some((participant: {id: string}) => participant.id === item.participantId))) throw new Error('invalid_storage_participant');
+        for (const participant of header.participants) {
+          if (typeof participant.id !== 'string' || typeof participant.provider !== 'string') throw new Error('invalid_storage_participant');
+          const preserve = (context: unknown) => {
+            if (context === undefined) return; // Not all attempts reached native context creation.
+            if (typeof context !== 'string' || !context) throw new Error('invalid_storage_context');
+            contexts.add(`${participant.provider}:${context}`);
+          };
+          if (runs.some(run => run.participantId === participant.id && needsEvidence(run)) ||
+              header.requests.some((request: { participantId: string; runId: string }) => request.participantId === participant.id ||
+                runs.some(run => run.id === request.runId && run.participantId === participant.id))) {
+            preserve(participant.contextRef?.id);
+          }
+          for (const attempt of header.attempts.filter((attempt: {participantId: string}) => attempt.participantId === participant.id)) {
+            const run = runs.find(run => run.id === attempt.runId), outcome = header.outcomes?.[attempt.runId];
+            // Retained rounds can still refer to a replaced context; current participant state is insufficient.
+            if ((run ? needsEvidence(run) : !['completed', 'failed', 'stopped'].includes(outcome?.status)) ||
+                header.requests.some((request: {runId: string}) => request.runId === attempt.runId)) {
+              preserve(attempt.executionRef?.data?.resourceContext ?? participant.contextRef?.id);
+            }
+          }
+        }
+      }
+      return { complete: true, contexts: [...contexts] };
+    } catch { return { complete: false, contexts: [] }; }
+    finally { db?.close(); }
   }
   listPendingStates(includeActive=false): ConversationReadState[] {
     const db=this.open(false);if(!db)return [];
@@ -291,7 +373,7 @@ export class ConversationRepository {
   }
   listPending(includeActive = false): StoredConversation[] {
     const db = this.open(false); if (!db) return [];
-    try { const sql=ConversationReadModel.available(db)?`SELECT c.body FROM conversation_read_states s JOIN conversations c ON c.id=s.id WHERE s.${includeActive?'active':'pending'}=1 UNION ALL SELECT c.body FROM conversations c LEFT JOIN conversation_read_states s ON c.id=s.id WHERE s.id IS NULL`:'SELECT body FROM conversations ORDER BY updated_at DESC';return (db.prepare(sql).all() as {body:string}[]).map(row=>ConversationEntryStore.hydrate(db,JSON.parse(row.body) as StoredConversation)).filter(record=>this.isPending(record,includeActive)); }
+    try { const sql=ConversationReadModel.available(db)?`SELECT c.body FROM conversation_read_states s JOIN conversations c ON c.id=s.id WHERE s.${includeActive?'active':'pending'}=1 UNION ALL SELECT c.body FROM conversations c LEFT JOIN conversation_read_states s ON c.id=s.id WHERE s.id IS NULL`:'SELECT body FROM conversations ORDER BY updated_at DESC';return (db.prepare(sql).all() as {body:string}[]).map(row=>ConversationEntryStore.hydrate(db,JSON.parse(row.body) as StoredConversation,this.nativeReader)).filter(record=>this.isPending(record,includeActive)); }
     finally { db.close(); }
   }
   hasUnfinishedWork(): boolean {
@@ -307,15 +389,15 @@ export class ConversationRepository {
   }
   listInterruptedTitles(generation:string): StoredConversation[] {
     const db=this.open(false);if(!db)return [];
-    try{return (db.prepare("SELECT body FROM conversations WHERE json_extract(body,'$.view.titleState.status')='generating' AND json_extract(body,'$.view.run.generation')<>?").all(generation) as Array<{body:string}>).map(row=>ConversationEntryStore.hydrate(db,JSON.parse(row.body) as StoredConversation));}finally{db.close();}
+    try{return (db.prepare("SELECT body FROM conversations WHERE json_extract(body,'$.view.titleState.status')='generating' AND json_extract(body,'$.view.run.generation')<>?").all(generation) as Array<{body:string}>).map(row=>ConversationEntryStore.hydrate(db,JSON.parse(row.body) as StoredConversation,this.nativeReader));}finally{db.close();}
   }
   listInterrupted(): StoredConversation[] {
     const db = this.open(false); if (!db) return [];
     try {
-      return (db.prepare(`SELECT body FROM conversations WHERE json_extract(body,'$.interruption.runId')=json_extract(body,'$.view.run.id') OR json_extract(body,'$.view.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','unknown','tools-active') ORDER BY updated_at DESC`).all() as {body:string}[]).map(row=>ConversationEntryStore.hydrate(db,JSON.parse(row.body) as StoredConversation));
+      return (db.prepare(`SELECT body FROM conversations WHERE json_extract(body,'$.interruption.runId')=json_extract(body,'$.view.run.id') OR json_extract(body,'$.view.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','unknown','tools-active') ORDER BY updated_at DESC`).all() as {body:string}[]).map(row=>ConversationEntryStore.hydrate(db,JSON.parse(row.body) as StoredConversation,this.nativeReader));
     } finally { db.close(); }
   }
-  querySummaries(workspaceIds: string[], input: {workspaceId?:string;activeOnly?:boolean;hidden?:boolean;query?:string;agent?:string;model?:string;activityState?:string;generation?:string;cursor?:string;limit:number}, generationAlive?: (generation:string)=>boolean): {conversations:ConversationView[];nextCursor?:string;total:number;stats:{modelExecutions:Array<{accountId:string;accountLabel:string;model:string;count:number}>;agents:Array<{label:string;count:number}>;models:Array<{label:string;count:number}>;executions:Array<{provider:string;model:string;count:number}>};activityCounts:{active:number;running:number;waiting:number;unseen:number;unknown:number;attention:number}} {
+  querySummaries(workspaceIds: string[], input: {workspaceId?:string;activeOnly?:boolean;hidden?:boolean;query?:string;agent?:string;model?:string;activityState?:string;generation?:string;cursor?:string;limit:number}, generationAlive?: (generation:string)=>boolean): {conversations:ConversationView[];nextCursor?:string;total:number;stats:{modelExecutions:Array<{accountId:string;accountLabel:string;model:string;count:number}>;agents:Array<{label:string;count:number}>;models:Array<{label:string;count:number}>;executions:Array<{provider:string;model:string;count:number}>};activityCounts:{pendingSend?:number;active:number;running:number;waiting:number;unseen:number;unknown:number;attention:number}} {
     const empty={conversations:[],total:0,stats:{agents:[],models:[],executions:[],modelExecutions:[]},activityCounts:{active:0,running:0,waiting:0,unseen:0,unknown:0,attention:0}};
     const db=this.open(false);if(!db||!workspaceIds.length){db?.close();return empty;}
     try {
@@ -324,8 +406,12 @@ export class ConversationRepository {
       // Existing databases stay read-only until a normal write installs the
       // optional index. Prefer it explicitly: the narrower ordering index can
       // otherwise win the planner's estimate and force full-history reads.
-      const HAS_WORK=hasWork(db);
-      const indexed=version>=3&&!!db.prepare("SELECT 1 FROM sqlite_master WHERE type='index' AND name='conversations_list_summary'").get();
+      const pendingRows = new PendingSendRepository(this.directory).activitySummaries(input.workspaceId ? workspaceIds.filter(id=>id===input.workspaceId) : workspaceIds);
+      const pending = new Map(pendingRows.map(({scope,conversationId,...display})=>[JSON.stringify([scope,conversationId]),JSON.stringify(display)]));
+      db.function('buildr_pending_activity',{deterministic:true},(scope,id)=>pending.get(JSON.stringify([scope,id]))??null);
+      const sendActivity = pending.size ? 'buildr_pending_activity(workspace_id,id)' : 'NULL';
+      const HAS_WORK = pending.size ? `(${hasWork(db)} OR ${sendActivity} IS NOT NULL)` : hasWork(db);
+      const indexed=!pending.size&&version>=3&&!!db.prepare("SELECT 1 FROM sqlite_master WHERE type='index' AND name='conversations_list_summary'").get();
       const table=indexed?'conversations INDEXED BY conversations_list_summary':'conversations';
       // Legacy reads remain zero-write and omit private records and full entries.
       const storedSource=version>=3?table:modern?'(SELECT *,activity_at AS user_at FROM conversations)':`(SELECT *,updated_at AS activity_at,updated_at AS user_at,0 AS activity_version,0 AS seen_version,CASE WHEN json_extract(body,'$.view.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown') THEN 1 ELSE 0 END AS is_active,json_set(json_extract(body,'$.view'),'$.entries',json('[]'),'$.requests',json('[]'),'$.activity',json_object('version',0,'seenThrough',0,'updatedAt',updated_at,'active',json(CASE WHEN json_extract(body,'$.view.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown') THEN 'true' ELSE 'false' END))) AS summary FROM conversations)`;
@@ -350,15 +436,15 @@ export class ConversationRepository {
       if(compatibility?.historical)db.function('buildr_conversation_active',{deterministic:true},(value,version,seen)=>Number(conversationActive(JSON.parse(String(value)),Number(version),Number(seen))));
       const activityHeader=ConversationReadModel.available(db)?`coalesce((SELECT json_extract(state,'$.view') FROM conversation_read_states AS activity_header WHERE activity_header.id=scoped_record.id AND activity_header.revision=scoped_record.revision),json_remove(json_extract(body,'$.view'),'$.entries'))`:"json_remove(json_extract(body,'$.view'),'$.entries')";
       const listActive=compatibility?.historical?`CASE WHEN ${historicalCandidate} THEN buildr_conversation_active(${activityHeader},activity_version,seen_version) ELSE is_active END`:'is_active';
-      const withDecisions=`(SELECT scoped_record.*,${decisionCount} AS pending_decision_count,${listActive} AS list_active FROM (SELECT * FROM ${storedSource}) AS scoped_record)`;
+      const withDecisions=`(SELECT scoped_record.*,${decisionCount} AS pending_decision_count,(${listActive} OR ${sendActivity} IS NOT NULL) AS list_active,${sendActivity} AS send_activity FROM (SELECT * FROM ${storedSource}) AS scoped_record)`;
       const status = "json_extract(summary,'$.run.status')";
       // Parallel owners are still authoritative. Compute this from compact
       // summaries so activity counts and filters need not load full histories.
       const retained = input.generation && generationAlive ? (db.prepare(`SELECT DISTINCT json_extract(summary,'$.run.generation') AS generation FROM ${storedSource} WHERE ${indexed?`${HAS_WORK} AND `:''}workspace_id IN (${ids.map(()=>'?').join(',')}) AND ${status} IN ('starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown')`).all(...ids) as Array<{generation:string|null}>).map(row=>row.generation).filter((generation):generation is string=>Boolean(generation&&generation!==input.generation&&generationAlive(generation))) : [];
       const generations = input.generation ? [...new Set([input.generation,...retained])].sort() : [];
       const effectiveStatus = generations.length ? `CASE WHEN coalesce(json_extract(summary,'$.run.generation'),'') NOT IN (${generations.map(()=>'?').join(',')}) AND ${status} IN ('starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown') THEN 'unknown' ELSE ${status} END` : status;
-      const state = `CASE WHEN pending_decision_count>0 THEN 'waiting' WHEN hidden=1 AND is_active=0 THEN NULL WHEN effective_status='unknown' THEN 'unknown' WHEN effective_status IN ('waiting-approval','waiting-question') THEN 'waiting' WHEN effective_status IN ('starting','running','stopping') THEN 'running' WHEN activity_version>seen_version THEN 'unseen' ELSE NULL END`;
-      const source=`(SELECT *,CASE WHEN activity_state IN ('waiting','unseen') THEN 2 WHEN list_active=1 THEN 1 ELSE 0 END AS sort_priority FROM (SELECT *,${state} AS activity_state FROM (SELECT *,${effectiveStatus} AS effective_status FROM ${withDecisions})))`;
+      const state = `CASE WHEN send_activity IS NOT NULL THEN 'send-'||json_extract(send_activity,'$.state') WHEN pending_decision_count>0 THEN 'waiting' WHEN hidden=1 AND is_active=0 THEN NULL WHEN effective_status='unknown' THEN 'unknown' WHEN effective_status IN ('waiting-approval','waiting-question') THEN 'waiting' WHEN effective_status IN ('starting','running','stopping') THEN 'running' WHEN activity_version>seen_version THEN 'unseen' ELSE NULL END`;
+      const source=`(SELECT *,CASE WHEN activity_state IN ('waiting','unseen','send-failed') THEN 2 WHEN list_active=1 THEN 1 ELSE 0 END AS sort_priority FROM (SELECT *,${state} AS activity_state FROM (SELECT *,${effectiveStatus} AS effective_status FROM ${withDecisions})))`;
       // Resolved generations can change outside this scope. Any effect on the
       // actual filtered list is already captured by its membership/order keys.
       const scope=createHash('sha256').update(JSON.stringify(['message-activity-first-v2',ids,{...input,cursor:undefined,limit:undefined}])).digest('hex');
@@ -369,7 +455,7 @@ export class ConversationRepository {
       // Materialize only compact, scoped facts once. Search, pagination and
       // execution filters must not narrow the overview's scope.
       const overview = db.prepare(`WITH scoped AS MATERIALIZED (
-        SELECT activity_state,effective_status,
+        SELECT activity_state,effective_status,pending_decision_count,send_activity,
           coalesce(nullif(json_extract(summary,'$.run.provider'),''),'未指定') AS provider,
           coalesce(nullif(json_extract(summary,'$.run.model'),''),'未指定') AS model,
           coalesce(nullif(json_extract(summary,'$.run.modelAccountId'),''),'unknown:'||id) AS account_id,
@@ -381,10 +467,11 @@ export class ConversationRepository {
       ) SELECT
         (SELECT json_object('active',count(activity_state),
           'running',coalesce(sum(effective_status IN ('starting','running','stopping')),0),
-          'waiting',coalesce(sum(activity_state='waiting'),0),
+          'waiting',coalesce(sum(activity_state='waiting' OR (send_activity IS NOT NULL AND (pending_decision_count>0 OR effective_status IN ('waiting-approval','waiting-question')))),0),
           'unseen',coalesce(sum(activity_state='unseen'),0),
           'unknown',coalesce(sum(activity_state='unknown'),0),
-          'attention',coalesce(sum(activity_state IN ('waiting','unseen','unknown')),0)) FROM scoped) AS counts,
+          'attention',coalesce(sum(activity_state IN ('waiting','unseen','unknown') OR (send_activity IS NOT NULL AND pending_decision_count>0)),0)) FROM scoped) AS counts,
+        (SELECT count(*) FROM scoped WHERE send_activity IS NOT NULL) AS send_count,
         (SELECT json_group_array(json_object('label',label,'count',n)) FROM (
           SELECT provider AS label,count(*) AS n FROM executing GROUP BY label ORDER BY n DESC,label
         )) AS agents,
@@ -397,8 +484,8 @@ export class ConversationRepository {
         (SELECT json_group_array(json_object('accountId',account_id,'accountLabel',account_label,'model',model,'count',n)) FROM (
           SELECT account_id,coalesce(nullif(max(account_label),''),'账号未记录') AS account_label,model,count(*) AS n
           FROM executing GROUP BY account_id,model ORDER BY n DESC,account_id,model
-        )) AS model_executions`).get(...statsValues) as {counts:string;agents:string;models:string;executions:string;model_executions:string};
-      const counts = JSON.parse(overview.counts) as typeof empty.activityCounts;
+        )) AS model_executions`).get(...statsValues) as {counts:string;send_count:number;agents:string;models:string;executions:string;model_executions:string};
+      const counts = {...JSON.parse(overview.counts),...(overview.send_count?{pendingSend:overview.send_count}:{})} as typeof empty.activityCounts;
       const stats = {
         agents: JSON.parse(overview.agents) as typeof empty.stats.agents,
         models: JSON.parse(overview.models) as typeof empty.stats.models,
@@ -406,9 +493,9 @@ export class ConversationRepository {
         modelExecutions: JSON.parse(overview.model_executions) as typeof empty.stats.modelExecutions,
       };
       if(input.activityState) {
-        if(!['running','waiting','unseen','unknown','attention'].includes(input.activityState))fail('agent_activity_state_invalid','活动分类无效。',400);
-        where.push(input.activityState==='attention'?"activity_state IN ('waiting','unseen','unknown')":input.activityState==='running'?"effective_status IN ('starting','running','stopping')":'activity_state=?');
-        if(!['attention','running'].includes(input.activityState))values.push(input.activityState);
+        if(!['running','waiting','unseen','unknown','attention','send-waiting','send-failed'].includes(input.activityState))fail('agent_activity_state_invalid','活动分类无效。',400);
+        where.push(input.activityState==='attention'?"(activity_state IN ('waiting','unseen','unknown') OR (send_activity IS NOT NULL AND pending_decision_count>0))":input.activityState==='running'?"effective_status IN ('starting','running','stopping')":input.activityState==='waiting'?"(activity_state='waiting' OR (send_activity IS NOT NULL AND (pending_decision_count>0 OR effective_status IN ('waiting-approval','waiting-question'))))":'activity_state=?');
+        if(!['attention','running','waiting'].includes(input.activityState))values.push(input.activityState);
       }
       if(input.activeOnly)where.push('(list_active=1 OR pending_decision_count>0)');
       else {where.push('(list_active=1 OR pending_decision_count>0 OR hidden=?)');values.push(Number(input.hidden===true));}
@@ -435,9 +522,9 @@ export class ConversationRepository {
       }
       const snippet=terms.length?`, ${searchSnippet(terms)} AS search_snippet`:'';
       const snippetValues=terms.length?[...terms.flatMap(term=>[term,term]),...terms]:[];
-      const rows=db.prepare(`SELECT summary,sort_priority,list_active,user_at,activity_at,pending_decision_count,id${snippet} FROM ${source} WHERE ${where.join(' AND ')} ORDER BY sort_priority DESC,user_at DESC,id DESC LIMIT ?`).all(...snippetValues,...values,input.limit+1) as Array<{summary:string;sort_priority:number;list_active:number;user_at:string;activity_at:string;pending_decision_count:number;id:string;search_snippet?:string|null}>;
+      const rows=db.prepare(`SELECT summary,sort_priority,list_active,user_at,activity_at,pending_decision_count,send_activity,id${snippet} FROM ${source} WHERE ${where.join(' AND ')} ORDER BY sort_priority DESC,user_at DESC,id DESC LIMIT ?`).all(...snippetValues,...values,input.limit+1) as Array<{summary:string;sort_priority:number;list_active:number;user_at:string;activity_at:string;pending_decision_count:number;send_activity:string|null;id:string;search_snippet?:string|null}>;
       const chosen=rows.slice(0,input.limit),last=chosen.at(-1);
-      return {conversations:chosen.map(row=>{const view=JSON.parse(row.summary) as ConversationView;const snippetText=row.search_snippet?.replace(/\s+/g,' ').trim();return {...view,...(snippetText?{searchSnippet:snippetText}:{}),activity:view.activity?{...view.activity,userInputAt:row.user_at,updatedAt:row.activity_at,pendingDecisionCount:row.pending_decision_count,active:Boolean(row.list_active)||row.pending_decision_count>0}:undefined,entries:[],requests:[],run:view.run?{...view.run,tools:[]}:undefined,participants:view.participants.map(participant=>({...participant,contextId:''}))};}),total,activityCounts:{...counts},stats,nextCursor:rows.length>input.limit&&last?Buffer.from(JSON.stringify({scope,epoch,priority:last.sort_priority,at:last.user_at,id:last.id})).toString('base64url'):undefined};
+      return {conversations:chosen.map(row=>{const view=JSON.parse(row.summary) as ConversationView;const snippetText=row.search_snippet?.replace(/\s+/g,' ').trim();return {...view,...(snippetText?{searchSnippet:snippetText}:{}),activity:view.activity?{...view.activity,userInputAt:row.user_at||undefined,updatedAt:row.activity_at,pendingDecisionCount:row.pending_decision_count,pendingSend:row.send_activity?JSON.parse(row.send_activity):undefined,active:Boolean(row.list_active)||row.pending_decision_count>0}:undefined,entries:[],requests:[],run:view.run?{...view.run,tools:[]}:undefined,participants:view.participants.map(participant=>({...participant,contextId:''}))};}),total,activityCounts:{...counts},stats,nextCursor:rows.length>input.limit&&last?Buffer.from(JSON.stringify({scope,epoch,priority:last.sort_priority,at:last.user_at,id:last.id})).toString('base64url'):undefined};
     }finally{db.close();}
   }
   markSeen(workspaceId:string,id:string,through:number): NonNullable<ConversationView['activity']> {
@@ -465,10 +552,19 @@ export class ConversationRepository {
     for(const entry of record.view.entries)if(entry.participation){const value=normalizeParticipation(entry.participation);delete entry.participation;if(value)(record.participationTools??={})[entry.id]={...value,entryRevision:createHash('sha256').update(JSON.stringify(entry)).digest('hex')};}
     const db = this.open(true)!;
     try {
-      const prepared=ConversationEntryStore.prepare(db,record);
+      const prepared=ConversationEntryStore.prepare(db,record,this.nativeTool?entry=>this.nativeTool!(record,entry):undefined);
       db.exec('BEGIN IMMEDIATE');
       const prior = db.prepare('SELECT revision,summary,message_signature,activity_at,user_at,activity_version,seen_version FROM conversations WHERE id=?').get(record.view.id) as {revision:string;summary:string;message_signature:string;activity_at:string;user_at:string;activity_version:number;seen_version:number}|undefined;
       if ((prior?.revision ?? undefined) !== priorRevision) fail('agent_revision_conflict', '对话已变化，请重新读取。', 409);
+      const physical=db.prepare('SELECT body FROM conversations WHERE id=?').get(record.view.id) as {body:string}|undefined;
+      if (physical) {
+        const attachments=(JSON.parse(physical.body) as StoredConversation).attachments;
+        for (const [id,meta] of Object.entries(record.attachments)) {
+          const current=attachments[id];
+          if (current?.nativeContent && !meta.nativeContent && current.size===meta.size && current.mimeType===meta.mimeType) meta.nativeContent=current.nativeContent;
+        }
+      }
+
       ConversationReadModel.saveHeader(db, record);
       db.prepare('INSERT INTO conversations(id,workspace_id,task_id,hidden,updated_at,revision,body,entry_count,inherited_count) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET task_id=excluded.task_id,hidden=excluded.hidden,updated_at=excluded.updated_at,revision=excluded.revision,body=excluded.body,entry_count=excluded.entry_count,inherited_count=excluded.inherited_count').run(record.view.id, record.view.workspaceId, record.view.taskId ?? null, Number(record.view.hidden), record.view.updatedAt, record.view.revision, ConversationEntryStore.header(record), record.view.entries.length, record.inheritedContext?.entries.length ?? 0);
       const signature=messageSignature(record);

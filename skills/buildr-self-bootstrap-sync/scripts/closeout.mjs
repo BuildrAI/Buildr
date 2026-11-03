@@ -2,11 +2,14 @@
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
+import { performance } from 'node:perf_hooks';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { developmentWebDataRoot } from './development-web-continuity.mjs';
 
 export const SELF_BOOTSTRAP_CLOSEOUT_RESULT_SCHEMA = 'buildr.self-bootstrap-closeout-result/v1';
 export const SELF_BOOTSTRAP_SYNC_RESUME_SCHEMA = 'buildr.self-bootstrap-sync-resume/v1';
@@ -107,6 +110,9 @@ export function compactSelfBootstrapCloseout(result) {
     runId: result?.runId || null,
     resultIdentity: maintenanceEvidence?.resultIdentity || null,
     stages,
+    startedAt: result?.startedAt || null,
+    finishedAt: result?.finishedAt || null,
+    durationMs: result?.durationMs ?? null,
     primaryFailure: result?.diagnostic ? {
       stage: (result.phases || []).find((stage) => stage.status === 'blocked')?.id || null,
       code: result.diagnostic.code || 'self-bootstrap-closeout.failed',
@@ -163,8 +169,39 @@ function closeoutError(code, message, details = null) {
   return error;
 }
 
+const monotonicStarts = new WeakMap();
+function beginTiming(target) {
+  target.startedAt = new Date().toISOString();
+  target.finishedAt = null;
+  target.durationMs = null;
+  monotonicStarts.set(target, performance.now());
+  return target;
+}
+function finishTiming(target) {
+  if (target.finishedAt !== null) return;
+  target.finishedAt = new Date().toISOString();
+  target.durationMs = Math.max(0, performance.now() - monotonicStarts.get(target));
+}
+// Fixed fields only: never include command arguments, environment or child output.
+function progress(scope, event, id, timing, status = null, phaseId = null) {
+  try {
+    fs.writeSync(2, `${JSON.stringify({ schemaVersion: 'buildr.self-bootstrap-progress/v1', scope, event, id, phaseId, status,
+      startedAt: timing.startedAt, finishedAt: timing.finishedAt, durationMs: timing.durationMs })}\n`);
+  } catch {
+    // Observability cannot turn an actual successful operation into failure or
+    // replace its primary diagnostic (e.g. a caller closes stderr).
+    timing.progressLogStatus = 'failed';
+  }
+}
 function phase(id) {
-  return { id, status: 'pending', inputIdentity: null, outputIdentity: null, operations: [], effects: [], diagnostic: null };
+  const stage = beginTiming({ id, status: 'pending', inputIdentity: null, outputIdentity: null, operations: [], effects: [], diagnostic: null });
+  progress('phase', 'started', id, stage);
+  return stage;
+}
+function finishPhase(stage) {
+  if (!stage || stage.finishedAt !== null) return;
+  finishTiming(stage);
+  progress('phase', 'finished', stage.id, stage, stage.status);
 }
 
 function operation(id, result, extra = {}) {
@@ -172,15 +209,40 @@ function operation(id, result, extra = {}) {
     id,
     status: result.status === 0 ? 'passed' : 'failed',
     exitCode: result.status,
+    signal: result.signal || null,
+    errorCode: result.errorCode || null,
     stdout: String(result.stdout || '').trim().slice(0, 2000),
     stderr: String(result.stderr || '').trim().slice(0, 2000),
     ...extra,
   };
 }
 
-function defaultExecute(executable, args, options) {
-  const result = spawnSync(executable, args, { cwd: options.cwd, encoding: options.binary ? null : 'utf8', env: options.env || process.env });
-  return { status: Number.isInteger(result.status) ? result.status : 1, stdout: result.stdout || '', stderr: result.stderr || result.error?.message || '' };
+export function defaultExecute(executable, args, options) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-closeout-output-'));
+  fs.chmodSync(directory, 0o700);
+  const stdoutFile = path.join(directory, 'stdout');
+  const stderrFile = path.join(directory, 'stderr');
+  let stdoutFd, stderrFd;
+  try {
+    stdoutFd = fs.openSync(stdoutFile, 'wx', 0o600);
+    stderrFd = fs.openSync(stderrFile, 'wx', 0o600);
+    // File descriptors avoid spawnSync's default pipe maxBuffer; parsing still
+    // consumes the complete output while operation summaries remain bounded.
+    const result = spawnSync(executable, args, { cwd: options.cwd,
+      env: { ...(options.env || process.env), BUILDR_DEVELOPMENT_PROGRESS_FD: '3' },
+      // Trusted preparation helpers write fixed progress events to fd 3 only;
+      // raw child streams stay private and are never relayed to worker.log.
+      stdio: ['ignore', stdoutFd, stderrFd, 2] });
+    const stdout = fs.readFileSync(stdoutFile, options.binary ? undefined : 'utf8');
+    const stderr = fs.readFileSync(stderrFile, 'utf8');
+    return { status: Number.isInteger(result.status) ? result.status : 1, signal: result.signal || null,
+      errorCode: result.error?.code || null, stdout, stderr: stderr || result.error?.message || '' };
+  } finally {
+    if (stdoutFd !== undefined) fs.closeSync(stdoutFd);
+    if (stderrFd !== undefined) fs.closeSync(stderrFd);
+    // This is the exact private directory created above, not caller input.
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
 }
 
 function parseJson(result, code, message) {
@@ -198,10 +260,18 @@ function belongsToUntrackedRoot(pathname, root) {
   return normalized === root || normalized.startsWith(`${root}/`);
 }
 
-function command(execute, executable, args, cwd, id, phaseResult, extra = {}, environment = process.env) {
-  const result = execute(executable, args, { cwd, env: environment });
-  phaseResult.operations.push(operation(id, result, extra));
-  return result;
+function command(execute, executable, args, cwd, id, phaseResult, extra = {}, environment = process.env, executionOptions = {}) {
+  const timing = beginTiming({});
+  progress('operation', 'started', id, timing, null, phaseResult.id);
+  let result;
+  try {
+    result = execute(executable, args, { cwd, env: environment, ...executionOptions });
+    return result;
+  } finally {
+    finishTiming(timing);
+    phaseResult.operations.push(operation(id, result || { status: 1 }, { ...extra, ...timing }));
+    progress('operation', 'finished', id, timing, result?.status === 0 ? 'passed' : 'failed', phaseResult.id);
+  }
 }
 
 function productCommand(execute, root, nodeExecutable, args, id, phaseResult) {
@@ -398,7 +468,10 @@ function restoreDevelopmentWebAfterFailure({ execute, root, nodeExecutable, reco
       || !sameFilesystemPath(identity.developmentRuntime?.executable, nodeExecutable)) {
       throw closeoutError('self-bootstrap-closeout.development-web-recovery-owner-mismatch', '当前开发应用来源不同，未替换该实例。');
     }
-    return { status: 'passed', disposition: 'preserved', instance: observed.instance };
+    if (observed.pageVerification?.status !== 'passed') {
+      throw closeoutError('self-bootstrap-closeout.development-web-recovery-page-failed', '开发实例身份健康但页面验收未通过，保留待恢复信息。', { pageVerification: observed.pageVerification || null });
+    }
+    return { status: 'passed', disposition: 'preserved', instance: observed.instance, pageVerification: observed.pageVerification };
   }
   if (observed.status === 'different-owner') throw closeoutError('self-bootstrap-closeout.development-web-recovery-owner-mismatch', '当前应用不属于开发版，未替换该实例。');
   const status = command(execute, nodeExecutable, [path.join(root, SERVICE_ROOT, 'tools/build/launcher/manage.ts'), 'status', '--channel', 'development'], root, 'inspect-recovery-launcher', phaseResult);
@@ -445,15 +518,9 @@ function verifyDevelopmentEntryIdentity({ execute, root, nodeExecutable, success
     });
   }
   const developmentEnvironment = { ...environment, BUILDR_NODE: nodeExecutable };
-  const inspected = execute(projectBridge, [], {
-    cwd: root,
-    env: { ...developmentEnvironment, BUILDR_INTERNAL_DEVELOPMENT_CLI_IDENTITY_JSON: '1' },
-  });
-  phaseResult.operations.push(operation('inspect-development-entry-identity', inspected, {
-    kind: 'development-entry',
-    executable: projectBridge,
-    args: [],
-  }));
+  const inspected = command(execute, projectBridge, [], root, 'inspect-development-entry-identity', phaseResult,
+    { kind: 'development-entry', executable: projectBridge, args: [] },
+    { ...developmentEnvironment, BUILDR_INTERNAL_DEVELOPMENT_CLI_IDENTITY_JSON: '1' });
   if (inspected.status !== 0) {
     developmentEntryFailure(evidence, 'self-bootstrap-closeout.development-entry-inspection-failed', 'Retained projects/product/buildr无法返回development entry identity。', {
       exitCode: inspected.status,
@@ -485,12 +552,8 @@ function verifyDevelopmentEntryIdentity({ execute, root, nodeExecutable, success
     developmentEntryFailure(evidence, 'self-bootstrap-closeout.development-entry-node-mismatch', 'Retained Project bridge没有使用Environment绑定的retained Node。');
   }
 
-  const versioned = execute(projectBridge, ['version', '--json'], { cwd: root, env: developmentEnvironment });
-  phaseResult.operations.push(operation('development-entry-version', versioned, {
-    kind: 'development-entry',
-    executable: projectBridge,
-    args: ['version', '--json'],
-  }));
+  const versioned = command(execute, projectBridge, ['version', '--json'], root, 'development-entry-version', phaseResult,
+    { kind: 'development-entry', executable: projectBridge, args: ['version', '--json'] }, developmentEnvironment);
   if (versioned.status !== 0) {
     developmentEntryFailure(evidence, 'self-bootstrap-closeout.development-entry-version-failed', 'Retained projects/product/buildr无法执行version --json。', {
       exitCode: versioned.status,
@@ -529,7 +592,7 @@ function developmentEntryCommand(execute, evidence, environment, root, args, id,
 }
 
 function requirePassed(result, code, message, details = null) {
-  if (result.status !== 0) throw closeoutError(code, message, { ...details, exitCode: result.status, stderr: String(result.stderr || '').trim() });
+  if (result.status !== 0) throw closeoutError(code, message, { ...details, exitCode: result.status, signal: result.signal || null, errorCode: result.errorCode || null, stderr: String(result.stderr || '').trim().slice(0, 2000) });
   return result;
 }
 
@@ -617,9 +680,10 @@ function verifySyncResumeSnapshot({ resume, root, execute, phaseResult, expected
 
 function verifySyncResumeIndex({ resume, root, execute, phaseResult }) {
   for (const file of resume.files) {
-    const observed = execute('git', ['show', `:${file.path}`], { cwd: root, binary: true });
+    const observed = command(execute, 'git', ['show', `:${file.path}`], root, 'verify-resumed-index-blob', phaseResult,
+      { kind: 'git', path: file.path }, process.env, { binary: true });
     const sha256 = observed.status === 0 ? contentDigest(observed.stdout) : null;
-    phaseResult.operations.push(operation('verify-resumed-index-blob', { ...observed, stdout: '' }, { kind: 'git', path: file.path, sha256 }));
+    Object.assign(phaseResult.operations.at(-1), { stdout: '', sha256 });
     if (sha256 !== file.sha256) throw closeoutError('self-bootstrap-closeout.resume-content-drift', '同步恢复的暂存内容与已核验快照不一致，未创建提交。', { path: file.path, expected: file.sha256, actual: sha256 });
   }
 }
@@ -645,6 +709,8 @@ function option(args, name) {
  * resumeSync?: string|null, restartDevelopmentWeb?: boolean, execute?: typeof defaultExecute, environment?: NodeJS.ProcessEnv}} options
  */
 export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, baseRef, deliveredRef, targetBranch, remote, agent, nodeExecutable, resumeSync = null, restartDevelopmentWeb = false, execute = defaultExecute, environment = process.env }) {
+  const executionTiming = beginTiming({});
+  progress('execution', 'started', 'self-bootstrap.closeout', executionTiming);
   const root = fs.realpathSync(path.resolve(workspaceRoot));
   const phases = [];
   let active = null;
@@ -655,8 +721,14 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, b
   let developmentWebRecovery = null;
   const activationIdentity = digest({ baseRef, deliveredRef, targetBranch, remote, agent });
   /** @param {string} status @param {{code: string, message: string, details: object|null}|null} diagnostic */
-  const result = (status, diagnostic = null) => ({ schemaVersion: SELF_BOOTSTRAP_CLOSEOUT_RESULT_SCHEMA, status, taskId, runId: null, delivery: { observed: delivered, ref: deliveredRef, remote, targetBranch }, phases, successor, diagnostic });
-  const start = (id) => { active = phase(id); phases.push(active); return active; };
+  let completedResult = null;
+  const result = (status, diagnostic = null) => {
+    if (active?.status === 'pending') active.status = status;
+    finishPhase(active);
+    completedResult = { schemaVersion: SELF_BOOTSTRAP_CLOSEOUT_RESULT_SCHEMA, status, taskId, runId: null, delivery: { observed: delivered, ref: deliveredRef, remote, targetBranch }, phases, successor, diagnostic, ...executionTiming };
+    return completedResult;
+  };
+  const start = (id) => { finishPhase(active); active = phase(id); phases.push(active); return active; };
   const read = (args, id) => gitText(execute, root, args, id, active, 'self-bootstrap-closeout.git-observation-failed');
   const assertHead = (expected) => {
     if (read(['symbolic-ref', '--quiet', '--short', 'HEAD'], 'current-branch') !== targetBranch || read(['rev-parse', 'HEAD'], 'current-head') !== expected) throw closeoutError('self-bootstrap-closeout.target-drift', '保留分支或提交已变化，停止当前激活动作。');
@@ -756,7 +828,7 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, b
       if (continuity.status === 'different-owner' && developmentWebRecovery) throw closeoutError('self-bootstrap-closeout.development-web-recovery-owner-mismatch', '待恢复的开发应用数据目录已有其他实例，未执行替换。');
       if (continuity.status === 'healthy-development') developmentWebRecovery = rememberDevelopmentWebRecovery(root, nodeExecutable, continuity, environment);
       const installed = command(execute, nodeExecutable, [path.join(root, SERVICE_ROOT, 'tools/build/launcher/manage.ts'), 'install', '--channel', 'development', '--no-stop-instance'], root, 'install-development-buildr-web', active);
-      requirePassed(installed, 'self-bootstrap-closeout.local-app-install-failed', '开发应用更新失败。');
+      requirePassed(installed, 'self-bootstrap-closeout.local-app-install-failed', '开发应用更新失败。', { dataRoot: developmentWebDataRoot(environment), nodeExecutable });
       const launcher = validateDevelopmentLauncherResult(parseJson(installed, 'self-bootstrap-closeout.local-app-result-invalid', '安装结果无效。'), root, nodeExecutable, successor);
       assertHead(successor);
       const continuityAfter = recoverDevelopmentWebContinuity({ execute, root, nodeExecutable, successor, launcher, continuity: developmentWebRecovery?.continuity || continuity, environment, phaseResult: active, forceRestart: restartDevelopmentWeb });
@@ -797,22 +869,63 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, b
     return result('blocked', { code: error.code || 'self-bootstrap-closeout.direct-failed', message: `${error.message}${recoveryMessage}`,
       details: recoveryResult ? { ...(error.details || {}), developmentWebRecovery: recoveryResult } : error.details || null });
   } finally {
-    if (ownsLock) { fs.unlinkSync(path.join(lock, 'owner.json')); fs.rmdirSync(lock); }
+    try {
+      if (ownsLock) { fs.unlinkSync(path.join(lock, 'owner.json')); fs.rmdirSync(lock); }
+    } finally {
+      finishTiming(executionTiming);
+      if (completedResult) Object.assign(completedResult, executionTiming);
+      progress('execution', 'finished', 'self-bootstrap.closeout', executionTiming, completedResult?.status || 'blocked');
+    }
   }
+}
+
+/** The installed launcher must run the development host Node, so build and verify with
+ *  the executable the instance declares; the Node running this script may be a copy. */
+export function resolveDevelopmentNodeExecutable({ requested, workspaceRoot, actualNodeExecutable = process.execPath, environment = process.env } = {}) {
+  if (requested) {
+    const resolved = path.resolve(requested);
+    if (!fs.statSync(resolved, { throwIfNoEntry: false })?.isFile()) throw closeoutError('self-bootstrap-closeout.node-executable-missing', `指定的 Node 不存在：${resolved}。`, { nodeExecutable: resolved });
+    return resolved;
+  }
+  const declared = declaredDevelopmentNode(environment);
+  // A pending development-web recovery keeps the Node that was healthy before the
+  // instance record disappeared; reuse it so the recovery can still match.
+  for (const candidate of [declared, recoveryDevelopmentNode(workspaceRoot), environment.BUILDR_NODE, actualNodeExecutable]) {
+    if (!candidate) continue;
+    const resolved = path.resolve(candidate);
+    if (fs.statSync(resolved, { throwIfNoEntry: false })?.isFile()) return resolved;
+  }
+  throw closeoutError('self-bootstrap-closeout.node-identity-mismatch', '找不到可用的开发宿主 Node。', { declared: declared ?? null });
+}
+
+function recoveryDevelopmentNode(workspaceRoot) {
+  if (!workspaceRoot) return null;
+  try {
+    const state = JSON.parse(fs.readFileSync(path.join(workspaceRoot, '.buildr', 'local', 'self-bootstrap-development-web-recovery.json'), 'utf8'));
+    const executable = state?.nodeExecutable;
+    return typeof executable === 'string' && executable ? executable : null;
+  } catch { return null; }
+}
+
+function declaredDevelopmentNode(environment) {
+  try {
+    const state = JSON.parse(fs.readFileSync(path.join(developmentWebDataRoot(environment), 'instance.json'), 'utf8'));
+    const executable = state?.launcherIdentity?.developmentRuntime?.executable;
+    return typeof executable === 'string' && executable ? executable : null;
+  } catch { return null; }
 }
 
 export function runSelfBootstrapCloseoutCommand({ args = process.argv.slice(2), actualNodeExecutable = process.execPath, execute = defaultExecute, environment = process.env } = {}) {
   const allowed = new Set(['--target', '--node-executable', '--detail', '--task', '--base-ref', '--delivered-ref', '--branch', '--remote', '--agent', '--resume-sync', '--restart-development-web']);
   if (args.length % 2 !== 0) throw closeoutError('self-bootstrap-closeout.arguments-invalid', '参数必须是选项和值。');
   for (let index = 0; index < args.length; index += 2) if (!allowed.has(args[index])) throw closeoutError('self-bootstrap-closeout.option-unknown', `不支持的选项：${args[index]}。`);
-  const nodeExecutable = option(args, '--node-executable');
-  if (!nodeExecutable || !sameFilesystemPath(actualNodeExecutable, nodeExecutable)) throw closeoutError('self-bootstrap-closeout.node-identity-mismatch', '必须使用保留环境声明的 Node。');
+  const workspaceRoot = option(args, '--target');
+  if (!workspaceRoot) throw closeoutError('self-bootstrap-closeout.arguments-incomplete', '需要明确的工作空间。');
+  const nodeExecutable = resolveDevelopmentNodeExecutable({ requested: option(args, '--node-executable'), workspaceRoot, actualNodeExecutable, environment });
   const detail = option(args, '--detail') || 'compact';
   if (!['compact', 'full'].includes(detail)) throw closeoutError('self-bootstrap-closeout.detail-invalid', 'detail 只支持 compact 或 full。');
   const restart = option(args, '--restart-development-web') || 'false';
   if (!['true', 'false'].includes(restart)) throw closeoutError('self-bootstrap-closeout.restart-value-invalid', 'restart-development-web 只支持 true 或 false。');
-  const workspaceRoot = option(args, '--target');
-  if (!workspaceRoot) throw closeoutError('self-bootstrap-closeout.arguments-incomplete', '需要明确的工作空间。');
   return runDirectSelfBootstrapCloseout({ workspaceRoot, taskId: option(args, '--task'), baseRef: option(args, '--base-ref'), deliveredRef: option(args, '--delivered-ref'), targetBranch: option(args, '--branch'), remote: option(args, '--remote'), agent: option(args, '--agent'), nodeExecutable, resumeSync: option(args, '--resume-sync'), restartDevelopmentWeb: restart === 'true', execute, environment });
 }
 

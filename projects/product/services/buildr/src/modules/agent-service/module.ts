@@ -43,8 +43,11 @@ export function createAgentServiceModule(options: { readLocalInstance?(): unknow
           assertSource(ref.sourceId);
           if(ref.kind !== 'work-item' || ref.scopeId === '@default')throw new AgentServiceError('agent_work_object_invalid','此范围不支持该关联对象。',409);
           const workspace = requires[WORKSPACE_APPLICATION].resolveRegisteredWorkspace(ref.scopeId);
-          const result = requires[TASK_QUERY_APPLICATION].inspectTask(workspace.rootPath, ref.id);
-          if(!result?.record || result.taskId !== ref.id)throw new AgentServiceError('agent_task_missing','任务身份不可用。',404);
+          // Identity verification needs the authoritative record and digest only.
+          // Full inspection also resolves project/change/worktree diagnostics,
+          // which can exceed the callback deadline and block unrelated execution.
+          const result = requires[TASK_QUERY_APPLICATION].inspectTaskSummaryView(workspace.rootPath, ref.id);
+          if(!result?.record || result.record.taskId !== ref.id)throw new AgentServiceError('agent_task_missing','任务身份不可用。',404);
           const revision = result.recordDigest ?? digest(result.record);
           if(expectedRevision && revision !== expectedRevision)throw new AgentServiceError('agent_work_object_changed','关联对象已变化。',409);
           return { ref, revision };
@@ -65,12 +68,18 @@ export function createAgentServiceModule(options: { readLocalInstance?(): unknow
       };
       const resolve = async (): Promise<AgentOperations> => (await connect()).operations;
       const start = async () => { await connect(); };
+      // 运行单元不一致或存在待切换单元时，响应契约差异来自版本对齐窗口而非违约。
+      const runtimeAligning = async () => {
+        const connection = await connect();
+        const status = await connection.lifecycle.status();
+        return !!status.pendingRuntime || status.identity.runtime.digest !== connection.runtime.digest;
+      };
       const runtimeStatus = async () => {
         const status = await (await connect()).lifecycle.status();
         return {instanceId:status.identity.instanceId,generation:status.identity.generation,pid:status.identity.pid,currentDigest:status.identity.runtime.digest,pendingDigest:status.pendingRuntime?.digest,busy:status.activity.busy,accepting:status.accepting,reasons:status.activity.reasons,diagnostic:status.diagnostic};
       };
       const close = async () => { closed=true;const active=connection;connection=undefined;await active?.then(value=>value.disconnect()); };
-      return { provides: { [AGENT_SERVICE_APPLICATION]: { start, close, status:async()=>(await connect()).lifecycle.status(), generate: async (input: Parameters<AgentOperations['models']['generate']>[0]) => (await resolve()).models.generate(input) } }, contributions: { cli: createAgentCliContributions(options.readLocalInstance), http: [createAgentServiceHttpContribution(resolve, { defaultWorkspace, registeredWorkspaceIds, runtimeStatus, prepareDefaultWorkspace: () => {fs.mkdirSync(defaultWorkspace().rootPath,{recursive:true});} })] }, lifecycle: { start: async () => { void start().catch(() => { console.warn('执行后台连接未完成，已有工作记录保留。'); }); }, stop: close } };
+      return { provides: { [AGENT_SERVICE_APPLICATION]: { start, close, status:async()=>(await connect()).lifecycle.status(), generate: async (input: Parameters<AgentOperations['models']['generate']>[0]) => (await resolve()).models.generate(input) } }, contributions: { cli: createAgentCliContributions(options.readLocalInstance), http: [createAgentServiceHttpContribution(resolve, { defaultWorkspace, registeredWorkspaceIds, runtimeStatus, runtimeAligning, prepareDefaultWorkspace: () => {fs.mkdirSync(defaultWorkspace().rootPath,{recursive:true});} })] }, lifecycle: { start: async () => { void start().catch(() => { console.warn('执行后台连接未完成，已有工作记录保留。'); }); }, stop: close } };
     },
   };
 }

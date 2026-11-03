@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Empty, Popover, Spin } from 'antd';
 import { SettingOutlined } from '@ant-design/icons';
 import { useAgentConversations } from './AgentConversationsContext';
-import { accountQuotaView, quotaOverviewAccounts } from './account-quota-view';
+import { accountQuotaView, accountQuotaWarning, quotaOverviewAccounts } from './account-quota-view';
 import type { ModelAccount } from './types';
 import './account-quota-button.css';
 
@@ -38,14 +38,13 @@ export function AccountQuotaButton({ onClick }: Props) {
     {error && <Alert type="warning" showIcon message={error}/>}
     {!loaded && !error ? <Spin size="small"/> : !visible.length && !error ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚无已登录账号，点击图标接入"/> : null}
     {visible.map(account => {
-      const view = accountQuotaView(account, Date.now(), true);
-      return <section key={account.id} data-account-id={account.id}>
+      const view = accountQuotaView(account, Date.now(), true), warning = accountQuotaWarning(account);
+      // 缓存额度直接展示；观察时间保留在悬停标题，不额外提示非实时。
+      return <section key={account.id} data-account-id={account.id} title={`额度最近更新：${view.observedLabel}`}>
         <strong>{account.accountLabel || account.label}</strong>
         <div>
           {view.lines.map((line, index) => <p key={index}>{line.text}</p>)}
-          {(account.status === 'failed' || view.stale || account.quota?.diagnostic) && <small className="ac-account-quota-warning" title={account.quota?.diagnostic}>
-            {account.status === 'failed' ? '账号待确认 · 上次额度' : view.stale ? '上次额度，非实时' : '详情见设置'}
-          </small>}
+          {warning && <small className="ac-account-quota-warning" title={account.quota?.diagnostic}>{warning}</small>}
         </div>
       </section>;
     })}

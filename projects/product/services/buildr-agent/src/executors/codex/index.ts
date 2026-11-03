@@ -1,3 +1,4 @@
+import { codexContent } from './content.ts';
 import { instructionParticipation } from '../../domain/participation.ts';
 import { nativeParticipation, participationRequests } from '../../domain/participation.ts';
 import { withExecutionFault } from '../../domain/execution-fault.ts';
@@ -19,7 +20,7 @@ import { ExecutorInputRejected, type ExecutorSupplementInput, type ExecutorInput
 import { checkedGateway, consumerBinding, gatewayModel, gatewayEffort, type ExecutorGateway } from '../model-gateway.ts';
 import type { ExecutorForkInput } from '../../contracts.ts';
 
-const capabilities = { interaction: { policy: interactionPolicy.version, nonBlockingQuestions: true }, supplement: true, permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
+const capabilities = { endQuestionWait: true, interaction: { policy: interactionPolicy.version, nonBlockingQuestions: true }, supplement: true, permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
 // Work-thread overrides also apply on resume; auxiliary title/summary threads stay tool-free.
 const conversationInteraction = {
   config: { features: { default_mode_request_user_input: true } },
@@ -47,7 +48,7 @@ function codexGatewayCatalog(gateway: ExecutorGateway) {
 }
 interface ActiveTurn { contextId: string; id: string; input: ExecutorSendInput; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown'; processId?: string; executionId: string }>; pending: Map<string, { nativeId: string | number; method: string; params: any }>; texts: Map<string, string>; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string; done: () => void; reject: (error: Error) => void; accepted: boolean; buffered: RpcMessage[] }
 export function createCodexExecutor(): AgentExecutor {
-  return { storage: { transientDirectories: ['tmp/node-compile-cache', 'cache/node-compile', 'home/.npm/_cacache', 'codex-home/.tmp/plugins'], canReclaim: codexCacheReclaimable, snapshots: [{ relative: 'codex-home/.tmp/plugins', key: 'curated-plugins', identity: codexCuratedIdentity }] }, descriptor: { id: 'codex', label: 'Codex', capabilities }, async open(options) { return await CodexRuntime.open(options); } };
+  return { nativeContent: codexContent, storage: { transientDirectories: ['tmp/node-compile-cache', 'cache/node-compile', 'home/.npm/_cacache', 'codex-home/.tmp/plugins'], canReclaim: codexCacheReclaimable, snapshots: [{ relative: 'codex-home/.tmp/plugins', key: 'curated-plugins', identity: codexCuratedIdentity }] }, descriptor: { id: 'codex', label: 'Codex', capabilities }, async open(options) { return await CodexRuntime.open(options); } };
 }
 class CodexRuntime implements AgentRuntime {
   participationInstruction?: import('../../participation-contracts.ts').ParticipationMatch;
@@ -401,6 +402,23 @@ class CodexRuntime implements AgentRuntime {
       } else result = { decision: approved ? 'accept' : 'decline' };
     }
     this.rpc.write({ id: pending.nativeId, result }); turn.pending.delete(requestId); turn.input.onEvent({ type: 'request-resolved', requestId });
+  }
+  async endQuestionWait(input: { contextRef: ContextRef; executionRef: ExecutionRef; requestIds: string[] }): Promise<ExecutorObservation | undefined> {
+    this.reference(input.contextRef);
+    const turn = this.turns.get(input.contextRef.id);
+    if (!turn || turn.id !== input.executionRef.id || !turn.accepted || turn.terminal) return;
+    await this.refreshTerminals(turn);
+    const requests = [...turn.pending].map(([id, pending]) => codexRequest(id, pending.method, pending.params));
+    if (this.turns.get(input.contextRef.id) !== turn || turn.terminal || !requests.length ||
+        requests.some(request => !request || request.kind !== 'question' || !input.requestIds.includes(request.id)) ||
+        [...turn.tools.values()].some(tool => tool.status !== 'completed')) return;
+    // Question-only model interruption is deliberately not stop(): no background
+    // terminal clean/terminate request may be issued by this primitive.
+    await this.rpc.call('turn/interrupt', { threadId: input.contextRef.id, turnId: turn.id }, 5000);
+    const deadline = Date.now() + 5000;
+    while (!turn.terminal && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10));
+    if (!turn.terminal) throw new Error('codex_question_wait_release_unknown');
+    return this.activeObservation(turn);
   }
   async stop({ contextRef, executionRef, toolId }: { contextRef: ContextRef; executionRef: ExecutionRef; toolId?: string }): Promise<ExecutorObservation> {
     this.reference(contextRef); const turn = this.turns.get(contextRef.id);

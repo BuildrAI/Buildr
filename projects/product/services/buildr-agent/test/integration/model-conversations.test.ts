@@ -43,7 +43,7 @@ test('retiring versions release idle native writers while other conversations ke
     send(old,idle.id,'first');await wait(()=>!old.conversationBusy('workspace',idle.id));
     send(old,active.id,'hold');await wait(()=>old.conversations.read('workspace',active.id).run?.accepted===true);
     const contextIds=[...writers.keys()];assert.equal(contextIds.length,2);
-    assert.equal(old.canAdoptParallel(),true);
+    assert.equal(old.retainsConversationSource('workspace',active.id),true);
     await old.freezeMetadata();await old.releaseIdleSources();
     assert.equal(writers.has(contextIds[0]),false);assert.equal(writers.has(contextIds[1]),true,'active native writer stays with its original generation');
     next=createAgentService(options);
@@ -62,7 +62,8 @@ test('retiring versions release idle native writers while other conversations ke
     const legacyPreview=next.conversations.prepareSend('workspace',legacy.id,legacyDraft);
     next.conversations.send('workspace',legacy.id,{...legacyDraft,previewToken:legacyPreview.token,clientRequestId:randomUUID()});
     await wait(()=>!next!.conversationBusy('workspace',legacy.id));
-    assert.equal(next.canAdoptParallel(),false,'legacy contexts share the account process and require a fully drained handoff');
+    assert.equal(next.retainsConversationSource('workspace',legacy.id),true,'legacy controls retain their exact conversation');
+    assert.equal(next.retainsConversationSource('other-workspace',legacy.id),false,'legacy ownership never becomes a global handoff gate');
   } finally {finish();await next?.close();await old.close();rmSync(root,{recursive:true,force:true});}
 });
 

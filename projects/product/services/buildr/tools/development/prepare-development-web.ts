@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 
+import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
@@ -41,25 +42,70 @@ async function generateFreshDevelopmentWebDtos(): Promise<string[]> {
   return JSON.parse(result.stdout) as string[];
 }
 
+/** Launcher output explains staged failures verbatim; keep the real cause reachable. */
+function stageWebPreparationFailure(error: unknown): Error {
+  const failure = error instanceof Error ? error : new Error(String(error));
+  const staged = failure as Error & { stage?: string; internalCode?: string; code?: string };
+  if (staged.stage) return failure;
+  staged.stage = 'prepare-web';
+  if (!staged.internalCode) staged.internalCode = typeof staged.code === 'string' ? staged.code : 'development_web_preparation_failed';
+  return failure;
+}
+
+type PreparationStageTiming = { id: string; status: 'passed' | 'failed'; startedAt: string; finishedAt: string; durationMs: number };
+
 export async function prepareDevelopmentWeb({
   outputRoot = path.join(serviceRoot, 'web-dist'),
   generateDtos = generateFreshDevelopmentWebDtos,
   build = buildWebDist,
   prepareAgent = prepareDevelopmentAgent,
+  now = () => performance.now(),
+  progress = (event) => {
+    const line = `${JSON.stringify(event)}\n`;
+    if (process.env.BUILDR_DEVELOPMENT_PROGRESS_FD === '3') fs.writeSync(3, line);
+    else process.stderr.write(line);
+  },
 }: {
   outputRoot?: string;
   generateDtos?: () => Promise<string[]>;
   build?: (outputRoot: string) => string;
   prepareAgent?: () => string;
-} = {}): Promise<{ schemaVersion: string; status: string; root: string; generatedDtos: string[] }> {
-  prepareAgent();
-  const generatedDtos = await generateDtos();
-  const root = build(path.resolve(outputRoot));
+  now?: () => number;
+  progress?: (event: Record<string, unknown>) => void;
+} = {}): Promise<{ schemaVersion: string; status: string; root: string; generatedDtos: string[]; timings: { durationMs: number; stages: PreparationStageTiming[] } }> {
+  const started = now();
+  const stages: PreparationStageTiming[] = [];
+  const emit = (event: Record<string, unknown>) => {
+    try { progress({ schemaVersion: 'buildr.development-web-progress/v1', ...event }); }
+    catch { /* Progress output must not replace the real build outcome. */ }
+  };
+  const stage = async <T>(id: string, operation: () => T | Promise<T>): Promise<T> => {
+    const begin = now();
+    const startedAt = new Date().toISOString();
+    emit({ event: 'stage-start', stage: id, startedAt });
+    let status: 'passed' | 'failed' = 'failed';
+    try { const result = await operation(); status = 'passed'; return result; }
+    finally {
+      const timing = { id, status, startedAt, finishedAt: new Date().toISOString(), durationMs: Math.max(0, now() - begin) };
+      stages.push(timing);
+      emit({ event: 'stage-end', stage: id, ...timing });
+    }
+  };
+  let generatedDtos: string[];
+  let root: string;
+  try {
+    await stage('prepare-agent', prepareAgent);
+    generatedDtos = await stage('generate-dtos', generateDtos);
+    root = await stage('build-web', () => build(path.resolve(outputRoot)));
+  } catch (error) {
+    throw Object.assign(stageWebPreparationFailure(error), { timings: { durationMs: Math.max(0, now() - started), stages } });
+  }
   return {
     schemaVersion: 'buildr.development-web-preparation/v1',
     status: 'passed',
     root,
     generatedDtos,
+    timings: { durationMs: Math.max(0, now() - started), stages },
   };
 }
 

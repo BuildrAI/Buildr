@@ -55,7 +55,7 @@ export class PendingSends {
           if (!this.options.active() || await this.options.conversationBusy(row.scope, row.conversationId)) { if(claimed)this.repository.finish(claimed,'waiting','交接已保存，等待当前接收后台就绪。'); continue; }
           claimed ??= this.repository.claim(row, service.generation, this.options.generationAlive);
           if (!claimed) continue;
-          service.conversations.send(row.scope, row.conversationId, { ...draft, previewToken: preview.token, clientRequestId: row.id });
+          service.conversations.send(row.scope, row.conversationId, { ...draft, clientRequestId: row.id });
           this.repository.finish(claimed, 'delivered', '已登记执行。');
         } catch (error) {
           const saved = service.conversations.lookupRequest(row.scope, row.conversationId, row.id);

@@ -40,13 +40,6 @@ export function conversationContinuationText(conversation: ConversationView | nu
   return '继续当前工作。请核对已有对话、尚未交付的用户要求和当前成果，接着完成未完成的目标；不要重复执行已完成的操作，不扩大原有授权。';
 }
 
-/** Only an unchanged, live execution can receive a supplement. Every other
- * ordinary input starts a new turn; old work is not an input admission gate. */
-export function canSupplementConversation(conversation:ConversationView|null,choice:{connectionId?:string;model?:string;modelAccountId?:string;serviceTier?:string;permissionMode?:string;reasoningEffort?:string},supported:boolean):boolean {
-  const run=conversation?.run,participant=conversation?.participants.find(value=>value.id===run?.participantId);
-  return Boolean(supported&&run?.accepted&&run.status==='running'&&participant?.connectionId===choice.connectionId&&run.model===choice.model&&run.modelAccountId===choice.modelAccountId&&run.serviceTier===choice.serviceTier&&(run.permissionMode??'default')===(choice.permissionMode??'default')&&run.reasoningEffort===choice.reasoningEffort);
-}
-
 export function executionLocked(run?: ConversationRun): boolean {
   if (run?.status === 'tools-active' && run.canContinue) return false;
   return Boolean(run && ['starting', 'running', 'waiting-approval', 'waiting-question', 'stopping', 'tools-active', 'unknown'].includes(run.status));
@@ -407,7 +400,8 @@ export function conversationUsageReport(contextReport: ConversationContextReport
 
 /** Only current execution bindings are actionable; history is rendered as ordinary entries. */
 export function currentConversationRequests(conversation: ConversationView | null): ConversationView['requests'] {
-  const run=conversation?.run;
-  if(!run||['completed','stopped'].includes(run.status))return [];
-  return conversation!.requests.filter(request=>request.runId===run.id&&request.participantId===run.participantId&&request.generation===run.generation);
+  if(!conversation)return [];
+  const runs=[...(conversation.run?[conversation.run]:[]),...conversation.retainedRuns??[]];
+  return conversation.requests.filter(request=>runs.some(run=>!run.supersededBy&&!['completed','stopped'].includes(run.status)&&
+    !(request.kind==='question'&&run.questionsEndedBy)&&request.runId===run.id&&request.participantId===run.participantId&&request.generation===run.generation));
 }

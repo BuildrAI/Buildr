@@ -8,10 +8,12 @@ const base = '/api/v1/app/agent-service';
 const workspace = '/api/v1/workspaces/:workspaceId/agent-conversations';
 const operation = (id: string, method: string, path: string, input: keyof typeof AGENT_SERVICE_HTTP_SCHEMAS, output: keyof typeof AGENT_SERVICE_HTTP_SCHEMAS, responseKind = 'json') => ({ id: `agent-service.${id}`, owner: 'agent-service', method, path, disposition: responseKind === 'json' ? 'migrated-json' : responseKind === 'binary' ? 'migrated-binary' : 'migrated-stream', responseKind, requestSchemaId: AGENT_SERVICE_HTTP_SCHEMAS[input].$id, successSchemaId: responseKind === 'binary' ? null : AGENT_SERVICE_HTTP_SCHEMAS[output].$id, errorSchemaId: 'https://schemas.buildr.ai/http/local-app/error/response/v1' });
 export const AGENT_SERVICE_HTTP_OPERATIONS = [
+  operation('webhook-settings','GET',`${base}/webhook-settings`,'empty','webhookSettings'),
+  operation('save-webhook-settings','POST',`${base}/webhook-settings`,'webhookSettingsInput','webhookSettings'),
+  operation('reveal-webhook-secret','POST',`${base}/webhook-settings/reveal`,'revision','webhookSecret'),
+  operation('test-webhook','POST',`${base}/webhook-settings/test`,'revision','webhookTest'),
   operation('participation','GET',`${workspace}/:conversationId/participation`,'participationQuery','participation'),
   operation('participation-summary','GET',`${workspace}/participation-summary`,'participationSummaryQuery','participationSummary'),
-  operation('warm-draft','POST',`${workspace}/drafts/:draftId/warmup`,'warmup','warmed'),
-  operation('warm-conversation','POST',`${workspace}/:conversationId/warmup`,'warmup','warmed'),
   operation('upgrade-program', 'POST', `${base}/connections/:connectionId/program-upgrades`, 'programUpgradeInput', 'programUpgrade'),
   operation('program-updates', 'GET', `${base}/program-updates`, 'empty', 'programUpdates'),
   operation('check-program-updates', 'POST', `${base}/program-updates/check`, 'programUpdateCheck', 'programUpdates'),
@@ -63,6 +65,7 @@ export const AGENT_SERVICE_HTTP_OPERATIONS = [
   operation('send', 'POST', `${workspace}/:conversationId/send`, 'send', 'sent'),
   operation('queue-send', 'POST', `${workspace}/:conversationId/pending-send`, 'queueSend', 'conversation'),
   operation('cancel-pending-send', 'POST', `${workspace}/:conversationId/cancel-pending-send`, 'cancelPendingSend', 'conversation'),
+  operation('webhook-replay','POST',`${workspace}/:conversationId/webhook-replay`,'webhookReplay','webhookReplayed'),
   operation('supplement', 'POST', `${workspace}/:conversationId/supplement`, 'supplement', 'supplemented'),
   operation('generate-title', 'POST', `${workspace}/:conversationId/generate-title`, 'revision', 'conversation'),
   operation('observe', 'POST', `${workspace}/:conversationId/observe`, 'empty', 'conversation'),

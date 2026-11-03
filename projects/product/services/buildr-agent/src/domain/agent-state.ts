@@ -70,7 +70,7 @@ export interface StoredConnection {
 export interface StoredParticipant {
   historical?: boolean;
   participationContext?: {id:string; configuredAt:string; instruction:import('../participation-contracts.ts').ParticipationMatch};
-  modelAccountId?: string; modelAccountIdentity?: string; modelId?: string; serviceTier?:string;modelConfiguration?:string;
+  modelAccountId?: string; modelAccountIdentity?: string; modelId?: string; serviceTier?:string;modelConfiguration?:string;modelLeaseConfiguration?:string;
   id: string;
   connectionId: string;
   provider: string;
@@ -101,7 +101,7 @@ export interface StoredConversation {
   titleDiagnostics?: Array<{runId:string;phase:'early'|'completion'|'manual';code:string;reason:string;at:string}>;
   participants: StoredParticipant[];
   sources: Record<string, string>;
-  attachments: Record<string, { mimeType: string; size: number; createdAt?: string; video?: import('../contracts.ts').VideoAttachment }>;
+  attachments: Record<string, { mimeType: string; size: number; createdAt?: string; nativeContent?: import('../native-content-contracts.ts').NativeAttachmentContent; video?: import('../contracts.ts').VideoAttachment }>;
   attempts: Array<{
     clientRequestId: string;
     inputDigest: string;
@@ -119,6 +119,9 @@ export interface StoredConversation {
     /** Stable independently admitted request after a proven non-delivery to an ended round. */
     continuedBy?: string;
     supersededStopRequested?: boolean;
+    /** Service-owned handoff; no provider identifiers cross model prompts. */
+    questionWaits?: Array<{ runId: string; requests: Array<{ id: string; nativeId: string }>; reuse?: boolean }>;
+    questionReleaseRequested?: boolean;
     automaticRetry?: { rootRunId: string; count: number };
     continuationOf?: string;
   }>;
