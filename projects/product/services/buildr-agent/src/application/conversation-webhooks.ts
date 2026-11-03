@@ -147,13 +147,14 @@ export class ConversationWebhooks {
     return value.split(this.secret).join('[REDACTED]').split(this.url).join('[REDACTED]').split(this.sourceUrl).join('[REDACTED]');
   }
 
-  private enqueue(eventId: string, value: unknown): void {
+  private enqueue(eventId: string, value: Record<string, unknown>): void {
     if (this.seen.has(eventId)) return;
     this.seen.add(eventId);
     if (this.seen.size > 10000) this.seen.delete(this.seen.values().next().value!);
     if (this.queue.length >= 512) return;
     // Recursive string sanitization also covers question labels/options and object identities.
-    const body = JSON.stringify(value, (_key, item: unknown) => typeof item === 'string' ? this.redact(item) : item);
+    // Producer identity is independent of the conversation's executor/model.
+    const body = JSON.stringify({ ...value, agent: { name: 'Buildr', id: 'buildr' } }, (_key, item: unknown) => typeof item === 'string' ? this.redact(item) : item);
     if (this.queuedBytes + Buffer.byteLength(body) > 16 * 1024 * 1024) return;
     this.queuedBytes += Buffer.byteLength(body);
     this.queue.push(body);

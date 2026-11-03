@@ -257,6 +257,6 @@ Buildr 隔离 DSH 的前台 shell 超时由原生执行器终止，默认层覆�
 
 ## 对话过程通知（候选实现）
 
-统一视图的提交出口 `ConversationEvents` 将过程变化交给 `ConversationWebhooks`，不修改执行器或任务记录。除旧四类状态摘要外，`conversation_updated` 发布运行/停止/待发送状态、待回应卡片快照、卡片关闭身份和消息增量；包含已授权外发的用户目标、助手回复与卡片答复，排除内部思考及原始工具输入输出。卡片消失只表示关闭，不推断答复或同意。候选优化将纯版本变化和未完成回复片段过滤，助手正文仅在消息完成或所属执行终止时发送；`task_started`、`status_changed`、`reply` 分别提供新执行、运行/工具状态和完成回复分类，保留兼容事件。此处 `task_started` 表示对话执行开始，不创建或修改正式任务记录。
+统一视图的提交出口 `ConversationEvents` 将过程变化交给 `ConversationWebhooks`，不修改执行器或任务记录。候选身份增强在统一序列化出口为每类事件添加 `agent: {name: "Buildr", id: "buildr"}`，标识生产者而非执行器或模型，不引入顶层身份别名。除旧四类状态摘要外，`conversation_updated` 发布运行/停止/待发送状态、待回应卡片快照、卡片关闭身份和消息增量；包含已授权外发的用户目标、助手回复与卡片答复，排除内部思考及原始工具输入输出。卡片消失只表示关闭，不推断答复或同意。候选优化将纯版本变化和未完成回复片段过滤，助手正文仅在消息完成或所属执行终止时发送；`task_started`、`status_changed`、`reply` 分别提供新执行、运行/工具状态和完成回复分类，保留兼容事件。此处 `task_started` 表示对话执行开始，不创建或修改正式任务记录。
 
 服务组合通过 `webhookConfiguration` 加载宿主私有 `~/.buildr-webhook.json`（`url`、`secret`），或显式 `BUILDR_AGENT_WEBHOOK_CONFIG`。仅默认文件不存在才兼容旧环境变量；无效私有文件不回退。配置不进入执行器环境或诊断。外发使用有界、无重试的尽力投递；并发到达可能乱序，接收端按进程代次、序号和事件标识处理。详细配置、内容边界与验收口径见产品 Buildr Skill 的 `references/agent-operations.md`。候选验证、共享服务采用和接收端处理是不同事实，不相互替代。

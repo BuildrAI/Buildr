@@ -39,6 +39,8 @@ test('event outlet maps four types, deduplicates and sends only safe JSON', asyn
     assert.equal(init.method, 'POST'); assert.equal(init.redirect, 'error');
     assert.equal((init.headers as Record<string,string>).authorization, 'Bearer private-test-key');
     const body = JSON.parse(String(init.body));
+    assert.deepEqual(body.agent, { name: 'Buildr', id: 'buildr' });
+    assert.ok(!('agentName' in body) && !('agentId' in body) && !('source' in body));
     assert.equal(body.workspaceId, 'workspace'); assert.equal(body.conversationId, 'conversation');
     assert.equal(body.timestamp, '2026-11-03T00:00:00.000Z'); assert.equal(body.eventId.length, 64);
     if (['completed','error','pending_question','pending_approval'].includes(body.eventType)) assert.ok(!String(init.body).includes('sensitive')); assert.ok(!String(init.body).includes(env.BUILDR_AGENT_WEBHOOK_SECRET));
@@ -180,5 +182,18 @@ test('independent pending-send revision changes are not swallowed by conversatio
   delete event.payload.conversation!.pendingSend;event.payload.conversation!.revision='new';hook.publish(event);
   await setImmediate();
   assert.equal(sent.length,3);assert.equal(sent[1].pendingSend.text,'next user goal');assert.equal(sent[2].pendingSend,null);
+  hook.close();
+});
+
+test('every event category carries canonical producer identity, not executor identity', async () => {
+  const sent: any[]=[];
+  const hook=ConversationWebhooks.configure(env,async(_url,init)=>{sent.push(JSON.parse(String(init!.body)));return new Response(null);})!;
+  const event=change();delete event.payload.conversation!.run;hook.publish(event);
+  event.payload.conversation!.run={id:'new',provider:'codex',status:'running'} as RunView;hook.publish(event);
+  event.payload.conversation!.entries=[{id:'reply',runId:'new',sequence:1,kind:'message',role:'assistant',status:'completed',text:'done',createdAt:new Date().toISOString()}];hook.publish(event);
+  for(const next of [change('waiting-question','question'),change('waiting-approval','approval'),change('completed'),change('failed')])hook.publish(next);
+  await setImmediate();
+  assert.deepEqual([...new Set(sent.map(body=>body.eventType))].sort(),['completed','conversation_updated','error','pending_approval','pending_question','reply','status_changed','task_started'].sort());
+  for(const body of sent){assert.deepEqual(body.agent,{name:'Buildr',id:'buildr'});assert.ok(!('agentName' in body)&&!('agentId' in body)&&!('source' in body));}
   hook.close();
 });
