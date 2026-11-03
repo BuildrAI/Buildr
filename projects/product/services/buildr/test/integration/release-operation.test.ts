@@ -466,7 +466,7 @@ for (const repairTools of [false, true]) test(`prepare ${repairTools ? 'repairs 
   assert.equal(aggregate.status, 'passed', JSON.stringify(aggregate.findings));
   let task: any = null;
   let worktreeCreated = false;
-  let dispatched = 0;
+  let dispatched = 0, gitFetches = 0;
   let merges = 0;
   let candidateComplete = false;
   let candidateConclusion = 'success', candidateAttempt = 1, retryRequests = 0;
@@ -497,7 +497,7 @@ for (const repairTools of [false, true]) test(`prepare ${repairTools ? 'repairs 
   t.after(() => new Promise<void>(resolve => { server.closeAllConnections(); server.close(() => resolve()); }));
   const api = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   const execute = (command: string, args: string[], options: any) => {
-    if (command !== 'gh') return spawnSync(command, args, { ...options, encoding: 'utf8' });
+    if (command !== 'gh') { if (command === 'git' && args[0] === 'fetch') gitFetches++; return spawnSync(command, args, { ...options, encoding: 'utf8' }); }
     const body = (value: unknown) => ({ status: 0, stdout: JSON.stringify(value) });
     if (args[0] === 'auth') return { status: 0, stdout: 'local-test-service' };
     if (args[0] === 'workflow') { dispatched++; if (args.includes('verification_source=' + verificationSource)) { repairRequested = true; repairRequests.push(args); } return { status: 1, stderr: 'injected lost dispatch response' }; }
@@ -510,7 +510,7 @@ for (const repairTools of [false, true]) test(`prepare ${repairTools ? 'repairs 
     if (args[0] === 'run' && args[1] === 'list') return body(dispatched ? [
       { databaseId: 700, headSha: sourceCommit, status: candidateComplete ? 'completed' : 'queued', conclusion: candidateComplete ? 'success' : null },
       ...(repairRequested && repairVisible ? [{ databaseId: 701, headSha: sourceCommit, displayTitle: 'Candidate repair 700 ' + verificationSource, status: 'completed', conclusion: 'success' }] : [])] : []);
-    if (args[0] === 'api') return body({ id: args[1]?.endsWith('/701') ? 701 : 700, head_sha: sourceCommit, run_attempt: candidateAttempt, path: '.github/workflows/verify.yml', repository: { full_name: 'BuildrAI/Buildr' }, event: 'workflow_dispatch', status: candidateComplete ? 'completed' : 'queued', conclusion: candidateComplete ? candidateConclusion : null });
+    if (args[0] === 'api') return body({ head_branch: `codex/release-main-${version}-g0`, id: args[1]?.endsWith('/701') ? 701 : 700, head_sha: sourceCommit, run_attempt: candidateAttempt, path: '.github/workflows/verify.yml', repository: { full_name: 'BuildrAI/Buildr' }, event: 'workflow_dispatch', status: candidateComplete ? 'completed' : 'queued', conclusion: candidateComplete ? candidateConclusion : null });
     if (args[0] === 'pr' && args[1] === 'list') return body(pr ? [pr] : []);
     if (args[0] === 'pr' && args[1] === 'view') return body({ ...pr, mergeStateStatus: 'CLEAN', mergeable: 'MERGEABLE', isDraft: false });
     if (args[0] === 'pr' && args[1] === 'checks') return body([{ name: 'protected-gate', state: 'SUCCESS', bucket: 'pass' }]);
@@ -582,6 +582,11 @@ for (const repairTools of [false, true]) test(`prepare ${repairTools ? 'repairs 
   const first = await runReleaseOperation({ ...options, sourceVerification: initialSourceVerification }, dependencies);
   assert.equal(first.status, 'candidate-running', JSON.stringify(first));
   assert.equal(dispatched, 1, 'lost responses must not dispatch twice');
+  const priorFetches = gitFetches;
+  const stillRunning = await runReleaseOperation(options, dependencies);
+  assert.equal(stillRunning.status, 'candidate-running', JSON.stringify(stillRunning));
+  assert.equal(gitFetches, priorFetches, 'observing a frozen active run must not refresh remote Git refs');
+  assert.equal(dispatched, 1);
   candidateComplete = true;
   if (!repairTools) {
     candidateConclusion = 'failure';
@@ -784,4 +789,56 @@ test('publish binds cleanup to its context and resume never expands historical a
   assert.equal(recovered.status, 'passed', JSON.stringify(recovered));
   assert.equal(recovered.action, 'resume');
   assert.equal(recovered.effects.some((item: any) => item.type === 'remote-refs-refreshed'), false, 'a completed publication must not re-enter preparation or recreate release branches');
+});
+
+test('original package is handed off while the other OS runs, and only readbacks are repeated', async t => {
+  const { observeCandidatePackage, candidateRunTimings } = await import('../../../../../../skills/buildr-release/scripts/candidate-run-observation.ts');
+  const { localArtifactHandoff } = await import('../../../../../../skills/buildr-release/scripts/release-orchestration-runner.ts');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-early-handoff-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const sourceCommit = 'a'.repeat(40);
+  const built = await createReleaseArtifactFixture(path.join(root, 'producer'), sourceCommit);
+  const candidate: any = { localRunner: 'macos', sourceCommit, runId: 42 };
+  const handoff = localArtifactHandoff(root, candidate);
+  const options = { candidate, handoff, repo: root, version: built.manifest.version };
+  let visible = false, downloads = 0;
+  const listing: any = { total_count: 1, artifacts: [{ id: 7, name: 'candidate-package', expired: false, workflow_run: { id: 42, head_sha: sourceCommit } }] };
+  const dependencies = { gh: () => JSON.stringify(visible ? listing : { total_count: 0, artifacts: [] }),
+    execute(command: string, args: string[]) {
+      assert.equal(command, 'gh'); assert.deepEqual(args.slice(0, 3), ['run', 'download', '42']);
+      downloads++;
+      fs.cpSync(path.dirname(built.manifestPath), args.at(-1)!, { recursive: true });
+      return { status: 0 };
+    } };
+  assert.equal(observeCandidatePackage(options, dependencies).status, 'pending');
+  assert.equal(downloads, 0);
+  visible = true;
+  let intended: any;
+  const ready = observeCandidatePackage(options, { ...dependencies, onDownloadIntent: (value: any) => { intended = value; } });
+  assert.equal(intended.status, 'download-requested'); assert.equal(intended.artifactId, 7);
+  assert.equal(ready.status, 'ready');
+  assert.equal(ready.localArtifact.runId, 42); assert.equal(ready.localArtifact.artifactId, 7);
+  assert.equal(ready.localArtifact.artifact.sha256, built.manifest.sha256);
+  assert.equal(fs.existsSync(path.join(handoff.artifactDirectory, built.manifest.filename)), true);
+  candidate.awaitingLocalArtifact = intended;
+  assert.equal(observeCandidatePackage(options, dependencies).status, 'ready', 'original intent recovers a completed rename after interrupted readback');
+  candidate.awaitingLocalArtifact = ready.localArtifact;
+  assert.equal(observeCandidatePackage(options, dependencies).status, 'ready');
+  assert.equal(downloads, 1);
+  assert.equal(observeCandidatePackage({ ...options, hasLocalEvidence: true }, dependencies).status, 'not-required');
+  assert.equal(observeCandidatePackage(options, { ...dependencies, gh: () => { throw Error('network unknown'); } }).status, 'unknown');
+  listing.artifacts[0].workflow_run.head_sha = 'b'.repeat(40);
+  assert.throws(() => observeCandidatePackage(options, dependencies), /different or ambiguous/u);
+  listing.artifacts[0].workflow_run.head_sha = sourceCommit;
+  fs.appendFileSync(path.join(handoff.artifactDirectory, built.manifest.filename), 'tamper');
+  assert.throws(() => observeCandidatePackage(options, dependencies), /size does not match/u);
+  const timings = candidateRunTimings({ created_at: '2026-01-01T00:00:00Z', run_started_at: '2026-01-01T00:00:02Z' }, [
+    { id: 1, name: 'consumer', status: 'in_progress', started_at: '2026-01-01T00:00:02Z', steps: [
+      { name: 'Prepare environment', started_at: '2026-01-01T00:00:02Z', completed_at: '2026-01-01T00:00:05Z' },
+      { name: 'Upload artifact' }, { name: 'Post cleanup' }, { name: 'Readback evidence' }, { name: 'Run checks' },
+    ] },
+  ]);
+  assert.equal(timings.queueMs, 2000); assert.equal(timings.jobs[0].durationMs, null);
+  assert.equal(timings.jobs[0].steps[0].durationMs, 3000);
+  assert.deepEqual(timings.jobs[0].steps.map((step: any) => step.phase), ['preparation', 'upload', 'cleanup', 'readback', 'check']);
 });

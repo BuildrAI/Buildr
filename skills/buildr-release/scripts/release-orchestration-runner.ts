@@ -8,6 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { createReleaseToolRuntime } from './runtime.ts';
+import { observeCandidatePackage, candidateRunTimings } from './candidate-run-observation.ts';
 import { sameFilesystemPath } from '../../../projects/product/services/buildr/src/infrastructure/filesystem/filesystem-path-identity.ts';
 import { createExactNodeExecutionEnvironment } from '../../../projects/product/services/buildr/src/infrastructure/process.ts';
 import { closeoutReleaseGitResources, reconcilePublishedReleaseWithDev, reconcileReleaseToMain, ensureReleaseToMainPullRequest, pushReleaseBranch, releaseCarrierBranchFor } from './release-git-convergence.ts';
@@ -634,6 +635,27 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
   const gh = (args: string[], cwd = workspace) => command(options.ghCommand || 'gh', args, cwd);
   const readRun = (runId: number) => JSON.parse(gh(['api', `repos/${releasePublishAuthority.repository}/actions/runs/${runId}`]));
   const save = () => writeOperation(file, state);
+  const observeRunningCandidate = (run: any, repo: string) => {
+    const pointer = state.candidate;
+    if (run.id !== pointer.runId || run.head_sha !== pointer.sourceCommit
+      || run.repository?.full_name !== releasePublishAuthority.repository || run.path?.split('@')[0] !== '.github/workflows/verify.yml'
+      || run.event !== 'workflow_dispatch' || run.head_branch !== pointer.branch) throw new Error('Running candidate no longer matches its frozen identity.');
+    let remoteTiming: any = { status: 'unknown' };
+    try {
+      const pages = JSON.parse(gh(['api', '--paginate', '--slurp', `repos/${releasePublishAuthority.repository}/actions/runs/${run.id}/attempts/${run.run_attempt}/jobs?per_page=100`], repo));
+      if (Array.isArray(pages) && pages.every(page => Array.isArray(page.jobs))) remoteTiming = candidateRunTimings(run, pages.flatMap(page => page.jobs));
+    } catch { /* Progress is diagnostic, never a candidate gate. */ }
+    const observation = observeCandidatePackage({ candidate: pointer, repo, handoff: localArtifactHandoff(repo, pointer),
+      hasLocalEvidence: Boolean(options.artifactVerification || pointer.verificationInputs?.artifact || pointer.repair?.verificationInputs?.artifact),
+      version: targets.versions.buildr, ghCommand: options.ghCommand }, { gh: (args: string[]) => gh(args, repo), execute,
+      onDownloadIntent: (intent: any) => { pointer.awaitingLocalArtifact = intent; save(); } });
+    if (observation.status === 'ready') {
+      pointer.awaitingLocalArtifact = observation.localArtifact; save();
+      return answer('local-artifact-verification-required', [observation.localArtifact.nextAction], { run, remoteTiming, localArtifact: observation.localArtifact });
+    }
+    return answer('candidate-running', ['等待同一候选；原包就绪后立即返回本机验包交接。'],
+      { run, remoteTiming, artifactObservation: observation });
+  };
   const packageDependencies = { ...dependencies.orchestrationDependencies, ...dependencies.packageDependencies,
     execute, runtime: dependencies.runtime, resolveRetainedController: dependencies.resolveRetainedController ?? resolveRetainedController,
     invokeRetainedController: dependencies.invokeRetainedController ?? defaultInvokeRetained,
@@ -712,6 +734,21 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       return answer('blocked', ['此选择已有公开授权或公开请求；只读检查原事实，为新候选使用独立选择。'], {
         diagnostic: { code: 'candidate-only-publication-conflict', message: 'Candidate-only preparation cannot resume an authorized or requested publication.' },
       });
+    }
+    // This path only observes the already frozen run. No source selection,
+    // Git refresh or dispatch is needed until that run reaches a terminal state.
+    if (action === 'prepare' && !state.preparation && state.candidate?.runId
+      && /^[a-f0-9]{40,64}$/u.test(state.candidate.sourceCommit ?? '') && typeof state.candidate.branch === 'string'
+      && typeof state.executionRoot === 'string' && state.sourceCommit === state.candidate.sourceCommit
+      && !options.baseline && !(options.sources?.length) && !state.publication?.requested && !state.publicationAuthorization) {
+      const running = readRun(state.candidate.runId);
+      if (running.status !== 'completed') {
+        const runtime = dependencies.runtime ?? createReleaseToolRuntime();
+        const owned = runtime.inspectGitWorktrees({ workspaceRoot: workspace, taskId: `release-${key}` });
+        const checkout = owned.repositories?.find((entry: any) => entry.selector === 'workspace')?.checkoutPath;
+        if (owned.status !== 'ready' || !checkout || checkout !== state.executionRoot) throw new Error('Running Candidate checkout ownership changed.');
+        phase = 'candidate-verification'; return observeRunningCandidate(running, checkout);
+      }
     }
     const preparationInputChanged = state.preparation && ((options.baseline && git(['rev-parse', `${options.baseline}^{commit}`]) !== state.baseline)
       || (options.sources ?? []).some((ref: string) => !state.sources.includes(git(['rev-parse', `${ref}^{commit}`]))));
@@ -1104,12 +1141,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
     if (candidate.head_sha !== sourceCommit) throw new Error('Candidate run source differs from the frozen release.');
       if (candidate.repository?.full_name !== releasePublishAuthority.repository || candidate.path?.split('@')[0] !== '.github/workflows/verify.yml' || candidate.event !== 'workflow_dispatch' || (scoped && candidate.head_branch !== carrier)) throw new Error('Candidate run does not belong to the expected repository, carrier and verification workflow.');
     if (candidate.status !== 'completed' || candidate.conclusion !== 'success') ensureCandidateBranch(carrier);
-    if (candidate.status !== 'completed') {
-      const localArtifact = localArtifactHandoff(repo, state.candidate);
-      return answer('candidate-running', [localArtifact?.nextAction ?? '等待当前候选终态，再继续同一prepare。'], {
-        run: candidate, ...(localArtifact ? { localArtifact } : {}),
-      });
-    }
+    if (candidate.status !== 'completed') return observeRunningCandidate(candidate, repo);
     if (candidate.conclusion !== 'success') {
       const previousRetry = state.candidate.retry;
       if (previousRetry?.runId === state.candidate.runId && Number(candidate.run_attempt) <= previousRetry.previousAttempt) {
@@ -1156,7 +1188,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       } else currentEffects.push({ type: 'candidate-artifact-download', directory: destination, state: 'reused' });
       state.candidate.awaitingLocalArtifact = localArtifact; save();
       return answer('local-artifact-verification-required', [
-        `在冻结源码的 buildr 服务使用 test/verification/artifact.ts：--artifact-dir ${localArtifact.artifactDirectory} --output ${evidenceDirectory}；通用原包与平台启动器只跑一次，最低24.15.0及实际稳定24.x分别补安装运行兼容。`,
+        `在冻结源码的 buildr 服务使用 test/verification/artifact.ts：--artifact-dir ${localArtifact.artifactDirectory} --output ${evidenceDirectory}；通用原包与平台启动器只跑一次，使用最低 Node 24.15.0；不附加当前 Node 重复验包。`,
         `完成后继续同一 prepare，传入 --artifact-verification ${evidenceDirectory}；采用远端已通过结果，只补缺项和完整汇总，不重打包。`,
       ], { localArtifact });
     }
@@ -1245,6 +1277,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
 
 const WAITING_RELEASE_STATUSES = new Set([
   'candidate-running', 'candidate-dispatch-unconfirmed', 'candidate-retry-unconfirmed',
+  'candidate-repair-dispatch-unconfirmed', 'candidate-repair-readback-required', 'main-merge-pending',
   'plugin-preparation-running', 'plugin-preparation-unknown',
   'publication-running', 'publication-dispatch-unconfirmed', 'publication-retry-unconfirmed',
   'publication-readback-required', 'publication-unknown', 'main-merge-readback-required',
@@ -1259,25 +1292,30 @@ export async function runReleaseOperationUntilSettled(options: any, dependencies
   const sleep = dependencies.sleep ?? ((ms: number) => new Promise(resolve => setTimeout(resolve, ms)));
   const run = dependencies.runReleaseOperation ?? runReleaseOperation;
   const startedAt = now(), allEffects: any[] = [];
+  let pollWorkMs = 0, sleepMs = 0;
   let polls = 0, previousPhase: string | null = null, action = options.action;
   for (;;) {
+    const pollStartedAt = now();
     const value = await run({ ...options, action, detail: 'full' }, dependencies);
+    pollWorkMs += now() - pollStartedAt;
     allEffects.push(...(value.effects ?? [])); polls++;
-    const phase = `${value.status}:${value.package ?? ''}:${value.run?.id ?? ''}`;
-    if (phase !== previousPhase) { dependencies.onProgress?.({ status: value.status, package: value.package, runId: value.run?.id }); previousPhase = phase; }
+    const phase = `${value.status}:${value.package ?? ''}:${value.run?.id ?? ''}:${JSON.stringify(value.remoteTiming ?? null)}`;
+    if (phase !== previousPhase) { dependencies.onProgress?.({ status: value.status, package: value.package, runId: value.run?.id, remoteTiming: value.remoteTiming, pollWorkMs, sleepMs }); previousPhase = phase; }
     const waiting = options.wait === true && WAITING_RELEASE_STATUSES.has(value.status);
     const durationMs = now() - startedAt;
     if (!waiting || durationMs >= timeoutMs || dependencies.signal?.aborted) return { ...value, effects: allEffects,
-      waiting: { status: dependencies.signal?.aborted ? 'cancelled' : waiting ? 'timed-out' : 'settled', polls, durationMs } };
+      waiting: { status: dependencies.signal?.aborted ? 'cancelled' : waiting ? 'timed-out' : 'settled', polls, durationMs, pollWorkMs, sleepMs } };
     // A public request has already been persisted by the owner. Only resume it.
     if (action === 'publish') action = 'resume';
+    const sleepStartedAt = now();
     await sleep(Math.min(intervalMs, timeoutMs - durationMs));
+    sleepMs += now() - sleepStartedAt;
   }
 }
 
 export function compactReleaseOperation(value: any): any {
   const keys = ['schemaVersion', 'action', 'status', 'version', 'selectionId', 'targets', 'sourceCommit', 'contextIdentity',
-    'package', 'stopAfter', 'outcomes', 'cleanup', 'cleanupPlan', 'diagnostic', 'nextActions', 'effects', 'waiting', 'operationDurationMs'];
+    'package', 'stopAfter', 'outcomes', 'cleanup', 'cleanupPlan', 'diagnostic', 'nextActions', 'effects', 'waiting', 'operationDurationMs', 'remoteTiming', 'artifactObservation'];
   const summary = Object.fromEntries(keys.filter(key => value[key] !== undefined).map(key => [key, value[key]]));
   for (const key of ['candidate', 'publication', 'run']) {
     const item = value[key];
@@ -1286,7 +1324,8 @@ export function compactReleaseOperation(value: any): any {
   if (value.localSource) summary.localSource = { status: value.localSource.status, missingStepIds: value.localSource.missingStepIds,
     nextActions: value.localSource.nextActions };
   if (value.localArtifact) summary.localArtifact = { artifactDirectory: value.localArtifact.artifactDirectory,
-    evidenceDirectory: value.localArtifact.evidenceDirectory, missingEvidenceIds: value.localArtifact.missingEvidenceIds, nextAction: value.localArtifact.nextAction };
+    evidenceDirectory: value.localArtifact.evidenceDirectory, runId: value.localArtifact.runId, artifactId: value.localArtifact.artifactId,
+    sha256: value.localArtifact.artifact?.sha256, checks: value.localArtifact.checks, missingEvidenceIds: value.localArtifact.missingEvidenceIds, nextAction: value.localArtifact.nextAction };
   if (value.preparation) summary.preparation = { status: value.preparation.status, directory: value.preparation.directory };
   if (value.preparationCloseout) summary.preparationCloseout = { status: value.preparationCloseout.status,
     directory: value.preparationCloseout.directory, report: value.preparationCloseout.report,
@@ -1348,7 +1387,7 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
       process.stdout.write('Usage: release-orchestration-runner.ts <prepare|inspect|publish|resume> --workspace <root> [--packages buildr|dsh-plugin|buildr,dsh-plugin] [--version <main-version>] [--plugin-version <plugin-version>] [--baseline <ref>] [--source <sha> ...] [--stop-after candidate] [--authorized] [--recover-publication] [--wait] [--wait-timeout-ms <ms>] [--wait-interval-ms <ms>] [--output <file>] [--detail compact|full]\n');
     } else {
     const value: any = options.normalOperation ? await runReleaseOperationUntilSettled(options, {
-      onProgress: options.wait ? (progress: any) => process.stderr.write(`[release] ${progress.status}${progress.runId ? ` run=${progress.runId}` : ''}\n`) : undefined,
+      onProgress: options.wait ? (progress: any) => process.stderr.write(`[release] ${progress.status}${progress.runId ? ` run=${progress.runId}` : ''} readback=${progress.pollWorkMs}ms sleep=${progress.sleepMs}ms${progress.remoteTiming ? ` remote=${JSON.stringify(progress.remoteTiming)}` : ''}\n`) : undefined,
     }) : options.action === 'inspect'
       ? inspectReleaseOrchestration(options.inspectedResult, options.expectedTimelineIdentity)
       : await runReleaseOrchestration(options);

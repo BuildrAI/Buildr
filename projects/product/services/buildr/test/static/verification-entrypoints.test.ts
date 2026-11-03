@@ -116,7 +116,24 @@ test('Candidate source work is independent and all consumers use the one immutab
   for (const input of ['artifact_verification', 'local_runner']) assert.ok(document.on.workflow_dispatch.inputs[input]);
   assert.equal(document.env.BUILDR_ARTIFACT_VERIFICATION, "${{ github.event_name == 'workflow_dispatch' && inputs.artifact_verification || '' }}");
   for (const [id, key] of [['candidate-artifact-consumers', 'artifact'], ['candidate-host-node', 'host']]) {
-    assert.equal(document.jobs[id!].if, `needs.candidate-plan.outputs.buildr == 'true' && needs.candidate-plan.outputs.${key}_required == 'true'`);
+    const condition = document.jobs[id!].if;
+    // Evaluate the actual restricted workflow expression, not its formatting.
+    const evaluate = (plan: string, bootstrap: string, required: boolean) => {
+      const expression = condition.replace(/always\(\)/gu, 'true')
+        .replaceAll('needs.candidate-plan.result', JSON.stringify(plan))
+        .replaceAll('needs.candidate-bootstrap.result', JSON.stringify(bootstrap))
+        .replaceAll('needs.candidate-plan.outputs.buildr', "'true'")
+        .replaceAll(`needs.candidate-plan.outputs.${key}_required`, JSON.stringify(String(required)));
+      assert.match(expression, /^[a-z'"=()&|!\s]+$/u);
+      return Boolean(Function(`return (${expression})`)());
+    };
+    assert.match(condition, /always\(\)/u, 'override GitHub implicit success() on skipped ancestors');
+    assert.equal(evaluate('success', 'success', true), true, 'source skipped but bootstrap succeeded');
+    assert.equal(evaluate('success', 'success', false), false, 'fully reused consumer stays skipped');
+    for (const failure of ['failure', 'cancelled', 'skipped']) {
+      assert.equal(evaluate(failure, 'success', true), false);
+      assert.equal(evaluate('success', failure, true), false);
+    }
   }
   assert.equal(document.jobs['candidate-source'].if, "needs.candidate-plan.outputs.buildr == 'true' && needs.candidate-plan.outputs.source_required == 'true'");
   for (const key of ['source', 'artifact', 'host']) assert.equal(document.jobs['candidate-plan'].outputs[key + '_required'], '${{ steps.repair.outputs.' + key + '_required || steps.plan.outputs.' + key + '_required }}');

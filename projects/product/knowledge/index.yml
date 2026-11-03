@@ -1307,6 +1307,7 @@ artifacts:
       - verification-candidate-source-binding
       - release-candidate-repair-operation
       - release-command-recovery
+      - release-candidate-observation-source
       - verification-frontend-test-runner
       - verification-candidate-browser
       - verification-candidate-environment
@@ -1651,7 +1652,7 @@ sources:
     title: 同轮候选普通结果日志
     kind: code
     path: services/buildr/test/verification/candidate-round.ts
-    summary: 同轮成功保留，只补失败及未执行项；不按文件、配方或依赖摘要使成功失效。
+    summary: 同轮完整成功保留；失败 Node 节点按真实文件输入、环境、清理与完整发现只补失败、新增及失效项，保留原来源。
   - id: verification-platform-boundaries
     title: 两系统源码与原包真实边界
     kind: code
@@ -1661,7 +1662,7 @@ sources:
     title: 通用与本机平台原包检查
     kind: code
     path: services/buildr/test/verification/artifact.ts
-    summary: 显式消费同一原包，独立选择通用检查与当前操作系统差异，分别保存最低和当前 Node 的真实执行证明，不重新制包。
+    summary: 显式消费同一原包，独立选择通用检查与当前操作系统差异，默认保存最低 Node 的真实执行证明，不另跑当前 Node 组合，不重新制包。
   - id: verification-artifact-reuse
     title: 原包检查证明交接与复用
     kind: code
@@ -1672,6 +1673,12 @@ sources:
     kind: skill
     skillId: buildr-release
     path: scripts/release-orchestration-runner.ts
+  - id: release-candidate-observation-source
+    title: 候选原包交接与运行耗时
+    kind: skill
+    skillId: buildr-release
+    path: scripts/candidate-run-observation.ts
+    summary: 只读同一运行与原包，校验准确字节后提前交接；未知不产包或派发，阶段时间缺失为未知。
   - id: release-selection-source
     title: 冻结发布选择
     kind: skill

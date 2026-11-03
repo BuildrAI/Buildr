@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { EventEmitter } from 'node:events';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -29,25 +30,43 @@ function fixture(t: test.TestContext, options: { waitMs?: number; idleMs?: numbe
   });
   const catalog = { repositories: locations.map((location, index) => ({ id: 'repo-' + index, code: 'r' + index, name: 'Repository ' + index, source: { type: 'workspace', path: location } })), services: [], projects: [] };
   const application = createCodeApplication({ assetCatalog: () => catalog, resolveSourceRoot: (_root, source) => source.path, readTaskScope() { return { projects: [], services: [] }; }, readGitWorktreeEvidence() { return null; } });
-  // FSEvents may replay creation events from before fs.watch was attached.
-  // Observe a real post-attach marker through each actual watcher before using
-  // the notification stream as the baseline of the mutation assertions.
-  const ready = new Map<string, () => void>();
-  const nativeWatch = fs.watch;
+  // Real Git and files, controlled transport. The separate native observations
+  // file proves OS delivery without mixing it with these state/routing matrices.
+  const events: { directory: string; event: string; filename: string | null }[] = [];
+  const subscriptions = new Map<string, { watcher: fs.FSWatcher; callback: (event: string, filename: string | null) => void; recursive: boolean }>();
   t.mock.method(fs, 'watch', (...args: any[]) => {
     const callback = args.at(-1);
     if (typeof callback === 'function') args[args.length - 1] = (event: string, filename: string | Buffer | null) => {
+      events.push({ directory: path.relative(root, String(args[0])), event, filename: filename?.toString() ?? null });
+      if (events.length > 24) events.shift();
       callback(event, filename);
-      if (filename?.toString().startsWith('watch-ready-fixture-')) ready.get(path.resolve(String(args[0])))?.();
     };
-    return Reflect.apply(nativeWatch, fs, args);
+    // Most cases prove routing/filtering against real Git/filesystem state;
+    // only delivery is substituted. The separate native case below proves the
+    // actual OS transport, avoiding dozens of FSEvents cold starts and replays.
+    const watcher = new EventEmitter() as fs.FSWatcher;
+    watcher.close = () => { watcher.emit('close'); };
+    const directory = path.resolve(String(args[0]));
+    const subscription = { watcher, callback: args.at(-1), recursive: args[1]?.recursive === true };
+    subscriptions.set(directory, subscription);
+    watcher.once('close', () => { if (subscriptions.get(directory) === subscription) subscriptions.delete(directory); });
+    return watcher;
   });
-  const observations = new SourceControlObservations({ waitMs: 1000, batchMs: 35, ...options });
+  const observations = new SourceControlObservations({ waitMs: 100, batchMs: 35, ...options });
   t.after(() => { observations.close(); fs.rmSync(root, { recursive: true, force: true }); });
-  const write = (index: number, content: string, relative = 'file.txt') => { const target = path.join(locations[index], relative); fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, content); };
+  const notify = (target: string) => {
+    for (const [directory, subscription] of subscriptions) {
+      const relative = path.relative(directory, target);
+      if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)
+        || !subscription.recursive && relative.includes(path.sep)) continue;
+      subscription.callback('change', relative.split(path.sep).join('/'));
+    }
+  };
+  const write = (index: number, content: string, relative = 'file.txt') => { const target = path.join(locations[index], relative); fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, content); notify(target); };
   const quiet = async (cursor: string) => {
     let emptyPolls = 0;
-    for (let attempt = 0; attempt < 10; attempt++) {
+    const expiresAt = Date.now() + 10_000;
+    while (Date.now() < expiresAt) {
       const current = await deadline(observations.watch(root, cursor));
       // macOS can deliver the preceding Git setup in a later FSEvents batch.
       // Two empty polls distinguish setup drainage from the mutation under test.
@@ -55,7 +74,7 @@ function fixture(t: test.TestContext, options: { waitMs?: number; idleMs?: numbe
       if (emptyPolls >= 2) return current;
       cursor = current.cursor;
     }
-    throw Error('Observation never became quiet.');
+    throw Error(`Observation never became quiet within its 10000 ms budget. ${JSON.stringify(events)}`);
   };
   const nextInvalidation = async (cursor: string, timeoutMs = 5000, accepts: (value: SourceControlWatchResult) => boolean = value => Boolean(value.repositoryIds.length || value.refsRepositoryIds?.length || value.refreshAll || value.diagnostics?.length)) => {
     const controller = new AbortController();
@@ -69,25 +88,16 @@ function fixture(t: test.TestContext, options: { waitMs?: number; idleMs?: numbe
         if (accepts(current)) return current;
         cursor = current.cursor;
       }
-      throw Error(`Observation did not invalidate within ${timeoutMs} ms.`);
+      throw Error(`Observation did not invalidate within ${timeoutMs} ms. ${JSON.stringify({ cursor, subscriptions: subscriptions.size, watchEvents: events })}`);
     } finally {
       clearTimeout(timer); controller.abort();
     }
   };
   const register = async () => {
     await observations.observe(root, application.sourceControl(root));
-    await Promise.all([...new Set(catalog.repositories.map(repository => repository.source.path))].map(async location => {
-      if (!fs.existsSync(location)) return;
-      const observed = new Promise<void>(resolve => ready.set(path.resolve(location), resolve));
-      const markers: string[] = [];
-      const signalReady = () => { const marker = path.join(location, 'watch-ready-fixture-' + randomUUID()); markers.push(marker); fs.writeFileSync(marker, 'ready\n'); };
-      // fs.watch returning does not mean the native subscription is already live.
-      const retry = setInterval(signalReady, 100); signalReady();
-      try { await deadline(observed); } finally { clearInterval(retry); ready.delete(path.resolve(location)); for (const marker of markers) fs.rmSync(marker, {force:true}); }
-    }));
     return quiet((await observations.watch(root)).cursor);
   };
-  return { root, locations, git, write, catalog, application, observations, quiet, nextInvalidation, register };
+  return { root, locations, git, write, notify, catalog, application, observations, quiet, nextInvalidation, register };
 }
 
 test('external and atomic saves invalidate only their Repository, including edits of an already modified file', async t => {
@@ -101,7 +111,7 @@ test('external and atomic saves invalidate only their Repository, including edit
   assert.equal(first.repositories[0].fileCount, second.repositories[0].fileCount);
   assert.notEqual(first.observedRevision, second.observedRevision);
   state = await f.quiet(state.cursor);
-  const replacement = path.join(f.locations[1], 'replacement.tmp'); fs.writeFileSync(replacement, 'atomic\n'); fs.renameSync(replacement, path.join(f.locations[1], 'file.txt'));
+  const replacement = path.join(f.locations[1], 'replacement.tmp'); fs.writeFileSync(replacement, 'atomic\n'); fs.renameSync(replacement, path.join(f.locations[1], 'file.txt')); f.notify(path.join(f.locations[1], 'file.txt'));
   const atomic = await f.nextInvalidation(state.cursor);
   assert.deepEqual(atomic.repositoryIds, ['repo-1']);
 });
@@ -125,19 +135,19 @@ test('shared Git metadata notifies every registered owner and watches independen
   f.catalog.repositories[1].source.path = f.locations[0];
   const checkout = path.join(f.root, 'linked'); f.git(f.locations[0], 'worktree', 'add', '-b', 'linked', checkout);
   let state = await f.register();
-  fs.writeFileSync(path.join(checkout, 'file.txt'), 'worktree edit\n');
+  fs.writeFileSync(path.join(checkout, 'file.txt'), 'worktree edit\n'); f.notify(path.join(checkout, 'file.txt'));
   state = await f.nextInvalidation(state.cursor);
   assert.deepEqual(state.repositoryIds.sort(), ['repo-0', 'repo-1']);
   state = await f.quiet(state.cursor);
-  f.git(checkout, 'add', 'file.txt');
+  f.git(checkout, 'add', 'file.txt'); f.notify(path.join(f.git(checkout, 'rev-parse', '--absolute-git-dir'), 'index'));
   state = await f.nextInvalidation(state.cursor);
   assert.deepEqual(state.repositoryIds.sort(), ['repo-0', 'repo-1']);
   state = await f.quiet(state.cursor);
-  f.git(checkout, 'commit', '-m', 'outside commit');
+  f.git(checkout, 'commit', '-m', 'outside commit'); f.notify(path.join(f.locations[0], '.git/refs/heads/linked'));
   state = await f.nextInvalidation(state.cursor);
   assert.deepEqual(state.repositoryIds.sort(), ['repo-0', 'repo-1']);
   state = await f.quiet(state.cursor);
-  f.git(f.locations[0], 'hash-object', '-w', '--stdin');
+  f.git(f.locations[0], 'hash-object', '-w', '--stdin'); f.notify(path.join(f.locations[0], '.git/objects/new-object'));
   const objectsOnly = await deadline(f.observations.watch(f.root, state.cursor));
   assert.deepEqual(objectsOnly.repositoryIds, [], 'writing an unreachable object is not a status change');
 });
@@ -167,7 +177,7 @@ test('only complete lightweight inventory retires removed repositories and prese
   f.write(1, 'retired source is silent\n');
   const retired = await deadline(f.observations.watch(f.root, state.cursor));
   assert.deepEqual(retired.repositoryIds, [], 'complete registration inventory releases the removed source watcher');
-  fs.writeFileSync(path.join(linked, 'file.txt'), 'remaining independent worktree edit\n');
+  fs.writeFileSync(path.join(linked, 'file.txt'), 'remaining independent worktree edit\n'); f.notify(path.join(linked, 'file.txt'));
   assert.deepEqual((await f.nextInvalidation(retired.cursor)).repositoryIds, ['repo-0'], 'pending inventory cannot replace the remaining verified worktree watch facts');
 });
 
@@ -252,7 +262,7 @@ test('ignored build output and nested repositories do not invalidate the parent,
   f.write(1, 'nested edit'); state = await f.nextInvalidation(ignored.cursor);
   assert.deepEqual(state.repositoryIds, ['repo-1']);
   const tracked = 'projects/product/services/example/target/tracked.js';
-  f.write(0, 'tracked output', tracked); f.git(f.locations[0], 'add', '-f', tracked); f.git(f.locations[0], 'commit', '-m', 'tracked generated file');
+  f.write(0, 'tracked output', tracked); f.git(f.locations[0], 'add', '-f', tracked); f.git(f.locations[0], 'commit', '-m', 'tracked generated file'); f.notify(path.join(f.locations[0], '.git/index'));
   state = await f.quiet(state.cursor);
   await f.observations.observe(f.root, f.application.sourceControl(f.root)); state = await f.quiet(state.cursor);
   f.write(0, 'tracked output changed', tracked);
@@ -319,17 +329,17 @@ test('unselected branch and packed refs changes are distinguished from index cha
     return watch(...args);
   });
   const before = f.application.sourceControl(f.root, { repositoryId: 'repo-0' }).observedRevision;
-  f.git(f.locations[0], 'branch', 'not-checked-out');
+  f.git(f.locations[0], 'branch', 'not-checked-out'); f.notify(path.join(f.locations[0], '.git/refs/heads/not-checked-out'));
   state = await f.nextInvalidation(state.cursor, 5000, referencesChanged);
   assert.deepEqual(state.refsRepositoryIds, ['repo-0']);
   assert.equal(f.application.sourceControl(f.root, { repositoryId: 'repo-0' }).observedRevision, before, 'status alone cannot detect an unselected branch');
   state = await f.quiet(state.cursor);
-  f.git(f.locations[0], 'pack-refs', '--all');
+  f.git(f.locations[0], 'pack-refs', '--all'); f.notify(path.join(f.locations[0], '.git/packed-refs'));
   state = await f.nextInvalidation(state.cursor, 5000, referencesChanged);
   assert.deepEqual(state.refsRepositoryIds, ['repo-0']);
   state = await f.quiet(state.cursor);
   f.write(0, 'staged change'); state = await f.nextInvalidation(state.cursor); state = await f.quiet(state.cursor);
-  f.git(f.locations[0], 'add', 'file.txt');
+  f.git(f.locations[0], 'add', 'file.txt'); f.notify(path.join(f.locations[0], '.git/index'));
   state = await f.nextInvalidation(state.cursor);
   assert.deepEqual(state.repositoryIds, ['repo-0']);
   assert.deepEqual(state.refsRepositoryIds, []);
@@ -342,7 +352,7 @@ test('a refs observation arriving after an empty heartbeat is still awaited', as
   t.mock.method(f.observations, 'watch', async (...args: Parameters<typeof watch>) => {
     const current = await watch(...args);
     if (!current.repositoryIds.length && !current.refreshAll && ++emptyHeartbeats === 1) {
-      f.git(f.locations[0], 'branch', 'after-first-heartbeat');
+      f.git(f.locations[0], 'branch', 'after-first-heartbeat'); f.notify(path.join(f.locations[0], '.git/refs/heads/after-first-heartbeat'));
     }
     return current;
   });
@@ -378,7 +388,7 @@ test('replacing a checkout at the same path rebinds filesystem identity rather t
   f.write(0, 'new checkout edit');
   assert.deepEqual((await f.nextInvalidation(state.cursor)).repositoryIds, ['repo-0']);
   state = await f.quiet((await f.observations.watch(f.root)).cursor);
-  fs.writeFileSync(path.join(retained, 'file.txt'), 'retired inode edit');
+  fs.writeFileSync(path.join(retained, 'file.txt'), 'retired inode edit'); f.notify(path.join(retained, 'file.txt'));
   assert.deepEqual((await deadline(f.observations.watch(f.root, state.cursor))).repositoryIds, [], 'retired directory watchers were released');
 });
 
@@ -452,7 +462,7 @@ test('uncloned repositories are not watched or reported until their directory ap
   assert.equal(readable.repositories.find(repository => repository.id === 'repo-missing')?.status, 'complete');
   await f.observations.observe(f.root, readable);
   const quiet = await f.quiet((await f.observations.watch(f.root)).cursor);
-  fs.writeFileSync(path.join(missing, 'file.txt'), 'external change\n');
+  fs.writeFileSync(path.join(missing, 'file.txt'), 'external change\n'); f.notify(path.join(missing, 'file.txt'));
   const noticed = await f.nextInvalidation(quiet.cursor);
   assert.ok(noticed.repositoryIds.includes('repo-missing'), 'a repository that became readable resumes file watching');
 });

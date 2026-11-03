@@ -216,3 +216,23 @@ test('Real failed file and earlier test identities remain visible before a file 
   assert.ok(namedFailureIndex >= 0);
   assert.ok(timeoutIndex > namedFailureIndex, 'a later timeout must not erase an earlier failed test name');
 });
+
+test('formal executor exposes a structured file failure before the child exits', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-live-failure-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const signalFile = path.join(root, 'diagnostic-seen');
+  const lines: string[] = [];
+  const execute = createVerificationExecutor({ productRoot: root, projectRoot: root, minimumNodeVersion: null,
+    env: { NODE_TEST_CONTEXT: undefined }, diagnosticsDirectory: path.join(root, 'diagnostics'),
+    errorStream: { write(line: string) { lines.push(line); fs.writeFileSync(signalFile, 'seen'); } } });
+  const result = await execute({ id: 'live-failure', timeoutMs: 5000, executor: { type: 'command', file: process.execPath, cwd: root,
+    args: ['-e', `const fs = require('node:fs'); process.stderr.write('not copied arbitrary output\\n');
+process.stderr.write('[buildr-integration-progress] ' + JSON.stringify({file:'a.test.ts', status:'failed', error:{code:'ERR_ASSERTION'}}) + '\\n');
+const timer = setInterval(() => { if (fs.existsSync(${JSON.stringify(signalFile)})) { clearInterval(timer); process.exit(1); } }, 10);`] } });
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.failureCode, undefined, 'the child observed the diagnostic before timeout');
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /ERR_ASSERTION/u);
+  assert.doesNotMatch(lines[0], /not copied arbitrary output/u);
+  assert.equal(result.processCleanup.status, 'clean');
+});

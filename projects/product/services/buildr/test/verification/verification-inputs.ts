@@ -8,7 +8,7 @@ import path from 'node:path';
 const sharedRecipe = [
   'test/register-development-entry.ts', 'tools/development/isolated-workspace-state.ts', 'test/verification/executor.ts', 'test/verification/plan-runner.ts',
   'test/verification/dag-scheduler.ts', 'test/verification/verification-reuse.ts', 'test/verification/verification-inputs.ts',
-  'test/verification/resource-coordinator.ts', 'test/verification/test-files.ts', 'test/verification/verification-input-discovery.ts',
+  'test/verification/resource-coordinator.ts', 'test/verification/candidate-round.ts', 'test/verification/integration-progress-reporter.ts', 'test/verification/test-files.ts', 'test/verification/verification-input-discovery.ts',
 ];
 const sharedTrees = ['test/context/', 'test/fixtures/', 'test/verification/timing/', 'test/verification/support/'];
 type Entry = string[];
@@ -65,6 +65,14 @@ export function scopedVerificationInputs(entries: Entry[], repositoryRoot: strin
   let fallback = verificationEntryFiles(step.executor).length === 0 && !(step.executor.files?.length > 0);
   let readsReleaseNotes = false;
   const unresolved = new Set<string>();
+  // A command's executable (for example the external Node binary) is not a
+  // source entry. Such dynamic scanners/compilers must retain the entire read
+  // scope, not silently omit the tests they discover through tsconfig/globs.
+  for (const entry of verificationEntryFiles(step.executor)) {
+    if (!byPath.has(path.posix.normalize(prefix + entry))) {
+      fallback = true; unresolved.add(`executor:unknown-entry:${entry}`);
+    }
+  }
   while (pending.length) {
     const file = pending.pop()!;
     const sourceEntry = byPath.get(file);

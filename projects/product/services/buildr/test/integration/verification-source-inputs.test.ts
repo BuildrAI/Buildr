@@ -11,7 +11,7 @@ import { verificationSteps } from '../verification/registry.ts';
 import { createVerificationSourceInputReader } from '../verification/verification-source-inputs.ts';
 import { createVerificationReuseIdentity } from '../verification/verification-reuse.ts';
 
-test('typecheck proof binds compilation inputs and tools while execution also binds its transport', t => {
+test('dynamic typecheck proof conservatively binds possible compilation inputs, transport and tools', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-typecheck-inputs-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const prefix = 'projects/product/services/buildr/', productRoot = path.join(root, prefix);
@@ -44,12 +44,11 @@ test('typecheck proof binds compilation inputs and tools while execution also bi
     const before = files.get(file)!; files.set(file, before + '\n// changed real input');
     const reader = observe();
     assert.notDeepEqual(reader.inputs(selected, false), executionBefore, file);
-    if (file === prefix + 'test/verification/executor.ts') {
-      assert.deepEqual(reader.inputs(selected, true), inputBefore, 'transport repairs do not erase an earlier clean compilation proof');
-    } else {
-      assert.notDeepEqual(reader.inputs(selected, true), inputBefore, file);
-      assert.notEqual(createVerificationReuseIdentity(selected, { ...snapshot, contentIdentities: reader.contentIdentities })?.key, original.key, file);
-    }
+    // This fixture has no include/exclude restriction. The dynamic command is
+    // not a parsed compiler input declaration, so excluding test/verification
+    // would be an unproved optimization (tsconfig defaults can include it).
+    assert.notDeepEqual(reader.inputs(selected, true), inputBefore, file);
+    assert.notEqual(createVerificationReuseIdentity(selected, { ...snapshot, contentIdentities: reader.contentIdentities })?.key, original.key, file);
     files.set(file, before);
   }
   for (const name of ['backend-dependencies', 'web-dependencies', 'npm']) {

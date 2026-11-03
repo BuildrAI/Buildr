@@ -425,7 +425,7 @@ export async function runVerificationStep(step: any, runtime: any = {}): Promise
       }
     }
     child.stdout.on('data', (chunk: any) => { stdout += chunk; });
-    child.stderr.on('data', (chunk: any) => { stderr += chunk; });
+    child.stderr.on('data', (chunk: any) => { stderr += chunk; runtime.onStderr?.(String(chunk)); });
     child.on('error', (error: any) => { childErrorCode = error.code ?? null; finish(1, error, 'child-process-error'); });
     child.on('exit', (code: any, signal: any) => {
       if (exitResult) return;

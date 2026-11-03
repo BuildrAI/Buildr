@@ -389,3 +389,30 @@ test('stable Integration slices bind their own explicit tests and preserve local
   assert.notEqual(observe(directoryReader).local, beforeDirectoryChange.local, 'directory discovery still binds every helper');
   assert.notEqual(observe(directoryReader).immutable, beforeDirectoryChange.immutable);
 });
+
+
+test('dynamic command scanners cannot reuse a pass after test source or membership changes', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dynamic-check-inputs-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const prefix = 'projects/product/services/buildr/', productRoot = path.join(root, prefix);
+  fs.mkdirSync(productRoot, { recursive: true });
+  const files = new Map([
+    [prefix + 'package.json', '{}'],
+    [prefix + 'tools/testing/run-types.ts', 'spawnSync(process.execPath, [compiler, ...process.argv.slice(2)]);'],
+    [prefix + 'test/a.test.ts', 'export const value: number = 1;'],
+  ]);
+  for (const id of ['test-typecheck', 'test-syntax']) {
+    const step = { id, executor: { type: 'command', file: process.execPath, args: [path.join(productRoot, 'tools/testing/run-types.ts'), '--project', 'tsconfig.tests.json'] }, reuse: { scope: 'repository' as const } };
+    const observe = () => createVerificationSourceInputReader(root, productRoot, undefined, {
+      entries: [...files].map(([file, text]) => [file, 'file', crypto.createHash('sha256').update(text).digest('hex')]),
+      unavailable: new Set(), readText: file => files.get(file) ?? '',
+    }).inputs(step, true);
+    const initial = observe();
+    assert.equal(initial.fallback, true, 'an external executable is not a known complete source reader');
+    files.set(prefix + 'test/a.test.ts', 'export const value: number = "type error";');
+    const changed = observe(); assert.notEqual(changed.contentIdentity, initial.contentIdentity);
+    files.set(prefix + 'test/new.test.ts', 'export const newMember = true;');
+    assert.notEqual(observe().contentIdentity, changed.contentIdentity);
+    files.delete(prefix + 'test/new.test.ts'); files.set(prefix + 'test/a.test.ts', 'export const value: number = 1;');
+  }
+});

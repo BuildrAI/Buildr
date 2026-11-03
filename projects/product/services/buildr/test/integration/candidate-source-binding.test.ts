@@ -342,10 +342,10 @@ test('default repair preparation verifies real package bytes, retains partial pr
   const artifactOnlyDirectory = path.join(output, 'artifact-only');
   const artifactOnlyMatrices = materializeCandidateRepair(artifactOnly, artifactOnlyDirectory, workflow);
   assert.deepEqual(artifactOnlyMatrices.artifact.map((item: any) => item.shard), ['runtime-windows']);
-  assert.equal(artifactOnlyMatrices.source.length, 1, 'a proof-only source job prevents transitive skipped dependencies');
-  const carrierId = artifactOnlyMatrices.source[0].shard;
-  assert.ok(artifactOnly.checks.find((check: any) => check.id === carrierId).steps.every((step: any) => step.disposition === 'reuse'), 'the carrier never reruns a passed source check');
-  assert.equal(fs.existsSync(path.join(artifactOnlyDirectory, 'candidate-ci-evidence-' + carrierId + '.json')), false, 'only its source job may publish the carried proof, never duplicate evidence');
+  assert.deepEqual(artifactOnlyMatrices.source, [], 'artifact repair never creates a proof-only source job');
+  for (const check of artifactOnly.checks.filter((item: any) => item.steps.every((step: any) => step.disposition === 'reuse'))) {
+    assert.equal(fs.existsSync(path.join(artifactOnlyDirectory, 'candidate-ci-evidence-' + check.id + '.json')), true);
+  }
   const adoptedSource = readCandidateCiEvidenceFiles(path.join(output, 'adopted')).find((item: any) => item.id === failedShard.id);
   assert.equal(adoptedSource.results.find((result: any) => result.id === failedId).candidateProof.origin.kind, 'local');
   const retained = readCandidateCiEvidenceFiles(path.join(output, 'reused'));

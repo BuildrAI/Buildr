@@ -42,6 +42,8 @@ export async function prepareVerificationReuse(plan: any, prepare: (steps: any[]
 
 export async function executePlan(plan: any, options: any): Promise<any>  {
   if (plan.status === 'blocked') throw new Error(plan.diagnostic?.message ?? 'Verification plan is blocked.');
+  const planStartedAt = Date.now();
+  const timings: any = {};
   const prefix: any = options.prefix ?? 'verify';
   const diagnosticsDirectory: any = options.diagnosticsDirectory ?? path.join(os.tmpdir(), 'buildr-verification-diagnostics');
   const artifactDirectory: any = options.artifactDirectory ?? path.join(os.tmpdir(), 'buildr-verification-candidate-package');
@@ -58,6 +60,8 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
     options.stream?.write(`[${prefix}] plan: execute=${estimate.executedCount} reuse=${estimate.reusedCount} remaining-work=${estimate.remainingWorkMs}ms dependency-path=${estimate.dependencyCriticalPathMs}ms (history/declared targets; queue/preparation excluded)\n`);
     for (const item of reuse.explanation.steps) options.stream?.write(`[${prefix}] ${item.disposition}: ${item.id} reason=${item.reasons.join(',')} scope=${item.inputScope}\n`);
   }
+  timings.preparationMs = Date.now() - planStartedAt;
+  const contextsStartedAt = Date.now();
   const resourceCoordinator: any = options.resourceCoordinator ?? createVerificationResourceCoordinator({
     root: resolveVerificationCoordinationRoot(options.productRoot, options.env),
     resources: coordinatedResourcesFromLimits(concurrency),
@@ -83,6 +87,7 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
   for (const context of preparedContexts) {
     options.stream?.write(`[${prefix}] context: ${context.provider.key} status=${context.owned ? 'prepared' : 'reused'} prepare=${context.prepareDurationMs}ms identity=${context.marker.identity}\n`);
   }
+  timings.contextPreparationMs = Date.now() - contextsStartedAt;
   const executorFactory: any = options.executorFactory ?? createVerificationExecutor;
   const executeFresh: any = executorFactory({
     ...options,
@@ -108,6 +113,7 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
     options.stream?.write(`[${prefix}] heartbeat completed=${completed}/${plan.steps.length} active=${running.length ? running.join(',') : 'none'}\n`);
   }, heartbeatIntervalMs);
   heartbeat.unref?.();
+  const executionStartedAt = Date.now();
   let results: any;
   let contextCleanup: any = null;
   try {
@@ -143,7 +149,9 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
       },
     });
   } finally {
+    timings.executionMs = Date.now() - executionStartedAt;
     clearInterval(heartbeat);
+    const cleanupStartedAt = Date.now();
     try {
       contextCleanup = contextPool.cleanup();
     } catch (error) {
@@ -151,16 +159,21 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
       // successful cleanup and ownership facts from their original run.
       reuse?.invalidate();
       throw error;
-    }
+    } finally { timings.contextCleanupMs = Date.now() - cleanupStartedAt; }
   }
   // An interrupted child may have left a process touching shared inputs. Keep
   // completed checks only after both child ownership and pool cleanup are known.
   const interruptionClean = !options.signal?.aborted || results.every((result: any) =>
     result.disposition === 'reused' || result.status === 'blocked' || result.processCleanup?.status === 'clean');
   const cleanupClean = contextCleanup?.status === 'cleaned' && interruptionClean;
+  const finalizationStartedAt = Date.now();
   const sourceBundle = reuse?.finish(results, cleanupClean);
+  timings.reuseFinalizationMs = Date.now() - finalizationStartedAt;
+  timings.totalMs = Date.now() - planStartedAt;
+  options.stream?.write(`[${prefix}] phases ${JSON.stringify(timings)}\n`);
   return {
     results,
+    timings,
     diagnosticsDirectory,
     artifactDirectory,
     ...(sourceBundle ? { sourceBundle } : {}),

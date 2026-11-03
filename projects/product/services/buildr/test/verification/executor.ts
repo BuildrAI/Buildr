@@ -218,6 +218,7 @@ export function createVerificationExecutor(options: any): any  {
       env: { ...baseEnv, ...executionContext.resourceEnvironment, ...artifactEnv, ...workerBudgetEnvironment(step, executionContext), ...(step.browserSelector ? { BUILDR_BROWSER_WEB_DIST_ROOT: browserWebDist } : {}) },
     });
     let result: any;
+    let diagnosticLine = '';
     try {
       result = await runVerificationStep({
         ...step,
@@ -228,6 +229,20 @@ export function createVerificationExecutor(options: any): any  {
       }, {
         signal: options.signal,
         onSpawn: (processIdentity: any) => options.onProcessStart?.(step, processIdentity),
+        onStderr: (chunk: string) => {
+          // Surface file failures before later slow files finish. Only the
+          // structured reporter payload is copied, never arbitrary child stderr.
+          diagnosticLine += chunk;
+          const lines = diagnosticLine.split('\n');
+          diagnosticLine = lines.pop()!.slice(-16_384);
+          for (const line of lines) {
+            if (!line.startsWith('[buildr-integration-progress] ') || line.length > 16_384) continue;
+            try {
+              const event = JSON.parse(line.slice('[buildr-integration-progress] '.length));
+              if (event.status === 'failed') options.errorStream?.write(`[verify-diagnostic] ${JSON.stringify({ stepId: step.id, ...event })}\n`);
+            } catch { /* Partial diagnostics do not change outcomes. */ }
+          }
+        },
       });
     } finally {
       state.cleanup();

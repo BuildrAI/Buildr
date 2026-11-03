@@ -171,7 +171,7 @@ export async function main(args = process.argv.slice(2)) {
   Object.assign(coverage, { conclusion, failedCount, notRunCount });
   const passed = conclusion === 'passed';
   writeVerificationTimingEvidence({ ...evidence, kind: request.mode, source, coverage,
-    status: passed ? 'passed' : 'failed', results: execution.results, contextLifecycle: execution.contextLifecycle,
+    status: passed ? 'passed' : 'failed', results: execution.results, timings: execution.timings, contextLifecycle: execution.contextLifecycle,
     startedAt, finishedAt: Date.now(), diagnosticsDirectory: evidence.diagnosticsOutput, prefix: 'verify',
     stream: process.stdout, errorStream: process.stderr, executionProfile });
   process.stdout.write(`Verification ${conclusion}: selected=${coverage.selectedCount} executed=${coverage.executedCount} reused=${coverage.reusedCount} failed=${failedCount} unavailable=${coverage.unavailableCount} not-run=${notRunCount} gaps=${gaps.length}.\n`);

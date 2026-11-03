@@ -189,13 +189,15 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
       } else {
         if (plan.status !== 'ready') throw new Error(plan.diagnostic?.message ?? 'Source verification plan is blocked.');
         assertMinimumNodeVersion(process.versions.node, fs.readFileSync(path.join(projectRoot, '.node-version'), 'utf8').trim());
+        const startedAt = Date.now();
         prepareSourceVerificationEnvironment(plan, reuseOptions);
+        const environmentPreparationMs = Date.now() - startedAt;
         enforceOfflineVerification();
         const { executePlan } = await import('./plan-runner.ts');
         const executionProfile = resolveVerificationExecutionProfile(process.env.BUILDR_VERIFICATION_PROFILE);
         const evidence = createVerificationEvidencePaths('source');
         const source = collectVerificationSourceIdentity(productRoot, { projectRoot });
-        const startedAt = Date.now();
+        const sourceObservationMs = Date.now() - startedAt - environmentPreparationMs;
         const cancellation = sourceVerificationCancellation();
         let execution: any;
         try {
@@ -204,12 +206,12 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
             stream: process.stdout, errorStream: process.stderr, prefix: 'verify-source',
             concurrency: executionProfile.limits, executionProfile, runId: evidence.runId,
             taskId: process.env.BUILDR_TASK_ID ?? source.branch ?? 'source', signal: cancellation.signal,
-            reuse: false, round,
+            reuse: false, force: reuseOptions.force, round,
           });
         } finally { cancellation.dispose(); }
         writeVerificationTimingEvidence({
           ...evidence, kind: 'source', source, status: execution.passed ? 'passed' : 'failed',
-          results: execution.results, contextLifecycle: execution.contextLifecycle,
+          results: execution.results, timings: { ...execution.timings, environmentPreparationMs, sourceObservationMs, sourceTotalMs: Date.now() - startedAt }, contextLifecycle: execution.contextLifecycle,
           startedAt, finishedAt: Date.now(), diagnosticsDirectory: evidence.diagnosticsOutput,
           prefix: 'verify-source', stream: process.stdout, errorStream: process.stderr, executionProfile,
         });

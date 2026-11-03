@@ -56,18 +56,7 @@ export function materializeCandidateRepair(plan: any, directory: string, workflo
     host: CANDIDATE_CI_HOST_NODE_TUPLES.filter((tuple: any) => needsExecution(tuple.id))
       .map((tuple: any) => ({ id: tuple.id, os: platforms[tuple.runner], node: tuple.requestedNode, preparation: tuple.id === 'host-minimum-macos' ? 'publisher' : 'host' })),
   };
-  // The retained workflow's artifact jobs inherit success() through the source
-  // dependency. If all source checks are reused, pass one existing proof through
-  // a source job (zero fresh checks) so GitHub does not skip required consumers.
-  let proofCarrier: string | undefined;
-  if (!matrices.source.length && matrices.artifact.length) {
-    const runner = CANDIDATE_CI_SHARDS.find((shard: any) => shard.id === matrices.artifact[0].shard)!.runner;
-    const carrier = CANDIDATE_CI_SHARDS.find((shard: any) => !shard.requiresArtifact && !shard.producesArtifact && shard.runner === runner && !needsExecution(shard.id));
-    if (!carrier) throw new Error('Artifact repair requires an available source proof carrier.');
-    proofCarrier = carrier.id;
-    matrices.source.push({ shard: carrier.id, os: platforms[carrier.runner], preparation: carrier.preparation });
-  }
-  for (const check of plan.checks.filter((item: any) => !needsExecution(item.id) && item.id !== proofCarrier)) {
+  for (const check of plan.checks.filter((item: any) => !needsExecution(item.id))) {
     const original = check.original, now = new Date().toISOString(), binding = plan.sourceBinding;
     const evidence = createCandidateCiEvidence({ kind: check.kind, id: check.id, purpose: 'candidate',
       sourceCommit: binding.productSource, sourceTree: binding.productTree, verificationSource: binding.verificationSource, sourceBinding: binding,

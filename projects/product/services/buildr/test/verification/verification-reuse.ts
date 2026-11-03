@@ -67,6 +67,24 @@ export function verificationFileSteps(step: VerificationReuseStep, productRoot: 
   });
 }
 
+/** Only complete, unambiguous file events can attest an entire test file. */
+export function verificationFileObservations(stderr: unknown): Map<string, any> {
+  const observations = new Map<string, any>();
+  const duplicates = new Set<string>();
+  for (const line of String(stderr ?? '').split('\n')) {
+    if (!line.startsWith('[buildr-integration-progress] ')) continue;
+    try {
+      const value = JSON.parse(line.slice('[buildr-integration-progress] '.length));
+      if (typeof value.entryFile !== 'string' || !['passed', 'failed'].includes(value.status)
+        || !Number.isFinite(value.durationMs) || value.durationMs < 0) continue;
+      if (observations.has(value.entryFile)) duplicates.add(value.entryFile);
+      observations.set(value.entryFile, value);
+    } catch { /* A partial line proves nothing. */ }
+  }
+  for (const file of duplicates) observations.delete(file);
+  return observations;
+}
+
 export function requiresFreshExternalVerification(step: VerificationReuseStep, snapshot: VerificationReuseSnapshot): boolean {
   // A mutable external database cannot be attested by source bytes or an old
   // skipped test. Only its owning group loses reuse; credentials stay unread.
@@ -484,14 +502,7 @@ export function createVerificationPlanReuse(plan: any, options: any): any {
       const result = missing.length ? await execute({ ...step, executor: { ...step.executor, files: missing.flatMap(file => file.executor.files) } }, context)
         : { status: 'passed', exitCode: 0, childOutcome: 'passed', childExitCode: 0, childSignal: null, durationMs: 0,
           stdout: '', stderr: '', processCleanup: { status: 'clean', ownership: 'prior-file-executions' } };
-      const observations = new Map<string, any>();
-      for (const line of String(result.stderr ?? '').split('\n')) {
-        if (!line.startsWith('[buildr-integration-progress] ')) continue;
-        try {
-          const value = JSON.parse(line.slice('[buildr-integration-progress] '.length));
-          if (typeof value.entryFile === 'string' && ['passed', 'failed'].includes(value.status) && Number.isFinite(value.durationMs)) observations.set(value.entryFile, value);
-        } catch { /* Incomplete log lines cannot attest a file. */ }
-      }
+      const observations = verificationFileObservations(result.stderr);
       return { ...result, fileCoverage: files.map(file => ({ step: file, prior: hits.get(file.id),
         observation: missing.includes(file) ? observations.get(file.executor.files[0]) : undefined })),
         reusedFiles: files.length - missing.length, executedFiles: missing.length };
