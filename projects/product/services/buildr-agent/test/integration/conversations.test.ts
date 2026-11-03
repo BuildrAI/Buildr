@@ -2704,38 +2704,20 @@ for (const exact of [false, true]) test('a resolved request cannot be resurrecte
   } finally { release(); await f.close(); }
 });
 
-for(const previouslyStopped of [false,true])test('startup reconciles legacy accepted switches without stopping current work or replaying an uncertain stop ('+previouslyStopped+')',async()=>{
-  const old=fake('local',{question:true}),other=fake('other',{hold:true}),controls:Array<{runId:string;action:string}>=[];
-  const f=fixture([old.executor,other.executor],{controlSupersededRun:async(_scope,_id,input,action)=>{controls.push({runId:input.runId,action});}});
-  try{
-    await connected(f.service,'local');await connected(f.service,'other');
-    const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','old goal');
-    const before=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.requests.length===1);
-    send(f.service,chat.id,'other','new goal');
-    const next=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.id!==before.run!.id&&view.run?.status==='running'&&controls.length===1);
-    const repository=new ConversationRepository(path.join(f.options.dataRoot,'agent-service')),record=repository.readConversation(chat.id)!;
-    // An upgrade sees the pre-marker format, including the unanswered binding.
-    record.view.retainedRuns![0]=structuredClone(before.run!);
-    if(previouslyStopped)record.view.retainedRuns![0]!.stopRequested=true;
-    delete record.attempts.find(attempt=>attempt.runId===before.run!.id)!.supersededStopRequested;
-    delete record.attempts.find(attempt=>attempt.runId===next.run!.id)!.questionWaits;
-    delete record.view.retainedRuns!.find(run=>run.id===before.run!.id)!.questionsEndedBy;
-    delete record.attempts.find(attempt=>attempt.runId===before.run!.id)!.questionReleaseRequested;
-    record.view.requests=structuredClone(before.requests);
-    record.requests[before.requests[0]!.id]={nativeId:'question-one',executionRef:record.attempts.find(attempt=>attempt.runId===before.run!.id)!.executionRef!};
-    repository.saveConversation(record,record.view.revision);controls.length=0;
-    await f.service.conversations.recoverInterrupted();
-    await waitUntil(()=>controls.length,value=>value===1);
-    let current=f.service.conversations.read('workspace-one',chat.id);
-    assert.equal(current.requests.length,0);assert.equal(current.retainedRuns![0]!.supersededBy,next.run!.id);
-    assert.deepEqual(current.run,next.run,'the active current run is untouched');
-    assert.deepEqual(controls,[{runId:before.run!.id,action:previouslyStopped?'observe':'stop'}]);
-    old.sends[0]!.onEvent({type:'request',request:{id:'late-question',kind:'question',title:'过期问题'}});
-    current=f.service.conversations.read('workspace-one',chat.id);assert.equal(current.requests.length,0);
-    assert.equal(old.replies.length,0);assert.equal(other.sends.length,1);
-    await f.service.conversations.recoverInterrupted();await new Promise(resolve=>setImmediate(resolve));
-    assert.equal(controls.filter(value=>value.action==='stop').length,previouslyStopped?0:1);
-  }finally{await f.close();}
+for(const previouslyStopped of [false,true])test('startup preserves a pending question without a replacement or repeated stop ('+previouslyStopped+')',async()=>{
+ const old=fake('local',{question:true}),other=fake('other',{hold:true}),controls:Array<{runId:string;action:string}>=[];
+ const f=fixture([old.executor,other.executor],{controlSupersededRun:async(_scope,_id,input,action)=>{controls.push({runId:input.runId,action});}});
+ try{
+  await connected(f.service,'local');await connected(f.service,'other');
+  const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','old goal');
+  const before=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.requests.length===1);
+  if(previouslyStopped){const repository=new ConversationRepository(path.join(f.options.dataRoot,'agent-service')),record=repository.readConversation(chat.id)!;record.view.run!.stopRequested=true;repository.saveConversation(record,record.view.revision);}
+  assert.throws(()=>send(f.service,chat.id,'other','new goal'),{code:'agent_pending_response'});
+  await f.service.conversations.recoverInterrupted();await f.service.conversations.recoverInterrupted();
+  const current=f.service.conversations.read('workspace-one',chat.id);
+  assert.equal(current.run!.id,before.run!.id);assert.deepEqual(current.requests,before.requests);
+  assert.equal(other.sends.length,0);assert.equal(old.replies.length,0);assert.deepEqual(controls,[]);
+ }finally{await f.close();}
 });
 
 for(const replacement of ['local','other'])test('retained tools allow a new instruction with '+replacement+' and preserve exact old stop',async()=>{
@@ -2743,6 +2725,8 @@ for(const replacement of ['local','other'])test('retained tools allow a new inst
   try{
     await connected(f.service,'local');await connected(f.service,'other');const chat=await f.service.conversations.create('workspace-one',{});
     send(f.service,chat.id,'local','start helper');const before=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='tools-active');
+    const unconfirmed={expectedRevision:before.revision,connectionId:replacement,text:'handle the new requirement',clientRequestId:randomUUID()};
+    assert.throws(()=>f.service.conversations.send('workspace-one',chat.id,unconfirmed),{code:replacement==='local'?'agent_native_supplement_required':'agent_session_confirmation_required'});
     send(f.service,chat.id,replacement,'handle the new requirement');
     const next=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.id!==before.run!.id&&['completed','tools-active'].includes(view.run?.status??''));
     assert.equal(next.retainedRuns?.[0]?.id,before.run!.id);assert.notEqual(next.run!.participantId,before.run!.participantId);
@@ -2757,23 +2741,15 @@ for(const replacement of ['local','other'])test('retained tools allow a new inst
   }finally{await f.close();}
 });
 
-for(const waiting of ['question','approval'] as const)test('new same-selection goal cleans only ordinary questions and preserves approvals: '+waiting,async()=>{
-  const old=fake('local',{question:waiting==='question',request:waiting==='approval'}),f=fixture([old.executor]);
-  try{
-    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','old goal');
-    const before=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.requests.length===1);
-    send(f.service,chat.id,'local','new goal is not an answer');
-    const next=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.id!==before.run!.id&&view.run?.accepted===true&&view.requests.length===(waiting==='question'?1:2));
-    assert.equal(old.replies.length,0);assert.equal(old.contexts.size,2);assert.equal(next.retainedRuns?.[0]?.supersededBy,undefined);
-    assert.equal(next.requests.some(request=>request.id===before.requests[0]!.id),waiting==='approval');
-    assert.notEqual(old.sends[1]!.contextRef.id,old.sends[0]!.contextRef.id);
-    if(waiting==='question'){
-      old.sends[0]!.onEvent({type:'request',request:{id:'late-old-question',kind:'question',title:'late'}});
-      assert.equal(f.service.conversations.read('workspace-one',chat.id).requests.length,1);
-      await assert.rejects(f.service.conversations.reply('workspace-one',chat.id,before.requests[0]!.id,{expectedRevision:f.service.conversations.read('workspace-one',chat.id).revision,runId:before.run!.id,participantId:before.run!.participantId,generation:before.run!.generation,answer:{scope:'yes'}}));
-      assert.equal(old.replies.length,0);
-    }
-  }finally{await f.close();}
+for(const waiting of ['question','approval'] as const)test('same-selection ordinary input preserves the pending '+waiting+' in the original context',async()=>{
+ const old=fake('local',{question:waiting==='question',request:waiting==='approval'}),f=fixture([old.executor]);try{
+  await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','old goal');
+  const before=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.requests.length===1);
+  assert.throws(()=>send(f.service,chat.id,'local','new goal is not an answer'),{code:'agent_pending_response'});
+  const after=f.service.conversations.read('workspace-one',chat.id);
+  assert.equal(old.replies.length,0);assert.equal(old.contexts.size,1);assert.equal(old.sends.length,1);
+  assert.deepEqual(after.run,before.run);assert.deepEqual(after.requests,before.requests);
+ }finally{await f.close();}
 });
 
 test('unknown retained stop is local to that execution and never replays or ends the new run',async()=>{

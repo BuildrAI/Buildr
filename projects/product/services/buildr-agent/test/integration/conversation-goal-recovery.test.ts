@@ -67,21 +67,12 @@ async function fixture({ release = true, question = false, failure = 'transport'
 }
 async function until(check: () => boolean) { for (let n = 0; n < 500; n++) { if (check()) return; await new Promise(resolve => setTimeout(resolve, 10)); } assert.fail('goal did not continue automatically'); }
 
-test('released unknown operation automatically resumes the same goal from real results without human input or replay', async () => {
-  const f = await fixture();
-  try {
-    await until(() => f.read().run?.status === 'completed');
-    const view = f.read();
-    assert.equal(fs.readFileSync(f.remaining, 'utf8'), 'continued goal');
-    assert.equal(f.firstWrites(), 1); assert.equal(f.sends.length, 2);
-    assert.equal(view.entries.filter(entry => entry.kind === 'message' && entry.role === 'user').length, 1);
-    assert.equal(view.entries.filter(entry => entry.kind === 'handoff').length, 0);
-    assert.equal(view.run!.permissionMode, 'full-access');
-    assert.equal(f.sends[0]!.model, f.sends[1]!.model);
-    assert.notEqual(f.sends[0]!.contextRef.id, f.sends[1]!.contextRef.id);
-    assert.equal(view.retainedRuns?.[0]?.status, 'unknown'); assert.equal(view.retainedRuns?.[0]?.resourcesReleased, true);
-    assert.equal(view.retainedRuns?.[0]?.tools[0]?.status, 'unknown');
-  } finally { await f.close(); }
+test('released unknown work does not create a replacement context during automatic recovery',async()=>{
+ const f=await fixture();try{
+  await until(()=>/未能自动接续/.test(f.read().run?.diagnostic??''));
+  assert.equal(f.sends.length,1);assert.equal(f.firstWrites(),1);assert.equal(fs.existsSync(f.remaining),false);
+  await f.service.conversations.recoverInterrupted();assert.equal(f.sends.length,1);
+ }finally{await f.close();}
 });
 
 for (const blocked of ['control', 'decision']) test('automatic goal recovery protects ' + blocked, async () => {
@@ -93,9 +84,11 @@ for (const blocked of ['control', 'decision']) test('automatic goal recovery pro
   } finally { await f.close(); }
 });
 
-for(const executorId of ['codex','dsh','qoder'])test(executorId+' structured protocol fault continues the goal without replay',async()=>{
- const f=await fixture({executorId,failure:'protocol'});
- try{await until(()=>f.read().run?.status==='completed');assert.equal(f.firstWrites(),1);assert.equal(f.sends.length,2);assert.equal(f.read().retainedRuns?.[0]?.fault?.kind,'protocol');}finally{await f.close();}
+for(const executorId of ['codex','dsh','qoder'])test(executorId+' protocol failure cannot silently replace unknown native work',async()=>{
+ const f=await fixture({executorId,failure:'protocol'});try{
+  await until(()=>/未能自动接续/.test(f.read().run?.diagnostic??''));
+  assert.equal(f.firstWrites(),1);assert.equal(f.sends.length,1);assert.equal(fs.existsSync(f.remaining),false);
+ }finally{await f.close();}
 });
 for(const blocked of ['control','decision'])test('protocol recovery protects '+blocked,async()=>{
  const f=await fixture({failure:'protocol',...(blocked==='control'?{release:false}:{question:true})});
@@ -106,12 +99,11 @@ for(const failure of ['protocol','request','idle-request'])test(failure+' failur
  const f=await fixture({failure,uncertain:false});
  try{await until(()=>f.read().run?.status==='completed');assert.equal(f.firstWrites(),1);assert.equal(f.sends.length,2);}finally{await f.close();}
 });
-test('protocol recovery budget survives repeated recovery scans',async()=>{
- const f=await fixture({failure:'protocol',persistent:true});
- try{
-  for(let n=0;n<3000;n++){if(f.read().run?.diagnostic?.includes('已达上限'))break;await new Promise(resolve=>setTimeout(resolve,10));}
-  assert.match(f.read().run?.diagnostic??'',/已达上限/);assert.equal(f.sends.length,4);assert.equal(f.firstWrites(),1);
-  await f.service.conversations.recoverInterrupted();assert.equal(f.sends.length,4);
+test('repeated recovery scans do not replay a refused replacement',async()=>{
+ const f=await fixture({failure:'protocol',persistent:true});try{
+  await until(()=>/未能自动接续/.test(f.read().run?.diagnostic??''));
+  for(let n=0;n<3;n++)await f.service.conversations.recoverInterrupted();
+  assert.equal(f.sends.length,1);assert.equal(f.firstWrites(),1);
  }finally{await f.close();}
 });
 

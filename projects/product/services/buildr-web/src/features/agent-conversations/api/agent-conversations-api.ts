@@ -115,7 +115,7 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
     send(conversation: ConversationView, input: SendInput & {previewToken?: string; clientRequestId: string}) { return request<{conversation: ConversationView}>(path(conversation.workspaceId, conversation.id) + '/send', post(input)); },
     queueSend(conversation: ConversationView, input: SendInput & {clientRequestId: string; expectedPendingRevision?: string; previousRunId?: string}) { return request<ConversationView>(path(conversation.workspaceId, conversation.id) + '/pending-send', post(input)); },
     cancelPendingSend(conversation: ConversationView, expectedPendingRevision: string) { return request<ConversationView>(path(conversation.workspaceId, conversation.id) + '/cancel-pending-send', post({expectedPendingRevision})); },
-    supplement(conversation: ConversationView, input: Pick<SupplementInput,'text'|'attachmentIds'|'clientRequestId'>) {
+    supplement(conversation: ConversationView, input: Pick<SupplementInput,'text'|'attachmentIds'|'clientRequestId'|'sameRunOnly'>) {
       const run=conversation.run;
       if(!run)return Promise.reject(new Error('原执行已结束，请核对后再发送；输入已保留。'));
       return request<SupplementResult>(path(conversation.workspaceId,conversation.id)+'/supplement',post({...input,runId:run.id,participantId:run.participantId,generation:run.generation}));

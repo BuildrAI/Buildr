@@ -32,58 +32,23 @@ async function fixture(options:{provider?:string;native?:boolean;tools?:boolean;
  send('original goal');const old=await until(read,value=>value.requests.length===1);
  return {service,root,read,send,old,sends,contexts,admission,releaseAdmission,get replies(){return replies;},get stops(){return stops;},get releases(){return releases;},async close(){admission.resolve();releaseAdmission.resolve();for(const context of contexts.values())context.finish();await service.close();fs.rmSync(root,{recursive:true,force:true});}};
 }
-for(const provider of ['codex','dsh','qoder'])test(provider+': service fallback preserves an active tool while admitting a new turn and closing only the old question',async()=>{
- const f=await fixture({provider,tools:true});try{const submission=f.send('new directive');const participant=submission.run.participantId;
-  const next=await until(f.read,value=>value.run!.accepted&&value.run!.id!==f.old.run!.id);
-  assert.equal(next.requests.length,0);assert.equal(f.stops,0);assert.equal(f.releases,0);assert.notEqual(participant,f.old.run!.participantId);assert.equal(next.run!.participantId,participant);
-  assert.equal(next.retainedRuns![0].tools[0].status,'running');assert.equal(next.retainedRuns![0].supersededBy,undefined);
-  f.sends[0].onEvent({type:'request',request:{id:'late-question',kind:'question',title:'late'}});assert.equal(f.read().requests.length,0);
- }finally{await f.close();}
-});
-test('independent new input rejection preserves the original question and its execution',async()=>{
- const f=await fixture({reject:true});try{f.send('new directive');const failed=await until(f.read,value=>value.run!.status==='failed');assert.equal(failed.requests[0].id,f.old.requests[0].id);assert.equal(f.stops,0);assert.equal(f.releases,0);assert.equal(failed.retainedRuns![0].supersededBy,undefined);}finally{await f.close();}
-});
-test('saving a new input is not native acceptance; old question remains until the exact receipt',async()=>{
- const f=await fixture({hold:true});try{const submitted=f.send('new directive');assert.equal(submitted.run.accepted,false);await until(()=>f.sends.length,value=>value===2);assert.equal(f.read().requests[0].id,f.old.requests[0].id);assert.equal(f.stops,0);f.admission.resolve();await until(f.read,value=>value.run!.accepted&&value.requests.length===0);await until(()=>f.stops,value=>value===1);assert.equal(f.read().run!.participantId,submitted.run.participantId);}finally{await f.close();}
-});
-test('declared native question release reuses a context without changing the submitted participant identity',async()=>{
- const f=await fixture({native:true});try{const next=f.send('new directive');assert.equal(next.run.participantId,f.old.run!.participantId);const done=await until(f.read,value=>value.run!.accepted&&value.run!.id===next.run.id);assert.equal(f.releases,1);assert.equal(f.stops,0);assert.equal(done.run!.participantId,next.run.participantId);assert.equal(f.sends[0].contextRef.id,f.sends[1].contextRef.id);}finally{await f.close();}
-});
-test('failed same-context native release keeps its fixed identity and does not dispatch a new native input',async()=>{
- const f=await fixture({native:true,unknown:true});try{const next=f.send('new directive');const failed=await until(f.read,value=>value.run!.status==='failed');assert.equal(failed.run!.participantId,next.run.participantId);assert.equal(f.sends.length,1);assert.equal(f.releases,1);assert.equal(failed.requests[0].id,f.old.requests[0].id);}finally{await f.close();}
-});
-test('unknown generic release is persisted and cannot be replayed by recovery or repeated control',async()=>{
- const f=await fixture({unknown:true});try{f.send('new directive');await until(()=>f.stops,value=>value===1);const repository=new ConversationRepository(path.join(f.root,'agent-service'));const record=repository.readConversation(f.old.id)!;const attempt=record.attempts.find(attempt=>attempt.runId===f.old.run!.id)!;assert.equal(attempt.questionReleaseRequested,true);assert.ok(record.view.retainedRuns?.find(run=>run.id===f.old.run!.id)?.questionsEndedBy);
+// Ordinary input no longer owns a question-release transition. Exercise the
+// former fallback and native-release variants against the preservation contract.
+for(const provider of ['codex','dsh','qoder'])for(const options of [{tools:true},{native:true},{native:true,unknown:true},{reject:true},{hold:true},{unknownNew:true}])test(provider+': pending question blocks replacement '+JSON.stringify(options),async()=>{
+ const f=await fixture({provider,...options});try{
+  const before=f.read(),draft={expectedRevision:before.revision,connectionId:provider,text:'new directive'};
+  const preview=f.service.conversations.prepareSend('scope',before.id,draft);
+  for(const token of [undefined,preview.token])assert.throws(()=>f.service.conversations.send('scope',before.id,{...draft,previewToken:token,clientRequestId:randomUUID()}),{code:'agent_pending_response'});
+  assert.equal(f.sends.length,1);assert.equal(f.stops,0);assert.equal(f.releases,0);assert.equal(f.replies,0);
+  assert.deepEqual(f.read().run,before.run);assert.deepEqual(f.read().requests,before.requests);
   await f.service.conversations.recoverInterrupted();
-  await f.service.conversations.releaseQuestionWait('scope',f.old.id,{expectedRevision:f.read().revision,runId:f.old.run!.id,participantId:f.old.run!.participantId,generation:f.old.run!.generation});assert.equal(f.stops,1);
+  assert.equal(f.stops,0);assert.equal(f.releases,0);assert.equal(f.sends.length,1);
  }finally{await f.close();}
 });
-
-test('a native release and a card reply cannot dispatch concurrently',async()=>{
- const f=await fixture({native:true,holdRelease:true});try{f.send('new directive');await until(()=>f.releases,value=>value===1);const current=f.read();
-  await assert.rejects(f.service.conversations.reply('scope',f.old.id,f.old.requests[0].id,{expectedRevision:current.revision,runId:f.old.run!.id,participantId:f.old.run!.participantId,generation:f.old.run!.generation,answer:'yes'}),{code:'agent_question_transition_in_flight'});
-  assert.equal(f.replies,0);f.releaseAdmission.resolve();await until(f.read,value=>value.run!.accepted);assert.equal(f.replies,0);
- }finally{await f.close();}
-});
-test('same-context start failure records the already released wait instead of pretending to roll it back',async()=>{
- const f=await fixture({native:true,reject:true});try{const next=f.send('new directive');const failed=await until(f.read,value=>value.run!.status==='failed');assert.equal(failed.requests.length,0);assert.equal(f.releases,1);assert.equal(failed.run!.participantId,next.run.participantId);assert.equal(f.sends.length,2);assert.ok(failed.entries.some(entry=>entry.role==='user'&&entry.text==='new directive'));}finally{await f.close();}
-});
-test('a missing native receipt preserves the original card and repeated submission does not replay the input',async()=>{
- const f=await fixture({unknownNew:true});try{const requestId=randomUUID();f.send('new directive',requestId);const unknown=await until(f.read,value=>value.run!.status==='unknown');assert.equal(unknown.requests[0].id,f.old.requests[0].id);f.send('new directive',requestId);assert.equal(f.sends.length,2);assert.equal(f.stops,0);}finally{await f.close();}
-});
-
-test('a retained older writer cannot make an ended question actionable again through the read model',async()=>{
- const f=await fixture({tools:true});try{f.send('new directive');await until(f.read,value=>value.run!.accepted&&value.requests.length===0);
-  const repository=new ConversationRepository(path.join(f.root,'agent-service')),record=repository.readConversation(f.old.id)!,revision=record.view.revision;
-  const stale={...f.old.requests[0],id:'legacy-reported-again'};record.view.requests.push(stale);record.requests[stale.id]={nativeId:'native-question',executionRef:record.attempts.find(attempt=>attempt.runId===f.old.run!.id)!.executionRef!};record.view.revision=randomUUID();repository.saveConversation(record,revision);
-  const current=f.read();assert.equal(current.requests.length,0);assert.equal(current.retainedRuns![0].questionsEndedBy,current.run!.id);assert.equal(current.retainedRuns![0].tools[0].status,'running');assert.equal(f.stops,0);
- }finally{await f.close();}
-});
-
-test('polling a finished retained tool releases only its remaining question wait',async()=>{
- const f=await fixture({tools:true});try{f.send('new directive');await until(f.read,value=>value.run!.accepted&&value.requests.length===0);assert.equal(f.stops,0);
-  const context=f.contexts.get(f.sends[0].contextRef.id)!;context.observation.tools=[];
-  await f.service.conversations.observeRun('scope',f.old.id,{expectedRevision:f.read().revision,runId:f.old.run!.id,participantId:f.old.run!.participantId,generation:f.old.run!.generation});
-  await until(()=>f.stops,value=>value===1);assert.equal(f.read().run!.status,'completed');assert.equal(f.read().retainedRuns![0].tools.length,0);
+test('refusing ordinary input leaves the original card answerable',async()=>{
+ const f=await fixture({native:true});try{
+  const before=f.read();assert.throws(()=>f.send('new directive'),{code:'agent_pending_response'});
+  await f.service.conversations.reply('scope',before.id,before.requests[0].id,{expectedRevision:f.read().revision,runId:before.run!.id,participantId:before.run!.participantId,generation:before.run!.generation,answer:'yes'});
+  assert.equal(f.replies,1);assert.equal(f.releases,0);assert.equal(f.sends.length,1);
  }finally{await f.close();}
 });

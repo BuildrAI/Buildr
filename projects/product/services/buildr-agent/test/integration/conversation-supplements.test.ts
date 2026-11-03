@@ -139,15 +139,15 @@ test('an explicit user stop prevents a delayed supplement from automatically sta
   }finally{await f.close();}
 });
 
-test('a newer independently submitted requirement wins over an in-flight old supplement observation',async()=>{
+test('an independent same-selection send cannot supersede an in-flight supplement',async()=>{
   const observed=gate(),f=await fixture({beforeObserve:observed.promise});try{
     const input=f.input('old supplementary input'),pending=f.service.conversations.supplement('workspace',f.read().id,input);
     await wait(()=>f.read().entries.some(entry=>entry.text===input.text));
     const before=f.read(),draft={expectedRevision:before.revision,connectionId:'fixture',text:'new independent requirement'};
     const preview=f.service.conversations.prepareSend('workspace',before.id,draft);
-    const newer=f.service.conversations.send('workspace',before.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});
-    observed.resolve();assert.equal((await pending).delivery,'rejected');
-    assert.equal(f.read().run!.id,newer.run.id);assert.equal(f.calls.length,0);
+    assert.throws(()=>f.service.conversations.send('workspace',before.id,{...draft,clientRequestId:randomUUID()}),/原生追加/);
+    observed.resolve();assert.equal((await pending).delivery,'accepted');
+    assert.equal(f.read().run!.id,before.run!.id);assert.equal(f.calls.length,1);
   }finally{observed.resolve();await f.close();}
 });
 
@@ -195,24 +195,29 @@ test('a multi-megabyte durable history receives the latest burst text and termin
     assert.ok(deliveries<=4);assert.equal(f.read().run!.status,'completed');assert.equal(f.read().entries.at(-1)!.text,'latest 4999');
   }finally{await f.close();}
 });
-for (const provider of ['codex','dsh','qoder']) test(provider + ': question wait is replaced by an isolated new turn without a declared native primitive', async () => {
+for (const provider of ['codex','dsh','qoder']) for (const kind of ['question','approval'] as const) test(provider + ': '+kind+' wait remains in the original round', async () => {
   const f = await fixture({ provider }); try {
-    f.emit({ type: 'request', request: { id: 'native-question', kind: 'question', title: 'Restart?', blocking: false } });
+    f.emit({ type: 'request', request: { id: 'native-request', kind, title: 'Restart?', blocking: false } });
     const before = f.read();
-    assert.equal(before.run!.status, 'running');
-    await assert.rejects(f.service.conversations.supplement('workspace', before.id, f.input('Discuss configuration instead')), /待回答问题/);
+    if(kind==='question')await assert.rejects(f.service.conversations.supplement('workspace', before.id, f.input('More context')), /待回答问题或授权/);
+    const draft = { expectedRevision: before.revision, connectionId: provider, text: 'More context' };
+    const preview = f.service.conversations.prepareSend('workspace', before.id, draft);
+    for (const token of [undefined, preview.token]) assert.throws(() => f.service.conversations.send('workspace', before.id, { ...draft, previewToken: token, clientRequestId: randomUUID() }), /原轮仍在等待回答或授权/);
     assert.equal(f.calls.length, 0);
+    assert.deepEqual(f.read().run, before.run);
     assert.deepEqual(f.read().requests, before.requests);
     assert.equal(f.read().entries.length, before.entries.length);
-    const draft = { expectedRevision: f.read().revision, connectionId: provider, text: 'Discuss configuration instead' };
-    const preview = f.service.conversations.prepareSend('workspace', before.id, draft);
-    f.service.conversations.send('workspace', before.id, { ...draft, previewToken: preview.token, clientRequestId: randomUUID() });
-    await wait(() => f.read().run!.id !== before.run!.id && f.read().run!.accepted === true);
-    assert.notEqual(f.read().run!.participantId, before.run!.participantId, 'unsupported native reuse is isolated from submission');
-    assert.equal(f.read().requests.length, 0, 'new input ends the original question wait without replying');
-    assert.equal(f.read().retainedRuns?.find(run => run.id === before.run!.id)?.supersededBy, undefined);
-    assert.ok(f.read().retainedRuns?.some(run => run.id === before.run!.id));
   } finally { await f.close(); }
+});
+for (const provider of ['codex','dsh','qoder']) test(provider+': ordinary send cannot replace a running same-selection round without explicit confirmation', async () => {
+  const f=await fixture({provider});try{
+    const before=f.read(),draft={expectedRevision:before.revision,connectionId:provider,text:'additional request'};
+    const preview=f.service.conversations.prepareSend('workspace',before.id,draft);
+    assert.throws(()=>f.service.conversations.send('workspace',before.id,{...draft,clientRequestId:randomUUID()}),/原生追加/);
+    assert.equal(f.read().run!.id,before.run!.id);assert.equal(f.read().run!.participantId,before.run!.participantId);
+    assert.equal((await f.service.conversations.supplement('workspace',before.id,{...f.input('additional request'),sameRunOnly:true})).delivery,'accepted');
+    assert.equal(f.read().run!.id,before.run!.id);assert.equal(f.calls.length,1);
+  }finally{await f.close();}
 });
 test('a question arriving during native observation prevents supplementary dispatch', async () => {
   const before = gate(), f = await fixture({ beforeObserve: before.promise }); try {

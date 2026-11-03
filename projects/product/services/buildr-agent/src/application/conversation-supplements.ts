@@ -25,7 +25,7 @@ export class ConversationSupplements {
     const run = record.view.run;
     if (this.ports.closing()) fail('agent_service_closing', '智能体服务正在退出，输入已保留。', 503);
     if (!run || run.id !== input.runId || run.participantId !== input.participantId || run.generation !== input.generation || run.generation !== this.ports.generation) fail('agent_supplement_stale', '原执行已变化，请核对后再发送；输入已保留。', 409);
-    if (record.view.requests.some(request => request.runId === run.id && request.kind === 'question')) fail('agent_supplement_unavailable', '原执行仍有待回答问题，请作为新要求发送；输入已保留，原问题未被回答。', 409);
+    if (record.view.requests.some(request => request.runId === run.id && request.kind === 'question')) fail('agent_supplement_unavailable', '原执行仍有待回答问题或授权，请在原卡片处理；输入已保留，不会另开会话。', 409);
     if (!run.accepted || !(allowEnded ? ['running', 'waiting-approval', 'waiting-question','completed','stopped','failed'] : ['running', 'waiting-approval', 'waiting-question']).includes(run.status)) fail('agent_supplement_unavailable', '当前执行尚不能接收新消息，请核对执行状态；输入已保留。', 409);
     const participant = record.participants.find(item => item.id === input.participantId);
     const execution = record.attempts.find(item => item.runId === input.runId && !item.supplement)?.executionRef;

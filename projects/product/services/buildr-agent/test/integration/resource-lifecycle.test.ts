@@ -367,30 +367,17 @@ for(const released of [true,false])test('historical unknown ownership is separat
  }finally{await f.close();}
 });
 
-test('a pending new request dispatches once while the completed old native context is still held',async()=>{
+test('a pending request cannot fabricate confirmation while the previous native context is held',async()=>{
  const f=await fixture({oldOwnerAlive:true});try{
-  let chat=await f.start('done');
-  const repository=new ConversationRepository(path.join(f.root,'agent-service'));
-  const record=repository.readConversation(chat.id)!,original=structuredClone(record.view.run!);
-  record.view.run!.generation='old-generation';delete record.view.run!.resourcesReleased;
-  repository.saveConversation(record,record.view.revision);
-  chat=f.service.conversations.read('workspace',chat.id);
-  const requestId=randomUUID(),draft={expectedRevision:chat.revision,connectionId:'local',modelAccountId:chat.run!.modelAccountId,model:'model',text:'new queued instruction',skipHandoffSummary:true};
-  f.service.conversations.queueSend('workspace',chat.id,{...draft,clientRequestId:requestId});
+  let chat=await f.start('done');const repository=new ConversationRepository(path.join(f.root,'agent-service'));
+  const record=repository.readConversation(chat.id)!;record.view.run!.generation='old-generation';delete record.view.run!.resourcesReleased;repository.saveConversation(record,record.view.revision);
+  chat=f.service.conversations.read('workspace',chat.id);const original=chat.run!.id,requestId=randomUUID();
+  f.service.conversations.queueSend('workspace',chat.id,{expectedRevision:chat.revision,connectionId:'local',modelAccountId:chat.run!.modelAccountId,model:'model',text:'new queued instruction',clientRequestId:requestId});
   const pump=new PendingSends({dataRoot:f.root,service:f.service,active:()=>true,generationAlive:()=>true,conversationBusy:async()=>false});
-  await pump.pump();
-  await f.wait(()=>f.service.conversations.read('workspace',chat.id).run?.id!==original.id&&f.service.conversations.read('workspace',chat.id).run?.status==='completed');
-  await pump.pump();
-  assert.equal(f.sent.length,2);assert.equal(f.sent[0],'done');assert.ok(f.sent[1].endsWith('new queued instruction'));
-  assert.equal(new PendingSendRepository(path.join(f.root,'agent-service')).lookup('workspace',chat.id,requestId)?.state,'delivered');
-  chat=f.service.conversations.read('workspace',chat.id);
-  assert.equal(chat.participants.length,2);
-  const previous=chat.retainedRuns?.find(run=>run.id===original.id);
-  assert.equal(previous?.generation,'old-generation');assert.equal(previous?.status,'completed');assert.notEqual(previous?.resourcesReleased,true);
-  const event=chat.entries.find(entry=>entry.runId===chat.run!.id&&entry.nativeSession);
-  assert.equal(event?.nativeSession?.reason,'session-replacement');assert.equal(event?.nativeSession?.from.generation,'old-generation');
-  assert.notEqual(event?.nativeSession?.from.contextId,event?.nativeSession?.to.contextId);
-  assert.match(event?.nativeSession?.description??'',/控制资源尚未释放/);assert.equal(event?.status,'accepted');
+  await pump.pump();await pump.pump();
+  assert.equal(f.sent.length,1);assert.equal(f.service.conversations.read('workspace',chat.id).run!.id,original);
+  const pending=new PendingSendRepository(path.join(f.root,'agent-service')).lookup('workspace',chat.id,requestId);
+  assert.equal(pending?.state,'failed');assert.match(pending?.reason??'',/明确确认/);
  }finally{await f.close();}
 });
 

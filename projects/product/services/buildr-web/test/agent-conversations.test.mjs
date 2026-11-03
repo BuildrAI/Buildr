@@ -701,11 +701,12 @@ test('更新程序只提交已观察接入修订与精确发布版本，使用�
   assert.deepEqual(JSON.parse(calls[0].init.body),{expectedRevision:'r-observed',expectedVersion:'0.164.0'});
 });
 
-test('输入框统一发送新轮，问题卡片始终回复原轮',async()=>{
+test('输入框支持原生追加，问题卡片始终回复原轮',async()=>{
  const {readFileSync}=await import('node:fs');
  const source=readFileSync(new URL('../src/features/agent-conversations/ConversationPanel.tsx',import.meta.url),'utf8');
  assert.ok(source.includes('context.api.send('));
- assert.ok(!source.includes('context.api.supplement('),'ordinary input must never steer an active turn');
+ assert.ok(source.includes('context.api.supplement('),'running input must use native supplement');
+ assert.ok(source.includes('sameRunOnly:true'),'native rejection must not silently start a new round');
  const reply=source.slice(source.indexOf('const reply=async'),source.indexOf('const renderQuestion='));
  assert.ok(reply.includes('context.api.reply('));
  assert.ok(!reply.includes('prepare('),'card replies must not switch to a new turn when model selection changes');

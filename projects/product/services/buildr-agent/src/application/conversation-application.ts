@@ -159,8 +159,7 @@ export class ConversationApplication {
         const draft: SendDraft = { expectedRevision: record.view.revision, connectionId: participant.connectionId,
           model: run.model, modelAccountId: run.modelAccountId, modelAccountIdentity: run.modelAccountIdentity, serviceTier: run.serviceTier,
           reasoningEffort: run.reasoningEffort, permissionMode: run.permissionMode ?? 'default', text: input.text, attachmentIds: input.attachmentIds };
-        const prepared = this.prepare(record, draft);
-        return this.submit(record, { ...draft, previewToken: prepared.preview.token, clientRequestId: requestId }).conversation;
+        return this.submit(record, { ...draft, clientRequestId: requestId }).conversation;
       },
       runtime: async (record, participant) => {
         if (!options.connections.get(participant.connectionId).enabled) fail('agent_connection_disabled', '接入已断开，输入已保留。', 409);
@@ -599,6 +598,7 @@ export class ConversationApplication {
       this.pendingSends.submit(workspaceId, id, this.draft(raw), requestId);
       return this.read(workspaceId, id);
     }
+    if (this.load(workspaceId,id).view.requests.length) fail('agent_pending_response', '原轮仍在等待回答或授权，请在原卡片处理；输入已保留，不会另开会话。', 409);
     const observed = this.load(workspaceId,id).view.run;
     if (previousRunId !== undefined && observed?.id !== previousRunId) fail('agent_revision_conflict','上一轮执行已变化，请重新读取后提交；草稿保留。',409);
     const draft = this.validatePending(workspaceId, id, raw);
@@ -792,6 +792,18 @@ export class ConversationApplication {
     const a = Buffer.from(prepared.preview.token); const b = Buffer.from(String(raw.previewToken));
     if (raw.previewToken !== undefined && (a.length !== b.length || !timingSafeEqual(a, b))) fail('agent_preview_stale', '发送预览已变化，请重新核对后发送。', 409);
     if (!prepared.preview.fits) fail('agent_handoff_capacity', prepared.preview.diagnostic!, 413);
+    // A caller-supplied preview confirms a replacement, but can never
+    // silently release a pending question or approval.
+    if (!initial && record.view.run) {
+      const current = record.view.run;
+      if (record.view.requests.some(request => request.runId === current.id))
+        fail('agent_pending_response', '原轮仍在等待回答或授权，请在原卡片处理；输入已保留，不会另开会话。', 409);
+      if (unfinishedRun(current) && !prepared.preview.switching && raw.previewToken === undefined)
+        fail('agent_native_supplement_required', '原轮仍在执行，请通过原生追加发送；不会另开会话。', 409);
+      if (!prepared.preview.participantId && raw.previewToken === undefined)
+        fail('agent_session_confirmation_required', '需要新的原生会话，请先查看交接内容并明确确认；输入已保留。', 409);
+    }
+
     let participant = record.participants.find(value=>value.id===prepared.preview.participantId);
     const connection = this.options.connections.get(prepared.draft.connectionId);
     if (!participant) {
@@ -1323,8 +1335,7 @@ export class ConversationApplication {
       // Preparation rechecks source identity, current model, permission and saved revision.
       const draft: SendDraft = { ...prepared.draft, continueRunId: undefined, expectedRevision: record.view.revision, skipHandoffSummary: true,
         ...(runtime ? { text: credential ? '系统自动重试：上次执行因本机模型凭据失效而结束，已重新准备执行环境并确认没有未结束的工具。请核对原对话、当前成果及工具结果，继续完成用户尚未完成的目标；不要重放全部历史命令，不扩大原有授权。' : '系统自动重试：上次执行因临时服务故障明确结束，已确认没有未结束的工具。请核对原对话、当前成果及工具结果，继续完成用户尚未完成的目标；不要重放全部历史命令，不扩大原有授权。' } : {}) };
-      const preview = this.prepareSend(workspaceId, id, draft);
-      if (runtime) this.send(workspaceId, id, { ...draft, previewToken: preview.token, clientRequestId: `automatic-retry:${rootRunId}:${count + 1}` }, true);
+      if (runtime) this.send(workspaceId, id, { ...draft, clientRequestId: `automatic-retry:${rootRunId}:${count + 1}` }, true);
       else {
         const retried = { ...this.prepare(this.load(workspaceId, id), draft), text: prepared.text };
         const current = this.currentRun(workspaceId, id, runId); if (!current) return;
@@ -1596,8 +1607,7 @@ export class ConversationApplication {
       if(!record.interruption.attempted)record.attempts.find(value=>value.runId===originalId)!.automaticRetry={rootRunId:lineage.rootRunId,count:lineage.count+1};
       record.interruption.attempted=true;this.save(record);
       draft.expectedRevision=record.view.revision;
-      const preview=this.prepareSend(workspaceId,id,draft);
-      this.send(workspaceId,id,{...draft,previewToken:preview.token,clientRequestId:requestId},true);
+      this.send(workspaceId,id,{...draft,clientRequestId:requestId},true);
     }catch(error){unavailable('执行未完成，未能自动接续：'+safeDiagnostic(error));}
   }
 
