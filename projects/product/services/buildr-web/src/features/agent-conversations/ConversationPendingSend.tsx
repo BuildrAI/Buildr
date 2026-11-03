@@ -1,3 +1,4 @@
+import { pendingSendReason } from './conversation-activity';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Button } from 'antd';
 import { ClockCircleOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
@@ -34,12 +35,12 @@ export function ConversationPendingSend({ conversation, onCancelled }: { convers
   return <>
     {pending&&conversation&&<section className="ac-pending-send" data-pending-send-state={pending.state} aria-label="待发送指令">
       <div className="ac-pending-send-header">
-        <span className="ac-pending-send-status" role="status">{pending.state==='failed'?<ExclamationCircleOutlined aria-hidden/>:<ClockCircleOutlined aria-hidden/>}{pending.state==='dispatching'?(pending.draft.waitingHandoff?'正在提交交接':'正在提交下一轮'):pending.state==='failed'?'待发送指令尚未执行':'新指令已保存，尚未发送'}</span>
+        <span className="ac-pending-send-status" role="status">{pending.state==='failed'?<ExclamationCircleOutlined aria-hidden/>:<ClockCircleOutlined aria-hidden/>}{pending.state==='failed'?'发送失败':'等待发送'}</span>
         <div className="ac-pending-send-actions"><Button type="text" size="small" aria-label="取消" disabled={busy||pending.state==='dispatching'} loading={busy} onClick={()=>void cancel()}>取消</Button></div>
       </div>
-      {pending.reason&&pending.state==='failed'&&<p className="ac-pending-send-reason" role="alert">{pending.reason}</p>}
+      {pending.reason&&pending.state==='failed'&&<p className="ac-pending-send-reason" role="alert">{pendingSendReason(pending)}</p>}
       <div className="ac-pending-send-text">{pending.draft.text||(!pending.draft.waitingHandoff?.answers?.length?'继续原目标':'')}{handoffAnswers(pending)&&<p>随交接提交的回答：{handoffAnswers(pending)}</p>}</div>
-      {pending.reason&&pending.state!=='failed'&&<p className="ac-pending-send-reason">{pending.reason}</p>}
+      {pending.reason&&pending.state!=='failed'&&<p className="ac-pending-send-reason">{pendingSendReason(pending)}</p>}
       {pending.draft.waitingHandoff&&<small>仅交接明确提交的回答，不自动停止原执行。取消只撤回尚未发送的新要求。</small>}
       {!!pending.draft.attachmentIds?.length&&<ConversationMessageImages conversation={conversation} ids={pending.draft.attachmentIds} read={context.api.readImage} label="待发送图片"/>}
     </section>}

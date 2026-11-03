@@ -107,3 +107,6 @@
 .ac-history-group-toggle>.ac-history-group-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ac-history-group-toggle>small{font-size:var(--font-size-meta);font-weight:400;color:#98a69d}
 .ac-history-group-toggle>:last-child{margin-left:auto}
+.ac-activity-status.is-send-waiting{color:#ad8b4e}
+.ac-activity-status.is-send-failed{color:var(--ant-color-error,#b65f56)}
+.ac-send-reason{display:block;margin-top:4px;font-size:var(--font-size-meta);font-weight:400;color:var(--ant-color-text-secondary,#819087);white-space:normal;overflow-wrap:anywhere}

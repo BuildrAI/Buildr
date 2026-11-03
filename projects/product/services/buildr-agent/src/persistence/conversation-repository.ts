@@ -1,3 +1,4 @@
+import { PendingSendRepository } from './pending-send-repository.ts';
 import { normalizeParticipation } from '../domain/participation.ts';
 import { projectParticipation, type ParticipationProjection } from '../domain/participation-record.ts';
 import { createHash } from 'node:crypto';
@@ -324,7 +325,7 @@ export class ConversationRepository {
       return (db.prepare(`SELECT body FROM conversations WHERE json_extract(body,'$.interruption.runId')=json_extract(body,'$.view.run.id') OR json_extract(body,'$.view.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','unknown','tools-active') ORDER BY updated_at DESC`).all() as {body:string}[]).map(row=>ConversationEntryStore.hydrate(db,JSON.parse(row.body) as StoredConversation));
     } finally { db.close(); }
   }
-  querySummaries(workspaceIds: string[], input: {workspaceId?:string;activeOnly?:boolean;hidden?:boolean;query?:string;agent?:string;model?:string;activityState?:string;generation?:string;cursor?:string;limit:number}, generationAlive?: (generation:string)=>boolean): {conversations:ConversationView[];nextCursor?:string;total:number;stats:{modelExecutions:Array<{accountId:string;accountLabel:string;model:string;count:number}>;agents:Array<{label:string;count:number}>;models:Array<{label:string;count:number}>;executions:Array<{provider:string;model:string;count:number}>};activityCounts:{active:number;running:number;waiting:number;unseen:number;unknown:number;attention:number}} {
+  querySummaries(workspaceIds: string[], input: {workspaceId?:string;activeOnly?:boolean;hidden?:boolean;query?:string;agent?:string;model?:string;activityState?:string;generation?:string;cursor?:string;limit:number}, generationAlive?: (generation:string)=>boolean): {conversations:ConversationView[];nextCursor?:string;total:number;stats:{modelExecutions:Array<{accountId:string;accountLabel:string;model:string;count:number}>;agents:Array<{label:string;count:number}>;models:Array<{label:string;count:number}>;executions:Array<{provider:string;model:string;count:number}>};activityCounts:{pendingSend?:number;active:number;running:number;waiting:number;unseen:number;unknown:number;attention:number}} {
     const empty={conversations:[],total:0,stats:{agents:[],models:[],executions:[],modelExecutions:[]},activityCounts:{active:0,running:0,waiting:0,unseen:0,unknown:0,attention:0}};
     const db=this.open(false);if(!db||!workspaceIds.length){db?.close();return empty;}
     try {
@@ -333,8 +334,12 @@ export class ConversationRepository {
       // Existing databases stay read-only until a normal write installs the
       // optional index. Prefer it explicitly: the narrower ordering index can
       // otherwise win the planner's estimate and force full-history reads.
-      const HAS_WORK=hasWork(db);
-      const indexed=version>=3&&!!db.prepare("SELECT 1 FROM sqlite_master WHERE type='index' AND name='conversations_list_summary'").get();
+      const pendingRows = new PendingSendRepository(this.directory).activitySummaries(input.workspaceId ? workspaceIds.filter(id=>id===input.workspaceId) : workspaceIds);
+      const pending = new Map(pendingRows.map(({scope,conversationId,...display})=>[JSON.stringify([scope,conversationId]),JSON.stringify(display)]));
+      db.function('buildr_pending_activity',{deterministic:true},(scope,id)=>pending.get(JSON.stringify([scope,id]))??null);
+      const sendActivity = pending.size ? 'buildr_pending_activity(workspace_id,id)' : 'NULL';
+      const HAS_WORK = pending.size ? `(${hasWork(db)} OR ${sendActivity} IS NOT NULL)` : hasWork(db);
+      const indexed=!pending.size&&version>=3&&!!db.prepare("SELECT 1 FROM sqlite_master WHERE type='index' AND name='conversations_list_summary'").get();
       const table=indexed?'conversations INDEXED BY conversations_list_summary':'conversations';
       // Legacy reads remain zero-write and omit private records and full entries.
       const storedSource=version>=3?table:modern?'(SELECT *,activity_at AS user_at FROM conversations)':`(SELECT *,updated_at AS activity_at,updated_at AS user_at,0 AS activity_version,0 AS seen_version,CASE WHEN json_extract(body,'$.view.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown') THEN 1 ELSE 0 END AS is_active,json_set(json_extract(body,'$.view'),'$.entries',json('[]'),'$.requests',json('[]'),'$.activity',json_object('version',0,'seenThrough',0,'updatedAt',updated_at,'active',json(CASE WHEN json_extract(body,'$.view.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown') THEN 'true' ELSE 'false' END))) AS summary FROM conversations)`;
@@ -359,15 +364,15 @@ export class ConversationRepository {
       if(compatibility?.historical)db.function('buildr_conversation_active',{deterministic:true},(value,version,seen)=>Number(conversationActive(JSON.parse(String(value)),Number(version),Number(seen))));
       const activityHeader=ConversationReadModel.available(db)?`coalesce((SELECT json_extract(state,'$.view') FROM conversation_read_states AS activity_header WHERE activity_header.id=scoped_record.id AND activity_header.revision=scoped_record.revision),json_remove(json_extract(body,'$.view'),'$.entries'))`:"json_remove(json_extract(body,'$.view'),'$.entries')";
       const listActive=compatibility?.historical?`CASE WHEN ${historicalCandidate} THEN buildr_conversation_active(${activityHeader},activity_version,seen_version) ELSE is_active END`:'is_active';
-      const withDecisions=`(SELECT scoped_record.*,${decisionCount} AS pending_decision_count,${listActive} AS list_active FROM (SELECT * FROM ${storedSource}) AS scoped_record)`;
+      const withDecisions=`(SELECT scoped_record.*,${decisionCount} AS pending_decision_count,(${listActive} OR ${sendActivity} IS NOT NULL) AS list_active,${sendActivity} AS send_activity FROM (SELECT * FROM ${storedSource}) AS scoped_record)`;
       const status = "json_extract(summary,'$.run.status')";
       // Parallel owners are still authoritative. Compute this from compact
       // summaries so activity counts and filters need not load full histories.
       const retained = input.generation && generationAlive ? (db.prepare(`SELECT DISTINCT json_extract(summary,'$.run.generation') AS generation FROM ${storedSource} WHERE ${indexed?`${HAS_WORK} AND `:''}workspace_id IN (${ids.map(()=>'?').join(',')}) AND ${status} IN ('starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown')`).all(...ids) as Array<{generation:string|null}>).map(row=>row.generation).filter((generation):generation is string=>Boolean(generation&&generation!==input.generation&&generationAlive(generation))) : [];
       const generations = input.generation ? [...new Set([input.generation,...retained])].sort() : [];
       const effectiveStatus = generations.length ? `CASE WHEN coalesce(json_extract(summary,'$.run.generation'),'') NOT IN (${generations.map(()=>'?').join(',')}) AND ${status} IN ('starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown') THEN 'unknown' ELSE ${status} END` : status;
-      const state = `CASE WHEN pending_decision_count>0 THEN 'waiting' WHEN hidden=1 AND is_active=0 THEN NULL WHEN effective_status='unknown' THEN 'unknown' WHEN effective_status IN ('waiting-approval','waiting-question') THEN 'waiting' WHEN effective_status IN ('starting','running','stopping') THEN 'running' WHEN activity_version>seen_version THEN 'unseen' ELSE NULL END`;
-      const source=`(SELECT *,CASE WHEN activity_state IN ('waiting','unseen') THEN 2 WHEN list_active=1 THEN 1 ELSE 0 END AS sort_priority FROM (SELECT *,${state} AS activity_state FROM (SELECT *,${effectiveStatus} AS effective_status FROM ${withDecisions})))`;
+      const state = `CASE WHEN send_activity IS NOT NULL THEN 'send-'||json_extract(send_activity,'$.state') WHEN pending_decision_count>0 THEN 'waiting' WHEN hidden=1 AND is_active=0 THEN NULL WHEN effective_status='unknown' THEN 'unknown' WHEN effective_status IN ('waiting-approval','waiting-question') THEN 'waiting' WHEN effective_status IN ('starting','running','stopping') THEN 'running' WHEN activity_version>seen_version THEN 'unseen' ELSE NULL END`;
+      const source=`(SELECT *,CASE WHEN activity_state IN ('waiting','unseen','send-failed') THEN 2 WHEN list_active=1 THEN 1 ELSE 0 END AS sort_priority FROM (SELECT *,${state} AS activity_state FROM (SELECT *,${effectiveStatus} AS effective_status FROM ${withDecisions})))`;
       // Resolved generations can change outside this scope. Any effect on the
       // actual filtered list is already captured by its membership/order keys.
       const scope=createHash('sha256').update(JSON.stringify(['message-activity-first-v2',ids,{...input,cursor:undefined,limit:undefined}])).digest('hex');
@@ -378,7 +383,7 @@ export class ConversationRepository {
       // Materialize only compact, scoped facts once. Search, pagination and
       // execution filters must not narrow the overview's scope.
       const overview = db.prepare(`WITH scoped AS MATERIALIZED (
-        SELECT activity_state,effective_status,
+        SELECT activity_state,effective_status,pending_decision_count,send_activity,
           coalesce(nullif(json_extract(summary,'$.run.provider'),''),'未指定') AS provider,
           coalesce(nullif(json_extract(summary,'$.run.model'),''),'未指定') AS model,
           coalesce(nullif(json_extract(summary,'$.run.modelAccountId'),''),'unknown:'||id) AS account_id,
@@ -390,10 +395,11 @@ export class ConversationRepository {
       ) SELECT
         (SELECT json_object('active',count(activity_state),
           'running',coalesce(sum(effective_status IN ('starting','running','stopping')),0),
-          'waiting',coalesce(sum(activity_state='waiting'),0),
+          'waiting',coalesce(sum(activity_state='waiting' OR (send_activity IS NOT NULL AND (pending_decision_count>0 OR effective_status IN ('waiting-approval','waiting-question')))),0),
           'unseen',coalesce(sum(activity_state='unseen'),0),
           'unknown',coalesce(sum(activity_state='unknown'),0),
-          'attention',coalesce(sum(activity_state IN ('waiting','unseen','unknown')),0)) FROM scoped) AS counts,
+          'attention',coalesce(sum(activity_state IN ('waiting','unseen','unknown') OR (send_activity IS NOT NULL AND pending_decision_count>0)),0)) FROM scoped) AS counts,
+        (SELECT count(*) FROM scoped WHERE send_activity IS NOT NULL) AS send_count,
         (SELECT json_group_array(json_object('label',label,'count',n)) FROM (
           SELECT provider AS label,count(*) AS n FROM executing GROUP BY label ORDER BY n DESC,label
         )) AS agents,
@@ -406,8 +412,8 @@ export class ConversationRepository {
         (SELECT json_group_array(json_object('accountId',account_id,'accountLabel',account_label,'model',model,'count',n)) FROM (
           SELECT account_id,coalesce(nullif(max(account_label),''),'账号未记录') AS account_label,model,count(*) AS n
           FROM executing GROUP BY account_id,model ORDER BY n DESC,account_id,model
-        )) AS model_executions`).get(...statsValues) as {counts:string;agents:string;models:string;executions:string;model_executions:string};
-      const counts = JSON.parse(overview.counts) as typeof empty.activityCounts;
+        )) AS model_executions`).get(...statsValues) as {counts:string;send_count:number;agents:string;models:string;executions:string;model_executions:string};
+      const counts = {...JSON.parse(overview.counts),...(overview.send_count?{pendingSend:overview.send_count}:{})} as typeof empty.activityCounts;
       const stats = {
         agents: JSON.parse(overview.agents) as typeof empty.stats.agents,
         models: JSON.parse(overview.models) as typeof empty.stats.models,
@@ -415,9 +421,9 @@ export class ConversationRepository {
         modelExecutions: JSON.parse(overview.model_executions) as typeof empty.stats.modelExecutions,
       };
       if(input.activityState) {
-        if(!['running','waiting','unseen','unknown','attention'].includes(input.activityState))fail('agent_activity_state_invalid','活动分类无效。',400);
-        where.push(input.activityState==='attention'?"activity_state IN ('waiting','unseen','unknown')":input.activityState==='running'?"effective_status IN ('starting','running','stopping')":'activity_state=?');
-        if(!['attention','running'].includes(input.activityState))values.push(input.activityState);
+        if(!['running','waiting','unseen','unknown','attention','send-waiting','send-failed'].includes(input.activityState))fail('agent_activity_state_invalid','活动分类无效。',400);
+        where.push(input.activityState==='attention'?"(activity_state IN ('waiting','unseen','unknown') OR (send_activity IS NOT NULL AND pending_decision_count>0))":input.activityState==='running'?"effective_status IN ('starting','running','stopping')":input.activityState==='waiting'?"(activity_state='waiting' OR (send_activity IS NOT NULL AND (pending_decision_count>0 OR effective_status IN ('waiting-approval','waiting-question'))))":'activity_state=?');
+        if(!['attention','running','waiting'].includes(input.activityState))values.push(input.activityState);
       }
       if(input.activeOnly)where.push('(list_active=1 OR pending_decision_count>0)');
       else {where.push('(list_active=1 OR pending_decision_count>0 OR hidden=?)');values.push(Number(input.hidden===true));}
@@ -444,9 +450,9 @@ export class ConversationRepository {
       }
       const snippet=terms.length?`, ${searchSnippet(terms)} AS search_snippet`:'';
       const snippetValues=terms.length?[...terms.flatMap(term=>[term,term]),...terms]:[];
-      const rows=db.prepare(`SELECT summary,sort_priority,list_active,user_at,activity_at,pending_decision_count,id${snippet} FROM ${source} WHERE ${where.join(' AND ')} ORDER BY sort_priority DESC,user_at DESC,id DESC LIMIT ?`).all(...snippetValues,...values,input.limit+1) as Array<{summary:string;sort_priority:number;list_active:number;user_at:string;activity_at:string;pending_decision_count:number;id:string;search_snippet?:string|null}>;
+      const rows=db.prepare(`SELECT summary,sort_priority,list_active,user_at,activity_at,pending_decision_count,send_activity,id${snippet} FROM ${source} WHERE ${where.join(' AND ')} ORDER BY sort_priority DESC,user_at DESC,id DESC LIMIT ?`).all(...snippetValues,...values,input.limit+1) as Array<{summary:string;sort_priority:number;list_active:number;user_at:string;activity_at:string;pending_decision_count:number;send_activity:string|null;id:string;search_snippet?:string|null}>;
       const chosen=rows.slice(0,input.limit),last=chosen.at(-1);
-      return {conversations:chosen.map(row=>{const view=JSON.parse(row.summary) as ConversationView;const snippetText=row.search_snippet?.replace(/\s+/g,' ').trim();return {...view,...(snippetText?{searchSnippet:snippetText}:{}),activity:view.activity?{...view.activity,userInputAt:row.user_at,updatedAt:row.activity_at,pendingDecisionCount:row.pending_decision_count,active:Boolean(row.list_active)||row.pending_decision_count>0}:undefined,entries:[],requests:[],run:view.run?{...view.run,tools:[]}:undefined,participants:view.participants.map(participant=>({...participant,contextId:''}))};}),total,activityCounts:{...counts},stats,nextCursor:rows.length>input.limit&&last?Buffer.from(JSON.stringify({scope,epoch,priority:last.sort_priority,at:last.user_at,id:last.id})).toString('base64url'):undefined};
+      return {conversations:chosen.map(row=>{const view=JSON.parse(row.summary) as ConversationView;const snippetText=row.search_snippet?.replace(/\s+/g,' ').trim();return {...view,...(snippetText?{searchSnippet:snippetText}:{}),activity:view.activity?{...view.activity,userInputAt:row.user_at||undefined,updatedAt:row.activity_at,pendingDecisionCount:row.pending_decision_count,pendingSend:row.send_activity?JSON.parse(row.send_activity):undefined,active:Boolean(row.list_active)||row.pending_decision_count>0}:undefined,entries:[],requests:[],run:view.run?{...view.run,tools:[]}:undefined,participants:view.participants.map(participant=>({...participant,contextId:''}))};}),total,activityCounts:{...counts},stats,nextCursor:rows.length>input.limit&&last?Buffer.from(JSON.stringify({scope,epoch,priority:last.sort_priority,at:last.user_at,id:last.id})).toString('base64url'):undefined};
     }finally{db.close();}
   }
   markSeen(workspaceId:string,id:string,through:number): NonNullable<ConversationView['activity']> {

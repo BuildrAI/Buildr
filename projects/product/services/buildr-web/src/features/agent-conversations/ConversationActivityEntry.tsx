@@ -5,7 +5,7 @@ import { ConversationActivityStatus } from './ConversationActivityStatus';
 import { groupConversationWorkspaces, orderActivityItems, activityBadge, activityReminder, type ActivityCounts, type ActivityState } from './conversation-activity';
 import { CopyButton } from '../../components/CopyButton';
 import './conversation-activity.css';
-export type ActivityItem={id:string;workspaceId:string;title:string;meta:string;state:ActivityState;userInputAt?:string;updatedAt?:string;executing?:boolean};
+export type ActivityItem={id:string;workspaceId:string;title:string;meta:string;state:ActivityState;reason?:string;userInputAt?:string;updatedAt?:string;executing?:boolean};
 export type ActivityPopupControl={open?:boolean;onOpenChange?(value:boolean):void};
 type Props=ActivityPopupControl&{counts?:ActivityCounts;countsStale?:boolean;summary?:ReactNode;historyPlacement?:'header'|'footer';menuClassName?:string;emptyDescription?:string;items:ActivityItem[];total:number;error?:string;hasMore?:boolean;workspaces:Array<{id:string;name:string}>;selectedId?:string;active?:boolean;side?:'left'|'right';onOpen(item:ActivityItem):void;onHistory():void;onToggleHistory?():void;onMore?():void};
 /** Shared by the product and offline prototype. It never reads or mutates conversations. */
@@ -19,7 +19,7 @@ export function ConversationActivityEntry(props:Props) {
     return [...groups].map(([key,rows])=>{const workspaceId=rows[0].workspaceId;return <section className="ac-activity-workspace" key={key} data-activity-workspace={workspaceId} aria-label={props.workspaces.find(row=>row.id===workspaceId)?.name||workspaceId}>
       <h3><span>{props.workspaces.find(row=>row.id===workspaceId)?.name||workspaceId}</span><small>{rows.length}</small></h3>
       {rows.map(item=><div key={item.workspaceId+':'+item.id} className={'ac-activity-row'+(props.selectedId===item.id?' is-selected':'')}>
-        <button type="button" data-activity-id={item.id} className="ac-activity-row-main" onClick={()=>{dismiss();props.onOpen(item);}}><span className="ac-activity-title"><strong title={item.title}>{item.title}</strong><ConversationActivityStatus state={item.state} executing={item.executing}/></span><small><span className="ac-activity-id" title={item.id}>{item.id}</span><span className="ac-activity-meta" title={item.meta}>{item.meta}</span></small></button>
+        <button type="button" data-activity-id={item.id} className="ac-activity-row-main" onClick={()=>{dismiss();props.onOpen(item);}}><span className="ac-activity-title"><strong title={item.title}>{item.title}</strong><ConversationActivityStatus state={item.state} executing={item.executing}/></span><small><span className="ac-activity-id" title={item.id}>{item.id}</span><span className="ac-activity-meta" title={item.meta}>{item.meta}</span></small>{item.reason&&<span className="ac-send-reason" title={item.reason}>{item.reason}</span>}</button>
         <CopyButton type="text" className="ac-activity-row-copy" text={item.id} ariaLabel="复制对话 ID" failureMessage="复制失败，请手动选择对话 ID 复制。"/>
       </div>)}
     </section>;});

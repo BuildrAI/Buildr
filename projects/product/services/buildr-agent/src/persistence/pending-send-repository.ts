@@ -47,6 +47,15 @@ export class PendingSendRepository {
   }
   read(scope: string, id: string): PendingSendRecord | undefined { return this.use(false, db => this.rows(db, scope, id).find(active), undefined); }
   lookup(scope: string, id: string, requestId: string): PendingSendRecord | undefined { return this.use(false, db => this.rows(db, scope, id).find(row => row.id === requestId), undefined); }
+  /** Scoped display facts only: never load drafts or attachments for activity lists. */
+  activitySummaries(scopes: string[]): Array<{scope:string;conversationId:string;state:'waiting'|'failed';reason:string;updatedAt:string}> {
+    if (!scopes.length) return [];
+    return this.use(false, db => (db.prepare(`SELECT scope,conversation_id AS conversationId,
+      CASE WHEN state='failed' THEN 'failed' ELSE 'waiting' END AS state,
+      CASE WHEN state='dispatching' THEN '正在投递，尚未确认受理。' ELSE json_extract(body,'$.reason') END AS reason,json_extract(body,'$.updatedAt') AS updatedAt
+      FROM submissions WHERE state NOT IN ('cancelled','delivered') AND scope IN (${scopes.map(()=>'?').join(',')})`)
+      .all(...scopes) as Array<{scope:string;conversationId:string;state:'waiting'|'failed';reason:string;updatedAt:string}>), []);
+  }
   list(): PendingSendRecord[] { return this.use(false, db => this.rows(db).filter(active), []); }
   view(record: PendingSendRecord | undefined): PendingSendView | undefined {
     if (!record || !active(record)) return;

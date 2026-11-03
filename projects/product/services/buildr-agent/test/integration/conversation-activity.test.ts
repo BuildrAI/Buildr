@@ -1,3 +1,6 @@
+import Ajv2020 from 'ajv/dist/2020.js';
+import { AGENT_OPERATION_SCHEMAS } from '../../src/operation-schemas.ts';
+import { PendingSendRepository } from '../../src/persistence/pending-send-repository.ts';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import fs from 'node:fs';
@@ -579,4 +582,49 @@ test('background-only old summaries are reinterpreted without writes and preserv
  assert.equal(repo.querySummaries(['w1'],{limit:10,activeOnly:true}).total,0);assert.deepEqual(fs.readFileSync(repo.filename),before);
  save(repo,r,r=>message(r,'answer','server started','message','assistant'));
  assert.equal(repo.querySummaries(['w1'],{limit:10,activeOnly:true}).total,1);assert.equal(repo.querySummaries(['w1'],{limit:10}).activityCounts.unseen,1);
+});
+
+
+test('pending send display participates in scoped pagination and activity without loading drafts or claiming execution',t=>{
+ const repo=fixture(t),pending=new PendingSendRepository(path.dirname(repo.filename));
+ for(const id of ['a','b'])repo.saveConversation(record(id));
+ repo.saveConversation(record('outside','w2'));
+ const draft={expectedRevision:'r0',connectionId:'codex',text:'private unsent body'};
+ let a=pending.submit('w1','a',draft,'request-a');
+ pending.submit('w1','b',draft,'request-b');pending.submit('w2','outside',draft,'request-outside');
+ const first=repo.querySummaries(['w1'],{activeOnly:true,limit:1});
+ assert.equal(first.total,2);assert.equal(first.activityCounts.active,2);assert.equal(first.activityCounts.pendingSend,2);
+ const validate=new Ajv2020({strict:false}).compile(AGENT_OPERATION_SCHEMAS.conversations);
+ assert.equal(validate(first),true,JSON.stringify(validate.errors));
+ assert.equal(first.activityCounts.running,0);assert.equal(first.activityCounts.waiting,0);assert.deepEqual(first.stats.modelExecutions,[]);
+ assert.equal(first.conversations[0].activity?.pendingSend?.state,'waiting');
+ assert.doesNotMatch(JSON.stringify(first),/private unsent body/);
+ const next=repo.querySummaries(['w1'],{activeOnly:true,limit:1,cursor:first.nextCursor});
+ assert.notEqual(first.conversations[0].id,next.conversations[0].id);assert.equal(next.nextCursor,undefined);
+ assert.equal(repo.querySummaries(['w1'],{activeOnly:true,activityState:'send-waiting',limit:10}).total,2);
+ const claimed=pending.claim(a,'owner',()=>false)!;
+ assert.equal(repo.querySummaries(['w1'],{limit:10}).conversations.find(v=>v.id==='a')?.activity?.pendingSend?.state,'waiting','dispatching has no third display state');
+ assert.equal(repo.querySummaries(['w1'],{limit:10}).conversations.find(v=>v.id==='a')?.activity?.pendingSend?.reason,'正在投递，尚未确认受理。');
+ pending.finish(claimed,'failed','specific failure');
+ const failed=repo.querySummaries(['w1'],{limit:10,activityState:'send-failed'});
+ assert.equal(failed.total,1);assert.equal(failed.conversations[0].activity?.pendingSend?.reason,'specific failure');
+ a=pending.read('w1','a')!;pending.cancel('w1','a',a.revision);
+ assert.equal(repo.querySummaries(['w1'],{activeOnly:true,limit:10}).total,1);
+ pending.finish(pending.read('w1','b')!,'delivered','accepted');
+ assert.equal(repo.querySummaries(['w1'],{activeOnly:true,limit:10}).total,0);
+ assert.equal(repo.querySummaries(['w2'],{activeOnly:true,limit:10}).total,1);
+});
+
+test('a submitted next instruction preserves a real old model execution and decision counts',t=>{
+ const repo=fixture(t),r=record('old');
+ r.view.run={id:'run',participantId:'p',provider:'codex',generation:'g',status:'running',accepted:true,tools:[],model:'m',modelAccountId:'account',startedAt:r.view.updatedAt,updatedAt:r.view.updatedAt};
+ r.view.requests=[{id:'q',kind:'question',title:'Choose',conversationId:'old',workspaceId:'w1',runId:'run',participantId:'p',generation:'g'}];
+ repo.saveConversation(r);
+ new PendingSendRepository(path.dirname(repo.filename)).submit('w1','old',{expectedRevision:'r0',connectionId:'codex',text:'next'},'request');
+ const page=repo.querySummaries(['w1'],{activeOnly:true,limit:10});
+ assert.equal(page.activityCounts.active,1);assert.equal(page.activityCounts.running,1);assert.equal(page.activityCounts.waiting,1);
+ assert.equal(page.conversations[0].activity?.pendingDecisionCount,1);assert.equal(page.conversations[0].activity?.pendingSend?.state,'waiting');
+ assert.equal(page.stats.modelExecutions[0].count,1);
+ assert.equal(repo.querySummaries(['w1'],{activityState:'waiting',limit:10}).total,1);
+ assert.equal(repo.querySummaries(['w1'],{activityState:'running',limit:10}).total,1);
 });
