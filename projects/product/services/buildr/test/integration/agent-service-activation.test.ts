@@ -52,3 +52,20 @@ await startAgentExecutionServer({...input,serviceOptions:{executors:[],modelProv
   const broken=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/activation-broken.mjs'});
   await assert.rejects(activateAgentServiceRuntime({dataRoot,profileId,runtime:broken}),(error:any)=>{assert.equal(error.code,'agent_process_activation_failed');assert.equal(error.stage,'connect');assert.match(error.message,/connect.*agent_process_activation_failed/);return true;});
 });
+
+test('preparation lock contention drains an idle backend through lifecycle ownership and retries once', {timeout:30_000}, async t=>{
+  const root=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'buildr-activation-lock-'))),dataRoot=path.join(root,'profile'),profileId='activation-lock';
+  t.after(async()=>{await stopAgentProcess({dataRoot,profileId,mode:'stop-owned'});fs.rmSync(root,{recursive:true,force:true});});
+  const runtime=prepareAgentRuntime({dataRoot});
+  const connection=await connectAgentProcess({dataRoot,profileId,runtime,sourceId:'buildr',legacySourceId:'buildr'});
+  const before=await connection.lifecycle.identity();await connection.disconnect();
+  const control=path.join(dataRoot,'agent-service/process'),lock=path.join(control,'storage.lock');
+  fs.mkdirSync(lock,{mode:0o700});fs.writeFileSync(path.join(lock,'identity.json'),JSON.stringify({pid:process.pid,nonce:'fixture-held-preparation'}),{mode:0o600});
+  let released=false;
+  const timer=setInterval(()=>{
+    const file=path.join(control,'last-stop.json');
+    if (!released&&fs.existsSync(file)&&JSON.parse(fs.readFileSync(file,'utf8')).confirmed) {fs.rmSync(lock,{recursive:true});released=true;}
+  },5);t.after(()=>clearInterval(timer));
+  const result=await activateAgentServiceRuntime({dataRoot,profileId,timeoutMs:10000});
+  assert.equal(released,true);assert.equal(result.status,'ready');assert.equal(result.currentDigest,runtime.digest);assert.notEqual(result.pid,before.pid);
+});

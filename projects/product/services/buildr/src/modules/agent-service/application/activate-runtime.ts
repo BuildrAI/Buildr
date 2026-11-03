@@ -6,7 +6,19 @@ export async function activateAgentServiceRuntime(input: {dataRoot: string; prof
   let stage='prepare';
   let connection:Awaited<ReturnType<typeof connectAgentProcess>>|undefined;
   try {
-    const runtime = input.runtime ?? prepareAgentRuntime({dataRoot: input.dataRoot});
+    let runtime=input.runtime;
+    if (!runtime) {
+      try { runtime=prepareAgentRuntime({dataRoot:input.dataRoot}); }
+      catch (error) {
+        if (!(error instanceof AgentServiceError) || error.code!=='agent_process_owned') throw error;
+        // A maintenance worker can repeatedly reacquire the preparation lock.
+        // The lifecycle owner may drain only proven-idle generations; a busy or
+        // uncertain generation rejects this without interrupting its execution.
+        stage='release-idle-preparation';
+        await stopAgentProcess({dataRoot:input.dataRoot,profileId:input.profileId,mode:'if-idle'});
+        stage='prepare';runtime=prepareAgentRuntime({dataRoot:input.dataRoot});
+      }
+    }
     const connect = () => connectAgentProcess({dataRoot: input.dataRoot, profileId: input.profileId, sourceId: 'buildr', legacySourceId: 'buildr', runtime, requireRuntime: true, activationTimeoutMs: input.timeoutMs});
     stage='connect';connection=await connect();
     stage='probe';
