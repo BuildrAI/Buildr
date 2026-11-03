@@ -83,7 +83,7 @@ await step('发送后始终展示最新信息，布局滚动不误加载更早�
     await page.reload();await input().waitFor();
     const stream=panel().locator('.ac-stream'),distance=()=>stream.evaluate((node:HTMLElement)=>Math.round(node.scrollHeight-node.scrollTop-node.clientHeight));
     await page.waitForFunction(()=>{const node=document.querySelector<HTMLElement>('#agent-conversation-panel .ac-stream');return Boolean(node&&node.scrollHeight-node.scrollTop-node.clientHeight<2);});
-    await stream.evaluate((node:HTMLElement)=>{node.scrollTop=0;node.dispatchEvent(new Event('scroll'));});await settle();
+    await stream.evaluate((node:HTMLElement)=>{node.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));node.scrollTop=0;node.dispatchEvent(new Event('scroll'));node.dispatchEvent(new PointerEvent('pointerup',{bubbles:true}));});await settle();
     const reading=await stream.evaluate((node:HTMLElement)=>({top:node.scrollTop,max:Math.round(node.scrollHeight-node.clientHeight)}));assert.ok(reading.max>80&&await distance()>24,'先离开最新位置阅读旧内容 '+JSON.stringify(reading));
     await input().fill('发送后应看到这条最新指令');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().locator('.ac-turn-prompt').filter({hasText:'发送后应看到这条最新指令'}).waitFor();
     await page.waitForFunction(()=>{const node=document.querySelector<HTMLElement>('#agent-conversation-panel .ac-stream');return Boolean(node&&node.scrollHeight-node.scrollTop-node.clientHeight<2);});
@@ -100,7 +100,7 @@ await step('发送后始终展示最新信息，布局滚动不误加载更早�
     assert.equal(fixture.entryReads,readsBefore,'输入区收缩造成的贴底滚动不读取更早记录');
     assert.equal(await panel().getByRole('button',{name:'向下到底',exact:true}).count(),0,'贴底滚动事件不弹出到底按钮');
     assert.ok(await distance()<24,'布局滚动后仍保持贴底');
-    await stream.evaluate((node:HTMLElement)=>{node.scrollTop=0;node.dispatchEvent(new Event('scroll'));});
+    await stream.evaluate((node:HTMLElement)=>{node.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));node.scrollTop=0;node.dispatchEvent(new Event('scroll'));node.dispatchEvent(new PointerEvent('pointerup',{bubbles:true}));});
     await panel().locator('[data-entry-id="latest-pin-older"]').waitFor({state:'attached'});
     assert.ok(fixture.entryReads>readsBefore,'用户继续向上翻阅仍加载更早记录');
   }finally{fixture.conversation=previous;historyPages.delete(1);await page.reload();await input().waitFor();}
@@ -205,6 +205,40 @@ await step('补完不足一屏的历史后仍位于最新位置，不反向跳�
     await page.locator('#agent-conversation-panel[data-conversation-id="'+previous.id+'"]').waitFor();
     await page.reload();await input().waitFor();
   }
+});
+
+await step('发送重排钳制仍贴底，阅读过程在完成后保留且可见答复确认查看',async()=>{
+ const saved=structuredClone(fixture.conversation),at=new Date().toISOString();
+ const narration=Array.from({length:70},(_,i)=>`过程段落 ${i}：正在检查并保留用户的阅读现场。`).join('\n\n');
+ const entry=(id:string,sequence:number,kind:string,text:string)=>({id,sequence,runId:'run-fixture',kind,role:kind==='tool'?'system':sequence===1?'user':'assistant',text,status:'completed',createdAt:at});
+ const stream=panel().locator('.ac-stream');
+ const settle=()=>page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
+ try{
+  update({run:run('running'),retainedRuns:[],requests:[],nextEntryCursor:undefined,entries:[entry('reading-user',1,'message','检查阅读位置'),entry('reading-process',2,'message',narration),{...entry('reading-tool',3,'tool','工具记录'),name:'Read'}]});
+  await page.reload();await input().waitFor();await panel().locator('[data-entry-id="reading-process"]').waitFor();
+  await page.waitForFunction(()=>{const n=document.querySelector<HTMLElement>('#agent-conversation-panel .ac-stream');return n&&n.scrollHeight-n.scrollTop-n.clientHeight<2;});
+  await stream.evaluate((node:HTMLElement)=>{
+   const content=node.querySelector<HTMLElement>('.ac-stream-content')!;
+   content.style.height='900px';content.style.overflow='hidden';void node.scrollHeight;
+   node.scrollTop=Math.min(node.scrollTop,900-node.clientHeight);
+   content.style.removeProperty('height');content.style.removeProperty('overflow');
+   // Native scrolling is queued after the mutation microtask checkpoint.
+   content.append(document.createElement('span'));
+  });await settle();
+  assert.ok(await stream.evaluate((n:HTMLElement)=>n.scrollHeight-n.scrollTop-n.clientHeight<2),'连续钳制再增长保持底部');
+  await stream.evaluate((node:HTMLElement)=>{node.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));node.scrollTop=1000;node.dispatchEvent(new Event('scroll'));node.dispatchEvent(new PointerEvent('pointerup',{bubbles:true}));});await settle();
+  const before=await stream.evaluate((n:HTMLElement)=>n.scrollTop);
+  update({run:run('completed'),activity:{version:900002,seenThrough:900001,active:false,updatedAt:at},entries:[...fixture.conversation.entries,entry('reading-final',4,'message',Array.from({length:40},(_,i)=>`最终答复 ${i}：已完成检查，正在阅读不要求先滚到底。`).join('\n\n'))]});
+  await panel().locator('[data-entry-id="reading-final"]').waitFor({state:'attached'});await settle();
+  assert.ok(await panel().locator('[data-entry-id="reading-process"]').isVisible(),'完成后不收起正在阅读的过程');
+  assert.ok(Math.abs(await stream.evaluate((n:HTMLElement)=>n.scrollTop)-before)<2,'完成后保留中间阅读位置');
+  assert.equal(fixture.conversation.activity.seenThrough,900001,'不可见的新答复仍待查看');
+  const seen=page.waitForResponse((response:any)=>response.request().method()==='POST'&&response.url().endsWith('/seen')&&response.request().postDataJSON().through===900002);
+  await stream.evaluate((node:HTMLElement)=>{node.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));const answer=node.querySelector<HTMLElement>('[data-entry-id="reading-final"]')!;node.scrollTop+=answer.getBoundingClientRect().top-node.getBoundingClientRect().top-100;node.dispatchEvent(new Event('scroll'));node.dispatchEvent(new PointerEvent('pointerup',{bubbles:true}));});
+  assert.ok(await stream.evaluate((n:HTMLElement)=>n.scrollHeight-n.scrollTop-n.clientHeight>24),'只阅读长答复开头，尚未贴底');
+  assert.equal((await seen).status(),200);
+  assert.equal(fixture.conversation.activity.seenThrough,900002,'可见的完成答复不残留待查看');
+ }finally{fixture.conversation=saved;await page.reload();await input().waitFor();}
 });
 
 await step('主答复后的隐藏子消息不阻止真实已读确认',async()=>{

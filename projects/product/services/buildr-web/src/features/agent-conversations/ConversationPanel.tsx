@@ -200,7 +200,11 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
     const observer=new ResizeObserver(()=>{earlier.followLayout();setAtBottom(bottom.current);});
     observer.observe(node);
     if(list)observer.observe(list);
-    return()=>observer.disconnect();
+    // A transient shrink can clamp scrollTop and regrow to the same size before
+    // ResizeObserver sees it. Reconcile DOM changes before native scroll events.
+    const mutations=new MutationObserver(()=>{earlier.followLayout();setAtBottom(bottom.current);});
+    if(list)mutations.observe(list,{childList:true,subtree:true,characterData:true});
+    return()=>{observer.disconnect();mutations.disconnect();};
   },[chat?.id,hasMessageList,context.view,context.open]);
   const fail=(failure:unknown)=>{setError(failure instanceof Error?failure.message:'操作未完成。');};
   const resolvePresentedFile=async(path:string,signal?:AbortSignal,literal=false)=>{
@@ -537,7 +541,15 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
     loadPage:(value,cursor,signal)=>context.api.entries(value.workspaceId,value.id,cursor,signal),
     prepend:page=>{if(chat)setExpandedToolGroups(previous=>carryExpandedProcessBlocks(visibleConversationEntries(chat.entries),visibleConversationEntries(page.entries),previous,chat.run));context.prependEntries(page);},
   });
-  const followBottom=()=>setAtBottom(previous=>previous===bottom.current?previous:bottom.current);
+  const followBottom=()=>{
+    setAtBottom(previous=>previous===bottom.current?previous:bottom.current);
+    // Completion must not collapse the live process underneath an upward reader.
+    if(!bottom.current)setExpandedToolGroups(previous=>{
+      const keys=turns.filter(turn=>conversationTurnExecution(turn,chat?.run).active||turn.items.some(item=>item.type==='process-block'&&item.active)).map(turn=>'turn:'+(turn.prompt?.runId??turn.items.flatMap(item=>item.type==='process-block'?item.entries:item.type==='entry'?[item.entry]:[]).find(entry=>entry.role==='assistant')?.runId??turn.key));
+      if(keys.every(key=>previous[key]!==undefined))return previous;
+      return {...previous,...Object.fromEntries(keys.filter(key=>previous[key]===undefined).map(key=>[key,true]))};
+    });
+  };
   const scrollToLatest=()=>{earlier.pinLatest();setAtBottom(true);};
   const seenAttempt=useRef('');
   useEffect(()=>{
@@ -545,18 +557,19 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
     if(!chat||!element||!context.open||context.view!=='conversation')return;
     const latest=latestVisibleConversationMessage(chat.entries);
     const check=()=>{
-      if(document.visibilityState!=='visible'||!bottom.current||!latest||!element.getClientRects().length)return;
+      if(document.visibilityState!=='visible'||!latest||!element.getClientRects().length)return;
       const message=Array.from(element.querySelectorAll<HTMLElement>('[data-entry-id]')).find(node=>node.dataset.entryId===latest.id);
       if(!message)return;
       const bounds=element.getBoundingClientRect(),rect=message.getBoundingClientRect();
-      if(rect.bottom>bounds.bottom+2||rect.bottom<=bounds.top||rect.width===0)return;
+      if(rect.top>=bounds.bottom||rect.bottom<=bounds.top||rect.width===0)return;
       const key=chat.workspaceId+':'+chat.id+':'+chat.activity?.version;
       if(seenAttempt.current===key)return;
       seenAttempt.current=key;void context.markSeen(chat);
     };
     const frame=requestAnimationFrame(check);
+    const observer=new ResizeObserver(check);observer.observe(element);if(streamContent.current)observer.observe(streamContent.current);
     element.addEventListener('scroll',check);document.addEventListener('visibilitychange',check);window.addEventListener('focus',check);
-    return()=>{cancelAnimationFrame(frame);element.removeEventListener('scroll',check);document.removeEventListener('visibilitychange',check);window.removeEventListener('focus',check);};
+    return()=>{cancelAnimationFrame(frame);observer.disconnect();element.removeEventListener('scroll',check);document.removeEventListener('visibilitychange',check);window.removeEventListener('focus',check);};
   },[chat,context.open,context.view,context.markSeen]);
   const run=chat?.run;
   const runConnection=context.connections.find(item=>item.id===chat?.participants.find(participant=>participant.id===run?.participantId)?.connectionId);
@@ -640,7 +653,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
       </header>
       {chat?.childOf&&<div className="ac-child-origin"><span title={chat.childOf.title}>背景来自「{chat.childOf.title}」 · {new Date(chat.childOf.createdAt).toLocaleString()}</span><span>仅继承创建时背景；后续按你的新要求独立处理。</span></div>}
       {chat&&<ConversationForkOrigin conversation={chat}/>}
-      <div className="ac-stream" ref={stream} tabIndex={0} aria-label="对话记录" aria-busy={earlier.loading} onScroll={()=>{earlier.onScroll();followBottom();}} onPointerDown={earlier.onPointerDown} onWheel={earlier.onWheel} onKeyDown={earlier.onKeyDown} onTouchStart={earlier.onTouchStart} onTouchMove={earlier.onTouchMove} onTouchEnd={earlier.onTouchEnd} onTouchCancel={earlier.onTouchCancel}>
+      <div className="ac-stream" ref={stream} tabIndex={0} aria-label="对话记录" aria-busy={earlier.loading} onScroll={()=>{earlier.onScroll();followBottom();}} onPointerDown={earlier.onPointerDown} onPointerUp={earlier.onPointerUp} onPointerCancel={earlier.onPointerCancel} onWheel={earlier.onWheel} onKeyDown={earlier.onKeyDown} onTouchStart={earlier.onTouchStart} onTouchMove={earlier.onTouchMove} onTouchEnd={earlier.onTouchEnd} onTouchCancel={earlier.onTouchCancel}>
         {earlier.loading&&<div className="ac-history-loading" role="status" aria-label="正在加载更早记录"><Spin size="small"/></div>}
         <div className="ac-stream-content" ref={streamContent}>
         {context.loading?<Spin/>:context.error?<Alert type="error" showIcon message={context.error} action={<Button onClick={()=>void context.refresh().catch(fail)}>重新读取</Button>}/>:!chat?.entries.length?<div className="ac-welcome"><CommentOutlined/><h1>{chat?.taskId||boundTaskId?'从这项任务继续':'今天想做什么？'}</h1><p>了解一个问题，或者交办一件事。</p>{!chat&&settings}</div>:<div className="ac-message-list">

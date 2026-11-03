@@ -13,7 +13,7 @@ export function useEarlierConversationEntries(props:Props){
  const [loading,setLoading]=useState(false),[error,setError]=useState('');
  const scope=useRef(selectionKey);scope.current=selectionKey;
  const active=useRef<AbortController|null>(null),anchor=useRef<Anchor|null>(null);
- const touch=useRef<number|null>(null),lastTop=useRef(0);
+ const touch=useRef<number|null>(null),lastTop=useRef(0),pointerActive=useRef(false);
  const size=useRef({height:0,viewport:0});
  const fill=useRef({allowed:true,cursors:new Set<number>()}),fillFrame=useRef(0);
  const cancelFill=()=>{if(fillFrame.current)cancelAnimationFrame(fillFrame.current);fillFrame.current=0;};
@@ -37,16 +37,20 @@ export function useEarlierConversationEntries(props:Props){
  const layoutClampedTop=(node:HTMLDivElement)=>Math.min(lastTop.current,Math.max(0,node.scrollHeight-node.clientHeight));
  const followLayout=()=>{
   const node=stream.current;if(!node||!bottom.current)return;
-  // A resize can share a frame with scrollbar/native scrolling. Only the
-  // browser's actual clamp of our last position is layout-owned movement.
-  if(size.current.height>0&&Math.abs(node.scrollTop-layoutClampedTop(node))>1&&node.scrollHeight-node.scrollTop-node.clientHeight>=24){
+  // A send can shrink then regrow content before either callback runs. Its
+  // intermediate native clamp is not reader intent; a live scrollbar drag is.
+  if(size.current.height>0&&pointerActive.current&&Math.abs(node.scrollTop-layoutClampedTop(node))>1&&node.scrollHeight-node.scrollTop-node.clientHeight>=24){
    anchor.current=null;bottom.current=false;remember();return;
   }
   node.scrollTop=node.scrollHeight;remember();scheduleFill();
  };
- useEffect(()=>()=>{active.current?.abort();active.current=null;anchor.current=null;cancelFill();},[]);
+ useEffect(()=>{
+  const release=()=>{pointerActive.current=false;};
+  window.addEventListener('pointerup',release);window.addEventListener('pointercancel',release);
+  return()=>{window.removeEventListener('pointerup',release);window.removeEventListener('pointercancel',release);active.current?.abort();active.current=null;anchor.current=null;cancelFill();};
+ },[]);
  useLayoutEffect(()=>{
-  active.current?.abort();active.current=null;anchor.current=null;touch.current=null;lastTop.current=0;size.current={height:0,viewport:0};cancelFill();fill.current={allowed:true,cursors:new Set()};setLoading(false);setError('');
+  active.current?.abort();active.current=null;anchor.current=null;touch.current=null;pointerActive.current=false;lastTop.current=0;size.current={height:0,viewport:0};cancelFill();fill.current={allowed:true,cursors:new Set()};setLoading(false);setError('');
  },[selectionKey]);
  useEffect(()=>{scheduleFill();},[chat?.entries,chat?.nextEntryCursor,selectionKey]);
  useLayoutEffect(()=>{
@@ -102,7 +106,7 @@ export function useEarlierConversationEntries(props:Props){
   const resized=node.scrollHeight!==size.current.height||node.clientHeight!==size.current.viewport;
   const upward=node.scrollTop<lastTop.current-1;
   const moved=Math.abs(node.scrollTop-lastTop.current)>1;
-  const layoutOnly=resized&&Math.abs(node.scrollTop-layoutClampedTop(node))<=1;
+  const layoutOnly=resized&&(!pointerActive.current||Math.abs(node.scrollTop-layoutClampedTop(node))<=1);
   // A queued scroll caused by our compensation already has this exact top.
   // Any other movement belongs to the reader, including scrollbar dragging.
   if(moved)anchor.current=null;
@@ -118,14 +122,16 @@ export function useEarlierConversationEntries(props:Props){
   if(upward&&distance>=24)readEarlier();
  };
  const pinLatest=()=>{
-  stopFill();anchor.current=null;touch.current=null;
+  stopFill();anchor.current=null;touch.current=null;pointerActive.current=false;
   active.current?.abort();active.current=null;setLoading(false);setError('');
   const node=stream.current;bottom.current=true;
   if(node){node.scrollTop=node.scrollHeight;remember();}
  };
  const interrupt=()=>{stopFill();anchor.current=null;};
  return {loading,error,onScroll,pinLatest,remember,followLayout,
-  onPointerDown:interrupt,
+  onPointerDown:()=>{pointerActive.current=true;interrupt();},
+  onPointerUp:()=>{pointerActive.current=false;},
+  onPointerCancel:()=>{pointerActive.current=false;},
   onWheel:(event:{deltaY:number})=>{interrupt();if(event.deltaY<0){bottom.current=false;readEarlier();}},
   onTouchStart:(event:{touches:ArrayLike<{clientY:number}>})=>{interrupt();touch.current=event.touches[0]?.clientY??null;},
   onTouchMove:(event:{touches:ArrayLike<{clientY:number}>})=>{const y=event.touches[0]?.clientY;if(y===undefined)return;interrupt();if(touch.current!==null&&y>touch.current){bottom.current=false;readEarlier();}touch.current=y;},
