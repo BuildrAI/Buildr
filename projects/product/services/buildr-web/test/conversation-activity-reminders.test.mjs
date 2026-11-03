@@ -39,11 +39,13 @@ test('单角标优先待决策加待查看，不从一页条目推算，也不�
   assert.equal(activityState({run:{status:'running'},activity:{version:2,seenThrough:0}}),'running');
   assert.equal(activityState({run:{status:'waiting-question'},activity:{version:2,seenThrough:2}}),'waiting');
 });
-test('非阻塞问题在运行时仍为待决策，列表和提醒共享双状态展示',()=>{
+test('非阻塞问题在运行时仍为待决策，列表和提醒只展示待决策且保留执行统计',()=>{
   const row={run:{status:'running'},activity:{version:2,seenThrough:2,pendingDecisionCount:1}};
   assert.equal(activityState(row),'waiting');
   const status=renderToStaticMarkup(React.createElement(ConversationActivityStatus,{state:activityState(row),executing:true}));
-  assert.match(status,/待决策 · 执行中/);
+  assert.match(status,/待决策/);assert.doesNotMatch(status,/执行中/);
+  const running=renderToStaticMarkup(React.createElement(ConversationActivityStatus,{state:'running'}));
+  assert.match(running,/执行中/);assert.doesNotMatch(running,/待决策/);
   const html=render({items:[{id:'question',workspaceId:'a',title:'等待决定',state:'waiting',executing:true,meta:'模型'}],workspaces:[{id:'a',name:'空间'}],counts:{active:1,running:1,waiting:1,unseen:0,unknown:0,attention:1}});
   assert.match(html,/1 个待处理对话/);assert.match(html,/待决策 1、待查看 0），执行中 1/);
   assert.equal(activityState({...row,activity:{...row.activity,pendingDecisionCount:0}}),'running');

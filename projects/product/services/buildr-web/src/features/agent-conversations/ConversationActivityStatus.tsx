@@ -1,5 +1,5 @@
 import type { ActivityState } from './conversation-activity';
-export function ConversationActivityStatus({state,executing=false}:{state:ActivityState;executing?:boolean}) {
+export function ConversationActivityStatus({state}:{state:ActivityState}) {
   if(!state)return null;
-  return <span className={'ac-activity-status is-'+state}><i aria-hidden="true"/>{state==='send-waiting'?'等待发送':state==='send-failed'?'发送失败':state==='running'?'执行中':state==='waiting'?'待决策':state==='unknown'?'状态待确认':'待查看'}{state==='waiting'&&executing?' · 执行中':''}</span>;
+  return <span className={'ac-activity-status is-'+state}><i aria-hidden="true"/>{state==='send-waiting'?'等待发送':state==='send-failed'?'发送失败':state==='running'?'执行中':state==='waiting'?'待决策':state==='unknown'?'状态待确认':'待查看'}</span>;
 }
