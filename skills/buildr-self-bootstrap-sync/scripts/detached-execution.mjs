@@ -71,6 +71,8 @@ export async function runDetachedCloseout({ args, runnerModule = defaultRunner, 
 async function worker(requestFile) {
   const directory = path.dirname(requestFile);
   const resultFile = path.join(directory, 'result.json');
+  const startedAt = new Date().toISOString();
+  const started = process.hrtime.bigint();
   let result;
   try {
     const { runnerModule, args } = JSON.parse(fs.readFileSync(requestFile, 'utf8'));
@@ -83,6 +85,9 @@ async function worker(requestFile) {
     };
     fs.writeFileSync(path.join(directory, 'driver-error'), '', { mode: 0o600 });
   }
+  // Driver failures before the runner starts still have truthful total timing.
+  if (!result.startedAt) Object.assign(result, { startedAt, finishedAt: new Date().toISOString(),
+    durationMs: Number(process.hrtime.bigint() - started) / 1e6 });
   // The file is an execution output, never an alternative delivery authority.
   // Publish atomically so a later conversation can read an intact final result.
   fs.writeFileSync(`${resultFile}.tmp`, `${JSON.stringify(result, null, 2)}\n`, { mode: 0o600 });

@@ -298,12 +298,13 @@ export async function main(args: any = process.argv.slice(2)): Promise<any>  {
   const action: any = args[0] || 'status';
   const value: any = (name: any, fallback: any) => { const i: any = args.indexOf(name); return i === -1 ? fallback : args[i + 1]; };
   const options: any = { platform: value('--platform', process.platform), channel: value('--channel', 'development'), installRoot: value('--target', undefined), stopInstance: !args.includes('--no-stop-instance') };
-  if (action === 'install') await prepareDevelopmentWeb();
+  const preparation = action === 'install' ? await prepareDevelopmentWeb() : null;
   const result: any = action === 'install' ? await installLauncher(options) : action === 'uninstall' ? await uninstallLauncher(options) : action === 'status' ? launcherStatus(options) : (() => { throw new Error(`Unknown launcher action: ${action}`); })();
   if (action === 'install') {
+    result.webPreparation = { status: preparation!.status, timings: preparation!.timings };
     const profile = resolveWebProfile({channel: 'development', runtime: {role: 'development'}});
     result.agentService = await activateAgentServiceRuntime({dataRoot: profile.dataRoot, profileId: profile.profile ?? 'development'});
   }
   console.log(JSON.stringify(result, null, 2));
 }
-if (import.meta.url === pathToFileURL(process.argv[1] || '').href) main().catch((error: any) => { console.error(JSON.stringify({status:'failed',stage:error.stage??'install',...(typeof error.internalCode==='string'&&/^[a-zA-Z][a-zA-Z0-9_]{0,99}$/.test(error.internalCode)?{internalCode:error.internalCode}:{}),code:typeof error.code==='string'&&/^[a-zA-Z][a-zA-Z0-9_]{0,99}$/.test(error.code)?error.code:'development_install_failed',message:error.stage||error.code?error.message:'开发应用安装未完成，原应用与工作记录已保留。'})); process.exitCode = 1; });
+if (import.meta.url === pathToFileURL(process.argv[1] || '').href) main().catch((error: any) => { console.error(JSON.stringify({status:'failed',stage:error.stage??'install',...(error.timings?{timings:error.timings}:{}),...(typeof error.internalCode==='string'&&/^[a-zA-Z][a-zA-Z0-9_]{0,99}$/.test(error.internalCode)?{internalCode:error.internalCode}:{}),code:typeof error.code==='string'&&/^[a-zA-Z][a-zA-Z0-9_]{0,99}$/.test(error.code)?error.code:'development_install_failed',message:error.stage||error.code?error.message:'开发应用安装未完成，原应用与工作记录已保留。'})); process.exitCode = 1; });

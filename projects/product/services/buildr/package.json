@@ -80,7 +80,7 @@
     "artifacts:prepare": "npm run agent:prepare && npm run contracts:prepare && npm run test-context:generate",
     "candidate:prepare": "node tools/verification/candidate-environment.ts prepare",
     "typecheck": "node tools/testing/run-types.ts --project tsconfig.json",
-    "build:web": "npm run contracts:prepare && npm run contracts:check && npm run contracts:check:workspace && node tools/development/run-development-npm.ts --prefix ../buildr-web run build",
+    "build:web": "npm run contracts:prepare && npm run contracts:check && npm run contracts:check:workspace && node tools/build/web-dist.ts",
     "dev:web": "npm --prefix ../buildr-web run dev",
     "benchmark:task-query-million": "node tools/performance/task-query-million.ts",
     "install:development": "./tools/development/install-buildr-development",
