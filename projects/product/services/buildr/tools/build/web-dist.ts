@@ -22,6 +22,19 @@ export function inspectLocalWebToolchain(root = webRoot): {
   return { status: missing.length ? 'blocked' : 'ready', root, tools, missing };
 }
 
+/** An exact Node copy may ship without npm; the host installation still provides one. */
+function npmCliOnPath(env: NodeJS.ProcessEnv, platform: string): string | undefined {
+  const name = platform === 'win32' ? 'npm.cmd' : 'npm';
+  for (const entry of String(env.PATH ?? '').split(path.delimiter)) {
+    if (!entry) continue;
+    try {
+      const resolved = fs.realpathSync(path.join(entry, name));
+      if (resolved.endsWith('npm-cli.js') && fs.statSync(resolved, { throwIfNoEntry: false })?.isFile()) return resolved;
+    } catch { /* keep looking */ }
+  }
+  return undefined;
+}
+
 export function resolveAdjacentNpmCli(
   nodeExecutable = process.execPath,
   env: NodeJS.ProcessEnv = process.env,
@@ -40,9 +53,11 @@ export function resolveAdjacentNpmCli(
           path.join(nodeRoot, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
         ]),
   ].filter((candidate): candidate is string => Boolean(candidate));
+  const fromPath = npmCliOnPath(env, platform);
+  if (fromPath) candidates.push(fromPath);
   const npmCli = candidates.find((candidate) => fs.statSync(candidate, { throwIfNoEntry: false })?.isFile());
   if (!npmCli) {
-    throw new Error(`Exact Node does not provide its adjacent npm CLI: ${candidates.join(', ')}`);
+    throw Object.assign(new Error(`Exact Node does not provide an npm CLI: ${candidates.join(', ')}`), { code: 'web_dist_npm_missing' });
   }
   return npmCli;
 }

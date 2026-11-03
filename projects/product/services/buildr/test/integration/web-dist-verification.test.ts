@@ -76,6 +76,18 @@ test('Browser build preflight只接受Buildr Web本地TypeScript和Vite', (t: an
   assert.ok(ready.tools.vite.startsWith(root));
 });
 
+test('web-dist在没有相邻npm时回落到PATH中的npm CLI', (t: any) => {
+  const { root }: any = fixture(t);
+  const bin = path.join(root, 'bin');
+  const npmCli = path.join(bin, 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js');
+  fs.mkdirSync(path.dirname(npmCli), { recursive: true });
+  fs.writeFileSync(npmCli, 'fixture');
+  fs.symlinkSync(npmCli, path.join(bin, 'npm'));
+  const nodeExecutable = path.join(root, 'node');
+  fs.writeFileSync(nodeExecutable, 'fixture');
+  assert.equal(resolveAdjacentNpmCli(nodeExecutable, { PATH: bin }, 'darwin'), npmCli);
+});
+
 test('Windows web-dist通过相邻npm CLI运行而不直接spawn npm.cmd', (t: any) => {
   const { root }: any = fixture(t);
   const nodeExecutable = path.join(root, 'node.exe');

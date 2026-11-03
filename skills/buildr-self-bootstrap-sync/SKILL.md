@@ -12,11 +12,16 @@ description: Buildr 自举工作空间中的已交付改动涉及规则、技能
 本技能（Skill）只处理 Buildr 自举工作空间的激活，不负责交付业务内容或任务完成登记。明确的基线到交付提交命中实际自举输入时，使用同一执行脚本的直接模式：
 
 ```bash
-<retained-node> skills/buildr-self-bootstrap-sync/scripts/closeout.mjs \
+# 智能体侧 HOME 是隔离目录，显式指向真实用户主目录；
+# 开发数据目录由 BUILDR_HOST_HOME 推导，也可用 BUILDR_APP_DATA_DIR 直接指定。
+HOME="${BUILDR_HOST_HOME:-$HOME}" \
+  <development-host-node> skills/buildr-self-bootstrap-sync/scripts/closeout.mjs \
   --base-ref <base-commit> --delivered-ref <delivered-commit> \
   --branch <target-branch> --remote <remote> --agent <adapter> \
-  --target <canonical-workspace> --node-executable <retained-node> --detail full
+  --target <canonical-workspace> --node-executable <development-host-node> --detail full
 ```
+
+`--node-executable` 是**开发宿主 node**（实例记录 `launcherIdentity.developmentRuntime.executable`，通常是 `BUILDR_HOST_HOME` 下的 node），不是 agent-service 运行时目录里的保留 node：安装后的启动器把它写成 `developmentRuntime`，网页构建又需要相邻 npm 或 PATH 中的 `npm`。省略该选项时按「实例记录 → `BUILDR_NODE` → 当前进程 node」解析。保留 node 与开发宿主 node 不是同一角色时，构建与安装用前者，最终验证用后者。
 
 脚本通过 Git 复核基线、实际改动、当前分支及远端包含关系。正式任务记录不是前置条件；可选 `--task <task-id>` 在新同步提交中同时写入一行标准任务尾注（Trailer）`Buildr-Task: <task-id>`，保留原有 `Buildr-Activation-Task` 说明，不查询或修改任务状态。未提供任务编码时不写这两项任务尾注（Trailer）；恢复既有后继提交时不补写或改写提交说明。参数不是成功证明；脚本不写第二交付状态库。没有对应环境时也不补造环境。成功和失败都按实际动作返回，已有交付不撤销。
 

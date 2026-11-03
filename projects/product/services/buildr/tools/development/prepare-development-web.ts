@@ -41,6 +41,16 @@ async function generateFreshDevelopmentWebDtos(): Promise<string[]> {
   return JSON.parse(result.stdout) as string[];
 }
 
+/** Launcher output explains staged failures verbatim; keep the real cause reachable. */
+function stageWebPreparationFailure(error: unknown): Error {
+  const failure = error instanceof Error ? error : new Error(String(error));
+  const staged = failure as Error & { stage?: string; internalCode?: string; code?: string };
+  if (staged.stage) return failure;
+  staged.stage = 'prepare-web';
+  if (!staged.internalCode) staged.internalCode = typeof staged.code === 'string' ? staged.code : 'development_web_preparation_failed';
+  return failure;
+}
+
 export async function prepareDevelopmentWeb({
   outputRoot = path.join(serviceRoot, 'web-dist'),
   generateDtos = generateFreshDevelopmentWebDtos,
@@ -52,9 +62,15 @@ export async function prepareDevelopmentWeb({
   build?: (outputRoot: string) => string;
   prepareAgent?: () => string;
 } = {}): Promise<{ schemaVersion: string; status: string; root: string; generatedDtos: string[] }> {
-  prepareAgent();
-  const generatedDtos = await generateDtos();
-  const root = build(path.resolve(outputRoot));
+  let generatedDtos: string[];
+  let root: string;
+  try {
+    prepareAgent();
+    generatedDtos = await generateDtos();
+    root = build(path.resolve(outputRoot));
+  } catch (error) {
+    throw stageWebPreparationFailure(error);
+  }
   return {
     schemaVersion: 'buildr.development-web-preparation/v1',
     status: 'passed',

@@ -7,6 +7,7 @@ import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { developmentWebDataRoot } from './development-web-continuity.mjs';
 
 export const SELF_BOOTSTRAP_CLOSEOUT_RESULT_SCHEMA = 'buildr.self-bootstrap-closeout-result/v1';
 export const SELF_BOOTSTRAP_SYNC_RESUME_SCHEMA = 'buildr.self-bootstrap-sync-resume/v1';
@@ -756,7 +757,7 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, b
       if (continuity.status === 'different-owner' && developmentWebRecovery) throw closeoutError('self-bootstrap-closeout.development-web-recovery-owner-mismatch', '待恢复的开发应用数据目录已有其他实例，未执行替换。');
       if (continuity.status === 'healthy-development') developmentWebRecovery = rememberDevelopmentWebRecovery(root, nodeExecutable, continuity, environment);
       const installed = command(execute, nodeExecutable, [path.join(root, SERVICE_ROOT, 'tools/build/launcher/manage.ts'), 'install', '--channel', 'development', '--no-stop-instance'], root, 'install-development-buildr-web', active);
-      requirePassed(installed, 'self-bootstrap-closeout.local-app-install-failed', '开发应用更新失败。');
+      requirePassed(installed, 'self-bootstrap-closeout.local-app-install-failed', '开发应用更新失败。', { dataRoot: developmentWebDataRoot(environment), nodeExecutable });
       const launcher = validateDevelopmentLauncherResult(parseJson(installed, 'self-bootstrap-closeout.local-app-result-invalid', '安装结果无效。'), root, nodeExecutable, successor);
       assertHead(successor);
       const continuityAfter = recoverDevelopmentWebContinuity({ execute, root, nodeExecutable, successor, launcher, continuity: developmentWebRecovery?.continuity || continuity, environment, phaseResult: active, forceRestart: restartDevelopmentWeb });
@@ -801,18 +802,42 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, b
   }
 }
 
+/** The installed launcher must run the development host Node, so build and verify with
+ *  the executable the instance declares; the Node running this script may be a copy. */
+export function resolveDevelopmentNodeExecutable({ requested, actualNodeExecutable = process.execPath, environment = process.env } = {}) {
+  if (requested) {
+    const resolved = path.resolve(requested);
+    if (!fs.statSync(resolved, { throwIfNoEntry: false })?.isFile()) throw closeoutError('self-bootstrap-closeout.node-executable-missing', `指定的 Node 不存在：${resolved}。`, { nodeExecutable: resolved });
+    return resolved;
+  }
+  const declared = declaredDevelopmentNode(environment);
+  for (const candidate of [declared, environment.BUILDR_NODE, actualNodeExecutable]) {
+    if (!candidate) continue;
+    const resolved = path.resolve(candidate);
+    if (fs.statSync(resolved, { throwIfNoEntry: false })?.isFile()) return resolved;
+  }
+  throw closeoutError('self-bootstrap-closeout.node-identity-mismatch', '找不到可用的开发宿主 Node。', { declared: declared ?? null });
+}
+
+function declaredDevelopmentNode(environment) {
+  try {
+    const state = JSON.parse(fs.readFileSync(path.join(developmentWebDataRoot(environment), 'instance.json'), 'utf8'));
+    const executable = state?.launcherIdentity?.developmentRuntime?.executable;
+    return typeof executable === 'string' && executable ? executable : null;
+  } catch { return null; }
+}
+
 export function runSelfBootstrapCloseoutCommand({ args = process.argv.slice(2), actualNodeExecutable = process.execPath, execute = defaultExecute, environment = process.env } = {}) {
   const allowed = new Set(['--target', '--node-executable', '--detail', '--task', '--base-ref', '--delivered-ref', '--branch', '--remote', '--agent', '--resume-sync', '--restart-development-web']);
   if (args.length % 2 !== 0) throw closeoutError('self-bootstrap-closeout.arguments-invalid', '参数必须是选项和值。');
   for (let index = 0; index < args.length; index += 2) if (!allowed.has(args[index])) throw closeoutError('self-bootstrap-closeout.option-unknown', `不支持的选项：${args[index]}。`);
-  const nodeExecutable = option(args, '--node-executable');
-  if (!nodeExecutable || !sameFilesystemPath(actualNodeExecutable, nodeExecutable)) throw closeoutError('self-bootstrap-closeout.node-identity-mismatch', '必须使用保留环境声明的 Node。');
+  const workspaceRoot = option(args, '--target');
+  if (!workspaceRoot) throw closeoutError('self-bootstrap-closeout.arguments-incomplete', '需要明确的工作空间。');
+  const nodeExecutable = resolveDevelopmentNodeExecutable({ requested: option(args, '--node-executable'), actualNodeExecutable, environment });
   const detail = option(args, '--detail') || 'compact';
   if (!['compact', 'full'].includes(detail)) throw closeoutError('self-bootstrap-closeout.detail-invalid', 'detail 只支持 compact 或 full。');
   const restart = option(args, '--restart-development-web') || 'false';
   if (!['true', 'false'].includes(restart)) throw closeoutError('self-bootstrap-closeout.restart-value-invalid', 'restart-development-web 只支持 true 或 false。');
-  const workspaceRoot = option(args, '--target');
-  if (!workspaceRoot) throw closeoutError('self-bootstrap-closeout.arguments-incomplete', '需要明确的工作空间。');
   return runDirectSelfBootstrapCloseout({ workspaceRoot, taskId: option(args, '--task'), baseRef: option(args, '--base-ref'), deliveredRef: option(args, '--delivered-ref'), targetBranch: option(args, '--branch'), remote: option(args, '--remote'), agent: option(args, '--agent'), nodeExecutable, resumeSync: option(args, '--resume-sync'), restartDevelopmentWeb: restart === 'true', execute, environment });
 }
 

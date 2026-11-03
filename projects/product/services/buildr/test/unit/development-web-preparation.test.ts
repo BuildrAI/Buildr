@@ -30,6 +30,14 @@ test('development Web preparation generates DTOs before building the ignored dis
   });
 });
 
+test('development Web preparation keeps the failing stage and code visible', async () => {
+  await assert.rejects(prepareDevelopmentWeb({
+    prepareAgent: () => '/prepared/agent',
+    generateDtos: async () => [],
+    build: () => { throw Object.assign(new Error('Exact Node does not provide an npm CLI'), { code: 'web_dist_npm_missing' }); },
+  }), (error: any) => error.stage === 'prepare-web' && error.internalCode === 'web_dist_npm_missing' && /npm CLI/.test(error.message));
+});
+
 test('development Web preparation does not build when DTO generation fails', async () => {
   let built = false;
   await assert.rejects(prepareDevelopmentWeb({

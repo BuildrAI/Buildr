@@ -10,11 +10,20 @@ import { pathToFileURL } from 'node:url';
 export const DEVELOPMENT_WEB_CONTINUITY_SCHEMA = 'buildr.development-web-continuity/v1';
 export const DEFAULT_DEVELOPMENT_WEB_PORT = 4458;
 
-export function developmentWebDataRoot(environment = process.env, platform = process.platform, home = os.homedir()) {
-  if (environment.BUILDR_APP_DATA_DIR) return path.resolve(environment.BUILDR_APP_DATA_DIR);
+function platformDataRoot(environment, platform, home) {
   if (platform === 'darwin') return path.join(home, 'Library', 'Application Support', 'Buildr Dev');
   if (platform === 'win32') return path.join(environment.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'Buildr Dev');
   return path.join(environment.XDG_STATE_HOME || path.join(home, '.local', 'state'), 'buildr-dev');
+}
+
+export function developmentWebDataRoot(environment = process.env, platform = process.platform, home = os.homedir()) {
+  if (environment.BUILDR_APP_DATA_DIR) return path.resolve(environment.BUILDR_APP_DATA_DIR);
+  // An agent shell runs under an isolated HOME, while the installed application
+  // still lives under the real user home; prefer a candidate that exists.
+  const candidates = [];
+  if (environment.BUILDR_HOST_HOME) candidates.push(platformDataRoot(environment, platform, environment.BUILDR_HOST_HOME));
+  candidates.push(platformDataRoot(environment, platform, home));
+  return candidates.find((candidate) => fs.existsSync(candidate)) ?? candidates[0];
 }
 
 function instanceFile(dataRoot) {
