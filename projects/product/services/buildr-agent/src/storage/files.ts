@@ -118,11 +118,15 @@ export function removeStorageCandidate(root: string, item: StorageCandidate, obs
  * checks; system observation is shared rather than spawned twice per file. */
 export function removeDiagnosticFileBatch(root: string, items: StorageCandidate[], unreferenced: (item:StorageCandidate)=>boolean,
   observe=observeStorageUse, deadline=Date.now()+3000): string[] {
-  const before=observe(), renamed:Array<{item:StorageCandidate;retired:string;changed:number}>=[],removed:string[]=[];
+  const remaining=Math.max(0,deadline-Date.now());if(!remaining)return [];
+  // System observation has its own subprocess timeout. Charge the file-work
+  // budget after it completes, so a slow lsof cannot starve every small batch.
+  const before=observe(), renameDeadline=Date.now()+remaining;
+  const renamed:Array<{item:StorageCandidate;retired:string;changed:number}>=[],removed:string[]=[];
   const restore=(item:StorageCandidate,retired:string)=>{if(fs.existsSync(retired)&&!fs.existsSync(item.path))fs.renameSync(retired,item.path);};
   try {
     for(const item of items.slice(0,256)) {
-      if(Date.now()>deadline)break;
+      if(Date.now()>renameDeadline)break;
       try {
         if(item.kind!=='diagnostic'||!item.eligible||!item.identity||!safeStorageResource(root,item.path)||storageInUse(item.ownerRoot,before)||!unreferenced(item))continue;
         const info=fs.lstatSync(item.path);if(!info.isFile()||info.size>256*1024||storageVersion(item.path).identity!==item.identity)continue;

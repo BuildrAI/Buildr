@@ -59,6 +59,18 @@ test('small diagnostic batches share observation while independently retaining h
   assert.equal(fs.readdirSync(f.logs).some(name=>name.startsWith('.reclaim-')),false,'held renamed object is restored');
 });
 
+test('slow system observation cannot consume a small diagnostic batch file-work budget',t=>{
+  const f=fixture(t);
+  for(let i=0;i<128;i++){const name=path.join(f.logs,`sdk-daemon-${deadPid}-${i}.log`);file(name);fs.utimesSync(name,1,1);}
+  const items=f.candidates();let clock=0,observations=0;
+  t.mock.method(Date,'now',()=>clock);
+  const observe=()=>{observations++;clock+=5000;return unused;};
+  assert.equal(removeDiagnosticFileBatch(f.root,items,()=>true,observe,100).length,128);
+  assert.equal(observations,2,'both system observations still occur');
+  assert.deepEqual(removeDiagnosticFileBatch(f.root,items,()=>true,observe,clock),[]);
+  assert.equal(observations,2,'an already exhausted caller budget starts no batch');
+});
+
 test('a public diagnostic batch drains hundreds of small logs and respects an item budget', {skip:process.platform!=='darwin'},t=>{
   const f=fixture(t);
   for(let i=0;i<320;i++){const name=path.join(f.logs,`sdk-daemon-${deadPid}-${i}.log`);file(name);fs.utimesSync(name,1,1);}
