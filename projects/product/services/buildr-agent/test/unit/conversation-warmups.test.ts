@@ -22,3 +22,16 @@ test('configuration changes wait for exact close and a close failure cannot sile
   await assert.rejects(pool.prepare('slot','new','agent',async()=>source),/exit unconfirmed/);
   await assert.rejects(pool.take('slot','new'),/exit unconfirmed/);assert.equal(closed,1);assert.equal(pool.size,1);
 });
+
+test('concurrent Qoder selections only prepare the latest and exact discard cannot close adopted work',async()=>{
+ let opens=0,closes=0;const pool=new ConversationWarmups(async()=>{closes++;},()=>0),create=async()=>{opens++;return source;};
+ const first=pool.prepare('old-slot','old-key','qoder',create),latest=pool.prepare('new-slot','new-key','qoder',create);
+ assert.equal(await first,false);assert.equal(await latest,true);assert.equal(opens,1);assert.equal(pool.size,1);
+ await pool.discard('new-slot','old-key');assert.equal(closes,0);
+ await pool.prepare('new-slot','new-key','qoder',create,'selection-a');
+ await pool.prepare('new-slot','new-key','qoder',create,'selection-b');
+ await pool.discard('new-slot','new-key','selection-a');assert.equal(closes,0,'reselecting the same binding transfers preparation identity');
+ assert.equal(opens,1);
+ assert.equal(await pool.take('new-slot','new-key'),source);
+ await pool.discard('new-slot','new-key');assert.equal(closes,0);assert.equal(pool.size,0);
+});

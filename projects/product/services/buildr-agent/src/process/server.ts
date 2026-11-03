@@ -62,6 +62,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
   let pending = readPrivate<PendingRuntime>(pendingFile);
   if (pending?.runtime.digest === options.runtime.digest) { pending = undefined; savePending({ runtime: options.runtime, state: 'adopted' }); }
   if (pending?.state === 'switching') pending = { ...pending, state: 'failed', diagnostic: '上次切换尚未确认，请核对实际运行版本。' };
+  service.setQoderIdleRetention(!pending);
   const generations = new Map<string, AbortController>();
   function status(): AgentProcessStatus {
     const activity = service.activity();
@@ -154,6 +155,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       validateAgentRuntime(options.dataRoot, input.runtime);
       pending = input.runtime.digest === options.runtime.digest ? undefined : { runtime: input.runtime, state: 'waiting' };
       savePending(pending ?? { runtime: options.runtime, state: 'adopted' });
+      service.setQoderIdleRetention(!pending);
       json(res, 200, status()); return;
     }
     if (req.url === '/shutdown') {

@@ -103,3 +103,5 @@ Agent Service 可把当前执行过程推给用户指定的可信接收端（例
 send 不接受 --connection 或 --model；已有对话跳过卡片沿用原执行配置，新建对话仅选择唯一 enabled 且 ready 连接。卡片正式答复使用 reply 的 --option/--other 或 --answer-json，不把普通文字输入视为批准。
 
 CLI supplement 显式使用 sameRunOnly=true，仅向原 runId 追加。挂起问题卡片时不接收该补充；需要放弃卡片并开启新轮时用 send --conversation <id> --skip-questions。投递过程中原轮已结束则返回 rejected 并保留内容，不自动转成新轮；delivery=unknown 仍须先读取核对，不能重发未知操作。
+
+Qoder首次选择可提前准备且不发送用户问题；安全结束的已用实例可在5分钟空闲窗口内复用，未使用准备在切走或闲置1分钟后释放。保留进程不等于原轮仍执行，也不等于物理资源已释放。升级和准确交接仍自动核验回收，不要求用户清缓存或重发输入；不能仅凭预热命中宣称真实首字响应已提速。

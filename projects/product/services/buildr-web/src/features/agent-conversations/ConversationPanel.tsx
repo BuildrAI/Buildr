@@ -278,8 +278,10 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
     const id=scope?.conversationId??newImages.id;
     const input={...choice,permissionMode,clientRequestId:warmSubmission.current.requestId,...(!scope&&draftWorkspaceId!=='@default'&&newCwd.trim()?{cwd:newCwd.trim()}:{}),...(!scope&&draftWorkspaceId!=='@default'&&boundTaskId?{taskId:boundTaskId}:{})};
     const key=JSON.stringify([workspace,id,input]);if(preparedSelection.current===key)return;
-    const timer=setTimeout(()=>{preparedSelection.current=key;void context.api.warmup(workspace,id,input,!scope).catch(()=>{});},200);
-    return()=>clearTimeout(timer);
+    const preparationId=crypto.randomUUID();
+    let preparing:Promise<unknown>|undefined;
+    const timer=setTimeout(()=>{preparedSelection.current=key;preparing=context.api.warmup(workspace,id,{...input,preparationId},!scope);void preparing.catch(()=>{});},200);
+    return()=>{clearTimeout(timer);preparedSelection.current='';if(preparing&&connection.provider==='qoder'){void preparing.then(()=>context.api.warmup(workspace,id,{...input,preparationId,discard:true},!scope)).catch(()=>{});}};
   },[context.open,embedded,context.api,context.scope,connection?.enabled,connection?.status,choice.connectionId,choice.modelAccountId,choice.modelAccountIdentity,choice.model,choice.reasoningEffort,choice.serviceTier,permissionMode,draftWorkspaceId,newImages.id,newCwd,boundTaskId]);
   const sendFirst=async(operation:SendOperation)=>{
     let submitted=firstSubmissions.read();

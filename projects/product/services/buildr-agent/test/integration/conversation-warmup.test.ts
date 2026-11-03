@@ -7,15 +7,16 @@ import {randomUUID} from 'node:crypto';
 import {createAgentService} from '../../src/index.ts';
 import type {AgentExecutor,ExecutorSendInput} from '../../src/contracts.ts';
 import type {ModelProvider} from '../../src/model-access/contracts.ts';
-import {CONNECTION_IDLE_MS} from '../../src/application/conversation-warmups.ts';
+import {CONNECTION_IDLE_MS,QODER_IDLE_REUSE_MS,QODER_PREPARATION_IDLE_MS} from '../../src/application/conversation-warmups.ts';
 const flush=async()=>{for(let i=0;i<30;i++)await new Promise<void>(resolve=>setImmediate(resolve));};
-async function fixture(){
+async function waitFor<T>(read:()=>T,accept:(value:T)=>boolean):Promise<T>{const deadline=Date.now()+5000;let value=read();while(!accept(value)&&Date.now()<deadline){await flush();value=read();}assert.ok(accept(value),'fixture work did not reach its expected state');return value;}
+async function fixture(connectionId='local'){
  const root=await mkdtemp(join(tmpdir(),'buildr-selection-warmup-'));
  let clock=Date.now(),opens=0,closed=0,prepared=0,inferred=0,failPreparation=false,failFirstClose=false;
  const sent:ExecutorSendInput[]=[],preparedContexts:string[]=[];
  let finish:(()=>void)|undefined;
  const capabilities={text:true,images:false,approval:true,questions:true,stop:true,resume:true,maxInputBytes:65536,permissionModes:['default','full-access'] as ('default'|'full-access')[]};
- const executor:AgentExecutor={descriptor:{id:'local',label:'Local',capabilities},async open(options){
+ const executor:AgentExecutor={descriptor:{id:connectionId,label:'Local',capabilities},async open(options){
   const source=Boolean(options.gateway);if(source)opens++;const sourceIndex=opens;let disposed=false,execution='',blocked=false,toolPending=false;
   return {get closed(){return disposed;},bindingIdentity:'local-binding',capabilities,
    inspectAccount:async()=>({status:'ready'}),models:async()=>[{id:'model',label:'Model'}],beginLogin:async()=>{},cancelLogin:async()=>{},
@@ -27,11 +28,11 @@ async function fixture(){
  }};
  const provider:ModelProvider={id:'fixture',label:'Fixture',async open(){return {protocol:'chat-completions',inspect:async()=>({status:'ready',models:[{id:'model',label:'Model',images:false,tools:true}]}),beginLogin:async()=>{},cancelLogin:async()=>{},infer:async()=>{inferred++;throw Error('must not infer');},close:async()=>{}};}};
  const service=createAgentService({dataRoot:root,executors:[executor],modelProviders:[provider],resolveWorkspace:()=>({rootPath:root}),assertTask(){},now:()=>new Date(clock)});
- await service.connections.connect('local',{expectedRevision:'unconfigured'});
+ await service.connections.connect(connectionId,{expectedRevision:'unconfigured'});
  const added=await service.models.accounts.add({provider:'fixture'}),account=await service.models.accounts.check(added.id);
  await service.models.accounts.preferences(account.id,{expectedRevision:account.revision,models:[{id:'model',enabled:true}]});
- const draftId=randomUUID(),clientRequestId=randomUUID(),choice={connectionId:'local',modelAccountId:account.id,model:'model',permissionMode:'default' as const,clientRequestId};
- const start=async(text='goal')=>{const revision=service.conversations.readDraft('workspace',draftId).revision;const result=await service.conversations.startDraft('workspace',draftId,{...choice,text,expectedDraftRevision:revision});await flush();return result.conversation;};
+ const draftId=randomUUID(),clientRequestId=randomUUID(),choice={connectionId,modelAccountId:account.id,model:'model',permissionMode:'default' as const,clientRequestId};
+ const start=async(text='goal')=>{const revision=service.conversations.readDraft('workspace',draftId).revision;const result=await service.conversations.startDraft('workspace',draftId,{...choice,text,expectedDraftRevision:revision});await waitFor(()=>service.conversations.read('workspace',result.conversation.id),view=>text==='hold'?view.run?.accepted===true:text==='question'?view.requests.length>0:text==='tool'?Boolean(view.run?.tools.some(tool=>tool.status==='unknown')):view.run?.status==='completed');await flush();return result.conversation;};
  return {service,root,choice,draftId,start,sent,preparedContexts,advance:(ms:number)=>clock+=ms,finish:()=>finish?.(),breakFirstClose:()=>{failFirstClose=true;},fail:()=>{failPreparation=true;},counts:()=>({opens,closed,prepared,inferred}),close:async()=>{finish?.();await service.close();await rm(root,{recursive:true,force:true});}};
 }
 test('selection is adopted once, promptly reclaimed after use and can be prepared again',async t=>{
@@ -73,8 +74,8 @@ test('unused selections retain 30 minutes while completed work releases promptly
 
 test('expired idle age never dismisses an unanswered question or an unconfirmed native tool',async t=>{
  t.mock.timers.enable({apis:['setInterval']});
- try{for(const mode of ['question','tool']){
-  const f=await fixture();try{
+ try{for(const connectionId of ['local','qoder'])for(const mode of ['question','tool']){
+  const f=await fixture(connectionId);try{
    const chat=await f.start(mode);f.advance(CONNECTION_IDLE_MS*2);t.mock.timers.tick(60_000);await flush();
    assert.equal(f.counts().closed,0,mode);const current=f.service.conversations.read('workspace',chat.id);
    if(mode==='question')assert.equal(current.requests.length,1);else assert.equal(current.run?.tools[0].status,'unknown');
@@ -102,5 +103,69 @@ test('shared native controls retain only their owning conversation',async()=>{
   assert.equal(f.service.retainsConversationSource('workspace',first.id),true);
   assert.equal(f.service.retainsConversationSource('workspace',other.id),false);
   assert.equal(f.service.retainsConversationSource('other-workspace',first.id),false);
+ }finally{await f.close();}
+});
+
+test('Qoder retains a used idle source across turns, refreshes its window, then expires',async t=>{
+ t.mock.timers.enable({apis:['setInterval']});const f=await fixture('qoder');try{
+  const chat=await f.start();assert.equal(f.counts().opens,1);
+  f.advance(QODER_IDLE_REUSE_MS-1);t.mock.timers.tick(60_000);await flush();assert.equal(f.counts().closed,0);
+  const current=f.service.conversations.read('workspace',chat.id);
+  assert.notEqual(current.run?.resourcesReleased,true,'retained process is not physically released');
+  const draft={...f.choice,text:'follow up',expectedRevision:current.revision},preview=f.service.conversations.prepareSend('workspace',chat.id,draft);
+  f.service.conversations.send('workspace',chat.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});await waitFor(()=>f.service.conversations.read('workspace',chat.id),view=>view.run?.status==='completed');await flush();
+  assert.equal(f.counts().opens,1);assert.equal(f.sent.length,2);assert.equal(f.sent[0].contextRef.id,f.sent[1].contextRef.id);
+  f.advance(1);t.mock.timers.tick(60_000);await flush();assert.equal(f.counts().closed,0,'second use refreshed the idle window');
+  f.advance(QODER_IDLE_REUSE_MS);t.mock.timers.tick(60_000);await flush();assert.equal(f.counts().closed,1);
+ }finally{await f.close();t.mock.timers.reset();}
+});
+
+test('Qoder explicit release bypasses idle retention and speculative discard never closes adopted work',async()=>{
+ const f=await fixture('qoder');try{
+  await f.service.conversations.warmup('workspace',f.draftId,f.choice,true);
+  const chat=await f.start();
+  await f.service.conversations.warmup('workspace',f.draftId,{...f.choice,discard:true},true);
+  assert.equal(f.counts().closed,0);
+  await f.service.releaseIdleSources();assert.equal(f.counts().closed,1,'upgrade/release is never blocked by the idle window');
+  assert.equal(f.service.conversations.read('workspace',chat.id).run?.resourcesReleased,true);
+ }finally{await f.close();}
+});
+
+test('Qoder speculative selection is latest-only, versioned discard is safe and unused entry expires',async t=>{ t.mock.timers.enable({apis:['setInterval']});
+ const f=await fixture('qoder');try{
+  await f.service.conversations.warmup('workspace',f.draftId,f.choice,true);
+  const changed={...f.choice,permissionMode:'full-access' as const};
+  await f.service.conversations.warmup('workspace',f.draftId,changed,true);
+  assert.equal(f.counts().closed,1);
+  await f.service.conversations.warmup('workspace',f.draftId,{...f.choice,discard:true},true);
+  assert.equal(f.counts().closed,1,'old binding cannot discard the new selection');
+  await f.service.conversations.warmup('workspace',randomUUID(),{...f.choice,clientRequestId:randomUUID()},true);
+  assert.equal(f.counts().closed,2,'a new Qoder slot replaces the old unused selection');
+  f.advance(QODER_PREPARATION_IDLE_MS-1);t.mock.timers.tick(60_000);await flush();assert.equal(f.counts().closed,2);
+  f.advance(1);t.mock.timers.tick(60_000);await flush();assert.equal(f.counts().closed,3);
+ }finally{await f.close();t.mock.timers.reset();}
+});
+
+test('Qoder pending backend upgrade revokes the idle window without stopping active work',async t=>{
+ t.mock.timers.enable({apis:['setInterval','setTimeout']});const f=await fixture('qoder');try{
+  await f.start();assert.equal(f.counts().closed,0);
+  f.service.setQoderIdleRetention(false);for(let n=0;n<7&&f.counts().closed<1;n++){t.mock.timers.tick(1000);await flush();}assert.equal(f.counts().closed,1);
+  const chat=await f.service.conversations.create('workspace',{}),draft={...f.choice,text:'hold',expectedRevision:chat.revision};
+  const preview=f.service.conversations.prepareSend('workspace',chat.id,draft);
+  f.service.conversations.send('workspace',chat.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});await flush();
+  t.mock.timers.tick(60_000);await flush();assert.equal(f.counts().closed,1,'real execution is protected');
+  f.finish();await flush();for(let n=0;n<7&&f.counts().closed<2;n++){t.mock.timers.tick(1000);await flush();}assert.equal(f.counts().closed,2,'completion during upgrade does not acquire a new idle window');
+ }finally{await f.close();t.mock.timers.reset();}
+});
+
+test('Qoder warmup cancellation is scoped to an attempt even when the binding is reselected unchanged',async()=>{
+ const f=await fixture('qoder');try{
+  await f.service.conversations.warmup('workspace',f.draftId,{...f.choice,preparationId:'first-selection'},true);
+  await f.service.conversations.warmup('workspace',f.draftId,{...f.choice,preparationId:'reselected'},true);
+  assert.equal(f.counts().opens,1);
+  await f.service.conversations.warmup('workspace',f.draftId,{...f.choice,preparationId:'first-selection',discard:true},true);
+  assert.equal(f.counts().closed,0);
+  await f.service.conversations.warmup('workspace',f.draftId,{...f.choice,preparationId:'reselected',discard:true},true);
+  assert.equal(f.counts().closed,1);
  }finally{await f.close();}
 });
