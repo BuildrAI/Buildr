@@ -8,11 +8,13 @@ import { executionScopeKey } from '../../../../src/index.ts';
 import type { ConversationView, AgentProcessConnection } from '../../../../src/index.ts';
 import { isLive, until, actor, prepareAgentRuntime, connectAgentProcess, copyPackage, prepared, cleanupProcessFixture } from '../../../support/process-fixture.ts';
 
-for (const modelBound of [true, false]) test(`activation proves the target while old work drains (${modelBound ? 'parallel with failed-target retry' : 'protected idle handoff'})`, {timeout:90_000}, async t => {
+for (const {modelBound,parallel,uncertain} of [{modelBound:true,parallel:true,uncertain:false},{modelBound:false,parallel:true,uncertain:false},{modelBound:false,parallel:true,uncertain:true},{modelBound:false,parallel:false,uncertain:false}]) test(`activation proves the target while old work drains (${modelBound ? 'model-bound' : 'shared native'} ${parallel ? 'parallel with failed-target retry' : 'incompatible protected handoff'}${uncertain ? ', unknown old result' : ''})`, {timeout:90_000}, async t => {
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-activation-')),dataRoot=path.join(root,'profile'),workspace=path.join(root,'work'),packageRoot=path.join(root,'package');
   fs.mkdirSync(workspace);copyPackage(prepared,packageRoot);
   fs.copyFileSync(path.join(import.meta.dirname,'../../fixtures/agent-process-entry.mjs'),path.join(packageRoot,'build/process-fixture.mjs'));
   const marker=path.join(packageRoot,'build/fixture-version.json');fs.writeFileSync(marker,JSON.stringify({version:'old'}));
+  const contractsFile=path.join(packageRoot,'build/runtime-contracts.json'),contracts=fs.readFileSync(contractsFile,'utf8');
+  if(!parallel)fs.writeFileSync(contractsFile,JSON.stringify({...JSON.parse(contracts),parallelCompatibility:2}));
   const runtime=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'}),profileId='activation-test',scope=executionScopeKey({sourceId:'minimal',id:'directory'});
   let main:Awaited<ReturnType<typeof actor>>|undefined,observer:AgentProcessConnection|undefined;
   t.after(()=>cleanupProcessFixture({root,dataRoot,profileId,host:main,observer}));
@@ -28,20 +30,23 @@ for (const modelBound of [true, false]) test(`activation proves the target while
     await main!.call('conversations.send',[scope,chat.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()}]);
     return until(()=>observer!.operations.conversations.read(scope,chat.id),view=>view.run?.accepted===true);
   };
-  const held=await start('hold');
+  const oldText=uncertain?'uncertain-ended':'hold',oldStatus=uncertain?'unknown':'running';
+  const held=await start(oldText);
+  if(uncertain)await until(()=>observer!.operations.conversations.read(scope,held.id),view=>view.run?.status==='unknown');
   const warmId=randomUUID(),warmInput={connectionId:'first',modelAccountId:account.id,model:'fixture',cwd:workspace,clientRequestId:randomUUID()};
   assert.equal((await main.call('conversations.warmup',[scope,warmId,warmInput,true])).prepared,true);
   assert.ok((await observer.lifecycle.status()).activity.reasons.some(reason=>reason.kind==='prepared-resource'));
+  fs.writeFileSync(contractsFile,contracts);
   fs.writeFileSync(marker,JSON.stringify({version:'new'}));
   const gate=path.join(dataRoot,'allow-upgrade');
   fs.writeFileSync(path.join(packageRoot,'build/activate.mjs'),`import fs from 'node:fs';const b=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));if(!fs.existsSync(b.dataRoot+'/allow-upgrade'))throw Error('startup blocked');await import('./process-fixture.mjs');\n`);
   const next=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/activate.mjs'});
-  if(modelBound){
+  if(parallel){
     await assert.rejects(connectAgentProcess({dataRoot,profileId,runtime:next,sourceId:'minimal',requireRuntime:true}),{code:'agent_process_activation_failed'});
-    assert.ok(isLive(old.pid));assert.equal((await observer.operations.conversations.read(scope,held.id)).run?.status,'running');
+    assert.ok(isLive(old.pid));assert.equal((await observer.operations.conversations.read(scope,held.id)).run?.status,oldStatus);
     const controls=await connectAgentProcess({dataRoot,profileId,runtime:next,sourceId:'minimal'});
     try {
-      assert.equal((await controls.operations.conversations.read(scope,held.id)).run?.status,'running','a failed activation must not block a new control client');
+      assert.equal((await controls.operations.conversations.read(scope,held.id)).run?.status,oldStatus,'a failed activation must not block a new control client');
       await until(()=>controls.lifecycle.status(),status=>Boolean(status.diagnostic));
       await assert.rejects(controls.operations.conversations.prepareSend(scope,held.id,{expectedRevision:held.revision,connectionId:'first',...selection,text:'must not send'}),{code:'agent_process_activation_failed'});
     } finally {await controls.disconnect();}
@@ -58,8 +63,8 @@ for (const modelBound of [true, false]) test(`activation proves the target while
     const adopted=await observer.lifecycle.status();
     assert.equal(adopted.identity.runtime.digest,next.digest);assert.equal(adopted.accepting,true);assert.ok(isLive(old.pid));
     assert.equal(fresh.run?.generation,adopted.identity.generation);
-    await until(()=>observer!.operations.conversations.read(scope,fresh.id),view=>view.run?.status==='completed'&&view.run.resourcesReleased===true);
-    assert.equal((await observer.operations.conversations.read(scope,held.id)).run?.status,'running');
+    await until(()=>observer!.operations.conversations.read(scope,fresh.id),view=>view.run?.status==='completed'&&(!modelBound||view.run.resourcesReleased===true));
+    assert.equal((await observer.operations.conversations.read(scope,held.id)).run?.status,oldStatus);
   }else{
     fs.writeFileSync(gate,'yes');
     await assert.rejects(connectAgentProcess({dataRoot,profileId,runtime:next,sourceId:'minimal',requireRuntime:true,activationTimeoutMs:100}),{code:'agent_process_activation_pending'});
@@ -71,14 +76,15 @@ for (const modelBound of [true, false]) test(`activation proves the target while
       await assert.rejects(ordinary.operations.conversations.prepareSend(scope,held.id,{expectedRevision:held.revision,connectionId:'first',text:'must not send'}),{code:'agent_process_activation_pending'});
     } finally {await ordinary.disconnect();}
   }
+  if(uncertain){const current=await observer.operations.conversations.read(scope,held.id);await observer.operations.conversations.stop(scope,held.id,{expectedRevision:current.revision,runId:current.run!.id,participantId:current.run!.participantId,generation:current.run!.generation});}
   fs.writeFileSync(path.join(dataRoot,'release'),'yes');
   const adopted=await until(()=>observer!.lifecycle.status(),value=>value.identity.runtime.digest===next.digest&&value.accepting);
   assert.equal(adopted.retiring,false);
-  await until(()=>observer!.operations.conversations.read(scope,held.id),view=>view.run?.status==='completed');
+  await until(()=>observer!.operations.conversations.read(scope,held.id),view=>view.run?.status===(uncertain?'stopped':'completed'));
   await until(async()=>!isLive(old.pid),Boolean);
   const sent=fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').trim().split('\n').map(line=>JSON.parse(line));
-  assert.equal(sent.filter(value=>value.text==='hold').length,1);
+  assert.equal(sent.filter(value=>value.text===oldText).length,1);
   assert.equal(sent.filter(value=>value.text==='must not send').length,0);
-  if(modelBound)assert.equal(sent.filter(value=>value.text==='new work').length,1);
-  if(modelBound)assert.equal(sent.find(value=>value.text==='new work')?.version,'new');
+  if(parallel)assert.equal(sent.filter(value=>value.text==='new work').length,1);
+  if(parallel)assert.equal(sent.find(value=>value.text==='new work')?.version,'new');
 });

@@ -367,7 +367,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       }).finally(() => { adopting = undefined; });
       return;
     }
-    if (pending?.state==='waiting' && canRunParallel(options.runtime,pending.runtime) && service.canAdoptParallel() && !inflight && !recovering && !sends.busy) {
+    if (pending?.state==='waiting' && canRunParallel(options.runtime,pending.runtime) && !inflight && !recovering && !sends.busy) {
       const target=pending.runtime;
       adopting=adoptParallel(target).finally(()=>{adopting=undefined;});
       return;

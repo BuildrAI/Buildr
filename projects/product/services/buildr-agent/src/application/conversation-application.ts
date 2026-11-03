@@ -102,8 +102,7 @@ export class ConversationApplication {
   private readonly idleReleaseTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly releaseChecks = new Map<string,Promise<boolean>>();
   private readonly releasedRuns = new Set<string>();
-  private sharedNativeContext = false;
-  canAdoptParallel(): boolean { return !this.sharedNativeContext; }
+  private readonly nativeSourceOwners = new Set<string>();
   private closing = false;
   private recoveryWork?: Promise<void>;
   private readonly recoveries = new Map<string, { runId?: string; work: Promise<void> }>();
@@ -191,7 +190,7 @@ export class ConversationApplication {
   private async sourceRuntime(record: StoredConversation, participant: StoredParticipant): Promise<PreparedSource> {
     const sourceRun=conversationRuns(record.view).find(run=>run.participantId===participant.id);
     if (!participant.modelAccountId) {
-      this.sharedNativeContext = true;
+      this.nativeSourceOwners.add(`${record.view.workspaceId}/${record.view.id}`);
       return this.options.connections.runtime(participant.connectionId).then(runtime => ({runtime, model: sourceRun?.model ?? ''}));
     }
     this.sourceOwners.set(participant.id, {workspaceId:record.view.workspaceId,id:record.view.id});
@@ -393,7 +392,7 @@ export class ConversationApplication {
     return work;
   }
   retainsConversationSource(workspaceId:string,id:string): boolean {
-    return this.sharedNativeContext || [...this.sourceOwners.entries()].some(([participant,owner])=>this.sourceRuntimes.has(participant)&&owner.workspaceId===workspaceId && owner.id===id);
+    return this.nativeSourceOwners.has(`${workspaceId}/${id}`) || [...this.sourceOwners.entries()].some(([participant,owner])=>this.sourceRuntimes.has(participant)&&owner.workspaceId===workspaceId && owner.id===id);
   }
   /** A retained process acknowledges release only after the exact native round and
    * all conversation-specific work have ended. Shared writers are never closed here. */
@@ -855,7 +854,7 @@ export class ConversationApplication {
     const automaticRetry = systemRecovery ? record.attempts.find(value => value.runId === record.view.run?.id)?.automaticRetry : undefined;
     record.attempts.push({ clientRequestId, inputDigest, runId: run.id, participantId: participant.id, through: record.view.entries.at(-1)!.sequence, userEntryId, accepted: false, ...(!systemRecovery ? {questionWaits} : {}), ...(raw.continueRunId || systemRecovery && record.view.run ? {continuationOf: raw.continueRunId ?? record.view.run!.id} : {}), ...(automaticRetry ? {automaticRetry: {...automaticRetry}} : {}) });
     const previousRun=record.view.run;if(previousRun){record.runOutcomes??={};record.runOutcomes[previousRun.id]={status:previousRun.status,diagnostic:previousRun.diagnostic,model:previousRun.model,provider:previousRun.provider,contextUsage:previousRun.contextUsage,generation:previousRun.generation,updatedAt:previousRun.updatedAt};}
-    if (!participant.modelAccountId) this.sharedNativeContext = true;
+    if (!participant.modelAccountId) this.nativeSourceOwners.add(`${workspaceId}/${id}`);
     delete record.interruption;
     if (previousRun && (unfinishedRun(previousRun) || record.view.requests.some(request => request.runId === previousRun.id) || previousRun.participantId!==participant.id && !previousRun.resourcesReleased && (this.sourceRuntimes.has(previousRun.participantId) || this.options.generationAlive?.(previousRun.generation)===true))) {
       record.view.retainedRuns ??= [];

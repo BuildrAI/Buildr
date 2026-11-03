@@ -91,3 +91,16 @@ test('one failed speculative close does not prevent an independent completed con
   assert.ok(f.service.activity().reasons.some(reason=>reason.kind==='runtime-release'),'the failed owner remains explicitly held');
  }finally{await f.close();t.mock.timers.reset();}
 });
+
+test('shared native controls retain only their owning conversation',async()=>{
+ const f=await fixture();try{
+  const first=await f.service.conversations.create('workspace',{}),other=await f.service.conversations.create('workspace',{});
+  const draft={connectionId:'local',text:'hold',expectedRevision:first.revision};
+  const preview=f.service.conversations.prepareSend('workspace',first.id,draft);
+  f.service.conversations.send('workspace',first.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});
+  await flush();
+  assert.equal(f.service.retainsConversationSource('workspace',first.id),true);
+  assert.equal(f.service.retainsConversationSource('workspace',other.id),false);
+  assert.equal(f.service.retainsConversationSource('other-workspace',first.id),false);
+ }finally{await f.close();}
+});
