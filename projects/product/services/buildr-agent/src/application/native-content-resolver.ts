@@ -78,13 +78,17 @@ export class NativeContentResolver {
       const run=origin.view.run;
       const context=original.context??(original.reason==='historical_context_unproven'&&run&&run.id===entry.runId&&run.participantId===participant.id?participant.contextRef?.id:undefined);
       const config=configRoot(this.root,origin,participant);if(!context||!config)return;
-      if(record.nativeTools?.[entry.id] && participant.provider === 'codex') {
+      if(record.nativeTools?.[entry.id] && ['codex','dsh','qoder'].includes(participant.provider)) {
         const skeleton = {...entry, text: ''};
         delete skeleton.input;
         delete skeleton.detail;
         const turnId = origin.attempts.find(value => value.runId === entry.runId && value.participantId === participant.id && value.accepted)?.executionRef?.id;
-        return {version: 3, provider: 'codex', contextId: context, nativeId: source.slice(split + 6), entry: skeleton,
-          session: {config: path.relative(this.root, config).split(path.sep).join('/'), cwd: origin.view.cwd, turnId}, text: []};
+        const parentSource = entry.parentToolId ? Object.entries(origin.sources).filter(([key,id])=>id===entry.parentToolId&&key.startsWith(participant.id+':tool:')) : [];
+        const owned=record.nativeTools?.[entry.id];
+        const parentToolId=typeof owned==='object'?owned.parentToolId:parentSource.length===1?parentSource[0]![0].slice(split+6):undefined;
+        if(entry.parentToolId&&!parentToolId)return;
+        return {version: 3, provider: participant.provider, contextId: context, nativeId: source.slice(split + 6), entry: skeleton,
+          session: {config: path.relative(this.root, config).split(path.sep).join('/'), cwd: origin.view.cwd, turnId,...(parentToolId?{parentToolId}:{})}, text: []};
       }
       const input={root:this.root,configRoot:config,contextId:context,cwd:origin.view.cwd};
       const suffix=participant.provider==='codex'?'codex-home/sessions':participant.provider==='qoder'?'qoder-config/projects':'dsh-home/sessions';

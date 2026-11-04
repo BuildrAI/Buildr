@@ -36,7 +36,7 @@ export function beginConversationMigration(db: DatabaseSync, directory: string):
     let cleanup: (() => void) | undefined;
     const version = db.prepare('PRAGMA user_version').get()!.user_version as number;
     if (version > 0) {
-      const fingerprint = identity(db), filename = path.join(directory, `conversations.pre-v8-${fingerprint}.sqlite`);
+      const fingerprint = identity(db), filename = path.join(directory, `conversations.pre-v9-${fingerprint}.sqlite`);
       if (!fs.existsSync(filename)) {
         const fd = fs.openSync(filename, 'wx', 0o600); fs.closeSync(fd);
         try { db.prepare('VACUUM INTO ?').run(filename); }
@@ -53,7 +53,7 @@ export function beginConversationMigration(db: DatabaseSync, directory: string):
         let current: DatabaseSync | undefined, source: DatabaseSync | undefined;
         try {
           current = new DatabaseSync(path.join(directory, 'conversations.sqlite'), { readOnly: true });
-          if (current.prepare('PRAGMA user_version').get()!.user_version !== 8 ||
+          if (current.prepare('PRAGMA user_version').get()!.user_version !== 9 ||
               Object.values(current.prepare('PRAGMA integrity_check').get()!)[0] !== 'ok') return;
           source = new DatabaseSync(filename, { readOnly: true });
           if (identity(source) !== fingerprint) return;

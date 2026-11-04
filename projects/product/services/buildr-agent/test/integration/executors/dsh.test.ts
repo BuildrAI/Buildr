@@ -17,6 +17,28 @@ class Stream {
   dispose(): void { this.closed = true; this.waiting?.({ done: true, value: undefined }); this.waiting = undefined; }
 }
 async function eventually(condition: () => unknown) { const deadline = Date.now() + 1000; while (!condition()) { if (Date.now() > deadline) throw new Error('condition timeout'); await new Promise(resolve => setTimeout(resolve, 5)); } }
+test('DSH cumulative text bursts coalesce before tool and terminal boundaries',async()=>{
+  const streams:Stream[]=[],visible:ExecutorEvent[]=[],cwd='/synthetic/stream';let sequence=0;
+  const ok=(value:any)=>({ok:true,value});
+  const publish=(type:string,data:any)=>{const event={seq:++sequence,type,data};for(const stream of streams)stream.push({type:'event',event});};
+  const remote={permissionPresets:{catalog:async()=>ok({defaultPreset:'workspace-write',options:[{value:'workspace-write'}]})},commands:{list:async()=>ok([{name:'permission',definitionId:'@deepseek-ai/dsh-permission-presets'}]),execute:async()=>ok({result:{kind:'success'}})},session:{
+    create:async()=>ok({sessionId:'stream-session'}),
+    follow:()=>{const stream=new Stream();streams.push(stream);stream.push({type:'snapshot',header:{id:'stream-session',cwd},cursor:sequence,records:[],projections:{values:{permissions:{currentValue:'workspace-write'}}}});return stream;},
+    prompt:async(input:any)=>{queueMicrotask(()=>{
+      publish('turn/start',{turn:1});publish('user/message',{turn:1,id:input.requestId,source:{rpcId:input.requestId},content:input.content});
+      for(const stream of streams){stream.push({type:'assistant-stream',frame:{type:'start',attemptId:'burst',turn:1,step:1}});for(let i=0;i<2000;i++)stream.push({type:'assistant-stream',frame:{type:'chunk',attemptId:'burst',index:i,chunk:{type:'text-delta',text:'x'}}});}
+      publish('tool/call',{turn:1,callId:'tool',name:'shell',arguments:'{}'});publish('tool/result',{turn:1,message:{toolCallId:'tool',content:[{type:'text',text:'done'}]}});publish('turn/end',{turn:1,reason:{kind:'completed'}});
+    });return ok({accepted:true});},
+  }};
+  const runtime=Reflect.construct(DshRuntime,['binding-stream',{close:async()=>{for(const s of streams)s.dispose();}},{remote,close:async()=>{},ctx:{}}]) as AgentRuntime;
+  try{
+    const contextRef=await runtime.createContext({cwd});await runtime.send({contextRef,cwd,text:'test',images:[],clientRequestId:'stream-request',onEvent:e=>visible.push(e)});
+    const texts=visible.filter((e):e is Extract<ExecutorEvent,{type:'item'}>=>e.type==='item'&&e.item.kind==='message'&&e.item.role==='assistant');
+    assert.ok(texts.length>0&&texts.length<40);assert.equal(texts.at(-1)!.item.text,'x'.repeat(2000));
+    const firstTool=visible.findIndex(e=>e.type==='item'&&e.item.kind==='tool');assert.ok(visible.indexOf(texts.at(-1)!)<firstTool);
+    assert.equal(visible.filter(e=>e.type==='item'&&e.item.kind==='tool').length,2);assert.ok(visible.findIndex(e=>e.type==='completed')>firstTool);
+  }finally{await runtime.close();}
+});
 test('DSH steering preserves exact input sources and holds a completion racing native admission', async () => {
   const streams:Stream[]=[],events:any[]=[],visible:ExecutorEvent[]=[],prompts:any[]=[];const cwd='/synthetic/workspace',ok=(value:any)=>({ok:true,value});
   let release!:()=>void;const admission=new Promise<void>(resolve=>{release=resolve;});

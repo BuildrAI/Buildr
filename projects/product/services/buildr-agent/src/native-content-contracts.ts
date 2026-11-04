@@ -15,7 +15,7 @@ export type NativeTextPart = NativeContentValue | { literal: string; residual?: 
 export interface NativeToolContent {
   version: 1 | 2 | 3; provider: string; contextId: string;
   nativeId?:string;
-  session?: { config: string; cwd: string; turnId?: string };
+  session?: { config: string; cwd: string; turnId?: string; parentToolId?: string };
   entry: ConversationEntry; text: NativeTextPart[]; input?: NativeTextPart[];
 }
 export interface NativeAttachmentContent {

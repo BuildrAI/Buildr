@@ -26,7 +26,7 @@ function record(id = 'chat'): StoredConversation {
 function tool(id: string, status: 'completed' | 'running' = 'completed') {
   return { id, sequence: 1, kind: 'tool' as const, role: 'system' as const, status, text: ('真实日志 ' + id + '\n').repeat(5000), input: 'command '.repeat(4000), createdAt: 'now' };
 }
-function backups(directory: string) { return fs.readdirSync(directory).filter(name => name.startsWith('conversations.pre-v8-')); }
+function backups(directory: string) { return fs.readdirSync(directory).filter(name => name.startsWith('conversations.pre-v9-')); }
 
 test('entry revisions are stored once across main/inherited positions, small previews reuse bodies and late repairs remain exact', t => {
   const { repo } = fixture(t), r = record();
@@ -78,7 +78,7 @@ test('v4 reads do not migrate; write migrates canonical data, verifies then dele
   const old = new DatabaseSync(repo.filename); old.exec('PRAGMA journal_mode=WAL');
   r.view.title = 'committed WAL title'; old.prepare('UPDATE conversations SET body=? WHERE id=?').run(JSON.stringify(r), r.view.id);
   r.view.revision = 'r2'; repo.saveConversation(r, 'r1');
-  assert.equal(old.prepare('PRAGMA user_version').get()!.user_version, 8);
+  assert.equal(old.prepare('PRAGMA user_version').get()!.user_version, 9);
   assert.throws(() => old.prepare('UPDATE conversations SET body=? WHERE id=?').run(JSON.stringify(r), r.view.id), /agent_storage_writer_incompatible/);
   old.close();
   assert.deepEqual(backups(directory), [], 'verified migration immediately deletes its exact backup');
@@ -116,7 +116,7 @@ test('backup failure leaves legacy database untouched, and missing positions can
   writeLegacyConversationDatabase(repo.filename, [r]);
   const before = fs.readFileSync(repo.filename), open = fs.openSync;
   fs.openSync = ((filename: fs.PathLike, ...args: any[]) => {
-    if (String(filename).includes('conversations.pre-v8-')) throw Object.assign(new Error('simulated disk full'), { code: 'ENOSPC' });
+    if (String(filename).includes('conversations.pre-v9-')) throw Object.assign(new Error('simulated disk full'), { code: 'ENOSPC' });
     return (open as any)(filename, ...args);
   }) as typeof fs.openSync;
   try { assert.throws(() => repo.startReadModels(), { code: 'agent_storage_unavailable' }); }
@@ -157,6 +157,6 @@ for (const failure of ['validation', 'deletion'] as const) {
     assert.equal(backups(directory).length, 1);
     assert.deepEqual(repo.readConversation(r.view.id)!.view.entries, r.view.entries);
     const db = new DatabaseSync(repo.filename, { readOnly: true });
-    try { assert.equal(db.prepare('PRAGMA user_version').get()!.user_version, 8); } finally { db.close(); }
+    try { assert.equal(db.prepare('PRAGMA user_version').get()!.user_version, 9); } finally { db.close(); }
   });
 }

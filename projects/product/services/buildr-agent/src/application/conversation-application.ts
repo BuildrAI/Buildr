@@ -94,7 +94,7 @@ export class ConversationApplication {
     const bytes = Buffer.byteLength(item.text) + Buffer.byteLength(input ?? '');
     this.liveTools.delete(id);
     if (bytes <= 8 * 1024 * 1024) this.liveTools.set(id, {conversationId: record.view.id, workspaceId: record.view.workspaceId,
-      text: item.text, input, bytes, ended: ['completed','failed'].includes(item.status ?? ''), checks: 0});
+      text: item.text, input, bytes, ended: ['completed','failed','unknown'].includes(item.status ?? ''), checks: 0});
     while(this.liveTools.size > 128 || [...this.liveTools.values()].reduce((sum,value) => sum + value.bytes,0) > 8 * 1024 * 1024)
       this.liveTools.delete(this.liveTools.keys().next().value!);
     if(!this.liveToolTimer) {
@@ -180,7 +180,7 @@ export class ConversationApplication {
       candidate: (scope, input) => this.candidate(scope, input),
       prepare: (record, input) => this.prepare(record, input).preview,
       submit: (record, input) => this.submit(record, input, false, true),
-      read: (scope, id) => this.read(scope, id),
+      read: (scope, id) => this.read(scope, id,{compactTools:true}),
     });
     this.supplements = new ConversationSupplements({ generation: options.generation, now: options.now, closing: () => this.closing,
       load: (workspaceId, id) => this.load(workspaceId, id), save: record => this.save(record), view: record => this.view(record),
@@ -648,7 +648,7 @@ export class ConversationApplication {
     const existing = this.pendingSends.lookup(workspaceId, id, requestId);
     if (existing && expectedPendingRevision === undefined) {
       this.pendingSends.submit(workspaceId, id, this.draft(raw), requestId);
-      return this.read(workspaceId, id);
+      return this.read(workspaceId, id,{compactTools:true});
     }
     if (this.load(workspaceId,id).view.requests.length) fail('agent_pending_response', '原轮仍在等待回答或授权，请在原卡片处理；输入已保留，不会另开会话。', 409);
     const observed = this.load(workspaceId,id).view.run;
@@ -659,14 +659,14 @@ export class ConversationApplication {
     if (waitingQuestions && waitingQuestions.some(question => this.repliesInFlight.has(question.id))) fail('agent_reply_in_flight', '原问题正在回应，请等待原结果；交接内容保留。', 409);
     if (draft.waitingHandoff && record.view.run?.status === 'waiting-question') this.prepare(record, draft);
     this.pendingSends.submit(workspaceId, id, draft, requestId, expectedPendingRevision, this.draft(raw), waitingQuestions, record.view.run?.status === 'waiting-question');
-    const view = this.read(workspaceId, id);
+    const view = this.read(workspaceId, id,{compactTools:true});
     this.options.events.publish({ type: 'conversation', workspaceId, conversationId: id, revision: view.revision, payload: { conversation: view } });
     return view;
   }
   cancelPendingSend(workspaceId: string, id: string, input: { expectedPendingRevision: string }): ConversationView {
     this.load(workspaceId, id);
     this.pendingSends.cancel(workspaceId, id, input.expectedPendingRevision);
-    const view = this.read(workspaceId, id);
+    const view = this.read(workspaceId, id,{compactTools:true});
     this.options.events.publish({ type: 'conversation', workspaceId, conversationId: id, revision: view.revision, payload: { conversation: view } });
     return view;
   }
@@ -897,7 +897,7 @@ export class ConversationApplication {
     this.save(record, initial);
     const work = this.execute(workspaceId, id, run.id, prepared).finally(() => { this.workers.delete(run.id); this.cancelledRetries.delete(run.id); this.scheduleSourceRelease(workspaceId, id); });
     this.workers.set(run.id, work);
-    return { run: structuredClone(run), conversation: this.read(workspaceId, id) };
+    return { run: structuredClone(run), conversation: this.read(workspaceId, id,{compactTools:true}) };
   }
 
   supplement(workspaceId: string, id: string, input: SupplementInput) { return this.supplements.send(workspaceId, id, input); }
@@ -917,9 +917,10 @@ export class ConversationApplication {
   }
   private applyItem(record: StoredConversation, participant: StoredParticipant, item: ExecutorItem, runId?: string, live = false): boolean {
     const changed = this.mergeItem(record,participant,item,runId);
-    if(changed && participant.provider === 'codex' && item.kind === 'tool' && item.nativeTool) {
+    if(changed && ['codex','dsh','qoder'].includes(participant.provider) && item.kind === 'tool' && item.nativeTool) {
       const id = record.sources[`${participant.id}:tool:${item.id}`];
-      (record.nativeTools ??= {})[id] = true;
+      const owned=(record.nativeTools ??= {});
+      owned[id] = item.parentToolId ? {parentToolId:item.parentToolId} : owned[id] ?? true;
       if(live) this.rememberNativeTool(record,participant,item);
     }
     return changed;
@@ -1534,7 +1535,7 @@ export class ConversationApplication {
     record = this.load(workspaceId, id); expected(record.view.revision, input.expectedRevision);
     if (runtime.bindingIdentity !== participant.bindingIdentity) fail('agent_binding_changed', '标题对应的原生接入身份已变化。', 409);
     await this.summarizeTitle(workspaceId, id, input.expectedRevision, runtime, true);
-    return this.read(workspaceId, id);
+    return this.read(workspaceId, id,{compactTools:true});
   }
   private async summarizeTitle(workspaceId: string, id: string, revision: string, runtime: AgentRuntime, explicit: boolean): Promise<void> {
     if (this.titleWork.has(id)) fail('agent_title_busy', '正在生成本段对话的标题，请稍后查看。', 409);
@@ -1759,7 +1760,7 @@ export class ConversationApplication {
 
   async observe(workspaceId: string, id: string): Promise<ConversationView> {
     await this.reconcileReleasedControls(workspaceId,id);
-    if(await this.reconcilePersisted(workspaceId,id))return this.read(workspaceId,id);
+    if(await this.reconcilePersisted(workspaceId,id))return this.read(workspaceId,id,{compactTools:true});
     const key = `${workspaceId}/${id}`;
     const current = this.observations.get(key); if (current) return current;
     const work = this.reconcile(workspaceId, id).finally(() => { this.observations.delete(key); this.scheduleSourceRelease(workspaceId, id); }).then(view => {
@@ -1824,7 +1825,7 @@ export class ConversationApplication {
         if (target && unfinishedRun(target)) { target.status = 'unknown'; target.diagnostic = safeDiagnostic(error); this.save(record); }
       }
     }
-    return this.read(workspaceId, id);
+    return this.read(workspaceId, id,{compactTools:true});
   }
   private control(workspaceId: string, id: string, input: { expectedRevision: string; runId: string; participantId: string; generation: string }): { record: StoredConversation; participant: StoredParticipant; run: RunView; executionRef?: ReturnType<ConversationApplication['load']>['attempts'][number]['executionRef'] } {
     const record = this.load(workspaceId, id); expected(record.view.revision, input.expectedRevision);
@@ -1851,7 +1852,7 @@ export class ConversationApplication {
         this.applyObservation(latest.record,hash(latest.record.view.requests) === observedRequests ? observation : {...observation,requests:undefined},latest.run); this.save(latest.record);
       }
     });
-    return this.read(workspaceId,id);
+    return this.read(workspaceId,id,{compactTools:true});
   }
   async stop(workspaceId: string, id: string, input: { expectedRevision: string; runId: string; participantId: string; generation: string; toolId?: string }): Promise<ConversationView> {
     if(!input.toolId){
@@ -1914,7 +1915,7 @@ export class ConversationApplication {
         await this.releaseIdleSources({workspaceId,id});
         this.scheduleSourceRelease(workspaceId,id);
       }
-      return this.read(workspaceId, id);
+      return this.read(workspaceId, id,{compactTools:true});
     }
     const runtime = (await this.sourceRuntime(control.record, control.participant)).runtime;
     let observation: ExecutorObservation;
@@ -1930,7 +1931,7 @@ export class ConversationApplication {
       if(record){this.applyObservation(record.record,observation,record.run);this.save(record.record);}
     });}catch{fail('agent_stop_result_unknown','停止请求已发出，记录结果尚未确认；不会自动重发。',503);}
     if (observation.status === 'running' || observation.status === 'unknown' || observation.status === 'tools-active') this.pollStop(workspaceId, id, input.runId);
-    return this.read(workspaceId, id);
+    return this.read(workspaceId, id,{compactTools:true});
   }
   private endReplacedQuestions(record: StoredConversation, runId: string): void {
     const next = record.attempts.find(attempt => attempt.runId === runId);
@@ -2103,7 +2104,7 @@ export class ConversationApplication {
     const owned = this.ownedRun(workspaceId, id, input.runId);
     const record = owned?.record;
     if (record && owned) { const answer=record.view.entries.find(e=>e.id===replyId);if(answer)answer.status='accepted';delete record.requests[requestId]; record.view.requests = record.view.requests.filter(value => value.id !== requestId); if (['waiting-approval', 'waiting-question'].includes(owned.run.status)) owned.run.status = this.waitingStatus(record, owned.run.id) ?? 'running'; this.save(record); }
-    return this.read(workspaceId, id);
+    return this.read(workspaceId, id,{compactTools:true});
     } finally { this.repliesInFlight.delete(requestId); this.scheduleSourceRelease(workspaceId, id); }
   }
 

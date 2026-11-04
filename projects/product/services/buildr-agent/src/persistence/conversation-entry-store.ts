@@ -41,15 +41,15 @@ export class ConversationEntryStore {
         DELETE FROM conversation_entry_contents WHERE conversation_id=OLD.id;
       END;
       CREATE TRIGGER conversation_body_format_insert BEFORE INSERT ON conversations
-        WHEN json_extract(NEW.body,'$._bodyFormat') IS NOT 8 OR json_array_length(NEW.body,'$.view.entries')>0 OR json_array_length(NEW.body,'$.inheritedContext.entries')>0
+        WHEN json_extract(NEW.body,'$._bodyFormat') IS NOT 9 OR json_array_length(NEW.body,'$.view.entries')>0 OR json_array_length(NEW.body,'$.inheritedContext.entries')>0
         BEGIN SELECT RAISE(ABORT,'agent_storage_writer_incompatible'); END;
       CREATE TRIGGER conversation_body_format_update BEFORE UPDATE OF body ON conversations
-        WHEN json_extract(NEW.body,'$._bodyFormat') IS NOT 8 OR json_array_length(NEW.body,'$.view.entries')>0 OR json_array_length(NEW.body,'$.inheritedContext.entries')>0
+        WHEN json_extract(NEW.body,'$._bodyFormat') IS NOT 9 OR json_array_length(NEW.body,'$.view.entries')>0 OR json_array_length(NEW.body,'$.inheritedContext.entries')>0
         BEGIN SELECT RAISE(ABORT,'agent_storage_writer_incompatible'); END;`);
   }
   static header(record: StoredConversation): string {
     return JSON.stringify({
-      ...record, _bodyFormat: 8, view: { ...record.view, entries: [] },
+      ...record, _bodyFormat: 9, view: { ...record.view, entries: [] },
       ...(record.inheritedContext ? { inheritedContext: { ...record.inheritedContext, entries: [] } } : {}),
     });
   }

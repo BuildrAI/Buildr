@@ -91,7 +91,8 @@ export class DshExecutionLineage {
     return [...this.jobs].filter(([id,job])=>owners.has(job.owner)&&(toolId==='dsh-job:'+id||job.callId===toolId)).map(([id])=>id);
   }
 }
-export function dshItem(event: any): ExecutorItem[] {
+export function dshItem(event: any, full = false): ExecutorItem[] {
+  const output = full ? (value:string)=>value : nativePreview;
   const data = event?.data ?? {}; const id = `event:${event?.seq}`;
   if (event?.type === 'user/message' && !isUserInput(event)) return [];
   if (event?.type === 'assistant/message') {
@@ -101,8 +102,8 @@ export function dshItem(event: any): ExecutorItem[] {
     return text ? [{ id: `assistant:${data.turn}:${data.step}`, kind: 'message', role: 'assistant', text, status: 'completed' }] : [];
   }
   if (event?.type === 'user/message') { const text = visibleText(data.content); return text || data.content?.some((part: any) => part.type === 'image') ? [{ id: data.id ?? id, kind: 'message', role: 'user', text, clientRequestId: data.source?.rpcId, executionId: data.source?.rpcId, status: 'completed' }] : []; }
-  if (event?.type === 'tool/call') return [{ id: data.callId, kind: 'tool', role: 'system', presentedFiles:dshPresentedFiles(data.name,data.arguments), name: typeof data.name === 'string' && data.name ? data.name : undefined, participation: nativeParticipation(data.arguments===undefined?undefined:String(data.arguments),undefined,'pending'), input: nativePreview(String(data.arguments ?? '')), text: String(data.name ?? '工具') + '\n' + nativePreview(String(data.arguments ?? '')), status: 'running' }];
-  if (event?.type === 'tool/result') return [{ id: data.message?.toolCallId ?? id, kind: 'tool', role: 'system', participation: nativeParticipation(undefined,data.message?.content===undefined?undefined:visibleText(data.message.content), dshToolOutcomeUnknown(event)?'unknown':data.message?.isError?'failed':'unknown'), text: nativePreview(visibleText(data.message?.content)), status: dshToolOutcomeUnknown(event)?'unknown':data.message?.isError ? 'failed' : 'completed' }];
+  if (event?.type === 'tool/call') return [{ id: data.callId, kind: 'tool', nativeTool: true, role: 'system', presentedFiles:dshPresentedFiles(data.name,data.arguments), name: typeof data.name === 'string' && data.name ? data.name : undefined, participation: nativeParticipation(data.arguments===undefined?undefined:String(data.arguments),undefined,'pending'), input: output(String(data.arguments ?? '')), text: String(data.name ?? '工具') + '\n' + output(String(data.arguments ?? '')), status: 'running' }];
+  if (event?.type === 'tool/result') return [{ id: data.message?.toolCallId ?? id, kind: 'tool', nativeTool: true, role: 'system', participation: nativeParticipation(undefined,data.message?.content===undefined?undefined:visibleText(data.message.content), dshToolOutcomeUnknown(event)?'unknown':data.message?.isError?'failed':'unknown'), text: output(visibleText(data.message?.content)), status: dshToolOutcomeUnknown(event)?'unknown':data.message?.isError ? 'failed' : 'completed' }];
   return [];
 }
 

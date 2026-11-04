@@ -23,6 +23,92 @@ import { ConversationAttachments } from '../../src/application/conversation-atta
 import { DatabaseSync } from 'node:sqlite';
 import { StorageMaintenance } from '../../src/process/storage-maintenance.ts';
 import { modelLeaseIdentity } from '../../src/model-access/model-preferences.ts';
+import type {NativeToolContent} from '../../src/native-content-contracts.ts';
+import {readNativeTool} from '../../src/executors/index.ts';
+
+function semanticNative(t:test.TestContext,provider:'dsh'|'qoder',compressed=provider==='dsh') {
+  const f=fixture(t,provider),turnId=randomUUID(),assistantId=randomUUID();
+  if(provider==='dsh'&&!compressed){const original=f.file;f.file=original.replace(/\.zstd$/,'');fs.unlinkSync(original);}
+  const meta={sessionId:f.contextId,cwd:f.cwd,isSidechain:false};
+  const rows=provider==='dsh'?[
+    {type:'session',version:4,id:f.contextId,cwd:f.cwd},
+    {seq:0,type:'turn/start',data:{turn:1}},
+    {seq:1,type:'user/message',data:{turn:1,id:turnId,source:{kind:'user',rpcId:turnId},content:[{type:'text',text:'test'}]}},
+    {seq:2,type:'tool/call',data:{turn:1,callId:f.toolId,name:'shell',arguments:JSON.stringify({command:f.input})}},
+    {seq:3,type:'tool/result',data:{turn:1,message:{toolCallId:f.toolId,content:[{type:'text',text:f.output}]}}},
+  ]:[
+    {...meta,type:'user',uuid:turnId,message:{content:[{type:'text',text:'test'}]}},
+    {...meta,type:'assistant',uuid:assistantId,message:{content:[{type:'tool_use',id:f.toolId,name:'Shell',input:{command:f.input}}]}},
+    {...meta,type:'user',uuid:randomUUID(),sourceToolAssistantUUID:assistantId,promptId:turnId,toolUseResult:{stdout:f.output,stderr:'',exitCode:0},message:{content:[{type:'tool_result',tool_use_id:f.toolId,content:'native display summary'}]}},
+  ];
+  const write=(values:any[]=rows)=>fs.writeFileSync(f.file,provider==='dsh'&&compressed?Buffer.concat(values.map(row=>zstdCompressSync(Buffer.from(JSON.stringify(row)+'\n')))):values.map(row=>JSON.stringify(row)+'\n').join(''));
+  write();
+  const reference:NativeToolContent={version:3,provider,contextId:f.contextId,nativeId:f.toolId,entry:{...f.entry,text:''},session:{config:path.relative(f.root,f.configRoot).split(path.sep).join('/'),cwd:f.cwd,turnId},text:[]};delete reference.entry.input;
+  return {...f,turnId,rows,reference,write,compressed};
+}
+
+for(const provider of ['dsh','qoder'] as const)for(const compressed of provider==='dsh'?[false,true]:[false])test(`${provider} semantic detail${compressed?' zstd':''} reads full bytes, exact owner and incomplete append`,t=>{
+  const f=semanticNative(t,provider,compressed),read=()=>readNativeTool(f.root,f.reference),before=fs.readFileSync(f.file);
+  assert.equal(read()?.text,f.output);assert.equal(read()?.input,JSON.stringify({command:f.input}));assert.deepEqual(fs.readFileSync(f.file),before);
+  for(const ref of [{...f.reference,nativeId:'different'},{...f.reference,session:{...f.reference.session!,turnId:'other'}},{...f.reference,session:{...f.reference.session!,cwd:'/other'}},{...f.reference,session:{...f.reference.session!,config:'connections/'+(provider==='dsh'?'qoder':'dsh')}}])assert.equal(readNativeTool(f.root,ref),undefined);
+  const tail=Buffer.from('{"type":');fs.appendFileSync(f.file,compressed?zstdCompressSync(tail).subarray(0,6):tail);
+  assert.equal(read()?.text,f.output,'pending tail does not hide preceding complete tools');
+  fs.unlinkSync(f.file);assert.equal(read(),undefined);
+});
+
+for(const provider of ['dsh','qoder'] as const)test(`${provider} stores only native identity before output is readable and after completion`,t=>{
+  const f=semanticNative(t,provider),resolver=new NativeContentResolver(f.root),repo=new ConversationRepository(f.root,(record,entry)=>resolver.tool(record,entry),ref=>readNativeTool(f.root,ref));t.after(()=>repo.stopReadModels());
+  const participantId=randomUUID(),runId=randomUUID(),entry:ConversationEntry={...f.entry,status:'running',runId,participantId};
+  const record:StoredConversation={view:{id:randomUUID(),workspaceId:'ws',revision:'r1',cwd:f.cwd,title:'native',updatedAt:'now',hidden:false,requests:[],participants:[],entries:[entry]},participants:[{id:participantId,connectionId:provider,provider,label:provider,bindingIdentity:'binding',deliveredThrough:0,contextRef:{id:f.contextId,data:{native:opaqueReference(provider,f.contextId,f.cwd,'binding')}}}],sources:{[participantId+':tool:'+f.toolId]:entry.id},nativeTools:{[entry.id]:true},attachments:{},requests:{},attempts:[{clientRequestId:f.turnId,inputDigest:'digest',runId,participantId,through:0,userEntryId:'user',accepted:true,executionRef:{id:f.turnId,data:{resourceContext:f.contextId,resourceBinding:'binding'}}}]};
+  fs.unlinkSync(f.file);repo.saveConversation(record);
+  const db=new DatabaseSync(repo.filename,{readOnly:true});t.after(()=>db.close());
+  const check=()=>{const row=db.prepare('SELECT c.codec,c.body,c.content_revision,e.compact FROM conversation_entry_contents c JOIN conversation_read_entries e USING(conversation_id,content_revision) WHERE c.conversation_id=?').get(record.view.id)!;assert.equal(row.codec,'native-tool');assert.equal(row.compact,null);const ref=JSON.parse(Buffer.from(row.body as Uint8Array).toString());assert.equal(ref.entry.text,'');assert.equal(Object.hasOwn(ref.entry,'input'),false);assert.equal(JSON.stringify(ref).includes(f.output),false);return row.content_revision as string;};
+  const pending=check();assert.throws(()=>repo.readEntry(record.view.id,entry.id,pending),{code:'agent_native_content_unavailable'});
+  entry.status='completed';record.view.revision='r2';repo.saveConversation(record,'r1');const revision=check();
+  f.write();assert.equal(repo.readEntry(record.view.id,entry.id,revision)?.text,f.output);
+  const cold=new ConversationRepository(f.root,undefined,ref=>readNativeTool(f.root,ref));t.after(()=>cold.stopReadModels());assert.equal(cold.readPage(record.view.id,undefined,undefined,true)!.view.entries[0].text,'');assert.equal(cold.readEntry(record.view.id,entry.id,revision)?.text,f.output);
+});
+
+test('Qoder native detail traverses more than 64 MiB without a full inventory',t=>{
+  const f=semanticNative(t,'qoder'),last=f.rows.at(-1);f.write(f.rows.slice(0,-1));
+  const padding=JSON.stringify({type:'progress',sessionId:f.contextId,padding:'x'.repeat(64*1024)})+'\n';
+  const fd=fs.openSync(f.file,'a');try{for(let i=0;i<1025;i++)fs.writeSync(fd,padding);}finally{fs.closeSync(fd);}
+  fs.appendFileSync(f.file,JSON.stringify(last)+'\n');assert.ok(fs.statSync(f.file).size>64*1024*1024);assert.equal(readNativeTool(f.root,f.reference)?.text,f.output);
+});
+
+test('Qoder child tools bind the exact native parent and its original turn',t=>{
+  const f=semanticNative(t,'qoder'),parent=f.toolId,child='child-call',prompt=randomUUID();
+  const directory=path.join(path.dirname(f.file),f.contextId,'subagents');fs.mkdirSync(directory,{recursive:true});
+  const file=path.join(directory,'agent-child.jsonl');
+  const meta={sessionId:f.contextId,cwd:f.cwd,isSidechain:true,parent_tool_use_id:parent};
+  const rows=[{...meta,type:'user',uuid:randomUUID(),promptId:prompt,origin:{kind:'agent'},message:{content:[{type:'text',text:'child input'}]}},{...meta,type:'assistant',uuid:'child-assistant',message:{content:[{type:'tool_use',id:child,name:'Read',input:{file_path:'/read-only'}}]}},{...meta,type:'user',uuid:randomUUID(),promptId:prompt,sourceToolAssistantUUID:'child-assistant',message:{content:[{type:'tool_result',tool_use_id:child,content:'complete child output'}]}}];
+  const write=()=>fs.writeFileSync(file,rows.map(r=>JSON.stringify(r)+'\n').join(''));write();
+  const ref={...f.reference,nativeId:child,entry:{...f.reference.entry,parentToolId:'buildr-parent-entry'},session:{...f.reference.session!,parentToolId:parent}};
+  assert.equal(readNativeTool(f.root,ref)?.text,'complete child output');
+  assert.equal(readNativeTool(f.root,{...ref,session:{...ref.session,turnId:'other'}}),undefined);
+  assert.equal(readNativeTool(f.root,{...ref,session:{...ref.session,parentToolId:'other'}}),undefined);
+  rows[1].parent_tool_use_id='other';write();assert.equal(readNativeTool(f.root,ref),undefined);
+  rows[1].parent_tool_use_id=parent;write();fs.copyFileSync(file,path.join(directory,'agent-ambiguous.jsonl'));assert.equal(readNativeTool(f.root,ref),undefined);
+});
+
+test('Qoder deferred results use the original assistant identity across prompt changes',t=>{
+  const f=semanticNative(t,'qoder'),result:any=f.rows.at(-1),later=randomUUID();
+  result.promptId=later;f.write();
+  assert.equal(readNativeTool(f.root,f.reference)?.text,f.output);
+  assert.equal(readNativeTool(f.root,{...f.reference,session:{...f.reference.session!,turnId:later}}),undefined);
+  result.sourceToolAssistantUUID='different-assistant';f.write();
+  assert.equal(readNativeTool(f.root,f.reference),undefined);
+  delete result.sourceToolAssistantUUID;f.write();
+  assert.equal(readNativeTool(f.root,f.reference),undefined);
+});
+
+test('Qoder prompt identity differs from persisted message UUID and survives context envelopes',t=>{
+  const f=semanticNative(t,'qoder');
+  const first:any=f.rows[0];first.uuid=randomUUID();first.promptId=f.turnId;first.origin={kind:'human'};first.humanInput={text:'test',mode:'prompt'};
+  f.rows.splice(1,0,{type:'user',uuid:randomUUID(),sessionId:f.contextId,cwd:f.cwd,isSidechain:false,message:{content:[{type:'text',text:'native context envelope'}]}} as any);f.write();
+  assert.equal(readNativeTool(f.root,f.reference)?.text,f.output);
+  assert.equal(readNativeTool(f.root,{...f.reference,session:{...f.reference.session!,turnId:first.uuid}}),undefined);
+});
 
 function conversation(t: test.TestContext, provider = 'qoder') {
   const f=fixture(t,provider), repo=new ConversationRepository(f.root), runId=randomUUID(), participantId=randomUUID(), binding='fixture-binding';
@@ -65,7 +151,7 @@ function fixture(t: test.TestContext, provider: string) {
   const executor = createNativeExecutors().find(value => value.descriptor.id === provider)!;
   const read = () => executor.nativeContent!({ root, configRoot, contextId, cwd });
   const entry: ConversationEntry = { id: randomUUID(), sequence: 1, kind: 'tool', role: 'system', text: input + '\n' + nativePreview(output), input, provider, status: 'completed', createdAt: 'now' };
-  return { dataRoot, root, configRoot, contextId, cwd, file, rows, source, executor, read, entry, output, toolId };
+  return { dataRoot, root, configRoot, contextId, cwd, file, rows, source, executor, read, entry, output, input, toolId };
 }
 
 for (const provider of ['codex', 'qoder', 'dsh']) test(`${provider}: exact persisted fragments reconstruct original tool bytes without native execution`, t => {
@@ -167,9 +253,9 @@ test('v5 upgrade preserves normalized bodies and rejects a retained old writer b
   db.exec("DROP TRIGGER conversation_body_format_insert; DROP TRIGGER conversation_body_format_update; UPDATE conversations SET body=json_set(body,'$._bodyFormat',5); PRAGMA user_version=5");
   const original=f.repo.readPage(f.r.view.id)!.view.entries;
   assert.equal(maintainNativeContent(f.dataRoot).diagnostic,'native_content_maintenance_deferred','maintenance cannot silently upgrade an old live store');
-  f.repo.startReadModels();assert.equal(db.prepare('PRAGMA user_version').get()!.user_version,8);
+  f.repo.startReadModels();assert.equal(db.prepare('PRAGMA user_version').get()!.user_version,9);
   assert.deepEqual(f.repo.readPage(f.r.view.id)!.view.entries,original);
-  assert.equal(fs.readdirSync(f.root).some(name=>name.startsWith('conversations.pre-v8-')),false);
+  assert.equal(fs.readdirSync(f.root).some(name=>name.startsWith('conversations.pre-v9-')),false);
   assert.throws(()=>db.prepare("UPDATE conversations SET body=json_set(body,'$._bodyFormat',5)").run(),/agent_storage_writer_incompatible/);db.close();
 });
 
@@ -317,9 +403,9 @@ test('v6 reference migration verifies persisted bytes even when the native sourc
   db.prepare("UPDATE conversation_entry_contents SET codec='native-v1',body=? WHERE content_revision=?").run(JSON.stringify(reference),row.content_revision);
   db.exec("DROP TRIGGER conversation_body_format_insert; DROP TRIGGER conversation_body_format_update; UPDATE conversations SET body=json_set(body,'$._bodyFormat',6); PRAGMA user_version=6");
   fs.unlinkSync(f.file);f.repo.startReadModels();
-  assert.equal(db.prepare('PRAGMA user_version').get()!.user_version,8);
+  assert.equal(db.prepare('PRAGMA user_version').get()!.user_version,9);
   assert.equal(db.prepare("SELECT count(*) n FROM conversation_entry_contents WHERE codec='native-v1'").get()!.n,1);
-  assert.equal(fs.readdirSync(f.root).some(name=>name.startsWith('conversations.pre-v8-')),false,'verified migration backup does not retain another database copy');
+  assert.equal(fs.readdirSync(f.root).some(name=>name.startsWith('conversations.pre-v9-')),false,'verified migration backup does not retain another database copy');
   assert.throws(()=>db.prepare("UPDATE conversations SET body=json_set(body,'$._bodyFormat',6)").run(),/agent_storage_writer_incompatible/);
   assert.throws(()=>f.repo.readEntry(f.r.view.id,f.entry.id,row.content_revision),{code:'agent_native_content_unavailable'});
 });

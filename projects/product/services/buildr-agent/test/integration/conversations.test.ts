@@ -1,6 +1,15 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import { AGENT_OPERATION_SCHEMAS } from '../../src/operation-schemas.ts';
 import { codexItem } from '../../src/executors/codex/items.ts';
+import {dshItem} from '../../src/executors/dsh/protocol.ts';
+import {qoderHistoryItems} from '../../src/executors/qoder/protocol.ts';
+import {zstdCompressSync} from 'node:zlib';
+import zlib from 'node:zlib';
+import {syncBuiltinESMExports} from 'node:module';
+import {ExecutorEventStream} from '../../src/executors/event-stream.ts';
+import {NativeContentReader} from '../../src/storage/native-content.ts';
+import {dispatchOperation} from '../../src/process/operations.ts';
+import {listen,body,json} from '../../src/process/transport.ts';
 import { opaqueReference } from '../../src/executors/native-process.ts';
 import { interactionPolicy } from '../../src/domain/interaction-policy.ts';
 import assert from 'node:assert/strict';
@@ -14,6 +23,106 @@ import { createAgentService } from '../../src/index.ts';
 import type { AgentExecutor, AgentRuntime, AgentServiceOptions, ContextRef, ConversationEntry, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorSendInput, ExecutorTitleInput, LoginObservation } from '../../src/contracts.ts';
 import { NativeRequestError } from '../../src/domain/error-diagnostic.ts';
 import { ConversationRepository } from '../../src/persistence/conversation-repository.ts';
+
+for(const provider of ['dsh','qoder'] as const)test(`${provider} streaming keeps HTTP controls responsive with large old tool history`,async t=>{
+  const native=fake(provider),open=native.executor.open;let begin:(()=>void)|undefined,started!:()=>void;
+  const outputStarted=new Promise<void>(resolve=>{started=resolve;});const chunks=200;
+  let finishStream!:()=>void,streamEnded=false;const streamDone=new Promise<void>(resolve=>{finishStream=resolve;});
+  native.executor.open=async options=>{
+    const runtime=await open(options),create=runtime.createContext.bind(runtime);
+    runtime.createContext=async input=>{const previous=await create(input),id=provider==='dsh'?'session-'+previous.id:previous.id;if(id!==previous.id){native.contexts.set(id,native.contexts.get(previous.id)!);native.contexts.delete(previous.id);}return{id,data:{native:opaqueReference(provider,id,input.cwd,runtime.bindingIdentity)}};};
+    runtime.send=async input=>{
+      try{
+      native.sends.push(input);const context=native.contexts.get(input.contextRef.id)!;
+      const executionRef={id:input.clientRequestId,data:{resourceContext:input.contextRef.id,resourceBinding:runtime.bindingIdentity}};
+      context.observation={status:'running',executionRef,tools:[{id:'stream',label:'command',status:'running'}]};input.onEvent({type:'accepted',executionRef});
+      const item:ExecutorItem={id:'stream',kind:'tool',role:'system',name:'shell',nativeTool:true,input:'read-only',text:'begin',executionId:executionRef.id,status:'running'};input.onEvent({type:'item',item});
+      await new Promise<void>(resolve=>{begin=resolve;});started();
+      const events=new ExecutorEventStream(input.onEvent);
+      for(let i=0;i<chunks;i++){events.push({type:'item',item:{...item,text:'stream '+i+'\n'+'data'.repeat(3000)}});await new Promise(resolve=>setTimeout(resolve,5));}
+      events.push({type:'item',item:{...item,text:'finished',status:'completed'}});events.push({type:'completed',status:'completed'});context.observation={status:'idle',executionRef,tools:[]};
+      }finally{streamEnded=true;finishStream();}
+    };return runtime;
+  };
+  const f=fixture([native.executor]);let channel:Awaited<ReturnType<typeof listen>>|undefined;
+  const writes=t.mock.method(ConversationRepository.prototype,'saveConversation');
+  const decompressions=t.mock.method(zlib,'zstdDecompressSync');syncBuiltinESMExports();
+  t.after(()=>{decompressions.mock.restore();syncBuiltinESMExports();});
+  const nativeReads=t.mock.method(NativeContentReader.prototype,'tool');
+  try{
+    await connected(f.service,provider);const chat=await f.service.conversations.create('workspace-one',{});
+    const repo=new ConversationRepository(path.join(f.options.dataRoot,'agent-service'));const old=repo.readConversation(chat.id)!;const prior=old.view.revision;
+    old.view.entries=Array.from({length:400},(_,i)=>({id:'old-'+i,sequence:i+1,kind:'tool' as const,role:'system' as const,text:'historical-'+i+'\n'+'history-only-data'.repeat(1300),status:'completed' as const,createdAt:'old'}));old.view.revision=randomUUID();repo.saveConversation(old,prior);repo.stopReadModels();
+    send(f.service,chat.id,provider,'read-only performance fixture');
+    const running=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id,{compactTools:true}),v=>v.entries.some(e=>e.kind==='tool'&&e.detail?.live));
+    const through=running.activity?.version??0;
+    let controlNativeReads=0;
+    channel=await listen(async(req,res)=>{const input=await body(req),before=nativeReads.mock.callCount();const result=await dispatchOperation(f.service,input.operation,input.args);controlNativeReads+=nativeReads.mock.callCount()-before;json(res,200,result);});
+    const baseline={writes:writes.mock.callCount(),native:nativeReads.mock.callCount(),decoded:decompressions.mock.callCount()};
+    begin!();await outputStarted;
+    const timings:Record<string,number[]>={read:[],children:[],activity:[],seen:[]};
+    const operations:{[key:string]:[string,unknown[]]}={read:['conversations.read',['workspace-one',chat.id,{compactTools:true}]],children:['conversations.listChildren',['workspace-one',chat.id,{}]],activity:['conversations.listAll',[['workspace-one'],{}]],seen:['conversations.markSeen',['workspace-one',chat.id,{through}]]};
+    const start=performance.now();
+    for(let n=0;n<250&&(n<12||!streamEnded);n++){
+      await Promise.all(Object.entries(operations).map(async([key,[operation,args]])=>{
+      const time=performance.now(),response=await fetch(channel!.origin,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({operation,args}),signal:AbortSignal.timeout(3000)});const value=await response.json();assert.equal(response.status,200,response.status===200?undefined:JSON.stringify(value));timings[key].push(performance.now()-time);
+      }));
+      if(!streamEnded)await new Promise(resolve=>setTimeout(resolve,5));
+    }
+    assert.equal(controlNativeReads,0,'control requests never open native tool bodies');
+    assert.equal(decompressions.mock.callCount()-baseline.decoded,0,'stream snapshots never decode old tool bodies');
+    const probeMs=performance.now()-start;
+    await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id,{compactTools:true}),v=>v.run?.status==='completed');
+    const saved=writes.mock.callCount()-baseline.writes;assert.ok(saved<chunks/2,`coalesced writes ${saved} for ${chunks} updates`);
+    const summary=Object.fromEntries(Object.entries(timings).map(([key,values])=>{const sorted=[...values].sort((a,b)=>a-b);return[key,{requests:values.length,p95Ms:Math.round(sorted[Math.ceil(sorted.length*.95)-1]),maxMs:Math.round(sorted.at(-1)!)}];}));
+    t.diagnostic(JSON.stringify({provider,historyTools:400,historyLogicalBytes:Buffer.byteLength(JSON.stringify(old.view.entries)),chunks,persistedUpdates:saved,nativeBodyReads:0,oldBodyDecompressions:0,modelWaitMs:0,source:'controlled post-adapter event fixture, actual HTTP/SQLite',controlProbeMs:Math.round(probeMs),streamFixtureMs:Math.round(performance.now()-start),endpoints:summary}));
+  }finally{begin?.();if(begin)await streamDone;await channel?.close();await f.close();}
+});
+
+for(const provider of ['dsh','qoder'] as const)test(`${provider} live tool output is never persisted and late native history survives reopening`,async()=>{
+  const native=fake(provider),open=native.executor.open,output='native-only-output\n'.repeat(1500);
+  let release!:()=>void,file='',completion:unknown;
+  native.executor.open=async options=>{
+    const runtime=await open(options),create=runtime.createContext.bind(runtime);
+    runtime.createContext=async input=>{
+      const previous=await create(input),id=provider==='dsh'?'session-'+previous.id:previous.id;
+      if(id!==previous.id){native.contexts.set(id,native.contexts.get(previous.id)!);native.contexts.delete(previous.id);}
+      return {id,data:{native:opaqueReference(provider,id,input.cwd,runtime.bindingIdentity)}};
+    };
+    runtime.send=async input=>{
+      native.sends.push(input);const context=native.contexts.get(input.contextRef.id)!,id='native-call';
+      const executionRef={id:input.clientRequestId,data:{resourceContext:input.contextRef.id,resourceBinding:runtime.bindingIdentity}};
+      context.observation={status:'running',executionRef,tools:[{id,label:'tool',status:'running'}]};input.onEvent({type:'accepted',executionRef});
+      const call=provider==='dsh'?{seq:2,type:'tool/call',data:{turn:1,callId:id,name:'shell',arguments:JSON.stringify({command:'read-only-command'})}}:{type:'assistant',uuid:'assistant',session_id:input.contextRef.id,message:{content:[{type:'tool_use',id,name:'Shell',input:{command:'read-only-command'}}]}};
+      const result=provider==='dsh'?{seq:3,type:'tool/result',data:{turn:1,message:{toolCallId:id,content:[{type:'text',text:output}]}}}:{type:'user',session_id:input.contextRef.id,message:{content:[{type:'tool_result',tool_use_id:id,content:output}]}};
+      const projected=(record:any)=>provider==='dsh'?dshItem(record):qoderHistoryItems([{type:'user',uuid:input.clientRequestId,session_id:input.contextRef.id,message:{content:[{type:'text',text:'run'}]}},call,record],input.contextRef.id).filter(item=>item.kind==='tool');
+      const raw=(record:any)=>({...record,sessionId:input.contextRef.id,cwd:input.cwd,isSidechain:false,promptId:input.clientRequestId,sourceToolAssistantUUID:record.type==='user'?'assistant':undefined});
+      file=provider==='dsh'?path.join(options.configRoot,'dsh-home/sessions/bucket',input.contextRef.id,'session.v4.jsonl.zstd'):path.join(options.configRoot,'qoder-config/projects/bucket',input.contextRef.id+'.jsonl');fs.mkdirSync(path.dirname(file),{recursive:true});
+      const rows=provider==='dsh'?[{type:'session',version:4,id:input.contextRef.id,cwd:input.cwd},{seq:0,type:'turn/start',data:{turn:1}},{seq:1,type:'user/message',data:{turn:1,source:{rpcId:input.clientRequestId},content:[{type:'text',text:'run'}]}},call]:[raw({type:'user',uuid:input.clientRequestId,message:{content:[{type:'text',text:'run'}]}}),raw(call)];
+      fs.writeFileSync(file,provider==='dsh'?Buffer.concat(rows.map(row=>zstdCompressSync(Buffer.from(JSON.stringify(row)+'\n')))):rows.map(row=>JSON.stringify(row)+'\n').join(''));
+      for(const item of projected(call))input.onEvent({type:'item',item:{...item,executionId:executionRef.id}});
+      input.onEvent({type:'item',item:{id,kind:'tool',role:'system',nativeTool:true,text:output.slice(0,100),executionId:executionRef.id,status:'running'}});
+      await new Promise<void>(resolve=>{release=resolve;});
+      for(const item of projected(result)){input.onEvent({type:'item',item:{...item,executionId:executionRef.id}});context.items.push({...item,executionId:executionRef.id});}
+      completion=provider==='dsh'?result:raw(result);context.observation={status:'idle',executionRef,tools:[]};input.onEvent({type:'completed',status:'completed'});
+    };return runtime;
+  };
+  const f=fixture([native.executor]);
+  try{
+    await connected(f.service,provider);const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,provider,'run');
+    const running=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id,{compactTools:true}),v=>v.entries.some(e=>e.kind==='tool'&&e.detail?.live));const tool=running.entries.find(e=>e.kind==='tool')!;
+    assert.ok(tool.text.includes('native-only-output'));
+    const subscription=f.service.conversations.subscribe('workspace-one',chat.id,{compactTools:true});const first=await subscription.events[Symbol.asyncIterator]().next();assert.equal(first.value?.payload.conversation?.entries.find((e:ConversationEntry)=>e.id===tool.id)?.detail?.live,true);subscription.close();
+    const db=new DatabaseSync(path.join(f.options.dataRoot,'agent-service/conversations.sqlite'),{readOnly:true});
+    const stored=()=>{const row=db.prepare('SELECT c.codec,c.body,e.compact FROM conversation_entry_contents c JOIN conversation_read_entries e USING(conversation_id,content_revision) WHERE e.conversation_id=? AND e.id=?').get(chat.id,tool.id)!;assert.equal(row.codec,'native-tool');assert.equal(row.compact,null);assert.equal(String(row.body).includes('native-only-output'),false);assert.equal(String(row.body).includes('read-only-command'),false);};
+    stored();release();await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id,{compactTools:true}),v=>v.run?.status==='completed');stored();
+    fs.appendFileSync(file,provider==='dsh'?zstdCompressSync(Buffer.from(JSON.stringify(completion)+'\n')):JSON.stringify(completion)+'\n');
+    const ready=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id,{compactTools:true}),v=>!v.entries.find(e=>e.id===tool.id)?.detail?.live);
+    const ref=ready.entries.find(e=>e.id===tool.id)!;assert.equal(ref.text,'');assert.equal(f.service.conversations.readEntry('workspace-one',chat.id,tool.id,ref.detail!.revision).text,output);stored();db.close();await f.service.close();
+    const cold=createAgentService(f.options);try{const entry=cold.conversations.read('workspace-one',chat.id,{compactTools:true}).entries.find(e=>e.id===tool.id)!;assert.equal(entry.text,'');assert.equal(cold.conversations.readEntry('workspace-one',chat.id,entry.id,entry.detail!.revision).text,output);}finally{await cold.close();}
+    assert.equal(native.sends.length,1);
+  }finally{release?.();await f.close();}
+});
 
 test('resuming history preserves a concurrent metadata update without failing the new input', async () => {
   const native = fake('local'), open = native.executor.open;
