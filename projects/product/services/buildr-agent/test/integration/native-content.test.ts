@@ -50,7 +50,7 @@ function semanticNative(t:test.TestContext,provider:'dsh'|'qoder',compressed=pro
 for(const provider of ['dsh','qoder'] as const)for(const compressed of provider==='dsh'?[false,true]:[false])test(`${provider} semantic detail${compressed?' zstd':''} reads full bytes, exact owner and incomplete append`,t=>{
   const f=semanticNative(t,provider,compressed),read=()=>readNativeTool(f.root,f.reference),before=fs.readFileSync(f.file);
   assert.equal(read()?.text,f.output);assert.equal(read()?.input,JSON.stringify({command:f.input}));assert.deepEqual(fs.readFileSync(f.file),before);
-  for(const ref of [{...f.reference,nativeId:'different'},{...f.reference,session:{...f.reference.session!,turnId:'other'}},{...f.reference,session:{...f.reference.session!,cwd:'/other'}},{...f.reference,session:{...f.reference.session!,config:'connections/'+(provider==='dsh'?'qoder':'dsh')}}])assert.equal(readNativeTool(f.root,ref),undefined);
+  for(const ref of [{...f.reference,nativeId:'different'},...(provider==='dsh'?[{...f.reference,session:{...f.reference.session!,turnId:'other'}}]:[]),{...f.reference,session:{...f.reference.session!,cwd:'/other'}},{...f.reference,session:{...f.reference.session!,config:'connections/'+(provider==='dsh'?'qoder':'dsh')}}])assert.equal(readNativeTool(f.root,ref),undefined);
   const tail=Buffer.from('{"type":');fs.appendFileSync(f.file,compressed?zstdCompressSync(tail).subarray(0,6):tail);
   assert.equal(read()?.text,f.output,'pending tail does not hide preceding complete tools');
   fs.unlinkSync(f.file);assert.equal(read(),undefined);
@@ -59,10 +59,10 @@ for(const provider of ['dsh','qoder'] as const)for(const compressed of provider=
 for(const provider of ['dsh','qoder'] as const)test(`${provider} stores only native identity before output is readable and after completion`,t=>{
   const f=semanticNative(t,provider),resolver=new NativeContentResolver(f.root),repo=new ConversationRepository(f.root,(record,entry)=>resolver.tool(record,entry),ref=>readNativeTool(f.root,ref));t.after(()=>repo.stopReadModels());
   const participantId=randomUUID(),runId=randomUUID(),entry:ConversationEntry={...f.entry,status:'running',runId,participantId};
-  const record:StoredConversation={view:{id:randomUUID(),workspaceId:'ws',revision:'r1',cwd:f.cwd,title:'native',updatedAt:'now',hidden:false,requests:[],participants:[],entries:[entry]},participants:[{id:participantId,connectionId:provider,provider,label:provider,bindingIdentity:'binding',deliveredThrough:0,contextRef:{id:f.contextId,data:{native:opaqueReference(provider,f.contextId,f.cwd,'binding')}}}],sources:{[participantId+':tool:'+f.toolId]:entry.id},nativeTools:{[entry.id]:true},attachments:{},requests:{},attempts:[{clientRequestId:f.turnId,inputDigest:'digest',runId,participantId,through:0,userEntryId:'user',accepted:true,executionRef:{id:f.turnId,data:{resourceContext:f.contextId,resourceBinding:'binding'}}}]};
+  const record:StoredConversation={view:{id:randomUUID(),workspaceId:'ws',revision:'r1',cwd:f.cwd,title:'native',updatedAt:'now',hidden:false,requests:[],participants:[],entries:[entry]},participants:[{id:participantId,connectionId:provider,provider,label:provider,bindingIdentity:'binding',deliveredThrough:0,contextRef:{id:f.contextId,data:{native:opaqueReference(provider,f.contextId,f.cwd,'binding')}}}],sources:{[participantId+':tool:'+f.toolId]:entry.id},nativeTools:{[entry.id]:true},attachments:{},requests:{},attempts:[{clientRequestId:f.turnId,inputDigest:'digest',runId,participantId,through:0,userEntryId:'user',accepted:true,executionRef:{id:provider==='qoder'?randomUUID():f.turnId,data:{resourceContext:f.contextId,resourceBinding:'binding'}}}]};
   fs.unlinkSync(f.file);repo.saveConversation(record);
   const db=new DatabaseSync(repo.filename,{readOnly:true});t.after(()=>db.close());
-  const check=()=>{const row=db.prepare('SELECT c.codec,c.body,c.content_revision,e.compact FROM conversation_entry_contents c JOIN conversation_read_entries e USING(conversation_id,content_revision) WHERE c.conversation_id=?').get(record.view.id)!;assert.equal(row.codec,'native-tool');assert.equal(row.compact,null);const ref=JSON.parse(Buffer.from(row.body as Uint8Array).toString());assert.equal(ref.entry.text,'');assert.equal(Object.hasOwn(ref.entry,'input'),false);assert.equal(JSON.stringify(ref).includes(f.output),false);return row.content_revision as string;};
+  const check=()=>{const row=db.prepare('SELECT c.codec,c.body,c.content_revision,e.compact FROM conversation_entry_contents c JOIN conversation_read_entries e USING(conversation_id,content_revision) WHERE c.conversation_id=?').get(record.view.id)!;assert.equal(row.codec,'native-tool');assert.equal(row.compact,null);const ref=JSON.parse(Buffer.from(row.body as Uint8Array).toString());assert.equal(ref.entry.text,'');if(provider==='qoder')assert.equal(ref.session.turnId,undefined);assert.equal(Object.hasOwn(ref.entry,'input'),false);assert.equal(JSON.stringify(ref).includes(f.output),false);return row.content_revision as string;};
   const pending=check();assert.throws(()=>repo.readEntry(record.view.id,entry.id,pending),{code:'agent_native_content_unavailable'});
   entry.status='completed';record.view.revision='r2';repo.saveConversation(record,'r1');const revision=check();
   f.write();assert.equal(repo.readEntry(record.view.id,entry.id,revision)?.text,f.output);
@@ -76,7 +76,7 @@ test('Qoder native detail traverses more than 64 MiB without a full inventory',t
   fs.appendFileSync(f.file,JSON.stringify(last)+'\n');assert.ok(fs.statSync(f.file).size>64*1024*1024);assert.equal(readNativeTool(f.root,f.reference)?.text,f.output);
 });
 
-test('Qoder child tools bind the exact native parent and its original turn',t=>{
+test('Qoder child tools bind the exact unique native parent',t=>{
   const f=semanticNative(t,'qoder'),parent=f.toolId,child='child-call',prompt=randomUUID();
   const directory=path.join(path.dirname(f.file),f.contextId,'subagents');fs.mkdirSync(directory,{recursive:true});
   const file=path.join(directory,'agent-child.jsonl');
@@ -85,17 +85,22 @@ test('Qoder child tools bind the exact native parent and its original turn',t=>{
   const write=()=>fs.writeFileSync(file,rows.map(r=>JSON.stringify(r)+'\n').join(''));write();
   const ref={...f.reference,nativeId:child,entry:{...f.reference.entry,parentToolId:'buildr-parent-entry'},session:{...f.reference.session!,parentToolId:parent}};
   assert.equal(readNativeTool(f.root,ref)?.text,'complete child output');
-  assert.equal(readNativeTool(f.root,{...ref,session:{...ref.session,turnId:'other'}}),undefined);
   assert.equal(readNativeTool(f.root,{...ref,session:{...ref.session,parentToolId:'other'}}),undefined);
   rows[1].parent_tool_use_id='other';write();assert.equal(readNativeTool(f.root,ref),undefined);
   rows[1].parent_tool_use_id=parent;write();fs.copyFileSync(file,path.join(directory,'agent-ambiguous.jsonl'));assert.equal(readNativeTool(f.root,ref),undefined);
+});
+
+test('Qoder rejects a native call ID reused by another prompt',t=>{
+  const f=semanticNative(t,'qoder');
+  f.rows.push({...f.rows[0],uuid:randomUUID(),promptId:randomUUID()} as any,{...f.rows[1],uuid:randomUUID()} as any);
+  f.write();assert.equal(readNativeTool(f.root,f.reference),undefined);
 });
 
 test('Qoder deferred results use the original assistant identity across prompt changes',t=>{
   const f=semanticNative(t,'qoder'),result:any=f.rows.at(-1),later=randomUUID();
   result.promptId=later;f.write();
   assert.equal(readNativeTool(f.root,f.reference)?.text,f.output);
-  assert.equal(readNativeTool(f.root,{...f.reference,session:{...f.reference.session!,turnId:later}}),undefined);
+  assert.equal(readNativeTool(f.root,{...f.reference,session:{...f.reference.session!,turnId:later}})?.text,f.output);
   result.sourceToolAssistantUUID='different-assistant';f.write();
   assert.equal(readNativeTool(f.root,f.reference),undefined);
   delete result.sourceToolAssistantUUID;f.write();
@@ -107,7 +112,7 @@ test('Qoder prompt identity differs from persisted message UUID and survives con
   const first:any=f.rows[0];first.uuid=randomUUID();first.promptId=f.turnId;first.origin={kind:'human'};first.humanInput={text:'test',mode:'prompt'};
   f.rows.splice(1,0,{type:'user',uuid:randomUUID(),sessionId:f.contextId,cwd:f.cwd,isSidechain:false,message:{content:[{type:'text',text:'native context envelope'}]}} as any);f.write();
   assert.equal(readNativeTool(f.root,f.reference)?.text,f.output);
-  assert.equal(readNativeTool(f.root,{...f.reference,session:{...f.reference.session!,turnId:first.uuid}}),undefined);
+  assert.equal(readNativeTool(f.root,{...f.reference,session:{...f.reference.session!,turnId:first.uuid}})?.text,f.output);
 });
 
 function conversation(t: test.TestContext, provider = 'qoder') {

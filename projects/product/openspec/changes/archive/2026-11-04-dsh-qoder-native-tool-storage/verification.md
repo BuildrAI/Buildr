@@ -30,3 +30,7 @@
 本机日志：`/tmp/dq-check-final.log`、`/tmp/dq-http-final.log`、`/tmp/dq-integration-full.log`、`/tmp/dq-upstream-focused.log`、`/tmp/dq-native-final.log`、`/tmp/dq-testtypes-final.log`、`/tmp/dq-agent-build-final.log`、`/tmp/dq-perf-final.log`、`/tmp/dq-real-largest-final-evidence.json`、`/tmp/dq-real-child-evidence.json`。临时日志不作为可移植成果的唯一依据，本文件保留命令范围和结果。
 
 初次检查中的测试类型错误、性能夹具错误已修复，末次检查通过；未篡改原失败日志。尚未用候选后台发起新的DSH/Qoder真实模型轮次或做候选页面端到端验收，也未验证共享运行时启用后的接口延迟。部署验收与实际空间回收不能用上述隔离结果替代。
+
+## 真实验收补充修复
+
+首次启用后DSH真实轮次通过；Qoder发现SDK执行编号与原生promptId不同，不能用SDK编号筛选原生轮次。实现改为准确配置、会话和唯一工具调用ID定位，并核对结果来源消息；跨prompt重复调用ID拒绝，子调用沿唯一父调用证明。新引用不写错误轮次字段，读取兼容最初已带SDK编号的引用。48项原生内容回归通过，受影响3项静态及Agent单元检查通过。Qoder原轮次的真实原生工具记录使用修正读取成功，无正文补写。真实最终启用与页面结果以Task验证报告为准。

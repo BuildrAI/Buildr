@@ -12,12 +12,14 @@ export function readQoderTool(root:string,reference:NativeToolContent) {
     let files=primary;
     const parent=reference.session?.parentToolId;
     if(parent){
-      if(!qoderToolRecord(input,primary[0]!,parent,reference.session?.turnId)?.call)return;
+      if(!qoderToolRecord(input,primary[0]!,parent)?.call)return;
       files=nativeContentFiles(input,path.join(path.dirname(primary[0]!),input.contextId,'subagents'),file=>file.endsWith('.jsonl'),2);
     }
     let selected:ReturnType<typeof qoderToolRecord>;
     for(const file of files){
-      const tool=qoderToolRecord(input,file,reference.nativeId!,parent?undefined:reference.session?.turnId,parent);
+      // Earlier v3 references carried the SDK execution ID in turnId. It is
+      // not a native prompt filter; prove the unique call and source message.
+      const tool=qoderToolRecord(input,file,reference.nativeId!,parent);
       if(!tool?.result)continue;
       if(selected)return;selected=tool;
     }
@@ -26,7 +28,7 @@ export function readQoderTool(root:string,reference:NativeToolContent) {
   }catch{return;}
 }
 
-function qoderToolRecord(input:NativeContentContext,file:string,id:string,turnId?:string,parent?:string) {
+function qoderToolRecord(input:NativeContentContext,file:string,id:string,parent?:string) {
   let execution:string|undefined,call:any,result:{text:string}|undefined,callOwner:string|undefined,ambiguous=false;
   const assistants=new Set<string>();
   for(const row of nativeToolRows(input,'qoder',file)){
@@ -39,7 +41,6 @@ function qoderToolRecord(input:NativeContentContext,file:string,id:string,turnId
       (row.humanInput||visibleText(row.message?.content)!=='[Request interrupted by user]'))execution=row.promptId??row.uuid;
     for(const part of parts){
       if(part.type==='tool_use'&&part.id===id){
-        if(turnId&&execution!==turnId)continue;
         if(call&&callOwner!==execution)ambiguous=true;
         call=part;callOwner=execution;if(typeof row.uuid==='string')assistants.add(row.uuid);
       }
@@ -49,7 +50,7 @@ function qoderToolRecord(input:NativeContentContext,file:string,id:string,turnId
         // still identifies the original assistant call, whose owner was checked above.
         if(row.sourceToolAssistantUUID){
           if(!assistants.has(row.sourceToolAssistantUUID))continue;
-        }else if(turnId&&turn!==turnId||turn!==callOwner)continue;
+        }else if(turn!==callOwner)continue;
         const native=row.toolUseResult;
         const text=native&&[native.stdout,native.stderr].some(value=>typeof value==='string')
           ? [native.stdout,native.stderr].filter(value=>typeof value==='string'&&value).join('\n')

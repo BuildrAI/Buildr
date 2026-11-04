@@ -82,7 +82,8 @@ export class NativeContentResolver {
         const skeleton = {...entry, text: ''};
         delete skeleton.input;
         delete skeleton.detail;
-        const turnId = origin.attempts.find(value => value.runId === entry.runId && value.participantId === participant.id && value.accepted)?.executionRef?.id;
+        // Qoder's SDK execution ID is not its persisted promptId.
+        const turnId = participant.provider==='qoder'?undefined:origin.attempts.find(value => value.runId === entry.runId && value.participantId === participant.id && value.accepted)?.executionRef?.id;
         const parentSource = entry.parentToolId ? Object.entries(origin.sources).filter(([key,id])=>id===entry.parentToolId&&key.startsWith(participant.id+':tool:')) : [];
         const owned=record.nativeTools?.[entry.id];
         const parentToolId=typeof owned==='object'?owned.parentToolId:parentSource.length===1?parentSource[0]![0].slice(split+6):undefined;
