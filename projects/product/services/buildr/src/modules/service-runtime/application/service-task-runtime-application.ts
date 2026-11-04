@@ -27,19 +27,19 @@ export type StartTaskRunsInput = {
   origin?: 'human' | 'agent';
 };
 
-export function runtimeTaskAllowsService(task: RuntimeTask, service: { code: string; projects: string[] }): boolean {
-  if (task.scope.services.length) return task.scope.services.some(ref => ref.service === service.code && service.projects.includes(ref.project));
-  return task.scope.projects.some(project => service.projects.includes(project));
-}
-
 /** Task contributes scope and defaults; each selected service still owns its run and failure. */
 export function createServiceTaskRuntimeApplication(deps: {
   readTaskScope(root: string, taskId: string): RuntimeTask;
   catalog: ServiceRuntimeCatalogPort;
   view: ServiceRuntimeView;
   runtime: ServiceRuntimeApplication;
+  worktreeServices?(root: string, taskId: string): string[];
 }) {
-  const taskServices = (root: string, task: RuntimeTask) => deps.catalog.listServices(root).filter(service => runtimeTaskAllowsService(task, service));
+  /** 任务可启动的服务只由本任务工作树决定，与项目范围声明无关。 */
+  const taskServices = (root: string, task: RuntimeTask) => {
+    const covered = new Set(deps.worktreeServices?.(root, task.taskId) ?? []);
+    return deps.catalog.listServices(root).filter(service => covered.has(service.code));
+  };
 
   async function detail(root: string, taskId: string): Promise<TaskRuntimeDetail> {
     const task = deps.readTaskScope(root, taskId);
@@ -98,10 +98,10 @@ export function createServiceTaskRuntimeApplication(deps: {
       visiting.add(selection.serviceCode);
       try {
         const item = servicesByCode.get(selection.serviceCode);
-        if (!item) throw new ServiceRuntimeError('service_runtime_task_scope_mismatch', `服务 ${selection.serviceCode} 不在当前任务范围。`);
+        if (!item) throw new ServiceRuntimeError('service_runtime_task_scope_mismatch', `服务 ${selection.serviceCode} 不在本任务工作树中。`);
         if (!item.worktree || item.worktree.id !== selection.worktreeId) throw new ServiceRuntimeError('service_runtime_task_worktree_unavailable', item.diagnostics.join(' ') || '所选目录不属于本任务，请刷新后重选。');
         const task = deps.readTaskScope(root, input.taskId);
-        if (!taskServices(root, task).some(service => service.code === selection.serviceCode)) throw new ServiceRuntimeError('service_runtime_task_scope_mismatch', '任务服务范围已变化，请刷新后重选。');
+        if (!taskServices(root, task).some(service => service.code === selection.serviceCode)) throw new ServiceRuntimeError('service_runtime_task_scope_mismatch', '本任务工作树已变化，请刷新后重选。');
         const definition = deps.runtime.readDefinition(root, selection.serviceCode)?.definition;
         if (!definition) throw new ServiceRuntimeError('service_runtime_definition_missing', `服务 ${selection.serviceCode} 尚无已验证的运行定义。`);
         const backends = definition.local.backends ?? [];
@@ -120,8 +120,8 @@ export function createServiceTaskRuntimeApplication(deps: {
             if (index >= 0) backendTargets[index] = target; else backendTargets.push(target);
           }
         }
-        // Dependency readiness may take time; re-read scope before the next service starts.
-        if (!taskServices(root, deps.readTaskScope(root, input.taskId)).some(service => service.code === selection.serviceCode)) throw new ServiceRuntimeError('service_runtime_task_scope_mismatch', '任务服务范围已变化，请刷新后重选。');
+        // Dependency readiness may take time; re-read task worktrees before the next service starts.
+        if (!taskServices(root, deps.readTaskScope(root, input.taskId)).some(service => service.code === selection.serviceCode)) throw new ServiceRuntimeError('service_runtime_task_scope_mismatch', '本任务工作树已变化，请刷新后重选。');
         const current = await deps.runtime.listRuns(root);
         const existing = current.find(run => run.serviceCode === selection.serviceCode && run.worktreeId === selection.worktreeId && run.taskId === input.taskId && isActiveRun(run));
         const expected = selection.expectedWorktree;
@@ -167,7 +167,7 @@ export function createServiceTaskRuntimeApplication(deps: {
           if (ready.head !== source.head || ready.branch !== source.branch || ready.dirty !== source.dirty) throw new ServiceRuntimeError('service_runtime_worktree_changed', '已有实例的启动时代码与当前目录不同，请核对后重新启动。');
           run = ready; reused = true;
         } else {
-          if (!taskServices(root, deps.readTaskScope(root, input.taskId)).some(service => service.code === selection.serviceCode)) throw new ServiceRuntimeError('service_runtime_task_scope_mismatch', '任务服务范围已变化，请刷新后重选。');
+          if (!taskServices(root, deps.readTaskScope(root, input.taskId)).some(service => service.code === selection.serviceCode)) throw new ServiceRuntimeError('service_runtime_task_scope_mismatch', '本任务工作树已变化，请刷新后重选。');
           const { backendTargets: _declared, expectedBackendRunId: legacyExpected, ...rest } = selection;
           const start = { ...rest, ...(backendTargets.length ? {} : { expectedBackendRunId: legacyExpected }), backendTargets, taskId: input.taskId, origin: input.origin ?? 'agent' as const, ...(mode ? { connection: mode } : {}) };
           run = definition.local.routing && routingPlan

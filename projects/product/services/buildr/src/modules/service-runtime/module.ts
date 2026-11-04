@@ -2,7 +2,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { CODE_APPLICATION } from '../code/module.ts';
 import { TASK_QUERY_APPLICATION, TASK_WORKTREE_PROVIDER } from '../task/module.ts';
-import { createServiceTaskRuntimeApplication, runtimeTaskAllowsService } from './application/service-task-runtime-application.ts';
+import { createServiceTaskRuntimeApplication } from './application/service-task-runtime-application.ts';
 import { WORKSPACE_APPLICATION } from '../workspace/module.ts';
 import { createServiceRuntimeApplication } from './application/service-runtime-application.ts';
 import { createServiceRuntimeView } from './application/service-runtime-view.ts';
@@ -45,6 +45,20 @@ export const SERVICE_RUNTIME_MODULE = Object.freeze({
 
       const resolveService = (targetRoot: string, serviceCode: string) => listServices(targetRoot).find(service => service.code === serviceCode) ?? null;
 
+      /** 本任务工作树覆盖的服务：工作树已属于该任务时，服务不因范围声明缺失而不可启动。 */
+      function taskWorktreeCoversService(targetRoot: string, taskId: string, serviceCode: string): boolean {
+        const service = resolveService(targetRoot, serviceCode);
+        if (!service?.repositoryId) return false;
+        try {
+          const observed = code.sourceControl(targetRoot, { repositoryId: service.repositoryId });
+          const repository = (observed.repositories as any[]).find(item => item.id === service.repositoryId);
+          if (!repository?.available) return false;
+          const evidence = worktreeProvider.readGitWorktreeEvidence(targetRoot, taskId, { optional: true });
+          const recorded = evidence?.evidence.repositories ?? [];
+          return (repository.worktrees as any[]).some(worktree => !worktree.isMain && recorded.some(item => matchesTaskCheckout(repository.location, worktree, item)));
+        } catch { return false; }
+      }
+
       function listWorktrees(targetRoot: string, serviceCode: string, taskId?: string): ServiceWorktree[] {
         const service = resolveService(targetRoot, serviceCode);
         if (!service) throw new ServiceRuntimeError('service_runtime_service_unknown', `服务未登记：${serviceCode}`);
@@ -53,7 +67,6 @@ export const SERVICE_RUNTIME_MODULE = Object.freeze({
         const repository = (observed.repositories as any[]).find(item => item.id === service.repositoryId);
         if (!repository?.available) throw new ServiceRuntimeError('service_runtime_repository_unavailable', `代码库本机目录或 Git 身份当前不可读取：${repository?.code ?? service.repositoryId}`);
         const task = taskId ? readTaskScope(targetRoot, taskId) : null;
-        if (task && !runtimeTaskAllowsService(task, service)) throw new ServiceRuntimeError('service_runtime_task_scope_mismatch', '所选服务不在当前任务范围。');
         // 明确任务的读取只消费该任务的提供者证据，不要求其他项目全部可读。
         const evidence = taskId ? worktreeProvider.readGitWorktreeEvidence(targetRoot, taskId, { optional: true }) : null;
         return (repository.worktrees as any[])
@@ -92,7 +105,7 @@ export const SERVICE_RUNTIME_MODULE = Object.freeze({
       const runtime = createServiceRuntimeApplication({ resolveService, listWorktrees,
         assertTaskScope(root, taskId, serviceCode) {
           const service = resolveService(root, serviceCode);
-          if (!service || !runtimeTaskAllowsService(readTaskScope(root, taskId), service)) throw new ServiceRuntimeError('service_runtime_task_scope_mismatch', '任务服务范围已变化，请刷新后重选。');
+          if (!service || !taskWorktreeCoversService(root, taskId, service.code)) throw new ServiceRuntimeError('service_runtime_task_scope_mismatch', '服务不在本任务工作树中，请刷新后重选。');
         },
       });
       const view = createServiceRuntimeView({ catalog: { listServices }, runtime });
@@ -109,6 +122,9 @@ export const SERVICE_RUNTIME_MODULE = Object.freeze({
       };
       const taskRuntime = createServiceTaskRuntimeApplication({
         runtime, view, catalog: { listServices }, readTaskScope,
+        worktreeServices(root: string, taskId: string) {
+          return listServices(root).filter(service => taskWorktreeCoversService(root, taskId, service.code)).map(service => service.code);
+        },
       });
 
       return Object.freeze({

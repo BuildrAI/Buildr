@@ -6,7 +6,7 @@ import type { ServiceRuntimeApplication } from '../../src/modules/service-runtim
 import type { ServiceRuntimeSummary, ServiceRuntimeView } from '../../src/modules/service-runtime/application/service-runtime-view.ts';
 import type { ServiceWorktree } from '../../src/modules/service-runtime/domain/worktrees.ts';
 
-function fixture(options: { backend?: boolean; failFrontend?: boolean; ambiguous?: boolean } = {}) {
+function fixture(options: { backend?: boolean; failFrontend?: boolean; ambiguous?: boolean; worktreeServices?: string[] } = {}) {
   const worktree = (code: string): ServiceWorktree => ({ id: code + '-task', path: '/task/' + code, label: '任务', main: false, branch: 'task', head: code + '-head', dirty: false, taskId: 'task', taskTitle: '测试任务' });
   const local = (code: string) => ({ command: ['node', 'server.js'], cwd: '.', profile: null, preferredPort: code === 'back' ? 8080 : 3000, portOverride: '--port', readiness: { kind: 'http' as const, path: '/' }, timeoutSeconds: 10,
     ...(code === 'front' ? { backends: [{ serviceCode: 'back', environmentVariable: 'PROXY_TARGET', remoteUrl: 'https://test.example.com' }] } : {}) });
@@ -37,10 +37,11 @@ function fixture(options: { backend?: boolean; failFrontend?: boolean; ambiguous
     },
   };
   const task = { taskId: 'task', title: '测试任务', scope: { projects: ['project'], services: [{ project: 'project', service: 'front' }, { project: 'project', service: 'back' }] } };
+  const covered = [...(options.worktreeServices ?? ['front', 'back'])];
   const app = createServiceTaskRuntimeApplication({ readTaskScope: () => task, catalog: { listServices: () => services.map(service => ({ ...service, modulePath: '' })) }, runtime: runtime as unknown as ServiceRuntimeApplication,
-    view: { overview: async () => ({ services, runs }) } as unknown as ServiceRuntimeView });
+    view: { overview: async () => ({ services, runs }) } as unknown as ServiceRuntimeView, worktreeServices: () => covered });
   if (options.backend) runs.push(createRun('back'));
-  return { app, calls, runs, createRun, task, runtime, worktrees };
+  return { app, calls, runs, createRun, task, runtime, worktrees, covered };
 }
 const selection = (code: string) => ({ serviceCode: code, worktreeId: code + '-task' });
 
@@ -71,16 +72,16 @@ test('already matching task runs are reused; different connection is an explicit
   const again = await f.app.start('/', { taskId: 'task', selected: [selection('front'), selection('back')] }); assert.ok(again.results.every(result => result.reused)); assert.deepEqual(f.calls, ['back', 'front']);
   const changed = await f.app.start('/', { taskId: 'task', selected: [selection('front')], connection: 'remote' }); assert.equal(changed.results[0].error?.code, 'service_runtime_connection_conflict');
 });
-test('wrong source, out of scope, duplicate selection fail without starting those services', async () => {
+test('wrong source, unknown service and duplicate selection fail without starting those services', async () => {
   const f = fixture(); const wrong = await f.app.start('/', { taskId: 'task', selected: [{ ...selection('front'), worktreeId: 'front-main' }, selection('unknown')] });
   assert.ok(wrong.results.every(result => result.error)); assert.deepEqual(f.calls, []);
   const drift = await f.app.start('/', { taskId: 'task', selected: [{ ...selection('back'), expectedWorktree: { path: '/wrong', branch: 'task', head: 'back-head', dirty: false } }] }); assert.equal(drift.results[0].error?.code, 'service_runtime_worktree_changed');
   await assert.rejects(f.app.start('/', { taskId: 'task', selected: [selection('back'), selection('back')] })); assert.deepEqual(f.calls, []);
 });
-test('scope removed during backend readiness prevents starting frontend and preserves ready backend', async () => {
+test('worktree removed during backend readiness prevents starting frontend and preserves ready backend', async () => {
   const f = fixture();
   f.runtime.waitForRun = async (_root, id) => {
-    f.task.scope.services = [{ project: 'project', service: 'back' }];
+    f.covered.splice(f.covered.indexOf('front'), 1);
     return f.runs.find(run => run.id === id)!;
   };
   const result = await f.app.start('/', { taskId: 'task', selected: [selection('front'), selection('back')], connection: 'local' });
@@ -88,10 +89,10 @@ test('scope removed during backend readiness prevents starting frontend and pres
   assert.equal(result.results[0].error?.code, 'service_runtime_task_scope_mismatch');
   assert.equal(result.results[1].run?.status, 'running');
 });
-test('scope removed during run reconciliation prevents the subsequent start', async () => {
+test('worktree removed during run reconciliation prevents the subsequent start', async () => {
   const f = fixture();
   f.runtime.listRuns = async () => {
-    f.task.scope.services = [{ project: 'project', service: 'front' }];
+    f.covered.splice(f.covered.indexOf('back'), 1);
     return f.runs;
   };
   const result = await f.app.start('/', { taskId: 'task', selected: [selection('back')] });
@@ -110,4 +111,14 @@ test('worktree changed while waiting for an existing instance rejects stale reus
   assert.equal(result.results[0].error?.code, 'service_runtime_worktree_changed');
   assert.deepEqual(f.calls, []);
   assert.equal(existing.status, 'running');
+});
+
+test('only services covered by the task worktrees are listed and startable', async () => {
+  const f = fixture({ worktreeServices: ['back'] });
+  const detail = await f.app.detail('/', 'task');
+  assert.deepEqual(detail.services.map(item => item.service.code), ['back']);
+  const result = await f.app.start('/', { taskId: 'task', selected: [selection('back')] });
+  assert.equal(result.results[0].error, null);
+  const rejected = await f.app.start('/', { taskId: 'task', selected: [selection('front')] });
+  assert.equal(rejected.results[0].error?.code, 'service_runtime_task_scope_mismatch');
 });
