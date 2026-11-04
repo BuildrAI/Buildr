@@ -10,7 +10,7 @@ type Options = {
   watch(cursor: string | undefined, signal: AbortSignal): Promise<CodeSourceControlWatchResponse>;
   subscribe?(listener: (notice: SourceControlChangeNotice) => void): () => void;
   cache?: {read(): CodeSourceControlResponse | null; write(data: CodeSourceControlResponse): void};
-  debounceMs?: number; fallbackMs?: number; retryMs?: number; concurrency?: number; initialDelayMs?: number;
+  debounceMs?: number; fallbackMs?: number; retryMs?: number; concurrency?: number; initialDelayMs?: number; minimumReconcileMs?: number;
 };
 type Job = {scope: string; repositoryId?: string; catalog: Catalog};
 const jobKey = (scope: string, repositoryId?: string) => JSON.stringify([scope, repositoryId || '']);
@@ -20,10 +20,15 @@ export function createSourceControlObserver(options: Options) {
   const catalogs = new Map<string, {catalog: Catalog; users: number}>();
   const queued = new Map<string, Job>(), running = new Map<string, Job>();
   const listeners = new Set<() => void>();
-  const debounceMs = options.debounceMs ?? 180, fallbackMs = options.fallbackMs ?? 120000;
+  const debounceMs = options.debounceMs ?? 180, fallbackMs = options.fallbackMs ?? 300000;
   const concurrency = Math.max(1, options.concurrency ?? 2);
   let started = false, visible = true, disposed = false, cursor: string | undefined;
-  let initialNotBefore = 0;
+  let initialNotBefore = 0, lastReconciledAt = -Infinity;
+  const minimumReconcileMs = options.minimumReconcileMs ?? 30000;
+  const verified = (value: ReturnType<Catalog['snapshot']>) => Boolean(value.selectionReady && value.data && !value.data.coverage.truncated && !value.data.worktreeCoverage.truncated && !value.error && !Object.keys(value.repositoryErrors).length && !value.cachedRepositoryIds?.length);
+  const markReconciled = () => {
+    if (verified(defaultCatalog.snapshot())) { lastReconciledAt = Date.now(); scheduleFallback(); }
+  };
   let scheduled: ReturnType<typeof setTimeout> | undefined, fallback: ReturnType<typeof setTimeout> | undefined;
   let watchController: AbortController | undefined, unsubscribe: (() => void) | undefined;
   let state = {diagnostics: [] as string[]};
@@ -75,7 +80,7 @@ export function createSourceControlObserver(options: Options) {
       });
       if (!next) break;
       const [key, job] = next; queued.delete(key); running.set(key, job);
-      void job.catalog.check(job.repositoryId).finally(() => { if (job.scope) job.catalog.adopt(defaultCatalog.snapshot()); running.delete(key); drain(); });
+      void job.catalog.check(job.repositoryId).then(() => { if (!job.scope && !job.repositoryId) markReconciled(); }).finally(() => { if (job.scope) job.catalog.adopt(defaultCatalog.snapshot()); running.delete(key); drain(); });
     }
   }
   function enqueue(scope: string, repositoryId?: string) {
@@ -100,9 +105,12 @@ export function createSourceControlObserver(options: Options) {
   function invalidateRefs(repositoryIds?: string[]) {
     for (const entry of catalogs.values()) entry.catalog.invalidateRefs(repositoryIds || entry.catalog.snapshot().data?.repositories.map(repository => repository.id) || []);
   }
-  function reconcile(taskId?: string) {
+  function reconcile(taskId?: string, force = false) {
     if (state.diagnostics.length) invalidateRefs();
     const scope = taskId || '';
+    // Focus and retained-view activation can fire repeatedly without a visibility
+    // gap. Reuse a recently verified catalog; real changes and manual refresh bypass this.
+    if (!force && !state.diagnostics.length && verified(getCatalog(scope).snapshot()) && Date.now() - lastReconciledAt < minimumReconcileMs) return;
     if (queued.has(jobKey(scope)) || running.has(jobKey(scope))) return;
     check(taskId);
   }
@@ -150,7 +158,7 @@ export function createSourceControlObserver(options: Options) {
   function setVisible(next: boolean) {
     if (disposed || visible === next) return;
     visible = next;
-    if (visible) { reconcile(); resumeWatch(); scheduleFallback(); }
+    if (visible) { reconcile(undefined, true); resumeWatch(); scheduleFallback(); }
     else { watchController?.abort(); watchController = undefined; clearTimeout(scheduled); scheduled = undefined; clearTimeout(fallback); }
   }
   return {
@@ -180,7 +188,7 @@ export function createSourceControlObserver(options: Options) {
     reconcile,
     refresh: (repositoryId?: string) => {
       queued.delete(jobKey('', repositoryId));
-      return defaultCatalog.refresh(repositoryId);
+      return defaultCatalog.refresh(repositoryId).then(() => { if (!repositoryId) markReconciled(); });
     },
     setVisible,
     start(initialVisible = true) {
