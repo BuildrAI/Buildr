@@ -962,8 +962,19 @@ await step('临时截图链接使用认证预览，文件错误提示不跨对�
   fs.writeFileSync(imagePath,png,{flag:'wx'});await page.route(matcher,intercept);
   try{
     fixture.additionalConversations.push({...previous,id:otherId,title:'另一段对话',entries:[{id:'other-entry',sequence:1,kind:'message',role:'user',text:'其他对话正文',createdAt:new Date().toISOString()}],run:undefined,participants:[]});
-    update({cwd:base,entries:[{id:'screenshot-reference',sequence:1,kind:'message',role:'assistant',runId:'run-fixture',text:`[查看验收截图](${encodeURI(imagePath)}) [相对截图](验收%20截图.png) [暂不可用截图](${encodeURI(missingPath)}) [无法定位的文件](/outside/not-authorized.md) [延迟文件](/outside/delayed.md)`,createdAt:new Date().toISOString()}],run:run('completed','codex')});
+    update({cwd:base,entries:[{id:'screenshot-reference',sequence:1,kind:'message',role:'assistant',runId:'run-fixture',text:`![验收截图](${encodeURI(imagePath)}) [查看验收截图](${encodeURI(imagePath)}) [相对截图](验收%20截图.png) [暂不可用截图](${encodeURI(missingPath)}) [无法定位的文件](/outside/not-authorized.md) [延迟文件](/outside/delayed.md)`,createdAt:new Date().toISOString()}],run:run('completed','codex')});
     await page.reload();await panel().getByRole('link',{name:'查看验收截图',exact:true}).waitFor();
+    // 内联图片同样可放大：实际像素、新窗口入口与切换对话关闭。
+    const inlineImage=panel().getByRole('button',{name:'查看大图：验收截图',exact:true});
+    await inlineImage.waitFor();await inlineImage.scrollIntoViewIfNeeded();
+    const inlineLoaded=page.waitForResponse((response:any)=>new URL(response.url()).pathname==='/api/v1/conversation-image');
+    await inlineImage.click();assert.equal((await inlineLoaded).status(),200);await assertImage();
+    assert.equal(await preview().locator('.ac-linked-image-preview').getAttribute('data-actual-size'),null);
+    await preview().getByRole('button',{name:'实际大小',exact:true}).click();
+    assert.equal(await preview().locator('.ac-linked-image-preview').getAttribute('data-actual-size'),'true','实际像素模式可滚动查看原图');
+    assert.equal(await preview().getByRole('button',{name:'适应窗口',exact:true}).count(),1);
+    assert.match((await preview().getByRole('link',{name:'新窗口打开',exact:true}).getAttribute('href'))||'',/^\/api\/v1\/conversation-image\?path=/);
+    await closePreview();
     const loaded=page.waitForResponse((response:any)=>new URL(response.url()).pathname==='/api/v1/conversation-image');
     await panel().getByRole('link',{name:'查看验收截图',exact:true}).click();assert.equal((await loaded).status(),200);await assertImage();assert.equal(await panel().getByRole('button',{name:'复制来源路径',exact:true}).count(),0,'临时图片不进入源码定位');await preview().evaluate(async(node:HTMLElement)=>{await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));await Promise.all(node.getAnimations({subtree:true}).map(animation=>animation.finished.catch(()=>{})));});await capture(page,'conversation-local-screenshot-preview.png');await closePreview();
     await panel().getByRole('link',{name:'相对截图',exact:true}).click();await assertImage();await closePreview();

@@ -613,7 +613,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
     return agent+' · '+conversationModelLabel(boundRun?.model||participant?.model,context.connections,context.modelCatalog,{connectionId:participant?.connectionId,modelAccountId:boundRun?.modelAccountId??participant?.modelAccountId});
   };
   const markdownImageResolver=useMemo(()=>(href:string)=>conversationImageSource(chat?.cwd,href),[chat?.cwd]);
-  const markdownOptions:MarkdownRenderOptions={allowRelativeLinks:true,allowParentRelativeLinks:true,allowAbsoluteFileLinks:true,taskLinkPathname:chat&&chat.workspaceId!=='@default'?'/workspaces/'+encodeURIComponent(chat.workspaceId):null,onRelativeLinkClick:reference=>void openProcessFile(reference),imageResolver:markdownImageResolver};
+  const markdownOptions:MarkdownRenderOptions={allowRelativeLinks:true,allowParentRelativeLinks:true,allowAbsoluteFileLinks:true,taskLinkPathname:chat&&chat.workspaceId!=='@default'?'/workspaces/'+encodeURIComponent(chat.workspaceId):null,onRelativeLinkClick:reference=>void openProcessFile(reference),imageResolver:markdownImageResolver,onImageClick:image=>{if(!chat||!image.src)return;setFileLinkFailure(null);setImageLink({selection:context.getSelection(),reference:image.reference||image.src,href:image.src});}};
   const forkableReplies = forkableReplyIds(chat);
   const finalReplies = finalReplyIds(chat);
   const loadToolEntry=useCallback((entry:ConversationEntry,signal?:AbortSignal)=>context.api.entry(chat!.workspaceId,chat!.id,entry,signal),[context.api,chat?.workspaceId,chat?.id]);

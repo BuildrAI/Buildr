@@ -381,6 +381,8 @@ artifacts:
       - agent-service-qoder-source
       - agent-service-host-source
       - agent-service-ui-source
+      - agent-conversation-image-preview-source
+      - markdown-image-preview-source
       - agent-service-ui-options-source
       - agent-service-conversation-preferences-source
       - agent-service-product-action-source
@@ -2031,7 +2033,17 @@ sources:
     title: 全局内部对话
     kind: code
     path: services/buildr-web/src/features/agent-conversations/ConversationPanel.tsx
-    summary: 统一历史、发送与接续预览、模型深度、授权问题、停止与标题操作。
+    summary: 统一历史、发送与接续预览、模型深度、授权问题、停止与标题操作；正文图片可点击放大到原始像素。
+  - id: agent-conversation-image-preview-source
+    title: 对话图片放大预览
+    kind: code
+    path: services/buildr-web/src/features/agent-conversations/ConversationImagePreview.tsx
+    summary: 复用同一认证图片地址放大查看，提供实际像素与适应窗口切换、新窗口打开及失败重试。
+  - id: markdown-image-preview-source
+    title: Markdown 图片放大触发
+    kind: code
+    path: services/buildr-web/src/lib/markdownImagePreviews.ts
+    summary: 宿主提供回调时才给已解析图片附加放大操作与键盘触发，其他阅读面保持不可交互。
   - id: agent-service-ui-dock-source
     title: 对话停靠与开合边界
     kind: code
@@ -2745,7 +2757,7 @@ sources:
     kind: code
     path: services/buildr-web/src/components/MarkdownHost.tsx
     observedDigest: 006c52ae5759501944c887d13af3d9c53c2359048131983110a8047497395a28
-    summary: 将文档渲染接入页面及相对链接事件。
+    summary: 将文档渲染接入页面，处理相对链接与由宿主决定的图片放大事件。
   - id: tree-ui
     title: 可折叠事实文件树
     kind: code

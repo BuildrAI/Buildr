@@ -20,6 +20,8 @@ export type MarkdownRenderOptions = {
   /** When true with allowRelativeLinks, relative href may include `..` segments (still sanitized by consumer / API). */
   allowParentRelativeLinks?: boolean;
   imageResolver?: (href: string) => { href: string } | null | undefined;
+  /** Hosts that can present the resolved image may offer an enlarged preview. */
+  onImageClick?: (image: { src: string; alt: string; reference: string }) => void;
   onRelativeLinkClick?: (href: string, event: MouseEvent) => void;
 };
 
@@ -107,6 +109,8 @@ function appendInline(parent, tokens, doc, linkOptions) {
       image.setAttribute('alt', alt);
       image.setAttribute('loading', 'lazy');
       image.setAttribute('referrerpolicy', 'no-referrer');
+      // Keep the authored reference so an enlarged preview can show its real source.
+      image.setAttribute('data-markdown-href', destination);
       image.addEventListener?.('error', () => {
         failedMarkdownImages.add(resolved.href);
         if (image.parentNode) image.replaceWith(imageFallback(doc, alt));
