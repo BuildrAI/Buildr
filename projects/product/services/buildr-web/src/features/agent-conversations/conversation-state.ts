@@ -48,7 +48,7 @@ export function executionLocked(run?: ConversationRun): boolean {
 export function needsConversationObservation(conversation: ConversationView | null): boolean {
   if (!conversation) return false;
   if (conversation.hidden && canCloseUncertainConversation(conversation)) return false;
-  if (conversation.pendingSend || conversation.requests.length || conversation.retainedRuns?.some(run=>!run.supersededBy&&(executionLocked(run)||run.tools.some(tool=>tool.status!=='completed')))) return true;
+  if (conversation.entries.some(entry=>entry.detail?.live) || conversation.pendingSend || conversation.requests.length || conversation.retainedRuns?.some(run=>!run.supersededBy&&(executionLocked(run)||run.tools.some(tool=>tool.status!=='completed')))) return true;
   const run = conversation.run;
   return Boolean(run && (executionLocked(run) || run.tools.some(tool => tool.status !== 'completed') ||
     run.executionState === 'active' || run.executionState === 'unknown'));

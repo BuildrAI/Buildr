@@ -1,3 +1,4 @@
+import { readCodexTool } from '../../src/executors/codex/content.ts';
 import { createAgentService } from '../../src/index.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -107,6 +108,19 @@ test('native image values return independently persisted bytes and reject privat
   assert.throws(() => reader.attachment(oversized), /原生正文/);
 });
 
+test('history snapshots and repeated control saves never resolve deferred native tool bodies',async t=>{
+  const f=conversation(t);assert.equal(maintainNativeContent(f.dataRoot).tools,1);
+  let reads=0;
+  t.mock.method(NativeContentReader.prototype,'tool',()=>{reads++;throw new Error('history body must not be read');});
+  const service=createAgentService({dataRoot:f.dataRoot,executors:[],modelProviders:[],resolveWorkspace:()=>({rootPath:f.cwd}),assertTask(){}});t.after(()=>service.close());
+  let view=service.conversations.read('ws',f.r.view.id,{compactTools:true});
+  const tool=view.entries[0];assert.ok(tool.detail);
+  for(let i=0;i<20;i++)view=await service.conversations.update('ws',view.id,{expectedRevision:view.revision,title:'update '+i});
+  assert.equal(reads,0);
+  assert.throws(()=>service.conversations.readEntry('ws',view.id,tool.id,tool.detail!.revision),/history body/);
+  assert.equal(reads,1);
+});
+
 test('settled tools move once, preserve detail/history/search/fork bytes and keep controls usable after external loss', t=>{
   const f=conversation(t), original=structuredClone(f.r), nativeBefore=fs.readFileSync(f.file);
   const result=maintainNativeContent(f.dataRoot); assert.equal(result.diagnostic,undefined); assert.equal(result.tools,1); assert.ok(result.contentBytesSaved>1024);
@@ -153,9 +167,9 @@ test('v5 upgrade preserves normalized bodies and rejects a retained old writer b
   db.exec("DROP TRIGGER conversation_body_format_insert; DROP TRIGGER conversation_body_format_update; UPDATE conversations SET body=json_set(body,'$._bodyFormat',5); PRAGMA user_version=5");
   const original=f.repo.readPage(f.r.view.id)!.view.entries;
   assert.equal(maintainNativeContent(f.dataRoot).diagnostic,'native_content_maintenance_deferred','maintenance cannot silently upgrade an old live store');
-  f.repo.startReadModels();assert.equal(db.prepare('PRAGMA user_version').get()!.user_version,7);
+  f.repo.startReadModels();assert.equal(db.prepare('PRAGMA user_version').get()!.user_version,8);
   assert.deepEqual(f.repo.readPage(f.r.view.id)!.view.entries,original);
-  assert.equal(fs.readdirSync(f.root).some(name=>name.startsWith('conversations.pre-v7-')),false);
+  assert.equal(fs.readdirSync(f.root).some(name=>name.startsWith('conversations.pre-v8-')),false);
   assert.throws(()=>db.prepare("UPDATE conversations SET body=json_set(body,'$._bodyFormat',5)").run(),/agent_storage_writer_incompatible/);db.close();
 });
 
@@ -303,9 +317,9 @@ test('v6 reference migration verifies persisted bytes even when the native sourc
   db.prepare("UPDATE conversation_entry_contents SET codec='native-v1',body=? WHERE content_revision=?").run(JSON.stringify(reference),row.content_revision);
   db.exec("DROP TRIGGER conversation_body_format_insert; DROP TRIGGER conversation_body_format_update; UPDATE conversations SET body=json_set(body,'$._bodyFormat',6); PRAGMA user_version=6");
   fs.unlinkSync(f.file);f.repo.startReadModels();
-  assert.equal(db.prepare('PRAGMA user_version').get()!.user_version,7);
+  assert.equal(db.prepare('PRAGMA user_version').get()!.user_version,8);
   assert.equal(db.prepare("SELECT count(*) n FROM conversation_entry_contents WHERE codec='native-v1'").get()!.n,1);
-  assert.equal(fs.readdirSync(f.root).some(name=>name.startsWith('conversations.pre-v7-')),false,'verified migration backup does not retain another database copy');
+  assert.equal(fs.readdirSync(f.root).some(name=>name.startsWith('conversations.pre-v8-')),false,'verified migration backup does not retain another database copy');
   assert.throws(()=>db.prepare("UPDATE conversations SET body=json_set(body,'$._bodyFormat',6)").run(),/agent_storage_writer_incompatible/);
   assert.throws(()=>f.repo.readEntry(f.r.view.id,f.entry.id,row.content_revision),{code:'agent_native_content_unavailable'});
 });
@@ -440,4 +454,106 @@ test('unrelated incomplete recovery metadata cannot retain a proven stable tool 
   assert.equal(f.repo.storageDependencies().complete,false);
   const result=maintainNativeContent(f.dataRoot);assert.equal(result.diagnostic,undefined);assert.equal(result.tools,1);
   assert.deepEqual(f.repo.readPage(f.r.view.id)!.view.entries[0],f.entry);
+});
+
+test('Codex native tool identity persists without body or preview before durable completion and reads the richer native event', t => {
+  const f = conversation(t, 'codex');
+  f.rows[2].payload.output=f.output.slice(0,128);
+  fs.writeFileSync(f.file,f.rows.map(row=>JSON.stringify(row)+'\n').join(''));
+  const beforeDb = new DatabaseSync(path.join(f.root,'conversations.sqlite'),{readOnly:true});
+  const prior = beforeDb.prepare('SELECT length(cast(c.body as blob)) stored,coalesce(length(cast(e.compact as blob)),0) preview FROM conversation_entry_contents c JOIN conversation_read_entries e USING(conversation_id,content_revision) WHERE e.conversation_id=? AND e.id=?').get(f.r.view.id,f.entry.id)!;
+  beforeDb.close();
+  const resolver = new NativeContentResolver(f.root, id => f.repo.readConversation(id));
+  const repo = new ConversationRepository(f.root, (record,entry) => resolver.tool(record,entry), ref => readCodexTool(f.root,ref));
+  t.after(() => repo.stopReadModels());
+  const entry = f.r.view.entries[0]!;
+  entry.status = 'running';
+  f.r.nativeTools = {[entry.id]:true};
+  f.r.view.revision = 'native-running';
+  repo.saveConversation(f.r, 'r1');
+  const db = new DatabaseSync(path.join(f.root,'conversations.sqlite'),{readOnly:true});
+  t.after(() => db.close());
+  const rows = () => db.prepare("SELECT c.*,e.compact FROM conversation_entry_contents c JOIN conversation_read_entries e USING(conversation_id,content_revision) WHERE e.conversation_id=? AND e.id=?").all(f.r.view.id,entry.id) as any[];
+  let row = rows()[0];
+  assert.equal(row.codec,'native-tool');
+  assert.equal(String(row.body).includes(f.output.slice(0,500)),false);
+  assert.equal(String(row.compact).includes(f.output.slice(0,500)),false);
+  assert.equal(row.compact,null,'the tool metadata has no second preview copy');
+  assert.equal(repo.readConversation(f.r.view.id)!.view.entries[0]!.text,'');
+  assert.throws(() => repo.readEntry(f.r.view.id,entry.id,row.content_revision), /原生正文/);
+  entry.status = 'completed';
+  f.r.view.revision = 'native-ended';
+  repo.saveConversation(f.r,'native-running');
+  row = rows()[0];
+  assert.throws(() => repo.readEntry(f.r.view.id,entry.id,row.content_revision), /原生正文/);
+  const completed = {type:'event_msg',payload:{type:'item_completed',turn_id:'execution',item:{type:'CommandExecution',id:f.toolId,command:entry.input,aggregated_output:f.output,exit_code:0,status:'completed'}}};
+  fs.appendFileSync(f.file,JSON.stringify(completed)+'\n');
+  const before = fs.readFileSync(f.file);
+  const full = repo.readEntry(f.r.view.id,entry.id,row.content_revision)!;
+  assert.equal(full.input,entry.input);
+  assert.equal(full.text,entry.input+'\n'+f.output);
+  assert.ok(full.text.length>entry.text.length,'history reads full native output rather than the live preview');
+  assert.deepEqual(fs.readFileSync(f.file),before);
+  const reference = ConversationEntryStore.reference(row)!;
+  assert.equal(readCodexTool(f.root,{...reference,session:{...reference.session!,turnId:'another-turn'}}),undefined);
+  assert.equal(readCodexTool(f.root,{...reference,session:{...reference.session!,cwd:'/different'}}),undefined);
+  assert.equal(rows().length,1,'revisions are reclaimed after metadata updates');
+  const reopened = new ConversationRepository(f.root,undefined,ref=>readCodexTool(f.root,ref));
+  assert.equal(reopened.readEntry(f.r.view.id,entry.id,row.content_revision)!.text,full.text);
+  const persisted = JSON.stringify(db.prepare('SELECT body FROM conversations WHERE id=?').get(f.r.view.id));
+  assert.equal(persisted.includes(f.output.slice(0,500)),false);
+  const afterBytes = Buffer.byteLength(row.body)+Buffer.byteLength(row.compact??'');
+  assert.ok(afterBytes<Buffer.byteLength(f.output)/4);
+  t.diagnostic(JSON.stringify({comparison:'same Codex tool body plus preview',before:Number(prior.stored)+Number(prior.preview),after:afterBytes,nativeUnchanged:true}));
+  const child = repo.readConversation(f.r.view.id)!;
+  child.view.id = randomUUID();child.view.revision = 'child';child.sources = {};
+  child.view.childOf = {conversationId:f.r.view.id,workspaceId:'ws',title:'source',sourceRevision:f.r.view.revision,throughSequence:2,createdAt:'now'};
+  repo.saveConversation(child);
+  const childEntry = repo.readConversation(child.view.id)!.view.entries[0]!;
+  assert.equal(repo.readEntry(child.view.id,childEntry.id,childEntry.detail!.revision)!.text,full.text);
+  const writer = new DatabaseSync(path.join(f.root,'conversations.sqlite'));
+  writer.prepare('DELETE FROM conversations WHERE id=?').run(f.r.view.id);writer.close();
+  child.view.revision = 'renamed-child';child.view.title = 'independent child';
+  repo.saveConversation(child,'child');
+  const independent = repo.readConversation(child.view.id)!.view.entries[0]!;
+  assert.equal(repo.readEntry(child.view.id,independent.id,independent.detail!.revision)!.text,full.text,'saved bindings remain readable without the Buildr parent');
+
+});
+
+for(const [kind,item,expected] of [
+  ['file-change',{type:'FileChange',changes:{'/work/result.ts':{kind:'update',diff:'native patch body'}},stdout:'native file output'},'native patch body'],
+  ['mcp-tool',{type:'McpToolCall',tool:'lookup',arguments:{query:'native query'},result:{content:[{type:'text',text:'native mcp body'}]}},'native mcp body'],
+  ['view-image',{type:'ImageView',path:'/work/picture.png'},'/work/picture.png'],
+] as const) test(`Codex ${kind} detail is projected from its native completion`,t=>{
+  const f=fixture(t,'codex');
+  const reference={version:3 as const,provider:'codex',contextId:f.contextId,nativeId:f.toolId,entry:{...f.entry,name:kind,text:'',input:undefined},text:[],session:{config:'connections/codex',cwd:f.cwd,turnId:'native-turn'}};
+  const row={type:'event_msg',payload:{type:'item_completed',turn_id:'native-turn',item:{...item,id:f.toolId,status:'completed'}}};
+  fs.appendFileSync(f.file,JSON.stringify(row)+'\n');
+  assert.ok(JSON.stringify(readCodexTool(f.root,reference)).includes(expected));
+  fs.appendFileSync(f.file,JSON.stringify(row)+'\n');
+  assert.ok(JSON.stringify(readCodexTool(f.root,reference)).includes(expected),'duplicate completion observation remains readable');
+  fs.appendFileSync(f.file,'{\"type\":\"event_msg\",\"payload\":');
+  assert.ok(JSON.stringify(readCodexTool(f.root,reference)).includes(expected),'a following incomplete append does not hide a completed tool');
+});
+
+test('Codex native argv is rendered as a shell-safe command without copying it into storage',t=>{
+  const f=fixture(t,'codex');
+  const argv=['/bin/zsh','-lc',"printf '%s' 'value with spaces'"];
+  const row={type:'event_msg',payload:{type:'item_completed',turn_id:'native-turn',item:{type:'CommandExecution',id:f.toolId,command:argv,aggregated_output:'result',exit_code:0,status:'completed'}}};
+  fs.appendFileSync(f.file,JSON.stringify(row)+'\n');
+  const reference={version:3 as const,provider:'codex',contextId:f.contextId,nativeId:f.toolId,entry:{...f.entry,text:'',input:undefined},text:[],session:{config:'connections/codex',cwd:f.cwd,turnId:'native-turn'}};
+  const detail=readCodexTool(f.root,reference)!;
+  assert.ok(detail.input!.startsWith("'/bin/zsh' '-lc' "));
+  assert.ok(detail.input!.includes("'\\''"));
+  assert.equal(detail.text,detail.input+'\nresult');
+});
+
+test('Codex semantic tool lookup reads a long append-only session with bounded line memory',t=>{
+  const f=fixture(t,'codex');
+  const filler=JSON.stringify({type:'event_msg',payload:{type:'irrelevant',text:'x'.repeat(1024*1024)}})+'\n';
+  for(let i=0;i<65;i++)fs.appendFileSync(f.file,filler);
+  fs.appendFileSync(f.file,JSON.stringify({type:'event_msg',payload:{type:'item_completed',turn_id:'native-turn',item:{type:'CommandExecution',id:f.toolId,command:'long session command',aggregated_output:'long session result',exit_code:0,status:'completed'}}})+'\n');
+  const reference={version:3 as const,provider:'codex',contextId:f.contextId,nativeId:f.toolId,entry:{...f.entry,text:'',input:undefined},text:[],session:{config:'connections/codex',cwd:f.cwd,turnId:'native-turn'}};
+  assert.ok(fs.statSync(f.file).size>64*1024*1024);
+  assert.equal(readCodexTool(f.root,reference)?.text,'long session command\nlong session result');
 });

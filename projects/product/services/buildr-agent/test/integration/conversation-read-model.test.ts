@@ -51,7 +51,7 @@ test('normalized writers update positions atomically and stale pages retain revi
  const separate=new ConversationRepository(path.dirname(repo.filename));assert.equal(separate.listPendingStates().length,0,'uncommitted old output is not visible');separate.stopReadModels();db.exec('COMMIT');
  assert.equal(repo.listPendingStates(true)[0].view.revision,'old-writer-2');assert.equal(repo.readPage(r.view.id),undefined,'stale projected messages must never escape');
  assert.throws(()=>repo.readEntry(r.view.id,'tool',preview.detail!.revision),{code:'agent_entry_changed'});
- repo.rebuildReadModel(r.view.id);assert.deepEqual(repo.readPage(r.view.id)!.view.entries,r.view.entries);assert.equal(repo.readConversation(r.view.id)!.view.run?.status,'waiting-question');
+ repo.rebuildReadModel(r.view.id);assert.deepEqual(JSON.parse(JSON.stringify(repo.readPage(r.view.id)!.view.entries)),r.view.entries);assert.equal(repo.readConversation(r.view.id)!.view.run?.status,'waiting-question');
  r.view.revision='old-writer-3';r.view.run=run('completed');db.prepare('UPDATE conversations SET body=?,revision=? WHERE id=?').run(ConversationEntryStore.header(r),r.view.revision,r.view.id);assert.equal(repo.listPendingStates(true).length,0);
 });
 
@@ -60,7 +60,7 @@ test('legacy reads are zero-write and verified migration preserves content befor
  writeLegacyConversationDatabase(repo.filename,[r]);
  const before=fs.readFileSync(repo.filename);assert.equal(repo.readPage(r.view.id),undefined);repo.listPendingStates();assert.deepEqual(fs.readFileSync(repo.filename),before);
  repo.rebuildReadModel(r.view.id);const check=new DatabaseSync(repo.filename,{readOnly:true});t.after(()=>check.close());assert.equal(check.prepare('PRAGMA user_version').get()!.user_version,CONVERSATION_SCHEMA_VERSION);assert.deepEqual(repo.readPage(r.view.id)!.view.entries,r.view.entries);
- assert.deepEqual(repo.readConversation(r.view.id)!.view.entries,r.view.entries);assert.equal(fs.readdirSync(path.dirname(repo.filename)).some(name=>name.startsWith('conversations.pre-v7-')),false);
+ assert.deepEqual(JSON.parse(JSON.stringify(repo.readConversation(r.view.id)!.view.entries)),r.view.entries);assert.equal(fs.readdirSync(path.dirname(repo.filename)).some(name=>name.startsWith('conversations.pre-v8-')),false);
 });
 
 test('status and projected pages do not parse canonical bodies, even when unrelated history is unreadable',t=>{
@@ -93,12 +93,27 @@ test('legacy present files survive compact paging without rewriting history or s
  const compact=JSON.parse(db.prepare('SELECT compact FROM conversation_read_entries WHERE id=?').get(tool.id)!.compact as string);delete compact.presentedFiles;
  db.prepare('UPDATE conversation_read_entries SET compact=? WHERE id=?').run(JSON.stringify(compact),tool.id);
  const service=createAgentService({dataRoot:base,executors:[],resolveWorkspace:()=>({rootPath:'/workspace'}),assertTask(){}});t.after(()=>service.close());
+ const readEntry=t.mock.method(ConversationRepository.prototype,'readEntry');
  const view=service.conversations.read('ws','presented',{compactTools:true});
  assert.deepEqual(view.entries[0].presentedFiles,[{path:'/workspace/release-process.md',description:'发布记录'}]);
  assert.equal(view.entries[0].input,undefined);assert.ok(view.entries[0].detail);
  assert.deepEqual(service.conversations.read('ws','presented').entries[0].presentedFiles,view.entries[0].presentedFiles);
  assert.equal(db.prepare('SELECT body FROM conversations WHERE id=?').get(r.view.id)!.body,original);
  assert.equal(service.conversations.read('ws','presented').run?.status,'completed');
+ for(let i=0;i<20;i++)service.conversations.read('ws','presented',{compactTools:true});
+ assert.equal(readEntry.mock.callCount(),1,'legacy file declarations are resolved once per exact revision');
+});
+
+test('old compressed tool bodies are validated only when detail is requested, not on snapshot or control saves',async t=>{
+ const base=fs.mkdtempSync(path.join(os.tmpdir(),'old-tool-snapshot-'));const repo=new ConversationRepository(path.join(base,'agent-service'));t.after(()=>{repo.stopReadModels();fs.rmSync(base,{recursive:true,force:true});});const r=record();r.view.entries=[{id:'large',sequence:1,kind:'tool',role:'system',text:'x'.repeat(20000),createdAt:'now',status:'completed'}];repo.saveConversation(r);
+ const db=new DatabaseSync(repo.filename);t.after(()=>db.close());
+ db.prepare("UPDATE conversation_entry_contents SET body=x'00' WHERE conversation_id=?").run(r.view.id);
+ const service=createAgentService({dataRoot:base,executors:[],modelProviders:[],resolveWorkspace:()=>({rootPath:r.view.cwd}),assertTask(){}});t.after(()=>service.close());
+ let view=service.conversations.read('ws',r.view.id,{compactTools:true});
+ assert.ok(view.entries[0].detail);
+ for(let i=0;i<10;i++)view=await service.conversations.update('ws',view.id,{expectedRevision:view.revision,title:'control '+i});
+ assert.throws(()=>service.conversations.readEntry('ws',view.id,'large',view.entries[0].detail!.revision),{code:'agent_entry_corrupt'});
+ assert.equal(Buffer.from(db.prepare('SELECT body FROM conversation_entry_contents WHERE conversation_id=?').get(r.view.id)!.body as Uint8Array).toString('hex'),'00');
 });
 
 test('lightweight reminders equal legacy pending projection including filtered questions and interrupted runs',async t=>{

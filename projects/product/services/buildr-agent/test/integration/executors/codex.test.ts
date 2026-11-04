@@ -395,3 +395,21 @@ test('Codex image viewing appears once in both live flow and durable history', a
     await runtime.stop({contextRef,executionRef:started.executionRef});await next;
   }finally{await runtime?.close();await rm(root,{recursive:true,force:true});}
  });
+
+
+test('native command output deltas use ordinary tool events with their original identity',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'buildr-codex-tool-stream-'));let runtime:AgentRuntime|undefined;
+ try {
+  const executable=join(root,'codex.mjs');await writeFile(executable,source);
+  runtime=await createCodexExecutor().open({connectionId:'codex',configRoot:root,executable,environment:{PATH:process.env.PATH??''}});
+  const contextRef=await runtime.createContext({cwd:root}),events:ExecutorEvent[]=[];
+  await runtime.send({contextRef,cwd:root,text:'[stream-tool-output]',images:[],clientRequestId:'stream-request',onEvent:event=>events.push(event)});
+  const tools=events.filter((event):event is Extract<ExecutorEvent,{type:'item'}>=>event.type==='item'&&event.item.kind==='tool').map(event=>event.item);
+  const partial=tools.find(item=>item.status==='running'&&item.text.endsWith('first second'));
+  assert.ok(partial,'the latest cumulative output crosses the completion barrier');
+  assert.ok(tools.indexOf(partial)<tools.length-1);
+  assert.ok(tools.every(item=>item.nativeTool===true&&item.id===tools[0]!.id&&item.executionId===tools[0]!.executionId));
+  assert.equal(tools.some(item=>item.text.includes('foreign')),false);
+  assert.equal(tools.at(-1)!.status,'completed');
+ } finally {await runtime?.close();await rm(root,{recursive:true,force:true});}
+});

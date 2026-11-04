@@ -156,3 +156,12 @@ test('只有模型思考时过程块不产生正文说明',()=>{
  const html=renderEntries([thinking('k1'),thinking('k2')],{active:true});
  assert.doesNotMatch(html,/ac-process-narration|内部推理|data-thinking/);
 });
+
+
+test('Codex折叠只显示元数据，展开实时详情直接显示原生输出',()=>{
+ const live={...tool('native'),provider:'codex',input:'echo private-input',text:'echo private-input\nprivate-live-output',detail:{revision:'a'.repeat(64),live:true}};
+ const closed=renderEntries([live],{active:true});
+ assert.doesNotMatch(closed,/private-input|private-live-output/);
+ const opened=renderEntries([live],{groupsOpen:{'tool-group:native':true},toolsOpen:{'tool:native':true}});
+ assert.match(opened,/private-live-output/);assert.doesNotMatch(opened,/正在读取完整工具记录/);
+});

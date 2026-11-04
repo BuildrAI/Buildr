@@ -15,7 +15,7 @@ export class NativeContentStore {
     this.db = new DatabaseSync(filename, { readOnly: !write });
     this.db.exec('PRAGMA busy_timeout=100');
     const version = Number(this.db.prepare('PRAGMA user_version').get()!.user_version);
-    if (version < (write ? 7 : 5) || version > 7) { this.db.close(); throw new Error('native_store_version'); }
+    if (version < (write ? 7 : 5) || version > 8) { this.db.close(); throw new Error('native_store_version'); }
     if (write) this.db.exec('CREATE TABLE IF NOT EXISTS conversation_storage_cursor(id INTEGER PRIMARY KEY CHECK(id=1),entry INTEGER NOT NULL,attachment TEXT NOT NULL); INSERT OR IGNORE INTO conversation_storage_cursor VALUES(1,0,\'\')');
   }
   /** Release at most 2 MiB per pass; a busy reader/writer merely defers reclamation. */

@@ -20,7 +20,6 @@ import { launchAgentProcess } from './handoff.ts';
 import { ConversationRepository } from '../persistence/conversation-repository.ts';
 import { PendingSends } from './pending-sends.ts';
 import { PendingSendRepository } from '../persistence/pending-send-repository.ts';
-import { cleanupStoppedProcesses } from './cleanup.ts';
 import { StorageMaintenance } from './storage-maintenance.ts';
 import { runtimeChange } from './runtime-change.ts';
 
@@ -344,8 +343,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       savePending(pending);
     } finally { startup?.release(); }
   }
-  const storageMaintenance = new StorageMaintenance(options.dataRoot, { enabled: () => accepting && !retiring && !closing });
-  let lastConfirmedCollection = 0;
+  const storageMaintenance = new StorageMaintenance(options.dataRoot, { enabled: () => accepting && !retiring && !closing, runtime:options.runtime });
   const timer = setInterval(() => {
     if (closing || adopting) return;
     if (retiring) {
@@ -354,7 +352,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       }).catch(() => { /* Keep the exact old owner until native release is confirmed. */ }).finally(() => { adopting=undefined; });
       return;
     }
-    if (accepting) { void sends.pump().catch(()=>{}); try { const now = Date.now(); if (now - lastConfirmedCollection >= 5000) { lastConfirmedCollection = now; cleanupStoppedProcesses(options.dataRoot,options.runtime); } } catch { /* Unknown resources remain retained. */ } }
+    if (accepting) void sends.pump().catch(()=>{});
     if (pending?.state==='waiting' && canRunParallel(options.runtime,pending.runtime) && !inflight && !recovering && !sends.busy) {
       const target=pending.runtime;
       adopting=adoptParallel(target).finally(()=>{adopting=undefined;});

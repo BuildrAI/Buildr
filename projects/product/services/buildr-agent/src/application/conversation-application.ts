@@ -17,6 +17,7 @@ import type { AttachmentInput } from '../contracts.ts';
 import { continuationDraft, releasedContinuation } from '../domain/conversation-continuation.ts';
 import { waitingHandoffQuestions, waitingQuestionText } from '../domain/waiting-question-handoff.ts';
 import { ConversationReadModel, type ConversationReadState } from '../persistence/conversation-read-model.ts';
+import { ConversationEntryStore } from '../persistence/conversation-entry-store.ts';
 import { LOCAL_CREDENTIAL_RETRIES, RETRY_DELAYS, localCredentialFailure, transientFailure } from '../domain/transient-failure.ts';
 import { NativeRequestError } from '../domain/error-diagnostic.ts';
 import {selectedOffering,modelConfiguration} from '../model-access/model-preferences.ts';
@@ -83,6 +84,41 @@ export class ConversationApplication {
   private readonly idleTimer: ReturnType<typeof setInterval>;
   private milliseconds() { return Date.parse(this.options.now()); }
   private readonly previewSecret = randomUUID();
+  private readonly liveTools = new Map<string, {conversationId: string; workspaceId: string; text: string; input?: string; bytes: number; ended: boolean; checks: number}>();
+  private liveToolTimer?: ReturnType<typeof setInterval>;
+  private rememberNativeTool(record: StoredConversation, participant: StoredParticipant, item: ExecutorItem): void {
+    const id = record.sources[`${participant.id}:tool:${item.id}`];
+    if (!id) return;
+    const prior = this.liveTools.get(id);
+    const input = item.input ?? prior?.input;
+    const bytes = Buffer.byteLength(item.text) + Buffer.byteLength(input ?? '');
+    this.liveTools.delete(id);
+    if (bytes <= 8 * 1024 * 1024) this.liveTools.set(id, {conversationId: record.view.id, workspaceId: record.view.workspaceId,
+      text: item.text, input, bytes, ended: ['completed','failed'].includes(item.status ?? ''), checks: 0});
+    while(this.liveTools.size > 128 || [...this.liveTools.values()].reduce((sum,value) => sum + value.bytes,0) > 8 * 1024 * 1024)
+      this.liveTools.delete(this.liveTools.keys().next().value!);
+    if(!this.liveToolTimer) {
+      this.liveToolTimer = setInterval(() => this.refreshNativeTools(),1000);
+      this.liveToolTimer.unref();
+    }
+  }
+  private refreshNativeTools(): void {
+    let checked = 0;
+    for(const [id,live] of [...this.liveTools]) {
+      if(!live.ended || checked++ >= 4) continue;
+      this.liveTools.delete(id);this.liveTools.set(id,live);
+      let available = false;
+      try {
+        const record = this.options.repository.readConversation(live.conversationId);
+        const entry = record?.view.entries.find(value => value.id === id);
+        if(entry?.detail) available = Boolean(this.options.repository.readEntry(live.conversationId,id,entry.detail.revision));
+      } catch { /* The native writer may still be publishing its completion record. */ }
+      if(!available && ++live.checks < 60) continue;
+      this.liveTools.delete(id);
+      try { this.retryRecordUpdate(() => this.save(this.load(live.workspaceId,live.conversationId))); } catch { /* A later read observes the same native identity. */ }
+    }
+    if(!this.liveTools.size) {clearInterval(this.liveToolTimer);this.liveToolTimer = undefined;}
+  }
   private readonly workers = new Map<string, Promise<void>>();
   private readonly observations = new Map<string, Promise<ConversationView>>();
   private readonly questionReleases = new Map<string,Promise<void>>();
@@ -377,10 +413,11 @@ export class ConversationApplication {
     normalizeQuestionCapabilities(record);
     return record;
   }
-  private view(record: ConversationReadState, before?: number, limit?: number): ConversationView {
+  private readonly legacyPresentedFiles = new Map<string, ReturnType<typeof presentedFilesForEntry>>();
+  private view(record: ConversationReadState, before?: number, limit?: number, readLegacyFiles = false, compactTools = true): ConversationView {
     setConversationTaskLinks(record.view,conversationTaskLinks(record.view));
     normalizeQuestionCapabilities(record);
-    const entries = record.view.entries.filter(entry => before === undefined || entry.sequence < before);
+    const entries = record.view.entries.filter(entry => before === undefined || entry.sequence < before).map(entry => compactTools ? ConversationEntryStore.preview(entry) : entry);
     const count = limit === undefined ? undefined : bounded(limit, PAGE_SIZE, 200);
     let inferredRound = {id:'legacy:0'};
     const entryRounds = count === undefined ? entries.map(entry => {
@@ -407,12 +444,27 @@ export class ConversationApplication {
     }
     // Historical tool output can be large; clone only the page that will be sent.
     const view = structuredClone({ ...record.view, entries: entries.slice(start), nextEntryCursor: start > 0 ? entries[start]!.sequence : record.view.nextEntryCursor });
+    view.entries = view.entries.map(entry => {
+      if(entry.input===undefined)delete entry.input;
+      const live = this.liveTools.get(entry.id);
+      if(!live || live.conversationId !== record.view.id) return entry;
+      const result = {...entry,text:live.text,input:live.input};
+      result.detail = entry.detail ? {...entry.detail,live:true} : undefined;
+      return result;
+    });
     view.entries=view.entries.map(entry=>{
       // Legacy compact projections may omit a large present invocation. Read only
       // this exact tool revision; never replay the native tool or rewrite history.
       let source=entry;
       if(entry.kind==='tool'&&entry.provider==='dsh'&&entry.name==='present'&&entry.status==='completed'&&entry.detail&&!entry.input&&!entry.presentedFiles){
-        source=this.options.repository.readEntry(view.id,entry.id,entry.detail.revision)??entry;
+        const key=JSON.stringify([view.id,entry.id,entry.detail.revision]);
+        let files=this.legacyPresentedFiles.get(key);
+        if(files===undefined&&readLegacyFiles){
+          try{files=presentedFilesForEntry(this.options.repository.readEntry(view.id,entry.id,entry.detail.revision)??entry);}catch{files=[];}
+          this.legacyPresentedFiles.set(key,files);
+          if(this.legacyPresentedFiles.size>128)this.legacyPresentedFiles.delete(this.legacyPresentedFiles.keys().next().value!);
+        }
+        if(files)source={...entry,presentedFiles:files};
       }
       const presentedFiles=presentedFilesForEntry(source);
       const result={...entry};delete result.presentedFiles;
@@ -443,8 +495,8 @@ export class ConversationApplication {
     const limit=options.limit===undefined?undefined:bounded(options.limit,PAGE_SIZE,200);
     const record=this.options.repository.readPage(id,options.before,limit,options.compactTools)??this.load(workspaceId,id);
     if(record.view.workspaceId!==workspaceId)fail('agent_conversation_missing','该工作空间中没有此对话。',404);
-    const result=this.view(record,options.before,limit);
-    if(options.compactTools)result.entries=result.entries.map(entry=>entry.detail?entry:ConversationReadModel.compact(entry));
+    const result=this.view(record,options.before,limit,true,options.compactTools===true);
+    if(options.compactTools)result.entries=result.entries.map(entry=>entry.detail||this.liveTools.has(entry.id)?entry:ConversationReadModel.compact(entry));
     return result;
   }
   readEntry(workspaceId:string,id:string,entryId:string,revision:string) {
@@ -863,7 +915,16 @@ export class ConversationApplication {
     const attempt=record.attempts.find(value=>value.runId===run.id);
     return Boolean(attempt?.persistedEnd&&attempt.persistedEnd===attempt.executionRef?.id&&run.executionState==='ended'&&!unfinishedRun(run));
   }
-  private applyItem(record: StoredConversation, participant: StoredParticipant, item: ExecutorItem, runId?: string): boolean {
+  private applyItem(record: StoredConversation, participant: StoredParticipant, item: ExecutorItem, runId?: string, live = false): boolean {
+    const changed = this.mergeItem(record,participant,item,runId);
+    if(changed && participant.provider === 'codex' && item.kind === 'tool' && item.nativeTool) {
+      const id = record.sources[`${participant.id}:tool:${item.id}`];
+      (record.nativeTools ??= {})[id] = true;
+      if(live) this.rememberNativeTool(record,participant,item);
+    }
+    return changed;
+  }
+  private mergeItem(record: StoredConversation, participant: StoredParticipant, item: ExecutorItem, runId?: string): boolean {
     if (Buffer.byteLength(item.text) > MAX_ITEM_BYTES) fail('agent_native_item_too_large', '原生条目超出安全展示容量，原记录保留于准确原生会话。', 413);
     const source = `${participant.id}:${item.kind}:${item.id}`;
     if (record.sources[source] === '@inherited') return false;
@@ -903,7 +964,7 @@ export class ConversationApplication {
       const thinkingChanged=Boolean(item.thinking)&&!entry.thinking;
       if (entry.text === item.text && entry.status === item.status && !nameChanged && !inputChanged && !filesChanged && !thinkingChanged && !participationChanged) return originChanged;
       if(participationChanged&&participation)(record.participationTools??={})[entry.id]={...participation,entryRevision:record.participationTools?.[entry.id]?.entryRevision};
-      entry.text = item.text; entry.status = item.status; if (item.thinking) entry.thinking = true; if (nameChanged) entry.name = item.name; if (inputChanged) entry.input = item.input; if(filesChanged)entry.presentedFiles=files; if(item.participation&&participation)(record.participationTools??={})[entry.id]={...participation,entryRevision:createHash('sha256').update(JSON.stringify(entry)).digest('hex')}; return true;
+      entry.text = item.text; entry.status = item.status; if (item.thinking) entry.thinking = true; if (nameChanged) entry.name = item.name; if (inputChanged) entry.input = item.input; if(filesChanged)entry.presentedFiles=files; if(item.participation&&participation)(record.participationTools??={})[entry.id]={...participation,entryRevision:item.nativeTool?undefined:createHash('sha256').update(JSON.stringify(entry)).digest('hex')}; return true;
     }
     entry = { id: randomUUID(), sequence: (record.view.entries.at(-1)?.sequence ?? record.view.childOf?.throughSequence ?? 0) + 1, createdAt: this.options.now(), kind: item.kind, role: item.role, text: item.text, ...(item.thinking?{thinking:true}:{}), ...(item.kind==='tool'?{participation:mergeParticipation(undefined,item.participation,item.name,item.input)}:{}), name: item.name, input: item.input, ...(item.presentedFiles?{presentedFiles:normalizePresentedFiles(item.presentedFiles)}:{}), parentToolId: item.parentToolId, participantId: participant.id, provider: participant.provider, runId:runId??record.attempts.find(a=>a.participantId===participant.id&&(a.executionRef?.id===item.executionId||a.clientRequestId===item.executionId))?.runId, status: item.status };
     record.view.entries.push(entry); record.sources[source] = entry.id;
@@ -936,7 +997,7 @@ export class ConversationApplication {
       ['observation','diagnostic','completed'].includes(event.type))return;
     if (event.type === 'item' && event.item.kind === 'tool' && event.item.executionId && attempt.executionRef?.id !== event.item.executionId) {
       const owner = record.attempts.find(value => value.participantId === participant.id && value.executionRef?.id === event.item.executionId);
-      if (owner && this.applyItem(record, participant, event.item, owner.runId)) this.save(record);
+      if (owner && this.applyItem(record, participant, event.item, owner.runId, true)) this.save(record);
       return;
     }
     if(event.type==='context-usage'){if(Number.isSafeInteger(event.usedTokens)&&event.usedTokens>=0){run.contextUsage={usedTokens:event.usedTokens,...(Number.isSafeInteger(event.windowTokens)&&event.windowTokens!>0?{windowTokens:event.windowTokens}:{})};run.updatedAt=this.options.now();this.save(record);}return;}
@@ -957,7 +1018,7 @@ export class ConversationApplication {
       if (event.inputItemId) record.sources[`${participant.id}:message:${event.inputItemId}`] = entry.id;
       this.endReplacedQuestions(record, runId);
     } else if (event.type === 'item') {
-      if (!this.applyItem(record, participant, event.item, runId)) return;
+      if (!this.applyItem(record, participant, event.item, runId, true)) return;
     } else if (event.type === 'request') {
       if (run.supersededBy || event.request.kind === 'question' && run.questionsEndedBy) return;
       if (!attempt.executionRef) fail('agent_native_request_unbound', '原生交互尚未取得执行身份，不能安全回应。', 409);
@@ -1015,11 +1076,11 @@ export class ConversationApplication {
     const record=this.load(workspaceId,id),entry=record.view.entries.find(e=>e.id===record.sources[participantId+':tool:'+nativeId]);
     const observation=entry&&(record.participationTools?.[entry.id]??entry.participation);
     if(!entry||!observation?.matches.some(m=>m.status!=='confirmed'))return;
-    const input=entry.input,entryId=entry.id;this.participationWork.add(key);
+    const input=entry.input??this.liveTools.get(entry.id)?.input,entryId=entry.id;this.participationWork.add(key);
     const request={ref:this.options.host.ref(workspaceId),observations:observation.matches.map((m,i)=>({id:String(i),kind:m.kind,path:m.locator,name:m.name}))};
     void within(Promise.resolve().then(()=>observe.call(this.options.host.capabilities,request)),PARTICIPATION_LIMITS.timeoutMs,'participation-timeout').then(result=>{
       if(this.closing||result.version!==1)return;
-      this.retryRecordUpdate(()=>{const current=this.load(workspaceId,id),item=current.view.entries.find(e=>e.id===entryId);const observed=item&&(current.participationTools?.[item.id]??item.participation);if(!item||!observed||item.input!==input)return;
+      this.retryRecordUpdate(()=>{const current=this.load(workspaceId,id),item=current.view.entries.find(e=>e.id===entryId);const observed=item&&(current.participationTools?.[item.id]??item.participation);if(!item||!observed||(item.input??this.liveTools.get(entryId)?.input)!==input)return;
         (current.participationTools??={})[item.id]={...applyParticipationSources(observed,result),entryRevision:current.participationTools?.[item.id]?.entryRevision};this.save(current);
       });
     }).catch(()=>{}).finally(()=>this.participationWork.delete(key));
@@ -2082,6 +2143,7 @@ export class ConversationApplication {
   }
   async close(): Promise<void> {
     this.closing = true;
+    clearInterval(this.liveToolTimer);this.liveTools.clear();
     await Promise.allSettled([...this.supersededCleanups.values(), ...this.questionReleases.values()]);
     clearInterval(this.idleTimer);
     for (const timer of this.idleReleaseTimers.values()) clearTimeout(timer);

@@ -1,3 +1,7 @@
+import Ajv2020 from 'ajv/dist/2020.js';
+import { AGENT_OPERATION_SCHEMAS } from '../../src/operation-schemas.ts';
+import { codexItem } from '../../src/executors/codex/items.ts';
+import { opaqueReference } from '../../src/executors/native-process.ts';
 import { interactionPolicy } from '../../src/domain/interaction-policy.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -817,7 +821,8 @@ test('default round pages split oversized rounds by bytes without dropping durab
       page = next;
     }
     assert.deepEqual(recovered, entries);
-    assert.deepEqual(repository.readConversation(created.id)!.view.entries, entries);
+    // Compare durable JSON bytes; deferred optional getters are not persisted fields.
+    assert.deepEqual(JSON.parse(JSON.stringify(repository.readConversation(created.id)!.view.entries)), entries);
   } finally { await f.close(); }
 });
 
@@ -851,7 +856,7 @@ test('large native items remain durable while the handoff carries actions and re
       const row = db.prepare('SELECT body FROM conversations WHERE id=?').get(created.id) as { body: string };
       assert.deepEqual(JSON.parse(row.body).view.entries, [], 'the header must not duplicate durable entry bodies');
       const repository = new ConversationRepository(path.join(f.options.dataRoot, 'agent-service'));
-      assert.deepEqual(repository.readConversation(created.id)!.view.entries, pages, 'pagination must not truncate the durable record');
+      assert.deepEqual(JSON.parse(JSON.stringify(repository.readConversation(created.id)!.view.entries)), pages, 'pagination must not truncate the durable record');
     } finally { db.close(); }
     const subscription = f.service.conversations.subscribe('workspace-one', created.id);
     const iterator = subscription.events[Symbol.asyncIterator]();
@@ -2945,4 +2950,96 @@ for(const blocked of ['none','stop','live-owner','unreleased','conflict'] as con
   }
   assert.equal(native.opens.length,opens);assert.equal(native.sends.length,sends);
  }finally{await observer?.close();await f.close();}
+});
+
+test('Codex live tool output reaches conversation SSE without persisting a body, then switches to native history', async () => {
+  const native = fake('codex');
+  const open = native.executor.open;
+  let release!: () => void;
+  let nativeFile = '';
+  let finalRow: unknown;
+  let nativeRows: unknown[] = [];
+  const output = 'unique-native-live-output\n'.repeat(900);
+  native.executor.open = async options => {
+    const runtime = await open(options);
+    const create = runtime.createContext.bind(runtime);
+    runtime.createContext = async input => {
+      const context = await create(input);
+      return {...context,data:{native:opaqueReference('codex',context.id,input.cwd,runtime.bindingIdentity)}};
+    };
+    runtime.send = async input => {
+      native.sends.push(input);
+      const context = native.contexts.get(input.contextRef.id)!;
+      const executionRef = {id:input.clientRequestId,data:{resourceContext:input.contextRef.id,resourceBinding:runtime.bindingIdentity}};
+      context.observation = {status:'running',executionRef,tools:[{id:'native-live',label:'命令',status:'running'}]};
+      input.onEvent({type:'accepted',executionRef});
+      nativeFile = path.join(options.configRoot,'codex-home/sessions/2026/11/04','rollout-'+input.contextRef.id+'.jsonl');
+      fs.mkdirSync(path.dirname(nativeFile),{recursive:true});
+      nativeRows = [{type:'session_meta',payload:{id:input.contextRef.id,cwd:input.cwd}}];
+      fs.writeFileSync(nativeFile,nativeRows.map(row=>JSON.stringify(row)+'\n').join(''));
+      const tool = {type:'commandExecution',id:'native-live',command:'echo native',aggregatedOutput:output,status:'inProgress'};
+      for(const item of codexItem(tool,executionRef.id,'inProgress')) input.onEvent({type:'item',item});
+      await new Promise<void>(resolve=>{release=resolve;});
+      for(const item of codexItem({...tool,status:'completed',exitCode:0},executionRef.id,'completed')) {
+        input.onEvent({type:'item',item});context.items.push(item);
+      }
+      context.observation = {status:'idle',executionRef,tools:[]};
+      finalRow = {type:'event_msg',payload:{type:'item_completed',turn_id:executionRef.id,item:{type:'CommandExecution',id:'native-live',command:tool.command,aggregated_output:output,exit_code:0,status:'completed'}}};
+      input.onEvent({type:'completed',status:'completed'});
+    };
+    return runtime;
+  };
+  const other = fake('other');
+  const f = fixture([native.executor,other.executor]);
+  try {
+    await connected(f.service,'codex');await connected(f.service,'other');
+    const chat = await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'codex','run');
+    const running = await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id,{compactTools:true}),view=>view.entries.some(e=>e.kind==='tool'&&e.status==='running'));
+    const tool = running.entries.find(e=>e.kind==='tool')!;
+    assert.ok(tool.text.includes('unique-native-live-output'));
+    const stream = f.service.conversations.subscribe('workspace-one',chat.id,{compactTools:true});
+    const first = await stream.events[Symbol.asyncIterator]().next();
+    assert.ok(first.value?.payload.conversation?.entries.find((e:ConversationEntry)=>e.id===tool.id)?.text.includes('unique-native-live-output'));
+    const validate = new Ajv2020({strict:false}).compile(AGENT_OPERATION_SCHEMAS.event);
+    assert.equal(validate(JSON.parse(JSON.stringify(first.value))),true,JSON.stringify(validate.errors));
+    assert.equal(tool.detail?.live,true);
+    stream.close();
+    const db = new DatabaseSync(path.join(f.options.dataRoot,'agent-service/conversations.sqlite'),{readOnly:true});
+    const verifyStored = () => {
+      const row = db.prepare('SELECT c.codec,c.body,c.content_revision,e.compact FROM conversation_entry_contents c JOIN conversation_read_entries e USING(conversation_id,content_revision) WHERE e.conversation_id=? AND e.id=?').get(chat.id,tool.id)!;
+      assert.equal(row.codec,'native-tool');
+      assert.equal(String(row.body).includes('unique-native-live-output'),false);
+      assert.equal(String(row.body).includes('echo native'),false);
+      assert.equal(String(row.compact).includes('echo native'),false);
+      assert.equal(row.compact,null);
+      const stored = JSON.parse(String(db.prepare('SELECT body FROM conversations WHERE id=?').get(chat.id)!.body));
+      assert.equal(stored.participationTools[tool.id].entryRevision,row.content_revision);
+      assert.equal(String(db.prepare('SELECT body FROM conversations WHERE id=?').get(chat.id)!.body).includes('unique-native-live-output'),false);
+    };
+    verifyStored();release();
+    await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id,{compactTools:true}),view=>view.run?.status==='completed');
+    verifyStored();
+    const current = f.service.conversations.read('workspace-one',chat.id);
+    f.service.conversations.prepareSend('workspace-one',chat.id,{expectedRevision:current.revision,connectionId:'other',text:'continue'});
+    const handoff = path.join(f.options.dataRoot,'agent-service/handoff-materials',chat.id);
+    for(const name of fs.readdirSync(handoff)) assert.equal(fs.readFileSync(path.join(handoff,name),'utf8').includes('unique-native-live-output'),false);
+    assert.equal(other.sends.length,0);
+    fs.appendFileSync(nativeFile,JSON.stringify(finalRow)+'\n');
+    const published = await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id,{compactTools:true}),view=>Boolean(view.entries.find(e=>e.id===tool.id)?.detail)&&!view.entries.find(e=>e.id===tool.id)?.detail?.live);
+    const pointer = published.entries.find(e=>e.id===tool.id)!;
+    assert.equal(pointer.text,'');
+    const before = fs.readFileSync(nativeFile);
+    assert.equal(f.service.conversations.readEntry('workspace-one',chat.id,tool.id,pointer.detail!.revision).text,'echo native\n'+output);
+    verifyStored();db.close();
+    await f.service.close();
+    const cold = createAgentService(f.options);
+    try {
+      const history = cold.conversations.read('workspace-one',chat.id,{compactTools:true});
+      const entry = history.entries.find(e=>e.id===tool.id)!;
+      assert.equal(entry.text,'');
+      assert.equal(cold.conversations.readEntry('workspace-one',chat.id,entry.id,entry.detail!.revision).text,'echo native\n'+output);
+    } finally {await cold.close();}
+    assert.deepEqual(fs.readFileSync(nativeFile),before);
+  } finally {release?.();await f.close();}
 });

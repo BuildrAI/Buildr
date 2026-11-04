@@ -77,6 +77,8 @@ export interface VideoAttachment { duration: number; frames: Array<{ id: string;
 export interface AttachmentInput { expectedRevision?: string; expectedAttachmentRevision?: string; mimeType: string; bytes: Uint8Array; video?: VideoAttachment }
 export interface PresentedFile { path:string; description?:string }
 export interface ExecutorItem {
+  /** The native executor owns this tool body. */
+  nativeTool?: true;
   participation?: ParticipationObservation;
   id: string;
   /** Native parent tool identity; absence does not imply an inferred child relationship. */
@@ -331,7 +333,7 @@ export interface ParticipantView { modelAccountId?: string; model?: string; id: 
 export interface ConversationEntry {
   participation?: ParticipationObservation;
   /** Bounded tool preview; fetch the exact content revision when expanded. */
-  detail?: {revision: string};
+  detail?: {revision: string; live?: boolean};
   id: string;
   /** Native child output stays attached to its parent tool, retaining its original role. */
   parentToolId?: string;

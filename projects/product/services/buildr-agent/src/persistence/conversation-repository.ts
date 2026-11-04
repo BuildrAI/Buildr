@@ -17,7 +17,7 @@ import type { NativeToolContent } from '../native-content-contracts.ts';
 import type { ConversationEntry } from '../contracts.ts';
 import { beginConversationMigration, migrateConversationEntries } from './conversation-migration.ts';
 
-export const CONVERSATION_SCHEMA_VERSION = 7;
+export const CONVERSATION_SCHEMA_VERSION = 8;
 const SCHEMA_VERSION = CONVERSATION_SCHEMA_VERSION;
 // 附件准备不等于开始；已发送或结果未知的尝试仍必须可发现。
 const LEGACY_HAS_WORK = "(json_array_length(json_extract(body,'$.view.entries'))>0 OR json_array_length(json_extract(body,'$.attempts'))>0 OR json_type(body,'$.view.run')='object' OR json_type(body,'$.view.childOf')='object')";
@@ -45,7 +45,7 @@ export class ConversationRepository {
   private stopped = false;
   private readonly nativeReader: NativeContentReader;
   private readonly nativeTool?: (record:StoredConversation,entry:ConversationEntry)=>NativeToolContent|undefined;
-  constructor(directory: string,nativeTool?:(record:StoredConversation,entry:ConversationEntry)=>NativeToolContent|undefined) { this.nativeTool=nativeTool;this.nativeReader = new NativeContentReader(directory); this.directory = directory; this.filename = path.join(directory, 'conversations.sqlite'); }
+  constructor(directory: string,nativeTool?:(record:StoredConversation,entry:ConversationEntry)=>NativeToolContent|undefined, readTool?:(reference:NativeToolContent)=>ConversationEntry|undefined) { this.nativeTool=nativeTool;this.nativeReader = new NativeContentReader(directory,readTool); this.directory = directory; this.filename = path.join(directory, 'conversations.sqlite'); }
 
   private open(write: boolean): DatabaseSync | undefined {
     if (!fs.existsSync(this.filename) && !write) return undefined;
@@ -133,6 +133,14 @@ export class ConversationRepository {
                 WHEN json_extract(NEW.body,'$._bodyFormat') IS NOT 7 OR json_array_length(NEW.body,'$.view.entries')>0 OR json_array_length(NEW.body,'$.inheritedContext.entries')>0
                 BEGIN SELECT RAISE(ABORT,'agent_storage_writer_incompatible'); END;`).join('\n')}
               PRAGMA user_version=7; COMMIT;`);
+          }
+          if(row.user_version < 8) {
+            db.exec(`BEGIN IMMEDIATE; DROP TRIGGER IF EXISTS conversation_body_format_insert; DROP TRIGGER IF EXISTS conversation_body_format_update;
+              UPDATE conversations SET body=json_set(body,'$._bodyFormat',8);
+              ${['INSERT','UPDATE OF body'].map((op,index)=>`CREATE TRIGGER conversation_body_format_${index?'update':'insert'} BEFORE ${op} ON conversations
+                WHEN json_extract(NEW.body,'$._bodyFormat') IS NOT 8 OR json_array_length(NEW.body,'$.view.entries')>0 OR json_array_length(NEW.body,'$.inheritedContext.entries')>0
+                BEGIN SELECT RAISE(ABORT,'agent_storage_writer_incompatible'); END;`).join('\n')}
+              PRAGMA user_version=8; COMMIT;`);
           }
           const HAS_WORK = hasWork(db);
         db.exec('CREATE TABLE IF NOT EXISTS conversation_participation (id TEXT PRIMARY KEY, revision TEXT NOT NULL, body TEXT NOT NULL)');
@@ -549,10 +557,11 @@ export class ConversationRepository {
   }
   saveConversation(record: StoredConversation, priorRevision?: string): void {
     // Preserve optional observations in the original private record, not strict legacy public DTOs.
-    for(const entry of record.view.entries)if(entry.participation){const value=normalizeParticipation(entry.participation);delete entry.participation;if(value)(record.participationTools??={})[entry.id]={...value,entryRevision:createHash('sha256').update(JSON.stringify(entry)).digest('hex')};}
+    for(const entry of record.view.entries)if(entry.participation){const value=normalizeParticipation(entry.participation);delete entry.participation;if(value)(record.participationTools??={})[entry.id]={...value,entryRevision:record.nativeTools?.[entry.id]?undefined:createHash('sha256').update(JSON.stringify(entry)).digest('hex')};}
     const db = this.open(true)!;
     try {
       const prepared=ConversationEntryStore.prepare(db,record,this.nativeTool?entry=>this.nativeTool!(record,entry):undefined);
+      for(const row of prepared) if(record.nativeTools?.[row.entry.id] && record.participationTools?.[row.entry.id]) record.participationTools[row.entry.id]!.entryRevision=row.revision;
       db.exec('BEGIN IMMEDIATE');
       const prior = db.prepare('SELECT revision,summary,message_signature,activity_at,user_at,activity_version,seen_version FROM conversations WHERE id=?').get(record.view.id) as {revision:string;summary:string;message_signature:string;activity_at:string;user_at:string;activity_version:number;seen_version:number}|undefined;
       if ((prior?.revision ?? undefined) !== priorRevision) fail('agent_revision_conflict', '对话已变化，请重新读取。', 409);

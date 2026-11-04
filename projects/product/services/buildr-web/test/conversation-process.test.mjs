@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {groupConversationStream,processBlockKey,carryExpandedProcessBlocks,processEntryStatus,conversationStreamTurns,conversationTurnExecution} from '../src/features/agent-conversations/conversation-state.ts';
+import {needsConversationObservation,groupConversationStream,processBlockKey,carryExpandedProcessBlocks,processEntryStatus,conversationStreamTurns,conversationTurnExecution} from '../src/features/agent-conversations/conversation-state.ts';
 import {processTool,conversationFileTarget} from '../src/features/agent-conversations/conversation-process.ts';
 import {visibleConversationEntries} from '../src/features/agent-conversations/conversation-notices.ts';
 const message=(id,text,runId='r1',role='assistant')=>({id,sequence:0,kind:'message',role,text,runId,createdAt:'2026-10-26T00:00:00Z'});
@@ -256,4 +256,12 @@ test('首条输入前的交接回执不能冒充原用户输入',()=>{
  const receipt={...message('receipt','接续','new','system'),kind:'handoff'};
  const turns=conversationStreamTurns(groupConversationStream([receipt,message('first','新要求','new','user'),message('extra','补充','new','user')]));
  assert.equal(turns.at(-1).prompt.id,'first');assert.equal(turns.at(-1).items[0].entry.id,'extra');
+});
+
+
+test('工具等待原生详情就绪时保持现有订阅，切换后按执行状态结束观察',()=>{
+ const conversation={entries:[{detail:{revision:'r',live:true}}],requests:[],run:{status:'completed',tools:[]}};
+ assert.equal(needsConversationObservation(conversation),true);
+ conversation.entries[0].detail={revision:'r'};
+ assert.equal(needsConversationObservation(conversation),false);
 });

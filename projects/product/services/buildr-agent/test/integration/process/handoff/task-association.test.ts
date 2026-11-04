@@ -13,7 +13,7 @@ import { actor, until, prepareAgentRuntime, connectAgentProcess, copyPackage, pr
 const execute=promisify(execFile);
 
 test('current metadata owner links a task while an older schema retains the active native execution',{timeout:90_000},async t=>{
-  const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-task-routing-')),dataRoot=path.join(root,'profile'),workspace=path.join(root,'work'),packageRoot=path.join(root,'package');
+  const root=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'agent-task-routing-'))),dataRoot=path.join(root,'profile'),workspace=path.join(root,'work'),packageRoot=path.join(root,'package');
   fs.mkdirSync(workspace);copyPackage(prepared,packageRoot);
   fs.copyFileSync(path.join(import.meta.dirname,'../../fixtures/agent-process-entry.mjs'),path.join(packageRoot,'build/process-fixture.mjs'));
   const schemaFile=path.join(packageRoot,'build/operation-schemas.js'),schema=fs.readFileSync(schemaFile,'utf8');

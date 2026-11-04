@@ -23,6 +23,7 @@ import { ConversationApplication } from '../application/conversation-application
 import { ConversationEvents } from '../application/conversation-events.ts';
 import { executorEnvironment } from '../application/executor-environment.ts';
 import { createNativeExecutors } from '../executors/index.ts';
+import { readCodexTool } from '../executors/codex/content.ts';
 import { NativeProgramManager } from '../executors/program-manager.ts';
 import { PreparationApplication } from '../application/preparation-application.ts';
 import { HostContext } from '../application/host-context.ts';
@@ -32,7 +33,7 @@ export function createAgentService(options: AgentServiceOptions) {
   const generation = randomUUID();
   const root = path.join(options.dataRoot, 'agent-service');
   const resolver=new NativeContentResolver(root,id=>repository.readConversation(id));
-  const repository:ConversationRepository = new ConversationRepository(root,(record,entry)=>resolver.tool(record,entry));
+  const repository:ConversationRepository = new ConversationRepository(root,(record,entry)=>resolver.tool(record,entry),reference=>readCodexTool(root,reference));
   repository.startReadModels();
   const webhooks = new WebhookManagement(options.environment ?? process.env, root, after => repository.webhookRecoveryPage(after));
   const events = new ConversationEvents(generation, webhooks);
