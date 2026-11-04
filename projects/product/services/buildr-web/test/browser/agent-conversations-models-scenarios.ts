@@ -20,6 +20,14 @@ await step('模型名称选择器仅在悬停时显示外形',async()=>{
       const hoveredCenter=await modelSettings().evaluate((node:HTMLElement)=>{const row=node.querySelector('.ac-model-top-row')!.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(node.querySelector('.ant-select-selection-item')!);const text=range.getBoundingClientRect();return Math.abs(text.left+text.right-row.left-row.right)/2;});assert.ok(hoveredCenter<=2,'悬停不改变模型名居中：'+hoveredCenter);
       await page.mouse.move(4,4);
       await page.waitForFunction(()=>{const node=document.querySelector<HTMLElement>('.ac-model-popover .ac-model-picker.ant-select');if(!node)return false;const style=getComputedStyle(node);return style.backgroundColor==='rgba(0, 0, 0, 0)'&&style.borderTopColor==='rgba(0, 0, 0, 0)';});
+      const combo=modelSettings().getByRole('combobox',{name:'执行模型',exact:true});await combo.focus();await combo.press('ArrowDown');
+      const modelList=page.locator('.ac-model-list-popup:visible');await modelList.waitFor();
+      const listBox=await modelList.boundingBox(),effortBox=await modelSettings().locator('.ac-effort-controls').boundingBox();
+      assert.ok(listBox&&effortBox&&Math.abs(listBox.width-effortBox.width)<=2,'模型下拉与推理强度区域同宽：'+JSON.stringify({list:listBox,effort:effortBox}));
+      assert.ok(listBox.width>=300,'模型下拉为长名称保留足够宽度：'+listBox.width);
+      const clipped=await modelList.locator('.ant-select-item-option-content').evaluateAll((nodes:HTMLElement[])=>nodes.filter((node:HTMLElement)=>node.scrollWidth>node.clientWidth+1).map(node=>node.textContent));
+      assert.deepEqual(clipped,[],'模型名称不被截断：'+JSON.stringify(clipped));
+      await page.keyboard.press('Escape');await modelList.waitFor({state:'hidden'});
       await closeModelSettings();
     });
 
