@@ -227,7 +227,7 @@ async function generateTitle(requestId: string, contextId: string, cwd: string, 
   try {
     if (userText !== undefined) {
       const state = await Promise.race([waitForTitleState(contextId, userText), cancelled]);
-      if (!state) throw new Error('agent_title_unavailable');
+      if (!state) throw new Error('agent_title_not_ready');
       return await requestTitle(state.q, qoderTitleMatchText(userText), cancelled);
     }
     const state = live.get(contextId);

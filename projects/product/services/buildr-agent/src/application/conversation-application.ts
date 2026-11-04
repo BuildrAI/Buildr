@@ -1276,10 +1276,20 @@ export class ConversationApplication {
       this.save(record);
       this.discoverParticipation(workspaceId,id,runId);
       dispatched = true;
-      const early = this.titleAtRunStart(workspaceId, id, runId, runtime, prepared.text).catch(() => {});
-      this.earlyTitles.set(id, early);
-      void early.finally(() => { if (this.earlyTitles.get(id) === early) this.earlyTitles.delete(id); this.scheduleSourceRelease(workspaceId, id); });
-      await runtime.send({ contextRef: participant.contextRef!, cwd: record.view.cwd, text: prepared.text, images: prepared.images, model: prepared.draft.modelAccountId ? selectedRuntime.model : prepared.draft.model, reasoningEffort: prepared.draft.reasoningEffort, permissionMode: prepared.draft.permissionMode, clientRequestId: record.attempts.find(value => value.runId === runId)!.clientRequestId, onEvent: event => this.event(workspaceId, id, runId, event) });
+      let titleStarted = false;
+      const startTitle = () => {
+        if (titleStarted) return;
+        titleStarted = true;
+        const early = this.titleAtRunStart(workspaceId, id, runId, runtime, prepared.text).catch(() => {});
+        this.earlyTitles.set(id, early);
+        void early.finally(() => { if (this.earlyTitles.get(id) === early) this.earlyTitles.delete(id); this.scheduleSourceRelease(workspaceId, id); });
+      };
+      await runtime.send({ contextRef: participant.contextRef!, cwd: record.view.cwd, text: prepared.text, images: prepared.images, model: prepared.draft.modelAccountId ? selectedRuntime.model : prepared.draft.model, reasoningEffort: prepared.draft.reasoningEffort, permissionMode: prepared.draft.permissionMode, clientRequestId: record.attempts.find(value => value.runId === runId)!.clientRequestId, onEvent: event => {
+        this.event(workspaceId, id, runId, event);
+        // A context can exist long before its input is admitted. Do not spend the
+        // independent title budget on native startup (especially Qoder).
+        if (event.type === 'accepted') startTitle();
+      } });
       // An old stop may already be observing this conversation. Its snapshot
       // cannot stand in for the just-finished new execution.
       const settled=this.ownedRun(workspaceId,id,runId);
@@ -1445,7 +1455,7 @@ export class ConversationApplication {
     }
     return record.titleAttemptsByParticipant[participantId]??={};
   }
-  /** Backfill the neutral name as soon as execution starts; the completed-run path stays the fallback. */
+  /** Backfill once native input is admitted; the completed-run path stays the fallback. */
   private async titleAtRunStart(workspaceId: string, id: string, runId: string, runtime: AgentRuntime, userText?: string): Promise<void> {
     const previous=this.earlyTitles.get(id);
     if (this.titleWork.has(id) && previous) await previous.catch(()=>{});
@@ -1492,6 +1502,7 @@ export class ConversationApplication {
       agent_native_process_closed: '生成标题时原生进程退出',
       agent_native_request_failed: '原生程序拒绝了标题请求',
       agent_title_unavailable: '当前执行方未提供独立标题生成能力',
+      agent_title_not_ready: '原生会话尚未就绪，本次标题生成未开始',
       agent_title_isolation_unverified: '标题请求的隔离权限未能确认',
       agent_title_tools_forbidden: '标题请求尝试使用工具，已拒绝',
       agent_title_invalid: '返回的标题超出长度限制或不合格',

@@ -2439,6 +2439,36 @@ function titleFake(id:string,options:{hold?:boolean;title:()=>Promise<string|und
   return native;
 }
 
+test('early title waits for exact native acceptance without consuming its budget during startup',async()=>{
+  let accept!:()=>void;const admitted=new Promise<void>(resolve=>{accept=resolve;});let calls=0;
+  const native=fake('local',{hold:true,beforeAccepted:admitted}),open=native.executor.open;
+  native.executor.open=async input=>({...await open(input),generateTitle:async()=>{calls++;return '对话面板分隔线优化';}});
+  const f=fixture([native.executor]);
+  try{
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'local','优化对话面板分隔线');await waitUntil(()=>native.sends.length,n=>n===1);
+    assert.equal(calls,0,'initialization cannot start or exhaust the title request');
+    const repo=new ConversationRepository(path.join(f.options.dataRoot,'agent-service'));try{const stored=repo.readConversation(chat.id)!;assert.notEqual(stored.earlyTitleAttempted,true);assert.equal(stored.titleAttemptsByParticipant?.[stored.view.run!.participantId]?.early,undefined);}finally{repo.stopReadModels();}
+    accept();const named=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.title==='对话面板分隔线优化');
+    assert.equal(named.run?.status,'running');assert.equal(calls,1);assert.equal(native.sends.length,1);
+    native.sends[0].onEvent({type:'accepted',executionRef:{id:'execution-1'}});
+    await new Promise<void>(resolve=>setImmediate(resolve));assert.equal(calls,1,'duplicate acceptance cannot restart title generation');
+  }finally{accept();await f.close();}
+});
+
+test('title readiness failure stays distinct from unsupported capability and retains completion fallback',async()=>{
+  let calls=0;const native=titleFake('local',{hold:true,title:async()=>{if(++calls===1)throw new Error('agent_title_not_ready');return '原生会话就绪后的标题';}}),f=fixture([native.executor]);
+  try{
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'local','优化对话布局');
+    const failed=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.titleState?.status==='failed');
+    assert.match(failed.titleState!.reason!,/agent_title_not_ready.*原生会话尚未就绪/);assert.equal(failed.run?.status,'running');assert.equal(calls,1);
+    native.contexts.get(native.sends[0].contextRef.id)!.unblock!();
+    const named=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.title==='原生会话就绪后的标题');
+    assert.equal(named.run?.status,'completed');assert.equal(calls,2);assert.equal(native.sends.length,1);
+  }finally{await f.close();}
+});
+
 test('title retry belongs to each participant: an empty first executor cannot block the healthy replacement',async()=>{
   let aCalls=0,bCalls=0;const a=titleFake('first',{title:async()=>{aCalls++;return undefined;}}),b=titleFake('second',{hold:true,title:async()=>{bCalls++;return '切换执行方后恢复的标题';}}),f=fixture([a.executor,b.executor]);
   try{
