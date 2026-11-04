@@ -17,6 +17,9 @@ import { PendingSendRepository } from '../persistence/pending-send-repository.ts
 import { normalizeSendDraft } from '../domain/send-draft.ts';
 import { validateOperation } from './operations.ts';
 
+/** These projections read only the execution store; they never call a host capability. */
+const LOCAL_CONVERSATION_READS = new Set(['conversations.listAll', 'conversations.pending', 'conversations.pendingSummary']);
+
 export interface AgentProcessConnectionOptions {
   dataRoot: string;
   profileId: string;
@@ -108,6 +111,17 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
   const attached = new Map<string, ProcessRecord>();
   let connecting: Promise<ProcessRecord> | undefined;
   const subscriptions = new Set<AbortController>(), generating = new Map<string, ProcessRecord>();
+  async function attachHost(candidate: ProcessRecord): Promise<void> {
+    if (!host) return;
+    try {
+      await request(candidate.origin, candidate.token, '/host/attach', {peer:host.peer,autoContinueInterrupted:options.autoContinueInterrupted}, AbortSignal.timeout(3000));
+    } catch (error) {
+      if (error instanceof AgentServiceError) throw error;
+      // Registration failed before dispatch: no business operation was sent.
+      // Never expose a raw DOM timeout as an internal HTTP 500 or replay work.
+      throw new AgentServiceError('agent_host_unavailable', '执行后台宿主连接尚未确认，本次操作尚未发送，原记录与输入已保留。', 503);
+    }
+  }
   async function connected(): Promise<ProcessRecord> {
     if (closed) throw new AgentServiceError('agent_process_client_closed', '执行后台连接已释放。', 503);
     if (connecting) return connecting;
@@ -119,7 +133,7 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
       if (host) for (const candidate of readProcessInstances(options.dataRoot).filter(candidate=>!candidate.stopped&&live(candidate.identity.pid))) {
         matches(candidate.identity, options);
         if (attached.has(candidate.identity.instanceId)) continue;
-        try { await request(candidate.origin, candidate.token, '/host/attach', {peer:host.peer,autoContinueInterrupted:options.autoContinueInterrupted}, AbortSignal.timeout(3000)); attached.set(candidate.identity.instanceId,candidate); }
+        try { await attachHost(candidate); attached.set(candidate.identity.instanceId,candidate); }
         catch (error) { if (candidate.identity.instanceId===record.identity.instanceId) throw error; }
       }
       return record;
@@ -174,7 +188,8 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
     // Refresh the callback before an operation can resolve a workspace. The
     // process being alive does not prove its in-memory peer registration survived.
     // Registration is idempotent; never retry the operation itself.
-    if (host && route === '/operations') await request(current.origin, current.token, '/host/attach', {peer:host.peer,autoContinueInterrupted:options.autoContinueInterrupted}, AbortSignal.timeout(3000));
+    const localRead = route === '/operations' && LOCAL_CONVERSATION_READS.has((value as {operation?:string} | undefined)?.operation ?? '');
+    if (host && route === '/operations' && !localRead) await attachHost(current);
     try { return await request(current.origin, current.token, route, value, signal); }
     catch (error) {
       if (error instanceof AgentServiceError || signal?.aborted) throw error;
