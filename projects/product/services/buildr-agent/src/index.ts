@@ -3,7 +3,7 @@ export { conversationEventEncoder, conversationEventDecoder } from './domain/con
 export type { ConversationDelta, TransferEvent } from './domain/conversation-transfer.ts';
 export * from './execution-contracts.ts';
 export { AGENT_OPERATION_SCHEMAS } from './operation-schemas.ts';
-export { connectAgentProcess, stopAgentProcess } from './process/client.ts';
+export { connectAgentProcess, stopAgentProcess, restartAgentProcess } from './process/client.ts';
 export { assertAgentUpgradeIdle, withAgentDataOffline } from './process/offline-data.ts';
 export type { AgentProcessConnection, AgentProcessConnectionOptions } from './process/client.ts';
 export type { AgentOperations, AgentSubscription } from './process/operations.ts';

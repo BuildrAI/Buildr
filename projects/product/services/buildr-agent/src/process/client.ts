@@ -323,3 +323,44 @@ async function stopAllProcesses(input: { dataRoot: string; profileId?: string; m
   const failure=results.find((result):result is PromiseRejectedResult=>result.status==='rejected');
   if (failure) throw failure.reason;
 }
+
+/** Explicit idle restart of the observed profile. Historical dead generations
+ * remain unknown; only live, authenticated owners are asked to stop. */
+export async function restartAgentProcess(input: AgentProcessConnectionOptions & { expectedGeneration: string }): Promise<AgentProcessConnection> {
+  const options = { ...input, dataRoot: path.resolve(input.dataRoot) };
+  const startup = claim(options.dataRoot, 'startup');
+  try {
+    const current = readProcessRecord(options.dataRoot);
+    if (!current || current.identity.generation !== input.expectedGeneration) throw new AgentServiceError('agent_control_stale', '执行后台已变化，请重新读取后重启。', 409);
+    matches(current.identity, options);
+    const records = readProcessInstances(options.dataRoot).filter(record => !record.stopped && live(record.identity.pid));
+    if (!records.some(record => record.identity.instanceId === current.identity.instanceId)) throw new AgentServiceError('agent_process_stop_unconfirmed', '当前执行后台尚未确认，未重启。', 409);
+    // Inspect every live owner before changing any of them. Each shutdown also
+    // checks idle again atomically on its own event loop.
+    for (const record of records) {
+      matches(record.identity, options);
+      const status: AgentProcessStatus = await request(record.origin, record.token, '/status', undefined, AbortSignal.timeout(3000));
+      if (status.identity.instanceId !== record.identity.instanceId || status.identity.generation !== record.identity.generation || status.identity.pid !== record.identity.pid) throw new AgentServiceError('agent_process_identity_mismatch', '重启观察身份不匹配。', 409);
+      if (status.activity.busy || status.pendingRuntime) throw new AgentServiceError('agent_process_busy', '执行服务仍有任务、待处理事项或版本切换，请处理后再重启。', 409);
+    }
+    const results = await Promise.allSettled(records.map(async record => {
+      await request(record.origin, record.token, '/shutdown', { expectedGeneration: record.identity.generation, mode: 'if-idle' }, AbortSignal.timeout(5000));
+      const deadline = Date.now() + 12000;
+      while (Date.now() < deadline) {
+        const receipt = readProcessInstances(options.dataRoot).find(value => value.identity.instanceId === record.identity.instanceId);
+        const last = readPrivate<{instanceId:string;confirmed:boolean}>(path.join(controlRoot(options.dataRoot), 'last-stop.json'));
+        if (receipt?.stopped && receipt.confirmed || !receipt && last?.instanceId === record.identity.instanceId && last.confirmed) return;
+        await pause(50);
+      }
+      throw new AgentServiceError('agent_process_stop_unconfirmed', '执行服务退出尚未确认，已有记录保留，请重新观察。', 409);
+    }));
+    const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+    if (failure) throw failure.reason;
+  } finally { startup.release(); }
+  const connection = await connectAgentProcess(options);
+  try {
+    const status = await connection.lifecycle.status();
+    if (status.identity.generation === input.expectedGeneration || !status.accepting || status.retiring) throw new AgentServiceError('agent_process_start_unconfirmed', '新执行后台尚未确认就绪。', 503);
+    return connection;
+  } catch (error) { await connection.disconnect(); throw error; }
+}

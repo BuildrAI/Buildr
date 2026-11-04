@@ -17,6 +17,7 @@ export const AGENT_SERVICE_HTTP_OPERATIONS = [
   operation('upgrade-program', 'POST', `${base}/connections/:connectionId/program-upgrades`, 'programUpgradeInput', 'programUpgrade'),
   operation('program-updates', 'GET', `${base}/program-updates`, 'empty', 'programUpdates'),
   operation('check-program-updates', 'POST', `${base}/program-updates/check`, 'programUpdateCheck', 'programUpdates'),
+  operation('runtime-restart', 'POST', `${base}/runtime/restart`, 'runtimeRestart', 'runtimeStatus'),
   operation('runtime', 'GET', `${base}/runtime`, 'empty', 'runtimeStatus'),
   operation('model-accounts', 'GET', `${base}/model-accounts`, 'empty', 'modelAccounts'),
   operation('add-model-account', 'POST', `${base}/model-accounts`, 'addModelAccount', 'modelAccount'),

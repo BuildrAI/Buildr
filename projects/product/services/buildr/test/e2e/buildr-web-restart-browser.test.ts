@@ -1,3 +1,4 @@
+import net from 'node:net';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -100,10 +101,41 @@ test('真实生产页面重启恢复、已知失败真正重试及未知状态�
     await page.locator('#more-actions').waitFor();
   };
 
+  await runScenario('独立执行服务真实重启保留Web实例与页面会话', async () => {
+    await page.goto(first.url);
+    await page.locator('#more-actions').waitFor();
+    await page.waitForFunction(async () => {
+      const response=await fetch('/api/v1/app/agent-service/runtime',{headers:{'x-buildr-session':document.querySelector('meta[name="buildr-session"]')?.getAttribute('content')??''}});
+      return response.ok && !(await response.json()).busy;
+    });
+    const token=await tokenOf(page);
+    const before=await page.evaluate(async () => (await fetch('/api/v1/app/agent-service/runtime',{headers:{'x-buildr-session':document.querySelector('meta[name="buildr-session"]')?.getAttribute('content')??''}})).json());
+    await page.locator('#more-actions').hover();
+    await page.locator('#restart-buildr-agent').click();
+    const modal=page.locator('.ant-modal-confirm');
+    await Promise.race([modal.waitFor(),page.locator('#restart-buildr-error').waitFor().then(async()=>{throw new Error(await page.locator('#restart-buildr-error').innerText());})]);
+    assert.match(await modal.innerText(),/只重启独立执行服务/);
+    const response=page.waitForResponse(response=>response.url().endsWith('/api/v1/app/agent-service/runtime/restart')&&response.request().method()==='POST');
+    const reloaded=page.waitForEvent('load');
+    await modal.locator('.ant-btn-primary').click();
+    const result=await response;assert.equal(result.status(),200);
+    await reloaded;
+    await page.locator('#more-actions').waitFor();
+    const after=await page.evaluate(async () => (await fetch('/api/v1/app/agent-service/runtime',{headers:{'x-buildr-session':document.querySelector('meta[name="buildr-session"]')?.getAttribute('content')??''}})).json());
+    assert.notEqual(after.generation,before.generation);assert.notEqual(after.pid,before.pid);
+    assert.equal((await receiptAt(instanceFile)).pid,first.pid);
+    assert.equal(await tokenOf(page),token);
+    await screenshot(page,'agent-restart-recovered');
+  });
+
   await runScenario('真实点击重启后新进程接管原端口且页面自动恢复', async () => {
     await page.goto(first.url);
     await page.locator('#more-actions').waitFor();
     const previousToken = await tokenOf(page);
+    const heldSocket=net.createConnection(Number(new URL(first.url).port),'127.0.0.1');
+    heldSocket.on('error',()=>{});t.after(()=>heldSocket.destroy());
+    await new Promise<void>(resolve=>heldSocket.once('connect',resolve));
+    heldSocket.write('GET / HTTP/1.1\r\nHost: localhost\r\n');
     await confirmRestart(page);
     await waitForPageRecovery(previousToken);
     const next = await receiptAt(instanceFile, first.pid);

@@ -144,6 +144,8 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
   const updateEntryRef = useRef<UpdateEntryHandle>(null);
   const [restartPhase, setRestartPhase] = useState<null | 'watching' | 'timed-out' | 'failed'>(null);
   const [restartError, setRestartError] = useState('');
+  const [agentRestarting, setAgentRestarting] = useState(false);
+  const agentRestartPending = useRef(false);
   const restartPending = useRef(false);
   const restartWatcher = useRef<AbortController | null>(null);
   const restartRequest = useRef<AbortController | null>(null);
@@ -298,8 +300,25 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
     setRestartPhase(status === 'failed' ? 'failed' : 'timed-out');
   }, []);
 
+  const restartAgent = async () => {
+    if (agentRestartPending.current || restartPending.current || quitPending.current) return;
+    agentRestartPending.current = true;
+    const controller = new AbortController();
+    restartRequest.current = controller;
+    try {
+      const current = await withRestartRequest(signal => runtimeSystemApi.agentRuntime(signal), {signal:controller.signal,timeoutMs:5000});
+      const ok = await confirmModal({title:'重启 Agent 执行服务？',content:'只重启独立执行服务，网页保持打开，对话历史与账号保留。有任务运行、待处理事项或版本切换时会拒绝重启；不会重发历史指令。',okText:'重启执行服务',okButtonProps:{danger:true}});
+      if (!ok) return;
+      setAgentRestarting(true); setRestartError('');
+      await withRestartRequest(signal => runtimeSystemApi.restartAgent(current.generation,signal), {signal:controller.signal,timeoutMs:30000});
+      window.location.reload();
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      setRestartError(error instanceof Error ? error.message : '执行服务重启尚未确认，请重新读取后核对。');
+    } finally { if (restartRequest.current === controller) restartRequest.current = null; agentRestartPending.current = false; setAgentRestarting(false); }
+  };
   const restart = async () => {
-    if (restartPending.current || quitPending.current) return;
+    if (agentRestartPending.current || restartPending.current || quitPending.current) return;
     restartPending.current = true;
     let controller: AbortController | null = null;
     try {
@@ -461,11 +480,12 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
                 { key: 'installation-info', icon: <InfoCircleOutlined />, label: '安装信息', onClick: () => setInstallationInfoOpen(true) },
                 { key: 'check-update', icon: <SyncOutlined />, label: <span id="check-buildr-update">检查更新…</span>, onClick: () => updateEntryRef.current?.check() },
                 { key: 'restart', icon: <PoweroffOutlined />, disabled: Boolean(preview), title: preview ? '托管预览由开发工具重新启动' : undefined, label: <span id="restart-buildr">重启 Buildr Web</span>, onClick: () => { void restart(); } },
+                { key: 'restart-agent', icon: <SyncOutlined />, disabled: Boolean(preview) || agentRestarting, label: <span id="restart-buildr-agent">重启 Agent 执行服务</span>, onClick: () => { void restartAgent(); } },
                 { key: 'quit', danger: true, icon: <CloseCircleOutlined />, label: <span id="quit-buildr">退出 Buildr Web</span>, onClick: () => { void quit(); } },
               ] }}
               trigger={['hover']} placement="bottomRight"
             >
-              <Button id="more-actions" className="nav-more" aria-label="更多操作" type="text" icon={<EllipsisOutlined />} loading={quitting} />
+              <Button id="more-actions" className="nav-more" aria-label="更多操作" type="text" icon={<EllipsisOutlined />} loading={quitting || agentRestarting} />
             </Dropdown>
             <div
               id="preview-identity"

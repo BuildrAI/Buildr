@@ -61,6 +61,7 @@ export const AGENT_OPERATION_SCHEMAS = {
   programUpgradeInput: named('AgentProgramUpgradeInput', closed({expectedRevision:text,expectedVersion:text})),
   programUpdateCheck: named('AgentProgramUpdateCheck', closed({connectionId: text}, [])),
   programUpdates: named('AgentProgramUpdates', closed({programs: list(closed({connectionId:text,revision:text,provider:text,label:text,executable:text,managed:boolean,upgrade:programUpgrade,status:{enum:['unchecked','not-connected','available','latest','ahead','unknown','stale']},versionKind:{enum:['program','package']},packageName:text,updateUrl:string,currentVersion:text,currentReleaseVersion:text,latestVersion:text,releaseSource:text,compatible:boolean,checkedAt:text,diagnostic:string},['connectionId','revision','provider','label','status','versionKind','packageName','updateUrl']))})),
+  runtimeRestart: named('runtime-restart', closed({expectedGeneration:text}, ['expectedGeneration'])),
   runtimeStatus: named('runtime-status', closed({instanceId:text,generation:text,pid:integer,currentDigest:text,pendingDigest:text,busy:boolean,accepting:boolean,reasons:list(closed({kind:text,count:integer})),diagnostic:string}, ['instanceId','generation','pid','currentDigest','busy','accepting','reasons'])),
   modelPreferences: named('AgentModelPreferences',closed({expectedRevision:text,models:{type:'array',minItems:1,maxItems:2000,items:closed({id:text,enabled:boolean,contextWindow:{anyOf:[{type:'integer',minimum:1,maximum:10000000},{type:'null'}]}},['id'])}})),
   modelAccount: named('AgentModelAccount', modelAccount),

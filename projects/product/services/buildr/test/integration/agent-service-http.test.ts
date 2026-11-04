@@ -822,3 +822,14 @@ test('webhook settings require authentication, protect secret reads and reject s
   response=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:saved.revision,url:saved.url,enabled:false})});assert.equal(response.status,200);const disabled=await response.json();assert.equal(disabled.state,'disabled');
   response=await fetch(endpoint+'/test',{method:'POST',headers,body:JSON.stringify({expectedRevision:disabled.revision})});assert.equal(response.status,409);
 });
+
+
+test('runtime restart authorizes writes, validates the observed generation and returns ready identity', async () => {
+  const status={instanceId:'new-instance',generation:'new-generation',pid:42,currentDigest:'digest',busy:false,accepting:true,reasons:[]};
+  let writes=0, restarted=0;
+  const contribution=createAgentServiceHttpContribution(()=>{throw new Error('ordinary operations must not resolve');},{restartRuntime:async input=>{restarted++;assert.equal(input.expectedGeneration,'old-generation');return status;}});
+  const context={request:{method:'POST'},pathname:'/api/v1/app/agent-service/runtime/restart',searchParams:new URLSearchParams(),authorizeWrite(){writes++;},authorizeRead(){throw new Error('wrong authorization');},readJsonBody:async()=>({expectedGeneration:'old-generation'})};
+  assert.deepEqual(await contribution.handleTopLevel(context),{status:200,body:status});assert.equal(writes,1);assert.equal(restarted,1);
+  const invalid=await contribution.handleTopLevel({...context,readJsonBody:async()=>({})});
+  assert.equal(invalid.status,400);assert.equal(restarted,1);
+});

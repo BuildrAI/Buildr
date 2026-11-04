@@ -69,7 +69,14 @@ export function createLocalWorkspaceServer(runtime: any, {
       } catch (error) {
         cleanupError = error;
       }
-      await new Promise<void>(resolve => server.close(() => resolve()));
+      // Keep returning stopping while owned resources drain. Once released,
+      // continuous HTTP streams must not outlive the successor's handoff budget.
+      await new Promise<void>(resolve => {
+        const deadline = setTimeout(() => server.closeAllConnections(), 1000);
+        deadline.unref();
+        server.close(() => { clearTimeout(deadline); resolve(); });
+        server.closeIdleConnections();
+      });
       if (ownsWriteExecutor) await taskWriteExecutor.close();
       await onShutdown?.(cleanupError);
       if (cleanupError) throw cleanupError;
