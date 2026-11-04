@@ -253,6 +253,6 @@ export class ConversationEntryStore {
   static content(db: DatabaseSync, id: string, entryId: string): (Content & { compact: string | null }) | undefined {
     return db.prepare(`SELECT c.*,e.content_revision,e.compact FROM conversation_read_entries e LEFT JOIN conversation_entry_contents c
       ON c.conversation_id=e.conversation_id AND c.content_revision=e.content_revision
-      WHERE e.conversation_id=? AND e.scope='main' AND e.id=?`).get(id, entryId) as unknown as (Content & {compact:string|null}) | undefined;
+      WHERE e.conversation_id=? AND e.id=? ORDER BY (e.scope='main') DESC LIMIT 1`).get(id, entryId) as unknown as (Content & {compact:string|null}) | undefined;
   }
 }

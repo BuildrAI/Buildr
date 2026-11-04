@@ -49,6 +49,8 @@ test('entry revisions are stored once across main/inherited positions, small pre
   r.view.revision = 'r2'; r.view.entries[0] = { ...entry, text: entry.text + '\n迟到结果' };
   repo.saveConversation(r, 'r1');
   assert.throws(() => repo.readEntry(r.view.id, entry.id, detail.revision), { code: 'agent_entry_changed' });
+  const currentDetail=repo.readPage(r.view.id,undefined,undefined,true)!.view.entries[0].detail!;
+  assert.equal(repo.readEntry(r.view.id,entry.id,currentDetail.revision)!.text,entry.text+'\n迟到结果','current main revision remains readable alongside pinned inherited content');
   assert.equal(repo.readConversation(r.view.id)!.inheritedContext!.entries[0].text, entry.text, 'old pinned inherited revision remains available');
   assert.deepEqual(repo.readPage(r.view.id)!.view.entries, r.view.entries);
 });

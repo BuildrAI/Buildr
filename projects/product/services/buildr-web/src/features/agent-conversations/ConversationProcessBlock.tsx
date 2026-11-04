@@ -21,7 +21,7 @@ function ToolIcon({kind}:{kind:ProcessToolKind}){
   const Icon={search:SearchOutlined,fetch:GlobalOutlined,directory:FolderOpenOutlined,image:PictureOutlined,tool:ToolOutlined}[kind];
   return <Icon/>;
 }
-function ToolStep({entry,active,onOpenFile,open,onToggle,loadEntry}:{entry:ConversationEntry;active:boolean;onOpenFile:FileOpener;open?:boolean;onToggle?:(open:boolean)=>void;loadEntry?:EntryLoader}){
+export function ToolStep({entry,active,onOpenFile,open,onToggle,loadEntry}:{entry:ConversationEntry;active:boolean;onOpenFile:FileOpener;open?:boolean;onToggle?:(open:boolean)=>void;loadEntry?:EntryLoader}){
   const [visited,setVisited]=useState(Boolean(open));
   const [detail,setDetail]=useState<{key:string;entry?:ConversationEntry;error?:string}>(),[attempt,setAttempt]=useState(0);
   const detailKey=entry.id+':'+(entry.detail?.revision??'');

@@ -451,13 +451,13 @@ export interface HandoffRound {
   userInputs: string[]; assistantNotes: string[];
   execution: Array<{action:string;result:string;location?:string}>;
   artifacts: Array<{location:string;description:string}>;
-  finalReply?: string; sourcePath?: string;
+  finalReply?: string; finalReplyId?:string; sourcePath?: string;
 }
 export interface HandoffMaterial {
   agent: string; model: string;
   changes: Array<{kind:'agent'|'model';label:string;before:string;after:string}>;
   rounds: HandoffRound[]; roundCount?: number; body: string; sourceThrough: number;
-  mode: 'records'|'summary'|'indexed'; sourcePath?: string;
+  mode: 'records'|'summary'|'indexed'; sourcePath?: string; sourceId?:string; sourceOnly?:boolean; bodyDigest?:string;
 }
 export interface SendDraft {
   /** Explicitly end this waiting question round before handing work to a different selection. */

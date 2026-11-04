@@ -292,6 +292,20 @@ export class ConversationRepository {
     const entry=this.readConversation(id)?.view.entries.find(entry=>entry.id===entryId);
     if(entry){if(createHash('sha256').update(JSON.stringify(entry)).digest('hex')!==revision)fail('agent_entry_changed','工具记录已变化，请重新读取当前对话。',409);return entry;}
   }
+  readToolReferences(id:string):Map<string,NativeToolContent> {
+    const refs=new Map<string,NativeToolContent>(),db=this.open(false);if(!db)return refs;
+    try{
+      for(const row of db.prepare("SELECT c.* FROM conversation_entry_contents c JOIN conversation_read_entries e USING(conversation_id,content_revision) WHERE c.conversation_id=? AND c.codec='native-tool'").all(id)){
+        const ref=ConversationEntryStore.reference(row as any);
+        if(ref?.version===3&&ref.entry.kind==='tool'&&ref.entry.text===''&&!ref.entry.input&&!ref.text.length&&!ref.input?.length)refs.set(ref.entry.id+':'+row.content_revision,ref);
+      }
+      return refs;
+    }finally{db.close();}
+  }
+  readNativeReference(ref:NativeToolContent,revision:string) {
+    if(ref.version!==3||createHash('sha256').update(JSON.stringify(ref)).digest('hex')!==revision)fail('agent_entry_corrupt','原生工具引用的修订不一致。',409);
+    return this.nativeReader.tool(ref,revision);
+  }
   readRevision(id:string):{revision:string;seenThrough?:number}|undefined {
     const db=this.open(false);if(!db)return;
     try{if(ConversationReadModel.available(db)){const row=db.prepare("SELECT revision,json_extract(state,'$.view.activity.seenThrough') AS seenThrough FROM conversation_read_states WHERE id=?").get(id) as {revision:string;seenThrough?:number}|undefined;if(row)return row;}const row=db.prepare('SELECT revision,summary FROM conversations WHERE id=?').get(id) as {revision:string;summary:string}|undefined;return row?{revision:row.revision,seenThrough:JSON.parse(row.summary)?.activity?.seenThrough}:undefined;}finally{db.close();}

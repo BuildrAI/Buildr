@@ -60,6 +60,7 @@ export const AGENT_SERVICE_HTTP_OPERATIONS = [
   operation('update', 'PATCH', `${workspace}/:conversationId`, 'update', 'conversation'),
   operation('child-list','GET',`${workspace}/:conversationId/children`,'empty','conversations'),
   operation('child-create','POST',`${workspace}/:conversationId/children`,'createChild','conversation'),
+  operation('history-source','GET',`${workspace}/:conversationId/history-source`,'historyQuery','historyPage'),
   operation('entry-detail','GET',`${workspace}/:conversationId/entry-detail/:entryId`,'empty','entry'),
   operation('entries', 'GET', `${workspace}/:conversationId/entries`, 'empty', 'conversation'),
   operation('prepare-send', 'POST', `${workspace}/:conversationId/prepare-send`, 'draft', 'preview'),

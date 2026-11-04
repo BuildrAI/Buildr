@@ -24,6 +24,39 @@ import type { AgentExecutor, AgentRuntime, AgentServiceOptions, ContextRef, Conv
 import { NativeRequestError } from '../../src/domain/error-diagnostic.ts';
 import { ConversationRepository } from '../../src/persistence/conversation-repository.ts';
 
+test('handoff references preserve ordered inputs and read details without duplicating or decoding old tools',async t=>{
+ const a=fake('a'),b=fake('b'),f=fixture([a.executor,b.executor]);t.after(()=>f.close());
+ await connected(f.service,'a');await connected(f.service,'b');const chat=await f.service.conversations.create('workspace-one',{});
+ send(f.service,chat.id,'a','initial');const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id,{compactTools:true}),v=>v.run?.status==='completed');
+ const repo=new ConversationRepository(path.join(f.options.dataRoot,'agent-service'));t.after(()=>repo.stopReadModels());const record=repo.readConversation(chat.id)!,runId=done.run!.id;
+ const text='handoff-user-original',output='HUGE_TOOL_BODY_'.repeat(40000),toolId=randomUUID();
+ const entry=(sequence:number,fields:Partial<ConversationEntry>):ConversationEntry=>({id:randomUUID(),sequence,createdAt:'now',kind:'message',role:'user',runId,text,...fields});
+ record.view.entries=[entry(1,{}),entry(2,{role:'assistant',text:'next stage'}),entry(3,{id:toolId,kind:'tool',role:'system',name:'command',input:'PRIVATE_COMMAND',text:output,status:'completed'}),entry(4,{text:'追加纠正'}),entry(5,{kind:'notice',text:'问题回答'}),entry(6,{role:'assistant',text:'final response',status:'completed'})];record.view.revision=randomUUID();repo.saveConversation(record,done.revision);
+ const original=zlib.zstdDecompressSync;let decodes=0;zlib.zstdDecompressSync=((...args:any[])=>{decodes++;return (original as any)(...args);}) as any;syncBuiltinESMExports();
+ let preview:ReturnType<typeof f.service.conversations.prepareSend>;
+ try{
+  const draft={expectedRevision:record.view.revision,connectionId:'b',text:'continue'};preview=f.service.conversations.prepareSend('workspace-one',chat.id,draft);
+  const again=f.service.conversations.prepareSend('workspace-one',chat.id,draft);assert.equal(preview.handoff!.sourcePath,again.handoff!.sourcePath);assert.equal(decodes,0);
+ }finally{zlib.zstdDecompressSync=original;syncBuiltinESMExports();}
+ const material=preview!.handoff!,sourceId=material.sourceId!,directory=path.dirname(material.sourcePath!),body=fs.readFileSync(material.sourcePath!,'utf8');
+ assert.ok(!body.includes(text)&&!body.includes('HUGE_TOOL_BODY_')&&!body.includes('PRIVATE_COMMAND'));assert.ok(Buffer.byteLength(body)<10000);assert.deepEqual(fs.readdirSync(directory),[sourceId]);t.diagnostic(JSON.stringify({toolBytes:Buffer.byteLength(output),indexBytes:Buffer.byteLength(body),handoffOldToolDecompressions:decodes,sourceFiles:1}));
+ assert.deepEqual(material.rounds[0].userInputs,[text,'追加纠正','问题回答']);assert.equal(material.rounds[0].finalReply,'final response');
+ let cursor:number|undefined=0;const entries:ConversationEntry[]=[];
+ do{const page=f.service.conversations.readHistory('workspace-one',chat.id,{sourceId,limit:2,cursor});assert.equal(page.unavailable.length,0);entries.push(...page.entries);cursor=page.nextCursor;}while(cursor!==undefined);
+ assert.deepEqual(entries.map(e=>e.sequence),[1,2,3,4,5,6]);assert.equal(entries[2].text,'');assert.equal(entries[2].input,undefined);assert.equal(f.service.conversations.readEntry('workspace-one',chat.id,toolId,entries[2].detail!.revision).text,output);
+ assert.throws(()=>f.service.conversations.readHistory('foreign',chat.id,{sourceId}),{code:'agent_conversation_missing'});
+ assert.throws(()=>f.service.conversations.readHistory('workspace-one',chat.id,{sourceId:'../../secret'}),{code:'agent_handoff_source_invalid'});
+ assert.throws(()=>f.service.conversations.readHistory('workspace-one',chat.id,{sourceId,roundId:'other'}),{code:'agent_handoff_round_missing'});
+ const later=repo.readConversation(chat.id)!;later.view.entries.push(entry(7,{text:'later input excluded'}));later.view.revision=randomUUID();repo.saveConversation(later,record.view.revision);
+ assert.equal(f.service.conversations.readHistory('workspace-one',chat.id,{sourceId}).entries.length,6);
+ const draft={expectedRevision:later.view.revision,connectionId:'b',text:'continue'};const next=f.service.conversations.prepareSend('workspace-one',chat.id,draft);f.service.conversations.send('workspace-one',chat.id,{...draft,previewToken:next.token,clientRequestId:randomUUID()});
+ const complete=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id,{compactTools:true}),v=>v.run?.status==='completed');
+ const receipt=complete.entries.find(e=>e.kind==='handoff'&&e.handoff?.sourceOnly)!.handoff!;assert.ok(receipt.sourceId);assert.ok(!JSON.stringify(receipt).includes(text));assert.deepEqual(receipt.rounds[0].userInputs,[]);assert.equal(b.sends.length,1);
+ const changed=repo.readConversation(chat.id)!;changed.view.entries.find(e=>e.sequence===1)!.text='changed original';changed.view.revision=randomUUID();repo.saveConversation(changed,complete.revision);
+ const missing=f.service.conversations.readHistory('workspace-one',chat.id,{sourceId});assert.ok(missing.unavailable.some(e=>e.id===entries[0].id));assert.ok(!JSON.stringify(missing).includes('changed original'));
+ fs.unlinkSync(material.sourcePath!);assert.throws(()=>f.service.conversations.readHistory('workspace-one',chat.id,{sourceId}),{code:'agent_handoff_source_unavailable'});
+});
+
 for(const provider of ['dsh','qoder'] as const)test(`${provider} streaming keeps HTTP controls responsive with large old tool history`,async t=>{
   const native=fake(provider),open=native.executor.open;let begin:(()=>void)|undefined,started!:()=>void;
   const outputStarted=new Promise<void>(resolve=>{started=resolve;});const chunks=200;
@@ -112,12 +145,14 @@ for(const provider of ['dsh','qoder'] as const)test(`${provider} live tool outpu
     await connected(f.service,provider);const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,provider,'run');
     const running=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id,{compactTools:true}),v=>v.entries.some(e=>e.kind==='tool'&&e.detail?.live));const tool=running.entries.find(e=>e.kind==='tool')!;
     assert.ok(tool.text.includes('native-only-output'));
+    const source=f.service.conversations.prepareSend('workspace-one',chat.id,{expectedRevision:running.revision,connectionId:provider,text:'inspect history without sending'}).handoff!;
     const subscription=f.service.conversations.subscribe('workspace-one',chat.id,{compactTools:true});const first=await subscription.events[Symbol.asyncIterator]().next();assert.equal(first.value?.payload.conversation?.entries.find((e:ConversationEntry)=>e.id===tool.id)?.detail?.live,true);subscription.close();
     const db=new DatabaseSync(path.join(f.options.dataRoot,'agent-service/conversations.sqlite'),{readOnly:true});
     const stored=()=>{const row=db.prepare('SELECT c.codec,c.body,e.compact FROM conversation_entry_contents c JOIN conversation_read_entries e USING(conversation_id,content_revision) WHERE e.conversation_id=? AND e.id=?').get(chat.id,tool.id)!;assert.equal(row.codec,'native-tool');assert.equal(row.compact,null);assert.equal(String(row.body).includes('native-only-output'),false);assert.equal(String(row.body).includes('read-only-command'),false);};
     stored();release();await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id,{compactTools:true}),v=>v.run?.status==='completed');stored();
     fs.appendFileSync(file,provider==='dsh'?zstdCompressSync(Buffer.from(JSON.stringify(completion)+'\n')):JSON.stringify(completion)+'\n');
     const ready=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id,{compactTools:true}),v=>!v.entries.find(e=>e.id===tool.id)?.detail?.live);
+    const snapshotDetail=f.service.conversations.readEntry('workspace-one',chat.id,tool.id,tool.detail!.revision,source.sourceId);assert.equal(snapshotDetail.text,output);
     const ref=ready.entries.find(e=>e.id===tool.id)!;assert.equal(ref.text,'');assert.equal(f.service.conversations.readEntry('workspace-one',chat.id,tool.id,ref.detail!.revision).text,output);stored();db.close();await f.service.close();
     const cold=createAgentService(f.options);try{const entry=cold.conversations.read('workspace-one',chat.id,{compactTools:true}).entries.find(e=>e.id===tool.id)!;assert.equal(entry.text,'');assert.equal(cold.conversations.readEntry('workspace-one',chat.id,entry.id,entry.detail!.revision).text,output);}finally{await cold.close();}
     assert.equal(native.sends.length,1);
@@ -980,7 +1015,7 @@ test('large native items remain durable while the handoff carries actions and re
     assert.equal(preview.history.length,12);assert.equal(preview.fits,true);assert.ok(preview.inputBytes<preview.maxInputBytes);
     assert.ok(!preview.handoff!.body.includes('x'.repeat(1000)));
     const index=JSON.parse(fs.readFileSync(preview.handoff!.sourcePath!,'utf8'));
-    const original=JSON.parse(fs.readFileSync(index.rounds[0].path,'utf8'));assert.equal(original.records.filter((e:any)=>e.kind==='tool').length,10);
+    const original=f.service.conversations.readHistory('workspace-one',created.id,{sourceId:path.basename(preview.handoff!.sourcePath!),roundId:index.rounds[0].id});assert.equal(original.entries.filter((e:any)=>e.kind==='tool').length,10);
     f.service.conversations.send('workspace-one',created.id,{...draft,previewToken:preview.token,clientRequestId:'indexed-handoff'});
     await waitUntil(()=>f.service.conversations.read('workspace-one',created.id),v=>v.run?.status==='completed');assert.equal(b.sends.length,1);
   } finally { await f.close(); }
@@ -1412,7 +1447,7 @@ test('tool result updates preserve original invocation input and name across his
 });
 
 
-test('long handoff uses local index without auxiliary summary; payload and receipt freeze the same body',async()=>{
+test('long handoff uses local index without auxiliary summary; receipt identifies the exact sent body',async()=>{
  let calls=0;const a=fake('a',{summary:async()=>{calls++;return 'unique auxiliary summary: verify the directory';}}),b=fake('b'),c=fake('c');
  b.executor.descriptor.capabilities.maxInputBytes=8192;
  const f=fixture([a.executor,b.executor,c.executor]);
@@ -1426,7 +1461,7 @@ test('long handoff uses local index without auxiliary summary; payload and recei
   assert.equal(preview.handoff!.mode,'indexed');assert.equal(calls,0);assert.equal(a.sends.length,1,'summary must not enter the work context');
   f.service.conversations.send('workspace-one',chat.id,{...draft,previewToken:preview.token,clientRequestId:'summarized'});
   const second=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
-  assert.equal(b.sends[0]!.text,preview.handoff!.body);assert.equal(second.entries.find(e=>e.kind==='handoff')!.handoff!.body,b.sends[0]!.text);
+  assert.equal(b.sends[0]!.text,preview.handoff!.body);assert.equal(second.entries.find(e=>e.kind==='handoff')!.handoff!.bodyDigest,createHash('sha256').update(b.sends[0]!.text).digest('hex'));
   assert.equal(second.entries.find(e=>e.kind==='handoff')!.status,'accepted');assert.equal(calls,0);
   const next=await f.service.conversations.prepareHandoff('workspace-one',chat.id,{expectedRevision:second.revision,connectionId:'c',text:'continue again'});
   assert.ok(!next.handoff!.body.includes('unique auxiliary summary'),'next material must derive from local originals, not the previous packet');
@@ -1442,8 +1477,8 @@ test('quota failure preserves long local source records and still permits handof
   send(f.service,chat.id,'a','user original '.repeat(1500));const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
   const draft={expectedRevision:done.revision,connectionId:'b',text:'continue'};const preview=await f.service.conversations.prepareHandoff('workspace-one',chat.id,draft);
   assert.equal(preview.handoff!.mode,'indexed');assert.equal(preview.fits,true);assert.equal(calls,0);
-  const index=JSON.parse(fs.readFileSync(preview.handoff!.sourcePath!,'utf8'));const source=JSON.parse(fs.readFileSync(index.rounds[0].path,'utf8'));
-  assert.equal(source.records[0].text,'user original '.repeat(1500));
+  const index=JSON.parse(fs.readFileSync(preview.handoff!.sourcePath!,'utf8'));const source=f.service.conversations.readHistory('workspace-one',chat.id,{sourceId:path.basename(preview.handoff!.sourcePath!),roundId:index.rounds[0].id});
+  assert.ok(source.truncatedIds.includes(source.entries[0].id));assert.equal(f.service.conversations.readEntry('workspace-one',chat.id,source.entries[0].id,source.entries[0].detail!.revision).text,'user original '.repeat(1500));
   f.service.conversations.send('workspace-one',chat.id,{...draft,previewToken:preview.token,clientRequestId:'quota-fallback'});
   await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');assert.equal(b.sends.length,1);
  }finally{await f.close();}
@@ -1516,7 +1551,7 @@ test('an uncertain handoff receipt stays uncertain and repeated submission never
   send(f.service,chat.id,'a','inspect first');const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
   const draft={expectedRevision:done.revision,connectionId:'b',text:'continue'},p=f.service.conversations.prepareSend('workspace-one',chat.id,draft),input={...draft,previewToken:p.token,clientRequestId:'uncertain-handoff'};
   f.service.conversations.send('workspace-one',chat.id,input);const unknown=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='unknown');
-  const receipt=unknown.entries.find(e=>e.kind==='handoff')!;assert.equal(receipt.status,'unknown');assert.equal(receipt.handoff!.body,b.sends[0]!.text);
+  const receipt=unknown.entries.find(e=>e.kind==='handoff')!;assert.equal(receipt.status,'unknown');assert.equal(receipt.handoff!.bodyDigest,createHash('sha256').update(b.sends[0]!.text).digest('hex'));
   f.service.conversations.send('workspace-one',chat.id,input);assert.equal(b.sends.length,1);assert.equal(f.service.conversations.read('workspace-one',chat.id).run!.accepted,false);
   assert.equal(f.service.conversations.prepareSend('workspace-one',chat.id,{...draft,expectedRevision:unknown.revision,text:'a different instruction'}).participantId,undefined);assert.equal(b.sends.length,1);
  }finally{await f.close();}
@@ -2696,7 +2731,7 @@ test('long inherited background keeps complete indexed sources and never silentl
     assert.equal(preview.handoff!.mode,'indexed');assert.equal(preview.fits,true);
     assert.match(preview.handoff!.body,/后续任务.*本次用户要求及适用规则安排/);
     const index=JSON.parse(fs.readFileSync(preview.handoff!.sourcePath!,'utf8'));assert.equal(index.rounds.length,8);
-    const first=JSON.parse(fs.readFileSync(index.rounds[0].path,'utf8'));assert.equal(first.records[0].text,record.view.entries[0]!.text);
+    const first=f.service.conversations.readHistory('workspace-one',child.id,{sourceId:path.basename(preview.handoff!.sourcePath!),roundId:index.rounds[0].id});assert.equal(first.unavailable.length,0);assert.equal(f.service.conversations.readEntry('workspace-one',child.id,first.entries[0].id,first.entries[0].detail!.revision).text,record.view.entries[0]!.text);
     assert.deepEqual(child.entries,[]);assert.equal(native.sends.length,0);
   }finally{await f.close();}
 });

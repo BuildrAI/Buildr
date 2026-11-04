@@ -418,8 +418,8 @@ test('HTTP handoff exposes the exact bounded body, local sources and confirmed r
   const prepared=await response.json();assert.equal(prepared.fits,true);assert.equal(prepared.handoff.mode,'indexed');assert.ok(fs.existsSync(prepared.handoff.sourcePath));assert.ok(prepared.inputBytes<=8192);
   response=await fetch(endpoint+'/send',{method:'POST',headers,body:JSON.stringify({...draft,previewToken:prepared.token,clientRequestId:'second'})});assert.equal(response.status,202);
   const after=await completed(),receipt=after.entries.find(entry=>entry.kind==='handoff')!;
-  assert.equal(sent[1],prepared.handoff.body);assert.equal(receipt.handoff!.body,prepared.handoff.body);assert.equal(receipt.status,'accepted');
-  response=await fetch(endpoint,{headers});assert.equal(response.status,200);assert.equal((await response.json()).entries.find((entry:any)=>entry.kind==='handoff').handoff.body,sent[1]);
+  assert.equal(sent[1],prepared.handoff.body);assert.equal(receipt.handoff!.bodyDigest,createHash('sha256').update(prepared.handoff.body).digest('hex'));assert.equal(receipt.status,'accepted');
+  response=await fetch(endpoint,{headers});assert.equal(response.status,200);assert.equal((await response.json()).entries.find((entry:any)=>entry.kind==='handoff').handoff.bodyDigest,createHash('sha256').update(sent[1]).digest('hex'));
   // Ordinary HTTP admission requires no preview request or token, but remains idempotent.
   const ordinary={expectedRevision:after.revision,connectionId:'b',text:'ordinary follow-up',clientRequestId:'direct-http'};
   const start=performance.now();
@@ -643,6 +643,13 @@ test('tool detail reads preserve full history, enforce content revisions and rem
   const detail=endpoint+'/entry-detail/'+encodeURIComponent(full.id)+'?revision='+page.entries[0].detail.revision;
   response=await fetch(detail);assert.equal(response.status,403);
   response=await fetch(detail,{headers});assert.equal(response.status,200);assert.deepEqual(await response.json(),full);
+  const source={version:2,conversationId:created.id,from:1,through:1,rounds:[{id:'http-round',title:'第1轮',from:1,through:1,userInputs:[],assistantNotes:[],execution:[],artifacts:[]}],images:[],records:[{id:full.id,sequence:1,revision:page.entries[0].detail.revision,tool:{...full,text:'',input:undefined,detail:page.entries[0].detail}}]};
+  const sourceId='index-'+createHash('sha256').update(JSON.stringify(source)).digest('hex')+'.json',sourceRoot=path.join(profile,'agent-service/handoff-materials',created.id);fs.mkdirSync(sourceRoot,{recursive:true});fs.writeFileSync(path.join(sourceRoot,sourceId),JSON.stringify(source)+'\n');
+  const history=endpoint+'/history-source?'+new URLSearchParams({sourceId,roundId:'http-round'});
+  response=await fetch(history);assert.equal(response.status,403);
+  response=await fetch(history,{headers});assert.equal(response.status,200);const sourcePage=await response.json();assert.equal(sourcePage.entries[0].text,'');assert.equal(sourcePage.entries[0].input,undefined);assert.equal(sourcePage.entries[0].detail.revision,page.entries[0].detail.revision);
+  response=await fetch(history+'&limit=101',{headers});assert.equal(response.status,400);
+  response=await fetch(endpoint+'/history-source?sourceId=../../secret',{headers});assert.equal(response.status,400);
   response=await fetch(detail.replace(page.entries[0].detail.revision,'0'.repeat(64)),{headers});assert.equal(response.status,409);
   response=await fetch(detail.replace('/workspaces/'+workspaceId,'/workspaces/00000000-0000-0000-0000-000000000001'),{headers});assert.equal(response.status,400);
   assert.deepEqual(JSON.parse((db.prepare('SELECT body FROM conversations WHERE id=?').get(created.id) as {body:string}).body).view.entries,[]);

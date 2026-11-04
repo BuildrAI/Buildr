@@ -158,8 +158,13 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
         query(searchParams,['runId']);
         return result('participation',await service.conversations.participation(workspaceId,participationMatch[1],validate('participationQuery',{runId:searchParams.get('runId')})));
       }
+      const historyMatch=suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})\/history-source$/);
+      if(historyMatch&&request.method==='GET'){
+        query(searchParams,['sourceId','roundId','cursor','limit']);
+        return result('historyPage',await service.conversations.readHistory(workspaceId,historyMatch[1],validate('historyQuery',{sourceId:searchParams.get('sourceId'),roundId:searchParams.get('roundId')??undefined,cursor:numberQuery(searchParams.get('cursor')),limit:numberQuery(searchParams.get('limit'))})));
+      }
       const detailMatch=suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})\/entry-detail\/([^/]+)$/);
-      if(detailMatch&&request.method==='GET'){query(searchParams,['revision']);const revision=searchParams.get('revision');if(!revision||!(/^[a-f0-9]{64}$/).test(revision))throw inputError();let entryId:string;try{entryId=decodeURIComponent(detailMatch[2]);}catch{throw inputError();}if(!entryId||entryId.length>1024)throw inputError();return result('entry',await service.conversations.readEntry(workspaceId,detailMatch[1],entryId,revision));}
+      if(detailMatch&&request.method==='GET'){query(searchParams,['revision','sourceId']);const revision=searchParams.get('revision');if(!revision||!(/^[a-f0-9]{64}$/).test(revision))throw inputError();let entryId:string;try{entryId=decodeURIComponent(detailMatch[2]);}catch{throw inputError();}if(!entryId||entryId.length>1024)throw inputError();return result('entry',await service.conversations.readEntry(workspaceId,detailMatch[1],entryId,revision,searchParams.get('sourceId')??undefined));}
       const match = suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})(?:\/(webhook-replay|fork|prepare-send|send|supplement|pending-send|cancel-pending-send|generate-title|children|seen|observe|stop|events|entries|attachments|requests)(?:\/([a-f0-9-]{36})(?:\/(reply))?)?)?$/);
       if (!match) return null;
       const [, id, action, childId, reply] = match;

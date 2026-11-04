@@ -269,3 +269,14 @@ Buildr 隔离 DSH 的前台 shell 超时由原生执行器终止，默认层覆�
 
 服务组合通过 `webhookConfiguration` 加载宿主私有 `~/.buildr-webhook.json`（`url`、`secret`），或显式 `BUILDR_AGENT_WEBHOOK_CONFIG`。仅默认文件不存在才兼容旧环境变量；无效私有文件不回退。配置不进入执行器环境或诊断。外发使用七类统一轻量事件，携带实例持久 agent.id、agent.name 和 machine 主机名；reply 不外发全文，由接收端 read 按需读取。发送端在 webhook-events.sqlite 事务保存投影与事件，用租约领取、仅2xx确认、指数退避及重启补推；成功事件按 eventId 可显式原样重放。并发到达可能乱序，响应丢失允许相同 eventId 重复到达。接收端只接收与转发，不承担业务判断或投递调度。详细配置、内容边界与验收口径见产品 Buildr Skill 的 `references/agent-operations.md`。候选验证、共享服务采用和接收端处理是不同事实，不相互替代。
 问题接续的服务策略位于[对话应用](../../../services/buildr-agent/src/application/conversation-application.ts)，安全释放与通用兜底位于[问题等待释放](../../../services/buildr-agent/src/application/question-wait-release.ts)。[执行器契约](../../../services/buildr-agent/src/contracts.ts)的可选 `endQuestionWait` 只允许释放准确纯问题等待；[Codex适配器](../../../services/buildr-agent/src/executors/codex/index.ts)使用原生轮次中断并等待真实终态，不调用后台终端清理。未提供该能力的执行器由服务在原生观察证明“仅问题等待、无工具与后台工作”后调用通用控制。释放意图保存在原尝试记录，防止重启或响应丢失后重复操作；原问题回答与释放互斥，工具审批不因新轮自动批准或撤销。
+
+
+## 按轮交接与来源读取
+
+交接仍按实际轮次组织用户输入、追加、纠正、问题回答、助手说明与最终答复；没有最终答复或执行未知时明确保留。正常交接直接组织消息，超过接收预算时给来源索引与读取指引，不依赖辅助模型摘要。交接说明是可选导航，不能替代原始要求或提升历史授权。
+
+`handoff-materials/<conversation-id>/index-<digest>.json`的新来源只保存轮次元数据、条目修订和必要工具元数据，不再导出整轮正文。新原生工具同时保留准确调用引用，因此交接时仍在执行的工具可在结束后从原生会话读取；不因展示状态更新而失去调用身份，也不保留正文兜底。索引身份固定覆盖范围，相同来源复用文件。旧已发来源和回执继续可读，本轮不破坏性清理历史路径。
+
+本对话控制命令的`history`按`sourceId`、可选`roundId`、`cursor`与`limit`读取消息及工具元数据；返回`nextCursor`时继续分页。`truncatedIds`是明确的消息片段，`unavailable`逐条标明缺失修订。`entry`携带同一来源、条目ID和修订读取完整消息或原生工具详情。范围只允许当前绑定对话，子对话从自身冻结继承读取；缺失不重放或修补原记录。
+
+已发回执只保留来源、轮次元数据和实际发送正文的SHA256，不重复保存整份提示词。交接抽屉按展开读取轮次，工具继续单独展开读取。预览中可见的消息与工具概况不代表已读取全部工具详情；发送身份、原生恢复和执行资源释放仍独立核对。

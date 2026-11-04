@@ -7,7 +7,30 @@ type ConversationScrollSample={at:number;top:number;height:number;viewport:numbe
 
 /** history 场景使用独立准备的对话现场。 */
 export async function runHistoryScenarios(fixture:AgentConversationFixture){
-  const {capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
+  const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
+await step('交接按轮引用读取，折叠不取正文，工具展开才读详情',async()=>{
+ const saved=structuredClone(fixture.conversation),sourceId='index-'+'a'.repeat(64)+'.json',at=new Date().toISOString();let histories=0,details=0,missing=false;
+ const tool={id:'source-tool',sequence:2,runId:'source-round',kind:'tool',role:'system',text:'',createdAt:at,name:'command',provider:'codex',status:'completed',detail:{revision:'b'.repeat(64)}};
+ const sourceEntries=[{id:'source-user',sequence:1,runId:'source-round',kind:'message',role:'user',text:'原始要求',createdAt:at},tool,{id:'source-append',sequence:3,runId:'source-round',kind:'message',role:'user',text:'追加：保留未知结果',createdAt:at},{id:'source-final',sequence:4,runId:'source-round',kind:'message',role:'assistant',text:'来源中的最终答复',createdAt:at}];
+ const historyRoute=async(route:any)=>{histories++;if(missing)expectedBrowserErrors?.add(route.request().url());await route.fulfill({status:missing?409:200,contentType:'application/json',body:JSON.stringify(missing?{error:{code:'agent_handoff_source_unavailable',message:'交接来源缺失，不能重放工作。'}}:{entries:sourceEntries,truncatedIds:[],unavailable:[]})});};
+ const entryRoute=async(route:any)=>{details++;await route.fulfill({contentType:'application/json',body:JSON.stringify({...tool,text:'NATIVE_HANDOFF_TOOL_DETAIL',input:'read-only-command'})});};
+ await page.route('**/history-source?**',historyRoute);await page.route('**/entry-detail/source-tool?**',entryRoute);
+ const material={agent:'Qoder',model:'fixture-model',changes:[{kind:'agent',label:'智能体',before:'Codex',after:'Qoder'}],rounds:[{id:'source-round',title:'第1轮',from:1,through:4,state:'completed',userInputs:[],assistantNotes:[],execution:[],artifacts:[],executionCount:1,finalReplyId:'source-final'}],body:'按来源读取',sourceThrough:4,sourceId,sourceOnly:true,mode:'indexed'};
+ try{
+  update({run:run('completed'),requests:[],entries:[{id:'outer-user',sequence:1,runId:'run-fixture',kind:'message',role:'user',text:'本轮交接',createdAt:at},{id:'source-receipt',sequence:2,runId:'run-fixture',kind:'handoff',role:'system',text:'已交给Qoder',createdAt:at,status:'accepted',provider:'qoder',handoff:material},{id:'outer-final',sequence:3,runId:'run-fixture',kind:'message',role:'assistant',text:'接手完成',createdAt:at,status:'completed'}]});
+  await page.reload();await input().waitFor();
+  await panel().locator('.ac-handoff-receipt').getByRole('button',{name:'交接内容',exact:true}).click();
+  const drawer=page.locator('.ac-handoff-drawer:visible');await drawer.locator('.ac-hd-round').waitFor();assert.equal(histories,0);assert.equal(details,0);
+  await drawer.locator('details.ac-hd-round > summary').click();await drawer.getByText('追加：保留未知结果',{exact:true}).waitFor();assert.equal(histories,1);assert.equal(details,0);await drawer.getByRole('heading',{name:'最终答复 · #4',exact:true}).waitFor();
+  await drawer.locator('details.ac-step-tool > summary').click();await drawer.getByText('NATIVE_HANDOFF_TOOL_DETAIL',{exact:false}).waitFor();assert.equal(details,1);
+  await capture(page,'agent-handoff-reference-source.png');
+  await drawer.getByRole('button',{name:'关闭交接内容',exact:true}).click();missing=true;
+  await panel().locator('.ac-handoff-receipt').getByRole('button',{name:'交接内容',exact:true}).click();await drawer.locator('details.ac-hd-round > summary').click();await drawer.getByRole('alert').filter({hasText:'交接来源缺失'}).waitFor();
+ }finally{
+  const close=page.getByRole('button',{name:'关闭交接内容',exact:true});if(await close.isVisible())await close.click();
+  await page.unroute('**/history-source?**',historyRoute);await page.unroute('**/entry-detail/source-tool?**',entryRoute);update(saved);
+ }
+});
 await step('待查看点击后立即同步列表与统计，不等待轮询',async()=>{
   const saved=structuredClone(fixture.conversation),at=new Date().toISOString(),version=910003;
   const summaryReads:number[]=[];

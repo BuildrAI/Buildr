@@ -1,6 +1,6 @@
 import { timeAttachmentStage } from './attachment-timing.ts';
 import type {WebhookSettingsView,WebhookSettingsInput,WebhookDeliveryResult} from '../types';
-import type { AgentParticipationParticipation, AgentParticipationSummaryParticipationSummary, AgentParticipationSummaryQueryParticipationSummaryQuery } from '../../../../build/generated/agent-service-http-dto';
+import type { AgentConversationHistoryPageHistoryPage, AgentParticipationParticipation, AgentParticipationSummaryParticipationSummary, AgentParticipationSummaryQueryParticipationSummaryQuery } from '../../../../build/generated/agent-service-http-dto';
 import { sharedConversationRead } from './shared-conversation-read.ts';
 import { conversationTransferDecoder } from './conversation-transfer.ts';
 import type { ProgramUpdatesView, ProgramUpgradeView } from '../types';
@@ -104,8 +104,12 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
     },
     create(input: {workspaceId: string; cwd?: string; taskId?: string; taskLinks?:{workspaceId:string;taskId:string}[]}) { return request<ConversationView>(path(input.workspaceId), post({cwd: input.cwd, taskId: input.taskId,taskLinks:input.taskLinks})); },
     read(workspaceId: string, id: string, signal?: AbortSignal) { return request<ConversationView>(path(workspaceId, id), {signal}); },
+    historySource(workspaceId:string,id:string,input:{sourceId:string;roundId?:string;cursor?:number;limit?:number},signal?:AbortSignal) {
+      const query=new URLSearchParams(Object.entries(input).filter(([,v])=>v!==undefined).map(([k,v])=>[k,String(v)]));
+      return read<AgentConversationHistoryPageHistoryPage>(path(workspaceId,id)+'/history-source?'+query,signal);
+    },
     entryReference(workspaceId:string,id:string,entryId:string,revision:string,signal?:AbortSignal) { return read<ConversationEntry>(path(workspaceId,id)+'/entry-detail/'+encodeURIComponent(entryId)+'?'+new URLSearchParams({revision}),signal); },
-    entry(workspaceId:string,id:string,entry:ConversationEntry,signal?:AbortSignal) {return request<ConversationEntry>(path(workspaceId,id)+'/entry-detail/'+encodeURIComponent(entry.id)+'?'+new URLSearchParams({revision:entry.detail!.revision}),{signal});},
+    entry(workspaceId:string,id:string,entry:ConversationEntry,signal?:AbortSignal,sourceId?:string) {return request<ConversationEntry>(path(workspaceId,id)+'/entry-detail/'+encodeURIComponent(entry.id)+'?'+new URLSearchParams({revision:entry.detail!.revision,...(sourceId?{sourceId}:{})}),{signal});},
     entries(workspaceId: string, id: string, cursor: number, signal?: AbortSignal) { return request<ConversationView>(path(workspaceId, id) + '/entries?' + new URLSearchParams({before: String(cursor)}), {signal}); },
     update(conversation: ConversationView, input: {title?: string; hidden?: boolean; taskId?: string | null; taskIds?: string[];taskLinks?:{workspaceId:string;taskId:string}[]}) { return request<ConversationView>(path(conversation.workspaceId, conversation.id), {method: 'PATCH', body: JSON.stringify({...input, expectedRevision: conversation.revision})}); },
     fork(conversation:ConversationView,entryId:string,clientRequestId:string) {return request<ConversationView>(path(conversation.workspaceId,conversation.id)+'/fork',post({expectedRevision:conversation.revision,entryId,clientRequestId}));},
