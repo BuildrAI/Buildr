@@ -175,7 +175,10 @@ export class DshRuntime implements AgentRuntime {
     // The caller prefers trusted native titles; missing native output must not
     // disable the isolated fallback for ordinary conversations.
     if(this.gateway){
-      const model=gatewayModel(this.gateway,input.model);
+      // A gateway lease exposes exactly one model. The caller names the model by
+      // its account catalog id, which is not a gateway route, so auxiliary
+      // requests always use the lease model rather than resolving that id.
+      const model=gatewayModel(this.gateway);
       return generateDshTitle(input,model.id,'chat-completions',init=>fetch(this.gateway!.baseUrl.replace(/\/$/,'')+'/chat/completions',{
         ...init,headers:{...Object.fromEntries(new Headers(init.headers)),authorization:'Bearer '+this.gateway!.apiKey},redirect:'error',
       }),Math.min(128,model.maxOutputTokens??128));
