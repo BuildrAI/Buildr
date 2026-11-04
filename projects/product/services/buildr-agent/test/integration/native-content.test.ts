@@ -108,8 +108,8 @@ test('native image values return independently persisted bytes and reject privat
   assert.throws(() => reader.attachment(oversized), /原生正文/);
 });
 
-test('history snapshots and repeated control saves never resolve deferred native tool bodies',async t=>{
-  const f=conversation(t);assert.equal(maintainNativeContent(f.dataRoot).tools,1);
+for (const provider of ['qoder','dsh','codex']) test(`${provider}: history snapshots and repeated control saves never resolve deferred native tool bodies`,async t=>{
+  const f=conversation(t,provider);assert.equal(maintainNativeContent(f.dataRoot).tools,1);
   let reads=0;
   t.mock.method(NativeContentReader.prototype,'tool',()=>{reads++;throw new Error('history body must not be read');});
   const service=createAgentService({dataRoot:f.dataRoot,executors:[],modelProviders:[],resolveWorkspace:()=>({rootPath:f.cwd}),assertTask(){}});t.after(()=>service.close());

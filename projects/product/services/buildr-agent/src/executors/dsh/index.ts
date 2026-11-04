@@ -49,7 +49,7 @@ export function dshCommandDeadlinePatch() {
   return [{id:'tool-bash',name:'@deepseek-ai/dsh-tool-bash',config:{promoteOnTimeout:false}},
     {id:'tool-pwsh',name:'@deepseek-ai/dsh-tool-pwsh',config:{promoteOnTimeout:false}}];
 }
-interface ActiveTurn { lineage: DshExecutionLineage; accepted?: boolean; lastSeq?: number; inputIds?: Set<string>; restoring?: Promise<void>; reconnects?: number; retryTimer?: ReturnType<typeof setTimeout>; reject?: (error: Error) => void; observationDiagnostic?: string; observationLost?: boolean; stopRequested?: boolean; stopConfirmed?:boolean; stopping?:Promise<ExecutorObservation>; cancellation?: Promise<void>; supplementInputs?: Set<string>; supplementAdmissions?: number; supplementUnknown?: boolean; pendingEnd?: any; finish?: () => void; id: string; input: ExecutorSendInput; nativeTurn?: number; contextWindow?: number; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown' }>; pending: Map<string, { request: ExecutorRequest; resolve?: (value: string) => void; answer?: (value: { answers: any[] }) => void; reject?: (error: Error) => void; wait?: any }>; stream?: any; pump?: Promise<void>; streamAttempt?: { id: string; turn: number; step: number; nextIndex: number; text: string }; }
+interface ActiveTurn { lineage: DshExecutionLineage; accepted?: boolean; lastSeq?: number; inputIds?: Set<string>; restoring?: Promise<void>; reconnects?: number; retryTimer?: ReturnType<typeof setTimeout>; reject?: (error: Error) => void; observationDiagnostic?: string; observationLost?: boolean; stopRequested?: boolean; stopConfirmed?:boolean; stopping?:Promise<ExecutorObservation>; cancellation?: Promise<void>; supplementInputs?: Set<string>; supplementAdmissions?: number; supplementUnknown?: boolean; pendingEnd?: any; finish?: () => void; id: string; input: ExecutorSendInput; nativeTurn?: number; contextWindow?: number; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown' }>; pending: Map<string, { request: ExecutorRequest; resolve?: (value: string) => void; answer?: (value: { answers: any[] }) => void; reject?: (error: Error) => void; wait?: any }>; stream?: any; pump?: Promise<void>; streamTimer?: ReturnType<typeof setTimeout>; streamDirty?: boolean; streamEmittedAt?: number; streamAttempt?: { id: string; turn: number; step: number; nextIndex: number; text: string }; }
 export function createDshExecutor(): AgentExecutor { return { nativeContent: dshContent, readPersistedExecution: readDshPersistedExecution, storage: { transientDirectories: ['tmp/node-compile-cache', 'cache/node-compile', 'home/.npm/_cacache'] }, descriptor: { id: 'dsh', label: 'DSH', capabilities }, open: options => DshRuntime.open(options) }; }
 export class DshRuntime implements AgentRuntime {
   participationInstruction?: import('../../participation-contracts.ts').ParticipationMatch;
@@ -337,6 +337,7 @@ export class DshRuntime implements AgentRuntime {
     const error = cause instanceof NativeObservationError ? cause
       : new NativeObservationError('dsh_execution_observation_lost', cause, this.gateway ? [this.gateway.apiKey] : []);
     if (this.disposed) return;
+    try { this.flushAssistant(turn); } catch { /* Keep the original failure and native controls. */ }
     turn.observationLost = true; turn.observationDiagnostic = error.diagnostic;
     const recoverable = turn.accepted && !this.closed && (turn.reconnects ?? 0) < 3;
     // A lost observer does not end the native turn. Keep its original waiter
@@ -361,10 +362,12 @@ export class DshRuntime implements AgentRuntime {
     const opening = new Promise<void>((resolve, fail) => { ready = resolve; reject = fail; }); opening.catch(() => {});
     const buffer: any[] = [];
     const pump = (async () => {
-      let opened = false;
+      let opened = false, frames = 0;
       try {
         for await (const frame of stream) {
           if (this.closed || turn.stream !== stream) break;
+          // Buffered native frames must yield to HTTP, stop controls and flush timers.
+          if (++frames % 32 === 0) await new Promise<void>(resolve => setImmediate(resolve));
           if (frame.type === 'snapshot') {
             if (frame.header.id !== turn.input.contextRef.id || frame.header.cwd !== turn.input.cwd) throw new Error('dsh_context_identity_mismatch');
             if (restore) await this.restoreSnapshot(turn, frame);
@@ -447,15 +450,24 @@ export class DshRuntime implements AgentRuntime {
       const text = (active.stream ?? []).flatMap((record: any) =>
         record?.type === 'text-chunks' && Array.isArray(record.texts) ? record.texts.filter((text: unknown) => typeof text === 'string')
           : record?.type === 'chunk' && record.chunk?.type === 'text-delta' ? [String(record.chunk.text ?? '')] : []).join('');
+      this.flushAssistant(turn);
       turn.streamAttempt = { id: active.attemptId, turn: active.turn, step: active.step, nextIndex: active.nextIndex, text };
       if (text) turn.input.onEvent({ type: 'item', item: { id: 'assistant:' + active.turn + ':' + active.step, kind: 'message', role: 'assistant', text, executionId: turn.id, status: 'running' } });
     }
     turn.input.onEvent({ type: 'observation', observation: this.activeObservation(turn) });
   }
 
+  private flushAssistant(turn: ActiveTurn): void {
+    clearTimeout(turn.streamTimer); turn.streamTimer = undefined;
+    const attempt = turn.streamAttempt;
+    if (!turn.streamDirty || !attempt) return;
+    turn.streamDirty = false; turn.streamEmittedAt = performance.now();
+    turn.input.onEvent({ type: 'item', item: { id: `assistant:${attempt.turn}:${attempt.step}`, kind: 'message', role: 'assistant', text: attempt.text, executionId: turn.id, status: 'running' } });
+  }
   private assistantFrame(turn: ActiveTurn, frame: any): void {
     if (frame.type === 'start') {
       if (turn.terminal || frame.turn !== turn.nativeTurn || !turn.inputIds?.has(turn.lineage.turns.get(frame.turn)!)) return;
+      this.flushAssistant(turn); turn.streamEmittedAt = undefined;
       turn.streamAttempt = { id: frame.attemptId, turn: frame.turn, step: frame.step, nextIndex: 0, text: '' }; return;
     }
     const attempt = turn.streamAttempt;
@@ -465,10 +477,18 @@ export class DshRuntime implements AgentRuntime {
       attempt.nextIndex++; turn.reconnects = 0;
       if (frame.chunk?.type === 'text-delta') {
         attempt.text += String(frame.chunk.text ?? '');
-        turn.input.onEvent({ type: 'item', item: { id: `assistant:${attempt.turn}:${attempt.step}`, kind: 'message', role: 'assistant', text: attempt.text, executionId: turn.id, status: 'running' } });
+        turn.streamDirty = true;
+        const remaining = 50 - (performance.now() - (turn.streamEmittedAt ?? -Infinity));
+        if (remaining <= 0) this.flushAssistant(turn);
+        else if (!turn.streamTimer) {
+          turn.streamTimer = setTimeout(() => {
+            try { this.flushAssistant(turn); } catch (error) { this.followFailed(turn, error); }
+          }, remaining);
+          turn.streamTimer.unref();
+        }
       }
     }
-    if (frame.type === 'end') turn.streamAttempt = undefined;
+    if (frame.type === 'end') { this.flushAssistant(turn); turn.streamAttempt = undefined; }
   }
   async supplement(input: ExecutorSupplementInput): Promise<ExecutorInputReceipt> {
     this.reference(input.contextRef, input.cwd);
@@ -495,6 +515,7 @@ export class DshRuntime implements AgentRuntime {
     }
   }
   private event(turn: ActiveTurn, event: any): void {
+    this.flushAssistant(turn);
     const data = event.data ?? {}; const emit = (event: import('../../contracts.ts').ExecutorEvent) => turn.input.onEvent(withExecutionFault(event));
     if (event.type === 'session/title') {
       if (data.source?.kind === 'provider' && typeof data.title === 'string') {
@@ -713,6 +734,7 @@ export class DshRuntime implements AgentRuntime {
       }
     }
     if(!confirmed){turn.diagnostic='停止尚未确认：原生取消未完成，未终止共享主机或启动第二份执行。';turn.observationLost=true;return this.activeObservation(turn);}
+    this.flushAssistant(turn);
     turn.stopConfirmed=true;turn.terminal='stopped';turn.observationLost=false;turn.supplementUnknown=false;turn.pendingEnd=undefined;
     turn.supplementInputs?.clear();turn.lineage.stopped(owners);
     for(const tool of turn.tools.values())if(tool.status==='running')tool.status='unknown';
@@ -723,6 +745,7 @@ export class DshRuntime implements AgentRuntime {
   }
   async close(): Promise<void> {
     const controlExited=Boolean(this.host.child&&(this.host.child.exitCode!==null||this.host.child.signalCode!==null));
+    for (const turn of this.turns.values()) { try { this.flushAssistant(turn); } catch { /* Preserve unknown delivery. */ } }
     this.disposed = true;
     for (const turn of this.turns.values()) if (turn.retryTimer) { clearTimeout(turn.retryTimer); turn.retryTimer = undefined; }
     await this.cancelLogin();

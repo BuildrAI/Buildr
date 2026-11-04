@@ -105,7 +105,7 @@ export function createRuntime(): any  {
       for(const diagnostic of result.diagnostics)console.warn('旧智能体接入清理未完成：',diagnostic.path,diagnostic.message);
     } catch { console.warn('旧智能体接入清理未完成，其他功能可继续使用。'); }
   }, closeResources: async () => {
-    registry.provide(CODE_SOURCE_CONTROL_OBSERVATIONS).close();
+    await registry.provide(CODE_SOURCE_CONTROL_OBSERVATIONS).close();
     registry.provide(CODE_GENERATION_APPLICATION).close();
     registry.provide(CONNECTION_SKILLS_APPLICATION).close();
     await Promise.all([registry.provide(AGENT_SERVICE_APPLICATION).close()]);

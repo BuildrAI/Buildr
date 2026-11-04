@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { IsolatedFileWatchers, type FileWatcher, type WatchFiles } from './source-control-watch-process.ts';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -14,12 +15,13 @@ async function watchKey(kind: string, directory: string) {
 const OUTPUT_DIRECTORIES = new Set(['node_modules', 'dist', 'build', 'web-dist', '.worktrees', '.buildr', 'target', '.gradle', '.next', 'coverage']);
 type OutputDecision = { pending: boolean; ignored: boolean; expires: number };
 type Target = { path: string; metadata: boolean; recursive: boolean; prefix?: string; outputs?: Map<string, OutputDecision>; tracked?: Set<string> };
-type Watched = { target: Target; owners: Set<string>; watcher: fs.FSWatcher; degraded: boolean };
-type Options = { changed(repositoryIds: string[], refsChanged?: boolean): void; diagnostic(repositoryId: string, message: string): void };
+type Watched = { target: Target; owners: Set<string>; watcher: FileWatcher; degraded: boolean };
+type Options = { watchFiles?: WatchFiles; changed(repositoryIds: string[], refsChanged?: boolean): void; diagnostic(repositoryId: string, message: string): void };
 
 /** Filesystem events invalidate observations; Git reads remain the authority. */
 export class SourceControlWatchers {
   private readonly options: Options;
+  private readonly isolated = new IsolatedFileWatchers();
   private readonly watched = new Map<string, Watched>();
   private readonly repositories = new Map<string, Set<string>>();
   private readonly generations = new Map<string, number>();
@@ -91,7 +93,15 @@ export class SourceControlWatchers {
     return true;
   }
 
-  private attach(key: string, target: Target, repositoryId: string) {
+  private readonly attaching = new Map<string, Promise<boolean>>();
+  private async attach(key: string, target: Target, repositoryId: string): Promise<boolean> {
+    const pending = this.attaching.get(key);
+    if (pending) { await pending; return this.attach(key, target, repositoryId); }
+    const work = this.attachTarget(key, target, repositoryId); this.attaching.set(key, work);
+    try { return await work; } finally { this.attaching.delete(key); }
+  }
+
+  private async attachTarget(key: string, target: Target, repositoryId: string) {
     const existing = this.watched.get(key);
     if (existing) {
       existing.owners.add(repositoryId); existing.target = target;
@@ -129,14 +139,15 @@ export class SourceControlWatchers {
       const refsChanged = target.metadata && (!relative || /(?:^|\/)(?:HEAD|config|config\.worktree|packed-refs|refs|commondir|gitdir)(?:\/|$)/.test(relative) || /^worktrees(?:\/[^/]+)?$/.test(relative));
       this.options.changed([...owners], refsChanged);
     };
-    let watcher: fs.FSWatcher;
-    try { watcher = fs.watch(target.path, { recursive: target.recursive, persistent: false }, changed); }
+    let watcher: FileWatcher;
+    try { watcher = (await (this.options.watchFiles ?? this.isolated.watch)(target.path, target.recursive, changed)); }
     catch {
-      watcher = fs.watch(target.path, { persistent: false }, changed);
+      watcher = (await (this.options.watchFiles ?? this.isolated.watch)(target.path, false, changed));
       watched.degraded = true;
       this.retries.add(repositoryId);
       this.options.diagnostic(repositoryId, '部分目录无法递归监听，将通过低频核对补偿变化。');
     }
+    if (this.closed) { watcher.close(); return false; }
     watcher.on('error', () => {
       watcher.close();
       if (this.watched.get(key)?.watcher === watcher) this.watched.delete(key);
@@ -150,9 +161,18 @@ export class SourceControlWatchers {
     return !watched.degraded;
   }
 
+  private readonly updating = new Map<string, Promise<boolean>>();
   async update(repositoryId: string, locations: string[]): Promise<boolean> {
     const generation = (this.generations.get(repositoryId) ?? 0) + 1;
     this.generations.set(repositoryId, generation);
+    const previous = this.updating.get(repositoryId) ?? Promise.resolve(false);
+    const work = previous.catch(() => false).then(() => this.updateTargets(repositoryId, locations, generation));
+    this.updating.set(repositoryId, work);
+    try { return await work; } finally { if (this.updating.get(repositoryId) === work) this.updating.delete(repositoryId); }
+  }
+
+  private async updateTargets(repositoryId: string, locations: string[], generation: number): Promise<boolean> {
+    if (this.closed || this.generations.get(repositoryId) !== generation) return false;
     this.retries.delete(repositoryId);
     const targets = new Map<string, Target>();
     await Promise.all([...new Set(locations)].slice(0, 128).map(async location => {
@@ -177,10 +197,15 @@ export class SourceControlWatchers {
     const retained = new Set<string>();
     let rebound = false;
     for (const [key, target] of targets) {
-      try { rebound = this.attach(key, target, repositoryId) || rebound; retained.add(key); }
+      try { rebound = (await this.attach(key, target, repositoryId)) || rebound; retained.add(key); }
       catch {
         this.retries.add(repositoryId);
         this.options.diagnostic(repositoryId, '文件变化监听不可用或已达资源上限，将通过低频核对补偿。');
+      }
+      // Retirement during asynchronous native registration must not revive an owner.
+      if (this.closed || this.generations.get(repositoryId) !== generation) {
+        for (const retainedKey of retained) this.release(retainedKey, repositoryId);
+        return false;
       }
     }
     this.repositories.set(repositoryId, retained);
@@ -205,5 +230,6 @@ export class SourceControlWatchers {
     this.closed = true; this.controller.abort();
     for (const value of this.watched.values()) value.watcher.close();
     this.watched.clear(); this.repositories.clear();
+    return this.isolated.close();
   }
 }

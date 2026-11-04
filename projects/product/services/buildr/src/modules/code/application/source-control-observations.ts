@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { SourceControlSharedReads } from './source-control-shared-reads.ts';
 import type { CodeSourceControlResponse } from './source-control-model.ts';
+import type { WatchFiles } from '../infrastructure/source-control-watch-process.ts';
 import { SourceControlWatchers } from '../infrastructure/source-control-watcher.ts';
 import { codeFailure } from '../infrastructure/code-file-reader.ts';
 
@@ -24,8 +25,11 @@ export class SourceControlObservations {
   private readonly idleMs: number;
   private readonly reap: ReturnType<typeof setInterval>;
   private closed = false;
+  private readonly watchFiles?: WatchFiles;
+  private readonly closing = new Set<Promise<void>>();
 
-  constructor(options: { waitMs?: number; batchMs?: number; idleMs?: number } = {}) {
+  constructor(options: { watchFiles?: WatchFiles; waitMs?: number; batchMs?: number; idleMs?: number } = {}) {
+    this.watchFiles = options.watchFiles;
     this.waitMs = Math.max(1, Math.min(20_000, options.waitMs ?? 20_000));
     this.batchMs = Math.max(1, Math.min(1000, options.batchMs ?? 400));
     this.idleMs = Math.max(1, options.idleMs ?? 60_000);
@@ -45,7 +49,7 @@ export class SourceControlObservations {
         this.release(...idle);
       }
       const created: State = { epoch: randomUUID(), sequence: 0, changed: new Map(), refsChanged: new Map(), pending: new Set(), pendingRefs: new Set(), fingerprints: new Map(), reads: new SourceControlSharedReads(), inventoryGeneration: 0, diagnostics: new Map(), waiters: new Set(), lastUsed: Date.now(), watchers: null! };
-      created.watchers = new SourceControlWatchers({ changed: (ids, refs) => this.invalidate(created, ids, refs), diagnostic: (id, message) => {
+      created.watchers = new SourceControlWatchers({ watchFiles: this.watchFiles, changed: (ids, refs) => this.invalidate(created, ids, refs), diagnostic: (id, message) => {
         created.reads.invalidate([id]);
         const messages = created.diagnostics.get(id) ?? new Set<string>(); messages.add(message); created.diagnostics.set(id, messages);
       } });
@@ -198,12 +202,13 @@ export class SourceControlObservations {
 
   private release(root: string, state: State) {
     if (state.batch) clearTimeout(state.batch);
-    state.reads.close(); state.watchers.close(); for (const waiter of [...state.waiters]) waiter.finish(); this.states.delete(root);
+    state.reads.close(); const closing = Promise.resolve(state.watchers.close()); this.closing.add(closing); void closing.finally(() => this.closing.delete(closing)); for (const waiter of [...state.waiters]) waiter.finish(); this.states.delete(root);
   }
 
   close() {
-    if (this.closed) return;
+    if (this.closed) return Promise.all(this.closing).then(() => {});
     this.closed = true; clearInterval(this.reap);
     for (const [root, state] of this.states) this.release(root, state);
+    return Promise.all(this.closing).then(() => {});
   }
 }

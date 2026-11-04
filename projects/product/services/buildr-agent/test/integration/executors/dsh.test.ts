@@ -451,3 +451,38 @@ test('DSH individually stops only the exact background job and retains state whe
   runtime.forkBridge=undefined;
  }finally{await f.runtime.close();await new Promise<void>(resolve=>server.close(()=>resolve()));await rm(dir,{recursive:true,force:true});}
 });
+
+test('DSH text bursts coalesce persistence events, yield controls and flush all text before terminal', async () => {
+  const streams:Stream[]=[], visible:ExecutorEvent[]=[], cwd='/synthetic/stream-load', ok=(value:any)=>({ok:true,value});
+  let timerRan=false, timerBeforeEnd=false;
+  const publish=(event:any)=>{for(const stream of streams)stream.push({type:'event',event});};
+  const remote={permissionPresets:{catalog:async()=>ok({defaultPreset:'workspace-write',options:[{value:'workspace-write'}]})},
+    commands:{list:async()=>ok([{name:'permission',definitionId:'@deepseek-ai/dsh-permission-presets'}]),execute:async()=>ok({result:{kind:'success'}})},session:{
+    create:async()=>ok({sessionId:'burst'}),follow:()=>{const stream=new Stream();streams.push(stream);stream.push({type:'snapshot',header:{id:'burst',cwd},cursor:0,records:[],projections:{values:{permissions:{currentValue:'workspace-write'}}}});return stream;},
+    prompt:async(input:any)=>{queueMicrotask(()=>{
+      setTimeout(()=>{timerRan=true;},0);
+      publish({type:'turn/start',data:{turn:1}});publish({type:'user/message',data:{id:'u',content:input.content,source:{rpcId:input.requestId}}});
+      for(const stream of streams){
+        stream.push({type:'assistant-stream',frame:{type:'start',attemptId:'burst',turn:1,step:1}});
+        for(let index=0;index<2000;index++)stream.push({type:'assistant-stream',frame:{type:'chunk',attemptId:'burst',index,chunk:{type:'text-delta',text:'字'}}});
+        stream.push({type:'assistant-stream',frame:{type:'end',attemptId:'burst'}});
+      }
+      publish({type:'turn/end',data:{turn:1,reason:{kind:'completed'}}});
+    });return ok({accepted:true});},cancel:async()=>ok({accepted:true}),
+  }};
+  const host={close:async()=>{for(const stream of streams)stream.dispose();}};
+  const runtime=Reflect.construct(DshRuntime,['burst-binding',host,{remote,close:async()=>{},ctx:{}}]) as AgentRuntime;
+  try{
+    const contextRef=await runtime.createContext({cwd});
+    await runtime.send({contextRef,cwd,text:'stream fixture',images:[],clientRequestId:'burst-request',onEvent:event=>{
+      visible.push(event);if(event.type==='completed')timerBeforeEnd=timerRan;
+    }});
+    const messages=visible.filter((event):event is Extract<ExecutorEvent,{type:'item'}>=>event.type==='item'&&event.item.id==='assistant:1:1');
+    assert.equal(messages.at(-1)!.item.text,'字'.repeat(2000));
+    assert.ok(messages.length<40,`${messages.length} snapshots for 2000 chunks`);
+    assert.equal(timerBeforeEnd,true,'control timers run before buffered output completes');
+    const final=visible.findIndex(event=>event.type==='completed');
+    assert.ok(visible.indexOf(messages.at(-1)!)<final);
+    const count=visible.length;await new Promise(resolve=>setTimeout(resolve,80));assert.equal(visible.length,count,'no delayed output after terminal');
+  }finally{await runtime.close();}
+});

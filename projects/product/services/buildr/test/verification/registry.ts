@@ -555,6 +555,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/source-control-observation-http.test.ts',
     'test/integration/source-control-observations.test.ts',
     'test/integration/source-control-native-observations.test.ts',
+    'test/integration/source-control-watch-process.test.ts',
   ], { schedulingCostMs: 179000, timeoutMs: 300_000, args: ['--test-concurrency=3'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),
   integrationSlice('integration-knowledge', [
     'test/integration/agent-asset-source-query.test.ts',

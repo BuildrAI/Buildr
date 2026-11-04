@@ -20,7 +20,7 @@ function deadline<T>(promise: Promise<T>, ms = 5000): Promise<T> {
 const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 function fixture(t: test.TestContext, options: { waitMs?: number; idleMs?: number } = {}) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-code-watch-'));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-code-watch-')));
   const git = (location: string, ...args: string[]) => execFileSync('git', ['--no-optional-locks', '-C', location, ...args], { encoding: 'utf8', env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0' }, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   const locations = ['one', 'two'].map(name => {
     const location = path.join(root, name); fs.mkdirSync(location);
@@ -52,7 +52,7 @@ function fixture(t: test.TestContext, options: { waitMs?: number; idleMs?: numbe
     watcher.once('close', () => { if (subscriptions.get(directory) === subscription) subscriptions.delete(directory); });
     return watcher;
   });
-  const observations = new SourceControlObservations({ waitMs: 100, batchMs: 35, ...options });
+  const observations = new SourceControlObservations({ watchFiles: async (directory, recursive, changed) => fs.watch(directory, {recursive, persistent:false}, changed), waitMs: 100, batchMs: 35, ...options });
   t.after(() => { observations.close(); fs.rmSync(root, { recursive: true, force: true }); });
   const notify = (target: string) => {
     for (const [directory, subscription] of subscriptions) {
