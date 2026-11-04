@@ -8,6 +8,8 @@ type Props = {
   workspaceName?: string;
   tone?: 'info' | 'warning' | 'error';
   reason?: string;
+  /** 该服务已有进行中的交接：只说明状态，不再提供第二次提交。 */
+  inProgress?: boolean;
 };
 
 /** 执行前的交接正文：目标、步骤、授权影响和完成后的查看位置先于任何提交。 */
@@ -17,14 +19,17 @@ export function AgentDiscoveryContent({
   workspaceName,
   tone = 'info',
   reason = '确认后才会创建对话并提交配置请求。',
+  inProgress = false,
 }: Props) {
   return <div className="discovery-drawer">
     <Alert
-      type={tone}
+      type={inProgress ? 'info' : tone}
       showIcon
       icon={<ScanOutlined />}
-      message="尚未执行配置"
-      description={<>{reason}<br />完成标志：本次执行正常结束且 Buildr 读到可用运行定义，服务页会显示“未运行”和“启动”。</>}
+      message={inProgress ? '配置进行中 · 已交接给原对话' : '尚未执行配置'}
+      description={inProgress
+        ? <>该服务的运行配置仍在原对话中执行；此处不会再提交新的配置请求。可回到原对话查看进展或回答智能体的请求。<br />完成标志：本次执行正常结束且 Buildr 读到可用运行定义，服务页会显示“未运行”和“启动”。</>
+        : <>{reason}<br />完成标志：本次执行正常结束且 Buildr 读到可用运行定义，服务页会显示“未运行”和“启动”。</>}
     />
     {workspaceName ? <p className="discovery-target"><span>工作空间</span><strong>{workspaceName}</strong></p> : null}
     <section className="discovery-summary" aria-label="配置内容">

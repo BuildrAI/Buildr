@@ -9,6 +9,7 @@ import { AppPrimaryNavigation } from './AppPrimaryNavigation';
 import { AppShellHeader, AppShellFrame } from './AppShellView';
 import { WorkbenchPreferencesProvider } from '../features/workbench/hooks/useWorkbenchPreferences';
 import { WorkspaceReadCacheProvider } from '../components/WorkspaceReadCache';
+import { RuntimeConfigurationOutcome } from '../features/service-runtime/components/RuntimeConfigurationOutcome';
 import { WorkbenchSearch } from '../features/workbench/components/WorkbenchSearch';
 import type { ResourcePreview } from './resource-preview';
 import { WorkspacePages } from './WorkspacePages';
@@ -465,6 +466,8 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
 
   return (
     <AppShellContext.Provider value={shellValue}>
+      {/* 交接的完成观察固定在壳层，离开服务页后仍按原对话与运行定义对齐结果。 */}
+      <RuntimeConfigurationOutcome workspaceId={workspaceId} />
       <WorkspaceSourceControlProvider workspaceId={workspaceId}>
       <WorkspaceReadCacheProvider key={workspaceId || 'global'}>
       <WorkbenchPreferencesProvider key={workspaceId || "global"} workspaceId={workspaceId}>

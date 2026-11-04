@@ -387,10 +387,10 @@ async function confirmAntModal(page: any): Promise<any>  {
   await page.locator('.ant-modal-confirm .ant-btn-primary').click();
 }
 
-async function capture(page: any, name: any): Promise<any>  {
+async function capture(page: any, name: any, options: any = {}): Promise<any>  {
   if (!SCREENSHOT_DIR) return;
   fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
-  await page.screenshot({ path: path.join(SCREENSHOT_DIR, name), fullPage: true, animations: 'disabled' });
+  await page.screenshot({ path: path.join(SCREENSHOT_DIR, name), fullPage: options.fullPage !== false, animations: 'disabled' });
 }
 
 // Dispatcher splits code into independent Explorer/SCM parents (240/900 seconds)

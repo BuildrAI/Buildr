@@ -198,6 +198,12 @@ a {
 .workspace-switcher-option-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .workspace-switcher-option-check { display:flex; justify-content:center; width:16px; flex:none; color:var(--soft-primary); }
 
+/* 下拉选项浮层与页面同为白色，边界和投影不足时容易和下方内容混在一起；统一补一层可见边界。 */
+.ant-select-dropdown.ant-select-dropdown {
+  border: 1px solid var(--soft-line);
+  box-shadow: 0 10px 28px rgba(30, 42, 42, 0.12);
+}
+
 .app-shell .nav-quit,
 .app-shell .nav-quit.ant-btn,
 .app-shell .nav-more,
