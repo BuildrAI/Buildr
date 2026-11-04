@@ -1,3 +1,5 @@
+import { createVisiblePoller } from '../../lib/visible-poller';
+import { activityPollMs } from './activity-polling';
 import { usePageVisibility } from './usePageVisibility';
 import { modelCatalogRefreshMs } from './page-visibility';
 import { readParticipationRun } from './participation-navigation';
@@ -82,7 +84,8 @@ export function AgentConversationsProvider({children, client = agentConversation
   const activityGeneration=useRef(0),activitySignature=useRef('');
   const [activityWorkspaceTicks,setActivityWorkspaceTicks]=useState<Record<string,number>|undefined>({});
   const workspaceSignatures=useRef(new Map<string,string>());
-  const refreshActivity=useCallback(async()=>{if(!client.listAll)return;const generation=++activityGeneration.current;try{const result=client.activitySummary?await client.activitySummary():await client.listAll({activeOnly:true,limit:100});if(generation!==activityGeneration.current)return;if('pending' in result)setPending(current=>retainObservation(current,result.pending as PendingConversation[]));const signature=JSON.stringify([result.nextCursor,result.conversations.map(row=>[row.workspaceId,row.id,row.title,row.hidden,row.run?.id,row.run?.status,row.run?.model,row.run?.provider,row.run?.modelAccountId,row.run?.modelSourceLabel,row.activity?.updatedAt,row.activity?.userInputAt,row.activity?.active,row.activity?.pendingDecisionCount,Boolean(row.activity&&row.activity.version>row.activity.seenThrough)])]);if(signature!==activitySignature.current){
+  const activityRead=useRef<Promise<void>|null>(null);
+  const readActivity=useCallback(async()=>{if(!client.listAll)return;const generation=++activityGeneration.current;try{const result=client.activitySummary?await client.activitySummary():await client.listAll({activeOnly:true,limit:100});if(generation!==activityGeneration.current)return;if('pending' in result)setPending(current=>retainObservation(current,result.pending as PendingConversation[]));const signature=JSON.stringify([result.nextCursor,result.conversations.map(row=>[row.workspaceId,row.id,row.title,row.hidden,row.run?.id,row.run?.status,row.run?.model,row.run?.provider,row.run?.modelAccountId,row.run?.modelSourceLabel,row.activity?.updatedAt,row.activity?.userInputAt,row.activity?.active,row.activity?.pendingDecisionCount,Boolean(row.activity&&row.activity.version>row.activity.seenThrough)])]);if(signature!==activitySignature.current){
       const next=activityWorkspaceSignatures(result.conversations),previous=workspaceSignatures.current;
       setActivityWorkspaceTicks(current=>{
         if(result.nextCursor)return undefined;
@@ -93,6 +96,11 @@ export function AgentConversationsProvider({children, client = agentConversation
       workspaceSignatures.current=next;
       setActivityRows(result.conversations);setActivityCursor(result.nextCursor);
     }setActivityCounts(current=>retainObservation(current,result.activityCounts));setActivityStats(current=>retainObservation(current,result.stats));setActivityTotal(result.total??result.conversations.length);setActivityError('');if(signature!==activitySignature.current){activitySignature.current=signature;setActivityTick(value=>value+1);}}catch(error){if(generation===activityGeneration.current)setActivityError(error instanceof Error?error.message:'活动对话尚未更新，保留上次结果。');}},[client]);
+  const refreshActivity=useCallback(()=>{
+    if(activityRead.current)return activityRead.current;
+    const request=readActivity().finally(()=>{if(activityRead.current===request)activityRead.current=null;});
+    activityRead.current=request;return request;
+  },[readActivity]);
   const loadMoreActivity=useCallback(async()=>{if(!activityCursor)return;const generation=activityGeneration.current;try{const result=await client.listAll({activeOnly:true,limit:100,cursor:activityCursor});if(generation!==activityGeneration.current)return;setActivityRows(previous=>[...previous,...result.conversations.filter(row=>!previous.some(item=>item.id===row.id&&item.workspaceId===row.workspaceId))]);setActivityCursor(result.nextCursor);}catch{await refreshActivity();}},[client,activityCursor,refreshActivity]);
   const pageVisible=usePageVisibility();
   const [modelCatalog,setModelCatalog]=useState<CatalogModel[]>([]);
@@ -150,7 +158,18 @@ export function AgentConversationsProvider({children, client = agentConversation
   const refreshConnections=useCallback(()=>discovery.refresh(),[discovery]);
   const refreshPending = useCallback(async () => { if(client.activitySummary){await refreshActivity();return;} void refreshActivity(); const result = await client.pending(); setPending(current=>retainObservation(current,result.conversations)); }, [client,refreshActivity]);
   const updateConnection = useCallback((value: ConnectionView) => {++connectionReadGeneration.current;setConnections(previous=>previous.some(item=>item.id===value.id)?previous.map(item=>item.id===value.id?value:item):[...previous,value]);},[]);
-  useEffect(() => { let active = true; const refresh = () => { if(document.visibilityState==='hidden')return;void refreshModelCatalog().catch(()=>{});void refreshConnections().catch(() => {}); void refreshPending().catch(() => {}); }; refresh(); const interval = setInterval(() => {if (active && document.visibilityState === 'visible') void refreshPending().catch(() => {});}, 5000); const visible=()=>{if(document.visibilityState==='visible')refresh();}; document.addEventListener('visibilitychange',visible); window.addEventListener('focus', refresh); return () => { document.removeEventListener('visibilitychange',visible); active = false; ++activityGeneration.current; clearInterval(interval); window.removeEventListener('focus', refresh); }; }, [refreshConnections, refreshPending,refreshModelCatalog]);
+  const activityPoller=useRef<ReturnType<typeof createVisiblePoller>|null>(null);
+  useEffect(()=>{activityPoller.current?.reschedule();},[activityCounts,activityError]);
+  const activityPolling=useRef({activityCounts,activityError});activityPolling.current={activityCounts,activityError};
+  useEffect(() => {
+    let metadataAt=-Infinity;
+    const metadata=()=>{if(document.visibilityState==='hidden'||Date.now()-metadataAt<1000)return;metadataAt=Date.now();void refreshModelCatalog().catch(()=>{});void refreshConnections().catch(()=>{});};
+    metadata();if(document.visibilityState!=='hidden')void refreshPending().catch(()=>{});
+    const poller=createVisiblePoller({document,window,read:refreshPending,interval:()=>activityPollMs(activityPolling.current.activityCounts,activityPolling.current.activityError)});
+    activityPoller.current=poller;
+    window.addEventListener('focus',metadata);document.addEventListener('visibilitychange',metadata);
+    return()=>{activityPoller.current=null;poller.dispose();activityRead.current=null;window.removeEventListener('focus',metadata);document.removeEventListener('visibilitychange',metadata);++activityGeneration.current;};
+  },[refreshConnections,refreshPending,refreshModelCatalog]);
   const openConversation = useCallback(async (workspaceId: string, conversationId: string,options:VisibilityOptions={}) => {
     const request = advanceSelection(); const nextScope = {workspaceId, conversationId}; scopeRef.current = nextScope; setScope(nextScope); setDraftScope(null); conversationRef.current=null; setConversation(null); setView('conversation'); if(!options.preserveVisibility)setVisibility(true); setLoading(true); setError(''); setStreamError(''); eventCursor.current = undefined; savePanel(visibility.current.open,nextScope);
     try { const next = await client.read(workspaceId, conversationId); if (request === serial.current && scopeRef.current?.conversationId === conversationId && scopeRef.current.workspaceId === workspaceId) apply(next); } catch (failure) { if (request === serial.current) setError(failure instanceof Error ? failure.message : '无法读取对话。'); } finally { if (request === serial.current) setLoading(false); }
