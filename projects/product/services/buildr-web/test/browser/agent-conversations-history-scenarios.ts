@@ -8,6 +8,33 @@ type ConversationScrollSample={at:number;top:number;height:number;viewport:numbe
 /** history 场景使用独立准备的对话现场。 */
 export async function runHistoryScenarios(fixture:AgentConversationFixture){
   const {capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
+await step('待查看点击后立即同步列表与统计，不等待轮询',async()=>{
+  const saved=structuredClone(fixture.conversation),at=new Date().toISOString(),version=910003;
+  const summaryReads:number[]=[];
+  const observe=(request:any)=>{if(request.url().includes('/activity-summary'))summaryReads.push(Date.now());};
+  page.on('request',observe);
+  try{
+    await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();
+    update({run:run('completed'),requests:[],retainedRuns:[],activity:{version,seenThrough:version-1,active:false,pendingDecisionCount:0,updatedAt:at},entries:[
+      {id:'seen-list-user',sequence:1,runId:'run-fixture',kind:'message',role:'user',text:'核对查看状态',createdAt:at},
+      {id:'seen-list-answer',sequence:2,runId:'run-fixture',kind:'message',role:'assistant',text:'查看后应当立即同步统计',status:'completed',createdAt:at},
+    ]});
+    await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
+    const row=panel().locator('[data-conversation-id="'+fixture.conversation.id+'"]');
+    await row.getByText('待查看',{exact:true}).waitFor();
+    await page.waitForFunction(()=>[...document.querySelectorAll('button[aria-label^="所有对话，"]')].some(node=>node.getAttribute('aria-label')?.includes('待查看 1')));
+    const before=summaryReads.length;
+    const seen=page.waitForResponse((response:any)=>response.request().method()==='POST'&&response.url().endsWith('/seen')&&response.request().postDataJSON().through===version);
+    await row.click();assert.equal((await seen).status(),200);
+    await page.waitForFunction(()=>[...document.querySelectorAll('button[aria-label^="所有对话，"]')].some(node=>node.getAttribute('aria-label')?.includes('待查看 0')),null,{timeout:1500});
+    assert.ok(summaryReads.length>before,'查看确认触发摘要，不依赖5秒或30秒轮询');
+    assert.ok(summaryReads.length<=before+2,'一次查看不产生请求风暴');
+    await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();
+    const refreshed=panel().locator('[data-conversation-id="'+fixture.conversation.id+'"]');await refreshed.waitFor();
+    await refreshed.getByText('待查看',{exact:true}).waitFor({state:'hidden',timeout:1500});
+    assert.equal(await refreshed.getByText('待查看',{exact:true}).count(),0,'列表状态与全局统计一致');
+  }finally{page.off('request',observe);fixture.conversation=saved;await page.reload();await input().waitFor();}
+});
 await step('隐藏对话释放观察连接，恢复核对且附件仍可上传',async()=>{
   const saved=structuredClone(fixture.conversation),beforeSends=fixture.sends;
   const otherPage=await page.context().newPage();
