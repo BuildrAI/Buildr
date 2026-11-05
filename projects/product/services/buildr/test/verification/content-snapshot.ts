@@ -14,8 +14,8 @@ export function collectVerificationContentSnapshot(options: any, previous: any =
   const relative = (root: string) => path.relative(repositoryRoot, root).split(path.sep).join('/');
   const productPrefix = relative(productRoot), projectPrefix = relative(projectRoot);
   if (projectPrefix === '..' || projectPrefix.startsWith('../')) throw new Error('Snapshot project is outside repository.');
-  if (previous && (previous.version !== 2 || previous.productRoot !== productRoot || previous.base !== options.base
-    || !previous.files || typeof previous.files !== 'object' || Array.isArray(previous.files))) throw new Error('Failure evidence snapshot does not match this checkout and comparison base.');
+  if (previous && (previous.version !== 2 || previous.productRoot !== productRoot || typeof previous.base !== 'string' || !previous.base
+    || !previous.files || typeof previous.files !== 'object' || Array.isArray(previous.files))) throw new Error('Failure evidence snapshot does not match this checkout.');
   const names = git(['ls-files', '--cached', '--others', '--exclude-standard', '-z', '--', projectPrefix || '.', 'skills/buildr-release/', ...VERIFICATION_GOVERNED_REPOSITORY_INPUTS], repositoryRoot).split('\0').filter(Boolean);
   if (previous && Object.values(previous.files).some(value => typeof value !== 'string' || value !== 'absent' && !/^[a-f0-9]{64}$/.test(value))) throw new Error('Invalid failure evidence content digest.');
   const files: Record<string, string> = Object.create(null);
@@ -40,7 +40,7 @@ export function collectVerificationContentSnapshot(options: any, previous: any =
   };
   const variables = [...new Set<string>(['TZ', 'LANG', 'LC_ALL', 'NODE_OPTIONS', 'BUILDR_VERIFICATION_PROFILE', 'BUILDR_VERIFICATION_NETWORK_MODE', ...(options.environmentInputs ?? [])])].sort();
   const environment = crypto.createHash('sha256').update(JSON.stringify([process.version, process.platform, process.arch, variables.map(key => [key, (options.env ?? process.env)[key] ?? ''])])).digest('hex');
-  return { version: 2, productRoot, base: options.base, files, environment,
+  return { version: 2, productRoot, base: options.base, previousBase: previous?.base ?? null, files, environment,
     environmentChanged: Boolean(previous && previous.environment !== environment),
     changedSincePrevious: previous ? Object.keys(files).filter(file => files[file] !== previous.files[file]).map(toProduct).sort() : [] };
 }

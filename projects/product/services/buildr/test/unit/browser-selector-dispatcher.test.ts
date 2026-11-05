@@ -334,3 +334,40 @@ test('conversation check accounts for two browser workers without a parent lease
     assert.equal(limits.resources['browser-runtime'],2);
   }
 });
+
+test('independent scenarios collect two failures, isolate fixtures and retain success', async () => {
+  const {runIndependentScenarios,selectIndependentScenarios}=await import('../../../buildr-web/test/browser/agent-conversation-scenarios.ts');
+  const disposed:number[]=[],results:any[]=[];let created=0;
+  const members=[0,1,2].map(n=>({id:'history/case-'+n,name:'case '+n,run:async(f:{id:number})=>{assert.equal(f.id,n);if(n!==1)throw Error('injected '+n);}}));
+  assert.throws(()=>selectIndependentScenarios(members,'history/unknown'),/未知/);
+  assert.deepEqual(selectIndependentScenarios(members,'history/case-1').map(s=>s.id),['history/case-1']);
+  await assert.rejects(runIndependentScenarios(members,{create:async()=>({id:created++}),dispose:async f=>{disposed.push(f.id);},record:r=>results.push(r)}),AggregateError);
+  assert.deepEqual(results.map(r=>r.status),['failed','passed','failed']);assert.deepEqual(disposed,[0,1,2]);
+});
+
+test('independent scenario cleanup failure leaves remaining members explicitly unrun', async () => {
+  const {runIndependentScenarios}=await import('../../../buildr-web/test/browser/agent-conversation-scenarios.ts');
+  let creates=0;const results:any[]=[];
+  await assert.rejects(runIndependentScenarios([0,1].map(n=>({id:String(n),name:String(n),run:async()=>{}})),{create:async()=>{creates++;return {};},dispose:async()=>{throw Error('dirty');},record:r=>results.push(r)}));
+  assert.equal(creates,1);assert.deepEqual(results.map(r=>r.status),['failed','not-run']);
+});
+
+test('test-only changes retain browser ownership without inferring unrelated product tags', async () => {
+  const {semanticTagsForPaths}=await import('../verification/semantic-tags.ts');
+  const file='services/buildr-web/test/browser/agent-conversations-history-scenarios.ts';
+  assert.deepEqual(semanticTagsForPaths([file]),[]);
+  const testPlan=createVerificationPlan({paths:[file],related:true,semantic:true,target:'source'},verificationSteps);
+  const ids=testPlan.steps.map((s:any)=>s.id);
+  assert.ok(ids.includes('e2e-browser:agent-conversations'));assert.ok(ids.includes('test-typecheck'));
+  assert.equal(ids.some((id:string)=>id.startsWith('agent-integration')),false);
+  const explicit=createVerificationPlan({paths:[file],tags:['handoff'],related:true,semantic:true,target:'source'},verificationSteps);
+  assert.ok(explicit.steps.some((s:any)=>s.id==='agent-integration-handoff'));
+  const transport=createVerificationPlan({paths:['services/buildr-agent/src/process/transport.ts'],related:true,semantic:true,target:'source'},verificationSteps);
+  assert.ok(transport.steps.some((s:any)=>s.id==='agent-integration-handoff'));
+  const preparation=createVerificationPlan({paths:['test/verification/web-dist.ts'],related:true,semantic:true,target:'source'},verificationSteps);
+  assert.ok(preparation.steps.some((s:any)=>s.id.startsWith('e2e-browser:')));
+});
+
+test('unknown history identity is rejected before browser commands are scheduled',()=>{
+  assert.throws(()=>planBrowserCommands(['agent-conversations'],'/unused',{BUILDR_AGENT_JOURNEY_PART:'history',BUILDR_AGENT_SCENARIO_FOCUS:'history/unknown'}),/未知独立场景/);
+});

@@ -395,7 +395,7 @@ async function capture(page: any, name: any, options: any = {}): Promise<any>  {
 
 // Dispatcher splits code into independent Explorer/SCM parents (240/900 seconds)
 // and reserves 15 seconds outside each parent for its isolated cleanup.
-test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeout: SELECTORS.has('code') && codeGroup ? codeGroup.nodeTimeoutMs : SELECTORS.has('code') || SELECTORS.has('task') ? 480_000 : SELECTORS.has('all') ? 300_000 : SELECTORS.has('agent-conversations') && process.env.BUILDR_AGENT_JOURNEY_QUEUE_ROOT ? 450_000 : SELECTORS.has('task-materials') ? 240_000 : SELECTORS.has('service') ? 240_000 : SELECTORS.has('agent-conversations') ? 180_000 : SELECTORS.has('layout') || SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('project') ? 120_000 : 45_000 }, async (t: any) => {
+test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeout: SELECTORS.has('code') && codeGroup ? codeGroup.nodeTimeoutMs : SELECTORS.has('code') || SELECTORS.has('task') ? 480_000 : SELECTORS.has('all') ? 300_000 : SELECTORS.has('agent-conversations') && process.env.BUILDR_AGENT_JOURNEY_QUEUE_ROOT ? 450_000 : SELECTORS.has('task-materials') ? 240_000 : SELECTORS.has('service') ? 240_000 : SELECTORS.has('agent-conversations') ? (process.env.BUILDR_AGENT_JOURNEY_PART==='history'?450_000:180_000) : SELECTORS.has('layout') || SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('project') ? 120_000 : 45_000 }, async (t: any) => {
   const requestedSmokeRoot: any = process.env.BUILDR_SMOKE_ROOT;
   const managedSmokeRoot: any = requestedSmokeRoot && fs.existsSync(path.join(requestedSmokeRoot, '.buildr-smoke-owner')) ? requestedSmokeRoot : null;
   const base: any = managedSmokeRoot || fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-browser-e2e-'));
@@ -772,7 +772,14 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
       runGroup: async (group: string) => {
         process.stderr.write(`[agent-conversation-group] group=${group} phase=isolated-page-ready\n`);
         try {
-          await runAgentConversationsJourney({t,page,workspaceUrl,workspaceRoot,otherWorkspaceId,capture,expectedBrowserErrors,group});
+          await runAgentConversationsJourney({t,page,workspaceUrl,workspaceRoot,otherWorkspaceId,capture,expectedBrowserErrors,group,newScenarioPage:newBrowserPage,afterScenario:async()=>{
+            assert.ok(browser.isConnected()&&server.listening,'独立场景必须保留健康服务与浏览器现场');
+            while(pendingConversationRequests.size)await Promise.allSettled([...pendingConversationRequests]);
+            if(isolateConversationService){resetConversationVisits(workbenchApplication,conversationRoots);assert.equal(readSharedResourceSet().id,sharedResourceBaseline);assert.deepEqual(conversationRoots.map(root=>readResourceAdoption(root)),resourceBaseline);}
+            assert.equal(runtime.inspectTask(workspaceRoot,'browser-task').recordDigest,baselineTask);
+            assert.equal(runtime.assetCatalog(workspaceRoot).revision,baselineCatalog);
+            assert.equal(blockedConversationWrites.length,0,'独立场景不得修改共享服务端状态');
+          }});
         } finally {
           try {
             while (pendingConversationRequests.size) await Promise.allSettled([...pendingConversationRequests]);

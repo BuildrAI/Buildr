@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {HISTORY_SCENARIO_CATALOG,type HistoryScenarioId} from './agent-conversation-history-catalog.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import {createAgentConversationFixture,type AgentConversationFixture} from './agent-conversation-fixture.ts';
@@ -6,9 +7,10 @@ import {createAgentConversationFixture,type AgentConversationFixture} from './ag
 type ConversationScrollSample={at:number;top:number;height:number;viewport:number;visible:boolean;entries:number;listBottom:number|null;streamBottom:number|null;listTop:number|null;streamTop:number|null};
 
 /** history 场景使用独立准备的对话现场。 */
-export async function runHistoryScenarios(fixture:AgentConversationFixture){
+const historyRuns = {
+  'history/workspace-switch': async (fixture: AgentConversationFixture) => {
   const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
-await step('切换工作空间只更新工作区，对话节点和草稿保留，列表默认全部空间',async()=>{
+
   const registry=await (await page.request.get(new URL('/api/v1/workspaces',workspaceUrl).href)).json();
   const other=registry.workspaces.find((entry:any)=>entry.workspace?.id&&entry.workspace.id!==workspaceId);
   assert.ok(other?.workspace);
@@ -26,8 +28,10 @@ await step('切换工作空间只更新工作区，对话节点和草稿保留�
   await capture(page,'conversation-workspace-switch-preserved.png');
   await panel().getByRole('button',{name:'返回当前对话',exact:true}).click();
   await input().fill('');
-});
-await step('交接按轮引用读取，折叠不取正文，工具展开才读详情',async()=>{
+  },
+  'history/handoff-source': async (fixture: AgentConversationFixture) => {
+  const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
+
  const saved=structuredClone(fixture.conversation),sourceId='index-'+'a'.repeat(64)+'.json',at=new Date().toISOString();let histories=0,details=0,missing=false;
  const tool={id:'source-tool',sequence:2,runId:'source-round',kind:'tool',role:'system',text:'',createdAt:at,name:'command',provider:'codex',status:'completed',detail:{revision:'b'.repeat(64)}};
  const sourceEntries=[{id:'source-user',sequence:1,runId:'source-round',kind:'message',role:'user',text:'原始要求',createdAt:at},tool,{id:'source-append',sequence:3,runId:'source-round',kind:'message',role:'user',text:'追加：保留未知结果',createdAt:at},{id:'source-final',sequence:4,runId:'source-round',kind:'message',role:'assistant',text:'来源中的最终答复',createdAt:at}];
@@ -49,8 +53,10 @@ await step('交接按轮引用读取，折叠不取正文，工具展开才读�
   const close=page.getByRole('button',{name:'关闭交接内容',exact:true});if(await close.isVisible())await close.click();
   await page.unroute('**/history-source?**',historyRoute);await page.unroute('**/entry-detail/source-tool?**',entryRoute);update(saved);
  }
-});
-await step('待查看点击后立即同步列表与统计，不等待轮询',async()=>{
+  },
+  'history/seen-summary': async (fixture: AgentConversationFixture) => {
+  const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
+
   const saved=structuredClone(fixture.conversation),at=new Date().toISOString(),version=910003;
   const summaryReads:number[]=[];
   const observe=(request:any)=>{if(request.url().includes('/activity-summary'))summaryReads.push(Date.now());};
@@ -76,8 +82,10 @@ await step('待查看点击后立即同步列表与统计，不等待轮询',asy
     await refreshed.getByText('待查看',{exact:true}).waitFor({state:'hidden',timeout:1500});
     assert.equal(await refreshed.getByText('待查看',{exact:true}).count(),0,'列表状态与全局统计一致');
   }finally{page.off('request',observe);fixture.conversation=saved;await page.reload();await input().waitFor();}
-});
-await step('隐藏对话释放观察连接，恢复核对且附件仍可上传',async()=>{
+  },
+  'history/hidden-observer': async (fixture: AgentConversationFixture) => {
+  const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
+
   const saved=structuredClone(fixture.conversation),beforeSends=fixture.sends;
   const otherPage=await page.context().newPage();
   const other=await createAgentConversationFixture({page:otherPage,workspaceUrl,workspaceRoot,otherWorkspaceId:fixture.otherWorkspaceId,capture,expectedBrowserErrors:fixture.expectedBrowserErrors});
@@ -102,8 +110,10 @@ await step('隐藏对话释放观察连接，恢复核对且附件仍可上传',
     assert.ok(spans.some((e:{name:string;duration:number})=>e.name==='buildr.attachment.read-file'));assert.ok(spans.some((e:{name:string;duration:number})=>e.name==='buildr.attachment.request'));assert.ok(spans.every((e:{name:string;duration:number})=>e.duration>=0));
     await capture(page,'conversation-upload-after-visibility.png');await panel().getByRole('button',{name:'移除图片 connection-probe.png',exact:true}).dispatchEvent('click');
   }finally{await other.dispose();await otherPage.close();await page.evaluate(()=>{delete (document as any).visibilityState;document.dispatchEvent(new Event('visibilitychange'));});fixture.conversation=saved;await page.reload();await input().waitFor();}
-});
-await step('列表调整空间顺序立即同步活动浮窗',async()=>{
+  },
+  'history/workspace-order': async (fixture: AgentConversationFixture) => {
+  const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
+
   const saved=fixture.additionalConversations,at=new Date().toISOString();
   const registry=await (await page.request.get(new URL('/api/v1/workspaces',workspaceUrl).href)).json();
   const otherId=registry.workspaces.find((entry:any)=>entry.workspace?.id&&entry.workspace.id!==workspaceId)?.workspace.id;assert.ok(otherId);
@@ -125,8 +135,10 @@ await step('列表调整空间顺序立即同步活动浮窗',async()=>{
       await capture(page,'conversation-popup-shared-order-'+direction.slice(4)+'.png');await page.mouse.move(0,0);await input().focus();await page.keyboard.press('Escape');
     }
   }finally{fixture.additionalConversations=saved;await page.unroute(pattern,route);await page.reload();await input().waitFor();}
-});
-await step('Buildr 参与两个入口暂时隐藏且不请求参与数据',async()=>{
+  },
+  'history/participation-hidden': async (fixture: AgentConversationFixture) => {
+  const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
+
   const saved=structuredClone(fixture.conversation),at=new Date().toISOString();
   let reads=0;
   const intercept=async(route:any)=>{reads++;await route.fulfill({status:500,json:{message:'隐藏时不应请求'}});};
@@ -142,8 +154,10 @@ await step('Buildr 参与两个入口暂时隐藏且不请求参与数据',async
     assert.equal(reads,0,'隐藏入口不得请求参与查询');
     await capture(page,'buildr-participation-entries-hidden.png');
   }finally{for(const pattern of patterns)await page.unroute(pattern,intercept);update(saved);}
-});
-await step('交错执行按归属合组，旧问题存档和子报告不打断主线',async()=>{
+  },
+  'history/ownership-grouping': async (fixture: AgentConversationFixture) => {
+  const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
+
   const saved=structuredClone(fixture.conversation),at=new Date().toISOString();
   const entry=(id:string,sequence:number,runId:string,kind:string,role:string,text:string,extra:any={})=>({id,sequence,runId,kind,role,text,status:'completed',createdAt:at,...extra});
   try{
@@ -173,8 +187,10 @@ await step('交错执行按归属合组，旧问题存档和子报告不打断�
     await older.locator('[data-entry-id="unified-old-two"]').waitFor();
     assert.equal(await older.locator('.ac-step-tool').count(),2);await capture(page,'conversation-unified-interleaved-work.png');
   }finally{fixture.conversation=saved;await page.reload();await input().waitFor();}
-});
-await step('同轮补充在原展示行下按序展开，完成后与过程一起折叠',async()=>{
+  },
+  'history/supplement-grouping': async (fixture: AgentConversationFixture) => {
+  const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
+
   const saved=structuredClone(fixture.conversation),at=new Date().toISOString();
   const entry=(id:string,sequence:number,role:string,text:string)=>({id,sequence,kind:'message',role,text,runId:'run-fixture',participantId:'participant-codex',createdAt:at,status:'completed'});
   try{
@@ -190,8 +206,10 @@ await step('同轮补充在原展示行下按序展开，完成后与过程一�
     await turn.getByRole('button',{name:'收起处理过程',exact:true}).click();update({entries:[entry('fold-earlier',0,'user','更早的原始要求'),...fixture.conversation!.entries]});await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
     const earlier=panel().locator('[data-turn-id="fold-earlier"]');await earlier.waitFor();assert.equal(await earlier.locator('[data-entry-id="fold-extra"]').count(),0,'补回更早输入后保留同一执行的明确折叠选择');
   }finally{fixture.conversation=saved;await page.reload();await input().waitFor();}
-});
-await step('发送后始终展示最新信息，布局滚动不误加载更早记录',async()=>{
+  },
+  'history/send-latest': async (fixture: AgentConversationFixture) => {
+  const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
+
   const previous=structuredClone(fixture.conversation),at=new Date().toISOString();
   const entry=(id:string,sequence:number,role:string,text:string)=>({id,sequence,kind:'message',role,text,provider:'codex',participantId:'participant-codex',runId:'run-fixture',status:'completed',createdAt:at});
   const settle=()=>page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
@@ -222,9 +240,10 @@ await step('发送后始终展示最新信息，布局滚动不误加载更早�
     await panel().locator('[data-entry-id="latest-pin-older"]').waitFor({state:'attached'});
     assert.ok(fixture.entryReads>readsBefore,'用户继续向上翻阅仍加载更早记录');
   }finally{fixture.conversation=previous;historyPages.delete(1);await page.reload();await input().waitFor();}
-});
+  },
+  'history/initial-page-alignment': async (fixture: AgentConversationFixture) => {
+  const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
 
-await step('补页期间短内容顶对齐，溢出后首帧跟随最新位置',async()=>{
   const previous=structuredClone(fixture.conversation),additional=fixture.additionalConversations,at=new Date().toISOString();
   const targetId='first-paint-target';
   const answer='打开后先只读取到这一条最新答复。';
@@ -288,9 +307,10 @@ await step('补页期间短内容顶对齐，溢出后首帧跟随最新位置',
     await page.locator('#agent-conversation-panel[data-conversation-id="'+previous.id+'"]').waitFor();
     await page.reload();await input().waitFor();
   }
-});
+  },
+  'history/short-page-alignment': async (fixture: AgentConversationFixture) => {
+  const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
 
-await step('补完不足一屏的历史后保持顶对齐，不撑高信息流',async()=>{
   const previous=structuredClone(fixture.conversation),additional=fixture.additionalConversations,at=new Date().toISOString();
   const targetId='short-history-first-paint';
   const target={...structuredClone(previous),id:targetId,title:'短历史首帧验证',revision:'short-history-r1',hidden:false,updatedAt:at,participants:[{id:'participant-codex',connectionId:'codex',provider:'codex',label:'Codex',model:'fixture-model',contextId:'native',deliveredThrough:0}],entries:[
@@ -323,9 +343,10 @@ await step('补完不足一屏的历史后保持顶对齐，不撑高信息流',
     await page.locator('#agent-conversation-panel[data-conversation-id="'+previous.id+'"]').waitFor();
     await page.reload();await input().waitFor();
   }
-});
+  },
+  'history/send-reflow': async (fixture: AgentConversationFixture) => {
+  const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
 
-await step('发送重排钳制仍贴底，阅读过程在完成后保留且可见答复确认查看',async()=>{
  const saved=structuredClone(fixture.conversation),at=new Date().toISOString();
  const narration=Array.from({length:70},(_,i)=>`过程段落 ${i}：正在检查并保留用户的阅读现场。`).join('\n\n');
  const entry=(id:string,sequence:number,kind:string,text:string)=>({id,sequence,runId:'run-fixture',kind,role:kind==='tool'?'system':sequence===1?'user':'assistant',text,status:'completed',createdAt:at});
@@ -357,9 +378,10 @@ await step('发送重排钳制仍贴底，阅读过程在完成后保留且可�
   assert.equal((await seen).status(),200);
   assert.equal(fixture.conversation.activity.seenThrough,900002,'可见的完成答复不残留待查看');
  }finally{fixture.conversation=saved;await page.reload();await input().waitFor();}
-});
+  },
+  'history/hidden-child-seen': async (fixture: AgentConversationFixture) => {
+  const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
 
-await step('主答复后的隐藏子消息不阻止真实已读确认',async()=>{
   const saved=structuredClone(fixture.conversation),at=new Date().toISOString(),version=900001;
   try{
     update({run:run('completed'),retainedRuns:[],requests:[],activity:{version,seenThrough:version-1,active:false,updatedAt:at},entries:[
@@ -376,8 +398,10 @@ await step('主答复后的隐藏子消息不阻止真实已读确认',async()=>
     assert.equal((await seen).status(),200);assert.equal(fixture.conversation.activity.seenThrough,version);
     assert.equal(await panel().locator('[data-entry-id="seen-child-input"],[data-entry-id="seen-child-answer"],[data-entry-id="retired-question-seen"]').count(),0);
   }finally{fixture.conversation=saved;await page.reload();await input().waitFor();}
-});
-await step('刷新布局跟随最新，滚动条接管后不被延迟锚点拉回',async()=>{
+  },
+  'history/scroll-anchor': async (fixture: AgentConversationFixture) => {
+  const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
+
   const saved=structuredClone(fixture.conversation),at=new Date().toISOString();
   const entry=(id:string,sequence:number,text:string)=>({id,sequence,kind:'message',role:'assistant',text,runId:'scroll-'+id,status:'completed',createdAt:at});
   const long=Array.from({length:60},(_,i)=>`第 ${i} 段，用于核对可见阅读位置。`).join('\n\n');
@@ -435,8 +459,10 @@ await step('刷新布局跟随最新，滚动条接管后不被延迟锚点拉�
     fixture.releaseEntryRead?.();fixture.holdEntryRead=false;historyPages.delete(100);fixture.conversation=saved;
     await page.evaluate(()=>{delete (window as any).__scrollExpected;});await page.reload();await input().waitFor();
   }
-});
-await step('大工具记录仅在展开明细时读取完整内容并按内容版本复用',async()=>{
+  },
+  'history/tool-detail-cache': async (fixture: AgentConversationFixture) => {
+  const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
+
   const saved=structuredClone(fixture.conversation);let reads=0,release:(()=>void)|undefined;
   const matcher='**/entry-detail/**';
   const full={id:'lazy-large-tool',sequence:2,kind:'tool',role:'system',name:'command',input:JSON.stringify({cmd:'read large result'}),text:'完整工具输出\n'+'x'.repeat(100000)+'\n完整输出结束',status:'completed',runId:'run-fixture',createdAt:new Date().toISOString()};
@@ -455,9 +481,10 @@ await step('大工具记录仅在展开明细时读取完整内容并按内容�
     assert.equal(await tool.locator('.ac-tool-detail pre').last().textContent(),full.text);
     await tool.locator(':scope>summary').click();await tool.locator(':scope>summary').click();assert.equal(reads,1,'相同版本再次展开复用已读取内容');
   }finally{release?.();await page.unroute(matcher,route);fixture.conversation=saved;await page.reload();await input().waitFor();}
-});
+  },
+  'history/attention-priority': async (fixture: AgentConversationFixture) => {
+  const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
 
-await step('较旧的待决策与待查看始终排在最新输入的执行中之前',async()=>{
   const saved=structuredClone(fixture.conversation),additional=fixture.additionalConversations;
   const rows=[
     {id:'priority-running',status:'running',at:'2026-10-30T08:00:00Z'},
@@ -480,8 +507,10 @@ await step('较旧的待决策与待查看始终排在最新输入的执行中�
   }finally{
     fixture.additionalConversations=additional;fixture.conversation=saved;await page.reload();await input().waitFor();
   }
-});
-await step('指定答复分叉为独立对话，刷新保留来源并可返回原对话',async()=>{
+  },
+  'history/fork-conversation': async (fixture: AgentConversationFixture) => {
+  const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
+
   const original=structuredClone(fixture.conversation),additional=[...fixture.additionalConversations],sends=fixture.sends;
   try{
     const at=new Date().toISOString(),source=update({title:'分叉来源对话',requests:[],run:run('completed'),entries:[
@@ -507,8 +536,10 @@ await step('指定答复分叉为独立对话，刷新保留来源并可返回�
     fixture.conversation=original;fixture.additionalConversations=additional;
     await page.setViewportSize({width:1600,height:1000});await page.reload();await input().waitFor();
   }
-});
-await step('顶部正文输入与列表共用最大宽度，宽屏居中且窄屏自适应',async()=>{
+  },
+  'history/responsive-width': async (fixture: AgentConversationFixture) => {
+  const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
+
   const sends=fixture.sends;
   const toggleFull=async(label:string)=>{await panel().getByRole('button',{name:'更多对话操作',exact:true}).click();await page.getByRole('menuitem',{name:label,exact:true}).click();await page.locator('.ant-dropdown:visible').waitFor({state:'hidden'});};
   const checkConversation=async(label:string)=>{
@@ -541,9 +572,10 @@ await step('顶部正文输入与列表共用最大宽度，宽屏居中且窄�
     await page.setViewportSize({width:1600,height:1000});const back=panel().getByRole('button',{name:'返回当前对话',exact:true});if(await back.isVisible())await back.click();
     if((await panel().getAttribute('class'))?.includes('is-full'))await toggleFull('恢复分屏');
   }
-});
+  },
+  'history/history-pagination': async (fixture: AgentConversationFixture) => {
+  const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
 
-await step('列表手动从末条加载，整行折叠与拖动互不干扰',async()=>{
   const original=fixture.additionalConversations,requests:Array<{workspaceId:string|null;query:string|null;limit:number;cursor:string|null}>=[];
   let fail=false,stale=false,release:(()=>void)|undefined,started:(()=>void)|undefined,holdExpand=false,releaseExpand:(()=>void)|undefined,expandStarted:(()=>void)|undefined;
   const held=new Promise<void>(resolve=>{started=resolve;});
@@ -596,9 +628,10 @@ await step('列表手动从末条加载，整行折叠与拖动互不干扰',asy
     release?.();releaseExpand?.();fail=false;stale=false;fixture.additionalConversations=original;await page.unroute(matcher,intercept);
     const back=panel().getByRole('button',{name:'返回当前对话',exact:true});if(await back.isVisible())await back.click();await input().waitFor();
   }
-});
+  },
+  'history/search': async (fixture: AgentConversationFixture) => {
+  const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
 
-await step('搜索只匹配标题与用户/助手消息，展示片段且统计读取不随关键词重发',async()=>{
   const saved=structuredClone(fixture.conversation),additional=fixture.additionalConversations,at=new Date().toISOString();
   const requests:Array<{limit:number;query:string|null}>=[];
   const matcher='**/api/v1/app/agent-service/conversations?*';
@@ -621,9 +654,10 @@ await step('搜索只匹配标题与用户/助手消息，展示片段且统计�
     await search.fill('完全不存在的关键词');
     await panel().getByText('没有匹配的对话',{exact:true}).waitFor();
   }finally{await page.unroute(matcher,intercept);fixture.additionalConversations=additional;fixture.conversation=saved;await page.reload();await input().waitFor();}
-});
+  },
+  'history/model-filter': async (fixture: AgentConversationFixture) => {
+  const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
 
-await step('完整列表的模型统计项可点击筛选并恢复',async()=>{
   const saved=structuredClone(fixture.conversation),additional=fixture.additionalConversations,models:string[]=[];
   let filteredStarted!:(()=>void);const filtered=new Promise<void>(resolve=>filteredStarted=resolve);
   const matcher='**/api/v1/app/agent-service/conversations?*';
@@ -643,9 +677,10 @@ await step('完整列表的模型统计项可点击筛选并恢复',async()=>{
     await page.waitForFunction(()=>!document.querySelector('.ac-execution-filter'));
     await page.waitForFunction(()=>document.querySelector('.ac-execution-summary button')?.getAttribute('aria-pressed')==='false');
   }finally{await page.unroute(matcher,intercept);fixture.additionalConversations=additional;fixture.conversation=saved;await page.reload();await input().waitFor();}
-});
+  },
+  'history/historical-model': async (fixture: AgentConversationFixture) => {
+  const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
 
-await step('首个回复前使用本轮实际智能体和模型，切换草稿或刷新不改写历史',async()=>{
       const previous=structuredClone(fixture.conversation),createdAt=new Date().toISOString();
       const participants=[{id:'participant-dsh',connectionId:'dsh',provider:'dsh',label:'DSH',model:'fixture-fast',contextId:'old',deliveredThrough:0},{id:'participant-codex',connectionId:'codex',provider:'codex',label:'Codex',model:'fixture-fast',contextId:'current',deliveredThrough:0}];
       const entries=[{id:'old-prompt',sequence:1,kind:'message',role:'user',text:'上一轮',runId:'old-run',createdAt},{id:'old-answer',sequence:2,kind:'message',role:'assistant',text:'上一轮回复',runId:'old-run',participantId:'participant-dsh',provider:'dsh',createdAt},{id:'awaiting-prompt',sequence:3,kind:'message',role:'user',text:'新一轮等待回复',runId:'run-fixture',status:'sending',createdAt}];
@@ -670,9 +705,10 @@ await step('首个回复前使用本轮实际智能体和模型，切换草稿�
       assert.ok(pinned2.distance<24,'贴底时视口收缩伴随滚动事件不应丢失贴底态 '+JSON.stringify(pinned2));assert.equal(pinned2.button,0,'贴底态丢失会误弹到底按钮');
       await streamForPin.evaluate((node:HTMLElement)=>{document.querySelector('#late-growth-2')?.remove();});
       fixture.conversation=previous;await page.reload();await input().waitFor();
-    });
+  },
+  'history/history-identity': async (fixture: AgentConversationFixture) => {
+  const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
 
-await step('历史两行展示完整标识，标题可复制同一标识且保留导航',async()=>{
       const identity='a63c0c92-c53d-4d8a-8a37-73f0169b282f',originalId=fixture.conversation.id,viewport=page.viewportSize();
       fixture.additionalConversations.push({...fixture.conversation,id:identity,workspaceId:workspaceId,title:'用于验证长标题不会挤出第三行的对话，标题超出时应保持在一行内',entries:[],participants:[],run:undefined,activity:undefined});
       const history=async()=>{await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();await panel().locator('.ac-history-list button[data-conversation-id="'+identity+'"]').waitFor();};
@@ -693,9 +729,10 @@ await step('历史两行展示完整标识，标题可复制同一标识且保�
       await page.evaluate(()=>{delete (navigator as any).clipboard;delete (window as any).__conversationCopiedId;});await capture(page,'agent-conversation-identity-desktop.png');
       await page.setViewportSize({width:390,height:844});await panel().locator('.ac-thread-identity').waitFor();assert.ok(await panel().getByRole('button',{name:'复制对话 ID',exact:true}).isVisible());await capture(page,'agent-conversation-identity-mobile.png');
       await history();await assertTwoLines();await capture(page,'agent-conversation-history-mobile.png');await panel().locator('.ac-history-list button[data-conversation-id="'+originalId+'"]').click();await input().waitFor();fixture.additionalConversations=fixture.additionalConversations.filter(item=>item.id!==identity);await page.setViewportSize(viewport);
-    });
+  },
+  'history/historical-tool-failure': async (fixture: AgentConversationFixture) => {
+  const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
 
-await step('历史工具失败不改变当前执行图形的状态',async()=>{
   const saved=structuredClone(fixture.conversation),at=new Date().toISOString();
   const tool=(id:string,name:string,status:string,sequence:number)=>({id,name,status,sequence,kind:'tool',role:'system',text:id,runId:'run-fixture',createdAt:at});
   try{
@@ -723,9 +760,10 @@ await step('历史工具失败不改变当前执行图形的状态',async()=>{
     assert.notEqual(await settled.locator(':scope>summary>.ac-step-node').evaluate((node:HTMLElement)=>getComputedStyle(node).color),
       await settled.locator('[data-entry-id="earlier-failed"]>summary>.ac-step-node').evaluate((node:HTMLElement)=>getComputedStyle(node).color),'折叠组保持正常工具图标，失败仍由右侧计数提示');
   }finally{fixture.conversation=saved;await page.reload();await input().waitFor();}
-});
+  },
+  'history/turn-timing': async (fixture: AgentConversationFixture) => {
+  const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
 
-await step('整轮计时包含最后答复，过程折叠向右、展开向下',async()=>{
   const saved=structuredClone(fixture.conversation);
   try{
     const startedAt='2026-11-02T05:11:24.000Z',updatedAt='2026-11-02T05:17:21.000Z';
@@ -750,9 +788,10 @@ await step('整轮计时包含最后答复，过程折叠向右、展开向下',
       if(status==='completed')await capture(page,'conversation-whole-turn-time.png');
     }
   }finally{fixture.conversation=saved;await page.reload();await input().waitFor();}
-});
+  },
+  'history/tool-folding': async (fixture: AgentConversationFixture) => {
+  const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
 
-await step('连续工具默认汇总折叠，明确展开在追加时保持，结束折叠且展开后失败提醒靠右',async()=>{
       const previous=structuredClone(fixture.conversation);
       const tool=(id:string,status='completed')=>({id,sequence:id==='single-tool'?1:2,kind:'tool',role:'system',name:'command',text:'echo verify\ncommand output',status,runId:'run-fixture',createdAt:new Date().toISOString()});
       update({entries:[tool('single-tool')],run:run('running')});await page.reload();
@@ -767,9 +806,10 @@ await step('连续工具默认汇总折叠，明确展开在追加时保持，�
       await panel().getByRole('button',{name:'展开处理过程',exact:true}).click();assert.equal(await panel().locator('.ac-process-timeline').evaluate((node:HTMLElement)=>getComputedStyle(node).borderLeftWidth),'0px');assert.match(await panel().locator('.ac-step-group').first().innerText(),/1 项失败/,'失败数在工具组汇总靠右展示');
       const caretOrder=await panel().locator('.ac-turn-identity-toggle').first().evaluate((node:HTMLElement)=>{const kids=[...node.children].map(child=>child.className.toString());return {name:kids.findIndex(cls=>cls.includes('ac-turn-identity-name')),indicator:kids.findIndex(cls=>cls.includes('ac-execution-indicator')),caret:kids.findIndex(cls=>cls.includes('ac-turn-identity-caret'))};});assert.ok(caretOrder.name<caretOrder.indicator&&caretOrder.indicator<caretOrder.caret,'折叠图标放在时间后面');
       await capture(page,'conversation-live-process-flat.png');await handle?.dispose();fixture.conversation=previous;await page.reload();await input().waitFor();
-    });
+  },
+  'history/new-input-with-question': async (fixture: AgentConversationFixture) => {
+  const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
 
-await step('有待回答问题时输入新指令始终发送新轮，卡片不被当作回答',async()=>{
   const saved=structuredClone(fixture.conversation),at=new Date().toISOString(),beforeReplies=fixture.replies,beforeSupplements=fixture.supplementaryCalls;
   const pattern='**/agent-conversations/*/send';let received:any;
   const admit=async(route:any)=>{
@@ -786,8 +826,10 @@ await step('有待回答问题时输入新指令始终发送新轮，卡片不�
     assert.equal(fixture.replies,beforeReplies);assert.equal(fixture.supplementaryCalls,beforeSupplements);assert.equal(fixture.conversation.requests.length,0);
     await capture(page,'question-new-input-turn.png');
   }finally{await page.unroute(pattern,admit);fixture.conversation=saved;await page.reload();await input().waitFor();}
-});
-await step('新轮尚未原生受理或启动失败时旧问题卡片保持可操作',async()=>{
+  },
+  'history/failed-new-input': async (fixture: AgentConversationFixture) => {
+  const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
+
   const saved=structuredClone(fixture.conversation),at=new Date().toISOString(),beforeReplies=fixture.replies;
   const request={id:'preserved-old-question',runId:'run-fixture',participantId:'participant-codex',generation:'generation-fixture',kind:'question',title:'是否重启？',questions:[{id:'restart',label:'是否重启？',options:[{id:'yes',label:'允许'}]}]};
   const pattern='**/agent-conversations/*/send';
@@ -806,8 +848,10 @@ await step('新轮尚未原生受理或启动失败时旧问题卡片保持可�
     assert.equal(fixture.replies,beforeReplies);assert.equal(fixture.conversation.run.accepted,false);assert.equal(fixture.conversation.requests[0].id,request.id);
     await capture(page,'new-input-failure-preserves-old-question.png');
   }finally{await page.unroute(pattern,submit);fixture.conversation=saved;await page.reload();await input().waitFor();}
-});
-await step('执行中图文普通发送、固定上下文和长输入，失败未知与独立停止',async()=>{
+  },
+  'history/running-supplement': async (fixture: AgentConversationFixture) => {
+  const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
+
       const previous=structuredClone(fixture.conversation),previousUploads=fixture.attachmentUploads,previousSupplementCalls=fixture.supplementaryCalls,startedAt=new Date(Date.now()-125000).toISOString();
       const entry=(id:string,sequence:number,role:string,text:string)=>({id,sequence,kind:'message',role,text,provider:'codex',participantId:'participant-codex',runId:'run-fixture',createdAt:new Date().toISOString(),status:'completed'});
       const long=Array.from({length:25},(_,i)=>`${i+1}. 保留完整用户要求，展开后在固定区域阅读。`).join('\n');
@@ -824,9 +868,10 @@ await step('执行中图文普通发送、固定上下文和长输入，失败�
       await supplement.waitFor();assert.equal(await panel().locator('.ac-turn').count(),1,'历史同轮补充仍在原轮展示');
       assert.equal(fixture.supplementaryCalls,previousSupplementCalls);
       fixture.conversation=previous;fixture.attachmentUploads=previousUploads;await page.reload();await input().fill('下一轮仍是草稿');
-    });
+  },
+  'history/flow-controls': async (fixture: AgentConversationFixture) => {
+  const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
 
-await step('历史无卡片且自然滚动，智能体标识可展开折叠，长过程可就近收起',async()=>{
       const previous=structuredClone(fixture.conversation),viewport=page.viewportSize();
       const item=(id:string,sequence:number,kind:string,role:string,text:string)=>({id,sequence,kind,role,text,name:kind==='tool'?'command':undefined,provider:'codex',participantId:'participant-codex',runId:'run-fixture',status:'completed',createdAt:new Date().toISOString()});
       const entries=[item('controls-user',1,'message','user','检查长过程时，输入和助手必须可以就近定位与收起。'),...Array.from({length:18},(_,i)=>[
@@ -848,9 +893,10 @@ await step('历史无卡片且自然滚动，智能体标识可展开折叠，�
       await identity.getByRole('button',{name:'展开处理过程',exact:true}).click();const group=process.locator('.ac-step-group').first();await group.locator(':scope>summary').click();assert.equal(await group.locator('.ac-step-group-items').evaluate((node:HTMLElement)=>getComputedStyle(node).borderLeftWidth),'0px');await group.locator(':scope>.ac-process-collapse').click();assert.equal(await group.getAttribute('open'),null);
       await page.setViewportSize({width:390,height:844});await stream.evaluate((node:HTMLElement)=>node.scrollTop=400);await settle();assert.ok(await identity.getByRole('button',{name:'收起处理过程',exact:true}).isVisible());assert.ok(await panel().evaluate((node:HTMLElement)=>node.scrollWidth<=node.clientWidth));await capture(page,'conversation-flow-controls-narrow.png');
       await page.setViewportSize(viewport);await capture(page,'conversation-flow-controls-desktop.png');fixture.conversation=previous;await page.reload();await input().waitFor();
-    });
+  },
+  'history/running-header': async (fixture: AgentConversationFixture) => {
+  const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
 
-await step('仅当前运行段悬浮，历史无嵌套卡片，结束失败停止和待回应立即恢复自然排版',async()=>{
       const previous=structuredClone(fixture.conversation),viewport=page.viewportSize();
       const entry=(id:string,sequence:number,role:string,text:string,runId:string)=>({id,sequence,kind:'message',role,text,provider:'codex',participantId:'participant-codex',runId,status:'completed',createdAt:new Date().toISOString()});
       const entries=[entry('past-user',1,'user','此前已经完成的要求。','past-run'),entry('past-answer',2,'assistant',Array.from({length:25},(_,i)=>'已完成的历史答复 '+i).join('\n\n'),'past-run'),entry('current-user',3,'user','只在这次执行期间固定当前要求。','run-fixture'),entry('current-narration',4,'assistant',Array.from({length:35},(_,i)=>'当前执行过程 '+i).join('\n\n'),'run-fixture')];
@@ -874,9 +920,10 @@ await step('仅当前运行段悬浮，历史无嵌套卡片，结束失败停�
         const headStyles=await panel().locator('.ac-turn-head').evaluateAll((nodes:HTMLElement[])=>nodes.map(node=>({position:getComputedStyle(node).position,shadow:getComputedStyle(node).boxShadow})));for(const s of headStyles){assert.equal(s.position,'static',status);assert.equal(s.shadow,'none',status);}
       }
       await capture(page,'conversation-running-context-history.png');fixture.conversation=previous;await page.reload();await input().waitFor();
-    });
+  },
+  'history/reading-position': async (fixture: AgentConversationFixture) => {
+  const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
 
-await step('刷新异步排版与输入框增高始终贴底，主动上翻保留阅读位置',async()=>{
   const saved=structuredClone(fixture.conversation),viewport=page.viewportSize();
   const stream=panel().locator('.ac-stream'),latest=panel().getByRole('button',{name:'向下到底',exact:true});
   const settle=()=>page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())))));
@@ -903,9 +950,10 @@ await step('刷新异步排版与输入框增高始终贴底，主动上翻保�
       await input().fill('');await latest.click();await assertPinned();
     }
   }finally{fixture.conversation=saved;await input().fill('');await page.setViewportSize(viewport);await page.reload();await input().waitFor();}
-});
+  },
+  'history/fill-viewport': async (fixture: AgentConversationFixture) => {
+  const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
 
-await step('打开和刷新时补足首屏，折叠过程不占高度也能继续补页，填满即停止',async()=>{
   const saved=structuredClone(fixture.conversation),reads=fixture.entryReads;
   const entry=(sequence:number,runId:string,kind:string,role:string,text:string)=>({id:'fill-'+sequence,sequence,runId,kind,role,text,status:'completed',createdAt:new Date().toISOString()});
   try{
@@ -923,9 +971,10 @@ await step('打开和刷新时补足首屏，折叠过程不占高度也能继�
     }
     await capture(page,'conversation-viewport-filled.png');
   }finally{fixture.conversation=saved;historyPages.clear();await page.reload();await input().waitFor();}
-});
+  },
+  'history/earlier-pagination': async (fixture: AgentConversationFixture) => {
+  const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
 
-await step('向上接近历史自动单批加载，阅读定位与展开保持，键盘触摸及失败重试隔离',async()=>{
       const previous=structuredClone(fixture.conversation),oldViewport=page.viewportSize(),readsBefore=fixture.entryReads;
       const entry=(sequence:number,kind:string,role:string,round:number)=>({id:'history-'+sequence,sequence,kind,role,runId:'history-round-'+round,name:kind==='tool'?'read':undefined,text:kind==='tool'?'读取 a.ts':role==='user'?'更早的用户要求 '+sequence:Array.from({length:10},(_,i)=>`第 ${round} 轮答复的阅读内容 ${i}`).join('\n\n'),input:kind==='tool'?'{}':undefined,status:'completed',createdAt:new Date().toISOString()});
       const rounds=(start:number)=>Array.from({length:5},(_,i)=>{const first=start+i*4;return [entry(first,'message','user',first),entry(first+1,'tool','system',first),entry(first+2,'tool','system',first),entry(first+3,'message','assistant',first)];}).flat();
@@ -995,9 +1044,10 @@ await step('向上接近历史自动单批加载，阅读定位与展开保持�
         await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();await panel().locator('.ac-history-list button[data-conversation-id="'+previous.id+'"]').click();await input().waitFor();
         await page.reload();await panel().locator('[data-run-status="stopped"]').waitFor();
       }
-    });
+  },
+  'history/pagination-budget': async (fixture: AgentConversationFixture) => {
+  const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
 
-await step('首屏补页预算耗尽后，滚轮触摸与键盘仍可自然向上续读',async()=>{
       const previous=structuredClone(fixture.conversation),stream=panel().locator('.ac-stream');
       const entry=(sequence:number,role:string)=>({id:'short-'+sequence,sequence,kind:'message',role,text:role==='user'?'更早的用户要求':'短答复',runId:'short-run-'+sequence,createdAt:new Date().toISOString()});
       try{
@@ -1017,8 +1067,10 @@ await step('首屏补页预算耗尽后，滚轮触摸与键盘仍可自然向�
           assert.equal(await stream.evaluate((node:HTMLElement)=>node.scrollTop),0,'不足一屏补页保留顶部');assert.equal(fixture.entryReads,readsBefore+5,gesture+'只加载所需一批');assert.equal(await panel().locator('[data-entry-id="short-80"]').count(),0,'不自动继续耗尽历史');
         }
       }finally{historyPages.clear();fixture.conversation=previous;await page.reload();await panel().locator('[data-run-status="stopped"]').waitFor();}
-    });
-await step('临时截图链接使用认证预览，文件错误提示不跨对话或草稿残留',async()=>{
+  },
+  'history/screenshot-links': async (fixture: AgentConversationFixture) => {
+  const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
+
   const previous=structuredClone(fixture.conversation),otherId='file-warning-other';
   const base=fs.realpathSync(path.dirname(workspaceRoot)),imagePath=path.join(base,'验收 截图.png'),missingPath=path.join(base,'恢复图片.png');
   const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64');
@@ -1059,9 +1111,10 @@ await step('临时截图链接使用认证预览，文件错误提示不跨对�
     for(const file of [imagePath,missingPath])if(fs.existsSync(file))fs.unlinkSync(file);
     await page.reload();await input().waitFor();await switchTo(previous.id);await input().waitFor();
   }
-});
+  },
+  'history/file-citations': async (fixture: AgentConversationFixture) => {
+  const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
 
-await step('file citations render labels and open the observed source with its line number',async()=>{
       const response=await page.request.get(workspaceUrl.replace('/workspaces/','/api/v1/workspaces/')+'/code/repositories');assert.equal(response.status(),200);
       const catalog=await response.json(),member=catalog.worktrees.find((item:any)=>item.available);assert.ok(member,'fixture has an observed source');
       const fixtureBase=fs.realpathSync(path.dirname(workspaceRoot)),sourceRoot=fs.realpathSync(member.path);
@@ -1078,6 +1131,12 @@ await step('file citations render labels and open the observed source with its l
       const state=await page.evaluate(()=>history.state?.usr?.codeEntry);if(state?.file)assert.equal(state.file.line,1);
       await capture(page,'agent-file-citation-open.png');
       } finally { fs.unlinkSync(createdFile);fixture.conversation=previous;await page.goto(workspaceUrl+'/overview');await input().waitFor(); }
-    });
+  },
+} satisfies Record<HistoryScenarioId, (fixture: AgentConversationFixture) => Promise<void>>;
 
+export const HISTORY_SCENARIOS = HISTORY_SCENARIO_CATALOG.map(item => ({...item,run:historyRuns[item.id]}));
+
+/** 兼容组调用；独立执行使用同一成员源。 */
+export async function runHistoryScenarios(fixture: AgentConversationFixture) {
+  for (const scenario of HISTORY_SCENARIOS) await fixture.step(scenario.name, () => scenario.run(fixture));
 }

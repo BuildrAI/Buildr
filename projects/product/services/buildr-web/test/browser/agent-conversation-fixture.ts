@@ -5,7 +5,7 @@ import {resolveQuestionAnswer,questionAnswerDisplay} from '../../../buildr-agent
 import type {ConnectionView} from '../../src/features/agent-conversations/types.ts';
 
 /** Actual hosted UI; only the new HTTP transport is replaced with explicit fixtures. */
-export async function createAgentConversationFixture({t,page,workspaceUrl,workspaceRoot,otherWorkspaceId,capture:capturePage,expectedBrowserErrors}:any){
+export async function createAgentConversationFixture({t,page,workspaceUrl,workspaceRoot,otherWorkspaceId,capture:capturePage,expectedBrowserErrors,scenarioSelectionHandled=false}:any){
   const capture=async(target:any,name:string)=>{if(!process.env.BUILDR_AGENT_CAPTURE_FAILURE_ONLY||name.includes('failure'))await capturePage(target,name);};
   let reminderPaging=false,reminderReadFailure=false,reminderReads=0;
   const taskRequests:Array<Record<string,unknown>>=[];
@@ -275,7 +275,7 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
     assert.equal(await entry.getAttribute('aria-expanded'),'true','经过浮窗与图标间的面板空隙不立即关闭');
     await menu.getByRole('button',{name:'全部对话',exact:true}).hover();assert.equal(await entry.getAttribute('aria-expanded'),'true');
   };
-  const scenarioFocus=(process.env.BUILDR_AGENT_SCENARIO_FOCUS||'').split('|').map(value=>value.trim()).filter(Boolean);
+  const scenarioFocus=(scenarioSelectionHandled?'':process.env.BUILDR_AGENT_SCENARIO_FOCUS||'').split('|').map(value=>value.trim()).filter(Boolean);
   let stepIndex=0;const step=async(name:string,operation:()=>Promise<void>)=>{if(scenarioFocus.length&&!scenarioFocus.some(value=>name.includes(value))){process.stderr.write('[agent-conversation-ui] not-selected '+name+'\n');return;}stepIndex++;const stepStart=Date.now();process.stderr.write('[agent-conversation-ui] '+name+'\n');try{await operation();process.stderr.write('[agent-conversation-ui]   ...'+((Date.now()-stepStart)/1000).toFixed(1)+'s '+name+'\n');}catch(failure){
     const taskDom=await page.evaluate(()=>{const inspect=(node:Element)=>({tag:node.tagName,id:node.id,className:node.className,hidden:node.hasAttribute('hidden'),ariaHidden:node.getAttribute('aria-hidden'),inert:node.hasAttribute('inert'),rect:node.getBoundingClientRect().toJSON(),display:getComputedStyle(node).display,visibility:getComputedStyle(node).visibility});return{url:location.href,title:document.querySelector('#task-detail-title')?.textContent,loading:[...document.querySelectorAll('.task-content-loading')].map(node=>({text:node.textContent,...inspect(node)})),entries:[...document.querySelectorAll('[data-task-internal-conversations]')].map(node=>({taskId:node.getAttribute('data-task-internal-conversations'),text:node.textContent,html:node.innerHTML,ancestors:(()=>{const ancestors=[];for(let ancestor:Element|null=node;ancestor;ancestor=ancestor.parentElement)ancestors.push(inspect(ancestor));return ancestors;})()})),resources:[...document.querySelectorAll('[data-workspace-resource-kind]')].map(node=>({kind:node.getAttribute('data-workspace-resource-kind'),...inspect(node)})),body:document.body.innerText.slice(-12000)};}).catch((error:unknown)=>({diagnosticError:String(error)}));
     process.stderr.write('[agent-conversation-failure-diagnostic] '+JSON.stringify({step:stepIndex,name,taskDom,taskRequests:taskRequests.slice(-80),selectTrace})+'\n');

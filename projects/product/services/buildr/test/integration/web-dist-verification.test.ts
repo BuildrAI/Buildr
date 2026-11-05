@@ -242,3 +242,30 @@ test('output symlinks and source directories are never treated as disposable gen
   }), /real directory/);
   assert.ok(fs.readFileSync(path.join(target, 'index.html'), 'utf8').includes('previous1'));
 });
+
+test('网页准备复用完整输入和输出字节，损坏或源码变化必须重建',t=>{
+  const {root}=fixture(t),cacheRoot=path.join(root,'cache'),source=path.join(root,'source.ts');fs.writeFileSync(source,'first');let builds=0;
+  const build=(target:string)=>{builds++;fakeBuild(target);};
+  const prepare=(name:string,env:any={})=>verifyGeneratedWebDist({outputRoot:path.join(root,name),cacheRoot,inputPaths:[source],optionalPaths:[],build,env});
+  const cold=prepare('cold'),warm=prepare('warm');assert.equal(builds,1);assert.equal(cold.preparation.status,'rebuilt');assert.equal(warm.preparation.status,'reused');
+  assert.deepEqual(describeWebDistTree(cold.root),describeWebDistTree(warm.root));
+  assert.equal(prepare('npm-cache-change',{npm_config_cache:'/different-owned-cache'}).preparation.status,'reused');assert.equal(builds,1);
+  fs.writeFileSync(path.join(cacheRoot,'dist/assets/app.js'),'corrupt');assert.equal(prepare('corrupt').preparation.status,'rebuilt');assert.equal(builds,2);
+  fs.writeFileSync(source,'changed');assert.equal(prepare('source-change').preparation.status,'rebuilt');assert.equal(builds,3);
+  assert.equal(prepare('env-change',{VITE_FIXTURE:'different'}).preparation.status,'rebuilt');assert.equal(builds,4);
+  fs.writeFileSync(path.join(cacheRoot,'verification-web-dist.json'),'{broken');assert.equal(prepare('receipt-change').preparation.status,'rebuilt');assert.equal(builds,5);
+});
+
+test('准备缓存不能接管符号链接，输入在构建中改变不能生成通过证据',t=>{
+  const {root}=fixture(t),source=path.join(root,'source.ts'),cache=path.join(root,'cache');fs.writeFileSync(source,'first');
+  fs.mkdirSync(cache);const alias=path.join(root,'alias');fs.symlinkSync(cache,alias);
+  assert.throws(()=>verifyGeneratedWebDist({outputRoot:path.join(root,'output'),cacheRoot:alias,inputPaths:[source],optionalPaths:[],build:fakeBuild}),/cache_root/);
+  assert.throws(()=>verifyGeneratedWebDist({outputRoot:path.join(root,'changed'),cacheRoot:cache,inputPaths:[source],optionalPaths:[],build:(target:string)=>{fakeBuild(target);fs.writeFileSync(source,'changed');}}),/inputs_changed/);
+});
+
+test('unknown npm options remain conservative cache inputs while download cache paths do not',t=>{
+  const {root}=fixture(t),source=path.join(root,'source.ts');fs.writeFileSync(source,'first');let builds=0;
+  const run=(name:string,env:any)=>verifyGeneratedWebDist({outputRoot:path.join(root,name),cacheRoot:path.join(root,'cache'),inputPaths:[source],optionalPaths:[],env,build:(target:string)=>{builds++;fakeBuild(target);}});
+  run('first',{});assert.equal(run('workspace',{npm_config_workspace:'another'}).preparation.status,'rebuilt');
+  assert.equal(run('same',{npm_config_workspace:'another',npm_config_cache:'/another-cache'}).preparation.status,'reused');assert.equal(builds,2);
+});

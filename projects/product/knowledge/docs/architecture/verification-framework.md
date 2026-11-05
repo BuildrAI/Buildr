@@ -40,6 +40,10 @@ Buildr 产品使用四类检查：静态检查（Static Check）、单元测试�
 
 `e2e-browser:code-explorer` 与 `e2e-browser:code` 是文件浏览和源代码管理两个独立检查。源码浏览器检查最多并行两个，仍受全局进程、工作线程和工作空间读写额度约束；它们共享不可变前端产物，各自使用临时工作空间、随机端口、浏览器和清理责任。其他共享可变资源的检查继续互斥。开始结束时间必须证明实际并行，准备去重不能被误算为测试通过。
 
+对话 `history` 的独立成员由 `buildr-web/test/browser/agent-conversations-history-scenarios.ts` 声明，稳定身份形如 `history/workspace-order`。每个成员新建浏览器上下文和夹具，独立失败同轮收集；清理或共享服务状态异常会明确留下未运行项。通过 `BUILDR_AGENT_JOURNEY_PART=history` 和 `BUILDR_AGENT_SCENARIO_FOCUS=<身份，多个用 | 分隔>` 可在同一 `test:e2e -- --check e2e-browser:agent-conversations` 入口定点诊断；未知筛选报错，子集通过不能作为整组通过，coverage会标记focused，失败接续仍选择未完整证明的父检查。较重的服务和生产构建仍由本轮共享，场景结果与耗时保存在现有诊断日志。
+
+自动语义关注点区分产品实现与测试路径；测试变化保留真实直接归属，不再仅因文件名包含conversation就追加无关原生进程组。显式 `--tag` 继续扩大集合。内容快照的检出目录身份与交付比较基线分开：基线变化仍比较实际内容，旧成功采用仍须通过配方、发现成员和环境校验。
+
 ## 环境准备入口
 
 智能体（Agent）根据实际缺项准备环境，检查命令不隐式下载厂商依赖或激活真实桌面。以下命令均从 `services/buildr` 调用；完整参数和输入校验由对应程序维护。
@@ -54,11 +58,13 @@ Buildr 产品使用四类检查：静态检查（Static Check）、单元测试�
 
 ## 执行和成本
 
+网页生产准备可在当前检出目录的 `build/verification-web-dist-cache` 中复用现有准备回执和产物清单；完整源码、生成接口、配方、依赖和工具环境匹配且输出字节完整时，复制到本轮独立输出。缓存损坏或输入变化会重建，结果单独给出重建/复用及准备时长；不读取在线产物，也不代替真实浏览器检查。
+
 准备依实际缺项完成，已有锁定依赖、构建输入和浏览器可以复用，不在每条检查前重装或重复生成。单元测试（Unit Test）不自动准备浏览器、真实账号、付费模型、准确双包或完整厂商软件开发工具包（SDK）。类型检查（Type Check）只证明真实编译范围，不把转译成功或 `noCheck` 声称为严格类型验证。
 
 实际工作进程数量和资源必须有界，完整集合的耗时与资源成本需观察并优化，不设统一三十秒门槛，不借无限并发掩盖消耗。发现慢检查先判断范围与实现效率，不仅因慢而改名，也不为达到预算删掉必要断言。
 
-智能体服务（Agent Service）的完整集成入口是从 `services/buildr-agent` 运行 `../buildr/tools/development/run-development-npm run test:integration`；它按[服务检查登记](../../../services/buildr-agent/tools/testing/verification-checks.ts)发现全部组，项目完整入口也消费同一登记。`agent-integration` 覆盖本机存储和对话，`agent-integration-native` 覆盖厂商协议；重型独立进程按启动与归属、跨版本交接、观察与恢复分别归入 `agent-integration-startup`、`agent-integration-handoff`、`agent-integration-recovery`。使用 `--check` 选择其中一组不能宣称完整智能体覆盖。
+智能体服务（Agent Service）的完整集成入口是从 `services/buildr-agent` 运行 `../buildr/tools/development/run-development-npm run test:integration`；它按[服务检查登记](../../../services/buildr-agent/tools/testing/verification-checks.ts)发现全部组，项目完整入口也消费同一登记。`agent-integration` 覆盖本机存储和对话，`agent-integration-native` 覆盖厂商协议；重型独立进程按启动与归属、跨版本交接、观察与恢复分别归入 `agent-integration-startup`、`agent-integration-handoff`、`agent-integration-recovery`。真实退避上限用例独立归入 `agent-integration-recovery-budget`，避免27秒左右的真实等待挤占恢复组串行预算；保持唯一主归属与完整发现，原恢复组预算不变。使用 `--check` 选择其中一组不能宣称完整智能体覆盖。
 
 重型组每组申请一个工作位，统一资源协调器（Resource Coordinator）以 `agent-process-tests` 限制同机最多两组；组内文件依照外层 `BUILDR_VERIFICATION_WORKER_BUDGET` 串行执行。直接诊断可运行 `node tools/testing/run-integration.ts --group all` 或指定同一检查标识，也服从该预算，最多并行两个文件。准备包由一次执行共享准备；每个用例的可写包、数据库和进程身份独立。
 

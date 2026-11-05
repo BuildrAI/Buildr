@@ -55,7 +55,12 @@ export function checkAvailability(step: any, env: NodeJS.ProcessEnv = process.en
   return gaps;
 }
 
-export function verificationCoverageEntry(step: any, result: any, platform = process.platform) {
+function focusedConversationCheck(step:any,env:NodeJS.ProcessEnv=process.env){
+  return step.id==='e2e-browser:agent-conversations'&&Boolean(env.BUILDR_AGENT_SCENARIO_FOCUS?.trim()||env.BUILDR_AGENT_JOURNEY_BATCH||env.BUILDR_AGENT_JOURNEY_PART&&env.BUILDR_AGENT_JOURNEY_PART!=='all');
+}
+
+export function verificationCoverageEntry(step: any, result: any, platform = process.platform, env:NodeJS.ProcessEnv = process.env) {
+  const focused=focusedConversationCheck(step,env);
   const executed = result && result.status !== 'blocked';
   const requiredPlatforms = step.platformScope?.kind === 'platform'
     ? step.platformScope.runners.map((runner: string) => runner === 'macos' ? 'darwin' : runner === 'windows' ? 'win32' : runner)
@@ -65,7 +70,7 @@ export function verificationCoverageEntry(step: any, result: any, platform = pro
     proofPlatform: executed ? result.reusedFrom?.environment?.platform ?? platform : null,
     exitCode: executed ? result.exitCode ?? null : null,
     status: result?.status ?? (step.availability === 'unavailable' ? 'unavailable' : 'not-run'),
-    disposition: result?.reusedFrom ? 'reused' : executed ? 'executed' : 'not-run' };
+    disposition: result?.reusedFrom ? 'reused' : executed ? 'executed' : 'not-run',...(focused?{scope:'focused'}:{}) };
 }
 
 export function planVerification(request: ReturnType<typeof parseVerificationArguments>, options: any = {}) {
@@ -170,6 +175,7 @@ export async function main(args = process.argv.slice(2)) {
       ? { ...snapshotSummary, fileCount: files ? Object.keys(files).length : null } : null }, null, 2)}\n`);
   }
   else print(plan);
+  if(!request.json&&plan.steps.some((step:any)=>focusedConversationCheck(step)))process.stdout.write('[verify] proof scope=focused: unselected conversation groups and scenarios remain unverified.\n');
   if (request.planOnly) return plan.status === 'ready' ? 0 : 1;
   const runnable = { ...plan, steps: plan.steps.filter((step: any) => step.availability === 'ready') };
   const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-verification-'));

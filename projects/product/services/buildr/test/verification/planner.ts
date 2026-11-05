@@ -697,7 +697,7 @@ export function createVerificationPlan(request: any = {}, steps: any = verificat
     }
   }
   const browserPlan: any = browserPaths.length ? selectBrowserSelectors(browserPaths) : { selectors: [], diagnostics: [] };
-  const selectedBrowsers = new Set<string>(browserPlan.selectors ?? []);
+  const selectedBrowsers = new Set<string>(browserPlan.selectors?.includes('all') ? steps.filter((step:any)=>step.browserSelector).map((step:any)=>step.browserSelector) : browserPlan.selectors ?? []);
   for (const diagnostic of browserPlan.diagnostics ?? []) gaps.push({ code: 'browser-selection-gap', ...diagnostic });
   for (const profile of profiles) {
     if (!VERIFICATION_PROFILES.includes(profile)) throw new Error(`Unknown verification profile: ${profile}`);

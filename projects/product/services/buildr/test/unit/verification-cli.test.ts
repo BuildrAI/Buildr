@@ -71,3 +71,12 @@ test('full Integration explains supplementary Host Node coverage while explicit 
   const explicit = planVerification(parseVerificationArguments(['related', '--check', 'host-node-boundaries', '--plan']));
   assert.ok(explicit.steps.some((step: any) => step.id === 'host-node-boundaries'));
 });
+
+test('focused browser success cannot erase an incompletely proven group on repair',async()=>{
+  const {readFailedVerificationGroups}=await import('../verification/failed-groups.ts');
+  const step={id:'e2e-browser:agent-conversations',target:'source',testing:{executionBoundary:'E2E'},availability:'ready'};
+  const focused=verificationCoverageEntry(step,{status:'passed',exitCode:0},'darwin',{BUILDR_AGENT_JOURNEY_PART:'history',BUILDR_AGENT_SCENARIO_FOCUS:'history/fill-viewport'});
+  assert.equal(focused.scope,'focused');assert.deepEqual(readFailedVerificationGroups('unused',{steps:[focused]}),[step.id]);
+  const complete=verificationCoverageEntry(step,{status:'passed',exitCode:0},'darwin',{});
+  assert.deepEqual(readFailedVerificationGroups('unused',{steps:[complete]}),[]);
+});

@@ -30,6 +30,11 @@ test('root bootstrap source and component changes participate in selection and r
   const changed = collectChangedProductPaths(options);
   assert.deepEqual(changed.paths, expected);
   assert.deepEqual(collectVerificationContentSnapshot(options, before).changedSincePrevious, expected);
+  const rebased=collectVerificationContentSnapshot({...options,base:'HEAD'},before);
+  assert.deepEqual(rebased.changedSincePrevious,expected);assert.equal(rebased.previousBase,base);
+  assert.throws(()=>collectVerificationContentSnapshot(options,{...before,productRoot:root}),/checkout/);
+  assert.throws(()=>collectVerificationContentSnapshot(options,{...before,files:{bad:'invalid'}}),/digest/);
+  assert.equal(collectVerificationContentSnapshot({...options,env:{LANG:'different'}},before).environmentChanged,true);
   const plan = createVerificationPlan({ paths: changed.paths, related: true, target: 'source' });
   assert.ok(plan.steps.some((step: any) => step.id === 'integration-self-bootstrap'));
   assert.deepEqual(plan.gaps, []);

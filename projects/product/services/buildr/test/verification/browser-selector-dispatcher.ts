@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import {HISTORY_SCENARIO_CATALOG} from '../../../buildr-web/test/browser/agent-conversation-history-catalog.ts';
+import {selectIndependentScenarios} from '../../../buildr-web/test/browser/agent-conversation-scenarios.ts';
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -45,7 +47,8 @@ export function planAgentConversationGroups(env: any = process.env): any[] {
     error.code = 'browser_agent_conversation_focus_invalid';
     throw error;
   }
-  if (focus !== 'all') return [{ id: focus, parts: [focus], queue: false, processTimeoutMs: 195_000 }];
+  if(focus==='history')selectIndependentScenarios(HISTORY_SCENARIO_CATALOG,env.BUILDR_AGENT_SCENARIO_FOCUS);
+  if (focus !== 'all') return [{ id: focus, parts: [focus], queue: false, processTimeoutMs: focus==='history'?465_000:195_000 }];
   return Array.from({ length: AGENT_CONVERSATION_WORKERS }, (_, index) => ({
     id: `worker-${index + 1}`, parts: [], queue: true, processTimeoutMs: 465_000,
   }));
@@ -160,6 +163,10 @@ export function selectBrowserSelectors(changedPaths: any): any  {
     }
     if (value.startsWith('src/web/http/')) {
       plan.reasons.push({ path: originalValue, selector: null, reason: 'HTTP/API owner; verify through the Buildr Web HTTP integration owner without starting Chrome.' });
+      continue;
+    }
+    if (/^services\/buildr-web\/test\/browser\/agent-conversations?[-.]/.test(originalValue)) {
+      add(plan,'agent-conversations',originalValue,'Conversation browser scenarios keep their direct browser owner.');
       continue;
     }
     if (originalValue.startsWith('services/buildr-web/') && !originalValue.startsWith('services/buildr-web/src/')) {
