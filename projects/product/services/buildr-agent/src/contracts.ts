@@ -52,7 +52,7 @@ export interface ModelGatewayConfiguration {
   nativeModel?: { provider: 'qoder'; id: string; accountIdentity: string };
 }
 export interface ExecutorOpenOptions {
-  /** Service-owned regenerable caches; never a native session/config HOME. */
+  /** Profile-wide tool caches, supplied by default to every provider; never a native session/config HOME. */
   cacheRoot?: string;
   /** Service-owned instructions supplied to every executor, including future providers. */
   interaction?: { version: 'buildr-interaction/v1'; instructions: string };

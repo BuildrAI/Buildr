@@ -1,9 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { Worker } from 'node:worker_threads';
+import { recordSharedCacheUse } from '../storage/shared-cache.ts';
+import { sharedToolchainEnvironment } from '../storage/toolchain-environment.ts';
 import type { AgentExecutor, AgentRuntime, ExecutorOpenOptions } from '../contracts.ts';
 import { claim, privateDirectory } from '../process/ownership.ts';
-import { ensureStorageDirectory, observeStorageUse, removeStorageCandidate, safeStoragePath, storageCandidate, type StorageCandidate, type StorageUse } from '../storage/files.ts';
+import { ensureStorageDirectory, safeStoragePath, storageCandidate, type StorageCandidate, type StorageUse } from '../storage/files.ts';
 
 /** Service-owned storage lifecycle; vendor adapters only name regenerable directories. */
 export class ExecutorStorage {
@@ -12,7 +15,7 @@ export class ExecutorStorage {
   constructor(root: string) { this.root = root; }
 
   options(executor: AgentExecutor, options: ExecutorOpenOptions): ExecutorOpenOptions {
-    if (!executor.storage) return options;
+    options = { ...options, environment: { ...options.environment, BUILDR_APP_DATA_DIR: options.environment.BUILDR_APP_DATA_DIR || path.dirname(this.root) } };
     const connection = path.join(this.root, 'connections', options.connectionId);
     if (!/^[a-z][a-z0-9-]*$/.test(options.connectionId)) throw new Error('agent_storage_connection_invalid');
     privateDirectory(this.root);
@@ -20,8 +23,11 @@ export class ExecutorStorage {
     if (!safeStoragePath(this.root, path.join(this.root, 'connections'))) throw new Error('agent_storage_path_unsafe');
     privateDirectory(connection);
     if (!safeStoragePath(this.root, connection)) throw new Error('agent_storage_path_unsafe');
+    const shared = sharedToolchainEnvironment(this.root, options.environment);
+    options = { ...options, environment: shared.environment, cacheRoot: shared.cacheRoot };
+    if (!executor.storage) return options;
     try {
-      for (const part of ['cache', 'cache/npm', 'cache/node-compile']) {
+      for (const part of ['cache', 'cache/npm', 'cache/node-compile', 'cache/yarn']) {
         const directory = path.join(connection, part); privateDirectory(directory);
         if (!safeStoragePath(this.root, directory)) throw new Error('agent_storage_path_unsafe');
       }
@@ -42,10 +48,15 @@ export class ExecutorStorage {
       }
     } catch { /* Native cache creation remains the compatibility fallback. */ }
     finally { lock?.release(); }
-    return { ...options, cacheRoot: path.join(connection, 'cache') };
+    return options;
   }
 
   opened(runtime: AgentRuntime, executor: AgentExecutor, root: string): AgentRuntime {
+    if (!this.bindings.has(runtime)) {
+      const send=runtime.send;
+      const observe=()=>{try{recordSharedCacheUse(this.root);}catch{/* Retain unsafe observations during maintenance. */}};
+      runtime.send=async input=>{observe();try{return await send.call(runtime,input);}finally{observe();}};
+    }
     this.bindings.set(runtime, { root, executor }); return runtime;
   }
 
@@ -53,13 +64,11 @@ export class ExecutorStorage {
     const binding = this.bindings.get(runtime);
     if (!binding || !binding.executor.storage?.transientDirectories.some(relative => fs.existsSync(path.join(binding.root, relative)))) return;
     if (!runtime.closed || !await runtime.canReclaimStorage?.()) return;
-    const lock = claim(path.dirname(this.root), 'storage');
-    try {
-      const use = observeStorageUse();
-      for (const item of executorCacheCandidates(this.root, binding.executor, binding.root, use, Infinity)) {
-        try { if (item.eligible && this.preserveSnapshot(binding.executor, binding.root, item.path)) removeStorageCandidate(this.root, item); } catch { /* Retain a failed cache; never change session state. */ }
-      }
-    } finally { lock.release(); }
+    const worker = new Worker(new URL(import.meta.url.endsWith('.ts') ? '../process/storage-maintenance.ts' : '../process/storage-maintenance.js', import.meta.url), {
+      workerData: { kind: 'agent-storage-release', dataRoot: path.dirname(this.root), provider: binding.executor.descriptor.id, configRoot: binding.root },
+    });
+    // Keep this narrow release alive until its rename/delete has finished.
+    await new Promise<void>((resolve, reject) => { worker.once('error', reject); worker.once('exit', () => resolve()); });
   }
 
   /** Caller holds storage lock. A retained seed prevents re-downloading the checkout every turn. */
@@ -90,14 +99,19 @@ export class ExecutorStorage {
   }
 }
 
-export function executorCacheCandidates(root: string, executor: AgentExecutor, configRoot: string, use: StorageUse, cutoff: number): StorageCandidate[] {
+export function executorCacheCandidates(root: string, executor: AgentExecutor, configRoot: string, use: StorageUse, cutoff: number, snapshotsOnly = false): StorageCandidate[] {
   const candidates: StorageCandidate[] = [];
   for (const relative of executor.storage?.transientDirectories ?? []) {
+    // Immediate native release only touches its bounded plugin snapshot; large
+    // tool caches are inventoried by the existing background maintenance worker.
+    if (snapshotsOnly && !executor.storage?.snapshots?.some(snapshot => snapshot.relative === relative)) continue;
     // Declarations are trusted adapter code, still never permit whole configs or traversal.
     if (path.isAbsolute(relative) || relative.split(/[\\/]/).some(part => !part || part === '.' || part === '..') || relative.split(/[\\/]/).length < 2) continue;
     const directory = path.join(configRoot, relative);
     if (fs.existsSync(directory)) {
-      const item = storageCandidate(root, 'cache', directory, configRoot, use, cutoff);
+      const download = relative.endsWith('/_cacache') || relative.endsWith('/Yarn/v6') || relative.endsWith('/yarn/v6');
+      const stableBefore = download ? Math.max(cutoff, Date.now() - 15 * 60_000) : cutoff;
+      const item = storageCandidate(root, 'cache', directory, configRoot, use, stableBefore);
       if (item.eligible && executor.storage?.canReclaim && !executor.storage.canReclaim(configRoot, relative)) { item.eligible = false; item.reason = 'cache_contents_retained'; }
       candidates.push(item);
     }

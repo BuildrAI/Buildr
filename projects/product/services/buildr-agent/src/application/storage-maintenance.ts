@@ -3,14 +3,36 @@ import path from 'node:path';
 import { createNativeExecutors } from '../executors/index.ts';
 import { ExecutorStorage, executorCacheCandidates } from './executor-storage.ts';
 import { claim } from '../process/ownership.ts';
+import { sharedCacheCandidates, sharedCacheReclaimable, sharedCachePolicy } from '../storage/shared-cache.ts';
+import { discoverHomeStorage } from '../storage/home-discovery.ts';
+import { runtimeObjectCandidates, runtimeObjectUnreferenced } from '../storage/runtime-objects.ts';
+import { runtimeSharingCandidates, shareRetainedRuntime } from '../process/runtime-sharing.ts';
 import { retainedRuntimeCandidates, retireRuntimeRecords, runtimeUnreferenced } from '../process/cleanup.ts';
 import { observeStorageUse, removeStorageCandidate, removeDiagnosticFileBatch, safeStoragePath, safeStorageResource, type StorageCandidate } from '../storage/files.ts';
+import { testArtifactCandidates, testArtifactUnreferenced } from '../storage/test-artifacts.ts';
+import { migrateToolCache, sharedCacheDestination } from '../storage/cache-migration.ts';
 import { diagnosticCandidates, diagnosticUnreferenced } from '../storage/diagnostics.ts';
 import { ConversationRepository } from '../persistence/conversation-repository.ts';
 
 export interface AgentStoragePlan {
   schemaVersion: 1; dataRoot: string; generatedAt: string;
+  homeStorage?: ReturnType<typeof discoverHomeStorage>; sharedCachePolicy?: typeof sharedCachePolicy;
   observationComplete: boolean; items: StorageCandidate[]; diagnostics: string[];
+}
+
+/** Native release proof is supplied by the owning runtime; all expensive file
+ * and process observations run in the same maintenance worker entry. */
+export function collectReleasedExecutorStorage(dataRoot: string, provider: string, config: string): void {
+  const root = path.join(dataRoot, 'agent-service'), account = path.join(root, 'connections', provider);
+  const executor = createNativeExecutors().find(item => item.descriptor.id === provider);
+  if (!executor || !safeStoragePath(root, config) || config !== account && !/^model-bindings\/[a-f0-9]{64}$/.test(path.relative(account, config).split(path.sep).join('/'))) return;
+  const lock = claim(dataRoot, 'storage');
+  try {
+    const storage = new ExecutorStorage(root), use = observeStorageUse();
+    for (const item of executorCacheCandidates(root, executor, config, use, Infinity, true)) {
+      try { if (item.eligible && storage.preserveSnapshot(executor, config, item.path)) removeStorageCandidate(root, item); } catch { /* Retain a failed cache. */ }
+    }
+  } finally { lock.release(); }
 }
 
 /** Read-only, local profile maintenance. Native session bodies and accounts are never candidates. */
@@ -31,12 +53,17 @@ export function inspectAgentStorage(input: { dataRoot: string }): AgentStoragePl
     }
     for (const config of configs) {
       result.items.push(...executorCacheCandidates(root, executor, config, use, cutoff));
+      result.items.push(...testArtifactCandidates(root, config, use, cutoff));
+      result.items.push(...nestedStoppedRuntimeCandidates(root, config, use));
       try { result.items.push(...diagnosticCandidates(root, executor, config, use, dependencies, Date.now())); }
       catch { result.diagnostics.push('diagnostic_inventory_unknown:' + executor.descriptor.id); }
     }
   }
-  try { result.items.push(...retainedRuntimeCandidates(dataRoot, use)); }
+  try { result.items.push(...retainedRuntimeCandidates(dataRoot, use), ...runtimeSharingCandidates(dataRoot, use), ...runtimeObjectCandidates(root, use)); }
   catch { result.diagnostics.push('runtime_inventory_unknown'); }
+  result.items.push(...sharedCacheCandidates(root,use,dependencies));
+  result.sharedCachePolicy=sharedCachePolicy;
+  result.homeStorage=discoverHomeStorage(root);
   return result;
 }
 
@@ -46,20 +73,20 @@ export function collectAgentStorage(plan: AgentStoragePlan, maximumItems = 128, 
   const root = path.join(plan.dataRoot, 'agent-service');
   if (!safeStoragePath(plan.dataRoot, root)) throw new Error('agent_storage_root_unsafe');
   const current = inspectAgentStorage({ dataRoot: plan.dataRoot });
-  const candidates = new Map(current.items.map(item => [item.path, item]));
+  const candidates = new Map(current.items.map(item => [item.kind + ":" + item.path, item]));
   const executors = new Map(createNativeExecutors().map(executor => [executor.descriptor.id, executor]));
   const storage = new ExecutorStorage(root);
   const repository = new ConversationRepository(root);
   const limit = Number.isSafeInteger(maximumItems) ? Math.max(0, Math.min(1024, maximumItems)) : 0;
   const deadline=Date.now()+Math.max(100,Math.min(options.budgetMs??10000,30000));
-  const results: Array<{ path: string; status: 'removed' | 'retained'; reason: string; sizeBytes: number }> = [];
+  const results: Array<{ path: string; status: 'removed' | 'retained' | 'shared'; reason: string; sizeBytes: number }> = [];
   let attempted = 0;
   const pending=plan.items.filter(item=>item.eligible).sort((a,b)=>b.sizeBytes-a.sizeBytes),handled=new Set<string>();
   for (const expected of pending) {
     if(handled.has(expected.path))continue;
-    const item = candidates.get(expected.path);
+    const item = candidates.get(expected.kind + ":" + expected.path);
     let reason = !item ? 'storage_no_longer_candidate' : item.kind !== expected.kind || item.identity !== expected.identity ? 'storage_changed' : item.reason;
-    let removed = false, lock: ReturnType<typeof claim> | undefined;
+    let removed = false, lock: ReturnType<typeof claim> | undefined, nestedLock: ReturnType<typeof claim> | undefined;
     if (attempted >= limit || Date.now()>deadline) {
       results.push({ path: expected.path, status: 'retained', reason: 'storage_batch_deferred', sizeBytes: item?.sizeBytes ?? expected.sizeBytes }); continue;
     }
@@ -69,7 +96,7 @@ export function collectAgentStorage(plan: AgentStoragePlan, maximumItems = 128, 
         for(const value of pending){
           if(group.length>=Math.min(256,limit-attempted))break;
           if(handled.has(value.path))continue;
-          const candidate=candidates.get(value.path);
+          const candidate=candidates.get(value.kind + ":" + value.path);
           if(candidate?.eligible&&candidate.kind==='diagnostic'&&value.kind===candidate.kind&&candidate.identity===value.identity&&candidate.sizeBytes<=256*1024&&safeStorageResource(root,candidate.path,64))group.push({expected:value,item:candidate});
         }
         let groupLock:ReturnType<typeof claim>|undefined;let removed=new Set<string>();
@@ -83,21 +110,41 @@ export function collectAgentStorage(plan: AgentStoragePlan, maximumItems = 128, 
       attempted++;
       try {
         lock = claim(plan.dataRoot, 'storage');
+        const runtimeDataRoot = item.runtimeDataRoot ?? plan.dataRoot;
+        if (item.runtimeDataRoot && item.runtimeDataRoot !== plan.dataRoot) nestedLock = claim(item.runtimeDataRoot, 'storage');
         const executor = item.kind === 'cache' ? executors.get(path.relative(root, item.ownerRoot).split(path.sep)[1]!) : undefined;
         const policy = !executor?.storage?.canReclaim || executor.storage.canReclaim(item.ownerRoot, path.relative(item.ownerRoot, item.path));
         if (!policy || executor && !storage.preserveSnapshot(executor, item.ownerRoot, item.path)) reason = 'cache_seed_or_contents_retained';
         else {
-          removed = removeStorageCandidate(root, item, observeStorageUse, () => item.kind === 'runtime'
-            ? runtimeUnreferenced(plan.dataRoot, item.path) : item.kind !== 'diagnostic' || diagnosticUnreferenced(item, repository.storageDependencies()));
+          removed = item.kind === 'runtime-share' ? shareRetainedRuntime(root, item, deadline) : item.kind === 'cache' && sharedCacheDestination(root, path.relative(item.ownerRoot, item.path))
+            ? migrateToolCache(root, item, deadline)
+            : removeStorageCandidate(root, item, observeStorageUse, directory => item.kind === 'runtime'
+            ? runtimeUnreferenced(runtimeDataRoot, item.path) : item.kind === 'shared-cache' ? sharedCacheReclaimable(root,item,observeStorageUse(),repository.storageDependencies()) : item.kind === 'runtime-object' ? runtimeObjectUnreferenced(directory, path.basename(item.path)) : item.kind === 'test-artifact' ? testArtifactUnreferenced(directory, item.path) : item.kind !== 'diagnostic' || diagnosticUnreferenced(item, repository.storageDependencies()));
           if (removed && item.kind === 'runtime') {
-            try { retireRuntimeRecords(plan.dataRoot, item.path); } catch { current.diagnostics.push('runtime_metadata_retained:' + item.path); }
+            try { retireRuntimeRecords(runtimeDataRoot, item.path); } catch { current.diagnostics.push('runtime_metadata_retained:' + item.path); }
           }
           if (!removed) reason = 'storage_recheck_retained';
         }
       } catch { reason = 'storage_collection_failed'; }
-      finally { lock?.release(); }
+      finally { nestedLock?.release(); lock?.release(); }
     }
-    results.push({ path: expected.path, status: removed ? 'removed' : 'retained', reason: removed ? 'unused_rebuildable' : reason, sizeBytes: item?.sizeBytes ?? expected.sizeBytes });
+    results.push({ path: expected.path, status: removed ? item?.kind === 'runtime-share' ? 'shared' : 'removed' : 'retained', reason: removed ? item?.kind === 'runtime-share' ? 'identical_runtime_objects_shared' : item?.kind === 'cache' && sharedCacheDestination(root, path.relative(item.ownerRoot, item.path)) ? 'cache_migrated_to_shared_root' : 'unused_rebuildable' : reason, sizeBytes: item?.sizeBytes ?? expected.sizeBytes });
   }
-  return { schemaVersion: 1 as const, dataRoot: plan.dataRoot, results, removedBytes: results.filter(item => item.status === 'removed').reduce((sum,item) => sum + item.sizeBytes, 0), diagnostics: current.diagnostics };
+  return { schemaVersion: 1 as const, dataRoot: plan.dataRoot, results, removedBytes: results.filter(item => item.status === 'removed' && item.reason !== 'cache_migrated_to_shared_root').reduce((sum,item) => sum + item.sizeBytes, 0), migratedBytes: results.filter(item => item.reason === 'cache_migrated_to_shared_root').reduce((sum,item) => sum + item.sizeBytes, 0), diagnostics: current.diagnostics };
+}
+
+/** Older development commands used the private HOME as a default app root.
+ * Only authenticated, confirmed shutdown receipts use timely cleanup here;
+ * ordinary/crashed profiles retain their current, pending and rollback units. */
+function nestedStoppedRuntimeCandidates(root: string, config: string, use: import('../storage/files.ts').StorageUse): StorageCandidate[] {
+  const base = path.join(config, 'home/Library/Application Support');
+  const profiles = [path.join(base, 'Buildr Dev')], previews = path.join(base, 'Buildr/previews');
+  if (safeStoragePath(root, previews)) for (const name of fs.readdirSync(previews)) {
+    const profile = path.join(previews, name);
+    if (safeStoragePath(root, profile)) profiles.push(profile);
+  }
+  return profiles.filter(profile => safeStoragePath(root, profile)).flatMap(profile => {
+    try { return [...retainedRuntimeCandidates(profile, use, undefined, Date.now(), true), ...runtimeSharingCandidates(profile, use)].map(item => ({ ...item, runtimeDataRoot: profile })); }
+    catch { return []; }
+  });
 }

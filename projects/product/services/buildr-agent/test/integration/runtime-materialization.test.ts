@@ -35,9 +35,10 @@ test('bounded runtime hashing preserves the complete legacy digest and detects c
   fs.writeFileSync(node,Buffer.alloc(9,23));
   fs.writeFileSync(path.join(packageRoot,'build/large'),'source was changed');
   assert.doesNotThrow(()=>validateAgentRuntime(dataRoot,runtime),'copy-on-write preserves independent retained bytes');
-  fs.writeFileSync(runtime.node,'tampered');assert.throws(()=>validateAgentRuntime(dataRoot,runtime),{code:'agent_runtime_changed'});
+  if (process.getuid?.()!==0) assert.throws(()=>fs.writeFileSync(runtime.node,'blocked'),{code:'EACCES'});
+  fs.chmodSync(runtime.node,0o700);fs.writeFileSync(runtime.node,'tampered');assert.throws(()=>validateAgentRuntime(dataRoot,runtime),{code:'agent_runtime_changed'});
   fs.writeFileSync(runtime.node,Buffer.alloc(8*1024*1024+17,19));
-  fs.writeFileSync(path.join(runtime.directory,'build/entry.js'),'tampered');assert.throws(()=>validateAgentRuntime(dataRoot,runtime),{code:'agent_runtime_changed'});
+  fs.chmodSync(path.join(runtime.directory,'build/entry.js'),0o600);fs.writeFileSync(path.join(runtime.directory,'build/entry.js'),'tampered');assert.throws(()=>validateAgentRuntime(dataRoot,runtime),{code:'agent_runtime_changed'});
 });
 
 test('test Node sharing keeps private paths, rejects mutation, survives peer cleanup and never links the installed executable', {skip:process.platform==='win32'}, ()=>{

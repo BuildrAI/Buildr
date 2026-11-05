@@ -5,9 +5,12 @@ import { spawnSync } from 'node:child_process';
 
 export interface StorageUse { complete: boolean; paths: readonly string[]; diagnostic?: string }
 export interface StorageCandidate {
-  kind: 'cache' | 'runtime' | 'diagnostic'; path: string; ownerRoot: string;
+  kind: 'cache' | 'runtime' | 'diagnostic' | 'test-artifact' | 'runtime-share' | 'runtime-object' | 'shared-cache'; path: string; ownerRoot: string;
   sizeBytes: number; identity?: string; eligible: boolean; reason: string;
   rootChanged?: number;
+  retentionDays?: number; lastPossibleUseAt?: number;
+  /** Exact nested Buildr profile, discovered only under a private native HOME. */
+  runtimeDataRoot?: string;
   diagnostic?: { provider: string; producerPid?: number; contextId?: string };
 }
 export interface StorageVersion { identity: string; sizeBytes: number; modified: number; rootChanged: number }
@@ -51,7 +54,7 @@ export function ensureStorageDirectory(root: string, target: string): void {
   let current = root;
   for (const part of relative.split(path.sep)) {
     current = path.join(current, part);
-    if (!fs.existsSync(current)) fs.mkdirSync(current, { mode: 0o700 });
+    if (!fs.existsSync(current)) { try { fs.mkdirSync(current, { mode: 0o700 }); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; } }
     if (!safeStoragePath(root, current)) throw new Error('storage_path_unsafe');
   }
 }
@@ -96,16 +99,16 @@ export function storageCandidate(root: string, kind: StorageCandidate['kind'], d
 }
 
 /** The caller holds the service storage lock; recheck immediately around the narrow rename. */
-export function removeStorageCandidate(root: string, item: StorageCandidate, observe = observeStorageUse, unreferenced = () => true): boolean {
+export function removeStorageCandidate(root: string, item: StorageCandidate, observe = observeStorageUse, unreferenced: (directory: string) => boolean = () => true): boolean {
   const safe = () => item.kind === 'diagnostic' ? safeStorageResource(root, item.path) : safeStoragePath(root, item.path);
-  if (!item.eligible || !item.identity || !safe() || !unreferenced() || storageInUse(item.ownerRoot, observe())) return false;
+  if (!item.eligible || !item.identity || !safe() || !unreferenced(item.path) || storageInUse(item.ownerRoot, observe())) return false;
   if (storageVersion(item.path).identity !== item.identity) return false;
   const retired = path.join(path.dirname(item.path), '.reclaim-' + randomUUID());
   fs.renameSync(item.path, retired);
   try {
     const renamedRootChanged = fs.lstatSync(retired).ctimeMs;
     const use = observe();
-    const permitted = unreferenced(), version = storageVersion(retired, item.rootChanged);
+    const permitted = unreferenced(retired), version = storageVersion(retired, item.rootChanged);
     if (!permitted || !use.complete || storageInUse(item.ownerRoot, use) || storageInUse(retired, use) ||
         version.identity !== item.identity || version.rootChanged !== renamedRootChanged) {
       if (!fs.existsSync(item.path)) fs.renameSync(retired, item.path);
