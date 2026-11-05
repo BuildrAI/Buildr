@@ -14,6 +14,21 @@ export function messageActivityAt(record: StoredConversation): string | undefine
     (entry.kind === 'message' && ['user','assistant'].includes(entry.role) || entry.role === 'user' && entry.kind === 'notice' && entry.id.startsWith('reply-')))
     .reduce<string|undefined>((latest,entry) => !latest || entry.createdAt > latest ? entry.createdAt : latest,undefined);
 }
+/** Final visible assistant reply of the latest completed, non-superseded run. */
+export function finalReplyActivityAt(record: StoredConversation): string | undefined {
+  const run = record.view.run;
+  if (!run || run.status !== 'completed' || run.supersededBy) return undefined;
+  let latest: string | undefined;
+  for (const entry of record.view.entries ?? []) {
+    if (entry.kind !== 'message' || entry.role !== 'assistant') continue;
+    if (entry.parentToolId || entry.thinking || entry.status === 'failed') continue;
+    // Current entries carry the run identity; legacy entries fall back to the
+    // run's start time rather than any later retained-round output.
+    if (entry.runId ? entry.runId !== run.id : entry.createdAt < run.startedAt) continue;
+    if (!latest || entry.createdAt > latest) latest = entry.createdAt;
+  }
+  return latest;
+}
 /** 保留独立的用户输入时间：用户消息与对问题的答复。 */
 export function userActivityAt(record: StoredConversation): string | undefined {
   let latest: string | undefined = record.view.forkedFrom?.forkedAt;
@@ -64,6 +79,6 @@ export function summaryView(record: StoredConversation, version: number, seenThr
     retainedRuns:view.retainedRuns?.map(run=>({...run,tools:[]})),
     run: view.run ? {...view.run, tools: []} : undefined,
     participants: record.participants.map(p => ({id:p.id,provider:p.provider as ConversationView['participants'][number]['provider'],connectionId:p.connectionId,label:p.label,model:p.modelId,modelAccountId:p.modelAccountId,deliveredThrough:p.deliveredThrough,contextId:''})),
-    activity: {version, seenThrough, updatedAt, pendingDecisionCount:decisions, active: conversationActive(view,version,seenThrough)},
+    activity: {version, seenThrough, updatedAt, finalReplyAt: finalReplyActivityAt(record), pendingDecisionCount:decisions, active: conversationActive(view,version,seenThrough)},
   };
 }

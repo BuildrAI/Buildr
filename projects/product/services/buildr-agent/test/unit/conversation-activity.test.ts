@@ -1,11 +1,38 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { summaryView, pendingDecisionCount } from '../../src/domain/conversation-activity.ts';
+import { summaryView, pendingDecisionCount, finalReplyActivityAt } from '../../src/domain/conversation-activity.ts';
 import type { StoredConversation } from '../../src/domain/agent-state.ts';
 
 test('legacy requests without a run identity remain pending rather than crashing discovery',()=>{
  const record={view:{requests:[{id:'pending'}]},participants:[]} as unknown as StoredConversation;
  assert.equal(summaryView(record,0,0,'now').activity!.active,true);
+});
+
+
+test('final reply comes only from the latest completed run and ignores intermediate evidence',()=>{
+ const at='2026-11-05T00:00:00Z';
+ const run={id:'current',participantId:'p',generation:'g',status:'completed',startedAt:at,updatedAt:at,tools:[]} as any;
+ const entry=(id:string,createdAt:string,extra:Record<string,unknown>={})=>({id,sequence:1,kind:'message' as const,role:'assistant' as const,text:id,createdAt,runId:'current',...extra});
+ const record={view:{run,entries:[
+  {id:'user',sequence:1,kind:'message',role:'user',text:'input',createdAt:at,runId:'current'},
+  entry('middle','2026-11-05T00:01:00Z'),
+  entry('thinking','2026-11-05T00:02:00Z',{thinking:true}),
+  entry('child','2026-11-05T00:03:00Z',{parentToolId:'tool'}),
+  entry('failed','2026-11-05T00:04:00Z',{status:'failed'}),
+  {id:'old-run',sequence:6,kind:'message',role:'assistant',text:'old',createdAt:'2026-11-05T00:06:00Z',runId:'old'},
+  entry('final','2026-11-05T00:05:00Z')
+ ],requests:[]},participants:[]} as unknown as StoredConversation;
+ assert.equal(finalReplyActivityAt(record),'2026-11-05T00:05:00Z');
+ assert.equal(summaryView(record,1,0,'now').activity!.finalReplyAt,'2026-11-05T00:05:00Z');
+ run.status='running';assert.equal(finalReplyActivityAt(record),undefined);
+ run.status='failed';assert.equal(finalReplyActivityAt(record),undefined);
+ run.status='completed';record.view.run!.supersededBy='new';assert.equal(finalReplyActivityAt(record),undefined);
+ delete record.view.run!.supersededBy;
+ // Legacy entries without runId only count from the current run's start.
+ record.view.run={...run,id:'legacy',startedAt:'2026-11-05T00:10:00Z'};
+ record.view.entries=[{id:'legacy-user',sequence:1,kind:'message',role:'user',text:'input',createdAt:'2026-11-05T00:10:00Z'},{id:'legacy-old',sequence:2,kind:'message',role:'assistant',text:'old',createdAt:'2026-11-05T00:09:00Z'},{id:'legacy-final',sequence:3,kind:'message',role:'assistant',text:'final',createdAt:'2026-11-05T00:11:00Z'}];
+ assert.equal(finalReplyActivityAt(record),'2026-11-05T00:11:00Z');
+ record.view.entries=[];assert.equal(finalReplyActivityAt(record),undefined);
 });
 
 test('historical unknown rounds only keep a stopped conversation active while work is in flight',()=>{
