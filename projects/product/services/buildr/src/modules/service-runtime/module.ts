@@ -126,6 +126,9 @@ export const SERVICE_RUNTIME_MODULE = Object.freeze({
         runtime, view, catalog: { listServices }, readTaskScope,
         integrationCheck(root, taskId) { return checkTaskIntegration(requires[TASK_COMMITS_APPLICATION].inspectTaskCommits(root, taskId, 'quick')); },
         worktreeServices(root: string, taskId: string) {
+          // 已清理的任务没有检出证据，不必逐服务读取整个代码库的工作树状态。
+          try { if (!worktreeProvider.readGitWorktreeEvidence(root, taskId, { optional: true })?.evidence.repositories.length) return []; }
+          catch { return []; }
           return listServices(root).filter(service => taskWorktreeCoversService(root, taskId, service.code)).map(service => service.code);
         },
       });

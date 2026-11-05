@@ -8,6 +8,7 @@ import { pathToFileURL } from 'node:url';
 import { createCodeApplication } from '../../src/modules/code/application/code-application.ts';
 import { CODE_APPLICATION } from '../../src/modules/code/module.ts';
 import { TASK_QUERY_APPLICATION, TASK_WORKTREE_PROVIDER } from '../../src/modules/task/module.ts';
+import { TASK_COMMITS_APPLICATION } from '../../src/modules/task/commits/module.ts';
 import { registerGitWorktreeProvider } from '../../src/modules/task/infrastructure/git-worktree-provider.ts';
 import { WORKSPACE_APPLICATION } from '../../src/modules/workspace/module.ts';
 import { SERVICE_RUNTIME_APPLICATION, SERVICE_RUNTIME_MODULE, SERVICE_RUNTIME_SOURCES, SERVICE_RUNTIME_VIEW, SERVICE_TASK_RUNTIME_APPLICATION } from '../../src/modules/service-runtime/module.ts';
@@ -15,6 +16,25 @@ import { createServiceRuntimeCliContributions } from '../../src/modules/service-
 import { createServiceRuntimeView } from '../../src/modules/service-runtime/application/service-runtime-view.ts';
 import { processAlive } from '../../src/modules/service-runtime/infrastructure/managed-process.ts';
 import { freeRuntimePort, runtimeDefinition, runtimeFixture } from '../helpers/service-runtime-fixture.ts';
+
+test('已清理任务只读提交快检，不逐服务扫描无关代码库状态', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'task-runtime-fast-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  let sourceReads = 0;
+  const catalog = { repositories: [{ id: 'repo' }], projects: [], services: [{ id: 'backend', code: 'backend', name: 'backend', repositoryId: 'repo', modulePath: '' }] };
+  const module: any = SERVICE_RUNTIME_MODULE.create({
+    [WORKSPACE_APPLICATION]: { assetCatalog: () => catalog },
+    [CODE_APPLICATION]: { sourceControl() { sourceReads++; throw new Error('must not scan cleaned task sources'); } },
+    [TASK_QUERY_APPLICATION]: { inspectTaskSummaryView: () => ({ record: { taskId: 'cleaned', title: '已清理任务', scope: { projects: [], services: [] } } }) },
+    [TASK_WORKTREE_PROVIDER]: { readGitWorktreeEvidence: () => null },
+    [TASK_COMMITS_APPLICATION]: { inspectTaskCommits: () => ({ status: 'complete', repositories: [], commits: [], coverage: { truncated: false }, diagnostics: [] }) },
+  });
+  const detail = await module.provides[SERVICE_TASK_RUNTIME_APPLICATION].detail(root, 'cleaned');
+  assert.equal(sourceReads, 0);
+  assert.deepEqual(detail.services, []);
+  assert.deepEqual(detail.diagnostics, []);
+  assert.equal(detail.integration.complete, false);
+});
 
 test('模块从真实代码库解析服务目录与分支，不依赖部署连接', async t => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'service-runtime-module-'));
