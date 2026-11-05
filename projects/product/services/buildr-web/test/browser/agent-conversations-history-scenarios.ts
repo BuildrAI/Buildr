@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {createAgentConversationFixture,type AgentConversationFixture} from './agent-conversation-fixture.ts';
 
-type ConversationScrollSample={at:number;top:number;height:number;viewport:number;visible:boolean;entries:number;listBottom:number|null;streamBottom:number|null};
+type ConversationScrollSample={at:number;top:number;height:number;viewport:number;visible:boolean;entries:number;listBottom:number|null;streamBottom:number|null;listTop:number|null;streamTop:number|null};
 
 /** history 场景使用独立准备的对话现场。 */
 export async function runHistoryScenarios(fixture:AgentConversationFixture){
@@ -120,7 +120,7 @@ await step('列表调整空间顺序立即同步活动浮窗',async()=>{
       const header=panel().locator('[data-history-workspace="'+workspaceId+'"] .ac-history-group-toggle');await header.waitFor();await header.press(direction);
       const expected=await panel().locator('[data-history-workspace]').evaluateAll((nodes:HTMLElement[])=>nodes.map(node=>node.dataset.historyWorkspace));
       await panel().getByRole('button',{name:'返回当前对话',exact:true}).click();await entry.hover();
-      const menu=page.locator('.ac-activity-menu:visible');await menu.waitFor();
+      const menu=page.locator('.ac-activity-menu:visible');await menu.waitFor();await menu.locator('[data-activity-workspace="@default"]').waitFor();
       assert.deepEqual(await menu.locator('[data-activity-workspace]').evaluateAll((nodes:HTMLElement[])=>nodes.map(node=>node.dataset.activityWorkspace)),expected.filter((id:string|undefined)=>[workspaceId,otherId,'@default'].includes(id!)));
       await capture(page,'conversation-popup-shared-order-'+direction.slice(4)+'.png');await page.mouse.move(0,0);await input().focus();await page.keyboard.press('Escape');
     }
@@ -224,7 +224,7 @@ await step('发送后始终展示最新信息，布局滚动不误加载更早�
   }finally{fixture.conversation=previous;historyPages.delete(1);await page.reload();await input().waitFor();}
 });
 
-await step('从列表打开长对话时首帧直接位于最新位置，正文出现后不跳到下方',async()=>{
+await step('补页期间短内容顶对齐，溢出后首帧跟随最新位置',async()=>{
   const previous=structuredClone(fixture.conversation),additional=fixture.additionalConversations,at=new Date().toISOString();
   const targetId='first-paint-target';
   const answer='打开后先只读取到这一条最新答复。';
@@ -253,7 +253,7 @@ await step('从列表打开长对话时首帧直接位于最新位置，正文�
         const stream=document.querySelector<HTMLElement>('#agent-conversation-panel .ac-stream');
         const list=stream?.querySelector<HTMLElement>('.ac-message-list');
         const entries=stream?[...stream.querySelectorAll<HTMLElement>('[data-entry-id]')].filter(node=>node.getClientRects().length).length:0;
-        trace.push({at:performance.now(),top:stream?.scrollTop??0,height:stream?.scrollHeight??0,viewport:stream?.clientHeight??0,visible:Boolean(stream?.getClientRects().length&&list),entries,listBottom:list?.getBoundingClientRect().bottom??null,streamBottom:stream?.getBoundingClientRect().bottom??null});
+        trace.push({at:performance.now(),top:stream?.scrollTop??0,height:stream?.scrollHeight??0,viewport:stream?.clientHeight??0,visible:Boolean(stream?.getClientRects().length&&list),entries,listBottom:list?.getBoundingClientRect().bottom??null,streamBottom:stream?.getBoundingClientRect().bottom??null,listTop:list?.getBoundingClientRect().top??null,streamTop:stream?.getBoundingClientRect().top??null});
         if(++frames<240)requestAnimationFrame(sample);
       };
       requestAnimationFrame(sample);
@@ -266,8 +266,8 @@ await step('从列表打开长对话时首帧直接位于最新位置，正文�
     const beforeFill:ConversationScrollSample[]=await page.evaluate(()=>(window as any).__conversationScrollTrace as ConversationScrollSample[]);
     const visible=beforeFill.filter(sample=>sample.visible&&sample.entries>0);
     assert.ok(visible.length,'首批最新记录应在补页请求挂起时可见');
-    const misplaced=visible.find(sample=>sample.listBottom===null||sample.streamBottom===null||sample.streamBottom-sample.listBottom>96);
-    assert.equal(misplaced,undefined,'补页期间短内容不能先露在信息流顶部：'+JSON.stringify(visible.slice(-8)));
+    const misplaced=visible.find(sample=>sample.listTop===null||sample.streamTop===null||Math.abs(sample.listTop-sample.streamTop)>1||sample.top!==0);
+    assert.equal(misplaced,undefined,'补页期间不足一屏的内容必须顶对齐，不能撑高或产生滚动：'+JSON.stringify(visible.slice(-8)));
     fixture.releaseEntryRead!();
     await panel().locator('[data-entry-id="first-paint-older-11-answer"]').waitFor({state:'attached'});
     await panel().locator('[data-entry-id="first-paint-older-11-answer"] .markdown-body').waitFor();
@@ -290,12 +290,12 @@ await step('从列表打开长对话时首帧直接位于最新位置，正文�
   }
 });
 
-await step('补完不足一屏的历史后仍位于最新位置，不反向跳到顶部',async()=>{
+await step('补完不足一屏的历史后保持顶对齐，不撑高信息流',async()=>{
   const previous=structuredClone(fixture.conversation),additional=fixture.additionalConversations,at=new Date().toISOString();
   const targetId='short-history-first-paint';
   const target={...structuredClone(previous),id:targetId,title:'短历史首帧验证',revision:'short-history-r1',hidden:false,updatedAt:at,participants:[{id:'participant-codex',connectionId:'codex',provider:'codex',label:'Codex',model:'fixture-model',contextId:'native',deliveredThrough:0}],entries:[
     {id:'short-history-user',sequence:11,runId:'short-history-run',kind:'message',role:'user',text:'打开后应该仍看到最新答复',status:'completed',createdAt:at},
-    {id:'short-history-answer',sequence:12,runId:'short-history-run',kind:'message',role:'assistant',text:'补完更早记录后，这段短对话仍贴在输入区上方。',status:'completed',createdAt:at},
+    {id:'short-history-answer',sequence:12,runId:'short-history-run',kind:'message',role:'assistant',text:'补完更早记录后，这段短对话仍从信息流顶部开始。',status:'completed',createdAt:at},
   ],nextEntryCursor:10,run:run('completed','codex',{id:'short-history-run',model:'fixture-model'}),requests:[],pendingSend:undefined};
   historyPages.set(10,{...target,entries:[
     {id:'short-history-older',sequence:1,runId:'short-history-older-run',kind:'message',role:'user',text:'一条更早的短要求',status:'completed',createdAt:at},
@@ -312,10 +312,10 @@ await step('补完不足一屏的历史后仍位于最新位置，不反向跳�
     await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
     const geometry=await panel().locator('.ac-stream').evaluate((node:HTMLElement)=>{
       const list=node.querySelector<HTMLElement>('.ac-message-list')!;
-      return {scrollTop:node.scrollTop,scrollHeight:node.scrollHeight,clientHeight:node.clientHeight,streamBottom:node.getBoundingClientRect().bottom,listBottom:list.getBoundingClientRect().bottom};
+      return {scrollTop:node.scrollTop,scrollHeight:node.scrollHeight,clientHeight:node.clientHeight,streamBottom:node.getBoundingClientRect().bottom,listBottom:list.getBoundingClientRect().bottom,streamTop:node.getBoundingClientRect().top,listTop:list.getBoundingClientRect().top};
     });
     assert.ok(geometry.scrollHeight<=geometry.clientHeight+1,'短历史补完后不应形成滚动区域：'+JSON.stringify(geometry));
-    assert.ok(geometry.streamBottom-geometry.listBottom<=2,'短历史补完后不能从底部跳到顶部：'+JSON.stringify(geometry));
+    assert.ok(Math.abs(geometry.listTop-geometry.streamTop)<=1&&geometry.scrollTop===0,'短历史补完后应保持顶对齐：'+JSON.stringify(geometry));
   }finally{
     historyPages.delete(10);fixture.additionalConversations=additional;fixture.conversation=previous;
     await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();
@@ -684,7 +684,7 @@ await step('历史两行展示完整标识，标题可复制同一标识且保�
         assert.ok(geometry.height<=60&&geometry.title<=21&&geometry.meta<=19&&!geometry.overflow,JSON.stringify(geometry));
       };
       await history();await assertTwoLines();
-      const toolbar=panel().locator('.ac-history-toolbar');assert.equal(await toolbar.locator(':scope > :first-child').getAttribute('class').then((value:string)=>value.includes('ant-input')),true,'搜索在前');assert.equal(await toolbar.locator('.ant-select-selection-item').innerText().then((value:string)=>value==='browser-e2e'),true,'默认当前工作空间');
+      const toolbar=panel().locator('.ac-history-toolbar');assert.equal(await toolbar.locator(':scope > :first-child').getAttribute('class').then((value:string)=>value.includes('ant-input')),true,'搜索在前');assert.equal(await toolbar.locator('.ant-select-selection-item').innerText(),'全部工作空间','列表入口默认全部工作空间');
       const toolbarSizes=await toolbar.evaluate((node:HTMLElement)=>({search:node.querySelector('.ant-input-affix-wrapper')!.getBoundingClientRect().width,workspace:node.querySelector('.ant-select')!.getBoundingClientRect().width}));assert.ok(toolbarSizes.workspace<=128&&toolbarSizes.search>toolbarSizes.workspace,JSON.stringify(toolbarSizes));
       await capture(page,'agent-conversation-history-desktop.png');
       await panel().locator('.ac-history-list button[data-conversation-id="'+identity+'"]').click();await panel().locator('.ac-thread-identity').waitFor();assert.equal(await panel().locator('.ac-thread-identity>span').innerText(),identity);
@@ -818,7 +818,8 @@ await step('执行中图文普通发送、固定上下文和长输入，失败�
       // Legacy supplementary entries remain readable; new input no longer creates them.
       update({entries:[...fixture.conversation.entries,{...entry('legacy-supplement',3,'user','执行中补充图文'),attachments:[]}]});
       await page.reload();await input().waitFor();
-      await panel().getByRole('button',{name:'展开处理过程',exact:true}).click();
+      await panel().getByRole('button',{name:'收起处理过程',exact:true}).waitFor();
+      assert.equal(await panel().getByRole('button',{name:'收起处理过程',exact:true}).getAttribute('aria-expanded'),'true','执行中的过程默认展开');
       const supplement=panel().locator('.ac-turn-content .ac-message.is-user').filter({hasText:'执行中补充图文'});
       await supplement.waitFor();assert.equal(await panel().locator('.ac-turn').count(),1,'历史同轮补充仍在原轮展示');
       assert.equal(fixture.supplementaryCalls,previousSupplementCalls);
@@ -859,7 +860,7 @@ await step('仅当前运行段悬浮，历史无嵌套卡片，结束失败停�
       await current.waitFor();assert.equal(await current.count(),1);assert.equal(await past.locator('.ac-turn-context').evaluate((node:HTMLElement)=>getComputedStyle(node).position),'static');
       await stream.evaluate((node:HTMLElement)=>{const turn=node.querySelector<HTMLElement>('.ac-turn.is-executing')!;node.scrollTop+=turn.getBoundingClientRect().top-node.getBoundingClientRect().top+220;});
       const style=await current.locator('.ac-turn-head').evaluate((node:HTMLElement)=>{const s=getComputedStyle(node),r=node.getBoundingClientRect();return{top:r.top,stream:node.closest('.ac-stream')!.getBoundingClientRect().top,position:s.position,side:s.borderLeftWidth,radius:s.borderRadius,shadow:s.boxShadow,background:s.backgroundColor,contextInside:Boolean(node.querySelector(':scope>.ac-turn-context')),identityInside:Boolean(node.querySelector(':scope>.ac-turn-identity'))};});
-      assert.ok(Math.abs(style.top-style.stream)<2,JSON.stringify(style));assert.equal(style.position,'sticky');assert.equal(style.side,'0px');assert.equal(style.radius,'0px');assert.notEqual(style.shadow,'none');assert.notEqual(style.background,'rgba(0, 0, 0, 0)');assert.ok(style.contextInside&&style.identityInside,'气泡与标识行一同进入吸顶头');
+      assert.ok(Math.abs(style.top-style.stream)<2,JSON.stringify(style));assert.equal(style.position,'sticky');assert.equal(style.side,'0px');assert.equal(style.radius,'0px');const separator=await current.locator('.ac-turn-identity').evaluate((node:HTMLElement)=>{const s=getComputedStyle(node,'::after');return{background:s.backgroundImage,height:s.height};});assert.notEqual(separator.background,'none');assert.ok(parseFloat(separator.height)>0);assert.notEqual(style.background,'rgba(0, 0, 0, 0)');assert.ok(style.contextInside&&style.identityInside,'气泡与标识行一同进入吸顶头');
       assert.equal(await current.locator('.ac-turn-identity').evaluate((node:HTMLElement)=>getComputedStyle(node).borderBottomWidth),'1px');
       const name=await current.locator('.ac-turn-identity-link').evaluate((node:HTMLElement)=>({font:getComputedStyle(node).fontSize,underline:getComputedStyle(node).textDecorationLine}));assert.equal(name.font,'12px');assert.equal(name.underline,'none');assert.equal(await panel().locator('.ac-execution-indicator.is-active').count(),1);
       assert.equal(await current.locator('.markdown-body p').first().evaluate((node:HTMLElement)=>getComputedStyle(node).fontSize),'15px');
@@ -869,7 +870,7 @@ await step('仅当前运行段悬浮，历史无嵌套卡片，结束失败停�
         update({run:run(status,'codex',{model:'fixture-model',startedAt})});await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await panel().locator(status==='waiting-approval'?'[data-execution-state="'+status+'"]':'[data-run-status="'+status+'"]').waitFor();await page.waitForFunction(()=>document.querySelectorAll('.ac-turn.is-executing').length===0);
         assert.equal(await panel().locator('.ac-execution-indicator.is-active').count(),0);
         const styles=await panel().locator('.ac-turn-context').evaluateAll((nodes:HTMLElement[])=>nodes.map(node=>({position:getComputedStyle(node).position,border:getComputedStyle(node).borderTopWidth,shadow:getComputedStyle(node).boxShadow})));for(const s of styles){assert.equal(s.position,'static',status);assert.equal(s.border,'0px',status);assert.equal(s.shadow,'none',status);}
-        const lineStyles=await panel().locator('.ac-turn-identity').evaluateAll((nodes:HTMLElement[])=>nodes.map(node=>({position:getComputedStyle(node).position,shadow:getComputedStyle(node).boxShadow})));for(const s of lineStyles){assert.equal(s.position,'static',status);assert.equal(s.shadow,'none',status);}
+        const lineStyles=await panel().locator('.ac-turn-identity').evaluateAll((nodes:HTMLElement[])=>nodes.map(node=>({position:getComputedStyle(node).position,shadow:getComputedStyle(node).boxShadow,separator:getComputedStyle(node,'::after').backgroundImage})));for(const s of lineStyles){assert.notEqual(s.position,'sticky',status);assert.equal(s.shadow,'none',status);assert.equal(s.separator,'none',status);}
         const headStyles=await panel().locator('.ac-turn-head').evaluateAll((nodes:HTMLElement[])=>nodes.map(node=>({position:getComputedStyle(node).position,shadow:getComputedStyle(node).boxShadow})));for(const s of headStyles){assert.equal(s.position,'static',status);assert.equal(s.shadow,'none',status);}
       }
       await capture(page,'conversation-running-context-history.png');fixture.conversation=previous;await page.reload();await input().waitFor();
@@ -895,7 +896,7 @@ await step('刷新异步排版与输入框增高始终贴底，主动上翻保�
       await input().fill(Array.from({length:7},(_,i)=>'输入框增高 '+i).join('\n'));await assertPinned();
       assert.ok(await stream.evaluate((node:HTMLElement)=>node.clientHeight)<before,'输入框实际占用了信息流可视高度');
       await input().fill('');await assertPinned();
-      await stream.evaluate((node:HTMLElement)=>{node.scrollTop-=240;});await settle();await latest.waitFor();
+      await stream.hover();await page.mouse.wheel(0,-240);await latest.waitFor();await settle();
       const reading=await stream.evaluate((node:HTMLElement)=>node.scrollTop);
       await input().fill('阅读历史时\n继续编辑\n不拉回底部');await settle();
       assert.ok(Math.abs(await stream.evaluate((node:HTMLElement)=>node.scrollTop)-reading)<2,'编辑输入框不抢走历史阅读位置');

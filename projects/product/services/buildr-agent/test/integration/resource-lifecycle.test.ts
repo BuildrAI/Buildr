@@ -367,7 +367,7 @@ for(const released of [true,false])test('historical unknown ownership is separat
  }finally{await f.close();}
 });
 
-test('a pending request cannot fabricate confirmation while the previous native context is held',async()=>{
+test('a queued same-selection instruction preserves the previous native owner and is delivered once',async()=>{
  const f=await fixture({oldOwnerAlive:true});try{
   let chat=await f.start('done');const repository=new ConversationRepository(path.join(f.root,'agent-service'));
   const record=repository.readConversation(chat.id)!;record.view.run!.generation='old-generation';delete record.view.run!.resourcesReleased;repository.saveConversation(record,record.view.revision);
@@ -375,9 +375,12 @@ test('a pending request cannot fabricate confirmation while the previous native 
   f.service.conversations.queueSend('workspace',chat.id,{expectedRevision:chat.revision,connectionId:'local',modelAccountId:chat.run!.modelAccountId,model:'model',text:'new queued instruction',clientRequestId:requestId});
   const pump=new PendingSends({dataRoot:f.root,service:f.service,active:()=>true,generationAlive:()=>true,conversationBusy:async()=>false});
   await pump.pump();await pump.pump();
-  assert.equal(f.sent.length,1);assert.equal(f.service.conversations.read('workspace',chat.id).run!.id,original);
-  const pending=new PendingSendRepository(path.join(f.root,'agent-service')).lookup('workspace',chat.id,requestId);
-  assert.equal(pending?.state,'failed');assert.match(pending?.reason??'',/明确确认/);
+  await f.wait(()=>f.service.conversations.read('workspace',chat.id).run?.status==='completed');
+  const after=f.service.conversations.read('workspace',chat.id);
+  assert.notEqual(after.run!.id,original);assert.equal(f.sent.length,2);
+  assert.ok(f.sent[1].endsWith('new queued instruction'));
+  assert.equal(after.retainedRuns?.find(run=>run.id===original)?.generation,'old-generation');
+  assert.equal(after.pendingSend,undefined);await pump.pump();assert.equal(f.sent.length,2);
  }finally{await f.close();}
 });
 

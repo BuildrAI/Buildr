@@ -27,7 +27,7 @@ export type TextConversationActionResult =
   | {status: 'unavailable' | 'failed' | 'busy'; message: string};
 export type AgentConversationsContextValue = {
   activityCounts:ConversationPage['activityCounts'];activityStats:ConversationPage['stats'];activityRows:ConversationView[];activityTotal:number;activityCursor?:string;activityError:string;activityTick:number;activityWorkspaceTicks?:Record<string,number>;
-  historyWorkspaceId:string|null|undefined;openHistory(workspaceId?:string|null):void;
+  historyWorkspaceId:string|null|undefined;openHistory(workspaceId?:string|null,options?:VisibilityOptions):void;
   historyCache?:ConversationHistoryCache;
   refreshActivity():Promise<void>;loadMoreActivity():Promise<void>;markSeen(value:ConversationView):Promise<void>;
 
@@ -336,7 +336,7 @@ export function AgentConversationsProvider({children, client = agentConversation
     eventCursor.current=undefined;scopeRef.current={workspaceId:result.workspaceId,conversationId:result.id};setScope(scopeRef.current);setDraftScope(null);savePanel(nextOpen,scopeRef.current);conversationRef.current=result;setConversation(result);setView('conversation');setVisibility(nextOpen,false);setStreamError('');return result;
   },[client,advanceSelection,isSelectionCurrent,setVisibility]);
   const setOpen = useCallback((value: boolean) => { setVisibility(value); savePanel(value,scopeRef.current); if (!value) setFull(false); }, [setVisibility]);
-  const openHistory=useCallback((workspaceId:string|null=null)=>{setHistoryWorkspaceId(workspaceId);setView('history');setVisibility(true);savePanel(true,scopeRef.current);},[setVisibility]);
+  const openHistory=useCallback((workspaceId:string|null=null,options:VisibilityOptions={})=>{setHistoryWorkspaceId(workspaceId);setView('history');if(!options.preserveVisibility)setVisibility(true);savePanel(visibility.current.open,scopeRef.current);},[setVisibility]);
   const openGlobal=useCallback(()=>openHistory(null),[openHistory]);
   const seenInFlight=useRef(new Set<string>());
   const displayedActivity=useRef(activityRows);displayedActivity.current=activityRows;

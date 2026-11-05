@@ -329,7 +329,7 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
     const reads=fixture.conversationReads;update({run:completed()});await panel().locator('[data-run-status="completed"]').waitFor({timeout:10000});assert.ok(fixture.conversationReads>reads,'重试耗尽后全局活动仍可发现完成');assert.equal(await notice().count(),0);
   });
   await step('已结束对话收到下一轮受理后重新建立连接，不复用旧告警',async()=>{
-    const streams=fixture.eventStreams,sends=fixture.sends;const subscribed=page.waitForRequest((request:any)=>new URL(request.url()).pathname.endsWith('/events'));await input().fill('下一轮');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().locator('[data-run-status="running"]').waitFor();
+    const streams=fixture.eventStreams,sends=fixture.sends;const subscribed=page.waitForResponse((response:any)=>new URL(response.url()).pathname.endsWith('/events'));await input().fill('下一轮');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().locator('[data-run-status="running"]').waitFor();
     await subscribed;
     assert.equal(fixture.sends,sends+1);assert.ok(fixture.eventStreams>streams);assert.equal(await notice().count(),0);
     await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();

@@ -779,6 +779,7 @@ const builtInVerificationSteps: any = Object.freeze([
   step({ id: 'source-contracts', name: 'repository contract tests', executor: { type: 'node-test', files: ['test/static/*.test.ts'], args: ['--import', './test/register-development-entry.ts', '--test-reporter=dot'] }, workerDemand: 2, profiles: ['candidate'], concurrencyClass: 'cpu-heavy' }),
   ...JOURNEY_SUITES.map((suite: any) => step({
     id: suite.id,
+    requiresWebDist: suite.requiresWebDist === true,
     name: suite.name,
     executor: { type: 'node', file: 'test/verification/journeys.ts', args: ['--owner', suite.id], discoveredFiles: [...suite.files] },
     profiles: ['candidate'],

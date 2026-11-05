@@ -26,6 +26,15 @@ function wait(milliseconds: any): any {
   return new Promise((resolve: any) => setTimeout(resolve, milliseconds));
 }
 
+async function waitForHealthyDevelopmentInstance(dataRoot:string){
+  const deadline=Date.now()+10_000;
+  let observed=await inspectDevelopmentInstance({dataRoot});
+  while(observed.status==='stale'&&observed.reason==='health-unreachable'&&Date.now()<deadline){
+    await wait(50);observed=await inspectDevelopmentInstance({dataRoot});
+  }
+  assert.equal(observed.status,'healthy-development',String(observed.reason));
+}
+
 async function waitForInstanceReceipt(file: any, { children = [], timeoutMs = INSTANCE_READY_TIMEOUT_MS, previousPid = null }: any = {}): Promise<any> {
   const stderr: any = () => children.map((item: any) => item.stderr()).join('\n');
   const deadline: any = Date.now() + timeoutMs;
@@ -218,7 +227,7 @@ test('真实隔离开发启动器→页面重启→后续源码更新，保留�
   const initial = await waitForInstanceReceipt(instanceFile);
   assert.equal(new URL(initial.url).port, String(port));
   assert.deepEqual(initial.launcherIdentity, identity);
-  assert.equal((await inspectDevelopmentInstance({ dataRoot: appData })).status, 'healthy-development');
+  await waitForHealthyDevelopmentInstance(appData);
   const session = await fetchSessionToken(initial.url);
   const agentBefore = await readAgentRuntime(initial.url, session);
 
@@ -237,7 +246,7 @@ test('真实隔离开发启动器→页面重启→后续源码更新，保留�
   const restartHealth = await fetch(`${restarted.url}/api/v1/health`, { headers: { 'x-buildr-instance': restarted.secret } });
   assert.equal(restartHealth.status, 200);
   assert.deepEqual((await restartHealth.json()).launcherIdentity, identity);
-  assert.equal((await inspectDevelopmentInstance({ dataRoot: appData })).status, 'healthy-development');
+  await waitForHealthyDevelopmentInstance(appData);
   const nextSession = await fetchSessionToken(restarted.url);
   assert.notEqual(nextSession, session);
   const agentAfterRestart = await readAgentRuntime(restarted.url, nextSession);
@@ -264,7 +273,7 @@ test('真实隔离开发启动器→页面重启→后续源码更新，保留�
   assert.equal(updated.instance.url, initial.url);
   assert.deepEqual(updated.instance.launcherIdentity, nextIdentity);
   assert.equal(updated.instance.productIdentity.developmentRuntimeIdentity, nextOrigin.developmentRuntimeIdentity);
-  assert.equal((await inspectDevelopmentInstance({ dataRoot: appData })).status, 'healthy-development');
+  await waitForHealthyDevelopmentInstance(appData);
   const agentAfterUpdate = await readAgentRuntime(updated.instance.url, await fetchSessionToken(updated.instance.url));
   assert.deepEqual([agentAfterUpdate.instanceId, agentAfterUpdate.generation, agentAfterUpdate.pid], [agentBefore.instanceId, agentBefore.generation, agentBefore.pid], '只修改宿主源码不更换独立执行后台');
 });

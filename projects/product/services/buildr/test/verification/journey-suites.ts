@@ -143,6 +143,7 @@ export const JOURNEY_SUITES: any = Object.freeze([
   }),
   Object.freeze({
     id: 'e2e-app-process',
+    requiresWebDist: true,
     name: 'Buildr Web process and preview',
     innerConcurrency: 2,
     schedulingCostMs: 25000,

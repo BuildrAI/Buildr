@@ -908,6 +908,7 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
     const branch = observed[0].branch;
     const plan = planGitWorktrees({ workspaceRoot: root, taskId, branch, includes: observed.filter((item) => item.selector !== 'workspace').map((item) => item.selector) });
     const groupRoot = assertObservedCheckoutSet(observed, plan.repositories);
+    assertNoUnlistedNestedRepositories(observed, git, { groupRoot });
     const repositories = plan.repositories.map((descriptor): RepositoryEvidence => {
       const item = observed.find((entry) => entry.selector === descriptor.selector)!;
       const record = { ...descriptor, ...item };

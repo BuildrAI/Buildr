@@ -42,7 +42,7 @@ test('真实生产页面重启恢复、已知失败真正重试及未知状态�
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-web-restart-browser-'));
   const appData = path.join(base, 'app-data'), productData = path.join(base, 'product-data');
   const controller = materializeCleanProductSource(serviceRoot, path.join(base, 'controller'));
-  const distRoot = path.join(serviceRoot, 'web-dist');
+  const distRoot = process.env.BUILDR_BROWSER_WEB_DIST_ROOT || path.join(serviceRoot, 'web-dist');
   assert.ok(fs.existsSync(path.join(distRoot, 'index.html')), '需要本次真实生产前端构建产物');
   fs.cpSync(distRoot, path.join(controller.root, 'web-dist'), { recursive: true });
   const instanceFile = path.join(appData, 'instance.json');

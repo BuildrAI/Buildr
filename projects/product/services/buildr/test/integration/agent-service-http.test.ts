@@ -433,7 +433,7 @@ test('HTTP handoff exposes the exact bounded body, local sources and confirmed r
 });
 
 
-test('the real web CLI discovers host interruptions on listening without a browser request', {timeout:30_000}, async t=>{
+test('the real web CLI discovers host interruptions on listening without a browser request', {timeout:60_000}, async t=>{
   let dataRoot='';
   let child: ReturnType<typeof spawn> | undefined;
   // Stop the owned processes before taskRecordFixture removes their identity
@@ -455,6 +455,9 @@ test('the real web CLI discovers host interruptions on listening without a brows
   db.prepare('UPDATE conversations SET body=? WHERE id=?').run(JSON.stringify(record),conversation.id);db.close();
   child=spawn(process.execPath,[path.resolve('bin/buildr.mjs'),'web','--port','0','--no-open'],{env:{...process.env,BUILDR_APP_DATA_DIR:dataRoot},stdio:['ignore','pipe','pipe']});
   let output='';child.stdout?.on('data',chunk=>{output+=chunk});child.stderr?.on('data',chunk=>{output+=chunk});
+  const listeningDeadline=Date.now()+20_000;
+  while(!output.includes('Buildr Web：')&&Date.now()<listeningDeadline){assert.equal(child.exitCode,null,output);await new Promise(resolve=>setTimeout(resolve,50));}
+  assert.match(output,/Buildr Web：/,'web readiness and recovery have separate bounded phases');
   const end=Date.now()+20_000;let diagnostic='before-startup';
   while(Date.now()<end){
     const read=new DatabaseSync(filename,{readOnly:true});

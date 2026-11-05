@@ -5,7 +5,8 @@ import { currentConversationRequests, executionLocked } from './conversation-sta
 export function conversationSendRoute(conversation: ConversationView, changed: boolean, preview = false): 'preview' | 'pending' | 'unavailable' | 'supplement' | 'send' {
   if (preview) return 'preview';
   const requests = currentConversationRequests(conversation);
-  if (requests.some(request => request.kind === 'question') || changed && requests.length) return 'pending';
+  if (requests.some(request => request.kind === 'question')) return 'send';
+  if (changed && requests.length) return 'pending';
   const run = conversation.run;
   // Resource release changes admission, not whether uncertain results need observation.
   // A pending decision still belongs to its original owner.

@@ -82,7 +82,7 @@ test('unknown observations and unconfirmed whole-run stops revoke continuation w
   } finally { await runtime?.close();await rm(root,{recursive:true,force:true}); }
 });
 
-test('queued input cannot confirm a new context; explicit handoff preserves old receipt ownership', async () => {
+test('queued same-selection recovery creates one context and preserves old receipt ownership', async () => {
   const root=await mkdtemp(join(tmpdir(),'buildr-codex-queued-retained-'));
   const dataRoot=join(root,'profile');let service:ReturnType<typeof createAgentService>|undefined;
   try {
@@ -101,13 +101,7 @@ test('queued input cannot confirm a new context; explicit handoff preserves old 
     service.conversations.queueSend('workspace',id,{expectedRevision:before.revision,connectionId:'codex',text:'[finish]',clientRequestId:'queued-next'});
     const pump=new PendingSends({dataRoot,service,active:()=>true,generationAlive:()=>true,conversationBusy:async(scope,id)=>service!.conversationInputBusy(scope,id)});
     await pump.pump();
-    const refused=service.conversations.read('workspace',id);
-    assert.equal(refused.run!.id,ownerRunId);assert.equal(refused.pendingSend?.state,'failed');
-    assert.equal(refused.entries.some(entry=>entry.role==='user'&&entry.text==='[finish]'),false,'no native input is admitted by the queue');
-    service.conversations.cancelPendingSend('workspace',id,{expectedPendingRevision:refused.pendingSend!.revision});
-    const confirmed={expectedRevision:service.conversations.read('workspace',id).revision,connectionId:'codex',text:'[finish]'};
-    const confirmation=service.conversations.prepareSend('workspace',id,confirmed);
-    service.conversations.send('workspace',id,{...confirmed,previewToken:confirmation.token,clientRequestId:'queued-next'});
+    assert.equal(service.conversations.read('workspace',id).pendingSend,undefined);
     await eventually(()=>service!.conversations.read('workspace',id).run?.id!==ownerRunId && service!.conversations.read('workspace',id).run?.status==='completed');
     await pump.pump();
     const after=service.conversations.read('workspace',id);

@@ -160,8 +160,9 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       if(closing || !accepting)throw new AgentServiceError('agent_process_switching','执行后台正在切换，尚未受理新更新。',503);
       if (input.expectedGeneration !== identity.generation) throw new AgentServiceError('agent_control_stale', '执行后台代次已变化。', 409);
       validateAgentRuntime(options.dataRoot, input.runtime);
-      pending = input.runtime.digest === options.runtime.digest ? undefined : { runtime: input.runtime, state: 'waiting' };
-      savePending(pending ?? { runtime: options.runtime, state: 'adopted' });
+      const nextPending = input.runtime.digest === options.runtime.digest ? undefined : { runtime: input.runtime, state: 'waiting' as const };
+      savePending(nextPending ?? { runtime: options.runtime, state: 'adopted' });
+      pending = nextPending;
       json(res, 200, status()); return;
     }
     if (req.url === '/shutdown') {

@@ -247,8 +247,8 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
       const items=[...document.querySelectorAll<HTMLElement>('.primary-navigation-rail button[data-nav]')];
       return items.length===3&&items.every(node=>{
         const selected=node.dataset.nav===expected,bg=getComputedStyle(node).backgroundColor,marker=getComputedStyle(node,'::before').content;
-        const hovered=node.matches(':hover'),fixed=node.hasAttribute('data-fixed');
-        const expectedBg=fixed?(hovered?'rgba(0, 0, 0, 0)':'rgb(237, 244, 240)'):hovered?'rgb(237, 244, 240)':selected?'rgb(231, 239, 236)':'rgba(0, 0, 0, 0)';
+        const hovered=node.matches(':hover'),fixed=node.hasAttribute('data-fixed'),current=node.hasAttribute('data-current');
+        const expectedBg=fixed?(hovered?'rgba(0, 0, 0, 0)':'rgb(237, 244, 240)'):current?(hovered?'rgb(223, 234, 229)':'rgb(231, 239, 236)'):hovered?'rgb(235, 237, 240)':selected?'rgb(235, 237, 240)':'rgba(0, 0, 0, 0)';
         return node.hasAttribute('data-highlighted')===selected&&bg===expectedBg&&['none','normal'].includes(marker);
       });
     },area||null);

@@ -172,7 +172,7 @@ export function createVerificationExecutor(options: any): any  {
 
   const requiredPreparationsFor = (step: any) => [
     ...(step.preparations ?? []),
-    ...(step.browserSelector ? [
+    ...((step.browserSelector || step.requiresWebDist) ? [
       { file: process.execPath, args: [path.join(productRoot, 'tools/development/run-development-npm.ts'), '--prefix', productRoot, 'run', 'artifacts:prepare'], cwd: productRoot },
       { file: process.execPath, args: [path.join(productRoot, 'test/verification/web-dist.ts'), '--output', browserWebDist], cwd: productRoot },
     ] : []),
@@ -220,7 +220,7 @@ export function createVerificationExecutor(options: any): any  {
       [CANDIDATE_RELEASE_MANIFEST_ENV]: artifacts.candidate.manifestPath,
     } : {};
     const state = createIsolatedWorkspaceState({
-      env: { ...baseEnv, ...executionContext.resourceEnvironment, ...artifactEnv, ...workerBudgetEnvironment(step, executionContext), ...(step.browserSelector ? { BUILDR_BROWSER_WEB_DIST_ROOT: browserWebDist } : {}) },
+      env: { ...baseEnv, ...executionContext.resourceEnvironment, ...artifactEnv, ...workerBudgetEnvironment(step, executionContext), ...((step.browserSelector || step.requiresWebDist) ? { BUILDR_BROWSER_WEB_DIST_ROOT: browserWebDist } : {}) },
     });
     let result: any;
     let diagnosticLine = '';
