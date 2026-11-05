@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import type { AgentExecutor, AgentRuntime, ContextRef, ExecutionRef, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorRequest, ExecutorSendInput, LoginObservation, PermissionMode } from '../../contracts.ts';
-import { nativeBinding, visibleText, bounded, findExecutable, inspectVersion, isolatedEnvironment, nativeHome, opaqueReference, parseReference, privateDirectories } from '../native-process.ts';
+import { releasedNativeControl, nativeBinding, visibleText, bounded, findExecutable, inspectVersion, isolatedEnvironment, nativeHome, opaqueReference, parseReference, privateDirectories } from '../native-process.ts';
 import { launchDshHost, dshValue, type DshClient } from './client.ts';
 import { dshBalanceQuota } from './balance.ts';
 import { DshExecutionLineage, dshItem, dshHistoryItems, dshExecutionObservation, dshToolOutcomeUnknown } from './protocol.ts';
@@ -51,7 +51,7 @@ export function dshCommandDeadlinePatch() {
     {id:'tool-pwsh',name:'@deepseek-ai/dsh-tool-pwsh',config:{promoteOnTimeout:false}}];
 }
 interface ActiveTurn { lineage: DshExecutionLineage; accepted?: boolean; lastSeq?: number; inputIds?: Set<string>; restoring?: Promise<void>; reconnects?: number; retryTimer?: ReturnType<typeof setTimeout>; reject?: (error: Error) => void; observationDiagnostic?: string; observationLost?: boolean; stopRequested?: boolean; stopConfirmed?:boolean; stopping?:Promise<ExecutorObservation>; cancellation?: Promise<void>; supplementInputs?: Set<string>; supplementAdmissions?: number; supplementUnknown?: boolean; pendingEnd?: any; finish?: () => void; id: string; input: ExecutorSendInput; nativeTurn?: number; contextWindow?: number; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown' }>; pending: Map<string, { request: ExecutorRequest; resolve?: (value: string) => void; answer?: (value: { answers: any[] }) => void; reject?: (error: Error) => void; wait?: any }>; stream?: any; pump?: Promise<void>; streamTimer?: ReturnType<typeof setTimeout>; streamDirty?: boolean; streamEmittedAt?: number; streamAttempt?: { id: string; turn: number; step: number; nextIndex: number; text: string }; }
-export function createDshExecutor(): AgentExecutor { return { nativeContent: dshContent, readPersistedExecution: readDshPersistedExecution, storage: { transientDirectories: regenerableToolCaches, canReclaim: toolCacheReclaimable }, descriptor: { id: 'dsh', label: 'DSH', capabilities }, open: options => DshRuntime.open(options) }; }
+export function createDshExecutor(): AgentExecutor { return { nativeContent: dshContent, readReleasedControl: input => releasedNativeControl('dsh',input,{allowUnknownBackgroundWork:true}), readPersistedExecution: readDshPersistedExecution, storage: { transientDirectories: regenerableToolCaches, canReclaim: toolCacheReclaimable }, descriptor: { id: 'dsh', label: 'DSH', capabilities }, open: options => DshRuntime.open(options) }; }
 export class DshRuntime implements AgentRuntime {
   participationInstruction?: import('../../participation-contracts.ts').ParticipationMatch;
   readonly capabilities = { ...capabilities, permissionModes: ['default'] as PermissionMode[] };

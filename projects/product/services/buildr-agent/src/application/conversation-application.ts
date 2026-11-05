@@ -1712,14 +1712,16 @@ export class ConversationApplication {
       const run=conversationRuns(record.view).find(run=>run.id===control.runId);
       if(!run||run.participantId!==control.participantId||run.generation!==control.generation)fail('agent_control_stale','原执行身份已变化，请重新读取。',409);
     }
+    // A read-only reopened runtime does not own the recorded old control group.
+    // Only exact group evidence and the original live owner can decide release.
     for(const saved of conversationRuns(record.view)){
-      if(control&&saved.id!==control.runId||saved.resourcesReleased||!saved.accepted||saved.generation===this.options.generation||!this.options.generationAlive||this.options.generationAlive(saved.generation)||record.view.requests.some(request=>request.runId===saved.id)||this.workers.has(saved.id)||this.sourceRuntimes.has(saved.participantId))continue;
+      if(control&&saved.id!==control.runId||saved.resourcesReleased||!saved.accepted||saved.generation===this.options.generation||!this.options.generationAlive||this.options.generationAlive(saved.generation)||record.view.requests.some(request=>request.runId===saved.id)||this.workers.has(saved.id))continue;
       const participant=record.participants.find(p=>p.id===saved.participantId),attempt=record.attempts.find(a=>a.runId===saved.id),revision=record.view.revision;
       if(!participant?.contextRef||!participant.bindingIdentity||!attempt?.executionRef)continue;
       const released=await this.options.connections.readReleasedControl(participant.connectionId,{bindingIdentity:participant.bindingIdentity,contextRef:participant.contextRef,executionRef:attempt.executionRef,cwd:record.view.cwd}).catch(()=>false);
       record=this.load(workspaceId,id);
       if(record.view.revision!==revision)return;
-      if(!released||this.options.generationAlive(saved.generation)||this.workers.has(saved.id)||this.sourceRuntimes.has(saved.participantId))continue;
+      if(!released||this.options.generationAlive(saved.generation)||this.workers.has(saved.id))continue;
       const run=conversationRuns(record.view).find(run=>run.id===saved.id)!;
       run.resourcesReleased=true;
       if(run.executionState!=='ended')run.executionState='unknown';
@@ -1942,9 +1944,11 @@ export class ConversationApplication {
       }
       return this.read(workspaceId, id,{compactTools:true});
     }
-    const runtime = (await this.sourceRuntime(control.record, control.participant)).runtime;
     let observation: ExecutorObservation;
-    try { observation = await runtime.stop({ contextRef: control.participant.contextRef, executionRef: control.executionRef, toolId: input.toolId }); }
+    try {
+      const runtime = (await this.sourceRuntime(control.record, control.participant)).runtime;
+      observation = await runtime.stop({ contextRef: control.participant.contextRef, executionRef: control.executionRef, toolId: input.toolId });
+    }
     catch (error) {
       if (input.toolId) fail('agent_tool_stop_failed', '未能确认此命令已停止，原执行状态已保留，请重新核对。', 409);
       const latest=this.ownedRun(workspaceId,id,input.runId);

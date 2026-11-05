@@ -3301,3 +3301,38 @@ test('Codex live tool output reaches conversation SSE without persisting a body,
     assert.deepEqual(fs.readFileSync(nativeFile),before);
   } finally {release?.();await f.close();}
 });
+
+test('DSH stop releases the exact exited cold host without opening it and accepts the next instruction',async()=>{
+ const {spawn}=await import('node:child_process');
+ const {createDshExecutor}=await import('../../src/executors/dsh/index.ts');
+ const native=fake('dsh'),f=fixture([native.executor]);let observer:ReturnType<typeof createAgentService>|undefined;
+ const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore'});
+ await new Promise<void>(resolve=>child.once('spawn',resolve));
+ try{
+  await connected(f.service,'dsh');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'dsh','original');
+  await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
+  const repo=new ConversationRepository(path.join(f.options.dataRoot,'agent-service')),record=repo.readConversation(chat.id)!,prior=record.view.revision;
+  const run=record.view.run!,participant=record.participants.find(p=>p.id===run.participantId)!,attempt=record.attempts.find(a=>a.runId===run.id)!;
+  participant.contextRef!.data={native:opaqueReference('dsh',participant.contextRef!.id,record.view.cwd,participant.bindingIdentity!)};
+  attempt.executionRef!.data={resourceGroup:child.pid!,resourceContext:participant.contextRef!.id,resourceBinding:participant.bindingIdentity!,backgroundWork:true};
+  Object.assign(run,{generation:'departed-owner',status:'tools-active',executionState:'active',resourcesReleased:false,interrupted:true,tools:[{id:'uncertain-command',label:'bash',status:'running'}]});
+  record.interruption={runId:run.id,awaitingUser:false};record.view.revision=randomUUID();repo.saveConversation(record,prior);
+  native.executor.readReleasedControl=createDshExecutor().readReleasedControl;
+  const open=native.executor.open;let forbidOpen=true;
+  native.executor.open=async input=>{if(forbidOpen)throw Error('must_not_open_old_connection');return open(input);};
+  observer=createAgentService({...f.options,generationAlive:()=>false});
+  const exited=new Promise<void>(resolve=>child.once('exit',()=>resolve()));child.kill();await exited;
+  const before=observer.conversations.read('workspace-one',chat.id),entries=before.entries.length,sends=native.sends.length;
+  const stopped=await observer.conversations.stop('workspace-one',chat.id,{expectedRevision:before.revision,runId:run.id,participantId:run.participantId,generation:run.generation});
+  assert.equal(stopped.run!.resourcesReleased,true);assert.equal(stopped.run!.stopRequested,true);
+  assert.equal(stopped.run!.status,'unknown');assert.equal(stopped.run!.executionState,'unknown');assert.equal(stopped.run!.tools[0].status,'unknown');
+  assert.equal(stopped.entries.length,entries);assert.equal(native.sends.length,sends);assert.ok(stopped.run!.tools.every(tool=>tool.status!=='running'));
+  forbidOpen=false;
+  // Stop must return without replay; only this explicit new request can send.
+  const draft={expectedRevision:stopped.revision,connectionId:'dsh',text:'new instruction after stop'};
+  await observer.conversations.send('workspace-one',chat.id,{...draft,clientRequestId:randomUUID()});
+  const completed=await waitUntil(()=>observer!.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
+  assert.equal(native.sends.length,sends+1);assert.ok(completed.entries.some(e=>e.text==='new instruction after stop'));
+  assert.equal(completed.retainedRuns!.find(r=>r.id===run.id)!.resourcesReleased,true);
+ }finally{if(child.exitCode===null&&child.signalCode===null)child.kill();await observer?.close();await f.close();}
+});

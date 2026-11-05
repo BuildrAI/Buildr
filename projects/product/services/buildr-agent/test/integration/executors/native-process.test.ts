@@ -203,3 +203,21 @@ test('cold control proof validates original binding and protects live groups wit
   assert.equal(await releasedNativeControl('codex',input),false);
  }finally{if(child.exitCode===null&&child.signalCode===null)child.kill();}
 });
+
+
+test('DSH cold control proof releases an exited group despite unknown job receipts, never a live or mismatched group',async()=>{
+ const {spawn}=await import('node:child_process');
+ const {createDshExecutor}=await import('../../../build/executors/dsh/index.js');
+ const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore'});
+ await new Promise<void>(resolve=>child.once('spawn',resolve));
+ const contextRef={id:'dsh-original',data:{native:opaqueReference('dsh','dsh-original','/workspace','binding')}};
+ const executionRef={id:'run',data:{resourceGroup:child.pid!,resourceContext:contextRef.id,resourceBinding:'binding',backgroundWork:true}};
+ const input={contextRef,executionRef,bindingIdentity:'binding',cwd:'/workspace'},executor=createDshExecutor();
+ try{
+  assert.equal(await executor.readReleasedControl!(input),false);
+  const exited=new Promise<void>(resolve=>child.once('exit',()=>resolve()));child.kill();await exited;
+  assert.equal(await executor.readReleasedControl!(input),true);
+  for(const changed of [{bindingIdentity:'other'},{cwd:'/other'},{contextRef:{...contextRef,id:'other'}},{executionRef:{...executionRef,id:''}},{executionRef:{...executionRef,data:{...executionRef.data,resourceGroup:0}}}])assert.equal(await executor.readReleasedControl!({...input,...changed}),false);
+  assert.equal(executionRef.data.backgroundWork,true);
+ }finally{if(child.exitCode===null&&child.signalCode===null)child.kill();}
+});

@@ -65,10 +65,12 @@ export async function ownedProcessGroupIdle(group:number,controlPid?:number):Pro
   }catch{return false;}
   finally{if(observer.exitCode===null&&observer.signalCode===null)observer.kill();}
 }
-/** A cold observer only proves absence of the recorded group; it never signals a recovered PID. */
-export async function releasedNativeControl(provider:string,input:{bindingIdentity:string;contextRef:import('../contracts.ts').ContextRef;executionRef:ExecutionRef;cwd:string}):Promise<boolean>{
+/** Proves only absence of the exact control group, never operation completion.
+ * DSH may retain unknown job receipts after its host exits; those remain unknown.
+ * A cold observer never signals a recovered PID. */
+export async function releasedNativeControl(provider:string,input:{bindingIdentity:string;contextRef:import('../contracts.ts').ContextRef;executionRef:ExecutionRef;cwd:string},options:{allowUnknownBackgroundWork?:boolean}={}):Promise<boolean>{
   const {contextRef,executionRef,bindingIdentity,cwd}=input,data=executionRef.data;
-  if(!bindingIdentity||!contextRef.id||!executionRef.id||!data||data.resourceContext!==contextRef.id||data.resourceBinding!==bindingIdentity||data.backgroundWork!==false)return false;
+  if(!bindingIdentity||!contextRef.id||!executionRef.id||!data||data.resourceContext!==contextRef.id||data.resourceBinding!==bindingIdentity||data.backgroundWork!==false&&!options.allowUnknownBackgroundWork)return false;
   try{if(parseReference(String(contextRef.data?.native??''),provider,cwd,bindingIdentity).nativeSessionId!==contextRef.id)return false;}catch{return false;}
   return ownedProcessGroupIdle(data.resourceGroup as number);
 }
