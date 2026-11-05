@@ -159,6 +159,70 @@ for(const provider of ['dsh','qoder'] as const)test(`${provider} live tool outpu
   }finally{release?.();await f.close();}
 });
 
+for (const provider of ['dsh', 'qoder'] as const) test(`${provider} unchanged native-tool references resume past an unknown old outcome without hiding new work`, async () => {
+  const native = fake(provider), open = native.executor.open;
+  native.executor.open = async options => {
+    const runtime = await open(options), create = runtime.createContext.bind(runtime), original = runtime.send.bind(runtime);
+    runtime.createContext = async input => {
+      const ref = await create(input);
+      return { ...ref, data: { native: opaqueReference(provider, ref.id, input.cwd, runtime.bindingIdentity) } };
+    };
+    runtime.send = async input => {
+      await original({ ...input, onEvent: event => {
+        if (event.type === 'accepted') event.executionRef.data = { resourceContext: input.contextRef.id, resourceBinding: runtime.bindingIdentity };
+        if (event.type === 'completed' && native.sends.length === 1) {
+          const context = native.contexts.get(input.contextRef.id)!, executionId = context.observation.executionRef!.id;
+          const call = provider === 'dsh'
+            ? { type: 'tool/call', data: { turn: 1, callId: 'native-history-tool', name: 'shell', arguments: '{"command":"read-only"}' } }
+            : { type: 'assistant', session_id: input.contextRef.id, message: { content: [{ type: 'tool_use', id: 'native-history-tool', name: 'shell', input: { command: 'read-only' } }] } };
+          const result = provider === 'dsh'
+            ? { type: 'tool/result', data: { turn: 1, message: { toolCallId: 'native-history-tool', content: [{ type: 'text', text: 'unchanged native body' }] } } }
+            : { type: 'user', session_id: input.contextRef.id, message: { content: [{ type: 'tool_result', tool_use_id: 'native-history-tool', content: 'unchanged native body' }] } };
+          const projected = provider === 'dsh'
+            ? [...dshItem(call), ...dshItem(result)]
+            : qoderHistoryItems([call, result], input.contextRef.id);
+          for (const item of projected) input.onEvent({ type: 'item', item: { ...item, executionId } });
+          context.items.push({ ...projected.at(-1)!, executionId, name: 'shell', input: '{"command":"read-only"}' });
+        }
+        input.onEvent(event);
+      } });
+    };
+    return runtime;
+  };
+  const f = fixture([native.executor]);
+  const repository = new ConversationRepository(path.join(f.options.dataRoot, 'agent-service'));
+  try {
+    await connected(f.service, provider);
+    const chat = await f.service.conversations.create('workspace-one', {});
+    send(f.service, chat.id, provider, 'original work');
+    const first = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id, { compactTools: true }), view => view.run?.status === 'completed');
+    const record = repository.readConversation(chat.id)!, old = record.view.run!, originalRunId = old.id;
+    assert.equal(record.view.entries.find(entry => entry.kind === 'tool')?.text, '', 'real v3 persistence must reload an empty body skeleton');
+    old.status = 'unknown'; old.executionState = 'unknown'; old.resourcesReleased = true;
+    record.view.retainedRuns = [old];
+    record.runOutcomes![old.id].status = 'unknown';
+    const retryId = randomUUID(), userEntryId = randomUUID();
+    record.view.run = { ...old, id: retryId, status: 'failed', accepted: false, tools: [], resourcesReleased: undefined };
+    record.view.entries.push({ id: userEntryId, sequence: record.view.entries.at(-1)!.sequence + 1, createdAt: 'now', kind: 'message', role: 'user', text: 'not delivered', participantId: old.participantId, runId: retryId, status: 'failed' });
+    record.attempts.push({ clientRequestId: randomUUID(), inputDigest: 'unsent', runId: retryId, participantId: old.participantId, through: record.view.entries.at(-1)!.sequence, userEntryId, accepted: false });
+    record.view.revision = randomUUID(); repository.saveConversation(record, first.revision);
+    for (const text of ['new requirement', 'another new requirement']) {
+      send(f.service, chat.id, provider, text);
+      const done = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id, { compactTools: true }), view => ['completed', 'failed'].includes(view.run?.status ?? ''));
+      assert.equal(done.run?.status, 'completed', done.run?.diagnostic);
+      assert.equal(done.participants.length, 1, 'resume the exact native context, not a replacement that bypasses history');
+      assert.equal(done.retainedRuns?.find(run => run.id === originalRunId)?.status, 'unknown');
+    }
+    assert.equal(native.sends.length, 3, 'only explicit new inputs are sent; the failed input is never replayed');
+    const context = native.contexts.values().next().value!;
+    context.items.push({ ...context.items.find(item => item.id === 'native-history-tool')!, id: 'genuinely-new-tool', status: 'running' });
+    send(f.service, chat.id, provider, 'must first review genuinely new work');
+    const blocked = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id, { compactTools: true }), view => view.run?.status === 'failed');
+    assert.match(blocked.run!.diagnostic!, /原生记录有新变化/);
+    assert.equal(native.sends.length, 3);
+  } finally { repository.stopReadModels(); await f.close(); }
+});
+
 test('resuming history preserves a concurrent metadata update without failing the new input', async () => {
   const native = fake('local'), open = native.executor.open;
   let onHistory: (() => void) | undefined;

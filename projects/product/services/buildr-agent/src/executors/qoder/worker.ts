@@ -71,6 +71,8 @@ interface ConversationQuery {
 const live = new Map<string, LiveQuery>();
 const conversations = new Map<string, ConversationQuery>();
 const fingerprint = (records: any[]) => createHash('sha256').update(JSON.stringify(records)).digest('hex');
+/** Terminal native task notifications; `killed` is what the CLI reports for a stopped command. */
+const terminalTaskStatuses = new Set(['completed', 'failed', 'stopped', 'killed']);
 const unresolvedTool = (tool: { status: string; taskPending?: boolean }) => Boolean(tool.taskPending) || tool.status !== 'completed';
 const protectedWork = (state: LiveQuery) => state.ambiguous || state.supplementUnknown || state.pending.size > 0 || state.inputAcks.size > 0 || [...state.tools.values()].some(unresolvedTool);
 const canClose = (state: LiveQuery) => Boolean(state.terminal) && !protectedWork(state);
@@ -384,14 +386,24 @@ async function readConversation(owner: ConversationQuery): Promise<void> {
         const text = visibleText(message.message?.content);
         const taskId = /<task-id>([^<>]+)<\/task-id>/.exec(text)?.[1];
         const toolId = /<tool-use-id>([^<>]+)<\/tool-use-id>/.exec(text)?.[1];
-        const status = /<status>(completed|failed|stopped)<\/status>/.exec(text)?.[1];
+        const status = /<status>([^<>]+)<\/status>/.exec(text)?.[1]?.trim();
         const tool = toolId ? state.tools.get(toolId) : undefined;
         // Text alone never establishes ownership. Require native origin and the exact launch receipt.
-        if (!owner.closing && !state.stopping && !state.ambiguous && tool && tool.taskId === taskId && taskId && status && typeof message.uuid === 'string') {
+        const owned = !owner.closing && !state.stopping && !state.ambiguous && tool && tool.taskId === taskId && taskId && typeof message.uuid === 'string';
+        // The status word says how the command ended; it never decides whether this turn owns it.
+        if (owned && status && terminalTaskStatuses.has(status)) {
           owner.reusable = false; state.terminal = undefined; state.diagnostic = undefined;
           (state.continuationIds ??= new Set()).add(message.uuid);
           owner.commandIds.add(message.uuid);
           tool.taskPending = false; tool.status = 'completed';
+          emit(state, { type: 'observation', observation: observe(state) }); continue;
+        }
+        if (owned) {
+          // An owned notification we cannot classify is not evidence of foreign work:
+          // reopen the native continuation, but do not invent a terminal tool result.
+          owner.reusable = false; state.terminal = undefined; state.diagnostic = undefined;
+          (state.continuationIds ??= new Set()).add(message.uuid);
+          owner.commandIds.add(message.uuid);
           emit(state, { type: 'observation', observation: observe(state) }); continue;
         }
         owner.reusable = false; state.ambiguous = true; state.diagnostic = 'qoder_task_owner_unconfirmed';

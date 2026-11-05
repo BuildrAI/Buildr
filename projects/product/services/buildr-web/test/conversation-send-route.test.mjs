@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { conversationSendRoute, refreshConversationSend, latestConversationSend } from '../src/features/agent-conversations/conversation-send-route.ts';
+import { needsConversationObservation, executionLocked } from '../src/features/agent-conversations/conversation-state.ts';
 import { createConversationInputAttempts, reconcileConversationInputAttempt } from '../src/features/agent-conversations/conversation-actions.ts';
 const chat=(status='running',requests=[])=>({run:{id:'run',participantId:'participant',generation:'generation',status,accepted:true},requests});
 const request=kind=>({id:'request',kind,runId:'run',participantId:'participant',generation:'generation'});
@@ -29,6 +30,18 @@ test('an accepted unknown round reaches native verification instead of a local r
   assert.equal(conversationSendRoute(chat('unknown'),false),'supplement');
   const stopped=chat('unknown');stopped.run.stopRequested=true;
   assert.equal(conversationSendRoute(stopped,false),'unavailable');
+});
+test('released uncertain control admits a new send without disabling observation or answering old decisions',async()=>{
+  const released={...chat('unknown'),entries:[],run:{...chat('unknown').run,resourcesReleased:true,executionState:'unknown',tools:[]}};
+  assert.equal(conversationSendRoute(released,false),'send');
+  assert.equal(executionLocked(released.run),true,'observation and display still regard the outcome as uncertain');
+  assert.equal(needsConversationObservation(released),true);
+  assert.equal(await refreshConversationSend(released,{observe:async()=>assert.fail('released control cannot accept supplements'),apply:()=>{},isCurrent:()=>true}),released);
+  for(const kind of ['question','approval']){
+    assert.equal(conversationSendRoute({...released,requests:[request(kind)]},false),'pending');
+  }
+  assert.equal(conversationSendRoute({...released,run:{...released.run,resourcesReleased:false}},false),'supplement');
+  assert.equal(conversationSendRoute(released,false,true),'preview');
 });
 test('unknown input facts are observed once and keep the exact round identity',async()=>{
   const before={...chat('unknown'),revision:'r1'},next={...chat(),revision:'r2'};let observes=0;const applied=[];

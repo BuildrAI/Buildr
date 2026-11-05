@@ -264,6 +264,28 @@ test('v5 upgrade preserves normalized bodies and rejects a retained old writer b
   assert.throws(()=>db.prepare("UPDATE conversations SET body=json_set(body,'$._bodyFormat',5)").run(),/agent_storage_writer_incompatible/);db.close();
 });
 
+test('an image migrated to native storage keeps the public upload revision valid across reads and metadata updates',async t=>{
+  const f=conversation(t),id=randomUUID(),bytes=Buffer.concat([Buffer.from('89504e470d0a1a0a','hex'),randomBytes(2048)]);
+  const filename=path.join(f.root,'attachments',f.r.view.id,id);
+  fs.mkdirSync(path.dirname(filename),{recursive:true});fs.writeFileSync(filename,bytes);
+  f.r.attachments[id]={size:bytes.length,mimeType:'image/png',createdAt:new Date().toISOString()};
+  f.r.view.entries[1].attachments=[id];f.r.view.revision='r2';f.repo.saveConversation(f.r,'r1');
+  const service=createAgentService({dataRoot:f.dataRoot,executors:[],modelProviders:[],resolveWorkspace:()=>({rootPath:f.cwd}),assertTask(){}});
+  t.after(()=>service.close());
+  const original=service.conversations.read('ws',f.r.view.id,{compactTools:true});
+  fs.appendFileSync(f.file,JSON.stringify({sessionId:f.contextId,cwd:f.cwd,isSidechain:false,type:'user',message:{content:[{type:'image',source:{type:'base64',data:bytes.toString('base64')}}]}})+'\n');
+  assert.equal(maintainNativeContent(f.dataRoot).attachments,1);
+  assert.ok(f.repo.readState(f.r.view.id)!.attachments[id].nativeContent);
+  const migrated=service.conversations.read('ws',f.r.view.id,{compactTools:true});
+  assert.equal(migrated.attachmentRevision,original.attachmentRevision,'internal storage references are not changes to the selected images');
+  await service.conversations.update('ws',migrated.id,{expectedRevision:migrated.revision,hidden:false});
+  const saved=service.conversations.addAttachment('ws',migrated.id,{expectedAttachmentRevision:migrated.attachmentRevision,mimeType:'image/png',bytes});
+  const current=service.conversations.read('ws',migrated.id,{compactTools:true});
+  assert.equal(current.attachmentRevision,saved.attachmentRevision);
+  assert.deepEqual(service.conversations.readAttachment('ws',migrated.id,id).bytes,bytes,'the original image remains readable');
+  assert.throws(()=>service.conversations.addAttachment('ws',migrated.id,{expectedAttachmentRevision:migrated.attachmentRevision,mimeType:'image/png',bytes}),{code:'agent_revision_conflict'},'real concurrent attachment changes still conflict');
+});
+
 test('native image bytes serve directly, materialize only when needed, ignore legacy paths and survive stale saves',t=>{
   const f=conversation(t), id=randomUUID(), bytes=randomBytes(2048), filename=path.join(f.root,'attachments',f.r.view.id,id);
   fs.mkdirSync(path.dirname(filename),{recursive:true});fs.writeFileSync(filename,bytes);

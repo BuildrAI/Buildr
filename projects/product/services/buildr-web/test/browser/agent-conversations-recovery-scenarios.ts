@@ -35,6 +35,25 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
       },saved),null);
     }finally{await page.unroute(pattern,reject);fixture.conversation=saved;await page.reload();await input().waitFor();}
   });
+  await step('已释放的未知执行直接发送新要求，不再追加旧轮且不冒充旧结果成功',async()=>{
+    const saved=structuredClone(fixture.conversation),sends=fixture.sends,text='已释放后明确提交的新要求';
+    const pattern='**/agent-conversations/'+saved.id+'/supplement';let supplements=0;
+    const reject=async(route:any)=>{supplements++;await route.fulfill({status:409,json:{error:{code:'agent_supplement_stale',message:'旧控制已释放'}}});};
+    try{
+      update({run:{...saved.run,status:'unknown',accepted:true,resourcesReleased:true,executionState:'unknown',tools:[{id:'old-operation',label:'旧结果待核对',status:'unknown'}]},requests:[],retainedRuns:[]});
+      await page.route(pattern,reject);await page.reload();await input().waitFor();
+      await panel().locator('.ac-execution-uncertain').waitFor();
+      assert.equal(fixture.conversation.run.status,'unknown');
+      assert.equal(fixture.conversation.run.tools[0].status,'unknown');
+      assert.doesNotMatch(await input().getAttribute('placeholder')||'',/追加要求/);
+      await input().fill(text);
+      const response=page.waitForResponse((value:any)=>value.request().method()==='POST'&&value.url().endsWith('/agent-conversations/'+saved.id+'/send'));
+      await panel().getByRole('button',{name:'发送对话',exact:true}).click();
+      assert.equal((await response).status(),200);
+      await panel().getByText(text,{exact:true}).waitFor();
+      assert.equal(supplements,0);assert.equal(fixture.sends,sends+1);
+    }finally{await page.unroute(pattern,reject);fixture.conversation=saved;await page.reload();await input().waitFor();}
+  });
   await step('关闭已释放待确认对话撤下提醒，历史保留且可恢复显示',async()=>{
     const saved=structuredClone(fixture.conversation),sends=fixture.sends,stops=fixture.stops;
     try{
@@ -103,7 +122,7 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
       const stage=panel().locator('[data-entry-id="goal-stage-reply"]');await stage.waitFor();
       assert.equal(await stage.locator('.ac-reply-actions').count(),0);
       assert.equal(await panel().locator('.ac-turn.is-executing').count(),1);
-      await panel().getByText('仍有工作在进行',{exact:true}).waitFor();
+      await panel().locator('.ac-active-tools-title').filter({hasText:/仍有\s*1\s*项命令.*运行/}).waitFor();
       await fixture.capture(page,'agent-goal-stage-still-working.png');
       update({run:{...pending,status:'completed',executionState:'ended',tools:[]}});
       await page.reload();await input().waitFor();
@@ -217,6 +236,7 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
     }finally{fixture.unknownStop=false;fixture.holdStop=false;fixture.releaseStop?.();fixture.conversation=saved;await page.setViewportSize(viewport);await page.reload();await input().waitFor();}
   });
   await step('已结束轮次打开只读取记录，后台刷新不订阅或轮询该轮',async()=>{
+    await input().fill('下一轮仍是草稿');
     for(const status of ['completed','stopped','failed']){
       update({run:run(status,'codex',{executionState:'ended'})});const streams=fixture.eventStreams;
       await page.reload();await panel().locator(`[data-run-status="${status}"]`).waitFor();
@@ -254,7 +274,9 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
     const offering={id:'alignment-offering',modelId:'alignment-model',label:'对齐检查模型',accountId:'alignment-account',accountIdentity:'alignment-identity',accountRevision:'alignment-r1',accountLabel:'对齐检查账号',provider:'fixture',available:true,enabled:true,images:true,tools:true,contextWindow:128000};
     fixture.sharedModels=[...previousModels,offering];await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
     await fixture.chooseModel('对齐检查模型');await fixture.closeModelSettings();
-    fixture.sharedModels=[...previousModels,{...offering,available:false}];await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+    fixture.sharedModels=[...previousModels,{...offering,available:false}];
+    // Consecutive focus metadata refreshes are intentionally throttled for 1 second.
+    await page.waitForTimeout(1100);await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
     const accountWarning=panel().locator('.ac-compose-wrap>.ant-alert').filter({hasText:'所选模型账号当前不可用'});await accountWarning.waitFor();
     const assertAligned=async(label:string)=>{
       const geometry=await notice().evaluate((node:HTMLElement)=>{
@@ -293,7 +315,8 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
   await step('既有全局活动发现其他入口新轮，按当前身份读一次并恢复观察',async()=>{
     update({run:completed()});await page.reload();await panel().locator('[data-run-status="completed"]').waitFor();const streams=fixture.eventStreams,sends=fixture.sends;
     update({run:run('running','codex',{id:'external-run',generation:'external-generation'})});
-    await panel().locator('[data-run-status="running"]').waitFor({timeout:10000});assert.ok(fixture.eventStreams>streams);assert.equal(fixture.sends,sends);
+    // Idle activity discovery runs every 30 seconds; allow one full refresh.
+    await panel().locator('[data-run-status="running"]').waitFor({timeout:40000});assert.ok(fixture.eventStreams>streams);assert.equal(fixture.sends,sends);
     await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
   });
   await step('切换新草稿后旧连接迟到关闭，不污染新对话也不继续重试',async()=>{
