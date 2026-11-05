@@ -28,7 +28,7 @@ const HAS_UNFINISHED = "EXISTS(SELECT 1 FROM json_each(body,'$.view.retainedRuns
 const SEARCH_TERM_LIMIT = 6;
 const SEARCH_ENTRY = "(json_extract(entry.value,'$.kind')='message' AND json_extract(entry.value,'$.role') IN ('user','assistant') AND coalesce(json_extract(entry.value,'$.thinking'),0)=0 AND instr(lower(json_extract(entry.value,'$.text')),lower(?))>0)";
 const searchTerms = (query?: string) => (query ?? '').trim().split(/\s+/).filter(Boolean).slice(0, SEARCH_TERM_LIMIT);
-const searchClause = (terms: string[], title: string, body: string) => terms.map(() => `(instr(lower(${title}),lower(?))>0 OR EXISTS(SELECT 1 FROM conversation_search_entries AS entry WHERE entry.owner_id=id AND ${SEARCH_ENTRY}))`).join(' AND ');
+const searchClause = (terms: string[], title: string) => terms.map(() => `(instr(lower(id),lower(?))>0 OR instr(lower(${title}),lower(?))>0 OR EXISTS(SELECT 1 FROM conversation_search_entries AS entry WHERE entry.owner_id=id AND ${SEARCH_ENTRY}))`).join(' AND ');
 const searchSnippet = (terms: string[]) => {
   const text = "json_extract(entry.value,'$.text')";
   const starts = terms.map(() => `CASE WHEN instr(lower(${text}),lower(?))>0 THEN instr(lower(${text}),lower(?)) ELSE 1000000 END`).join(',');
@@ -391,7 +391,7 @@ export class ConversationRepository {
       if (options.taskId) { where.push("(EXISTS(SELECT 1 FROM json_each(read_state,'$.view.taskLinks') WHERE json_extract(value,'$.workspaceId')=? AND json_extract(value,'$.taskId')=?) OR (json_type(read_state,'$.view.taskLinks') IS NULL AND workspace_id=? AND ((json_type(read_state,'$.view.taskIds') IS NULL AND task_id=?) OR EXISTS(SELECT 1 FROM json_each(read_state,'$.view.taskIds') WHERE value=?))))"); values.push(workspaceId,options.taskId,workspaceId,options.taskId,options.taskId); }
       if (options.parentConversationId) { where.push("json_extract(read_state,'$.view.childOf.conversationId')=?"); values.push(options.parentConversationId); }
       const terms = searchTerms(options.query);
-      if (terms.length) { where.push(searchClause(terms, "json_extract(read_state,'$.view.title')", 'body')); for (const term of terms) values.push(term, term); }
+      if (terms.length) { where.push(searchClause(terms, "json_extract(read_state,'$.view.title')")); for (const term of terms) values.push(term, term, term); }
       if (options.before) { where.push('(updated_at || \'/\' || id) < ?'); values.push(options.before); }
       values.push(options.limit);
       return (db.prepare(`SELECT read_state${modern?',summary':''} FROM ${source} WHERE ${where.length?where.join(' AND '):'1'} ORDER BY updated_at DESC,id DESC LIMIT ?`).all(...values) as {read_state:string;summary?:string}[]).map(row=>{
@@ -450,7 +450,9 @@ export class ConversationRepository {
       const compactDecisions="json_extract(summary,'$.activity.pendingDecisionCount')";
       // New summaries stay on the covering index. Only legacy/mismatched rows
       // need their current request header (or canonical legacy body) inspected.
-      const historicalCandidate="is_active=1 AND (json_extract(summary,'$.run.status')='tools-active' OR EXISTS(SELECT 1 FROM json_each(summary,'$.retainedRuns') AS historical WHERE json_extract(historical.value,'$.resourcesReleased')=1 OR json_extract(historical.value,'$.status')='tools-active'))";
+      // Retained unknown runs are included because a completed conversation may
+      // still carry an old unreleased unknown that should no longer be active.
+      const historicalCandidate="is_active=1 AND (json_extract(summary,'$.run.status')='tools-active' OR EXISTS(SELECT 1 FROM json_each(summary,'$.retainedRuns') AS historical WHERE json_extract(historical.value,'$.resourcesReleased')=1 OR json_extract(historical.value,'$.status') IN ('tools-active','unknown')))";
       const compatibility=modern?db.prepare(`SELECT max(${compactDecisions} IS NULL OR json_extract(summary,'$.revision')<>revision) AS decisions,max(${historicalCandidate}) AS historical FROM ${table} WHERE ${indexed?`${HAS_WORK} AND `:''}workspace_id IN (${ids.map(()=>'?').join(',')})`).get(...ids) as {decisions:number;historical:number}:undefined;
       const legacyDecisions=!modern || Boolean(compatibility?.decisions);
       let decisionCount=compactDecisions;
@@ -530,7 +532,7 @@ export class ConversationRepository {
       if(input.activeOnly)where.push('(list_active=1 OR pending_decision_count>0)');
       else {where.push('(list_active=1 OR pending_decision_count>0 OR hidden=?)');values.push(Number(input.hidden===true));}
       const terms=searchTerms(input.query);
-      if(terms.length){where.push(searchClause(terms,"json_extract(summary,'$.title')",'body'));for(const term of terms)values.push(term,term);}
+      if(terms.length){where.push(searchClause(terms,"json_extract(summary,'$.title')"));for(const term of terms)values.push(term,term,term);}
       if(input.agent||input.model)where.push("effective_status IN ('starting','running','stopping')");
       if(input.agent){where.push("coalesce(nullif(json_extract(summary,'$.run.provider'),''),'未指定')=?");values.push(input.agent);}
       if(input.model){where.push("coalesce(nullif(json_extract(summary,'$.run.model'),''),'未指定')=?");values.push(input.model);}

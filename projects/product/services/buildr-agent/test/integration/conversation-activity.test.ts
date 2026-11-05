@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { CONVERSATION_SCHEMA_VERSION, ConversationRepository } from '../../src/persistence/conversation-repository.ts';
+import { conversationActive } from '../../src/domain/conversation-activity.ts';
 import type { StoredConversation } from '../../src/domain/agent-state.ts';
 
 function fixture(t:TestContext) {
@@ -135,6 +136,62 @@ test('search matches titles and visible messages only, ANDs terms, and returns a
   const snippet=search('命中词').conversations.find(row=>row.id==='visible')?.searchSnippet;
   assert.ok(snippet?.includes('命中词'));assert.ok(snippet!.length<=120);assert.ok(!snippet!.includes('另一个词'));
   assert.deepEqual(repo.listConversations('w1',{limit:10,query:'命中词'}).map(r=>r.view.id).sort(),['both','title-only','visible']);
+});
+
+test('historical unknown without in-flight work no longer keeps a completed conversation active',()=>{
+  const view=record('active-rule').view, at='2026-10-27T00:00:00Z';
+  view.run={id:'current',participantId:'p',provider:'codex',generation:'g',status:'completed',accepted:true,executionState:'ended',tools:[],startedAt:at,updatedAt:at};
+  view.retainedRuns=[{id:'old',participantId:'p',provider:'codex',generation:'g0',status:'unknown',accepted:false,stopRequested:true,canContinue:false,executionState:'unknown',tools:[],startedAt:at,updatedAt:at}];
+  assert.equal(conversationActive(view,1,1),false);
+  view.retainedRuns[0].tools=[{id:'tool',label:'bash',status:'running'}];
+  assert.equal(conversationActive(view,1,1),true);
+  view.retainedRuns[0].tools=[{id:'tool',label:'bash',status:'unknown'}];
+  assert.equal(conversationActive(view,1,1),true);
+  view.retainedRuns[0].tools=[];view.retainedRuns[0].executionState='active';
+  assert.equal(conversationActive(view,1,1),true);
+  view.retainedRuns[0].executionState='unknown';
+  assert.equal(conversationActive(view,2,1),true);
+  view.requests=[{id:'q',kind:'question',blocking:false,title:'question',questions:[],conversationId:view.id,workspaceId:view.workspaceId,runId:'old',participantId:'p',generation:'g0'}];
+  assert.equal(conversationActive(view,1,1),true);
+});
+
+test('list reinterprets old active summaries with retained unknown runs without writing',t=>{
+  const repo=fixture(t),at='2026-10-27T00:00:00Z';
+  const stale=record('stale');message(stale,'stale-input','old input');
+  stale.view.run={id:'current',participantId:'p',provider:'codex',generation:'g',status:'completed',accepted:true,executionState:'ended',tools:[],startedAt:at,updatedAt:at};
+  stale.view.retainedRuns=[{id:'old',participantId:'p',provider:'codex',generation:'g0',status:'unknown',accepted:false,stopRequested:true,canContinue:false,executionState:'unknown',tools:[],startedAt:at,updatedAt:at}];
+  repo.saveConversation(stale);repo.markSeen('w1',stale.view.id,stale.view.activity!.version);
+  const newer=record('newer');newer.view.updatedAt='2026-10-27T01:00:00Z';message(newer,'newer-input','new input');repo.saveConversation(newer);repo.markSeen('w1',newer.view.id,newer.view.activity!.version);
+  const db=new DatabaseSync(repo.filename);db.prepare("UPDATE conversations SET is_active=1, summary=json_set(summary,'$.activity.active',json('true')) WHERE id='stale'").run();db.close();
+  const before=fs.readFileSync(repo.filename);
+  const read=repo.querySummaries(['w1'],{limit:10});
+  assert.equal(read.conversations.find(row=>row.id==='stale')?.activity?.active,false);
+  assert.deepEqual(read.conversations.map(row=>row.id),['newer','stale']);
+  assert.equal(repo.querySummaries(['w1'],{limit:10,activeOnly:true}).total,0);
+  assert.deepEqual(fs.readFileSync(repo.filename),before,'compatibility read stays zero-write');
+});
+
+test('search matches conversation id substrings while keeping title and message scope',t=>{
+  const repo=fixture(t);
+  const entry=(r:StoredConversation,id:string,kind:'message'|'tool'|'notice',role:'user'|'assistant'|'system',text:string,extra:{thinking?:boolean}={})=>{
+    r.view.entries.push({id,sequence:r.view.entries.length+1,kind,role,text,createdAt:r.view.updatedAt,...extra});
+  };
+  const idOnly=record('id-only-7f3a');idOnly.view.title='普通标题';entry(idOnly,'id-only-entry','message','user','普通内容');
+  const idAndMessage=record('id-and-message-9b2c');idAndMessage.view.title='普通标题二';entry(idAndMessage,'id-message-entry','message','user','这里包含关键词');
+  const titleOnly=record('title-hit');titleOnly.view.title='关键词标题';entry(titleOnly,'title-hit-entry','message','user','普通内容');
+  const messageOnly=record('message-hit');messageOnly.view.title='普通标题三';entry(messageOnly,'message-hit-entry','message','user','关键词内容');
+  const toolOnly=record('tool-hit');toolOnly.view.title='工具现场';entry(toolOnly,'tool-hit-entry','tool','system','7f3a');
+  for(const r of [idOnly,idAndMessage,titleOnly,messageOnly,toolOnly])repo.saveConversation(r);
+  const search=(query:string)=>repo.querySummaries(['w1'],{limit:10,query});
+  assert.deepEqual(search('7f3a').conversations.map(row=>row.id).sort(),['id-only-7f3a']);
+  assert.deepEqual(search('ID-ONLY').conversations.map(row=>row.id).sort(),['id-only-7f3a']);
+  assert.deepEqual(search('9b2c 关键词').conversations.map(row=>row.id).sort(),['id-and-message-9b2c']);
+  assert.deepEqual(search('7f3a 关键词').conversations.map(row=>row.id),[]);
+  assert.equal(search('7f3a').conversations[0]?.searchSnippet,undefined);
+  const snippet=search('关键词').conversations.find(row=>row.id==='message-hit')?.searchSnippet;
+  assert.ok(snippet?.includes('关键词'));
+  assert.deepEqual(repo.listConversations('w1',{limit:10,query:'7f3a'}).map(r=>r.view.id).sort(),['id-only-7f3a']);
+  assert.deepEqual(repo.listConversations('w1',{limit:10,query:'9b2c 关键词'}).map(r=>r.view.id).sort(),['id-and-message-9b2c']);
 });
 
 test('legacy reads are zero-write, upgrade establishes seen baseline, then counts only new messages',t=>{

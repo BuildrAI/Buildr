@@ -46,6 +46,10 @@ export function conversationActive(view: ConversationView, version: number, seen
   const pending=(run:NonNullable<ConversationView['run']>, historical=false)=>{
     if(run.supersededBy)return false;
     if(run.status==='tools-active')return run.tools.some(tool=>tool.status==='unknown'); // Model ended; retain job controls without claiming model activity.
+    // Historical uncertainty without any in-flight work is evidence, not a
+    // reason to keep the conversation at the top of the list. Running or
+    // unknown tools and an active execution state still protect real work.
+    if(historical && run.status==='unknown' && run.executionState!=='active' && !run.tools.some(tool=>tool.status==='running'||tool.status==='unknown'))return false;
     if(historical && run.resourcesReleased && run.executionState!=='active' && !run.tools.some(tool=>tool.status==='running'))return false;
     return run.executionState==='active' || (!run.resourcesReleased&&BUSY_STATES.has(run.status)) || run.tools.some(tool=>tool.status!=='completed');
   };

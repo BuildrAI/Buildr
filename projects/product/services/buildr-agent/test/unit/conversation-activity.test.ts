@@ -8,7 +8,7 @@ test('legacy requests without a run identity remain pending rather than crashing
  assert.equal(summaryView(record,0,0,'now').activity!.active,true);
 });
 
-test('released historical unknown rounds do not keep a stopped conversation active; only proven running tools still do',()=>{
+test('historical unknown rounds only keep a stopped conversation active while work is in flight',()=>{
  const run={id:'old',status:'unknown',resourcesReleased:true,executionState:'unknown',tools:[]} as any;
  const record={view:{run:{id:'cancelled',status:'stopped',resourcesReleased:true,tools:[]},retainedRuns:[run],requests:[],hidden:false},participants:[]} as unknown as StoredConversation;
  assert.equal(summaryView(record,3,3,'now').activity!.active,false);
@@ -16,7 +16,8 @@ test('released historical unknown rounds do not keep a stopped conversation acti
  run.tools=[{id:'uncertain-operation',status:'unknown'}];assert.equal(summaryView(record,3,3,'now').activity!.active,false);
  run.tools=[{id:'live-operation',status:'running'}];assert.equal(summaryView(record,3,3,'now').activity!.active,true);
  run.executionState='active';run.tools=[];assert.equal(summaryView(record,3,3,'now').activity!.active,true);run.executionState='unknown';
- run.tools=[];run.resourcesReleased=false;assert.equal(summaryView(record,3,3,'now').activity!.active,true,'unreleased work remains visible');
+ run.tools=[];run.resourcesReleased=false;assert.equal(summaryView(record,3,3,'now').activity!.active,false,'historical unknown without in-flight work is not active');
+ run.tools=[{id:'live-operation',status:'running'}];assert.equal(summaryView(record,3,3,'now').activity!.active,true,'unreleased running work remains visible');
 });
 
 test('closing a released unknown result preserves facts and cannot mute retained live work',()=>{
