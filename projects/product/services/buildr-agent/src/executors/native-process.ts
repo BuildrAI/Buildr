@@ -12,14 +12,20 @@ import { toolEnvironment } from './tool-environment.ts';
 import { errorDiagnostic, NativeRequestError } from '../domain/error-diagnostic.ts';
 
 export type NativeEnvironment = NodeJS.ProcessEnv;
+/** Account roots remain explicit. Never infer a host HOME from the service user. */
+export function accountEnvironment(input: NativeEnvironment, privateHome: string, temporary: string, extra: NativeEnvironment, cacheRoot?: string): NativeEnvironment {
+  const host = input.BUILDR_TOOLCHAIN_HOST_HOME || input.BUILDR_HOST_HOME || input.HOME || input.USERPROFILE;
+  const home = host && isAbsolute(host) ? host : privateHome;
+  return isolatedEnvironment({ ...input, HOME: home, USERPROFILE: home }, home, temporary, extra, cacheRoot);
+}
 /** Deliberately excludes desktop RPC credentials and default provider credentials. */
 export function isolatedEnvironment(input: NativeEnvironment, home: string, temporary: string, extra: NativeEnvironment = {}, cacheRoot?: string): NativeEnvironment {
   const result: NativeEnvironment = {};
-  for (const key of ['PATH', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'USER', 'LOGNAME', 'SYSTEMROOT', 'SystemRoot', 'WINDIR', 'COMSPEC', 'PATHEXT', 'JAVA_HOME', 'JDK_HOME', 'MAVEN_HOME', 'M2_HOME', 'GRADLE_HOME', 'BUILDR_TOOLCHAIN_ROOT', 'BUILDR_MAVEN_REPOSITORY', 'COREPACK_HOME', 'npm_config_devdir', 'npm_package_config_node_gyp_devdir', 'PIP_CACHE_DIR', 'UV_CACHE_DIR', 'PYTHONPYCACHEPREFIX', 'NVM_DIR', 'VOLTA_HOME', 'ASDF_DATA_DIR', 'MISE_DATA_DIR', 'SDKMAN_DIR', 'SSL_CERT_FILE', 'SSL_CERT_DIR', 'NODE_EXTRA_CA_CERTS', 'HTTPS_PROXY', 'HTTP_PROXY', 'ALL_PROXY', 'NO_PROXY', 'https_proxy', 'http_proxy', 'all_proxy', 'no_proxy']) {
+  for (const key of ['BUILDR_TOOLCHAIN_HOST_HOME','PATH', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'USER', 'LOGNAME', 'SYSTEMROOT', 'SystemRoot', 'WINDIR', 'COMSPEC', 'PATHEXT', 'JAVA_HOME', 'JDK_HOME', 'MAVEN_HOME', 'M2_HOME', 'GRADLE_HOME', 'BUILDR_TOOLCHAIN_ROOT', 'BUILDR_MAVEN_REPOSITORY', 'COREPACK_HOME', 'npm_config_devdir', 'npm_package_config_node_gyp_devdir', 'PIP_CACHE_DIR', 'UV_CACHE_DIR', 'PYTHONPYCACHEPREFIX', 'NVM_DIR', 'VOLTA_HOME', 'ASDF_DATA_DIR', 'MISE_DATA_DIR', 'SDKMAN_DIR', 'SSL_CERT_FILE', 'SSL_CERT_DIR', 'NODE_EXTRA_CA_CERTS', 'HTTPS_PROXY', 'HTTP_PROXY', 'ALL_PROXY', 'NO_PROXY', 'https_proxy', 'http_proxy', 'all_proxy', 'no_proxy']) {
     if (input[key] !== undefined) result[key] = input[key];
   }
   if (input.BUILDR_MAVEN_REPOSITORY) result.JAVA_TOOL_OPTIONS = '-Dmaven.repo.local="' + input.BUILDR_MAVEN_REPOSITORY.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
-  return { ...result, ...toolEnvironment(input), ...(cacheRoot ? { npm_config_cache: join(cacheRoot, 'npm'), NPM_CONFIG_CACHE: join(cacheRoot, 'npm'), NODE_COMPILE_CACHE: join(cacheRoot, 'node-compile'), YARN_CACHE_FOLDER: join(cacheRoot, 'yarn') } : {}), HOME: home, USERPROFILE: home, TMPDIR: temporary, TMP: temporary, TEMP: temporary, ...extra };
+  return { ...result, ...toolEnvironment(input), ...(cacheRoot ? { npm_config_cache: input.npm_config_cache || input.NPM_CONFIG_CACHE || join(cacheRoot, 'npm'), NPM_CONFIG_CACHE: input.npm_config_cache || input.NPM_CONFIG_CACHE || join(cacheRoot, 'npm'), NODE_COMPILE_CACHE: input.NODE_COMPILE_CACHE || join(cacheRoot, 'node-compile'), YARN_CACHE_FOLDER: input.YARN_CACHE_FOLDER || join(cacheRoot, 'yarn') } : {}), HOME: home, USERPROFILE: home, TMPDIR: temporary, TMP: temporary, TEMP: temporary, ...extra };
 }
 export async function privateDirectories(...directories: string[]): Promise<void> {
   for (const directory of directories) {

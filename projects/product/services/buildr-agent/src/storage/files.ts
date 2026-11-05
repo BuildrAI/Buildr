@@ -8,12 +8,16 @@ export interface StorageCandidate {
   kind: 'cache' | 'runtime' | 'diagnostic' | 'test-artifact' | 'runtime-share' | 'runtime-object' | 'shared-cache'; path: string; ownerRoot: string;
   sizeBytes: number; identity?: string; eligible: boolean; reason: string;
   rootChanged?: number;
+  /** Only regenerable cache data with a fresh execution/recovery proof may
+   * narrow occupancy to its own subtree; account ownership remains unchanged. */
+  useRoot?: string;
   retentionDays?: number; lastPossibleUseAt?: number;
   /** Exact nested Buildr profile, discovered only under a private native HOME. */
   runtimeDataRoot?: string;
   diagnostic?: { provider: string; producerPid?: number; contextId?: string };
 }
 export interface StorageVersion { identity: string; sizeBytes: number; modified: number; rootChanged: number }
+export const storageUseRoot=(item:StorageCandidate)=>item.kind==='cache'&&item.useRoot===item.path?item.path:item.ownerRoot;
 
 /** No file bodies, process environments or command arguments enter the maintenance result. */
 export function observeStorageUse(): StorageUse {
@@ -101,7 +105,7 @@ export function storageCandidate(root: string, kind: StorageCandidate['kind'], d
 /** The caller holds the service storage lock; recheck immediately around the narrow rename. */
 export function removeStorageCandidate(root: string, item: StorageCandidate, observe = observeStorageUse, unreferenced: (directory: string) => boolean = () => true): boolean {
   const safe = () => item.kind === 'diagnostic' ? safeStorageResource(root, item.path) : safeStoragePath(root, item.path);
-  if (!item.eligible || !item.identity || !safe() || !unreferenced(item.path) || storageInUse(item.ownerRoot, observe())) return false;
+  if (!item.eligible || !item.identity || !safe() || !unreferenced(item.path) || storageInUse(storageUseRoot(item), observe())) return false;
   if (storageVersion(item.path).identity !== item.identity) return false;
   const retired = path.join(path.dirname(item.path), '.reclaim-' + randomUUID());
   fs.renameSync(item.path, retired);
@@ -109,7 +113,7 @@ export function removeStorageCandidate(root: string, item: StorageCandidate, obs
     const renamedRootChanged = fs.lstatSync(retired).ctimeMs;
     const use = observe();
     const permitted = unreferenced(retired), version = storageVersion(retired, item.rootChanged);
-    if (!permitted || !use.complete || storageInUse(item.ownerRoot, use) || storageInUse(retired, use) ||
+    if (!permitted || !use.complete || storageInUse(storageUseRoot(item), use) || storageInUse(retired, use) ||
         version.identity !== item.identity || version.rootChanged !== renamedRootChanged) {
       if (!fs.existsSync(item.path)) fs.renameSync(retired, item.path);
       return false;
@@ -123,6 +127,17 @@ export function removeStorageCandidate(root: string, item: StorageCandidate, obs
  * checks; system observation is shared rather than spawned twice per file. */
 export function removeDiagnosticFileBatch(root: string, items: StorageCandidate[], unreferenced: (item:StorageCandidate)=>boolean,
   observe=observeStorageUse, deadline=Date.now()+3000): string[] {
+  return removeSmallResourceBatch(root,items,unreferenced,observe,deadline,'diagnostic');
+}
+
+/** Caller has verified and published each regenerable cache entry. The same
+ * before/after observation and per-object identity proof used for diagnostics
+ * applies; this grants no authority to classify arbitrary directories. */
+export function removeCacheBatch(root:string,items:StorageCandidate[],observe=observeStorageUse,deadline=Date.now()+3000,unreferenced:(item:StorageCandidate)=>boolean=()=>true):string[]{
+  return removeSmallResourceBatch(root,items,unreferenced,observe,deadline,'cache');
+}
+function removeSmallResourceBatch(root:string,items:StorageCandidate[],unreferenced:(item:StorageCandidate)=>boolean,
+  observe:typeof observeStorageUse,deadline:number,kind:'diagnostic'|'cache'):string[]{
   const remaining=Math.max(0,deadline-Date.now());if(!remaining)return [];
   // System observation has its own subprocess timeout. Charge the file-work
   // budget after it completes, so a slow lsof cannot starve every small batch.
@@ -133,7 +148,7 @@ export function removeDiagnosticFileBatch(root: string, items: StorageCandidate[
     for(const item of items.slice(0,256)) {
       if(Date.now()>renameDeadline)break;
       try {
-        if(item.kind!=='diagnostic'||!item.eligible||!item.identity||!safeStorageResource(root,item.path,64)||storageInUse(item.ownerRoot,before)||!unreferenced(item))continue;
+        if(item.kind!==kind||!item.eligible||!item.identity||!safeStorageResource(root,item.path,kind==='cache'?5000:64)||storageInUse(item.ownerRoot,before)||!unreferenced(item))continue;
         const info=fs.lstatSync(item.path),version=storageVersion(item.path);
         if((!info.isFile()&&!info.isDirectory())||version.sizeBytes>256*1024||version.identity!==item.identity)continue;
         const retired=path.join(path.dirname(item.path),'.reclaim-'+randomUUID());fs.renameSync(item.path,retired);

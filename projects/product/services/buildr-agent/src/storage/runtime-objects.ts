@@ -1,4 +1,6 @@
 import fs from 'node:fs';
+import { cloneViewReferences } from './clone-views.ts';
+import { cloneFile } from './clone-file.ts';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { ensureStorageDirectory, safeStoragePath, storageCandidate, type StorageCandidate, type StorageUse } from './files.ts';
@@ -12,7 +14,7 @@ export function runtimeFileHash(file: string): string {
 
 /** Caller holds the existing profile storage lock. One read-only inode per
  * content and executable mode; views only link it, never copy another body. */
-export function materializeRuntimeObject(root: string, source: string, mode?: number): string {
+export function materializeRuntimeObject(root: string, source: string, mode?: number, requireClone=false): string {
   const before = fs.lstatSync(source);
   if (!before.isFile() || before.isSymbolicLink()) throw new Error('agent_runtime_source_changed');
   const digest = runtimeFileHash(source), executable = mode ?? (before.mode & 0o111);
@@ -28,7 +30,7 @@ export function materializeRuntimeObject(root: string, source: string, mode?: nu
   if (fs.existsSync(target)) { verify(); return target; }
   const staged = path.join(directory, '.stage-' + randomUUID());
   try {
-    fs.copyFileSync(source, staged, fs.constants.COPYFILE_FICLONE);
+    if(requireClone)cloneFile(source,staged);else if(before.size>=1024*1024){try{cloneFile(source,staged);}catch{fs.copyFileSync(source,staged,fs.constants.COPYFILE_EXCL);}}else fs.copyFileSync(source, staged, fs.constants.COPYFILE_FICLONE);
     if (runtimeFileHash(staged) !== digest) throw new Error('agent_runtime_source_changed');
     fs.chmodSync(staged, 0o400 | executable);
     try { fs.linkSync(staged, target); } catch (error) { if (!fs.existsSync(target)) throw error; }
@@ -41,6 +43,8 @@ export function materializeRuntimeObject(root: string, source: string, mode?: nu
  * unlinked, hash-verified service object is eligible, after its retention window. */
 export function runtimeObjectUnreferenced(directory: string, identity: string): boolean {
   try {
+    const references=cloneViewReferences(path.resolve(directory,'../../../..'));
+    if(!references.complete||references.objects.has(identity))return false;
     const match = /^([a-f0-9]{64})-([0-7]{1,3})$/.exec(identity);
     const names = fs.readdirSync(directory);
     if (!match || names.length !== 1 || names[0] !== (process.platform === 'win32' ? 'payload.exe' : 'payload')) return false;
@@ -51,13 +55,14 @@ export function runtimeObjectUnreferenced(directory: string, identity: string): 
 }
 export function runtimeObjectCandidates(root: string, use: StorageUse, now=Date.now()): StorageCandidate[] {
   const base = path.join(root, 'toolchains/objects'), result: StorageCandidate[] = [];
+  const references=cloneViewReferences(root);if(!references.complete)return result;
   if (!safeStoragePath(root, base)) return result;
   for (const prefix of fs.readdirSync(base)) {
     const parent = path.join(base, prefix);
     if (!/^[a-f0-9]{2}$/.test(prefix) || !safeStoragePath(root,parent)) continue;
     for (const identity of fs.readdirSync(parent)) {
       const directory = path.join(parent, identity);
-      if (!identity.startsWith(prefix) || !safeStoragePath(root,directory)) continue;
+      if (references.objects.has(identity) || !identity.startsWith(prefix) || !safeStoragePath(root,directory)) continue;
       const file = path.join(directory,process.platform === 'win32' ? 'payload.exe' : 'payload');
       if (fs.lstatSync(file,{throwIfNoEntry:false})?.nlink !== 1) continue;
       const item = storageCandidate(root,'runtime-object',directory,directory,use,now-30*24*60*60_000);

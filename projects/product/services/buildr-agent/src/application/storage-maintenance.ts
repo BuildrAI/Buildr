@@ -8,9 +8,10 @@ import { discoverHomeStorage } from '../storage/home-discovery.ts';
 import { runtimeObjectCandidates, runtimeObjectUnreferenced } from '../storage/runtime-objects.ts';
 import { runtimeSharingCandidates, shareRetainedRuntime } from '../process/runtime-sharing.ts';
 import { retainedRuntimeCandidates, retireRuntimeRecords, runtimeUnreferenced } from '../process/cleanup.ts';
-import { observeStorageUse, removeStorageCandidate, removeDiagnosticFileBatch, safeStoragePath, safeStorageResource, type StorageCandidate } from '../storage/files.ts';
+import { observeStorageUse, removeStorageCandidate, removeDiagnosticFileBatch, removeCacheBatch, safeStoragePath, safeStorageResource, type StorageCandidate } from '../storage/files.ts';
 import { testArtifactCandidates, testArtifactUnreferenced } from '../storage/test-artifacts.ts';
 import { migrateToolCache, sharedCacheDestination } from '../storage/cache-migration.ts';
+import type { HomeDiscoveryCursor } from '../storage/home-discovery.ts';
 import { diagnosticCandidates, diagnosticUnreferenced } from '../storage/diagnostics.ts';
 import { ConversationRepository } from '../persistence/conversation-repository.ts';
 
@@ -36,7 +37,7 @@ export function collectReleasedExecutorStorage(dataRoot: string, provider: strin
 }
 
 /** Read-only, local profile maintenance. Native session bodies and accounts are never candidates. */
-export function inspectAgentStorage(input: { dataRoot: string }): AgentStoragePlan {
+export function inspectAgentStorage(input: { dataRoot: string; homeCursor?:HomeDiscoveryCursor;scanHomes?:boolean }): AgentStoragePlan {
   const dataRoot = path.resolve(input.dataRoot), root = path.join(dataRoot, 'agent-service');
   const use = observeStorageUse();
   const result: AgentStoragePlan = { schemaVersion: 1, dataRoot, generatedAt: new Date().toISOString(), observationComplete: use.complete, items: [], diagnostics: use.diagnostic ? [use.diagnostic] : [] };
@@ -52,7 +53,7 @@ export function inspectAgentStorage(input: { dataRoot: string }): AgentStoragePl
       if (/^[a-f0-9]{64}$/.test(id) && safeStoragePath(root, config)) configs.push(config);
     }
     for (const config of configs) {
-      result.items.push(...executorCacheCandidates(root, executor, config, use, cutoff));
+      result.items.push(...executorCacheCandidates(root, executor, config, use, cutoff,false,dependencies));
       result.items.push(...testArtifactCandidates(root, config, use, cutoff));
       result.items.push(...nestedStoppedRuntimeCandidates(root, config, use));
       try { result.items.push(...diagnosticCandidates(root, executor, config, use, dependencies, Date.now())); }
@@ -63,7 +64,7 @@ export function inspectAgentStorage(input: { dataRoot: string }): AgentStoragePl
   catch { result.diagnostics.push('runtime_inventory_unknown'); }
   result.items.push(...sharedCacheCandidates(root,use,dependencies));
   result.sharedCachePolicy=sharedCachePolicy;
-  result.homeStorage=discoverHomeStorage(root);
+  if(input.scanHomes!==false)result.homeStorage=discoverHomeStorage(root,{cursor:input.homeCursor});
   return result;
 }
 
@@ -72,11 +73,16 @@ export function collectAgentStorage(plan: AgentStoragePlan, maximumItems = 128, 
   if (plan.schemaVersion !== 1 || !path.isAbsolute(plan.dataRoot) || !Array.isArray(plan.items)) throw new Error('agent_storage_plan_invalid');
   const root = path.join(plan.dataRoot, 'agent-service');
   if (!safeStoragePath(plan.dataRoot, root)) throw new Error('agent_storage_root_unsafe');
-  const current = inspectAgentStorage({ dataRoot: plan.dataRoot });
+  const current = inspectAgentStorage({ dataRoot: plan.dataRoot,scanHomes:false });
   const candidates = new Map(current.items.map(item => [item.kind + ":" + item.path, item]));
   const executors = new Map(createNativeExecutors().map(executor => [executor.descriptor.id, executor]));
   const storage = new ExecutorStorage(root);
   const repository = new ConversationRepository(root);
+  const cacheUnreferenced=(item:StorageCandidate)=>{
+    if(!item.useRoot)return true;
+    const provider=path.relative(root,item.ownerRoot).split(path.sep)[1],dependencies=repository.storageDependencies();
+    return !!provider&&dependencies.complete&&!dependencies.contexts.some(context=>context.startsWith(provider+':'));
+  };
   const limit = Number.isSafeInteger(maximumItems) ? Math.max(0, Math.min(1024, maximumItems)) : 0;
   const deadline=Date.now()+Math.max(100,Math.min(options.budgetMs??10000,30000));
   const results: Array<{ path: string; status: 'removed' | 'retained' | 'shared'; reason: string; sizeBytes: number }> = [];
@@ -91,6 +97,29 @@ export function collectAgentStorage(plan: AgentStoragePlan, maximumItems = 128, 
       results.push({ path: expected.path, status: 'retained', reason: 'storage_batch_deferred', sizeBytes: item?.sizeBytes ?? expected.sizeBytes }); continue;
     }
     if (item?.eligible && item.kind === expected.kind && item.identity === expected.identity) {
+      // Expanded Yarn packages are independently verified by the adapter. Batch
+      // only small entries after publication, retaining every per-entry proof.
+      if(item.kind==='cache'&&item.sizeBytes<=256*1024&&/(?:Yarn|yarn)\/v6\/npm-[^/]+$/.test(item.path.split(path.sep).join('/'))){
+        const group:StorageCandidate[]=[],published:StorageCandidate[]=[],targets=new Map<string,string|undefined>();let groupLock:ReturnType<typeof claim>|undefined;let removed=new Set<string>();
+        try{
+          groupLock=claim(plan.dataRoot,'storage');const before=observeStorageUse();
+          for(const value of pending){
+            if(group.length>=Math.min(256,limit-attempted)||Date.now()>deadline-500)break;
+            if(handled.has(value.path))continue;
+            const candidate=candidates.get(value.kind+':'+value.path);
+            if(!candidate?.eligible||candidate.kind!=='cache'||candidate.identity!==value.identity||candidate.sizeBytes>256*1024||!/(?:Yarn|yarn)\/v6\/npm-[^/]+$/.test(candidate.path.split(path.sep).join('/')))continue;
+            const executor=executors.get(path.relative(root,candidate.ownerRoot).split(path.sep)[1]!);
+            if(!executor?.storage?.canReclaim?.(candidate.ownerRoot,path.relative(candidate.ownerRoot,candidate.path)))continue;
+            group.push(candidate);
+            targets.set(candidate.path,sharedCacheDestination(root,path.relative(candidate.ownerRoot,candidate.path)));
+            try{if(migrateToolCache(root,candidate,deadline,()=>before,{publishOnly:true}))published.push(candidate);}catch{/* Keep this source intact. */}
+          }
+          removed=new Set(removeCacheBatch(root,published,observeStorageUse,deadline,candidate=>targets.get(candidate.path)===sharedCacheDestination(root,path.relative(candidate.ownerRoot,candidate.path))));
+        }catch{/* Lock and observation failures retain all sources. */}finally{groupLock?.release();}
+        for(const candidate of group){handled.add(candidate.path);results.push({path:candidate.path,status:removed.has(candidate.path)?'removed':'retained',reason:removed.has(candidate.path)?'cache_migrated_to_shared_root':'storage_recheck_retained',sizeBytes:candidate.sizeBytes});}
+        attempted+=group.length;
+        if(group.length)continue;
+      }
       if(item.kind==='diagnostic'&&item.sizeBytes<=256*1024&&safeStorageResource(root,item.path,64)) {
         const group:Array<{expected:StorageCandidate;item:StorageCandidate}>=[];
         for(const value of pending){
@@ -117,7 +146,7 @@ export function collectAgentStorage(plan: AgentStoragePlan, maximumItems = 128, 
         if (!policy || executor && !storage.preserveSnapshot(executor, item.ownerRoot, item.path)) reason = 'cache_seed_or_contents_retained';
         else {
           removed = item.kind === 'runtime-share' ? shareRetainedRuntime(root, item, deadline) : item.kind === 'cache' && sharedCacheDestination(root, path.relative(item.ownerRoot, item.path))
-            ? migrateToolCache(root, item, deadline)
+            ? migrateToolCache(root, item, deadline,observeStorageUse,{canRemove:()=>cacheUnreferenced(item)})
             : removeStorageCandidate(root, item, observeStorageUse, directory => item.kind === 'runtime'
             ? runtimeUnreferenced(runtimeDataRoot, item.path) : item.kind === 'shared-cache' ? sharedCacheReclaimable(root,item,observeStorageUse(),repository.storageDependencies()) : item.kind === 'runtime-object' ? runtimeObjectUnreferenced(directory, path.basename(item.path)) : item.kind === 'test-artifact' ? testArtifactUnreferenced(directory, item.path) : item.kind !== 'diagnostic' || diagnosticUnreferenced(item, repository.storageDependencies()));
           if (removed && item.kind === 'runtime') {

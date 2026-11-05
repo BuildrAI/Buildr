@@ -20,6 +20,9 @@ export function createIsolatedWorkspaceState(options: { env?: NodeJS.ProcessEnv;
     env: {
       ...env,
       BUILDR_TEST_LOCAL_STATE_ROOT: root,
+      // Synthetic service fixtures must not adopt or verify the real user's
+      // package cache; dependency preparation still uses the native manager.
+      BUILDR_TOOLCHAIN_HOST_HOME: path.join(root,'tool-host'),
       // Reusable verification evidence outlives disposable test files.
       BUILDR_TEST_SHARED_TEMP_ROOT: env.BUILDR_TEST_SHARED_TEMP_ROOT || os.tmpdir(),
       TMPDIR: temp,

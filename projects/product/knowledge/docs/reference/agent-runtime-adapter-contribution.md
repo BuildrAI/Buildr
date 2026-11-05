@@ -101,3 +101,13 @@
 专项验证只证明实际执行的入口、版本和行为，不升级成“该品牌在所有当前会话均已加载”的承诺。
 
 依据：[运行时投射规范](../../../openspec/specs/workspace-first-runtime-projection/spec.md)、[适配约定实现](../../../services/buildr/src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts)及[当前适配说明](../../../services/buildr/docs/agent-runtime-adapters.md)。
+
+## 工具环境与HOME存储
+
+执行默认复用明确提供的宿主HOME和工具环境，只通过原生目录参数隔离账号、会话和专属配置。当前适配器分别设置CODEX_HOME、DSH_HOME/DSH_AGENTS_HOME、QODER_CONFIG_DIR；新增适配器必须核实完整目录覆盖能力，不能只设置HOME隔离所有工具。不能证明私有数据完整隔离时保留私有HOME兼容模式。以下HOME发现/共享仅用于Buildr受管历史目录和兼容模式，不扫描或自动整理真实用户HOME。临时目录继续受管；不得为切换环境停止或重发已有任务。
+
+内部对话执行器从公共入口继承工具和缓存路径，账号及会话仍私有；不要为新品牌再创建下载/编译缓存。现有维护worker同时扫描HOME并保存接续游标，按安装协议核验未知组件，npm锁与本地SRI归档一致时可自动共享，缺失、变化及占用按周期重试。工具私自写入HOME不要求用户定期提醒排查。
+
+`storage/component-sharing.ts`负责安装证据和可写隔离视图，`storage/clone-file.ts`只执行不退化的文件系统克隆；`process/storage-maintenance.ts`复用原storage锁并把结果写入原观察快照。没有不可变契约的安装文件不可使用可写硬链接，额外配置、凭据和业务文件不可从package.json或重复字节推断归属。新安装器协议须提供完整文件范围和核验方法，不按组件名称追加判断。
+
+旧npm下载正文和Node编译缓存的回收需先证明无执行/待确认/恢复引用，再检查缓存子树占用，并在删除前后重读引用；账号常驻但缓存空闲时仍可自动处理。其他运行与私有状态目录不得借此缩小保护。迁移大缓存时，新增发布预算不应被已保全前缀的重复遍历耗尽；重扫描始终留在维护worker。

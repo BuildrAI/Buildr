@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { selectHostToolCaches } from './toolchain-locations.ts';
 import { ensureStorageDirectory } from './files.ts';
 
 /** One local tool environment for every executor. Account configuration and
@@ -8,7 +9,9 @@ export function sharedToolchainEnvironment(root: string, input: Readonly<Record<
   const tools = path.join(root, 'toolchains'), cacheRoot = path.join(tools, 'cache');
   for (const relative of ['toolchains', 'toolchains/cache', ...['npm', 'yarn', 'node-compile', 'pip', 'uv', 'python', 'maven', 'node-gyp', 'corepack'].map(name => 'toolchains/cache/' + name), 'toolchains/runtimes']) ensureStorageDirectory(root, path.join(root, relative));
   const environment: Record<string, string> = { ...input, BUILDR_TOOLCHAIN_ROOT: tools, COREPACK_HOME: path.join(cacheRoot,'corepack'), npm_config_devdir: path.join(cacheRoot,'node-gyp'), npm_package_config_node_gyp_devdir: path.join(cacheRoot,'node-gyp'), npm_config_cache: path.join(cacheRoot, 'npm'), NPM_CONFIG_CACHE: path.join(cacheRoot, 'npm'), NODE_COMPILE_CACHE: path.join(cacheRoot, 'node-compile'), YARN_CACHE_FOLDER: path.join(cacheRoot, 'yarn'), PIP_CACHE_DIR: path.join(cacheRoot, 'pip'), UV_CACHE_DIR: path.join(cacheRoot, 'uv'), PYTHONPYCACHEPREFIX: path.join(cacheRoot, 'python') };
-  const hostHome = input.HOME || input.USERPROFILE;
+  const selected=selectHostToolCaches(root,input);
+  for(const [name,keys]of [['npm',['npm_config_cache','NPM_CONFIG_CACHE']],['yarn',['YARN_CACHE_FOLDER']],['corepack',['COREPACK_HOME']],['node-gyp',['npm_config_devdir','npm_package_config_node_gyp_devdir']],['pip',['PIP_CACHE_DIR']],['uv',['UV_CACHE_DIR']],['python',['PYTHONPYCACHEPREFIX']],['node-compile',['NODE_COMPILE_CACHE']]] as const){for(const key of keys)if(selected[name])environment[key]=selected[name]!;}
+  const hostHome = input.BUILDR_TOOLCHAIN_HOST_HOME || input.BUILDR_HOST_HOME || input.HOME || input.USERPROFILE;
   const existing = (value: string | undefined): string | undefined => {
     try { return value && path.isAbsolute(value) && fs.statSync(value).isDirectory() ? fs.realpathSync(value) : undefined; } catch { return; }
   };
@@ -31,13 +34,14 @@ export function sharedToolchainEnvironment(root: string, input: Readonly<Record<
   if (maven) environment.MAVEN_HOME = maven;
   const bin = [java && path.join(java, 'bin'), maven && path.join(maven, 'bin')].filter((value): value is string => !!value);
   environment.PATH = [...bin, input.PATH ?? ''].join(path.delimiter);
-  // Reuse an existing host repository without exposing ~/.m2/settings.xml.
+  // Reuse the host repository; never copy ~/.m2/settings.xml into a private HOME.
   const repository = existing(hostHome && path.join(hostHome, '.m2/repository')) ?? path.join(cacheRoot, 'maven');
   environment.BUILDR_MAVEN_REPOSITORY = repository;
   // The JVM parses quoted JAVA_TOOL_OPTIONS itself, including paths with spaces.
   environment.JAVA_TOOL_OPTIONS = '-Dmaven.repo.local="' + repository.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
   for (const [key, relative] of [['NVM_DIR', '.nvm'], ['VOLTA_HOME', '.volta'], ['ASDF_DATA_DIR', '.asdf'], ['MISE_DATA_DIR', '.local/share/mise'], ['SDKMAN_DIR', '.sdkman']] as const) {
-    environment[key] = existing(input[key]) ?? existing(hostHome && path.join(hostHome, relative)) ?? path.join(tools, 'runtimes', key.toLowerCase());
+    const configured=existing(input[key]);
+    environment[key] = configured&&!configured.startsWith(root+path.sep)?configured:hostHome&&path.isAbsolute(hostHome)?path.join(hostHome,relative):path.join(tools,'runtimes',key.toLowerCase());
   }
   return { cacheRoot, environment };
 }

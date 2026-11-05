@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { verifiedPackageFiles } from './package-archive.ts';
 import { safeStoragePath } from './files.ts';
 
 /** Only package-manager caches inside the service-created isolated HOME or
@@ -14,6 +15,7 @@ export const regenerableToolCaches = [
 /** Legacy Yarn locations predate YARN_CACHE_FOLDER. Require the package
  * manager's own provenance and matching package identity before reclaiming. */
 export function toolCacheReclaimable(root: string, relative: string): boolean {
+  if(/(?:^|\/)(?:Yarn|yarn)\/v6\/npm-[^/]+$/.test(relative.split(path.sep).join('/')))return verifiedYarnCacheEntry(root,relative);
   if (relative.endsWith('/node-gyp')) return nodeHeaderCache(root,relative);
   if (relative.endsWith('/corepack/v1')) return corepackCache(root,relative);
   if (!relative.endsWith('/yarn/v6') && !relative.endsWith('/Yarn/v6')) return true;
@@ -73,5 +75,24 @@ function corepackCache(root:string,relative:string):boolean {
       }
     }
     return true;
+  }catch{return false;}
+}
+
+/** A completed package may migrate even when its neighboring .tmp is unproven.
+ * Prove every byte and reject extra artifacts or credential-bearing URLs. */
+export function verifiedYarnCacheEntry(root:string,relative:string):boolean{
+  try{
+    const directory=path.join(root,relative),modules=path.join(directory,'node_modules');
+    if(!safeStoragePath(root,modules)||!path.basename(directory).startsWith('npm-'))return false;
+    const packages=fs.readdirSync(modules).flatMap(name=>name.startsWith('@')&&safeStoragePath(root,path.join(modules,name))?fs.readdirSync(path.join(modules,name)).map(child=>name+'/'+child):[name]);
+    if(packages.length!==1)return false;
+    const pkg=path.join(modules,packages[0]!),metadata=cacheJson(path.join(pkg,'.yarn-metadata.json')),installed=cacheJson(path.join(pkg,'package.json'));
+    if(metadata.registry!=='npm'||metadata.manifest?.name!==packages[0]||installed.name!==packages[0]||installed.version!==metadata.manifest?.version||typeof metadata.remote?.integrity!=='string')return false;
+    for(const field of ['resolved','reference'])if(metadata.remote[field]){const url=new URL(metadata.remote[field]);if(!['https:','http:'].includes(url.protocol)||url.username||url.password||url.search)return false;}
+    const archive=path.join(pkg,'.yarn-tarball.tgz'),files=verifiedPackageFiles(root,pkg,archive,metadata.remote.integrity);
+    const allowed=new Set([...files,path.join(pkg,'.yarn-metadata.json'),archive]),directories=new Set<string>([directory]);
+    for(const file of allowed){let parent=path.dirname(file);while(parent.startsWith(directory+path.sep)){directories.add(parent);parent=path.dirname(parent);}}
+    let nodes=0;const check=(file:string):boolean=>{if(++nodes>100000)return false;const stat=fs.lstatSync(file);if(stat.isSymbolicLink()||process.getuid&&stat.uid!==process.getuid())return false;if(stat.isDirectory())return directories.has(file)&&fs.readdirSync(file).every(name=>check(path.join(file,name)));return stat.isFile()&&stat.nlink===1&&allowed.has(file);};
+    return check(directory);
   }catch{return false;}
 }

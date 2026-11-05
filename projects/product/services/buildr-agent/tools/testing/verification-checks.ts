@@ -13,12 +13,12 @@ export const agentIntegrationChecks = [
     testFiles: ['test/integration/executors/**/*.test.ts'], schedulingCostMs: 15000, timeoutMs: 60000,
     resourceDemand: { workers: 2, processes: 2 } },
   { id: 'agent-integration-startup', name: 'Agent real process startup, host exits and ownership',
-    testFiles: ['test/integration/process/startup/*.test.ts'], schedulingCostMs: 40000, timeoutMs: 90000,
+    testFiles: ['test/integration/process/startup/*.test.ts'], schedulingCostMs: 90000, timeoutMs: 150000,
     resourceDemand: { workers: 1, processes: 1, workspaceIo: 1 }, resources: ['agent-process-tests'] },
   { id: 'agent-integration-handoff', name: 'Agent real retained generations and question handoff',
-    // Serial execution of the six retained-process scenarios takes ~90 seconds;
+    // Real retained-process cases include serial runtime materialization (~20s each);
     // this is the whole-group ceiling, separate from each scenario's timeout.
-    testFiles: ['test/integration/process/handoff/*.test.ts'], schedulingCostMs: 90000, timeoutMs: 180000,
+    testFiles: ['test/integration/process/handoff/*.test.ts'], schedulingCostMs: 180000, timeoutMs: 300000,
     resourceDemand: { workers: 1, processes: 1, workspaceIo: 1 }, resources: ['agent-process-tests'] },
   { id: 'agent-integration-recovery', name: 'Agent real observation, cancellation and resource release',
     testFiles: ['test/integration/process/recovery/*.test.ts'], schedulingCostMs: 120000, timeoutMs: 240000,

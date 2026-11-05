@@ -590,7 +590,10 @@ test('real image bytes and ownership are checked, source profile and credentials
     const isolated = createAgentService({ ...f.options, environment: { PATH: '/usr/bin', HOME: f.root, HTTPS_PROXY: 'http://127.0.0.1:1234', OPENAI_API_KEY: 'secret', CODEX_HOME: '/outside', DSH_HOME: '/outside', QODER_CONFIG_DIR: '/outside', CODEX_DESKTOP_TOKEN: 'secret' } });
     try {
       await connected(isolated, 'local');
-      assert.deepEqual(Object.keys((native.opens.at(-1)!.environment as object)).sort(), ['HOME', 'HTTPS_PROXY', 'PATH']);
+      const environment=native.opens.at(-1)!.environment!;
+      assert.equal(environment.HOME,f.root);assert.equal(environment.HTTPS_PROXY,'http://127.0.0.1:1234');
+      assert.ok(environment.BUILDR_TOOLCHAIN_ROOT);assert.equal(environment.npm_config_cache,path.join(environment.BUILDR_TOOLCHAIN_ROOT,'cache/npm'));
+      for(const secret of ['OPENAI_API_KEY','CODEX_HOME','DSH_HOME','QODER_CONFIG_DIR','CODEX_DESKTOP_TOKEN'])assert.equal(environment[secret],undefined,secret+' must not leak');
       const created = await isolated.conversations.create('workspace-one', {});
       assert.throws(() => isolated.conversations.addAttachment('workspace-one', created.id, { expectedRevision: created.revision, mimeType: 'image/png', bytes: Buffer.from('not png') }), { code: 'agent_image_invalid' });
       const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64');

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { ConversationRepository } from '../../src/persistence/conversation-repository.ts';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -197,6 +198,7 @@ test('public maintenance re-inventories previews and cannot apply a forged crede
   const cache = path.join(config, 'home/.npm/_cacache'), plugins = path.join(config, 'codex-home/.tmp/plugins');
   file(path.join(cache, 'package')); file(path.join(plugins, 'plugin')); cleanPluginCheckout(plugins);
   const account = path.join(config, 'codex-home/auth.json'); file(account, 'credential'); age(config);
+  const executor=createNativeExecutors()[0]!;new ConversationRepository(path.join(dataRoot,'agent-service')).saveConnection({view:{id:'codex',provider:'codex',label:'fixture',revision:'one',enabled:false,status:'disconnected',models:[],capabilities:executor.descriptor.capabilities}} as any);
   const plan = inspectAgentStorage({ dataRoot }); assert.equal(plan.items.filter(x => x.eligible).length, 2);
   file(path.join(plugins, 'new-plugin'));
   plan.items.push({ kind: 'cache', path: path.dirname(account), ownerRoot: config, sizeBytes: 1, identity: 'forged', eligible: true, reason: 'forged' });

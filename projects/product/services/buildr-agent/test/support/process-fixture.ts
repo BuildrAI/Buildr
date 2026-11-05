@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { connectAgentProcess as connect, prepareAgentRuntime as prepare, stopAgentProcess as stop } from '../../src/index.ts';
 import type { AgentProcessConnection, AgentRuntimeUnit } from '../../src/index.ts';
-import { readProcessInstances } from '../../src/process/ownership.ts';
+import { readProcessInstances, readProcessRecord } from '../../src/process/ownership.ts';
 import { request } from '../../src/process/transport.ts';
 
 import { phase } from './process-timing.ts';
@@ -69,8 +69,12 @@ export async function cleanupProcessFixture({ root, dataRoot, profileId, host, o
       for (const marker of ['release', 'release-other', 'release-second', 'finish-stop', 'release-uncertain-resource']) {
         fs.writeFileSync(path.join(dataRoot, marker), 'yes');
       }
-      const current = [...owned.values()].find(record => !record.stopped && isLive(record.identity.pid));
-      if (!connection && current) connection = await connectAgentProcess({dataRoot,profileId,runtime:current.identity.runtime,sourceId:'minimal'});
+      const record=readProcessRecord(dataRoot);
+      const current=record&&owned.has(record.identity.pid)&&!record.stopped&&isLive(record.identity.pid)?record:undefined;
+      // A test can hand off several times. Its original observer may now point
+      // at a confirmed retired process; release through the exact current owner.
+      if(current){await connection?.disconnect();connection=await connectAgentProcess({dataRoot,profileId,runtime:current.identity.runtime,sourceId:'minimal'});}
+      else if(![...owned.values()].some(value=>isLive(value.identity.pid))){await connection?.disconnect();connection=undefined;}
       if (connection) {
         // Revocation stops native question/command loops as well as the visible current round.
         for (const id of ['first', 'second']) {
