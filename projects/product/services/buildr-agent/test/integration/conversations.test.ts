@@ -604,7 +604,7 @@ test('real image bytes and ownership are checked, source profile and credentials
     try {
       await connected(isolated, 'local');
       const environment=native.opens.at(-1)!.environment!;
-      assert.equal(environment.HOME,f.root);assert.equal(environment.HTTPS_PROXY,'http://127.0.0.1:1234');
+      assert.equal(environment.HOME,f.root);assert.equal(environment.HTTPS_PROXY,'http://127.0.0.1:1234');assert.equal(environment.PATH,'/usr/bin');
       assert.ok(environment.BUILDR_TOOLCHAIN_ROOT);assert.equal(environment.npm_config_cache,path.join(environment.BUILDR_TOOLCHAIN_ROOT,'cache/npm'));
       for(const secret of ['OPENAI_API_KEY','CODEX_HOME','DSH_HOME','QODER_CONFIG_DIR','CODEX_DESKTOP_TOKEN'])assert.equal(environment[secret],undefined,secret+' must not leak');
       const created = await isolated.conversations.create('workspace-one', {});

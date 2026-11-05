@@ -60,7 +60,7 @@ export async function cleanupProcessFixture({ root, dataRoot, profileId, host, o
     }
   };
   observe();
-  let connection = observer;
+  let connection: AgentProcessConnection | undefined;
   const errors: unknown[] = [];
   let uncertainReleases=0;
   try {
@@ -94,7 +94,9 @@ export async function cleanupProcessFixture({ root, dataRoot, profileId, host, o
     });
   } catch (error) { errors.push(error); }
   try { await host?.close(); } catch (error) { errors.push(error); host?.child.kill('SIGTERM'); }
-  try { await connection?.disconnect(); } catch (error) { errors.push(error); }
+  for (const client of [connection, observer]) {
+    try { await client?.disconnect(); } catch (error) { errors.push(error); }
+  }
   try {
     observe();
     // Deliberate crash/restart scenarios retain unconfirmed historical receipts.

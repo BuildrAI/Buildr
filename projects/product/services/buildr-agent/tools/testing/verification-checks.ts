@@ -1,8 +1,10 @@
 import path from 'node:path';
+import fs from 'node:fs';
 import process from 'node:process';
 import { sharedCheckPreparation } from '../../../buildr/tools/testing/verification-checks.ts';
 
 const root = path.resolve(import.meta.dirname, '../..');
+const processTests = (group: string, omit: string) => fs.globSync(`test/integration/process/${group}/*.test.ts`, { cwd: root }).filter(file => path.basename(file) !== omit).sort();
 const runner = path.resolve(root, '../buildr/tools/testing/run-service-tests.ts');
 /** Each integration file has one primary owner. The public full entry consumes this catalogue. */
 export const agentIntegrationChecks = [
@@ -13,12 +15,17 @@ export const agentIntegrationChecks = [
     testFiles: ['test/integration/executors/**/*.test.ts'], schedulingCostMs: 15000, timeoutMs: 60000,
     resourceDemand: { workers: 2, processes: 2 } },
   { id: 'agent-integration-startup', name: 'Agent real process startup, host exits and ownership',
-    testFiles: ['test/integration/process/startup/*.test.ts'], schedulingCostMs: 90000, timeoutMs: 150000,
+    testFiles: processTests('startup', 'ownership.test.ts'), schedulingCostMs: 40000, timeoutMs: 90000,
+    resourceDemand: { workers: 1, processes: 1, workspaceIo: 1 }, resources: ['agent-process-tests'] },
+  { id: 'agent-integration-startup-ownership', name: 'Agent real host exits and retained ownership',
+    testFiles: ['test/integration/process/startup/ownership.test.ts'], schedulingCostMs: 65000, timeoutMs: 90000,
     resourceDemand: { workers: 1, processes: 1, workspaceIo: 1 }, resources: ['agent-process-tests'] },
   { id: 'agent-integration-handoff', name: 'Agent real retained generations and question handoff',
-    // Real retained-process cases include serial runtime materialization (~20s each);
-    // this is the whole-group ceiling, separate from each scenario's timeout.
-    testFiles: ['test/integration/process/handoff/*.test.ts'], schedulingCostMs: 180000, timeoutMs: 300000,
+    // Activation owns the expensive upgrade chain separately; each file still has one primary owner.
+    testFiles: processTests('handoff', 'activation.test.ts'), schedulingCostMs: 120000, timeoutMs: 180000,
+    resourceDemand: { workers: 1, processes: 1, workspaceIo: 1 }, resources: ['agent-process-tests'] },
+  { id: 'agent-integration-handoff-activation', name: 'Agent retained runtime activation and failed successor recovery',
+    testFiles: ['test/integration/process/handoff/activation.test.ts'], schedulingCostMs: 100000, timeoutMs: 180000,
     resourceDemand: { workers: 1, processes: 1, workspaceIo: 1 }, resources: ['agent-process-tests'] },
   { id: 'agent-integration-recovery', name: 'Agent real observation, cancellation and resource release',
     testFiles: ['test/integration/process/recovery/*.test.ts'], schedulingCostMs: 120000, timeoutMs: 240000,
