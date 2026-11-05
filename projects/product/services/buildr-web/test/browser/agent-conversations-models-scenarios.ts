@@ -22,12 +22,19 @@ await step('模型名称选择器仅在悬停时显示外形',async()=>{
       await page.waitForFunction(()=>{const node=document.querySelector<HTMLElement>('.ac-model-popover .ac-model-picker.ant-select');if(!node)return false;const style=getComputedStyle(node);return style.backgroundColor==='rgba(0, 0, 0, 0)'&&style.borderTopColor==='rgba(0, 0, 0, 0)';});
       const combo=modelSettings().getByRole('combobox',{name:'执行模型',exact:true});await combo.focus();await combo.press('ArrowDown');
       const modelList=page.locator('.ac-model-list-popup:visible');await modelList.waitFor();
+      await page.waitForFunction(()=>{const node=document.querySelector('.ac-model-list-popup');return Boolean(node&&getComputedStyle(node).opacity==='1'&&!/(?:enter|appear)-active/.test(node.className));});
+      await capture(page,'agent-model-search.png');
       const listBox=await modelList.boundingBox(),effortBox=await modelSettings().locator('.ac-effort-controls').boundingBox();
       assert.ok(listBox&&effortBox&&Math.abs(listBox.width-effortBox.width)<=2,'模型下拉与推理强度区域同宽：'+JSON.stringify({list:listBox,effort:effortBox}));
       assert.ok(listBox.width>=300,'模型下拉为长名称保留足够宽度：'+listBox.width);
       const clipped=await modelList.locator('.ant-select-item-option-content').evaluateAll((nodes:HTMLElement[])=>nodes.filter((node:HTMLElement)=>node.scrollWidth>node.clientWidth+1).map(node=>node.textContent));
       assert.deepEqual(clipped,[],'模型名称不被截断：'+JSON.stringify(clipped));
-      await page.keyboard.press('Escape');await modelList.waitFor({state:'hidden'});
+      assert.equal(await picker.locator('input:not([readonly])').count(),0,'模型行不包含可编辑输入框与闪烁光标');
+      assert.equal(await picker.locator('input').evaluate((node:HTMLInputElement)=>node.style.opacity),'0','只读的隐藏输入不显示光标');
+      const modelSearch=modelList.getByRole('textbox',{name:'搜索模型',exact:true});await modelSearch.waitFor();
+      await modelSearch.fill('Fast');await modelList.getByText('Fast model',{exact:true}).waitFor();
+      assert.equal(await modelList.getByText('Fixture model',{exact:true}).count(),0,'搜索按模型名称过滤');
+      await modelSearch.press('Escape');await modelList.waitFor({state:'hidden'});
       await closeModelSettings();
     });
 

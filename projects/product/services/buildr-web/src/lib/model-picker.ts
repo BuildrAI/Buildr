@@ -12,6 +12,18 @@ export function sortReasoningEfforts<T extends {id:string}>(options:readonly T[]
   return options.map((value,index)=>({value,index,rank:reasoningEffortRank(value.id)})).sort((a,b)=>(a.rank??Infinity)-(b.rank??Infinity)||a.index-b.index).map(item=>item.value);
 }
 
+export type ModelPickerGroup={id:string;label:string;options:{value:string;label:string;disabled?:boolean}[]};
+
+/** 只按模型或来源名称过滤可见选项；分组标签匹配时保留该来源的完整选项。 */
+export function filterModelGroups(groups:readonly ModelPickerGroup[],query:string):ModelPickerGroup[] {
+  const needle=query.trim().toLocaleLowerCase();
+  if(!needle)return groups.map(group=>({...group,options:[...group.options]}));
+  return groups.map(group=>{
+    const source=group.label.toLocaleLowerCase().includes(needle);
+    return {...group,options:group.options.filter(option=>source||option.label.toLocaleLowerCase().includes(needle))};
+  }).filter(group=>group.options.length>0);
+}
+
 export function modelSourceName(provider:string):string {
   const id=provider.replace(/^native-/, '');
   return ({codex:'Codex',dsh:'DSH',deepseek:'DeepSeek',qoder:'Qoder',devin:'Devin'} as Record<string,string>)[id]??provider;

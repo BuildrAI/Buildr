@@ -87,3 +87,11 @@ export function officialConversationChoice(connection:ConnectionView|undefined,c
  const source=own.find(item=>item.modelId===connection?.models.find(model=>model.isDefault)?.id)??own[0];
  return source?{connectionId,model:source.modelId,modelAccountId:source.accountId,modelAccountRevision:source.accountRevision,modelAccountIdentity:source.accountIdentity,serviceTier:source.defaultServiceTier}:{connectionId};
 }
+
+/** 首条发送前把连接实际提供的原生账号绑定到选择；没有可证明的同名模型来源时保持原选择，不推断账号。 */
+export function nativeConversationChoice(choice:ConversationChoice,connection:ConnectionView|undefined,catalog:CatalogModel[]):ConversationChoice {
+  if(choice.modelAccountId)return choice;
+  const model=choice.model??selectedConversationModel(connection)?.id??connection?.models[0]?.id;
+  const source=catalog.find(item=>item.accountId==='native-'+choice.connectionId&&item.modelId===model&&item.available&&item.enabled!==false);
+  return source?{...choice,model:model??source.modelId,modelAccountId:source.accountId,modelAccountRevision:source.accountRevision,modelAccountIdentity:source.accountIdentity,serviceTier:choice.serviceTier??source.defaultServiceTier}:choice;
+}

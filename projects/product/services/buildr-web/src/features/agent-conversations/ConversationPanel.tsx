@@ -38,7 +38,7 @@ import { ConversationComposer } from './ConversationComposer';
 import { ConversationTurn } from './ConversationTurn';
 import { imageSelectionError } from './conversation-images';
 import { uploadConversationMaterials } from './conversation-material-upload';
-import {conversationPermissionKey,conversationPermissionStorageKey,conversationRunIdentity,permissionModeLabels,readConversationPermission,selectedConversationModel,selectedConversationPermission,supportsConversationPermission,validConversationChoice,writeConversationPermission,type ConversationChoice,type PermissionMode} from './conversation-options';
+import {conversationPermissionKey,conversationPermissionStorageKey,conversationRunIdentity,nativeConversationChoice,permissionModeLabels,readConversationPermission,selectedConversationModel,selectedConversationPermission,supportsConversationPermission,validConversationChoice,writeConversationPermission,type ConversationChoice,type PermissionMode} from './conversation-options';
 import { appendDraftAttachment, canGenerateConversationTitle, conversationConflictNeedsRefresh, conversationTurnBinding, executionLocked, groupConversationStream, conversationStreamTurns, conversationTurnExecution, conversationTurnTiming, participantExecutionPairs, removeSubmittedAttachments, shouldSendOnKey, latestConversationParticipant, processBlockKey, type ConversationSelection } from './conversation-state';
 import { conversationActionKey, createConversationActions, createConversationInputAttempts, reconcileConversationInputAttempt } from './conversation-actions';
 import { useNewConversationImages } from './useNewConversationImages';
@@ -270,6 +270,15 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   },[context.api,firstSubmissions]);
   const submissionIdentity=useRef({draftId:'',requestId:crypto.randomUUID()});
   if(submissionIdentity.current.draftId!==newImages.id)submissionIdentity.current={draftId:newImages.id,requestId:crypto.randomUUID()};
+  // 模型目录可能晚于输入到达；首条发送前用最新目录补齐原生账号，避免写入无法归属的执行记录。
+  const firstSendChoice=async()=>{
+    if(choice.modelAccountId)return choice;
+    let catalog=context.modelCatalog;
+    try{catalog=(await context.api.modelCatalog()).models;}catch{/* 读取失败时保留当前观察，继续原有发送行为。 */}
+    const bound=nativeConversationChoice(choice,connection,catalog);
+    if(bound!==choice)setChoices(previous=>({...previous,[choiceKey]:bound}));
+    return bound;
+  };
   const sendFirst=async(operation:SendOperation)=>{
     let submitted=firstSubmissions.read();
     const fresh=!submitted;
@@ -283,7 +292,9 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
       if(!context.isSelectionCurrent(operation.selection))return;
       const expectedIds=images.map(image=>image.id);
       if(JSON.stringify(draftMaterialIds(snapshot.images))!==JSON.stringify(expectedIds))throw new Error('草稿图片已变化，请核对后重新发送。');
-      submitted=firstSubmissions.save({draftId:newImages.id,workspaceId:draftWorkspaceId,input:{connectionId:choice.connectionId,modelAccountId:choice.modelAccountId,modelAccountRevision:choice.modelAccountRevision,modelAccountIdentity:choice.modelAccountIdentity,model:choice.model,serviceTier:choice.serviceTier,reasoningEffort:choice.reasoningEffort,permissionMode,text:draft.text,attachmentIds:expectedIds as NonNullable<SendDraft['attachmentIds']>,expectedDraftRevision:snapshot.revision,clientRequestId:submissionIdentity.current.requestId,...(draftWorkspaceId!=='@default'&&newCwd?{cwd:newCwd.trim()}:{}),...(boundTaskLinks.length?{taskLinks:boundTaskLinks}:{})}});
+      const bound=await firstSendChoice();
+      if(!context.isSelectionCurrent(operation.selection))return;
+      submitted=firstSubmissions.save({draftId:newImages.id,workspaceId:draftWorkspaceId,input:{connectionId:bound.connectionId,modelAccountId:bound.modelAccountId,modelAccountRevision:bound.modelAccountRevision,modelAccountIdentity:bound.modelAccountIdentity,model:bound.model,serviceTier:bound.serviceTier,reasoningEffort:bound.reasoningEffort,permissionMode,text:draft.text,attachmentIds:expectedIds as NonNullable<SendDraft['attachmentIds']>,expectedDraftRevision:snapshot.revision,clientRequestId:submissionIdentity.current.requestId,...(draftWorkspaceId!=='@default'&&newCwd?{cwd:newCwd.trim()}:{}),...(boundTaskLinks.length?{taskLinks:boundTaskLinks}:{})}});
     }
     try{
       const result=await context.api.startDraft(submitted.workspaceId,submitted.draftId,submitted.input);

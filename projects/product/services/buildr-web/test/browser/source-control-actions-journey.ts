@@ -84,9 +84,11 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
         await combo.focus();await combo.press('ArrowDown');
         const modelList=page.locator('.ac-model-list-popup:visible');
         await modelList.getByRole('navigation',{name:'模型来源快速定位',exact:true}).waitFor();
+        assert.equal(await settings.locator('.ac-model-picker input:not([readonly])').count(),0,'模型行不包含可编辑输入框与光标');
         assert.equal(await modelList.getByText('Disabled Model',{exact:true}).count(),0,'未启用模型不出现在执行模型菜单');
         assert.match(await modelList.locator('.ant-select-item-option').filter({hasText:'Offline Model'}).getAttribute('class'),/ant-select-item-option-disabled/,'已启用但来源不可用的模型保留且禁选');
-        await combo.fill('Browser');assert.equal(await modelList.getByText('Offline Model',{exact:true}).count(),0,'公共选择器真实搜索过滤');
+        const modelSearch=modelList.getByRole('textbox',{name:'搜索模型',exact:true});
+        await modelSearch.fill('Browser');assert.equal(await modelList.getByText('Offline Model',{exact:true}).count(),0,'公共选择器真实搜索过滤');
         await modelList.getByText('Browser Model',{exact:true}).click();
         const slider=settings.getByRole('slider',{name:'思考深度',exact:true});await slider.press('End');assert.equal(await slider.getAttribute('aria-valuetext'),'高');
         await settings.getByRole('button',{name:'切换服务档位',exact:true}).click();assert.equal(await slider.getAttribute('aria-valuetext'),'高');
@@ -98,12 +100,13 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
         await panel.locator('#generate-commit-message-model-menu').click();await settings.waitFor();
         try{await page.waitForFunction(()=>{const node=document.querySelector('.ac-model-popover:not(.ant-popover-hidden)');if(!node)return false;const box=node.getBoundingClientRect();return box.width>100&&box.height>30&&getComputedStyle(node).opacity==='1'&&!/(?:enter|appear)-active/.test(node.className)&&box.left>=-1&&box.top>=-1&&box.right<=innerWidth+1&&box.bottom<=innerHeight+1;});}catch(error){const bounds=await page.evaluate(()=>({viewport:[innerWidth,innerHeight],trigger:document.querySelector('#generate-commit-message-model-menu')?.getBoundingClientRect().toJSON(),popups:[...document.querySelectorAll('.ac-model-popover')].map(node=>({class:node.className,rect:node.getBoundingClientRect().toJSON()}))}));await capture(page,'source-control-model-settings-narrow-failure.png');throw new Error('窄视口模型弹层不可见或溢出：'+JSON.stringify(bounds),{cause:error});}
         if(process.env.BUILDR_SCREENSHOT_DIR)await page.screenshot({path:process.env.BUILDR_SCREENSHOT_DIR+'/source-control-model-settings-narrow.png',fullPage:false});
-        await combo.focus();await combo.press('ArrowDown');await combo.fill('Browser');
+        await combo.focus();await combo.press('ArrowDown');
+        await modelList.getByRole('textbox',{name:'搜索模型',exact:true}).fill('Browser');
         await modelList.getByText('Browser Model',{exact:true}).waitFor();
         assert.equal(await modelList.getByText('Offline Model',{exact:true}).count(),0,'窄视口仍可搜索模型');
         await page.waitForFunction(()=>{const node=document.querySelector('.ac-model-list-popup:not(.ant-select-dropdown-hidden)');if(!node)return false;const box=node.getBoundingClientRect();return box.width>100&&box.height>30&&getComputedStyle(node).opacity==='1'&&!/(?:enter|appear)-active/.test(node.className)&&box.left>=-1&&box.top>=-1&&box.right<=innerWidth+1&&box.bottom<=innerHeight+1;});
         if(process.env.BUILDR_SCREENSHOT_DIR)await page.screenshot({path:process.env.BUILDR_SCREENSHOT_DIR+'/source-control-model-list-narrow.png',fullPage:false});
-        await combo.press('Escape');await modelList.waitFor({state:'hidden'});assert.equal(await settings.isVisible(),true,'首个Escape仅关闭模型列表');
+        await modelList.getByRole('textbox',{name:'搜索模型',exact:true}).press('Escape');await modelList.waitFor({state:'hidden'});assert.equal(await settings.isVisible(),true,'首个Escape仅关闭模型列表');
         await combo.press('Escape');await settings.waitFor({state:'hidden'});
         await page.setViewportSize({width:1440,height:900});
         await panel.locator('#generate-commit-message-model-menu').click();await settings.waitFor();
@@ -116,9 +119,9 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
         assert.equal(await restoredPanel.locator('#generate-commit-message').getAttribute('aria-label'),'生成提交说明 · Fixture / Browser Model','刷新后仍记住执行模型');
         await restoredPanel.locator('#generate-commit-message-model-menu').click();
         await settings.getByRole('slider',{name:'思考深度',exact:true}).waitFor();assert.equal(await settings.getByRole('slider',{name:'思考深度',exact:true}).getAttribute('aria-valuetext'),'高','刷新恢复执行推理强度');assert.equal(await settings.getByRole('button',{name:'切换服务档位',exact:true}).getAttribute('aria-pressed'),'true');
-        await combo.focus();await combo.press('ArrowDown');await combo.fill('commit-only-unmatched-search');await combo.press('Escape');await combo.press('Escape');await settings.waitFor({state:'hidden'});
+        await combo.focus();await combo.press('ArrowDown');await page.locator('.ac-model-list-popup:visible').getByRole('textbox',{name:'搜索模型',exact:true}).fill('commit-only-unmatched-search');await page.locator('.ac-model-list-popup:visible').getByRole('textbox',{name:'搜索模型',exact:true}).press('Escape');await page.locator('.ac-model-list-popup:visible').waitFor({state:'hidden'});await combo.press('Escape');await settings.waitFor({state:'hidden'});
         await conversation.openDesktopConversation();await conversation.assertModelSummary('fixture / Browser Model','低');assert.equal(await conversation.input().inputValue(),'隔离偏好草稿');
-        await conversation.openModelSettings();const conversationCombo=conversation.modelSettings().getByRole('combobox',{name:'执行模型',exact:true});await conversationCombo.focus();await conversationCombo.press('ArrowDown');assert.equal(await conversationCombo.inputValue(),'','临时搜索不从提交生成泄漏到对话');await page.keyboard.press('Escape');
+        await conversation.openModelSettings();const conversationCombo=conversation.modelSettings().getByRole('combobox',{name:'执行模型',exact:true});await conversationCombo.focus();await conversationCombo.press('ArrowDown');assert.equal(await page.locator('.ac-model-list-popup:visible').getByRole('textbox',{name:'搜索模型',exact:true}).inputValue(),'','临时搜索不从提交生成泄漏到对话');await page.keyboard.press('Escape');
         assert.equal(await conversation.modelSettings().getByRole('button',{name:'切换服务档位',exact:true}).getAttribute('aria-pressed'),'false','执行档位不覆盖对话偏好');
         await conversation.modelSettings().getByRole('slider',{name:'思考深度',exact:true}).press('End');await conversation.chooseModel('Fixture model');await conversation.closeModelSettings();await conversation.closeConversation();
         await restoredPanel.locator('#generate-commit-message-model-menu').click();assert.equal(await settings.getByRole('button',{name:'切换服务档位',exact:true}).getAttribute('aria-pressed'),'true','对话变更不反向覆盖执行档位');await combo.focus();await page.keyboard.press('Escape');await settings.waitFor({state:'hidden'});

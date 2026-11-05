@@ -19,6 +19,7 @@
 .ac-effort-list>.ant-btn.is-selected{background:var(--ant-color-primary-bg,#e7efec);color:var(--soft-primary)}
 .ac-effort-list small{margin-left:8px;color:var(--soft-muted);font-size: var(--font-size-meta);font-weight:400}
 .ac-model-list-popup.ant-select-dropdown{border:1px solid var(--soft-line,#d8e1dc);box-shadow:0 8px 28px #263b3029;background:var(--soft-surface,#fff);padding:5px;border-radius:10px}
+.ac-model-search{padding:2px 2px 5px}.ac-model-search .ant-input-affix-wrapper{padding-inline:9px;border-radius:8px;background:var(--soft-surface,#fff);border-color:var(--soft-line,#d8e1dc)}.ac-model-search .ant-input{font-size:var(--font-size-body);background:transparent}.ac-model-search .ant-input-prefix{margin-inline-end:6px;color:var(--soft-muted)}.ac-model-search-empty{color:var(--soft-muted);font-size:var(--font-size-body)}
 .ac-model-source-nav{display:flex;flex-wrap:wrap;gap:2px;padding:3px 2px 6px;border-bottom:1px solid var(--soft-line,#d8e1dc);margin-bottom:4px}
 .ac-model-source-nav .ant-btn{height:25px;font-size: var(--font-size-body);padding:0 7px;color:var(--soft-primary)}
 .ac-model-list-popup .ant-select-item-group{position:sticky;top:0;z-index:2;background:#f2f5f3;color:var(--soft-ink);border-bottom:1px solid var(--soft-line,#d8e1dc);font-weight:600;padding:7px 10px}
