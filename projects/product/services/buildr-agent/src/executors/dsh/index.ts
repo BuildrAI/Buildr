@@ -1,3 +1,4 @@
+import { diagnosticCode } from '../../storage/execution-log.ts';
 import { regenerableToolCaches, toolCacheReclaimable } from '../../storage/tool-cache.ts';
 import { dshContent } from './content.ts';
 import { instructionParticipation } from '../../domain/participation.ts';
@@ -71,8 +72,9 @@ export class DshRuntime implements AgentRuntime {
   private gateway?: ExecutorGateway;
   private modelBridge?: {key:string;addressFile:string};
   private forkBridge?: {key:string;addressFile:string;patch:string};
-  private constructor(bindingIdentity: string, host: Awaited<ReturnType<typeof launchDshHost>>, client: DshClient) {
-    this.bindingIdentity=bindingIdentity;this.host=host;this.client=client;
+  private readonly diagnostics?:ExecutorOpenOptions['diagnostics'];
+  private constructor(bindingIdentity: string, host: Awaited<ReturnType<typeof launchDshHost>>, client: DshClient,diagnostics?:ExecutorOpenOptions['diagnostics']) {
+    this.bindingIdentity=bindingIdentity;this.host=host;this.client=client;this.diagnostics=diagnostics;
     host.child?.once('exit',()=>{
       for(const turn of this.turns.values())if(!turn.terminal){
         if(turn.retryTimer){clearTimeout(turn.retryTimer);turn.retryTimer=undefined;}
@@ -107,13 +109,13 @@ export class DshRuntime implements AgentRuntime {
     await writeFile(forkPatch, JSON.stringify(patches), {mode:0o600});
     patch = forkPatch;
     let host: Awaited<ReturnType<typeof launchDshHost>>;
-    try { host = await launchDshHost(executable, env, options.configRoot, options.signal, patch); }
+    try { host = await launchDshHost(executable, env, options.configRoot, options.signal, patch,options.diagnostics?event=>options.diagnostics!({...event,provider:'dsh'}):undefined); }
     catch (error) {
       await rm(forkBridge.addressFile,{force:true});
       await rm(forkPatch,{force:true});
       throw error;
     }
-    const runtime = new DshRuntime(binding.identity, host, host.client);
+    const runtime = new DshRuntime(binding.identity, host, host.client,options.diagnostics);
     runtime.participationInstruction = instructionParticipation('interaction-policy',(options.interaction ?? interactionPolicy).instructions);
     runtime.bindingData = binding.data; runtime.metadata.version = version;
     runtime.gateway = gateway; runtime.modelBridge=modelBridge;
@@ -335,6 +337,7 @@ export class DshRuntime implements AgentRuntime {
     }
   }
   private followFailed(turn: ActiveTurn, cause: unknown): void {
+    this.diagnostics?.({event:'observation-lost',provider:'dsh',executionId:turn.id,contextId:turn.input.contextRef.id,code:diagnosticCode(cause),attempt:turn.reconnects??0});
     const error = cause instanceof NativeObservationError ? cause
       : new NativeObservationError('dsh_execution_observation_lost', cause, this.gateway ? [this.gateway.apiKey] : []);
     if (this.disposed) return;
@@ -437,6 +440,7 @@ export class DshRuntime implements AgentRuntime {
     // Repair durable items independently of the old in-memory projection. This also
     // repairs an event consumer that failed after mutating its native turn object.
     for (const item of dshHistoryItems(events)) if (item.executionId && turn.inputIds?.has(item.executionId)) turn.input.onEvent({ type: 'item', item });
+    if(turn.observationLost)this.diagnostics?.({event:'observation-restored',provider:'dsh',executionId:turn.id,contextId:turn.input.contextRef.id,attempt:turn.reconnects??0});
     turn.observationLost = false; turn.observationDiagnostic = undefined;
     for (const event of events) {
       if (event.seq <= (turn.lastSeq ?? -1)) continue;
@@ -555,6 +559,7 @@ export class DshRuntime implements AgentRuntime {
       turn.tools.set(data.callId, { id: data.callId, label: String(data.name ?? '工具'), status: 'running' });
 
     }
+    if(dshToolOutcomeUnknown(event))this.diagnostics?.({event:'native-tail-repair',provider:'dsh',executionId:turn.id,contextId:turn.input.contextRef.id,code:'TOOL_OUTCOME_UNKNOWN'});
     if (event.type === 'tool/result') { const id = data.message?.toolCallId; const tool = turn.tools.get(id); if (tool) tool.status = dshToolOutcomeUnknown(event)?'unknown':'completed'; }
     if (event.type === 'approval/decided') { for (const [id, pending] of turn.pending) if (pending.resolve && id === String(data.id)) { turn.pending.delete(id); emit({ type: 'request-resolved', requestId: id }); } }
     if (event.type === 'turn/end') {

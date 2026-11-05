@@ -38,3 +38,24 @@ test('explicit restart changes the idle generation, preserves history, rejects s
   assert.equal((await observer.lifecycle.identity()).generation,next.identity.generation);
   controller.abort();await cancelled;
 });
+
+test('a killed execution backend keeps its exact exit signal and links the replacement generation', {timeout:90000}, async t=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-exit-evidence-')),dataRoot=path.join(root,'profile'),workspace=path.join(root,'work');
+ fs.mkdirSync(workspace);const packageRoot=path.join(root,'package');copyPackage(prepared,packageRoot);
+ fs.copyFileSync(path.join(import.meta.dirname,'../../fixtures/agent-process-entry.mjs'),path.join(packageRoot,'build/process-fixture.mjs'));
+ fs.writeFileSync(path.join(packageRoot,'build/fixture-version.json'),JSON.stringify({version:'exit-evidence'}));
+ const runtime=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'}),profileId='exit-evidence',options={dataRoot,profileId,runtime,sourceId:'minimal'};
+ let host:Awaited<ReturnType<typeof actor>>|undefined,observer:AgentProcessConnection|undefined;
+ t.after(()=>cleanupProcessFixture({root,dataRoot,profileId,host,observer}));
+ host=await actor({...options,workspace});observer=await connectAgentProcess(options);
+ const original=await observer.lifecycle.identity();await observer.disconnect();observer=undefined;
+ process.kill(original.pid,'SIGKILL'); // Exact live fixture process owned by this test.
+ await until(async()=>{try{process.kill(original.pid,0);return false;}catch{return true;}},Boolean);
+ observer=await connectAgentProcess(options);const replacement=await observer.lifecycle.identity();
+ assert.notEqual(replacement.generation,original.generation);
+ const directory=path.join(dataRoot,'agent-service/diagnostics');
+ const rows=()=>fs.readdirSync(directory).flatMap(name=>fs.readFileSync(path.join(directory,name),'utf8').trim().split('\n').map(line=>JSON.parse(line)));
+ await until(async()=>rows().some(row=>row.event==='service-child-exit'&&row.childPid===original.pid&&row.signal==='SIGKILL'),Boolean);
+ assert.ok(rows().some(row=>row.event==='service-start'&&row.generation===replacement.generation&&row.previousGeneration===original.generation&&row.previousPid===original.pid));
+ assert.ok(!rows().some(row=>row.event==='service-close-result'&&row.generation===original.generation));
+});

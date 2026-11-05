@@ -253,3 +253,20 @@ test('independent maintenance retries after the exact writer exits, and close st
   const retained = f.run(deadPid, 'after-close'); await delay(100);
   assert.ok(fs.existsSync(retained));
 });
+
+
+test('execution metadata log rotates privately, drops unapproved fields and survives an unsafe destination',async()=>{
+ const {executionLog,diagnosticCode}=await import('../../src/storage/execution-log.ts');
+ assert.equal(diagnosticCode({code:'agent_history_changed',message:'PRIVATE_PROMPT'}),'agent_history_changed');
+ assert.equal(diagnosticCode(new Error('PRIVATE_PROMPT')),undefined);
+ const fs=await import('node:fs'),os=await import('node:os'),path=await import('node:path');
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-lifecycle-ring-'));
+ try{
+  const log=executionLog(root,'test-generation',650);
+  for(let i=0;i<100;i++)log({event:'stop-request',runId:'run-'+i,text:'PRIVATE_PROMPT',token:'PRIVATE_TOKEN',code:'PRIVATE ERROR WITH SECRET',args:['PRIVATE_COMMAND']});
+  const directory=path.join(root,'diagnostics'),names=fs.readdirSync(directory);assert.equal(names.length,3);
+  for(const name of names){const file=path.join(directory,name),stat=fs.statSync(file),text=fs.readFileSync(file,'utf8');assert.ok(stat.size<=650);assert.equal(stat.mode&0o777,0o600);assert.ok(!text.includes('PRIVATE'));for(const line of text.trim().split('\n'))assert.ok(JSON.parse(line).time);}
+  const outside=path.join(root,'outside');fs.writeFileSync(outside,'keep');const file=path.join(directory,names.find(name=>name.endsWith('.jsonl'))!);fs.unlinkSync(file);fs.symlinkSync(outside,file);
+  assert.doesNotThrow(()=>log({event:'service-start'}));assert.equal(fs.readFileSync(outside,'utf8'),'keep');
+ }finally{fs.rmSync(root,{recursive:true,force:true});}
+});

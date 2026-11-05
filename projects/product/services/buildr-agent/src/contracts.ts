@@ -51,7 +51,10 @@ export interface ModelGatewayConfiguration {
   /** Same-account Qoder execution uses its native model route, retaining the source lease binding. */
   nativeModel?: { provider: 'qoder'; id: string; accountIdentity: string };
 }
+/** Private lifecycle metadata; implementations must never pass request or credential content. */
+export type ExecutionDiagnosticSink = (event: {event:string;[key:string]:unknown})=>void;
 export interface ExecutorOpenOptions {
+  diagnostics?: ExecutionDiagnosticSink;
   /** Profile-wide tool caches, supplied by default to every provider; never a native session/config HOME. */
   cacheRoot?: string;
   /** Service-owned instructions supplied to every executor, including future providers. */

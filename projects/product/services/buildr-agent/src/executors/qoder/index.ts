@@ -118,7 +118,7 @@ class QoderRuntime implements AgentRuntime {
     if (!isCompatibleProgram('qoder', version)) throw new Error(`qoder_version_unsupported: requires ${nativeProgramPolicy('qoder').compatibility}`);
     const binding = await consumerBinding('qoder', executable, version, config, options);
     const sdkModule=await qoderSdkPair(executable,version);
-    const rpc = new NativeRpc(process.execPath, [fileURLToPath(new URL(import.meta.url.endsWith('.ts') ? './worker.ts' : './worker.js', import.meta.url))], { cwd: options.configRoot, env });
+    const rpc = new NativeRpc(process.execPath, [fileURLToPath(new URL(import.meta.url.endsWith('.ts') ? './worker.ts' : './worker.js', import.meta.url))], { cwd: options.configRoot, env, diagnostics:options.diagnostics?event=>options.diagnostics!({...event,provider:'qoder'}):undefined });
     const runtime = new QoderRuntime(binding.identity, rpc, executable, env, options.configRoot);
     runtime.participationInstruction = instructionParticipation('interaction-policy',(options.interaction ?? interactionPolicy).instructions);
     runtime.bindingData = binding.data;

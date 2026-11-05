@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, writeFile, rm, rename, realpath, stat } from 'node:fs/p
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { NativeRpc, bindingFingerprint, nativeBinding, isolatedEnvironment, opaqueReference, parseReference } from '../../../build/executors/native-process.js';
+import { OwnedControlResource, NativeRpc, bindingFingerprint, nativeBinding, isolatedEnvironment, opaqueReference, parseReference } from '../../../build/executors/native-process.js';
 import { executorEnvironment as executorEnvForTest } from '../../../build/application/executor-environment.js';
 import { toolEnvironment } from '../../../build/executors/tool-environment.js';
 
@@ -220,4 +220,26 @@ test('DSH cold control proof releases an exited group despite unknown job receip
   for(const changed of [{bindingIdentity:'other'},{cwd:'/other'},{contextRef:{...contextRef,id:'other'}},{executionRef:{...executionRef,id:''}},{executionRef:{...executionRef,data:{...executionRef.data,resourceGroup:0}}}])assert.equal(await executor.readReleasedControl!({...input,...changed}),false);
   assert.equal(executionRef.data.backgroundWork,true);
  }finally{if(child.exitCode===null&&child.signalCode===null)child.kill();}
+});
+
+
+test('native lifecycle retains exit signal, controlled stop and exact execution linkage without process content',{skip:process.platform==='win32'},async()=>{
+ const {executionLog}=await import('../../../src/storage/execution-log.ts');
+ const fs=await import('node:fs');
+ const root=await mkdtemp(join(tmpdir(),'buildr-lifecycle-'));
+ try{
+  const log=executionLog(root,'test-generation');
+  const control=new OwnedControlResource(process.execPath,['-e','process.stderr.write("private-secret ERR_TEST_FAILURE\\n");setInterval(()=>{},1000)'],{cwd:root,env:process.env,diagnostics:log});
+  await new Promise<void>(resolve=>control.child.once('spawn',resolve));
+  const ref=control.executionRef('exact-run','exact-context','private-binding');
+  await new Promise<void>(resolve=>control.child.stderr.once('data',()=>resolve()));
+  await control.stopExecution(ref,'exact-context','private-binding');
+  const text=fs.readdirSync(join(root,'diagnostics')).map(name=>fs.readFileSync(join(root,'diagnostics',name),'utf8')).join(''),rows=text.trim().split('\n').map(line=>JSON.parse(line));
+  assert.ok(rows.some(row=>row.event==='native-execution-bind'&&row.executionId==='exact-run'&&row.contextId==='exact-context'));
+  assert.ok(rows.some(row=>row.event==='native-signal'&&row.reason==='stop-execution'&&row.signal==='SIGTERM'));
+  assert.ok(rows.some(row=>row.event==='native-exit'&&row.signal==='SIGTERM'));
+  assert.ok(rows.some(row=>row.event==='native-fatal-diagnostic'&&row.code==='ERR_TEST_FAILURE'));
+  assert.ok(!text.includes('private-secret')&&!text.includes('private-binding')&&!text.includes('setInterval'));
+  assert.ok(rows.every(row=>row.time&&row.generation==='test-generation'&&row.childPid===control.child.pid));
+ }finally{await rm(root,{recursive:true,force:true});}
 });

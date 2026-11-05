@@ -288,3 +288,13 @@ Buildr 隔离 DSH 的前台 shell 超时由原生执行器终止，默认层覆�
 原维护worker自动发现所有连接及模型域的HOME，包括未来执行器；有界扫描只读文件元数据，不跟随链接。最新发现写入私有`agent-service/process/storage-observation.json`，报告生成时间、扫描完整性、观察到的逻辑/路径分配量、工具归属和调查动作；它是可替换的诊断快照，不是引用库或删除依据。Agent可通过公开inspectAgentStorage即时读取同样结果。未知目录只形成调查线索，只有明确工具策略才能接入迁移；node-gyp头文件需版本头/安装标记匹配，Corepack需原生定位与包版本元数据匹配，冲突不覆盖。公共环境设置node-gyp与Corepack路径，减少重新写入HOME。
 
 缓存使用观察位于toolchains/cache-use，六个零正文文件记录保守的最后可能使用时间。公共执行入口在真实原生轮开始和结束更新观察，程序安装更新npm下载观察；维护发现消费者或恢复引用时也延后窗口。首次维护才发现的旧缓存从当前重新起算，缺少/损坏观察保留，不用目录mtime推断最后使用。删除前再次核对使用观察和原引用/占用/身份，不增加包索引数据库；观察写入不触发任务重发。
+
+## 中断诊断的私有时间线
+
+Agent Service 在实际产品数据目录的 `agent-service/diagnostics/` 保存 `lifecycle-<pid>-<generation>.jsonl`。先从实例记录核对准确数据目录和后台代次，再用 `conversationId` / `runId` 查 `run-state`，沿 `executionId`、`contextId`、`controlId` 与 `childPid` 串起原生进程事件。`service-start` 的前代标识和 `service-launch` / `service-child-exit` 可连接跨后台恢复，不按同名进程猜归属。
+
+`stop-request` / `stop-result` / `stop-failed` 表示控制请求及结果；`native-close-request` 和 `native-signal` 区分拥有者关闭、关闭超时升级信号与停止执行。`native-exit` 保留真实退出码或信号；`service-uncaught-exception` 只保留错误代码，`service-signal` 与 `service-close-result` 标识正常退出路径。`observation-lost` / `observation-restored` 标记连接观察故障及恢复，不能当作命令结束。`native-tail-repair` 表示恢复时观察到原生补齐的未知回执；日志 `time` 是本次实际观察时间，不把原生日志沿用的工具时间当成真实中断时间。
+
+日志只保存结构化标识、状态、计数和错误代码，不保存提示词、工具参数输出、环境、认证地址、Cookie、完整错误或堆栈。目录权限 `0700`，文件 `0600`；每个后台的日志单文件最多 2 MiB，轮换两份，每次创建写入器最多保留 64 份非活动进程日志，活动进程日志不因跨后台清理而删除。日志不可写会输出一次固定诊断，不改变执行和恢复策略。
+
+SIGKILL、主机断电或父子进程同时被强制终止时，进程自身可能来不及记下退出。后继启动的前代关联、缺失的正常关闭回执及仍存活父进程的子退出记录可缩小边界，但不能单凭“没有日志”认定退出信号或操作者；需要系统级审计才可能进一步证明。旧无标识混合日志只能作线索，不能填补历史事实。

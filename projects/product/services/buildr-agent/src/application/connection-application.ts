@@ -1,3 +1,4 @@
+import { executionLog } from '../storage/execution-log.ts';
 import { ExecutorStorage } from './executor-storage.ts';
 import { interactionPolicy } from '../domain/interaction-policy.ts';
 import { createHash, randomUUID } from 'node:crypto';
@@ -138,7 +139,7 @@ export class ConnectionApplication {
   }
 
   private async openExecutor(executor: AgentExecutor, options: import('../contracts.ts').ExecutorOpenOptions): Promise<AgentRuntime> {
-    return this.storage.opened(await executor.open(this.storage.options(executor, options)), executor, options.configRoot);
+    return this.storage.opened(await executor.open(this.storage.options(executor, {...options,diagnostics:executionLog(this.options.root,this.options.generation)})), executor, options.configRoot);
   }
 
   private stored(id: string): StoredConnection {

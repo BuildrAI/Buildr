@@ -1,3 +1,4 @@
+import { executionLog,diagnosticCode } from '../storage/execution-log.ts';
 import { releaseQuestionWait } from './question-wait-release.ts';
 import { mergeParticipation, instructionParticipation, applyParticipationSources, participationSource, validParticipationSource, normalizeParticipation, participationGaps, PARTICIPATION_LIMITS } from '../domain/participation.ts';
 import { singleParticipation, summarizeParticipation } from '../domain/participation-record.ts';
@@ -81,6 +82,8 @@ export class ConversationApplication {
       {kind:'fork',count:this.forks.active},
     ].filter(value=>value.count>0);
   }
+  private readonly diagnostics:ReturnType<typeof executionLog>;
+  private readonly diagnosticStates=new Map<string,string>();
   private readonly idleTimer: ReturnType<typeof setInterval>;
   private milliseconds() { return Date.parse(this.options.now()); }
   private readonly previewSecret = randomUUID();
@@ -164,6 +167,7 @@ export class ConversationApplication {
   };
   constructor(options: ConversationApplication['options']) {
     this.options = options;
+    this.diagnostics=executionLog(options.root,options.generation);
     this.idleTimer=setInterval(()=>{void this.collectIdle().catch(()=>{});},60_000);this.idleTimer.unref();
     this.media = new ConversationAttachments({ root: options.root, now: options.now, save: record => this.save(record) });
     this.forks = new ConversationForks({
@@ -489,6 +493,12 @@ export class ConversationApplication {
     const prior = record.view.revision;
     record.view.revision = randomUUID(); record.view.updatedAt = this.options.now();
     this.options.repository.saveConversation(record, initial ? undefined : prior);
+    for(const run of conversationRuns(record.view)){
+      const attempt=record.attempts.find(a=>a.runId===run.id),participant=record.participants.find(p=>p.id===run.participantId);
+      const facts={event:'run-state',conversationId:record.view.id,workspaceId:record.view.workspaceId,runId:run.id,participantId:run.participantId,provider:run.provider,ownerGeneration:run.generation,status:run.status,accepted:run.accepted,stopRequested:run.stopRequested===true,resourcesReleased:run.resourcesReleased===true,executionId:attempt?.executionRef?.id,contextId:participant?.contextRef?.id,childPid:attempt?.executionRef?.data?.resourceGroup,runningTools:run.tools.filter(t=>t.status==='running').length,unknownTools:run.tools.filter(t=>t.status==='unknown').length};
+      const signature=JSON.stringify(facts);
+      if(this.diagnosticStates.get(run.id)!==signature){this.diagnostics(facts);this.diagnosticStates.delete(run.id);this.diagnosticStates.set(run.id,signature);if(this.diagnosticStates.size>512)this.diagnosticStates.delete(this.diagnosticStates.keys().next().value!);}
+    }
     this.options.events.publish({ type: 'conversation', workspaceId: record.view.workspaceId, conversationId: record.view.id, revision: record.view.revision, payload: { conversation: this.view(record) } });
   }
   read(workspaceId: string, id: string, options: { before?: number; limit?: number; compactTools?: boolean } = {}): ConversationView {
@@ -1305,6 +1315,7 @@ export class ConversationApplication {
       else if (ended?.view.run?.status === 'failed') await this.retryFailure(workspaceId, id, runId, prepared, retries, rootRunId, ended.view.run.diagnostic ?? '', runtime);
       void this.generateAutomaticTitle(workspaceId, id, runId, runtime).catch(() => {});
     } catch (error) {
+      this.diagnostics({event:'run-failed',workspaceId,conversationId:id,runId,code:diagnosticCode(error)});
       const record = this.currentRun(workspaceId, id, runId);
       if (!record) {
         const detached=this.ownedRun(workspaceId,id,runId);
@@ -1882,6 +1893,12 @@ export class ConversationApplication {
     return this.read(workspaceId,id,{compactTools:true});
   }
   async stop(workspaceId: string, id: string, input: { expectedRevision: string; runId: string; participantId: string; generation: string; toolId?: string }): Promise<ConversationView> {
+    const facts={workspaceId,conversationId:id,runId:input.runId,participantId:input.participantId,ownerGeneration:input.generation};
+    this.diagnostics({...facts,event:'stop-request',reason:input.toolId?'individual-tool':'whole-run'});
+    try{const view=await this.stopOwned(workspaceId,id,input),run=conversationRuns(view).find(r=>r.id===input.runId);this.diagnostics({...facts,event:'stop-result',status:run?.status,resourcesReleased:run?.resourcesReleased===true});return view;}
+    catch(error){this.diagnostics({...facts,event:'stop-failed',code:diagnosticCode(error)});throw error;}
+  }
+  private async stopOwned(workspaceId: string, id: string, input: { expectedRevision: string; runId: string; participantId: string; generation: string; toolId?: string }): Promise<ConversationView> {
     if(!input.toolId){
       await this.reconcileReleasedControls(workspaceId,id,input);
       const released=this.load(workspaceId,id),run=conversationRuns(released.view).find(run=>run.id===input.runId);

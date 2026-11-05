@@ -1,3 +1,4 @@
+import { executionLog,diagnosticCode } from '../storage/execution-log.ts';
 import type { ServiceEvent } from '../contracts.ts';
 import { conversationEventEncoder } from '../domain/conversation-transfer.ts';
 import path from 'node:path';
@@ -28,6 +29,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
   validateAgentRuntime(options.dataRoot, options.runtime);
   let owner = claim(options.dataRoot, 'owner'), ownsMetadata = true;
   let abortStart: (() => Promise<void>) | undefined;
+  let cleanupDiagnostics:(()=>void)|undefined;
   try {
   const hosts = new AgentHostRegistry();
   const backendChange = runtimeChange(readProcessRecord(options.dataRoot), options.runtime.digest, new Date().toISOString());
@@ -56,6 +58,13 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     try { writePrivate(pendingFile, value); } finally { storage.release(); }
   }
   const identity: AgentProcessIdentity = { contracts: AGENT_EXECUTION_CONTRACTS, instanceId, generation: service.generation, profileId: options.profileId, dataRoot: path.resolve(options.dataRoot), pid: process.pid, runtime: options.runtime, parallelCompatibility: options.runtime.parallelCompatibility };
+  const diagnostics=executionLog(path.join(options.dataRoot,'agent-service'),service.generation);
+  const previous=readProcessRecord(options.dataRoot);
+  diagnostics({event:'service-start',runtimeDigest:options.runtime.digest,previousGeneration:previous?.identity.generation,previousPid:previous?.identity.pid,reason:backendChange?.reason??'initial-start'});
+  const fatal=(error:Error)=>diagnostics({event:'service-uncaught-exception',code:diagnosticCode(error)});
+  const onExit=(exitCode:number)=>diagnostics({event:'service-exit',exitCode,expected:closing});
+  process.on('uncaughtExceptionMonitor',fatal);process.on('exit',onExit);
+  cleanupDiagnostics=()=>{process.removeListener('uncaughtExceptionMonitor',fatal);process.removeListener('exit',onExit);};
   let accepting = true, closing = false, recovering = false, startedRecovery = false, inflight = 0;
   let retiring = false, adopting: Promise<void> | undefined;
   let pending = readPrivate<PendingRuntime>(pendingFile);
@@ -158,7 +167,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     if (req.url === '/shutdown') {
       if (input.expectedGeneration !== identity.generation || !['if-idle','stop-owned'].includes(input.mode)) throw new AgentServiceError('agent_control_stale', '退出请求已变化。', 409);
       if (input.mode === 'if-idle' && status().activity.busy) throw new AgentServiceError('agent_process_busy', '执行后台仍有工作或待确认事项。', 409);
-      accepting = false; json(res, 202, { accepted: true }); setImmediate(() => { void close().finally(() => { process.exitCode = 0; }); }); return;
+      accepting = false; json(res, 202, { accepted: true }); setImmediate(() => { void close('authenticated-shutdown').finally(() => { process.exitCode = 0; }); }); return;
     }
     if (req.url === '/cancel-generation') { generations.get(input.requestId)?.abort(); json(res, 200, { cancelled: true }); return; }
     if (req.url === '/events') {
@@ -278,8 +287,9 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
   writeProcessInstance(options.dataRoot, processRecord());
   writePrivate(path.join(controlRoot(options.dataRoot), 'instance.json'), processRecord());
   let closeWork: Promise<void> | undefined;
-  function close(): Promise<void> {
+  function close(reason='internal-close'): Promise<void> {
     if (closeWork) return closeWork;
+    diagnostics({event:'service-close-request',reason});
     closing = true; accepting = false;
     storageMaintenance.close();
     let confirmed=false;
@@ -292,11 +302,13 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
         writePrivate(path.join(controlRoot(options.dataRoot), 'last-stop.json'), { instanceId, confirmed, reasons: activity.reasons });
         writeProcessInstance(options.dataRoot, {...processRecord(),stopped:true,confirmed});
         await channel.close(); clearProcessRecord(options.dataRoot, instanceId);
-      } finally { if(confirmed&&ownsMetadata)owner.release(); clearInterval(timer); process.removeListener('SIGTERM', signal); process.removeListener('SIGINT', signal); }
+        diagnostics({event:'service-close-result',confirmed});
+      } finally { if(confirmed&&ownsMetadata)owner.release(); clearInterval(timer); process.removeListener('SIGTERM', term); process.removeListener('SIGINT', interrupt);cleanupDiagnostics?.(); }
     })(); return closeWork;
   }
-  const signal = () => { void close().finally(() => { process.exitCode = 0; }); };
-  process.once('SIGTERM', signal); process.once('SIGINT', signal);
+  const signal = (name:string) => { diagnostics({event:'service-signal',signal:name});void close('signal-'+name).finally(() => { process.exitCode = 0; }); };
+  const term=()=>signal('SIGTERM'),interrupt=()=>signal('SIGINT');
+  process.once('SIGTERM', term); process.once('SIGINT', interrupt);
   async function adoptParallel(target: AgentRuntimeUnit): Promise<void> {
     let startup: ReturnType<typeof claim> | undefined;
     let pid: number | undefined;
@@ -348,7 +360,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     if (closing || adopting) return;
     if (retiring) {
       adopting = service.releaseIdleSources().then(() => {
-        if (!status().activity.busy && !inflight) void close().finally(()=>{process.exitCode=0;});
+        if (!status().activity.busy && !inflight) void close('retired-idle').finally(()=>{process.exitCode=0;});
       }).catch(() => { /* Keep the exact old owner until native release is confirmed. */ }).finally(() => { adopting=undefined; });
       return;
     }
@@ -370,9 +382,9 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     // The short-lived successor coordinator owns the handoff after this process exits.
     const child = spawn(options.runtime.node, [path.join(options.runtime.directory, 'build/process/handoff.js'), handoff], { detached: true, stdio: 'ignore', windowsHide: true });
     child.once('error', () => { pending = { runtime: target, state: 'failed', diagnostic: '无法启动版本交接程序，旧后台已保留。' }; savePending(pending); accepting = true; });
-    child.once('spawn', () => { pending = { runtime: target, state: 'switching', coordinatorPid: child.pid, handoffFile:handoff }; savePending(pending); child.unref(); void close().finally(() => { process.exitCode = 0; }); });
+    child.once('spawn', () => { pending = { runtime: target, state: 'switching', coordinatorPid: child.pid, handoffFile:handoff }; savePending(pending); child.unref(); void close('runtime-handoff').finally(() => { process.exitCode = 0; }); });
   }, 250);
   timer.unref();
   return { identity, origin: channel.origin, status, close };
-  } catch (error) { try { await abortStart?.(); } finally { owner.release(); } throw error; }
+  } catch (error) { try { await abortStart?.(); } finally { cleanupDiagnostics?.();owner.release(); } throw error; }
 }
