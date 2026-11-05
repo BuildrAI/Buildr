@@ -20,6 +20,13 @@ function createTestDocument(): any  {
       nodeName: tagName === '#document-fragment' ? '#document-fragment' : tagName.toUpperCase(),
       tagName: tagName === '#document-fragment' ? undefined : tagName.toUpperCase(),
       attributes: Object.create(null),
+      listeners: new Map<string, (event: any) => void>(),
+      addEventListener(type: string, listener: (event: any) => void) { this.listeners.set(type,listener); },
+      dispatchEvent(event: any) { this.listeners.get(event.type)?.(event); },
+      replaceWith(next: any) {
+        const parent=this.parentNode;if(!parent)return;
+        parent.childNodes[parent.childNodes.indexOf(this)]=next;next.parentNode=parent;this.parentNode=null;
+      },
       childNodes: [],
       parentNode: null,
       ownerDocument: document,
@@ -512,4 +519,17 @@ test('任务列表的复合正文位于复用布局的单一内容区，有序�
   assert.equal(item.childNodes[1].className, 'markdown-task-content');
   assert.equal(item.childNodes[1].querySelector('strong').textContent, '完成');
   assert.equal(item.childNodes[1].querySelector('ul li').textContent, '子项');
+});
+
+test('failed image falls back in its current view and a fresh render can recover the same URL',async()=>{
+  const {renderMarkdown}=await loadRenderer();
+  const options={imageResolver:()=>({href:'/safe/recoverable.png'})};
+  const first=renderMarkdown('![可恢复图片](recoverable.png)',options);
+  const image=first.querySelector('img');assert.ok(image);
+  image.dispatchEvent({type:'error'});
+  assert.equal(first.querySelector('img'),null);
+  assert.match(first.textContent,/图片无法预览：可恢复图片/);
+  assert.equal(first.querySelector('span')?.getAttribute('aria-label'),'图片无法预览：可恢复图片','failed images retain their accessible name');
+  const refreshed=renderMarkdown('![可恢复图片](recoverable.png)',options);
+  assert.equal(refreshed.querySelector('img')?.getAttribute('src'),'/safe/recoverable.png');
 });

@@ -8,7 +8,7 @@ export async function runTaskMaterialsJourney({ t, page, runtime, materials, wor
   const simple = 'materials-simple', empty = 'materials-intent-only', history = 'materials-history';
   // Diagnostic selection retains the same production host and fixture boundary.
   const focus = process.env.BUILDR_TASK_MATERIALS_FOCUS || '';
-  const scenario = async (name: string, action: () => Promise<void>) => { if (!focus || name.includes(focus)) await t.test(name, action); };
+  const scenario = async (name: string, action: () => Promise<void>) => { if (!focus || name.includes(focus)) await t.test(name, async()=>{await page.goto('about:blank');await action();}); };
   const inputs = path.join(workspaceRoot, '.buildr/local/materials-browser-inputs');
   fs.mkdirSync(inputs, { recursive: true });
   const json = (name: string, value: unknown) => {
@@ -199,7 +199,7 @@ export async function runTaskMaterialsJourney({ t, page, runtime, materials, wor
     await body().getByRole('button', { name: '阅读模式', exact: true }).click(); await decoded('本机材料配图');
     await body().getByRole('menuitem').filter({ hasText: '项目配图材料' }).click();
     await decoded('项目材料配图');
-    await body().getByRole('img', { name: '稍后恢复的图片', exact: true }).scrollIntoViewIfNeeded();
+    await body().getByRole('img', { name: /^(?:图片无法预览：)?稍后恢复的图片$/ }).scrollIntoViewIfNeeded();
     await body().getByText('部分图片暂时不可读取，请刷新任务正文后重试。', { exact: true }).waitFor({ state: 'visible' });
     assert.match(await body().innerText(), /项目图片正文/);
     fs.writeFileSync(path.join(projectRoot, 'assets/later.png'), png);
@@ -225,7 +225,7 @@ export async function runTaskMaterialsJourney({ t, page, runtime, materials, wor
     assert.equal(linkedResponse.body.path, 'docs/linked-images.md');
     await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>('[data-task-linked-document] img')].some(item => item.alt === '链接资料配图' && item.complete && item.naturalWidth === 1));
     assert.match((await linked.getByRole('img', { name: '链接资料配图', exact: true }).getAttribute('src'))!, new RegExp(`/tasks/${id}/document-image/demo`));
-    await linked.getByRole('img', { name: '链接后稍后恢复的图片', exact: true }).scrollIntoViewIfNeeded();
+    await linked.getByRole('img', { name: /^(?:图片无法预览：)?链接后稍后恢复的图片$/ }).scrollIntoViewIfNeeded();
     await linked.getByText('部分图片暂时不可读取，请刷新资料后重试。', { exact: true }).waitFor({ state: 'visible' });
     assert.match(await linked.innerText(), /链接后的图片正文/);
     fs.writeFileSync(path.join(projectRoot, 'assets/linked-later.png'), png);
@@ -235,7 +235,7 @@ export async function runTaskMaterialsJourney({ t, page, runtime, materials, wor
     assert.equal(reread.status(), 200);
     assert.equal((await reread.json()).path, 'docs/linked-images.md');
     await linked.getByRole('img', { name: '链接后稍后恢复的图片', exact: true }).waitFor({ state: 'visible' });
-    await linked.getByRole('img', { name: '链接后稍后恢复的图片', exact: true }).scrollIntoViewIfNeeded();
+    await linked.getByRole('img', { name: /^(?:图片无法预览：)?链接后稍后恢复的图片$/ }).scrollIntoViewIfNeeded();
     await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>('[data-task-linked-document] img')].some(item => item.alt === '链接后稍后恢复的图片' && item.complete && item.naturalWidth === 1));
     assert.equal(await linked.getByText('部分图片暂时不可读取，请刷新资料后重试。', { exact: true }).count(), 0);
     await linked.getByRole('button', { name: '查看原文', exact: true }).click();

@@ -21,7 +21,10 @@
 
 - `buildr-web-browser-verification`: 浏览器独立场景选择、失败隔离与清理。
 - `product-verification-quality`: 测试变更影响、跨基线接续与准备复用证据。
+- `buildr-web-client`: 按已归档要求校准任务列表目标展示，消除旧场景描述冲突。
 
 ## Impact
 
-涉及 buildr-web/test/browser、buildr/test/verification 及对应单元/集成回归和使用指引。沿用现有 registry、timing、内容快照和工作树，不新增状态库、不修改发布门禁或产品业务状态。任务为 verification-backlog-repair，保留已有未交付补丁。
+涉及 buildr-web/test/browser、buildr/test/verification 及对应单元/集成回归和使用指引。真实现场修复还覆盖 Agent 首次准备与网页生命周期、前端最终产物压缩、图片刷新及分支操作的旧读取取消。沿用现有 registry、timing、内容快照和工作树，不新增状态库、不修改发布门禁或产品业务状态。任务为 verification-backlog-repair，保留已有未交付补丁。
+
+本轮规范事实校准：buildr-web-client既有任务列表描述按2026-11-02已归档要求消除旧摘要/悬停场景冲突；不改变现行产品行为。

@@ -37,7 +37,7 @@ function cachedWebDist(outputRoot: string, build: any, cacheRoot: string, option
   if(path.resolve(outputRoot)===path.resolve(cacheRoot)||path.resolve(outputRoot).startsWith(path.resolve(cacheRoot)+path.sep))throw new Error('web_dist_cache_output_overlap');
   return withExclusiveFileLock(path.join(cacheRoot,'.lock'),cacheRoot,()=>{
     const sourcePaths=options.inputPaths??[
-      ...['src','index.html','vite.config.ts','tsconfig.json','tsconfig.app.json','tsconfig.node.json','package.json','package-lock.json','build/generated'].map(file=>path.join(webRoot,file)),
+      ...['src','tools','index.html','vite.config.ts','tsconfig.json','tsconfig.app.json','tsconfig.node.json','package.json','package-lock.json','build/generated'].map(file=>path.join(webRoot,file)),
       ...['test/verification/web-dist.ts','tools/build/web-dist.ts','tools/build/generated-artifacts.ts','tools/verification/candidate-preparation-reuse.ts','tools/testing/run-types.ts','tools/development/run-development-npm.ts'].map(file=>path.join(productRoot,file)),
     ];
     const input=()=>{

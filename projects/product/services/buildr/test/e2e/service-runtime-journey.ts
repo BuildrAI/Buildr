@@ -205,7 +205,8 @@ export async function runServiceRuntimeJourney({ page, runtime, workspaceRoot, w
   };
   const startTask = async () => {
     await assertCentered(page, modal());
-    const response = page.waitForResponse(result => result.url() === `${apiBase}/tasks/${taskId}/runs` && result.request().method() === 'POST');
+    // Both selected services retain their real 30-second readiness bounds.
+    const response = page.waitForResponse(result => result.url() === `${apiBase}/tasks/${taskId}/runs` && result.request().method() === 'POST',{timeout:60_000});
     await modal().getByRole('button', { name: '启动所选服务', exact: true }).click();
     const result = await response; assert.equal(result.status(), 200); const body = await result.json();
     assert.equal(body.results.some((item: any) => item.error), false, JSON.stringify(body)); await taskStart().waitFor({ state: 'hidden' }); return body;

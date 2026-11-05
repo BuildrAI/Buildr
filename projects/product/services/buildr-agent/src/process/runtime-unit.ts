@@ -42,7 +42,8 @@ function digestTree(root: string, names: string[], node: string, entry: string):
   return digest.digest('hex');
 }
 /** Materialize the already prepared private package; no source or global installation fallback. */
-export function prepareAgentRuntime(input: { dataRoot: string; packageRoot?: string; entry?: string; node?: string }): AgentRuntimeUnit {
+export function prepareAgentRuntime(input: { dataRoot: string; packageRoot?: string; entry?: string; node?: string }, checkCancelled: () => void = () => {}): AgentRuntimeUnit {
+  checkCancelled();
   const packageRoot = fs.realpathSync(input.packageRoot ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..'));
   const entry = input.entry ?? 'build/process/entry.js';
   const node = fs.realpathSync(input.node ?? process.execPath);
@@ -51,18 +52,20 @@ export function prepareAgentRuntime(input: { dataRoot: string; packageRoot?: str
   if (fs.existsSync(path.join(packageRoot, 'node_modules'))) names.push(...files(path.join(packageRoot, 'node_modules')).map(name => path.join('node_modules', name)));
   names.push('package.json');
   const digest = digestTree(packageRoot, names.sort(), node, entry);
+  checkCancelled();
   const compatibility = readPrivate<{ parallelCompatibility?: 1 | 2 | 3 }>(path.join(packageRoot, 'build/runtime-contracts.json'));
   const lock = claimStorage(input.dataRoot);
   try {
   const units = path.join(controlRoot(input.dataRoot), 'runtimes'); privateDirectory(units);
   const directory = path.join(units, digest);
   const descriptor: AgentRuntimeUnit = { schemaVersion: 1, digest, directory, entry: path.join(directory, entry), node: path.join(directory, process.platform === 'win32' ? 'node.exe' : 'node'), ...([1,2,3].includes(compatibility?.parallelCompatibility ?? 0) ? { parallelCompatibility: compatibility!.parallelCompatibility } : {}) };
-  if (fs.existsSync(directory)) { validateAgentRuntime(input.dataRoot, descriptor); const now = new Date(); fs.utimesSync(directory, now, now); return descriptor; }
+  if (fs.existsSync(directory)) { validateAgentRuntime(input.dataRoot, descriptor); checkCancelled(); const now = new Date(); fs.utimesSync(directory, now, now); return descriptor; }
   const stage = path.join(units, '.stage-' + randomUUID()); privateDirectory(stage);
   try {
-    for (const name of names) { const target = path.join(stage, name); fs.mkdirSync(path.dirname(target), { recursive: true }); if (name === 'build/runtime-contracts.json') fs.copyFileSync(path.join(packageRoot, name), target);
+    for (const name of names) { checkCancelled(); const target = path.join(stage, name); fs.mkdirSync(path.dirname(target), { recursive: true }); if (name === 'build/runtime-contracts.json') fs.copyFileSync(path.join(packageRoot, name), target);
       else fs.linkSync(materializeRuntimeObject(path.join(input.dataRoot, 'agent-service'), path.join(packageRoot, name)), target); }
     fs.linkSync(materializeRuntimeObject(path.join(input.dataRoot, 'agent-service'), node, 0o100), path.join(stage, path.basename(descriptor.node)));
+    checkCancelled();
     writePrivate(path.join(stage, 'runtime.json'), { ...descriptor, files: names });
     try { fs.renameSync(stage, directory); } catch (error) { if (!fs.existsSync(directory)) throw error; }
     validateAgentRuntime(input.dataRoot, descriptor); return descriptor;

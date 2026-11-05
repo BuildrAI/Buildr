@@ -160,13 +160,15 @@ export function createLocalWorkspaceServer(runtime: any, {
 
   const ready: Promise<any> = new Promise((resolve: any, reject: any) => {
     server.once('error', reject);
-    server.listen(port, '127.0.0.1', () => {
-      onReady?.();
-      server.removeListener('error', reject);
-      const address = server.address();
-      if (!address || typeof address === 'string') throw new Error('Buildr Web server did not bind a TCP address.');
-      origin = `http://127.0.0.1:${address.port}`;
-      resolve({ server, url: origin, initialWorkspaceId, sessionToken, instanceSecret: healthSecret });
+    server.listen(port, '127.0.0.1', async () => {
+      try {
+        await onReady?.();
+        server.removeListener('error', reject);
+        const address = server.address();
+        if (!address || typeof address === 'string') throw new Error('Buildr Web server did not bind a TCP address.');
+        origin = `http://127.0.0.1:${address.port}`;
+        resolve({ server, url: origin, initialWorkspaceId, sessionToken, instanceSecret: healthSecret });
+      } catch(error) { reject(error); }
     });
   });
   return { server, ready, shutdown };

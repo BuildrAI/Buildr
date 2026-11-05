@@ -93,10 +93,12 @@ export function createRuntime(): any  {
   registry.install(createParentCoordinationModule(runtime));
   registry.install(createArtifactLifecycleModule(runtime));
   registry.install(createSystemInstallationModule(runtime));
-  registry.install(createWebModule(runtime, { httpContributions: registry.contributions('http'), onReady: () => {
+  registry.install(createWebModule(runtime, { httpContributions: registry.contributions('http'), onReady: async () => {
     // start() resolves the service lazily; a synchronous throw here must not
     // escape the listen callback and kill the process.
-    try { void registry.provide(AGENT_SERVICE_APPLICATION).start().catch(warnRecoveryFailure); }
+    // Publish readiness only after the backend retains the package bytes. An npm
+    // update may replace this source installation immediately after the receipt.
+    try { await registry.provide(AGENT_SERVICE_APPLICATION).start(); }
     catch (error) { warnRecoveryFailure(error); }
     try {
       const profile=webProfileContract.resolveWebProfile(readCurrentProductIdentity());

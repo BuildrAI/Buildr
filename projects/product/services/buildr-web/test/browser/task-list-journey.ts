@@ -11,7 +11,9 @@ export async function runTaskListJourney({antdSelectDisplay, antdSelectOptionTex
 <script id="buildr-prototype" type="application/json">{"version":1,"pages":[{"id":"local","title":"任务本机页面","notes":[{"id":"scope","title":"本机来源","text":"此页面属于当前任务，不要求关联规范变更。"}],"states":[]}]}</script></body></html>`);
     assert.deepEqual(runtime.inspectTask(workspaceRoot, taskId).record.changes, []);
     await page.goto(`${workspaceUrl}/tasks/${taskId}`);
+    const prototypeRead=page.waitForResponse((response:any)=>new URL(response.url()).pathname.endsWith(`/tasks/${taskId}/ui-prototypes`),{timeout:30_000});
     await page.locator('[data-task-node=design]').click();
+    const prototypeResponse=await prototypeRead;assert.equal(prototypeResponse.status(),200,await prototypeResponse.text());
     await page.locator('[data-task-tab=prototype]').filter({ hasText: '任务本机页面' }).click();
     await page.frameLocator('#task-prototype-frame').locator('#local-prototype-heading').waitFor({ state: 'visible' });
     await page.frameLocator('#task-prototype-frame').locator('#local-prototype-action').click();
@@ -567,48 +569,24 @@ export async function runTaskListJourney({antdSelectDisplay, antdSelectOptionTex
     await page.setViewportSize({width:1280,height:720});
   });
 
-  await t.test('任务列表整行进入详情、任务列悬停预览目标、单一项目列进入项目页', async () => {
-    runtime.createTask(workspaceRoot, { taskId: 'browser-list-navigation', title: '列表交互任务', intent: '验证任务列的完整目标预览**标记**与单一项目入口。', projects: ['demo'], services: [], changes: [] });
-    runtime.createTask(workspaceRoot, { taskId: 'browser-list-cross', title: '跨项目列表任务', intent: '验证跨项目任务不提供单一项目入口', projects: ['demo', 'other'], services: [], changes: [] });
-    await page.setViewportSize({ width: 1280, height: 860 });
+  await t.test('任务列表只显示标题与状态，整行和键盘进入详情，单一项目列进入项目页', async () => {
+    const id='browser-list-navigation', goal='验证任务列的完整目标**标记**与单一项目入口。';
+    runtime.createTask(workspaceRoot, { taskId:id, title:'列表交互任务', intent:goal, projects:['demo'], services:[], changes:[] });
+    runtime.createTask(workspaceRoot, { taskId:'browser-list-cross', title:'跨项目列表任务', intent:'验证跨项目任务不提供单一项目入口', projects:['demo','other'], services:[], changes:[] });
+    await page.setViewportSize({width:1280,height:860});
     await page.goto(`${workspaceUrl}/tasks?status=open`);
-    const row = page.locator('#task-table-body [data-task-id="browser-list-navigation"]');
-    await row.waitFor({ state: 'visible' });
-    const projectHeader = page.locator('.task-compact-table thead th').filter({ hasText: '项目' });
-    await projectHeader.first().waitFor({ state: 'visible' });
-    assert.doesNotMatch(await row.locator('.task-row-summary').innerText(), /\*\*/, '摘要行展示去除标记的紧凑目标');
-    await row.locator('.task-goal-preview-host').hover();
-    const preview = page.locator('.selectable-hover-card .selectable-hover-card-content').filter({ hasText: '完整目标预览' });
-    await preview.waitFor({ state: 'visible' });
-    assert.match(await preview.innerText(), /完整目标预览标记与单一项目入口/);
-    const cardBox = await page.locator('.selectable-hover-card').first().boundingBox();
-    const viewportWidth = await page.evaluate(() => innerWidth);
-    assert.ok(cardBox && cardBox.x >= 0 && cardBox.x + cardBox.width <= viewportWidth, '目标预览保持在窗口内');
-    await page.mouse.move(0, 0);
-    await preview.waitFor({ state: 'hidden' });
-    assert.equal(await page.locator('#task-table-body [data-task-id="browser-list-cross"] a[href*="/projects/"]').count(), 0, '跨项目任务不提供单一项目入口');
-    const projectLink = page.locator('#task-table-body [data-task-id="browser-list-navigation"] a[href*="/projects/demo"]');
-    assert.equal(await projectLink.count(), 1, '单一项目任务的项目列提供项目页入口');
-    await projectLink.click();
-    await page.waitForFunction(() => location.pathname.endsWith('/projects/demo'));
+    const row=page.locator(`#task-table-body [data-task-id="${id}"]`);
+    await row.waitFor({state:'visible'});
+    await row.locator('.task-row-main').hover();
+    assert.equal(await row.locator('.task-row-summary').count(),0,'列表不展示目标摘要');
+    assert.equal(await row.locator('.task-goal-preview-host').count(),0,'列表不提供目标悬停预览');
+    assert.equal(await page.locator('#task-table-body [data-task-id="browser-list-cross"] a[href*="/projects/"]').count(),0);
+    const projectLink=row.locator('a[href*="/projects/demo"]');assert.equal(await projectLink.count(),1);
+    await projectLink.click();await page.waitForFunction(()=>location.pathname.endsWith('/projects/demo'));
     await page.goto(`${workspaceUrl}/tasks?status=open`);
-    const listRow = page.locator('#task-table-body [data-task-id="browser-list-navigation"]');
-    const goalHost = listRow.locator('.task-goal-preview-host');
-    await page.mouse.move(0, 0);
-    await goalHost.focus();
-    await page.keyboard.press('Shift+Tab');
-    await page.keyboard.press('Tab');
-    assert.equal(await goalHost.evaluate((node: HTMLElement) => document.activeElement === node), true, '键盘返回任务目标预览');
-    await preview.waitFor({ state: 'visible' });
-    await preview.hover();
-    assert.equal(await preview.evaluate((node: HTMLElement) => getComputedStyle(node).userSelect), 'text', '预览正文仍可选择复制');
-    await listRow.locator('.task-row-main').press('Enter');
-    await preview.waitFor({ state: 'hidden' });
-    await page.waitForFunction(() => Boolean(document.querySelector('#task-table-body tr.task-row-current')));
-    await page.goto(`${workspaceUrl}/tasks?status=open`);
-    await listRow.locator('.task-row-summary').click();
-    await page.waitForFunction(() => Boolean(document.querySelector('#task-table-body tr.task-row-current')));
+    await row.locator('.task-row-main').press('Enter');await page.locator('#task-detail-main').waitFor();
+    assert.ok((await page.locator('#task-detail-main').innerText()).includes('完整目标'),'详情保留完整目标');
+    await page.goto(`${workspaceUrl}/tasks?status=open`);await row.locator('td').last().click();
+    await page.locator('#task-detail-main').waitFor();
   });
-
-
 }

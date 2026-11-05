@@ -519,6 +519,12 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
       assert.deepEqual(workbenchApplication.inspectWorkbenchPreferences(root).items, [], '测试工作空间的初始工作台状态必须为空。');
     }
   }
+  // Ordinary page journeys require a ready real collaborator. Cold preparation
+  // responsiveness is covered independently; conversation fixtures own their routes.
+  if(!isolateConversationService){
+    await runtimeProvide(webRuntime,AGENT_SERVICE_APPLICATION).start();
+    process.stderr.write(`[buildr-browser] selector=${selectorLabel} phase=agent-ready\n`);
+  }
   browser = await launchTestBrowser();
   const browserErrors: any[] = [];
   const expectedBrowserErrors: any = new Set();
@@ -530,8 +536,23 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     const context = await browser.newContext({ locale: 'zh-CN' });
     const nextPage = await context.newPage();
     nextPage.on('pageerror', (error: any) => browserErrors.push(`pageerror ${nextPage.url()}: ${error.message}`));
-    nextPage.on('console', (message: any) => { if (message.type() === 'error') browserErrors.push(`console.error ${nextPage.url()} [${message.location().url}]: ${message.text()}`); });
+    nextPage.on('console', (message: any) => {
+      if (message.type() === 'error') browserErrors.push(`console.error ${nextPage.url()} [${message.location().url}]: ${message.text()}`);
+      if (message.type() === 'warning' && message.text().startsWith('文件语言加载失败')) process.stderr.write('[browser-language-load] '+message.text()+'\n');
+    });
     nextPage.setDefaultTimeout(10_000);
+    nextPage.on('requestfinished',(request:any)=>{
+      const timing=request.timing();
+      if(timing.responseEnd>1000)process.stderr.write('[browser-request-timing] '+JSON.stringify({path:new URL(request.url()).pathname,responseMs:timing.responseEnd,requestStart:timing.requestStart,responseStart:timing.responseStart,connectStart:timing.connectStart,connectEnd:timing.connectEnd})+'\n');
+    });
+    nextPage.on('response',async(response:any)=>{
+      const pathname=new URL(response.url()).pathname;
+      if(response.status()>=400&&pathname.endsWith('/code/branches')){
+        const failure=await response.json().catch(()=>null);
+        process.stderr.write('[browser-branch-read-failure] '+JSON.stringify({path:pathname,status:response.status(),code:failure?.error?.code})+'\n');
+      }
+    });
+
     if (isolateConversationService) {
       // Conversation writes are supplied by the per-group route fixture.
       // Only real workspace opens and recent visits are allowed; visits are reset.
@@ -544,6 +565,35 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     return nextPage;
   };
   let page: any = await newBrowserPage();
+  let lastTick=performance.now(),maximumLag=0;
+  const lagTimer=setInterval(()=>{const now=performance.now();maximumLag=Math.max(maximumLag,now-lastTick-100);lastTick=now;},100);
+  t.after(()=>{clearInterval(lagTimer);process.stderr.write('[browser-host-lag] '+JSON.stringify({maximumLag})+'\n');});
+
+  const observedNavigations: Array<{path:string;status:number}> = [];
+  const observedWrites: Array<{path:string;method:string;status?:number}> = [];
+  const writes=new WeakMap<object,{path:string;method:string;status?:number}>();
+  page.on('request',(request:any)=>{if(!['GET','HEAD','OPTIONS'].includes(request.method())){const item={path:new URL(request.url()).pathname,method:request.method()};observedWrites.push(item);writes.set(request,item);if(observedWrites.length>30)observedWrites.shift();}});
+  page.on('response',(response:any)=>{const item=writes.get(response.request());if(item)item.status=response.status();});
+
+  page.on('response',(response:any)=>{
+    if(response.request().isNavigationRequest()&&response.frame()===page.mainFrame()){
+      observedNavigations.push({path:new URL(response.url()).pathname,status:response.status()});
+      if(observedNavigations.length>20)observedNavigations.shift();
+    }
+  });
+  const runTest=t.test.bind(t);
+  t.test=(...args:any[])=>{
+    const action=args.at(-1);
+    if(typeof action==='function')args[args.length-1]=async(context:any)=>{
+      try{return await action(context);}catch(error){
+        const state=await page.evaluate(()=>({path:location.pathname,title:document.title,session:Boolean(document.querySelector('meta[name="buildr-session"]')),nodes:[...document.querySelectorAll('[data-task-node]')].map(n=>({value:n.getAttribute('data-task-node'),visible:Boolean(n.getClientRects().length)})),ids:[...document.querySelectorAll('[id]')].slice(0,100).map(n=>n.id),text:document.body.innerText.slice(0,5000)})).catch(()=>({closed:true}));
+        process.stderr.write('[browser-failure-state] '+JSON.stringify({scenario:args[0],navigations:observedNavigations,writes:observedWrites,state})+'\n');
+        throw error;
+      }
+    };
+    return runTest(...args);
+  };
+
   process.stderr.write(`[buildr-browser] selector=${selectorLabel} fixture=${fixtureProfile} phase=browser-ready\n`);
   t.beforeEach(() => { browserErrors.length = 0; expectedBrowserErrors.clear(); });
   t.afterEach(async () => {

@@ -9,6 +9,10 @@ export function useSourceControlRead<I extends object, T>(key: string, input: I,
   const cache = useRef(new Map<string, T>());
   const pending = useRef<AbortController | null>(null), sequence = useRef(0);
   const current = useRef({ key, input, loader, enabled }); current.current = { key, input, loader, enabled };
+  const cancel = useCallback(() => {
+    ++sequence.current; pending.current?.abort(); pending.current = null;
+    setState(previous => previous.loading ? {...previous, loading:false} : previous);
+  }, []);
   const update = useCallback((apply: (previous: T) => T) => {
     const source = current.current, previous = cache.current.get(source.key);
     if (!source.enabled || !previous) return;
@@ -40,5 +44,5 @@ export function useSourceControlRead<I extends object, T>(key: string, input: I,
     return () => { ++sequence.current; pending.current?.abort(); pending.current = null; };
   }, [key, enabled, loader, refreshVersion, refresh]);
   const visible = state.key === key ? state : null;
-  return { data: visible?.data ?? cache.current.get(key) ?? null, loading: enabled && Boolean(key) && (!visible || visible.loading), error: visible?.error || '', refresh, update };
+  return { data: visible?.data ?? cache.current.get(key) ?? null, loading: enabled && Boolean(key) && (!visible || visible.loading), error: visible?.error || '', refresh, update, cancel };
 }

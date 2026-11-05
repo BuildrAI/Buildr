@@ -5,7 +5,6 @@ import { markdownDestination } from './lib/markdownDestination.ts';
 import { copyText } from './lib/copyText.ts';
 import { cachedDiagramSvg, setDiagramSvg } from './lib/markdownDiagramSvg.ts';
 /** Failed destinations stay textual across re-renders; a new document load starts with a clean view. */
-const failedMarkdownImages = new Set<string>();
 
 export type MarkdownRenderOptions = {
   document?: Document;
@@ -68,6 +67,7 @@ function imageFallback(doc, alt) {
   fallback.className = 'markdown-image-fallback';
   fallback.setAttribute('role', 'img');
   fallback.textContent = alt ? `图片无法预览：${alt}` : '图片无法预览';
+  fallback.setAttribute('aria-label', fallback.textContent);
   return fallback;
 }
 
@@ -102,7 +102,7 @@ function appendInline(parent, tokens, doc, linkOptions) {
       const destination = decodeHTML(token.href);
       const resolved = linkOptions.imageResolver?.(markdownDestination(destination) ?? '');
       const alt = token.tokens ? inlineText(token.tokens) : decodeHTML(token.text);
-      if (!resolved?.href || failedMarkdownImages.has(resolved.href)) {
+      if (!resolved?.href) {
         parent.append(imageFallback(doc, alt)); continue;
       }
       const image = doc.createElement('img');
@@ -112,7 +112,6 @@ function appendInline(parent, tokens, doc, linkOptions) {
       // Keep the authored reference so an enlarged preview can show its real source.
       image.setAttribute('data-markdown-href', destination);
       image.addEventListener?.('error', () => {
-        failedMarkdownImages.add(resolved.href);
         if (image.parentNode) image.replaceWith(imageFallback(doc, alt));
       });
       parent.append(image);

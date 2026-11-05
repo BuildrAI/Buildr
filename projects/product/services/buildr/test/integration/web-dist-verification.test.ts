@@ -4,7 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { buildWebDist, resolveAdjacentNpmCli } from '../../tools/build/web-dist.ts';
+import { buildWebDist, resolveAdjacentNpmCli, validateWebDist } from '../../tools/build/web-dist.ts';
+import { brotliCompressSync, gzipSync } from 'node:zlib';
 import { describeWebDistTree, inspectLocalWebToolchain, verifyGeneratedWebDist } from '../verification/web-dist.ts';
 
 function fixture(t: any): any  {
@@ -104,6 +105,18 @@ function productionDist(target: string, hash: string, body = hash): void {
   fs.writeFileSync(path.join(target, 'assets', `app-${hash}.js`), body);
   fs.writeFileSync(path.join(target, 'assets', `app-${hash}.css`), 'body{}');
 }
+
+test('production dist rejects compressed bytes captured before final chunk rewriting', t => {
+  const {root}=fixture(t);
+  productionDist(root,'compressed1','export const preload = [];');
+  const file=path.join(root,'assets/app-compressed1.js'),final=fs.readFileSync(file);
+  for(const [extension,encode] of [['gz',gzipSync],['br',brotliCompressSync]] as const){
+    fs.writeFileSync(file+'.'+extension,encode(Buffer.from('export const preload = __VITE_PRELOAD__;')));
+    assert.throws(()=>validateWebDist(root),(error:any)=>error.code==='web_dist_inventory_invalid'&&error.details?.file==='assets/app-compressed1.js.'+extension);
+    fs.writeFileSync(file+'.'+extension,encode(final));
+    assert.ok(validateWebDist(root).includes('assets/app-compressed1.js.'+extension));
+  }
+});
 
 function safeBuildFixture(t: any) {
   const { root } = fixture(t);

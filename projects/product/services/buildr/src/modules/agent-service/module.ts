@@ -18,6 +18,7 @@ export function createAgentServiceModule(options: { readLocalInstance?(): unknow
     create(requires: Record<string, any>) {
       let connection: Promise<AgentProcessConnection> | undefined;
       let closed = false;
+      const initialization = new AbortController();
       // The process connection and its default scope must share one profile binding.
       // Directory identity is still checked on every use below.
       let boundProfile: ReturnType<typeof options.resolveWebProfile> | undefined;
@@ -62,7 +63,7 @@ export function createAgentServiceModule(options: { readLocalInstance?(): unknow
         if(closed)throw new AgentServiceError('agent_process_client_closed','本机主程序连接已释放。',503);
         if(!connection){
           const bound=profile();
-          connection=connectAgentProcess({dataRoot:bound.dataRoot,profileId:bound.profile??(bound.overridden?'preview':'released'),sourceId:'buildr',legacySourceId:'buildr',host,autoContinueInterrupted:true}).catch(error=>{connection=undefined;throw error;});
+          connection=connectAgentProcess({dataRoot:bound.dataRoot,profileId:bound.profile??(bound.overridden?'preview':'released'),sourceId:'buildr',legacySourceId:'buildr',host,autoContinueInterrupted:true,signal:initialization.signal}).catch(error=>{connection=undefined;throw error;});
         }
         return connection;
       };
@@ -96,7 +97,13 @@ export function createAgentServiceModule(options: { readLocalInstance?(): unknow
           return await runtimeStatus();
         } finally { restarting = false; }
       };
-      const close = async () => { closed=true;const active=connection;connection=undefined;await active?.then(value=>value.disconnect()); };
+      const close = async () => {
+        closed=true;
+        initialization.abort(new AgentServiceError('agent_process_client_closed','本机主程序连接已释放。',503));
+        const active=connection;connection=undefined;
+        try { await active?.then(value=>value.disconnect()); }
+        catch(error) { if(error!==initialization.signal.reason)throw error; }
+      };
       return { provides: { [AGENT_SERVICE_APPLICATION]: { start, close, status:async()=>(await connect()).lifecycle.status(), generate: async (input: Parameters<AgentOperations['models']['generate']>[0]) => (await resolve()).models.generate(input) } }, contributions: { cli: createAgentCliContributions(options.readLocalInstance), http: [createAgentServiceHttpContribution(resolve, { defaultWorkspace, registeredWorkspaceIds, runtimeStatus, restartRuntime, runtimeAligning, prepareDefaultWorkspace: () => {fs.mkdirSync(defaultWorkspace().rootPath,{recursive:true});} })] }, lifecycle: { start: async () => { void start().catch(() => { console.warn('执行后台连接未完成，已有工作记录保留。'); }); }, stop: close } };
     },
   };

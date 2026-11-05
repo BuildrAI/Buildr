@@ -263,7 +263,7 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
   const setHighEffort=async()=>{const dialog=await openModelSettings(),slider=dialog.getByRole('slider',{name:'思考深度',exact:true});await slider.press('End');assert.equal(await slider.getAttribute('aria-valuenow'),await slider.getAttribute('aria-valuemax'));assert.equal(await slider.getAttribute('aria-valuetext'),'高');};
   const assertModelSummary=async(model:string,effort?:string)=>{const label=modelTrigger().locator('.ac-model-label');await label.filter({hasText:model}).waitFor();assert.equal(await label.innerText(),model);const depth=modelTrigger().locator('.ac-model-effort');if(effort){await depth.filter({hasText:effort}).waitFor();assert.equal(await depth.innerText(),effort);}else assert.equal(await depth.count(),0);};
   const reset=async()=>{await page.goto(workspaceUrl+'/overview');await page.evaluate(()=>sessionStorage.clear());await page.reload();await page.locator('#workbench-overview').waitFor();};
-  const reopen=async()=>{await page.getByRole('button',{name:'查看对话列表',exact:true}).click();await page.locator('.ac-history-list button').first().click();await input().waitFor();};
+  const reopen=async()=>{await page.getByRole('button',{name:'查看对话列表',exact:true}).click();await page.locator('.ac-history-list button[data-conversation-id="'+conversation.id+'"]').click();await input().waitFor();};
   const assertReminderGap=async()=>{
     const rail=page.locator('.ac-collapsed-rail'),entry=rail.getByRole('button',{name:/^所有对话，/}),menu=page.locator('.ac-activity-menu:visible');
     await entry.hover();await menu.waitFor();

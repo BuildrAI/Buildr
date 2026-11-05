@@ -10,7 +10,8 @@ import { OPERATION_NAMES } from './operations.ts';
 import type { AgentOperations, AgentSubscription } from './operations.ts';
 import { claim, controlRoot, live, readLock, readPrivate, readProcessRecord, readProcessInstances, writePrivate } from './ownership.ts';
 import type { ProcessRecord } from './ownership.ts';
-import { prepareAgentRuntime, validateAgentRuntime, canRunParallel } from './runtime-unit.ts';
+import { validateAgentRuntime, canRunParallel } from './runtime-unit.ts';
+import { prepareAgentRuntimeAsync } from './runtime-preparation.ts';
 import { launchAgentProcess, resumeAgentHandoff } from './handoff.ts';
 import { request, privateToken } from './transport.ts';
 import { PendingSendRepository } from '../persistence/pending-send-repository.ts';
@@ -31,6 +32,8 @@ export interface AgentProcessConnectionOptions {
   /** Activation owners wait; ordinary clients retain old-run controls during an update. */
   requireRuntime?: boolean;
   activationTimeoutMs?: number;
+  /** Cancels initialization only; disconnecting never cancels retained executions. */
+  signal?: AbortSignal;
 }
 const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 function matches(identity: AgentProcessIdentity, options: Pick<AgentProcessConnectionOptions, 'dataRoot' | 'profileId'>): void {
@@ -45,18 +48,24 @@ async function healthy(record: ProcessRecord, options: AgentProcessConnectionOpt
   }
   catch (error) { if (error instanceof AgentServiceError && error.code === 'agent_process_identity_mismatch') throw error; return false; }
 }
-async function ensure(options: AgentProcessConnectionOptions & {runtime:AgentRuntimeUnit}): Promise<ProcessRecord> {
-  const current = readProcessRecord(options.dataRoot);
-  if (current && await healthy(current, options)) return current;
-  let startup: ReturnType<typeof claim> | undefined;
+async function claimStartup(dataRoot: string, signal?: AbortSignal): Promise<ReturnType<typeof claim>> {
   for (let i = 0; i < 200; i++) {
-    try { startup = claim(options.dataRoot, 'startup'); break; }
+    signal?.throwIfAborted();
+    try { return claim(dataRoot, 'startup'); }
     catch (error) { if (!(error instanceof AgentServiceError) || error.code !== 'agent_process_owned') throw error; await pause(100); }
   }
-  if (!startup) throw new AgentServiceError('agent_process_start_busy', '执行后台启动尚未完成。', 503);
+  throw new AgentServiceError('agent_process_start_busy', '执行后台启动尚未完成。', 503);
+}
+async function ensure(options: AgentProcessConnectionOptions & {runtime:AgentRuntimeUnit}, initialStartup?: ReturnType<typeof claim>): Promise<ProcessRecord> {
+  let startup = initialStartup;
   try {
+    options.signal?.throwIfAborted();
+    const current = readProcessRecord(options.dataRoot);
+    if (current && await healthy(current, options)) return current;
+    startup ??= await claimStartup(options.dataRoot, options.signal);
     let resumed = false;
     for (let i = 0; i < 200; i++) {
+      options.signal?.throwIfAborted();
       const record = readProcessRecord(options.dataRoot);
       if (record && await healthy(record, options)) return record;
       const owner = readLock(options.dataRoot, 'owner');
@@ -73,9 +82,11 @@ async function ensure(options: AgentProcessConnectionOptions & {runtime:AgentRun
         let runtime=pending?.runtime&&['waiting','parallel-starting','adopted'].includes(pending.state)?pending.runtime:record?.identity.runtime??options.runtime;
         if(retained.some(candidate=>!canRunParallel(candidate.identity.runtime,runtime)))runtime=record?.identity.runtime??retained[0]!.identity.runtime;
         validateAgentRuntime(options.dataRoot, runtime);
+        options.signal?.throwIfAborted();
         launchAgentProcess({ dataRoot: path.resolve(options.dataRoot), profileId: options.profileId, runtime, token: privateToken(), legacySourceId: options.legacySourceId, autoContinueInterrupted: options.autoContinueInterrupted });
         // Give the successor time to claim before another loop considers launching.
         for (let attempt = 0; attempt < 200; attempt++) {
+          options.signal?.throwIfAborted();
           const started = readProcessRecord(options.dataRoot);
           if (started && await healthy(started, options)) return started;
           await pause(100);
@@ -85,7 +96,7 @@ async function ensure(options: AgentProcessConnectionOptions & {runtime:AgentRun
       await pause(100);
     }
     throw new AgentServiceError('agent_process_start_unconfirmed', '执行后台未确认就绪；已有记录保留。', 503);
-  } finally { startup.release(); }
+  } finally { startup?.release(); }
 }
 
 export interface AgentProcessConnection {
@@ -96,8 +107,19 @@ export interface AgentProcessConnection {
   disconnect(): Promise<void>;
 }
 export async function connectAgentProcess(input: AgentProcessConnectionOptions): Promise<AgentProcessConnection> {
-  const options = { ...input, dataRoot: path.resolve(input.dataRoot), runtime: input.runtime ?? prepareAgentRuntime({ dataRoot: input.dataRoot }) };
-  const host = input.host ? await exposeAgentHost(input.sourceId, input.host) : undefined;
+  input.signal?.throwIfAborted();
+  const dataRoot = path.resolve(input.dataRoot);
+  // Cold preparation is part of isolated startup, before instance.json exists.
+  // Retain its existing startup lock until the actual backend confirms ownership.
+  const initialStartup = !readProcessRecord(dataRoot) ? await claimStartup(dataRoot, input.signal) : undefined;
+  let runtime: AgentRuntimeUnit;
+  let host: Awaited<ReturnType<typeof exposeAgentHost>> | undefined;
+  try {
+    runtime = input.runtime ?? await prepareAgentRuntimeAsync({ dataRoot }, input.signal);
+    input.signal?.throwIfAborted();
+    host = input.host ? await exposeAgentHost(input.sourceId, input.host) : undefined;
+  } catch(error) { initialStartup?.release(); throw error; }
+  const options = { ...input, dataRoot, runtime };
   let record: ProcessRecord, closed = false, reconnect = false;
   let requestedDigest: string | undefined;
   const pendingSends = new PendingSendRepository(path.join(options.dataRoot,'agent-service'));
@@ -174,7 +196,7 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
     else if (!status.accepting || status.retiring) throw new AgentServiceError('agent_process_activation_failed', status.diagnostic || '当前执行后台未就绪，输入已保留，请核对后台启动状态。', 503);
   }
   try {
-    record = await ensure(options); await connected();
+    record = await ensure(options, initialStartup); await connected();
     const retired = readPrivate<string[]>(path.join(controlRoot(options.dataRoot),'retired-runtimes.json')) ?? [];
     const retainedOlder = readProcessInstances(options.dataRoot).some(candidate=>candidate.identity.runtime.digest===options.runtime.digest&&(candidate.retiring||candidate.stopped));
     if (record.identity.runtime.digest !== options.runtime.digest && !retired.includes(options.runtime.digest) && !retainedOlder) {
@@ -183,6 +205,7 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
       if (options.requireRuntime) await awaitRuntime(options.runtime, options.activationTimeoutMs);
     }
   } catch (error) { await host?.close(); throw error; }
+  finally { initialStartup?.release(); }
   async function call(route: string, value?: unknown, signal?: AbortSignal): Promise<any> {
     const current = await connected();
     // Refresh the callback before an operation can resolve a workspace. The
