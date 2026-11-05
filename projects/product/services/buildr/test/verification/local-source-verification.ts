@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { createSourceVerificationPlan } from './source.ts';
 import { encodeCandidateSourceImport } from './candidate-source-reuse.ts';
 import { assertCandidateRound, passedRoundRecord, readCandidateRound } from './candidate-round.ts';
-import { verificationStepOwnership, VERIFICATION_GOVERNED_REPOSITORY_INPUTS } from './ownership.ts';
+import { verificationStepOwnership, VERIFICATION_GOVERNED_REPOSITORY_INPUTS, isVerificationGovernedRepositoryInput } from './ownership.ts';
 import { matchesInput } from './planner.ts';
 import { verificationSteps } from './registry.ts';
 
@@ -28,7 +28,7 @@ function normalizedProductPath(value: string): string | null {
   if (value.startsWith(BUILDR_PREFIX)) return value.slice(BUILDR_PREFIX.length);
   if (value.startsWith(PRODUCT_PREFIX)) return value.slice(PRODUCT_PREFIX.length);
   if (value.startsWith(RELEASE_SKILLS_PREFIX)) return value;
-  if (VERIFICATION_GOVERNED_REPOSITORY_INPUTS.includes(value)) return value;
+  if (isVerificationGovernedRepositoryInput(value)) return value;
   return null;
 }
 

@@ -89,6 +89,34 @@ test('concurrent source preparations wait for their owner and publish a complete
   assert.deepEqual(fs.readdirSync(path.dirname(destination)), ['buildr-agent']);
 });
 
+test('unchanged Agent preparation avoids staging and repairs same-size output drift', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-agent-prepare-content-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const host = path.join(root, 'host'), agent = path.join(root, 'agent');
+  fs.mkdirSync(path.join(agent, 'build'), { recursive: true });
+  fs.writeFileSync(path.join(agent, 'package.json'), JSON.stringify({ name: '@buildr-ai/buildr-agent', private: true, dependencies: {} }));
+  fs.writeFileSync(path.join(agent, 'LICENSE'), 'fixture');
+  fs.writeFileSync(path.join(agent, 'build/index.js'), 'original');
+  const options = { serviceRoot: host, agentRoot: agent, build: false };
+  const destination = prepareDevelopmentAgent(options);
+  const mkdir = t.mock.method(fs, 'mkdtempSync', () => { throw Error('unchanged preparation must not stage a copy'); });
+  assert.equal(prepareDevelopmentAgent(options), destination);
+  mkdir.mock.restore();
+  const entry = path.join(destination, 'build/index.js'), original = fs.statSync(entry);
+  fs.writeFileSync(entry, 'tampered');
+  fs.utimesSync(entry, original.atime, original.mtime);
+  prepareDevelopmentAgent(options);
+  assert.equal(fs.readFileSync(entry, 'utf8'), 'original');
+  fs.writeFileSync(path.join(destination, 'extra'), 'unexpected');
+  prepareDevelopmentAgent(options);
+  assert.equal(fs.existsSync(path.join(destination, 'extra')), false);
+  if (process.platform !== 'win32') {
+    fs.chmodSync(entry, 0o777);
+    prepareDevelopmentAgent(options);
+    assert.equal(fs.statSync(entry).mode & 0o777, original.mode & 0o777);
+  }
+});
+
 test('the compiled public Agent package and vendor clients load away from the development checkout', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-agent-package-consumer-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

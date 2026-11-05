@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { fork, type ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { fileURLToPath } from 'node:url';
+import { resolveProductResource } from '../../../infrastructure/product-resources/index.ts';
 
 export type FileWatcher = { close(): void; on(event: 'error', listener: (error: Error) => void): unknown };
 export type WatchFiles = (directory: string, recursive: boolean, changed: (event: string, filename: string | null) => void) => Promise<FileWatcher>;
@@ -41,7 +41,10 @@ export class IsolatedFileWatchers {
   private start(): ChildProcess {
     if (this.closed) throw Error('file watcher closed');
     if (this.child) return this.child;
-    const child = fork(fileURLToPath(import.meta.url), ['--source-control-watch-child'], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
+    const entry = resolveProductResource('runtime/source-control-watch-process.cjs', {
+      developmentFallback: 'src/modules/code/infrastructure/source-control-watch-process.ts',
+    });
+    const child = fork(entry, ['--source-control-watch-child'], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
     this.child = child;
     child.unref(); child.channel?.unref();
     const failed = () => {

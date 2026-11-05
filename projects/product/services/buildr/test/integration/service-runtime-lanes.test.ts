@@ -55,7 +55,8 @@ async function fixture(t: test.TestContext, options: { fail?: string; wrongObser
     } }));
   }
   const view = createServiceRuntimeView({ catalog, runtime });
-  const tasks = createServiceTaskRuntimeApplication({ catalog, runtime, view, worktreeServices: () => codes,
+  const tasks = createServiceTaskRuntimeApplication({ catalog, runtime, view,
+    worktreeServices: (_root, taskId) => codes.filter(code => worktrees[code]!.some(worktree => worktree.taskId === taskId)),
     readTaskScope: (_root, taskId) => ({ taskId, title: taskId, scope: { projects: ['project'], services: [] } }),
   });
   const source = (code: string, task = 'task') => worktrees[code]!.find(value => task === 'main' ? value.main : value.taskId === task)!;

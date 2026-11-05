@@ -133,7 +133,9 @@ try {
     assert.deepEqual(unexpected, [], `sync must only update canonical Workspace data and Buildr-owned projections:\n${synchronizedStatus}`);
     const synchronizedWorkspace: any = fs.readFileSync(path.join(checkout, '.buildr', 'workspace.yml'), 'utf8');
     assert.doesNotMatch(synchronizedWorkspace, /(?:^|\n)runtime:/, 'sync must remove the legacy Workspace Node declaration');
-    run('git', ['add', '-A', '--', '.buildr/workspace.yml', '.buildr/builtin-receipts.json', 'rules', 'skills', 'commands', 'components'], { cwd: checkout });
+    const synchronizedPaths: any[] = ['.buildr/workspace.yml', '.buildr/builtin-receipts.json', 'rules', 'skills', 'commands', 'components']
+      .filter((entry: any) => fs.existsSync(path.join(checkout, entry)));
+    run('git', ['add', '-A', '--', ...synchronizedPaths], { cwd: checkout });
     run('git', ['commit', '-qm', 'synchronize canonical Workspace data and Buildr-owned projections'], { cwd: checkout });
     run('git', ['push', '-q'], { cwd: checkout });
   }

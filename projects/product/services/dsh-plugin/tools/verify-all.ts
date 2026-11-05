@@ -64,20 +64,21 @@ export async function verifyPluginSourcePhase(group: 'unit' | 'static' | 'integr
   const { createCandidateRoundExecution } = await import(new URL('../../buildr/test/verification/candidate-round.ts', import.meta.url).href);
   const { reusedVerificationResult } = await import(new URL('../../buildr/test/verification/verification-reuse.ts', import.meta.url).href);
   const { runVerificationStep } = await import(new URL('../../buildr/test/verification/timing/parallel-runner.ts', import.meta.url).href);
-  const files = pluginSourcePhaseFiles(group, pluginRoot), step = { ...pluginSourcePhaseStep(group, files, environment), platformScope: { kind: 'common' } };
+  const files = pluginSourcePhaseFiles(group, pluginRoot);
+  const definition = pluginSourcePhaseStep(group, files, environment);
+  const step = { ...definition, executor: { ...definition.executor, cwd: pluginRoot }, platformScope: { kind: 'common' } };
   const imported = environment.BUILDR_SOURCE_VERIFICATION ? candidateSourceImportFromEnvironment(environment) : undefined;
   const round = group === 'unit' ? options.round ?? (imported ? { roundId: imported.roundId, imports: imported } : undefined) : undefined;
   const execution = createCandidateRoundExecution({ steps: [step] }, { productRoot, round });
   const prior = execution?.hits.get(step.id);
-  if (prior) { const phase = reusedVerificationResult(prior); console.error(`[dsh-source-phase] ${group} retained from this round`); return { phase, proof: null, log: execution.finish() }; }
+  if (prior) { const phase = reusedVerificationResult(prior); console.error(`[dsh-source-phase] ${group} retained from this round`); return { phase, proof: null, log: execution.finish([], true) }; }
   console.error(`[dsh-source-phase] ${group} started`);
   const startedAt = new Date().toISOString();
   const result = await runVerificationStep({ name: step.id, command: process.execPath, args: ['--test', ...step.executor.args, ...files], cwd: pluginRoot, env: environment, diagnosticsDirectory: options.diagnosticsDirectory });
   if (result.status !== 'passed') { if (result.stdout) process.stdout.write(result.stdout); if (result.stderr) process.stderr.write(result.stderr); }
   const phase = { ...result, id: step.id, disposition: 'executed', startedAt, finishedAt: new Date().toISOString() };
-  execution?.record(phase);
   if (result.status !== 'passed') throw Object.assign(new Error(`Plugin ${group} verification failed (${result.exitCode}).`), { sourcePhase: phase });
-  return { phase, proof: null, log: execution?.finish() };
+  return { phase, proof: null, log: execution?.finish([phase], result.processCleanup?.status === 'clean') };
 }
 /** Transport the archive already consumed by the pair check, never run a second pack. */
 export function writeVerifiedPluginCandidate(input: { output: string; tarball: string; version: string; sourceCommit: string; sourceTree: string;

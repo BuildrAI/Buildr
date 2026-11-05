@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+
 import path from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
@@ -14,6 +15,7 @@ import { runVerificationStep, writeVerificationDiagnostics } from './timing/para
 import { resolveNodeTestFiles } from './test-files.ts';
 import { createIsolatedWorkspaceState } from '../../tools/development/isolated-workspace-state.ts';
 
+const settlePreload = new URL('./settle-diagnostics.mjs', import.meta.url).href;
 const testPreload = pathToFileURL(path.resolve(import.meta.dirname, '../register-development-entry.ts')).href;
 
 function innerConcurrencyBudget(step: any, executionContext: any = {}): any  {
@@ -80,6 +82,7 @@ export function createVerificationExecutor(options: any): any  {
   // fixtures must not overwrite its timing receipt through process.env.
   delete baseEnv.BUILDR_CANDIDATE_PREPARATION_OUTPUT;
   delete baseEnv.BUILDR_CANDIDATE_PREPARATION_ID;
+  delete baseEnv.BUILDR_VERIFICATION_FORCE;
   const sharedCandidate: any = readSharedCandidatePackage(baseEnv);
   const artifacts: any = sharedCandidate ? { candidate: sharedCandidate } : {};
   const preparations: Map<string, Promise<any>> = options.preparations ?? new Map();
@@ -115,8 +118,8 @@ export function createVerificationExecutor(options: any): any  {
     }
     return preparations.get(key)!;
   };
-  const nodeTestFile: any = (file: any) => {
-    const relative: any = path.relative(productRoot, file).split(path.sep).join('/');
+  const nodeTestFile: any = (file: any, cwd: string = productRoot) => {
+    const relative: any = path.relative(cwd, file).split(path.sep).join('/');
     return relative.startsWith('.') ? relative : `./${relative}`;
   };
 
@@ -128,9 +131,11 @@ export function createVerificationExecutor(options: any): any  {
     }
     if (executor.type === 'node') return { command: exactNode.nodeExecutable, args: [path.join(productRoot, executor.file), ...(executor.args ?? [])] };
     if (executor.type === 'node-test') {
-      const files: any = resolveNodeTestFiles(productRoot, executor.files, `verification step ${step.id}`);
+      const executionRoot = path.resolve(productRoot, executor.cwd ?? '.');
+      const files: any = resolveNodeTestFiles(executionRoot, executor.files, `verification step ${step.id}`);
       return {
         command: exactNode.nodeExecutable,
+        cwd: executionRoot,
         // Preserve case names and timings in the normal diagnostic log. A
         // focused execution uses this same executor and produces reusable
         // proof, so diagnosis need not be followed by a duplicate formal run.
@@ -138,7 +143,7 @@ export function createVerificationExecutor(options: any): any  {
           .filter((argument: any) => !argument.startsWith('--test-concurrency') && !argument.startsWith('--test-reporter')),
           '--test-reporter=spec',
           '--test-reporter-destination=stdout',
-          `--test-reporter=${pathToFileURL(path.join(import.meta.dirname, 'integration-progress-reporter.ts')).href}`, '--test-reporter-destination=stderr', ...files.map(nodeTestFile)],
+          `--test-reporter=${pathToFileURL(path.join(import.meta.dirname, 'integration-progress-reporter.ts')).href}`, '--test-reporter-destination=stderr', ...files.map((file: string) => nodeTestFile(file, executionRoot))],
       };
     }
     if (executor.type === 'node-context-test') {
@@ -148,7 +153,7 @@ export function createVerificationExecutor(options: any): any  {
         args: nodeContextTestArguments(step, executionContext, {
           runner: path.join(productRoot, 'build/test-context/node-runner-cli.js'),
           cwd: productRoot,
-          files: files.map(nodeTestFile),
+          files: files.map((file: string) => nodeTestFile(file, productRoot)),
         }),
       };
     }
@@ -224,7 +229,7 @@ export function createVerificationExecutor(options: any): any  {
         ...step,
         ...resolved,
         cwd: resolved.cwd ?? productRoot,
-        env: state.env,
+        env: { ...state.env, NODE_OPTIONS: [(state.env as NodeJS.ProcessEnv).NODE_OPTIONS, `--import=${settlePreload}`].filter(Boolean).join(' ') },
         diagnosticsDirectory: options.diagnosticsDirectory,
       }, {
         signal: options.signal,
@@ -236,6 +241,7 @@ export function createVerificationExecutor(options: any): any  {
           const lines = diagnosticLine.split('\n');
           diagnosticLine = lines.pop()!.slice(-16_384);
           for (const line of lines) {
+            if (line.startsWith('[buildr-state-diagnostic] ') && line.length <= 65_536) options.errorStream?.write(`${line}\n`);
             if (!line.startsWith('[buildr-integration-progress] ') || line.length > 16_384) continue;
             try {
               const event = JSON.parse(line.slice('[buildr-integration-progress] '.length));

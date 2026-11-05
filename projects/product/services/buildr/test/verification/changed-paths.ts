@@ -1,10 +1,11 @@
+import crypto from 'node:crypto';
 import path from 'node:path';
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { isDeepStrictEqual } from 'node:util';
 import { createRequire } from 'node:module';
 import { normalizeProductPath } from './planner.ts';
-import { VERIFICATION_GOVERNED_REPOSITORY_INPUTS } from './ownership.ts';
+import { VERIFICATION_GOVERNED_REPOSITORY_INPUTS, isVerificationGovernedRepositoryInput } from './ownership.ts';
 import { sameFilesystemPath } from '../../src/infrastructure/git/checkout-identity.ts';
 
 const require: any = createRequire(import.meta.url);
@@ -121,11 +122,11 @@ export function collectChangedProductPaths(options: any): any  {
   git(gitRoot, ['rev-parse', '--verify', `${head}^{commit}`]);
   const pathspecs: any[] = [projectPrefix || '.', 'skills/buildr-release/', ...VERIFICATION_GOVERNED_REPOSITORY_INPUTS];
   const commands: any = options.head ? [
-    ['diff', '--name-only', '-z', `${base}...${head}`, '--', ...pathspecs],
+    ['diff', '--no-renames', '--name-only', '-z', `${base}...${head}`, '--', ...pathspecs],
   ] : [
-    ['diff', '--name-only', '-z', `${base}...HEAD`, '--', ...pathspecs],
-    ['diff', '--cached', '--name-only', '-z', '--', ...pathspecs],
-    ['diff', '--name-only', '-z', '--', ...pathspecs],
+    ['diff', '--no-renames', '--name-only', '-z', `${base}...HEAD`, '--', ...pathspecs],
+    ['diff', '--cached', '--no-renames', '--name-only', '-z', '--', ...pathspecs],
+    ['diff', '--no-renames', '--name-only', '-z', '--', ...pathspecs],
     ['ls-files', '--others', '--exclude-standard', '-z', '--', ...pathspecs],
   ];
   const workspacePaths: any = commands.flatMap((args: any) => zeroSeparated(git(gitRoot, args)));
@@ -139,7 +140,7 @@ export function collectChangedProductPaths(options: any): any  {
       relative = productPrefix ? normalizedWorkspacePath.slice(productPrefix.length + 1) : normalizedWorkspacePath;
     } else if (!projectPrefix || normalizedWorkspacePath === projectPrefix || normalizedWorkspacePath.startsWith(`${projectPrefix}/`)) {
       relative = projectPrefix ? normalizedWorkspacePath.slice(projectPrefix.length + 1) : normalizedWorkspacePath;
-    } else if (VERIFICATION_GOVERNED_REPOSITORY_INPUTS.includes(normalizedWorkspacePath)) {
+    } else if (isVerificationGovernedRepositoryInput(normalizedWorkspacePath)) {
       relative = normalizedWorkspacePath;
     } else continue;
     if (relative) paths.push(normalizeProductPath(relative));
@@ -175,4 +176,29 @@ export function collectChangedProductPaths(options: any): any  {
     } catch {}
   }
   return { base, head, paths: uniquePaths, source: 'git', versionOnlyPackagePaths, selectionOnlyPaths: [...new Set(selectionOnlyPaths)].sort(), selectionReasons };
+}
+
+/** Capture changed contents so a repair compares against the actual preceding run,
+ * including its dirty files, rather than reselecting the entire delivery diff. */
+export function collectImpactSnapshot(changed: any, options: any, previous: any = null): any {
+  if (previous && (previous.version !== 1 || previous.productRoot !== fs.realpathSync(options.productRoot)
+    || previous.base !== changed.base || !previous.files || typeof previous.files !== 'object' || Array.isArray(previous.files))) {
+    throw new Error('Failure evidence snapshot does not match this checkout and comparison base.');
+  }
+  const paths = [...new Set<string>([...changed.paths, ...Object.keys(previous?.files ?? {})])].sort();
+  const files: Record<string, string> = {};
+  for (const file of paths) {
+    const normalized = normalizeProductPath(file);
+    if (normalized !== file || path.isAbsolute(file) || file.split('/').includes('..')) throw new Error(`Invalid snapshot path: ${file}`);
+    const projectOwned = /^(?:services|knowledge|openspec|docs)\//u.test(file) || file === 'verification.yml';
+    const root = projectOwned ? options.projectRoot : options.productRoot;
+    const absolute = file.startsWith('skills/buildr-release/') || isVerificationGovernedRepositoryInput(file)
+      ? path.resolve(git(options.productRoot, ['rev-parse', '--show-toplevel']).trim(), file) : path.resolve(root, file);
+    try {
+      const stat = fs.lstatSync(absolute);
+      files[file] = crypto.createHash('sha256').update(String(stat.mode)).update('\0').update(stat.isSymbolicLink() ? fs.readlinkSync(absolute) : fs.readFileSync(absolute)).digest('hex');
+    } catch (error: any) { if (error.code !== 'ENOENT') throw error; files[file] = 'absent'; }
+  }
+  return { version: 1, productRoot: fs.realpathSync(options.productRoot), base: changed.base, files,
+    changedSincePrevious: previous ? paths.filter(file => files[file] !== previous.files[file]) : changed.paths };
 }

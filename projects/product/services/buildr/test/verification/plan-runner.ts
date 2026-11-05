@@ -54,7 +54,11 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
   const preparations = new Map<string, Promise<any>>();
   const observeReuse = () => createCandidateRoundExecution(plan, options) ?? createVerificationPlanReuse(plan, options);
   const preflight = options.executorFactory ? null : createVerificationExecutor({ ...options, diagnosticsDirectory, artifactDirectory, preparations });
-  const reuse = preflight ? await prepareVerificationReuse(plan, preflight.prepareSteps, observeReuse) : observeReuse();
+  const forced = options.reuse?.force === true || (options.env ?? process.env).BUILDR_VERIFICATION_FORCE === '1';
+  // A forced run has no reusable checks. Observe once after owned preparation,
+  // while retaining the mandatory post-execution content/cleanup validation.
+  if (preflight && forced) await preflight.prepareSteps(plan.steps);
+  const reuse = preflight && !forced ? await prepareVerificationReuse(plan, preflight.prepareSteps, observeReuse) : observeReuse();
   if (reuse?.explanation) {
     const estimate = reuse.explanation.estimate;
     options.stream?.write(`[${prefix}] plan: execute=${estimate.executedCount} reuse=${estimate.reusedCount} remaining-work=${estimate.remainingWorkMs}ms dependency-path=${estimate.dependencyCriticalPathMs}ms (history/declared targets; queue/preparation excluded)\n`);
@@ -72,10 +76,13 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
   });
   // Provider implementations may load the full Product runtime. Keep them out of
   // the clean-checkout Candidate aggregate import graph until execution starts.
-  const { TEST_CONTEXT_PROVIDERS }: any = await import('../context/registry.ts');
+  const requiredContextKeys = plan.steps.filter((step: any) => !reuse?.hits.has(step.id)).flatMap((step: any) => step.contexts ?? []);
+  const { TEST_CONTEXT_PROVIDERS }: any = requiredContextKeys.length || options.contextPoolFactory ? await import('../context/registry.ts') : { TEST_CONTEXT_PROVIDERS: [] };
+  const contextEnvironment = { ...process.env, ...(options.env ?? {}) };
+  delete contextEnvironment.BUILDR_VERIFICATION_FORCE;
   const contextPool: any = (options.contextPoolFactory ?? createTestContextPool)({
     providers: TEST_CONTEXT_PROVIDERS,
-    env: { ...process.env, ...(options.env ?? {}) },
+    env: contextEnvironment,
   });
   const contextKeys: any[] = [...new Set(plan.steps.filter((step: any) => !reuse?.hits.has(step.id)).flatMap((step: any) => step.contexts ?? []))];
   const preparedContexts: any[] = [];
@@ -119,7 +126,8 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
   try {
     const executionPlan = { ...plan, steps: plan.steps.map((step: any) => reuse?.hits.has(step.id)
       ? { ...step, resources: [], resourceClaims: [], concurrencyClass: 'default', resourceDemand: { workers: 1, processes: 1 } }
-      : step) };
+      : options.executionProfile?.id === 'local' && (step.id === 'integration-archify' || step.service === 'buildr-agent' && step.testing?.executionBoundary === 'Integration')
+        ? { ...step, concurrencyClass: 'exclusive' } : step) };
     results = await runVerificationDag(executionPlan, {
       execute,
       concurrency,
@@ -129,7 +137,7 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
       signal: options.signal,
       onStart: (step: any) => {
         active.set(step.id, { startedAtMs: Date.now(), pid: null, processGroupId: null });
-        options.stream?.write(`\n[${prefix}] ${step.id}: ${step.name}\n`);
+        options.stream?.write(`\n[${prefix}] ${step.id}: ${step.name} concurrency=${step.concurrencyClass}\n`);
         options.onStart?.(step);
       },
       onComplete: (result: any, step: any) => {

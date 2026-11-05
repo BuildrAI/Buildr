@@ -308,6 +308,28 @@ test('owned-port release rejects a changed listener set before sending any signa
   assert.deepEqual(signals,[]);
 });
 
+test('graceful shutdown accepts the owned receipt disappearing at the read boundary', async t => {
+  const f = fixture(t);
+  const read = fs.readFileSync;
+  let retiring = false, observed = false;
+  t.mock.method(fs, 'readFileSync', (file: any, ...args: any[]) => {
+    if (String(file) === f.file && retiring) {
+      retiring = false; observed = true; fs.unlinkSync(f.file);
+    }
+    return (read as any)(file, ...args);
+  });
+  const result = await restartDevelopmentInstance({ ...f.base,
+    fetchImpl: async (url: any, init: any) => {
+      if (init.method === 'POST') { retiring = true; return new Response('{}', { status: 202 }); }
+      return f.base.fetchImpl(url, init);
+    },
+  });
+  assert.equal(observed, true);
+  assert.equal(result.status, 'passed');
+  assert.equal(result.instance?.pid, 300);
+  assert.equal(f.spawns(), 1);
+});
+
 test('stopping recovery preserves a receipt replaced during graceful waiting',async t=>{
   const f=fixture(t);let releases=0;
   await assert.rejects(restartDevelopmentInstance({...f.base,timeoutMs:10,killProcess:()=>true,

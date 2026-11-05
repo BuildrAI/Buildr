@@ -8,6 +8,32 @@ import { pathToFileURL } from 'node:url';
 import { collectChangedProductPaths, resolveVerificationBase } from '../verification/changed-paths.ts';
 import { createVerificationPlan } from '../verification/planner.ts';
 import { serviceVerificationChecks as pluginChecks } from '../../../dsh-plugin/tools/testing/verification-checks.ts';
+import { collectVerificationContentSnapshot } from '../verification/content-snapshot.ts';
+
+test('root bootstrap source and component changes participate in selection and repair snapshots', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-root-impact-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const projectRoot = path.join(root, 'projects/product'), productRoot = path.join(projectRoot, 'services/buildr');
+  fs.mkdirSync(productRoot, { recursive: true });
+  const script = 'skills/buildr-self-bootstrap-sync/scripts/continuity.mjs';
+  const component = 'components/workspace/buildr-self-bootstrap/component.yml';
+  const write = (file: string, text: string) => { fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true }); fs.writeFileSync(path.join(root, file), text); };
+  write(script, 'before'); write(component, 'before');
+  git(root, ['init']); git(root, ['config', 'user.email', 'fixture@example.invalid']); git(root, ['config', 'user.name', 'Fixture']);
+  git(root, ['add', '.']); git(root, ['commit', '-m', 'baseline']);
+  const base = git(root, ['rev-parse', 'HEAD']).trim();
+  const options = { productRoot, projectRoot, base };
+  const before = collectVerificationContentSnapshot(options);
+  const added = 'skills/buildr-self-bootstrap-sync/scripts/new.mjs';
+  write(script, 'after'); write(component, 'after'); write(added, 'new'); write('skills/other/script.mjs', 'outside this scope');
+  const expected = [component, script, added].sort();
+  const changed = collectChangedProductPaths(options);
+  assert.deepEqual(changed.paths, expected);
+  assert.deepEqual(collectVerificationContentSnapshot(options, before).changedSincePrevious, expected);
+  const plan = createVerificationPlan({ paths: changed.paths, related: true, target: 'source' });
+  assert.ok(plan.steps.some((step: any) => step.id === 'integration-self-bootstrap'));
+  assert.deepEqual(plan.gaps, []);
+});
 
 test('依赖安装前可加载 changed path collector，缺少 YAML 时保守处理声明变化', () => {
   const moduleUrl: any = pathToFileURL(path.resolve(import.meta.dirname, '../verification/changed-paths.ts')).href;

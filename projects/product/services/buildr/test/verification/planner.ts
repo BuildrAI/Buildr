@@ -1,3 +1,5 @@
+import { isVerificationFrameworkInput } from './ownership.ts';
+import { semanticTagsForPaths } from './semantic-tags.ts';
 import fs from 'node:fs';
 import { selectBrowserSelectors } from './browser-selector-dispatcher.ts';
 import path from 'node:path';
@@ -646,6 +648,15 @@ export function createVerificationPlan(request: any = {}, steps: any = verificat
   const profiles: any[] = [...new Set(request.profiles ?? [])];
   const groups: any[] = [...new Set(request.groups ?? [])];
   const stepIds: any[] = [...new Set(request.stepIds ?? [])];
+  const tags: string[] = [...new Set<string>([...(request.tags ?? []), ...(request.semantic ? semanticTagsForPaths(paths) : [])])];
+  const knownTags = new Set(steps.flatMap((step: any) => step.tags ?? []));
+  for (const tag of request.tags ?? []) if (!knownTags.has(tag)) throw new Error(`Unknown semantic tag: ${tag}`);
+  for (const step of steps) {
+    const matched = tags.filter(tag => step.tags?.includes(tag));
+    if (!matched.length || !eligible(step) || step.selection === 'explicit-only') continue;
+    selected.add(step.id);
+    reasons.set(step.id, matched.map(tag => `semantic tag ${tag}`));
+  }
   const versionOnlyPackagePaths: any = new Set((request.versionOnlyPackagePaths ?? []).map(normalizeProductPath));
   const selectionOnlyPaths: any = new Set([
     ...versionOnlyPackagePaths,
@@ -664,7 +675,7 @@ export function createVerificationPlan(request: any = {}, steps: any = verificat
     if (!selectionOnlyPaths.has(productPath)) throw new Error(`Selection reason path is not classified as selection-only: ${productPath}`);
     if (typeof code !== 'string' || code.length === 0) throw new Error(`Invalid selection reason code for path: ${productPath}`);
   }
-  const fullScopeMatches: any = paths.filter((productPath: any) => !selectionOnlyPaths.has(productPath)).flatMap((productPath: any) => VERIFICATION_FULL_SCOPE_AUTHORITIES
+  const fullScopeMatches: any = paths.filter((productPath: any) => !selectionOnlyPaths.has(productPath) && !(request.related && isVerificationFrameworkInput(productPath))).flatMap((productPath: any) => VERIFICATION_FULL_SCOPE_AUTHORITIES
     .filter((authority: any) => matchesInput(productPath, authority.pattern))
     .map((authority: any) => ({ productPath, authority })));
   for (const id of stepIds) {
@@ -678,7 +689,14 @@ export function createVerificationPlan(request: any = {}, steps: any = verificat
       selected.add(step.id); reasons.set(step.id, [`complete ${step.testing.executionBoundary} source checks`]);
     }
   }
-  const browserPlan: any = paths.length ? selectBrowserSelectors(paths) : { selectors: [], diagnostics: [] };
+  const browserPaths = request.related ? paths.filter((file: string) => !isVerificationFrameworkInput(file)) : paths;
+  if (request.related && paths.some(isVerificationFrameworkInput)) {
+    for (const id of ['unit', 'test-syntax', 'test-typecheck', 'integration-changed-paths', 'integration-verification-runtime']) {
+      if (!byId.has(id)) continue;
+      selected.add(id); reasons.set(id, [...(reasons.get(id) ?? []), 'verification framework contract']);
+    }
+  }
+  const browserPlan: any = browserPaths.length ? selectBrowserSelectors(browserPaths) : { selectors: [], diagnostics: [] };
   const selectedBrowsers = new Set<string>(browserPlan.selectors ?? []);
   for (const diagnostic of browserPlan.diagnostics ?? []) gaps.push({ code: 'browser-selection-gap', ...diagnostic });
   for (const profile of profiles) {
@@ -740,7 +758,7 @@ export function createVerificationPlan(request: any = {}, steps: any = verificat
     ? 'full'
     : (mappedPaths.length > 0 || selectionOnlyPaths.size > 0)
       ? 'affected'
-      : (profiles.length > 0 || groups.length > 0 || stepIds.length > 0)
+      : (profiles.length > 0 || groups.length > 0 || stepIds.length > 0 || tags.length > 0)
         ? 'explicit'
         : 'not-applicable';
   const scopeReasons: any[] = [
@@ -765,6 +783,7 @@ export function createVerificationPlan(request: any = {}, steps: any = verificat
     paths: Object.freeze(paths),
     profiles: Object.freeze(profiles),
     groups: Object.freeze(groups),
+    tags: Object.freeze(tags),
     stepIds: Object.freeze(stepIds),
     scope: Object.freeze({ mode: scopeMode, reasons: Object.freeze(scopeReasons) }),
     delegated: Object.freeze(delegatedPaths),

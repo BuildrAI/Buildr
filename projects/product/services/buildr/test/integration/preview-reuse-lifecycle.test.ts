@@ -98,6 +98,11 @@ test('preview stop includes its independent backend and refuses purge after unce
   await connection.disconnect();
   await stopPreview('demo',{dataRoot:data.dataRoot,retainOwner:true});
   assert.equal(fs.existsSync(path.join(profileRoot,'agent-service/process/instance.json')),false);
+  // A confirmed shutdown receipt can precede the native process exit. Only
+  // corrupt the historical receipt once this fixture's actual process is gone.
+  const live = () => { try { process.kill(status.identity.pid, 0); return true; } catch { return false; } };
+  for (let tick = 0; tick < 100 && live(); tick++) await new Promise(resolve => setTimeout(resolve, 25));
+  assert.equal(live(), false, 'the owned backend must exit before simulating an uncertain historical receipt');
   assert.ok(fs.existsSync(profileRoot));
   const receiptFile=path.join(profileRoot,'agent-service/process/instances',status.identity.generation+'.json');
   const confirmedReceipt=fs.readFileSync(receiptFile,'utf8'),receipt=JSON.parse(confirmedReceipt);

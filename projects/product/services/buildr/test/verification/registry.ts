@@ -1,3 +1,4 @@
+import { semanticTagsForStep } from './semantic-tags.ts';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { serviceVerificationChecks as buildrChecks, sharedCheckPreparation } from '../../tools/testing/verification-checks.ts';
@@ -947,7 +948,7 @@ export const verificationSteps: any = Object.freeze([
     ...step, ...(step.id === 'spec-change-consistency' ? { requirements: ['Compares current source against explicit --base or the observed HEAD commit.'] } : {}), target: step.executor.consumesArtifact || step.executor.type === 'candidate-artifact' ? 'artifact' : 'source',
   })),
   ...serviceSteps, ...browserSteps,
-]);
+].map((step: any) => Object.freeze({ ...step, tags: semanticTagsForStep(step) })));
 assertVerificationContextDispositionCoverage(verificationSteps.map((item: any) => item.id));
 
 

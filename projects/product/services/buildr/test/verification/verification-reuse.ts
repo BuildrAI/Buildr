@@ -61,8 +61,9 @@ const liveMysqlInput = 'BUILDR_TEST_MYSQL_CONNECTION_FILE';
  * run is never evidence for a complete file or group. No check IDs are added. */
 export function verificationFileSteps(step: VerificationReuseStep, productRoot: string): VerificationReuseStep[] {
   if (!step.reuse || step.parentId || step.executor.type !== 'node-test' || step.executor.args?.some((value: string) => /--test-(?:name-pattern|skip-pattern|only|shard)/u.test(value))) return [];
-  return resolveNodeTestFiles(productRoot, step.executor.files, step.id).map((file: string) => {
-    const relative = path.relative(productRoot, file).split(path.sep).join('/');
+  const executionRoot = path.resolve(productRoot, step.executor.cwd ?? '.');
+  return resolveNodeTestFiles(executionRoot, step.executor.files, step.id).map((file: string) => {
+    const relative = path.relative(executionRoot, file).split(path.sep).join('/');
     return { ...step, id: `${step.id}:${relative}`, parentId: step.id, dependsOn: [], executor: { ...step.executor, files: [relative] } };
   });
 }
