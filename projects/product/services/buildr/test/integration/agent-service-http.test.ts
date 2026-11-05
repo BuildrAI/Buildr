@@ -434,8 +434,17 @@ test('HTTP handoff exposes the exact bounded body, local sources and confirmed r
 
 
 test('the real web CLI discovers host interruptions on listening without a browser request', {timeout:30_000}, async t=>{
+  let dataRoot='';
+  let child: ReturnType<typeof spawn> | undefined;
+  // Stop the owned processes before taskRecordFixture removes their identity
+  // records. Otherwise stopAgentProcess cannot authenticate the surviving backend.
+  t.after(async()=>{
+    if(!dataRoot)return;
+    try { if(child)await stopOwnedChildProcess(child); }
+    finally { await stopAgentProcess({dataRoot}); }
+  });
   const {base,root}=taskRecordFixture(t,'agent-startup-recovery');
-  const dataRoot=path.join(base,'restart-profile');
+  dataRoot=path.join(base,'restart-profile');
   const service=createAgentService({dataRoot,executors:[],resolveWorkspace:()=>({rootPath:root}),assertTask:()=>{}});
   const conversation=await service.conversations.create('startup-workspace',{});await service.close();
   const filename=path.join(dataRoot,'agent-service','conversations.sqlite');
@@ -444,12 +453,8 @@ test('the real web CLI discovers host interruptions on listening without a brows
   record.view.run={id:'interrupted-run',participantId:'missing-participant',provider:'codex',generation:'previous-host',status:'stopped',accepted:true,tools:[],interrupted:true,diagnostic:'before-startup',startedAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
   record.interruption={runId:'interrupted-run',awaitingUser:false};
   db.prepare('UPDATE conversations SET body=? WHERE id=?').run(JSON.stringify(record),conversation.id);db.close();
-  const child=spawn(process.execPath,[path.resolve('bin/buildr.mjs'),'web','--port','0','--no-open'],{env:{...process.env,BUILDR_APP_DATA_DIR:dataRoot},stdio:['ignore','pipe','pipe']});
-  let output='';child.stdout.on('data',chunk=>{output+=chunk});child.stderr.on('data',chunk=>{output+=chunk});
-  t.after(async()=>{
-    try { await stopOwnedChildProcess(child); }
-    finally { await stopAgentProcess({dataRoot}).catch(error=>{if(error.code!=='agent_process_stop_unconfirmed')throw error;}); }
-  });
+  child=spawn(process.execPath,[path.resolve('bin/buildr.mjs'),'web','--port','0','--no-open'],{env:{...process.env,BUILDR_APP_DATA_DIR:dataRoot},stdio:['ignore','pipe','pipe']});
+  let output='';child.stdout?.on('data',chunk=>{output+=chunk});child.stderr?.on('data',chunk=>{output+=chunk});
   const end=Date.now()+20_000;let diagnostic='before-startup';
   while(Date.now()<end){
     const read=new DatabaseSync(filename,{readOnly:true});
