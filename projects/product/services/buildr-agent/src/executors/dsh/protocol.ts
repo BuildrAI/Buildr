@@ -97,9 +97,18 @@ export function dshItem(event: any, full = false): ExecutorItem[] {
   if (event?.type === 'user/message' && !isUserInput(event)) return [];
   if (event?.type === 'assistant/message') {
     const content = data.message?.content;
-    // 只投影可见助手文字：模型思考（reasoning）属于模型内部过程，不进入对话处理过程。
+    const parts: any[] = Array.isArray(content) ? content : [];
+    // 思考是独立过程条目：只进入处理过程，不作为助手消息、最终答复或模型历史。
+    const entries: Array<{ at: number; item: ExecutorItem }> = [];
+    parts.forEach((part: any, index: number) => {
+      if (part?.type !== 'reasoning' && part?.type !== 'thinking') return;
+      const reasoning = typeof part.text === 'string' ? part.text.trim() : '';
+      if (!reasoning) return; // 只有签名的推理没有可读明文。
+      entries.push({ at: index, item: { id: `assistant:${data.turn}:${data.step}:thinking:${index}`, kind: 'thinking', role: 'assistant', text: reasoning, status: 'completed' } });
+    });
     const text = visibleText(content);
-    return text ? [{ id: `assistant:${data.turn}:${data.step}`, kind: 'message', role: 'assistant', text, status: 'completed' }] : [];
+    if (text) entries.push({ at: Array.isArray(content) ? content.findIndex((part: any) => part?.type === 'text' || part?.type === 'input_text') : 0, item: { id: `assistant:${data.turn}:${data.step}`, kind: 'message', role: 'assistant', text, status: 'completed' } });
+    return entries.sort((left, right) => left.at - right.at).map(entry => entry.item);
   }
   if (event?.type === 'user/message') { const text = visibleText(data.content); return text || data.content?.some((part: any) => part.type === 'image') ? [{ id: data.id ?? id, kind: 'message', role: 'user', text, clientRequestId: data.source?.rpcId, executionId: data.source?.rpcId, status: 'completed' }] : []; }
   if (event?.type === 'tool/call') return [{ id: data.callId, kind: 'tool', nativeTool: true, role: 'system', presentedFiles:dshPresentedFiles(data.name,data.arguments), name: typeof data.name === 'string' && data.name ? data.name : undefined, participation: nativeParticipation(data.arguments===undefined?undefined:String(data.arguments),undefined,'pending'), input: output(String(data.arguments ?? '')), text: String(data.name ?? '工具') + '\n' + output(String(data.arguments ?? '')), status: 'running' }];

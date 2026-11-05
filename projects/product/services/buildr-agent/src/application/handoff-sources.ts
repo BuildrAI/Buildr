@@ -67,7 +67,7 @@ export function readHandoffSource(root:string,id:string,query:HandoffHistoryQuer
   if(ref.tool){if(!append(ref.tool)){position--;break;}continue;}
   try{
    const entry=read(ref);if(!entry)throw Error('条目或原修订不可用');
-   if(entry.kind==='handoff'||entry.thinking)throw Error('来源不是可见消息');
+   if(entry.kind==='handoff'||entry.kind==='thinking'||entry.thinking)throw Error('来源不是可见消息');
    const truncated=entry.text.length>8192,candidate={...entry,text:truncated?entry.text.slice(0,8192):entry.text,detail:{revision:ref.revision}};
    if(!append(candidate)){position--;break;}if(truncated)page.truncatedIds.push(entry.id);
   }catch{page.unavailable.push({id:ref.id,revision:ref.revision,reason:'条目或原修订不可用；未返回当前内容代替。'});}

@@ -105,6 +105,7 @@ export class DshRuntime implements AgentRuntime {
     patches.push(...dshCommandDeadlinePatch());
     patches.push({insert:[{id:'buildr-command-deadline',name:fileURLToPath(new URL(import.meta.url.endsWith('.ts')?'./command-deadline-plugin.ts':'./command-deadline-plugin.js',import.meta.url))}]});
     patches.push({insert:[{id:'buildr-interaction',name:fileURLToPath(new URL(import.meta.url.endsWith('.ts')?'./interaction-plugin.ts':'./interaction-plugin.js',import.meta.url)),config:{instructions:(options.interaction??interactionPolicy).instructions}}]});
+    patches.push({insert:[{id:'buildr-narration-reminder',name:fileURLToPath(new URL(import.meta.url.endsWith('.ts')?'./narration-reminder-plugin.ts':'./narration-reminder-plugin.js',import.meta.url)),config:{threshold:6}}]});
     patches.push({insert:[{id:'buildr-fork-transfer',name:fileURLToPath(new URL(import.meta.url.endsWith('.ts')?'./fork-transfer-plugin.ts':'./fork-transfer-plugin.js',import.meta.url)),config:{addressFile:forkBridge.addressFile}}]});
     await writeFile(forkPatch, JSON.stringify(patches), {mode:0o600});
     patch = forkPatch;

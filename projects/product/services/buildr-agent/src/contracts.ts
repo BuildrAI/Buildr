@@ -87,7 +87,7 @@ export interface ExecutorItem {
   /** Native parent tool identity; absence does not imply an inferred child relationship. */
   parentToolId?: string;
   clientRequestId?: string;
-  kind: 'message' | 'tool' | 'notice';
+  kind: 'message' | 'tool' | 'notice' | 'thinking';
   role: 'user' | 'assistant' | 'system';
   text: string;
   /** Model thinking fragment: process-only content, never a final reply nor model history. */
@@ -341,7 +341,7 @@ export interface ConversationEntry {
   /** Native child output stays attached to its parent tool, retaining its original role. */
   parentToolId?: string;
   sequence: number;
-  kind: 'message' | 'tool' | 'notice' | 'handoff';
+  kind: 'message' | 'tool' | 'notice' | 'handoff' | 'thinking';
   role: 'user' | 'assistant' | 'system';
   text: string;
   /** Model thinking fragment: process-only content, never a final reply nor model history. */

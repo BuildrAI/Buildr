@@ -207,7 +207,8 @@ export function groupConversationStream(entries:readonly ConversationEntry[],cur
   const items:ConversationStreamItem[]=[];
   const runs=[...retainedRuns,...(currentRun?[currentRun]:[])],known=new Map(runs.map(run=>[run.id,run]));
   const finals=finalConversationReplyIds(entries,runs);
-  const isProcess=(entry:ConversationEntry)=>entry.kind==='tool'||entry.kind==='message'&&entry.role==='assistant';
+  // 思考是过程条目，留在处理过程内；它不能成为最终答复（finalConversationReplyIds 只认助手消息）。
+  const isProcess=(entry:ConversationEntry)=>entry.kind==='tool'||entry.kind==='thinking'||entry.kind==='message'&&entry.role==='assistant';
   for(let index=0;index<entries.length;){
     const first=entries[index];
     if(!isProcess(first)){items.push({type:'entry',entry:first});index++;continue;}

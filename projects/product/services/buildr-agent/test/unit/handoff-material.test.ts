@@ -11,10 +11,10 @@ test('round identity preserves in-run answers, failed tools and explicit artifac
  assert.equal(handoffEntries(records).length,6);
 });
 test('thinking fragments never become handoff evidence or a final reply',()=>{
- const records=[entry(1,{}),entry(2,{role:'assistant',text:'内部推理',thinking:true,status:'completed'}),entry(3,{role:'assistant',text:'结论',status:'completed'})];
+ const records=[entry(1,{}),entry(2,{role:'assistant',text:'内部推理',thinking:true,status:'completed'}),entry(3,{kind:'thinking',role:'assistant',text:'折叠推理',status:'completed'}),entry(4,{role:'assistant',text:'结论',status:'completed'})];
  const round=organizeHandoff(records)[0]!;
  assert.equal(round.finalReply,'结论');assert.deepEqual(round.assistantNotes,[]);assert.equal(handoffEntries(records).length,2);
- assert.ok(!JSON.stringify(round).includes('内部推理'));
+ assert.ok(!JSON.stringify(round).includes('内部推理'));assert.ok(!JSON.stringify(round).includes('折叠推理'));
 });
 test('interruption after assistant commentary does not invent a final reply or artifact',()=>{
  const rounds=organizeHandoff([entry(1,{}),entry(2,{role:'assistant',text:'will inspect',status:'completed'}),entry(3,{kind:'tool',role:'system',name:'read',text:'not finished',status:'running'})]);
