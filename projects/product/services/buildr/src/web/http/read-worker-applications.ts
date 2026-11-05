@@ -60,7 +60,10 @@ export async function runApplicationRead(message: any) {
   const application = runtimeProvide(runtime, operation.capability);
   if(message.operation.startsWith('code-')) {
     const input=JSON.parse(message.input);
-    value=await application[operation.method](message.targetRoot,operation.method==='repositories'?input.taskId:input);
+    if (message.operation === 'code-source-control') {
+      const {observedWorktrees, ...query} = input;
+      value = await application.sourceControl(message.targetRoot, query, observedWorktrees);
+    } else value=await application[operation.method](message.targetRoot,operation.method==='repositories'?input.taskId:input);
   } else value = await application[operation.method](message.targetRoot, message.taskId, ...(operation.fields || []).map(field => message[field]), ...(message.operation === 'file-diff' ? [message.checkoutId] : []));
   return value;
 }

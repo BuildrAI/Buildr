@@ -25,7 +25,7 @@ export function createCodeCommitApplication(dependencies: Dependencies) {
     return snapshot;
   }
   function commitContext(root: string, input: Partial<CodeCommitLocation>): CodeCommitContext {
-    const snapshot = commitSnapshot(root, input, { includeDiff: false }), push = readCodePushSnapshot(snapshot.source);
+    const snapshot = commitSnapshot(root, input, { includeDiff: false }), push = readCodePushSnapshot(snapshot.source, {observed:snapshot});
     return { source: snapshot.source, revision: snapshot.revision, head: snapshot.head, branch: snapshot.branch, hasChanges: snapshot.hasChanges, fileCount: snapshot.paths.length, push: { revision: push.revision, target: push.target, available: push.available, reason: push.reason, ahead: push.ahead } };
   }
   function failedSync(root: string, input: CodeCommitLocation, response: CodeGitMutationResult, error: unknown, status: 'unavailable' | 'unknown'): CodeSyncResult {

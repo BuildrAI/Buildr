@@ -16,7 +16,7 @@ const OUTPUT_DIRECTORIES = new Set(['node_modules', 'dist', 'build', 'web-dist',
 type OutputDecision = { pending: boolean; ignored: boolean; expires: number };
 type Target = { path: string; metadata: boolean; recursive: boolean; prefix?: string; outputs?: Map<string, OutputDecision>; tracked?: Set<string> };
 type Watched = { target: Target; owners: Set<string>; watcher: FileWatcher; degraded: boolean };
-type Options = { watchFiles?: WatchFiles; changed(repositoryIds: string[], refsChanged?: boolean): void; diagnostic(repositoryId: string, message: string): void };
+type Options = { watchFiles?: WatchFiles; changed(repositoryIds: string[], refsChanged?: boolean, locations?: string[]): void; diagnostic(repositoryId: string, message: string): void };
 
 /** Filesystem events invalidate observations; Git reads remain the authority. */
 export class SourceControlWatchers {
@@ -137,7 +137,7 @@ export class SourceControlWatchers {
         }
       }
       const refsChanged = target.metadata && (!relative || /(?:^|\/)(?:HEAD|config|config\.worktree|packed-refs|refs|commondir|gitdir)(?:\/|$)/.test(relative) || /^worktrees(?:\/[^/]+)?$/.test(relative));
-      this.options.changed([...owners], refsChanged);
+      this.options.changed([...owners], refsChanged, target.metadata ? undefined : [target.path]);
     };
     let watcher: FileWatcher;
     try { watcher = (await (this.options.watchFiles ?? this.isolated.watch)(target.path, target.recursive, changed)); }
