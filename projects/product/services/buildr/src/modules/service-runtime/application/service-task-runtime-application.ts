@@ -1,4 +1,5 @@
 import { ServiceRuntimeError } from '../domain/errors.ts';
+import type { TaskIntegrationCheck } from '../infrastructure/task-integration-check.ts';
 import { isActiveRun, type ManagedRunRecord } from '../domain/runs.ts';
 import type { ServiceWorktree } from '../domain/worktrees.ts';
 import type { LocalBackendAvailability, ServiceRuntimeApplication, StartRunInput } from './service-runtime-application.ts';
@@ -11,7 +12,7 @@ export type RuntimeTask = {
   scope: { projects: string[]; services: Array<{ project: string; service: string }> };
 };
 export type TaskRuntimeService = { service: ServiceRuntimeSummary; worktree: ServiceWorktree | null; connectionTarget: LocalBackendAvailability[] | null; diagnostics: string[] };
-export type TaskRuntimeDetail = { taskId: string; title: string; services: TaskRuntimeService[]; runs: ManagedRunRecord[]; diagnostics: string[] };
+export type TaskRuntimeDetail = { taskId: string; title: string; services: TaskRuntimeService[]; runs: ManagedRunRecord[]; diagnostics: string[]; integration?: TaskIntegrationCheck };
 export type TaskRunSelection = Pick<StartRunInput, 'serviceCode' | 'worktreeId' | 'expectedWorktree' | 'expectedBackendRunId' | 'backendTargets'>;
 export type TaskRunResult = {
   serviceCode: string;
@@ -34,6 +35,7 @@ export function createServiceTaskRuntimeApplication(deps: {
   view: ServiceRuntimeView;
   runtime: ServiceRuntimeApplication;
   worktreeServices?(root: string, taskId: string): string[];
+  integrationCheck?(root: string, taskId: string): TaskIntegrationCheck;
 }) {
   /** 任务可启动的服务只由本任务工作树决定，与项目范围声明无关。 */
   const taskServices = (root: string, task: RuntimeTask) => {
@@ -58,8 +60,14 @@ export function createServiceTaskRuntimeApplication(deps: {
       catch (cause) { diagnostics.push((cause as Error).message); }
       return { service, worktree, connectionTarget, diagnostics };
     });
-    const diagnostics = services.length ? [] : ['任务尚未明确服务范围，请先核对本次验证涉及的服务。'];
-    return { taskId: task.taskId, title: task.title, services, runs: overview.runs.filter(run => run.taskId === taskId), diagnostics };
+    const diagnostics: string[] = [];
+    let integration: TaskIntegrationCheck | undefined;
+    if (!services.length) {
+      try { integration = deps.integrationCheck?.(root, taskId); }
+      catch (cause) { diagnostics.push(`集成快检未完成：${(cause as Error).message}`); }
+      if (!integration) diagnostics.push('当前没有可用的本任务工作树；尚未取得集成核对结果。');
+    }
+    return { taskId: task.taskId, title: task.title, services, runs: overview.runs.filter(run => run.taskId === taskId), diagnostics, ...(integration ? { integration } : {}) };
   }
 
   function failure(selection: TaskRunSelection, cause: unknown): TaskRunResult {

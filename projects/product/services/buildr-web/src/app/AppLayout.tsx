@@ -469,8 +469,8 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
       {/* 交接的完成观察固定在壳层，离开服务页后仍按原对话与运行定义对齐结果。 */}
       <RuntimeConfigurationOutcome workspaceId={workspaceId} />
       <WorkspaceSourceControlProvider workspaceId={workspaceId}>
-      <WorkspaceReadCacheProvider key={workspaceId || 'global'}>
-      <WorkbenchPreferencesProvider key={workspaceId || "global"} workspaceId={workspaceId}>
+      <WorkspaceReadCacheProvider scopeKey={workspaceId || 'global'}>
+      <WorkbenchPreferencesProvider workspaceId={workspaceId}>
       <div className={"app-shell has-primary-navigation area-" + area + (conversations.open && conversations.full ? " has-full-conversation" : "")}>
         <AppShellHeader primaryNavigation="rail" isGlobal={isGlobal} brandHref={isGlobal ? '/' : workspaceHref('/overview')} development={webProfile === 'development'} workspaceName={isGlobal ? '全部工作空间' : (workspace?.name || '正在读取…')} workspaceMenuItems={workspaceMenuItems} area={area} workbenchHref={workspaceHref('/overview')} codeHref={codeEntryPath} workspaceDestination={{to:workspaceDestination.current.path,state:workspaceDestination.current.state}} actions={<>
             {!isGlobal ? <WorkbenchSearch key={workspaceId} /> : null}

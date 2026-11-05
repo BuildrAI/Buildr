@@ -122,7 +122,7 @@ test('无关服务仓库缺失不阻塞当前任务的真实目录、启动和�
   for (const invalid of ['taskId=../escape', 'taskId=current&taskId=other', 'taskId=current&extra=1', 'taskId=']) await assert.rejects(query(invalid), (error: any) => error.status === 400);
   await runtime.stopRun(root, result.results[0].run.id);
   git(checkout, 'switch', '-c', 'different-task-branch');
-  assert.equal((await taskRuntime.detail(root, task.taskId)).services.find((item: any) => item.service.code === 'backend').worktree, null);
+  assert.equal((await taskRuntime.detail(root, task.taskId)).services.find((item: any) => item.service.code === 'backend'), undefined);
   assert.deepEqual((await query('taskId=current')).body.worktrees, [], 'changed checkout identity must not fall back to the main checkout');
   await assert.rejects(runtime.startRun(root, { serviceCode: 'backend', worktreeId: source.id, taskId: task.taskId }), (error: any) => error.code === 'service_runtime_worktree_unknown');
 });
@@ -187,4 +187,31 @@ test('CLI restart 共用先校验后停启的连接能力，并等待新实例�
   assert.equal(ready.connection.url, backend.url);
   assert.equal(processAlive(original.pid), false);
   assert.equal(processAlive(backend.pid), true);
+});
+
+test('集成快检区分主库包含、未包含、无提交与截断，不把任务检出当作主库', async t => {
+  const { checkTaskIntegration } = await import('../../src/modules/service-runtime/infrastructure/task-integration-check.ts');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'task-integration-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  git('init', '--initial-branch=dev'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.com'); git('config', 'commit.gpgSign', 'false');
+  git('commit', '--allow-empty', '-m', 'base');
+  const base = git('rev-parse', 'HEAD');
+  git('checkout', '-b', 'task'); git('commit', '--allow-empty', '-m', 'task');
+  const taskHead = git('rev-parse', 'HEAD'); git('checkout', 'dev');
+  const checkout = path.join(root, 'task-checkout');
+  git('worktree', 'add', checkout, 'task');
+  const read = { status: 'complete', repositories: [{ id: 'repo', root, label: 'repo', status: 'complete' }], commits: [{ repositoryId: 'repo', hash: base }], coverage: { truncated: false }, diagnostics: [] };
+  const passed = checkTaskIntegration(read);
+  assert.equal(passed.complete, true); assert.equal(passed.repositories[0].branch, 'dev');
+  assert.equal(passed.repositories[0].contained, 1);
+  assert.equal(checkTaskIntegration({ ...read, commits: [{ repositoryId: 'repo', hash: taskHead }] }).repositories[0].status, 'not-contained');
+  const fromTaskCheckout = checkTaskIntegration({ ...read, repositories: [{ ...read.repositories[0], root: checkout }], commits: [{ repositoryId: 'repo', hash: taskHead }] });
+  assert.equal(fromTaskCheckout.repositories[0].branch, 'dev');
+  assert.equal(fromTaskCheckout.repositories[0].status, 'not-contained');
+  assert.equal(checkTaskIntegration({ ...read, commits: [] }).repositories[0].status, 'unknown');
+  assert.equal(checkTaskIntegration({ ...read, coverage: { truncated: true } }).complete, false);
+  assert.equal(checkTaskIntegration({ ...read, repositories: [{ ...read.repositories[0], root: path.join(root, 'missing') }] }).repositories[0].status, 'unknown');
+  git('merge', '--ff-only', 'task');
+  assert.equal(checkTaskIntegration({ ...read, commits: [{ repositoryId: 'repo', hash: taskHead }] }).complete, true);
 });

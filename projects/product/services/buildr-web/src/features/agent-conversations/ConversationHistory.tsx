@@ -18,9 +18,9 @@ import { useDebouncedValue } from './useDebouncedValue';
 import './conversation-activity.css';
 export type ConversationWorkspace = {id:string;name:string;rootPath:string};
 type HistoryGroupResult = {total?:number;busy:boolean;error:boolean};
-export function ConversationHistory({workspaces,defaultWorkspaceId}:{workspaces:ConversationWorkspace[];defaultWorkspaceId:string|null}) {
+export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWorkspaceId}:{workspaces:ConversationWorkspace[];defaultWorkspaceId:string|null}) {
   const context=useAgentConversations();
-  const initial=context.historyWorkspaceId===undefined?defaultWorkspaceId??'':context.historyWorkspaceId??'';
+  const initial=context.historyWorkspaceId??'';
   const [workspaceId,setWorkspaceId]=useState(initial),[query,setQuery]=useState(''),[hidden,setHidden]=useState(false),[filter,setFilter]=useState<ExecutionFilter>(null);
   const searchQuery=useDebouncedValue(query,250);
   const groupOrder=useHistoryGroupPreference();

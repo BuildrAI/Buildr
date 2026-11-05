@@ -1,4 +1,6 @@
 import path from 'node:path';
+import { TASK_COMMITS_APPLICATION } from '../task/commits/module.ts';
+import { checkTaskIntegration } from './infrastructure/task-integration-check.ts';
 import fs from 'node:fs';
 import { CODE_APPLICATION } from '../code/module.ts';
 import { TASK_QUERY_APPLICATION, TASK_WORKTREE_PROVIDER } from '../task/module.ts';
@@ -20,7 +22,7 @@ export const SERVICE_RUNTIME_SOURCES = 'service-runtime.sources';
 
 export const SERVICE_RUNTIME_MODULE = Object.freeze({
     id: SERVICE_RUNTIME_MODULE_ID,
-    requires: [WORKSPACE_APPLICATION, CODE_APPLICATION, TASK_QUERY_APPLICATION, TASK_WORKTREE_PROVIDER],
+    requires: [WORKSPACE_APPLICATION, CODE_APPLICATION, TASK_QUERY_APPLICATION, TASK_WORKTREE_PROVIDER, TASK_COMMITS_APPLICATION],
     create: (requires: Record<string, any>) => {
       const workspace = requires[WORKSPACE_APPLICATION];
       const code = requires[CODE_APPLICATION];
@@ -122,6 +124,7 @@ export const SERVICE_RUNTIME_MODULE = Object.freeze({
       };
       const taskRuntime = createServiceTaskRuntimeApplication({
         runtime, view, catalog: { listServices }, readTaskScope,
+        integrationCheck(root, taskId) { return checkTaskIntegration(requires[TASK_COMMITS_APPLICATION].inspectTaskCommits(root, taskId, 'quick')); },
         worktreeServices(root: string, taskId: string) {
           return listServices(root).filter(service => taskWorktreeCoversService(root, taskId, service.code)).map(service => service.code);
         },

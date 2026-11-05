@@ -4,6 +4,25 @@ import type {AgentConversationFixture} from './agent-conversation-fixture.ts';
 /** tasks 场景使用独立准备的对话现场。 */
 export async function runTasksScenarios(fixture:AgentConversationFixture){
   const {assertFixed,capture,chooseAgent,chooseOption,closeConversation,connections,input,openDesktopConversation,page,panel,reopen,run,sentInputs,step,update,workspaceId,workspaceUrl}=fixture;
+await step('已合并任务本地验证展示集成快检而非服务范围警示',async()=>{
+  const matcher='**/service-runtime/tasks/browser-associated-task';
+  await page.route(matcher,async(route:any)=>route.fulfill({json:{
+    taskId:'browser-associated-task',title:'已合并任务',services:[],runs:[],diagnostics:[],
+    integration:{checkedAt:new Date().toISOString(),complete:true,diagnostics:[],repositories:[
+      {repositoryId:'repo',label:'业务代码库',branch:'dev',head:'a'.repeat(40),checked:2,contained:2,status:'contained',message:'已发现的关联提交均已包含在主工作库当前版本。'},
+    ]},
+  }}));
+  try {
+    await page.goto(workspaceUrl+'/tasks/browser-associated-task');
+    await page.getByText('本地验证',{exact:true}).click();
+    const runtime=page.locator('#task-local-runtime');
+    await runtime.getByText('集成快检通过',{exact:true}).waitFor();
+    assert.match(await runtime.innerText(),/业务代码库.*dev.*已包含 2\/2/s);
+    assert.doesNotMatch(await runtime.innerText(),/任务尚未明确服务范围/);
+    assert.equal(await runtime.getByRole('button',{name:'启动任务服务'}).isDisabled(),true);
+    await capture(page,'task-integrated-quick-check.png');
+  } finally { await page.unroute(matcher); }
+});
 await step('关联数量浮层零一多、跨空间同码前缀搜索及双向导航',async()=>{
   const taskId='browser-associated-task',remote=fixture.otherWorkspaceId;
   assert.ok(remote,'夹具必须提供第二个真实登记空间');

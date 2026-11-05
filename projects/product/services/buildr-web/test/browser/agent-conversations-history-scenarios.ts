@@ -8,6 +8,25 @@ type ConversationScrollSample={at:number;top:number;height:number;viewport:numbe
 /** history 场景使用独立准备的对话现场。 */
 export async function runHistoryScenarios(fixture:AgentConversationFixture){
   const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
+await step('切换工作空间只更新工作区，对话节点和草稿保留，列表默认全部空间',async()=>{
+  const registry=await (await page.request.get(new URL('/api/v1/workspaces',workspaceUrl).href)).json();
+  const other=registry.workspaces.find((entry:any)=>entry.workspace?.id&&entry.workspace.id!==workspaceId);
+  assert.ok(other?.workspace);
+  await input().fill('切换空间保留的草稿');
+  await panel().evaluate((node:HTMLElement)=>{(window as any).__retainedConversationPanel=node;});
+  const switcher=page.locator('.workspace-switcher').first();
+  await switcher.click();
+  await page.locator('.ant-dropdown:visible').getByText(other.workspace.name,{exact:true}).click();
+  await page.waitForURL('**/workspaces/'+other.workspace.id+'/**');
+  await input().waitFor();
+  assert.equal(await input().inputValue(),'切换空间保留的草稿');
+  assert.equal(await panel().evaluate((node:HTMLElement)=>node===(window as any).__retainedConversationPanel),true);
+  await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();
+  await panel().locator('.ac-history-toolbar').getByText('全部工作空间',{exact:true}).waitFor();
+  await capture(page,'conversation-workspace-switch-preserved.png');
+  await panel().getByRole('button',{name:'返回当前对话',exact:true}).click();
+  await input().fill('');
+});
 await step('交接按轮引用读取，折叠不取正文，工具展开才读详情',async()=>{
  const saved=structuredClone(fixture.conversation),sourceId='index-'+'a'.repeat(64)+'.json',at=new Date().toISOString();let histories=0,details=0,missing=false;
  const tool={id:'source-tool',sequence:2,runId:'source-round',kind:'tool',role:'system',text:'',createdAt:at,name:'command',provider:'codex',status:'completed',detail:{revision:'b'.repeat(64)}};

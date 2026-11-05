@@ -114,7 +114,8 @@ export type LocalBackendAvailability = {
 };
 export type ServiceRuntimeDetail = { service: ServiceRuntimeSummary; worktrees: ServiceWorktree[]; connectionTargets: Record<string, LocalBackendAvailability[]>; diagnostics: string[] };
 export type TaskRuntimeService = { service: ServiceRuntimeSummary; worktree: ServiceWorktree | null; connectionTarget: LocalBackendAvailability[] | null; diagnostics: string[] };
-export type TaskRuntimeView = { taskId: string; title: string; services: TaskRuntimeService[]; runs: ManagedRun[]; diagnostics: string[] };
+export type TaskIntegrationCheck = { checkedAt: string; complete: boolean; repositories: Array<{ repositoryId: string; label: string; branch: string | null; head: string | null; checked: number; contained: number; status: 'contained' | 'not-contained' | 'unknown'; message: string }>; diagnostics: string[] };
+export type TaskRuntimeView = { taskId: string; title: string; services: TaskRuntimeService[]; runs: ManagedRun[]; diagnostics: string[]; integration?: TaskIntegrationCheck };
 export type StartOptions = { connection?: ConnectionSelection; environment?: string; standalone?: boolean; backendTargets?: BackendTarget[]; origin?: 'human' | 'agent'; taskId?: string; expectedWorktree?: ExpectedWorktree; expectedBackendRunId?: string };
 export type RestartOptions = { connection?: ConnectionSelection; environment?: string; backendTargets?: BackendTarget[]; expectedWorktree?: ExpectedWorktree; expectedBackendRunId?: string; expectedRoutingDigest?: string };
 export type TaskStartSelection = { serviceCode: string; worktreeId: string; expectedWorktree?: ExpectedWorktree; expectedBackendRunId?: string; backendTargets?: BackendTarget[] };

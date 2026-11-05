@@ -48,6 +48,7 @@ const allowedCrossModulePorts: any = new Set([
   'modules/service-runtime/module.ts -> modules/workspace/module.ts',
   'modules/service-runtime/module.ts -> modules/code/module.ts',
   'modules/service-runtime/module.ts -> modules/task/module.ts',
+  'modules/service-runtime/module.ts -> modules/task/commits/module.ts',
   'modules/mysql-query/module.ts -> modules/connection-skills/module.ts',
   'modules/mysql-query/module.ts -> modules/workspace/module.ts',
   'modules/code/module.ts -> modules/agent-service/module.ts',

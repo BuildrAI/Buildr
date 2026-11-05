@@ -1,3 +1,4 @@
+import { TaskIntegrationNotice } from './TaskIntegrationNotice';
 import { useMemo, useState } from 'react';
 import { Alert, App, Button, Modal, Tag } from 'antd';
 import { CommentOutlined } from '@ant-design/icons';
@@ -65,6 +66,7 @@ export function TaskLocalRuntime({ taskId }: { taskId: string }) {
     <p className="runtime-section-note">开发验证使用本任务代码目录。服务就绪与后端目标可在这里查看，业务验证仍需在授权后执行。</p>
     {runtime.error ? <Alert type="warning" showIcon message={runtime.error} action={<Button onClick={() => void runtime.refresh()}>重试</Button>} /> : null}
     {error && !startOpen ? <Alert type="error" showIcon message={error} closable onClose={() => setError('')} /> : null}
+    {runtime.data?.integration ? <TaskIntegrationNotice check={runtime.data.integration} /> : null}
     {runtime.data?.diagnostics.length ? <Alert type="warning" showIcon message="任务服务诊断" description={runtime.data.diagnostics.join('；')} /> : null}
     {runtime.loading && !runtime.data ? <p className="runtime-section-note">正在读取任务服务与代码目录…</p> : null}
     {services.filter(item => !item.service.definition || !item.worktree || item.diagnostics.length).map(item => <Alert key={item.service.code} type="warning" showIcon message={item.service.name} description={[...item.diagnostics, ...(!item.worktree ? ['没有唯一匹配的本任务代码目录，不会回落主工作库。'] : []), ...(!item.service.definition ? [item.service.definitionDiagnostic || '尚未配置启动方式。'] : [])].join('；')} action={!item.service.definition ? configuration.pending?.code === item.service.code ? <Button size="small" icon={<CommentOutlined />} onClick={configuration.openPendingConversation}>查看对话</Button> : <Button size="small" onClick={() => configuration.open({ code: item.service.code, name: item.service.name, definition: item.service.definition })}>运行配置</Button> : undefined} />)}

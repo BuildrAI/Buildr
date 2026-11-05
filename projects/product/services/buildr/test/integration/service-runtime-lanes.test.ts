@@ -55,7 +55,7 @@ async function fixture(t: test.TestContext, options: { fail?: string; wrongObser
     } }));
   }
   const view = createServiceRuntimeView({ catalog, runtime });
-  const tasks = createServiceTaskRuntimeApplication({ catalog, runtime, view,
+  const tasks = createServiceTaskRuntimeApplication({ catalog, runtime, view, worktreeServices: () => codes,
     readTaskScope: (_root, taskId) => ({ taskId, title: taskId, scope: { projects: ['project'], services: [] } }),
   });
   const source = (code: string, task = 'task') => worktrees[code]!.find(value => task === 'main' ? value.main : value.taskId === task)!;
