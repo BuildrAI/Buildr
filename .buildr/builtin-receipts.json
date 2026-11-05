@@ -361,19 +361,27 @@
       "type": "skill",
       "id": "project-verification",
       "target": "skills/buildr/project-verification",
-      "integrity": "sha256-08833fbf21d9c9093af37b1b31021319a70c2968e6f6abe6106aabaf31d1e145",
+      "integrity": "sha256-d6ba91e7b870c04a2a9099b17cbded33fc8d86772ac2bf9e09a88ba5d2d19b86",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-59a62fd28da96259eaa8eb2b219e771a75fe58e9ad49c24642ce784ff2513513"
+          "integrity": "sha256-1bbf53c1e2be007c51bad29d4fbc705e74535c0595e9606851658f5155e71fb3"
         },
         {
           "path": "references/frontend-verification.md",
           "integrity": "sha256-7bf441404e8bdbd1c1adf9d2e58b70939dcb653e73e09c287bee6e5d191fc204"
         },
         {
+          "path": "references/impact-selection.md",
+          "integrity": "sha256-42fee033214d3fefda5c9dad979f7ee9b32b470bc0105487e6f9ab09938df7a8"
+        },
+        {
           "path": "references/record-report.md",
           "integrity": "sha256-8bc6facb683b31547ec443704c096b24af4cca79319e9a2b0904b95f8dd4dd3d"
+        },
+        {
+          "path": "scripts/verify-impact.mjs",
+          "integrity": "sha256-2057a900d6fa84f18a20a45b6d7db2e41b224277266ee5057eb3612b14b5d994"
         }
       ]
     },
