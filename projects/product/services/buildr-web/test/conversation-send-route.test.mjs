@@ -14,7 +14,7 @@ test('questions and changed selections cannot bypass a pending response',()=>{
   assert.equal(conversationSendRoute(chat('waiting-approval',[request('approval')]),true),'pending');
 });
 test('stopping, starting and uncertain rounds cannot become new sends',()=>{
-  for(const status of ['starting','stopping','tools-active'])assert.equal(conversationSendRoute(chat(status),false),'unavailable',status);
+  for(const status of ['starting','stopping'])assert.equal(conversationSendRoute(chat(status),false),'unavailable',status);
 });
 test('completed rounds continue and changed selections use guarded send',()=>{
   assert.equal(conversationSendRoute(chat('completed'),false),'send');
@@ -29,7 +29,20 @@ test('preview never dispatches an input or releases a pending request',()=>{
 test('an accepted unknown round reaches native verification instead of a local refusal',()=>{
   assert.equal(conversationSendRoute(chat('unknown'),false),'supplement');
   const stopped=chat('unknown');stopped.run.stopRequested=true;
-  assert.equal(conversationSendRoute(stopped,false),'unavailable');
+  assert.equal(conversationSendRoute(stopped,false),'send');
+});
+test('background work and explicit stop preserve old controls while admitting new requirements',()=>{
+  for(const status of ['tools-active','unknown','stopping']){
+    const before=chat(status);before.run.tools=[{id:'old-job',label:'original job',status:'unknown'}];
+    if(status!=='tools-active')before.run.stopRequested=true;
+    const original=structuredClone(before);
+    assert.equal(conversationSendRoute(before,false),'send');
+    assert.deepEqual(before,original,'routing must retain the original execution and tool facts');
+    for(const kind of ['approval','question'])assert.equal(conversationSendRoute({...before,requests:[request(kind)]},false),'pending');
+    assert.equal(conversationSendRoute(before,false,true),'preview');
+  }
+  const unaccepted=chat('starting');unaccepted.run.accepted=false;unaccepted.run.stopRequested=true;
+  assert.equal(conversationSendRoute(unaccepted,false),'unavailable');
 });
 test('released uncertain control admits a new send without disabling observation or answering old decisions',async()=>{
   const released={...chat('unknown'),entries:[],run:{...chat('unknown').run,resourcesReleased:true,executionState:'unknown',tools:[]}};

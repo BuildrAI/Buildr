@@ -95,6 +95,42 @@ await step('单项停止只对原生明确可停止的命令开放，旧记录�
       }finally{await page.unroute(matcher,intercept);await page.setViewportSize({width:1600,height:1000});}
     });
 
+await step('后台命令未核对及停止未确认时仍可发送新要求，读取结果直接可见',async()=>{
+      await chooseAgent('Codex');await chooseModel('Fixture model');await setHighEffort();await closeModelSettings();
+      for(const status of ['tools-active','unknown','stopping']){
+        update({run:run(status,'codex',{canContinue:false,stopRequested:status!=='tools-active',tools:[{id:'old-command',label:'需要保留的原命令',status:'unknown'}]}),requests:[],pendingSend:undefined});
+        await reopen();
+        if(status==='tools-active'){
+          const notice=panel().locator('.ac-active-tools');
+          await notice.getByText('仍有 1 项命令待核对，可继续对话',{exact:true}).waitFor();
+          await notice.getByRole('button',{name:'查看命令',exact:true}).click();await notice.getByText('需要保留的原命令',{exact:true}).waitFor();
+          await notice.getByRole('button',{name:'重新读取',exact:true}).click();
+          await notice.locator('small[role="status"]').filter({hasText:'读取完成：尚未取得部分命令的结束记录'}).waitFor();
+          await capture(page,'agent-controls-read-feedback.png');
+        }
+        const before=fixture.sends;await input().fill('新的要求 '+status);
+        await panel().getByRole('button',{name:'发送对话',exact:true}).click();
+        await panel().locator('[data-run-status="running"]').waitFor();
+        assert.equal(fixture.sends,before+1,'每条新要求准确发送一次');
+        assert.equal(sentInputs.at(-1)?.text,'新的要求 '+status);assert.equal(await input().inputValue(),'');
+      }
+    });
+
+await step('取消旧交接保留草稿，下一次只发送当前的新指令',async()=>{
+      await chooseAgent('Codex');await chooseModel('Fixture model');await setHighEffort();await closeModelSettings();
+      update({run:run('unknown','codex',{resourcesReleased:true,stopRequested:true,tools:[{id:'old',label:'原命令',status:'unknown'}]}),requests:[],pendingSend:undefined});await reopen();
+      const before=fixture.sends;fixture.prepareError={code:'agent_session_confirmation_required',message:'旧后台要求确认内部会话。'};
+      await input().fill('旧指令，暂不发送');await panel().getByRole('button',{name:'发送对话',exact:true}).click();
+      const drawer=panel().locator('.ac-handoff-drawer');await drawer.getByRole('button',{name:'关闭交接内容',exact:true}).waitFor();
+      assert.equal(fixture.sends,before);await drawer.getByRole('button',{name:'关闭交接内容',exact:true}).click();await drawer.waitFor({state:'hidden'});
+      assert.equal(await input().inputValue(),'旧指令，暂不发送','关闭预览不清除草稿');
+      await input().fill('已经有人部署了，可以不部署了');await panel().getByRole('button',{name:'发送对话',exact:true}).click();
+      await panel().locator('[data-run-status="running"]').waitFor();
+      assert.equal(fixture.sends,before+1);assert.equal(sentInputs.at(-1)?.text,'已经有人部署了，可以不部署了');
+      assert.equal(sentInputs.slice(before).some((item:any)=>item.text==='旧指令，暂不发送'),false,'已取消的预览不能再次发送旧指令');
+      assert.equal(await panel().locator('.ac-handoff-drawer:visible').count(),0);
+    });
+
 await step('仅后台作业不占执行中模型且历史保留后台状态',async()=>{
       const at=new Date().toISOString();
       update({run:run('tools-active','codex',{canContinue:true,executionState:'active',tools:[{id:'background-server',label:'bash',status:'running',canStop:true}]}),pendingSend:undefined,requests:[],activity:{version:1,seenThrough:1,active:false,updatedAt:at},entries:[{id:'bg-input',sequence:1,runId:'run-fixture',kind:'message',role:'user',text:'启动服务',createdAt:at},{id:'bg-answer',sequence:2,runId:'run-fixture',kind:'message',role:'assistant',text:'服务已启动',createdAt:at}]});

@@ -29,6 +29,7 @@ export function ConversationActiveToolsNotice({tools,diagnostic,feedback,canCont
         {!resourcesReleased&&<Button type="text" size="small" aria-label="停止剩余执行" loading={stopping} disabled={stopping} onClick={()=>onStop()}>{stopping?'正在停止…':'停止剩余执行'}</Button>}
       </div>
     </div>
+    {feedback&&<small role="status">{feedback}</small>}
     {expanded&&<div id={detailsId} className="ac-active-tools-list">
       {active.map((tool,index)=><article className="ac-active-tool" key={tool.id}>
         <header><strong>命令 {index+1}</strong><small>{resourcesReleased||tool.status==='unknown'?'状态待确认':'运行中'}</small>

@@ -1790,7 +1790,7 @@ test('same executor and model records native session replacement without claimin
     const preview=f.service.conversations.prepareSend('workspace-one',chat.id,draft);
     assert.equal(preview.participantId,undefined,'unknown original context cannot be reused');
     assert.equal(preview.switching,false,'an internal context change is not a user handoff');
-    f.service.conversations.send('workspace-one',chat.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});
+    f.service.conversations.send('workspace-one',chat.id,{...draft,clientRequestId:randomUUID()});
     const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='completed');
     assert.notEqual(native.sends[0]!.contextRef.id,native.sends[1]!.contextRef.id);
     const transfer=done.entries.find(entry=>entry.nativeSession);
@@ -2963,19 +2963,39 @@ for(const previouslyStopped of [false,true])test('startup preserves a pending qu
  }finally{await f.close();}
 });
 
+test('an unconfirmed stop permits same-selection new input without an internal handoff confirmation or replay',async()=>{
+ const native=fake('local',{hold:true}),open=native.executor.open;
+ native.executor.open=async options=>{const runtime=await open(options);return {...runtime,stop:async()=>{throw new Error('original stop channel unavailable');}};};
+ const f=fixture([native.executor]);try{
+  await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','old requirement');
+  const before=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.accepted===true);
+  await assert.rejects(f.service.conversations.stop('workspace-one',chat.id,{expectedRevision:before.revision,runId:before.run!.id,participantId:before.run!.participantId,generation:before.run!.generation}));
+  const stopped=f.service.conversations.read('workspace-one',chat.id);assert.equal(stopped.run!.stopRequested,true);assert.equal(stopped.run!.status,'unknown');
+  const draft={expectedRevision:stopped.revision,connectionId:'local',text:'new requirement',clientRequestId:randomUUID()};
+  f.service.conversations.send('workspace-one',chat.id,draft);
+  const next=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.id!==before.run!.id&&view.run?.accepted===true);
+  assert.equal(next.retainedRuns?.[0]?.id,before.run!.id);assert.equal(next.retainedRuns?.[0]?.status,'unknown');assert.equal(next.retainedRuns?.[0]?.stopRequested,true);
+  assert.notEqual(next.run!.participantId,before.run!.participantId);assert.equal(native.sends.length,2);assert.equal(native.contexts.size,2);
+ }finally{await f.close();}
+});
+
 for(const replacement of ['local','other'])test('retained tools allow a new instruction with '+replacement+' and preserve exact old stop',async()=>{
   const old=fake('local',{toolSurvives:true}),other=fake('other');const f=fixture([old.executor,other.executor]);
   try{
     await connected(f.service,'local');await connected(f.service,'other');const chat=await f.service.conversations.create('workspace-one',{});
     send(f.service,chat.id,'local','start helper');const before=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='tools-active');
     const unconfirmed={expectedRevision:before.revision,connectionId:replacement,text:'handle the new requirement',clientRequestId:randomUUID()};
-    assert.throws(()=>f.service.conversations.send('workspace-one',chat.id,unconfirmed),{code:replacement==='local'?'agent_native_supplement_required':'agent_session_confirmation_required'});
-    send(f.service,chat.id,replacement,'handle the new requirement');
+    if(replacement==='local')f.service.conversations.send('workspace-one',chat.id,unconfirmed);
+    else{
+      assert.throws(()=>f.service.conversations.send('workspace-one',chat.id,unconfirmed),{code:'agent_session_confirmation_required'});
+      send(f.service,chat.id,replacement,'handle the new requirement');
+    }
     const next=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.id!==before.run!.id&&['completed','tools-active'].includes(view.run?.status??''));
     assert.equal(next.retainedRuns?.[0]?.id,before.run!.id);assert.notEqual(next.run!.participantId,before.run!.participantId);
     assert.equal(old.contexts.size,replacement==='local'?2:1,'new work cannot overwrite an unfinished native context');
     assert.equal(next.retainedRuns?.[0]?.status,'tools-active');
     assert.equal(Boolean(next.retainedRuns?.[0]?.supersededBy),false);
+    if(replacement==='local')assert.equal(next.entries.filter(entry=>entry.kind==='handoff'&&!entry.nativeSession).length,0,'internal control diagnostics do not create a user-selected handoff');
     await assert.rejects(f.service.conversations.stop('workspace-one',chat.id,{expectedRevision:before.revision,runId:before.run!.id,participantId:before.run!.participantId,generation:before.run!.generation}),{code:'agent_revision_conflict'});
     const stopped=await f.service.conversations.stop('workspace-one',chat.id,{expectedRevision:next.revision,runId:before.run!.id,participantId:before.run!.participantId,generation:before.run!.generation,toolId:'own-tool'});
     assert.equal(stopped.retainedRuns?.[0]?.status,'stopped');assert.equal(stopped.run!.id,next.run!.id);assert.equal(stopped.run!.status,next.run!.status);

@@ -115,3 +115,31 @@ test('DSH synthetic unknown-result repair remains unknown in a live observation'
   assert.deepEqual(await rt.canRelease(run),{executionState:'ended'});
  }finally{await f.close();}
 });
+
+test('DSH cold stop reports an ownership conflict without cancelling or replaying another native host',{skip:process.platform==='win32'},async()=>{
+ const f=await fixture();try{
+  const original=f.runtime(),run=await f.start(original),cold=f.runtime();
+  await cold.resumeContext({contextRef:run.contextRef,cwd:f.root});
+  const before=structuredClone(run.executionRef);
+  await assert.rejects(cold.stop(run),(error:any)=>error.code==='agent_stop_owner_unavailable'&&error.status===409&&/尚不能确认剩余命令已停止/.test(error.message));
+  assert.deepEqual(run.executionRef,before);assert.equal(f.controls[0]!.child.exitCode,null);assert.equal(f.controls[0]!.child.signalCode,null);
+  assert.equal(f.sent.length,1);assert.equal((await original.observe(run)).status,'running');
+  f.finish(run.contextRef);await run.sending;
+  const settled=await cold.stop(run);
+  assert.equal(settled.status,'idle');assert.deepEqual(settled.executionRef,run.executionRef);assert.equal(f.sent.length,1);
+ }finally{await f.close();}
+});
+
+test('DSH cold stop retains a missing background-job receipt after the original host exits',{skip:process.platform==='win32'},async()=>{
+ const f=await fixture();try{
+  const original=f.runtime(),run=await f.start(original);
+  f.publish(run.contextRef.id,{type:'tool/call',data:{turn:1,callId:'background-call',name:'bash'}});
+  f.publish(run.contextRef.id,{type:'job/registered',data:{jobId:'background-job',owner:run.contextRef.id,kind:'bash',toolCall:{callId:'background-call'}}});
+  f.finish(run.contextRef);await run.sending;
+  await closeOwnedProcess(f.controls[0]!.child,30);
+  const cold=f.runtime();await cold.resumeContext({contextRef:run.contextRef,cwd:f.root});
+  await assert.rejects(cold.stop(run),(error:any)=>error.code==='agent_stop_owner_unavailable'&&error.status===409);
+  const observed=await cold.observe(run);
+  assert.equal(observed.status,'tools-active');assert.equal(observed.tools[0]?.status,'running');assert.equal(f.sent.length,1);
+ }finally{await f.close();}
+});

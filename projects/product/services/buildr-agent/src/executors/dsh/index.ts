@@ -685,7 +685,14 @@ export class DshRuntime implements AgentRuntime {
   }
   async stop({ contextRef, executionRef, toolId }: { contextRef: ContextRef; executionRef: ExecutionRef; toolId?: string }): Promise<ExecutorObservation> {
     this.reference(contextRef); const turn = this.turns.get(contextRef.id);
-    if (!turn || turn.id !== executionRef.id) throw new Error('停止尚未确认：当前连接未持有原轮执行，已保留原工具状态；请核对原执行。');
+    if (!turn || turn.id !== executionRef.id) {
+      // A reopened native connection can read the original history, but cannot
+      // cancel work owned by its previous host. Never signal a recovered PID or
+      // report this expected ownership boundary as an internal server failure.
+      const observation = await this.observe({ contextRef, executionRef }).catch(() => undefined);
+      if (observation?.executionRef?.id === executionRef.id && ['idle','stopped'].includes(observation.status) && observation.tools.every(tool => tool.status === 'completed')) return observation;
+      throw new AgentServiceError('agent_stop_owner_unavailable', '当前连接未持有原执行的停止通道，尚不能确认剩余命令已停止。原记录已保留；可以发送新要求，系统会保留旧执行并使用独立上下文。', 409);
+    }
     if (toolId) return this.stopToolJobs(turn,toolId);
     turn.stopRequested=true;
     if(turn.stopConfirmed)return this.activeObservation(turn);

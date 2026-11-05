@@ -45,6 +45,13 @@ test('停止与核对期间保留准确操作，不提供重复恢复执行',()=
   assert.doesNotMatch(html,/恢复执行|恢复成功|已停止/);
 });
 
+test('重新读取的实际结果直接可见，不仅藏在悬停提示中',()=>{
+  const feedback='读取完成：尚未取得部分命令的结束记录，请查看命令状态。';
+  const html=render({tools:[{id:'old',status:'unknown',label:'original command'}],feedback});
+  assert.ok(html.includes('<small role="status">'+feedback+'</small>'));
+  assert.doesNotMatch(html,/读取成功|已确认停止/);
+});
+
 const {ConversationRetainedWork}=await import('../src/features/agent-conversations/ConversationRetainedWork.tsx');
 test('原执行和未答问题保持原归属且不阻止继续对话',()=>{
   const conversation={participants:[{id:'p',label:'原执行方'}],requests:[{id:'q',runId:'old-question',participantId:'p',title:'确认发布吗？'}],retainedRuns:[

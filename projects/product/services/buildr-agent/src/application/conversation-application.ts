@@ -862,10 +862,11 @@ export class ConversationApplication {
       // Unknown work whose owner is gone keeps its exact state and stays open
       // to adoption or an explicit new instruction instead of an impossible append.
       const supplementAvailable = current.resourcesReleased !== true
+        && current.status !== 'tools-active' && !current.stopRequested
         && (current.generation === this.options.generation || Boolean(this.options.generationAlive?.(current.generation)));
       if (unfinishedRun(current) && supplementAvailable && !prepared.preview.switching && raw.previewToken === undefined)
         fail('agent_native_supplement_required', '原轮仍在执行，请通过原生追加发送；不会另开会话。', 409);
-      if (!prepared.preview.participantId && raw.previewToken === undefined)
+      if (!prepared.preview.participantId && prepared.preview.switching && raw.previewToken === undefined)
         fail('agent_session_confirmation_required', '需要新的原生会话，请先查看交接内容并明确确认；输入已保留。', 409);
     }
 
