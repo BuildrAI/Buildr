@@ -148,8 +148,11 @@ export class ConversationEntryStore {
       prior.delete(key);
     }
     for (const row of prior.values()) db.prepare('DELETE FROM conversation_read_entries WHERE conversation_id=? AND scope=? AND sequence=?').run(record.view.id, row.scope, row.sequence);
-    db.prepare(`DELETE FROM conversation_entry_contents WHERE conversation_id=? AND NOT EXISTS(
-      SELECT 1 FROM conversation_read_entries e WHERE e.conversation_id=conversation_entry_contents.conversation_id AND e.content_revision=conversation_entry_contents.content_revision)`).run(record.view.id);
+    // Build the live revision set once. A correlated lookup scans the positions
+    // for every body and makes each streamed character quadratic in history size.
+    // Both scopes participate so inherited entries keep their pinned revisions.
+    db.prepare(`DELETE FROM conversation_entry_contents WHERE conversation_id=? AND content_revision NOT IN(
+      SELECT content_revision FROM conversation_read_entries WHERE conversation_id=?)`).run(record.view.id, record.view.id);
   }
   static decode(row: Content, reader?: NativeContentReader, lazy = false, compact?: string | null): ConversationEntry {
     if(lazy&&compact&&['raw','zstd'].includes(row.codec)){

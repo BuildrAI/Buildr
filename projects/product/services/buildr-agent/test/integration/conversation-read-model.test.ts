@@ -16,6 +16,32 @@ function record(id='one'):StoredConversation{return {view:{id,workspaceId:'ws',r
 const run=(status='completed',tools:any[]=[])=>({id:'run',participantId:'p',provider:'codex' as const,generation:'g',status:status as any,accepted:true,tools,startedAt:'now',updatedAt:'now'});
 function priorPending(r:StoredConversation,active:boolean){return Boolean(r.view.requests.length||r.view.retainedRuns?.some(unfinishedRun)||r.view.run?.tools.some(t=>t.status!=='completed')||(active?[...BUSY_STATES]:['unknown','tools-active']).includes(r.view.run?.status??'' as any));}
 
+test('streaming participation refresh leaves current canonical messages untouched and repairs stale messages',t=>{
+ const repo=fixture(t),r=record();
+ r.view.entries=Array.from({length:2000},(_,i)=>({id:'e'+i,sequence:i+1,kind:'message',role:'assistant',text:'history '+i,createdAt:'now'}));
+ r.inheritedContext={entries:[structuredClone(r.view.entries.at(-1)!)],outcomes:{},pendingQuestions:[]};
+ repo.saveConversation(r);repo.stopReadModels();
+ const db=new DatabaseSync(repo.filename);t.after(()=>db.close());
+ db.exec(`CREATE TABLE refresh_writes(kind TEXT);
+ CREATE TRIGGER count_header_refresh AFTER UPDATE ON conversation_read_states BEGIN INSERT INTO refresh_writes VALUES('header'); END;
+ CREATE TRIGGER count_entry_refresh AFTER UPDATE ON conversation_read_entries BEGIN INSERT INTO refresh_writes VALUES('entry'); END;
+ CREATE TRIGGER count_content_cleanup AFTER DELETE ON conversation_entry_contents BEGIN INSERT INTO refresh_writes VALUES('content'); END;`);
+ for(let i=2;i<=4;i++){
+  const prior=r.view.revision;r.view.revision='r'+i;r.view.entries.at(-1)!.text+='字';repo.saveConversation(r,prior);
+  db.exec('DELETE FROM refresh_writes');
+  repo.rebuildReadModel(r.view.id);
+  assert.deepEqual(db.prepare('SELECT kind FROM refresh_writes').all(),[],'participation-only refresh must not rewrite the message projection');
+  assert.equal(repo.participationProjections('ws').incomplete,false);
+  assert.equal(repo.readPage(r.view.id,undefined,1)!.view.entries[0].text,r.view.entries.at(-1)!.text);
+  assert.equal(db.prepare('SELECT count(*) AS n FROM conversation_entry_contents').get()!.n,2001,'obsolete streamed revisions are removed while the inherited revision remains pinned');
+  assert.equal(repo.readConversation(r.view.id)!.inheritedContext!.entries[0].text,'history 1999');
+ }
+ db.prepare('UPDATE conversation_read_states SET message_revision=NULL WHERE id=?').run(r.view.id);
+ repo.rebuildReadModel(r.view.id);
+ assert.ok(db.prepare('SELECT 1 FROM refresh_writes WHERE kind=?').get('header'));
+ assert.equal(repo.readPage(r.view.id,undefined,1)!.view.entries[0].text,r.view.entries.at(-1)!.text);
+});
+
 test('compact status exactly preserves pending semantics, including retained work and tools after completion',t=>{
  const repo=fixture(t);const records:StoredConversation[]=[];
  for(const status of ['starting','running','waiting-approval','waiting-question','stopping','stopped','unknown','tools-active','completed','failed']){

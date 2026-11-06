@@ -257,7 +257,16 @@ export class ConversationRepository {
     try {
       db.exec('BEGIN IMMEDIATE');
       const current = db.prepare('SELECT revision FROM conversations WHERE id=?').get(id) as {revision:string}|undefined;
-      if (current?.revision === record.view.revision) { ConversationReadModel.saveHeader(db, record); ConversationReadModel.saveEntries(db, record); db.prepare('INSERT INTO conversation_participation(id,revision,body) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,body=excluded.body').run(id,record.view.revision,JSON.stringify(projectParticipation(record))); }
+      if (current?.revision === record.view.revision) {
+        // Ordinary saves already commit the header and entries atomically. The
+        // queued participation refresh must not rewrite that canonical history.
+        const messages = db.prepare('SELECT revision,message_revision FROM conversation_read_states WHERE id=?').get(id) as {revision:string;message_revision:string|null}|undefined;
+        if (messages?.revision !== current.revision || messages.message_revision !== current.revision) {
+          ConversationReadModel.saveHeader(db, record);
+          ConversationReadModel.saveEntries(db, record);
+        }
+        db.prepare('INSERT INTO conversation_participation(id,revision,body) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,body=excluded.body').run(id,record.view.revision,JSON.stringify(projectParticipation(record)));
+      }
       else this.queueReadRepair(id);
       db.exec('COMMIT');
     } catch (error) { try { db.exec('ROLLBACK'); } catch {} throw error; } finally { db.close(); }
