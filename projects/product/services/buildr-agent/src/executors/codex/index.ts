@@ -74,8 +74,8 @@ class CodexRuntime implements AgentRuntime {
     const gateway = checkedGateway(options.gateway);
     const { home, temporary } = nativeHome(options.configRoot);
     const config = join(options.configRoot, 'codex-home');
-    await privateDirectories(options.configRoot, home, temporary, config);
     const env = accountEnvironment(options.environment, home, temporary, { CODEX_HOME: config, ...(gateway ? { BUILDR_MODEL_GATEWAY_KEY: gateway.apiKey, NO_PROXY: '127.0.0.1,localhost,::1', no_proxy: '127.0.0.1,localhost,::1' } : {}) }, options.cacheRoot);
+    await privateDirectories(options.configRoot, config, ...(env.HOME === home ? [home] : []), temporary);
     const executable = await findExecutable(options.executable, ['codex', 'codex.exe'], env);
     const version = await inspectVersion(executable, env, options.signal);
     if (!isCompatibleProgram('codex', version)) throw new Error(`codex_version_unsupported: requires ${nativeProgramPolicy('codex').compatibility}`);

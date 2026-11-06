@@ -326,7 +326,7 @@ export class ConversationRepository {
     return this.readConversation(id);
   }
   /** Canonical headers only: maintenance never loads message bodies or trusts optional read caches. */
-  storageDependencies(onReference?: (record: {view: Pick<StoredConversation['view'], 'id' | 'cwd'>}, participant: StoredParticipant, bindingIdentity?: string) => void): { complete: boolean; contexts: string[] } {
+  storageDependencies(onReference?: (record: {view: Pick<StoredConversation['view'], 'id' | 'cwd'>}, participant: StoredParticipant, bindingIdentity?: string, consumer?: {run?: RunView; executionRef?: import('../contracts.ts').ExecutionRef; pending: boolean}) => void): { complete: boolean; contexts: string[] } {
     let db: DatabaseSync | undefined;
     try {
       db = this.open(false);
@@ -347,23 +347,24 @@ export class ConversationRepository {
           !header.participants.some((participant: {id: string}) => participant.id === item.participantId))) throw new Error('invalid_storage_participant');
         for (const participant of header.participants) {
           if (typeof participant.id !== 'string' || typeof participant.provider !== 'string') throw new Error('invalid_storage_participant');
-          const preserve = (context: unknown, bindingIdentity?: string) => {
-            if (context === undefined) { onReference?.({view: header.view}, participant, bindingIdentity); return; } // Starting work still owns its environment before native context creation.
+          const preserve = (context: unknown, bindingIdentity?: string, consumer?: {run?: RunView; executionRef?: import('../contracts.ts').ExecutionRef; pending: boolean}) => {
+            if (context === undefined) { onReference?.({view: header.view}, participant, bindingIdentity, consumer); return; } // Starting work still owns its environment before native context creation.
             if (typeof context !== 'string' || !context) throw new Error('invalid_storage_context');
             contexts.add(`${participant.provider}:${context}`);
-            onReference?.({view: header.view}, participant, bindingIdentity);
+            onReference?.({view: header.view}, participant, bindingIdentity, consumer);
           };
-          if (runs.some(run => run.participantId === participant.id && needsEvidence(run)) ||
-              header.requests.some((request: { participantId: string; runId: string }) => request.participantId === participant.id ||
-                runs.some(run => run.id === request.runId && run.participantId === participant.id))) {
-            preserve(participant.contextRef?.id);
+          const pending = header.requests.some((request: {participantId: string; runId: string}) => request.participantId === participant.id || runs.some(run => run.id === request.runId && run.participantId === participant.id));
+          if (pending) preserve(participant.contextRef?.id, undefined, {pending: true});
+          for (const run of runs.filter(run => run.participantId === participant.id && needsEvidence(run))) {
+            const attempt = header.attempts.find((attempt: {runId: string; participantId: string}) => attempt.runId === run.id && attempt.participantId === participant.id);
+            preserve(participant.contextRef?.id, undefined, {run, executionRef: attempt?.executionRef, pending: false});
           }
           for (const attempt of header.attempts.filter((attempt: {participantId: string}) => attempt.participantId === participant.id)) {
             const run = runs.find(run => run.id === attempt.runId), outcome = header.outcomes?.[attempt.runId];
             // Retained rounds can still refer to a replaced context; current participant state is insufficient.
             if ((run ? needsEvidence(run) : !['completed', 'failed', 'stopped'].includes(outcome?.status)) ||
                 header.requests.some((request: {runId: string}) => request.runId === attempt.runId)) {
-              preserve(attempt.executionRef?.data?.resourceContext ?? participant.contextRef?.id, attempt.executionRef?.data?.resourceBinding);
+              preserve(attempt.executionRef?.data?.resourceContext ?? participant.contextRef?.id, attempt.executionRef?.data?.resourceBinding, {run, executionRef: attempt.executionRef, pending: header.requests.some((request: {runId: string}) => request.runId === attempt.runId)});
             }
           }
         }

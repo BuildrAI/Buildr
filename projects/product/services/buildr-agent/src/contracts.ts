@@ -247,6 +247,8 @@ export interface AgentExecutor {
   /** Adapter-owned cache knowledge, applied by the shared service lifecycle. */
   storage?: {
     transientDirectories: readonly string[];
+    /** Adapter verifies creator/completion of old regenerable temporary payloads. */
+    legacyDirectories?(configRoot: string): readonly string[];
     /** Private diagnostic resources only; the service owns dependency/occupancy checks and deletion. */
     diagnostics?(configRoot: string): Array<{ relativePath: string; producerPid?: number; contextId?: string; reason?: string }>;
     canReclaim?(configRoot: string, relative: string): boolean;

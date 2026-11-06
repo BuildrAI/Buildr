@@ -91,10 +91,10 @@ export class DshRuntime implements AgentRuntime {
     options.signal?.throwIfAborted();
     const gateway = checkedGateway(options.gateway);
     const { home, temporary } = nativeHome(options.configRoot); const config = join(options.configRoot, 'dsh-home'); const agents = join(options.configRoot, 'dsh-agents-home');
-    await privateDirectories(options.configRoot, home, temporary, config, agents);
     const modelBridge = !gateway&&!ownerPatch?{key:randomUUID(),addressFile:join(config,'model-bridge-'+randomUUID()+'.json')}:undefined;
     const forkBridge = {key:randomUUID(),addressFile:join(config,'fork-bridge-'+randomUUID()+'.json')};
     const env = accountEnvironment(options.environment, home, temporary, { DSH_HOME: config, DSH_AGENTS_HOME: agents, DSH_TOOLS_MODE: 'native', BUILDR_DSH_FORK_KEY:forkBridge.key, ...(modelBridge?{BUILDR_DSH_OWNER_KEY:modelBridge.key}:{}), ...(ownerPatch ? { BUILDR_DSH_OWNER_KEY: options.environment.BUILDR_DSH_OWNER_KEY } : {}), ...(gateway ? { BUILDR_MODEL_GATEWAY_KEY: gateway.apiKey, NO_PROXY: '127.0.0.1,localhost,::1', no_proxy: '127.0.0.1,localhost,::1' } : {}) }, options.cacheRoot);
+    await privateDirectories(options.configRoot, config, agents, ...(env.HOME === home ? [home] : []), ...(env.TMPDIR === temporary ? [temporary] : []));
     const executable = await findExecutable(options.executable, ['dsh', 'dsh.exe'], env); const version = await inspectVersion(executable, env, options.signal);
     if (!isCompatibleProgram('dsh', version)) throw new Error(`dsh_version_unsupported: requires ${nativeProgramPolicy('dsh').compatibility}`);
     const binding = await consumerBinding('dsh', executable, version, config, options);

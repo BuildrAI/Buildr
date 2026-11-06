@@ -16,7 +16,8 @@ export type NativeEnvironment = NodeJS.ProcessEnv;
 export function accountEnvironment(input: NativeEnvironment, privateHome: string, temporary: string, extra: NativeEnvironment, cacheRoot?: string): NativeEnvironment {
   const host = input.BUILDR_TOOLCHAIN_HOST_HOME || input.BUILDR_HOST_HOME || input.HOME || input.USERPROFILE;
   const home = host && isAbsolute(host) ? host : privateHome;
-  return isolatedEnvironment({ ...input, HOME: home, USERPROFILE: home }, home, temporary, extra, cacheRoot);
+  const hostTemporary = home === host ? [input.TMPDIR, input.TMP, input.TEMP].find(value => value && isAbsolute(value)) : undefined;
+  return isolatedEnvironment({ ...input, HOME: home, USERPROFILE: home }, home, hostTemporary || temporary, extra, cacheRoot);
 }
 /** Deliberately excludes desktop RPC credentials and default provider credentials. */
 export function isolatedEnvironment(input: NativeEnvironment, home: string, temporary: string, extra: NativeEnvironment = {}, cacheRoot?: string): NativeEnvironment {

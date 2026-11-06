@@ -1,4 +1,5 @@
 import { regenerableToolCaches, toolCacheReclaimable } from '../../storage/tool-cache.ts';
+import { qoderLegacyCaches } from './cache-storage.ts';
 import { qoderContent } from './content.ts';
 import { instructionParticipation } from '../../domain/participation.ts';
 import {generateQoderTitle} from './title.ts';
@@ -19,7 +20,7 @@ import { ExecutorInputRejected, type ExecutorSupplementInput, type ExecutorInput
 import { checkedGateway, consumerBinding, gatewayModel, qoderGatewayPolicy, type ExecutorGateway } from '../model-gateway.ts';
 import type { ExecutorForkInput } from '../../contracts.ts';
 const capabilities = { interaction: { policy: interactionPolicy.version, nonBlockingQuestions: false }, supplement: true, permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
-export function createQoderExecutor(): AgentExecutor { return { nativeContent: qoderContent, readReleasedControl: input => releasedNativeControl('qoder',input), readPersistedExecution: readQoderPersistedExecution, storage: { diagnostics: qoderDiagnosticResources, transientDirectories: regenerableToolCaches, canReclaim: toolCacheReclaimable }, descriptor: { id: 'qoder', label: 'Qoder', capabilities }, open: options => QoderRuntime.open(options) }; }
+export function createQoderExecutor(): AgentExecutor { return { nativeContent: qoderContent, readReleasedControl: input => releasedNativeControl('qoder',input), readPersistedExecution: readQoderPersistedExecution, storage: { legacyDirectories: qoderLegacyCaches, diagnostics: qoderDiagnosticResources, transientDirectories: regenerableToolCaches, canReclaim: toolCacheReclaimable }, descriptor: { id: 'qoder', label: 'Qoder', capabilities }, open: options => QoderRuntime.open(options) }; }
 class QoderRuntime implements AgentRuntime {
   participationInstruction?: import('../../participation-contracts.ts').ParticipationMatch;
   readonly capabilities = capabilities;
@@ -112,8 +113,8 @@ class QoderRuntime implements AgentRuntime {
     const { home, temporary } = nativeHome(options.configRoot);
     // qodercliAuth owns this one Buildr login; model leases isolate execution, not credentials.
     const config = join(options.nativeAccountConfigRoot ?? options.configRoot, 'qoder-config');
-    await privateDirectories(options.configRoot, home, temporary, config);
     const env = accountEnvironment(options.environment, home, temporary, { QODER_CONFIG_DIR: config, ...(gateway && !gateway.nativeModel ? { QODER_SDK_CUSTOM_BASE_URL_BYOK: '1', BUILDR_MODEL_GATEWAY_KEY: gateway.apiKey, NO_PROXY: '127.0.0.1,localhost,::1', no_proxy: '127.0.0.1,localhost,::1' } : {}) }, options.cacheRoot);
+    await privateDirectories(options.configRoot, config, ...(env.HOME === home ? [home] : []), ...(env.TMPDIR === temporary ? [temporary] : []));
     const executable = await findExecutable(options.executable, ['qodercli', 'qoder', 'qodercli.exe'], env); const version = await inspectVersion(executable, env, options.signal);
     if (!isCompatibleProgram('qoder', version)) throw new Error(`qoder_version_unsupported: requires ${nativeProgramPolicy('qoder').compatibility}`);
     const binding = await consumerBinding('qoder', executable, version, config, options);

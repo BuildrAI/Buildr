@@ -569,3 +569,40 @@ test('legacy npm exec installations are regenerable cache classes, not project d
   assert.equal(removeStorageCandidate(root,item,()=>unused),true);
   assert.equal(fs.readFileSync(path.join(project,'business/index.js'),'utf8'),'user work');
 });
+
+test('cache-only consumers release stale history without weakening native evidence or pending guards', async t => {
+  const {legacyCacheReferences}=await import('../../src/application/storage-maintenance.ts');
+  const root=path.join(fixture(t),'agent-service'),record={view:{id:'conversation',cwd:'/project'}};
+  const participant={id:'one',provider:'dsh',connectionId:'dsh',bindingIdentity:'binding'} as any;
+  const config=path.join(root,'connections/dsh');
+  const run={status:'unknown',executionState:'unknown',resourcesReleased:true,tools:[]} as any;
+  const consumer={run,pending:false,executionRef:{id:'old',data:{resourceGroup:2_000_000_000}}};
+  const inspect=()=>legacyCacheReferences(root,{storageDependencies(visitor){visitor?.(record,participant,undefined,consumer);return {complete:true,contexts:['dsh:history']};}});
+  let references=inspect();
+  assert.deepEqual(references(config).contexts,[]);
+  assert.deepEqual(references.dependencies.contexts,['dsh:history'],'native recovery dependency is unchanged');
+  consumer.pending=true;assert.ok(inspect()(config).contexts.length);
+  consumer.pending=false;run.resourcesReleased=false;assert.ok(inspect()(config).contexts.length,'unknown unreleased work is protected');
+  run.status='completed';run.executionState='ended';assert.deepEqual(inspect()(config).contexts,[],'terminal dead resource no longer pins downloads');
+  consumer.executionRef.data.resourceGroup=1;assert.ok(inspect()(config).contexts.length,'invalid ownership proof is retained');
+  assert.equal(run.resourcesReleased,false,'cache inspection never repairs business state');
+});
+
+
+test('unaccepted stale work requires whole-config quiescence while new pending work remains protected',async t=>{
+  const {legacyCacheReferences}=await import('../../src/application/storage-maintenance.ts');
+  const root=path.join(fixture(t),'agent-service'),config=path.join(root,'connections/dsh');
+  const participant={id:'one',provider:'dsh',connectionId:'dsh',bindingIdentity:'binding'} as any;
+  const run={status:'unknown',executionState:'unknown',accepted:false,tools:[]} as any;
+  const consumer={run,pending:false};
+  const inspect=()=>legacyCacheReferences(root,{storageDependencies(visitor){visitor?.({view:{id:'conversation',cwd:'/work'}},participant,undefined,consumer);return {complete:true,contexts:['dsh:history']};}})(config);
+  const cache=path.join(config,'cache/npm/_cacache');file(path.join(cache,'download'),'rebuildable');
+  const references=inspect();assert.deepEqual(references.contexts,[]);assert.equal(references.strictOccupancy,true);
+  const executor=createNativeExecutors().find(x=>x.descriptor.id==='dsh')!;
+  const held=executorCacheCandidates(root,executor,config,{complete:true,paths:[path.join(config,'dsh-home/session')]},Infinity,false,references).find(x=>x.path===cache)!;
+  assert.equal(held.eligible,false);assert.equal(held.useRoot,undefined);
+  assert.equal(executorCacheCandidates(root,executor,config,unused,Infinity,false,references).find(x=>x.path===cache)?.eligible,true);
+  consumer.pending=true;assert.ok(inspect().contexts.length);
+  consumer.pending=false;run.status='starting';assert.ok(inspect().contexts.length);
+  assert.equal(run.executionState,'unknown');
+});

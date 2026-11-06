@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { createNativeExecutors } from '../executors/index.ts';
 import { configRoot as nativeConfigRoot } from './native-content-resolver.ts';
 import { ExecutorStorage, executorCacheCandidates } from './executor-storage.ts';
@@ -80,9 +81,9 @@ export function collectAgentStorage(plan: AgentStoragePlan, maximumItems = 128, 
   const storage = new ExecutorStorage(root);
   const repository = new ConversationRepository(root);
   const cacheUnreferenced=(item:StorageCandidate)=>{
-    if(!item.useRoot)return true;
+    if(!item.retire)return true;
     const dependencies = legacyCacheReferences(root, repository)(item.ownerRoot);
-    return dependencies.complete && dependencies.contexts.length === 0;
+    return dependencies.complete && dependencies.contexts.length === 0 && (!dependencies.strictOccupancy || !item.useRoot);
   };
   const limit = Number.isSafeInteger(maximumItems) ? Math.max(0, Math.min(1024, maximumItems)) : 0;
   const deadline=Date.now()+Math.max(100,Math.min(options.budgetMs??10000,30000));
@@ -158,10 +159,30 @@ function nestedStoppedRuntimeCandidates(root: string, config: string, use: impor
  * busy binding must not pin unrelated legacy HOMEs. Unresolvable or replaced
  * binding identities retain that provider's caches conservatively. */
 export function legacyCacheReferences(root: string, repository: Pick<ConversationRepository, 'storageDependencies'>) {
-  const configs = new Set<string>(), unknown = new Set<string>(), observed = new Set<string>();
-  const dependencies = repository.storageDependencies((record, participant, bindingIdentity) => {
+  const configs = new Set<string>(), unknown = new Set<string>(), observed = new Set<string>(), consumers = new Set<string>(), quiescent = new Set<string>();
+  // This observation is cache-only; native diagnostic/recovery dependencies below
+  // retain the original strict evidence set. Failure retains ambiguous consumers.
+  let liveGroups: Set<number> | undefined;
+  try {
+    const result = spawnSync('/bin/ps', ['-axo', 'pgid='], {encoding:'utf8',timeout:1000,maxBuffer:4*1024*1024,stdio:['ignore','pipe','pipe']});
+    const lines = result.stdout?.trim().split(/\s+/) ?? [];
+    if (!result.error && result.status === 0 && !result.stderr.trim() && lines.length && lines.every(value => /^\d+$/.test(value))) liveGroups = new Set(lines.map(Number));
+  } catch { /* Incomplete process observation retains old consumers. */ }
+  const dependencies = repository.storageDependencies((record, participant, bindingIdentity, consumer) => {
     observed.add(participant.provider);
-    const config = bindingIdentity && bindingIdentity !== participant.bindingIdentity ? undefined : nativeConfigRoot(root, record, participant);
+    let requiresQuiescence = false;
+    if (consumer && !consumer.pending) {
+      const run = consumer.run, group = consumer.executionRef?.data?.resourceGroup;
+      const ended = run && ['completed','failed','stopped'].includes(run.status) && run.executionState === 'ended' && run.tools.every(tool => tool.status === 'completed');
+      if (run?.resourcesReleased === true || ended && Number.isSafeInteger(group) && Number(group) > 1 && liveGroups && !liveGroups.has(Number(group))) return;
+      // Pre-acceptance failures have no owned execution to release. Their whole
+      // config must be process-quiescent; never narrow this case to cache files.
+      requiresQuiescence = Boolean(run && ['failed','stopped','unknown'].includes(run.status) && run.accepted === false && !consumer.executionRef && run.tools.length === 0);
+    }
+    const resolved = bindingIdentity && bindingIdentity !== participant.bindingIdentity ? undefined : nativeConfigRoot(root, record, participant);
+    if (requiresQuiescence && resolved) { quiescent.add(resolved); quiescent.add(path.join(root, 'connections', participant.provider)); return; }
+    consumers.add(participant.provider);
+    const config = resolved;
     if (config) configs.add(config); else unknown.add(participant.provider);
   });
   // Callers without scoped evidence (old readers/test doubles) retain the
@@ -170,7 +191,7 @@ export function legacyCacheReferences(root: string, repository: Pick<Conversatio
     const provider = path.relative(root, config).split(path.sep)[1];
     const contexts = dependencies.contexts.filter(context => context.startsWith(provider + ':'));
     const sharedConnection = config === path.join(root, 'connections', provider!);
-    const protectedScope = configs.has(config) || unknown.has(provider!) || contexts.length > 0 && !observed.has(provider!) || sharedConnection && observed.has(provider!);
-    return {complete: dependencies.complete, contexts: protectedScope ? contexts.length ? contexts : [provider + ':pending-native-context'] : []};
+    const protectedScope = configs.has(config) || unknown.has(provider!) || contexts.length > 0 && !observed.has(provider!) || sharedConnection && consumers.has(provider!);
+    return {complete: dependencies.complete, strictOccupancy: quiescent.has(config), contexts: protectedScope ? contexts.length ? contexts : [provider + ':pending-native-context'] : []};
   }, {dependencies});
 }

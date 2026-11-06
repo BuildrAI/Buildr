@@ -100,9 +100,10 @@ export class ExecutorStorage {
   }
 }
 
-export function executorCacheCandidates(root: string, executor: AgentExecutor, configRoot: string, use: StorageUse, cutoff: number, snapshotsOnly = false, dependencies?:{complete:boolean;contexts:string[]}): StorageCandidate[] {
+export function executorCacheCandidates(root: string, executor: AgentExecutor, configRoot: string, use: StorageUse, cutoff: number, snapshotsOnly = false, dependencies?:{complete:boolean;contexts:string[];strictOccupancy?:boolean}): StorageCandidate[] {
   const candidates: StorageCandidate[] = [];
-  for (const relative of executor.storage?.transientDirectories ?? []) {
+  const legacy = snapshotsOnly ? [] : executor.storage?.legacyDirectories?.(configRoot) ?? [];
+  for (const relative of [...(executor.storage?.transientDirectories ?? []), ...legacy]) {
     // Immediate native release only touches its bounded plugin snapshot; large
     // tool caches are inventoried by the existing background maintenance worker.
     if (snapshotsOnly && !executor.storage?.snapshots?.some(snapshot => snapshot.relative === relative)) continue;
@@ -113,9 +114,9 @@ export function executorCacheCandidates(root: string, executor: AgentExecutor, c
       // The adapter owns these exact regenerable namespaces. Retire each whole
       // legacy class; public cache publication and package integrity are not a
       // prerequisite for discarding downloads/bytecode that may be rebuilt.
-      const retire = regenerableToolCaches.includes(relative);
+      const retire = regenerableToolCaches.includes(relative) || legacy.includes(relative);
       const referenced = dependencies?.contexts.some(context => context.startsWith(executor.descriptor.id + ':'));
-      const narrow = retire && dependencies?.complete === true && !referenced;
+      const narrow = retire && dependencies?.complete === true && !referenced && !dependencies.strictOccupancy;
       const item = storageCandidate(root, 'cache', directory, narrow ? directory : configRoot, use, retire ? Infinity : cutoff);
       if (retire) item.retire = true;
       if (narrow) { item.ownerRoot = configRoot; item.useRoot = directory; }
