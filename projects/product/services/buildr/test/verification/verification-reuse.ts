@@ -99,7 +99,11 @@ export function collectVerificationReuseSnapshot(options: VerificationReuseOptio
   const productRoot = path.resolve(options.productRoot), repositoryRoot = git(productRoot, ['rev-parse', '--show-toplevel']).trim();
   const env = options.env ?? process.env;
   const declared = [...(options.steps ?? verificationSteps), ...(options.step ? [options.step] : [])];
-  const steps = [...declared, ...declared.filter(step => !step.parentId).flatMap(step => verificationFileSteps(step, productRoot))];
+  // Callers can already include file-level checks. Expand only missing members;
+  // otherwise every file proof is parsed and fingerprinted twice.
+  const declaredIds = new Set(declared.map(step => step.id));
+  const steps = [...declared, ...declared.filter(step => !step.parentId).flatMap(step => verificationFileSteps(step, productRoot))
+    .filter(step => !declaredIds.has(step.id))];
   const sourceInputs = collectVerificationSourceInputs(repositoryRoot, productRoot, steps);
   const history = new Map<string, ReturnType<typeof collectVerificationSourceInputs> | null>();
   const historicalInputs = (commit: string, legacyDeclarations = false) => {
