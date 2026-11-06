@@ -371,3 +371,20 @@ test('test-only changes retain browser ownership without inferring unrelated pro
 test('unknown history identity is rejected before browser commands are scheduled',()=>{
   assert.throws(()=>planBrowserCommands(['agent-conversations'],'/unused',{BUILDR_AGENT_JOURNEY_PART:'history',BUILDR_AGENT_SCENARIO_FOCUS:'history/unknown'}),/未知独立场景/);
 });
+
+test('shared framework changes retain contract owners without inferred broad tags', async () => {
+  const { semanticTagsForPaths } = await import('../verification/semantic-tags.ts');
+  for (const file of ['test/verification/ownership.ts', 'test/verification/ownership/runtime.ts',
+    'test/verification/planner.ts', 'test/verification/changed-paths.ts']) {
+    assert.deepEqual(semanticTagsForPaths([file]), [], file);
+    const request = { paths: [file], related: true, target: 'source' };
+    const direct = createVerificationPlan(request);
+    const inferred = createVerificationPlan({ ...request, semantic: true });
+    assert.deepEqual(inferred.steps.map((s: any) => s.id), direct.steps.map((s: any) => s.id), file);
+    for (const id of ['unit', 'integration-changed-paths', 'integration-verification-runtime']) {
+      assert.ok(inferred.steps.some((s: any) => s.id === id), file);
+    }
+    const explicit = createVerificationPlan({ ...request, semantic: true, tags: ['handoff'] });
+    assert.ok(explicit.steps.some((s: any) => s.id === 'agent-integration-handoff'));
+  }
+});

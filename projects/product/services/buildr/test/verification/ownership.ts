@@ -57,7 +57,7 @@ export const VERIFICATION_PRODUCTION_OWNER_ALLOWLIST: any = Object.freeze([
   }
 ].map((item: any) => Object.freeze(item)));
 
-export const VERIFICATION_SELECTION_METADATA_INPUTS: any = Object.freeze(['verification.yml', 'package.json', 'package-lock.json']);
+export const VERIFICATION_SELECTION_METADATA_INPUTS: any = Object.freeze(['verification.yml', 'package.json', 'package-lock.json', '.github/workflows/verify.yml']);
 
 export function verificationStepOwnership(id: any, executor: any = null): any  {
   const value: any = VERIFICATION_STEP_OWNERSHIP[id];

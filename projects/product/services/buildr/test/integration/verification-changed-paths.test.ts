@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
-import { collectChangedProductPaths, resolveVerificationBase } from '../verification/changed-paths.ts';
+import { collectChangedProductPaths, resolveVerificationBase, isVerificationWorkflowTriggerOnlyChange } from '../verification/changed-paths.ts';
 import { createVerificationPlan } from '../verification/planner.ts';
 import { serviceVerificationChecks as pluginChecks } from '../../../dsh-plugin/tools/testing/verification-checks.ts';
 import { collectVerificationContentSnapshot } from '../verification/content-snapshot.ts';
@@ -148,4 +148,52 @@ test('独立插件发布工作流从实际 Git 变更选择其全部服务检查
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('workflow event-only Git diff retains contracts without full source expansion', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-workflow-impact-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const projectRoot = path.join(root, 'projects/product');
+  const productRoot = path.join(projectRoot, 'services/buildr');
+  const workflow = '.github/workflows/verify.yml';
+  fs.mkdirSync(productRoot, { recursive: true });
+  fs.mkdirSync(path.join(root, '.github/workflows'), { recursive: true });
+  const original = 'on: [push]\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test\n';
+  const trigger = original.replace('[push]', '[pull_request]');
+  const write = (text: string) => fs.writeFileSync(path.join(root, workflow), text);
+  write(original);
+  git(root, ['init']); git(root, ['config', 'user.email', 'fixture@example.invalid']); git(root, ['config', 'user.name', 'Fixture']);
+  git(root, ['add', '.']); git(root, ['commit', '-m', 'baseline']);
+  const base = git(root, ['rev-parse', 'HEAD']).trim();
+  write(trigger);
+  const options = { productRoot, projectRoot, base };
+  const changed = collectChangedProductPaths(options);
+  assert.deepEqual(changed.selectionReasons, [{ path: workflow, code: 'workflow-trigger-only-change' }]);
+  const narrowed = createVerificationPlan({ ...changed, related: true, target: 'source' });
+  const conservative = createVerificationPlan({ paths: [workflow], related: true, target: 'source' });
+  assert.equal(narrowed.scope.mode, 'affected');
+  assert.equal(conservative.scope.mode, 'full');
+  assert.ok(narrowed.steps.some((step: any) => step.id === 'source-contracts'));
+  assert.ok(narrowed.steps.length < conservative.steps.length);
+  assert.deepEqual(narrowed.gaps, []);
+  git(root, ['add', '.']); git(root, ['commit', '-m', 'trigger']);
+  const head = git(root, ['rev-parse', 'HEAD']).trim();
+  write(trigger.replace('npm test', 'npm run check'));
+  assert.deepEqual(collectChangedProductPaths({ ...options, head }).selectionOnlyPaths, [workflow]);
+  assert.deepEqual(collectChangedProductPaths(options).selectionOnlyPaths, []);
+  assert.equal(createVerificationPlan({ ...collectChangedProductPaths(options), related: true, target: 'source' }).scope.mode, 'full');
+  fs.rmSync(path.join(root, workflow));
+  assert.deepEqual(collectChangedProductPaths(options).selectionOnlyPaths, []);
+});
+
+test('workflow classification never exempts execution, unknown, or malformed changes', () => {
+  const base = 'on: [push]\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test\n';
+  assert.equal(isVerificationWorkflowTriggerOnlyChange(base, base.replace('[push]', '[pull_request]')), true);
+  for (const current of [
+    base.replace('npm test', 'npm run check'), base.replace('ubuntu-latest', 'windows-latest'),
+    base + 'env: {MODE: test}\n', base + 'permissions: {contents: write}\n',
+    base + 'unknown: true\n', base.replace('    steps:', '    strategy: {matrix: {node: [24]}}\n    steps:'),
+    base + 'jobs: {}\n', 'on: [push]\njobs: {}', 'on: [',
+    'jobs: {check: {runs-on: ubuntu-latest}}',
+  ]) assert.equal(isVerificationWorkflowTriggerOnlyChange(base, current), false, current);
 });

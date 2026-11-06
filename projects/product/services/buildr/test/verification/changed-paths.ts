@@ -88,6 +88,25 @@ export function isVerificationDeclarationMetadataOnlyChange(baseText: any, curre
   }
 }
 
+/** Only event configuration is exempt; execution and unknown fields stay exact. */
+export function isVerificationWorkflowTriggerOnlyChange(baseText: string, currentText: string): boolean {
+  try {
+    const YAML = require('yaml');
+    const execution = (text: string) => {
+      const value = YAML.parse(text);
+      if (!value || typeof value !== 'object' || Array.isArray(value)
+        || !Object.hasOwn(value, 'on') || !value.on
+        || !value.jobs || typeof value.jobs !== 'object' || Array.isArray(value.jobs)
+        || Object.keys(value.jobs).length === 0) throw new Error('Invalid verification workflow');
+      delete value.on;
+      return value;
+    };
+    return isDeepStrictEqual(execution(baseText), execution(currentText));
+  } catch {
+    return false;
+  }
+}
+
 export function resolveVerificationBase(gitRoot: any, requestedBase: any): any  {
   const candidates: any = requestedBase ? [requestedBase] : [];
   if (!requestedBase) {
@@ -172,6 +191,18 @@ export function collectChangedProductPaths(options: any): any  {
       if (isVerificationDeclarationMetadataOnlyChange(baseText, currentText)) {
         selectionOnlyPaths.push('verification.yml');
         selectionReasons.push({ path: 'verification.yml', code: 'verification-presentation-metadata-change' });
+      }
+    } catch {}
+  }
+  const workflowPath = '.github/workflows/verify.yml';
+  if (uniquePaths.includes(workflowPath)) {
+    try {
+      const baseText = git(gitRoot, ['show', `${base}:${workflowPath}`]);
+      const currentText = options.head ? git(gitRoot, ['show', `${head}:${workflowPath}`])
+        : fs.readFileSync(path.join(gitRoot, workflowPath), 'utf8');
+      if (isVerificationWorkflowTriggerOnlyChange(baseText, currentText)) {
+        selectionOnlyPaths.push(workflowPath);
+        selectionReasons.push({ path: workflowPath, code: 'workflow-trigger-only-change' });
       }
     } catch {}
   }
