@@ -16,6 +16,7 @@ await step('模型名称选择器仅在悬停时显示外形',async()=>{
       const idle=await read();assert.equal(idle.width,'1px');assert.equal(idle.background,'rgba(0, 0, 0, 0)');assert.equal(idle.border,'rgba(0, 0, 0, 0)');assert.ok(idle.text.length>0,'模型名称在未悬停时仍可读');
       const box=await picker.boundingBox();assert.ok(box);await page.mouse.move(box.x+box.width/2,box.y+box.height/2);
       await page.waitForFunction(()=>{const node=document.querySelector<HTMLElement>('.ac-model-popover .ac-model-picker.ant-select');if(!node)return false;const style=getComputedStyle(node);return style.backgroundColor!=='rgba(0, 0, 0, 0)'&&style.borderTopColor!=='rgba(0, 0, 0, 0)';});
+      await picker.evaluate((node:HTMLElement)=>Promise.all(node.getAnimations().map(animation=>animation.finished.catch(()=>{}))));
       const hovered=await read();assert.notEqual(hovered.background,'rgba(0, 0, 0, 0)');assert.notEqual(hovered.border,'rgba(0, 0, 0, 0)');
       const hoveredCenter=await modelSettings().evaluate((node:HTMLElement)=>{const row=node.querySelector('.ac-model-top-row')!.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(node.querySelector('.ant-select-selection-item')!);const text=range.getBoundingClientRect();return Math.abs(text.left+text.right-row.left-row.right)/2;});assert.ok(hoveredCenter<=2,'悬停不改变模型名居中：'+hoveredCenter);
       await page.mouse.move(4,4);
@@ -23,6 +24,9 @@ await step('模型名称选择器仅在悬停时显示外形',async()=>{
       const combo=modelSettings().getByRole('combobox',{name:'执行模型',exact:true});await combo.focus();await combo.press('ArrowDown');
       const modelList=page.locator('.ac-model-list-popup:visible');await modelList.waitFor();
       await page.waitForFunction(()=>{const node=document.querySelector('.ac-model-list-popup');return Boolean(node&&getComputedStyle(node).opacity==='1'&&!/(?:enter|appear)-active/.test(node.className));});
+      await picker.evaluate((node:HTMLElement)=>Promise.all(node.getAnimations().map(animation=>animation.finished.catch(()=>{}))));
+      const opened=await read();assert.deepEqual({background:opened.background,border:opened.border},{background:hovered.background,border:hovered.border},'展开候选与悬停使用同一模型框样式');
+      assert.equal(await picker.evaluate((node:HTMLElement)=>getComputedStyle(node).outlineStyle),'none','展开候选不叠加第二层描边');
       await capture(page,'agent-model-search.png');
       const listBox=await modelList.boundingBox(),effortBox=await modelSettings().locator('.ac-effort-controls').boundingBox();
       assert.ok(listBox&&effortBox&&Math.abs(listBox.width-effortBox.width)<=2,'模型下拉与推理强度区域同宽：'+JSON.stringify({list:listBox,effort:effortBox}));
