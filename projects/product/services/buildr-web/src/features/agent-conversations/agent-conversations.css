@@ -45,14 +45,6 @@
 .ac-process-narration .markdown-body>:first-child{margin-top:0}
 .ac-process-narration .markdown-body>:last-child{margin-bottom:0}
 .ac-process-narration .markdown-body pre{font-size: var(--font-size-code);white-space:pre-wrap;overflow-wrap:anywhere}
-.ac-process-thinking{position:relative;margin:6px 0 8px;padding:0}
-.ac-process-thinking>summary{display:flex;align-items:center;gap:8px;min-height:26px;padding:3px 5px 3px 0;border-radius:4px;list-style:none;cursor:pointer;color:#8b948d;font-size:var(--font-size-secondary);line-height:20px}
-.ac-process-thinking>summary::-webkit-details-marker{display:none}
-.ac-process-thinking[open]>summary>.ac-step-chevron{transform:rotate(90deg)}
-.ac-process-thinking-body{margin:2px 0 6px 23px;padding:8px 12px;border-left:2px solid #eceee9;border-radius:0 6px 6px 0;background:#fafbf8;max-height:320px;overflow:auto}
-.ac-process-thinking-body .markdown-body{color:#6d776f;font-size:var(--font-size-secondary);line-height:1.75;overflow-wrap:anywhere}
-.ac-process-thinking-body .markdown-body>:first-child{margin-top:0}
-.ac-process-thinking-body .markdown-body>:last-child{margin-bottom:0}
 .ac-step,.ac-step-group{position:relative;margin:2px 0;padding:0;border:0;border-radius:0;background:transparent;min-width:0}
 .ac-step>summary,.ac-step-group>summary{display:flex;align-items:center;gap:8px;min-height:28px;padding:4px 5px 4px 0;border-radius:4px;list-style:none;cursor:pointer;color:#727c75;font-size: var(--font-size-body);font-weight:400;white-space:nowrap;line-height:20px}
 .ac-step-node{display:inline-flex;align-items:center;justify-content:center;flex:none;width:15px;height:20px;color:#919c93;font-size:var(--font-size-secondary)}
@@ -67,6 +59,12 @@
 .ac-step.is-failed>summary>.ac-step-status,.ac-step.is-failed>summary>.ac-step-node,.ac-step-group.is-failed>summary>.ac-step-status{color:#a2742e}
 .ac-step[open]>summary>.ac-step-action,.ac-step-group[open]>summary>.ac-step-action{color:#404f44}
 .ac-step-group-items{margin:1px 0 2px 7px;padding-left:11px;border-left:1px solid #e7ece8}
+/* 展开几十上百条调用时只占有限高度，其余在组内滚动，底部收起操作保持可见。 */
+.ac-step-group[open]>.ac-step-group-items{max-height:min(60vh,480px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+/* macOS 的浮层滚动条只在滚动时出现；显式着色让「还有更多」始终可见。 */
+.ac-step-group[open]>.ac-step-group-items::-webkit-scrollbar{width:8px}
+.ac-step-group[open]>.ac-step-group-items::-webkit-scrollbar-thumb{background:#d5ddd7;border-radius:4px}
+.ac-step-group[open]>.ac-step-group-items::-webkit-scrollbar-track{background:transparent}
 .ac-tool-file-link{display:inline-block;max-width:100%;padding:0 4px;border:0;border-radius:3px;background:#f0f4f1;color:#53765f;font:inherit;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle;cursor:pointer;text-align:left}
 .ac-tool-file-link:hover{background:#e7eee9;text-decoration:underline;text-underline-offset:3px}
 .ac-tool-detail{margin:4px 0 12px 23px;padding:10px 12px;border-radius:6px;background:#f5f7f5;color:#657168;font-size: var(--font-size-secondary)}

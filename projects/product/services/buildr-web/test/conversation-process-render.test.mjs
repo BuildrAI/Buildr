@@ -143,26 +143,32 @@ test('旧分组残留running或同轮补充分段不会产生多个实时指示'
  assert.equal((renderEntries([current],{active:true,liveToolId:'current'}).match(/ac-execution-light/g)||[]).length,1);
 });
 const thinking=(id,text='内部推理 '+id)=>({id,sequence:0,kind:'thinking',role:'assistant',text,createdAt:'2026-10-27T00:00:00Z'});
-test('模型思考以折叠块出现在处理过程，不冒充助手说明',()=>{
+test('模型思考不进入信息流，工具与说明保持原顺序',()=>{
  const entries=[thinking('k1'),tool('t1'),narration('n1')];
  for(const active of [true,false]){
   const html=renderEntries(entries,{active,open:true});
-  assert.equal((html.match(/class="ac-process-thinking"/g)||[]).length,1);
-  assert.doesNotMatch(html,/内部推理/,'默认折叠不渲染思考正文');
+  assert.doesNotMatch(html,/ac-process-thinking|思考|内部推理/);
   assert.equal((html.match(/ac-process-narration/g)||[]).length,1);
   if(!active)assert.match(html,/1 次工具调用/);
  }
 });
-test('只有模型思考时过程块只显示思考，不产生助手说明',()=>{
- const html=renderEntries([thinking('k1'),thinking('k2')],{active:true});
- assert.equal((html.match(/class="ac-process-thinking"/g)||[]).length,2);
- assert.doesNotMatch(html,/ac-process-narration|内部推理/);
+test('只有模型思考时不生成处理过程行',()=>{
+ assert.equal(renderEntries([thinking('k1'),thinking('k2')],{active:true}),'');
 });
-test('旧版带 thinking 标记的助手条目按同一折叠形态呈现',()=>{
+test('旧版带 thinking 标记的助手条目同样跳过',()=>{
  const legacy={id:'legacy',sequence:0,kind:'message',role:'assistant',text:'旧推理',thinking:true,createdAt:'2026-10-27T00:00:00Z'};
  const html=renderEntries([legacy],{active:true});
- assert.equal((html.match(/class="ac-process-thinking"/g)||[]).length,1);
- assert.doesNotMatch(html,/ac-process-narration|旧推理/);
+ assert.equal(html,'');
+});
+test('展开的工具组限制高度并在组内滚动，收起操作留在滚动区外',()=>{
+ const css=readFileSync(new URL('../src/features/agent-conversations/agent-conversations.css',import.meta.url),'utf8');
+ const rule=css.match(/\.ac-step-group\[open\]>\.ac-step-group-items\{([^}]*)\}/)?.[1]??'';
+ assert.match(rule,/max-height:min\(60vh,480px\)/);
+ assert.match(rule,/overflow-y:auto/);
+ const html=renderEntries(Array.from({length:40},(_,index)=>tool('many-'+index)),{open:true,groupsOpen:{'tool-group:many-0':true}});
+ assert.match(html,/ac-step-group-items/);
+ assert.match(html,/收起工具调用/);
+ assert.ok(html.indexOf('ac-step-group-items')<html.indexOf('收起工具调用'),'收起操作位于滚动容器之后');
 });
 
 
