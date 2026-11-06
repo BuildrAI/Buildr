@@ -445,16 +445,17 @@ class CodexRuntime implements AgentRuntime {
       if (toolId) return { status: 'unknown', tools: [], diagnostic: 'codex_exact_live_turn_unavailable' };
       return this.observe({ contextRef, executionRef });
     }
-    if (!turn.terminal && !toolId) await this.rpc.call('turn/interrupt', { threadId: contextRef.id, turnId: turn.id }, 5000);
+    const interrupt = !turn.terminal && !toolId ? this.rpc.call('turn/interrupt', { threadId: contextRef.id, turnId: turn.id }, 5000) : Promise.resolve();
     if (turn.terminal && !toolId) turn.terminal = 'stopped'; // An unconfirmed whole-run stop must not release queued input.
-    await this.refreshTerminals(turn);
-    const selected = [...turn.tools.values()].filter(tool => tool.status === 'running' && (!toolId || tool.id === toolId));
+    // Stop known exact processes immediately, without putting terminal-list
+    // observation ahead of cancellation. Unknown observations retain identity.
+    const selected = [...turn.tools.values()].filter(tool => (toolId ? tool.status === 'running' && tool.id === toolId : tool.status !== 'completed'));
     if (toolId && !selected.some(tool => tool.processId)) throw new Error('codex_exact_tool_stop_unavailable');
-    for (const tool of selected) {
-      if (!tool.processId) continue;
+    const [interrupted] = await Promise.allSettled([interrupt,...selected.filter(tool=>tool.processId).map(async tool => {
       try { await this.rpc.call('thread/backgroundTerminals/terminate', { threadId: contextRef.id, processId: tool.processId }, 4000); }
       catch { tool.status = 'unknown'; }
-    }
+    })]);
+    if(interrupted!.status==='rejected')throw interrupted.reason;
     return await this.observe({ contextRef, executionRef });
   }
   private async refreshTerminals(turn: ActiveTurn): Promise<void> {

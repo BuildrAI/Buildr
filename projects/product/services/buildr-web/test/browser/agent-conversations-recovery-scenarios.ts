@@ -6,6 +6,29 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
   const {page,panel,run,step,update,input}=fixture;
   const notice=()=>panel().locator('.ac-stream-disconnect');
   const completed=()=>run('completed','codex',{executionState:'ended'});
+  await step('点击停止立即截断输出且正常停止不显示提示或黄色警示',async()=>{
+    const saved=structuredClone(fixture.conversation),text='点击停止时保留的文字',late='停止后迟到的输出';
+    let release:()=>void=()=>{};const gate=new Promise<void>(resolve=>{release=resolve;});
+    const pattern='**/agent-conversations/'+saved.id+'/stop';
+    const handler=async(route:any)=>{
+      await gate;
+      const current=fixture.conversation;
+      update({run:{...current.run,status:'stopped',stopRequested:true,resourcesReleased:true,executionState:'ended'},entries:current.entries.map((entry:any)=>entry.id==='stop-output'?{...entry,text:text+late,status:'completed'}:entry)});
+      await route.fulfill({json:fixture.conversation});
+    };
+    try{
+      const owner=run('running');update({run:owner,requests:[],entries:[...saved.entries,{id:'stop-output',sequence:9000,kind:'message',role:'assistant',text,runId:owner.id,participantId:owner.participantId,status:'running',createdAt:new Date().toISOString()}]});
+      await page.reload();await panel().getByText(text,{exact:true}).waitFor();await page.route(pattern,handler);
+      const request=page.waitForRequest((request:any)=>request.url().endsWith('/stop'));
+      await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await request;
+      assert.equal(await panel().getByRole('button',{name:'停止本次执行',exact:true}).count(),0);
+      assert.equal(await panel().getByText(/正在停止|已确认停止|内容已变化/).count(),0);
+      const response=page.waitForResponse((response:any)=>response.url().endsWith('/stop'));release();await response;
+      await panel().locator('.ac-compose-wrap[data-run-status="stopped"]').waitFor();
+      assert.equal(await panel().getByText(text,{exact:true}).count(),1);assert.equal(await panel().getByText(late,{exact:false}).count(),0);
+      assert.equal(await panel().locator('.ac-compose-wrap .ant-alert-warning').count(),0);
+    }finally{release();await page.unroute(pattern,handler);fixture.conversation=saved;await page.reload();await input().waitFor();}
+  });
   await step('旧追加请求已拒绝时，保留的草稿读取最新轮次并作为新轮发送',async()=>{
     const saved=structuredClone(fixture.conversation),beforeSends=fixture.sends,text='旧草稿按最新轮次发送';
     const original={runId:saved.run.id,participantId:saved.run.participantId,generation:saved.run.generation,clientRequestId:crypto.randomUUID(),text,images:[]};
@@ -225,11 +248,10 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
       fixture.unknownStop=true;fixture.holdStop=true;
       const stopStarted=new Promise<void>(resolve=>{fixture.stopStarted=resolve;});
       await state.getByRole('button',{name:'停止',exact:true}).click();await stopStarted;
-      await state.getByText('正在停止本轮及派生工作…',{exact:true}).waitFor();
-      const pendingStop=state.getByRole('button',{name:/正在停止…/});
-      assert.equal(await pendingStop.isDisabled(),true);await pendingStop.evaluate((button:HTMLButtonElement)=>button.click());
+      await state.waitFor({state:'hidden'});
+      assert.equal(await panel().getByText('正在停止本轮及派生工作…',{exact:true}).count(),0);
       assert.equal(fixture.stops,beforeStops+1,'重复点击只投递一次停止');assert.equal(fixture.sends,beforeSends);
-      fixture.releaseStop!();await state.getByText('停止请求已处理：仍无法读取原执行状态，记录已保留。可发送新要求，不会重做原操作。',{exact:true}).waitFor();
+      fixture.releaseStop!();await state.waitFor();
       assert.equal(fixture.sends,beforeSends,'停止未确认不得自动重试');
     }catch(error){
       process.stderr.write('[interrupted-reply-state] '+JSON.stringify({run:fixture.conversation.run,observes:fixture.observes,panel:await panel().innerText()})+'\n');throw error;

@@ -1,4 +1,5 @@
 import { timeAttachmentStage } from './attachment-timing.ts';
+import { stopConversationWithRecovery } from '../conversation-stop';
 import type {WebhookSettingsView,WebhookSettingsInput,WebhookDeliveryResult} from '../types';
 import type { AgentConversationHistoryPageHistoryPage, AgentParticipationParticipation, AgentParticipationSummaryParticipationSummary, AgentParticipationSummaryQueryParticipationSummaryQuery } from '../../../../build/generated/agent-service-http-dto';
 import { sharedConversationRead } from './shared-conversation-read.ts';
@@ -125,7 +126,7 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
       if(!run)return Promise.reject(new Error('原执行已结束，请核对后再发送；输入已保留。'));
       return request<SupplementResult>(path(conversation.workspaceId,conversation.id)+'/supplement',post({...input,runId:run.id,participantId:run.participantId,generation:run.generation}));
     },
-    stop(conversation: ConversationView, toolId?: string) { const run = conversation.run; if (!run) return Promise.reject(new Error('没有可以停止的执行。')); return request<ConversationView>(path(conversation.workspaceId, conversation.id) + '/stop', post({expectedRevision: conversation.revision, runId: run.id, participantId: run.participantId, generation: run.generation, toolId})); },
+    stop(conversation: ConversationView, toolId?: string) { return stopConversationWithRecovery(conversation,current=>{const run=current.run!;return request<ConversationView>(path(current.workspaceId,current.id)+'/stop',post({expectedRevision:current.revision,runId:run.id,participantId:run.participantId,generation:run.generation,toolId}));},()=>request<ConversationView>(path(conversation.workspaceId,conversation.id))); },
     observeRun(conversation:ConversationView) { const run=conversation.run;if(!run)return Promise.reject(new Error('没有可以核对的执行。'));return request<ConversationView>(path(conversation.workspaceId,conversation.id)+'/observe-run',post({expectedRevision:conversation.revision,runId:run.id,participantId:run.participantId,generation:run.generation})); },
     observe(conversation: ConversationView) { return request<ConversationView>(path(conversation.workspaceId, conversation.id) + '/observe', post({})); },
     reply(conversation: ConversationView, requestId: string, input: {answer: unknown}) { const pending = conversation.requests.find(item => item.id === requestId); if (!pending) return Promise.reject(new Error('原请求已经变化，请重新读取。')); return request<ConversationView>(path(conversation.workspaceId, conversation.id) + `/requests/${encodeURIComponent(requestId)}/reply`, post({...input, expectedRevision: conversation.revision, runId: pending.runId, participantId: pending.participantId, generation: pending.generation})); },

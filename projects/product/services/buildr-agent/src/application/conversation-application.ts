@@ -1017,6 +1017,9 @@ export class ConversationApplication {
     if (!run) return;
     const participant = record.participants.find(value => value.id === run.participantId)!;
     const attempt = record.attempts.find(value => value.runId === runId)!;
+    // The native channel may still drain buffered text after interruption. Keep
+    // tool/control observations, but do not append model output after user stop.
+    if(run.stopRequested&&event.type==='item'&&event.item.kind==='message')return;
     // A late transport failure cannot negate an exact settled execution.
     if(this.hasPersistedEnd(record,run)&&
       ['observation','diagnostic','completed'].includes(event.type))return;
@@ -1899,7 +1902,7 @@ export class ConversationApplication {
     catch(error){this.diagnostics({...facts,event:'stop-failed',code:diagnosticCode(error)});throw error;}
   }
   private async stopOwned(workspaceId: string, id: string, input: { expectedRevision: string; runId: string; participantId: string; generation: string; toolId?: string }): Promise<ConversationView> {
-    if(!input.toolId){
+    if(!input.toolId&&input.generation!==this.options.generation){
       await this.reconcileReleasedControls(workspaceId,id,input);
       const released=this.load(workspaceId,id),run=conversationRuns(released.view).find(run=>run.id===input.runId);
       if(run?.resourcesReleased){

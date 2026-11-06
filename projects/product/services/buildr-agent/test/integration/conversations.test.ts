@@ -530,6 +530,19 @@ test('acceptance loss remains unknown through process restart and never retries 
   } finally { await f.close(); }
 });
 
+test('local stop records cancellation before yielding and ignores buffered model output',async()=>{
+ const native=fake('local',{hold:true}),f=fixture([native.executor]);
+ try{
+  await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','hold');
+  const running=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.accepted===true);
+  const run=running.run!,stopping=f.service.conversations.stop('workspace-one',chat.id,{expectedRevision:running.revision,runId:run.id,participantId:run.participantId,generation:run.generation});
+  assert.equal(f.service.conversations.read('workspace-one',chat.id).run!.stopRequested,true,'stop intent must be durable before the first asynchronous wait');
+  native.sends[0]!.onEvent({type:'item',item:{id:'late-output',kind:'message',role:'assistant',text:'buffered output after stop',status:'running'}});
+  assert.equal(f.service.conversations.read('workspace-one',chat.id).entries.some(entry=>entry.text==='buffered output after stop'),false);
+  assert.equal((await stopping).run!.status,'stopped');
+ }finally{await f.close();}
+});
+
 test('stop and authorization respond while send is still waiting; concurrent conversations stay independent', async () => {
   const native = fake('local', { request: true }); const f = fixture([native.executor]);
   try {

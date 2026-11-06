@@ -13,6 +13,25 @@ import { PendingSends } from '../../../src/process/pending-sends.ts';
 const source = readFileSync(new URL('./fixtures/codex-cli.mjs', import.meta.url), 'utf8');
 async function eventually(condition: () => unknown, timeout = 1000) { const until = Date.now() + timeout; while (!condition()) { if (Date.now() > until) throw new Error('condition timeout'); await new Promise(resolve => setTimeout(resolve, 5)); } }
 
+test('whole-round stop terminates the known command even when terminal listing fails',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'buildr-codex-stop-observation-'));let runtime:AgentRuntime|undefined;
+ try{
+  const executable=join(root,'codex.mjs');
+  await writeFile(executable,source.replace('const m=JSON.parse(l);',"const m=JSON.parse(l);fs.appendFileSync(path.join(process.env.CODEX_HOME,'requests.jsonl'),JSON.stringify(m)+'\\n');"));
+  runtime=await createCodexExecutor().open({connectionId:'codex',configRoot:root,executable,environment:{PATH:process.env.PATH??''}});
+  const contextRef=await runtime.createContext({cwd:root}),events:ExecutorEvent[]=[];
+  await runtime.send({contextRef,cwd:root,text:'[retain-command]',images:[],clientRequestId:'first',onEvent:event=>events.push(event)});
+  const accepted=events.find(event=>event.type==='accepted');assert.equal(accepted?.type,'accepted');
+  await writeFile(join(root,'codex-home/fail-terminal-observation'),'fail');
+  const before=(await readFile(join(root,'codex-home/requests.jsonl'),'utf8')).trim().split('\n').length;
+  await runtime.stop({contextRef,executionRef:accepted.executionRef});
+  const methods=(await readFile(join(root,'codex-home/requests.jsonl'),'utf8')).trim().split('\n').slice(before).map(line=>JSON.parse(line).method);
+  assert.ok(methods.indexOf('thread/backgroundTerminals/terminate')<methods.indexOf('thread/backgroundTerminals/list'),'cancel exact tools before waiting for terminal observations');
+  await rm(join(root,'codex-home/fail-terminal-observation'));
+  assert.equal((await runtime.observe({contextRef,executionRef:accepted.executionRef})).tools.some(tool=>tool.status!=='completed'),false);
+ }finally{await runtime?.close();await rm(root,{recursive:true,force:true});}
+});
+
 test('normal completion retains command control across turns without letting a late old receipt end the new turn', async () => {
   const root=await mkdtemp(join(tmpdir(),'buildr-codex-retained-'));let runtime:AgentRuntime|undefined;
   try {
