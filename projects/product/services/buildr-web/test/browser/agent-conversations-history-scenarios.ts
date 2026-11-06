@@ -62,11 +62,11 @@ const historyRuns = {
   const observe=(request:any)=>{if(request.url().includes('/activity-summary'))summaryReads.push(Date.now());};
   page.on('request',observe);
   try{
-    await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();
     update({run:run('completed'),requests:[],retainedRuns:[],activity:{version,seenThrough:version-1,active:false,pendingDecisionCount:0,updatedAt:at},entries:[
       {id:'seen-list-user',sequence:1,runId:'run-fixture',kind:'message',role:'user',text:'核对查看状态',createdAt:at},
       {id:'seen-list-answer',sequence:2,runId:'run-fixture',kind:'message',role:'assistant',text:'查看后应当立即同步统计',status:'completed',createdAt:at},
     ]});
+    await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();
     await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
     const row=panel().locator('[data-conversation-id="'+fixture.conversation.id+'"]');
     await row.getByText('待查看',{exact:true}).waitFor();
@@ -737,16 +737,24 @@ const historyRuns = {
   const tool=(id:string,name:string,status:string,sequence:number)=>({id,name,status,sequence,kind:'tool',role:'system',text:id,runId:'run-fixture',createdAt:at});
   try{
     for(const [name,status] of [['Agent','running'],['command','running'],['read','running'],['Agent','completed'],['Agent','unknown'],['Agent','failed']]){
-      update({entries:[tool('earlier-failed','command','failed',1),tool('earlier-ok','read','completed',2),tool('current-tool',name,status,3)],run:run('running'),requests:[]});
+      update({entries:[tool('earlier-failed','command','completed',1),tool('earlier-ok','read','completed',2),tool('current-tool',name,status,3)],run:run('running'),requests:[]});
       await page.reload();
       const group=panel().locator('.ac-step-group.is-live'),summary=group.locator(':scope>summary');
       await summary.waitFor();assert.equal(await summary.getAttribute('data-current-tool-status'),status);
       await summary.click();
       const color=(locator:any)=>locator.evaluate((node:HTMLElement)=>getComputedStyle(node).color);
+      const groupColor=await color(summary.locator(':scope>.ac-step-node'));
+      const toolColor=await color(group.locator('[data-entry-id="current-tool"]>summary>.ac-step-node'));
+      // Compare each role with its own baseline; groups and tool rows have
+      // deliberately different hierarchy colors in the current contract.
+      update({entries:[tool('earlier-failed','command','failed',1),tool('earlier-ok','read','completed',2),tool('current-tool',name,status,3)]});
+      await group.locator('[data-entry-id="earlier-failed"].is-failed').waitFor();
       const currentColor=await color(group.locator('[data-entry-id="current-tool"]>summary>.ac-step-node'));
       const failedColor=await color(group.locator('[data-entry-id="earlier-failed"]>summary>.ac-step-node'));
-      if(status==='failed')assert.notEqual(await color(summary.locator(':scope>.ac-step-node')),failedColor,'工具组左侧保持正常图标，失败由详情表达');
-      else assert.equal(await color(summary.locator(':scope>.ac-step-node')),currentColor,'正常工具保持原图标颜色');
+      assert.equal(await summary.getAttribute('data-current-tool-status'),status,'历史失败不能改写当前工具状态');
+      assert.equal(await color(summary.locator(':scope>.ac-step-node')),groupColor,'历史失败不能改变工具组原图标颜色');
+      assert.equal(currentColor,toolColor,'历史失败不能改变当前工具原图标颜色');
+      assert.notEqual(groupColor,failedColor,'工具组保持正常图标，失败由具体工具表达');
       if(status==='failed')assert.equal(currentColor,failedColor);
       else assert.notEqual(currentColor,failedColor,'历史失败不能给正常执行的图形染色');
       assert.match(await group.locator('[data-entry-id="earlier-failed"]>summary').innerText(),/失败/);
@@ -908,7 +916,7 @@ const historyRuns = {
       await stream.evaluate((node:HTMLElement)=>node.scrollTop=550);await identity.getByRole('button',{name:'展开处理过程',exact:true}).click();await settle();assert.equal(await process.getAttribute('data-expanded'),'true');
       await identity.getByRole('button',{name:'收起处理过程',exact:true}).click();await settle();assert.equal(await process.getAttribute('data-expanded'),'false');
       const collapsed=await identity.getByRole('button',{name:'展开处理过程',exact:true}).evaluate((node:HTMLElement)=>({top:node.getBoundingClientRect().top,stream:node.closest('.ac-stream')!.getBoundingClientRect().top}));assert.ok(collapsed.top>=collapsed.stream-2,JSON.stringify(collapsed));
-      await identity.getByRole('button',{name:'展开处理过程',exact:true}).click();const group=process.locator('.ac-step-group').first();await group.locator(':scope>summary').click();assert.equal(await group.locator('.ac-step-group-items').evaluate((node:HTMLElement)=>getComputedStyle(node).borderLeftWidth),'0px');await group.locator(':scope>.ac-process-collapse').click();assert.equal(await group.getAttribute('open'),null);
+      await identity.getByRole('button',{name:'展开处理过程',exact:true}).click();const group=process.locator('.ac-step-group').first();await group.locator(':scope>summary').click();assert.equal(await group.locator('.ac-step-group-items').evaluate((node:HTMLElement)=>getComputedStyle(node).borderLeftWidth),'0px');assert.equal(await group.locator(':scope>.ac-process-collapse').count(),0,'工具组不重复提供底部收起按钮');await group.locator(':scope>summary').click();assert.equal(await group.getAttribute('open'),null);
       await page.setViewportSize({width:390,height:844});await stream.evaluate((node:HTMLElement)=>node.scrollTop=400);await settle();assert.ok(await identity.getByRole('button',{name:'收起处理过程',exact:true}).isVisible());assert.ok(await panel().evaluate((node:HTMLElement)=>node.scrollWidth<=node.clientWidth));await capture(page,'conversation-flow-controls-narrow.png');
       await page.setViewportSize(viewport);await capture(page,'conversation-flow-controls-desktop.png');fixture.conversation=previous;await page.reload();await input().waitFor();
   },
@@ -1141,7 +1149,7 @@ const historyRuns = {
       const filePath='conversation-citation.md',createdFile=path.join(sourceRoot,filePath);fs.writeFileSync(createdFile,'# Conversation citation\n\nVerified local source.\n',{flag:'wx'});
       try {
       update({workspaceId,cwd:member.path,entries:[{id:'file-citation',sequence:1,kind:'message',role:'assistant',runId:'run-fixture',text:`Sources: [Readable source](${filePath}:1), [Unavailable source](/outside/not-authorized.md:1), [Parent source](../outside.md:1), [Task note](@task/task-one)`,createdAt:new Date().toISOString()}],run:run('completed','codex')});
-      await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();await panel().locator('.ac-history-list button[data-conversation-id="'+fixture.conversation.id+'"]').click();await input().waitFor();const source=panel().getByRole('link',{name:'Readable source',exact:true});await source.waitFor();assert.equal(await source.getAttribute('data-markdown-href'),filePath+':1');assert.equal(await source.innerText(),'Readable source');assert.equal(await panel().getByRole('link',{name:'Task note',exact:true}).getAttribute('href'),'/workspaces/'+workspaceId+'/tasks/task-one');await panel().getByRole('link',{name:'Parent source',exact:true}).waitFor();
+      await page.reload();await input().waitFor();const source=panel().getByRole('link',{name:'Readable source',exact:true});await source.waitFor();assert.equal(await source.getAttribute('data-markdown-href'),filePath+':1');assert.equal(await source.innerText(),'Readable source');assert.equal(await panel().getByRole('link',{name:'Task note',exact:true}).getAttribute('href'),'/workspaces/'+workspaceId+'/tasks/task-one');await panel().getByRole('link',{name:'Parent source',exact:true}).waitFor();
       await capture(page,'agent-file-citation-labels.png');
       await panel().getByRole('link',{name:'Unavailable source',exact:true}).click();await panel().getByRole('button',{name:'复制来源路径',exact:true}).waitFor();
       const reading=page.waitForResponse((response:any)=>{const url=new URL(response.url());return url.pathname.endsWith('/code/editor-file')&&url.searchParams.get('filePath')===filePath;});

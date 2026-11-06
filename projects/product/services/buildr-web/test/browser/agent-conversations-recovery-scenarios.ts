@@ -144,7 +144,7 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
       await page.reload();await input().waitFor();
       const stage=panel().locator('[data-entry-id="goal-stage-reply"]');await stage.waitFor();
       assert.equal(await stage.locator('.ac-reply-actions').count(),0);
-      assert.equal(await panel().locator('.ac-turn.is-executing').count(),1);
+      assert.equal(await panel().locator('.ac-turn.is-executing').count(),0,'仅后台命令不能冒充模型仍在执行');
       await panel().locator('.ac-active-tools-title').filter({hasText:/仍有\s*1\s*项命令.*运行/}).waitFor();
       await fixture.capture(page,'agent-goal-stage-still-working.png');
       update({run:{...pending,status:'completed',executionState:'ended',tools:[]}});

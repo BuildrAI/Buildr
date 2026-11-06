@@ -157,7 +157,7 @@ await step('原生暂忙时保存待发送内容，刷新保留、仅可取消�
       update({run:run('stopping','dsh'),requests:[],pendingSend:undefined});await reopen();
       const before=fixture.sends,previewsBefore=fixture.prepares;
       await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles({name:'cancel.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64')});
-      await panel().getByRole('button',{name:'移除图片 cancel.png',exact:true}).waitFor();
+      await panel().locator('.ac-image-thumbnail[title="cancel.png"]').hover();await panel().getByRole('button',{name:'移除图片 cancel.png',exact:true}).waitFor();
       fixture.prepareError={code:'agent_process_switching',message:'原生服务正在切换。'};
       await input().fill('上一轮结束后继续修复');await input().press('Enter');
       await panel().getByText('等待发送',{exact:true}).waitFor();
@@ -206,7 +206,7 @@ await step('原生暂忙时保存待发送内容，刷新保留、仅可取消�
     });
 
 await step('A的停止等待不阻断B，A的迟到回执不改B状态',async()=>{
-      update({run:run('running','dsh')});fixture.additionalConversations[0].run=run('running','codex');await reopen();const stopsBefore=fixture.stops;fixture.holdStop=true;const started=new Promise<void>(resolve=>{fixture.stopStarted=resolve;});await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await started;
+      update({run:run('running','dsh',{id:'parallel-stop-a'})});fixture.additionalConversations[0].run=run('running','codex',{id:'parallel-stop-b'});await reopen();const stopsBefore=fixture.stops;fixture.holdStop=true;const started=new Promise<void>(resolve=>{fixture.stopStarted=resolve;});await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await started;
       await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();await page.locator('.ac-history-list').getByText('另一段任务对话',{exact:true}).click();await panel().locator('[data-run-status="running"]').waitFor();await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();assert.equal(fixture.stops,stopsBefore+2,'B不等待A的控制请求完成');const response=page.waitForResponse((value:any)=>value.url().includes('/'+fixture.conversation.id+'/stop'));fixture.releaseStop!();await response;await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>resolve())));assert.equal(await panel().getAttribute('data-conversation-id'),'task-second');assert.equal(await panel().locator('[data-run-status="stopped"]').count(),1);
     });
 

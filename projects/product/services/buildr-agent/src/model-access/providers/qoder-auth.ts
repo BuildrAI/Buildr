@@ -11,7 +11,8 @@ export function qoderAccountFailure(error: unknown, authExpired = false): Accoun
   if (authExpired || value?.code === 'TOKEN_EXPIRE' || /^(?:Local login has expired\.|Login expired$|token is not active$)/i.test(message)) {
     return { status: 'expired', diagnostic: qoderLoginExpiredMessage };
   }
-  if (value?.code === 'ENOENT' || message === 'qoder_login_required' || message === 'No qodercli login found. Run "qodercli login" first.') {
+  if (value?.code === 'ENOENT' || message === 'qoder_login_required' || message === 'No qodercli login found. Run "qodercli login" first.' ||
+      message === 'Authentication required. Log in with qodercli login or provide valid SDK credentials.') {
     return { status: 'not-authenticated', diagnostic: '请先登录 Qoder 账号；不要求购买或选择 Qoder 自有模型。' };
   }
   return { status: 'failed', diagnostic: 'Qoder 账号检查未完成，请检查网络或程序连接后重试；当前不能确定登录是否失效。' };
