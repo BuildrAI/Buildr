@@ -66,6 +66,15 @@ export function conversationReasoningSelection(connection:ConnectionView|undefin
   return {options,index,ordered,inherited:choice.reasoningEffort===undefined,label:index>=0?reasoningEffortLabel(options[index]!):choice.reasoningEffort||'默认'};
 }
 
+/**
+ * 执行目标是否变化只看智能体、来源账号、模型、档位与权限。
+ * 思考深度是单轮参数：原原生会话可以用新强度接收下一条要求，不构成换人交接。
+ */
+export function executionSelectionChanged(run:Pick<ConversationRun,'model'|'modelAccountId'|'serviceTier'|'permissionMode'>|undefined,participantConnectionId:string|undefined,choice:Pick<ConversationChoice,'connectionId'|'model'|'modelAccountId'|'serviceTier'>,permissionMode:PermissionMode):boolean {
+  if(!run)return false;
+  return participantConnectionId!==choice.connectionId||run.model!==choice.model||run.modelAccountId!==choice.modelAccountId||run.serviceTier!==choice.serviceTier||(run.permissionMode??'default')!==permissionMode;
+}
+
 /** 状态行表达执行身份（智能体与模型）；来源账号只保留在模型设置和发送预览。 */
 export function conversationRunIdentity(run:ConversationRun,connection:ConnectionView|undefined,catalog:CatalogModel[]):string {
   const shared=catalog.find(model=>model.accountId===run.modelAccountId&&model.modelId===run.model);

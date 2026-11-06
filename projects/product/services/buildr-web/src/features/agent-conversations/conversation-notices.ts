@@ -19,14 +19,50 @@ export function latestVisibleConversationMessage(entries:ConversationEntry[]):Co
   return visibleConversationEntries(entries).filter(entry=>!entry.parentToolId&&!entry.thinking&&(entry.kind==='message'&&(entry.role==='user'||entry.role==='assistant')||entry.role==='user'&&entry.kind==='notice'&&entry.id.startsWith('reply-'))&&entry.status!=='failed').at(-1);
 }
 
+/** 服务端记录的原因文本收敛为一句人话；未登记的原因回落到通用说明，不猜具体原因。 */
+const nativeSessionCauses: Record<string, string> = {
+  '用户执行选择变化': '执行选择已变化',
+  '原轮仍有在途工作，新要求使用独立会话': '原轮仍在执行',
+  '原会话控制资源尚未释放，新要求使用独立会话': '原后台尚未释放原会话',
+  '原上下文不可复用，使用新的原生会话': '原会话无法继续',
+  '原轮控制已释放，新后台复用原生会话': '原后台已释放，新后台接回原会话',
+};
+
+/** 主对话只说明发生了什么、本轮在哪里继续；会话编号、后台代次与变化依据留在接续诊断。 */
+export function conversationNativeSessionSummary(entry:Pick<ConversationEntry,'nativeSession'>):string {
+  const session=entry.nativeSession;
+  if(!session)return '';
+  const adoption=session.reason==='backend-adoption';
+  const cause=session.backendChange?'后台程序内容已更新':adoption?'后台已接管':nativeSessionCauses[session.description]??'原会话无法继续';
+  return `${cause}，${adoption?'本轮仍在原原生会话中继续':'本轮改在新的原生会话中继续'}。原执行与历史记录保留。`;
+}
+
+/** 折叠诊断按字段呈现，便于逐项核对，而不是一整段编号。 */
+export type NativeSessionDiagnosticField = { label: string; value: string };
+
+/** 折叠后的技术明细，供核对前后身份与变化依据；不作为主对话正文。 */
+export function conversationNativeSessionDiagnostic(entry:Pick<ConversationEntry,'nativeSession'|'status'>):NativeSessionDiagnosticField[] {
+  const session=entry.nativeSession;
+  if(!session)return [];
+  const {reason,description,from,to,backendChange}=session;
+  const adoption=reason==='backend-adoption';
+  const fields:NativeSessionDiagnosticField[]=[{label:'类型',value:adoption?'后台接管，原生会话保留':'原生会话替换'}];
+  fields.push({label:'原生会话',value:`${from.contextId??'无原生会话'} → ${to.contextId}`});
+  fields.push({label:'后台代次',value:`${from.generation??'历史未记录'} → ${to.generation}`});
+  if(backendChange)fields.push({label:'变化依据',value:`${backendChange.reason==='runtime-content-changed'?'检测到后台运行内容变化':'同一运行内容的后台进程重启'}（${backendChange.detectedAt}；运行内容 ${backendChange.fromDigest} → ${backendChange.toDigest}）`});
+  else if(from.generation!==to.generation)fields.push({label:'变化依据',value:'后台变化来源：历史未记录'});
+  fields.push({label:'原因',value:description});
+  fields.push({label:'本轮状态',value:entry.status==='accepted'?'已受理':entry.status==='failed'?'未送达':entry.status==='unknown'?'送达待确认':'等待受理'});
+  return fields;
+}
+
+/** 未送达与送达待确认必须留在可见摘要里，不因折叠而隐藏。 */
+export function conversationNativeSessionIssue(entry:Pick<ConversationEntry,'status'>):string|undefined {
+  return entry.status==='failed'?'本轮未送达':entry.status==='unknown'?'本轮送达待确认':undefined;
+}
+
 /** A new native context with unchanged choices is continuation, not a model takeover. */
-export function conversationHandoffReceipt(entry:Pick<ConversationEntry,'handoff'|'nativeSession'|'status'|'text'>):string {
-  if(entry.nativeSession){
-    const {reason,description,from,to,backendChange}=entry.nativeSession;
-    const state=entry.status==='accepted'?'本轮已受理':entry.status==='failed'?'本轮未送达':entry.status==='unknown'?'本轮送达待确认':'等待本轮受理';
-    const cause=backendChange?`${backendChange.reason==='runtime-content-changed'?'检测到后台运行内容变化':'同一运行内容的后台进程重启'}（${backendChange.detectedAt}；运行内容 ${backendChange.fromDigest} → ${backendChange.toDigest}）`:from.generation!==to.generation?'后台变化来源：历史未记录':'';
-    return `${reason==='backend-adoption'?'后台接管，原生会话保留':'原生会话交接'}：${from.contextId??'无原生会话'} → ${to.contextId}；后台 ${from.generation??'历史未记录'} → ${to.generation}${cause?'；'+cause:''}；${description}；${state}`;
-  }
+export function conversationHandoffReceipt(entry:Pick<ConversationEntry,'handoff'|'status'|'text'>):string {
   if(!entry.handoff)return entry.text;
   if(!entry.handoff.changes.length)return entry.status==='accepted'?'':entry.status==='failed'?'新要求未接收':'新要求接收待确认';
   const target=entry.handoff.changes.map(change=>change.after).join(' · ');

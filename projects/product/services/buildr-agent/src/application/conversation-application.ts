@@ -763,9 +763,11 @@ export class ConversationApplication {
     const previous = record.participants.find(value=>value.id===record.view.run?.participantId) ?? record.participants.at(-1);
     const previousRun = record.view.run;
     // Native context identity governs control and history, never whether the user changed execution choice.
+    // Reasoning effort is a per-turn parameter of the same native session: every executor receives it with the
+    // new input, so changing it alone reuses the session instead of organizing a user-visible handoff.
     const switching = Boolean(previous && (previous.connectionId!==input.connectionId || previous.modelAccountId!==input.modelAccountId ||
       previous.modelAccountIdentity!==source?.identity || previous.modelId!==input.model || previous.serviceTier!==input.serviceTier ||
-      previousRun && (previousRun.reasoningEffort!==input.reasoningEffort || (previousRun.permissionMode??'default')!==input.permissionMode)));
+      previousRun && (previousRun.permissionMode??'default')!==input.permissionMode));
     const history = changes.map(entry => ({sequence:entry.sequence,role:entry.role,provider:entry.provider,text:entry.kind==='tool'?`${entry.name??'工具'} · ${entry.status??'结果未知'}（具体内容见本地来源）`:entry.text.length>4096?entry.text.slice(0,4096)+'…（完整原文见本地来源）':entry.text}));
     const maxInputBytes=receivingBudget(connection.capabilities.maxInputBytes,boundModel&&'contextWindow' in boundModel?boundModel.contextWindow:undefined,boundModel&&'maxOutputTokens' in boundModel?boundModel.maxOutputTokens:undefined);
     const localRounds=changes.length ? organizeHandoff(changes,{...record.inheritedContext?.outcomes,...record.runOutcomes,...(record.view.run?{[record.view.run.id]:record.view.run}:{})}) : [];

@@ -1194,6 +1194,36 @@ test('actual model effort resolves in preview, persists across restart and rejec
   } finally { await f.close(); }
 });
 
+test('changing only the reasoning effort reuses the native session and delivers just the new requirement', async () => {
+  const native = fake(); const open = native.executor.open;
+  native.executor.open = async input => ({ ...await open(input), async models() { return [
+    { id: 'small', label: 'Small', isDefault: true, reasoningEfforts: [{ id: 'low', label: 'Fast' }, { id: 'high', label: 'Deep' }], defaultReasoningEffort: 'low' },
+  ]; } });
+  const f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local'); const view = await f.service.conversations.create('workspace-one', {});
+    const first = { expectedRevision: view.revision, connectionId: 'local', model: 'small', text: 'first requirement', reasoningEffort: 'low' };
+    const preview = f.service.conversations.prepareSend('workspace-one', view.id, first);
+    f.service.conversations.send('workspace-one', view.id, { ...first, previewToken: preview.token, clientRequestId: randomUUID() });
+    const done = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed');
+    const contextId = done.participants[0]!.contextId;
+    const second = { expectedRevision: done.revision, connectionId: 'local', model: 'small', text: 'second requirement', reasoningEffort: 'high' };
+    const next = f.service.conversations.prepareSend('workspace-one', view.id, second);
+    assert.equal(next.switching, false, '思考深度不是执行组合变化');
+    assert.deepEqual(next.handoff?.changes, []); assert.equal(next.reasoningEffort, 'high');
+    const started = f.service.conversations.send('workspace-one', view.id, { ...second, clientRequestId: randomUUID() });
+    assert.equal(started.run!.reasoningEffort, 'high');
+    const after = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed' && value.run.id !== done.run!.id);
+    assert.equal(after.participants.length, 1, '同一原生会话不因思考深度新增参与者');
+    assert.equal(after.participants[0]!.contextId, contextId);
+    assert.equal(after.entries.some(entry => entry.kind === 'handoff'), false, '不生成交接记录');
+    assert.equal(native.sends.length, 2);
+    assert.equal(native.sends[1]!.contextRef.id, contextId, '新要求送达同一原生会话');
+    assert.equal(native.sends[1]!.reasoningEffort, 'high');
+    assert.equal(native.sends[1]!.text, 'second requirement', '只交付新要求，不重新注入交接资料');
+  } finally { await f.close(); }
+});
+
 test('observed native model selection refreshes the private default and reaches the active conversation SSE', async () => {
   const native = fake(); const open = native.executor.open; let selected = 'a';
   const models = () => ['a', 'b'].map(id => ({ id, label: id, isDefault: id === selected, reasoningEfforts: [{ id: 'low', label: 'Low' }], defaultReasoningEffort: 'low' }));

@@ -39,7 +39,7 @@ import { ConversationComposer } from './ConversationComposer';
 import { ConversationTurn } from './ConversationTurn';
 import { imageSelectionError } from './conversation-images';
 import { uploadConversationMaterials } from './conversation-material-upload';
-import {conversationPermissionKey,conversationPermissionStorageKey,conversationRunIdentity,nativeConversationChoice,permissionModeLabels,readConversationPermission,selectedConversationModel,selectedConversationPermission,supportsConversationPermission,validConversationChoice,writeConversationPermission,type ConversationChoice,type PermissionMode} from './conversation-options';
+import {conversationPermissionKey,conversationPermissionStorageKey,conversationRunIdentity,executionSelectionChanged,nativeConversationChoice,permissionModeLabels,readConversationPermission,selectedConversationModel,selectedConversationPermission,supportsConversationPermission,validConversationChoice,writeConversationPermission,type ConversationChoice,type PermissionMode} from './conversation-options';
 import { appendDraftAttachment, canGenerateConversationTitle, conversationConflictNeedsRefresh, conversationTurnBinding, executionLocked, groupConversationStream, conversationStreamTurns, conversationTurnExecution, conversationTurnTiming, participantExecutionPairs, removeSubmittedAttachments, shouldSendOnKey, latestConversationParticipant, processBlockKey, type ConversationSelection } from './conversation-state';
 import { conversationActionKey, createConversationActions, createConversationInputAttempts, reconcileConversationInputAttempt } from './conversation-actions';
 import { useNewConversationImages } from './useNewConversationImages';
@@ -55,7 +55,7 @@ import {ConversationHandoffDrawer} from './ConversationHandoffDrawer';
 import { ConversationProcessBlock } from './ConversationProcessBlock';
 import { ConversationTaskLink } from './ConversationTaskLink';
 import {modelPreferenceFromChoice,preferredConversationChoice,readConversationModelPreference,readConversationModulePreference,rememberConversationAgent,rememberConversationPermission,rememberedConversationPermission,writeConversationModelPreference,writeConversationModulePreference} from './conversation-preferences';
-import {conversationFailureImpact,conversationSystemNoticeText,visibleConversationEntries,conversationModelWarning,conversationActionError,conversationHandoffReceipt,latestVisibleConversationMessage} from './conversation-notices';
+import {conversationFailureImpact,conversationSystemNoticeText,visibleConversationEntries,conversationModelWarning,conversationActionError,conversationHandoffReceipt,conversationNativeSessionDiagnostic,conversationNativeSessionIssue,conversationNativeSessionSummary,latestVisibleConversationMessage} from './conversation-notices';
 import './agent-conversations.css';
 import './conversation-flow.css';
 const statusLabels = {starting:'正在准备执行',running:'正在执行','waiting-approval':'等待授权','waiting-question':'等待你的回复',stopping:'正在停止',stopped:'已确认停止','tools-active':'仍有命令未结束',unknown:'执行状态待确认',completed:'本轮已结束',failed:'本轮执行失败'};
@@ -145,7 +145,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   const selectedSourceModel=context.modelCatalog.find(model=>model.accountId===choice.modelAccountId&&model.modelId===choice.model&&(!choice.modelAccountIdentity||model.accountIdentity===choice.modelAccountIdentity));
   const effectiveModel=choice.model??selectedConversationModel(connection,undefined)?.id;
   const effectiveModelLabel=selectedSourceModel?.label||selectedConversationModel(connection,effectiveModel)?.label||effectiveModel||'默认模型';
-  const executionChangedFor=(value:ConversationView|null|undefined)=>Boolean(value?.run&&(latestConversationParticipant(value)?.connectionId!==choice.connectionId||value.run.model!==effectiveModel||value.run.modelAccountId!==choice.modelAccountId||value.run.serviceTier!==choice.serviceTier||value.run.reasoningEffort!==choice.reasoningEffort||(value.run.permissionMode??'default')!==permissionMode));
+  const executionChangedFor=(value:ConversationView|null|undefined)=>executionSelectionChanged(value?.run,value?latestConversationParticipant(value)?.connectionId:undefined,{...choice,model:effectiveModel},permissionMode);
   const executionChanged=executionChangedFor(chat);
   const waitingHandoffAvailable=Boolean(executionChanged&&chat?.run?.status==='waiting-question'&&handoffSelections[choiceKey]===chat.run.id&&currentConversationRequests(chat).length&&currentConversationRequests(chat).every(request=>request.kind==='question'&&request.runId===chat.run!.id&&request.participantId===chat.run!.participantId&&request.generation===chat.run!.generation)&&!chat.pendingSend);
   const waitingQuestions=currentConversationRequests(chat).filter(request=>request.kind==='question');
@@ -634,15 +634,18 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   const loadToolEntry=useCallback((entry:ConversationEntry,signal?:AbortSignal)=>context.api.entry(chat!.workspaceId,chat!.id,entry,signal),[context.api,chat?.workspaceId,chat?.id]);
   const renderEntry=(entry:ConversationEntry)=>{
     if(entry.kind==='handoff'){
-      const text=conversationHandoffReceipt(entry);
-      if(entry.nativeSession?.reason==='backend-adoption'){
-        const issue=entry.status==='failed'?'本轮未送达':entry.status==='unknown'?'本轮送达待确认':'';
+      if(entry.nativeSession){
+        const issue=conversationNativeSessionIssue(entry),summary=conversationNativeSessionSummary(entry);
         return <details className={'ac-handoff-receipt ac-adoption-diagnostic'+(issue?' has-issue':'')} key={entry.id} data-native-session-event={entry.nativeSession.reason}>
-          <summary>{issue?`${issue} · 接续诊断`:'接续诊断'}</summary>
-          <p><time dateTime={entry.createdAt}>{new Date(entry.createdAt).toLocaleString('zh-CN',{hour12:false})} · </time>{text}</p>
+          <summary>{issue?`${issue} · ${summary}`:summary}</summary>
+          <dl className="ac-native-session-fields">
+            <dt>时间</dt><dd><time dateTime={entry.createdAt}>{new Date(entry.createdAt).toLocaleString('zh-CN',{hour12:false})}</time></dd>
+            {conversationNativeSessionDiagnostic(entry).flatMap(field=>[<dt key={field.label+'dt'}>{field.label}</dt>,<dd key={field.label+'dd'}>{field.value}</dd>])}
+          </dl>
         </details>;
       }
-      return text?<div className="ac-handoff-receipt" key={entry.id} data-native-session-event={entry.nativeSession?.reason}><span>{entry.nativeSession&&<time dateTime={entry.createdAt}>{new Date(entry.createdAt).toLocaleString('zh-CN',{hour12:false})} · </time>}{text}</span>{Boolean(entry.handoff?.changes.length)&&<Button type="link" size="small" onClick={()=>{setSelectedHandoff(entry);setPreviewOpen(true);}}>交接内容</Button>}</div>:null;
+      const text=conversationHandoffReceipt(entry);
+      return text?<div className="ac-handoff-receipt" key={entry.id}><span>{text}</span>{Boolean(entry.handoff?.changes.length)&&<Button type="link" size="small" onClick={()=>{setSelectedHandoff(entry);setPreviewOpen(true);}}>交接内容</Button>}</div>:null;
     }
     return <article key={entry.id} className={'ac-message is-'+entry.role} data-entry-id={entry.id} data-message-provider={entry.provider}>{entry.role==='assistant'?<MarkdownHost markdown={entry.text} className="markdown-body" options={markdownOptions}/>:<p>{entry.kind==='notice'&&entry.id.startsWith('reply-')?conversationReplyText(entry.text):conversationSystemNoticeText(entry)}</p>}{entry.attachments?.length?<ConversationMessageImages conversation={chat!} ids={entry.attachments} read={context.api.readImage}/>:null}{entry.deliveryDiagnostic&&<small className="ac-input-diagnostic" role="status">{entry.deliveryDiagnostic}</small>}{entry.status==='unknown'&&<Tag color="warning">是否送达待确认</Tag>}{entry.role==='assistant'&&finalReplies.has(entry.id)&&<span className="ac-reply-actions"><CopyButton type="text" text={entry.text} ariaLabel="复制回复" failureMessage="复制失败，请手动选择文字。"/>{chat&&forkableReplies.has(entry.id)&&<ConversationForkAction conversation={chat} entryId={entry.id}/>}</span>}</article>;
   };
