@@ -258,6 +258,8 @@ await step('全局对话保留草稿与执行位置，左右停靠到一级导�
       assert.ok(activityCopyOrder.copyRight<=activityCopyOrder.idLeft&&Math.abs(activityCopyOrder.copyMid-activityCopyOrder.idMid)<4,JSON.stringify(activityCopyOrder));
       assert.equal(await activityMenu().locator('.ac-activity-filters,.ac-stats-groups').count(),0,'浮窗移除分类及重复维度统计');
       await railActivity.focus();const groups=activityMenu().locator('.ac-reminder-section');await groups.waitFor();assert.equal(await groups.count(),1);assert.equal(await groups.getAttribute('aria-label'),'活动中对话');
+      await activityMenu().getByText('对话提醒',{exact:true}).click();const activityFocusButton=activityMenu().locator('button[data-activity-id="attention-other"]');await activityFocusButton.focus();
+      assert.equal(await activityFocusButton.locator('..').evaluate((node:HTMLElement)=>getComputedStyle(node).outlineStyle),'none','鼠标聚焦对话行不显示多余边框');
       assert.equal(await railActivity.locator('[data-count-kind]').count(),1,'入口只保留一个角标');
       await assertReminderGap();await capture(page,'agent-conversation-attention-counts.png');
       const originalPending=fixture.additionalPending;

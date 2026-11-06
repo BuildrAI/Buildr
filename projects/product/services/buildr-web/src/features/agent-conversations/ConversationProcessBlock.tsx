@@ -79,6 +79,7 @@ function ToolGroup({entries,active,onOpenFile,open,onToggle,toolsOpen,onToolTogg
       {live ? <>
         <span className="ac-step-node" aria-hidden="true"><ToolIcon kind={latestTool.kind}/></span>
         <span className={'ac-step-label'+(latestTool.kind==='command'?' is-command':'')} title={liveLabel}>{liveLabel}</span>
+        <RightOutlined className="ac-step-chevron" aria-hidden="true"/>
       </> : <>
         <span className="ac-step-node" aria-hidden="true"><ToolIcon kind={kinds.size===1?tools[0].kind:'tool'}/></span>
         <span className="ac-step-action">{entries.length} 次工具调用</span>

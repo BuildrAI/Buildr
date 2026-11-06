@@ -796,7 +796,7 @@ const historyRuns = {
       const tool=(id:string,status='completed')=>({id,sequence:id==='single-tool'?1:2,kind:'tool',role:'system',name:'command',text:'echo verify\ncommand output',status,runId:'run-fixture',createdAt:new Date().toISOString()});
       update({entries:[tool('single-tool')],run:run('running')});await page.reload();
       const initialGroup=panel().locator('.ac-step-group');await initialGroup.locator(':scope>summary').waitFor();assert.equal(await initialGroup.getAttribute('open'),null);assert.equal(await panel().locator('.ac-step').count(),0,'工具默认只显示汇总');
-      assert.equal(await initialGroup.locator(':scope>summary .ac-execution-light').count(),0,'执行中的工具组不再显示行前光点');assert.match((await initialGroup.getAttribute('class'))??'',/is-live/,'工具组保留实时状态');assert.equal(await initialGroup.locator(':scope>summary').evaluate((node:HTMLElement)=>getComputedStyle(node).animationName),'ac-live-row','整行保持呼吸动画');await page.emulateMedia({reducedMotion:'reduce'});assert.equal(await initialGroup.locator(':scope>summary').evaluate((node:HTMLElement)=>getComputedStyle(node).animationName),'none');assert.equal(await panel().locator('.ac-execution-indicator .ac-execution-light').first().evaluate((node:HTMLElement)=>getComputedStyle(node).animationName),'none');await page.emulateMedia({reducedMotion:'no-preference'});assert.equal(await initialGroup.locator(':scope>summary .ac-step-action').count(),0,'执行中工具行不显示调用统计');assert.equal(await initialGroup.locator(':scope>summary .ac-step-chevron').count(),0,'执行中工具行尾部无其他内容');await initialGroup.locator(':scope>summary').click();
+      assert.equal(await initialGroup.locator(':scope>summary .ac-execution-light').count(),0,'执行中的工具组不再显示行前光点');assert.match((await initialGroup.getAttribute('class'))??'',/is-live/,'工具组保留实时状态');assert.equal(await initialGroup.locator(':scope>summary').evaluate((node:HTMLElement)=>getComputedStyle(node).animationName),'ac-live-row','整行保持呼吸动画');await page.emulateMedia({reducedMotion:'reduce'});assert.equal(await initialGroup.locator(':scope>summary').evaluate((node:HTMLElement)=>getComputedStyle(node).animationName),'none');assert.equal(await panel().locator('.ac-execution-indicator .ac-execution-light').first().evaluate((node:HTMLElement)=>getComputedStyle(node).animationName),'none');await page.emulateMedia({reducedMotion:'no-preference'});assert.equal(await initialGroup.locator(':scope>summary .ac-step-action').count(),0,'执行中工具行不显示调用统计');assert.equal(await initialGroup.locator(':scope>summary .ac-step-chevron').count(),1,'执行中工具行保留展开折叠图标');assert.equal(await initialGroup.locator(':scope>summary .ac-step-chevron').getAttribute('aria-hidden'),'true');await initialGroup.locator(':scope>summary').click();
       const first=panel().locator('[data-entry-id="single-tool"]');await first.locator(':scope>summary').waitFor();
       const handle=await first.elementHandle();await first.locator(':scope>summary').click();await first.locator('.ac-tool-detail').waitFor();
       update({entries:[tool('single-tool'),tool('second-tool','failed')]});await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
@@ -805,6 +805,24 @@ const historyRuns = {
       update({run:run('completed')});await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await panel().locator('.ac-process[data-process-state="settled"]').waitFor({state:'attached'});assert.equal(await panel().locator('.ac-process[open]').count(),0);
       await panel().getByRole('button',{name:'展开处理过程',exact:true}).click();assert.equal(await panel().locator('.ac-process-timeline').evaluate((node:HTMLElement)=>getComputedStyle(node).borderLeftWidth),'0px');assert.match(await panel().locator('.ac-step-group').first().innerText(),/1 项失败/,'失败数在工具组汇总靠右展示');
       const caretOrder=await panel().locator('.ac-turn-identity-toggle').first().evaluate((node:HTMLElement)=>{const kids=[...node.children].map(child=>child.className.toString());return {name:kids.findIndex(cls=>cls.includes('ac-turn-identity-name')),indicator:kids.findIndex(cls=>cls.includes('ac-execution-indicator')),caret:kids.findIndex(cls=>cls.includes('ac-turn-identity-caret'))};});assert.ok(caretOrder.name<caretOrder.indicator&&caretOrder.indicator<caretOrder.caret,'折叠图标放在时间后面');
+      const scrollingTools=Array.from({length:24},(_,index)=>tool('scroll-tool-'+index));
+      const longAnswer={id:'scroll-answer',sequence:99,kind:'message',role:'assistant',runId:'run-fixture',text:Array.from({length:80},(_,index)=>'信息流第 '+(index+1)+' 行').join('\n'),status:'completed',createdAt:new Date().toISOString()};
+      update({entries:[...scrollingTools,longAnswer],run:run('running')});await page.reload();await input().waitFor();
+      const scrollingGroup=panel().locator('.ac-step-group').first();await scrollingGroup.locator(':scope>summary').waitFor();
+      if(await scrollingGroup.getAttribute('open')===null)await scrollingGroup.locator(':scope>summary').click();
+      const scrollingItems=scrollingGroup.locator(':scope>.ac-step-group-items');await scrollingItems.waitFor();
+      const stream=panel().locator('.ac-stream');
+      const scrollGeometry=await scrollingItems.evaluate((node:HTMLElement)=>({scrollHeight:node.scrollHeight,clientHeight:node.clientHeight}));
+      assert.ok(scrollGeometry.scrollHeight>scrollGeometry.clientHeight+4,'工具组内容形成内部滚动条');
+      await stream.evaluate((node:HTMLElement)=>node.scrollTop=0);await scrollingItems.evaluate((node:HTMLElement)=>node.scrollTop=0);
+      await scrollingItems.hover();await page.mouse.wheel(0,160);
+      await page.waitForFunction(()=>{const node=document.querySelector<HTMLElement>('.ac-step-group[open]>.ac-step-group-items');return Boolean(node&&node.scrollTop>0);});
+      assert.equal(await stream.evaluate((node:HTMLElement)=>node.scrollTop),0,'工具组内未到底时外层信息流不抢先滚动');
+      await scrollingItems.evaluate((node:HTMLElement)=>node.scrollTop=node.scrollHeight);
+      const outerBefore=await stream.evaluate((node:HTMLElement)=>node.scrollTop);
+      await page.mouse.wheel(0,160);
+      await page.waitForFunction((before:number)=>{const node=document.querySelector<HTMLElement>('#agent-conversation-panel .ac-stream');return Boolean(node&&node.scrollTop>before);},outerBefore);
+      await capture(page,'conversation-tool-group-scroll-chain.png');
       await capture(page,'conversation-live-process-flat.png');await handle?.dispose();fixture.conversation=previous;await page.reload();await input().waitFor();
   },
   'history/new-input-with-question': async (fixture: AgentConversationFixture) => {

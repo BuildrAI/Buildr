@@ -40,6 +40,8 @@ export async function renderTaskRecordHttpDto(): Promise<string> {
     TaskMaterialsWriteResponse: body(TASK_MATERIALS_SCHEMAS.writeResponse),
     TaskListRequest: body(TASK_HTTP_SCHEMAS.listRequest),
     TaskListResponse: body(TASK_HTTP_SCHEMAS.listResponse),
+    TaskTitleSummariesRequest: body(TASK_HTTP_SCHEMAS.titleSummariesRequest),
+    TaskTitleSummariesResponse: body(TASK_HTTP_SCHEMAS.titleSummariesResponse),
     TaskDetailRequest: body(TASK_HTTP_SCHEMAS.detailRequest),
     TaskDetailResponse: body(TASK_HTTP_SCHEMAS.detailResponse),
     TaskUpdateRequest: body(TASK_HTTP_SCHEMAS.updateRequest),

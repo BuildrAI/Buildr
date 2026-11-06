@@ -48,7 +48,19 @@ await step('关联数量浮层零一多、跨空间同码前缀搜索及双向�
   assert.equal(fixture.creations,before+1);assert.equal(fixture.conversation.taskId,taskId);
   await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
   const originalId=fixture.conversation.id,cwd=fixture.conversation.cwd;
+  const firstTitleSummaries=page.waitForResponse((response:any)=>new URL(response.url()).pathname.endsWith('/tasks/title-summaries'));
   await conversationButton().hover();await popup().getByText('已关联任务',{exact:true}).waitFor();
+  await firstTitleSummaries;
+  await page.keyboard.press('Escape');await popup().waitFor({state:'hidden'});
+  const reopenedTitleSummaries=page.waitForResponse((response:any)=>new URL(response.url()).pathname.endsWith('/tasks/title-summaries'));
+  await conversationButton().click();await popup().getByText('已关联任务',{exact:true}).waitFor();
+  await reopenedTitleSummaries;
+  const refreshedTitleSummaries=page.waitForResponse((response:any)=>new URL(response.url()).pathname.endsWith('/tasks/title-summaries'));
+  await popup().getByRole('button',{name:'刷新关联信息',exact:true}).click();
+  await refreshedTitleSummaries;
+  const changedTitleSummaries=page.waitForResponse((response:any)=>new URL(response.url()).pathname.endsWith('/tasks/title-summaries'));
+  await page.evaluate(()=>window.dispatchEvent(new Event('buildr-conversation-associations-changed')));
+  await changedTitleSummaries;
   // Measure the final popup position, not its entering transform.
   await page.waitForFunction(([body,trigger]:HTMLElement[])=>body.getBoundingClientRect().bottom<=trigger.getBoundingClientRect().top+10,[await popup().elementHandle(),await conversationButton().elementHandle()],{timeout:10_000});
   const triggerBox=await conversationButton().boundingBox(),popupBox=await popup().boundingBox();assert.ok(popupBox!.y+popupBox!.height<=triggerBox!.y+10,'底部入口向上展开');
@@ -71,7 +83,8 @@ await step('关联数量浮层零一多、跨空间同码前缀搜索及双向�
   assert.equal(await popup().getByText('正在读取任务信息…',{exact:true}).count(),0);
   const metaBoxes=await panel().locator('.ac-location-meta>span').evaluateAll((nodes:any[])=>nodes.map(node=>{const r=node.getBoundingClientRect();return {top:r.top,height:r.height};}));assert.ok(Math.abs(metaBoxes[0].top+metaBoxes[0].height/2-metaBoxes[1].top-metaBoxes[1].height/2)<2,'工作空间与关联任务横向对齐');
   assert.ok(taskSearchPages>=2,'前缀搜索必须读取包含匹配的后续页');await page.unroute(taskMatcher,taskPager);
-  const candidate=popup().locator('.ac-association-candidate').filter({hasText:'other-workspace'});await candidate.click();
+  const addedTitleSummaries=page.waitForResponse((response:any)=>{const url=new URL(response.url());return url.pathname.endsWith('/tasks/title-summaries')&&decodeURIComponent(url.pathname).includes('/workspaces/'+remote+'/')&&url.searchParams.get('ids')===taskId;});
+  const candidate=popup().locator('.ac-association-candidate').filter({hasText:'other-workspace'});await candidate.click();await addedTitleSummaries;
   await page.waitForFunction(()=>document.querySelector('#agent-conversation-panel .ac-association-trigger')?.textContent?.includes('2'));
   assert.deepEqual(fixture.conversation.taskLinks,[{workspaceId,taskId},{workspaceId:remote,taskId}]);
   assert.equal(fixture.conversation.cwd,cwd);assert.equal(fixture.conversation.workspaceId,workspaceId);assert.equal(fixture.sends,sends+1);
@@ -80,7 +93,9 @@ await step('关联数量浮层零一多、跨空间同码前缀搜索及双向�
   await linkedRow(remote).locator('.ac-association-open').click();await waitTaskWorkspace(remote);await waitTaskDetail(taskId);
   await taskButton().waitFor();await closeConversation();await taskButton().click();await popup().locator('[data-associated-conversation="'+originalId+'"]').click();
   await input().waitFor();await waitConversation(originalId);assert.equal(await panel().getAttribute('data-conversation-id'),originalId,'异空间任务打开原空间对话');assert.equal(fixture.creations,before+1);
+  const removedTitleSummaries=page.waitForResponse((response:any)=>{const url=new URL(response.url());return url.pathname.endsWith('/tasks/title-summaries')&&decodeURIComponent(url.pathname).includes('/workspaces/'+workspaceId+'/')&&url.searchParams.get('ids')===taskId;});
   await conversationButton().click();await linkedRow(remote).getByRole('button',{name:'解除关联 '+taskId,exact:true}).click();
+  await removedTitleSummaries;
   await page.waitForFunction(()=>document.querySelector('#agent-conversation-panel .ac-association-trigger')?.textContent?.includes('1'));
   assert.equal(await popup().isVisible(),true);assert.deepEqual(fixture.conversation.taskLinks,[{workspaceId,taskId}]);await page.keyboard.press('Escape');
   await closeConversation();await taskButton().click();await popup().getByText('暂无关联对话。',{exact:true}).waitFor();

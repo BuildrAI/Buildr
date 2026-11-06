@@ -60,7 +60,7 @@
 .ac-step[open]>summary>.ac-step-action,.ac-step-group[open]>summary>.ac-step-action{color:#404f44}
 .ac-step-group-items{margin:1px 0 2px 7px;padding-left:11px;border-left:1px solid #e7ece8}
 /* 展开几十上百条调用时只占有限高度，其余在组内滚动，底部收起操作保持可见。 */
-.ac-step-group[open]>.ac-step-group-items{max-height:min(60vh,480px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.ac-step-group[open]>.ac-step-group-items{max-height:min(60vh,480px);overflow-y:auto;overscroll-behavior:auto;scrollbar-width:thin}
 /* macOS 的浮层滚动条只在滚动时出现；显式着色让「还有更多」始终可见。 */
 .ac-step-group[open]>.ac-step-group-items::-webkit-scrollbar{width:8px}
 .ac-step-group[open]>.ac-step-group-items::-webkit-scrollbar-thumb{background:#d5ddd7;border-radius:4px}
@@ -71,6 +71,7 @@
 .ac-step-group>summary>.ac-step-node{color:#6f8378}
 .ac-step-group>summary>.ac-step-action{color:#44534a;font-weight:600}
 .ac-step-group>summary>.ac-step-label{color:#5d6d63;font-weight:500}
+.ac-step-group>summary>.ac-step-chevron{color:#6f8378}
 .ac-tool-file-link{display:inline-block;max-width:100%;padding:0 4px;border:0;border-radius:3px;background:#f0f4f1;color:#53765f;font:inherit;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle;cursor:pointer;text-align:left}
 .ac-tool-file-link:hover{background:#e7eee9;text-decoration:underline;text-underline-offset:3px}
 .ac-tool-detail{margin:4px 0 12px 23px;padding:10px 12px;border-radius:6px;background:#f5f7f5;color:#657168;font-size: var(--font-size-secondary)}

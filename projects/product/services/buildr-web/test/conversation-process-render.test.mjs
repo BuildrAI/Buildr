@@ -44,7 +44,7 @@ test('未展开的历史过程不挂载正文，执行中的说明与工具汇�
  const live=renderEntries(entries,{active:true,open:false});assert.match(live,/ac-process-narration/);assert.match(live,/ac-step-group/);assert.doesNotMatch(live,/ac-tool-detail|ac-step-group-items/);
 });
 
-test('执行中工具组不再显示行前光点，整行保留实时状态，结束后恢复统计',()=>{const live=render(true);assert.doesNotMatch(live,/ac-execution-light/);assert.match(live,/class="ac-step-group is-live"/);assert.doesNotMatch(live,/次工具调用/);assert.match(render(false),/次工具调用/);});
+test('执行中工具组不再显示行前光点，整行保留实时状态和展开图标，结束后恢复统计',()=>{const live=render(true);assert.doesNotMatch(live,/ac-execution-light/);assert.match(live,/class="ac-step-group is-live"/);assert.match(live,/ac-step-chevron/);assert.doesNotMatch(live,/次工具调用/);assert.match(render(false),/次工具调用/);});
 test('实时摘要携带当前工具自身状态，不使用组内历史失败作为当前状态',()=>{
  const failed={...tool('failed'),status:'failed'};
  for(const status of ['running','completed','unknown','failed']){
@@ -164,6 +164,8 @@ test('展开的工具组限制高度并在组内滚动，不再出现重复的�
  const rule=css.match(/\.ac-step-group\[open\]>\.ac-step-group-items\{([^}]*)\}/)?.[1]??'';
  assert.match(rule,/max-height:min\(60vh,480px\)/);
  assert.match(rule,/overflow-y:auto/);
+ assert.match(rule,/overscroll-behavior:auto/);
+ assert.doesNotMatch(rule,/overscroll-behavior:contain/);
  const html=renderEntries(Array.from({length:40},(_,index)=>tool('many-'+index)),{open:true,groupsOpen:{'tool-group:many-0':true}});
  assert.match(html,/ac-step-group-items/);
  assert.doesNotMatch(html,/收起工具调用/,'点击组行即可收起，不再保留重复按钮');

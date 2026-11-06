@@ -35,6 +35,10 @@ await step('模型名称选择器仅在悬停时显示外形',async()=>{
       await modelSearch.fill('Fast');await modelList.getByText('Fast model',{exact:true}).waitFor();
       assert.equal(await modelList.getByText('Fixture model',{exact:true}).count(),0,'搜索按模型名称过滤');
       await modelSearch.press('Escape');await modelList.waitFor({state:'hidden'});
+      await combo.focus();await combo.press('ArrowDown');await modelList.waitFor();
+      await page.mouse.click(4,4);await modelSettings().waitFor({state:'hidden'});await modelList.waitFor({state:'hidden'});
+      assert.equal(await modelTrigger().getAttribute('aria-expanded'),'false','点击外部关闭模型设置时候选列表同步关闭');
+      await openModelSettings();await modelList.waitFor({state:'hidden'});
       await closeModelSettings();
     });
 
