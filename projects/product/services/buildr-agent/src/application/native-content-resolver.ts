@@ -9,7 +9,7 @@ import { parseReference } from '../executors/native-process.ts';
 import { modelLeaseIdentity } from '../model-access/model-preferences.ts';
 import { nativeContentHash } from '../storage/native-content.ts';
 
-export function configRoot(root: string, record: StoredConversation, participant: StoredParticipant): string | undefined {
+export function configRoot(root: string, record: {view: Pick<StoredConversation['view'], 'id' | 'cwd'>}, participant: StoredParticipant): string | undefined {
   if (participant.connectionId !== participant.provider) return;
   try { if (participant.contextRef && parseReference(String(participant.contextRef.data?.native ?? ''),participant.provider,record.view.cwd,participant.bindingIdentity).nativeSessionId !== participant.contextRef.id) return; }
   catch { return; }

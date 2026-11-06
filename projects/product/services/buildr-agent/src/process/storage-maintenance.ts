@@ -1,6 +1,5 @@
 import path from 'node:path';
 import fs from 'node:fs';
-import { maintainComponentSharing, type ComponentSharingResult } from '../storage/component-sharing.ts';
 import type { HomeDiscoveryCursor } from '../storage/home-discovery.ts';
 import { observeSharedCacheUse } from '../storage/shared-cache.ts';
 import { observeStorageUse } from '../storage/files.ts';
@@ -34,17 +33,15 @@ if (!isMainThread && workerData?.kind === 'agent-storage-program') {
       let cacheObservationComplete=true;
       try { observeSharedCacheUse(cacheRoot,observeStorageUse(),new ConversationRepository(cacheRoot).storageDependencies()); } catch { cacheObservationComplete=false; }
       const observationFile=path.join(cacheRoot,'process/storage-observation.json');
-      let previous:{homeStorage?:{cursor?:HomeDiscoveryCursor};componentSharing?:ComponentSharingResult}|undefined;
+      let previous:{homeStorage?:{cursor?:HomeDiscoveryCursor}}|undefined;
       try{const stat=fs.lstatSync(observationFile);if(stat.isFile()&&!stat.isSymbolicLink()&&stat.size<4*1024*1024)previous=JSON.parse(fs.readFileSync(observationFile,'utf8'));}catch{/* First observation starts a new cycle. */}
       const plan = inspectAgentStorage({ dataRoot: workerData.dataRoot,homeCursor:previous?.homeStorage?.cursor });
       const result = collectAgentStorage(plan,512,{budgetMs:30000});
-      let componentSharing:ComponentSharingResult|undefined;
-      try{const lock=claimStorage(workerData.dataRoot);try{componentSharing=maintainComponentSharing(cacheRoot,plan.homeStorage?.installationLocks??[],plan.items,previous?.componentSharing?.state,{budgetMs:3000,maximumFiles:32});}finally{lock.release();}}catch{componentSharing={state:previous?.componentSharing?.state??{locks:[],next:0},complete:false,clonedBytes:0,reusedFiles:0,observations:[{path:cacheRoot,status:'retained',reason:'component_lock_or_observation_deferred'}]};}
       if(!cacheObservationComplete)for(const item of plan.items)if(item.kind==='shared-cache'){item.eligible=false;item.reason='cache_usage_observation_failed';}
       try {
         const root=path.join(workerData.dataRoot,'agent-service');
         ensureStorageDirectory(root,path.join(root,'process'));
-        writePrivate(path.join(root,'process/storage-observation.json'),{schemaVersion:1,generatedAt:plan.generatedAt,homeStorage:plan.homeStorage,sharedCachePolicy:plan.sharedCachePolicy,componentSharing:componentSharing??previous?.componentSharing,diagnostics:plan.diagnostics});
+        writePrivate(path.join(root,'process/storage-observation.json'),{schemaVersion:1,generatedAt:plan.generatedAt,homeStorage:plan.homeStorage,sharedCachePolicy:plan.sharedCachePolicy,legacyCachePolicy:'retire-rebuildable-classes',diagnostics:plan.diagnostics});
       } catch { /* Optional diagnostic publication never gates reclamation. */ }
       parentPort?.postMessage({ nativeContent: content, removedBytes: result.removedBytes, migratedBytes: result.migratedBytes, shared: result.results.filter(item=>item.status==='shared').length, backlog:result.results.some(item=>item.status!=='retained')&&result.results.some(item=>item.reason==='storage_batch_deferred'), retained: result.results.filter(item => item.status === 'retained').length });
     }catch{parentPort?.postMessage({nativeContent:content,diagnostic:'storage_collection_deferred'});}

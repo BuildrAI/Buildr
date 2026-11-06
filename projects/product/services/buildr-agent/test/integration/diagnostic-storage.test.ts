@@ -175,6 +175,16 @@ test('canonical dependencies protect hidden, retained, unresolved and unreleased
   assert.equal(f.repo.storageDependencies().contexts.length, 1, 'terminal text alone does not release control');
   f.record.view.run.resourcesReleased = true; f.record.view.revision = 'r4'; f.repo.saveConversation(f.record, 'r3');
   assert.equal(f.repo.storageDependencies().contexts.length, 0);
+  const owners: unknown[] = [];
+  const startupContext=f.record.participants[0]!.contextRef;
+  f.record.participants[0]!.contextRef=undefined;
+  f.record.view.run.status='starting'; f.record.view.run.resourcesReleased=false;
+  f.record.view.revision='startup'; f.repo.saveConversation(f.record,'r4');
+  assert.deepEqual(f.repo.storageDependencies((record,participant)=>owners.push([record.view.id,participant.id])).contexts,[]);
+  assert.equal(owners.length,1,'the real SQLite header exposes startup ownership without a native context id');
+  f.record.participants[0]!.contextRef=startupContext;
+  f.record.view.run.status='completed';f.record.view.run.resourcesReleased=true;
+  f.record.view.revision='r4';f.repo.saveConversation(f.record,'startup');
   f.record.view.retainedRuns = [{ ...f.record.view.run, id: 'old', status: 'tools-active', tools: [{ id: 'job', label: 'job', status: 'unknown' }] }];
   f.record.view.revision = 'r5'; f.repo.saveConversation(f.record, 'r4');
   const db = new DatabaseSync(f.repo.filename); db.exec('DELETE FROM conversation_read_states'); db.close();

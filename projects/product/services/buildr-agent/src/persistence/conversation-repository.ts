@@ -10,7 +10,7 @@ import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
 import { AgentServiceError, fail } from '../domain/agent-state.ts';
-import type { StoredConnection, StoredConversation } from '../domain/agent-state.ts';
+import type { StoredConnection, StoredConversation, StoredParticipant } from '../domain/agent-state.ts';
 import { ConversationReadModel, type ConversationReadState } from './conversation-read-model.ts';
 import { ConversationEntryStore } from './conversation-entry-store.ts';
 import type { NativeToolContent } from '../native-content-contracts.ts';
@@ -326,7 +326,7 @@ export class ConversationRepository {
     return this.readConversation(id);
   }
   /** Canonical headers only: maintenance never loads message bodies or trusts optional read caches. */
-  storageDependencies(): { complete: boolean; contexts: string[] } {
+  storageDependencies(onReference?: (record: {view: Pick<StoredConversation['view'], 'id' | 'cwd'>}, participant: StoredParticipant, bindingIdentity?: string) => void): { complete: boolean; contexts: string[] } {
     let db: DatabaseSync | undefined;
     try {
       db = this.open(false);
@@ -335,6 +335,7 @@ export class ConversationRepository {
       const contexts = new Set<string>();
       const needsEvidence = (run: RunView) => unfinishedRun(run) || run.resourcesReleased !== true || run.executionState === 'unknown' || run.executionState === 'active';
       for (const row of db.prepare(`SELECT json_object(
+        'view',json_object('id',json_extract(body,'$.view.id'),'cwd',json_extract(body,'$.view.cwd')),
         'participants',json_extract(body,'$.participants'),'attempts',json_extract(body,'$.attempts'),
         'outcomes',json_extract(body,'$.runOutcomes'),'run',json_extract(body,'$.view.run'),
         'retainedRuns',json_extract(body,'$.view.retainedRuns'),'requests',json_extract(body,'$.view.requests')) AS header FROM conversations`).iterate()) {
@@ -346,10 +347,11 @@ export class ConversationRepository {
           !header.participants.some((participant: {id: string}) => participant.id === item.participantId))) throw new Error('invalid_storage_participant');
         for (const participant of header.participants) {
           if (typeof participant.id !== 'string' || typeof participant.provider !== 'string') throw new Error('invalid_storage_participant');
-          const preserve = (context: unknown) => {
-            if (context === undefined) return; // Not all attempts reached native context creation.
+          const preserve = (context: unknown, bindingIdentity?: string) => {
+            if (context === undefined) { onReference?.({view: header.view}, participant, bindingIdentity); return; } // Starting work still owns its environment before native context creation.
             if (typeof context !== 'string' || !context) throw new Error('invalid_storage_context');
             contexts.add(`${participant.provider}:${context}`);
+            onReference?.({view: header.view}, participant, bindingIdentity);
           };
           if (runs.some(run => run.participantId === participant.id && needsEvidence(run)) ||
               header.requests.some((request: { participantId: string; runId: string }) => request.participantId === participant.id ||
@@ -361,7 +363,7 @@ export class ConversationRepository {
             // Retained rounds can still refer to a replaced context; current participant state is insufficient.
             if ((run ? needsEvidence(run) : !['completed', 'failed', 'stopped'].includes(outcome?.status)) ||
                 header.requests.some((request: {runId: string}) => request.runId === attempt.runId)) {
-              preserve(attempt.executionRef?.data?.resourceContext ?? participant.contextRef?.id);
+              preserve(attempt.executionRef?.data?.resourceContext ?? participant.contextRef?.id, attempt.executionRef?.data?.resourceBinding);
             }
           }
         }

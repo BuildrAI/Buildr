@@ -7,7 +7,8 @@ import { safeStoragePath } from './files.ts';
  * explicitly supplied shared cache root. Never include node_modules, native
  * histories, arbitrary tmp directories or the complete HOME. */
 export const regenerableToolCaches = [
-  'tmp/node-compile-cache', 'cache/node-compile', 'home/.npm/_cacache', 'cache/npm/_cacache',
+  'tmp/node-compile-cache', 'cache/node-compile', 'home/.npm/_cacache', 'cache/npm/_cacache', 'home/.npm/_npx', 'cache/npm/_npx',
+  'home/Library/Caches/pip', 'home/.cache/pip', 'home/.cache/uv', 'home/Library/Caches/com.apple.python',
   'home/Library/Caches/node-gyp', 'home/.cache/node/corepack/v1',
   'home/Library/Caches/Yarn/v6', 'home/.cache/yarn/v6', 'cache/yarn/v6',
 ];

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Worker } from 'node:worker_threads';
-import { verifiedYarnCacheEntry } from '../storage/tool-cache.ts';
+import { regenerableToolCaches } from '../storage/tool-cache.ts';
 import { recordSharedCacheUse } from '../storage/shared-cache.ts';
 import { sharedToolchainEnvironment } from '../storage/toolchain-environment.ts';
 import type { AgentExecutor, AgentRuntime, ExecutorOpenOptions } from '../contracts.ts';
@@ -110,29 +110,23 @@ export function executorCacheCandidates(root: string, executor: AgentExecutor, c
     if (path.isAbsolute(relative) || relative.split(/[\\/]/).some(part => !part || part === '.' || part === '..') || relative.split(/[\\/]/).length < 2) continue;
     const directory = path.join(configRoot, relative);
     if (fs.existsSync(directory)) {
-      const download = relative.endsWith('/_cacache') || relative.endsWith('/Yarn/v6') || relative.endsWith('/yarn/v6');
-      const stableBefore = download ? Math.max(cutoff, Date.now() - 15 * 60_000) : cutoff;
-      // Warm account readers can live after every task ends. Only npm download
-      // bodies and Node bytecode may use a narrower scope, with authoritative
-      // execution/recovery references checked again at deletion time.
-      const dataCache=['home/.npm/_cacache','cache/npm/_cacache','tmp/node-compile-cache','cache/node-compile'].includes(relative);
-      const referenced=dependencies?.contexts.some(context=>context.startsWith(executor.descriptor.id+':'));
-      const narrow=dataCache&&dependencies?.complete===true&&!referenced;
-      const item = storageCandidate(root, 'cache', directory, narrow?directory:configRoot, use, stableBefore);
-      if(narrow){item.ownerRoot=configRoot;item.useRoot=directory;}
-      if(dataCache&&dependencies&&(!dependencies.complete||referenced)){item.eligible=false;item.reason=dependencies.complete?'cache_recovery_or_execution_retained':'cache_reference_observation_failed';}
-      if (item.eligible && executor.storage?.canReclaim && !executor.storage.canReclaim(configRoot, relative)) { item.eligible = false; item.reason = 'cache_contents_retained'; }
-      candidates.push(item);
-      // One unfinished Yarn neighbor must not retain every completed package.
-      // Removing one completed entry changes the parent mtime. That must not
-      // postpone every other independently stable package for another window.
-      if(!item.eligible&&['cache_contents_retained','storage_recent'].includes(item.reason)&&/(?:Yarn|yarn)\/v6$/.test(relative)&&!executor.storage?.canReclaim?.(configRoot,relative)){
-        for(const name of fs.readdirSync(directory)){
-          const member=path.join(relative,name);
-          if(!name.startsWith('npm-')||!verifiedYarnCacheEntry(configRoot,member))continue;
-          candidates.push(storageCandidate(root,'cache',path.join(configRoot,member),configRoot,use,stableBefore));
-        }
+      // The adapter owns these exact regenerable namespaces. Retire each whole
+      // legacy class; public cache publication and package integrity are not a
+      // prerequisite for discarding downloads/bytecode that may be rebuilt.
+      const retire = regenerableToolCaches.includes(relative);
+      const referenced = dependencies?.contexts.some(context => context.startsWith(executor.descriptor.id + ':'));
+      const narrow = retire && dependencies?.complete === true && !referenced;
+      const item = storageCandidate(root, 'cache', directory, narrow ? directory : configRoot, use, retire ? Infinity : cutoff);
+      if (retire) item.retire = true;
+      if (narrow) { item.ownerRoot = configRoot; item.useRoot = directory; }
+      if (retire && dependencies && (!dependencies.complete || referenced)) {
+        item.eligible = false;
+        item.reason = dependencies.complete ? 'cache_recovery_or_execution_retained' : 'cache_reference_observation_failed';
       }
+      if (!retire && item.eligible && executor.storage?.canReclaim && !executor.storage.canReclaim(configRoot, relative)) {
+        item.eligible = false; item.reason = 'cache_contents_retained';
+      }
+      candidates.push(item);
     }
   }
   return candidates;

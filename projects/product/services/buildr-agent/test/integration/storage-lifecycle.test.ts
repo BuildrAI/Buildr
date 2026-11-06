@@ -219,7 +219,7 @@ test('runtime preparation waits for another process short storage collection', a
   assert.doesNotThrow(()=>prepareAgentRuntime({dataRoot,packageRoot:pkg,entry:'build/entry.js',node}));
 });
 
-test('download caches include actual shared npm and proven Yarn roots with a stable window and private consumer protection', t => {
+test('legacy download classes retire without package archives or shared destination copies', t => {
   const root = path.join(fixture(t), 'agent-service');
   const config = path.join(root, 'connections/dsh/model-bindings', 'c'.repeat(64));
   const executor = createNativeExecutors().find(x => x.descriptor.id === 'dsh')!;
@@ -235,8 +235,13 @@ test('download caches include actual shared npm and proven Yarn roots with a sta
   const selected = plan().find(x => x.path === yarn)!;
   assert.equal(removeStorageCandidate(root, selected, () => ({ complete: true, paths: [path.join(config, 'native-session')] })), false);
   file(path.join(pkg, '.yarn-metadata.json'), '{}'); age(config);
-  assert.equal(plan().find(x => x.path === yarn)?.reason, 'cache_contents_retained');
-  assert.equal(fs.existsSync(pkg), true, 'unproven package tree stays');
+  assert.equal(plan().find(x => x.path === yarn)?.eligible, true,'cache classification does not depend on each package manifest');
+  const outside=path.join(root,'business-output');file(path.join(outside,'result'),'keep');
+  fs.symlinkSync(outside,path.join(pkg,'generated-link'));
+  const current=plan().find(x=>x.path===yarn)!;
+  assert.equal(removeStorageCandidate(root,current,()=>unused),true);
+  assert.equal(fs.readFileSync(path.join(outside,'result'),'utf8'),'keep','nested links are unlinked, never followed');
+  assert.equal(fs.existsSync(path.join(root,'toolchains/cache/yarn')),false,'no package publication prerequisite');
 });
 
 test('application directory hints prevent duplicate default profiles without merging HOME or overriding explicit isolation', t => {
@@ -292,7 +297,7 @@ test('the existing maintenance worker removes completed disposable test state an
   assert.ok(observation.homeStorage.objects.some((item:any)=>item.provider==='future-agent'&&item.action==='investigate-owner'));
   assert.equal(fs.readFileSync(path.join(dataRoot,'agent-service/connections/future-agent/home/business-output/keep'),'utf8'),'keep');
   assert.equal(fs.existsSync(path.join(config,'cache/npm/_cacache')),false);
-  assert.equal(fs.readFileSync(path.join(dataRoot,'agent-service/toolchains/cache/npm/_cacache/content-v2/fixture'),'utf8'),'reusable download','automatic worker migrates old cache rather than dropping the reusable download');
+  assert.equal(fs.existsSync(path.join(dataRoot,'agent-service/toolchains/cache/npm/_cacache/content-v2/fixture')),false,'automatic worker retires old cache without making a public duplicate');
 });
 
 test('nested confirmed shutdowns use their own references and storage lock without removing profile data', { skip: process.platform !== 'darwin' }, t => {
@@ -524,4 +529,43 @@ test('parallel cache-use observations keep one private stamp without directory c
   const directory=path.join(root,'toolchains/cache-use');
   assert.equal(fs.readdirSync(directory).length,6);
   for(const name of fs.readdirSync(directory)){const stat=fs.lstatSync(path.join(directory,name));assert.equal(stat.nlink,1);assert.equal(stat.size,0);assert.equal(stat.isSymbolicLink(),false);}
+});
+
+test('legacy cache references protect the exact binding and fall back conservatively when identity cannot be resolved', async t => {
+  const {legacyCacheReferences}=await import('../../src/application/storage-maintenance.ts');
+  const root=path.join(fixture(t),'agent-service'),record={view:{id:'conversation',cwd:'/project'}};
+  const participant={id:'one',provider:'dsh',connectionId:'dsh',bindingIdentity:'native-binding'} as any;
+  const scoped=legacyCacheReferences(root,{storageDependencies(visitor){visitor?.(record,participant);return {complete:true,contexts:['dsh:running']};}});
+  assert.deepEqual(scoped(path.join(root,'connections/dsh')).contexts,['dsh:running']);
+  assert.deepEqual(scoped(path.join(root,'connections/dsh/model-bindings','a'.repeat(64))).contexts,[],'unrelated old binding is not pinned by another task');
+  const replaced=legacyCacheReferences(root,{storageDependencies(visitor){visitor?.(record,participant,'old-binding');return {complete:true,contexts:['dsh:recovering']};}});
+  assert.deepEqual(replaced(path.join(root,'connections/dsh/model-bindings','a'.repeat(64))).contexts,['dsh:recovering']);
+  const incomplete=legacyCacheReferences(root,{storageDependencies(){return {complete:false,contexts:[]};}});
+  assert.equal(incomplete(path.join(root,'connections/dsh')).complete,false);
+});
+
+test('shared connection caches retain every active binding and pre-context startup owner', async t => {
+  const {legacyCacheReferences}=await import('../../src/application/storage-maintenance.ts');
+  const {configRoot}=await import('../../src/application/native-content-resolver.ts');
+  const root=path.join(fixture(t),'agent-service'),record={view:{id:'conversation',cwd:'/project'}};
+  const participant={id:'one',provider:'dsh',connectionId:'dsh',bindingIdentity:'native-binding',modelAccountId:'account',modelAccountIdentity:'identity',modelId:'model',modelConfiguration:'{}'} as any;
+  const config=configRoot(root,record,participant)!;
+  for(const contexts of [['dsh:active'],[]]){
+    const references=legacyCacheReferences(root,{storageDependencies(visitor){visitor?.(record,participant);return {complete:true,contexts};}});
+    assert.ok(references(path.join(root,'connections/dsh')).contexts.length,'connection-level cache serves all bindings');
+    assert.ok(references(config).contexts.length,'pending native creation still protects its binding');
+    assert.deepEqual(references(path.join(root,'connections/dsh/model-bindings','f'.repeat(64))).contexts,[]);
+  }
+});
+
+test('legacy npm exec installations are regenerable cache classes, not project dependency trees', t => {
+  const root=path.join(fixture(t),'agent-service'),config=path.join(root,'connections/dsh');
+  const cache=path.join(config,'home/.npm/_npx'),project=path.join(config,'home/project/node_modules');
+  file(path.join(cache,'opaque-install/node_modules/tool/index.js'),'regenerable tool');
+  file(path.join(project,'business/index.js'),'user work');
+  const executor=createNativeExecutors().find(item=>item.descriptor.id==='dsh')!;
+  const items=executorCacheCandidates(root,executor,config,unused,Infinity,false,{complete:true,contexts:[]});
+  const item=items.find(item=>item.path===cache)!;assert.ok(item?.eligible&&item.retire);
+  assert.equal(removeStorageCandidate(root,item,()=>unused),true);
+  assert.equal(fs.readFileSync(path.join(project,'business/index.js'),'utf8'),'user work');
 });

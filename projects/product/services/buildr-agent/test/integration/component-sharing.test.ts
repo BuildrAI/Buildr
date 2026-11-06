@@ -117,7 +117,7 @@ test('an unrelated task in the same account does not block sharing an idle insta
   assert.equal(result.reusedFiles,3);assert.ok(result.observations.some(item=>item.status==='shared'));
 });
 
-test('periodic maintenance automatically discovers a busy new component and shares it after its own holder exits', {skip:process.platform!=='darwin',timeout:30000}, async t=>{
+test('periodic maintenance retires whole legacy cache classes after their holder exits without migrating packages', {skip:process.platform!=='darwin',timeout:30000}, async t=>{
   const dataRoot=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'component-auto-'))),root=path.join(dataRoot,'agent-service');
   const item=install(root,'codex');let maintenance:StorageMaintenance|undefined;
   const oldCaches=['home/.npm/_cacache','cache/node-compile'].map(relative=>path.join(item.owner,relative));
@@ -131,14 +131,15 @@ test('periodic maintenance automatically discovers a busy new component and shar
   await Promise.all([once(holder.stdout!,'data'),once(warm.stdout!,'data')]);maintenance=new StorageMaintenance(dataRoot,{initialMs:1,intervalMs:10});
   const snapshot=()=>{try{return JSON.parse(fs.readFileSync(path.join(root,'process/storage-observation.json'),'utf8'));}catch{return undefined;}};
   const wait=async(predicate:(value:any)=>boolean)=>{const deadline=Date.now()+20000;while(Date.now()<deadline){const value=snapshot();if(value&&predicate(value))return value;await new Promise(resolve=>setTimeout(resolve,20));}assert.fail('automatic component maintenance did not settle');};
-  const busy=await wait(value=>value.componentSharing?.observations.some((row:any)=>row.path===item.lock&&row.reason==='component_owner_in_use'));
+  const busy=await wait(value=>value.legacyCachePolicy==='retire-rebuildable-classes');
   assert.ok(busy.homeStorage.installationLocks.includes(item.lock));
   for(const cache of oldCaches)assert.ok(fs.existsSync(cache),'a running owner retains its old caches');
   holder.kill('SIGTERM');await once(holder,'exit');
-  const shared=await wait(value=>value.componentSharing?.state.installations?.[item.lock]?.complete===true&&oldCaches.every(cache=>!fs.existsSync(cache)));
-  assert.ok(shared.componentSharing.reusedFiles>0);assert.equal(fs.readFileSync(item.file,'utf8'),'original body '.repeat(10000));
-  assert.equal(warm.exitCode,null,'warm account readers remain alive during automatic cache migration');
-  for(const relative of ['npm/_cacache','node-compile'])assert.equal(fs.readFileSync(path.join(root,'toolchains/cache',relative,'proof-entry'),'utf8'),'rebuildable cache');
+  await wait(()=>oldCaches.every(cache=>!fs.existsSync(cache)));
+  assert.equal(fs.readFileSync(item.file,'utf8'),'original body '.repeat(10000),'unclassified installation is untouched');
+  assert.equal(fs.existsSync(path.join(root,'toolchains/component-views')),false,'no per-package sharing is scheduled');
+  assert.equal(warm.exitCode,null,'warm account readers remain alive during automatic cache retirement');
+  for(const relative of ['npm/_cacache','node-compile'])assert.equal(fs.existsSync(path.join(root,'toolchains/cache',relative,'proof-entry')),false,'no public copy is created');
 });
 
 test('one conflicting cache entry is retained without starving later valid entries',t=>{
@@ -152,7 +153,7 @@ test('one conflicting cache entry is retained without starving later valid entri
   assert.ok(result.observations.some(item=>item.reason==='component_shared_cache_conflict'));
 });
 
-test('a completed Yarn package migrates independently of an unproven temporary neighbor',t=>{
+test('legacy Yarn retirement uses one declared class even when a package archive or temporary neighbor is incomplete',t=>{
   const root=fixture(t),owner=path.join(root,'connections/dsh'),cache=path.join(owner,'home/Library/Caches/Yarn/v6'),entry=path.join(cache,'npm-unseen-1.0.0-integrity'),pkg=path.join(entry,'node_modules/unseen');
   const entries={'package.json':JSON.stringify({name:'unseen',version:'1.0.0'}),'index.js':'module.exports=42;'};
   const tar=archive(entries),integrity='sha512-'+createHash('sha512').update(tar).digest('base64');
@@ -163,7 +164,8 @@ test('a completed Yarn package migrates independently of an unproven temporary n
   const age=(directory:string)=>{for(const name of fs.readdirSync(directory)){const file=path.join(directory,name);if(fs.statSync(file).isDirectory())age(file);fs.utimesSync(file,1,1);}fs.utimesSync(directory,1,1);};age(cache);
   const executor=createNativeExecutors().find(item=>item.descriptor.id==='dsh')!;
   const plan=executorCacheCandidates(root,executor,owner,unused,Date.now()-86400000);
-  assert.ok(plan.some(item=>item.path===entry&&item.eligible));assert.ok(!plan.some(item=>item.path.endsWith('/.tmp')&&item.eligible));
+  assert.ok(plan.some(item=>item.path===cache&&item.eligible&&item.retire));
+  assert.equal(plan.some(item=>item.path===entry),false,'no per-package candidate expansion');
   write(path.join(pkg,'local-business-output'),'must keep');assert.equal(verifiedYarnCacheEntry(owner,path.relative(owner,entry)),false);
 });
 

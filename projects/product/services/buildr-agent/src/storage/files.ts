@@ -11,6 +11,8 @@ export interface StorageCandidate {
   /** Only regenerable cache data with a fresh execution/recovery proof may
    * narrow occupancy to its own subtree; account ownership remains unchanged. */
   useRoot?: string;
+  /** Declared regenerable legacy cache: retire without publishing a public copy. */
+  retire?: boolean;
   retentionDays?: number; lastPossibleUseAt?: number;
   /** Exact nested Buildr profile, discovered only under a private native HOME. */
   runtimeDataRoot?: string;
