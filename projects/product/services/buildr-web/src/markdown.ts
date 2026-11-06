@@ -155,6 +155,27 @@ function closesFence(line: string, fence: { marker: string; length: number }) {
   return Boolean(match && match[1][0] === fence.marker && match[1].length >= fence.length);
 }
 
+// CommonMark's flanking rules reject a delimiter glued to punctuation, so a
+// Chinese sentence like 按**"改了哪个文件"**选组 renders its asterisks instead
+// of emphasis. Adapt only those narrow spellings; code, escapes and all other
+// emphasis remain under the normal Markdown lexer.
+const cjkStrongSpellings = [
+  // Closing punctuation glued to Han text: **保留事项：**较宽
+  /^\*\*(?!\*)([^\s*\\`\n][^*\\`\n]*[，。；：！？、）】》」』])\*\*(?=\p{Script=Han})/u,
+  // A quote or bracket glued to the opener: 按**"改了哪个文件"**选组 / 按**（见上）**处理
+  /^\*\*(?!\*)(\p{P}(?:[^*\\`\n]*[^\s*\\`\n])?)\*\*(?!\*)/u,
+];
+const hanText = /\p{Script=Han}/u;
+
+function cjkStrongMatch(source: string) {
+  const closing = cjkStrongSpellings[0].exec(source);
+  if (closing && hanText.test(closing[1])) return closing;
+  const opening = cjkStrongSpellings[1].exec(source);
+  // Plain English prose keeps CommonMark's rule; only Chinese context opts in.
+  if (opening && (hanText.test(opening[1]) || hanText.test(source.charAt(opening[0].length)))) return opening;
+  return null;
+}
+
 // Marked 16's closing-fence pattern accepts spaces but not trailing tabs.
 // Adapt only that valid spelling; leave all other syntax to its normal lexer.
 const markdownParser = new Marked({
@@ -164,10 +185,8 @@ const markdownParser = new Marked({
     level: 'inline',
     start(source) { return source.indexOf('**'); },
     tokenizer(source) {
-      // A narrow compatibility spelling, not a rewrite of the source. Code,
-      // escapes and other emphasis remain under the normal Markdown lexer.
-      const match = /^\*\*(?!\*)([^\s*\\`\n][^*\\`\n]*[，。；：！？、）】》」』])\*\*(?=\p{Script=Han})/u.exec(source);
-      if (!match || !/\p{Script=Han}/u.test(match[1])) return;
+      const match = cjkStrongMatch(source);
+      if (!match) return;
       return { type: 'strong', raw: match[0], text: match[1], tokens: this.lexer.inlineTokens(match[1]) };
     },
   }],
