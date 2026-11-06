@@ -42,6 +42,25 @@ test('streaming participation refresh leaves current canonical messages untouche
  assert.equal(repo.readPage(r.view.id,undefined,1)!.view.entries[0].text,r.view.entries.at(-1)!.text);
 });
 
+test('text-only saves carry exact participation forward and repair stale or invalid projections',t=>{
+ const repo=fixture(t),r=record();repo.saveConversation(r);repo.stopReadModels();repo.rebuildReadModel(r.view.id);
+ const db=new DatabaseSync(repo.filename);t.after(()=>db.close());
+ const before=JSON.parse((db.prepare('SELECT body FROM conversation_participation WHERE id=?').get(r.view.id)!.body as string));
+ r.view.entries.push({id:'a',sequence:1,kind:'message',role:'assistant',text:'fragment',createdAt:'now'});
+ const prior=r.view.revision;r.view.revision='text-1';repo.saveConversation(r,prior,{participationUnchanged:true});
+ const current=JSON.parse(db.prepare('SELECT body FROM conversation_participation WHERE id=?').get(r.view.id)!.body as string);
+ assert.deepEqual(current,{...before,revision:r.view.revision});assert.equal(repo.participationProjections('ws').incomplete,false);
+ for(const bad of ['missing','stale','invalid','old-parser']){
+  if(bad==='missing')db.prepare('DELETE FROM conversation_participation WHERE id=?').run(r.view.id);
+  else db.prepare('UPDATE conversation_participation SET revision=?,body=? WHERE id=?').run(bad==='stale'?'old':r.view.revision,bad==='invalid'?'broken':JSON.stringify({...current,parserVersion:bad==='old-parser'?0:1}),r.view.id);
+  const previous=r.view.revision;r.view.revision='text-'+bad;r.view.entries[0].text+='字';repo.saveConversation(r,previous,{participationUnchanged:true});repo.stopReadModels();
+  assert.equal(repo.participationProjections('ws').incomplete,true,bad);
+  repo.stopReadModels();repo.rebuildReadModel(r.view.id);assert.equal(repo.participationProjections('ws').incomplete,false,bad);
+ }
+ const previous=r.view.revision;r.view.revision='normal-update';repo.saveConversation(r,previous);repo.stopReadModels();
+ assert.equal(repo.participationProjections('ws').incomplete,true,'ordinary mutations still invalidate participation');
+});
+
 test('compact status exactly preserves pending semantics, including retained work and tools after completion',t=>{
  const repo=fixture(t);const records:StoredConversation[]=[];
  for(const status of ['starting','running','waiting-approval','waiting-question','stopping','stopped','unknown','tools-active','completed','failed']){

@@ -123,6 +123,9 @@ export class ConversationApplication {
     if(!this.liveTools.size) {clearInterval(this.liveToolTimer);this.liveToolTimer = undefined;}
   }
   private readonly workers = new Map<string, Promise<void>>();
+  // Only consecutive native text events share a record. Every reuse checks the
+  // durable revision; controls and other writers keep the normal load path.
+  private readonly streamingRecords = new Map<string, StoredConversation>();
   private readonly observations = new Map<string, Promise<ConversationView>>();
   private readonly questionReleases = new Map<string,Promise<void>>();
   private readonly supersededCleanups = new Map<string,Promise<void>>();
@@ -487,12 +490,12 @@ export class ConversationApplication {
     view.pendingSend = this.pendingSends.view(this.pendingSends.read(view.workspaceId, view.id));
     return view;
   }
-  private save(record: StoredConversation, initial = false): void {
+  private save(record: StoredConversation, initial = false, textOnly = false): void {
     if(record.view.run?.status==='completed'){record.view.run.interrupted=undefined;delete record.interruption;}
     for(const observed of conversationRuns(record.view))if(['completed','failed','stopped','unknown','tools-active'].includes(observed.status)){record.runOutcomes??={};record.runOutcomes[observed.id]={status:observed.status,diagnostic:observed.diagnostic,model:observed.model,provider:observed.provider,contextUsage:observed.contextUsage,generation:observed.generation,updatedAt:observed.updatedAt};}
     const prior = record.view.revision;
     record.view.revision = randomUUID(); record.view.updatedAt = this.options.now();
-    this.options.repository.saveConversation(record, initial ? undefined : prior);
+    this.options.repository.saveConversation(record, initial ? undefined : prior, {participationUnchanged:textOnly});
     for(const run of conversationRuns(record.view)){
       const attempt=record.attempts.find(a=>a.runId===run.id),participant=record.participants.find(p=>p.id===run.participantId);
       const facts={event:'run-state',conversationId:record.view.id,workspaceId:record.view.workspaceId,runId:run.id,participantId:run.participantId,provider:run.provider,ownerGeneration:run.generation,status:run.status,accepted:run.accepted,stopRequested:run.stopRequested===true,resourcesReleased:run.resourcesReleased===true,executionId:attempt?.executionRef?.id,contextId:participant?.contextRef?.id,childPid:attempt?.executionRef?.data?.resourceGroup,runningTools:run.tools.filter(t=>t.status==='running').length,unknownTools:run.tools.filter(t=>t.status==='unknown').length};
@@ -1012,7 +1015,11 @@ export class ConversationApplication {
     }
   }
   private applyEvent(workspaceId: string, id: string, runId: string, event: ExecutorEvent): void {
-    const record = this.load(workspaceId, id);
+    const textOnly = event.type === 'item' && event.item.kind === 'message' && event.item.role === 'assistant';
+    const cached = textOnly ? this.streamingRecords.get(id) : undefined;
+    this.streamingRecords.delete(id);
+    const record = cached && cached.view.workspaceId === workspaceId && cached.view.run?.id === runId &&
+      this.options.repository.readRevision(id)?.revision === cached.view.revision ? cached : this.load(workspaceId, id);
     const run = conversationRuns(record.view).find(value => value.id === runId && value.generation === this.options.generation);
     if (!run) return;
     const participant = record.participants.find(value => value.id === run.participantId)!;
@@ -1069,7 +1076,11 @@ export class ConversationApplication {
       if (event.status === 'failed') { run.status = 'failed'; run.fault = event.fault; run.diagnostic = event.diagnostic ?? '原生执行失败。'; }
       else { run.diagnostic = event.diagnostic; }
     }
-    run.updatedAt = this.options.now(); this.save(record);
+    run.updatedAt = this.options.now(); this.save(record, false, textOnly);
+    if (textOnly && event.type === 'item' && event.item.status === 'running') {
+      this.streamingRecords.set(id, record);
+      if (this.streamingRecords.size > 8) this.streamingRecords.delete(this.streamingRecords.keys().next().value!);
+    }
     if (event.type === 'accepted' || event.type === 'observation' || event.type === 'completed' || event.type === 'item' && event.item.kind === 'tool') this.scheduleQuestionWaitReleases(record);
     if(event.type==='item'&&event.item.kind==='tool')this.enrichParticipation(workspaceId,id,participant.id,event.item.id);
     if (event.type === 'accepted' && run.status === 'stopping') {
@@ -2193,6 +2204,7 @@ export class ConversationApplication {
   }
   async close(): Promise<void> {
     this.closing = true;
+    this.streamingRecords.clear();
     clearInterval(this.liveToolTimer);this.liveTools.clear();
     await Promise.allSettled([...this.supersededCleanups.values(), ...this.questionReleases.values()]);
     clearInterval(this.idleTimer);

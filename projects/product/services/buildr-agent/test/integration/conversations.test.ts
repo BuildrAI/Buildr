@@ -266,6 +266,47 @@ test('resuming history preserves a concurrent metadata update without failing th
 });
 
 type Context = { items: ExecutorItem[]; observation: ExecutorObservation; unblock?: () => void };
+test('native text streams persist every fragment and reload after concurrent writes and stop', async t => {
+  const native=fake('codex',{hold:true}),f=fixture([native.executor]);t.after(()=>f.close());
+  await connected(f.service,'codex');const chat=await f.service.conversations.create('workspace-one',{});
+  send(f.service,chat.id,'codex','stream');
+  await waitUntil(()=>native.sends.length,n=>n===1);
+  await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='running');
+  const repo=new ConversationRepository(path.join(f.options.dataRoot,'agent-service'));t.after(()=>repo.stopReadModels());
+  repo.rebuildReadModel(chat.id);
+  const original=ConversationRepository.prototype.readConversation;let loads=0;
+  const spy=t.mock.method(ConversationRepository.prototype,'readConversation',function(this:ConversationRepository,...args:Parameters<typeof original>){loads++;return original.apply(this,args);});
+  const emit=(text:string)=>native.sends[0].onEvent({type:'item',item:{id:'stream-answer',kind:'message',role:'assistant',text,status:'running',executionId:'execution-1'}});
+  for(let i=1;i<=20;i++){
+    emit('字'.repeat(i));
+    const view=f.service.conversations.read('workspace-one',chat.id);
+    assert.equal(view.entries.at(-1)?.text,'字'.repeat(i),'each fragment is visible without a merge window');
+  }
+  assert.ok(loads<=2,`consecutive text must not reload the complete history (${loads} loads)`);spy.mock.restore();
+  assert.equal(repo.readConversation(chat.id)!.view.entries.at(-1)?.text,'字'.repeat(20),'last fragment is durable');
+  const seenThrough=f.service.conversations.read('workspace-one',chat.id).activity!.version;
+  repo.markSeen('workspace-one',chat.id,seenThrough);emit('after seen');
+  assert.equal(f.service.conversations.read('workspace-one',chat.id).activity!.seenThrough,seenThrough,'seen-only writes survive cache reuse at the same revision');
+  native.sends[0].onEvent({type:'item',item:{id:'interleaved-tool',kind:'tool',role:'system',name:'read',text:'result',status:'completed',executionId:'execution-1'}});
+  emit('after tool');assert.ok(repo.readConversation(chat.id)!.view.entries.some(e=>e.kind==='tool'&&e.text==='result'));
+  const record=repo.readConversation(chat.id)!,prior=record.view.revision;
+  record.view.title='external rename';record.view.revision=randomUUID();repo.saveConversation(record,prior);
+  emit('after external write');
+  assert.equal(f.service.conversations.read('workspace-one',chat.id).title,'external rename');
+  // Race after the fast revision check: the rejected mutation must retry from storage.
+  const save=ConversationRepository.prototype.saveConversation;let race=true;
+  const conflict=t.mock.method(ConversationRepository.prototype,'saveConversation',function(this:ConversationRepository,...args:Parameters<typeof save>){
+    if(race){race=false;const other=repo.readConversation(chat.id)!,previous=other.view.revision;other.view.title='racing rename';other.view.revision=randomUUID();save.call(repo,other,previous);}
+    return save.apply(this,args);
+  });
+  emit('after race');conflict.mock.restore();
+  const current=f.service.conversations.read('workspace-one',chat.id);
+  assert.equal(current.title,'racing rename');assert.equal(current.entries.filter(e=>e.role==='assistant').at(-1)?.text,'after race');
+  await f.service.conversations.stop('workspace-one',chat.id,{expectedRevision:current.revision,runId:current.run!.id,participantId:current.run!.participantId,generation:current.run!.generation});
+  emit('late text after stop');
+  assert.ok(!repo.readConversation(chat.id)!.view.entries.some(e=>e.text==='late text after stop'));
+});
+
 function fake(id = 'local', options: { hold?: boolean; disconnect?: 'stopped'|'running'|'unknown'|'tool'; disconnectError?: string; beforeDisconnect?: Promise<void>; disconnectAlways?: boolean; disconnectOn?: number; beforeResume?: Promise<void>; unknown?: boolean; images?: boolean; noAnswer?: boolean; multipleModels?: boolean; request?: boolean; question?: boolean; coldUnknown?: boolean; beforeAccepted?: Promise<void>; replyAfterTerminal?: boolean; toolSurvives?: boolean; toolInput?: boolean; failure?: string | ((attempt: number) => string | undefined); prepareFailures?: number; unknownCreate?: boolean; beforeObservation?: Promise<void>; wrongObservation?: boolean; summary?:(input:ExecutorTitleInput)=>Promise<string|undefined> } = {}) {
   const contexts = new Map<string, Context>(); const sends: ExecutorSendInput[] = []; const replies: unknown[] = []; const opens: ExecutorOpenOptions[] = [];
   let preparations = 0;

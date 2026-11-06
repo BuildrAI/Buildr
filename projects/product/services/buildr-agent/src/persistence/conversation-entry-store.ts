@@ -14,6 +14,7 @@ export type Content = { content_revision: string; codec: string; body_bytes: num
 type Position = { scope: string; entry: ConversationEntry; round: string; revision: string; compact: string | null; bytes: number; compactBytes: number; content?: Content };
 export type PreparedEntries = Position[];
 const lazyEntries = new WeakMap<ConversationEntry, { row: Content; compact: string; metadata: string; untouched(): boolean }>();
+const nativePositions = new WeakMap<ConversationEntry, {signature:string; position:Position}>();
 const metadata = (entry: ConversationEntry) => JSON.stringify(Object.fromEntries(Object.entries(Object.getOwnPropertyDescriptors(entry)).filter(([key]) => key !== 'text' && key !== 'input').map(([key, descriptor]) => [key, descriptor.value])));
 
 
@@ -61,11 +62,17 @@ export class ConversationEntryStore {
   /** Prepare expensive compression before the ordinary write transaction. */
   static prepare(db: DatabaseSync, record: StoredConversation, nativeTool?:(entry:ConversationEntry)=>NativeToolContent|undefined): PreparedEntries {
     const existing = new Set((db.prepare('SELECT content_revision FROM conversation_entry_contents WHERE conversation_id=?').all(record.view.id) as Array<{content_revision: string}>).map(row => row.content_revision));
-    const semantic = new Map<string, NativeToolContent>();
-    for(const row of db.prepare("SELECT c.* FROM conversation_entry_contents c WHERE conversation_id=? AND codec='native-tool'").all(record.view.id) as unknown as Content[]) {
-      const reference = this.reference(row)!;
-      semantic.set(reference.entry.id,reference);
-    }
+    let semantic: Map<string, NativeToolContent> | undefined;
+    const references = () => {
+      if (!semantic) {
+        semantic = new Map();
+        for(const row of db.prepare("SELECT c.* FROM conversation_entry_contents c WHERE conversation_id=? AND codec='native-tool'").all(record.view.id) as unknown as Content[]) {
+          const reference = this.reference(row)!;
+          semantic.set(reference.entry.id,reference);
+        }
+      }
+      return semantic;
+    };
     const result: PreparedEntries = [];
     for (const [scope, entries] of [['main', record.view.entries], ['inherited', record.inheritedContext?.entries ?? []]] as const) {
       let round = { id: 'legacy:0' };
@@ -87,16 +94,23 @@ export class ConversationEntryStore {
           return;
         }
         if(record.nativeTools?.[entry.id]) {
-          const previous = semantic.get(entry.id);
           const skeleton = {...entry,text: ''};
           delete skeleton.input;delete skeleton.detail;
+          const signature = JSON.stringify(skeleton), cached = nativePositions.get(entry);
+          if (cached?.signature === signature && existing.has(cached.position.revision)) {
+            entry.detail = {revision:cached.position.revision};
+            result.push({...cached.position,scope,entry,round:rounds[index]!.id,content:undefined});
+            return;
+          }
+          const previous = references().get(entry.id);
           const reference = previous ? {...previous,entry:skeleton} : nativeTool?.(entry);
           if(reference?.version !== 3) throw new AgentServiceError('agent_native_tool_unbound', '原生工具身份尚未绑定。', 409);
           const body = JSON.stringify(reference), revision = digest(body);
           const compact = JSON.stringify({...reference.entry, detail: {revision}});
           entry.detail = {revision};
-          result.push({scope, entry, round: rounds[index]!.id, revision, compact: null, bytes: Buffer.byteLength(body), compactBytes: Buffer.byteLength(compact),
-            content: existing.has(revision) ? undefined : {...this.encodeReference(reference), content_revision: revision, body_bytes: Buffer.byteLength(body)}});
+          const position:Position={scope, entry, round: rounds[index]!.id, revision, compact: null, bytes: Buffer.byteLength(body), compactBytes: Buffer.byteLength(compact)};
+          nativePositions.set(entry,{signature,position});
+          result.push({...position,content: existing.has(revision) ? undefined : {...this.encodeReference(reference), content_revision: revision, body_bytes: Buffer.byteLength(body)}});
           return;
         }
         const body = JSON.stringify(entry), revision = digest(body), bytes = Buffer.byteLength(body);

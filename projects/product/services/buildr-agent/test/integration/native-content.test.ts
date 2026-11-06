@@ -64,7 +64,11 @@ for(const provider of ['dsh','qoder'] as const)test(`${provider} stores only nat
   const db=new DatabaseSync(repo.filename,{readOnly:true});t.after(()=>db.close());
   const check=()=>{const row=db.prepare('SELECT c.codec,c.body,c.content_revision,e.compact FROM conversation_entry_contents c JOIN conversation_read_entries e USING(conversation_id,content_revision) WHERE c.conversation_id=?').get(record.view.id)!;assert.equal(row.codec,'native-tool');assert.equal(row.compact,null);const ref=JSON.parse(Buffer.from(row.body as Uint8Array).toString());assert.equal(ref.entry.text,'');if(provider==='qoder')assert.equal(ref.session.turnId,undefined);assert.equal(Object.hasOwn(ref.entry,'input'),false);assert.equal(JSON.stringify(ref).includes(f.output),false);return row.content_revision as string;};
   const pending=check();assert.throws(()=>repo.readEntry(record.view.id,entry.id,pending),{code:'agent_native_content_unavailable'});
-  entry.status='completed';record.view.revision='r2';repo.saveConversation(record,'r1');const revision=check();
+  const parse=ConversationEntryStore.reference;let referenceParses=0;
+  const spy=t.mock.method(ConversationEntryStore,'reference',function(...args:Parameters<typeof parse>){referenceParses++;return parse.apply(ConversationEntryStore,args);});
+  for(let i=0;i<5;i++){const prior=record.view.revision;record.view.revision='stream-'+i;repo.saveConversation(record,prior);}
+  assert.equal(referenceParses,0,'stable native identities must not be decoded for every text fragment');spy.mock.restore();
+  const prior=record.view.revision;entry.status='completed';record.view.revision='r2';repo.saveConversation(record,prior);const revision=check();assert.notEqual(revision,pending,'changed tool metadata invalidates the cached reference');
   f.write();assert.equal(repo.readEntry(record.view.id,entry.id,revision)?.text,f.output);
   const cold=new ConversationRepository(f.root,undefined,ref=>readNativeTool(f.root,ref));t.after(()=>cold.stopReadModels());assert.equal(cold.readPage(record.view.id,undefined,undefined,true)!.view.entries[0].text,'');assert.equal(cold.readEntry(record.view.id,entry.id,revision)?.text,f.output);
 });

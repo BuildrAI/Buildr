@@ -590,7 +590,7 @@ export class ConversationRepository {
       db.exec('COMMIT');return activity;
     }catch(error){try{db.exec('ROLLBACK');}catch{}throw error;}finally{db.close();}
   }
-  saveConversation(record: StoredConversation, priorRevision?: string): void {
+  saveConversation(record: StoredConversation, priorRevision?: string, options: {participationUnchanged?:boolean} = {}): void {
     // Preserve optional observations in the original private record, not strict legacy public DTOs.
     for(const entry of record.view.entries)if(entry.participation){const value=normalizeParticipation(entry.participation);delete entry.participation;if(value)(record.participationTools??={})[entry.id]={...value,entryRevision:record.nativeTools?.[entry.id]?undefined:createHash('sha256').update(JSON.stringify(entry)).digest('hex')};}
     const db = this.open(true)!;
@@ -626,8 +626,16 @@ export class ConversationRepository {
       const before=prior?.summary?JSON.parse(prior.summary) as ConversationView:undefined;
       const rank=(v:ConversationView|undefined)=>JSON.stringify([v?.title,v?.hidden,v?.run?.status,v?.activity,v?.run?.provider,v?.run?.model]);
       if(rank(before)!==rank(summary))db.exec('UPDATE conversation_epoch SET value=value+1 WHERE id=1');
+      // Assistant text changes neither tool evidence nor input participation.
+      // Carry forward only a valid projection of the exact previous revision;
+      // missing/stale projections still take the existing repair path.
+      const participationCurrent = options.participationUnchanged && priorRevision !== undefined &&
+        db.prepare(`UPDATE conversation_participation SET revision=?,body=json_set(body,'$.revision',?)
+          WHERE id=? AND revision=? AND CASE WHEN json_valid(body)
+            THEN json_extract(body,'$.version')=1 AND json_extract(body,'$.parserVersion')=1 ELSE 0 END`)
+          .run(record.view.revision,record.view.revision,record.view.id,priorRevision).changes === 1;
       db.exec('COMMIT');
-      this.queueReadRepair(record.view.id);
+      if (!participationCurrent) this.queueReadRepair(record.view.id);
     } catch (error) { try { db.exec('ROLLBACK'); } catch {} throw error; }
     finally { db.close(); }
   }
