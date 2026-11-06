@@ -1,7 +1,37 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { checkAvailability, parseVerificationArguments, planVerification, verificationCoverageEntry } from '../verification/cli.ts';
+import { EventEmitter } from 'node:events';
+import { checkAvailability, parseVerificationArguments, planVerification, verificationCoverageEntry, withVerificationSignals } from '../verification/cli.ts';
 import { verificationSteps } from '../verification/registry.ts';
+
+test('verification interruption retains its first signal and releases handlers after evidence or failure', async () => {
+  for (const fails of [false, true]) {
+    const owner = new EventEmitter();
+    const existing = () => {};
+    owner.on('SIGINT', existing);
+    const run = withVerificationSignals(async signal => {
+      owner.emit('SIGTERM');
+      owner.emit('SIGINT');
+      assert.equal(signal.aborted, true);
+      assert.equal(signal.reason, 'SIGTERM');
+      await Promise.resolve();
+      assert.equal(owner.listenerCount('SIGTERM'), 1, 'handler stays installed during finalization');
+      if (fails) throw new Error('evidence-write-failed');
+      return 'evidence-saved';
+    }, owner);
+    if (fails) await assert.rejects(run, /evidence-write-failed/);
+    else assert.equal(await run, 'evidence-saved');
+    assert.deepEqual(owner.listeners('SIGINT'), [existing]);
+    assert.equal(owner.listenerCount('SIGTERM'), 0);
+  }
+});
+
+test('repair accepts cancellation evidence and keeps independent successes', async () => {
+  const { readFailedVerificationGroups } = await import('../verification/failed-groups.ts');
+  assert.deepEqual(readFailedVerificationGroups('unused', { coverage: { selected: [
+    { id: 'done', status: 'passed' }, { id: 'stopped', status: 'cancelled' }, { id: 'pending', status: 'blocked' },
+  ] } }), ['stopped', 'pending']);
+});
 
 test('explicit verification accepts repeated check requests without requiring a task or base', () => {
   const request = parseVerificationArguments(['related', '--check', 'unit', '--check', 'frontend-logic', '--check', 'unit', '--plan']);

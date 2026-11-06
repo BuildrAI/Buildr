@@ -121,10 +121,17 @@ export function collectVerificationReuseSnapshot(options: VerificationReuseOptio
   const variables = Object.fromEntries(['TZ', 'LANG', 'LC_ALL', 'NODE_OPTIONS', 'BUILDR_VERIFICATION_PROFILE', 'BUILDR_VERIFICATION_NETWORK_MODE'].map(key => [key, env[key] ?? '']));
   const exactNode = createExactNodeExecutionEnvironment({ nodeExecutable: process.execPath, env, requireNpm: true });
   const npm = spawnCommandSync(exactNode.npmExecutable!, ['--version'], { env: exactNode.env, encoding: 'utf8', timeout: 10_000 });
+  // Observe only dependencies used by this plan's proof identities. These are
+  // fresh byte observations at each boundary, never a cache across executions.
+  const requiredTools = new Set(steps.flatMap(step => step.reuse ? requiredToolKeys(step) : []));
+  const dependencyRoots = [
+    ['backend-dependencies', productRoot],
+    ['web-dependencies', path.resolve(productRoot, '../buildr-web')],
+    ['plugin-dependencies', path.resolve(productRoot, '../dsh-plugin')],
+  ];
   const tools = { git: git(repositoryRoot, ['--version']).trim().replace(/^git version /u, '').replace(/[^a-z0-9.+:-]/giu, '-'), npm: npm.status === 0 ? String(npm.stdout).trim() : 'unavailable',
-    'backend-dependencies': preparationContentDigest([path.join(productRoot, 'node_modules')], { optional: true }) ?? 'unavailable',
-    'web-dependencies': preparationContentDigest([path.resolve(productRoot, '../buildr-web/node_modules')], { optional: true, webDependencyCache: true }) ?? 'unavailable',
-    'plugin-dependencies': preparationContentDigest([path.resolve(productRoot, '../dsh-plugin/node_modules')], { optional: true }) ?? 'unavailable' };
+    ...Object.fromEntries(dependencyRoots.filter(([key]) => requiredTools.has(key!)).map(([key, root]) =>
+      [key, preparationContentDigest([path.join(root!, 'node_modules')], { optional: true, webDependencyCache: key === 'web-dependencies' }) ?? 'unavailable'])) };
   const head = git(repositoryRoot, ['rev-parse', 'HEAD']), refs = git(repositoryRoot, ['show-ref', '--head']), gitHistory = git(repositoryRoot, ['log', '--all', '--format=%H:%P']);
   let gitComparison: VerificationReuseSnapshot['gitComparison'];
   if ([...(options.steps ?? verificationSteps), ...(options.step ? [options.step] : [])].some(step => step.reuse && step.reuse.git === 'comparison')) {

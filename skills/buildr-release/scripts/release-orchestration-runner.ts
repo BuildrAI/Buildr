@@ -1343,12 +1343,20 @@ function parseOptions(argv: any): any  {
 
 if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) {
   let options: any = null;
+  const controller = new AbortController();
+  const interrupt = () => { if (!controller.signal.aborted) controller.abort('SIGINT'); };
+  const terminate = () => { if (!controller.signal.aborted) controller.abort('SIGTERM'); };
   try {
     options = parseOptions(process.argv.slice(2));
+    if (options.normalOperation) {
+      process.on('SIGINT', interrupt);
+      process.on('SIGTERM', terminate);
+    }
     if (options.help) {
       process.stdout.write('Usage: release-orchestration-runner.ts <prepare|inspect|publish|resume> --workspace <root> [--packages buildr|dsh-plugin|buildr,dsh-plugin] [--version <main-version>] [--plugin-version <plugin-version>] [--baseline <ref>] [--source <sha> ...] [--stop-after candidate] [--authorized] [--recover-publication] [--wait] [--wait-timeout-ms <ms>] [--wait-interval-ms <ms>] [--output <file>] [--detail compact|full]\n');
     } else {
     const value: any = options.normalOperation ? await runReleaseOperationUntilSettled(options, {
+      signal: controller.signal,
       onProgress: options.wait ? (progress: any) => process.stderr.write(`[release] ${progress.status}${progress.runId ? ` run=${progress.runId}` : ''} readback=${progress.pollWorkMs}ms sleep=${progress.sleepMs}ms${progress.remoteTiming ? ` remote=${JSON.stringify(progress.remoteTiming)}` : ''}\n`) : undefined,
     }) : options.action === 'inspect'
       ? inspectReleaseOrchestration(options.inspectedResult, options.expectedTimelineIdentity)
@@ -1356,9 +1364,13 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
     if (options.output) fs.writeFileSync(options.output, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
     process.stdout.write(`${JSON.stringify(options.detail === 'full' ? value : options.normalOperation ? compactReleaseOperation(value) : compactReleaseOrchestration(value), null, 2)}\n`);
     if (value.status === 'blocked') process.exitCode = 1;
+    if (value.waiting?.status === 'cancelled') process.exitCode = controller.signal.reason === 'SIGTERM' ? 143 : 130;
     }
   } catch (error: any) {
     process.stderr.write(`${JSON.stringify({ schemaVersion: releaseOrchestrationSchema, status: 'blocked', error: error.message, effects: [], nextActions: ['修复release orchestration输入或current owner事实后重试。'] }, null, 2)}\n`);
     process.exitCode = 1;
+  } finally {
+    process.off('SIGINT', interrupt);
+    process.off('SIGTERM', terminate);
   }
 }

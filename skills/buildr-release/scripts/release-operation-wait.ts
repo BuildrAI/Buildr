@@ -25,15 +25,31 @@ export async function waitForReleaseOperation(options: ReleaseWaitOptions, depen
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 12 * 60 * 60_000
     || !Number.isSafeInteger(intervalMs) || intervalMs < 1 || intervalMs > 60_000) throw new Error('Release wait timeout or interval is invalid.');
   const now = dependencies.now ?? Date.now;
-  const sleep = dependencies.sleep ?? ((ms: number) => new Promise(resolve => setTimeout(resolve, ms)));
+  const sleep = dependencies.sleep ?? ((ms: number) => new Promise<void>(resolve => {
+    const signal = dependencies.signal;
+    if (signal?.aborted) { resolve(); return; }
+    const done = () => { clearTimeout(timer); signal?.removeEventListener('abort', done); resolve(); };
+    const timer = setTimeout(done, ms);
+    signal?.addEventListener('abort', done, { once: true });
+  }));
   const run = dependencies.runReleaseOperation;
   if (!run) throw new Error('Release wait requires its operation owner.');
   const startedAt = now(), allEffects: unknown[] = [];
   let pollWorkMs = 0, sleepMs = 0;
   let polls = 0, previousPhase: string | null = null, action = options.action;
+  let latest: ReleaseOperationObservation | null = null;
+  const cancelled = (value: ReleaseOperationObservation) => ({ ...value, effects: allEffects,
+    waiting: { status: 'cancelled', polls, durationMs: now() - startedAt, pollWorkMs, sleepMs } });
   for (;;) {
+    // In-flight owner work must finish observing its effects. Cancellation at
+    // rest never starts another owner action, especially a publication resume.
+    if (dependencies.signal?.aborted) {
+      if (latest) return cancelled(latest);
+      dependencies.signal.throwIfAborted();
+    }
     const pollStartedAt = now();
     const value = await run({ ...options, action, detail: 'full' }, dependencies);
+    latest = value;
     pollWorkMs += now() - pollStartedAt;
     allEffects.push(...(value.effects ?? [])); polls++;
     const phase = `${value.status}:${value.package ?? ''}:${value.run?.id ?? ''}:${JSON.stringify(value.remoteTiming ?? null)}`;

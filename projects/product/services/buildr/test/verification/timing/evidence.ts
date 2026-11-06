@@ -161,7 +161,7 @@ function seconds(milliseconds: any): any  {
 
 export function formatVerificationTimingSummary(summary: any, prefix: any = 'verify'): any  {
   const slowest: any = [...summary.steps].sort((left: any, right: any) => right.durationMs - left.durationMs)[0] ?? null;
-  const failed: any = summary.steps.filter((step: any) => ['failed', 'timed-out', 'blocked'].includes(step.status));
+  const failed: any = summary.steps.filter((step: any) => ['failed', 'timed-out', 'cancelled', 'blocked'].includes(step.status));
   const budget: any = summary.budgetStatus ? ` budget=${summary.budgetStatus}/${seconds(summary.budgetMs)}` : '';
   const lines: any[] = [
     `[${prefix}] timing: total=${seconds(summary.totalDurationMs)}${budget}`,

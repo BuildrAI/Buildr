@@ -154,7 +154,26 @@ function print(plan: any) {
   for (const gap of plan.gaps) process.stdout.write(`gap: ${JSON.stringify(gap)}\n`);
 }
 
+/** Keep the handler through evidence finalization; a second signal does not
+ * bypass owned cleanup or replace the original reason for interruption. */
+export async function withVerificationSignals<T>(run: (signal: AbortSignal) => Promise<T>, owner: Pick<import('node:events').EventEmitter, 'on' | 'off'> = process): Promise<T> {
+  const controller = new AbortController();
+  const interrupt = () => { if (!controller.signal.aborted) controller.abort('SIGINT'); };
+  const terminate = () => { if (!controller.signal.aborted) controller.abort('SIGTERM'); };
+  owner.on('SIGINT', interrupt);
+  owner.on('SIGTERM', terminate);
+  try { return await run(controller.signal); }
+  finally { owner.off('SIGINT', interrupt); owner.off('SIGTERM', terminate); }
+}
+
 export async function main(args = process.argv.slice(2)) {
+  return withVerificationSignals(async signal => {
+    const result = await runVerification(args, signal);
+    return signal.aborted ? signal.reason === 'SIGTERM' ? 143 : 130 : result;
+  });
+}
+
+async function runVerification(args: string[], signal: AbortSignal) {
   const invocationStartedAt = Date.now();
   const request = parseVerificationArguments(args);
   if (request.help) {
@@ -190,12 +209,13 @@ export async function main(args = process.argv.slice(2)) {
       productRoot, projectRoot, diagnosticsDirectory: evidence.diagnosticsOutput, artifactDirectory: path.join(temporaryRoot, 'artifacts'),
       env: { ...process.env, ...(request.base ? { BUILDR_VERIFICATION_BASE: request.base } : {}), BUILDR_CHANGED_PATHS_JSON: JSON.stringify(plan.paths) },
       executionProfile, concurrency: executionProfile.limits, runId: evidence.runId,
+      signal,
       taskId: process.env.BUILDR_TASK_ID ?? source.branch ?? request.mode, stream: process.stdout, errorStream: process.stderr,
     });
   } catch (error: any) { executionError = error.stack ?? error.message; process.stderr.write(`${executionError}\n`); }
   finally { fs.rmSync(temporaryRoot, { recursive: true, force: true }); }
   const runtimeGaps = execution.results.filter((result: any) => result.status === 'blocked').map((result: any) => ({ code: 'execution-unavailable', checkId: result.id, reason: result.reason }));
-  const gaps = [...plan.gaps, ...runtimeGaps, ...(executionError ? [{ code: 'execution-interrupted', reason: executionError }] : [])];
+  const gaps = [...plan.gaps, ...runtimeGaps, ...(signal.aborted ? [{ code: 'execution-interrupted', reason: `Verification cancelled by ${signal.reason}; unfinished checks remain unverified.` }] : []), ...(executionError ? [{ code: 'execution-interrupted', reason: executionError }] : [])];
   const coverage = {
     repair: plan.repair, impactSnapshot: plan.impactSnapshot, mode: plan.mode, selection: plan.selection, target: plan.target, reference: plan.reference, base: plan.base, targetExclusions: plan.targetExclusions, selectionExclusions: plan.selectionExclusions,
     selected: plan.steps.map((step: any) => {
@@ -207,7 +227,7 @@ export async function main(args = process.argv.slice(2)) {
     reusedCount: execution.results.filter((result: any) => result.reusedFrom).length,
     unavailableCount: plan.steps.filter((step: any) => step.availability !== 'ready').length + runtimeGaps.length,
   };
-  const failedCount = execution.results.filter((result: any) => !['passed', 'blocked'].includes(result.status)).length;
+  const failedCount = execution.results.filter((result: any) => !['passed', 'blocked', 'cancelled'].includes(result.status)).length;
   const notRunCount = coverage.selected.filter((item: any) => item.status === 'not-run').length;
   const conclusion = failedCount ? 'not-passed' : gaps.length || notRunCount || !execution.passed ? 'incomplete' : 'passed';
   Object.assign(coverage, { conclusion, failedCount, notRunCount });
