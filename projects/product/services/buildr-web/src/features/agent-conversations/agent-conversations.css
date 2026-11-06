@@ -46,18 +46,18 @@
 .ac-process-narration .markdown-body>:last-child{margin-bottom:0}
 .ac-process-narration .markdown-body pre{font-size: var(--font-size-code);white-space:pre-wrap;overflow-wrap:anywhere}
 .ac-step,.ac-step-group{position:relative;margin:2px 0;padding:0;border:0;border-radius:0;background:transparent;min-width:0}
-.ac-step>summary,.ac-step-group>summary{display:flex;align-items:center;gap:8px;min-height:28px;padding:4px 5px 4px 0;border-radius:4px;list-style:none;cursor:pointer;color:#727c75;font-size: var(--font-size-body);font-weight:400;white-space:nowrap;line-height:20px}
+.ac-step>summary,.ac-step-group>summary{display:flex;align-items:center;gap:8px;min-height:28px;padding:4px 5px 4px 0;border-radius:4px;list-style:none;cursor:pointer;color:#7c847e;font-size: var(--font-size-secondary);font-weight:400;white-space:nowrap;line-height:20px}
 .ac-step-node{display:inline-flex;align-items:center;justify-content:center;flex:none;width:15px;height:20px;color:#919c93;font-size:var(--font-size-secondary)}
 .ac-command-symbol{display:block;flex:none;width:15px;height:13px;fill:none;stroke:currentColor;stroke-width:1;stroke-linecap:round;stroke-linejoin:round}
 .ac-file-symbol{display:block;flex:none;width:var(--icon-size-label);height:var(--icon-size-label);fill:none;stroke:currentColor;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round}
-.ac-step-action{flex:none;color:#6f7c72}
-.ac-step-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;color:#879087}
+.ac-step-action{flex:none;color:#7c847e}
+.ac-step-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;color:#8c948d}
 .ac-step-label.is-command{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size: var(--font-size-code)}
 .ac-step-chevron{margin-left:auto;font-size:var(--icon-size-tiny)}
 .ac-step-status{display:inline-flex;align-items:center;gap:4px;flex:none;font-size: var(--font-size-meta)}
 .ac-step.is-running>summary>.ac-step-status,.ac-step-group.is-running>summary>.ac-step-status{color:var(--ac-process-accent)}
 .ac-step.is-failed>summary>.ac-step-status,.ac-step.is-failed>summary>.ac-step-node,.ac-step-group.is-failed>summary>.ac-step-status{color:#a2742e}
-.ac-step[open]>summary>.ac-step-action,.ac-step-group[open]>summary>.ac-step-action{color:#404f44}
+.ac-step[open]>summary>.ac-step-action,.ac-step-group[open]>summary>.ac-step-action{color:#747e76}
 .ac-step-group-items{margin:1px 0 2px 7px;padding-left:11px;border-left:1px solid #e7ece8}
 /* 展开几十上百条调用时只占有限高度，其余在组内滚动，底部收起操作保持可见。 */
 .ac-step-group[open]>.ac-step-group-items{max-height:min(60vh,480px);overflow-y:auto;overscroll-behavior:auto;scrollbar-width:thin}
@@ -65,13 +65,9 @@
 .ac-step-group[open]>.ac-step-group-items::-webkit-scrollbar{width:8px}
 .ac-step-group[open]>.ac-step-group-items::-webkit-scrollbar-thumb{background:#d5ddd7;border-radius:4px}
 .ac-step-group[open]>.ac-step-group-items::-webkit-scrollbar-track{background:transparent}
-/* 工具组行是这段列表的标题：比具体工具行更高、更深，但不新增整行背景。 */
-.ac-step-group>summary{min-height:32px;margin-bottom:2px;color:#44534a}
+/* 工具记录是过程说明的辅助信息；分组由间距和展开边界表达，不靠加粗。 */
+.ac-step-group>summary{min-height:32px;margin-bottom:2px}
 .ac-step-group[open]>summary{border-bottom:1px solid #edf1ee}
-.ac-step-group>summary>.ac-step-node{color:#6f8378}
-.ac-step-group>summary>.ac-step-action{color:#44534a;font-weight:600}
-.ac-step-group>summary>.ac-step-label{color:#5d6d63;font-weight:500}
-.ac-step-group>summary>.ac-step-chevron{color:#6f8378}
 .ac-tool-file-link{display:inline-block;max-width:100%;padding:0 4px;border:0;border-radius:3px;background:#f0f4f1;color:#53765f;font:inherit;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle;cursor:pointer;text-align:left}
 .ac-tool-file-link:hover{background:#e7eee9;text-decoration:underline;text-underline-offset:3px}
 .ac-tool-detail{margin:4px 0 12px 23px;padding:10px 12px;border-radius:6px;background:#f5f7f5;color:#657168;font-size: var(--font-size-secondary)}
