@@ -151,12 +151,18 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
       return response.blob();
     },
     async subscribe(workspaceId: string, id: string, signal: AbortSignal, onEvent: (event: ConversationEvent) => void, cursor?: number) {
-      const send=()=>fetcher(path(workspaceId,id)+'/events',{cache:'no-store',signal,headers:{...session.writeHeaders(),accept:'text/event-stream','x-buildr-conversation-transfer':'delta-v1',...(cursor?{'last-event-id':String(cursor)}:{})}});
-      let response=await send();
-      if(response.status===403&&session.refreshSession){
-        const body=await response.clone().json().catch(()=>null);
-        if(body?.error?.code==='session_forbidden'&&await session.refreshSession(signal)){signal.throwIfAborted();response=await send();}
-      }
+      let transfer='delta-v2';
+      const send=()=>fetcher(path(workspaceId,id)+'/events',{cache:'no-store',signal,headers:{...session.writeHeaders(),accept:'text/event-stream','x-buildr-conversation-transfer':transfer,...(cursor?{'last-event-id':String(cursor)}:{})}});
+      const authenticated=async()=>{
+        let response=await send();
+        if(response.status===403&&session.refreshSession){
+          const body=await response.clone().json().catch(()=>null);
+          if(body?.error?.code==='session_forbidden'&&await session.refreshSession(signal)){signal.throwIfAborted();await response.body?.cancel();response=await send();}
+        }
+        return response;
+      };
+      let response=await authenticated();
+      if(response.status===400){await response.body?.cancel();signal.throwIfAborted();transfer='delta-v1';response=await authenticated();}
       if (!response.ok || !response.body) {
         const body=await response.json().catch(()=>null);
         const reference=body?.error?.details?.requestId;

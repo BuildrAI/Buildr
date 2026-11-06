@@ -733,6 +733,8 @@ test('conversation stream negotiation preserves legacy snapshots and validates c
  const compact=await observe({'x-buildr-conversation-transfer':'delta-v1'});
  assert.deepEqual(compact[0],legacy[0]);assert.equal(compact[1].payload.conversation,undefined);assert.equal(compact[1].payload.delta.baseCursor,0);assert.equal(compact[1].payload.delta.conversation.revision,'r2');assert.deepEqual(compact[1].payload.delta.entries,[]);
  assert.ok(JSON.stringify(compact[1]).length<JSON.stringify(legacy[1]).length/20);
+ const patches=await observe({'x-buildr-conversation-transfer':'delta-v2'});
+ assert.deepEqual(patches[0],legacy[0]);assert.deepEqual(patches[1].payload.patch.changes,{title:'updated',revision:'r2'});assert.deepEqual(patches[1].payload.patch.entries,[]);assert.deepEqual(patches[1].payload.patch.texts,[]);assert.equal(patches[1].payload.patch.entryIds,undefined);
  await observe({'x-buildr-conversation-transfer':'unsupported'});assert.equal(lastResponse.status,400);assert.equal(lastResponse.body.error.code,'agent_http_input_invalid');
 });
 

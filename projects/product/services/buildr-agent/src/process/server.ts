@@ -19,6 +19,7 @@ import type { ProcessBootstrap, ProcessRecord } from './ownership.ts';
 import { validateAgentRuntime, canRunParallel } from './runtime-unit.ts';
 import { launchAgentProcess } from './handoff.ts';
 import { ConversationRepository } from '../persistence/conversation-repository.ts';
+import { ConversationReadModel } from '../persistence/conversation-read-model.ts';
 import { PendingSends } from './pending-sends.ts';
 import { PendingSendRepository } from '../persistence/pending-send-repository.ts';
 import { StorageMaintenance } from './storage-maintenance.ts';
@@ -179,7 +180,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       const stopHeartbeat = keepEventStreamAlive(res);
       const controller = new AbortController();
       let signature = '', relayCursor = 0;
-      const encode = input.transfer === 'delta-v1' ? conversationEventEncoder() : (event: ServiceEvent) => event;
+      const encode = ['delta-v1','delta-v2'].includes(input.transfer) ? conversationEventEncoder(input.transfer) : (event: ServiceEvent) => event;
       const refresh = () => {
         if (res.destroyed || controller.signal.aborted) return;
         try {
@@ -197,7 +198,14 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       const stop = () => { controller.abort(); subscription.close(); clearInterval(poll); stopHeartbeat(); }; res.once('close', stop);
       try { for await (const event of subscription.events) {
         if (res.destroyed) break;
-        const conversation = service.conversations.read(input.scope, input.id,{compactTools:true});
+        const published=event.payload.conversation;
+        const publishedVersion=published?[published.revision,published.activity?.seenThrough,published.pendingSend?.revision].join(':'):undefined;
+        // Legacy raw/present entries may still need compacting or file metadata
+        // from read(). Reuse only snapshots that already have those semantics.
+        const reusable=published?.entries.every(entry=>!(entry.kind==='tool'&&entry.provider==='dsh'&&entry.name==='present'&&entry.status==='completed'&&entry.detail&&!entry.input&&!entry.presentedFiles)
+          &&(entry.detail||ConversationReadModel.compact(entry)===entry));
+        const conversation = published&&reusable&&publishedVersion===service.conversations.observationVersion(input.scope,input.id)
+          ?published:service.conversations.read(input.scope, input.id,{compactTools:true});
         signature = [conversation.revision,conversation.activity?.seenThrough,conversation.pendingSend?.revision].join(':');
         if (!res.write('data: ' + JSON.stringify(encode({...event,cursor:++relayCursor,revision:conversation.revision,payload:{conversation}})) + '\n\n')) await once(res, 'drain', {signal:controller.signal});
       } }

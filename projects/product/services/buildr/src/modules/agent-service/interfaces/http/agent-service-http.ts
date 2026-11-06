@@ -180,11 +180,11 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
         if (action === 'events') {
           query(searchParams, ['cursor', 'generation']);
           const transfer = request.headers['x-buildr-conversation-transfer'];
-          if (transfer !== undefined && transfer !== 'delta-v1') throw inputError();
+          if (transfer !== undefined && transfer !== 'delta-v1' && transfer !== 'delta-v2') throw inputError();
           numberQuery(searchParams.get('cursor'));
           const subscription = await service.conversations.subscribe(workspaceId, id);
-          const encode = conversationEventEncoder();
-          return respond.stream(subscription, (event: any) => validate('event', transfer === 'delta-v1' ? encode(event) : event, true));
+          const encode = conversationEventEncoder(transfer==='delta-v2'?'delta-v2':'delta-v1');
+          return respond.stream(subscription, (event: any) => validate('event', transfer !== undefined ? encode(event) : event, true));
         }
         if (action === 'attachments' && childId) {
           query(searchParams, []);

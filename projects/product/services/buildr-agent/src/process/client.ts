@@ -281,7 +281,7 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
   operations.conversations.subscribe = async (scope: string, id: string): Promise<AgentSubscription> => {
     const current = await connected(), controller = new AbortController(); subscriptions.add(controller);
     let response: Response;
-    try { response = await fetch(current.origin + '/events', { method: 'POST', headers: { Authorization: 'Bearer ' + current.token, 'Content-Type': 'application/json' }, body: JSON.stringify({ sourceId: options.sourceId, scope, id, transfer: 'delta-v1' }), signal: controller.signal }); }
+    try { response = await fetch(current.origin + '/events', { method: 'POST', headers: { Authorization: 'Bearer ' + current.token, 'Content-Type': 'application/json' }, body: JSON.stringify({ sourceId: options.sourceId, scope, id, transfer: 'delta-v2' }), signal: controller.signal }); }
     catch (error) { subscriptions.delete(controller); throw error; }
     if (!response.ok || !response.body) { subscriptions.delete(controller); await response.body?.cancel(); throw new AgentServiceError('agent_process_subscription_failed', '执行后台事件连接未建立。', response.status); }
     const stream = response.body;
