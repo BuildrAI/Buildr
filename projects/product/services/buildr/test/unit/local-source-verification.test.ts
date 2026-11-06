@@ -5,7 +5,7 @@ import { decodeCandidateSourceImport } from '../verification/candidate-source-re
 import { emptyCandidateRound, roundResult } from '../verification/candidate-round.ts';
 import { parseSourceArgs } from '../verification/source.ts';
 const record = (id: string, status = 'passed', platform = 'darwin') => roundResult({ id, status, exitCode: status === 'passed' ? 0 : 1, durationMs: 4 }, 'round', { runId: 'original', sourceCommit: 'original', finishedAt: '2026-10-19' }, { platform, nodeVersion: '24.15.0' });
-const fixture = (records: any[]) => ({ createSourcePlan: () => ({ status: 'ready', runner: 'macos', steps: [{ id: 'unit', platformScope: { kind: 'common' } }, { id: 'native', platformScope: { kind: 'native' } }] }), readRound: () => ({ ...emptyCandidateRound('round'), records }) });
+const fixture = (records: any[]) => ({ pluginUnitStep: () => ({ id: 'dsh-plugin:unit', inputs: ['services/dsh-plugin/**'], platformScope: { kind: 'common' } }), createSourcePlan: () => ({ status: 'ready', runner: 'macos', steps: [{ id: 'unit', platformScope: { kind: 'common' } }, { id: 'native', platformScope: { kind: 'native' } }] }), readRound: () => ({ ...emptyCandidateRound('round'), records }) });
 const ownedFixture = (records: any[]) => ({
   createSourcePlan: () => ({ status: 'ready', runner: 'macos', steps: [
     { id: 'integration-connections', platformScope: { kind: 'common' }, executor: { type: 'node-test', files: ['test/integration/connection-skills-cli.test.ts'] } },

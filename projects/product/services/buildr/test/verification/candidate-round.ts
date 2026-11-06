@@ -1,3 +1,4 @@
+import { verificationInputApplicability } from './result-applicability.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -59,12 +60,15 @@ export function createCandidateRoundExecution(plan: any, options: any, dependenc
   const filesByCheck = new Map<string, any[]>(plan.steps.map((step: any) => [step.id,
     step.executor ? verificationFileSteps(step, options.productRoot) : []]));
   const files = [...filesByCheck.values()].flat();
+  const observedSteps = [...plan.steps.filter((step: any) => step.reuse), ...files];
   const observe = () => {
-    if (!files.length) return null;
-    try { return (dependencies.collectSnapshot ?? collectVerificationReuseSnapshot)({ ...options, steps: files }); }
+    if (!observedSteps.length) return null;
+    try { return (dependencies.collectSnapshot ?? collectVerificationReuseSnapshot)({ ...options, steps: observedSteps }); }
     catch { return null; } // An unknown input is a miss, never a success.
   };
-  const before = observe();
+  // A planning pass with no prior input proof cannot reuse anything. Avoid a
+  // complete observation until the real execution freezes its inputs.
+  const before = options.inspectOnly && ![...records.values()].some(record => record.result?.inputIdentity || record.result?.roundFiles?.length) ? null : observe();
   const fileKey = (step: any, snapshot: any) => snapshot ? createVerificationReuseIdentity(step, snapshot)?.key : null;
   const priorFiles = new Map<string, any>();
   const hits = new Map<string, any>();
@@ -81,7 +85,9 @@ export function createCandidateRoundExecution(plan: any, options: any, dependenc
         && prior.environment?.platform === process.platform && prior.environment?.arch === process.arch
         && prior.environment?.nodeVersion === process.versions.node && prior.origin?.runId) priorFiles.set(file.id, prior);
     }
-    if (passedRoundRecord(record, roundId, step, plan.runner ?? process.platform)
+    const currentIdentity = before && step.reuse ? createVerificationReuseIdentity(step, before) : null;
+    const applicable = !step.reuse || verificationInputApplicability(record?.result?.inputIdentity, currentIdentity).applicable;
+    if (applicable && passedRoundRecord(record, roundId, step, plan.runner ?? process.platform)
       && (!record.result.roundFiles || members.length > 0 && members.every(file => priorFiles.has(file.id))
         && record.result.roundFiles.length === members.length)) hits.set(step.id, record);
   }
@@ -114,7 +120,15 @@ export function createCandidateRoundExecution(plan: any, options: any, dependenc
     finish(results: any[], cleanupClean: boolean) {
       const after = observe();
       for (const result of results) {
-        if (result.disposition === 'reused') continue;
+        if (result.disposition === 'reused') {
+          const step = plan.steps.find((step: any) => step.id === result.id);
+          const prior = hits.get(result.id);
+          const current = after && step?.reuse ? createVerificationReuseIdentity(step, after) : null;
+          if (step?.reuse && !verificationInputApplicability(prior?.result?.inputIdentity, current).applicable) {
+            Object.assign(result, { status: 'failed', exitCode: 1, failureCode: 'candidate-reused-input-drift' });
+          }
+          continue;
+        }
         const now = new Date().toISOString();
         const environment = { platform: process.platform, arch: process.arch, nodeVersion: process.versions.node };
         const origin = { kind: process.env.GITHUB_RUN_ID ? 'ci' : 'local', runId: options.runId ?? `round-${process.pid}`,
@@ -132,6 +146,14 @@ export function createCandidateRoundExecution(plan: any, options: any, dependenc
           if (result.status === 'passed' && result.roundFiles.length !== coverage.length) Object.assign(result,
             { status: 'failed', exitCode: 1, failureCode: 'candidate-file-input-drift-or-cleanup' });
           delete result.roundFileCoverage;
+        }
+        const step = plan.steps.find((step: any) => step.id === result.id);
+        if (step?.reuse) {
+          const inputIdentity = before && createVerificationReuseIdentity(step, before);
+          const finalIdentity = after && createVerificationReuseIdentity(step, after);
+          if (cleanupClean && verificationInputApplicability(inputIdentity, finalIdentity).applicable) {
+            result.inputIdentity = inputIdentity; result.inputEnvironment = before.environment;
+          } else { delete result.inputIdentity; delete result.inputEnvironment; }
         }
         const record = roundResult(result, roundId, origin, environment);
         records.set(key(record), record);

@@ -1,3 +1,4 @@
+import { verificationInputApplicability } from './result-applicability.ts';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -172,7 +173,7 @@ export function createVerificationReuseIdentity(step: VerificationReuseStep, sna
   return { key: digest(identity), ...identity };
 }
 
-function validEnvironment(value: any): value is VerificationReuseEnvironment {
+export function validEnvironment(value: any): value is VerificationReuseEnvironment {
   if (!value || !['darwin', 'win32', 'linux'].includes(value.platform) || !['arm64', 'x64', 'ia32', 'arm', 'ppc64', 's390x', 'riscv64'].includes(value.arch)
     || typeof value.nodeVersion !== 'string' || !digestPattern.test(value.variablesIdentity ?? '') || !value.tools || typeof value.tools !== 'object' || Array.isArray(value.tools)) return false;
   try { assertMinimumNodeVersion(value.nodeVersion, '24.15.0'); } catch { return false; }
@@ -214,7 +215,7 @@ export function validateVerificationReuseRecord(record: unknown, options: Verifi
             ...(step.platformScope?.kind === 'common' ? { environment: undefined, runner: undefined, arch: undefined } : {}) }))) return false;
     }
     const identity = createVerificationReuseIdentity(step, { ...snapshot, environment: value.environment });
-    if (identity !== null && JSON.stringify(identity) === JSON.stringify(value.identity)) return true;
+    if (verificationInputApplicability(value.identity, identity).applicable) return true;
     // Old records remain original execution evidence. Authenticate their broad
     // input digest against immutable source before comparing the narrower inputs.
     if (!identity || !step.reuse || step.reuse.git || !snapshot.historicalInputs) return false;
@@ -436,10 +437,7 @@ export function inspectVerificationReusePlan(plan: any, options: VerificationReu
     else if (!identity) reasons.push('inputs-unavailable');
     else if (!prior) reasons.push('no-matching-result');
     else {
-      for (const [field, reason] of [['contentIdentity', 'product-input-changed'], ['recipeIdentity', 'check-recipe-changed'],
-        ['environmentIdentity', 'environment-changed'], ['gitIdentity', 'git-input-changed']] as const) {
-        if (identity[field] !== prior.identity[field]) reasons.push(reason);
-      }
+      reasons.push(...verificationInputApplicability(prior.identity, identity).reasons);
       if (!reasons.length) reasons.push('prior-result-invalid-or-revoked');
     }
     const observed = prior?.environment?.platform === snapshot.environment.platform && prior?.environment?.arch === snapshot.environment.arch

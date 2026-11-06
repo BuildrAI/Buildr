@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { waitForReleaseOperation } from './release-operation-wait.ts';
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -24,14 +25,14 @@ import { createReleaseLifecycle, projectReleaseLifecycleOrchestration } from './
 import { compactReleasePhaseTimeline, createReleasePhaseTimeline, projectCandidateAttempts } from './release-phase-timeline.ts';
 import { inspectHostedReleaseTransaction } from './release-transaction-evidence.ts';
 import { runHostedReleaseTransaction, readCandidateEvidence } from './release-transaction-runner.ts';
-import { assertReleaseConsumptionCoverage } from '../../../projects/product/services/buildr/test/verification/release/release-consumption.ts';
+import { assertReleaseConsumptionCoverage } from '../../../projects/product/services/buildr/test/verification/release-verification.ts';
 import { normalizeReleaseTargets } from './release-targets.ts';
 import { preparePackageRelease, continuePackageRelease, evaluateObservedPackagePlan, observePackageCounterparts } from './package-release-operation.ts';
 import { observePublishedPackageArtifact } from './package-artifact-observation.ts';
-import { createReleaseCandidatePlan, assertPluginSourceAggregate } from '../../../projects/product/services/buildr/test/verification/release/verify-pr-candidate.ts';
+import { createReleaseCandidatePlan, assertPluginSourceAggregate } from '../../../projects/product/services/buildr/test/verification/release-verification.ts';
 import { readPluginSourceCandidate } from './plugin-hosted-release.ts';
 import { readReleaseArtifact, releaseArtifactManifestName } from './release-artifact.ts';
-import { CANDIDATE_CI_SHARDS, CANDIDATE_CI_HOST_NODE_TUPLES } from '../../../projects/product/services/buildr/test/verification/registry.ts';
+import { releaseVerificationCoverage, releaseVerificationTransport, releaseVerificationTimeouts } from '../../../projects/product/services/buildr/test/verification/release-verification.ts';
 import { candidatePreparationDirectory, readCandidatePreparationSnapshot } from './release-task-evidence-correlation.ts';
 
 export const releaseOrchestrationSchema: any = 'buildr.release-orchestration-result/v1';
@@ -44,7 +45,7 @@ const TASK: any = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/u;
 async function prepareLocalSourceVerification(options: any): Promise<any> {
   // Source execution tools stay outside the production import graph. This
   // source-checkout release owner loads them only before a new dispatch.
-  const owner = await import(new URL('../../../projects/product/services/buildr/test/verification/local-source-verification.ts', import.meta.url).href);
+  const owner = await import(new URL('../../../projects/product/services/buildr/test/verification/release-verification.ts', import.meta.url).href);
   return owner.prepareLocalSourceVerification(options);
 }
 
@@ -487,8 +488,8 @@ function finishCandidatePreparation(workspace: string, state: any, selection: an
     if (snapshot.buildr) {
       const evidenceIds = new Set(snapshot.buildr.aggregate.evidenceIds);
       for (const [kind, testing, ids] of [
-        ['source', 'buildr-source', CANDIDATE_CI_SHARDS.filter((item: any) => !item.requiresArtifact && !item.producesArtifact).map((item: any) => item.id)],
-        ['artifact', 'buildr-artifact', [...CANDIDATE_CI_SHARDS.filter((item: any) => item.requiresArtifact || item.producesArtifact), ...CANDIDATE_CI_HOST_NODE_TUPLES].map((item: any) => item.id)],
+        ['source', 'buildr-source', releaseVerificationCoverage().source],
+        ['artifact', 'buildr-artifact', releaseVerificationCoverage().artifact],
       ] as any) checks.push({ id: `candidate-${kind}`, project: 'product', testing, selection: 'full', targets: ids.filter((id: string) => evidenceIds.has(id)),
         source: 'command', outcome: 'passed', summary: `准确候选 ${prepared.run.id}/${prepared.run.attempt} 的完整 ${kind} 覆盖通过，原始来源及复用记录保留。` });
     }
@@ -756,12 +757,10 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       const snapshot = readCandidatePreparationSnapshot(workspace, key, state.preparation);
       let different = Boolean(options.verificationSource && git(['rev-parse', `${options.verificationSource}^{commit}`]) !== snapshot.verificationInputs.sourceCommit);
       if (options.sourceVerification) {
-        const { encodeCandidateSourceImport } = await import('../../../projects/product/services/buildr/test/verification/candidate-source-reuse.ts');
-        different ||= identity(encodeCandidateSourceImport(JSON.parse(fs.readFileSync(options.sourceVerification, 'utf8')))) !== snapshot.verificationInputs.source;
+        different ||= identity(releaseVerificationTransport('source', options.sourceVerification)) !== snapshot.verificationInputs.source;
       }
       if (options.artifactVerification) {
-        const { readCandidateArtifactImports, encodeCandidateArtifactImport } = await import('../../../projects/product/services/buildr/test/verification/candidate-artifact-reuse.ts');
-        different ||= identity(encodeCandidateArtifactImport(readCandidateArtifactImports(options.artifactVerification))) !== snapshot.verificationInputs.artifact;
+        different ||= identity(releaseVerificationTransport('artifact', options.artifactVerification)) !== snapshot.verificationInputs.artifact;
       }
       if (different) {
         if ((dependencies.runtime ?? createReleaseToolRuntime()).inspectTask(workspace, `release-${key}`).record?.status === 'active') {
@@ -1055,13 +1054,11 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
           ? [`buildr_peer_version=${state.preparationPeer.version}`, `buildr_peer_integrity=${state.preparationPeer.integrity}`] : [])] : [];
       let sourceTransport: string | undefined;
       if (options.sourceVerification) {
-        const { encodeCandidateSourceImport } = await import('../../../projects/product/services/buildr/test/verification/candidate-source-reuse.ts');
-        sourceTransport = encodeCandidateSourceImport(JSON.parse(fs.readFileSync(options.sourceVerification, 'utf8')));
+        sourceTransport = releaseVerificationTransport('source', options.sourceVerification);
       }
       let artifactTransport: string | undefined;
       if (options.artifactVerification) {
-        const { readCandidateArtifactImports, encodeCandidateArtifactImport } = await import('../../../projects/product/services/buildr/test/verification/candidate-artifact-reuse.ts');
-        artifactTransport = encodeCandidateArtifactImport(readCandidateArtifactImports(options.artifactVerification));
+        artifactTransport = releaseVerificationTransport('artifact', options.artifactVerification);
       }
       const repaired = continueCandidateRepair({ repo, candidate: state.candidate,
         verificationSource: options.verificationSource ?? state.candidate.repair?.verificationSource ?? sourceCommit, fields, sourceTransport, artifactTransport }, {
@@ -1103,8 +1100,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
         if (localSource.transport) fields.push(`source_verification=${localSource.transport}`);
         if (state.candidate.localRunner) fields.push(`local_runner=${state.candidate.localRunner}`);
         const { lintCandidateStepTimeouts } = await import('./candidate-step-timings.ts');
-        const { verificationSteps: registrySteps } = await import('../../../projects/product/services/buildr/test/verification/registry.ts').catch(() => ({ verificationSteps: [] }));
-        const capacityWarnings = lintCandidateStepTimeouts(path.join(workspace, 'projects/product/services/buildr'), registrySteps ?? []);
+        const capacityWarnings = lintCandidateStepTimeouts(path.join(workspace, 'projects/product/services/buildr'), releaseVerificationTimeouts());
         if (capacityWarnings.length > 0) {
           currentEffects.push({ type: 'candidate-capacity-warnings', warnings: capacityWarnings });
           for (const warning of capacityWarnings) {
@@ -1275,42 +1271,8 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
   }
 }
 
-const WAITING_RELEASE_STATUSES = new Set([
-  'candidate-running', 'candidate-dispatch-unconfirmed', 'candidate-retry-unconfirmed',
-  'candidate-repair-dispatch-unconfirmed', 'candidate-repair-readback-required', 'main-merge-pending',
-  'plugin-preparation-running', 'plugin-preparation-unknown',
-  'publication-running', 'publication-dispatch-unconfirmed', 'publication-retry-unconfirmed',
-  'publication-readback-required', 'publication-unknown', 'main-merge-readback-required',
-]);
-
-/** Continue the same owner state; never infer a new dispatch from a lost response. */
 export async function runReleaseOperationUntilSettled(options: any, dependencies: any = {}): Promise<any> {
-  const timeoutMs = Number(options.waitTimeoutMs ?? 30 * 60_000), intervalMs = Number(options.waitIntervalMs ?? 30_000);
-  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 12 * 60 * 60_000
-    || !Number.isSafeInteger(intervalMs) || intervalMs < 1 || intervalMs > 60_000) throw new Error('Release wait timeout or interval is invalid.');
-  const now = dependencies.now ?? Date.now;
-  const sleep = dependencies.sleep ?? ((ms: number) => new Promise(resolve => setTimeout(resolve, ms)));
-  const run = dependencies.runReleaseOperation ?? runReleaseOperation;
-  const startedAt = now(), allEffects: any[] = [];
-  let pollWorkMs = 0, sleepMs = 0;
-  let polls = 0, previousPhase: string | null = null, action = options.action;
-  for (;;) {
-    const pollStartedAt = now();
-    const value = await run({ ...options, action, detail: 'full' }, dependencies);
-    pollWorkMs += now() - pollStartedAt;
-    allEffects.push(...(value.effects ?? [])); polls++;
-    const phase = `${value.status}:${value.package ?? ''}:${value.run?.id ?? ''}:${JSON.stringify(value.remoteTiming ?? null)}`;
-    if (phase !== previousPhase) { dependencies.onProgress?.({ status: value.status, package: value.package, runId: value.run?.id, remoteTiming: value.remoteTiming, pollWorkMs, sleepMs }); previousPhase = phase; }
-    const waiting = options.wait === true && WAITING_RELEASE_STATUSES.has(value.status);
-    const durationMs = now() - startedAt;
-    if (!waiting || durationMs >= timeoutMs || dependencies.signal?.aborted) return { ...value, effects: allEffects,
-      waiting: { status: dependencies.signal?.aborted ? 'cancelled' : waiting ? 'timed-out' : 'settled', polls, durationMs, pollWorkMs, sleepMs } };
-    // A public request has already been persisted by the owner. Only resume it.
-    if (action === 'publish') action = 'resume';
-    const sleepStartedAt = now();
-    await sleep(Math.min(intervalMs, timeoutMs - durationMs));
-    sleepMs += now() - sleepStartedAt;
-  }
+  return waitForReleaseOperation(options, { ...dependencies, runReleaseOperation: dependencies.runReleaseOperation ?? runReleaseOperation });
 }
 
 export function compactReleaseOperation(value: any): any {

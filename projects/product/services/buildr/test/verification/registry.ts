@@ -1106,6 +1106,19 @@ export const CANDIDATE_CI_SHARDS: any = Object.freeze(declaredCandidateShards.ma
   return Object.freeze({ ...shard, stepIds: Object.freeze([...new Set([...shard.stepIds.flatMap((id: string) => serviceReplacements.get(id) ?? (verificationSteps.some((step: any) => step.id === id) ? [id] : [])), ...additions])]) });
 }));
 
+/** Check requirements are projected once from the authoritative candidate declarations.
+ * Source preparation consumes this index, not CI shard membership on every pass. */
+const SOURCE_PREPARATION_RANKS = ['base', 'frontend', 'source-runtime'] as const;
+const sourcePreparationByCheck = new Map<string, string>();
+for (const shard of CANDIDATE_CI_SHARDS) for (const id of shard.stepIds) {
+  const profile = SOURCE_PREPARATION_RANKS.includes(shard.preparation) ? shard.preparation : 'source-runtime';
+  const previous = sourcePreparationByCheck.get(id);
+  if (!previous || SOURCE_PREPARATION_RANKS.indexOf(profile) > SOURCE_PREPARATION_RANKS.indexOf(previous as any)) sourcePreparationByCheck.set(id, profile);
+}
+export function sourcePreparationForCheck(id: string): string {
+  return sourcePreparationByCheck.get(id) ?? 'source-runtime';
+}
+
 export const CANDIDATE_CI_PLATFORM_REPEATS: any = Object.freeze({
   'release-tarball-consumption': Object.freeze(['runtime-macos', 'runtime-windows']),
 });

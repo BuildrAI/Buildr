@@ -1,3 +1,6 @@
+import { pluginSourcePhaseFiles, pluginSourcePhaseStep } from '../../../dsh-plugin/tools/source-phase-definition.ts';
+import { collectVerificationReuseSnapshot, createVerificationReuseIdentity } from './verification-reuse.ts';
+import { verificationInputApplicability } from './result-applicability.ts';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createSourceVerificationPlan } from './source.ts';
@@ -58,7 +61,11 @@ export async function prepareLocalSourceVerification(options: {
   if (pluginRequired && !pluginUnit) throw new Error('The DSH plugin Unit check is not registered.');
   // The release round retains its existing phase identity while consuming the
   // single Service-owned check's actual inputs and execution declaration.
-  const required = [...(buildrRequired ? plan.steps : []), ...(pluginRequired ? [{ ...pluginUnit, id: 'dsh-plugin:unit' }] : [])];
+  const required = [...(buildrRequired ? plan.steps : []), ...(pluginRequired ? [(dependencies.pluginUnitStep ?? (() => {
+    const pluginRoot = path.join(options.repo, 'projects/product/services/dsh-plugin');
+    const definition = pluginSourcePhaseStep('unit', pluginSourcePhaseFiles('unit', pluginRoot), options.env);
+    return { ...definition, inputs: pluginUnit.inputs, inputExclusions: pluginUnit.inputExclusions, executor: { ...definition.executor, cwd: pluginRoot }, platformScope: { kind: 'common' } };
+  }))()] : [])];
   const head = (dependencies.sourceHead ?? sourceHead)(options.repo);
   const readChangedPaths = dependencies.changedPaths ?? changedSourcePaths;
   const changedBySource = new Map<string, string[] | null>();
@@ -66,10 +73,20 @@ export async function prepareLocalSourceVerification(options: {
     if (!changedBySource.has(source)) changedBySource.set(source, readChangedPaths(options.repo, source, head!));
     return changedBySource.get(source)!;
   };
+  let snapshot: any;
+  const inputsFor = (step: any) => {
+    try {
+      snapshot ??= collectVerificationReuseSnapshot({ productRoot: path.join(options.repo, 'projects/product/services/buildr'), steps: required, env: options.env });
+      return createVerificationReuseIdentity(step, snapshot);
+    } catch { return null; }
+  };
   const invalidatedStepIds: string[] = [];
   const missingStepIds = required.filter((step: any) => {
     const record = log.records.find((entry: any) => passedRoundRecord(entry, options.roundId, step, plan.runner));
     if (!record) return true;
+    if (step.reuse && !verificationInputApplicability(record.result?.inputIdentity, inputsFor(step)).applicable) {
+      invalidatedStepIds.push(step.id); return true;
+    }
     const recordedSource = record.origin?.sourceCommit;
     if (!head || !recordedSource || recordedSource === head) return false;
     const changed = changedSince(recordedSource);

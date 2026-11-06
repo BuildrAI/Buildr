@@ -18,7 +18,7 @@ import {
   releaseWorkflowPath,
   sha256,
 } from './release-authority.ts';
-import { assertReleaseConsumptionCoverage } from '../../../projects/product/services/buildr/test/verification/release/release-consumption.ts';
+import { assertReleaseConsumptionCoverage } from '../../../projects/product/services/buildr/test/verification/release/release-consumption-contract.ts';
 import { readReleaseArtifact, RELEASE_ARTIFACT_METADATA_MAX_BYTES } from './release-artifact.ts';
 import { createReleaseContext, evaluateReleaseReadiness, releaseContextIdentity, validateReleaseContext } from './release-readiness.ts';
 import { inspectReleaseSelection } from './release-selection.ts';

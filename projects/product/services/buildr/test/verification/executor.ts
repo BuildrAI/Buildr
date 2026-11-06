@@ -4,13 +4,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 import { buildCommandInvocation, createExactNodeExecutionEnvironment } from '../../src/infrastructure/process.ts';
-import {
-  createCandidatePackage,
-  CANDIDATE_PACK_METADATA_ENV,
-  CANDIDATE_RELEASE_MANIFEST_ENV,
-  CANDIDATE_TARBALL_ENV,
-  readSharedCandidatePackage,
-} from '../../../../../../skills/buildr-release/scripts/candidate-package.ts';
+import type { CandidatePackageAdapter } from './package-adapter.ts';
 import { runVerificationStep, writeVerificationDiagnostics } from './timing/parallel-runner.ts';
 import { resolveNodeTestFiles } from './test-files.ts';
 import { createIsolatedWorkspaceState } from '../../tools/development/isolated-workspace-state.ts';
@@ -83,7 +77,12 @@ export function createVerificationExecutor(options: any): any  {
   delete baseEnv.BUILDR_CANDIDATE_PREPARATION_OUTPUT;
   delete baseEnv.BUILDR_CANDIDATE_PREPARATION_ID;
   delete baseEnv.BUILDR_VERIFICATION_FORCE;
-  const sharedCandidate: any = readSharedCandidatePackage(baseEnv);
+  const packageAdapter: CandidatePackageAdapter | undefined = options.packageAdapter;
+  const sharedCandidate: any = packageAdapter?.read(baseEnv);
+  function requirePackageAdapter(): CandidatePackageAdapter {
+    if (!packageAdapter) throw new Error('Candidate package production requires an explicit package adapter.');
+    return packageAdapter;
+  }
   const artifacts: any = sharedCandidate ? { candidate: sharedCandidate } : {};
   const preparations: Map<string, Promise<any>> = options.preparations ?? new Map();
   const browserWebDist = path.join(options.diagnosticsDirectory ?? artifactDirectoryForBrowser(), 'browser-web-dist');
@@ -182,10 +181,10 @@ export function createVerificationExecutor(options: any): any  {
       const startedAt: any = Date.now();
       let error: any = null;
       try {
-        if (!sharedCandidate) {
+        if (!artifacts.candidate) {
           const artifactDirectory: any = path.resolve(options.artifactDirectory);
           fs.mkdirSync(artifactDirectory, { recursive: true });
-          const candidate: any = await createCandidatePackage(productRoot, artifactDirectory, { npmExecutable });
+          const candidate: any = await requirePackageAdapter().create(productRoot, artifactDirectory, { npmExecutable });
           artifacts.candidate = candidate;
         }
       } catch (caught: any) {
@@ -215,9 +214,9 @@ export function createVerificationExecutor(options: any): any  {
     }
     const resolved: any = commandFor(step, executionContext);
     const artifactEnv: any = step.executor.consumesArtifact && artifacts.candidate ? {
-      [CANDIDATE_TARBALL_ENV]: artifacts.candidate.tarball,
-      [CANDIDATE_PACK_METADATA_ENV]: artifacts.candidate.metadataPath,
-      [CANDIDATE_RELEASE_MANIFEST_ENV]: artifacts.candidate.manifestPath,
+      [requirePackageAdapter().environment.tarball]: artifacts.candidate.tarball,
+      [requirePackageAdapter().environment.metadata]: artifacts.candidate.metadataPath,
+      [requirePackageAdapter().environment.manifest]: artifacts.candidate.manifestPath,
     } : {};
     const state = createIsolatedWorkspaceState({
       env: { ...baseEnv, ...executionContext.resourceEnvironment, ...artifactEnv, ...workerBudgetEnvironment(step, executionContext), ...((step.browserSelector || step.requiresWebDist) ? { BUILDR_BROWSER_WEB_DIST_ROOT: browserWebDist } : {}) },

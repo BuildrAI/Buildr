@@ -6,6 +6,7 @@ import path from 'node:path';
 // Complete read scopes are independent of changed-path ownership. Unreviewed
 // files remain inputs; only these known test/tool namespaces are partitioned.
 const sharedRecipe = [
+  'test/verification/result-applicability.ts', 'test/verification/package-adapter.ts', 'test/verification/candidate-check-inputs.ts',
   'test/verification/settle-diagnostics.mjs', 'test/register-development-entry.ts', 'tools/development/isolated-workspace-state.ts', 'test/verification/executor.ts', 'test/verification/plan-runner.ts',
   'test/verification/dag-scheduler.ts', 'test/verification/verification-reuse.ts', 'test/verification/verification-inputs.ts',
   'test/verification/resource-coordinator.ts', 'test/verification/candidate-round.ts', 'test/verification/integration-progress-reporter.ts', 'test/verification/test-files.ts', 'test/verification/verification-input-discovery.ts',

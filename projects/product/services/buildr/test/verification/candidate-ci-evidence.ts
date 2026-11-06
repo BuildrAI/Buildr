@@ -6,7 +6,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { spawnCommandSync } from '../../src/infrastructure/process.ts';
 import { readReleaseArtifact, releaseArtifactManifestName, releasePackMetadataName } from '../../../../../../skills/buildr-release/scripts/release-artifact.ts';
-import { releaseConsumptionIdentity, RELEASE_CHECKS, validateReleaseCheckDefinitions } from './release/release-consumption.ts';
+import { releaseConsumptionIdentity, RELEASE_CHECKS, validateReleaseCheckDefinitions } from './release/release-consumption-contract.ts';
 import {
   CANDIDATE_CI_AGGREGATE_SCHEMA,
   CANDIDATE_CI_CHECKPOINT_SCHEMA,

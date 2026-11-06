@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { EventEmitter } from 'node:events';
-import { createSourceVerificationPlan, parseSourceArgs, prepareSourceVerificationEnvironment, sourceOnlyVerificationSteps, sourceVerificationPreparation, sourceVerificationCancellation } from '../verification/source.ts';
+import { sourcePreparationCommands, createSourceVerificationPlan, parseSourceArgs, prepareSourceVerificationEnvironment, sourceOnlyVerificationSteps, sourceVerificationPreparation, sourceVerificationCancellation } from '../verification/source.ts';
 import { createVerificationPlan, createPlatformArtifactVerificationPlan, createPlatformSourceVerificationPlan, validateCandidateCiCoverage, validateVerificationRegistry } from '../verification/planner.ts';
 import { CANDIDATE_CI_SHARDS, verificationSteps } from '../verification/registry.ts';
 
@@ -196,4 +196,15 @@ test('editorial and architecture checks remain selectable in development but are
     assert.ok(affected.steps.some((step: any) => step.id === id), `source package checks belong in daily affected feedback: ${id}`);
   }
   assert.equal(affected.steps.some((step: any) => step.id === 'candidate-tarball'), false, 'daily feedback does not create a release package');
+});
+
+test('owned generated-input preparation hands off commands only after complete success', async () => {
+  assert.equal(sourcePreparationCommands({ preparations: [] }).size, 0);
+  assert.equal(sourcePreparationCommands({ preparations: [{ status: 'failed', operations: [{ id: 'generated-contracts-and-test-context', status: 'passed' }] }] }).size, 0);
+  const commands = sourcePreparationCommands({ preparations: [{ id: 'owned', status: 'passed', operations: [
+    { id: 'generated-contracts-and-test-context', status: 'passed', finishedAt: 'observed' }] }] });
+  assert.ok(commands.size > 0);
+  const registered = verificationSteps.find((step: any) => step.id === 'typecheck');
+  for (const preparation of registered.preparations) assert.ok(commands.has(JSON.stringify([preparation.file, preparation.args, preparation.cwd])));
+  for (const result of commands.values()) assert.equal((await result).reusedFrom.preparation, 'owned');
 });

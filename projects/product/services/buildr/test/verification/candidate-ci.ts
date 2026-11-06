@@ -13,8 +13,11 @@ import { candidateSourceImportFromEnvironment, planCandidateSourceReuse } from '
 import { assertFrozenCandidateCheckout, candidateArtifactImportFromEnvironment, candidateDeferredArtifactIds, candidateDependencyInputsIdentity, createCandidateDeferredPlan,
   createCandidateExecutionEnvironment, readCandidateDeferredPlan, reusableCandidateArtifactStepIds, reusedCandidateArtifactResult, validateCandidateArtifactEvidence } from './candidate-artifact-reuse.ts';
 import { passedRoundRecord } from './candidate-round.ts';
+import { collectVerificationReuseSnapshot, createVerificationReuseIdentity, validEnvironment } from './verification-reuse.ts';
+import { verificationInputApplicability } from './result-applicability.ts';
 import { CANDIDATE_CI_HOST_NODE_TUPLES, CANDIDATE_CI_SHARDS, resolveVerificationExecutionProfile, verificationSteps } from './registry.ts';
-import { createCandidateCheckInputReader, createCandidateSourceBinding } from '../../../../../../skills/buildr-release/scripts/candidate-source-binding.ts';
+import { createCandidateSourceBinding } from '../../../../../../skills/buildr-release/scripts/candidate-source-binding.ts';
+import { createCandidateCheckInputReader } from './candidate-check-inputs.ts';
 import { assertCandidateRepairPlan, candidateProofDefinition, candidateProofDescriptors, candidateRepairShardPlan, reusedCandidateProofResult, validateCandidateRepairProof } from './candidate-repair.ts';
 import {
   aggregateCandidateCiEvidence,
@@ -68,9 +71,21 @@ function checkInputsFor(id: string, commit: string): any {
   return Object.fromEntries(descriptor.steps.map((step: any) => [step.id, input(commit, candidateProofDefinition(step))]));
 }
 
+let sourceReuseSnapshot: ReturnType<typeof collectVerificationReuseSnapshot> | undefined;
 function validateSourceRecord(record: any, stepId: string, runner: string): boolean {
   const step = verificationSteps.find((item: any) => item.id === stepId);
-  return Boolean(step && process.env.BUILDR_SELECTION_ID && passedRoundRecord(record, process.env.BUILDR_SELECTION_ID, step, runner));
+  if (!step || !process.env.BUILDR_SELECTION_ID || !passedRoundRecord(record, process.env.BUILDR_SELECTION_ID, step, runner)) return false;
+  if (!step.reuse) return true;
+  try {
+    sourceReuseSnapshot ??= collectVerificationReuseSnapshot({ productRoot, steps: verificationSteps });
+    const original = record.result?.inputEnvironment;
+    // Explicit common checks may adopt proof from either declared OS. Retain its
+    // real environment; native checks continue to require their actual platform.
+    const portable = step.platformScope?.kind === 'common' && validEnvironment(original)
+      && original.platform === record.environment?.platform && original.nodeVersion === record.environment?.nodeVersion;
+    const snapshot = portable ? { ...sourceReuseSnapshot, environment: original } : sourceReuseSnapshot;
+    return verificationInputApplicability(record.result?.inputIdentity, createVerificationReuseIdentity(step, snapshot)).applicable;
+  } catch { return false; }
 }
 
 function artifactRecordSourceMatches(record: any): boolean {

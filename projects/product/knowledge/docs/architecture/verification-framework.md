@@ -97,3 +97,11 @@ Buildr 产品使用四类检查：静态检查（Static Check）、单元测试�
 [测试建设（project-testing）](../../../services/buildr/resources/workspace/skills/buildr/project-testing/SKILL.md)统一维护测试代码、项目入口、发现与选择映射和 `verification.yml`；[项目验证（project-verification）](../../../services/buildr/resources/workspace/skills/buildr/project-verification/SKILL.md)依据请求选择、实际执行、交付证据并按需记录已有任务报告。准备声明维护归 `buildr` 的[准备指引](../../../services/buildr/resources/runtime/skills/buildr/references/preparation-declarations.md)，不再设置声明中转技能。
 
 正式报告仍使用 `task verification inspect|record` 和原内容摘要冲突保护；没有任务时直接交付真实证据，不补造任务或报告。推送前检查不授予 Git 写入授权，发布验证不授予公开发布授权。
+
+## 项目验证与发布的消费边界
+
+通用项目测试能力只维护测试地图和任务报告；本项目的执行登记、候选轮次及准确原包机制不成为用户项目的前提。发布通过 `test/verification/release-verification.ts` 消费检查覆盖和证明传输，覆盖契约在 `release/release-consumption-contract.ts`，包的真实执行仍由原消费入口承担。检查输入计算位于 `candidate-check-inputs.ts`；发布侧只保留产品构建输入和受保护执行来源绑定。
+
+`result-applicability.ts` 比较内容、配方、环境及 Git 输入身份，日常复用与候选采用共用这一基础判断。轮次、平台及来源政策保持独立；新候选仍完整执行。候选记录可携带执行前后稳定的输入身份，历史记录保留原样，无法证明适用性时只补必要检查。插件源码执行与就绪核验共用服务拥有的 `source-phase-definition.ts`，避免两边生成不同配方。
+
+验证执行器不直接加载发布产包实现；计划需要原包生产或消费时，组合入口才提供 `package-adapter.ts` 的适配。准备需求从检查级索引取得，仍由同一候选声明投影，不维护第二份成员表。执行前准备、执行后内容核验和独立清理责任继续保留。

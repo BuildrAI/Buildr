@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
+import { sharedCheckPreparation } from '../../tools/testing/verification-checks.ts';
 import { randomUUID } from 'node:crypto';
 import { createCandidateRoundExecution } from './candidate-round.ts';
 import path from 'node:path';
@@ -11,7 +12,7 @@ import { assertMinimumNodeVersion } from '../../src/infrastructure/process.ts';
 import { enforceOfflineVerification } from '../../src/infrastructure/network/verification-network-policy.ts';
 import { prepareCandidateEnvironment } from '../../tools/verification/candidate-environment.ts';
 import { createVerificationPlan } from './planner.ts';
-import { CANDIDATE_CI_SHARDS, VERIFICATION_PLATFORMS, verificationSteps, resolveVerificationExecutionProfile } from './registry.ts';
+import { CANDIDATE_CI_SHARDS, sourcePreparationForCheck, VERIFICATION_PLATFORMS, verificationSteps, resolveVerificationExecutionProfile } from './registry.ts';
 import { collectVerificationSourceIdentity, createVerificationEvidencePaths, writeVerificationTimingEvidence } from './timing/evidence.ts';
 import { inspectVerificationReusePlan } from './verification-reuse.ts';
 import { resolveVerificationBase } from './changed-paths.ts';
@@ -128,13 +129,13 @@ const sourceVerificationForce = (force: boolean | undefined, env: NodeJS.Process
 
 /** Preparation follows the existing Candidate declarations for checks that will
  * actually execute. An unregistered check retains the conservative source setup. */
-export function sourceVerificationPreparation(plan: any, reuse: any, shards: readonly any[] = CANDIDATE_CI_SHARDS): any {
+export function sourceVerificationPreparation(plan: any, reuse: any, shards?: readonly any[]): any {
   const dispositions = new Map((reuse?.steps ?? []).map((step: any) => [step.id, step.disposition]));
   const missing = plan.steps.filter((step: any) => dispositions.get(step.id) !== 'reuse');
   let rank = -1;
   for (const step of missing) {
-    const owners = shards.filter(shard => shard.stepIds.includes(step.id));
-    const required = owners.length ? owners.map(owner => owner.preparation) : ['source-runtime'];
+    const owners = shards?.filter(shard => shard.stepIds.includes(step.id));
+    const required = owners ? owners.length ? owners.map(owner => owner.preparation) : ['source-runtime'] : [sourcePreparationForCheck(step.id)];
     for (const profile of required) {
       const current = sourcePreparationProfiles.indexOf(profile);
       rank = Math.max(rank, current < 0 ? sourcePreparationProfiles.length - 1 : current);
@@ -149,9 +150,9 @@ export function sourceVerificationPreparation(plan: any, reuse: any, shards: rea
 export function prepareSourceVerificationEnvironment(plan: any, options: any, dependencies: any = {}): any {
   options = { ...options, force: sourceVerificationForce(options.force, options.env ?? process.env) };
   const inspect = dependencies.inspectReuse ?? ((plan: any, options: any) => options.round
-    ? createCandidateRoundExecution(plan, options).explanation : inspectVerificationReusePlan(plan, options));
+    ? createCandidateRoundExecution(plan, { ...options, inspectOnly: true }).explanation : inspectVerificationReusePlan(plan, options));
   const prepare = dependencies.prepareEnvironment ?? prepareCandidateEnvironment;
-  const shards = dependencies.shards ?? CANDIDATE_CI_SHARDS;
+  const shards = dependencies.shards;
   const preparations: any[] = [];
   let preparedRank = -1;
   let reuse = inspect(plan, options);
@@ -164,6 +165,22 @@ export function prepareSourceVerificationEnvironment(plan: any, options: any, de
     preparedRank = rank;
     reuse = inspect(plan, options);
   }
+}
+
+/** Same-process handoff of a completed owned artifacts:prepare operation.
+ * Never reads a caller file or promotes preparation to a check result. */
+export function sourcePreparationCommands(prepared: any): Map<string, Promise<any>> {
+  const commands = new Map<string, Promise<any>>();
+  const receipt = prepared.preparations?.findLast((item: any) => item.status === 'passed' && item.operations?.some((operation: any) =>
+    operation.id === 'generated-contracts-and-test-context' && operation.status === 'passed'));
+  if (!receipt) return commands;
+  const owner = receipt.operations.find((operation: any) => operation.id === 'generated-contracts-and-test-context');
+  for (const command of sharedCheckPreparation) {
+    const key = JSON.stringify([command.file, command.args, path.resolve(productRoot, command.cwd)]);
+    commands.set(key, Promise.resolve({ id: owner.id, status: 'passed', exitCode: 0, durationMs: 0,
+      command: command.file, args: command.args, cwd: path.resolve(productRoot, command.cwd), reusedFrom: { preparation: receipt.id, finishedAt: owner.finishedAt } }));
+  }
+  return commands;
 }
 
 function usage(): void {
@@ -182,7 +199,7 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
         env: enforceOfflineVerification(comparisonRequired || args.base
           ? pinSourceVerificationBase(productRoot, process.env, args.base) : { ...process.env }) };
       if (args.json) {
-        const reuse = createCandidateRoundExecution(plan, reuseOptions).explanation;
+        const reuse = createCandidateRoundExecution(plan, { ...reuseOptions, inspectOnly: true }).explanation;
         process.stdout.write(`${JSON.stringify({ ...plan, verificationBase: reuseOptions.env.BUILDR_VERIFICATION_BASE,
           reuse, preparation: sourceVerificationPreparation(plan, reuse) }, null, 2)}\n`);
         if (plan.status !== 'ready') process.exitCode = 1;
@@ -190,7 +207,7 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
         if (plan.status !== 'ready') throw new Error(plan.diagnostic?.message ?? 'Source verification plan is blocked.');
         assertMinimumNodeVersion(process.versions.node, fs.readFileSync(path.join(projectRoot, '.node-version'), 'utf8').trim());
         const startedAt = Date.now();
-        prepareSourceVerificationEnvironment(plan, reuseOptions);
+        const prepared = prepareSourceVerificationEnvironment(plan, reuseOptions);
         const environmentPreparationMs = Date.now() - startedAt;
         enforceOfflineVerification();
         const { executePlan } = await import('./plan-runner.ts');
@@ -206,7 +223,7 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
             stream: process.stdout, errorStream: process.stderr, prefix: 'verify-source',
             concurrency: executionProfile.limits, executionProfile, runId: evidence.runId,
             taskId: process.env.BUILDR_TASK_ID ?? source.branch ?? 'source', signal: cancellation.signal,
-            reuse: false, force: reuseOptions.force, round,
+            reuse: false, force: reuseOptions.force, round, preparations: sourcePreparationCommands(prepared),
           });
         } finally { cancellation.dispose(); }
         writeVerificationTimingEvidence({

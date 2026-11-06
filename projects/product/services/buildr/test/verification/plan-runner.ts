@@ -51,7 +51,11 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
   let completed: any = 0;
   const heartbeatIntervalMs: any = Number.isFinite(options.heartbeatIntervalMs) && options.heartbeatIntervalMs > 0 ? options.heartbeatIntervalMs : 15_000;
   const concurrency: any = options.concurrency ?? VERIFICATION_CONCURRENCY;
-  const preparations = new Map<string, Promise<any>>();
+  const preparations: Map<string, Promise<any>> = options.preparations ?? new Map();
+  if (!options.packageAdapter && plan.steps.some((step: any) => step.executor?.type === 'candidate-artifact' || step.executor?.consumesArtifact)) {
+    const { loadCandidatePackageAdapter } = await import('./package-adapter.ts');
+    options = { ...options, packageAdapter: await loadCandidatePackageAdapter() };
+  }
   const observeReuse = () => createCandidateRoundExecution(plan, options) ?? createVerificationPlanReuse(plan, options);
   const preflight = options.executorFactory ? null : createVerificationExecutor({ ...options, diagnosticsDirectory, artifactDirectory, preparations });
   const forced = options.reuse?.force === true || (options.env ?? process.env).BUILDR_VERIFICATION_FORCE === '1';

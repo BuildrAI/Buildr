@@ -28,19 +28,8 @@ export function parseVerificationInputs(args: string[], env: NodeJS.ProcessEnv =
 export const archiveTreeIdentity = (bytes: Buffer) => hash(Buffer.from(JSON.stringify([...packageArchiveFiles(bytes)].map(([name, data]) => [name, hash(data)]).sort((a, b) => a[0].localeCompare(b[0])))));
 // Only the SDK-independent source phase is portable. SDK consumers run
 // freshly until their actual installed dependencies and built inputs are bound.
-export const PLUGIN_SOURCE_PHASE_IDS = ['dsh-plugin:unit'] as const;
-export const PLUGIN_PEER_PHASE_FILES = ['test/integration/source-business-gateway.test.ts'] as const;
-export function pluginSourcePhaseFiles(group: 'unit' | 'static' | 'integration' | 'e2e', pluginRoot = root): string[] {
-  const files = readdirSync(join(pluginRoot, 'test', group)).filter(name => name.endsWith('.test.ts')).sort()
-    .map(name => `test/${group}/${name}`).filter(file => !(PLUGIN_PEER_PHASE_FILES as readonly string[]).includes(file));
-  return files;
-}
-export function pluginSourcePhaseStep(group: 'unit' | 'static' | 'integration' | 'e2e', files: string[], env: NodeJS.ProcessEnv = process.env) {
-  const workers = resolveVerificationWorkerBudget({ env, fallback: 2, maximum: files.length, label: `Plugin ${group} tests` });
-  return { id: `dsh-plugin:${group}`, executor: { type: 'node-test', files: [...files].sort(), args: [`--test-concurrency=${workers}`] },
-    resourceDemand: { workers, processes: workers },
-    reuse: group === 'unit' ? { scope: 'plugin' as const, git: false } : false as const };
-}
+import { PLUGIN_SOURCE_PHASE_IDS, PLUGIN_PEER_PHASE_FILES, pluginSourcePhaseFiles, pluginSourcePhaseStep } from './source-phase-definition.ts';
+export { PLUGIN_SOURCE_PHASE_IDS, PLUGIN_PEER_PHASE_FILES, pluginSourcePhaseFiles, pluginSourcePhaseStep } from './source-phase-definition.ts';
 export function pluginSourceSdkKey(pluginRoot = root): string {
   const identity = sourceSdkIdentityFromFiles(readFileSync(join(pluginRoot, SOURCE_SDK_MANIFEST)),
     readFileSync(join(pluginRoot, 'sdk-patches/dsh-v0.2.0-rc.2-event-sources-settings.patch')));
