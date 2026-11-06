@@ -503,6 +503,7 @@ const integrationSlice: any = (id: any, files: any, options: any = {}) => Object
   schedulingCostMs: options.schedulingCostMs,
   ...(options.timeoutMs == null ? {} : { timeoutMs: options.timeoutMs }),
   concurrencyClass: options.concurrencyClass ?? 'workspace-heavy',
+  ...(options.resourceDemand ? { resourceDemand: options.resourceDemand } : {}),
   resources: Object.freeze(options.resources ?? []),
   contexts: Object.freeze(options.contexts ?? []),
   args: Object.freeze([...(options.args ?? []), '--test-reporter=dot']),
@@ -587,7 +588,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/workspace-read-reuse.test.ts',
   // Catalog transaction groups run independently; full CLI lifecycles and
   // original-package workflows have their own E2E owners.
-  ], { schedulingCostMs: 5000, timeoutMs: 360_000, args: ['--test-concurrency=2'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),
+  ], { schedulingCostMs: 5000, timeoutMs: 360_000, args: ['--test-concurrency=2'], resourceDemand: { workers: 2, processes: 2, git: 1, workspaceIo: 2 }, contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),
   integrationSlice('integration-archify', [
     'test/integration/archify-command-cost.test.ts',
     'test/integration/archify-component.test.ts',
@@ -635,7 +636,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
   // the heavier authoring scenario so one worker covers its actual runtime.
   integrationSlice('integration-connections-cli', [
     'test/integration/connection-skills-cli.test.ts',
-  ], { schedulingCostMs: 5000, timeoutMs: 180_000, args: ['--test-concurrency=1'] }),
+  ], { schedulingCostMs: 5000, timeoutMs: 180_000, args: ['--test-concurrency=1'], resourceDemand: { workers: 1, processes: 1, workspaceIo: 2 } }),
   integrationSlice('integration-runtime-projection', [
     'test/integration/verification-provider-migration.test.ts',
     'test/integration/capability-contracts.test.ts',
@@ -773,6 +774,7 @@ const builtInVerificationSteps: any = Object.freeze([
     schedulingCostMs: slice.schedulingCostMs,
     ...(slice.timeoutMs == null ? {} : { timeoutMs: slice.timeoutMs }),
     concurrencyClass: slice.concurrencyClass,
+    ...(slice.resourceDemand ? { resourceDemand: slice.resourceDemand } : {}),
     resources: [...slice.resources],
     contexts: [...slice.contexts],
   })),

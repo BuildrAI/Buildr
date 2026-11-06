@@ -1267,7 +1267,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
       const attempted = page.waitForResponse((response: any) => response.url() === registryUrl && response.request().method() === 'DELETE')
         .then((response: any) => ({ response }), (error: unknown) => ({ error }));
       try {
-        await card.getByRole('button', { name: '移除', exact: true }).click();
+        await card.getByRole('button', { name: /^移\s*除$/ }).click();
         const confirmation = page.getByRole('dialog', { name: '移除工作空间', exact: true });
         await confirmation.waitFor({ state: 'visible' });
         await confirmAntModal(page);
@@ -1281,6 +1281,7 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
           return {
             url: location.href,
             operationError: error?.getClientRects().length ? error.textContent : null,
+            cards: Array.from(document.querySelectorAll('.workspace-card')).map(card => ({ id: card.getAttribute('data-workspace-id'), buttons: Array.from(card.querySelectorAll('button')).map(button => ({ text: button.textContent, disabled: button.disabled })) })),
             dialogs: Array.from(document.querySelectorAll('[role="dialog"]')).filter(node => node.getClientRects().length).map(node => node.textContent),
           };
         });

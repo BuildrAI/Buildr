@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 import { buildApplicationPayload } from '../../../../../../skills/buildr-release/scripts/application-payload.ts';
 import { createReleaseArtifact, readReleaseArtifact } from '../../../../../../skills/buildr-release/scripts/release-artifact.ts';
+import { loadCandidatePackageAdapter } from '../verification/package-adapter.ts';
 import { inspectCandidatePaths } from '../verification/release/open-source-candidate.ts';
 import {
   CANDIDATE_PACK_METADATA_ENV,
@@ -279,6 +280,7 @@ test('release artifact preparation packs once and detects mutated bytes', async 
     const execute: any = createVerificationExecutor({
       productRoot: serviceRoot,
       artifactDirectory: forbiddenRepackRoot,
+      packageAdapter: await loadCandidatePackageAdapter(),
       env: {
         [CANDIDATE_TARBALL_ENV]: artifact.tarball,
         [CANDIDATE_PACK_METADATA_ENV]: artifact.packMetadataPath,

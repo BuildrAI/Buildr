@@ -65,7 +65,7 @@ test('SDK-consuming integration has no reusable identity even with the former SD
   const step = pluginSourcePhaseStep('integration', pluginSourcePhaseFiles('integration'));
   assert.equal(createVerificationReuseIdentity(step, snapshot), null);
 });
-test('standalone source phase retains a real passed result after edits and executes a new round fully', async t => {
+test('standalone source phase preserves history but invalidates edited inputs in the same and new rounds', async t => {
   const { verifyPluginSourcePhase } = await import('../../tools/verify-all.ts');
   const repo = realpathSync(mkdtempSync(join(tmpdir(), 'buildr-plugin-source-only-')));
   t.after(() => rmSync(repo, { recursive: true, force: true }));
@@ -80,8 +80,9 @@ test('standalone source phase retains a real passed result after edits and execu
   const executed = await verifyPluginSourcePhase('unit', { pluginRoot, env, round });
   assert.equal(executed.phase.status, 'passed'); assert.equal(executed.phase.disposition, 'executed');
   writeFileSync(file, "import test from 'node:test'; test('changed input', () => { throw Error('new failure'); });\n");
-  const retained = await verifyPluginSourcePhase('unit', { pluginRoot, env, round });
-  assert.equal(retained.phase.disposition, 'reused');
-  assert.equal(retained.phase.sourceRecord.origin.sourceCommit, executed.log.records[0].origin.sourceCommit);
+  await assert.rejects(verifyPluginSourcePhase('unit', { pluginRoot, env, round }), /verification failed/u);
+  const retained = JSON.parse(readFileSync(round.output, 'utf8'));
+  assert.ok(retained.records.some((entry: any) => entry.result?.status === 'passed'
+    && entry.origin?.sourceCommit === executed.log.records[0].origin.sourceCommit), 'the real historical success remains recorded');
   await assert.rejects(verifyPluginSourcePhase('unit', { pluginRoot, env, round: { roundId: 'second', output: join(repo, 'second.json') } }), /verification failed/u);
 });

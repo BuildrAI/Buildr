@@ -354,7 +354,7 @@ export async function runServiceRuntimeJourney({ page, runtime, workspaceRoot, w
     assert.match(agent.sentInputs[0].text, new RegExp(frontend.code));
     assert.match(agent.sentInputs[0].text, /references\/local-services\.md/);
     assert.doesNotMatch(agent.sentInputs[0].text, /portOverride|expectedRoutingDigest/);
-    assert.equal(agent.sentInputs[0].cwd, fs.realpathSync(workspaceRoot));
+    assert.equal(fs.realpathSync(agent.sentInputs[0].cwd), fs.realpathSync(workspaceRoot));
     // Completion feedback: the run must end and the runtime definition must be readable.
     const liveDefinition = YAML.parse(fs.readFileSync(before.service.definition.path, 'utf8'));
     assert.ok(liveDefinition.local);
