@@ -12,6 +12,7 @@ const maximumDecoded = 64 * 1024 * 1024;
 const digest = (body: string | Uint8Array) => createHash('sha256').update(body).digest('hex');
 export type Content = { content_revision: string; codec: string; body_bytes: number; body: string | Uint8Array };
 type Position = { scope: string; entry: ConversationEntry; round: string; revision: string; compact: string | null; bytes: number; compactBytes: number; content?: Content };
+type TextUpdate = {position:Position; previousRevision:string};
 export type PreparedEntries = Position[];
 const lazyEntries = new WeakMap<ConversationEntry, { row: Content; compact: string; metadata: string; untouched(): boolean }>();
 const nativePositions = new WeakMap<ConversationEntry, {signature:string; position:Position}>();
@@ -167,6 +168,29 @@ export class ConversationEntryStore {
     // Both scopes participate so inherited entries keep their pinned revisions.
     db.prepare(`DELETE FROM conversation_entry_contents WHERE conversation_id=? AND content_revision NOT IN(
       SELECT content_revision FROM conversation_read_entries WHERE conversation_id=?)`).run(record.view.id, record.view.id);
+  }
+  /** Only a previously saved, unchanged-size record may use the caller's exact text mutation. */
+  static prepareText(db:DatabaseSync,record:StoredConversation,entryId:string):TextUpdate|undefined {
+    const entry=record.view.entries.find(entry=>entry.id===entryId);
+    if(!entry||entry.kind!=='message'||entry.role!=='assistant'||!entry.runId||record.nativeTools?.[entry.id])return;
+    const old=db.prepare(`SELECT e.content_revision,e.round_id,c.entry_count,c.inherited_count
+      FROM conversation_read_entries e JOIN conversations c ON c.id=e.conversation_id
+      WHERE e.conversation_id=? AND e.scope='main' AND e.sequence=? AND e.id=?`).get(record.view.id,entry.sequence,entry.id) as {content_revision:string;round_id:string;entry_count:number;inherited_count:number}|undefined;
+    if(!old||old.entry_count!==record.view.entries.length||old.inherited_count!==(record.inheritedContext?.entries.length??0)||old.round_id!=='run:'+entry.runId)return;
+    const body=JSON.stringify(entry),revision=digest(body),bytes=Buffer.byteLength(body);
+    return {previousRevision:old.content_revision,position:{scope:'main',entry,round:old.round_id,revision,compact:null,bytes,compactBytes:bytes,
+      content:{content_revision:revision,codec:'raw',body_bytes:bytes,body}}};
+  }
+  /** Keep all other positions, including inherited pins, untouched in the same transaction. */
+  static saveText(db:DatabaseSync,id:string,update:TextUpdate):void {
+    const p=update.position;
+    db.prepare('INSERT OR IGNORE INTO conversation_entry_contents(conversation_id,content_revision,codec,body_bytes,body) VALUES(?,?,?,?,?)').run(id,p.revision,'raw',p.bytes,p.content!.body);
+    const changed=db.prepare(`UPDATE conversation_read_entries SET round_id=?,content_revision=?,compact=NULL,body_bytes=?,compact_bytes=?,visible=?
+      WHERE conversation_id=? AND scope='main' AND sequence=? AND id=? AND content_revision=?`).run(p.round,p.revision,p.bytes,p.compactBytes,Number(!p.entry.thinking),id,p.entry.sequence,p.entry.id,update.previousRevision).changes;
+    if(changed!==1)throw new AgentServiceError('agent_entry_corrupt','文本消息位置已变化；原记录已保留。',409);
+    if(update.previousRevision!==p.revision)db.prepare(`DELETE FROM conversation_entry_contents WHERE conversation_id=? AND content_revision=?
+      AND NOT EXISTS(SELECT 1 FROM conversation_read_entries WHERE conversation_id=? AND content_revision=?)`).run(id,update.previousRevision,id,update.previousRevision);
+    db.prepare('UPDATE conversation_read_states SET message_revision=revision WHERE id=?').run(id);
   }
   static decode(row: Content, reader?: NativeContentReader, lazy = false, compact?: string | null): ConversationEntry {
     if(lazy&&compact&&['raw','zstd'].includes(row.codec)){

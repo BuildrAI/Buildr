@@ -61,6 +61,37 @@ test('text-only saves carry exact participation forward and repair stale or inva
  assert.equal(repo.participationProjections('ws').incomplete,true,'ordinary mutations still invalidate participation');
 });
 
+test('consecutive text updates preserve other positions, inherited pins and atomic revision protection',t=>{
+ const repo=fixture(t),r=record();
+ r.view.entries=[{id:'u',sequence:1,runId:'run',kind:'message',role:'user',text:'input',createdAt:'now'},
+  {id:'a',sequence:2,runId:'run',kind:'message',role:'assistant',text:'initial',status:'running',createdAt:'now'},
+  {id:'tool',sequence:3,runId:'run',kind:'tool',role:'system',text:'stored tool body',status:'completed',createdAt:'now'}];
+ r.inheritedContext={entries:[structuredClone(r.view.entries[1])],outcomes:{},pendingQuestions:[]};
+ repo.saveConversation(r);repo.stopReadModels();repo.rebuildReadModel(r.view.id);
+ const db=new DatabaseSync(repo.filename);t.after(()=>db.close());
+ const untouched=db.prepare("SELECT scope,sequence,content_revision FROM conversation_read_entries WHERE conversation_id=? AND NOT(scope='main' AND id='a') ORDER BY scope,sequence").all(r.view.id);
+ for(let i=0;i<8;i++){
+  const prior=r.view.revision;r.view.revision='chunk-'+i;r.view.entries[1].text+='字';
+  repo.saveConversation(r,prior,{participationUnchanged:true,textEntryId:'a'});
+  const cold=repo.readConversation(r.view.id)!;
+  assert.equal(cold.view.entries[1].text,r.view.entries[1].text);assert.equal(cold.inheritedContext!.entries[0].text,'initial');
+  assert.deepEqual(db.prepare("SELECT scope,sequence,content_revision FROM conversation_read_entries WHERE conversation_id=? AND NOT(scope='main' AND id='a') ORDER BY scope,sequence").all(r.view.id),untouched);
+  assert.equal(db.prepare('SELECT count(*) AS n FROM conversation_entry_contents WHERE conversation_id=?').get(r.view.id)!.n,4,'only the inherited pin and current text revision remain');
+ }
+ // A new item cannot use the one-existing-position update path.
+ r.view.entries.push({id:'new',sequence:4,runId:'run',kind:'message',role:'assistant',text:'new item',createdAt:'now'});
+ let prior=r.view.revision;r.view.revision='new-item';repo.saveConversation(r,prior,{participationUnchanged:true,textEntryId:'new'});
+ assert.equal(repo.readConversation(r.view.id)!.view.entries.length,4);
+ db.exec(`CREATE TRIGGER fail_text_write BEFORE UPDATE ON conversation_read_entries WHEN NEW.id='a' BEGIN SELECT RAISE(ABORT,'text_write_failed'); END;`);
+ prior=r.view.revision;r.view.revision='rejected';r.view.entries[1].text='must roll back';
+ assert.throws(()=>repo.saveConversation(r,prior,{participationUnchanged:true,textEntryId:'a'}),/text_write_failed/);
+ assert.equal(repo.readRevision(r.view.id)!.revision,prior);assert.notEqual(repo.readConversation(r.view.id)!.view.entries[1].text,'must roll back');
+ db.exec('DROP TRIGGER fail_text_write');
+ const current=repo.readConversation(r.view.id)!,old=current.view.revision;current.view.title='external';current.view.revision='external';repo.saveConversation(current,old);
+ r.view.revision='stale';assert.throws(()=>repo.saveConversation(r,prior,{participationUnchanged:true,textEntryId:'a'}),{code:'agent_revision_conflict'});
+ assert.equal(repo.readConversation(r.view.id)!.view.title,'external');
+});
+
 test('compact status exactly preserves pending semantics, including retained work and tools after completion',t=>{
  const repo=fixture(t);const records:StoredConversation[]=[];
  for(const status of ['starting','running','waiting-approval','waiting-question','stopping','stopped','unknown','tools-active','completed','failed']){

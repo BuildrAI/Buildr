@@ -490,12 +490,12 @@ export class ConversationApplication {
     view.pendingSend = this.pendingSends.view(this.pendingSends.read(view.workspaceId, view.id));
     return view;
   }
-  private save(record: StoredConversation, initial = false, textOnly = false): void {
+  private save(record: StoredConversation, initial = false, textOnly = false, textEntryId?:string): void {
     if(record.view.run?.status==='completed'){record.view.run.interrupted=undefined;delete record.interruption;}
     for(const observed of conversationRuns(record.view))if(['completed','failed','stopped','unknown','tools-active'].includes(observed.status)){record.runOutcomes??={};record.runOutcomes[observed.id]={status:observed.status,diagnostic:observed.diagnostic,model:observed.model,provider:observed.provider,contextUsage:observed.contextUsage,generation:observed.generation,updatedAt:observed.updatedAt};}
     const prior = record.view.revision;
     record.view.revision = randomUUID(); record.view.updatedAt = this.options.now();
-    this.options.repository.saveConversation(record, initial ? undefined : prior, {participationUnchanged:textOnly});
+    this.options.repository.saveConversation(record, initial ? undefined : prior, {participationUnchanged:textOnly,textEntryId});
     for(const run of conversationRuns(record.view)){
       const attempt=record.attempts.find(a=>a.runId===run.id),participant=record.participants.find(p=>p.id===run.participantId);
       const facts={event:'run-state',conversationId:record.view.id,workspaceId:record.view.workspaceId,runId:run.id,participantId:run.participantId,provider:run.provider,ownerGeneration:run.generation,status:run.status,accepted:run.accepted,stopRequested:run.stopRequested===true,resourcesReleased:run.resourcesReleased===true,executionId:attempt?.executionRef?.id,contextId:participant?.contextRef?.id,childPid:attempt?.executionRef?.data?.resourceGroup,runningTools:run.tools.filter(t=>t.status==='running').length,unknownTools:run.tools.filter(t=>t.status==='unknown').length};
@@ -1076,7 +1076,8 @@ export class ConversationApplication {
       if (event.status === 'failed') { run.status = 'failed'; run.fault = event.fault; run.diagnostic = event.diagnostic ?? '原生执行失败。'; }
       else { run.diagnostic = event.diagnostic; }
     }
-    run.updatedAt = this.options.now(); this.save(record, false, textOnly);
+    run.updatedAt = this.options.now();
+    this.save(record, false, textOnly, record===cached&&event.type==='item'?record.sources[`${participant.id}:${event.item.kind}:${event.item.id}`]:undefined);
     if (textOnly && event.type === 'item' && event.item.status === 'running') {
       this.streamingRecords.set(id, record);
       if (this.streamingRecords.size > 8) this.streamingRecords.delete(this.streamingRecords.keys().next().value!);

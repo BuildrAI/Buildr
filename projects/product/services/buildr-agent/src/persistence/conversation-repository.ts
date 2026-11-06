@@ -43,6 +43,7 @@ export class ConversationRepository {
   private repairs = new Set<string>();
   private repairScheduled = false;
   private stopped = false;
+  private readonly savedRecords = new WeakMap<StoredConversation,string>();
   private readonly nativeReader: NativeContentReader;
   private readonly nativeTool?: (record:StoredConversation,entry:ConversationEntry)=>NativeToolContent|undefined;
   constructor(directory: string,nativeTool?:(record:StoredConversation,entry:ConversationEntry)=>NativeToolContent|undefined, readTool?:(reference:NativeToolContent)=>ConversationEntry|undefined) { this.nativeTool=nativeTool;this.nativeReader = new NativeContentReader(directory,readTool); this.directory = directory; this.filename = path.join(directory, 'conversations.sqlite'); }
@@ -590,19 +591,23 @@ export class ConversationRepository {
       db.exec('COMMIT');return activity;
     }catch(error){try{db.exec('ROLLBACK');}catch{}throw error;}finally{db.close();}
   }
-  saveConversation(record: StoredConversation, priorRevision?: string, options: {participationUnchanged?:boolean} = {}): void {
+  /** textEntryId is only for a caller-proven single-entry mutation of the same saved record. */
+  saveConversation(record: StoredConversation, priorRevision?: string, options: {participationUnchanged?:boolean;textEntryId?:string} = {}): void {
     // Preserve optional observations in the original private record, not strict legacy public DTOs.
     for(const entry of record.view.entries)if(entry.participation){const value=normalizeParticipation(entry.participation);delete entry.participation;if(value)(record.participationTools??={})[entry.id]={...value,entryRevision:record.nativeTools?.[entry.id]?undefined:createHash('sha256').update(JSON.stringify(entry)).digest('hex')};}
     const db = this.open(true)!;
     try {
-      const prepared=ConversationEntryStore.prepare(db,record,this.nativeTool?entry=>this.nativeTool!(record,entry):undefined);
-      for(const row of prepared) if(record.nativeTools?.[row.entry.id] && record.participationTools?.[row.entry.id]) record.participationTools[row.entry.id]!.entryRevision=row.revision;
+      const textUpdate=priorRevision!==undefined&&options.participationUnchanged&&options.textEntryId&&this.savedRecords.get(record)===priorRevision
+        ?ConversationEntryStore.prepareText(db,record,options.textEntryId):undefined;
+      this.savedRecords.delete(record);
+      const prepared=textUpdate?undefined:ConversationEntryStore.prepare(db,record,this.nativeTool?entry=>this.nativeTool!(record,entry):undefined);
+      for(const row of prepared??[]) if(record.nativeTools?.[row.entry.id] && record.participationTools?.[row.entry.id]) record.participationTools[row.entry.id]!.entryRevision=row.revision;
       db.exec('BEGIN IMMEDIATE');
       const prior = db.prepare('SELECT revision,summary,message_signature,activity_at,user_at,activity_version,seen_version FROM conversations WHERE id=?').get(record.view.id) as {revision:string;summary:string;message_signature:string;activity_at:string;user_at:string;activity_version:number;seen_version:number}|undefined;
       if ((prior?.revision ?? undefined) !== priorRevision) fail('agent_revision_conflict', '对话已变化，请重新读取。', 409);
-      const physical=db.prepare('SELECT body FROM conversations WHERE id=?').get(record.view.id) as {body:string}|undefined;
+      const physical=Object.keys(record.attachments).length?db.prepare("SELECT json_extract(body,'$.attachments') AS attachments FROM conversations WHERE id=?").get(record.view.id) as {attachments:string}|undefined:undefined;
       if (physical) {
-        const attachments=(JSON.parse(physical.body) as StoredConversation).attachments;
+        const attachments=JSON.parse(physical.attachments) as StoredConversation['attachments'];
         for (const [id,meta] of Object.entries(record.attachments)) {
           const current=attachments[id];
           if (current?.nativeContent && !meta.nativeContent && current.size===meta.size && current.mimeType===meta.mimeType) meta.nativeContent=current.nativeContent;
@@ -621,7 +626,8 @@ export class ConversationRepository {
       const summary=summaryView(record,version,prior?.seen_version??0,activityAt);
       record.view.activity=summary.activity;
       ConversationReadModel.saveHeader(db, record);
-      ConversationReadModel.saveEntries(db, record, prepared);
+      if(textUpdate)ConversationEntryStore.saveText(db,record.view.id,textUpdate);
+      else ConversationReadModel.saveEntries(db, record, prepared);
       db.prepare('UPDATE conversations SET summary=?,message_signature=?,activity_at=?,user_at=?,activity_version=?,is_active=? WHERE id=?').run(JSON.stringify(summary),signature,activityAt,userAt,version,Number(summary.activity!.active),record.view.id);
       const before=prior?.summary?JSON.parse(prior.summary) as ConversationView:undefined;
       const rank=(v:ConversationView|undefined)=>JSON.stringify([v?.title,v?.hidden,v?.run?.status,v?.activity,v?.run?.provider,v?.run?.model]);
@@ -635,6 +641,7 @@ export class ConversationRepository {
             THEN json_extract(body,'$.version')=1 AND json_extract(body,'$.parserVersion')=1 ELSE 0 END`)
           .run(record.view.revision,record.view.revision,record.view.id,priorRevision).changes === 1;
       db.exec('COMMIT');
+      this.savedRecords.set(record,record.view.revision);
       if (!participationCurrent) this.queueReadRepair(record.view.id);
     } catch (error) { try { db.exec('ROLLBACK'); } catch {} throw error; }
     finally { db.close(); }
