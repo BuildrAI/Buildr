@@ -77,7 +77,6 @@ function ToolGroup({entries,active,onOpenFile,open,onToggle,toolsOpen,onToolTogg
   return <details className={'ac-step-group'+(failed?' is-failed':'')+(live?' is-live':'')} open={open} onToggle={event=>{if(event.target===event.currentTarget&&event.currentTarget.open!==open)onToggle(event.currentTarget.open);}}>
     <summary data-entry-group={JSON.stringify(entries.map(entry=>entry.id))} data-current-tool-status={live?processEntryStatus(latestEntry,active):undefined}>
       {live ? <>
-        <span className="ac-execution-light" aria-hidden="true"/>
         <span className="ac-step-node" aria-hidden="true"><ToolIcon kind={latestTool.kind}/></span>
         <span className={'ac-step-label'+(latestTool.kind==='command'?' is-command':'')} title={liveLabel}>{liveLabel}</span>
       </> : <>
@@ -90,7 +89,6 @@ function ToolGroup({entries,active,onOpenFile,open,onToggle,toolsOpen,onToolTogg
       </>}
     </summary>
     {(open||visited)&&<div className="ac-step-group-items">{entries.map(entry=><ToolStep loadEntry={loadEntry} key={entry.id} entry={entry} active={active} onOpenFile={onOpenFile} open={toolsOpen?toolsOpen['tool:'+entry.id]??false:undefined} onToggle={value=>onToolToggle?.(entry.id,value)}/>)}</div>}
-    {open&&<button type="button" className="ac-process-collapse" onClick={event=>{const details=event.currentTarget.closest('details')!;onToggle(false);requestAnimationFrame(()=>{const summary=details.querySelector('summary');if(summary)locateConversationContent(summary);});}}>收起工具调用</button>}
   </details>;
 }
 type TimelineItem={type:'tools';entries:ConversationEntry[]}|{type:'narration';entry:ConversationEntry};

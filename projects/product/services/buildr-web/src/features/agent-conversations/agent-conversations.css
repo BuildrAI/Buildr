@@ -65,6 +65,12 @@
 .ac-step-group[open]>.ac-step-group-items::-webkit-scrollbar{width:8px}
 .ac-step-group[open]>.ac-step-group-items::-webkit-scrollbar-thumb{background:#d5ddd7;border-radius:4px}
 .ac-step-group[open]>.ac-step-group-items::-webkit-scrollbar-track{background:transparent}
+/* 工具组行是这段列表的标题：比具体工具行更高、更深，但不新增整行背景。 */
+.ac-step-group>summary{min-height:32px;margin-bottom:2px;color:#44534a}
+.ac-step-group[open]>summary{border-bottom:1px solid #edf1ee}
+.ac-step-group>summary>.ac-step-node{color:#6f8378}
+.ac-step-group>summary>.ac-step-action{color:#44534a;font-weight:600}
+.ac-step-group>summary>.ac-step-label{color:#5d6d63;font-weight:500}
 .ac-tool-file-link{display:inline-block;max-width:100%;padding:0 4px;border:0;border-radius:3px;background:#f0f4f1;color:#53765f;font:inherit;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle;cursor:pointer;text-align:left}
 .ac-tool-file-link:hover{background:#e7eee9;text-decoration:underline;text-underline-offset:3px}
 .ac-tool-detail{margin:4px 0 12px 23px;padding:10px 12px;border-radius:6px;background:#f5f7f5;color:#657168;font-size: var(--font-size-secondary)}
