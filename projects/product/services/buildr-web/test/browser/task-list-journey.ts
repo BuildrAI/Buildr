@@ -436,8 +436,10 @@ export async function runTaskListJourney({antdSelectDisplay, antdSelectOptionTex
       return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'browser_prototype_fixture_failed', message: '原型读取夹具失败' } }) });
     });
     try {
-      const prototypeFailure = page.waitForResponse((response: any) => new URL(response.url()).pathname.endsWith('/tasks/browser-task/ui-prototypes') && response.status() === 500);
       await closeTaskReading(page); await page.locator('[data-task-node=design]').click();
+      await page.locator('[data-task-node=design][aria-pressed="true"]').waitFor();
+      await page.locator('#task-detail-refresh[aria-busy="false"]').waitFor();
+      const prototypeFailure = page.waitForResponse((response: any) => new URL(response.url()).pathname.endsWith('/tasks/browser-task/ui-prototypes') && response.status() === 500);
       await page.locator('#task-detail-refresh').click();
       assert.equal((await prototypeFailure).status(), 500);
       await closeTaskReading(page); await page.locator('[data-task-node=requirements]').click();

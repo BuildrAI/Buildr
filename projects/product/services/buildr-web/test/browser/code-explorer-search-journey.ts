@@ -53,11 +53,13 @@ export async function runExplorerSearchJourney({assertEditorText, capture, codeE
     await folder.click();await page.locator('[data-file-path="src/file1.ts"]').waitFor();
     await showPrimaryNavigation(page, 'code');await page.locator('.primary-navigation-rail button[data-nav="code"]').click();await page.locator('.primary-secondary-navigation.is-fixed:visible').waitFor();
     await page.locator('.primary-navigation-rail button[data-nav="code"]').click();await page.locator('.primary-secondary-navigation.is-fixed').waitFor({state:'hidden'});await page.mouse.move(400,4);await page.locator('.primary-secondary-navigation.is-floating').waitFor({state:'hidden'});
-    const geometry=await page.locator('.code-explorer-stage').evaluate((el:HTMLElement)=>{
-      const stage=el.getBoundingClientRect(),parent=el.parentElement!.getBoundingClientRect(),tree=el.querySelector('.global-source-dock')!.getBoundingClientRect();
+    const geometryHandle=await page.waitForFunction(()=>{
+      const el=document.querySelector<HTMLElement>('.code-explorer-stage');
+      if(!el?.isConnected||!el.parentElement||!el.querySelector('.global-source-dock')||!el.querySelector('.code-file-stage'))return false;
+      const stage=el.getBoundingClientRect(),parent=el.parentElement.getBoundingClientRect(),tree=el.querySelector('.global-source-dock')!.getBoundingClientRect();
       const reader=el.querySelector('.code-file-stage')!.getBoundingClientRect();
       return {leftGap:tree.left-parent.left,rightGap:parent.right-stage.right,width:stage.width,parentWidth:parent.width,dividerGap:reader.left-tree.right};
-    });assert.ok(Math.abs(geometry.leftGap)<2,JSON.stringify(geometry));assert.ok(Math.abs(geometry.rightGap)<2,JSON.stringify(geometry));assert.ok(Math.abs(geometry.width-geometry.parentWidth)<2);assert.ok(Math.abs(geometry.dividerGap)<1,JSON.stringify(geometry));
+    });const geometry=await geometryHandle.jsonValue();await geometryHandle.dispose();assert.ok(Math.abs(geometry.leftGap)<2,JSON.stringify(geometry));assert.ok(Math.abs(geometry.rightGap)<2,JSON.stringify(geometry));assert.ok(Math.abs(geometry.width-geometry.parentWidth)<2);assert.ok(Math.abs(geometry.dividerGap)<1,JSON.stringify(geometry));
     await noOverflow();await capture(page,'code-tree-collapsed-menu.png');
     await search('README.md');await fileResult('projects/demo/services/api/README.md').click();await read.markdown('Explorer document');
     const markdown=await page.locator(codeMarkdown).evaluate((el:HTMLElement)=>{const box=el.getBoundingClientRect(),parent=el.parentElement!.getBoundingClientRect(),style=getComputedStyle(el);return {width:box.width,contentWidth:box.width-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight),centerGap:Math.abs((box.left+box.right)-(parent.left+parent.right))};});

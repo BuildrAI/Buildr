@@ -6,7 +6,7 @@ import path from 'node:path';
 import { execFile, execFileSync, spawn, spawnSync } from 'node:child_process';
 import test from 'node:test';
 import YAML from 'yaml';
-import { stopAgentProcess } from '@buildr-ai/buildr-agent';
+import { prepareAgentRuntime, stopAgentProcess } from '@buildr-ai/buildr-agent';
 
 import { createRuntime } from './runtime-harness.ts';
 import { renderWorkspaceManifest } from '../../src/modules/workspace/persistence/workspace-manifest-repository.ts';
@@ -609,6 +609,8 @@ suiteTest('app-process', 'buildr web 重复启动复用单实例并从陈旧 run
   const base: any = temporaryRoot(t);
   const root: any = initWorkspace(t, { name: 'single-instance' });
   const appData: any = path.join(base, 'single-instance-data');
+  // This fixture proves stale state and instance reuse, independently of cold materialization.
+  prepareAgentRuntime({dataRoot:appData});
   fs.mkdirSync(appData, { recursive: true });
   fs.writeFileSync(path.join(appData, 'instance.json'), '{"schemaVersion":"buildr.local-app-instance/v1","url":"http://127.0.0.1:1","secret":"stale","pid":999999}\n');
   const env: any = { ...process.env, BUILDR_APP_DATA_DIR: appData };

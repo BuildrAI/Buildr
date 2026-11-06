@@ -94,10 +94,10 @@ on:
         description: Exact verification-tool commit on dev; product inputs and workflow must match the original Candidate
         required: false
         type: string
+  # Daily development is verified on the developer's current host.
+  # Remote platform verification is explicit; the dev-to-main PR is the release entry.
   pull_request:
-    branches: [dev, main]
-  push:
-    branches: [dev]
+    branches: [main]
 
 permissions:
   contents: read

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { AGENT_SERVICE_APPLICATION, createAgentServiceModule } from '../../src/modules/agent-service/module.ts';
 import { WORKSPACE_APPLICATION } from '../../src/modules/workspace/module.ts';
 import { TASK_QUERY_APPLICATION } from '../../src/modules/task/module.ts';
-import { stopAgentProcess } from '@buildr-ai/buildr-agent';
+import { prepareAgentRuntime, stopAgentProcess } from '@buildr-ai/buildr-agent';
 import { runtimeProvide } from '../../src/bootstrap/runtime.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -445,6 +445,8 @@ test('the real web CLI discovers host interruptions on listening without a brows
   });
   const {base,root}=taskRecordFixture(t,'agent-startup-recovery');
   dataRoot=path.join(base,'restart-profile');
+  // This scenario proves recovery after listening; cold materialization has its own tests.
+  prepareAgentRuntime({dataRoot});
   const service=createAgentService({dataRoot,executors:[],resolveWorkspace:()=>({rootPath:root}),assertTask:()=>{}});
   const conversation=await service.conversations.create('startup-workspace',{});await service.close();
   const filename=path.join(dataRoot,'agent-service','conversations.sqlite');

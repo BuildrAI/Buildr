@@ -21,7 +21,7 @@ description: 按用户请求或任务目标选择并实际执行项目检查，�
 
 Buildr 产品在 `services/buildr` 通过项目包装入口调用 `npm test`、`npm run check`、`npm run test:static`、`npm run test:integration`、`npm run test:e2e`、`npm run test:related`；使用各入口提供的 `--plan` 查看范围、`--check <id>` 显式指定检查。具体检查与类型参数按当前入口帮助，用户的任意明确检查请求不强制改写为任务或发布流程。其他项目使用自身真实入口，不要求采用 Buildr 产品脚本。
 
-Buildr 产品交付代码前必须按[改动选组与修复验证](references/impact-selection.md)运行本技能脚本；路径、语义标签与上次失败共同选组，必要组全绿且无缺口才允许合并。修复只补失败、未完成和实际受影响组及其依赖，不默认整轮重跑。
+Buildr 产品交付代码前必须按[改动选组与修复验证](references/impact-selection.md)运行本技能脚本；路径、语义标签与上次失败共同选组，日常合入按本机适用的必要组验收；其他系统专属检查保留未执行事实，在明确要求远端平台验证或发布时执行，不自动触发远端检查。修复只补失败、未完成和实际受影响组及其依赖，不默认整轮重跑。
 
 ## 3. 执行与证据
 

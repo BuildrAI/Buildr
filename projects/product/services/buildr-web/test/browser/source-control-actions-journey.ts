@@ -78,6 +78,7 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
         await settings.waitFor();
         assert.equal(await settings.getByRole('button',{name:'配置模型',exact:true}).count(),0,'公共模型弹层不提供配置入口');
         assert.equal(await settings.locator('.ac-model-picker .ant-select-arrow').count(),0,'内部模型名称不带下拉箭头');
+        await page.waitForFunction(()=>{const node=document.querySelector('.ac-model-popover');if(!node)return false;const box=node.getBoundingClientRect();return box.width>100&&box.height>30&&getComputedStyle(node).opacity==='1'&&!/(?:enter|appear)-active/.test(node.className);});
         const geometry=await settings.evaluate((node:HTMLElement)=>{const popup=node.closest('.ant-popover')!.getBoundingClientRect(),trigger=document.querySelector('#generate-commit-message-model-menu')!.getBoundingClientRect(),row=node.querySelector('.ac-model-top-row')!.getBoundingClientRect(),item=node.querySelector('.ant-select-selection-item')!,range=document.createRange();range.selectNodeContents(item);const text=range.getBoundingClientRect();return{top:popup.top,triggerBottom:trigger.bottom,left:popup.left,triggerLeft:trigger.left,right:popup.right,triggerRight:trigger.right,center:Math.abs(text.left+text.right-row.left-row.right)/2};});
         assert.ok(geometry.top>=geometry.triggerBottom-1&&Math.abs(geometry.left-geometry.triggerLeft)<=2&&geometry.right>geometry.triggerRight,'紧凑弹层位于按钮下方且向右展开：'+JSON.stringify(geometry));
         assert.ok(geometry.center<=2,'内部模型名相对整行居中：'+JSON.stringify(geometry));
