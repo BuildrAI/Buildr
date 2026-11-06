@@ -1,0 +1,43 @@
+{
+  "schemaVersion": "buildr.openspec-convergence-receipt/v3",
+  "retention": "transaction",
+  "algorithmVersion": 5,
+  "change": "2026-11-06-cjk-strong-quote-opener",
+  "project": "product",
+  "convergenceIdentity": "sha256-543c2ab9a8204c842aa3973a1c227c4670db1e4112f720da3a20246c021682cd",
+  "planIdentity": "sha256-482d2c581054fb73dad5bf182a5f18ce7a401ec02a161ae94e36e2db091f84bf",
+  "deltaDigest": "sha256-fab47866727241a52a2bf38973b036892df39ca8319b3e49b8e43ad76d6087b0",
+  "executableIdentity": {
+    "sourceKind": "external-declared",
+    "reference": "external:openspec",
+    "version": "1.13.0",
+    "sha256": "ca136f0e9fd4951dcf93d8ed729ebc97b2d97d3980cd9dc9d42fc80e32e797c6"
+  },
+  "files": [
+    {
+      "path": "openspec/specs/cjk-strong-compatibility/spec.md",
+      "beforeExists": true,
+      "beforeContent": "# cjk-strong-compatibility Specification\n\n## Purpose\n规定共享 Markdown 对中文标点紧邻正文的双星号加粗写法的兼容边界，同时保留原文、代码字面量及安全渲染行为。\n\n## Requirements\n\n### Requirement: 中文标点紧邻正文的加粗兼容\n\n共享 Markdown 渲染器 SHALL 将含中文文字、以中文标点结尾且闭合双星号紧接中文正文的完整双星号片段渲染为加粗；原始内容 MUST 保持不变。\n\n#### Scenario: 中文标签后直接跟随正文\n- **WHEN** 渲染 `**保留事项：**较宽的跨版本接续套件`\n- **THEN** `保留事项：` 以 strong 元素显示，正文不新增空白，原始星号不显示\n\n#### Scenario: 保留字面量与正常语法\n- **WHEN** 相同文本出现在代码块、行内代码或已转义星号中，或缺少完整闭合符\n- **THEN** 渲染器保留字面含义，不将其转换为加粗\n\n#### Scenario: 安全与既有 Markdown\n- **WHEN** 兼容文本与链接、普通强调或不可信 HTML 同时出现\n- **THEN** 既有链接与强调继续有效，不可信 HTML 仍以安全 DOM 方式处理\n",
+      "expectedExists": true,
+      "expectedContent": "# cjk-strong-compatibility Specification\n\n## Purpose\n规定共享 Markdown 对中文标点紧邻正文的双星号加粗写法的兼容边界，同时保留原文、代码字面量及安全渲染行为。\n\n## Requirements\n\n### Requirement: 中文标点紧邻正文的加粗兼容\n\n共享 Markdown 渲染器 SHALL 将含中文文字的完整双星号片段渲染为加粗，包括：内容以中文标点结尾且闭合双星号紧接中文正文的写法，以及开符双星号紧接引号、括号等标点且内容或后文属于中文语境的写法；原始内容 MUST 保持不变。\n\n#### Scenario: 中文标签后直接跟随正文\n\n- **WHEN** 渲染 `**保留事项：**较宽的跨版本接续套件`\n- **THEN** `保留事项：` 以 strong 元素显示，正文不新增空白，原始星号不显示\n\n#### Scenario: 中文引号紧贴开符\n\n- **WHEN** 渲染 `因为当前框架主要按**\"改了哪个文件\"选组，还不能准确判断\"这个文件里具体改了什么\"**。`\n- **THEN** 引号内的整段内容以 strong 元素显示，正文不显示 `**`\n\n#### Scenario: 全角引号与括号\n\n- **WHEN** 渲染 `按**“改了哪个文件”**选组` 或 `按**（见上文）**处理`\n- **THEN** 两种写法都以 strong 元素显示，正文不显示 `**`\n\n#### Scenario: 保留字面量与正常语法\n\n- **WHEN** 相同文本出现在代码块、行内代码或已转义星号中，或缺少完整闭合符\n- **THEN** 渲染器保留字面含义，不将其转换为加粗\n\n#### Scenario: 安全与既有 Markdown\n\n- **WHEN** 兼容文本与链接、普通强调或不可信 HTML 同时出现\n- **THEN** 既有链接与强调继续有效，不可信 HTML 仍以安全 DOM 方式处理\n",
+      "beforeDigest": "sha256-2bc7424d4123c9ba898e3240033c0c08f5afc6396deaa51914e54d79e6e034aa",
+      "expectedDigest": "sha256-f2cbe1a578bcb8e3df6feb7e96461de28cbd3202c936d2efc6061f32d4c335db"
+    }
+  ],
+  "operations": [
+    {
+      "capability": "cjk-strong-compatibility",
+      "type": "MODIFIED",
+      "requirement": "中文标点紧邻正文的加粗兼容",
+      "status": "safe",
+      "reason": "upstream-validated"
+    }
+  ],
+  "disposition": "planned-not-applied",
+  "validation": null,
+  "apply": null,
+  "confirmation": null,
+  "archive": null,
+  "createdAt": "2026-11-06T02:11:01.511Z",
+  "updatedAt": "2026-11-06T02:11:01.511Z"
+}
