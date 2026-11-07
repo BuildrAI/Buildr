@@ -83,7 +83,7 @@ export function writeVerifiedPluginCandidate(input: { output: string; tarball: s
 export async function verifyAll(args = process.argv.slice(2)) {
 const request = parseVerificationInputs(args);
 const verificationSource = captureVerificationSource(root);
-const { sdk, sdkReceipt, bundles, peer, raw, environment } = preparePluginCheckEnvironment(root, request);
+const { sdk, sdkReceipt, bundles, peer, raw, environment, discardCompletedStaging } = preparePluginCheckEnvironment(root, request);
 const run = (script: string, ...parameters: string[]): void => {
   execFileSync(process.execPath, [join(root, script), ...parameters], { cwd: root, stdio: 'inherit', env: environment, shell: false });
 };
@@ -98,7 +98,8 @@ sourcePhases.push({ id: 'dsh-plugin:peer-gateway', status: 'passed', disposition
 run('test/integration/run-source-ui.ts');
 run('tools/verify-package.ts', '--source-sdk', sdk, '--bundle', join(bundles, 'composition'));
 run('tools/verify-package.ts', '--dev', '--source-sdk', sdk, '--bundle', join(bundles, 'composition-dev'));
-const packEnvironment = smokePeerEnvironment({ root: bundles, workspace: join(bundles, 'pack-workspace'), appData: join(bundles, 'pack-app'), productData: join(bundles, 'pack-product') }, process.execPath);
+const packRoot = join(bundles, 'pack-scope');
+const packEnvironment = smokePeerEnvironment({ root: packRoot, workspace: join(packRoot, 'workspace'), appData: join(packRoot, 'app'), productData: join(packRoot, 'product') }, process.execPath);
 const packed = spawnSync(process.execPath, [resolvePeerNpm(process.execPath, request.npmCli), 'pack', join(bundles, 'composition'), '--json', '--ignore-scripts', '--pack-destination', bundles], { cwd: root, env: packEnvironment, shell: false, encoding: 'utf8', timeout: 30_000 });
 if (packed.error || packed.status !== 0) throw new Error('Verified bundle packing failed');
 const rows = JSON.parse(String(packed.stdout)); if (!Array.isArray(rows) || rows.length !== 1 || !/^[A-Za-z0-9._-]+\.tgz$/.test(rows[0].filename)) throw new Error('Verified package inventory invalid');
@@ -120,6 +121,10 @@ const report = { schemaVersion: 'buildr.dsh-full-verification/v1', status: 'pass
   sourceSdk, sourcePhases, ...(request.candidateOutput ? { candidateBound: true, sourceTree, sourceBinding: { method: 'git-tree-content-equivalence', testedGitHead: verificationSource.observedCommit, testedWorkingTreeDirty: verificationSource.dirty, verifiedContentSha256: verificationSource.contentSha256, candidateSourceCommit: sourceCommit, candidateSourceTree: sourceTree } } : {}),
   checks: ['unit', 'integration', 'source-ui', 'released-loader', 'development-loader', 'actual-package-pair'], variants: ['released', 'development'], runtimeActivated: false, desktopValidated: false };
 if (request.output) writeFileSync(request.output, `${JSON.stringify(report, null, 2)}\n`);
+// The report, phase diagnostics and exact archive remain available. A failed
+// or interrupted run keeps its staging for diagnosis; never sweep other runs.
+try { discardCompletedStaging([tarball, ...(request.output ? [request.output] : []), ...(request.candidateOutput ? [request.candidateOutput] : [])]); }
+catch (error) { console.error('[dsh-source-phase] verification passed; could not reclaim staging:', error); }
 console.log(JSON.stringify(report)); return report;
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await verifyAll();

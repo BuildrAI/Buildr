@@ -1,11 +1,29 @@
 import assert from 'node:assert/strict';
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { collectPluginSourceVerificationBundle, parseVerificationInputs, PLUGIN_PEER_PHASE_FILES, PLUGIN_SOURCE_PHASE_IDS, pluginSourcePhaseFiles, pluginSourcePhaseStep, pluginSourceSdkKey } from '../../tools/verify-all.ts';
+import { completedStagingCleanup } from '../../tools/check-environment.ts';
+
+test('completed verification only reclaims its own staging and preserves usable evidence', t => {
+  const root = mkdtempSync(join(tmpdir(), 'buildr-plugin-staging-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const bundles = join(root, 'checks'), install = join(bundles, 'install'), outside = join(root, 'external-peer');
+  const candidate = join(bundles, 'candidate'), log = join(bundles, 'phase.log'), link = join(bundles, 'link');
+  for (const directory of [install, candidate, outside]) mkdirSync(directory, { recursive: true });
+  writeFileSync(log, 'passed'); writeFileSync(join(candidate, 'candidate.json'), '{}');
+  symlinkSync(outside, link, 'junction');
+  const reclaim = completedStagingCleanup(bundles);
+  reclaim([install, candidate, outside, link], [log, join(candidate, 'candidate.json')]);
+  assert.equal(existsSync(install), false);
+  for (const file of [outside, link, log, join(candidate, 'candidate.json')]) assert.ok(existsSync(file));
+  renameSync(bundles, join(root, 'original-checks')); mkdirSync(install, { recursive: true });
+  reclaim([install], []);
+  assert.ok(existsSync(install), 'a replacement directory is not owned by the completed verification');
+});
 
 test('manual activation tests report the missing explicit SDK while formal full verification still rejects it', t => {
   const root = mkdtempSync(join(tmpdir(), 'buildr-plugin-no-sdk-'));
