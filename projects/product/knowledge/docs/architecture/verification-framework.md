@@ -62,6 +62,8 @@ Buildr 产品使用四类检查：静态检查（Static Check）、单元测试�
 
 准备依实际缺项完成，已有锁定依赖、构建输入和浏览器可以复用，不在每条检查前重装或重复生成。单元测试（Unit Test）不自动准备浏览器、真实账号、付费模型、准确双包或完整厂商软件开发工具包（SDK）。类型检查（Type Check）只证明真实编译范围，不把转译成功或 `noCheck` 声称为严格类型验证。
 
+[HTTP DTO 生成](../../../services/buildr/tools/codegen/contracts/output-paths.ts)比较完整内容后再写入；相同内容保留文件身份和修改时间，变化时通过原子替换发布，已打开的读取者仍持有完整旧文件。[开发依赖准备](../../../services/buildr/tools/development/prepare-development-dependencies.ts)的 Agent 构建与[Agent 包准备](../../../services/buildr/tools/development/prepare-development-agent.ts)共用同一个互斥锁，等待后重新检查已有构建，避免重复构建和读取半成品；其他独立准备继续按原声明执行。
+
 实际工作进程数量和资源必须有界，完整集合的耗时与资源成本需观察并优化，不设统一三十秒门槛，不借无限并发掩盖消耗。发现慢检查先判断范围与实现效率，不仅因慢而改名，也不为达到预算删掉必要断言。
 
 智能体服务（Agent Service）的完整集成入口是从 `services/buildr-agent` 运行 `../buildr/tools/development/run-development-npm run test:integration`；它按[服务检查登记](../../../services/buildr-agent/tools/testing/verification-checks.ts)发现全部组，项目完整入口也消费同一登记。`agent-integration` 覆盖本机存储和对话，`agent-integration-native` 覆盖厂商协议；重型独立进程按启动与归属、跨版本交接、观察与恢复分别归入 `agent-integration-startup`、`agent-integration-handoff`、`agent-integration-recovery`。真实退避上限用例独立归入 `agent-integration-recovery-budget`，避免27秒左右的真实等待挤占恢复组串行预算；保持唯一主归属与完整发现，原恢复组预算不变。使用 `--check` 选择其中一组不能宣称完整智能体覆盖。

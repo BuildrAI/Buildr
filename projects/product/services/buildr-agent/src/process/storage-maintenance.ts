@@ -21,6 +21,9 @@ if (!isMainThread && workerData?.kind === 'agent-storage-program') {
   try { collectReleasedExecutorStorage(workerData.dataRoot, workerData.provider, workerData.configRoot); }
   catch { /* Contention only defers this optional snapshot to periodic maintenance. */ }
 } else if (!isMainThread && workerData?.kind === 'agent-storage-maintenance') {
+  // Keep the public package synchronously loadable by CJS hosts. Only the
+  // maintenance worker owns this asynchronous work, never module evaluation.
+  void (async () => {
   try {
     // Confirmed shutdowns use the same worker as the other storage collectors.
     // The scheduler throttles this even while a diagnostic backlog drains.
@@ -47,6 +50,7 @@ if (!isMainThread && workerData?.kind === 'agent-storage-program') {
       parentPort?.postMessage({ nativeContent: content, removedBytes: result.removedBytes, migratedBytes: result.migratedBytes, shared: result.results.filter(item=>item.status==='shared').length, backlog:result.results.some(item=>item.status!=='retained')&&result.results.some(item=>item.reason==='storage_batch_deferred'), retained: result.results.filter(item => item.status === 'retained').length });
     }catch{parentPort?.postMessage({nativeContent:content,diagnostic:'storage_collection_deferred'});}
   } catch { parentPort?.postMessage({ diagnostic: 'storage_collection_deferred' }); }
+  })();
 }
 
 export class StorageMaintenance {

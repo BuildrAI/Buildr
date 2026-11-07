@@ -8,6 +8,13 @@ import { withExclusiveFileLock } from '../../src/infrastructure/filesystem/exclu
 
 const buildrRoot = path.resolve(import.meta.dirname, '../..');
 
+/** Building source and copying it into the host package share one ownership boundary. */
+export function withDevelopmentAgentPreparationLock<T>(serviceRoot: string, action: () => T): T {
+  const destination = path.join(serviceRoot, 'node_modules/@buildr-ai/buildr-agent');
+  return withExclusiveFileLock(path.join(serviceRoot, 'node_modules/.buildr-agent-preparation.lock'), destination,
+    action, { timeoutMs: 30_000 });
+}
+
 /** Staging garbage is not the published package; cleanup must not revoke a valid adoption. */
 function cleanupPreparationTree(directory: string): void {
   try { fs.rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); }
@@ -24,9 +31,7 @@ export function prepareDevelopmentAgent({
   agentRoot = path.resolve(serviceRoot, '../buildr-agent'),
   build = true,
 }: { serviceRoot?: string; agentRoot?: string; build?: boolean } = {}): string {
-  const destination = path.join(serviceRoot, 'node_modules/@buildr-ai/buildr-agent');
-  return withExclusiveFileLock(path.join(serviceRoot, 'node_modules/.buildr-agent-preparation.lock'), destination,
-    () => materializeDevelopmentAgent({ serviceRoot, agentRoot, build }), { timeoutMs: 30_000 });
+  return withDevelopmentAgentPreparationLock(serviceRoot, () => materializeDevelopmentAgent({ serviceRoot, agentRoot, build }));
 }
 
 function materializeDevelopmentAgent({ serviceRoot, agentRoot, build }: { serviceRoot: string; agentRoot: string; build: boolean }): string {

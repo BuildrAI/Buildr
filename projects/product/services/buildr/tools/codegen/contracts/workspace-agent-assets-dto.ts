@@ -8,7 +8,7 @@ import path from 'node:path';
 import { compile } from 'json-schema-to-typescript';
 import { WORKSPACE_HTTP_SCHEMAS } from '../../../src/modules/workspace/interfaces/http/workspace-http-contracts.ts';
 import { AGENT_ASSETS_HTTP_SCHEMAS } from '../../../src/modules/agent-assets/interfaces/http/agent-assets-http-contracts.ts';
-import { cliOutputRoot, contractOutputPaths } from './output-paths.ts';
+import { cliOutputRoot, contractOutputPaths, writeContractOutput } from './output-paths.ts';
 
 const serviceRoot: any = path.resolve(import.meta.dirname, '../../..');
 const productRoot: any = path.resolve(serviceRoot, '../..');
@@ -49,8 +49,7 @@ export async function writeWorkspaceAgentAssetsDtos(outputRoot: any = undefined)
   const outputs: any[] = [];
   for (const target of rendered) {
     for (const file of [target.backend, target.web]) {
-      fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.writeFileSync(file, target.content);
+      writeContractOutput(file, target.content);
       outputs.push(file);
     }
   }
