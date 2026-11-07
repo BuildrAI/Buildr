@@ -2,7 +2,6 @@
 import { collectVerificationContentSnapshot } from './content-snapshot.ts';
 import { readFailedVerificationGroups } from './failed-groups.ts';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { execFileSync } from 'node:child_process';
@@ -12,6 +11,7 @@ import { createVerificationPlan } from './planner.ts';
 import { executePlan } from './plan-runner.ts';
 import { resolveVerificationExecutionProfile, verificationSteps } from './registry.ts';
 import { collectVerificationSourceIdentity, createVerificationEvidencePaths, writeVerificationTimingEvidence } from './timing/evidence.ts';
+import { createIsolatedWorkspaceState } from '../../tools/development/isolated-workspace-state.ts';
 
 const productRoot = path.resolve(import.meta.dirname, '../..');
 const projectRoot = path.resolve(productRoot, '../..');
@@ -197,25 +197,33 @@ async function runVerification(args: string[], signal: AbortSignal) {
   if(!request.json&&plan.steps.some((step:any)=>focusedConversationCheck(step)))process.stdout.write('[verify] proof scope=focused: unselected conversation groups and scenarios remain unverified.\n');
   if (request.planOnly) return plan.status === 'ready' ? 0 : 1;
   const runnable = { ...plan, steps: plan.steps.filter((step: any) => step.availability === 'ready') };
-  const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-verification-'));
-  const evidence = createVerificationEvidencePaths(request.mode);
   const source = collectVerificationSourceIdentity(productRoot, { projectRoot });
   const startedAt = Date.now();
   const executionProfile = resolveVerificationExecutionProfile(process.env.BUILDR_VERIFICATION_PROFILE);
+  const evidence = createVerificationEvidencePaths(request.mode);
+  const scratch = createIsolatedWorkspaceState();
   let execution: any = { passed: false, results: [] };
   let executionError: string | null = null;
+  let cleanupError: string | null = null;
   try {
     execution = await executePlan(runnable, {
-      productRoot, projectRoot, diagnosticsDirectory: evidence.diagnosticsOutput, artifactDirectory: path.join(temporaryRoot, 'artifacts'),
+      productRoot, projectRoot, diagnosticsDirectory: evidence.diagnosticsOutput, artifactDirectory: path.join(scratch.root, 'artifacts'),
       env: { ...process.env, ...(request.base ? { BUILDR_VERIFICATION_BASE: request.base } : {}), BUILDR_CHANGED_PATHS_JSON: JSON.stringify(plan.paths) },
       executionProfile, concurrency: executionProfile.limits, runId: evidence.runId,
       signal,
       taskId: process.env.BUILDR_TASK_ID ?? source.branch ?? request.mode, stream: process.stdout, errorStream: process.stderr,
     });
   } catch (error: any) { executionError = error.stack ?? error.message; process.stderr.write(`${executionError}\n`); }
-  finally { fs.rmSync(temporaryRoot, { recursive: true, force: true }); }
+  finally {
+    try { scratch.cleanup(); }
+    catch (error) {
+      cleanupError = error instanceof Error ? error.message : String(error);
+      process.stderr.write(`[verify] scratch cleanup deferred: ${cleanupError}\n`);
+    }
+  }
   const runtimeGaps = execution.results.filter((result: any) => result.status === 'blocked').map((result: any) => ({ code: 'execution-unavailable', checkId: result.id, reason: result.reason }));
-  const gaps = [...plan.gaps, ...runtimeGaps, ...(signal.aborted ? [{ code: 'execution-interrupted', reason: `Verification cancelled by ${signal.reason}; unfinished checks remain unverified.` }] : []), ...(executionError ? [{ code: 'execution-interrupted', reason: executionError }] : [])];
+  const gaps = [...plan.gaps, ...runtimeGaps, ...(signal.aborted ? [{ code: 'execution-interrupted', reason: `Verification cancelled by ${signal.reason}; unfinished checks remain unverified.` }] : []), ...(executionError ? [{ code: 'execution-interrupted', reason: executionError }] : []),
+    ...(cleanupError ? [{ code: 'execution-cleanup-incomplete', reason: cleanupError }] : [])];
   const coverage = {
     repair: plan.repair, impactSnapshot: plan.impactSnapshot, mode: plan.mode, selection: plan.selection, target: plan.target, reference: plan.reference, base: plan.base, targetExclusions: plan.targetExclusions, selectionExclusions: plan.selectionExclusions,
     selected: plan.steps.map((step: any) => {

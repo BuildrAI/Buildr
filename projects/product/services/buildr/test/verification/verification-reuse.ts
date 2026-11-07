@@ -1,7 +1,6 @@
 import { verificationInputApplicability } from './result-applicability.ts';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { assertMinimumNodeVersion, createExactNodeExecutionEnvironment, spawnCommandSync } from '../../src/infrastructure/process.ts';
@@ -254,7 +253,12 @@ export function resolveVerificationReuseDirectory(options: VerificationReuseOpti
   const override = env.BUILDR_VERIFICATION_REUSE_DIR;
   if (override) { if (!path.isAbsolute(override)) throw new Error('BUILDR_VERIFICATION_REUSE_DIR must be absolute'); return override; }
   const common = fs.realpathSync(path.resolve(options.productRoot, git(options.productRoot, ['rev-parse', '--git-common-dir']).trim()));
-  return path.join(env.BUILDR_TEST_SHARED_TEMP_ROOT || os.tmpdir(), 'buildr-verification-reuse', digest(common).slice(7, 31), 'v1');
+  if (env.BUILDR_TEST_SHARED_TEMP_ROOT) {
+    return path.join(env.BUILDR_TEST_SHARED_TEMP_ROOT, 'buildr-verification-reuse', digest(common).slice(7, 31), 'v1');
+  }
+  // Verification proofs belong to the repository, including its linked worktrees.
+  // The invoking Agent's temporary directory is only for disposable run state.
+  return path.join(common, 'buildr', 'verification-reuse', 'v1');
 }
 
 export function readVerificationReuseBundle(file: string): VerificationReuseBundle {
