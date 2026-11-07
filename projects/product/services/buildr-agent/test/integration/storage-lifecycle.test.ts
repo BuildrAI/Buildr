@@ -12,7 +12,7 @@ import { ExecutorStorage, executorCacheCandidates } from '../../src/application/
 import { isolatedEnvironment } from '../../src/executors/native-process.ts';
 import { observeStorageUse, removeStorageCandidate, storageCandidate } from '../../src/storage/files.ts';
 import { prepareAgentRuntime } from '../../src/process/runtime-unit.ts';
-import { retainedRuntimeCandidates } from '../../src/process/cleanup.ts';
+import { retainedRuntimeCandidates, runtimeUnreferenced, retireRuntimeRecords } from '../../src/process/cleanup.ts';
 import { claim, controlRoot, writePrivate } from '../../src/process/ownership.ts';
 import { AGENT_EXECUTION_CONTRACTS } from '../../src/execution-contracts.ts';
 import { inspectAgentStorage, collectAgentStorage } from '../../src/application/storage-maintenance.ts';
@@ -195,7 +195,7 @@ test('closed-runtime maintenance requires native release proof and keeps session
 
 test('public maintenance re-inventories previews and cannot apply a forged credential path', { skip: process.platform !== 'darwin' }, t => {
   const dataRoot = fixture(t), config = path.join(dataRoot, 'agent-service/connections/codex/model-bindings', 'c'.repeat(64));
-  const cache = path.join(config, 'home/.npm/_cacache'), plugins = path.join(config, 'codex-home/.tmp/plugins');
+  const cache = path.join(config, 'cache/node-compile'), plugins = path.join(config, 'codex-home/.tmp/plugins');
   file(path.join(cache, 'package')); file(path.join(plugins, 'plugin')); cleanPluginCheckout(plugins);
   const account = path.join(config, 'codex-home/auth.json'); file(account, 'credential'); age(config);
   const executor=createNativeExecutors()[0]!;new ConversationRepository(path.join(dataRoot,'agent-service')).saveConnection({view:{id:'codex',provider:'codex',label:'fixture',revision:'one',enabled:false,status:'disconnected',models:[],capabilities:executor.descriptor.capabilities}} as any);
@@ -219,7 +219,7 @@ test('runtime preparation waits for another process short storage collection', a
   assert.doesNotThrow(()=>prepareAgentRuntime({dataRoot,packageRoot:pkg,entry:'build/entry.js',node}));
 });
 
-test('legacy download classes retire without package archives or shared destination copies', t => {
+test('legacy download classes retain reuse value without package publication or manual approvals', t => {
   const root = path.join(fixture(t), 'agent-service');
   const config = path.join(root, 'connections/dsh/model-bindings', 'c'.repeat(64));
   const executor = createNativeExecutors().find(x => x.descriptor.id === 'dsh')!;
@@ -230,16 +230,16 @@ test('legacy download classes retire without package archives or shared destinat
   const npm = path.join(config, 'cache/npm/_cacache'); file(path.join(npm, 'content-v2/sha512/blob'));
   age(config, Date.now() - 30 * 60_000);
   const plan = () => executorCacheCandidates(root, executor, config, unused, Date.now() - day);
-  assert.ok(plan().find(x => x.path === yarn)?.eligible);
-  assert.ok(plan().find(x => x.path === npm)?.eligible, 'actual npm_config_cache path is declared');
+  assert.equal(plan().find(x => x.path === yarn)?.reason,'legacy_cache_reuse_value_unverified');
+  assert.equal(plan().find(x => x.path === npm)?.eligible,false,'old downloads are not silently discarded');
   const selected = plan().find(x => x.path === yarn)!;
   assert.equal(removeStorageCandidate(root, selected, () => ({ complete: true, paths: [path.join(config, 'native-session')] })), false);
   file(path.join(pkg, '.yarn-metadata.json'), '{}'); age(config);
-  assert.equal(plan().find(x => x.path === yarn)?.eligible, true,'cache classification does not depend on each package manifest');
+  assert.equal(plan().find(x => x.path === yarn)?.eligible,false,'unknown package data remains preserved');
   const outside=path.join(root,'business-output');file(path.join(outside,'result'),'keep');
   fs.symlinkSync(outside,path.join(pkg,'generated-link'));
   const current=plan().find(x=>x.path===yarn)!;
-  assert.equal(removeStorageCandidate(root,current,()=>unused),true);
+  assert.equal(removeStorageCandidate(root,current,()=>unused),false);
   assert.equal(fs.readFileSync(path.join(outside,'result'),'utf8'),'keep','nested links are unlinked, never followed');
   assert.equal(fs.existsSync(path.join(root,'toolchains/cache/yarn')),false,'no package publication prerequisite');
 });
@@ -296,7 +296,7 @@ test('the existing maintenance worker removes completed disposable test state an
   assert.equal(fs.existsSync(publicCache),false,'automatic worker reclaims proven idle expired shared cache');
   assert.ok(observation.homeStorage.objects.some((item:any)=>item.provider==='future-agent'&&item.action==='investigate-owner'));
   assert.equal(fs.readFileSync(path.join(dataRoot,'agent-service/connections/future-agent/home/business-output/keep'),'utf8'),'keep');
-  assert.equal(fs.existsSync(path.join(config,'cache/npm/_cacache')),false);
+  assert.equal(fs.existsSync(path.join(config,'cache/npm/_cacache')),true,'worker preserves unique downloads');
   assert.equal(fs.existsSync(path.join(dataRoot,'agent-service/toolchains/cache/npm/_cacache/content-v2/fixture')),false,'automatic worker retires old cache without making a public duplicate');
 });
 
@@ -401,7 +401,7 @@ test('shared Java and Maven use existing public installations and repository wit
     assert.equal(env.JAVA_HOME,java);assert.equal(env.MAVEN_HOME,maven);assert.equal(env.BUILDR_MAVEN_REPOSITORY,repository);
     assert.ok(env.JAVA_TOOL_OPTIONS?.includes(repository));assert.notEqual(env.HOME,host);
     assert.equal(fs.existsSync(path.join(env.HOME!,'.m2/settings.xml')),false);
-    assert.equal(env.PIP_CACHE_DIR,path.join(shared.cacheRoot,'pip'));
+    assert.equal(env.PIP_CACHE_DIR,path.join(host,process.platform==='darwin'?'Library/Caches/pip':'.cache/pip'));
   }
 });
 
@@ -433,7 +433,7 @@ test('cache retention follows purpose and real observations without a capacity b
   file(path.join(cache,'bytecode'),'regenerable');file(path.join(download,'content-v2/package'),'download');
   age(cache,Date.now()-40*day);age(download,Date.now()-40*day);
   const dependencies={complete:true,contexts:[]},usage=path.join(root,'toolchains/cache-use');
-  assert.ok(sharedCacheCandidates(root,unused,dependencies).every(x=>!x.eligible&&x.reason==='cache_usage_unobserved'));
+  assert.ok(sharedCacheCandidates(root,unused,dependencies).every(x=>!x.eligible&&['cache_usage_unobserved','download_cache_reuse_value_unverified'].includes(x.reason)));
   assert.equal(fs.existsSync(usage),false,'read-only inspection does not create use records');
   observeSharedCacheUse(root,unused,dependencies);
   assert.ok(sharedCacheCandidates(root,unused,dependencies).every(x=>!x.eligible),'first observation starts a full window');
@@ -450,7 +450,7 @@ test('cache retention follows purpose and real observations without a capacity b
   assert.equal(sharedCacheReclaimable(root,compiled,unused,dependencies),false,'new use invalidates an old collector preview');
   assert.ok(sharedCacheCandidates(root,unused,dependencies).every(x=>!x.eligible));
   age(usage,Date.now()-40*day);
-  assert.ok(sharedCacheCandidates(root,unused,dependencies).every(x=>x.eligible));
+  assert.ok(sharedCacheCandidates(root,unused,dependencies).every(x=>x.path===cache?x.eligible:!x.eligible),'expiry is insufficient to discard downloads');
   observeSharedCacheUse(root,unused,{complete:false,contexts:[]});
   assert.ok(sharedCacheCandidates(root,unused,dependencies).every(x=>!x.eligible),'unconfirmed consumers renew a conservative use bound');
   file(path.join(root,'toolchains/cache/npm/_npx/work/index.js'),'installed tool');
@@ -558,15 +558,15 @@ test('shared connection caches retain every active binding and pre-context start
   }
 });
 
-test('legacy npm exec installations are regenerable cache classes, not project dependency trees', t => {
+test('legacy npm exec installations keep installed tool reuse value', t => {
   const root=path.join(fixture(t),'agent-service'),config=path.join(root,'connections/dsh');
   const cache=path.join(config,'home/.npm/_npx'),project=path.join(config,'home/project/node_modules');
   file(path.join(cache,'opaque-install/node_modules/tool/index.js'),'regenerable tool');
   file(path.join(project,'business/index.js'),'user work');
   const executor=createNativeExecutors().find(item=>item.descriptor.id==='dsh')!;
   const items=executorCacheCandidates(root,executor,config,unused,Infinity,false,{complete:true,contexts:[]});
-  const item=items.find(item=>item.path===cache)!;assert.ok(item?.eligible&&item.retire);
-  assert.equal(removeStorageCandidate(root,item,()=>unused),true);
+  const item=items.find(item=>item.path===cache)!;assert.ok(!item?.eligible&&item.retire);
+  assert.equal(removeStorageCandidate(root,item,()=>unused),false);
   assert.equal(fs.readFileSync(path.join(project,'business/index.js'),'utf8'),'user work');
 });
 
@@ -596,7 +596,7 @@ test('unaccepted stale work requires whole-config quiescence while new pending w
   const run={status:'unknown',executionState:'unknown',accepted:false,tools:[]} as any;
   const consumer={run,pending:false};
   const inspect=()=>legacyCacheReferences(root,{storageDependencies(visitor){visitor?.({view:{id:'conversation',cwd:'/work'}},participant,undefined,consumer);return {complete:true,contexts:['dsh:history']};}})(config);
-  const cache=path.join(config,'cache/npm/_cacache');file(path.join(cache,'download'),'rebuildable');
+  const cache=path.join(config,'cache/node-compile');file(path.join(cache,'download'),'rebuildable');
   const references=inspect();assert.deepEqual(references.contexts,[]);assert.equal(references.strictOccupancy,true);
   const executor=createNativeExecutors().find(x=>x.descriptor.id==='dsh')!;
   const held=executorCacheCandidates(root,executor,config,{complete:true,paths:[path.join(config,'dsh-home/session')]},Infinity,false,references).find(x=>x.path===cache)!;
@@ -605,4 +605,56 @@ test('unaccepted stale work requires whole-config quiescence while new pending w
   consumer.pending=true;assert.ok(inspect().contexts.length);
   consumer.pending=false;run.status='starting';assert.ok(inspect().contexts.length);
   assert.equal(run.executionState,'unknown');
+});
+
+
+test('local curated-sync copies require the same clean official managed seed', t => {
+ const root=path.join(fixture(t),'agent-service'),config=path.join(root,'connections/codex/model-bindings','d'.repeat(64));
+ const seed=path.join(root,'connections/codex/cache/curated-plugins');file(path.join(seed,'plugin.js'));cleanPluginCheckout(seed);
+ const checkout=path.join(config,'codex-home/.tmp/plugins');fs.mkdirSync(path.dirname(checkout),{recursive:true});fs.cpSync(seed,checkout,{recursive:true});
+ execFileSync('git',['-C',checkout,'remote','remove','origin']);
+ const head=execFileSync('git',['-C',seed,'rev-parse','HEAD'],{encoding:'utf8'}).trim();
+ file(path.join(checkout,'.git/FETCH_HEAD'),head+"\t\t'refs/codex/curated-sync' of /retired/local/checkout\n");
+ const executor=createNativeExecutors().find(x=>x.descriptor.id==='codex')!;
+ assert.equal(executor.storage!.canReclaim!(config,'codex-home/.tmp/plugins'),true);
+ file(path.join(checkout,'local-work'),'keep');assert.equal(executor.storage!.canReclaim!(config,'codex-home/.tmp/plugins'),false);
+ fs.unlinkSync(path.join(checkout,'local-work'));fs.rmSync(seed,{recursive:true});
+ assert.equal(executor.storage!.canReclaim!(config,'codex-home/.tmp/plugins'),false,'local URL alone grants no deletion authority');
+});
+
+
+test('historical recovery contexts do not pin retired compile caches but pending work still protects them', async t=>{
+ const {cacheStorageDependencies}=await import('../../src/application/storage-maintenance.ts');
+ const {sharedCacheCandidates,sharedCacheReclaimable}=await import('../../src/storage/shared-cache.ts');
+ const {registerToolCache}=await import('../../src/storage/toolchain-locations.ts');
+ const base=fixture(t),root=path.join(base,'agent-service'),owner=path.join(root,'connections/dsh'),cache=path.join(root,'toolchains/cache/node-compile'),host=path.join(base,'host-compile');
+ file(path.join(owner,'keep'),'account');file(path.join(cache,'code'),'bytecode');fs.mkdirSync(host);registerToolCache(root,'node-compile',host);
+ const run={resourcesReleased:true,tools:[]} as any,consumer={run,pending:false};
+ const repo={storageDependencies(visitor:any){visitor?.({view:{id:'one',cwd:'/work'}},{provider:'dsh',connectionId:'dsh',bindingIdentity:'binding'},undefined,consumer);return {complete:true,contexts:['dsh:native-history']};}};
+ let refs=cacheStorageDependencies(root,repo);assert.deepEqual(refs.contexts,[]);
+ let item=sharedCacheCandidates(root,unused,refs).find(item=>item.path===cache)!;
+ assert.equal(item.eligible,true,'explicitly retired bytecode needs no extra retention window');assert.equal(sharedCacheReclaimable(root,item,unused,refs),true);
+ consumer.pending=true;refs=cacheStorageDependencies(root,repo);assert.ok(refs.contexts.length);assert.equal(sharedCacheCandidates(root,unused,refs).find(item=>item.path===cache)!.eligible,false);
+ assert.equal(fs.readdirSync(host).length,0,'host content is never collected');
+});
+
+
+test('a completed adoption acknowledgement cannot pin a confirmed stopped runtime', t=>{
+ const base=fixture(t),dataRoot=path.join(base,'profile'),pkg=path.join(base,'package'),node=path.join(base,'node');
+ file(path.join(pkg,'package.json'),'{}');file(path.join(pkg,'build/entry.js'),'export {};');file(path.join(pkg,'build/runtime-contracts.json'),JSON.stringify({contracts:AGENT_EXECUTION_CONTRACTS,storageVersion:1}));file(node,'fixture node');fs.chmodSync(node,0o700);
+ const unit=prepareAgentRuntime({dataRoot,packageRoot:pkg,entry:'build/entry.js',node}),generation=randomUUID();
+ writePrivate(path.join(controlRoot(dataRoot),'instances',generation+'.json'),{identity:{dataRoot,generation,pid:2147483647,runtime:unit},stopped:true,confirmed:true});
+ writePrivate(path.join(controlRoot(dataRoot),'pending.json'),{runtime:unit,state:'waiting'});
+ assert.equal(retainedRuntimeCandidates(dataRoot,unused,undefined,Date.now(),true).find(x=>x.path===unit.directory)!.eligible,false);
+ writePrivate(path.join(controlRoot(dataRoot),'pending.json'),{runtime:unit,state:'adopted'});
+ assert.equal(retainedRuntimeCandidates(dataRoot,unused,undefined,Date.now(),true).find(x=>x.path===unit.directory)!.eligible,true);
+ const instanceId=randomUUID();writePrivate(path.join(controlRoot(dataRoot),'instance.json'),{identity:{dataRoot,generation,instanceId,pid:2147483647,runtime:unit},stopped:false,confirmed:false});
+ writePrivate(path.join(controlRoot(dataRoot),'last-stop.json'),{instanceId:randomUUID(),confirmed:true});
+ assert.equal(runtimeUnreferenced(dataRoot,unit.directory),false,'mismatched stop receipt preserves the current pointer');
+ writePrivate(path.join(controlRoot(dataRoot),'last-stop.json'),{instanceId,confirmed:true});
+ const candidate=retainedRuntimeCandidates(dataRoot,unused,undefined,Date.now(),true).find(x=>x.path===unit.directory)!;
+ assert.equal(candidate.eligible,true);assert.equal(removeStorageCandidate(path.join(dataRoot,'agent-service'),candidate,()=>unused,()=>runtimeUnreferenced(dataRoot,unit.directory)),true);
+ retireRuntimeRecords(dataRoot,unit.directory);
+ assert.equal(fs.existsSync(path.join(controlRoot(dataRoot),'instance.json')),false);assert.equal(fs.existsSync(path.join(controlRoot(dataRoot),'pending.json')),false);
+
 });

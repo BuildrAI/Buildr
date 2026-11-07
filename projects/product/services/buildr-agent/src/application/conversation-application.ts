@@ -305,7 +305,8 @@ export class ConversationApplication {
       for(const finish of [...this.sourceReleasePending.values()])await finish().catch(()=>false);
       const groups = new Map<AgentRuntime, Array<{id:string; leaseIdentity?:string; source:Promise<{runtime:AgentRuntime;model:string;leaseIdentity?:string}>}>>();
       for (const [id, source] of this.sourceRuntimes) {
-        const value = await source.catch(() => undefined); if (!value) continue;
+        // An unrelated initialization owns no ready runtime to reclaim.
+        const value = await Promise.race([source.catch(() => undefined), new Promise<undefined>(resolve => setImmediate(() => resolve(undefined)))]); if (!value) continue;
         const members=groups.get(value.runtime)??[];members.push({id,source,leaseIdentity:value.leaseIdentity});groups.set(value.runtime,members);
       }
       for (const [runtime,members] of groups) {

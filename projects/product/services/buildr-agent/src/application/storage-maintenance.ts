@@ -1,4 +1,6 @@
 import fs from 'node:fs';
+import { legacyDownloadRetained } from '../storage/tool-cache.ts';
+import { migrateVerifiedNpmCache } from '../storage/cache-migration.ts';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createNativeExecutors } from '../executors/index.ts';
@@ -10,7 +12,7 @@ import { discoverHomeStorage } from '../storage/home-discovery.ts';
 import { runtimeObjectCandidates, runtimeObjectUnreferenced } from '../storage/runtime-objects.ts';
 import { runtimeSharingCandidates, shareRetainedRuntime } from '../process/runtime-sharing.ts';
 import { retainedRuntimeCandidates, retireRuntimeRecords, runtimeUnreferenced } from '../process/cleanup.ts';
-import { observeStorageUse, removeStorageCandidate, removeDiagnosticFileBatch, safeStoragePath, safeStorageResource, type StorageCandidate } from '../storage/files.ts';
+import { observeStorageUse, removeStorageCandidate, removeDiagnosticFileBatch, removeDiagnosticDatabaseFamily, safeStoragePath, safeStorageResource, type StorageCandidate } from '../storage/files.ts';
 import { testArtifactCandidates, testArtifactUnreferenced } from '../storage/test-artifacts.ts';
 import type { HomeDiscoveryCursor } from '../storage/home-discovery.ts';
 import { diagnosticCandidates, diagnosticUnreferenced } from '../storage/diagnostics.ts';
@@ -20,6 +22,36 @@ export interface AgentStoragePlan {
   schemaVersion: 1; dataRoot: string; generatedAt: string;
   homeStorage?: ReturnType<typeof discoverHomeStorage>; sharedCachePolicy?: typeof sharedCachePolicy;
   observationComplete: boolean; items: StorageCandidate[]; diagnostics: string[];
+}
+
+/** Batch migration of the known old npm cache class. The worker and direct
+ * maintenance use the same references, lock, occupancy and final identity proof. */
+export async function mergeLegacyNpmCaches(plan:AgentStoragePlan,budgetMs=30000) {
+  const root=path.join(plan.dataRoot,'agent-service'),repository=new ConversationRepository(root);
+  const deadline=Date.now()+Math.max(100,Math.min(budgetMs,30000)),results=[];
+  for(const item of plan.items){
+    if(item.kind!=='cache'||!['home/.npm/_cacache','cache/npm/_cacache'].includes(path.relative(item.ownerRoot,item.path).split(path.sep).join('/')))continue;
+    let lock:ReturnType<typeof claim>|undefined;
+    try {
+      if(Date.now()>deadline)break;
+      lock=claim(plan.dataRoot,'storage');
+      const owner=path.relative(root,item.ownerRoot).split(path.sep).join('/');
+      const match=/^connections\/([^/]+)(?:\/model-bindings\/[a-f0-9]{64})?$/.exec(owner);
+      const executor=createNativeExecutors().find(value=>value.descriptor.id===match?.[1]);
+      if(!executor)continue;
+      const refs=legacyCacheReferences(root,repository)(item.ownerRoot);
+      const fresh=executorCacheCandidates(root,executor,item.ownerRoot,observeStorageUse(),Date.now(),false,refs).find(value=>value.path===item.path);
+      if(!fresh?.identity||fresh.identity!==item.identity){results.push({path:item.path,removed:false,reason:'npm_cache_source_changed'});continue;}
+      const idle=()=>{
+        const refs=legacyCacheReferences(root,repository)(item.ownerRoot);
+        return refs.complete&&refs.contexts.length===0;
+      };
+      const result=await migrateVerifiedNpmCache(root,{...fresh,eligible:true},deadline,observeStorageUse,idle);
+      results.push({path:item.path,sizeBytes:item.sizeBytes,...result});
+    }catch(error){results.push({path:item.path,removed:false,reason:error instanceof Error&&error.message==='npm_cache_migration_deferred'?'npm_cache_migration_deferred':'npm_cache_verification_or_use_retained'});}
+    finally{lock?.release();}
+  }
+  return results;
 }
 
 /** Native release proof is supplied by the owning runtime; all expensive file
@@ -44,7 +76,8 @@ export function inspectAgentStorage(input: { dataRoot: string; homeCursor?:HomeD
   const result: AgentStoragePlan = { schemaVersion: 1, dataRoot, generatedAt: new Date().toISOString(), observationComplete: use.complete, items: [], diagnostics: use.diagnostic ? [use.diagnostic] : [] };
   if (!safeStoragePath(dataRoot, root)) { result.diagnostics.push('storage_root_unsafe'); return result; }
   const cutoff = Date.now() - 24 * 60 * 60_000;
-  const references = legacyCacheReferences(root, new ConversationRepository(root));
+  const repository = new ConversationRepository(root);
+  const references = legacyCacheReferences(root, repository);
   const dependencies = references.dependencies;
   for (const executor of createNativeExecutors()) {
     const account = path.join(root, 'connections', executor.descriptor.id);
@@ -58,13 +91,13 @@ export function inspectAgentStorage(input: { dataRoot: string; homeCursor?:HomeD
       result.items.push(...executorCacheCandidates(root, executor, config, use, cutoff,false,references(config)));
       result.items.push(...testArtifactCandidates(root, config, use, cutoff));
       result.items.push(...nestedStoppedRuntimeCandidates(root, config, use));
-      try { result.items.push(...diagnosticCandidates(root, executor, config, use, dependencies, Date.now())); }
+      try { result.items.push(...diagnosticCandidates(root, executor, config, use, dependencies, Date.now(),references(config))); }
       catch { result.diagnostics.push('diagnostic_inventory_unknown:' + executor.descriptor.id); }
     }
   }
   try { result.items.push(...retainedRuntimeCandidates(dataRoot, use), ...runtimeSharingCandidates(dataRoot, use), ...runtimeObjectCandidates(root, use)); }
   catch { result.diagnostics.push('runtime_inventory_unknown'); }
-  result.items.push(...sharedCacheCandidates(root,use,dependencies));
+  result.items.push(...sharedCacheCandidates(root,use,cacheStorageDependencies(root,repository,references)));
   result.sharedCachePolicy=sharedCachePolicy;
   if(input.scanHomes!==false)result.homeStorage=discoverHomeStorage(root,{cursor:input.homeCursor});
   return result;
@@ -80,8 +113,12 @@ export function collectAgentStorage(plan: AgentStoragePlan, maximumItems = 128, 
   const executors = new Map(createNativeExecutors().map(executor => [executor.descriptor.id, executor]));
   const storage = new ExecutorStorage(root);
   const repository = new ConversationRepository(root);
+  const diagnosticReferences=(item:StorageCandidate)=>item.diagnostic?.config
+    ?legacyCacheReferences(root,repository)(item.diagnostic.config)
+    :item.diagnostic?.contextId?repository.storageDependencies():{complete:true,contexts:[]};
   const cacheUnreferenced=(item:StorageCandidate)=>{
     if(!item.retire)return true;
+    if(legacyDownloadRetained(path.relative(item.ownerRoot,item.path)))return false;
     const dependencies = legacyCacheReferences(root, repository)(item.ownerRoot);
     return dependencies.complete && dependencies.contexts.length === 0 && (!dependencies.strictOccupancy || !item.useRoot);
   };
@@ -99,18 +136,29 @@ export function collectAgentStorage(plan: AgentStoragePlan, maximumItems = 128, 
       results.push({ path: expected.path, status: 'retained', reason: 'storage_batch_deferred', sizeBytes: item?.sizeBytes ?? expected.sizeBytes }); continue;
     }
     if (item?.eligible && item.kind === expected.kind && item.identity === expected.identity) {
-      if(item.kind==='diagnostic'&&item.sizeBytes<=256*1024&&safeStorageResource(root,item.path,64)) {
+      if(item.kind==='diagnostic'&&(item.sizeBytes<=256*1024||item.diagnostic?.database)&&safeStorageResource(root,item.path,64)) {
         const group:Array<{expected:StorageCandidate;item:StorageCandidate}>=[];
-        for(const value of pending){
+        const database=item.diagnostic?.database;
+        const members=database?current.items.filter(value=>value.diagnostic?.database===database):[];
+        const expectedItems=new Map(plan.items.map(value=>[value.path,value]));
+        if(database&&(members.length>limit-attempted||members.some(value=>!value.eligible||expectedItems.get(value.path)?.identity!==value.identity))){
+          for(const value of pending.filter(value=>value.diagnostic?.database===database)){
+            handled.add(value.path);results.push({path:value.path,status:'retained',reason:'diagnostic_family_retained',sizeBytes:value.sizeBytes});
+          }
+          continue;
+        }
+        for(const value of database?members:pending){
           if(group.length>=Math.min(256,limit-attempted))break;
           if(handled.has(value.path))continue;
           const candidate=candidates.get(value.kind + ":" + value.path);
-          if(candidate?.eligible&&candidate.kind==='diagnostic'&&value.kind===candidate.kind&&candidate.identity===value.identity&&candidate.sizeBytes<=256*1024&&safeStorageResource(root,candidate.path,64))group.push({expected:value,item:candidate});
+          if(candidate?.eligible&&candidate.kind==='diagnostic'&&value.kind===candidate.kind&&candidate.identity===value.identity&&
+            (database?candidate.diagnostic?.database===database:!candidate.diagnostic?.database&&candidate.sizeBytes<=256*1024)&&safeStorageResource(root,candidate.path,64))group.push({expected:value,item:candidate});
         }
         let groupLock:ReturnType<typeof claim>|undefined;let removed=new Set<string>();
         try {
           groupLock=claim(plan.dataRoot,'storage');
-          removed=new Set(removeDiagnosticFileBatch(root,group.map(value=>value.item),value=>diagnosticUnreferenced(value,value.diagnostic?.contextId?repository.storageDependencies():{complete:true,contexts:[]}),observeStorageUse,deadline));
+          const collect=database?removeDiagnosticDatabaseFamily:removeDiagnosticFileBatch;
+          removed=new Set(collect(root,group.map(value=>value.item),value=>diagnosticUnreferenced(value,diagnosticReferences(value)),observeStorageUse,deadline));
         }catch{/* Lock or observation failure only defers this group. */}finally{groupLock?.release();}
         for(const value of group){handled.add(value.item.path);results.push({path:value.item.path,status:removed.has(value.item.path)?'removed':'retained',reason:removed.has(value.item.path)?'unused_diagnostic':Date.now()>deadline?'storage_batch_deferred':'storage_recheck_retained',sizeBytes:value.item.sizeBytes});}
         attempted+=group.length;continue;
@@ -125,7 +173,7 @@ export function collectAgentStorage(plan: AgentStoragePlan, maximumItems = 128, 
         if (!policy || executor && !storage.preserveSnapshot(executor, item.ownerRoot, item.path)) reason = 'cache_seed_or_contents_retained';
         else {
           removed = item.kind === 'runtime-share' ? shareRetainedRuntime(root, item, deadline) : removeStorageCandidate(root, item, observeStorageUse, directory => item.retire ? cacheUnreferenced(item) : item.kind === 'runtime'
-            ? runtimeUnreferenced(runtimeDataRoot, item.path) : item.kind === 'shared-cache' ? sharedCacheReclaimable(root,item,observeStorageUse(),repository.storageDependencies()) : item.kind === 'runtime-object' ? runtimeObjectUnreferenced(directory, path.basename(item.path)) : item.kind === 'test-artifact' ? testArtifactUnreferenced(directory, item.path) : item.kind !== 'diagnostic' || diagnosticUnreferenced(item, repository.storageDependencies()));
+            ? runtimeUnreferenced(runtimeDataRoot, item.path) : item.kind === 'shared-cache' ? sharedCacheReclaimable(root,item,observeStorageUse(),cacheStorageDependencies(root,repository)) : item.kind === 'runtime-object' ? runtimeObjectUnreferenced(directory, path.basename(item.path)) : item.kind === 'test-artifact' ? testArtifactUnreferenced(directory, item.path) : item.kind !== 'diagnostic' || diagnosticUnreferenced(item, diagnosticReferences(item)));
           if (removed && item.kind === 'runtime') {
             try { retireRuntimeRecords(runtimeDataRoot, item.path); } catch { current.diagnostics.push('runtime_metadata_retained:' + item.path); }
           }
@@ -194,4 +242,13 @@ export function legacyCacheReferences(root: string, repository: Pick<Conversatio
     const protectedScope = configs.has(config) || unknown.has(provider!) || contexts.length > 0 && !observed.has(provider!) || sharedConnection && consumers.has(provider!);
     return {complete: dependencies.complete, strictOccupancy: quiescent.has(config), contexts: protectedScope ? contexts.length ? contexts : [provider + ':pending-native-context'] : []};
   }, {dependencies});
+}
+
+/** Historical transcripts are recovery evidence, not compile-cache consumers.
+ * Keep active/pending and unresolved bindings, including future providers. */
+export function cacheStorageDependencies(root:string, repository:Pick<ConversationRepository,'storageDependencies'>, references=legacyCacheReferences(root,repository)):{complete:boolean;contexts:string[]} {
+  try {
+    const providers=new Set([...createNativeExecutors().map(value=>value.descriptor.id),...fs.readdirSync(path.join(root,'connections'))]);
+    return {complete:references.dependencies.complete,contexts:[...new Set([...providers].filter(value=>/^[a-z][a-z0-9-]*$/.test(value)).flatMap(provider=>references(path.join(root,'connections',provider)).contexts))]};
+  }catch{return {complete:false,contexts:[]};}
 }

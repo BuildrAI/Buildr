@@ -276,7 +276,7 @@ export class ConnectionApplication {
   async releaseGatewayRuntime(runtime: AgentRuntime): Promise<void> {
     const owned = [];
     for (const [key, pending] of this.gatewayRuntimes) {
-      const candidate = await pending.catch(() => undefined);
+      const candidate = await Promise.race([pending.catch(() => undefined), new Promise<undefined>(resolve => setImmediate(() => resolve(undefined)))]);
       if (candidate === runtime) owned.push({key,pending});
     }
     if (!owned.length) {

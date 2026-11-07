@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { selectedToolCache } from './toolchain-locations.ts';
 import path from 'node:path';
 import { toolCacheReclaimable } from './tool-cache.ts';
 import { ensureStorageDirectory, safeStoragePath, storageCandidate, storageInUse, type StorageCandidate, type StorageUse } from './files.ts';
@@ -15,6 +16,13 @@ const bodies = [
   { relative: 'node-compile', key: 'node-compile', days: sharedCachePolicy.compileRetentionDays },
   { relative: 'python', key: 'python-compile', days: sharedCachePolicy.compileRetentionDays },
 ];
+/** Only the old service-owned bytecode directory is retired. Host caches stay
+ * outside collection authority; their mere existence never permits deletion. */
+function retiredCompileCache(root:string,relative:string):boolean {
+  if(relative!=='node-compile'&&relative!=='python')return false;
+  const selected=selectedToolCache(root,relative);
+  return !!selected&&selected!==root&&!selected.startsWith(root+path.sep);
+}
 const stampPath = (root:string,key:string) => path.join(root,'toolchains/cache-use',key);
 function lastPossibleUse(root:string,key:string):number|undefined {
   const file=stampPath(root,key);
@@ -53,7 +61,8 @@ export function observeSharedCacheUse(root:string,use:StorageUse,dependencies:{c
 }
 export function sharedCacheReclaimable(root:string,item:StorageCandidate,use:StorageUse,dependencies:{complete:boolean;contexts:string[]},now=Date.now()):boolean {
   const body=bodies.find(value=>path.join(root,'toolchains/cache',value.relative)===item.path);
-  if(!body||['uv','yarn/v6'].includes(body.relative)||!sharedCacheUnreferenced(root,use,dependencies))return false;
+  if(!body||!['node-compile','python'].includes(body.relative)||!sharedCacheUnreferenced(root,use,dependencies))return false;
+  if(retiredCompileCache(root,body.relative))return true;
   const observed=lastPossibleUse(root,body.key);
   return observed!==undefined&&observed<=now-body.days*day;
 }
@@ -61,14 +70,16 @@ export function sharedCacheCandidates(root:string,use:StorageUse,dependencies:{c
   const base=path.join(root,'toolchains/cache'),owner=path.join(root,'connections');
   if(!safeStoragePath(root,base)||!safeStoragePath(root,owner))return [];
   return bodies.filter(body=>safeStoragePath(root,path.join(base,body.relative))).map(body=>{
-    const item=storageCandidate(root,'shared-cache',path.join(base,body.relative),owner,use,now-body.days*day);
+    const retired=retiredCompileCache(root,body.relative);
+    const item=storageCandidate(root,'shared-cache',path.join(base,body.relative),owner,use,retired?Infinity:now-body.days*day);
     const observed=lastPossibleUse(root,body.key);
     item.retentionDays=body.days;item.lastPossibleUseAt=observed;
     if(!toolCacheReclaimable(base,body.relative)){item.eligible=false;item.reason='cache_contents_retained';}
-    if(observed===undefined){item.eligible=false;item.reason='cache_usage_unobserved';}
-    else if(observed>now-body.days*day){item.eligible=false;item.reason='shared_cache_recent_use';}
+    if(!retired&&observed===undefined){item.eligible=false;item.reason='cache_usage_unobserved';}
+    else if(!retired&&observed!==undefined&&observed>now-body.days*day){item.eligible=false;item.reason='shared_cache_recent_use';}
     if(['uv','yarn/v6'].includes(body.relative)){item.eligible=false;item.reason='shared_cache_installation_references_unproven';}
     if(!sharedCacheUnreferenced(root,use,dependencies)){item.eligible=false;item.reason='shared_cache_consumer_or_recovery_retained';}
+    if(!['node-compile','python'].includes(body.relative)){item.eligible=false;item.reason='download_cache_reuse_value_unverified';}
     return item;
   });
 }

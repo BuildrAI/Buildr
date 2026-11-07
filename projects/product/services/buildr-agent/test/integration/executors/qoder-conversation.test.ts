@@ -142,9 +142,13 @@ test('Qoder idle resource shutdown preserves the exact completed observation wit
     const control = { contextRef: f.contextRef, executionRef: accepted.executionRef };
     assert.equal((await f.runtime.observe(control)).status, 'idle');
     assert.equal(await f.runtime.prepareRelease!(control), true);
+    const stale={...control,executionRef:{...control.executionRef,data:{...control.executionRef.data,backgroundWork:true}}};
+    assert.equal(await f.runtime.prepareRelease!(stale),true,'fresh proof supersedes an old background hint');
+
     const beforeClose = round.events.length;
     await f.runtime.close();
     assert.deepEqual(round.events.slice(beforeClose), [], 'closing the idle control channel must not revoke the native completion');
+    assert.deepEqual(await f.runtime.canRelease!(stale), { executionState: 'unknown' },'pre-close native proof survives into physical exit verification');
     assert.deepEqual(await f.runtime.canRelease!(control), { executionState: 'unknown' });
     assert.equal(round.events.filter(event => event.type === 'accepted').length, 1, 'shutdown never resends the input');
   } finally { await f.close(); }

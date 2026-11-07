@@ -9,6 +9,14 @@ const ownedDirectory=(directory:string)=>{try{const stat=fs.lstatSync(directory)
 function existing(value:string|undefined):string|undefined{
   try{if(!value||!path.isAbsolute(value))return;const actual=fs.realpathSync(value);return ownedDirectory(actual)?actual:undefined;}catch{return;}
 }
+/** Create only a verified host-owned path; never follow a cache link or
+ * turn an isolated Agent HOME into another tool environment. No package IO. */
+export function prepareHostToolDirectory(home:string|undefined,relative:string,root:string):string|undefined {
+  const base=existing(home);
+  if(!base || base===root || base.startsWith(root+path.sep) || path.isAbsolute(relative) || relative.split(/[\\/]/).some(part=>!part||part==='.'||part==='..'))return;
+  const target=path.join(base,relative);
+  try {ensureStorageDirectory(base,target);return target;}catch{return;}
+}
 /** Read only literal public cache paths. Never source shell code, inherit an
  * npmrc/yarnrc, or copy authentication settings into an Agent environment. */
 function configured(home:string|undefined,name:string,field:string):string|undefined{
@@ -55,12 +63,17 @@ export function selectHostToolCaches(root:string,input:Readonly<Record<string,st
     'node-gyp':supplied.npm_config_devdir||(cache&&path.join(cache,'node-gyp')),
     pip:supplied.PIP_CACHE_DIR||(cache&&path.join(cache,'pip')),
     uv:supplied.UV_CACHE_DIR||(cache&&path.join(cache,'uv')),
-    python:supplied.PYTHONPYCACHEPREFIX,
-    'node-compile':supplied.NODE_COMPILE_CACHE,
+    python:supplied.PYTHONPYCACHEPREFIX||(cache&&path.join(cache,'python')),
+    'node-compile':supplied.NODE_COMPILE_CACHE||(cache&&path.join(cache,'node-compile')),
   };
   const result:Partial<Record<ToolCache,string>>={};
-  const external=(value:string|undefined)=>{const actual=existing(value);return actual&&actual!==root&&!actual.startsWith(root+path.sep)?actual:undefined;};
-  const defaults:Partial<Record<ToolCache,string|undefined>>={npm:configured(home,'.npmrc','cache')||(home&&path.join(home,'.npm')),yarn:configured(home,'.yarnrc','cache-folder')||(cache&&path.join(cache,'Yarn')),corepack:home&&path.join(home,'.cache/node/corepack'),'node-gyp':cache&&path.join(cache,'node-gyp'),pip:cache&&path.join(cache,'pip'),uv:cache&&path.join(cache,'uv')};
+  const external=(value:string|undefined)=>{
+    if(!value||!path.isAbsolute(value)||value===root||value.startsWith(root+path.sep))return;
+    const relative=home&&path.relative(home,value);
+    const actual=relative&&!relative.startsWith('..')&&!path.isAbsolute(relative)?prepareHostToolDirectory(home,relative,root):existing(value);
+    return actual&&actual!==root&&!actual.startsWith(root+path.sep)?actual:undefined;
+  };
+  const defaults:Partial<Record<ToolCache,string|undefined>>={npm:configured(home,'.npmrc','cache')||(home&&path.join(home,'.npm')),yarn:configured(home,'.yarnrc','cache-folder')||(cache&&path.join(cache,'Yarn')),corepack:home&&path.join(home,'.cache/node/corepack'),'node-gyp':cache&&path.join(cache,'node-gyp'),pip:cache&&path.join(cache,'pip'),uv:cache&&path.join(cache,'uv'),python:cache&&path.join(cache,'python'),'node-compile':cache&&path.join(cache,'node-compile')};
   for(const name of toolCaches){
     // An inherited legacy private cache must not become the system default.
     const value=external(candidates[name])||external(selectedToolCache(root,name))||external(defaults[name]);

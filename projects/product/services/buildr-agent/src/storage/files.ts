@@ -16,7 +16,7 @@ export interface StorageCandidate {
   retentionDays?: number; lastPossibleUseAt?: number;
   /** Exact nested Buildr profile, discovered only under a private native HOME. */
   runtimeDataRoot?: string;
-  diagnostic?: { provider: string; producerPid?: number; contextId?: string };
+  diagnostic?: { provider: string; producerPid?: number; contextId?: string; config?:string; database?:string };
 }
 export interface StorageVersion { identity: string; sizeBytes: number; modified: number; rootChanged: number }
 export const storageUseRoot=(item:StorageCandidate)=>item.kind==='cache'&&item.useRoot===item.path?item.path:item.ownerRoot;
@@ -132,6 +132,15 @@ export function removeDiagnosticFileBatch(root: string, items: StorageCandidate[
   return removeSmallResourceBatch(root,items,unreferenced,observe,deadline,'diagnostic');
 }
 
+/** A verified SQLite diagnostic and its WAL/SHM form one bounded family.
+ * Stage and validate every member before deleting any; main file is last. */
+export function removeDiagnosticDatabaseFamily(root:string,items:StorageCandidate[],unreferenced:(item:StorageCandidate)=>boolean,
+  observe=observeStorageUse,deadline=Date.now()+3000):string[]{
+  const database=items[0]?.diagnostic?.database,config=items[0]?.diagnostic?.config;
+  if(!database||!config||!items.length||items.length>3||items.some(item=>item.ownerRoot!==config||item.diagnostic?.database!==database||!['','-wal','-shm'].some(suffix=>item.path===database+suffix)))return [];
+  return removeSmallResourceBatch(root,[...items].sort((a,b)=>Number(a.path===database)-Number(b.path===database)),unreferenced,observe,deadline,'diagnostic',true);
+}
+
 /** Caller has verified and published each regenerable cache entry. The same
  * before/after observation and per-object identity proof used for diagnostics
  * applies; this grants no authority to classify arbitrary directories. */
@@ -139,7 +148,7 @@ export function removeCacheBatch(root:string,items:StorageCandidate[],observe=ob
   return removeSmallResourceBatch(root,items,unreferenced,observe,deadline,'cache');
 }
 function removeSmallResourceBatch(root:string,items:StorageCandidate[],unreferenced:(item:StorageCandidate)=>boolean,
-  observe:typeof observeStorageUse,deadline:number,kind:'diagnostic'|'cache'):string[]{
+  observe:typeof observeStorageUse,deadline:number,kind:'diagnostic'|'cache',database=false):string[]{
   const remaining=Math.max(0,deadline-Date.now());if(!remaining)return [];
   // System observation has its own subprocess timeout. Charge the file-work
   // budget after it completes, so a slow lsof cannot starve every small batch.
@@ -152,13 +161,17 @@ function removeSmallResourceBatch(root:string,items:StorageCandidate[],unreferen
       try {
         if(item.kind!==kind||!item.eligible||!item.identity||!safeStorageResource(root,item.path,kind==='cache'?5000:64)||storageInUse(item.ownerRoot,before)||!unreferenced(item))continue;
         const info=fs.lstatSync(item.path),version=storageVersion(item.path);
-        if((!info.isFile()&&!info.isDirectory())||version.sizeBytes>256*1024||version.identity!==item.identity)continue;
+        if((database?!info.isFile():!info.isFile()&&!info.isDirectory())||!database&&version.sizeBytes>256*1024||version.identity!==item.identity)continue;
         const retired=path.join(path.dirname(item.path),'.reclaim-'+randomUUID());fs.renameSync(item.path,retired);
         const moved={item,retired,changed:0};renamed.push(moved);moved.changed=fs.lstatSync(retired).ctimeMs;
       }catch{/* A changed or unavailable file is retained independently. */}
     }
-    if(!renamed.length)return removed;
+    if(!renamed.length||database&&renamed.length!==items.length)return removed;
     const after=observe();
+    if(database&&!renamed.every(({item,retired,changed})=>{
+      const version=storageVersion(retired,item.rootChanged);
+      return !storageInUse(item.ownerRoot,after)&&!storageInUse(retired,after)&&unreferenced(item)&&version.identity===item.identity&&version.rootChanged===changed;
+    }))return removed;
     for(const {item,retired,changed} of renamed) {
       try {
         const version=storageVersion(retired,item.rootChanged);

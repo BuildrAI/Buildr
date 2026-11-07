@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { selectHostToolCaches } from './toolchain-locations.ts';
+import { selectHostToolCaches, prepareHostToolDirectory } from './toolchain-locations.ts';
 import { ensureStorageDirectory } from './files.ts';
 
 /** One local tool environment for every executor. Account configuration and
@@ -35,7 +35,7 @@ export function sharedToolchainEnvironment(root: string, input: Readonly<Record<
   const bin = [java && path.join(java, 'bin'), maven && path.join(maven, 'bin')].filter((value): value is string => !!value);
   environment.PATH = [...bin, input.PATH ?? ''].join(path.delimiter);
   // Reuse the host repository; never copy ~/.m2/settings.xml into a private HOME.
-  const repository = existing(hostHome && path.join(hostHome, '.m2/repository')) ?? path.join(cacheRoot, 'maven');
+  const repository = prepareHostToolDirectory(hostHome,'.m2/repository',root) ?? path.join(cacheRoot, 'maven');
   environment.BUILDR_MAVEN_REPOSITORY = repository;
   // The JVM parses quoted JAVA_TOOL_OPTIONS itself, including paths with spaces.
   environment.JAVA_TOOL_OPTIONS = '-Dmaven.repo.local="' + repository.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';

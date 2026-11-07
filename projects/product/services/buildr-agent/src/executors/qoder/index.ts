@@ -37,6 +37,8 @@ class QoderRuntime implements AgentRuntime {
   private configRoot: string;
   private contexts = new Map<string, string>();
   private handlers = new Map<string, ExecutorSendInput['onEvent']>();
+  private readonly releaseProofs = new Set<string>();
+  private releaseKey(contextRef:ContextRef,executionRef:ExecutionRef):string { return JSON.stringify([contextRef.id,executionRef.id,executionRef.data?.resourceGroup,executionRef.data?.resourceBinding]); }
   private executionHandlers = new Map<string, ExecutorSendInput['onEvent']>();
   private submissions = new Map<string, {contextId:string; settled:boolean; accepted:boolean; released?:boolean}>();
   private observations = new Map<string, ExecutorObservation>();
@@ -263,12 +265,13 @@ class QoderRuntime implements AgentRuntime {
   async prepareRelease({contextRef,executionRef}:{contextRef:ContextRef;executionRef:ExecutionRef}):Promise<boolean>{
     this.reference(contextRef);
     const resource=executionRef.data;
-    if(!resource || resource.resourceContext!==contextRef.id || resource.resourceBinding!==this.bindingIdentity || resource.backgroundWork!==false)return false;
+    if(!resource || resource.resourceContext!==contextRef.id || resource.resourceBinding!==this.bindingIdentity)return false;
     // A cold history reader has no live state for the old worker. Its exact
     // process-group proof remains authoritative; never require a new-worker PID.
     if(resource.resourceGroup!==this.rpc.child.pid || this.rpc.closed)return Boolean(await this.canRelease({contextRef,executionRef}));
     const proof=await this.rpc.call('release-check',{contextId:contextRef.id,executionId:executionRef.id},5000);
-    return Boolean(proof.ended&&!proof.blocked);
+    if(proof.ended&&!proof.blocked){this.releaseProofs.add(this.releaseKey(contextRef,executionRef));return true;}
+    return false;
   }
   async canRelease({contextRef,executionRef}:{contextRef:ContextRef;executionRef:ExecutionRef}):Promise<boolean|{executionState:'ended'|'unknown'}>{
     this.reference(contextRef);
@@ -278,7 +281,10 @@ class QoderRuntime implements AgentRuntime {
       if(!proof.ended||proof.blocked)return false;
       ended=true;executionState=proof.executionState==='ended'?'ended':'unknown';
     }
-    const released = await this.rpc.control.releaseExecution(executionRef,contextRef.id,this.bindingIdentity,{ended,executionState,channelClosed:this.rpc.closed});
+    // A live release-check supersedes the historical background-work hint.
+    // Cold observers still require the persisted proof and an absent group.
+    const reference = (ended || this.releaseProofs.has(this.releaseKey(contextRef,executionRef))) && executionRef.data ? {...executionRef,data:{...executionRef.data,backgroundWork:false}} : executionRef;
+    const released = await this.rpc.control.releaseExecution(reference,contextRef.id,this.bindingIdentity,{ended,executionState,channelClosed:this.rpc.closed});
     if (released) { this.executionHandlers.delete(executionRef.id); if (this.observations.get(contextRef.id)?.executionRef?.id === executionRef.id) this.handlers.delete(contextRef.id); }
     return released;
   }

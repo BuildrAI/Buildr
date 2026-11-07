@@ -6,7 +6,7 @@ import { instructionParticipation } from '../../domain/participation.ts';
 import { nativeParticipation, participationRequests } from '../../domain/participation.ts';
 import { withExecutionFault } from '../../domain/execution-fault.ts';
 import { codexUnsettledTools } from './recovery.ts';
-import { codexCacheReclaimable, codexCuratedIdentity } from './storage.ts';
+import { codexCacheReclaimable, codexCuratedIdentity, codexDiagnosticLogs } from './storage.ts';
 import { interactionPolicy, blocksExecution } from '../../domain/interaction-policy.ts';
 import {createHash} from 'node:crypto';
 import { errorDiagnostic, NativeObservationError } from '../../domain/error-diagnostic.ts';
@@ -51,7 +51,7 @@ function codexGatewayCatalog(gateway: ExecutorGateway) {
 }
 interface ActiveTurn { commandStreams?: Map<string,{command:string;output:string}>; contextId: string; id: string; input: ExecutorSendInput; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown'; processId?: string; executionId: string }>; pending: Map<string, { nativeId: string | number; method: string; params: any }>; texts: Map<string, string>; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string; done: () => void; reject: (error: Error) => void; accepted: boolean; buffered: RpcMessage[] }
 export function createCodexExecutor(): AgentExecutor {
-  return { nativeContent: codexContent, storage: { transientDirectories: [...regenerableToolCaches, 'codex-home/.tmp/plugins'], canReclaim: (root, relative) => toolCacheReclaimable(root, relative) && codexCacheReclaimable(root, relative), snapshots: [{ relative: 'codex-home/.tmp/plugins', key: 'curated-plugins', identity: codexCuratedIdentity }] }, descriptor: { id: 'codex', label: 'Codex', capabilities }, async open(options) { return await CodexRuntime.open(options); } };
+  return { nativeContent: codexContent, storage: { transientDirectories: [...regenerableToolCaches, 'codex-home/.tmp/plugins'], diagnostics:codexDiagnosticLogs, canReclaim: (root, relative) => toolCacheReclaimable(root, relative) && codexCacheReclaimable(root, relative), snapshots: [{ relative: 'codex-home/.tmp/plugins', key: 'curated-plugins', identity: codexCuratedIdentity }] }, descriptor: { id: 'codex', label: 'Codex', capabilities }, async open(options) { return await CodexRuntime.open(options); } };
 }
 class CodexRuntime implements AgentRuntime {
   participationInstruction?: import('../../participation-contracts.ts').ParticipationMatch;

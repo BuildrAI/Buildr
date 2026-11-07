@@ -9,7 +9,7 @@ import { claimStorage, writePrivate } from './ownership.ts';
 import { sharePreparedToolPackage } from '../storage/runtime-objects.ts';
 import { maintainNativeContent } from '../application/native-content-maintenance.ts';
 import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
-import { inspectAgentStorage, collectAgentStorage, collectReleasedExecutorStorage } from '../application/storage-maintenance.ts';
+import { inspectAgentStorage, collectAgentStorage, collectReleasedExecutorStorage, cacheStorageDependencies, mergeLegacyNpmCaches } from '../application/storage-maintenance.ts';
 import { cleanupStoppedProcesses } from './cleanup.ts';
 import type { AgentRuntimeUnit } from '../execution-contracts.ts';
 
@@ -31,17 +31,18 @@ if (!isMainThread && workerData?.kind === 'agent-storage-program') {
     try {
       const cacheRoot=path.join(workerData.dataRoot,'agent-service');
       let cacheObservationComplete=true;
-      try { observeSharedCacheUse(cacheRoot,observeStorageUse(),new ConversationRepository(cacheRoot).storageDependencies()); } catch { cacheObservationComplete=false; }
+      try { observeSharedCacheUse(cacheRoot,observeStorageUse(),cacheStorageDependencies(cacheRoot,new ConversationRepository(cacheRoot))); } catch { cacheObservationComplete=false; }
       const observationFile=path.join(cacheRoot,'process/storage-observation.json');
       let previous:{homeStorage?:{cursor?:HomeDiscoveryCursor}}|undefined;
       try{const stat=fs.lstatSync(observationFile);if(stat.isFile()&&!stat.isSymbolicLink()&&stat.size<4*1024*1024)previous=JSON.parse(fs.readFileSync(observationFile,'utf8'));}catch{/* First observation starts a new cycle. */}
       const plan = inspectAgentStorage({ dataRoot: workerData.dataRoot,homeCursor:previous?.homeStorage?.cursor });
+      const npmCaches=await mergeLegacyNpmCaches(plan);
       const result = collectAgentStorage(plan,512,{budgetMs:30000});
       if(!cacheObservationComplete)for(const item of plan.items)if(item.kind==='shared-cache'){item.eligible=false;item.reason='cache_usage_observation_failed';}
       try {
         const root=path.join(workerData.dataRoot,'agent-service');
         ensureStorageDirectory(root,path.join(root,'process'));
-        writePrivate(path.join(root,'process/storage-observation.json'),{schemaVersion:1,generatedAt:plan.generatedAt,homeStorage:plan.homeStorage,sharedCachePolicy:plan.sharedCachePolicy,legacyCachePolicy:'retire-rebuildable-classes',diagnostics:plan.diagnostics});
+        writePrivate(path.join(root,'process/storage-observation.json'),{schemaVersion:1,generatedAt:plan.generatedAt,homeStorage:plan.homeStorage,sharedCachePolicy:plan.sharedCachePolicy,legacyCachePolicy:'retire-rebuildable-classes',npmCaches,diagnostics:plan.diagnostics});
       } catch { /* Optional diagnostic publication never gates reclamation. */ }
       parentPort?.postMessage({ nativeContent: content, removedBytes: result.removedBytes, migratedBytes: result.migratedBytes, shared: result.results.filter(item=>item.status==='shared').length, backlog:result.results.some(item=>item.status!=='retained')&&result.results.some(item=>item.reason==='storage_batch_deferred'), retained: result.results.filter(item => item.status === 'retained').length });
     }catch{parentPort?.postMessage({nativeContent:content,diagnostic:'storage_collection_deferred'});}

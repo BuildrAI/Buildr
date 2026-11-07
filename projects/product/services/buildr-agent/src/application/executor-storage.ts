@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Worker } from 'node:worker_threads';
-import { regenerableToolCaches } from '../storage/tool-cache.ts';
+import { regenerableToolCaches, legacyDownloadRetained } from '../storage/tool-cache.ts';
 import { recordSharedCacheUse } from '../storage/shared-cache.ts';
 import { sharedToolchainEnvironment } from '../storage/toolchain-environment.ts';
 import type { AgentExecutor, AgentRuntime, ExecutorOpenOptions } from '../contracts.ts';
@@ -111,14 +111,14 @@ export function executorCacheCandidates(root: string, executor: AgentExecutor, c
     if (path.isAbsolute(relative) || relative.split(/[\\/]/).some(part => !part || part === '.' || part === '..') || relative.split(/[\\/]/).length < 2) continue;
     const directory = path.join(configRoot, relative);
     if (fs.existsSync(directory)) {
-      // The adapter owns these exact regenerable namespaces. Retire each whole
-      // legacy class; public cache publication and package integrity are not a
-      // prerequisite for discarding downloads/bytecode that may be rebuilt.
+      // Adapter-owned bytecode can retire as a whole class. Downloads remain
+      // protected here; only the verified npm merge path proves public coverage.
       const retire = regenerableToolCaches.includes(relative) || legacy.includes(relative);
       const referenced = dependencies?.contexts.some(context => context.startsWith(executor.descriptor.id + ':'));
       const narrow = retire && dependencies?.complete === true && !referenced && !dependencies.strictOccupancy;
       const item = storageCandidate(root, 'cache', directory, narrow ? directory : configRoot, use, retire ? Infinity : cutoff);
       if (retire) item.retire = true;
+      if (retire && legacyDownloadRetained(relative)) { item.eligible=false;item.reason='legacy_cache_reuse_value_unverified'; }
       if (narrow) { item.ownerRoot = configRoot; item.useRoot = directory; }
       if (retire && dependencies && (!dependencies.complete || referenced)) {
         item.eligible = false;

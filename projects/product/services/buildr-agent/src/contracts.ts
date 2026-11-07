@@ -250,7 +250,10 @@ export interface AgentExecutor {
     /** Adapter verifies creator/completion of old regenerable temporary payloads. */
     legacyDirectories?(configRoot: string): readonly string[];
     /** Private diagnostic resources only; the service owns dependency/occupancy checks and deletion. */
-    diagnostics?(configRoot: string): Array<{ relativePath: string; producerPid?: number; contextId?: string; reason?: string }>;
+    diagnostics?(configRoot: string): Array<{ relativePath: string; producerPid?: number; contextId?: string; reason?: string;
+      /** Adapter verified a pure diagnostic SQLite family. Its complete config
+       * must have no consumer; the collector retires the whole family together. */
+      quiescentDatabase?: string }>;
     canReclaim?(configRoot: string, relative: string): boolean;
     /** Immutable seed copied into private working directories; never a shared native HOME. */
     snapshots?: ReadonlyArray<{ relative: string; key: string; identity(directory: string): string | undefined }>;

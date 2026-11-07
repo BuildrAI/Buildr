@@ -117,11 +117,14 @@ export async function cleanupProcessFixture({ root, dataRoot, profileId, host, o
     const { execFileSync } = await import('node:child_process');
     for (const [pid, record] of owned) if (isLive(pid)) {
       const command = execFileSync('ps',['-p',String(pid),'-o','command='],{encoding:'utf8'});
-      if (command.includes(record.identity.runtime.entry)) process.kill(pid,'SIGKILL');
+      if (command.includes(record.identity.runtime.entry)) process.kill(pid,'SIGTERM');
     }
     await until(async () => [...owned.keys()].filter(isLive), live => live.length === 0);
   }
   if (uncertainReleases) process.stderr.write(`[agent-test-cleanup] ${JSON.stringify({releaseReceipts:'unconfirmed',count:uncertainReleases,exit:'confirmed'})}\n`);
+  // Never delete control identity while physical process exit is unproven.
+  const survivors = [...owned.keys()].filter(isLive);
+  if (survivors.length) throw new AggregateError(errors, 'Owned processes still live; fixture retained: ' + survivors.join(','));
   cleanup(root);
   if (errors.length) throw new AggregateError(errors, 'Process fixture cleanup failed; owned processes were reaped.');
 }
