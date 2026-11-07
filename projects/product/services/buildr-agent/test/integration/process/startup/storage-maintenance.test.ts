@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { acquirePreparedProcessFixture } from '../../../support/prepared-process-fixture.ts';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -7,14 +8,12 @@ import { createRequire } from 'node:module';
 import { DatabaseSync } from 'node:sqlite';
 import { registerToolCache } from '../../../../src/storage/toolchain-locations.ts';
 import type { AgentProcessConnection } from '../../../../src/index.ts';
-import { until, actor, prepareAgentRuntime, connectAgentProcess, copyPackage, prepared, cleanupProcessFixture } from '../../../support/process-fixture.ts';
+import { until, actor, connectAgentProcess, cleanupProcessFixture } from '../../../support/process-fixture.ts';
 
 test('packaged execution backend automatically reclaims closed diagnostics while authenticated control remains available', { skip: process.platform !== 'darwin', timeout: 30000 }, async t => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agent-auto-storage-'))), dataRoot = path.join(root, 'profile'), workspace = path.join(root, 'work');
-  fs.mkdirSync(workspace); const packageRoot = path.join(root, 'package'); copyPackage(prepared, packageRoot);
-  fs.copyFileSync(path.join(import.meta.dirname, '../../fixtures/agent-process-entry.mjs'), path.join(packageRoot, 'build/process-fixture.mjs'));
-  fs.writeFileSync(path.join(packageRoot, 'build/fixture-version.json'), JSON.stringify({ version: 'storage-test' }));
-  const runtime = prepareAgentRuntime({ dataRoot, packageRoot, entry: 'build/process-fixture.mjs' }), profileId = 'storage-test';
+  fs.mkdirSync(workspace);
+  const runtime = acquirePreparedProcessFixture(dataRoot), profileId = 'storage-test';
   const runId = '2026-11-03T00-00-00-000+08-00-packaged-p2000000000';
   const config = path.join(dataRoot, 'agent-service/connections/qoder/qoder-config');
   const directory = path.join(config, 'logs/runs', runId); fs.mkdirSync(directory, { recursive: true });

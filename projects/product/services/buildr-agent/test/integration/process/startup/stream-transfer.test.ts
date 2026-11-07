@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { acquirePreparedProcessFixture } from '../../../support/prepared-process-fixture.ts';
 import test from 'node:test';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -7,14 +8,12 @@ import {randomUUID} from 'node:crypto';
 import {executionScopeKey,conversationEventDecoder} from '../../../../src/index.ts';
 import {readProcessRecord} from '../../../../src/process/ownership.ts';
 import {ConversationRepository} from '../../../../src/persistence/conversation-repository.ts';
-import {actor,prepareAgentRuntime,copyPackage,prepared,cleanupProcessFixture,connectAgentProcess} from '../../../support/process-fixture.ts';
+import {actor,cleanupProcessFixture,connectAgentProcess} from '../../../support/process-fixture.ts';
 
 test('v2 process stream and public client preserve committed updates and external-writer recovery',{timeout:60000},async t=>{
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-stream-transfer-')),dataRoot=path.join(root,'profile'),workspace=path.join(root,'work');fs.mkdirSync(workspace);
- const packageRoot=path.join(root,'package');copyPackage(prepared,packageRoot);
- fs.copyFileSync(path.join(import.meta.dirname,'../../fixtures/agent-process-entry.mjs'),path.join(packageRoot,'build/process-fixture.mjs'));
- fs.writeFileSync(path.join(packageRoot,'build/fixture-version.json'),JSON.stringify({version:'stream-transfer'}));
- const runtime=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'}),profileId='stream-isolation',scope=executionScopeKey({sourceId:'minimal',id:'directory'});
+
+ const runtime=acquirePreparedProcessFixture(dataRoot),profileId='stream-isolation',scope=executionScopeKey({sourceId:'minimal',id:'directory'});
  let host:Awaited<ReturnType<typeof actor>>|undefined,observer:Awaited<ReturnType<typeof connectAgentProcess>>|undefined;
  const abort=new AbortController();let reader:ReadableStreamDefaultReader<Uint8Array>|undefined,subscription:Awaited<ReturnType<NonNullable<typeof observer>['operations']['conversations']['subscribe']>>|undefined;
  t.after(async()=>{abort.abort();subscription?.close();await reader?.cancel().catch(()=>{});await cleanupProcessFixture({root,dataRoot,profileId,host,observer});});

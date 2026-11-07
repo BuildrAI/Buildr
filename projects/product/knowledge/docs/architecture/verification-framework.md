@@ -68,6 +68,8 @@ Buildr 产品使用四类检查：静态检查（Static Check）、单元测试�
 
 重型组每组申请一个工作位，统一资源协调器（Resource Coordinator）以 `agent-process-tests` 限制同机最多两组；组内文件依照外层 `BUILDR_VERIFICATION_WORKER_BUDGET` 串行执行。直接诊断可运行 `node tools/testing/run-integration.ts --group all` 或指定同一检查标识，也服从该预算，最多并行两个文件。准备包由一次执行共享准备；每个用例的可写包、数据库和进程身份独立。
 
+在本机支持的平台，`agent-integration-startup` 中五个只消费现成环境的场景，由[准备夹具](../../../services/buildr-agent/test/support/prepared-process-fixture.ts)每轮真实准备一次，再复制各用例独立的运行目录，重写私有路径并通过生产完整字节校验。数据库、会话和进程仍独立；种子污染拒绝使用，不跨轮缓存。测试运行环境创建、升级和迁移本身的场景继续真实准备；Windows 保留完整准备路径。
+
 支持的平台使用写时复制（Copy-on-Write）克隆包。完整运行由[只读输入提供者](../../../services/buildr-agent/test/support/immutable-process-inputs.ts)保有一份只读 Node.js 副本，测试运行单元通过硬链接（Hard Link）共用相同程序字节，仍保留独立路径和编译包。可写内容不建立硬链接（Hard Link）。不同 Node.js 字节、跨卷及不支持的平台退回独立副本；Windows 暂不启用硬链接（Hard Link）共用。输入持有者只在运行单元链接全部释放后清理，异常时保留诊断。
 
 生产运行单元继续真实物化并在每次校验时读取全部字节，摘要使用同一个有界缓冲区（Buffer）分块计算，不缓存旧摘要。

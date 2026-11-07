@@ -7,6 +7,43 @@ import test from 'node:test';
 import { AGENT_EXECUTION_CONTRACTS } from '../../src/index.ts';
 import { prepareAgentRuntime, validateAgentRuntime } from '../../src/process/runtime-unit.ts';
 import { shareFixtureNode, withImmutableProcessInputs } from '../support/immutable-process-inputs.ts';
+import { acquirePreparedProcessFixture, withPreparedProcessFixture } from '../support/prepared-process-fixture.ts';
+
+test('prepared process fixture leases isolate mutation, reject seed pollution and clean after failure', { skip: process.platform === 'win32' }, t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-fixture-isolation-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const packageRoot = packageInput(root), node = path.join(root, 'fixture-node');
+  fs.writeFileSync(node, 'private fixture executable bytes');
+  const producer = (dataRoot: string) => prepareAgentRuntime({ dataRoot, packageRoot, node, entry: 'build/entry.js' });
+  let seedRoot = '', originalDigest = '';
+  assert.throws(() => withPreparedProcessFixture(env => {
+    seedRoot = env.BUILDR_AGENT_TEST_FIXTURE_ROOT!;
+    const leftRoot = path.join(root, 'left'), rightRoot = path.join(root, 'right');
+    const left = acquirePreparedProcessFixture(leftRoot, env), right = acquirePreparedProcessFixture(rightRoot, env);
+    originalDigest = left.digest;
+    assert.equal(left.digest, right.digest);
+    assert.notEqual(left.directory, right.directory);
+    assert.notEqual(fs.statSync(left.entry).ino, fs.statSync(right.entry).ino);
+    assert.notEqual(fs.statSync(left.node).ino, fs.statSync(right.node).ino);
+    fs.chmodSync(left.entry, 0o600); fs.writeFileSync(left.entry, 'changed private input');
+    assert.throws(() => validateAgentRuntime(leftRoot, left), { code: 'agent_runtime_changed' });
+    assert.doesNotThrow(() => validateAgentRuntime(rightRoot, right));
+    fs.rmSync(leftRoot, { recursive: true, force: true });
+    assert.doesNotThrow(() => validateAgentRuntime(rightRoot, right), 'peer cleanup cannot invalidate a lease');
+    assert.throws(() => acquirePreparedProcessFixture(rightRoot, env), /already exists/);
+    const seed = JSON.parse(fs.readFileSync(path.join(seedRoot, 'fixture.json'), 'utf8'));
+    fs.chmodSync(seed.entry, 0o600); fs.writeFileSync(seed.entry, 'polluted seed');
+    assert.throws(() => acquirePreparedProcessFixture(path.join(root, 'third'), env), { code: 'agent_runtime_changed' });
+    throw new Error('fixture-run-failed');
+  }, {}, producer), /fixture-run-failed/);
+  assert.equal(fs.existsSync(seedRoot), false, 'producer cleanup also runs on an assertion failure');
+  fs.writeFileSync(path.join(packageRoot, 'build/entry.js'), 'export const changed = true;\n');
+  withPreparedProcessFixture(env => {
+    const fresh = acquirePreparedProcessFixture(path.join(root, 'fresh'), env);
+    assert.notEqual(fresh.digest, originalDigest, 'a new run must prepare current input, not adopt the old seed');
+    return 0;
+  }, {}, producer);
+});
 
 function packageInput(root: string, large=false) {
   const pkg=path.join(root,'package');fs.mkdirSync(path.join(pkg,'build'),{recursive:true});

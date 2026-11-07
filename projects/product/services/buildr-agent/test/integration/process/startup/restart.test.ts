@@ -1,18 +1,17 @@
 import assert from 'node:assert/strict';
+import { acquirePreparedProcessFixture } from '../../../support/prepared-process-fixture.ts';
 import test from 'node:test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { restartAgentProcess, executionScopeKey } from '../../../../src/index.ts';
 import type { AgentProcessConnection } from '../../../../src/index.ts';
-import { until, actor, prepareAgentRuntime, connectAgentProcess, copyPackage, prepared, cleanupProcessFixture } from '../../../support/process-fixture.ts';
+import { until, actor, connectAgentProcess, cleanupProcessFixture } from '../../../support/process-fixture.ts';
 
 test('explicit restart changes the idle generation, preserves history, rejects stale and busy observations', {timeout:90000}, async t => {
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-restart-')),dataRoot=path.join(root,'profile'),workspace=path.join(root,'work');
-  fs.mkdirSync(workspace);const packageRoot=path.join(root,'package');copyPackage(prepared,packageRoot);
-  fs.copyFileSync(path.join(import.meta.dirname,'../../fixtures/agent-process-entry.mjs'),path.join(packageRoot,'build/process-fixture.mjs'));
-  fs.writeFileSync(path.join(packageRoot,'build/fixture-version.json'),JSON.stringify({version:'restart'}));
-  const runtime=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'}),profileId='restart-test';
+  fs.mkdirSync(workspace);
+  const runtime=acquirePreparedProcessFixture(dataRoot),profileId='restart-test';
   const options={dataRoot,profileId,runtime,sourceId:'minimal'};
   let host:Awaited<ReturnType<typeof actor>>|undefined,observer:AgentProcessConnection|undefined;
   const controller=new AbortController();
@@ -41,10 +40,8 @@ test('explicit restart changes the idle generation, preserves history, rejects s
 
 test('a killed execution backend keeps its exact exit signal and links the replacement generation', {timeout:90000}, async t=>{
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-exit-evidence-')),dataRoot=path.join(root,'profile'),workspace=path.join(root,'work');
- fs.mkdirSync(workspace);const packageRoot=path.join(root,'package');copyPackage(prepared,packageRoot);
- fs.copyFileSync(path.join(import.meta.dirname,'../../fixtures/agent-process-entry.mjs'),path.join(packageRoot,'build/process-fixture.mjs'));
- fs.writeFileSync(path.join(packageRoot,'build/fixture-version.json'),JSON.stringify({version:'exit-evidence'}));
- const runtime=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'}),profileId='exit-evidence',options={dataRoot,profileId,runtime,sourceId:'minimal'};
+ fs.mkdirSync(workspace);
+ const runtime=acquirePreparedProcessFixture(dataRoot),profileId='exit-evidence',options={dataRoot,profileId,runtime,sourceId:'minimal'};
  let host:Awaited<ReturnType<typeof actor>>|undefined,observer:AgentProcessConnection|undefined;
  t.after(()=>cleanupProcessFixture({root,dataRoot,profileId,host,observer}));
  host=await actor({...options,workspace});observer=await connectAgentProcess(options);
