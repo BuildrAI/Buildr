@@ -132,6 +132,12 @@ test('执行状态行只表达智能体与模型，不把模型来源账号标�
   const native={id:'codex',provider:'codex',models:[{id:'gpt-5-codex',label:'GPT-5 Codex'}]};
   assert.equal(conversationRunIdentity({...conversation.run,provider:'codex',model:'gpt-5-codex'},native,[]),'Codex · GPT-5 Codex');
   assert.equal(conversationRunIdentity({...conversation.run,provider:'codex',model:'custom-model'},undefined,[]),'Codex · custom-model');
+  const subscription=[{accountId:'native-codex',accountIdentity:'subscription',modelId:'gpt-6.1-sol',accountLabel:'订阅账号',accountRevision:'r1',provider:'native-codex',label:'GPT-6.1-Sol',available:true,enabled:true}];
+  const api=[{...subscription[0],accountId:'api',accountIdentity:'api',accountLabel:'ChatGPT API',provider:'openai'}];
+  assert.equal(conversationRunIdentity({...conversation.run,provider:'codex',modelAccountId:'native-codex',model:'gpt-6.1-sol'},native,subscription),'Codex · ChatGPT / GPT-6.1-Sol');
+  assert.equal(conversationRunIdentity({...conversation.run,provider:'codex',modelAccountId:'api',model:'gpt-6.1-sol'},native,api),'Codex · ChatGPT API / GPT-6.1-Sol');
+  const deepseek=[{accountId:'native-dsh',accountIdentity:'deepseek',modelId:'deepseek-v4',accountLabel:'DeepSeek',accountRevision:'r2',provider:'native-dsh',label:'DeepSeek-V4',available:true,enabled:true}];
+  assert.equal(conversationRunIdentity({...conversation.run,provider:'dsh',modelAccountId:'native-dsh',model:'deepseek-v4'},undefined,deepseek),'DSH · DeepSeek / DeepSeek-V4');
 });
 
 test('输入法组合和Shift+Enter不发送，执行与未知状态保留新内容为草稿',()=>{

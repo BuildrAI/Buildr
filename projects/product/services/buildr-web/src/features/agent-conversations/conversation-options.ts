@@ -1,5 +1,5 @@
-import {reasoningEffortLabel,reasoningEffortRank,sortReasoningEfforts,modelSourceName,tierReasoningEffort} from '../../lib/model-picker.ts';
-export {reasoningEffortLabel,reasoningEffortRank,sortReasoningEfforts,modelSourceName,nextServiceTier,tierReasoningEffort} from '../../lib/model-picker.ts';
+import {reasoningEffortLabel,reasoningEffortRank,sortReasoningEfforts,modelSourceName,executionAgentName,tierReasoningEffort} from '../../lib/model-picker.ts';
+export {reasoningEffortLabel,reasoningEffortRank,sortReasoningEfforts,modelSourceName,executionAgentName,nextServiceTier,tierReasoningEffort} from '../../lib/model-picker.ts';
 import type {ConnectionView, ConversationRun, SendDraft, CatalogModel} from './types';
 
 export type ConversationChoice = Pick<SendDraft,'connectionId'|'model'|'reasoningEffort'|'serviceTier'|'modelAccountId'|'modelAccountRevision'|'modelAccountIdentity'>;
@@ -79,7 +79,7 @@ export function executionSelectionChanged(run:Pick<ConversationRun,'model'|'mode
 export function conversationRunIdentity(run:ConversationRun,connection:ConnectionView|undefined,catalog:CatalogModel[]):string {
   const shared=catalog.find(model=>model.accountId===run.modelAccountId&&model.modelId===run.model);
   const model=shared?modelSourceName(shared.provider)+' / '+shared.label:selectedConversationModel(connection,run.model)?.label||run.model;
-  return [modelSourceName(run.provider),model].filter(Boolean).join(' · ');
+  return [executionAgentName(run.provider),model].filter(Boolean).join(' · ');
 }
 
 /** A legacy native choice must bind its own catalog source before selecting a tier. */

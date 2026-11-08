@@ -8,6 +8,8 @@ import { join } from 'node:path';
 import { codexBody } from '../../src/model-access/providers/codex.ts';
 import { createCodexModelProvider } from '../../src/model-access/providers/codex.ts';
 import { createOpenAIApiModelProvider, isOpenAIChatModel, openAIResponsesBody } from '../../src/model-access/providers/openai-api.ts';
+import { createQoderModelProvider } from '../../src/model-access/providers/qoder.ts';
+import { modelQuotaFailure } from '../../src/model-access/quota.ts';
 
 import { fields, integer, splitFrames } from '../../src/model-access/providers/devin-codec.ts';
 
@@ -89,9 +91,114 @@ test('ChatGPT API keeps its key private, validates before replacement and uses t
 
 test('ChatGPT API filters non-chat models and normalizes Responses bodies without inventing capabilities', () => {
   for (const id of ['text-embedding-3-large','whisper-1','gpt-4o-transcribe','gpt-image-1','gpt-4o-realtime-preview','omni-moderation-latest','sora-2']) assert.equal(isOpenAIChatModel(id),false,id);
+  for (const id of ['gpt-live-1','gpt-5-search-api','gpt-5-search-api-2025-10-14']) assert.equal(isOpenAIChatModel(id),false,id);
   for (const id of ['gpt-5','gpt-4.1','gpt-4o-mini','o3','o4-mini','chatgpt-4o-latest']) assert.equal(isOpenAIChatModel(id),true,id);
   const body = openAIResponsesBody({input:'hello',include:['reasoning.encrypted_content'],max_output_tokens:128},'gpt-5');
   assert.equal(body.model,'gpt-5'); assert.equal(body.store,false); assert.deepEqual(body.include,['reasoning.encrypted_content']);
+});
+
+test('ChatGPT API uses official model-page capabilities, labels and conservative fallback', {timeout:10000}, async t => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-openai-api-capabilities-'));
+  const mock: typeof fetch = async url => {
+    if (String(url) !== 'https://api.openai.com/v1/models') throw new Error('unexpected_test_network');
+    return Response.json({data:[
+      {id:'gpt-6.1-sol'},
+      {id:'gpt-5.4-mini-2026-03-17'},
+      {id:'gpt-live-1'},
+      {id:'gpt-5-search-api'},
+      {id:'gpt-future-chat'},
+    ]});
+  };
+  const runtime = await createOpenAIApiModelProvider({fetch:mock}).open({accountId:'account',configRoot:root,environment:{}});
+  t.after(async()=>{await runtime.close();await rm(root,{recursive:true,force:true});});
+  const configure = runtime.configure?.bind(runtime);
+  assert.ok(configure);
+  const result = await configure({apiKey:'sk-capabilities'});
+  assert.deepEqual(result.models.map(model=>model.id),['gpt-6.1-sol','gpt-5.4-mini-2026-03-17','gpt-future-chat']);
+  const sol = result.models.find(model=>model.id==='gpt-6.1-sol')!;
+  assert.equal(sol.label,'GPT-6.1-Sol');
+  assert.equal(sol.family,'GPT-6.1');
+  assert.equal(sol.images,true);
+  assert.equal(sol.tools,true);
+  assert.equal(sol.contextWindow,1_050_000);
+  assert.equal(sol.maxOutputTokens,128_000);
+  assert.deepEqual(sol.reasoningEfforts?.map(effort=>effort.id),['low','medium','high','xhigh','max']);
+  assert.equal(sol.defaultReasoningEffort,'medium');
+  const snapshot = result.models.find(model=>model.id==='gpt-5.4-mini-2026-03-17')!;
+  assert.equal(snapshot.label,'GPT-5.4-Mini');
+  assert.equal(snapshot.contextWindow,400_000);
+  assert.equal(snapshot.id,'gpt-5.4-mini-2026-03-17');
+  const unknown = result.models.find(model=>model.id==='gpt-future-chat')!;
+  assert.equal(unknown.label,'GPT-Future-Chat');
+  assert.equal(unknown.images,false);
+  assert.equal(unknown.contextWindow,undefined);
+  assert.equal(unknown.reasoningEfforts,undefined);
+});
+
+test('Qoder merges app-only models and uses add-on quota instead of reporting exhaustion', {timeout:10000}, async t => {
+  const calls:string[]=[];
+  const owner={
+    inspect:async()=>({status:'ready' as const}),
+    identity:async()=> 'qoder-personal',
+    async request(path:string){
+      calls.push(path);
+      if(path==='/models')return Response.json({
+        chat:[{key:'auto',display_name:'Auto',enable:true,is_vl:true,is_reasoning:false,context_config:{'200K':{token_count:200000,is_default:true}}}],
+        app:[
+          {key:'auto',display_name:'Auto',enable:true,is_vl:true,is_reasoning:false,context_config:{'200K':{token_count:200000,is_default:true}}},
+          {key:'lmodel',display_name:'QoDuck',enable:true,is_vl:true,is_reasoning:true,thinking_config:{enabled:{efforts:{low:{},high:{is_default:true}},is_default:true}},context_config:{'1M':{token_count:1000000},'200K':{token_count:200000,is_default:true}}},
+        ],
+      });
+      if(path==='/usage')return Response.json({
+        userType:'personal_lite',isQuotaExceeded:false,expiresAt:1795276800000,
+        userQuota:{total:1000,used:1000,remaining:0,percentage:1,unit:'credits'},
+        addOnQuota:{total:2700,used:1101,remaining:1599,percentage:0.41,unit:'credits'},
+      });
+      throw new Error('unexpected_qoder_path');
+    },
+  };
+  const runtime = await createQoderModelProvider(owner).open({accountId:'qoder',configRoot:'unused',environment:{}});
+  t.after(async()=>{await runtime.close();});
+  const result = await runtime.inspect();
+  assert.equal(result.status,'ready');
+  assert.deepEqual(result.models.map(model=>model.id),['auto','lmodel']);
+  const duck = result.models.find(model=>model.id==='lmodel')!;
+  assert.equal(duck.label,'QoDuck');
+  assert.equal(duck.images,true);
+  assert.deepEqual(duck.reasoningEfforts?.map(effort=>effort.id),['low','high']);
+  assert.equal(duck.defaultReasoningEffort,'high');
+  assert.deepEqual(result.quota?.windows?.map(window=>[window.id,window.label,window.remainingPercent]),[['credits','套餐内 Credits',0],['add-on','资源包',59.2]]);
+  assert.equal(result.quota?.remainingPercent,43.2);
+  assert.match(result.quota?.summary??'',/套餐 0 \/ 1,000 credits/);
+  assert.match(result.quota?.summary??'',/资源包 1,599 \/ 2,700 credits/);
+  assert.equal(modelQuotaFailure({provider:'native-qoder',label:'Qoder',accountLabel:'Qoder',quota:result.quota},{creditFactor:0.5},Date.now()),undefined);
+  assert.equal(calls.filter(path=>path==='/models').length,1);
+  assert.equal(calls.filter(path=>path==='/usage').length,1);
+});
+
+test('Qoder keeps org resource package compatibility and does not block models when quota read fails', {timeout:10000}, async t => {
+  let usageStatus=200;
+  const owner={
+    inspect:async()=>({status:'ready' as const}),
+    identity:async()=> 'qoder-team',
+    async request(path:string){
+      if(path==='/models')return Response.json({chat:[{key:'auto',display_name:'Auto',enable:true,is_vl:true}]});
+      if(path==='/usage')return usageStatus===200
+        ? Response.json({userType:'teams',userQuota:{total:1000,remaining:1000,percentage:0},orgResourcePackage:{available:true,cap:500,remaining:250}})
+        : new Response('private upstream body',{status:500});
+      throw new Error('unexpected_qoder_path');
+    },
+  };
+  const runtime = await createQoderModelProvider(owner).open({accountId:'qoder',configRoot:'unused',environment:{}});
+  t.after(async()=>{await runtime.close();});
+  const ready = await runtime.inspect();
+  assert.deepEqual(ready.quota?.windows?.map(window=>[window.id,window.remainingPercent]),[['credits',100],['org-package',50]]);
+  assert.equal(ready.quota?.remainingPercent,83.3);
+  usageStatus=500;
+  const failed = await runtime.inspect();
+  assert.equal(failed.status,'ready');
+  assert.deepEqual(failed.models.map(model=>model.id),['auto']);
+  assert.equal(failed.quota?.available,false);
 });
 
 test('ChatGPT API does not apply the catalog timeout to an in-progress model response', async t => {

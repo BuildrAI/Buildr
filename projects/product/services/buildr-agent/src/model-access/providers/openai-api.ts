@@ -3,9 +3,10 @@ import type { LoginObservation } from '../../contracts.ts';
 import { ModelAccessError, type ModelProvider, type ModelProviderObservation, type ModelProviderRuntime, type ModelOffering, type ProviderInferenceInput, type ProtocolJson } from '../contracts.ts';
 import { record, string } from './private-account.ts';
 import { PrivateApiKey } from './private-api-key.ts';
+import { openAIModelOffering } from './openai-api-models.ts';
 
 const BASE = 'https://api.openai.com/v1';
-const EXCLUDED_MODEL = /(embedding|whisper|tts|transcrib|audio|realtime|moderation|dall-e|gpt-image|image-|sora|video|search-preview|computer-use)/i;
+const EXCLUDED_MODEL = /(embedding|whisper|tts|transcrib|audio|realtime|moderation|dall-e|gpt-image|image-|sora|video|search-api|search-preview|live-|computer-use)/i;
 const CHAT_MODEL = /^(gpt-|chatgpt-|o[1-9](?:-|$)|codex-)/i;
 
 export interface OpenAIApiProviderOptions {
@@ -152,7 +153,7 @@ class OpenAIApiRuntime implements ModelProviderRuntime {
     const models = (Array.isArray(data.data) ? data.data : []).flatMap(value => {
       const row = record(value), id = string(row.id);
       if (!id || !isOpenAIChatModel(id) || row.enabled === false || row.disabled === true) return [];
-      return [{ id, label: id, family: id.split('-')[0] ?? id, images: false, tools: true } satisfies ModelOffering];
+      return [openAIModelOffering(id, string(row.display_name) ?? string(row.name)) satisfies ModelOffering];
     });
     if (!models.length) throw new ModelAccessError('model_openai_catalog_empty', '当前 API Key 没有可用的文本对话模型。', 409);
     return models;

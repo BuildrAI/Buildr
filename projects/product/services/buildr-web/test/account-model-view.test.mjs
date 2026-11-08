@@ -36,6 +36,22 @@ test('ChatGPT API 首次校验失败后保留同一账号，不重复创建占�
  assert.deepEqual(views.filter(view=>view.provider==='openai').map(view=>view.id),['api']);assert.equal(views.find(view=>view.provider==='openai').providerLabel,'ChatGPT API');
 });
 
+test('ChatGPT API 模型已观察但余额不可读时显示模型观察时间与平台账单说明',()=>{
+ const observed={...api,observedAt:'2026-11-08T03:04:05.000Z',quota:{available:false}};
+ const view=modelSourceViews([observed],[]).find(view=>view.id===observed.id);
+ assert.equal(view.observedLabel,new Date(observed.observedAt).toLocaleString());
+ assert.match(view.quotaNote,/OpenAI 平台查看用量与账单/);
+ assert.deepEqual(view.windows,[]);
+ assert.equal(view.observedLabel.includes('尚未读取'),false);
+});
+
+test('DSH 接入的 DeepSeek 模型来源显示 DeepSeek，不显示执行智能体名称',()=>{
+ const dsh={id:'native-dsh',identity:'deepseek',provider:'native-dsh',connectionId:'dsh',label:'DeepSeek',authType:'oauth',revision:'r3',enabled:true,status:'ready',accountLabel:'DeepSeek',models:[{id:'deepseek-v4',label:'DeepSeek-V4',images:false,tools:true,enabled:true}]};
+ const view=modelSourceViews([dsh],[]).find(view=>view.id===dsh.id);
+ assert.equal(view.providerLabel,'DeepSeek');
+ assert.equal(view.models[0].label,'DeepSeek-V4');
+});
+
 test('官方登录后的核对阶段不再提示继续等待浏览器登录',()=>{
  const account={id:'native-qoder',provider:'native-qoder',connectionId:'qoder',label:'Qoder',revision:'r',enabled:true,status:'not-authenticated',models:[]};
  const connection={id:'qoder',enabled:true,loginAttempt:{id:'login',state:'checking'}};
