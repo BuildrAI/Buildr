@@ -931,7 +931,7 @@ const browserSchedulingCostMs: Record<string, number> = {
   task: 181000, 'code-explorer': 175000, code: 228000,
   // The conversation value includes failed waits: a conservative queue estimate,
   // never a passing performance baseline or a timeout extension.
-  'agent-conversations': 327000, 'task-materials': 177000,
+  'agent-conversations': 660000, 'task-materials': 177000,
   'connection-skills': 108000, articles: 78000, layout: 79000,
 };
 const browserSteps = BROWSER_SELECTORS.map((selector: string) => Object.freeze({
@@ -940,13 +940,13 @@ const browserSteps = BROWSER_SELECTORS.map((selector: string) => Object.freeze({
   inputs: ['services/buildr-web/src/**', 'src/web/**', 'test/e2e/**'], inputExclusions: [],
   executor: { type: 'node', file: 'test/verification/browser-selector-dispatcher.ts', args: ['--selector', selector, '--run'], discoveredFiles: selector === 'core' ? ['test/e2e/buildr-web-browser.test.ts'] : [] },
   ...(browserSchedulingCostMs[selector] ? { schedulingCostMs: browserSchedulingCostMs[selector] } : {}),
-  timeoutMs: selector === 'code' ? 1_300_000 : 600_000, concurrencyClass: 'workspace-heavy', resources: ['browser-runtime'],
+  timeoutMs: selector === 'code' ? 1_300_000 : selector === 'agent-conversations' ? 1_200_000 : 600_000, concurrencyClass: 'workspace-heavy', resources: ['browser-runtime'],
   // Conversation workers acquire browser-runtime individually in the dispatcher.
   // The parent must not hold a slot while waiting for its own child workers.
-  ...(selector === 'agent-conversations' ? { resourceClaims: [], resourceUnits: { 'browser-runtime': 2 } } : {}),
+  ...(selector === 'agent-conversations' ? { resourceClaims: [], resourceUnits: { 'browser-runtime': 1 } } : {}),
   isolationMode: 'full-lifecycle', resetStrategy: 'recreate', parallelSafety: 'bounded',
   resourceDemand: selector === 'agent-conversations'
-    ? { workers: 2, processes: 2, workspaceIo: 2 }
+    ? { workers: 1, processes: 1, workspaceIo: 2 }
     : { workers: 1, processes: 1, workspaceIo: 1 },
   reuse: false,
   testing: { ownerScope: 'project:product', primaryIntent: 'Development', executionBoundary: 'E2E', primaryEvidenceOwner: `e2e-browser:${selector}`,

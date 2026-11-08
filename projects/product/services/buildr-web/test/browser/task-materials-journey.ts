@@ -446,18 +446,22 @@ export async function runTaskMaterialsJourney({ t, page, runtime, materials, wor
     write(simple, 'implementation.md', `${implementation.content}\n抽屉真实新版本二。\n`, implementation.actualDigest);
     const routePattern = new RegExp(`/tasks/${simple}/materials(?:\\?|$)`);
     let release!: () => void; let observed!: () => void; let forwarded!: () => void;
+    let forwardingError: unknown;
     const pending = new Promise<void>(resolve => { release = resolve; });
     const started = new Promise<void>(resolve => { observed = resolve; });
     const handled = new Promise<void>(resolve => { forwarded = resolve; });
     await page.route(routePattern, async (route: any) => {
-      const actual = await route.fetch(); observed();
-      try { await pending; await route.fulfill({ response: actual }); } finally { forwarded(); }
+      observed();
+      try { await pending; await route.continue(); }
+      catch (error) { forwardingError = error; }
+      finally { forwarded(); }
     });
     try {
       await page.locator('#task-reading-refresh').click(); await started;
       await drawer.getByText(/已读正文正在核对/).waitFor({ state: 'visible' });
       assert.doesNotMatch(await drawer.locator('.markdown-body').innerText(), /抽屉真实新版本二/);
     } finally { release(); await handled; await page.unroute(routePattern); }
+    if (forwardingError) throw forwardingError;
     await drawer.locator('.markdown-body').filter({ hasText: '抽屉真实新版本二' }).waitFor({ state: 'visible' });
     const latest = inspect(simple).documents.find((item: any) => item.role === 'implementation');
     write(simple, 'implementation.md', `${latest.content}\n失败期间尚未读到的版本三。\n`, latest.actualDigest);
@@ -489,12 +493,15 @@ export async function runTaskMaterialsJourney({ t, page, runtime, materials, wor
     }
     const pattern = (id: string) => new RegExp(`/tasks/${id}/materials(?:\\?|$)`);
     let release!: () => void, observed!: () => void, forwarded!: () => void;
+    let forwardingError: unknown;
     const pending = new Promise<void>(resolve => { release = resolve; });
     const started = new Promise<void>(resolve => { observed = resolve; });
     const handled = new Promise<void>(resolve => { forwarded = resolve; });
     await page.route(pattern(delayed), async (route: any) => {
-      const response = await route.fetch(); observed();
-      try { await pending; await route.fulfill({ response }); } finally { forwarded(); }
+      observed();
+      try { await pending; await route.continue(); }
+      catch (error) { forwardingError = error; }
+      finally { forwarded(); }
     });
     const checklist = page.locator('#task-checklist-panel:visible');
     try {
@@ -503,6 +510,7 @@ export async function runTaskMaterialsJourney({ t, page, runtime, materials, wor
       await checklist.getByText('正在读取实施清单…', { exact: true }).waitFor({ state: 'visible' });
       assert.doesNotMatch(await checklist.innerText(), /暂无实施清单/);
     } finally { release(); await handled; await page.unroute(pattern(delayed)); }
+    if (forwardingError) throw forwardingError;
     await checklist.locator('[data-task-material=impl]').filter({ hasText: '读取成功后的真实正文' }).waitFor({ state: 'visible' });
     await capture(page, 'task-materials-checklist-loaded.png');
     const fail = (route: any) => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'task_materials_probe_failed', message: '清单读取失败夹具。' } }) });

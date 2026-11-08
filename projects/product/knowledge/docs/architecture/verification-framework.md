@@ -89,13 +89,13 @@ Buildr 产品使用四类检查：静态检查（Static Check）、单元测试�
 
 [HTTP DTO 生成](../../../services/buildr/tools/codegen/contracts/output-paths.ts)比较完整内容后再写入；相同内容保留文件身份和修改时间，变化时通过原子替换发布，已打开的读取者仍持有完整旧文件。[开发依赖准备](../../../services/buildr/tools/development/prepare-development-dependencies.ts)的 Agent 构建与[Agent 包准备](../../../services/buildr/tools/development/prepare-development-agent.ts)共用同一个互斥锁，等待后重新检查已有构建，避免重复构建和读取半成品；其他独立准备继续按原声明执行。
 
-实际工作进程数量和资源必须有界，完整集合的耗时与资源成本需观察并优化，不设统一三十秒门槛，不借无限并发掩盖消耗。发现慢检查先判断范围与实现效率，不仅因慢而改名，也不为达到预算删掉必要断言。
+实际工作进程数量和资源必须有界，完整集合的耗时与资源成本需观察并优化，不设统一三十秒门槛，不借无限并发掩盖消耗。自动机器初始宽度和重型组并行均不超过3，浏览器并发固定为2，对话journey内部使用1个worker串行；四路并发或同一对话组两个worker并行实测使15 CPU机器负载达到12至21，并导致真实浏览器等待、Qoder原生对话未结算和进程交接失败。三组及以上的准入仍保留4份工作空间I/O，使两组重型生命周期可重叠。发现慢检查先判断范围与实现效率，不仅因慢而改名，也不为达到预算删掉必要断言。
 
 智能体服务（Agent Service）的完整集成入口是从 `services/buildr-agent` 运行 `../buildr/tools/development/run-development-npm run test:integration`；它按[服务检查登记](../../../services/buildr-agent/tools/testing/verification-checks.ts)发现全部组，项目完整入口也消费同一登记。`agent-integration` 覆盖本机存储及服务契约，`agent-integration-conversations` 独立覆盖较长的对话生命周期文件；两组成员互斥，完整入口仍发现同一全集。前者申请2个工作进程与2份I/O，后者申请1个工作进程与1份I/O，在原全局额度内并行，避免大文件堵住组内文件队列。`agent-integration-native` 覆盖厂商协议；重型独立进程按启动与归属、跨版本交接、观察与恢复分别归入 `agent-integration-startup`、`agent-integration-handoff`、`agent-integration-recovery`。真实退避上限用例独立归入 `agent-integration-recovery-budget`，避免27秒左右的真实等待挤占恢复组串行预算；保持唯一主归属与完整发现，原恢复组预算不变。使用 `--check` 选择其中一组不能宣称完整智能体覆盖。
 
 重型组每组申请一个工作位，统一资源协调器（Resource Coordinator）以 `agent-process-tests` 限制同机最多两组；组内文件依照外层 `BUILDR_VERIFICATION_WORKER_BUDGET` 串行执行。直接诊断可运行 `node tools/testing/run-integration.ts --group all` 或指定同一检查标识，也服从该预算，最多并行两个文件。准备包由一次执行共享准备；每个用例的可写包、数据库和进程身份独立。
 
-本机执行计划为真实Agent进程组、Archify和嵌套Git组保留当前整份工作空间I/O额度，使这些敏感生命周期不与其他已声明重工作区I/O组竞争；不再将全部Agent集成强制改为全局独占。独立协议和轻量检查可在剩余预算内执行，实际工作线程授权不扩大。刷新当前检出目录生成文件的工具边界组仍全局独占。长组耗时估计用于现有成本优先调度，既不是通过证据，也不改变期限。
+本机执行计划为真实Agent进程组、Archify和嵌套Git组申请最多两份工作空间I/O额度，不再随额度增长而占满全部。四份额度下最多两组重型生命周期可重叠；三份及以下仍保持原互斥，避免在没有足够空间时强行并发。`agent-process-tests`具名正确性锁、组内工作进程与进程预算、其他资源锁和清理责任不随之放大，独立协议和轻量检查可在剩余预算内执行。刷新当前检出目录生成文件的工具边界组仍全局独占。长组耗时估计用于现有成本优先调度，既不是通过证据，也不改变期限；实际重叠、等待原因、墙钟、失败率和清理须由完整运行证据核对。
 
 在本机支持的平台，`agent-integration-startup` 中五个只消费现成环境的场景，由[准备夹具](../../../services/buildr-agent/test/support/prepared-process-fixture.ts)每轮真实准备一次，再复制各用例独立的运行目录，重写私有路径并通过生产完整字节校验。数据库、会话和进程仍独立；种子污染拒绝使用，不跨轮缓存。测试运行环境创建、升级和迁移本身的场景继续真实准备；Windows 保留完整准备路径。
 

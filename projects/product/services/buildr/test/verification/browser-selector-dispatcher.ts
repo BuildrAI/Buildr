@@ -50,7 +50,7 @@ export function planAgentConversationGroups(env: any = process.env): any[] {
   if(focus==='history')selectIndependentScenarios(HISTORY_SCENARIO_CATALOG,env.BUILDR_AGENT_SCENARIO_FOCUS);
   if (focus !== 'all') return [{ id: focus, parts: [focus], queue: false, processTimeoutMs: focus==='history'?465_000:195_000 }];
   return Array.from({ length: AGENT_CONVERSATION_WORKERS }, (_, index) => ({
-    id: `worker-${index + 1}`, parts: [], queue: true, processTimeoutMs: 465_000,
+    id: `worker-${index + 1}`, parts: [], queue: true, processTimeoutMs: 1_150_000,
   }));
 }
 

@@ -1026,7 +1026,12 @@ const historyRuns = {
     historyPages.set(180,{...fixture.conversation,entries:[entry(160,'fill-previous','message','user','之前的要求'),entry(161,'fill-previous','message','assistant',Array.from({length:36},(_,i)=>'上一轮可阅读的答复内容 '+i).join('\n\n')),entry(170,'fill-latest','message','user','最新要求')],nextEntryCursor:160});
     historyPages.set(160,{...fixture.conversation,entries:[entry(140,'fill-earlier','message','user','不应自动读到这里')],nextEntryCursor:140});
     for(let opened=1;opened<=2;opened++){
-      await page.reload();await panel().locator('[data-entry-id="fill-161"]').waitFor();
+      await page.reload();
+      try{await panel().locator('[data-entry-id="fill-161"]').waitFor();}
+      catch(failure){
+        const state=await page.evaluate(()=>{const stream=document.querySelector<HTMLElement>('.ac-stream');return{entries:[...document.querySelectorAll<HTMLElement>('[data-entry-id]')].map(node=>node.getAttribute('data-entry-id')),stream:stream?{scrollTop:stream.scrollTop,scrollHeight:stream.scrollHeight,clientHeight:stream.clientHeight,text:stream.textContent?.slice(0,2000)}:null};}).catch(()=>({closed:true}));
+        throw new Error('首屏补页未到达 fill-161：opened='+opened+' reads='+(fixture.entryReads-reads)+' state='+JSON.stringify(state),{cause:failure});
+      }
       await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())))));
       const view=await panel().locator('.ac-stream').evaluate((node:HTMLElement)=>({height:node.scrollHeight,viewport:node.clientHeight,gap:node.scrollHeight-node.scrollTop-node.clientHeight}));
       assert.ok(view.height>view.viewport,JSON.stringify(view));assert.ok(view.gap<2,JSON.stringify(view));

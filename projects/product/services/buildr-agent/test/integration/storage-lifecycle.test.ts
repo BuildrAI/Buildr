@@ -13,7 +13,7 @@ import { isolatedEnvironment } from '../../src/executors/native-process.ts';
 import { observeStorageUse, removeStorageCandidate, storageCandidate } from '../../src/storage/files.ts';
 import { prepareAgentRuntime } from '../../src/process/runtime-unit.ts';
 import { retainedRuntimeCandidates, runtimeUnreferenced, retireRuntimeRecords } from '../../src/process/cleanup.ts';
-import { claim, controlRoot, writePrivate } from '../../src/process/ownership.ts';
+import { claim, controlRoot, readLock, writePrivate } from '../../src/process/ownership.ts';
 import { AGENT_EXECUTION_CONTRACTS } from '../../src/execution-contracts.ts';
 import { inspectAgentStorage, collectAgentStorage } from '../../src/application/storage-maintenance.ts';
 import type { AgentRuntime } from '../../src/contracts.ts';
@@ -238,6 +238,28 @@ test('runtime preparation waits for another process short storage collection', a
   t.after(async()=>{if(child.exitCode===null){child.kill();await once(child,'exit');}});
   await once(child.stdout!,'data');
   assert.doesNotThrow(()=>prepareAgentRuntime({dataRoot,packageRoot:pkg,entry:'build/entry.js',node}));
+});
+
+test('storage claim retries when the holder releases during conflict evaluation', t => {
+  const dataRoot = fixture(t);
+  const held = claim(dataRoot, 'storage');
+  const lockPath = path.join(controlRoot(dataRoot), 'storage.lock');
+  const originalExistsSync = fs.existsSync;
+  let triggered = false;
+  // Deterministically reproduce the production race: the holder releases the lock
+  // between the failed publish rename and the existence check that evaluates it.
+  const patched = t.mock.method(fs, 'existsSync', ((target: fs.PathLike) => {
+    if (!triggered && target === lockPath) { triggered = true; held.release(); }
+    return originalExistsSync(target);
+  }) as typeof fs.existsSync);
+  t.after(() => patched.mock.restore());
+  try {
+    const acquired = claim(dataRoot, 'storage');
+    assert.equal(readLock(dataRoot, 'storage')?.pid, process.pid, 'the retry acquires the released lock');
+    acquired.release();
+  } finally { patched.mock.restore(); }
+  assert.equal(triggered, true, 'the release window was actually exercised');
+  assert.equal(readLock(dataRoot, 'storage'), undefined, 'no lock remains after release');
 });
 
 test('legacy download classes retain reuse value without package publication or manual approvals', t => {

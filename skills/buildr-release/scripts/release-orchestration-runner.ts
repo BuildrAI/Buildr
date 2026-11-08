@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { waitForReleaseOperation } from './release-operation-wait.ts';
+import { releaseContextSchema } from './release-readiness.ts';
+import { recoverQueuedRelease, releaseQueuePolicy } from './github-queue-recovery.ts';
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -24,7 +26,7 @@ import { containsCredentialMaterial, releasePublishAuthority } from './release-a
 import { createReleaseLifecycle, projectReleaseLifecycleOrchestration } from './release-lifecycle.ts';
 import { compactReleasePhaseTimeline, createReleasePhaseTimeline, projectCandidateAttempts } from './release-phase-timeline.ts';
 import { inspectHostedReleaseTransaction } from './release-transaction-evidence.ts';
-import { runHostedReleaseTransaction, readCandidateEvidence } from './release-transaction-runner.ts';
+import { runHostedReleaseTransaction, readCandidateEvidence, frozenReleaseDispatchArgs } from './release-transaction-runner.ts';
 import { assertReleaseConsumptionCoverage } from '../../../projects/product/services/buildr/test/verification/release-verification.ts';
 import { normalizeReleaseTargets } from './release-targets.ts';
 import { preparePackageRelease, continuePackageRelease, evaluateObservedPackagePlan, observePackageCounterparts } from './package-release-operation.ts';
@@ -602,6 +604,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
   let action = options.action;
   if (options.stopAfter !== undefined && (options.stopAfter !== 'candidate' || action !== 'prepare')) throw new Error('--stop-after candidate is only supported by prepare.');
   const stopAfterCandidate = options.stopAfter === 'candidate';
+  releaseQueuePolicy(options);
   if (options.recoverPublication === true && (action !== 'resume' || options.authorized !== true)) throw new Error('Publication executor recovery requires explicit resume --recover-publication --authorized.');
   if (!['prepare', 'inspect', 'publish', 'resume'].includes(action)) throw new Error('Release operation must be prepare, inspect, publish or resume.');
   const targets = normalizeReleaseTargets({ packages: options.packages, version: options.version, pluginVersion: options.pluginVersion, selectionId: options.selectionId });
@@ -730,6 +733,36 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
   try {
     if (fs.existsSync(file)) state = JSON.parse(fs.readFileSync(file, 'utf8'));
     if (scoped && JSON.stringify(state.targets) !== JSON.stringify(targets)) throw new Error('Stored release targets changed while acquiring the operation lock.');
+    if (action === 'resume') {
+      // Older records may have persisted the public request without its frozen
+      // dispatch inputs. Restore only bytes already present in the validated context.
+      const mainPointer = scoped ? state.packagePublications?.buildr : state.publication;
+      const mainOwner = scoped ? state.context?.packages?.buildr?.ownerContext : state.context;
+      if (state.schemaVersion === 'buildr.release-operation-input/v2'
+        && mainPointer?.requested && !mainPointer.dispatchArgs && mainOwner?.schemaVersion === releaseContextSchema
+        && mainOwner.workflow?.digest && mainOwner.release && mainOwner.candidate) {
+        mainPointer.dispatchArgs = frozenReleaseDispatchArgs(mainOwner, mainPointer.releaseId ?? mainOwner.identity.slice(7, 31));
+        currentEffects.push({ type: 'release-dispatch-inputs-restored', basis: 'original-frozen-context', contextIdentity: mainOwner.identity });
+        save();
+      }
+      const pointers = [...new Set([state.candidate?.repair?.dispatchArgs ? state.candidate.repair : state.candidate,
+        state.publication, state.pluginPreparation, ...Object.values(state.packagePublications ?? {})].filter(Boolean))];
+      for (const pointer of pointers) {
+        if (!pointer.dispatchArgs && !pointer.queueRedispatch && !pointer.queueCancellation) continue;
+        const recovery = recoverQueuedRelease(pointer, options, { gh, save: () => {
+          if (pointer === state.candidate?.repair && pointer.runId) state.candidate.runId = pointer.runId;
+          save();
+        }, now: dependencies.now });
+        if (!recovery) continue;
+        currentEffects.push({ type: 'release-queue-recovery', ...recovery });
+        save();
+        const candidatePointer = pointer === state.candidate || pointer === state.candidate?.repair;
+        const status = recovery.status === 'redispatched'
+          ? (candidatePointer ? 'candidate-dispatch-unconfirmed' : 'publication-dispatch-unconfirmed')
+          : (candidatePointer ? 'candidate-running' : 'publication-running');
+        return answer(status, [], recovery.run ? { run: recovery.run } : {});
+      }
+    }
     if (stopAfterCandidate && (state.publicationAuthorization || state.publication?.requested || state.publicationEvidence
         || Object.values(state.packagePublications ?? {}).some((value: any) => value.requested || value.runId || value.evidence))) {
       return answer('blocked', ['此选择已有公开授权或公开请求；只读检查原事实，为新候选使用独立选择。'], {
@@ -815,12 +848,15 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       currentEffects.push({ type: 'remote-refs-refreshed', refs: ['origin/dev', 'origin/main'] });
       const previous = dependencies.orchestrationDependencies ?? {};
       const transactionDependencies = { ...previous.transactionDependencies,
-        onDispatchIntent: (intent: any) => { state.publication = { requested: true, releaseId: intent.releaseId, contextIdentity: intent.contextIdentity, runId: null,
+        onDispatchIntent: (intent: any) => { state.publication = { ...state.publication, requested: true, releaseId: intent.releaseId, dispatchArgs: intent.dispatchArgs,
+          contextIdentity: intent.contextIdentity, runId: null,
           cleanupAuthorization: { policy: 'delete-owned-release-branches/v2', contextIdentity: intent.contextIdentity } }; writeOperation(file, state); },
         onDispatchObserved: (run: any) => { state.publication = { ...state.publication, requested: true, runId: run.runId, contextIdentity: state.context.identity }; writeOperation(file, state); },
       };
       const dispatched = await runReleaseOrchestration({ action: 'dispatch', version: options.version, releaseTask: `release-${options.version}`, publicationAuthorized: true,
-        expectedContextDigest: state.context.identity, transaction: state.transaction }, { ...previous, transactionDependencies });
+        expectedContextDigest: state.context.identity,
+        transaction: { ...state.transaction, releaseContext: state.context, releaseId: state.publication?.releaseId, excludedRunIds: state.publication?.previousRunIds } },
+        { ...previous, transactionDependencies });
       currentEffects.push(...dispatched.effects);
       const run = dispatched.steps?.find((item: any) => item.operation === 'dispatch');
       const runId = run?.runId ?? dispatched.publishRunId ?? null;
@@ -831,7 +867,9 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
     if (action === 'resume' && state.publication?.requested && !state.publication.runId) {
       const title = `Release ${options.version} (${state.publication.releaseId || state.context.identity.slice(7, 31)})`;
       const runs = JSON.parse(gh(['run', 'list', '--repo', releasePublishAuthority.repository, '--workflow', 'publish.yml', '--event', 'workflow_dispatch', '--limit', '100', '--json', 'databaseId,displayTitle,headSha']));
-      const run = runs.find((item: any) => item.displayTitle === title && item.headSha === state.context.convergence.mainCommit);
+      const previous = new Set(state.publication.previousRunIds ?? []);
+      const run = runs.find((item: any) => item.displayTitle === title && item.headSha === state.context.convergence.mainCommit
+        && !previous.has(item.databaseId));
       if (!run) return answer('publication-dispatch-unconfirmed', ['继续回读同一发布请求；不把响应丢失当成未派发。']);
       state.publication.runId = run.databaseId;
       writeOperation(file, state);
@@ -1078,7 +1116,9 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       state.candidate.verificationInputs = { ...state.candidate.verificationInputs, ...state.candidate.repair?.verificationInputs }; save();
     }
     if (!state.candidate.runId) {
-      const find = () => JSON.parse(gh(['run', 'list', '--repo', releasePublishAuthority.repository, '--workflow', 'verify.yml', '--branch', carrier, '--event', 'workflow_dispatch', '--limit', '100', '--json', 'databaseId,headSha,status,conclusion'])).find((run: any) => run.headSha === sourceCommit);
+      const previous = new Set(state.candidate.previousRunIds ?? []);
+      const find = () => JSON.parse(gh(['run', 'list', '--repo', releasePublishAuthority.repository, '--workflow', 'verify.yml', '--branch', carrier, '--event', 'workflow_dispatch', '--limit', '100', '--json', 'databaseId,headSha,status,conclusion'])).find((run: any) => run.headSha === sourceCommit
+        && !previous.has(run.databaseId));
       let existing = find();
       if (!existing && state.candidate.dispatchRejected === true) state.candidate.dispatchRequested = false;
       if (!existing && !state.candidate.dispatchRequested) {
@@ -1108,13 +1148,14 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
           }
         }
         assertCandidateDispatchBudget(['purpose=candidate', ...fields]);
+        state.candidate.dispatchArgs = ['workflow', 'run', 'verify.yml', '--repo', releasePublishAuthority.repository, '--ref', carrier, '-f', 'purpose=candidate', ...fields.flatMap(field => ['-f', field])];
         state.candidate.dispatchRequested = true;
         state.candidate.dispatchRejected = false;
         const effect = { type: 'candidate-dispatched', branch: carrier, sourceCommit, state: 'unknown' };
         currentEffects.push(effect);
         state.candidate.sourceVerification = { recordCount: localSource.recordCount ?? 0, digest: identity(localSource.transport ?? '') };
         writeOperation(file, state);
-        try { gh(['workflow', 'run', 'verify.yml', '--repo', releasePublishAuthority.repository, '--ref', carrier, '-f', 'purpose=candidate', ...fields.flatMap(field => ['-f', field])]); effect.state = 'confirmed'; }
+        try { gh(state.candidate.dispatchArgs); effect.state = 'confirmed'; }
         catch (error: any) {
           state.candidate.dispatchDiagnostic = error.diagnostic ?? { code: 'candidate-dispatch-unknown', message: String(error.message).slice(-8192) };
           state.candidate.dispatchRejected = releaseDispatchRejected(state.candidate.dispatchDiagnostic);
@@ -1331,6 +1372,8 @@ function parseOptions(argv: any): any  {
     stopAfter: options['stop-after'],
     waitTimeoutMs: options['wait-timeout-ms'] ? Number(options['wait-timeout-ms']) : undefined,
     waitIntervalMs: options['wait-interval-ms'] ? Number(options['wait-interval-ms']) : undefined,
+    queueTimeoutSeconds: options['queue-timeout-seconds'] ? Number(options['queue-timeout-seconds']) : undefined,
+    maxQueueRedispatches: options['max-queue-redispatches'] !== undefined ? Number(options['max-queue-redispatches']) : undefined,
     supportTasks: options['support-tasks'] ? options['support-tasks'].split(',').filter(Boolean) : undefined,
   };
   if (options['stop-after'] !== undefined) throw new Error('--stop-after candidate is only supported by normal prepare, without --input.');
@@ -1353,7 +1396,7 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
       process.on('SIGTERM', terminate);
     }
     if (options.help) {
-      process.stdout.write('Usage: release-orchestration-runner.ts <prepare|inspect|publish|resume> --workspace <root> [--packages buildr|dsh-plugin|buildr,dsh-plugin] [--version <main-version>] [--plugin-version <plugin-version>] [--baseline <ref>] [--source <sha> ...] [--stop-after candidate] [--authorized] [--recover-publication] [--wait] [--wait-timeout-ms <ms>] [--wait-interval-ms <ms>] [--output <file>] [--detail compact|full]\n');
+      process.stdout.write('Usage: release-orchestration-runner.ts <prepare|inspect|publish|resume> --workspace <root> [--packages buildr|dsh-plugin|buildr,dsh-plugin] [--version <main-version>] [--plugin-version <plugin-version>] [--baseline <ref>] [--source <sha> ...] [--stop-after candidate] [--authorized] [--recover-publication] [--wait] [--wait-timeout-ms <ms>] [--wait-interval-ms <ms>] [--queue-timeout-seconds <seconds>] [--max-queue-redispatches <count>] [--output <file>] [--detail compact|full]\n');
     } else {
     const value: any = options.normalOperation ? await runReleaseOperationUntilSettled(options, {
       signal: controller.signal,

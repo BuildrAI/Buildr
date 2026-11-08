@@ -1,7 +1,10 @@
 /** 逻辑分组保持可单独选择；完整运行可在隔离页面中复用较重的运行现场。 */
 export const AGENT_CONVERSATION_GROUPS = Object.freeze(["setup","history","handoff","tasks","models","recovery","selection","video","children"] as const);
 export type AgentConversationGroup = typeof AGENT_CONVERSATION_GROUPS[number];
-export const AGENT_CONVERSATION_WORKERS = 2;
+// One worker keeps the timing-sensitive groups from competing with each other.
+// The previous two-worker budget made setup/tasks/recovery fail even when the
+// whole verification plan was otherwise idle.
+export const AGENT_CONVERSATION_WORKERS = 1;
 
 export function parseAgentConversationBatch(raw: string | undefined): AgentConversationGroup[] | null {
   if (!raw) return null;

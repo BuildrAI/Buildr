@@ -92,6 +92,74 @@ test('local lifecycle IO isolation admits independent work without expanding wor
   assert.equal(localExecutionStep(definitions[0],profile,2).resourceDemand.workspaceIo,2);
 });
 
+test('local-auto bounds lifecycle IO so two heavy groups can share four slots without widening named resources', async () => {
+  const base = resolveVerificationExecutionProfile('local');
+  const profile = (workspaceIo: number) => ({
+    id: 'local-auto',
+    limits: { ...base.limits, capacities: { ...base.limits.capacities, workspaceIo } },
+  });
+  const ids = ['agent-integration-startup', 'integration-archify', 'e2e-nested-git'];
+  const definitions = ids.map(id => verificationSteps.find((check: any) => check.id === id));
+  const run = async (workspaceIo: number) => {
+    const active = new Set<string>();
+    let maximum = 0;
+    const steps = definitions.map((definition: any) => localExecutionStep(definition, profile(workspaceIo), workspaceIo));
+    const results = await runVerificationDag({ steps }, {
+      concurrency: profile(workspaceIo).limits,
+      executionProfile: profile(workspaceIo),
+      execute: async (check: any) => {
+        active.add(check.id);
+        maximum = Math.max(maximum, active.size);
+        await new Promise<void>(resolve => setImmediate(resolve));
+        active.delete(check.id);
+        return { status: 'passed', exitCode: 0, durationMs: 1 };
+      },
+    });
+    assert.equal(results.every((value: any) => value.status === 'passed'), true);
+    return { maximum, steps };
+  };
+  const wide = await run(4);
+  assert.equal(wide.maximum, 2, 'four IO slots admit two lifecycle groups, never all three');
+  for (const step of wide.steps) {
+    const original = definitions.find((definition: any) => definition.id === step.id);
+    assert.equal(step.resourceDemand.workspaceIo, 2);
+    assert.equal(step.resourceDemand.workers, original.resourceDemand.workers);
+    assert.deepEqual(step.resources, original.resources);
+  }
+  assert.equal((await run(3)).maximum, 1, 'three IO slots retain lifecycle mutual exclusion');
+});
+
+test('local-auto keeps the two agent-process-tests slots available under bounded IO', async () => {
+  const base = resolveVerificationExecutionProfile('local');
+  const limits = { ...base.limits, capacities: { ...base.limits.capacities, workspaceIo: 4 } };
+  const profile = { id: 'local-auto', limits };
+  const definitions = ['agent-integration-startup', 'agent-integration-startup-ownership']
+    .map(id => verificationSteps.find((check: any) => check.id === id));
+  const active = new Set<string>();
+  let overlap = false;
+  const results = await runVerificationDag({
+    steps: definitions.map((definition: any) => localExecutionStep(definition, profile, limits)),
+  }, {
+    concurrency: limits,
+    executionProfile: profile,
+    execute: async (check: any) => {
+      active.add(check.id);
+      overlap ||= active.size === 2;
+      await new Promise<void>(resolve => setImmediate(resolve));
+      active.delete(check.id);
+      return { status: 'passed', exitCode: 0, durationMs: 1 };
+    },
+  });
+  assert.equal(results.every((value: any) => value.status === 'passed'), true);
+  assert.equal(overlap, true, 'the existing named agent-process-tests capacity remains usable');
+  for (const definition of definitions) {
+    const prepared = localExecutionStep(definition, profile, limits);
+    assert.equal(prepared.resourceDemand.workspaceIo, 2);
+    assert.equal(prepared.resourceDemand.workers, definition.resourceDemand.workers);
+    assert.deepEqual(prepared.resources, ['agent-process-tests']);
+  }
+});
+
 test('independent conversation and storage owners share the existing IO capacity with distinct file membership', async () => {
   const profile = resolveVerificationExecutionProfile('local');
   const ids = ['agent-integration','agent-integration-conversations'];

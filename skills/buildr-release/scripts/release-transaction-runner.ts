@@ -226,6 +226,17 @@ function taskCorrelationProjection(value: any): any  {
   return value ? releaseTaskAssociationProjection(value) : null;
 }
 
+/** Restore only inputs already present in a validated frozen release context. */
+export function frozenReleaseDispatchArgs(value: any, releaseId: string): string[] {
+  const context = validateReleaseContext(value);
+  const workflowDigest = context.executorRecovery?.workflowDigest ?? context.workflow.digest;
+  return ['workflow', 'run', releasePublishAuthority.workflow, '--repo', releasePublishAuthority.repository, '--ref', 'main',
+    '-f', `release_id=${releaseId}`, '-f', `version=${context.release.version}`, '-f', `source_commit=${context.convergence.mainCommit}`,
+    '-f', `candidate_base=${context.release.sourceCommit}`, '-f', `candidate_tree=${context.release.sourceTree}`,
+    '-f', `workflow_sha256=${workflowDigest.slice(7)}`,
+    '-f', `context_digest=${context.identity}`, '-f', `candidate_run_id=${context.candidate.runId}`, '-f', `release_context=${JSON.stringify(context)}`];
+}
+
 export async function runHostedReleaseTransaction(options: any = {}, dependencies: any = {}): Promise<any>  {
   const rawExecute: any = dependencies.execute ?? defaultExecute;
   const exactNode: any = createExactNodeExecutionEnvironment({ nodeExecutable: process.execPath, env: process.env, requireNpm: true, minimumVersion: '24.15.0' });
@@ -417,20 +428,20 @@ export async function runHostedReleaseTransaction(options: any = {}, dependencie
     const runs = parseJson(invoke(execute, ghCommand, ['run', 'list', '--repo', releasePublishAuthority.repository, '--workflow', releasePublishAuthority.workflow,
       '--event', 'workflow_dispatch', '--branch', 'main', '--limit', '100', '--json', 'databaseId,displayTitle,headSha,status,conclusion,url'], repo), 'GitHub release run lookup');
     if (!Array.isArray(runs)) throw new Error('GitHub release run lookup is not an array.');
-    return runs.find((item: any) => item.displayTitle === title && item.headSha === sourceCommit) ?? null;
+    const excluded = new Set(options.excludedRunIds ?? []);
+    return runs.find((item: any) => item.displayTitle === title && item.headSha === sourceCommit && !excluded.has(item.databaseId)) ?? null;
   };
   let run = listRun();
   if (!run && options.dispatchPreviouslyRequested !== true) {
     const intent = { type: 'workflow-dispatched', releaseId, contextIdentity: context.identity, state: 'unknown' };
     effects.push(intent);
-    dependencies.onDispatchIntent?.({ releaseId, contextIdentity: context.identity });
+    const dispatchArgs = ['workflow', 'run', releasePublishAuthority.workflow, '--repo', releasePublishAuthority.repository, '--ref', 'main',
+      '-f', `release_id=${releaseId}`, '-f', `version=${version}`, '-f', `source_commit=${context.convergence.mainCommit}`,
+      '-f', `candidate_base=${candidateBase}`, '-f', `candidate_tree=${candidateTree}`, '-f', `workflow_sha256=${workflowSha256}`,
+      '-f', `context_digest=${context.identity}`, '-f', `candidate_run_id=${context.candidate.runId}`, '-f', `release_context=${JSON.stringify(context)}`];
+    dependencies.onDispatchIntent?.({ releaseId, contextIdentity: context.identity, dispatchArgs });
     try {
-      invoke(execute, ghCommand, [
-        'workflow', 'run', releasePublishAuthority.workflow, '--repo', releasePublishAuthority.repository, '--ref', 'main',
-        '-f', `release_id=${releaseId}`, '-f', `version=${version}`, '-f', `source_commit=${context.convergence.mainCommit}`,
-        '-f', `candidate_base=${candidateBase}`, '-f', `candidate_tree=${candidateTree}`, '-f', `workflow_sha256=${workflowSha256}`,
-        '-f', `context_digest=${context.identity}`, '-f', `candidate_run_id=${context.candidate.runId}`, '-f', `release_context=${JSON.stringify(context)}`,
-      ], repo);
+      invoke(execute, ghCommand, dispatchArgs, repo);
       intent.state = 'confirmed';
     } catch { /* Read the same request identity; do not issue another dispatch. */ }
   }

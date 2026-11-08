@@ -209,7 +209,7 @@ await step('旧对话原生模型绑定来源和切换档位后仍恢复上次�
         await chooseModel('其他模型');await chooseModel('原生模型记忆');
         assert.equal(await modelSettings().getByRole('slider',{name:'思考深度',exact:true}).getAttribute('aria-valuetext'),'高');
         assert.equal(fixture.conversation.run.reasoningEffort,'medium','主动选择不改写旧运行记录');
-        await closeModelSettings();await fixture.startNewConversation();await input().waitFor();await assertModelSummary('Codex / 原生模型记忆','高');
+        await closeModelSettings();await fixture.startNewConversation();await input().waitFor();await assertModelSummary('ChatGPT / 原生模型记忆','高');
       }finally{fixture.sharedModels=previousModels;update(previousConversation);}
     });
 }

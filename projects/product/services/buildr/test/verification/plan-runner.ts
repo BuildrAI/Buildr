@@ -41,6 +41,8 @@ export async function prepareVerificationReuse(plan: any, prepare: (steps: any[]
 }
 
 /** Private lifecycle fixtures need IO headroom, not ownership of unrelated checks.
+ * A bounded two-slot claim lets at most two heavy groups share a four-slot budget,
+ * while capacity three or below keeps their previous mutual exclusion.
  * Keep worker grants unchanged: they also control actual child concurrency. */
 export function localExecutionStep(step: any, profile: any, concurrency: any): any {
   if (!['local', 'local-auto'].includes(profile?.id)) return step;
@@ -50,7 +52,7 @@ export function localExecutionStep(step: any, profile: any, concurrency: any): a
   const workspaceIo = Number.isInteger(concurrency) ? concurrency : concurrency.capacities?.workspaceIo;
   if (!Number.isInteger(workspaceIo) || workspaceIo < 1) return step;
   return { ...step, concurrencyClass: 'workspace-heavy',
-    resourceDemand: { ...step.resourceDemand, workspaceIo } };
+    resourceDemand: { ...step.resourceDemand, workspaceIo: Math.min(2, workspaceIo) } };
 }
 
 /** A verified cache hit executes no child and occupies no declared resources. */

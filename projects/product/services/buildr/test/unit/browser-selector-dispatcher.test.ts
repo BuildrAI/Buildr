@@ -159,7 +159,7 @@ test('internal conversation paths select the executable conversation journey and
   assert.deepEqual(selectBrowserSelectors(['services/buildr-web/src/features/agent-conversations/ConversationPanel.tsx']).selectors,['agent-conversations']);
   assert.deepEqual(selectBrowserSelectors(['services/buildr-web/src/features/agent-conversations/agent-conversations.css']).selectors,['layout','agent-conversations']);
   const commands=planBrowserCommands(['agent-conversations'],'/tmp/conversation-web-dist',{});
-  assert.deepEqual(commands.map(item=>item.id),['browser:agent-conversations:worker-1','browser:agent-conversations:worker-2']);
+  assert.deepEqual(commands.map(item=>item.id),['browser:agent-conversations:worker-1']);
   for(const command of commands){assert.equal(command.argv.at(-1),'agent-conversations');assert.equal(command.env.BUILDR_BROWSER_WEB_DIST_ROOT,'/tmp/conversation-web-dist');assert.equal(command.env.BUILDR_AGENT_JOURNEY_USES_QUEUE,'1');assert.equal(command.env.BUILDR_AGENT_JOURNEY_PART,'');assert.match(command.argv[1],/run-isolated-workspace-check\.ts$/);}
   for(const group of AGENT_CONVERSATION_GROUPS){
     const focused=planBrowserCommands(['agent-conversations'],'/tmp/conversation-web-dist',{BUILDR_AGENT_JOURNEY_PART:group,BUILDR_AGENT_JOURNEY_BATCH:'stale'});
@@ -332,15 +332,15 @@ test('unconfirmed process cleanup retains the browser slot and stops pending wor
   assert.deepEqual(results.map(item=>item.status),['failed','failed']);
 });
 
-test('conversation check accounts for two browser workers without a parent lease deadlock',()=>{
+test('conversation check accounts for one browser worker without a parent lease deadlock',()=>{
   const step=verificationSteps.find((item:any)=>item.id==='e2e-browser:agent-conversations');
   assert.deepEqual(step.resourceClaims,[]);
-  assert.deepEqual(step.resourceUnits,{'browser-runtime':2});
-  assert.deepEqual(step.resourceDemand,{workers:2,processes:2,workspaceIo:2});
+  assert.deepEqual(step.resourceUnits,{'browser-runtime':1});
+  assert.deepEqual(step.resourceDemand,{workers:1,processes:1,workspaceIo:2});
   for(const id of ['local','ci','ci-workspace-limited']){
     const limits=resolveVerificationExecutionProfile(id).limits;
-    assert.ok(limits.capacities.workers>=2);
-    assert.ok(limits.capacities.processes>=2);
+    assert.ok(limits.capacities.workers>=1);
+    assert.ok(limits.capacities.processes>=1);
     assert.ok(limits.capacities.workspaceIo>=2);
     assert.equal(limits.resources['browser-runtime'],2);
   }
