@@ -329,7 +329,10 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
       await page.setViewportSize({width:1600,height:1000});fixture.sharedModels=previousModels;await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await fixture.chooseModel('Fixture model');await fixture.closeModelSettings();
     }
     fixture.dropEventStreams=0;fixture.connectionEventProbe=true;const recoveryStreams=fixture.eventStreams;
-    await notice().waitFor({state:'hidden',timeout:20000});assert.ok(fixture.eventStreams>recoveryStreams,'未结束轮次自动继续重连并清除旧告警');assert.equal(fixture.sends,sends);
+    await notice().waitFor({state:'hidden',timeout:20000});
+    const streamDeadline=Date.now()+20000;
+    while(fixture.eventStreams<=recoveryStreams&&Date.now()<streamDeadline)await new Promise(resolve=>setTimeout(resolve,50));
+    assert.ok(fixture.eventStreams>recoveryStreams,'未结束轮次自动继续重连并清除旧告警');assert.equal(fixture.sends,sends);
     const reads=fixture.conversationReads;update({run:completed()});await panel().locator('[data-run-status="completed"]').waitFor({timeout:10000});assert.ok(fixture.conversationReads>reads,'重试耗尽后全局活动仍可发现完成');assert.equal(await notice().count(),0);
   });
   await step('已结束对话收到下一轮受理后重新建立连接，不复用旧告警',async()=>{

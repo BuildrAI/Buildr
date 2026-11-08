@@ -60,6 +60,47 @@ export function reusedExecutionStep(step: any): any {
   return { ...step, resources: [], resourceClaims: [], resourceUnits: {}, concurrencyClass: 'default', resourceDemand: { workers: 1, processes: 1 } };
 }
 
+/** Run compatible browser selectors through one real host. The representative
+ * keeps the browser slot and the other members wait on it without launching a
+ * second server or browser. A single selected member never expands to its
+ * bundle, so focused diagnosis keeps its original scope. */
+export function bundleBrowserExecutionSteps(steps: any[], isReused: (id: string) => boolean = () => false): any {
+  const groups = new Map<string, any[]>();
+  for (const step of steps) {
+    if (!step.browserBundle || isReused(step.id)) continue;
+    const members = groups.get(step.browserBundle) ?? [];
+    members.push(step);
+    groups.set(step.browserBundle, members);
+  }
+  const replacements = new Map<string, any>();
+  const coveredBy = new Map<string, string>();
+  for (const members of groups.values()) {
+    if (members.length < 2) continue;
+    const selectors = members.map(member => member.browserSelector).filter(Boolean);
+    if (selectors.length !== members.length) continue;
+    const representative = members[0];
+    const estimatedCostMs = members.reduce((total: number, member: any) => total + (member.schedulingCostMs ?? 0), 0);
+    replacements.set(representative.id, {
+      ...representative,
+      browserSelectors: selectors,
+      executor: { ...representative.executor, args: ['--selector', selectors.join(','), '--run'] },
+      schedulingCostMs: estimatedCostMs,
+      timeoutMs: Math.min(900_000, Math.max(600_000, estimatedCostMs + 120_000)),
+    });
+    for (const member of members.slice(1)) {
+      replacements.set(member.id, {
+        ...member,
+        dependsOn: [...new Set([...(member.dependsOn ?? []), representative.id])],
+        resources: [], resourceClaims: [], resourceUnits: {},
+        concurrencyClass: 'default',
+        resourceDemand: { workers: 1, processes: 1 },
+      });
+      coveredBy.set(member.id, representative.id);
+    }
+  }
+  return { steps: steps.map(step => replacements.get(step.id) ?? step), coveredBy };
+}
+
 export async function executePlan(plan: any, options: any): Promise<any>  {
   if (plan.status === 'blocked') throw new Error(plan.diagnostic?.message ?? 'Verification plan is blocked.');
   const planStartedAt = Date.now();
@@ -132,7 +173,14 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
       options.onProcessStart?.(step, processIdentity);
     },
   });
+  let coveredBrowserSteps: Map<string, string> = new Map();
   const execute: any = (step: any, executionContext: any) => {
+    if (coveredBrowserSteps.has(step.id)) {
+      return Promise.resolve({
+        status: 'passed', exitCode: 0, durationMs: 0, stdout: '', stderr: '',
+        coveredBy: coveredBrowserSteps.get(step.id),
+      });
+    }
     const failedContext = (step.contexts ?? []).find((key: string) => contextFailures.has(key));
     if (failedContext) return Promise.resolve({ status: 'blocked', exitCode: 1, durationMs: 0, stdout: '', stderr: '', reason: `Required context ${failedContext} is unavailable: ${contextFailures.get(failedContext)}` });
     const record = reuse?.hits.get(step.id);
@@ -148,13 +196,19 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
   let results: any;
   let contextCleanup: any = null;
   try {
-    const executionPlan = { ...plan, steps: plan.steps.map((step: any) => reuse?.hits.has(step.id)
+    const baseExecutionPlan = { ...plan, steps: plan.steps.map((step: any) => reuse?.hits.has(step.id)
       ? reusedExecutionStep(step)
       : localExecutionStep(step, options.executionProfile, concurrency)) };
+    const bundledExecution = bundleBrowserExecutionSteps(baseExecutionPlan.steps, (id: string) => Boolean(reuse?.hits.has(id)));
+    coveredBrowserSteps = bundledExecution.coveredBy;
+    const executionPlan = { ...baseExecutionPlan, steps: bundledExecution.steps };
     results = await runVerificationDag(executionPlan, {
       execute,
       concurrency,
       schedulingMode: options.schedulingMode,
+      ...(concurrency?.resources?.['browser-runtime']
+        ? { priorityResources: options.priorityResources ?? ['browser-runtime'] }
+        : {}),
       executionProfile: options.executionProfile,
       resourceCoordinator,
       signal: options.signal,

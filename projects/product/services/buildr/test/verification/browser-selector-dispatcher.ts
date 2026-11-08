@@ -12,8 +12,8 @@ import { executeVerificationCommand } from './support/process-executor.ts';
 
 import { collectChangedProductPaths } from './changed-paths.ts';
 
-import { BROWSER_SELECTORS } from './browser-selector-catalog.ts';
-import { AGENT_CONVERSATION_GROUPS, AGENT_CONVERSATION_WORKERS } from '../../../buildr-web/test/browser/agent-conversation-groups.ts';
+import { BROWSER_BUNDLES, BROWSER_SELECTORS } from './browser-selector-catalog.ts';
+import { AGENT_CONVERSATION_BATCHES, AGENT_CONVERSATION_GROUPS } from '../../../buildr-web/test/browser/agent-conversation-groups.ts';
 import { inspectAgentConversationQueue } from '../../../buildr-web/test/browser/agent-conversation-queue.ts';
 import { createVerificationResourceCoordinator, coordinatedResourcesFromLimits, resolveVerificationCoordinationRoot } from './resource-coordinator.ts';
 import { resolveVerificationWorkerBudget } from './worker-budget.ts';
@@ -49,8 +49,8 @@ export function planAgentConversationGroups(env: any = process.env): any[] {
   }
   if(focus==='history')selectIndependentScenarios(HISTORY_SCENARIO_CATALOG,env.BUILDR_AGENT_SCENARIO_FOCUS);
   if (focus !== 'all') return [{ id: focus, parts: [focus], queue: false, processTimeoutMs: focus==='history'?465_000:195_000 }];
-  return Array.from({ length: AGENT_CONVERSATION_WORKERS }, (_, index) => ({
-    id: `worker-${index + 1}`, parts: [], queue: true, processTimeoutMs: 1_150_000,
+  return AGENT_CONVERSATION_BATCHES.map((parts: ReadonlyArray<string>, index: number) => ({
+    id: `worker-${index + 1}`, parts: [...parts], queue: false, processTimeoutMs: 600_000,
   }));
 }
 
@@ -58,6 +58,18 @@ export function planBrowserCommands(selectors: any[], webDistRoot: string, env: 
   const selected = selectors.includes('all') ? BROWSER_SELECTORS : selectors;
   const browserTest = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../e2e/buildr-web-browser.test.ts');
   const isolationRunner = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../tools/development/run-isolated-workspace-check.ts');
+  const bundle = selected.length > 1
+    ? BROWSER_BUNDLES.find((candidate: any) => selected.every((selector: string) => candidate.selectors.includes(selector)))
+    : null;
+  if (bundle) {
+    return [{
+      id: `browser:bundle:${bundle.id}`,
+      argv: [process.execPath, isolationRunner, '--script', browserTest, '--', selected.join(',')],
+      cwd: productRoot,
+      timeoutMs: 900_000,
+      env: { ...env, BUILDR_BROWSER_WEB_DIST_ROOT: webDistRoot },
+    }];
+  }
   return selected.flatMap((selector: string) => {
     const groups = selector === 'code' || selector === 'code-explorer' ? planCodeBrowserGroups(env, selector) : selector === 'agent-conversations' ? planAgentConversationGroups(env) : [null];
     return groups.map((group: any) => ({
@@ -69,8 +81,8 @@ export function planBrowserCommands(selectors: any[], webDistRoot: string, env: 
         ...env,
         BUILDR_BROWSER_WEB_DIST_ROOT: webDistRoot,
         ...(group && selector === 'agent-conversations' ? {
-          BUILDR_AGENT_JOURNEY_PART: group.queue ? '' : group.parts[0],
-          BUILDR_AGENT_JOURNEY_BATCH: '',
+          BUILDR_AGENT_JOURNEY_PART: group.queue || group.parts.length > 1 ? '' : group.parts[0],
+          BUILDR_AGENT_JOURNEY_BATCH: !group.queue && group.parts.length > 1 ? JSON.stringify(group.parts) : '',
           BUILDR_AGENT_JOURNEY_QUEUE_ROOT: '',
           BUILDR_AGENT_JOURNEY_USES_QUEUE: group.queue ? '1' : '',
         } : {}),
@@ -306,12 +318,17 @@ async function main(): Promise<any>  {
   const full: any = args.includes('--full');
   const selectorIndex: any = args.indexOf('--selector');
   const explicitSelector: any = selectorIndex < 0 ? null : args[selectorIndex + 1];
-  if (selectorIndex >= 0 && (!explicitSelector || !BROWSER_SELECTORS.includes(explicitSelector))) throw new Error('--selector requires one known Browser selector.');
+  const explicitSelectors: string[] | null = explicitSelector
+    ? explicitSelector.split(',').map((value: string) => value.trim()).filter(Boolean) : null;
+  if (selectorIndex >= 0 && (!explicitSelectors?.length || explicitSelectors.some((selector: string) => !BROWSER_SELECTORS.includes(selector)))) {
+    throw new Error('--selector requires one or more comma-separated known Browser selectors.');
+  }
   const run: any = args.includes('--run');
   let plan: any;
   try {
     plan = explicitSelector
-      ? { status: 'selected', mode: 'explicit', paths: [], selectors: [explicitSelector], reasons: [{ path: null, selector: explicitSelector, reason: 'Explicit Browser selector.' }], diagnostics: [] }
+      ? { status: 'selected', mode: 'explicit', paths: [], selectors: explicitSelectors,
+        reasons: explicitSelectors!.map((selector: string) => ({ path: null, selector, reason: 'Explicit Browser selector.' })), diagnostics: [] }
       : full
       ? { status: 'selected', mode: 'full', paths: [], selectors: ['all'], reasons: [{ path: null, selector: 'all', reason: 'Complete browser journeys.' }], diagnostics: [] }
       : selectBrowserSelectors(parseChangedPaths());

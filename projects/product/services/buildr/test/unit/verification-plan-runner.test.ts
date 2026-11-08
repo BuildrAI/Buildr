@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { executePlan, localExecutionStep, reusedExecutionStep, prepareVerificationReuse } from '../verification/plan-runner.ts';
+import { bundleBrowserExecutionSteps, executePlan, localExecutionStep, reusedExecutionStep, prepareVerificationReuse } from '../verification/plan-runner.ts';
 import { resolveVerificationExecutionProfile, verificationSteps } from '../verification/registry.ts';
 import { runVerificationDag } from '../verification/dag-scheduler.ts';
 
@@ -191,4 +191,25 @@ test('a cached two-browser owner executes without browser or IO reservation', as
     execute: async () => ({ status: 'passed', exitCode: 0, durationMs: 0 }),
   });
   assert.equal(results[0].status, 'passed');
+});
+
+test('browser bundle keeps one real host while focused single-selector checks stay narrow', () => {
+  const members = ['core', 'shell', 'workbench'].map((selector: string) =>
+    verificationSteps.find((check: any) => check.id === `e2e-browser:${selector}`));
+  const bundled = bundleBrowserExecutionSteps(members);
+  const [core, shell, workbench] = bundled.steps;
+  assert.deepEqual(core.browserSelectors, ['core', 'shell', 'workbench']);
+  assert.deepEqual(core.executor.args, ['--selector', 'core,shell,workbench', '--run']);
+  assert.ok(core.schedulingCostMs > 0);
+  assert.deepEqual(shell.dependsOn, ['e2e-browser:core']);
+  assert.deepEqual(shell.resources, []);
+  assert.deepEqual(shell.resourceUnits, {});
+  assert.deepEqual(workbench.dependsOn, ['e2e-browser:core']);
+  assert.equal(bundled.coveredBy.get('e2e-browser:shell'), 'e2e-browser:core');
+  assert.equal(bundled.coveredBy.get('e2e-browser:workbench'), 'e2e-browser:core');
+
+  const focused = bundleBrowserExecutionSteps([members[1]]);
+  assert.equal(focused.steps[0].browserSelectors, undefined);
+  assert.equal(focused.steps[0].dependsOn.length, 0);
+  assert.equal(focused.coveredBy.size, 0);
 });

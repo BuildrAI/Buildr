@@ -78,6 +78,16 @@ export async function runVerificationDag(plan: any, options: any = {}): Promise<
     if (units > (limits.resources?.[resource] ?? 0)) throw new Error(`Unsatisfied resource units for ${step.id}: ${resource}`);
   }
   const schedulingMode: any = parseVerificationSchedulingMode(options.schedulingMode);
+  const priorityResourceInput: any = options.priorityResources ?? [];
+  if (!Array.isArray(priorityResourceInput) || priorityResourceInput.some((resource: any) => typeof resource !== 'string')) {
+    throw new Error('priorityResources must be an array of resource names');
+  }
+  const priorityResources: string[] = [...new Set<string>(priorityResourceInput)];
+  for (const resource of priorityResources) {
+    if (!Number.isInteger(limits.resources?.[resource]) || limits.resources[resource] < 1) {
+      throw new Error(`Invalid priority resource: ${resource}`);
+    }
+  }
   const planIndex: any = new Map(plan.steps.map((step: any, index: any) => [step.id, index]));
   const schedulingPriorities: any = createVerificationSchedulingPriorities(plan);
   const pending: any = new Map(plan.steps.map((step: any) => [step.id, step]));
@@ -182,6 +192,16 @@ export async function runVerificationDag(plan: any, options: any = {}): Promise<
   };
 
   const pendingInSchedulingOrder: any = () => [...pending.values()].sort((left: any, right: any) => {
+    // A scarce resource with an idle slot is worth filling before ordinary
+    // work. Once every priority slot is occupied, normal ordering applies so
+    // unrelated checks keep progressing instead of waiting for a browser turn.
+    const freePriorityResources: string[] = priorityResources.filter((resource: string) =>
+      (activeByResource.get(resource) ?? 0) < limits.resources[resource]);
+    if (freePriorityResources.length > 0) {
+      const leftPriority: any = (left.resources ?? []).some((resource: string) => freePriorityResources.includes(resource));
+      const rightPriority: any = (right.resources ?? []).some((resource: string) => freePriorityResources.includes(resource));
+      if (leftPriority !== rightPriority) return leftPriority ? -1 : 1;
+    }
     if (schedulingMode === 'critical-path') {
       const leftPriority: any = schedulingPriorities.get(left.id);
       const rightPriority: any = schedulingPriorities.get(right.id);

@@ -53,15 +53,17 @@ Buildr 产品使用四类检查：静态检查（Static Check）、单元测试�
 
 `test:system`把两类检查放入同一依赖计划，复用本轮准备及总资源预算；测试类型不是阶段屏障。它仍是两类检查的组合入口，不新增测试类型。无需分别启动两个会相互争抢机器的命令；真正依赖、独占和具名资源锁继续生效，因此总耗时不保证等于两类中较长的一类。
 
-非CI默认使用`local-auto`，按可用CPU并行度和内存形成初始预算：每3个CPU、每4GiB一个外层组，自动宽度限制在1至4。全局、工作空间重负载、浏览器与工作空间I/O额度一起调整；为容纳现有双工作进程组，浏览器和I/O至少为2。工作进程额度至少容纳现有单组需求，自动上限16。它是保守初始策略，不是实时CPU、内存或磁盘调节器；额度为测试声明单位，不等于操作系统进程硬上限。实现及固定档位见[容量策略](../../../services/buildr/test/verification/execution-capacity.ts)和[登记](../../../services/buildr/test/verification/registry.ts)。
+非CI默认使用`local-auto`，按可用CPU并行度和内存形成初始预算：每3个CPU、每4GiB一个外层组，自动宽度限制在1至3。全局、工作空间重负载、浏览器与工作空间I/O额度一起调整；为容纳现有双工作进程组，浏览器和I/O至少为2。工作进程额度至少容纳现有单组需求，自动上限16。它是保守初始策略，不是实时CPU、内存或磁盘调节器；额度为测试声明单位，不等于操作系统进程硬上限。实现及固定档位见[容量策略](../../../services/buildr/test/verification/execution-capacity.ts)和[登记](../../../services/buildr/test/verification/registry.ts)。
 
 `BUILDR_VERIFICATION_PROFILE=local`保留原固定档位，CI默认档位也保持固定。`BUILDR_VERIFICATION_JOBS=<正整数>`明确覆盖外层宽度，同时调整相关多维额度，避免只增大全局并发仍被浏览器或I/O挡住；组内并发和正确性资源锁不随之放大。计划与计时证据保存`capacityPolicy`、`capacityObservation`和最终额度，复现时应核对这些字段。
 
 `e2e-browser:code-explorer` 与 `e2e-browser:code` 是文件浏览和源代码管理两个独立检查。源码浏览器检查按上述档位准入，仍受全局进程、工作线程和工作空间读写额度约束；它们共享不可变前端产物，各自使用临时工作空间、随机端口、浏览器和清理责任。其他共享可变资源的检查继续互斥。开始结束时间必须证明实际并行，准备去重不能被误算为测试通过。
 
-对话 `history` 的独立成员由 `buildr-web/test/browser/agent-conversations-history-scenarios.ts` 声明，稳定身份形如 `history/workspace-order`。完整运行的两个工作进程先领取其他场景组，再逐项领取这些独立成员；不再由一个进程承包整个 `history`。每个成员仍新建浏览器上下文和夹具，独立失败同轮收集；领取后崩溃不会自动重放，清理或共享服务状态异常会明确留下未运行项。通过 `BUILDR_AGENT_JOURNEY_PART=history` 和 `BUILDR_AGENT_SCENARIO_FOCUS=<身份，多个用 | 分隔>` 可在同一 `test:e2e -- --check e2e-browser:agent-conversations` 入口定点诊断；未知筛选报错，子集通过不能作为整组通过，coverage会标记focused，失败接续仍选择未完整证明的父检查。较重的服务和生产构建仍由本轮共享，场景结果与耗时保存在现有诊断日志。
+兼容选择器可以在确证不引入状态污染、不跳过断言且清理完整时复用同一隔离宿主。当前只合并`core,shell,workbench`为`browser:bundle:reading`：代表步骤执行完整场景，其余成员以零成本结果回填；单独聚焦任一成员时仍保持窄范围。`project+service`因service运行时目录污染、`task+task-materials`因Task列表响应等待超时未采用，继续使用独立现场。调度器在`browser-runtime`有空闲槽位时优先准入待执行浏览器步骤，槽位满后恢复普通成本顺序，避免普通检查被永久饿死。
 
-对话父组的 `resourceUnits.browser-runtime=2` 记录两个子进程的真实占用；外层按数量准入、释放和估算，物理浏览器租约仍由子进程分别持有，父组不重复申请。缓存命中不执行子进程，同时清空数量与资源声明，避免占住其他检查的读写预算。
+对话 `history` 的独立成员由 `buildr-web/test/browser/agent-conversations-history-scenarios.ts` 声明，稳定身份形如 `history/workspace-order`。完整运行不再由一个进程承包整个对话组，而是使用两个静态隔离批次：批次A保留`setup,tasks,recovery`顺序并只分配约三分之一history场景，批次B承载其余组和剩余history场景；两个批次各用独立进程与互斥场景集合。每个成员仍新建浏览器上下文和夹具，独立失败同轮收集；领取后崩溃不会自动重放，清理或共享服务状态异常会明确留下未运行项。通过 `BUILDR_AGENT_JOURNEY_PART=history` 和 `BUILDR_AGENT_SCENARIO_FOCUS=<身份，多个用 | 分隔>` 可在同一 `test:e2e -- --check e2e-browser:agent-conversations` 入口定点诊断；未知筛选报错，子集通过不能作为整组通过，coverage会标记focused，失败接续仍选择未完整证明的父检查。较重的服务和生产构建仍由本轮共享，场景结果与耗时保存在现有诊断日志。
+
+对话父组的 `resourceUnits.browser-runtime=2` 与 `workers/processes=2` 记录两个子现场的真实占用；外层按数量准入、释放和估算，物理浏览器租约仍由子进程分别持有，父组不重复申请。`workspaceIo=2` 保证外层预算不会把两个内层现场压成串行。浏览器只有两个槽位，另一个浏览器检查占用时第二个对话批次仍会等待；缓存命中不执行子进程，同时清空数量与资源声明，避免占住其他检查的读写预算。
 
 自动语义关注点区分产品实现与测试路径；测试变化保留真实直接归属，不再仅因文件名包含conversation就追加无关原生进程组。显式 `--tag` 继续扩大集合。内容快照的检出目录身份与交付比较基线分开：基线变化仍比较实际内容，旧成功采用仍须通过配方、发现成员和环境校验。
 
@@ -89,7 +91,9 @@ Buildr 产品使用四类检查：静态检查（Static Check）、单元测试�
 
 [HTTP DTO 生成](../../../services/buildr/tools/codegen/contracts/output-paths.ts)比较完整内容后再写入；相同内容保留文件身份和修改时间，变化时通过原子替换发布，已打开的读取者仍持有完整旧文件。[开发依赖准备](../../../services/buildr/tools/development/prepare-development-dependencies.ts)的 Agent 构建与[Agent 包准备](../../../services/buildr/tools/development/prepare-development-agent.ts)共用同一个互斥锁，等待后重新检查已有构建，避免重复构建和读取半成品；其他独立准备继续按原声明执行。
 
-实际工作进程数量和资源必须有界，完整集合的耗时与资源成本需观察并优化，不设统一三十秒门槛，不借无限并发掩盖消耗。自动机器初始宽度和重型组并行均不超过3，浏览器并发固定为2，对话journey内部使用1个worker串行；四路并发或同一对话组两个worker并行实测使15 CPU机器负载达到12至21，并导致真实浏览器等待、Qoder原生对话未结算和进程交接失败。三组及以上的准入仍保留4份工作空间I/O，使两组重型生命周期可重叠。发现慢检查先判断范围与实现效率，不仅因慢而改名，也不为达到预算删掉必要断言。
+实际工作进程数量和资源必须有界，完整集合的耗时与资源成本需观察并优化，不设统一三十秒门槛，不借无限并发掩盖消耗。自动机器初始宽度和重型组并行均不超过3，浏览器并发固定为2；对话journey使用两个静态隔离批次，而不是同一队列里的两个worker。四路并发曾使15 CPU机器负载达到12至21，并导致真实浏览器等待、Qoder原生对话未结算和进程交接失败；三路以内及互斥批次未再复现。三组及以上的准入仍保留4份工作空间I/O，使两组重型生命周期可重叠。发现慢检查先判断范围与实现效率，不仅因慢而改名，也不为达到预算删掉必要断言。
+
+第二轮完整四类实测：112项选择、106项实际执行、106项通过、6项环境或平台不可用，总墙钟37分05秒；准备39.9秒、执行2155.5秒、复用收尾23.5秒。所有执行项累计102分51秒，global=3下理论下限约34分17秒，实际为下限的108.2%；三路并发占用33分16秒，说明机器接近持续满载。14个浏览器选择器累计31分28秒，浏览器流水从第46秒持续到第1015秒，之后约20分钟由Integration/E2E进程链和末尾独占组构成。对话组502秒中两个批次分别274秒和254秒，只有约26秒重叠，因为`e2e-browser:code`在前241秒占用另一个浏览器槽位；即使两个批次完全并行，浏览器总工作不变，只会把其他浏览器组后移。reading bundle全量139秒，r2三个独立现场合计约155秒。继续提速应优先减少真实重复生命周期或缩短长集成套件，而不是继续压缩对话组或提高默认并发。
 
 智能体服务（Agent Service）的完整集成入口是从 `services/buildr-agent` 运行 `../buildr/tools/development/run-development-npm run test:integration`；它按[服务检查登记](../../../services/buildr-agent/tools/testing/verification-checks.ts)发现全部组，项目完整入口也消费同一登记。`agent-integration` 覆盖本机存储及服务契约，`agent-integration-conversations` 独立覆盖较长的对话生命周期文件；两组成员互斥，完整入口仍发现同一全集。前者申请2个工作进程与2份I/O，后者申请1个工作进程与1份I/O，在原全局额度内并行，避免大文件堵住组内文件队列。`agent-integration-native` 覆盖厂商协议；重型独立进程按启动与归属、跨版本交接、观察与恢复分别归入 `agent-integration-startup`、`agent-integration-handoff`、`agent-integration-recovery`。真实退避上限用例独立归入 `agent-integration-recovery-budget`，避免27秒左右的真实等待挤占恢复组串行预算；保持唯一主归属与完整发现，原恢复组预算不变。使用 `--check` 选择其中一组不能宣称完整智能体覆盖。
 

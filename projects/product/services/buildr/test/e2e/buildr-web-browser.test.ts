@@ -405,7 +405,7 @@ async function capture(page: any, name: any, options: any = {}): Promise<any>  {
 
 // Dispatcher splits code into independent Explorer/SCM parents (240/900 seconds)
 // and reserves 15 seconds outside each parent for its isolated cleanup.
-test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeout: SELECTORS.has('code') && codeGroup ? codeGroup.nodeTimeoutMs : SELECTORS.has('code') || SELECTORS.has('task') ? 480_000 : SELECTORS.has('all') ? 300_000 : SELECTORS.has('agent-conversations') && process.env.BUILDR_AGENT_JOURNEY_QUEUE_ROOT ? 1_150_000 : SELECTORS.has('task-materials') ? 240_000 : SELECTORS.has('service') ? 240_000 : SELECTORS.has('agent-conversations') ? (process.env.BUILDR_AGENT_JOURNEY_PART==='history'?450_000:180_000) : SELECTORS.has('layout') || SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('project') ? 120_000 : 45_000 }, async (t: any) => {
+test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeout: SELECTORS.has('code') && codeGroup ? codeGroup.nodeTimeoutMs : SELECTORS.has('code') || SELECTORS.has('task') ? 480_000 : SELECTORS.has('all') ? 300_000 : SELECTORS.size > 1 ? 300_000 : SELECTORS.has('agent-conversations') && process.env.BUILDR_AGENT_JOURNEY_BATCH ? 600_000 : SELECTORS.has('agent-conversations') && process.env.BUILDR_AGENT_JOURNEY_QUEUE_ROOT ? 1_150_000 : SELECTORS.has('task-materials') ? 240_000 : SELECTORS.has('service') ? 240_000 : SELECTORS.has('agent-conversations') ? (process.env.BUILDR_AGENT_JOURNEY_PART==='history'?450_000:180_000) : SELECTORS.has('layout') || SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('project') ? 120_000 : 45_000 }, async (t: any) => {
   const costEnabled = process.env.BUILDR_BROWSER_COST_PROFILE === '1';
   const costClock = () => costEnabled ? performance.now() : 0;
   const costStarted = costClock();
@@ -1317,7 +1317,14 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
       const attempted = page.waitForResponse((response: any) => response.url() === registryUrl && response.request().method() === 'DELETE')
         .then((response: any) => ({ response }), (error: unknown) => ({ error }));
       try {
-        await card.getByRole('button', { name: /^移\s*除$/ }).click();
+        // The previous removal keeps the button in its loading state until the
+        // mutation settles. Under a busy browser host that handoff can exceed
+        // Playwright's default action timeout even though the mutation already
+        // returned its error. Wait for the same card's action to be usable
+        // again instead of racing the state update.
+        const removeButton = card.locator('.workspace-remove');
+        await removeButton.waitFor({ state: 'visible' });
+        await removeButton.click({ timeout: 30_000 });
         const confirmation = page.getByRole('dialog', { name: '移除工作空间', exact: true });
         await confirmation.waitFor({ state: 'visible' });
         await confirmAntModal(page);

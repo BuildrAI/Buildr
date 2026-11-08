@@ -7,7 +7,7 @@ import test from 'node:test';
 import { BROWSER_SELECTORS, parseChangedPaths, planBrowserCommands, planCodeBrowserGroups, runAgentConversationCommands, selectBrowserSelectors } from '../verification/browser-selector-dispatcher.ts';
 import { createVerificationPlan } from '../verification/planner.ts';
 import { resolveVerificationExecutionProfile, verificationSteps } from '../verification/registry.ts';
-import { AGENT_CONVERSATION_GROUPS, AGENT_CONVERSATION_WORKERS, parseAgentConversationBatch, runAgentConversationBatch } from '../../../buildr-web/test/browser/agent-conversation-groups.ts';
+import { AGENT_CONVERSATION_BATCHES, AGENT_CONVERSATION_GROUPS, AGENT_CONVERSATION_WORKERS, parseAgentConversationBatch, runAgentConversationBatch } from '../../../buildr-web/test/browser/agent-conversation-groups.ts';
 import { AGENT_CONVERSATION_QUEUE_ITEMS, claimAgentConversationGroups, finishAgentConversationGroup, inspectAgentConversationQueue } from '../../../buildr-web/test/browser/agent-conversation-queue.ts';
 import { HISTORY_SCENARIO_CATALOG } from '../../../buildr-web/test/browser/agent-conversation-history-catalog.ts';
 import { guardConversationServerWrite, resetConversationVisits } from '../../../buildr-web/test/browser/agent-conversation-isolation.ts';
@@ -142,6 +142,18 @@ test('full browser selection discovers both isolated code checks once',()=>{
  assert.deepEqual(commands.filter(item=>item.argv.at(-1)==='code').map(item=>item.id),['browser:code-explorer:explorer','browser:code:source-control']);
  assert.equal(new Set(commands.map(item=>item.id)).size,commands.length);
 });
+test('compatible browser selectors share one host in a bundle command',()=>{
+ const commands=planBrowserCommands(['core','shell','workbench'],'/tmp/web-dist',{});
+ assert.equal(commands.length,1);
+ assert.equal(commands[0].id,'browser:bundle:reading');
+ assert.deepEqual(commands[0].argv.slice(4),['--','core,shell,workbench']);
+ assert.equal(commands[0].env.BUILDR_BROWSER_WEB_DIST_ROOT,'/tmp/web-dist');
+ const partial=planBrowserCommands(['shell','workbench'],'/tmp/web-dist',{});
+ assert.equal(partial.length,1);
+ assert.deepEqual(partial[0].argv.slice(4),['--','shell,workbench']);
+ const independent=planBrowserCommands(['articles','layout'],'/tmp/web-dist',{});
+ assert.deepEqual(independent.map(item=>item.id),['browser:articles','browser:layout']);
+});
 test('source-control diagnostic focus remains scoped to its explicit check',()=>{
  for(const focus of ['all','branch|source']){
   const commands=planBrowserCommands(['code'],'/tmp/web-dist',{BUILDR_SOURCE_CONTROL_FOCUS:focus});
@@ -159,8 +171,13 @@ test('internal conversation paths select the executable conversation journey and
   assert.deepEqual(selectBrowserSelectors(['services/buildr-web/src/features/agent-conversations/ConversationPanel.tsx']).selectors,['agent-conversations']);
   assert.deepEqual(selectBrowserSelectors(['services/buildr-web/src/features/agent-conversations/agent-conversations.css']).selectors,['layout','agent-conversations']);
   const commands=planBrowserCommands(['agent-conversations'],'/tmp/conversation-web-dist',{});
-  assert.deepEqual(commands.map(item=>item.id),['browser:agent-conversations:worker-1']);
-  for(const command of commands){assert.equal(command.argv.at(-1),'agent-conversations');assert.equal(command.env.BUILDR_BROWSER_WEB_DIST_ROOT,'/tmp/conversation-web-dist');assert.equal(command.env.BUILDR_AGENT_JOURNEY_USES_QUEUE,'1');assert.equal(command.env.BUILDR_AGENT_JOURNEY_PART,'');assert.match(command.argv[1],/run-isolated-workspace-check\.ts$/);}
+  assert.deepEqual(commands.map(item=>item.id),['browser:agent-conversations:worker-1','browser:agent-conversations:worker-2']);
+  for(const command of commands){
+    assert.equal(command.argv.at(-1),'agent-conversations');assert.equal(command.env.BUILDR_BROWSER_WEB_DIST_ROOT,'/tmp/conversation-web-dist');
+    assert.equal(command.env.BUILDR_AGENT_JOURNEY_USES_QUEUE,'');assert.equal(command.env.BUILDR_AGENT_JOURNEY_PART,'');
+    const batch=JSON.parse(command.env.BUILDR_AGENT_JOURNEY_BATCH);assert.ok(batch.length>0);assert.equal(new Set(batch).size,batch.length);
+    assert.match(command.argv[1],/run-isolated-workspace-check\.ts$/);
+  }
   for(const group of AGENT_CONVERSATION_GROUPS){
     const focused=planBrowserCommands(['agent-conversations'],'/tmp/conversation-web-dist',{BUILDR_AGENT_JOURNEY_PART:group,BUILDR_AGENT_JOURNEY_BATCH:'stale'});
     assert.deepEqual(focused.map(item=>item.id),['browser:agent-conversations:'+group]);
@@ -170,6 +187,17 @@ test('internal conversation paths select the executable conversation journey and
     assert.equal(focused[0].env.BUILDR_AGENT_JOURNEY_USES_QUEUE,'');
   }
   assert.throws(()=>planBrowserCommands(['agent-conversations'],'/tmp/conversation-web-dist',{BUILDR_AGENT_JOURNEY_PART:'typo'}),error=>error instanceof Error && 'code' in error && error.code==='browser_agent_conversation_focus_invalid');
+});
+
+test('对话静态批次互斥覆盖所有逻辑组与独立场景，并优先保持时序敏感组同进程',()=>{
+  assert.equal(AGENT_CONVERSATION_BATCHES.length,AGENT_CONVERSATION_WORKERS);
+  const all=[...AGENT_CONVERSATION_BATCHES.flat()];
+  assert.equal(new Set(all).size,all.length,'同一场景不得出现在两个隔离现场');
+  assert.deepEqual([...AGENT_CONVERSATION_BATCHES[0]].filter(group=>AGENT_CONVERSATION_GROUPS.includes(group as any)),['setup','tasks','recovery']);
+  for(const group of AGENT_CONVERSATION_GROUPS.filter(group=>group!=='history'))assert.ok(all.includes(group),'缺少逻辑组 '+group);
+  assert.deepEqual(all.filter(item=>item.startsWith('history/')).sort(),HISTORY_SCENARIO_CATALOG.map(item=>item.id).sort());
+  assert.doesNotThrow(()=>parseAgentConversationBatch(JSON.stringify(AGENT_CONVERSATION_BATCHES[0])));
+  assert.throws(()=>parseAgentConversationBatch(JSON.stringify(['history/unknown-scenario'])),/有效场景组或独立场景/);
 });
 
 test('a shared queue claims each group once and distinguishes unfinished work', t => {
@@ -332,11 +360,11 @@ test('unconfirmed process cleanup retains the browser slot and stops pending wor
   assert.deepEqual(results.map(item=>item.status),['failed','failed']);
 });
 
-test('conversation check accounts for one browser worker without a parent lease deadlock',()=>{
+test('conversation check accounts for both browser workers without a parent lease deadlock',()=>{
   const step=verificationSteps.find((item:any)=>item.id==='e2e-browser:agent-conversations');
   assert.deepEqual(step.resourceClaims,[]);
   assert.deepEqual(step.resourceUnits,{'browser-runtime':1});
-  assert.deepEqual(step.resourceDemand,{workers:1,processes:1,workspaceIo:2});
+  assert.deepEqual(step.resourceDemand,{workers:AGENT_CONVERSATION_WORKERS,processes:AGENT_CONVERSATION_WORKERS,workspaceIo:2});
   for(const id of ['local','ci','ci-workspace-limited']){
     const limits=resolveVerificationExecutionProfile(id).limits;
     assert.ok(limits.capacities.workers>=1);

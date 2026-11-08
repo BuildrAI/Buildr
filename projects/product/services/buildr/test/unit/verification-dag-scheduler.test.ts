@@ -503,3 +503,39 @@ test('dependency and exclusive wait reasons remain distinct and cancellation clo
   assert.equal(cancelled[1].scheduling.waits[0].durationMs, 20);
   assert.equal(cancelled[1].scheduling.grant, undefined, 'pending checks never received a grant');
 });
+
+test('空闲 browser 槽位优先启动浏览器检查，槽位占满后普通检查继续推进', async () => {
+  const started: string[] = [];
+  let releaseBrowser!: () => void;
+  const browserGate = new Promise<void>(resolve => { releaseBrowser = resolve; });
+  const browser = (id: string, cost: number) => ({
+    ...step(id, [], 'workspace-heavy', cost),
+    resources: ['browser-runtime'],
+    resourceDemand: { workers: 1, processes: 1, workspaceIo: 1 },
+  });
+  const results = await runVerificationDag(plan([
+    step('heavy-a', [], 'default', 100),
+    browser('browser-a', 10),
+    browser('browser-b', 9),
+    step('heavy-b', [], 'default', 50),
+  ]), {
+    concurrency: {
+      global: 2,
+      classes: { default: 2, 'workspace-heavy': 2 },
+      resources: { 'browser-runtime': 1 },
+      capacities: { workers: 4, processes: 4, workspaceIo: 2 },
+    },
+    schedulingMode: 'cost',
+    priorityResources: ['browser-runtime'],
+    onStart: (item: any) => started.push(item.id),
+    execute: async (item: any) => {
+      if (item.id === 'browser-a') { setTimeout(releaseBrowser, 25); await browserGate; }
+      return { status: 'passed', exitCode: 0, durationMs: 1 };
+    },
+  });
+
+  assert.equal(started[0], 'browser-a', '空闲浏览器槽位必须先于普通工作被填满');
+  assert.ok(started.indexOf('browser-a') < started.indexOf('heavy-a'));
+  assert.ok(started.indexOf('heavy-b') < started.indexOf('browser-b'), '浏览器槽位占满后普通检查不得等待');
+  assert.deepEqual(results.map((item: any) => item.status), ['passed', 'passed', 'passed', 'passed']);
+});

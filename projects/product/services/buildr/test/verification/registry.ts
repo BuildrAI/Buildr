@@ -6,7 +6,8 @@ import { serviceVerificationChecks as buildrChecks, sharedCheckPreparation } fro
 import { serviceVerificationChecks as webChecks } from '../../../buildr-web/tools/testing/verification-checks.ts';
 import { serviceVerificationChecks as agentChecks } from '../../../buildr-agent/tools/testing/verification-checks.ts';
 import { serviceVerificationChecks as pluginChecks } from '../../../dsh-plugin/tools/testing/verification-checks.ts';
-import { BROWSER_SELECTORS } from './browser-selector-catalog.ts';
+import { BROWSER_BUNDLES, BROWSER_SELECTORS } from './browser-selector-catalog.ts';
+import { AGENT_CONVERSATION_WORKERS } from '../../../buildr-web/test/browser/agent-conversation-groups.ts';
 import { MACOS_PLATFORM_BOUNDARIES, WINDOWS_PLATFORM_BOUNDARIES } from './platform-boundaries.ts';
 import { PACKAGE_VERIFIERS } from '../../tools/verification/package-check/verification-registry.ts';
 import { assertVerificationContextDispositionCoverage, verificationContextDisposition } from '../context/dispositions.ts';
@@ -928,14 +929,18 @@ for (const [, checks] of serviceSets) for (const check of checks) for (const id 
 }
 // Successful local observations are scheduling estimates, never admission thresholds.
 const browserSchedulingCostMs: Record<string, number> = {
+  core: 25000, shell: 72000, workbench: 58000, project: 69000, service: 184000, change: 31000,
   task: 181000, 'code-explorer': 175000, code: 228000,
   // The conversation value includes failed waits: a conservative queue estimate,
   // never a passing performance baseline or a timeout extension.
   'agent-conversations': 660000, 'task-materials': 177000,
   'connection-skills': 108000, articles: 78000, layout: 79000,
 };
+const browserBundleBySelector: any = new Map(BROWSER_BUNDLES.flatMap((bundle: any) =>
+  bundle.selectors.map((selector: string) => [selector, bundle.id])));
 const browserSteps = BROWSER_SELECTORS.map((selector: string) => Object.freeze({
   id: `e2e-browser:${selector}`, name: `Browser journey: ${selector}`, browserSelector: selector, target: 'source',
+  ...(browserBundleBySelector.has(selector) ? { browserBundle: browserBundleBySelector.get(selector) } : {}),
   dependsOn: [], groups: [], profiles: [], contexts: [], developmentRunners: [], platformScope: COMMON_PLATFORM_SCOPE,
   inputs: ['services/buildr-web/src/**', 'src/web/**', 'test/e2e/**'], inputExclusions: [],
   executor: { type: 'node', file: 'test/verification/browser-selector-dispatcher.ts', args: ['--selector', selector, '--run'], discoveredFiles: selector === 'core' ? ['test/e2e/buildr-web-browser.test.ts'] : [] },
@@ -946,7 +951,7 @@ const browserSteps = BROWSER_SELECTORS.map((selector: string) => Object.freeze({
   ...(selector === 'agent-conversations' ? { resourceClaims: [], resourceUnits: { 'browser-runtime': 1 } } : {}),
   isolationMode: 'full-lifecycle', resetStrategy: 'recreate', parallelSafety: 'bounded',
   resourceDemand: selector === 'agent-conversations'
-    ? { workers: 1, processes: 1, workspaceIo: 2 }
+    ? { workers: AGENT_CONVERSATION_WORKERS, processes: AGENT_CONVERSATION_WORKERS, workspaceIo: 2 }
     : { workers: 1, processes: 1, workspaceIo: 1 },
   reuse: false,
   testing: { ownerScope: 'project:product', primaryIntent: 'Development', executionBoundary: 'E2E', primaryEvidenceOwner: `e2e-browser:${selector}`,

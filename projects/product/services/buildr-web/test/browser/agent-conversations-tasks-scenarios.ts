@@ -182,7 +182,9 @@ await step('原生暂忙时保存待发送内容，刷新保留、仅可取消�
       await capture(page,'agent-conversation-pending-failure.png');
       update({pendingSend:pending});await page.reload();await panel().getByText('等待发送',{exact:true}).waitFor();
       await panel().getByRole('button',{name:'取消',exact:true}).click();await panel().locator('[data-pending-send-state]').waitFor({state:'hidden'});
-      assert.equal(await input().inputValue(),pending.draft.text);assert.equal(await input().evaluate((node:HTMLElement)=>document.activeElement===node),true);
+      assert.equal(await input().inputValue(),pending.draft.text);
+      await page.waitForFunction(()=>document.activeElement?.getAttribute('aria-label')==='对话输入');
+      assert.equal(await input().evaluate((node:HTMLElement)=>document.activeElement===node),true);
       assert.equal(await panel().getByRole('button',{name:'移除图片 cancel.png',exact:true}).count(),1);
       const stopsBeforeCancel=fixture.stops;
       update({pendingSend:pending});await page.reload();await input().fill('已有新草稿');
