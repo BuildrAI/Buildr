@@ -1,5 +1,6 @@
 import type { ExecutorTitleInput } from '../../contracts.ts';
 import { bounded, privateDirectories, type NativeRpc, type RpcMessage } from '../native-process.ts';
+import { parseTitleJsonObject } from '../title-output.ts';
 
 /** One text-only, ephemeral request with separate permissions and no work-thread input. */
 export async function generateCodexTitle(rpc: NativeRpc, input: ExecutorTitleInput, directory: string, auxiliary: Set<string>, handoff = false): Promise<string | undefined> {
@@ -49,9 +50,8 @@ export async function generateCodexTitle(rpc: NativeRpc, input: ExecutorTitleInp
     }, 3_000);
     turnId = turn.turn?.id; if (!turnId) throw new Error('agent_title_turn_missing');
     await bounded(ended, handoff?11_000:30_000, 'agent_title_timeout');
-    let output: Record<string,unknown>;
-    try { output = JSON.parse([...texts.values()].join('\n')); }
-    catch { throw new Error('agent_title_output_invalid'); }
+    const output=parseTitleJsonObject([...texts.values()].join('\n'));
+    if(!output)throw new Error('agent_title_output_invalid');
     const value=output[handoff?'summary':'title'];return typeof value === 'string' ? value : undefined;
   } finally {
     input.signal.removeEventListener('abort', abort); remove();
