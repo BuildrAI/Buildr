@@ -14,14 +14,16 @@ export function sortReasoningEfforts<T extends {id:string}>(options:readonly T[]
 
 export type ModelPickerGroup={id:string;label:string;options:{value:string;label:string;disabled?:boolean}[]};
 
-/** 只按模型或来源名称过滤可见选项；分组标签匹配时保留该来源的完整选项。 */
+const modelNameOrder=new Intl.Collator('zh-Hans-CN',{sensitivity:'base',numeric:true});
+
+/** 来源分组与组内模型按显示名称稳定排序，再只按模型或来源名称过滤可见选项；分组标签匹配时保留该来源的完整选项。 */
 export function filterModelGroups(groups:readonly ModelPickerGroup[],query:string):ModelPickerGroup[] {
   const needle=query.trim().toLocaleLowerCase();
-  if(!needle)return groups.map(group=>({...group,options:[...group.options]}));
-  return groups.map(group=>{
+  const visible=needle?groups.map(group=>{
     const source=group.label.toLocaleLowerCase().includes(needle);
     return {...group,options:group.options.filter(option=>source||option.label.toLocaleLowerCase().includes(needle))};
-  }).filter(group=>group.options.length>0);
+  }).filter(group=>group.options.length>0):groups;
+  return visible.map(group=>({...group,options:[...group.options].sort((a,b)=>modelNameOrder.compare(a.label,b.label))})).sort((a,b)=>modelNameOrder.compare(a.label,b.label));
 }
 
 export function modelSourceName(provider:string):string {
