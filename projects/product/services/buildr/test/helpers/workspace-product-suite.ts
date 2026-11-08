@@ -730,6 +730,115 @@ suiteTest('app-process', '独立 checkout preview 并行隔离、输出身份并
   currentPhase = 'completed';
 });
 
+suiteTest('app-process', '任务预览默认共享真实工作空间，显式快照隔离同 ID 副本', { timeout: APP_PROCESS_TIMEOUT_MS }, async (t: any) => {
+  const started: any[] = [];
+  let appData: string;
+  t.after(async () => {
+    for (const owner of started) await stopPreview(owner.instance, { dataRoot: appData, caller: {
+      taskId: owner.taskId, workspaceRoot: owner.workspaceRoot, worktree: owner.worktree,
+      worktreeEvidencePath: owner.worktreeEvidencePath, worktreePlanDigest: owner.worktreePlanDigest,
+      repositorySet: owner.repositorySet,
+    } });
+  });
+  const base = temporaryRoot(t);
+  const canonical = initGitWorkspace(t, { name: 'shared-task-preview' });
+  const other = initGitWorkspace(t, { name: 'other-shared-workspace' });
+  const checkoutRoot = execFileSync('git', ['-C', PRODUCT_ROOT, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
+  const productRelative = path.relative(checkoutRoot, PRODUCT_ROOT);
+  const canonicalProduct = path.join(canonical, productRelative);
+  fs.mkdirSync(canonicalProduct, { recursive: true });
+  // Keep actual candidate sources in the fixture Git repository so snapshot
+  // writes exercise (rather than bypass) the candidate writer provenance fence.
+  for (const entry of ['src', 'bin', 'resources', 'package.json']) {
+    fs.cpSync(path.join(PRODUCT_ROOT, entry), path.join(canonicalProduct, entry), { recursive: true });
+  }
+  execFileSync('git', ['-C', canonical, 'add', '.']);
+  execFileSync('git', ['-C', canonical, 'commit', '-m', 'preview product fixture'], { stdio: 'ignore' });
+  appData = path.join(base, 'app-data');
+  const env = { ...process.env, BUILDR_APP_DATA_DIR: appData };
+  const command = (args: string[]) => {
+    const result = runBuildr(args, { env, timeout: APP_COMMAND_TIMEOUT_MS });
+    assert.equal(result.status, 0, previewCommandDiagnostic(args.slice(0, 3).join(' '), result, APP_COMMAND_TIMEOUT_MS));
+    return JSON.parse(result.stdout);
+  };
+  const taskId = 'shared-preview';
+  command(['task', 'create', taskId, '--title', 'Preview fixture', '--intent', 'Verify shared workspace reads', '--status', 'active', '--target', canonical, '--json']);
+  const created = command(['worktree', 'create', taskId, '--branch', 'task/shared-preview', '--target', canonical, '--json']);
+  assert.equal(created.status, 'ready');
+  const worktree = created.repositories[0].checkoutPath;
+  const candidateProduct = path.join(worktree, productRelative);
+  // Only installed dependencies and generated types are reused; product sources
+  // and the invocation entry are from the managed fixture worktree.
+  fs.symlinkSync(path.join(PRODUCT_ROOT, 'node_modules'), path.join(candidateProduct, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
+  fs.cpSync(path.join(PRODUCT_ROOT, 'build', 'generated'), path.join(candidateProduct, 'build', 'generated'), { recursive: true });
+  createWebStaticFixture(path.join(candidateProduct, 'web-dist'));
+  fs.mkdirSync(appData, { recursive: true });
+  const registryFile = path.join(appData, 'workspace-registry.json');
+  fs.writeFileSync(registryFile, JSON.stringify({
+    schemaVersion: 'buildr.local-workspace-registry/v1', roots: [canonical, other], lastOpenedRoot: canonical,
+  }));
+  const registryBefore = fs.readFileSync(registryFile, 'utf8');
+  const id = createRuntime().getWorkspace(canonical).workspace.id;
+  const otherId = createRuntime().getWorkspace(other).workspace.id;
+  for (const mode of ['shared', 'snapshot']) {
+    const name = `task-${mode}`;
+    // Omission tests the public default rather than supplying --workspace-mode shared.
+    const result = command(['web', 'preview', 'start', name, '--task', taskId, '--target', canonical,
+      ...(mode === 'snapshot' ? ['--workspace-mode', 'snapshot'] : []), '--no-open', '--json']);
+    const owner = result.owner;
+    started.push(owner);
+    assert.equal(owner.worktree, worktree);
+    assert.equal(owner.productCheckout, candidateProduct);
+    assert.equal(owner.workspaceMode, mode);
+    assert.equal(fs.realpathSync(owner.environmentRoot), fs.realpathSync(mode === 'shared' ? canonical : worktree));
+    const instance = JSON.parse(fs.readFileSync(path.join(appData, 'previews', name, 'instance.json'), 'utf8'));
+    const health = await fetch(`${result.url}/api/v1/health`, { headers: { 'x-buildr-instance': instance.secret } });
+    assert.equal(health.status, 200);
+    const healthData = await health.json();
+    assert.equal(healthData.previewIdentity.workspaceMode, mode);
+    assert.equal(healthData.previewIdentity.worktree, worktree);
+    const listResponse = await fetch(`${result.url}/api/v1/workspaces`);
+    assert.equal(listResponse.status, 200);
+    const listed = await listResponse.json();
+    assert.deepEqual(listed.workspaces.map((item: any) => item.workspace.id).sort(), mode === 'shared' ? [id, otherId].sort() : [id]);
+    assert.ok(listed.workspaces.every((item: any) => item.status === 'ready'));
+    if (mode === 'shared') {
+      const html = await fetch(result.url).then(response => response.text());
+      const session = html.match(/<meta name="buildr-session" content="([^"]+)"/);
+      assert.ok(session, 'shared workspace navigation requires the real page session');
+      for (const item of listed.workspaces) {
+        const opened: Response = await fetch(`${result.url}/api/v1/workspaces/open`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-buildr-session': session[1], origin: new URL(result.url).origin },
+          body: JSON.stringify({ workspaceId: item.workspace.id }),
+        });
+        assert.equal(opened.status, 200, await opened.clone().text());
+        assert.deepEqual(await opened.json(), { ready: true, workspaceId: item.workspace.id });
+      }
+    }
+    const detail = await fetch(`${result.url}/api/v1/workspaces/${id}`).then(response => response.json());
+    assert.equal(fs.realpathSync(detail.rootPath), fs.realpathSync(owner.environmentRoot));
+    const tasksResponse = await fetch(`${result.url}/api/v1/workspaces/${id}/tasks`);
+    assert.equal(tasksResponse.status, 200);
+    const tasks = await tasksResponse.json();
+    assert.ok(tasks.tasks.some((item: any) => item.record.taskId === taskId));
+    if (mode === 'shared') {
+      assert.equal(fs.existsSync(path.join(worktree, '.buildr', 'local', 'workspace.sqlite')), false);
+      assert.equal(fs.existsSync(path.join(appData, 'previews', name, 'workspace-registry.json')), false);
+      // A later canonical update must be visible without reseeding or restarting.
+      command(['task', 'create', 'later-task', '--title', 'Later', '--intent', 'Verify live reads', '--target', canonical, '--json']);
+      const live = await fetch(`${result.url}/api/v1/workspaces/${id}/tasks`).then(response => response.json());
+      assert.ok(live.tasks.some((item: any) => item.record.taskId === 'later-task'));
+    } else {
+      assert.equal(owner.taskStore.seeded, true);
+      command(['task', 'create', 'after-snapshot', '--title', 'After snapshot', '--intent', 'Verify frozen reads', '--target', canonical, '--json']);
+      const frozen = await fetch(`${result.url}/api/v1/workspaces/${id}/tasks`).then(response => response.json());
+      assert.ok(!frozen.tasks.some((item: any) => item.record.taskId === 'after-snapshot'));
+    }
+    assert.equal(fs.readFileSync(registryFile, 'utf8'), registryBefore);
+  }
+});
+
 suiteTest('manifest-registry', 'public CLI 暴露 web 与 init description help', () => {
   const appHelp: any = runBuildr(['web', '--help']);
   assert.equal(appHelp.status, 0, appHelp.stderr);

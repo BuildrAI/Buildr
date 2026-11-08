@@ -91,6 +91,9 @@ export function resolvePreviewSharedRegistryFile(webProfile: WebProfile, env: No
   let instance: string | null = null;
   try {
     const owner = JSON.parse(raw);
+    // A task snapshot shares the canonical UUID but owns a different data root;
+    // merging the real workspace here would make that identity ambiguous.
+    if (owner?.workspaceMode === 'snapshot') return null;
     if (owner && typeof owner.instance === 'string') instance = owner.instance;
   } catch { return null; }
   if (!instance) return null;

@@ -462,10 +462,10 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
   async function manageBuildrWebPreview(action: string, args: string[]): Promise<unknown> {
     if (action === 'start') {
       const [name, ...commandOptions] = args;
-      if (!name) throw new Error('Usage: buildr web preview start <instance> [--task <task-id> --target <canonical-workspace>] [--workspace <root> ...] [--port <port>] [--reuse <profile>[:facet,...]] [--refresh-reuse] [--no-open] [--json]');
+      if (!name) throw new Error('Usage: buildr web preview start <instance> [--task <task-id> --target <canonical-workspace>] [--workspace-mode shared|snapshot] [--workspace <root> ...] [--port <port>] [--reuse <profile>[:facet,...]] [--refresh-reuse] [--no-open] [--json]');
       const result = await startPreview(runtime, name, commandOptions);
       if (commandOptions.includes('--json')) console.log(JSON.stringify(withJsonSchema(PUBLIC_JSON_SCHEMAS.localAppPreview, result), null, 2));
-      else console.log(`Buildr Web 开发预览已${result.status === 'reused' ? '复用' : '启动'}：${result.url}\n实例：${result.owner.instance}\nworktree：${result.owner.worktree}\n分支：${result.owner.branch}\nHEAD：${result.owner.head}${result.owner.dirty ? '（有未提交修改）' : ''}${result.owner.taskStore ? `\n任务库：${result.owner.taskStore.seeded ? '已按启动时点从 canonical 播种快照' : '复用工作树本地副本'}` : ''}${result.owner.reuse ? `\n沿用：${result.owner.reuse.source}（${result.owner.reuse.facets.join('、')}）${result.owner.reuse.results.filter((facet) => facet.status === 'failed').map((facet) => `\n- ${facet.label}：${facet.diagnostics.join('；') || '失败'}`).join('')}` : ''}`);
+      else console.log(`Buildr Web 开发预览已${result.status === 'reused' ? '复用' : '启动'}：${result.url}\n实例：${result.owner.instance}\n工作空间模式：${result.owner.workspaceMode}\n数据目标：${result.owner.environmentRoot}\nworktree：${result.owner.worktree}\n分支：${result.owner.branch}\nHEAD：${result.owner.head}${result.owner.dirty ? '（有未提交修改）' : ''}${result.owner.taskStore ? `\n任务库：${result.owner.taskStore.seeded ? '已按启动时点从 canonical 播种快照' : '复用工作树本地副本'}` : ''}${result.owner.reuse ? `\n沿用：${result.owner.reuse.source}（${result.owner.reuse.facets.join('、')}）${result.owner.reuse.results.filter((facet) => facet.status === 'failed').map((facet) => `\n- ${facet.label}：${facet.diagnostics.join('；') || '失败'}`).join('')}` : ''}`);
       return result;
     }
     if (action === 'list') {
@@ -473,7 +473,7 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
       const result = await listPreviews();
       if (args.includes('--json')) console.log(JSON.stringify(withJsonSchema(PUBLIC_JSON_SCHEMAS.localAppPreview, result), null, 2));
       else if (!result.previews.length) console.log('没有运行中的 Buildr Web 开发预览。');
-      else result.previews.forEach((preview) => console.log(`${preview.instance}\t${preview.status}\t${preview.url || '-'}\t${preview.owner.worktree}${preview.owner.reuse ? `\t沿用：${preview.owner.reuse.source}（${preview.owner.reuse.facets.join('、')}）` : ''}`));
+      else result.previews.forEach((preview) => console.log(`${preview.instance}\t${preview.status}\t${preview.url || '-'}\t${preview.owner.worktree}\t${preview.owner.workspaceMode}\t${preview.owner.environmentRoot}${preview.owner.reuse ? `\t沿用：${preview.owner.reuse.source}（${preview.owner.reuse.facets.join('、')}）` : ''}`));
       return result;
     }
     if (action === 'stop') {
