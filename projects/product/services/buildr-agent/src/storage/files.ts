@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 
 export interface StorageUse { complete: boolean; paths: readonly string[]; diagnostic?: string }
 export interface StorageCandidate {
-  kind: 'cache' | 'runtime' | 'diagnostic' | 'test-artifact' | 'runtime-share' | 'runtime-object' | 'shared-cache'; path: string; ownerRoot: string;
+  kind: 'cache' | 'runtime' | 'diagnostic' | 'test-artifact' | 'runtime-share' | 'runtime-object' | 'shared-cache' | 'program-package'; path: string; ownerRoot: string;
   sizeBytes: number; identity?: string; eligible: boolean; reason: string;
   rootChanged?: number;
   /** Only regenerable cache data with a fresh execution/recovery proof may

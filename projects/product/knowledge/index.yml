@@ -370,6 +370,7 @@ artifacts:
       - agent-service-connections-source
       - agent-service-preparation-source
       - agent-service-programs-source
+      - agent-service-program-packages-source
       - agent-service-conversations-source
       - agent-service-question-wait-source
       - agent-service-handoff-source
@@ -1999,6 +2000,11 @@ sources:
     kind: code
     path: services/buildr-agent/src/executors/program-manager.ts
     summary: 核对本机路径、应用身份和固定版本，在独立目录准备官方程序并清理本次安装进程。
+  - id: agent-service-program-packages-source
+    title: 受管程序包引用与回收候选
+    kind: code
+    path: services/buildr-agent/src/storage/program-packages.ts
+    summary: 观察连接绑定、未完成更新与默认安装位置引用，为维护提供程序包候选并在执行时复查引用。
   - id: agent-service-storage-source
     title: 本机私有交互库
     kind: code

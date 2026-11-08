@@ -8,6 +8,7 @@ import { configRoot as nativeConfigRoot } from './native-content-resolver.ts';
 import { ExecutorStorage, executorCacheCandidates } from './executor-storage.ts';
 import { claim } from '../process/ownership.ts';
 import { sharedCacheCandidates, sharedCacheReclaimable, sharedCachePolicy } from '../storage/shared-cache.ts';
+import { programPackageCandidates, programPackageUnreferenced } from '../storage/program-packages.ts';
 import { discoverHomeStorage } from '../storage/home-discovery.ts';
 import { runtimeObjectCandidates, runtimeObjectUnreferenced } from '../storage/runtime-objects.ts';
 import { runtimeSharingCandidates, shareRetainedRuntime } from '../process/runtime-sharing.ts';
@@ -98,6 +99,7 @@ export function inspectAgentStorage(input: { dataRoot: string; homeCursor?:HomeD
   try { result.items.push(...retainedRuntimeCandidates(dataRoot, use), ...runtimeSharingCandidates(dataRoot, use), ...runtimeObjectCandidates(root, use)); }
   catch { result.diagnostics.push('runtime_inventory_unknown'); }
   result.items.push(...sharedCacheCandidates(root,use,cacheStorageDependencies(root,repository,references)));
+  result.items.push(...programPackageCandidates(root, use, cutoff));
   result.sharedCachePolicy=sharedCachePolicy;
   if(input.scanHomes!==false)result.homeStorage=discoverHomeStorage(root,{cursor:input.homeCursor});
   return result;
@@ -173,7 +175,7 @@ export function collectAgentStorage(plan: AgentStoragePlan, maximumItems = 128, 
         if (!policy || executor && !storage.preserveSnapshot(executor, item.ownerRoot, item.path)) reason = 'cache_seed_or_contents_retained';
         else {
           removed = item.kind === 'runtime-share' ? shareRetainedRuntime(root, item, deadline) : removeStorageCandidate(root, item, observeStorageUse, directory => item.retire ? cacheUnreferenced(item) : item.kind === 'runtime'
-            ? runtimeUnreferenced(runtimeDataRoot, item.path) : item.kind === 'shared-cache' ? sharedCacheReclaimable(root,item,observeStorageUse(),cacheStorageDependencies(root,repository)) : item.kind === 'runtime-object' ? runtimeObjectUnreferenced(directory, path.basename(item.path)) : item.kind === 'test-artifact' ? testArtifactUnreferenced(directory, item.path) : item.kind !== 'diagnostic' || diagnosticUnreferenced(item, diagnosticReferences(item)));
+            ? runtimeUnreferenced(runtimeDataRoot, item.path) : item.kind === 'shared-cache' ? sharedCacheReclaimable(root,item,observeStorageUse(),cacheStorageDependencies(root,repository)) : item.kind === 'program-package' ? programPackageUnreferenced(root, item.path) : item.kind === 'runtime-object' ? runtimeObjectUnreferenced(directory, path.basename(item.path)) : item.kind === 'test-artifact' ? testArtifactUnreferenced(directory, item.path) : item.kind !== 'diagnostic' || diagnosticUnreferenced(item, diagnosticReferences(item)));
           if (removed && item.kind === 'runtime') {
             try { retireRuntimeRecords(runtimeDataRoot, item.path); } catch { current.diagnostics.push('runtime_metadata_retained:' + item.path); }
           }

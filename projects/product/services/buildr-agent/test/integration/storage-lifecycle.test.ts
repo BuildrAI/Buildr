@@ -208,6 +208,27 @@ test('public maintenance re-inventories previews and cannot apply a forged crede
   assert.ok(fs.existsSync(plugins)); assert.equal(fs.readFileSync(account, 'utf8'), 'credential');
 });
 
+test('maintenance reclaims unbound program packages and keeps bound or upgrading ones', { skip: process.platform !== 'darwin' }, t => {
+  const dataRoot = fixture(t), root = path.join(dataRoot, 'agent-service');
+  const old = path.join(root, 'programs/qoder/package-1.0.58-darwin-arm64');
+  const bound = path.join(root, 'programs/qoder/package-1.0.59-darwin-arm64');
+  const staging = path.join(root, 'programs/dsh/.prepare-crashed');
+  for (const directory of [old, bound, staging]) { file(path.join(directory, 'node_modules/index.js'), 'module'); age(directory); }
+  const repository = new ConversationRepository(root);
+  const executor = createNativeExecutors().find(item => item.descriptor.id === 'qoder')!;
+  repository.saveConnection({ view: { id: 'qoder', provider: 'qoder', label: 'fixture', revision: 'one', enabled: true, status: 'connected', executable: path.join(bound, 'node_modules/index.js'), models: [], capabilities: executor.descriptor.capabilities } } as any);
+  const plan = inspectAgentStorage({ dataRoot, scanHomes: false });
+  const items = plan.items.filter(item => item.kind === 'program-package');
+  assert.equal(items.find(item => item.path === old)?.eligible, true);
+  assert.equal(items.find(item => item.path === bound)?.reason, 'program_package_referenced');
+  assert.equal(items.find(item => item.path === staging)?.eligible, true);
+  const result = collectAgentStorage(plan);
+  assert.equal(result.results.find(item => item.path === old)?.status, 'removed');
+  assert.equal(result.results.find(item => item.path === staging)?.status, 'removed');
+  assert.ok(!fs.existsSync(old) && !fs.existsSync(staging));
+  assert.ok(fs.existsSync(path.join(bound, 'node_modules/index.js')));
+});
+
 test('runtime preparation waits for another process short storage collection', async t => {
   const root=fixture(t),dataRoot=path.join(root,'profile'),pkg=path.join(root,'package'),node=path.join(root,'node');
   file(path.join(pkg,'package.json'),'{"type":"module"}');file(path.join(pkg,'build/entry.js'),'export {};');
