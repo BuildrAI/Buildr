@@ -77,6 +77,44 @@ export function conversationFailureImpact(run: Pick<ConversationRun,'status'|'ac
   return `${delivery}对话记录已保留。${work}`;
 }
 
+export type ConversationFailureReason = { summary: string; action?: string };
+
+function failureRetrySeconds(diagnostic: string): number | undefined {
+  const match = diagnostic.match(/(?:retryAfterSeconds|waitTime)[^0-9]{0,8}(\d+)/i);
+  const seconds = match ? Number(match[1]) : NaN;
+  return Number.isSafeInteger(seconds) && seconds > 0 ? Math.min(seconds, 3600) : undefined;
+}
+
+/** 只提炼可公开的原因；原始厂商内容仍留在技术详情中。 */
+export function conversationFailureReason(diagnostic?: string, fault?: Pick<ConversationRun,'fault'>['fault']): ConversationFailureReason {
+  const text = diagnostic ?? '';
+  if (/CALL_COUNT_LIMIT|isQueued|调用次数|调用频率|rate.?limit|too many requests|(?:^|\D)429(?:\D|$)/i.test(text)) {
+    const retry = failureRetrySeconds(text);
+    return { summary: '模型调用达到当前上限，请求被服务端排队。', action: retry ? `约 ${retry} 秒后重试，或切换到其他模型/账号。` : '请稍后重试，或切换到其他模型/账号。' };
+  }
+  if (/quota|额度|余额不足|credit/i.test(text)) return { summary: '模型账号额度不足。', action: '请切换有额度的模型/账号，或稍后重试。' };
+  if (/login[_ -]?expired|not[_ -]?authenticated|未登录|登录已失效|登录已过期|认证失败|API Key 无效|(?:^|\D)(?:401|403)(?:\D|$)/i.test(text)) {
+    return { summary: '模型账号登录失效或没有访问权限。', action: '请检查账号状态并重新登录。' };
+  }
+  if (/model[_ -]?(?:unavailable|disabled)|模型.*(?:不可用|已停用)|所选模型/i.test(text)) {
+    return { summary: '所选模型当前不可用。', action: '请重新选择可用模型，或检查账号状态。' };
+  }
+  if (/ETIMEDOUT|timeout|timed out|超时/i.test(text)) return { summary: '模型服务响应超时。', action: '请稍后重试，或切换到其他模型。' };
+  if (/ECONN(?:REFUSED|RESET|ABORTED)|ENOTFOUND|fetch failed|network|网络|socket hang up|连接.*(?:中断|失败)/i.test(text)) {
+    return { summary: '与模型服务的连接中断。', action: '请检查网络连接后重试。' };
+  }
+  if (fault?.kind === 'process' || /agent_native_process_(?:closed|failed)|process (?:exited|closed|failed)|进程.*(?:结束|退出|失败)/i.test(text)) {
+    return { summary: '执行进程意外结束。', action: '请先核对本轮已有成果，再决定是否继续；不会自动重放原操作。' };
+  }
+  if (fault?.kind === 'protocol' || /malformed tool call|orphan_tool_call|tool_call_stream|工具调用.*(?:格式|异常|中断)/i.test(text)) {
+    return { summary: '模型返回的工具调用格式异常，本轮已中止。', action: '继续前请核对已有成果；不会自动重放原操作。' };
+  }
+  if (fault?.kind === 'transport' || /observation_lost|event_observation|状态观察.*(?:丢失|中断)/i.test(text)) {
+    return { summary: '执行状态观察中断，未能确认本轮结束。', action: '请先核对执行记录和已有成果。' };
+  }
+  return { summary: '本轮执行因未识别的原因中断。', action: '请展开技术详情核对准确诊断；如持续出现，请保留该信息。' };
+}
+
 export function conversationModelWarning(ready: boolean, accountId: string | undefined, model: {available: boolean; enabled?: boolean} | undefined): string | undefined {
   if (!ready || !accountId || model?.available) return;
   return model?.enabled === false ? '所选模型已停用，请重新选择。' : '所选模型账号当前不可用，请检查账号登录状态。';
