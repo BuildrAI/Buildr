@@ -379,6 +379,11 @@ artifacts:
       - agent-service-codex-source
       - agent-service-dsh-source
       - agent-service-qoder-source
+      - openai-api-model-source
+      - private-api-key-source
+      - agent-service-model-account-http-source
+      - model-account-api-key-ui-source
+      - model-account-source-view-source
       - agent-service-host-source
       - agent-service-ui-source
       - agent-conversation-image-preview-source
@@ -2024,6 +2029,31 @@ sources:
     kind: code
     path: services/buildr-agent/src/executors/qoder/index.ts
     summary: 隔离工作进程（Worker）使用官方软件开发工具包（SDK）与qodercli，恢复准确原生上下文。
+  - id: openai-api-model-source
+    title: ChatGPT 官方 API Key 来源
+    kind: code
+    path: services/buildr-agent/src/model-access/providers/openai-api.ts
+    summary: 固定 OpenAI 官方端点，核对候选密钥后原子替换，发现文本对话模型，并以无状态 Responses 推理供统一网关使用。
+  - id: private-api-key-source
+    title: 模型来源私有 API Key
+    kind: code
+    path: services/buildr-agent/src/model-access/providers/private-api-key.ts
+    summary: 在账号私有目录以 0600 文件保存密钥，拒绝链接与非单链接目标，原子替换且不进入公共账号元数据。
+  - id: agent-service-model-account-http-source
+    title: 模型账号公开 HTTP 入口
+    kind: code
+    path: services/buildr/src/modules/agent-service/interfaces/http/agent-service-http.ts
+    summary: 受本机认证保护的账号读取、目录、偏好、API Key 配置、检查、登录与断开入口；普通响应不返回密钥。
+  - id: model-account-api-key-ui-source
+    title: ChatGPT API Key 账号设置
+    kind: code
+    path: services/buildr-web/src/features/agent-conversations/AccountModelManager.tsx
+    summary: 提供独立 ChatGPT API 来源卡片，可订阅与 API Key 同时使用，并支持密码录入、验证、更换、刷新、模型管理和断开，不显示 URL 输入。
+  - id: model-account-source-view-source
+    title: 模型来源与 ChatGPT API 独立分类
+    kind: code
+    path: services/buildr-web/src/features/agent-conversations/account-model-view.ts
+    summary: 将订阅与 API Key 输出为两个独立来源，保留认证与已配置状态；没有 API Key 账号时提供 ChatGPT API 配置入口，两者可同时展示。
   - id: agent-service-host-source
     title: 智能体服务宿主装配
     kind: code

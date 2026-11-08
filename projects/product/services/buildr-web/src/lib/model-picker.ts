@@ -26,7 +26,7 @@ export function filterModelGroups(groups:readonly ModelPickerGroup[],query:strin
 
 export function modelSourceName(provider:string):string {
   const id=provider.replace(/^native-/, '');
-  return ({codex:'Codex',dsh:'DSH',deepseek:'DeepSeek',qoder:'Qoder',devin:'Devin'} as Record<string,string>)[id]??provider;
+  return ({codex:'Codex',openai:'ChatGPT API',dsh:'DSH',deepseek:'DeepSeek',qoder:'Qoder',devin:'Devin'} as Record<string,string>)[id]??provider;
 }
 
 

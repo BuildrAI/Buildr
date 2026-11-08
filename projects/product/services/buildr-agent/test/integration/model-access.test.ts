@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createModelAccess } from '../../src/model-access/application.ts';
 import { translateRequest, translateResponse, type OpaqueReasoning } from '../../src/model-access/protocols.ts';
 import type { ModelOffering, ModelProvider, ProviderInferenceInput, ProtocolJson } from '../../src/model-access/contracts.ts';
+import { createOpenAIApiModelProvider } from '../../src/model-access/providers/openai-api.ts';
 
 const model={id:'source-model',label:'真实来源模型',images:true,tools:true,contextWindow:32000};
 const noOpaque:OpaqueReasoning={encode(value){return JSON.stringify(value);},decode(value){return JSON.parse(value);}};
@@ -306,6 +307,142 @@ test('login remains checking until model discovery completes and cancelled disco
 });
 
 async function checkEnabled(application:any,id:string,input:any={}){const row=await application.accounts.check(id,input);const disabled=row.models.filter((model:any)=>model.enabled===false);return disabled.length?await application.accounts.preferences(id,{expectedRevision:row.revision,models:disabled.map((model:any)=>({id:model.id,enabled:true}))}):row;}
+
+test('ChatGPT API account uses a private key, fixed upstream and revokes old leases on key replacement', {timeout:10000}, async()=>{
+  const root = await mkdtemp(join(tmpdir(), 'buildr-openai-api-account-'));
+  const valid = new Set(['sk-old']);
+  const upstream: Array<{url:string;authorization:string|null;body?:ProtocolJson}> = [];
+  const mock: typeof fetch = async (url, init = {}) => {
+    const target = String(url), authorization = new Headers(init.headers).get('authorization');
+    if (target === 'https://api.openai.com/v1/models') {
+      upstream.push({url:target,authorization});
+      if (!authorization || !valid.has(authorization.replace(/^Bearer /,''))) return new Response('private', {status:401});
+      return Response.json({data:[{id:'gpt-5'},{id:'text-embedding-3-small'}]});
+    }
+    if (target === 'https://api.openai.com/v1/responses') {
+      const body = JSON.parse(String(init.body)) as ProtocolJson;
+      upstream.push({url:target,authorization,body});
+      return Response.json({id:'resp_fixture',object:'response',status:'completed',model:'gpt-5',output:[{type:'message',role:'assistant',content:[{type:'output_text',text:'api answer'}]}],usage:{input_tokens:2,output_tokens:2,total_tokens:4}});
+    }
+    throw new Error('unexpected_test_network');
+  };
+  const access = createModelAccess({root,providers:[createOpenAIApiModelProvider({fetch:mock})]});
+  try {
+    const added = await access.accounts.add({provider:'openai'});
+    assert.equal(added.authType,'api-key'); assert.equal(added.modeLabel,'API Key'); assert.equal(added.group?.label,'ChatGPT'); assert.equal(added.credentialConfigured,false);
+    const configured = await access.accounts.configure(added.id,{expectedRevision:added.revision,apiKey:'sk-old'});
+    assert.equal(configured.status,'ready'); assert.equal(configured.credentialConfigured,true); assert.deepEqual(configured.models.map(model=>model.id),['gpt-5']);
+    assert.equal(JSON.stringify(access.accounts.list()).includes('sk-old'),false);
+    assert.equal((await readFile(join(root,'accounts.json'),'utf8')).includes('sk-old'),false);
+    if (process.platform !== 'win32') assert.equal((await stat(join(root,'accounts',added.id,'model-api-key.json'))).mode & 0o777,0o600);
+    const enabled = await access.accounts.preferences(added.id,{expectedRevision:configured.revision,models:[{id:'gpt-5',enabled:true}]});
+    const input={accountId:added.id,modelId:'gpt-5',agentId:'codex',conversationId:'api-chat',runId:'run-one'};
+    const lease = await access.leases.create(input);
+    const response = await fetch(lease.baseUrl+'/responses',{method:'POST',headers:{authorization:'Bearer '+lease.apiKey,'content-type':'application/json'},body:JSON.stringify({model:lease.model,input:'hello'})});
+    assert.equal(response.status,200); assert.equal((await response.json()).output[0].content[0].text,'api answer');
+    assert.equal(upstream.at(-1)?.url,'https://api.openai.com/v1/responses'); assert.equal(upstream.at(-1)?.authorization,'Bearer sk-old'); assert.equal(upstream.at(-1)?.body?.store,false);
+    await assert.rejects(access.accounts.configure(added.id,{expectedRevision:enabled.revision,apiKey:'sk-invalid'}),{code:'model_openai_api_key_invalid'});
+    assert.equal(access.accounts.read(added.id).identity,enabled.identity);
+    access.freezeMetadata();
+    await assert.rejects(access.accounts.configure(added.id,{expectedRevision:enabled.revision,apiKey:'sk-after-freeze'}),{code:'model_access_closed'});
+    access.freezeMetadata(false);
+    valid.add('sk-new');
+    const replaced = await access.accounts.configure(added.id,{expectedRevision:enabled.revision,apiKey:'sk-new'});
+    assert.notEqual(replaced.identity,enabled.identity);
+    const stale = await fetch(lease.baseUrl+'/responses',{method:'POST',headers:{authorization:'Bearer '+lease.apiKey,'content-type':'application/json'},body:JSON.stringify({model:lease.model,input:'late'})});
+    assert.equal(stale.status,401);
+  } finally { await access.close(); await rm(root,{recursive:true,force:true}); }
+});
+
+test('ChatGPT API streams tools and cancellation through the gateway for multiple executors', {timeout:10000}, async()=>{
+  const root = await mkdtemp(join(tmpdir(), 'buildr-openai-api-gateway-'));
+  const upstream: Array<{url:string;body:ProtocolJson}> = [];
+  let cancelStarted!:()=>void;
+  const cancelReady = new Promise<void>(resolve=>{cancelStarted=resolve;});
+  let cancelled = false;
+  const sse = (events:unknown[])=>new Response(events.map(event=>'data: '+JSON.stringify(event)+'\n\n').join(''),{headers:{'content-type':'text/event-stream'}});
+  const mock: typeof fetch = async (url, init = {}) => {
+    const target=String(url);
+    if(target==='https://api.openai.com/v1/models')return Response.json({data:[{id:'gpt-5'}]});
+    if(target!=='https://api.openai.com/v1/responses')throw new Error('unexpected_test_network');
+    const body=JSON.parse(String(init.body)) as ProtocolJson;
+    upstream.push({url:target,body});
+    if(JSON.stringify(body).includes('cancel-request')){
+      return new Response(new ReadableStream<Uint8Array>({
+        start(controller){
+          cancelStarted();
+          init.signal?.addEventListener('abort',()=>{cancelled=true;controller.close();},{once:true});
+        },
+      }),{headers:{'content-type':'text/event-stream'}});
+    }
+    return sse([
+      {type:'response.output_text.delta',delta:'checking'},
+      {type:'response.output_item.added',output_index:1,item:{id:'call_1',type:'function_call',call_id:'call_1',name:'read_file',arguments:''}},
+      {type:'response.function_call_arguments.delta',item_id:'call_1',output_index:1,delta:'{"path":"README.md"}'},
+      {type:'response.function_call_arguments.done',item_id:'call_1',arguments:'{"path":"README.md"}'},
+      {type:'response.completed',response:{status:'completed',output:[],usage:{input_tokens:3,output_tokens:2}}},
+    ]);
+  };
+  const access=createModelAccess({root,providers:[createOpenAIApiModelProvider({fetch:mock})]});
+  try{
+    const added=await access.accounts.add({provider:'openai'});
+    const configured=await access.accounts.configure(added.id,{expectedRevision:added.revision,apiKey:'sk-gateway'});
+    const enabled=await access.accounts.preferences(added.id,{expectedRevision:configured.revision,models:[{id:'gpt-5',enabled:true}]});
+    const leaseInput={accountId:enabled.id,modelId:'gpt-5'};
+    const codex=await access.leases.create({...leaseInput,agentId:'codex',conversationId:'tool-chat',runId:'tool-run'});
+    const qoder=await access.leases.create({...leaseInput,agentId:'qoder',conversationId:'qoder-chat',runId:'qoder-run'});
+    const tool={type:'function',name:'read_file',description:'Read a file',parameters:{type:'object',properties:{path:{type:'string'}},required:['path']}};
+    const responses=await fetch(codex.baseUrl+'/responses',{method:'POST',headers:{authorization:'Bearer '+codex.apiKey,'content-type':'application/json'},body:JSON.stringify({model:codex.model,stream:true,input:'inspect',tools:[tool]})});
+    const responsesText=await responses.text();
+    assert.equal(responses.status,200);assert.match(responsesText,/read_file/);assert.match(responsesText,/README\.md/);assert.match(responsesText,/response\.completed/);
+    const chat=await fetch(qoder.baseUrl+'/chat/completions',{method:'POST',headers:{authorization:'Bearer '+qoder.apiKey,'content-type':'application/json'},body:JSON.stringify({model:qoder.model,stream:true,messages:[{role:'user',content:'inspect'}],tools:[{type:'function',function:{name:'read_file',description:'Read a file',parameters:tool.parameters}}]})});
+    const chatText=await chat.text();
+    assert.equal(chat.status,200);assert.match(chatText,/read_file/);assert.match(chatText,/README\.md/);assert.match(chatText,/\[DONE\]/);
+    assert.ok(upstream.length>=2);assert.ok(upstream.every(row=>row.url==='https://api.openai.com/v1/responses'));assert.ok(upstream.every(row=>String(row.body.model)==='gpt-5'));assert.ok(upstream.some(row=>JSON.stringify(row.body).includes('read_file')));
+    const cancelLease=await access.leases.create({...leaseInput,agentId:'codex',conversationId:'cancel-chat',runId:'cancel-run'});
+    const pending=fetch(cancelLease.baseUrl+'/responses',{method:'POST',headers:{authorization:'Bearer '+cancelLease.apiKey,'content-type':'application/json'},body:JSON.stringify({model:cancelLease.model,stream:true,input:'cancel-request'})});
+    await cancelReady;access.leases.stopRun('cancel-chat','cancel-run');
+    await pending.catch(()=>undefined);
+    for(let i=0;i<100&&!cancelled;i++)await new Promise(resolve=>setTimeout(resolve,5));
+    assert.equal(cancelled,true);
+    const late=await fetch(cancelLease.baseUrl+'/responses',{method:'POST',headers:{authorization:'Bearer '+cancelLease.apiKey,'content-type':'application/json'},body:JSON.stringify({model:cancelLease.model,stream:true,input:'cancel-request'})});
+    assert.equal(late.status,409);
+  }finally{await access.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('ChatGPT subscription and API-key sources remain usable at the same time', {timeout:10000}, async()=>{
+  const root=await mkdtemp(join(tmpdir(),'buildr-chatgpt-parallel-sources-'));
+  const group={id:'chatgpt',label:'ChatGPT'};
+  const subscription:ModelProvider={...provider(async()=>chat({content:'subscription answer'})),id:'subscription',label:'ChatGPT',authentication:{type:'oauth',label:'订阅'},group,modeLabel:'订阅'};
+  const mock:typeof fetch=async(url,init={})=>{
+    const target=String(url);
+    if(target==='https://api.openai.com/v1/models')return Response.json({data:[{id:'gpt-5'}]});
+    if(target==='https://api.openai.com/v1/responses')return Response.json({id:'resp_parallel',status:'completed',output:[{type:'message',role:'assistant',content:[{type:'output_text',text:'api answer'}]}]});
+    throw new Error('unexpected_test_network');
+  };
+  const access=createModelAccess({root,providers:[subscription,createOpenAIApiModelProvider({fetch:mock})]});
+  try{
+    const subscriptionAdded=await access.accounts.add({provider:'subscription'});
+    const subscriptionReady=await checkEnabled(access,subscriptionAdded.id);
+    await access.accounts.preferences(subscriptionAdded.id,{expectedRevision:subscriptionReady.revision,models:[{id:model.id,enabled:true}]});
+    const apiAdded=await access.accounts.add({provider:'openai'});
+    const apiConfigured=await access.accounts.configure(apiAdded.id,{expectedRevision:apiAdded.revision,apiKey:'sk-parallel'});
+    await access.accounts.preferences(apiAdded.id,{expectedRevision:apiConfigured.revision,models:[{id:'gpt-5',enabled:true}]});
+    const available=access.catalog.list().models.filter(item=>item.available);
+    assert.deepEqual(new Set(available.map(item=>item.accountId)),new Set([subscriptionAdded.id,apiAdded.id]));
+    assert.equal(access.accounts.read(subscriptionAdded.id).status,'ready');
+    assert.equal(access.accounts.read(apiAdded.id).status,'ready');
+    const subscriptionLease=await access.leases.create({accountId:subscriptionAdded.id,modelId:model.id,agentId:'codex',conversationId:'subscription-chat',runId:'subscription-run'});
+    const apiLease=await access.leases.create({accountId:apiAdded.id,modelId:'gpt-5',agentId:'qoder',conversationId:'api-chat',runId:'api-run'});
+    const [subscriptionResponse,apiResponse]=await Promise.all([
+      fetch(subscriptionLease.baseUrl+'/responses',{method:'POST',headers:{authorization:'Bearer '+subscriptionLease.apiKey,'content-type':'application/json'},body:JSON.stringify({model:subscriptionLease.model,input:'hello'})}),
+      fetch(apiLease.baseUrl+'/responses',{method:'POST',headers:{authorization:'Bearer '+apiLease.apiKey,'content-type':'application/json'},body:JSON.stringify({model:apiLease.model,input:'hello'})}),
+    ]);
+    assert.equal(subscriptionResponse.status,200);assert.equal(apiResponse.status,200);
+    assert.equal((await subscriptionResponse.text()).includes('subscription answer'),true);
+    assert.equal((await apiResponse.text()).includes('api answer'),true);
+  }finally{await access.close();await rm(root,{recursive:true,force:true});}
+});
 
 test('single generation uses the selected account without tools or persistent conversation and rejects stale identity',async()=>{
  const root=await mkdtemp(join(tmpdir(),'buildr-model-generate-'));const inputs:ProviderInferenceInput[]=[];

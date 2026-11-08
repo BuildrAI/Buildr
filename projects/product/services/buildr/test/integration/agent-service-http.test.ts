@@ -357,6 +357,24 @@ test('model account HTTP preserves authentication, revisions, source identity an
   response=await fetch(endpoint+'/'+created.id+'/login-attempts/'+login.loginAttempt.id+'/cancel',{method:'POST',headers,body:JSON.stringify({expectedRevision:login.revision})});assert.equal(response.status,200);const cancelled=await response.json();assert.equal(cancelled.loginAttempt.state,'cancelled');
 });
 
+test('model account HTTP configures API-key sources without echoing the secret', {timeout:30000}, async t=>{
+  const {base,root}=taskRecordFixture(t,'api-key-model-http');
+  let configured = '';
+  const service=createAgentService({dataRoot:path.join(base,'model-profile'),executors:[],modelProviders:[{id:'fixture',label:'ChatGPT',authentication:{type:'api-key',label:'API Key',placeholder:'sk-...'},group:{id:'chatgpt',label:'ChatGPT'},modeLabel:'API Key',async open(){return {protocol:'responses',async inspect(){return {status:configured?'ready':'not-authenticated',credentialConfigured:!!configured,models:configured?[{id:'gpt-test',label:'GPT Test',images:false,tools:true}]:[]};},async configure({apiKey}){configured=apiKey;return {status:'ready',credentialConfigured:true,models:[{id:'gpt-test',label:'GPT Test',images:false,tools:true}]};},async beginLogin(){},async cancelLogin(){},async infer(){return Response.json({});},async close(){}};}}],resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
+  const runtime=createRuntime(),contributions=runtimeContributions(runtime,'http').filter((item:{id:string})=>item.id!=='agent-service.http');contributions.push(createAgentServiceHttpContribution(()=>service));
+  const server=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions}),{url,sessionToken}=await server.ready;
+  t.after(async()=>{await service.close();server.server.closeAllConnections();await new Promise<void>(resolve=>server.server.close(()=>resolve()));});
+  const endpoint=url+'/api/v1/app/agent-service/model-accounts',headers={origin:url,'x-buildr-session':sessionToken,'content-type':'application/json'};
+  let response=await fetch(endpoint,{headers});const listed=await response.json();
+  assert.equal(listed.providers[0].authentication.type,'api-key');assert.equal(listed.providers[0].group.label,'ChatGPT');assert.equal(listed.providers[0].modeLabel,'API Key');
+  response=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({provider:'fixture'})});const created=await response.json();assert.equal(created.authType,'api-key');assert.equal(created.credentialConfigured,false);
+  const keyEndpoint=endpoint+'/'+created.id+'/api-key';
+  assert.equal((await fetch(keyEndpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:created.revision})})).status,400);
+  assert.equal((await fetch(keyEndpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:'old',apiKey:'sk-private'})})).status,409);
+  response=await fetch(keyEndpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:created.revision,apiKey:'sk-private'})});assert.equal(response.status,200);
+  const configuredView=await response.json();assert.equal(configuredView.status,'ready');assert.equal(configuredView.credentialConfigured,true);assert.equal(JSON.stringify(configuredView).includes('sk-private'),false);assert.equal(configured,'sk-private');
+});
+
 test('model selection HTTP returns the local snapshot without waiting for external account checks', {timeout:30000},async t=>{
   const {base,root}=taskRecordFixture(t,'model-catalog-current-http');
   const service=createAgentService({dataRoot:path.join(base,'profile'),executors:[],modelProviders:[{id:'fixture',label:'Fixture',async open(){return{protocol:'chat-completions',async inspect(){return{status:'ready',models:[{id:'model',label:'Model',images:false,tools:true}]};},async beginLogin(){},async cancelLogin(){},async infer(){return assert.fail('catalog must not infer');},async close(){}};}}],resolveWorkspace:()=>({rootPath:root}),assertTask(){}});

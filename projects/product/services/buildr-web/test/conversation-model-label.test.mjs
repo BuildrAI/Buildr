@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {conversationModelLabel,conversationModelSourceLabel} from '../src/features/agent-conversations/conversation-model-label.ts';
+import {modelSourceName} from '../src/lib/model-picker.ts';
 const connections=[{id:'codex',models:[{id:'qmodel_38max',label:'QMODEL 3.8 MAX'},{id:'swe-2',label:'SWE-2'}]}];
-const catalog=[{accountId:'source-a',provider:'native-codex',modelId:'shared-id',label:'FULL MODEL NAME'},{accountId:'source-b',provider:'native-qoder',modelId:'shared-id',label:'OTHER MODEL NAME'},{accountId:'source-c',provider:'custom',modelId:'custom-id',label:'CUSTOM'}];
+const catalog=[{accountId:'source-a',provider:'native-codex',modelId:'shared-id',label:'FULL MODEL NAME'},{accountId:'source-b',provider:'native-qoder',modelId:'shared-id',label:'OTHER MODEL NAME'},{accountId:'source-c',provider:'custom',modelId:'custom-id',label:'CUSTOM'},{accountId:'source-d',provider:'openai',modelId:'gpt-5',label:'GPT-5'}];
 test('展示精确复用选择器完整名称，查询仍可使用原始编号',()=>{
  assert.equal(conversationModelLabel('qmodel_38max',connections,catalog),'QMODEL 3.8 MAX');
  assert.equal(conversationModelLabel('swe-2',connections,catalog),'SWE-2');
@@ -16,7 +17,9 @@ test('未知或同名编号歧义不伪造名称，缺失与未知明确区分',
 test('来源名称来自已绑定账号的供应商；缺失时明示账号未记录，不从模型名称推断',()=>{
  assert.equal(conversationModelSourceLabel('source-a',catalog),'ChatGPT');
  assert.equal(conversationModelSourceLabel('source-b',catalog),'Qoder');
+ assert.equal(conversationModelSourceLabel('source-d',catalog),'ChatGPT API');
  assert.equal(conversationModelSourceLabel('source-c',catalog),'custom');
  assert.equal(conversationModelSourceLabel('unknown:conversation',catalog),'账号未记录');
  assert.equal(conversationModelSourceLabel('',catalog),'账号未记录');
+ assert.equal(modelSourceName('openai'),'ChatGPT API','API Key 来源在模型选择器中是独立分类');
 });

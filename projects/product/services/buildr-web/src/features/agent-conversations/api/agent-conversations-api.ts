@@ -10,7 +10,7 @@ import type { ActivityCounts, ActivityFilter } from '../conversation-activity';
 import { createApiClient, LocalSessionAdapter } from '../../../api';
 import type { ApiClient, ApiError, SessionAdapter } from '../../../api';
 import { parseEventFrame } from '../conversation-state';
-import type { ModelAccount, CatalogModel, AttachmentView, ConnectionView, ConversationEvent, ConversationSummary, ConversationEntry, ConversationView, PendingConversation, PreparationView, ProviderId, SendInput, SendPreview, SupplementInput, SupplementResult } from '../types';
+import type { ModelAccount, ModelProviderView, CatalogModel, AttachmentView, ConnectionView, ConversationEvent, ConversationSummary, ConversationEntry, ConversationView, PendingConversation, PreparationView, ProviderId, SendInput, SendPreview, SupplementInput, SupplementResult } from '../types';
 
 export type DraftImages = AgentDraftImagesDraftImages;
 export type StartDraftInput = AgentDraftStartStartDraft;
@@ -44,7 +44,7 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
     participation(workspaceId:string,conversationId:string,runId:string,signal?:AbortSignal) { return read<AgentParticipationParticipation>(path(workspaceId,conversationId)+'/participation?runId='+encodeURIComponent(runId),signal); },
     participationSummary(workspaceId:string,input:AgentParticipationSummaryQueryParticipationSummaryQuery={},signal?:AbortSignal) { const query=new URLSearchParams(Object.entries(input).filter(([,v])=>v!==undefined&&v!=='').map(([k,v])=>[k,String(v)])); return read<AgentParticipationSummaryParticipationSummary>(path(workspaceId)+'/participation-summary?'+query,signal); },
     defaultWorkspace(signal?: AbortSignal) { return request<{rootPath: string}>(appPath+'/default-workspace', {signal}); },
-    modelAccounts(signal?:AbortSignal) {return request<{accounts:ModelAccount[];providers:Array<{id:string;label:string}>}>(appPath+'/model-accounts',{signal});},
+    modelAccounts(signal?:AbortSignal) {return request<{accounts:ModelAccount[];providers:ModelProviderView[]}>(appPath+'/model-accounts',{signal});},
     modelCatalog(signal?:AbortSignal) {
       // Independently cancellable callers must not cancel a shared read.
       if(signal)return request<{models:CatalogModel[];diagnostic?:string;hasSnapshot?:boolean}>(appPath+'/model-catalog',{signal});
@@ -53,6 +53,7 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
     },
     addModelAccount(provider:string) {return changeModels<ModelAccount>(appPath+'/model-accounts',post({provider}));},
     modelPreferences(account:ModelAccount,models:Array<{id:string;enabled?:boolean;contextWindow?:number|null}>) {return changeModels<ModelAccount>(appPath+'/model-accounts/'+account.id+'/preferences',post({expectedRevision:account.revision,models}));},
+    configureModelAccount(account:ModelAccount,apiKey:string) {return changeModels<ModelAccount>(appPath+'/model-accounts/'+account.id+'/api-key',post({expectedRevision:account.revision,apiKey}));},
     modelAccountAction(account:ModelAccount,action:'check'|'disconnect'|'login-attempts') {return changeModels<ModelAccount>(appPath+'/model-accounts/'+account.id+'/'+action,post({expectedRevision:account.revision}));},
     modelLoginAttempt(accountId:string,attemptId:string,signal?:AbortSignal) {return changeModels<ModelAccount>(appPath+'/model-accounts/'+accountId+'/login-attempts/'+attemptId,{signal});},
     cancelModelLogin(account:ModelAccount) {return changeModels<ModelAccount>(appPath+'/model-accounts/'+account.id+'/login-attempts/'+account.loginAttempt!.id+'/cancel',post({expectedRevision:account.revision}));},
