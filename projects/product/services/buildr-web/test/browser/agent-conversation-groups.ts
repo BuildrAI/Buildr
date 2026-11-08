@@ -18,7 +18,7 @@ export function parseAgentConversationBatch(raw: string | undefined): AgentConve
 export async function runAgentConversationBatch(
   groups: Iterable<string>,
   options: {
-    preparePage: (index: number) => Promise<void>;
+    preparePage: (index: number, group: string) => Promise<void>;
     runGroup: (group: string) => Promise<void>;
     afterGroup?: (group: string) => void;
     canContinue?: () => boolean;
@@ -38,7 +38,7 @@ export async function runAgentConversationBatch(
     if (next.done) break;
     const group = next.value;
     try {
-      await options.preparePage(index);
+      await options.preparePage(index, group);
       await options.runGroup(group);
     } catch (cause) {
       failures.push(new Error(`对话场景组 ${group} 未完成。`, { cause }));

@@ -4,6 +4,18 @@ Buildr 产品使用四类检查：静态检查（Static Check）、单元测试�
 
 本页解释产品自身执行方式；[项目声明](../../../verification.yml)公开少量稳定入口，[准备声明](../../../preparation.yml)记录真实准备命令。四服务是 `buildr`、`buildr-web`、`buildr-agent` 与 `dsh-plugin`，成员发现、类型和相关选择由[实际执行登记](../../../services/buildr/test/verification/registry.ts)与项目程序负责，不在说明和地图各复制一份文件清单。
 
+## 三层职责
+
+| 层次 | 负责什么 | 与下一层的关系 |
+| --- | --- | --- |
+| Buildr 产品提供的通用项目测试能力 | 测试建设技能维护项目自己的测试与`verification.yml`；验证技能选择并执行项目入口，应用保存可选任务报告。 | Buildr 自身是使用这套能力的一个项目；普通用户项目不必采用Buildr内部执行器。 |
+| Buildr 项目的具体测试框架 | 四服务检查登记、发现与选组、准备、依赖调度、多维资源、隔离执行、内容适用性、失败与计时证据。 | 日常开发与发布都消费这些检查；测试类型本身不构成阶段屏障。 |
+| Buildr 发布编排 | 冻结准确来源和原包，选择所需源码/原包/平台检查，消费有效证明，再执行另行授权的发布动作。 | 不复制第二份测试清单，不把源码成功当作原包或跨平台成功。 |
+
+具体执行从`cli.ts`取得请求，经`planner.ts`与`registry.ts`选组；`plan-runner.ts`组织准备、上下文和执行，`dag-scheduler.ts`只在依赖与预算允许时准入，`executor.ts`调用真实检查。`resource-coordinator.ts`协调跨执行租约；计时、覆盖及内容适用性分别保留原始结果和有效复用来源。各模块位于[验证实现目录](../../../services/buildr/test/verification/)，正式任务报告仍由应用保存。
+
+这些入口和策略以所在检出目录为准；任务工作树的候选实现不代表当前已安装或主开发检出目录已采用。
+
 ## 四类检查
 
 | 类型 | 证明边界 |
@@ -26,6 +38,7 @@ Buildr 产品使用四类检查：静态检查（Static Check）、单元测试�
 | 四服务全量静态检查（Static Check） | `npm run test:static` |
 | 全量集成测试（Integration Test） | `npm run test:integration` |
 | 全量端到端测试（End-to-End Test，E2E） | `npm run test:e2e` |
+| 集成与端到端共同调度，覆盖两类完整并集 | `npm run test:system` |
 | 按用户请求、实际文件或改动选择相关四类检查 | `npm run test:related` |
 
 用户可指定具体检查、类型、全量或相关范围，不要求先创建正式任务或先提供 Git 基线。已知检查直接执行；需要比较才使用明确来源。相关选择须依据实际公共行为、调用方、依赖及交付边界补足自动路径选择，零匹配不能冒充目标已验证。
@@ -38,9 +51,17 @@ Buildr 产品使用四类检查：静态检查（Static Check）、单元测试�
 
 分类落实到实际断言。来源选择、迟到响应、状态合并、筛选和尺寸计算直接调用生产逻辑，以替身隔离外部协作者；真实 Git、文件写盘、HTTP 与冲突边界由集成测试（Integration Test）验证；浏览器端到端测试（E2E Test）保留必要完整使用流程。删除重复高层组合前核对已有低层证明并补齐缺口，不能以改名或单纯删断言降低耗时。
 
-`e2e-browser:code-explorer` 与 `e2e-browser:code` 是文件浏览和源代码管理两个独立检查。源码浏览器检查最多并行两个，仍受全局进程、工作线程和工作空间读写额度约束；它们共享不可变前端产物，各自使用临时工作空间、随机端口、浏览器和清理责任。其他共享可变资源的检查继续互斥。开始结束时间必须证明实际并行，准备去重不能被误算为测试通过。
+`test:system`把两类检查放入同一依赖计划，复用本轮准备及总资源预算；测试类型不是阶段屏障。它仍是两类检查的组合入口，不新增测试类型。无需分别启动两个会相互争抢机器的命令；真正依赖、独占和具名资源锁继续生效，因此总耗时不保证等于两类中较长的一类。
 
-对话 `history` 的独立成员由 `buildr-web/test/browser/agent-conversations-history-scenarios.ts` 声明，稳定身份形如 `history/workspace-order`。每个成员新建浏览器上下文和夹具，独立失败同轮收集；清理或共享服务状态异常会明确留下未运行项。通过 `BUILDR_AGENT_JOURNEY_PART=history` 和 `BUILDR_AGENT_SCENARIO_FOCUS=<身份，多个用 | 分隔>` 可在同一 `test:e2e -- --check e2e-browser:agent-conversations` 入口定点诊断；未知筛选报错，子集通过不能作为整组通过，coverage会标记focused，失败接续仍选择未完整证明的父检查。较重的服务和生产构建仍由本轮共享，场景结果与耗时保存在现有诊断日志。
+非CI默认使用`local-auto`，按可用CPU并行度和内存形成初始预算：每3个CPU、每4GiB一个外层组，自动宽度限制在1至4。全局、工作空间重负载、浏览器与工作空间I/O额度一起调整；为容纳现有双工作进程组，浏览器和I/O至少为2。工作进程额度至少容纳现有单组需求，自动上限16。它是保守初始策略，不是实时CPU、内存或磁盘调节器；额度为测试声明单位，不等于操作系统进程硬上限。实现及固定档位见[容量策略](../../../services/buildr/test/verification/execution-capacity.ts)和[登记](../../../services/buildr/test/verification/registry.ts)。
+
+`BUILDR_VERIFICATION_PROFILE=local`保留原固定档位，CI默认档位也保持固定。`BUILDR_VERIFICATION_JOBS=<正整数>`明确覆盖外层宽度，同时调整相关多维额度，避免只增大全局并发仍被浏览器或I/O挡住；组内并发和正确性资源锁不随之放大。计划与计时证据保存`capacityPolicy`、`capacityObservation`和最终额度，复现时应核对这些字段。
+
+`e2e-browser:code-explorer` 与 `e2e-browser:code` 是文件浏览和源代码管理两个独立检查。源码浏览器检查按上述档位准入，仍受全局进程、工作线程和工作空间读写额度约束；它们共享不可变前端产物，各自使用临时工作空间、随机端口、浏览器和清理责任。其他共享可变资源的检查继续互斥。开始结束时间必须证明实际并行，准备去重不能被误算为测试通过。
+
+对话 `history` 的独立成员由 `buildr-web/test/browser/agent-conversations-history-scenarios.ts` 声明，稳定身份形如 `history/workspace-order`。完整运行的两个工作进程先领取其他场景组，再逐项领取这些独立成员；不再由一个进程承包整个 `history`。每个成员仍新建浏览器上下文和夹具，独立失败同轮收集；领取后崩溃不会自动重放，清理或共享服务状态异常会明确留下未运行项。通过 `BUILDR_AGENT_JOURNEY_PART=history` 和 `BUILDR_AGENT_SCENARIO_FOCUS=<身份，多个用 | 分隔>` 可在同一 `test:e2e -- --check e2e-browser:agent-conversations` 入口定点诊断；未知筛选报错，子集通过不能作为整组通过，coverage会标记focused，失败接续仍选择未完整证明的父检查。较重的服务和生产构建仍由本轮共享，场景结果与耗时保存在现有诊断日志。
+
+对话父组的 `resourceUnits.browser-runtime=2` 记录两个子进程的真实占用；外层按数量准入、释放和估算，物理浏览器租约仍由子进程分别持有，父组不重复申请。缓存命中不执行子进程，同时清空数量与资源声明，避免占住其他检查的读写预算。
 
 自动语义关注点区分产品实现与测试路径；测试变化保留真实直接归属，不再仅因文件名包含conversation就追加无关原生进程组。显式 `--tag` 继续扩大集合。内容快照的检出目录身份与交付比较基线分开：基线变化仍比较实际内容，旧成功采用仍须通过配方、发现成员和环境校验。
 
@@ -58,6 +79,10 @@ Buildr 产品使用四类检查：静态检查（Static Check）、单元测试�
 
 ## 执行和成本
 
+步骤的`scheduling.waits`记录本轮准入等待区间及当时原因：依赖、全局数量、类别、具名资源、工作进程/I/O容量或独占；同一区间可能有多个原因，不能相加当作墙钟耗时。`resourceCoordination.waitDurationMs`仍单独表示跨执行的租约等待。`workspaceIo`额度覆盖声明的步骤生命周期，不能据此声称磁盘已饱和。
+
+浏览器前置造数据复用同一私有应用适配器，避免重复启动完整CLI；完整初始化、登记、同步和Doctor仍执行，页面业务及场景内CLI断言保留原入口。各组可写环境和服务仍独立，不把共用不可变输入扩大为共用数据库。精确版本命令在完整命令登记装配前读取原身份，减少无关模块加载；其他命令继续完整装配。这两项减少准备工作，不消除Agent启动和测试场景链本身的成本。
+
 网页生产准备可在当前检出目录的 `build/verification-web-dist-cache` 中复用现有准备回执和产物清单；完整源码、生成接口、配方、依赖和工具环境匹配且输出字节完整时，复制到本轮独立输出。缓存损坏或输入变化会重建，结果单独给出重建/复用及准备时长；不读取在线产物，也不代替真实浏览器检查。
 
 准备依实际缺项完成，已有锁定依赖、构建输入和浏览器可以复用，不在每条检查前重装或重复生成。单元测试（Unit Test）不自动准备浏览器、真实账号、付费模型、准确双包或完整厂商软件开发工具包（SDK）。类型检查（Type Check）只证明真实编译范围，不把转译成功或 `noCheck` 声称为严格类型验证。
@@ -66,9 +91,11 @@ Buildr 产品使用四类检查：静态检查（Static Check）、单元测试�
 
 实际工作进程数量和资源必须有界，完整集合的耗时与资源成本需观察并优化，不设统一三十秒门槛，不借无限并发掩盖消耗。发现慢检查先判断范围与实现效率，不仅因慢而改名，也不为达到预算删掉必要断言。
 
-智能体服务（Agent Service）的完整集成入口是从 `services/buildr-agent` 运行 `../buildr/tools/development/run-development-npm run test:integration`；它按[服务检查登记](../../../services/buildr-agent/tools/testing/verification-checks.ts)发现全部组，项目完整入口也消费同一登记。`agent-integration` 覆盖本机存储和对话，`agent-integration-native` 覆盖厂商协议；重型独立进程按启动与归属、跨版本交接、观察与恢复分别归入 `agent-integration-startup`、`agent-integration-handoff`、`agent-integration-recovery`。真实退避上限用例独立归入 `agent-integration-recovery-budget`，避免27秒左右的真实等待挤占恢复组串行预算；保持唯一主归属与完整发现，原恢复组预算不变。使用 `--check` 选择其中一组不能宣称完整智能体覆盖。
+智能体服务（Agent Service）的完整集成入口是从 `services/buildr-agent` 运行 `../buildr/tools/development/run-development-npm run test:integration`；它按[服务检查登记](../../../services/buildr-agent/tools/testing/verification-checks.ts)发现全部组，项目完整入口也消费同一登记。`agent-integration` 覆盖本机存储及服务契约，`agent-integration-conversations` 独立覆盖较长的对话生命周期文件；两组成员互斥，完整入口仍发现同一全集。前者申请2个工作进程与2份I/O，后者申请1个工作进程与1份I/O，在原全局额度内并行，避免大文件堵住组内文件队列。`agent-integration-native` 覆盖厂商协议；重型独立进程按启动与归属、跨版本交接、观察与恢复分别归入 `agent-integration-startup`、`agent-integration-handoff`、`agent-integration-recovery`。真实退避上限用例独立归入 `agent-integration-recovery-budget`，避免27秒左右的真实等待挤占恢复组串行预算；保持唯一主归属与完整发现，原恢复组预算不变。使用 `--check` 选择其中一组不能宣称完整智能体覆盖。
 
 重型组每组申请一个工作位，统一资源协调器（Resource Coordinator）以 `agent-process-tests` 限制同机最多两组；组内文件依照外层 `BUILDR_VERIFICATION_WORKER_BUDGET` 串行执行。直接诊断可运行 `node tools/testing/run-integration.ts --group all` 或指定同一检查标识，也服从该预算，最多并行两个文件。准备包由一次执行共享准备；每个用例的可写包、数据库和进程身份独立。
+
+本机执行计划为真实Agent进程组、Archify和嵌套Git组保留当前整份工作空间I/O额度，使这些敏感生命周期不与其他已声明重工作区I/O组竞争；不再将全部Agent集成强制改为全局独占。独立协议和轻量检查可在剩余预算内执行，实际工作线程授权不扩大。刷新当前检出目录生成文件的工具边界组仍全局独占。长组耗时估计用于现有成本优先调度，既不是通过证据，也不改变期限。
 
 在本机支持的平台，`agent-integration-startup` 中五个只消费现成环境的场景，由[准备夹具](../../../services/buildr-agent/test/support/prepared-process-fixture.ts)每轮真实准备一次，再复制各用例独立的运行目录，重写私有路径并通过生产完整字节校验。数据库、会话和进程仍独立；种子污染拒绝使用，不跨轮缓存。测试运行环境创建、升级和迁移本身的场景继续真实准备；Windows 保留完整准备路径。
 
@@ -76,7 +103,7 @@ Buildr 产品使用四类检查：静态检查（Static Check）、单元测试�
 
 生产运行单元继续真实物化并在每次校验时读取全部字节，摘要使用同一个有界缓冲区（Buffer）分块计算，不缓存旧摘要。
 
-重型用例的清理先撤销本用例的原生连接，再关闭宿主并要求后台停止，核对所观察进程已经退出后删除目录；断言失败仍执行同样的清理，退出未确认作为失败报告。默认输出包复制、运行准备、启动、停止、进程退出及目录清理的开始与完成记录；`BUILDR_TEST_PHASE_TIMING=1` 另记录逐次交互耗时；服务集成执行器（Executor）保留逐文件开始、完成和失败类型。外层总限时取消与产品断言失败分别判断。
+重型用例的清理先撤销本用例的原生连接，再关闭宿主并要求后台停止，核对所观察进程已经退出后删除目录；断言失败仍执行同样的清理，退出未确认作为失败报告。默认输出包复制、运行准备、启动、停止、进程退出及目录清理的开始与完成记录；`BUILDR_TEST_PHASE_TIMING=1` 另记录逐次交互耗时；服务集成执行器（Executor）保留逐文件开始、完成和失败类型。外层总限时取消与产品断言失败分别判断。 测试状态清理允许有限次数重新观测已退出进程的关闭窗口，只有明确无占用才删除目录；持续占用或观测不明保留目录和具体诊断。清理失败保留子进程原结果、输出和耗时，整体仍失败；清理观测与子结果写入计时证据。
 
 运行中不改被测源码，一轮收集无依赖的失败，修复后补失败及受影响项。复用须核对内容、配方、依赖、工具和必要环境仍适用，保留实际来源；推送前完整集合的证明不可由仅执行相关部分替代。缺少测试、环境不可用、未执行、失败及待授权分别报告。
 

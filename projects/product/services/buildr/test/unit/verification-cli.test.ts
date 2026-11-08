@@ -110,3 +110,14 @@ test('focused browser success cannot erase an incompletely proven group on repai
   const complete=verificationCoverageEntry(step,{status:'passed',exitCode:0},'darwin',{});
   assert.deepEqual(readFailedVerificationGroups('unused',{steps:[complete]}),[]);
 });
+
+
+test('system selection is the exact union of complete Integration and E2E plans', () => {
+  const plans = ['integration', 'e2e', 'system'].map(mode => planVerification(parseVerificationArguments([mode, '--plan']), { env: { CI: 'true' } }));
+  const expected = [...new Set(plans.slice(0, 2).flatMap(plan => plan.steps.map((step: any) => step.id)))].sort();
+  const actual = plans[2].steps.map((step: any) => step.id);
+  assert.deepEqual([...actual].sort(), expected);
+  assert.equal(actual.length, new Set(actual).size);
+  assert.equal(plans[2].selection, 'full');
+  assert.equal(plans[2].executionProfile.id, 'ci');
+});

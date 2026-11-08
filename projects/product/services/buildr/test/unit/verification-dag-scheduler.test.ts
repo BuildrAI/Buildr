@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createVerificationSchedulingPriorities, parseVerificationSchedulingMode, runVerificationDag } from '../verification/dag-scheduler.ts';
+import { estimateVerificationPlan } from '../verification/planner.ts';
 import { resolveVerificationExecutionProfile, verificationSteps } from '../verification/registry.ts';
 
 const step: any = (id: any, dependsOn: any = [], concurrencyClass: any = 'default', schedulingCostMs: any) => ({
@@ -411,4 +412,94 @@ test('critical-path priority 在非法 cycle 上 fail closed', () => {
     step('a', ['b'], 'default', 1),
     step('b', ['a'], 'default', 1),
   ])), /Verification scheduling priority cycle/);
+});
+
+
+test('delegated two-browser owners leave I/O available to non-browser work and release both slots on failure', async () => {
+  const starts: string[] = [];
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const pending = runVerificationDag(plan([
+    { ...step('parent', [], 'default', 300), resources: ['browser'], resourceUnits: { browser: 2 }, resourceClaims: [], resourceDemand: { workers: 2, processes: 2, workspaceIo: 2 } },
+    { ...step('browser-sibling', [], 'default', 200), resources: ['browser'], resourceDemand: { workers: 1, processes: 1, workspaceIo: 1 } },
+    { ...step('independent', [], 'default', 100), resourceDemand: { workers: 1, processes: 1, workspaceIo: 1 } },
+  ]), {
+    concurrency: { global: 3, classes: { default: 3 }, resources: { browser: 2 }, capacities: { workers: 4, processes: 4, workspaceIo: 3 } },
+    execute: async (item: any) => {
+      starts.push(item.id);
+      if (item.id === 'parent') await gate;
+      if (item.id === 'independent') {
+        assert.deepEqual(starts, ['parent', 'independent']);
+        release();
+      }
+      return { status: item.id === 'parent' ? 'failed' : 'passed', exitCode: item.id === 'parent' ? 1 : 0, durationMs: 1 };
+    },
+  });
+  const results = await pending;
+  assert.deepEqual(starts, ['parent', 'independent', 'browser-sibling']);
+  assert.deepEqual(results.map((item: any) => item.status), ['failed', 'passed', 'passed']);
+});
+
+test('resource quantities reject undeclared, nonpositive and impossible reservations before execution', async () => {
+  for (const resourceUnits of [{ browser: 0 }, { browser: 1.5 }, { browser: 3 }, { other: 1 }]) {
+    await assert.rejects(runVerificationDag(plan([{ ...step('invalid'), resources: ['browser'], resourceUnits }]), {
+      concurrency: { global: 1, classes: { default: 1 }, resources: { browser: 2 } },
+      execute: async () => assert.fail('invalid reservations must not execute'),
+    }), /resource units/);
+  }
+});
+
+
+test('plan lower bounds count delegated browser slot time without multiplying wall time', () => {
+  const result = estimateVerificationPlan(plan([
+    { ...step('parent', [], 'default', 300), resources: ['browser'], resourceUnits: { browser: 2 } },
+    { ...step('sibling', [], 'default', 100), resources: ['browser'] },
+  ]), { concurrency: { global: 3, resources: { browser: 2 } } });
+  assert.equal(result.totalEstimatedDurationMs, 400);
+  assert.equal(result.resourceCapacityLowerBounds[0].estimatedDurationMs, 700);
+  assert.equal(result.resourceCapacityLowerBounds[0].lowerBoundMs, 350);
+});
+
+test('local wait evidence distinguishes browser and IO admission without hiding independent work', async () => {
+  let clock = 0;
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const results = await runVerificationDag({ steps: [
+    { ...step('browser-owner'), resources: ['browser'], resourceUnits: { browser: 2 }, resourceDemand: { workers: 2, processes: 2, workspaceIo: 2 } },
+    { ...step('browser-waiter'), resources: ['browser'], resourceDemand: { workers: 1, processes: 1, workspaceIo: 1 } },
+    step('independent'),
+  ] }, {
+    now: () => clock,
+    concurrency: { global: 3, classes: { default: 3 }, resources: { browser: 2 }, capacities: { workers: 4, processes: 4, workspaceIo: 2 } },
+    execute: async (item: any) => {
+      if (item.id === 'browser-owner') await gate;
+      if (item.id === 'independent') { clock = 50; release(); }
+      return { status: 'passed', exitCode: 0, durationMs: 1 };
+    },
+  });
+  const wait = results[1].scheduling.waits[0];
+  assert.equal(wait.scope, 'local-admission');
+  assert.deepEqual(wait.reasons, ['resource:browser', 'capacity:workspaceIo']);
+  assert.equal(wait.durationMs, 50);
+  assert.equal(results[2].scheduling.waits, undefined);
+});
+
+test('dependency and exclusive wait reasons remain distinct and cancellation closes observed waits', async () => {
+  let clock = 0;
+  const result = await runVerificationDag({ steps: [step('writer', [], 'exclusive'), step('peer'), step('dependent', ['writer'])] }, {
+    now: () => clock, concurrency: { global: 3, classes: { default: 3, exclusive: 1 } },
+    execute: async (item: any) => { if (item.id === 'writer') clock = 30; return { status: 'passed', exitCode: 0, durationMs: 1 }; },
+  });
+  assert.ok(result[1].scheduling.waits.some((wait: any) => wait.reasons.includes('exclusive-running')));
+  assert.ok(result[2].scheduling.waits.some((wait: any) => wait.reasons.includes('dependency:writer')));
+  const cancellation = new AbortController();
+  clock = 0;
+  const cancelled = await runVerificationDag({ steps: [step('active'), step('pending')] }, {
+    now: () => clock, concurrency: 1, signal: cancellation.signal,
+    execute: async () => { clock = 20; cancellation.abort(); return { status: 'cancelled', exitCode: 130, durationMs: 20 }; },
+  });
+  assert.equal(cancelled[1].status, 'blocked');
+  assert.ok(cancelled[1].scheduling.waits[0].reasons.includes('global-capacity'));
+  assert.equal(cancelled[1].scheduling.waits[0].durationMs, 20);
+  assert.equal(cancelled[1].scheduling.grant, undefined, 'pending checks never received a grant');
 });

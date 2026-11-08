@@ -7,19 +7,20 @@ import process from 'node:process';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { collectChangedProductPaths, collectImpactSnapshot } from './changed-paths.ts';
+import { estimateVerificationPlan } from './planner.ts';
 import { createVerificationPlan } from './planner.ts';
-import { executePlan } from './plan-runner.ts';
+import { executePlan, localExecutionStep } from './plan-runner.ts';
 import { resolveVerificationExecutionProfile, verificationSteps } from './registry.ts';
 import { collectVerificationSourceIdentity, createVerificationEvidencePaths, writeVerificationTimingEvidence } from './timing/evidence.ts';
 import { createIsolatedWorkspaceState } from '../../tools/development/isolated-workspace-state.ts';
 
 const productRoot = path.resolve(import.meta.dirname, '../..');
 const projectRoot = path.resolve(productRoot, '../..');
-const modes: Record<string, string[]> = { unit: ['Unit'], static: ['Static'], integration: ['Integration'], e2e: ['E2E'], check: ['Static', 'Unit'], related: [] };
+const modes: Record<string, string[]> = { unit: ['Unit'], static: ['Static'], integration: ['Integration'], e2e: ['E2E'], system: ['Integration', 'E2E'], check: ['Static', 'Unit'], related: [] };
 
 export function parseVerificationArguments(args: string[]) {
   const mode = args[0];
-  if (!Object.hasOwn(modes, mode)) throw new Error('Choose unit, static, integration, e2e, check or related.');
+  if (!Object.hasOwn(modes, mode)) throw new Error('Choose unit, static, integration, e2e, system, check or related.');
   const request = { mode, checks: [] as string[], tags: [] as string[], failedFrom: null as string | null, semantic: false, base: null as string | null, planOnly: false, json: false, help: false, list: false, reference: null as string | null };
   for (let index = 1; index < args.length; index++) {
     const arg = args[index];
@@ -75,6 +76,7 @@ export function verificationCoverageEntry(step: any, result: any, platform = pro
 
 export function planVerification(request: ReturnType<typeof parseVerificationArguments>, options: any = {}) {
   const steps = options.steps ?? verificationSteps;
+  const executionProfile = options.executionProfile ?? resolveVerificationExecutionProfile(undefined, options.env ?? process.env);
   let changed = request.base && request.mode === 'related' ? (options.collectChanged ?? collectChangedProductPaths)({ productRoot: options.productRoot ?? productRoot, projectRoot: options.projectRoot ?? projectRoot, base: request.base }) : { paths: [], base: null };
   const previousEvidence = request.failedFrom ? JSON.parse(fs.readFileSync(request.failedFrom, 'utf8')) : null;
   const deliveryChanged = changed;
@@ -91,7 +93,8 @@ export function planVerification(request: ReturnType<typeof parseVerificationArg
       selectionReasons: (changed.selectionReasons ?? []).filter((item: any) => paths.includes(item.path)) };
   }
   const failedIds = request.failedFrom ? [...new Set<string>([...readFailedVerificationGroups(request.failedFrom, previousEvidence), ...(impactSnapshot?.environmentChanged ? previousEvidence.coverage.selected.map((step: any) => step.id) : [])])] : [];
-  const plan = createVerificationPlan({ ...changed, tags: request.tags, semantic: request.semantic, types: modes[request.mode], stepIds: [...new Set([...request.checks, ...failedIds])], target: 'source', related: request.mode === 'related', completeTypes: request.mode === 'check' }, steps);
+  const discoveredPlan = createVerificationPlan({ ...changed, tags: request.tags, semantic: request.semantic, types: modes[request.mode], stepIds: [...new Set([...request.checks, ...failedIds])], target: 'source', related: request.mode === 'related', completeTypes: request.mode === 'check' }, steps);
+  const plan = { ...discoveredPlan, steps: discoveredPlan.steps.map((step: any) => localExecutionStep(step, executionProfile, executionProfile.limits)) };
   // Narrow execution after repairs, but recheck unresolved ownership against the
   // complete delivery diff. A previous mapping gap must never disappear as green.
   const deliveryGaps = previousEvidence?.coverage?.impactSnapshot
@@ -123,7 +126,7 @@ export function planVerification(request: ReturnType<typeof parseVerificationArg
       gaps.push({ code: 'dependency-unavailable', checkId: step.id, dependencies: step.dependsOn.filter((id: string) => unavailable.has(id)), reason: 'A required producer cannot execute in this environment.' });
     }
   }
-  return { ...plan, impactSnapshot, repair: request.failedFrom ? { evidence: path.resolve(request.failedFrom), failedIds, comparison: previousEvidence?.coverage?.impactSnapshot ? 'previous-run-contents' : 'delivery-base' } : null, targetExclusions, selectionExclusions, status: gaps.length ? 'incomplete' : 'ready', gaps, mode: request.mode, selection: request.mode === 'related' ? request.base ? 'related-plus-explicit' : 'explicit' : request.mode === 'check' || !request.checks.length ? 'full' : 'explicit', base: changed.base ?? request.base, reference: request.reference, steps: plan.steps.map((step: any) => ({ ...step, ...(failedIds.includes(step.id) ? { reuse: false, reuseDisabledReason: 'previous-run-did-not-pass' } : {}), availability: unavailable.has(step.id) ? 'unavailable' : 'ready' })) };
+  return { ...plan, executionProfile, estimate: estimateVerificationPlan(plan, { concurrency: executionProfile.limits }), impactSnapshot, repair: request.failedFrom ? { evidence: path.resolve(request.failedFrom), failedIds, comparison: previousEvidence?.coverage?.impactSnapshot ? 'previous-run-contents' : 'delivery-base' } : null, targetExclusions, selectionExclusions, status: gaps.length ? 'incomplete' : 'ready', gaps, mode: request.mode, selection: request.mode === 'related' ? request.base ? 'related-plus-explicit' : 'explicit' : request.mode === 'check' || !request.checks.length ? 'full' : 'explicit', base: changed.base ?? request.base, reference: request.reference, steps: plan.steps.map((step: any) => ({ ...step, ...(failedIds.includes(step.id) ? { reuse: false, reuseDisabledReason: 'previous-run-did-not-pass' } : {}), availability: unavailable.has(step.id) ? 'unavailable' : 'ready' })) };
 }
 
 function print(plan: any) {
@@ -177,7 +180,7 @@ async function runVerification(args: string[], signal: AbortSignal) {
   const invocationStartedAt = Date.now();
   const request = parseVerificationArguments(args);
   if (request.help) {
-    process.stdout.write('npm test | npm run check | npm run test:static|test:integration|test:e2e|test:related\nOptions: --plan, --json, repeatable --check <id>, --tag <semantic-tag>, --semantic, --failed-from <timing.json>, --list; test:related --base <ref> adds affected checks.\ncheck always includes every source Static and Unit check; explicit checks never narrow that set.\n');
+    process.stdout.write('npm test | npm run check | npm run test:static|test:integration|test:e2e|test:system|test:related\nOptions: --plan, --json, repeatable --check <id>, --tag <semantic-tag>, --semantic, --failed-from <timing.json>, --list; test:related --base <ref> adds affected checks.\ncheck always includes every source Static and Unit check; explicit checks never narrow that set.\n');
     return 0;
   }
   if (request.list) { process.stdout.write(`${JSON.stringify(verificationSteps.map((step: any) => ({ id: step.id, type: step.testing.executionBoundary, target: step.target, name: step.name, tags: step.tags })), null, 2)}\n`); return 0; }
@@ -185,7 +188,8 @@ async function runVerification(args: string[], signal: AbortSignal) {
   const snapshotBase = execFileSync('git', ['rev-parse', '--verify', `${reference}^{commit}`], { cwd: productRoot, encoding: 'utf8' }).trim();
   request.reference = reference;
   if (request.base || request.mode !== 'related') request.base = snapshotBase;
-  const plan = planVerification(request, { snapshotBase });
+  const executionProfile = resolveVerificationExecutionProfile(process.env.BUILDR_VERIFICATION_PROFILE);
+  const plan = planVerification(request, { snapshotBase, executionProfile });
   if (request.json) {
     // Planning output is not run evidence. Keep full content inventories in the
     // execution report; repair planning still observes them before selection.
@@ -199,7 +203,6 @@ async function runVerification(args: string[], signal: AbortSignal) {
   const runnable = { ...plan, steps: plan.steps.filter((step: any) => step.availability === 'ready') };
   const source = collectVerificationSourceIdentity(productRoot, { projectRoot });
   const startedAt = Date.now();
-  const executionProfile = resolveVerificationExecutionProfile(process.env.BUILDR_VERIFICATION_PROFILE);
   const evidence = createVerificationEvidencePaths(request.mode);
   const scratch = createIsolatedWorkspaceState();
   let execution: any = { passed: false, results: [] };

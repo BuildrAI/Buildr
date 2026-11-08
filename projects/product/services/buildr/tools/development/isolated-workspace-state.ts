@@ -33,15 +33,38 @@ export function createIsolatedWorkspaceState(options: { env?: NodeJS.ProcessEnv;
     cleanup() {
       // A cancelled child can outlive its test runner. Keep its control records
       // until the owner can stop it; deleting the root would orphan recovery.
+      let observationCount = 0;
+      const settledOwnerPids = new Set<string>();
       if (process.platform === 'darwin' && fs.existsSync(root)) {
-        const actualRoot = fs.realpathSync(root);
-        const use = spawnSync('/usr/sbin/lsof', ['-nP', '-a', '-u', String(process.getuid!()), '-Fpn'], {encoding:'utf8',timeout:5000,maxBuffer:32*1024*1024});
-        if (use.error || use.status !== 0 || use.stderr.trim() || use.stdout.split('\n').some(line => line.startsWith('n'+actualRoot+path.sep) || line === 'n'+actualRoot)) {
-          throw new Error('test_state_still_in_use: retained ' + root);
+        const observationStarted = Date.now();
+        // Process exit can precede final file-handle release. Re-observe a
+        // bounded number of times; never delete on an occupied/unknown result.
+        for (let attempt = 0; attempt < 3; attempt++) {
+          observationCount++;
+          const actualRoot = fs.realpathSync(root);
+          const use = spawnSync('/usr/sbin/lsof', ['-nP', '-a', '-u', String(process.getuid!()), '-Fpcn'], {encoding:'utf8',timeout:5000,maxBuffer:32*1024*1024});
+          const owners = new Set<string>();
+          let pid = '', command = '';
+          const ownerCommands: string[] = [];
+          for (const line of (use.stdout ?? '').split('\n')) {
+            if (line.startsWith('p')) pid = line.slice(1);
+            if (line.startsWith('c')) command = line.slice(1);
+            if (line.startsWith('n'+actualRoot+path.sep) || line === 'n'+actualRoot) { owners.add(pid); ownerCommands.push(command + ':' + line.slice(1)); }
+          }
+          for (const owner of owners) settledOwnerPids.add(owner);
+          const warning = (use.stderr ?? '').trim();
+          if (!use.error && use.status === 0 && !warning && !owners.size) break;
+          if (attempt < 2 && Date.now() - observationStarted < 1000) continue;
+          throw new Error('test_state_still_in_use: retained ' + root + ' ' + JSON.stringify({
+            observation: use.error || use.status !== 0 || warning ? 'inconclusive' : 'occupied',
+            status: use.status, signal: use.signal, errorCode: (use.error as NodeJS.ErrnoException | undefined)?.code ?? null,
+            warning: warning.slice(0, 1000), ownerPids: [...owners], owners: ownerCommands.slice(0, 10),
+          }));
         }
       }
       if (fs.existsSync(root)) fs.writeFileSync(marker, JSON.stringify({ ...identity, completed: true }), { mode: 0o600 });
       fs.rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+      return { status: 'cleaned', observationCount, settledOwnerPids: [...settledOwnerPids] };
     },
   };
 }

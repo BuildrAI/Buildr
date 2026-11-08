@@ -63,8 +63,9 @@ test('生产 Web 装配能够解析已登记工作空间并读取项目，未知
     const missing = await fetch(`${instance.url}/api/v1/workspaces/00000000-0000-4000-8000-000000000000/projects`);
     assert.equal(missing.status, 404);
   } finally {
-    if (instance) await new Promise<void>((resolve) => instance.server.close(resolve));
-    await stopAgentProcess({ dataRoot: path.join(base, 'app-data') });
+    // Finish owned shutdown before the fixture's after hook releases its files.
+    try { await instance?.shutdown(); }
+    finally { await stopAgentProcess({dataRoot:path.join(base,'app-data'),mode:'stop-owned'}); }
   }
 });
 
@@ -137,7 +138,7 @@ test('正式Web与Task Preview生命周期均不创建后台maintenance schedule
     ensureRegisteredTarget: root => ensureRegisteredTarget(formalRuntime, root),
   });
   const formal: any = await formalRuntime.startBuildrWeb(['--port', '0', '--no-open']);
-  await new Promise((resolve: any) => formal.server.close(resolve));
+  await formal.shutdown();
 
   process.env.BUILDR_LOCAL_APP_PREVIEW = JSON.stringify({
     schemaVersion: 'buildr.local-app-preview/v1',
@@ -152,7 +153,7 @@ test('正式Web与Task Preview生命周期均不创建后台maintenance schedule
     ensureRegisteredTarget: root => ensureRegisteredTarget(previewRuntime, root),
   });
   const preview: any = await previewRuntime.startBuildrWeb(['--port', '0', '--no-open']);
-  await new Promise((resolve: any) => preview.server.close(resolve));
+  await preview.shutdown();
 });
 
 test('development start reuses the current source and preserves a healthy instance when the source differs or is unproven', async (t) => {

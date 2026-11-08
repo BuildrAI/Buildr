@@ -106,6 +106,8 @@ function normalizedSteps(results: any): any  {
     ...(result.failureFacts ? { failureFacts: result.failureFacts } : {}),
     ...(result.reusedFrom ? { disposition: 'reused', reusedFrom: result.reusedFrom } : {}),
     ...(result.processCleanup ? { processCleanup: result.processCleanup } : {}),
+    ...(result.stateCleanup ? { stateCleanup: result.stateCleanup } : {}),
+    ...(result.childResult ? { childResult: result.childResult } : {}),
     ...(result.phases?.length ? { phases: result.phases } : {}),
     ...(result.testContextRuntime ? { testContextRuntime: result.testContextRuntime } : {}),
     ...(result.preparations ? { preparations: result.preparations } : {}),
@@ -137,6 +139,8 @@ export function createVerificationTimingSummary(options: any): any  {
       ...(options.schedulingMode ? { schedulingMode: options.schedulingMode } : {}),
       ...(options.executionProfile ? {
         executionProfile: options.executionProfile.id,
+        ...(options.executionProfile.capacityPolicy ? { capacityPolicy: options.executionProfile.capacityPolicy } : {}),
+        ...(options.executionProfile.capacityObservation ? { capacityObservation: options.executionProfile.capacityObservation } : {}),
         concurrency: options.executionProfile.limits,
       } : {}),
     },

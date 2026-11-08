@@ -40,6 +40,24 @@ export async function prepareVerificationReuse(plan: any, prepare: (steps: any[]
   }
 }
 
+/** Private lifecycle fixtures need IO headroom, not ownership of unrelated checks.
+ * Keep worker grants unchanged: they also control actual child concurrency. */
+export function localExecutionStep(step: any, profile: any, concurrency: any): any {
+  if (!['local', 'local-auto'].includes(profile?.id)) return step;
+  const agentProcess = step.service === 'buildr-agent'
+    && step.testing?.executionBoundary === 'Integration' && step.resources?.includes('agent-process-tests');
+  if (!agentProcess && !['integration-archify', 'e2e-nested-git'].includes(step.id)) return step;
+  const workspaceIo = Number.isInteger(concurrency) ? concurrency : concurrency.capacities?.workspaceIo;
+  if (!Number.isInteger(workspaceIo) || workspaceIo < 1) return step;
+  return { ...step, concurrencyClass: 'workspace-heavy',
+    resourceDemand: { ...step.resourceDemand, workspaceIo } };
+}
+
+/** A verified cache hit executes no child and occupies no declared resources. */
+export function reusedExecutionStep(step: any): any {
+  return { ...step, resources: [], resourceClaims: [], resourceUnits: {}, concurrencyClass: 'default', resourceDemand: { workers: 1, processes: 1 } };
+}
+
 export async function executePlan(plan: any, options: any): Promise<any>  {
   if (plan.status === 'blocked') throw new Error(plan.diagnostic?.message ?? 'Verification plan is blocked.');
   const planStartedAt = Date.now();
@@ -103,7 +121,7 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
   const executeFresh: any = executorFactory({
     ...options,
     preparations,
-    env: { ...(options.env ?? process.env), ...contextPool.environment() },
+    env: { ...(options.env ?? process.env), ...contextPool.environment(), ...(options.executionProfile?.id ? { BUILDR_VERIFICATION_PROFILE: options.executionProfile.id } : {}) },
     diagnosticsDirectory,
     artifactDirectory,
     onProcessStart(step: any, processIdentity: any): any  {
@@ -129,9 +147,8 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
   let contextCleanup: any = null;
   try {
     const executionPlan = { ...plan, steps: plan.steps.map((step: any) => reuse?.hits.has(step.id)
-      ? { ...step, resources: [], resourceClaims: [], concurrencyClass: 'default', resourceDemand: { workers: 1, processes: 1 } }
-      : options.executionProfile?.id === 'local' && (step.id === 'integration-archify' || step.service === 'buildr-agent' && step.testing?.executionBoundary === 'Integration')
-        ? { ...step, concurrencyClass: 'exclusive' } : step) };
+      ? reusedExecutionStep(step)
+      : localExecutionStep(step, options.executionProfile, concurrency)) };
     results = await runVerificationDag(executionPlan, {
       execute,
       concurrency,

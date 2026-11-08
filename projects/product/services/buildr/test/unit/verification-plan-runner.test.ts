@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { executePlan, prepareVerificationReuse } from '../verification/plan-runner.ts';
+import { executePlan, localExecutionStep, reusedExecutionStep, prepareVerificationReuse } from '../verification/plan-runner.ts';
+import { resolveVerificationExecutionProfile, verificationSteps } from '../verification/registry.ts';
+import { runVerificationDag } from '../verification/dag-scheduler.ts';
 
 test('owned dependency preparation precedes the environment proof and leaves cached checks untouched', async () => {
   let version = 0;
@@ -61,4 +63,64 @@ test('a failed check preserves independent results and blocks only its dependent
   assert.equal(result.results.find((value: any) => value.id === 'dependent').status, 'blocked');
   assert.equal(result.results.find((value: any) => value.id === 'independent').status, 'passed');
   assert.deepEqual(input.events, ['cleaned']);
+});
+
+test('local lifecycle IO isolation admits independent work without expanding worker grants', async () => {
+  const profile = resolveVerificationExecutionProfile('local');
+  const protectedIds = ['agent-integration-startup', 'integration-archify', 'agent-integration'];
+  const ids = [...protectedIds, 'agent-integration-native'];
+  const definitions = ids.map(id => verificationSteps.find((check: any) => check.id === id));
+  const active = new Set<string>(); let independentOverlap = false;
+  const input = options(async check => {
+    const original = definitions.find(value => value.id === check.id);
+    assert.equal(check.resourceDemand.workers, original.resourceDemand.workers);
+    active.add(check.id);
+    assert.ok(protectedIds.filter(id=>active.has(id)).length<=1, 'IO-sensitive lifecycles must not compete');
+    independentOverlap ||= active.has('agent-integration-native') && active.size > 1;
+    await new Promise<void>(resolve => setImmediate(resolve));
+    active.delete(check.id);
+    return {status:'passed',exitCode:0,durationMs:1};
+  });
+  const result = await runVerificationDag({steps:definitions.map(check=>localExecutionStep(check,profile,profile.limits))},
+    {concurrency:profile.limits,executionProfile:profile,execute:input.executorFactory()});
+  assert.equal(result.every((value:any)=>value.status==='passed'),true); assert.equal(independentOverlap,true);
+  const writer = verificationSteps.find((check:any)=>check.id==='integration');
+  assert.equal(localExecutionStep(writer,profile,profile.limits).concurrencyClass,'exclusive');
+  assert.equal(localExecutionStep(definitions[0],{id:'ci'},profile.limits),definitions[0]);
+  const limited = {...profile.limits,capacities:{...profile.limits.capacities,workspaceIo:1}};
+  assert.equal(localExecutionStep(definitions[0],profile,limited).resourceDemand.workspaceIo,1);
+  assert.equal(localExecutionStep(definitions[0],profile,2).resourceDemand.workspaceIo,2);
+});
+
+test('independent conversation and storage owners share the existing IO capacity with distinct file membership', async () => {
+  const profile = resolveVerificationExecutionProfile('local');
+  const ids = ['agent-integration','agent-integration-conversations'];
+  const definitions = ids.map(id=>verificationSteps.find((check:any)=>check.id===id));
+  const active = new Set<string>(); let overlap = false;
+  const input = options(async check=>{
+    active.add(check.id); overlap ||= ids.every(id=>active.has(id));
+    await new Promise<void>(resolve=>setImmediate(resolve));active.delete(check.id);
+    return {status:'passed',exitCode:0,durationMs:1};
+  });
+  const result=await runVerificationDag({steps:definitions.map(check=>localExecutionStep(check,profile,profile.limits))},
+    {concurrency:profile.limits,executionProfile:profile,execute:input.executorFactory()});
+  assert.equal(result.every((value:any)=>value.status==='passed'),true);assert.equal(overlap,true);
+  const [storage,conversations]=definitions;
+  assert.equal(storage.resourceDemand.workers+conversations.resourceDemand.workers,3);
+  assert.equal(storage.executor.discoveredFiles.includes('../buildr-agent/test/integration/conversations.test.ts'),false);
+  assert.deepEqual(conversations.executor.discoveredFiles,['../buildr-agent/test/integration/conversations.test.ts']);
+});
+
+
+test('a cached two-browser owner executes without browser or IO reservation', async () => {
+  const definition = verificationSteps.find((check: any) => check.id === 'e2e-browser:agent-conversations');
+  const cached = reusedExecutionStep(definition);
+  assert.deepEqual(cached.resources, []);
+  assert.deepEqual(cached.resourceUnits, {});
+  const results = await runVerificationDag({ steps: [cached] }, {
+    concurrency: { global: 1, classes: { default: 1 }, resources: {}, capacities: { workers: 1, processes: 1 } },
+    resourceCoordinator: { acquire: () => assert.fail('cached results do not acquire child leases') },
+    execute: async () => ({ status: 'passed', exitCode: 0, durationMs: 0 }),
+  });
+  assert.equal(results[0].status, 'passed');
 });

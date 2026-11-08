@@ -250,7 +250,13 @@ export function createVerificationExecutor(options: any): any  {
         },
       });
     } finally {
-      state.cleanup();
+      try { const stateCleanup = state.cleanup(); if (result) result = { ...result, stateCleanup }; }
+      catch (error: any) {
+        if (!result) throw error;
+        result = { ...result, childResult: { status: result.status, exitCode: result.exitCode, durationMs: result.durationMs },
+          status: 'failed', exitCode: 1, failureCode: 'verification-state-cleanup-failed',
+          stderr: `${result.stderr ?? ''}\nVerification state cleanup failed: ${error.message}\n` };
+      }
     }
     const testContextRuntime: any = step.executor.type === 'node-context-test' ? parseNodeTestContextSummary(result.stdout) : null;
     return { ...result, ...(testContextRuntime ? { testContextRuntime } : {}), ...(preparationResults.length ? { preparations: preparationResults } : {}) };

@@ -8,7 +8,8 @@ import { BROWSER_SELECTORS, parseChangedPaths, planBrowserCommands, planCodeBrow
 import { createVerificationPlan } from '../verification/planner.ts';
 import { resolveVerificationExecutionProfile, verificationSteps } from '../verification/registry.ts';
 import { AGENT_CONVERSATION_GROUPS, AGENT_CONVERSATION_WORKERS, parseAgentConversationBatch, runAgentConversationBatch } from '../../../buildr-web/test/browser/agent-conversation-groups.ts';
-import { claimAgentConversationGroups, finishAgentConversationGroup, inspectAgentConversationQueue } from '../../../buildr-web/test/browser/agent-conversation-queue.ts';
+import { AGENT_CONVERSATION_QUEUE_ITEMS, claimAgentConversationGroups, finishAgentConversationGroup, inspectAgentConversationQueue } from '../../../buildr-web/test/browser/agent-conversation-queue.ts';
+import { HISTORY_SCENARIO_CATALOG } from '../../../buildr-web/test/browser/agent-conversation-history-catalog.ts';
 import { guardConversationServerWrite, resetConversationVisits } from '../../../buildr-web/test/browser/agent-conversation-isolation.ts';
 
 test('Task-owned materials select the existing production-host browser boundary', () => {
@@ -183,9 +184,18 @@ test('a shared queue claims each group once and distinguishes unfinished work', 
   const state=inspectAgentConversationQueue(root);
   assert.deepEqual(state.unclaimed,[]);
   assert.deepEqual(state.unfinished,[b]);
-  assert.equal(state.attempted.length,AGENT_CONVERSATION_GROUPS.length-1);
+  assert.equal(state.attempted.length,AGENT_CONVERSATION_QUEUE_ITEMS.length-1);
   finishAgentConversationGroup(root,b);
-  assert.deepEqual(inspectAgentConversationQueue(root).attempted,[...AGENT_CONVERSATION_GROUPS]);
+  assert.deepEqual(inspectAgentConversationQueue(root).attempted,[...AGENT_CONVERSATION_QUEUE_ITEMS]);
+});
+
+test('the queue preserves coarse coverage and distributes every independent history member exactly once', () => {
+  assert.equal(new Set(AGENT_CONVERSATION_QUEUE_ITEMS).size,AGENT_CONVERSATION_QUEUE_ITEMS.length);
+  assert.deepEqual(AGENT_CONVERSATION_QUEUE_ITEMS.filter(item=>!item.startsWith('history/')),
+    AGENT_CONVERSATION_GROUPS.filter(group=>group!=='history'));
+  assert.deepEqual(AGENT_CONVERSATION_QUEUE_ITEMS.filter(item=>item.startsWith('history/')),
+    HISTORY_SCENARIO_CATALOG.map(scenario=>scenario.id));
+  assert.equal(AGENT_CONVERSATION_QUEUE_ITEMS.some(item=>String(item)==='history'),false);
 });
 
 test('an unusable environment leaves subsequent groups unclaimed', async t => {
@@ -200,7 +210,7 @@ test('an unusable environment leaves subsequent groups unclaimed', async t => {
   }),AggregateError);
   const state=inspectAgentConversationQueue(root);
   assert.deepEqual(state.attempted,['setup']);
-  assert.equal(state.unclaimed.length,AGENT_CONVERSATION_GROUPS.length-1);
+  assert.equal(state.unclaimed.length,AGENT_CONVERSATION_QUEUE_ITEMS.length-1);
 });
 
 test('only unmocked server writes are blocked in a shared conversation environment', async () => {
@@ -325,6 +335,7 @@ test('unconfirmed process cleanup retains the browser slot and stops pending wor
 test('conversation check accounts for two browser workers without a parent lease deadlock',()=>{
   const step=verificationSteps.find((item:any)=>item.id==='e2e-browser:agent-conversations');
   assert.deepEqual(step.resourceClaims,[]);
+  assert.deepEqual(step.resourceUnits,{'browser-runtime':2});
   assert.deepEqual(step.resourceDemand,{workers:2,processes:2,workspaceIo:2});
   for(const id of ['local','ci','ci-workspace-limited']){
     const limits=resolveVerificationExecutionProfile(id).limits;

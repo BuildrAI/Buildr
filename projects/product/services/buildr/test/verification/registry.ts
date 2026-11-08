@@ -1,3 +1,4 @@
+import { resolveExecutionCapacity } from './execution-capacity.ts';
 import { semanticTagsForStep } from './semantic-tags.ts';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -465,6 +466,7 @@ export const VERIFICATION_RESOURCE_CONTRACTS: any = Object.freeze({
 
 export const VERIFICATION_EXECUTION_PROFILES: any = Object.freeze({
   local: concurrency(4, 3, 2, { integration: 4, 'integration-candidate-release': 2, 'runtime-adapter-parity': 2, ...Object.fromEntries(JOURNEY_SUITES.map((suite: any) => [suite.id, suite.innerConcurrency])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }, { workers: 8, processes: 8, git: 3, workspaceIo: 3 }),
+  'local-auto': concurrency(4, 3, 2, { integration: 4, 'integration-candidate-release': 2, 'runtime-adapter-parity': 2, ...Object.fromEntries(JOURNEY_SUITES.map((suite: any) => [suite.id, suite.innerConcurrency])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }, { workers: 8, processes: 8, git: 3, workspaceIo: 3 }),
   ci: concurrency(4, 3, 2, { integration: 4, 'integration-candidate-release': 2, 'runtime-adapter-parity': 2, ...Object.fromEntries(JOURNEY_SUITES.map((suite: any) => [suite.id, suite.innerConcurrency])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }, { workers: 8, processes: 8, git: 3, workspaceIo: 3 }),
   'ci-workspace-limited': concurrency(4, 2, 1, { integration: 3, unit: 3, 'source-contracts': 2, 'integration-runtime': 2, 'integration-code': 2, 'integration-knowledge': 1, 'integration-workspace-assets': 2, 'integration-archify': 1, 'integration-task-records': 2, 'integration-connections': 2, 'integration-runtime-projection': 1,  ...Object.fromEntries(JOURNEY_SUITES.map((suite: any) => [suite.id, Math.min(suite.innerConcurrency, 2)])), 'integration-candidate-release': 2, 'runtime-adapter-parity': 2, 'integration-candidate-release-selection': 1, 'integration-candidate-package-selection': 1, 'integration-candidate-release-effects': 1, 'integration-candidate-git-convergence': 2, 'integration-candidate-git-selection': 2, 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 2 }, { workers: 3, processes: 3, git: 2, workspaceIo: 2 }),
 });
@@ -490,10 +492,10 @@ export const VERIFICATION_PARALLEL_SAFETY: any = Object.freeze(['worker-safe', '
 export const VERIFICATION_RESOURCE_DEMANDS: any = Object.freeze(['workers', 'processes', 'git', 'workspaceIo']);
 
 export function resolveVerificationExecutionProfile(value: any, env: any = process.env): any  {
-  const id: any = value || (env.CI === 'true' ? 'ci' : 'local');
+  const id: any = value || env.BUILDR_VERIFICATION_PROFILE || (env.CI === 'true' ? 'ci' : 'local-auto');
   const limits: any = VERIFICATION_EXECUTION_PROFILES[id];
   if (!limits) throw new Error(`Unknown verification execution profile: ${id}`);
-  return { id, limits };
+  return { id, ...resolveExecutionCapacity(limits, { automatic: id === 'local-auto', env }) };
 }
 
 const integrationSlice: any = (id: any, files: any, options: any = {}) => Object.freeze({
@@ -531,7 +533,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/verification-reuse-filesystem.test.ts',
     'test/integration/verification-inputs.test.ts',
     'test/integration/windows-artifact-diagnosis.test.ts',
-  ], { schedulingCostMs: 5000, timeoutMs: 300_000, concurrencyClass: 'exclusive', args: ['--test-concurrency=4'] }),
+  ], { schedulingCostMs: 109000, timeoutMs: 300_000, concurrencyClass: 'exclusive', args: ['--test-concurrency=4'] }),
   integrationSlice('integration-code', [
     'test/integration/retire-legacy-agent-data.test.ts',
     'test/integration/code-branch-application.test.ts',
@@ -588,13 +590,13 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/workspace-read-reuse.test.ts',
   // Catalog transaction groups run independently; full CLI lifecycles and
   // original-package workflows have their own E2E owners.
-  ], { schedulingCostMs: 5000, timeoutMs: 360_000, args: ['--test-concurrency=2'], resourceDemand: { workers: 2, processes: 2, git: 1, workspaceIo: 2 }, contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),
+  ], { schedulingCostMs: 227000, timeoutMs: 360_000, args: ['--test-concurrency=2'], resourceDemand: { workers: 2, processes: 2, git: 1, workspaceIo: 2 }, contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),
   integrationSlice('integration-archify', [
     'test/integration/archify-command-cost.test.ts',
     'test/integration/archify-component.test.ts',
   // Existing child limits are 175s + 35s; retain bounded startup and cleanup
   // room when the limited profile grants this lifecycle only one worker.
-  ], { schedulingCostMs: 60000, timeoutMs: 300_000, args: ['--test-concurrency=2'] }),
+  ], { schedulingCostMs: 110000, timeoutMs: 300_000, args: ['--test-concurrency=2'] }),
   integrationSlice('integration-task-records', [
     'test/integration/document-images.test.ts',
     'test/integration/markdown-image-files.test.ts',
@@ -610,7 +612,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/task-record-http-contract.test.ts',
     'test/integration/workbench-application.test.ts',
     'test/integration/workbench-http-contract.test.ts',
-  ], { schedulingCostMs: 5000, args: ['--test-concurrency=3'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),
+  ], { schedulingCostMs: 145000, args: ['--test-concurrency=3'], contexts: [TASK_LIFECYCLE_CONTEXT_KEY] }),
   integrationSlice('integration-connections', [
     'test/integration/browser-profiles.test.ts',
     'test/integration/browser-runtime.test.ts',
@@ -631,7 +633,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/nacos-connection-skill.test.ts',
     'test/integration/retired-connections.test.ts',
     'test/integration/xxl-job-connection-skill.test.ts',
-  ], { schedulingCostMs: 5000, timeoutMs: 300_000, args: ['--test-concurrency=3'] }),
+  ], { schedulingCostMs: 202000, timeoutMs: 300_000, args: ['--test-concurrency=3'] }),
   // This scenario spawns dozens of real CLI processes. Keep it isolated from
   // the heavier authoring scenario so one worker covers its actual runtime.
   integrationSlice('integration-connections-cli', [
@@ -847,7 +849,7 @@ const builtInVerificationSteps: any = Object.freeze([
   ], args: ['--test-concurrency=1', '--test-reporter=dot'], consumesArtifact: true }, profiles: ['candidate'], groups: ['release'], dependsOn: ['candidate-tarball'], schedulingCostMs: 15000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'npm-launcher-candidate', name: 'verified npm installation Launcher projection', executor: { type: 'node-test', files: [
     'test/integration/npm-launcher.test.ts',
-  ], args: ['--test-concurrency=1', '--test-reporter=dot'] }, profiles: ['candidate'], groups: ['release', 'windows-npm-preflight'],  concurrencyClass: 'workspace-heavy' }),
+  ], args: ['--test-concurrency=1', '--test-reporter=dot'] }, profiles: ['candidate'], groups: ['release', 'windows-npm-preflight'], schedulingCostMs: 177000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'host-node-cli-consumption', name: 'Host Node installed CLI consumption', executor: { type: 'node', file: 'test/verification/host-node/cli-consumption.ts', consumesArtifact: true }, profiles: ['host-node'],  dependsOn: ['candidate-tarball'], concurrencyClass: 'workspace-heavy' }),
   step({ id: 'open-source-candidate', name: 'open-source candidate', executor: { type: 'node', file: 'test/verification/release/open-source-candidate.ts', consumesArtifact: true }, profiles: ['candidate'], groups: ['public', 'release'],  dependsOn: ['candidate-tarball'] }),
   step({ id: 'spec-change-consistency', name: 'Active and archived specification changes match current source', executor: { type: 'node', file: 'test/verification/openspec/spec-change-consistency.ts' }, profiles: [], groups: ['openspec'], }),
@@ -925,7 +927,13 @@ for (const [, checks] of serviceSets) for (const check of checks) for (const id 
   serviceReplacements.set(id, [...(serviceReplacements.get(id) ?? []), check.id]);
 }
 // Successful local observations are scheduling estimates, never admission thresholds.
-const browserSchedulingCostMs: Record<string, number> = {"task": 181000, "code-explorer": 175000, "code": 228000};
+const browserSchedulingCostMs: Record<string, number> = {
+  task: 181000, 'code-explorer': 175000, code: 228000,
+  // The conversation value includes failed waits: a conservative queue estimate,
+  // never a passing performance baseline or a timeout extension.
+  'agent-conversations': 327000, 'task-materials': 177000,
+  'connection-skills': 108000, articles: 78000, layout: 79000,
+};
 const browserSteps = BROWSER_SELECTORS.map((selector: string) => Object.freeze({
   id: `e2e-browser:${selector}`, name: `Browser journey: ${selector}`, browserSelector: selector, target: 'source',
   dependsOn: [], groups: [], profiles: [], contexts: [], developmentRunners: [], platformScope: COMMON_PLATFORM_SCOPE,
@@ -935,7 +943,7 @@ const browserSteps = BROWSER_SELECTORS.map((selector: string) => Object.freeze({
   timeoutMs: selector === 'code' ? 1_300_000 : 600_000, concurrencyClass: 'workspace-heavy', resources: ['browser-runtime'],
   // Conversation workers acquire browser-runtime individually in the dispatcher.
   // The parent must not hold a slot while waiting for its own child workers.
-  ...(selector === 'agent-conversations' ? { resourceClaims: [] } : {}),
+  ...(selector === 'agent-conversations' ? { resourceClaims: [], resourceUnits: { 'browser-runtime': 2 } } : {}),
   isolationMode: 'full-lifecycle', resetStrategy: 'recreate', parallelSafety: 'bounded',
   resourceDemand: selector === 'agent-conversations'
     ? { workers: 2, processes: 2, workspaceIo: 2 }

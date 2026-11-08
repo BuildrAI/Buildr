@@ -27,10 +27,11 @@ const scenarios:Record<AgentConversationGroup,(fixture:Awaited<ReturnType<typeof
 /** 保留完整对话入口；各场景组复用唯一夹具，独立执行时重新准备现场。 */
 export async function runAgentConversationsJourney(options:any){
   const part=options.group||process.env.BUILDR_AGENT_JOURNEY_PART||'all';
-  if(part!=='all'&&!AGENT_CONVERSATION_GROUPS.some(group=>group===part))throw new Error('未知对话测试分组：'+part);
-  if (part === 'history' || part === 'all') {
-    const members=selectIndependentScenarios(HISTORY_SCENARIOS,process.env.BUILDR_AGENT_SCENARIO_FOCUS);
-    await options.t.test('对话独立场景：history',{timeout:60_000*members.length},async()=>{
+  const historyItem=HISTORY_SCENARIOS.some(scenario=>scenario.id===part);
+  if(part!=='all'&&!historyItem&&!AGENT_CONVERSATION_GROUPS.some(group=>group===part))throw new Error('未知对话测试分组：'+part);
+  if (part === 'history' || part === 'all' || historyItem) {
+    const members=selectIndependentScenarios(HISTORY_SCENARIOS,historyItem?part:process.env.BUILDR_AGENT_SCENARIO_FOCUS);
+    await options.t.test('对话独立场景：'+(historyItem?part:'history'),{timeout:60_000*members.length},async()=>{
       await runIndependentScenarios(members.map(scenario=>({...scenario,run:(fixture:Awaited<ReturnType<typeof createAgentConversationFixture>>)=>fixture.step(scenario.name,()=>scenario.run(fixture))})),{
         create:async()=>{
           const page=await options.newScenarioPage();
@@ -45,7 +46,7 @@ export async function runAgentConversationsJourney(options:any){
         record:result=>process.stderr.write('[agent-conversation-scenario] '+JSON.stringify(result)+'\n'),
       });
     });
-    if (part === 'history') return;
+    if (part === 'history' || historyItem) return;
   }
   await options.t.test('对话交互：'+part,{timeout:180_000},async()=>{
     const fixture=await createAgentConversationFixture(options);

@@ -411,6 +411,10 @@ const historyRuns = {
     update({entries:[entry('scroll-current',100,long)],nextEntryCursor:100,run:run('completed'),requests:[]});
     historyPages.set(100,{...fixture.conversation,entries:[entry('scroll-earlier',50,long)],nextEntryCursor:undefined});
     await page.reload();await input().waitFor();
+    // The input mounts before MarkdownHost's effect and font layout finish.
+    await panel().locator('[data-entry-id="scroll-current"]').getByText(/第 59 段，用于核对可见阅读位置。/).waitFor();
+    await page.evaluate(() => document.fonts.ready.then(() => undefined));
+    await settle();
     await page.waitForFunction(()=>{const n=document.querySelector<HTMLElement>('#agent-conversation-panel .ac-stream');return Boolean(n&&n.scrollTop>100&&n.scrollHeight-n.scrollTop-n.clientHeight<2);});
     const reads=fixture.entryReads;
     // Content growth can queue a scroll event before the resize observer.

@@ -5,12 +5,17 @@ import { sharedCheckPreparation } from '../../../buildr/tools/testing/verificati
 
 const root = path.resolve(import.meta.dirname, '../..');
 const processTests = (group: string, omit: string) => fs.globSync(`test/integration/process/${group}/*.test.ts`, { cwd: root }).filter(file => path.basename(file) !== omit).sort();
+const rootTests = fs.globSync('test/integration/*.test.ts', { cwd: root }).filter(file => path.basename(file) !== 'conversations.test.ts').sort();
 const runner = path.resolve(root, '../buildr/tools/testing/run-service-tests.ts');
 /** Each integration file has one primary owner. The public full entry consumes this catalogue. */
 export const agentIntegrationChecks = [
   { id: 'agent-integration', name: 'Agent storage, conversations and local service contracts',
-    testFiles: ['test/integration/*.test.ts'], schedulingCostMs: 40000, timeoutMs: 90000,
-    resourceDemand: { workers: 2, processes: 2 } },
+    testFiles: rootTests, schedulingCostMs: 70000, timeoutMs: 90000,
+    // Database/cache/filesystem lifecycles are real IO, not a lightweight model protocol.
+    resourceDemand: { workers: 2, processes: 2, workspaceIo: 2 } },
+  { id: 'agent-integration-conversations', name: 'Agent conversation lifecycle and authenticated input contracts',
+    testFiles: ['test/integration/conversations.test.ts'], schedulingCostMs: 50000, timeoutMs: 90000,
+    resourceDemand: { workers: 1, processes: 1, workspaceIo: 1 } },
   { id: 'agent-integration-native', name: 'Agent native executor and model protocols',
     testFiles: ['test/integration/executors/**/*.test.ts'], schedulingCostMs: 15000, timeoutMs: 60000,
     resourceDemand: { workers: 2, processes: 2 } },

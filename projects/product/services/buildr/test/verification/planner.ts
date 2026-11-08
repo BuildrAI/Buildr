@@ -604,7 +604,7 @@ export function estimateVerificationPlan(plan: any, options: any = {}): any  {
   const resourceCapacityLowerBounds: any = Object.freeze(Object.entries(concurrency.resources ?? {}).map(([resource, capacity]: any) => {
     const resourceSteps: any = plan.steps.filter((step: any) => (step.resources ?? []).includes(resource));
     const stepIds: any = resourceSteps.map((step: any) => step.id);
-    const estimatedDurationMs: any = resourceSteps.reduce((total: any, step: any) => total + (Number.isFinite(cost(step)) && cost(step) >= 0 ? cost(step) : 0), 0);
+    const estimatedDurationMs: any = resourceSteps.reduce((total: any, step: any) => total + (Number.isFinite(cost(step)) && cost(step) >= 0 ? cost(step) : 0) * (step.resourceUnits?.[resource] ?? 1), 0);
     return Object.freeze({
       resource,
       capacity,
