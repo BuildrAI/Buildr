@@ -3,7 +3,7 @@ import test from 'node:test';
 import { prepareLocalSourceVerification } from '../verification/local-source-verification.ts';
 import { decodeCandidateSourceImport } from '../verification/candidate-source-reuse.ts';
 import { emptyCandidateRound, roundResult } from '../verification/candidate-round.ts';
-import { parseSourceArgs } from '../verification/source.ts';
+import { parseSourceArgs, selectSourceVerificationSubset } from '../verification/source.ts';
 const record = (id: string, status = 'passed', platform = 'darwin') => roundResult({ id, status, exitCode: status === 'passed' ? 0 : 1, durationMs: 4 }, 'round', { runId: 'original', sourceCommit: 'original', finishedAt: '2026-10-19' }, { platform, nodeVersion: '24.15.0' });
 const fixture = (records: any[]) => ({ pluginUnitStep: () => ({ id: 'dsh-plugin:unit', inputs: ['services/dsh-plugin/**'], platformScope: { kind: 'common' } }), createSourcePlan: () => ({ status: 'ready', runner: 'macos', steps: [{ id: 'unit', platformScope: { kind: 'common' } }, { id: 'native', platformScope: { kind: 'native' } }] }), readRound: () => ({ ...emptyCandidateRound('round'), records }) });
 const ownedFixture = (records: any[]) => ({
@@ -34,6 +34,12 @@ test('source verification accepts explicit invalidation step ids', () => {
   assert.deepEqual(parseSourceArgs(['--round', 'round', '--selected', 'a,b:c']).selected, ['a', 'b:c']);
   assert.throws(() => parseSourceArgs(['--selected', 'a b']), /comma-separated/u);
   assert.throws(() => parseSourceArgs(['--selected', 'a', '--selected', 'b']), /only be supplied once/u);
+});
+test('source subset keeps plan dependencies and ignores checks owned by another target', () => {
+  const plan = { steps: [{ id: 'candidate-tarball', dependsOn: [] }, { id: 'application-payload-artifact', dependsOn: ['candidate-tarball'] }] };
+  const subset = selectSourceVerificationSubset(plan, ['application-payload-artifact', 'integration-windows-native']);
+  assert.deepEqual(subset.steps.map((step: any) => step.id), ['candidate-tarball', 'application-payload-artifact']);
+  assert.throws(() => selectSourceVerificationSubset(plan, ['not-a-real-check']), /Unknown selected verification step/u);
 });
 test('source changes after a passed record invalidate only steps that own the changed inputs', async () => {
   const changed = await prepareLocalSourceVerification({ repo: '/source', roundId: 'round' }, {

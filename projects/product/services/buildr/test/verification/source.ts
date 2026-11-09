@@ -199,7 +199,11 @@ function usage(): void {
  * are not claimed; they stay absent from this round instead of failing it. */
 export function selectSourceVerificationSubset(plan: any, selectedIds: string[]): any {
   const byId: any = new Map(plan.steps.map((step: any) => [step.id, step]));
-  const unknown = selectedIds.filter((id: string) => !byId.has(id));
+  // A release selection spans the whole Candidate, including the other
+  // operating system and final-package checks. Only ids unknown to the
+  // registry are mistakes; ids outside this plan are owned by another runner.
+  const known = new Set<string>(verificationSteps.map((step: any) => step.id));
+  const unknown = selectedIds.filter((id: string) => !known.has(id));
   if (unknown.length) throw new Error(`Unknown selected verification step: ${unknown.sort().join(', ')}.`);
   const closure = new Set<string>();
   const visit = (id: string) => {
@@ -207,7 +211,7 @@ export function selectSourceVerificationSubset(plan: any, selectedIds: string[])
     closure.add(id);
     for (const dependency of byId.get(id)?.dependsOn ?? []) if (byId.has(dependency)) visit(dependency);
   };
-  for (const id of selectedIds) visit(id);
+  for (const id of selectedIds) if (byId.has(id)) visit(id);
   return { ...plan, steps: plan.steps.filter((step: any) => closure.has(step.id)), selectedStepIds: [...closure].sort() };
 }
 
