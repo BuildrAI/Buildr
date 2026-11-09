@@ -25,10 +25,10 @@ function workspace(base: any, name: any, id: any = crypto.randomUUID()): any  {
   return root;
 }
 
-function runtimeFor(profile: any, profiles: any): any  {
+function runtimeFor(profile: any, profiles: any, sharedProfileRegistryFile?: string): any  {
   const runtime: any = createRuntime();
   runtime.workspaceRepository = createWorkspaceManifestRepository(runtime);
-  runtime.registryRepository = createWorkspaceRegistryRepository(runtime, { productIdentity: DEVELOPMENT, webProfile: profile, resolveWebProfile });
+  runtime.registryRepository = createWorkspaceRegistryRepository(runtime, { productIdentity: DEVELOPMENT, webProfile: profile, resolveWebProfile, sharedProfileRegistryFile });
   Object.assign(runtime, runtime.workspaceRepository, runtime.registryRepository);
   registerWorkspaceQueryApplication(runtime);
   registerWorkspaceManagementFence(runtime, { peerProfiles: profiles, oppositeWebProfile });
@@ -41,17 +41,12 @@ function register(runtime: any, root: any): any  {
   return runtime.registerLocalWorkspace({ rootPath: root, revision: before.revision });
 }
 
-function sharedProfile(dataRoot: any): any  {
-  // options.dataRoot 会置 overridden=true；共享 Profile 语义需要 overridden=false。
-  return { ...resolveWebProfile(DEVELOPMENT, { dataRoot }), overridden: false };
-}
-
 test('共享 Profile 登记列表拒绝系统临时目录与 .worktrees 检出', (t: any) => {
   const base: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-registry-scope-'));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const sharedRoot: any = path.join(base, 'shared');
-  const profile: any = sharedProfile(sharedRoot);
-  const runtime: any = runtimeFor(profile, { development: profile });
+  const profile: any = resolveWebProfile(DEVELOPMENT, { dataRoot: sharedRoot });
+  const runtime: any = runtimeFor(profile, { development: profile }, path.join(sharedRoot, 'workspace-registry.json'));
 
   for (const root of [workspace(base, 'temp-workspace'), path.join(base, '.worktrees', 'task-demo')]) {
     if (!fs.existsSync(path.join(root, '.buildr'))) {
@@ -67,12 +62,30 @@ test('共享 Profile 登记列表拒绝系统临时目录与 .worktrees 检出',
   assert.equal(fs.existsSync(path.join(sharedRoot, 'workspace-registry.json')), false);
 });
 
+test('覆盖变量指向共享数据根仍拒绝临时目录', (t: any) => {
+  const base: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-registry-scope-'));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const sharedRoot: any = path.join(base, 'shared');
+  // dataRoot 覆盖会置 overridden=true，但写入目标即共享登记文件时仍属共享范围。
+  const profile: any = resolveWebProfile(DEVELOPMENT, { dataRoot: sharedRoot });
+  assert.equal(profile.overridden, true);
+  const runtime: any = runtimeFor(profile, { development: profile }, path.join(sharedRoot, 'workspace-registry.json'));
+
+  const root: any = workspace(base, 'temp-workspace');
+  assert.throws(
+    () => register(runtime, root),
+    (error: any) => error.code === 'workspace_registry_ephemeral_root',
+  );
+  assert.equal(runtime.listRegisteredWorkspaces().workspaces.length, 0);
+  assert.equal(fs.existsSync(path.join(sharedRoot, 'workspace-registry.json')), false);
+});
+
 test('隔离数据根继续允许登记临时位置', (t: any) => {
   const base: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-registry-scope-'));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const isolatedRoot: any = path.join(base, 'isolated');
   const profile: any = resolveWebProfile(DEVELOPMENT, { dataRoot: isolatedRoot });
-  const runtime: any = runtimeFor(profile, { development: profile });
+  const runtime: any = runtimeFor(profile, { development: profile }, path.join(base, 'shared', 'workspace-registry.json'));
 
   const root: any = workspace(base, 'temp-workspace');
   const result: any = register(runtime, root);

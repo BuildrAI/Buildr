@@ -61,7 +61,8 @@ function isolateBuildrWebData(t: any, appData: any): any  {
 function runBuildr(args: any, options: any = {}): any  {
   const targetIndex: any = args.indexOf('--target');
   const targetRoot: any = targetIndex >= 0 ? args[targetIndex + 1] : null;
-  const scopedAppData: any = options.env || process.env.BUILDR_APP_DATA_DIR
+  // 未显式传 env 时一律隔离数据根，不继承智能体环境可能指向真实数据根的 BUILDR_APP_DATA_DIR。
+  const scopedAppData: any = options.env
     ? null
     : targetRoot
       ? path.join(path.dirname(path.resolve(targetRoot)), 'app-data')
@@ -78,7 +79,8 @@ function runBuildr(args: any, options: any = {}): any  {
 async function runBuildrAsync(args: any, options: any = {}): Promise<any> {
   const targetIndex: any = args.indexOf('--target');
   const targetRoot: any = targetIndex >= 0 ? args[targetIndex + 1] : null;
-  const scopedAppData: any = options.env || process.env.BUILDR_APP_DATA_DIR
+  // 未显式传 env 时一律隔离数据根，不继承智能体环境可能指向真实数据根的 BUILDR_APP_DATA_DIR。
+  const scopedAppData: any = options.env
     ? null
     : targetRoot
       ? path.join(path.dirname(path.resolve(targetRoot)), 'app-data')
