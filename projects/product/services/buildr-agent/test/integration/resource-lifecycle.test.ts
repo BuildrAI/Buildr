@@ -233,6 +233,35 @@ test('program upgrade proceeds after exact resources release while the historica
  }finally{await f.close();}
 });
 
+test('program upgrade is not held forever by an unknown run from a dead generation',async()=>{
+ const f=await fixture({upgrade:true});try{
+  const chat=await f.start('done');await f.wait(()=>f.service.conversations.read('workspace',chat.id).run?.resourcesReleased===true);
+  const repository=new ConversationRepository(path.join(f.root,'agent-service')),saved=repository.readConversation(chat.id)!,revision=saved.view.revision,participant=chat.participants[0];
+  saved.view.retainedRuns=[{id:randomUUID(),participantId:participant.id,provider:'codex',generation:'dead-generation',status:'unknown',accepted:false,tools:[],model:chat.run!.model,startedAt:'2026-11-04T05:29:32.179Z',updatedAt:'2026-11-04T05:40:09.908Z',diagnostic:'尚未确认原执行的准确身份，保留记录并重新观察。'}];
+  repository.saveConversation(saved,revision);
+  const current=f.service.connections.read('codex');
+  f.service.connections.upgradeProgram('codex',{expectedRevision:current.revision,expectedVersion:'0.166.0'});
+  await f.wait(()=>f.service.connections.programUpdates().programs[0]?.upgrade?.state==='completed');
+  assert.equal(f.service.connections.read('codex').executable,f.installed);
+  const stale=f.service.conversations.read('workspace',chat.id).retainedRuns?.find(run=>run.generation==='dead-generation');
+  assert.equal(stale?.status,'unknown');assert.equal(stale?.resourcesReleased,undefined);assert.deepEqual(f.sent,['done']);
+ }finally{await f.close();}
+});
+
+test('program upgrade still waits for an unknown run whose generation is alive',async()=>{
+ const f=await fixture({upgrade:true,oldOwnerAlive:true});try{
+  const chat=await f.start('done');await f.wait(()=>f.service.conversations.read('workspace',chat.id).run?.resourcesReleased===true);
+  const repository=new ConversationRepository(path.join(f.root,'agent-service')),saved=repository.readConversation(chat.id)!,revision=saved.view.revision,participant=chat.participants[0];
+  saved.view.retainedRuns=[{id:randomUUID(),participantId:participant.id,provider:'codex',generation:'live-generation',status:'unknown',accepted:false,tools:[],model:chat.run!.model,startedAt:'2026-11-04T05:29:32.179Z',updatedAt:'2026-11-04T05:40:09.908Z',diagnostic:'尚未确认原执行的准确身份，保留记录并重新观察。'}];
+  repository.saveConversation(saved,revision);
+  const current=f.service.connections.read('codex');
+  f.service.connections.upgradeProgram('codex',{expectedRevision:current.revision,expectedVersion:'0.166.0'});
+  await f.wait(()=>f.service.connections.programUpdates().programs[0]?.upgrade?.state==='waiting');
+  await new Promise(resolve=>setTimeout(resolve,200));
+  assert.equal(f.service.connections.programUpdates().programs[0]?.upgrade?.state,'waiting');assert.equal(f.service.connections.read('codex').executable,f.original);
+ }finally{await f.close();}
+});
+
 
 test('natural completion automatically releases its source and gateway; historical observation releases again',async()=>{
  const f=await fixture();try{

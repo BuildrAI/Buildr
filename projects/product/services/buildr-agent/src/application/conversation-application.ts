@@ -2189,7 +2189,13 @@ export class ConversationApplication {
     await this.releaseIdleSources();
     if ([...this.sourceConnections].some(([id, connection]) => connection === connectionId && this.sourceRuntimes.has(id))) return false;
     return !this.options.repository.listPendingStates(true).some(record => {
-      return conversationRuns(record.view).some(run => (!run.resourcesReleased && unfinishedRun(run) || record.view.requests.some(request => request.runId === run.id)) && record.participants.some(item => item.id === run.participantId && item.connectionId === connectionId));
+      return conversationRuns(record.view).some(run => {
+        // A dead generation cannot still own the program: its unconfirmed record
+        // stays visible, but it must not hold every future upgrade forever.
+        const alive = run.generation === this.options.generation || this.options.generationAlive?.(run.generation) === true;
+        const unfinished = !run.resourcesReleased && unfinishedRun(run) || record.view.requests.some(request => request.runId === run.id);
+        return alive && unfinished && record.participants.some(item => item.id === run.participantId && item.connectionId === connectionId);
+      });
     });
   }
 
