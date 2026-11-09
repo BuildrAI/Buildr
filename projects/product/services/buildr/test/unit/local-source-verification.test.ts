@@ -48,6 +48,50 @@ test('source changes after a passed record invalidate only steps that own the ch
   assert.deepEqual(unrelated.missingStepIds, ['integration-code']);
   assert.deepEqual(unrelated.invalidatedStepIds, ['integration-code']);
 });
+test('broad content identity changes reuse a check when source ownership is unaffected', async () => {
+  const previous = { key: 'sha256-old', stepId: 'integration-connections', contentIdentity: 'sha256-old-content',
+    recipeIdentity: 'sha256-recipe', environmentIdentity: 'sha256-environment' };
+  const current = { ...previous, key: 'sha256-new', contentIdentity: 'sha256-new-content' };
+  const record = roundResult({ id: 'integration-connections', status: 'passed', exitCode: 0, durationMs: 4, inputIdentity: previous },
+    'round', { runId: 'original', sourceCommit: 'original', finishedAt: '2026-10-19' }, { platform: 'darwin', nodeVersion: '24.15.0' });
+  const fixture = {
+    createSourcePlan: () => ({ status: 'ready', runner: 'macos', steps: [{
+      id: 'integration-connections', platformScope: { kind: 'common' }, reuse: { scope: 'repository' },
+      executor: { type: 'node', file: 'test/verification/example.ts' },
+    }] }),
+    readRound: () => ({ ...emptyCandidateRound('round'), records: [record] }),
+    sourceHead: () => 'new', changedPaths: () => ['projects/product/services/buildr/src/modules/code/application/example.ts'],
+    inputsFor: () => current,
+  };
+  const reused = await prepareLocalSourceVerification({ repo: '/source', roundId: 'round' }, fixture);
+  assert.equal(reused.status, 'ready');
+  assert.deepEqual(reused.missingStepIds, []);
+  assert.deepEqual(reused.invalidatedStepIds, []);
+
+  const affected = await prepareLocalSourceVerification({ repo: '/source', roundId: 'round' }, {
+    ...fixture,
+    changedPaths: () => ['projects/product/services/buildr/src/modules/connection-skills/application/example.ts'],
+  });
+  assert.deepEqual(affected.missingStepIds, ['integration-connections']);
+  assert.deepEqual(affected.invalidatedStepIds, ['integration-connections']);
+});
+test('unaffected source content still rejects recipe changes', async () => {
+  const previous = { key: 'sha256-old', stepId: 'integration-connections', contentIdentity: 'sha256-old-content',
+    recipeIdentity: 'sha256-recipe', environmentIdentity: 'sha256-environment' };
+  const record = roundResult({ id: 'integration-connections', status: 'passed', exitCode: 0, durationMs: 4, inputIdentity: previous },
+    'round', { runId: 'original', sourceCommit: 'original', finishedAt: '2026-10-19' }, { platform: 'darwin', nodeVersion: '24.15.0' });
+  const changed = await prepareLocalSourceVerification({ repo: '/source', roundId: 'round' }, {
+    createSourcePlan: () => ({ status: 'ready', runner: 'macos', steps: [{
+      id: 'integration-connections', platformScope: { kind: 'common' }, reuse: { scope: 'repository' },
+      executor: { type: 'node', file: 'test/verification/example.ts' },
+    }] }),
+    readRound: () => ({ ...emptyCandidateRound('round'), records: [record] }),
+    sourceHead: () => 'new', changedPaths: () => ['projects/product/services/buildr/src/modules/code/application/example.ts'],
+    inputsFor: () => ({ ...previous, key: 'sha256-new', contentIdentity: 'sha256-new-content', recipeIdentity: 'sha256-new-recipe' }),
+  });
+  assert.deepEqual(changed.missingStepIds, ['integration-connections']);
+  assert.deepEqual(changed.invalidatedStepIds, ['integration-connections']);
+});
 test('plugin source changes invalidate only the plugin step', async () => {
   const pluginChanged = await prepareLocalSourceVerification({ repo: '/source', roundId: 'round', packages: ['dsh-plugin'] }, {
     ...fixture([record('dsh-plugin:unit')]),

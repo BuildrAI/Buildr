@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { collectVerificationReuseSnapshot, createVerificationReuseIdentity, verificationFileSteps, verificationFileObservations } from './verification-reuse.ts';
+import { createChangedVerificationSourcePathsReader, sourceChangeAffected, verificationInputApplicabilityForSourceChange } from './source-change-applicability.ts';
 
 export const ROUND_SCHEMA = 'buildr.candidate-round-log/v1';
 export const ROUND_RESULT_SCHEMA = 'buildr.candidate-round-result/v1';
@@ -61,6 +62,10 @@ export function createCandidateRoundExecution(plan: any, options: any, dependenc
     step.executor ? verificationFileSteps(step, options.productRoot) : []]));
   const files = [...filesByCheck.values()].flat();
   const observedSteps = [...plan.steps.filter((step: any) => step.reuse), ...files];
+  let sourceCommit: string | null = null;
+  try { sourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: options.productRoot, encoding: 'utf8' }).trim(); } catch { /* Diagnostic only. */ }
+  const readChangedPaths = dependencies.changedPaths ?? createChangedVerificationSourcePathsReader(options.productRoot);
+  const affectedFor = (record: any, step: any) => sourceChangeAffected(step, record, sourceCommit, readChangedPaths);
   const observe = () => {
     if (!observedSteps.length) return null;
     try { return (dependencies.collectSnapshot ?? collectVerificationReuseSnapshot)({ ...options, steps: observedSteps }); }
@@ -86,15 +91,15 @@ export function createCandidateRoundExecution(plan: any, options: any, dependenc
         && prior.environment?.nodeVersion === process.versions.node && prior.origin?.runId) priorFiles.set(file.id, prior);
     }
     const currentIdentity = before && step.reuse ? createVerificationReuseIdentity(step, before) : null;
-    const applicable = !step.reuse || verificationInputApplicability(record?.result?.inputIdentity, currentIdentity).applicable;
+    const affected = step.reuse ? affectedFor(record, step) : undefined;
+    const applicable = !step.reuse || verificationInputApplicabilityForSourceChange(record?.result?.inputIdentity, currentIdentity, affected).applicable;
+    const completeFiles = affected === false || members.length > 0 && members.every(file => priorFiles.has(file.id))
+      && record?.result?.roundFiles?.length === members.length;
     if (applicable && passedRoundRecord(record, roundId, step, plan.runner ?? process.platform)
-      && (!record.result.roundFiles || members.length > 0 && members.every(file => priorFiles.has(file.id))
-        && record.result.roundFiles.length === members.length)) hits.set(step.id, record);
+      && (!record.result.roundFiles || completeFiles)) hits.set(step.id, record);
   }
   const steps = plan.steps.map((step: any) => ({ id: step.id, disposition: hits.has(step.id) ? 'reuse' : 'execute',
     reasons: [hits.has(step.id) ? 'passed-in-this-round' : invalidStepIds.has(step.id) ? 'source-inputs-changed' : 'failed-or-not-run-in-this-round'], inputScope: 'candidate-round' }));
-  let sourceCommit: string | null = null;
-  try { sourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: options.productRoot, encoding: 'utf8' }).trim(); } catch { /* Diagnostic only. */ }
   const persist = () => { log = { ...log, records: [...records.values()] }; if (config.output) writeCandidateRound(config.output, log); return log; };
   return { hits, explanation: { steps, estimate: { executedCount: steps.length - hits.size, reusedCount: hits.size, remainingWorkMs: 0, dependencyCriticalPathMs: 0 } },
     async executeFiles(step: any, execute: any, context: any) {
@@ -124,7 +129,7 @@ export function createCandidateRoundExecution(plan: any, options: any, dependenc
           const step = plan.steps.find((step: any) => step.id === result.id);
           const prior = hits.get(result.id);
           const current = after && step?.reuse ? createVerificationReuseIdentity(step, after) : null;
-          if (step?.reuse && !verificationInputApplicability(prior?.result?.inputIdentity, current).applicable) {
+          if (step?.reuse && !verificationInputApplicabilityForSourceChange(prior?.result?.inputIdentity, current, affectedFor(prior, step)).applicable) {
             Object.assign(result, { status: 'failed', exitCode: 1, failureCode: 'candidate-reused-input-drift' });
           }
           continue;

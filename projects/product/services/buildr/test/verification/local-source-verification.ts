@@ -1,50 +1,16 @@
 import { pluginSourcePhaseFiles, pluginSourcePhaseStep } from '../../../dsh-plugin/tools/source-phase-definition.ts';
 import { collectVerificationReuseSnapshot, createVerificationReuseIdentity } from './verification-reuse.ts';
-import { verificationInputApplicability } from './result-applicability.ts';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createSourceVerificationPlan } from './source.ts';
 import { encodeCandidateSourceImport } from './candidate-source-reuse.ts';
 import { assertCandidateRound, passedRoundRecord, readCandidateRound } from './candidate-round.ts';
-import { verificationStepOwnership, VERIFICATION_GOVERNED_REPOSITORY_INPUTS, isVerificationGovernedRepositoryInput } from './ownership.ts';
-import { matchesInput } from './planner.ts';
 import { verificationSteps } from './registry.ts';
-
-const BUILDR_PREFIX = 'projects/product/services/buildr/';
-const PRODUCT_PREFIX = 'projects/product/';
-const RELEASE_SKILLS_PREFIX = 'skills/buildr-release/';
+import { createChangedVerificationSourcePathsReader, verificationStepAffectedBy, verificationInputApplicabilityForSourceChange } from './source-change-applicability.ts';
 
 function sourceHead(repo: string): string | null {
   try { return execFileSync('git', ['-C', repo, 'rev-parse', 'HEAD'], { encoding: 'utf8', timeout: 10_000 }).trim() || null; }
   catch { return null; }
-}
-
-function changedSourcePaths(repo: string, from: string, to: string): string[] | null {
-  try {
-    return execFileSync('git', ['-C', repo, 'diff', '--name-only', from, to, '--', BUILDR_PREFIX, PRODUCT_PREFIX, RELEASE_SKILLS_PREFIX, ...VERIFICATION_GOVERNED_REPOSITORY_INPUTS], { encoding: 'utf8', timeout: 30_000, maxBuffer: 16 * 1024 * 1024 })
-      .split(/\r?\n/u).filter(Boolean);
-  } catch { return null; }
-}
-
-/** Mirrors the changed-path conventions consumed by the verification planner. */
-function normalizedProductPath(value: string): string | null {
-  if (value.startsWith(BUILDR_PREFIX)) return value.slice(BUILDR_PREFIX.length);
-  if (value.startsWith(PRODUCT_PREFIX)) return value.slice(PRODUCT_PREFIX.length);
-  if (value.startsWith(RELEASE_SKILLS_PREFIX)) return value;
-  if (isVerificationGovernedRepositoryInput(value)) return value;
-  return null;
-}
-
-function stepAffectedBy(step: any, changed: string[]): boolean | null {
-  let ownership: any;
-  try { ownership = Array.isArray(step.inputs) ? step : verificationStepOwnership(step.id, step.executor); }
-  catch { return null; }
-  const inputs: string[] = ownership.inputs;
-  return changed.some(value => {
-    const productPath = normalizedProductPath(value);
-    return productPath !== null && inputs.some((pattern: string) => matchesInput(productPath, pattern))
-      && !(ownership.inputExclusions ?? []).some((pattern: string) => matchesInput(productPath, pattern));
-  });
 }
 
 /** Candidate readiness reads this round's ordinary results, without a global
@@ -67,7 +33,7 @@ export async function prepareLocalSourceVerification(options: {
     return { ...definition, inputs: pluginUnit.inputs, inputExclusions: pluginUnit.inputExclusions, executor: { ...definition.executor, cwd: pluginRoot }, platformScope: { kind: 'common' } };
   }))()] : [])];
   const head = (dependencies.sourceHead ?? sourceHead)(options.repo);
-  const readChangedPaths = dependencies.changedPaths ?? changedSourcePaths;
+  const readChangedPaths = dependencies.changedPaths ?? createChangedVerificationSourcePathsReader(options.repo);
   const changedBySource = new Map<string, string[] | null>();
   const changedSince = (source: string) => {
     if (!changedBySource.has(source)) changedBySource.set(source, readChangedPaths(options.repo, source, head!));
@@ -75,6 +41,7 @@ export async function prepareLocalSourceVerification(options: {
   };
   let snapshot: any;
   const inputsFor = (step: any) => {
+    if (dependencies.inputsFor) return dependencies.inputsFor(step);
     try {
       snapshot ??= collectVerificationReuseSnapshot({ productRoot: path.join(options.repo, 'projects/product/services/buildr'), steps: required, env: options.env });
       return createVerificationReuseIdentity(step, snapshot);
@@ -84,15 +51,15 @@ export async function prepareLocalSourceVerification(options: {
   const missingStepIds = required.filter((step: any) => {
     const record = log.records.find((entry: any) => passedRoundRecord(entry, options.roundId, step, plan.runner));
     if (!record) return true;
-    if (step.reuse && !verificationInputApplicability(record.result?.inputIdentity, inputsFor(step)).applicable) {
+    const recordedSource = record.origin?.sourceCommit;
+    const changed = head && recordedSource && recordedSource !== head ? changedSince(recordedSource) : undefined;
+    const affected = changed === undefined ? undefined : changed === null ? null : verificationStepAffectedBy(step, changed);
+    if (affected === null || affected === true) {
       invalidatedStepIds.push(step.id); return true;
     }
-    const recordedSource = record.origin?.sourceCommit;
-    if (!head || !recordedSource || recordedSource === head) return false;
-    const changed = changedSince(recordedSource);
-    if (changed === null) { invalidatedStepIds.push(step.id); return true; }
-    const affected = stepAffectedBy(step, changed);
-    if (affected === null || affected) { invalidatedStepIds.push(step.id); return true; }
+    if (step.reuse && !verificationInputApplicabilityForSourceChange(record.result?.inputIdentity, inputsFor(step), affected).applicable) {
+      invalidatedStepIds.push(step.id); return true;
+    }
     return false;
   }).map((step: any) => step.id);
   const invalidated = [...new Set(invalidatedStepIds)].sort();
