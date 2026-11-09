@@ -718,6 +718,10 @@ export class ConversationApplication {
     const source = input.modelAccountId ? this.options.modelAccess?.accounts.snapshot(input.modelAccountId) : undefined;
     if (input.modelAccountId && (!source || !source.enabled || source.status !== 'ready')) fail('agent_model_source_unavailable', '所选套餐尚未连接，请检查账号。', 409);
     if (source && input.modelAccountIdentity && source.identity !== input.modelAccountIdentity) fail('agent_model_source_changed', '套餐登录来源已变化，请重新选择套餐模型。', 409);
+    // Qoder resolves third-party models only through its interactive BYOK wizard,
+    // which the SDK control channel used for execution does not expose. Selecting
+    // another vendor here always failed after dispatch, so refuse it up front.
+    if (source && connection.provider === 'qoder' && !['qoder', 'native-qoder'].includes(source.provider)) fail('agent_model_source_unsupported', 'Qoder Agent 暂不支持选择其他供应商的模型，请改用 Qoder 原生模型。', 409);
     // The revision is an observation hint, not a selection identity. Current source,
     // identity, model availability and capability are revalidated below.
     const availableModels = source?.models ?? connection.models;
