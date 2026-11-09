@@ -75,6 +75,11 @@ let sourceReuseSnapshot: ReturnType<typeof collectVerificationReuseSnapshot> | u
 function validateSourceRecord(record: any, stepId: string, runner: string): boolean {
   const step = verificationSteps.find((item: any) => item.id === stepId);
   if (!step || !process.env.BUILDR_SELECTION_ID || !passedRoundRecord(record, process.env.BUILDR_SELECTION_ID, step, runner)) return false;
+  // The maintainer selected the exact checks to execute this round. A check
+  // outside that selection keeps its passed record and is transported as such;
+  // it is not revalidated against today's environment because no fresh run is
+  // claimed. Missing records or unselected checks never reach this branch.
+  if (record.result?.retainedByUserInstruction === true) return true;
   if (!step.reuse) return true;
   try {
     sourceReuseSnapshot ??= collectVerificationReuseSnapshot({ productRoot, steps: verificationSteps });

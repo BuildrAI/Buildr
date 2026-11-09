@@ -48,3 +48,21 @@ test('candidate round reuses a passed check when changed source is outside its o
   assert.equal(execute(['projects/product/services/buildr/src/modules/code/application/example.ts']).hits.has(step.id), true);
   assert.equal(execute(['projects/product/services/buildr/src/modules/connection-skills/application/example.ts']).hits.has(step.id), false);
 });
+
+test('user-selected scope executes selected checks and retains other passed records without fresh identity', () => {
+  const step = (id: string) => ({
+    id, platformScope: { kind: 'common' as const }, reuse: { scope: 'repository' as const },
+    executor: { type: 'node', file: `test/verification/${id}.ts` },
+  });
+  const imports = { ...emptyCandidateRound('round'), records: [record('selected'), record('retained')] };
+  const execution = createCandidateRoundExecution({ runner: 'darwin', steps: [step('selected'), step('retained')] },
+    { productRoot: process.cwd(), round: { roundId: 'round', imports, invalidStepIds: ['selected'], selectedStepIds: ['selected'] } },
+    { collectSnapshot: () => null, changedPaths: () => ['projects/product/services/buildr/src/modules/code/application/example.ts'] });
+  assert.equal(execution.hits.has('selected'), false);
+  assert.equal(execution.hits.has('retained'), true);
+  assert.deepEqual(execution.explanation.steps.find((item: any) => item.id === 'selected').reasons, ['source-inputs-changed']);
+  assert.deepEqual(execution.explanation.steps.find((item: any) => item.id === 'retained').reasons, ['retained-by-user-instruction']);
+  const log = execution.finish([{ id: 'selected', status: 'passed', exitCode: 0, durationMs: 1, startedAt: '2026-10-20T00:00:00.000Z',
+    finishedAt: '2026-10-20T00:00:00.001Z', childOutcome: 'passed', childExitCode: 0, childSignal: null, processCleanup: { status: 'clean' } }], true);
+  assert.equal(log.records.find((item: any) => item.identity.stepId === 'retained').result.retainedByUserInstruction, true);
+});

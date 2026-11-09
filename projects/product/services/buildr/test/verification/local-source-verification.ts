@@ -17,6 +17,7 @@ function sourceHead(repo: string): string | null {
  * cache or content, recipe and dependency fingerprints. */
 export async function prepareLocalSourceVerification(options: {
   repo: string; sourceFile?: string; base?: string; platform?: string; env?: NodeJS.ProcessEnv; packages?: string[]; roundId: string;
+  selectedStepIds?: string[];
 }, dependencies: any = {}): Promise<any> {
   const plan = (dependencies.createSourcePlan ?? createSourceVerificationPlan)(options.platform ?? process.platform);
   const buildrRequired = options.packages?.includes('buildr') ?? true;
@@ -48,9 +49,16 @@ export async function prepareLocalSourceVerification(options: {
     } catch { return null; }
   };
   const invalidatedStepIds: string[] = [];
+  const retainedStepIds: string[] = [];
+  const missingBaselineStepIds: string[] = [];
+  const selectedStepIds = new Set<string>(options.selectedStepIds ?? []);
   const missingStepIds = required.filter((step: any) => {
     const record = log.records.find((entry: any) => passedRoundRecord(entry, options.roundId, step, plan.runner));
     if (!record) return true;
+    if (selectedStepIds.size > 0 && !selectedStepIds.has(step.id)) {
+      retainedStepIds.push(step.id);
+      return false;
+    }
     const recordedSource = record.origin?.sourceCommit;
     const changed = head && recordedSource && recordedSource !== head ? changedSince(recordedSource) : undefined;
     const affected = changed === undefined ? undefined : changed === null ? null : verificationStepAffectedBy(step, changed);
@@ -62,16 +70,25 @@ export async function prepareLocalSourceVerification(options: {
     }
     return false;
   }).map((step: any) => step.id);
+  if (selectedStepIds.size > 0) for (const step of required) {
+    if (selectedStepIds.has(step.id)) continue;
+    const record = log.records.find((entry: any) => passedRoundRecord(entry, options.roundId, step, plan.runner));
+    if (!record) missingBaselineStepIds.push(step.id);
+  }
   const invalidated = [...new Set(invalidatedStepIds)].sort();
   if (buildrRequired && plan.status !== 'ready') return { status: 'local-verification-required', missingStepIds, invalidatedStepIds: invalidated, diagnostic: plan.diagnostic, nextActions: ['在声明支持的本机平台执行。'] };
   const productRoot = path.join(options.repo, 'projects/product/services/buildr');
   return { status: missingStepIds.length ? 'local-verification-required' : 'ready', runner: plan.runner,
     roundId: options.roundId, missingStepIds, invalidatedStepIds: invalidated, recordCount: log.records.length, verificationBase: options.base ?? null,
+    ...(selectedStepIds.size > 0 ? { selectedStepIds: [...selectedStepIds].sort(), retainedStepIds: [...new Set(retainedStepIds)].sort(), missingBaselineStepIds: [...new Set(missingBaselineStepIds)].sort() } : {}),
     verificationPlan: { steps: required.map((step: any) => ({ id: step.id, disposition: missingStepIds.includes(step.id) ? 'execute' : 'reuse',
-      reasons: [missingStepIds.includes(step.id) ? (invalidated.includes(step.id) ? 'source-inputs-changed' : 'failed-or-not-run-in-this-round') : 'passed-in-this-round'] })) },
+      reasons: [missingStepIds.includes(step.id) ? (invalidated.includes(step.id) ? 'source-inputs-changed' : selectedStepIds.size > 0 ? 'user-selected-execution' : 'failed-or-not-run-in-this-round')
+        : retainedStepIds.includes(step.id) ? 'retained-by-user-instruction' : 'passed-in-this-round'] })) },
     ...(missingStepIds.length ? {} : { transport: encodeCandidateSourceImport(log) }),
     nextActions: missingStepIds.length ? [
-      `在 ${productRoot} 执行 tools/development/run-development-node test/verification/source.ts --round ${options.roundId}${options.base ? ` --base ${options.base}` : ''}${options.sourceFile ? ` --output ${options.sourceFile}` : ''}${invalidated.length ? ` --invalidate ${invalidated.join(',')}` : ''}；同轮只补失败及未执行项。插件使用同一 --round 和 --output 运行 tools/verify-source.ts${invalidated.includes('dsh-plugin:unit') ? ' --invalidate dsh-plugin:unit' : ''}。`,
+      `在 ${productRoot} 执行 tools/development/run-development-node test/verification/source.ts --round ${options.roundId}${options.base ? ` --base ${options.base}` : ''}${options.sourceFile ? ` --output ${options.sourceFile}` : ''}${invalidated.length ? ` --invalidate ${invalidated.join(',')}` : ''}${selectedStepIds.size > 0 ? ` --selected ${[...selectedStepIds].sort().join(',')}` : ''}；同轮只补失败及未执行项。插件使用同一 --round 和 --output 运行 tools/verify-source.ts${invalidated.includes('dsh-plugin:unit') ? ' --invalidate dsh-plugin:unit' : ''}。`,
       ...(invalidated.length ? [`源码自记录后发生变化，仅需重跑受影响步骤：${invalidated.join(', ')}。`] : []),
+      ...(selectedStepIds.size > 0 ? [`本轮按用户指定范围验收：${[...selectedStepIds].sort().join(', ')}。`] : []),
+      ...(missingBaselineStepIds.length ? [`用户范围外的检查缺少同轮已通过记录，无法保留：${[...new Set(missingBaselineStepIds)].sort().join(', ')}。`] : []),
     ] : [] };
 }

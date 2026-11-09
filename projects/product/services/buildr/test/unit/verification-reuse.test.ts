@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
-import { createVerificationReuseIdentity, reusedVerificationResult, validateVerificationReuseRecord,
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { createVerificationReuseIdentity, dependencyEnvironmentIdentity, reusedVerificationResult, validateVerificationReuseRecord,
   type VerificationReuseSnapshot, type VerificationReuseStep, type VerificationReuseRecord } from '../verification/verification-reuse.ts';
 import { verificationSteps, verificationStepExecutionInputs } from '../verification/registry.ts';
 
@@ -182,4 +185,22 @@ test('only the observed semantic input consumers declare selectors; artifact bro
   const inputs = Object.fromEntries(verificationSteps.flatMap((item: VerificationReuseStep) => item.reuse && item.reuse.inputs ? [[item.id, item.reuse.inputs]] : []));
   assert.deepEqual(inputs, { 'spec-change-consistency': ['BUILDR_VERIFICATION_BASE'], 'runtime-skill-projection': ['BUILDR_CHANGED_PATHS_JSON'], 'docs-quality': ['BUILDR_CHANGED_PATHS_JSON'] });
   assert.equal(verificationSteps.find((item: VerificationReuseStep) => item.id === 'artifact-browser-core').reuse, false);
+});
+
+test('dependency environment identity follows declarations and installed versions, not source-derived build output', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-dependency-identity-'));
+  try {
+    fs.writeFileSync(path.join(root, 'package.json'), '{"name":"fixture"}');
+    fs.writeFileSync(path.join(root, 'package-lock.json'), '{"lockfileVersion":3}');
+    fs.mkdirSync(path.join(root, 'node_modules', '@fixture', 'pkg'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'node_modules', '.package-lock.json'), '{"packages":{}}');
+    const first = dependencyEnvironmentIdentity(root);
+    assert.match(first ?? '', /^sha256-/u);
+    // Rebuilding a linked workspace package mutates node_modules bytes without
+    // changing what was installed; it must not invalidate every check.
+    fs.writeFileSync(path.join(root, 'node_modules', '@fixture', 'pkg', 'build.js'), 'changed');
+    assert.equal(dependencyEnvironmentIdentity(root), first);
+    fs.writeFileSync(path.join(root, 'node_modules', '.package-lock.json'), '{"packages":{"@fixture/pkg":{}}}');
+    assert.notEqual(dependencyEnvironmentIdentity(root), first);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });

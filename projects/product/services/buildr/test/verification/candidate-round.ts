@@ -50,6 +50,10 @@ export function createCandidateRoundExecution(plan: any, options: any, dependenc
   if (!config) return null;
   const roundId = config.roundId;
   const invalidStepIds = new Set<string>(config.invalidStepIds ?? []);
+  // A user may declare the exact checks that must execute this round. Checks
+  // outside that declaration keep the round's passed record without claiming
+  // a fresh execution; a missing baseline is a miss, never an invented pass.
+  const selectedStepIds = new Set<string>(config.selectedStepIds ?? []);
   let log = readCandidateRound(config.output, roundId);
   const imports = config.imports ? (Array.isArray(config.imports) ? config.imports : [config.imports]) : [];
   const records = new Map<string, any>();
@@ -77,10 +81,15 @@ export function createCandidateRoundExecution(plan: any, options: any, dependenc
   const fileKey = (step: any, snapshot: any) => snapshot ? createVerificationReuseIdentity(step, snapshot)?.key : null;
   const priorFiles = new Map<string, any>();
   const hits = new Map<string, any>();
+  const retained = new Set<string>();
   for (const step of plan.steps) {
-    if (invalidStepIds.has(step.id) || options.force === true) continue;
     const record = records.get(`${step.id}:${process.platform}`)
       ?? [...records.values()].find(record => passedRoundRecord(record, roundId, step, plan.runner ?? process.platform));
+    if (selectedStepIds.size > 0 && !selectedStepIds.has(step.id)) {
+      if (passedRoundRecord(record, roundId, step, plan.runner ?? process.platform)) { hits.set(step.id, record); retained.add(step.id); }
+      continue;
+    }
+    if (invalidStepIds.has(step.id) || options.force === true) continue;
     const members = filesByCheck.get(step.id) ?? [];
     for (const file of members) {
       const matches = record?.result?.roundFiles?.filter((item: any) => item.file === file.executor.files[0]) ?? [];
@@ -99,7 +108,8 @@ export function createCandidateRoundExecution(plan: any, options: any, dependenc
       && (!record.result.roundFiles || completeFiles)) hits.set(step.id, record);
   }
   const steps = plan.steps.map((step: any) => ({ id: step.id, disposition: hits.has(step.id) ? 'reuse' : 'execute',
-    reasons: [hits.has(step.id) ? 'passed-in-this-round' : invalidStepIds.has(step.id) ? 'source-inputs-changed' : 'failed-or-not-run-in-this-round'], inputScope: 'candidate-round' }));
+    reasons: [hits.has(step.id) ? (retained.has(step.id) ? 'retained-by-user-instruction' : 'passed-in-this-round')
+      : invalidStepIds.has(step.id) ? 'source-inputs-changed' : selectedStepIds.size > 0 ? 'user-selected-execution' : 'failed-or-not-run-in-this-round'], inputScope: 'candidate-round' }));
   const persist = () => { log = { ...log, records: [...records.values()] }; if (config.output) writeCandidateRound(config.output, log); return log; };
   return { hits, explanation: { steps, estimate: { executedCount: steps.length - hits.size, reusedCount: hits.size, remainingWorkMs: 0, dependencyCriticalPathMs: 0 } },
     async executeFiles(step: any, execute: any, context: any) {
@@ -128,6 +138,7 @@ export function createCandidateRoundExecution(plan: any, options: any, dependenc
         if (result.disposition === 'reused') {
           const step = plan.steps.find((step: any) => step.id === result.id);
           const prior = hits.get(result.id);
+          if (retained.has(result.id)) continue;
           const current = after && step?.reuse ? createVerificationReuseIdentity(step, after) : null;
           if (step?.reuse && !verificationInputApplicabilityForSourceChange(prior?.result?.inputIdentity, current, affectedFor(prior, step)).applicable) {
             Object.assign(result, { status: 'failed', exitCode: 1, failureCode: 'candidate-reused-input-drift' });
@@ -162,6 +173,11 @@ export function createCandidateRoundExecution(plan: any, options: any, dependenc
         }
         const record = roundResult(result, roundId, origin, environment);
         records.set(key(record), record);
+      }
+      for (const id of retained) {
+        const step = plan.steps.find((step: any) => step.id === id);
+        const record = [...records.values()].find(item => item.identity?.stepId === id && passedRoundRecord(item, roundId, step, plan.runner ?? process.platform));
+        if (record) record.result.retainedByUserInstruction = true;
       }
       return persist();
     },

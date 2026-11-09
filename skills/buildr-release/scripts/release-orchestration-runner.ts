@@ -1123,9 +1123,15 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       if (!existing && state.candidate.dispatchRejected === true) state.candidate.dispatchRequested = false;
       if (!existing && !state.candidate.dispatchRequested) {
         phase = 'source-verification';
+        const selectedStepIds: string[] | undefined = options.selectedChecks ?? state.verificationSelection?.selectedStepIds;
+        if (options.selectedChecks?.length) {
+          state.verificationSelection = { selectedStepIds: [...options.selectedChecks].sort(), source: 'user-instruction', recordedAt: new Date().toISOString() };
+          save();
+        }
         const localSource = await (dependencies.prepareLocalSourceVerification ?? prepareLocalSourceVerification)({
           repo, sourceFile: options.sourceVerification ?? path.join(workspace, 'projects/product/services/buildr/build/verification/candidate-rounds', `${key}.json`), roundId: key, base: selection.devBaseline,
           packages: [...(!scoped || plan.requirements.buildr ? ['buildr'] : []), ...(scoped && plan.requirements.plugin ? ['dsh-plugin'] : [])],
+          ...(selectedStepIds?.length ? { selectedStepIds } : {}),
         });
         if (localSource.status !== 'ready') {
           save();
@@ -1325,7 +1331,8 @@ export function compactReleaseOperation(value: any): any {
     if (item) summary[key] = Object.fromEntries(['runId', 'runAttempt', 'id', 'status', 'conclusion', 'url', 'sourceCommit'].filter(field => item[field] !== undefined).map(field => [field, item[field]]));
   }
   if (value.localSource) summary.localSource = { status: value.localSource.status, missingStepIds: value.localSource.missingStepIds,
-    nextActions: value.localSource.nextActions };
+    selectedStepIds: value.localSource.selectedStepIds, retainedStepIds: value.localSource.retainedStepIds,
+    missingBaselineStepIds: value.localSource.missingBaselineStepIds, nextActions: value.localSource.nextActions };
   if (value.localArtifact) summary.localArtifact = { artifactDirectory: value.localArtifact.artifactDirectory,
     evidenceDirectory: value.localArtifact.evidenceDirectory, runId: value.localArtifact.runId, artifactId: value.localArtifact.artifactId,
     sha256: value.localArtifact.artifact?.sha256, checks: value.localArtifact.checks, missingEvidenceIds: value.localArtifact.missingEvidenceIds, nextAction: value.localArtifact.nextAction };
@@ -1369,6 +1376,7 @@ function parseOptions(argv: any): any  {
     sourceVerification: options['source-verification'],
     artifactVerification: options['artifact-verification'],
     verificationSource: options['verification-source'],
+    selectedChecks: options['selected-checks'] ? options['selected-checks'].split(',').map((id: string) => id.trim()).filter(Boolean) : undefined,
     stopAfter: options['stop-after'],
     waitTimeoutMs: options['wait-timeout-ms'] ? Number(options['wait-timeout-ms']) : undefined,
     waitIntervalMs: options['wait-interval-ms'] ? Number(options['wait-interval-ms']) : undefined,
@@ -1377,7 +1385,7 @@ function parseOptions(argv: any): any  {
     supportTasks: options['support-tasks'] ? options['support-tasks'].split(',').filter(Boolean) : undefined,
   };
   if (options['stop-after'] !== undefined) throw new Error('--stop-after candidate is only supported by normal prepare, without --input.');
-  if (!options.input) throw new Error('Usage: release-orchestration-runner.ts <prepare|inspect|publish|resume> --workspace <root> [--packages buildr|dsh-plugin|buildr,dsh-plugin] [--version <main-version>] [--plugin-version <plugin-version>] [--baseline <ref>] [--source <sha> ...] [--stop-after candidate] [--authorized] [--recover-publication]');
+    if (!options.input) throw new Error('Usage: release-orchestration-runner.ts <prepare|inspect|publish|resume> --workspace <root> [--packages buildr|dsh-plugin|buildr,dsh-plugin] [--version <main-version>] [--plugin-version <plugin-version>] [--baseline <ref>] [--source <sha> ...] [--selected-checks <step-id,...>] [--stop-after candidate] [--authorized] [--recover-publication]');
   if (!['compact', 'full'].includes(options.detail)) throw new Error('--detail must be compact or full.');
   const input: any = JSON.parse(fs.readFileSync(path.resolve(options.input), 'utf8'));
   if (action === 'inspect') return { action, detail: options.detail, output: options.output ? path.resolve(options.output) : null, expectedTimelineIdentity: options['timeline-identity'] ?? null, inspectedResult: input };
@@ -1396,7 +1404,7 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
       process.on('SIGTERM', terminate);
     }
     if (options.help) {
-      process.stdout.write('Usage: release-orchestration-runner.ts <prepare|inspect|publish|resume> --workspace <root> [--packages buildr|dsh-plugin|buildr,dsh-plugin] [--version <main-version>] [--plugin-version <plugin-version>] [--baseline <ref>] [--source <sha> ...] [--stop-after candidate] [--authorized] [--recover-publication] [--wait] [--wait-timeout-ms <ms>] [--wait-interval-ms <ms>] [--queue-timeout-seconds <seconds>] [--max-queue-redispatches <count>] [--output <file>] [--detail compact|full]\n');
+      process.stdout.write('Usage: release-orchestration-runner.ts <prepare|inspect|publish|resume> --workspace <root> [--packages buildr|dsh-plugin|buildr,dsh-plugin] [--version <main-version>] [--plugin-version <plugin-version>] [--baseline <ref>] [--source <sha> ...] [--selected-checks <step-id,...>] [--stop-after candidate] [--authorized] [--recover-publication] [--wait] [--wait-timeout-ms <ms>] [--wait-interval-ms <ms>] [--queue-timeout-seconds <seconds>] [--max-queue-redispatches <count>] [--output <file>] [--detail compact|full]\n');
     } else {
     const value: any = options.normalOperation ? await runReleaseOperationUntilSettled(options, {
       signal: controller.signal,

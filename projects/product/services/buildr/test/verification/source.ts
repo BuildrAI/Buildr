@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import { sharedCheckPreparation } from '../../tools/testing/verification-checks.ts';
 import { randomUUID } from 'node:crypto';
-import { createCandidateRoundExecution } from './candidate-round.ts';
+import { createCandidateRoundExecution, passedRoundRecord, readCandidateRound } from './candidate-round.ts';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -35,8 +35,8 @@ export function sourceVerificationCancellation(signals: Pick<NodeJS.Process, 'on
     dispose: () => { signals.removeListener('SIGINT', interrupt); signals.removeListener('SIGTERM', terminate); } };
 }
 
-export function parseSourceArgs(args: string[]): { help: boolean; json: boolean; force: boolean; scope: SourceVerificationScope; base: string | null; output: string | null; round: string | null; invalidate: string[] } {
-  const result = { help: false, json: false, force: false, scope: 'all' as SourceVerificationScope, base: null as string | null, output: null as string | null, round: null as string | null, invalidate: [] as string[] };
+export function parseSourceArgs(args: string[]): { help: boolean; json: boolean; force: boolean; scope: SourceVerificationScope; base: string | null; output: string | null; round: string | null; invalidate: string[]; selected: string[] } {
+  const result = { help: false, json: false, force: false, scope: 'all' as SourceVerificationScope, base: null as string | null, output: null as string | null, round: null as string | null, invalidate: [] as string[], selected: [] as string[] };
   let scopeSupplied = false;
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
@@ -70,6 +70,13 @@ export function parseSourceArgs(args: string[]): { help: boolean; json: boolean;
       const ids = value.split(',').map(id => id.trim()).filter(Boolean);
       if (!ids.length || ids.some(id => !/^[a-z0-9][a-z0-9:-]*$/u.test(id))) throw new Error('--invalidate requires comma-separated step ids');
       result.invalidate = ids;
+    } else if (arg === '--selected') {
+      const value = args[++index];
+      if (!value || value.startsWith('-')) throw new Error('Missing value for --selected');
+      if (result.selected.length) throw new Error('--selected may only be supplied once');
+      const ids = value.split(',').map(id => id.trim()).filter(Boolean);
+      if (!ids.length || ids.some(id => !/^[a-z0-9][a-z0-9:-]*$/u.test(id))) throw new Error('--selected requires comma-separated step ids');
+      result.selected = ids;
     } else throw new Error(`Unknown release source-verification option: ${arg}`);
   }
   if (result.help && args.length !== 1) throw new Error('--help cannot be combined with other arguments');
@@ -184,7 +191,7 @@ export function sourcePreparationCommands(prepared: any): Map<string, Promise<an
 }
 
 function usage(): void {
-  process.stdout.write('Internal release source verification: node test/verification/source.ts [--scope all|common|platform] [--base <ref>] [--json] [--force] [--round <round-id>] [--output <round-log.json>] [--invalidate <step-id,...>]\n');
+  process.stdout.write('Internal release source verification: node test/verification/source.ts [--scope all|common|platform] [--base <ref>] [--json] [--force] [--round <round-id>] [--output <round-log.json>] [--invalidate <step-id,...>] [--selected <step-id,...>]\n');
 }
 
 if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) {
@@ -194,7 +201,7 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
     else {
       const plan = createSourceVerificationPlan(process.platform, { scope: args.scope });
       const comparisonRequired = plan.steps.some((step: any) => step.reuse?.git === 'comparison');
-      const round = { roundId: args.round ?? process.env.BUILDR_VERIFICATION_ROUND ?? randomUUID(), ...(args.output ? { output: path.resolve(args.output) } : {}), ...(args.invalidate.length ? { invalidStepIds: args.invalidate } : {}) };
+      const round = { roundId: args.round ?? process.env.BUILDR_VERIFICATION_ROUND ?? randomUUID(), ...(args.output ? { output: path.resolve(args.output) } : {}), ...(args.invalidate.length ? { invalidStepIds: args.invalidate } : {}), ...(args.selected.length ? { selectedStepIds: args.selected } : {}) };
       const reuseOptions = { productRoot, projectRoot, round, force: sourceVerificationForce(args.force),
         env: enforceOfflineVerification(comparisonRequired || args.base
           ? pinSourceVerificationBase(productRoot, process.env, args.base) : { ...process.env }) };
@@ -205,6 +212,13 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
         if (plan.status !== 'ready') process.exitCode = 1;
       } else {
         if (plan.status !== 'ready') throw new Error(plan.diagnostic?.message ?? 'Source verification plan is blocked.');
+        if (args.selected.length) {
+          const selected = new Set(args.selected);
+          const log = readCandidateRound(round.output, round.roundId);
+          const withoutBaseline = plan.steps.filter((step: any) => !selected.has(step.id)
+            && !log.records.some((entry: any) => passedRoundRecord(entry, round.roundId, step, plan.runner)));
+          if (withoutBaseline.length) throw new Error(`User-selected verification scope has no passed baseline record for: ${withoutBaseline.map((step: any) => step.id).join(', ')}`);
+        }
         assertMinimumNodeVersion(process.versions.node, fs.readFileSync(path.join(projectRoot, '.node-version'), 'utf8').trim());
         const startedAt = Date.now();
         const prepared = prepareSourceVerificationEnvironment(plan, reuseOptions);

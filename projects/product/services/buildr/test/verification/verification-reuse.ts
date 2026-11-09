@@ -94,6 +94,26 @@ export function requiresFreshExternalVerification(step: VerificationReuseStep, s
 }
 
 /** Hash actual source bytes, modes and link targets. HEAD is provenance, never the content key. */
+/** Dependency identity follows declared and actually installed package versions.
+ * Rebuilding a workspace-linked package or rerunning a test may change files
+ * under node_modules without changing the dependency graph; those source-derived
+ * bytes belong to source ownership, not to the environment. Keep the full byte
+ * digest only when the install cannot be described by npm's installed lock. */
+export function dependencyEnvironmentIdentity(root: string, options: { webDependencyCache?: boolean } = {}): string | null {
+  const installedLock = path.join(root, 'node_modules', '.package-lock.json');
+  try {
+    if (fs.lstatSync(installedLock).isFile()) {
+      const hash = crypto.createHash('sha256');
+      for (const file of ['package.json', 'package-lock.json'].map(name => path.join(root, name)).filter(file => fs.lstatSync(file, { throwIfNoEntry: false })?.isFile())) {
+        hash.update(`${path.relative(root, file)}\0`); hash.update(fs.readFileSync(file));
+      }
+      hash.update(`${path.relative(root, installedLock)}\0`); hash.update(fs.readFileSync(installedLock));
+      return `sha256-${hash.digest('hex')}`;
+    }
+  } catch { /* Fall through to the byte proof. */ }
+  return preparationContentDigest([path.join(root, 'node_modules')], { optional: true, webDependencyCache: options.webDependencyCache });
+}
+
 export function collectVerificationReuseSnapshot(options: VerificationReuseOptions): VerificationReuseSnapshot {
   const productRoot = path.resolve(options.productRoot), repositoryRoot = git(productRoot, ['rev-parse', '--show-toplevel']).trim();
   const env = options.env ?? process.env;
@@ -130,7 +150,7 @@ export function collectVerificationReuseSnapshot(options: VerificationReuseOptio
   ];
   const tools = { git: git(repositoryRoot, ['--version']).trim().replace(/^git version /u, '').replace(/[^a-z0-9.+:-]/giu, '-'), npm: npm.status === 0 ? String(npm.stdout).trim() : 'unavailable',
     ...Object.fromEntries(dependencyRoots.filter(([key]) => requiredTools.has(key!)).map(([key, root]) =>
-      [key, preparationContentDigest([path.join(root!, 'node_modules')], { optional: true, webDependencyCache: key === 'web-dependencies' }) ?? 'unavailable'])) };
+      [key, dependencyEnvironmentIdentity(root!, { webDependencyCache: key === 'web-dependencies' }) ?? 'unavailable'])) };
   const head = git(repositoryRoot, ['rev-parse', 'HEAD']), refs = git(repositoryRoot, ['show-ref', '--head']), gitHistory = git(repositoryRoot, ['log', '--all', '--format=%H:%P']);
   let gitComparison: VerificationReuseSnapshot['gitComparison'];
   if ([...(options.steps ?? verificationSteps), ...(options.step ? [options.step] : [])].some(step => step.reuse && step.reuse.git === 'comparison')) {
