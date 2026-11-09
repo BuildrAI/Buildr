@@ -1867,6 +1867,32 @@ test('shutdown never resets a cancelled recovery intent on an accepted unknown t
   } finally {await f.close();}
 });
 
+test('observing an unaccepted stop without native identity ends the wait instead of staying unknown',async()=>{
+  const native=fake('local',{unknown:true}),f=fixture([native.executor]);
+  try{
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'local','stop before acceptance');
+    await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='unknown');
+    const repository=new ConversationRepository(path.join(f.options.dataRoot,'agent-service'));
+    const record=repository.readConversation(chat.id)!;
+    const run=record.view.run!,attempt=record.attempts.find(value=>value.runId===run.id)!;
+    run.status='unknown';run.accepted=false;run.stopRequested=true;run.executionState='unknown';run.tools=[];run.resourcesReleased=undefined;run.generation='retired-generation';
+    attempt.accepted=false;delete attempt.executionRef;
+    record.interruption={runId:run.id,awaitingUser:false,cancelled:true};
+    repository.saveConversation(record,record.view.revision);
+    const saved=repository.readConversation(chat.id)!;
+    const observed=await f.service.conversations.observeRun('workspace-one',chat.id,{expectedRevision:saved.view.revision,runId:run.id,participantId:run.participantId,generation:'retired-generation'});
+    assert.equal(observed.run!.status,'stopped');
+    assert.equal(observed.run!.stopRequested,true);
+    assert.equal(observed.run!.resourcesReleased,undefined);
+    assert.match(observed.run!.diagnostic!,/已结束本轮等待.*是否送达仍未知/);
+    const persisted=repository.readConversation(chat.id)!;
+    assert.equal(persisted.view.run!.status,'stopped');
+    assert.equal(persisted.view.run!.stopRequested,true);
+    assert.equal(persisted.view.run!.executionState,'unknown');
+  } finally {await f.close();}
+});
+
 test('host shutdown records its own interruption without relabelling a user stop or replaying work',async()=>{
  for(const userStop of [false,true]){const native=fake('local',{hold:true}),f=fixture([native.executor]);try{
   await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','work once');

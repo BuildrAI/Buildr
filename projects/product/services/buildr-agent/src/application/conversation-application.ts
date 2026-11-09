@@ -1771,6 +1771,25 @@ export class ConversationApplication {
       const run=conversationRuns(record.view).find(run=>run.id===control.runId);
       if(!run||run.participantId!==control.participantId||run.generation!==control.generation)fail('agent_control_stale','原执行身份已变化，请重新读取。',409);
     }
+    // A stop requested before acceptance leaves no native execution identity to
+    // release. Once the waiting round no longer has an owner or in-flight work,
+    // apply the same unconfirmed-stop settlement as stop/finalize so a restart
+    // cannot leave the conversation pending forever. Delivery stays unknown.
+    let settledUnaccepted=false;
+    for(const saved of conversationRuns(record.view)){
+      if(control&&saved.id!==control.runId||saved.resourcesReleased||saved.accepted||saved.stopRequested!==true||
+        saved.generation===this.options.generation||this.workers.has(saved.id)||
+        record.view.requests.some(request=>request.runId===saved.id)||
+        saved.tools.some(tool=>tool.status!=='completed')||
+        record.attempts.find(attempt=>attempt.runId===saved.id)?.executionRef||
+        ['completed','failed','stopped'].includes(saved.status))continue;
+      saved.status='stopped';saved.executionState='unknown';saved.canContinue=false;
+      saved.diagnostic='已结束本轮等待；原输入是否送达仍未知，已有操作结果保留，不会重发。';
+      saved.updatedAt=this.options.now();
+      if(record.view.run?.id===saved.id)record.interruption={runId:saved.id,awaitingUser:false,cancelled:true};
+      settledUnaccepted=true;
+    }
+    if(settledUnaccepted)this.save(record);
     // A read-only reopened runtime does not own the recorded old control group.
     // Only exact group evidence and the original live owner can decide release.
     for(const saved of conversationRuns(record.view)){
@@ -1923,7 +1942,8 @@ export class ConversationApplication {
   async observeRun(workspaceId: string, id: string, input: {expectedRevision:string;runId:string;participantId:string;generation:string}): Promise<ConversationView> {
     await this.reconcileReleasedControls(workspaceId,id,input);
     const released=this.load(workspaceId,id);
-    if(conversationRuns(released.view).find(run=>run.id===input.runId)?.resourcesReleased)return this.view(released);
+    const observed=conversationRuns(released.view).find(run=>run.id===input.runId);
+    if(observed?.resourcesReleased||observed&&['completed','failed','stopped'].includes(observed.status))return this.view(released);
     const control = this.control(workspaceId,id,{...input,expectedRevision:released.view.revision});
     if (!control.executionRef || !control.participant.contextRef || control.run.resourcesReleased || !unfinishedRun(control.run)) return this.view(control.record);
     const runtime = (await this.sourceRuntime(control.record,control.participant)).runtime;
