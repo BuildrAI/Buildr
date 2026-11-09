@@ -171,6 +171,31 @@ test('list reinterprets old active summaries with retained unknown runs without 
   assert.deepEqual(fs.readFileSync(repo.filename),before,'compatibility read stays zero-write');
 });
 
+test('old active summaries exit for unaccepted stops without work but keep unknown evidence and live tools',t=>{
+  const repo=fixture(t),at='2026-11-09T00:00:00Z';
+  const saveStale=(id:string,toolStatus?:'running'|'unknown')=>{
+    const item=record(id);message(item,id+'-input','old input');
+    item.view.run={id:'run-'+id,participantId:'p',provider:'qoder',generation:'g',status:'unknown',accepted:false,stopRequested:true,canContinue:false,resourcesReleased:false,executionState:'unknown',tools:toolStatus?[{id:'tool',label:'command',status:toolStatus}]:[],diagnostic:'上一轮资源仍待释放，请稍后核对。',model:'m',startedAt:at,updatedAt:at};
+    repo.saveConversation(item);repo.markSeen('w1',item.view.id,item.view.activity!.version);
+    return item;
+  };
+  const quiet=saveStale('unaccepted-quiet'),busy=saveStale('unaccepted-busy','unknown');
+  const db=new DatabaseSync(repo.filename);
+  db.prepare("UPDATE conversations SET is_active=1,summary=json_set(summary,'$.activity.active',json('true')) WHERE id IN (?,?)").run(quiet.view.id,busy.view.id);
+  db.close();
+  const before=fs.readFileSync(repo.filename);
+  const active=repo.querySummaries(['w1'],{activeOnly:true,limit:10});
+  assert.deepEqual(active.conversations.map(row=>row.id),[busy.view.id]);
+  assert.equal(active.activityCounts.active,1);assert.equal(active.activityCounts.unknown,1);
+  const all=repo.querySummaries(['w1'],{limit:10});
+  const quietRow=all.conversations.find(row=>row.id===quiet.view.id)!;
+  assert.equal(quietRow.activity!.active,false);assert.equal(quietRow.run!.status,'unknown');assert.equal(quietRow.run!.stopRequested,true);
+  const preserved=repo.readConversation(quiet.view.id)!;
+  assert.equal(preserved.view.run!.status,'unknown');assert.equal(preserved.view.run!.stopRequested,true);
+  assert.match(preserved.view.run!.diagnostic??'',/待释放/);
+  assert.deepEqual(fs.readFileSync(repo.filename),before,'summary reinterpretation stays zero-write');
+});
+
 test('search matches conversation id substrings while keeping title and message scope',t=>{
   const repo=fixture(t);
   const entry=(r:StoredConversation,id:string,kind:'message'|'tool'|'notice',role:'user'|'assistant'|'system',text:string,extra:{thinking?:boolean}={})=>{

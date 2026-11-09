@@ -30,9 +30,9 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
     }finally{release();await page.unroute(pattern,handler);fixture.conversation=saved;await page.reload();await input().waitFor();}
   });
   await step('停止请求未确认时明确已请求并撤下重复停止按钮',async()=>{
-    const saved=structuredClone(fixture.conversation),beforeStops=fixture.stops;
+    const saved=structuredClone(fixture.conversation),current=fixture.conversation,beforeStops=fixture.stops;
     try{
-      update({run:run('unknown','codex',{resourcesReleased:false,stopRequested:true,executionState:'unknown',interrupted:true,diagnostic:'未取得本轮结束记录'}),requests:[]});
+      update({run:run('unknown','codex',{accepted:false,resourcesReleased:false,stopRequested:true,executionState:'unknown',interrupted:true,diagnostic:'未取得本轮结束记录'}),requests:[],...(current.activity?{activity:{...current.activity,active:false,seenThrough:current.activity.version}}:{})});
       await page.reload();await input().waitFor();
       const state=panel().locator('.ac-execution-uncertain');
       await state.getByText('停止已请求，结束状态待确认',{exact:true}).waitFor();
@@ -42,6 +42,12 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
       assert.equal(fixture.stops,beforeStops);
       assert.equal(fixture.conversation.run.status,'unknown');
       assert.equal(fixture.conversation.run.stopRequested,true);
+      const summaries=await page.evaluate(async()=>{const token=document.querySelector<HTMLMetaElement>('meta[name="buildr-session"]')!.content;return (await fetch('/api/v1/app/agent-service/activity-summary',{headers:{'x-buildr-session':token}})).json();});
+      assert.equal(summaries.conversations.some((row:any)=>row.id===saved.id),false);
+      assert.equal(summaries.activityCounts.unknown,0);
+      await page.locator('button.ac-all-conversations:visible').first().hover();
+      const activityMenu=page.locator('.ac-activity-menu:visible').first();await activityMenu.waitFor();
+      assert.equal(await activityMenu.locator(`button[data-activity-id="${saved.id}"]`).count(),0);
     }finally{fixture.conversation=saved;await page.reload();await input().waitFor();}
   });
   await step('工具执行中的停止请求未确认时不重复提供停止',async()=>{

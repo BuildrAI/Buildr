@@ -424,6 +424,11 @@ test('活动主状态只显示一个静态结果，完成未查看仍属于活�
   assert.equal(activityState({...row,requests:conversation.requests}),'waiting','valid approvals require a decision even while execution continues');
   assert.equal(activityState({...row,run:{...row.run,status:'waiting-question'}}),'waiting');
   assert.equal(activityState({...row,run:{...row.run,status:'unknown'}}),'unknown');
+  const settled={...row,run:{...row.run,status:'unknown',accepted:false,stopRequested:true,executionState:'unknown',resourcesReleased:false,tools:[]},activity:{...row.activity,active:false,seenThrough:3}};
+  assert.equal(activityState(settled),null,'未受理停止且没有在途工作时不再显示状态待确认');
+  assert.equal(isActiveConversation(settled),false);
+  assert.equal(activityState({...settled,activity:{...settled.activity,active:true,seenThrough:2}}),'unknown','后端仍报告活跃或未读时保留活动身份');
+  assert.equal(isActiveConversation({...settled,activity:{...settled.activity,active:true,seenThrough:2}}),true);
   assert.equal(activityState({...row,run:{...row.run,status:'completed'}}),'unseen');
   assert.equal(isActiveConversation({...row,run:{...row.run,status:'completed'}}),true);
   const seen={...row,run:{...row.run,status:'completed'},activity:{...row.activity,active:false,seenThrough:3}};

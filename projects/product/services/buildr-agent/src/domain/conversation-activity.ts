@@ -56,10 +56,16 @@ export function hiddenReleasedOutcome(view: Pick<ConversationView, 'hidden'|'req
     conversationRuns(view).every(run => run.supersededBy || run.executionState !== 'active' && !run.tools.some(tool => tool.status === 'running') &&
       (run.status === 'unknown' ? run.resourcesReleased : !BUSY_STATES.has(run.status) && (run.resourcesReleased || run.tools.every(tool => tool.status === 'completed')))));
 }
+/** A stop requested before acceptance is settled attention once no in-flight work remains. */
+function unacceptedStopSettled(run: NonNullable<ConversationView['run']>): boolean {
+  return run.status === 'unknown' && run.stopRequested === true && run.accepted === false &&
+    run.executionState !== 'active' && (run.tools ?? []).every(tool => tool.status === 'completed');
+}
 /** Historical uncertainty is evidence, not proof of currently running work. */
 export function conversationActive(view: ConversationView, version: number, seenThrough: number): boolean {
   const pending=(run:NonNullable<ConversationView['run']>, historical=false)=>{
     if(run.supersededBy)return false;
+    if(unacceptedStopSettled(run))return false;
     if(run.status==='tools-active')return run.tools.some(tool=>tool.status==='unknown'); // Model ended; retain job controls without claiming model activity.
     // Historical uncertainty without any in-flight work is evidence, not a
     // reason to keep the conversation at the top of the list. Running or

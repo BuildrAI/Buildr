@@ -47,6 +47,21 @@ test('historical unknown rounds only keep a stopped conversation active while wo
  run.tools=[{id:'live-operation',status:'running'}];assert.equal(summaryView(record,3,3,'now').activity!.active,true,'unreleased running work remains visible');
 });
 
+test('an unaccepted stop without in-flight work settles activity while preserving unknown evidence',()=>{
+ const at='2026-11-09T00:00:00Z';
+ const run={id:'unaccepted',participantId:'p',generation:'g',status:'unknown',accepted:false,stopRequested:true,resourcesReleased:false,executionState:'unknown',tools:[],diagnostic:'上一轮资源仍待释放，请稍后核对。',startedAt:at,updatedAt:at} as any;
+ const record={view:{run,requests:[],hidden:false},participants:[]} as unknown as StoredConversation;
+ assert.equal(summaryView(record,3,3,'now').activity!.active,false);
+ assert.equal(record.view.run?.status,'unknown');assert.equal(record.view.run?.stopRequested,true);assert.match(record.view.run?.diagnostic??'',/待释放/);
+ assert.equal(summaryView(record,4,3,'now').activity!.active,true,'unread output still needs attention');
+ run.tools=[{id:'live-operation',status:'running'}];assert.equal(summaryView(record,3,3,'now').activity!.active,true);
+ run.tools=[{id:'uncertain-operation',status:'unknown'}];assert.equal(summaryView(record,3,3,'now').activity!.active,true);
+ run.tools=[];run.executionState='active';assert.equal(summaryView(record,3,3,'now').activity!.active,true);
+ run.executionState='unknown';run.accepted=true;assert.equal(summaryView(record,3,3,'now').activity!.active,true,'only a proven unaccepted stop settles the unknown');
+ run.accepted=false;record.view.requests=[{id:'q',runId:'unaccepted',participantId:'p',generation:'g'} as any];
+ assert.equal(summaryView(record,3,3,'now').activity!.active,true,'pending decisions always keep attention');
+});
+
 test('closing a released unknown result preserves facts and cannot mute retained live work',()=>{
  const run={id:'released',status:'unknown',executionState:'unknown',resourcesReleased:true,tools:[{id:'missing',status:'unknown'}]} as any;
  const record={view:{hidden:true,run,requests:[]},participants:[]} as unknown as StoredConversation;
