@@ -363,11 +363,19 @@ async function main(): Promise<any>  {
   const stagingRoot: any = suppliedWebDist ? path.resolve(suppliedWebDist) : path.join(stagingParent, 'web-dist');
   const controller = new AbortController();
   let unsafeCleanupDetected = false;
+  let preparedRuntimeRoot: any = null;
   const cancel = () => controller.abort();
   process.on('SIGINT', cancel);
   process.on('SIGTERM', cancel);
   try {
     const commands = planBrowserCommands(plan.selectors, stagingRoot, { ...process.env, BUILDR_BROWSER_SELECTOR_PLAN_JSON: JSON.stringify(plan) });
+    if (commands.length > 1 && !process.env.BUILDR_AGENT_PREPARED_RUNTIME_SEED && process.env.BUILDR_AGENT_PREPARED_RUNTIME_REUSE !== '0') {
+      const { prepareSharedAgentRuntime } = await import('../helpers/prepared-agent-runtime.ts');
+      preparedRuntimeRoot = fs.mkdtempSync(path.join(process.env.BUILDR_TEST_SHARED_TEMP_ROOT || os.tmpdir(), 'buildr-browser-agent-runtime-'));
+      const descriptor = prepareSharedAgentRuntime({ productRoot, root: preparedRuntimeRoot });
+      for (const command of commands) command.env.BUILDR_AGENT_PREPARED_RUNTIME_SEED = descriptor;
+      process.stderr.write(`[browser-agent-runtime] prepared seed for ${commands.length} browser processes\n`);
+    }
     if (!suppliedWebDist) {
     const prepareResult = await runPhase('artifacts', [process.execPath, path.join(productRoot, 'tools/development/run-development-npm.ts'), '--prefix', productRoot, 'run', 'artifacts:prepare'], productRoot, 120_000, process.env, controller.signal);
     if (prepareResult.status !== 'passed') {
@@ -434,6 +442,7 @@ async function main(): Promise<any>  {
     process.off('SIGINT', cancel);
     process.off('SIGTERM', cancel);
     if (stagingParent) fs.rmSync(stagingParent, { recursive: true, force: true });
+    if (preparedRuntimeRoot) fs.rmSync(preparedRuntimeRoot, { recursive: true, force: true });
   }
 }
 

@@ -56,7 +56,7 @@ function warnRecoveryFailure(error: unknown): void {
   console.warn('中断执行恢复检查未完成，已有工作记录保留。', ...(code ? [code] : []));
 }
 
-export function createRuntime(): any  {
+export function createRuntime(options: { agentRuntime?: import('@buildr-ai/buildr-agent').AgentRuntimeUnit } = {}): any  {
   const runtime: any = { ...platform };
   registerInfrastructure(runtime);
   registerProductInvocation(runtime);
@@ -81,7 +81,7 @@ export function createRuntime(): any  {
   registry.install(createPublicationModule(runtime));
   registry.install(AGENT_ASSETS_SOURCE_MODULE);
   registry.install(createChangeModule(runtime));
-  registry.install(createAgentServiceModule({ readLocalInstance: readLocalBuildrWebInstance, readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile }));
+  registry.install(createAgentServiceModule({ readLocalInstance: readLocalBuildrWebInstance, readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile, ...(options.agentRuntime ? { runtime: options.agentRuntime } : {}) }));
   registry.install(CODE_MODULE);
   registry.install(createConnectionSkillsModule({ readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile }));
   registry.install(SERVICE_RUNTIME_MODULE);

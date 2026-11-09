@@ -65,7 +65,7 @@ function cachedWebDist(outputRoot: string, build: any, cacheRoot: string, option
     }
     const manifest=createGeneratedArtifactManifest({inputs:{source:before.input??'uncacheable-current-input'},artifacts:[{id:'web-dist',root:cachedRoot}]});
     // A caller-owned existing destination follows the normal build path instead.
-    fs.cpSync(cachedRoot,outputRoot,{recursive:true,errorOnExist:true,force:false});
+    fs.cpSync(cachedRoot,outputRoot,{recursive:true,errorOnExist:true,force:false,mode:fs.constants.COPYFILE_FICLONE});
     assertGeneratedArtifactManifest(manifest,{'web-dist':outputRoot});
     const after=reuse.inspect(recipe);
     if(before.input&&after.input!==before.input)throw new Error('web_dist_inputs_changed_during_preparation');

@@ -1,4 +1,5 @@
 import os from 'node:os';
+import fs from 'node:fs';
 import { createCandidateRoundExecution } from './candidate-round.ts';
 import path from 'node:path';
 import { createTestContextPool } from '../context/runtime.ts';
@@ -160,11 +161,41 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
     options.stream?.write(`[${prefix}] context: ${context.provider.key} status=${context.owned ? 'prepared' : 'reused'} prepare=${context.prepareDurationMs}ms identity=${context.marker.identity}\n`);
   }
   timings.contextPreparationMs = Date.now() - contextsStartedAt;
+  // Browser processes validate and materialize the Agent runtime independently.
+  // Prepare one immutable unit for the whole plan and let each process copy it.
+  const browserWork = plan.steps.some((step: any) => !reuse?.hits.has(step.id) && (step.browserSelector || String(step.id).startsWith('e2e-browser:')));
+  let preparedAgentRuntime: string | null = null;
+  let preparedAgentRuntimeRoot: string | null = null;
+  if (browserWork && (options.env ?? process.env).BUILDR_AGENT_PREPARED_RUNTIME_REUSE !== '0') {
+    const startedAt = Date.now();
+    try {
+      const { prepareSharedAgentRuntime } = await import('../helpers/prepared-agent-runtime.ts');
+      preparedAgentRuntimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-plan-agent-runtime-'));
+      preparedAgentRuntime = prepareSharedAgentRuntime({ productRoot: options.productRoot ?? process.cwd(), root: preparedAgentRuntimeRoot });
+      options.stream?.write(`[${prefix}] agent runtime: prepared one Browser seed in ${Date.now() - startedAt}ms\n`);
+    } catch (error: any) {
+      // Reuse is an optimization; each Browser process can still prepare locally.
+      options.errorStream?.write(`[${prefix}] agent runtime seed unavailable: ${error.message}\n`);
+      preparedAgentRuntime = null;
+      if (preparedAgentRuntimeRoot) fs.rmSync(preparedAgentRuntimeRoot, { recursive: true, force: true });
+      preparedAgentRuntimeRoot = null;
+    }
+    timings.agentRuntimePreparationMs = Date.now() - startedAt;
+  }
   const executorFactory: any = options.executorFactory ?? createVerificationExecutor;
+  const executionEnvironment: any = {
+    ...(options.env ?? process.env),
+    ...contextPool.environment(),
+    ...(options.executionProfile?.id ? { BUILDR_VERIFICATION_PROFILE: options.executionProfile.id } : {}),
+  };
+  // Never let an inherited seed from another run reach a Browser process when
+  // this plan could not prepare one from the current package.
+  if (browserWork && !preparedAgentRuntime) delete executionEnvironment.BUILDR_AGENT_PREPARED_RUNTIME_SEED;
+  if (preparedAgentRuntime) executionEnvironment.BUILDR_AGENT_PREPARED_RUNTIME_SEED = preparedAgentRuntime;
   const executeFresh: any = executorFactory({
     ...options,
     preparations,
-    env: { ...(options.env ?? process.env), ...contextPool.environment(), ...(options.executionProfile?.id ? { BUILDR_VERIFICATION_PROFILE: options.executionProfile.id } : {}) },
+    env: executionEnvironment,
     diagnosticsDirectory,
     artifactDirectory,
     onProcessStart(step: any, processIdentity: any): any  {
@@ -244,7 +275,10 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
       // successful cleanup and ownership facts from their original run.
       reuse?.invalidate();
       throw error;
-    } finally { timings.contextCleanupMs = Date.now() - cleanupStartedAt; }
+    } finally {
+      timings.contextCleanupMs = Date.now() - cleanupStartedAt;
+      if (preparedAgentRuntimeRoot) fs.rmSync(preparedAgentRuntimeRoot, { recursive: true, force: true });
+    }
   }
   // An interrupted child may have left a process touching shared inputs. Keep
   // completed checks only after both child ownership and pool cleanup are known.

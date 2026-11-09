@@ -4,7 +4,7 @@ import { AGENT_ASSETS_SOURCE_QUERY } from '../agent-assets/source/module.ts';
 import fs from 'node:fs';
 import { createHash } from 'node:crypto';
 import { connectAgentProcess, restartAgentProcess, AgentServiceError } from '@buildr-ai/buildr-agent';
-import type { AgentHostCapabilities, AgentProcessConnection, AgentOperations } from '@buildr-ai/buildr-agent';
+import type { AgentHostCapabilities, AgentProcessConnection, AgentOperations, AgentRuntimeUnit } from '@buildr-ai/buildr-agent';
 import { WORKSPACE_APPLICATION } from '../workspace/module.ts';
 import { TASK_QUERY_APPLICATION } from '../task/module.ts';
 import { defaultWorkspaceRoot } from './infrastructure/default-workspace.ts';
@@ -12,7 +12,7 @@ import { createAgentServiceHttpContribution } from './interfaces/http/agent-serv
 
 export const AGENT_SERVICE_APPLICATION = 'agent-service.application';
 
-export function createAgentServiceModule(options: { readLocalInstance?(): unknown; readProductIdentity(): unknown; resolveWebProfile(identity: unknown): { dataRoot: string; profile?: string; overridden?: boolean } }) {
+export function createAgentServiceModule(options: { readLocalInstance?(): unknown; readProductIdentity(): unknown; resolveWebProfile(identity: unknown): { dataRoot: string; profile?: string; overridden?: boolean }; runtime?: AgentRuntimeUnit }) {
   return {
     id: 'agent-service', requires: [WORKSPACE_APPLICATION, TASK_QUERY_APPLICATION, AGENT_ASSETS_SOURCE_QUERY],
     create(requires: Record<string, any>) {
@@ -63,7 +63,7 @@ export function createAgentServiceModule(options: { readLocalInstance?(): unknow
         if(closed)throw new AgentServiceError('agent_process_client_closed','本机主程序连接已释放。',503);
         if(!connection){
           const bound=profile();
-          connection=connectAgentProcess({dataRoot:bound.dataRoot,profileId:bound.profile??(bound.overridden?'preview':'released'),sourceId:'buildr',legacySourceId:'buildr',host,autoContinueInterrupted:true,signal:initialization.signal}).catch(error=>{connection=undefined;throw error;});
+          connection=connectAgentProcess({dataRoot:bound.dataRoot,profileId:bound.profile??(bound.overridden?'preview':'released'),sourceId:'buildr',legacySourceId:'buildr',host,autoContinueInterrupted:true,signal:initialization.signal,...(options.runtime?{runtime:options.runtime}:{})}).catch(error=>{connection=undefined;throw error;});
         }
         return connection;
       };
@@ -89,7 +89,7 @@ export function createAgentServiceModule(options: { readLocalInstance?(): unknow
           previous = await connect();
           if (closed) throw new AgentServiceError('agent_process_client_closed', '网页服务正在退出。', 503);
           const bound = profile();
-          const pending = restartAgentProcess({dataRoot:bound.dataRoot,profileId:bound.profile??(bound.overridden?'preview':'released'),sourceId:'buildr',legacySourceId:'buildr',host,autoContinueInterrupted:true,expectedGeneration:input.expectedGeneration});
+          const pending = restartAgentProcess({dataRoot:bound.dataRoot,profileId:bound.profile??(bound.overridden?'preview':'released'),sourceId:'buildr',legacySourceId:'buildr',host,autoContinueInterrupted:true,expectedGeneration:input.expectedGeneration,...(options.runtime?{runtime:options.runtime}:{})});
           // Busy/stale refusal leaves the existing host and its active work intact.
           connection = pending.catch(() => previous!);
           await pending;

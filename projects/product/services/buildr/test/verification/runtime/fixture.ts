@@ -75,7 +75,7 @@ export class RuntimeVerificationHarness {
   cloneWorkspace(seed: any, prefix: any = 'buildr-runtime-clone-'): any  {
     const parent: any = this.createTemporaryDirectory(prefix);
     const workspace: any = path.join(parent, 'workspace');
-    fs.cpSync(seed, workspace, { recursive: true });
+    fs.cpSync(seed, workspace, { recursive: true, mode: fs.constants.COPYFILE_FICLONE });
     return workspace;
   }
 

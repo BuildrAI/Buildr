@@ -151,7 +151,7 @@ export function createGitRepositoryContextProvider(): any  {
       }
     },
     materialize({ context, sandboxRoot }: any): any  {
-      fs.cpSync(context.seedRoot, sandboxRoot, { recursive: true });
+      fs.cpSync(context.seedRoot, sandboxRoot, { recursive: true, mode: fs.constants.COPYFILE_FICLONE });
       const repositoryRoot: any = path.join(sandboxRoot, 'repository.git');
       const attachedRoot: any = path.join(sandboxRoot, 'attached');
       runGit(GIT_REPOSITORY_CONTEXT_KEY, 'git.clone-attached', ['clone', '--branch', 'dev', repositoryRoot, attachedRoot], sandboxRoot);

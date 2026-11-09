@@ -39,6 +39,7 @@ import { runCompositeTaskChildrenJourney } from '../../../buildr-web/test/browse
 import { runWorkbenchJourney } from './workbench-journey.ts';
 import { runPublicationJourney, publicationTestPng } from './publication-journey.ts';
 import { useLegacyAssetCatalog } from '../helpers/legacy-asset-catalog.ts';
+import { acquirePreparedAgentRuntime } from '../helpers/prepared-agent-runtime.ts';
 import { runServiceKnowledgeJourney } from './service-knowledge-journey.ts';
 import { runServiceRuntimeJourney } from './service-runtime-journey.ts';
 import { runProjectKnowledgeInitializationJourney } from './knowledge-initialization-journey.ts';
@@ -531,7 +532,8 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
   registry = runtime.registerLocalWorkspace({ rootPath: otherRoot, revision: registry.revision });
   const otherWorkspaceId: any = registry.workspaces.find((item: any) => item.rootPath === otherRoot).workspace.id;
   // Fixture writers may use the test adapter; the HTTP host must use production composition.
-  webRuntime = createProductionRuntime();
+  const preparedAgentRuntime = acquirePreparedAgentRuntime(process.env.BUILDR_APP_DATA_DIR);
+  webRuntime = createProductionRuntime(preparedAgentRuntime ? { agentRuntime: preparedAgentRuntime } : {});
   const workspaceApplication = runtimeProvide(webRuntime, WORKSPACE_APPLICATION);
   const workspacePorts = {
     ensureRegisteredTarget: workspaceApplication.ensureRegisteredTarget,
