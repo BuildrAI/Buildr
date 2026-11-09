@@ -35,6 +35,7 @@ import { createReleaseCandidatePlan, assertPluginSourceAggregate } from '../../.
 import { readPluginSourceCandidate } from './plugin-hosted-release.ts';
 import { readReleaseArtifact, releaseArtifactManifestName } from './release-artifact.ts';
 import { releaseVerificationCoverage, releaseVerificationTransport, releaseVerificationTimeouts } from '../../../projects/product/services/buildr/test/verification/release-verification.ts';
+import { parseCandidateDeclaredScope } from '../../../projects/product/services/buildr/test/verification/candidate-declared-scope.ts';
 import { candidatePreparationDirectory, readCandidatePreparationSnapshot } from './release-task-evidence-correlation.ts';
 
 export const releaseOrchestrationSchema: any = 'buildr.release-orchestration-result/v1';
@@ -1123,11 +1124,42 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       if (!existing && state.candidate.dispatchRejected === true) state.candidate.dispatchRequested = false;
       if (!existing && !state.candidate.dispatchRequested) {
         phase = 'source-verification';
-        const selectedStepIds: string[] | undefined = options.selectedChecks ?? state.verificationSelection?.selectedStepIds;
+        const excludedBoundaries: string[] | undefined = options.excludedBoundaries ?? state.verificationSelection?.excludedBoundaries;
+        let scopeStatement: string | undefined = options.scopeStatement ?? state.verificationSelection?.statement;
+        if (excludedBoundaries?.length && !scopeStatement?.trim()) {
+          throw new Error('--excluded-boundaries requires --scope-statement so the maintainer decision is recorded.');
+        }
+        const { verificationSteps } = await import('../../../projects/product/services/buildr/test/verification/registry.ts');
+        const buildStepIds = new Set<string>(verificationSteps.filter((step: any) => step.executor?.type === 'candidate-artifact').map((step: any) => step.id));
+        const candidateStepIds: string[] = verificationSteps.filter((step: any) => step.profiles.includes('candidate')).map((step: any) => step.id);
+        let selectedStepIds: string[] | undefined = state.verificationSelection?.selectedStepIds;
+        let excludedStepIds: string[] = state.verificationSelection?.excludedStepIds ?? [];
         if (options.selectedChecks?.length) {
-          state.verificationSelection = { selectedStepIds: [...options.selectedChecks].sort(), source: 'user-instruction', recordedAt: new Date().toISOString() };
+          selectedStepIds = [...options.selectedChecks].sort();
+          excludedStepIds = candidateStepIds.filter((id: string) => !selectedStepIds!.includes(id) && !buildStepIds.has(id)).sort();
+          scopeStatement ??= `用户指定本轮只执行：${selectedStepIds.join(', ')}`;
+          state.verificationSelection = { selectedStepIds, excludedStepIds, selectionMode: 'selected-checks', statement: scopeStatement,
+            source: 'user-instruction', recordedAt: new Date().toISOString() };
+          save();
+        } else if (excludedBoundaries?.length) {
+          // A declared boundary excludes the same checks in the local source round
+          // that the remote Candidate will skip; the user does not repeat the list.
+          const excluded = new Set<string>(excludedBoundaries);
+          selectedStepIds = verificationSteps
+            .filter((step: any) => step.profiles.includes('candidate')
+              && (step.executor?.type === 'candidate-artifact' || !excluded.has(step.testing?.executionBoundary)))
+            .map((step: any) => step.id).sort();
+          excludedStepIds = candidateStepIds.filter((id: string) => !selectedStepIds!.includes(id)).sort();
+          state.verificationSelection = { excludedBoundaries: [...excludedBoundaries].sort(), selectedStepIds, excludedStepIds,
+            selectionMode: 'excluded-boundaries', statement: scopeStatement!.trim(), source: 'user-instruction', recordedAt: new Date().toISOString() };
           save();
         }
+        const dispatchScope = (excludedBoundaries?.length || excludedStepIds.length) ? {
+          ...(excludedBoundaries?.length ? { excludedBoundaries: [...excludedBoundaries].sort() } : {}),
+          ...(excludedStepIds.length ? { excludedStepIds } : {}),
+          statement: scopeStatement!.trim(),
+        } : null;
+        if (dispatchScope) parseCandidateDeclaredScope(JSON.stringify(dispatchScope));
         const localSource = await (dependencies.prepareLocalSourceVerification ?? prepareLocalSourceVerification)({
           repo, sourceFile: options.sourceVerification ?? path.join(workspace, 'projects/product/services/buildr/build/verification/candidate-rounds', `${key}.json`), roundId: key, base: selection.devBaseline,
           packages: [...(!scoped || plan.requirements.buildr ? ['buildr'] : []), ...(scoped && plan.requirements.plugin ? ['dsh-plugin'] : [])],
@@ -1145,6 +1177,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
             ? [`buildr_peer_version=${state.preparationPeer.version}`, `buildr_peer_integrity=${state.preparationPeer.integrity}`] : [])] : [];
         if (localSource.transport) fields.push(`source_verification=${localSource.transport}`);
         if (state.candidate.localRunner) fields.push(`local_runner=${state.candidate.localRunner}`);
+        if (dispatchScope) fields.push(`verification_scope=${JSON.stringify(dispatchScope)}`);
         const { lintCandidateStepTimeouts } = await import('./candidate-step-timings.ts');
         const capacityWarnings = lintCandidateStepTimeouts(path.join(workspace, 'projects/product/services/buildr'), releaseVerificationTimeouts());
         if (capacityWarnings.length > 0) {
@@ -1377,6 +1410,8 @@ function parseOptions(argv: any): any  {
     artifactVerification: options['artifact-verification'],
     verificationSource: options['verification-source'],
     selectedChecks: options['selected-checks'] ? options['selected-checks'].split(',').map((id: string) => id.trim()).filter(Boolean) : undefined,
+    excludedBoundaries: options['excluded-boundaries'] ? options['excluded-boundaries'].split(',').map((boundary: string) => boundary.trim()).filter(Boolean) : undefined,
+    scopeStatement: options['scope-statement'],
     stopAfter: options['stop-after'],
     waitTimeoutMs: options['wait-timeout-ms'] ? Number(options['wait-timeout-ms']) : undefined,
     waitIntervalMs: options['wait-interval-ms'] ? Number(options['wait-interval-ms']) : undefined,
@@ -1385,7 +1420,7 @@ function parseOptions(argv: any): any  {
     supportTasks: options['support-tasks'] ? options['support-tasks'].split(',').filter(Boolean) : undefined,
   };
   if (options['stop-after'] !== undefined) throw new Error('--stop-after candidate is only supported by normal prepare, without --input.');
-    if (!options.input) throw new Error('Usage: release-orchestration-runner.ts <prepare|inspect|publish|resume> --workspace <root> [--packages buildr|dsh-plugin|buildr,dsh-plugin] [--version <main-version>] [--plugin-version <plugin-version>] [--baseline <ref>] [--source <sha> ...] [--selected-checks <step-id,...>] [--stop-after candidate] [--authorized] [--recover-publication]');
+    if (!options.input) throw new Error('Usage: release-orchestration-runner.ts <prepare|inspect|publish|resume> --workspace <root> [--packages buildr|dsh-plugin|buildr,dsh-plugin] [--version <main-version>] [--plugin-version <plugin-version>] [--baseline <ref>] [--source <sha> ...] [--selected-checks <step-id,...>] [--excluded-boundaries Static|Unit|Integration|E2E,... --scope-statement <user-decision>] [--stop-after candidate] [--authorized] [--recover-publication]');
   if (!['compact', 'full'].includes(options.detail)) throw new Error('--detail must be compact or full.');
   const input: any = JSON.parse(fs.readFileSync(path.resolve(options.input), 'utf8'));
   if (action === 'inspect') return { action, detail: options.detail, output: options.output ? path.resolve(options.output) : null, expectedTimelineIdentity: options['timeline-identity'] ?? null, inspectedResult: input };
@@ -1404,7 +1439,7 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
       process.on('SIGTERM', terminate);
     }
     if (options.help) {
-      process.stdout.write('Usage: release-orchestration-runner.ts <prepare|inspect|publish|resume> --workspace <root> [--packages buildr|dsh-plugin|buildr,dsh-plugin] [--version <main-version>] [--plugin-version <plugin-version>] [--baseline <ref>] [--source <sha> ...] [--selected-checks <step-id,...>] [--stop-after candidate] [--authorized] [--recover-publication] [--wait] [--wait-timeout-ms <ms>] [--wait-interval-ms <ms>] [--queue-timeout-seconds <seconds>] [--max-queue-redispatches <count>] [--output <file>] [--detail compact|full]\n');
+      process.stdout.write('Usage: release-orchestration-runner.ts <prepare|inspect|publish|resume> --workspace <root> [--packages buildr|dsh-plugin|buildr,dsh-plugin] [--version <main-version>] [--plugin-version <plugin-version>] [--baseline <ref>] [--source <sha> ...] [--selected-checks <step-id,...>] [--excluded-boundaries Static|Unit|Integration|E2E,... --scope-statement <user-decision>] [--stop-after candidate] [--authorized] [--recover-publication] [--wait] [--wait-timeout-ms <ms>] [--wait-interval-ms <ms>] [--queue-timeout-seconds <seconds>] [--max-queue-redispatches <count>] [--output <file>] [--detail compact|full]\n');
     } else {
     const value: any = options.normalOperation ? await runReleaseOperationUntilSettled(options, {
       signal: controller.signal,

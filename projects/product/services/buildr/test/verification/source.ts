@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import { sharedCheckPreparation } from '../../tools/testing/verification-checks.ts';
 import { randomUUID } from 'node:crypto';
-import { createCandidateRoundExecution, passedRoundRecord, readCandidateRound } from './candidate-round.ts';
+import { createCandidateRoundExecution } from './candidate-round.ts';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -194,6 +194,23 @@ function usage(): void {
   process.stdout.write('Internal release source verification: node test/verification/source.ts [--scope all|common|platform] [--base <ref>] [--json] [--force] [--round <round-id>] [--output <round-log.json>] [--invalidate <step-id,...>] [--selected <step-id,...>]\n');
 }
 
+/** A user-selected round executes exactly the selected checks plus the
+ * dependencies they actually need. Scope-outside checks are not executed and
+ * are not claimed; they stay absent from this round instead of failing it. */
+export function selectSourceVerificationSubset(plan: any, selectedIds: string[]): any {
+  const byId: any = new Map(plan.steps.map((step: any) => [step.id, step]));
+  const unknown = selectedIds.filter((id: string) => !byId.has(id));
+  if (unknown.length) throw new Error(`Unknown selected verification step: ${unknown.sort().join(', ')}.`);
+  const closure = new Set<string>();
+  const visit = (id: string) => {
+    if (closure.has(id)) return;
+    closure.add(id);
+    for (const dependency of byId.get(id)?.dependsOn ?? []) if (byId.has(dependency)) visit(dependency);
+  };
+  for (const id of selectedIds) visit(id);
+  return { ...plan, steps: plan.steps.filter((step: any) => closure.has(step.id)), selectedStepIds: [...closure].sort() };
+}
+
 if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) {
   try {
     const args = parseSourceArgs(process.argv.slice(2));
@@ -201,27 +218,21 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
     else {
       const plan = createSourceVerificationPlan(process.platform, { scope: args.scope });
       const comparisonRequired = plan.steps.some((step: any) => step.reuse?.git === 'comparison');
-      const round = { roundId: args.round ?? process.env.BUILDR_VERIFICATION_ROUND ?? randomUUID(), ...(args.output ? { output: path.resolve(args.output) } : {}), ...(args.invalidate.length ? { invalidStepIds: args.invalidate } : {}), ...(args.selected.length ? { selectedStepIds: args.selected } : {}) };
+      const executionPlan = args.selected.length ? selectSourceVerificationSubset(plan, args.selected) : plan;
+      const round = { roundId: args.round ?? process.env.BUILDR_VERIFICATION_ROUND ?? randomUUID(), ...(args.output ? { output: path.resolve(args.output) } : {}), ...(args.invalidate.length ? { invalidStepIds: args.invalidate } : {}), ...(args.selected.length ? { selectedStepIds: executionPlan.selectedStepIds } : {}) };
       const reuseOptions = { productRoot, projectRoot, round, force: sourceVerificationForce(args.force),
         env: enforceOfflineVerification(comparisonRequired || args.base
           ? pinSourceVerificationBase(productRoot, process.env, args.base) : { ...process.env }) };
       if (args.json) {
-        const reuse = createCandidateRoundExecution(plan, { ...reuseOptions, inspectOnly: true }).explanation;
-        process.stdout.write(`${JSON.stringify({ ...plan, verificationBase: reuseOptions.env.BUILDR_VERIFICATION_BASE,
-          reuse, preparation: sourceVerificationPreparation(plan, reuse) }, null, 2)}\n`);
+        const reuse = createCandidateRoundExecution(executionPlan, { ...reuseOptions, inspectOnly: true }).explanation;
+        process.stdout.write(`${JSON.stringify({ ...executionPlan, verificationBase: reuseOptions.env.BUILDR_VERIFICATION_BASE,
+          reuse, preparation: sourceVerificationPreparation(executionPlan, reuse) }, null, 2)}\n`);
         if (plan.status !== 'ready') process.exitCode = 1;
       } else {
         if (plan.status !== 'ready') throw new Error(plan.diagnostic?.message ?? 'Source verification plan is blocked.');
-        if (args.selected.length) {
-          const selected = new Set(args.selected);
-          const log = readCandidateRound(round.output, round.roundId);
-          const withoutBaseline = plan.steps.filter((step: any) => !selected.has(step.id)
-            && !log.records.some((entry: any) => passedRoundRecord(entry, round.roundId, step, plan.runner)));
-          if (withoutBaseline.length) throw new Error(`User-selected verification scope has no passed baseline record for: ${withoutBaseline.map((step: any) => step.id).join(', ')}`);
-        }
         assertMinimumNodeVersion(process.versions.node, fs.readFileSync(path.join(projectRoot, '.node-version'), 'utf8').trim());
         const startedAt = Date.now();
-        const prepared = prepareSourceVerificationEnvironment(plan, reuseOptions);
+        const prepared = prepareSourceVerificationEnvironment(executionPlan, reuseOptions);
         const environmentPreparationMs = Date.now() - startedAt;
         enforceOfflineVerification();
         const { executePlan } = await import('./plan-runner.ts');
@@ -232,7 +243,7 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
         const cancellation = sourceVerificationCancellation();
         let execution: any;
         try {
-          execution = await executePlan(plan, {
+          execution = await executePlan(executionPlan, {
             productRoot, projectRoot, env: reuseOptions.env, diagnosticsDirectory: evidence.diagnosticsOutput,
             stream: process.stdout, errorStream: process.stderr, prefix: 'verify-source',
             concurrency: executionProfile.limits, executionProfile, runId: evidence.runId,

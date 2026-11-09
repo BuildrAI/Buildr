@@ -356,9 +356,11 @@ export function aggregateCandidateCiEvidence(evidence: any, expectedContext: any
   if (expectedRunId !== null && expectedRunAttempt === null) {
     findings.push(evidenceFinding('workflow-aggregate-attempt-invalid', 'Candidate gate', expectedWorkflow?.runAttempt ?? null));
   }
-  const expected: any = new Map([
-    ...CANDIDATE_CI_SHARDS.map((item: any) => [item.id, { kind: 'shard', runner: item.runner, platformScope: item.platformScope, primaryStepIds: item.stepIds, requiresArtifact: item.requiresArtifact || item.producesArtifact }]),
-    ...CANDIDATE_CI_HOST_NODE_TUPLES.map((item: any) => [item.id, { kind: 'host-node', runner: item.runner, primaryStepIds: [], requiresArtifact: true, requestedNode: item.requestedNode }]),
+  const candidateShards: any[] = options.shards ?? CANDIDATE_CI_SHARDS;
+  const hostNodeTuples: any[] = options.hostNodeTuples ?? CANDIDATE_CI_HOST_NODE_TUPLES;
+  const expected: any = new Map<any, any>([
+    ...candidateShards.map((item: any): [any, any] => [item.id, { kind: 'shard', runner: item.runner, platformScope: item.platformScope, primaryStepIds: item.stepIds, requiresArtifact: item.requiresArtifact || item.producesArtifact }]),
+    ...hostNodeTuples.map((item: any): [any, any] => [item.id, { kind: 'host-node', runner: item.runner, primaryStepIds: [], requiresArtifact: true, requestedNode: item.requestedNode }]),
   ]);
   const byId: any = new Map();
   for (const item of evidence) {
@@ -441,7 +443,7 @@ export function aggregateCandidateCiEvidence(evidence: any, expectedContext: any
   const deferredIds = Array.isArray(options.deferredIds) ? [...new Set(options.deferredIds)] as string[] : [];
   const validDeferred = deferredIds.every(id => {
     const descriptor = expected.get(id);
-    return descriptor?.requiresArtifact && !CANDIDATE_CI_SHARDS.some((shard: any) => shard.id === id && shard.producesArtifact);
+    return descriptor?.requiresArtifact && !candidateShards.some((shard: any) => shard.id === id && shard.producesArtifact);
   });
   const awaitingLocal = validDeferred && findings.length > 0 && findings.every(item => item.code === 'evidence-missing' && deferredIds.includes(item.id));
   return {
@@ -460,6 +462,8 @@ export function aggregateCandidateCiEvidence(evidence: any, expectedContext: any
     },
     status: findings.length === 0 ? 'passed' : awaitingLocal ? 'incomplete' : 'failed',
     ...(awaitingLocal ? { deferredIds: findings.map(item => item.id).sort(), awaiting: 'local-artifact-verification' } : {}),
+    ...(options.declaredScope ? { declaredScope: options.declaredScope } : {}),
+    ...(options.notRun && options.notRun.evidenceIds?.length ? { notRun: options.notRun } : {}),
     evidenceIds: [...byId.keys()].sort(),
     findings,
     timing: candidateCiTiming([...byId.values()], options.preparations),

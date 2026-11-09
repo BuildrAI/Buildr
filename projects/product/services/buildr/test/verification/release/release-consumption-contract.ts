@@ -56,8 +56,15 @@ export function assertReleaseConsumptionCoverage(aggregate: any, expected: { sou
   if (aggregate?.status !== 'passed' || aggregate.sourceCommit !== expected.sourceCommit || (expected.sourceTree && aggregate.sourceTree !== expected.sourceTree)) throw new Error('Release consumption requires a passed Candidate for the exact source.');
   // The aggregate owner validates individual proofs. This consumer checks current
   // coverage and exact bytes; a whole-list digest change is not a missing check.
+  // Evidence the maintainer explicitly declared out of scope is reported by the
+  // aggregate as `notRun`; only an undeclared gap blocks consumption.
+  const present = new Set<string>(aggregate.evidenceIds ?? []);
+  const notRun = new Set<string>(aggregate.notRun?.evidenceIds ?? []);
+  if (notRun.size > 0 && !aggregate.declaredScope) throw new Error('Candidate reports not-run evidence without the user declaration that authorized it.');
   for (const check of RELEASE_CHECKS) {
-    if ('evidence' in check && check.evidence.some((id: string) => !aggregate.evidenceIds?.includes(id))) throw new Error(`Candidate is missing release check ${check.id}.`);
+    if (!('evidence' in check)) continue;
+    const undeclared = check.evidence.filter((id: string) => !present.has(id) && !notRun.has(id));
+    if (undeclared.length) throw new Error(`Candidate is missing release check ${check.id}: ${undeclared.join(', ')}.`);
   }
   for (const field of ['sourceCommit', 'filename', 'size', 'sha256', 'integrity', 'applicationPayloadDigest']) {
     if (!artifact || aggregate.artifact?.[field] !== artifact[field]) throw new Error(`Candidate consumption artifact ${field} mismatches.`);

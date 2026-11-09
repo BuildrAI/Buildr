@@ -51,6 +51,16 @@ test('source changes after a passed record invalidate only steps that own the ch
   assert.deepEqual(unrelated.missingStepIds, ['integration-code']);
   assert.deepEqual(unrelated.invalidatedStepIds, ['integration-code']);
 });
+test('changed-path observation compares the recorded source with the observed head', async () => {
+  const calls: string[][] = [];
+  const result = await prepareLocalSourceVerification({ repo: '/source', roundId: 'round' }, {
+    ...ownedFixture([record('integration-connections'), record('integration-code')]),
+    sourceHead: () => 'new',
+    changedPaths: (from: string, to: string) => { calls.push([from, to]); return []; },
+  });
+  assert.deepEqual(calls, [['original', 'new']]);
+  assert.deepEqual(result.missingStepIds, []);
+});
 test('broad content identity changes reuse a check when source ownership is unaffected', async () => {
   const previous = { key: 'sha256-old', stepId: 'integration-connections', contentIdentity: 'sha256-old-content',
     recipeIdentity: 'sha256-recipe', environmentIdentity: 'sha256-environment' };
@@ -158,11 +168,14 @@ test('user-selected scope retains passed checks outside the selection without re
   assert.deepEqual(scoped.missingStepIds, ['integration-connections']);
   assert.deepEqual(scoped.invalidatedStepIds, ['integration-connections']);
   assert.deepEqual(scoped.retainedStepIds, ['integration-code']);
-  assert.deepEqual(scoped.missingBaselineStepIds, []);
+  assert.deepEqual(scoped.outOfScopeStepIds, ['integration-code']);
   assert.match(scoped.nextActions[0], /--selected integration-connections/u);
 
   const absent = await prepareLocalSourceVerification({ repo: '/source', roundId: 'round', selectedStepIds: ['integration-connections'] },
     userScopeFixture([withIdentity('integration-connections')]));
-  assert.deepEqual(absent.missingStepIds, ['integration-connections', 'integration-code']);
-  assert.deepEqual(absent.missingBaselineStepIds, ['integration-code']);
+  assert.deepEqual(absent.missingStepIds, ['integration-connections']);
+  assert.deepEqual(absent.retainedStepIds, []);
+  assert.deepEqual(absent.outOfScopeStepIds, ['integration-code']);
+  assert.equal(absent.verificationPlan.steps.find((step: any) => step.id === 'integration-code').disposition, 'not-run');
+  assert.deepEqual(absent.verificationPlan.steps.find((step: any) => step.id === 'integration-code').reasons, ['declared-out-of-scope']);
 });

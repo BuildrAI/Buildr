@@ -875,8 +875,10 @@ export function createCandidateCiShardPlan(shardId: any, options: any = {}, step
   const shard: any = CANDIDATE_CI_SHARDS.find((item: any) => item.id === shardId);
   if (!shard) throw new Error(`Unknown Candidate CI shard: ${shardId}`);
   if (shard.requiresArtifact && options.externalArtifact !== true) throw new Error(`Candidate CI shard ${shardId} requires an external candidate artifact`);
-  const plan: any = createVerificationPlan({ stepIds: shard.stepIds }, steps);
-  const primary: any = new Set(shard.stepIds);
+  const stepIds: string[] = options.stepIds ?? shard.stepIds;
+  if (stepIds.some((id: string) => !shard.stepIds.includes(id))) throw new Error(`Candidate CI shard ${shardId} was asked to run an undeclared step`);
+  const plan: any = createVerificationPlan({ stepIds }, steps);
+  const primary: any = new Set(stepIds);
   const projectedSteps: any[] = [];
   for (const item of plan.steps) {
     if (!primary.has(item.id) && item.id !== 'candidate-tarball') {
@@ -892,7 +894,7 @@ export function createCandidateCiShardPlan(shardId: any, options: any = {}, step
     ...plan,
     source: 'candidate-ci-shard',
     shard,
-    primaryStepIds: shard.stepIds,
+    primaryStepIds: stepIds,
     steps: Object.freeze(projectedSteps),
   });
 }
