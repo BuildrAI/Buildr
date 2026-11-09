@@ -598,7 +598,10 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
       if (message.type() === 'error') browserErrors.push(`console.error ${nextPage.url()} [${message.location().url}]: ${message.text()}`);
       if (message.type() === 'warning' && message.text().startsWith('文件语言加载失败')) process.stderr.write('[browser-language-load] '+message.text()+'\n');
     });
-    nextPage.setDefaultTimeout(10_000);
+    // Bundled selectors run in one host while other heavy verification groups
+    // share the machine; observed event-loop lag can exceed 8s. Focused
+    // single-selector diagnosis keeps the tighter budget.
+    nextPage.setDefaultTimeout(SELECTORS.size > 1 ? 20_000 : 10_000);
     nextPage.on('requestfinished',(request:any)=>{
       const timing=request.timing();
       if(timing.responseEnd>1000)process.stderr.write('[browser-request-timing] '+JSON.stringify({path:new URL(request.url()).pathname,responseMs:timing.responseEnd,requestStart:timing.requestStart,responseStart:timing.responseStart,connectStart:timing.connectStart,connectEnd:timing.connectEnd})+'\n');

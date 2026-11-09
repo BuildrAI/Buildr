@@ -164,7 +164,7 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
   const executeFresh: any = executorFactory({
     ...options,
     preparations,
-    env: { ...(options.env ?? process.env), BUILDR_SKIP_FINAL_DOCTOR: '1', ...contextPool.environment(), ...(options.executionProfile?.id ? { BUILDR_VERIFICATION_PROFILE: options.executionProfile.id } : {}) },
+    env: { ...(options.env ?? process.env), ...contextPool.environment(), ...(options.executionProfile?.id ? { BUILDR_VERIFICATION_PROFILE: options.executionProfile.id } : {}) },
     diagnosticsDirectory,
     artifactDirectory,
     onProcessStart(step: any, processIdentity: any): any  {

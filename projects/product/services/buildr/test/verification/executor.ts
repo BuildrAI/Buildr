@@ -99,7 +99,10 @@ export function createVerificationExecutor(options: any): any  {
         let state: ReturnType<typeof createIsolatedWorkspaceState> | null = null;
         let result: any;
         try {
-          state = createIsolatedWorkspaceState({ env: baseEnv });
+          // Derived setup never owns the Doctor proof; explicit checks do.
+          // Keeping the skip on preparations avoids nested process boots that
+          // do not change their assertions.
+          state = createIsolatedWorkspaceState({ env: { ...baseEnv, BUILDR_SKIP_FINAL_DOCTOR: '1' } });
           result = await runVerificationStep({ id, diagnosticId: id, name: args.join(' '), command, args, cwd, env: state.env, timeoutMs: 300_000, diagnosticsDirectory: options.diagnosticsDirectory }, { signal: options.signal });
         } catch (error: any) {
           result = { status: 'failed', exitCode: 1, durationMs: Date.now() - startedAt, stdout: '', stderr: error.message,
@@ -218,9 +221,16 @@ export function createVerificationExecutor(options: any): any  {
       [requirePackageAdapter().environment.metadata]: artifacts.candidate.metadataPath,
       [requirePackageAdapter().environment.manifest]: artifacts.candidate.manifestPath,
     } : {};
-    const state = createIsolatedWorkspaceState({
-      env: { ...baseEnv, ...executionContext.resourceEnvironment, ...artifactEnv, ...workerBudgetEnvironment(step, executionContext), ...((step.browserSelector || step.requiresWebDist) ? { BUILDR_BROWSER_WEB_DIST_ROOT: browserWebDist } : {}) },
-    });
+    const stepEnvironment: any = {
+      ...baseEnv,
+      ...executionContext.resourceEnvironment,
+      ...artifactEnv,
+      ...workerBudgetEnvironment(step, executionContext),
+      ...((step.browserSelector || step.requiresWebDist) ? { BUILDR_BROWSER_WEB_DIST_ROOT: browserWebDist } : {}),
+    };
+    if (step.keepFinalDoctor === true) delete stepEnvironment.BUILDR_SKIP_FINAL_DOCTOR;
+    else stepEnvironment.BUILDR_SKIP_FINAL_DOCTOR = '1';
+    const state = createIsolatedWorkspaceState({ env: stepEnvironment });
     let result: any;
     let diagnosticLine = '';
     try {

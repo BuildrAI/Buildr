@@ -754,7 +754,7 @@ const builtInVerificationSteps: any = Object.freeze([
   step({ id: 'frontend-logic', name: 'Buildr Web complete logic suite', executor: { type: 'node', file: '../buildr-web/tools/run-logic-tests.mjs' }, profiles: ['candidate'], concurrencyClass: 'cpu-heavy' }),
 
   step({ id: 'typecheck', name: 'TypeScript static checking', executor: { type: 'npm', args: ['run', 'typecheck'] }, profiles: ['candidate'], }),
-  step({ id: 'unit', name: 'fine-grained unit tests', executor: { type: 'node-test', files: ['test/unit/*.test.ts'], args: ['--import', './test/register-development-entry.ts', '--test-reporter=dot'] }, workerDemand: 4, profiles: ['candidate'],  concurrencyClass: 'cpu-heavy' }),
+  step({ id: 'unit', name: 'fine-grained unit tests', keepFinalDoctor: true, executor: { type: 'node-test', files: ['test/unit/*.test.ts'], args: ['--import', './test/register-development-entry.ts', '--test-reporter=dot'] }, workerDemand: 4, profiles: ['candidate'],  concurrencyClass: 'cpu-heavy' }),
 
   ...INTEGRATION_PRIMARY_SLICES.map((slice: any) => step({
     id: slice.id,
@@ -884,7 +884,7 @@ const builtInVerificationSteps: any = Object.freeze([
   step({ id: 'runtime-reconciliation', name: 'Workspace E2E: runtime reconciliation', executor: { type: 'workspace-suite', selector: 'runtime-reconciliation' }, profiles: ['candidate'],  schedulingCostMs: 36000, concurrencyClass: 'workspace-heavy' }),
 
   step({ id: 'repository-onboarding', name: 'repository onboarding from a clean checkout', executor: { type: 'node', file: 'test/verification/onboarding/repository.ts' },   schedulingCostMs: 88000, concurrencyClass: 'workspace-heavy' }),
-  step({ id: 'init-onboarding', name: 'single-command init onboarding', executor: { type: 'node', file: 'test/verification/onboarding/init.ts' }, profiles: ['candidate'],  schedulingCostMs: 100000, concurrencyClass: 'workspace-heavy' }),
+  step({ id: 'init-onboarding', name: 'single-command init onboarding', keepFinalDoctor: true, executor: { type: 'node', file: 'test/verification/onboarding/init.ts' }, profiles: ['candidate'],  schedulingCostMs: 100000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'cli-compatibility', name: 'CLI compatibility', executor: { type: 'node', file: 'tools/development/run-isolated-workspace-check.ts', args: ['--script', 'test/verification/cli/compatibility.ts'] }, profiles: ['candidate'], groups: ['cli'],  schedulingCostMs: 42000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'cli-package-parity', name: 'CLI package parity', executor: { type: 'node', file: 'test/verification/cli/package-parity.ts', consumesArtifact: true }, profiles: ['candidate'], groups: ['cli'],  dependsOn: ['candidate-tarball'], schedulingCostMs: 15000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'service-branch-contract', name: 'Service branch contract', executor: { type: 'node', file: 'test/verification/onboarding/service-branch.ts' }, profiles: ['candidate'],   schedulingCostMs: 3000, concurrencyClass: 'workspace-heavy' }),
@@ -912,6 +912,7 @@ const serviceSteps = serviceSets.flatMap(([service, checks]) => checks.map((chec
     contexts: [], resources: check.resources ?? [], developmentRunners: [], platformScope: COMMON_PLATFORM_SCOPE,
     isolationMode: footprints.length ? 'sandbox' : 'none', resetStrategy: footprints.length ? 'recreate' : 'none',
     parallelSafety: 'worker-safe', concurrencyClass: 'cpu-heavy', resourceDemand: check.resourceDemand ?? inherited?.resourceDemand ?? { workers: 1, processes: 1 },
+    ...(inherited?.keepFinalDoctor === true ? { keepFinalDoctor: true } : {}),
     ...(check.schedulingCostMs ? { schedulingCostMs: check.schedulingCostMs } : {}),
     id: check.id, name: check.name, service, serviceRoot: root, serviceOwned: true, testFiles: check.testFiles ?? [], target: 'source',
     ...(check.selection ? { selection: check.selection } : {}),
@@ -988,6 +989,7 @@ const candidateShard: any = (id: any, runner: any, phase: any, stepIds: any, opt
 
 export const CORE_MACOS_STEP_IDS: any = Object.freeze([
   'integration',
+  'integration-generated-artifacts',
   'integration-code',
   'integration-knowledge',
   'integration-workspace-assets',
