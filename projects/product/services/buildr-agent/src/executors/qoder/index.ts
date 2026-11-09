@@ -17,8 +17,7 @@ import type { AccountObservation, AgentExecutor, AgentRuntime, ContextRef, Execu
 import { NativeRpc, releasedNativeControl, nativeBinding, bounded, closeOwnedProcess, findExecutable, inspectVersion, accountEnvironment, nativeCommand, nativeHome, opaqueReference, parseReference, privateDirectories } from '../native-process.ts';
 import {readQoderIdentity,requestQoderModel,inspectQoderLogin} from '../../model-access/providers/qoder.ts';
 import { ExecutorInputRejected, type ExecutorSupplementInput, type ExecutorInputReceipt } from '../../contracts.ts';
-import { checkedGateway, consumerBinding, gatewayModel, qoderGatewayPolicy, qoderGatewayProvider, type ExecutorGateway } from '../model-gateway.ts';
-import { registerQoderProvider, unregisterQoderProvider, type QoderProviderRegistration } from './provider-registration.ts';
+import { checkedGateway, consumerBinding, gatewayModel, qoderGatewayPolicy, type ExecutorGateway } from '../model-gateway.ts';
 import type { ExecutorForkInput } from '../../contracts.ts';
 const capabilities = { interaction: { policy: interactionPolicy.version, nonBlockingQuestions: false }, supplement: true, permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
 export function createQoderExecutor(): AgentExecutor { return { nativeContent: qoderContent, readReleasedControl: input => releasedNativeControl('qoder',input), readPersistedExecution: readQoderPersistedExecution, storage: { legacyDirectories: qoderLegacyCaches, diagnostics: qoderDiagnosticResources, transientDirectories: regenerableToolCaches, canReclaim: toolCacheReclaimable }, descriptor: { id: 'qoder', label: 'Qoder', capabilities }, open: options => QoderRuntime.open(options) }; }
@@ -45,7 +44,6 @@ class QoderRuntime implements AgentRuntime {
   private observations = new Map<string, ExecutorObservation>();
   private login?: { child: ChildProcessWithoutNullStreams; cancelled: boolean; update: (value: LoginObservation) => void };
   private gateway?: ExecutorGateway;
-  private providerRegistration?: { config: string; registration: QoderProviderRegistration };
   private constructor(bindingIdentity: string, rpc: NativeRpc, executable: string, environment: NodeJS.ProcessEnv, configRoot: string) {
     this.bindingIdentity = bindingIdentity; this.rpc = rpc; this.executable = executable; this.environment = environment; this.configRoot = configRoot;
     rpc.onMessage(message => {
@@ -124,14 +122,10 @@ class QoderRuntime implements AgentRuntime {
     const binding = await consumerBinding('qoder', executable, version, config, options);
     const sdkModule=await qoderSdkPair(executable,version);
     const rpc = new NativeRpc(process.execPath, [fileURLToPath(new URL(import.meta.url.endsWith('.ts') ? './worker.ts' : './worker.js', import.meta.url))], { cwd: options.configRoot, env, diagnostics:options.diagnostics?event=>options.diagnostics!({...event,provider:'qoder'}):undefined });
-    // Qoder reads custom providers only from the persisted connection settings file.
-    const registration = gateway && !gateway.nativeModel ? qoderGatewayProvider(gateway) : undefined;
-    if (registration) await registerQoderProvider(config, registration);
     const runtime = new QoderRuntime(binding.identity, rpc, executable, env, options.configRoot);
     runtime.participationInstruction = instructionParticipation('interaction-policy',(options.interaction ?? interactionPolicy).instructions);
     runtime.bindingData = binding.data;
     runtime.gateway = gateway;
-    if (registration) runtime.providerRegistration = { config, registration };
     let abortedClose: Promise<void> | undefined; const abort = () => { abortedClose ??= rpc.close(); };
     options.signal?.addEventListener('abort', abort, { once: true }); if (options.signal?.aborted) abort();
     try {
@@ -139,7 +133,7 @@ class QoderRuntime implements AgentRuntime {
       if (gateway) await runtime.assertNativeAccount();
       // Platform account and live model checks use the real query before its first input.
       options.signal?.throwIfAborted(); return runtime;
-    } catch (error) { if (registration) await unregisterQoderProvider(config, registration).catch(() => {}); await (abortedClose ?? rpc.close()); throw error; }
+    } catch (error) { await (abortedClose ?? rpc.close()); throw error; }
     finally { options.signal?.removeEventListener('abort', abort); }
   }
   private reference(context: ContextRef, cwd?: string): string {
@@ -301,7 +295,5 @@ class QoderRuntime implements AgentRuntime {
   }
   async reply({ contextRef, executionRef, requestId, answer }: { contextRef: ContextRef; executionRef: ExecutionRef; requestId: string; answer: unknown }): Promise<void> { this.reference(contextRef); await this.rpc.call('reply', { contextId: contextRef.id, executionId: executionRef.id, requestId, answer }); }
   async stop({ contextRef, executionRef, toolId }: { contextRef: ContextRef; executionRef: ExecutionRef; toolId?: string }): Promise<ExecutorObservation> { this.reference(contextRef); return await this.rpc.call('stop', { contextId: contextRef.id, executionId: executionRef.id, toolId }, 7000); }
-  async close(): Promise<void> {
-    if (this.providerRegistration) await unregisterQoderProvider(this.providerRegistration.config, this.providerRegistration.registration).catch(() => {});
-    await this.cancelLogin(); await this.rpc.call('close', {}, 5000).catch(() => {}); await this.rpc.close(); this.handlers.clear(); this.executionHandlers.clear(); }
+  async close(): Promise<void> { await this.cancelLogin(); await this.rpc.call('close', {}, 5000).catch(() => {}); await this.rpc.close(); this.handlers.clear(); this.executionHandlers.clear(); }
 }

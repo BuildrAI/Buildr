@@ -40,23 +40,11 @@ function qoderProviderId(gateway: ExecutorGateway): string {
 export function qoderGatewayModelId(gateway: ExecutorGateway): string {
   return gateway.nativeModel?.id ?? qoderProviderId(gateway) + '/' + gatewayModel(gateway).id;
 }
-function qoderProviderDefinition(gateway: ExecutorGateway, apiKey: string) {
-  const model = gatewayModel(gateway);
-  const efforts = model.reasoningEfforts?.filter(effort => qoderReasoningEfforts.has(effort.id)).map(effort => effort.id);
-  return { type: 'openai-compatible', protocol: 'openai', authType: 'bearer', baseUrl: gateway.baseUrl, apiKey, displayName: 'Buildr', model: model.id, models: [{ model: model.id, displayName: model.label, ...(model.contextWindow ? { contextWindow: model.contextWindow } : {}), ...(model.maxOutputTokens ? { maxOutputTokens: model.maxOutputTokens } : {}), capabilities: { ...(typeof model.tools === 'boolean' ? { tools: model.tools } : {}), ...(typeof model.vision === 'boolean' ? { vision: model.vision } : {}), ...(efforts?.length ? { thinking: { modes: ['enabled'], preferredMode: 'enabled', supportsEffort: true, supportedEffortLevels: efforts } } : {}) } }] };
-}
 /** A query-local settings overlay; account settings and credentials remain native-owned. */
 export function qoderGatewaySettings(gateway: ExecutorGateway) {
-  return { providers: { [qoderProviderId(gateway)]: qoderProviderDefinition(gateway, '${BUILDR_MODEL_GATEWAY_KEY}') } };
-}
-/**
- * The persisted provider Qoder reads from `<config>/settings.json`.
- * Qoder resolves custom models only from that file: a query-local overlay,
- * `--settings`, `outerProviders` and `apiKeyEnv` never reach the model catalog.
- * The lease key is written as a literal because Qoder does not expand env references.
- */
-export function qoderGatewayProvider(gateway: ExecutorGateway) {
-  return { id: qoderProviderId(gateway), provider: qoderProviderDefinition(gateway, gateway.apiKey) };
+  const model = gatewayModel(gateway);
+  const efforts = model.reasoningEfforts?.filter(effort => qoderReasoningEfforts.has(effort.id)).map(effort => effort.id);
+  return { providers: { [qoderProviderId(gateway)]: { type: 'openai-compatible', protocol: 'openai', authType: 'bearer', baseUrl: gateway.baseUrl, apiKey: '${BUILDR_MODEL_GATEWAY_KEY}', displayName: 'Buildr', model: model.id, models: [{ model: model.id, displayName: model.label, ...(model.contextWindow ? { contextWindow: model.contextWindow } : {}), ...(model.maxOutputTokens ? { maxOutputTokens: model.maxOutputTokens } : {}), capabilities: { ...(typeof model.tools === 'boolean' ? { tools: model.tools } : {}), ...(typeof model.vision === 'boolean' ? { vision: model.vision } : {}), ...(efforts?.length ? { thinking: { modes: ['enabled'], preferredMode: 'enabled', supportsEffort: true, supportedEffortLevels: efforts } } : {}) } }] } } };
 }
 /** Called for every Qoder purpose; a qualified string selects its registered direct route. */
 export function qoderGatewayPolicy(gateway: ExecutorGateway, selected?: string, effort?: string) {
