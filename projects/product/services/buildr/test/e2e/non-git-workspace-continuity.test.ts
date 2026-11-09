@@ -9,6 +9,7 @@ import { createRuntime, runtimeProvide } from '../../src/bootstrap/runtime.ts';
 import { WORKSPACE_APPLICATION } from '../../src/modules/workspace/module.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
+import { runCliInProcess } from '../helpers/in-process-cli.ts';
 
 const serviceRoot = path.resolve(import.meta.dirname, '../..');
 const file = path.join(import.meta.dirname, 'non-git-workspace-continuity.test.ts');
@@ -42,11 +43,13 @@ async function scenario({ nestedGit = false } = {}) {
   const cli = path.join(serviceRoot, 'bin/buildr.mjs');
   const target = ['--target', workspace];
   const run = (args: string[], expected = 0) => {
-    const result = spawnSync(process.execPath, [cli, ...args], { cwd: smokeRoot, env, encoding: 'utf8', timeout: 30_000, maxBuffer: 8 * 1024 * 1024 });
-    assert.equal(result.status, expected, `${args.join(' ')}\n${result.error?.message || ''}\n${result.stdout}\n${result.stderr}`);
-    return result;
+    // `init` performs the agent runtime onboarding through a child Buildr
+    // invocation, so it keeps the real process entry. Every other command runs
+    // through the same CLI code in-process to avoid a cold Node start each time.
+    if (args[0] === 'init') return Promise.resolve(spawnSync(process.execPath, [cli, ...args], { cwd: smokeRoot, env, encoding: 'utf8', timeout: 30_000, maxBuffer: 8 * 1024 * 1024 }));
+    return runCliInProcess(args, expected, { cwd: smokeRoot, env });
   };
-  const json = (args: string[], expected = 0) => JSON.parse(run([...args, '--json'], expected).stdout);
+  const json = (args: string[], expected = 0) => run([...args, '--json'], expected).then((result: any) => JSON.parse(result.stdout));
   const input = (name: string, content: string) => {
     const location = path.join(smokeRoot, name);
     fs.writeFileSync(location, content);
@@ -74,7 +77,7 @@ async function scenario({ nestedGit = false } = {}) {
     }
   };
 
-  run(['init', ...target, '--name', 'non-git-documents', '--description', 'Pure document workspace continuity fixture', '--profile', 'personal']);
+  await run(['init', ...target, '--name', 'non-git-documents', '--description', 'Pure document workspace continuity fixture', '--profile', 'personal']);
   assertNoGit();
   const projected = (id: string) => fs.readFileSync(path.join(workspace, '.agents/skills', id, 'SKILL.md'), 'utf8');
   const triage = projected('task-triage');
@@ -91,7 +94,7 @@ async function scenario({ nestedGit = false } = {}) {
     assert.match(effective, /身份未明只停止依赖该身份的写入/);
   }
 
-  let catalog = json(['assets', 'inspect', ...target]);
+  let catalog = await json(['assets', 'inspect', ...target]);
   if (nestedGit) {
     const codeRoot = path.join(workspace, 'repositories/unchanged');
     fs.mkdirSync(codeRoot, { recursive: true });
@@ -105,23 +108,23 @@ async function scenario({ nestedGit = false } = {}) {
     fs.writeFileSync(path.join(codeRoot, 'base.txt'), 'Existing code must remain unchanged.\n');
     git(['add', '--', 'base.txt']); git(['-c', 'commit.gpgSign=false', 'commit', '-m', 'existing code']);
     const repositoryInput = input('repository.json', JSON.stringify({ revision: catalog.revision, code: 'unchanged', path: 'repositories/unchanged', integrationBranch: 'main' }));
-    catalog = json(['assets', 'create', 'repository', ...target, '--input', repositoryInput]);
+    catalog = await json(['assets', 'create', 'repository', ...target, '--input', repositoryInput]);
     assert.equal(catalog.repositories[0].source.type, 'git');
     assert.equal(catalog.repositories[0].source.git, undefined, 'A local repository must not acquire a fictional remote.');
     nestedRepository = { root: codeRoot, head: git(['rev-parse', 'HEAD']), refs: git(['show-ref']) };
     assertNoGit();
   }
   const projectInput = input('project.json', JSON.stringify({ revision: catalog.revision, code: 'documents', name: '纯资料项目' }));
-  const createdProject = json(['assets', 'create', 'project', ...target, '--input', projectInput]);
+  const createdProject = await json(['assets', 'create', 'project', ...target, '--input', projectInput]);
   assert.equal(createdProject.projects[0].source.type, 'workspace');
   if (nestedGit) {
     const serviceInput = input('service.json', JSON.stringify({ revision: createdProject.revision, projectId: createdProject.projects[0].id, service: { code: 'unchanged-api', name: '已有实现', repositoryId: createdProject.repositories[0].id } }));
-    const withCode = json(['assets', 'create', 'service', ...target, '--input', serviceInput]);
+    const withCode = await json(['assets', 'create', 'service', ...target, '--input', serviceInput]);
     assert.deepEqual(withCode.projects[0].serviceIds, [withCode.services[0].id]);
   }
   const projectRoot = path.join(workspace, 'projects/documents');
   const brief = input('brief.md', '# 资料维护目标\n\n核对当前正文、外部变化和完成结果。\n');
-  const created = json(['task', 'create', 'document-work', '--title', '资料接续', '--intent', '维护真实非 Git 资料', '--project', 'documents', '--brief-file', brief, ...target]);
+  const created = await json(['task', 'create', 'document-work', '--title', '资料接续', '--intent', '维护真实非 Git 资料', '--project', 'documents', '--brief-file', brief, ...target]);
   assert.equal(created.record.status, 'active');
   assert.deepEqual(created.record.changes, []);
   if (nestedGit) {
@@ -134,22 +137,22 @@ async function scenario({ nestedGit = false } = {}) {
     const references = input('mixed-materials.json', JSON.stringify({ schemaVersion: 'buildr.task-materials/v2', documents: [
       { id: 'project-document', role: 'implementation', title: '当前资料', source: { kind: 'project', project: 'documents', path: relative } },
     ] }));
-    json(['task', 'materials', 'record', 'document-work', '--materials', references, '--expected-current', 'absent', ...target]);
+    await json(['task', 'materials', 'record', 'document-work', '--materials', references, '--expected-current', 'absent', ...target]);
     fs.appendFileSync(document, '\n外部变化需要原地保留。\n');
-    const materials = json(['task', 'materials', 'inspect', 'document-work', ...target]);
+    const materials = await json(['task', 'materials', 'inspect', 'document-work', ...target]);
     assert.equal(materials.documents[0].content, fs.readFileSync(document, 'utf8'));
-    const completed = json(['task', 'complete', 'document-work', '--summary', '资料已回读，代码库未改变。', '--expected-record', created.recordDigest, ...target]);
+    const completed = await json(['task', 'complete', 'document-work', '--summary', '资料已回读，代码库未改变。', '--expected-record', created.recordDigest, ...target]);
     assert.equal(completed.record.status, 'completed');
     assertNoGit();
     process.stdout.write('Mixed-root document lifecycle preserves unrelated registered code.\n');
     return;
   }
   const updatedBrief = input('brief-update.md', '# 资料维护目标\n\n已明确实际文件与验收范围。\n');
-  const updated = json(['task', 'update', 'document-work', '--brief-file', updatedBrief, '--expected-record', created.recordDigest, ...target]);
-  const stale = json(['task', 'update', 'document-work', '--title', '不得覆盖当前任务', '--expected-record', created.recordDigest, ...target], 1);
+  const updated = await json(['task', 'update', 'document-work', '--brief-file', updatedBrief, '--expected-record', created.recordDigest, ...target]);
+  const stale = await json(['task', 'update', 'document-work', '--title', '不得覆盖当前任务', '--expected-record', created.recordDigest, ...target], 1);
   assert.equal(stale.status, 'blocked');
   assert.equal(stale.diagnostic.code, 'task_record_conflict');
-  assert.equal(json(['task', 'inspect', 'document-work', ...target]).recordDigest, updated.recordDigest);
+  assert.equal((await json(['task', 'inspect', 'document-work', ...target])).recordDigest, updated.recordDigest);
 
   // This fixture represents a professional editor's ordinary file result. It is
   // deliberately not a product writer or a claimed atomic concurrency guard.
@@ -159,12 +162,12 @@ async function scenario({ nestedGit = false } = {}) {
   const initial = '# 项目当前说明\n\n这是唯一实际正文。\n';
   fs.writeFileSync(projectDocument, initial, { flag: 'wx' });
   const localInput = input('implementation.md', '# 本机实施材料\n\n实际说明位置已核对。\n');
-  const local = json(['task', 'materials', 'write', 'document-work', '--path', 'implementation.md', '--content', localInput, '--expected-document', 'absent', ...target]);
+  const local = await json(['task', 'materials', 'write', 'document-work', '--path', 'implementation.md', '--content', localInput, '--expected-document', 'absent', ...target]);
   const references = input('materials.json', JSON.stringify({ schemaVersion: 'buildr.task-materials/v2', documents: [
     { id: 'project', role: 'implementation', title: '当前项目资料', source: { kind: 'project', project: 'documents', path: relativeDocument } },
     { id: 'local', role: 'implementation', title: '本机实施材料', source: { kind: 'task', path: 'implementation.md' } },
   ] }));
-  const materials = json(['task', 'materials', 'record', 'document-work', '--materials', references, '--expected-current', 'absent', ...target]);
+  const materials = await json(['task', 'materials', 'record', 'document-work', '--materials', references, '--expected-current', 'absent', ...target]);
   assert.equal(materials.documents[0].content, initial);
   assert.equal(materials.documents[0].actualDigest, digest(initial));
   assert.equal(materials.documents[0].provenance, 'retained-project');
@@ -199,7 +202,7 @@ async function scenario({ nestedGit = false } = {}) {
 
     fs.appendFileSync(projectDocument, '\n其他入口补充的当前内容。\n');
     const external = fs.readFileSync(projectDocument, 'utf8');
-    const refreshed = json(['task', 'materials', 'inspect', 'document-work', ...target]);
+    const refreshed = await json(['task', 'materials', 'inspect', 'document-work', ...target]);
     assert.equal(refreshed.documents[0].content, external); assert.equal(refreshed.documents[0].actualDigest, digest(external));
     assert.notEqual(refreshed.documents[0].actualDigest, materials.documents[0].actualDigest);
     assert.equal((await readProject()).content, external);
@@ -208,13 +211,13 @@ async function scenario({ nestedGit = false } = {}) {
     const localFile = path.join(workspace, '.buildr/local/task-materials/document-work/implementation.md');
     fs.appendFileSync(localFile, '\n外部编辑必须保留。\n');
     const externalLocal = fs.readFileSync(localFile, 'utf8');
-    const conflict = run(['task', 'materials', 'write', 'document-work', '--path', 'implementation.md', '--content', localInput, '--expected-document', local.actualDigest, ...target, '--json'], 1);
+    const conflict = await run(['task', 'materials', 'write', 'document-work', '--path', 'implementation.md', '--content', localInput, '--expected-document', local.actualDigest, ...target, '--json'], 1);
     assert.match(`${conflict.stdout}${conflict.stderr}`, /task_materials_document_conflict/);
     assert.equal(fs.readFileSync(localFile, 'utf8'), externalLocal);
-    const latest = json(['task', 'materials', 'inspect', 'document-work', ...target]);
+    const latest = await json(['task', 'materials', 'inspect', 'document-work', ...target]);
     assert.equal(latest.documents[1].content, externalLocal); assert.equal(latest.documents[1].actualDigest, digest(externalLocal));
-    assert.equal(json(['task', 'inspect', 'document-work', ...target]).recordDigest, updated.recordDigest, 'Material work must not rewrite Task Record.');
-    const completed = json(['task', 'complete', 'document-work', '--summary', '项目正文和本机材料已回读，外部内容保留。', '--expected-record', updated.recordDigest, ...target]);
+    assert.equal((await json(['task', 'inspect', 'document-work', ...target])).recordDigest, updated.recordDigest, 'Material work must not rewrite Task Record.');
+    const completed = await json(['task', 'complete', 'document-work', '--summary', '项目正文和本机材料已回读，外部内容保留。', '--expected-record', updated.recordDigest, ...target]);
     assert.equal(completed.record.status, 'completed');
     assert.equal(fs.readFileSync(projectDocument, 'utf8'), external);
     assert.equal(fs.readFileSync(localFile, 'utf8'), externalLocal);
@@ -258,9 +261,9 @@ async function nestedGitIsolationScenario(section: 'full' | 'lifecycle' | 'safet
   const env = { ...process.env };
   delete env.GIT_DIR; delete env.GIT_WORK_TREE;
   const run = (args: string[], expected = 0, json = true) => {
-    const result = spawnSync(process.execPath, [path.join(serviceRoot, 'bin/buildr.mjs'), ...args, '--target', workspace, ...(json ? ['--json'] : [])], { cwd: smokeRoot, env, encoding: 'utf8', timeout: 30_000, maxBuffer: 8 * 1024 * 1024 });
-    assert.equal(result.status, expected, `${args.join(' ')}\n${result.error?.message || ''}\n${result.stdout}\n${result.stderr}`);
-    return json ? JSON.parse(result.stdout) : result;
+    const full: string[] = [...args, '--target', workspace, ...(json ? ['--json'] : [])];
+    if (args[0] === 'init') return Promise.resolve(spawnSync(process.execPath, [path.join(serviceRoot, 'bin/buildr.mjs'), ...full], { cwd: smokeRoot, env, encoding: 'utf8', timeout: 30_000, maxBuffer: 8 * 1024 * 1024 }));
+    return runCliInProcess(full, expected, { cwd: smokeRoot, env }).then((result: any) => json ? JSON.parse(result.stdout) : result);
   };
   const input = path.join(smokeRoot, 'asset-input.json');
   const write = (args: string[], value: unknown) => { fs.writeFileSync(input, JSON.stringify(value)); return run([...args, '--input', input]); };
@@ -271,7 +274,7 @@ async function nestedGitIsolationScenario(section: 'full' | 'lifecycle' | 'safet
   };
   completePhase();
   completePhase = startPhase('workspace-init');
-  run(['init', '--name', 'mixed-workspace', '--description', 'Nested Git isolation fixture', '--profile', 'personal'], 0, false);
+  await run(['init', '--name', 'mixed-workspace', '--description', 'Nested Git isolation fixture', '--profile', 'personal'], 0, false);
   const assertRootHasNoGit = () => {
     git(workspace, ['rev-parse', '--show-toplevel'], 128);
     assert.equal(fs.existsSync(path.join(workspace, '.git')), false);
@@ -310,7 +313,7 @@ async function nestedGitIsolationScenario(section: 'full' | 'lifecycle' | 'safet
     catalog = fixtureRuntime.createCatalogService(workspace, { revision: catalog.revision, projectId, service: { code, name: code, repositoryId: catalog.repositories.find((item: { code: string }) => item.code === repositoryCode).id, modulePath } });
   }
   const taskId = 'nested-code', branch = `codex/${taskId}`;
-  const task = run(['task', 'create', taskId, '--title', '隔离嵌套代码', '--intent', '修改两个实际 Git 来源并保留普通资料', '--project', 'demo', '--service', 'demo/api', '--service', 'demo/api-view', '--service', 'demo/worker']);
+  const task = await run(['task', 'create', taskId, '--title', '隔离嵌套代码', '--intent', '修改两个实际 Git 来源并保留普通资料', '--project', 'demo', '--service', 'demo/api', '--service', 'demo/api-view', '--service', 'demo/worker']);
   completePhase();
   const create = ['worktree', 'create', taskId, '--branch', branch, '--include', 'service:demo/api', '--include', 'service:demo/api-view', '--include', 'service:demo/worker'];
   let sourceRecords: Array<{ selector: string; sourceRepository: string; checkoutPath: string; branch: string }> = [];
@@ -319,20 +322,20 @@ async function nestedGitIsolationScenario(section: 'full' | 'lifecycle' | 'safet
   const cleanup = (records = sourceRecords) => ['worktree', 'cleanup', taskId, ...records.flatMap(item => ['--expected-source', `${item.selector}=${sourceHeads[item.selector]}`, '--delivered-ref', `${item.selector}=${deliveredHeads[item.selector]}`])];
   if (section !== 'safety') {
   completePhase = startPhase('worktree-selection');
-  const created = run(create);
+  const created = await run(create);
   assert.equal(created.status, 'ready');
   assert.deepEqual(created.repositories.map((item: { selector: string }) => item.selector), ['service:demo/api', 'service:demo/worker']);
   assertRootHasNoGit();
   assert.equal(fs.existsSync(path.join(apiRoot, 'modules/shared/.git')), false);
   assert.ok(fs.existsSync(created.evidencePath));
-  const retry = run(create);
+  const retry = await run(create);
   assert.equal(retry.status, 'ready');
   assert.deepEqual(retry.repositories.map((item: { checkoutPath: string }) => item.checkoutPath), created.repositories.map((item: { checkoutPath: string }) => item.checkoutPath));
   assert.ok(retry.repositories.every((item: { state: string }) => item.state === 'reused'));
-  const inspected = run(['worktree', 'inspect', taskId]);
+  const inspected = await run(['worktree', 'inspect', taskId]);
   assert.equal(inspected.status, 'ready');
   assert.equal(inspected.repositories.length, 2);
-  const preview = run(['web', 'preview', 'start', 'nested-preview', '--task', taskId, '--no-open'], 1, false);
+  const preview = await run(['web', 'preview', 'start', 'nested-preview', '--task', taskId, '--no-open'], 1, false);
   assert.match(`${preview.stdout}${preview.stderr}`, /preview_worktree_scope_missing/);
   completePhase();
   completePhase = startPhase('materials-provenance');
@@ -342,24 +345,24 @@ async function nestedGitIsolationScenario(section: 'full' | 'lifecycle' | 'safet
   fs.writeFileSync(projectDocument, '# 当前项目资料\n\n这份资料属于实际非 Git 项目目录。\n');
   const materialsInput = path.join(smokeRoot, 'mixed-materials.json');
   fs.writeFileSync(materialsInput, JSON.stringify({ schemaVersion: 'buildr.task-materials/v2', documents: [{ id: 'project', role: 'implementation', title: '项目当前资料', source: { kind: 'project', project: 'demo', path: projectRelative } }] }));
-  const materials = run(['task', 'materials', 'record', taskId, '--materials', materialsInput, '--expected-current', 'absent']);
+  const materials = await run(['task', 'materials', 'record', taskId, '--materials', materialsInput, '--expected-current', 'absent']);
   assert.equal(materials.documents[0].provenance, 'retained-project');
   assert.equal(materials.documents[0].content, fs.readFileSync(projectDocument, 'utf8'));
   assert.equal(materials.documents[0].actualDigest, digest(materials.documents[0].content));
   fs.appendFileSync(projectDocument, '\n其他入口刚更新的资料。\n');
-  const currentMaterials = run(['task', 'materials', 'inspect', taskId]);
+  const currentMaterials = await run(['task', 'materials', 'inspect', taskId]);
   assert.equal(currentMaterials.documents[0].content, fs.readFileSync(projectDocument, 'utf8'));
   assert.equal(currentMaterials.documents[0].actualDigest, digest(currentMaterials.documents[0].content));
   assert.notEqual(currentMaterials.documents[0].actualDigest, materials.documents[0].actualDigest);
   const projectRoot = path.join(workspace, 'projects/demo');
   git(projectRoot, ['init', '--initial-branch=main']);
-  const gitProjectMaterials = run(['task', 'materials', 'inspect', taskId]);
+  const gitProjectMaterials = await run(['task', 'materials', 'inspect', taskId]);
   assert.equal(gitProjectMaterials.documents[0].diagnostic.code, 'task_worktree_project_root_unavailable');
   assert.equal(gitProjectMaterials.documents[0].content, null);
   assert.equal(gitProjectMaterials.documents[0].actualDigest, null);
   assert.equal(fs.readFileSync(projectDocument, 'utf8'), currentMaterials.documents[0].content);
   fs.rmSync(path.join(projectRoot, '.git'), { recursive: true });
-  assert.equal(run(['task', 'materials', 'inspect', taskId]).documents[0].actualDigest, currentMaterials.documents[0].actualDigest);
+  assert.equal((await run(['task', 'materials', 'inspect', taskId])).documents[0].actualDigest, currentMaterials.documents[0].actualDigest);
   completePhase();
   completePhase = startPhase('anchor-conflict');
 
@@ -371,24 +374,24 @@ async function nestedGitIsolationScenario(section: 'full' | 'lifecycle' | 'safet
   const duplicateEvidence = path.join(otherDirectory, `${taskId}.json`);
   assert.notEqual(fs.realpathSync(path.dirname(created.evidencePath)), fs.realpathSync(otherDirectory));
   fs.writeFileSync(duplicateEvidence, originalEvidence, { flag: 'wx' });
-  const ambiguous = run(['worktree', 'inspect', taskId], 1);
+  const ambiguous = await run(['worktree', 'inspect', taskId], 1);
   assert.equal(ambiguous.status, 'blocked');
   assert.deepEqual(ambiguous.effects, []);
   assert.equal(fs.readFileSync(created.evidencePath, 'utf8'), originalEvidence);
   assert.equal(fs.readFileSync(duplicateEvidence, 'utf8'), originalEvidence);
   sourceRecords.forEach(item => assert.equal(fs.existsSync(item.checkoutPath), true));
   fs.unlinkSync(duplicateEvidence);
-  assert.equal(run(['worktree', 'inspect', taskId]).status, 'ready');
+  assert.equal((await run(['worktree', 'inspect', taskId])).status, 'ready');
   completePhase();
   completePhase = startPhase('association-ambiguity');
 
   // Another group's unreadable/duplicate association may also claim these members.
   const otherTaskId = 'conflicted-other';
-  run(['task', 'create', otherTaskId, '--title', '需要核对的关联', '--intent', '不能把重复来源吞掉后断言另一个关联唯一', '--project', 'demo']);
+  await run(['task', 'create', otherTaskId, '--title', '需要核对的关联', '--intent', '不能把重复来源吞掉后断言另一个关联唯一', '--project', 'demo']);
   const uncertainEvidence = JSON.stringify({ ...JSON.parse(originalEvidence), taskId: otherTaskId });
   const conflictingFiles = [path.join(path.dirname(created.evidencePath), `${otherTaskId}.json`), path.join(otherDirectory, `${otherTaskId}.json`)];
   conflictingFiles.forEach(location => fs.writeFileSync(location, uncertainEvidence, { flag: 'wx' }));
-  const uncertainCatalog = run(['code', 'repositories', '--task', taskId]);
+  const uncertainCatalog = await run(['code', 'repositories', '--task', taskId]);
   const currentPaths = sourceRecords.map(item => {
     const alias = path.join(path.dirname(item.checkoutPath), path.basename(item.checkoutPath).toUpperCase());
     if (!fs.existsSync(alias)) return item.checkoutPath;
@@ -409,12 +412,12 @@ async function nestedGitIsolationScenario(section: 'full' | 'lifecycle' | 'safet
   assertSameDirectories(uncertainMembers.map((item: { path: string }) => item.path), currentPaths);
   assert.ok(uncertainMembers.every((item: { taskId: string | null; available: boolean }) => item.available && item.taskId === null));
   assert.ok(uncertainCatalog.diagnostics.some((item: { code: string }) => item.code === 'code_worktree_task_unconfirmed'));
-  const uncertainControl = run(['code', 'source-control', '--task', taskId]);
+  const uncertainControl = await run(['code', 'source-control', '--task', taskId]);
   const controlMembers = uncertainControl.repositories.flatMap((item: { worktrees: Array<{ location: string; taskId: string | null; taskDiagnostic: string | null; available: boolean }> }) => item.worktrees).filter((item: { location: string }) => currentPaths.some(reference => sameExistingDirectory(item.location, reference)));
   assert.equal(controlMembers.length, 2);
   assertSameDirectories(controlMembers.map((item: { location: string }) => item.location), currentPaths);
   assert.ok(controlMembers.every((item: { taskId: string | null; taskDiagnostic: string | null; available: boolean }) => item.available && item.taskId === null && item.taskDiagnostic));
-  const ambiguousCleanup = run(['worktree', 'cleanup', otherTaskId, ...sourceRecords.flatMap(item => {
+  const ambiguousCleanup = await run(['worktree', 'cleanup', otherTaskId, ...sourceRecords.flatMap(item => {
     const head = git(item.checkoutPath, ['rev-parse', 'HEAD']);
     return ['--expected-source', `${item.selector}=${head}`, '--delivered-ref', `${item.selector}=${head}`];
   })], 1);
@@ -425,7 +428,7 @@ async function nestedGitIsolationScenario(section: 'full' | 'lifecycle' | 'safet
   completePhase();
   completePhase = startPhase('delivery');
 
-  const codeCatalog = run(['code', 'repositories', '--task', taskId]);
+  const codeCatalog = await run(['code', 'repositories', '--task', taskId]);
   assert.deepEqual(codeCatalog.selectedWorktreeGroupIds, [`task:${taskId}`]);
   assert.deepEqual(new Set(codeCatalog.selectedRepositoryIds), new Set(catalog.repositories.map((item: { id: string }) => item.id)));
   const taskMembers = codeCatalog.worktrees.filter((item: { kind: string }) => item.kind === 'task');
@@ -442,12 +445,12 @@ async function nestedGitIsolationScenario(section: 'full' | 'lifecycle' | 'safet
     git(item.checkoutPath, ['-c', 'commit.gpgSign=false', 'commit', '-m', `feat: ${item.selector}`, '-m', `Buildr-Task: ${taskId}`]);
     sourceHeads[item.selector] = git(item.checkoutPath, ['rev-parse', 'HEAD']);
   }
-  const beforeTask = run(['task', 'inspect', taskId]);
-  const commits = run(['task', 'commits', taskId]);
+  const beforeTask = await run(['task', 'inspect', taskId]);
+  const commits = await run(['task', 'commits', taskId]);
   assert.equal(commits.status, 'complete', JSON.stringify(commits.diagnostics));
   assert.deepEqual(new Set(commits.commits.map((item: { hash: string }) => item.hash)), new Set(Object.values(sourceHeads)));
   assert.equal(commits.repositories.length, 2);
-  assert.equal(run(['task', 'inspect', taskId]).recordDigest, beforeTask.recordDigest);
+  assert.equal((await run(['task', 'inspect', taskId])).recordDigest, beforeTask.recordDigest);
   assert.equal(beforeTask.recordDigest, task.recordDigest);
   for (const item of sourceRecords) {
     git(item.sourceRepository, ['merge', '--ff-only', branch]);
@@ -456,11 +459,11 @@ async function nestedGitIsolationScenario(section: 'full' | 'lifecycle' | 'safet
   }
   completePhase();
   completePhase = startPhase('group-cleanup');
-  const partialDelivery = run(cleanup(sourceRecords.slice(0, 1)), 1);
+  const partialDelivery = await run(cleanup(sourceRecords.slice(0, 1)), 1);
   assert.equal(partialDelivery.status, 'blocked');
   assert.deepEqual(partialDelivery.effects, []);
   sourceRecords.forEach(item => assert.equal(fs.existsSync(item.checkoutPath), true));
-  const cleaned = run(cleanup());
+  const cleaned = await run(cleanup());
   assert.equal(cleaned.status, 'cleaned');
   assert.equal(fs.existsSync(created.evidencePath), false);
   sourceRecords.forEach(item => {
@@ -475,22 +478,22 @@ async function nestedGitIsolationScenario(section: 'full' | 'lifecycle' | 'safet
   completePhase = startPhase('observed-recovery');
 
   // Only current child objects are available after losing this case's evidence.
-  const recreated = run(create);
+  const recreated = await run(create);
   assert.equal(recreated.status, 'ready');
   fs.unlinkSync(recreated.evidencePath);
   const observed = path.join(smokeRoot, 'observed-checkouts.json');
   const currentRecords = recreated.repositories.map((item: { selector: string; sourceRepository: string; checkoutPath: string; branch: string }) => ({ selector: item.selector, sourceRepository: item.sourceRepository, checkoutPath: item.checkoutPath, branch: item.branch }));
   fs.writeFileSync(observed, JSON.stringify(currentRecords.slice(0, 1)));
-  const omitted = run([...cleanup(sourceRecords.slice(0, 1)), '--observed-checkouts', observed], 1);
+  const omitted = await run([...cleanup(sourceRecords.slice(0, 1)), '--observed-checkouts', observed], 1);
   assert.equal(omitted.status, 'blocked');
   assert.deepEqual(omitted.effects, []);
   currentRecords.forEach((item: { checkoutPath: string }) => assert.equal(fs.existsSync(item.checkoutPath), true));
   fs.writeFileSync(observed, JSON.stringify(currentRecords));
-  const observedInspection = run(['worktree', 'inspect', taskId, '--observed-checkouts', observed]);
+  const observedInspection = await run(['worktree', 'inspect', taskId, '--observed-checkouts', observed]);
   assert.equal(observedInspection.status, 'ready');
   assert.equal(observedInspection.evidenceSource, 'observed');
   assert.equal(fs.existsSync(recreated.evidencePath), false);
-  const recovered = run([...cleanup(), '--observed-checkouts', observed]);
+  const recovered = await run([...cleanup(), '--observed-checkouts', observed]);
   assert.equal(recovered.status, 'cleaned');
   assert.equal(recovered.evidenceSource, 'observed');
   assert.equal(fs.existsSync(recreated.evidencePath), false);
@@ -518,44 +521,44 @@ async function nestedGitIsolationScenario(section: 'full' | 'lifecycle' | 'safet
 
   // A damaged, unrelated declaration cannot stop healthy selected work or data.
   const badRoot = createSource('broken');
-  catalog = write(['assets', 'create', 'project'], { revision: catalog.revision, code: 'other', name: 'Other project' });
-  catalog = write(['assets', 'create', 'repository'], { revision: catalog.revision, code: 'broken', path: 'repositories/broken', integrationBranch: 'main' });
-  catalog = write(['assets', 'create', 'service'], { revision: catalog.revision, projectId: catalog.projects.find((item: { code: string }) => item.code === 'other').id, service: { code: 'broken-api', name: 'Broken API', repositoryId: catalog.repositories.find((item: { code: string }) => item.code === 'broken').id } });
+  catalog = await write(['assets', 'create', 'project'], { revision: catalog.revision, code: 'other', name: 'Other project' });
+  catalog = await write(['assets', 'create', 'repository'], { revision: catalog.revision, code: 'broken', path: 'repositories/broken', integrationBranch: 'main' });
+  catalog = await write(['assets', 'create', 'service'], { revision: catalog.revision, projectId: catalog.projects.find((item: { code: string }) => item.code === 'other').id, service: { code: 'broken-api', name: 'Broken API', repositoryId: catalog.repositories.find((item: { code: string }) => item.code === 'broken').id } });
   const badGit = path.join(badRoot, '.git');
   fs.renameSync(badGit, path.join(smokeRoot, 'broken-git-preserved'));
   fs.writeFileSync(badGit, 'gitdir: unavailable-git-directory\n');
   const goodRefs = [apiRoot, workerRoot].map(root => git(root, ['show-ref']));
-  const rejected = run(['worktree', 'create', 'bad-selection', '--branch', 'codex/bad-selection', '--include', 'service:demo/api', '--include', 'service:other/broken-api'], 1);
+  const rejected = await run(['worktree', 'create', 'bad-selection', '--branch', 'codex/bad-selection', '--include', 'service:demo/api', '--include', 'service:other/broken-api'], 1);
   assert.equal(rejected.status, 'blocked');
   assert.deepEqual(rejected.effects, []);
   [apiRoot, workerRoot].forEach((root, index) => assert.equal(git(root, ['show-ref']), goodRefs[index]));
   assert.equal(fs.existsSync(path.join(workspace, '.worktrees/bad-selection')), false);
   fs.appendFileSync(retainedDocument, '\n坏代码库不阻止已确认的资料维护。\n');
-  const docsTask = run(['task', 'create', 'mixed-documents', '--title', '资料接续', '--intent', '维护实际资料', '--project', 'demo']);
-  const docsCompleted = run(['task', 'complete', 'mixed-documents', '--summary', '普通资料继续维护，未写损坏来源。', '--expected-record', docsTask.recordDigest]);
+  const docsTask = await run(['task', 'create', 'mixed-documents', '--title', '资料接续', '--intent', '维护实际资料', '--project', 'demo']);
+  const docsCompleted = await run(['task', 'complete', 'mixed-documents', '--summary', '普通资料继续维护，未写损坏来源。', '--expected-record', docsTask.recordDigest]);
   assert.equal(docsCompleted.record.status, 'completed');
-  const healthy = run(create);
+  const healthy = await run(create);
   assert.equal(healthy.status, 'ready');
   sourceRecords = healthy.repositories as typeof sourceRecords;
-  assert.equal(run(['worktree', 'inspect', taskId]).status, 'ready');
-  const uncertainHealthyCatalog = run(['code', 'repositories', '--task', taskId]);
+  assert.equal((await run(['worktree', 'inspect', taskId])).status, 'ready');
+  const uncertainHealthyCatalog = await run(['code', 'repositories', '--task', taskId]);
   const healthyPaths = healthy.repositories.map((item: { checkoutPath: string }) => item.checkoutPath);
   const healthyCatalogMembers = uncertainHealthyCatalog.worktrees.filter((item: { path: string }) => healthyPaths.some((reference: string) => sameExistingDirectory(item.path, reference)));
   assert.equal(healthyCatalogMembers.length, 2);
   assertSameDirectories(healthyCatalogMembers.map((item: { path: string }) => item.path), healthyPaths);
   assert.ok(healthyCatalogMembers.every((item: { available: boolean; taskId: string | null }) => item.available && item.taskId === null));
-  const uncertainHealthyControl = run(['code', 'source-control', '--task', taskId]);
+  const uncertainHealthyControl = await run(['code', 'source-control', '--task', taskId]);
   const healthyControlMembers = uncertainHealthyControl.repositories.flatMap((item: { worktrees: Array<{ location: string; available: boolean; taskId: string | null; taskDiagnostic: string | null }> }) => item.worktrees).filter((item: { location: string }) => healthyPaths.some((reference: string) => sameExistingDirectory(item.location, reference)));
   assert.equal(healthyControlMembers.length, 2);
   assertSameDirectories(healthyControlMembers.map((item: { location: string }) => item.location), healthyPaths);
   assert.ok(healthyControlMembers.every((item: { available: boolean; taskId: string | null; taskDiagnostic: string | null }) => item.available && item.taskId === null && item.taskDiagnostic));
   assert.equal(fs.readFileSync(badGit, 'utf8'), 'gitdir: unavailable-git-directory\n');
   fs.unlinkSync(badGit); fs.renameSync(path.join(smokeRoot, 'broken-git-preserved'), badGit);
-  const confirmedHealthyCatalog = run(['code', 'repositories', '--task', taskId]);
+  const confirmedHealthyCatalog = await run(['code', 'repositories', '--task', taskId]);
   assert.equal(confirmedHealthyCatalog.worktrees.filter((item: { kind: string; taskId: string }) => item.kind === 'task' && item.taskId === taskId).length, 2);
-  const confirmedHealthyControl = run(['code', 'source-control', '--task', taskId]);
+  const confirmedHealthyControl = await run(['code', 'source-control', '--task', taskId]);
   assert.equal(confirmedHealthyControl.repositories.flatMap((item: { worktrees: Array<{ taskId: string | null }> }) => item.worktrees).filter((item: { taskId: string | null }) => item.taskId === taskId).length, 2);
-  assert.equal(run(cleanup()).status, 'cleaned');
+  assert.equal((await run(cleanup())).status, 'cleaned');
   assert.equal(fs.readFileSync(groupDocument, 'utf8'), groupContent);
   assert.match(fs.readFileSync(retainedDocument, 'utf8'), /坏代码库不阻止已确认的资料维护/);
   assert.equal(git(badRoot, ['status', '--porcelain']), '');
@@ -570,7 +573,7 @@ async function nestedGitIsolationScenario(section: 'full' | 'lifecycle' | 'safet
   fs.symlinkSync(external, path.join(unsafeRoot, 'repositories'), 'dir');
   const externalNames = fs.readdirSync(external, { recursive: true });
   const beforeUnsafeRefs = git(apiRoot, ['show-ref']);
-  const escaped = run(['worktree', 'create', unsafeTask, '--branch', `codex/${unsafeTask}`, '--include', 'service:demo/api'], 1);
+  const escaped = await run(['worktree', 'create', unsafeTask, '--branch', `codex/${unsafeTask}`, '--include', 'service:demo/api'], 1);
   assert.equal(escaped.status, 'blocked'); assert.deepEqual(escaped.effects, []);
   assert.deepEqual(fs.readdirSync(external, { recursive: true }), externalNames);
   assert.equal(fs.readFileSync(path.join(external, 'owner.txt'), 'utf8'), 'external content must remain unchanged\n');
