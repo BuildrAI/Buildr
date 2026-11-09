@@ -7,6 +7,7 @@ import path from 'node:path';
 import { createVerificationReuseIdentity, dependencyEnvironmentIdentity, reusedVerificationResult, validateVerificationReuseRecord,
   type VerificationReuseSnapshot, type VerificationReuseStep, type VerificationReuseRecord } from '../verification/verification-reuse.ts';
 import { verificationSteps, verificationStepExecutionInputs } from '../verification/registry.ts';
+import { portableVerificationExecutor, portableVerificationPreparations } from '../verification/verification-portable-inputs.ts';
 
 const sha = `sha256-${'a'.repeat(64)}` as const;
 const step: VerificationReuseStep = { id: 'fixture-check', executor: { type: 'node', file: 'check.ts' }, reuse: { scope: 'backend' }, dependsOn: [] };
@@ -39,6 +40,40 @@ test('source identity binds content and check recipe while commit and checkout l
   assert.notDeepEqual(createVerificationReuseIdentity(step, { ...snapshot, contentIdentities: { ...snapshot.contentIdentities, backend: `sha256-${'b'.repeat(64)}` } }), identity);
   assert.equal(createVerificationReuseIdentity({ ...step, executor: { type: 'candidate-artifact' } }, snapshot), null);
   assert.equal(createVerificationReuseIdentity({ ...step, executor: { type: 'node', consumesArtifact: true } }, snapshot), null);
+});
+
+test('command recipes normalize Node and repository paths without hiding external command changes', () => {
+  const command = {
+    type: 'command', file: '/opt/node-24.21/bin/node',
+    args: ['/checkout-a/projects/product/services/buildr/tools/check.ts', '--mode=source'],
+    cwd: '/checkout-a/projects/product/services/buildr',
+  };
+  assert.deepEqual(
+    portableVerificationExecutor(command, { repositoryRoot: '/checkout-a', nodeExecutable: '/opt/node-24.21/bin/node' }),
+    portableVerificationExecutor({
+      type: 'command', file: '/opt/node-24.22/bin/node',
+      args: ['/checkout-b/projects/product/services/buildr/tools/check.ts', '--mode=source'],
+      cwd: '/checkout-b/projects/product/services/buildr',
+    }, { repositoryRoot: '/checkout-b', nodeExecutable: '/opt/node-24.22/bin/node' }),
+  );
+  const commandStep = { ...step, executor: command };
+  const snapshotA = { ...snapshot, repositoryRoot: '/checkout-a', productRoot: '/checkout-a/projects/product/services/buildr' };
+  const snapshotB = { ...snapshot, repositoryRoot: '/checkout-b', productRoot: '/checkout-b/projects/product/services/buildr' };
+  assert.deepEqual(createVerificationReuseIdentity(commandStep, snapshotA), createVerificationReuseIdentity({
+    ...commandStep, executor: { ...command, args: [command.args[0]!.replace('checkout-a', 'checkout-b'), ...command.args.slice(1)],
+      cwd: command.cwd.replace('checkout-a', 'checkout-b') },
+  }, snapshotB));
+  assert.deepEqual(
+    portableVerificationPreparations([{ file: '/opt/node-24.21/bin/node', args: ['/checkout-a/tools/prepare.ts'], cwd: '/checkout-a' }],
+      { repositoryRoot: '/checkout-a', nodeExecutable: '/opt/node-24.21/bin/node' }),
+    portableVerificationPreparations([{ file: '/opt/node-24.22/bin/node', args: ['/checkout-b/tools/prepare.ts'], cwd: '/checkout-b' }],
+      { repositoryRoot: '/checkout-b', nodeExecutable: '/opt/node-24.22/bin/node' }),
+  );
+  assert.notDeepEqual(
+    portableVerificationExecutor({ type: 'command', file: '/usr/bin/git', args: [], cwd: '/checkout-a' }, { repositoryRoot: '/checkout-a' }),
+    portableVerificationExecutor({ type: 'command', file: '/usr/local/bin/git', args: [], cwd: '/checkout-b' }, { repositoryRoot: '/checkout-b' }),
+    'an external executable outside the repository remains a real recipe input',
+  );
 });
 
 test('execution inputs bind only the selected check inner workers, not queue capacities or unrelated checks', () => {

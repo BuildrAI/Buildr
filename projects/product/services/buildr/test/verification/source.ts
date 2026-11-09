@@ -247,10 +247,14 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
         const source = collectVerificationSourceIdentity(productRoot, { projectRoot });
         const sourceObservationMs = Date.now() - startedAt - environmentPreparationMs;
         const cancellation = sourceVerificationCancellation();
+        // Explicit preparation owns dependency installation. Wrapped development
+        // commands inside checks must not start another implicit install while
+        // the verification network policy is offline.
+        const executionEnv = { ...reuseOptions.env, BUILDR_DEVELOPMENT_PREPARE_SKIP: '1' };
         let execution: any;
         try {
           execution = await executePlan(executionPlan, {
-            productRoot, projectRoot, env: reuseOptions.env, diagnosticsDirectory: evidence.diagnosticsOutput,
+            productRoot, projectRoot, env: executionEnv, diagnosticsDirectory: evidence.diagnosticsOutput,
             stream: process.stdout, errorStream: process.stderr, prefix: 'verify-source',
             concurrency: executionProfile.limits, executionProfile, runId: evidence.runId,
             taskId: process.env.BUILDR_TASK_ID ?? source.branch ?? 'source', signal: cancellation.signal,

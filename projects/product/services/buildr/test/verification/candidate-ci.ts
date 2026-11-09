@@ -9,12 +9,11 @@ import { assertMinimumNodeVersion, createExactNodeExecutionEnvironment, spawnCom
 import { enforceOfflineVerification } from '../../src/infrastructure/network/verification-network-policy.ts';
 import { executePlan } from './plan-runner.ts';
 import { createCandidateCiShardPlan } from './planner.ts';
-import { candidateSourceImportFromEnvironment, planCandidateSourceReuse } from './candidate-source-reuse.ts';
+import { candidateSourceImportFromEnvironment, candidateSourceShardReuse, planCandidateSourceReuse, reusedCandidateSourceResult,
+  validateCandidateSourceRecord } from './candidate-source-reuse.ts';
 import { assertFrozenCandidateCheckout, candidateArtifactImportFromEnvironment, candidateDeferredArtifactIds, candidateDependencyInputsIdentity, createCandidateDeferredPlan,
   createCandidateExecutionEnvironment, readCandidateDeferredPlan, reusableCandidateArtifactStepIds, reusedCandidateArtifactResult, validateCandidateArtifactEvidence } from './candidate-artifact-reuse.ts';
-import { passedRoundRecord } from './candidate-round.ts';
-import { collectVerificationReuseSnapshot, createVerificationReuseIdentity, validEnvironment } from './verification-reuse.ts';
-import { verificationInputApplicability } from './result-applicability.ts';
+import { collectVerificationReuseSnapshot } from './verification-reuse.ts';
 import { CANDIDATE_CI_HOST_NODE_TUPLES, CANDIDATE_CI_SHARDS, resolveVerificationExecutionProfile, verificationSteps } from './registry.ts';
 import { createCandidateSourceBinding } from '../../../../../../skills/buildr-release/scripts/candidate-source-binding.ts';
 import { createCandidateCheckInputReader } from './candidate-check-inputs.ts';
@@ -91,23 +90,9 @@ function checkInputsFor(id: string, commit: string): any {
 let sourceReuseSnapshot: ReturnType<typeof collectVerificationReuseSnapshot> | undefined;
 function validateSourceRecord(record: any, stepId: string, runner: string): boolean {
   const step = verificationSteps.find((item: any) => item.id === stepId);
-  if (!step || !process.env.BUILDR_SELECTION_ID || !passedRoundRecord(record, process.env.BUILDR_SELECTION_ID, step, runner)) return false;
-  // The maintainer selected the exact checks to execute this round. A check
-  // outside that selection keeps its passed record and is transported as such;
-  // it is not revalidated against today's environment because no fresh run is
-  // claimed. Missing records or unselected checks never reach this branch.
-  if (record.result?.retainedByUserInstruction === true) return true;
-  if (!step.reuse) return true;
-  try {
-    sourceReuseSnapshot ??= collectVerificationReuseSnapshot({ productRoot, steps: verificationSteps });
-    const original = record.result?.inputEnvironment;
-    // Explicit common checks may adopt proof from either declared OS. Retain its
-    // real environment; native checks continue to require their actual platform.
-    const portable = step.platformScope?.kind === 'common' && validEnvironment(original)
-      && original.platform === record.environment?.platform && original.nodeVersion === record.environment?.nodeVersion;
-    const snapshot = portable ? { ...sourceReuseSnapshot, environment: original } : sourceReuseSnapshot;
-    return verificationInputApplicability(record.result?.inputIdentity, createVerificationReuseIdentity(step, snapshot)).applicable;
-  } catch { return false; }
+  if (!step) return false;
+  sourceReuseSnapshot ??= collectVerificationReuseSnapshot({ productRoot, steps: verificationSteps });
+  return validateCandidateSourceRecord({ record, step, runner, selectionId: process.env.BUILDR_SELECTION_ID, snapshot: sourceReuseSnapshot });
 }
 
 function artifactRecordSourceMatches(record: any): boolean {
@@ -162,6 +147,10 @@ async function runShard(shardId: any): Promise<any>  {
   const repair = repairPlan();
   const originalPlan = createCandidateCiShardPlan(shardId, { externalArtifact: Boolean(externalArtifact), stepIds: shard.stepIds });
   const checkInputs = checkInputsFor(shardId, verificationSource);
+  const sourceReused = !shard.requiresArtifact && !shard.producesArtifact
+    ? candidateSourceShardReuse(shard, candidateSourceImportFromEnvironment(process.env), validateSourceRecord).reused
+      .map(item => reusedCandidateSourceResult(item.record))
+    : [];
   let localReused: any[] = [];
   if (!Object.entries(process.env).some(([key, value]) => key.startsWith('GITHUB_') && value) && externalArtifact) {
     try {
@@ -172,7 +161,8 @@ async function runShard(shardId: any): Promise<any>  {
       localReused = reusable.map(stepId => reusedCandidateArtifactResult(previous, stepId));
     } catch { /* Invalid, stale or incomplete prior proof must execute again. */ }
   }
-  const reusedIds = new Set(localReused.map(result => result.id));
+  const reusedResults = [...sourceReused, ...localReused];
+  const reusedIds = new Set(reusedResults.map(result => result.id));
   const plan: any = repair ? candidateRepairShardPlan(repair, shardId, originalPlan) : { ...originalPlan,
     steps: originalPlan.steps.filter((step: any) => !reusedIds.has(step.id)).map((step: any) => ({ ...step,
       dependsOn: step.dependsOn.filter((dependency: string) => !reusedIds.has(dependency)) })) };
@@ -184,7 +174,7 @@ async function runShard(shardId: any): Promise<any>  {
   let cleanupClean = false;
   let contextLifecycle: any = null;
   let fullPlanCoordination: any = null;
-  const completedResults: any[] = [];
+  const completedResults: any[] = [...reusedResults];
   const writeCheckpoint: any = (checkpointStatus: any = 'running') => {
     let checkpointArtifact: any = externalArtifact;
     if (!checkpointArtifact && shard.producesArtifact) {
@@ -219,7 +209,7 @@ async function runShard(shardId: any): Promise<any>  {
       prefix: `candidate-ci:${shardId}`,
       executionProfile: resolveVerificationExecutionProfile(process.env.BUILDR_VERIFICATION_PROFILE),
       concurrency: resolveVerificationExecutionProfile(process.env.BUILDR_VERIFICATION_PROFILE).limits,
-      env: externalArtifact ? artifactEnvironment(externalArtifact) : {},
+      env: { ...(externalArtifact ? artifactEnvironment(externalArtifact) : {}), BUILDR_DEVELOPMENT_PREPARE_SKIP: '1' },
       runId: process.env.GITHUB_RUN_ID ? `${process.env.GITHUB_RUN_ID}-${shardId}` : `candidate-ci-${shardId}-${process.pid}`,
       taskId: `candidate-ci-${shardId}`,
       reuse: false,
@@ -237,11 +227,12 @@ async function runShard(shardId: any): Promise<any>  {
     if (repair) {
       const selected = repair.checks.find((item: any) => item.id === shardId);
       results = selected.steps.map((item: any) => item.disposition === 'reuse' ? reusedCandidateProofResult(item.proof) : results.find(result => result.id === item.id));
-    } else if (localReused.length > 0) {
-      results = shard.stepIds.map((stepId: string) => localReused.find(result => result.id === stepId) ?? results.find(result => result.id === stepId));
+    } else if (reusedResults.length > 0) {
+      results = shard.stepIds.map((stepId: string) => reusedResults.find(result => result.id === stepId) ?? results.find(result => result.id === stepId)).filter(Boolean);
     }
     if (!workflowIdentity) assertFrozenCandidateCheckout(productRoot, verificationSource);
-    status = execution.passed ? 'passed' : 'failed';
+    const complete = results.length === shard.stepIds.length && results.every(result => result?.status === 'passed');
+    status = execution.passed && complete ? 'passed' : 'failed';
   } catch (error: any) {
     failure = error;
     results = [{ id: `${shardId}-runner`, status: 'failed', exitCode: 1, durationMs: Date.now() - startedAtMs }];
@@ -390,8 +381,7 @@ if (action === 'plan') {
         platform: environment.platform, arch: environment.arch, nodeVersion: environment.nodeVersion,
         primaryStepIds: shard.stepIds, artifact: null, startedAt: now, finishedAt: now, durationMs: 0, status: 'passed',
         checkInputs: checkInputsFor(shard.id, sourceCommit), cleanupClean: true,
-        results: records.map((record: any) => ({ ...record.result, durationMs: 0, disposition: 'reused',
-          reusedFrom: { ...record.origin, durationMs: record.result.durationMs, identity: record.identity.key }, sourceRecord: record })),
+        results: records.map(reusedCandidateSourceResult),
       });
       writeCandidateCiEvidence(path.join(reuseRoot, `candidate-ci-evidence-${shard.id}.json`), evidence);
     }

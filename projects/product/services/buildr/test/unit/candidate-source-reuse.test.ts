@@ -4,9 +4,10 @@ import { gzipSync } from 'node:zlib';
 import test from 'node:test';
 import { CANDIDATE_CI_SHARDS, verificationStepById } from '../verification/registry.ts';
 import {
-  candidateSourceImportFromEnvironment, decodeCandidateSourceImport, encodeCandidateSourceImport,
-  MAX_SOURCE_IMPORT_CHARACTERS, planCandidateSourceReuse,
+  candidateSourceImportFromEnvironment, candidateSourceShardReuse, decodeCandidateSourceImport, encodeCandidateSourceImport,
+  MAX_SOURCE_IMPORT_CHARACTERS, planCandidateSourceReuse, reusedCandidateSourceResult, validateCandidateSourceRecord,
 } from '../verification/candidate-source-reuse.ts';
+import { createVerificationReuseIdentity, type VerificationReuseEnvironment, type VerificationReuseSnapshot } from '../verification/verification-reuse.ts';
 
 const record = (stepId: string, runner = 'macos', passed = true) => ({
   schemaVersion: 'buildr.verification-source-result/v1',
@@ -63,4 +64,46 @@ test('closed source shard coverage can be reused while missing, failed and other
   assert.deepEqual(complete.sourceShards.map(s => s.id), ['windows']);
   assert.deepEqual(complete.reusedShards.map(s => s.shard.id), ['mac']);
   assert.equal(complete.reusedShards[0].records.length, 2);
+});
+
+test('a partial source shard keeps valid sibling checks for transport and executes only the missing check', () => {
+  const shard = { id: 'mac', runner: 'macos', platformScope: { kind: 'common' }, stepIds: ['unit', 'source-contracts'] };
+  const bundle = (records: any[]) => ({ schemaVersion: 'buildr.verification-source-bundle/v1', records });
+  const validate = (item: any, _step: string, runner: string) => item.result.status === 'passed' && item.environment.runner === runner;
+  const split = candidateSourceShardReuse(shard, bundle([record('unit')]), validate);
+  assert.deepEqual(split.reused.map(item => item.stepId), ['unit']);
+  assert.deepEqual(split.missingStepIds, ['source-contracts']);
+  const plan = planCandidateSourceReuse([shard], bundle([record('unit')]), validate);
+  assert.deepEqual(plan.sourceShards.map(item => item.id), ['mac']);
+  assert.deepEqual(plan.reusedStepIds, ['unit']);
+  assert.deepEqual(plan.reusedByShard[0].missingStepIds, ['source-contracts']);
+  const result = reusedCandidateSourceResult(split.reused[0].record);
+  assert.equal(result.disposition, 'reused');
+  assert.equal(result.durationMs, 0);
+  assert.equal(result.sourceRecord, split.reused[0].record);
+});
+
+test('platform source proofs retain their original same-OS environment instead of the checker host', () => {
+  const step = { id: 'native-macos', executor: { type: 'node-test', files: ['native.test.ts'] },
+    reuse: { scope: 'platform-backend' as const, tools: ['git'] }, platformScope: { kind: 'platform', runners: ['macos'] } };
+  const environment: VerificationReuseEnvironment = { platform: 'darwin', arch: 'arm64', nodeVersion: '24.21.0',
+    tools: { 'backend-dependencies': `sha256-${'a'.repeat(64)}`, git: '2.50.1' }, variablesIdentity: `sha256-${'b'.repeat(64)}` };
+  const snapshot: VerificationReuseSnapshot = { productRoot: '/checkout/projects/product/services/buildr', repositoryRoot: '/checkout',
+    sourceCommit: 'c'.repeat(40), gitIdentity: `sha256-${'d'.repeat(64)}`,
+    contentIdentities: { backend: `sha256-${'e'.repeat(64)}`, 'platform-backend': `sha256-${'f'.repeat(64)}`,
+      web: `sha256-${'1'.repeat(64)}`, product: `sha256-${'2'.repeat(64)}`, repository: `sha256-${'3'.repeat(64)}`,
+      plugin: `sha256-${'4'.repeat(64)}`, runtime: `sha256-${'5'.repeat(64)}` }, environment };
+  const identity = createVerificationReuseIdentity(step, snapshot);
+  assert.ok(identity);
+  const record = {
+    schemaVersion: 'buildr.candidate-round-result/v1', roundId: 'round',
+    identity: { stepId: step.id, key: `round:${step.id}` }, origin: { runId: 'source-1', sourceCommit: snapshot.sourceCommit,
+      startedAt: '2026-11-09T00:00:00.000Z', finishedAt: '2026-11-09T00:00:01.000Z' },
+    environment: { platform: environment.platform, arch: environment.arch, nodeVersion: environment.nodeVersion },
+    result: { id: step.id, status: 'passed', exitCode: 0, inputIdentity: identity, inputEnvironment: environment },
+  };
+  const checker = { ...snapshot, productRoot: '/checker/projects/product/services/buildr', repositoryRoot: '/checker',
+    environment: { ...environment, platform: 'linux', arch: 'x64', nodeVersion: '24.22.2' } };
+  assert.equal(validateCandidateSourceRecord({ record, step, runner: 'macos', selectionId: 'round', snapshot: checker }), true);
+  assert.equal(validateCandidateSourceRecord({ record, step, runner: 'windows', selectionId: 'round', snapshot: checker }), false);
 });

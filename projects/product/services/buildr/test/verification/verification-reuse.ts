@@ -11,6 +11,7 @@ import { withExclusiveFileLock } from '../../src/infrastructure/filesystem/exclu
 import { collectVerificationSourceInputs } from './verification-source-inputs.ts';
 import { resolveVerificationBase } from './changed-paths.ts';
 import { resolveNodeTestFiles } from './test-files.ts';
+import { portableVerificationExecutor, portableVerificationPreparations } from './verification-portable-inputs.ts';
 
 export type ReuseDigest = `sha256-${string}`;
 export type VerificationReuseScope = 'backend' | 'platform-backend' | 'web' | 'product' | 'repository' | 'plugin' | 'runtime';
@@ -185,7 +186,9 @@ export function createVerificationReuseIdentity(step: VerificationReuseStep, sna
   if (!contentIdentity) return null;
   const declared = verificationSteps.find((item: VerificationReuseStep) => item.id === step.id);
   const execution = verificationStepExecutionInputs(step);
-  const recipeIdentity = digest({ version: proof ? 2 : 1, id: step.id, executor: step.executor, dependsOn: declared?.dependsOn ?? step.dependsOn ?? [], contexts: step.contexts ?? [], timeoutMs: step.timeoutMs ?? null, reuse: step.reuse, preparations: step.preparations ?? [], type: step.testing?.executionBoundary, target: step.target,
+  const recipeIdentity = digest({ version: 3, id: step.id, executor: portableVerificationExecutor(step.executor, snapshot),
+    dependsOn: declared?.dependsOn ?? step.dependsOn ?? [], contexts: step.contexts ?? [], timeoutMs: step.timeoutMs ?? null, reuse: step.reuse,
+    preparations: portableVerificationPreparations(step.preparations, snapshot), type: step.testing?.executionBoundary, target: step.target,
     ...(execution ? { execution } : {}),
     ...(inputs ? { source: inputs.recipeIdentity, fallback: inputs.fallback, resources: step.resources, resourceDemand: step.resourceDemand, concurrencyClass: step.concurrencyClass } : {}) });
   const { platform, arch, nodeVersion, tools, variablesIdentity } = snapshot.environment;

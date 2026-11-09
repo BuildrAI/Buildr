@@ -4,6 +4,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createVerificationInputAnalysis, scopedVerificationInputs } from './verification-inputs.ts';
 import type { VerificationReuseScope, VerificationReuseStep, ReuseDigest } from './verification-reuse.ts';
+import { portableVerificationExecutor } from './verification-portable-inputs.ts';
 
 type Entry = string[];
 export type VerificationInputSource = { entries: Entry[]; unavailable: Set<string>; readText: (file: string) => string };
@@ -156,6 +157,6 @@ export function collectVerificationSourceInputs(repositoryRoot: string, productR
     contentIdentities: reader.contentIdentities, unavailableScopes: reader.unavailableScopes,
     stepInputs: Object.fromEntries(steps.filter(step => step.reuse && step.reuse.inputMode === 'runtime-check').map(step => [step.id, reader.inputs(step, false)])),
     proofInputs: Object.fromEntries(steps.filter(step => step.reuse).map(step => [step.id, { ...reader.inputs(step, true),
-      selectionIdentity: digest({ executor: step.executor, scope: step.reuse && step.reuse.scope }) }])),
+      selectionIdentity: digest({ executor: portableVerificationExecutor(step.executor, { repositoryRoot }), scope: step.reuse && step.reuse.scope }) }])),
   };
 }
