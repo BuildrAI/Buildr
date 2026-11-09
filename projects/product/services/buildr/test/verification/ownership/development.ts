@@ -71,6 +71,15 @@ export default {
     ],
     "inputExclusions": []
   },
+"integration-generated-artifacts": {
+    "inputs": [
+      "tools/build/**",
+      "tools/codegen/**",
+      "tools/testing/**",
+      "test/integration/generated-artifact-set.test.ts"
+    ],
+    "inputExclusions": []
+  },
 "integration-code": {
     "inputs": [
       "src/modules/installation/infrastructure/retire-legacy-agent-data.ts",
