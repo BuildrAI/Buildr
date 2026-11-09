@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 import test from 'node:test';
 import { CANDIDATE_CI_SHARDS, verificationStepById } from '../verification/registry.ts';
@@ -30,6 +31,9 @@ test('complete reusable local source proof leaves only the other system native b
 test('source transport preserves the portable records and rejects modified or oversized input', () => {
   const original = bundle([record('unit')]);
   assert.deepEqual(decodeCandidateSourceImport(encodeCandidateSourceImport(original)), original);
+  const digest = `sha256-${crypto.createHash('sha256').update(JSON.stringify(original)).digest('hex')}`;
+  const legacy = gzipSync(JSON.stringify({ schemaVersion: 'buildr.candidate-source-import/v1', digest, bundle: original })).toString('base64');
+  assert.deepEqual(decodeCandidateSourceImport(legacy), original);
   assert.throws(() => decodeCandidateSourceImport('a'.repeat(MAX_SOURCE_IMPORT_CHARACTERS + 1)), /budget/);
   assert.throws(() => decodeCandidateSourceImport('not a payload'), /invalid/);
   const corrupt = gzipSync(JSON.stringify({ schemaVersion: 'buildr.candidate-source-import/v1', digest: 'wrong', bundle: original })).toString('base64');

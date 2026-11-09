@@ -203,6 +203,8 @@ export function selectSourceVerificationSubset(plan: any, selectedIds: string[])
   // operating system and final-package checks. Only ids unknown to the
   // registry are mistakes; ids outside this plan are owned by another runner.
   const known = new Set<string>(verificationSteps.map((step: any) => step.id));
+  // Plugin checks are registered by the plugin runner, not this service's list.
+  for (const id of selectedIds) if (id.startsWith('dsh-plugin:')) known.add(id);
   const unknown = selectedIds.filter((id: string) => !known.has(id));
   if (unknown.length) throw new Error(`Unknown selected verification step: ${unknown.sort().join(', ')}.`);
   const closure = new Set<string>();

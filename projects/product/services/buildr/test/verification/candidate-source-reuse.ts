@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { assertCandidateRound, ROUND_SCHEMA } from './candidate-round.ts';
-import { gzipSync, gunzipSync } from 'node:zlib';
+import { brotliCompressSync, brotliDecompressSync, gzipSync, gunzipSync } from 'node:zlib';
 
 export const CANDIDATE_SOURCE_IMPORT_ENV = 'BUILDR_SOURCE_VERIFICATION';
 // Common checks have one coverage owner across declared executable systems.
@@ -39,7 +39,9 @@ export function encodeCandidateSourceImport(bundle: SourceBundle): string {
   const body = JSON.stringify(bundle);
   const packet = JSON.stringify({ schemaVersion: PACKET_SCHEMA, digest: digest(body), bundle });
   if (Buffer.byteLength(packet) > MAX_DECODED_BYTES) throw new Error('Source verification exceeds its decoded byte budget.');
-  const encoded = gzipSync(packet).toString('base64');
+  // Brotli keeps a full round under the dispatch budget; gzip exceeded it once
+  // file-level proofs accumulated. Decoding still accepts older gzip packets.
+  const encoded = brotliCompressSync(packet).toString('base64');
   if (encoded.length > MAX_SOURCE_IMPORT_CHARACTERS) {
     throw new Error('Source verification exceeds the workflow input budget; no Candidate was dispatched.');
   }
@@ -52,7 +54,11 @@ export function decodeCandidateSourceImport(encoded: string): SourceBundle {
   }
   let packet: any;
   try {
-    packet = JSON.parse(gunzipSync(Buffer.from(encoded, 'base64'), { maxOutputLength: MAX_DECODED_BYTES }).toString('utf8'));
+    const bytes = Buffer.from(encoded, 'base64');
+    let decoded: Buffer;
+    try { decoded = gunzipSync(bytes, { maxOutputLength: MAX_DECODED_BYTES }); }
+    catch { decoded = brotliDecompressSync(bytes, { maxOutputLength: MAX_DECODED_BYTES }); }
+    packet = JSON.parse(decoded.toString('utf8'));
   } catch {
     throw new Error('Source verification transport cannot be decoded within its byte budget.');
   }
