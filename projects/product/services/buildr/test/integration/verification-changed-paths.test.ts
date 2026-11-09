@@ -97,6 +97,34 @@ test('changed path collector 合并 base diff、staged、unstaged 与 untracked 
   }
 });
 
+test('comparison base that already contains HEAD becomes an explicit coverage gap', () => {
+  const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-empty-comparison-'));
+  try {
+    const productRoot: any = path.join(root, 'projects', 'product');
+    fs.mkdirSync(path.join(productRoot, 'docs'), { recursive: true });
+    fs.writeFileSync(path.join(productRoot, 'docs', 'tracked.md'), 'base\n');
+    git(root, ['init']);
+    git(root, ['config', 'user.email', 'verification@example.com']);
+    git(root, ['config', 'user.name', 'Verification Fixture']);
+    git(root, ['add', '.']);
+    git(root, ['commit', '-m', 'base']);
+
+    const changed: any = collectChangedProductPaths({ productRoot, base: 'HEAD' });
+    assert.deepEqual(changed.paths, []);
+    assert.equal(changed.comparison.containsHead, true);
+    const plan: any = createVerificationPlan({ ...changed, related: true, target: 'source' });
+    assert.equal(plan.status, 'incomplete');
+    assert.deepEqual(plan.steps, []);
+    assert.equal(plan.gaps.length, 1);
+    assert.equal(plan.gaps[0].code, 'empty-comparison');
+    const explicit: any = createVerificationPlan({ ...changed, related: true, target: 'source', stepIds: ['unit'] });
+    assert.equal(explicit.status, 'ready');
+    assert.deepEqual(explicit.steps.map((step: any) => step.id), ['unit']);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('显式 paths 不读取 Git 且 base 解析失败时 fail closed', () => {
   const explicit: any = collectChangedProductPaths({ productRoot: process.cwd(), explicitPaths: ['./docs/a.md', 'docs/a.md'] });
   assert.deepEqual(explicit, { base: null, paths: ['docs/a.md'], source: 'explicit', versionOnlyPackagePaths: [], selectionOnlyPaths: [], selectionReasons: [] });

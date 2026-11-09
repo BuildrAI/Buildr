@@ -164,6 +164,10 @@ test('the current executor rejects unverified Devin model-source combinations be
     await service.models.accounts.preferences(added.id,{expectedRevision:checked.revision,models:checked.models.map(model=>({id:model.id,enabled:true}))});
     const conversation=await service.conversations.create('workspace',{});
     const draft={expectedRevision:conversation.revision,modelAccountId:added.id,modelAccountIdentity:checked.identity,text:'compatibility probe',permissionMode:'default' as const};
-    for(const [connectionId,model] of [['qoder','swe-2'],['qoder','other-model'],['dsh','swe-2'],['dsh','other-model'],['codex','swe-2'],['codex','other-model']])service.conversations.prepareSend('workspace',conversation.id,{...draft,connectionId,model});
+    for(const [connectionId,model] of [['qoder','swe-2'],['qoder','other-model'],['dsh','swe-2'],['dsh','other-model'],['codex','swe-2'],['codex','other-model']]){
+      const prepare=()=>service.conversations.prepareSend('workspace',conversation.id,{...draft,connectionId,model});
+      if(connectionId==='qoder')assert.throws(prepare,{code:'agent_model_source_unsupported'});
+      else prepare();
+    }
   }finally{await service.close();rmSync(root,{recursive:true,force:true});}
 });

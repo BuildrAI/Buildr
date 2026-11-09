@@ -58,10 +58,17 @@ test('only Qoder consuming its own linked account gets a native model route, wit
     await send('qoder','native-qoder',native.id,'full-access');await send('qoder','native-qoder',native.id,'default');
     assert.equal(sent[0].context,sent[1].context);assert.deepEqual(sent.slice(0,2).map(input=>input.mode),['full-access','default']);
     const shared=await service.conversations.create('workspace',{title:'跨执行方来源回归'});await send('codex','native-qoder',shared.id,'default');
-    const foreign=await service.conversations.create('workspace',{title:'外部来源回归'});await send('qoder',external.id,foreign.id,'default');
-    const bound=opens.filter(input=>input.gateway);assert.equal(bound.length,3);
+    const foreign=await service.conversations.create('workspace',{title:'外部来源回归'});
+    const foreignDraft={expectedRevision:foreign.revision,connectionId:'qoder',modelAccountId:external.id,model:'qmodel_38max',text:'external source must be refused',permissionMode:'default' as const};
+    assert.throws(()=>service.conversations.prepareSend('workspace',foreign.id,foreignDraft),error=>{
+      const value=error as {code?:string;status?:number};
+      assert.equal(value.code,'agent_model_source_unsupported');
+      assert.equal(value.status,409);
+      return true;
+    });
+    const bound=opens.filter(input=>input.gateway);assert.equal(bound.length,2);
     assert.deepEqual(bound[0].gateway!.nativeModel,{provider:'qoder',id:'qmodel_38max',accountIdentity:service.models.accounts.read('native-qoder').identity});
-    assert.equal(bound[1].gateway!.nativeModel,undefined);assert.equal(bound[2].gateway!.nativeModel,undefined);
+    assert.equal(bound[1].gateway!.nativeModel,undefined);
     assert.ok(sent.every(input=>input.model?.startsWith('buildr-')),'public model names remain separate from leased execution routes');
   } finally {await service.close();await rm(root,{recursive:true,force:true});}
 });

@@ -138,7 +138,18 @@ export function collectChangedProductPaths(options: any): any  {
   const projectPrefix: any = git(projectRoot, ['rev-parse', '--show-prefix']).trim().replace(/\/+$/u, '');
   const base: any = resolveVerificationBase(gitRoot, options.base);
   const head: any = options.head ?? 'HEAD';
-  git(gitRoot, ['rev-parse', '--verify', `${head}^{commit}`]);
+  const baseCommit: any = git(gitRoot, ['rev-parse', '--verify', `${base}^{commit}`]).trim();
+  const headCommit: any = git(gitRoot, ['rev-parse', '--verify', `${head}^{commit}`]).trim();
+  const mergeBase: any = git(gitRoot, ['merge-base', baseCommit, headCommit]).trim();
+  const comparison: any = Object.freeze({
+    base: baseCommit,
+    head: headCommit,
+    mergeBase,
+    // A base equal to or descending from HEAD makes `base...head` empty even
+    // when the working tree contains the delivery. Agents must not read that
+    // silent empty diff as proof that no related checks are needed.
+    containsHead: mergeBase === headCommit,
+  });
   const pathspecs: any[] = [projectPrefix || '.', 'skills/buildr-release/', ...VERIFICATION_GOVERNED_REPOSITORY_INPUTS];
   const commands: any = options.head ? [
     ['diff', '--no-renames', '--name-only', '-z', `${base}...${head}`, '--', ...pathspecs],
@@ -206,7 +217,7 @@ export function collectChangedProductPaths(options: any): any  {
       }
     } catch {}
   }
-  return { base, head, paths: uniquePaths, source: 'git', versionOnlyPackagePaths, selectionOnlyPaths: [...new Set(selectionOnlyPaths)].sort(), selectionReasons };
+  return { base, head, comparison, paths: uniquePaths, source: 'git', versionOnlyPackagePaths, selectionOnlyPaths: [...new Set(selectionOnlyPaths)].sort(), selectionReasons };
 }
 
 /** Capture changed contents so a repair compares against the actual preceding run,

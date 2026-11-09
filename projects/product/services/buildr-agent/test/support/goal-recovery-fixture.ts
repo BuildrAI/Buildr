@@ -52,10 +52,13 @@ export async function goalRecoveryFixture({ release = true, question = false, fa
       reply: async () => {}, stop: async () => ({ status: 'stopped', tools: [] }), async close() { closed = true; },
     };
   } };
-  const provider: ModelProvider = { id: 'fixture', label: 'Fixture', async open() { return { protocol: 'chat-completions', inspect: async () => ({ status: 'ready', identity: 'same-user', models: [{ id: 'model', label: 'Model', tools: true, images: false }] }), beginLogin: async () => {}, cancelLogin: async () => {}, infer: async () => { throw Error('paid calls forbidden'); }, close: async () => {} }; } };
+  const nativeQoder = executorId === 'qoder';
+  const provider: ModelProvider = { id: nativeQoder ? 'native-qoder' : 'fixture', ...(nativeQoder ? { connectionId: 'qoder' } : {}), label: 'Fixture', async open() { return { protocol: 'chat-completions', inspect: async () => ({ status: 'ready', identity: 'same-user', models: [{ id: 'model', label: 'Model', tools: true, images: false }] }), beginLogin: async () => {}, cancelLogin: async () => {}, infer: async () => { throw Error('paid calls forbidden'); }, close: async () => {} }; } };
   const service = createAgentService({ dataRoot: root, executors: [executor], modelProviders: [provider], autoContinueInterrupted: true, resolveWorkspace: () => ({ rootPath: root }), assertTask() {} });
   await service.connections.connect(executorId, { expectedRevision: 'unconfigured' });
-  const account = await service.models.accounts.add({ provider: 'fixture' }), checked = await service.models.accounts.check(account.id);
+  const account = nativeQoder ? { id: 'native-qoder' } : await service.models.accounts.add({ provider: 'fixture' });
+  if (nativeQoder) await service.models.catalog.list({ refresh: true });
+  const checked = await service.models.accounts.check(account.id);
   await service.models.accounts.preferences(account.id, { expectedRevision: checked.revision, models: [{ id: 'model', enabled: true }] });
   const chat = await service.conversations.create('workspace', {});
   const draft = { expectedRevision: chat.revision, connectionId: executorId, modelAccountId: account.id, model: 'model', permissionMode: 'full-access' as const, text: 'Create and verify both result files' };

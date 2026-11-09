@@ -756,6 +756,15 @@ export function createVerificationPlan(request: any = {}, steps: any = verificat
       reasons.set(item.id, [...(reasons.get(item.id) ?? []), ...fullScopeReasons.map((reason: any) => reason.message)]);
     }
   }
+  if (request.related && paths.length === 0 && stepIds.length === 0 && tags.length === 0
+    && request.comparison?.containsHead === true) {
+    gaps.push({
+      code: 'empty-comparison',
+      comparison: request.comparison.base,
+      head: request.comparison.head,
+      reason: 'The comparison base already contains HEAD, so no changed paths can be selected. Use a base before this task\'s changes or pass explicit --check/--tag selection.',
+    });
+  }
   expandDependencies(selected, byId, reasons);
   // A caller may keep the release-only owners out of an ordinary full run while
   // the release gate still selects them explicitly.
