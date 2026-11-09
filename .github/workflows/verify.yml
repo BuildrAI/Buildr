@@ -111,10 +111,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # The lock file retains historical mirror URLs; force every Candidate npm
-  # invocation to the authoritative registry instead of a stale mirror host.
+  # The lock file is normalized to the authoritative registry. Keep npm's
+  # registry explicit so a runner-local mirror config cannot redirect installs.
   npm_config_registry: https://registry.npmjs.org/
-  npm_config_replace_registry_host: always
   CANDIDATE_SOURCE_SHA: ${{ inputs.repair_candidate_run_id && inputs.verification_source || github.event.pull_request.head.sha || github.sha }}
   BUILDR_CANDIDATE_PURPOSE: ${{ inputs.purpose || 'candidate' }}
   BUILDR_CANDIDATE_EXPECTED_SOURCE_TREE: ${{ inputs.expected_source_tree || '' }}
