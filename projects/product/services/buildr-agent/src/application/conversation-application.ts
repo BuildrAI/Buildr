@@ -341,6 +341,10 @@ export class ConversationApplication {
             if(!attempt){safe=false;break;}
             candidates.push({...member,workspaceId:held.workspaceId,conversationId:held.id,runId,prepare:proof,proof});continue;
           }
+          // An unaccepted submission can only be released by its exact native
+          // proof. General logical quiescence must not turn a missing receipt
+          // into permission to close that source.
+          if(!attempt?.accepted){safe=false;break;}
           const exactProof=participant?.contextRef&&attempt?.executionRef&&runtime.canRelease;
           const releaseInput=exactProof?{contextRef:participant!.contextRef!,executionRef:attempt!.executionRef!}:undefined;
           // A native SDK can retain an idle daemon until its runtime is closed.
@@ -1187,7 +1191,15 @@ export class ConversationApplication {
       run.status = 'stopped'; this.retireQuestions(record, requests);
     }
     else if (observation.status === 'idle') {
-      if (!run.accepted) { if (run.status !== 'starting' && run.status !== 'stopping') run.status = 'unknown'; return; }
+      if (!run.accepted) {
+        if (run.stopRequested && !run.tools.some(tool => tool.status !== 'completed')) {
+          run.status = 'stopped';
+          run.executionState = 'ended';
+          run.canContinue = false;
+          run.diagnostic = '已结束本轮等待；原输入是否送达仍未知，已有操作结果保留，不会重发。';
+        } else if (run.status !== 'starting' && run.status !== 'stopping') run.status = 'unknown';
+        return;
+      }
       run.status = run.status === 'stopping' ? 'stopped' : run.status === 'failed' || record.interruption?.runId === run.id && record.interruption.reason === 'execution-fault' ? 'failed' : 'completed';
       if (run.status==='completed' && !observation.diagnostic) delete run.diagnostic;
       this.retireQuestions(record, requests);
@@ -1932,7 +1944,47 @@ export class ConversationApplication {
     const facts={workspaceId,conversationId:id,runId:input.runId,participantId:input.participantId,ownerGeneration:input.generation};
     this.diagnostics({...facts,event:'stop-request',reason:input.toolId?'individual-tool':'whole-run'});
     try{const view=await this.stopOwned(workspaceId,id,input),run=conversationRuns(view).find(r=>r.id===input.runId);this.diagnostics({...facts,event:'stop-result',status:run?.status,resourcesReleased:run?.resourcesReleased===true});return view;}
-    catch(error){this.diagnostics({...facts,event:'stop-failed',code:diagnosticCode(error)});throw error;}
+    catch(error){
+      this.diagnostics({...facts,event:'stop-failed',code:diagnosticCode(error)});
+      if(input.toolId||error instanceof AgentServiceError&&error.code==='agent_revision_conflict')throw error;
+      const view=this.finalizeUnconfirmedStop(workspaceId,id,input);
+      if(!view)throw error;
+      const run=conversationRuns(view).find(value=>value.id===input.runId);
+      this.diagnostics({...facts,event:'stop-result',status:run?.status,resourcesReleased:run?.resourcesReleased===true});
+      return view;
+    }
+  }
+  /**
+   * A whole-run stop is a user end action, not a request whose failure leaves
+   * the same stop control active forever. Keep the exact outcome unknown when
+   * the native end cannot be proven, while durably recording the stop intent
+   * and returning the latest conversation for the client to render.
+   */
+  private finalizeUnconfirmedStop(workspaceId:string,id:string,input:{runId:string;participantId:string}):ConversationView|undefined{
+    let found=false;
+    this.retryRecordUpdate(()=>{
+      const record=this.load(workspaceId,id);
+      const run=conversationRuns(record.view).find(value=>value.id===input.runId&&value.participantId===input.participantId);
+      if(!run)return;
+      found=true;
+      run.stopRequested=true;run.canContinue=false;
+      if(!['completed','failed','stopped'].includes(run.status)){
+        const attempt=record.attempts.find(value=>value.runId===run.id);
+        const endedWithoutIdentity=!this.workers.has(run.id)&&!attempt?.executionRef&&run.accepted===false;
+        run.status=endedWithoutIdentity?'stopped':'unknown';
+        run.executionState='unknown';
+        run.diagnostic=endedWithoutIdentity
+          ?'已结束本轮等待；原输入是否送达仍未知，已有操作结果保留，不会重发。'
+          :'停止已请求，但未取得原生结束确认；原工作记录已保留，不会重发。';
+        run.tools=run.tools.map(tool=>tool.status==='running'?{...tool,status:'unknown',canStop:false}:tool);
+      }
+      if(record.view.run?.id===run.id)record.interruption={runId:run.id,awaitingUser:false,cancelled:true};
+      run.updatedAt=this.options.now();
+      this.save(record);
+    });
+    if(!found)return;
+    this.scheduleSourceRelease(workspaceId,id);
+    return this.read(workspaceId,id,{compactTools:true});
   }
   private async stopOwned(workspaceId: string, id: string, input: { expectedRevision: string; runId: string; participantId: string; generation: string; toolId?: string }): Promise<ConversationView> {
     if(!input.toolId&&input.generation!==this.options.generation){
@@ -1989,8 +2041,12 @@ export class ConversationApplication {
       // An in-flight send can still return its exact identity, where accepted
       // schedules the original stop. A settled lost receipt cannot do so.
       if (!input.toolId && !this.workers.has(input.runId)) {
-        control.run.status='unknown';control.run.executionState='unknown';control.run.canContinue=false;
-        control.run.diagnostic='已取消本轮自动接续；未能确认原生执行身份或停止结果，工作记录已保留。';
+        const endedWithoutIdentity=control.run.accepted===false;
+        control.run.status=endedWithoutIdentity?'stopped':'unknown';control.run.executionState='unknown';control.run.canContinue=false;
+        control.run.diagnostic=endedWithoutIdentity
+          ?'已结束本轮等待；原输入是否送达仍未知，已有操作结果保留，不会重发。'
+          :'停止已请求，但未取得原生执行身份；原工作记录已保留，不会重发。';
+        control.run.tools=control.run.tools.map(tool=>tool.status==='running'?{...tool,status:'unknown',canStop:false}:tool);
         control.run.updatedAt=this.options.now();this.save(control.record);
         await this.releaseIdleSources({workspaceId,id});
         this.scheduleSourceRelease(workspaceId,id);
@@ -2004,8 +2060,6 @@ export class ConversationApplication {
     }
     catch (error) {
       if (input.toolId) fail('agent_tool_stop_failed', '未能确认此命令已停止，原执行状态已保留，请重新核对。', 409);
-      const latest=this.ownedRun(workspaceId,id,input.runId);
-      if(latest&&!latest.run.resourcesReleased){latest.run.status='unknown';latest.run.executionState='unknown';latest.run.diagnostic='停止尚未确认：'+safeDiagnostic(error);latest.run.updatedAt=this.options.now();this.save(latest.record);}
       throw error;
     }
     try{this.retryRecordUpdate(()=>{

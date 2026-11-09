@@ -136,7 +136,7 @@ test('legacy executors without physical release evidence remain conservative abo
 });
 
 test('failed stop restores unknown rather than pretending a model is still executing',async()=>{
- const f=await fixture({stopFails:true});try{let c=await f.start('uncertain');await assert.rejects(f.service.conversations.stop('workspace',c.id,{expectedRevision:c.revision,runId:c.run!.id,participantId:c.run!.participantId,generation:c.run!.generation}));c=f.service.conversations.read('workspace',c.id);assert.equal(c.run?.status,'unknown');assert.equal(f.service.conversations.listAll(['workspace'],{activeOnly:true}).stats.modelExecutions.length,0);}finally{await f.close();}
+ const f=await fixture({stopFails:true});try{const c=await f.start('uncertain');const result=await f.service.conversations.stop('workspace',c.id,{expectedRevision:c.revision,runId:c.run!.id,participantId:c.run!.participantId,generation:c.run!.generation});assert.equal(result.run?.status,'unknown');assert.equal(result.run?.stopRequested,true);assert.match(result.run?.diagnostic??'',/停止已请求/);assert.equal(f.service.conversations.listAll(['workspace'],{activeOnly:true}).stats.modelExecutions.length,0);}finally{await f.close();}
 });
 
 
@@ -315,9 +315,9 @@ for(const supported of [false,true])test('cancelled unaccepted submission releas
  const f=await fixture({unaccepted:true,unacceptedProof:supported});try{
   const first=await f.start('no-receipt'),other=await f.start('hold'),run=first.run!;
   let result=await f.service.conversations.stop('workspace',first.id,{expectedRevision:first.revision,runId:run.id,participantId:run.participantId,generation:run.generation});
-  assert.equal(result.run!.status,'unknown');assert.notEqual(result.run!.resourcesReleased,true);assert.equal(f.closed.length,0);
+  assert.equal(result.run!.status,'stopped');assert.equal(result.run!.stopRequested,true);assert.notEqual(result.run!.resourcesReleased,true);assert.equal(f.closed.length,0);
   f.contexts.get(first.participants[0].contextId)!.idle=true;await f.service.releaseIdleSources();result=f.service.conversations.read('workspace',first.id);
-  assert.equal(result.run!.status,supported?'stopped':'unknown');assert.equal(result.run!.resourcesReleased===true,supported);
+  assert.equal(result.run!.status,'stopped');assert.equal(result.run!.resourcesReleased===true,supported);
   if(supported){assert.equal(result.run!.executionState,'unknown');assert.match(result.run!.diagnostic!,/是否送达仍未知/);assert.equal(result.entries.find(e=>e.role==='user')!.status,'unknown');}
   assert.equal(f.service.conversations.read('workspace',other.id).run!.status,'running');assert.deepEqual(f.sent,['no-receipt','hold']);assert.equal(f.closed.length,supported?1:0);
   const stored=new ConversationRepository(path.join(f.root,'agent-service')).readConversation(first.id)!;assert.equal(stored.interruption!.cancelled,true);
@@ -329,7 +329,7 @@ test('an unaccepted cancellation cannot close a source shared with another execu
   const first=await f.start('no-receipt'),other=await f.start('hold'),run=first.run!;
   f.contexts.get(first.participants[0].contextId)!.idle=true;
   const stopped=await f.service.conversations.stop('workspace',first.id,{expectedRevision:first.revision,runId:run.id,participantId:run.participantId,generation:run.generation});
-  assert.equal(stopped.run!.status,'unknown');assert.notEqual(stopped.run!.resourcesReleased,true);assert.equal(f.closed.length,0);assert.equal(f.service.conversations.read('workspace',other.id).run!.status,'running');assert.deepEqual(f.sent,['no-receipt','hold']);
+  assert.equal(stopped.run!.status,'stopped');assert.equal(stopped.run!.stopRequested,true);assert.notEqual(stopped.run!.resourcesReleased,true);assert.equal(f.closed.length,0);assert.equal(f.service.conversations.read('workspace',other.id).run!.status,'running');assert.deepEqual(f.sent,['no-receipt','hold']);
  }finally{await f.close();}
 });
 

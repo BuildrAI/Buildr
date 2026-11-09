@@ -1832,7 +1832,7 @@ test('shutdown preserves a completed current turn even when released unknown his
   } finally {await cold?.close();await f.close();}
 });
 
-test('stopping an unresolved submission without a native execution identity returns unknown and persists cancellation',async()=>{
+test('stopping an unresolved submission without a native execution identity ends the round and persists cancellation',async()=>{
   const native=fake('local',{unknown:true}),f=fixture([native.executor],{autoContinueInterrupted:true});
   let cold:ReturnType<typeof createAgentService>|undefined;
   try {
@@ -1841,13 +1841,13 @@ test('stopping an unresolved submission without a native execution identity retu
     const before=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='unknown');
     const run=before.run!;
     const stopped=await f.service.conversations.stop('workspace-one',chat.id,{expectedRevision:before.revision,runId:run.id,participantId:run.participantId,generation:run.generation});
-    assert.equal(stopped.run!.status,'unknown');assert.notEqual(stopped.run!.resourcesReleased,true);
-    assert.match(stopped.run!.diagnostic!,/已取消.*自动接续.*未.*确认/);
+    assert.equal(stopped.run!.status,'stopped');assert.equal(stopped.run!.stopRequested,true);assert.notEqual(stopped.run!.resourcesReleased,true);
+    assert.match(stopped.run!.diagnostic!,/已结束本轮等待.*是否送达仍未知/);
     await f.service.close();
     const repository=new ConversationRepository(path.join(f.options.dataRoot,'agent-service'));
     assert.equal(repository.readConversation(chat.id)!.interruption?.cancelled,true);
     cold=createAgentService(f.options);await cold.conversations.recoverInterrupted();
-    assert.equal(native.sends.length,1);assert.equal(cold.conversations.read('workspace-one',chat.id).run!.status,'unknown');
+    assert.equal(native.sends.length,1);assert.equal(cold.conversations.read('workspace-one',chat.id).run!.status,'stopped');
   } finally {await cold?.close();await f.close();}
 });
 
@@ -3142,7 +3142,8 @@ test('an unconfirmed stop permits same-selection new input without an internal h
  const f=fixture([native.executor]);try{
   await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','old requirement');
   const before=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.accepted===true);
-  await assert.rejects(f.service.conversations.stop('workspace-one',chat.id,{expectedRevision:before.revision,runId:before.run!.id,participantId:before.run!.participantId,generation:before.run!.generation}));
+  const result=await f.service.conversations.stop('workspace-one',chat.id,{expectedRevision:before.revision,runId:before.run!.id,participantId:before.run!.participantId,generation:before.run!.generation});
+  assert.equal(result.run!.stopRequested,true);assert.equal(result.run!.status,'unknown');
   const stopped=f.service.conversations.read('workspace-one',chat.id);assert.equal(stopped.run!.stopRequested,true);assert.equal(stopped.run!.status,'unknown');
   const draft={expectedRevision:stopped.revision,connectionId:'local',text:'new requirement',clientRequestId:randomUUID()};
   f.service.conversations.send('workspace-one',chat.id,draft);
@@ -3195,7 +3196,8 @@ test('unknown retained stop is local to that execution and never replays or ends
     await connected(f.service,'local');await connected(f.service,'other');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','one operation');
     const before=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='tools-active');
     send(f.service,chat.id,'other','new direction');const next=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='completed');
-    await assert.rejects(f.service.conversations.stop('workspace-one',chat.id,{expectedRevision:next.revision,runId:before.run!.id,participantId:before.run!.participantId,generation:before.run!.generation}));
+    const stopped=await f.service.conversations.stop('workspace-one',chat.id,{expectedRevision:next.revision,runId:before.run!.id,participantId:before.run!.participantId,generation:before.run!.generation});
+    assert.equal(stopped.retainedRuns?.find(run=>run.id===before.run!.id)?.stopRequested,true);
     const after=f.service.conversations.read('workspace-one',chat.id);assert.equal(after.run!.id,next.run!.id);assert.equal(after.run!.status,'completed');assert.equal(after.retainedRuns?.[0]?.status,'unknown');
     assert.equal(old.sends.length,1);assert.equal(other.sends.length,1);
     assert.equal(f.service.conversationBusy('workspace-one',chat.id),true);assert.equal(f.service.conversationInputBusy('workspace-one',chat.id),false);

@@ -18,6 +18,12 @@ test('revision rejection refreshes only the original round',async()=>{
  const result=await stopConversationWithRecovery(chat,async current=>{sent.push(current);if(sent.length===1)throw conflict();return current;},async()=>({...chat,revision:'r2'}));
  assert.equal(result.revision,'r2');assert.equal(sent.length,2);assert.equal(sent[1].run.id,'run');
 });
+test('control generation rejection refreshes only the original round',async()=>{
+ const sent=[];
+ const stale=()=>Object.assign(new Error('本轮执行或服务代次已变化，请重新观察。'),{status:409,code:'agent_control_stale'});
+ const result=await stopConversationWithRecovery(chat,async current=>{sent.push(current);if(sent.length===1)throw stale();return current;},async()=>({...chat,revision:'r2'}));
+ assert.equal(result.revision,'r2');assert.equal(sent.length,2);assert.equal(sent[1].run.id,'run');
+});
 test('recovery cannot stop a replacement run or changed owner',async()=>{
  for(const changes of [{id:'other'},{participantId:'other'},{generation:'other'}]){
   let calls=0;await assert.rejects(stopConversationWithRecovery(chat,async()=>{calls++;throw conflict();},async()=>({...chat,run:{...chat.run,...changes}})),/原执行已变化/);assert.equal(calls,1);

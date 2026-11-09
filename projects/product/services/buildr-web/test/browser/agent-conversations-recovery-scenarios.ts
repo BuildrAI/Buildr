@@ -29,6 +29,50 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
       assert.equal(await panel().locator('.ac-compose-wrap .ant-alert-warning').count(),0);
     }finally{release();await page.unroute(pattern,handler);fixture.conversation=saved;await page.reload();await input().waitFor();}
   });
+  await step('停止请求未确认时明确已请求并撤下重复停止按钮',async()=>{
+    const saved=structuredClone(fixture.conversation),beforeStops=fixture.stops;
+    try{
+      update({run:run('unknown','codex',{resourcesReleased:false,stopRequested:true,executionState:'unknown',interrupted:true,diagnostic:'未取得本轮结束记录'}),requests:[]});
+      await page.reload();await input().waitFor();
+      const state=panel().locator('.ac-execution-uncertain');
+      await state.getByText('停止已请求，结束状态待确认',{exact:true}).waitFor();
+      assert.equal(await state.getByRole('button',{name:'停止',exact:true}).count(),0);
+      await state.getByRole('button',{name:'重新读取',exact:true}).click();
+      await state.getByText('读取完成：仍无法读取原执行状态，记录已保留。可发送新要求，不会重做原操作。',{exact:true}).waitFor();
+      assert.equal(fixture.stops,beforeStops);
+      assert.equal(fixture.conversation.run.status,'unknown');
+      assert.equal(fixture.conversation.run.stopRequested,true);
+    }finally{fixture.conversation=saved;await page.reload();await input().waitFor();}
+  });
+  await step('工具执行中的停止请求未确认时不重复提供停止',async()=>{
+    const saved=structuredClone(fixture.conversation),beforeStops=fixture.stops;
+    try{
+      update({run:run('tools-active','codex',{resourcesReleased:false,stopRequested:true,executionState:'unknown',tools:[{id:'stop-pending',label:'仍在收尾的命令',status:'running',canStop:true}]}),requests:[]});
+      await page.reload();await input().waitFor();
+      const state=panel().locator('.ac-active-tools');
+      await state.getByText('停止已请求，等待剩余命令结束',{exact:true}).waitFor();
+      assert.equal(await panel().getByRole('button',{name:'停止剩余执行',exact:true}).count(),0);
+      await state.getByRole('button',{name:'查看命令',exact:true}).click();
+      await state.getByText('停止已请求',{exact:true}).waitFor();
+      assert.equal(await panel().getByRole('button',{name:'停止此命令',exact:true}).count(),0);
+      assert.equal(fixture.stops,beforeStops);
+      assert.equal(fixture.conversation.run.stopRequested,true);
+    }finally{fixture.conversation=saved;await page.reload();await input().waitFor();}
+  });
+  await step('运行中的停止请求保持明确状态且刷新后不恢复停止按钮',async()=>{
+    const saved=structuredClone(fixture.conversation),beforeStops=fixture.stops;
+    try{
+      update({run:run('running','codex',{resourcesReleased:false,stopRequested:true}),requests:[]});
+      for(let read=0;read<2;read++){
+        await page.reload();await input().waitFor();
+        const state=panel().locator('.ac-execution-statusbar');
+        await state.getByText('停止已请求，等待结束确认',{exact:true}).waitFor();
+        assert.equal(await panel().getByRole('button',{name:'停止本次执行',exact:true}).count(),0);
+        assert.equal(fixture.conversation.run.stopRequested,true);
+      }
+      assert.equal(fixture.stops,beforeStops);
+    }finally{fixture.conversation=saved;await page.reload();await input().waitFor();}
+  });
   await step('旧追加请求已拒绝时，保留的草稿读取最新轮次并作为新轮发送',async()=>{
     const saved=structuredClone(fixture.conversation),beforeSends=fixture.sends,text='旧草稿按最新轮次发送';
     const original={runId:saved.run.id,participantId:saved.run.participantId,generation:saved.run.generation,clientRequestId:crypto.randomUUID(),text,images:[]};

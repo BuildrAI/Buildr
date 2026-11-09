@@ -13,7 +13,7 @@ export function stoppedConversationEntries(conversation:ConversationView, stoppe
   });
 }
 
-/** Retry only explicit pre-dispatch revision rejection, always pinned to the clicked round. */
+/** Retry explicit stale observation or revision rejection, always pinned to the clicked round. */
 export async function stopConversationWithRecovery(conversation:ConversationView, stop:(current:ConversationView)=>Promise<ConversationView>, read:()=>Promise<ConversationView>):Promise<ConversationView> {
   const owner=conversation.run;
   if(!owner)throw new Error('没有可以停止的执行。');
@@ -21,7 +21,7 @@ export async function stopConversationWithRecovery(conversation:ConversationView
   for(let attempt=0;;attempt++){
     try{return await stop(current);}catch(failure){
       const error=failure as {status?:number;code?:string};
-      if(attempt>=2||error.status!==409||error.code!=='agent_revision_conflict')throw failure;
+      if(attempt>=2||error.status!==409||!['agent_revision_conflict','agent_control_stale'].includes(error.code??''))throw failure;
       const fresh=await read();
       const run=[...(fresh.run?[fresh.run]:[]),...(fresh.retainedRuns??[])].find(run=>run.id===owner.id&&run.participantId===owner.participantId&&run.generation===owner.generation);
       if(!run||fresh.id!==conversation.id||fresh.workspaceId!==conversation.workspaceId)throw new Error('原执行已变化，停止未确认。');
