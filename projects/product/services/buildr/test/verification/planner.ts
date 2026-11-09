@@ -647,6 +647,7 @@ export function createVerificationPlan(request: any = {}, steps: any = verificat
   const productionOwnerAudit: any = request.related ? { gaps: [] } : auditProductionOwnerCoverage(paths, steps);
   const profiles: any[] = [...new Set(request.profiles ?? [])];
   const groups: any[] = [...new Set(request.groups ?? [])];
+  const excludeGroups: any[] = [...new Set(request.excludeGroups ?? [])];
   const stepIds: any[] = [...new Set(request.stepIds ?? [])];
   const tags: string[] = [...new Set<string>([...(request.tags ?? []), ...(request.semantic ? semanticTagsForPaths(paths) : [])])];
   const knownTags = new Set(steps.flatMap((step: any) => step.tags ?? []));
@@ -713,6 +714,9 @@ export function createVerificationPlan(request: any = {}, steps: any = verificat
       reasons.set(item.id, [...(reasons.get(item.id) ?? []), `group ${group}`]);
     }
   }
+  for (const group of excludeGroups) {
+    if (!VERIFICATION_GROUPS.includes(group)) throw new Error(`Unknown verification group: ${group}`);
+  }
   const unmatchedPaths: any[] = [];
   const delegatedPaths: any[] = [];
   const mappedPaths: any[] = [];
@@ -753,6 +757,12 @@ export function createVerificationPlan(request: any = {}, steps: any = verificat
     }
   }
   expandDependencies(selected, byId, reasons);
+  // A caller may keep the release-only owners out of an ordinary full run while
+  // the release gate still selects them explicitly.
+  for (const id of [...selected]) {
+    const step: any = byId.get(id);
+    if (step?.groups?.some((group: string) => excludeGroups.includes(group))) selected.delete(id);
+  }
   const orderedIds: any = topologicalOrder(selected, steps);
   const scopeMode: any = types.length && (stepIds.length === 0 || request.completeTypes === true) || fullScopeReasons.length > 0 || profiles.some((profile: any) => profile === 'candidate')
     ? 'full'
@@ -783,6 +793,7 @@ export function createVerificationPlan(request: any = {}, steps: any = verificat
     paths: Object.freeze(paths),
     profiles: Object.freeze(profiles),
     groups: Object.freeze(groups),
+    excludeGroups: Object.freeze(excludeGroups),
     tags: Object.freeze(tags),
     stepIds: Object.freeze(stepIds),
     scope: Object.freeze({ mode: scopeMode, reasons: Object.freeze(scopeReasons) }),

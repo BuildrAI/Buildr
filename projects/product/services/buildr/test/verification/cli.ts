@@ -21,7 +21,7 @@ const modes: Record<string, string[]> = { unit: ['Unit'], static: ['Static'], in
 export function parseVerificationArguments(args: string[]) {
   const mode = args[0];
   if (!Object.hasOwn(modes, mode)) throw new Error('Choose unit, static, integration, e2e, system, check or related.');
-  const request = { mode, checks: [] as string[], tags: [] as string[], failedFrom: null as string | null, semantic: false, base: null as string | null, planOnly: false, json: false, help: false, list: false, reference: null as string | null };
+  const request = { mode, checks: [] as string[], tags: [] as string[], excludeGroups: [] as string[], failedFrom: null as string | null, semantic: false, base: null as string | null, planOnly: false, json: false, help: false, list: false, reference: null as string | null };
   for (let index = 1; index < args.length; index++) {
     const arg = args[index];
     if (arg === '--semantic') request.semantic = true;
@@ -29,16 +29,18 @@ export function parseVerificationArguments(args: string[]) {
     else if (arg === '--json') { request.planOnly = true; request.json = true; }
     else if (arg === '--help' || arg === '-h') request.help = true;
     else if (arg === '--list') { request.planOnly = true; request.list = true; }
-    else if (arg === '--check' || arg === '--base' || arg === '--tag' || arg === '--failed-from') {
+    else if (arg === '--check' || arg === '--base' || arg === '--tag' || arg === '--without-group' || arg === '--failed-from') {
       const value = args[++index];
       if (!value || value.startsWith('-')) throw new Error(`${arg} requires a value.`);
       if (arg === '--check') request.checks.push(value);
       else if (arg === '--tag') request.tags.push(value);
+      else if (arg === '--without-group') request.excludeGroups.push(value);
       else if (arg === '--failed-from') { if (request.failedFrom) throw new Error('--failed-from may only be supplied once.'); request.failedFrom = value; }
       else { if (request.base) throw new Error('--base may only be supplied once.'); request.base = value; }
     } else throw new Error(`Unknown verification option: ${arg}`);
   }
   request.checks = [...new Set(request.checks)];
+  request.excludeGroups = [...new Set(request.excludeGroups)];
   if (request.base && !['related', 'check', 'static'].includes(mode)) throw new Error('--base supplies comparison context to static/check, or changed-path selection to related.');
   if ((request.tags.length || request.failedFrom || request.semantic) && mode !== 'related') throw new Error('Semantic and failure selection require related mode.');
   if (mode === 'related' && !request.base && !request.checks.length && !request.tags.length && !request.failedFrom && !request.help && !request.list) throw new Error('test:related requires --base <ref> or one or more explicit --check <id>.');
@@ -93,7 +95,7 @@ export function planVerification(request: ReturnType<typeof parseVerificationArg
       selectionReasons: (changed.selectionReasons ?? []).filter((item: any) => paths.includes(item.path)) };
   }
   const failedIds = request.failedFrom ? [...new Set<string>([...readFailedVerificationGroups(request.failedFrom, previousEvidence), ...(impactSnapshot?.environmentChanged ? previousEvidence.coverage.selected.map((step: any) => step.id) : [])])] : [];
-  const discoveredPlan = createVerificationPlan({ ...changed, tags: request.tags, semantic: request.semantic, types: modes[request.mode], stepIds: [...new Set([...request.checks, ...failedIds])], target: 'source', related: request.mode === 'related', completeTypes: request.mode === 'check' }, steps);
+  const discoveredPlan = createVerificationPlan({ ...changed, tags: request.tags, semantic: request.semantic, types: modes[request.mode], stepIds: [...new Set([...request.checks, ...failedIds])], target: 'source', related: request.mode === 'related', completeTypes: request.mode === 'check', excludeGroups: request.excludeGroups }, steps);
   const plan = { ...discoveredPlan, steps: discoveredPlan.steps.map((step: any) => localExecutionStep(step, executionProfile, executionProfile.limits)) };
   // Narrow execution after repairs, but recheck unresolved ownership against the
   // complete delivery diff. A previous mapping gap must never disappear as green.

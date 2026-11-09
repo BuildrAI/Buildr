@@ -259,6 +259,20 @@ function createSelectedFixture(root: any): any  {
     createShellFixture(root);
     return 'shell+core';
   }
+  // The reading bundle only needs the shared shell fixture: two registered
+  // projects, one service, one Change and the associated Task. The full
+  // fixture's record/material variants belong to the task owners.
+  if (SELECTORS.size >= 2 && [...SELECTORS].every(selector => ['core', 'shell', 'workbench', 'change'].includes(selector))) {
+    createShellFixture(root);
+    return 'reading';
+  }
+  // Task and Task materials share one real fixture: both create their own
+  // records through the production applications and read them through the
+  // same hosted Workspace.
+  if (SELECTORS.size >= 2 && [...SELECTORS].every(selector => ['task', 'task-materials'].includes(selector))) {
+    createFixture(root, { applicationTasks: true });
+    return 'task-records';
+  }
   if (SELECTORS.size !== 1) {
     createFixture(root, { articles: selected('articles') });
     return 'full';

@@ -1037,6 +1037,7 @@ export const CORE_MACOS_SHARDS: any = Object.freeze([
   ]),
   candidateShard('core-project-task-macos', 'macos', 'verification', [
     'integration',
+    'integration-generated-artifacts',
     'integration-code',
     'integration-knowledge',
     'integration-workspace-assets',
