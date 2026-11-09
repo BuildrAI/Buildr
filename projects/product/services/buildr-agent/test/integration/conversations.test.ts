@@ -1294,11 +1294,93 @@ test('a failed early title falls back to the completed-run attempt, then the aut
     await connected(f.service, 'local'); const view = await f.service.conversations.create('workspace-one', {}); send(f.service, view.id, 'local', 'start work');
     await waitUntil(() => calls, Boolean); for (const context of native.contexts.values()) context.unblock?.();
     const done = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed');
-    await waitUntil(() => calls === 2, Boolean); assert.equal(done.title, '新对话');
+    assert.equal(done.run!.status, 'completed');
+    await waitUntil(() => calls === 2, Boolean);
+    const failed = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.title === '生成标题错误，请手动修改');
+    assert.equal(failed.titleState?.status, 'failed'); assert.equal(failed.run?.status, 'completed');
     send(f.service, view.id, 'local', 'next'); await waitUntil(() => native.sends.length > 1, Boolean); for (const context of native.contexts.values()) context.unblock?.();
     await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed');
     assert.equal(calls, 2);
   } finally { await f.close(); }
+});
+
+test('an early title failure keeps the neutral name until the completion fallback runs', async () => {
+  const native = fake('local', { hold: true }); const open = native.executor.open; let calls = 0;
+  native.executor.open = async input => ({ ...await open(input), async generateTitle() { calls++; if (calls === 1) throw new Error('agent_title_timeout'); return '完成阶段恢复的标题'; } });
+  const f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local'); const view = await f.service.conversations.create('workspace-one', {}); send(f.service, view.id, 'local', 'early failure stays neutral');
+    await waitUntil(() => calls === 1, Boolean);
+    const running = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'running' && value.titleState?.status === 'failed');
+    assert.equal(running.title, '新对话');
+    for (const context of native.contexts.values()) context.unblock?.();
+    const named = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed' && value.title === '完成阶段恢复的标题');
+    assert.equal(named.titleState?.status, 'generated'); assert.equal(calls, 2);
+  } finally { await f.close(); }
+});
+
+test('an explicit title failure keeps the failure reminder and a later manual name still wins', async () => {
+  const native = fake(); const open = native.executor.open; let calls = 0;
+  native.executor.open = async input => ({ ...await open(input), async generateTitle() { calls++; throw new Error('agent_native_request_failed'); } });
+  const f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local'); const view = await f.service.conversations.create('workspace-one', {}); send(f.service, view.id, 'local', 'automatic title failure');
+    const failed = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed' && value.title === '生成标题错误，请手动修改' && value.titleState?.status === 'failed');
+    await assert.rejects(f.service.conversations.generateTitle('workspace-one', view.id, { expectedRevision: failed.revision }), { code: 'agent_title_failed' });
+    const preserved = f.service.conversations.read('workspace-one', view.id);
+    assert.equal(preserved.title, '生成标题错误，请手动修改');
+    const renamed = await f.service.conversations.update('workspace-one', view.id, { expectedRevision: preserved.revision, title: '我的手动标题' });
+    assert.equal(renamed.title, '我的手动标题');
+    const before = calls; send(f.service, view.id, 'local', 'next work');
+    await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed' && value.run.id !== failed.run!.id);
+    assert.equal(calls, before); assert.equal(f.service.conversations.read('workspace-one', view.id).title, '我的手动标题');
+  } finally { await f.close(); }
+});
+
+test('a failure reminder still lets another participant attempt an early title', async () => {
+  const first = fake('first'), second = fake('second');
+  const openFirst = first.executor.open, openSecond = second.executor.open; let firstCalls = 0, secondCalls = 0;
+  first.executor.open = async input => ({ ...await openFirst(input), async generateTitle() { firstCalls++; throw new Error('agent_title_timeout'); } });
+  second.executor.open = async input => ({ ...await openSecond(input), async generateTitle() { secondCalls++; return '第二个执行方生成的标题'; } });
+  const f = fixture([first.executor, second.executor]);
+  try {
+    await connected(f.service, 'first'); await connected(f.service, 'second');
+    const view = await f.service.conversations.create('workspace-one', {}); send(f.service, view.id, 'first', 'start with first');
+    await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed' && value.title === '生成标题错误，请手动修改');
+    assert.equal(firstCalls, 2);
+    send(f.service, view.id, 'second', 'continue with second');
+    const named = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed' && value.title === '第二个执行方生成的标题');
+    assert.equal(secondCalls, 1); assert.equal(named.participants.length, 2);
+    send(f.service, view.id, 'first', 'return to first');
+    await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed' && value.run.id !== named.run!.id);
+    assert.equal(firstCalls, 2);
+  } finally { await f.close(); }
+});
+
+test('startup repairs an exhausted historical title failure in detail and list views', async () => {
+  const native = fake(); const open = native.executor.open;
+  native.executor.open = async input => ({ ...await open(input), async generateTitle() { throw new Error('agent_title_timeout'); } });
+  const f = fixture([native.executor]); let restored: ReturnType<typeof createAgentService> | undefined;
+  try {
+    await connected(f.service, 'local'); const view = await f.service.conversations.create('workspace-one', {}); send(f.service, view.id, 'local', 'historical title failure');
+    await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed' && value.title === '生成标题错误，请手动修改');
+    await f.service.close();
+    const repo = new ConversationRepository(path.join(f.options.dataRoot, 'agent-service'));
+    try {
+      const record = repo.readConversation(view.id)!; const prior = record.view.revision;
+      record.view.title = '新对话'; record.view.titleState = { status: 'failed', reason: '历史标题生成失败' }; record.view.revision = randomUUID();
+      repo.saveConversation(record, prior);
+    } finally { repo.stopReadModels(); }
+    restored = createAgentService(f.options);
+    assert.equal(restored.conversations.read('workspace-one', view.id).title, '新对话');
+    assert.equal(restored.conversations.listAll(['workspace-one'], {}).conversations.find(item => item.id === view.id)?.title, '新对话');
+    await restored.conversations.recoverInterrupted();
+    const repaired = restored.conversations.read('workspace-one', view.id);
+    assert.equal(repaired.title, '生成标题错误，请手动修改'); assert.equal(repaired.titleState?.status, 'failed');
+    assert.equal(restored.conversations.listAll(['workspace-one'], {}).conversations.find(item => item.id === view.id)?.title, '生成标题错误，请手动修改');
+    await restored.conversations.recoverInterrupted();
+    assert.equal(restored.conversations.read('workspace-one', view.id).title, '生成标题错误，请手动修改');
+  } finally { await restored?.close(); await f.close(); }
 });
 
 test('conversation task association can be set, replaced and cleared with the observed revision', async () => {
@@ -1355,9 +1437,11 @@ test('oversized or failed title inference preserves the neutral name and reserve
   const f = fixture([native.executor]);
   try {
     await connected(f.service, 'local'); const view = await f.service.conversations.create('workspace-one', {}); send(f.service, view.id, 'local', 'first');
-    await waitUntil(() => calls === 2, Boolean); await new Promise(resolve => setTimeout(resolve, 10)); assert.equal(f.service.conversations.read('workspace-one', view.id).titleState?.status,'failed'); assert.equal(f.service.conversations.read('workspace-one', view.id).title, '新对话');
+    await waitUntil(() => calls === 2, Boolean);
+    const failed = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.title === '生成标题错误，请手动修改');
+    assert.equal(failed.titleState?.status,'failed');
     await f.service.close(); const restored = createAgentService(f.options);
-    try { send(restored, view.id, 'local', 'after restart'); await waitUntil(() => restored.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed'); await new Promise(resolve => setTimeout(resolve, 10)); assert.equal(calls, 2); assert.equal(native.sends.length, 2); }
+    try { send(restored, view.id, 'local', 'after restart'); await waitUntil(() => restored.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed'); await new Promise(resolve => setTimeout(resolve, 10)); assert.equal(calls, 2); assert.equal(native.sends.length, 2); assert.equal(restored.conversations.read('workspace-one', view.id).title, '生成标题错误，请手动修改'); }
     finally { await restored.close(); }
   } finally { await f.close(); }
 });
@@ -2033,8 +2117,8 @@ test('unavailable title generation is recorded once and a restart recovers inter
   const native=fake(),f=fixture([native.executor]);
   try{
     await connected(f.service,'local');const view=await f.service.conversations.create('workspace-one',{});send(f.service,view.id,'local','work');
-    const done=await waitUntil(()=>f.service.conversations.read('workspace-one',view.id),value=>value.titleState?.status==='unavailable');
-    assert.equal(done.title,'新对话');assert.ok(done.titleState?.reason);assert.equal(native.sends.length,1);
+    const done=await waitUntil(()=>f.service.conversations.read('workspace-one',view.id),value=>value.titleState?.status==='unavailable'&&value.title==='生成标题错误，请手动修改');
+    assert.equal(done.title,'生成标题错误，请手动修改');assert.ok(done.titleState?.reason);assert.equal(native.sends.length,1);
     await f.service.close();
     const db=new DatabaseSync(path.join(f.options.dataRoot,'agent-service/conversations.sqlite'));
     db.prepare("UPDATE conversations SET body=json_set(body,'$.view.titleState.status','generating') WHERE id=?").run(view.id);db.close();

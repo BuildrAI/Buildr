@@ -434,6 +434,10 @@ export class ConversationRepository {
     const db=this.open(false);if(!db)return [];
     try{return (db.prepare("SELECT body FROM conversations WHERE json_extract(body,'$.view.titleState.status')='generating' AND json_extract(body,'$.view.run.generation')<>?").all(generation) as Array<{body:string}>).map(row=>ConversationEntryStore.hydrate(db,JSON.parse(row.body) as StoredConversation,this.nativeReader));}finally{db.close();}
   }
+  listTitleFailureCandidates(): StoredConversation[] {
+    const db=this.open(false);if(!db)return [];
+    try{return (db.prepare("SELECT body FROM conversations WHERE json_extract(body,'$.titleOrigin')='default' AND json_extract(body,'$.view.title')='新对话' AND json_extract(body,'$.view.titleState.status') IN ('failed','unavailable')").all() as Array<{body:string}>).map(row=>ConversationEntryStore.hydrate(db,JSON.parse(row.body) as StoredConversation,this.nativeReader));}finally{db.close();}
+  }
   listInterrupted(): StoredConversation[] {
     const db = this.open(false); if (!db) return [];
     try {

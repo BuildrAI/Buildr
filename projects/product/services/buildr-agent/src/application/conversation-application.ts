@@ -49,6 +49,8 @@ import { ConversationChildren, type CreateChildInput } from './conversation-chil
 
 type PreparedSource = { runtime: AgentRuntime; model: string; leaseIdentity?: string };
 const TITLE_TIMEOUT_MS = 45_000;
+const NEUTRAL_TITLE = '新对话';
+const TITLE_FAILURE_REMINDER = '生成标题错误，请手动修改';
 const MAX_TEXT_BYTES = 64 * 1024;
 const MAX_ITEM_BYTES = 1024 * 1024;
 const PAGE_SIZE = 100;
@@ -599,7 +601,7 @@ export class ConversationApplication {
     try { cwd = fs.realpathSync(selected); if (!fs.statSync(cwd).isDirectory()) throw new Error(); }
     catch { fail('agent_cwd_missing', '工作目录不存在或不可访问。'); }
     const record: StoredConversation = { view: {
-      id: randomUUID(), workspaceId, cwd, taskId: input.taskId, title: input.title ? nonempty(input.title, '对话标题', 160) : '新对话', titleState:{status:input.title?'manual':'pending'},
+      id: randomUUID(), workspaceId, cwd, taskId: input.taskId, title: input.title ? nonempty(input.title, '对话标题', 160) : NEUTRAL_TITLE, titleState:{status:input.title?'manual':'pending'},
       revision: randomUUID(), hidden: false, updatedAt: this.options.now(), participants: [], entries: [], requests: [],
     }, hostScope: workspace, titleOrigin: input.title ? 'manual' : 'default', participants: [], sources: {}, attempts: [], requests: {}, attachments: {} };
     setConversationTaskLinks(record.view,links);
@@ -1472,7 +1474,7 @@ export class ConversationApplication {
   }
 
   private titleEligible(record: StoredConversation): boolean {
-    return !this.closing && record.titleOrigin === 'default' && record.view.title === '新对话';
+    return !this.closing && record.titleOrigin === 'default' && (record.view.title === NEUTRAL_TITLE || record.view.title === TITLE_FAILURE_REMINDER);
   }
   private titleAttempts(record:StoredConversation, participantId:string): {early?:boolean;completion?:boolean} {
     if (!record.titleAttemptsByParticipant) {
@@ -1551,6 +1553,7 @@ export class ConversationApplication {
     if (current.titleOrigin === 'default' || current.view.titleState?.status === 'generating') {
       current.view.titleState = {status:code==='agent_title_unavailable'?'unavailable':'failed', reason};
     }
+    if (phase === 'completion' && current.titleOrigin === 'default' && current.view.title === NEUTRAL_TITLE) current.view.title = TITLE_FAILURE_REMINDER;
     this.save(current);
   }
   private acceptTitle(record: StoredConversation, raw: string | undefined, explicit = false): boolean {
@@ -1643,6 +1646,17 @@ export class ConversationApplication {
       if(record.titleOrigin!=='default')continue;
       record.view.titleState={status:'failed',reason:'标题生成因服务重启中断，原有回复已保留，可显式重新生成。'};
       try{this.save(record);}catch{/* A concurrent newer record wins; do not block unrelated executions. */}
+    }
+    for(const candidate of this.options.repository.listTitleFailureCandidates()){
+      try{
+        const {workspaceId,id}=candidate.view;
+        const record=this.load(workspaceId,id),participantId=record.view.run?.participantId;
+        if(record.titleOrigin!=='default'||record.view.title!==NEUTRAL_TITLE||!['failed','unavailable'].includes(record.view.titleState?.status??'')||!participantId)continue;
+        const attempts=this.titleAttempts(record,participantId);
+        if(!(attempts.early&&attempts.completion))continue;
+        record.view.title=TITLE_FAILURE_REMINDER;
+        this.save(record);
+      }catch{/* A local conflict must not prevent recovery of unrelated records. */}
     }
     const candidates=this.options.repository.listInterrupted();
     const work=async()=>{

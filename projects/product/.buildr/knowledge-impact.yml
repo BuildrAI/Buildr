@@ -1,16 +1,20 @@
 schemaVersion: buildr.knowledge-impact/v1
-task: focus-conversation-history-drawer
-change: focus-conversation-history-drawer
+task: conversation-title-error-reminder
+change: conversation-title-failure-reminder
 operation: reconcile
 impacts:
-  - type: reference
-    target: knowledge/code-map/technical-layers.md
-    reason: 专注模式对话历史改为面板内左侧临时栏、当前对话保持可见；分屏模式保持面板内替换。代码地图 ConversationPanel 职责描述同步校准。
+  - type: technical-architecture
+    target: knowledge/docs/architecture/agent-integration.md
+    reason: 自动标题两个有界阶段都失败后回填失败提醒标题，历史记录启动补齐，手动名称优先；标题说明同步校准。
     status: updated
     sourceIdentities:
-      - services/buildr-web/src/features/agent-conversations/ConversationPanel.tsx
-      - services/buildr-web/src/features/agent-conversations/ConversationActivity.tsx
-      - services/buildr-web/src/features/agent-conversations/conversation-dock.css
-      - openspec/changes/archive/2026-11-09-focus-conversation-history-drawer/specs/buildr-web-client/spec.md
-      - openspec/specs/buildr-web-client/spec.md
+      - services/buildr-agent/src/application/conversation-application.ts
+      - services/buildr-agent/src/persistence/conversation-repository.ts
+      - openspec/changes/conversation-title-failure-reminder/specs/agent-conversations/spec.md
+  - type: code-map
+    target: knowledge/code-map/technical-layers.md
+    reason: 对话应用的短标题职责补充最终失败提醒与历史补齐说明。
+    status: updated
+    sourceIdentities:
+      - services/buildr-agent/src/application/conversation-application.ts
 unresolvedItems: []
