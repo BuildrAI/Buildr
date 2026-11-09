@@ -77,7 +77,7 @@ export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWork
   });
   const empty=groupsSettled&&visibleGroups.every(id=>groupResults.values[id]?.total===0);
   return <section className="ac-history" aria-label="对话列表">
-    <header className="ac-thread-header"><Button type="text" icon={<ArrowLeftOutlined/>} aria-label="返回当前对话" onClick={()=>context.setView('conversation')}/><strong>对话列表</strong><Button type="text" icon={<PlusOutlined/>} aria-label="新建对话" onClick={()=>context.newConversation({preserveVisibility:true})}/></header>
+    <header className="ac-thread-header">{!context.open&&<Button type="text" icon={<ArrowLeftOutlined/>} aria-label="返回当前对话" onClick={()=>context.setView('conversation')}/>}<strong>对话列表</strong>{!context.open&&<Button type="text" icon={<PlusOutlined/>} aria-label="新建对话" onClick={()=>context.newConversation({preserveVisibility:true})}/>}</header>
     <div className="ac-history-body">
       <div className="ac-history-toolbar"><Input allowClear prefix={<SearchOutlined/>} aria-label="搜索对话" placeholder="搜索对话" value={query} onChange={event=>setQuery(event.target.value)}/><Select aria-label="对话列表工作空间" value={workspaceId} options={[{value:'',label:'全部工作空间'},...workspaces.map(item=>({value:item.id,label:item.name}))]} onChange={value=>{setWorkspaceId(value);setFilter(null);}}/></div>
       <BuildrParticipation workspaceId={workspaceId||'@default'}/>

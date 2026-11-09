@@ -35,3 +35,6 @@
 .ac-collapsed-rail .ac-conversation-icon.ant-btn.is-active:hover,.global-conversations-control .ac-conversation-icon.ant-btn.is-active:hover{color:var(--soft-primary);background:#edf4f0}
 
 .ac-panel:not(.is-full) .ac-request{max-width:none}
+.ac-panel.is-full{position:relative}
+/* 专注模式的历史左栏是临时浏览浮层：不替换当前对话，选择或返回后关闭。 */
+.ac-history-drawer{position:absolute;top:0;bottom:0;left:0;z-index:11;width:min(420px,100%);background:#fff;border-right:1px solid var(--soft-line);box-shadow:4px 0 18px #273f3220}

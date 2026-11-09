@@ -73,6 +73,10 @@ export const HISTORY_SCENARIO_CATALOG = [
     "name": "顶部正文输入与列表共用最大宽度，宽屏居中且窄屏自适应"
   },
   {
+    "id": "history/focus-mode-drawer",
+    "name": "专注模式列表左侧临时栏不替换对话，分屏模式保持面板内替换"
+  },
+  {
     "id": "history/history-pagination",
     "name": "列表手动从末条加载，整行折叠与拖动互不干扰"
   },

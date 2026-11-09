@@ -263,7 +263,12 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
   const setHighEffort=async()=>{const dialog=await openModelSettings(),slider=dialog.getByRole('slider',{name:'思考深度',exact:true});await slider.press('End');assert.equal(await slider.getAttribute('aria-valuenow'),await slider.getAttribute('aria-valuemax'));assert.equal(await slider.getAttribute('aria-valuetext'),'高');};
   const assertModelSummary=async(model:string,effort?:string)=>{const label=modelTrigger().locator('.ac-model-label');await label.filter({hasText:model}).waitFor();assert.equal(await label.innerText(),model);const depth=modelTrigger().locator('.ac-model-effort');if(effort){await depth.filter({hasText:effort}).waitFor();assert.equal(await depth.innerText(),effort);}else assert.equal(await depth.count(),0);};
   const reset=async()=>{await page.goto(workspaceUrl+'/overview');await page.evaluate(()=>sessionStorage.clear());await page.reload();await page.locator('#workbench-overview').waitFor();};
-  const reopen=async()=>{await page.getByRole('button',{name:'查看对话列表',exact:true}).click();await page.locator('.ac-history-list button[data-conversation-id="'+conversation.id+'"]').click();await input().waitFor();};
+  // 固定/专注下标题栏不再重复列表与返回入口，统一走导轨（手机为顶栏）；暂看仍用标题栏以保持不固定布局。
+  const isPeeking=()=>panel().evaluate((node:HTMLElement)=>node.classList.contains('is-peeking'));
+  const openHistoryList=async()=>{if(await isPeeking()){await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();return;}const rail=page.locator('.ac-collapsed-rail');if(await rail.isVisible())await rail.locator('.ac-all-conversations').click();else await page.locator('.global-conversations-control .ac-all-conversations').click();};
+  const backToConversation=async()=>{if(await isPeeking()){await panel().getByRole('button',{name:'返回当前对话',exact:true}).click();return;}const rail=page.locator('.ac-collapsed-rail');if(await rail.isVisible())await rail.locator('.ac-current-conversation').click();else await page.locator('#global-conversations-entry').click();};
+  const startNewConversation=async()=>{if(await isPeeking()){await panel().getByRole('button',{name:'新建对话',exact:true}).click();return;}const rail=page.locator('.ac-collapsed-rail');if(await rail.isVisible())await rail.locator('.ac-new-conversation').click();else await page.locator('.global-conversations-control').getByRole('button',{name:'新建对话',exact:true}).click();};
+  const reopen=async()=>{await openHistoryList();await page.locator('.ac-history-list button[data-conversation-id="'+conversation.id+'"]').click();await input().waitFor();};
   const assertReminderGap=async()=>{
     const rail=page.locator('.ac-collapsed-rail'),entry=rail.getByRole('button',{name:/^所有对话，/}),menu=page.locator('.ac-activity-menu:visible');
     await entry.hover();await menu.waitFor();
@@ -374,6 +379,9 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
     get reminderPaging(){return reminderPaging;}, set reminderPaging(value){reminderPaging=value;},
     get reminderReadFailure(){return reminderReadFailure;}, set reminderReadFailure(value){reminderReadFailure=value;},
     reopen,
+    openHistoryList,
+    backToConversation,
+    startNewConversation,
     get replies(){return replies;}, set replies(value){replies=value;},
     reset,
     get revision(){return revision;}, set revision(value){revision=value;},

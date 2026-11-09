@@ -352,7 +352,7 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
     fixture.eventStreamHook=async()=>{fixture.eventStreamHook=undefined;started?.();await gate;};
     try{
       await page.reload();await held;await panel().locator('[data-run-status="running"]').waitFor();
-      await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().fill('新草稿保留');release?.();
+      await fixture.startNewConversation();await input().fill('新草稿保留');release?.();
       await page.waitForTimeout(800);assert.equal(fixture.eventStreams,streams+1);assert.equal(await notice().count(),0);assert.equal(await input().inputValue(),'新草稿保留');assert.equal(fixture.sends,sends);
     }finally{release?.();fixture.eventStreamHook=undefined;}
   });

@@ -23,10 +23,10 @@ const historyRuns = {
   await input().waitFor();
   assert.equal(await input().inputValue(),'切换空间保留的草稿');
   assert.equal(await panel().evaluate((node:HTMLElement)=>node===(window as any).__retainedConversationPanel),true);
-  await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();
+  await fixture.openHistoryList();
   await panel().locator('.ac-history-toolbar').getByText('全部工作空间',{exact:true}).waitFor();
   await capture(page,'conversation-workspace-switch-preserved.png');
-  await panel().getByRole('button',{name:'返回当前对话',exact:true}).click();
+  await fixture.backToConversation();
   await input().fill('');
   },
   'history/handoff-source': async (fixture: AgentConversationFixture) => {
@@ -66,7 +66,7 @@ const historyRuns = {
       {id:'seen-list-user',sequence:1,runId:'run-fixture',kind:'message',role:'user',text:'核对查看状态',createdAt:at},
       {id:'seen-list-answer',sequence:2,runId:'run-fixture',kind:'message',role:'assistant',text:'查看后应当立即同步统计',status:'completed',createdAt:at},
     ]});
-    await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();
+    await fixture.openHistoryList();
     await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
     const row=panel().locator('[data-conversation-id="'+fixture.conversation.id+'"]');
     await row.getByText('待查看',{exact:true}).waitFor();
@@ -77,7 +77,7 @@ const historyRuns = {
     await page.waitForFunction(()=>[...document.querySelectorAll('button[aria-label^="所有对话，"]')].some(node=>node.getAttribute('aria-label')?.includes('待查看 0')),null,{timeout:1500});
     assert.ok(summaryReads.length>before,'查看确认触发摘要，不依赖5秒或30秒轮询');
     assert.ok(summaryReads.length<=before+2,'一次查看不产生请求风暴');
-    await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();
+    await fixture.openHistoryList();
     const refreshed=panel().locator('[data-conversation-id="'+fixture.conversation.id+'"]');await refreshed.waitFor();
     await refreshed.getByText('待查看',{exact:true}).waitFor({state:'hidden',timeout:1500});
     assert.equal(await refreshed.getByText('待查看',{exact:true}).count(),0,'列表状态与全局统计一致');
@@ -125,11 +125,11 @@ const historyRuns = {
     fixture.additionalConversations=rows;await page.route(pattern,route);await page.reload();await input().waitFor();
     const entry=page.locator('button[aria-label^="所有对话，"]:visible').last();
     for(const direction of ['Alt+ArrowUp','Alt+ArrowDown']){
-      await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();
+      await fixture.openHistoryList();
       await panel().locator('.ac-history-toolbar .ant-select-selector').click();await page.locator('.ant-select-dropdown:visible .ant-select-item-option-content').filter({hasText:/^全部工作空间$/}).click();
       const header=panel().locator('[data-history-workspace="'+workspaceId+'"] .ac-history-group-toggle');await header.waitFor();await header.press(direction);
       const expected=await panel().locator('[data-history-workspace]').evaluateAll((nodes:HTMLElement[])=>nodes.map(node=>node.dataset.historyWorkspace));
-      await panel().getByRole('button',{name:'返回当前对话',exact:true}).click();await entry.hover();
+      await fixture.backToConversation();await entry.hover();
       const menu=page.locator('.ac-activity-menu:visible');await menu.waitFor();await menu.locator('[data-activity-workspace="@default"]').waitFor();
       assert.deepEqual(await menu.locator('[data-activity-workspace]').evaluateAll((nodes:HTMLElement[])=>nodes.map(node=>node.dataset.activityWorkspace)),expected.filter((id:string|undefined)=>[workspaceId,otherId,'@default'].includes(id!)));
       await capture(page,'conversation-popup-shared-order-'+direction.slice(4)+'.png');await page.mouse.move(0,0);await input().focus();await page.keyboard.press('Escape');
@@ -148,7 +148,7 @@ const historyRuns = {
     update({run:run('completed'),requests:[],entries:[{id:'participation-user',sequence:1,runId:'run-fixture',kind:'message',role:'user',text:'观察参与',createdAt:at},{id:'participation-answer',sequence:2,runId:'run-fixture',kind:'message',role:'assistant',text:'已完成',status:'completed',createdAt:at}]});
     await page.reload();await input().waitFor();
     assert.equal(await panel().getByRole('button',{name:'Buildr 参与',exact:true}).count(),0);
-    await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();
+    await fixture.openHistoryList();
     await panel().locator('.ac-history-toolbar').waitFor();
     assert.equal(await panel().getByRole('button',{name:'Buildr 参与汇总',exact:true}).count(),0);
     assert.equal(reads,0,'隐藏入口不得请求参与查询');
@@ -259,7 +259,7 @@ const historyRuns = {
   try{
     fixture.additionalConversations=[target];
     await page.reload();await input().waitFor();
-    await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();
+    await fixture.openHistoryList();
     const row=panel().locator('.ac-history-list button[data-conversation-id="'+targetId+'"]');
     await row.waitFor();
     fixture.holdEntryRead=true;
@@ -302,7 +302,7 @@ const historyRuns = {
   }finally{
     fixture.releaseEntryRead?.();fixture.holdEntryRead=false;fixture.entryReadStarted=undefined;historyPages.delete(100);
     fixture.additionalConversations=additional;fixture.conversation=previous;
-    await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();
+    await fixture.openHistoryList();
     await panel().locator('.ac-history-list button[data-conversation-id="'+previous.id+'"]').click();
     await page.locator('#agent-conversation-panel[data-conversation-id="'+previous.id+'"]').waitFor();
     await page.reload();await input().waitFor();
@@ -323,7 +323,7 @@ const historyRuns = {
   try{
     fixture.additionalConversations=[target];
     await page.reload();await input().waitFor();
-    await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();
+    await fixture.openHistoryList();
     const row=panel().locator('.ac-history-list button[data-conversation-id="'+targetId+'"]');
     await row.waitFor();await row.click();
     await page.locator('#agent-conversation-panel[data-conversation-id="'+targetId+'"]').waitFor();
@@ -338,7 +338,7 @@ const historyRuns = {
     assert.ok(Math.abs(geometry.listTop-geometry.streamTop)<=1&&geometry.scrollTop===0,'短历史补完后应保持顶对齐：'+JSON.stringify(geometry));
   }finally{
     historyPages.delete(10);fixture.additionalConversations=additional;fixture.conversation=previous;
-    await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();
+    await fixture.openHistoryList();
     await panel().locator('.ac-history-list button[data-conversation-id="'+previous.id+'"]').click();
     await page.locator('#agent-conversation-panel[data-conversation-id="'+previous.id+'"]').waitFor();
     await page.reload();await input().waitFor();
@@ -496,10 +496,10 @@ const historyRuns = {
     fixture.additionalConversations=rows.map(row=>({...structuredClone(saved),id:row.id,title:row.id,workspaceId,
       revision:row.id,updatedAt:row.at,requests:[],run:run(row.status),activity:{version:1,seenThrough:0,active:true,userInputAt:row.at}}));
     await page.reload();await input().waitFor();
-    const open=async()=>{await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();await panel().locator('[data-conversation-id="priority-running"]').waitFor();};
+    const open=async()=>{await fixture.openHistoryList();await panel().locator('[data-conversation-id="priority-running"]').waitFor();};
     const order=()=>panel().locator(`[data-history-workspace="${workspaceId}"] .ac-history-row-main`).evaluateAll((nodes:HTMLElement[])=>nodes.map(node=>node.dataset.conversationId).filter(id=>id?.startsWith('priority-')));
     await open();assert.deepEqual(await order(),['priority-unseen','priority-waiting','priority-running']);
-    await panel().getByRole('button',{name:'返回当前对话',exact:true}).click();
+    await fixture.backToConversation();
     fixture.additionalConversations[0].activity.userInputAt='2026-10-31T08:00:00Z';
     fixture.additionalConversations[0].revision='newer-input';
     await open();assert.deepEqual(await order(),['priority-unseen','priority-waiting','priority-running']);
@@ -522,7 +522,7 @@ const historyRuns = {
     await page.reload();await input().waitFor();
     await panel().locator('[data-entry-id="fork-answer"]').getByRole('button',{name:'分支到新对话',exact:true}).click();
     const origin=panel().locator('[data-forked-from="'+source.id+'"]');await origin.waitFor();
-    await panel().getByRole('button',{name:'对话信息',exact:true}).filter({hasText:'新对话'}).waitFor();
+    await panel().getByRole('button',{name:'重命名对话',exact:true}).filter({hasText:'新对话'}).waitFor();
     assert.equal(await panel().getByText('不要带入的后续消息',{exact:true}).count(),0);
     assert.equal(await input().inputValue(),'');assert.equal(fixture.sends,sends,'创建分支不发送工作指令');
     await page.reload();await origin.waitFor();
@@ -553,7 +553,7 @@ const historyRuns = {
     await capture(page,'conversation-shared-width-'+label+'.png');
   };
   const checkHistory=async(label:string)=>{
-    await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();await panel().locator('.ac-history-row').first().waitFor();
+    await fixture.openHistoryList();await panel().locator('.ac-history-row').first().waitFor();
     const geometry=await panel().locator('.ac-history').evaluate((node:HTMLElement)=>{
       const rect=(item:Element)=>{const r=item.getBoundingClientRect();return{left:r.left,right:r.right,width:r.width};};
       const body=node.querySelector<HTMLElement>('.ac-history-body')!;return{host:rect(node),body:rect(body),header:rect(node.querySelector('.ac-thread-header')!),toolbar:rect(node.querySelector('.ac-history-toolbar')!),stats:rect(node.querySelector('.ac-execution-summary')!),group:rect(node.querySelector('.ac-history-group')!),overflow:body.scrollWidth-body.clientWidth};
@@ -562,15 +562,49 @@ const historyRuns = {
     assert.ok(Math.abs((geometry.body.left-geometry.host.left)-(geometry.host.right-geometry.body.right))<1,label+'居中');
     for(const area of ['stats','group'] as const){assert.ok(Math.abs(geometry[area].left-geometry.toolbar.left)<1);assert.ok(Math.abs(geometry[area].right-geometry.toolbar.right)<1);}
     assert.equal(geometry.header.width,geometry.host.width);assert.ok(geometry.overflow<=1,label+'无横向溢出');
-    await capture(page,'conversation-history-width-'+label+'.png');await panel().getByRole('button',{name:'返回当前对话',exact:true}).click();
+    await capture(page,'conversation-history-width-'+label+'.png');await fixture.backToConversation();
   };
   try{
     await checkConversation('sidebar');await checkHistory('sidebar');await toggleFull('专注对话');
     for(const [label,width,height] of [['wide',2048,1152],['desktop',1280,900],['mobile',375,844]] as const){await page.setViewportSize({width,height});await checkConversation(label);await checkHistory(label);}
     assert.equal(fixture.sends,sends,'调整布局和查看列表不发送工作');
   }finally{
-    await page.setViewportSize({width:1600,height:1000});const back=panel().getByRole('button',{name:'返回当前对话',exact:true});if(await back.isVisible())await back.click();
+    await page.setViewportSize({width:1600,height:1000});if(await panel().locator('.ac-history').count())await fixture.backToConversation();
     if((await panel().getAttribute('class'))?.includes('is-full'))await toggleFull('恢复分屏');
+  }
+  },
+  'history/focus-mode-drawer': async (fixture: AgentConversationFixture) => {
+  const {capture,input,page,panel,run,update}=fixture;
+  const saved=structuredClone(fixture.conversation);
+  const toggleFull=async(label:string)=>{await panel().getByRole('button',{name:'更多对话操作',exact:true}).click();await page.getByRole('menuitem',{name:label,exact:true}).click();await page.locator('.ant-dropdown:visible').waitFor({state:'hidden'});};
+  const rail=page.getByRole('complementary',{name:'当前对话与所有对话',exact:true}),listEntry=rail.locator('.ac-all-conversations'),drawer=panel().locator('.ac-history-drawer');
+  try{
+    update({title:'专注列表现场',requests:[],run:run('completed'),entries:[{id:'focus-user',sequence:1,kind:'message',role:'user',text:'专注列表不替换对话',createdAt:new Date().toISOString()}]});
+    await page.reload();await input().waitFor();
+    await toggleFull('专注对话');
+    await listEntry.click();await drawer.waitFor();await drawer.locator('.ac-history-row').first().waitFor();
+    assert.ok(await input().isVisible(),'专注模式打开列表栏后对话输入保持可见');
+    assert.ok(await panel().getByText('专注列表不替换对话',{exact:true}).isVisible(),'对话正文不被历史替换');
+    const geometry=await page.evaluate(()=>{const host=document.querySelector('#agent-conversation-panel')!.getBoundingClientRect(),bar=document.querySelector('.ac-history-drawer')!.getBoundingClientRect();return{hostLeft:host.left,hostWidth:host.width,barLeft:bar.left,barWidth:bar.width};});
+    assert.ok(Math.abs(geometry.barLeft-geometry.hostLeft)<1,'列表栏贴近面板左侧');
+    assert.ok(geometry.barWidth<=421&&geometry.barWidth<geometry.hostWidth,'列表栏宽度有界且不占满面板');
+    await capture(page,'conversation-focus-history-drawer.png');
+    await listEntry.click();await drawer.waitFor({state:'hidden'});
+    assert.ok((await panel().getAttribute('class'))?.includes('is-full'),'再次点击入口不退出专注模式');
+    await listEntry.click();await drawer.waitFor();
+    await fixture.backToConversation();await drawer.waitFor({state:'hidden'});
+    await listEntry.click();await drawer.waitFor();await drawer.locator('.ac-history-row').first().waitFor();
+    await drawer.locator('.ac-history-row-main').first().click();await drawer.waitFor({state:'hidden'});await input().waitFor();
+    assert.ok(await input().isVisible(),'选择对话后关闭列表栏并保留对话');
+    await toggleFull('恢复分屏');
+    await listEntry.click();await panel().locator('.ac-history').waitFor();
+    assert.equal(await panel().locator('.ac-history-drawer').count(),0,'分屏模式不渲染临时栏');
+    assert.equal(await input().isVisible(),false,'分屏模式历史仍在面板内替换对话');
+    await fixture.backToConversation();await input().waitFor();
+  }finally{
+    fixture.conversation=saved;
+    if((await panel().getAttribute('class'))?.includes('is-full'))await toggleFull('恢复分屏');
+    await page.reload();await input().waitFor();
   }
   },
   'history/history-pagination': async (fixture: AgentConversationFixture) => {
@@ -595,7 +629,7 @@ const historyRuns = {
     const registry=await (await page.request.get(new URL('/api/v1/workspaces',workspaceUrl).href)).json();
     const otherId=registry.workspaces.find((entry:any)=>entry.workspace?.id&&entry.workspace.id!==workspaceId)?.workspace.id;assert.ok(otherId);
     fixture.additionalConversations=[make('other-batch',otherId),...Array.from({length:26},(_,i)=>make('batch-'+i,workspaceId)),...Array.from({length:8},(_,i)=>make('default-batch-'+i,'@default'))];
-    await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();
+    await fixture.openHistoryList();
     const search=panel().getByRole('textbox',{name:'搜索对话',exact:true});await search.fill('分批现场');
     await panel().locator('.ac-history-toolbar .ant-select-selector').click();await page.locator('.ant-select-dropdown:visible .ant-select-item-option-content').filter({hasText:/^全部工作空间$/}).click();
     const group=panel().locator('[data-history-workspace="'+workspaceId+'"]'),defaults=panel().locator('[data-history-workspace="@default"]'),header=group.locator('.ac-history-group-toggle');
@@ -626,7 +660,7 @@ const historyRuns = {
     await capture(page,'conversation-history-manual-controls.png');
   }finally{
     release?.();releaseExpand?.();fail=false;stale=false;fixture.additionalConversations=original;await page.unroute(matcher,intercept);
-    const back=panel().getByRole('button',{name:'返回当前对话',exact:true});if(await back.isVisible())await back.click();await input().waitFor();
+    if(await panel().locator('.ac-history').count())await fixture.backToConversation();await input().waitFor();
   }
   },
   'history/search': async (fixture: AgentConversationFixture) => {
@@ -644,7 +678,7 @@ const historyRuns = {
     update({title:'当前对话',run:run('completed'),requests:[],entries:[]});
     await page.route(matcher,intercept);
     await page.reload();await input().waitFor();
-    await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();
+    await fixture.openHistoryList();
     const search=panel().getByRole('textbox',{name:'搜索对话',exact:true});await search.fill('片段关键词');
     await panel().locator('[data-conversation-id="search-message"] .ac-history-row-snippet').waitFor();
     await page.waitForFunction(()=>!document.querySelector('[data-conversation-id="search-tool"]'));
@@ -667,7 +701,7 @@ const historyRuns = {
     update({title:'筛选现场',run:run('running','qoder',{model:'filter-model',modelAccountId:'filter-account'}),requests:[],entries:[]});
     await page.route(matcher,intercept);
     await page.reload();await input().waitFor();
-    await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();
+    await fixture.openHistoryList();
     const chip=panel().locator('.ac-execution-summary button').first();await chip.waitFor();
     await chip.click();
     await filtered;
@@ -711,7 +745,7 @@ const historyRuns = {
 
       const identity='a63c0c92-c53d-4d8a-8a37-73f0169b282f',originalId=fixture.conversation.id,viewport=page.viewportSize();
       fixture.additionalConversations.push({...fixture.conversation,id:identity,workspaceId:workspaceId,title:'用于验证长标题不会挤出第三行的对话，标题超出时应保持在一行内',entries:[],participants:[],run:undefined,activity:undefined});
-      const history=async()=>{await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();await panel().locator('.ac-history-list button[data-conversation-id="'+identity+'"]').waitFor();};
+      const history=async()=>{await fixture.openHistoryList();await panel().locator('.ac-history-list button[data-conversation-id="'+identity+'"]').waitFor();};
       const assertTwoLines=async()=>{
         const row=panel().locator('.ac-history-list button[data-conversation-id="'+identity+'"]');assert.equal(await row.locator('.ac-history-id').innerText(),identity);
         const copyOrder=await row.evaluate((node:HTMLElement)=>{const parent=node.parentElement!,copy=parent.querySelector('.ac-history-row-copy')!,id=node.querySelector('.ac-history-id')!;const a=copy.getBoundingClientRect(),b=id.getBoundingClientRect();return{copyLeft:a.left,copyRight:a.right,idLeft:b.left,copyMid:a.top+a.height/2,idMid:b.top+b.height/2};});
@@ -1062,12 +1096,12 @@ const historyRuns = {
         await capture(page,'conversation-history-scroll-mobile.png');
         const heldRequest=await requested;const settled=new Promise<void>(resolve=>{const finish=(request:any)=>{if(request!==heldRequest)return;page.off('requestfinished',finish);page.off('requestfailed',finish);resolve();};page.on('requestfinished',finish);page.on('requestfailed',finish);});
         const other={...previous,id:'history-other',title:'历史加载中的另一段对话',entries:[],participants:[],run:undefined};fixture.additionalConversations.push(other);
-        await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();await panel().locator('.ac-history-list button[data-conversation-id="history-other"]').click();await page.locator('#agent-conversation-panel[data-conversation-id="history-other"]').waitFor();
+        await fixture.openHistoryList();await panel().locator('.ac-history-list button[data-conversation-id="history-other"]').click();await page.locator('#agent-conversation-panel[data-conversation-id="history-other"]').waitFor();
         fixture.releaseEntryRead!();await settled;await settle();
         assert.equal(await panel().locator('[data-entry-id="history-101"]').count(),0,'迟到页不进入另一段对话');
       }finally{
         fixture.releaseEntryRead?.();fixture.holdEntryRead=false;fixture.failEntryRead=false;fixture.conversation=previous;historyPages.clear();fixture.additionalConversations=fixture.additionalConversations.filter(item=>item.id!=='history-other');await page.setViewportSize(oldViewport);
-        await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();await panel().locator('.ac-history-list button[data-conversation-id="'+previous.id+'"]').click();await input().waitFor();
+        await fixture.openHistoryList();await panel().locator('.ac-history-list button[data-conversation-id="'+previous.id+'"]').click();await input().waitFor();
         await page.reload();await panel().locator('[data-run-status="stopped"]').waitFor();
       }
   },
@@ -1103,7 +1137,7 @@ const historyRuns = {
   let delay=false,release:(()=>void)|undefined,started:(()=>void)|undefined;
   const held=new Promise<void>(resolve=>{started=resolve;}),matcher='**/api/v1/workspaces/*/code/repositories*';
   const intercept=async(route:any)=>{if(!delay)return route.fallback();delay=false;started?.();await new Promise<void>(resolve=>{release=resolve;});await route.fulfill({status:503,json:{error:{code:'fixture_unavailable',message:'旧对话迟到的文件读取失败'}}});};
-  const switchTo=async(id:string)=>{await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();await panel().locator('button[data-conversation-id="'+id+'"]').click();await page.locator('#agent-conversation-panel[data-conversation-id="'+id+'"]').waitFor();};
+  const switchTo=async(id:string)=>{await fixture.openHistoryList();await panel().locator('button[data-conversation-id="'+id+'"]').click();await page.locator('#agent-conversation-panel[data-conversation-id="'+id+'"]').waitFor();};
   const preview=()=>page.getByRole('dialog',{name:'图片预览',exact:true});
   const closePreview=async()=>{await preview().getByRole('button',{name:'关闭预览',exact:true}).click();await preview().waitFor({state:'hidden'});};
   const assertImage=async()=>{await preview().waitFor();await page.waitForFunction(()=>{const image=document.querySelector<HTMLImageElement>('.ac-linked-image-preview img');return Boolean(image?.complete&&image.naturalWidth>0);});};
@@ -1130,7 +1164,7 @@ const historyRuns = {
     fs.writeFileSync(missingPath,png,{flag:'wx'});await preview().getByRole('button',{name:'重新加载',exact:true}).click();await assertImage();await closePreview();
     await panel().getByRole('link',{name:'无法定位的文件',exact:true}).click();await panel().getByRole('button',{name:'复制来源路径',exact:true}).waitFor();
     await switchTo(otherId);assert.equal(await panel().getByRole('button',{name:'复制来源路径',exact:true}).count(),0,'其他对话没有旧提醒');await switchTo(previous.id);assert.equal(await panel().getByRole('button',{name:'复制来源路径',exact:true}).count(),0,'返回原对话也不恢复过期提醒');
-    await panel().getByRole('link',{name:'无法定位的文件',exact:true}).click();await panel().getByRole('button',{name:'复制来源路径',exact:true}).waitFor();await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().waitFor();assert.equal(await panel().getByRole('button',{name:'复制来源路径',exact:true}).count(),0,'新草稿也没有旧提醒');
+    await panel().getByRole('link',{name:'无法定位的文件',exact:true}).click();await panel().getByRole('button',{name:'复制来源路径',exact:true}).waitFor();await fixture.startNewConversation();await input().waitFor();assert.equal(await panel().getByRole('button',{name:'复制来源路径',exact:true}).count(),0,'新草稿也没有旧提醒');
     await switchTo(previous.id);fixture.expectedBrowserErrors.add('503');delay=true;await panel().getByRole('link',{name:'延迟文件',exact:true}).click();await held;await switchTo(otherId);const late=page.waitForResponse((response:any)=>new URL(response.url()).pathname.endsWith('/code/repositories')&&response.status()===503);release?.();await late;await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));assert.equal(await panel().getByRole('button',{name:'复制来源路径',exact:true}).count(),0,'旧请求迟到失败不能给新对话添加提醒');
   }finally{
     release?.();await page.unroute(matcher,intercept);fixture.additionalConversations=fixture.additionalConversations.filter(item=>item.id!==otherId);fixture.conversation=previous;
