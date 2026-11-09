@@ -705,10 +705,16 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
             const hasProcess=turn.items.some(item=>item.type==='process-block');
             const turnExpansionKey='turn:'+(prompt?.runId??assistant?.runId??turn.key);
             const turnExpanded=expandedToolGroups[turnExpansionKey]??(execution.active||turn.items.some(item=>item.type==='process-block'&&item.active)||hasExpandedProcess);
-            const timing=conversationTurnTiming(turn,[...(chat.retainedRuns??[]),...(run?[run]:[])]);
+            const turnRuns=[...(chat.retainedRuns??[]),...(run?[run]:[])];
+            const timing=conversationTurnTiming(turn,turnRuns);
+            /* A released run may have ended without a verified outcome; the current
+               run keeps its own prominent notice, so only recalled turns need this. */
+            const turnRun=turnRuns.find(value=>value.id===(prompt?.runId??assistant?.runId));
+            const unverified=Boolean(turnRun&&turnRun.status==='unknown'&&!execution.current&&!turnRun.supersededBy);
             return <ConversationTurn key={turn.key} id={turn.key} runId={execution.current?run?.id:assistant?.runId||prompt?.runId} prompt={prompt?{id:prompt.id,text:prompt.text,images:prompt.attachments?.length?<ConversationMessageImages conversation={chat} ids={prompt.attachments} read={context.api.readImage}/>:undefined,diagnostic:prompt.deliveryDiagnostic?<small className="ac-input-diagnostic" role="status">{prompt.deliveryDiagnostic}</small>:prompt.status==='unknown'?<Tag color="warning">是否送达待确认</Tag>:undefined}:undefined}
               onCollapseProcess={processKeys.some(key=>expandedToolGroups[key]===true)?()=>setExpandedToolGroups(previous=>({...previous,...Object.fromEntries(processKeys.map(key=>[key,false]))})):undefined} collapseLabel={hasExpandedProcess?'收起处理过程':'收起工具调用'} identity={execution.current?runIdentity:turnIdentity(assistant||prompt)} executing={executing&&!outputPaused} startedAt={timing.startedAt} finishedAt={timing.finishedAt} processExpanded={turnExpanded} onToggleProcess={hasProcess||hasSupplement?()=>setExpandedToolGroups(previous=>({...previous,[turnExpansionKey]:!turnExpanded,...Object.fromEntries(settled.flatMap(item=>item.type==='process-block'?[[processBlockKey(item.entries),!turnExpanded]]:[]))})):undefined}>
               {executing&&execution.waiting&&<small className="ac-input-diagnostic" role="status">{execution.waiting}</small>}
+              {unverified&&<small className="ac-input-diagnostic" title={turnRun?.diagnostic}>本轮结果待核对，原记录保留在可展开的处理过程中。</small>}
               {turn.items.map(item=>{
                 if(item.type==='entry')return item.entry.kind==='message'&&item.entry.role==='user'&&!turnExpanded?null:renderEntry(item.entry);
                 const key=processBlockKey(item.entries);

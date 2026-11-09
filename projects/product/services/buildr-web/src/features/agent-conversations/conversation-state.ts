@@ -191,6 +191,14 @@ export function conversationRunSettled(run?:ConversationRun):boolean {
     run.executionState!=='active'&&run.executionState!=='unknown'&&
     !(run.tools??[]).some(tool=>tool.status!=='completed');
 }
+/** A run stays live while its execution can still produce steps. A released or
+ * ended execution keeps its unverified outcome without the live presentation. */
+export function conversationRunLive(run?:ConversationRun):boolean {
+  if(!run)return false;
+  if(run.executionState==='active')return true;
+  if(run.executionState==='ended'||run.resourcesReleased)return false;
+  return !['completed','stopped','failed'].includes(run.status);
+}
 /** Legacy records have no message phase: the last assistant message of a settled
  * run is its visible reply, regardless of length. Never promote live narration. */
 export function finalConversationReplyIds(entries:readonly ConversationEntry[],runs:readonly ConversationRun[]=[]):Set<string> {
@@ -214,7 +222,7 @@ export function groupConversationStream(entries:readonly ConversationEntry[],cur
     if(!isProcess(first)){items.push({type:'entry',entry:first});index++;continue;}
     const run:ConversationEntry[]=[];
     while(index<entries.length&&isProcess(entries[index])&&entries[index].runId===first.runId)run.push(entries[index++]);
-    const active=!conversationRunSettled(first.runId?known.get(first.runId):undefined);
+    const active=conversationRunLive(first.runId?known.get(first.runId):undefined);
     const result=active?undefined:run.find(entry=>finals.has(entry.id));
     const process=result?run.filter(entry=>entry!==result):run;
     if(process.length)items.push({type:'process-block',entries:process,active,finishedAt:result?.createdAt});

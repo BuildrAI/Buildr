@@ -824,7 +824,8 @@ const historyRuns = {
       await page.reload();await input().waitFor();
       assert.equal(await panel().locator('.ac-execution-indicator time').first().innerText(),'00:05:57');
       const initial=panel().locator('.ac-turn-identity-toggle');
-      if(await initial.getAttribute('aria-expanded')==='true')await initial.click();
+      assert.equal(await initial.getAttribute('aria-expanded'),'false','执行结束后处理过程默认收起');
+      assert.equal(await panel().locator('.ac-process-timeline').count(),0,'收起时不渲染过程条目');
       const expand=panel().getByRole('button',{name:'展开处理过程',exact:true});
       await expand.waitFor();assert.equal(await expand.locator('.ac-turn-identity-caret svg').getAttribute('data-icon'),'right');
       await expand.click();
@@ -833,6 +834,11 @@ const historyRuns = {
       await collapse.click();assert.equal(await expand.locator('.ac-turn-identity-caret svg').getAttribute('data-icon'),'right');
       if(status==='completed')await capture(page,'conversation-whole-turn-time.png');
     }
+    // 旧轮结果待核对时同样收起，并用一行说明保留待核对事实。
+    update({entries,requests:[],retainedRuns:[run('unknown','qoder',{id:'run-fixture',startedAt,updatedAt,resourcesReleased:true,executionState:'unknown'})],run:run('completed','qoder',{id:'later-run',startedAt,updatedAt,resourcesReleased:true,executionState:'ended'})});
+    await page.reload();await input().waitFor();
+    await panel().getByText('本轮结果待核对',{exact:false}).waitFor();
+    assert.equal(await panel().locator('.ac-turn-identity-toggle').first().getAttribute('aria-expanded'),'false','旧轮待核对不重新展开过程');
   }finally{fixture.conversation=saved;await page.reload();await input().waitFor();}
   },
   'history/tool-folding': async (fixture: AgentConversationFixture) => {
