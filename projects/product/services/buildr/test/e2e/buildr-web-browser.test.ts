@@ -485,9 +485,15 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
   const fixtureProfile: any = createSelectedFixture(workspaceRoot);
   process.stderr.write(`[buildr-browser] selector=${selectorLabel} fixture=${fixtureProfile} phase=fixture-ready\n`);
   costBegin('secondary-workspace');
-  const otherRoot: any = path.join(base, 'other-workspace');
-  initializeBrowserFixture(otherRoot, 'other-workspace', '第二个浏览器工作空间');
-  if(SELECTORS.has('agent-conversations')||SELECTORS.has('all'))runBuildr(['task','create','browser-associated-task','--title','跨空间同码任务','--intent','验证准确空间与任务身份','--status','active','--target',otherRoot]);
+  // Only selectors whose real journey compares two Workspaces need the
+  // secondary fixture. Others keep the same single-Workspace assertions.
+  const needsOtherWorkspace: any = SELECTORS.has('all')
+    || ['shell', 'layout', 'workbench', 'project', 'articles', 'task', 'agent-conversations'].some(selector => SELECTORS.has(selector));
+  const otherRoot: any = needsOtherWorkspace ? path.join(base, 'other-workspace') : null;
+  if (otherRoot) {
+    initializeBrowserFixture(otherRoot, 'other-workspace', '第二个浏览器工作空间');
+    if(SELECTORS.has('agent-conversations')||SELECTORS.has('all'))runBuildr(['task','create','browser-associated-task','--title','跨空间同码任务','--intent','验证准确空间与任务身份','--status','active','--target',otherRoot]);
+  }
   costBegin('application-and-servers');
   const runtime: any = createRuntime();
   if (SELECTORS.has('layout') || SELECTORS.has('code')) {
@@ -529,8 +535,8 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
       retireWorktree:(checkoutId:string)=>{const member=checkoutPaths.get(checkoutId);assert.ok(member,'fixture checkout identity is known');runGit(member[0],['worktree','remove','--force',member[1]]);}};
   }
   let registry: any = runtime.listRegisteredWorkspaces();
-  registry = runtime.registerLocalWorkspace({ rootPath: otherRoot, revision: registry.revision });
-  const otherWorkspaceId: any = registry.workspaces.find((item: any) => item.rootPath === otherRoot).workspace.id;
+  if (otherRoot) registry = runtime.registerLocalWorkspace({ rootPath: otherRoot, revision: registry.revision });
+  const otherWorkspaceId: any = otherRoot ? registry.workspaces.find((item: any) => item.rootPath === otherRoot).workspace.id : null;
   // Fixture writers may use the test adapter; the HTTP host must use production composition.
   const preparedAgentRuntime = acquirePreparedAgentRuntime(process.env.BUILDR_APP_DATA_DIR);
   webRuntime = createProductionRuntime(preparedAgentRuntime ? { agentRuntime: preparedAgentRuntime } : {});
