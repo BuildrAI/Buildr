@@ -9,12 +9,12 @@ type Props={
   selectedKey:string; modelLabel:string; defaultLabel?:string; groups:ModelPickerGroup[];
   reasoning:ModelPickerReasoning; disabled:boolean; unavailable:boolean;
   tierSwitchable:boolean; tierDisabled:boolean; tierLabel?:string; accelerated:boolean;
-  resetKey?:string; compact?:boolean; id?:string; popupPlacement?:'topRight'|'bottomLeft';
+  resetKey?:string; compact?:boolean; id?:string; popupPlacement?:'topRight'|'bottomLeft'; notice?:string;
   onSelectModel(key:string):void; onSelectEffort(id:string):void; onCycleTier():void;
 };
 
 /** Controlled model UI only: callers own catalog, choice, preferences and business context. */
-export function ModelPicker({selectedKey,modelLabel,defaultLabel='默认模型',groups,reasoning,disabled,unavailable,tierSwitchable,tierDisabled,tierLabel,accelerated,resetKey,compact=false,id,popupPlacement='topRight',onSelectModel,onSelectEffort,onCycleTier}:Props){
+export function ModelPicker({selectedKey,modelLabel,defaultLabel='默认模型',groups,reasoning,disabled,unavailable,tierSwitchable,tierDisabled,tierLabel,accelerated,resetKey,compact=false,id,popupPlacement='topRight',notice,onSelectModel,onSelectEffort,onCycleTier}:Props){
   const [open,setOpen]=useState(false),[query,setQuery]=useState(''),[modelListOpen,setModelListOpen]=useState(false);
   // Corner placements flip but do not shift by default; keep compact menus inside narrow viewports.
   const popupAlign=compact?{overflow:{adjustX:true,adjustY:true,shiftX:true}}:undefined;
@@ -53,6 +53,7 @@ export function ModelPicker({selectedKey,modelLabel,defaultLabel='默认模型',
       notFoundContent={<span className="ac-model-search-empty">{groups.length?'没有匹配的模型':'暂无可选模型'}</span>}
       popupMatchSelectWidth placement={popupPlacement} dropdownAlign={popupAlign} virtual={false} listHeight={248}
       popupRender={menu=><div ref={modelPopup}>
+        {notice&&<p className="ac-model-notice" role="note">{notice}</p>}
         <div className="ac-model-search"><Input size="small" allowClear prefix={<SearchOutlined aria-hidden="true"/>} placeholder="搜索模型或来源" aria-label="搜索模型" autoComplete="off" value={query} onChange={event=>setQuery(event.target.value)}
           onKeyDown={event=>{if(event.key==='Escape'){event.stopPropagation();closeModelList();controlsRef.current?.querySelector<HTMLElement>('.ac-model-picker [role="combobox"]')?.focus();}}}/></div>
         <nav className="ac-model-source-nav" aria-label="模型来源快速定位">{visibleGroups.map(group=><Button key={group.id} size="small" type="text" onMouseDown={event=>{event.preventDefault();event.stopPropagation();}} onClick={event=>{event.stopPropagation();jumpToGroup(group.id);}}>{group.label}</Button>)}</nav>{menu}</div>}

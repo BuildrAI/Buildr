@@ -44,3 +44,6 @@
 .ac-depth-slider .ant-slider-handle::after{width:18px;height:18px;inset:5px;box-shadow:0 0 0 2px var(--soft-primary,#397d74)}
 .ac-depth-slider .ant-slider-handle:hover::after,.ac-depth-slider .ant-slider-handle:focus::after,.ac-depth-slider .ant-slider-handle:active::after{width:18px;height:18px;inset:5px;box-shadow:0 0 0 4px color-mix(in srgb,var(--soft-primary,#397d74) 35%,transparent)}
 .ac-depth-labels{margin-top:2px;font-size:var(--font-size-body);height:20px}
+
+/* Cross-vendor sources stay visible; this explains why they cannot be chosen. */
+.ac-model-notice{margin:0 8px 6px;padding:6px 8px;border-radius:6px;font-size:var(--font-size-meta);line-height:1.45;color:var(--ant-color-warning-text,inherit);background:var(--ant-color-warning-bg,transparent);border:1px solid var(--ant-color-warning-border,transparent);}
