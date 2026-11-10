@@ -148,14 +148,15 @@ export async function prepareLocalMainPackage(options: {
     files.push(...preparedPlugin.files);
   }
   const handoffDirectory = path.join(directory, 'handoff');
-  const handoff = createPackageHandoff({ output: handoffDirectory, sourceCommit: options.sourceCommit, sourceTree: options.sourceTree,
-    platform: options.platform, artifactSha256: artifact.manifest.sha256, files, verificationScope: options.scope, plugin,
-    platformPolicy: LOCAL_PLATFORM_POLICY, verificationRules });
+  let handoff: any;
   try {
-    (dependencies.preflight ?? preflightLocalConsumption)({ repo: options.repo, sourceCommit: options.sourceCommit, sourceTree: options.sourceTree,
-      directory: path.join(directory, 'consumption-preflight'), handoff, artifactDirectory: packageDirectory,
-      sourcePacket, artifactPacket, pluginDirectory, expectedPeer: options.plan?.selection.packages.includes('buildr') ? peer : options.peer,
-      roundId: options.roundId }, { execute });
+    handoff = createPackageHandoff({ output: handoffDirectory, sourceCommit: options.sourceCommit, sourceTree: options.sourceTree,
+      platform: options.platform, artifactSha256: artifact.manifest.sha256, files, verificationScope: options.scope, plugin,
+      platformPolicy: LOCAL_PLATFORM_POLICY, verificationRules, consume: input =>
+        (dependencies.preflight ?? preflightLocalConsumption)({ repo: options.repo, sourceCommit: options.sourceCommit, sourceTree: options.sourceTree,
+          directory: path.join(directory, 'consumption-preflight'), handoff: input, artifactDirectory: packageDirectory,
+          sourcePacket, artifactPacket, pluginDirectory, expectedPeer: options.plan?.selection.packages.includes('buildr') ? peer : options.peer,
+          roundId: options.roundId }, { execute })?.consumption });
   } catch (error: any) {
     return { status: 'local-consumption-preflight-required', nextActions: [`正式消费预演未通过：${error.message}；保留原包和证明，修正读取／契约后接续，不重新制包。`] };
   }

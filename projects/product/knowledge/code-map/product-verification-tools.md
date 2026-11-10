@@ -22,6 +22,7 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
   - [local-source-verification.ts](../../services/buildr/test/verification/local-source-verification.ts) — 发布派发前读取同轮主包及插件普通日志，失败或未执行项只返回补齐动作
   - [build-input-policy.ts](../../../../skills/buildr-release/scripts/build-input-policy.ts) — 版本化输入分类和冻结验证规则的纯值契约，不授予公开权限
   - [local-consumption-preflight.ts](../../../../skills/buildr-release/scripts/local-consumption-preflight.ts) — 只读采用本机证明并复用正式原包／插件消费者，不重测或重打包
+  - [local-consumption-record.ts](../../../../skills/buildr-release/scripts/local-consumption-record.ts) — 冻结本机消费汇总；保全时核对输入、规则、覆盖及准确原包后采用，不重推导源码证明
   - [verification-rules.ts](../../services/buildr/test/verification/release/verification-rules.ts) — 从验证登记与插件配方捕获规则，接续时校验而非覆盖冻结值
   - [local-package-coverage.ts](../../services/buildr/test/verification/local-package-coverage.ts) — 校验冻结的本机必需／对端可选策略，供聚合与正式消费共用；旧候选不降级
   - [package-smoke.ts](../../services/buildr/test/verification/release/package-smoke.ts) — 独立原包冒烟，一次安装、CLI身份和Web健康，不生成候选证明
@@ -130,7 +131,7 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
     - [buildr-web-browser.test.ts](../../services/buildr/test/e2e/buildr-web-browser.test.ts) — 隔离服务、浏览器（Browser）和测试现场的组装、选择与清理
     - [workbench-journey.ts](../../services/buildr/test/e2e/workbench-journey.ts) — 实际页面回应、并发冲突后的重读保存、偏好恢复与资料阅读旅程
 
-新候选从已登记的 `.github/workflows/verify.yml` 的 `local-package` 入口调用 `.github/workflows/verify-package.yml`：主包只执行对端原包验收，独立插件仅校验并保全原包及证明；其他入口保留开发反馈、合入检查与旧模型接续。`skills/buildr-release/scripts/local-plugin-preparation.ts` 统一独立／联合插件本机准备，插件服务的 `tools/ensure-release-sdk.ts` 校验复用或新建 SDK。本机生产唯一原包并执行通用和本机平台验收，两端保持真实来源及最低 Node 证明；另一系统源码专项不再作为每次发布自动全量前置。历史分片名称中的 `macos` 不代表通用检查只能在 macOS 执行，实际归属以 `platformScope` 为准。汇总仍由 `candidate-ci-evidence.ts` 核验源码、原包、环境与原始来源，不能用本机成功替代对端尚未执行的验包。
+新候选从已登记的 `.github/workflows/verify.yml` 的 `local-package` 入口调用 `.github/workflows/verify-package.yml`：主包和独立插件仅校验并保全原包及证明，对端冒烟显式可选；其他入口保留开发反馈、合入检查与旧模型接续。`skills/buildr-release/scripts/local-plugin-preparation.ts` 统一独立／联合插件本机准备，插件服务的 `tools/ensure-release-sdk.ts` 校验复用或新建 SDK。本机生产唯一原包并执行通用和本机平台验收，两端保持真实来源及最低 Node 证明；另一系统源码专项不再作为每次发布自动全量前置。历史分片名称中的 `macos` 不代表通用检查只能在 macOS 执行，实际归属以 `platformScope` 为准。新主包在本机由 `candidate-ci-evidence.ts` 核验源码、原包、环境与原始来源后冻结汇总，保全采用 `local-consumption-record.ts` 核对；旧交接和独立验证源保留原推导。不能用本机成功替代对端尚未执行的验包。
 
 ## 测试源码检查与按边界执行
 

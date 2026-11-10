@@ -350,12 +350,11 @@ test('workflow keeps explicit/release entries and plugin source Candidate has no
   assert.doesNotMatch(workflow, /^  push:/mu);
   assert.match(workflow, /github\.head_ref == 'dev'/u);
   const development = workflow.split('  dev-feedback-macos:\n')[1].split('  dev-feedback-windows:\n')[0];
-  const peerObservation = "observePublishedPackageArtifact('buildr', { distTag: 'next' })";
-  assert.ok(development.includes(peerObservation), 'development must observe the exact published next peer');
-  assert.match(development, /if \(observation\.status !== 'present' \|\| !bytes\) throw new Error/u, 'missing peer bytes must fail preparation');
-  assert.match(development, /schemaVersion: packageArtifactInputSchema, artifact: observation\.artifact, tarball/u, 'peer input must retain the observed artifact identity');
-  assert.match(development, /BUILDR_DSH_BUILDR_PEER_INPUT/u);
-  assert.ok(development.indexOf(peerObservation) < development.indexOf('npm run check'));
+  assert.doesNotMatch(development, /prepare-release-sdk|prepare-check-environment|pnpm@|observePublishedPackageArtifact|BUILDR_DSH_BUILDR_PEER_INPUT/u,
+    'ordinary feedback must not download the SDK, fetch a peer or build plugin inputs');
+  assert.match(development, /SDK-dependent checks remain unavailable, not passed/u);
+  assert.match(development, /npm run check/u);
+  assert.match(development, /npm run test:related/u);
   const plugin = workflow.split('  plugin-source-candidate:\n')[1].split('  candidate-gate:\n')[0];
   assert.doesNotMatch(plugin, /id-token|npm-production|tools\/trusted-publish|npm publish/u);
   assert.match(plugin, /--buildr-peer/u);

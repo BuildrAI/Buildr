@@ -199,49 +199,11 @@ jobs:
         continue-on-error: true
         working-directory: projects/product/services/buildr-web
         run: npm ci
-      - name: Install pinned DSH package manager
+      - name: Report local-only plugin integration coverage
         if: steps.services.outputs.dsh == 'true'
-        continue-on-error: true
-        shell: bash
         run: |
-          mkdir -p "${RUNNER_TEMP}/dsh-tooling"
-          : > "${RUNNER_TEMP}/dsh-tooling/user.npmrc"
-          : > "${RUNNER_TEMP}/dsh-tooling/global.npmrc"
-          cd "${RUNNER_TEMP}/dsh-tooling"
-          env -i PATH="${PATH}" NPM_CONFIG_USERCONFIG="${RUNNER_TEMP}/dsh-tooling/user.npmrc" NPM_CONFIG_GLOBALCONFIG="${RUNNER_TEMP}/dsh-tooling/global.npmrc" \
-            npm install --prefix "${RUNNER_TEMP}/dsh-tooling" --ignore-scripts --no-save --no-package-lock --no-audit --no-fund --registry=https://registry.npmjs.org/ pnpm@11.7.0
-      - name: Prepare pinned DSH SDK
-        if: steps.services.outputs.dsh == 'true'
-        continue-on-error: true
-        working-directory: projects/product/services/dsh-plugin
-        shell: bash
-        run: |
-          node tools/prepare-release-sdk.ts --node "$(command -v node)" --pnpm "${RUNNER_TEMP}/dsh-tooling/node_modules/pnpm/bin/pnpm.cjs" > "${RUNNER_TEMP}/development-dsh-sdk.json"
-          node --input-type=module -e 'import fs from "node:fs"; import path from "node:path"; const result = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); if (result.schemaVersion !== "buildr.dsh-release-sdk/v1" || result.status !== "prepared" || typeof result.sdk !== "string" || !path.isAbsolute(result.sdk) || /[\u0000-\u001f\u007f]/.test(result.sdk)) throw new Error("SDK output missing"); fs.appendFileSync(process.env.GITHUB_ENV, `BUILDR_DSH_SOURCE_SDK_ROOT=${result.sdk}\n`);' "${RUNNER_TEMP}/development-dsh-sdk.json"
-      - name: Observe the exact published Buildr peer for affected plugin checks
-        if: steps.services.outputs.dsh == 'true'
-        continue-on-error: true
-        shell: bash
-        run: |
-          node --input-type=module - <<'JS'
-          import fs from 'node:fs';
-          import path from 'node:path';
-          import { observePublishedPackageArtifact, packageArtifactInputSchema } from '../../../../skills/buildr-release/scripts/package-artifact-observation.ts';
-          const { observation, bytes } = await observePublishedPackageArtifact('buildr', { distTag: 'next' });
-          if (observation.status !== 'present' || !bytes) throw new Error(JSON.stringify(observation));
-          const tarball = path.join(process.env.RUNNER_TEMP, 'development-buildr-peer.tgz');
-          fs.writeFileSync(tarball, bytes);
-          fs.writeFileSync(path.join(process.env.RUNNER_TEMP, 'development-buildr-peer.json'), JSON.stringify({ schemaVersion: packageArtifactInputSchema, artifact: observation.artifact, tarball }));
-          JS
-          node --input-type=module -e 'import fs from "node:fs"; fs.appendFileSync(process.env.GITHUB_ENV, `BUILDR_DSH_BUILDR_PEER_INPUT=${process.argv[1]}\n`);' "${RUNNER_TEMP}/development-buildr-peer.json"
-      - name: Prepare related plugin integration inputs
-        if: steps.services.outputs.dsh == 'true'
-        continue-on-error: true
-        working-directory: projects/product/services/dsh-plugin
-        shell: bash
-        run: |
-          node tools/prepare-check-environment.ts --source-sdk "${BUILDR_DSH_SOURCE_SDK_ROOT}" --buildr-peer "${BUILDR_DSH_BUILDR_PEER_INPUT}" --output "${RUNNER_TEMP}/plugin-check-environment.json"
-          node --input-type=module -e 'import fs from "node:fs"; const receipt=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); for(const [key,value] of Object.entries(receipt.env)){if(typeof value!=="string" || /[\r\n]/u.test(value))throw Error("Invalid prepared environment"); fs.appendFileSync(process.env.GITHUB_ENV,`${key}=${value}\n`);}' "${RUNNER_TEMP}/plugin-check-environment.json"
+          echo 'DSH SDK, exact-peer and packaged-plugin checks run locally during explicit release preparation; this feedback job does not prepare them.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'SDK-dependent checks remain unavailable, not passed, in the uploaded verification report.' >> "$GITHUB_STEP_SUMMARY"
       - name: Verify all source static and unit checks
         continue-on-error: true
         env:

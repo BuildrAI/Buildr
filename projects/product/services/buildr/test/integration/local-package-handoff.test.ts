@@ -20,6 +20,8 @@ import { RELEASE_CHECKS } from '../verification/release/release-consumption-cont
 import { LOCAL_PACKAGE_MODEL } from '../../../../../../skills/buildr-release/scripts/local-package-handoff.ts';
 import { localPackageCoverage } from '../verification/local-package-coverage.ts';
 import { localPackageVerifierBinding } from '../../../../../../skills/buildr-release/scripts/local-package-verifier-binding.ts';
+import { adoptLocalConsumption, freezeLocalConsumption } from '../../../../../../skills/buildr-release/scripts/local-consumption-record.ts';
+import { CANDIDATE_CI_AGGREGATE_SCHEMA } from '../verification/release/candidate-ci-contract.ts';
 
 const hash = (data: Buffer | string) => createHash('sha256').update(data).digest('hex');
 function fixture(t: any) {
@@ -271,6 +273,9 @@ test('hosted workflow only verifies the original on the opposite system and has 
   assert.match(platformConsumer.if, /!inputs.preserve_only && !inputs.diagnostic_only/);
   assert.match(workflow.jobs.package['runs-on'], /preserve_only.*ubuntu-24\.04/);
   assert.equal(entry.jobs['local-package'].with.preserve_only, "${{ fromJSON(inputs.local_package || '{}').preserve_only == true }}");
+  const adoption = workflow.jobs.package.steps.find((step: any) => step.name === 'Validate and adopt local proofs without executing source checks');
+  assert.match(adoption.if, /!inputs\.preserve_only \|\| env\.BUILDR_LOCAL_PACKAGE_HAS_CONSUMPTION != 'true' \|\| inputs\.verification_source != ''/u,
+    'only frozen normal preservation skips re-derivation; historical and independent verification retain it');
   const smoke = workflow.jobs.package.steps.find((step: any) => step.name === 'Independent package smoke without Candidate qualification');
   assert.match(smoke.if, /inputs.diagnostic_only/);
   assert.match(smoke.run, /run-isolated-workspace-check\.ts.*package-smoke\.ts/);
@@ -380,7 +385,8 @@ test('preflight adopts existing proof through plan/aggregate then the formal con
   const artifact = { sourceCommit: f.sourceCommit, filename: 'package.tgz', size: f.data.length,
     sha256: hash(f.data), integrity: 'sha512-YQ==', applicationPayloadDigest: `sha256-${'e'.repeat(64)}` };
   const platformVerification = localPackageCoverage(handoff, [], []).platformVerification;
-  const aggregate = { status: 'passed', executionModel: LOCAL_PACKAGE_MODEL, sourceCommit: f.sourceCommit,
+  const aggregate = { schemaVersion: CANDIDATE_CI_AGGREGATE_SCHEMA, purpose: 'candidate', findings: [],
+    status: 'passed', executionModel: LOCAL_PACKAGE_MODEL, sourceCommit: f.sourceCommit,
     sourceTree: f.sourceTree, artifact, registryIdentity: rules.recipeIdentity, packageHandoff: handoff, platformVerification,
     evidenceIds: [...new Set(RELEASE_CHECKS.flatMap(check => 'evidence' in check ? [...check.evidence] : []))]
       .filter(id => !platformVerification.optionalEvidenceIds.includes(id)) };
@@ -403,7 +409,45 @@ test('preflight adopts existing proof through plan/aggregate then the formal con
       return { status: 0, stdout: '', stderr: '' };
     },
   };
-  assert.equal(preflightLocalConsumption(options, dependencies).status, 'passed');
+  const local = preflightLocalConsumption(options, dependencies);
+  assert.equal(local.status, 'passed');
+  const creation: Parameters<typeof createPackageHandoff>[0] = { output: path.join(f.root, 'frozen-consumption'), sourceCommit: f.sourceCommit, sourceTree: f.sourceTree,
+    platform: 'darwin' as const, artifactSha256: hash(f.data), files: f.files, platformPolicy: LOCAL_PLATFORM_POLICY,
+    verificationRules: rules, consume: () => local.consumption };
+  const frozen = createPackageHandoff(creation);
+  assert.deepEqual(freezeLocalConsumption(frozen, { ...aggregate, packageHandoff: frozen }), local.consumption,
+    'an explicitly repeated preflight may consume the final handoff without nesting its summary');
+  assert.deepEqual(createPackageHandoff({ ...creation, consume() { assert.fail('identical frozen inputs must not repeat preflight'); } }), frozen);
+  const data = createPackageHandoffCommit(f.repo, creation.output), received = path.join(f.root, 'consumption-received');
+  const restored = restorePackageHandoff(f.repo, data.commit, received, { ...f.expected, identity: frozen.identity, preserveOnly: true });
+  assert.deepEqual(restored.consumption, local.consumption);
+  const remote = { handoff: restored, repo: f.repo, artifact, sourceCommit: f.sourceCommit, sourceTree: f.sourceTree,
+    workflow: { runId: '123', runAttempt: '2' } };
+  const adopted = adoptLocalConsumption(remote);
+  assert.equal(adopted.workflow.aggregateAttempt, 2);
+  assert.equal(adopted.preservedConsumption.origin, 'local');
+  assert.deepEqual(adopted.workflow.evidenceAttempts, [], 'preserving local proof is not a remote test execution');
+  assert.equal(adopted.platformVerification.status, 'not-verified');
+  assert.throws(() => adoptLocalConsumption({ ...remote, artifact: { ...artifact, sha256: '0'.repeat(64) } }), /one frozen contract/);
+  assert.throws(() => adoptLocalConsumption({ ...remote, sourceTree: '0'.repeat(40) }), /inputs or rules differ/);
+  assert.throws(() => adoptLocalConsumption({ ...remote, workflow: null }), /exact remote run/);
+  assert.throws(() => freezeLocalConsumption(handoff, { ...aggregate, workflow: { runId: '123' } }), /complete local/);
+  assert.throws(() => freezeLocalConsumption(handoff, { ...aggregate, findings: ['failed'] }), /complete local/);
+  const tampered = structuredClone(frozen); tampered.consumption.aggregate.status = 'failed';
+  assert.throws(() => adoptLocalConsumption({ ...remote, handoff: tampered }), /handoff identity/);
+  const reseal = (value: any) => {
+    const { identity: _identity, ...body } = value;
+    return { ...body, identity: `sha256-${hash(JSON.stringify(body))}` };
+  };
+  assert.throws(() => adoptLocalConsumption({ ...remote, handoff: reseal(tampered) }), /passed Candidate/,
+    'even a valid outer digest must not make failed consumption acceptable');
+  tampered.consumption = { ...local.consumption, inputIdentity: 'sha256-' + '0'.repeat(64) };
+  assert.throws(() => adoptLocalConsumption({ ...remote, handoff: reseal(tampered) }), /inputs or rules differ/);
+  assert.throws(() => createPackageHandoff({ ...creation, output: path.join(f.root, 'preflight-handoff'),
+    consume() { throw new Error('legacy preflight still required'); } }), /legacy preflight still required/);
+  const changedProof = path.join(f.root, 'changed-proof.json'); fs.writeFileSync(changedProof, '{"changed":true}');
+  assert.throws(() => createPackageHandoff({ ...creation, files: f.files.map(file =>
+    file.path === 'source-verification.json' ? { ...file, source: changedProof } : file) }), /cannot be overwritten/);
   fail = true;
   assert.throws(() => preflightLocalConsumption(options, dependencies), /passed Candidate/);
   assert.deepEqual(commands, ['plan', 'aggregate', 'plan', 'aggregate'], 'no source/artifact tests, packer or publisher was invoked');

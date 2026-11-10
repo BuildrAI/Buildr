@@ -87,10 +87,18 @@ export function validatePackageHandoff(value: any): any {
   return value;
 }
 
+/** Recover the exact proof-input manifest, before adding its derived summary. */
+export function consumptionInputHandoff(value: any): any {
+  validatePackageHandoff(value);
+  const { identity: _identity, consumption: _consumption, ...body } = value;
+  return validatePackageHandoff({ ...body, identity: digest(body) });
+}
+
 /** Only these explicit ordinary files enter the data ref; no directory sweep, links, credentials or executable code. */
 export function createPackageHandoff(options: {
   output: string; sourceCommit: string; sourceTree: string; platform?: NodeJS.Platform;
   artifactSha256: string; files: Array<{ path: string; source: string }>; verificationScope?: any; plugin?: any; kind?: 'buildr' | 'plugin'; platformPolicy?: typeof LOCAL_PLATFORM_POLICY; verificationRules?: any;
+  consume?: (handoff: any) => any;
 }): any {
   const platforms = localPackagePlatform(options.platform);
   if (!exactSha(options.sourceCommit) || !exactSha(options.sourceTree)) throw new Error('Handoff requires exact frozen source.');
@@ -119,14 +127,36 @@ export function createPackageHandoff(options: {
     sourceCommit: options.sourceCommit, sourceTree: options.sourceTree,
     localRunner: platforms.local, remoteRunner: platforms.remote, artifactSha256: options.artifactSha256,
     verificationScope: options.verificationScope ?? null, plugin: options.plugin ?? null, files };
-  const manifest = validatePackageHandoff({ ...body, identity: digest(body) });
-  const target = path.join(output, 'handoff.json'), text = JSON.stringify(manifest) + '\n';
+  let manifest = validatePackageHandoff({ ...body, identity: digest(body) });
+  const target = path.join(output, 'handoff.json');
+  // Resuming identical frozen inputs reuses the summary as well. Never overwrite
+  // an existing handoff or adopt a summary after its proof bytes have changed.
+  if (fs.existsSync(target) && options.consume) {
+    const previous = validatePackageHandoff(JSON.parse(fs.readFileSync(target, 'utf8')));
+    if (!isSameInput(previous, manifest)) throw new Error('Frozen package handoff cannot be overwritten.');
+    // Historical handoffs can predate a successful preflight. Validate them,
+    // but do not silently rewrite their immutable identity to the new format.
+    if (!previous.consumption) options.consume(manifest);
+    return previous;
+  }
+  if (options.consume) {
+    const consumption = options.consume(manifest);
+    for (const [index, file] of files.entries()) {
+      if (sha(fs.readFileSync(options.files[index].source)) !== file.sha256) throw new Error('Package handoff input changed during consumption preflight.');
+    }
+    const frozen = { ...body, ...(consumption ? { consumption } : {}) };
+    manifest = validatePackageHandoff({ ...frozen, identity: digest(frozen) });
+  }
+  const text = JSON.stringify(manifest) + '\n';
   if (fs.existsSync(target) && fs.readFileSync(target, 'utf8') !== text) throw new Error('Frozen package handoff cannot be overwritten.');
   fs.mkdirSync(output, { recursive: true });
   if (!fs.existsSync(target)) fs.writeFileSync(target, text, { flag: 'wx' });
   return manifest;
 }
 
+function isSameInput(left: any, right: any): boolean {
+  return consumptionInputHandoff(left).identity === right.identity;
+}
 /** A separate temporary Git index cannot stage or alter the product checkout. No push occurs here. */
 export function createPackageHandoffCommit(repo: string, directory: string): { commit: string; manifest: any } {
   const manifest = validatePackageHandoff(JSON.parse(fs.readFileSync(path.join(directory, 'handoff.json'), 'utf8')));

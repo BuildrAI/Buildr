@@ -113,6 +113,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     }
     envLine('BUILDR_LOCAL_PACKAGE_HANDOFF', path.join(output, 'handoff.json'));
     envLine('BUILDR_LOCAL_PACKAGE_KIND', handoff.kind ?? 'buildr');
+    envLine('BUILDR_LOCAL_PACKAGE_HAS_CONSUMPTION', handoff.consumption ? 'true' : 'false');
     if (handoff.kind !== 'plugin') {
       envLine('BUILDR_CANDIDATE_CI_ARTIFACT_DIR', path.join(output, 'candidate-package'));
       // File inputs avoid Windows' per-variable size limit and an unnecessary

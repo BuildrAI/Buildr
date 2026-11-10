@@ -13,7 +13,7 @@ description: 准备、检查、发布或恢复 Buildr 主包、DSH 插件或联�
 
 ### 本机正式消费预演与冻结规则
 
-新准备在分发前调用 `scripts/local-consumption-preflight.ts`：主包用既有 `candidate-ci.ts plan/aggregate` 只采用真实本机证明，再调用正式发布器的原包读取与覆盖函数；插件共用正式消费者的准确原包和完整证明读取。每次预演使用独立派生证据目录，不能让上次成功掩盖本次失败；回执只证明本机消费，不虚构 Actions 身份或公开资格。`local-consumption-preflight-required` 时保留原包，修复读取／契约后继续，不重建 SDK、制包或启动测试轮。
+新准备在分发前调用 `scripts/local-consumption-preflight.ts`：主包用既有 `candidate-ci.ts plan/aggregate` 只采用真实本机证明，再调用正式发布器的原包读取与覆盖函数；插件共用正式消费者的准确原包和完整证明读取。首次成功预演的主包汇总随 handoff 和原始证明冻结；相同原包、证明与规则接续时直接采用，输入变化则拒绝。GitHub 保全模式核对来源、规则、字节与覆盖后采用该汇总，不重复推导；旧交接、独立验证源及显式对端检查仍走原路径。实际重新执行预演时使用独立派生证据目录，不能让上次成功掩盖本次失败；回执只证明本机消费，不虚构 Actions 身份或公开资格。`local-consumption-preflight-required` 时保留原包，修复读取／契约后继续，不重建 SDK、制包或启动测试轮。
 
 新交接的 `verificationRules` 固定输入分类策略、验证配方、消费契约、平台策略和声明范围；已有 `verification-rules.json` 不被新默认覆盖。新来源绑定为 `buildr.candidate-source-binding/v2`，携带 `buildr.build-input-policy/v1`；历史 v1 绑定仍可读取。分类规则必须按版本保留，不能修改旧版本解释。漂移时明确诊断，不自动重派碰运气。
 

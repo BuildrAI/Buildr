@@ -8,6 +8,7 @@ import { inspectReleaseConsumerArtifact } from '../../../projects/product/servic
 import { assertReleaseConsumptionCoverage } from '../../../projects/product/services/buildr/test/verification/release/release-consumption-contract.ts';
 import { currentVerificationRules } from '../../../projects/product/services/buildr/test/verification/release/verification-rules.ts';
 import { validatePackageHandoff } from './local-package-handoff.ts';
+import { freezeLocalConsumption } from './local-consumption-record.ts';
 
 /** Read-only consumer rehearsal. It adopts existing proofs but never invokes
  * a source/artifact check, packer, SDK builder, GitHub request or publisher. */
@@ -67,6 +68,7 @@ export function preflightLocalConsumption(options: {
       (dependencies.assertCoverage ?? assertReleaseConsumptionCoverage)(aggregate,
         { sourceCommit: options.sourceCommit, sourceTree: options.sourceTree }, inspected.artifact.manifest);
       receipt.checks.push({ id: 'main-formal-consumption', status: 'passed', artifactSha256: inspected.artifact.manifest.sha256 });
+      if (!options.verifierRepo && handoff.platformPolicy) receipt.consumption = freezeLocalConsumption(handoff, aggregate);
     }
     if (handoff.plugin) {
       if (!options.pluginDirectory) throw new Error('Plugin consumption requires the original candidate directory.');

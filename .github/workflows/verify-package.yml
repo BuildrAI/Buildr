@@ -165,7 +165,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: node ../../../../skills/buildr-release/scripts/local-package-remote.ts retry
       - name: Validate and adopt local proofs without executing source checks
-        if: env.BUILDR_LOCAL_PACKAGE_KIND != 'plugin' && !inputs.diagnostic_only
+        if: env.BUILDR_LOCAL_PACKAGE_KIND != 'plugin' && !inputs.diagnostic_only && (!inputs.preserve_only || env.BUILDR_LOCAL_PACKAGE_HAS_CONSUMPTION != 'true' || inputs.verification_source != '')
         env:
           VERIFICATION_SOURCE: ${{ inputs.verification_source }}
         run: |

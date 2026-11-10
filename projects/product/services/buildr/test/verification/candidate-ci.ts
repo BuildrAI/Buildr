@@ -17,6 +17,7 @@ import { assertFrozenCandidateCheckout, candidateArtifactImportFromEnvironment, 
   createCandidateExecutionEnvironment, readCandidateDeferredPlan, reusableCandidateArtifactStepIds, reusedCandidateArtifactResult, validateCandidateArtifactEvidence } from './candidate-artifact-reuse.ts';
 import { collectVerificationReuseSnapshot } from './verification-reuse.ts';
 import { localPackageVerifierBinding } from '../../../../../../skills/buildr-release/scripts/local-package-verifier-binding.ts';
+import { adoptLocalConsumption } from '../../../../../../skills/buildr-release/scripts/local-consumption-record.ts';
 import { createCandidateSourceBinding } from '../../../../../../skills/buildr-release/scripts/candidate-source-binding.ts';
 import { createCandidateCheckInputReader } from './candidate-check-inputs.ts';
 import { applyCandidateDeclaredScope, CANDIDATE_DECLARED_SCOPE_ENV, parseCandidateDeclaredScope } from './candidate-declared-scope.ts';
@@ -384,6 +385,14 @@ function aggregate(): any  {
   const startedAtMs = Date.now();
   const sourceCommit: any = resolveCandidateSourceCommit(productRoot, expectedSource);
   const executionContext: any = resolveCandidateExecutionContext(productRoot, sourceCommit);
+  const handoff = localPackageHandoff();
+  if (handoff?.consumption && process.env.BUILDR_LOCAL_PACKAGE_PRESERVE_ONLY === 'true' && !independent.binding) {
+    const artifact = readCandidateCiArtifact(process.env.BUILDR_CANDIDATE_CI_ARTIFACT_DIR, sourceCommit);
+    const result = adoptLocalConsumption({ handoff, repo: path.resolve(productRoot, '../../../..'),
+      artifact: artifact.identity, workflow: workflowIdentity, ...executionContext });
+    writeAggregate(result, startedAtMs);
+    return;
+  }
   const evidenceRoot: any = path.resolve(process.env.BUILDR_CANDIDATE_CI_EVIDENCE_DIR || outputRoot);
   const repair = repairPlan();
   const scope = candidateScope();
@@ -397,7 +406,6 @@ function aggregate(): any  {
     declaredScope: scope.scope,
     notRun: scope.notRun,
   });
-  const handoff = localPackageHandoff();
   if (handoff) {
     const artifact = readCandidateCiArtifact(process.env.BUILDR_CANDIDATE_CI_ARTIFACT_DIR, sourceCommit);
     if (artifact.identity.sha256 !== handoff.artifactSha256) throw new Error('Aggregated package bytes differ from the local producer.');
@@ -407,6 +415,10 @@ function aggregate(): any  {
     const coverage = localPackageCoverage(handoff, CANDIDATE_CI_SHARDS, CANDIDATE_CI_HOST_NODE_TUPLES);
     if (coverage.platformVerification) result.platformVerification = coverage.platformVerification;
   }
+  writeAggregate(result, startedAtMs);
+}
+
+function writeAggregate(result: any, startedAtMs: number): void {
   result.timing.aggregation = { startedAt: new Date(startedAtMs).toISOString(), finishedAt: new Date().toISOString(), elapsedMs: Date.now() - startedAtMs };
   const output: any = path.resolve(process.env.BUILDR_CANDIDATE_CI_AGGREGATE_OUTPUT || path.join(outputRoot, 'candidate-ci-aggregate.json'));
   fs.mkdirSync(path.dirname(output), { recursive: true });
