@@ -55,6 +55,8 @@ export async function publishFrozenArtifact(options: any, dependencies: any = {}
     if (before.published) return { status: 'passed', action: 'reused', registry: before, effects: [], attempted };
     // The owner already bound this call to the authorized frozen bytes. A
     // successful Registry 404 permits retry; transport errors still stop below.
+    if (previousAttempt !== 'not-attempted') effects.push({ type: 'npm-publication-retry-authorized', basis: 'official-registry-version-404',
+      package: manifest.packageName, version: manifest.version, integrity: manifest.integrity, previousAttempt, observedAt: new Date().toISOString() });
     const publishEffect = { type: 'npm-published', package: manifest.packageName, version: manifest.version, sourceCommit: manifest.sourceCommit,
       sha256: manifest.sha256, integrity: manifest.integrity, state: 'unknown' };
     effects.push(publishEffect);

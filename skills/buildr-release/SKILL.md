@@ -37,11 +37,11 @@ description: 准备、检查、发布或恢复 Buildr 主包、DSH 插件或联�
 
 发布代码的唯一源是所选源码检出位置的 `skills/buildr-release/scripts/`。从该位置的 `projects/product/services/buildr/` 使用 `tools/development/run-development-node ../../../../skills/buildr-release/scripts/release-orchestration-runner.ts --help` 查看当前参数，再调用 `prepare`、`inspect`、`publish --authorized` 或 `resume`。投射到智能体的技能副本用于发现和指引；不要从投射目录运行绑定源码的脚本。工作流（Workflow）也调用同一源码脚本。
 
-正常准备和接续使用 `--wait`，由程序等待同一远端运行，每次状态或远端步骤变化返回进度，区分本机回读工作、休眠和远端可证明的阶段耗时；默认最多等待 30 分钟，可用 `--wait-timeout-ms` 调整。默认输出摘要；需要原始证据时使用 `--output <file>`，仅诊断具体问题时使用 `--detail full`。等待期间不反复调用 `inspect` 或读取全部日志；真实失败、缺少本机证明或授权时，程序返回对应缺项。
+正常准备和接续使用 `--wait`，由阻塞式 `gh run watch` 等待同一远端运行，默认总等待 30 分钟，可用 `--wait-timeout-ms` 调整。禁止智能体在前台使用 `for`/`while` 加 `sleep` 反复查询 GitHub 状态。可直接运行 `gh run watch <run-id> --repo BuildrAI/Buildr --exit-status --interval 30`；合并请求的检查使用 `gh pr checks <pr-url> --repo BuildrAI/Buildr --required --watch --fail-fast`。程序仅在命令结束或有界等待预算到期后回读，以处理排队超时、失败和本机原包交接；取消等待只终止本机watch进程，不取消远端运行。缺少准确runId时返回回读缺项，不以未知结果授权再次派发。默认输出摘要，原始证据可用 `--output <file>`，诊断时使用 `--detail full`。
 
 candidate 与发布作业默认排队 600 秒仍未开始时取消：先确认该运行没有任何作业或步骤启动，再取消并回读 `completed/cancelled`；随后清除当前指针及 journal 引用，保留 runId、取消依据、清理字段和每次重派原因的审计历史，再用完整冻结派发参数创建新运行。默认最多重派两次，可用 `--queue-timeout-seconds <seconds>` 与 `--max-queue-redispatches <count>` 调整。已启动后取消、取消结果未知、缺少原始参数或次数用尽时局部停止，不自动重派、不猜测新参数、不重复未知请求。旧的已授权请求若缺少冻结派发参数，只能从原已校验发布上下文恢复；不能从当前 `dev` 或手写参数重建。
 
-重试沿用已授权的原发布请求、冻结上下文及原包；官方 Registry 确认准确版本 HTTP 404 后，允许同一 releaseId 重试，不再由旧日志状态单独拦截。已存在版本校验 integrity 后复用；网络、认证、完整性错误仍停止相关写入，不把查询失败当作版本不存在。
+官方 npm 注册表明确确认准确版本 HTTP 404 后，允许同一 releaseId、原冻结上下文和原包重试 npm 写入，不再因原journal未知而拒绝，并记录版本、完整性与404依据。网络错误、认证错误和完整性冲突不作为版本不存在；已公开且摘要一致时只复用。resume 继续消费原冻结的受保护执行身份，不把本机CLI进程的Node身份变化误当作发布内容变化；源码、工作流、版本、包摘要和授权仍须一致。
 
 环境审批必须调用 `scripts/environment-approval.ts` 的 `approvePendingEnvironmentDeployments()`；整数环境 id 用大写 `-F`，或用 `--input` 的 JSON 数字。禁止手写小写 `-f` 的 `gh api` 命令绕过该函数。
 

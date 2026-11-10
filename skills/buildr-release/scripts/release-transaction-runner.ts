@@ -413,8 +413,9 @@ export async function runHostedReleaseTransaction(options: any = {}, dependencie
     mainCommit: sourceCommit,
     mainTree: actualTree,
     workflowDigest: `sha256-${workflowSha256}`,
-    nodeVersion: exactNode.audit.version,
-    nodeIdentity: exactNode.audit.identity,
+    // Local resumption consumes the original protected execution identity, not this CLI process identity.
+    nodeVersion: suppliedContext ? context.node.version : exactNode.audit.version,
+    nodeIdentity: suppliedContext ? context.node.executionIdentity : exactNode.audit.identity,
   };
   if (JSON.stringify(observedBindings) !== JSON.stringify(expectedBindings)) throw new Error(`Release context/current source binding mismatch: ${JSON.stringify({ expected: expectedBindings, actual: observedBindings })}`);
   const readiness: any = evaluateReleaseReadiness({ stage: 'dispatch-check', context });

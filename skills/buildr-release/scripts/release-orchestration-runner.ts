@@ -558,7 +558,6 @@ function finishCandidatePreparation(workspace: string, state: any, selection: an
 
 export async function waitForReleaseMainPullRequest(options: any, dependencies: any = {}): Promise<any> {
   const now = dependencies.now ?? Date.now;
-  const sleep = dependencies.sleep ?? ((ms: number) => new Promise(resolve => setTimeout(resolve, ms)));
   const startedAt = now(), deadline = startedAt + 30_000;
   const execute = dependencies.execute ?? spawnSync;
   let pullRequest: any = null, checks: any[] = [];
@@ -580,7 +579,7 @@ export async function waitForReleaseMainPullRequest(options: any, dependencies: 
     return parsed;
   };
   try {
-    while (true) {
+    for (let observation = 0; observation < 2; observation++) {
       if (pullRequest && now() >= deadline) return finish('pending');
       pullRequest = read(['pr', 'view', options.url, '--repo', releasePublishAuthority.repository, '--json',
         'state,headRefOid,headRefName,baseRefName,url,mergeStateStatus,mergeable,isDraft']);
@@ -605,7 +604,10 @@ export async function waitForReleaseMainPullRequest(options: any, dependencies: 
           && pullRequest.mergeable === 'MERGEABLE') return finish('ready');
       const remaining = deadline - now();
       if (remaining <= 0) return finish('pending');
-      await sleep(Math.min(3_000, remaining));
+      if (observation > 0 || checks.length === 0) return finish('pending');
+      const watched = execute(options.ghCommand || 'gh', ['pr', 'checks', options.url, '--repo', releasePublishAuthority.repository,
+        '--required', '--watch', '--fail-fast', '--interval', '3'], { cwd: options.repo, timeout: remaining, encoding: 'utf8', maxBuffer: 1024 * 1024 });
+      if (watched.error) return finish(watched.error.code === 'ETIMEDOUT' ? 'pending' : 'unknown', releaseCommandDiagnostic(options.ghCommand || 'gh', ['pr', 'checks'], watched));
     }
   } catch (error: any) {
     return finish('unknown', error.diagnostic ?? { code: 'release-main-pr-readback-failed', message: error.message });

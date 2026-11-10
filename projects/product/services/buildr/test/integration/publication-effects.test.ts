@@ -329,7 +329,7 @@ test('publishFrozenArtifact converges on delayed registry propagation without re
   assert.ok(reads >= 3, `readback polled until propagation converged (reads=${reads})`);
 });
 
-test('publishFrozenArtifact retains an unknown write across attempts and later reads back the same bytes without republishing', async t => {
+test('publishFrozenArtifact retries the frozen bytes on official 404 and reuses confirmed bytes', async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-publish-unconfirmed-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const sourceRepo = path.join(root, 'source');
@@ -347,9 +347,12 @@ test('publishFrozenArtifact retains an unknown write across attempts and later r
 
   let publishCalls = 0;
   let visible = false;
+  let registryStatus: number | null = null;
+  let servedIntegrity = artifact.manifest.integrity;
   const server = http.createServer((req, res) => {
     const json = (status: number, body: unknown) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
-    if (req.url?.endsWith(`/${version}`)) return visible ? json(200, { name: '@buildr-ai/buildr', version, dist: { integrity: artifact.manifest.integrity } }) : json(404, {});
+    if (req.url?.endsWith(`/${version}`) && registryStatus !== null) return json(registryStatus, {});
+    if (req.url?.endsWith(`/${version}`)) return visible ? json(200, { name: '@buildr-ai/buildr', version, dist: { integrity: servedIntegrity } }) : json(404, {});
     return json(200, { name: '@buildr-ai/buildr', 'dist-tags': { latest: '0.0.1', next: null } });
   });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -378,24 +381,38 @@ test('publishFrozenArtifact retains an unknown write across attempts and later r
   const previousAttempt = publicationAttemptFromJournal(journal, context, artifact.manifest, nextRun);
   assert.equal(previousAttempt, 'attempted');
   const resumed = await publishFrozenArtifact({ manifestPath: built.manifestPath, npmTag, previousAttempt }, dependencies);
-  assert.equal(resumed.status, 'blocked'); assert.equal(resumed.diagnostic.code, 'npm-publication-attempt-unconfirmed');
-  assert.equal(publishCalls, 1, 'a later attempt with a fresh 404 must only read back the original write');
+  assert.equal(resumed.status, 'blocked'); assert.equal(resumed.diagnostic.code, 'npm-publication-unconfirmed');
+  assert.equal(resumed.effects.find((effect: any) => effect.type === 'npm-publication-retry-authorized').basis, 'official-registry-version-404');
+  assert.equal(publishCalls, 2, 'one new attempt retries exactly once after official version 404');
   for (const previous of [null, { ...journal, contextIdentity: `sha256-${'b'.repeat(64)}` }, { ...journal, artifact: { ...journal.artifact, sha256: '0'.repeat(64) } },
     { ...journal, publish: { ...firstRun, runId: 43 } }, { ...journal, publish: { ...firstRun, runAttempt: 2 } }, { ...journal, npmAttempted: null }]) {
     const unknown = publicationAttemptFromJournal(previous, context, artifact.manifest, nextRun);
     assert.equal(unknown, 'unknown');
-    assert.equal((await publishFrozenArtifact({ manifestPath: built.manifestPath, npmTag, previousAttempt: unknown }, dependencies)).diagnostic.code, 'npm-publication-history-unknown');
+    // A foreign journal remains classified as unknown; protected context checks reject known mismatches.
+    // The low-level write boundary below resolves a missing journal through a fresh official observation.
   }
   assert.equal(publicationAttemptFromJournal({ ...journal, npmAttempted: false, effects: [] }, context, artifact.manifest, nextRun), 'not-attempted', 'a bound failure before any write can still publish');
   const recoveryContext = { identity: `sha256-${'c'.repeat(64)}`, convergence: { mainCommit: source }, executorRecovery: {
     originalContextIdentity: context.identity, previousRunId: 42, previousRunAttempt: 1,
   } };
   assert.equal(publicationAttemptFromJournal(journal, recoveryContext, artifact.manifest, { ...firstRun, runId: 43 }), 'attempted', 'publisher repair retains the original context write boundary');
-  assert.equal(publishCalls, 1);
+  const retried = await publishFrozenArtifact({ manifestPath: built.manifestPath, npmTag, previousAttempt: 'unknown' }, dependencies);
+  assert.equal(retried.diagnostic.code, 'npm-publication-unconfirmed'); assert.equal(publishCalls, 3);
+  assert.equal(retried.effects[0].basis, 'official-registry-version-404');
+  for (const status of [401, 403]) {
+    registryStatus = status;
+    assert.equal((await publishFrozenArtifact({ manifestPath: built.manifestPath, npmTag, previousAttempt: 'unknown' }, dependencies)).status, 'blocked');
+    assert.equal(publishCalls, 3, 'authorization errors do not authorize a retry');
+  }
+  registryStatus = null;
   visible = true;
+  servedIntegrity = 'sha512-conflict';
+  assert.equal((await publishFrozenArtifact({ manifestPath: built.manifestPath, npmTag, previousAttempt: 'unknown' }, dependencies)).diagnostic.code, 'registry-integrity-conflict');
+  assert.equal(publishCalls, 3, 'different bytes never authorize a retry');
+  servedIntegrity = artifact.manifest.integrity;
   const recovered = await publishFrozenArtifact({ manifestPath: built.manifestPath, npmTag, previousAttempt }, dependencies);
   assert.equal(recovered.status, 'passed'); assert.equal(recovered.action, 'reused');
-  assert.equal(recovered.registry.integrity, artifact.manifest.integrity); assert.equal(publishCalls, 1);
+  assert.equal(recovered.registry.integrity, artifact.manifest.integrity); assert.equal(publishCalls, 3);
   assert.equal((await publishFrozenArtifact({ manifestPath: built.manifestPath, npmTag, previousAttempt: 'unknown' }, dependencies)).status, 'passed', 'unknown history cannot deny confirmed matching public bytes');
 });
 

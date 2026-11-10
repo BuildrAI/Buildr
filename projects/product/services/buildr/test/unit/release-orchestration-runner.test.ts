@@ -221,61 +221,72 @@ test('merge-to-dispatch and post-Publication closeout recover as one end-to-end 
   assert.equal(fixture.calls.filter((args: any) => args[0] === 'task' && args[1] === 'complete').length, 1);
 });
 
-test('continuous release waits internally for one request, resumes public work and stops on all real blockers', async () => {
+test('continuous release watches one request, resumes public work and stops on real blockers', async () => {
   const { runReleaseOperationUntilSettled } = await import('../../../../../../skills/buildr-release/scripts/release-orchestration-runner.ts');
   const actions: string[] = [], progress: string[] = [];
-  let now = 0;
-  const statuses = ['publication-dispatch-unconfirmed', 'publication-running', 'publication-running', 'passed'];
+  let now = 0, watches = 0;
+  const statuses = ['publication-running', 'publication-running', 'passed'];
   const value = await runReleaseOperationUntilSettled({ action: 'publish', wait: true, waitIntervalMs: 10, waitTimeoutMs: 100 }, {
-    now: () => now, sleep: async (ms: number) => { now += ms; },
+    now: () => now,
+    watchRun: async (request: any) => { assert.equal(request.runId, 42); now += 10; return { status: ++watches === 1 ? 'timed-out' : 'completed', exitCode: 0 }; },
     onProgress: (event: any) => progress.push(event.status),
-    runReleaseOperation: async (options: any) => { actions.push(options.action); return { status: statuses.shift(), effects: actions.length === 1 ? [{ type: 'requested' }] : [] }; },
+    runReleaseOperation: async (options: any) => { actions.push(options.action); return { status: statuses.shift(), run: { id: 42 }, effects: actions.length === 1 ? [{ type: 'requested' }] : [] }; },
   });
-  assert.deepEqual(actions, ['publish', 'resume', 'resume', 'resume']);
-  assert.deepEqual(progress, ['publication-dispatch-unconfirmed', 'publication-running', 'passed']);
+  assert.deepEqual(actions, ['publish', 'resume', 'resume']);
+  assert.deepEqual(progress, ['publication-running', 'passed']);
   assert.deepEqual(value.effects, [{ type: 'requested' }]);
-  assert.equal(value.waiting.status, 'settled');
+  assert.equal(value.waiting.status, 'settled'); assert.equal(watches, 2);
   for (const status of ['local-verification-required', 'local-artifact-verification-required', 'diagnosis-required', 'authorization-required', 'blocked']) {
     let calls = 0;
     const stopped = await runReleaseOperationUntilSettled({ action: 'prepare', wait: true }, {
-      runReleaseOperation: async () => { calls++; return { status, effects: [] }; }, sleep: () => assert.fail('a real blocker must return immediately'),
+      runReleaseOperation: async () => { calls++; return { status, effects: [] }; }, watchRun: () => assert.fail('a real blocker must return immediately'),
     });
     assert.equal(stopped.status, status); assert.equal(calls, 1);
+  }
+});
+
+test('unknown dispatch and adoption identities return readback gaps without polling or another request', async () => {
+  const { runReleaseOperationUntilSettled } = await import('../../../../../../skills/buildr-release/scripts/release-orchestration-runner.ts');
+  for (const status of ['publication-dispatch-unconfirmed', 'candidate-repair-dispatch-unconfirmed', 'candidate-repair-readback-required', 'main-merge-pending']) {
+    let calls = 0;
+    const value = await runReleaseOperationUntilSettled({ action: 'resume', wait: true }, {
+      runReleaseOperation: async () => { calls++; return { status, effects: [{ type: 'requested' }] }; },
+      watchRun: () => assert.fail('an unknown run cannot be watched'),
+    });
+    assert.equal(calls, 1); assert.equal(value.waiting.status, 'readback-required'); assert.deepEqual(value.effects, [{ type: 'requested' }]);
   }
 });
 
 test('continuous release times out with the original run identity and can be disabled', async () => {
   const { runReleaseOperationUntilSettled, compactReleaseOperation } = await import('../../../../../../skills/buildr-release/scripts/release-orchestration-runner.ts');
   let now = 0, calls = 0;
-  const dependencies = { now: () => now, sleep: async (ms: number) => { now += ms; },
+  const dependencies = { now: () => now, watchRun: async (request: any) => { now += request.timeoutMs; return { status: 'timed-out' }; },
     runReleaseOperation: async () => { calls++; return { status: 'candidate-running', candidate: { runId: 42 }, context: { files: Array(500).fill('large inventory') }, effects: [], nextActions: ['continue the same request'] }; } };
   const value = await runReleaseOperationUntilSettled({ action: 'prepare', wait: true, waitIntervalMs: 10, waitTimeoutMs: 20 }, dependencies);
   assert.equal(value.waiting.status, 'timed-out'); assert.equal(value.candidate.runId, 42); assert.equal(calls, 3);
+  assert.equal(value.waiting.watchMs, 20); assert.equal(value.waiting.sleepMs, 0);
   const compact = compactReleaseOperation(value);
   assert.equal(compact.candidate.runId, 42); assert.equal('context' in compact, false); assert.deepEqual(compact.nextActions, value.nextActions);
-  await runReleaseOperationUntilSettled({ action: 'prepare' }, { ...dependencies, sleep: () => assert.fail('waiting must be explicit') });
+  await runReleaseOperationUntilSettled({ action: 'prepare' }, { ...dependencies, watchRun: () => assert.fail('waiting must be explicit') });
   assert.equal(calls, 4);
   await assert.rejects(runReleaseOperationUntilSettled({ waitTimeoutMs: NaN }, dependencies), /invalid/u);
 });
 
-
-test('candidate repair and main adoption remain waiting; readback work is not sleep time', async () => {
+test('candidate artifact handoff stops waiting and separates readback work from command wait', async () => {
   const { runReleaseOperationUntilSettled, compactReleaseOperation } = await import('../../../../../../skills/buildr-release/scripts/release-orchestration-runner.ts');
   let now = 0;
-  const statuses = ['candidate-repair-dispatch-unconfirmed', 'candidate-repair-readback-required', 'main-merge-pending', 'local-artifact-verification-required'];
+  const statuses = ['candidate-running', 'candidate-running', 'local-artifact-verification-required'];
   const value = await runReleaseOperationUntilSettled({ action: 'prepare', wait: true, waitIntervalMs: 10, waitTimeoutMs: 100 }, {
-    now: () => now, sleep: async (ms: number) => { now += ms; },
+    now: () => now, watchRun: async (request: any) => { now += request.timeoutMs; return { status: 'timed-out' }; },
     runReleaseOperation: async () => { now += 2; return { status: statuses.shift(), run: { id: 42 }, effects: [] }; },
   });
   assert.equal(statuses.length, 0);
-  assert.equal(value.waiting.status, 'settled');
-  assert.deepEqual(value.waiting, { status: 'settled', polls: 4, durationMs: 38, pollWorkMs: 8, sleepMs: 30 });
+  assert.deepEqual(value.waiting, { status: 'settled', polls: 3, durationMs: 26, pollWorkMs: 6, sleepMs: 0, watchMs: 20 });
   const compact = compactReleaseOperation({ ...value, localArtifact: { runId: 42, artifactId: 3, artifact: { sha256: 'a' }, checks: [{ node: '24.15.0' }] } });
-  assert.equal(compact.localArtifact.runId, 42);
-  assert.equal(compact.localArtifact.sha256, 'a');
+  assert.equal(compact.localArtifact.runId, 42); assert.equal(compact.localArtifact.sha256, 'a');
 });
 
-test('release cancellation during sleep retains original effects without another resume', async () => {
+test('release cancellation during watch retains original effects without another resume', async () => {
   const { runReleaseOperationUntilSettled } = await import('../../../../../../skills/buildr-release/scripts/release-orchestration-runner.ts');
   const controller = new AbortController();
   const actions: string[] = [];
@@ -284,28 +295,36 @@ test('release cancellation during sleep retains original effects without another
   const value = await runReleaseOperationUntilSettled({ action: 'publish', wait: true, waitIntervalMs: 10 }, {
     signal: controller.signal, now: () => now,
     runReleaseOperation: async (options: any) => { actions.push(options.action); return { status: 'publication-running', run: { id: 42 }, effects: [effect] }; },
-    sleep: async (ms: number) => { now += ms; controller.abort(); },
+    watchRun: async () => { now += 10; controller.abort(); return { status: 'cancelled' }; },
   });
-  assert.deepEqual(actions, ['publish']);
-  assert.equal(value.run.id, 42);
-  assert.deepEqual(value.effects, [effect]);
-  assert.deepEqual(value.waiting, { status: 'cancelled', polls: 1, durationMs: 10, pollWorkMs: 0, sleepMs: 10 });
+  assert.deepEqual(actions, ['publish']); assert.equal(value.run.id, 42); assert.deepEqual(value.effects, [effect]);
+  assert.deepEqual(value.waiting, { status: 'cancelled', polls: 1, durationMs: 10, pollWorkMs: 0, sleepMs: 0, watchMs: 10 });
   const preCancelled = new AbortController(); preCancelled.abort();
   await assert.rejects(runReleaseOperationUntilSettled({ action: 'publish', wait: true }, {
     signal: preCancelled.signal, runReleaseOperation: async () => assert.fail('already cancelled work must not dispatch'),
   }), { name: 'AbortError' });
 });
 
-test('native release sleep is interrupted without waiting for its whole interval', async () => {
+test('watch cancellation is observed without waiting for the whole command deadline', async () => {
   const { runReleaseOperationUntilSettled } = await import('../../../../../../skills/buildr-release/scripts/release-orchestration-runner.ts');
   const controller = new AbortController();
   let polls = 0;
   const value = await runReleaseOperationUntilSettled({ action: 'resume', wait: true, waitIntervalMs: 60_000 }, {
     signal: controller.signal,
     runReleaseOperation: async () => { polls++; setImmediate(() => controller.abort()); return { status: 'publication-running', run: { id: 42 }, effects: [] }; },
-    sleep: undefined,
+    watchRun: (request: any) => new Promise(resolve => request.signal.addEventListener('abort', () => resolve({ status: 'cancelled' }), { once: true })),
   });
-  assert.equal(polls, 1);
-  assert.equal(value.waiting.status, 'cancelled');
-  assert.equal(value.run.id, 42);
+  assert.equal(polls, 1); assert.equal(value.waiting.status, 'cancelled'); assert.equal(value.run.id, 42);
+});
+
+test('watch errors and missing terminal evidence return without repeated commands', async () => {
+  const { runReleaseOperationUntilSettled } = await import('../../../../../../skills/buildr-release/scripts/release-orchestration-runner.ts');
+  for (const status of ['failed', 'completed']) {
+    let watches = 0;
+    const value = await runReleaseOperationUntilSettled({ action: 'resume', wait: true }, {
+      runReleaseOperation: async () => ({ status: 'publication-running', run: { id: 42 } }),
+      watchRun: async () => { watches++; return { status, exitCode: 1, message: 'unavailable' }; },
+    });
+    assert.equal(watches, 1); assert.equal(value.waiting.status, status === 'failed' ? 'watch-failed' : 'readback-required');
+  }
 });

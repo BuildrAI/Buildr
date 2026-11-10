@@ -6,6 +6,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { reconcilePublicationAfterPreparedContext, resolveRetainedController, runReleaseOperation, waitForReleaseMainPullRequest } from '../../../../../../skills/buildr-release/scripts/release-orchestration-runner.ts';
+import { watchReleaseRun } from '../../../../../../skills/buildr-release/scripts/release-operation-wait.ts';
 import { packageDownloadTimeoutMs, readCandidateEvidence, runHostedReleaseTransaction } from '../../../../../../skills/buildr-release/scripts/release-transaction-runner.ts';
 import { inspectReleaseSelection } from '../../../../../../skills/buildr-release/scripts/release-selection.ts';
 import { createReleaseArtifactFixture, preparationRecordFixture } from '../helpers/release-artifact-fixture.ts';
@@ -37,33 +38,59 @@ function protectedMainFixture(): any {
   };
 }
 
-test('protected main waits through an uncomputed state and missing checks, then admits the same ready PR', async () => {
+test('protected main uses a blocking required-check watch then revalidates the frozen PR', async () => {
   const f = protectedMainFixture();
-  const result = await waitForReleaseMainPullRequest(f.options, f.dependencies((args: string[]) => args[1] === 'view'
-    ? { status: 0, stdout: JSON.stringify({ ...f.pullRequest, ...(f.elapsed() === 0 ? { mergeStateStatus: 'UNKNOWN', mergeable: 'UNKNOWN' } : {}) }) }
-    : f.elapsed() === 0 ? { status: 1, stdout: '', stderr: `no checks reported on the '${f.options.branch}' branch` }
-      : { status: 0, stdout: JSON.stringify([{ name: 'protected-gate', bucket: 'pass', state: 'SUCCESS' }]) }));
+  let watched = false;
+  const result = await waitForReleaseMainPullRequest(f.options, f.dependencies((args: string[]) => {
+    if (args.includes('--watch')) { watched = true; return { status: 0, stdout: '' }; }
+    return { status: args[1] === 'checks' && !watched ? 8 : 0,
+      stdout: JSON.stringify(args[1] === 'view' ? { ...f.pullRequest, ...(!watched ? { mergeStateStatus: 'UNKNOWN', mergeable: 'UNKNOWN' } : {}) }
+        : [{ name: 'protected-gate', bucket: watched ? 'pass' : 'pending', state: watched ? 'SUCCESS' : 'IN_PROGRESS' }]) };
+  }));
   assert.equal(result.status, 'ready'); assert.equal(result.pullRequest.url, f.options.url);
-  assert.equal(result.durationMs, 3_000); assert.deepEqual(f.waits, [3_000]);
+  assert.equal(f.requests.filter((args: string[]) => args.includes('--watch')).length, 1);
+  assert.equal(f.requests.filter((args: string[]) => args[1] === 'view').length, 2);
+  assert.deepEqual(f.waits, []);
 });
 
-test('protected main waiting stops at its bounded deadline without a failed merge or repeated work', async () => {
+test('protected main waiting stops when its blocking command reaches the deadline', async () => {
   const f = protectedMainFixture();
-  const result = await waitForReleaseMainPullRequest(f.options, f.dependencies((args: string[]) => ({ status: args[1] === 'checks' ? 8 : 0,
-    stdout: JSON.stringify(args[1] === 'view' ? { ...f.pullRequest, mergeStateStatus: 'BLOCKED' }
-      : [{ name: 'protected-gate', bucket: 'pending', state: 'IN_PROGRESS' }]) })));
-  assert.equal(result.status, 'pending'); assert.equal(result.durationMs, 30_000);
-  assert.equal(f.requests.length, 20); assert.equal(f.waits.length, 10);
-  assert.equal(result.checks[0].name, 'protected-gate');
+  const result = await waitForReleaseMainPullRequest(f.options, f.dependencies((args: string[]) => args.includes('--watch')
+    ? { status: null, error: Object.assign(new Error('deadline'), { code: 'ETIMEDOUT' }) }
+    : { status: args[1] === 'checks' ? 8 : 0, stdout: JSON.stringify(args[1] === 'view' ? { ...f.pullRequest, mergeStateStatus: 'BLOCKED' }
+      : [{ name: 'protected-gate', bucket: 'pending', state: 'IN_PROGRESS' }]) }));
+  assert.equal(result.status, 'pending'); assert.equal(f.requests.length, 3);
+  assert.deepEqual(f.waits, []); assert.equal(result.checks[0].name, 'protected-gate');
 });
 
-test('a clean new PR still waits for its required check to register', async () => {
+test('a clean new PR with no registered required check returns a readback gap without merging', async () => {
   const f = protectedMainFixture();
   const result = await waitForReleaseMainPullRequest(f.options, f.dependencies((args: string[]) => ({ status: 0,
-    stdout: JSON.stringify(args[1] === 'view' ? f.pullRequest
-      : f.elapsed() === 0 ? [] : [{ name: 'Candidate gate', bucket: 'pass', state: 'SUCCESS' }]) })));
-  assert.equal(result.status, 'ready');
-  assert.deepEqual(f.waits, [3_000], 'an initially empty required-check list is not permission to merge');
+    stdout: JSON.stringify(args[1] === 'view' ? f.pullRequest : []) })));
+  assert.equal(result.status, 'pending'); assert.deepEqual(f.waits, []);
+  assert.equal(f.requests.length, 2);
+});
+
+test('native release watch exits on completion, timeout and cancellation without retained child processes', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-native-watch-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  // Node consumes the first "run" argument as a script, a portable fake gh binary.
+  fs.writeFileSync(path.join(root, 'run'), "const fs = require('node:fs'); fs.writeFileSync('args.json', JSON.stringify(process.argv.slice(2))); fs.writeFileSync('pid', String(process.pid)); if (fs.readFileSync('mode', 'utf8') === 'wait') setInterval(() => {}, 1000);\n");
+  fs.writeFileSync(path.join(root, 'mode'), 'complete');
+  const request = { ghCommand: process.execPath, cwd: root, runId: 42, timeoutMs: 5000, intervalSeconds: 2 };
+  assert.equal((await watchReleaseRun(request)).status, 'completed');
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(root, 'args.json'), 'utf8')), ['watch', '42', '--repo', 'BuildrAI/Buildr', '--exit-status', '--interval', '2']);
+  const pid = Number(fs.readFileSync(path.join(root, 'pid'), 'utf8'));
+  assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' });
+  fs.writeFileSync(path.join(root, 'mode'), 'wait');
+  assert.equal((await watchReleaseRun({ ...request, timeoutMs: 250 })).status, 'timed-out');
+  const timedOutPid = Number(fs.readFileSync(path.join(root, 'pid'), 'utf8'));
+  assert.throws(() => process.kill(timedOutPid, 0), { code: 'ESRCH' });
+  const controller = new AbortController();
+  const watching = watchReleaseRun({ ...request, signal: controller.signal });
+  controller.abort();
+  assert.equal((await watching).status, 'cancelled');
+  assert.equal((await watchReleaseRun({ ...request, ghCommand: path.join(root, 'missing') })).status, 'failed');
 });
 
 for (const bucket of ['fail', 'cancel']) test(`protected main reports required ${bucket} without waiting or touching unrelated checks`, async () => {
@@ -741,7 +768,7 @@ for (const repairTools of [false, true]) test(`historical remote-produced prepar
 });
 
 
-test('publish binds cleanup to its context and resume never expands historical authorization', async t => {
+test('publication cleanup requires matching hosted evidence rather than historical pointer policy', async t => {
   const workspace = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-cleanup-authorization-')));
   t.after(() => fs.rmSync(workspace, { recursive: true, force: true }));
   git(workspace, ['init', '-b', 'dev']);
@@ -755,6 +782,7 @@ test('publish binds cleanup to its context and resume never expands historical a
   fs.writeFileSync(file, JSON.stringify({ schemaVersion: 'buildr.release-operation-input/v1', version, workspace, sources: [], context, transaction: {}, publication: null }));
   const observed: any[] = [];
   const evidence = { status: 'passed', identity: digest('4'), context, publish: { runId: 84, runAttempt: 1 }, observedAt: '2026-09-27T00:00:00.000Z' };
+  let returnedEvidence: any = evidence;
   const orchestrationDependencies = {
     runHostedReleaseTransaction: async (input: any, dependencies: any) => {
       if (input.action === 'readiness') return { status: 'ready', context, effects: [] };
@@ -762,10 +790,10 @@ test('publish binds cleanup to its context and resume never expands historical a
       dependencies.onDispatchObserved({ runId: 84 });
       return { status: 'running', context, github: { runId: 84 }, effects: [], nextActions: [] };
     },
-    inspectHostedReleaseTransaction: async () => ({ status: 'passed', evidence }),
+    inspectHostedReleaseTransaction: async () => ({ status: 'passed', evidence: returnedEvidence }),
     reconcilePublishedReleaseWithDev: () => ({ status: 'passed', identity: digest('5'), recoveryIdentity: digest('6'), effects: [] }),
     closeoutReleaseGitResources: (input: any) => {
-      observed.push([input.authorizeRemoteDelete, input.cleanupPolicy]);
+      observed.push([input.publicationEvidence.identity, input.publicationEvidence.context.identity, input.version]);
       return { status: 'passed', identity: digest('7'), formalReleaseRef: { disposition: input.authorizeRemoteDelete ? 'cleaned-and-verified' : 'retained-and-verified' }, effects: [] };
     },
     inspectTask: () => ({ record: { status: 'completed' }, recordDigest: digest('8') }),
@@ -790,7 +818,12 @@ test('publish binds cleanup to its context and resume never expands historical a
     const resumed = await runReleaseOperation({ action: 'resume', version, workspace }, dependencies);
     assert.equal(resumed.status, 'passed', `${mode}: ${JSON.stringify(resumed)}`);
   }
-  assert.deepEqual(observed, [[true, 'delete-owned-release-branches/v2'], [true, 'delete-owned-release-branches/v1'], [false, undefined], [false, undefined]]);
+  assert.deepEqual(observed, Array(4).fill([evidence.identity, context.identity, version]));
+  returnedEvidence = { ...evidence, context: { ...context, identity: digest('0') } };
+  const foreign = await runReleaseOperation({ action: 'resume', version, workspace }, dependencies);
+  assert.equal(foreign.status, 'blocked', 'an unrelated hosted Publication cannot authorize cleanup');
+  assert.equal(observed.length, 4, 'no cleanup is attempted for foreign Publication evidence');
+  returnedEvidence = evidence;
   const recovered = await runReleaseOperation({ action: 'prepare', version, workspace }, dependencies);
   assert.equal(recovered.status, 'passed', JSON.stringify(recovered));
   assert.equal(recovered.action, 'resume');

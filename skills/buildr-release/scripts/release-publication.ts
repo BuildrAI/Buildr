@@ -183,6 +183,13 @@ export async function runReleasePublication(options: any, dependencies: any = {}
   const journal = path.join(options.outputDirectory, 'publication-steps.json');
   const previous = options.previousPublicationDirectory ? readPublicationJournal(options.previousPublicationDirectory)
     : fs.existsSync(journal) ? readPublicationJournal(options.outputDirectory) : null;
+  // Unknown/missing history can be resolved by a current official 404; a known foreign binding cannot.
+  const expectedPreviousContext = Number(options.publish?.runAttempt) > 1 || !context.executorRecovery
+    ? context.identity : context.executorRecovery.originalContextIdentity;
+  if ((previous?.contextIdentity && previous.contextIdentity !== expectedPreviousContext)
+    || (previous?.artifact && JSON.stringify(previous.artifact) !== JSON.stringify(publicationArtifact(artifact.manifest)))) {
+    throw Object.assign(new Error('Previous publication belongs to a different frozen context or artifact.'), { code: 'npm-publication-binding-conflict' });
+  }
   const previousAttempt = publicationAttemptFromJournal(previous, context, artifact.manifest, options.publish);
   let npmAttempted: boolean | null = previousAttempt === 'attempted' ? true : previousAttempt === 'not-attempted' ? false : null;
   const checkpoint = (value: any) => {
