@@ -4,10 +4,11 @@ import { nativeContentFiles, nativeContentImages, nativeContentRows } from '../n
 import {nativeToolContext,nativeToolRows} from '../native-tool-source.ts';
 import {visibleText} from '../native-process.ts';
 
-export function readQoderTool(root:string,reference:NativeToolContent) {
-  const input=nativeToolContext(root,reference,'qoder');if(!input)return;
+export function readQoderTool(root:string,reference:NativeToolContent,product:'qoder'|'qoder-cn'='qoder') {
+  const input=nativeToolContext(root,reference,product);if(!input)return;
+  const configDirectory=product==='qoder'?'qoder-config':'qoder-cn-config';
   try{
-    const primary=nativeContentFiles(input,path.join(input.configRoot,'qoder-config/projects'),file=>path.basename(file)===input.contextId+'.jsonl',3);
+    const primary=nativeContentFiles(input,path.join(input.configRoot,configDirectory,'projects'),file=>path.basename(file)===input.contextId+'.jsonl',3);
     if(primary.length!==1)return;
     let files=primary;
     const parent=reference.session?.parentToolId;
@@ -19,7 +20,7 @@ export function readQoderTool(root:string,reference:NativeToolContent) {
     for(const file of files){
       // Earlier v3 references carried the SDK execution ID in turnId. It is
       // not a native prompt filter; prove the unique call and source message.
-      const tool=qoderToolRecord(input,file,reference.nativeId!,parent);
+      const tool=qoderToolRecord(input,file,reference.nativeId!,parent,product);
       if(!tool?.result)continue;
       if(selected)return;selected=tool;
     }
@@ -28,10 +29,10 @@ export function readQoderTool(root:string,reference:NativeToolContent) {
   }catch{return;}
 }
 
-function qoderToolRecord(input:NativeContentContext,file:string,id:string,parent?:string) {
+function qoderToolRecord(input:NativeContentContext,file:string,id:string,parent?:string,product:'qoder'|'qoder-cn'='qoder') {
   let execution:string|undefined,call:any,result:{text:string}|undefined,callOwner:string|undefined,ambiguous=false;
   const assistants=new Set<string>();
-  for(const row of nativeToolRows(input,'qoder',file)){
+  for(const row of nativeToolRows(input,product,file)){
     if(row.sessionId!==undefined&&row.sessionId!==input.contextId)return;
     if(!['user','assistant'].includes(row.type))continue;
     if(row.sessionId!==input.contextId||row.cwd!==input.cwd||row.isSidechain!==Boolean(parent)||parent&&row.parent_tool_use_id!==parent)return;
@@ -63,11 +64,12 @@ function qoderToolRecord(input:NativeContentContext,file:string,id:string,parent
   return {call,result};
 }
 
-export function qoderContent(input: NativeContentContext): NativeContentInventory | undefined {
+export function qoderContent(input: NativeContentContext, product: 'qoder'|'qoder-cn' = 'qoder'): NativeContentInventory | undefined {
   if (!/^[a-f0-9-]{36}$/.test(input.contextId)) return;
-  const files = nativeContentFiles(input, path.join(input.configRoot, 'qoder-config/projects'), file => path.basename(file) === input.contextId + '.jsonl', 3);
+  const configDirectory = product === 'qoder' ? 'qoder-config' : 'qoder-cn-config';
+  const files = nativeContentFiles(input, path.join(input.configRoot, configDirectory, 'projects'), file => path.basename(file) === input.contextId + '.jsonl', 3);
   if (files.length !== 1) return;
-  const rows = nativeContentRows(input, 'qoder', files[0]!);
+  const rows = nativeContentRows(input, product, files[0]!);
   const messages=rows.filter(row=>['user','assistant'].includes(row.value.type));
   if (!messages.length || rows.some(row=>row.value.sessionId!==undefined && row.value.sessionId!==input.contextId) ||
     messages.some(row=>row.value.cwd!==input.cwd || row.value.sessionId!==input.contextId || row.value.isSidechain!==false)) return;

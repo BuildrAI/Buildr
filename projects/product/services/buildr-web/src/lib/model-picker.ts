@@ -28,13 +28,13 @@ export function filterModelGroups(groups:readonly ModelPickerGroup[],query:strin
 
 export function modelSourceName(provider:string):string {
   const id=provider.replace(/^native-/, '');
-  return ({codex:'ChatGPT',openai:'ChatGPT API',dsh:'DeepSeek',deepseek:'DeepSeek',qoder:'Qoder',devin:'Devin'} as Record<string,string>)[id]??provider;
+  return ({codex:'ChatGPT',openai:'ChatGPT API',dsh:'DeepSeek',deepseek:'DeepSeek',qoder:'Qoder','qoder-cn':'Qoder CN',devin:'Devin'} as Record<string,string>)[id]??provider;
 }
 
 /** Execution agent names stay separate from model-source names. */
 export function executionAgentName(provider:string):string {
   const id=provider.replace(/^native-/, '');
-  return ({codex:'Codex',dsh:'DSH',qoder:'Qoder',devin:'Devin',deepseek:'DeepSeek'} as Record<string,string>)[id]??provider;
+  return ({codex:'Codex',dsh:'DSH',qoder:'Qoder','qoder-cn':'Qoder CN',devin:'Devin',deepseek:'DeepSeek'} as Record<string,string>)[id]??provider;
 }
 
 

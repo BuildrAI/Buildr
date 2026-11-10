@@ -9,7 +9,7 @@ export function checkedGateway(gateway?: ExecutorGateway): ExecutorGateway | und
   if (!gateway) return undefined;
   const url = new URL(gateway.baseUrl);
   if (url.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) || url.username || url.password || url.search || url.hash || !url.port || !gateway.identity || !gateway.apiKey || gateway.models.length !== 1 || !gateway.models[0].id) throw new Error('agent_gateway_lease_invalid');
-  if (gateway.nativeModel && (gateway.nativeModel.provider !== 'qoder' || !gateway.nativeModel.id || !gateway.nativeModel.accountIdentity)) throw new Error('agent_gateway_lease_invalid');
+  if (gateway.nativeModel && (!['qoder','qoder-cn'].includes(gateway.nativeModel.provider) || !gateway.nativeModel.id || !gateway.nativeModel.accountIdentity)) throw new Error('agent_gateway_lease_invalid');
   return structuredClone(gateway);
 }
 export async function consumerBinding(provider: string, executable: string, version: string, config: string, options: ExecutorOpenOptions) {

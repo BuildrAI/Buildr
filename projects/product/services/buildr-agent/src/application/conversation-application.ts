@@ -25,6 +25,7 @@ import {selectedOffering,modelConfiguration} from '../model-access/model-prefere
 import type {ModelOffering} from '../model-access/contracts.ts';
 import type { ModelAccess } from '../model-access/application.ts';
 import { modelQuotaFailure } from '../model-access/quota.ts';
+import { isQoderProvider, qoderProduct } from '../executors/qoder/product.ts';
 import { qoderLoginExpiredMessage } from '../model-access/providers/qoder-auth.ts';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import fs from 'node:fs';
@@ -249,7 +250,7 @@ export class ConversationApplication {
     const access=this.options.modelAccess;if(!access)fail('agent_model_source_unavailable','模型套餐组件不可用。',409);
     const lease=await access.leases.create({ accountId: participant.modelAccountId!, expectedIdentity: participant.modelAccountIdentity, modelId: participant.modelId!,serviceTier:participant.serviceTier, conversationId: record.view.id, agentId: participant.connectionId, runId: runId ?? 'prepare' });
     try {const runtime=await this.options.connections.runtime(participant.connectionId, { identity: lease.identity, baseUrl: lease.baseUrl, apiKey: lease.apiKey,
-      ...(lease.provider === 'native-qoder' && participant.connectionId === 'qoder' ? { nativeModel: { provider: 'qoder' as const, id: participant.modelId!, accountIdentity: participant.modelAccountIdentity! } } : {}),
+      ...(nativeLeaseProvider(lease.provider) && participant.connectionId === nativeLeaseProvider(lease.provider) ? { nativeModel: { provider: nativeLeaseProvider(lease.provider)!, id: participant.modelId!, accountIdentity: participant.modelAccountIdentity! } } : {}),
       models: [{id: lease.model, label: lease.offering.label, isDefault: true, reasoningEfforts: lease.offering.reasoningEfforts, defaultReasoningEffort: lease.offering.defaultReasoningEffort, contextWindow: lease.offering.contextWindow, maxOutputTokens: lease.offering.maxOutputTokens, vision: lease.offering.images, tools: lease.offering.tools}] });return {runtime,model:lease.model,leaseIdentity:lease.identity};}
     catch(error){access.leases.release(lease.identity);throw error;}
   }
@@ -716,9 +717,9 @@ export class ConversationApplication {
     if (stoppedContinuation(record, input) && this.pendingSends.read(record.view.workspaceId, record.view.id)) fail('agent_continue_unavailable', '已有待发送要求，请先处理后再继续。', 409);
     input = continuationDraft(record, input);
     const connection = this.options.connections.get(input.connectionId);
-    if (connection.enabled && connection.provider === 'qoder' && connection.status === 'expired') fail('qoder_platform_login_expired', qoderLoginExpiredMessage, 409);
+    if (connection.enabled && isQoderProvider(connection.provider) && connection.status === 'expired') fail('qoder_platform_login_expired', qoderProduct(connection.provider).label === 'Qoder' ? qoderLoginExpiredMessage : `${qoderProduct(connection.provider).label} 登录授权已失效，请重新登录。所选模型来源保持不变。`, 409);
     if (!connection.enabled || (!input.modelAccountId && connection.status !== 'ready')) fail('agent_account_unavailable', '请先准备智能体程序，并连接所选模型账号。', 409);
-    if (input.modelAccountId && connection.provider === 'qoder' && connection.status === 'not-authenticated') fail('qoder_platform_login_required', 'Qoder 程序需要先完成基础平台登录；所选套餐不变，不要求使用 Qoder 自有模型。', 409);
+    if (input.modelAccountId && isQoderProvider(connection.provider) && connection.status === 'not-authenticated') fail('qoder_platform_login_required', `${qoderProduct(connection.provider).label} 程序需要先完成基础平台登录；所选套餐不变，不要求使用 Qoder 自有模型。`, 409);
     if (!(connection.capabilities.permissionModes ?? ['default']).includes(input.permissionMode!)) fail('agent_permission_unavailable', '此接入尚不支持所选权限模式，请明确改选后重试。', 409);
     const source = input.modelAccountId ? this.options.modelAccess?.accounts.snapshot(input.modelAccountId) : undefined;
     if (input.modelAccountId && (!source || !source.enabled || source.status !== 'ready')) fail('agent_model_source_unavailable', '所选套餐尚未连接，请检查账号。', 409);
@@ -726,7 +727,7 @@ export class ConversationApplication {
     // Qoder resolves third-party models only through its interactive BYOK wizard,
     // which the SDK control channel used for execution does not expose. Selecting
     // another vendor here always failed after dispatch, so refuse it up front.
-    if (source && connection.provider === 'qoder' && !['qoder', 'native-qoder'].includes(source.provider)) fail('agent_model_source_unsupported', 'Qoder Agent 暂不支持选择其他供应商的模型，请改用 Qoder 原生模型。', 409);
+    if (source && isQoderProvider(connection.provider) && source.provider !== connection.provider && source.provider !== 'native-' + connection.provider) fail('agent_model_source_unsupported', `${qoderProduct(connection.provider).label} Agent 暂不支持选择其他供应商的模型，请改用 ${qoderProduct(connection.provider).label} 原生模型。`, 409);
     // The revision is an observation hint, not a selection identity. Current source,
     // identity, model availability and capability are revalidated below.
     const availableModels = source?.models ?? connection.models;
@@ -953,7 +954,7 @@ export class ConversationApplication {
   }
   private applyItem(record: StoredConversation, participant: StoredParticipant, item: ExecutorItem, runId?: string, live = false): boolean {
     const changed = this.mergeItem(record,participant,item,runId,live);
-    if(changed && ['codex','dsh','qoder'].includes(participant.provider) && item.kind === 'tool' && item.nativeTool) {
+    if(changed && ['codex','dsh','qoder','qoder-cn'].includes(participant.provider) && item.kind === 'tool' && item.nativeTool) {
       const id = record.sources[`${participant.id}:tool:${item.id}`];
       const owned=(record.nativeTools ??= {});
       owned[id] = item.parentToolId ? {parentToolId:item.parentToolId} : owned[id] ?? true;
@@ -2336,4 +2337,11 @@ export class ConversationApplication {
     await Promise.allSettled([...ids].map(id => this.closeConnection(id)));
     for(const item of interrupted){const record=this.load(item.workspaceId,item.id);if(record.view.run?.id===item.runId&&record.view.run&&['stopped','unknown','tools-active','stopping'].includes(record.view.run.status)){record.view.run.diagnostic=record.view.run.status==='stopped'?'宿主退出导致执行停止；这不是用户主动停止。':'宿主退出后原执行仍待核对，不能重复发送。';this.save(record);}}
   }
+}
+
+/** A native Qoder lease is only meaningful for the product that produced it. */
+function nativeLeaseProvider(provider:string):'qoder'|'qoder-cn'|undefined {
+  if(provider==='native-qoder')return 'qoder';
+  if(provider==='native-qoder-cn')return 'qoder-cn';
+  return undefined;
 }

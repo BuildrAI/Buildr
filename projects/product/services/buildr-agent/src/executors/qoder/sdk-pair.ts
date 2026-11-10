@@ -4,7 +4,9 @@ import { pathToFileURL } from 'node:url';
 
 /** The executable and SDK are one installed unit. Never resolve a different
  * package through the host's module search path for a managed bundled CLI. */
-export async function qoderSdkPair(executable:string,version:string):Promise<string|undefined> {
+export async function qoderSdkPair(executable:string,version:string,product:{id:string;sdkPackage:string}|{id:string}={id:'qoder'}):Promise<string|undefined> {
+  // Only the international product ships an importable Agent SDK; Qoder CN drives ACP.
+  if(product.id!=='qoder')return undefined;
   const file=await realpath(executable);
   const root=path.resolve(path.dirname(file),'../..');
   let metadata:any;

@@ -116,7 +116,7 @@ export class NativeProgramManager implements AgentProgramManager {
       }
       candidates.push(item);
     }
-    const supported = ['darwin', 'linux', 'win32'].includes(process.platform) && ['arm64', 'x64'].includes(process.arch) && !(input.provider === 'qoder' && process.platform === 'win32' && process.arch === 'arm64');
+    const supported = ['darwin', 'linux', 'win32'].includes(process.platform) && ['arm64', 'x64'].includes(process.arch) && !(['qoder','qoder-cn'].includes(input.provider) && process.platform === 'win32' && process.arch === 'arm64');
     return { candidates, installation: { label: policy.label, version: installVersion, url: policy.url, canInstall: supported && !input.boundExecutable && !releaseDiagnostic, ...(!supported ? { diagnostic: '此系统或架构尚无可用的自动准备方式，请查看官方安装说明。' } : input.boundExecutable ? { diagnostic: '已有接入已绑定原程序；请恢复该程序，不会自动安装并改绑。' } : releaseDiagnostic ? { diagnostic: releaseDiagnostic } : {}) } };
   }
   async install(input: Parameters<AgentProgramManager['install']>[0]): Promise<string> {

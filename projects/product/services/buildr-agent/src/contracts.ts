@@ -49,7 +49,7 @@ export interface ModelGatewayConfiguration {
   identity: string; baseUrl: string; apiKey: string;
   models: Array<AgentModel & { contextWindow?: number; maxOutputTokens?: number; vision?: boolean; tools?: boolean }>;
   /** Same-account Qoder execution uses its native model route, retaining the source lease binding. */
-  nativeModel?: { provider: 'qoder'; id: string; accountIdentity: string };
+  nativeModel?: { provider: 'qoder' | 'qoder-cn'; id: string; accountIdentity: string };
 }
 /** Private lifecycle metadata; implementations must never pass request or credential content. */
 export type ExecutionDiagnosticSink = (event: {event:string;[key:string]:unknown})=>void;

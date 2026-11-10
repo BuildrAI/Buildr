@@ -14,7 +14,7 @@ export function configRoot(root: string, record: {view: Pick<StoredConversation[
   try { if (participant.contextRef && parseReference(String(participant.contextRef.data?.native ?? ''),participant.provider,record.view.cwd,participant.bindingIdentity).nativeSessionId !== participant.contextRef.id) return; }
   catch { return; }
   const base = path.join(root,'connections',participant.provider);
-  if (!participant.modelAccountId || participant.provider==='qoder') return base;
+  if (!participant.modelAccountId || participant.provider==='qoder' || participant.provider==='qoder-cn') return base;
   if (!participant.modelAccountIdentity || !participant.modelId || participant.modelConfiguration === undefined) return;
   let configuration=participant.modelLeaseConfiguration??participant.modelConfiguration;
   if(participant.modelLeaseConfiguration!==undefined){
@@ -78,12 +78,12 @@ export class NativeContentResolver {
       const run=origin.view.run;
       const context=original.context??(original.reason==='historical_context_unproven'&&run&&run.id===entry.runId&&run.participantId===participant.id?participant.contextRef?.id:undefined);
       const config=configRoot(this.root,origin,participant);if(!context||!config)return;
-      if(record.nativeTools?.[entry.id] && ['codex','dsh','qoder'].includes(participant.provider)) {
+      if(record.nativeTools?.[entry.id] && ['codex','dsh','qoder','qoder-cn'].includes(participant.provider)) {
         const skeleton = {...entry, text: ''};
         delete skeleton.input;
         delete skeleton.detail;
-        // Qoder's SDK execution ID is not its persisted promptId.
-        const turnId = participant.provider==='qoder'?undefined:origin.attempts.find(value => value.runId === entry.runId && value.participantId === participant.id && value.accepted)?.executionRef?.id;
+        // Qoder's execution ID is not its persisted promptId.
+        const turnId = participant.provider==='qoder'||participant.provider==='qoder-cn'?undefined:origin.attempts.find(value => value.runId === entry.runId && value.participantId === participant.id && value.accepted)?.executionRef?.id;
         const parentSource = entry.parentToolId ? Object.entries(origin.sources).filter(([key,id])=>id===entry.parentToolId&&key.startsWith(participant.id+':tool:')) : [];
         const owned=record.nativeTools?.[entry.id];
         const parentToolId=typeof owned==='object'?owned.parentToolId:parentSource.length===1?parentSource[0]![0].slice(split+6):undefined;
@@ -92,7 +92,7 @@ export class NativeContentResolver {
           session: {config: path.relative(this.root, config).split(path.sep).join('/'), cwd: origin.view.cwd, turnId,...(parentToolId?{parentToolId}:{})}, text: []};
       }
       const input={root:this.root,configRoot:config,contextId:context,cwd:origin.view.cwd};
-      const suffix=participant.provider==='codex'?'codex-home/sessions':participant.provider==='qoder'?'qoder-config/projects':'dsh-home/sessions';
+      const suffix=participant.provider==='codex'?'codex-home/sessions':participant.provider==='qoder'?'qoder-config/projects':participant.provider==='qoder-cn'?'qoder-cn-config/projects':'dsh-home/sessions';
       const files=nativeContentFiles(input,path.join(config,suffix),file=>participant.provider==='dsh'?path.basename(path.dirname(file))===context&&/^session\.v4\.jsonl(?:\.zstd)?$/.test(file):path.basename(file).endsWith(context+'.jsonl'));
       if(files.length!==1)return;
       const states=files.map(file=>{const s=fs.lstatSync(file);return [file,s.dev,s.ino,s.size,s.mtimeMs,s.ctimeMs];});

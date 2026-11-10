@@ -4,7 +4,7 @@ import {zstdDecompressSync} from 'node:zlib';
 import type {NativeContentContext,NativeToolContent} from '../native-content-contracts.ts';
 import {maxNativeSourceBytes,nativeContentPath} from '../storage/native-content.ts';
 
-export function nativeToolContext(root:string,reference:NativeToolContent,provider:'dsh'|'qoder'):NativeContentContext|undefined {
+export function nativeToolContext(root:string,reference:NativeToolContent,provider:'dsh'|'qoder'|'qoder-cn'):NativeContentContext|undefined {
   const session=reference.session;
   if(reference.version!==3||reference.provider!==provider||!session||!reference.nativeId||
     !new RegExp('^connections/'+provider+'(?:/model-bindings/[a-f0-9]{64})?$').test(session.config)||

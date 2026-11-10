@@ -5,7 +5,7 @@ import { fail } from './agent-state.ts';
 export function normalizeQuestionCapabilities(record: {view: {requests: PendingRequestView[]};participants:Array<{id:string;provider:string}>}):void {
   const providers=new Map(record.participants.map(participant=>[participant.id,participant.provider]));
   for(const request of record.view.requests){
-    if(request.kind!=='question'||!['dsh','qoder'].includes(providers.get(request.participantId)??''))continue;
+    if(request.kind!=='question'||!['dsh','qoder','qoder-cn'].includes(providers.get(request.participantId)??''))continue;
     for(const question of request.questions??[])question.allowOther??=true;
   }
 }

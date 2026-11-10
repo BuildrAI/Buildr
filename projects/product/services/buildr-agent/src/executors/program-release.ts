@@ -28,7 +28,7 @@ export async function readProgramRelease(provider: string, executable: string, s
   const release = await readProgramLatestRelease(provider, signal);
   const packageName = nativeProgramPolicy(provider).package.replace(/@[^@]+$/, '');
   let currentReleaseVersion: string | undefined;
-  if (provider === 'qoder') {
+  if (provider === 'qoder' || provider === 'qoder-cn') {
     let directory = path.dirname(await fs.realpath(executable));
     for (let depth = 0; depth < 6; depth++, directory = path.dirname(directory)) {
       signal.throwIfAborted();

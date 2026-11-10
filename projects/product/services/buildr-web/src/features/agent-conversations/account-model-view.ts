@@ -2,7 +2,7 @@ import {balanceLines} from './account-quota-view.ts';
 import type {ModelAccount,ConnectionView} from './types';
 import type {ManagedModel,ModelSourceView} from './AccountModelManager';
 const waiting=(value:{state:string}|undefined)=>!!value&&['initializing','waiting-browser','checking'].includes(value.state);
-const labels:Record<string,string>={codex:'ChatGPT',openai:'ChatGPT API',dsh:'DeepSeek',qoder:'Qoder',devin:'Devin',deepseek:'DeepSeek'};
+const labels:Record<string,string>={codex:'ChatGPT',openai:'ChatGPT API',dsh:'DeepSeek',qoder:'Qoder','qoder-cn':'Qoder CN',devin:'Devin',deepseek:'DeepSeek'};
 const sourceNameOrder=new Intl.Collator('zh-Hans-CN',{sensitivity:'base',numeric:true});
 function resetLabel(value?:string):string {if(!value)return '重置时间未提供';const ms=Date.parse(value);return Number.isFinite(ms)?`${new Date(ms).toLocaleString()} 重置`:'重置时间未提供';}
 export function modelSourceViews(accounts:ModelAccount[],connections:ConnectionView[]):ModelSourceView[]{

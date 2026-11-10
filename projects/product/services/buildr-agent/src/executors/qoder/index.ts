@@ -16,11 +16,15 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import type { AccountObservation, AgentExecutor, AgentRuntime, ContextRef, ExecutionRef, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorSendInput, ExecutorTitleInput, LoginObservation, PermissionMode } from '../../contracts.ts';
 import { NativeRpc, releasedNativeControl, nativeBinding, bounded, closeOwnedProcess, findExecutable, inspectVersion, accountEnvironment, nativeCommand, nativeHome, opaqueReference, parseReference, privateDirectories } from '../native-process.ts';
 import {readQoderIdentity,requestQoderModel,inspectQoderLogin} from '../../model-access/providers/qoder.ts';
+import {qoderProduct,type QoderProductId} from './product.ts';
 import { ExecutorInputRejected, type ExecutorSupplementInput, type ExecutorInputReceipt } from '../../contracts.ts';
 import { checkedGateway, consumerBinding, gatewayModel, qoderGatewayPolicy, type ExecutorGateway } from '../model-gateway.ts';
 import type { ExecutorForkInput } from '../../contracts.ts';
 const capabilities = { interaction: { policy: interactionPolicy.version, nonBlockingQuestions: false }, supplement: true, permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
-export function createQoderExecutor(): AgentExecutor { return { nativeContent: qoderContent, readReleasedControl: input => releasedNativeControl('qoder',input), readPersistedExecution: readQoderPersistedExecution, storage: { legacyDirectories: qoderLegacyCaches, diagnostics: qoderDiagnosticResources, transientDirectories: regenerableToolCaches, canReclaim: toolCacheReclaimable }, descriptor: { id: 'qoder', label: 'Qoder', capabilities }, open: options => QoderRuntime.open(options) }; }
+export function createQoderExecutor(productId:QoderProductId='qoder'): AgentExecutor {
+  const product=qoderProduct(productId);
+  return { nativeContent: input => qoderContent(input,productId), readReleasedControl: input => releasedNativeControl(productId,input), storage: { legacyDirectories: qoderLegacyCaches, diagnostics: qoderDiagnosticResources, transientDirectories: regenerableToolCaches, canReclaim: toolCacheReclaimable }, descriptor: { id: productId, label: product.label, capabilities }, open: options => QoderRuntime.open(options,productId) };
+}
 class QoderRuntime implements AgentRuntime {
   participationInstruction?: import('../../participation-contracts.ts').ParticipationMatch;
   readonly capabilities = capabilities;
@@ -35,6 +39,9 @@ class QoderRuntime implements AgentRuntime {
   private executable: string;
   private environment: NodeJS.ProcessEnv;
   private configRoot: string;
+  private product: ReturnType<typeof qoderProduct>;
+  private productId: QoderProductId;
+  private configDirectory: string;
   private contexts = new Map<string, string>();
   private handlers = new Map<string, ExecutorSendInput['onEvent']>();
   private readonly releaseProofs = new Set<string>();
@@ -44,8 +51,9 @@ class QoderRuntime implements AgentRuntime {
   private observations = new Map<string, ExecutorObservation>();
   private login?: { child: ChildProcessWithoutNullStreams; cancelled: boolean; update: (value: LoginObservation) => void };
   private gateway?: ExecutorGateway;
-  private constructor(bindingIdentity: string, rpc: NativeRpc, executable: string, environment: NodeJS.ProcessEnv, configRoot: string) {
+  private constructor(bindingIdentity: string, rpc: NativeRpc, executable: string, environment: NodeJS.ProcessEnv, configRoot: string, productId: QoderProductId, configDirectory: string) {
     this.bindingIdentity = bindingIdentity; this.rpc = rpc; this.executable = executable; this.environment = environment; this.configRoot = configRoot;
+    this.product = qoderProduct(productId); this.productId = productId; this.configDirectory = configDirectory;
     rpc.onMessage(message => {
       if (message.method === 'buildr/transportClosed') {
         for (const contextId of this.handlers.keys()) {
@@ -111,20 +119,22 @@ class QoderRuntime implements AgentRuntime {
     try { this.handlers.get(contextId)?.({ type: 'observation', observation: { status: 'unknown', executionRef: prior?.executionRef, tools: prior?.tools ?? [], diagnostic: error.diagnostic } }); } catch { /* The original worker and exact controls remain alive. */ }
   }
 
-  static async open(options: ExecutorOpenOptions): Promise<QoderRuntime> {
+  static async open(options: ExecutorOpenOptions, productId:QoderProductId='qoder'): Promise<QoderRuntime> {
     options.signal?.throwIfAborted();
+    const product=qoderProduct(productId);
     const gateway = checkedGateway(options.gateway);
+    if(gateway && productId!=='qoder') throw new Error('qoder_cn_model_source_unsupported');
     const { home, temporary } = nativeHome(options.configRoot);
-    // qodercliAuth owns this one Buildr login; model leases isolate execution, not credentials.
-    const config = join(options.nativeAccountConfigRoot ?? options.configRoot, 'qoder-config');
-    const env = accountEnvironment(options.environment, home, temporary, { QODER_CONFIG_DIR: config, ...(gateway && !gateway.nativeModel ? { QODER_SDK_CUSTOM_BASE_URL_BYOK: '1', BUILDR_MODEL_GATEWAY_KEY: gateway.apiKey, NO_PROXY: '127.0.0.1,localhost,::1', no_proxy: '127.0.0.1,localhost,::1' } : {}) }, options.cacheRoot);
+    // The native CLI owns this one Buildr login; model leases isolate execution, not credentials.
+    const config = join(options.nativeAccountConfigRoot ?? options.configRoot, product.configDirectory);
+    const env = accountEnvironment(options.environment, home, temporary, { [product.configEnvironment]: config, ...(gateway && !gateway.nativeModel ? { QODER_SDK_CUSTOM_BASE_URL_BYOK: '1', BUILDR_MODEL_GATEWAY_KEY: gateway.apiKey, NO_PROXY: '127.0.0.1,localhost,::1', no_proxy: '127.0.0.1,localhost,::1' } : {}) }, options.cacheRoot);
     await privateDirectories(options.configRoot, config, ...(env.HOME === home ? [home] : []), ...(env.TMPDIR === temporary ? [temporary] : []));
-    const executable = await findExecutable(options.executable, ['qodercli', 'qoder', 'qodercli.exe'], env); const version = await inspectVersion(executable, env, options.signal);
-    if (!isCompatibleProgram('qoder', version)) throw new Error(`qoder_version_unsupported: requires ${nativeProgramPolicy('qoder').compatibility}`);
-    const binding = await consumerBinding('qoder', executable, version, config, options);
-    const sdkModule=await qoderSdkPair(executable,version);
+    const executable = await findExecutable(options.executable, product.executableNames, env); const version = await inspectVersion(executable, env, options.signal);
+    if (!isCompatibleProgram(productId, version)) throw new Error(`qoder_version_unsupported: requires ${nativeProgramPolicy(productId).compatibility}`);
+    const binding = await consumerBinding(productId, executable, version, config, options);
+    const sdkModule=await qoderSdkPair(executable,version,product);
     const rpc = new NativeRpc(process.execPath, [fileURLToPath(new URL(import.meta.url.endsWith('.ts') ? './worker.ts' : './worker.js', import.meta.url))], { cwd: options.configRoot, env, diagnostics:options.diagnostics?event=>options.diagnostics!({...event,provider:'qoder'}):undefined });
-    const runtime = new QoderRuntime(binding.identity, rpc, executable, env, options.configRoot);
+    const runtime = new QoderRuntime(binding.identity, rpc, executable, env, options.configRoot, productId, product.configDirectory);
     runtime.participationInstruction = instructionParticipation('interaction-policy',(options.interaction ?? interactionPolicy).instructions);
     runtime.bindingData = binding.data;
     runtime.gateway = gateway;
@@ -141,7 +151,7 @@ class QoderRuntime implements AgentRuntime {
   private reference(context: ContextRef, cwd?: string): string {
     const saved = this.contexts.get(context.id) ?? (typeof context.data?.cwd === 'string' ? context.data.cwd : undefined);
     if (!saved || cwd && saved !== cwd) throw new Error('agent_context_binding_mismatch');
-    if (parseReference(String(context.data?.native ?? ''), 'qoder', saved, this.bindingIdentity).nativeSessionId !== context.id) throw new Error('agent_context_binding_mismatch');
+    if (parseReference(String(context.data?.native ?? ''), this.productId, saved, this.bindingIdentity).nativeSessionId !== context.id) throw new Error('agent_context_binding_mismatch');
     this.contexts.set(context.id, saved); return saved;
   }
   async inspectAccount(): Promise<AccountObservation> {
@@ -151,10 +161,10 @@ class QoderRuntime implements AgentRuntime {
   async verifyUpgrade():Promise<void> {
     await this.rpc.call('verify-upgrade',{},60_000);
   }
-  async modelIdentity():Promise<string> {return 'qoder:'+(await readQoderIdentity(join(this.configRoot,'qoder-config'))).userID;}
+  async modelIdentity():Promise<string> {return this.productId+':'+(await readQoderIdentity(join(this.configRoot,this.configDirectory))).userID;}
   async requestModel(path:string,init:RequestInit={},expectedIdentity?:string):Promise<Response> {
     if(this.gateway)throw new Error('qoder_native_account_required');
-    return requestQoderModel(join(this.configRoot,'qoder-config'),path,init,fetch,expectedIdentity);
+    return requestQoderModel(join(this.configRoot,this.configDirectory),path,init,fetch,expectedIdentity,this.productId);
   }
   async models() { return this.gateway ? structuredClone(this.gateway.models) : await this.rpc.call('models', { cwd: this.configRoot }, 40000); }
   async generateTitle(input: ExecutorTitleInput): Promise<string | undefined> {
@@ -174,7 +184,7 @@ class QoderRuntime implements AgentRuntime {
       const urls = text.match(/https:\/\/[^\s"'<>]+/g) ?? [];
       for (const value of urls) {
         let url: URL; try { url = new URL(value); } catch { continue; }
-        if ((url.hostname === 'qoder.com' || url.hostname.endsWith('.qoder.com')) && value !== currentUrl) { currentUrl = value; update({ state: 'waiting-browser', url: url.href }); }
+        if (this.product.loginHosts.some(host=>url.hostname===host||url.hostname.endsWith('.'+host)) && value !== currentUrl) { currentUrl = value; update({ state: 'waiting-browser', url: url.href }); }
       }
     };
     child.stdout.on('data', read); child.stderr.on('data', read);
@@ -182,21 +192,21 @@ class QoderRuntime implements AgentRuntime {
       const status = await bounded(new Promise<number | null>((resolve, reject) => { child.once('exit', resolve); child.once('error', () => reject(new Error('qoder_login_failed'))); }), 15 * 60 * 1000);
       if (this.login !== login || login.cancelled) return;
       if (status !== 0) { update({ state: 'failed', diagnostic: 'qoder_login_failed' }); return; }
-      update({ state: 'checking' }); const account = await inspectQoderLogin(this.environment.QODER_CONFIG_DIR!);
+      update({ state: 'checking' }); const account = await inspectQoderLogin(this.environment[this.product.configEnvironment]!, this.productId);
       if (this.login !== login) return;
       if (account.status === 'ready') update({ state: 'completed' }); else update({ state: account.status === 'expired' ? 'expired' : 'failed', diagnostic: account.diagnostic ?? 'qoder_account_not_ready' });
     } catch { if (this.login === login) { await closeOwnedProcess(child); update({ state: 'expired' }); } }
     finally { text = ''; if (this.login === login) this.login = undefined; }
   }
   async cancelLogin(): Promise<void> { const login = this.login; if (!login) return; this.login = undefined; login.cancelled = true; await closeOwnedProcess(login.child); login.update({ state: 'cancelled' }); }
-  async createContext({ cwd }: { cwd: string }): Promise<ContextRef> { const id = randomUUID(); this.contexts.set(id, cwd); return { id, data: { cwd, native: opaqueReference('qoder', id, cwd, this.bindingIdentity) } }; }
+  async createContext({ cwd }: { cwd: string }): Promise<ContextRef> { const id = randomUUID(); this.contexts.set(id, cwd); return { id, data: { cwd, native: opaqueReference(this.productId, id, cwd, this.bindingIdentity) } }; }
   async forkContext(input: ExecutorForkInput): Promise<ContextRef> {
     if (!(input.source instanceof QoderRuntime)) throw new Error('agent_context_binding_mismatch');
     input.source.reference(input.contextRef, input.cwd);
     const result = await this.rpc.call('fork', { contextId: input.contextRef.id, cwd: input.cwd, itemId: input.itemId, executionId: input.executionRef.id, inputItemIds: input.inputItemIds });
     if (typeof result.sessionId !== 'string' || result.sessionId === input.contextRef.id) throw new Error('agent_fork_identity_invalid');
     this.contexts.set(result.sessionId, input.cwd);
-    const ref = { id: result.sessionId, data: { cwd: input.cwd, native: opaqueReference('qoder', result.sessionId, input.cwd, this.bindingIdentity) } };
+    const ref = { id: result.sessionId, data: { cwd: input.cwd, native: opaqueReference(this.productId, result.sessionId, input.cwd, this.bindingIdentity) } };
     input.onCreated(ref);
     return ref;
   }
@@ -267,7 +277,8 @@ class QoderRuntime implements AgentRuntime {
   private async assertNativeAccount(): Promise<void> {
     if (!this.gateway?.nativeModel) return;
     const identity = await readQoderIdentity(this.environment.QODER_CONFIG_DIR!);
-    if (createHash('sha256').update('qoder:' + identity.userID).digest('hex') !== this.gateway.nativeModel.accountIdentity) throw new Error('qoder_native_account_changed');
+    const nativeProvider=this.gateway.nativeModel.provider;
+    if (createHash('sha256').update(nativeProvider+':' + identity.userID).digest('hex') !== this.gateway.nativeModel.accountIdentity) throw new Error('qoder_native_account_changed');
   }
   async observe({ contextRef, executionRef }: { contextRef: ContextRef; executionRef?: ExecutionRef }): Promise<ExecutorObservation> {
     this.reference(contextRef);

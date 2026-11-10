@@ -12,6 +12,7 @@ const maxDecoded = 128 * 1024 * 1024, cacheBudget = 32 * 1024 * 1024;
 const roots: Record<string, RegExp> = {
   codex: /^codex-home\/sessions\/.+\.jsonl$/,
   qoder: /^qoder-config\/projects\/.+\.jsonl$/,
+  'qoder-cn': /^qoder-cn-config\/projects\/.+\.jsonl$/,
   dsh: /^dsh-home\/(?:sessions\/.+\/(?:session\.v4\.jsonl(?:\.zstd)?|attachments\/.+)|attachments\/v1\/objects\/[a-f0-9]{2}\/[a-f0-9]{64})$/,
 };
 const unavailable = () => new AgentServiceError('agent_native_content_unavailable', '原生正文缺失、变化或不可安全读取；已保留来源引用，不会重发操作。', 409);

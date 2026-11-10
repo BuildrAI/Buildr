@@ -10,8 +10,8 @@ import type { AgentServiceConnectionConnection, AgentConversationConversation, A
 import type { AgentServicePreparationPreparation } from '../../../build/generated/agent-service-http-dto';
 
 // Display choices are the three validated executors; HTTP views come from the host schema.
-export type ProviderId = 'codex' | 'dsh' | 'qoder';
-export const providerNames: Record<string,string> = {codex:'Codex',dsh:'DSH',qoder:'Qoder'};
+export type ProviderId = 'codex' | 'dsh' | 'qoder' | 'qoder-cn';
+export const providerNames: Record<string,string> = {codex:'Codex',dsh:'DSH',qoder:'Qoder','qoder-cn':'Qoder CN'};
 export type ConnectionView = AgentServiceConnectionConnection;
 export type PreparationView = AgentServicePreparationPreparation;
 export type ConversationView = AgentConversationConversation;

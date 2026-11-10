@@ -7,7 +7,8 @@ import { record, string, positive } from './private-account.ts';
 import { buildAuthHeaders, qoderEncodeBody } from './qoder-signing.ts';
 import { ModelAccessError } from '../contracts.ts';
 import { upstreamFailure } from '../errors.ts';
-import { qoderAccountFailure, qoderAuthenticationError, qoderTeamQuotaMessage } from './qoder-auth.ts';
+import { qoderAccountFailure, qoderAuthenticationError } from './qoder-auth.ts';
+import { qoderProduct, type QoderProductId } from '../../executors/qoder/product.ts';
 
 /** Read only the exact Buildr private profile. The native CLI remains the credential writer. */
 export async function readQoderIdentity(config: string) {
@@ -24,13 +25,13 @@ export async function readQoderIdentity(config: string) {
   return {userID,authToken,machineID,name:string(user.name)??'',email:string(user.email)??''};
 }
 /** Only the fixed model and quota endpoints are reachable through this owner. */
-export async function requestQoderModel(config: string, path: string, init: RequestInit = {}, fetchFn: typeof fetch=fetch, expectedIdentity?:string):Promise<Response> {
+export async function requestQoderModel(config: string, path: string, init: RequestInit = {}, fetchFn: typeof fetch=fetch, expectedIdentity?:string, productId:QoderProductId='qoder'):Promise<Response> {
   if(path!=='/models'&&path!=='/chat'&&path!=='/usage') throw new Error('qoder_model_target_invalid');
-  const creds=await readQoderIdentity(config);
-  if(expectedIdentity&&createHash('sha256').update('qoder:'+creds.userID).digest('hex')!==expectedIdentity)throw new Error('model_identity_conflict');
+  const product=qoderProduct(productId),creds=await readQoderIdentity(config);
+  if(expectedIdentity&&createHash('sha256').update(`${productId}:`+creds.userID).digest('hex')!==expectedIdentity)throw new Error('model_identity_conflict');
   // The openapi host authenticates with the plain OAuth bearer instead of COSY signing.
-  if(path==='/usage')return fetchFn('https://center.qoder.sh/api/v2/quota/usage',{method:'GET',headers:{accept:'application/json',authorization:`Bearer ${creds.authToken}`},signal:init.signal,redirect:'error'});
-  const url=path==='/models'?'https://api3.qoder.sh/algo/api/v2/model/list?Encode=1':'https://api3.qoder.sh/algo/api/v2/service/pro/sse/agent_chat_generation?FetchKeys=llm_model_result&AgentId=agent_common&Encode=1';
+  if(path==='/usage')return fetchFn(`${product.api.openapi}/api/v2/quota/usage`,{method:'GET',headers:{accept:'application/json',authorization:`Bearer ${creds.authToken}`},signal:init.signal,redirect:'error'});
+  const url=path==='/models'?`${product.api.gateway}/algo/api/v2/model/list?Encode=1`:`${product.api.gateway}/algo/api/v2/service/pro/sse/agent_chat_generation?FetchKeys=llm_model_result&AgentId=agent_common&Encode=1`;
   const body=path==='/chat'?qoderEncodeBody(String(init.body)):null;
   return fetchFn(url,{method:path==='/chat'?'POST':'GET',headers:{...buildAuthHeaders(body,url,creds),accept:path==='/chat'?'text/event-stream':'application/json',...(body?{'content-type':'application/json'}:{})},...(body?{body:new Uint8Array(body)}:{}),signal:init.signal,redirect:'error'});
 }
@@ -40,23 +41,24 @@ export interface QoderModelOwner {
   request(path:string,init?:RequestInit):Promise<Response>;
 }
 /** Verify official login without starting another SDK query or invoking a model. */
-export async function inspectQoderLogin(config: string): Promise<AccountObservation> {
+export async function inspectQoderLogin(config: string, productId:QoderProductId='qoder'): Promise<AccountObservation> {
+  const product=qoderProduct(productId);
   try {
-    const response = await requestQoderModel(config, '/models', { signal: AbortSignal.timeout(15000) });
+    const response = await requestQoderModel(config, '/models', { signal: AbortSignal.timeout(15000) }, fetch, undefined, productId);
     if (!response.ok) throw await qoderResponseFailure(response);
     const data = record(await response.json());
     if (!Array.isArray(data.chat)) throw new Error('qoder_catalog_invalid');
-    return { status: 'ready', label: 'Qoder', loginMethod: 'Qoder 账号' };
+    return { status: 'ready', label: product.label, loginMethod: `${product.label} 账号` };
   } catch (error) {
     if (error instanceof ModelAccessError && error.code === 'qoder_platform_login_expired') return { status: 'expired', diagnostic: error.message };
-    return qoderAccountFailure(error);
+    return qoderAccountFailure(error,false,product.label);
   }
 }
 const quotaNumber=(value:unknown):number|undefined=>typeof value==='number'&&Number.isFinite(value)?value:undefined;
 const quotaFormat=(value:number):string=>Number.isInteger(value)?value.toLocaleString('zh-CN'):value.toFixed(1);
 const quotaPercent=(value:number):number=>value>0?Math.max(0.1,Math.round(Math.min(100,value)*10)/10):0;
 /** Read the openapi credits usage. A failed read keeps the model catalog usable. */
-async function observeQoderQuota(request:(path:string,init?:RequestInit)=>Promise<Response>):Promise<ModelProviderObservation['quota']>{
+async function observeQoderQuota(request:(path:string,init?:RequestInit)=>Promise<Response>,productLabel='Qoder'):Promise<ModelProviderObservation['quota']>{
   const observedAt=new Date().toISOString();
   try{
     const response=await request('/usage',{signal:AbortSignal.timeout(10000)});
@@ -87,12 +89,13 @@ async function observeQoderQuota(request:(path:string,init?:RequestInit)=>Promis
       addOnTotal!==undefined&&addOnRemaining!==undefined?`资源包 ${quotaFormat(addOnRemaining)} / ${quotaFormat(addOnTotal)} credits`:undefined,
       addOnPercent===undefined&&orgPercent!==undefined?(orgTotal!==undefined&&orgRemaining!==undefined?`组织资源包 ${quotaFormat(orgRemaining)} / ${quotaFormat(orgTotal)} credits`:`组织资源包 · 剩余 ${quotaFormat(orgPercent)}%`):undefined,
     ].filter((value):value is string=>!!value);
-    const summary=summaryParts.length?`Qoder · ${summaryParts.join(' · ')}`:undefined;
+    const summary=summaryParts.length?`${productLabel} · ${summaryParts.join(' · ')}`:undefined;
     return{available:true,observedAt,...(planLabel?{planLabel}:{}),windows,remainingPercent:remaining,...(resetsAt?{resetsAt}:{}),...(summary?{summary}:{})};
   }catch{return{available:false,observedAt};}
 }
-export function createQoderModelProvider(owner:QoderModelOwner):ModelProvider {
-  return {id:'native-qoder',label:'Qoder',connectionId:'qoder',async open(){
+export function createQoderModelProvider(owner:QoderModelOwner,productId:QoderProductId='qoder'):ModelProvider {
+  const product=qoderProduct(productId);
+  return {id:`native-${productId}`,label:product.label,connectionId:productId,async open(){
     const models=new Map<string,{offering:ModelOffering;config:ProtocolJson}>();
     const inspect=async():Promise<ModelProviderObservation>=>{
       let identity: string | undefined;
@@ -100,7 +103,7 @@ export function createQoderModelProvider(owner:QoderModelOwner):ModelProvider {
         identity=await owner.identity();
         // Authenticated endpoints establish current login. Avoid launching an
         // additional CLI just to reread the same local account.
-        const [response,quota]=await Promise.all([owner.request('/models',{signal:AbortSignal.timeout(15000)}),observeQoderQuota((path,init)=>owner.request(path,init))]);
+        const [response,quota]=await Promise.all([owner.request('/models',{signal:AbortSignal.timeout(15000)}),observeQoderQuota((path,init)=>owner.request(path,init),product.label)]);
         if(!response.ok)throw await qoderResponseFailure(response);
         const data=record(await response.json());
         const chat=Array.isArray(data.chat)?data.chat:[],app=Array.isArray(data.app)?data.app:[];
@@ -114,16 +117,16 @@ export function createQoderModelProvider(owner:QoderModelOwner):ModelProvider {
           const offering:ModelOffering={id,...(reportedContextWindow?{reportedContextWindow}:{}),label:string(config.display_name)??id,tools:true,images:config.is_vl===true,...(contextWindow?{contextWindow}:{}),...(creditFactor!==undefined?{creditFactor}:{}),...(efforts.length?{reasoningEfforts:efforts.map(id=>({id,label:id})),defaultReasoningEffort:efforts.find(id=>record(record(enabled.efforts)[id]).is_default===true)}:{})};
           models.set(id,{offering,config});}
         const currentIdentity=await owner.identity();
-        if(currentIdentity!==identity){models.clear();return{status:'failed',incomplete:true,identity:currentIdentity,models:[],diagnostic:'Qoder 账号已变化，请重新刷新；未使用前一个账号的模型或额度。'};}
-        const exhaustedTeam=quota?.available&&quota.planLabel==='Teams'&&quota.remainingPercent===0;
-        return{status:models.size?'ready':'failed',label:'Qoder',identity,models:[...models.values()].map(v=>v.offering),quota,...(exhaustedTeam?{diagnostic:qoderTeamQuotaMessage}:{})};
+        if(currentIdentity!==identity){models.clear();return{status:'failed',incomplete:true,identity:currentIdentity,models:[],diagnostic:`${product.label} 账号已变化，请重新刷新；未使用前一个账号的模型或额度。`};}
+        const exhaustedTeam=quota?.available&&quota.planLabel==='Teams'&&quota.remainingPercent===0;const teamQuotaDiagnostic=`${product.label} 团队账号额度已用尽，无法继续使用，请更换有额度的账号后重新登录。`;
+        return{status:models.size?'ready':'failed',label:product.label,identity,models:[...models.values()].map(v=>v.offering),quota,...(exhaustedTeam?{diagnostic:teamQuotaDiagnostic}:{})};
       } catch(error) {
-        const failure=error instanceof ModelAccessError&&error.code==='qoder_platform_login_expired'?{status:'expired' as const,diagnostic:error.message}:error instanceof ModelAccessError&&error.code==='model_quota_exhausted'?{status:'failed' as const,diagnostic:'Qoder 当前账号额度不足；团队账号额度用尽后无法继续使用，请更换有额度的账号后重新登录。'}:qoderAccountFailure(error);
+        const failure=error instanceof ModelAccessError&&error.code==='qoder_platform_login_expired'?{status:'expired' as const,diagnostic:error.message}:error instanceof ModelAccessError&&error.code==='model_quota_exhausted'?{status:'failed' as const,diagnostic:`${product.label} 当前账号额度不足；团队账号额度用尽后无法继续使用，请更换有额度的账号后重新登录。`}:qoderAccountFailure(error,false,product.label);
         return{...failure,incomplete:failure.status==='failed',identity,models:[]};
       }
     };
     return {protocol:'chat-completions',inspect,
-      async beginLogin(){throw new Error('请在Qoder账号中登录。');},async cancelLogin(){},async close(){},
+      async beginLogin(){throw new Error(`请在 ${product.label} 账号中登录。`);},async cancelLogin(){},async close(){},
       async infer(input){
         if((await owner.inspect()).status!=='ready')return Response.json({error:{code:'qoder_login_required'}},{status:401});
         if(!models.has(input.modelId))await inspect();
@@ -162,6 +165,9 @@ async function qoderResponseFailure(response:Response):Promise<ModelAccessError>
   finally{await reader?.cancel().catch(()=>{});reader?.releaseLock();}
   let detail:ProtocolJson={};try{if(bytes<=8192){const body=record(JSON.parse(text));detail=record(body.error??body);}}catch{/* Arbitrary response bodies stay private. */}
   const auth=qoderAuthenticationError(response.status,{code:detail.code,message:detail.message??detail.msg});if(auth)return auth;
+  // Qoder reports missing plan credits as 402/403 with a pricing link instead of a quota code.
+  const quotaSignal=response.status===402||response.status===403&&(/pricing|quota|credit/i.test(text)||typeof detail.pricingUrl==='string');
+  if(quotaSignal)return new ModelAccessError('model_quota_exhausted','当前账号的套餐额度不足，请更换可用账号或购买套餐后继续。',429);
   return upstreamFailure({code:detail.code??'qoder_model_upstream_failed',message:detail.message??detail.msg},response.status);
 }
 function qoderStreamFailure(envelope:ProtocolJson):ModelAccessError{
