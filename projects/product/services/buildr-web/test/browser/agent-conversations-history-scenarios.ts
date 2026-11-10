@@ -8,6 +8,55 @@ type ConversationScrollSample={at:number;top:number;height:number;viewport:numbe
 
 /** history 场景使用独立准备的对话现场。 */
 const historyRuns = {
+  'history/draft-priority': async (fixture: AgentConversationFixture) => {
+    const {page,panel,input,workspaceId,run}=fixture;
+    const saved=structuredClone(fixture.conversation),additional=fixture.additionalConversations;
+    const row=(id:string,index:number)=>({...saved,id,title:id,requests:[],run:run('completed'),activity:{version:0,seenThrough:0,active:false,updatedAt:'2026-10-01'},updatedAt:`2026-10-${String(20-index).padStart(2,'0')}T00:00:00Z`});
+    let key='',imagesKey='';
+    try{
+      fixture.additionalConversations=[...Array.from({length:6},(_,i)=>row('ordinary-'+i,i)),row('draft-old',10),row('image-old',11)];
+      ({key,imagesKey}=await page.evaluate(({workspaceId}:any)=>{
+        const profile=document.querySelector('meta[name="buildr-web-profile"]')?.getAttribute('content')||'local';
+        const key=`buildr.agent-conversation.draft:${encodeURIComponent(profile)}:${encodeURIComponent(workspaceId)}:draft-old`;
+        const imagesKey='buildr.agent-conversation.attachments:'+profile;
+        sessionStorage.setItem(key,'尚未发送');
+        sessionStorage.setItem(imagesKey,JSON.stringify({'image-old':[{id:'image-draft',name:'note.txt',mimeType:'text/plain',revision:'r1',size:4}]}));
+        return {key,imagesKey};
+      },{workspaceId}));
+      await page.reload();await input().waitFor();await fixture.openHistoryList();
+      const group=()=>page.locator(`[data-history-workspace="${workspaceId}"]`);
+      await group().locator('[data-conversation-id="draft-old"]').waitFor();
+      assert.equal(await group().locator('[data-conversation-id="draft-old"] .ac-draft-status').innerText(),'有草稿');
+      assert.equal(await group().locator('[data-conversation-id="image-old"] .ac-draft-status').innerText(),'有草稿');
+      const ids=await group().locator('[data-conversation-id]').evaluateAll((nodes:Element[])=>nodes.map(node=>node.getAttribute('data-conversation-id')));
+      assert.ok(ids.indexOf(saved.id)<ids.indexOf('draft-old'),'executing conversation remains ahead of drafts');
+      await group().locator('[data-conversation-id="draft-old"]').click();await input().waitFor();assert.equal(await input().inputValue(),'尚未发送');
+      await input().fill('');await fixture.openHistoryList();
+      await page.waitForFunction(()=>!document.querySelector('.ac-history-list button[data-conversation-id="draft-old"]'));
+      assert.equal(await group().locator('[data-conversation-id="image-old"] .ac-draft-status').innerText(),'有草稿');
+      await fixture.capture(page,'conversation-draft-priority.png');
+    }finally{
+      await page.evaluate(({key,imagesKey}:any)=>{sessionStorage.removeItem(key);sessionStorage.removeItem(imagesKey);},{key,imagesKey});
+      fixture.additionalConversations=additional;fixture.conversation=saved;await page.reload();await input().waitFor();
+    }
+  },
+  'history/welcome-centering': async (fixture: AgentConversationFixture) => {
+    const {page,panel,input}=fixture;
+    await fixture.startNewConversation();await input().waitFor();
+    for(const viewport of [{width:1280,height:1000},{width:800,height:1200}]){
+      await page.setViewportSize(viewport);
+      await panel().locator('.ac-welcome h1').waitFor();
+      const geometry=await panel().evaluate((node:HTMLElement)=>{
+        const welcome=node.querySelector('.ac-welcome')!.getBoundingClientRect(),stream=node.querySelector('.ac-stream')!.getBoundingClientRect(),compose=node.querySelector('.ac-compose-wrap')!.getBoundingClientRect();
+        return {offset:Math.abs((welcome.top+welcome.bottom)/2-(stream.top+stream.bottom)/2),stream:stream.height,welcome:welcome.height,compose:compose.top,bottom:stream.bottom};
+      });
+      assert.ok(geometry.stream>geometry.welcome+40,'空态有垂直居中空间');
+      assert.ok(geometry.offset<12,JSON.stringify(geometry));
+      assert.ok(geometry.compose>=geometry.bottom-2,'输入区仍位于消息区域下方');
+      await fixture.capture(page,`conversation-welcome-${viewport.width}.png`);
+    }
+    await page.setViewportSize({width:1440,height:1000});await fixture.reopen();
+  },
   'history/switch-loading': async (fixture: AgentConversationFixture) => {
     const {page,panel,input,update,run,workspaceId}=fixture;
     const saved=structuredClone(fixture.conversation),additional=fixture.additionalConversations;

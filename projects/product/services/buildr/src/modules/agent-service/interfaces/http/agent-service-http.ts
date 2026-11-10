@@ -26,10 +26,16 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       if (pathname !== prefix && !pathname.startsWith(`${prefix}/`)) return null;
       if(pathname===prefix+'/conversations'&&request.method==='GET'&&!searchParams.has('taskId')){
         authorizeRead();
-        query(searchParams,['workspaceId','cursor','limit','hidden','query','activeOnly','agent','model','activityState']);
+        query(searchParams,['workspaceId','cursor','limit','hidden','query','activeOnly','agent','model','activityState','draftConversationIds']);
         for(const key of ['activeOnly','hidden'])if(searchParams.has(key)&&!['true','false'].includes(searchParams.get(key)!))throw inputError();
         if(searchParams.has('activityState')&&!['running','waiting','unseen','unknown','attention'].includes(searchParams.get('activityState')!))throw inputError();
-        return result('conversations',await (await resolve()).conversations.listAll(registeredWorkspaceIds(),{workspaceId:searchParams.get('workspaceId')??undefined,cursor:searchParams.get('cursor')??undefined,limit:numberQuery(searchParams.get('limit')),hidden:searchParams.get('hidden')==='true',activeOnly:searchParams.get('activeOnly')==='true',query:searchParams.get('query')??undefined,agent:searchParams.get('agent')??undefined,model:searchParams.get('model')??undefined,activityState:searchParams.get('activityState')??undefined}));
+        let draftConversationIds:string[]|undefined;
+        if(searchParams.has('draftConversationIds')){
+          try{draftConversationIds=JSON.parse(searchParams.get('draftConversationIds')!);}catch{throw inputError();}
+          if(!Array.isArray(draftConversationIds)||draftConversationIds.some(id=>typeof id!=='string'||!id||id.length>200))throw inputError();
+          draftConversationIds=[...new Set(draftConversationIds)].sort();
+        }
+        return result('conversations',await (await resolve()).conversations.listAll(registeredWorkspaceIds(),{draftConversationIds,workspaceId:searchParams.get('workspaceId')??undefined,cursor:searchParams.get('cursor')??undefined,limit:numberQuery(searchParams.get('limit')),hidden:searchParams.get('hidden')==='true',activeOnly:searchParams.get('activeOnly')==='true',query:searchParams.get('query')??undefined,agent:searchParams.get('agent')??undefined,model:searchParams.get('model')??undefined,activityState:searchParams.get('activityState')??undefined}));
       }
       if (pathname === prefix + '/activity-summary' && request.method === 'GET') {
         authorizeRead(); query(searchParams, ['revision']);

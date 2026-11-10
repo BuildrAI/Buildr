@@ -165,6 +165,11 @@ test('private conversations use authenticated HTTP and bounded binary input; str
   response = await fetch(`${app}/conversations`, {headers:readHeaders}); assert.equal(response.status,200);
   summaries=await response.json();assert.equal(summaries.total,1);assert.equal(summaries.conversations[0].id,created.id);assert.deepEqual(summaries.conversations[0].entries,[]);
   response = await fetch(`${app}/conversations?workspaceId=unregistered`, {headers:readHeaders});assert.equal(response.status,404);
+  for(const draftValue of ['null','{}','[1]','[""]','invalid']){
+    response=await fetch(`${app}/conversations?draftConversationIds=${encodeURIComponent(draftValue)}`,{headers:readHeaders});assert.equal(response.status,400);
+  }
+  response=await fetch(`${app}/conversations?draftConversationIds=${encodeURIComponent(JSON.stringify([created.id,'foreign-id']))}`,{headers:readHeaders});assert.equal(response.status,200);
+  assert.deepEqual((await response.json()).conversations.map((row:any)=>row.id),[created.id]);
   response = await fetch(`${app}/conversations?activeOnly=1`, {headers:readHeaders});assert.equal(response.status,400);
   response=await fetch(`${app}/conversations?activityState=invalid`,{headers:readHeaders});assert.equal(response.status,400);
   response=await fetch(`${app}/conversations?activityState=waiting`,{headers:readHeaders});assert.equal(response.status,200);const waitingPage=await response.json();assert.equal(waitingPage.total,0);assert.deepEqual(waitingPage.conversations,[]);assert.equal(typeof waitingPage.activityCounts.attention,'number');

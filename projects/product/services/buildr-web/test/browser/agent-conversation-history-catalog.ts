@@ -1,5 +1,7 @@
 /** Stable history identities and labels; safe for source-only planning. */
 export const HISTORY_SCENARIO_CATALOG = [
+  {id:'history/draft-priority',name:'草稿在分页前优先展示，文字清空恢复顺序并保留附件标识'},
+  {id:'history/welcome-centering',name:'新对话欢迎区穿过保留节点后仍垂直居中'},
   {
     "id": "history/switch-loading",
     "name": "切换慢请求保留不可交互的原消息，首订阅不重复读取且旧响应不串会话"

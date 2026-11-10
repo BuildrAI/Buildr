@@ -444,7 +444,7 @@ export class ConversationRepository {
       return (db.prepare(`SELECT body FROM conversations WHERE json_extract(body,'$.interruption.runId')=json_extract(body,'$.view.run.id') OR json_extract(body,'$.view.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','unknown','tools-active') ORDER BY updated_at DESC`).all() as {body:string}[]).map(row=>ConversationEntryStore.hydrate(db,JSON.parse(row.body) as StoredConversation,this.nativeReader));
     } finally { db.close(); }
   }
-  querySummaries(workspaceIds: string[], input: {workspaceId?:string;activeOnly?:boolean;hidden?:boolean;query?:string;agent?:string;model?:string;activityState?:string;generation?:string;cursor?:string;limit:number}, generationAlive?: (generation:string)=>boolean): {conversations:ConversationView[];nextCursor?:string;total:number;stats:{modelExecutions:Array<{accountId:string;accountLabel:string;model:string;count:number}>;agents:Array<{label:string;count:number}>;models:Array<{label:string;count:number}>;executions:Array<{provider:string;model:string;count:number}>};activityCounts:{pendingSend?:number;active:number;running:number;waiting:number;unseen:number;unknown:number;attention:number}} {
+  querySummaries(workspaceIds: string[], input: {draftConversationIds?:string[];workspaceId?:string;activeOnly?:boolean;hidden?:boolean;query?:string;agent?:string;model?:string;activityState?:string;generation?:string;cursor?:string;limit:number}, generationAlive?: (generation:string)=>boolean): {conversations:ConversationView[];nextCursor?:string;total:number;stats:{modelExecutions:Array<{accountId:string;accountLabel:string;model:string;count:number}>;agents:Array<{label:string;count:number}>;models:Array<{label:string;count:number}>;executions:Array<{provider:string;model:string;count:number}>};activityCounts:{pendingSend?:number;active:number;running:number;waiting:number;unseen:number;unknown:number;attention:number}} {
     const empty={conversations:[],total:0,stats:{agents:[],models:[],executions:[],modelExecutions:[]},activityCounts:{active:0,running:0,waiting:0,unseen:0,unknown:0,attention:0}};
     const db=this.open(false);if(!db||!workspaceIds.length){db?.close();return empty;}
     try {
@@ -493,12 +493,15 @@ export class ConversationRepository {
       const generations = input.generation ? [...new Set([input.generation,...retained])].sort() : [];
       const effectiveStatus = generations.length ? `CASE WHEN coalesce(json_extract(summary,'$.run.generation'),'') NOT IN (${generations.map(()=>'?').join(',')}) AND ${status} IN ('starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown') THEN 'unknown' ELSE ${status} END` : status;
       const state = `CASE WHEN send_activity IS NOT NULL THEN 'send-'||json_extract(send_activity,'$.state') WHEN pending_decision_count>0 THEN 'waiting' WHEN hidden=1 AND list_active=0 THEN NULL WHEN effective_status='unknown' AND list_active=1 THEN 'unknown' WHEN effective_status IN ('waiting-approval','waiting-question') THEN 'waiting' WHEN effective_status IN ('starting','running','stopping') THEN 'running' WHEN activity_version>seen_version THEN 'unseen' ELSE NULL END`;
+      const drafts=new Set(input.draftConversationIds??[]);
+      if(drafts.size)db.function('buildr_has_draft',{deterministic:true},id=>Number(drafts.has(String(id))));
+      const draftPriority=drafts.size?'WHEN buildr_has_draft(id)=1 THEN 1 ':'';
       const finalReplyAt="json_extract(summary,'$.activity.finalReplyAt')";
-      const orderAt=`CASE WHEN sort_priority>0 THEN user_at WHEN json_extract(summary,'$.run.status')='completed' AND json_extract(summary,'$.run.supersededBy') IS NULL AND coalesce(${finalReplyAt},activity_at)>user_at THEN coalesce(${finalReplyAt},activity_at) ELSE user_at END`;
-      const source=`(SELECT *,${orderAt} AS order_at FROM (SELECT *,CASE WHEN activity_state IN ('waiting','unseen','send-failed') THEN 2 WHEN list_active=1 THEN 1 ELSE 0 END AS sort_priority FROM (SELECT *,${state} AS activity_state FROM (SELECT *,${effectiveStatus} AS effective_status FROM ${withDecisions}))))`;
+      const orderAt=`CASE WHEN sort_priority>1 THEN user_at WHEN json_extract(summary,'$.run.status')='completed' AND json_extract(summary,'$.run.supersededBy') IS NULL AND coalesce(${finalReplyAt},activity_at)>user_at THEN coalesce(${finalReplyAt},activity_at) ELSE user_at END`;
+      const source=`(SELECT *,${orderAt} AS order_at FROM (SELECT *,CASE WHEN activity_state IN ('waiting','unseen','send-failed') THEN 3 WHEN list_active=1 THEN 2 ${draftPriority}ELSE 0 END AS sort_priority FROM (SELECT *,${state} AS activity_state FROM (SELECT *,${effectiveStatus} AS effective_status FROM ${withDecisions}))))`;
       // Resolved generations can change outside this scope. Any effect on the
       // actual filtered list is already captured by its membership/order keys.
-      const scope=createHash('sha256').update(JSON.stringify(['final-reply-activity-v1',ids,{...input,cursor:undefined,limit:undefined}])).digest('hex');
+      const scope=createHash('sha256').update(JSON.stringify(['final-reply-activity-v1',ids,{...input,draftConversationIds:[...drafts].sort(),cursor:undefined,limit:undefined}])).digest('hex');
       const where=[`workspace_id IN (${ids.map(()=>'?').join(',')})`];const values:Array<string|number>=[...generations,...ids];
       if(input.workspaceId){where.push('workspace_id=?');values.push(input.workspaceId);}
       where.push(HAS_WORK);
@@ -568,7 +571,7 @@ export class ConversationRepository {
       if(input.cursor){
         let cursor:{scope:string;epoch:string;priority:number;at:string;id:string};
         try{cursor=JSON.parse(Buffer.from(input.cursor,'base64url').toString('utf8'));}catch{fail('agent_cursor_invalid','对话列表位置无效，请刷新列表。',409);}
-        if(!cursor||typeof cursor!=='object'||cursor.scope!==scope||cursor.epoch!==epoch||typeof cursor.at!=='string'||typeof cursor.id!=='string'||![0,1,2].includes(cursor.priority))fail('agent_cursor_stale','对话列表顺序已变化，请刷新后继续。',409);
+        if(!cursor||typeof cursor!=='object'||cursor.scope!==scope||cursor.epoch!==epoch||typeof cursor.at!=='string'||typeof cursor.id!=='string'||![0,1,2,3].includes(cursor.priority))fail('agent_cursor_stale','对话列表顺序已变化，请刷新后继续。',409);
         where.push('(sort_priority < ? OR (sort_priority=? AND (order_at < ? OR (order_at=? AND id < ?))))');values.push(cursor.priority,cursor.priority,cursor.at,cursor.at,cursor.id);
       }
       const snippet=terms.length?`, ${searchSnippet(terms)} AS search_snippet`:'';

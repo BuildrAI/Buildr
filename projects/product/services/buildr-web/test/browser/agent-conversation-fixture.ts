@@ -102,7 +102,8 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
         rows=rows.filter(item=>searchTerms.every(term=>{const lower=term.toLowerCase();return String(item.title||'').toLowerCase().includes(lower)||(item.entries||[]).some((entry:any)=>searchable(entry,lower));}));
       }
       if(reminderReadFailure&&category)return route.fulfill({status:503,json:{error:{code:'fixture_unavailable',message:'模拟分组读取失败'}}});
-      const priority=(row:any)=>['waiting','unseen'].includes(state(row)??'')?2:active(row)?1:0;
+      const draftIds=new Set(JSON.parse(url.searchParams.get('draftConversationIds')||'[]'));
+      const priority=(row:any)=>['waiting','unseen'].includes(state(row)??'')?3:active(row)?2:draftIds.has(row.id)?1:0;
       rows.sort((a:any,b:any)=>priority(b)-priority(a)||(b.activity?.userInputAt||b.updatedAt||'').localeCompare(a.activity?.userInputAt||a.updatedAt||'')||b.id.localeCompare(a.id));
       const total=rows.length,offset=Number(url.searchParams.get('cursor')||0),limit=Number(url.searchParams.get('limit')||(reminderPaging?100:30));
       const nextCursor=offset+limit<rows.length?String(offset+limit):undefined;

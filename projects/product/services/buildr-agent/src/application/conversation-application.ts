@@ -562,9 +562,9 @@ export class ConversationApplication {
   }
   pendingSummary() { return { conversations: this.options.repository.listPendingStates().map(record => pendingConversationSummary(this.view(record, undefined, 1))) }; }
   pending(): { conversations: ConversationView[] } { return { conversations: this.options.repository.listPendingStates().map(record => ({ ...this.view(record, undefined, 1), entries: [] })) }; }
-  listAll(workspaceIds:string[],input:{workspaceId?:string;activeOnly?:boolean;hidden?:boolean;query?:string;agent?:string;model?:string;activityState?:string;cursor?:string;limit?:number}={}) {
+  listAll(workspaceIds:string[],input:{draftConversationIds?:string[];workspaceId?:string;activeOnly?:boolean;hidden?:boolean;query?:string;agent?:string;model?:string;activityState?:string;cursor?:string;limit?:number}={}) {
     if(input.workspaceId&&!workspaceIds.includes(input.workspaceId))fail('agent_workspace_missing','工作空间未登记。',404);
-    const result=this.options.repository.querySummaries(workspaceIds,{...input,generation:this.options.generation,query:input.query?.trim().slice(0,200),limit:bounded(input.limit,30,100)},this.options.generationAlive);
+    const result=this.options.repository.querySummaries(workspaceIds,{...input,draftConversationIds:[...new Set(input.draftConversationIds??[])].sort(),generation:this.options.generation,query:input.query?.trim().slice(0,200),limit:bounded(input.limit,30,100)},this.options.generationAlive);
     for(const view of result.conversations){
       if(view.run&&view.run.generation!==this.options.generation&&!this.options.generationAlive?.(view.run.generation)&&BUSY_STATES.has(view.run.status)){view.run.status='unknown';view.run.interrupted=true;}
     }

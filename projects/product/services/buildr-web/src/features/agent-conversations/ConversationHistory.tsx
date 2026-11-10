@@ -1,3 +1,4 @@
+import { useConversationDraftPresence } from './useConversationDraftPresence';
 import { BuildrParticipation } from './BuildrParticipation';
 import { ConversationExecutionSummary } from './ConversationExecutionSummary';
 import { conversationModelSourceLabel, conversationModelLabel } from './conversation-model-label';
@@ -20,6 +21,7 @@ export type ConversationWorkspace = {id:string;name:string;rootPath:string};
 type HistoryGroupResult = {total?:number;busy:boolean;error:boolean};
 export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWorkspaceId}:{workspaces:ConversationWorkspace[];defaultWorkspaceId:string|null}) {
   const context=useAgentConversations();
+  const draftIds=useConversationDraftPresence();
   const initial=context.historyWorkspaceId??'';
   const [workspaceId,setWorkspaceId]=useState(initial),[query,setQuery]=useState(''),[hidden,setHidden]=useState(false),[filter,setFilter]=useState<ExecutionFilter>(null);
   const searchQuery=useDebouncedValue(query,250);
@@ -45,7 +47,7 @@ export function ConversationHistory({workspaces,defaultWorkspaceId: _defaultWork
   const workspaceName=(id:string)=>id===DEFAULT_HISTORY_GROUP?'默认':workspaces.find(item=>item.id===id)?.name||id;
   const renderRow=(row:ConversationSummary)=><div key={row.workspaceId+':'+row.id} className={'ac-history-row'+(context.scope?.workspaceId===row.workspaceId&&context.scope.conversationId===row.id?' is-selected':'')}>
     <button type="button" className="ac-history-row-main" data-conversation-id={row.id} onClick={()=>void context.openConversation(row.workspaceId,row.id,{preserveVisibility:true})}>
-      <span className="ac-history-row-title"><strong title={row.title}>{row.title}</strong><ConversationActivityStatus state={activityState(row)}/></span>
+      <span className="ac-history-row-title"><strong title={row.title}>{row.title}</strong><ConversationActivityStatus state={activityState(row)}/>{draftIds.includes(row.id)&&<span className="ac-draft-status">有草稿</span>}</span>
       {sendActivity(row)?.reason&&<span className="ac-send-reason">{sendActivity(row)?.reason}</span>}
       {row.searchSnippet&&<span className="ac-history-row-snippet" title={row.searchSnippet}>{row.searchSnippet}</span>}
       <small><span className="ac-history-id" title={row.id}>{row.id}</span><span className="ac-history-meta">{conversationMetadata(row,undefined,row.run?.model?conversationModelLabel(row.run.model,context.connections,context.modelCatalog,{modelAccountId:row.run.modelAccountId}):undefined)}</span></small>

@@ -766,3 +766,26 @@ test('a submitted next instruction preserves a real old model execution and deci
  assert.equal(repo.querySummaries(['w1'],{activityState:'waiting',limit:10}).total,1);
  assert.equal(repo.querySummaries(['w1'],{activityState:'running',limit:10}).total,1);
 });
+
+
+test('draft priority applies before pagination without changing activity, filtering or stored records',t=>{
+ const repo=fixture(t);
+ const rows=['ordinary','draft','running','waiting','empty'].map(id=>record(id));
+ for(const [index,row] of rows.entries()){
+  row.view.updatedAt=`2026-10-${String(28-index).padStart(2,'0')}T00:00:00Z`;
+  if(row.view.id!=='empty')message(row,'input-'+row.view.id,'work');
+  if(['running','waiting'].includes(row.view.id))row.view.run={id:'r-'+row.view.id,participantId:'p',provider:'codex',generation:'g',status:row.view.id==='waiting'?'waiting-question':'running',accepted:true,tools:[],startedAt:row.view.updatedAt,updatedAt:row.view.updatedAt};
+  repo.saveConversation(row);repo.markSeen('w1',row.view.id,0);
+ }
+ const normal=repo.querySummaries(['w1'],{limit:20});
+ assert.deepEqual(normal.conversations.map(row=>row.id),['waiting','running','ordinary','draft']);
+ const options={draftConversationIds:['draft','empty','unregistered'],limit:1};
+ const found:string[]=[];let cursor:string|undefined;
+ do{const page=repo.querySummaries(['w1'],{...options,cursor});assert.deepEqual(page.activityCounts,normal.activityCounts);assert.equal(page.total,4);found.push(...page.conversations.map(row=>row.id));cursor=page.nextCursor;}while(cursor);
+ assert.deepEqual(found,['waiting','running','draft','ordinary']);
+ const first=repo.querySummaries(['w1'],options);
+ assert.throws(()=>repo.querySummaries(['w1'],{limit:1,cursor:first.nextCursor,draftConversationIds:[]}),/顺序已变化/);
+ assert.equal(repo.querySummaries(['w1'],{...options,query:'missing'}).total,0);
+ assert.deepEqual(repo.querySummaries(['w1'],{...options,activeOnly:true,limit:20}).conversations.map(row=>row.id),['waiting','running']);
+ assert.deepEqual(repo.querySummaries(['w1'],{limit:20}).conversations.map(row=>row.id),normal.conversations.map(row=>row.id),'clearing drafts restores ordering with no write');
+});

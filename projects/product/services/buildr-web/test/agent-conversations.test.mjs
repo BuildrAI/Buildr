@@ -437,8 +437,8 @@ test('活动主状态只显示一个静态结果，完成未查看仍属于活�
 test('全空间查询不继承浏览空间，查看确认携带准确身份与已呈现位置',async t=>{
   const requests=[];t.mock.method(globalThis,'fetch',async(url,init)=>{requests.push({url,init});return new Response(JSON.stringify({conversations:[],activity:{version:4,seenThrough:3}}));});
   const api=createAgentConversationsClient(createApiClient({getWorkspaceId:()=> 'browsing-ws',sessionAdapter:session}),session);
-  await api.listAll({activeOnly:true,workspaceId:'saved/ws',agent:'codex',limit:10});await api.seen(conversation,3);
-  const url=new URL(requests[0].url,'http://local');assert.equal(url.pathname,'/api/v1/app/agent-service/conversations');assert.equal(url.searchParams.get('workspaceId'),'saved/ws');assert.equal(url.searchParams.get('activeOnly'),'true');
+  await api.listAll({activeOnly:true,workspaceId:'saved/ws',agent:'codex',limit:10,draftConversationIds:['draft/id']});await api.seen(conversation,3);
+  const url=new URL(requests[0].url,'http://local');assert.equal(url.pathname,'/api/v1/app/agent-service/conversations');assert.equal(url.searchParams.get('workspaceId'),'saved/ws');assert.equal(url.searchParams.get('activeOnly'),'true');assert.deepEqual(JSON.parse(url.searchParams.get('draftConversationIds')),['draft/id']);
   assert.equal(requests[1].url,'/api/v1/workspaces/saved%2Fws/agent-conversations/chat%2Fid/seen');assert.deepEqual(JSON.parse(requests[1].init.body),{through:3});
 });
 
