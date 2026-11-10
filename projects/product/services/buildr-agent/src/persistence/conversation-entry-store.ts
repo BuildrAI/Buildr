@@ -89,6 +89,7 @@ export class ConversationEntryStore {
       });
       entries.forEach((entry, index) => {
         const lazy = lazyEntries.get(entry);
+        let nativeIdentityUnproven = false;
         if (lazy && lazy.untouched() && lazy.metadata === metadata(entry) && existing.has(lazy.row.content_revision)) {
           result.push({ scope, entry, round: rounds[index]!.id, revision: lazy.row.content_revision, compact: lazy.compact,
             bytes: lazy.row.body_bytes, compactBytes: Buffer.byteLength(lazy.compact) });
@@ -105,14 +106,20 @@ export class ConversationEntryStore {
           }
           const previous = references().get(entry.id);
           const reference = previous ? {...previous,entry:skeleton} : nativeTool?.(entry);
-          if(reference?.version !== 3) throw new AgentServiceError('agent_native_tool_unbound', '原生工具身份尚未绑定。', 409);
-          const body = JSON.stringify(reference), revision = digest(body);
-          const compact = JSON.stringify({...reference.entry, detail: {revision}});
-          entry.detail = {revision};
-          const position:Position={scope, entry, round: rounds[index]!.id, revision, compact: null, bytes: Buffer.byteLength(body), compactBytes: Buffer.byteLength(compact)};
-          nativePositions.set(entry,{signature,position});
-          result.push({...position,content: existing.has(revision) ? undefined : {...this.encodeReference(reference), content_revision: revision, body_bytes: Buffer.byteLength(body)}});
-          return;
+          if(reference?.version === 3) {
+            const body = JSON.stringify(reference), revision = digest(body);
+            const compact = JSON.stringify({...reference.entry, detail: {revision}});
+            entry.detail = {revision};
+            const position:Position={scope, entry, round: rounds[index]!.id, revision, compact: null, bytes: Buffer.byteLength(body), compactBytes: Buffer.byteLength(compact)};
+            nativePositions.set(entry,{signature,position});
+            result.push({...position,content: existing.has(revision) ? undefined : {...this.encodeReference(reference), content_revision: revision, body_bytes: Buffer.byteLength(body)}});
+            return;
+          }
+          // 本次无法重新证明原生身份（例如运行被停止后原会话不再可就地绑定）。
+          // 只用已捕获的本地内容保存这一条，并保留原生标记：之后可证明时仍升级为引用。
+          // 若因此拒绝整次保存，这条记录会让该对话之后的每轮写入都失败。
+          nativeIdentityUnproven = true;
+          delete entry.detail;
         }
         const body = JSON.stringify(entry), revision = digest(body), bytes = Buffer.byteLength(body);
         let preview = JSON.stringify(this.compact(entry, revision,!!lazy?.untouched()));
@@ -133,7 +140,7 @@ export class ConversationEntryStore {
             if (compressed.length < bytes) { stored = compressed; codec = 'zstd'; }
           }
           content = { content_revision: revision, codec, body_bytes: bytes, body: stored };
-          const reference=nativeTool?.(entry);
+          const reference=nativeIdentityUnproven?undefined:nativeTool?.(entry);
           if(reference){
             const encoded=this.encodeReference(reference),compact=JSON.stringify(this.compact(entry,revision,true));
             const priorPreview=preview===body?0:Buffer.byteLength(preview);
