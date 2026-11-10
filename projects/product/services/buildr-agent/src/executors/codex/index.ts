@@ -50,7 +50,7 @@ function codexGatewayCatalog(gateway: ExecutorGateway) {
     truncation_policy: { mode: 'tokens', limit: 10000 },
   })) };
 }
-interface ActiveTurn { commandStreams?: Map<string,{command:string;output:string}>; contextId: string; id: string; input: ExecutorSendInput; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown'; processId?: string; executionId: string }>; pending: Map<string, { nativeId: string | number; method: string; params: any }>; texts: Map<string, string>; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string; done: () => void; reject: (error: Error) => void; accepted: boolean; buffered: RpcMessage[] }
+interface ActiveTurn { contextCompaction?: import('../../contracts.ts').ContextCompaction; commandStreams?: Map<string,{command:string;output:string}>; contextId: string; id: string; input: ExecutorSendInput; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown'; processId?: string; executionId: string }>; pending: Map<string, { nativeId: string | number; method: string; params: any }>; texts: Map<string, string>; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string; done: () => void; reject: (error: Error) => void; accepted: boolean; buffered: RpcMessage[] }
 export function createCodexExecutor(): AgentExecutor {
   return { nativeContent: codexContent, storage: { transientDirectories: [...regenerableToolCaches, 'codex-home/.tmp/plugins'], diagnostics:codexDiagnosticLogs, canReclaim: (root, relative) => toolCacheReclaimable(root, relative) && codexCacheReclaimable(root, relative), snapshots: [{ relative: 'codex-home/.tmp/plugins', key: 'curated-plugins', identity: codexCuratedIdentity }] }, descriptor: { id: 'codex', label: 'Codex', capabilities }, async open(options) { return await CodexRuntime.open(options); } };
 }
@@ -339,6 +339,10 @@ class CodexRuntime implements AgentRuntime {
     }
     if (message.method === 'item/started' || message.method === 'item/completed') {
       const item = p.item;
+      if (item?.type === 'contextCompaction' && typeof item.id === 'string' && !turn.terminal) {
+        if (message.method === 'item/started' && turn.contextCompaction?.id !== item.id) turn.contextCompaction = {id:item.id,startedAt:new Date().toISOString()};
+        if (message.method === 'item/completed' && turn.contextCompaction?.id === item.id) delete turn.contextCompaction;
+      }
       if (item?.type === 'commandExecution') {
         turn.tools.set(item.id, {id:item.id,label:'命令',status:message.method === 'item/completed'?'completed':'running',processId:item.processId,executionId:turn.id});
         if(message.method === 'item/completed') turn.commandStreams?.delete(item.id);
@@ -369,7 +373,7 @@ class CodexRuntime implements AgentRuntime {
     const tools = [...turn.tools.values()].map(({ processId, executionId, ...tool }) => ({ ...tool, canStop: Boolean(processId) && tool.status === 'running' }));
     const requests = [...turn.pending].flatMap(([id, pending]) => codexRequest(id, pending.method, pending.params) ?? []);
     const canContinue = turn.terminal === 'completed' && !turn.pending.size && tools.some(tool => tool.status === 'running') && [...turn.tools.values()].every(tool => tool.status === 'completed' || tool.status === 'running' && Boolean(tool.processId));
-    return { canContinue, status: turn.terminal ? tools.some(tool => tool.status === 'running') ? 'tools-active' : tools.some(tool => tool.status === 'unknown') ? 'unknown' : turn.terminal === 'stopped' ? 'stopped' : 'idle' : requests.some(blocksExecution) ? 'waiting' : 'running', executionRef: this.rpc.executionRef(turn.id, turn.contextId, this.bindingIdentity, [...turn.tools.values()].some(tool => Boolean(tool.processId) && tool.status !== 'completed')), tools, requests, ...(turn.terminal === 'failed' && turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) };
+    return { contextCompaction: turn.terminal ? null : turn.contextCompaction ?? null, canContinue, status: turn.terminal ? tools.some(tool => tool.status === 'running') ? 'tools-active' : tools.some(tool => tool.status === 'unknown') ? 'unknown' : turn.terminal === 'stopped' ? 'stopped' : 'idle' : requests.some(blocksExecution) ? 'waiting' : 'running', executionRef: this.rpc.executionRef(turn.id, turn.contextId, this.bindingIdentity, [...turn.tools.values()].some(tool => Boolean(tool.processId) && tool.status !== 'completed')), tools, requests, ...(turn.terminal === 'failed' && turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) };
   }
   async observe({ contextRef, executionRef, knownItems }: { contextRef: ContextRef; executionRef?: ExecutionRef; knownItems?: readonly ExecutorItem[] }): Promise<ExecutorObservation> {
     this.reference(contextRef);

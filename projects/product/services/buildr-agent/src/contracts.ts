@@ -114,7 +114,10 @@ export interface ExecutorRequest {
   questions?: Array<{ id: string; label: string; options?: Array<{ id: string; label: string; description?: string }>; multiple?: boolean; allowOther?: boolean }>;
 }
 export type ExecutionFault = { kind: 'protocol' | 'transport' | 'process' };
+export interface ContextCompaction { id: string; startedAt: string }
 export interface ExecutorObservation {
+  /** Exact native phase snapshot; null explicitly clears, omission is unknown. */
+  contextCompaction?: ContextCompaction | null;
   fault?: ExecutionFault;
   /** The native model ended normally; retained commands remain controllable in this context. */
   canContinue?: boolean;
@@ -390,6 +393,7 @@ export interface RunView {
   fault?: ExecutionFault;
   /** Host interruption is unfinished work, distinct from a user stop. */
   interrupted?: boolean;
+  contextCompaction?: ContextCompaction;
   contextUsage?: {usedTokens:number;windowTokens?:number};
   modelAccountId?: string; modelAccountIdentity?: string; modelSourceLabel?: string;
   id: string;

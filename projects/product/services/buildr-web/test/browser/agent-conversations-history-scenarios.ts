@@ -8,6 +8,26 @@ type ConversationScrollSample={at:number;top:number;height:number;viewport:numbe
 
 /** history 场景使用独立准备的对话现场。 */
 const historyRuns = {
+  'history/context-compaction': async (fixture: AgentConversationFixture) => {
+    const {page,panel,input,run,update}=fixture;
+    const previous=structuredClone(fixture.conversation),startedAt=new Date(Date.now()-42000).toISOString();
+    try {
+      update({requests:[],run:run('running','codex',{contextCompaction:{id:'compact',startedAt}})});
+      await page.reload();await input().waitFor();
+      const notice=()=>panel().locator('[data-context-compaction="compact"]');
+      await notice().waitFor();assert.match(await notice().innerText(),/正在压缩上下文，请等待/);
+      assert.match(await notice().locator('time').innerText(),/00:00:4[2-9]/);
+      await panel().getByRole('button',{name:'停止本次执行',exact:true}).waitFor();
+      await fixture.capture(page,'conversation-context-compaction.png');
+      await page.reload();await input().waitFor();await notice().waitFor();
+      assert.notEqual(await notice().locator('time').innerText(),'00:00:00');
+      for (const status of ['running','completed','failed','stopped','unknown'] as const) {
+        update({requests:[],run:run(status,'codex',status==='running'?{}:{contextCompaction:{id:'stale',startedAt}})});
+        await page.reload();await input().waitFor();
+        assert.equal(await panel().locator('[data-context-compaction]').count(),0);
+      }
+    } finally {fixture.conversation=previous;await page.reload();await input().waitFor();}
+  },
   'history/draft-priority': async (fixture: AgentConversationFixture) => {
     const {page,panel,input,workspaceId,run}=fixture;
     const saved=structuredClone(fixture.conversation),additional=fixture.additionalConversations;

@@ -3606,3 +3606,38 @@ for(const accepted of [true,false])test('explicit stop escape isolates unknown w
   assert.throws(()=>f.service.conversations.prepareSend('workspace-one',chat.id,{...draft,expectedRevision:done.revision}),/原执行已变化/);
  }finally{repository.stopReadModels();await f.close();}
 });
+
+test('native compaction phase persists, rejects foreign snapshots and clears on uncertainty and stop',async()=>{
+ const native=fake('local',{hold:true}),f=fixture([native.executor]);
+ try{
+  await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','work');
+  await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='running');
+  const input=native.sends[0]!,phase={id:'compact',startedAt:'2026-11-10T10:00:00.000Z'};
+  const observe=(contextCompaction:ExecutorObservation['contextCompaction'],status:ExecutorObservation['status']='running',id='execution-1')=>input.onEvent({type:'observation',observation:{status,tools:[],executionRef:{id},contextCompaction}});
+  observe(phase,'running','foreign');assert.equal(f.service.conversations.read('workspace-one',chat.id).run!.contextCompaction,undefined);
+  observe(phase);assert.deepEqual(f.service.conversations.read('workspace-one',chat.id).run!.contextCompaction,phase);
+  observe({...phase,startedAt:'2026-11-10T11:00:00.000Z'});assert.deepEqual(f.service.conversations.read('workspace-one',chat.id).run!.contextCompaction,phase);
+  observe(undefined);assert.deepEqual(f.service.conversations.read('workspace-one',chat.id).run!.contextCompaction,phase);
+  const repo=new ConversationRepository(path.join(f.options.dataRoot,'agent-service'));try{assert.deepEqual(repo.readConversation(chat.id)!.view.run!.contextCompaction,phase);}finally{repo.stopReadModels();}
+  observe(null);assert.equal(f.service.conversations.read('workspace-one',chat.id).run!.contextCompaction,undefined);
+  observe(phase);observe(undefined,'unknown');assert.equal(f.service.conversations.read('workspace-one',chat.id).run!.contextCompaction,undefined);
+  observe(phase);const current=f.service.conversations.read('workspace-one',chat.id),run=current.run!;
+  await f.service.conversations.stop('workspace-one',chat.id,{expectedRevision:current.revision,runId:run.id,participantId:run.participantId,generation:run.generation});
+  observe(phase);assert.equal(f.service.conversations.read('workspace-one',chat.id).run!.contextCompaction,undefined);
+ }finally{await f.close();}
+});
+
+for(const status of ['completed','failed','stopped'] as const)test('compaction is removed by native terminal '+status+' and late observation cannot restore it',async()=>{
+ const native=fake('local',{hold:true}),f=fixture([native.executor]);
+ try{
+  await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','work');
+  await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='running');
+  const input=native.sends[0]!,observation:ExecutorObservation={status:'running',tools:[],executionRef:{id:'execution-1'},contextCompaction:{id:'compact',startedAt:'2026-11-10T10:00:00.000Z'}};
+  input.onEvent({type:'observation',observation});assert.ok(f.service.conversations.read('workspace-one',chat.id).run!.contextCompaction);
+  input.onEvent({type:'completed',status});
+  assert.equal(f.service.conversations.read('workspace-one',chat.id).run!.contextCompaction,undefined);
+  input.onEvent({type:'observation',observation:{...observation,status:status==='stopped'?'stopped':'idle',contextCompaction:null}});
+  input.onEvent({type:'observation',observation});
+  assert.equal(f.service.conversations.read('workspace-one',chat.id).run!.contextCompaction,undefined);
+ }finally{await f.close();}
+});

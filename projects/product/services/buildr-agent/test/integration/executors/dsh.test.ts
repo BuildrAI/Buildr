@@ -508,3 +508,31 @@ test('DSH text bursts coalesce persistence events, yield controls and flush all 
     const count=visible.length;await new Promise(resolve=>setTimeout(resolve,80));assert.equal(visible.length,count,'no delayed output after terminal');
   }finally{await runtime.close();}
 });
+
+test('DSH compaction uses current lineage and exact completion identity',async()=>{
+ const streams:Stream[]=[],events:ExecutorEvent[]=[],cwd='/synthetic/compaction';let sequence=0;
+ const ok=(value:any)=>({ok:true,value});
+ const publish=(type:string,data:any)=>{for(const stream of streams)stream.push({type:'event',event:{seq:++sequence,time:1700000000000,type,data}});};
+ const remote={permissionPresets:{catalog:async()=>ok({defaultPreset:'workspace-write',options:[{value:'workspace-write'}]})},commands:{list:async()=>ok([{name:'permission',definitionId:'@deepseek-ai/dsh-permission-presets'}]),execute:async()=>ok({result:{kind:'success'}})},session:{
+  create:async()=>ok({sessionId:'compaction-session'}),
+  follow:()=>{const s=new Stream();streams.push(s);s.push({type:'snapshot',header:{id:'compaction-session',cwd},cursor:sequence,records:[],projections:{values:{permissions:{currentValue:'workspace-write'}}}});return s;},
+  prompt:async(input:any)=>{queueMicrotask(()=>{
+   publish('turn/start',{turn:1});publish('user/message',{turn:1,id:input.requestId,source:{rpcId:input.requestId},content:input.content});
+   publish('compaction/start',{turn:99,compactionId:'foreign'});
+   publish('compaction/start',{turn:null,compactionId:'standalone'});
+   publish('compaction/start',{turn:1,compactionId:'compact'});
+   publish('compaction/end',{turn:1,compactionId:'other'});
+   publish('compaction/end',{turn:1,compactionId:'compact',error:'sensitive native error'});
+   publish('turn/end',{turn:1,reason:{kind:'completed'}});
+  });return ok({accepted:true});}
+ }};
+ const runtime=Reflect.construct(DshRuntime,['binding-compaction',{close:async()=>{for(const s of streams)s.dispose();}},{remote,close:async()=>{},ctx:{}}]) as AgentRuntime;
+ try{
+  const contextRef=await runtime.createContext({cwd});await runtime.send({contextRef,cwd,text:'test',images:[],clientRequestId:'compact-request',onEvent:e=>events.push(e)});
+  const observations=events.filter((e):e is Extract<ExecutorEvent,{type:'observation'}>=>e.type==='observation').map(e=>e.observation);
+  assert.equal(observations.filter(o=>o.contextCompaction?.id==='compact').length,2);
+  assert.equal(observations.some(o=>['foreign','standalone'].includes(o.contextCompaction?.id??'')),false);
+  assert.ok(observations.some(o=>o.diagnostic==='DSH 上下文压缩失败。'&&o.contextCompaction===null));
+  assert.equal(observations.at(-1)!.contextCompaction,null);assert.equal(JSON.stringify(observations).includes('sensitive native error'),false);
+ }finally{await runtime.close();}
+});

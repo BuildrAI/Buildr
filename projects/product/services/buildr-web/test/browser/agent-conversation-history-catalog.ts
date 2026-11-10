@@ -1,5 +1,6 @@
 /** Stable history identities and labels; safe for source-only planning. */
 export const HISTORY_SCENARIO_CATALOG = [
+  {id:'history/context-compaction',name:'原生上下文压缩可见、刷新保时、结束和未知不残留且保留停止'},
   {id:'history/draft-priority',name:'草稿在分页前优先展示，文字清空恢复顺序并保留附件标识'},
   {id:'history/welcome-centering',name:'新对话欢迎区穿过保留节点后仍垂直居中'},
   {

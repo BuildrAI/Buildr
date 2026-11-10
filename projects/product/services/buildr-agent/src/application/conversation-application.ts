@@ -499,6 +499,7 @@ export class ConversationApplication {
     return view;
   }
   private save(record: StoredConversation, initial = false, textOnly = false, textEntryId?:string): void {
+    for (const run of conversationRuns(record.view)) if (run.stopRequested || run.supersededBy || run.resourcesReleased || !['running','waiting-approval','waiting-question'].includes(run.status)) delete run.contextCompaction;
     if(record.view.run?.status==='completed'){record.view.run.interrupted=undefined;delete record.interruption;}
     for(const observed of conversationRuns(record.view))if(['completed','failed','stopped','unknown','tools-active'].includes(observed.status)){record.runOutcomes??={};record.runOutcomes[observed.id]={status:observed.status,diagnostic:observed.diagnostic,model:observed.model,provider:observed.provider,contextUsage:observed.contextUsage,generation:observed.generation,updatedAt:observed.updatedAt};}
     const prior = record.view.revision;
@@ -1087,6 +1088,7 @@ export class ConversationApplication {
     } else if (event.type === 'observation') this.applyObservation(record, event.observation, run);
     else if (event.type === 'diagnostic') run.diagnostic = event.message;
     else if (event.type === 'completed') {
+      delete run.contextCompaction;
       // A model terminal event alone does not prove that tools have stopped.
       if (event.status === 'failed') { run.status = 'failed'; run.fault = event.fault; run.diagnostic = event.diagnostic ?? '原生执行失败。'; }
       else { run.diagnostic = event.diagnostic; }
@@ -1165,6 +1167,12 @@ export class ConversationApplication {
     }
     run.executionState=['idle','stopped'].includes(observation.status)&&observation.tools.every(tool=>tool.status==='completed')?'ended':['running','waiting','tools-active'].includes(observation.status)?'active':'unknown';
     run.tools = observation.tools;
+    if (attempt?.executionRef && attempt.executionRef.id === observation.executionRef?.id && !['completed','failed','stopped'].includes(run.status) && observation.contextCompaction !== undefined) {
+      if (observation.contextCompaction === null) delete run.contextCompaction;
+      else if (observation.contextCompaction.id && Number.isFinite(Date.parse(observation.contextCompaction.startedAt))) {
+        if (run.contextCompaction?.id !== observation.contextCompaction.id) run.contextCompaction = {...observation.contextCompaction};
+      }
+    }
     // A complete native snapshot, not "running" alone, proves request absence.
     if (observation.requests && attempt?.executionRef && observation.executionRef?.id === attempt.executionRef.id) {
       const ids = new Set(observation.requests.map(request => request.id));

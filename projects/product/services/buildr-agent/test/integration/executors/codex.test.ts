@@ -463,3 +463,26 @@ test('native command output deltas use ordinary tool events with their original 
   assert.equal(tools.at(-1)!.status,'completed');
  } finally {await runtime?.close();await rm(root,{recursive:true,force:true});}
 });
+
+test('Codex compaction lifecycle is exact, repeat-safe and absent after completion', async () => {
+ const root=await mkdtemp(join(tmpdir(),'codex-compaction-'));let runtime:AgentRuntime|undefined;
+ try {
+  const executable=join(root,'codex.mjs');
+  const marker="setTimeout(()=>{event('item/started'";
+  assert.ok(source.includes(marker));
+  await writeFile(executable,source.replace(marker,`setTimeout(()=>{
+   event('item/started',{threadId:p.threadId,turnId:'old-turn',item:{type:'contextCompaction',id:'foreign'}});
+   event('item/started',{threadId:p.threadId,turnId:id,item:{type:'contextCompaction',id:'compact'}});
+   event('item/started',{threadId:p.threadId,turnId:id,item:{type:'contextCompaction',id:'compact'}});
+   event('item/completed',{threadId:p.threadId,turnId:id,item:{type:'contextCompaction',id:'other'}});
+   event('item/completed',{threadId:p.threadId,turnId:id,item:{type:'contextCompaction',id:'compact'}});
+   event('item/started'`));
+  runtime=await createCodexExecutor().open({connectionId:'codex',configRoot:root,executable,environment:{PATH:process.env.PATH??''}});
+  const contextRef=await runtime.createContext({cwd:root}),events:ExecutorEvent[]=[];
+  await runtime.send({contextRef,cwd:root,text:'[finish]',images:[],clientRequestId:'compact',onEvent:e=>events.push(e)});
+  const phases=events.filter((e):e is Extract<ExecutorEvent,{type:'observation'}>=>e.type==='observation').map(e=>e.observation.contextCompaction);
+  const active=phases.filter(p=>p?.id==='compact');assert.equal(active.length,3);
+  assert.equal(new Set(active.map(p=>p!.startedAt)).size,1);assert.equal(phases.some(p=>p?.id==='foreign'),false);
+  assert.equal(phases.at(-1),null);assert.equal((await runtime.observe({contextRef})).contextCompaction,null);
+ } finally {await runtime?.close();await rm(root,{recursive:true,force:true});}
+});

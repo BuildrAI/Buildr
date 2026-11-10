@@ -45,6 +45,7 @@ class ConversationInput implements AsyncIterableIterator<any> {
   close(): void { this.ended = true; this.values = []; this.waiter?.({ done: true, value: undefined }); this.waiter = undefined; }
 }
 interface LiveQuery {
+  contextCompaction?: import('../../contracts.ts').ContextCompaction;
   startedAt: number;
   dispatched?:boolean;
   startupFailure?:string;
@@ -119,7 +120,7 @@ const emit = (state: LiveQuery, event: ExecutorEvent) => {
   stream.push(withExecutionFault(event));
 };
 const accepted = (state: LiveQuery) => { if (!state.accepted) { state.accepted = true; emit(state, { type: 'accepted', executionRef: { id: state.id }, inputItemId: state.id }); } };
-const observe = (state: LiveQuery): ExecutorObservation => ({ status: state.ambiguous ? 'unknown' : state.pending.size ? 'waiting' : state.nativeExited && !state.terminal ? state.blockedOnExit || [...state.tools.values()].some(tool => unresolvedTool(tool) || tool.taskId) ? 'unknown' : 'stopped' : state.terminal ? [...state.tools.values()].some(tool => tool.status === 'running' || tool.taskPending && tool.status !== 'unknown') ? 'tools-active' : [...state.tools.values()].some(tool => tool.status === 'unknown') ? 'unknown' : state.terminal === 'stopped' ? 'stopped' : 'idle' : state.pending.size ? 'waiting' : 'running', executionRef: { id: state.id }, tools: [...state.tools.values()].map(({ taskId, taskPending, ...tool }) => ({ ...tool, status: tool.status === 'unknown' ? 'unknown' : taskPending ? 'running' : tool.status, canStop: Boolean(taskId) && Boolean(taskPending || tool.status === 'running') })), backgroundWork: state.unownedTasks.size > 0 || [...state.tools.values()].some(tool => Boolean(tool.taskId) && unresolvedTool(tool)), requests: [...state.pending.values()].map(pending => pending.request), ...(state.diagnostic ? { diagnostic: state.diagnostic } : {}) });
+const observe = (state: LiveQuery): ExecutorObservation => ({ contextCompaction: state.terminal || state.ambiguous || state.nativeExited ? null : state.contextCompaction ?? null, status: state.ambiguous ? 'unknown' : state.pending.size ? 'waiting' : state.nativeExited && !state.terminal ? state.blockedOnExit || [...state.tools.values()].some(tool => unresolvedTool(tool) || tool.taskId) ? 'unknown' : 'stopped' : state.terminal ? [...state.tools.values()].some(tool => tool.status === 'running' || tool.taskPending && tool.status !== 'unknown') ? 'tools-active' : [...state.tools.values()].some(tool => tool.status === 'unknown') ? 'unknown' : state.terminal === 'stopped' ? 'stopped' : 'idle' : state.pending.size ? 'waiting' : 'running', executionRef: { id: state.id }, tools: [...state.tools.values()].map(({ taskId, taskPending, ...tool }) => ({ ...tool, status: tool.status === 'unknown' ? 'unknown' : taskPending ? 'running' : tool.status, canStop: Boolean(taskId) && Boolean(taskPending || tool.status === 'running') })), backgroundWork: state.unownedTasks.size > 0 || [...state.tools.values()].some(tool => Boolean(tool.taskId) && unresolvedTool(tool)), requests: [...state.pending.values()].map(pending => pending.request), ...(state.diagnostic ? { diagnostic: state.diagnostic } : {}) });
 function gatewayPolicy(context: any, selected?: string, effort?: string) {
   const policy = qoderGatewayPolicy(gateway!, selected, effort);
   assertGatewayModel(context.availableModels);
@@ -478,6 +479,13 @@ async function readConversation(owner: ConversationQuery): Promise<void> {
       }
       // Warm reuse is admitted only by this exact native input echo, not an old child or tool event.
       if (owner.rounds > 1 && !state.echoed && !(primary && message.type === 'user' && message.uuid === state.id)) throw new Error('qoder_round_identity_unconfirmed');
+      if (primary && message.type === 'system' && (message.subtype === 'status' || message.subtype === 'compact_boundary')) {
+        if (message.subtype === 'status' && message.status === 'compacting') {
+          accepted(state);
+          state.contextCompaction ??= {id:state.id,startedAt:new Date().toISOString()};
+        } else if (message.subtype === 'compact_boundary' || message.status === null) delete state.contextCompaction;
+        emit(state, {type:'observation',observation:observe(state)});
+      }
       if (primary && ['assistant', 'stream_event', 'result'].includes(message.type)) accepted(state);
       if (message.type === 'assistant') {
         if (primary && message.message?.id) state.completedMessages.add(message.message.id);
