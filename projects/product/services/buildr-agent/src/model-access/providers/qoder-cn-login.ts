@@ -22,10 +22,11 @@ export async function beginQoderCnLogin(
   update: (value: LoginObservation) => void,
   started: (session: QoderCnLoginSession) => void,
   finished: () => void,
+  options: { executable?: string; signal?: AbortSignal } = {},
 ): Promise<void> {
   update({ state: 'initializing' });
   let executable: string;
-  try { executable = await findExecutable(undefined, qoderCnProduct.executableNames, environment); }
+  try { executable = await findExecutable(options.executable, qoderCnProduct.executableNames, environment); }
   catch { update({ state: 'failed', diagnostic: '未找到 Qoder CN 命令行程序，请先安装 qodercn 后重试。' }); return; }
   let version: string;
   try { version = await inspectVersion(executable, environment); }
@@ -35,6 +36,7 @@ export async function beginQoderCnLogin(
     return;
   }
   await privateDirectories(config);
+  options.signal?.throwIfAborted();
   const command = nativeCommand(executable);
   const child = spawn(command.command, [...command.prefix, 'login'], {
     cwd: config,
@@ -64,7 +66,7 @@ export async function beginQoderCnLogin(
       update({ state: 'failed', diagnostic: currentUrl ? '登录未完成，请重新发起登录。' : '登录未完成，请检查网络后重新发起。' });
       return;
     }
-    update({ state: 'checking' });
+    update({ state: 'completed' });
   } catch {
     if (!session.cancelled) { await closeOwnedProcess(child); update({ state: 'expired', diagnostic: '登录等待超时，请重新发起登录。' }); }
   } finally { finished(); }

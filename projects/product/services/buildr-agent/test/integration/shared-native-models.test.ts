@@ -16,7 +16,8 @@ test('linked sources are discovered once without adding accounts, native login, 
  try{
   for(const id of ['codex','dsh','qoder'])await service.connections.connect(id,{expectedRevision:'unconfigured'});
   const catalog=await service.models.catalog.list({refresh:true});assert.equal(catalog.models.length,3);assert.ok(catalog.models.every(m=>m.enabled===false&&!m.available));
-  const first=(await service.models.accounts.list()).accounts;assert.deepEqual(first.map(a=>a.connectionId),['codex','dsh','qoder']);assert.equal(requests,5);
+  const first=(await service.models.accounts.list()).accounts;assert.deepEqual(first.filter(a=>a.connectionId).map(a=>a.connectionId),['codex','dsh','qoder']);assert.equal(requests,5);
+  const cn=first.find(a=>a.id==='native-qoder-cn');assert.ok(cn);assert.equal(cn.connectionId,undefined);assert.equal(cn.status,'not-authenticated');assert.deepEqual(cn.models,[]);
   await service.models.catalog.list();assert.equal(requests,5);
   const qoder=service.connections.read('qoder');await service.connections.disconnect('qoder',{expectedRevision:qoder.revision});
   const disabled=await service.models.catalog.list();assert.equal(disabled.models.some(m=>m.accountId==='native-qoder'&&m.available),false);assert.equal(disabled.diagnostic,undefined,'intentional disconnect is not a background failure');

@@ -294,7 +294,7 @@ export class ModelAccessApplication {
         if(this.closed||this.current(id).loginAttempt?.id!==attemptId||this.current(id).loginAttempt?.state!=='checking'||this.current(id).identity!==identity)return;
         const checked=await this.check(id);
         const latest=this.current(id);
-        if(this.closed||latest.loginAttempt?.id!==attemptId||latest.loginAttempt.state!=='checking'||latest.identity!==identity)return;
+        if(this.closed||latest.loginAttempt?.id!==attemptId||latest.loginAttempt.state!=='checking'||latest.identity!==checked.identity)return;
         latest.loginAttempt={id:attemptId,updatedAt:this.now,state:checked.status==='ready'&&checked.models.length?'completed':'failed',...(checked.status==='ready'&&checked.models.length?{}:{diagnostic:checked.diagnostic??'账号登录后未取得可用模型，请重新检查。'})};
         await this.changed(latest);return;
       }

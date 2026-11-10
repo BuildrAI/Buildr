@@ -1,3 +1,4 @@
+import {ModelLoginPages} from './model-login-pages';
 import {WebhookSettings} from './WebhookSettings';
 import {AgentProgramUpdates} from './AgentProgramUpdates';
 import {useCallback,useEffect,useRef,useState} from 'react';
@@ -27,21 +28,21 @@ export function AgentConnectionSettings(){
  useEffect(()=>{if(!context.settings)return;const timer=setInterval(()=>void refresh().catch(()=>{}),3000);return()=>clearInterval(timer);},[context.settings,refresh]);
  const active=[...context.connections.filter(connection=>waiting(connection.loginAttempt)).map(connection=>'native:'+connection.id+':'+connection.loginAttempt!.id),...accounts.filter(account=>!account.connectionId&&waiting(account.loginAttempt)).map(account=>account.id+':'+account.loginAttempt!.id)].join(',');
  useEffect(()=>{if(!context.settings||!active)return;const controller=new AbortController();let reading=false;const timer=setInterval(()=>{if(reading)return;reading=true;void (async()=>{await Promise.all(active.split(',').map(async key=>{const parts=key.split(':');if(parts[0]==='native')context.updateConnection(await context.api.loginAttempt(parts[1],parts[2],controller.signal));else update(await context.api.modelLoginAttempt(parts[0],parts[1],controller.signal));}));if(!controller.signal.aborted)await refresh();})().catch(failure=>{if(!controller.signal.aborted)setError(failure instanceof Error?failure.message:'登录观察失败。');}).finally(()=>{reading=false;});},750);return()=>{controller.abort();clearInterval(timer);};},[context.settings,active,context.api,context.updateConnection,refresh]);
- const openedLogin=useRef(new Set<string>());
- // Opening the official page as soon as the CLI prints it is the expected "click login → browser" flow;
- // the card keeps a manual button when a browser blocks this automatic tab.
- useEffect(()=>{for(const account of accounts){const attempt=account.loginAttempt;if(!attempt?.url||account.connectionId||attempt.state!=='waiting-browser')continue;if(openedLogin.current.has(attempt.id))continue;openedLogin.current.add(attempt.id);window.open(attempt.url,'_blank');}},[accounts]);
+ const loginPages=useRef<ModelLoginPages|null>(null);
+ if(!loginPages.current)loginPages.current=new ModelLoginPages(()=>window.open('about:blank','_blank'));
+ useEffect(()=>{loginPages.current!.observe(accounts);},[accounts]);
+ useEffect(()=>()=>loginPages.current!.close(),[]);
  const revisions=context.connections.map(connection=>connection.id+':'+connection.revision).join(',');
  useEffect(()=>{if(context.settings)void refresh().catch(()=>{});},[revisions,context.settings,refresh]);
  const onPending=useCallback((id:string,value:boolean)=>setPreparing(previous=>previous[id]===value?previous:{...previous,[id]:value}),[]);
  const nativeLogin=async(connection:ConnectionView)=>{context.updateConnection(await context.api.login(connection));};
  useEffect(()=>{if(!pendingLogin||preparing[pendingLogin]||busy)return;const connection=context.connections.find(connection=>connection.id===pendingLogin);if(connection?.enabled){setPendingLogin(null);setProgram(null);void act(()=>nativeLogin(connection));}},[pendingLogin,preparing,revisions,busy]);
- function login(id:string){void act(async()=>{
+ function login(id:string){if(gate.current)return;const account=accounts.find(account=>account.id===id);const reserved=account&&!account.connectionId?loginPages.current!.reserve(id):undefined;void act(async()=>{
   let account=accounts.find(account=>account.id===id);
   if(!account){account=await context.api.addModelAccount('devin');update(account);setSelection(current=>({...current,sourceId:account!.id}));}
   if(account.connectionId){const connection=context.connections.find(connection=>connection.id===account!.connectionId);if(!connection)throw new Error('请重新读取本机智能体程序。');if(!connection.enabled||!connection.configPath){setMode('agents');setProgram(connection.id);return;}await nativeLogin(connection);}
-  else update(await context.api.modelAccountAction(account,'login-attempts'));
- });}
+  else {const result=await context.api.modelAccountAction(account,'login-attempts');reserved?.bind(result.loginAttempt?.id);update(result);}
+ }).then(success=>{if(!success)reserved?.close();});}
  function configureKey(id:string,key:string){return act(async()=>{let account=accounts.find(item=>item.id===id);if(!account){account=await context.api.addModelAccount('openai');update(account);setSelection(current=>({...current,sourceId:account!.id}));}const configured=await context.api.configureModelAccount(account,key);update(configured);setSelection(current=>({...current,sourceId:configured.id}));});}
  function check(id:string){for(const account of accounts.filter(item=>(id==='all'||id===item.id)&&item.enabled)){if(checking.current.has(account.id))continue;checking.current.add(account.id);setRefreshingIds([...checking.current]);void context.api.modelAccountAction(account,'check').then(update).then(()=>context.refreshModelCatalog()).catch(()=>setError('部分账号刷新失败，已保留已有信息。')).finally(()=>{checking.current.delete(account.id);setRefreshingIds([...checking.current]);});}}
  function disconnect(id:string){const account=accounts.find(account=>account.id===id);if(account)void act(async()=>{update(await context.api.modelAccountAction(account,'disconnect'));});}

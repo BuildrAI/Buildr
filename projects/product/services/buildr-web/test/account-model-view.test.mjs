@@ -62,3 +62,11 @@ test('官方登录后的核对阶段不再提示继续等待浏览器登录',()=
  assert.equal(completed.loginPending,false);assert.equal(completed.loginChecking,false);
  assert.equal(completed.loginMessage,undefined);
 });
+
+test('登录准备显示实际进度，失败原因优先于旧账号检查提示，取消后仍可重试',()=>{
+ const row={id:'native-qoder-cn',provider:'native-qoder-cn',label:'Qoder CN',revision:'r',enabled:true,status:'not-authenticated',models:[],diagnostic:'旧的账号检查提示'};
+ const view=(state,diagnostic)=>modelSourceViews([{...row,loginAttempt:{id:'attempt',state,diagnostic}}],[]).find(source=>source.id===row.id);
+ const pending=view('initializing','正在下载官方登录程序');assert.equal(pending.diagnostic,undefined);assert.equal(pending.loginMessage,'正在下载官方登录程序');assert.equal(pending.loginPending,true);
+ const failed=view('failed','程序下载失败，请重试');assert.equal(failed.diagnostic,'程序下载失败，请重试');assert.equal(failed.loginPending,false);
+ assert.equal(view('cancelled').loginPending,false);
+});
