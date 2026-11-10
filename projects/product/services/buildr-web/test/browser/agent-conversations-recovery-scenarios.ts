@@ -32,11 +32,13 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
   await step('停止请求未确认时明确已请求并撤下重复停止按钮',async()=>{
     const saved=structuredClone(fixture.conversation),current=fixture.conversation,beforeStops=fixture.stops;
     try{
-      update({run:run('unknown','codex',{accepted:false,resourcesReleased:false,stopRequested:true,executionState:'unknown',interrupted:true,diagnostic:'未取得本轮结束记录'}),requests:[],...(current.activity?{activity:{...current.activity,active:false,seenThrough:current.activity.version}}:{})});
+      update({run:run('unknown','codex',{...current.run,status:'unknown',accepted:false,resourcesReleased:false,stopRequested:true,executionState:'unknown',interrupted:true,diagnostic:'未取得本轮结束记录'}),requests:[],...(current.activity?{activity:{...current.activity,active:false,seenThrough:current.activity.version}}:{})});
       await page.reload();await input().waitFor();
       const state=panel().locator('.ac-execution-uncertain');
       await state.getByText('停止已请求，结束状态待确认',{exact:true}).waitFor();
       assert.equal(await state.getByRole('button',{name:'停止',exact:true}).count(),0);
+      assert.equal(await state.getByRole('button',{name:'结束等待并继续',exact:true}).isEnabled(),true);
+      assert.equal(await input().getAttribute('placeholder'),'提出问题，或描述想完成的工作');
       await state.getByRole('button',{name:'重新读取',exact:true}).click();
       await state.getByText('读取完成：仍无法读取原执行状态，记录已保留。可发送新要求，不会重做原操作。',{exact:true}).waitFor();
       assert.equal(fixture.stops,beforeStops);

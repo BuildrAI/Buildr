@@ -13,12 +13,23 @@ export function releasedContinuation(record: StoredConversation, input: SendDraf
     resolvePermissionMode(input.permissionMode) === (run.permissionMode ?? 'default'));
 }
 
+/** Stopping ends the user's wait, not the uncertain native work. Never reuse its context. */
+export function stoppedContinuation(record: StoredConversation, input: SendDraft): boolean {
+  const run = record.view.run, participant = record.participants.find(value => value.id === run?.participantId);
+  return Boolean(run && input.continueRunId === run.id && run.status === 'unknown' && run.stopRequested &&
+    participant && input.connectionId === participant.connectionId &&
+    input.modelAccountId === run.modelAccountId && input.modelAccountIdentity === run.modelAccountIdentity && input.model === run.model &&
+    input.serviceTier === run.serviceTier && input.reasoningEffort === run.reasoningEffort &&
+    resolvePermissionMode(input.permissionMode) === (run.permissionMode ?? 'default'));
+}
+
 /** Resolve the exact failed work from saved facts, never from a fresh user message. */
 export function continuationDraft(record: StoredConversation, input: SendDraft): SendDraft {
   if (!input.continueRunId) return input;
   const run = record.view.run;
   if (!run || run.id !== input.continueRunId) fail('agent_continue_stale', '原执行已变化，请重新读取后继续。', 409);
   if (input.waitingHandoff && run.status === 'waiting-question') return { ...input, text: '用户明确请求切换执行组合并接续原目标。请核对已有成果与随交接提交的问题回答；未回答的问题不构成同意，仍需决定时重新询问。不要逐条重放历史命令，不扩大原有授权。' };
+  if (stoppedContinuation(record, input)) return { ...input, attachmentIds: [], text: '用户明确请求结束对旧轮的等待并继续原目标。旧执行已请求停止，但尚未确认结束，原输入是否送达及命令结果仍以原记录为准；旧命令可能仍在运行。请先核对已有对话、当前成果、未知操作和未回答问题，再推进可独立完成的剩余工作；不要重发原输入、逐条重放历史命令、与旧命令并发修改同一成果、覆盖已有成果或代答问题。不得宣称旧执行已停止或工作成功，不扩大原授权。' };
   const released = releasedContinuation(record, input);
   if (!released && (!['failed', 'stopped', 'completed'].includes(run.status) || record.view.requests.some(request=>request.runId===run.id) || run.tools.some(tool => tool.status !== 'completed'))) fail('agent_continue_unavailable', '请先核对原执行及工具已结束，并处理待回答或待授权的问题。', 409);
   const replied = record.view.entries.some(entry => entry.role === 'assistant' && entry.kind === 'message' && !entry.thinking && entry.text.trim() && (entry.runId === run.id || !entry.runId && entry.createdAt >= run.startedAt));

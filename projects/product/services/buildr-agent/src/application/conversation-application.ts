@@ -15,7 +15,7 @@ import { reconcileLegacySupersededRuns } from '../domain/superseded-runs.ts';
 import { blocksExecution } from '../domain/interaction-policy.ts';
 import { ConversationAttachments, attachmentRevision, MAX_IMAGE_BYTES, MAX_VISUAL_INPUTS } from './conversation-attachments.ts';
 import type { AttachmentInput } from '../contracts.ts';
-import { continuationDraft, releasedContinuation } from '../domain/conversation-continuation.ts';
+import { continuationDraft, releasedContinuation, stoppedContinuation } from '../domain/conversation-continuation.ts';
 import { waitingHandoffQuestions, waitingQuestionText } from '../domain/waiting-question-handoff.ts';
 import { ConversationReadModel, type ConversationReadState } from '../persistence/conversation-read-model.ts';
 import { ConversationEntryStore } from '../persistence/conversation-entry-store.ts';
@@ -712,7 +712,8 @@ export class ConversationApplication {
     let input = this.draft(raw); expected(record.view.revision, input.expectedRevision);
     const waitingQuestions = input.waitingHandoff ? waitingHandoffQuestions(record, input) : undefined;
     if (!waitingQuestions) this.assertAccepting(record);
-    if (record.view.run && releasedContinuation(record, input) && !this.allowsReleasedContinuation(record.view.workspaceId, record.view.id, input)) fail('agent_continue_unavailable', '原目标仍有在途工作，请核对后再继续。', 409);
+    if (record.view.run && !stoppedContinuation(record, input) && releasedContinuation(record, input) && !this.allowsReleasedContinuation(record.view.workspaceId, record.view.id, input)) fail('agent_continue_unavailable', '原目标仍有在途工作，请核对后再继续。', 409);
+    if (stoppedContinuation(record, input) && this.pendingSends.read(record.view.workspaceId, record.view.id)) fail('agent_continue_unavailable', '已有待发送要求，请先处理后再继续。', 409);
     input = continuationDraft(record, input);
     const connection = this.options.connections.get(input.connectionId);
     if (connection.enabled && connection.provider === 'qoder' && connection.status === 'expired') fail('qoder_platform_login_expired', qoderLoginExpiredMessage, 409);
@@ -763,7 +764,7 @@ export class ConversationApplication {
       record.view.requests.some(request => request.runId === current.id && request.kind === 'question') &&
       !record.view.requests.some(request => request.runId === current.id && request.kind !== 'question') &&
       !conversationRuns(record.view).some(run => run.id !== current.id && run.participantId === latest.id && unfinishedRun(run)));
-    const held = latest && !replacingQuestion && !releasedContinuation(record,input) && conversationRuns(record.view).some(run => run.participantId === latest.id && (
+    const held = latest && !replacingQuestion && (!releasedContinuation(record,input) || stoppedContinuation(record,input)) && conversationRuns(record.view).some(run => run.participantId === latest.id && (
       record.view.requests.some(request => request.runId === run.id) ||
       run.id === record.view.run?.id && unfinishedRun(run) ||
       !run.resourcesReleased && (unfinishedRun(run) || run.generation !== this.options.generation && this.options.generationAlive?.(run.generation) === true)

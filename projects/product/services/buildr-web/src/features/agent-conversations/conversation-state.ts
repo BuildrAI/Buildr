@@ -13,10 +13,16 @@ export function canContinueReleasedConversation(conversation: ConversationView |
   return Boolean(conversation?.run?.status === 'unknown' && conversation.run.accepted && canCloseUncertainConversation(conversation));
 }
 
+/** Explicit stop-escape preserves the old owner and starts an independent context. */
+export function canContinueConversation(conversation: ConversationView | null): boolean {
+  return Boolean(conversation && !conversation.pendingSend &&
+    (conversation.run?.status === 'unknown' && conversation.run.stopRequested || canContinueReleasedConversation(conversation)));
+}
+
 export function conversationRecoveryAction(conversation: ConversationView | null): {kind:'recover'|'observe';label:string} | null {
   const run = conversation?.run; if (!conversation || !run) return null;
   if (run.status === 'tools-active' && run.canContinue) return null;
-  if (canContinueReleasedConversation(conversation)) return {kind:'recover',label:'继续工作'};
+  if (canContinueConversation(conversation)) return {kind:'recover',label:run.stopRequested?'结束等待并继续':'继续工作'};
   if (run.status === 'unknown' || run.status === 'tools-active' || ['failed','stopped','completed'].includes(run.status) && run.tools.some(tool => tool.status !== 'completed')) return {kind:'observe',label:'核对状态'};
   if (executionLocked(run) || currentConversationRequests(conversation).length || run.tools.some(tool => tool.status !== 'completed')) return null;
   const replied = conversation.entries.some(entry => !entry.parentToolId && !entry.thinking && entry.role === 'assistant' && entry.kind === 'message' && entry.text.trim() && (entry.runId === run.id || !entry.runId && entry.createdAt >= run.startedAt));

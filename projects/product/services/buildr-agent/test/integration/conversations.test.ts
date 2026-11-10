@@ -3578,3 +3578,31 @@ test('documents: existing conversation mixes PDF and images, retaining names and
   assert.equal(f.service.conversations.readAttachment('workspace-one',chat.id,doc.id).name,'合同.pdf');
  }finally{await f.close();}
 });
+
+for(const accepted of [true,false])test('explicit stop escape isolates unknown work and preserves exact controls; accepted='+accepted,async()=>{
+ const native=fake('local',{disconnect:'unknown'}),f=fixture([native.executor]);
+ const repository=new ConversationRepository(path.join(f.options.dataRoot,'agent-service'));
+ try{
+  await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});
+  send(f.service,chat.id,'local','preserve my goal');
+  await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='unknown');
+  const record=repository.readConversation(chat.id)!,revision=record.view.revision,old=record.view.run!;
+  old.stopRequested=true;old.accepted=accepted;old.resourcesReleased=false;old.executionState='unknown';
+  old.tools=[{id:'unknown-command',label:'command',status:'unknown'}];
+  record.view.revision=randomUUID();repository.saveConversation(record,revision);
+  const draft=continueDraft(f.service,chat.id),preview=f.service.conversations.prepareSend('workspace-one',chat.id,draft);
+  assert.equal(preview.participantId,undefined,'stop escape must not reuse the old native context');
+  const request={...draft,previewToken:preview.token,clientRequestId:randomUUID()};
+  const first=f.service.conversations.send('workspace-one',chat.id,request);
+  const repeated=f.service.conversations.send('workspace-one',chat.id,request);
+  assert.equal(repeated.run.id,first.run.id,'duplicate click keeps the exact new execution');
+  const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='completed');
+  assert.equal(native.sends.length,2);
+  assert.notEqual(native.sends[0]!.contextRef.id,native.sends[1]!.contextRef.id);
+  assert.match(native.sends[1]!.text,/旧命令可能仍在运行/);
+  const retained=done.retainedRuns!.find(run=>run.id===old.id)!;
+  assert.equal(retained.participantId,old.participantId);assert.equal(retained.generation,old.generation);
+  assert.equal(retained.status,'unknown');assert.equal(retained.resourcesReleased,false);
+  assert.throws(()=>f.service.conversations.prepareSend('workspace-one',chat.id,{...draft,expectedRevision:done.revision}),/原执行已变化/);
+ }finally{repository.stopReadModels();await f.close();}
+});

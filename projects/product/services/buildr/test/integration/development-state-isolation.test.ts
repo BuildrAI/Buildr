@@ -42,7 +42,9 @@ function fixture(t: test.TestContext) {
 test('direct application and child CLI init keep auto-registration inside test state', t => {
   const f = fixture(t);
   const script = path.join(f.root, 'direct-check.mjs');
-  const workspaces = ['application', 'cli', 'source-only'].map(name => path.join(f.root, name));
+  const state = createIsolatedWorkspaceState({env:f.env});
+  t.after(()=>state.cleanup());
+  const workspaces = ['application', 'cli', 'source-only'].map(name => path.join(state.root, name));
   fs.writeFileSync(script, `
 import fs from 'node:fs';
 import path from 'node:path';
@@ -60,13 +62,14 @@ for (const [index, extra] of [[1, []], [2, ['--source-only']]]) {
 const registry = JSON.parse(fs.readFileSync(path.join(process.env.BUILDR_APP_DATA_DIR, 'workspace-registry.json'), 'utf8'));
 console.log(JSON.stringify({ root: process.env.BUILDR_TEST_LOCAL_STATE_ROOT, app: process.env.BUILDR_APP_DATA_DIR, product: process.env.BUILDR_PRODUCT_DATA_DIR, roots: registry.roots }));
 `);
-  const result = spawnSync(process.execPath, [script], { cwd: serviceRoot, env: { ...f.env, NODE_COMPILE_CACHE: path.join(f.root, 'compile-cache') }, encoding: 'utf8', timeout: 120_000 });
+  const result = spawnSync(process.execPath, [script], { cwd: serviceRoot, env: { ...state.env, BUILDR_SMOKE_ROOT:state.root, NODE_COMPILE_CACHE: path.join(f.root, 'compile-cache') }, encoding: 'utf8', timeout: 120_000 });
   assert.equal(result.status, 0, result.stderr || result.stdout || result.error?.message);
   const observed = JSON.parse(result.stdout.trim());
   assert.notEqual(observed.app, f.appData);
   assert.notEqual(observed.product, f.productData);
   assert.deepEqual(observed.roots, workspaces.slice(0, 2));
-  assert.equal(fs.existsSync(observed.root), false, 'owned test state must be removed after success');
+  assert.equal(observed.root,state.root,'application and child CLI share the workspace runner scope');
+  assert.equal(fs.existsSync(observed.root), true, 'child does not clean the parent runner scope');
   for (const directory of [f.appData, f.productData]) assert.deepEqual(fs.readdirSync(directory), ['keep']);
   assert.ok(fs.existsSync(path.join(workspaces[2], '.buildr/workspace.yml')));
 });
@@ -211,4 +214,17 @@ test('test state keeps ownership evidence while a live file is held, then cleans
   assert.ok(fs.existsSync(file));
  } finally {fs.closeSync(fd);state.cleanup();}
  assert.equal(fs.existsSync(state.root),false);
+});
+
+test('workspace runner bootstrap reuses its verified fixture scope without cleaning the parent owner', t => {
+  const state=createIsolatedWorkspaceState();t.after(()=>state.cleanup());
+  const result=spawnSync(process.execPath,['--input-type=module','-e',`
+await import(${JSON.stringify(bootstrap)});
+console.log(JSON.stringify({root:process.env.BUILDR_TEST_LOCAL_STATE_ROOT,app:process.env.BUILDR_APP_DATA_DIR}));
+`],{cwd:serviceRoot,env:{...state.env,BUILDR_SMOKE_ROOT:state.root,NODE_TEST_CONTEXT:undefined},encoding:'utf8',timeout:15000});
+  assert.equal(result.status,0,result.stderr);
+  const observed=JSON.parse(result.stdout);
+  assert.equal(observed.root,state.root);
+  assert.equal(observed.app,state.env.BUILDR_APP_DATA_DIR);
+  assert.equal(fs.existsSync(state.root),true,'only the workspace runner owns cleanup');
 });
