@@ -1,10 +1,8 @@
-import { regenerableToolCaches, toolCacheReclaimable } from '../../storage/tool-cache.ts';
-import { qoderLegacyCaches } from './cache-storage.ts';
 import { qoderContent } from './content.ts';
 import { instructionParticipation } from '../../domain/participation.ts';
 import {generateQoderTitle} from './title.ts';
 import {readQoderPersistedExecution} from './durable-history.ts';
-import { qoderDiagnosticResources } from './diagnostic-storage.ts';
+import { qoderStorage } from './storage.ts';
 import {qoderSdkPair} from './sdk-pair.ts';
 import { interactionPolicy } from '../../domain/interaction-policy.ts';
 import { NativeObservationError, NativeRequestError } from '../../domain/error-diagnostic.ts';
@@ -23,7 +21,7 @@ import type { ExecutorForkInput } from '../../contracts.ts';
 const capabilities = { interaction: { policy: interactionPolicy.version, nonBlockingQuestions: false }, supplement: true, permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
 export function createQoderExecutor(productId:QoderProductId='qoder'): AgentExecutor {
   const product=qoderProduct(productId);
-  return { nativeContent: input => qoderContent(input,productId), readReleasedControl: input => releasedNativeControl(productId,input), storage: { legacyDirectories: qoderLegacyCaches, diagnostics: qoderDiagnosticResources, transientDirectories: regenerableToolCaches, canReclaim: toolCacheReclaimable }, descriptor: { id: productId, label: product.label, capabilities }, open: options => QoderRuntime.open(options,productId) };
+  return { nativeContent: input => qoderContent(input,productId), readReleasedControl: input => releasedNativeControl(productId,input), storage: qoderStorage(), descriptor: { id: productId, label: product.label, capabilities }, open: options => QoderRuntime.open(options,productId) };
 }
 class QoderRuntime implements AgentRuntime {
   participationInstruction?: import('../../participation-contracts.ts').ParticipationMatch;
