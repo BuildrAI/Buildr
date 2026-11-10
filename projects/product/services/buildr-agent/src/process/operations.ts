@@ -46,7 +46,7 @@ export function validateOperation(name: string, args: unknown): asserts args is 
   if (input && !validators.get(input[1])!(JSON.parse(JSON.stringify(args[input[0]] ?? (input[1] === 'check' ? {} : null))))) throw new AgentServiceError('agent_process_input_invalid', '执行操作字段无效。');
   if (name === 'conversations.addAttachment' || name === 'conversations.addDraftImage') {
     const value = args[2];
-    if (!value || typeof value.base64 !== 'string' || value.base64.length > (typeof value.mimeType === 'string' && value.mimeType.startsWith('video/') ? 44 : 12) * 1024 * 1024 || !(name === 'conversations.addDraftImage' ? validators.get('draftImage')!({expectedRevision:value.expectedRevision,name:value.name,mimeType:value.mimeType,frame:value.frame,video:value.video}) : validators.get('attachment')!({ expectedRevision: value.expectedRevision, expectedAttachmentRevision: value.expectedAttachmentRevision, mimeType: value.mimeType, video: value.video }))) throw new AgentServiceError('agent_process_input_invalid', '附件字段无效。');
+    if (!value || typeof value.base64 !== 'string' || value.base64.length > (typeof value.mimeType === 'string' && !value.mimeType.startsWith('image/') ? 44 : 12) * 1024 * 1024 || !(name === 'conversations.addDraftImage' ? validators.get('draftImage')!({expectedRevision:value.expectedRevision,name:value.name,mimeType:value.mimeType,frame:value.frame,video:value.video}) : validators.get('attachment')!({ expectedRevision: value.expectedRevision, expectedAttachmentRevision: value.expectedAttachmentRevision, name: value.name, mimeType: value.mimeType, video: value.video }))) throw new AgentServiceError('agent_process_input_invalid', '附件字段无效。');
   }
 }
 export async function dispatchOperation(service: AgentService, name: string, args: any[]): Promise<unknown> {
@@ -57,6 +57,6 @@ export async function dispatchOperation(service: AgentService, name: string, arg
   for (const part of parts) owner = owner[part];
   // Names are the closed allowlist above; no arbitrary method/property invocation.
   const value = await owner[method](...args);
-  if (name === 'conversations.readAttachment' || name === 'conversations.readDraftImage') return { base64: value.bytes.toString('base64'), mimeType: value.mimeType };
+  if (name === 'conversations.readAttachment' || name === 'conversations.readDraftImage') return { base64: value.bytes.toString('base64'), mimeType: value.mimeType, name: value.name };
   return value;
 }

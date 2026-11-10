@@ -253,7 +253,7 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
       }
       if (['conversations.fork','conversations.create','conversations.createChild','conversations.startDraft','conversations.send','conversations.prepareSend','conversations.prepareHandoff'].includes(name) && needsReadyCheck(current)) await readyForNewWork(current);
       if (name === 'conversations.addDraftImage') args[2] = { expectedRevision: args[2].expectedRevision, name: args[2].name, frame: args[2].frame, mimeType: args[2].mimeType, video: args[2].video, base64: Buffer.from(args[2].bytes).toString('base64') };
-      if (name === 'conversations.addAttachment') args[2] = { expectedRevision: args[2].expectedRevision, expectedAttachmentRevision: args[2].expectedAttachmentRevision, mimeType: args[2].mimeType, video: args[2].video, base64: Buffer.from(args[2].bytes).toString('base64') };
+      if (name === 'conversations.addAttachment') args[2] = { expectedRevision: args[2].expectedRevision, expectedAttachmentRevision: args[2].expectedAttachmentRevision, name: args[2].name, mimeType: args[2].mimeType, video: args[2].video, base64: Buffer.from(args[2].bytes).toString('base64') };
       let result;
       try { result = await call('/operations', { contract: AGENT_EXECUTION_CONTRACTS.operations, sourceId: options.sourceId, operation: name, args }); }
       catch (error) {
@@ -265,7 +265,7 @@ export async function connectAgentProcess(input: AgentProcessConnectionOptions):
         const legacy = await call('/operations', { contract: AGENT_EXECUTION_CONTRACTS.operations, sourceId: options.sourceId, operation: 'conversations.pending', args: [] });
         result = { conversations: legacy.conversations.map(pendingConversationSummary) };
       }
-      return ['conversations.readAttachment','conversations.readDraftImage'].includes(name) ? { bytes: Buffer.from(result.base64, 'base64'), mimeType: result.mimeType } : withPending(result);
+      return ['conversations.readAttachment','conversations.readDraftImage'].includes(name) ? { bytes: Buffer.from(result.base64, 'base64'), mimeType: result.mimeType, name: result.name } : withPending(result);
     };
   }
   operations.models.generate = async (value: { signal: AbortSignal } & Record<string, unknown>) => {

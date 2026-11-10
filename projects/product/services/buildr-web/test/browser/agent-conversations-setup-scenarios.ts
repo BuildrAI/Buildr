@@ -7,6 +7,33 @@ import type {AgentConversationFixture} from './agent-conversation-fixture.ts';
 export async function runSetupScenarios(fixture:AgentConversationFixture){
   await runWebhookSettingsJourney(fixture);
   const {assertFixed,assertModelSummary,assertNavigationHighlight,assertReminderGap,capture,chooseAgent,chooseModel,chooseOption,closeConversation,closeModelSettings,connections,expectedBrowserErrors,input,modelSettings,openDesktopConversation,openModelSettings,page,panel,preferenceBodies,preparedInputs,programAttempts,reset,run,sentInputs,setHighEffort,step,workspaceId}=fixture;
+await step('文档附件支持九份、拒绝第十份并刷新恢复文件名',async()=>{
+  await reset();await openDesktopConversation();await input().waitFor();
+  await input().fill('读取上传文档');
+  const file=panel().locator('.ac-compose-wrap input[type=file]');
+  assert.match(await file.getAttribute('accept'),/\.md/);assert.match(await file.getAttribute('accept'),/\.docx/);
+  const docs=Array.from({length:9},(_,i)=>({name:`说明${i}.md`,mimeType:'text/markdown',buffer:Buffer.from(`# 文档 ${i}`)}));
+  await file.setInputFiles(docs);
+  await panel().getByRole('button',{name:'移除文档 说明8.md',exact:true}).waitFor();
+  assert.equal(await panel().locator('.ac-document-thumbnail').count(),9);
+  assert.equal(await panel().locator('.ac-document-thumbnail img').count(),0);
+  await file.setInputFiles({name:'第十份.pdf',mimeType:'application/pdf',buffer:Buffer.from('%PDF-1.7')});
+  await panel().getByText('每次最多添加 9 份附件。',{exact:true}).waitFor();
+  assert.equal(await panel().locator('.ac-document-thumbnail').count(),9);
+  await page.reload();await input().waitFor();
+  await panel().getByRole('button',{name:'移除文档 说明8.md',exact:true}).waitFor();
+  assert.equal(await input().inputValue(),'读取上传文档');
+  assert.equal(await panel().locator('.ac-document-thumbnail').count(),9);
+  const nameHeight=await panel().locator('.ac-document-name').first().evaluate((node:HTMLElement)=>node.getBoundingClientRect().height);
+  assert.ok(nameHeight>=20,'文件名保持完整一行高度，不被卡片布局裁切');
+  await capture(page,'agent-document-nine-attachments.png');
+  await panel().locator('.ac-document-thumbnail[title="说明8.md"]').hover();
+  await panel().getByRole('button',{name:'移除文档 说明8.md',exact:true}).click();
+  await panel().getByRole('button',{name:'移除文档 说明8.md',exact:true}).waitFor({state:'hidden'});
+  assert.equal(await panel().locator('.ac-document-thumbnail').count(),8);
+  assert.equal(fixture.sends,0,'上传与恢复不自动发送');
+});
+
 await step('新对话欢迎内容在高矮视口居中，空间不足时仍可完整滚动阅读',async()=>{
   await reset();const viewport=page.viewportSize();await openDesktopConversation();
   const stream=panel().locator('.ac-stream'),welcome=stream.locator('.ac-welcome');await welcome.waitFor();

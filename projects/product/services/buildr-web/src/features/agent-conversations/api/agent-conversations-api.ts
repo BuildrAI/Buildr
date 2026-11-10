@@ -102,7 +102,10 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
       let response=await send();
       if(response.status===403&&session.refreshSession){const body=await response.clone().json().catch(()=>null);if(body?.error?.code==='session_forbidden'&&await session.refreshSession())response=await send();}
       if(!response.ok)throw new Error('草稿图片读取失败，请重新添加或稍后重试。');
-      return response.blob();
+      const blob = await response.blob();
+      const encodedName = response.headers.get('content-disposition')?.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+      if (encodedName) { try { return new File([blob], decodeURIComponent(encodedName), {type:blob.type}); } catch { /* Old responses need no name. */ } }
+      return blob;
     },
     create(input: {workspaceId: string; cwd?: string; taskId?: string; taskLinks?:{workspaceId:string;taskId:string}[]}) { return request<ConversationView>(path(input.workspaceId), post({cwd: input.cwd, taskId: input.taskId,taskLinks:input.taskLinks})); },
     read(workspaceId: string, id: string, signal?: AbortSignal) { return request<ConversationView>(path(workspaceId, id), {signal}); },
@@ -134,7 +137,7 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
     async upload(conversation: ConversationView, file: File, video?: { duration: number; frames: Array<{ id: string; time: number }> }) {
       const bytes = await timeAttachmentStage('read-file',()=>file.arrayBuffer());
       const revisionHeader:Record<string,string>=conversation.attachmentRevision?{'x-buildr-attachment-revision':conversation.attachmentRevision}:{'x-buildr-conversation-revision':conversation.revision};
-      const send = () => timeAttachmentStage('request',()=>fetcher(path(conversation.workspaceId,conversation.id) + '/attachments', {method:'POST',cache:'no-store',headers:{...session.writeHeaders(),'content-type':file.type,...revisionHeader,...(video?{'x-buildr-video':JSON.stringify(video)}:{})},body:bytes}));
+      const send = () => timeAttachmentStage('request',()=>fetcher(path(conversation.workspaceId,conversation.id) + '/attachments', {method:'POST',cache:'no-store',headers:{...session.writeHeaders(),'content-type':file.type,'x-buildr-image-name':encodeURIComponent(file.name),...revisionHeader,...(video?{'x-buildr-video':JSON.stringify(video)}:{})},body:bytes}));
       let response = await send();
       if(response.status===403 && session.refreshSession){const body=await response.clone().json().catch(()=>null);if(body?.error?.code==='session_forbidden' && await session.refreshSession())response=await send();}
       const body=await response.json();
@@ -149,7 +152,10 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
         if (body?.error?.code === 'session_forbidden' && await session.refreshSession()) response = await send();
       }
       if (!response.ok) throw new Error('附件读取失败，请重新加载。');
-      return response.blob();
+      const blob = await response.blob();
+      const encodedName = response.headers.get('content-disposition')?.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+      if (encodedName) { try { return new File([blob], decodeURIComponent(encodedName), {type:blob.type}); } catch { /* Old responses need no name. */ } }
+      return blob;
     },
     async subscribe(workspaceId: string, id: string, signal: AbortSignal, onEvent: (event: ConversationEvent) => void, cursor?: number) {
       let transfer='delta-v2';

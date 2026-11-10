@@ -14,7 +14,7 @@ test('自由回答图片转换为已校验本机来源，旧选项与多选不�
 });
 test('拒绝客户端路径、不可自由填写的选项、跨范围材料和未准备的视频',()=>{
   assert.equal(isMaterialAnswer({text:'x',attachmentIds:[],path:'/etc/passwd'}),false);
-  for(const value of [{text:'x',attachmentIds:['a'],path:'/etc/passwd'},{text:'x',attachmentIds:['a','b','c','d','e']}])assert.throws(()=>resolveQuestionAnswer(request,{scope:value},expand));
+  for(const value of [{text:'x',attachmentIds:['a'],path:'/etc/passwd'},{text:'x',attachmentIds:Array.from({length:10},(_,i)=>String(i))}])assert.throws(()=>resolveQuestionAnswer(request,{scope:value},expand));
   assert.throws(()=>resolveQuestionAnswer({...request,questions:[{id:'scope',label:'范围',options:[{id:'yes',label:'确认'}]}]},{scope:{text:'',attachmentIds:['a']}},expand));
   assert.throws(()=>resolveQuestionAnswer(request,{scope:{text:'',attachmentIds:['a']}},()=>{throw new Error('other conversation');}),/other conversation/);
   assert.throws(()=>resolveQuestionAnswer(request,{scope:{text:'',attachmentIds:['a']}},()=>{throw new Error('unprepared video');}));

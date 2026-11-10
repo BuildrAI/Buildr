@@ -25,7 +25,7 @@ export function ConversationAnswerInput({label,value,onChange,onUpload,busy,acti
     finally {adding.current = false; setUploading(false);}
   };
   return <div className="ac-answer-input">
-    <ConversationComposer addLabel="添加回答图片或视频" images={images} materialDisabled={busy||uploading||!onUpload} addDisabled={busy||uploading||!onUpload} uploading={uploading} onAdd={add} onRemove={id=>update(latest.current.images.filter(image=>image.id!==id))} onBlocked={()=>setError('当前正在处理，请稍后再添加图片或视频。')}
+    <ConversationComposer addLabel="添加回答图片、视频或文档" images={images} materialDisabled={busy||uploading||!onUpload} addDisabled={busy||uploading||!onUpload} uploading={uploading} onAdd={add} onRemove={id=>update(latest.current.images.filter(image=>image.id!==id))} onBlocked={()=>setError('当前正在处理，请稍后再添加图片、视频或文档。')}
       input={{'aria-label':label,placeholder:'输入你的回答',value,autoSize:{minRows:2,maxRows:6},onChange:event=>{latest.current.value=event.target.value;onChange(event.target.value,latest.current.images);}}} access={null} execution={actions}/>
     {error&&<Alert type="error" message={error} showIcon/>}
   </div>;

@@ -14,7 +14,7 @@ export type MaterialAnswer = { text: string; attachmentIds: string[] };
 export function isMaterialAnswer(value: unknown): value is MaterialAnswer {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const raw = value as Record<string, unknown>;
-  return Object.keys(raw).every(key => key === 'text' || key === 'attachmentIds') && typeof raw.text === 'string' && Array.isArray(raw.attachmentIds) && raw.attachmentIds.length <= 4 && raw.attachmentIds.every(id => typeof id === 'string' && Boolean(id)) && Boolean(raw.text.trim() || raw.attachmentIds.length);
+  return Object.keys(raw).every(key => key === 'text' || key === 'attachmentIds') && typeof raw.text === 'string' && Array.isArray(raw.attachmentIds) && raw.attachmentIds.length <= 9 && raw.attachmentIds.every(id => typeof id === 'string' && Boolean(id)) && Boolean(raw.text.trim() || raw.attachmentIds.length);
 }
 export function answerAttachmentIds(answer: unknown): string[] {
   if (isMaterialAnswer(answer)) return answer.attachmentIds;
@@ -32,7 +32,7 @@ export function questionAnswerDisplay(answer: unknown): unknown {
 /** Native question protocols remain text-only. Resolve private image sources on the host, never trust client paths. */
 export function resolveQuestionAnswer(request: PendingRequestView, answer: unknown, expand: (ids: string[]) => {images: ExecutorImage[]; description: string}): { answer: unknown; attachmentIds: string[]; images: ExecutorImage[] } {
   const ids = [...new Set(answerAttachmentIds(answer))];
-  if (ids.length > 4) fail('agent_question_answer_invalid', '每次回答最多添加4份图片或视频。');
+  if (ids.length > 9) fail('agent_question_answer_invalid', '每次回答最多添加9份附件。');
   if (ids.length && request.kind !== 'question') fail('agent_question_answer_invalid', '授权回答不能包含附件。');
   const images: ExecutorImage[] = [];
   const resolve = (value: unknown, free: boolean): unknown => {

@@ -77,7 +77,7 @@ export interface LoginObservation {
 }
 export interface ExecutorImage { id: string; path: string; mimeType: string }
 export interface VideoAttachment { duration: number; frames: Array<{ id: string; time: number }> }
-export interface AttachmentInput { expectedRevision?: string; expectedAttachmentRevision?: string; mimeType: string; bytes: Uint8Array; video?: VideoAttachment }
+export interface AttachmentInput { name?: string; expectedRevision?: string; expectedAttachmentRevision?: string; mimeType: string; bytes: Uint8Array; video?: VideoAttachment }
 export interface PresentedFile { path:string; description?:string }
 export interface ExecutorItem {
   /** The native executor owns this tool body. */

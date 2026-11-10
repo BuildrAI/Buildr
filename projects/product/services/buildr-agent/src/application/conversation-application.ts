@@ -788,7 +788,7 @@ export class ConversationApplication {
     const rounds=sources?.rounds??localRounds;
     const answerImages=(input.waitingHandoff?.answers??[]).flatMap(item=>answerAttachmentIds(item.answer));
     const currentImages=[...new Set([...(input.attachmentIds??[]),...answerImages,...answerMaterials])];
-    if(currentImages.length>4)fail('agent_question_answer_invalid','每次回答最多添加4份图片或视频。');
+    if(currentImages.length>9)fail('agent_question_answer_invalid','每次回答最多添加9份附件。');
     const canAttachHistory=connection.capabilities.images&&(!source||Boolean(selectedModel&&'images' in selectedModel&&selectedModel.images));
     const priorImages=canAttachHistory&&currentImages.length<4?historicalImages.filter(image=>image.available&&'mimeType' in image&&image.mimeType?.startsWith('image/')&&!currentImages.includes(image.id)).slice(-Math.max(0,4-currentImages.length)).map(image=>image.id):[];
     const ids=[...new Set([...priorImages,...currentImages])];
@@ -2268,7 +2268,7 @@ export class ConversationApplication {
     const record = this.load(workspaceId, id);
     return this.media.add(record, input, [...(this.pendingSends.read(workspaceId, id)?.draft.attachmentIds ?? []), ...(this.pendingSends.read(workspaceId,id)?.draft.waitingHandoff?.answers ?? []).flatMap(item=>answerAttachmentIds(item.answer))]);
   }
-  readAttachment(workspaceId: string, id: string, attachmentId: string): { bytes: Buffer; mimeType: string } {
+  readAttachment(workspaceId: string, id: string, attachmentId: string): { bytes: Buffer; mimeType: string; name?: string } {
     const record=this.options.repository.readState(id);
     if(!record||record.view.workspaceId!==workspaceId)fail('agent_conversation_missing','该工作空间中没有此对话。',404);
     return this.media.read(record, attachmentId);

@@ -1,25 +1,26 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Button, Image } from 'antd';
-import { CloseOutlined, FileImageOutlined } from '@ant-design/icons';
+import { CloseOutlined, FileImageOutlined, FileTextOutlined } from '@ant-design/icons';
 import type { AttachmentView } from './types';
-import { attachmentMimeType, transferredFiles } from './conversation-images';
+import { attachmentMimeType, conversationDocumentTypes, transferredFiles } from './conversation-images';
 
 export type DraftImage = AttachmentView & { name: string; file?: File };
-export function ImageThumbnail({ image, disabled = false, onRemove }: { image: Pick<DraftImage, 'name' | 'file'>; disabled?: boolean; onRemove?(): void }) {
+export function ImageThumbnail({ image, disabled = false, onRemove }: { image: Pick<DraftImage, 'name' | 'file'> & {mimeType?:string;size?:number}; disabled?: boolean; onRemove?(): void }) {
   const [url, setUrl] = useState<string>();
-  const video = image.file?.type.startsWith('video/');
+  const type = image.file?.type || image.mimeType || '';
+  const video = type.startsWith('video/'), document = conversationDocumentTypes.includes(type);
   useEffect(() => {
-    if (!image.file) return;
+    if (!image.file || document) { setUrl(undefined); return; }
     if (video) { const local = URL.createObjectURL(image.file); setUrl(local); return () => URL.revokeObjectURL(local); }
     // The application permits data: images, while blob: remains blocked by its CSP.
     const reader = new FileReader(); setUrl(undefined);
     reader.onload = () => { if (typeof reader.result === 'string') setUrl(reader.result); };
     reader.readAsDataURL(image.file);
     return () => { reader.onload = null; reader.abort(); };
-  }, [image.file, video]);
-  return <div className={'ac-image-thumbnail'+(video?' ac-video-thumbnail':'')} title={image.name}>
-    {url ? video ? <><video src={url} controls preload="metadata" playsInline aria-label={image.name}/><small>视频 · 抽样画面，不含音轨</small></> : <Image src={url} alt={image.name} width={72} height={72} preview={{ mask: <></> }} /> : <FileImageOutlined />}
-    {onRemove && <Button type="text" size="small" className="ac-image-remove" icon={<CloseOutlined />} aria-label={(video?'移除视频 ':'移除图片 ') + image.name} disabled={disabled} onClick={onRemove} />}
+  }, [image.file, video, document]);
+  return <div className={'ac-image-thumbnail'+(document?' ac-document-thumbnail':video?' ac-video-thumbnail':'')} title={image.name}>
+    {document ? <><FileTextOutlined/><span className="ac-document-name">{image.name}</span><small>{Math.ceil((image.size ?? image.file?.size ?? 0)/1024)} KiB</small></> : url ? video ? <><video src={url} controls preload="metadata" playsInline aria-label={image.name}/><small>视频 · 抽样画面，不含音轨</small></> : <Image src={url} alt={image.name} width={72} height={72} preview={{ mask: <></> }} /> : <FileImageOutlined />}
+    {onRemove && <Button type="text" size="small" className="ac-image-remove" icon={<CloseOutlined />} aria-label={(document?'移除文档 ':video?'移除视频 ':'移除图片 ') + image.name} disabled={disabled} onClick={onRemove} />}
   </div>;
 }
 
@@ -29,7 +30,7 @@ export function ConversationImageInput({ images, disabled, onAdd, onRemove, onBl
   const [dragging, setDragging] = useState(false);
   return <div className={'ac-composer' + (dragging ? ' ac-composer-dragging' : '')}
     onPaste={event => {
-      const files = transferredFiles(event.clipboardData).filter(file => /^(image|video)\//.test(attachmentMimeType(file)));
+      const files = transferredFiles(event.clipboardData).filter(file => (/^(image|video)\//.test(attachmentMimeType(file)) || conversationDocumentTypes.includes(attachmentMimeType(file))));
       if (!files.length) return;
       event.preventDefault();
       if (disabled) onBlocked(); else void onAdd(files);
@@ -43,6 +44,6 @@ export function ConversationImageInput({ images, disabled, onAdd, onRemove, onBl
     }}>
     {images.length > 0 && <div className="ac-attachments" aria-label="待发送附件">{images.map(image => <ImageThumbnail key={image.id} image={image} disabled={disabled} onRemove={() => onRemove(image.id)} />)}</div>}
     {children}
-    {dragging && <div className="ac-image-drop-hint">松开以添加图片或视频</div>}
+    {dragging && <div className="ac-image-drop-hint">松开以添加图片、视频或文档</div>}
   </div>;
 }

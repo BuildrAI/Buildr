@@ -116,13 +116,13 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
         if (request.method === 'GET' && action === 'submissions' && childId) return result('draftLookup', await service.conversations.lookupDraft(workspaceId, draftId, childId));
         if (request.method === 'GET' && action === 'attachments' && childId) {
           const image = await service.conversations.readDraftImage(workspaceId, draftId, childId);
-          respond.binary(image.bytes, image.mimeType, { disposition: 'inline', filename: childId }); return true;
+          respond.binary(image.bytes, image.mimeType, { disposition: /^(image|video)\//.test(image.mimeType) ? 'inline' : 'attachment', filename: image.name || childId }); return true;
         }
         if (request.method === 'POST' && action === 'attachments' && !childId) {
           let name: string; try { name = decodeURIComponent(request.headers['x-buildr-image-name'] ?? '图片'); } catch { throw inputError(); }
           let video: unknown;try {if(request.headers['x-buildr-video'])video=JSON.parse(request.headers['x-buildr-video']);}catch{throw inputError();}
           const metadata = validate('draftImage', { expectedRevision: request.headers['x-buildr-draft-revision'], name, mimeType: request.headers['content-type'], ...(request.headers['x-buildr-frame']==='true'?{frame:true}:{}), ...(video!==undefined?{video}:{}) });
-          return result('draftImages', await service.conversations.addDraftImage(workspaceId, draftId, { ...metadata, bytes: await readBinaryBody((metadata.mimeType.startsWith('video/')?32:8) * 1024 * 1024) }), 201);
+          return result('draftImages', await service.conversations.addDraftImage(workspaceId, draftId, { ...metadata, bytes: await readBinaryBody((metadata.mimeType.startsWith('image/')?8:32) * 1024 * 1024) }), 201);
         }
         if (request.method === 'DELETE' && action === 'attachments' && childId) return result('draftImages', await service.conversations.removeDraftImage(workspaceId, draftId, validate('removeDraftImage', { ...await readJsonBody(), attachmentId: childId })));
         if (request.method === 'POST' && action === 'send' && !childId) {
@@ -190,7 +190,7 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
         if (action === 'attachments' && childId) {
           query(searchParams, []);
           const attachment = await service.conversations.readAttachment(workspaceId, id, childId);
-          respond.binary(attachment.bytes, attachment.mimeType, { disposition: 'inline', filename: childId }); return true;
+          respond.binary(attachment.bytes, attachment.mimeType, { disposition: /^(image|video)\//.test(attachment.mimeType) ? 'inline' : 'attachment', filename: attachment.name || childId }); return true;
         }
         return null;
       }
@@ -218,8 +218,9 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       if (action === 'attachments' && !childId) {
         let video: unknown;
         try { if (request.headers['x-buildr-video']) video = JSON.parse(request.headers['x-buildr-video']); } catch { throw inputError(); }
-        const metadata = validate('attachment', { expectedRevision: request.headers['x-buildr-conversation-revision'], expectedAttachmentRevision: request.headers['x-buildr-attachment-revision'], mimeType: request.headers['content-type'], ...(video !== undefined ? { video } : {}) });
-        return result('attachmentResult', await service.conversations.addAttachment(workspaceId, id, { ...metadata, bytes: await readBinaryBody((metadata.mimeType.startsWith('video/') ? 32 : 8) * 1024 * 1024) }), 201);
+        let name: string | undefined; try { if (request.headers['x-buildr-image-name']) name = decodeURIComponent(request.headers['x-buildr-image-name']); } catch { throw inputError(); }
+        const metadata = validate('attachment', { ...(name ? {name} : {}), expectedRevision: request.headers['x-buildr-conversation-revision'], expectedAttachmentRevision: request.headers['x-buildr-attachment-revision'], mimeType: request.headers['content-type'], ...(video !== undefined ? { video } : {}) });
+        return result('attachmentResult', await service.conversations.addAttachment(workspaceId, id, { ...metadata, bytes: await readBinaryBody((metadata.mimeType.startsWith('image/') ? 8 : 32) * 1024 * 1024) }), 201);
       }
       return null;
     },

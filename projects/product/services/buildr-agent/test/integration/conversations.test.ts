@@ -2911,14 +2911,14 @@ for(const visual of [true,false])test('正式材料回答的容量与能力失�
  const native=fake('local',{question:true,images:visual}),f=fixture([native.executor]);try{
   await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','检查');
   let waiting=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='waiting-question');
-  const ids:string[]=[];for(let n=0;n<5;n++){const attachment=f.service.conversations.addAttachment('workspace-one',chat.id,{expectedRevision:waiting.revision,mimeType:'image/png',bytes:Buffer.from('89504e470d0a1a0a','hex')});ids.push(attachment.id);waiting=f.service.conversations.read('workspace-one',chat.id);}
+  const ids:string[]=[];for(let n=0;n<10;n++){const attachment=f.service.conversations.addAttachment('workspace-one',chat.id,{expectedRevision:waiting.revision,mimeType:'image/png',bytes:Buffer.from('89504e470d0a1a0a','hex')});ids.push(attachment.id);waiting=f.service.conversations.read('workspace-one',chat.id);}
   const input={expectedRevision:waiting.revision,runId:waiting.run!.id,participantId:waiting.run!.participantId,generation:waiting.run!.generation};
   await assert.rejects(f.service.conversations.reply('workspace-one',chat.id,waiting.requests[0]!.id,{...input,answer:{scope:{text:'',attachmentIds:ids}}}),{code:'agent_question_answer_invalid'});
   await assert.rejects(f.service.conversations.reply('workspace-one',chat.id,waiting.requests[0]!.id,{...input,answer:{scope:{text:'',attachmentIds:[ids[0]],path:'/etc/passwd'}}}),{code:'agent_question_answer_invalid'});
   assert.throws(()=>f.service.conversations.addAttachment('workspace-one',chat.id,{expectedRevision:waiting.revision,mimeType:'image/png',bytes:Buffer.alloc(8*1024*1024+1)}),{code:'agent_image_invalid',status:413});
   if(!visual)await assert.rejects(f.service.conversations.reply('workspace-one',chat.id,waiting.requests[0]!.id,{...input,answer:{scope:{text:'',attachmentIds:[ids[0]]}}}),{code:'agent_capability_unavailable'});
   assert.equal(native.replies.length,0);assert.equal(f.service.conversations.read('workspace-one',chat.id).requests.length,1);
-  if(visual){await f.service.conversations.reply('workspace-one',chat.id,waiting.requests[0]!.id,{...input,answer:{scope:{text:'四份材料',attachmentIds:ids.slice(0,4)}}});assert.equal(native.replies.length,1);}
+  if(visual){await f.service.conversations.reply('workspace-one',chat.id,waiting.requests[0]!.id,{...input,answer:{scope:{text:'九份材料',attachmentIds:ids.slice(0,9)}}});assert.equal(native.replies.length,1);}
  }finally{await f.close();}
 });
 
@@ -3536,4 +3536,45 @@ test('DSH stop releases the exact exited cold host without opening it and accept
   assert.equal(native.sends.length,sends+1);assert.ok(completed.entries.some(e=>e.text==='new instruction after stop'));
   assert.equal(completed.retainedRuns!.find(r=>r.id===run.id)!.resourcesReleased,true);
  }finally{if(child.exitCode===null&&child.signalCode===null)child.kill();await observer?.close();await f.close();}
+});
+
+test('documents: first send restores nine named originals without requiring vision and rejects a tenth',async()=>{
+ const native=fake('local'),f=fixture([native.executor]),id=randomUUID();
+ try {
+  await connected(f.service,'local');
+  let staged=f.service.conversations.readDraft('@default',id);
+  for(let i=0;i<9;i++)staged=f.service.conversations.addDraftImage('@default',id,{expectedRevision:staged.revision,name:`说明${i}.md`,mimeType:'text/markdown',bytes:Buffer.from(`# 内容 ${i}`)});
+  assert.equal(staged.images.length,9);
+  assert.throws(()=>f.service.conversations.addDraftImage('@default',id,{expectedRevision:staged.revision,name:'第十份.md',mimeType:'text/markdown',bytes:Buffer.from('extra')}),{code:'agent_attachment_capacity'});
+  const input={connectionId:'local',text:'读取这些文档',attachmentIds:staged.images.map(image=>image.id),clientRequestId:randomUUID(),expectedDraftRevision:staged.revision};
+  const first=await f.service.conversations.startDraft('workspace-one',id,input);
+  await waitUntil(()=>f.service.conversations.read('workspace-one',first.conversation.id),view=>view.run?.status==='completed');
+  assert.equal(native.sends.length,1);assert.equal(native.sends[0]!.images.length,0);
+  assert.match(native.sends[0]!.text,/用户附加文档/);assert.match(native.sends[0]!.text,/说明8.md/);
+  for(let i=0;i<9;i++){
+   const read=f.service.conversations.readAttachment('workspace-one',first.conversation.id,staged.images[i]!.id);
+   assert.equal(read.name,`说明${i}.md`);assert.equal(read.bytes.toString(),`# 内容 ${i}`);
+  }
+  assert.equal(f.service.conversations.readDraft('@default',id).images.length,0);
+ }finally{await f.close();}
+});
+
+test('documents: existing conversation mixes PDF and images, retaining names and safe exact paths',async()=>{
+ const native=fake('local',{images:true}),f=fixture([native.executor]);
+ try{
+  await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});
+  const upload=(name:string,mimeType:string,bytes:Buffer)=>f.service.conversations.addAttachment('workspace-one',chat.id,{expectedRevision:f.service.conversations.read('workspace-one',chat.id).revision,name,mimeType,bytes});
+  assert.throws(()=>upload('../bad.pdf','application/pdf',Buffer.from('%PDF-1.7')),{code:'agent_attachment_invalid'});
+  assert.throws(()=>upload('bad.pdf','application/pdf',Buffer.from('bad')),{code:'agent_document_invalid'});
+  const doc=upload('合同.pdf','application/pdf',Buffer.from('%PDF-1.7\nexample'));
+  const image=upload('截图.png','image/png',Buffer.from([137,80,78,71,13,10,26,10]));
+  const before=f.service.conversations.read('workspace-one',chat.id);
+  const input={expectedRevision:before.revision,connectionId:'local',text:'对照文档和截图',attachmentIds:[doc.id,image.id]};
+  f.service.conversations.send('workspace-one',chat.id,{...input,clientRequestId:randomUUID()});
+  await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='completed');
+  assert.deepEqual(native.sends[0]!.images.map(image=>image.id),[image.id]);
+  const docs=JSON.parse(native.sends[0]!.text.split('用户附加文档')[1]!.split('：\n')[1]!);
+  assert.equal(docs[0].name,'合同.pdf');assert.equal(fs.readFileSync(docs[0].path).toString(),'%PDF-1.7\nexample');
+  assert.equal(f.service.conversations.readAttachment('workspace-one',chat.id,doc.id).name,'合同.pdf');
+ }finally{await f.close();}
 });

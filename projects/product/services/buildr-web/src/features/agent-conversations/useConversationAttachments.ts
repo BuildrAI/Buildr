@@ -8,7 +8,7 @@ export function readConversationImages(storage: Pick<Storage, 'getItem'>, key: s
   try {
     const value = JSON.parse(storage.getItem(key) || '{}');
     if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-    return Object.fromEntries(Object.entries(value).filter(([id, images]) => id && Array.isArray(images) && images.length <= 4 && images.every(image =>
+    return Object.fromEntries(Object.entries(value).filter(([id, images]) => id && Array.isArray(images) && images.length <= 9 && images.every(image =>
       image && ['id', 'name', 'mimeType', 'revision'].every(field => typeof image[field] === 'string') && typeof image.size === 'number'))) as Images;
   } catch { return {}; }
 }
