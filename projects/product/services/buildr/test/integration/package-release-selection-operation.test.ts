@@ -214,8 +214,12 @@ function fixture(t: any, changes: { mainRuntime?: boolean; omitSourcePatch?: boo
     if (args[0] === 'pr' && args[1] === 'list') return body(pr ? [pr] : []);
     if (args[0] === 'pr' && args[1] === 'view') return mainReadbackFailed ? { status: 1, stderr: 'HTTP 503 readback unavailable' }
       : body({ ...pr, mergeStateStatus: mainGate === 'ready' ? 'CLEAN' : 'BLOCKED', mergeable: 'MERGEABLE', isDraft: false });
-    if (args[0] === 'pr' && args[1] === 'checks') return body([{ name: 'protected-gate', state: mainGate === 'ready' ? 'SUCCESS' : 'IN_PROGRESS',
-      bucket: mainGate === 'ready' ? 'pass' : mainGate === 'failed' ? 'fail' : 'pending' }]);
+    if (args[0] === 'pr' && args[1] === 'checks') {
+      // Blocking watch consumes the bounded wait; the fixture returns at its deadline.
+      if (args.includes('--watch')) { elapsed += 30_000; return { error: { code: 'ETIMEDOUT' } }; }
+      return body([{ name: 'protected-gate', state: mainGate === 'ready' ? 'SUCCESS' : 'IN_PROGRESS',
+        bucket: mainGate === 'ready' ? 'pass' : mainGate === 'failed' ? 'fail' : 'pending' }]);
+    }
     if (args[0] === 'pr' && args[1] === 'create') {
       assert.ok(events.includes('source-proof')); events.push('pr-created');
       pr = { number: 1, state: 'OPEN', headRefOid: state().sourceCommit, headRefName: args[args.indexOf('--head') + 1], baseRefName: 'main', url: 'https://github.com/BuildrAI/Buildr/pull/1' };
@@ -296,6 +300,7 @@ releaseSelectionTest('protected main waiting, failed checks and unknown reads re
   data.setMainGate('pending');
   const pending = await runReleaseOperation(data.options, data.dependencies);
   assertReleaseStatus(pending, 'main-merge-pending'); assert.equal(pending.mainPullRequest.durationMs, 30_000);
+  assert.ok(data.requests.some((args: string[]) => args[0] === 'pr' && args[1] === 'checks' && args.includes('--watch')));
   assert.equal(pending.recovery.stage, 'adoption-readiness'); assert.equal(pending.recovery.automaticFullRerun, false);
   assert.equal(data.counts().merges, 0); assert.equal(data.counts().pluginDispatches, 0);
   const frozenSource = data.state().sourceCommit, candidateRunId = data.state().candidate.runId;

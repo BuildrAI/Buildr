@@ -5,6 +5,7 @@ import { readQoderIdentity, requestQoderModel, inspectQoderLogin } from '../../m
 import { AcpClient, type AcpServerRequest } from '../qoder/acp.ts';
 import { qoderContent } from '../qoder/content.ts';
 import { qoderProduct } from '../qoder/product.ts';
+import { qoderStorage } from '../qoder/storage.ts';
 import { interactionPolicy } from '../../domain/interaction-policy.ts';
 import { instructionParticipation } from '../../domain/participation.ts';
 import { isCompatibleProgram, nativeProgramPolicy } from '../program-policy.ts';
@@ -386,5 +387,5 @@ function quotaMessage(message: string): string {
 }
 
 export function createQoderCnExecutor(): AgentExecutor {
-  return { nativeContent: input => qoderContent(input, 'qoder-cn'), descriptor: { id: 'qoder-cn', label: product.label, capabilities }, open: options => QoderCnRuntime.open(options) };
+  return { nativeContent: input => qoderContent(input, 'qoder-cn'), storage: qoderStorage(), descriptor: { id: 'qoder-cn', label: product.label, capabilities }, open: options => QoderCnRuntime.open(options) };
 }
