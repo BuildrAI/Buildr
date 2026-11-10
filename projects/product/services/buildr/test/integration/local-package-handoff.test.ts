@@ -6,7 +6,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { parse as parseYaml } from 'yaml';
-import { createPackageHandoff, createPackageHandoffCommit, restorePackageHandoff, LOCAL_PLATFORM_POLICY } from '../../../../../../skills/buildr-release/scripts/local-package-handoff.ts';
+import { createPackageHandoff, createPackageHandoffCommit, restorePackageHandoff, validatePackageHandoff, LOCAL_PLATFORM_POLICY } from '../../../../../../skills/buildr-release/scripts/local-package-handoff.ts';
 import { continueLocalPackageCandidate } from '../../../../../../skills/buildr-release/scripts/local-package-operation.ts';
 import { prepareLocalMainPackage } from '../../../../../../skills/buildr-release/scripts/local-package-preparation.ts';
 import { restorePriorPlatformEvidence } from '../../../../../../skills/buildr-release/scripts/local-package-remote.ts';
@@ -388,6 +388,7 @@ test('preflight adopts existing proof through plan/aggregate then the formal con
   const aggregate = { schemaVersion: CANDIDATE_CI_AGGREGATE_SCHEMA, purpose: 'candidate', findings: [],
     status: 'passed', executionModel: LOCAL_PACKAGE_MODEL, sourceCommit: f.sourceCommit,
     sourceTree: f.sourceTree, artifact, registryIdentity: rules.recipeIdentity, packageHandoff: handoff, platformVerification,
+    timing: { aggregation: { startedAt: '2026-01-01T00:00:00.000Z', finishedAt: '2026-01-01T00:00:01.000Z', elapsedMs: 1 } },
     evidenceIds: [...new Set(RELEASE_CHECKS.flatMap(check => 'evidence' in check ? [...check.evidence] : []))]
       .filter(id => !platformVerification.optionalEvidenceIds.includes(id)) };
   const options = { repo: f.repo, sourceCommit: f.sourceCommit, sourceTree: f.sourceTree, directory, handoff,
@@ -428,6 +429,11 @@ test('preflight adopts existing proof through plan/aggregate then the formal con
   assert.equal(adopted.preservedConsumption.origin, 'local');
   assert.deepEqual(adopted.workflow.evidenceAttempts, [], 'preserving local proof is not a remote test execution');
   assert.equal(adopted.platformVerification.status, 'not-verified');
+  const frozenTiming = adopted.packageHandoff.consumption.aggregate.timing;
+  adopted.timing.aggregation = { startedAt: '2026-01-01T00:00:00.000Z', finishedAt: '2026-01-01T00:00:01.000Z', elapsedMs: 1000 };
+  assert.deepEqual(adopted.packageHandoff.consumption.aggregate.timing, frozenTiming,
+    'aggregate timing must not rewrite the frozen consumption handoff');
+  assert.equal(validatePackageHandoff(adopted.packageHandoff).identity, adopted.packageHandoff.identity);
   assert.throws(() => adoptLocalConsumption({ ...remote, artifact: { ...artifact, sha256: '0'.repeat(64) } }), /one frozen contract/);
   assert.throws(() => adoptLocalConsumption({ ...remote, sourceTree: '0'.repeat(40) }), /inputs or rules differ/);
   assert.throws(() => adoptLocalConsumption({ ...remote, workflow: null }), /exact remote run/);

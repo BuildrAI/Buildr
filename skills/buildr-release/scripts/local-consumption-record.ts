@@ -41,7 +41,7 @@ export function adoptLocalConsumption(options: { handoff: any; repo: string; art
   if (!/^[1-9]\d*$/u.test(String(workflow?.runId)) || !/^[1-9]\d*$/u.test(String(workflow?.runAttempt))) {
     throw new Error('Consumption preservation requires the exact remote run and attempt.');
   }
-  const result = { ...record.aggregate, packageHandoff: handoff,
+  const result = { ...structuredClone(record.aggregate), packageHandoff: handoff,
     workflow: { runId: String(workflow.runId), aggregateAttempt: Number(workflow.runAttempt), evidenceAttempts: [] },
     preservedConsumption: { inputIdentity: input.identity, origin: 'local' } };
   assertReleaseConsumptionCoverage(result, options, options.artifact);
