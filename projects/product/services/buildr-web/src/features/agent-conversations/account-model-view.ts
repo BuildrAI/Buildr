@@ -6,9 +6,12 @@ const labels:Record<string,string>={codex:'ChatGPT',openai:'ChatGPT API',dsh:'De
 const sourceNameOrder=new Intl.Collator('zh-Hans-CN',{sensitivity:'base',numeric:true});
 function resetLabel(value?:string):string {if(!value)return '重置时间未提供';const ms=Date.parse(value);return Number.isFinite(ms)?`${new Date(ms).toLocaleString()} 重置`:'重置时间未提供';}
 export function modelSourceViews(accounts:ModelAccount[],connections:ConnectionView[]):ModelSourceView[]{
- const visible=accounts.filter(account=>account.connectionId||account.provider==='devin'||account.provider==='openai'||account.status==='ready'||account.models.length||waiting(account.loginAttempt));
+ // A source that owns its credentials has exactly one row whose id is the provider id
+ // (see ModelAccess.ensureLinked); it must stay visible while logged out.
+ const linkedSource=(account:ModelAccount)=>account.id===account.provider;
+ const visible=accounts.filter(account=>account.connectionId||linkedSource(account)||account.provider==='devin'||account.provider==='openai'||account.status==='ready'||account.models.length||waiting(account.loginAttempt));
  const sources:ModelSourceView[]=visible.map(account=>{
-  const provider=account.connectionId||account.provider,connection=connections.find(connection=>connection.id===account.connectionId);
+  const provider=account.connectionId||(account.provider.startsWith('native-')?account.provider.slice('native-'.length):account.provider),connection=connections.find(connection=>connection.id===account.connectionId);
   const login=account.connectionId?connection?.loginAttempt:account.loginAttempt;
   const loginMessage=login?.diagnostic||(login?.state==='checking'?'正在核对登录结果，模型与额度会自动更新。':undefined);
   const rawLabel=account.accountLabel||account.label,plan=account.quota?.planLabel;

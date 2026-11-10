@@ -47,3 +47,20 @@ test('执行方下拉只包含本机已准备的智能体',async()=>{
   const connections=[{id:'dsh',enabled:true,configPath:'/a'},{id:'qoder',enabled:true},{id:'qoder-cn',enabled:false,configPath:'/b'},{id:'codex',enabled:true,configPath:'/c'}];
   assert.deepEqual(preparedAgentConnections(connections).map(item=>item.id),['dsh','codex']);
 });
+
+test('自持源账号在未登录时仍显示，且按产品名标注',async()=>{
+  const {modelSourceViews}=await import('../src/features/agent-conversations/account-model-view.ts');
+  const accounts=[
+    {id:'native-qoder-cn',provider:'native-qoder-cn',label:'Qoder CN',revision:'r1',enabled:true,status:'not-authenticated',models:[]},
+    {id:'native-qoder',provider:'native-qoder',connectionId:'qoder',label:'Qoder',revision:'r2',enabled:true,status:'ready',models:[]},
+    {id:'2bb3d2b7-c228-477b-b86f-ba806e91647d',provider:'codex',label:'旧账号',revision:'r3',enabled:true,status:'not-authenticated',models:[]},
+  ];
+  const sources=modelSourceViews(accounts,[]);
+  const cn=sources.find(source=>source.id==='native-qoder-cn');
+  assert.ok(cn,'自带登录的来源必须可见');
+  assert.equal(cn.providerLabel,'Qoder CN');
+  assert.equal(cn.provider,'qoder-cn');
+  assert.equal(cn.status,'not-authenticated');
+  assert.ok(sources.some(source=>source.id==='native-qoder'));
+  assert.equal(sources.some(source=>source.id.startsWith('2bb3d2b7')),false,'无归属的旧行仍隐藏');
+});
