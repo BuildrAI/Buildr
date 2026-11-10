@@ -34,15 +34,14 @@ test('v2 cleans every proved generation, keeps other versions, and reconstructs 
   assert.ok(repeated.branches.every((item: any) => item.disposition === 'already-cleaned'));
 });
 
-test('v1 keeps earlier generations and continues to accept a CLI string generation', t => {
+test('legacy v1 parameters use automatic all-generation cleanup and accept a CLI string generation', t => {
   const data = convergenceFixture(true, true);
   t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
   const { earlier, current, options } = multiGenerationCloseout(data, 'delete-owned-release-branches/v1');
   const cleaned = closeoutReleaseGitResources({ ...options, generation: String(options.generation) });
   assert.equal(cleaned.status, 'passed', JSON.stringify(cleaned));
-  assert.notEqual(git(data.controller, 'ls-remote', 'origin', `refs/heads/${earlier}`), '');
-  assert.equal(git(data.controller, 'ls-remote', 'origin', `refs/heads/${current}`), '');
-  assert.equal(cleaned.resources.carriers, undefined, 'a v1 result cannot claim all generations are absent');
+  for (const branch of [earlier, current, 'release-0.1.0-rc.5']) assert.equal(git(data.controller, 'ls-remote', 'origin', `refs/heads/${branch}`), '');
+  assert.deepEqual(cleaned.resources.carriers, { scope: 'same-version', disposition: 'absent' });
 });
 
 test('package data closeout retains bytes still read by a source-carrier job, then deletes only the exact preserved ref', t => {
