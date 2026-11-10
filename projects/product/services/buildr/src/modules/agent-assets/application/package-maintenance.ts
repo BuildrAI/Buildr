@@ -35,6 +35,8 @@ export interface PackageMaintenanceDependencies {
   mutationPathFingerprint: (...args: any[]) => any;
   packageRegistryMutationPaths: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['packageRegistryMutationPaths'];
   assertSafeSyncMutationPaths: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['assertSafeSyncMutationPaths'];
+  planProjectCapabilityCleanup: import('../../workspace/module.ts').WorkspaceAssetSupport['planProjectCapabilityCleanup'];
+  cleanupProjectCapabilities: import('../../workspace/module.ts').WorkspaceAssetSupport['cleanupProjectCapabilities'];
   convergeRegistryManifests: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['convergeRegistryManifests'];
   readSkillsManifestForWrite: ReturnType<typeof import('./skills.ts').registerDomainsSkills>['readSkillsManifestForWrite'];
   writeSkillsManifest: ReturnType<typeof import('./skills.ts').registerDomainsSkills>['writeSkillsManifest'];
@@ -116,6 +118,8 @@ export function registerApplicationPackageMaintenance(dependencies: PackageMaint
     const manifest = readPackageManifest();
     const changed: any[] = [];
     const findings: any[] = [];
+    const projectCapabilityCleanup = options.checkOnly === true ? dependencies.planProjectCapabilityCleanup(targetRoot) : options.projectCapabilityCleanup || [];
+    for (const candidate of projectCapabilityCleanup) findings.push({ type: 'project-capability', id: candidate.path, status: 'retired', path: candidate.path, converge: true });
     const restoreOutcomes: any[] = [];
     const restoreId = options.restoreId || null;
     const checkOnly = options.checkOnly === true;
@@ -147,6 +151,7 @@ export function registerApplicationPackageMaintenance(dependencies: PackageMaint
     };
 
     if (!checkOnly) {
+      changed.push(...dependencies.cleanupProjectCapabilities(targetRoot, projectCapabilityCleanup));
       changed.push(...convergeRegistryManifests(targetRoot));
       if (appendGitignoreEntries(path.join(targetRoot, '.gitignore'), [...WORKSPACE_ROOT_GITIGNORE_ENTRIES])) {
         changed.push('.gitignore');
@@ -311,7 +316,7 @@ export function registerApplicationPackageMaintenance(dependencies: PackageMaint
     }
 
     const affectedPaths = checkOnly ? packageBuiltinMutationPaths(targetRoot, manifest, receipts, findings) : [];
-    return { targetRoot, changed: [...new Set(changed)], findings, ...(restoreId ? { restoreOutcomes } : {}), affectedPaths, signature: checkOnly ? builtinSyncPlanSignature(targetRoot, findings, affectedPaths) : null };
+    return { targetRoot, changed: [...new Set(changed)], findings, projectCapabilityCleanup, ...(restoreId ? { restoreOutcomes } : {}), affectedPaths, signature: checkOnly ? builtinSyncPlanSignature(targetRoot, findings, affectedPaths) : null };
   }
 
   function keepPackageCustomizations(targetRoot: string, expected: Array<{id:string;integrity:string}>) {

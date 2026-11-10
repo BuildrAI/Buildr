@@ -25,7 +25,7 @@ test('内置知识消费者均解析 v4；缺少术语能力只降级相关专�
   const manifest = YAML.parse(fs.readFileSync(file, 'utf8'));
   manifest.skills.find((item: any) => item.id === 'terminology-governance').state = 'uninstalled';
   fs.writeFileSync(file, YAML.stringify(manifest));
-  const graph = resolveSkillCapabilityGraph(root, null, { runtime: 'codex' });
+  const graph = resolveSkillCapabilityGraph(root, { runtime: 'codex' });
   const knowledge = graph.consumers.find((item: any) => item.consumer === 'current-knowledge-maintenance');
   assert.equal(knowledge.readiness, 'degraded');
   assert.equal(knowledge.dependencies[0].mode, 'optional');
@@ -60,7 +60,7 @@ test('升级移除可证明的旧默认约定，用户自有旧版本依赖不�
   assert.deepEqual(updated.contracts.filter((item: any) => item.id === capability).map((item: any) => item.version), [3, 4]);
   assert.equal(updated.skills.find((item: any) => item.id === 'local-reader').requires[0].version, 2);
   for (const version of [1, 2]) assert.equal(fs.existsSync(path.join(root, `skills/contracts/buildr/current-knowledge-maintenance/v${version}.md`)), false);
-  const graph = resolveSkillCapabilityGraph(root, null, { runtime: 'codex' });
+  const graph = resolveSkillCapabilityGraph(root, { runtime: 'codex' });
   assert.equal(graph.consumers.find((item: any) => item.consumer === 'local-reader').readiness, 'blocked');
   assert.equal(graph.consumers.find((item: any) => item.consumer === 'task-finish').readiness, 'ready');
 });
@@ -91,7 +91,7 @@ test('v3 内置提供者升级后不改绑用户旧依赖，缺口只影响真�
   assert.deepEqual(updated.skills.find((item: any) => item.id === 'legacy-reader').requires, [{ capability, version: 3, mode: 'required' }]);
   assert.deepEqual(updated.bindings.find((item: any) => item.capability === capability && item.version === 3), oldBinding);
   assert.deepEqual(updated.skills.find((item: any) => item.id === 'current-knowledge-maintenance').provides, [{ capability, version: 4 }]);
-  const graph = resolveSkillCapabilityGraph(root, null, { runtime: 'codex' });
+  const graph = resolveSkillCapabilityGraph(root, { runtime: 'codex' });
   const legacy = graph.consumers.find((item: any) => item.consumer === 'legacy-reader');
   assert.equal(legacy.readiness, 'blocked');
   assert.equal(legacy.dependencies[0].contract.version, 3);
@@ -113,7 +113,7 @@ test('用户自有 v3 提供者和绑定升级后仍能服务原依赖', (t) => 
   const updated = YAML.parse(fs.readFileSync(file, 'utf8'));
   assert.deepEqual(updated.bindings.find((item: any) => item.capability === capability && item.version === 3), oldBinding);
   assert.deepEqual(updated.skills.find((item: any) => item.id === 'local-v3-knowledge').provides, [{ capability, version: 3 }]);
-  const graph = resolveSkillCapabilityGraph(root, null, { runtime: 'codex' });
+  const graph = resolveSkillCapabilityGraph(root, { runtime: 'codex' });
   const consumer = graph.consumers.find((item: any) => item.consumer === 'local-v3-reader');
   assert.equal(consumer.readiness, 'ready');
   assert.equal(consumer.dependencies[0].selectedProvider.id, 'local-v3-knowledge');

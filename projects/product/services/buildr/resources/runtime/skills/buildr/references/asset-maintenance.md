@@ -105,9 +105,9 @@
 
 ## Skills
 
-- 工作空间（Workspace）的 `skills/manifest.yml` 管理采用与绑定；组织自有技能（Skill）源位于空间 `skills/`，官方源通过清单中的 `resource` 引用共享资源集 `~/.buildr/resources/`。不要手工编辑共享官方资源或生成入口。Project 只在 `capabilities.yml` 引用 workspace Skill 并声明 requirements/bindings/applicability，不作为安装或可见性边界。
+- 工作空间（Workspace）的 `skills/manifest.yml` 管理采用与绑定；组织自有技能（Skill）源位于空间 `skills/`，官方源通过清单中的 `resource` 引用共享资源集 `~/.buildr/resources/`。不要手工编辑共享官方资源或生成入口。项目能力上下文 `capabilities.yml` 已退役，不再生成或消费；Doctor 对已有文件只读提示；同步自动清理确认安全的空需求/绑定及技能名单配置，非空或异常文件保留。项目适用边界由技能说明和项目规则表达。
 - 定制非组件管理的共享官方技能（Skill）时，核对影响后用 `skills add <id> --source <已核实的完整共享目录> --replace --target <workspace>` 建立当前空间副本，再修改与同步。保留原资产身份、绑定及附件，来源转为本空间维护；组件成员仍由组件维护入口负责，不编辑共享库。
-- 本地作者型 Skill 可以只适用于某个 Project，但内容仍在 workspace 维护，由 Project applicability 表达业务范围；远端发布型 Skill 适合已发布或外部维护的 Skill。
+- 本地作者型 Skill 可以只适用于某个 Project，但内容仍在 workspace 维护，由技能说明和项目规则表达业务范围；远端发布型 Skill 适合已发布或外部维护的 Skill。
 - Buildr 随包场景化流程通过 workspace Skills 承载；Agent 价值观、边界和约束由 `AGENTS.md` 承载。
 - 本地作者型：`buildr skills add [<id>] --source <skill-dir> --target <workspace>`；移除登记用 `buildr skills remove <id> --target <workspace>`，保留本地源目录和全部文件；组件受管技能继续走组件维护入口，不能借此删除成员。旧 `--scope .` 只作 deprecated 兼容；Project scope 已不受支持。
 - 本地作者型和 package Skill 的完整源目录可包含 `SKILL.md` 以及 `agents/`、`assets/`、`examples/`、`references/`、`scripts/`、`templates/`；render 保留随附文件的原始字节与 owner executable 状态，只有 `SKILL.md` 会注入 managed marker、contributions、capability bindings 和 adapter context。

@@ -284,8 +284,8 @@ export function resolveSkills(organizationRoot: any, projectRoot: any, options: 
   if (options.includeWorkspace !== false && fs.existsSync(organizationManifest)) {
     layers.push(organizationManifest);
   }
-  // Project is a business/capability context. Legacy Project Skill manifests
-  // are intentionally excluded until the explicit migration command moves them.
+  // Workspace is the only Skill source authority. Legacy Project manifests
+  // are excluded; this version does not migrate them.
 
   const productSkillsById: any = new Map(readPackageAgentSkills(runtime).map((skill: any) => [skill.id, skill]));
   const packageSourcesById: any = new Map(readPackageSkillSources(runtime).map((skill: any) => [skill.id, skill]));

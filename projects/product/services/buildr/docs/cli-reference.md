@@ -172,7 +172,7 @@ buildr help assets
 | `buildr task verification inspect\|record <task-id>` | 读取或整值保存Workspace SQLite中的current任务验证报告。`record --report <json-file>`接收Agent在开发完成后形成的实际检查、选择范围、目标、结果、未覆盖项和结论；`inspect`可带当前内容identity判断报告是否仍适用。命令不生成计划、不执行测试、不绑定Candidate。 |
 | `buildr rules render` | 按 `AGENTS.md` 的 scope 祖先链与子树投射规则内容；`rules add/remove` 与 `rules/manifest.yml` 已退役，既有文件保留为兼容内容。 |
 | `buildr skills add/remove` | 只维护 workspace `skills/` 中的 Skill source；旧 `--scope .` 仅兼容并警告，Project scope 被拒绝。 |
-| `buildr skills bind/unbind` | 维护 workspace 默认 binding，或在 `projects/<project>/capabilities.yml` 维护 Project context binding。 |
+| `buildr skills bind/unbind` | 仅维护 workspace 默认 binding；项目 scope 已退役，请求会在写入前拒绝。 |
 | `buildr skills render [<agent>] [--adapter <adapter-id>] --destination workspace\|user` | 从 `--target <workspace>` 读取源资产，投射到工作空间（Workspace）或个人用户层；默认 workspace，不按品牌登记限制通用技能（Skill）。 |
 | `buildr commands add/remove` | 维护 workspace Command catalog definitions；最后一个 definition 仍被 requirement 引用时零写入。 |
 | `buildr commands check [--project <project> ...]` | 按显式 Project task context 合并 requirements 并观察本机环境；无 Project 时只检查 workspace defaults。 |
@@ -325,7 +325,7 @@ current Task报告使用`buildr.task-verification-report/v1`，绑定Task scope�
 
 ## Skill capability contracts
 
-`buildr.skills/v3` 为每个 workspace Skill 保存稳定 `assetIdentity`/`sourceIdentity`，并支持 versioned contract、provider `provides`、consumer `requires` 和 workspace 默认 binding。Project context 使用 `buildr.project-capabilities/v1`。安装 provider 本身不会静默改绑。
+`buildr.skills/v3` 为每个 workspace Skill 保存稳定 `assetIdentity`/`sourceIdentity`，并支持 versioned contract、provider `provides`、consumer `requires` 和 workspace 默认 binding。项目能力上下文 `buildr.project-capabilities/v1` 已退役，旧 `capabilities.yml` 不参与解析；Doctor 只读提示，同步自动清理确认安全的空需求/绑定及技能名单文件，其他内容保留，不自动迁移。安装 provider 本身不会静默改绑。
 
 Contract 格式、scope 规则、替换示例以及 `ready` 的边界见 [Skill Capability Contracts](skill-capability-contracts.md)。
 

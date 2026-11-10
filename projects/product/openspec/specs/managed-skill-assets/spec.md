@@ -64,13 +64,13 @@ Buildr MUST 将启用且适用于当前 runtime 的本地作者型 Skill 和 pac
 - **AND** Buildr MUST NOT 跟随该成员读取或写入 Skill 源目录和 runtime target 之外的内容
 
 ### Requirement: Buildr Skill 前置说明 Skill 类型和安装方式
-Buildr 内置 Skill 的 `SKILL.md` MUST 在资产维护细节前说明 workspace Skill source 类型、Project capability/applicability context 和 user/workspace render destination。
+Buildr 内置 Skill 的 `SKILL.md` MUST 在资产维护细节前说明 workspace Skill source 类型、项目规则适用边界和 user/workspace render destination。
 
 #### Scenario: 前置 Skill 类型
 - **WHEN** Agent 阅读 Buildr Skill
 - **THEN** Buildr Skill MUST 先说明本地作者型 Skill 和远端发布型 Skill 的区别
 - **AND** Buildr Skill MUST 说明两类 Skill 都登记到 workspace source authority
-- **AND** Buildr Skill MUST 说明 Project 专用语义通过 capability/applicability context 表达
+- **AND** Buildr Skill MUST 说明 Project 专用语义由项目规则与技能说明表达
 
 #### Scenario: 前置三种登记方式
 - **WHEN** Agent 阅读 Buildr Skill
@@ -263,11 +263,11 @@ Buildr MUST 提供 legacy Project Skill migration check/apply，使历史 Projec
 #### Scenario: Legacy Project 独有 Skill
 - **WHEN** legacy Project manifest 的 Skill ID 不存在于 workspace manifest
 - **THEN** migration plan MUST 将该 Skill 移动或登记为 workspace Skill
-- **AND** MUST 在 Project capability context 中保留 applicability
+- **AND** MUST NOT 创建项目能力配置；适用边界由技能说明表达
 
 #### Scenario: Workspace 与 legacy Project Skill 等价
 - **WHEN** legacy Project Skill 与 workspace Skill 的 identity/content 可证明等价
-- **THEN** migration plan MUST 去重 Project 副本并创建逻辑引用
+- **THEN** migration plan MUST 去重 Project 副本，适用边界由技能说明表达
 - **AND** MUST NOT 改变 workspace canonical Skill 内容
 
 #### Scenario: Workspace 与 legacy Project Skill 同名不同内容
@@ -276,7 +276,7 @@ Buildr MUST 提供 legacy Project Skill migration check/apply，使历史 Projec
 - **AND** migration apply MUST 零写入，直到用户选择重命名、canonical 版本或放弃迁移
 
 #### Scenario: Migration apply 失败
-- **WHEN** migration 在 workspace manifest、Project context、源目录或最终 doctor 任一步失败
+- **WHEN** migration 在 workspace manifest、源目录或最终 doctor 任一步失败
 - **THEN** Buildr MUST 恢复事务前状态并保留 recovery evidence
 - **AND** Buildr MUST NOT 删除 legacy Project Skill 源
 

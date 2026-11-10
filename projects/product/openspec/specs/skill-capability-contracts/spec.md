@@ -2,6 +2,7 @@
 
 ## Purpose
 定义 Buildr Skill capability contract、provider/consumer 声明、scope binding、依赖 readiness、runtime 投射和 Agent 工作能力适配的产品契约。
+
 ## Requirements
 
 ### Requirement: Agent 根据工作意图执行工作能力适配
@@ -91,8 +92,8 @@ Buildr MUST 将可组合 Skill 的能力契约与 Skill 资产身份分离，MUS
 - **AND** Buildr MUST NOT 选择其中一份 identity 继续解析 provider
 
 #### Scenario: Project 引用 capability contract
-- **WHEN** Project `capabilities.yml` 声明 requirement、binding 或 applicability
-- **THEN** Buildr MUST 将其解析到 workspace registry 的唯一 contract identity
+- **WHEN** Project 旧 `capabilities.yml` 声明 requirement、binding 或 applicability
+- **THEN** Buildr MUST NOT 将其解析为能力配置，只通过 Doctor 提示退役
 - **AND** Project MUST NOT 定义、复制或覆盖 contract 文档
 
 #### Scenario: 同一 workspace 重定义 contract identity
@@ -255,15 +256,15 @@ Buildr MUST 将用户 provider 的 `provides` 视为组织声明的 contract con
 - **AND** Agent MUST NOT 依靠语义猜测绕过 required dependency diagnostics
 
 ### Requirement: Provider 通过 workspace registry 与业务上下文 binding 解析
-Buildr MUST 从唯一 workspace Skill registry 解析 providers，并 MUST 使用明确 Project task context 或 workspace default binding 确定 provider，而不是使用 Project Skill source scope 继承。
+Buildr MUST 从唯一 workspace Skill registry 解析 providers，并 MUST 使用 workspace default binding 或唯一兼容 provider 确定 provider，而不是使用 Project Skill source scope 继承。
 
 #### Scenario: Project context 存在 binding
-- **WHEN** 当前任务明确属于一个 Project，且 Project capability context 为 required capability 声明 binding
-- **THEN** Buildr MUST 选择对应 workspace provider
-- **AND** MUST NOT 将该 binding 解释为 Skill 可见性或安装隔离
+- **WHEN** Project 旧能力上下文为 required capability 声明 binding
+- **THEN** Buildr MUST 忽略该绑定并给出退役诊断
+- **AND** MUST NOT 改变工作空间 provider 选择
 
 #### Scenario: 没有 Project binding 时使用 workspace default
-- **WHEN** 当前任务没有适用的 Project binding且 workspace 声明 default binding
+- **WHEN** workspace 声明 default binding
 - **THEN** Buildr MUST 使用 workspace default provider
 - **AND** provider selection MUST NOT 依赖 Skill 安装顺序
 
@@ -290,7 +291,7 @@ Buildr MUST 要求并行或替代 provider 使用各自 Skill ID，并 MUST NOT 
 - **AND** MUST NOT 将 capability binding 作为绕过名称冲突的依据
 
 ### Requirement: Capability graph 必须消费已安装 Component 的结构化 dependency contribution
-Buildr capability graph MUST只从 base consumer `requires`、enabled installed Component 的结构化 dependency contributions 和 Project capability context 计算依赖；它 MUST NOT解析 Skill 或 Contribution Markdown 来猜测 dependency edge。
+Buildr capability graph MUST只从 base consumer `requires`、enabled installed Component 的结构化 dependency contributions 计算依赖；它 MUST NOT解析 Skill 或 Contribution Markdown 来猜测 dependency edge。
 
 #### Scenario: Component dependency contribution 生效
 - **WHEN** runtime resolver 成功组合目标 Skill 与 Component-owned dependency contribution
@@ -319,3 +320,16 @@ Task Record、Review、Verification、父任务协调、Git Worktree 与默认 T
 - **WHEN** package 验证解析更新后的 providers 与 consumers
 - **THEN** selected bindings MUST保持 ready 且 major 版本与当前保证一致
 - **AND** graph MUST不包含已退役 Task workflow provider 或隐式依赖
+
+### Requirement: 能力绑定仅允许工作空间作用域
+Buildr MUST 将工作空间作为能力配置唯一作用域；旧项目配置 MUST NOT 改变能力图或投射绑定。
+
+#### Scenario: 请求项目级绑定或解绑
+- **WHEN** 客户端向 bind/unbind 提供项目 scope
+- **THEN** MUST 在写入前明确报告项目能力上下文已退役
+- **AND** MUST NOT 修改项目文件或工作空间绑定
+
+#### Scenario: 旧项目配置与默认选择不同
+- **WHEN** 工作空间存在默认绑定且项目旧文件包含另一 provider 或需求
+- **THEN** 能力图和投射 MUST 只使用工作空间选择及依赖
+- **AND** MUST NOT 产生项目消费者或跨项目绑定冲突

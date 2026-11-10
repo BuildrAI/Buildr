@@ -41,7 +41,6 @@ export type ProjectApplicationRuntime = {
   writeMappedFileIfMissing(targetRoot: string, destinationRoot: string, entry: any, variables: any, created: string[]): void;
   ensureDirectory(directory: string): void;
   trackWrite(targetRoot: string, file: string, content: string, created: string[]): void;
-  renderProjectCapabilitiesYaml(): string;
   renderProjectCommandsYaml(): string;
   gitDefaultBranch(root: string, remote?: string): string;
   ensureGitBoundaries(targetRoot: string, items: any[]): string[];
@@ -325,7 +324,6 @@ export function registerProjectApplication(runtime: ProjectApplicationRuntime) {
         const manifest = runtime.readPackageManifest();
         for (const relativeDir of manifest.projectDirectories) runtime.ensureDirectory(path.join(projectRoot, relativeDir));
         for (const rawEntry of manifest.projectFiles) runtime.writeMappedFileIfMissing(targetRoot, projectRoot, runtime.parseManifestFileEntry(rawEntry, 'projectFiles'), { project }, created);
-        runtime.trackWrite(targetRoot, path.join(projectRoot, 'capabilities.yml'), runtime.renderProjectCapabilitiesYaml(), created);
         runtime.trackWrite(targetRoot, path.join(projectRoot, 'commands.yml'), runtime.renderProjectCommandsYaml(), created);
         const source = repoRef
           ? { type: 'git', path: `projects/${project}`, git: { url: repoRef, remote, integrationBranch: integrationBranch || existingEntry?.source?.git?.integrationBranch || runtime.gitDefaultBranch(projectRoot, remote) } }

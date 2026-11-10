@@ -8,7 +8,7 @@ import {
   parseCapabilityContract,
   parseSkillsManifestDocument,
 } from '../../src/modules/agent-assets/persistence/skill-manifest.ts';
-import { resolveCrossProjectCapabilityContext, resolveSkillCapabilityGraph } from '../../src/modules/agent-assets/persistence/capability-graph-repository.ts';
+import { resolveSkillCapabilityGraph } from '../../src/modules/agent-assets/persistence/capability-graph-repository.ts';
 
 const sections: any[] = ['Purpose', 'Consumer Obligations', 'Minimum Guarantees', 'Effects and Authorization', 'Result Evidence', 'Decision Points', 'Allowed Variations'];
 
@@ -76,21 +76,21 @@ test('resolver 不猜测多个 provider，显式 binding 生效且卸载后不�
     ],
   };
   manifest(root, document);
-  let graph: any = resolveSkillCapabilityGraph(root, null, { runtime: 'codex' });
+  let graph: any = resolveSkillCapabilityGraph(root, { runtime: 'codex' });
   assert.equal(graph.consumers[0].readiness, 'blocked');
   assert.equal(graph.consumers[0].reason, 'ambiguous_provider');
   document.bindings = [{ capability: 'example.operation', version: 1, provider: 'provider-two' }];
   manifest(root, document);
-  graph = resolveSkillCapabilityGraph(root, null, { runtime: 'codex' });
+  graph = resolveSkillCapabilityGraph(root, { runtime: 'codex' });
   assert.equal(graph.consumers[0].dependencies[0].selectedProvider.id, 'provider-two');
   document.skills[1].state = 'uninstalled';
   manifest(root, document);
-  graph = resolveSkillCapabilityGraph(root, null, { runtime: 'codex' });
+  graph = resolveSkillCapabilityGraph(root, { runtime: 'codex' });
   assert.equal(graph.consumers[0].reason, 'invalid_binding');
   assert.equal(graph.consumers[0].dependencies[0].selectedProvider, null);
 });
 
-test('Project capability context 显式覆盖 workspace binding，provider 仍来自 workspace registry', () => {
+test('旧 Project capability context 不改变 workspace binding 或消费者', () => {
   const root: any = workspace();
   const contractPath: any = contract(root, 'example.operation');
   for (const id of ['workspace-provider', 'consumer']) skill(root, id);
@@ -107,17 +107,18 @@ test('Project capability context 显式覆盖 workspace binding，provider 仍�
       { id: 'project-provider', path: 'project-provider', provides: [{ capability: 'example.operation', version: 1 }] },
     ],
   });
-  let graph: any = resolveSkillCapabilityGraph(root, projectRoot, { runtime: 'codex', scope: 'projects/demo' });
+  let graph: any = resolveSkillCapabilityGraph(root, { runtime: 'codex' });
   assert.equal(graph.consumers[0].dependencies[0].selectedProvider.id, 'workspace-provider');
   fs.writeFileSync(path.join(projectRoot, 'capabilities.yml'), YAML.stringify({
     schemaVersion: 'buildr.project-capabilities/v1',
     bindings: [{ capability: 'example.operation', version: 1, provider: 'project-provider' }],
-    requires: [],
-    skills: ['project-provider'],
+    requires: [{ capability: 'example.retired-missing', version: 1, mode: 'required' }],
+    skills: ['unknown-retired-skill'],
   }));
-  graph = resolveSkillCapabilityGraph(root, projectRoot, { runtime: 'codex', scope: 'projects/demo' });
-  assert.equal(graph.consumers[0].dependencies[0].selectedProvider.id, 'project-provider');
-  assert.equal(graph.consumers[0].dependencies[0].binding.scope, 'projects/demo');
+  graph = resolveSkillCapabilityGraph(root, { runtime: 'codex' });
+  assert.equal(graph.consumers[0].dependencies[0].selectedProvider.id, 'workspace-provider');
+  assert.equal(graph.consumers[0].dependencies[0].binding.scope, '.');
+  assert.equal(graph.consumers.some((item: any) => item.consumer.startsWith('project:')), false);
 });
 
 test('required dependency 递归阻断并检测 cycle，optional 缺失只降级', () => {
@@ -144,7 +145,7 @@ test('required dependency 递归阻断并检测 cycle，optional 缺失只降级
       { id: 'optional-consumer', path: 'optional-consumer', requires: [{ capability: 'example.optional', version: 1, mode: 'optional' }] },
     ],
   });
-  const graph: any = resolveSkillCapabilityGraph(root, null, { runtime: 'codex' });
+  const graph: any = resolveSkillCapabilityGraph(root, { runtime: 'codex' });
   const consumer: any = graph.consumers.find((item: any) => item.consumer === 'consumer');
   assert.equal(consumer.readiness, 'blocked');
   assert.ok(['provider_not_ready', 'dependency_cycle'].includes(consumer.reason));
@@ -167,7 +168,7 @@ test('provider 声明兼容 contract 但不支持当前 runtime 时报告 runtim
       { id: 'consumer', path: 'consumer', requires: [{ capability: 'example.runtime', version: 1, mode: 'required' }] },
     ],
   });
-  const graph: any = resolveSkillCapabilityGraph(root, null, { runtime: 'codex' });
+  const graph: any = resolveSkillCapabilityGraph(root, { runtime: 'codex' });
   assert.equal(graph.consumers[0].readiness, 'blocked');
   assert.equal(graph.consumers[0].reason, 'runtime_unavailable');
   assert.deepEqual(graph.consumers[0].dependencies[0].candidates, [{ id: 'provider', scope: '.', runtimePath: 'provider', runtimeAvailable: false }]);
@@ -185,12 +186,12 @@ test('只有不同 major version 的 provider 时报告 version_mismatch 和候�
       { id: 'consumer', path: 'consumer', requires: [{ capability: 'example.versioned', version: 1, mode: 'required' }] },
     ],
   });
-  const dependency: any = resolveSkillCapabilityGraph(root, null, { runtime: 'codex' }).consumers[0].dependencies[0];
+  const dependency: any = resolveSkillCapabilityGraph(root, { runtime: 'codex' }).consumers[0].dependencies[0];
   assert.equal(dependency.reason, 'version_mismatch');
   assert.deepEqual(dependency.candidateVersions, [{ id: 'provider', versions: [2] }]);
 });
 
-test('跨 Project 不同 binding fail closed 为 cross_project_binding_ambiguous', () => {
+test('跨 Project 旧配置不再产生 binding 冲突', () => {
   const root: any = workspace();
   const contractPath: any = contract(root, 'example.operation');
   for (const id of ['provider-a', 'provider-b']) skill(root, id);
@@ -203,7 +204,68 @@ test('跨 Project 不同 binding fail closed 为 cross_project_binding_ambiguous
     fs.mkdirSync(projectRoot, { recursive: true });
     fs.writeFileSync(path.join(projectRoot, 'capabilities.yml'), YAML.stringify({ schemaVersion: 'buildr.project-capabilities/v1', requires: [], skills: [provider], bindings: [{ capability: 'example.operation', version: 1, provider }] }));
   }
-  const context: any = resolveCrossProjectCapabilityContext(root, ['a', 'b'], { runtime: 'codex' });
-  assert.equal(context.readiness, 'blocked');
-  assert.equal(context.conflicts[0].reason, 'cross_project_binding_ambiguous');
+  const graph: any = resolveSkillCapabilityGraph(root, { runtime: 'codex' });
+  assert.deepEqual(graph.bindings, []);
+  assert.equal(graph.scope, '.');
+  assert.deepEqual(graph.consumers, []);
+});
+
+test('退役配置只做分级提示，保留文件且不校验过期技能', async () => {
+  const { observeRetiredProjectCapabilities } = await import('../../src/modules/workspace/application/project-capability-retirement.ts');
+  const root = workspace();
+  const file = path.join(root, 'capabilities.yml');
+  assert.equal(observeRetiredProjectCapabilities(root), null);
+  for (const [content, expected] of [
+    ['schemaVersion: buildr.project-capabilities/v1\nrequires: []\nbindings: []\nskills: [no-longer-installed]\n', 'info'],
+    ['schemaVersion: buildr.project-capabilities/v1\nrequires: [{capability: example.missing, version: 1, mode: required}]\n', 'warning'],
+    ['schemaVersion: buildr.project-capabilities/v1\nbindings: [{capability: example.operation, version: 1, provider: old}]\n', 'warning'],
+    ['schemaVersion: unknown\n', 'warning'],
+    ['invalid: [\n', 'warning'],
+  ]) {
+    fs.writeFileSync(file, content);
+    const observed = observeRetiredProjectCapabilities(root);
+    assert.equal(observed?.status, expected);
+    assert.equal(observed?.code, 'projects.capabilities_retired');
+    assert.equal(fs.readFileSync(file, 'utf8'), content);
+  }
+  fs.unlinkSync(file);
+  fs.symlinkSync(path.join(root, 'skills/manifest.yml'), file);
+  assert.equal(observeRetiredProjectCapabilities(root)?.status, 'warning');
+});
+
+test('旧项目配置清理只选择已登记、空间内的安全文件并拒绝版本漂移', async (t) => {
+  const { planProjectCapabilityCleanup, cleanupProjectCapabilities } = await import('../../src/modules/workspace/application/project-capability-retirement.ts');
+  const root = workspace();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const safe = 'schemaVersion: buildr.project-capabilities/v1\nrequires: []\nbindings: []\nskills: [retired-skill]\n';
+  const variants = { safe, empty: 'schemaVersion: buildr.project-capabilities/v1\n', bound: safe.replace('bindings: []', 'bindings: [{capability: example.operation, version: 1, provider: old}]'), unknown: safe + 'custom: keep\n', malformed: 'invalid: [\n', unknownSkillData: safe.replace('[retired-skill]', '[{id: retired-skill, note: keep}]'), unregistered: safe, attached: safe, link: safe };
+  const projects: Record<string, any> = {};
+  for (const [code, content] of Object.entries(variants)) {
+    const projectRoot = path.join(root, 'projects', code);
+    fs.mkdirSync(projectRoot, { recursive: true });
+    fs.writeFileSync(path.join(projectRoot, 'capabilities.yml'), content);
+    if (code !== 'unregistered') projects[code] = { source: { path: `projects/${code}`, ...(code === 'attached' ? { root: 'attached' } : {}) } };
+  }
+  const link = path.join(root, 'projects/link/capabilities.yml');
+  fs.unlinkSync(link);
+  fs.symlinkSync(path.join(root, 'projects/bound/capabilities.yml'), link);
+  projects.ancestorLink = { source: { path: 'projects/linked-root' } };
+  fs.symlinkSync(path.join(root, 'projects/safe'), path.join(root, 'projects/linked-root'));
+  projects.outside = { source: { path: '..' } };
+  const plan = planProjectCapabilityCleanup(root, projects);
+  assert.deepEqual(plan.map((item) => item.path), ['projects/empty/capabilities.yml', 'projects/safe/capabilities.yml']);
+  const safeFile = path.join(root, 'projects/safe/capabilities.yml');
+  fs.writeFileSync(safeFile, safe + '# user edit\n');
+  assert.throws(() => cleanupProjectCapabilities(root, plan), /changed before cleanup/);
+  assert.equal(fs.readFileSync(safeFile, 'utf8'), safe + '# user edit\n');
+  assert.equal(fs.existsSync(path.join(root, 'projects/empty/capabilities.yml')), true, 'version preflight must precede all deletions');
+  const fresh = planProjectCapabilityCleanup(root, projects);
+  assert.deepEqual(cleanupProjectCapabilities(root, fresh), fresh.map((item) => item.path));
+  assert.deepEqual(planProjectCapabilityCleanup(root, projects), []);
+  assert.deepEqual(cleanupProjectCapabilities(root, []), []);
+  for (const [code, content] of Object.entries(variants)) {
+    if (['safe', 'empty', 'link'].includes(code)) continue;
+    assert.equal(fs.readFileSync(path.join(root, 'projects', code, 'capabilities.yml'), 'utf8'), content);
+  }
+  assert.equal(fs.lstatSync(link).isSymbolicLink(), true);
 });

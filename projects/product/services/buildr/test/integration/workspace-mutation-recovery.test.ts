@@ -269,3 +269,35 @@ test('automatic rollback preserves current targets when a backup has disappeared
   assert.equal(fs.readFileSync(a, 'utf8'), 'current');
   assert.equal(fs.existsSync(f.api.mutationLockPath(f.root)), true);
 });
+
+test('同步事务后续失败时恢复已自动清理的旧项目能力文件', async (t) => {
+  const { planProjectCapabilityCleanup, cleanupProjectCapabilities } = await import('../../src/modules/workspace/application/project-capability-retirement.ts');
+  const f = fixture(t);
+  const content = 'schemaVersion: buildr.project-capabilities/v1\nrequires: []\nbindings: []\nskills: [old]\n';
+  const file = f.file('projects/demo/capabilities.yml', content);
+  const candidates = planProjectCapabilityCleanup(f.root, { demo: { source: { path: 'projects/demo' } } });
+  assert.throws(() => f.api.withWorkspaceMutation(f.root, 'test.cleanup', [file], () => {
+    cleanupProjectCapabilities(f.root, candidates);
+    assert.equal(fs.existsSync(file), false);
+    throw new Error('later sync failure');
+  }), /later sync failure/);
+  assert.equal(fs.readFileSync(file, 'utf8'), content);
+  assert.equal(fs.existsSync(f.api.mutationLockPath(f.root)), false);
+});
+
+test('清理检测到快照后的用户编辑时不自动回滚覆盖新内容', async (t) => {
+  const { planProjectCapabilityCleanup, cleanupProjectCapabilities } = await import('../../src/modules/workspace/application/project-capability-retirement.ts');
+  const f = fixture(t);
+  const content = 'schemaVersion: buildr.project-capabilities/v1\nrequires: []\nbindings: []\n';
+  const file = f.file('projects/demo/capabilities.yml', content);
+  const candidates = planProjectCapabilityCleanup(f.root, { demo: { source: { path: 'projects/demo' } } });
+  const edited = content + '# changed after transaction snapshot\n';
+  assert.throws(() => f.api.withWorkspaceMutation(f.root, 'test.cleanup.conflict', [file], () => {
+    fs.writeFileSync(file, edited);
+    cleanupProjectCapabilities(f.root, candidates);
+  }), /automatic rollback withheld/);
+  assert.equal(fs.readFileSync(file, 'utf8'), edited, 'detected external edits must remain authoritative');
+  const lock = JSON.parse(fs.readFileSync(f.api.mutationLockPath(f.root), 'utf8'));
+  const journal = JSON.parse(fs.readFileSync(path.join(f.api.mutationStateRoot(f.root), lock.transactionId, 'journal.json'), 'utf8'));
+  assert.equal(journal.phase, 'rollback-failed');
+});

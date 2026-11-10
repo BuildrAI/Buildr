@@ -1,13 +1,10 @@
 import { createSkillRegistration } from './skill-registration.ts';
 import fs from 'node:fs';
 import path from 'node:path';
-import YAML from 'yaml';
 import {
-  PROJECT_CAPABILITIES_SCHEMA,
   capabilityKey,
   migrateSkillsManifestDocument,
   validateCapabilityIdentity,
-  validateProjectCapabilitiesDocument,
   validateConnectionDefinitionReferences,
 } from '../persistence/skill-manifest.ts';
 import { selectedProviderImpacts } from '../persistence/capability-graph-repository.ts';
@@ -50,7 +47,7 @@ export function registerDomainsSkills(dependencies: SkillsDependencies) {
   } = dependencies;
   const {
     manifestDocumentFor, attachManifestDocument, readSkillManifestDocument, readSkillManifest,
-    readSkillManifestSchemaVersion, renderSkillsManifestYaml, renderProjectCapabilitiesYaml,
+    readSkillManifestSchemaVersion, renderSkillsManifestYaml,
     skillsManifestPath, readSkillsManifestForWrite, writeSkillsManifest,
   } = createSkillRepository({
     atomicWriteFile, existsFile, parseYamlDocument, toPosixRelative,
@@ -187,10 +184,10 @@ export function registerDomainsSkills(dependencies: SkillsDependencies) {
     if (scope === undefined || scope === null || scope === '.' || scope === 'workspace') return { scope: '.', scopeRoot: targetRoot, deprecatedScope: scope === '.' };
     const normalizedScope = normalizeRelativePathForBuildr(scope, `Unsupported skills scope: ${scope}`);
     if (/^projects\/[^/]+$/.test(normalizedScope)) {
-      const error: Error & Record<string, any> = new Error(`Legacy Project Skill source scope is no longer supported: ${normalizedScope}. Project is a capability/applicability context, not an Agent Skill installation boundary. This Buildr version does not migrate Project Skill sources; review and move the source to workspace skills/ before upgrading.`);
+      const error: Error & Record<string, any> = new Error(`Legacy Project Skill source scope is no longer supported: ${normalizedScope}. Project is not an Agent Skill source or capability configuration boundary. This Buildr version does not migrate Project Skill sources; review and move the source to workspace skills/ before upgrading.`);
       error.code = 'skills.project_scope_unsupported';
       error.reason = 'project_scope_removed';
-      error.nextActions = ['Review the legacy Project Skill source without modifying it.', 'Move the Skill source to workspace skills/ and reference it from projects/<project>/capabilities.yml, or use an older Buildr version before upgrading.'];
+      error.nextActions = ['Review the legacy Project Skill source without modifying it.', 'Move the Skill source to workspace skills/ and describe its applicability in the Skill instructions or Project rules, or use an older Buildr version before upgrading.'];
       throw error;
     }
     throw new Error(`Unsupported skills scope. Skills source authority is workspace: ${scope}`);
@@ -486,19 +483,17 @@ export function registerDomainsSkills(dependencies: SkillsDependencies) {
   }
 
   function capabilityContextForScope(targetRoot: any, scopeInput: any): any  {
-    if (!scopeInput || scopeInput === '.' || scopeInput === 'workspace') return { scope: '.', scopeRoot: targetRoot, file: skillsManifestPath(targetRoot), kind: 'workspace' };
-    const scope = normalizeRelativePathForBuildr(scopeInput, `Unsupported capability context: ${scopeInput}`);
-    if (!/^projects\/[^/]+$/.test(scope)) throw new Error(`Unsupported capability context: ${scopeInput}`);
-    const scopeRoot = path.join(targetRoot, scope);
-    if (!existsDirectory(scopeRoot)) throw new Error(`Project context does not exist: ${scope}`);
-    return { scope, scopeRoot, file: path.join(scopeRoot, 'capabilities.yml'), kind: 'project' };
+    if (!scopeInput || scopeInput === '.' || scopeInput === 'workspace') return { scope: '.', scopeRoot: targetRoot, file: skillsManifestPath(targetRoot) };
+    const error: Error & Record<string, any> = new Error(`Project capability context is retired: ${scopeInput}. Capability bindings are workspace-only; no configuration was changed.`);
+    error.code = 'skills.project_capabilities_retired';
+    throw error;
   }
 
   function skillsBindUnsafe(input: any): any  {
     const { rawCapability, targetRoot, scopeInput = null, provider = null, remove = false } = input;
     const requested = parseCapabilityArgument(rawCapability, 'capability');
     assertInitializedBuildrWorkspace(targetRoot);
-    const { scope, scopeRoot, file: contextFile, kind } = capabilityContextForScope(targetRoot, scopeInput);
+    const { scope, scopeRoot } = capabilityContextForScope(targetRoot, scopeInput);
     if (!remove && !provider) throw new Error('Missing required option: --provider');
     if (provider) assertName(provider, 'Provider Skill id');
 
@@ -516,9 +511,7 @@ export function registerDomainsSkills(dependencies: SkillsDependencies) {
 
     const localFile = skillsManifestPath(targetRoot);
     const skills = existsFile(localFile) ? readSkillManifest(localFile) : attachManifestDocument(migrateSkillsManifestDocument({ skills: [] }, { manifestPath: localFile }));
-    const document = kind === 'workspace'
-      ? manifestDocumentFor(skills)
-      : (existsFile(contextFile) ? validateProjectCapabilitiesDocument(parseYamlDocument(fs.readFileSync(contextFile, 'utf8'), contextFile), contextFile) : { schemaVersion: PROJECT_CAPABILITIES_SCHEMA, requires: [], bindings: [], skills: [] });
+    const document = manifestDocumentFor(skills);
     const bindings: any[] = [...(document.bindings || [])];
     const index = bindings.findIndex((binding: any) => binding.capability === requested.capability && binding.version === requested.version);
     const previousProvider = index === -1 ? null : bindings[index].provider;
@@ -535,13 +528,8 @@ export function registerDomainsSkills(dependencies: SkillsDependencies) {
     }
     if (bindings.length) document.bindings = bindings;
     else delete document.bindings;
-    if (kind === 'workspace') {
-      document.skills = skills;
-      writeSkillsManifest(targetRoot, skills);
-    } else {
-      validateProjectCapabilitiesDocument(document, contextFile);
-      atomicWriteFile(contextFile, YAML.stringify(document, { lineWidth: 0 }));
-    }
+    document.skills = skills;
+    writeSkillsManifest(targetRoot, skills);
     return { targetRoot, scope, rawCapability, provider, remove, impacts: impact?.impacts || [] };
   }
 
@@ -566,7 +554,6 @@ export function registerDomainsSkills(dependencies: SkillsDependencies) {
     readSkillManifest,
     readSkillManifestSchemaVersion,
     renderSkillsManifestYaml,
-    renderProjectCapabilitiesYaml,
     validateSkillManifestEntries,
     isManifestSourceLabel,
     normalizeRelativePathForBuildr,

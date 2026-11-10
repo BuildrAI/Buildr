@@ -103,7 +103,7 @@ Buildr MVP MUST 通过 Buildr 技能（Skill）、当前命令帮助、带智能
 - **WHEN** Agent 只需要让当前 runtime 学会使用 Buildr
 - **THEN** Agent MUST 使用 `buildr skill install <agent>`
 - **AND** 当 Agent 需要投射 workspace Skills 时，Agent MUST 使用 `buildr skills render <agent> --destination workspace|user`
-- **AND** Project 专用语义 MUST 通过 `capabilities.yml` 表达而不是建立 Skill source scope
+- **AND** Project 专用语义 MUST 在项目规则与技能说明中表达，MUST NOT 建立项目技能源或能力配置作用域
 
 #### Scenario: 讨论其他更高层入口
 - **WHEN** 需要评估 `buildr use` 等其他更高层入口
@@ -293,12 +293,12 @@ Buildr onboarding guidance MUST 说明 workspace 是唯一 Skill source authorit
 #### Scenario: 用户要求项目专用 Skill
 - **WHEN** 用户要求一个 Skill 只适用于某个 Project
 - **THEN** Agent MUST 在 workspace source authority 中维护该 Skill
-- **AND** MUST 在 Project `capabilities.yml` 中声明 applicability 或 binding
+- **AND** MUST 在技能说明或适用项目规则中表达使用边界，MUST NOT 生成项目能力配置
 - **AND** MUST NOT 创建 Project Skill manifest 或隐式投射用户级 Skills
 
 #### Scenario: Agent 询问 Project Skill
 - **WHEN** 用户或旧文档使用“Project Skill”描述当前能力
-- **THEN** onboarding MUST 区分 legacy Project Skill source、Project capability/applicability context 与 workspace destination
+- **THEN** onboarding MUST 区分 legacy Project Skill source 与 workspace destination，并说明项目能力配置已经退役
 - **AND** canonical guidance MUST NOT 把 Project 描述为当前 Skill source 或安装隔离层
 
 ### Requirement: Runtime guidance 公开 Skills inventory 保证边界

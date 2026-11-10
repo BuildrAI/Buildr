@@ -328,7 +328,7 @@ export function registerApplicationRuntime(dependencies: RuntimeProjectionDepend
     const updated = withWorkspaceMutation(targetRoot, `buildr.sync:${agent}`, preflight.affectedPaths, () => {
       const workspaceMigration = migrateWorkspaceMetadata(targetRoot);
       const projectMigration = migrateProjectRegistry(targetRoot);
-      const sourceUpdate = syncPackageBuiltins(targetRoot);
+      const sourceUpdate = syncPackageBuiltins(targetRoot, { projectCapabilityCleanup: lockedPlan.builtins.projectCapabilityCleanup });
       const components = syncPackageComponents(targetRoot, { plans: lockedPlan.components.plans, preparedFindings: lockedPlan.components.findings, strictPreparedPlans: true });
       const requiredErrors = components.errors.filter((item: any) => item.required === true);
       if (requiredErrors.length) throw new Error(`sync 暂停：required Component 源资产存在冲突。\n- ${requiredErrors.map((item: any) => item.error).join('\n- ')}`);

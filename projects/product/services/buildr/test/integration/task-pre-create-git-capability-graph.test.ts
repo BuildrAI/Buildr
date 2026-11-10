@@ -18,7 +18,7 @@ test('Git provider 不可用且工作目录未提交、无上游时仍可创建�
     const manifest: any = YAML.parse(fs.readFileSync(file, 'utf8'));
     manifest.skills.find((item: any) => item.id === 'git-operations').state = 'uninstalled';
     fs.writeFileSync(file, YAML.stringify(manifest, { lineWidth: 0 }));
-    const graph: any = resolveSkillCapabilityGraph(root, null, { runtime: 'codex' });
+    const graph: any = resolveSkillCapabilityGraph(root, { runtime: 'codex' });
     const consumer: any = graph.consumers.find((item: any) => item.consumer === 'task-triage');
     const gitDependency: any = consumer.dependencies.find((item: any) => item.capability === 'buildr.git-operations');
     const taskDependency: any = consumer.dependencies.find((item: any) => item.capability === 'buildr.task-record');

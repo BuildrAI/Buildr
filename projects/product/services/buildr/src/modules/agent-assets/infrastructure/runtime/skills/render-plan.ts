@@ -222,7 +222,7 @@ export function resolveRenderSkills(repoRoot: any, scope: any, runtime: any, opt
     throw error;
   }
   const adapter = getRuntimeAdapterFor(runtime, options.adapterId);
-  const workspaceGraph = resolveSkillCapabilityGraph(organizationRoot, null, { runtime, adapterId: adapter.id });
+  const workspaceGraph = resolveSkillCapabilityGraph(organizationRoot, { runtime, adapterId: adapter.id });
   return resolveSkills(organizationRoot, null, { runtime, adapterId: adapter.id, resolveRemote: options.resolveRemote }).map((skill: any) => ({ ...skill, runtime, adapterId: adapter.id, declaredScope: '.', capabilityBindings: capabilityBindingsForSkill(workspaceGraph, skill.id) }));
 }
 

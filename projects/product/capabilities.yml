@@ -1,5 +1,0 @@
-schemaVersion: buildr.project-capabilities/v1
-requires: []
-bindings: []
-skills:
-  - buildr-release

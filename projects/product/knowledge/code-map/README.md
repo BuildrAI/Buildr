@@ -10,7 +10,6 @@ projects/product/                         项目（Project）：跨服务产品�
 ├── AGENTS.md                             项目规则
 ├── .node-version                         声明开发 Node 版本（接受下限与供给锚点）
 ├── buildr                                薄开发入口，委托 services/buildr
-├── capabilities.yml                      项目能力声明
 ├── commands.yml                          项目命令需求
 ├── preparation.yml                       准备入口、位置与范围
 ├── verification.yml                      测试体系、选择方法与证明范围

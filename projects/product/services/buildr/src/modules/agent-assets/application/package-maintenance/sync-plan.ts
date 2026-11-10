@@ -53,6 +53,7 @@ export function createPackageSyncPlan({
     }
     // Only proven-safe retirement targets participate in the write transaction.
     for (const finding of findings) {
+      if (finding.type === 'project-capability' && finding.converge === true) affected.add(path.join(targetRoot, finding.path));
       if (finding.type === 'skill' && finding.id === 'archify' && finding.converge === true) {
         affected.add(path.join(targetRoot, 'skills/buildr/archify'));
         affected.add(path.join(targetRoot, 'skills/buildr/archify.buildr-stage'));
