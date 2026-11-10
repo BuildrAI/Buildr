@@ -6,59 +6,50 @@ import test, { after } from 'node:test';
 import { createRuntime } from '../helpers/runtime-harness.ts';
 import { cleanupLocalTaskLifecycleSystemContext } from '../helpers/task-lifecycle-system-context.ts';
 import {
-  runBuildr as realRun,
-  runBuildrJson as realJson,
+  runBuildr as run,
+  runBuildrJson as json,
   taskRecordFixture as fixture,
 } from '../helpers/task-record-system-fixture.ts';
-import { runCliInProcess, runCliJsonInProcess } from '../helpers/in-process-cli.ts';
-
-// Same contract as the fixture helpers these replace: assert the expected exit
-// status (default 0) and return the captured CLI result.
-const run: any = (args: any, expected: any = 0) => runCliInProcess(args, expected);
-const json: any = (args: any, expected: any = 0) => runCliJsonInProcess(args, expected);
 
 after(() => cleanupLocalTaskLifecycleSystemContext());
 
-test('CLI 和 Application 覆盖六个动作、0/1/N Change、跨 Project 同名与四态结果', async (t: any) => {
+test('CLI 和 Application 覆盖六个动作、0/1/N Change、跨 Project 同名与四态结果', (t: any) => {
   const { root }: any = fixture(t, 'task-lifecycle');
   const runtime: any = createRuntime();
   const empty: any = runtime.createTask(root, { taskId: 'empty-task', title: '空引用', intent: '允许没有 Change', projects: [], services: [], changes: [] });
   assert.equal(empty.schemaVersion, 'buildr.task-record-result/v5'); assert.deepEqual(empty.record.changes, []); assert.equal(empty.status, 'created'); assert.deepEqual(empty.nextActions, []); assert.equal('path' in empty, false);
 
-  const created: any = await json(['task', 'create', 'multi-task', '--title', '多范围任务', '--intent', '验证限定引用', '--project', 'demo', '--service', 'demo/api', '--change', 'demo/same-change', '--change', 'demo/second-change', '--change', 'other/same-change', '--target', root]);
+  const created: any = json(['task', 'create', 'multi-task', '--title', '多范围任务', '--intent', '验证限定引用', '--project', 'demo', '--service', 'demo/api', '--change', 'demo/same-change', '--change', 'demo/second-change', '--change', 'other/same-change', '--target', root]);
   assert.equal(created.record.changes.length, 3); assert.match(created.recordDigest, /^sha256-/); assert.deepEqual(created.effects, [{ type: 'created', taskId: 'multi-task' }]); assert.equal('path' in created, false);
-  const inspected: any = await json(['task', 'inspect', 'multi-task', '--target', root]); assert.equal(inspected.recordDigest, created.recordDigest); assert.deepEqual(inspected.effects, []); assert.equal('path' in inspected, false);
-  // Real child-process contract: the in-process runner above must match the
-  // actual `bin/buildr.mjs` process for the same read-only command.
-  assert.deepEqual(realJson(['task', 'inspect', 'multi-task', '--target', root]), inspected);
+  const inspected: any = json(['task', 'inspect', 'multi-task', '--target', root]); assert.equal(inspected.recordDigest, created.recordDigest); assert.deepEqual(inspected.effects, []); assert.equal('path' in inspected, false);
 
   const updated: any = runtime.updateTask(root, 'multi-task', { expectedRecordDigest: created.recordDigest, title: '更新标题', removeChanges: ['demo/second-change'], addProjects: ['other'] });
   assert.equal(updated.status, 'updated'); assert.equal(updated.record.title, '更新标题'); assert.deepEqual(updated.record.scope.projects, ['demo', 'other']); assert.equal(updated.record.changes.length, 2);
   assert.equal(runtime.createTask(root, { taskId: 'peer-task', title: '共享 Change', intent: '不扫描其他 Task ownership', projects: [], services: [], changes: ['demo/same-change'] }).status, 'created');
 
-  const completed: any = await json(['task', 'complete', 'empty-task', '--summary', '确认无需修改', '--expected-record', empty.recordDigest, '--target', root]);
+  const completed: any = json(['task', 'complete', 'empty-task', '--summary', '确认无需修改', '--expected-record', empty.recordDigest, '--target', root]);
   assert.deepEqual(completed.record.result, { summary: '确认无需修改' });
   assert.deepEqual(completed.nextActions, []);
   const abandoned: any = runtime.createTask(root, { taskId: 'abandoned-task', title: '取消任务', intent: '验证放弃', projects: [], services: [], changes: [] });
   assert.equal(abandoned.status, 'created');
   const ended: any = runtime.abandonTask(root, 'abandoned-task', { expectedRecordDigest: abandoned.recordDigest, reason: '目标取消' }); assert.deepEqual(ended.record.result, { summary: '目标取消' }); assert.deepEqual(ended.nextActions, completed.nextActions);
   const humanCreated: any = runtime.createTask(root, { taskId: 'human-output-task', title: '人类输出', intent: '验证终态输出', projects: [], services: [], changes: [] });
-  const human: any = await run(['task', 'complete', 'human-output-task', '--summary', '完成', '--expected-record', humanCreated.recordDigest, '--target', root]);
+  const human: any = run(['task', 'complete', 'human-output-task', '--summary', '完成', '--expected-record', humanCreated.recordDigest, '--target', root]);
   assert.match(human.stdout, /Task human-output-task completed/);
   assert.doesNotMatch(human.stdout, /复盘|Next:/);
-  const terminal: any = await json(['task', 'update', 'abandoned-task', '--title', '缺少更正原因', '--expected-record', ended.recordDigest, '--target', root], 1); assert.equal(terminal.status, 'blocked'); assert.equal(terminal.diagnostic.code, 'task_record_field_invalid'); assert.deepEqual(terminal.effects, []);
+  const terminal: any = json(['task', 'update', 'abandoned-task', '--title', '缺少更正原因', '--expected-record', ended.recordDigest, '--target', root], 1); assert.equal(terminal.status, 'blocked'); assert.equal(terminal.diagnostic.code, 'task_record_field_invalid'); assert.deepEqual(terminal.effects, []);
   assert.equal(runtime.recordTaskRetrospective, undefined);
   assert.equal(runtime.handleTaskRetrospective, undefined);
   assert.equal(runtime.listTaskRetrospectives, undefined);
   assert.throws(() => runtime.createTask(root, { taskId: 'multi-task', title: '重复', intent: '不得覆盖', projects: [], services: [], changes: [] }), (error: any) => error.code === 'task_record_already_exists');
-  const duplicate: any = await json(['task', 'create', 'multi-task', '--title', '重复', '--intent', '不得覆盖', '--target', root], 1);
+  const duplicate: any = json(['task', 'create', 'multi-task', '--title', '重复', '--intent', '不得覆盖', '--target', root], 1);
   assert.equal(duplicate.status, 'blocked');
   assert.equal(duplicate.record.taskId, 'multi-task');
   assert.equal(duplicate.recordDigest, runtime.inspectTask(root, 'multi-task').recordDigest);
-  const syntax: any = await json(['task', 'create', 'missing-title', '--intent', '语法错误', '--target', root], 2); assert.equal(syntax.schemaVersion, 'buildr.cli-error/v1'); assert.equal(syntax.error.code, 'task_record_cli.syntax');
+  const syntax: any = json(['task', 'create', 'missing-title', '--intent', '语法错误', '--target', root], 2); assert.equal(syntax.schemaVersion, 'buildr.cli-error/v1'); assert.equal(syntax.error.code, 'task_record_cli.syntax');
 });
 
-test('任务完成只经既有 complete，旧收尾专用完成写入口退出', async (t: any) => {
+test('任务完成只经既有 complete，旧收尾专用完成写入口退出', (t: any) => {
   const { root }: any = fixture(t, 'direct-completion');
   const runtime: any = createRuntime();
   assert.equal(runtime.completeTaskFromFinish, undefined);
@@ -70,10 +61,10 @@ test('任务完成只经既有 complete，旧收尾专用完成写入口退出',
   assert.equal(runtime.inspectTask(root, 'direct-task').record.status, 'completed');
 });
 
-test('普通后续 Task 只在目标中说明来源，不维护复盘专用关系', async (t: any) => {
+test('普通后续 Task 只在目标中说明来源，不维护复盘专用关系', (t: any) => {
   const { root }: any = fixture(t, 'task-todo-followup');
   const runtime: any = createRuntime();
-  const todo: any = await json(['task', 'create', 'todo-followup', '--title', '待办改进', '--intent', '承接 source-one 的复盘建议', '--status', 'todo', '--target', root]);
+  const todo: any = json(['task', 'create', 'todo-followup', '--title', '待办改进', '--intent', '承接 source-one 的复盘建议', '--status', 'todo', '--target', root]);
   assert.equal(todo.record.status, 'todo');
   assert.deepEqual(todo.record.changes, []);
   assert.equal(todo.record.intent, '承接 source-one 的复盘建议');
@@ -82,13 +73,13 @@ test('普通后续 Task 只在目标中说明来源，不维护复盘专用关�
   assert.deepEqual(runtime.queryTasks(root, { status: 'open' }).tasks.map((item: any) => item.record.taskId), ['todo-followup']);
   assert.deepEqual(runtime.queryTasks(root, { status: 'todo' }).tasks.map((item: any) => item.record.taskId), ['todo-followup']);
   assert.throws(() => runtime.updateTask(root, 'todo-followup', { expectedRecordDigest: todo.recordDigest, addChanges: ['demo/same-change'] }), (error: any) => error.code === 'task_record_todo_change_forbidden');
-  const activated: any = await json(['task', 'activate', 'todo-followup', '--expected-record', todo.recordDigest, '--target', root]);
+  const activated: any = json(['task', 'activate', 'todo-followup', '--expected-record', todo.recordDigest, '--target', root]);
   assert.equal(activated.status, 'activated');
   assert.equal(activated.record.status, 'active');
   assert.deepEqual(runtime.queryTasks(root, { status: 'open' }).tasks.map((item: any) => item.record.taskId), ['todo-followup']);
 });
 
-test('复盘文档由 Agent 写入固定本地路径，Task Record 只登记摘要与决定状态', async (t: any) => {
+test('复盘文档由 Agent 写入固定本地路径，Task Record 只登记摘要与决定状态', (t: any) => {
   const { root }: any = fixture(t, 'task-retrospective-document');
   const runtime: any = createRuntime();
   const created: any = runtime.createTask(root, { taskId: 'document-task', title: '本地复盘', intent: '验证最小登记', projects: [], services: [], changes: [] });
@@ -129,7 +120,7 @@ test('复盘文档由 Agent 写入固定本地路径，Task Record 只登记摘�
   assert.equal(fs.existsSync(documentPath), true, '清除 Task Record 摘要不能删除本地文档');
 });
 
-test('复盘文档读取拒绝符号链接目录且不写Task状态', async (t: any) => {
+test('复盘文档读取拒绝符号链接目录且不写Task状态', (t: any) => {
   const { base, root }: any = fixture(t, 'task-retrospective-document-symlink');
   const runtime: any = createRuntime();
   const created: any = runtime.createTask(root, { taskId: 'symlink-task', title: '符号链接复盘', intent: '验证读取边界', projects: [], services: [], changes: [] });
@@ -150,11 +141,11 @@ test('复盘文档读取拒绝符号链接目录且不写Task状态', async (t: 
   assert.equal(runtime.inspectTask(root, 'symlink-task').recordDigest, before.recordDigest);
 });
 
-test('Parent Task 支持直接层级、重挂与清除，并拒绝自引用、循环和 terminal 新关系', async (t: any) => {
+test('Parent Task 支持直接层级、重挂与清除，并拒绝自引用、循环和 terminal 新关系', (t: any) => {
   const { root }: any = fixture(t, 'task-parent');
   const runtime: any = createRuntime();
-  const parent: any = await json(['task', 'create', 'parent-task', '--title', '协调任务', '--intent', '管理直接子任务', '--target', root]);
-  const child: any = await json(['task', 'create', 'child-task', '--title', '子任务', '--intent', '被协调', '--parent', 'parent-task', '--target', root]);
+  const parent: any = json(['task', 'create', 'parent-task', '--title', '协调任务', '--intent', '管理直接子任务', '--target', root]);
+  const child: any = json(['task', 'create', 'child-task', '--title', '子任务', '--intent', '被协调', '--parent', 'parent-task', '--target', root]);
   assert.equal(child.record.parentTaskId, 'parent-task');
   assert.deepEqual(child.taskRelations.parent, { taskId: 'parent-task', title: '协调任务', status: 'active' });
   assert.deepEqual(runtime.inspectTask(root, 'parent-task').taskRelations.children.map((item: any) => item.taskId), ['child-task']);
@@ -167,13 +158,13 @@ test('Parent Task 支持直接层级、重挂与清除，并拒绝自引用、�
   assert.throws(() => runtime.createTask(root, { taskId: 'missing-parent-child', title: '非法子任务', intent: 'Parent 不存在', parentTaskId: 'missing-parent', projects: [], services: [], changes: [] }), (error: any) => error.code === 'task_record_parent_not_found');
 
   const replacement: any = runtime.createTask(root, { taskId: 'replacement-parent', title: '替代协调任务', intent: '验证重挂', projects: [], services: [], changes: [] });
-  const reparented: any = await json(['task', 'update', 'child-task', '--parent', 'replacement-parent', '--expected-record', runtime.inspectTask(root, 'child-task').recordDigest, '--target', root]);
+  const reparented: any = json(['task', 'update', 'child-task', '--parent', 'replacement-parent', '--expected-record', runtime.inspectTask(root, 'child-task').recordDigest, '--target', root]);
   assert.equal(reparented.record.parentTaskId, 'replacement-parent');
   assert.deepEqual(runtime.inspectTask(root, 'parent-task').taskRelations.children, []);
   assert.deepEqual(runtime.inspectTask(root, 'replacement-parent').taskRelations.children.map((item: any) => item.taskId), ['child-task']);
-  const cleared: any = await json(['task', 'update', 'child-task', '--clear-parent', '--expected-record', reparented.recordDigest, '--target', root]);
+  const cleared: any = json(['task', 'update', 'child-task', '--clear-parent', '--expected-record', reparented.recordDigest, '--target', root]);
   assert.equal(cleared.record.parentTaskId, null);
-  const mutuallyExclusive: any = await json(['task', 'update', 'child-task', '--parent', 'parent-task', '--clear-parent', '--target', root], 2);
+  const mutuallyExclusive: any = json(['task', 'update', 'child-task', '--parent', 'parent-task', '--clear-parent', '--target', root], 2);
   assert.equal(mutuallyExclusive.error.code, 'task_record_cli.syntax');
 
   const parentEvidence: any = (id: any) => ({ expectedRecordDigest: runtime.inspectTask(root, id).recordDigest, parentCompletion: {
@@ -202,7 +193,7 @@ test('Parent Task 支持直接层级、重挂与清除，并拒绝自引用、�
   assert.match(parent.recordDigest, /^sha256-/);
 });
 
-test('引用、closed input、旧 YAML、陈旧 digest 与 transaction 失败均保留最后有效记录', async (t: any) => {
+test('引用、closed input、旧 YAML、陈旧 digest 与 transaction 失败均保留最后有效记录', (t: any) => {
   const { root }: any = fixture(t, 'task-failures');
   const runtime: any = createRuntime();
   const legacyDirectory: any = path.join(root, '.buildr', 'tasks', 'safe-task');
@@ -257,13 +248,13 @@ test('引用、closed input、旧 YAML、陈旧 digest 与 transaction 失败均
   assert.equal(fs.readFileSync(reviewFile, 'utf8'), 'owner: user-defined-sibling\n');
 
   fs.appendFileSync(legacyFile, 'unknown: still-ignored\n');
-  const inspected: any = await json(['task', 'inspect', 'safe-task', '--target', root]); assert.equal(inspected.status, 'inspected'); assert.equal(inspected.record.intent, '由另一客户端更新');
+  const inspected: any = json(['task', 'inspect', 'safe-task', '--target', root]); assert.equal(inspected.status, 'inspected'); assert.equal(inspected.record.intent, '由另一客户端更新');
   assert.throws(() => runtime.createTask(root, { taskId: 'safe-task', title: '不得覆盖', intent: 'SQLite duplicate', projects: [], services: [], changes: [] }), (error: any) => error.code === 'task_record_already_exists');
   const list: any = runtime.queryTasks(root); assert.equal(list.tasks.some((item: any) => item.record.taskId === 'safe-task'), true);
   assert.notDeepEqual(original, current.record);
 });
 
-test('历史Project、Service或Change不可用时Task仍可读并允许移除引用或修改无关字段', async (t: any) => {
+test('历史Project、Service或Change不可用时Task仍可读并允许移除引用或修改无关字段', (t: any) => {
   const { root }: any = fixture(t, 'task-reference-availability');
   const runtime: any = createRuntime();
   const created: any = runtime.createTask(root, { taskId: 'historical-references', title: '历史引用', intent: '引用以后可能迁移', projects: ['demo'], services: ['demo/api'], changes: ['demo/same-change'] });
@@ -273,7 +264,7 @@ test('历史Project、Service或Change不可用时Task仍可读并允许移除�
   assert.equal(inspected.recordDigest, created.recordDigest);
   assert.deepEqual(inspected.record.scope, created.record.scope);
   assert.deepEqual(new Set(inspected.referenceDiagnostics.map((item: any) => item.kind)), new Set(['project', 'service', 'change']));
-  const cliInspected: any = await json(['task', 'inspect', 'historical-references', '--target', root]);
+  const cliInspected: any = json(['task', 'inspect', 'historical-references', '--target', root]);
   assert.deepEqual(cliInspected.record, inspected.record);
   assert.deepEqual(cliInspected.referenceDiagnostics, inspected.referenceDiagnostics);
   const detail: any = runtime.inspectTaskView(root, 'historical-references');
@@ -301,56 +292,56 @@ test('历史Project、Service或Change不可用时Task仍可读并允许移除�
   assert.throws(() => runtime.updateTask(root, 'historical-references', { expectedRecordDigest: cleaned.recordDigest, addChanges: ['missing/change'] }), { code: 'task_record_project_not_found' });
 });
 
-test('CLI 完成动作沿用观察到的记录摘要并拒绝覆盖并发更新', async (t: any) => {
+test('CLI 完成动作沿用观察到的记录摘要并拒绝覆盖并发更新', (t: any) => {
   const { root }: any = fixture(t, 'completion-cas');
   const runtime: any = createRuntime();
   const before: any = runtime.createTask(root, { taskId: 'cas-task', title: '旧目标', intent: '初始目标', projects: [], services: [], changes: [] });
   runtime.updateTask(root, 'cas-task', { expectedRecordDigest: before.recordDigest, intent: '协作者更新了目标' });
-  const rejected: any = await run(['task', 'complete', 'cas-task', '--summary', '基于旧目标完成', '--expected-record', before.recordDigest, '--target', root, '--json'], 1);
+  const rejected: any = run(['task', 'complete', 'cas-task', '--summary', '基于旧目标完成', '--expected-record', before.recordDigest, '--target', root, '--json'], 1);
   assert.notEqual(rejected.status, 0);
   assert.equal(runtime.inspectTask(root, 'cas-task').record.status, 'active');
   const current: any = runtime.inspectTask(root, 'cas-task');
-  const completed: any = await json(['task', 'complete', 'cas-task', '--summary', '已核对新目标并完成', '--expected-record', current.recordDigest, '--target', root]);
+  const completed: any = json(['task', 'complete', 'cas-task', '--summary', '已核对新目标并完成', '--expected-record', current.recordDigest, '--target', root]);
   assert.equal(completed.record.status, 'completed');
 });
 
-test('CLI parent completion requires an explicit evidence file and preserves the authorization', async (t: any) => {
+test('CLI parent completion requires an explicit evidence file and preserves the authorization', (t: any) => {
   const { root, base }: any = fixture(t, 'parent-completion-cli');
-  const created: any = await json(['task', 'create', 'explicit-parent', '--parent-task', '--title', '父任务', '--intent', '核对独立整体目标', '--target', root]);
+  const created: any = json(['task', 'create', 'explicit-parent', '--parent-task', '--title', '父任务', '--intent', '核对独立整体目标', '--target', root]);
   assert.equal(created.record.isParent, true);
-  const denied: any = await json(['task', 'complete', 'explicit-parent', '--summary', '尚无授权', '--expected-record', created.recordDigest, '--target', root], 1);
+  const denied: any = json(['task', 'complete', 'explicit-parent', '--summary', '尚无授权', '--expected-record', created.recordDigest, '--target', root], 1);
   assert.equal(denied.diagnostic.code, 'parent_completion_authorization_required');
-  const context: any = await json(['task', 'parent', 'inspect', 'explicit-parent', '--target', root]);
+  const context: any = json(['task', 'parent', 'inspect', 'explicit-parent', '--target', root]);
   const evidence: any = path.join(base, 'parent-completion.json');
   fs.writeFileSync(evidence, JSON.stringify({ expectedSnapshot: context.completion.snapshotIdentity,
     acceptance: { summary: '整体目标已核对', children: [] },
     authorization: { source: 'test:explicit-parent-user-message', statement: '用户明确授权完成 explicit-parent' } }));
-  const completed: any = await json(['task', 'complete', 'explicit-parent', '--summary', '整体完成', '--expected-record', created.recordDigest, '--parent-completion', evidence, '--target', root]);
+  const completed: any = json(['task', 'complete', 'explicit-parent', '--summary', '整体完成', '--expected-record', created.recordDigest, '--parent-completion', evidence, '--target', root]);
   assert.equal(completed.record.result.parentCompletion.authorization.source, 'test:explicit-parent-user-message');
 });
 
 
-test('CLI可显式更正终态并保留历史，随后仍能使用统一状态更新', async (t: any) => {
+test('CLI可显式更正终态并保留历史，随后仍能使用统一状态更新', (t: any) => {
   const { root }: any = fixture(t, 'task-correction-cli');
-  const created: any = await json(['task', 'create', 'correctable', '--title', '阶段任务', '--intent', '先完成一个阶段', '--target', root]);
-  const completed: any = await json(['task', 'complete', 'correctable', '--summary', '阶段已完成', '--expected-record', created.recordDigest, '--target', root]);
-  const reopened: any = await json(['task', 'update', 'correctable', '--status', 'active', '--reason', '用户恢复整体目标', '--intent', '继续整体工作', '--expected-record', completed.recordDigest, '--target', root]);
+  const created: any = json(['task', 'create', 'correctable', '--title', '阶段任务', '--intent', '先完成一个阶段', '--target', root]);
+  const completed: any = json(['task', 'complete', 'correctable', '--summary', '阶段已完成', '--expected-record', created.recordDigest, '--target', root]);
+  const reopened: any = json(['task', 'update', 'correctable', '--status', 'active', '--reason', '用户恢复整体目标', '--intent', '继续整体工作', '--expected-record', completed.recordDigest, '--target', root]);
   assert.equal(reopened.record.status, 'active'); assert.equal(reopened.record.result, null);
   assert.equal(reopened.record.resultHistory[0].result.summary, '阶段已完成');
   assert.equal(reopened.record.resultHistory[0].intent, '先完成一个阶段');
-  const again: any = await json(['task', 'update', 'correctable', '--status', 'completed', '--summary', '整体已完成', '--expected-record', reopened.recordDigest, '--target', root]);
+  const again: any = json(['task', 'update', 'correctable', '--status', 'completed', '--summary', '整体已完成', '--expected-record', reopened.recordDigest, '--target', root]);
   assert.equal(again.record.status, 'completed'); assert.equal(again.record.resultHistory.length, 1);
 });
 
-test('CLI task list 复用 v7 轻量列表投影，默认只返回未终结任务并显式表达分页与非法输入', async (t: any) => {
+test('CLI task list 复用 v7 轻量列表投影，默认只返回未终结任务并显式表达分页与非法输入', (t: any) => {
   const { root }: any = fixture(t, 'task-list-cli');
-  await json(['task', 'create', 'list-open-one', '--title', '未终结一', '--intent', '验证默认过滤', '--target', root]);
-  await json(['task', 'create', 'list-open-two', '--title', '未终结二', '--intent', '验证默认过滤', '--target', root]);
-  const done: any = await json(['task', 'create', 'list-done', '--title', '已完成', '--intent', '验证状态过滤', '--target', root]);
-  await json(['task', 'complete', 'list-done', '--summary', '已完成', '--expected-record', done.recordDigest, '--target', root]);
-  await json(['task', 'create', 'list-todo', '--title', '待办意向', '--intent', '验证 open 覆盖 todo', '--status', 'todo', '--target', root]);
+  json(['task', 'create', 'list-open-one', '--title', '未终结一', '--intent', '验证默认过滤', '--target', root]);
+  json(['task', 'create', 'list-open-two', '--title', '未终结二', '--intent', '验证默认过滤', '--target', root]);
+  const done: any = json(['task', 'create', 'list-done', '--title', '已完成', '--intent', '验证状态过滤', '--target', root]);
+  json(['task', 'complete', 'list-done', '--summary', '已完成', '--expected-record', done.recordDigest, '--target', root]);
+  json(['task', 'create', 'list-todo', '--title', '待办意向', '--intent', '验证 open 覆盖 todo', '--status', 'todo', '--target', root]);
 
-  const listed: any = await json(['task', 'list', '--target', root]);
+  const listed: any = json(['task', 'list', '--target', root]);
   assert.equal(listed.schemaVersion, 'buildr.task-record-list/v7');
   assert.equal(listed.filters.status, 'open'); assert.equal(listed.pageSize, 20);
   assert.equal(listed.totalTaskCount, 4); assert.equal(listed.matchingTaskCount, 3);
@@ -359,57 +350,57 @@ test('CLI task list 复用 v7 轻量列表投影，默认只返回未终结任�
   assert.equal('brief' in listed.tasks[0].record, false);
   assert.doesNotMatch(JSON.stringify(listed), /brief|\.sqlite|workspace-sqlite/);
 
-  const all: any = await json(['task', 'list', '--status', 'all', '--target', root]);
+  const all: any = json(['task', 'list', '--status', 'all', '--target', root]);
   assert.equal(all.filters.status, 'all'); assert.equal(all.matchingTaskCount, 4);
-  const activeOnly: any = await json(['task', 'list', '--status', 'active', '--target', root]);
+  const activeOnly: any = json(['task', 'list', '--status', 'active', '--target', root]);
   assert.equal(activeOnly.matchingTaskCount, 2);
 
-  const empty: any = await json(['task', 'list', '--q', 'zzzznomatch', '--target', root]);
+  const empty: any = json(['task', 'list', '--q', 'zzzznomatch', '--target', root]);
   assert.deepEqual(empty.tasks, []); assert.equal(empty.matchingTaskCount, 0); assert.equal(empty.totalTaskCount, 4);
   assert.equal(empty.filters.q, 'zzzznomatch'); assert.equal(empty.hasMore, false);
-  const humanEmpty: any = await run(['task', 'list', '--q', 'zzzznomatch', '--target', root]);
+  const humanEmpty: any = run(['task', 'list', '--q', 'zzzznomatch', '--target', root]);
   assert.match(humanEmpty.stdout, /过滤 status=open：匹配 0 \/ 共 4，本页 0/);
 
-  const pageOne: any = await json(['task', 'list', '--status', 'all', '--page-size', '1', '--target', root]);
+  const pageOne: any = json(['task', 'list', '--status', 'all', '--page-size', '1', '--target', root]);
   assert.equal(pageOne.tasks.length, 1); assert.equal(pageOne.hasMore, true); assert.match(pageOne.nextCursor, /.+/);
   assert.notEqual(pageOne.filterOptions, null);
-  const pageTwo: any = await json(['task', 'list', '--status', 'all', '--page-size', '1', '--cursor', pageOne.nextCursor, '--target', root]);
+  const pageTwo: any = json(['task', 'list', '--status', 'all', '--page-size', '1', '--cursor', pageOne.nextCursor, '--target', root]);
   assert.equal(pageTwo.tasks.length, 1); assert.equal(pageTwo.filterOptions, null);
   assert.notEqual(pageTwo.tasks[0].record.taskId, pageOne.tasks[0].record.taskId);
 
-  const human: any = await run(['task', 'list', '--target', root]);
+  const human: any = run(['task', 'list', '--target', root]);
   assert.match(human.stdout, /list-open-one\tactive\t未终结一/);
   assert.match(human.stdout, /过滤 status=open：匹配 3 \/ 共 4，本页 3/);
 
-  const positional: any = await json(['task', 'list', 'list-open-one', '--target', root], 2);
+  const positional: any = json(['task', 'list', 'list-open-one', '--target', root], 2);
   assert.equal(positional.schemaVersion, 'buildr.cli-error/v1');
   assert.equal(positional.error.code, 'task_record_cli.syntax');
   assert.match(positional.help, /buildr task list/);
 
-  const unknownArg: any = await json(['task', 'list', '--nope', 'x', '--target', root], 2);
+  const unknownArg: any = json(['task', 'list', '--nope', 'x', '--target', root], 2);
   assert.equal(unknownArg.error.code, 'task_record_cli.syntax');
   assert.match(unknownArg.error.message, /Unknown argument: --nope/);
 
-  const badPageSize: any = await json(['task', 'list', '--page-size', '0', '--target', root], 1);
+  const badPageSize: any = json(['task', 'list', '--page-size', '0', '--target', root], 1);
   assert.equal(badPageSize.schemaVersion, 'buildr.task-record-result/v5');
   assert.equal(badPageSize.status, 'blocked'); assert.equal(badPageSize.operation, 'list');
   assert.equal(badPageSize.taskId, null); assert.equal(badPageSize.record, null);
   assert.equal(badPageSize.diagnostic.code, 'task_record_filter_invalid');
   assert.equal(badPageSize.diagnostic.details.field, 'pageSize');
 
-  const badStatus: any = await json(['task', 'list', '--status', 'bogus', '--target', root], 1);
+  const badStatus: any = json(['task', 'list', '--status', 'bogus', '--target', root], 1);
   assert.equal(badStatus.status, 'blocked'); assert.equal(badStatus.diagnostic.code, 'task_record_filter_invalid');
   assert.equal(badStatus.diagnostic.details.field, 'status');
 });
 
 
-test('CLI default task page stays bounded in a workspace with hundreds of tasks', async (t:any)=>{
+test('CLI default task page stays bounded in a workspace with hundreds of tasks', (t:any)=>{
  const {root}=fixture(t,'task-list-bounded');const runtime=createRuntime();
  for(let i=0;i<240;i++)runtime.createTask(root,{taskId:'bounded-'+i,title:'Task '+i,intent:'bounded page',status:'todo',projects:[],services:[],changes:[]});
- const first=await json(['task','list','--target',root]);
+ const first=json(['task','list','--target',root]);
  assert.equal(first.tasks.length,20);assert.equal(first.totalTaskCount,240);assert.equal(first.matchingTaskCount,240);assert.equal(first.hasMore,true);assert.ok(first.nextCursor);
  assert.ok(first.tasks.every((item:any)=>!('brief' in item.record)));
- const second=await json(['task','list','--target',root,'--cursor',first.nextCursor]);
+ const second=json(['task','list','--target',root,'--cursor',first.nextCursor]);
  assert.equal(second.tasks.length,20);assert.equal(second.filterOptions,null);
  assert.ok(second.tasks.every((item:any)=>!first.tasks.some((old:any)=>old.record.taskId===item.record.taskId)));
 });

@@ -11,7 +11,7 @@ import {OwnedControlResource,closeOwnedProcess} from '../../../build/executors/n
 test('cold stop rejects without fabricating an empty settled observation',async()=>{
  const runtime=new(DshRuntime as any)('binding',{},{});
  const contextRef=runtime.context('context','/isolated');
- await assert.rejects(runtime.stop({contextRef,executionRef:{id:'previous'}}),{code:'agent_stop_owner_unavailable',status:409});
+ await assert.rejects(runtime.stop({contextRef,executionRef:{id:'previous'}}),/未持有原轮执行/);
 });
 
 for(const mode of ['owned','shared','protected'] as const)test('unresponsive native stop is bounded and resource scoped: '+mode,{skip:process.platform==='win32'},async()=>{

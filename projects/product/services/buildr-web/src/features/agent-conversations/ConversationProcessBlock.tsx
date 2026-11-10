@@ -21,36 +21,33 @@ function ToolIcon({kind}:{kind:ProcessToolKind}){
   const Icon={search:SearchOutlined,fetch:GlobalOutlined,directory:FolderOpenOutlined,image:PictureOutlined,tool:ToolOutlined}[kind];
   return <Icon/>;
 }
-export function ToolStep({entry,active,onOpenFile,open,onToggle,loadEntry}:{entry:ConversationEntry;active:boolean;onOpenFile:FileOpener;open?:boolean;onToggle?:(open:boolean)=>void;loadEntry?:EntryLoader}){
+function ToolStep({entry,active,onOpenFile,open,onToggle,loadEntry}:{entry:ConversationEntry;active:boolean;onOpenFile:FileOpener;open?:boolean;onToggle?:(open:boolean)=>void;loadEntry?:EntryLoader}){
   const [visited,setVisited]=useState(Boolean(open));
   const [detail,setDetail]=useState<{key:string;entry?:ConversationEntry;error?:string}>(),[attempt,setAttempt]=useState(0);
   const detailKey=entry.id+':'+(entry.detail?.revision??'');
   const expanded=Boolean(open||visited);
-  const remoteDetail=Boolean(entry.detail&&!entry.detail.live);
-  const fetchDetail=(['codex','dsh','qoder'].includes(entry.provider??'')?Boolean(open):expanded)&&remoteDetail;
   useEffect(()=>{
-    if(!fetchDetail||!entry.detail||!loadEntry)return;
+    if(!expanded||!entry.detail||!loadEntry)return;
     const controller=new AbortController();setDetail({key:detailKey});
     void loadEntry(entry,controller.signal).then(value=>{if(!controller.signal.aborted)setDetail({key:detailKey,entry:value});}).catch(error=>{if(!controller.signal.aborted)setDetail({key:detailKey,error:error instanceof Error?error.message:'工具记录读取失败。'});});
     return()=>controller.abort();
-  },[fetchDetail,detailKey,loadEntry,attempt]);
+  },[expanded,detailKey,loadEntry,attempt]);
   const full=detail?.key===detailKey?detail:undefined;
-  const visibleEntry=remoteDetail?full?.entry??entry:entry;
+  const visibleEntry=entry.detail?full?.entry??entry:entry;
   const status=processEntryStatus(entry,active);
   const tool=processTool(visibleEntry);
-  const summary=['codex','dsh','qoder'].includes(entry.provider??'')?processTool({...entry,text:'',input:undefined}):tool;
   const fileLink=(path:string)=><button key={path} type="button" className="ac-tool-file-link" title={path} aria-label={'查看文件 '+path} onClick={event=>{event.preventDefault();event.stopPropagation();onOpenFile(path);}}>{path.split(/[\\/]/).at(-1)}</button>;
   return <details className={'ac-step ac-step-tool'+(status==='failed'?' is-failed':'')+(status==='running'?' is-running':'')} data-entry-id={entry.id} open={open} onToggle={event=>{if(event.target!==event.currentTarget)return;if(event.currentTarget.open)setVisited(true);if(event.currentTarget.open!==open)onToggle?.(event.currentTarget.open);}}>
     <summary>
-      <span className="ac-step-node" aria-hidden="true"><ToolIcon kind={summary.kind}/></span>
-      <span className="ac-step-action">{summary.action}</span>
-      <span className={'ac-step-label'+(tool.kind==='command'?' is-command':'')} title={summary.paths[0]||summary.description}>{summary.paths.length===1?fileLink(summary.paths[0]):summary.description}</span>
+      <span className="ac-step-node" aria-hidden="true"><ToolIcon kind={tool.kind}/></span>
+      <span className="ac-step-action">{tool.action}</span>
+      <span className={'ac-step-label'+(tool.kind==='command'?' is-command':'')} title={tool.paths[0]||tool.description}>{tool.paths.length===1?fileLink(tool.paths[0]):tool.description}</span>
       {status==='failed'&&<span className="ac-step-status"><WarningOutlined aria-hidden="true"/>失败</span>}
       {status==='unknown'&&<span className="ac-step-status">结果待核对</span>}
       <RightOutlined className="ac-step-chevron" aria-hidden="true"/>
     </summary>
-    {expanded&&remoteDetail&&!full?.entry&&<div className="ac-tool-detail" role="status">{full?.error?<>{full.error}<button type="button" onClick={()=>setAttempt(value=>value+1)}>重试</button></>:'正在读取完整工具记录…'}</div>}
-    {expanded&&(!remoteDetail||full?.entry)&&<div className="ac-tool-detail">
+    {expanded&&entry.detail&&!full?.entry&&<div className="ac-tool-detail" role="status">{full?.error?<>{full.error}<button type="button" onClick={()=>setAttempt(value=>value+1)}>重试</button></>:'正在读取完整工具记录…'}</div>}
+    {expanded&&(!entry.detail||full?.entry)&&<div className="ac-tool-detail">
       {tool.paths.length>0&&<div className="ac-tool-files"><span>当前文件</span>{tool.paths.map(fileLink)}</div>}
       {tool.kind==='command'&&tool.command?<><div className="ac-tool-detail-label">命令</div><pre className="ac-tool-command">{tool.command}</pre>{tool.output&&<><div className="ac-tool-detail-label">输出</div><pre>{tool.output}</pre></>}</>:
         <>{tool.input&&<><div className="ac-tool-detail-label">调用参数</div><pre>{tool.input}</pre></>}<div className="ac-tool-detail-label">{tool.input?'输出':'调用记录'}</div><pre>{visibleEntry.text}</pre></>}
@@ -61,7 +58,7 @@ export function ToolStep({entry,active,onOpenFile,open,onToggle,loadEntry}:{entr
 function ToolGroup({entries,active,onOpenFile,open,onToggle,toolsOpen,onToolToggle,liveForce=false,loadEntry}:{entries:ConversationEntry[];active:boolean;onOpenFile:FileOpener;open:boolean;onToggle:(open:boolean)=>void;toolsOpen?:Record<string,boolean>;onToolToggle?:(id:string,open:boolean)=>void;liveForce?:boolean;loadEntry?:EntryLoader}){
   const [visited,setVisited]=useState(open);
   useEffect(()=>{if(open)setVisited(true);},[open]);
-  const tools=entries.map(entry=>processTool(['codex','dsh','qoder'].includes(entry.provider??'')?{...entry,text:'',input:undefined}:entry));
+  const tools=entries.map(processTool);
   const kinds=new Set(tools.map(tool=>tool.kind));
   const counts=new Map<string,number>();
   for(const tool of tools)counts.set(tool.action,(counts.get(tool.action)||0)+1);
@@ -72,14 +69,14 @@ function ToolGroup({entries,active,onOpenFile,open,onToggle,toolsOpen,onToolTogg
      executing, the group holding the newest tool stays in the live presentation. */
   const live=liveForce;
   const latestEntry=entries.at(-1)!;
-  const latestTool=tools.at(-1)!;
+  const latestTool=processTool(latestEntry);
   const liveLabel=`${latestTool.action} ${latestTool.description}`.trim();
   return <details className={'ac-step-group'+(failed?' is-failed':'')+(live?' is-live':'')} open={open} onToggle={event=>{if(event.target===event.currentTarget&&event.currentTarget.open!==open)onToggle(event.currentTarget.open);}}>
     <summary data-entry-group={JSON.stringify(entries.map(entry=>entry.id))} data-current-tool-status={live?processEntryStatus(latestEntry,active):undefined}>
       {live ? <>
+        <span className="ac-execution-light" aria-hidden="true"/>
         <span className="ac-step-node" aria-hidden="true"><ToolIcon kind={latestTool.kind}/></span>
         <span className={'ac-step-label'+(latestTool.kind==='command'?' is-command':'')} title={liveLabel}>{liveLabel}</span>
-        <RightOutlined className="ac-step-chevron" aria-hidden="true"/>
       </> : <>
         <span className="ac-step-node" aria-hidden="true"><ToolIcon kind={kinds.size===1?tools[0].kind:'tool'}/></span>
         <span className="ac-step-action">{entries.length} 次工具调用</span>
@@ -90,14 +87,15 @@ function ToolGroup({entries,active,onOpenFile,open,onToggle,toolsOpen,onToolTogg
       </>}
     </summary>
     {(open||visited)&&<div className="ac-step-group-items">{entries.map(entry=><ToolStep loadEntry={loadEntry} key={entry.id} entry={entry} active={active} onOpenFile={onOpenFile} open={toolsOpen?toolsOpen['tool:'+entry.id]??false:undefined} onToggle={value=>onToolToggle?.(entry.id,value)}/>)}</div>}
+    {open&&<button type="button" className="ac-process-collapse" onClick={event=>{const details=event.currentTarget.closest('details')!;onToggle(false);requestAnimationFrame(()=>{const summary=details.querySelector('summary');if(summary)locateConversationContent(summary);});}}>收起工具调用</button>}
   </details>;
 }
 type TimelineItem={type:'tools';entries:ConversationEntry[]}|{type:'narration';entry:ConversationEntry};
 function processTimeline(entries:readonly ConversationEntry[]):TimelineItem[]{
   const items:TimelineItem[]=[];
   for(const entry of entries){
-    // 思考只保留为过程数据与最终答复判定语义，不进入可见信息流。
-    if(entry.kind==='thinking'||entry.thinking)continue;
+    // 模型思考不进入处理过程，只展示助手实际输出文字与工具调用。
+    if(entry.thinking)continue;
     const last=items[items.length-1];
     if(entry.kind==='tool'){
       if(last?.type==='tools')last.entries.push(entry);
@@ -120,12 +118,9 @@ export function ConversationProcessBlock({hidden,markdownOptions,headerless,bloc
   const tools=entries.filter(entry=>entry.kind==='tool');
   const duration=active?'':durationLabel(summary.startedAt,finishedAt||summary.finishedAt);
   const lastToolId=liveToolId===undefined?tools.at(-1)?.id:liveToolId;
-  const items=processTimeline(entries);
-  const timeline=active||open||visited?<div className="ac-process-timeline">{items.map(item=>item.type==='narration'
+  const timeline=active||open||visited?<div className="ac-process-timeline">{processTimeline(entries).map(item=>item.type==='narration'
     ?<div key={item.entry.id} className="ac-process-narration" data-entry-id={item.entry.id}><MarkdownHost markdown={item.entry.text} className="markdown-body" options={markdownOptions}/></div>
     :<ToolGroup loadEntry={loadEntry} key={item.entries[0].id} entries={item.entries} active={active} onOpenFile={onOpenFile} toolsOpen={toolsOpen} onToolToggle={onToolToggle} liveForce={active&&item.entries.some(entry=>entry.id===lastToolId)} open={item.entries.map(entry=>groupsOpen['tool-group:'+entry.id]).find(value=>value!==undefined)??false} onToggle={value=>onGroupToggle?.(item.entries.map(entry=>entry.id),value)}/> )}</div>:null;
-    // 只有思考的过程没有可读内容，不生成空的处理过程行。
-    if(!items.length)return null;
     if(hidden&&active)return null;
     if(active)return <div className="ac-process is-flow" data-process-state="live">{timeline}</div>;
     if(headerless)return <div className="ac-process is-flow ac-process-inline" data-process-state="settled" data-expanded={open}>{open&&timeline}</div>;

@@ -31,7 +31,6 @@ export function WorkbenchPreferencesProvider({ workspaceId, children }: { worksp
   const writes = useMemo(() => createPreferenceWriteQueue(), [client]);
   const currentClient = useRef(client);
   currentClient.current = client;
-  const preferencesClient = useRef(client);
   const generation = useRef(0), readController = useRef<AbortController | null>(null);
   const pending = useRef<Promise<void> | null>(null);
   const refresh = useCallback((): Promise<void> => {
@@ -47,7 +46,6 @@ export function WorkbenchPreferencesProvider({ workspaceId, children }: { worksp
       try {
         const data = await client.preferences({ signal: controller.signal });
         if (controller.signal.aborted || seq !== generation.current || currentClient.current !== client) return;
-        preferencesClient.current = client;
         setPreferences(data); setError('');
       } catch (err) {
         if (!controller.signal.aborted && seq === generation.current && currentClient.current === client) {
@@ -77,7 +75,6 @@ export function WorkbenchPreferencesProvider({ workspaceId, children }: { worksp
     try {
       const data = await operation();
       if (currentClient.current !== client) return;
-      preferencesClient.current = client;
       setPreferences(data); setError('');
       if (notify) setRevision(value => value + 1);
     } finally {
@@ -96,12 +93,11 @@ export function WorkbenchPreferencesProvider({ workspaceId, children }: { worksp
     if (!workspaceId) return;
     await mutate(() => client.visit(input), false);
   }, [client, workspaceId, mutate]);
-  const visiblePreferences = preferencesClient.current === client ? preferences : null;
   const value = useMemo<Preferences>(() => ({
-    workspaceId, preferences: visiblePreferences, data: visiblePreferences, loading, error, revision, refresh,
-    has: (kind, key) => Boolean(visiblePreferences?.items.some(item => item.kind === kind && item.key === key)),
+    workspaceId, preferences, data: preferences, loading, error, revision, refresh,
+    has: (kind, key) => Boolean(preferences?.items.some(item => item.kind === kind && item.key === key)),
     set, remove, recordVisit,
-  }), [workspaceId, visiblePreferences, loading, error, revision, refresh, set, remove, recordVisit]);
+  }), [workspaceId, preferences, loading, error, revision, refresh, set, remove, recordVisit]);
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
 

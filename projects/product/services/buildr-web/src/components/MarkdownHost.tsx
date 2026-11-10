@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react';
 import { renderMarkdown, type MarkdownRenderOptions } from '../markdown';
-import { bindMarkdownImagePreviews } from '../lib/markdownImagePreviews';
 import { resolveTaskBriefReference, taskBriefHref } from '../lib/taskBriefLinks';
 import { renderMarkdownDiagrams } from '../lib/markdownDiagrams';
 
@@ -58,7 +57,6 @@ export function MarkdownHost({ markdown, className, options, fragment, renderVer
           optionsRef.current?.onRelativeLinkClick?.(href, event);
         });
     }
-    if (currentOptions.onImageClick) bindMarkdownImagePreviews(view, () => optionsRef.current?.onImageClick);
     host.replaceChildren(view);
     if (fragment) requestAnimationFrame(() => scrollMarkdownFragment(view, fragment));
     return renderMarkdownDiagrams(view);

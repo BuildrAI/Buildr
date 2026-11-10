@@ -8,7 +8,7 @@ import { activateAgentServiceRuntime } from '../../src/modules/agent-service/app
 
 // The same activation owner used after launcher installation, with real private
 // transport and child processes, no vendor programs or real model accounts.
-test('activation reports the exact ready server, protects busy work and adopts the target upgrade', {timeout:60_000}, async t => {
+test('activation reports the exact ready server and rejects an installed target that cannot start', {timeout:60_000}, async t => {
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-activation-')),dataRoot=path.join(root,'profile'),packageRoot=path.join(root,'package'),profileId='activation-integration';
   t.after(async()=>{await stopAgentProcess({dataRoot,profileId,mode:'stop-owned'});fs.rmSync(root,{recursive:true,force:true});});
   fs.cpSync(path.resolve(import.meta.dirname,'../../node_modules/@buildr-ai/buildr-agent'),packageRoot,{recursive:true,mode:fs.constants.COPYFILE_FICLONE});
@@ -48,28 +48,9 @@ await startAgentExecutionServer({...input,serviceOptions:{executors:[],modelProv
   const next=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/activation-fixture.mjs'});
   const adopted=await activateAgentServiceRuntime({dataRoot,profileId,runtime:next});
   assert.equal(adopted.currentDigest,next.digest);assert.notEqual(adopted.generation,first.generation);assert.notEqual(adopted.pid,first.pid);
-});
-
-test('activation refuses an attempted broken target without claiming uncertain startup is confirmed failure', {timeout:60_000}, async t=>{
-  const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-activation-broken-')),
-    dataRoot=path.join(root,'profile'),packageRoot=path.join(root,'package'),profileId='activation-broken';
-  t.after(async()=>{await stopAgentProcess({dataRoot,profileId,mode:'stop-owned'});fs.rmSync(root,{recursive:true,force:true});});
-  fs.cpSync(path.resolve(import.meta.dirname,'../../node_modules/@buildr-ai/buildr-agent'),packageRoot,{recursive:true,mode:fs.constants.COPYFILE_FICLONE});
-  fs.writeFileSync(path.join(packageRoot,'build/activation-good.mjs'),`import fs from 'node:fs';import {startAgentExecutionServer} from './index.js';const input=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));await startAgentExecutionServer({...input,serviceOptions:{executors:[],modelProviders:[]}});\n`);
-  const working=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/activation-good.mjs'});
-  const ready=await activateAgentServiceRuntime({dataRoot,profileId,runtime:working});
-  assert.equal(ready.status,'ready');assert.equal(ready.currentDigest,working.digest);
-  const retainedBytes=fs.readFileSync(working.entry);
-  const attempted=path.join(root,'attempted');
-  fs.writeFileSync(path.join(packageRoot,'build/activation-broken.mjs'),`import fs from 'node:fs';fs.writeFileSync(${JSON.stringify(attempted)},'attempted');throw Error('fixture startup failure');\n`);
+  fs.writeFileSync(path.join(packageRoot,'build/activation-broken.mjs'),"throw Error('fixture startup failure');\n");
   const broken=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/activation-broken.mjs'});
-  await assert.rejects(activateAgentServiceRuntime({dataRoot,profileId,runtime:broken}),(error:any)=>{
-    assert.ok(['agent_process_activation_failed','agent_process_start_unconfirmed'].includes(error.code));
-    assert.equal(error.stage,'connect');assert.ok(error.message.includes(`connect / ${error.code}`));return true;
-  });
-  assert.equal(fs.readFileSync(attempted,'utf8'),'attempted');
-  assert.deepEqual(fs.readFileSync(working.entry),retainedBytes,'The previous working runtime must be retained unchanged.');
-  assert.ok(fs.existsSync(broken.entry),'A failed activation retains the exact target bytes.');
+  await assert.rejects(activateAgentServiceRuntime({dataRoot,profileId,runtime:broken}),(error:any)=>{assert.equal(error.code,'agent_process_activation_failed');assert.equal(error.stage,'connect');assert.match(error.message,/connect.*agent_process_activation_failed/);return true;});
 });
 
 test('preparation lock contention drains an idle backend through lifecycle ownership and retries once', {timeout:30_000}, async t=>{

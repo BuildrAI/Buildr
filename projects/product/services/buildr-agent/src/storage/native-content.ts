@@ -51,8 +51,7 @@ export class NativeContentReader {
   private readonly root: string;
   private readonly cache = new Map<string, { identity: string; value: unknown; bytes: number }>();
   private cacheBytes = 0;
-  private readonly readTool?: (reference: NativeToolContent) => ConversationEntry | undefined;
-  constructor(root: string, readTool?: (reference: NativeToolContent) => ConversationEntry | undefined) { this.root = path.resolve(root); this.readTool = readTool; }
+  constructor(root: string) { this.root = path.resolve(root); }
   private source(provider: string, source: NativeContentSource): unknown {
     if (!source || !Number.isSafeInteger(source.offset) || source.offset < 0 || !Number.isSafeInteger(source.length) || source.length < 1 ||
       source.length > maxNativeSourceBytes || !/^[a-f0-9]{64}$/.test(source.sha256)) throw unavailable();
@@ -127,12 +126,6 @@ export class NativeContentReader {
   }
   tool(reference: NativeToolContent, revision: string): ConversationEntry {
     try {
-      if(reference.version === 3) {
-        if(nativeContentHash(JSON.stringify(reference)) !== revision) throw unavailable();
-        const entry = this.readTool?.(reference);
-        if(!entry) throw unavailable();
-        return entry;
-      }
       if (![1, 2].includes(reference.version) || typeof reference.contextId !== 'string' || reference.entry.kind !== 'tool') throw unavailable();
       const entry = structuredClone(reference.entry);
       if (reference.input) entry.input = this.text(reference.provider, reference.input);

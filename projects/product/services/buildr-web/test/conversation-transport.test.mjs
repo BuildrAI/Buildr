@@ -96,20 +96,3 @@ test('write invalidation separates old and new reads; old completion cannot evic
  releases[0]('old');assert.equal(await old,'old');
  const joined=read('/same');releases[1]('fresh');assert.deepEqual(await Promise.all([fresh,joined]),['fresh','fresh']);assert.equal(calls,2);
 });
-
-test('browser v2 reconstruction matches committed snapshots across append, correction, controls and reconnect',()=>{
- const encode=conversationEventEncoder('delta-v2'),decode=conversationTransferDecoder('workspace','chat');
- let previous={cursor:0,generation:'g',type:'snapshot',workspaceId:'workspace',conversationId:'chat',revision:'r0',payload:{conversation:{id:'chat',workspaceId:'workspace',cwd:'/workspace',title:'work',revision:'r0',hidden:false,updatedAt:'now',participants:[],requests:[],entries:[{id:'e',sequence:1,kind:'message',role:'assistant',text:'中😀',createdAt:'now',status:'running'}]}}};
- previous.payload.conversation.run={id:'run',participantId:'p',provider:'codex',generation:'g',status:'running',accepted:true,tools:[{id:'tool',label:'read',status:'running'}],startedAt:'now',updatedAt:'now'};
- assert.deepEqual(decode(encode(previous)),previous);
- for(const [i,modify] of [
-  v=>{v.entries[0].text+='\n追加';},v=>{v.entries[0].status='completed';v.run.status='stopping';v.run.stopRequested=true;v.run.tools[0].status='completed';},v=>{v.entries[0].text='修正';v.taskId='t';},
-  v=>{delete v.taskId;v.entries.push({id:'tool',sequence:2,kind:'tool',role:'system',text:'',status:'running',createdAt:'now'});},
-  v=>{v.entries[1].status='completed';v.entries.reverse();},v=>{v.entries=[];v.retainedRuns=[v.run];delete v.run;},
- ].entries()){
-  const next=structuredClone(previous);next.cursor=i+1;next.type='conversation';next.revision=next.payload.conversation.revision='r'+next.cursor;if(next.payload.conversation.run)next.payload.conversation.run.updatedAt='time-'+i;modify(next.payload.conversation);
-  const wire=encode(next);assert.ok(wire.payload.patch);const bad=structuredClone(wire);bad.payload.patch.baseRevision='wrong';assert.throws(()=>decode(bad),/基准/);if(wire.payload.patch.texts.length){const offset=structuredClone(wire);offset.payload.patch.texts[0].offset++;assert.throws(()=>decode(offset),/基准/);}if(wire.payload.patch.runs.length){const owner=structuredClone(wire);owner.payload.patch.runs[0].id='foreign';assert.throws(()=>decode(owner),/基准/);}assert.deepEqual(decode(wire),next);previous=next;
- }
- assert.throws(()=>conversationTransferDecoder('workspace','chat')(encode({...previous,cursor:20,type:'conversation',revision:'last',payload:{conversation:{...previous.payload.conversation,revision:'last'}}})),/基准/);
- const snapshot={...previous,cursor:21,type:'snapshot'};assert.deepEqual(decode(encode(snapshot)),snapshot);
-});

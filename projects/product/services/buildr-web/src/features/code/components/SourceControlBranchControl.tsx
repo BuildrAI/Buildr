@@ -20,14 +20,13 @@ export function SourceControlBranchControl({workspaceId, repository, worktree, v
   const sourceKey = JSON.stringify([workspaceId, repository.id, worktree.worktreeId]);
   const currentSource = useRef(sourceKey); currentSource.current = sourceKey;
   const mounted = useRef(false), writing = useRef(false);
-  const busyListener=useRef(onBusy);busyListener.current=onBusy;
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useEffect(() => { setFailure(null); setOpen(false); }, [sourceKey]);
   useEffect(() => {setOpen(false);}, [inlineVisible, rowVisible]);
   useEffect(() => {if (openRequest && ready && rowVisible) setOpen(true);}, [openRequest]);
   const loader = useCallback((input: CodeSourceControlInput, signal: AbortSignal) => codeApi.branches(workspaceId, input, signal), [workspaceId]);
   const input = {repositoryId: repository.id, worktreeId: worktree.worktreeId};
-  const branches = useSourceControlRead(sourceKey, input, loader, Boolean(open && ready && !pending && !fetchActions?.pending[repository.id]), version);
+  const branches = useSourceControlRead(sourceKey, input, loader, Boolean(open && ready), version);
   const entries = branches.data?.source.repositoryId === repository.id && branches.data.source.worktreeId === worktree.worktreeId ? branches.data.branches : [];
   const fetchResult = fetchActions?.results[repository.id];
   const fetching = Boolean(fetchActions?.pending[repository.id]);
@@ -42,11 +41,10 @@ export function SourceControlBranchControl({workspaceId, repository, worktree, v
     try { await fetchActions.run([repository]); }
     catch (error) { if (mounted.current && currentSource.current === sourceKey) message.error(error instanceof Error ? error.message : '获取远程失败'); }
   }
-  useEffect(() => { busyListener.current?.(pending || fetching); }, [pending, fetching]);
-  useEffect(() => () => { busyListener.current?.(false); }, []);
+  useEffect(() => { onBusy?.(pending || fetching); }, [pending, fetching, onBusy]);
+  useEffect(() => () => { onBusy?.(false); }, [onBusy]);
   async function useIndependent(entry: SourceControlBranch) {
     if (!onIndependent || writing.current || fetching || branches.loading || !branches.data) return false;
-    branches.cancel();busyListener.current?.(true);
     writing.current = true; setPending(true); setFailure(null);
     try { await onIndependent(entry, branches.data); return true; }
     catch (error) { if (mounted.current && currentSource.current === sourceKey) setFailure(branchSwitchFailure(error)); return false; }
@@ -56,7 +54,6 @@ export function SourceControlBranchControl({workspaceId, repository, worktree, v
     if (writing.current || fetching || branches.loading || !branches.data) return false;
     const snapshot = branches.data;
     const isCurrent = () => mounted.current && currentSource.current === sourceKey;
-    branches.cancel();busyListener.current?.(true);
     writing.current = true; setPending(true); setFailure(null);
     let succeeded = false;
     try {

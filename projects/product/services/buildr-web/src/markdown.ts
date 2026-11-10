@@ -5,6 +5,7 @@ import { markdownDestination } from './lib/markdownDestination.ts';
 import { copyText } from './lib/copyText.ts';
 import { cachedDiagramSvg, setDiagramSvg } from './lib/markdownDiagramSvg.ts';
 /** Failed destinations stay textual across re-renders; a new document load starts with a clean view. */
+const failedMarkdownImages = new Set<string>();
 
 export type MarkdownRenderOptions = {
   document?: Document;
@@ -19,8 +20,6 @@ export type MarkdownRenderOptions = {
   /** When true with allowRelativeLinks, relative href may include `..` segments (still sanitized by consumer / API). */
   allowParentRelativeLinks?: boolean;
   imageResolver?: (href: string) => { href: string } | null | undefined;
-  /** Hosts that can present the resolved image may offer an enlarged preview. */
-  onImageClick?: (image: { src: string; alt: string; reference: string }) => void;
   onRelativeLinkClick?: (href: string, event: MouseEvent) => void;
 };
 
@@ -67,7 +66,6 @@ function imageFallback(doc, alt) {
   fallback.className = 'markdown-image-fallback';
   fallback.setAttribute('role', 'img');
   fallback.textContent = alt ? `图片无法预览：${alt}` : '图片无法预览';
-  fallback.setAttribute('aria-label', fallback.textContent);
   return fallback;
 }
 
@@ -102,16 +100,15 @@ function appendInline(parent, tokens, doc, linkOptions) {
       const destination = decodeHTML(token.href);
       const resolved = linkOptions.imageResolver?.(markdownDestination(destination) ?? '');
       const alt = token.tokens ? inlineText(token.tokens) : decodeHTML(token.text);
-      if (!resolved?.href) {
+      if (!resolved?.href || failedMarkdownImages.has(resolved.href)) {
         parent.append(imageFallback(doc, alt)); continue;
       }
       const image = doc.createElement('img');
       image.setAttribute('alt', alt);
       image.setAttribute('loading', 'lazy');
       image.setAttribute('referrerpolicy', 'no-referrer');
-      // Keep the authored reference so an enlarged preview can show its real source.
-      image.setAttribute('data-markdown-href', destination);
       image.addEventListener?.('error', () => {
+        failedMarkdownImages.add(resolved.href);
         if (image.parentNode) image.replaceWith(imageFallback(doc, alt));
       });
       parent.append(image);
@@ -155,27 +152,6 @@ function closesFence(line: string, fence: { marker: string; length: number }) {
   return Boolean(match && match[1][0] === fence.marker && match[1].length >= fence.length);
 }
 
-// CommonMark's flanking rules reject a delimiter glued to punctuation, so a
-// Chinese sentence like 按**"改了哪个文件"**选组 renders its asterisks instead
-// of emphasis. Adapt only those narrow spellings; code, escapes and all other
-// emphasis remain under the normal Markdown lexer.
-const cjkStrongSpellings = [
-  // Closing punctuation glued to Han text: **保留事项：**较宽
-  /^\*\*(?!\*)([^\s*\\`\n][^*\\`\n]*[，。；：！？、）】》」』])\*\*(?=\p{Script=Han})/u,
-  // A quote or bracket glued to the opener: 按**"改了哪个文件"**选组 / 按**（见上）**处理
-  /^\*\*(?!\*)(\p{P}(?:[^*\\`\n]*[^\s*\\`\n])?)\*\*(?!\*)/u,
-];
-const hanText = /\p{Script=Han}/u;
-
-function cjkStrongMatch(source: string) {
-  const closing = cjkStrongSpellings[0].exec(source);
-  if (closing && hanText.test(closing[1])) return closing;
-  const opening = cjkStrongSpellings[1].exec(source);
-  // Plain English prose keeps CommonMark's rule; only Chinese context opts in.
-  if (opening && (hanText.test(opening[1]) || hanText.test(source.charAt(opening[0].length)))) return opening;
-  return null;
-}
-
 // Marked 16's closing-fence pattern accepts spaces but not trailing tabs.
 // Adapt only that valid spelling; leave all other syntax to its normal lexer.
 const markdownParser = new Marked({
@@ -185,8 +161,10 @@ const markdownParser = new Marked({
     level: 'inline',
     start(source) { return source.indexOf('**'); },
     tokenizer(source) {
-      const match = cjkStrongMatch(source);
-      if (!match) return;
+      // A narrow compatibility spelling, not a rewrite of the source. Code,
+      // escapes and other emphasis remain under the normal Markdown lexer.
+      const match = /^\*\*(?!\*)([^\s*\\`\n][^*\\`\n]*[，。；：！？、）】》」』])\*\*(?=\p{Script=Han})/u.exec(source);
+      if (!match || !/\p{Script=Han}/u.test(match[1])) return;
       return { type: 'strong', raw: match[0], text: match[1], tokens: this.lexer.inlineTokens(match[1]) };
     },
   }],

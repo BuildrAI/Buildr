@@ -3,8 +3,6 @@
 .has-full-conversation .app-frame>#app-view,.has-full-conversation .app-frame>.primary-navigation{display:none!important}
 .ac-thread-header{height:43px;min-height:43px;display:flex;align-items:center;gap:4px;padding:0 max(var(--ac-content-gutter,18px),calc((100% - var(--ac-content-width,800px))/2 + var(--ac-content-gutter,18px)));border-bottom:1px solid var(--soft-line,#e1e5e9);background:#f4f6f7}.ac-thread-header>strong{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size: var(--font-size-body)}.ac-thread-header .ant-tag{font-size: var(--font-size-secondary);padding-inline:4px;margin:0}.ac-thread-header .ant-btn{width:26px;height:28px;padding:0;color:#86938e}.ac-thread-actions{display:flex;flex:none;gap:0}.ac-thread-header .pane-toggle-button.ant-btn{width:28px;min-width:28px;height:28px}
 .ac-thread-title{flex:1;min-width:0;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;height:29px;padding:3px 5px;border:0;border-radius:5px;background:transparent;color:inherit;font:inherit;font-size: var(--font-size-body);font-weight:600;cursor:pointer}.ac-thread-title:hover,.ac-thread-title:focus-visible{background:#eaf0ec}.ac-thread-title:focus-visible{outline:2px solid #8cb9a8;outline-offset:1px}
-.ac-thread-title-static{cursor:default}.ac-thread-title-static:hover,.ac-thread-title-static:focus-visible{background:transparent;outline:none}
-.ac-location-name.ant-btn,.ac-location-name{border:0;background:none;padding:0;font:inherit;color:inherit;cursor:pointer}.ac-location-name:hover{text-decoration:underline}
 
 .ac-thread-heading{flex:1;min-width:0;display:flex;align-items:center;gap:8px}.ac-thread-heading .ac-thread-title{flex:0 1 auto;max-width:60%;height:29px}
 .ac-thread-identity{display:flex;align-items:center;gap:4px;flex:0 1 auto;min-width:48px;color:#89978f;font-size: var(--font-size-meta);line-height:16px;min-width:0}.ac-thread-identity>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;user-select:text}.ac-thread-identity>.ant-btn{flex:none;width:20px;height:18px;font-size: var(--font-size-meta)}
@@ -48,28 +46,19 @@
 .ac-process-narration .markdown-body>:last-child{margin-bottom:0}
 .ac-process-narration .markdown-body pre{font-size: var(--font-size-code);white-space:pre-wrap;overflow-wrap:anywhere}
 .ac-step,.ac-step-group{position:relative;margin:2px 0;padding:0;border:0;border-radius:0;background:transparent;min-width:0}
-.ac-step>summary,.ac-step-group>summary{display:flex;align-items:center;gap:8px;min-height:28px;padding:4px 5px 4px 0;border-radius:4px;list-style:none;cursor:pointer;color:#7c847e;font-size: var(--font-size-secondary);font-weight:400;white-space:nowrap;line-height:20px}
+.ac-step>summary,.ac-step-group>summary{display:flex;align-items:center;gap:8px;min-height:28px;padding:4px 5px 4px 0;border-radius:4px;list-style:none;cursor:pointer;color:#727c75;font-size: var(--font-size-body);font-weight:400;white-space:nowrap;line-height:20px}
 .ac-step-node{display:inline-flex;align-items:center;justify-content:center;flex:none;width:15px;height:20px;color:#919c93;font-size:var(--font-size-secondary)}
 .ac-command-symbol{display:block;flex:none;width:15px;height:13px;fill:none;stroke:currentColor;stroke-width:1;stroke-linecap:round;stroke-linejoin:round}
 .ac-file-symbol{display:block;flex:none;width:var(--icon-size-label);height:var(--icon-size-label);fill:none;stroke:currentColor;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round}
-.ac-step-action{flex:none;color:#7c847e}
-.ac-step-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;color:#8c948d}
+.ac-step-action{flex:none;color:#6f7c72}
+.ac-step-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;color:#879087}
 .ac-step-label.is-command{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size: var(--font-size-code)}
 .ac-step-chevron{margin-left:auto;font-size:var(--icon-size-tiny)}
 .ac-step-status{display:inline-flex;align-items:center;gap:4px;flex:none;font-size: var(--font-size-meta)}
 .ac-step.is-running>summary>.ac-step-status,.ac-step-group.is-running>summary>.ac-step-status{color:var(--ac-process-accent)}
 .ac-step.is-failed>summary>.ac-step-status,.ac-step.is-failed>summary>.ac-step-node,.ac-step-group.is-failed>summary>.ac-step-status{color:#a2742e}
-.ac-step[open]>summary>.ac-step-action,.ac-step-group[open]>summary>.ac-step-action{color:#747e76}
+.ac-step[open]>summary>.ac-step-action,.ac-step-group[open]>summary>.ac-step-action{color:#404f44}
 .ac-step-group-items{margin:1px 0 2px 7px;padding-left:11px;border-left:1px solid #e7ece8}
-/* 展开几十上百条调用时只占有限高度，其余在组内滚动，底部收起操作保持可见。 */
-.ac-step-group[open]>.ac-step-group-items{max-height:min(60vh,480px);overflow-y:auto;overscroll-behavior:auto;scrollbar-width:thin}
-/* macOS 的浮层滚动条只在滚动时出现；显式着色让「还有更多」始终可见。 */
-.ac-step-group[open]>.ac-step-group-items::-webkit-scrollbar{width:8px}
-.ac-step-group[open]>.ac-step-group-items::-webkit-scrollbar-thumb{background:#d5ddd7;border-radius:4px}
-.ac-step-group[open]>.ac-step-group-items::-webkit-scrollbar-track{background:transparent}
-/* 工具记录是过程说明的辅助信息；分组由间距和展开边界表达，不靠加粗。 */
-.ac-step-group>summary{min-height:32px;margin-bottom:2px}
-.ac-step-group[open]>summary{border-bottom:1px solid #edf1ee}
 .ac-tool-file-link{display:inline-block;max-width:100%;padding:0 4px;border:0;border-radius:3px;background:#f0f4f1;color:#53765f;font:inherit;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle;cursor:pointer;text-align:left}
 .ac-tool-file-link:hover{background:#e7eee9;text-decoration:underline;text-underline-offset:3px}
 .ac-tool-detail{margin:4px 0 12px 23px;padding:10px 12px;border-radius:6px;background:#f5f7f5;color:#657168;font-size: var(--font-size-secondary)}
@@ -82,7 +71,6 @@
 .ac-message .markdown-body{color:var(--soft-ink,#252a31)}
 @media(prefers-reduced-motion:reduce){.ac-process-running-dot{animation:none}.ac-process-chevron,.ac-step-chevron{transition:none}}
 .ac-run-status{font-size: var(--font-size-meta);color:#84998b;padding:8px 24px}.ac-run-status p{white-space:pre-wrap;margin:7px 0}.ac-run-status[data-run-status=unknown],.ac-run-status[data-run-status=tools-active]{color:#a28a5b}
-.ac-failure-notice{max-width:760px}.ac-failure-reason{display:flex;align-items:flex-start;gap:6px;color:#7d642e}.ac-failure-reason>.anticon{flex:none;margin-top:3px}.ac-failure-reason>strong{flex:none;color:#6a5528}.ac-failure-action{color:#8a7444}.ac-failure-impact{color:#84998b}.ac-failure-diagnostic{margin-top:6px;padding:0;border:0;background:transparent}.ac-failure-diagnostic>summary{cursor:pointer;width:fit-content;color:#8c978f;font-size:var(--font-size-meta)}.ac-failure-diagnostic>p{max-height:8em;overflow:auto;overflow-wrap:anywhere;margin:5px 0 0;padding:8px 10px;border-radius:6px;background:#f5f7f5;color:#657168;font:var(--font-size-meta)/1.65 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 /* Keep the welcome content centered through the resize-observer wrapper, without stretching message streams. */
 .ac-stream-content:has(>.ac-welcome){min-height:100%;display:grid;grid-template-columns:minmax(0,1fr)}
 .ac-welcome{width:100%;min-height:100%;display:flex;flex-direction:column;justify-content:center;max-width:620px;padding:32px 27px;margin:auto;box-sizing:border-box}.ac-welcome>.anticon{align-self:flex-start;font-size:var(--icon-size-prominent);padding:10px;border:1px solid #dce9e1;border-radius:12px;color:#5c947a;margin-bottom:20px}.ac-welcome h1{font-size:var(--font-size-page);font-weight:550;margin:0 0 12px}.ac-welcome>p{color:#93a096;font-size: var(--font-size-body)}.ac-welcome .ac-location-settings{margin-top:16px;width:100%}
@@ -230,11 +218,8 @@
 .ac-execution-uncertain-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ac-linked-image-reference{display:flex;align-items:flex-start;gap:8px;margin-bottom:16px}
 .ac-linked-image-reference code{min-width:0;flex:1;overflow-wrap:anywhere;color:var(--soft-muted)}
-.ac-linked-image-preview{display:flex;align-items:center;justify-content:center;min-height:100px;max-height:78vh;overflow:hidden}
-.ac-linked-image-preview .ant-image-img{width:auto;max-width:100%;max-height:78vh;object-fit:contain}
-/* 原始像素模式按实际尺寸展示并滚动，避免把大图重新缩放成看不清的小字。 */
-.ac-linked-image-preview[data-actual-size="true"]{display:block;overflow:auto}
-.ac-linked-image-preview[data-actual-size="true"] .ant-image-img{max-width:none;max-height:none}
+.ac-linked-image-preview{display:flex;align-items:center;justify-content:center;min-height:100px}
+.ac-linked-image-preview .ant-image-img{width:auto;max-width:100%;max-height:70vh;object-fit:contain}
 
 .ac-reply-actions{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
 .ac-fork-action{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}

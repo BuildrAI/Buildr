@@ -16,6 +16,4 @@
 .ac-adoption-diagnostic{display:block;margin:4px 0 12px;padding:0;border:0;border-radius:0;background:transparent;line-height:1.8}
 .ac-adoption-diagnostic>summary{cursor:pointer;width:fit-content;max-width:100%;overflow-wrap:anywhere;font:inherit;color:inherit}
 .ac-adoption-diagnostic.has-issue>summary{color:var(--ac-attention-ink)}
-.ac-native-session-fields{display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px 12px;margin:6px 0 0}
-.ac-native-session-fields>dt{white-space:nowrap;opacity:.75}
-.ac-native-session-fields>dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.ac-adoption-diagnostic>p{margin:6px 0 0;overflow-wrap:anywhere}

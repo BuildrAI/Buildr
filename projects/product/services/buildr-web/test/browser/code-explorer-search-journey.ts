@@ -53,13 +53,11 @@ export async function runExplorerSearchJourney({assertEditorText, capture, codeE
     await folder.click();await page.locator('[data-file-path="src/file1.ts"]').waitFor();
     await showPrimaryNavigation(page, 'code');await page.locator('.primary-navigation-rail button[data-nav="code"]').click();await page.locator('.primary-secondary-navigation.is-fixed:visible').waitFor();
     await page.locator('.primary-navigation-rail button[data-nav="code"]').click();await page.locator('.primary-secondary-navigation.is-fixed').waitFor({state:'hidden'});await page.mouse.move(400,4);await page.locator('.primary-secondary-navigation.is-floating').waitFor({state:'hidden'});
-    const geometryHandle=await page.waitForFunction(()=>{
-      const el=document.querySelector<HTMLElement>('.code-explorer-stage');
-      if(!el?.isConnected||!el.parentElement||!el.querySelector('.global-source-dock')||!el.querySelector('.code-file-stage'))return false;
-      const stage=el.getBoundingClientRect(),parent=el.parentElement.getBoundingClientRect(),tree=el.querySelector('.global-source-dock')!.getBoundingClientRect();
+    const geometry=await page.locator('.code-explorer-stage').evaluate((el:HTMLElement)=>{
+      const stage=el.getBoundingClientRect(),parent=el.parentElement!.getBoundingClientRect(),tree=el.querySelector('.global-source-dock')!.getBoundingClientRect();
       const reader=el.querySelector('.code-file-stage')!.getBoundingClientRect();
       return {leftGap:tree.left-parent.left,rightGap:parent.right-stage.right,width:stage.width,parentWidth:parent.width,dividerGap:reader.left-tree.right};
-    });const geometry=await geometryHandle.jsonValue();await geometryHandle.dispose();assert.ok(Math.abs(geometry.leftGap)<2,JSON.stringify(geometry));assert.ok(Math.abs(geometry.rightGap)<2,JSON.stringify(geometry));assert.ok(Math.abs(geometry.width-geometry.parentWidth)<2);assert.ok(Math.abs(geometry.dividerGap)<1,JSON.stringify(geometry));
+    });assert.ok(Math.abs(geometry.leftGap)<2,JSON.stringify(geometry));assert.ok(Math.abs(geometry.rightGap)<2,JSON.stringify(geometry));assert.ok(Math.abs(geometry.width-geometry.parentWidth)<2);assert.ok(Math.abs(geometry.dividerGap)<1,JSON.stringify(geometry));
     await noOverflow();await capture(page,'code-tree-collapsed-menu.png');
     await search('README.md');await fileResult('projects/demo/services/api/README.md').click();await read.markdown('Explorer document');
     const markdown=await page.locator(codeMarkdown).evaluate((el:HTMLElement)=>{const box=el.getBoundingClientRect(),parent=el.parentElement!.getBoundingClientRect(),style=getComputedStyle(el);return {width:box.width,contentWidth:box.width-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight),centerGap:Math.abs((box.left+box.right)-(parent.left+parent.right))};});
@@ -178,31 +176,12 @@ export async function runExplorerSearchJourney({assertEditorText, capture, codeE
       await search('export const');await tokenSearch;await matchResult(firstPath,1).click();
       await read.text('firstSearch');await read.line(1);await page.locator('.repository-source-row[data-line="1"] mark.repository-search-hit').filter({hasText:'export const'}).waitFor();
       const tokenHit=page.locator('.repository-source-row[data-line="1"] mark.repository-search-hit');assert.equal(await tokenHit.count(),1);assert.equal(await tokenHit.innerText(),'export const');
-      const painted=await page.waitForFunction(()=>{
-        const hit=[...document.querySelectorAll<HTMLElement>('.repository-source-row[data-line="1"] mark.repository-search-hit')].find(item=>item.textContent==='export const'&&item.getClientRects().length);
-        const line=hit?.closest<HTMLElement>('.repository-source-row');if(!line)return false;
-        const base=getComputedStyle(line.closest('.cm-content')!).color,source=line.textContent||'';
-        const nodes:Text[]=[];const walker=document.createTreeWalker(line,NodeFilter.SHOW_TEXT);let next:Node|null;
-        while((next=walker.nextNode()))nodes.push(next as Text);
-        const tokens=['export','const'].map(text=>{
-          const start=source.indexOf(text);if(start<0)return null;let offset=0;const classes=new Set<string>();
-          for(const node of nodes){
-            const end=offset+node.data.length;
-            if(end>start&&offset<start+text.length){
-              let parent=node.parentElement;while(parent&&parent!==line&&!(parent.tagName==='SPAN'&&parent.className&&getComputedStyle(parent).color!==base))parent=parent.parentElement;
-              if(!parent||parent===line)return null;classes.add(parent.className);
-            }
-            offset=end;
-          }
-          return classes.size?{text,className:[...classes].join(' ')}:null;
-        });
-        return tokens.every(Boolean)?tokens:false;
-      }).catch(async (error:unknown)=>{
-        console.error('[keyword-paint-state]',JSON.stringify(await page.locator('.repository-source-row[data-line="1"]').evaluateAll((lines:HTMLElement[])=>lines.map(line=>({visible:!!line.getClientRects().length,html:line.innerHTML,base:getComputedStyle(line.closest('.cm-content')!).color,spans:[...line.querySelectorAll('span')].map(span=>({text:span.textContent,className:span.className,color:getComputedStyle(span).color}))})))));
-        throw error;
+      await page.waitForFunction(()=>{
+        const line=document.querySelector('.repository-source-row[data-line="1"]'),base=line&&getComputedStyle(line.closest('.cm-content')!).color;
+        return line&&['export','const'].every(text=>[...line.querySelectorAll('span')].some(node=>node.textContent===text&&getComputedStyle(node).color!==base));
       });
-      const keywordPaint=await painted.jsonValue() as Array<{text:string;className:string}>;await painted.dispose();
-      assert.deepEqual(keywordPaint.map((token:any)=>token.text),['export','const']);assert.ok(keywordPaint.every((token:any)=>Boolean(token.className)),'搜索标记内两个关键字的字符均保留真实语言着色，不依赖span分段');
+      const keywordPaint=await page.locator('.repository-source-row[data-line="1"]').evaluate((line:HTMLElement)=>['export','const'].map(text=>{const node=[...line.querySelectorAll('span')].find(node=>node.textContent===text&&getComputedStyle(node).color!==getComputedStyle(line.closest('.cm-content')!).color);return {text:node?.textContent,className:node?.className};}));
+      assert.deepEqual(keywordPaint.map((token:any)=>token.text),['export','const']);assert.ok(keywordPaint.every((token:any)=>Boolean(token.className)),'真实语言着色在搜索高亮内继续显示两个关键字');
       const markdownSearch=page.waitForResponse((response:any)=>{const url=new URL(response.url());return url.pathname.endsWith('/code/search')&&url.searchParams.get('query')==='Explorer document';});
       await search('Explorer document');await markdownSearch;
       const markdownPath='projects/demo/services/api/README.md',markdownGroup=page.locator('.repository-search-group[data-file-path="'+markdownPath+'"]');await markdownGroup.waitFor();

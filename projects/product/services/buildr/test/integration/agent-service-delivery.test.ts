@@ -5,7 +5,6 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawn, spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
-import { once } from 'node:events';
 import test from 'node:test';
 import { copyAgentRuntimePackage } from '../../tools/build/agent-package.ts';
 import { prepareDevelopmentAgent } from '../../tools/development/prepare-development-agent.ts';
@@ -14,35 +13,6 @@ import { verifyApplicationPayload } from '../../src/infrastructure/product-resou
 import { acquireExclusiveFileLock, releaseExclusiveFileLock } from '../../src/infrastructure/filesystem/exclusive-file-lock.ts';
 
 const serviceRoot = path.resolve(import.meta.dirname, '../..');
-
-test('dependency preparation waits for Agent publication and adopts its completed build', { timeout: 10_000 }, async t => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-agent-build-owner-'));
-  const host = path.join(root, 'services/buildr'), agent = path.join(root, 'services/buildr-agent');
-  const destination = path.join(host, 'node_modules/@buildr-ai/buildr-agent');
-  const lock = acquireExclusiveFileLock(path.join(host, 'node_modules/.buildr-agent-preparation.lock'), destination);
-  fs.writeFileSync(path.join(root, 'preparation.yml'), 'schemaVersion: buildr.project-preparation/v1\nentries:\n  - id: buildr-agent.build\n    cwd: services/buildr-agent\n    executable: build\n    args: []\n');
-  const script = path.join(root, 'waiter.mjs');
-  fs.writeFileSync(script, `import {prepareDevelopmentDependencies} from ${JSON.stringify(pathToFileURL(path.join(serviceRoot, 'tools/development/prepare-development-dependencies.ts')).href)};
-process.send('started');
-const result=prepareDevelopmentDependencies({root:${JSON.stringify(root)},execute(){process.send('duplicate-build');return {status:0};},log(){}});
-process.send(result);`);
-  const child = spawn(process.execPath, [script], { stdio: ['ignore', 'pipe', 'pipe', 'ipc'], env: { ...process.env, NODE_OPTIONS: '' } });
-  t.after(async () => {
-    releaseExclusiveFileLock(lock);
-    if (child.exitCode === null && child.signalCode === null) { child.kill(); await once(child, 'close'); }
-    fs.rmSync(root, { recursive: true, force: true });
-  });
-  const messages: unknown[] = [];
-  child.on('message', value => messages.push(value));
-  assert.equal((await once(child, 'message'))[0], 'started');
-  await new Promise(resolve => setTimeout(resolve, 100));
-  assert.deepEqual(messages, ['started'], 'a competing builder cannot bypass the package owner');
-  fs.mkdirSync(path.join(agent, 'build'), { recursive: true });
-  fs.writeFileSync(path.join(agent, 'build/index.js'), 'export const ready=true;');
-  assert.equal(releaseExclusiveFileLock(lock), true);
-  assert.deepEqual(await once(child, 'close'), [0, null]);
-  assert.deepEqual(messages, ['started', { executed: [], reused: ['buildr-agent.build'] }]);
-});
 
 test('old staging cleanup failure does not revoke the newly published complete runtime', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-agent-cleanup-'));
@@ -117,34 +87,6 @@ test('concurrent source preparations wait for their owner and publish a complete
   assert.throws(() => prepareDevelopmentAgent({ serviceRoot: host, agentRoot: agent, build: false }), /agent_runtime_dependency_missing/u);
   assert.equal(fs.readFileSync(path.join(destination, 'build/index.js'), 'utf8'), 'export const ready = "updated";\n', 'failed staging preserves the previously usable runtime');
   assert.deepEqual(fs.readdirSync(path.dirname(destination)), ['buildr-agent']);
-});
-
-test('unchanged Agent preparation avoids staging and repairs same-size output drift', t => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-agent-prepare-content-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const host = path.join(root, 'host'), agent = path.join(root, 'agent');
-  fs.mkdirSync(path.join(agent, 'build'), { recursive: true });
-  fs.writeFileSync(path.join(agent, 'package.json'), JSON.stringify({ name: '@buildr-ai/buildr-agent', private: true, dependencies: {} }));
-  fs.writeFileSync(path.join(agent, 'LICENSE'), 'fixture');
-  fs.writeFileSync(path.join(agent, 'build/index.js'), 'original');
-  const options = { serviceRoot: host, agentRoot: agent, build: false };
-  const destination = prepareDevelopmentAgent(options);
-  const mkdir = t.mock.method(fs, 'mkdtempSync', () => { throw Error('unchanged preparation must not stage a copy'); });
-  assert.equal(prepareDevelopmentAgent(options), destination);
-  mkdir.mock.restore();
-  const entry = path.join(destination, 'build/index.js'), original = fs.statSync(entry);
-  fs.writeFileSync(entry, 'tampered');
-  fs.utimesSync(entry, original.atime, original.mtime);
-  prepareDevelopmentAgent(options);
-  assert.equal(fs.readFileSync(entry, 'utf8'), 'original');
-  fs.writeFileSync(path.join(destination, 'extra'), 'unexpected');
-  prepareDevelopmentAgent(options);
-  assert.equal(fs.existsSync(path.join(destination, 'extra')), false);
-  if (process.platform !== 'win32') {
-    fs.chmodSync(entry, 0o777);
-    prepareDevelopmentAgent(options);
-    assert.equal(fs.statSync(entry).mode & 0o777, original.mode & 0o777);
-  }
 });
 
 test('the compiled public Agent package and vendor clients load away from the development checkout', t => {

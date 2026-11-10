@@ -192,29 +192,3 @@ test('public CLI preflight and converge use declared upstream installation', (t:
  assert.match(fs.readFileSync(path.join(project,'openspec/specs/demo/spec.md'),'utf8'),/Portable delta identity/);
  assert.equal(JSON.parse(invoke(['openspec','converge',...args]).stdout).status,'passed');
 });
-
-test('dated change name archives as itself and converge still reports passed', (t:any)=>{
- const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-openspec-dated-'));
- t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
- const workspace=path.join(root,'workspace');
- const service=path.resolve(import.meta.dirname,'../..');
- const env={...process.env,PATH:`${path.join(service,'node_modules/.bin')}${path.delimiter}${process.env.PATH||''}`,BUILDR_APP_DATA_DIR:path.join(root,'app-data'),BUILDR_PRODUCT_DATA_DIR:path.join(root,'product-data'),OPENSPEC_TELEMETRY:'0'};
- const invoke=(args:string[],expected=0)=>{
-   const result=spawnSync(process.execPath,[path.join(service,'bin/buildr.mjs'),...args],{cwd:service,env,encoding:'utf8'});
-   assert.equal(result.status,expected,result.stderr||result.stdout);return result;
- };
- invoke(['init','--target',workspace,'--name','openspec-dated-fixture','--profile','team']);
- invoke(['project','create','demo','--target',workspace]);
- const name='2026-11-06-change-a';
- const project=path.join(workspace,'projects/demo'),change=path.join(project,'openspec/changes',name);
- writeDelta(change,'demo',deltaSpec());
- fs.writeFileSync(path.join(change,'.openspec.yaml'),'schema: spec-driven\n');
- fs.writeFileSync(path.join(change,'tasks.md'),'- [x] implemented\n');
- fs.writeFileSync(path.join(change,'proposal.md'),'## Why\nFixture\n');
- fs.mkdirSync(path.join(project,'openspec/specs/demo'),{recursive:true});
- fs.writeFileSync(path.join(project,'openspec/specs/demo/spec.md'),'# Demo Specification\n\n## Purpose\n\nThis purpose describes existing behavior so the fixture passes strict upstream validation.\n\n## Requirements\n\n### Requirement: Existing\nSystem MUST retain existing behavior.\n\n#### Scenario: existing\n- **WHEN** invoked\n- **THEN** existing behavior remains\n');
- const result=JSON.parse(invoke(['openspec','converge',name,'--project','demo','--target',workspace,'--json']).stdout);
- assert.equal(result.status,'passed',JSON.stringify(result));
- assert.ok(!fs.existsSync(change));
- assert.ok(fs.existsSync(path.join(project,'openspec/changes/archive',name)),'archive keeps the already dated name');
-});

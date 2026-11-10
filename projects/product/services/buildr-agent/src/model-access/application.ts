@@ -126,10 +126,6 @@ export class ModelAccessApplication {
   }
   private view(row: ModelAccountView): ModelAccountView {
     const result = structuredClone(row), url = this.urls.get(row.id);
-    const provider = this.providers.get(row.provider);
-    if (provider?.authentication) result.authType = provider.authentication.type;
-    if (provider?.group) result.group = structuredClone(provider.group);
-    if (provider?.modeLabel) result.modeLabel = provider.modeLabel;
     result.models=result.models.map(model=>effectiveModel(model,this.preferences.get(row.id)?.[model.id]));
     if (result.loginAttempt && url?.attemptId === result.loginAttempt.id) result.loginAttempt.url = url.url;
     return result;
@@ -173,62 +169,14 @@ export class ModelAccessApplication {
     row.status='not-authenticated';row.models=[];delete row.quota;delete row.accountLabel;delete row.observedAt;
     for(const lease of [...this.leasesByIdentity.values()])if(lease.input.accountId===id&&!(input.abortActive===false&&lease.requests.size>0))this.release(lease.view.identity);
   }
-  list() {
-    if (this.storageError) throw this.storageError;
-    return {
-      accounts: [...this.rows.values()].map(row => this.view(row)),
-      providers: [...this.providers.values()].filter(provider => !provider.connectionId).map(provider => ({
-        id: provider.id,
-        label: provider.label,
-        ...(provider.authentication ? { authentication: structuredClone(provider.authentication) } : {}),
-        ...(provider.group ? { group: structuredClone(provider.group) } : {}),
-        ...(provider.modeLabel ? { modeLabel: provider.modeLabel } : {}),
-      })),
-    };
-  }
+  list() { if (this.storageError) throw this.storageError; return { accounts: [...this.rows.values()].map(row => this.view(row)), providers: [...this.providers.values()].filter(provider=>!provider.connectionId).map(provider => ({ id: provider.id, label: provider.label })) }; }
   read(id: string) { return this.view(this.current(id)); }
   async add(input: { provider: string; label?: string }) {
     await this.ready; if (this.storageError) throw this.storageError;
     const provider = this.providers.get(input.provider);
     if (!provider || provider.connectionId) throw new ModelAccessError('model_provider_unavailable', '此模型来源由已有账号自动发现。', 404);
-    const row: ModelAccountView = { id: randomUUID(), identity:randomUUID(), provider: provider.id, label: input.label?.trim().slice(0, 160) || provider.label, revision: randomUUID(), enabled: true, status: 'not-authenticated', credentialConfigured: false, models: [] };
+    const row: ModelAccountView = { id: randomUUID(), identity:randomUUID(), provider: provider.id, label: input.label?.trim().slice(0, 160) || provider.label, revision: randomUUID(), enabled: true, status: 'not-authenticated', models: [] };
     this.rows.set(row.id, row); await this.save(); this.options.changed?.(this.view(row)); return this.view(row);
-  }
-  async configure(id: string, input: { expectedRevision: string; apiKey: string }) {
-    await this.ready;
-    if (this.closed || this.metadataReadOnly) throw new ModelAccessError('model_access_closed', '模型账号配置未能保存。', 503);
-    const row = this.current(id);
-    if (row.connectionId) throw new ModelAccessError('model_managed_account', '此账号复用原生登录，请在对应账号入口操作。', 409);
-    conflict(row.revision, input.expectedRevision);
-    const provider = this.providers.get(row.provider);
-    if (provider?.authentication?.type !== 'api-key') throw new ModelAccessError('model_credential_unsupported', '此模型来源不支持 API Key 配置。', 400);
-    if (typeof input.apiKey !== 'string' || !input.apiKey.trim() || input.apiKey.length > 4096) throw new ModelAccessError('model_api_key_invalid', 'API Key 不能为空且不能超过 4096 个字符。', 400);
-    const runtime = await this.runtime(id);
-    if (!runtime.configure) throw new ModelAccessError('model_credential_unsupported', '此模型来源尚未实现 API Key 配置。', 503);
-    const operation = (this.operations.get(id) ?? 0) + 1;
-    this.operations.set(id, operation);
-    const observation = await runtime.configure({ apiKey: input.apiKey });
-    if (this.closed || this.metadataReadOnly) throw new ModelAccessError('model_access_closed', '模型账号配置未能保存。', 503);
-    const before = this.selectionState(row);
-    if (observation.identity && row.identity !== digest(observation.identity)) {
-      row.identity = digest(observation.identity);
-      for (const lease of [...this.leasesByIdentity.values()]) if (lease.input.accountId === id) this.release(lease.view.identity);
-    }
-    row.enabled = true;
-    row.status = observation.status;
-    row.credentialConfigured = observation.credentialConfigured ?? true;
-    if (observation.label) row.accountLabel = observation.label;
-    row.diagnostic = observation.diagnostic;
-    if (observation.status === 'ready') {
-      const preferences = this.preferences.get(id) ?? {};
-      for (const model of observation.models) if (!Object.hasOwn(preferences, model.id)) Object.defineProperty(preferences, model.id, { value: { enabled: false }, enumerable: true, writable: true, configurable: true });
-      this.preferences.set(id, preferences);
-      row.models = structuredClone(observation.models);
-      row.observedAt = this.now;
-      if (observation.quota) row.quota = observation.quota;
-      else delete row.quota;
-    }
-    return await this.observed(row, before);
   }
   async check(id: string, input: { expectedRevision?: string } = {}) {
     await this.ready; const row = this.current(id); conflict(row.revision, input.expectedRevision);
@@ -248,7 +196,7 @@ export class ModelAccessApplication {
       if(observation.identity && row.identity!==digest(observation.identity)){row.status='not-authenticated';row.identity=digest(observation.identity);row.models=[];delete row.quota;delete row.accountLabel;delete row.observedAt;for(const lease of [...this.leasesByIdentity.values()])if(lease.input.accountId===id)this.release(lease.view.identity);}
       // An incomplete observation is not evidence that a previously usable account expired.
       // Explicit authentication results and identity changes still invalidate it immediately.
-      row.enabled = true; row.status = observation.status === 'failed' && observation.incomplete === true && row.status === 'ready' && (!observation.identity || row.identity === digest(observation.identity)) ? 'ready' : observation.status; if(observation.credentialConfigured!==undefined)row.credentialConfigured=observation.credentialConfigured; if(observation.label) row.accountLabel = observation.label; row.diagnostic = observation.diagnostic;
+      row.enabled = true; row.status = observation.status === 'failed' && observation.incomplete === true && row.status === 'ready' && (!observation.identity || row.identity === digest(observation.identity)) ? 'ready' : observation.status; if(observation.label) row.accountLabel = observation.label; row.diagnostic = observation.diagnostic;
       if(observation.status==='ready') {
         const prefs=this.preferences.get(id)??{};
         for(const model of observation.models)if(!Object.hasOwn(prefs,model.id))Object.defineProperty(prefs,model.id,{value:{enabled:false},enumerable:true,writable:true,configurable:true});
@@ -447,8 +395,8 @@ export class ModelAccessApplication {
       if (!response.body) throw new ModelAccessError('model_response_empty','模型服务返回空响应。',502);
       res.writeHead(response.status,{'Content-Type':response.headers.get('content-type') || 'application/json','Cache-Control':'no-store'});
       const reader = response.body.getReader();
-      try { while (!controller.signal.aborted) { const chunk = await reader.read(); if (chunk.done) break; if (!res.write(chunk.value)) await once(res,'drain',{signal:controller.signal}); } }
-      finally { if (controller.signal.aborted) await reader.cancel().catch(()=>{}); if (!res.destroyed && !res.writableEnded) res.end(); reader.releaseLock(); }
+      try { while (!controller.signal.aborted) { const chunk = await reader.read(); if (chunk.done) break; if (!res.write(chunk.value)) await once(res,'drain',{signal:controller.signal}); } if (!controller.signal.aborted) res.end(); }
+      finally { if (controller.signal.aborted) await reader.cancel().catch(()=>{}); reader.releaseLock(); }
     } catch (error) {
       if (!res.headersSent && !res.destroyed) { this.json(res,error instanceof ModelAccessError ? error.status : 502,{error:modelFailure(error)}); }
       else if (!res.destroyed) res.destroy();
@@ -476,7 +424,7 @@ export function createModelAccess(options: ModelAccessOptions) {
   const application = new ModelAccessApplication(options);
   return {
     ensureLinked: () => application.ensureLinked(), invalidate: (id:string,input?:{abortActive?:boolean}) => application.invalidate(id,input),
-    accounts: { list: () => application.list(), read: (id: string) => application.read(id), snapshot: (id:string) => application.read(id), preferences:(id:string,input:ModelPreferenceUpdate)=>application.updatePreferences(id,input), add: (input: {provider:string;label?:string}) => application.add(input), configure: (id:string,input:{expectedRevision:string;apiKey:string}) => application.configure(id,input), login: (id:string,input:{expectedRevision:string}) => application.login(id,input), attempt: (id:string,attemptId:string) => application.attempt(id,attemptId), cancelLogin: (id:string,attemptId:string,input:{expectedRevision:string}) => application.cancelLogin(id,attemptId,input), check: (id:string,input:{expectedRevision?:string}={}) => application.check(id,input), disconnect: (id:string,input:{expectedRevision:string}) => application.disconnect(id,input) },
+    accounts: { list: () => application.list(), read: (id: string) => application.read(id), snapshot: (id:string) => application.read(id), preferences:(id:string,input:ModelPreferenceUpdate)=>application.updatePreferences(id,input), add: (input: {provider:string;label?:string}) => application.add(input), login: (id:string,input:{expectedRevision:string}) => application.login(id,input), attempt: (id:string,attemptId:string) => application.attempt(id,attemptId), cancelLogin: (id:string,attemptId:string,input:{expectedRevision:string}) => application.cancelLogin(id,attemptId,input), check: (id:string,input:{expectedRevision?:string}={}) => application.check(id,input), disconnect: (id:string,input:{expectedRevision:string}) => application.disconnect(id,input) },
     catalog: { list: () => application.catalog() },
     activity: () => application.activity(),
     freezeMetadata: (value = true) => application.freezeMetadata(value),

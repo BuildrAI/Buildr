@@ -1,4 +1,3 @@
-import { createVisiblePoller } from '../../../lib/visible-poller';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { releaseAwarenessApi, type ReleaseAwareness } from '../api/release-awareness-api';
 import { updateFlowApi, type UpdateFlowJob } from '../api/update-flow-api';
@@ -10,7 +9,6 @@ export function useUpdateFlow({ enabled, onCompleted }: { enabled:boolean; onCom
   const [awareness,setAwareness]=useState<ReleaseAwareness|null>(null),[job,setJob]=useState<UpdateFlowJob|null>(null);
   const [checking,setChecking]=useState(false),[checkError,setCheckError]=useState(''),[connection,setConnection]=useState<ConnectionState>('connected');
   const jobRef=useRef(job),generation=useRef(0),mutating=useRef(false),watcher=useRef<AbortController|null>(null),expectingRestart=useRef(false),finished=useRef(false);
-  const passivePoller=useRef<ReturnType<typeof createVisiblePoller>|null>(null);
   const mounted=useRef(true),checkGeneration=useRef(0),manualCheck=useRef(false);
   jobRef.current=job;
   useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;generation.current++;watcher.current?.abort();};},[]);
@@ -61,15 +59,13 @@ export function useUpdateFlow({ enabled, onCompleted }: { enabled:boolean; onCom
     else if(!options.silent)setCheckError(results[0].reason instanceof Error?results[0].reason.message:'暂时无法检查发布版本。');
     if(results[1].status==='fulfilled'&&current===generation.current)accept(results[1].value);
     else if(results[1].status==='rejected'&&!options.silent)setCheckError(results[1].reason instanceof Error?results[1].reason.message:'更新状态暂不可用。');
-    passivePoller.current?.observed();
     if(!options.silent){manualCheck.current=false;setChecking(false);}
   },[accept]);
   useEffect(()=>{
     if(!enabled)return;
     const controller=new AbortController();void check({silent:true,signal:controller.signal});
-    const poller=createVisiblePoller({document,window,read:()=>check({silent:true,signal:controller.signal}),interval:()=>600000,focusFreshMs:600000,resumeWhenFresh:false});
-    passivePoller.current=poller;
-    return()=>{passivePoller.current=null;controller.abort();poller.dispose();};
+    const timer=setInterval(()=>{if(document.visibilityState==='visible')void check({silent:true,signal:controller.signal});},60000);
+    return()=>{controller.abort();clearInterval(timer);};
   },[enabled,check]);
   useEffect(()=>{
     if(!enabled||!job||!['preparing','applying'].includes(job.status)||connection!=='connected')return;

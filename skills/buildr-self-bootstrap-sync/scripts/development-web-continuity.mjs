@@ -385,12 +385,8 @@ export async function restartDevelopmentInstance({
     const finishShutdown = async (state) => {
       const deadline = Date.now() + timeoutMs;
       for (;;) {
-        let current;
-        try { current = JSON.parse(fs.readFileSync(instanceFile(dataRoot), 'utf8')); }
-        catch (error) {
-          if (error.code === 'ENOENT') return;
-          throw continuityError('owner-mismatch', 'The development instance record changed during shutdown; it has been preserved.');
-        }
+        if (!fs.existsSync(instanceFile(dataRoot))) return;
+        const current = readJson(instanceFile(dataRoot));
         if (JSON.stringify(current) !== JSON.stringify(state)) throw continuityError('owner-mismatch', 'The development instance record changed during shutdown; it has been preserved.');
         try { killProcess(state.pid, 0); }
         catch (error) { if (error.code === 'ESRCH') return; throw error; }

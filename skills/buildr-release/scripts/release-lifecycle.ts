@@ -1,22 +1,5 @@
 import crypto from 'node:crypto';
 
-/** Derived owner facts only. Public effects remain with their original owners. */
-export interface ReleaseLifecycleFacts {
-  selection: { status: string; generation: number; identity: string | null };
-  candidate: { status: string; identity: string | null };
-  readiness: { status: string; contextDigest: string | null };
-  publication: { status: string; runId: string | number | null; evidenceIdentity: string | null };
-  convergence: { status: string; recoveryIdentity: string | null };
-  closeout: { status: string; identity: string | null; formalReleaseRef: { disposition: string } | null };
-}
-export interface ReleaseLifecycle {
-  schemaVersion: string; status: 'blocked' | 'passed' | 'active'; version: string; phase: string;
-  releaseTask: { taskId: string; status: string; recordDigest: string | null };
-  recoveryIdentity: string;
-  recovery: { version: string; taskId: string; selectionGeneration: number; selectionIdentity: string | null; contextDigest: string | null; publishRun: string | number | null };
-  facts: ReleaseLifecycleFacts; findings: Array<{ code: string; owner: string }>; effects: unknown[]; nextActions: string[];
-}
-
 export const releaseLifecycleSchema: any = 'buildr.release-lifecycle/v1';
 
 const VERSION: any = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u;
@@ -47,7 +30,7 @@ function digest(value: any): any  {
   return `sha256-${crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex')}`;
 }
 
-function phaseFor(facts: ReleaseLifecycleFacts): string  {
+function phaseFor(facts: any): any  {
   if (facts.selection.status !== 'frozen') return 'selection';
   if (facts.candidate.status !== 'passed') return 'candidate';
   if (facts.readiness.status !== 'ready') return 'readiness';
@@ -58,7 +41,7 @@ function phaseFor(facts: ReleaseLifecycleFacts): string  {
   return 'closed';
 }
 
-export function createReleaseLifecycle(input: any): ReleaseLifecycle  {
+export function createReleaseLifecycle(input: any): any  {
   const version: any = required(input?.version, VERSION, 'version');
   const releaseTask: any = {
     taskId: required(input?.releaseTask?.taskId, TASK, 'releaseTask.taskId'),
@@ -76,7 +59,7 @@ export function createReleaseLifecycle(input: any): ReleaseLifecycle  {
   const publication: any = { status: status(input?.publication?.status, 'publication'), runId: input?.publication?.runId ?? null, evidenceIdentity: optionalDigest(input?.publication?.evidenceIdentity, 'publication.evidenceIdentity') };
   const convergence: any = { status: status(input?.convergence?.status, 'convergence'), recoveryIdentity: optionalDigest(input?.convergence?.recoveryIdentity, 'convergence.recoveryIdentity') };
   const closeout: any = { status: status(input?.closeout?.status, 'closeout'), identity: optionalDigest(input?.closeout?.identity, 'closeout.identity'), formalReleaseRef: input?.closeout?.formalReleaseRef ?? null };
-  const facts: ReleaseLifecycleFacts = { selection, candidate, readiness, publication, convergence, closeout };
+  const facts: any = { selection, candidate, readiness, publication, convergence, closeout };
   const phase: any = phaseFor(facts);
   if (releaseTask.status === 'completed' && phase !== 'closed') throw new Error(`releaseTask must remain active while lifecycle phase is ${phase}.`);
   if (phase !== 'selection' && !selection.identity) throw new Error('selection.identity is required after selection.');
@@ -95,7 +78,7 @@ export function createReleaseLifecycle(input: any): ReleaseLifecycle  {
     findings.push({ code: 'formal-release-ref-not-verified', owner: 'release-closeout' });
   }
   if (releaseTask.status === 'completed' && findings.length) throw new Error('Completed releaseTask requires a verified retained or cleaned formal release ref.');
-  const statusValue: ReleaseLifecycle['status'] = findings.length ? 'blocked' : phase === 'closed' ? 'passed' : 'active';
+  const statusValue: any = findings.length ? 'blocked' : phase === 'closed' ? 'passed' : 'active';
   return {
     schemaVersion: releaseLifecycleSchema,
     status: statusValue,

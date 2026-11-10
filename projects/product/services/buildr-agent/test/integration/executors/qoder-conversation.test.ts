@@ -49,7 +49,6 @@ for (const input of ['background-continue-error', 'background-continue-error-arr
     await assert.rejects(f.send('must not enter'), /agent_native_turn_active/);
     await writeFile(join(f.configRoot, 'qoder-config/complete-continuation'), 'yes');
     await eventually(() => round.events.some(event => event.type === 'item' && event.item.text === 'continued final answer'));
-    await eventually(() => round.events.some(event => event.type === 'completed' && event.status === 'completed'));
     assert.equal((await f.runtime.observe(control)).status, 'idle');
     const history = await f.runtime.readHistory({ contextRef: f.contextRef, cwd: f.cwd });
     assert.deepEqual(history.filter(item => item.role === 'user').map(item => item.id), [round.clientRequestId]);
@@ -57,30 +56,6 @@ for (const input of ['background-continue-error', 'background-continue-error-arr
     assert.deepEqual(await f.runtime.canRelease!(control), { executionState: 'ended' });
     assert.equal(round.events.filter(event => event.type === 'accepted').length, 1);
     assert.equal((await f.launches()).length, 1);
-  } finally { await f.close(); }
-});
-
-for (const mode of ['killed', 'unknown-status']) test('Qoder owned text notification preserves its native continuation: ' + mode, async () => {
-  const f = await fixture();
-  try {
-    const round = await f.send('background-continue-error');
-    const accepted = round.events.find(event => event.type === 'accepted'); assert.equal(accepted?.type, 'accepted');
-    const control = { contextRef: f.contextRef, executionRef: accepted.executionRef };
-    await writeFile(join(f.configRoot, 'qoder-config/continue-background'), mode);
-    await eventually(() => round.events.some(event => event.type === 'item' && event.item.id === 'continuation-tool'));
-    assert.equal((await f.runtime.observe(control)).status, 'running');
-    assert.equal(await f.runtime.canRelease!(control), false, 'a continuation is still active');
-    await writeFile(join(f.configRoot, 'qoder-config/complete-continuation'), 'yes');
-    await eventually(() => round.events.some(event => event.type === 'item' && event.item.text === 'continued final answer'));
-    await eventually(() => round.events.some(event => event.type === 'completed' && event.status === 'completed'));
-    const final = await f.runtime.observe(control);
-    assert.equal(final.status, mode === 'killed' ? 'idle' : 'tools-active');
-    assert.equal(final.backgroundWork, mode !== 'killed');
-    assert.ok(!round.events.some(event => event.type === 'observation' && event.observation.status === 'unknown'));
-    if (mode === 'killed') assert.deepEqual(await f.runtime.canRelease!({ ...control, executionRef: final.executionRef! }), { executionState: 'ended' });
-    else assert.equal(await f.runtime.canRelease!(control), false, 'an unknown status never proves the background command ended');
-    assert.equal((await f.runtime.readHistory({ contextRef: f.contextRef, cwd: f.cwd })).filter(item => item.role === 'user').length, 1);
-    assert.equal(round.events.filter(event => event.type === 'accepted').length, 1);
   } finally { await f.close(); }
 });
 
@@ -142,13 +117,9 @@ test('Qoder idle resource shutdown preserves the exact completed observation wit
     const control = { contextRef: f.contextRef, executionRef: accepted.executionRef };
     assert.equal((await f.runtime.observe(control)).status, 'idle');
     assert.equal(await f.runtime.prepareRelease!(control), true);
-    const stale={...control,executionRef:{...control.executionRef,data:{...control.executionRef.data,backgroundWork:true}}};
-    assert.equal(await f.runtime.prepareRelease!(stale),true,'fresh proof supersedes an old background hint');
-
     const beforeClose = round.events.length;
     await f.runtime.close();
     assert.deepEqual(round.events.slice(beforeClose), [], 'closing the idle control channel must not revoke the native completion');
-    assert.deepEqual(await f.runtime.canRelease!(stale), { executionState: 'unknown' },'pre-close native proof survives into physical exit verification');
     assert.deepEqual(await f.runtime.canRelease!(control), { executionState: 'unknown' });
     assert.equal(round.events.filter(event => event.type === 'accepted').length, 1, 'shutdown never resends the input');
   } finally { await f.close(); }

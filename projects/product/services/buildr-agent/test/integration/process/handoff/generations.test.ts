@@ -106,41 +106,14 @@ test('parallel versions retain old controls, dispatch durable next instructions 
     // saved draft is withdrawn and delivered through an explicit confirmed
     // send instead of opening a replacement session silently.
     first=await observer.operations.conversations.read(scope,first.id);
-    // A no-host pump may update the saved instruction between the read and the
-    // withdrawal. Re-read the documented conflict instead of failing the whole
-    // handoff proof on a transient pending revision.
-    for(let attempt=0;first.pendingSend;attempt++){
-      try{
-        // The withdrawal itself advances the conversation revision. Keep the
-        // returned view so the following explicit send is prepared against the
-        // observation it actually produced instead of the pre-cancel revision.
-        first=await observer.operations.conversations.cancelPendingSend(scope,first.id,{expectedPendingRevision:first.pendingSend.revision});
-        break;
-      }catch(error){
-        if(attempt>=2||!['agent_pending_conflict','agent_revision_conflict'].includes((error as {code?:string}).code??''))throw error;
-        first=await observer.operations.conversations.read(scope,first.id);
-      }
-    }
-    const confirmedRequestId=randomUUID();
-    for(let attempt=0;;attempt++){
-      const confirmed={expectedRevision:first.revision,connectionId:'first',...sourceChoice,text:'queued revised'};
-      try{
-        const confirmedPreview=await main.call('conversations.prepareSend',[scope,first.id,confirmed]);
-        await main.call('conversations.send',[scope,first.id,{...confirmed,previewToken:confirmedPreview.token,clientRequestId:confirmedRequestId}]);
-        break;
-      }catch(error){
-        // The no-host pump may advance the saved instruction between the read
-        // and preview. Retry only an explicit optimistic-concurrency rejection;
-        // the fixed request identity keeps the actual send idempotent.
-        if(attempt>=2||!['agent_pending_conflict','agent_revision_conflict'].includes((error as {code?:string}).code??''))throw error;
-        first=await observer.operations.conversations.read(scope,first.id);
-      }
-    }
+    if(first.pendingSend)await observer.operations.conversations.cancelPendingSend(scope,first.id,{expectedPendingRevision:first.pendingSend.revision});
+    const confirmed={expectedRevision:first.revision,connectionId:'first',...sourceChoice,text:'queued revised'};
+    const confirmedPreview=await main.call('conversations.prepareSend',[scope,first.id,confirmed]);
+    await main.call('conversations.send',[scope,first.id,{...confirmed,previewToken:confirmedPreview.token,clientRequestId:randomUUID()}]);
     first=await until(()=>observer!.operations.conversations.read(scope,first.id),value=>value.run?.generation===adopted.identity.generation&&value.run?.status==='completed');
     const sent=fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').trim().split('\n').map(line=>JSON.parse(line));
-    assert.equal(sent.filter(value=>value.text==='queued revised').length,1,`queued revised sends: ${JSON.stringify(sent.filter(value=>value.text==='queued revised'))}`);
-    assert.equal(sent.find(value=>value.text==='queued revised').version,'new');
-    assert.equal(sent.filter(value=>value.text==='queued original').length,0,`queued original sends: ${JSON.stringify(sent.filter(value=>value.text==='queued original'))}`);
+    assert.equal(sent.filter(value=>value.text==='queued revised').length,1);assert.equal(sent.find(value=>value.text==='queued revised').version,'new');
+    assert.equal(sent.filter(value=>value.text==='queued original').length,0);
     assert.equal(first.retainedRuns?.find(run=>run.id===original.id)?.status,'tools-active','delivery must not wait for the old stop');
     fs.writeFileSync(path.join(dataRoot,'finish-stop'),'yes');
     // Withdrawing the saved instruction never replays it behind the explicit send.
@@ -213,15 +186,7 @@ test('a ready successor adopts the released native session after the old round e
  };
  await dispatch('first round');const contextId=chat.participants.at(-1)!.contextId;
  fs.writeFileSync(marker,JSON.stringify({version:'new'}));const next=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'});
- for(let attempt=0;;attempt++){
-   try{await observer.lifecycle.requestRuntime({expectedGeneration:old.generation,runtime:next});break;}
-   catch(error){
-     // The old round is complete, but its exact process can still be releasing
-     // ownership. Only the documented transient is retried; other errors stay.
-     if((error as {code?:string}).code!=='agent_process_owned'||attempt>=19)throw error;
-     await new Promise(resolve=>setTimeout(resolve,100));
-   }
- }
+ await observer.lifecycle.requestRuntime({expectedGeneration:old.generation,runtime:next});
  const adopted=await until(()=>observer!.lifecycle.status(),value=>value.identity.runtime.digest===next.digest);
  await until(async()=>!isLive(old.pid),Boolean);
  await main.call('conversations.read',[scope,chat.id]);

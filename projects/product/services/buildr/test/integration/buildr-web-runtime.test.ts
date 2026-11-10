@@ -5,7 +5,6 @@ import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import test from 'node:test';
-import { stopAgentProcess } from '@buildr-ai/buildr-agent';
 
 import { createRuntime } from '../helpers/runtime-harness.ts';
 import { createRuntime as createProductionRuntime, runtimeProvide } from '../../src/bootstrap/runtime.ts';
@@ -54,19 +53,13 @@ test('生产 Web 装配能够解析已登记工作空间并读取项目，未知
   const workspace = runtimeProvide(runtime, WORKSPACE_APPLICATION);
   const workspaceId = workspace.ensureRegisteredTarget(root);
   const expected = runtimeProvide(runtime, PROJECT_APPLICATION).listProjects(root);
-  let instance: any;
-  try {
-    instance = await runtimeProvide(runtime, WEB_INSTANCE_LIFECYCLE).startBuildrWeb(['--port', '0', '--no-open']);
-    const response = await fetch(`${instance.url}/api/v1/workspaces/${workspaceId}/projects`);
-    assert.equal(response.status, 200, await response.clone().text());
-    assert.deepEqual(await response.json(), expected);
-    const missing = await fetch(`${instance.url}/api/v1/workspaces/00000000-0000-4000-8000-000000000000/projects`);
-    assert.equal(missing.status, 404);
-  } finally {
-    // Finish owned shutdown before the fixture's after hook releases its files.
-    try { await instance?.shutdown(); }
-    finally { await stopAgentProcess({dataRoot:path.join(base,'app-data'),mode:'stop-owned'}); }
-  }
+  const instance = await runtimeProvide(runtime, WEB_INSTANCE_LIFECYCLE).startBuildrWeb(['--port', '0', '--no-open']);
+  t.after(() => new Promise<void>((resolve) => instance.server.close(resolve)));
+  const response = await fetch(`${instance.url}/api/v1/workspaces/${workspaceId}/projects`);
+  assert.equal(response.status, 200, await response.clone().text());
+  assert.deepEqual(await response.json(), expected);
+  const missing = await fetch(`${instance.url}/api/v1/workspaces/00000000-0000-4000-8000-000000000000/projects`);
+  assert.equal(missing.status, 404);
 });
 
 test('默认浏览器 opener 为 macOS、Windows 和 Linux 生成平台命令', () => {
@@ -121,8 +114,7 @@ test('正式Web与Task Preview生命周期均不创建后台maintenance schedule
   const previousPreview: any = process.env.BUILDR_LOCAL_APP_PREVIEW;
   process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data');
   delete process.env.BUILDR_LOCAL_APP_PREVIEW;
-  t.after(async () => {
-    await stopAgentProcess({ dataRoot: path.join(base, 'app-data') });
+  t.after(() => {
     if (previousDataRoot === undefined) delete process.env.BUILDR_APP_DATA_DIR;
     else process.env.BUILDR_APP_DATA_DIR = previousDataRoot;
     if (previousPreview === undefined) delete process.env.BUILDR_LOCAL_APP_PREVIEW;
@@ -138,7 +130,7 @@ test('正式Web与Task Preview生命周期均不创建后台maintenance schedule
     ensureRegisteredTarget: root => ensureRegisteredTarget(formalRuntime, root),
   });
   const formal: any = await formalRuntime.startBuildrWeb(['--port', '0', '--no-open']);
-  await formal.shutdown();
+  await new Promise((resolve: any) => formal.server.close(resolve));
 
   process.env.BUILDR_LOCAL_APP_PREVIEW = JSON.stringify({
     schemaVersion: 'buildr.local-app-preview/v1',
@@ -153,7 +145,7 @@ test('正式Web与Task Preview生命周期均不创建后台maintenance schedule
     ensureRegisteredTarget: root => ensureRegisteredTarget(previewRuntime, root),
   });
   const preview: any = await previewRuntime.startBuildrWeb(['--port', '0', '--no-open']);
-  await preview.shutdown();
+  await new Promise((resolve: any) => preview.server.close(resolve));
 });
 
 test('development start reuses the current source and preserves a healthy instance when the source differs or is unproven', async (t) => {
@@ -165,7 +157,6 @@ test('development start reuses the current source and preserves a healthy instan
   let server: any;
   t.after(async () => {
     if (server) await new Promise<void>(resolve => server.close(resolve));
-    await stopAgentProcess({ dataRoot: path.join(base, 'app-data') });
     if (previousDataRoot === undefined) delete process.env.BUILDR_APP_DATA_DIR;
     else process.env.BUILDR_APP_DATA_DIR = previousDataRoot;
     if (previousPreview === undefined) delete process.env.BUILDR_LOCAL_APP_PREVIEW;
@@ -221,7 +212,6 @@ test('development start with explicit replace flag gracefully restarts a mismatc
   let server: any;
   t.after(async () => {
     if (server) await new Promise<void>(resolve => server.close(() => resolve()));
-    await stopAgentProcess({ dataRoot: path.join(base, 'app-data') });
     if (previousDataRoot === undefined) delete process.env.BUILDR_APP_DATA_DIR;
     else process.env.BUILDR_APP_DATA_DIR = previousDataRoot;
     if (previousPreview === undefined) delete process.env.BUILDR_LOCAL_APP_PREVIEW;

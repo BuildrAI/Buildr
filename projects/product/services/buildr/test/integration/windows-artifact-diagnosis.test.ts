@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import test from 'node:test';
 import { createVerificationExecutor } from '../verification/executor.ts';
-import { loadCandidatePackageAdapter } from '../verification/package-adapter.ts';
 import { runWindowsArtifactDiagnosis } from '../verification/release/windows-artifact-diagnosis.ts';
 
 test('source-only diagnosis suppresses inherited artifact variables through the real executor merge', async () => {
@@ -12,7 +11,6 @@ test('source-only diagnosis suppresses inherited artifact variables through the 
   const serviceRoot = path.resolve(import.meta.dirname, '../..');
   try {
     for (const key of keys) process.env[key] = `/absent-inherited-artifact/${key}`;
-    const packageAdapter = await loadCandidatePackageAdapter();
     const env = { DIAGNOSTIC_CANDIDATE_RUN_ID: '1', DIAGNOSTIC_CANDIDATE_SOURCE: oldSource, EXPECTED_SOURCE_TREE: tree,
       DIAGNOSTIC_SCENARIO: 'worktree-windows', DIAGNOSTIC_RUN_JSON: '/run.json', DIAGNOSTIC_ARTIFACT_DIR: '/old-package',
       DIAGNOSTIC_OUTPUT: '/unused-diagnosis', GITHUB_SHA: checkSource, GITHUB_REPOSITORY: 'BuildrAI/Buildr' };
@@ -24,9 +22,8 @@ test('source-only diagnosis suppresses inherited artifact variables through the 
       execute: async (plan, options) => {
         const deleted = { ...options.env };
         for (const key of keys) delete deleted[key];
-        assert.throws(() => createVerificationExecutor({ productRoot: serviceRoot, projectRoot: path.resolve(serviceRoot, '../..'), env: deleted, packageAdapter }), /shared candidate tarball is missing/u, 'an explicit package consumer still reproduces the inherited-package read');
-        assert.doesNotThrow(() => createVerificationExecutor({ productRoot: serviceRoot, projectRoot: path.resolve(serviceRoot, '../..'), env: deleted }), 'source execution does not load a package adapter implicitly');
-        createVerificationExecutor({ productRoot: serviceRoot, projectRoot: path.resolve(serviceRoot, '../..'), env: options.env, packageAdapter });
+        assert.throws(() => createVerificationExecutor({ productRoot: serviceRoot, projectRoot: path.resolve(serviceRoot, '../..'), env: deleted }), /shared candidate tarball is missing/u, 'deleting overrides reproduces the inherited-package read');
+        createVerificationExecutor({ productRoot: serviceRoot, projectRoot: path.resolve(serviceRoot, '../..'), env: options.env });
         constructed = true;
         return { passed: true, results: plan.steps.map((step: any) => ({ id: step.id, status: 'passed', exitCode: 0, durationMs: 0 })) };
       },

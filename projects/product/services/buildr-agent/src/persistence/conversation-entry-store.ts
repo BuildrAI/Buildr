@@ -12,10 +12,8 @@ const maximumDecoded = 64 * 1024 * 1024;
 const digest = (body: string | Uint8Array) => createHash('sha256').update(body).digest('hex');
 export type Content = { content_revision: string; codec: string; body_bytes: number; body: string | Uint8Array };
 type Position = { scope: string; entry: ConversationEntry; round: string; revision: string; compact: string | null; bytes: number; compactBytes: number; content?: Content };
-type TextUpdate = {position:Position; previousRevision:string};
 export type PreparedEntries = Position[];
 const lazyEntries = new WeakMap<ConversationEntry, { row: Content; compact: string; metadata: string; untouched(): boolean }>();
-const nativePositions = new WeakMap<ConversationEntry, {signature:string; position:Position}>();
 const metadata = (entry: ConversationEntry) => JSON.stringify(Object.fromEntries(Object.entries(Object.getOwnPropertyDescriptors(entry)).filter(([key]) => key !== 'text' && key !== 'input').map(([key, descriptor]) => [key, descriptor.value])));
 
 
@@ -43,15 +41,15 @@ export class ConversationEntryStore {
         DELETE FROM conversation_entry_contents WHERE conversation_id=OLD.id;
       END;
       CREATE TRIGGER conversation_body_format_insert BEFORE INSERT ON conversations
-        WHEN json_extract(NEW.body,'$._bodyFormat') IS NOT 9 OR json_array_length(NEW.body,'$.view.entries')>0 OR json_array_length(NEW.body,'$.inheritedContext.entries')>0
+        WHEN json_extract(NEW.body,'$._bodyFormat') IS NOT 7 OR json_array_length(NEW.body,'$.view.entries')>0 OR json_array_length(NEW.body,'$.inheritedContext.entries')>0
         BEGIN SELECT RAISE(ABORT,'agent_storage_writer_incompatible'); END;
       CREATE TRIGGER conversation_body_format_update BEFORE UPDATE OF body ON conversations
-        WHEN json_extract(NEW.body,'$._bodyFormat') IS NOT 9 OR json_array_length(NEW.body,'$.view.entries')>0 OR json_array_length(NEW.body,'$.inheritedContext.entries')>0
+        WHEN json_extract(NEW.body,'$._bodyFormat') IS NOT 7 OR json_array_length(NEW.body,'$.view.entries')>0 OR json_array_length(NEW.body,'$.inheritedContext.entries')>0
         BEGIN SELECT RAISE(ABORT,'agent_storage_writer_incompatible'); END;`);
   }
   static header(record: StoredConversation): string {
     return JSON.stringify({
-      ...record, _bodyFormat: 9, view: { ...record.view, entries: [] },
+      ...record, _bodyFormat: 7, view: { ...record.view, entries: [] },
       ...(record.inheritedContext ? { inheritedContext: { ...record.inheritedContext, entries: [] } } : {}),
     });
   }
@@ -63,17 +61,6 @@ export class ConversationEntryStore {
   /** Prepare expensive compression before the ordinary write transaction. */
   static prepare(db: DatabaseSync, record: StoredConversation, nativeTool?:(entry:ConversationEntry)=>NativeToolContent|undefined): PreparedEntries {
     const existing = new Set((db.prepare('SELECT content_revision FROM conversation_entry_contents WHERE conversation_id=?').all(record.view.id) as Array<{content_revision: string}>).map(row => row.content_revision));
-    let semantic: Map<string, NativeToolContent> | undefined;
-    const references = () => {
-      if (!semantic) {
-        semantic = new Map();
-        for(const row of db.prepare("SELECT c.* FROM conversation_entry_contents c WHERE conversation_id=? AND codec='native-tool'").all(record.view.id) as unknown as Content[]) {
-          const reference = this.reference(row)!;
-          semantic.set(reference.entry.id,reference);
-        }
-      }
-      return semantic;
-    };
     const result: PreparedEntries = [];
     for (const [scope, entries] of [['main', record.view.entries], ['inherited', record.inheritedContext?.entries ?? []]] as const) {
       let round = { id: 'legacy:0' };
@@ -92,26 +79,6 @@ export class ConversationEntryStore {
         if (lazy && lazy.untouched() && lazy.metadata === metadata(entry) && existing.has(lazy.row.content_revision)) {
           result.push({ scope, entry, round: rounds[index]!.id, revision: lazy.row.content_revision, compact: lazy.compact,
             bytes: lazy.row.body_bytes, compactBytes: Buffer.byteLength(lazy.compact) });
-          return;
-        }
-        if(record.nativeTools?.[entry.id]) {
-          const skeleton = {...entry,text: ''};
-          delete skeleton.input;delete skeleton.detail;
-          const signature = JSON.stringify(skeleton), cached = nativePositions.get(entry);
-          if (cached?.signature === signature && existing.has(cached.position.revision)) {
-            entry.detail = {revision:cached.position.revision};
-            result.push({...cached.position,scope,entry,round:rounds[index]!.id,content:undefined});
-            return;
-          }
-          const previous = references().get(entry.id);
-          const reference = previous ? {...previous,entry:skeleton} : nativeTool?.(entry);
-          if(reference?.version !== 3) throw new AgentServiceError('agent_native_tool_unbound', '原生工具身份尚未绑定。', 409);
-          const body = JSON.stringify(reference), revision = digest(body);
-          const compact = JSON.stringify({...reference.entry, detail: {revision}});
-          entry.detail = {revision};
-          const position:Position={scope, entry, round: rounds[index]!.id, revision, compact: null, bytes: Buffer.byteLength(body), compactBytes: Buffer.byteLength(compact)};
-          nativePositions.set(entry,{signature,position});
-          result.push({...position,content: existing.has(revision) ? undefined : {...this.encodeReference(reference), content_revision: revision, body_bytes: Buffer.byteLength(body)}});
           return;
         }
         const body = JSON.stringify(entry), revision = digest(body), bytes = Buffer.byteLength(body);
@@ -163,62 +130,16 @@ export class ConversationEntryStore {
       prior.delete(key);
     }
     for (const row of prior.values()) db.prepare('DELETE FROM conversation_read_entries WHERE conversation_id=? AND scope=? AND sequence=?').run(record.view.id, row.scope, row.sequence);
-    // Build the live revision set once. A correlated lookup scans the positions
-    // for every body and makes each streamed character quadratic in history size.
-    // Both scopes participate so inherited entries keep their pinned revisions.
-    db.prepare(`DELETE FROM conversation_entry_contents WHERE conversation_id=? AND content_revision NOT IN(
-      SELECT content_revision FROM conversation_read_entries WHERE conversation_id=?)`).run(record.view.id, record.view.id);
-  }
-  /** Only a previously saved, unchanged-size record may use the caller's exact text mutation. */
-  static prepareText(db:DatabaseSync,record:StoredConversation,entryId:string):TextUpdate|undefined {
-    const entry=record.view.entries.find(entry=>entry.id===entryId);
-    if(!entry||entry.kind!=='message'||entry.role!=='assistant'||!entry.runId||record.nativeTools?.[entry.id])return;
-    const old=db.prepare(`SELECT e.content_revision,e.round_id,c.entry_count,c.inherited_count
-      FROM conversation_read_entries e JOIN conversations c ON c.id=e.conversation_id
-      WHERE e.conversation_id=? AND e.scope='main' AND e.sequence=? AND e.id=?`).get(record.view.id,entry.sequence,entry.id) as {content_revision:string;round_id:string;entry_count:number;inherited_count:number}|undefined;
-    if(!old||old.entry_count!==record.view.entries.length||old.inherited_count!==(record.inheritedContext?.entries.length??0)||old.round_id!=='run:'+entry.runId)return;
-    const body=JSON.stringify(entry),revision=digest(body),bytes=Buffer.byteLength(body);
-    return {previousRevision:old.content_revision,position:{scope:'main',entry,round:old.round_id,revision,compact:null,bytes,compactBytes:bytes,
-      content:{content_revision:revision,codec:'raw',body_bytes:bytes,body}}};
-  }
-  /** Keep all other positions, including inherited pins, untouched in the same transaction. */
-  static saveText(db:DatabaseSync,id:string,update:TextUpdate):void {
-    const p=update.position;
-    db.prepare('INSERT OR IGNORE INTO conversation_entry_contents(conversation_id,content_revision,codec,body_bytes,body) VALUES(?,?,?,?,?)').run(id,p.revision,'raw',p.bytes,p.content!.body);
-    const changed=db.prepare(`UPDATE conversation_read_entries SET round_id=?,content_revision=?,compact=NULL,body_bytes=?,compact_bytes=?,visible=?
-      WHERE conversation_id=? AND scope='main' AND sequence=? AND id=? AND content_revision=?`).run(p.round,p.revision,p.bytes,p.compactBytes,Number(!p.entry.thinking),id,p.entry.sequence,p.entry.id,update.previousRevision).changes;
-    if(changed!==1)throw new AgentServiceError('agent_entry_corrupt','文本消息位置已变化；原记录已保留。',409);
-    if(update.previousRevision!==p.revision)db.prepare(`DELETE FROM conversation_entry_contents WHERE conversation_id=? AND content_revision=?
-      AND NOT EXISTS(SELECT 1 FROM conversation_read_entries WHERE conversation_id=? AND content_revision=?)`).run(id,update.previousRevision,id,update.previousRevision);
-    db.prepare('UPDATE conversation_read_states SET message_revision=revision WHERE id=?').run(id);
+    db.prepare(`DELETE FROM conversation_entry_contents WHERE conversation_id=? AND NOT EXISTS(
+      SELECT 1 FROM conversation_read_entries e WHERE e.conversation_id=conversation_entry_contents.conversation_id AND e.content_revision=conversation_entry_contents.content_revision)`).run(record.view.id);
   }
   static decode(row: Content, reader?: NativeContentReader, lazy = false, compact?: string | null): ConversationEntry {
-    if(lazy&&compact&&['raw','zstd'].includes(row.codec)){
-      const preview=JSON.parse(compact) as ConversationEntry;
-      if(preview.kind==='tool'){
-        const entry={...preview};delete entry.detail;
-        let resolved:ConversationEntry|undefined,changed=false;
-        for(const key of ['text','input'] as const)Object.defineProperty(entry,key,{enumerable:true,configurable:true,
-          get:()=>(resolved??=this.decode(row,reader))[key],
-          set:value=>{changed=true;resolved??=this.decode(row,reader);resolved[key]=value;}});
-        const original=metadata(entry);
-        lazyEntries.set(entry,{row,compact,metadata:original,untouched:()=>!changed});
-        registerEntryRevision(entry,()=>!changed&&metadata(entry)===original?row.content_revision:undefined);
-        return entry;
-      }
-    }
-    if (['native-v1','native-v2','native-v2-zstd','native-tool'].includes(row.codec)) {
+    if (['native-v1','native-v2','native-v2-zstd'].includes(row.codec)) {
       let ref: NativeToolContent;
       try {
         ref=this.reference(row)!;if(!reader)throw new Error();
       }
       catch { throw new AgentServiceError('agent_native_content_unavailable', '原生正文引用不可读；已保留记录，不会重发操作。', 409); }
-      if(ref.version === 3 && digest(JSON.stringify(ref)) !== row.content_revision) throw new AgentServiceError('agent_entry_corrupt','原生工具引用的内容版本不一致。',409);
-      if(ref.version === 3 && lazy) {
-        const entry = {...ref.entry, detail: {revision: row.content_revision}};
-        registerEntryRevision(entry, () => row.content_revision);
-        return entry;
-      }
       if (!lazy) return reader.tool(ref, row.content_revision);
       const entry = structuredClone(ref.entry); let resolved: ConversationEntry | undefined, changed = false;
       for (const key of ['text', ...(ref.input ? ['input'] : [])] as Array<'text' | 'input'>) {
@@ -241,24 +162,17 @@ export class ConversationEntryStore {
       return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as ConversationEntry;
     } catch { throw new AgentServiceError('agent_entry_corrupt', '消息正文损坏、编码不支持或超出解压预算；原记录已保留，不会重发操作。', 409); }
   }
-  /** Display a deferred tool without invoking its body getters. */
-  static preview(entry: ConversationEntry): ConversationEntry {
-    const lazy = lazyEntries.get(entry);
-    if (!lazy?.untouched()) return entry;
-    return {...JSON.parse(lazy.compact),...JSON.parse(metadata(entry))};
-  }
   static encodeReference(reference: NativeToolContent): {codec:string;body:string|Uint8Array} {
     const body=JSON.stringify(reference);
-    if(reference.version === 3) return {codec: 'native-tool', body};
     if(reference.version===1)return {codec:'native-v1',body};
     const compressed=zstdCompressSync(Buffer.from(body));
     return compressed.length<Buffer.byteLength(body)?{codec:'native-v2-zstd',body:compressed}:{codec:'native-v2',body};
   }
   static reference(row: Content): NativeToolContent|undefined {
-    if(!['native-v1','native-v2','native-v2-zstd','native-tool'].includes(row.codec))return;
+    if(!['native-v1','native-v2','native-v2-zstd'].includes(row.codec))return;
     const bytes=row.codec==='native-v2-zstd'?zstdDecompressSync(Buffer.from(row.body),{maxOutputLength:maximumDecoded}):Buffer.from(row.body);
     const reference=JSON.parse(bytes.toString('utf8')) as NativeToolContent;
-    if(![1,2,3].includes(reference.version)||reference.entry?.kind!=='tool')throw new Error('native_reference_invalid');
+    if(![1,2].includes(reference.version)||reference.entry?.kind!=='tool')throw new Error('native_reference_invalid');
     return reference;
   }
   static load(db: DatabaseSync, id: string, scope = 'main', reader?: NativeContentReader, lazy = false): ConversationEntry[] {
@@ -294,6 +208,6 @@ export class ConversationEntryStore {
   static content(db: DatabaseSync, id: string, entryId: string): (Content & { compact: string | null }) | undefined {
     return db.prepare(`SELECT c.*,e.content_revision,e.compact FROM conversation_read_entries e LEFT JOIN conversation_entry_contents c
       ON c.conversation_id=e.conversation_id AND c.content_revision=e.content_revision
-      WHERE e.conversation_id=? AND e.id=? ORDER BY (e.scope='main') DESC LIMIT 1`).get(id, entryId) as unknown as (Content & {compact:string|null}) | undefined;
+      WHERE e.conversation_id=? AND e.scope='main' AND e.id=?`).get(id, entryId) as unknown as (Content & {compact:string|null}) | undefined;
   }
 }

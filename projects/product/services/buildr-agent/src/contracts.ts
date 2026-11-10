@@ -51,11 +51,8 @@ export interface ModelGatewayConfiguration {
   /** Same-account Qoder execution uses its native model route, retaining the source lease binding. */
   nativeModel?: { provider: 'qoder'; id: string; accountIdentity: string };
 }
-/** Private lifecycle metadata; implementations must never pass request or credential content. */
-export type ExecutionDiagnosticSink = (event: {event:string;[key:string]:unknown})=>void;
 export interface ExecutorOpenOptions {
-  diagnostics?: ExecutionDiagnosticSink;
-  /** Profile-wide tool caches, supplied by default to every provider; never a native session/config HOME. */
+  /** Service-owned regenerable caches; never a native session/config HOME. */
   cacheRoot?: string;
   /** Service-owned instructions supplied to every executor, including future providers. */
   interaction?: { version: 'buildr-interaction/v1'; instructions: string };
@@ -80,14 +77,12 @@ export interface VideoAttachment { duration: number; frames: Array<{ id: string;
 export interface AttachmentInput { expectedRevision?: string; expectedAttachmentRevision?: string; mimeType: string; bytes: Uint8Array; video?: VideoAttachment }
 export interface PresentedFile { path:string; description?:string }
 export interface ExecutorItem {
-  /** The native executor owns this tool body. */
-  nativeTool?: true;
   participation?: ParticipationObservation;
   id: string;
   /** Native parent tool identity; absence does not imply an inferred child relationship. */
   parentToolId?: string;
   clientRequestId?: string;
-  kind: 'message' | 'tool' | 'notice' | 'thinking';
+  kind: 'message' | 'tool' | 'notice';
   role: 'user' | 'assistant' | 'system';
   text: string;
   /** Model thinking fragment: process-only content, never a final reply nor model history. */
@@ -247,13 +242,8 @@ export interface AgentExecutor {
   /** Adapter-owned cache knowledge, applied by the shared service lifecycle. */
   storage?: {
     transientDirectories: readonly string[];
-    /** Adapter verifies creator/completion of old regenerable temporary payloads. */
-    legacyDirectories?(configRoot: string): readonly string[];
     /** Private diagnostic resources only; the service owns dependency/occupancy checks and deletion. */
-    diagnostics?(configRoot: string): Array<{ relativePath: string; producerPid?: number; contextId?: string; reason?: string;
-      /** Adapter verified a pure diagnostic SQLite family. Its complete config
-       * must have no consumer; the collector retires the whole family together. */
-      quiescentDatabase?: string }>;
+    diagnostics?(configRoot: string): Array<{ relativePath: string; producerPid?: number; contextId?: string; reason?: string }>;
     canReclaim?(configRoot: string, relative: string): boolean;
     /** Immutable seed copied into private working directories; never a shared native HOME. */
     snapshots?: ReadonlyArray<{ relative: string; key: string; identity(directory: string): string | undefined }>;
@@ -341,12 +331,12 @@ export interface ParticipantView { modelAccountId?: string; model?: string; id: 
 export interface ConversationEntry {
   participation?: ParticipationObservation;
   /** Bounded tool preview; fetch the exact content revision when expanded. */
-  detail?: {revision: string; live?: boolean};
+  detail?: {revision: string};
   id: string;
   /** Native child output stays attached to its parent tool, retaining its original role. */
   parentToolId?: string;
   sequence: number;
-  kind: 'message' | 'tool' | 'notice' | 'handoff' | 'thinking';
+  kind: 'message' | 'tool' | 'notice' | 'handoff';
   role: 'user' | 'assistant' | 'system';
   text: string;
   /** Model thinking fragment: process-only content, never a final reply nor model history. */
@@ -428,7 +418,7 @@ export interface ConversationView {
   pendingSend?: PendingSendView;
   /** Independent observation version for append-only image admission. */
   attachmentRevision?: string;
-  activity?: { version: number; seenThrough: number; updatedAt: string; finalReplyAt?: string; active: boolean; userInputAt?: string; pendingDecisionCount?: number; pendingSend?: {state:'waiting'|'failed';reason:string;updatedAt:string} };
+  activity?: { version: number; seenThrough: number; updatedAt: string; active: boolean; userInputAt?: string; pendingDecisionCount?: number; pendingSend?: {state:'waiting'|'failed';reason:string;updatedAt:string} };
   titleState?: { status: 'pending' | 'generating' | 'generated' | 'manual' | 'failed' | 'unavailable' | 'unknown'; reason?: string };
   id: string;
   workspaceId: string;
@@ -459,13 +449,13 @@ export interface HandoffRound {
   userInputs: string[]; assistantNotes: string[];
   execution: Array<{action:string;result:string;location?:string}>;
   artifacts: Array<{location:string;description:string}>;
-  finalReply?: string; finalReplyId?:string; sourcePath?: string;
+  finalReply?: string; sourcePath?: string;
 }
 export interface HandoffMaterial {
   agent: string; model: string;
   changes: Array<{kind:'agent'|'model';label:string;before:string;after:string}>;
   rounds: HandoffRound[]; roundCount?: number; body: string; sourceThrough: number;
-  mode: 'records'|'summary'|'indexed'; sourcePath?: string; sourceId?:string; sourceOnly?:boolean; bodyDigest?:string;
+  mode: 'records'|'summary'|'indexed'; sourcePath?: string;
 }
 export interface SendDraft {
   /** Explicitly end this waiting question round before handing work to a different selection. */

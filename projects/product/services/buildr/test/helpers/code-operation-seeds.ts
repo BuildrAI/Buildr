@@ -19,7 +19,7 @@ export function copyEmptyCodeRepository(destination: string, format: string, nam
     git(seed, 'config', 'user.name', name); git(seed, 'config', 'user.email', email); git(seed, 'config', 'commit.gpgSign', 'false');
     seeds.set(key, seed);
   }
-  fs.cpSync(seed, destination, { recursive: true, mode: fs.constants.COPYFILE_FICLONE });
+  fs.cpSync(seed, destination, { recursive: true });
 }
 export function copyCodeSyncRepositories(destination: string, format: string): string {
   const key = 'sync:' + format;
@@ -36,7 +36,7 @@ export function copyCodeSyncRepositories(destination: string, format: string): s
     git(peer, 'config', 'user.name', 'Peer Fixture'); git(peer, 'config', 'user.email', 'peer@example.com'); git(peer, 'config', 'commit.gpgSign', 'false');
     seeds.set(key, seed);
   }
-  fs.cpSync(seed, destination, { recursive: true, mode: fs.constants.COPYFILE_FICLONE });
+  fs.cpSync(seed, destination, { recursive: true });
   const remote = path.join(destination, 'remote.git');
   for (const name of ['repository', 'peer']) git(path.join(destination, name), 'remote', 'set-url', 'origin', remote);
   return git(path.join(destination, 'repository'), 'rev-parse', 'HEAD');

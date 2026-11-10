@@ -1,37 +1,7 @@
 import path from 'node:path';
-import type { NativeContentContext, NativeContentInventory, NativeToolContent } from '../../native-content-contracts.ts';
+import type { NativeContentContext, NativeContentInventory } from '../../native-content-contracts.ts';
 import { nativeContentFiles, nativeContentImages, nativeContentRows } from '../native-content.ts';
 import { NativeContentReader } from '../../storage/native-content.ts';
-import {nativeToolContext,nativeToolRows} from '../native-tool-source.ts';
-import {DshExecutionLineage,dshItem} from './protocol.ts';
-
-export function readDshTool(root:string,reference:NativeToolContent) {
-  const input=nativeToolContext(root,reference,'dsh');if(!input)return;
-  try{
-    const files=nativeContentFiles(input,path.join(input.configRoot,'dsh-home/sessions'),file=>path.basename(path.dirname(file))===input.contextId&&/^session\.v4\.jsonl(?:\.zstd)?$/.test(path.basename(file)),4);
-    if(files.length!==1)return;
-    const lineage=new DshExecutionLineage(input.contextId);
-    let header=false,sequence=0,call:ReturnType<typeof dshItem>[number]|undefined,result:typeof call,owner:string|undefined,ambiguous=false;
-    for(const row of nativeToolRows(input,'dsh',files[0]!)){
-      if(!header){
-        if(row.type!=='session'||row.version!==4||row.id!==input.contextId||row.cwd!==input.cwd)return;
-        header=true;continue;
-      }
-      if(row.seq!==sequence++)return;
-      lineage.record(row);
-      const turn=lineage.turns.get(row.data?.turn??lineage.currentTurn!);
-      if(reference.session?.turnId&&turn!==reference.session.turnId)continue;
-      const id=row.type==='tool/call'?row.data?.callId:row.type==='tool/result'?row.data?.message?.toolCallId:undefined;
-      if(id!==reference.nativeId)continue;
-      if(call&&owner!==turn)ambiguous=true;
-      owner=turn;
-      if(row.type==='tool/call')call=dshItem(row,true)[0];
-      else result=dshItem(row,true)[0];
-    }
-    if(!header||!call||!result||ambiguous)return;
-    return {...reference.entry,input:call.input,text:result.text};
-  }catch{return;}
-}
 
 export function dshContent(input: NativeContentContext): NativeContentInventory | undefined {
   if (!/^session-[a-f0-9-]{36}$/.test(input.contextId)) return;

@@ -3,15 +3,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { spawn, execFileSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 import { createQoderExecutor } from '../../src/executors/qoder/index.ts';
-import { createCodexExecutor } from '../../src/executors/codex/index.ts';
 import { diagnosticCandidates, diagnosticStabilityMs } from '../../src/storage/diagnostics.ts';
-import { removeStorageCandidate, removeDiagnosticFileBatch, removeDiagnosticDatabaseFamily, storageVersion, safeStorageResource, type StorageUse, type StorageCandidate } from '../../src/storage/files.ts';
+import { removeStorageCandidate, removeDiagnosticFileBatch, safeStorageResource, type StorageUse } from '../../src/storage/files.ts';
 import { ConversationRepository } from '../../src/persistence/conversation-repository.ts';
 import { inspectAgentStorage, collectAgentStorage } from '../../src/application/storage-maintenance.ts';
 import { StorageMaintenance } from '../../src/process/storage-maintenance.ts';
@@ -19,40 +18,6 @@ import type { StoredConversation } from '../../src/domain/agent-state.ts';
 
 const unused = { complete: true, paths: [] };
 const deadPid = 2_000_000_000;
-
-test('Codex UUID logs require a pure SQLite schema and an idle complete configuration',t=>{
-  const f=fixture(t),config=path.join(f.root,'connections/codex'),home=path.join(config,'codex-home');fs.mkdirSync(home,{recursive:true});
-  const make=(name:string,extra='')=>{const db=new DatabaseSync(path.join(home,name));db.exec('CREATE TABLE logs(ts INTEGER,feedback_log_body TEXT,thread_id TEXT,process_uuid TEXT);'+extra);db.close();};
-  make('logs_2.sqlite');make('logs_1.sqlite');make('state_5.sqlite');
-  execFileSync(process.execPath,['--input-type=module','-e',"import{DatabaseSync}from'node:sqlite';const db=new DatabaseSync(process.argv[1]);db.exec('PRAGMA journal_mode=WAL;CREATE TABLE sessions(input TEXT)');process.exit(0)",path.join(home,'logs_1.sqlite')]);
-  assert.ok(fs.existsSync(path.join(home,'logs_1.sqlite-wal')),'the added non-diagnostic schema really lives in WAL');
-  file(path.join(home,'sessions/history.jsonl'),'native history');file(path.join(home,'auth.json'),'isolated credential');age(home);
-  const candidates=(use:StorageUse=unused,refs={complete:true,contexts:[] as string[]})=>diagnosticCandidates(f.root,createCodexExecutor(),config,use,{complete:true,contexts:['historical-native-reference']},Date.now(),refs);
-  assert.deepEqual(candidates().map(x=>path.basename(x.path)),['logs_2.sqlite']);
-  assert.equal(candidates()[0]!.eligible,true,'native history references do not reference diagnostic log bodies');
-  assert.equal(candidates({complete:true,paths:[config]})[0]!.reason,'storage_in_use');
-  assert.equal(candidates(unused,{complete:true,contexts:['active-consumer']})[0]!.eligible,false);
-  assert.equal(candidates(unused,{complete:false,contexts:[]})[0]!.eligible,false);
-  if(process.platform==='darwin'){
-    const plan=inspectAgentStorage({dataRoot:f.dataRoot,scanHomes:false});
-    assert.ok(collectAgentStorage(plan).results.some(x=>x.path===path.join(home,'logs_2.sqlite')&&x.status==='removed'));
-    assert.equal(fs.existsSync(path.join(home,'logs_1.sqlite')),true);assert.equal(fs.existsSync(path.join(home,'state_5.sqlite')),true);
-    assert.equal(fs.readFileSync(path.join(home,'sessions/history.jsonl'),'utf8'),'native history');assert.equal(fs.existsSync(path.join(home,'auth.json')),true);
-  }
-});
-
-test('large diagnostic SQLite families stage atomically and restore all members if one changes or is held',t=>{
-  const f=fixture(t),database=path.join(f.logs,'logs_2.sqlite'),paths=[database,database+'-wal',database+'-shm'];
-  for(const p of paths)file(p,'x'.repeat(300000));
-  const items=():StorageCandidate[]=>paths.map(p=>({kind:'diagnostic',path:p,ownerRoot:f.config,...storageVersion(p),eligible:true,reason:'unused_diagnostic',diagnostic:{provider:'codex',config:f.config,database}}));
-  let observations=0;
-  assert.deepEqual(removeDiagnosticDatabaseFamily(f.root,items(),()=>true,()=>++observations===2?{complete:true,paths:[f.config]}:unused),[]);
-  assert.ok(paths.every(p=>fs.existsSync(p)));assert.equal(fs.readdirSync(f.logs).some(n=>n.startsWith('.reclaim-')),false);
-  observations=0;const before=items();
-  assert.deepEqual(removeDiagnosticDatabaseFamily(f.root,before,()=>true,()=>{if(++observations===1)fs.appendFileSync(database+'-wal','changed');return unused;}),[]);
-  assert.ok(paths.every(p=>fs.existsSync(p)));
-  assert.equal(removeDiagnosticDatabaseFamily(f.root,items(),()=>true,()=>unused).length,3);
-});
 function file(name: string, text = 'diagnostic') { fs.mkdirSync(path.dirname(name), { recursive: true }); fs.writeFileSync(name, text); }
 function age(directory: string) {
   for (const name of fs.readdirSync(directory)) { const p = path.join(directory, name); if (fs.lstatSync(p).isDirectory()) age(p); else if (!fs.lstatSync(p).isSymbolicLink()) fs.utimesSync(p, 1, 1); }
@@ -210,16 +175,6 @@ test('canonical dependencies protect hidden, retained, unresolved and unreleased
   assert.equal(f.repo.storageDependencies().contexts.length, 1, 'terminal text alone does not release control');
   f.record.view.run.resourcesReleased = true; f.record.view.revision = 'r4'; f.repo.saveConversation(f.record, 'r3');
   assert.equal(f.repo.storageDependencies().contexts.length, 0);
-  const owners: unknown[] = [];
-  const startupContext=f.record.participants[0]!.contextRef;
-  f.record.participants[0]!.contextRef=undefined;
-  f.record.view.run.status='starting'; f.record.view.run.resourcesReleased=false;
-  f.record.view.revision='startup'; f.repo.saveConversation(f.record,'r4');
-  assert.deepEqual(f.repo.storageDependencies((record,participant)=>owners.push([record.view.id,participant.id])).contexts,[]);
-  assert.equal(owners.length,1,'the real SQLite header exposes startup ownership without a native context id');
-  f.record.participants[0]!.contextRef=startupContext;
-  f.record.view.run.status='completed';f.record.view.run.resourcesReleased=true;
-  f.record.view.revision='r4';f.repo.saveConversation(f.record,'startup');
   f.record.view.retainedRuns = [{ ...f.record.view.run, id: 'old', status: 'tools-active', tools: [{ id: 'job', label: 'job', status: 'unknown' }] }];
   f.record.view.revision = 'r5'; f.repo.saveConversation(f.record, 'r4');
   const db = new DatabaseSync(f.repo.filename); db.exec('DELETE FROM conversation_read_states'); db.close();
@@ -297,21 +252,4 @@ test('independent maintenance retries after the exact writer exits, and close st
   maintenance.close();
   const retained = f.run(deadPid, 'after-close'); await delay(100);
   assert.ok(fs.existsSync(retained));
-});
-
-
-test('execution metadata log rotates privately, drops unapproved fields and survives an unsafe destination',async()=>{
- const {executionLog,diagnosticCode}=await import('../../src/storage/execution-log.ts');
- assert.equal(diagnosticCode({code:'agent_history_changed',message:'PRIVATE_PROMPT'}),'agent_history_changed');
- assert.equal(diagnosticCode(new Error('PRIVATE_PROMPT')),undefined);
- const fs=await import('node:fs'),os=await import('node:os'),path=await import('node:path');
- const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-lifecycle-ring-'));
- try{
-  const log=executionLog(root,'test-generation',650);
-  for(let i=0;i<100;i++)log({event:'stop-request',runId:'run-'+i,text:'PRIVATE_PROMPT',token:'PRIVATE_TOKEN',code:'PRIVATE ERROR WITH SECRET',args:['PRIVATE_COMMAND']});
-  const directory=path.join(root,'diagnostics'),names=fs.readdirSync(directory);assert.equal(names.length,3);
-  for(const name of names){const file=path.join(directory,name),stat=fs.statSync(file),text=fs.readFileSync(file,'utf8');assert.ok(stat.size<=650);assert.equal(stat.mode&0o777,0o600);assert.ok(!text.includes('PRIVATE'));for(const line of text.trim().split('\n'))assert.ok(JSON.parse(line).time);}
-  const outside=path.join(root,'outside');fs.writeFileSync(outside,'keep');const file=path.join(directory,names.find(name=>name.endsWith('.jsonl'))!);fs.unlinkSync(file);fs.symlinkSync(outside,file);
-  assert.doesNotThrow(()=>log({event:'service-start'}));assert.equal(fs.readFileSync(outside,'utf8'),'keep');
- }finally{fs.rmSync(root,{recursive:true,force:true});}
 });

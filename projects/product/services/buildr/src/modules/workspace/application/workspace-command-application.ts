@@ -4,7 +4,7 @@ import process from 'node:process';
 
 import type { RegistryRepository } from '../persistence/workspace-registry-repository.ts';
 import type { WorkspaceRepository } from '../persistence/workspace-manifest-repository.ts';
-import { insideFilesystemPath, sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.ts';
+import { insideFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.ts';
 import { createWorkspace, isWorkspaceId } from '../domain/workspace.ts';
 import { WORKSPACE_DESCRIPTION_TODO } from '../persistence/workspace-manifest-repository.ts';
 
@@ -40,10 +40,9 @@ export function ensureRegisteredTarget(runtime: WorkspaceCommandApplicationRunti
   const root = runtime.path.resolve(targetRoot);
   runtime.assertInitializedBuildrWorkspace(root);
   let registry = runtime.listRegisteredWorkspaces();
-  const existing = registry.workspaces.find((entry: any) => sameFilesystemPath(entry.rootPath, root));
+  const existing = registry.workspaces.find((entry: any) => entry.rootPath === root);
   if (!existing) registry = runtime.registerLocalWorkspace({ rootPath: root, revision: registry.revision });
-  const entry = registry.workspaces.find((item: any) => sameFilesystemPath(item.rootPath, root));
-  if (entry?.status === 'identity_conflict') throw workspaceError('workspace_registry_identity_conflict', '目标 Workspace identity 对应多个目录，请使用新预览实例名或先核对已有登记。', 409, { rootPath: root });
+  const entry = registry.workspaces.find((item: any) => item.rootPath === root);
   return entry?.workspace?.id || null;
 }
 
@@ -148,14 +147,13 @@ export function registerWorkspaceCommandApplication(runtime: WorkspaceCommandApp
     if (!isWorkspaceId(workspaceId)) throw workspaceError('workspace_registry_identity_invalid', 'Workspace id 必须是 UUID。');
     const persistence = runtime.registryRepository.readWorkspaceRegistryPersistence();
     // 预览上下文同样解析共享 Profile 登记的工作空间，保持列表与详情一致。
-    const roots = [...persistence.registry.roots, ...(runtime.registryRepository.readSharedRegistryRoots?.().roots || [])]
-      .filter((root, index, all) => all.findIndex(other => sameFilesystemPath(root, other)) === index);
+    const roots = [...persistence.registry.roots, ...(runtime.registryRepository.readSharedRegistryRoots?.().roots || [])];
     const matches = roots.filter((root: any) => runtime.workspaceRegistryEntry(root).workspace?.id === workspaceId);
     if (!matches.length) throw workspaceError('workspace_registry_not_found', 'Workspace 未登记或当前不可用。', 404);
     if (matches.length > 1) throw workspaceError('workspace_registry_identity_conflict', '同一 Workspace identity 对应多个已登记目录。', 409);
     const current = runtime.readWorkspaceRecord(matches[0]);
     if (current.workspace.id !== workspaceId) throw workspaceError('workspace_registry_identity_mismatch', '已登记路径中的 Workspace identity 已变化。', 409);
-    if (touch && persistence.registry.roots.includes(matches[0]) && persistence.registry.lastOpenedRoot !== matches[0]) {
+    if (touch && persistence.registry.lastOpenedRoot !== matches[0]) {
       try {
         runtime.registryRepository.withWorkspaceRegistryMutation(persistence.revision, (currentRegistry: any) => ({ ...currentRegistry, lastOpenedRoot: currentRegistry.roots.includes(matches[0]) ? matches[0] : currentRegistry.lastOpenedRoot }));
       } catch (error: any) {

@@ -21,8 +21,6 @@
 - [有界材料与业务校验](../../../services/buildr/src/modules/code/application/code-commit-message-application.ts)：准备材料并在回填前重读真实来源。
 - [生成请求状态与取消](../../../services/buildr/src/modules/code/application/code-generation.ts)：短期内存请求，按工作空间（Workspace）查询和取消，保留超时与失败。
 - [进程接入](../../../services/buildr/src/modules/agent-service/module.ts)与[公共客户端](../../../services/buildr-agent/src/process/client.ts)：跨进程传递有界请求及取消，宿主断连取消其拥有的单次调用，不取消持久对话。
-- [首次准备](../../../services/buildr-agent/src/process/runtime-preparation.ts)：工作线程执行原字节校验与物化，保留存储锁；普通调用只合并在途准备，不缓存验证结论。有取消信号的宿主独立持有准备，协作取消后等线程清理并退出。启动锁覆盖准备到后台确认的整个窗口，避免将冷启动误判成旧版宿主。
-- [网页启动](../../../services/buildr/src/bootstrap/runtime.ts)：准备过程不阻塞网页事件循环；正常启动先保全运行单元并确认接入，再交付就绪回执，避免安装更新立即替换尚在读取的包目录。准备失败时保留诊断与其他网页能力，升级保护不会将失败当作已隔离。网页关闭取消未完成初始化并等待释放，不在关闭后迟到启动后台。
 - [统一模型调用](../../../services/buildr-agent/src/model-access/application.ts)：复用现有账号、目录、版本检查和协议转换，释放本次调用绑定。
 - [界面草稿保护](../../../services/buildr-web/src/features/code/source-control-actions.ts)：按来源保持草稿，隔离迟到结果与切换页面。
 - [生成入口](../../../services/buildr-web/src/features/code/components/SourceControlCommitPanel.tsx)：独立读取模型目录，选模型、生成、取消及手写提交。

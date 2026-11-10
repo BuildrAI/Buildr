@@ -4,8 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import childProcess, { execFileSync } from 'node:child_process';
-import { syncBuiltinESMExports } from 'node:module';
+import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { createCodeApplication } from '../../src/modules/code/application/code-application.ts';
 import { SourceControlObservations, type SourceControlWatchResult } from '../../src/modules/code/application/source-control-observations.ts';
@@ -21,7 +20,7 @@ function deadline<T>(promise: Promise<T>, ms = 5000): Promise<T> {
 const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 function fixture(t: test.TestContext, options: { waitMs?: number; idleMs?: number } = {}) {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-code-watch-')));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-code-watch-'));
   const git = (location: string, ...args: string[]) => execFileSync('git', ['--no-optional-locks', '-C', location, ...args], { encoding: 'utf8', env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0' }, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   const locations = ['one', 'two'].map(name => {
     const location = path.join(root, name); fs.mkdirSync(location);
@@ -53,7 +52,7 @@ function fixture(t: test.TestContext, options: { waitMs?: number; idleMs?: numbe
     watcher.once('close', () => { if (subscriptions.get(directory) === subscription) subscriptions.delete(directory); });
     return watcher;
   });
-  const observations = new SourceControlObservations({ watchFiles: async (directory, recursive, changed) => fs.watch(directory, {recursive, persistent:false}, changed), waitMs: 100, batchMs: 35, ...options });
+  const observations = new SourceControlObservations({ waitMs: 100, batchMs: 35, ...options });
   t.after(() => { observations.close(); fs.rmSync(root, { recursive: true, force: true }); });
   const notify = (target: string) => {
     for (const [directory, subscription] of subscriptions) {
@@ -533,80 +532,4 @@ test('shared observations bound completed entries and bytes rather than retainin
   await concurrent.read('x','x','v1',async()=>{repeated++;return large;}); assert.equal(repeated,3,'simultaneously completing reads also respect the byte budget');
   concurrent.close();
   reads.close();
-});
-
-
-test('background file changes reread only the changed checkout; explicit, metadata and expired reads stay fresh', async t => {
-  const f = fixture(t), linked = path.join(f.root, 'linked');
-  f.git(f.locations[0], 'worktree', 'add', '-b', 'linked', linked);
-  let cursor = await f.register();
-  const http = createCodeHttpContribution(f.application, f.observations);
-  const original = childProcess.execFileSync, scans: string[] = [];
-  const capture = t.mock.method(childProcess, 'execFileSync', (file: any, args: any, options: any) => {
-    if (file === 'git' && args.includes('status')) scans.push(args[args.indexOf('-C') + 1]);
-    return original(file, args, options);
-  });
-  syncBuiltinESMExports();
-  t.after(() => { capture.mock.restore(); syncBuiltinESMExports(); });
-  const read = async (shared = true) => {
-    const result = await http.handle({request:{method:'GET'}, root:f.root, suffix:'/code/source-control',
-      searchParams:new URLSearchParams({repositoryId:'repo-0', ...(shared ? {observation:'shared'} : {})}),
-      submitTaskRead:async (_operation, _task, message) => {
-        const {observedWorktrees, ...input} = JSON.parse(message.input);
-        return f.application.sourceControl(f.root, input, observedWorktrees);
-      }});
-    return result!.body as ReturnType<typeof f.application.sourceControl>;
-  };
-  await read(); assert.equal(scans.length, 2); scans.length = 0;
-  f.write(0, 'changed primary\n'); cursor = await f.nextInvalidation(cursor.cursor);
-  const changed = await read();
-  assert.deepEqual(scans, [f.locations[0]], 'unaffected linked checkout does not launch status');
-  assert.equal(changed.repositories[0].worktrees.find(value => value.location === f.locations[0])?.fileCount, 1);
-  scans.length = 0;
-  fs.writeFileSync(path.join(linked, 'file.txt'), 'changed linked\n'); f.notify(path.join(linked, 'file.txt'));
-  cursor = await f.nextInvalidation(cursor.cursor); const next = await read();
-  assert.deepEqual(scans, [linked]);
-  assert.equal(next.repositories[0].worktrees.find(value => value.location === linked)?.fileCount, 1);
-  scans.length = 0; await read(false); assert.equal(scans.length, 2, 'manual reads bypass every cached status');
-  await read(); scans.length = 0;
-  f.git(linked, 'add', 'file.txt'); f.notify(path.join(f.git(linked, 'rev-parse', '--absolute-git-dir'), 'index'));
-  cursor = await f.nextInvalidation(cursor.cursor); await read();
-  assert.equal(scans.length, 2, 'metadata changes conservatively invalidate all checkout statuses');
-  scans.length = 0;
-  const now = Date.now, clock = t.mock.method(Date, 'now', () => now() + 10_001);
-  try { await read(); assert.equal(scans.length, 2, 'repeated partial reuse cannot extend the original status lifetime'); }
-  finally { clock.mock.restore(); }
-});
-
-test('an event during a background read cannot resurrect the changed checkout cache', async t => {
-  const f = fixture(t), linked = path.join(f.root, 'linked');
-  f.git(f.locations[0], 'worktree', 'add', '-b', 'linked', linked);
-  let cursor = await f.register();
-  const input = {repositoryId:'repo-0'}, inventory = f.application.sourceControlInventory(f.root);
-  const load = async (_signal: AbortSignal, values: Parameters<typeof f.application.sourceControl>[2]) => f.application.sourceControl(f.root, input, values);
-  await f.observations.readShared(f.root, input, inventory, load);
-  f.write(0, 'first\n'); cursor = await f.nextInvalidation(cursor.cursor);
-  await f.observations.readShared(f.root, input, inventory, async (signal, values) => {
-    const result = await load(signal, values);
-    f.write(0, 'later\n'); cursor = await f.nextInvalidation(cursor.cursor);
-    return result;
-  });
-  let reused: string[] = [];
-  await f.observations.readShared(f.root, input, inventory, async (signal, values) => {
-    reused = values.map(value => value.location); return load(signal, values);
-  });
-  assert.deepEqual(reused, [linked], 'the concurrent change stays dirty while the unaffected checkout remains reusable');
-});
-
-
-test('the response cache expires at the oldest reused checkout rather than renewing its age', async t => {
-  const {SourceControlSharedReads} = await import('../../src/modules/code/application/source-control-shared-reads.ts');
-  const reads = new SourceControlSharedReads(); t.after(() => reads.close());
-  const start = Date.now(); let now = start, calls = 0;
-  t.mock.method(Date, 'now', () => now);
-  const value = {diagnostics:[], repositories:[{worktrees:[{readAt:new Date(start - 9_000).toISOString()}]}]} as any;
-  const load = async () => { calls++; return value; };
-  await reads.read('repo', 'repo', 'v1', load);
-  now += 999; await reads.read('repo', 'repo', 'v1', load); assert.equal(calls, 1);
-  now += 2; await reads.read('repo', 'repo', 'v1', load); assert.equal(calls, 2);
 });

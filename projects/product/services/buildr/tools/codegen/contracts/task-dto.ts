@@ -10,7 +10,7 @@ import {
   TASK_HTTP_DEFINITIONS,
   TASK_HTTP_SCHEMAS,
 } from '../../../src/modules/task/interfaces/http/task-http-schema.ts';
-import { cliOutputRoot, contractOutputPaths, writeContractOutput } from './output-paths.ts';
+import { cliOutputRoot, contractOutputPaths } from './output-paths.ts';
 import { TASK_MATERIALS_DEFINITIONS, TASK_MATERIALS_SCHEMAS } from '../../../src/modules/task/materials/application/task-materials-contracts.ts';
 
 const serviceRoot = path.resolve(import.meta.dirname, '../../..');
@@ -40,8 +40,6 @@ export async function renderTaskRecordHttpDto(): Promise<string> {
     TaskMaterialsWriteResponse: body(TASK_MATERIALS_SCHEMAS.writeResponse),
     TaskListRequest: body(TASK_HTTP_SCHEMAS.listRequest),
     TaskListResponse: body(TASK_HTTP_SCHEMAS.listResponse),
-    TaskTitleSummariesRequest: body(TASK_HTTP_SCHEMAS.titleSummariesRequest),
-    TaskTitleSummariesResponse: body(TASK_HTTP_SCHEMAS.titleSummariesResponse),
     TaskDetailRequest: body(TASK_HTTP_SCHEMAS.detailRequest),
     TaskDetailResponse: body(TASK_HTTP_SCHEMAS.detailResponse),
     TaskUpdateRequest: body(TASK_HTTP_SCHEMAS.updateRequest),
@@ -111,7 +109,8 @@ export async function writeTaskRecordHttpDto(outputRoot?: string): Promise<strin
   const selected = outputRoot ? taskDtoOutputPaths(outputRoot) : defaultOutputs;
   const outputs = [selected.backend, selected.web];
   for (const output of outputs) {
-    writeContractOutput(output, expected);
+    fs.mkdirSync(path.dirname(output), { recursive: true });
+    fs.writeFileSync(output, expected);
   }
   return outputs;
 }

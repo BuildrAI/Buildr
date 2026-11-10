@@ -55,16 +55,6 @@ test('首屏填充有预算，折叠内容不增加高度时不耗尽全部历�
   const f=initialViewport(t);f.hook.followLayout();await f.flush();assert.ok(f.reads()>0&&f.reads()<=4);assert.ok(f.props.conversation.nextEntryCursor>0);
   f.hook.followLayout();await f.flush();assert.ok(f.reads()<=4);
 });
-test('布局回调短暂清掉贴底状态时仍补齐首屏，直到内容真正超出一屏',async t=>{
-  const f=initialViewport(t,{heightAfterPage:n=>n<3?500:900});
-  const prepend=f.props.prepend;
-  f.props.prepend=value=>{
-    prepend(value);
-    if(f.reads()===1)f.bottom.current=false;
-  };
-  f.hook.followLayout();await f.flush();
-  assert.equal(f.reads(),3);assert.ok(f.node.scrollHeight>f.node.clientHeight);
-});
 test('首屏已足够或用户接管后不自动读取',async t=>{
   const f=initialViewport(t);f.node.scrollHeight=900;f.hook.followLayout();await f.flush();assert.equal(f.reads(),0);
   f.node.scrollHeight=500;f.hook.followLayout();await f.flush();assert.equal(f.reads(),0);

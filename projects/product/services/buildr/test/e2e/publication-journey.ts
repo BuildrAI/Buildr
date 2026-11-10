@@ -440,11 +440,7 @@ export async function runPublicationJourney({ t, page, runtime, workspaceRoot, w
     assert.equal(await visible().locator('#articles-search').inputValue(), '浏览器');
     assert.equal(await primaryTabs().count(), tabCount);
     const readingPane = visible().locator('.pane-right > .pane-body');
-    await visible().locator('.publication-body').getByText(/^段落 80：/).waitFor();
-    await page.evaluate(() => document.fonts.ready.then(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))));
-    // Use an interior reading position: a restored width may change the final
-    // content height, making the old maximum scrollTop physically unreachable.
-    await readingPane.evaluate((pane: HTMLElement) => { pane.scrollTop = Math.min(2400, (pane.scrollHeight - pane.clientHeight) / 2); });
+    await readingPane.evaluate((pane: HTMLElement) => { pane.scrollTop = pane.scrollHeight - pane.clientHeight; });
     const readingTop = await readingPane.evaluate((pane: HTMLElement) => pane.scrollTop);
     assert.ok(readingTop > 1000);
     await page.locator('.workspace-pane-host').getByRole('button', { name: '收起页面', exact: true }).click();

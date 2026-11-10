@@ -2,9 +2,7 @@
 .ac-association-trigger{display:inline-flex;align-items:center;gap:5px;padding:2px 0;border:0;background:transparent;color:var(--ant-color-primary,#527c6b);font:inherit;cursor:pointer;white-space:nowrap}
 .ac-association-trigger:focus-visible{outline:2px solid var(--ant-color-primary,#527c6b);outline-offset:3px;border-radius:3px}
 .ac-association-body{width:min(360px,calc(100vw - 48px));overflow:visible;display:flex;flex-direction:column;gap:10px}
-.ac-association-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:24px}
-.ac-association-heading>strong,.ac-association-search>strong{font-size:var(--font-size-body)}
-.ac-association-refresh.ant-btn{flex:none;width:24px;height:24px;padding:0;color:var(--ant-color-text-secondary,#75817b)}
+.ac-association-body>strong,.ac-association-search>strong{font-size:var(--font-size-body)}
 .ac-association-body small{display:block;font-size:var(--font-size-meta);color:var(--ant-color-text-secondary,#75817b);overflow-wrap:anywhere}
 .ac-association-rows{display:flex;flex-direction:column;gap:4px;max-height:260px;overflow:auto;overscroll-behavior:contain}
 .ac-association-row{display:flex;align-items:center;gap:6px;border-radius:6px}

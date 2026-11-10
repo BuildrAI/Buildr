@@ -16,82 +16,6 @@ function record(id='one'):StoredConversation{return {view:{id,workspaceId:'ws',r
 const run=(status='completed',tools:any[]=[])=>({id:'run',participantId:'p',provider:'codex' as const,generation:'g',status:status as any,accepted:true,tools,startedAt:'now',updatedAt:'now'});
 function priorPending(r:StoredConversation,active:boolean){return Boolean(r.view.requests.length||r.view.retainedRuns?.some(unfinishedRun)||r.view.run?.tools.some(t=>t.status!=='completed')||(active?[...BUSY_STATES]:['unknown','tools-active']).includes(r.view.run?.status??'' as any));}
 
-test('streaming participation refresh leaves current canonical messages untouched and repairs stale messages',t=>{
- const repo=fixture(t),r=record();
- r.view.entries=Array.from({length:2000},(_,i)=>({id:'e'+i,sequence:i+1,kind:'message',role:'assistant',text:'history '+i,createdAt:'now'}));
- r.inheritedContext={entries:[structuredClone(r.view.entries.at(-1)!)],outcomes:{},pendingQuestions:[]};
- repo.saveConversation(r);repo.stopReadModels();
- const db=new DatabaseSync(repo.filename);t.after(()=>db.close());
- db.exec(`CREATE TABLE refresh_writes(kind TEXT);
- CREATE TRIGGER count_header_refresh AFTER UPDATE ON conversation_read_states BEGIN INSERT INTO refresh_writes VALUES('header'); END;
- CREATE TRIGGER count_entry_refresh AFTER UPDATE ON conversation_read_entries BEGIN INSERT INTO refresh_writes VALUES('entry'); END;
- CREATE TRIGGER count_content_cleanup AFTER DELETE ON conversation_entry_contents BEGIN INSERT INTO refresh_writes VALUES('content'); END;`);
- for(let i=2;i<=4;i++){
-  const prior=r.view.revision;r.view.revision='r'+i;r.view.entries.at(-1)!.text+='字';repo.saveConversation(r,prior);
-  db.exec('DELETE FROM refresh_writes');
-  repo.rebuildReadModel(r.view.id);
-  assert.deepEqual(db.prepare('SELECT kind FROM refresh_writes').all(),[],'participation-only refresh must not rewrite the message projection');
-  assert.equal(repo.participationProjections('ws').incomplete,false);
-  assert.equal(repo.readPage(r.view.id,undefined,1)!.view.entries[0].text,r.view.entries.at(-1)!.text);
-  assert.equal(db.prepare('SELECT count(*) AS n FROM conversation_entry_contents').get()!.n,2001,'obsolete streamed revisions are removed while the inherited revision remains pinned');
-  assert.equal(repo.readConversation(r.view.id)!.inheritedContext!.entries[0].text,'history 1999');
- }
- db.prepare('UPDATE conversation_read_states SET message_revision=NULL WHERE id=?').run(r.view.id);
- repo.rebuildReadModel(r.view.id);
- assert.ok(db.prepare('SELECT 1 FROM refresh_writes WHERE kind=?').get('header'));
- assert.equal(repo.readPage(r.view.id,undefined,1)!.view.entries[0].text,r.view.entries.at(-1)!.text);
-});
-
-test('text-only saves carry exact participation forward and repair stale or invalid projections',t=>{
- const repo=fixture(t),r=record();repo.saveConversation(r);repo.stopReadModels();repo.rebuildReadModel(r.view.id);
- const db=new DatabaseSync(repo.filename);t.after(()=>db.close());
- const before=JSON.parse((db.prepare('SELECT body FROM conversation_participation WHERE id=?').get(r.view.id)!.body as string));
- r.view.entries.push({id:'a',sequence:1,kind:'message',role:'assistant',text:'fragment',createdAt:'now'});
- const prior=r.view.revision;r.view.revision='text-1';repo.saveConversation(r,prior,{participationUnchanged:true});
- const current=JSON.parse(db.prepare('SELECT body FROM conversation_participation WHERE id=?').get(r.view.id)!.body as string);
- assert.deepEqual(current,{...before,revision:r.view.revision});assert.equal(repo.participationProjections('ws').incomplete,false);
- for(const bad of ['missing','stale','invalid','old-parser']){
-  if(bad==='missing')db.prepare('DELETE FROM conversation_participation WHERE id=?').run(r.view.id);
-  else db.prepare('UPDATE conversation_participation SET revision=?,body=? WHERE id=?').run(bad==='stale'?'old':r.view.revision,bad==='invalid'?'broken':JSON.stringify({...current,parserVersion:bad==='old-parser'?0:1}),r.view.id);
-  const previous=r.view.revision;r.view.revision='text-'+bad;r.view.entries[0].text+='字';repo.saveConversation(r,previous,{participationUnchanged:true});repo.stopReadModels();
-  assert.equal(repo.participationProjections('ws').incomplete,true,bad);
-  repo.stopReadModels();repo.rebuildReadModel(r.view.id);assert.equal(repo.participationProjections('ws').incomplete,false,bad);
- }
- const previous=r.view.revision;r.view.revision='normal-update';repo.saveConversation(r,previous);repo.stopReadModels();
- assert.equal(repo.participationProjections('ws').incomplete,true,'ordinary mutations still invalidate participation');
-});
-
-test('consecutive text updates preserve other positions, inherited pins and atomic revision protection',t=>{
- const repo=fixture(t),r=record();
- r.view.entries=[{id:'u',sequence:1,runId:'run',kind:'message',role:'user',text:'input',createdAt:'now'},
-  {id:'a',sequence:2,runId:'run',kind:'message',role:'assistant',text:'initial',status:'running',createdAt:'now'},
-  {id:'tool',sequence:3,runId:'run',kind:'tool',role:'system',text:'stored tool body',status:'completed',createdAt:'now'}];
- r.inheritedContext={entries:[structuredClone(r.view.entries[1])],outcomes:{},pendingQuestions:[]};
- repo.saveConversation(r);repo.stopReadModels();repo.rebuildReadModel(r.view.id);
- const db=new DatabaseSync(repo.filename);t.after(()=>db.close());
- const untouched=db.prepare("SELECT scope,sequence,content_revision FROM conversation_read_entries WHERE conversation_id=? AND NOT(scope='main' AND id='a') ORDER BY scope,sequence").all(r.view.id);
- for(let i=0;i<8;i++){
-  const prior=r.view.revision;r.view.revision='chunk-'+i;r.view.entries[1].text+='字';
-  repo.saveConversation(r,prior,{participationUnchanged:true,textEntryId:'a'});
-  const cold=repo.readConversation(r.view.id)!;
-  assert.equal(cold.view.entries[1].text,r.view.entries[1].text);assert.equal(cold.inheritedContext!.entries[0].text,'initial');
-  assert.deepEqual(db.prepare("SELECT scope,sequence,content_revision FROM conversation_read_entries WHERE conversation_id=? AND NOT(scope='main' AND id='a') ORDER BY scope,sequence").all(r.view.id),untouched);
-  assert.equal(db.prepare('SELECT count(*) AS n FROM conversation_entry_contents WHERE conversation_id=?').get(r.view.id)!.n,4,'only the inherited pin and current text revision remain');
- }
- // A new item cannot use the one-existing-position update path.
- r.view.entries.push({id:'new',sequence:4,runId:'run',kind:'message',role:'assistant',text:'new item',createdAt:'now'});
- let prior=r.view.revision;r.view.revision='new-item';repo.saveConversation(r,prior,{participationUnchanged:true,textEntryId:'new'});
- assert.equal(repo.readConversation(r.view.id)!.view.entries.length,4);
- db.exec(`CREATE TRIGGER fail_text_write BEFORE UPDATE ON conversation_read_entries WHEN NEW.id='a' BEGIN SELECT RAISE(ABORT,'text_write_failed'); END;`);
- prior=r.view.revision;r.view.revision='rejected';r.view.entries[1].text='must roll back';
- assert.throws(()=>repo.saveConversation(r,prior,{participationUnchanged:true,textEntryId:'a'}),/text_write_failed/);
- assert.equal(repo.readRevision(r.view.id)!.revision,prior);assert.notEqual(repo.readConversation(r.view.id)!.view.entries[1].text,'must roll back');
- db.exec('DROP TRIGGER fail_text_write');
- const current=repo.readConversation(r.view.id)!,old=current.view.revision;current.view.title='external';current.view.revision='external';repo.saveConversation(current,old);
- r.view.revision='stale';assert.throws(()=>repo.saveConversation(r,prior,{participationUnchanged:true,textEntryId:'a'}),{code:'agent_revision_conflict'});
- assert.equal(repo.readConversation(r.view.id)!.view.title,'external');
-});
-
 test('compact status exactly preserves pending semantics, including retained work and tools after completion',t=>{
  const repo=fixture(t);const records:StoredConversation[]=[];
  for(const status of ['starting','running','waiting-approval','waiting-question','stopping','stopped','unknown','tools-active','completed','failed']){
@@ -127,7 +51,7 @@ test('normalized writers update positions atomically and stale pages retain revi
  const separate=new ConversationRepository(path.dirname(repo.filename));assert.equal(separate.listPendingStates().length,0,'uncommitted old output is not visible');separate.stopReadModels();db.exec('COMMIT');
  assert.equal(repo.listPendingStates(true)[0].view.revision,'old-writer-2');assert.equal(repo.readPage(r.view.id),undefined,'stale projected messages must never escape');
  assert.throws(()=>repo.readEntry(r.view.id,'tool',preview.detail!.revision),{code:'agent_entry_changed'});
- repo.rebuildReadModel(r.view.id);assert.deepEqual(JSON.parse(JSON.stringify(repo.readPage(r.view.id)!.view.entries)),r.view.entries);assert.equal(repo.readConversation(r.view.id)!.view.run?.status,'waiting-question');
+ repo.rebuildReadModel(r.view.id);assert.deepEqual(repo.readPage(r.view.id)!.view.entries,r.view.entries);assert.equal(repo.readConversation(r.view.id)!.view.run?.status,'waiting-question');
  r.view.revision='old-writer-3';r.view.run=run('completed');db.prepare('UPDATE conversations SET body=?,revision=? WHERE id=?').run(ConversationEntryStore.header(r),r.view.revision,r.view.id);assert.equal(repo.listPendingStates(true).length,0);
 });
 
@@ -136,7 +60,7 @@ test('legacy reads are zero-write and verified migration preserves content befor
  writeLegacyConversationDatabase(repo.filename,[r]);
  const before=fs.readFileSync(repo.filename);assert.equal(repo.readPage(r.view.id),undefined);repo.listPendingStates();assert.deepEqual(fs.readFileSync(repo.filename),before);
  repo.rebuildReadModel(r.view.id);const check=new DatabaseSync(repo.filename,{readOnly:true});t.after(()=>check.close());assert.equal(check.prepare('PRAGMA user_version').get()!.user_version,CONVERSATION_SCHEMA_VERSION);assert.deepEqual(repo.readPage(r.view.id)!.view.entries,r.view.entries);
- assert.deepEqual(JSON.parse(JSON.stringify(repo.readConversation(r.view.id)!.view.entries)),r.view.entries);assert.equal(fs.readdirSync(path.dirname(repo.filename)).some(name=>name.startsWith('conversations.pre-v9-')),false);
+ assert.deepEqual(repo.readConversation(r.view.id)!.view.entries,r.view.entries);assert.equal(fs.readdirSync(path.dirname(repo.filename)).some(name=>name.startsWith('conversations.pre-v7-')),false);
 });
 
 test('status and projected pages do not parse canonical bodies, even when unrelated history is unreadable',t=>{
@@ -169,27 +93,12 @@ test('legacy present files survive compact paging without rewriting history or s
  const compact=JSON.parse(db.prepare('SELECT compact FROM conversation_read_entries WHERE id=?').get(tool.id)!.compact as string);delete compact.presentedFiles;
  db.prepare('UPDATE conversation_read_entries SET compact=? WHERE id=?').run(JSON.stringify(compact),tool.id);
  const service=createAgentService({dataRoot:base,executors:[],resolveWorkspace:()=>({rootPath:'/workspace'}),assertTask(){}});t.after(()=>service.close());
- const readEntry=t.mock.method(ConversationRepository.prototype,'readEntry');
  const view=service.conversations.read('ws','presented',{compactTools:true});
  assert.deepEqual(view.entries[0].presentedFiles,[{path:'/workspace/release-process.md',description:'发布记录'}]);
  assert.equal(view.entries[0].input,undefined);assert.ok(view.entries[0].detail);
  assert.deepEqual(service.conversations.read('ws','presented').entries[0].presentedFiles,view.entries[0].presentedFiles);
  assert.equal(db.prepare('SELECT body FROM conversations WHERE id=?').get(r.view.id)!.body,original);
  assert.equal(service.conversations.read('ws','presented').run?.status,'completed');
- for(let i=0;i<20;i++)service.conversations.read('ws','presented',{compactTools:true});
- assert.equal(readEntry.mock.callCount(),1,'legacy file declarations are resolved once per exact revision');
-});
-
-test('old compressed tool bodies are validated only when detail is requested, not on snapshot or control saves',async t=>{
- const base=fs.mkdtempSync(path.join(os.tmpdir(),'old-tool-snapshot-'));const repo=new ConversationRepository(path.join(base,'agent-service'));t.after(()=>{repo.stopReadModels();fs.rmSync(base,{recursive:true,force:true});});const r=record();r.view.entries=[{id:'large',sequence:1,kind:'tool',role:'system',text:'x'.repeat(20000),createdAt:'now',status:'completed'}];repo.saveConversation(r);
- const db=new DatabaseSync(repo.filename);t.after(()=>db.close());
- db.prepare("UPDATE conversation_entry_contents SET body=x'00' WHERE conversation_id=?").run(r.view.id);
- const service=createAgentService({dataRoot:base,executors:[],modelProviders:[],resolveWorkspace:()=>({rootPath:r.view.cwd}),assertTask(){}});t.after(()=>service.close());
- let view=service.conversations.read('ws',r.view.id,{compactTools:true});
- assert.ok(view.entries[0].detail);
- for(let i=0;i<10;i++)view=await service.conversations.update('ws',view.id,{expectedRevision:view.revision,title:'control '+i});
- assert.throws(()=>service.conversations.readEntry('ws',view.id,'large',view.entries[0].detail!.revision),{code:'agent_entry_corrupt'});
- assert.equal(Buffer.from(db.prepare('SELECT body FROM conversation_entry_contents WHERE conversation_id=?').get(r.view.id)!.body as Uint8Array).toString('hex'),'00');
 });
 
 test('lightweight reminders equal legacy pending projection including filtered questions and interrupted runs',async t=>{

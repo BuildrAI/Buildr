@@ -1,5 +1,5 @@
 import { Button, Tooltip } from 'antd';
-import { CheckCircleOutlined, CommentOutlined, SettingOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, SettingOutlined } from '@ant-design/icons';
 import { formatShortDateTime } from '../../../lib/taskLabels';
 import type { RuntimeDefinitionView } from '../api/service-runtime-api';
 
@@ -13,7 +13,7 @@ export function RuntimeConfigurationSummary({ definition, configuring = false, o
       <div className="runtime-configuration-title"><h3>启动与连接配置</h3><Tooltip title={`智能体（Agent）验证于 ${formatShortDateTime(definition.verifiedAt)}；就绪不代表业务验证完成。`}><span className="runtime-configuration-verification"><CheckCircleOutlined />已验证 · {formatShortDateTime(definition.verifiedAt)}</span></Tooltip></div>
       <div className="runtime-configuration-actions">
         <Button size="small" onClick={onView}>查看配置</Button>
-        <Button size="small" icon={configuring ? <CommentOutlined /> : <SettingOutlined />} onClick={onConfigure}>{configuring ? '查看对话' : '配置启动与连接'}</Button>
+        <Button size="small" icon={<SettingOutlined />} loading={configuring} disabled={configuring} aria-label={configuring ? '配置中' : undefined} onClick={onConfigure}>{configuring ? '配置中' : '配置启动与连接'}</Button>
       </div>
     </div>
     {definition.local.remoteEnvironments?.length ? <dl className="runtime-configuration-connections">{definition.local.remoteEnvironments.map(environment => <div key={environment.code}><dt>{environment.name}</dt><dd><code>{environment.url || '沿已验证配置'}</code></dd></div>)}</dl> : backends.length ? <dl className="runtime-configuration-connections">

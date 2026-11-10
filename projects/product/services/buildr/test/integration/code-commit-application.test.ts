@@ -1,6 +1,3 @@
-import childProcess from 'node:child_process';
-import { syncBuiltinESMExports } from 'node:module';
-import { resolveCodeWorktree } from '../../src/modules/code/infrastructure/code-worktree-reader.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -102,42 +99,4 @@ test('mutation process timeouts are bounded and leave hook-created worktree cont
   const f = fixture(t); f.write('same.txt', 'base\n'); f.commit(); fs.writeFileSync(path.join(f.root, '.git', 'hooks', 'pre-commit'), '#!/bin/sh\nprintf running > timeout-marker\nsleep 20\n', { mode: 0o755 }); f.write('same.txt', 'current\n'); f.git('add', '--all');
   const start = Date.now(), source = f.app.commitSnapshot(f.root, f.input()).source;
   const result = await runCodeGitMutation(source, ['commit', '-m', 'timeout'], { timeoutMs: 3000 }); assert.equal(result.timedOut, true); assert.ok(Date.now() - start < 8000); assert.equal(fs.readFileSync(path.join(f.root, 'timeout-marker'), 'utf8'), 'running');
-});
-
-
-test('commit context reuses verified HEAD and branch facts without dropping closing content checks', t => {
-  const f = fixture(t); f.write('file.txt', 'base\n'); f.commit(); f.write('file.txt', 'changed\n');
-  const input = f.input(), original = childProcess.execFileSync, queries: string[][] = [];
-  const capture = t.mock.method(childProcess, 'execFileSync', (file: any, args: any, options: any) => {
-    if (file === 'git') queries.push(args);
-    return original(file, args, options);
-  });
-  syncBuiltinESMExports();
-  try {
-    const context = f.app.commitContext(f.root, input);
-    assert.equal(context.hasChanges, true); assert.equal(context.head, f.git('rev-parse', 'HEAD'));
-    assert.equal(queries.filter(args => args.includes('symbolic-ref') && args.includes('-q')).length, 1, 'push context shares the already verified branch');
-    assert.equal(queries.filter(args => args.includes('status')).length, 2, 'both opening and closing status checks remain');
-    const paths = queries.filter(args => args.includes('--git-path') && args.includes('index'));
-    assert.equal(paths.length, 1); assert.ok(paths[0].includes('--git-dir'), 'Git and index paths share one query');
-  } finally { capture.mock.restore(); syncBuiltinESMExports(); }
-});
-
-
-test('registered checkout resolution avoids peer identity probes and still revalidates its Git entry', t => {
-  const f = fixture(t); f.write('file.txt', 'base\n'); f.commit();
-  const linked = path.join(f.base, 'linked'); f.git('worktree', 'add', '-b', 'linked', linked);
-  const selected = f.input(), original = childProcess.execFileSync, probes: string[] = [];
-  const capture = t.mock.method(childProcess, 'execFileSync', (file: any, args: any, options: any) => {
-    if (file === 'git' && args.includes('--show-toplevel')) probes.push(args[args.indexOf('-C') + 1]);
-    return original(file, args, options);
-  });
-  syncBuiltinESMExports();
-  try {
-    const result = resolveCodeWorktree(f.root, selected.repositoryId, selected.worktreeId);
-    assert.equal(result.location, fs.realpathSync(f.root)); assert.equal(result.isRegistered, true); assert.equal(result.isMain, true);
-    assert.deepEqual(probes, [f.root, f.root], 'only the selected checkout is checked at opening and closing');
-  } finally { capture.mock.restore(); syncBuiltinESMExports(); }
-  const moved = f.root + '-old'; fs.renameSync(f.root, moved); fs.cpSync(moved, f.root, {recursive:true});
-  assert.throws(() => resolveCodeWorktree(f.root, selected.repositoryId, selected.worktreeId), error => ['code_worktree_not_registered','code_worktree_identity_changed'].includes((error as {code:string}).code));
 });

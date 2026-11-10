@@ -2,8 +2,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { SourceControlSharedReads } from './source-control-shared-reads.ts';
-import type { CodeSourceControlWorktree, CodeSourceControlResponse } from './source-control-model.ts';
-import type { WatchFiles } from '../infrastructure/source-control-watch-process.ts';
+import type { CodeSourceControlResponse } from './source-control-model.ts';
 import { SourceControlWatchers } from '../infrastructure/source-control-watcher.ts';
 import { codeFailure } from '../infrastructure/code-file-reader.ts';
 
@@ -12,7 +11,6 @@ type Waiter = { finish(): void };
 type ReadObservationTicket = { epoch: string; inventoryGeneration: number };
 type State = {
   epoch: string; sequence: number; changed: Map<string, number>; refsChanged: Map<string, number>; pending: Set<string>; pendingRefs: Set<string>; fingerprints: Map<string, string>;
-  worktrees: Map<string, { signature: string; values: CodeSourceControlWorktree[]; generation: number }>;
   inventoryGeneration: number; inventoryIds?: Set<string>; reads: SourceControlSharedReads;
   diagnostics: Map<string, Set<string>>; waiters: Set<Waiter>; watchers: SourceControlWatchers;
   batch?: ReturnType<typeof setTimeout>; lastUsed: number;
@@ -26,11 +24,8 @@ export class SourceControlObservations {
   private readonly idleMs: number;
   private readonly reap: ReturnType<typeof setInterval>;
   private closed = false;
-  private readonly watchFiles?: WatchFiles;
-  private readonly closing = new Set<Promise<void>>();
 
-  constructor(options: { watchFiles?: WatchFiles; waitMs?: number; batchMs?: number; idleMs?: number } = {}) {
-    this.watchFiles = options.watchFiles;
+  constructor(options: { waitMs?: number; batchMs?: number; idleMs?: number } = {}) {
     this.waitMs = Math.max(1, Math.min(20_000, options.waitMs ?? 20_000));
     this.batchMs = Math.max(1, Math.min(1000, options.batchMs ?? 400));
     this.idleMs = Math.max(1, options.idleMs ?? 60_000);
@@ -49,9 +44,8 @@ export class SourceControlObservations {
         if (!idle) throw codeFailure('code_watch_capacity', '代码状态观察数量已达上限。', 429);
         this.release(...idle);
       }
-      const created: State = { epoch: randomUUID(), sequence: 0, changed: new Map(), refsChanged: new Map(), pending: new Set(), pendingRefs: new Set(), fingerprints: new Map(), reads: new SourceControlSharedReads(), worktrees: new Map(), inventoryGeneration: 0, diagnostics: new Map(), waiters: new Set(), lastUsed: Date.now(), watchers: null! };
-      created.watchers = new SourceControlWatchers({ watchFiles: this.watchFiles, changed: (ids, refs, locations) => this.invalidate(created, ids, refs, locations), diagnostic: (id, message) => {
-        this.invalidateWorktrees(created, [id]);
+      const created: State = { epoch: randomUUID(), sequence: 0, changed: new Map(), refsChanged: new Map(), pending: new Set(), pendingRefs: new Set(), fingerprints: new Map(), reads: new SourceControlSharedReads(), inventoryGeneration: 0, diagnostics: new Map(), waiters: new Set(), lastUsed: Date.now(), watchers: null! };
+      created.watchers = new SourceControlWatchers({ changed: (ids, refs) => this.invalidate(created, ids, refs), diagnostic: (id, message) => {
         created.reads.invalidate([id]);
         const messages = created.diagnostics.get(id) ?? new Set<string>(); messages.add(message); created.diagnostics.set(id, messages);
       } });
@@ -60,17 +54,8 @@ export class SourceControlObservations {
     state.lastUsed = Date.now(); return state;
   }
 
-  private invalidateWorktrees(state: State, repositoryIds?: string[], locations?: string[]) {
-    const ids = repositoryIds && new Set(repositoryIds);
-    for (const [id, entry] of state.worktrees) if (!ids || ids.has(id)) {
-      entry.generation++;
-      entry.values = locations ? entry.values.filter(value => !locations.includes(value.location)) : [];
-    }
-  }
-
-  private invalidate(state: State, repositoryIds: string[], refsChanged = false, locations?: string[]) {
+  private invalidate(state: State, repositoryIds: string[], refsChanged = false) {
     if (this.closed || !repositoryIds.length) return;
-    this.invalidateWorktrees(state, repositoryIds, locations);
     state.reads.invalidate(repositoryIds);
     for (const id of repositoryIds) state.pending.add(id);
     if (refsChanged) for (const id of repositoryIds) state.pendingRefs.add(id);
@@ -88,7 +73,7 @@ export class SourceControlObservations {
 
   private retainRepositories(state: State, ids: Set<string>) {
     for (const id of state.fingerprints.keys()) if (!ids.has(id)) {
-      state.watchers.remove(id); state.worktrees.delete(id); state.fingerprints.delete(id); state.diagnostics.delete(id); this.invalidate(state, [id], true);
+      state.watchers.remove(id); state.fingerprints.delete(id); state.diagnostics.delete(id); this.invalidate(state, [id], true);
     }
   }
 
@@ -145,11 +130,10 @@ export class SourceControlObservations {
   }
 
   invalidateReads(root: string, repositoryIds?: string[]) {
-    const state = this.states.get(root);
-    if (state) { this.invalidateWorktrees(state, repositoryIds); state.reads.invalidate(repositoryIds); }
+    this.states.get(root)?.reads.invalidate(repositoryIds);
   }
 
-  async readShared(root: string, input: { taskId?: string; repositoryId: string }, inventory: CodeSourceControlResponse, load: (signal: AbortSignal, worktrees: CodeSourceControlWorktree[]) => Promise<CodeSourceControlResponse>): Promise<CodeSourceControlResponse> {
+  async readShared(root: string, input: { taskId?: string; repositoryId: string }, inventory: CodeSourceControlResponse, load: (signal: AbortSignal) => Promise<CodeSourceControlResponse>): Promise<CodeSourceControlResponse> {
     const state = this.state(root);
     const repository = inventory.repositories.find(value => value.id === input.repositoryId);
     // Verify registration and directory/Git entry identity without launching Git.
@@ -177,24 +161,7 @@ export class SourceControlObservations {
     const signature = JSON.stringify([inventory.observedRevision, proof || randomUUID()]);
     const ticket = this.beginRead(root);
     return state.reads.read(JSON.stringify([input.taskId || '', input.repositoryId]), input.repositoryId, signature, async signal => {
-      let entry = state.worktrees.get(input.repositoryId);
-      if (!entry || entry.signature !== signature) {
-        if (state.worktrees.size >= 128) state.worktrees.delete(state.worktrees.keys().next().value!);
-        entry = {signature, values: [], generation: 0}; state.worktrees.set(input.repositoryId, entry);
-      }
-      const generation = entry.generation;
-      const reusable = state.diagnostics.size ? [] : entry.values.filter(value => Date.now() - Date.parse(value.readAt) < 10_000);
-      const value = await load(signal, reusable);
-      if (entry.generation === generation && !value.diagnostics.length) {
-        const worktrees = value.repositories.find(repository => repository.id === input.repositoryId)?.worktrees || [];
-        // Bound retained metadata by the same budget as the shared response cache.
-        entry.values = Buffer.byteLength(JSON.stringify(worktrees)) <= 4 * 1024 * 1024 ? worktrees : [];
-        let bytes = [...state.worktrees.values()].reduce((sum, item) => sum + Buffer.byteLength(JSON.stringify(item.values)), 0);
-        for (const other of state.worktrees.values()) {
-          if (bytes <= 4 * 1024 * 1024) break;
-          if (other !== entry) { bytes -= Buffer.byteLength(JSON.stringify(other.values)); other.values = []; }
-        }
-      }
+      const value = await load(signal);
       if (ticket) await this.observe(root, value, true, ticket).catch(() => {});
       if (state.diagnostics.size) state.reads.invalidate([input.repositoryId]);
       return value;
@@ -231,13 +198,12 @@ export class SourceControlObservations {
 
   private release(root: string, state: State) {
     if (state.batch) clearTimeout(state.batch);
-    state.reads.close(); const closing = Promise.resolve(state.watchers.close()); this.closing.add(closing); void closing.finally(() => this.closing.delete(closing)); for (const waiter of [...state.waiters]) waiter.finish(); this.states.delete(root);
+    state.reads.close(); state.watchers.close(); for (const waiter of [...state.waiters]) waiter.finish(); this.states.delete(root);
   }
 
   close() {
-    if (this.closed) return Promise.all(this.closing).then(() => {});
+    if (this.closed) return;
     this.closed = true; clearInterval(this.reap);
     for (const [root, state] of this.states) this.release(root, state);
-    return Promise.all(this.closing).then(() => {});
   }
 }

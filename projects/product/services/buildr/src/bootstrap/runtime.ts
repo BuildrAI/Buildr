@@ -56,7 +56,7 @@ function warnRecoveryFailure(error: unknown): void {
   console.warn('中断执行恢复检查未完成，已有工作记录保留。', ...(code ? [code] : []));
 }
 
-export function createRuntime(options: { agentRuntime?: import('@buildr-ai/buildr-agent').AgentRuntimeUnit } = {}): any  {
+export function createRuntime(): any  {
   const runtime: any = { ...platform };
   registerInfrastructure(runtime);
   registerProductInvocation(runtime);
@@ -81,7 +81,7 @@ export function createRuntime(options: { agentRuntime?: import('@buildr-ai/build
   registry.install(createPublicationModule(runtime));
   registry.install(AGENT_ASSETS_SOURCE_MODULE);
   registry.install(createChangeModule(runtime));
-  registry.install(createAgentServiceModule({ readLocalInstance: readLocalBuildrWebInstance, readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile, ...(options.agentRuntime ? { runtime: options.agentRuntime } : {}) }));
+  registry.install(createAgentServiceModule({ readLocalInstance: readLocalBuildrWebInstance, readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile }));
   registry.install(CODE_MODULE);
   registry.install(createConnectionSkillsModule({ readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile }));
   registry.install(SERVICE_RUNTIME_MODULE);
@@ -93,12 +93,10 @@ export function createRuntime(options: { agentRuntime?: import('@buildr-ai/build
   registry.install(createParentCoordinationModule(runtime));
   registry.install(createArtifactLifecycleModule(runtime));
   registry.install(createSystemInstallationModule(runtime));
-  registry.install(createWebModule(runtime, { httpContributions: registry.contributions('http'), onReady: async () => {
+  registry.install(createWebModule(runtime, { httpContributions: registry.contributions('http'), onReady: () => {
     // start() resolves the service lazily; a synchronous throw here must not
     // escape the listen callback and kill the process.
-    // Publish readiness only after the backend retains the package bytes. An npm
-    // update may replace this source installation immediately after the receipt.
-    try { await registry.provide(AGENT_SERVICE_APPLICATION).start(); }
+    try { void registry.provide(AGENT_SERVICE_APPLICATION).start().catch(warnRecoveryFailure); }
     catch (error) { warnRecoveryFailure(error); }
     try {
       const profile=webProfileContract.resolveWebProfile(readCurrentProductIdentity());
@@ -107,7 +105,7 @@ export function createRuntime(options: { agentRuntime?: import('@buildr-ai/build
       for(const diagnostic of result.diagnostics)console.warn('旧智能体接入清理未完成：',diagnostic.path,diagnostic.message);
     } catch { console.warn('旧智能体接入清理未完成，其他功能可继续使用。'); }
   }, closeResources: async () => {
-    await registry.provide(CODE_SOURCE_CONTROL_OBSERVATIONS).close();
+    registry.provide(CODE_SOURCE_CONTROL_OBSERVATIONS).close();
     registry.provide(CODE_GENERATION_APPLICATION).close();
     registry.provide(CONNECTION_SKILLS_APPLICATION).close();
     await Promise.all([registry.provide(AGENT_SERVICE_APPLICATION).close()]);

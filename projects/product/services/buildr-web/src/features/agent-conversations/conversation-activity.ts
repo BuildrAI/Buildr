@@ -21,11 +21,6 @@ function pendingDecisions(row:ConversationSummary):number {
       (!request.participantId||request.participantId===run.participantId)&&(!request.generation||request.generation===run.generation);
   }).length;
 }
-function unacceptedStopSettled(row:ConversationSummary):boolean {
-  const run=row.run;
-  return row.activity?.active===false&&run?.status==='unknown'&&run.stopRequested===true&&run.accepted===false&&
-    run.executionState!=='active'&&pendingDecisions(row)===0;
-}
 export function pendingSendReason(pending:{state:string;reason:string}):string {
   return pending.state==='dispatching'?'正在投递，尚未确认受理。':pending.reason;
 }
@@ -37,7 +32,7 @@ export function activityState(row:ConversationSummary):ActivityState {
   const submitted=sendActivity(row);
   if(submitted)return submitted.state==='failed'?'send-failed':'send-waiting';
   if(pendingDecisions(row)>0)return 'waiting';
-  if(row.run?.status==='unknown'&&!unacceptedStopSettled(row))return 'unknown';
+  if(row.run?.status==='unknown')return 'unknown';
   if(['waiting-approval','waiting-question'].includes(row.run?.status??''))return 'waiting';
   if(isExecuting(row))return 'running';
   if(row.activity&&row.activity.version>row.activity.seenThrough)return 'unseen';
@@ -53,7 +48,7 @@ export function reminderFallbackRows<T extends ConversationSummary>(rows:readonl
   }
   return {pending,running};
 }
-export const isActiveConversation=(row:ConversationSummary)=>Boolean(activityState(row)||(row.activity?.active&&!unacceptedStopSettled(row)));
+export const isActiveConversation=(row:ConversationSummary)=>Boolean(row.activity?.active||activityState(row));
 export function orderActivityItems<T extends {id:string;state:ActivityState;updatedAt?:string;userInputAt?:string}>(items:readonly T[]):T[] {
   const priority=(item:T)=>item.state==='waiting'||item.state==='unseen'||item.state==='send-failed'?0:1;
   const at=(item:T)=>item.userInputAt??item.updatedAt;

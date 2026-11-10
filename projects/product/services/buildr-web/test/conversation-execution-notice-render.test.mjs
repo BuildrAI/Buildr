@@ -41,16 +41,9 @@ test('后台已释放时说明结果仍未知，保留核对并撤下无效停�
 
 test('缺少明确释放证明时保留停止，不把未知当作已释放',()=>{
  for(const resourcesReleased of [undefined,false]){
-  const html=renderToStaticMarkup(React.createElement(ConversationExecutionNotice,{resourcesReleased,stopRequested:false,observing:false,stopping:false,onObserve(){},onStop(){}}));
+  const html=renderToStaticMarkup(React.createElement(ConversationExecutionNotice,{resourcesReleased,observing:false,stopping:false,onObserve(){},onStop(){}}));
   assert.match(html,/>停止</);assert.doesNotMatch(html,/后台已释放/);
  }
-});
-
-test('停止请求已提交时明确结束动作，不重复保留停止按钮',()=>{
- const html=renderToStaticMarkup(React.createElement(ConversationExecutionNotice,{resourcesReleased:false,stopRequested:true,observing:false,stopping:false,onObserve(){},onStop(){}}));
- assert.match(html,/停止已请求，结束状态待确认/);
- assert.match(html,/停止请求已提交，尚未取得本轮结束确认/);
- assert.doesNotMatch(html,/>停止<\/button>|正在执行|执行成功/);
 });
 
 test('核对未得到新结果时在原行给出结论，不新增说明行或展开块',()=>{

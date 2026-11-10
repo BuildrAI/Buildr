@@ -13,9 +13,9 @@ export const HANDOFF_SUMMARY_PROMPT=`你只负责整理交接材料，不执行�
 合并重复动作，不复制脚本、文件和日志全文。不猜测成果或授权，不输出秘密和隐藏推理。每项判断保留来源序号；说明覆盖范围和缺失。本地索引继续作为完整来源，不声称摘要替代全部历史。`;
 
 const clip=(value:string,max=600)=>value.length>max?value.slice(0,max)+'…（完整内容见来源）':value;
-export function handoffEntries(entries:ConversationEntry[],after=0):ConversationEntry[]{return entries.filter(e=>e.sequence>after&&e.kind!=='handoff'&&e.kind!=='thinking'&&!e.thinking&&!(e.parentToolId&&e.kind==='message'));}
+export function handoffEntries(entries:ConversationEntry[],after=0):ConversationEntry[]{return entries.filter(e=>e.sequence>after&&e.kind!=='handoff'&&!e.thinking&&!(e.parentToolId&&e.kind==='message'));}
 function locations(entry:ConversationEntry):string[]{
- const found:string[]=(entry.presentedFiles??[]).map(file=>file.path);
+ const found:string[]=[];
  try{const value=JSON.parse(entry.input??'{}');for(const key of ['file_path','path','filePath','target_path'])if(typeof value[key]==='string'&&value[key].length<2048)found.push(value[key]);}catch{/* Commands and scripts remain in local sources. */}
  if(entry.name==='file-change')for(const line of entry.text.split('\n').slice(1))if(line.trim()&&line.length<2048)found.push(line.trim());
  return [...new Set(found)].slice(0,20);
@@ -33,7 +33,7 @@ function executionOverview(tools:ConversationEntry[]):HandoffRound['execution']{
  const successful=[...groups].map(([action,g])=>{const paths=[...g.paths];return {action,result:`${action}：${g.count} 次执行结束；原始次序与结果见本轮来源`,location:[...paths.slice(0,5),...(paths.length>5?[`另 ${paths.length-5} 处见来源`]:[]),`记录范围 #${g.from}–#${g.through}`].join('；')};});
  return [...successful,...execution];
 }
-/** Human-readable delivery body; source references resolve authoritative records on demand. */
+/** Human-readable delivery body; raw records stay in the per-round source files. */
 export function formatHandoffRounds(rounds:HandoffRound[]):string{
  return rounds.map(r=>[
   `${r.title}（记录 #${r.from}–#${r.through}）`,
@@ -64,11 +64,11 @@ export function organizeHandoff(entries:ConversationEntry[],outcomes:Record<stri
    userInputs:rows.filter(e=>e.role==='user').map(e=>e.text),assistantNotes:assistant.filter(e=>e!==final).map(e=>e.text),
    execution:executionOverview(tools),executionCount:tools.length,
    artifacts:tools.filter(e=>e.name==='file-change'&&e.status==='completed').flatMap(e=>locations(e).map(location=>({location,description:`记录 #${e.sequence} 报告文件变更已执行；当前内容与验证状态需核对。` }))),
-   ...(final?{finalReply:final.text,finalReplyId:final.id}:{}),
+   ...(final?{finalReply:final.text}:{}),
   };
  });
 }
-/** Bounded display only. Immutable source indices identify the authoritative records. */
+/** Bounded display only. Full records remain in the immutable local source files. */
 export function displayRounds(rounds:HandoffRound[]):HandoffRound[]{return rounds.slice(-100).map(r=>({...r,executionCount:r.executionCount??r.execution.length,artifactCount:r.artifactCount??r.artifacts.length,userInputs:r.userInputs.map(t=>clip(t,2048)),assistantNotes:r.assistantNotes.map(t=>clip(t,1000)),execution:r.execution.slice(-30),artifacts:r.artifacts.slice(-30),...(r.finalReply?{finalReply:clip(r.finalReply,3000)}:{})}));}
 export function receivingBudget(maxInputBytes:number,windowTokens?:number,maxOutputTokens?:number):number{
  const bytes=Math.max(1,Math.min(2*1024*1024,maxInputBytes));

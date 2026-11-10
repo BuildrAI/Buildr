@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
-import { sharedCheckPreparation } from '../../tools/testing/verification-checks.ts';
 import { randomUUID } from 'node:crypto';
 import { createCandidateRoundExecution } from './candidate-round.ts';
 import path from 'node:path';
@@ -12,7 +11,7 @@ import { assertMinimumNodeVersion } from '../../src/infrastructure/process.ts';
 import { enforceOfflineVerification } from '../../src/infrastructure/network/verification-network-policy.ts';
 import { prepareCandidateEnvironment } from '../../tools/verification/candidate-environment.ts';
 import { createVerificationPlan } from './planner.ts';
-import { CANDIDATE_CI_SHARDS, sourcePreparationForCheck, VERIFICATION_PLATFORMS, verificationSteps, resolveVerificationExecutionProfile } from './registry.ts';
+import { CANDIDATE_CI_SHARDS, VERIFICATION_PLATFORMS, verificationSteps, resolveVerificationExecutionProfile } from './registry.ts';
 import { collectVerificationSourceIdentity, createVerificationEvidencePaths, writeVerificationTimingEvidence } from './timing/evidence.ts';
 import { inspectVerificationReusePlan } from './verification-reuse.ts';
 import { resolveVerificationBase } from './changed-paths.ts';
@@ -35,8 +34,8 @@ export function sourceVerificationCancellation(signals: Pick<NodeJS.Process, 'on
     dispose: () => { signals.removeListener('SIGINT', interrupt); signals.removeListener('SIGTERM', terminate); } };
 }
 
-export function parseSourceArgs(args: string[]): { help: boolean; json: boolean; force: boolean; scope: SourceVerificationScope; base: string | null; output: string | null; round: string | null; invalidate: string[]; selected: string[] } {
-  const result = { help: false, json: false, force: false, scope: 'all' as SourceVerificationScope, base: null as string | null, output: null as string | null, round: null as string | null, invalidate: [] as string[], selected: [] as string[] };
+export function parseSourceArgs(args: string[]): { help: boolean; json: boolean; force: boolean; scope: SourceVerificationScope; base: string | null; output: string | null; round: string | null; invalidate: string[] } {
+  const result = { help: false, json: false, force: false, scope: 'all' as SourceVerificationScope, base: null as string | null, output: null as string | null, round: null as string | null, invalidate: [] as string[] };
   let scopeSupplied = false;
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
@@ -70,13 +69,6 @@ export function parseSourceArgs(args: string[]): { help: boolean; json: boolean;
       const ids = value.split(',').map(id => id.trim()).filter(Boolean);
       if (!ids.length || ids.some(id => !/^[a-z0-9][a-z0-9:-]*$/u.test(id))) throw new Error('--invalidate requires comma-separated step ids');
       result.invalidate = ids;
-    } else if (arg === '--selected') {
-      const value = args[++index];
-      if (!value || value.startsWith('-')) throw new Error('Missing value for --selected');
-      if (result.selected.length) throw new Error('--selected may only be supplied once');
-      const ids = value.split(',').map(id => id.trim()).filter(Boolean);
-      if (!ids.length || ids.some(id => !/^[a-z0-9][a-z0-9:-]*$/u.test(id))) throw new Error('--selected requires comma-separated step ids');
-      result.selected = ids;
     } else throw new Error(`Unknown release source-verification option: ${arg}`);
   }
   if (result.help && args.length !== 1) throw new Error('--help cannot be combined with other arguments');
@@ -136,13 +128,13 @@ const sourceVerificationForce = (force: boolean | undefined, env: NodeJS.Process
 
 /** Preparation follows the existing Candidate declarations for checks that will
  * actually execute. An unregistered check retains the conservative source setup. */
-export function sourceVerificationPreparation(plan: any, reuse: any, shards?: readonly any[]): any {
+export function sourceVerificationPreparation(plan: any, reuse: any, shards: readonly any[] = CANDIDATE_CI_SHARDS): any {
   const dispositions = new Map((reuse?.steps ?? []).map((step: any) => [step.id, step.disposition]));
   const missing = plan.steps.filter((step: any) => dispositions.get(step.id) !== 'reuse');
   let rank = -1;
   for (const step of missing) {
-    const owners = shards?.filter(shard => shard.stepIds.includes(step.id));
-    const required = owners ? owners.length ? owners.map(owner => owner.preparation) : ['source-runtime'] : [sourcePreparationForCheck(step.id)];
+    const owners = shards.filter(shard => shard.stepIds.includes(step.id));
+    const required = owners.length ? owners.map(owner => owner.preparation) : ['source-runtime'];
     for (const profile of required) {
       const current = sourcePreparationProfiles.indexOf(profile);
       rank = Math.max(rank, current < 0 ? sourcePreparationProfiles.length - 1 : current);
@@ -157,9 +149,9 @@ export function sourceVerificationPreparation(plan: any, reuse: any, shards?: re
 export function prepareSourceVerificationEnvironment(plan: any, options: any, dependencies: any = {}): any {
   options = { ...options, force: sourceVerificationForce(options.force, options.env ?? process.env) };
   const inspect = dependencies.inspectReuse ?? ((plan: any, options: any) => options.round
-    ? createCandidateRoundExecution(plan, { ...options, inspectOnly: true }).explanation : inspectVerificationReusePlan(plan, options));
+    ? createCandidateRoundExecution(plan, options).explanation : inspectVerificationReusePlan(plan, options));
   const prepare = dependencies.prepareEnvironment ?? prepareCandidateEnvironment;
-  const shards = dependencies.shards;
+  const shards = dependencies.shards ?? CANDIDATE_CI_SHARDS;
   const preparations: any[] = [];
   let preparedRank = -1;
   let reuse = inspect(plan, options);
@@ -174,47 +166,8 @@ export function prepareSourceVerificationEnvironment(plan: any, options: any, de
   }
 }
 
-/** Same-process handoff of a completed owned artifacts:prepare operation.
- * Never reads a caller file or promotes preparation to a check result. */
-export function sourcePreparationCommands(prepared: any): Map<string, Promise<any>> {
-  const commands = new Map<string, Promise<any>>();
-  const receipt = prepared.preparations?.findLast((item: any) => item.status === 'passed' && item.operations?.some((operation: any) =>
-    operation.id === 'generated-contracts-and-test-context' && operation.status === 'passed'));
-  if (!receipt) return commands;
-  const owner = receipt.operations.find((operation: any) => operation.id === 'generated-contracts-and-test-context');
-  for (const command of sharedCheckPreparation) {
-    const key = JSON.stringify([command.file, command.args, path.resolve(productRoot, command.cwd)]);
-    commands.set(key, Promise.resolve({ id: owner.id, status: 'passed', exitCode: 0, durationMs: 0,
-      command: command.file, args: command.args, cwd: path.resolve(productRoot, command.cwd), reusedFrom: { preparation: receipt.id, finishedAt: owner.finishedAt } }));
-  }
-  return commands;
-}
-
 function usage(): void {
-  process.stdout.write('Internal release source verification: node test/verification/source.ts [--scope all|common|platform] [--base <ref>] [--json] [--force] [--round <round-id>] [--output <round-log.json>] [--invalidate <step-id,...>] [--selected <step-id,...>]\n');
-}
-
-/** A user-selected round executes exactly the selected checks plus the
- * dependencies they actually need. Scope-outside checks are not executed and
- * are not claimed; they stay absent from this round instead of failing it. */
-export function selectSourceVerificationSubset(plan: any, selectedIds: string[]): any {
-  const byId: any = new Map(plan.steps.map((step: any) => [step.id, step]));
-  // A release selection spans the whole Candidate, including the other
-  // operating system and final-package checks. Only ids unknown to the
-  // registry are mistakes; ids outside this plan are owned by another runner.
-  const known = new Set<string>(verificationSteps.map((step: any) => step.id));
-  // Plugin checks are registered by the plugin runner, not this service's list.
-  for (const id of selectedIds) if (id.startsWith('dsh-plugin:')) known.add(id);
-  const unknown = selectedIds.filter((id: string) => !known.has(id));
-  if (unknown.length) throw new Error(`Unknown selected verification step: ${unknown.sort().join(', ')}.`);
-  const closure = new Set<string>();
-  const visit = (id: string) => {
-    if (closure.has(id)) return;
-    closure.add(id);
-    for (const dependency of byId.get(id)?.dependsOn ?? []) if (byId.has(dependency)) visit(dependency);
-  };
-  for (const id of selectedIds) if (byId.has(id)) visit(id);
-  return { ...plan, steps: plan.steps.filter((step: any) => closure.has(step.id)), selectedStepIds: [...closure].sort() };
+  process.stdout.write('Internal release source verification: node test/verification/source.ts [--scope all|common|platform] [--base <ref>] [--json] [--force] [--round <round-id>] [--output <round-log.json>] [--invalidate <step-id,...>]\n');
 }
 
 if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) {
@@ -224,21 +177,20 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
     else {
       const plan = createSourceVerificationPlan(process.platform, { scope: args.scope });
       const comparisonRequired = plan.steps.some((step: any) => step.reuse?.git === 'comparison');
-      const executionPlan = args.selected.length ? selectSourceVerificationSubset(plan, args.selected) : plan;
-      const round = { roundId: args.round ?? process.env.BUILDR_VERIFICATION_ROUND ?? randomUUID(), ...(args.output ? { output: path.resolve(args.output) } : {}), ...(args.invalidate.length ? { invalidStepIds: args.invalidate } : {}), ...(args.selected.length ? { selectedStepIds: executionPlan.selectedStepIds } : {}) };
+      const round = { roundId: args.round ?? process.env.BUILDR_VERIFICATION_ROUND ?? randomUUID(), ...(args.output ? { output: path.resolve(args.output) } : {}), ...(args.invalidate.length ? { invalidStepIds: args.invalidate } : {}) };
       const reuseOptions = { productRoot, projectRoot, round, force: sourceVerificationForce(args.force),
         env: enforceOfflineVerification(comparisonRequired || args.base
           ? pinSourceVerificationBase(productRoot, process.env, args.base) : { ...process.env }) };
       if (args.json) {
-        const reuse = createCandidateRoundExecution(executionPlan, { ...reuseOptions, inspectOnly: true }).explanation;
-        process.stdout.write(`${JSON.stringify({ ...executionPlan, verificationBase: reuseOptions.env.BUILDR_VERIFICATION_BASE,
-          reuse, preparation: sourceVerificationPreparation(executionPlan, reuse) }, null, 2)}\n`);
+        const reuse = createCandidateRoundExecution(plan, reuseOptions).explanation;
+        process.stdout.write(`${JSON.stringify({ ...plan, verificationBase: reuseOptions.env.BUILDR_VERIFICATION_BASE,
+          reuse, preparation: sourceVerificationPreparation(plan, reuse) }, null, 2)}\n`);
         if (plan.status !== 'ready') process.exitCode = 1;
       } else {
         if (plan.status !== 'ready') throw new Error(plan.diagnostic?.message ?? 'Source verification plan is blocked.');
         assertMinimumNodeVersion(process.versions.node, fs.readFileSync(path.join(projectRoot, '.node-version'), 'utf8').trim());
         const startedAt = Date.now();
-        const prepared = prepareSourceVerificationEnvironment(executionPlan, reuseOptions);
+        prepareSourceVerificationEnvironment(plan, reuseOptions);
         const environmentPreparationMs = Date.now() - startedAt;
         enforceOfflineVerification();
         const { executePlan } = await import('./plan-runner.ts');
@@ -247,18 +199,14 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
         const source = collectVerificationSourceIdentity(productRoot, { projectRoot });
         const sourceObservationMs = Date.now() - startedAt - environmentPreparationMs;
         const cancellation = sourceVerificationCancellation();
-        // Explicit preparation owns dependency installation. Wrapped development
-        // commands inside checks must not start another implicit install while
-        // the verification network policy is offline.
-        const executionEnv = { ...reuseOptions.env, BUILDR_DEVELOPMENT_PREPARE_SKIP: '1' };
         let execution: any;
         try {
-          execution = await executePlan(executionPlan, {
-            productRoot, projectRoot, env: executionEnv, diagnosticsDirectory: evidence.diagnosticsOutput,
+          execution = await executePlan(plan, {
+            productRoot, projectRoot, env: reuseOptions.env, diagnosticsDirectory: evidence.diagnosticsOutput,
             stream: process.stdout, errorStream: process.stderr, prefix: 'verify-source',
             concurrency: executionProfile.limits, executionProfile, runId: evidence.runId,
             taskId: process.env.BUILDR_TASK_ID ?? source.branch ?? 'source', signal: cancellation.signal,
-            reuse: false, force: reuseOptions.force, round, preparations: sourcePreparationCommands(prepared),
+            reuse: false, force: reuseOptions.force, round,
           });
         } finally { cancellation.dispose(); }
         writeVerificationTimingEvidence({

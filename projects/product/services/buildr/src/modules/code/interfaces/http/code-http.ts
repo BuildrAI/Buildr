@@ -124,8 +124,8 @@ export function createCodeHttpContribution(application:CodeApplication, observat
     const input=(operation==='sourceControlInventory'?values:{...query,path:filePath,showIgnored:values.showIgnored==='true',...(page===undefined?{}:{page:Number(page)}),...(line===undefined?{}:{line:Number(line)}),...(limit===undefined?{}:{limit:Number(limit)})}) as CodeInput;
     if (operation === 'sourceControl' && observation === 'shared' && values.repositoryId && observations) {
       const inventory = application.sourceControlInventory(root, values.taskId ? {taskId:values.taskId} : {});
-      const body = await observations.readShared(root, {taskId:values.taskId, repositoryId:values.repositoryId}, inventory, async (signal, observedWorktrees) => {
-        const value = await (submitTaskRead ? submitTaskRead('code-source-control','code-files',{input:JSON.stringify({...input, observedWorktrees})},signal) : application.sourceControl(root,input,observedWorktrees));
+      const body = await observations.readShared(root, {taskId:values.taskId, repositoryId:values.repositoryId}, inventory, async signal => {
+        const value = await (submitTaskRead ? submitTaskRead('code-source-control','code-files',{input:JSON.stringify(input)},signal) : application.sourceControl(root,input));
         if (!CODE_HTTP_VALIDATORS.validate(CODE_HTTP_SCHEMAS.sourceControl.$id,value).valid) throw codeFailure('code_response_invalid','代码读取结果不符合契约。',500);
         return value as CodeSourceControlResponse;
       });

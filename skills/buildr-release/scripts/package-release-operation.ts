@@ -406,9 +406,7 @@ export async function continuePackageRelease(options: any, scope: any, dependenc
       if (!pointer.runId) {
         const title = `Release ${context.targets.versions.buildr} (${pointer.releaseId || context.packages.buildr.ownerContext.identity.slice(7, 31)})`;
         const runs = JSON.parse(gh(['run', 'list', '--repo', 'BuildrAI/Buildr', '--workflow', 'publish.yml', '--event', 'workflow_dispatch', '--limit', '100', '--json', 'databaseId,displayTitle,headSha']));
-        const previous = new Set(pointer.previousRunIds ?? []);
-        const matches = runs.filter((run: any) => run.displayTitle === title
-          && run.headSha === releaseExecutionCommit(context.packages.buildr.ownerContext) && !previous.has(run.databaseId));
+        const matches = runs.filter((run: any) => run.displayTitle === title && run.headSha === releaseExecutionCommit(context.packages.buildr.ownerContext));
         if (matches.length > 1) return { status: 'publication-dispatch-ambiguous', package: name, nextActions: ['多个运行匹配原主包请求；保留原指针，核对准确运行身份，不再次派发。'] };
         const found = matches[0];
         if (!found) return { status: 'publication-dispatch-unconfirmed', nextActions: ['回读原主包请求，不再次派发。'] };
@@ -494,10 +492,9 @@ export async function continuePackageRelease(options: any, scope: any, dependenc
   let dispatched: any;
   if (next === 'buildr') {
     dispatched = await (dependencies.runHostedReleaseTransaction ?? runHostedReleaseTransaction)({ ...state.transactions.buildr, action: 'dispatch', publicationAuthorized: true,
-      dispatchPreviouslyRequested: pointer.requested, releaseContext: context.packages.buildr.ownerContext,
-      releaseId: pointer.releaseId, excludedRunIds: pointer.previousRunIds }, { ...dependencies.transactionDependencies,
+      dispatchPreviouslyRequested: pointer.requested }, { ...dependencies.transactionDependencies,
       ...(candidates.buildr?.candidateEvidence ? { candidateEvidence: candidates.buildr.candidateEvidence } : {}),
-      onDispatchIntent: (intent: any) => { Object.assign(pointer, { requested: true, releaseId: intent.releaseId, dispatchArgs: intent.dispatchArgs }); save(); },
+      onDispatchIntent: (intent: any) => { Object.assign(pointer, { requested: true, releaseId: intent.releaseId }); save(); },
       onDispatchObserved: (run: any) => { Object.assign(pointer, { requested: true, runId: run.runId }); save(); },
     });
     if (dispatched.github?.runId) { pointer.requested = true; pointer.runId = dispatched.github.runId; save(); }

@@ -24,7 +24,6 @@ import { AssetEditDrawer } from './AssetEditDrawer';
 import { KnowledgeBrowser } from '../../knowledge/components/KnowledgeBrowser';
 import { useKnowledgeReading } from '../../knowledge/useKnowledgeReading';
 import { ServiceRuntimeSection } from '../../service-runtime/components/ServiceRuntimeSection';
-import { useRuntimeConfigurationStartRequest } from '../../service-runtime/hooks/useRuntimeConfiguration';
 import '../../service-runtime/service-runtime.css';
 import './asset-home.css';
 
@@ -49,9 +48,6 @@ export function AssetHome({ kind, previewId, knowledge, initialEditing, initialV
   const [documents, setDocuments] = useState<string[]>([]), [activeDocument, setActiveDocument] = useState<string | null>(null);
   const data = catalog.data;
   const service = data?.services.find(s => s.id === assetId || s.code === assetId);
-  // 完成通知的“启动本地”以一次性请求到达；服务页可能停在详情页签，先切到本地运行再交给运行区消费。
-  const startRequested = useRuntimeConfigurationStartRequest(workspaceId, kind === 'service' ? service?.code : null);
-  useEffect(() => { if (startRequested) setView('runtime'); }, [startRequested]);
   const [knowledgeRefresh, setKnowledgeRefresh] = useState(0);
   const knowledgeRead = useKnowledgeReading({ kind: 'service', id: service?.id || assetId }, undefined, undefined, knowledgeRefresh, kind === 'service' && Boolean(service));
   const knowledgeCount = knowledgeRead.data?.index?.artifacts.length || 0;

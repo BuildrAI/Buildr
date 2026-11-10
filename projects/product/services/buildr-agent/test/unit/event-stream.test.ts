@@ -30,15 +30,3 @@ test('scheduled delivery preserves separate messages, child sources and changed 
   stream.push({type:'observation',observation:{status:'running',tools:[{id:'t',label:'tool',status:'completed'}]}});
   assert.equal(delivered.length,5);stream.flush();assert.equal(delivered.length,5);
 });
-
-test('native tool bursts retain their latest output and flush before completion or a different call',()=>{
- const delivered:ExecutorEvent[]=[];let flush=()=>{};
- const stream=new ExecutorEventStream(event=>delivered.push(event),callback=>{flush=callback;return()=>{};});
- const item=(id:string,text:string,status:'running'|'completed'='running'):ExecutorEvent=>({type:'item',item:{id,kind:'tool',role:'system',nativeTool:true,executionId:'run',status,text}});
- for(let i=0;i<1000;i++)stream.push(item('command','output '+i));
- assert.equal(delivered.length,0);
- stream.push(item('command','final','completed'));
- assert.deepEqual(delivered.map(e=>e.type==='item'?e.item.text:''),['output 999','final']);
- stream.push(item('first','first output'));stream.push(item('second','second output'));
- assert.equal(delivered.length,3);flush();assert.equal(delivered.length,4);
-});

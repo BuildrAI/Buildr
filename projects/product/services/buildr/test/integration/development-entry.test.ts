@@ -1,6 +1,4 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
-import { createIsolatedWorkspaceState } from '../../tools/development/isolated-workspace-state.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
@@ -33,22 +31,4 @@ test('开发启动器读取声明版本且 package engines 保留发布兼容范
   assert.equal(packageJson.engines.node, `>=${declared}`);
   assert.match(source, /resolve-development-node/u);
   assert.doesNotMatch(source, /workspace\.yml|Workspace Node runtime|BUILDR_NODE_RUNTIME_DATA_DIR/u);
-});
-
-
-test('version identity stays available without full runtime bootstrap and preserves exact argument matching', t => {
-  const state = createIsolatedWorkspaceState();
-  t.after(() => state.cleanup());
-  const version = JSON.parse(fs.readFileSync(path.join(serviceRoot, 'package.json'), 'utf8')).version;
-  const invoke = (args: string[]) => spawnSync(process.execPath, [path.join(serviceRoot, 'bin/buildr.mjs'), ...args], {
-    cwd: serviceRoot, env: { ...state.env, BUILDR_TEST_FAIL_FULL_BOOTSTRAP: '1', NODE_TEST_CONTEXT: undefined }, encoding: 'utf8', timeout: 15_000,
-  });
-  for (const args of [['version'], ['--version'], ['-V'], ['version', '--json']]) {
-    const result = invoke(args);
-    assert.equal(result.status, 0, result.stderr);
-    assert.equal(args.includes('--json') ? JSON.parse(result.stdout).version : result.stdout.trim(), version);
-  }
-  const invalid = invoke(['--version', '--unexpected']);
-  assert.notEqual(invalid.status, 0);
-  assert.match(invalid.stderr, /Injected full runtime bootstrap failure/);
 });

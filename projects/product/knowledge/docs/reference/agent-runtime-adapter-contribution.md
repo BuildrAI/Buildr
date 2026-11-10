@@ -101,11 +101,3 @@
 专项验证只证明实际执行的入口、版本和行为，不升级成“该品牌在所有当前会话均已加载”的承诺。
 
 依据：[运行时投射规范](../../../openspec/specs/workspace-first-runtime-projection/spec.md)、[适配约定实现](../../../services/buildr/src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts)及[当前适配说明](../../../services/buildr/docs/agent-runtime-adapters.md)。
-
-## 工具环境与HOME存储
-
-执行默认复用明确提供的宿主HOME和工具环境，只通过原生目录参数隔离账号、会话和专属配置。当前适配器分别设置CODEX_HOME、DSH_HOME/DSH_AGENTS_HOME、QODER_CONFIG_DIR；新增适配器必须核实完整目录覆盖能力，不能只设置HOME隔离所有工具。不能证明私有数据完整隔离时保留私有HOME兼容模式。以下HOME发现与退役仅用于Buildr受管历史目录和兼容模式，不扫描或自动整理真实用户HOME。临时目录继续受管；不得为切换环境停止或重发已有任务。
-
-内部对话执行器从公共入口继承工具和缓存路径，账号及会话仍私有。旧HOME的受管下载、编译和工具准备缓存，由适配器声明准确可再生范围，再按整类退役；不逐包对齐归档，不向公共目录发布旧缓存，不要求先有对应公共副本。后续使用允许重新下载或编译。
-
-`process/storage-maintenance.ts`沿现有周期worker、storage锁和引用/系统占用检查执行。清理前后重新检查身份与版本，有执行、待确认或恢复引用及占用时延后自动重试；引用解除后只读账号文件的常驻进程不永久阻塞缓存。未知安装目录、任意node_modules、账号、原生会话、恢复数据和用户成果不在此范围；不整体删除HOME。原生程序与保留运行版本的不可变对象共享仍由原机制负责。

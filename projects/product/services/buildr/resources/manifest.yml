@@ -511,8 +511,6 @@ workspaceFiles:
   - resources/workspace/skills/buildr/project-verification/SKILL.md => skills/buildr/project-verification/SKILL.md copy
   - resources/workspace/skills/buildr/project-verification/references/frontend-verification.md => skills/buildr/project-verification/references/frontend-verification.md copy
   - resources/workspace/skills/buildr/project-verification/references/record-report.md => skills/buildr/project-verification/references/record-report.md copy
-  - resources/workspace/skills/buildr/project-verification/references/impact-selection.md => skills/buildr/project-verification/references/impact-selection.md copy
-  - resources/workspace/skills/buildr/project-verification/scripts/verify-impact.mjs => skills/buildr/project-verification/scripts/verify-impact.mjs copy
   - resources/workspace/skills/buildr/project-testing/references/maintain-map.md => skills/buildr/project-testing/references/maintain-map.md copy
   - resources/workspace/skills/buildr/project-testing/references/project-verification-v4.md => skills/buildr/project-testing/references/project-verification-v4.md copy
   - resources/workspace/skills/buildr/project-testing/templates/project-verification.yml => skills/buildr/project-testing/templates/project-verification.yml copy

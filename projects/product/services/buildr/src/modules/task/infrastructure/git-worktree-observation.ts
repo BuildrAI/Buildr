@@ -98,17 +98,13 @@ export function assertNoUnlistedNestedRepositories(repositories: GitWorktreeObse
   const known = new Set(repositories.map((item) => item.checkoutPath));
   const roots = repositories.filter((item) => !repositories.some((parent) => parent !== item && contains(parent.checkoutPath, item.checkoutPath)));
   if (groupRoot) assertLiteralWorktreePath(groupRoot);
-  const pending = (groupRoot ? [groupRoot] : roots.map((item) => item.checkoutPath))
-    .filter((entry) => fs.existsSync(entry)).map((entry) => ({ path: entry, depth: 0 }));
+  const pending = (groupRoot ? [groupRoot] : roots.map((item) => item.checkoutPath)).filter((entry) => fs.existsSync(entry));
   const deadline = Date.now() + 5000;
-  // 依赖与构建产物不承载登记的嵌套仓库，跳过以免大目录触发观察上限。
-  const skipped = new Set(['node_modules', 'build', 'web-dist', 'dist', 'target', 'coverage', '.cache', '.next']);
-  const maxDepth = 8;
   let directoryCount = 0;
   let entryCount = 0;
   while (pending.length) {
     if (++directoryCount > 10000 || Date.now() > deadline) fail('工作树嵌套集合超过本次安全观察上限，尚未确认完整集合。');
-    const { path: directory, depth } = pending.pop()!;
+    const directory = pending.pop()!;
     const entries: fs.Dirent[] = [];
     const handle = fs.opendirSync(directory);
     try {
@@ -123,10 +119,8 @@ export function assertNoUnlistedNestedRepositories(repositories: GitWorktreeObse
       const bare = git(directory, ['rev-parse', '--is-bare-repository']);
       if (bare.status === 0 && bare.stdout.trim() === 'true') fail(`清理集合包含嵌套裸 Git 仓库：${directory}`);
     }
-    if (depth >= maxDepth) continue;
     for (const entry of entries) {
-      if (entry.name === '.git' || entry.name.startsWith('.') || skipped.has(entry.name)) continue;
-      if (entry.isDirectory() && !entry.isSymbolicLink()) pending.push({ path: path.join(directory, entry.name), depth: depth + 1 });
+      if (entry.name !== '.git' && entry.isDirectory() && !entry.isSymbolicLink()) pending.push(path.join(directory, entry.name));
     }
   }
 }

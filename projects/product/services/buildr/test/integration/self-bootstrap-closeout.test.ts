@@ -4,8 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
-import test, { after } from 'node:test';
-import { createTestContextPool } from '../context/runtime.ts';
+import test from 'node:test';
 import { defaultExecute, runDirectSelfBootstrapCloseout, runSelfBootstrapCloseoutCommand, SELF_BOOTSTRAP_SYNC_RESUME_SCHEMA } from '../../../../../../skills/buildr-self-bootstrap-sync/scripts/closeout.mjs';
 import { DEFAULT_DEVELOPMENT_WEB_PORT, restartDevelopmentInstance, inspectDevelopmentInstance } from '../../../../../../skills/buildr-self-bootstrap-sync/scripts/development-web-continuity.mjs';
 import { parseTaskCommitTrailer } from '../../src/modules/task/commits/domain/task-commit.ts';
@@ -23,7 +22,8 @@ function git(root: any, ...args: any[]): any  {
   return result.stdout.trim();
 }
 
-function prepareFixture(base: string): void {
+function fixture(t: any): any  {
+  const base: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-self-bootstrap-closeout-'));
   const root: any = path.join(base, 'workspace');
   const remote: any = path.join(base, 'remote.git');
   fs.mkdirSync(path.join(root, 'components', 'workspace', 'buildr-self-bootstrap'), { recursive: true });
@@ -47,7 +47,7 @@ function prepareFixture(base: string): void {
   fs.writeFileSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'resources', 'manifest.yml'), 'schemaVersion: buildr.package/v1\n');
   fs.writeFileSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'package.json'), JSON.stringify({ name: '@buildr-ai/buildr', version: '0.1.0-test' }));
   fs.writeFileSync(projectBridge, `#!/bin/sh
-exec "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)/services/buildr/tools/development/run-development-cli" "$@"
+exec '${launcher}' "$@"
 `, { mode: 0o755 });
   fs.copyFileSync(path.join(sourceServiceRoot, 'tools', 'development', 'run-development-cli'), launcher);
   fs.chmodSync(launcher, 0o755);
@@ -86,31 +86,8 @@ runtime:
   run('git', ['init', '--bare', remote], base);
   git(root, 'remote', 'add', 'origin', remote);
   git(root, 'push', '-u', 'origin', 'dev');
-  git(root, 'rev-parse', 'HEAD');
-}
-
-const fixturePool = createTestContextPool({ providers: [{
-  key: 'self-bootstrap-closeout/v1', isolationMode: 'sandbox', resetStrategy: 'recreate', parallelSafety: 'worker-safe',
-  prepare({ seedRoot }: any) { prepareFixture(seedRoot); },
-  inspect({ seedRoot }: any) {
-    assert.ok(fs.statSync(path.join(seedRoot, 'workspace/.git/HEAD')).isFile());
-    assert.ok(fs.statSync(path.join(seedRoot, 'remote.git/HEAD')).isFile());
-  },
-}] });
-after(() => fixturePool.cleanup());
-
-function fixture(t: any): any {
-  const lease = fixturePool.acquire('self-bootstrap-closeout/v1');
-  t.after(() => lease.release());
-  const base = lease.root, root = path.join(base, 'workspace'), remote = path.join(base, 'remote.git');
-  // Each sandbox owns independent Git objects, refs, index and remote. No hard
-  // links or alternates can let one destructive recovery case pollute another.
-  git(root, 'remote', 'set-url', 'origin', remote);
-  const baseRef = git(root, 'rev-parse', 'HEAD');
-  const projectBridge = path.join(root, 'projects/product/buildr');
-  const launcher = path.join(root, 'projects/product/services/buildr/tools/development/run-development-cli');
-  const cliEntry = path.join(root, 'projects/product/services/buildr/bin/buildr.mjs');
-  const defaultBin = path.join(base, 'default-bin');
+  const baseRef: any = git(root, 'rev-parse', 'HEAD');
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   return {
     root,
     remote,
@@ -122,19 +99,6 @@ function fixture(t: any): any {
     environment: { ...process.env, BUILDR_CLI_INSTALL_DIR: defaultBin, PATH: `${defaultBin}${path.delimiter}${process.env.PATH || ''}` },
   };
 }
-
-test('prepared closeout sandboxes isolate files, Git refs, indexes and remotes', t => {
-  const first = fixture(t), second = fixture(t);
-  fs.writeFileSync(path.join(first.root, 'skills/generated/SKILL.md'), 'changed only here\n');
-  git(first.root, 'add', '.'); git(first.root, 'commit', '-m', 'isolated mutation');
-  git(first.root, 'push', 'origin', 'dev');
-  assert.equal(fs.readFileSync(path.join(second.root, 'skills/generated/SKILL.md'), 'utf8'), 'v1\n');
-  assert.equal(git(second.root, 'rev-parse', 'HEAD'), second.baseRef);
-  assert.equal(git(second.root, 'status', '--porcelain'), '');
-  assert.equal(git(second.root, 'ls-remote', 'origin', 'refs/heads/dev').split(/\s/u)[0], second.baseRef);
-  assert.notEqual(git(first.root, 'rev-parse', 'HEAD'), second.baseRef);
-  assert.notEqual(first.remote, second.remote);
-});
 
 function executor(root: any, options: any = {}): any  {
   const canonicalRoot: any = fs.realpathSync(root);
