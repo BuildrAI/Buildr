@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import { waitForReleaseOperation } from './release-operation-wait.ts';
+import { releaseContextSchema } from './release-readiness.ts';
+import { recoverQueuedRelease, releaseQueuePolicy } from './github-queue-recovery.ts';
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -19,19 +22,21 @@ import { retryCandidateFailedShards, classifyCandidateFailure } from './candidat
 import { releaseCommandDiagnostic, releaseDispatchRejected, releaseRecoveryPlan } from './release-failure.ts';
 import { extractReleaseNotes } from './release-notes.ts';
 import { assertCandidateDispatchBudget, continueCandidateRepair } from './candidate-repair-operation.ts';
+import { excludesAllCandidateBoundaries } from '../../../projects/product/services/buildr/test/verification/candidate-declared-scope.ts';
 import { containsCredentialMaterial, releasePublishAuthority } from './release-authority.ts';
 import { createReleaseLifecycle, projectReleaseLifecycleOrchestration } from './release-lifecycle.ts';
 import { compactReleasePhaseTimeline, createReleasePhaseTimeline, projectCandidateAttempts } from './release-phase-timeline.ts';
 import { inspectHostedReleaseTransaction } from './release-transaction-evidence.ts';
-import { runHostedReleaseTransaction, readCandidateEvidence } from './release-transaction-runner.ts';
-import { assertReleaseConsumptionCoverage } from '../../../projects/product/services/buildr/test/verification/release/release-consumption.ts';
+import { runHostedReleaseTransaction, readCandidateEvidence, frozenReleaseDispatchArgs } from './release-transaction-runner.ts';
+import { assertReleaseConsumptionCoverage } from '../../../projects/product/services/buildr/test/verification/release-verification.ts';
 import { normalizeReleaseTargets } from './release-targets.ts';
 import { preparePackageRelease, continuePackageRelease, evaluateObservedPackagePlan, observePackageCounterparts } from './package-release-operation.ts';
 import { observePublishedPackageArtifact } from './package-artifact-observation.ts';
-import { createReleaseCandidatePlan, assertPluginSourceAggregate } from '../../../projects/product/services/buildr/test/verification/release/verify-pr-candidate.ts';
+import { createReleaseCandidatePlan, assertPluginSourceAggregate } from '../../../projects/product/services/buildr/test/verification/release-verification.ts';
 import { readPluginSourceCandidate } from './plugin-hosted-release.ts';
 import { readReleaseArtifact, releaseArtifactManifestName } from './release-artifact.ts';
-import { CANDIDATE_CI_SHARDS, CANDIDATE_CI_HOST_NODE_TUPLES } from '../../../projects/product/services/buildr/test/verification/registry.ts';
+import { releaseVerificationCoverage, releaseVerificationTransport, releaseVerificationTimeouts } from '../../../projects/product/services/buildr/test/verification/release-verification.ts';
+import { parseCandidateDeclaredScope } from '../../../projects/product/services/buildr/test/verification/candidate-declared-scope.ts';
 import { candidatePreparationDirectory, readCandidatePreparationSnapshot } from './release-task-evidence-correlation.ts';
 
 export const releaseOrchestrationSchema: any = 'buildr.release-orchestration-result/v1';
@@ -44,7 +49,7 @@ const TASK: any = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/u;
 async function prepareLocalSourceVerification(options: any): Promise<any> {
   // Source execution tools stay outside the production import graph. This
   // source-checkout release owner loads them only before a new dispatch.
-  const owner = await import(new URL('../../../projects/product/services/buildr/test/verification/local-source-verification.ts', import.meta.url).href);
+  const owner = await import(new URL('../../../projects/product/services/buildr/test/verification/release-verification.ts', import.meta.url).href);
   return owner.prepareLocalSourceVerification(options);
 }
 
@@ -487,8 +492,8 @@ function finishCandidatePreparation(workspace: string, state: any, selection: an
     if (snapshot.buildr) {
       const evidenceIds = new Set(snapshot.buildr.aggregate.evidenceIds);
       for (const [kind, testing, ids] of [
-        ['source', 'buildr-source', CANDIDATE_CI_SHARDS.filter((item: any) => !item.requiresArtifact && !item.producesArtifact).map((item: any) => item.id)],
-        ['artifact', 'buildr-artifact', [...CANDIDATE_CI_SHARDS.filter((item: any) => item.requiresArtifact || item.producesArtifact), ...CANDIDATE_CI_HOST_NODE_TUPLES].map((item: any) => item.id)],
+        ['source', 'buildr-source', releaseVerificationCoverage().source],
+        ['artifact', 'buildr-artifact', releaseVerificationCoverage().artifact],
       ] as any) checks.push({ id: `candidate-${kind}`, project: 'product', testing, selection: 'full', targets: ids.filter((id: string) => evidenceIds.has(id)),
         source: 'command', outcome: 'passed', summary: `准确候选 ${prepared.run.id}/${prepared.run.attempt} 的完整 ${kind} 覆盖通过，原始来源及复用记录保留。` });
     }
@@ -601,6 +606,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
   let action = options.action;
   if (options.stopAfter !== undefined && (options.stopAfter !== 'candidate' || action !== 'prepare')) throw new Error('--stop-after candidate is only supported by prepare.');
   const stopAfterCandidate = options.stopAfter === 'candidate';
+  releaseQueuePolicy(options);
   if (options.recoverPublication === true && (action !== 'resume' || options.authorized !== true)) throw new Error('Publication executor recovery requires explicit resume --recover-publication --authorized.');
   if (!['prepare', 'inspect', 'publish', 'resume'].includes(action)) throw new Error('Release operation must be prepare, inspect, publish or resume.');
   const targets = normalizeReleaseTargets({ packages: options.packages, version: options.version, pluginVersion: options.pluginVersion, selectionId: options.selectionId });
@@ -729,6 +735,36 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
   try {
     if (fs.existsSync(file)) state = JSON.parse(fs.readFileSync(file, 'utf8'));
     if (scoped && JSON.stringify(state.targets) !== JSON.stringify(targets)) throw new Error('Stored release targets changed while acquiring the operation lock.');
+    if (action === 'resume') {
+      // Older records may have persisted the public request without its frozen
+      // dispatch inputs. Restore only bytes already present in the validated context.
+      const mainPointer = scoped ? state.packagePublications?.buildr : state.publication;
+      const mainOwner = scoped ? state.context?.packages?.buildr?.ownerContext : state.context;
+      if (state.schemaVersion === 'buildr.release-operation-input/v2'
+        && mainPointer?.requested && !mainPointer.dispatchArgs && mainOwner?.schemaVersion === releaseContextSchema
+        && mainOwner.workflow?.digest && mainOwner.release && mainOwner.candidate) {
+        mainPointer.dispatchArgs = frozenReleaseDispatchArgs(mainOwner, mainPointer.releaseId ?? mainOwner.identity.slice(7, 31));
+        currentEffects.push({ type: 'release-dispatch-inputs-restored', basis: 'original-frozen-context', contextIdentity: mainOwner.identity });
+        save();
+      }
+      const pointers = [...new Set([state.candidate?.repair?.dispatchArgs ? state.candidate.repair : state.candidate,
+        state.publication, state.pluginPreparation, ...Object.values(state.packagePublications ?? {})].filter(Boolean))];
+      for (const pointer of pointers) {
+        if (!pointer.dispatchArgs && !pointer.queueRedispatch && !pointer.queueCancellation) continue;
+        const recovery = recoverQueuedRelease(pointer, options, { gh, save: () => {
+          if (pointer === state.candidate?.repair && pointer.runId) state.candidate.runId = pointer.runId;
+          save();
+        }, now: dependencies.now });
+        if (!recovery) continue;
+        currentEffects.push({ type: 'release-queue-recovery', ...recovery });
+        save();
+        const candidatePointer = pointer === state.candidate || pointer === state.candidate?.repair;
+        const status = recovery.status === 'redispatched'
+          ? (candidatePointer ? 'candidate-dispatch-unconfirmed' : 'publication-dispatch-unconfirmed')
+          : (candidatePointer ? 'candidate-running' : 'publication-running');
+        return answer(status, [], recovery.run ? { run: recovery.run } : {});
+      }
+    }
     if (stopAfterCandidate && (state.publicationAuthorization || state.publication?.requested || state.publicationEvidence
         || Object.values(state.packagePublications ?? {}).some((value: any) => value.requested || value.runId || value.evidence))) {
       return answer('blocked', ['此选择已有公开授权或公开请求；只读检查原事实，为新候选使用独立选择。'], {
@@ -756,12 +792,10 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       const snapshot = readCandidatePreparationSnapshot(workspace, key, state.preparation);
       let different = Boolean(options.verificationSource && git(['rev-parse', `${options.verificationSource}^{commit}`]) !== snapshot.verificationInputs.sourceCommit);
       if (options.sourceVerification) {
-        const { encodeCandidateSourceImport } = await import('../../../projects/product/services/buildr/test/verification/candidate-source-reuse.ts');
-        different ||= identity(encodeCandidateSourceImport(JSON.parse(fs.readFileSync(options.sourceVerification, 'utf8')))) !== snapshot.verificationInputs.source;
+        different ||= identity(releaseVerificationTransport('source', options.sourceVerification)) !== snapshot.verificationInputs.source;
       }
       if (options.artifactVerification) {
-        const { readCandidateArtifactImports, encodeCandidateArtifactImport } = await import('../../../projects/product/services/buildr/test/verification/candidate-artifact-reuse.ts');
-        different ||= identity(encodeCandidateArtifactImport(readCandidateArtifactImports(options.artifactVerification))) !== snapshot.verificationInputs.artifact;
+        different ||= identity(releaseVerificationTransport('artifact', options.artifactVerification)) !== snapshot.verificationInputs.artifact;
       }
       if (different) {
         if ((dependencies.runtime ?? createReleaseToolRuntime()).inspectTask(workspace, `release-${key}`).record?.status === 'active') {
@@ -816,12 +850,15 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       currentEffects.push({ type: 'remote-refs-refreshed', refs: ['origin/dev', 'origin/main'] });
       const previous = dependencies.orchestrationDependencies ?? {};
       const transactionDependencies = { ...previous.transactionDependencies,
-        onDispatchIntent: (intent: any) => { state.publication = { requested: true, releaseId: intent.releaseId, contextIdentity: intent.contextIdentity, runId: null,
+        onDispatchIntent: (intent: any) => { state.publication = { ...state.publication, requested: true, releaseId: intent.releaseId, dispatchArgs: intent.dispatchArgs,
+          contextIdentity: intent.contextIdentity, runId: null,
           cleanupAuthorization: { policy: 'delete-owned-release-branches/v2', contextIdentity: intent.contextIdentity } }; writeOperation(file, state); },
         onDispatchObserved: (run: any) => { state.publication = { ...state.publication, requested: true, runId: run.runId, contextIdentity: state.context.identity }; writeOperation(file, state); },
       };
       const dispatched = await runReleaseOrchestration({ action: 'dispatch', version: options.version, releaseTask: `release-${options.version}`, publicationAuthorized: true,
-        expectedContextDigest: state.context.identity, transaction: state.transaction }, { ...previous, transactionDependencies });
+        expectedContextDigest: state.context.identity,
+        transaction: { ...state.transaction, releaseContext: state.context, releaseId: state.publication?.releaseId, excludedRunIds: state.publication?.previousRunIds } },
+        { ...previous, transactionDependencies });
       currentEffects.push(...dispatched.effects);
       const run = dispatched.steps?.find((item: any) => item.operation === 'dispatch');
       const runId = run?.runId ?? dispatched.publishRunId ?? null;
@@ -832,7 +869,9 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
     if (action === 'resume' && state.publication?.requested && !state.publication.runId) {
       const title = `Release ${options.version} (${state.publication.releaseId || state.context.identity.slice(7, 31)})`;
       const runs = JSON.parse(gh(['run', 'list', '--repo', releasePublishAuthority.repository, '--workflow', 'publish.yml', '--event', 'workflow_dispatch', '--limit', '100', '--json', 'databaseId,displayTitle,headSha']));
-      const run = runs.find((item: any) => item.displayTitle === title && item.headSha === state.context.convergence.mainCommit);
+      const previous = new Set(state.publication.previousRunIds ?? []);
+      const run = runs.find((item: any) => item.displayTitle === title && item.headSha === state.context.convergence.mainCommit
+        && !previous.has(item.databaseId));
       if (!run) return answer('publication-dispatch-unconfirmed', ['继续回读同一发布请求；不把响应丢失当成未派发。']);
       state.publication.runId = run.databaseId;
       writeOperation(file, state);
@@ -1055,13 +1094,11 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
           ? [`buildr_peer_version=${state.preparationPeer.version}`, `buildr_peer_integrity=${state.preparationPeer.integrity}`] : [])] : [];
       let sourceTransport: string | undefined;
       if (options.sourceVerification) {
-        const { encodeCandidateSourceImport } = await import('../../../projects/product/services/buildr/test/verification/candidate-source-reuse.ts');
-        sourceTransport = encodeCandidateSourceImport(JSON.parse(fs.readFileSync(options.sourceVerification, 'utf8')));
+        sourceTransport = releaseVerificationTransport('source', options.sourceVerification);
       }
       let artifactTransport: string | undefined;
       if (options.artifactVerification) {
-        const { readCandidateArtifactImports, encodeCandidateArtifactImport } = await import('../../../projects/product/services/buildr/test/verification/candidate-artifact-reuse.ts');
-        artifactTransport = encodeCandidateArtifactImport(readCandidateArtifactImports(options.artifactVerification));
+        artifactTransport = releaseVerificationTransport('artifact', options.artifactVerification);
       }
       const repaired = continueCandidateRepair({ repo, candidate: state.candidate,
         verificationSource: options.verificationSource ?? state.candidate.repair?.verificationSource ?? sourceCommit, fields, sourceTransport, artifactTransport }, {
@@ -1081,14 +1118,60 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       state.candidate.verificationInputs = { ...state.candidate.verificationInputs, ...state.candidate.repair?.verificationInputs }; save();
     }
     if (!state.candidate.runId) {
-      const find = () => JSON.parse(gh(['run', 'list', '--repo', releasePublishAuthority.repository, '--workflow', 'verify.yml', '--branch', carrier, '--event', 'workflow_dispatch', '--limit', '100', '--json', 'databaseId,headSha,status,conclusion'])).find((run: any) => run.headSha === sourceCommit);
+      const previous = new Set(state.candidate.previousRunIds ?? []);
+      const find = () => JSON.parse(gh(['run', 'list', '--repo', releasePublishAuthority.repository, '--workflow', 'verify.yml', '--branch', carrier, '--event', 'workflow_dispatch', '--limit', '100', '--json', 'databaseId,headSha,status,conclusion'])).find((run: any) => run.headSha === sourceCommit
+        && !previous.has(run.databaseId));
       let existing = find();
       if (!existing && state.candidate.dispatchRejected === true) state.candidate.dispatchRequested = false;
       if (!existing && !state.candidate.dispatchRequested) {
         phase = 'source-verification';
+        const excludedBoundaries: string[] | undefined = options.excludedBoundaries ?? state.verificationSelection?.excludedBoundaries;
+        let scopeStatement: string | undefined = options.scopeStatement ?? state.verificationSelection?.statement;
+        if (excludedBoundaries?.length && !scopeStatement?.trim()) {
+          throw new Error('--excluded-boundaries requires --scope-statement so the maintainer decision is recorded.');
+        }
+        const { verificationSteps, CANDIDATE_CI_HOST_NODE_TUPLES } = await import('../../../projects/product/services/buildr/test/verification/registry.ts');
+        const buildStepIds = new Set<string>(verificationSteps.filter((step: any) => step.executor?.type === 'candidate-artifact').map((step: any) => step.id));
+        const candidateStepIds: string[] = verificationSteps.filter((step: any) => step.profiles.includes('candidate')).map((step: any) => step.id);
+        let selectedStepIds: string[] | undefined = state.verificationSelection?.selectedStepIds;
+        let excludedStepIds: string[] = state.verificationSelection?.excludedStepIds ?? [];
+        if (options.selectedChecks?.length) {
+          selectedStepIds = [...options.selectedChecks].sort();
+          excludedStepIds = candidateStepIds.filter((id: string) => !selectedStepIds!.includes(id) && !buildStepIds.has(id)).sort();
+          scopeStatement ??= `用户指定本轮只执行：${selectedStepIds.join(', ')}`;
+          state.verificationSelection = { selectedStepIds, excludedStepIds, selectionMode: 'selected-checks', statement: scopeStatement,
+            source: 'user-instruction', recordedAt: new Date().toISOString() };
+          save();
+        } else if (excludedBoundaries?.length) {
+          // A declared boundary excludes the same checks in the local source round
+          // that the remote Candidate will skip; the user does not repeat the list.
+          const excluded = new Set<string>(excludedBoundaries);
+          selectedStepIds = verificationSteps
+            .filter((step: any) => step.profiles.includes('candidate')
+              && (step.executor?.type === 'candidate-artifact' || !excluded.has(step.testing?.executionBoundary)))
+            .map((step: any) => step.id).sort();
+          excludedStepIds = candidateStepIds.filter((id: string) => !selectedStepIds!.includes(id)).sort();
+          state.verificationSelection = { excludedBoundaries: [...excludedBoundaries].sort(), selectedStepIds, excludedStepIds,
+            selectionMode: 'excluded-boundaries', statement: scopeStatement!.trim(), source: 'user-instruction', recordedAt: new Date().toISOString() };
+          save();
+        }
+        if (plan && excludesAllCandidateBoundaries(state.verificationSelection)) {
+          plan = { ...plan, requirements: { ...plan.requirements, plugin: false } };
+          state.verificationSelection.excludedEvidenceIds = CANDIDATE_CI_HOST_NODE_TUPLES.map((tuple: any) => tuple.id).sort();
+          state.candidatePlan = plan;
+          save();
+        }
+        const dispatchScope = (excludedBoundaries?.length || excludedStepIds.length) ? {
+          ...(excludedBoundaries?.length ? { excludedBoundaries: [...excludedBoundaries].sort() } : {}),
+          ...(excludedStepIds.length ? { excludedStepIds } : {}),
+          ...(state.verificationSelection?.excludedEvidenceIds?.length ? { excludedEvidenceIds: state.verificationSelection.excludedEvidenceIds } : {}),
+          statement: scopeStatement!.trim(),
+        } : null;
+        if (dispatchScope) parseCandidateDeclaredScope(JSON.stringify(dispatchScope));
         const localSource = await (dependencies.prepareLocalSourceVerification ?? prepareLocalSourceVerification)({
           repo, sourceFile: options.sourceVerification ?? path.join(workspace, 'projects/product/services/buildr/build/verification/candidate-rounds', `${key}.json`), roundId: key, base: selection.devBaseline,
           packages: [...(!scoped || plan.requirements.buildr ? ['buildr'] : []), ...(scoped && plan.requirements.plugin ? ['dsh-plugin'] : [])],
+          ...(selectedStepIds?.length ? { selectedStepIds } : {}),
         });
         if (localSource.status !== 'ready') {
           save();
@@ -1102,9 +1185,9 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
             ? [`buildr_peer_version=${state.preparationPeer.version}`, `buildr_peer_integrity=${state.preparationPeer.integrity}`] : [])] : [];
         if (localSource.transport) fields.push(`source_verification=${localSource.transport}`);
         if (state.candidate.localRunner) fields.push(`local_runner=${state.candidate.localRunner}`);
+        if (dispatchScope) fields.push(`verification_scope=${JSON.stringify(dispatchScope)}`);
         const { lintCandidateStepTimeouts } = await import('./candidate-step-timings.ts');
-        const { verificationSteps: registrySteps } = await import('../../../projects/product/services/buildr/test/verification/registry.ts').catch(() => ({ verificationSteps: [] }));
-        const capacityWarnings = lintCandidateStepTimeouts(path.join(workspace, 'projects/product/services/buildr'), registrySteps ?? []);
+        const capacityWarnings = lintCandidateStepTimeouts(path.join(workspace, 'projects/product/services/buildr'), releaseVerificationTimeouts());
         if (capacityWarnings.length > 0) {
           currentEffects.push({ type: 'candidate-capacity-warnings', warnings: capacityWarnings });
           for (const warning of capacityWarnings) {
@@ -1112,13 +1195,14 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
           }
         }
         assertCandidateDispatchBudget(['purpose=candidate', ...fields]);
+        state.candidate.dispatchArgs = ['workflow', 'run', 'verify.yml', '--repo', releasePublishAuthority.repository, '--ref', carrier, '-f', 'purpose=candidate', ...fields.flatMap(field => ['-f', field])];
         state.candidate.dispatchRequested = true;
         state.candidate.dispatchRejected = false;
         const effect = { type: 'candidate-dispatched', branch: carrier, sourceCommit, state: 'unknown' };
         currentEffects.push(effect);
         state.candidate.sourceVerification = { recordCount: localSource.recordCount ?? 0, digest: identity(localSource.transport ?? '') };
         writeOperation(file, state);
-        try { gh(['workflow', 'run', 'verify.yml', '--repo', releasePublishAuthority.repository, '--ref', carrier, '-f', 'purpose=candidate', ...fields.flatMap(field => ['-f', field])]); effect.state = 'confirmed'; }
+        try { gh(state.candidate.dispatchArgs); effect.state = 'confirmed'; }
         catch (error: any) {
           state.candidate.dispatchDiagnostic = error.diagnostic ?? { code: 'candidate-dispatch-unknown', message: String(error.message).slice(-8192) };
           state.candidate.dispatchRejected = releaseDispatchRejected(state.candidate.dispatchDiagnostic);
@@ -1275,42 +1359,8 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
   }
 }
 
-const WAITING_RELEASE_STATUSES = new Set([
-  'candidate-running', 'candidate-dispatch-unconfirmed', 'candidate-retry-unconfirmed',
-  'candidate-repair-dispatch-unconfirmed', 'candidate-repair-readback-required', 'main-merge-pending',
-  'plugin-preparation-running', 'plugin-preparation-unknown',
-  'publication-running', 'publication-dispatch-unconfirmed', 'publication-retry-unconfirmed',
-  'publication-readback-required', 'publication-unknown', 'main-merge-readback-required',
-]);
-
-/** Continue the same owner state; never infer a new dispatch from a lost response. */
 export async function runReleaseOperationUntilSettled(options: any, dependencies: any = {}): Promise<any> {
-  const timeoutMs = Number(options.waitTimeoutMs ?? 30 * 60_000), intervalMs = Number(options.waitIntervalMs ?? 30_000);
-  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 12 * 60 * 60_000
-    || !Number.isSafeInteger(intervalMs) || intervalMs < 1 || intervalMs > 60_000) throw new Error('Release wait timeout or interval is invalid.');
-  const now = dependencies.now ?? Date.now;
-  const sleep = dependencies.sleep ?? ((ms: number) => new Promise(resolve => setTimeout(resolve, ms)));
-  const run = dependencies.runReleaseOperation ?? runReleaseOperation;
-  const startedAt = now(), allEffects: any[] = [];
-  let pollWorkMs = 0, sleepMs = 0;
-  let polls = 0, previousPhase: string | null = null, action = options.action;
-  for (;;) {
-    const pollStartedAt = now();
-    const value = await run({ ...options, action, detail: 'full' }, dependencies);
-    pollWorkMs += now() - pollStartedAt;
-    allEffects.push(...(value.effects ?? [])); polls++;
-    const phase = `${value.status}:${value.package ?? ''}:${value.run?.id ?? ''}:${JSON.stringify(value.remoteTiming ?? null)}`;
-    if (phase !== previousPhase) { dependencies.onProgress?.({ status: value.status, package: value.package, runId: value.run?.id, remoteTiming: value.remoteTiming, pollWorkMs, sleepMs }); previousPhase = phase; }
-    const waiting = options.wait === true && WAITING_RELEASE_STATUSES.has(value.status);
-    const durationMs = now() - startedAt;
-    if (!waiting || durationMs >= timeoutMs || dependencies.signal?.aborted) return { ...value, effects: allEffects,
-      waiting: { status: dependencies.signal?.aborted ? 'cancelled' : waiting ? 'timed-out' : 'settled', polls, durationMs, pollWorkMs, sleepMs } };
-    // A public request has already been persisted by the owner. Only resume it.
-    if (action === 'publish') action = 'resume';
-    const sleepStartedAt = now();
-    await sleep(Math.min(intervalMs, timeoutMs - durationMs));
-    sleepMs += now() - sleepStartedAt;
-  }
+  return waitForReleaseOperation(options, { ...dependencies, runReleaseOperation: dependencies.runReleaseOperation ?? runReleaseOperation });
 }
 
 export function compactReleaseOperation(value: any): any {
@@ -1322,7 +1372,8 @@ export function compactReleaseOperation(value: any): any {
     if (item) summary[key] = Object.fromEntries(['runId', 'runAttempt', 'id', 'status', 'conclusion', 'url', 'sourceCommit'].filter(field => item[field] !== undefined).map(field => [field, item[field]]));
   }
   if (value.localSource) summary.localSource = { status: value.localSource.status, missingStepIds: value.localSource.missingStepIds,
-    nextActions: value.localSource.nextActions };
+    selectedStepIds: value.localSource.selectedStepIds, retainedStepIds: value.localSource.retainedStepIds,
+    missingBaselineStepIds: value.localSource.missingBaselineStepIds, nextActions: value.localSource.nextActions };
   if (value.localArtifact) summary.localArtifact = { artifactDirectory: value.localArtifact.artifactDirectory,
     evidenceDirectory: value.localArtifact.evidenceDirectory, runId: value.localArtifact.runId, artifactId: value.localArtifact.artifactId,
     sha256: value.localArtifact.artifact?.sha256, checks: value.localArtifact.checks, missingEvidenceIds: value.localArtifact.missingEvidenceIds, nextAction: value.localArtifact.nextAction };
@@ -1366,13 +1417,18 @@ function parseOptions(argv: any): any  {
     sourceVerification: options['source-verification'],
     artifactVerification: options['artifact-verification'],
     verificationSource: options['verification-source'],
+    selectedChecks: options['selected-checks'] ? options['selected-checks'].split(',').map((id: string) => id.trim()).filter(Boolean) : undefined,
+    excludedBoundaries: options['excluded-boundaries'] ? options['excluded-boundaries'].split(',').map((boundary: string) => boundary.trim()).filter(Boolean) : undefined,
+    scopeStatement: options['scope-statement'],
     stopAfter: options['stop-after'],
     waitTimeoutMs: options['wait-timeout-ms'] ? Number(options['wait-timeout-ms']) : undefined,
     waitIntervalMs: options['wait-interval-ms'] ? Number(options['wait-interval-ms']) : undefined,
+    queueTimeoutSeconds: options['queue-timeout-seconds'] ? Number(options['queue-timeout-seconds']) : undefined,
+    maxQueueRedispatches: options['max-queue-redispatches'] !== undefined ? Number(options['max-queue-redispatches']) : undefined,
     supportTasks: options['support-tasks'] ? options['support-tasks'].split(',').filter(Boolean) : undefined,
   };
   if (options['stop-after'] !== undefined) throw new Error('--stop-after candidate is only supported by normal prepare, without --input.');
-  if (!options.input) throw new Error('Usage: release-orchestration-runner.ts <prepare|inspect|publish|resume> --workspace <root> [--packages buildr|dsh-plugin|buildr,dsh-plugin] [--version <main-version>] [--plugin-version <plugin-version>] [--baseline <ref>] [--source <sha> ...] [--stop-after candidate] [--authorized] [--recover-publication]');
+    if (!options.input) throw new Error('Usage: release-orchestration-runner.ts <prepare|inspect|publish|resume> --workspace <root> [--packages buildr|dsh-plugin|buildr,dsh-plugin] [--version <main-version>] [--plugin-version <plugin-version>] [--baseline <ref>] [--source <sha> ...] [--selected-checks <step-id,...>] [--excluded-boundaries Static|Unit|Integration|E2E,... --scope-statement <user-decision>] [--stop-after candidate] [--authorized] [--recover-publication]');
   if (!['compact', 'full'].includes(options.detail)) throw new Error('--detail must be compact or full.');
   const input: any = JSON.parse(fs.readFileSync(path.resolve(options.input), 'utf8'));
   if (action === 'inspect') return { action, detail: options.detail, output: options.output ? path.resolve(options.output) : null, expectedTimelineIdentity: options['timeline-identity'] ?? null, inspectedResult: input };
@@ -1381,12 +1437,20 @@ function parseOptions(argv: any): any  {
 
 if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) {
   let options: any = null;
+  const controller = new AbortController();
+  const interrupt = () => { if (!controller.signal.aborted) controller.abort('SIGINT'); };
+  const terminate = () => { if (!controller.signal.aborted) controller.abort('SIGTERM'); };
   try {
     options = parseOptions(process.argv.slice(2));
+    if (options.normalOperation) {
+      process.on('SIGINT', interrupt);
+      process.on('SIGTERM', terminate);
+    }
     if (options.help) {
-      process.stdout.write('Usage: release-orchestration-runner.ts <prepare|inspect|publish|resume> --workspace <root> [--packages buildr|dsh-plugin|buildr,dsh-plugin] [--version <main-version>] [--plugin-version <plugin-version>] [--baseline <ref>] [--source <sha> ...] [--stop-after candidate] [--authorized] [--recover-publication] [--wait] [--wait-timeout-ms <ms>] [--wait-interval-ms <ms>] [--output <file>] [--detail compact|full]\n');
+      process.stdout.write('Usage: release-orchestration-runner.ts <prepare|inspect|publish|resume> --workspace <root> [--packages buildr|dsh-plugin|buildr,dsh-plugin] [--version <main-version>] [--plugin-version <plugin-version>] [--baseline <ref>] [--source <sha> ...] [--selected-checks <step-id,...>] [--excluded-boundaries Static|Unit|Integration|E2E,... --scope-statement <user-decision>] [--stop-after candidate] [--authorized] [--recover-publication] [--wait] [--wait-timeout-ms <ms>] [--wait-interval-ms <ms>] [--queue-timeout-seconds <seconds>] [--max-queue-redispatches <count>] [--output <file>] [--detail compact|full]\n');
     } else {
     const value: any = options.normalOperation ? await runReleaseOperationUntilSettled(options, {
+      signal: controller.signal,
       onProgress: options.wait ? (progress: any) => process.stderr.write(`[release] ${progress.status}${progress.runId ? ` run=${progress.runId}` : ''} readback=${progress.pollWorkMs}ms sleep=${progress.sleepMs}ms${progress.remoteTiming ? ` remote=${JSON.stringify(progress.remoteTiming)}` : ''}\n`) : undefined,
     }) : options.action === 'inspect'
       ? inspectReleaseOrchestration(options.inspectedResult, options.expectedTimelineIdentity)
@@ -1394,9 +1458,13 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
     if (options.output) fs.writeFileSync(options.output, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
     process.stdout.write(`${JSON.stringify(options.detail === 'full' ? value : options.normalOperation ? compactReleaseOperation(value) : compactReleaseOrchestration(value), null, 2)}\n`);
     if (value.status === 'blocked') process.exitCode = 1;
+    if (value.waiting?.status === 'cancelled') process.exitCode = controller.signal.reason === 'SIGTERM' ? 143 : 130;
     }
   } catch (error: any) {
     process.stderr.write(`${JSON.stringify({ schemaVersion: releaseOrchestrationSchema, status: 'blocked', error: error.message, effects: [], nextActions: ['修复release orchestration输入或current owner事实后重试。'] }, null, 2)}\n`);
     process.exitCode = 1;
+  } finally {
+    process.off('SIGINT', interrupt);
+    process.off('SIGTERM', terminate);
   }
 }

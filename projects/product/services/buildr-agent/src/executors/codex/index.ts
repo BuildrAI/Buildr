@@ -1,9 +1,12 @@
+import { regenerableToolCaches, toolCacheReclaimable } from '../../storage/tool-cache.ts';
+import { codexItem } from './items.ts';
+export { codexItem } from './items.ts';
 import { codexContent } from './content.ts';
 import { instructionParticipation } from '../../domain/participation.ts';
 import { nativeParticipation, participationRequests } from '../../domain/participation.ts';
 import { withExecutionFault } from '../../domain/execution-fault.ts';
 import { codexUnsettledTools } from './recovery.ts';
-import { codexCacheReclaimable, codexCuratedIdentity } from './storage.ts';
+import { codexCacheReclaimable, codexCuratedIdentity, codexDiagnosticLogs } from './storage.ts';
 import { interactionPolicy, blocksExecution } from '../../domain/interaction-policy.ts';
 import {createHash} from 'node:crypto';
 import { errorDiagnostic, NativeObservationError } from '../../domain/error-diagnostic.ts';
@@ -12,7 +15,7 @@ import { join, relative, sep, isAbsolute } from 'node:path';
 import { lstat, readFile, writeFile, copyFile, realpath, chmod } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import type { AgentExecutor, AgentRuntime, ContextRef, ExecutionRef, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorRequest, ExecutorSendInput, ExecutorTitleInput, LoginObservation, PermissionMode } from '../../contracts.ts';
-import { NativeRpc, nativePreview, nativeBinding, bounded, findExecutable, inspectVersion, isolatedEnvironment, ownedProcessGroupIdle, nativeCommand, nativeHome, opaqueReference, parseReference, privateDirectories, visibleText, type RpcMessage } from '../native-process.ts';
+import { NativeRpc, nativePreview, nativeBinding, bounded, findExecutable, inspectVersion, accountEnvironment, ownedProcessGroupIdle, nativeCommand, nativeHome, opaqueReference, parseReference, privateDirectories, visibleText, type RpcMessage } from '../native-process.ts';
 import { modelOptions } from '../model-options.ts';
 import { generateCodexTitle } from './title.ts';
 import { codexThreadPermissions, codexTurnPermissions } from './permissions.ts';
@@ -46,9 +49,9 @@ function codexGatewayCatalog(gateway: ExecutorGateway) {
     truncation_policy: { mode: 'tokens', limit: 10000 },
   })) };
 }
-interface ActiveTurn { contextId: string; id: string; input: ExecutorSendInput; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown'; processId?: string; executionId: string }>; pending: Map<string, { nativeId: string | number; method: string; params: any }>; texts: Map<string, string>; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string; done: () => void; reject: (error: Error) => void; accepted: boolean; buffered: RpcMessage[] }
+interface ActiveTurn { commandStreams?: Map<string,{command:string;output:string}>; contextId: string; id: string; input: ExecutorSendInput; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown'; processId?: string; executionId: string }>; pending: Map<string, { nativeId: string | number; method: string; params: any }>; texts: Map<string, string>; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string; done: () => void; reject: (error: Error) => void; accepted: boolean; buffered: RpcMessage[] }
 export function createCodexExecutor(): AgentExecutor {
-  return { nativeContent: codexContent, storage: { transientDirectories: ['tmp/node-compile-cache', 'cache/node-compile', 'home/.npm/_cacache', 'codex-home/.tmp/plugins'], canReclaim: codexCacheReclaimable, snapshots: [{ relative: 'codex-home/.tmp/plugins', key: 'curated-plugins', identity: codexCuratedIdentity }] }, descriptor: { id: 'codex', label: 'Codex', capabilities }, async open(options) { return await CodexRuntime.open(options); } };
+  return { nativeContent: codexContent, storage: { transientDirectories: [...regenerableToolCaches, 'codex-home/.tmp/plugins'], diagnostics:codexDiagnosticLogs, canReclaim: (root, relative) => toolCacheReclaimable(root, relative) && codexCacheReclaimable(root, relative), snapshots: [{ relative: 'codex-home/.tmp/plugins', key: 'curated-plugins', identity: codexCuratedIdentity }] }, descriptor: { id: 'codex', label: 'Codex', capabilities }, async open(options) { return await CodexRuntime.open(options); } };
 }
 class CodexRuntime implements AgentRuntime {
   participationInstruction?: import('../../participation-contracts.ts').ParticipationMatch;
@@ -71,8 +74,8 @@ class CodexRuntime implements AgentRuntime {
     const gateway = checkedGateway(options.gateway);
     const { home, temporary } = nativeHome(options.configRoot);
     const config = join(options.configRoot, 'codex-home');
-    await privateDirectories(options.configRoot, home, temporary, config);
-    const env = isolatedEnvironment(options.environment, home, temporary, { CODEX_HOME: config, ...(gateway ? { BUILDR_MODEL_GATEWAY_KEY: gateway.apiKey, NO_PROXY: '127.0.0.1,localhost,::1', no_proxy: '127.0.0.1,localhost,::1' } : {}) }, options.cacheRoot);
+    const env = accountEnvironment(options.environment, home, temporary, { CODEX_HOME: config, ...(gateway ? { BUILDR_MODEL_GATEWAY_KEY: gateway.apiKey, NO_PROXY: '127.0.0.1,localhost,::1', no_proxy: '127.0.0.1,localhost,::1' } : {}) }, options.cacheRoot);
+    await privateDirectories(options.configRoot, config, ...(env.HOME === home ? [home] : []), temporary);
     const executable = await findExecutable(options.executable, ['codex', 'codex.exe'], env);
     const version = await inspectVersion(executable, env, options.signal);
     if (!isCompatibleProgram('codex', version)) throw new Error(`codex_version_unsupported: requires ${nativeProgramPolicy('codex').compatibility}`);
@@ -86,7 +89,7 @@ class CodexRuntime implements AgentRuntime {
       const values = { web_search: 'disabled', model_provider: 'buildr-models', model: model.id, review_model: model.id, model_catalog_json: catalog, 'model_providers.buildr-models.name': 'Buildr', 'model_providers.buildr-models.base_url': gateway.baseUrl.replace(/\/$/, ''), 'model_providers.buildr-models.env_key': 'BUILDR_MODEL_GATEWAY_KEY', 'model_providers.buildr-models.wire_api': 'responses', 'model_providers.buildr-models.requires_openai_auth': false, 'model_providers.buildr-models.supports_websockets': false, ...(model.contextWindow ? { model_context_window: model.contextWindow } : {}) };
       for (const [key, value] of Object.entries(values)) overrides.push('-c', `${key}=${JSON.stringify(value)}`);
     }
-    const rpc = new NativeRpc(launch.command, [...launch.prefix, 'app-server', '--listen', 'stdio://', '-c', 'cli_auth_credentials_store="file"', ...overrides], { cwd: options.configRoot, env });
+    const rpc = new NativeRpc(launch.command, [...launch.prefix, 'app-server', '--listen', 'stdio://', '-c', 'cli_auth_credentials_store="file"', ...overrides], { cwd: options.configRoot, env, diagnostics:options.diagnostics?event=>options.diagnostics!({...event,provider:'codex'}):undefined });
     const runtime = new CodexRuntime(binding.identity, rpc, join(temporary, 'title-requests'));
     runtime.interaction = { ...conversationInteraction, developerInstructions: (options.interaction ?? interactionPolicy).instructions + '\n必要提问使用 request_user_input。' };
     runtime.participationInstruction = instructionParticipation('interaction-policy',runtime.interaction.developerInstructions);
@@ -317,13 +320,29 @@ class CodexRuntime implements AgentRuntime {
       if (!request) { this.rpc.write({ id: message.id, error: { code: -32601, message: 'Unsupported Buildr request' } }); return; }
       turn.pending.set(request.id, { nativeId: message.id, method: message.method, params: p }); emit({ type: 'request', request }); return;
     }
+    if(message.method === 'item/commandExecution/outputDelta' && typeof p.delta === 'string') {
+      const tool = turn.tools.get(p.itemId), stream = turn.commandStreams?.get(p.itemId);
+      if(tool?.status !== 'running' || tool.executionId !== turn.id || !stream) return;
+      const output = nativePreview(stream.output + p.delta);
+      if(output === stream.output) return;
+      stream.output = output;
+      for(const item of codexItem({type:'commandExecution',id:p.itemId,command:stream.command,aggregatedOutput:stream.output,status:'inProgress'},turn.id,'inProgress')) emit({type:'item',item});
+      return;
+    }
     if (message.method === 'item/agentMessage/delta') {
       const text = (turn.texts.get(p.itemId) ?? '') + String(p.delta ?? ''); turn.texts.set(p.itemId, text);
       emit({ type: 'item', item: { id: p.itemId, kind: 'message', role: 'assistant', text, executionId: turn.id, status: 'running' } });
     }
     if (message.method === 'item/started' || message.method === 'item/completed') {
       const item = p.item;
-      if (item?.type === 'commandExecution') turn.tools.set(item.id, { id: item.id, label: String(item.command ?? '命令'), status: message.method === 'item/completed' ? 'completed' : 'running', processId: item.processId, executionId: turn.id });
+      if (item?.type === 'commandExecution') {
+        turn.tools.set(item.id, {id:item.id,label:'命令',status:message.method === 'item/completed'?'completed':'running',processId:item.processId,executionId:turn.id});
+        if(message.method === 'item/completed') turn.commandStreams?.delete(item.id);
+        else {
+          turn.commandStreams ??= new Map();
+          if(turn.commandStreams.size < 128) turn.commandStreams.set(item.id,{command:nativePreview(String(item.command ?? '')),output:''});
+        }
+      }
       else if (item?.type === 'fileChange' || item?.type === 'mcpToolCall') turn.tools.set(item.id, { id: item.id, label: item.type === 'fileChange' ? '修改文件' : String(item.tool ?? '工具'), status: message.method === 'item/completed' ? 'completed' : 'running', executionId: turn.id });
       for (const safe of codexItem(item, turn.id, message.method === 'item/completed' ? 'completed' : 'inProgress')) emit({ type: 'item', item: safe });
       emit({ type: 'observation', observation: this.activeObservation(turn) });
@@ -365,7 +384,7 @@ class CodexRuntime implements AgentRuntime {
         unsettled = unsettled.filter(tool => !received.has(tool.id)); }
       catch { return { status: 'unknown', executionRef: { id: exact.id }, tools: [], diagnostic: 'codex_recovery_history_unconfirmed' }; }
     }
-    return { status: exact.status === 'inProgress' ? 'unknown' : exact.status === 'interrupted' ? 'stopped' : 'idle', executionRef: executionRef ?? { id: exact.id }, tools: [...new Map([...unsettled, ...(exact.items ?? []).filter((item: any) => ['commandExecution', 'fileChange', 'mcpToolCall'].includes(item.type) && !['completed', 'failed', 'declined'].includes(item.status)).map((item: any) => ({ id: item.id, label: String(item.command ?? '命令'), status: 'unknown' as const, canStop: false }))].map(tool => [tool.id, tool])).values()] };
+    return { status: exact.status === 'inProgress' ? 'unknown' : exact.status === 'interrupted' ? 'stopped' : 'idle', executionRef: executionRef ?? { id: exact.id }, tools: [...new Map([...unsettled, ...(exact.items ?? []).filter((item: any) => ['commandExecution', 'fileChange', 'mcpToolCall'].includes(item.type) && !['completed', 'failed', 'declined'].includes(item.status)).map((item: any) => ({ id: item.id, label: item.type === 'mcpToolCall' ? String(item.tool ?? '工具') : '命令', status: 'unknown' as const, canStop: false }))].map(tool => [tool.id, tool])).values()] };
   }
   async canRelease({contextRef,executionRef}:{contextRef:ContextRef;executionRef:ExecutionRef}):Promise<boolean|{executionState:'ended'|'unknown'}>{
     this.reference(contextRef);
@@ -426,16 +445,17 @@ class CodexRuntime implements AgentRuntime {
       if (toolId) return { status: 'unknown', tools: [], diagnostic: 'codex_exact_live_turn_unavailable' };
       return this.observe({ contextRef, executionRef });
     }
-    if (!turn.terminal && !toolId) await this.rpc.call('turn/interrupt', { threadId: contextRef.id, turnId: turn.id }, 5000);
+    const interrupt = !turn.terminal && !toolId ? this.rpc.call('turn/interrupt', { threadId: contextRef.id, turnId: turn.id }, 5000) : Promise.resolve();
     if (turn.terminal && !toolId) turn.terminal = 'stopped'; // An unconfirmed whole-run stop must not release queued input.
-    await this.refreshTerminals(turn);
-    const selected = [...turn.tools.values()].filter(tool => tool.status === 'running' && (!toolId || tool.id === toolId));
+    // Stop known exact processes immediately, without putting terminal-list
+    // observation ahead of cancellation. Unknown observations retain identity.
+    const selected = [...turn.tools.values()].filter(tool => (toolId ? tool.status === 'running' && tool.id === toolId : tool.status !== 'completed'));
     if (toolId && !selected.some(tool => tool.processId)) throw new Error('codex_exact_tool_stop_unavailable');
-    for (const tool of selected) {
-      if (!tool.processId) continue;
+    const [interrupted] = await Promise.allSettled([interrupt,...selected.filter(tool=>tool.processId).map(async tool => {
       try { await this.rpc.call('thread/backgroundTerminals/terminate', { threadId: contextRef.id, processId: tool.processId }, 4000); }
       catch { tool.status = 'unknown'; }
-    }
+    })]);
+    if(interrupted!.status==='rejected')throw interrupted.reason;
     return await this.observe({ contextRef, executionRef });
   }
   private async refreshTerminals(turn: ActiveTurn): Promise<void> {
@@ -462,24 +482,7 @@ class CodexRuntime implements AgentRuntime {
     await this.rpc.close();
   }
 }
-export function codexItem(item: any, executionId: string, status: string): ExecutorItem[] {
-  if (!item?.id) return [];
-  // A stopped turn does not undo tools which already completed. Conversely,
-  // an unfinished historical item is uncertain, not a live execution.
-  const final: ExecutorItem['status'] = item.status === 'completed' ? 'completed' : item.status === 'failed' || item.status === 'declined' ? 'failed' : item.status === 'inProgress' ? status === 'inProgress' ? 'running' : undefined : status === 'completed' ? 'completed' : status === 'failed' ? 'failed' : status === 'interrupted' ? undefined : 'running';
-  if (item.type === 'agentMessage') return [{ id: item.id, kind: 'message', role: 'assistant', text: String(item.text ?? ''), executionId, status: final }];
-  if (item.type === 'userMessage') return [{ id: item.id, ...(typeof item.clientId === 'string' && item.clientId ? { clientRequestId: item.clientId } : {}), kind: 'message', role: 'user', text: visibleText(item.content), executionId, status: 'completed' }];
-  if (item.type === 'commandExecution') return [{ id: item.id, kind: 'tool', role: 'system', name: 'command', participation: nativeParticipation(item.command===undefined?undefined:String(item.command), item.aggregatedOutput === undefined ? undefined : String(item.aggregatedOutput), item.exitCode === 0 ? 'succeeded' : typeof item.exitCode === 'number' || item.status === 'failed' ? 'failed' : final === 'running' ? 'pending' : 'unknown', item.exitCode), input: String(item.command ?? ''), text: String(item.command ?? '命令') + (item.aggregatedOutput ? '\n' + nativePreview(String(item.aggregatedOutput)) : ''), executionId, status: final }];
-  if (item.type === 'imageView') return [{ id: item.id, kind: 'tool', role: 'system', name: 'view-image', text: '查看图片\n' + String(item.path ?? ''), executionId, status: 'completed' }];
-  if (item.type === 'fileChange') return [{ id: item.id, kind: 'tool', role: 'system', name: 'file-change', participation:nativeParticipation(item.changes===undefined?undefined:JSON.stringify(item.changes),undefined,item.status==='failed'?'failed':final==='running'?'pending':'unknown'), text: '修改文件\n' + (item.changes ?? []).map((change: any) => String(change.path ?? '')).join('\n'), executionId, status: final }];
-  if (item.type === 'mcpToolCall') {
-    const input=item.arguments===undefined?undefined:JSON.stringify(item.arguments);
-    const participation=nativeParticipation(input,item.result===undefined?undefined:typeof item.result==='string'||Array.isArray(item.result)?visibleText(item.result):Array.isArray(item.result?.content)?visibleText(item.result.content):undefined,item.error?'failed':final==='running'?'pending':'unknown');
-    participation.matches=participationRequests(item.tool,input);
-    return [{ id: item.id, kind: 'tool', role: 'system', name: 'mcp-tool', participation, input: input===undefined?undefined:nativePreview(input), text: String(item.tool ?? '工具'), executionId, status: final }];
-  }
-  return [];
-}
+
 function codexRequest(id: string, method: string, params: any): ExecutorRequest | undefined {
   if (method === 'item/tool/requestUserInput') return { id, kind: 'question', blocking: params.isBlocking !== false, title: '需要你的回复', questions: (params.questions ?? []).map((question: any) => ({ id: question.id, label: String(question.question ?? question.header ?? ''), allowOther: Boolean(question.isOther), options: question.options?.map((option: any) => ({ id: option.label, label: option.label, ...(typeof option.description === 'string' ? { description: option.description } : {}) })) })) };
   if (method === 'item/permissions/requestApproval') return { id, kind: 'approval', title: '允许本轮所列权限？', description: String(params.reason ?? '') + '\n' + JSON.stringify(params.permissions ?? {}), options: [{ id: 'approve', label: '允许本轮所列权限' }, { id: 'deny', label: '拒绝' }] };

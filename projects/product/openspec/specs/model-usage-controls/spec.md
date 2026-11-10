@@ -54,3 +54,78 @@
 #### Scenario: 读取失败及入口可用
 - **WHEN** 概览读取失败或没有已登录账号
 - **THEN** 显示读取失败或空状态，点击按钮仍能打开原设置，未登录与断开账号不伪装为已登录
+
+### Requirement: 账号卡片必须支持独立 ChatGPT API 来源原位配置
+
+账号设置 MUST 提供与订阅账号分开显示的独立 `ChatGPT API` 来源卡片。未配置时 MUST 在原卡片提供密码输入与保存动作，不要求切换独立页面，也不提供 URL 输入。校验成功后 MUST 在同一卡片展示账号状态、模型入口、观察时间及额度未知事实；校验失败 MUST 保留输入操作与其他来源，不得把失败账号显示为已登录。订阅来源与 API Key 来源 MUST 能同时显示为已连接或可用，不提供互斥启用要求。账号来源列表 MUST 按显示名称稳定排序，`全部来源` 固定在首位，使 `ChatGPT` 与 `ChatGPT API` 相邻显示。
+
+#### Scenario: 首次配置 API Key
+
+- **WHEN** 用户在 ChatGPT API 卡片填写密钥并保存
+- **THEN** 卡片 MUST 显示校验中状态，完成后显示可用模型与观察时间
+- **AND** 密钥 MUST 以密码输入呈现且保存后不再显示原文
+
+#### Scenario: 无效密钥诊断
+
+- **WHEN** 保存的密钥被服务商拒绝
+- **THEN** 卡片 MUST 显示具体认证或权限诊断并允许重新输入
+- **AND** 其他账号卡片 MUST 保持原状态和模型
+
+#### Scenario: 管理已连接 API Key
+
+- **WHEN** ChatGPT API 来源已连接
+- **THEN** 用户 MUST 能刷新模型、更换密钥、管理模型启停和上下文并断开该来源
+- **AND** 断开或更换 MUST 不影响 ChatGPT 订阅账号及无关来源
+
+#### Scenario: 订阅和 API Key 同时可用
+
+- **WHEN** ChatGPT 订阅账号和 ChatGPT API 来源均已成功连接
+- **THEN** 两张来源卡片 MUST 同时保持可用状态
+- **AND** 系统 MUST NOT 要求停用其中一个来源才能启用另一个
+
+#### Scenario: 账号来源名称排序
+
+- **WHEN** 账号设置同时展示 ChatGPT 订阅、ChatGPT API 与其他来源
+- **THEN** 来源列表 MUST 按显示名称排序，`ChatGPT` 与 `ChatGPT API` MUST 相邻
+- **AND** `全部来源` MUST 始终位于来源列表首位，排序不得改变当前选择或账号状态
+
+### Requirement: Qoder 套餐额度与资源包必须分别表达
+
+Qoder 来源 MUST 同时解析 `/usage` 返回的套餐额度与资源包额度，个人账号的 `addOnQuota` 与组织账号的资源包字段 MUST 按真实响应表达。系统 MUST 分别展示套餐窗口与资源包窗口，并按可用额度和总量计算账号级剩余比例；MUST NOT 仅因套餐窗口为 0% 判定整个账号耗尽，也 MUST NOT 因额度读取失败阻断模型目录。
+
+#### Scenario: 套餐耗尽但资源包仍有余额
+
+- **WHEN** `/usage` 返回套餐总额 1000、剩余 0，资源包总额 2700、剩余 1599
+- **THEN** 账号卡片 MUST 同时显示套餐与资源包窗口及其真实剩余
+- **AND** 账号级剩余比例 MUST 大于零，模型执行 MUST NOT 因额度耗尽被拒绝
+
+#### Scenario: 资源包读取失败
+
+- **WHEN** 资源包字段缺失或本次额度读取失败
+- **THEN** 系统 MUST 保留模型目录并明确额度未知或保留旧观察
+- **AND** MUST NOT 把未知资源包当作零余额
+
+### Requirement: ChatGPT API 额度未知必须明确且区分模型观察
+
+ChatGPT API 账号卡片 MUST 区分模型目录观察时间与额度观察时间。普通 API Key 无法读取剩余余额时，系统 MUST 明确显示额度未知，并说明费用与余额由 OpenAI 平台管理；MUST NOT 显示为零余额、已耗尽，或把模型目录已成功观察误显示为“尚未读取”。
+
+#### Scenario: 模型已读取但余额不可读
+
+- **WHEN** ChatGPT API 模型目录读取成功而官方 API 不返回剩余余额
+- **THEN** 卡片 MUST 显示模型目录观察时间与额度未知说明
+- **AND** 模型 MUST 保持可用，系统 MUST NOT 推断零余额
+
+#### Scenario: 普通 API Key 无法读取账单
+
+- **WHEN** 普通 API Key 请求组织账单或余额接口被拒绝
+- **THEN** 系统 MUST 保留未知状态并指向 OpenAI 平台用量/账单，不得要求用户把管理员密钥或会话 Cookie 交给 Buildr
+
+### Requirement: 模型候选来源快捷行必须保持单行
+
+模型候选弹层中的来源快捷行 MUST 在常见桌面与窄视口宽度内保持单行，超出时 MUST 采用可访问的横向滚动或其他不折行方式；来源按钮 MUST 保持可点击和可聚焦。
+
+#### Scenario: 多个来源同时存在
+
+- **WHEN** 模型候选同时包含 ChatGPT、DSH、Qoder、Devin 与 ChatGPT API
+- **THEN** 来源快捷行 MUST 不折成第二行
+- **AND** 每个来源 MUST 仍能定位到对应模型分组

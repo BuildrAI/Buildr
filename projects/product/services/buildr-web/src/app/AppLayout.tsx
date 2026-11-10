@@ -9,6 +9,7 @@ import { AppPrimaryNavigation } from './AppPrimaryNavigation';
 import { AppShellHeader, AppShellFrame } from './AppShellView';
 import { WorkbenchPreferencesProvider } from '../features/workbench/hooks/useWorkbenchPreferences';
 import { WorkspaceReadCacheProvider } from '../components/WorkspaceReadCache';
+import { RuntimeConfigurationOutcome } from '../features/service-runtime/components/RuntimeConfigurationOutcome';
 import { WorkbenchSearch } from '../features/workbench/components/WorkbenchSearch';
 import type { ResourcePreview } from './resource-preview';
 import { WorkspacePages } from './WorkspacePages';
@@ -144,6 +145,8 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
   const updateEntryRef = useRef<UpdateEntryHandle>(null);
   const [restartPhase, setRestartPhase] = useState<null | 'watching' | 'timed-out' | 'failed'>(null);
   const [restartError, setRestartError] = useState('');
+  const [agentRestarting, setAgentRestarting] = useState(false);
+  const agentRestartPending = useRef(false);
   const restartPending = useRef(false);
   const restartWatcher = useRef<AbortController | null>(null);
   const restartRequest = useRef<AbortController | null>(null);
@@ -298,8 +301,25 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
     setRestartPhase(status === 'failed' ? 'failed' : 'timed-out');
   }, []);
 
+  const restartAgent = async () => {
+    if (agentRestartPending.current || restartPending.current || quitPending.current) return;
+    agentRestartPending.current = true;
+    const controller = new AbortController();
+    restartRequest.current = controller;
+    try {
+      const current = await withRestartRequest(signal => runtimeSystemApi.agentRuntime(signal), {signal:controller.signal,timeoutMs:5000});
+      const ok = await confirmModal({title:'重启 Agent 执行服务？',content:'只重启独立执行服务，网页保持打开，对话历史与账号保留。有任务运行、待处理事项或版本切换时会拒绝重启；不会重发历史指令。',okText:'重启执行服务',okButtonProps:{danger:true}});
+      if (!ok) return;
+      setAgentRestarting(true); setRestartError('');
+      await withRestartRequest(signal => runtimeSystemApi.restartAgent(current.generation,signal), {signal:controller.signal,timeoutMs:30000});
+      window.location.reload();
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      setRestartError(error instanceof Error ? error.message : '执行服务重启尚未确认，请重新读取后核对。');
+    } finally { if (restartRequest.current === controller) restartRequest.current = null; agentRestartPending.current = false; setAgentRestarting(false); }
+  };
   const restart = async () => {
-    if (restartPending.current || quitPending.current) return;
+    if (agentRestartPending.current || restartPending.current || quitPending.current) return;
     restartPending.current = true;
     let controller: AbortController | null = null;
     try {
@@ -446,13 +466,15 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
 
   return (
     <AppShellContext.Provider value={shellValue}>
+      {/* 交接的完成观察固定在壳层，离开服务页后仍按原对话与运行定义对齐结果。 */}
+      <RuntimeConfigurationOutcome workspaceId={workspaceId} />
       <WorkspaceSourceControlProvider workspaceId={workspaceId}>
-      <WorkspaceReadCacheProvider key={workspaceId || 'global'}>
-      <WorkbenchPreferencesProvider key={workspaceId || "global"} workspaceId={workspaceId}>
+      <WorkspaceReadCacheProvider scopeKey={workspaceId || 'global'}>
+      <WorkbenchPreferencesProvider workspaceId={workspaceId}>
       <div className={"app-shell has-primary-navigation area-" + area + (conversations.open && conversations.full ? " has-full-conversation" : "")}>
         <AppShellHeader primaryNavigation="rail" isGlobal={isGlobal} brandHref={isGlobal ? '/' : workspaceHref('/overview')} development={webProfile === 'development'} workspaceName={isGlobal ? '全部工作空间' : (workspace?.name || '正在读取…')} workspaceMenuItems={workspaceMenuItems} area={area} workbenchHref={workspaceHref('/overview')} codeHref={codeEntryPath} workspaceDestination={{to:workspaceDestination.current.path,state:workspaceDestination.current.state}} actions={<>
             {!isGlobal ? <WorkbenchSearch key={workspaceId} /> : null}
-            <div className="global-conversations-control"><Button id="global-conversations-entry" className={conversations.open&&conversations.view==='conversation'?'is-active':''} type="text" icon={<CommentOutlined aria-hidden="true"/>} aria-label={conversations.open&&conversations.view==='conversation'?'收起当前对话':'展开当前对话'} aria-expanded={conversations.open&&conversations.view==='conversation'} onClick={()=>{setMobileActivityOpen(false);conversations.toggleView('conversation');}}/><ConversationActivity open={mobileActivityOpen} onOpenChange={setMobileActivityOpen} workspaces={registry.flatMap(entry=>entry.workspace?[{id:entry.workspace.id,name:entry.workspace.name,rootPath:entry.rootPath}]:[])}/></div>
+            <div className="global-conversations-control"><Button className="ac-new-conversation" type="text" icon={<PlusOutlined aria-hidden="true"/>} aria-label="新建对话" title="新建对话" onClick={()=>{setMobileActivityOpen(false);conversations.newConversation();}}/><Button id="global-conversations-entry" className={conversations.open&&conversations.view==='conversation'?'is-active':''} type="text" icon={<CommentOutlined aria-hidden="true"/>} aria-label={conversations.open&&conversations.view==='conversation'?'收起当前对话':'展开当前对话'} aria-expanded={conversations.open&&conversations.view==='conversation'} onClick={()=>{setMobileActivityOpen(false);conversations.toggleView('conversation');}}/><ConversationActivity open={mobileActivityOpen} onOpenChange={setMobileActivityOpen} workspaces={registry.flatMap(entry=>entry.workspace?[{id:entry.workspace.id,name:entry.workspace.name,rootPath:entry.rootPath}]:[])}/></div>
             {!isGlobal ? <Button className="shell-menu-toggle" aria-label="打开导航菜单" icon={<MenuOutlined />} onClick={() => setNavigationOpen(true)} /> : null}
             <InstallationInfoDialog open={installationInfoOpen} onClose={() => setInstallationInfoOpen(false)} />
             <UpdateEntry ref={updateEntryRef} enabled checkOnly={Boolean(preview)} openAgentAction={openAgentAction} onCompleted={webProfile === 'development' ? devUpdateCompleted : undefined} />
@@ -461,11 +483,12 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
                 { key: 'installation-info', icon: <InfoCircleOutlined />, label: '安装信息', onClick: () => setInstallationInfoOpen(true) },
                 { key: 'check-update', icon: <SyncOutlined />, label: <span id="check-buildr-update">检查更新…</span>, onClick: () => updateEntryRef.current?.check() },
                 { key: 'restart', icon: <PoweroffOutlined />, disabled: Boolean(preview), title: preview ? '托管预览由开发工具重新启动' : undefined, label: <span id="restart-buildr">重启 Buildr Web</span>, onClick: () => { void restart(); } },
+                { key: 'restart-agent', icon: <SyncOutlined />, disabled: Boolean(preview) || agentRestarting, label: <span id="restart-buildr-agent">重启 Agent 执行服务</span>, onClick: () => { void restartAgent(); } },
                 { key: 'quit', danger: true, icon: <CloseCircleOutlined />, label: <span id="quit-buildr">退出 Buildr Web</span>, onClick: () => { void quit(); } },
               ] }}
               trigger={['hover']} placement="bottomRight"
             >
-              <Button id="more-actions" className="nav-more" aria-label="更多操作" type="text" icon={<EllipsisOutlined />} loading={quitting} />
+              <Button id="more-actions" className="nav-more" aria-label="更多操作" type="text" icon={<EllipsisOutlined />} loading={quitting || agentRestarting} />
             </Dropdown>
             <div
               id="preview-identity"

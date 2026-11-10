@@ -47,6 +47,16 @@ save();
 reply(m.id,{turn:active});
 setTimeout(()=>{event('item/started',{threadId:p.threadId,turnId:id,item:user});
 event('item/agentMessage/delta',{threadId:p.threadId,turnId:id,itemId:'assistant-'+id,delta:'你好'});
+if(workText.includes('[stream-tool-output]')){
+const tool={id:'stream-'+id,type:'commandExecution',command:'synthetic stream',status:'inProgress'};
+active.items.push(tool);event('item/started',{threadId:p.threadId,turnId:id,item:tool});
+event('item/commandExecution/outputDelta',{threadId:p.threadId,turnId:'foreign-turn',itemId:tool.id,delta:'foreign'});
+event('item/commandExecution/outputDelta',{threadId:p.threadId,turnId:id,itemId:tool.id,delta:'first '});
+event('item/commandExecution/outputDelta',{threadId:p.threadId,turnId:id,itemId:tool.id,delta:'second'});
+tool.status='completed';tool.aggregatedOutput='first second';tool.exitCode=0;
+event('item/completed',{threadId:p.threadId,turnId:id,item:tool});
+active.status='completed';save();event('turn/completed',{threadId:p.threadId,turn:active});return;
+}
 if(workText.includes('[retain-command]')||workText.includes('[finish]')){
 if(workText.includes('[retain-command]')){const item={id:'command-'+id,type:'commandExecution',command:'synthetic retained command',status:'inProgress',processId:'native-process-'+id};active.items.push(item);event('item/started',{threadId:p.threadId,turnId:id,item});}
 const answer={id:'assistant-'+id,type:'agentMessage',text:'正常答复',phase:'final_answer'};active.items.push(answer);event('item/completed',{threadId:p.threadId,turnId:id,item:answer});

@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
-import { createVerificationReuseIdentity, reusedVerificationResult, validateVerificationReuseRecord,
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { createVerificationReuseIdentity, dependencyEnvironmentIdentity, reusedVerificationResult, validateVerificationReuseRecord,
   type VerificationReuseSnapshot, type VerificationReuseStep, type VerificationReuseRecord } from '../verification/verification-reuse.ts';
 import { verificationSteps, verificationStepExecutionInputs } from '../verification/registry.ts';
+import { portableVerificationExecutor, portableVerificationPreparations } from '../verification/verification-portable-inputs.ts';
 
 const sha = `sha256-${'a'.repeat(64)}` as const;
 const step: VerificationReuseStep = { id: 'fixture-check', executor: { type: 'node', file: 'check.ts' }, reuse: { scope: 'backend' }, dependsOn: [] };
@@ -36,6 +40,40 @@ test('source identity binds content and check recipe while commit and checkout l
   assert.notDeepEqual(createVerificationReuseIdentity(step, { ...snapshot, contentIdentities: { ...snapshot.contentIdentities, backend: `sha256-${'b'.repeat(64)}` } }), identity);
   assert.equal(createVerificationReuseIdentity({ ...step, executor: { type: 'candidate-artifact' } }, snapshot), null);
   assert.equal(createVerificationReuseIdentity({ ...step, executor: { type: 'node', consumesArtifact: true } }, snapshot), null);
+});
+
+test('command recipes normalize Node and repository paths without hiding external command changes', () => {
+  const command = {
+    type: 'command', file: '/opt/node-24.21/bin/node',
+    args: ['/checkout-a/projects/product/services/buildr/tools/check.ts', '--mode=source'],
+    cwd: '/checkout-a/projects/product/services/buildr',
+  };
+  assert.deepEqual(
+    portableVerificationExecutor(command, { repositoryRoot: '/checkout-a', nodeExecutable: '/opt/node-24.21/bin/node' }),
+    portableVerificationExecutor({
+      type: 'command', file: '/opt/node-24.22/bin/node',
+      args: ['/checkout-b/projects/product/services/buildr/tools/check.ts', '--mode=source'],
+      cwd: '/checkout-b/projects/product/services/buildr',
+    }, { repositoryRoot: '/checkout-b', nodeExecutable: '/opt/node-24.22/bin/node' }),
+  );
+  const commandStep = { ...step, executor: command };
+  const snapshotA = { ...snapshot, repositoryRoot: '/checkout-a', productRoot: '/checkout-a/projects/product/services/buildr' };
+  const snapshotB = { ...snapshot, repositoryRoot: '/checkout-b', productRoot: '/checkout-b/projects/product/services/buildr' };
+  assert.deepEqual(createVerificationReuseIdentity(commandStep, snapshotA), createVerificationReuseIdentity({
+    ...commandStep, executor: { ...command, args: [command.args[0]!.replace('checkout-a', 'checkout-b'), ...command.args.slice(1)],
+      cwd: command.cwd.replace('checkout-a', 'checkout-b') },
+  }, snapshotB));
+  assert.deepEqual(
+    portableVerificationPreparations([{ file: '/opt/node-24.21/bin/node', args: ['/checkout-a/tools/prepare.ts'], cwd: '/checkout-a' }],
+      { repositoryRoot: '/checkout-a', nodeExecutable: '/opt/node-24.21/bin/node' }),
+    portableVerificationPreparations([{ file: '/opt/node-24.22/bin/node', args: ['/checkout-b/tools/prepare.ts'], cwd: '/checkout-b' }],
+      { repositoryRoot: '/checkout-b', nodeExecutable: '/opt/node-24.22/bin/node' }),
+  );
+  assert.notDeepEqual(
+    portableVerificationExecutor({ type: 'command', file: '/usr/bin/git', args: [], cwd: '/checkout-a' }, { repositoryRoot: '/checkout-a' }),
+    portableVerificationExecutor({ type: 'command', file: '/usr/local/bin/git', args: [], cwd: '/checkout-b' }, { repositoryRoot: '/checkout-b' }),
+    'an external executable outside the repository remains a real recipe input',
+  );
 });
 
 test('execution inputs bind only the selected check inner workers, not queue capacities or unrelated checks', () => {
@@ -182,4 +220,22 @@ test('only the observed semantic input consumers declare selectors; artifact bro
   const inputs = Object.fromEntries(verificationSteps.flatMap((item: VerificationReuseStep) => item.reuse && item.reuse.inputs ? [[item.id, item.reuse.inputs]] : []));
   assert.deepEqual(inputs, { 'spec-change-consistency': ['BUILDR_VERIFICATION_BASE'], 'runtime-skill-projection': ['BUILDR_CHANGED_PATHS_JSON'], 'docs-quality': ['BUILDR_CHANGED_PATHS_JSON'] });
   assert.equal(verificationSteps.find((item: VerificationReuseStep) => item.id === 'artifact-browser-core').reuse, false);
+});
+
+test('dependency environment identity follows declarations and installed versions, not source-derived build output', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-dependency-identity-'));
+  try {
+    fs.writeFileSync(path.join(root, 'package.json'), '{"name":"fixture"}');
+    fs.writeFileSync(path.join(root, 'package-lock.json'), '{"lockfileVersion":3}');
+    fs.mkdirSync(path.join(root, 'node_modules', '@fixture', 'pkg'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'node_modules', '.package-lock.json'), '{"packages":{}}');
+    const first = dependencyEnvironmentIdentity(root);
+    assert.match(first ?? '', /^sha256-/u);
+    // Rebuilding a linked workspace package mutates node_modules bytes without
+    // changing what was installed; it must not invalidate every check.
+    fs.writeFileSync(path.join(root, 'node_modules', '@fixture', 'pkg', 'build.js'), 'changed');
+    assert.equal(dependencyEnvironmentIdentity(root), first);
+    fs.writeFileSync(path.join(root, 'node_modules', '.package-lock.json'), '{"packages":{"@fixture/pkg":{}}}');
+    assert.notEqual(dependencyEnvironmentIdentity(root), first);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });

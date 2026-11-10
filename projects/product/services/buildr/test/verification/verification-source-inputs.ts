@@ -2,8 +2,9 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { scopedVerificationInputs } from './verification-inputs.ts';
+import { createVerificationInputAnalysis, scopedVerificationInputs } from './verification-inputs.ts';
 import type { VerificationReuseScope, VerificationReuseStep, ReuseDigest } from './verification-reuse.ts';
+import { portableVerificationExecutor } from './verification-portable-inputs.ts';
 
 type Entry = string[];
 export type VerificationInputSource = { entries: Entry[]; unavailable: Set<string>; readText: (file: string) => string };
@@ -16,6 +17,12 @@ function workingSource(repositoryRoot: string): VerificationInputSource {
     cwd: repositoryRoot, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024,
   }).split('\0').filter(Boolean))].sort();
   const unavailable = new Set<string>();
+  const texts = new Map<string, string>();
+  const readBytes = (file: string, absolute: string) => {
+    const bytes = fs.readFileSync(absolute);
+    if (/\.[cm]?[jt]sx?$/u.test(file)) texts.set(file, bytes.toString('utf8'));
+    return bytes;
+  };
   const entries = files.map(file => {
     const absolute = path.join(repositoryRoot, file), stat = fs.lstatSync(absolute, { throwIfNoEntry: false });
     if (!stat) return [file, 'absent'];
@@ -23,12 +30,12 @@ function workingSource(repositoryRoot: string): VerificationInputSource {
       try {
         const target = fs.realpathSync(absolute), relative = path.relative(repositoryRoot, target);
         if (relative.startsWith('..') || path.isAbsolute(relative) || !fs.statSync(target).isFile()) unavailable.add(file);
-        return [file, 'link', fs.readlinkSync(absolute), unavailable.has(file) ? 'unknown-target' : bytesDigest(fs.readFileSync(target))];
+        return [file, 'link', fs.readlinkSync(absolute), unavailable.has(file) ? 'unknown-target' : bytesDigest(readBytes(file, target))];
       } catch { unavailable.add(file); return [file, 'link', 'unknown-target']; }
     }
-    return stat.isFile() ? [file, stat.mode & 0o111 ? 'executable' : 'file', bytesDigest(fs.readFileSync(absolute))] : [file, 'other'];
+    return stat.isFile() ? [file, stat.mode & 0o111 ? 'executable' : 'file', bytesDigest(readBytes(file, absolute))] : [file, 'other'];
   });
-  return { entries, unavailable, readText: file => fs.readFileSync(path.join(repositoryRoot, file), 'utf8') };
+  return { entries, unavailable, readText: file => texts.get(file) ?? fs.readFileSync(path.join(repositoryRoot, file), 'utf8') };
 }
 
 /** Read immutable Git objects without checkout, index changes, or executing old code. */
@@ -87,6 +94,12 @@ export function createVerificationSourceInputReader(repositoryRoot: string, prod
   repositoryRoot = fs.realpathSync(repositoryRoot);
   productRoot = fs.realpathSync(productRoot);
   const source = suppliedSource ?? (commit ? committedSource(repositoryRoot, commit) : workingSource(repositoryRoot));
+  const analysis = createVerificationInputAnalysis();
+  const texts = new Map<string, string>();
+  const readText = (file: string) => {
+    if (!texts.has(file)) texts.set(file, source.readText(file));
+    return texts.get(file)!;
+  };
   const prefix = 'projects/product/services/', backend = `${prefix}buildr/`, web = `${prefix}buildr-web/`, plugin = `${prefix}dsh-plugin/`;
   const common = (file: string) => ['projects/product/.node-version', 'projects/product/buildr', 'projects/product/preparation.yml', 'projects/product/verification.yml'].includes(file)
     || !options.legacyDeclarations && file === '.github/workflows/verify.yml';
@@ -105,7 +118,7 @@ export function createVerificationSourceInputReader(repositoryRoot: string, prod
   const inputs = (step: VerificationReuseStep, proof: boolean) => {
     const scope = step.reuse && step.reuse.scope;
     if (!scope) throw new Error('Expected a reusable source check.');
-    let value = scopedVerificationInputs(selected[scope], repositoryRoot, productRoot, step, { ...options, proof, readText: source.readText });
+    let value = scopedVerificationInputs(selected[scope], repositoryRoot, productRoot, step, { ...options, proof, readText, analysis });
     if (value.unresolved.some(item => item.includes(':module:'))) {
       const scopedPaths = new Set(selected[scope].map(([file]) => file!));
       const sourcePaths = new Set(source.entries.map(([file]) => file!));
@@ -121,7 +134,7 @@ export function createVerificationSourceInputReader(repositoryRoot: string, prod
         const roots = outside.map(file => file.match(/^(?:projects\/product\/services\/[^/]+|skills\/[^/]+)\//u)?.[0] ?? '');
         const expanded = scope === 'platform-backend' || roots.includes('') ? source.entries
           : source.entries.filter(([file]) => scopedPaths.has(file!) || roots.some(root => file!.startsWith(root)));
-        value = scopedVerificationInputs(expanded, repositoryRoot, productRoot, step, { ...options, proof, readText: source.readText });
+        value = scopedVerificationInputs(expanded, repositoryRoot, productRoot, step, { ...options, proof, readText, analysis });
         if (scope === 'platform-backend') {
           value.fallback = true;
           value.unresolved = [...new Set([...value.unresolved, ...outside.map(file => `platform-backend:module-outside-scope:${file}`)])].sort();
@@ -144,6 +157,6 @@ export function collectVerificationSourceInputs(repositoryRoot: string, productR
     contentIdentities: reader.contentIdentities, unavailableScopes: reader.unavailableScopes,
     stepInputs: Object.fromEntries(steps.filter(step => step.reuse && step.reuse.inputMode === 'runtime-check').map(step => [step.id, reader.inputs(step, false)])),
     proofInputs: Object.fromEntries(steps.filter(step => step.reuse).map(step => [step.id, { ...reader.inputs(step, true),
-      selectionIdentity: digest({ executor: step.executor, scope: step.reuse && step.reuse.scope }) }])),
+      selectionIdentity: digest({ executor: portableVerificationExecutor(step.executor, { repositoryRoot }), scope: step.reuse && step.reuse.scope }) }])),
   };
 }

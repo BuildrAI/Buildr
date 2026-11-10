@@ -1,27 +1,42 @@
 import path from 'node:path';
+import fs from 'node:fs';
 import process from 'node:process';
 import { sharedCheckPreparation } from '../../../buildr/tools/testing/verification-checks.ts';
 
 const root = path.resolve(import.meta.dirname, '../..');
+const processTests = (group: string, omit: string) => fs.globSync(`test/integration/process/${group}/*.test.ts`, { cwd: root }).filter(file => path.basename(file) !== omit).sort();
+const rootTests = fs.globSync('test/integration/*.test.ts', { cwd: root }).filter(file => path.basename(file) !== 'conversations.test.ts').sort();
 const runner = path.resolve(root, '../buildr/tools/testing/run-service-tests.ts');
 /** Each integration file has one primary owner. The public full entry consumes this catalogue. */
 export const agentIntegrationChecks = [
   { id: 'agent-integration', name: 'Agent storage, conversations and local service contracts',
-    testFiles: ['test/integration/*.test.ts'], schedulingCostMs: 40000, timeoutMs: 90000,
-    resourceDemand: { workers: 2, processes: 2 } },
+    testFiles: rootTests, schedulingCostMs: 70000, timeoutMs: 90000,
+    // Database/cache/filesystem lifecycles are real IO, not a lightweight model protocol.
+    resourceDemand: { workers: 2, processes: 2, workspaceIo: 2 } },
+  { id: 'agent-integration-conversations', name: 'Agent conversation lifecycle and authenticated input contracts',
+    testFiles: ['test/integration/conversations.test.ts'], schedulingCostMs: 50000, timeoutMs: 90000,
+    resourceDemand: { workers: 1, processes: 1, workspaceIo: 1 } },
   { id: 'agent-integration-native', name: 'Agent native executor and model protocols',
-    testFiles: ['test/integration/executors/**/*.test.ts'], schedulingCostMs: 15000, timeoutMs: 60000,
+    testFiles: ['test/integration/executors/**/*.test.ts'], schedulingCostMs: 30000, timeoutMs: 60000,
     resourceDemand: { workers: 2, processes: 2 } },
   { id: 'agent-integration-startup', name: 'Agent real process startup, host exits and ownership',
-    testFiles: ['test/integration/process/startup/*.test.ts'], schedulingCostMs: 40000, timeoutMs: 90000,
+    testFiles: processTests('startup', 'ownership.test.ts'), schedulingCostMs: 55000, timeoutMs: 90000,
+    resourceDemand: { workers: 1, processes: 1, workspaceIo: 1 }, resources: ['agent-process-tests'] },
+  { id: 'agent-integration-startup-ownership', name: 'Agent real host exits and retained ownership',
+    testFiles: ['test/integration/process/startup/ownership.test.ts'], schedulingCostMs: 65000, timeoutMs: 90000,
     resourceDemand: { workers: 1, processes: 1, workspaceIo: 1 }, resources: ['agent-process-tests'] },
   { id: 'agent-integration-handoff', name: 'Agent real retained generations and question handoff',
-    // Serial execution of the six retained-process scenarios takes ~90 seconds;
-    // this is the whole-group ceiling, separate from each scenario's timeout.
-    testFiles: ['test/integration/process/handoff/*.test.ts'], schedulingCostMs: 90000, timeoutMs: 180000,
+    // Activation owns the expensive upgrade chain separately; each file still has one primary owner.
+    testFiles: processTests('handoff', 'activation.test.ts'), schedulingCostMs: 120000, timeoutMs: 180000,
+    resourceDemand: { workers: 1, processes: 1, workspaceIo: 1 }, resources: ['agent-process-tests'] },
+  { id: 'agent-integration-handoff-activation', name: 'Agent retained runtime activation and failed successor recovery',
+    testFiles: ['test/integration/process/handoff/activation.test.ts'], schedulingCostMs: 100000, timeoutMs: 180000,
     resourceDemand: { workers: 1, processes: 1, workspaceIo: 1 }, resources: ['agent-process-tests'] },
   { id: 'agent-integration-recovery', name: 'Agent real observation, cancellation and resource release',
-    testFiles: ['test/integration/process/recovery/*.test.ts'], schedulingCostMs: 120000, timeoutMs: 240000,
+    testFiles: processTests('recovery','protocol-budget.test.ts'), schedulingCostMs: 168000, timeoutMs: 240000,
+    resourceDemand: { workers: 1, processes: 1, workspaceIo: 1 }, resources: ['agent-process-tests'] },
+  { id: 'agent-integration-recovery-budget', name: 'Agent real recovery backoff budget',
+    testFiles: ['test/integration/process/recovery/protocol-budget.test.ts'], schedulingCostMs: 35000, timeoutMs: 60000,
     resourceDemand: { workers: 1, processes: 1, workspaceIo: 1 }, resources: ['agent-process-tests'] },
 ].map(group => ({ ...group, type: 'Integration',
   sourcePaths: ['src/**', 'tools/testing/**', 'test/support/**', 'test/integration/fixtures/**', 'package.json',

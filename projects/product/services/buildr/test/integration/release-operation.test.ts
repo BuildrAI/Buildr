@@ -794,7 +794,7 @@ test('publish binds cleanup to its context and resume never expands historical a
 test('original package is handed off while the other OS runs, and only readbacks are repeated', async t => {
   const { observeCandidatePackage, candidateRunTimings } = await import('../../../../../../skills/buildr-release/scripts/candidate-run-observation.ts');
   const { localArtifactHandoff } = await import('../../../../../../skills/buildr-release/scripts/release-orchestration-runner.ts');
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-early-handoff-'));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-early-handoff-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const sourceCommit = 'a'.repeat(40);
   const built = await createReleaseArtifactFixture(path.join(root, 'producer'), sourceCommit);

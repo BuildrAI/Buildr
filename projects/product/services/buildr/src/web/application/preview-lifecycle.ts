@@ -51,6 +51,8 @@ export type PreviewOwner = {
   productCheckout: string | null;
   repositorySet: PreviewRepository[];
   identityMode: 'task-worktree-v1' | 'standalone-checkout';
+  workspaceMode?: 'shared' | 'snapshot';
+  environmentRoot?: string;
   taskStore?: { source: 'canonical' | 'existing'; seeded: boolean } | null;
   reuse?: PreviewReuseFacts;
   managedProcess?: { pid: number; url?: string; state: 'healthy' | 'cleanup-failed' };
@@ -149,6 +151,8 @@ function parsePreviewOwner(value: unknown, expectedName?: string): PreviewOwner 
     || typeof item.branch !== 'string'
     || typeof item.head !== 'string'
     || typeof item.dirty !== 'boolean'
+    || (item.workspaceMode !== undefined && item.workspaceMode !== 'shared' && item.workspaceMode !== 'snapshot')
+    || (item.environmentRoot !== undefined && (typeof item.environmentRoot !== 'string' || !path.isAbsolute(item.environmentRoot)))
     || (item.identityMode !== 'task-worktree-v1' && item.identityMode !== 'standalone-checkout')) return null;
   const repositorySet = parseRepositorySet(item.repositorySet);
   if (!repositorySet) return null;
@@ -172,6 +176,8 @@ function parsePreviewOwner(value: unknown, expectedName?: string): PreviewOwner 
     productCheckout: optionalString(item.productCheckout),
     repositorySet,
     identityMode: item.identityMode,
+    workspaceMode: item.workspaceMode === 'shared' ? 'shared' : 'snapshot',
+    environmentRoot: optionalString(item.environmentRoot) || undefined,
     taskStore: parseTaskStore(item.taskStore),
     reuse: readPreviewReuseFacts(item.reuse) ?? undefined,
     managedProcess: parseManagedProcess(item.managedProcess),
@@ -266,6 +272,11 @@ function samePreviewOwner(left: PreviewOwner | null, right: PreviewOwner): boole
     && (left.productCheckout === right.productCheckout || sameFilesystemPath(left.productCheckout, right.productCheckout))
     && left.taskId === right.taskId
     && left.identityMode === right.identityMode
+    && (left.workspaceMode || 'snapshot') === right.workspaceMode
+    // Old workers did not declare their data target or registry mode. They can
+    // still be stopped, but must restart before promising new mode semantics.
+    && Boolean(left.environmentRoot)
+    && sameFilesystemPath(left.environmentRoot, right.environmentRoot)
     && left.workspaceRoot === right.workspaceRoot
     && left.worktreeEvidencePath === right.worktreeEvidencePath
     && (left.identityMode !== 'task-worktree-v1' || preservesPreviewRepositories(left, right.worktreePlanDigest, right.repositorySet)));
@@ -490,7 +501,11 @@ export async function startPreview(runtime: PreviewRuntime, name: string, args: 
   const dataRoot = options.dataRoot || buildrWebDataRoot();
   const startupTimeoutMs = options.startupTimeoutMs ?? 10_000;
   const instance = assertPreviewName(name);
-  runtime.assertNoUnknownOptions(args, new Set(['--target', '--task', '--port', '--workspace', '--no-open', '--json', '--reuse', '--refresh-reuse']), new Set(['--no-open', '--json', '--refresh-reuse']));
+  runtime.assertNoUnknownOptions(args, new Set(['--target', '--task', '--port', '--workspace', '--workspace-mode', '--no-open', '--json', '--reuse', '--refresh-reuse']), new Set(['--no-open', '--json', '--refresh-reuse']));
+  const workspaceMode = runtime.optionValue(args, '--workspace-mode', 'shared');
+  if (workspaceMode !== 'shared' && workspaceMode !== 'snapshot') {
+    throw codedError('--workspace-mode 必须为 shared 或 snapshot。', 'preview_workspace_mode_invalid');
+  }
   const rawReuse = runtime.optionValue(args, '--reuse', null);
   const refreshReuse = args.includes('--refresh-reuse');
   if (refreshReuse && !rawReuse) {
@@ -514,8 +529,6 @@ export async function startPreview(runtime: PreviewRuntime, name: string, args: 
     const workspaceRoot = fs.realpathSync(runtime.assertCanonicalTaskWorkspace(requestedRoot));
     taskWorktree = resolveTaskPreviewWorktree(runtime, workspaceRoot, taskId);
     targetRoot = taskWorktree.worktree;
-    const taskStore = prepareTaskPreviewStore(taskWorktree);
-    taskWorktree = { ...taskWorktree, taskStore };
     // Product checkout 在目标工作树内的位置等于调用方 product 相对其自身 checkout 根的路径；
     // 调用方可以来自 canonical 或任一 linked worktree，不能直接以 canonical 根取相对值。
     const productRoot = runtime.productRoot();
@@ -542,7 +555,8 @@ export async function startPreview(runtime: PreviewRuntime, name: string, args: 
       portNote = desiredPort === remembered ? `复用上次端口 ${remembered}。` : `上次端口 ${remembered} 被占用，改用随机端口。`;
     }
   }
-  const owner = previewOwnerForWorktree(instance, targetRoot, appInvocation.sourceRoot, taskWorktree);
+  const environmentRoot = workspaceMode === 'shared' && taskWorktree ? taskWorktree.workspaceRoot : targetRoot;
+  let owner: PreviewOwner = { ...previewOwnerForWorktree(instance, targetRoot, appInvocation.sourceRoot, taskWorktree), workspaceMode, environmentRoot };
   const existingOwner = readPreviewOwner(instance, dataRoot);
   const existingInstance = readPreviewInstance(instance, dataRoot);
   const healthy = await healthyInstance(existingInstance);
@@ -571,6 +585,16 @@ export async function startPreview(runtime: PreviewRuntime, name: string, args: 
   if (existingOwner && !samePreviewOwner(existingOwner, owner) && existingInstance) {
     throw codedError(`预览实例 ${instance} 留有其他 worktree 的陈旧记录；请由原 owner 执行 preview stop 后再复用。`, 'preview_owner_stale_conflict', { instance, owner: existingOwner });
   }
+  const retainedRegistry = record(readJson(path.join(previewDataRoot(instance, dataRoot), 'workspace-registry.json')));
+  if (workspaceMode === 'shared' && taskWorktree && Array.isArray(retainedRegistry?.roots)
+    && retainedRegistry.roots.some(root => typeof root === 'string' && sameFilesystemPath(root, taskWorktree.worktree))) {
+    throw codedError(`预览实例 ${instance} 保留了工作树快照登记；请使用新实例名，或由原 owner 执行 preview stop --purge 后重建，不能混用真实工作空间。`, 'preview_workspace_mode_conflict');
+  }
+  // Only snapshot mode prepares a local store, and never before ownership has
+  // been checked: a rejected mode switch must not seed or overwrite data.
+  if (workspaceMode === 'snapshot' && taskWorktree) {
+    owner = { ...owner, taskStore: prepareTaskPreviewStore(taskWorktree) };
+  }
   const root = previewDataRoot(instance, dataRoot);
   fs.mkdirSync(root, { recursive: true });
   const previousReuse = existingOwner?.reuse ?? readStoredPreviewReuse(instance, dataRoot);
@@ -591,8 +615,8 @@ export async function startPreview(runtime: PreviewRuntime, name: string, args: 
   const logDescriptor = fs.openSync(logFile, 'a');
   let child: ChildProcess;
   try {
-    child = spawn(appInvocation.command, [...appInvocation.argsPrefix, 'web', '--target', targetRoot, '--port', String(desiredPort), '--no-open'], {
-      cwd: targetRoot,
+    child = spawn(appInvocation.command, [...appInvocation.argsPrefix, 'web', '--target', environmentRoot, '--port', String(desiredPort), '--no-open'], {
+      cwd: environmentRoot,
       detached: true,
       stdio: ['ignore', logDescriptor, logDescriptor],
       env: { ...process.env, BUILDR_APP_DATA_DIR: root, BUILDR_LOCAL_APP_PREVIEW: JSON.stringify(ownedOwner) },

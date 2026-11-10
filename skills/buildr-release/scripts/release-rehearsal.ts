@@ -14,7 +14,7 @@ import { validateReleaseExecutionBinding } from './release-execution-binding.ts'
 import { inspectReleaseSelection } from './release-selection.ts';
 import { observeUnpublishedRelease } from './release-observation.ts';
 import { readReleaseArtifact } from './release-artifact.ts';
-import { assertReleaseConsumptionCoverage } from '../../../projects/product/services/buildr/test/verification/release/release-consumption.ts';
+import { assertReleaseConsumptionCoverage } from '../../../projects/product/services/buildr/test/verification/release/release-consumption-contract.ts';
 import { pushReleaseBranch } from './release-git-convergence.ts';
 
 export const RELEASE_REHEARSAL_PREPARATION_SCHEMA = 'buildr.release-rehearsal-preparation/v2';

@@ -2,18 +2,17 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 import YAML from 'yaml';
 
 import { applyWorkspaceSqliteMigration, loadWorkspaceSqliteMigrations } from '../../src/infrastructure/sqlite/workspace-sqlite.ts';
 import { copyPreparedWorkspace } from '../helpers/prepared-fixtures.ts';
+import { runCliInProcess } from '../helpers/in-process-cli.ts';
 
 const PRODUCT_ROOT: any = path.resolve(import.meta.dirname, '../..');
-const BUILDR: any = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
-function run(args: any): any  {
-  return spawnSync(process.execPath, [BUILDR, ...args], { cwd: PRODUCT_ROOT, encoding: 'utf8' });
+async function run(args: any): Promise<any>  {
+  return runCliInProcess(args);
 }
 
 function fixtureRoot(t: any): any  {
@@ -96,7 +95,7 @@ function seedBeforeRetrospectiveRefactor(root: any): any  {
   database.close();
 }
 
-test('sync 清退 package 已不再声明的 Buildr-owned contract 与 binding', (t: any) => {
+test('sync 清退 package 已不再声明的 Buildr-owned contract 与 binding', async (t: any) => {
   const root: any = fixtureRoot(t);
   const manifestFile: any = path.join(root, 'skills', 'manifest.yml');
   const manifest: any = YAML.parse(fs.readFileSync(manifestFile, 'utf8'));
@@ -143,7 +142,7 @@ Fixture.
 Fixture.
 `);
 
-  const synced: any = run(['sync', 'codex', '--target', root]);
+  const synced: any = await run(['sync', 'codex', '--target', root]);
   assert.equal(synced.status, 0, synced.stderr || synced.stdout);
   const updated: any = YAML.parse(fs.readFileSync(manifestFile, 'utf8'));
   assert.equal(updated.contracts.some((item: any) => item.id === 'buildr.retired-example'), false);
@@ -151,19 +150,19 @@ Fixture.
   assert.equal(fs.existsSync(target), false);
 });
 
-test('sync 直接删除既有 Task Asset Review observation 数据', (t: any) => {
+test('sync 直接删除既有 Task Asset Review observation 数据', async (t: any) => {
   const root: any = fixtureRoot(t);
   seedBeforeRetrospectiveRefactor(root);
   const legacy: any = path.join(root, '.buildr', 'asset-review', 'inbox', 'legacy.md');
   fs.mkdirSync(path.dirname(legacy), { recursive: true });
   fs.writeFileSync(legacy, Buffer.from('legacy observation bytes\n\u0000retired'));
 
-  const synced: any = run(['sync', 'codex', '--target', root]);
+  const synced: any = await run(['sync', 'codex', '--target', root]);
   assert.equal(synced.status, 0, synced.stderr || synced.stdout);
   assert.equal(fs.existsSync(path.join(root, '.buildr', 'asset-review')), false);
 });
 
-test('sync 不跟随 Task Asset Review 符号链接删除外部数据', (t: any) => {
+test('sync 不跟随 Task Asset Review 符号链接删除外部数据', async (t: any) => {
   if (process.platform === 'win32') return t.skip('symlink ownership boundary is covered on POSIX');
   const root: any = fixtureRoot(t);
   seedBeforeRetrospectiveRefactor(root);
@@ -173,24 +172,24 @@ test('sync 不跟随 Task Asset Review 符号链接删除外部数据', (t: any)
   fs.writeFileSync(externalFile, 'external');
   fs.symlinkSync(external, path.join(root, '.buildr', 'asset-review'));
 
-  const synced: any = run(['sync', 'codex', '--target', root]);
+  const synced: any = await run(['sync', 'codex', '--target', root]);
   assert.notEqual(synced.status, 0);
   assert.match(`${synced.stderr}\n${synced.stdout}`, /旧本机数据目录清理失败/);
   assert.equal(fs.readFileSync(externalFile, 'utf8'), 'external');
 });
 
-test('sync 接受已登记的历史 Task Asset Review contract 并安全退休', (t: any) => {
+test('sync 接受已登记的历史 Task Asset Review contract 并安全退休', async (t: any) => {
   const root: any = fixtureRoot(t);
   const target: any = injectLegacyAssetReviewContract(root);
-  const synced: any = run(['sync', 'codex', '--target', root]);
+  const synced: any = await run(['sync', 'codex', '--target', root]);
   assert.equal(synced.status, 0, synced.stderr || synced.stdout);
   assert.equal(fs.existsSync(target), false);
 });
 
-test('sync 接受上一版 Task Verification contract metadata 并安全升级到v4', (t: any) => {
+test('sync 接受上一版 Task Verification contract metadata 并安全升级到v4', async (t: any) => {
   const root: any = fixtureRoot(t);
   const legacy: any = injectLegacyTaskVerificationV3(root);
-  const synced: any = run(['sync', 'codex', '--target', root]);
+  const synced: any = await run(['sync', 'codex', '--target', root]);
   assert.equal(synced.status, 0, synced.stderr || synced.stdout);
   const manifest: any = YAML.parse(fs.readFileSync(path.join(root, 'skills', 'manifest.yml'), 'utf8'));
   assert.equal(manifest.contracts.some((item: any) => item.id === 'buildr.task-verification' && item.version === 3), false);
@@ -198,10 +197,10 @@ test('sync 接受上一版 Task Verification contract metadata 并安全升级�
   assert.equal(fs.existsSync(legacy), false);
 });
 
-test('sync 接受上一版 Task Record contract metadata 并安全升级到v4', (t: any) => {
+test('sync 接受上一版 Task Record contract metadata 并安全升级到v4', async (t: any) => {
   const root: any = fixtureRoot(t);
   injectLegacyTaskRecordV2(root);
-  const synced: any = run(['sync', 'codex', '--target', root]);
+  const synced: any = await run(['sync', 'codex', '--target', root]);
   assert.equal(synced.status, 0, synced.stderr || synced.stdout);
   const manifest: any = YAML.parse(fs.readFileSync(path.join(root, 'skills', 'manifest.yml'), 'utf8'));
   assert.equal(manifest.contracts.some((item: any) => item.id === 'buildr.task-record' && item.version === 2), false);
@@ -209,10 +208,10 @@ test('sync 接受上一版 Task Record contract metadata 并安全升级到v4', 
   assert.equal(manifest.bindings.some((item: any) => item.capability === 'buildr.task-record' && item.version === 2), false);
 });
 
-test('sync 将 Task Record v3 的受管契约与绑定一并升级为 v4', (t: any) => {
+test('sync 将 Task Record v3 的受管契约与绑定一并升级为 v4', async (t: any) => {
   const root: any = fixtureRoot(t);
   const predecessor = injectLegacyTaskRecordV3(root);
-  const synced: any = run(['sync', 'codex', '--target', root]);
+  const synced: any = await run(['sync', 'codex', '--target', root]);
   assert.equal(synced.status, 0, synced.stderr || synced.stdout);
   const manifest: any = YAML.parse(fs.readFileSync(path.join(root, 'skills', 'manifest.yml'), 'utf8'));
   assert.deepEqual(manifest.contracts.filter((item: any) => item.id === 'buildr.task-record').map((item: any) => item.version), [4]);
@@ -222,10 +221,10 @@ test('sync 将 Task Record v3 的受管契约与绑定一并升级为 v4', (t: a
   assert.ok(manifest.contracts.find((item: any) => item.id === 'buildr.task-record' && item.version === 4)?.resource, 'the upgraded contract must carry its shared resource projection');
 });
 
-test('sync 在源资产 mutation 前升级 pending SQLite migrations', (t: any) => {
+test('sync 在源资产 mutation 前升级 pending SQLite migrations', async (t: any) => {
   const root: any = fixtureRoot(t);
   const file: any = seedMigrationV4(root);
-  const synced: any = run(['sync', 'codex', '--target', root]);
+  const synced: any = await run(['sync', 'codex', '--target', root]);
   assert.equal(synced.status, 0, synced.stderr || synced.stdout);
   const database: any = new DatabaseSync(file, { readOnly: true });
   const expectedMigrations: any = loadWorkspaceSqliteMigrations().map(({ version, name }: any) => ({ version, name }));
@@ -236,14 +235,14 @@ test('sync 在源资产 mutation 前升级 pending SQLite migrations', (t: any) 
   database.close();
 });
 
-test('sync 的 SQLite migration 失败时不写源资产', (t: any) => {
+test('sync 的 SQLite migration 失败时不写源资产', async (t: any) => {
   const root: any = fixtureRoot(t);
   const file: any = path.join(root, '.buildr', 'local', 'workspace.sqlite');
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, 'not a sqlite database\n');
   const manifestFile: any = path.join(root, 'skills', 'manifest.yml');
   const manifestBefore: any = fs.readFileSync(manifestFile);
-  const synced: any = run(['sync', 'codex', '--target', root]);
+  const synced: any = await run(['sync', 'codex', '--target', root]);
   assert.notEqual(synced.status, 0);
   assert.match(`${synced.stderr}\n${synced.stdout}`, /Workspace structured store/);
   assert.deepEqual(fs.readFileSync(manifestFile), manifestBefore);

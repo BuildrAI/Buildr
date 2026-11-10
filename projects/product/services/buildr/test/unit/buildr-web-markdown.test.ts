@@ -20,6 +20,13 @@ function createTestDocument(): any  {
       nodeName: tagName === '#document-fragment' ? '#document-fragment' : tagName.toUpperCase(),
       tagName: tagName === '#document-fragment' ? undefined : tagName.toUpperCase(),
       attributes: Object.create(null),
+      listeners: new Map<string, (event: any) => void>(),
+      addEventListener(type: string, listener: (event: any) => void) { this.listeners.set(type,listener); },
+      dispatchEvent(event: any) { this.listeners.get(event.type)?.(event); },
+      replaceWith(next: any) {
+        const parent=this.parentNode;if(!parent)return;
+        parent.childNodes[parent.childNodes.indexOf(this)]=next;next.parentNode=parent;this.parentNode=null;
+      },
       childNodes: [],
       parentNode: null,
       ownerDocument: document,
@@ -160,6 +167,23 @@ test('renderMarkdown 兼容中文标点闭合加粗，不改写正文与字面�
   assert.equal(normal.querySelectorAll('strong').length, 2);
   assert.equal(normal.querySelector('em')?.textContent, '强调');
   assert.equal(renderMarkdown('**事项<script>：**较宽').querySelector('script'), null);
+});
+
+test('renderMarkdown 兼容中文引号紧贴开符的加粗，不改写正文与字面量', async () => {
+  const { renderMarkdown } = await loadRenderer();
+  const sentence = '因为当前框架主要按**"改了哪个文件"选组，还不能准确判断"这个文件里具体改了什么"**。';
+  const root = renderMarkdown(sentence);
+  assert.equal(root.querySelector('strong')?.textContent, '"改了哪个文件"选组，还不能准确判断"这个文件里具体改了什么"');
+  assert.equal(root.textContent, '因为当前框架主要按"改了哪个文件"选组，还不能准确判断"这个文件里具体改了什么"。');
+  for (const input of ['按**“改了哪个文件”**选组', '按**（见上文）**处理', '按**"说明"**。', '按**"A"**方案']) {
+    const view = renderMarkdown(input);
+    assert.ok(view.querySelector('strong'), input);
+    assert.equal(view.textContent.includes('**'), false, input);
+  }
+  for (const input of ['`按**"x"**选组`', '```\n按**"x"**选组\n```', '按\\*\\*"x"\\*\\*选组', '按**"x"选组']) {
+    assert.equal(renderMarkdown(input).querySelector('strong'), null, input);
+  }
+  assert.equal(renderMarkdown('Plain **"quoted"** text').querySelector('strong')?.textContent, '"quoted"');
 });
 
 test('renderMarkdown 支持标题层级偏移，避免详情页重复 h1', async () => {
@@ -512,4 +536,17 @@ test('任务列表的复合正文位于复用布局的单一内容区，有序�
   assert.equal(item.childNodes[1].className, 'markdown-task-content');
   assert.equal(item.childNodes[1].querySelector('strong').textContent, '完成');
   assert.equal(item.childNodes[1].querySelector('ul li').textContent, '子项');
+});
+
+test('failed image falls back in its current view and a fresh render can recover the same URL',async()=>{
+  const {renderMarkdown}=await loadRenderer();
+  const options={imageResolver:()=>({href:'/safe/recoverable.png'})};
+  const first=renderMarkdown('![可恢复图片](recoverable.png)',options);
+  const image=first.querySelector('img');assert.ok(image);
+  image.dispatchEvent({type:'error'});
+  assert.equal(first.querySelector('img'),null);
+  assert.match(first.textContent,/图片无法预览：可恢复图片/);
+  assert.equal(first.querySelector('span')?.getAttribute('aria-label'),'图片无法预览：可恢复图片','failed images retain their accessible name');
+  const refreshed=renderMarkdown('![可恢复图片](recoverable.png)',options);
+  assert.equal(refreshed.querySelector('img')?.getAttribute('src'),'/safe/recoverable.png');
 });

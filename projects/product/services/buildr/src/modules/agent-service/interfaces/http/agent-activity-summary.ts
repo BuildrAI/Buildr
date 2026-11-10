@@ -9,7 +9,7 @@ export function agentActivitySummary(page: Page, pending: unknown[], expectedRev
     taskId:view.taskId,taskIds:view.taskIds,taskLinks:view.taskLinks,activity:view.activity,
     participants:[],entries:[],requests:[],
     ...(view.run ? {run:{id:view.run.id,participantId:view.run.participantId,provider:view.run.provider,generation:view.run.generation,
-      status:view.run.status,accepted:view.run.accepted,tools:[],startedAt:view.run.startedAt,updatedAt:view.run.updatedAt,
+      status:view.run.status,accepted:view.run.accepted,stopRequested:view.run.stopRequested,executionState:view.run.executionState,tools:[],startedAt:view.run.startedAt,updatedAt:view.run.updatedAt,
       model:view.run.model,modelAccountId:view.run.modelAccountId}} : {}),
   }));
   const body = {conversations,pending,nextCursor:page.nextCursor,total:page.total,activityCounts:page.activityCounts,stats:page.stats};

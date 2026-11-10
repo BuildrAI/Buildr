@@ -33,10 +33,12 @@ export function createWebCliContributions(application: WebCliRuntime | null = nu
     surface: "maintenance",
     summary: "提供 --task 时，从该 Task 的受管 Git Worktree 启动；--reuse 可显式沿用开发版环境事实，预览能力保存精确 owner 并负责认证停止自己创建的进程。",
     help: [
-      "Usage: buildr web preview start <instance> [--task <task-id> --target <canonical-workspace>] [--workspace <root> ...] [--port <port>] [--reuse <profile>[:facet,...]] [--refresh-reuse] [--no-open] [--json]",
+      "Usage: buildr web preview start <instance> [--task <task-id> --target <canonical-workspace>] [--workspace-mode shared|snapshot] [--workspace <root> ...] [--port <port>] [--reuse <profile>[:facet,...]] [--refresh-reuse] [--no-open] [--json]",
       "",
       "提供 --task 时，从该 Task 的受管 Git Worktree 启动；预览能力保存精确 owner 并负责认证停止自己创建的进程。",
       "不提供 --task 时保留独立 checkout 预览。实例名不能接管其他健康预览，也不会替换默认 Buildr Web Runtime。",
+      "--workspace-mode 默认 shared：使用开发版登记的真实工作空间；--task 只选择产品代码工作树，不重复登记同 ID 工作树。真实业务操作仍受原有写入保护约束。",
+      "显式 snapshot：--task 使用工作树任务库快照，不合并开发版共享登记；适合隔离写入验收。启动结果包含 workspaceMode 和 environmentRoot；切换模式或数据目标使用新实例名，普通 stop 会保留旧数据与登记，不将快照实例直接改为共享实例。",
       "不指定 --port 时复用该实例上次端口（被占用则改用随机端口）；--workspace 可重复，把其他已初始化 Workspace 登记进本实例用于验收。",
       "--reuse development 沿用开发版应用数据：默认包含 model-catalog（模型账号、缓存模型与启用偏好）与 agent-runtime（provider 登录配置、所需程序与预览内连接绑定）。",
       "可用 --reuse development:model-catalog,agent-runtime 只选择明确 facet；agent-runtime 自动包含 model-catalog。来源只读，写入限定在预览实例根内。",

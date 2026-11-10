@@ -24,7 +24,12 @@ function fixture(t: test.TestContext) {
   // Cache storage is owned runtime state, outside the observed source inventory.
   fs.writeFileSync(path.join(root, '.git/info/exclude'), '.cache/\n');
   const step = { id: 'source-fixture', executor: { type: 'node', file: 'check.ts' }, reuse: { scope: 'backend' as const } };
-  const options = { productRoot, env, steps: [step] };
+  // The scope-comparison cases below consume Web/plugin tool identities too.
+  // Observe those plans explicitly; a backend-only observation cannot prove them.
+  const options = { productRoot, env, steps: [step,
+    { ...step, id: 'runtime-fixture', reuse: { scope: 'runtime' as const } },
+    { ...step, id: 'plugin-fixture', reuse: { scope: 'plugin' as const } },
+  ] };
   const observe = () => collectVerificationReuseSnapshot(options);
   return { root, productRoot, step, options, observe };
 }

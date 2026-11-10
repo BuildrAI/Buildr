@@ -53,6 +53,8 @@ DSH_BUILD_NODE=<explicit-compatible-node>
 
 `sdk:prepare`／`composition:dev` 是同工具的 npm 桥接，仍须显式传入以上输入。`build-plugin.ts`／`verify-all.ts` 原入口不改变；完整检查在唯一目录生成两种插件（Plugin），将精确路径交给共存测试及实际装载器（Loader），不读取固定旧产物。`BUILDR_DSH_SOURCE_SDK_ROOT` 仍可显式选择 SDK，不自动认为普通 rc.2 已增强。
 
+独立完整检查成功后回收本次创建的临时插件、组合构建和对端安装，保留报告、阶段日志和验证过的压缩包。失败或中断时保留现场；调用方提供的 SDK 与对端环境不参与回收。
+
 ## 实体产物与就绪核验
 
 先编译实际 Host 提供者及选定生产者 TypeScript 项目，使用原 `WorkspaceTypertGenerator` 生成真实远程声明，再编译客户端（Client）依赖项目并构建原轨迹浏览器产物。编译探针（Compiler Probe）检查正式列／详情扩展位（Slot）、`TrajectoryRecordContext`、已加载窗口 `recordContexts`、真实 `eventRefs` 及带类型的事件来源字段；不以占位声明或 `any[]` 通过。

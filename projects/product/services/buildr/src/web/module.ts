@@ -42,7 +42,7 @@ export function resumeDevelopmentWorkspaceRefresh(product: {channel?:string}, se
   setImmediate(() => { void refresh().catch((error:Error) => console.warn('工作空间后台刷新未完成：', error.message)); });
 }
 
-export function createWebModule(runtime: WebInstanceLifecycleRuntime, options: { httpContributions?: unknown[]; closeResources?: () => Promise<void>; onReady?:()=>void } = {}) {
+export function createWebModule(runtime: WebInstanceLifecycleRuntime, options: { httpContributions?: unknown[]; closeResources?: () => Promise<void>; onReady?:()=>void | Promise<void> } = {}) {
   const httpContributions = options.httpContributions || [];
   return Object.freeze({
     id: WEB_MODULE_ID,
@@ -69,7 +69,7 @@ export function createWebModule(runtime: WebInstanceLifecycleRuntime, options: {
       registerWebInstanceLifecycle(composition, {
         httpContributions,
         closeResources: options.closeResources,
-        createLocalWorkspaceServer: (webRuntime, serverOptions) => Reflect.apply(createLocalWorkspaceServer, undefined, [webRuntime, { ...serverOptions, onReady: () => { if (!serverOptions.previewIdentity) { options.onReady?.(); resumeUpdate();
+        createLocalWorkspaceServer: (webRuntime, serverOptions) => Reflect.apply(createLocalWorkspaceServer, undefined, [webRuntime, { ...serverOptions, onReady: async () => { if (!serverOptions.previewIdentity) { await options.onReady?.(); resumeUpdate();
           resumeDevelopmentWorkspaceRefresh(identity.readCurrentProductIdentity!(), serverOptions, workspace.refreshPreparedWorkspaces); } } }]),
         ensureRegisteredTarget: workspace.ensureRegisteredTarget,
         resolveRegisteredWorkspace: workspace.resolveRegisteredWorkspace,

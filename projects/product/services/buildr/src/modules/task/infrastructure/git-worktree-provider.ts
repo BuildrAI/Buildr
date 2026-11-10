@@ -908,6 +908,7 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
     const branch = observed[0].branch;
     const plan = planGitWorktrees({ workspaceRoot: root, taskId, branch, includes: observed.filter((item) => item.selector !== 'workspace').map((item) => item.selector) });
     const groupRoot = assertObservedCheckoutSet(observed, plan.repositories);
+    assertNoUnlistedNestedRepositories(observed, git, { groupRoot });
     const repositories = plan.repositories.map((descriptor): RepositoryEvidence => {
       const item = observed.find((entry) => entry.selector === descriptor.selector)!;
       const record = { ...descriptor, ...item };
@@ -915,7 +916,6 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
       const identity = fs.existsSync(item.checkoutPath) ? worktreeIdentity(item.checkoutPath) : null;
       return { ...record, startPoint: null, head: identity?.head ?? gitText(item.sourceRepository, ['rev-parse', '--verify', `refs/heads/${item.branch}^{commit}`]), clean: identity?.clean ?? null, registered: identity?.registered ?? false, state: identity ? 'ready' : 'blocked', diagnostic: identity ? null : '当前检出位置不存在。' };
     });
-    assertNoUnlistedNestedRepositories(repositories, git, { groupRoot });
     return { file: evidencePathForRepositories(taskId, plan.repositories), repositories, evidenceSource: 'observed', status: 'ready' };
   }
 
@@ -953,7 +953,6 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
         const checks: CleanupCheck[] = [];
         const controlMetadataOnly = new Set<string>();
         const retainedTargets = new Map<string, { kind: 'refs'; targetHead: string; refs: string[] } | { kind: 'worktree'; branch: string; head: string }>();
-        assertNoUnlistedNestedRepositories(stored.repositories, git);
         for (const record of stored.repositories) {
           assertCurrentCheckoutIdentity(record, git, parseGitWorktreeList, { cleanup: true });
           const reviewedDelivery = reviewedDeliveries[record.selector] ?? null;
@@ -1008,7 +1007,8 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
         const removed: Array<Record<string, unknown>> = [];
         for (const record of [...checks].sort((left, right) => right.checkoutPath.split(path.sep).length - left.checkoutPath.split(path.sep).length)) {
           assertCurrentCheckoutIdentity(record, git, parseGitWorktreeList, { cleanup: true });
-          assertNoUnlistedNestedRepositories(checks.filter((item) => item.checkoutPath === record.checkoutPath || inside(record.checkoutPath, item.checkoutPath)), git);
+          // 有存储登记时集合已完整；仅无历史恢复需要确认没有遗漏嵌套仓库。
+          if (stored.evidenceSource === 'observed') assertNoUnlistedNestedRepositories(checks.filter((item) => item.checkoutPath === record.checkoutPath || inside(record.checkoutPath, item.checkoutPath)), git);
           const retainedTarget = retainedTargets.get(record.selector);
           if (retainedTarget?.kind === 'refs') {
             const currentRefs = retainedDeliveryRefs(record.sourceRepository, retainedTarget.targetHead, record.branch);

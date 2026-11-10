@@ -8,7 +8,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { assertPluginSourceAggregate, releaseCandidateRequirements } from '../../../../projects/product/services/buildr/test/verification/release/verify-pr-candidate.ts';
 import { assertReleaseExecutorSource } from '../release-executor-recovery.ts';
 import { containsCredentialMaterial } from '../release-authority.ts';
-import { assertReleaseConsumptionCoverage } from '../../../../projects/product/services/buildr/test/verification/release/release-consumption.ts';
+import { assertReleaseConsumptionCoverage } from '../../../../projects/product/services/buildr/test/verification/release/release-consumption-contract.ts';
 import { assertBoundVerification } from '../../../../projects/product/services/dsh-plugin/tools/full-verification.ts';
 import { parseReleaseCandidate, readReleaseCandidate, sourceSdkIdentityFromFiles, SOURCE_SDK_MANIFEST, PLUGIN_SERVICE_PATH, type ReleaseCandidate } from './release-candidate.ts';
 import { assertPluginCandidateAdoption, createPluginCandidateAdoption, PLUGIN_CANDIDATE_ADOPTION_FILE, type PluginCandidateAdoption, type PluginCandidateMain } from './candidate-adoption.ts';

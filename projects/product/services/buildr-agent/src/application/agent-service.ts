@@ -11,6 +11,7 @@ import {createModelAccess} from '../model-access/application.ts';
 import {createDevinModelProvider} from '../model-access/providers/devin.ts';
 import {createCodexModelProvider} from '../model-access/providers/codex.ts';
 import {createDeepSeekModelProvider} from '../model-access/providers/deepseek.ts';
+import {createOpenAIApiModelProvider} from '../model-access/providers/openai-api.ts';
 import {createDeepSeekAccountOwner} from '../executors/dsh/model-source-owner.ts';
 import path from 'node:path';
 import process from 'node:process';
@@ -23,6 +24,7 @@ import { ConversationApplication } from '../application/conversation-application
 import { ConversationEvents } from '../application/conversation-events.ts';
 import { executorEnvironment } from '../application/executor-environment.ts';
 import { createNativeExecutors } from '../executors/index.ts';
+import { readNativeTool } from '../executors/index.ts';
 import { NativeProgramManager } from '../executors/program-manager.ts';
 import { PreparationApplication } from '../application/preparation-application.ts';
 import { HostContext } from '../application/host-context.ts';
@@ -32,7 +34,7 @@ export function createAgentService(options: AgentServiceOptions) {
   const generation = randomUUID();
   const root = path.join(options.dataRoot, 'agent-service');
   const resolver=new NativeContentResolver(root,id=>repository.readConversation(id));
-  const repository:ConversationRepository = new ConversationRepository(root,(record,entry)=>resolver.tool(record,entry));
+  const repository:ConversationRepository = new ConversationRepository(root,(record,entry)=>resolver.tool(record,entry),reference=>readNativeTool(root,reference));
   repository.startReadModels();
   const webhooks = new WebhookManagement(options.environment ?? process.env, root, after => repository.webhookRecoveryPage(after));
   const events = new ConversationEvents(generation, webhooks);
@@ -49,9 +51,9 @@ export function createAgentService(options: AgentServiceOptions) {
   });
   const dsh=owner('dsh');
   const dshProvider=createDeepSeekModelProvider({ownerFactory:()=>({...dsh,quota:async()=>connections.useProgram('dsh',async()=>{const runtime=await connections.runtime('dsh');return await runtime.modelQuota?.()??{available:false,observedAt:now()};}),beginLogin:async()=>{throw new Error('请在DSH账号中登录。');},cancelLogin:async()=>{},close:async()=>{},request:(url,init)=>dsh.request(new URL(url).pathname,init)})});
-  const nativeDsh:ModelProvider={...dshProvider,id:'native-dsh',label:'DSH / DeepSeek',connectionId:'dsh',async open(input){const runtime=await dshProvider.open(input);return{protocol:runtime.protocol,inspect:async()=>{const value=await runtime.inspect();return{...value,...(value.status==='ready'?{identity:await dsh.identity()}: {})};},beginLogin:u=>runtime.beginLogin(u),cancelLogin:()=>runtime.cancelLogin(),infer:i=>runtime.infer(i),close:()=>runtime.close()};}};
+  const nativeDsh:ModelProvider={...dshProvider,id:'native-dsh',label:'DeepSeek',connectionId:'dsh',async open(input){const runtime=await dshProvider.open(input);return{protocol:runtime.protocol,inspect:async()=>{const value=await runtime.inspect();return{...value,...(value.status==='ready'?{identity:await dsh.identity()}: {})};},beginLogin:u=>runtime.beginLogin(u),cancelLogin:()=>runtime.cancelLogin(),infer:i=>runtime.infer(i),close:()=>runtime.close()};}};
   const linkedProviders=[createCodexModelProvider({owner:owner('codex')}),nativeDsh,createQoderModelProvider(owner('qoder'))].map(provider=>({...provider,async open(input:Parameters<ModelProvider['open']>[0]){const runtime=await provider.open(input);return{protocol:runtime.protocol,inspect:()=>runtime.inspect(),beginLogin:(u:Parameters<typeof runtime.beginLogin>[0])=>runtime.beginLogin(u),cancelLogin:()=>runtime.cancelLogin(),close:()=>runtime.close(),infer:async(i:Parameters<typeof runtime.infer>[0])=>{const identity=createHash('sha256').update(await owner(provider.connectionId!).identity()).digest('hex');if(models.accounts.read(provider.id).identity!==identity)throw new ModelAccessError('model_identity_conflict','账号身份已变化，请刷新模型。');return runtime.infer(i);}};}}));
-  const models = createModelAccess({root: path.join(root, 'model-access'), providers: options.modelProviders ?? [...linkedProviders,createCodexModelProvider(), createDevinModelProvider(), createDeepSeekModelProvider({ownerFactory: async input => {
+  const models = createModelAccess({root: path.join(root, 'model-access'), providers: options.modelProviders ?? [...linkedProviders,createCodexModelProvider(),createOpenAIApiModelProvider(), createDevinModelProvider(), createDeepSeekModelProvider({ownerFactory: async input => {
     const bound = connections.get('dsh').executable;
     const catalog = await programManager.discover({provider:'dsh',...(bound?{executable:bound,boundExecutable:bound}:{}),signal:new AbortController().signal});
     const candidates = catalog.candidates.filter(candidate=>candidate.compatible);
@@ -191,7 +193,8 @@ export function createAgentService(options: AgentServiceOptions) {
       read: (workspaceId: string, id: string, input: Parameters<ConversationApplication['read']>[2] = {}) => conversations.read(workspaceId, id, input),
       participation: (workspaceId:string,id:string,input:{runId:string}) => conversations.participation(workspaceId,id,input),
       participationSummary: (workspaceId:string,input:import('../participation-contracts.ts').ParticipationSummaryInput={}) => conversations.participationSummary(workspaceId,input),
-      readEntry: (workspaceId:string,id:string,entryId:string,revision:string) => conversations.readEntry(workspaceId,id,entryId,revision),
+      readHistory: (workspaceId:string,id:string,input:Parameters<ConversationApplication['readHistory']>[2]) => conversations.readHistory(workspaceId,id,input),
+      readEntry: (workspaceId:string,id:string,entryId:string,revision:string,sourceId?:string) => conversations.readEntry(workspaceId,id,entryId,revision,sourceId),
       observationVersion: (workspaceId:string,id:string) => conversations.observationVersion(workspaceId,id),
       update: (workspaceId: string, id: string, input: Parameters<ConversationApplication['update']>[2]) => conversations.update(workspaceId, id, input),
       generateTitle: (workspaceId: string, id: string, input: Parameters<ConversationApplication['generateTitle']>[2]) => conversations.generateTitle(workspaceId, id, input),

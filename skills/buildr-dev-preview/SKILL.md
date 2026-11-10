@@ -28,8 +28,8 @@ description: 在 Buildr 自身开发或验收中，需要启动服务验证时�
 
 | 模式 | 服务目标（`--target`） | 任务数据 | 适用 |
 |---|---|---|---|
-| canonical 实时库 | canonical workspace 根 | canonical `.buildr/local/workspace.sqlite` 实时读取 | 需要真实任务记录、工作树材料经受管证据（`task-worktree-candidate`）解析的验收 |
-| 隔离快照 | 任务工作树根 | 启动前以一致副本为工作树 `.buildr/local/workspace.sqlite` 播种 | `--task` 预览形态、需要冻结数据时点或隔离页面内写入 |
+| shared（默认） | canonical workspace 根 | 直接读取开发版登记的真实工作空间和任务库 | 使用已有配置验收，代码仍来自任务工作树；材料按受管证据读取 |
+| snapshot（显式） | 任务工作树根 | 启动前以一致副本为工作树 `.buildr/local/workspace.sqlite` 播种 | 冻结数据时点或隔离页面内写入，不合并开发版共享登记 |
 | 空现场 | 隔离新建目录 | 不复制任务库 | 只验证页面壳层、不依赖任务材料 |
 
 快照播种只允许写工作树自身 `.buildr/local/`；canonical 库始终只读。已存在的工作树本地副本复用，不覆盖。
@@ -37,16 +37,18 @@ description: 在 Buildr 自身开发或验收中，需要启动服务验证时�
 ## 托管路径（首选）
 
 ```bash
-<worktree>/projects/product/buildr web preview start <instance> [--task <task-id> --target <canonical-root>] [--port 0] [--no-open] [--json]
+<worktree>/projects/product/buildr web preview start <instance> [--task <task-id> --target <canonical-root>] [--workspace-mode shared|snapshot] [--port 0] [--no-open] [--json]
 <worktree>/projects/product/buildr web preview list --json
 <worktree>/projects/product/buildr web preview stop <instance> [--task <task-id> --target <canonical-root>]
 ```
 
-- `--task` 形态：自动解析任务受管工作树、服务目标指向工作树、为目标缺失的本地任务库从 canonical 播种一致副本（结果 `taskStore` 如实标注 `canonical` 播种或 `existing` 复用）。这是隔离快照模式的托管实现，优先使用。
-- canonical 实时库模式：`web preview start <instance> --target <canonical-root>` 不提供 `--task`，服务目标为 canonical，任务材料按 worktree evidence 读工作树候选副本。
+- 默认 shared：`--task` 只解析受管工作树作为代码来源，服务数据目标为 canonical；开发版登记的其他真实工作空间也可直接选择，不再把同 ID 工作树重复登记。预览会话、端口、进程和登记写入仍隔离，不共享整个开发版数据根。
+- 显式 `--workspace-mode snapshot`：服务目标指向工作树，为缺失的本地任务库从 canonical 播种一致副本（`taskStore` 标注 `canonical` 播种或 `existing` 复用），不合并开发版共享登记，避免同 ID 主目录冲突。
+- 无 `--task` 时从当前开发入口运行代码，`--target` 直接指定真实工作空间。默认 shared；不要将同 ID 工作树当成另一个真实工作空间登记。
+- `--reuse development` 只负责模型与智能体运行环境，不负责工作空间列表；列表共享无需该参数。真实工作空间业务写入仍受原有授权、版本和候选来源保护；自举主目录任务库写入验收使用 snapshot，不绕过保护。
 - 连接页面和查询优先在隔离工作空间验证；真实系统验收另行核对目标及授权。预览通过当前团队实例读取团队认证，本机个人认证属于预览自己的数据目录，不复用日常个人账号；不得把开发工作空间当成业务连接来源。目标或数据源模式改变时使用新实例名，不覆盖已有登记。
 - 托管实例持有 owner、secret 与启动锁，`preview stop` 需匹配 owner 身份；不要直接 `kill` 进程绕过 owner 检查。
-- 启动输出即为验收链接：loopback URL + 实例名 + worktree/branch/HEAD + dirty 状态 + 任务库来源；向维护者交接时原样给出。
+- 启动输出即为验收链接：loopback URL + 实例名 + worktree/branch/HEAD + dirty 状态 + `workspaceMode` / `environmentRoot` + 任务库来源；向维护者交接时原样给出。模式或数据目标改变使用新实例名；普通停止会保留数据与登记，不把旧快照实例直接切到真实数据。清空旧实例须由原 owner 显式使用 `stop --purge` 并核对清理结果。
 
 ## 修改后重新验证
 

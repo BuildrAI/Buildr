@@ -11,6 +11,48 @@ import { verificationSteps } from '../verification/registry.ts';
 import { createVerificationSourceInputReader } from '../verification/verification-source-inputs.ts';
 import { createVerificationReuseIdentity } from '../verification/verification-reuse.ts';
 
+test('shared parsing keeps each check equivalent to a fresh observation, including import discovery order', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-input-analysis-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const prefix = 'projects/product/services/buildr/', productRoot = path.join(root, prefix);
+  fs.mkdirSync(productRoot, { recursive: true });
+  const files = new Map([
+    ['test/first.test.ts', "import { a, b } from './helpers/shared.ts'; a(); b();"],
+    ['test/second.test.ts', "import { b, a } from './helpers/shared.ts'; b(); a();"],
+    ['test/helpers/shared.ts', "import { first } from './first.ts'; import { second } from './second.ts'; export function a() { return first; } export function b() { return second; }"],
+    ['test/helpers/first.ts', 'export const first = 1;'],
+    ['test/helpers/second.ts', 'export const second = 2;'],
+  ].map(([file, text]) => [prefix + file, text]));
+  const source = { entries: [...files].map(([file, text]) => [file!, 'file', crypto.createHash('sha256').update(text!).digest('hex')]),
+    unavailable: new Set<string>(), readText: (file: string) => files.get(file)! };
+  const observe = () => createVerificationSourceInputReader(root, productRoot, undefined, source);
+  const step = (file: string) => ({ id: file, executor: { type: 'node-test', files: [file] }, reuse: { scope: 'backend' as const } });
+  const shared = observe();
+  for (const file of ['test/first.test.ts', 'test/second.test.ts', 'test/first.test.ts']) {
+    assert.deepEqual(shared.inputs(step(file), true), observe().inputs(step(file), true));
+  }
+});
+
+test('an observed working source retains its own module bytes while a fresh observation detects same-size drift', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-source-observation-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const productRoot = path.join(root, 'projects/product/services/buildr');
+  fs.mkdirSync(path.join(productRoot, 'test'), { recursive: true });
+  fs.writeFileSync(path.join(productRoot, 'test/check.ts'), "import './first.ts';");
+  fs.writeFileSync(path.join(productRoot, 'test/first.ts'), 'export const first = 1;');
+  fs.writeFileSync(path.join(productRoot, 'test/other.ts'), 'export const other = 2;');
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  git('init', '-b', 'dev'); git('add', '.');
+  git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'commit.gpgSign=false', 'commit', '-m', 'baseline');
+  const step = { id: 'check', executor: { type: 'node-test', files: ['test/check.ts'] }, reuse: { scope: 'backend' as const } };
+  const expected = createVerificationSourceInputReader(root, productRoot, git('rev-parse', 'HEAD')).inputs(step, true);
+  const observed = createVerificationSourceInputReader(root, productRoot);
+  const file = path.join(productRoot, 'test/check.ts'), stat = fs.statSync(file);
+  fs.writeFileSync(file, "import './other.ts';"); fs.utimesSync(file, stat.atime, stat.mtime);
+  assert.deepEqual(observed.inputs(step, true), expected);
+  assert.notDeepEqual(createVerificationSourceInputReader(root, productRoot).inputs(step, true), expected);
+});
+
 test('dynamic typecheck proof conservatively binds possible compilation inputs, transport and tools', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-typecheck-inputs-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

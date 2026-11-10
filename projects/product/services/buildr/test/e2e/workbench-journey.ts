@@ -30,7 +30,8 @@ export async function runWorkbenchJourney({ t, page, runtime, workspaceRoot, oth
   const documentPath = path.join(workspaceRoot, 'projects/demo/docs/workbench-reference.md');
   fs.mkdirSync(path.dirname(documentPath), { recursive: true });
   fs.writeFileSync(documentPath, '# 工作台关联资料\n\n这是当前项目的真实文件内容，用于接续目标并阅读成果。\n');
-  await page.goto(`${workspaceUrl}/overview`);
+  const landing=await page.goto(`${workspaceUrl}/overview`);
+  assert.equal(landing?.status(),200,'工作台初始文档应成功托管');
   const session = await page.locator('meta[name="buildr-session"]').getAttribute('content');
   assert.ok(session);
   const headers = { origin: new URL(workspaceUrl).origin, 'x-buildr-session': session, 'content-type': 'application/json' };

@@ -371,13 +371,13 @@ export function registerApplicationRuntime(dependencies: RuntimeProjectionDepend
       }
     }
     for (const warning of rendered.warnings) console.error(`Warning: ${warning}`);
-    if (finalDoctor.classification.status !== 'passed') {
+    if (!['passed', 'skipped'].includes(finalDoctor.classification.status)) {
       const detail = finalDoctor.classification.diagnostic ? `\n${finalDoctor.classification.diagnostic}` : '';
       throw new Error(`${runtimeId ?? adapterId} sync 未完成：${finalDoctor.classification.message}${detail}`);
     }
     const hasPending = updated.findings.some((item:any)=>['modified','missing','blocked'].includes(item.status)&&!item.converge);
     adoptPackageResources(targetRoot, !hasPending, resourceSet);
-    console.log('doctor 通过。');
+    console.log(finalDoctor.classification.status === 'skipped' ? 'doctor 由验证检查覆盖。' : 'doctor 通过。');
   }
 
   return Object.freeze({

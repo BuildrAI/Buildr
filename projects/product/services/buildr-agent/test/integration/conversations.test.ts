@@ -1,3 +1,16 @@
+import Ajv2020 from 'ajv/dist/2020.js';
+import { AGENT_OPERATION_SCHEMAS } from '../../src/operation-schemas.ts';
+import { codexItem } from '../../src/executors/codex/items.ts';
+import {dshItem} from '../../src/executors/dsh/protocol.ts';
+import {qoderHistoryItems} from '../../src/executors/qoder/protocol.ts';
+import {zstdCompressSync} from 'node:zlib';
+import zlib from 'node:zlib';
+import {syncBuiltinESMExports} from 'node:module';
+import {ExecutorEventStream} from '../../src/executors/event-stream.ts';
+import {NativeContentReader} from '../../src/storage/native-content.ts';
+import {dispatchOperation} from '../../src/process/operations.ts';
+import {listen,body,json} from '../../src/process/transport.ts';
+import { opaqueReference } from '../../src/executors/native-process.ts';
 import { interactionPolicy } from '../../src/domain/interaction-policy.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -10,6 +23,205 @@ import { createAgentService } from '../../src/index.ts';
 import type { AgentExecutor, AgentRuntime, AgentServiceOptions, ContextRef, ConversationEntry, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorSendInput, ExecutorTitleInput, LoginObservation } from '../../src/contracts.ts';
 import { NativeRequestError } from '../../src/domain/error-diagnostic.ts';
 import { ConversationRepository } from '../../src/persistence/conversation-repository.ts';
+
+test('handoff references preserve ordered inputs and read details without duplicating or decoding old tools',async t=>{
+ const a=fake('a'),b=fake('b'),f=fixture([a.executor,b.executor]);t.after(()=>f.close());
+ await connected(f.service,'a');await connected(f.service,'b');const chat=await f.service.conversations.create('workspace-one',{});
+ send(f.service,chat.id,'a','initial');const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id,{compactTools:true}),v=>v.run?.status==='completed');
+ const repo=new ConversationRepository(path.join(f.options.dataRoot,'agent-service'));t.after(()=>repo.stopReadModels());const record=repo.readConversation(chat.id)!,runId=done.run!.id;
+ const text='handoff-user-original',output='HUGE_TOOL_BODY_'.repeat(40000),toolId=randomUUID();
+ const entry=(sequence:number,fields:Partial<ConversationEntry>):ConversationEntry=>({id:randomUUID(),sequence,createdAt:'now',kind:'message',role:'user',runId,text,...fields});
+ record.view.entries=[entry(1,{}),entry(2,{role:'assistant',text:'next stage'}),entry(3,{id:toolId,kind:'tool',role:'system',name:'command',input:'PRIVATE_COMMAND',text:output,status:'completed'}),entry(4,{text:'追加纠正'}),entry(5,{kind:'notice',text:'问题回答'}),entry(6,{role:'assistant',text:'final response',status:'completed'})];record.view.revision=randomUUID();repo.saveConversation(record,done.revision);
+ const original=zlib.zstdDecompressSync;let decodes=0;zlib.zstdDecompressSync=((...args:any[])=>{decodes++;return (original as any)(...args);}) as any;syncBuiltinESMExports();
+ let preview:ReturnType<typeof f.service.conversations.prepareSend>;
+ try{
+  const draft={expectedRevision:record.view.revision,connectionId:'b',text:'continue'};preview=f.service.conversations.prepareSend('workspace-one',chat.id,draft);
+  const again=f.service.conversations.prepareSend('workspace-one',chat.id,draft);assert.equal(preview.handoff!.sourcePath,again.handoff!.sourcePath);assert.equal(decodes,0);
+ }finally{zlib.zstdDecompressSync=original;syncBuiltinESMExports();}
+ const material=preview!.handoff!,sourceId=material.sourceId!,directory=path.dirname(material.sourcePath!),body=fs.readFileSync(material.sourcePath!,'utf8');
+ assert.ok(!body.includes(text)&&!body.includes('HUGE_TOOL_BODY_')&&!body.includes('PRIVATE_COMMAND'));assert.ok(Buffer.byteLength(body)<10000);assert.deepEqual(fs.readdirSync(directory),[sourceId]);t.diagnostic(JSON.stringify({toolBytes:Buffer.byteLength(output),indexBytes:Buffer.byteLength(body),handoffOldToolDecompressions:decodes,sourceFiles:1}));
+ assert.deepEqual(material.rounds[0].userInputs,[text,'追加纠正','问题回答']);assert.equal(material.rounds[0].finalReply,'final response');
+ let cursor:number|undefined=0;const entries:ConversationEntry[]=[];
+ do{const page=f.service.conversations.readHistory('workspace-one',chat.id,{sourceId,limit:2,cursor});assert.equal(page.unavailable.length,0);entries.push(...page.entries);cursor=page.nextCursor;}while(cursor!==undefined);
+ assert.deepEqual(entries.map(e=>e.sequence),[1,2,3,4,5,6]);assert.equal(entries[2].text,'');assert.equal(entries[2].input,undefined);assert.equal(f.service.conversations.readEntry('workspace-one',chat.id,toolId,entries[2].detail!.revision).text,output);
+ assert.throws(()=>f.service.conversations.readHistory('foreign',chat.id,{sourceId}),{code:'agent_conversation_missing'});
+ assert.throws(()=>f.service.conversations.readHistory('workspace-one',chat.id,{sourceId:'../../secret'}),{code:'agent_handoff_source_invalid'});
+ assert.throws(()=>f.service.conversations.readHistory('workspace-one',chat.id,{sourceId,roundId:'other'}),{code:'agent_handoff_round_missing'});
+ const later=repo.readConversation(chat.id)!;later.view.entries.push(entry(7,{text:'later input excluded'}));later.view.revision=randomUUID();repo.saveConversation(later,record.view.revision);
+ assert.equal(f.service.conversations.readHistory('workspace-one',chat.id,{sourceId}).entries.length,6);
+ const draft={expectedRevision:later.view.revision,connectionId:'b',text:'continue'};const next=f.service.conversations.prepareSend('workspace-one',chat.id,draft);f.service.conversations.send('workspace-one',chat.id,{...draft,previewToken:next.token,clientRequestId:randomUUID()});
+ const complete=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id,{compactTools:true}),v=>v.run?.status==='completed');
+ const receipt=complete.entries.find(e=>e.kind==='handoff'&&e.handoff?.sourceOnly)!.handoff!;assert.ok(receipt.sourceId);assert.ok(!JSON.stringify(receipt).includes(text));assert.deepEqual(receipt.rounds[0].userInputs,[]);assert.equal(b.sends.length,1);
+ const changed=repo.readConversation(chat.id)!;changed.view.entries.find(e=>e.sequence===1)!.text='changed original';changed.view.revision=randomUUID();repo.saveConversation(changed,complete.revision);
+ const missing=f.service.conversations.readHistory('workspace-one',chat.id,{sourceId});assert.ok(missing.unavailable.some(e=>e.id===entries[0].id));assert.ok(!JSON.stringify(missing).includes('changed original'));
+ fs.unlinkSync(material.sourcePath!);assert.throws(()=>f.service.conversations.readHistory('workspace-one',chat.id,{sourceId}),{code:'agent_handoff_source_unavailable'});
+});
+
+for(const provider of ['dsh','qoder'] as const)test(`${provider} streaming keeps HTTP controls responsive with large old tool history`,async t=>{
+  const native=fake(provider),open=native.executor.open;let begin:(()=>void)|undefined,started!:()=>void;
+  const outputStarted=new Promise<void>(resolve=>{started=resolve;});const chunks=200;
+  let finishStream!:()=>void,streamEnded=false;const streamDone=new Promise<void>(resolve=>{finishStream=resolve;});
+  native.executor.open=async options=>{
+    const runtime=await open(options),create=runtime.createContext.bind(runtime);
+    runtime.createContext=async input=>{const previous=await create(input),id=provider==='dsh'?'session-'+previous.id:previous.id;if(id!==previous.id){native.contexts.set(id,native.contexts.get(previous.id)!);native.contexts.delete(previous.id);}return{id,data:{native:opaqueReference(provider,id,input.cwd,runtime.bindingIdentity)}};};
+    runtime.send=async input=>{
+      try{
+      native.sends.push(input);const context=native.contexts.get(input.contextRef.id)!;
+      const executionRef={id:input.clientRequestId,data:{resourceContext:input.contextRef.id,resourceBinding:runtime.bindingIdentity}};
+      context.observation={status:'running',executionRef,tools:[{id:'stream',label:'command',status:'running'}]};input.onEvent({type:'accepted',executionRef});
+      const item:ExecutorItem={id:'stream',kind:'tool',role:'system',name:'shell',nativeTool:true,input:'read-only',text:'begin',executionId:executionRef.id,status:'running'};input.onEvent({type:'item',item});
+      await new Promise<void>(resolve=>{begin=resolve;});started();
+      const events=new ExecutorEventStream(input.onEvent);
+      for(let i=0;i<chunks;i++){events.push({type:'item',item:{...item,text:'stream '+i+'\n'+'data'.repeat(3000)}});await new Promise(resolve=>setTimeout(resolve,5));}
+      events.push({type:'item',item:{...item,text:'finished',status:'completed'}});events.push({type:'completed',status:'completed'});context.observation={status:'idle',executionRef,tools:[]};
+      }finally{streamEnded=true;finishStream();}
+    };return runtime;
+  };
+  const f=fixture([native.executor]);let channel:Awaited<ReturnType<typeof listen>>|undefined;
+  const writes=t.mock.method(ConversationRepository.prototype,'saveConversation');
+  const decompressions=t.mock.method(zlib,'zstdDecompressSync');syncBuiltinESMExports();
+  t.after(()=>{decompressions.mock.restore();syncBuiltinESMExports();});
+  const nativeReads=t.mock.method(NativeContentReader.prototype,'tool');
+  try{
+    await connected(f.service,provider);const chat=await f.service.conversations.create('workspace-one',{});
+    const repo=new ConversationRepository(path.join(f.options.dataRoot,'agent-service'));const old=repo.readConversation(chat.id)!;const prior=old.view.revision;
+    old.view.entries=Array.from({length:400},(_,i)=>({id:'old-'+i,sequence:i+1,kind:'tool' as const,role:'system' as const,text:'historical-'+i+'\n'+'history-only-data'.repeat(1300),status:'completed' as const,createdAt:'old'}));old.view.revision=randomUUID();repo.saveConversation(old,prior);repo.stopReadModels();
+    send(f.service,chat.id,provider,'read-only performance fixture');
+    const running=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id,{compactTools:true}),v=>v.entries.some(e=>e.kind==='tool'&&e.detail?.live));
+    const through=running.activity?.version??0;
+    let controlNativeReads=0;
+    channel=await listen(async(req,res)=>{const input=await body(req),before=nativeReads.mock.callCount();const result=await dispatchOperation(f.service,input.operation,input.args);controlNativeReads+=nativeReads.mock.callCount()-before;json(res,200,result);});
+    const baseline={writes:writes.mock.callCount(),native:nativeReads.mock.callCount(),decoded:decompressions.mock.callCount()};
+    begin!();await outputStarted;
+    const timings:Record<string,number[]>={read:[],children:[],activity:[],seen:[]};
+    const operations:{[key:string]:[string,unknown[]]}={read:['conversations.read',['workspace-one',chat.id,{compactTools:true}]],children:['conversations.listChildren',['workspace-one',chat.id,{}]],activity:['conversations.listAll',[['workspace-one'],{}]],seen:['conversations.markSeen',['workspace-one',chat.id,{through}]]};
+    const start=performance.now();
+    for(let n=0;n<250&&(n<12||!streamEnded);n++){
+      await Promise.all(Object.entries(operations).map(async([key,[operation,args]])=>{
+      const time=performance.now(),response=await fetch(channel!.origin,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({operation,args}),signal:AbortSignal.timeout(3000)});const value=await response.json();assert.equal(response.status,200,response.status===200?undefined:JSON.stringify(value));timings[key].push(performance.now()-time);
+      }));
+      if(!streamEnded)await new Promise(resolve=>setTimeout(resolve,5));
+    }
+    assert.equal(controlNativeReads,0,'control requests never open native tool bodies');
+    assert.equal(decompressions.mock.callCount()-baseline.decoded,0,'stream snapshots never decode old tool bodies');
+    const probeMs=performance.now()-start;
+    await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id,{compactTools:true}),v=>v.run?.status==='completed');
+    const saved=writes.mock.callCount()-baseline.writes;assert.ok(saved<chunks/2,`coalesced writes ${saved} for ${chunks} updates`);
+    const summary=Object.fromEntries(Object.entries(timings).map(([key,values])=>{const sorted=[...values].sort((a,b)=>a-b);return[key,{requests:values.length,p95Ms:Math.round(sorted[Math.ceil(sorted.length*.95)-1]),maxMs:Math.round(sorted.at(-1)!)}];}));
+    t.diagnostic(JSON.stringify({provider,historyTools:400,historyLogicalBytes:Buffer.byteLength(JSON.stringify(old.view.entries)),chunks,persistedUpdates:saved,nativeBodyReads:0,oldBodyDecompressions:0,modelWaitMs:0,source:'controlled post-adapter event fixture, actual HTTP/SQLite',controlProbeMs:Math.round(probeMs),streamFixtureMs:Math.round(performance.now()-start),endpoints:summary}));
+  }finally{begin?.();if(begin)await streamDone;await channel?.close();await f.close();}
+});
+
+for(const provider of ['dsh','qoder'] as const)test(`${provider} live tool output is never persisted and late native history survives reopening`,async()=>{
+  const native=fake(provider),open=native.executor.open,output='native-only-output\n'.repeat(1500);
+  let release!:()=>void,file='',completion:unknown;
+  native.executor.open=async options=>{
+    const runtime=await open(options),create=runtime.createContext.bind(runtime);
+    runtime.createContext=async input=>{
+      const previous=await create(input),id=provider==='dsh'?'session-'+previous.id:previous.id;
+      if(id!==previous.id){native.contexts.set(id,native.contexts.get(previous.id)!);native.contexts.delete(previous.id);}
+      return {id,data:{native:opaqueReference(provider,id,input.cwd,runtime.bindingIdentity)}};
+    };
+    runtime.send=async input=>{
+      native.sends.push(input);const context=native.contexts.get(input.contextRef.id)!,id='native-call';
+      const executionRef={id:input.clientRequestId,data:{resourceContext:input.contextRef.id,resourceBinding:runtime.bindingIdentity}};
+      context.observation={status:'running',executionRef,tools:[{id,label:'tool',status:'running'}]};input.onEvent({type:'accepted',executionRef});
+      const call=provider==='dsh'?{seq:2,type:'tool/call',data:{turn:1,callId:id,name:'shell',arguments:JSON.stringify({command:'read-only-command'})}}:{type:'assistant',uuid:'assistant',session_id:input.contextRef.id,message:{content:[{type:'tool_use',id,name:'Shell',input:{command:'read-only-command'}}]}};
+      const result=provider==='dsh'?{seq:3,type:'tool/result',data:{turn:1,message:{toolCallId:id,content:[{type:'text',text:output}]}}}:{type:'user',session_id:input.contextRef.id,message:{content:[{type:'tool_result',tool_use_id:id,content:output}]}};
+      const projected=(record:any)=>provider==='dsh'?dshItem(record):qoderHistoryItems([{type:'user',uuid:input.clientRequestId,session_id:input.contextRef.id,message:{content:[{type:'text',text:'run'}]}},call,record],input.contextRef.id).filter(item=>item.kind==='tool');
+      const raw=(record:any)=>({...record,sessionId:input.contextRef.id,cwd:input.cwd,isSidechain:false,promptId:input.clientRequestId,sourceToolAssistantUUID:record.type==='user'?'assistant':undefined});
+      file=provider==='dsh'?path.join(options.configRoot,'dsh-home/sessions/bucket',input.contextRef.id,'session.v4.jsonl.zstd'):path.join(options.configRoot,'qoder-config/projects/bucket',input.contextRef.id+'.jsonl');fs.mkdirSync(path.dirname(file),{recursive:true});
+      const rows=provider==='dsh'?[{type:'session',version:4,id:input.contextRef.id,cwd:input.cwd},{seq:0,type:'turn/start',data:{turn:1}},{seq:1,type:'user/message',data:{turn:1,source:{rpcId:input.clientRequestId},content:[{type:'text',text:'run'}]}},call]:[raw({type:'user',uuid:input.clientRequestId,message:{content:[{type:'text',text:'run'}]}}),raw(call)];
+      fs.writeFileSync(file,provider==='dsh'?Buffer.concat(rows.map(row=>zstdCompressSync(Buffer.from(JSON.stringify(row)+'\n')))):rows.map(row=>JSON.stringify(row)+'\n').join(''));
+      for(const item of projected(call))input.onEvent({type:'item',item:{...item,executionId:executionRef.id}});
+      input.onEvent({type:'item',item:{id,kind:'tool',role:'system',nativeTool:true,text:output.slice(0,100),executionId:executionRef.id,status:'running'}});
+      await new Promise<void>(resolve=>{release=resolve;});
+      for(const item of projected(result)){input.onEvent({type:'item',item:{...item,executionId:executionRef.id}});context.items.push({...item,executionId:executionRef.id});}
+      completion=provider==='dsh'?result:raw(result);context.observation={status:'idle',executionRef,tools:[]};input.onEvent({type:'completed',status:'completed'});
+    };return runtime;
+  };
+  const f=fixture([native.executor]);
+  try{
+    await connected(f.service,provider);const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,provider,'run');
+    const running=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id,{compactTools:true}),v=>v.entries.some(e=>e.kind==='tool'&&e.detail?.live));const tool=running.entries.find(e=>e.kind==='tool')!;
+    assert.ok(tool.text.includes('native-only-output'));
+    const source=f.service.conversations.prepareSend('workspace-one',chat.id,{expectedRevision:running.revision,connectionId:provider,text:'inspect history without sending'}).handoff!;
+    const subscription=f.service.conversations.subscribe('workspace-one',chat.id,{compactTools:true});const first=await subscription.events[Symbol.asyncIterator]().next();assert.equal(first.value?.payload.conversation?.entries.find((e:ConversationEntry)=>e.id===tool.id)?.detail?.live,true);subscription.close();
+    const db=new DatabaseSync(path.join(f.options.dataRoot,'agent-service/conversations.sqlite'),{readOnly:true});
+    const stored=()=>{const row=db.prepare('SELECT c.codec,c.body,e.compact FROM conversation_entry_contents c JOIN conversation_read_entries e USING(conversation_id,content_revision) WHERE e.conversation_id=? AND e.id=?').get(chat.id,tool.id)!;assert.equal(row.codec,'native-tool');assert.equal(row.compact,null);assert.equal(String(row.body).includes('native-only-output'),false);assert.equal(String(row.body).includes('read-only-command'),false);};
+    stored();release();await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id,{compactTools:true}),v=>v.run?.status==='completed');stored();
+    fs.appendFileSync(file,provider==='dsh'?zstdCompressSync(Buffer.from(JSON.stringify(completion)+'\n')):JSON.stringify(completion)+'\n');
+    const ready=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id,{compactTools:true}),v=>!v.entries.find(e=>e.id===tool.id)?.detail?.live);
+    const snapshotDetail=f.service.conversations.readEntry('workspace-one',chat.id,tool.id,tool.detail!.revision,source.sourceId);assert.equal(snapshotDetail.text,output);
+    const ref=ready.entries.find(e=>e.id===tool.id)!;assert.equal(ref.text,'');assert.equal(f.service.conversations.readEntry('workspace-one',chat.id,tool.id,ref.detail!.revision).text,output);stored();db.close();await f.service.close();
+    const cold=createAgentService(f.options);try{const entry=cold.conversations.read('workspace-one',chat.id,{compactTools:true}).entries.find(e=>e.id===tool.id)!;assert.equal(entry.text,'');assert.equal(cold.conversations.readEntry('workspace-one',chat.id,entry.id,entry.detail!.revision).text,output);}finally{await cold.close();}
+    assert.equal(native.sends.length,1);
+  }finally{release?.();await f.close();}
+});
+
+for (const provider of ['dsh', 'qoder'] as const) test(`${provider} unchanged native-tool references resume past an unknown old outcome without hiding new work`, async () => {
+  const native = fake(provider), open = native.executor.open;
+  native.executor.open = async options => {
+    const runtime = await open(options), create = runtime.createContext.bind(runtime), original = runtime.send.bind(runtime);
+    runtime.createContext = async input => {
+      const ref = await create(input);
+      return { ...ref, data: { native: opaqueReference(provider, ref.id, input.cwd, runtime.bindingIdentity) } };
+    };
+    runtime.send = async input => {
+      await original({ ...input, onEvent: event => {
+        if (event.type === 'accepted') event.executionRef.data = { resourceContext: input.contextRef.id, resourceBinding: runtime.bindingIdentity };
+        if (event.type === 'completed' && native.sends.length === 1) {
+          const context = native.contexts.get(input.contextRef.id)!, executionId = context.observation.executionRef!.id;
+          const call = provider === 'dsh'
+            ? { type: 'tool/call', data: { turn: 1, callId: 'native-history-tool', name: 'shell', arguments: '{"command":"read-only"}' } }
+            : { type: 'assistant', session_id: input.contextRef.id, message: { content: [{ type: 'tool_use', id: 'native-history-tool', name: 'shell', input: { command: 'read-only' } }] } };
+          const result = provider === 'dsh'
+            ? { type: 'tool/result', data: { turn: 1, message: { toolCallId: 'native-history-tool', content: [{ type: 'text', text: 'unchanged native body' }] } } }
+            : { type: 'user', session_id: input.contextRef.id, message: { content: [{ type: 'tool_result', tool_use_id: 'native-history-tool', content: 'unchanged native body' }] } };
+          const projected = provider === 'dsh'
+            ? [...dshItem(call), ...dshItem(result)]
+            : qoderHistoryItems([call, result], input.contextRef.id);
+          for (const item of projected) input.onEvent({ type: 'item', item: { ...item, executionId } });
+          context.items.push({ ...projected.at(-1)!, executionId, name: 'shell', input: '{"command":"read-only"}' });
+        }
+        input.onEvent(event);
+      } });
+    };
+    return runtime;
+  };
+  const f = fixture([native.executor]);
+  const repository = new ConversationRepository(path.join(f.options.dataRoot, 'agent-service'));
+  try {
+    await connected(f.service, provider);
+    const chat = await f.service.conversations.create('workspace-one', {});
+    send(f.service, chat.id, provider, 'original work');
+    const first = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id, { compactTools: true }), view => view.run?.status === 'completed');
+    const record = repository.readConversation(chat.id)!, old = record.view.run!, originalRunId = old.id;
+    assert.equal(record.view.entries.find(entry => entry.kind === 'tool')?.text, '', 'real v3 persistence must reload an empty body skeleton');
+    old.status = 'unknown'; old.executionState = 'unknown'; old.resourcesReleased = true;
+    record.view.retainedRuns = [old];
+    record.runOutcomes![old.id].status = 'unknown';
+    const retryId = randomUUID(), userEntryId = randomUUID();
+    record.view.run = { ...old, id: retryId, status: 'failed', accepted: false, tools: [], resourcesReleased: undefined };
+    record.view.entries.push({ id: userEntryId, sequence: record.view.entries.at(-1)!.sequence + 1, createdAt: 'now', kind: 'message', role: 'user', text: 'not delivered', participantId: old.participantId, runId: retryId, status: 'failed' });
+    record.attempts.push({ clientRequestId: randomUUID(), inputDigest: 'unsent', runId: retryId, participantId: old.participantId, through: record.view.entries.at(-1)!.sequence, userEntryId, accepted: false });
+    record.view.revision = randomUUID(); repository.saveConversation(record, first.revision);
+    for (const text of ['new requirement', 'another new requirement']) {
+      send(f.service, chat.id, provider, text);
+      const done = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id, { compactTools: true }), view => ['completed', 'failed'].includes(view.run?.status ?? ''));
+      assert.equal(done.run?.status, 'completed', done.run?.diagnostic);
+      assert.equal(done.participants.length, 1, 'resume the exact native context, not a replacement that bypasses history');
+      assert.equal(done.retainedRuns?.find(run => run.id === originalRunId)?.status, 'unknown');
+    }
+    assert.equal(native.sends.length, 3, 'only explicit new inputs are sent; the failed input is never replayed');
+    const context = native.contexts.values().next().value!;
+    context.items.push({ ...context.items.find(item => item.id === 'native-history-tool')!, id: 'genuinely-new-tool', status: 'running' });
+    send(f.service, chat.id, provider, 'must first review genuinely new work');
+    const blocked = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id, { compactTools: true }), view => view.run?.status === 'failed');
+    assert.match(blocked.run!.diagnostic!, /原生记录有新变化/);
+    assert.equal(native.sends.length, 3);
+  } finally { repository.stopReadModels(); await f.close(); }
+});
 
 test('resuming history preserves a concurrent metadata update without failing the new input', async () => {
   const native = fake('local'), open = native.executor.open;
@@ -54,6 +266,47 @@ test('resuming history preserves a concurrent metadata update without failing th
 });
 
 type Context = { items: ExecutorItem[]; observation: ExecutorObservation; unblock?: () => void };
+test('native text streams persist every fragment and reload after concurrent writes and stop', async t => {
+  const native=fake('codex',{hold:true}),f=fixture([native.executor]);t.after(()=>f.close());
+  await connected(f.service,'codex');const chat=await f.service.conversations.create('workspace-one',{});
+  send(f.service,chat.id,'codex','stream');
+  await waitUntil(()=>native.sends.length,n=>n===1);
+  await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='running');
+  const repo=new ConversationRepository(path.join(f.options.dataRoot,'agent-service'));t.after(()=>repo.stopReadModels());
+  repo.rebuildReadModel(chat.id);
+  const original=ConversationRepository.prototype.readConversation;let loads=0;
+  const spy=t.mock.method(ConversationRepository.prototype,'readConversation',function(this:ConversationRepository,...args:Parameters<typeof original>){loads++;return original.apply(this,args);});
+  const emit=(text:string)=>native.sends[0].onEvent({type:'item',item:{id:'stream-answer',kind:'message',role:'assistant',text,status:'running',executionId:'execution-1'}});
+  for(let i=1;i<=20;i++){
+    emit('字'.repeat(i));
+    const view=f.service.conversations.read('workspace-one',chat.id);
+    assert.equal(view.entries.at(-1)?.text,'字'.repeat(i),'each fragment is visible without a merge window');
+  }
+  assert.ok(loads<=2,`consecutive text must not reload the complete history (${loads} loads)`);spy.mock.restore();
+  assert.equal(repo.readConversation(chat.id)!.view.entries.at(-1)?.text,'字'.repeat(20),'last fragment is durable');
+  const seenThrough=f.service.conversations.read('workspace-one',chat.id).activity!.version;
+  repo.markSeen('workspace-one',chat.id,seenThrough);emit('after seen');
+  assert.equal(f.service.conversations.read('workspace-one',chat.id).activity!.seenThrough,seenThrough,'seen-only writes survive cache reuse at the same revision');
+  native.sends[0].onEvent({type:'item',item:{id:'interleaved-tool',kind:'tool',role:'system',name:'read',text:'result',status:'completed',executionId:'execution-1'}});
+  emit('after tool');assert.ok(repo.readConversation(chat.id)!.view.entries.some(e=>e.kind==='tool'&&e.text==='result'));
+  const record=repo.readConversation(chat.id)!,prior=record.view.revision;
+  record.view.title='external rename';record.view.revision=randomUUID();repo.saveConversation(record,prior);
+  emit('after external write');
+  assert.equal(f.service.conversations.read('workspace-one',chat.id).title,'external rename');
+  // Race after the fast revision check: the rejected mutation must retry from storage.
+  const save=ConversationRepository.prototype.saveConversation;let race=true;
+  const conflict=t.mock.method(ConversationRepository.prototype,'saveConversation',function(this:ConversationRepository,...args:Parameters<typeof save>){
+    if(race){race=false;const other=repo.readConversation(chat.id)!,previous=other.view.revision;other.view.title='racing rename';other.view.revision=randomUUID();save.call(repo,other,previous);}
+    return save.apply(this,args);
+  });
+  emit('after race');conflict.mock.restore();
+  const current=f.service.conversations.read('workspace-one',chat.id);
+  assert.equal(current.title,'racing rename');assert.equal(current.entries.filter(e=>e.role==='assistant').at(-1)?.text,'after race');
+  await f.service.conversations.stop('workspace-one',chat.id,{expectedRevision:current.revision,runId:current.run!.id,participantId:current.run!.participantId,generation:current.run!.generation});
+  emit('late text after stop');
+  assert.ok(!repo.readConversation(chat.id)!.view.entries.some(e=>e.text==='late text after stop'));
+});
+
 function fake(id = 'local', options: { hold?: boolean; disconnect?: 'stopped'|'running'|'unknown'|'tool'; disconnectError?: string; beforeDisconnect?: Promise<void>; disconnectAlways?: boolean; disconnectOn?: number; beforeResume?: Promise<void>; unknown?: boolean; images?: boolean; noAnswer?: boolean; multipleModels?: boolean; request?: boolean; question?: boolean; coldUnknown?: boolean; beforeAccepted?: Promise<void>; replyAfterTerminal?: boolean; toolSurvives?: boolean; toolInput?: boolean; failure?: string | ((attempt: number) => string | undefined); prepareFailures?: number; unknownCreate?: boolean; beforeObservation?: Promise<void>; wrongObservation?: boolean; summary?:(input:ExecutorTitleInput)=>Promise<string|undefined> } = {}) {
   const contexts = new Map<string, Context>(); const sends: ExecutorSendInput[] = []; const replies: unknown[] = []; const opens: ExecutorOpenOptions[] = [];
   let preparations = 0;
@@ -318,6 +571,19 @@ test('acceptance loss remains unknown through process restart and never retries 
   } finally { await f.close(); }
 });
 
+test('local stop records cancellation before yielding and ignores buffered model output',async()=>{
+ const native=fake('local',{hold:true}),f=fixture([native.executor]);
+ try{
+  await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','hold');
+  const running=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.accepted===true);
+  const run=running.run!,stopping=f.service.conversations.stop('workspace-one',chat.id,{expectedRevision:running.revision,runId:run.id,participantId:run.participantId,generation:run.generation});
+  assert.equal(f.service.conversations.read('workspace-one',chat.id).run!.stopRequested,true,'stop intent must be durable before the first asynchronous wait');
+  native.sends[0]!.onEvent({type:'item',item:{id:'late-output',kind:'message',role:'assistant',text:'buffered output after stop',status:'running'}});
+  assert.equal(f.service.conversations.read('workspace-one',chat.id).entries.some(entry=>entry.text==='buffered output after stop'),false);
+  assert.equal((await stopping).run!.status,'stopped');
+ }finally{await f.close();}
+});
+
 test('stop and authorization respond while send is still waiting; concurrent conversations stay independent', async () => {
   const native = fake('local', { request: true }); const f = fixture([native.executor]);
   try {
@@ -375,10 +641,15 @@ test('official navigation is ephemeral and cancelled login callbacks cannot resu
 test('real image bytes and ownership are checked, source profile and credentials do not leak into executor environment', async () => {
   const native = fake('local', { images: true }); const f = fixture([native.executor]);
   try {
-    const isolated = createAgentService({ ...f.options, environment: { PATH: '/usr/bin', HOME: f.root, HTTPS_PROXY: 'http://127.0.0.1:1234', OPENAI_API_KEY: 'secret', CODEX_HOME: '/outside', DSH_HOME: '/outside', QODER_CONFIG_DIR: '/outside', CODEX_DESKTOP_TOKEN: 'secret' } });
+    const sharedCache = path.join(f.root, 'shared-npm-cache');
+    fs.mkdirSync(sharedCache);
+    const isolated = createAgentService({ ...f.options, environment: { PATH: '/usr/bin', HOME: f.root, npm_config_cache: sharedCache, HTTPS_PROXY: 'http://127.0.0.1:1234', OPENAI_API_KEY: 'secret', CODEX_HOME: '/outside', DSH_HOME: '/outside', QODER_CONFIG_DIR: '/outside', CODEX_DESKTOP_TOKEN: 'secret' } });
     try {
       await connected(isolated, 'local');
-      assert.deepEqual(Object.keys((native.opens.at(-1)!.environment as object)).sort(), ['HOME', 'HTTPS_PROXY', 'PATH']);
+      const environment=native.opens.at(-1)!.environment!;
+      assert.equal(environment.HOME,f.root);assert.equal(environment.HTTPS_PROXY,'http://127.0.0.1:1234');assert.equal(environment.PATH,'/usr/bin');
+      assert.ok(environment.BUILDR_TOOLCHAIN_ROOT);assert.equal(fs.realpathSync(environment.npm_config_cache!),fs.realpathSync(sharedCache));
+      for(const secret of ['OPENAI_API_KEY','CODEX_HOME','DSH_HOME','QODER_CONFIG_DIR','CODEX_DESKTOP_TOKEN'])assert.equal(environment[secret],undefined,secret+' must not leak');
       const created = await isolated.conversations.create('workspace-one', {});
       assert.throws(() => isolated.conversations.addAttachment('workspace-one', created.id, { expectedRevision: created.revision, mimeType: 'image/png', bytes: Buffer.from('not png') }), { code: 'agent_image_invalid' });
       const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64');
@@ -817,7 +1088,8 @@ test('default round pages split oversized rounds by bytes without dropping durab
       page = next;
     }
     assert.deepEqual(recovered, entries);
-    assert.deepEqual(repository.readConversation(created.id)!.view.entries, entries);
+    // Compare durable JSON bytes; deferred optional getters are not persisted fields.
+    assert.deepEqual(JSON.parse(JSON.stringify(repository.readConversation(created.id)!.view.entries)), entries);
   } finally { await f.close(); }
 });
 
@@ -851,7 +1123,7 @@ test('large native items remain durable while the handoff carries actions and re
       const row = db.prepare('SELECT body FROM conversations WHERE id=?').get(created.id) as { body: string };
       assert.deepEqual(JSON.parse(row.body).view.entries, [], 'the header must not duplicate durable entry bodies');
       const repository = new ConversationRepository(path.join(f.options.dataRoot, 'agent-service'));
-      assert.deepEqual(repository.readConversation(created.id)!.view.entries, pages, 'pagination must not truncate the durable record');
+      assert.deepEqual(JSON.parse(JSON.stringify(repository.readConversation(created.id)!.view.entries)), pages, 'pagination must not truncate the durable record');
     } finally { db.close(); }
     const subscription = f.service.conversations.subscribe('workspace-one', created.id);
     const iterator = subscription.events[Symbol.asyncIterator]();
@@ -866,7 +1138,7 @@ test('large native items remain durable while the handoff carries actions and re
     assert.equal(preview.history.length,12);assert.equal(preview.fits,true);assert.ok(preview.inputBytes<preview.maxInputBytes);
     assert.ok(!preview.handoff!.body.includes('x'.repeat(1000)));
     const index=JSON.parse(fs.readFileSync(preview.handoff!.sourcePath!,'utf8'));
-    const original=JSON.parse(fs.readFileSync(index.rounds[0].path,'utf8'));assert.equal(original.records.filter((e:any)=>e.kind==='tool').length,10);
+    const original=f.service.conversations.readHistory('workspace-one',created.id,{sourceId:path.basename(preview.handoff!.sourcePath!),roundId:index.rounds[0].id});assert.equal(original.entries.filter((e:any)=>e.kind==='tool').length,10);
     f.service.conversations.send('workspace-one',created.id,{...draft,previewToken:preview.token,clientRequestId:'indexed-handoff'});
     await waitUntil(()=>f.service.conversations.read('workspace-one',created.id),v=>v.run?.status==='completed');assert.equal(b.sends.length,1);
   } finally { await f.close(); }
@@ -921,6 +1193,36 @@ test('actual model effort resolves in preview, persists across restart and rejec
     await f.service.close(); const restored = createAgentService(f.options);
     try { const run = restored.conversations.read('workspace-one', view.id).run!; assert.equal(run.model, 'small'); assert.equal(run.reasoningEffort, 'high'); }
     finally { await restored.close(); }
+  } finally { await f.close(); }
+});
+
+test('changing only the reasoning effort reuses the native session and delivers just the new requirement', async () => {
+  const native = fake(); const open = native.executor.open;
+  native.executor.open = async input => ({ ...await open(input), async models() { return [
+    { id: 'small', label: 'Small', isDefault: true, reasoningEfforts: [{ id: 'low', label: 'Fast' }, { id: 'high', label: 'Deep' }], defaultReasoningEffort: 'low' },
+  ]; } });
+  const f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local'); const view = await f.service.conversations.create('workspace-one', {});
+    const first = { expectedRevision: view.revision, connectionId: 'local', model: 'small', text: 'first requirement', reasoningEffort: 'low' };
+    const preview = f.service.conversations.prepareSend('workspace-one', view.id, first);
+    f.service.conversations.send('workspace-one', view.id, { ...first, previewToken: preview.token, clientRequestId: randomUUID() });
+    const done = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed');
+    const contextId = done.participants[0]!.contextId;
+    const second = { expectedRevision: done.revision, connectionId: 'local', model: 'small', text: 'second requirement', reasoningEffort: 'high' };
+    const next = f.service.conversations.prepareSend('workspace-one', view.id, second);
+    assert.equal(next.switching, false, '思考深度不是执行组合变化');
+    assert.deepEqual(next.handoff?.changes, []); assert.equal(next.reasoningEffort, 'high');
+    const started = f.service.conversations.send('workspace-one', view.id, { ...second, clientRequestId: randomUUID() });
+    assert.equal(started.run!.reasoningEffort, 'high');
+    const after = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed' && value.run.id !== done.run!.id);
+    assert.equal(after.participants.length, 1, '同一原生会话不因思考深度新增参与者');
+    assert.equal(after.participants[0]!.contextId, contextId);
+    assert.equal(after.entries.some(entry => entry.kind === 'handoff'), false, '不生成交接记录');
+    assert.equal(native.sends.length, 2);
+    assert.equal(native.sends[1]!.contextRef.id, contextId, '新要求送达同一原生会话');
+    assert.equal(native.sends[1]!.reasoningEffort, 'high');
+    assert.equal(native.sends[1]!.text, 'second requirement', '只交付新要求，不重新注入交接资料');
   } finally { await f.close(); }
 });
 
@@ -992,11 +1294,93 @@ test('a failed early title falls back to the completed-run attempt, then the aut
     await connected(f.service, 'local'); const view = await f.service.conversations.create('workspace-one', {}); send(f.service, view.id, 'local', 'start work');
     await waitUntil(() => calls, Boolean); for (const context of native.contexts.values()) context.unblock?.();
     const done = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed');
-    await waitUntil(() => calls === 2, Boolean); assert.equal(done.title, '新对话');
+    assert.equal(done.run!.status, 'completed');
+    await waitUntil(() => calls === 2, Boolean);
+    const failed = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.title === '生成标题错误，请手动修改');
+    assert.equal(failed.titleState?.status, 'failed'); assert.equal(failed.run?.status, 'completed');
     send(f.service, view.id, 'local', 'next'); await waitUntil(() => native.sends.length > 1, Boolean); for (const context of native.contexts.values()) context.unblock?.();
     await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed');
     assert.equal(calls, 2);
   } finally { await f.close(); }
+});
+
+test('an early title failure keeps the neutral name until the completion fallback runs', async () => {
+  const native = fake('local', { hold: true }); const open = native.executor.open; let calls = 0;
+  native.executor.open = async input => ({ ...await open(input), async generateTitle() { calls++; if (calls === 1) throw new Error('agent_title_timeout'); return '完成阶段恢复的标题'; } });
+  const f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local'); const view = await f.service.conversations.create('workspace-one', {}); send(f.service, view.id, 'local', 'early failure stays neutral');
+    await waitUntil(() => calls === 1, Boolean);
+    const running = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'running' && value.titleState?.status === 'failed');
+    assert.equal(running.title, '新对话');
+    for (const context of native.contexts.values()) context.unblock?.();
+    const named = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed' && value.title === '完成阶段恢复的标题');
+    assert.equal(named.titleState?.status, 'generated'); assert.equal(calls, 2);
+  } finally { await f.close(); }
+});
+
+test('an explicit title failure keeps the failure reminder and a later manual name still wins', async () => {
+  const native = fake(); const open = native.executor.open; let calls = 0;
+  native.executor.open = async input => ({ ...await open(input), async generateTitle() { calls++; throw new Error('agent_native_request_failed'); } });
+  const f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local'); const view = await f.service.conversations.create('workspace-one', {}); send(f.service, view.id, 'local', 'automatic title failure');
+    const failed = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed' && value.title === '生成标题错误，请手动修改' && value.titleState?.status === 'failed');
+    await assert.rejects(f.service.conversations.generateTitle('workspace-one', view.id, { expectedRevision: failed.revision }), { code: 'agent_title_failed' });
+    const preserved = f.service.conversations.read('workspace-one', view.id);
+    assert.equal(preserved.title, '生成标题错误，请手动修改');
+    const renamed = await f.service.conversations.update('workspace-one', view.id, { expectedRevision: preserved.revision, title: '我的手动标题' });
+    assert.equal(renamed.title, '我的手动标题');
+    const before = calls; send(f.service, view.id, 'local', 'next work');
+    await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed' && value.run.id !== failed.run!.id);
+    assert.equal(calls, before); assert.equal(f.service.conversations.read('workspace-one', view.id).title, '我的手动标题');
+  } finally { await f.close(); }
+});
+
+test('a failure reminder still lets another participant attempt an early title', async () => {
+  const first = fake('first'), second = fake('second');
+  const openFirst = first.executor.open, openSecond = second.executor.open; let firstCalls = 0, secondCalls = 0;
+  first.executor.open = async input => ({ ...await openFirst(input), async generateTitle() { firstCalls++; throw new Error('agent_title_timeout'); } });
+  second.executor.open = async input => ({ ...await openSecond(input), async generateTitle() { secondCalls++; return '第二个执行方生成的标题'; } });
+  const f = fixture([first.executor, second.executor]);
+  try {
+    await connected(f.service, 'first'); await connected(f.service, 'second');
+    const view = await f.service.conversations.create('workspace-one', {}); send(f.service, view.id, 'first', 'start with first');
+    await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed' && value.title === '生成标题错误，请手动修改');
+    assert.equal(firstCalls, 2);
+    send(f.service, view.id, 'second', 'continue with second');
+    const named = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed' && value.title === '第二个执行方生成的标题');
+    assert.equal(secondCalls, 1); assert.equal(named.participants.length, 2);
+    send(f.service, view.id, 'first', 'return to first');
+    await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed' && value.run.id !== named.run!.id);
+    assert.equal(firstCalls, 2);
+  } finally { await f.close(); }
+});
+
+test('startup repairs an exhausted historical title failure in detail and list views', async () => {
+  const native = fake(); const open = native.executor.open;
+  native.executor.open = async input => ({ ...await open(input), async generateTitle() { throw new Error('agent_title_timeout'); } });
+  const f = fixture([native.executor]); let restored: ReturnType<typeof createAgentService> | undefined;
+  try {
+    await connected(f.service, 'local'); const view = await f.service.conversations.create('workspace-one', {}); send(f.service, view.id, 'local', 'historical title failure');
+    await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed' && value.title === '生成标题错误，请手动修改');
+    await f.service.close();
+    const repo = new ConversationRepository(path.join(f.options.dataRoot, 'agent-service'));
+    try {
+      const record = repo.readConversation(view.id)!; const prior = record.view.revision;
+      record.view.title = '新对话'; record.view.titleState = { status: 'failed', reason: '历史标题生成失败' }; record.view.revision = randomUUID();
+      repo.saveConversation(record, prior);
+    } finally { repo.stopReadModels(); }
+    restored = createAgentService(f.options);
+    assert.equal(restored.conversations.read('workspace-one', view.id).title, '新对话');
+    assert.equal(restored.conversations.listAll(['workspace-one'], {}).conversations.find(item => item.id === view.id)?.title, '新对话');
+    await restored.conversations.recoverInterrupted();
+    const repaired = restored.conversations.read('workspace-one', view.id);
+    assert.equal(repaired.title, '生成标题错误，请手动修改'); assert.equal(repaired.titleState?.status, 'failed');
+    assert.equal(restored.conversations.listAll(['workspace-one'], {}).conversations.find(item => item.id === view.id)?.title, '生成标题错误，请手动修改');
+    await restored.conversations.recoverInterrupted();
+    assert.equal(restored.conversations.read('workspace-one', view.id).title, '生成标题错误，请手动修改');
+  } finally { await restored?.close(); await f.close(); }
 });
 
 test('conversation task association can be set, replaced and cleared with the observed revision', async () => {
@@ -1053,9 +1437,11 @@ test('oversized or failed title inference preserves the neutral name and reserve
   const f = fixture([native.executor]);
   try {
     await connected(f.service, 'local'); const view = await f.service.conversations.create('workspace-one', {}); send(f.service, view.id, 'local', 'first');
-    await waitUntil(() => calls === 2, Boolean); await new Promise(resolve => setTimeout(resolve, 10)); assert.equal(f.service.conversations.read('workspace-one', view.id).titleState?.status,'failed'); assert.equal(f.service.conversations.read('workspace-one', view.id).title, '新对话');
+    await waitUntil(() => calls === 2, Boolean);
+    const failed = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.title === '生成标题错误，请手动修改');
+    assert.equal(failed.titleState?.status,'failed');
     await f.service.close(); const restored = createAgentService(f.options);
-    try { send(restored, view.id, 'local', 'after restart'); await waitUntil(() => restored.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed'); await new Promise(resolve => setTimeout(resolve, 10)); assert.equal(calls, 2); assert.equal(native.sends.length, 2); }
+    try { send(restored, view.id, 'local', 'after restart'); await waitUntil(() => restored.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed'); await new Promise(resolve => setTimeout(resolve, 10)); assert.equal(calls, 2); assert.equal(native.sends.length, 2); assert.equal(restored.conversations.read('workspace-one', view.id).title, '生成标题错误，请手动修改'); }
     finally { await restored.close(); }
   } finally { await f.close(); }
 });
@@ -1298,7 +1684,7 @@ test('tool result updates preserve original invocation input and name across his
 });
 
 
-test('long handoff uses local index without auxiliary summary; payload and receipt freeze the same body',async()=>{
+test('long handoff uses local index without auxiliary summary; receipt identifies the exact sent body',async()=>{
  let calls=0;const a=fake('a',{summary:async()=>{calls++;return 'unique auxiliary summary: verify the directory';}}),b=fake('b'),c=fake('c');
  b.executor.descriptor.capabilities.maxInputBytes=8192;
  const f=fixture([a.executor,b.executor,c.executor]);
@@ -1312,7 +1698,7 @@ test('long handoff uses local index without auxiliary summary; payload and recei
   assert.equal(preview.handoff!.mode,'indexed');assert.equal(calls,0);assert.equal(a.sends.length,1,'summary must not enter the work context');
   f.service.conversations.send('workspace-one',chat.id,{...draft,previewToken:preview.token,clientRequestId:'summarized'});
   const second=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
-  assert.equal(b.sends[0]!.text,preview.handoff!.body);assert.equal(second.entries.find(e=>e.kind==='handoff')!.handoff!.body,b.sends[0]!.text);
+  assert.equal(b.sends[0]!.text,preview.handoff!.body);assert.equal(second.entries.find(e=>e.kind==='handoff')!.handoff!.bodyDigest,createHash('sha256').update(b.sends[0]!.text).digest('hex'));
   assert.equal(second.entries.find(e=>e.kind==='handoff')!.status,'accepted');assert.equal(calls,0);
   const next=await f.service.conversations.prepareHandoff('workspace-one',chat.id,{expectedRevision:second.revision,connectionId:'c',text:'continue again'});
   assert.ok(!next.handoff!.body.includes('unique auxiliary summary'),'next material must derive from local originals, not the previous packet');
@@ -1328,8 +1714,8 @@ test('quota failure preserves long local source records and still permits handof
   send(f.service,chat.id,'a','user original '.repeat(1500));const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
   const draft={expectedRevision:done.revision,connectionId:'b',text:'continue'};const preview=await f.service.conversations.prepareHandoff('workspace-one',chat.id,draft);
   assert.equal(preview.handoff!.mode,'indexed');assert.equal(preview.fits,true);assert.equal(calls,0);
-  const index=JSON.parse(fs.readFileSync(preview.handoff!.sourcePath!,'utf8'));const source=JSON.parse(fs.readFileSync(index.rounds[0].path,'utf8'));
-  assert.equal(source.records[0].text,'user original '.repeat(1500));
+  const index=JSON.parse(fs.readFileSync(preview.handoff!.sourcePath!,'utf8'));const source=f.service.conversations.readHistory('workspace-one',chat.id,{sourceId:path.basename(preview.handoff!.sourcePath!),roundId:index.rounds[0].id});
+  assert.ok(source.truncatedIds.includes(source.entries[0].id));assert.equal(f.service.conversations.readEntry('workspace-one',chat.id,source.entries[0].id,source.entries[0].detail!.revision).text,'user original '.repeat(1500));
   f.service.conversations.send('workspace-one',chat.id,{...draft,previewToken:preview.token,clientRequestId:'quota-fallback'});
   await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');assert.equal(b.sends.length,1);
  }finally{await f.close();}
@@ -1402,7 +1788,7 @@ test('an uncertain handoff receipt stays uncertain and repeated submission never
   send(f.service,chat.id,'a','inspect first');const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
   const draft={expectedRevision:done.revision,connectionId:'b',text:'continue'},p=f.service.conversations.prepareSend('workspace-one',chat.id,draft),input={...draft,previewToken:p.token,clientRequestId:'uncertain-handoff'};
   f.service.conversations.send('workspace-one',chat.id,input);const unknown=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='unknown');
-  const receipt=unknown.entries.find(e=>e.kind==='handoff')!;assert.equal(receipt.status,'unknown');assert.equal(receipt.handoff!.body,b.sends[0]!.text);
+  const receipt=unknown.entries.find(e=>e.kind==='handoff')!;assert.equal(receipt.status,'unknown');assert.equal(receipt.handoff!.bodyDigest,createHash('sha256').update(b.sends[0]!.text).digest('hex'));
   f.service.conversations.send('workspace-one',chat.id,input);assert.equal(b.sends.length,1);assert.equal(f.service.conversations.read('workspace-one',chat.id).run!.accepted,false);
   assert.equal(f.service.conversations.prepareSend('workspace-one',chat.id,{...draft,expectedRevision:unknown.revision,text:'a different instruction'}).participantId,undefined);assert.equal(b.sends.length,1);
  }finally{await f.close();}
@@ -1446,7 +1832,7 @@ test('shutdown preserves a completed current turn even when released unknown his
   } finally {await cold?.close();await f.close();}
 });
 
-test('stopping an unresolved submission without a native execution identity returns unknown and persists cancellation',async()=>{
+test('stopping an unresolved submission without a native execution identity ends the round and persists cancellation',async()=>{
   const native=fake('local',{unknown:true}),f=fixture([native.executor],{autoContinueInterrupted:true});
   let cold:ReturnType<typeof createAgentService>|undefined;
   try {
@@ -1455,13 +1841,13 @@ test('stopping an unresolved submission without a native execution identity retu
     const before=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='unknown');
     const run=before.run!;
     const stopped=await f.service.conversations.stop('workspace-one',chat.id,{expectedRevision:before.revision,runId:run.id,participantId:run.participantId,generation:run.generation});
-    assert.equal(stopped.run!.status,'unknown');assert.notEqual(stopped.run!.resourcesReleased,true);
-    assert.match(stopped.run!.diagnostic!,/已取消.*自动接续.*未.*确认/);
+    assert.equal(stopped.run!.status,'stopped');assert.equal(stopped.run!.stopRequested,true);assert.notEqual(stopped.run!.resourcesReleased,true);
+    assert.match(stopped.run!.diagnostic!,/已结束本轮等待.*是否送达仍未知/);
     await f.service.close();
     const repository=new ConversationRepository(path.join(f.options.dataRoot,'agent-service'));
     assert.equal(repository.readConversation(chat.id)!.interruption?.cancelled,true);
     cold=createAgentService(f.options);await cold.conversations.recoverInterrupted();
-    assert.equal(native.sends.length,1);assert.equal(cold.conversations.read('workspace-one',chat.id).run!.status,'unknown');
+    assert.equal(native.sends.length,1);assert.equal(cold.conversations.read('workspace-one',chat.id).run!.status,'stopped');
   } finally {await cold?.close();await f.close();}
 });
 
@@ -1577,7 +1963,7 @@ test('same executor and model records native session replacement without claimin
     const preview=f.service.conversations.prepareSend('workspace-one',chat.id,draft);
     assert.equal(preview.participantId,undefined,'unknown original context cannot be reused');
     assert.equal(preview.switching,false,'an internal context change is not a user handoff');
-    f.service.conversations.send('workspace-one',chat.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});
+    f.service.conversations.send('workspace-one',chat.id,{...draft,clientRequestId:randomUUID()});
     const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='completed');
     assert.notEqual(native.sends[0]!.contextRef.id,native.sends[1]!.contextRef.id);
     const transfer=done.entries.find(entry=>entry.nativeSession);
@@ -1731,8 +2117,8 @@ test('unavailable title generation is recorded once and a restart recovers inter
   const native=fake(),f=fixture([native.executor]);
   try{
     await connected(f.service,'local');const view=await f.service.conversations.create('workspace-one',{});send(f.service,view.id,'local','work');
-    const done=await waitUntil(()=>f.service.conversations.read('workspace-one',view.id),value=>value.titleState?.status==='unavailable');
-    assert.equal(done.title,'新对话');assert.ok(done.titleState?.reason);assert.equal(native.sends.length,1);
+    const done=await waitUntil(()=>f.service.conversations.read('workspace-one',view.id),value=>value.titleState?.status==='unavailable'&&value.title==='生成标题错误，请手动修改');
+    assert.equal(done.title,'生成标题错误，请手动修改');assert.ok(done.titleState?.reason);assert.equal(native.sends.length,1);
     await f.service.close();
     const db=new DatabaseSync(path.join(f.options.dataRoot,'agent-service/conversations.sqlite'));
     db.prepare("UPDATE conversations SET body=json_set(body,'$.view.titleState.status','generating') WHERE id=?").run(view.id);db.close();
@@ -2290,6 +2676,36 @@ function titleFake(id:string,options:{hold?:boolean;title:()=>Promise<string|und
   return native;
 }
 
+test('early title waits for exact native acceptance without consuming its budget during startup',async()=>{
+  let accept!:()=>void;const admitted=new Promise<void>(resolve=>{accept=resolve;});let calls=0;
+  const native=fake('local',{hold:true,beforeAccepted:admitted}),open=native.executor.open;
+  native.executor.open=async input=>({...await open(input),generateTitle:async()=>{calls++;return '对话面板分隔线优化';}});
+  const f=fixture([native.executor]);
+  try{
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'local','优化对话面板分隔线');await waitUntil(()=>native.sends.length,n=>n===1);
+    assert.equal(calls,0,'initialization cannot start or exhaust the title request');
+    const repo=new ConversationRepository(path.join(f.options.dataRoot,'agent-service'));try{const stored=repo.readConversation(chat.id)!;assert.notEqual(stored.earlyTitleAttempted,true);assert.equal(stored.titleAttemptsByParticipant?.[stored.view.run!.participantId]?.early,undefined);}finally{repo.stopReadModels();}
+    accept();const named=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.title==='对话面板分隔线优化');
+    assert.equal(named.run?.status,'running');assert.equal(calls,1);assert.equal(native.sends.length,1);
+    native.sends[0].onEvent({type:'accepted',executionRef:{id:'execution-1'}});
+    await new Promise<void>(resolve=>setImmediate(resolve));assert.equal(calls,1,'duplicate acceptance cannot restart title generation');
+  }finally{accept();await f.close();}
+});
+
+test('title readiness failure stays distinct from unsupported capability and retains completion fallback',async()=>{
+  let calls=0;const native=titleFake('local',{hold:true,title:async()=>{if(++calls===1)throw new Error('agent_title_not_ready');return '原生会话就绪后的标题';}}),f=fixture([native.executor]);
+  try{
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'local','优化对话布局');
+    const failed=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.titleState?.status==='failed');
+    assert.match(failed.titleState!.reason!,/agent_title_not_ready.*原生会话尚未就绪/);assert.equal(failed.run?.status,'running');assert.equal(calls,1);
+    native.contexts.get(native.sends[0].contextRef.id)!.unblock!();
+    const named=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.title==='原生会话就绪后的标题');
+    assert.equal(named.run?.status,'completed');assert.equal(calls,2);assert.equal(native.sends.length,1);
+  }finally{await f.close();}
+});
+
 test('title retry belongs to each participant: an empty first executor cannot block the healthy replacement',async()=>{
   let aCalls=0,bCalls=0;const a=titleFake('first',{title:async()=>{aCalls++;return undefined;}}),b=titleFake('second',{hold:true,title:async()=>{bCalls++;return '切换执行方后恢复的标题';}}),f=fixture([a.executor,b.executor]);
   try{
@@ -2582,7 +2998,7 @@ test('long inherited background keeps complete indexed sources and never silentl
     assert.equal(preview.handoff!.mode,'indexed');assert.equal(preview.fits,true);
     assert.match(preview.handoff!.body,/后续任务.*本次用户要求及适用规则安排/);
     const index=JSON.parse(fs.readFileSync(preview.handoff!.sourcePath!,'utf8'));assert.equal(index.rounds.length,8);
-    const first=JSON.parse(fs.readFileSync(index.rounds[0].path,'utf8'));assert.equal(first.records[0].text,record.view.entries[0]!.text);
+    const first=f.service.conversations.readHistory('workspace-one',child.id,{sourceId:path.basename(preview.handoff!.sourcePath!),roundId:index.rounds[0].id});assert.equal(first.unavailable.length,0);assert.equal(f.service.conversations.readEntry('workspace-one',child.id,first.entries[0].id,first.entries[0].detail!.revision).text,record.view.entries[0]!.text);
     assert.deepEqual(child.entries,[]);assert.equal(native.sends.length,0);
   }finally{await f.close();}
 });
@@ -2720,19 +3136,40 @@ for(const previouslyStopped of [false,true])test('startup preserves a pending qu
  }finally{await f.close();}
 });
 
+test('an unconfirmed stop permits same-selection new input without an internal handoff confirmation or replay',async()=>{
+ const native=fake('local',{hold:true}),open=native.executor.open;
+ native.executor.open=async options=>{const runtime=await open(options);return {...runtime,stop:async()=>{throw new Error('original stop channel unavailable');}};};
+ const f=fixture([native.executor]);try{
+  await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','old requirement');
+  const before=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.accepted===true);
+  const result=await f.service.conversations.stop('workspace-one',chat.id,{expectedRevision:before.revision,runId:before.run!.id,participantId:before.run!.participantId,generation:before.run!.generation});
+  assert.equal(result.run!.stopRequested,true);assert.equal(result.run!.status,'unknown');
+  const stopped=f.service.conversations.read('workspace-one',chat.id);assert.equal(stopped.run!.stopRequested,true);assert.equal(stopped.run!.status,'unknown');
+  const draft={expectedRevision:stopped.revision,connectionId:'local',text:'new requirement',clientRequestId:randomUUID()};
+  f.service.conversations.send('workspace-one',chat.id,draft);
+  const next=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.id!==before.run!.id&&view.run?.accepted===true);
+  assert.equal(next.retainedRuns?.[0]?.id,before.run!.id);assert.equal(next.retainedRuns?.[0]?.status,'unknown');assert.equal(next.retainedRuns?.[0]?.stopRequested,true);
+  assert.notEqual(next.run!.participantId,before.run!.participantId);assert.equal(native.sends.length,2);assert.equal(native.contexts.size,2);
+ }finally{await f.close();}
+});
+
 for(const replacement of ['local','other'])test('retained tools allow a new instruction with '+replacement+' and preserve exact old stop',async()=>{
   const old=fake('local',{toolSurvives:true}),other=fake('other');const f=fixture([old.executor,other.executor]);
   try{
     await connected(f.service,'local');await connected(f.service,'other');const chat=await f.service.conversations.create('workspace-one',{});
     send(f.service,chat.id,'local','start helper');const before=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='tools-active');
     const unconfirmed={expectedRevision:before.revision,connectionId:replacement,text:'handle the new requirement',clientRequestId:randomUUID()};
-    assert.throws(()=>f.service.conversations.send('workspace-one',chat.id,unconfirmed),{code:replacement==='local'?'agent_native_supplement_required':'agent_session_confirmation_required'});
-    send(f.service,chat.id,replacement,'handle the new requirement');
+    if(replacement==='local')f.service.conversations.send('workspace-one',chat.id,unconfirmed);
+    else{
+      assert.throws(()=>f.service.conversations.send('workspace-one',chat.id,unconfirmed),{code:'agent_session_confirmation_required'});
+      send(f.service,chat.id,replacement,'handle the new requirement');
+    }
     const next=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.id!==before.run!.id&&['completed','tools-active'].includes(view.run?.status??''));
     assert.equal(next.retainedRuns?.[0]?.id,before.run!.id);assert.notEqual(next.run!.participantId,before.run!.participantId);
     assert.equal(old.contexts.size,replacement==='local'?2:1,'new work cannot overwrite an unfinished native context');
     assert.equal(next.retainedRuns?.[0]?.status,'tools-active');
     assert.equal(Boolean(next.retainedRuns?.[0]?.supersededBy),false);
+    if(replacement==='local')assert.equal(next.entries.filter(entry=>entry.kind==='handoff'&&!entry.nativeSession).length,0,'internal control diagnostics do not create a user-selected handoff');
     await assert.rejects(f.service.conversations.stop('workspace-one',chat.id,{expectedRevision:before.revision,runId:before.run!.id,participantId:before.run!.participantId,generation:before.run!.generation}),{code:'agent_revision_conflict'});
     const stopped=await f.service.conversations.stop('workspace-one',chat.id,{expectedRevision:next.revision,runId:before.run!.id,participantId:before.run!.participantId,generation:before.run!.generation,toolId:'own-tool'});
     assert.equal(stopped.retainedRuns?.[0]?.status,'stopped');assert.equal(stopped.run!.id,next.run!.id);assert.equal(stopped.run!.status,next.run!.status);
@@ -2759,7 +3196,8 @@ test('unknown retained stop is local to that execution and never replays or ends
     await connected(f.service,'local');await connected(f.service,'other');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','one operation');
     const before=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='tools-active');
     send(f.service,chat.id,'other','new direction');const next=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='completed');
-    await assert.rejects(f.service.conversations.stop('workspace-one',chat.id,{expectedRevision:next.revision,runId:before.run!.id,participantId:before.run!.participantId,generation:before.run!.generation}));
+    const stopped=await f.service.conversations.stop('workspace-one',chat.id,{expectedRevision:next.revision,runId:before.run!.id,participantId:before.run!.participantId,generation:before.run!.generation});
+    assert.equal(stopped.retainedRuns?.find(run=>run.id===before.run!.id)?.stopRequested,true);
     const after=f.service.conversations.read('workspace-one',chat.id);assert.equal(after.run!.id,next.run!.id);assert.equal(after.run!.status,'completed');assert.equal(after.retainedRuns?.[0]?.status,'unknown');
     assert.equal(old.sends.length,1);assert.equal(other.sends.length,1);
     assert.equal(f.service.conversationBusy('workspace-one',chat.id),true);assert.equal(f.service.conversationInputBusy('workspace-one',chat.id),false);
@@ -2945,4 +3383,131 @@ for(const blocked of ['none','stop','live-owner','unreleased','conflict'] as con
   }
   assert.equal(native.opens.length,opens);assert.equal(native.sends.length,sends);
  }finally{await observer?.close();await f.close();}
+});
+
+test('Codex live tool output reaches conversation SSE without persisting a body, then switches to native history', async () => {
+  const native = fake('codex');
+  const open = native.executor.open;
+  let release!: () => void;
+  let nativeFile = '';
+  let finalRow: unknown;
+  let nativeRows: unknown[] = [];
+  const output = 'unique-native-live-output\n'.repeat(900);
+  native.executor.open = async options => {
+    const runtime = await open(options);
+    const create = runtime.createContext.bind(runtime);
+    runtime.createContext = async input => {
+      const context = await create(input);
+      return {...context,data:{native:opaqueReference('codex',context.id,input.cwd,runtime.bindingIdentity)}};
+    };
+    runtime.send = async input => {
+      native.sends.push(input);
+      const context = native.contexts.get(input.contextRef.id)!;
+      const executionRef = {id:input.clientRequestId,data:{resourceContext:input.contextRef.id,resourceBinding:runtime.bindingIdentity}};
+      context.observation = {status:'running',executionRef,tools:[{id:'native-live',label:'命令',status:'running'}]};
+      input.onEvent({type:'accepted',executionRef});
+      nativeFile = path.join(options.configRoot,'codex-home/sessions/2026/11/04','rollout-'+input.contextRef.id+'.jsonl');
+      fs.mkdirSync(path.dirname(nativeFile),{recursive:true});
+      nativeRows = [{type:'session_meta',payload:{id:input.contextRef.id,cwd:input.cwd}}];
+      fs.writeFileSync(nativeFile,nativeRows.map(row=>JSON.stringify(row)+'\n').join(''));
+      const tool = {type:'commandExecution',id:'native-live',command:'echo native',aggregatedOutput:output,status:'inProgress'};
+      for(const item of codexItem(tool,executionRef.id,'inProgress')) input.onEvent({type:'item',item});
+      await new Promise<void>(resolve=>{release=resolve;});
+      for(const item of codexItem({...tool,status:'completed',exitCode:0},executionRef.id,'completed')) {
+        input.onEvent({type:'item',item});context.items.push(item);
+      }
+      context.observation = {status:'idle',executionRef,tools:[]};
+      finalRow = {type:'event_msg',payload:{type:'item_completed',turn_id:executionRef.id,item:{type:'CommandExecution',id:'native-live',command:tool.command,aggregated_output:output,exit_code:0,status:'completed'}}};
+      input.onEvent({type:'completed',status:'completed'});
+    };
+    return runtime;
+  };
+  const other = fake('other');
+  const f = fixture([native.executor,other.executor]);
+  try {
+    await connected(f.service,'codex');await connected(f.service,'other');
+    const chat = await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'codex','run');
+    const running = await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id,{compactTools:true}),view=>view.entries.some(e=>e.kind==='tool'&&e.status==='running'));
+    const tool = running.entries.find(e=>e.kind==='tool')!;
+    assert.ok(tool.text.includes('unique-native-live-output'));
+    const stream = f.service.conversations.subscribe('workspace-one',chat.id,{compactTools:true});
+    const first = await stream.events[Symbol.asyncIterator]().next();
+    assert.ok(first.value?.payload.conversation?.entries.find((e:ConversationEntry)=>e.id===tool.id)?.text.includes('unique-native-live-output'));
+    const validate = new Ajv2020({strict:false}).compile(AGENT_OPERATION_SCHEMAS.event);
+    assert.equal(validate(JSON.parse(JSON.stringify(first.value))),true,JSON.stringify(validate.errors));
+    assert.equal(tool.detail?.live,true);
+    stream.close();
+    const db = new DatabaseSync(path.join(f.options.dataRoot,'agent-service/conversations.sqlite'),{readOnly:true});
+    const verifyStored = () => {
+      const row = db.prepare('SELECT c.codec,c.body,c.content_revision,e.compact FROM conversation_entry_contents c JOIN conversation_read_entries e USING(conversation_id,content_revision) WHERE e.conversation_id=? AND e.id=?').get(chat.id,tool.id)!;
+      assert.equal(row.codec,'native-tool');
+      assert.equal(String(row.body).includes('unique-native-live-output'),false);
+      assert.equal(String(row.body).includes('echo native'),false);
+      assert.equal(String(row.compact).includes('echo native'),false);
+      assert.equal(row.compact,null);
+      const stored = JSON.parse(String(db.prepare('SELECT body FROM conversations WHERE id=?').get(chat.id)!.body));
+      assert.equal(stored.participationTools[tool.id].entryRevision,row.content_revision);
+      assert.equal(String(db.prepare('SELECT body FROM conversations WHERE id=?').get(chat.id)!.body).includes('unique-native-live-output'),false);
+    };
+    verifyStored();release();
+    await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id,{compactTools:true}),view=>view.run?.status==='completed');
+    verifyStored();
+    const current = f.service.conversations.read('workspace-one',chat.id);
+    f.service.conversations.prepareSend('workspace-one',chat.id,{expectedRevision:current.revision,connectionId:'other',text:'continue'});
+    const handoff = path.join(f.options.dataRoot,'agent-service/handoff-materials',chat.id);
+    for(const name of fs.readdirSync(handoff)) assert.equal(fs.readFileSync(path.join(handoff,name),'utf8').includes('unique-native-live-output'),false);
+    assert.equal(other.sends.length,0);
+    fs.appendFileSync(nativeFile,JSON.stringify(finalRow)+'\n');
+    const published = await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id,{compactTools:true}),view=>Boolean(view.entries.find(e=>e.id===tool.id)?.detail)&&!view.entries.find(e=>e.id===tool.id)?.detail?.live);
+    const pointer = published.entries.find(e=>e.id===tool.id)!;
+    assert.equal(pointer.text,'');
+    const before = fs.readFileSync(nativeFile);
+    assert.equal(f.service.conversations.readEntry('workspace-one',chat.id,tool.id,pointer.detail!.revision).text,'echo native\n'+output);
+    verifyStored();db.close();
+    await f.service.close();
+    const cold = createAgentService(f.options);
+    try {
+      const history = cold.conversations.read('workspace-one',chat.id,{compactTools:true});
+      const entry = history.entries.find(e=>e.id===tool.id)!;
+      assert.equal(entry.text,'');
+      assert.equal(cold.conversations.readEntry('workspace-one',chat.id,entry.id,entry.detail!.revision).text,'echo native\n'+output);
+    } finally {await cold.close();}
+    assert.deepEqual(fs.readFileSync(nativeFile),before);
+  } finally {release?.();await f.close();}
+});
+
+test('DSH stop releases the exact exited cold host without opening it and accepts the next instruction',async()=>{
+ const {spawn}=await import('node:child_process');
+ const {createDshExecutor}=await import('../../src/executors/dsh/index.ts');
+ const native=fake('dsh'),f=fixture([native.executor]);let observer:ReturnType<typeof createAgentService>|undefined;
+ const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore'});
+ await new Promise<void>(resolve=>child.once('spawn',resolve));
+ try{
+  await connected(f.service,'dsh');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'dsh','original');
+  await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
+  const repo=new ConversationRepository(path.join(f.options.dataRoot,'agent-service')),record=repo.readConversation(chat.id)!,prior=record.view.revision;
+  const run=record.view.run!,participant=record.participants.find(p=>p.id===run.participantId)!,attempt=record.attempts.find(a=>a.runId===run.id)!;
+  participant.contextRef!.data={native:opaqueReference('dsh',participant.contextRef!.id,record.view.cwd,participant.bindingIdentity!)};
+  attempt.executionRef!.data={resourceGroup:child.pid!,resourceContext:participant.contextRef!.id,resourceBinding:participant.bindingIdentity!,backgroundWork:true};
+  Object.assign(run,{generation:'departed-owner',status:'tools-active',executionState:'active',resourcesReleased:false,interrupted:true,tools:[{id:'uncertain-command',label:'bash',status:'running'}]});
+  record.interruption={runId:run.id,awaitingUser:false};record.view.revision=randomUUID();repo.saveConversation(record,prior);
+  native.executor.readReleasedControl=createDshExecutor().readReleasedControl;
+  const open=native.executor.open;let forbidOpen=true;
+  native.executor.open=async input=>{if(forbidOpen)throw Error('must_not_open_old_connection');return open(input);};
+  observer=createAgentService({...f.options,generationAlive:()=>false});
+  const exited=new Promise<void>(resolve=>child.once('exit',()=>resolve()));child.kill();await exited;
+  const before=observer.conversations.read('workspace-one',chat.id),entries=before.entries.length,sends=native.sends.length;
+  const stopped=await observer.conversations.stop('workspace-one',chat.id,{expectedRevision:before.revision,runId:run.id,participantId:run.participantId,generation:run.generation});
+  assert.equal(stopped.run!.resourcesReleased,true);assert.equal(stopped.run!.stopRequested,true);
+  assert.equal(stopped.run!.status,'unknown');assert.equal(stopped.run!.executionState,'unknown');assert.equal(stopped.run!.tools[0].status,'unknown');
+  assert.equal(stopped.entries.length,entries);assert.equal(native.sends.length,sends);assert.ok(stopped.run!.tools.every(tool=>tool.status!=='running'));
+  forbidOpen=false;
+  // Stop must return without replay; only this explicit new request can send.
+  const draft={expectedRevision:stopped.revision,connectionId:'dsh',text:'new instruction after stop'};
+  await observer.conversations.send('workspace-one',chat.id,{...draft,clientRequestId:randomUUID()});
+  const completed=await waitUntil(()=>observer!.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
+  assert.equal(native.sends.length,sends+1);assert.ok(completed.entries.some(e=>e.text==='new instruction after stop'));
+  assert.equal(completed.retainedRuns!.find(r=>r.id===run.id)!.resourcesReleased,true);
+ }finally{if(child.exitCode===null&&child.signalCode===null)child.kill();await observer?.close();await f.close();}
 });

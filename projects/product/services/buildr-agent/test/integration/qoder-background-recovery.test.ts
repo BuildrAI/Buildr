@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, writeFile, rm, realpath } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, rm, realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { randomUUID } from 'node:crypto';
+import { createCipheriv, randomUUID } from 'node:crypto';
 import { createAgentService } from '../../src/index.ts';
 import { createQoderExecutor } from '../../src/executors/qoder/index.ts';
 import type { ModelProvider } from '../../src/model-access/contracts.ts';
@@ -13,13 +13,21 @@ async function until<T>(read: () => T, check: (value: T) => boolean): Promise<T>
   assert.fail('Qoder service conversation did not converge');
 }
 
+const authUser = 'fixture-user', authMachine = '1234567890123456-machine';
+async function login(root: string) {
+  const config = join(root, 'agent-service/connections/qoder/qoder-config'), key = Buffer.from(authMachine.slice(0, 16)), cipher = createCipheriv('aes-128-cbc', key, key);
+  await mkdir(join(config, '.auth'), { recursive: true });
+  await writeFile(join(config, '.auth', 'machine_id'), authMachine);
+  await writeFile(join(config, '.auth', 'user'), Buffer.concat([cipher.update(JSON.stringify({ uid: authUser, security_oauth_token: 'fixture-secret' })), cipher.final()]).toString('base64'));
+}
+
 async function fixture() {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'buildr-qoder-service-recovery-')));
   const executable = join(root, 'qoder.mjs');
   await writeFile(executable, await readFile(new URL('./executors/fixtures/qoder-conversation-cli.mjs', import.meta.url)));
   const native = createQoderExecutor();
-  const provider: ModelProvider = { id: 'fixture', label: 'Fixture', async open() { return {
-    protocol: 'chat-completions', inspect: async () => ({ status: 'ready', models: [{ id: 'fixture-model', label: 'Fixture', tools: true, images: false }] }),
+  const provider: ModelProvider = { id: 'native-qoder', connectionId: 'qoder', label: 'Fixture', async open() { return {
+    protocol: 'chat-completions', inspect: async () => ({ status: 'ready', identity: 'qoder:' + authUser, models: [{ id: 'fixture-model', label: 'Fixture', tools: true, images: false }] }),
     beginLogin: async () => {}, cancelLogin: async () => {}, infer: async () => { throw Error('No paid inference in fixture'); }, close: async () => {},
   }; } };
   const open = (generationAlive?: (generation: string) => boolean) => createAgentService({ generationAlive, dataRoot: root, resolveWorkspace: () => ({ rootPath: root }), assertTask() {}, modelProviders: [provider],
@@ -34,10 +42,12 @@ test('Qoder normal completion survives automatic source release and reopening wi
   let reader: ReturnType<typeof open> | undefined;
   try {
     await service.connections.connect('qoder', { expectedRevision: 'unconfigured', executable });
-    const added = await service.models.accounts.add({ provider: 'fixture' }), checked = await service.models.accounts.check(added.id);
-    await service.models.accounts.preferences(added.id, { expectedRevision: checked.revision, models: [{ id: 'fixture-model', enabled: true }] });
+    await login(root);
+    await service.models.catalog.list({ refresh: true });
+    const checked = await service.models.accounts.check('native-qoder');
+    await service.models.accounts.preferences('native-qoder', { expectedRevision: checked.revision, models: [{ id: 'fixture-model', enabled: true }] });
     const chat = await service.conversations.create('workspace', {});
-    const draft = { expectedRevision: chat.revision, connectionId: 'qoder', modelAccountId: added.id, model: 'fixture-model', text: 'one' };
+    const draft = { expectedRevision: chat.revision, connectionId: 'qoder', modelAccountId: 'native-qoder', model: 'fixture-model', text: 'one' };
     const preview = service.conversations.prepareSend('workspace', chat.id, draft);
     service.conversations.send('workspace', chat.id, { ...draft, previewToken: preview.token, clientRequestId: randomUUID() });
     const final = await until(() => service.conversations.read('workspace', chat.id), value => value.run?.resourcesReleased === true);
@@ -57,10 +67,12 @@ test('Qoder native background continuation converges through conversation storag
   const { root, executable, open } = await fixture(), service = open();
   try {
     await service.connections.connect('qoder', { expectedRevision: 'unconfigured', executable });
-    const added = await service.models.accounts.add({ provider: 'fixture' }), checked = await service.models.accounts.check(added.id);
-    await service.models.accounts.preferences(added.id, { expectedRevision: checked.revision, models: [{ id: 'fixture-model', enabled: true }] });
+    await login(root);
+    await service.models.catalog.list({ refresh: true });
+    const checked = await service.models.accounts.check('native-qoder');
+    await service.models.accounts.preferences('native-qoder', { expectedRevision: checked.revision, models: [{ id: 'fixture-model', enabled: true }] });
     const chat = await service.conversations.create('workspace', {});
-    const draft = { expectedRevision: chat.revision, connectionId: 'qoder', modelAccountId: added.id, model: 'fixture-model', text: 'background-continue-error' };
+    const draft = { expectedRevision: chat.revision, connectionId: 'qoder', modelAccountId: 'native-qoder', model: 'fixture-model', text: 'background-continue-error' };
     const preview = service.conversations.prepareSend('workspace', chat.id, draft);
     service.conversations.send('workspace', chat.id, { ...draft, previewToken: preview.token, clientRequestId: randomUUID() });
     const read = () => service.conversations.read('workspace', chat.id);
@@ -90,10 +102,12 @@ test('Qoder legacy lost-result recovery releases only exited exact controls and 
   let next: ReturnType<typeof open> | undefined, ownerAlive = true;
   try {
     await old.connections.connect('qoder', { expectedRevision: 'unconfigured', executable });
-    const added = await old.models.accounts.add({ provider: 'fixture' }), checked = await old.models.accounts.check(added.id);
-    await old.models.accounts.preferences(added.id, { expectedRevision: checked.revision, models: [{ id: 'fixture-model', enabled: true }] });
+    await login(root);
+    await old.models.catalog.list({ refresh: true });
+    const checked = await old.models.accounts.check('native-qoder');
+    await old.models.accounts.preferences('native-qoder', { expectedRevision: checked.revision, models: [{ id: 'fixture-model', enabled: true }] });
     const chat = await old.conversations.create('workspace', {});
-    const draft = { expectedRevision: chat.revision, connectionId: 'qoder', modelAccountId: added.id, model: 'fixture-model', text: 'legacy-late-unknown' };
+    const draft = { expectedRevision: chat.revision, connectionId: 'qoder', modelAccountId: 'native-qoder', model: 'fixture-model', text: 'legacy-late-unknown' };
     const preview = old.conversations.prepareSend('workspace', chat.id, draft);
     old.conversations.send('workspace', chat.id, { ...draft, previewToken: preview.token, clientRequestId: randomUUID() });
     const prior = await until(() => old.conversations.read('workspace', chat.id), value => value.run?.status === 'unknown');

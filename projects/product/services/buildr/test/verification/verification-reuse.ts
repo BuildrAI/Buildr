@@ -1,6 +1,6 @@
+import { verificationInputApplicability } from './result-applicability.ts';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { assertMinimumNodeVersion, createExactNodeExecutionEnvironment, spawnCommandSync } from '../../src/infrastructure/process.ts';
@@ -11,6 +11,7 @@ import { withExclusiveFileLock } from '../../src/infrastructure/filesystem/exclu
 import { collectVerificationSourceInputs } from './verification-source-inputs.ts';
 import { resolveVerificationBase } from './changed-paths.ts';
 import { resolveNodeTestFiles } from './test-files.ts';
+import { portableVerificationExecutor, portableVerificationPreparations } from './verification-portable-inputs.ts';
 
 export type ReuseDigest = `sha256-${string}`;
 export type VerificationReuseScope = 'backend' | 'platform-backend' | 'web' | 'product' | 'repository' | 'plugin' | 'runtime';
@@ -61,8 +62,9 @@ const liveMysqlInput = 'BUILDR_TEST_MYSQL_CONNECTION_FILE';
  * run is never evidence for a complete file or group. No check IDs are added. */
 export function verificationFileSteps(step: VerificationReuseStep, productRoot: string): VerificationReuseStep[] {
   if (!step.reuse || step.parentId || step.executor.type !== 'node-test' || step.executor.args?.some((value: string) => /--test-(?:name-pattern|skip-pattern|only|shard)/u.test(value))) return [];
-  return resolveNodeTestFiles(productRoot, step.executor.files, step.id).map((file: string) => {
-    const relative = path.relative(productRoot, file).split(path.sep).join('/');
+  const executionRoot = path.resolve(productRoot, step.executor.cwd ?? '.');
+  return resolveNodeTestFiles(executionRoot, step.executor.files, step.id).map((file: string) => {
+    const relative = path.relative(executionRoot, file).split(path.sep).join('/');
     return { ...step, id: `${step.id}:${relative}`, parentId: step.id, dependsOn: [], executor: { ...step.executor, files: [relative] } };
   });
 }
@@ -93,11 +95,35 @@ export function requiresFreshExternalVerification(step: VerificationReuseStep, s
 }
 
 /** Hash actual source bytes, modes and link targets. HEAD is provenance, never the content key. */
+/** Dependency identity follows declared and actually installed package versions.
+ * Rebuilding a workspace-linked package or rerunning a test may change files
+ * under node_modules without changing the dependency graph; those source-derived
+ * bytes belong to source ownership, not to the environment. Keep the full byte
+ * digest only when the install cannot be described by npm's installed lock. */
+export function dependencyEnvironmentIdentity(root: string, options: { webDependencyCache?: boolean } = {}): string | null {
+  const installedLock = path.join(root, 'node_modules', '.package-lock.json');
+  try {
+    if (fs.lstatSync(installedLock).isFile()) {
+      const hash = crypto.createHash('sha256');
+      for (const file of ['package.json', 'package-lock.json'].map(name => path.join(root, name)).filter(file => fs.lstatSync(file, { throwIfNoEntry: false })?.isFile())) {
+        hash.update(`${path.relative(root, file)}\0`); hash.update(fs.readFileSync(file));
+      }
+      hash.update(`${path.relative(root, installedLock)}\0`); hash.update(fs.readFileSync(installedLock));
+      return `sha256-${hash.digest('hex')}`;
+    }
+  } catch { /* Fall through to the byte proof. */ }
+  return preparationContentDigest([path.join(root, 'node_modules')], { optional: true, webDependencyCache: options.webDependencyCache });
+}
+
 export function collectVerificationReuseSnapshot(options: VerificationReuseOptions): VerificationReuseSnapshot {
   const productRoot = path.resolve(options.productRoot), repositoryRoot = git(productRoot, ['rev-parse', '--show-toplevel']).trim();
   const env = options.env ?? process.env;
   const declared = [...(options.steps ?? verificationSteps), ...(options.step ? [options.step] : [])];
-  const steps = [...declared, ...declared.filter(step => !step.parentId).flatMap(step => verificationFileSteps(step, productRoot))];
+  // Callers can already include file-level checks. Expand only missing members;
+  // otherwise every file proof is parsed and fingerprinted twice.
+  const declaredIds = new Set(declared.map(step => step.id));
+  const steps = [...declared, ...declared.filter(step => !step.parentId).flatMap(step => verificationFileSteps(step, productRoot))
+    .filter(step => !declaredIds.has(step.id))];
   const sourceInputs = collectVerificationSourceInputs(repositoryRoot, productRoot, steps);
   const history = new Map<string, ReturnType<typeof collectVerificationSourceInputs> | null>();
   const historicalInputs = (commit: string, legacyDeclarations = false) => {
@@ -115,10 +141,17 @@ export function collectVerificationReuseSnapshot(options: VerificationReuseOptio
   const variables = Object.fromEntries(['TZ', 'LANG', 'LC_ALL', 'NODE_OPTIONS', 'BUILDR_VERIFICATION_PROFILE', 'BUILDR_VERIFICATION_NETWORK_MODE'].map(key => [key, env[key] ?? '']));
   const exactNode = createExactNodeExecutionEnvironment({ nodeExecutable: process.execPath, env, requireNpm: true });
   const npm = spawnCommandSync(exactNode.npmExecutable!, ['--version'], { env: exactNode.env, encoding: 'utf8', timeout: 10_000 });
+  // Observe only dependencies used by this plan's proof identities. These are
+  // fresh byte observations at each boundary, never a cache across executions.
+  const requiredTools = new Set(steps.flatMap(step => step.reuse ? requiredToolKeys(step) : []));
+  const dependencyRoots = [
+    ['backend-dependencies', productRoot],
+    ['web-dependencies', path.resolve(productRoot, '../buildr-web')],
+    ['plugin-dependencies', path.resolve(productRoot, '../dsh-plugin')],
+  ];
   const tools = { git: git(repositoryRoot, ['--version']).trim().replace(/^git version /u, '').replace(/[^a-z0-9.+:-]/giu, '-'), npm: npm.status === 0 ? String(npm.stdout).trim() : 'unavailable',
-    'backend-dependencies': preparationContentDigest([path.join(productRoot, 'node_modules')], { optional: true }) ?? 'unavailable',
-    'web-dependencies': preparationContentDigest([path.resolve(productRoot, '../buildr-web/node_modules')], { optional: true, webDependencyCache: true }) ?? 'unavailable',
-    'plugin-dependencies': preparationContentDigest([path.resolve(productRoot, '../dsh-plugin/node_modules')], { optional: true }) ?? 'unavailable' };
+    ...Object.fromEntries(dependencyRoots.filter(([key]) => requiredTools.has(key!)).map(([key, root]) =>
+      [key, dependencyEnvironmentIdentity(root!, { webDependencyCache: key === 'web-dependencies' }) ?? 'unavailable'])) };
   const head = git(repositoryRoot, ['rev-parse', 'HEAD']), refs = git(repositoryRoot, ['show-ref', '--head']), gitHistory = git(repositoryRoot, ['log', '--all', '--format=%H:%P']);
   let gitComparison: VerificationReuseSnapshot['gitComparison'];
   if ([...(options.steps ?? verificationSteps), ...(options.step ? [options.step] : [])].some(step => step.reuse && step.reuse.git === 'comparison')) {
@@ -153,7 +186,9 @@ export function createVerificationReuseIdentity(step: VerificationReuseStep, sna
   if (!contentIdentity) return null;
   const declared = verificationSteps.find((item: VerificationReuseStep) => item.id === step.id);
   const execution = verificationStepExecutionInputs(step);
-  const recipeIdentity = digest({ version: proof ? 2 : 1, id: step.id, executor: step.executor, dependsOn: declared?.dependsOn ?? step.dependsOn ?? [], contexts: step.contexts ?? [], timeoutMs: step.timeoutMs ?? null, reuse: step.reuse, preparations: step.preparations ?? [], type: step.testing?.executionBoundary, target: step.target,
+  const recipeIdentity = digest({ version: 3, id: step.id, executor: portableVerificationExecutor(step.executor, snapshot),
+    dependsOn: declared?.dependsOn ?? step.dependsOn ?? [], contexts: step.contexts ?? [], timeoutMs: step.timeoutMs ?? null, reuse: step.reuse,
+    preparations: portableVerificationPreparations(step.preparations, snapshot), type: step.testing?.executionBoundary, target: step.target,
     ...(execution ? { execution } : {}),
     ...(inputs ? { source: inputs.recipeIdentity, fallback: inputs.fallback, resources: step.resources, resourceDemand: step.resourceDemand, concurrencyClass: step.concurrencyClass } : {}) });
   const { platform, arch, nodeVersion, tools, variablesIdentity } = snapshot.environment;
@@ -171,7 +206,7 @@ export function createVerificationReuseIdentity(step: VerificationReuseStep, sna
   return { key: digest(identity), ...identity };
 }
 
-function validEnvironment(value: any): value is VerificationReuseEnvironment {
+export function validEnvironment(value: any): value is VerificationReuseEnvironment {
   if (!value || !['darwin', 'win32', 'linux'].includes(value.platform) || !['arm64', 'x64', 'ia32', 'arm', 'ppc64', 's390x', 'riscv64'].includes(value.arch)
     || typeof value.nodeVersion !== 'string' || !digestPattern.test(value.variablesIdentity ?? '') || !value.tools || typeof value.tools !== 'object' || Array.isArray(value.tools)) return false;
   try { assertMinimumNodeVersion(value.nodeVersion, '24.15.0'); } catch { return false; }
@@ -213,7 +248,7 @@ export function validateVerificationReuseRecord(record: unknown, options: Verifi
             ...(step.platformScope?.kind === 'common' ? { environment: undefined, runner: undefined, arch: undefined } : {}) }))) return false;
     }
     const identity = createVerificationReuseIdentity(step, { ...snapshot, environment: value.environment });
-    if (identity !== null && JSON.stringify(identity) === JSON.stringify(value.identity)) return true;
+    if (verificationInputApplicability(value.identity, identity).applicable) return true;
     // Old records remain original execution evidence. Authenticate their broad
     // input digest against immutable source before comparing the narrower inputs.
     if (!identity || !step.reuse || step.reuse.git || !snapshot.historicalInputs) return false;
@@ -241,7 +276,12 @@ export function resolveVerificationReuseDirectory(options: VerificationReuseOpti
   const override = env.BUILDR_VERIFICATION_REUSE_DIR;
   if (override) { if (!path.isAbsolute(override)) throw new Error('BUILDR_VERIFICATION_REUSE_DIR must be absolute'); return override; }
   const common = fs.realpathSync(path.resolve(options.productRoot, git(options.productRoot, ['rev-parse', '--git-common-dir']).trim()));
-  return path.join(env.BUILDR_TEST_SHARED_TEMP_ROOT || os.tmpdir(), 'buildr-verification-reuse', digest(common).slice(7, 31), 'v1');
+  if (env.BUILDR_TEST_SHARED_TEMP_ROOT) {
+    return path.join(env.BUILDR_TEST_SHARED_TEMP_ROOT, 'buildr-verification-reuse', digest(common).slice(7, 31), 'v1');
+  }
+  // Verification proofs belong to the repository, including its linked worktrees.
+  // The invoking Agent's temporary directory is only for disposable run state.
+  return path.join(common, 'buildr', 'verification-reuse', 'v1');
 }
 
 export function readVerificationReuseBundle(file: string): VerificationReuseBundle {
@@ -435,10 +475,7 @@ export function inspectVerificationReusePlan(plan: any, options: VerificationReu
     else if (!identity) reasons.push('inputs-unavailable');
     else if (!prior) reasons.push('no-matching-result');
     else {
-      for (const [field, reason] of [['contentIdentity', 'product-input-changed'], ['recipeIdentity', 'check-recipe-changed'],
-        ['environmentIdentity', 'environment-changed'], ['gitIdentity', 'git-input-changed']] as const) {
-        if (identity[field] !== prior.identity[field]) reasons.push(reason);
-      }
+      reasons.push(...verificationInputApplicability(prior.identity, identity).reasons);
       if (!reasons.length) reasons.push('prior-result-invalid-or-revoked');
     }
     const observed = prior?.environment?.platform === snapshot.environment.platform && prior?.environment?.arch === snapshot.environment.arch

@@ -1,4 +1,5 @@
 import { spawnSync } from './process.ts';
+import process from 'node:process';
 
 export const FINAL_DOCTOR_MAX_BUFFER = 4 * 1024 * 1024;
 const DIAGNOSTIC_PREVIEW_LIMIT = 16 * 1024;
@@ -47,6 +48,19 @@ export function classifyFinalDoctorResult(result: any): any  {
 }
 
 export function runFinalDoctor({ invocation = null, executable, cliPath, agent = null, runtimeId = agent, adapterId = null, targetRoot, cwd, spawn = spawnSync }: any): any  {
+  // Verification owns explicit Doctor checks. Derived setup commands may skip
+  // the nested process boot while preserving the same sync assertions.
+  if (process.env.BUILDR_SKIP_FINAL_DOCTOR === '1') {
+    return {
+      result: { status: 0, stdout: '', stderr: '' },
+      classification: {
+        status: 'skipped',
+        code: 'doctor.skipped',
+        message: '最终 Doctor 由验证框架的显式检查覆盖。',
+        diagnostic: '',
+      },
+    };
+  }
   const selected = invocation || { command: executable, argsPrefix: cliPath ? [cliPath] : [] };
   const result = spawn(selected.command, [...selected.argsPrefix, ...finalDoctorArgs(runtimeId, targetRoot, adapterId)], {
     cwd,

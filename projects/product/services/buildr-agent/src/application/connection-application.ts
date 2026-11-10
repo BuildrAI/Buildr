@@ -1,3 +1,4 @@
+import { executionLog } from '../storage/execution-log.ts';
 import { ExecutorStorage } from './executor-storage.ts';
 import { interactionPolicy } from '../domain/interaction-policy.ts';
 import { createHash, randomUUID } from 'node:crypto';
@@ -138,7 +139,7 @@ export class ConnectionApplication {
   }
 
   private async openExecutor(executor: AgentExecutor, options: import('../contracts.ts').ExecutorOpenOptions): Promise<AgentRuntime> {
-    return this.storage.opened(await executor.open(this.storage.options(executor, options)), executor, options.configRoot);
+    return this.storage.opened(await executor.open(this.storage.options(executor, {...options,diagnostics:executionLog(this.options.root,this.options.generation)})), executor, options.configRoot);
   }
 
   private stored(id: string): StoredConnection {
@@ -275,7 +276,7 @@ export class ConnectionApplication {
   async releaseGatewayRuntime(runtime: AgentRuntime): Promise<void> {
     const owned = [];
     for (const [key, pending] of this.gatewayRuntimes) {
-      const candidate = await pending.catch(() => undefined);
+      const candidate = await Promise.race([pending.catch(() => undefined), new Promise<undefined>(resolve => setImmediate(() => resolve(undefined)))]);
       if (candidate === runtime) owned.push({key,pending});
     }
     if (!owned.length) {

@@ -1,3 +1,5 @@
+import net from 'node:net';
+import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { createServer } from 'node:http';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -197,4 +199,28 @@ test('--restart 同身份接管：认证退出旧实例并在原端口重建', a
   const receipt = JSON.parse(fs.readFileSync(f.receiptFile, 'utf8'));
   assert.equal(receipt.pid, process.pid);
   assert.match(receipt.url, /4499$/);
+});
+
+
+test('Web shutdown drains a never-ending HTTP response without waiting for its client', {timeout:8000}, async t => {
+  let resourcesClosed = false;
+  const host = createLocalWorkspaceServer({}, {
+    ensureRegisteredTarget: () => null, resolveRegisteredWorkspace: () => ({}),
+    httpContributions: [{taskIdSource: /^[a-z]+$/}],
+    beforeShutdown: async () => { resourcesClosed = true; },
+  });
+  const {server,url} = await host.ready;
+  t.after(() => {server.closeAllConnections();server.close();});
+  // An unfinished HTTP header keeps an accepted connection active forever;
+  // closing the listener alone cannot drain it.
+  const socket = net.createConnection(Number(new URL(url).port), '127.0.0.1');
+  socket.on('error',()=>{});
+  await new Promise<void>(resolve => socket.once('connect',resolve));
+  socket.write('GET / HTTP/1.1\r\nHost: localhost\r\n');
+  const started = Date.now();
+  await host.shutdown();
+  assert.equal(resourcesClosed,true);
+  assert.equal(server.listening,false);
+  assert.ok(Date.now()-started < 4000);
+  socket.destroy();
 });

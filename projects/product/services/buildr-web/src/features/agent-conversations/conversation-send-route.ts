@@ -1,12 +1,19 @@
 import type { ConversationView } from './types';
 import { currentConversationRequests, executionLocked } from './conversation-state.ts';
 
-/** Refusal never becomes an independent new round. */
+/** New requirements keep retained controls; uncertain supplementary receipts are reconciled separately. */
 export function conversationSendRoute(conversation: ConversationView, changed: boolean, preview = false): 'preview' | 'pending' | 'unavailable' | 'supplement' | 'send' {
   if (preview) return 'preview';
   const requests = currentConversationRequests(conversation);
-  if (requests.some(request => request.kind === 'question') || changed && requests.length) return 'pending';
+  if (requests.some(request => request.kind === 'question')) return 'send';
+  if (changed && requests.length) return 'pending';
   const run = conversation.run;
+  // Resource release changes admission, not whether uncertain results need observation.
+  // A pending decision still belongs to its original owner.
+  if (run?.resourcesReleased) return requests.length ? 'pending' : 'send';
+  // The model has ended, or the user explicitly stopped addressing it. The
+  // service retains that execution and admits new input in an isolated context.
+  if (run?.accepted && (run.status === 'tools-active' || run.stopRequested)) return requests.length ? 'pending' : 'send';
   if (!changed && executionLocked(run)) {
     return run?.accepted && !run.stopRequested && ['running', 'waiting-approval', 'waiting-question', 'unknown'].includes(run.status) ? 'supplement' : 'unavailable';
   }
@@ -37,7 +44,7 @@ export async function refreshConversationSend(
 ): Promise<ConversationView | undefined> {
   if (!options.isCurrent()) return;
   const run = before.run;
-  if (run?.status !== 'unknown' || !run.accepted || run.stopRequested) return before;
+  if (run?.status !== 'unknown' || !run.accepted || run.stopRequested || run.resourcesReleased) return before;
   const { id, participantId, generation } = run;
   const next = await options.observe(before);
   if (!options.isCurrent()) return;

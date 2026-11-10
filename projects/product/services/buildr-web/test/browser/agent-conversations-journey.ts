@@ -1,8 +1,9 @@
+import {runIndependentScenarios,selectIndependentScenarios} from './agent-conversation-scenarios.ts';
 import assert from 'node:assert/strict';
 import {AGENT_CONVERSATION_GROUPS,type AgentConversationGroup} from './agent-conversation-groups.ts';
 import {createAgentConversationFixture} from './agent-conversation-fixture.ts';
 import {runSetupScenarios} from './agent-conversations-setup-scenarios.ts';
-import {runHistoryScenarios} from './agent-conversations-history-scenarios.ts';
+import {HISTORY_SCENARIOS,runHistoryScenarios} from './agent-conversations-history-scenarios.ts';
 import {runHandoffScenarios} from './agent-conversations-handoff-scenarios.ts';
 import {runTasksScenarios} from './agent-conversations-tasks-scenarios.ts';
 import {runModelsScenarios} from './agent-conversations-models-scenarios.ts';
@@ -26,7 +27,27 @@ const scenarios:Record<AgentConversationGroup,(fixture:Awaited<ReturnType<typeof
 /** 保留完整对话入口；各场景组复用唯一夹具，独立执行时重新准备现场。 */
 export async function runAgentConversationsJourney(options:any){
   const part=options.group||process.env.BUILDR_AGENT_JOURNEY_PART||'all';
-  if(part!=='all'&&!AGENT_CONVERSATION_GROUPS.some(group=>group===part))throw new Error('未知对话测试分组：'+part);
+  const historyItem=HISTORY_SCENARIOS.some(scenario=>scenario.id===part);
+  if(part!=='all'&&!historyItem&&!AGENT_CONVERSATION_GROUPS.some(group=>group===part))throw new Error('未知对话测试分组：'+part);
+  if (part === 'history' || part === 'all' || historyItem) {
+    const members=selectIndependentScenarios(HISTORY_SCENARIOS,historyItem?part:process.env.BUILDR_AGENT_SCENARIO_FOCUS);
+    await options.t.test('对话独立场景：'+(historyItem?part:'history'),{timeout:60_000*members.length},async()=>{
+      await runIndependentScenarios(members.map(scenario=>({...scenario,run:(fixture:Awaited<ReturnType<typeof createAgentConversationFixture>>)=>fixture.step(scenario.name,()=>scenario.run(fixture))})),{
+        create:async()=>{
+          const page=await options.newScenarioPage();
+          let fixture:Awaited<ReturnType<typeof createAgentConversationFixture>>|undefined;
+          try {
+            fixture=await createAgentConversationFixture({...options,page,scenarioSelectionHandled:true});
+            await fixture.initialize('history');return fixture;
+          } catch(error) {try{await fixture?.dispose();}finally{await page.context().close();}throw error;}
+        },
+        dispose:async fixture=>{try{await fixture.dispose();}finally{await fixture.page.context().close();}},
+        afterScenario:options.afterScenario,
+        record:result=>process.stderr.write('[agent-conversation-scenario] '+JSON.stringify(result)+'\n'),
+      });
+    });
+    if (part === 'history' || historyItem) return;
+  }
   await options.t.test('对话交互：'+part,{timeout:180_000},async()=>{
     const fixture=await createAgentConversationFixture(options);
     try{
@@ -36,7 +57,7 @@ export async function runAgentConversationsJourney(options:any){
         '每个对话场景组都从独立测试数据开始',
       );
       await fixture.initialize(part);
-      for(const group of part==='all'?AGENT_CONVERSATION_GROUPS:[part as AgentConversationGroup])await scenarios[group](fixture);
+      for(const group of part==='all'?AGENT_CONVERSATION_GROUPS.filter(group=>group!=='history'):[part as AgentConversationGroup])await scenarios[group](fixture);
     }finally{await fixture.dispose();}
   });
 }

@@ -48,6 +48,7 @@ export class ConversationChildren {
     candidate.view.childOf={conversationId:parentId,workspaceId:scope,title:parent.view.title,sourceRevision:parent.view.revision,
       throughSequence:parent.view.entries.at(-1)?.sequence??parent.view.childOf?.throughSequence??0,createdAt:this.options.now(),
       ...(parent.view.run?{state:parent.view.run.status}:{})};
+    candidate.nativeTools = structuredClone(parent.nativeTools);
     candidate.inheritedContext={entries,outcomes,pendingQuestions};
     this.options.media.inherit(parent,candidate,[...new Set(entries.flatMap(entry=>entry.attachments??[]))]);
     try { this.options.save(candidate); }

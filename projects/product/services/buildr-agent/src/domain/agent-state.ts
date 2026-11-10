@@ -80,7 +80,8 @@ export interface StoredParticipant {
   deliveredThrough: number;
 }
 export interface StoredConversation {
-  /** Optional metadata keyed by original tool id; public legacy entry DTOs stay unchanged. */
+  /** Buildr tool entry IDs whose execution body belongs to the native executor. */
+  nativeTools?: Record<string, true | {parentToolId:string}>;
   participationTools?: Record<string,import('../participation-contracts.ts').ParticipationObservation & {entryRevision?:string}>;
   forkRequest?: { digest: string; clientRequestId: string };
   /** Immutable, visible source records, separate from this conversation's own messages. */

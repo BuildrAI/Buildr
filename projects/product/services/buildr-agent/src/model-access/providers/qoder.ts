@@ -53,7 +53,7 @@ export async function inspectQoderLogin(config: string): Promise<AccountObservat
   }
 }
 const quotaNumber=(value:unknown):number|undefined=>typeof value==='number'&&Number.isFinite(value)?value:undefined;
-const quotaFormat=(value:number):string=>Number.isInteger(value)?String(value):value.toFixed(1);
+const quotaFormat=(value:number):string=>Number.isInteger(value)?value.toLocaleString('zh-CN'):value.toFixed(1);
 const quotaPercent=(value:number):number=>value>0?Math.max(0.1,Math.round(Math.min(100,value)*10)/10):0;
 /** Read the openapi credits usage. A failed read keeps the model catalog usable. */
 async function observeQoderQuota(request:(path:string,init?:RequestInit)=>Promise<Response>):Promise<ModelProviderObservation['quota']>{
@@ -70,14 +70,25 @@ async function observeQoderQuota(request:(path:string,init?:RequestInit)=>Promis
     };
     const windows:Array<{id:string;label:string;remainingPercent:number;resetsAt?:string}>=[];
     const user=record(data.userQuota),userPercent=remainingPercent(user,'total');
-    if(userPercent!==undefined)windows.push({id:'credits',label:'Credits',remainingPercent:userPercent,...(resetsAt?{resetsAt}:{})});
-    const org=record(data.orgResourcePackage),orgPercent=org.available===true?remainingPercent(org,'cap'):undefined;
-    if(orgPercent!==undefined)windows.push({id:'org-package',label:'组织资源包',remainingPercent:orgPercent});
+    const buckets:Array<{total?:number;remaining?:number}>=[];
+    if(userPercent!==undefined){windows.push({id:'credits',label:'套餐内 Credits',remainingPercent:userPercent,...(resetsAt?{resetsAt}:{})});buckets.push({total:positive(user.total),remaining:quotaNumber(user.remaining)});}
+    const addOn=record(data.addOnQuota),addOnPercent=remainingPercent(addOn,'total');
+    if(addOnPercent!==undefined){windows.push({id:'add-on',label:'资源包',remainingPercent:addOnPercent,...(resetsAt?{resetsAt}:{})});buckets.push({total:positive(addOn.total),remaining:quotaNumber(addOn.remaining)});}
+    const org=record(data.orgResourcePackage),orgPercent=addOnPercent===undefined?(org.available===true?remainingPercent(org,'cap'):remainingPercent(org,'total')):undefined;
+    if(orgPercent!==undefined){windows.push({id:'org-package',label:'组织资源包',remainingPercent:orgPercent});buckets.push({total:positive(org.cap)??positive(org.total),remaining:quotaNumber(org.remaining)});}
     if(!windows.length)return{available:false,observedAt};
-    const userType=string(data.userType),planLabel=userType==='teams'?'Teams':userType?userType[0]!.toUpperCase()+userType.slice(1):undefined;
-    const total=positive(user.total),remaining=quotaNumber(user.remaining);
-    const summary=total!==undefined&&remaining!==undefined?`Qoder · 剩余 ${quotaFormat(remaining)} / ${quotaFormat(total)} credits`:undefined;
-    return{available:true,observedAt,...(planLabel?{planLabel}:{}),windows,remainingPercent:Math.min(...windows.map(window=>window.remainingPercent)),...(resetsAt?{resetsAt}:{}),...(summary?{summary}:{})};
+    const userType=string(data.userType),planLabel=userType==='teams'?'Teams':userType?userType.split('_').map(part=>part?part[0]!.toUpperCase()+part.slice(1):part).join(' '):undefined;
+    const combined=buckets.length?(()=>{const total=buckets.reduce((sum,bucket)=>sum+(bucket.total??0),0),remaining=buckets.reduce((sum,bucket)=>sum+(bucket.remaining??0),0);return total>0?quotaPercent(remaining/total*100):undefined;})():undefined;
+    const remaining=typeof data.isQuotaExceeded==='boolean'&&data.isQuotaExceeded?0:combined??Math.min(...windows.map(window=>window.remainingPercent));
+    const userTotal=positive(user.total),userRemaining=quotaNumber(user.remaining),addOnTotal=positive(addOn.total),addOnRemaining=quotaNumber(addOn.remaining);
+    const orgTotal=positive(org.cap)??positive(org.total),orgRemaining=quotaNumber(org.remaining);
+    const summaryParts=[
+      userTotal!==undefined&&userRemaining!==undefined?`套餐 ${quotaFormat(userRemaining)} / ${quotaFormat(userTotal)} credits`:undefined,
+      addOnTotal!==undefined&&addOnRemaining!==undefined?`资源包 ${quotaFormat(addOnRemaining)} / ${quotaFormat(addOnTotal)} credits`:undefined,
+      addOnPercent===undefined&&orgPercent!==undefined?(orgTotal!==undefined&&orgRemaining!==undefined?`组织资源包 ${quotaFormat(orgRemaining)} / ${quotaFormat(orgTotal)} credits`:`组织资源包 · 剩余 ${quotaFormat(orgPercent)}%`):undefined,
+    ].filter((value):value is string=>!!value);
+    const summary=summaryParts.length?`Qoder · ${summaryParts.join(' · ')}`:undefined;
+    return{available:true,observedAt,...(planLabel?{planLabel}:{}),windows,remainingPercent:remaining,...(resetsAt?{resetsAt}:{}),...(summary?{summary}:{})};
   }catch{return{available:false,observedAt};}
 }
 export function createQoderModelProvider(owner:QoderModelOwner):ModelProvider {
@@ -91,8 +102,11 @@ export function createQoderModelProvider(owner:QoderModelOwner):ModelProvider {
         // additional CLI just to reread the same local account.
         const [response,quota]=await Promise.all([owner.request('/models',{signal:AbortSignal.timeout(15000)}),observeQoderQuota((path,init)=>owner.request(path,init))]);
         if(!response.ok)throw await qoderResponseFailure(response);
-        const data=record(await response.json());if(!Array.isArray(data.chat))throw new Error('qoder_catalog_invalid');models.clear();
-        for(const value of data.chat){const config=record(value),id=string(config.key);if(!id||config.enable===false)continue;
+        const data=record(await response.json());
+        const chat=Array.isArray(data.chat)?data.chat:[],app=Array.isArray(data.app)?data.app:[];
+        if(!chat.length&&!app.length)throw new Error('qoder_catalog_invalid');models.clear();
+        // Prefer the chat group; app-only entries such as QoDuck are still real models.
+        for(const value of [...chat,...app]){const config=record(value),id=string(config.key);if(!id||config.enable===false||models.has(id))continue;
           const thinking=record(config.thinking_config),enabled=record(thinking.enabled),efforts=Object.keys(record(enabled.efforts));
           const contexts=Object.values(record(config.context_config)).map(record);const windows=contexts.flatMap(v=>positive(v.token_count)??[]);const contextWindow=positive(contexts.find(v=>v.is_default===true)?.token_count)??positive(config.max_input_tokens)??(windows.length?Math.min(...windows):undefined);
           const reportedContextWindow=windows.length?Math.max(...windows):positive(config.max_input_tokens);

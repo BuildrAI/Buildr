@@ -13,6 +13,25 @@ import { PendingSends } from '../../../src/process/pending-sends.ts';
 const source = readFileSync(new URL('./fixtures/codex-cli.mjs', import.meta.url), 'utf8');
 async function eventually(condition: () => unknown, timeout = 1000) { const until = Date.now() + timeout; while (!condition()) { if (Date.now() > until) throw new Error('condition timeout'); await new Promise(resolve => setTimeout(resolve, 5)); } }
 
+test('whole-round stop terminates the known command even when terminal listing fails',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'buildr-codex-stop-observation-'));let runtime:AgentRuntime|undefined;
+ try{
+  const executable=join(root,'codex.mjs');
+  await writeFile(executable,source.replace('const m=JSON.parse(l);',"const m=JSON.parse(l);fs.appendFileSync(path.join(process.env.CODEX_HOME,'requests.jsonl'),JSON.stringify(m)+'\\n');"));
+  runtime=await createCodexExecutor().open({connectionId:'codex',configRoot:root,executable,environment:{PATH:process.env.PATH??''}});
+  const contextRef=await runtime.createContext({cwd:root}),events:ExecutorEvent[]=[];
+  await runtime.send({contextRef,cwd:root,text:'[retain-command]',images:[],clientRequestId:'first',onEvent:event=>events.push(event)});
+  const accepted=events.find(event=>event.type==='accepted');assert.equal(accepted?.type,'accepted');
+  await writeFile(join(root,'codex-home/fail-terminal-observation'),'fail');
+  const before=(await readFile(join(root,'codex-home/requests.jsonl'),'utf8')).trim().split('\n').length;
+  await runtime.stop({contextRef,executionRef:accepted.executionRef});
+  const methods=(await readFile(join(root,'codex-home/requests.jsonl'),'utf8')).trim().split('\n').slice(before).map(line=>JSON.parse(line).method);
+  assert.ok(methods.indexOf('thread/backgroundTerminals/terminate')<methods.indexOf('thread/backgroundTerminals/list'),'cancel exact tools before waiting for terminal observations');
+  await rm(join(root,'codex-home/fail-terminal-observation'));
+  assert.equal((await runtime.observe({contextRef,executionRef:accepted.executionRef})).tools.some(tool=>tool.status!=='completed'),false);
+ }finally{await runtime?.close();await rm(root,{recursive:true,force:true});}
+});
+
 test('normal completion retains command control across turns without letting a late old receipt end the new turn', async () => {
   const root=await mkdtemp(join(tmpdir(),'buildr-codex-retained-'));let runtime:AgentRuntime|undefined;
   try {
@@ -63,7 +82,7 @@ test('unknown observations and unconfirmed whole-run stops revoke continuation w
   } finally { await runtime?.close();await rm(root,{recursive:true,force:true}); }
 });
 
-test('queued input cannot confirm a new context; explicit handoff preserves old receipt ownership', async () => {
+test('queued same-selection recovery creates one context and preserves old receipt ownership', async () => {
   const root=await mkdtemp(join(tmpdir(),'buildr-codex-queued-retained-'));
   const dataRoot=join(root,'profile');let service:ReturnType<typeof createAgentService>|undefined;
   try {
@@ -82,13 +101,7 @@ test('queued input cannot confirm a new context; explicit handoff preserves old 
     service.conversations.queueSend('workspace',id,{expectedRevision:before.revision,connectionId:'codex',text:'[finish]',clientRequestId:'queued-next'});
     const pump=new PendingSends({dataRoot,service,active:()=>true,generationAlive:()=>true,conversationBusy:async(scope,id)=>service!.conversationInputBusy(scope,id)});
     await pump.pump();
-    const refused=service.conversations.read('workspace',id);
-    assert.equal(refused.run!.id,ownerRunId);assert.equal(refused.pendingSend?.state,'failed');
-    assert.equal(refused.entries.some(entry=>entry.role==='user'&&entry.text==='[finish]'),false,'no native input is admitted by the queue');
-    service.conversations.cancelPendingSend('workspace',id,{expectedPendingRevision:refused.pendingSend!.revision});
-    const confirmed={expectedRevision:service.conversations.read('workspace',id).revision,connectionId:'codex',text:'[finish]'};
-    const confirmation=service.conversations.prepareSend('workspace',id,confirmed);
-    service.conversations.send('workspace',id,{...confirmed,previewToken:confirmation.token,clientRequestId:'queued-next'});
+    assert.equal(service.conversations.read('workspace',id).pendingSend,undefined);
     await eventually(()=>service!.conversations.read('workspace',id).run?.id!==ownerRunId && service!.conversations.read('workspace',id).run?.status==='completed');
     await pump.pump();
     const after=service.conversations.read('workspace',id);
@@ -395,3 +408,21 @@ test('Codex image viewing appears once in both live flow and durable history', a
     await runtime.stop({contextRef,executionRef:started.executionRef});await next;
   }finally{await runtime?.close();await rm(root,{recursive:true,force:true});}
  });
+
+
+test('native command output deltas use ordinary tool events with their original identity',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'buildr-codex-tool-stream-'));let runtime:AgentRuntime|undefined;
+ try {
+  const executable=join(root,'codex.mjs');await writeFile(executable,source);
+  runtime=await createCodexExecutor().open({connectionId:'codex',configRoot:root,executable,environment:{PATH:process.env.PATH??''}});
+  const contextRef=await runtime.createContext({cwd:root}),events:ExecutorEvent[]=[];
+  await runtime.send({contextRef,cwd:root,text:'[stream-tool-output]',images:[],clientRequestId:'stream-request',onEvent:event=>events.push(event)});
+  const tools=events.filter((event):event is Extract<ExecutorEvent,{type:'item'}>=>event.type==='item'&&event.item.kind==='tool').map(event=>event.item);
+  const partial=tools.find(item=>item.status==='running'&&item.text.endsWith('first second'));
+  assert.ok(partial,'the latest cumulative output crosses the completion barrier');
+  assert.ok(tools.indexOf(partial)<tools.length-1);
+  assert.ok(tools.every(item=>item.nativeTool===true&&item.id===tools[0]!.id&&item.executionId===tools[0]!.executionId));
+  assert.equal(tools.some(item=>item.text.includes('foreign')),false);
+  assert.equal(tools.at(-1)!.status,'completed');
+ } finally {await runtime?.close();await rm(root,{recursive:true,force:true});}
+});

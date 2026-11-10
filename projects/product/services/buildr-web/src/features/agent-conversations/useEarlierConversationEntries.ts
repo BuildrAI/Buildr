@@ -25,7 +25,9 @@ export function useEarlierConversationEntries(props:Props){
    fillFrame.current=0;
    const node=stream.current,value=current.current.conversation;
    if(!fill.current.allowed||active.current||!node?.getClientRects().length||!value?.entries.length||value.nextEntryCursor===undefined)return;
-   if(!bottom.current||node.scrollHeight>node.clientHeight+1||fill.current.cursors.size>=INITIAL_FILL_PAGES||fill.current.cursors.has(value.nextEntryCursor)){stopFill();return;}
+   // Explicit wheel, touch, keyboard and pointer handlers already end automatic
+   // filling. A transient layout scroll must not be mistaken for reader takeover.
+   if(node.scrollHeight>node.clientHeight+1||fill.current.cursors.size>=INITIAL_FILL_PAGES||fill.current.cursors.has(value.nextEntryCursor)){stopFill();return;}
    fill.current.cursors.add(value.nextEntryCursor);void load(true);
   });});
  };
@@ -116,7 +118,7 @@ export function useEarlierConversationEntries(props:Props){
   // into a request for history or disable the initial/latest follow.
   if(bottom.current&&(layoutOnly||!moved))return;
   if(distance<24)bottom.current=true;
-  else{bottom.current=false;if(moved&&!layoutOnly)stopFill();}
+  else{bottom.current=false;if(moved&&!layoutOnly&&!fill.current.allowed)stopFill();}
   // A shrinking composer clamps the viewport to the new bottom; that upward
   // scroll event is layout, not a request to read older entries.
   if(upward&&distance>=24)readEarlier();

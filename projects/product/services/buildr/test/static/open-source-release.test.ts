@@ -457,9 +457,9 @@ test('CI and publish workflows use the supported Node runtime', async () => {
   const publishWorkflow: any = fs.readFileSync(path.join(workspaceRoot, '.github/workflows/publish.yml'), 'utf8');
   const verifyDocument: any = YAML.parseDocument(verifyWorkflow, { uniqueKeys: true }).toJS();
   const hostNodeSmoke: any = fs.readFileSync(path.join(serviceRoot, 'test/verification/host-node/cli-consumption.ts'), 'utf8');
-  assert.deepEqual(Object.keys(verifyDocument.on).sort(), ['pull_request', 'push', 'workflow_dispatch']);
-  assert.deepEqual(verifyDocument.on.pull_request.branches, ['dev', 'main']);
-  assert.deepEqual(verifyDocument.on.push.branches, ['dev']);
+  assert.deepEqual(Object.keys(verifyDocument.on).sort(), ['pull_request', 'workflow_dispatch']);
+  assert.deepEqual(verifyDocument.on.pull_request.branches, ['main']);
+  assert.equal(verifyDocument.on.push, undefined, 'daily dev pushes must not start remote platform verification');
   assert.equal(verifyDocument.env.BUILDR_VERIFICATION_BASE, '${{ inputs.selection_baseline || \'\' }}', 'Candidate and formal repair share their already frozen selection baseline');
   assert.equal(verifyDocument.jobs['dev-feedback-macos'].if, "(github.event_name == 'pull_request' && github.base_ref == 'dev') || (github.event_name == 'push' && github.ref == 'refs/heads/dev')");
   assert.equal(verifyDocument.jobs['dev-feedback-windows'].if, "(github.event_name == 'pull_request' && github.base_ref == 'dev') || (github.event_name == 'push' && github.ref == 'refs/heads/dev')");

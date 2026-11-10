@@ -8,6 +8,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { stopAgentProcess } from '@buildr-ai/buildr-agent';
 
 import { createUpdateLauncher } from '../../src/modules/installation/application/update-launcher.ts';
 import { createRuntime } from '../helpers/runtime-harness.ts';
@@ -113,6 +114,9 @@ test.beforeEach((t: any) => {
       for (const cleanup of [...pending].reverse()) {
         try { await cleanup(); } catch (error) { failures.push(error); }
       }
+      // Web detachment deliberately retains its isolated backend. The fixture
+      // owns this unique profile and must confirm backend release before purge.
+      try { await stopAgentProcess({dataRoot:appData}); } catch(error) { failures.push(error); }
       if (failures.length) throw new AggregateError(failures, `Fixture cleanup failed at ${appData}.`);
       fs.rmSync(appData, { recursive: true, force: true });
     } finally {
@@ -267,7 +271,7 @@ if (args[0] === 'view') {
       if (!fs.existsSync(receiptFile)) return null;
       const observed = JSON.parse(fs.readFileSync(receiptFile, 'utf8'));
       return observed.pid === child.pid ? observed : null;
-    }, { message: 'old installed Web receipt', diagnostic: () => child.output.join('') });
+    }, { attempts: 600, message: 'old installed Web receipt', diagnostic: () => child.output.join('') });
     assert.equal(receipt.productIdentity.version, oldVersion);
     webPids.add(receipt.pid);
     return { child, receipt };
@@ -618,7 +622,7 @@ test('npm Launcher takes over CLI ownership, serializes concurrent opens, reuses
     if (!fs.existsSync(receiptFile)) return null;
     const valueAtFile: any = JSON.parse(fs.readFileSync(receiptFile, 'utf8'));
     return valueAtFile.pid === cli.pid && !valueAtFile.launcherIdentity ? valueAtFile : null;
-  }, { message: 'foreground CLI receipt' });
+  }, { attempts: 600, message: 'foreground CLI receipt', diagnostic: () => cli.output.join('') });
 
   const first: any = launch(['--no-open', '--launcher-binding', installed.bindingPath]);
   const second: any = launch(['--no-open', '--launcher-binding', installed.bindingPath]);
@@ -857,7 +861,7 @@ test('non-Windows foreground Web clears its receipt on SIGHUP', async (t: any) =
   const receiptFile: any = path.join(process.env.BUILDR_APP_DATA_DIR!, 'instance.json');
   const child: any = spawnInstalledWeb(value.registration.entry.entryPath, ['--no-open', '--port', '0']);
   onFixtureCleanup(t, () => stopFixtureChild(child));
-  await waitFor(() => fs.existsSync(receiptFile) ? JSON.parse(fs.readFileSync(receiptFile, 'utf8')).pid === child.pid : false, { message: 'SIGHUP test receipt' });
+  await waitFor(() => fs.existsSync(receiptFile) ? JSON.parse(fs.readFileSync(receiptFile, 'utf8')).pid === child.pid : false, { attempts: 600, message: 'SIGHUP test receipt', diagnostic: () => child.output.join('') });
   child.kill('SIGHUP');
   await waitForChildExit(child, 'SIGHUP Web process');
   assert.equal(fs.existsSync(receiptFile), false);

@@ -15,6 +15,7 @@ import type {
   TaskListRequest,
   TaskListResponse,
   TaskRetrospectiveDocumentResponse,
+  TaskTitleSummariesResponse,
   TaskUpdateRequest,
   TaskUpdateResponse,
 } from '../../../../build/generated/task-dto';
@@ -89,6 +90,10 @@ export function createTaskClient(client: ApiClient) {
     list(input: TaskListRequest = {}, options: ReadOptions = {}, workspaceId?: string | null): Promise<TaskListResponse> {
       const prefix = workspaceId ? `/api/v1/workspaces/${encodeURIComponent(workspaceId)}` : '/api/v1';
       return typed(client(`${prefix}/tasks${queryString(input)}`, options));
+    },
+    titleSummaries(workspaceId: string, taskIds: string[], options: ReadOptions = {}): Promise<TaskTitleSummariesResponse> {
+      const query = new URLSearchParams({ ids: taskIds.join(',') });
+      return typed(client(`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/tasks/title-summaries?${query}`, options));
     },
     detail(taskId: string, options: ReadOptions = {}, workspaceId?:string): Promise<TaskDetailResponse> {
       const prefix=workspaceId?`/api/v1/workspaces/${encodeURIComponent(workspaceId)}`:'/api/v1';

@@ -1,6 +1,7 @@
 import { timeAttachmentStage } from './attachment-timing.ts';
+import { stopConversationWithRecovery } from '../conversation-stop';
 import type {WebhookSettingsView,WebhookSettingsInput,WebhookDeliveryResult} from '../types';
-import type { AgentParticipationParticipation, AgentParticipationSummaryParticipationSummary, AgentParticipationSummaryQueryParticipationSummaryQuery } from '../../../../build/generated/agent-service-http-dto';
+import type { AgentConversationHistoryPageHistoryPage, AgentParticipationParticipation, AgentParticipationSummaryParticipationSummary, AgentParticipationSummaryQueryParticipationSummaryQuery } from '../../../../build/generated/agent-service-http-dto';
 import { sharedConversationRead } from './shared-conversation-read.ts';
 import { conversationTransferDecoder } from './conversation-transfer.ts';
 import type { ProgramUpdatesView, ProgramUpgradeView } from '../types';
@@ -9,7 +10,7 @@ import type { ActivityCounts, ActivityFilter } from '../conversation-activity';
 import { createApiClient, LocalSessionAdapter } from '../../../api';
 import type { ApiClient, ApiError, SessionAdapter } from '../../../api';
 import { parseEventFrame } from '../conversation-state';
-import type { ModelAccount, CatalogModel, AttachmentView, ConnectionView, ConversationEvent, ConversationSummary, ConversationEntry, ConversationView, PendingConversation, PreparationView, ProviderId, SendInput, SendPreview, SupplementInput, SupplementResult } from '../types';
+import type { ModelAccount, ModelProviderView, CatalogModel, AttachmentView, ConnectionView, ConversationEvent, ConversationSummary, ConversationEntry, ConversationView, PendingConversation, PreparationView, ProviderId, SendInput, SendPreview, SupplementInput, SupplementResult } from '../types';
 
 export type DraftImages = AgentDraftImagesDraftImages;
 export type StartDraftInput = AgentDraftStartStartDraft;
@@ -43,7 +44,7 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
     participation(workspaceId:string,conversationId:string,runId:string,signal?:AbortSignal) { return read<AgentParticipationParticipation>(path(workspaceId,conversationId)+'/participation?runId='+encodeURIComponent(runId),signal); },
     participationSummary(workspaceId:string,input:AgentParticipationSummaryQueryParticipationSummaryQuery={},signal?:AbortSignal) { const query=new URLSearchParams(Object.entries(input).filter(([,v])=>v!==undefined&&v!=='').map(([k,v])=>[k,String(v)])); return read<AgentParticipationSummaryParticipationSummary>(path(workspaceId)+'/participation-summary?'+query,signal); },
     defaultWorkspace(signal?: AbortSignal) { return request<{rootPath: string}>(appPath+'/default-workspace', {signal}); },
-    modelAccounts(signal?:AbortSignal) {return request<{accounts:ModelAccount[];providers:Array<{id:string;label:string}>}>(appPath+'/model-accounts',{signal});},
+    modelAccounts(signal?:AbortSignal) {return request<{accounts:ModelAccount[];providers:ModelProviderView[]}>(appPath+'/model-accounts',{signal});},
     modelCatalog(signal?:AbortSignal) {
       // Independently cancellable callers must not cancel a shared read.
       if(signal)return request<{models:CatalogModel[];diagnostic?:string;hasSnapshot?:boolean}>(appPath+'/model-catalog',{signal});
@@ -52,6 +53,7 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
     },
     addModelAccount(provider:string) {return changeModels<ModelAccount>(appPath+'/model-accounts',post({provider}));},
     modelPreferences(account:ModelAccount,models:Array<{id:string;enabled?:boolean;contextWindow?:number|null}>) {return changeModels<ModelAccount>(appPath+'/model-accounts/'+account.id+'/preferences',post({expectedRevision:account.revision,models}));},
+    configureModelAccount(account:ModelAccount,apiKey:string) {return changeModels<ModelAccount>(appPath+'/model-accounts/'+account.id+'/api-key',post({expectedRevision:account.revision,apiKey}));},
     modelAccountAction(account:ModelAccount,action:'check'|'disconnect'|'login-attempts') {return changeModels<ModelAccount>(appPath+'/model-accounts/'+account.id+'/'+action,post({expectedRevision:account.revision}));},
     modelLoginAttempt(accountId:string,attemptId:string,signal?:AbortSignal) {return changeModels<ModelAccount>(appPath+'/model-accounts/'+accountId+'/login-attempts/'+attemptId,{signal});},
     cancelModelLogin(account:ModelAccount) {return changeModels<ModelAccount>(appPath+'/model-accounts/'+account.id+'/login-attempts/'+account.loginAttempt!.id+'/cancel',post({expectedRevision:account.revision}));},
@@ -104,8 +106,12 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
     },
     create(input: {workspaceId: string; cwd?: string; taskId?: string; taskLinks?:{workspaceId:string;taskId:string}[]}) { return request<ConversationView>(path(input.workspaceId), post({cwd: input.cwd, taskId: input.taskId,taskLinks:input.taskLinks})); },
     read(workspaceId: string, id: string, signal?: AbortSignal) { return request<ConversationView>(path(workspaceId, id), {signal}); },
+    historySource(workspaceId:string,id:string,input:{sourceId:string;roundId?:string;cursor?:number;limit?:number},signal?:AbortSignal) {
+      const query=new URLSearchParams(Object.entries(input).filter(([,v])=>v!==undefined).map(([k,v])=>[k,String(v)]));
+      return read<AgentConversationHistoryPageHistoryPage>(path(workspaceId,id)+'/history-source?'+query,signal);
+    },
     entryReference(workspaceId:string,id:string,entryId:string,revision:string,signal?:AbortSignal) { return read<ConversationEntry>(path(workspaceId,id)+'/entry-detail/'+encodeURIComponent(entryId)+'?'+new URLSearchParams({revision}),signal); },
-    entry(workspaceId:string,id:string,entry:ConversationEntry,signal?:AbortSignal) {return request<ConversationEntry>(path(workspaceId,id)+'/entry-detail/'+encodeURIComponent(entry.id)+'?'+new URLSearchParams({revision:entry.detail!.revision}),{signal});},
+    entry(workspaceId:string,id:string,entry:ConversationEntry,signal?:AbortSignal,sourceId?:string) {return request<ConversationEntry>(path(workspaceId,id)+'/entry-detail/'+encodeURIComponent(entry.id)+'?'+new URLSearchParams({revision:entry.detail!.revision,...(sourceId?{sourceId}:{})}),{signal});},
     entries(workspaceId: string, id: string, cursor: number, signal?: AbortSignal) { return request<ConversationView>(path(workspaceId, id) + '/entries?' + new URLSearchParams({before: String(cursor)}), {signal}); },
     update(conversation: ConversationView, input: {title?: string; hidden?: boolean; taskId?: string | null; taskIds?: string[];taskLinks?:{workspaceId:string;taskId:string}[]}) { return request<ConversationView>(path(conversation.workspaceId, conversation.id), {method: 'PATCH', body: JSON.stringify({...input, expectedRevision: conversation.revision})}); },
     fork(conversation:ConversationView,entryId:string,clientRequestId:string) {return request<ConversationView>(path(conversation.workspaceId,conversation.id)+'/fork',post({expectedRevision:conversation.revision,entryId,clientRequestId}));},
@@ -121,7 +127,7 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
       if(!run)return Promise.reject(new Error('原执行已结束，请核对后再发送；输入已保留。'));
       return request<SupplementResult>(path(conversation.workspaceId,conversation.id)+'/supplement',post({...input,runId:run.id,participantId:run.participantId,generation:run.generation}));
     },
-    stop(conversation: ConversationView, toolId?: string) { const run = conversation.run; if (!run) return Promise.reject(new Error('没有可以停止的执行。')); return request<ConversationView>(path(conversation.workspaceId, conversation.id) + '/stop', post({expectedRevision: conversation.revision, runId: run.id, participantId: run.participantId, generation: run.generation, toolId})); },
+    stop(conversation: ConversationView, toolId?: string) { return stopConversationWithRecovery(conversation,current=>{const run=current.run!;return request<ConversationView>(path(current.workspaceId,current.id)+'/stop',post({expectedRevision:current.revision,runId:run.id,participantId:run.participantId,generation:run.generation,toolId}));},()=>request<ConversationView>(path(conversation.workspaceId,conversation.id))); },
     observeRun(conversation:ConversationView) { const run=conversation.run;if(!run)return Promise.reject(new Error('没有可以核对的执行。'));return request<ConversationView>(path(conversation.workspaceId,conversation.id)+'/observe-run',post({expectedRevision:conversation.revision,runId:run.id,participantId:run.participantId,generation:run.generation})); },
     observe(conversation: ConversationView) { return request<ConversationView>(path(conversation.workspaceId, conversation.id) + '/observe', post({})); },
     reply(conversation: ConversationView, requestId: string, input: {answer: unknown}) { const pending = conversation.requests.find(item => item.id === requestId); if (!pending) return Promise.reject(new Error('原请求已经变化，请重新读取。')); return request<ConversationView>(path(conversation.workspaceId, conversation.id) + `/requests/${encodeURIComponent(requestId)}/reply`, post({...input, expectedRevision: conversation.revision, runId: pending.runId, participantId: pending.participantId, generation: pending.generation})); },
@@ -146,12 +152,18 @@ export function createAgentConversationsClient(client: ApiClient, session: Sessi
       return response.blob();
     },
     async subscribe(workspaceId: string, id: string, signal: AbortSignal, onEvent: (event: ConversationEvent) => void, cursor?: number) {
-      const send=()=>fetcher(path(workspaceId,id)+'/events',{cache:'no-store',signal,headers:{...session.writeHeaders(),accept:'text/event-stream','x-buildr-conversation-transfer':'delta-v1',...(cursor?{'last-event-id':String(cursor)}:{})}});
-      let response=await send();
-      if(response.status===403&&session.refreshSession){
-        const body=await response.clone().json().catch(()=>null);
-        if(body?.error?.code==='session_forbidden'&&await session.refreshSession(signal)){signal.throwIfAborted();response=await send();}
-      }
+      let transfer='delta-v2';
+      const send=()=>fetcher(path(workspaceId,id)+'/events',{cache:'no-store',signal,headers:{...session.writeHeaders(),accept:'text/event-stream','x-buildr-conversation-transfer':transfer,...(cursor?{'last-event-id':String(cursor)}:{})}});
+      const authenticated=async()=>{
+        let response=await send();
+        if(response.status===403&&session.refreshSession){
+          const body=await response.clone().json().catch(()=>null);
+          if(body?.error?.code==='session_forbidden'&&await session.refreshSession(signal)){signal.throwIfAborted();await response.body?.cancel();response=await send();}
+        }
+        return response;
+      };
+      let response=await authenticated();
+      if(response.status===400){await response.body?.cancel();signal.throwIfAborted();transfer='delta-v1';response=await authenticated();}
       if (!response.ok || !response.body) {
         const body=await response.json().catch(()=>null);
         const reference=body?.error?.details?.requestId;

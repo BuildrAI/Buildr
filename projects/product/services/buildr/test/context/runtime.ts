@@ -242,7 +242,9 @@ export function createTestContextPool(options: any = {}): any  {
     const startedAt: any = Date.now();
     try {
       if (typeof context.provider.materialize === 'function') context.provider.materialize({ context, sandboxBase, sandboxRoot });
-      else fs.cpSync(context.seedRoot, sandboxRoot, { recursive: true });
+      // Copy-on-write keeps the immutable seed untouched while every sandbox
+      // gets distinct inodes. Unsupported filesystems fall back to a real copy.
+      else fs.cpSync(context.seedRoot, sandboxRoot, { recursive: true, mode: fs.constants.COPYFILE_FICLONE });
       if (!fs.statSync(sandboxRoot, { throwIfNoEntry: false })?.isDirectory()) throw contextError('test_context_sandbox_invalid', 'Context provider did not materialize a sandbox directory.', { key, sandboxRoot });
       const realSandbox: any = fs.realpathSync(sandboxRoot);
       if (!isContainedPath(sandboxBase, realSandbox) || realSandbox !== path.resolve(sandboxRoot) || realSandbox === context.seedRoot) {

@@ -22,7 +22,8 @@ async function fixture(t: test.TestContext) {
   const catalog = { listServices: () => codes.map(code => ({ id: code, code, name: code, type: 'backend', repositoryId: code, modulePath: '', projects: ['p'] })) };
   const runtime = createServiceRuntimeApplication({ resolveService: (_root, code) => codes.includes(code) ? { id: code, code } : null, listWorktrees: (_root, code) => worktrees(code) });
   const view = createServiceRuntimeView({ catalog, runtime });
-  const taskRuntime = createServiceTaskRuntimeApplication({ readTaskScope: () => ({ taskId: 'task', title: '本地验证', scope: { projects: ['p'], services: [] } }), runtime, view, catalog });
+  const taskRuntime = createServiceTaskRuntimeApplication({ readTaskScope: () => ({ taskId: 'task', title: '本地验证', scope: { projects: ['p'], services: [] } }),
+    worktreeServices: (_root, taskId) => codes.filter(code => worktrees(code).some(worktree => worktree.taskId === taskId)), runtime, view, catalog });
   const http = createServiceRuntimeHttp({ runtime, view, taskRuntime });
   for (const code of codes) await runtime.writeDefinition(root, code, `version: 1\nsource: agent\nverifiedAt: '2026-10-22'\nlocal:\n  command: [${JSON.stringify(process.execPath)}, -e, ${JSON.stringify(script)}, --]\n  cwd: .\n  preferredPort: ${code === 'front' ? 24201 : 24202}\n  portOverride: --port\n  readiness: {kind: log, pattern: ready}\n  timeoutSeconds: 10\n${code === 'front' ? '  backends: [{serviceCode: back, environmentVariable: BUILDR_TEST_BACKEND, remoteUrl: https://test.example.com}]\n' : ''}`);
   t.after(async () => {

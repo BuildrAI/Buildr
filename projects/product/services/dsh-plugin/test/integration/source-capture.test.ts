@@ -116,8 +116,10 @@ test('ambiguous or forbidden material paths do not invent a document target or e
  assert.deepEqual(accepted.matches[0].targets,[{kind:'task',id:'demo'},{kind:'material',id:limitPath}]);
 });
 
+function shellArg(value: string): string { return "'" + value.replaceAll("'", "'\"'\"'") + "'"; }
+
 async function commandIdentityFixture(t: TestContext) {
- const directory=await fs.mkdtemp(path.join(os.tmpdir(),'buildr-capture-command-')),root=await fs.realpath(directory);
+ const directory=await fs.mkdtemp(path.join(os.tmpdir(),'buildr capture command-')),root=await fs.realpath(directory);
  t.after(()=>fs.rm(root,{recursive:true,force:true}));
  const node=path.join(root,'node'),retainedNode=path.join(root,'retained','node'),normalCli=path.join(root,'npm','buildr.mjs');
  const sourceRoot=path.join(root,'candidate/projects/product/services/buildr'),normalRoot=path.join(root,'retained/projects/product/services/buildr');
@@ -138,56 +140,56 @@ test('normal channel commands are proven separately from the candidate metadata 
  const f=await commandIdentityFixture(t),alias=path.join(f.root,'wrapper-alias'),copy=path.join(f.root,'copied-buildr');await fs.symlink(f.normalWrapper,alias);await fs.copyFile(f.normalWrapper,copy);
  const capture=createEventSourceCapture({channel:'development',resolveBinding:async()=>f.candidate,resolveCommandBindings:async()=>[f.candidate,f.normal],processDependencies:{exec:f.exec},querySources:async()=>assert.fail('Buildr CLI matching does not query method bodies')});
  for(const entry of [f.normalWrapper,path.relative(f.root,f.normalWrapper),alias]){
-  const source=await capture(f.command(entry+' task inspect demo'));assert.equal(source.status,'confirmed');assert.equal(source.matches[0].locator?.entry,f.normalWrapper);assert.equal(source.matches[0].observedVersion?.target,'entry');assert.deepEqual(source.matches[0].targets,[{kind:'task',id:'demo'}]);
+  const source=await capture(f.command(shellArg(entry)+' task inspect demo'));assert.equal(source.status,'confirmed');assert.equal(source.matches[0].locator?.entry,f.normalWrapper);assert.equal(source.matches[0].observedVersion?.target,'entry');assert.deepEqual(source.matches[0].targets,[{kind:'task',id:'demo'}]);
  }
  assert.ok(f.inspected.includes(f.normal.cliEntry));assert.ok(f.inspected.includes(f.candidate.cliEntry));
- assert.equal((await capture(f.command(copy+' task inspect demo'))).status,'not-applicable');
- await fs.unlink(alias);await fs.symlink(copy,alias);assert.equal((await capture(f.command(alias+' task inspect demo'))).status,'not-applicable');
+ assert.equal((await capture(f.command(shellArg(copy)+' task inspect demo'))).status,'not-applicable');
+ await fs.unlink(alias);await fs.symlink(copy,alias);assert.equal((await capture(f.command(shellArg(alias)+' task inspect demo'))).status,'not-applicable');
  const nodeAlias=path.join(f.root,'interpreter-alias'),scriptAlias=path.join(f.root,'candidate-script-alias');await fs.symlink(f.node,nodeAlias);await fs.symlink(f.candidate.cliEntry,scriptAlias);
- const throughNodeAliases=await capture(f.command(nodeAlias+' '+scriptAlias+' task inspect demo'));assert.equal(throughNodeAliases.status,'confirmed');assert.equal(throughNodeAliases.matches[0].locator?.entry,f.candidate.cliEntry);
+ const throughNodeAliases=await capture(f.command(shellArg(nodeAlias)+' '+shellArg(scriptAlias)+' task inspect demo'));assert.equal(throughNodeAliases.status,'confirmed');assert.equal(throughNodeAliases.matches[0].locator?.entry,f.candidate.cliEntry);
  const isolated=createEventSourceCapture({channel:'development',resolveBinding:async()=>f.candidate,resolveCommandBindings:async()=>[f.candidate,f.normal],processDependencies:{exec:async(file,args,options)=>args[0]===f.candidate.cliEntry?Promise.reject(Error('candidate unavailable')):f.exec(file,args)},querySources:async()=>assert.fail('normal command cannot substitute as metadata query')});
- assert.equal((await isolated(f.command(f.normalWrapper+' task inspect demo'))).status,'confirmed');
+ assert.equal((await isolated(f.command(shellArg(f.normalWrapper)+' task inspect demo'))).status,'confirmed');
 });
 
 test('npm identity accepts its explicit same-file link while excluding development wrappers and runtime Nodes',async t=>{
  const f=await commandIdentityFixture(t),alias=path.join(f.root,'npm-command-alias');await fs.symlink(f.normal.cliEntry,alias);
  const capture=createEventSourceCapture({channel:'npm',resolveBinding:async()=>f.normal,resolveCommandBindings:async()=>[f.normal],processDependencies:{exec:async(file,args,options)=>{const original=JSON.parse((await f.exec(file,args)).stdout);original.channels.npm={status:'installed',identity:{ownershipIdentity:'npm-normal',version:'1',protocolIdentity:'v1',package:'@buildr-ai/buildr',channel:'npm'}};return {stdout:JSON.stringify(original)};}},querySources:async()=>assert.fail('npm must not inherit the development interpreter or source reader')});
- const source=await capture(f.command(alias+' task inspect demo'));assert.equal(source.status,'confirmed');assert.equal(source.matches[0].locator?.entry,f.normal.cliEntry);assert.equal(source.matches[0].evidence[0].identity,'npm:'+f.normal.cliEntry);
- assert.equal((await capture(f.command(f.normalWrapper+' task inspect demo'))).status,'not-applicable');
- assert.equal((await capture(f.command(f.retainedNode+' '+f.script+' --help'))).status,'not-applicable');
+ const source=await capture(f.command(shellArg(alias)+' task inspect demo'));assert.equal(source.status,'confirmed');assert.equal(source.matches[0].locator?.entry,f.normal.cliEntry);assert.equal(source.matches[0].evidence[0].identity,'npm:'+f.normal.cliEntry);
+ assert.equal((await capture(f.command(shellArg(f.normalWrapper)+' task inspect demo'))).status,'not-applicable');
+ assert.equal((await capture(f.command(shellArg(f.retainedNode)+' '+shellArg(f.script)+' --help'))).status,'not-applicable');
 });
 
 test('approved candidate and normal runtime Nodes capture only their exact owned skill-script operand with no body',async t=>{
  const f=await commandIdentityFixture(t);let queries=0;
  const capture=createEventSourceCapture({channel:'development',resolveBinding:async()=>f.candidate,resolveCommandBindings:async()=>[f.candidate,f.normal],processDependencies:{exec:f.exec},querySources:async(binding,channel,cwd,input)=>{queries++;assert.deepEqual(binding,f.candidate);assert.equal(channel,'development');assert.equal(cwd,f.root);assert.deepEqual(input.observations,[{id:'capture',type:'file',locator:{path:f.script},observedDigest:f.digest}]);assert.equal(input.mode,'metadata');assert.equal(JSON.stringify(input).includes('PRIVATE SCRIPT BODY'),false);assert.equal(JSON.stringify(input).includes(user),false);return f.scriptResult();}});
  for(const interpreter of [f.node,f.retainedNode]){
-  const source=await capture(f.command(interpreter+' '+path.relative(f.root,f.script)+' --help --input /private/user-document.md'));assert.equal(source.status,'confirmed');assert.equal(source.matches[0].kind,'capability');assert.equal(source.matches[0].action,'call');assert.equal(source.matches[0].operation,'archify help');assert.equal(source.matches[0].locator?.entry,f.script);assert.equal(source.matches[0].observedVersion?.digest,f.digest.slice(7));assert.equal(source.matches[0].observedVersion?.target,'entry');assert.equal(source.matches[0].completeness,'none');assert.equal(source.matches[0].contentRefs,undefined);assert.equal(JSON.stringify(source).includes('PRIVATE SCRIPT BODY'),false);assert.equal(JSON.stringify(source).includes('/private/user-document.md'),false);
+  const source=await capture(f.command(shellArg(interpreter)+' '+shellArg(path.relative(f.root,f.script))+' --help --input /private/user-document.md'));assert.equal(source.status,'confirmed');assert.equal(source.matches[0].kind,'capability');assert.equal(source.matches[0].action,'call');assert.equal(source.matches[0].operation,'archify help');assert.equal(source.matches[0].locator?.entry,f.script);assert.equal(source.matches[0].observedVersion?.digest,f.digest.slice(7));assert.equal(source.matches[0].observedVersion?.target,'entry');assert.equal(source.matches[0].completeness,'none');assert.equal(source.matches[0].contentRefs,undefined);assert.equal(JSON.stringify(source).includes('PRIVATE SCRIPT BODY'),false);assert.equal(JSON.stringify(source).includes('/private/user-document.md'),false);
  }
  assert.equal(queries,2);
  const before=f.inspected.length;
- for(const text of [f.node+' -e "ordinary" '+f.script,f.node+' /ordinary/script.mjs --input '+f.script])assert.equal((await capture(f.command(text))).status,'not-applicable');
+ for(const text of [shellArg(f.node)+' -e "ordinary" '+f.script,shellArg(f.node)+' /ordinary/script.mjs --input '+f.script])assert.equal((await capture(f.command(text))).status,'not-applicable');
  assert.equal(queries,2);assert.equal(f.inspected.length,before,'ordinary Node calls do not query every installation or scan other arguments');
- for(const name of ['buildr','node'])assert.equal((await capture(f.command(name+' '+f.script+' --help'))).status,'unknown');assert.equal(queries,2);assert.equal(f.inspected.length,before);
+ for(const name of ['buildr','node'])assert.equal((await capture(f.command(name+' '+shellArg(f.script)+' --help'))).status,'unknown');assert.equal(queries,2);assert.equal(f.inspected.length,before);
 });
 
 test('managed-only, foreign, stale and receipt-mismatched scripts never become Buildr capabilities',async t=>{
  const f=await commandIdentityFixture(t);
  for(const result of [f.scriptResult('workspace'),f.scriptResult('external'),f.scriptResult('buildr','different'),f.scriptResult('buildr','matched-current','sha256-'+hash)]){
   const capture=createEventSourceCapture({channel:'development',resolveBinding:async()=>f.candidate,resolveCommandBindings:async()=>[f.candidate,f.normal],processDependencies:{exec:f.exec},querySources:async()=>result});
-  const source=await capture(f.command(f.retainedNode+' '+f.script+' --help'));assert.notEqual(source.status,'confirmed');assert.deepEqual(source.matches,[]);
+  const source=await capture(f.command(shellArg(f.retainedNode)+' '+shellArg(f.script)+' --help'));assert.notEqual(source.status,'confirmed');assert.deepEqual(source.matches,[]);
  }
  const foreignNode=path.join(f.root,'foreign','node');await fs.mkdir(path.dirname(foreignNode),{recursive:true});await fs.copyFile(f.node,foreignNode);
  const rejected=createEventSourceCapture({channel:'development',resolveBinding:async()=>f.candidate,resolveCommandBindings:async()=>[f.candidate,f.normal],processDependencies:{exec:f.exec},querySources:async()=>assert.fail('unapproved same-byte interpreter must not query an asset')});
- assert.equal((await rejected(f.command(foreignNode+' '+f.script+' --help'))).status,'not-applicable');
+ assert.equal((await rejected(f.command(shellArg(foreignNode)+' '+shellArg(f.script)+' --help'))).status,'not-applicable');
  const changed=createEventSourceCapture({channel:'development',resolveBinding:async()=>f.candidate,resolveCommandBindings:async()=>[f.normal],processDependencies:{exec:f.exec},querySources:async()=>{await fs.appendFile(f.retainedNode,'changed');return f.scriptResult();}});
- assert.equal((await changed(f.command(f.retainedNode+' '+f.script+' --help'))).status,'unknown');
+ assert.equal((await changed(f.command(shellArg(f.retainedNode)+' '+shellArg(f.script)+' --help'))).status,'unknown');
 });
 
 test('script capture is bounded and a script changing during its metadata query cannot retain a confirmed version',async t=>{
  const f=await commandIdentityFixture(t);let queries=0;
  const capture=createEventSourceCapture({channel:'development',resolveBinding:async()=>f.candidate,resolveCommandBindings:async()=>[f.candidate],processDependencies:{exec:f.exec},querySources:async()=>{queries++;await fs.appendFile(f.script,'changed after the hash');return f.scriptResult();}});
- assert.equal((await capture(f.command(f.node+' '+f.script+' --help'))).status,'unknown');assert.equal(queries,1);
- await fs.writeFile(f.script,'x'.repeat(512*1024+1));assert.equal((await capture(f.command(f.node+' '+f.script+' --help'))).status,'unknown');assert.equal(queries,1,'oversized script does not reach the source CLI');
+ assert.equal((await capture(f.command(shellArg(f.node)+' '+shellArg(f.script)+' --help'))).status,'unknown');assert.equal(queries,1);
+ await fs.writeFile(f.script,'x'.repeat(512*1024+1));assert.equal((await capture(f.command(shellArg(f.node)+' '+shellArg(f.script)+' --help'))).status,'unknown');assert.equal(queries,1,'oversized script does not reach the source CLI');
 });
 test('concurrent frames do not share cancellation or raw-body cache',async()=>{
  const first=request(),second=request();const controller=new AbortController();first.signal=controller.signal;

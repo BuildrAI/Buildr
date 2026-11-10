@@ -82,6 +82,10 @@ on:
         required: false
         type: choice
         options: ['', macos, windows]
+      verification_scope:
+        description: 'Recorded user decision as JSON, e.g. {"excludedBoundaries":["E2E"],"statement":"..."}; empty keeps the full Candidate'
+        required: false
+        type: string
       repair_candidate_run_id:
         description: Completed controlled Candidate whose original package and valid checks are preserved
         required: false
@@ -94,10 +98,10 @@ on:
         description: Exact verification-tool commit on dev; product inputs and workflow must match the original Candidate
         required: false
         type: string
+  # Daily development is verified on the developer's current host.
+  # Remote platform verification is explicit; the dev-to-main PR is the release entry.
   pull_request:
-    branches: [dev, main]
-  push:
-    branches: [dev]
+    branches: [main]
 
 permissions:
   contents: read
@@ -107,6 +111,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  # The lock file is normalized to the authoritative registry. Keep npm's
+  # registry explicit so a runner-local mirror config cannot redirect installs.
+  npm_config_registry: https://registry.npmjs.org/
   CANDIDATE_SOURCE_SHA: ${{ inputs.repair_candidate_run_id && inputs.verification_source || github.event.pull_request.head.sha || github.sha }}
   BUILDR_CANDIDATE_PURPOSE: ${{ inputs.purpose || 'candidate' }}
   BUILDR_CANDIDATE_EXPECTED_SOURCE_TREE: ${{ inputs.expected_source_tree || '' }}
@@ -124,6 +131,7 @@ env:
   BUILDR_SOURCE_VERIFICATION: ${{ github.event_name == 'workflow_dispatch' && inputs.source_verification || '' }}
   BUILDR_ARTIFACT_VERIFICATION: ${{ github.event_name == 'workflow_dispatch' && inputs.artifact_verification || '' }}
   BUILDR_CANDIDATE_LOCAL_RUNNER: ${{ github.event_name == 'workflow_dispatch' && !inputs.repair_candidate_run_id && inputs.local_runner || '' }}
+  BUILDR_CANDIDATE_VERIFICATION_SCOPE: ${{ github.event_name == 'workflow_dispatch' && inputs.verification_scope || '' }}
   BUILDR_CANDIDATE_REPAIR_RUN_ID: ${{ inputs.repair_candidate_run_id || '' }}
   BUILDR_CANDIDATE_PRODUCT_SOURCE: ${{ inputs.product_source || '' }}
   BUILDR_CANDIDATE_VERIFICATION_SOURCE: ${{ inputs.verification_source || '' }}

@@ -8,7 +8,7 @@ import { parseTaskCommitTrailer } from '../../task/commits/domain/task-commit.ts
 import type { CodeGitWorktree } from '../infrastructure/code-worktree-reader.ts';
 import { codeWorktreeTaskKey, type readSourceControlTaskAssociations } from '../infrastructure/code-worktree-catalog.ts';
 import { SOURCE_CONTROL_LIMITS, assertCodeRevision, assertSourceControlPath, codeRevision, observeSourceControl, readIndexEntry, readSourceControlRefs, sourceControlHistoryTips, readRawCodeCommit, readRawCodeCommits, listCodeCommitIds, readCodeCommitFiles, readCodePatch, workingCodeChange } from '../infrastructure/source-control-git-reader.ts';
-import type { CodeReadMeta, CodeReadDiagnostic, CodeSourceControlInput, CodeSourceControlResponse, CodeSourceControlRepository, CodeRepositoryCloneStatus, CodeRepositoryCloneResult, CodeHistoryCommit, CodeHistoryResponse, CodeAuthorsResponse, CodeCommitResponse, CodeDiffResponse, CodeSourceFileResponse } from './source-control-model.ts';
+import type { CodeReadMeta, CodeReadDiagnostic, CodeSourceControlInput, CodeSourceControlResponse, CodeSourceControlRepository, CodeSourceControlWorktree, CodeRepositoryCloneStatus, CodeRepositoryCloneResult, CodeHistoryCommit, CodeHistoryResponse, CodeAuthorsResponse, CodeCommitResponse, CodeDiffResponse, CodeSourceFileResponse } from './source-control-model.ts';
 
 type Catalog = { repositories: Array<{ id: string; code: string; name: string; location: string; available: boolean; gitId: string | null }>; selectedRepositoryIds: string[]; scopeReason: string; diagnostics: CodeReadDiagnostic[] };
 type Dependencies = { repositories(root: string, taskId?: string, repositoryId?: string): Catalog; inventory(root:string,taskId?:string):Catalog; source(root: string, input: CodeSourceControlInput): CodeSource;worktrees(root:string,repositoryId:string,registered:Catalog['repositories'][number]):{worktrees:CodeGitWorktree[];source(worktreeId:string):CodeSource;verify(source:CodeSource):void}; taskAssociations?(root:string,repositories:CodeSourceControlRepository[],taskId?:string,deadline?:number):ReturnType<typeof readSourceControlTaskAssociations>; readTask?(root: string, taskId: string): { taskId: string; title: string }; repositoryCloneStatus?(root: string, repositoryId: string): CodeRepositoryCloneStatus; repositoryCloneRequest?(root: string, repositoryId: string): CodeRepositoryCloneResult };
@@ -54,7 +54,7 @@ export function createSourceControlApplication(dependencies: Dependencies) {
     const current=dependencies.source(root,{...input,worktreeId:source.worktreeId||input.worktreeId});
     if(current.worktreeId!==source.worktreeId||current.location!==source.location)throw codeFailure('code_worktree_identity_changed','读取期间工作树身份已变化，请刷新后继续。',409);
   }
-  function sourceControl(root: string, input: CodeSourceControlInput = {}): CodeSourceControlResponse {
+  function sourceControl(root: string, input: CodeSourceControlInput = {}, observedWorktrees: CodeSourceControlWorktree[] = []): CodeSourceControlResponse {
     if(input.repositoryId!==undefined&&(typeof input.repositoryId!=='string'||!input.repositoryId))throw codeFailure('code_repository_required','必须选择已登记代码库。');
     const catalog = dependencies.repositories(root,undefined,input.repositoryId), repositories: CodeSourceControlRepository[] = [];
     const diagnostics = [...catalog.diagnostics]; let truncated = false,statusAttempts=0;const deadline=Date.now()+SOURCE_CONTROL_LIMITS.statusReadMs;
@@ -75,7 +75,21 @@ export function createSourceControlApplication(dependencies: Dependencies) {
           try{
             if(index>=SOURCE_CONTROL_LIMITS.repositories||position>=SOURCE_CONTROL_LIMITS.worktrees||statusAttempts>=SOURCE_CONTROL_LIMITS.totalWorktrees||Date.now()>=deadline){truncated=true;output.worktreeCoverage.truncated=true;throw codeFailure('code_worktree_read_limit','超出本次读取预算（128个代码库、共128个检出、12秒），保留Git清单但状态尚未确认。',413);}
             statusAttempts++;
-            const source=reading.source(worktree.worktreeId),observed=observeSourceControl(source);reading.verify(source);
+            const source=reading.source(worktree.worktreeId);
+            // Only background HTTP observations supply these short-lived values.
+            // Inventory, checkout identity and closing registration checks stay live.
+            const cached = observedWorktrees.find(value => value.worktreeId === worktree.worktreeId && value.location === source.location
+              && value.source?.repositoryId === registered.id && value.status === 'complete' && value.available && !value.diagnostics.length
+              && value.branch === worktree.branch && value.head === worktree.head && Date.now() >= Date.parse(value.readAt) && Date.now() - Date.parse(value.readAt) < 10_000);
+            if (cached) {
+              reading.verify(source);
+              Object.assign(checkout, {available:true, source:{...source,version:cached.source!.version}, status:cached.status, branch:cached.branch, head:cached.head,
+                upstream:cached.upstream,ahead:cached.ahead,behind:cached.behind,fileCount:cached.fileCount,changes:cached.changes,
+                observedRevision:cached.observedRevision,coverage:cached.coverage,readAt:cached.readAt});
+              output.worktreeCoverage.read++;
+              continue;
+            }
+            const observed=observeSourceControl(source);reading.verify(source);
             const currentVersion=observed.branch||observed.head;
             source.version=currentVersion?currentVersion+' · 当前文件':'当前文件';
             Object.assign(checkout,{available:true,source,status:observed.truncated?'partial':'complete',branch:observed.branch,head:observed.head,upstream:observed.upstream,ahead:observed.ahead,behind:observed.behind,fileCount:observed.fileCount,changes:observed.files,observedRevision:observed.observedRevision,coverage:{fileLimit:SOURCE_CONTROL_LIMITS.files,truncated:observed.truncated}});output.worktreeCoverage.read++;

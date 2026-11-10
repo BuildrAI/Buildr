@@ -217,7 +217,7 @@ if (!candidatePackageSource.includes('buildApplicationPayload(') || !candidatePa
 if (/npm(?:Executable)?[^\n]*\[\s*['"]pack['"][^\n]*productRoot/u.test(candidatePackageSource)) {
   problems.push('formal candidate must not npm pack the development product root');
 }
-for (const entry of ['test', 'check', 'test:static', 'test:integration', 'test:e2e', 'test:related']) {
+for (const entry of ['test', 'check', 'test:static', 'test:integration', 'test:e2e', 'test:system', 'test:related']) {
   if (!packageJson.scripts?.[entry]) problems.push(`missing project verification command: ${entry}`);
 }
 if (!fs.existsSync(path.join(productRoot, 'test', 'verification', 'release', 'platform-launcher-invocation.ts'))) problems.push('platform Launcher integration module is missing');

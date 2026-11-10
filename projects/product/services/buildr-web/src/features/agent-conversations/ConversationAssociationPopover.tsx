@@ -1,8 +1,12 @@
 import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {Popover,AutoComplete,Alert,Button} from 'antd';
-import {DeleteOutlined,LinkOutlined,CommentOutlined} from '@ant-design/icons';
+import {DeleteOutlined,LinkOutlined,CommentOutlined,ReloadOutlined} from '@ant-design/icons';
 import {associationKey,associationQueryReady,ASSOCIATION_SEARCH_LIMIT,type AssociationItem,type AssociationResult} from './conversation-associations';
 import './conversation-associations.css';
+
+export function AssociationHeading({title,refreshing,onRefresh}:{title:string;refreshing:boolean;onRefresh:()=>void}){
+  return <div className="ac-association-heading"><strong>{title}</strong><Button className="ac-association-refresh" type="text" size="small" icon={<ReloadOutlined/>} loading={refreshing} aria-label="刷新关联信息" title="刷新关联信息" aria-busy={refreshing} disabled={refreshing} onClick={onRefresh}/></div>;
+}
 
 /** Shared only by the two ends of the conversation/task relation. */
 export function ConversationAssociationPopover({kind,count,loading,enabled=true,children,onOpenChange}:{kind:'task'|'conversation';count:number|null;loading?:boolean;enabled?:boolean;children:ReactNode;onOpenChange?:(open:boolean)=>void}){

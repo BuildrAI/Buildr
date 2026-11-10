@@ -15,6 +15,9 @@ test('Qoder explicit expiration is recognized without the SDK expiry callback', 
   }
   assert.equal(qoderAccountFailure(new Error('unknown'), true).status, 'expired');
   assert.equal(qoderAccountFailure(new Error('No qodercli login found. Run "qodercli login" first.')).status, 'not-authenticated');
+  const emptyAccount=Object.assign(new Error('Authentication required. Log in with qodercli login or provide valid SDK credentials.'),{name:'ControlRequestError'});
+  assert.equal(qoderAccountFailure(emptyAccount).status, 'not-authenticated');
+  assert.equal(qoderAccountFailure(new Error('Authentication required.')).status, 'failed', 'ambiguous messages are not proof of missing login');
   for (const message of ['fetch failed', 'ETIMEDOUT', 'insufficient_quota', 'credits exhausted', 'permission denied']) {
     assert.equal(qoderAccountFailure(new Error(message)).status, 'failed');
     assert.equal(qoderAuthenticationError(403, { message }), undefined);

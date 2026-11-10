@@ -27,12 +27,13 @@ function assertSchema(operationId: any, kind: any, value: any): any  {
 }
 
 test('Task Record contract catalog、DTO drift 与未迁移诊断保持局部', async () => {
-  assert.equal(TASK_HTTP_OPERATIONS.length, 14);
+  assert.equal(TASK_HTTP_OPERATIONS.length, 15);
   assert.deepEqual(TASK_HTTP_OPERATIONS.map((operation: any) => operation.id), [
     'task-materials.inspect',
     'task-materials.record',
     'task-materials.write',
     'task-record.list',
+    'task-record.title-summaries',
     'task-record.detail',
     'task-record.update',
     'task-record.complete',
@@ -102,6 +103,37 @@ test('六个 Task Record operation 的真实 HTTP 成功与错误响应匹配 Sc
   let response: any = await request(endpoint);
   assert.equal(response.status, 200);
   assertSchema('task-record.list', 'success', response.body);
+
+  response = await request(`${endpoint}/title-summaries?ids=contract-update,contract-complete,missing-title`);
+  assert.equal(response.status, 200);
+  assertSchema('task-record.title-summaries', 'success', response.body);
+  assert.deepEqual(response.body, {
+    schemaVersion: 'buildr.task-title-summary-list/v1',
+    items: [
+      { taskId: 'contract-update', title: '更新前' },
+      { taskId: 'contract-complete', title: '待完成' },
+    ],
+    missingTaskIds: ['missing-title'],
+  });
+  response = await request(`${endpoint}/title-summaries?ids=contract-update,contract-update,missing-title,missing-title`);
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.body, {
+    schemaVersion: 'buildr.task-title-summary-list/v1',
+    items: [{ taskId: 'contract-update', title: '更新前' }],
+    missingTaskIds: ['missing-title'],
+  });
+  response = await request(`${endpoint}/title-summaries?ids=${Array.from({ length: 101 }, (_, index) => `task-${index + 1}`).join(',')}`);
+  assert.equal(response.status, 400);
+  assert.equal(response.body.error.code, 'task_title_ids_invalid');
+  assertSchema('task-record.title-summaries', 'error', response.body);
+  response = await request(`${endpoint}/title-summaries?ids=contract-update&ids=contract-complete`);
+  assert.equal(response.status, 400);
+  assert.equal(response.body.error.code, 'task_api_query_invalid');
+  assertSchema('task-record.title-summaries', 'error', response.body);
+  response = await request(`${endpoint}/title-summaries?ids=contract-update,../private`);
+  assert.equal(response.status, 400);
+  assert.equal(response.body.error.code, 'task_title_ids_invalid');
+  assertSchema('task-record.title-summaries', 'error', response.body);
 
   response = await request(`${endpoint}/contract-update`);
   assert.equal(response.status, 200);

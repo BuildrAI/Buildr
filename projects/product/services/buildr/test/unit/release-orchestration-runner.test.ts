@@ -274,3 +274,38 @@ test('candidate repair and main adoption remain waiting; readback work is not sl
   assert.equal(compact.localArtifact.runId, 42);
   assert.equal(compact.localArtifact.sha256, 'a');
 });
+
+test('release cancellation during sleep retains original effects without another resume', async () => {
+  const { runReleaseOperationUntilSettled } = await import('../../../../../../skills/buildr-release/scripts/release-orchestration-runner.ts');
+  const controller = new AbortController();
+  const actions: string[] = [];
+  const effect = { type: 'workflow-dispatched', runId: 42 };
+  let now = 0;
+  const value = await runReleaseOperationUntilSettled({ action: 'publish', wait: true, waitIntervalMs: 10 }, {
+    signal: controller.signal, now: () => now,
+    runReleaseOperation: async (options: any) => { actions.push(options.action); return { status: 'publication-running', run: { id: 42 }, effects: [effect] }; },
+    sleep: async (ms: number) => { now += ms; controller.abort(); },
+  });
+  assert.deepEqual(actions, ['publish']);
+  assert.equal(value.run.id, 42);
+  assert.deepEqual(value.effects, [effect]);
+  assert.deepEqual(value.waiting, { status: 'cancelled', polls: 1, durationMs: 10, pollWorkMs: 0, sleepMs: 10 });
+  const preCancelled = new AbortController(); preCancelled.abort();
+  await assert.rejects(runReleaseOperationUntilSettled({ action: 'publish', wait: true }, {
+    signal: preCancelled.signal, runReleaseOperation: async () => assert.fail('already cancelled work must not dispatch'),
+  }), { name: 'AbortError' });
+});
+
+test('native release sleep is interrupted without waiting for its whole interval', async () => {
+  const { runReleaseOperationUntilSettled } = await import('../../../../../../skills/buildr-release/scripts/release-orchestration-runner.ts');
+  const controller = new AbortController();
+  let polls = 0;
+  const value = await runReleaseOperationUntilSettled({ action: 'resume', wait: true, waitIntervalMs: 60_000 }, {
+    signal: controller.signal,
+    runReleaseOperation: async () => { polls++; setImmediate(() => controller.abort()); return { status: 'publication-running', run: { id: 42 }, effects: [] }; },
+    sleep: undefined,
+  });
+  assert.equal(polls, 1);
+  assert.equal(value.waiting.status, 'cancelled');
+  assert.equal(value.run.id, 42);
+});

@@ -4,7 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { buildWebDist, resolveAdjacentNpmCli } from '../../tools/build/web-dist.ts';
+import { buildWebDist, resolveAdjacentNpmCli, validateWebDist } from '../../tools/build/web-dist.ts';
+import { brotliCompressSync, gzipSync } from 'node:zlib';
 import { describeWebDistTree, inspectLocalWebToolchain, verifyGeneratedWebDist } from '../verification/web-dist.ts';
 
 function fixture(t: any): any  {
@@ -104,6 +105,18 @@ function productionDist(target: string, hash: string, body = hash): void {
   fs.writeFileSync(path.join(target, 'assets', `app-${hash}.js`), body);
   fs.writeFileSync(path.join(target, 'assets', `app-${hash}.css`), 'body{}');
 }
+
+test('production dist rejects compressed bytes captured before final chunk rewriting', t => {
+  const {root}=fixture(t);
+  productionDist(root,'compressed1','export const preload = [];');
+  const file=path.join(root,'assets/app-compressed1.js'),final=fs.readFileSync(file);
+  for(const [extension,encode] of [['gz',gzipSync],['br',brotliCompressSync]] as const){
+    fs.writeFileSync(file+'.'+extension,encode(Buffer.from('export const preload = __VITE_PRELOAD__;')));
+    assert.throws(()=>validateWebDist(root),(error:any)=>error.code==='web_dist_inventory_invalid'&&error.details?.file==='assets/app-compressed1.js.'+extension);
+    fs.writeFileSync(file+'.'+extension,encode(final));
+    assert.ok(validateWebDist(root).includes('assets/app-compressed1.js.'+extension));
+  }
+});
 
 function safeBuildFixture(t: any) {
   const { root } = fixture(t);
@@ -241,4 +254,31 @@ test('output symlinks and source directories are never treated as disposable gen
     execute(_executable, args) { productionDist(args[args.length - 1], 'current12'); return { status: 0 }; }
   }), /real directory/);
   assert.ok(fs.readFileSync(path.join(target, 'index.html'), 'utf8').includes('previous1'));
+});
+
+test('网页准备复用完整输入和输出字节，损坏或源码变化必须重建',t=>{
+  const {root}=fixture(t),cacheRoot=path.join(root,'cache'),source=path.join(root,'source.ts');fs.writeFileSync(source,'first');let builds=0;
+  const build=(target:string)=>{builds++;fakeBuild(target);};
+  const prepare=(name:string,env:any={})=>verifyGeneratedWebDist({outputRoot:path.join(root,name),cacheRoot,inputPaths:[source],optionalPaths:[],build,env});
+  const cold=prepare('cold'),warm=prepare('warm');assert.equal(builds,1);assert.equal(cold.preparation.status,'rebuilt');assert.equal(warm.preparation.status,'reused');
+  assert.deepEqual(describeWebDistTree(cold.root),describeWebDistTree(warm.root));
+  assert.equal(prepare('npm-cache-change',{npm_config_cache:'/different-owned-cache'}).preparation.status,'reused');assert.equal(builds,1);
+  fs.writeFileSync(path.join(cacheRoot,'dist/assets/app.js'),'corrupt');assert.equal(prepare('corrupt').preparation.status,'rebuilt');assert.equal(builds,2);
+  fs.writeFileSync(source,'changed');assert.equal(prepare('source-change').preparation.status,'rebuilt');assert.equal(builds,3);
+  assert.equal(prepare('env-change',{VITE_FIXTURE:'different'}).preparation.status,'rebuilt');assert.equal(builds,4);
+  fs.writeFileSync(path.join(cacheRoot,'verification-web-dist.json'),'{broken');assert.equal(prepare('receipt-change').preparation.status,'rebuilt');assert.equal(builds,5);
+});
+
+test('准备缓存不能接管符号链接，输入在构建中改变不能生成通过证据',t=>{
+  const {root}=fixture(t),source=path.join(root,'source.ts'),cache=path.join(root,'cache');fs.writeFileSync(source,'first');
+  fs.mkdirSync(cache);const alias=path.join(root,'alias');fs.symlinkSync(cache,alias);
+  assert.throws(()=>verifyGeneratedWebDist({outputRoot:path.join(root,'output'),cacheRoot:alias,inputPaths:[source],optionalPaths:[],build:fakeBuild}),/cache_root/);
+  assert.throws(()=>verifyGeneratedWebDist({outputRoot:path.join(root,'changed'),cacheRoot:cache,inputPaths:[source],optionalPaths:[],build:(target:string)=>{fakeBuild(target);fs.writeFileSync(source,'changed');}}),/inputs_changed/);
+});
+
+test('unknown npm options remain conservative cache inputs while download cache paths do not',t=>{
+  const {root}=fixture(t),source=path.join(root,'source.ts');fs.writeFileSync(source,'first');let builds=0;
+  const run=(name:string,env:any)=>verifyGeneratedWebDist({outputRoot:path.join(root,name),cacheRoot:path.join(root,'cache'),inputPaths:[source],optionalPaths:[],env,build:(target:string)=>{builds++;fakeBuild(target);}});
+  run('first',{});assert.equal(run('workspace',{npm_config_workspace:'another'}).preparation.status,'rebuilt');
+  assert.equal(run('same',{npm_config_workspace:'another',npm_config_cache:'/another-cache'}).preparation.status,'reused');assert.equal(builds,2);
 });

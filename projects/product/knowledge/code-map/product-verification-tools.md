@@ -132,3 +132,13 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
 - [source-control-selection.ts](../../services/buildr-web/src/features/code/source-control-selection.ts) 承担任务入口、显式用户选择与已观察来源的优先级判断，由页面工作台调用并由无服务器单元测试直接验证。
 - [source-control-row-density.ts](../../services/buildr-web/src/features/code/components/source-control-row-density.ts) 只计算测量值对应的逐级展示；行组件继续拥有 DOM 测量与真实交互，计算边界由单元测试覆盖。
 - 文件浏览与源代码管理分别由 `e2e-browser:code-explorer`、`e2e-browser:code` 选择。源码浏览器检查共享不可变构建，各自创建临时现场，独立资源限制允许最多两个检查并行；真实 Git 与 HTTP 矩阵仍由现有集成入口执行。
+
+## 验证与发布之间的窄消费边界
+
+- [release-verification.ts](../../services/buildr/test/verification/release-verification.ts)：发布消费的覆盖集合、证明传输与已有候选能力入口，发布不解释内部缓存及分片成员。
+- [release-consumption-contract.ts](../../services/buildr/test/verification/release/release-consumption-contract.ts)：轻量覆盖定义及原包身份核验；原 `release-consumption.ts` 保留真实包消费执行与兼容导出。
+- [candidate-check-inputs.ts](../../services/buildr/test/verification/candidate-check-inputs.ts)：统一检查输入读取、身份计算及历史输入认证；[candidate-source-binding.ts](../../../../skills/buildr-release/scripts/candidate-source-binding.ts) 保留构建输入及公开执行来源绑定。
+- [result-applicability.ts](../../services/buildr/test/verification/result-applicability.ts)：共用输入事实比较；日常缓存、候选轮次及平台采用分别施加政策。
+- [package-adapter.ts](../../services/buildr/test/verification/package-adapter.ts)：组合入口按需装配产包能力，执行器只消费明确适配。
+- [source-phase-definition.ts](../../services/dsh-plugin/tools/source-phase-definition.ts)：插件源码检查的实际成员与执行配方，由执行与就绪检查共同消费。
+- [release-operation-wait.ts](../../../../skills/buildr-release/scripts/release-operation-wait.ts)：有界等待同一发布操作；不选择新源码、重发未知请求或维护另一份发布状态。

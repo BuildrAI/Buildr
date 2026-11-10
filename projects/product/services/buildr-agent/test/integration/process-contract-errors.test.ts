@@ -143,3 +143,32 @@ test('lightweight pending read falls back only on explicit unsupported operation
  failure='agent_operation_result_unknown';calls.length=0;
  await assert.rejects(connection.operations.conversations.pendingSummary(),{code:failure});assert.deepEqual(calls,['conversations.pendingSummary']);
 });
+
+test('local conversation projections do not wait for a stalled callback refresh', {timeout:10_000}, async t => {
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-local-projection-'));
+  const runtime:AgentRuntimeUnit={schemaVersion:1,digest:'d'.repeat(64),directory:root,entry:path.join(root,'entry.js'),node:process.execPath};
+  const identity:AgentProcessIdentity={contracts:AGENT_EXECUTION_CONTRACTS,instanceId:'projection-owner',generation:'projection-generation',profileId:'fixture',dataRoot:root,pid:process.pid,runtime};
+  let stalled=false,attachments=0,operations=0;
+  const server=createServer(async(req,res)=>{
+    if(req.url==='/identity'){res.end(JSON.stringify(identity));return;}
+    let raw='';for await(const chunk of req)raw+=chunk;const input=JSON.parse(raw);
+    if(req.url==='/host/attach'){attachments++;if(!stalled)res.end('{}');return;}
+    if(req.url==='/host/detach'){res.end('{}');return;}
+    operations++;res.end(JSON.stringify({conversations:[],operation:input.operation}));
+  });
+  server.listen(0,'127.0.0.1');await once(server,'listening');const address=server.address();assert.ok(address&&typeof address!=='string');
+  writePrivate(path.join(controlRoot(root),'instance.json'),{identity,origin:`http://127.0.0.1:${address.port}`,token:'projection-fixture-token'});
+  const host={resolveExecutionScope:async({ref}:any)=>({ref,revision:'one',rootPath:root}),verifyWorkObject:async({ref}:any)=>({ref,revision:'one'}),listExecutionScopes:async()=>({refs:[],revision:'one'})};
+  const connection=await connectAgentProcess({dataRoot:root,profileId:'fixture',sourceId:'minimal',runtime,host});
+  t.after(async()=>{await connection.disconnect();server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));fs.rmSync(root,{recursive:true,force:true});});
+  const initial=attachments;stalled=true;const start=performance.now();
+  await Promise.all([
+    connection.operations.conversations.listAll(['scope'],{activeOnly:true,limit:100}),
+    connection.operations.conversations.pendingSummary(),
+    connection.operations.conversations.pending(),
+  ]);
+  assert.equal(attachments,initial,'local reads must not refresh a callback they do not use');
+  assert.equal(operations,3);assert.ok(performance.now()-start<1000,'ready projections must not inherit the 3-second callback timeout');
+  await assert.rejects(connection.operations.conversations.read('scope','chat'),{code:'agent_host_unavailable',status:503});
+  assert.equal(operations,3,'a failed prerequisite must not dispatch or replay the operation');
+});

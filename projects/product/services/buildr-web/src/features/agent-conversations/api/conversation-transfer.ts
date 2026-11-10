@@ -1,15 +1,21 @@
 import type { ConversationEvent } from '../types';
+import {restoreConversationPatch} from './conversation-patch.ts';
 
 /** Reduce wire deltas before the existing selection, history and generation guards. */
 export function conversationTransferDecoder(workspaceId: string, conversationId: string) {
   let previous: ConversationEvent | undefined;
   return (event: ConversationEvent): ConversationEvent => {
-    const delta = event.payload.delta;
+    const delta = event.payload.delta,patch=event.payload.patch;
     if (event.workspaceId !== workspaceId || event.conversationId !== conversationId) {
-      if (delta) throw new Error('实时事件不属于当前对话，需要重新观察。');
+      if (delta||patch) throw new Error('实时事件不属于当前对话，需要重新观察。');
       // Legacy full events keep their existing ignore/filter semantics. They
       // cannot replace the baseline used for this subscription's deltas.
       return event;
+    }
+    if(patch){
+      const base=previous?.payload.conversation;
+      if(!base||!previous||base.id!==conversationId||base.workspaceId!==workspaceId||event.type==='snapshot'||delta||event.payload.conversation||event.generation!==previous.generation||patch.baseCursor!==previous.cursor||patch.baseRevision!==base.revision||event.cursor<=previous.cursor||patch.changes.revision!==event.revision)throw new Error('实时更新基准已变化，需要重新观察。');
+      event={...event,payload:{...(event.payload.connection?{connection:event.payload.connection}:{}),conversation:restoreConversationPatch(base,patch)}};
     }
     if (delta) {
       const base = previous?.payload.conversation, view = delta.conversation;

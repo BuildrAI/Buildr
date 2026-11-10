@@ -21,7 +21,7 @@ for(const fails of [false,true])test('Qoder binding switches only after real con
  const capabilities={text:true,images:false,approval:false,questions:false,stop:true,resume:true,maxInputBytes:65536};
  let app:ConnectionApplication;
  const executor:AgentExecutor={descriptor:{id:'qoder',label:'Qoder',capabilities},async open(options){return{bindingIdentity:'stable',bindingData:{executable:old},capabilities,inspectAccount:async()=>({status:'ready'}),models:async()=>[],beginLogin:async()=>{},cancelLogin:async()=>{},createContext:async()=>({id:'context'}),resumeContext:async()=>{},readHistory:async()=>[],send:async()=>{assert.fail('original work must never replay');},observe:async()=>({status:'idle',tools:[]}),reply:async()=>{},stop:async()=>({status:'stopped',tools:[]}),verifyUpgrade:async()=>{verified++;assert.equal(app.get('qoder').executable,old);if(fails)throw Error('conversation validation failed');},close:async()=>{closed.push(options.executable!);}};}};
- app=new ConnectionApplication({root,repository:new ConversationRepository(root),executors:[executor],events:{publish(){}} as any,changed(){},now:()=>new Date().toISOString()} as any);
+ app=new ConnectionApplication({root,repository:new ConversationRepository(root),executors:[executor],environment:{PATH:'/usr/bin'},generation:'fixture-generation',changed(){},now:()=>new Date().toISOString()});
  try{
   await app.connect('qoder',{expectedRevision:'unconfigured',executable:old});const observed=app.get('qoder'),release=app.acquireProgramChange('qoder')!;
   try{if(fails)await assert.rejects(app.replaceProgram('qoder',observed,next),/validation failed/);else await app.replaceProgram('qoder',observed,next);}finally{release();}
