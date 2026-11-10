@@ -152,6 +152,55 @@ test('main-only product content blocks reconciliation with zero Git writes', (t:
   assert.equal(inspectReleaseSelection({ repo: data.repo, version: data.version, devRef: 'dev' }).releaseHead, frozen.releaseHead);
 });
 
+test('main whose tree is a published release state converges after a withdrawn release merge', (t: any) => {
+  const data: any = fixture('0.1.0-rc.4'); t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
+  create(data); select(data); freeze(data);
+  // A withdrawn unpublished release merge leaves main's ancestry past its own
+  // tree: the content returns to the published release while the merge base
+  // moves forward, so provenance alone reports the published state as
+  // main-only content.
+  git(data.retained, 'checkout', '-b', 'published', data.baseline);
+  fs.writeFileSync(path.join(data.retained, 'projects/product/released-only.txt'), 'published release content\n');
+  git(data.retained, 'add', '.'); git(data.retained, 'commit', '-m', 'published release content');
+  const published: any = git(data.retained, 'rev-parse', 'HEAD');
+  git(data.retained, 'tag', 'v0.1.0-rc.2', published);
+  const publishedTree: any = git(data.retained, 'rev-parse', `${published}^{tree}`);
+  const main: any = git(data.retained, 'commit-tree', publishedTree, '-p', data.source, '-p', published, '-m', 'main holds the published release state');
+  git(data.retained, 'update-ref', 'refs/heads/main', main);
+  git(data.retained, 'push', 'origin', 'main');
+  const releaseHead: any = inspectReleaseSelection({ repo: data.repo, version: data.version, devRef: 'dev' }).releaseHead;
+  const reconciled: any = reconcileReleaseSelectionWithMain({ repo: data.repo, version: data.version, devRef: 'dev', mainRef: 'origin/main', confirm: true,
+    reason: 'published release state superseded by the release line', executionBinding: data.binding() });
+  assert.equal(reconciled.status, 'passed', JSON.stringify(reconciled.diagnostic));
+  assert.equal(reconciled.action, 'reconciled');
+  assert.equal(git(data.repo, 'rev-parse', 'HEAD^{tree}'), git(data.repo, 'rev-parse', `${releaseHead}^{tree}`));
+  const message: any = git(data.repo, 'show', '-s', '--format=%B', git(data.repo, 'rev-parse', 'HEAD'));
+  assert.match(message, /Coverage-Disposition: main-released-state/u);
+  assert.match(message, new RegExp(`Released-State: v0\\.1\\.0-rc\\.2 ${published} ${publishedTree}`, 'u'));
+});
+
+test('main holding an unpublished state blocks even when a release tag shares its tree', (t: any) => {
+  const data: any = fixture('0.1.0-rc.5'); t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
+  create(data); select(data); freeze(data);
+  git(data.retained, 'checkout', '-b', 'published', data.baseline);
+  const published: any = git(data.retained, 'rev-parse', 'HEAD');
+  git(data.retained, 'tag', 'v0.1.0-rc.2', published);
+  fs.writeFileSync(path.join(data.retained, 'projects/product/main-only.txt'), 'unpublished main content\n');
+  git(data.retained, 'add', '.'); git(data.retained, 'commit', '-m', 'unpublished main content');
+  const modified: any = git(data.retained, 'rev-parse', 'HEAD');
+  const main: any = git(data.retained, 'commit-tree', `${modified}^{tree}`, '-p', data.source, '-p', published, '-m', 'main with unpublished content');
+  git(data.retained, 'update-ref', 'refs/heads/main', main);
+  git(data.retained, 'push', 'origin', 'main');
+  const before: any = git(data.repo, 'rev-parse', 'HEAD');
+  const blocked: any = reconcileReleaseSelectionWithMain({ repo: data.repo, version: data.version, devRef: 'dev', mainRef: 'origin/main', confirm: true,
+    reason: 'unpublished main content must not be dropped', executionBinding: data.binding() });
+  assert.equal(blocked.status, 'blocked');
+  assert.equal(blocked.diagnostic.code, 'release_main_coverage_incomplete');
+  assert.deepEqual(blocked.diagnostic.details.uncoveredPaths, ['projects/product/main-only.txt']);
+  assert.equal(blocked.diagnostic.details.coverageDisposition, 'incomplete');
+  assert.equal(git(data.repo, 'rev-parse', 'HEAD'), before);
+});
+
 test('main coverage recognizes renamed and transient dev paths from commit provenance', (t: any) => {
   const data: any = fixture('0.1.0-rc.31'); t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
   fs.writeFileSync(path.join(data.retained, 'projects/product/transient.txt'), 'temporary\n');
