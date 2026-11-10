@@ -8,6 +8,74 @@ type ConversationScrollSample={at:number;top:number;height:number;viewport:numbe
 
 /** history 场景使用独立准备的对话现场。 */
 const historyRuns = {
+  'history/switch-loading': async (fixture: AgentConversationFixture) => {
+    const {page,panel,input,update,run,workspaceId}=fixture;
+    const saved=structuredClone(fixture.conversation),additional=fixture.additionalConversations;
+    const at=new Date().toISOString();
+    const entries=(prefix:string)=>[
+      {id:prefix+'-user',sequence:1,kind:'message',role:'user',text:prefix+'输入',createdAt:at},
+      {id:prefix+'-answer',sequence:2,kind:'message',role:'assistant',text:prefix+'答复',status:'completed',createdAt:at},
+    ];
+    const target={...saved,id:'switch-target',title:'切换目标',revision:'switch-r1',run:run('running'),requests:[],entries:entries('目标')};
+    const failed={...target,id:'switch-failed',title:'失败目标',run:run('completed')};
+    let reads=0,release:(()=>void)|undefined,started:(()=>void)|undefined;
+    let fail=false;
+    const detail=async(route:any)=>{
+      reads++;started?.();await new Promise<void>(resolve=>{release=resolve;});
+      if(fail)return route.fulfill({status:503,json:{error:{code:'switch_unavailable',message:'切换读取失败'}}}).catch(()=>{});
+      return route.fulfill({json:target}).catch(()=>{}); // A superseded request can already be aborted.
+    };
+    const events=async(route:any)=>route.fulfill({contentType:'text/event-stream',body:'data: '+JSON.stringify({
+      cursor:900001,generation:'switch-stream',type:'snapshot',workspaceId,conversationId:target.id,revision:'switch-r2',
+      payload:{conversation:{...target,revision:'switch-r2',run:run('completed'),entries:entries('订阅最新')}},
+    })+'\n\n'});
+    const detailPattern='**/agent-conversations/switch-target',eventPattern='**/agent-conversations/switch-target/events';
+    const failedPattern='**/agent-conversations/switch-failed';
+    const choose=async(id:string)=>{
+      await fixture.openHistoryList();
+      await panel().locator('button[data-conversation-id="'+id+'"]').click();
+    };
+    try{
+      update({run:run('completed'),requests:[],entries:entries('原屏')});
+      fixture.additionalConversations=[target,failed];
+      await page.reload();await input().waitFor();await panel().getByText('原屏答复',{exact:true}).waitFor();
+      await page.evaluate(()=>{(window as any).__retainedMessage=document.querySelector('.ac-message-list');});
+      await page.route(detailPattern,detail);await page.route(eventPattern,events);await page.route(failedPattern,detail);
+      let pending=new Promise<void>(resolve=>{started=resolve;});
+      await choose(target.id);await pending;
+      await panel().getByRole('status',{name:'正在切换对话',exact:true}).waitFor();
+      assert.equal(await panel().locator('.ac-transcript').getAttribute('inert'),'');
+      assert.equal(await panel().locator('.ac-transcript').getAttribute('aria-hidden'),'true');
+      assert.ok(await page.evaluate(()=>(window as any).__retainedMessage===document.querySelector('.ac-message-list')),'保留原 DOM，而不是另建一份快照');
+      assert.equal(await input().isDisabled(),true);
+      release!();
+      await panel().getByText('订阅最新答复',{exact:true}).waitFor();
+      assert.equal(reads,1,'首订阅依靠快照补齐读取后的变化，不重复读取详情');
+      assert.equal(await panel().locator('.ac-transcript').getAttribute('inert'),null);
+      assert.equal(await panel().getByText('原屏答复',{exact:true}).count(),0);
+
+      fail=true;fixture.expectedBrowserErrors.add('switch-failed');fixture.expectedBrowserErrors.add('503');
+      pending=new Promise<void>(resolve=>{started=resolve;});
+      await choose(failed.id);await pending;release!();
+      await panel().getByRole('alert').filter({hasText:'切换读取失败'}).waitFor();
+      assert.equal(await panel().getByText('订阅最新答复',{exact:true}).count(),0,'失败不把旧详情当成当前对话');
+
+      fail=false;pending=new Promise<void>(resolve=>{started=resolve;});
+      await choose(target.id);await pending;
+      const delayed=release!;
+      fixture.expectedBrowserErrors.add('switch-target');
+      await choose(saved.id);await panel().getByText('原屏答复',{exact:true}).waitFor();
+      delayed();
+      await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+      assert.equal(await panel().getAttribute('data-conversation-id'),saved.id,'已取消读取的迟到响应不改变选择');
+      assert.equal(await panel().getByText('目标答复',{exact:true}).count(),0);
+    }finally{
+      release?.();
+      await page.evaluate(()=>{delete (window as any).__retainedMessage;});
+      await page.unroute(detailPattern,detail);await page.unroute(eventPattern,events);await page.unroute(failedPattern,detail);
+      fixture.additionalConversations=additional;fixture.conversation=saved;
+    }
+  },
   'history/workspace-switch': async (fixture: AgentConversationFixture) => {
   const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
 
@@ -88,7 +156,7 @@ const historyRuns = {
 
   const saved=structuredClone(fixture.conversation),beforeSends=fixture.sends;
   const otherPage=await page.context().newPage();
-  const other=await createAgentConversationFixture({page:otherPage,workspaceUrl,workspaceRoot,otherWorkspaceId:fixture.otherWorkspaceId,capture,expectedBrowserErrors:fixture.expectedBrowserErrors});
+  const other=await createAgentConversationFixture({page:otherPage,workspaceUrl,workspaceRoot,otherWorkspaceId:fixture.otherWorkspaceId,capture,expectedBrowserErrors:fixture.expectedBrowserErrors,scenarioSelectionHandled:true});
   let otherHidden=0,otherSends=0;
   const visibility=async(value:string)=>page.evaluate((value:string)=>{Object.defineProperty(document,'visibilityState',{configurable:true,get:()=>value});document.dispatchEvent(new Event('visibilitychange'));},value);
   try{

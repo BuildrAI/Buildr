@@ -129,8 +129,10 @@ export function AgentConversationsProvider({children, client = agentConversation
   const getSelection=useCallback(()=>({generation:serial.current,scope:scopeRef.current}),[]);
   const isSelectionCurrent=useCallback((selection:ConversationSelection)=>sameConversationSelection(getSelection(),selection),[getSelection]);
   const participationNavigation=useRef<AbortController|null>(null);
+  const selectionRead=useRef<AbortController|null>(null);
+  useEffect(()=>()=>selectionRead.current?.abort(),[]);
   useEffect(()=>{if(!open)participationNavigation.current?.abort();return()=>participationNavigation.current?.abort();},[open]);
-  const advanceSelection=useCallback(()=>{participationNavigation.current?.abort();const generation=++serial.current;setSelectionGeneration(generation);return generation;},[]);
+  const advanceSelection=useCallback(()=>{participationNavigation.current?.abort();selectionRead.current?.abort();const generation=++serial.current;setSelectionGeneration(generation);return generation;},[]);
   const apply = useCallback((next: ConversationView, observedRevision?:string) => { const current = scopeRef.current; if (current?.workspaceId === next.workspaceId && current.conversationId === next.id) {
     // Keep the observed fact synchronous: a stream can end in the same tick as
     // its completion event, before React commits the corresponding render.
@@ -173,7 +175,8 @@ export function AgentConversationsProvider({children, client = agentConversation
   },[refreshConnections,refreshPending,refreshModelCatalog]);
   const openConversation = useCallback(async (workspaceId: string, conversationId: string,options:VisibilityOptions={}) => {
     const request = advanceSelection(); const nextScope = {workspaceId, conversationId}; scopeRef.current = nextScope; setScope(nextScope); setDraftScope(null); conversationRef.current=null; setConversation(null); setView('conversation'); if(!options.preserveVisibility)setVisibility(true); setLoading(true); setError(''); setStreamError(''); eventCursor.current = undefined; savePanel(visibility.current.open,nextScope);
-    try { const next = await client.read(workspaceId, conversationId); if (request === serial.current && scopeRef.current?.conversationId === conversationId && scopeRef.current.workspaceId === workspaceId) apply(next); } catch (failure) { if (request === serial.current) setError(failure instanceof Error ? failure.message : '无法读取对话。'); } finally { if (request === serial.current) setLoading(false); }
+    const controller=new AbortController();selectionRead.current=controller;
+    try { const next = await client.read(workspaceId, conversationId,controller.signal); if (request === serial.current && scopeRef.current?.conversationId === conversationId && scopeRef.current.workspaceId === workspaceId) apply(next); } catch (failure) { if (request === serial.current&&!controller.signal.aborted) setError(failure instanceof Error ? failure.message : '无法读取对话。'); } finally { if(selectionRead.current===controller)selectionRead.current=null;if (request === serial.current) setLoading(false); }
   }, [client,advanceSelection,setVisibility,apply]);
   const locateParticipation=useCallback(async(workspaceId:string,conversationId:string,runId:string)=>{
     participationNavigation.current?.abort();
@@ -273,7 +276,10 @@ export function AgentConversationsProvider({children, client = agentConversation
         retryTimer=setTimeout(()=>{void connect(true);},15_000);
       }
     };
-    void connect(true);
+    // The first SSE frame is an authoritative snapshot, registered without an
+    // async gap on the server. Do not repeat the selection read before it.
+    // Dropped connections still reconcile before retrying above.
+    void connect();
     return () => { controller.abort(); if (retryTimer) clearTimeout(retryTimer);setReconnecting(false); };
     // Ordinary snapshot changes must not recreate the subscriber or lose its cursor.
   }, [client, scope?.workspaceId, scope?.conversationId, observationKey, pageVisible, observation, refreshPending, refreshConnections,apply,getSelection,isSelectionCurrent]);

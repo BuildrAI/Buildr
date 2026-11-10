@@ -1,6 +1,10 @@
 /** Stable history identities and labels; safe for source-only planning. */
 export const HISTORY_SCENARIO_CATALOG = [
   {
+    "id": "history/switch-loading",
+    "name": "切换慢请求保留不可交互的原消息，首订阅不重复读取且旧响应不串会话"
+  },
+  {
     "id": "history/workspace-switch",
     "name": "切换工作空间只更新工作区，对话节点和草稿保留，列表默认全部空间"
   },

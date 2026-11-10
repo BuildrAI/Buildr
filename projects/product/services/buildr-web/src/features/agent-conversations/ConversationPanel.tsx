@@ -38,6 +38,7 @@ import { ConversationDock } from './ConversationDock';
 import { ConversationMessageImages } from './ConversationMessageImages';
 import { ConversationComposer } from './ConversationComposer';
 import { ConversationTurn } from './ConversationTurn';
+import { ConversationTranscript } from './ConversationTranscript';
 import { imageSelectionError, conversationDocumentTypes } from './conversation-images';
 import { uploadConversationMaterials } from './conversation-material-upload';
 import {conversationPermissionKey,conversationPermissionStorageKey,conversationRunIdentity,executionSelectionChanged,nativeConversationChoice,permissionModeLabels,readConversationPermission,selectedConversationModel,selectedConversationPermission,supportsConversationPermission,validConversationChoice,writeConversationPermission,type ConversationChoice,type PermissionMode} from './conversation-options';
@@ -620,13 +621,13 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   const titleStatus=chat?.titleState;
   const titleLabels={pending:'等待执行开始后生成标题，首轮结束后可补生成',generating:'正在生成标题',generated:'标题已自动生成',manual:'标题已手动设置',failed:'标题未能自动生成',unavailable:'当前无法自动生成标题',unknown:'旧对话未记录标题生成状态'};
   const settings=<div className="ac-location-settings">{chat&&<><strong>标题</strong><span>{titleLabels[titleStatus?.status??'unknown']}</span>{titleStatus?.reason&&<small>{titleStatus.reason}</small>}{canGenerateConversationTitle(chat)&&<Button size="small" loading={generatingTitle} onClick={()=>void generateTitle()}>生成简短标题</Button>}</>}<strong>工作空间</strong>{chat?<><span>{workspace?.name||(chat.workspaceId==='@default'?'默认工作空间':chat.workspaceId)}</span><code>{chat.cwd}</code></>:<><Select classNames={{popup:{root:'ac-panel-popup'}}} aria-label="新对话工作空间" allowClear={draftWorkspaceId!=='@default'} value={draftWorkspaceId==='@default'?undefined:draftWorkspaceId} placeholder="默认工作空间" options={workspaces.filter(item=>item.id!=='@default').map(item=>({value:item.id,label:item.name}))} onChange={value=>{const workspaceId=value||'@default';draft.setWorkspace(workspaceId);context.newConversation({preserveVisibility:true,scope:{workspaceId}});setPrepared(null);}}/></>}</div>;
-  const visibleEntries=chat?visibleConversationEntries(stoppedConversationEntries(chat,stoppedOutput)):[];
-  const transcript=groupConversationStream(visibleEntries,chat?.run,chat?.retainedRuns);
+  const visibleEntries=useMemo(()=>chat?visibleConversationEntries(stoppedConversationEntries(chat,stoppedOutput)):[],[chat,stoppedOutput]);
+  const transcript=useMemo(()=>groupConversationStream(visibleEntries,chat?.run,chat?.retainedRuns),[visibleEntries,chat?.run,chat?.retainedRuns]);
   const liveToolId=!outputPaused&&chat?.run?.status==='running'?[...visibleEntries].reverse().find(entry=>entry.kind==='tool'&&entry.runId===chat.run!.id)?.id??null:null;
   const modelWarning=conversationModelWarning(context.modelCatalogReady,choice.modelAccountId,selectedSourceModel);
   const actionError=conversationActionError(error||(replyFailure&&!confirmedConversationReply(chat,replyFailure.attempt)?replyFailure.message:'')||(needsDefaultRoot?defaultRootError:''),modelWarning);
   const connectionWarning=context.streamError&&needsConversationObservation(chat)&&run?.status!=='unknown'&&<Alert className="ac-stream-disconnect" type="warning" showIcon message="实时连接正在恢复" description={context.streamError.replace(/^对话连接已中断[；;]\s*/,'')} action={<Button type="text" size="small" loading={observing} onClick={()=>void observe()}>重新连接并核对</Button>}/>;
-  const turns=conversationStreamTurns(transcript);
+  const turns=useMemo(()=>conversationStreamTurns(transcript),[transcript]);
   const turnIdentity=(entry:ConversationEntry|undefined)=>{
     if(!entry)return '';
     const {participant,run:boundRun}=conversationTurnBinding(entry,chat);
@@ -659,11 +660,12 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   };
   const fileError=fileLinkFailure&&context.isSelectionCurrent(fileLinkFailure.selection)&&<Alert type="warning" message={fileLinkFailure.message} description={<code>{fileLinkFailure.reference}</code>} closable onClose={()=>setFileLinkFailure(null)} action={<CopyButton type="text" text={fileLinkFailure.reference} ariaLabel="复制来源路径" failureMessage="复制失败，请手动复制来源路径。"/>}/>;
   const panel=<section id={panelId} className={'ac-panel'+(context.full?' is-full':'')+(embedded?' ac-child-panel':'')} aria-label={embedded?'子对话':'内部对话'} data-dock={context.side} data-conversation-id={chat?.id}>
-    {context.view==='history'&&!context.full?<ConversationHistory workspaces={workspaces} defaultWorkspaceId={defaultWorkspaceId}/>:<>
+    {context.view==='history'&&!context.full&&<ConversationHistory workspaces={workspaces} defaultWorkspaceId={defaultWorkspaceId}/>}
+    <div className="ac-conversation-view" hidden={context.view==='history'&&!context.full}>
       <header className="ac-thread-header" data-run-status={run&&['running','completed'].includes(run.status)?run.status:undefined}>
         {!embedded&&!context.open&&<Button type="text" icon={<UnorderedListOutlined/>} aria-label="查看对话列表" title="对话列表" onClick={()=>context.openHistory(null,{preserveVisibility:true})}/>}
         <div className="ac-thread-heading">
-        {chat?<button type="button" className="ac-thread-title" aria-label="重命名对话" title={chat.title} onClick={()=>{setTitle(chat.title);setRename(true);}}>{chat.title}</button>:<strong className="ac-thread-title ac-thread-title-static">新对话</strong>}
+        {chat?<button type="button" className="ac-thread-title" aria-label="重命名对话" title={chat.title} onClick={()=>{setTitle(chat.title);setRename(true);}}>{chat.title}</button>:<strong className="ac-thread-title ac-thread-title-static">{context.loading?'正在读取对话…':context.scope?'对话':'新对话'}</strong>}
         {chat&&<div className="ac-thread-identity"><CopyButton type="text" text={chat.id} ariaLabel="复制对话 ID" failureMessage="复制失败，请手动选择对话 ID 复制。"/><span title={chat.id}>{chat.id}</span></div>}
         </div>
         <div className="ac-thread-actions">
@@ -695,10 +697,11 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
       </header>
       {chat?.childOf&&<div className="ac-child-origin"><span title={chat.childOf.title}>背景来自「{chat.childOf.title}」 · {new Date(chat.childOf.createdAt).toLocaleString()}</span><span>仅继承创建时背景；后续按你的新要求独立处理。</span></div>}
       {chat&&<ConversationForkOrigin conversation={chat}/>}
-      <div className="ac-stream" ref={stream} tabIndex={0} aria-label="对话记录" aria-busy={earlier.loading} onScroll={()=>{earlier.onScroll();followBottom();}} onPointerDown={earlier.onPointerDown} onPointerUp={earlier.onPointerUp} onPointerCancel={earlier.onPointerCancel} onWheel={earlier.onWheel} onKeyDown={earlier.onKeyDown} onTouchStart={earlier.onTouchStart} onTouchMove={earlier.onTouchMove} onTouchEnd={earlier.onTouchEnd} onTouchCancel={earlier.onTouchCancel}>
+      <div className="ac-stream" ref={stream} tabIndex={0} aria-label="对话记录" aria-busy={context.loading||earlier.loading} onScroll={()=>{earlier.onScroll();followBottom();}} onPointerDown={earlier.onPointerDown} onPointerUp={earlier.onPointerUp} onPointerCancel={earlier.onPointerCancel} onWheel={earlier.onWheel} onKeyDown={earlier.onKeyDown} onTouchStart={earlier.onTouchStart} onTouchMove={earlier.onTouchMove} onTouchEnd={earlier.onTouchEnd} onTouchCancel={earlier.onTouchCancel}>
         {earlier.loading&&<div className="ac-history-loading" role="status" aria-label="正在加载更早记录"><Spin size="small"/></div>}
         <div className="ac-stream-content" ref={streamContent}>
-        {context.loading?<Spin/>:context.error?<Alert type="error" showIcon message={context.error} action={<Button onClick={()=>void context.refresh().catch(fail)}>重新读取</Button>}/>:!chat?.entries.length?<div className="ac-welcome"><CommentOutlined/><h1>{chat?.taskId||boundTaskId?'从这项任务继续':'今天想做什么？'}</h1><p>了解一个问题，或者交办一件事。</p>{!chat&&settings}</div>:<div className="ac-message-list">
+        <ConversationTranscript loading={context.loading}>
+        {context.error?<Alert type="error" showIcon message={context.error} action={<Button onClick={()=>void context.refresh().catch(fail)}>重新读取</Button>}/>:!chat?.entries.length?<div className="ac-welcome"><CommentOutlined/><h1>{chat?.taskId||boundTaskId?'从这项任务继续':'今天想做什么？'}</h1><p>了解一个问题，或者交办一件事。</p>{!chat&&settings}</div>:<div className="ac-message-list">
           {turns.map((turn,index)=>{
             const first=turn.items.find(item=>item.type==='process-block'||item.type==='entry'&&item.entry.role==='assistant');
             const assistant=first?.type==='process-block'?first.entries[0]:first?.entry;
@@ -731,6 +734,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
             </ConversationTurn>;
           })}
         </div>}
+        </ConversationTranscript>
         <ConversationPendingSend conversation={chat} onCancelled={(cancelled,answers)=>{setError('');const text=[cancelled.text,answers].filter(Boolean).join('\n');if(text)draft.setText(draft.text.trim()&&draft.text!==text?[draft.text,text].join('\n\n'):text);if(cancelled.attachmentIds?.length&&chat)setAttachments(previous=>({...previous,[chat.id]:[...(previous[chat.id]||[]),...(previous['@pending:'+chat.id]||queuedImages.current[chat.id]||[]).filter(image=>cancelled.attachmentIds!.some(id=>id===image.id)&&!(previous[chat.id]||[]).some(value=>value.id===image.id))]}));setFeedback('已取消，内容已放回输入框。');requestAnimationFrame(()=>document.getElementById(panelId)?.querySelector<HTMLTextAreaElement>('textarea')?.focus());}}/>{currentConversationRequests(chat).map(renderQuestion)}
         </div>
       </div>
@@ -750,7 +754,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
           execution={<><ConversationOptions showAgent={false} key={choiceKey+':'+context.side+':'+context.open} connections={context.connections} value={choice} disabled={sending} onChange={select}/><Button type="primary" shape="circle" icon={<ArrowUpOutlined/>} aria-label="发送对话" title={waitingHandoffAvailable?waitingHandoffLabel:'发送'} disabled={!canSend||(!waitingHandoffAvailable&&!sendText.trim()&&!images.length)} loading={sending} onClick={()=>void prepare(false)}/></>}/>
         <div className="ac-location-meta"><span>所属工作空间：<Popover rootClassName="ac-panel-popup" title="对话信息" trigger="click" open={locationOpen} onOpenChange={setLocationOpen} content={settings}><button type="button" className="ac-location-name" aria-label="对话信息与工作空间" title={(chat?.cwd||newCwd)||undefined}>{chat?(workspace?.name||(chat.workspaceId==='@default'?'默认工作空间':chat.workspaceId)):(workspaces.find(item=>item.id===draftWorkspaceId)?.name||'默认工作空间')}</button></Popover></span><span>· <ConversationTaskLink key={chat?chat.workspaceId+':'+chat.id:'draft'} taskLinks={chat?conversationTaskLinks(chat):boundTaskLinks} onAssign={assignTask} onNavigate={()=>context.setFull(false)}/></span><small className="ac-location-keys">Enter 发送 · Shift+Enter 换行</small></div>
       </div>
-    </>}
+    </div>
     {context.full&&context.view==='history'&&<div className="ac-history-drawer"><ConversationHistory workspaces={workspaces} defaultWorkspaceId={defaultWorkspaceId}/></div>}
     <ConversationHandoffDrawer loadHistory={chat?(input,signal)=>context.api.historySource(chat.workspaceId,chat.id,input,signal):undefined} loadEntry={chat?(entry,signal)=>context.api.entry(chat.workspaceId,chat.id,entry,signal,viewedHandoff?.handoff?.sourceId):undefined} onOpenFile={path=>void openProcessFile(path)} open={previewOpen} side={context.side} material={viewedHandoff?.handoff??prepared?.preview.handoff??null} onChooseModel={!viewedHandoff&&prepared&&!prepared.preview.fits?()=>{setPreviewOpen(false);requestAnimationFrame(()=>document.getElementById(panelId)?.querySelector<HTMLButtonElement>('.ac-model-trigger')?.click());}:undefined} onContinue={!viewedHandoff&&prepared&&prepared.preview.fits?()=>{if(prepared.input.continueRunId&&!prepared.input.waitingHandoff)void prepare(false,false,prepared.input.continueRunId);else void commit(prepared);}:undefined} continueLabel={prepared?.input.waitingHandoff?(prepared.input.waitingHandoff.answers?.length?'回答并交接':prepared.input.continueRunId?'交接并继续':'交接并发送'):undefined} continuing={sending} continueDisabled={!canSend||Boolean(chat?.pendingSend)} delivery={viewedHandoff&&viewedHandoff.status!=='accepted'?viewedHandoff.status==='failed'?'failed':'unknown':undefined} received={viewedHandoff?.status==='accepted'} issue={viewedHandoff&&viewedHandoff.status!=='accepted'?'尚未确认接收，请先核对原执行。':prepared&&!prepared.preview.fits?prepared.preview.diagnostic:undefined} onClose={()=>{setPreviewOpen(false);setSelectedHandoff(null);setPrepared(null);}}/>
     <Modal open={rename} title="重命名对话" getContainer={false} styles={{mask:{position:'absolute'},wrapper:{position:'absolute'}}} onCancel={()=>setRename(false)} onOk={()=>void updateMetadata({title:title.trim()})} okButtonProps={{disabled:!title.trim()}} okText="保存" cancelText="取消"><Input aria-label="对话名称" value={title} onChange={event=>setTitle(event.target.value)}/></Modal>
