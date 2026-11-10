@@ -13,6 +13,43 @@ import { PendingSends } from '../../../src/process/pending-sends.ts';
 const source = readFileSync(new URL('./fixtures/codex-cli.mjs', import.meta.url), 'utf8');
 async function eventually(condition: () => unknown, timeout = 1000) { const until = Date.now() + timeout; while (!condition()) { if (Date.now() > until) throw new Error('condition timeout'); await new Promise(resolve => setTimeout(resolve, 5)); } }
 
+test('Codex resume, history, observation and forks use metadata plus bounded pages', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-codex-pagination-'));
+  let runtime: AgentRuntime | undefined;
+  try {
+    const executable = join(root, 'codex.mjs'), requests = join(root, 'requests.jsonl');
+    await writeFile(executable, source.replace('const m=JSON.parse(l);', `const m=JSON.parse(l);fs.appendFileSync(${JSON.stringify(requests)},JSON.stringify(m)+'\\n');`));
+    const open = () => createCodexExecutor().open({ connectionId: 'codex', configRoot: root, executable, environment: { PATH: process.env.PATH ?? '' } });
+    runtime = await open();
+    const contextRef = await runtime.createContext({ cwd: root }), events: ExecutorEvent[] = [];
+    await runtime.send({ contextRef, cwd: root, text: '[finish]', images: [], clientRequestId: 'history-request', onEvent: event => events.push(event) });
+    const accepted = events.find(event => event.type === 'accepted'); assert.equal(accepted?.type, 'accepted');
+    await runtime.close(); runtime = undefined;
+    const statePath = join(root, 'codex-home/state.json'), state = JSON.parse(await readFile(statePath, 'utf8'));
+    const turn = state[contextRef.id].turns[0];
+    for (let index = 0; index < 25; index++) turn.items.push({ id: 'history-' + index, type: 'agentMessage', text: 'history ' + index });
+    await writeFile(statePath, JSON.stringify(state));
+    await writeFile(requests, '');
+    runtime = await open();
+    await runtime.resumeContext({ contextRef, cwd: root });
+    const history = await runtime.readHistory({ contextRef, cwd: root });
+    assert.equal(history.filter(item => /^history-\d+$/.test(item.id)).length, 25);
+    assert.equal((await runtime.observe({ contextRef })).status, 'idle');
+    let child: ContextRef | undefined;
+    await runtime.forkContext!({ source: runtime, contextRef, cwd: root, executionRef: accepted.executionRef, itemId: 'history-0', onCreated: value => { child = value; } });
+    assert.ok(child);
+    assert.equal((await runtime.readHistory({ contextRef: child, cwd: root })).filter(item => /^history-\d+$/.test(item.id)).length, 25);
+    const sent = (await readFile(requests, 'utf8')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
+    assert.ok(sent.filter(row => row.method === 'thread/resume').every(row => row.params.excludeTurns === true));
+    assert.ok(sent.filter(row => row.method === 'thread/read').every(row => row.params.includeTurns === false));
+    assert.ok(sent.filter(row => row.method === 'thread/turns/list').every(row => row.params.itemsView === 'notLoaded'));
+    const itemPages = sent.filter(row => row.method === 'thread/items/list');
+    assert.ok(itemPages.length >= 5, 'history and observation must fetch per-turn item pages');
+    assert.ok(itemPages.every(row => row.params.limit === 20));
+    assert.ok(sent.filter(row => row.method === 'thread/fork').every(row => row.params.excludeTurns === true));
+  } finally { await runtime?.close(); await rm(root, { recursive: true, force: true }); }
+});
+
 test('whole-round stop terminates the known command even when terminal listing fails',async()=>{
  const root=await mkdtemp(join(tmpdir(),'buildr-codex-stop-observation-'));let runtime:AgentRuntime|undefined;
  try{

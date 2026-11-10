@@ -2,8 +2,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { nativeProgramPolicy } from './program-policy.ts';
 
-/** Read only fixed vendor registry endpoints; never run an upstream update command. */
-export async function readProgramRelease(provider: string, executable: string, signal: AbortSignal): Promise<{ latestVersion: string; currentReleaseVersion?: string; source: string }> {
+/** Read only the fixed vendor registry endpoint; never run an upstream update command. */
+export async function readProgramLatestRelease(provider: string, signal: AbortSignal): Promise<{ latestVersion: string; source: string }> {
   const packageName = nativeProgramPolicy(provider).package.replace(/@[^@]+$/, '');
   const source = `https://registry.npmjs.org/${encodeURIComponent(packageName)}/latest`;
   const response = await fetch(source, { signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]), redirect: 'error', headers: { accept: 'application/json' } });
@@ -20,6 +20,13 @@ export async function readProgramRelease(provider: string, executable: string, s
   } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
   const metadata = JSON.parse(body);
   if (metadata.name !== packageName || typeof metadata.version !== 'string' || metadata.version.length > 100) throw new Error('agent_release_invalid');
+  return { latestVersion: metadata.version, source };
+}
+
+/** Read the official default release and, for Qoder, the bound package version. */
+export async function readProgramRelease(provider: string, executable: string, signal: AbortSignal): Promise<{ latestVersion: string; currentReleaseVersion?: string; source: string }> {
+  const release = await readProgramLatestRelease(provider, signal);
+  const packageName = nativeProgramPolicy(provider).package.replace(/@[^@]+$/, '');
   let currentReleaseVersion: string | undefined;
   if (provider === 'qoder') {
     let directory = path.dirname(await fs.realpath(executable));
@@ -33,5 +40,5 @@ export async function readProgramRelease(provider: string, executable: string, s
       } catch { /* A standalone program need not have package metadata. */ }
     }
   }
-  return { latestVersion: metadata.version, currentReleaseVersion, source };
+  return { ...release, currentReleaseVersion };
 }

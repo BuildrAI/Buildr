@@ -15,7 +15,7 @@ import { bounded, closeOwnedProcess, visibleText, nativePreview } from '../nativ
 import * as embeddedSdk from '@qoder-ai/qoder-agent-sdk';
 let { query, qodercliAuth, ProcessTransport, getSessionInfo, getSessionMessages, InMemorySessionStore, importSessionToStore, forkSession } = embeddedSdk;
 let shutdownDaemon = embeddedSdk.shutdownDaemon;
-import { qoderHistoryItems, qoderResultOutcome, qoderInterruptionIds, qoderInterruptedObservation, qoderParentTool, qoderTaskResult, qoderTaskNotificationIds } from './protocol.ts';
+import { qoderHistoryItems, qoderHistoryPage, qoderResultOutcome, qoderInterruptionIds, qoderInterruptedObservation, qoderParentTool, qoderTaskResult, qoderTaskNotificationIds } from './protocol.ts';
 import { qoderModel } from '../model-options.ts';
 import { resolvePermissionMode } from '../../domain/permission-mode.ts';
 import { safeDiagnostic } from '../../domain/agent-state.ts';
@@ -70,6 +70,11 @@ interface ConversationQuery {
 }
 const live = new Map<string, LiveQuery>();
 const conversations = new Map<string, ConversationQuery>();
+interface HistorySnapshot { token: string; contextId: string; cwd: string; items: ExecutorItem[]; expiresAt: number; timer?: ReturnType<typeof setTimeout> }
+const historySnapshots = new Map<string, HistorySnapshot>();
+const HISTORY_PAGE_BYTES = 4 * 1024 * 1024 - 64 * 1024;
+const HISTORY_SNAPSHOT_TTL = 2 * 60 * 1000;
+const MAX_HISTORY_SNAPSHOTS = 8;
 const fingerprint = (records: any[]) => createHash('sha256').update(JSON.stringify(records)).digest('hex');
 /** Terminal native task notifications; `killed` is what the CLI reports for a stopped command. */
 const terminalTaskStatuses = new Set(['completed', 'failed', 'stopped', 'killed']);
@@ -199,10 +204,57 @@ async function transcript(contextId: string, cwd: string): Promise<{ messages: a
   const messages: any[] = await getSessionMessages(contextId, { dir: cwd, sessionStore: store, view: 'historical', includeSystemMessages: true, limit: 20000 });
   return { messages, records };
 }
-async function history(contextId: string, cwd: string): Promise<ExecutorItem[]> {
-  const { messages, records } = await transcript(contextId, cwd);
-  await checkHistory(contextId, cwd, records);
-  return qoderHistoryItems(messages, contextId, qoderInterruptionIds(messages, records, contextId), records);
+function releaseHistorySnapshot(snapshot: HistorySnapshot): void {
+  if (snapshot.timer) clearTimeout(snapshot.timer);
+  snapshot.timer = undefined;
+  if (historySnapshots.get(snapshot.token) === snapshot) historySnapshots.delete(snapshot.token);
+}
+function scheduleHistoryExpiry(snapshot: HistorySnapshot): void {
+  if (snapshot.timer) clearTimeout(snapshot.timer);
+  snapshot.expiresAt = Date.now() + HISTORY_SNAPSHOT_TTL;
+  snapshot.timer = setTimeout(() => releaseHistorySnapshot(snapshot), HISTORY_SNAPSHOT_TTL);
+  snapshot.timer.unref();
+}
+function pruneHistorySnapshots(): void {
+  const now = Date.now();
+  for (const snapshot of historySnapshots.values()) if (snapshot.expiresAt <= now) releaseHistorySnapshot(snapshot);
+}
+async function history(contextId: string, cwd: string, snapshotId?: string, cursor?: string): Promise<any> {
+  pruneHistorySnapshots();
+  let snapshot: HistorySnapshot;
+  if (snapshotId !== undefined) {
+    if (typeof snapshotId !== 'string' || !snapshotId || cursor === undefined) throw new Error('qoder_history_cursor_invalid');
+    const found = historySnapshots.get(snapshotId);
+    if (!found || found.contextId !== contextId || found.cwd !== cwd || found.expiresAt <= Date.now()) {
+      if (found) releaseHistorySnapshot(found);
+      throw new Error('qoder_history_snapshot_expired');
+    }
+    snapshot = found;
+  } else {
+    if (cursor !== undefined) throw new Error('qoder_history_cursor_invalid');
+    const { messages, records } = await transcript(contextId, cwd);
+    await checkHistory(contextId, cwd, records);
+    const token = randomUUID();
+    snapshot = { token, contextId, cwd, items: qoderHistoryItems(messages, contextId, qoderInterruptionIds(messages, records, contextId), records), expiresAt: 0 };
+    while (historySnapshots.size >= MAX_HISTORY_SNAPSHOTS) {
+      const oldest = historySnapshots.values().next().value as HistorySnapshot | undefined;
+      if (!oldest) break;
+      releaseHistorySnapshot(oldest);
+    }
+    historySnapshots.set(token, snapshot);
+    scheduleHistoryExpiry(snapshot);
+  }
+  const offset = cursor === undefined ? 0 : Number(cursor);
+  if (!Number.isSafeInteger(offset) || offset < 0) { releaseHistorySnapshot(snapshot); throw new Error('qoder_history_cursor_invalid'); }
+  try {
+    const page = qoderHistoryPage(snapshot.items, offset, HISTORY_PAGE_BYTES);
+    if (page.nextCursor === undefined) releaseHistorySnapshot(snapshot);
+    else scheduleHistoryExpiry(snapshot);
+    return { data: page.data, ...(page.nextCursor === undefined ? {} : { nextCursor: page.nextCursor, snapshotId: snapshot.token }) };
+  } catch (error) {
+    releaseHistorySnapshot(snapshot);
+    throw error;
+  }
 }
 const TITLE_TEXT_LIMIT = 128 * 1024;
 /** The early title must follow the exact user input of the admitted run. */
@@ -529,7 +581,7 @@ async function dispatch(method: string, params: any): Promise<any> {
     return await forkSession(params.contextId, { dir: params.cwd, upToMessageId: boundary.uuid, title: '新对话' });
   }
   if (method === 'resume') { await checkHistory(params.contextId, params.cwd); const info = await getSessionInfo(params.contextId, { dir: params.cwd }); if (!info || info.sessionId !== params.contextId || info.cwd && info.cwd !== params.cwd) throw new Error('qoder_context_not_found'); return {}; }
-  if (method === 'history') return await history(params.contextId, params.cwd);
+  if (method === 'history') return await history(params.contextId, params.cwd, params.snapshotId, params.cursor);
   if (method === 'prepare') { await execute({...params,clientRequestId:randomUUID()},true); return {}; }
   if(method==='verify-upgrade') {
     const id=randomUUID();const owner:TitleQuery={q:undefined,release(){},cancel(){}};
@@ -578,6 +630,7 @@ async function dispatch(method: string, params: any): Promise<any> {
     return {released:!owner||Boolean(owner.exited)};
   }
   if (method === 'close') {
+    for (const snapshot of [...historySnapshots.values()]) releaseHistorySnapshot(snapshot);
     await Promise.allSettled([...titleQueries.values()].map(async owner=>{owner.cancel();await closeTitle(owner);}));
     await Promise.allSettled([...live.values()].map(async item => {
       item.stopping = true; for (const pending of item.pending.values()) pending.resolve({ behavior: 'deny', message: 'Host closed.' });

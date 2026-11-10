@@ -121,7 +121,7 @@ test('Codex imports an exact source rollout into the destination profile and rej
     const rpc=(target as any).rpc,call=rpc.call.bind(rpc);
     rpc.call=async(method:string,params:any,...rest:any[])=>{
       const result=await call(method,params,...rest);
-      if(method==='thread/read')result.thread.turns.push({id:'unexpected-later',items:[]});
+      if(method==='thread/turns/list'&&params.sortDirection==='desc'&&params.limit===1&&result.data[0])result.data=[{...result.data[0],id:'unexpected-later'}];
       return result;
     };
     await assert.rejects(target.forkContext!({source:target,contextRef:child,cwd:root,executionRef:{id:'one'},itemId:'answer-one',onCreated:value=>{known=value.id;}}),/boundary/);

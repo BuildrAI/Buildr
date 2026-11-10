@@ -104,6 +104,18 @@ test('current policy default destinations stay reusable for prepared programs', 
   assert.ok(items.filter(item => defaults.includes(item.path)).every(item => !item.eligible && item.reason === 'program_package_referenced'));
 });
 
+test('the newest registry-version package stays reusable before a connection binds it', t => {
+  const root = fixture(t);
+  const older = packageFixture(root, 'codex', 'package-0.166.0-darwin-arm64', Date.now() - 3 * day);
+  const newest = packageFixture(root, 'codex', 'package-0.167.0-darwin-arm64', Date.now() - 2 * day);
+  fs.writeFileSync(path.join(root, 'programs', 'codex', 'prepared.json'), JSON.stringify({ version: '0.167.0', executable: executable(newest) }));
+  const references = programPackageReferences(root);
+  assert.ok(references.directories.has(newest));
+  const items = programPackageCandidates(root, unused, Date.now() - day);
+  assert.equal(items.find(item => item.path === newest)?.eligible, false);
+  assert.equal(items.find(item => item.path === older)?.eligible, true);
+});
+
 test('candidates require a stable window, no occupancy and no references; staging leftovers qualify', t => {
   const root = fixture(t);
   const old = packageFixture(root, 'qoder', 'package-1.0.58-darwin-arm64');

@@ -8,6 +8,13 @@ let state=fs.existsSync(file)?JSON.parse(fs.readFileSync(file)):{};
 let active;
 const reply=(id,result)=>process.stdout.write(JSON.stringify({id,result})+'\n');
 const event=(method,params)=>process.stdout.write(JSON.stringify({method,params})+'\n');
+const exposed=(m,thread)=>m.params?.excludeTurns===true||m.params?.includeTurns===false?{...thread,turns:[]}:thread;
+const page=(values,p,map)=>{
+ const ordered=p.sortDirection==='desc'?[...values].reverse():[...values];
+ const start=Number(p.cursor??0),limit=Math.max(0,Number(p.limit??ordered.length));
+ const selected=ordered.slice(start,start+limit);
+ return{data:selected.map(map),nextCursor:start+limit<ordered.length?String(start+limit):null};
+};
 const save=()=>{for(const t of Object.values(state)){t.path=path.join(process.env.CODEX_HOME,'sessions',t.id+'.jsonl');fs.mkdirSync(path.dirname(t.path),{recursive:true});const rows=[{type:'session_meta',payload:{id:t.id,fixtureThread:{id:t.id,cwd:t.cwd,turns:t.turns}}}];for(const turn of t.turns){rows.push({type:'event_msg',payload:{type:'task_started',turn_id:turn.id}});for(const item of turn.items??[]){if(item.type!=='commandExecution')continue;rows.push({type:'response_item',payload:{type:'function_call',call_id:item.id,name:'exec_command'}});if(item.status==='completed')rows.push({type:'response_item',payload:{type:'function_call_output',call_id:item.id,output:'done'}});}}fs.writeFileSync(t.path,rows.map(row=>JSON.stringify(row)).join('\n')+'\n');}fs.writeFileSync(file+'.next',JSON.stringify(state));fs.renameSync(file+'.next',file);};
 r.on('line',l=>{const m=JSON.parse(l);
 if(m.method==='initialize'){if(process.env.OPENAI_API_KEY||process.env.CODEX_APP_SERVER_TOKEN)throw Error('credential leak');
@@ -27,14 +34,25 @@ save();
 reply(m.id,{thread:t});
 return;
 }
-if(m.method==='thread/resume'||m.method==='thread/read'){reply(m.id,{thread:state[m.params.threadId]});
+if(m.method==='thread/resume'||m.method==='thread/read'){reply(m.id,{thread:exposed(m,state[m.params.threadId])});
 return;
+}
+if(m.method==='thread/turns/list'){
+const turns=state[m.params.threadId]?.turns??[];
+const itemsView=m.params.itemsView??'summary';
+const result=page(turns,m.params,turn=>({...turn,itemsView,items:itemsView==='notLoaded'?[]:itemsView==='summary'?(turn.items??[]).filter((item)=>item.type==='userMessage'||item.type==='agentMessage'):(turn.items??[])}));
+reply(m.id,result);return;
+}
+if(m.method==='thread/items/list'){
+const turn=state[m.params.threadId]?.turns.find(value=>value.id===m.params.turnId);
+const items=turn?.items??[];
+reply(m.id,page(items,m.params,item=>({item,turnId:m.params.turnId,startedAtMs:null,completedAtMs:null})));return;
 }
 if(m.method==='thread/fork'){
 const p=m.params,source=p.path?JSON.parse(fs.readFileSync(p.path,'utf8').split('\n')[0]).payload.fixtureThread:state[p.threadId];
 const boundary=source.turns.findIndex(turn=>turn.id===p.lastTurnId);
 const t={...structuredClone(source),id:'fork-'+Date.now()+'-'+Object.keys(state).length,turns:structuredClone(source.turns.slice(0,boundary+1))};
-state[t.id]=t;save();reply(m.id,{thread:t});return;
+state[t.id]=t;save();reply(m.id,{thread:exposed(m,t)});return;
 }
 if(m.method==='turn/start'){const p=m.params;
 const originalText=p.input.find(part=>part.type==='text')?.text??'';const workText=originalText.includes('\n\n本次用户要求：\n')?originalText.slice(originalText.lastIndexOf('\n\n本次用户要求：\n')+'\n\n本次用户要求：\n'.length):originalText;

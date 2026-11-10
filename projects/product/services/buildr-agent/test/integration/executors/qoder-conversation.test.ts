@@ -168,6 +168,36 @@ test('Qoder permission changes and external history invalidate idle reuse withou
   } finally { await f.close(); }
 });
 
+test('Qoder history is transferred in bounded pages and reconstructs the complete transcript', async () => {
+  const f = await fixture();
+  try {
+    await f.send('one');
+    const root = join(f.configRoot, 'qoder-config/projects'), directory = join(root, (await readdir(root))[0]), filename = join(directory, f.contextRef.id + '.jsonl');
+    const base = { sessionId: f.contextRef.id, cwd: f.cwd, isSidechain: false, timestamp: new Date().toISOString(), userType: 'external', entrypoint: 'cli', version: '1.1.75' };
+    let parent = JSON.parse((await readFile(filename, 'utf8')).trimEnd().split('\n').at(-1)!).uuid;
+    const bulk = Array.from({ length: 300 }, (_, index) => {
+      const uuid = 'bulk-' + index, row = { ...base, type: 'assistant', uuid, parentUuid: parent, message: { role: 'assistant', id: uuid, content: [{ type: 'text', text: 'x'.repeat(16_000) }] } };
+      parent = uuid;
+      return row;
+    });
+    await writeFile(filename, (await readFile(filename, 'utf8')).trimEnd() + '\n' + bulk.map(record => JSON.stringify(record)).join('\n') + '\n');
+    const rpc = (f.runtime as any).rpc, call = rpc.call.bind(rpc), pages: Array<{ args: any; result: any }> = [];
+    rpc.call = async (method: string, args: any, ...rest: any[]) => {
+      const result = await call(method, args, ...rest);
+      if (method === 'history') pages.push({ args, result });
+      return result;
+    };
+    const history = await f.runtime.readHistory({ contextRef: f.contextRef, cwd: f.cwd });
+    assert.equal(history.filter(item => item.id.startsWith('message:bulk-')).length, 300);
+    assert.ok(pages.length >= 2, 'bulk history must require more than one worker page');
+    assert.equal(pages[0]!.args.snapshotId, undefined);
+    assert.ok(pages.slice(1).every(page => typeof page.args.snapshotId === 'string' && typeof page.args.cursor === 'string'));
+    assert.ok(pages.every(page => Buffer.byteLength(JSON.stringify(page.result)) < 8 * 1024 * 1024));
+    assert.equal(pages.at(-1)!.result.nextCursor, undefined);
+    assert.equal((await f.runtime.readHistory({ contextRef: f.contextRef, cwd: f.cwd })).filter(item => item.id.startsWith('message:bulk-')).length, 300);
+  } finally { await f.close(); }
+});
+
 test('Qoder interleaved child streaming retains stable parent identity without corrupting the main stream', async () => {
   const f = await fixture();
   try {

@@ -1,4 +1,6 @@
-/** Version admission, pinned downloads and stable persisted binding namespaces. */
+/** Version admission, legacy fallback metadata and stable persisted binding namespaces.
+ * New managed installs resolve the official registry `latest`; these versions are not
+ * used to prevent a newer release from being downloaded. */
 export const nativeProgramPolicies = {
   codex: { major: 0, bindingSeries: '0.163', compatibility: '0.x.x', version: '0.163.0', package: '@openai/codex@0.163.0', entry: 'node_modules/@openai/codex/bin/codex.js', names: ['codex', 'codex.exe'], url: 'https://developers.openai.com/codex/cli', label: 'Codex 独立程序' },
   dsh: { major: 0, bindingSeries: '0.2', compatibility: '0.x.x', version: '0.2.1-rc.2', package: '@deepseek-ai/dsh@0.2.1-rc.2', entry: 'node_modules/@deepseek-ai/dsh/lib/bin.js', names: ['dsh', 'dsh.exe'], url: 'https://www.deepseek.com/en/harness/', label: 'DSH 官方程序' },

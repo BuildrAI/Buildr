@@ -1,7 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DshExecutionLineage, dshExecutionObservation, dshHistoryItems, dshItem } from '../../src/executors/dsh/protocol.ts';
-import { qoderHistoryItems, qoderResultOutcome, qoderInterruptionIds, qoderInterruptedObservation } from '../../src/executors/qoder/protocol.ts';
+import { qoderHistoryItems, qoderHistoryPage, qoderResultOutcome, qoderInterruptionIds, qoderInterruptedObservation } from '../../src/executors/qoder/protocol.ts';
+
+test('Qoder history pages are byte-bounded, reversible and reject one oversized item', () => {
+  const items = Array.from({ length: 25 }, (_, index) => ({ id: String(index), kind: 'message' as const, role: 'assistant' as const, text: 'x'.repeat(180), status: 'completed' as const }));
+  const pages = []; let cursor: string | undefined;
+  do {
+    const page = qoderHistoryPage(items, cursor === undefined ? 0 : Number(cursor), 1024);
+    pages.push(page.data);
+    assert.ok(Buffer.byteLength(JSON.stringify(page.data)) <= 1024);
+    cursor = page.nextCursor;
+  } while (cursor !== undefined);
+  assert.deepEqual(pages.flat().map(item => item.id), items.map(item => item.id));
+  assert.throws(() => qoderHistoryPage([{ ...items[0]!, text: 'x'.repeat(2000) }], 0, 1024), /history_item_too_large/);
+  assert.throws(() => qoderHistoryPage(items, items.length + 1, 1024), /history_cursor_invalid/);
+});
 
 test('Qoder native task notifications preserve the original execution in history without inventing user input', () => {
   const input = (uuid: string, text: string) => ({ type: 'user', uuid, session_id: 's', message: { content: [{ type: 'text', text }] } });

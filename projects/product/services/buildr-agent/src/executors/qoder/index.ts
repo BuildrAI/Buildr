@@ -89,7 +89,9 @@ class QoderRuntime implements AgentRuntime {
     const pending = this.historyRepairs.get(contextId); if (pending) return pending;
     const work = (async () => {
       if (!executionId) throw new Error('qoder_exact_execution_not_observed');
-      const items: ExecutorItem[] = await this.rpc.call('history', { contextId, cwd: this.contexts.get(contextId) });
+      const cwd = this.contexts.get(contextId);
+      if (!cwd) throw new Error('qoder_context_not_found');
+      const items = await this.readHistoryPages(contextId, cwd);
       const handler = this.handlers.get(contextId);
       if (!handler) throw new Error('qoder_event_observation_lost');
       const owned = items.filter(item => item.executionId === executionId);
@@ -204,7 +206,22 @@ class QoderRuntime implements AgentRuntime {
     await this.rpc.call('prepare', {...input, contextRef:undefined, contextId:input.contextRef.id, ...(this.gateway ? {model:gatewayModel(this.gateway,input.model).id,reasoningEffort:qoderGatewayPolicy(this.gateway,input.model,input.reasoningEffort).parameters.reasoningEffort}: {})},45000);
   }
   async resumeContext({ contextRef, cwd }: { contextRef: ContextRef; cwd: string }): Promise<void> { this.reference(contextRef, cwd); await this.rpc.call('resume', { contextId: contextRef.id, cwd }); }
-  async readHistory({ contextRef, cwd }: { contextRef: ContextRef; cwd: string }): Promise<ExecutorItem[]> { this.reference(contextRef, cwd); return await this.rpc.call('history', { contextId: contextRef.id, cwd }); }
+  private async readHistoryPages(contextId: string, cwd: string): Promise<ExecutorItem[]> {
+    const items: ExecutorItem[] = [];
+    let snapshotId: string | undefined, cursor: string | undefined;
+    for (let page = 0; page < 10_000; page++) {
+      const result = await this.rpc.call('history', { contextId, cwd, ...(snapshotId === undefined ? {} : { snapshotId }), ...(cursor === undefined ? {} : { cursor }) });
+      if (!result || !Array.isArray(result.data)) throw new Error('qoder_history_page_invalid');
+      items.push(...result.data);
+      if (result.nextCursor === undefined || result.nextCursor === null) return items;
+      if (typeof result.nextCursor !== 'string' || !result.nextCursor || result.nextCursor === cursor || typeof result.snapshotId !== 'string' || !result.snapshotId) throw new Error('qoder_history_pagination_invalid');
+      if (snapshotId !== undefined && result.snapshotId !== snapshotId) throw new Error('qoder_history_pagination_invalid');
+      snapshotId = result.snapshotId;
+      cursor = result.nextCursor;
+    }
+    throw new Error('qoder_history_pagination_invalid');
+  }
+  async readHistory({ contextRef, cwd }: { contextRef: ContextRef; cwd: string }): Promise<ExecutorItem[]> { this.reference(contextRef, cwd); return await this.readHistoryPages(contextRef.id, cwd); }
   async send(input: ExecutorSendInput): Promise<void> {
     this.reference(input.contextRef, input.cwd);
     const submission:{contextId:string;settled:boolean;accepted:boolean;released?:boolean}={contextId:input.contextRef.id,settled:false,accepted:false};

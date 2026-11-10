@@ -55,6 +55,24 @@ export function qoderHistoryItems(messages: any[], contextId: string, interrupti
   const latest = new Map<string, ExecutorItem>(); for (const item of items) { const prior=latest.get(item.id);latest.set(item.id, { ...prior, ...item, ...(item.kind==='tool'?{participation:mergeParticipation(prior?.participation,item.participation,item.name??prior?.name,item.input??prior?.input)}:{}) }); } return [...latest.values()];
 }
 
+/** Split an already-projected history into frames that stay well below the
+ * native RPC limit. A single oversized item fails explicitly instead of
+ * letting the worker's response kill the control channel. */
+export function qoderHistoryPage(items: readonly ExecutorItem[], offset = 0, maximumBytes = 4 * 1024 * 1024, maximumItems = 100): { data: ExecutorItem[]; nextCursor?: string } {
+  if (!Number.isSafeInteger(offset) || offset < 0 || offset > items.length) throw new Error('qoder_history_cursor_invalid');
+  if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 1024 || !Number.isSafeInteger(maximumItems) || maximumItems < 1) throw new Error('qoder_history_page_invalid');
+  let end = offset, bytes = 2;
+  while (end < items.length && end - offset < maximumItems) {
+    const itemBytes = Buffer.byteLength(JSON.stringify(items[end]));
+    const addition = (end === offset ? 0 : 1) + itemBytes;
+    if (end === offset && addition + bytes > maximumBytes) throw new Error('qoder_history_item_too_large');
+    if (end > offset && bytes + addition > maximumBytes) break;
+    bytes += addition;
+    end++;
+  }
+  return { data: items.slice(offset, end), ...(end < items.length ? { nextCursor: String(end) } : {}) };
+}
+
 /** The SDK projection omits origin metadata. Match only native primary-chain receipts, never user text alone. */
 export function qoderInterruptionIds(messages: any[], records: any[], contextId: string): Set<string> {
   const raw = new Map(records.filter(record => record.sessionId === contextId && record.isSidechain === false).map(record => [record.uuid, record]));

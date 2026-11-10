@@ -1,6 +1,7 @@
 import { regenerableToolCaches, toolCacheReclaimable } from '../../storage/tool-cache.ts';
 import { codexItem } from './items.ts';
 export { codexItem } from './items.ts';
+import { codexFindTurn, codexLatestTurn, codexThreadMetadata, codexTurnItems, codexTurns } from './pagination.ts';
 import { codexContent } from './content.ts';
 import { instructionParticipation } from '../../domain/participation.ts';
 import { nativeParticipation, participationRequests } from '../../domain/participation.ts';
@@ -175,18 +176,17 @@ class CodexRuntime implements AgentRuntime {
     const source = input.source;
     if (!(source instanceof CodexRuntime)) throw new Error('agent_context_binding_mismatch');
     source.reference(input.contextRef, input.cwd);
-    const observed = await source.rpc.call('thread/read', { threadId: input.contextRef.id, includeTurns: true });
-    const turns = observed.thread?.turns ?? [];
-    const selected = turns.find((turn: any) => turn.id === input.executionRef.id);
-    if (observed.thread?.id !== input.contextRef.id || observed.thread.cwd !== input.cwd || !selected || selected.status === 'inProgress') throw new Error('agent_fork_boundary_unavailable');
+    const observed = await codexThreadMetadata(source.rpc, input.contextRef.id, input.cwd);
+    const selected = await codexFindTurn(source.rpc, input.contextRef.id, input.executionRef.id);
+    if (!selected || selected.status === 'inProgress') throw new Error('agent_fork_boundary_unavailable');
     // A paginated Codex store cannot resolve a foreign CODEX_HOME's thread from
     // path alone. Copy the native-owned opaque rollout into the destination's
     // private store first; Codex, not Buildr, interprets and slices that history.
     // Never link or mutate the original; the imported snapshot is not used for work.
     let importPath: string | undefined;
     if (source !== this) {
-      if (typeof observed.thread.path !== 'string' || !source.modelConfig || !this.modelConfig) throw new Error('agent_fork_unavailable');
-      const filename = await realpath(observed.thread.path), root = await realpath(source.modelConfig);
+      if (typeof observed.path !== 'string' || !source.modelConfig || !this.modelConfig) throw new Error('agent_fork_unavailable');
+      const filename = await realpath(observed.path), root = await realpath(source.modelConfig);
       const local = relative(root, filename);
       if (!local || isAbsolute(local) || local.startsWith('..' + sep) || !['sessions','archived_sessions'].includes(local.split(sep)[0]!)) throw new Error('agent_context_binding_mismatch');
       const info = await lstat(filename);
@@ -201,27 +201,31 @@ class CodexRuntime implements AgentRuntime {
     }
     const forked = await this.rpc.call('thread/fork', {
       threadId: input.contextRef.id, ...(importPath ? { path: importPath } : {}),
-      lastTurnId: input.executionRef.id, cwd: input.cwd, ephemeral: false, deferGoalContinuation: true, ...this.interaction,
+      lastTurnId: input.executionRef.id, cwd: input.cwd, ephemeral: false, excludeTurns: true, deferGoalContinuation: true, ...this.interaction,
       ...(this.gateway ? { model: gatewayModel(this.gateway).id, modelProvider: 'buildr-models' } : {}),
     });
     if (!forked.thread?.id || forked.thread.id === input.contextRef.id || forked.thread.cwd !== input.cwd) throw new Error('agent_fork_identity_invalid');
     const ref = this.context(forked.thread.id, input.cwd);
     input.onCreated(ref);
-    // Older servers can ignore unknown fields. Never accept a whole-history fork.
-    const result = await this.rpc.call('thread/read', { threadId: ref.id, includeTurns: true });
-    if (result.thread?.turns?.at(-1)?.id !== input.executionRef.id) throw new Error('agent_fork_boundary_unavailable');
+    // Older servers can ignore unknown fields. A paginated boundary read proves
+    // the fork without asking either process to hydrate the whole history.
+    const boundary = await codexLatestTurn(this.rpc, ref.id);
+    if (boundary?.id !== input.executionRef.id) throw new Error('agent_fork_boundary_unavailable');
     return ref;
   }
   async resumeContext({ contextRef, cwd, permissionMode }: { contextRef: ContextRef; cwd: string; permissionMode?: PermissionMode }): Promise<void> {
     this.reference(contextRef, cwd);
-    const result = await this.rpc.call('thread/resume', { threadId: contextRef.id, cwd, ...this.interaction, ...(permissionMode === undefined ? {} : codexThreadPermissions(permissionMode)) });
+    const result = await this.rpc.call('thread/resume', { threadId: contextRef.id, cwd, excludeTurns: true, ...this.interaction, ...(permissionMode === undefined ? {} : codexThreadPermissions(permissionMode)) });
     if (result.thread?.id !== contextRef.id || result.thread.cwd !== cwd) throw new Error('codex_context_identity_mismatch');
   }
   async readHistory({ contextRef, cwd }: { contextRef: ContextRef; cwd: string }): Promise<ExecutorItem[]> {
     this.reference(contextRef, cwd);
-    const result = await this.rpc.call('thread/read', { threadId: contextRef.id, includeTurns: true });
-    if (result.thread?.id !== contextRef.id || result.thread.cwd !== cwd) throw new Error('codex_context_identity_mismatch');
-    return (result.thread.turns ?? []).flatMap((turn: any) => (turn.items ?? []).flatMap((item: any) => codexItem(item, turn.id, turn.status)));
+    await codexThreadMetadata(this.rpc, contextRef.id, cwd);
+    const items: ExecutorItem[] = [];
+    for (const turn of await codexTurns(this.rpc, contextRef.id)) {
+      for (const item of await codexTurnItems(this.rpc, contextRef.id, turn.id)) items.push(...codexItem(item, turn.id, turn.status));
+    }
+    return items;
   }
   async readTitle({ contextRef, cwd }: { contextRef: ContextRef; cwd: string }): Promise<string | undefined> {
     this.reference(contextRef, cwd);
@@ -371,20 +375,21 @@ class CodexRuntime implements AgentRuntime {
     this.reference(contextRef);
     const turn = this.turns.get(contextRef.id);
     if (turn && (!executionRef || executionRef.id === turn.id)) { if (turn.terminal) await this.refreshTerminals(turn); return this.activeObservation(turn); }
-    const history = await this.rpc.call('thread/read', { threadId: contextRef.id, includeTurns: true });
-    const exact = executionRef ? history.thread?.turns?.find((item: any) => item.id === executionRef.id) : history.thread?.turns?.at(-1);
+    const thread = await codexThreadMetadata(this.rpc, contextRef.id);
+    const exact = executionRef ? await codexFindTurn(this.rpc, contextRef.id, executionRef.id) : await codexLatestTurn(this.rpc, contextRef.id);
     if (!exact) return { status: 'unknown', tools: [], diagnostic: 'codex_turn_not_observed' };
+    const exactItems = await codexTurnItems(this.rpc, contextRef.id, exact.id);
     let unsettled: Awaited<ReturnType<typeof codexUnsettledTools>> = [];
     if (exact.status === 'interrupted') {
-      try { unsettled = await codexUnsettledTools(history.thread.path, this.modelConfig!, contextRef.id, exact.id);
+      try { unsettled = await codexUnsettledTools(thread.path, this.modelConfig!, contextRef.id, exact.id);
         const received = new Set((knownItems ?? []).filter(item => item.kind === 'tool' && item.executionId === exact.id && ['completed', 'failed'].includes(item.status ?? '') && !/Process running with session ID/.test(item.text)).map(item => item.id));
-        for (const item of exact.items ?? []) {
+        for (const item of exactItems) {
           if (['commandExecution', 'fileChange', 'mcpToolCall'].includes(item.type) && ['completed', 'failed', 'declined'].includes(item.status)) received.add(item.id);
         }
         unsettled = unsettled.filter(tool => !received.has(tool.id)); }
       catch { return { status: 'unknown', executionRef: { id: exact.id }, tools: [], diagnostic: 'codex_recovery_history_unconfirmed' }; }
     }
-    return { status: exact.status === 'inProgress' ? 'unknown' : exact.status === 'interrupted' ? 'stopped' : 'idle', executionRef: executionRef ?? { id: exact.id }, tools: [...new Map([...unsettled, ...(exact.items ?? []).filter((item: any) => ['commandExecution', 'fileChange', 'mcpToolCall'].includes(item.type) && !['completed', 'failed', 'declined'].includes(item.status)).map((item: any) => ({ id: item.id, label: item.type === 'mcpToolCall' ? String(item.tool ?? '工具') : '命令', status: 'unknown' as const, canStop: false }))].map(tool => [tool.id, tool])).values()] };
+    return { status: exact.status === 'inProgress' ? 'unknown' : exact.status === 'interrupted' ? 'stopped' : 'idle', executionRef: executionRef ?? { id: exact.id }, tools: [...new Map([...unsettled, ...exactItems.filter((item: any) => ['commandExecution', 'fileChange', 'mcpToolCall'].includes(item.type) && !['completed', 'failed', 'declined'].includes(item.status)).map((item: any) => ({ id: item.id, label: item.type === 'mcpToolCall' ? String(item.tool ?? '工具') : '命令', status: 'unknown' as const, canStop: false }))].map(tool => [tool.id, tool])).values()] };
   }
   async canRelease({contextRef,executionRef}:{contextRef:ContextRef;executionRef:ExecutionRef}):Promise<boolean|{executionState:'ended'|'unknown'}>{
     this.reference(contextRef);

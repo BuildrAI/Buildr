@@ -52,12 +52,26 @@ export function programPackageReferences(root: string): ProgramPackageReferences
       const provider = name.slice(0, -'.json'.length);
       const base = path.join(root, 'programs', provider);
       if (providers.includes(provider)) {
-        try { for (const directory of fs.readdirSync(base)) directories.add(path.join(base, directory)); }
+        try { for (const directory of fs.readdirSync(base)) if (directory.startsWith('package-') || directory.startsWith('.prepare-')) directories.add(path.join(base, directory)); }
         catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') complete = false; }
       } else complete = false;
     }
   }
-  // The policy default destination stays reusable for prepared, not-yet-bound programs.
+  // A prepared package may not be bound yet. Its explicit pointer keeps that
+  // exact package until a later preparation or update supersedes it.
+  for (const provider of providers) {
+    const file = path.join(root, 'programs', provider, 'prepared.json');
+    try {
+      const info = fs.lstatSync(file);
+      if (!info.isFile() || info.isSymbolicLink() || info.size > 65536) throw new Error('program_latest_pointer_invalid');
+      const pointer = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (typeof pointer.executable !== 'string') throw new Error('program_latest_pointer_invalid');
+      add(pointer.executable);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') complete = false;
+    }
+  }
+  // Keep the legacy default destination reusable as well.
   for (const provider of providers) directories.add(path.join(root, 'programs', provider, `${nativeProgramPolicies[provider as keyof typeof nativeProgramPolicies].version}-${process.platform}-${process.arch}`));
   return { complete, directories };
 }
@@ -73,6 +87,7 @@ export function programPackageCandidates(root: string, use: StorageUse, cutoff: 
     let names: string[];
     try { names = fs.readdirSync(base); } catch { continue; }
     for (const name of names) {
+      if (!name.startsWith('package-') && !name.startsWith('.prepare-')) continue;
       const target = path.join(base, name);
       const item = storageCandidate(root, 'program-package', target, target, use, cutoff);
       if (item.eligible && (!references.complete || references.directories.has(target))) {
