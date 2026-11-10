@@ -54,7 +54,7 @@ export function FileEditingPane({ file, editing, active = true, markdownOptions,
   useEffect(() => {
     let cancelled = false;
     const language = LanguageDescription.matchFilename(fileEditingLanguages, file.path);
-    if (language) void language.load().then(support => { if (!cancelled) current.current.setLanguage(file.id, support); }).catch(error => { console.warn('文件语言加载失败', file.path, error); });
+    if (language) void language.load().then(support => { if (!cancelled) current.current.setLanguage(file.id, support); }).catch(() => {});
     return () => { cancelled = true; };
   }, [file.id, file.path]);
   const markdown = file.kind === 'markdown';

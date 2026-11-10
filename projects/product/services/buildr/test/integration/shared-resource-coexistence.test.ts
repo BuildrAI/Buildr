@@ -69,16 +69,16 @@ test('中断目录恢复只消费原集，不以当前旧包回退', t => {
   assert.equal(inspectSharedResources().id,published.id);
 });
 
-function preparation(root:string,workspace:string,onRender:()=>void,scope='local') {
+function preparation(root:string,workspace:string,onRender:()=>void) {
   fs.mkdirSync(path.join(workspace,'.buildr'),{recursive:true});
   fs.writeFileSync(path.join(workspace,'.buildr/workspace.yml'),'workspace identity');
   const receipts=path.join(workspace,'.buildr/agent-runtime/workspace/agents-standard/skill-projection-ownership-receipts');
   fs.mkdirSync(receipts,{recursive:true});fs.writeFileSync(path.join(receipts,'example.json'),'{}');
-  const entry={rootPath:fs.realpathSync(workspace),workspace:{id:'test',name:'Example'},registryScope:scope};
+  const entry={rootPath:fs.realpathSync(workspace),workspace:{id:'test',name:'Example'},registryScope:'local'};
   return createWorkspacePreparation({
     registryRepository:{workspaceRegistryPath:()=>path.join(root,'registry/workspaces.json'),isSharedRegistryScope:()=>false},
     listRegisteredWorkspaces:()=>({workspaces:[entry]}),resolveRegisteredWorkspace:()=>entry,
-    assertWorkspaceManagementAccess:()=>{assert.notEqual(scope,'shared','shared opening must not claim or refresh workspace assets');return {claimed:true};},
+    assertWorkspaceManagementAccess:()=>({claimed:true}),
     canonicalWorkspaceManagementIdentity:(target:string)=>{assert.equal(target,fs.realpathSync(workspace));},
     ensureRegisteredTarget:(target:string)=>{assert.equal(target,fs.realpathSync(workspace));},
     renderRuntime:onRender,
@@ -86,21 +86,6 @@ function preparation(root:string,workspace:string,onRender:()=>void,scope='local
     readComponentsManifestForWrite:()=>({components:[{id:"buildr-self-bootstrap",enabled:true,state:"installed"}]}),
   });
 }
-
-test('预览打开共享工作空间只完成导航，不准备、刷新投射或接管管理归属', t => {
-  const {root,workspace}=fixture(t);
-  let renders=0;
-  const app=preparation(root,workspace,()=>{renders++;},'shared');
-  const before=fs.readFileSync(path.join(workspace,'.buildr/workspace.yml'),'utf8');
-  const result=app.prepareWorkspaceForOpen('test');
-  assert.deepEqual(result,{ready:true,workspaceId:'test'});
-  assert.equal(validateWorkspaceHttp(WORKSPACE_HTTP_SCHEMAS.preparationOpenResponse.$id,result,'workspace.preparation.open','response'),result);
-  assert.equal(renders,0);
-  assert.equal(readResourceAdoption(workspace),null);
-  assert.equal(fs.readFileSync(path.join(workspace,'.buildr/workspace.yml'),'utf8'),before);
-  assert.equal(fs.existsSync(path.join(workspace,'.buildr/local/web-management.json')),false);
-  assert.equal(fs.existsSync(path.join(root,'registry')),false);
-});
 
 test('打开旧采用空间只刷新本机投射；自有源保留，重复打开幂等', t => {
   const {old,next,root,workspace}=fixture(t);publishPackageResources(old);adoptPackageResources(workspace,true);

@@ -109,7 +109,7 @@ export class ConversationReadModel {
         FROM conversation_read_entries e LEFT JOIN conversation_entry_contents c
         ON c.conversation_id=e.conversation_id AND c.content_revision=e.content_revision
         WHERE e.conversation_id=? AND e.scope='main' AND e.sequence>=? AND e.sequence<? ORDER BY e.sequence`).all(id, selected.at(-1)!, before ?? Number.MAX_SAFE_INTEGER) : [];
-      record.view.entries = rows.map(row => compact && row.compact !== null ? JSON.parse(row.compact as string) : ConversationEntryStore.decode(row as any, reader, row.codec === 'native-tool' || row.compact !== null, row.compact as string));
+      record.view.entries = rows.map(row => compact && row.compact !== null ? JSON.parse(row.compact as string) : ConversationEntryStore.decode(row as any, reader));
     } else {
       record.view.entries = selected.length ? (db.prepare(`SELECT ${column} AS body FROM conversation_read_entries WHERE conversation_id=? AND sequence>=? AND sequence<? ORDER BY sequence`).all(id, selected.at(-1)!, before ?? Number.MAX_SAFE_INTEGER) as Array<{body: string}>).map(row => JSON.parse(row.body)) : [];
     }

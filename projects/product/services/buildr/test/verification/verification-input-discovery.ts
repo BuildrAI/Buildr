@@ -14,10 +14,6 @@ export function discoveredVerificationFiles(step: any, files: string[]): { selec
 }
 
 export function verificationEntryFiles(executor: any): string[] {
-  // Command executors use `file` as the executable, not a source entry. Their
-  // source inventory stays conservative while executable paths remain outside
-  // the reusable recipe identity.
-  if (executor.type === 'command') return [];
   if (executor.file) return [executor.file];
   if (executor.type === 'workspace-suite' && /^[a-z][a-z-]+$/u.test(executor.selector)) return [`test/verification/workspace/${executor.selector}.ts`];
   if (executor.type === 'package-selector') return ['test/verification/package/run.ts'];

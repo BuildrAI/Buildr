@@ -166,11 +166,7 @@ export function createWorkspacePreparation(runtime: any, options: { spawnProcess
   }
   function prepareWorkspaceForOpen(id: string) {
     const resolved = runtime.resolveRegisteredWorkspace(id);
-    const entry = runtime.listRegisteredWorkspaces().workspaces.find((entry: any) => entry.workspace?.id === id);
-    // Opening a shared workspace is navigation, not a transfer of management
-    // ownership or permission to refresh its assets from candidate code.
-    if (entry?.registryScope === 'shared') return { ready: true as const, workspaceId: id };
-    const local = entry;
+    const local = runtime.listRegisteredWorkspaces().workspaces.find((entry: any) => entry.workspace?.id === id && entry.registryScope !== 'shared');
     if (!local) throw fail('workspace_management_channel_conflict', '此目录属于其他管理来源，不能从当前页面更新。');
     runtime.assertWorkspaceManagementAccess(resolved.rootPath);
     const owned = store.list().find(item => item.rootPath === fs.realpathSync(resolved.rootPath) && item.directoryIdentity === identity(resolved.rootPath) && item.status === 'preparing');

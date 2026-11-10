@@ -156,23 +156,6 @@ export function listConnectionExecutables(input: { sourceRoot: string; database?
   return [...executables];
 }
 
-/** Read-only program reference observation for storage maintenance. Any read
- * or parse failure is incomplete so callers retain the affected packages. */
-export function listConnectionProgramReferences(database: string): { complete: boolean; paths: string[] } {
-  const paths = new Set<string>();
-  let rows: ReturnType<typeof readRows>;
-  try { rows = readRows(database); } catch { return { complete: false, paths: [] }; }
-  let complete = true;
-  for (const row of rows) {
-    let record: Record<string, any>;
-    try { record = JSON.parse(row.body); } catch { complete = false; continue; }
-    for (const value of [record?.view?.executable, record?.bindingData?.executable, record?.programSource]) {
-      if (typeof value === 'string') paths.add(value);
-    }
-  }
-  return { complete, paths: [...paths] };
-}
-
 /**
  * Copies connection rows from a source environment into the preview interaction
  * database. Conversations, attachments and handoff materials are never read or

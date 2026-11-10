@@ -71,8 +71,6 @@ interface ConversationQuery {
 const live = new Map<string, LiveQuery>();
 const conversations = new Map<string, ConversationQuery>();
 const fingerprint = (records: any[]) => createHash('sha256').update(JSON.stringify(records)).digest('hex');
-/** Terminal native task notifications; `killed` is what the CLI reports for a stopped command. */
-const terminalTaskStatuses = new Set(['completed', 'failed', 'stopped', 'killed']);
 const unresolvedTool = (tool: { status: string; taskPending?: boolean }) => Boolean(tool.taskPending) || tool.status !== 'completed';
 const protectedWork = (state: LiveQuery) => state.ambiguous || state.supplementUnknown || state.pending.size > 0 || state.inputAcks.size > 0 || [...state.tools.values()].some(unresolvedTool);
 const canClose = (state: LiveQuery) => Boolean(state.terminal) && !protectedWork(state);
@@ -229,7 +227,7 @@ async function generateTitle(requestId: string, contextId: string, cwd: string, 
   try {
     if (userText !== undefined) {
       const state = await Promise.race([waitForTitleState(contextId, userText), cancelled]);
-      if (!state) throw new Error('agent_title_not_ready');
+      if (!state) throw new Error('agent_title_unavailable');
       return await requestTitle(state.q, qoderTitleMatchText(userText), cancelled);
     }
     const state = live.get(contextId);
@@ -386,24 +384,14 @@ async function readConversation(owner: ConversationQuery): Promise<void> {
         const text = visibleText(message.message?.content);
         const taskId = /<task-id>([^<>]+)<\/task-id>/.exec(text)?.[1];
         const toolId = /<tool-use-id>([^<>]+)<\/tool-use-id>/.exec(text)?.[1];
-        const status = /<status>([^<>]+)<\/status>/.exec(text)?.[1]?.trim();
+        const status = /<status>(completed|failed|stopped)<\/status>/.exec(text)?.[1];
         const tool = toolId ? state.tools.get(toolId) : undefined;
         // Text alone never establishes ownership. Require native origin and the exact launch receipt.
-        const owned = !owner.closing && !state.stopping && !state.ambiguous && tool && tool.taskId === taskId && taskId && typeof message.uuid === 'string';
-        // The status word says how the command ended; it never decides whether this turn owns it.
-        if (owned && status && terminalTaskStatuses.has(status)) {
+        if (!owner.closing && !state.stopping && !state.ambiguous && tool && tool.taskId === taskId && taskId && status && typeof message.uuid === 'string') {
           owner.reusable = false; state.terminal = undefined; state.diagnostic = undefined;
           (state.continuationIds ??= new Set()).add(message.uuid);
           owner.commandIds.add(message.uuid);
           tool.taskPending = false; tool.status = 'completed';
-          emit(state, { type: 'observation', observation: observe(state) }); continue;
-        }
-        if (owned) {
-          // An owned notification we cannot classify is not evidence of foreign work:
-          // reopen the native continuation, but do not invent a terminal tool result.
-          owner.reusable = false; state.terminal = undefined; state.diagnostic = undefined;
-          (state.continuationIds ??= new Set()).add(message.uuid);
-          owner.commandIds.add(message.uuid);
           emit(state, { type: 'observation', observation: observe(state) }); continue;
         }
         owner.reusable = false; state.ambiguous = true; state.diagnostic = 'qoder_task_owner_unconfirmed';
@@ -433,7 +421,7 @@ async function readConversation(owner: ConversationQuery): Promise<void> {
         if (text) emit(state, { type: 'item', item: { id, ...parent, kind: 'message', role: 'assistant', text, executionId: state.id, status: 'completed' } });
         for (const part of message.message?.content ?? []) if (part.type === 'tool_use') {
           state.tools.set(part.id, { id: part.id, label: String(part.name ?? '工具'), status: 'running' });
-          emit(state, { type: 'item', item: { id: part.id, ...parent, kind: 'tool', nativeTool: true, role: 'system', name: part.name || undefined, participation: nativeParticipation(part.input===undefined?undefined:JSON.stringify(part.input),undefined,'pending'), input: nativePreview(JSON.stringify(part.input ?? {})), text: String(part.name ?? '工具') + '\n' + nativePreview(JSON.stringify(part.input ?? {})), executionId: state.id, status: 'running' } });
+          emit(state, { type: 'item', item: { id: part.id, ...parent, kind: 'tool', role: 'system', name: part.name || undefined, participation: nativeParticipation(part.input===undefined?undefined:JSON.stringify(part.input),undefined,'pending'), input: nativePreview(JSON.stringify(part.input ?? {})), text: String(part.name ?? '工具') + '\n' + nativePreview(JSON.stringify(part.input ?? {})), executionId: state.id, status: 'running' } });
         }
       }
       if (message.type === 'stream_event') {
@@ -463,7 +451,7 @@ async function readConversation(owner: ConversationQuery): Promise<void> {
           const taskId = receipt?.kind === 'backgrounded' ? receipt.taskId : receipt?.backgroundTaskId;
           if (tool && typeof taskId === 'string' && taskId) { tool.taskId = taskId; tool.taskPending = true; }
           const text = nativePreview(visibleText(part.content)); state.toolDetails.set(part.tool_use_id, text);
-          emit(state, { type: 'item', item: { id: part.tool_use_id, participation: nativeParticipation(undefined,part.content===undefined?undefined:visibleText(part.content),part.is_error?'failed':'unknown'), ...parent, kind: 'tool', nativeTool: true, role: 'system', text, executionId: state.id, status: part.is_error ? 'failed' : 'completed' } });
+          emit(state, { type: 'item', item: { id: part.tool_use_id, participation: nativeParticipation(undefined,part.content===undefined?undefined:visibleText(part.content),part.is_error?'failed':'unknown'), ...parent, kind: 'tool', role: 'system', text, executionId: state.id, status: part.is_error ? 'failed' : 'completed' } });
         }
       }
       if (message.type === 'system' && message.subtype === 'task_started') { const tool = state.tools.get(message.tool_use_id); if (tool) { tool.taskId = message.task_id; tool.taskPending = true; } }
@@ -474,7 +462,7 @@ async function readConversation(owner: ConversationQuery): Promise<void> {
         if (tool && (!message.tool_use_id || tool.id === message.tool_use_id) && (!tool.taskPending || !tool.taskId || tool.taskId === message.task_id)) {
           tool.taskPending = false; tool.status = 'completed';
           const text = qoderTaskResult(state.toolDetails.get(tool.id), message);
-          if (text) { state.toolDetails.set(tool.id, text); emit(state, { type: 'item', item: { id: tool.id, kind: 'tool', nativeTool: true, role: 'system', text, executionId: state.id, status: message.status === 'failed' ? 'failed' : 'completed' } }); }
+          if (text) { state.toolDetails.set(tool.id, text); emit(state, { type: 'item', item: { id: tool.id, kind: 'tool', role: 'system', text, executionId: state.id, status: message.status === 'failed' ? 'failed' : 'completed' } }); }
         } else if (tool) { owner.reusable = false; state.ambiguous = true; state.diagnostic = 'qoder_task_owner_unconfirmed'; }
       }
       if (primary && message.type === 'result') await endRound(owner, message);

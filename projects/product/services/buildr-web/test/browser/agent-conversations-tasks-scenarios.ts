@@ -4,25 +4,6 @@ import type {AgentConversationFixture} from './agent-conversation-fixture.ts';
 /** tasks 场景使用独立准备的对话现场。 */
 export async function runTasksScenarios(fixture:AgentConversationFixture){
   const {assertFixed,capture,chooseAgent,chooseOption,closeConversation,connections,input,openDesktopConversation,page,panel,reopen,run,sentInputs,step,update,workspaceId,workspaceUrl}=fixture;
-await step('已合并任务本地验证展示集成快检而非服务范围警示',async()=>{
-  const matcher='**/service-runtime/tasks/browser-associated-task';
-  await page.route(matcher,async(route:any)=>route.fulfill({json:{
-    taskId:'browser-associated-task',title:'已合并任务',services:[],runs:[],diagnostics:[],
-    integration:{checkedAt:new Date().toISOString(),complete:true,diagnostics:[],repositories:[
-      {repositoryId:'repo',label:'业务代码库',branch:'dev',head:'a'.repeat(40),checked:2,contained:2,status:'contained',message:'已发现的关联提交均已包含在主工作库当前版本。'},
-    ]},
-  }}));
-  try {
-    await page.goto(workspaceUrl+'/tasks/browser-associated-task');
-    await page.getByText('本地验证',{exact:true}).click();
-    const runtime=page.locator('#task-local-runtime');
-    await runtime.getByText('集成快检通过',{exact:true}).waitFor();
-    assert.match(await runtime.innerText(),/业务代码库.*dev.*已包含 2\/2/s);
-    assert.doesNotMatch(await runtime.innerText(),/任务尚未明确服务范围/);
-    assert.equal(await runtime.getByRole('button',{name:'启动任务服务'}).isDisabled(),true);
-    await capture(page,'task-integrated-quick-check.png');
-  } finally { await page.unroute(matcher); }
-});
 await step('关联数量浮层零一多、跨空间同码前缀搜索及双向导航',async()=>{
   const taskId='browser-associated-task',remote=fixture.otherWorkspaceId;
   assert.ok(remote,'夹具必须提供第二个真实登记空间');
@@ -48,19 +29,7 @@ await step('关联数量浮层零一多、跨空间同码前缀搜索及双向�
   assert.equal(fixture.creations,before+1);assert.equal(fixture.conversation.taskId,taskId);
   await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
   const originalId=fixture.conversation.id,cwd=fixture.conversation.cwd;
-  const firstTitleSummaries=page.waitForResponse((response:any)=>new URL(response.url()).pathname.endsWith('/tasks/title-summaries'));
   await conversationButton().hover();await popup().getByText('已关联任务',{exact:true}).waitFor();
-  await firstTitleSummaries;
-  await page.keyboard.press('Escape');await popup().waitFor({state:'hidden'});
-  const reopenedTitleSummaries=page.waitForResponse((response:any)=>new URL(response.url()).pathname.endsWith('/tasks/title-summaries'));
-  await conversationButton().click();await popup().getByText('已关联任务',{exact:true}).waitFor();
-  await reopenedTitleSummaries;
-  const refreshedTitleSummaries=page.waitForResponse((response:any)=>new URL(response.url()).pathname.endsWith('/tasks/title-summaries'));
-  await popup().getByRole('button',{name:'刷新关联信息',exact:true}).click();
-  await refreshedTitleSummaries;
-  const changedTitleSummaries=page.waitForResponse((response:any)=>new URL(response.url()).pathname.endsWith('/tasks/title-summaries'));
-  await page.evaluate(()=>window.dispatchEvent(new Event('buildr-conversation-associations-changed')));
-  await changedTitleSummaries;
   // Measure the final popup position, not its entering transform.
   await page.waitForFunction(([body,trigger]:HTMLElement[])=>body.getBoundingClientRect().bottom<=trigger.getBoundingClientRect().top+10,[await popup().elementHandle(),await conversationButton().elementHandle()],{timeout:10_000});
   const triggerBox=await conversationButton().boundingBox(),popupBox=await popup().boundingBox();assert.ok(popupBox!.y+popupBox!.height<=triggerBox!.y+10,'底部入口向上展开');
@@ -83,8 +52,7 @@ await step('关联数量浮层零一多、跨空间同码前缀搜索及双向�
   assert.equal(await popup().getByText('正在读取任务信息…',{exact:true}).count(),0);
   const metaBoxes=await panel().locator('.ac-location-meta>span').evaluateAll((nodes:any[])=>nodes.map(node=>{const r=node.getBoundingClientRect();return {top:r.top,height:r.height};}));assert.ok(Math.abs(metaBoxes[0].top+metaBoxes[0].height/2-metaBoxes[1].top-metaBoxes[1].height/2)<2,'工作空间与关联任务横向对齐');
   assert.ok(taskSearchPages>=2,'前缀搜索必须读取包含匹配的后续页');await page.unroute(taskMatcher,taskPager);
-  const addedTitleSummaries=page.waitForResponse((response:any)=>{const url=new URL(response.url());return url.pathname.endsWith('/tasks/title-summaries')&&decodeURIComponent(url.pathname).includes('/workspaces/'+remote+'/')&&url.searchParams.get('ids')===taskId;});
-  const candidate=popup().locator('.ac-association-candidate').filter({hasText:'other-workspace'});await candidate.click();await addedTitleSummaries;
+  const candidate=popup().locator('.ac-association-candidate').filter({hasText:'other-workspace'});await candidate.click();
   await page.waitForFunction(()=>document.querySelector('#agent-conversation-panel .ac-association-trigger')?.textContent?.includes('2'));
   assert.deepEqual(fixture.conversation.taskLinks,[{workspaceId,taskId},{workspaceId:remote,taskId}]);
   assert.equal(fixture.conversation.cwd,cwd);assert.equal(fixture.conversation.workspaceId,workspaceId);assert.equal(fixture.sends,sends+1);
@@ -93,9 +61,7 @@ await step('关联数量浮层零一多、跨空间同码前缀搜索及双向�
   await linkedRow(remote).locator('.ac-association-open').click();await waitTaskWorkspace(remote);await waitTaskDetail(taskId);
   await taskButton().waitFor();await closeConversation();await taskButton().click();await popup().locator('[data-associated-conversation="'+originalId+'"]').click();
   await input().waitFor();await waitConversation(originalId);assert.equal(await panel().getAttribute('data-conversation-id'),originalId,'异空间任务打开原空间对话');assert.equal(fixture.creations,before+1);
-  const removedTitleSummaries=page.waitForResponse((response:any)=>{const url=new URL(response.url());return url.pathname.endsWith('/tasks/title-summaries')&&decodeURIComponent(url.pathname).includes('/workspaces/'+workspaceId+'/')&&url.searchParams.get('ids')===taskId;});
   await conversationButton().click();await linkedRow(remote).getByRole('button',{name:'解除关联 '+taskId,exact:true}).click();
-  await removedTitleSummaries;
   await page.waitForFunction(()=>document.querySelector('#agent-conversation-panel .ac-association-trigger')?.textContent?.includes('1'));
   assert.equal(await popup().isVisible(),true);assert.deepEqual(fixture.conversation.taskLinks,[{workspaceId,taskId}]);await page.keyboard.press('Escape');
   await closeConversation();await taskButton().click();await popup().getByText('暂无关联对话。',{exact:true}).waitFor();
@@ -157,7 +123,7 @@ await step('原生暂忙时保存待发送内容，刷新保留、仅可取消�
       update({run:run('stopping','dsh'),requests:[],pendingSend:undefined});await reopen();
       const before=fixture.sends,previewsBefore=fixture.prepares;
       await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles({name:'cancel.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64')});
-      await panel().locator('.ac-image-thumbnail[title="cancel.png"]').hover();await panel().getByRole('button',{name:'移除图片 cancel.png',exact:true}).waitFor();
+      await panel().getByRole('button',{name:'移除图片 cancel.png',exact:true}).waitFor();
       fixture.prepareError={code:'agent_process_switching',message:'原生服务正在切换。'};
       await input().fill('上一轮结束后继续修复');await input().press('Enter');
       await panel().getByText('等待发送',{exact:true}).waitFor();
@@ -182,9 +148,7 @@ await step('原生暂忙时保存待发送内容，刷新保留、仅可取消�
       await capture(page,'agent-conversation-pending-failure.png');
       update({pendingSend:pending});await page.reload();await panel().getByText('等待发送',{exact:true}).waitFor();
       await panel().getByRole('button',{name:'取消',exact:true}).click();await panel().locator('[data-pending-send-state]').waitFor({state:'hidden'});
-      assert.equal(await input().inputValue(),pending.draft.text);
-      await page.waitForFunction(()=>document.activeElement?.getAttribute('aria-label')==='对话输入');
-      assert.equal(await input().evaluate((node:HTMLElement)=>document.activeElement===node),true);
+      assert.equal(await input().inputValue(),pending.draft.text);assert.equal(await input().evaluate((node:HTMLElement)=>document.activeElement===node),true);
       assert.equal(await panel().getByRole('button',{name:'移除图片 cancel.png',exact:true}).count(),1);
       const stopsBeforeCancel=fixture.stops;
       update({pendingSend:pending});await page.reload();await input().fill('已有新草稿');
@@ -208,25 +172,25 @@ await step('原生暂忙时保存待发送内容，刷新保留、仅可取消�
     });
 
 await step('A的停止等待不阻断B，A的迟到回执不改B状态',async()=>{
-      update({run:run('running','dsh',{id:'parallel-stop-a'})});fixture.additionalConversations[0].run=run('running','codex',{id:'parallel-stop-b'});await reopen();const stopsBefore=fixture.stops;fixture.holdStop=true;const started=new Promise<void>(resolve=>{fixture.stopStarted=resolve;});await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await started;
-      await fixture.openHistoryList();await page.locator('.ac-history-list').getByText('另一段任务对话',{exact:true}).click();await panel().locator('[data-run-status="running"]').waitFor();await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();assert.equal(fixture.stops,stopsBefore+2,'B不等待A的控制请求完成');const response=page.waitForResponse((value:any)=>value.url().includes('/'+fixture.conversation.id+'/stop'));fixture.releaseStop!();await response;await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>resolve())));assert.equal(await panel().getAttribute('data-conversation-id'),'task-second');assert.equal(await panel().locator('[data-run-status="stopped"]').count(),1);
+      update({run:run('running','dsh')});fixture.additionalConversations[0].run=run('running','codex');await reopen();const stopsBefore=fixture.stops;fixture.holdStop=true;const started=new Promise<void>(resolve=>{fixture.stopStarted=resolve;});await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await started;
+      await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();await page.locator('.ac-history-list').getByText('另一段任务对话',{exact:true}).click();await panel().locator('[data-run-status="running"]').waitFor();await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();assert.equal(fixture.stops,stopsBefore+2,'B不等待A的控制请求完成');const response=page.waitForResponse((value:any)=>value.url().includes('/'+fixture.conversation.id+'/stop'));fixture.releaseStop!();await response;await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>resolve())));assert.equal(await panel().getAttribute('data-conversation-id'),'task-second');assert.equal(await panel().locator('[data-run-status="stopped"]').count(),1);
     });
 
 await step('迟到的预览与创建不得跨到另一段对话或新草稿，也不能自动执行',async()=>{
       // This scenario owns the primary source; the preceding stop test leaves B selected.
       if(await panel().getAttribute('data-conversation-id')!==fixture.conversation.id){
-        await fixture.openHistoryList();
+        await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();
         await page.locator('.ac-history-row-main[data-conversation-id="'+fixture.conversation.id+'"]').click();await input().waitFor();
       }
       const sentBefore=fixture.sends;await chooseAgent('Qoder');await input().fill('旧会话等待预览');fixture.holdPrepare=true;const preparedStarted=new Promise<void>(resolve=>{fixture.prepareStarted=resolve;});await panel().locator('.ac-transfer-notice,.ac-recovery-action').getByRole('button',{name:'交接内容',exact:true}).click();await preparedStarted;
-      await fixture.startNewConversation();await input().fill('新草稿需要保留');const previewResponse=page.waitForResponse((response:any)=>response.url().endsWith('/prepare-send'));fixture.releasePrepare!();await previewResponse;await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>resolve())));assert.equal(fixture.sends,sentBefore);assert.equal(await page.getByRole('dialog',{name:'确认发送与接续范围',exact:true}).count(),0);assert.equal(await panel().getAttribute('data-conversation-id'),null);assert.equal(await input().inputValue(),'新草稿需要保留');assert.equal(await panel().getByRole('button',{name:'发送对话',exact:true}).isEnabled(),true);
-      fixture.holdCreate=true;const createdStarted=new Promise<void>(resolve=>{fixture.createStarted=resolve;});await panel().getByRole('button',{name:'发送对话',exact:true}).click();await createdStarted;await fixture.startNewConversation();await input().fill('同为新对话，但已经是另一份草稿');const createResponse=page.waitForResponse((response:any)=>response.request().method()==='POST'&&response.url().includes('/drafts/')&&response.url().endsWith('/send'));fixture.releaseCreate!();await createResponse;await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>resolve())));assert.equal(fixture.sends,sentBefore+1);assert.equal(await panel().getAttribute('data-conversation-id'),null);assert.equal(await input().inputValue(),'同为新对话，但已经是另一份草稿');assert.equal(await page.getByRole('dialog',{name:'确认发送与接续范围',exact:true}).count(),0);
+      await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().fill('新草稿需要保留');const previewResponse=page.waitForResponse((response:any)=>response.url().endsWith('/prepare-send'));fixture.releasePrepare!();await previewResponse;await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>resolve())));assert.equal(fixture.sends,sentBefore);assert.equal(await page.getByRole('dialog',{name:'确认发送与接续范围',exact:true}).count(),0);assert.equal(await panel().getAttribute('data-conversation-id'),null);assert.equal(await input().inputValue(),'新草稿需要保留');assert.equal(await panel().getByRole('button',{name:'发送对话',exact:true}).isEnabled(),true);
+      fixture.holdCreate=true;const createdStarted=new Promise<void>(resolve=>{fixture.createStarted=resolve;});await panel().getByRole('button',{name:'发送对话',exact:true}).click();await createdStarted;await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().fill('同为新对话，但已经是另一份草稿');const createResponse=page.waitForResponse((response:any)=>response.request().method()==='POST'&&response.url().includes('/drafts/')&&response.url().endsWith('/send'));fixture.releaseCreate!();await createResponse;await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>resolve())));assert.equal(fixture.sends,sentBefore+1);assert.equal(await panel().getAttribute('data-conversation-id'),null);assert.equal(await input().inputValue(),'同为新对话，但已经是另一份草稿');assert.equal(await page.getByRole('dialog',{name:'确认发送与接续范围',exact:true}).count(),0);
     });
 
 await step('反复新建共用同一份新草稿，含权限与模型选择',async()=>{
       await input().fill('跨入口共享的草稿');await chooseOption('执行权限','完全访问');
-      await fixture.startNewConversation();await input().waitFor();assert.equal(await input().inputValue(),'跨入口共享的草稿','再次新建沿用唯一新草稿');
-      await fixture.openHistoryList();await panel().locator('.ac-history').waitFor();await fixture.startNewConversation();await input().waitFor();assert.equal(await input().inputValue(),'跨入口共享的草稿','历史视图新建仍是同一份草稿');
+      await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().waitFor();assert.equal(await input().inputValue(),'跨入口共享的草稿','再次新建沿用唯一新草稿');
+      await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();await panel().locator('.ac-history').waitFor();await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().waitFor();assert.equal(await input().inputValue(),'跨入口共享的草稿','历史视图新建仍是同一份草稿');
       assert.equal(await panel().locator('.ac-permission-select .ant-select-selection-item').innerText(),'完全访问','新建不丢弃未发送的权限选择');
       await chooseOption('执行权限','默认权限');
       await closeConversation();await panel().waitFor({state:'hidden'});await openDesktopConversation();await input().waitFor();assert.equal(await input().inputValue(),'跨入口共享的草稿','收起再打开草稿仍在');await input().fill('');
@@ -237,7 +201,7 @@ await step('创建回执迟到时保留主动收起，接受的发送在后台�
     });
 
 await step('首次创建期间继续输入，权限准确转移，切家不降级且刷新保留显式默认',async()=>{
-      const sentBefore=fixture.sends;await fixture.startNewConversation();await input().waitFor();assert.equal(await panel().locator('.ac-permission-select .ant-select-selection-item').innerText(),'默认权限','明确选回默认后，同空间新对话恢复该选择');
+      const sentBefore=fixture.sends;await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().waitFor();assert.equal(await panel().locator('.ac-permission-select .ant-select-selection-item').innerText(),'默认权限','明确选回默认后，同空间新对话恢复该选择');
       await chooseAgent('Codex');await chooseOption('执行权限','完全访问');await input().fill('首次发送的固定快照');fixture.holdCreate=true;const creating=new Promise<void>(resolve=>{fixture.createStarted=resolve;});await panel().getByRole('button',{name:'发送对话',exact:true}).click();await creating;await input().fill('创建期间继续输入的下一轮草稿');const accepted=page.waitForResponse((response:any)=>response.url().endsWith('/send'));fixture.releaseCreate!();await accepted;await panel().locator('[data-run-status="running"]').waitFor();
       assert.equal(fixture.sends,sentBefore+1);assert.equal(sentInputs.at(-1).text,'首次发送的固定快照');assert.equal(sentInputs.at(-1).permissionMode,'full-access');assert.equal(fixture.conversation.run.permissionMode,'full-access');assert.equal(await input().inputValue(),'创建期间继续输入的下一轮草稿','迁移真实会话时读取最新草稿，不覆盖创建期间的连续输入');await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
       connections[2].capabilities.permissionModes=['default'];const connectionsRead=page.waitForResponse((response:any)=>response.url().endsWith('/agent-service/connections'));await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await connectionsRead;await chooseAgent('Qoder');await panel().getByText('当前执行者不支持完全访问',{exact:true}).waitFor();assert.equal(await panel().locator('.ac-permission-select .ant-select-selection-item').innerText(),'完全访问');assert.equal(await panel().getByRole('button',{name:'发送对话',exact:true}).isDisabled(),false);await input().press('Enter');assert.equal(fixture.sends,sentBefore+1,'未支持完全访问时提示原因，不静默降级');
@@ -250,7 +214,7 @@ await step('多图上传和旧发送回执只影响对应图片，不复活已�
       fixture.holdUploadAt=fixture.attachmentUploads+2;const uploadingSecond=new Promise<void>(resolve=>{fixture.uploadStarted=resolve;});await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles([png('first.png'),png('second.png')]);await uploadingSecond;assert.equal(await panel().getByRole('button',{name:'移除图片 first.png',exact:true}).isDisabled(),true,'批次上传期间材料修改入口禁用');assert.equal(await panel().getByRole('button',{name:'发送对话',exact:true}).isDisabled(),true,'完整批次接受前不发送部分材料');const secondAccepted=page.waitForResponse((response:any)=>response.url().endsWith('/attachments'));fixture.releaseUpload!();await secondAccepted;await panel().getByRole('button',{name:'移除图片 second.png',exact:true}).waitFor();await panel().locator('.ac-image-thumbnail[title="first.png"]').hover();await panel().getByRole('button',{name:'移除图片 first.png',exact:true}).click();assert.equal(await panel().getByRole('button',{name:'移除图片 first.png',exact:true}).count(),0,'批次完成后只移除用户指定的材料');await panel().getByRole('button',{name:'发送对话',exact:true}).waitFor();
       const sentBefore=fixture.sends,submittedImage='image-fixture-'+fixture.attachmentUploads;fixture.holdSend=true;const started=new Promise<void>(resolve=>{fixture.sendStarted=resolve;});await panel().getByRole('button',{name:'发送对话',exact:true}).click();await started;assert.equal(fixture.sends,sentBefore+1);assert.deepEqual(sentInputs.at(-1).attachmentIds,[submittedImage]);assert.equal(sentInputs.at(-1).permissionMode,'default','full切回default时下一轮明确传default');assert.equal(fixture.conversation.run.permissionMode,'default');
       const activeId=fixture.conversation.id;update({title:'输入与附件竞态验证',run:run('completed','codex',{model:'fixture-model',permissionMode:'default'})});fixture.additionalConversations=[{id:'attachment-other',workspaceId:workspaceId,cwd:'/isolated/other',title:'附件验证中的另一段对话',revision:'attachment-other-r1',hidden:false,updatedAt:new Date().toISOString(),participants:[],entries:[],requests:[]}];
-      await fixture.openHistoryList();await page.locator('.ac-history-list').getByText('附件验证中的另一段对话',{exact:true}).click();await page.locator('#agent-conversation-panel[data-conversation-id="attachment-other"]').waitFor();await fixture.openHistoryList();await page.locator('.ac-history-list').getByText('输入与附件竞态验证',{exact:true}).click();await page.locator('#agent-conversation-panel[data-conversation-id="'+activeId+'"]').waitFor();await panel().locator('[data-run-status="completed"]').waitFor();
+      await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();await page.locator('.ac-history-list').getByText('附件验证中的另一段对话',{exact:true}).click();await page.locator('#agent-conversation-panel[data-conversation-id="attachment-other"]').waitFor();await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();await page.locator('.ac-history-list').getByText('输入与附件竞态验证',{exact:true}).click();await page.locator('#agent-conversation-panel[data-conversation-id="'+activeId+'"]').waitFor();await panel().locator('[data-run-status="completed"]').waitFor();
       await panel().locator('.ac-compose-wrap input[type=file]').setInputFiles(png('later.png'));await panel().getByRole('button',{name:'移除图片 later.png',exact:true}).waitFor();await input().fill('旧发送之后新增的下一轮内容');const delayedAccepted=page.waitForResponse((response:any)=>response.url().endsWith('/send'));fixture.releaseSend!();await delayedAccepted;await panel().getByRole('button',{name:'移除图片 second.png',exact:true}).waitFor({state:'hidden'});assert.equal(await panel().getByRole('button',{name:'移除图片 later.png',exact:true}).isVisible(),true,'旧发送只移除提交ID，保留切回后新添图');assert.equal(await input().inputValue(),'旧发送之后新增的下一轮内容');await panel().locator('[data-run-status="completed"]').waitFor();assert.equal(await panel().locator('.ac-permission-select .ant-select-selection-item').innerText(),'默认权限');await page.reload();await panel().locator('[data-run-status="completed"]').waitFor();assert.equal(fixture.conversation.run.permissionMode,'default','刷新读取实际run权限');
     });
 }

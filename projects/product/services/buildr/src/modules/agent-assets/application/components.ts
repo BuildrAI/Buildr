@@ -842,7 +842,7 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
       targetRoot,
       cwd: productRoot(),
     });
-    if (!['passed', 'skipped'].includes(finalDoctor.classification.status)) {
+    if (finalDoctor.classification.status !== 'passed') {
       const detail = finalDoctor.classification.diagnostic ? `\n${finalDoctor.classification.diagnostic}` : '';
       throw new Error(`Component 源资产和 runtime 已 reconcile，但 ${finalDoctor.classification.message}${detail}\n修复后运行：buildr doctor${agent === null ? '' : ` --agent ${agent}`} --adapter ${selection.adapterId} --target ${targetRoot} --json`);
     }

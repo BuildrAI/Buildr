@@ -41,22 +41,6 @@ export function enumerateCodeWorktrees(registeredLocation:string,_repositoryId:s
 
 export function resolveCodeWorktree(registeredLocation:string,repositoryId:string,worktreeId:string) {
   if(!/^checkout-[a-f0-9]{64}$/.test(worktreeId))throw codeFailure('code_worktree_invalid','工作树身份无效。');
-  // The registered checkout is a common action target. Resolve its exact ID
-  // before discovering peer identities; peer discovery grows with task count.
-  let registered: CheckoutIdentity | undefined;
-  try { registered = observeGitCheckoutReadIdentity(registeredLocation); } catch { /* Preserve the full resolver's diagnostics below. */ }
-  if (registered?.id === worktreeId) {
-    const records = codeGit(registeredLocation, ['worktree', 'list', '--porcelain', '-z'], 8 * 1024 * 1024).toString('utf8').split('\0\0').filter(Boolean);
-    const position = records.findIndex(record => record.split('\0').some(field => field.startsWith('worktree ') && sameFilesystemPath(field.slice(9), registered!.root)));
-    if (position < 0) throw codeFailure('code_worktree_not_registered', '所选工作树已移除或不属于这个登记代码库，请刷新清单。', 409);
-    let closing: CheckoutIdentity;
-    try { closing = observeGitCheckoutReadIdentity(registeredLocation); }
-    catch { throw codeFailure('code_worktree_unavailable', 'Git 已登记的工作树目录当前不可读取。', 404); }
-    if (closing.id !== registered.id) throw codeFailure('code_worktree_identity_changed', '工作树目录已不再属于该代码库，不能读取替代目录。', 409);
-    const fields = records[position].split('\0'), branch = fields.find(field => field.startsWith('branch '))?.slice(7);
-    return {worktreeId, name:path.basename(closing.root)||closing.root, location:closing.root, isMain:position === 0, isRegistered:true,
-      branch:branch?.startsWith('refs/heads/') ? branch.slice(11) : null, head:fields.find(field => field.startsWith('HEAD '))?.slice(5)||null};
-  }
   const listing=enumerateCodeWorktrees(registeredLocation,repositoryId),worktree=listing.worktrees.find(worktree=>worktree.worktreeId===worktreeId);
   if(!worktree)throw codeFailure('code_worktree_not_registered','所选工作树已移除或不属于这个登记代码库，请刷新清单。',409);
   let identity:ReturnType<typeof observeGitCheckoutReadIdentity>;

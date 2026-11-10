@@ -7,7 +7,6 @@ import test from 'node:test';
 import { createRuntime, runtimeContributions } from '../helpers/runtime-harness.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { createReleaseAwarenessHttpContribution } from '../../src/modules/installation/interfaces/http/release-awareness-http.ts';
-import { createWebStaticFixture } from '../helpers/web-static-fixture.ts';
 import { registerWorkspaceSqlite } from '../../src/infrastructure/sqlite/workspace-sqlite.ts';
 import { taskRecordFixture as fixture } from '../helpers/task-record-system-fixture.ts';
 
@@ -167,14 +166,10 @@ test('发布提示等待现有工作池时独立 HTML 先完成，保留原协�
   let release!:(value:unknown)=>void,started!:()=>void;
   const began=new Promise<void>(resolve=>{started=resolve;});
   const readExecutor={run:(operation:string,input:any)=>{assert.equal(operation,'release-awareness');assert.equal(input.targetRoot,root);started();return new Promise(resolve=>{release=resolve;});}};
-  const instance=createLocalWorkspaceServer(runtime,{targetRoot:root,staticRoot:createWebStaticFixture(path.join(base,'web')),httpContributions,readExecutor});const {url}=await instance.ready;
+  const instance=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions,readExecutor});const {url}=await instance.ready;
   t.after(()=>new Promise<void>(resolve=>instance.server.close(()=>resolve())));
-  const result={current:{version:'fixture'},tracks:{},notices:[],blockingReasons:[],nextActions:[]};
-  const pending=fetch(url+'/api/v1/release-awareness');
-  try{
-    await began;
-    const html=await fetch(url+'/');assert.equal(html.status,200);await html.text();
-    release(result);
-    const response=await pending;assert.equal(response.status,200);assert.equal((await response.json()).current.version,'fixture');
-  }finally{release?.(result);await pending.catch(()=>{});}
+  const pending=fetch(url+'/api/v1/release-awareness');await began;
+  const html=await fetch(url+'/');assert.equal(html.status,200);await html.text();
+  release({current:{version:'fixture'},tracks:{},notices:[],blockingReasons:[],nextActions:[]});
+  const response=await pending;assert.equal(response.status,200);assert.equal((await response.json()).current.version,'fixture');
 });

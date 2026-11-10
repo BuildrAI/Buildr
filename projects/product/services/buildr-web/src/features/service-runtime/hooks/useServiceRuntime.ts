@@ -1,4 +1,4 @@
-import { useCallback, useContext, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useContext, useEffect, useMemo } from 'react';
 import { api } from '../../../api';
 import { WorkspaceViewActiveContext } from '../../../app/pageTabs';
 import { useCachedWorkspaceRead, useWorkspaceReadCache } from '../../../components/WorkspaceReadCache';
@@ -7,25 +7,23 @@ import {
   type ServiceRuntimeDetail, type ServiceRuntimeOverview, type TaskRuntimeView,
 } from '../api/service-runtime-api';
 
-import { createVisiblePoller } from '../../../lib/visible-poller';
-import { serviceRuntimePollMs } from '../runtime-polling';
+const POLL_INTERVAL_MS = 5000;
 const detailKey = (workspaceId: string | null, code: string | null, taskId?: string) => JSON.stringify([workspaceId, 'runtime-detail', code, taskId ?? null]);
 
-function useServiceRuntimeRead<T extends { runs?: readonly { status: string }[]; service?: { runs: readonly { status: string }[] } } | null>(workspaceId: string | null, key: string, read: (client: ReturnType<typeof createServiceRuntimeClient>, signal: AbortSignal) => Promise<T>) {
+function useServiceRuntimeRead<T>(workspaceId: string | null, key: string, read: (client: ReturnType<typeof createServiceRuntimeClient>, signal: AbortSignal) => Promise<T>) {
   const active = useContext(WorkspaceViewActiveContext);
   const client = useMemo(() => createServiceRuntimeClient(api, workspaceId || undefined), [workspaceId]);
   const state = useCachedWorkspaceRead(key, signal => read(client, signal), Boolean(workspaceId && active));
   const refresh = useCallback((options: { silent?: boolean; invalidate?: boolean } = {}) => state.refresh({ ...options, force: true }), [state.refresh]);
-  const latest = useRef(state); latest.current = state;
-  const polling = useRef<ReturnType<typeof createVisiblePoller> | null>(null);
-  useEffect(() => { polling.current?.reschedule(); }, [state.data, state.error]);
   useEffect(() => {
     if (!active || !workspaceId) return;
-    const poller = createVisiblePoller({document, window, read: () => refresh({silent:true}), interval: () => serviceRuntimePollMs(latest.current.data, latest.current.error)});
-    polling.current = poller;
-    const onChange = (event: Event) => { if ((event as CustomEvent<{ workspaceId?: unknown }>).detail?.workspaceId === workspaceId) void poller.request(); };
+    const onFocus = () => { if (document.visibilityState === 'visible') void refresh({ silent: true }); };
+    const onChange = (event: Event) => { if ((event as CustomEvent<{ workspaceId?: unknown }>).detail?.workspaceId === workspaceId) void refresh({ silent: true }); };
+    window.addEventListener('focus', onFocus);
     window.addEventListener(SERVICE_RUNTIME_CHANGED, onChange);
-    return () => { polling.current = null; poller.dispose(); window.removeEventListener(SERVICE_RUNTIME_CHANGED, onChange); };
+    document.addEventListener('visibilitychange', onFocus);
+    const timer = setInterval(() => { if (document.visibilityState === 'visible') void refresh({ silent: true }); }, POLL_INTERVAL_MS);
+    return () => { clearInterval(timer); window.removeEventListener('focus', onFocus); window.removeEventListener(SERVICE_RUNTIME_CHANGED, onChange); document.removeEventListener('visibilitychange', onFocus); };
   }, [refresh, active, workspaceId]);
   return { ...state, refresh, active };
 }

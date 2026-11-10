@@ -1,5 +1,3 @@
-import { regenerableToolCaches, toolCacheReclaimable } from '../../storage/tool-cache.ts';
-import { qoderLegacyCaches } from './cache-storage.ts';
 import { qoderContent } from './content.ts';
 import { instructionParticipation } from '../../domain/participation.ts';
 import {generateQoderTitle} from './title.ts';
@@ -14,13 +12,13 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import type { AccountObservation, AgentExecutor, AgentRuntime, ContextRef, ExecutionRef, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorSendInput, ExecutorTitleInput, LoginObservation, PermissionMode } from '../../contracts.ts';
-import { NativeRpc, releasedNativeControl, nativeBinding, bounded, closeOwnedProcess, findExecutable, inspectVersion, accountEnvironment, nativeCommand, nativeHome, opaqueReference, parseReference, privateDirectories } from '../native-process.ts';
+import { NativeRpc, releasedNativeControl, nativeBinding, bounded, closeOwnedProcess, findExecutable, inspectVersion, isolatedEnvironment, nativeCommand, nativeHome, opaqueReference, parseReference, privateDirectories } from '../native-process.ts';
 import {readQoderIdentity,requestQoderModel,inspectQoderLogin} from '../../model-access/providers/qoder.ts';
 import { ExecutorInputRejected, type ExecutorSupplementInput, type ExecutorInputReceipt } from '../../contracts.ts';
 import { checkedGateway, consumerBinding, gatewayModel, qoderGatewayPolicy, type ExecutorGateway } from '../model-gateway.ts';
 import type { ExecutorForkInput } from '../../contracts.ts';
 const capabilities = { interaction: { policy: interactionPolicy.version, nonBlockingQuestions: false }, supplement: true, permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
-export function createQoderExecutor(): AgentExecutor { return { nativeContent: qoderContent, readReleasedControl: input => releasedNativeControl('qoder',input), readPersistedExecution: readQoderPersistedExecution, storage: { legacyDirectories: qoderLegacyCaches, diagnostics: qoderDiagnosticResources, transientDirectories: regenerableToolCaches, canReclaim: toolCacheReclaimable }, descriptor: { id: 'qoder', label: 'Qoder', capabilities }, open: options => QoderRuntime.open(options) }; }
+export function createQoderExecutor(): AgentExecutor { return { nativeContent: qoderContent, readReleasedControl: input => releasedNativeControl('qoder',input), readPersistedExecution: readQoderPersistedExecution, storage: { diagnostics: qoderDiagnosticResources, transientDirectories: ['tmp/node-compile-cache', 'cache/node-compile', 'home/.npm/_cacache'] }, descriptor: { id: 'qoder', label: 'Qoder', capabilities }, open: options => QoderRuntime.open(options) }; }
 class QoderRuntime implements AgentRuntime {
   participationInstruction?: import('../../participation-contracts.ts').ParticipationMatch;
   readonly capabilities = capabilities;
@@ -37,8 +35,6 @@ class QoderRuntime implements AgentRuntime {
   private configRoot: string;
   private contexts = new Map<string, string>();
   private handlers = new Map<string, ExecutorSendInput['onEvent']>();
-  private readonly releaseProofs = new Set<string>();
-  private releaseKey(contextRef:ContextRef,executionRef:ExecutionRef):string { return JSON.stringify([contextRef.id,executionRef.id,executionRef.data?.resourceGroup,executionRef.data?.resourceBinding]); }
   private executionHandlers = new Map<string, ExecutorSendInput['onEvent']>();
   private submissions = new Map<string, {contextId:string; settled:boolean; accepted:boolean; released?:boolean}>();
   private observations = new Map<string, ExecutorObservation>();
@@ -115,13 +111,13 @@ class QoderRuntime implements AgentRuntime {
     const { home, temporary } = nativeHome(options.configRoot);
     // qodercliAuth owns this one Buildr login; model leases isolate execution, not credentials.
     const config = join(options.nativeAccountConfigRoot ?? options.configRoot, 'qoder-config');
-    const env = accountEnvironment(options.environment, home, temporary, { QODER_CONFIG_DIR: config, ...(gateway && !gateway.nativeModel ? { QODER_SDK_CUSTOM_BASE_URL_BYOK: '1', BUILDR_MODEL_GATEWAY_KEY: gateway.apiKey, NO_PROXY: '127.0.0.1,localhost,::1', no_proxy: '127.0.0.1,localhost,::1' } : {}) }, options.cacheRoot);
-    await privateDirectories(options.configRoot, config, ...(env.HOME === home ? [home] : []), ...(env.TMPDIR === temporary ? [temporary] : []));
+    await privateDirectories(options.configRoot, home, temporary, config);
+    const env = isolatedEnvironment(options.environment, home, temporary, { QODER_CONFIG_DIR: config, ...(gateway && !gateway.nativeModel ? { QODER_SDK_CUSTOM_BASE_URL_BYOK: '1', BUILDR_MODEL_GATEWAY_KEY: gateway.apiKey, NO_PROXY: '127.0.0.1,localhost,::1', no_proxy: '127.0.0.1,localhost,::1' } : {}) }, options.cacheRoot);
     const executable = await findExecutable(options.executable, ['qodercli', 'qoder', 'qodercli.exe'], env); const version = await inspectVersion(executable, env, options.signal);
     if (!isCompatibleProgram('qoder', version)) throw new Error(`qoder_version_unsupported: requires ${nativeProgramPolicy('qoder').compatibility}`);
     const binding = await consumerBinding('qoder', executable, version, config, options);
     const sdkModule=await qoderSdkPair(executable,version);
-    const rpc = new NativeRpc(process.execPath, [fileURLToPath(new URL(import.meta.url.endsWith('.ts') ? './worker.ts' : './worker.js', import.meta.url))], { cwd: options.configRoot, env, diagnostics:options.diagnostics?event=>options.diagnostics!({...event,provider:'qoder'}):undefined });
+    const rpc = new NativeRpc(process.execPath, [fileURLToPath(new URL(import.meta.url.endsWith('.ts') ? './worker.ts' : './worker.js', import.meta.url))], { cwd: options.configRoot, env });
     const runtime = new QoderRuntime(binding.identity, rpc, executable, env, options.configRoot);
     runtime.participationInstruction = instructionParticipation('interaction-policy',(options.interaction ?? interactionPolicy).instructions);
     runtime.bindingData = binding.data;
@@ -265,13 +261,12 @@ class QoderRuntime implements AgentRuntime {
   async prepareRelease({contextRef,executionRef}:{contextRef:ContextRef;executionRef:ExecutionRef}):Promise<boolean>{
     this.reference(contextRef);
     const resource=executionRef.data;
-    if(!resource || resource.resourceContext!==contextRef.id || resource.resourceBinding!==this.bindingIdentity)return false;
+    if(!resource || resource.resourceContext!==contextRef.id || resource.resourceBinding!==this.bindingIdentity || resource.backgroundWork!==false)return false;
     // A cold history reader has no live state for the old worker. Its exact
     // process-group proof remains authoritative; never require a new-worker PID.
     if(resource.resourceGroup!==this.rpc.child.pid || this.rpc.closed)return Boolean(await this.canRelease({contextRef,executionRef}));
     const proof=await this.rpc.call('release-check',{contextId:contextRef.id,executionId:executionRef.id},5000);
-    if(proof.ended&&!proof.blocked){this.releaseProofs.add(this.releaseKey(contextRef,executionRef));return true;}
-    return false;
+    return Boolean(proof.ended&&!proof.blocked);
   }
   async canRelease({contextRef,executionRef}:{contextRef:ContextRef;executionRef:ExecutionRef}):Promise<boolean|{executionState:'ended'|'unknown'}>{
     this.reference(contextRef);
@@ -281,10 +276,7 @@ class QoderRuntime implements AgentRuntime {
       if(!proof.ended||proof.blocked)return false;
       ended=true;executionState=proof.executionState==='ended'?'ended':'unknown';
     }
-    // A live release-check supersedes the historical background-work hint.
-    // Cold observers still require the persisted proof and an absent group.
-    const reference = (ended || this.releaseProofs.has(this.releaseKey(contextRef,executionRef))) && executionRef.data ? {...executionRef,data:{...executionRef.data,backgroundWork:false}} : executionRef;
-    const released = await this.rpc.control.releaseExecution(reference,contextRef.id,this.bindingIdentity,{ended,executionState,channelClosed:this.rpc.closed});
+    const released = await this.rpc.control.releaseExecution(executionRef,contextRef.id,this.bindingIdentity,{ended,executionState,channelClosed:this.rpc.closed});
     if (released) { this.executionHandlers.delete(executionRef.id); if (this.observations.get(contextRef.id)?.executionRef?.id === executionRef.id) this.handlers.delete(contextRef.id); }
     return released;
   }

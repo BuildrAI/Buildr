@@ -529,9 +529,10 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
       await row(third).waitFor();
       assert.equal(await page.locator('#tasks-state').innerText(), '3 个任务', '同样条件返回更多任务后必须更新统计');
       await page.unroute(listPattern, slowList);
-      // Current task lists retain normal pointer interaction without goal previews.
+      // Exercise a real open hover preview before clicking, rather than racing
+      // its delay or bypassing hit testing when switching to the next row.
       await row(first).hover();
-      assert.equal(await row(first).locator('.task-goal-preview-host').count(),0);
+      await page.locator('.selectable-hover-card:visible').waitFor();
       await row(first).click();
       await initial;
       const content = page.locator('#task-node-content:visible');

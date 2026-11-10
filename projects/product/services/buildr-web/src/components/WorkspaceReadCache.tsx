@@ -4,8 +4,8 @@ import { createWorkspaceReadCache } from '../lib/workspace-read-cache';
 const Context = createContext<ReturnType<typeof createWorkspaceReadCache> | null>(null);
 
 /** The shell owns observation lifetime; changing workspace or leaving the shell clears it. */
-export function WorkspaceReadCacheProvider({ children, scopeKey }: { children: ReactNode; scopeKey?: string }) {
-  const cache = useMemo(() => createWorkspaceReadCache(), [scopeKey]);
+export function WorkspaceReadCacheProvider({ children }: { children: ReactNode }) {
+  const cache = useMemo(() => createWorkspaceReadCache(), []);
   useEffect(() => () => cache.dispose(), [cache]);
   return <Context.Provider value={cache}>{children}</Context.Provider>;
 }

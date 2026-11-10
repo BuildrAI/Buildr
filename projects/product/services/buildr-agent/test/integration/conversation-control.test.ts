@@ -51,15 +51,9 @@ test('packaged control subprocess reads, observes and precisely stops without ex
     await invoke('participation-summary',JSON.stringify({limit:50}));
     assert.deepEqual(calls.slice(4).map(call=>call.operation),['conversations.read','conversations.participation','conversations.read','conversations.participationSummary']);
     assert.equal(conversationControlInstruction(binding,process.execPath).includes(token),false);
-    await invoke('history',JSON.stringify({sourceId:'index-'+'a'.repeat(64)+'.json',roundId:'original',limit:2}));
-    await invoke('entry',JSON.stringify({entryId:'tool',revision:'b'.repeat(64)}));
-    assert.deepEqual(calls.slice(8).map(call=>call.operation),['conversations.readHistory','conversations.readEntry']);
-    assert.deepEqual(calls[9].args,[binding.scope,binding.conversationId,'tool','b'.repeat(64)]);
-    await assert.rejects(invoke('entry',JSON.stringify({entryId:'tool',revision:'invalid'})));
-    await assert.rejects(invoke('history',JSON.stringify({sourceId:'../../secret'})));
     identity.instanceId=randomUUID();
     await assert.rejects(invoke('read'),/后台身份已变化/);
-    assert.equal(calls.length,10);
+    assert.equal(calls.length,8);
   }finally{await channel.close();fs.rmSync(root,{recursive:true,force:true});}
 });
 

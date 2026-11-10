@@ -8,11 +8,10 @@ import { resolveTaskCommitRepositoryScope, type TaskRepositoryScopeDependencies,
 export type TaskCommitsDependencies = TaskRepositoryScopeDependencies;
 
 export function createTaskCommitsApplication(dependencies: TaskCommitsDependencies, limits: CommitLimits = TASK_COMMIT_LIMITS) {
-  function inspectTaskCommits(targetRoot: string, taskIdValue: string, mode: 'full' | 'quick' = 'full'): TaskCommitsResult {
+  function inspectTaskCommits(targetRoot: string, taskIdValue: string): TaskCommitsResult {
     const taskId = taskActionId(taskIdValue, 'taskId');
-    const selectedLimits = mode === 'quick' ? { ...limits, historyLimitPerRepository: Math.min(limits.historyLimitPerRepository, 1000), totalTimeoutMs: Math.min(limits.totalTimeoutMs, 2500), timeoutMs: Math.min(limits.timeoutMs, 500) } : limits;
-    const scope = resolveTaskCommitRepositoryScope(targetRoot, taskId, dependencies, selectedLimits);
-    return readTaskCommits(scope, taskId, selectedLimits);
+    const scope = resolveTaskCommitRepositoryScope(targetRoot, taskId, dependencies, limits);
+    return readTaskCommits(scope, taskId, limits);
   }
   return Object.freeze({ inspectTaskCommits });
 }

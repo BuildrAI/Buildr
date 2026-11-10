@@ -5,7 +5,7 @@ import process from 'node:process';
 
 import { productDataRoot } from '../../../infrastructure/filesystem/product-data-root.ts';
 import { withExclusiveFileLock } from '../../../infrastructure/filesystem/exclusive-file-lock.ts';
-import { isConfirmedMissingPath, sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.ts';
+import { isConfirmedMissingPath } from '../../../infrastructure/filesystem/filesystem-path-identity.ts';
 
 export const WORKSPACE_REGISTRY_SCHEMA = 'buildr.local-workspace-registry/v1';
 
@@ -25,12 +25,10 @@ export type WorkspaceRegistryRepositoryRuntime = {
 export type WorkspaceRegistryRepositoryOptions = {
   productIdentity?: ProductIdentity;
   readProductIdentity?: () => ProductIdentity;
-  resolveWebProfile?: (identity: ProductIdentity, options: any) => WebProfile;
+  resolveWebProfile?: (identity: ProductIdentity, options: WorkspaceRegistryRepositoryOptions) => WebProfile;
   webProfile?: WebProfile;
   /** 预览实例读取的共享 Profile 登记文件；null 表示本实例登记列表不合并共享条目。 */
   sharedRegistryFile?: string | null;
-  /** 该 Profile 的共享长期登记文件；用于按文件真实身份判定共享范围。默认按 Profile 默认数据根计算。 */
-  sharedProfileRegistryFile?: string;
 };
 
 function registryRevision(content: any) {
@@ -93,9 +91,6 @@ export function resolvePreviewSharedRegistryFile(webProfile: WebProfile, env: No
   let instance: string | null = null;
   try {
     const owner = JSON.parse(raw);
-    // A task snapshot shares the canonical UUID but owns a different data root;
-    // merging the real workspace here would make that identity ambiguous.
-    if (owner?.workspaceMode === 'snapshot') return null;
     if (owner && typeof owner.instance === 'string') instance = owner.instance;
   } catch { return null; }
   if (!instance) return null;
@@ -111,27 +106,16 @@ export function createWorkspaceRegistryRepository(runtime: WorkspaceRegistryRepo
   if (!productIdentity) throw new Error('Workspace registry repository requires the System Installation identity port.');
   if (typeof options.resolveWebProfile !== 'function') throw new Error('Workspace registry repository requires the System Installation Web Profile contract.');
   const resolveWebProfile = options.resolveWebProfile;
-  const identity: ProductIdentity = productIdentity;
   const webProfile = options.webProfile || resolveWebProfile(productIdentity, options);
   const sharedRegistryFile = options.sharedRegistryFile !== undefined ? options.sharedRegistryFile : resolvePreviewSharedRegistryFile(webProfile);
-  const injectedSharedProfileRegistryFile = options.sharedProfileRegistryFile !== undefined
-    ? path.resolve(options.sharedProfileRegistryFile)
-    : null;
 
   function workspaceRegistryPath() {
     return path.join(webProfile.dataRoot, 'workspace-registry.json');
   }
 
-  /** 该 Profile 的共享长期登记文件：去除覆盖变量后的默认数据根下的登记文件。 */
-  function sharedProfileRegistryPath() {
-    if (injectedSharedProfileRegistryFile) return injectedSharedProfileRegistryFile;
-    const canonical = resolveWebProfile(identity, { env: { ...process.env, BUILDR_APP_DATA_DIR: '' } });
-    return path.join(canonical.dataRoot, 'workspace-registry.json');
-  }
-
-  /** 当前实例是否写入共享 Profile 登记列表：按写入文件真实身份判定，而非是否设置覆盖变量。 */
+  /** 当前实例是否写入共享 Profile 登记列表（未隔离数据根）。预览与显式覆盖都不算共享。 */
   function isSharedRegistryScope() {
-    return sameFilesystemPath(workspaceRegistryPath(), sharedProfileRegistryPath());
+    return webProfile.overridden !== true;
   }
 
   /** 预览上下文读取共享 Profile 的 roots；共享文件缺失或损坏时返回空列表，不阻断本实例读取。 */

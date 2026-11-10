@@ -9,7 +9,7 @@ import { assertMinimumNodeVersion, spawnCommandSync } from '../../src/infrastruc
 import { candidateEnvironmentPlan, prepareCandidateEnvironment } from '../../tools/verification/candidate-environment.ts';
 import { CANDIDATE_CI_HOST_NODE_TUPLES, CANDIDATE_CI_SHARDS } from './registry.ts';
 import { readCandidateCiArtifact, resolveCandidateExecutionContext, resolveCandidateSourceCommit } from './candidate-ci-evidence.ts';
-import { createCandidateCheckInputReader } from './candidate-check-inputs.ts';
+import { createCandidateCheckInputReader } from '../../../../../../skills/buildr-release/scripts/candidate-source-binding.ts';
 import { candidateProofDefinition, candidateProofDescriptors } from './candidate-repair.ts';
 import { assertFrozenCandidateCheckout, validateCandidateArtifactEvidence } from './candidate-artifact-reuse.ts';
 import { resolveExactNodeExecutable } from './required-node.ts';

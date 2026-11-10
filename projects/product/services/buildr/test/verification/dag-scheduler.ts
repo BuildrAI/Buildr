@@ -36,6 +36,10 @@ function failedDependency(step: any, results: any): any  {
   return (step.dependsOn ?? []).find((id: any) => results.has(id) && results.get(id).status !== 'passed');
 }
 
+function dependenciesPassed(step: any, results: any): any  {
+  return (step.dependsOn ?? []).every((id: any) => results.get(id)?.status === 'passed');
+}
+
 function normalizedLimits(requested: any, plan: any): any  {
   if (Number.isInteger(requested)) return { global: requested, classes: { default: requested }, resources: {}, capacities: { workers: requested, processes: requested, git: requested, workspaceIo: requested } };
   if (requested) return { ...requested, capacities: requested.capacities ?? { workers: requested.global, processes: requested.global, git: requested.global, workspaceIo: requested.global } };
@@ -73,21 +77,7 @@ export async function runVerificationDag(plan: any, options: any = {}): Promise<
   for (const [name, value] of Object.entries(limits.capacities ?? {})) {
     if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) throw new Error(`Invalid resource capacity for ${name}`);
   }
-  for (const step of plan.steps) for (const [resource, units] of Object.entries(step.resourceUnits ?? {})) {
-    if (!(step.resources ?? []).includes(resource) || typeof units !== 'number' || !Number.isInteger(units) || units < 1) throw new Error(`Invalid resource units for ${step.id}: ${resource}`);
-    if (units > (limits.resources?.[resource] ?? 0)) throw new Error(`Unsatisfied resource units for ${step.id}: ${resource}`);
-  }
   const schedulingMode: any = parseVerificationSchedulingMode(options.schedulingMode);
-  const priorityResourceInput: any = options.priorityResources ?? [];
-  if (!Array.isArray(priorityResourceInput) || priorityResourceInput.some((resource: any) => typeof resource !== 'string')) {
-    throw new Error('priorityResources must be an array of resource names');
-  }
-  const priorityResources: string[] = [...new Set<string>(priorityResourceInput)];
-  for (const resource of priorityResources) {
-    if (!Number.isInteger(limits.resources?.[resource]) || limits.resources[resource] < 1) {
-      throw new Error(`Invalid priority resource: ${resource}`);
-    }
-  }
   const planIndex: any = new Map(plan.steps.map((step: any, index: any) => [step.id, index]));
   const schedulingPriorities: any = createVerificationSchedulingPriorities(plan);
   const pending: any = new Map(plan.steps.map((step: any) => [step.id, step]));
@@ -103,52 +93,33 @@ export async function runVerificationDag(plan: any, options: any = {}): Promise<
     if (!Number.isInteger(capacity) || capacity < (value as number)) throw new Error(`Unsatisfied ${dimension} resource demand for ${step.id}: demand=${value} capacity=${capacity ?? 'missing'}`);
   }
 
-  let schedulingEventAtMs = queuedAtMs;
-  const waiting = new Map<string, { reasons: string[]; since: number }>();
-  const waits = new Map<string, any[]>();
-  const observeWait = (step: any, reasons: string[]) => {
-    const previous = waiting.get(step.id);
-    if (previous && previous.reasons.join('|') === reasons.join('|')) return;
-    if (previous) {
-      const history = waits.get(step.id) ?? [];
-      history.push({ scope: 'local-admission', reasons: previous.reasons,
-        startedAt: new Date(previous.since).toISOString(), finishedAt: new Date(schedulingEventAtMs).toISOString(),
-        durationMs: Math.max(0, schedulingEventAtMs - previous.since) });
-      waits.set(step.id, history);
-    }
-    if (reasons.length) waiting.set(step.id, { reasons, since: schedulingEventAtMs });
-    else waiting.delete(step.id);
-  };
-
-  const admissionReasons: any = (step: any) => {
-    const reasons: string[] = [];
-    if (active.size >= limits.global) reasons.push('global-capacity');
+  const capacityAvailable: any = (step: any) => {
+    if (active.size >= limits.global) return false;
     const concurrencyClass: any = step.concurrencyClass || 'default';
     const classLimit: any = limits.classes[concurrencyClass] ?? limits.global;
     if (!Number.isInteger(classLimit) || classLimit < 1) throw new Error(`Invalid concurrency limit for ${concurrencyClass}`);
-    if ((activeByClass.get(concurrencyClass) ?? 0) >= classLimit) reasons.push(`class:${concurrencyClass}`);
+    if ((activeByClass.get(concurrencyClass) ?? 0) >= classLimit) return false;
     for (const resource of step.resources ?? []) {
       const resourceLimit: any = limits.resources?.[resource];
       if (!Number.isInteger(resourceLimit) || resourceLimit < 1) throw new Error(`Invalid concurrency limit for resource ${resource}`);
-      if ((activeByResource.get(resource) ?? 0) + (step.resourceUnits?.[resource] ?? 1) > resourceLimit) reasons.push(`resource:${resource}`);
+      if ((activeByResource.get(resource) ?? 0) >= resourceLimit) return false;
     }
     for (const [dimension, demand] of Object.entries(demandByStep.get(step.id))) {
-      if ((activeDemand.get(dimension) ?? 0) + demand > limits.capacities[dimension]) reasons.push(`capacity:${dimension}`);
+      if ((activeDemand.get(dimension) ?? 0) + demand > limits.capacities[dimension]) return false;
     }
     const exclusiveRunning: any = [...active.values()].some((item: any) => (item.step.concurrencyClass || 'default') === 'exclusive');
-    if (exclusiveRunning) reasons.push('exclusive-running');
-    if (concurrencyClass === 'exclusive' && active.size > 0) reasons.push('exclusive-needs-idle');
-    return reasons;
+    if (exclusiveRunning) return false;
+    if (concurrencyClass === 'exclusive' && active.size > 0) return false;
+    return true;
   };
 
   const launch: any = (step: any) => {
-    observeWait(step, []);
     let startedAtMs: any = null;
     const concurrencyClass: any = step.concurrencyClass || 'default';
     const resourceGrant: any = demandByStep.get(step.id);
     pending.delete(step.id);
     activeByClass.set(concurrencyClass, (activeByClass.get(concurrencyClass) ?? 0) + 1);
-    for (const resource of step.resources ?? []) activeByResource.set(resource, (activeByResource.get(resource) ?? 0) + (step.resourceUnits?.[resource] ?? 1));
+    for (const resource of step.resources ?? []) activeByResource.set(resource, (activeByResource.get(resource) ?? 0) + 1);
     for (const [dimension, demand] of Object.entries(resourceGrant)) activeDemand.set(dimension, (activeDemand.get(dimension) ?? 0) + demand);
     let resourceHandle: any = null;
     const promise: any = Promise.resolve().then(async () => {
@@ -158,7 +129,6 @@ export async function runVerificationDag(plan: any, options: any = {}): Promise<
         : null;
       if (options.signal?.aborted) return { status: 'blocked', exitCode: null, durationMs: 0, reason: 'execution cancelled before start', failureCode: 'capability-cancelled' };
       startedAtMs = now();
-      schedulingEventAtMs = Math.max(schedulingEventAtMs, startedAtMs);
       options.onStart?.(step, resourceGrant);
       return execute(step, { resourceEnvironment: resourceHandle?.environment || {}, executionProfile: options.executionProfile, resourceGrant });
     }).then((result: any) => ({ id: step.id, title: step.title, name: step.name, ...result }), (error: any) => ({
@@ -167,10 +137,9 @@ export async function runVerificationDag(plan: any, options: any = {}): Promise<
       const release: any = resourceHandle ? await resourceHandle.release() : [];
       const releaseFailed: any = release.some((item: any) => !['released', 'not-applicable'].includes(item.status));
       const finishedAtMs: any = now();
-      schedulingEventAtMs = Math.max(schedulingEventAtMs, finishedAtMs);
       const scheduledResult: any = {
         ...result,
-        scheduling: Object.freeze({ mode: schedulingMode, ...schedulingPriorities.get(step.id), demand: resourceGrant, grant: resourceGrant, ...(waits.has(step.id) ? { waits: waits.get(step.id) } : {}) }),
+        scheduling: Object.freeze({ mode: schedulingMode, ...schedulingPriorities.get(step.id), demand: resourceGrant, grant: resourceGrant }),
         ...(resourceHandle ? { resourceCoordination: { waitDurationMs: resourceHandle.waitDurationMs, acquiredAt: resourceHandle.acquiredAt, claims: resourceHandle.claims.map(({ heartbeat, directory, token, ...claim }: any) => claim), release } } : {}),
         ...(releaseFailed && result.status === 'passed' ? { status: 'failed', exitCode: 1, stderr: `${result.stderr || ''}Verification resource cleanup did not preserve ownership.\n` } : {}),
         queuedAt,
@@ -182,7 +151,7 @@ export async function runVerificationDag(plan: any, options: any = {}): Promise<
       };
       active.delete(step.id);
       activeByClass.set(concurrencyClass, activeByClass.get(concurrencyClass) - 1);
-      for (const resource of step.resources ?? []) activeByResource.set(resource, activeByResource.get(resource) - (step.resourceUnits?.[resource] ?? 1));
+      for (const resource of step.resources ?? []) activeByResource.set(resource, activeByResource.get(resource) - 1);
       for (const [dimension, demand] of Object.entries(resourceGrant)) activeDemand.set(dimension, activeDemand.get(dimension) - (demand as number));
       results.set(step.id, scheduledResult);
       options.onComplete?.(scheduledResult, step);
@@ -192,16 +161,6 @@ export async function runVerificationDag(plan: any, options: any = {}): Promise<
   };
 
   const pendingInSchedulingOrder: any = () => [...pending.values()].sort((left: any, right: any) => {
-    // A scarce resource with an idle slot is worth filling before ordinary
-    // work. Once every priority slot is occupied, normal ordering applies so
-    // unrelated checks keep progressing instead of waiting for a browser turn.
-    const freePriorityResources: string[] = priorityResources.filter((resource: string) =>
-      (activeByResource.get(resource) ?? 0) < limits.resources[resource]);
-    if (freePriorityResources.length > 0) {
-      const leftPriority: any = (left.resources ?? []).some((resource: string) => freePriorityResources.includes(resource));
-      const rightPriority: any = (right.resources ?? []).some((resource: string) => freePriorityResources.includes(resource));
-      if (leftPriority !== rightPriority) return leftPriority ? -1 : 1;
-    }
     if (schedulingMode === 'critical-path') {
       const leftPriority: any = schedulingPriorities.get(left.id);
       const rightPriority: any = schedulingPriorities.get(right.id);
@@ -223,10 +182,8 @@ export async function runVerificationDag(plan: any, options: any = {}): Promise<
     let progressed: any = false;
     if (options.signal?.aborted) {
       for (const step of pending.values()) {
-        schedulingEventAtMs = Math.max(schedulingEventAtMs, now());
-        observeWait(step, []);
         const result = { id: step.id, title: step.title, name: step.name, status: 'blocked', exitCode: null, signal: null, durationMs: 0,
-          stdout: '', stderr: '', reason: 'execution cancelled before start', failureCode: 'capability-cancelled', queuedAt, blockedAt: new Date(schedulingEventAtMs).toISOString(), ...(waits.has(step.id) ? { scheduling: { mode: schedulingMode, waits: waits.get(step.id) } } : {}) };
+          stdout: '', stderr: '', reason: 'execution cancelled before start', failureCode: 'capability-cancelled', queuedAt, blockedAt: new Date(now()).toISOString() };
         results.set(step.id, result);
         options.onComplete?.(result, step);
       }
@@ -237,20 +194,16 @@ export async function runVerificationDag(plan: any, options: any = {}): Promise<
       if (!blockedBy) continue;
       pending.delete(step.id);
       const blockedAtMs: any = now();
-      schedulingEventAtMs = Math.max(schedulingEventAtMs, blockedAtMs);
-      observeWait(step, []);
-      const result: any = { id: step.id, title: step.title, name: step.name, status: 'blocked', exitCode: null, signal: null, durationMs: 0, stdout: '', stderr: '', blockedBy, reason: `dependency ${blockedBy} did not pass`, queuedAt, blockedAt: new Date(blockedAtMs).toISOString(), ...(waits.has(step.id) ? { scheduling: { mode: schedulingMode, waits: waits.get(step.id) } } : {}) };
+      const result: any = { id: step.id, title: step.title, name: step.name, status: 'blocked', exitCode: null, signal: null, durationMs: 0, stdout: '', stderr: '', blockedBy, reason: `dependency ${blockedBy} did not pass`, queuedAt, blockedAt: new Date(blockedAtMs).toISOString() };
       results.set(step.id, result);
       options.onComplete?.(result, step);
       progressed = true;
     }
     for (const step of pendingInSchedulingOrder()) {
-      const dependencies = (step.dependsOn ?? []).filter((id: string) => results.get(id)?.status !== 'passed');
-      const reasons = dependencies.length ? dependencies.map((id: string) => `dependency:${id}`) : admissionReasons(step);
-      if (reasons.length) { observeWait(step, reasons); continue; }
+      if (!dependenciesPassed(step, results) || !capacityAvailable(step)) continue;
       launch(step);
       progressed = true;
-
+      if ((step.concurrencyClass || 'default') === 'exclusive') break;
     }
     if (active.size > 0) {
       await Promise.race([...active.values()].map((item: any) => item.promise));

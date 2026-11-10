@@ -1,5 +1,4 @@
 import os from 'node:os';
-import fs from 'node:fs';
 import { createCandidateRoundExecution } from './candidate-round.ts';
 import path from 'node:path';
 import { createTestContextPool } from '../context/runtime.ts';
@@ -41,67 +40,6 @@ export async function prepareVerificationReuse(plan: any, prepare: (steps: any[]
   }
 }
 
-/** Private lifecycle fixtures need IO headroom, not ownership of unrelated checks.
- * A bounded two-slot claim lets at most two heavy groups share a four-slot budget,
- * while capacity three or below keeps their previous mutual exclusion.
- * Keep worker grants unchanged: they also control actual child concurrency. */
-export function localExecutionStep(step: any, profile: any, concurrency: any): any {
-  if (!['local', 'local-auto'].includes(profile?.id)) return step;
-  const agentProcess = step.service === 'buildr-agent'
-    && step.testing?.executionBoundary === 'Integration' && step.resources?.includes('agent-process-tests');
-  if (!agentProcess && !['integration-archify', 'e2e-nested-git'].includes(step.id)) return step;
-  const workspaceIo = Number.isInteger(concurrency) ? concurrency : concurrency.capacities?.workspaceIo;
-  if (!Number.isInteger(workspaceIo) || workspaceIo < 1) return step;
-  return { ...step, concurrencyClass: 'workspace-heavy',
-    resourceDemand: { ...step.resourceDemand, workspaceIo: Math.min(2, workspaceIo) } };
-}
-
-/** A verified cache hit executes no child and occupies no declared resources. */
-export function reusedExecutionStep(step: any): any {
-  return { ...step, resources: [], resourceClaims: [], resourceUnits: {}, concurrencyClass: 'default', resourceDemand: { workers: 1, processes: 1 } };
-}
-
-/** Run compatible browser selectors through one real host. The representative
- * keeps the browser slot and the other members wait on it without launching a
- * second server or browser. A single selected member never expands to its
- * bundle, so focused diagnosis keeps its original scope. */
-export function bundleBrowserExecutionSteps(steps: any[], isReused: (id: string) => boolean = () => false): any {
-  const groups = new Map<string, any[]>();
-  for (const step of steps) {
-    if (!step.browserBundle || isReused(step.id)) continue;
-    const members = groups.get(step.browserBundle) ?? [];
-    members.push(step);
-    groups.set(step.browserBundle, members);
-  }
-  const replacements = new Map<string, any>();
-  const coveredBy = new Map<string, string>();
-  for (const members of groups.values()) {
-    if (members.length < 2) continue;
-    const selectors = members.map(member => member.browserSelector).filter(Boolean);
-    if (selectors.length !== members.length) continue;
-    const representative = members[0];
-    const estimatedCostMs = members.reduce((total: number, member: any) => total + (member.schedulingCostMs ?? 0), 0);
-    replacements.set(representative.id, {
-      ...representative,
-      browserSelectors: selectors,
-      executor: { ...representative.executor, args: ['--selector', selectors.join(','), '--run'] },
-      schedulingCostMs: estimatedCostMs,
-      timeoutMs: Math.min(900_000, Math.max(600_000, estimatedCostMs + 120_000)),
-    });
-    for (const member of members.slice(1)) {
-      replacements.set(member.id, {
-        ...member,
-        dependsOn: [...new Set([...(member.dependsOn ?? []), representative.id])],
-        resources: [], resourceClaims: [], resourceUnits: {},
-        concurrencyClass: 'default',
-        resourceDemand: { workers: 1, processes: 1 },
-      });
-      coveredBy.set(member.id, representative.id);
-    }
-  }
-  return { steps: steps.map(step => replacements.get(step.id) ?? step), coveredBy };
-}
-
 export async function executePlan(plan: any, options: any): Promise<any>  {
   if (plan.status === 'blocked') throw new Error(plan.diagnostic?.message ?? 'Verification plan is blocked.');
   const planStartedAt = Date.now();
@@ -113,18 +51,10 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
   let completed: any = 0;
   const heartbeatIntervalMs: any = Number.isFinite(options.heartbeatIntervalMs) && options.heartbeatIntervalMs > 0 ? options.heartbeatIntervalMs : 15_000;
   const concurrency: any = options.concurrency ?? VERIFICATION_CONCURRENCY;
-  const preparations: Map<string, Promise<any>> = options.preparations ?? new Map();
-  if (!options.packageAdapter && plan.steps.some((step: any) => step.executor?.type === 'candidate-artifact' || step.executor?.consumesArtifact)) {
-    const { loadCandidatePackageAdapter } = await import('./package-adapter.ts');
-    options = { ...options, packageAdapter: await loadCandidatePackageAdapter() };
-  }
+  const preparations = new Map<string, Promise<any>>();
   const observeReuse = () => createCandidateRoundExecution(plan, options) ?? createVerificationPlanReuse(plan, options);
   const preflight = options.executorFactory ? null : createVerificationExecutor({ ...options, diagnosticsDirectory, artifactDirectory, preparations });
-  const forced = options.reuse?.force === true || (options.env ?? process.env).BUILDR_VERIFICATION_FORCE === '1';
-  // A forced run has no reusable checks. Observe once after owned preparation,
-  // while retaining the mandatory post-execution content/cleanup validation.
-  if (preflight && forced) await preflight.prepareSteps(plan.steps);
-  const reuse = preflight && !forced ? await prepareVerificationReuse(plan, preflight.prepareSteps, observeReuse) : observeReuse();
+  const reuse = preflight ? await prepareVerificationReuse(plan, preflight.prepareSteps, observeReuse) : observeReuse();
   if (reuse?.explanation) {
     const estimate = reuse.explanation.estimate;
     options.stream?.write(`[${prefix}] plan: execute=${estimate.executedCount} reuse=${estimate.reusedCount} remaining-work=${estimate.remainingWorkMs}ms dependency-path=${estimate.dependencyCriticalPathMs}ms (history/declared targets; queue/preparation excluded)\n`);
@@ -142,13 +72,10 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
   });
   // Provider implementations may load the full Product runtime. Keep them out of
   // the clean-checkout Candidate aggregate import graph until execution starts.
-  const requiredContextKeys = plan.steps.filter((step: any) => !reuse?.hits.has(step.id)).flatMap((step: any) => step.contexts ?? []);
-  const { TEST_CONTEXT_PROVIDERS }: any = requiredContextKeys.length || options.contextPoolFactory ? await import('../context/registry.ts') : { TEST_CONTEXT_PROVIDERS: [] };
-  const contextEnvironment = { ...process.env, ...(options.env ?? {}) };
-  delete contextEnvironment.BUILDR_VERIFICATION_FORCE;
+  const { TEST_CONTEXT_PROVIDERS }: any = await import('../context/registry.ts');
   const contextPool: any = (options.contextPoolFactory ?? createTestContextPool)({
     providers: TEST_CONTEXT_PROVIDERS,
-    env: contextEnvironment,
+    env: { ...process.env, ...(options.env ?? {}) },
   });
   const contextKeys: any[] = [...new Set(plan.steps.filter((step: any) => !reuse?.hits.has(step.id)).flatMap((step: any) => step.contexts ?? []))];
   const preparedContexts: any[] = [];
@@ -161,41 +88,11 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
     options.stream?.write(`[${prefix}] context: ${context.provider.key} status=${context.owned ? 'prepared' : 'reused'} prepare=${context.prepareDurationMs}ms identity=${context.marker.identity}\n`);
   }
   timings.contextPreparationMs = Date.now() - contextsStartedAt;
-  // Browser processes validate and materialize the Agent runtime independently.
-  // Prepare one immutable unit for the whole plan and let each process copy it.
-  const browserWork = plan.steps.some((step: any) => !reuse?.hits.has(step.id) && (step.browserSelector || String(step.id).startsWith('e2e-browser:')));
-  let preparedAgentRuntime: string | null = null;
-  let preparedAgentRuntimeRoot: string | null = null;
-  if (browserWork && (options.env ?? process.env).BUILDR_AGENT_PREPARED_RUNTIME_REUSE !== '0') {
-    const startedAt = Date.now();
-    try {
-      const { prepareSharedAgentRuntime } = await import('../helpers/prepared-agent-runtime.ts');
-      preparedAgentRuntimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-plan-agent-runtime-'));
-      preparedAgentRuntime = prepareSharedAgentRuntime({ productRoot: options.productRoot ?? process.cwd(), root: preparedAgentRuntimeRoot });
-      options.stream?.write(`[${prefix}] agent runtime: prepared one Browser seed in ${Date.now() - startedAt}ms\n`);
-    } catch (error: any) {
-      // Reuse is an optimization; each Browser process can still prepare locally.
-      options.errorStream?.write(`[${prefix}] agent runtime seed unavailable: ${error.message}\n`);
-      preparedAgentRuntime = null;
-      if (preparedAgentRuntimeRoot) fs.rmSync(preparedAgentRuntimeRoot, { recursive: true, force: true });
-      preparedAgentRuntimeRoot = null;
-    }
-    timings.agentRuntimePreparationMs = Date.now() - startedAt;
-  }
   const executorFactory: any = options.executorFactory ?? createVerificationExecutor;
-  const executionEnvironment: any = {
-    ...(options.env ?? process.env),
-    ...contextPool.environment(),
-    ...(options.executionProfile?.id ? { BUILDR_VERIFICATION_PROFILE: options.executionProfile.id } : {}),
-  };
-  // Never let an inherited seed from another run reach a Browser process when
-  // this plan could not prepare one from the current package.
-  if (browserWork && !preparedAgentRuntime) delete executionEnvironment.BUILDR_AGENT_PREPARED_RUNTIME_SEED;
-  if (preparedAgentRuntime) executionEnvironment.BUILDR_AGENT_PREPARED_RUNTIME_SEED = preparedAgentRuntime;
   const executeFresh: any = executorFactory({
     ...options,
     preparations,
-    env: executionEnvironment,
+    env: { ...(options.env ?? process.env), ...contextPool.environment() },
     diagnosticsDirectory,
     artifactDirectory,
     onProcessStart(step: any, processIdentity: any): any  {
@@ -204,14 +101,7 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
       options.onProcessStart?.(step, processIdentity);
     },
   });
-  let coveredBrowserSteps: Map<string, string> = new Map();
   const execute: any = (step: any, executionContext: any) => {
-    if (coveredBrowserSteps.has(step.id)) {
-      return Promise.resolve({
-        status: 'passed', exitCode: 0, durationMs: 0, stdout: '', stderr: '',
-        coveredBy: coveredBrowserSteps.get(step.id),
-      });
-    }
     const failedContext = (step.contexts ?? []).find((key: string) => contextFailures.has(key));
     if (failedContext) return Promise.resolve({ status: 'blocked', exitCode: 1, durationMs: 0, stdout: '', stderr: '', reason: `Required context ${failedContext} is unavailable: ${contextFailures.get(failedContext)}` });
     const record = reuse?.hits.get(step.id);
@@ -227,25 +117,19 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
   let results: any;
   let contextCleanup: any = null;
   try {
-    const baseExecutionPlan = { ...plan, steps: plan.steps.map((step: any) => reuse?.hits.has(step.id)
-      ? reusedExecutionStep(step)
-      : localExecutionStep(step, options.executionProfile, concurrency)) };
-    const bundledExecution = bundleBrowserExecutionSteps(baseExecutionPlan.steps, (id: string) => Boolean(reuse?.hits.has(id)));
-    coveredBrowserSteps = bundledExecution.coveredBy;
-    const executionPlan = { ...baseExecutionPlan, steps: bundledExecution.steps };
+    const executionPlan = { ...plan, steps: plan.steps.map((step: any) => reuse?.hits.has(step.id)
+      ? { ...step, resources: [], resourceClaims: [], concurrencyClass: 'default', resourceDemand: { workers: 1, processes: 1 } }
+      : step) };
     results = await runVerificationDag(executionPlan, {
       execute,
       concurrency,
       schedulingMode: options.schedulingMode,
-      ...(concurrency?.resources?.['browser-runtime']
-        ? { priorityResources: options.priorityResources ?? ['browser-runtime'] }
-        : {}),
       executionProfile: options.executionProfile,
       resourceCoordinator,
       signal: options.signal,
       onStart: (step: any) => {
         active.set(step.id, { startedAtMs: Date.now(), pid: null, processGroupId: null });
-        options.stream?.write(`\n[${prefix}] ${step.id}: ${step.name} concurrency=${step.concurrencyClass}\n`);
+        options.stream?.write(`\n[${prefix}] ${step.id}: ${step.name}\n`);
         options.onStart?.(step);
       },
       onComplete: (result: any, step: any) => {
@@ -275,10 +159,7 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
       // successful cleanup and ownership facts from their original run.
       reuse?.invalidate();
       throw error;
-    } finally {
-      timings.contextCleanupMs = Date.now() - cleanupStartedAt;
-      if (preparedAgentRuntimeRoot) fs.rmSync(preparedAgentRuntimeRoot, { recursive: true, force: true });
-    }
+    } finally { timings.contextCleanupMs = Date.now() - cleanupStartedAt; }
   }
   // An interrupted child may have left a process touching shared inputs. Keep
   // completed checks only after both child ownership and pool cleanup are known.

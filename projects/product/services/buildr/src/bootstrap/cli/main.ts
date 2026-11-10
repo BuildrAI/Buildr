@@ -1,5 +1,4 @@
 import process from 'node:process';
-import { isVersionRequest, printVersion } from './identity.ts';
 import fs from 'node:fs';
 import { streamRemoteText } from '../../infrastructure/network/stream-remote-text.ts';
 import { captureWebRestartAttempt } from '../../web/startup-context.ts';
@@ -51,7 +50,6 @@ async function runInternalProductAction(argv: string[]): Promise<boolean> {
 export async function runCli(argv: string[] = process.argv): Promise<unknown> {
   captureWebRestartAttempt(argv);
   if (await runInternalProductAction(argv)) return;
-  if (isVersionRequest(argv.slice(2))) return printVersion(argv.slice(2));
   if (process.env.BUILDR_TEST_FAIL_FULL_BOOTSTRAP === '1') throw new Error('Injected full runtime bootstrap failure.');
   const { dispatch } = await import('./registry.ts');
   return dispatch(argv);

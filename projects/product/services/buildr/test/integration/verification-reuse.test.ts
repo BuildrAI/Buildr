@@ -3,52 +3,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { collectVerificationReuseSnapshot, createVerificationReuseIdentity, createVerificationReuseStore,
+import { createVerificationReuseIdentity, createVerificationReuseStore,
   type VerificationReuseSnapshot, type VerificationReuseStep, type VerificationReuseRecord } from '../verification/verification-reuse.ts';
 import { createCandidateRoundExecution } from '../verification/candidate-round.ts';
 import { executePlan } from '../verification/plan-runner.ts';
-import { execFileSync } from 'node:child_process';
-
-test('proof collection reads only needed dependency trees while preserving identities and byte drift detection', t => {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'scoped-proof-dependencies-')));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const service = path.join(root, 'projects/product/services/buildr');
-  const write = (file: string, bytes: string) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, bytes); };
-  write(path.join(root, '.gitignore'), 'node_modules/\n');
-  write(path.join(service, 'check.ts'), 'export const check = true;\n');
-  const dependencies = ['buildr', 'buildr-web', 'dsh-plugin'].map(name => path.join(root, 'projects/product/services', name, 'node_modules/proof-fixture/index.js'));
-  for (const file of dependencies) write(file, 'export const value = 1;\n');
-  execFileSync('git', ['init', '--initial-branch=dev', root], { stdio: 'ignore' });
-  execFileSync('git', ['-C', root, 'add', '.']);
-  execFileSync('git', ['-C', root, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'fixture'], { stdio: 'ignore' });
-  const backend: VerificationReuseStep = { id: 'backend-proof', executor: { type: 'node', file: 'check.ts' }, reuse: { scope: 'backend' } };
-  const web = { ...backend, id: 'web-proof', reuse: { scope: 'web' as const } };
-  const plugin = { ...backend, id: 'plugin-proof', reuse: { scope: 'plugin' as const } };
-  const collect = (steps: VerificationReuseStep[]) => collectVerificationReuseSnapshot({ productRoot: service, steps });
-  const full = collect([backend, web, plugin]);
-  const read = fs.readFileSync;
-  const forbidden = new Set(dependencies.slice(1));
-  const unrelatedReads: string[] = [];
-  const spy = t.mock.method(fs, 'readFileSync', ((file: any, ...args: any[]) => {
-    if (forbidden.has(String(file))) unrelatedReads.push(String(file));
-    return Reflect.apply(read, fs, [file, ...args]);
-  }) as typeof fs.readFileSync);
-  const narrow = collect([backend]);
-  spy.mock.restore();
-  assert.deepEqual(unrelatedReads, [], 'unrelated dependency bytes must not be read');
-  assert.deepEqual(createVerificationReuseIdentity(backend, narrow), createVerificationReuseIdentity(backend, full));
-  write(dependencies[1]!, 'export const value = 2;\n');
-  const changedWeb = collect([backend, web]);
-  assert.deepEqual(createVerificationReuseIdentity(backend, changedWeb), createVerificationReuseIdentity(backend, narrow));
-  assert.notEqual(createVerificationReuseIdentity(web, changedWeb)?.key, createVerificationReuseIdentity(web, full)?.key);
-  const before = fs.statSync(dependencies[0]!);
-  write(dependencies[0]!, 'export const value = 2;\n');
-  fs.utimesSync(dependencies[0]!, before.atime, before.mtime);
-  assert.notEqual(createVerificationReuseIdentity(backend, collect([backend]))?.key, createVerificationReuseIdentity(backend, narrow)?.key,
-    'same-sized dependency edits with restored timestamps still invalidate proof');
-  const explicit = { ...backend, reuse: { scope: 'backend' as const, tools: ['web-dependencies'] } };
-  assert.equal(collect([explicit]).environment.tools['web-dependencies'], changedWeb.environment.tools['web-dependencies']);
-});
 
 const sha = `sha256-${'a'.repeat(64)}` as const;
 const step: VerificationReuseStep = { id: 'fixture-check', executor: { type: 'node', file: 'check.ts' }, reuse: { scope: 'backend' }, dependsOn: [] };

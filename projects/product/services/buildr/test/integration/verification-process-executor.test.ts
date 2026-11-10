@@ -236,39 +236,3 @@ const timer = setInterval(() => { if (fs.existsSync(${JSON.stringify(signalFile)
   assert.doesNotMatch(lines[0], /not copied arbitrary output/u);
   assert.equal(result.processCleanup.status, 'clean');
 });
-
-test('explicit package adapter produces one immutable package for repeated producer execution', async t => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-package-adapter-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  let produced = 0;
-  const execute = createVerificationExecutor({ productRoot: root, projectRoot: root, minimumNodeVersion: null,
-    artifactDirectory: path.join(root, 'artifact'), diagnosticsDirectory: path.join(root, 'diagnostics'),
-    packageAdapter: { read: () => null, create: async () => { produced++; return { tarball: 'same.tgz' }; },
-      environment: { tarball: 'TARBALL', metadata: 'METADATA', manifest: 'MANIFEST' } } });
-  const step = { id: 'candidate', name: 'Candidate', executor: { type: 'candidate-artifact' } };
-  assert.equal((await execute(step)).status, 'passed');
-  assert.equal((await execute(step)).status, 'passed');
-  assert.equal(produced, 1);
-});
-
-
-test('state cleanup failure retains the successful child output and execution duration', async t => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-cleanup-result-proof-'));
-  const remove = fs.rmSync;
-  let retained = '';
-  t.after(() => { t.mock.restoreAll(); if (retained) remove(retained, { recursive: true, force: true }); remove(root, { recursive: true, force: true }); });
-  t.mock.method(fs, 'rmSync', (target: any, options: any) => {
-    if (path.basename(String(target)).startsWith('buildr-test-state-')) { retained = String(target); throw new Error('injected-state-cleanup-error'); }
-    return remove(target, options);
-  });
-  const execute = createVerificationExecutor({ productRoot: root, projectRoot: root, minimumNodeVersion: null, env: { NODE_TEST_CONTEXT: undefined } });
-  const result = await execute({ id: 'child-proof', name: 'child proof', executor: { type: 'command', file: process.execPath, args: ['-e', "console.log('completed-child-proof')"], cwd: root } });
-  assert.equal(result.status, 'failed');
-  assert.equal(result.failureCode, 'verification-state-cleanup-failed');
-  assert.equal(result.childResult.status, 'passed');
-  assert.equal(result.childResult.exitCode, 0);
-  assert.ok(result.durationMs > 0);
-  assert.match(result.stdout, /completed-child-proof/);
-  assert.match(result.stderr, /injected-state-cleanup-error/);
-  assert.ok(retained && fs.existsSync(retained));
-});

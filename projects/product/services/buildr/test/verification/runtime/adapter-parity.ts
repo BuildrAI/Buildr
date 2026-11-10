@@ -24,7 +24,7 @@ export class ParityVerificationHarness extends RuntimeVerificationHarness {
     const productData = path.join(root, 'product-data');
     fs.mkdirSync(path.join(root, 'tmp'), { recursive: true });
     fs.mkdirSync(productData, { recursive: true });
-    fs.cpSync(sharedResourcesRoot(), path.join(productData, 'resources'), { recursive: true, mode: fs.constants.COPYFILE_FICLONE });
+    fs.cpSync(sharedResourcesRoot(), path.join(productData, 'resources'), { recursive: true });
     this.workspaceEnvironments.set(path.resolve(workspace), {
       BUILDR_APP_DATA_DIR: path.join(root, 'app-data'),
       BUILDR_PRODUCT_DATA_DIR: productData,

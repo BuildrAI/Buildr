@@ -249,9 +249,7 @@ export function runPluginHostedOperation(options: any, dependencies: any = {}): 
         ...(options.peer.origin === 'candidate' ? [`buildr_candidate_run_id=${options.buildrCandidateRunId}`] : [])]
       : [`candidate_run_id=${options.candidateRunId}`, ...(options.originalSourceCommit && options.originalSourceCommit !== options.sourceCommit ? [`publication_source_commit=${options.originalSourceCommit}`] : []), ...(pointer.recoveryRunId ? [`recovery_run_id=${pointer.recoveryRunId}`] : [])];
     try {
-      pointer.dispatchArgs = ['workflow', 'run', workflow, '--repo', repository, '--ref', 'main', '-f', `operation=${options.operation}`, '-f', `version=${options.version}`, ...fields.flatMap(field => ['-f', field])];
-      dependencies.onPointer?.(pointer);
-      gh(pointer.dispatchArgs);
+      gh(['workflow', 'run', workflow, '--repo', repository, '--ref', 'main', '-f', `operation=${options.operation}`, '-f', `version=${options.version}`, ...fields.flatMap(field => ['-f', field])]);
       effect.state = 'confirmed';
       pointer.dispatch = { state: 'accepted', diagnostic: null };
     } catch (error: any) {

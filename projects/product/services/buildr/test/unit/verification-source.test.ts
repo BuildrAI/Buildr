@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { EventEmitter } from 'node:events';
-import { sourcePreparationCommands, createSourceVerificationPlan, parseSourceArgs, prepareSourceVerificationEnvironment, sourceOnlyVerificationSteps, sourceVerificationPreparation, sourceVerificationCancellation } from '../verification/source.ts';
+import { createSourceVerificationPlan, parseSourceArgs, prepareSourceVerificationEnvironment, sourceOnlyVerificationSteps, sourceVerificationPreparation, sourceVerificationCancellation } from '../verification/source.ts';
 import { createVerificationPlan, createPlatformArtifactVerificationPlan, createPlatformSourceVerificationPlan, validateCandidateCiCoverage, validateVerificationRegistry } from '../verification/planner.ts';
 import { CANDIDATE_CI_SHARDS, verificationSteps } from '../verification/registry.ts';
 
@@ -19,13 +19,12 @@ for (const [signal, exitCode] of [['SIGINT', 130], ['SIGTERM', 143]] as const) t
 });
 
 test('source flags keep plan-only output, force and portable export explicit', () => {
-  assert.deepEqual(parseSourceArgs([]), { help: false, json: false, force: false, scope: 'all', base: null, output: null, round: null, invalidate: [], selected: [] });
-  assert.deepEqual(parseSourceArgs(['--json', '--force', '--output', '/tmp/source.json']), { help: false, json: true, force: true, scope: 'all', base: null, output: '/tmp/source.json', round: null, invalidate: [], selected: [] });
+  assert.deepEqual(parseSourceArgs([]), { help: false, json: false, force: false, scope: 'all', base: null, output: null, round: null, invalidate: [] });
+  assert.deepEqual(parseSourceArgs(['--json', '--force', '--output', '/tmp/source.json']), { help: false, json: true, force: true, scope: 'all', base: null, output: '/tmp/source.json', round: null, invalidate: [] });
   assert.equal(parseSourceArgs(['--scope', 'common']).scope, 'common');
   assert.equal(parseSourceArgs(['--scope', 'platform']).scope, 'platform');
   assert.equal(parseSourceArgs(['--base', 'origin/dev']).base, 'origin/dev');
   assert.deepEqual(parseSourceArgs(['--invalidate', 'integration-connections-cli,dsh-plugin:unit']).invalidate, ['integration-connections-cli', 'dsh-plugin:unit']);
-  assert.deepEqual(parseSourceArgs(['--selected', 'unit,integration-code']).selected, ['unit', 'integration-code']);
   for (const args of [['--scope'], ['--scope', 'windows'], ['--scope', 'common', '--scope', 'platform'], ['--base'], ['--base', '--json'], ['--base', 'one', '--base', 'two'], ['--output'], ['--output', '--force'], ['--invalidate'], ['--invalidate', '--json'], ['--invalidate', 'a b'], ['--invalidate', 'a', '--invalidate', 'b'], ['--unknown'], ['unit'], ['--help', '--json'], ['--output', 'one', '--output', 'two']]) assert.throws(() => parseSourceArgs(args));
 });
 
@@ -197,15 +196,4 @@ test('editorial and architecture checks remain selectable in development but are
     assert.ok(affected.steps.some((step: any) => step.id === id), `source package checks belong in daily affected feedback: ${id}`);
   }
   assert.equal(affected.steps.some((step: any) => step.id === 'candidate-tarball'), false, 'daily feedback does not create a release package');
-});
-
-test('owned generated-input preparation hands off commands only after complete success', async () => {
-  assert.equal(sourcePreparationCommands({ preparations: [] }).size, 0);
-  assert.equal(sourcePreparationCommands({ preparations: [{ status: 'failed', operations: [{ id: 'generated-contracts-and-test-context', status: 'passed' }] }] }).size, 0);
-  const commands = sourcePreparationCommands({ preparations: [{ id: 'owned', status: 'passed', operations: [
-    { id: 'generated-contracts-and-test-context', status: 'passed', finishedAt: 'observed' }] }] });
-  assert.ok(commands.size > 0);
-  const registered = verificationSteps.find((step: any) => step.id === 'typecheck');
-  for (const preparation of registered.preparations) assert.ok(commands.has(JSON.stringify([preparation.file, preparation.args, preparation.cwd])));
-  for (const result of commands.values()) assert.equal((await result).reusedFrom.preparation, 'owned');
 });

@@ -1,8 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { realpath, stat, lstat, mkdir, chmod } from 'node:fs/promises';
-import { createHash, randomUUID } from 'node:crypto';
-import { diagnosticCode } from '../storage/execution-log.ts';
-import type { ExecutionDiagnosticSink } from '../contracts.ts';
+import { createHash } from 'node:crypto';
 import type { ExecutionRef } from '../contracts.ts';
 import { StringDecoder } from 'node:string_decoder';
 import { dirname, isAbsolute, join } from 'node:path';
@@ -12,21 +10,13 @@ import { toolEnvironment } from './tool-environment.ts';
 import { errorDiagnostic, NativeRequestError } from '../domain/error-diagnostic.ts';
 
 export type NativeEnvironment = NodeJS.ProcessEnv;
-/** Account roots remain explicit. Never infer a host HOME from the service user. */
-export function accountEnvironment(input: NativeEnvironment, privateHome: string, temporary: string, extra: NativeEnvironment, cacheRoot?: string): NativeEnvironment {
-  const host = input.BUILDR_TOOLCHAIN_HOST_HOME || input.BUILDR_HOST_HOME || input.HOME || input.USERPROFILE;
-  const home = host && isAbsolute(host) ? host : privateHome;
-  const hostTemporary = home === host ? [input.TMPDIR, input.TMP, input.TEMP].find(value => value && isAbsolute(value)) : undefined;
-  return isolatedEnvironment({ ...input, HOME: home, USERPROFILE: home }, home, hostTemporary || temporary, extra, cacheRoot);
-}
 /** Deliberately excludes desktop RPC credentials and default provider credentials. */
 export function isolatedEnvironment(input: NativeEnvironment, home: string, temporary: string, extra: NativeEnvironment = {}, cacheRoot?: string): NativeEnvironment {
   const result: NativeEnvironment = {};
-  for (const key of ['BUILDR_TOOLCHAIN_HOST_HOME','PATH', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'USER', 'LOGNAME', 'SYSTEMROOT', 'SystemRoot', 'WINDIR', 'COMSPEC', 'PATHEXT', 'JAVA_HOME', 'JDK_HOME', 'MAVEN_HOME', 'M2_HOME', 'GRADLE_HOME', 'BUILDR_TOOLCHAIN_ROOT', 'BUILDR_MAVEN_REPOSITORY', 'COREPACK_HOME', 'npm_config_devdir', 'npm_package_config_node_gyp_devdir', 'PIP_CACHE_DIR', 'UV_CACHE_DIR', 'PYTHONPYCACHEPREFIX', 'NVM_DIR', 'VOLTA_HOME', 'ASDF_DATA_DIR', 'MISE_DATA_DIR', 'SDKMAN_DIR', 'SSL_CERT_FILE', 'SSL_CERT_DIR', 'NODE_EXTRA_CA_CERTS', 'HTTPS_PROXY', 'HTTP_PROXY', 'ALL_PROXY', 'NO_PROXY', 'https_proxy', 'http_proxy', 'all_proxy', 'no_proxy']) {
+  for (const key of ['PATH', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'USER', 'LOGNAME', 'SYSTEMROOT', 'SystemRoot', 'WINDIR', 'COMSPEC', 'PATHEXT', 'SSL_CERT_FILE', 'SSL_CERT_DIR', 'NODE_EXTRA_CA_CERTS', 'HTTPS_PROXY', 'HTTP_PROXY', 'ALL_PROXY', 'NO_PROXY', 'https_proxy', 'http_proxy', 'all_proxy', 'no_proxy']) {
     if (input[key] !== undefined) result[key] = input[key];
   }
-  if (input.BUILDR_MAVEN_REPOSITORY) result.JAVA_TOOL_OPTIONS = '-Dmaven.repo.local="' + input.BUILDR_MAVEN_REPOSITORY.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
-  return { ...result, ...toolEnvironment(input), ...(cacheRoot ? { npm_config_cache: input.npm_config_cache || input.NPM_CONFIG_CACHE || join(cacheRoot, 'npm'), NPM_CONFIG_CACHE: input.npm_config_cache || input.NPM_CONFIG_CACHE || join(cacheRoot, 'npm'), NODE_COMPILE_CACHE: input.NODE_COMPILE_CACHE || join(cacheRoot, 'node-compile'), YARN_CACHE_FOLDER: input.YARN_CACHE_FOLDER || join(cacheRoot, 'yarn') } : {}), HOME: home, USERPROFILE: home, TMPDIR: temporary, TMP: temporary, TEMP: temporary, ...extra };
+  return { ...result, ...toolEnvironment(input), ...(cacheRoot ? { npm_config_cache: join(cacheRoot, 'npm'), NPM_CONFIG_CACHE: join(cacheRoot, 'npm'), NODE_COMPILE_CACHE: join(cacheRoot, 'node-compile') } : {}), HOME: home, USERPROFILE: home, TMPDIR: temporary, TMP: temporary, TEMP: temporary, ...extra };
 }
 export async function privateDirectories(...directories: string[]): Promise<void> {
   for (const directory of directories) {
@@ -49,15 +39,13 @@ export async function bounded<T>(promise: Promise<T>, timeoutMs: number, code = 
   try { return await Promise.race([promise, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(code)), timeoutMs); })]); }
   finally { clearTimeout(timer); }
 }
-const childDiagnostics=new WeakMap<ChildProcessWithoutNullStreams,ExecutionDiagnosticSink>();
 export async function closeOwnedProcess(child: ChildProcessWithoutNullStreams, timeoutMs = 2500): Promise<void> {
   if (child.exitCode !== null || child.signalCode !== null) return;
-  const log=childDiagnostics.get(child);log?.({event:'native-close-request',reason:'owner-dispose'});
   const exited = new Promise<void>(resolve => child.once('exit', () => resolve()));
   child.stdin.end();
   try { await bounded(exited, timeoutMs); return; } catch { /* Own exact live ChildProcess, never a recovered PID. */ }
-  log?.({event:'native-signal',signal:'SIGTERM',reason:'close-timeout'});child.kill('SIGTERM');
-  try { await bounded(exited, timeoutMs); return; } catch { log?.({event:'native-signal',signal:'SIGKILL',reason:'close-timeout'});child.kill('SIGKILL'); }
+  child.kill('SIGTERM');
+  try { await bounded(exited, timeoutMs); return; } catch { child.kill('SIGKILL'); }
   await bounded(exited, timeoutMs);
 }
 export interface RpcMessage { id?: string | number; method?: string; params?: any; result?: any; error?: { code?: number; message?: string }; }
@@ -76,34 +64,20 @@ export async function ownedProcessGroupIdle(group:number,controlPid?:number):Pro
   }catch{return false;}
   finally{if(observer.exitCode===null&&observer.signalCode===null)observer.kill();}
 }
-/** Proves only absence of the exact control group, never operation completion.
- * DSH may retain unknown job receipts after its host exits; those remain unknown.
- * A cold observer never signals a recovered PID. */
-export async function releasedNativeControl(provider:string,input:{bindingIdentity:string;contextRef:import('../contracts.ts').ContextRef;executionRef:ExecutionRef;cwd:string},options:{allowUnknownBackgroundWork?:boolean}={}):Promise<boolean>{
+/** A cold observer only proves absence of the recorded group; it never signals a recovered PID. */
+export async function releasedNativeControl(provider:string,input:{bindingIdentity:string;contextRef:import('../contracts.ts').ContextRef;executionRef:ExecutionRef;cwd:string}):Promise<boolean>{
   const {contextRef,executionRef,bindingIdentity,cwd}=input,data=executionRef.data;
-  if(!bindingIdentity||!contextRef.id||!executionRef.id||!data||data.resourceContext!==contextRef.id||data.resourceBinding!==bindingIdentity||data.backgroundWork!==false&&!options.allowUnknownBackgroundWork)return false;
+  if(!bindingIdentity||!contextRef.id||!executionRef.id||!data||data.resourceContext!==contextRef.id||data.resourceBinding!==bindingIdentity||data.backgroundWork!==false)return false;
   try{if(parseReference(String(contextRef.data?.native??''),provider,cwd,bindingIdentity).nativeSessionId!==contextRef.id)return false;}catch{return false;}
   return ownedProcessGroupIdle(data.resourceGroup as number);
 }
 /** Shared ownership and release proof for RPC and native HTTP control hosts. */
 export class OwnedControlResource {
   readonly child: ChildProcessWithoutNullStreams;
-  private readonly log?:ExecutionDiagnosticSink;
-  private readonly bindings=new Set<string>();
-  constructor(command:string,args:string[],options:{cwd:string;env:NativeEnvironment;diagnostics?:ExecutionDiagnosticSink}) {
-    this.child=spawn(command,args,{cwd:options.cwd,env:options.env,detached:process.platform!=='win32',stdio:['pipe','pipe','pipe'],windowsHide:true});
-    const controlId=randomUUID();this.log=options.diagnostics?event=>{try{options.diagnostics!({...event,controlId,childPid:this.child.pid});}catch{ /* Diagnosis cannot fail native work. */ }}:undefined;
-    if(this.log)childDiagnostics.set(this.child,this.log);
-    this.child.once('spawn',()=>this.log?.({event:'native-start'}));
-    this.child.once('error',error=>this.log?.({event:'native-spawn-error',code:diagnosticCode(error)}));
-    this.child.once('exit',(exitCode,signal)=>this.log?.({event:'native-exit',exitCode,signal}));
-    // Preserve recognizable fatal codes, never raw stderr (which can contain credentials).
-    let tail='',fatalLogged=false;
-    this.child.stderr.on('data',chunk=>{if(fatalLogged||!this.log)return;tail=(tail+chunk.toString()).slice(-512);const code=tail.match(/\b(?:ERR_[A-Z0-9_]{2,80}|FATAL ERROR|JavaScript heap out of memory)\b/)?.[0];if(code){fatalLogged=true;this.log({event:'native-fatal-diagnostic',code:code.startsWith('ERR_')?code:'NATIVE_FATAL_ERROR'});}});
-
+  constructor(command:string,args:string[],options:{cwd:string;env:NativeEnvironment}) {
+    this.child=spawn(command,args,{...options,detached:process.platform!=='win32',stdio:['pipe','pipe','pipe'],windowsHide:true});
   }
   executionRef(id: string, contextId: string, binding: string, backgroundWork = false): ExecutionRef {
-    if(!this.bindings.has(id)){if(this.bindings.size>=256)this.bindings.delete(this.bindings.values().next().value!);this.bindings.add(id);this.log?.({event:'native-execution-bind',executionId:id,contextId,provider:undefined});}
     return { id, ...(process.platform !== 'win32' && this.child.pid ? { data: { resourceGroup: this.child.pid, resourceContext: contextId, resourceBinding: binding, backgroundWork } } : {}) };
   }
   async stopExecution(ref:ExecutionRef,contextId:string,binding:string):Promise<boolean> {
@@ -112,7 +86,7 @@ export class OwnedControlResource {
     const exited=()=>this.child.exitCode!==null||this.child.signalCode!==null;
     // A previously exited child grants observation only, never a new kill by PID.
     if(exited())return ownedProcessGroupIdle(group);
-    const signal=(name:NodeJS.Signals)=>{this.log?.({event:'native-signal',signal:name,reason:'stop-execution',executionId:ref.id,contextId});try{process.kill(-group,name);}catch(error){if((error as NodeJS.ErrnoException).code!=='ESRCH')throw error;}};
+    const signal=(name:NodeJS.Signals)=>{try{process.kill(-group,name);}catch(error){if((error as NodeJS.ErrnoException).code!=='ESRCH')throw error;}};
     if(!exited()){
       const ended=new Promise<void>(resolve=>this.child.once('exit',()=>resolve()));
       signal('SIGTERM');
@@ -156,7 +130,7 @@ export class NativeRpc {
   private failed = false;
   private readonly diagnosticSecrets: string[];
   get closed(): boolean { return this.disposed || this.failed || this.child.exitCode !== null || this.child.signalCode !== null || this.child.stdin.destroyed; }
-  constructor(command: string, args: string[], options: { cwd: string; env: NativeEnvironment;diagnostics?:ExecutionDiagnosticSink }) {
+  constructor(command: string, args: string[], options: { cwd: string; env: NativeEnvironment }) {
     this.diagnosticSecrets = Object.entries(options.env).filter(([key, value]) => /(?:TOKEN|KEY|PASSWORD|SECRET)$/i.test(key) && value).map(([, value]) => value!);
     this.control=new OwnedControlResource(command,args,options);
     this.child=this.control.child;
@@ -203,7 +177,6 @@ export class NativeRpc {
       } else for (const listener of this.listeners) {
         try { listener(message); }
         catch (error) {
-          childDiagnostics.get(this.child)?.({event:'native-consumer-failed',code:diagnosticCode(error)});
           // A local projection/persistence error is not a native protocol failure.
           // Keep the process and independent RPC controls alive for exact observation.
           try { listener({ method: 'buildr/eventConsumerFailed', params: { threadId: message.params?.threadId, contextId: message.params?.contextId, diagnostic: errorDiagnostic(error instanceof Error ? error.message : undefined, this.diagnosticSecrets) } }); } catch { /* Preserve native execution even if the diagnostic consumer also fails. */ }
@@ -215,7 +188,7 @@ export class NativeRpc {
     if(this.transportEnd)this.fail(this.transportEnd);
     }finally{this.draining=false;}
   }
-  private fail(code: string): void { for (const pending of this.pending.values()) pending.reject(new Error(code)); this.pending.clear(); if (!this.failed) { childDiagnostics.get(this.child)?.({event:'native-transport-failed',code});this.failed = true; for (const listener of this.listeners) { try { listener({ method: 'buildr/transportClosed', params: { code } }); } catch { /* Consumer errors cannot escape a process event handler. */ } } } }
+  private fail(code: string): void { for (const pending of this.pending.values()) pending.reject(new Error(code)); this.pending.clear(); if (!this.failed) { this.failed = true; for (const listener of this.listeners) { try { listener({ method: 'buildr/transportClosed', params: { code } }); } catch { /* Consumer errors cannot escape a process event handler. */ } } } }
   write(message: RpcMessage): void {
     if (this.disposed || this.child.exitCode !== null || this.child.signalCode !== null || this.child.stdin.destroyed) throw new Error('agent_native_process_closed');
     this.child.stdin.write(JSON.stringify(message) + '\n');

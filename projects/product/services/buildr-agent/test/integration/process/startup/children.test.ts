@@ -1,17 +1,18 @@
 import assert from 'node:assert/strict';
-import { acquirePreparedProcessFixture } from '../../../support/prepared-process-fixture.ts';
 import test from 'node:test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { executionScopeKey } from '../../../../src/index.ts';
-import { actor, cleanupProcessFixture } from '../../../support/process-fixture.ts';
+import { actor, prepareAgentRuntime, copyPackage, prepared, cleanupProcessFixture } from '../../../support/process-fixture.ts';
 
 test('child conversation creation and relation reads cross the independent process boundary without an executor',{timeout:30000},async t=>{
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-child-process-')),dataRoot=path.join(root,'profile'),workspace=path.join(root,'work');fs.mkdirSync(workspace);
-
-  const runtime=acquirePreparedProcessFixture(dataRoot),profileId='child-isolation',scope=executionScopeKey({sourceId:'minimal',id:'directory'});
+  const packageRoot=path.join(root,'package');copyPackage(prepared,packageRoot);
+  fs.copyFileSync(path.join(import.meta.dirname,'../../fixtures/agent-process-entry.mjs'),path.join(packageRoot,'build/process-fixture.mjs'));
+  fs.writeFileSync(path.join(packageRoot,'build/fixture-version.json'),JSON.stringify({version:'child-test'}));
+  const runtime=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/process-fixture.mjs'}),profileId='child-isolation',scope=executionScopeKey({sourceId:'minimal',id:'directory'});
   let host:Awaited<ReturnType<typeof actor>>|undefined;
   t.after(() => cleanupProcessFixture({root,dataRoot,profileId,host:host,observer:undefined}));
   {

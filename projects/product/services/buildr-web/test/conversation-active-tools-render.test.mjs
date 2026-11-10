@@ -45,20 +45,6 @@ test('停止与核对期间保留准确操作，不提供重复恢复执行',()=
   assert.doesNotMatch(html,/恢复执行|恢复成功|已停止/);
 });
 
-test('停止请求已提交后不再显示重复停止入口，并明确等待剩余命令结束',()=>{
-  const html=render({stopRequested:true,tools:[{id:'native',status:'running',label:'native command',canStop:true}]});
-  assert.match(html,/停止已请求，等待剩余命令结束/);
-  assert.match(html,/停止请求已提交，尚未取得本轮及剩余命令的结束确认/);
-  assert.doesNotMatch(html,/停止剩余执行|停止此命令/);
-});
-
-test('重新读取的实际结果直接可见，不仅藏在悬停提示中',()=>{
-  const feedback='读取完成：尚未取得部分命令的结束记录，请查看命令状态。';
-  const html=render({tools:[{id:'old',status:'unknown',label:'original command'}],feedback});
-  assert.ok(html.includes('<small role="status">'+feedback+'</small>'));
-  assert.doesNotMatch(html,/读取成功|已确认停止/);
-});
-
 const {ConversationRetainedWork}=await import('../src/features/agent-conversations/ConversationRetainedWork.tsx');
 test('原执行和未答问题保持原归属且不阻止继续对话',()=>{
   const conversation={participants:[{id:'p',label:'原执行方'}],requests:[{id:'q',runId:'old-question',participantId:'p',title:'确认发布吗？'}],retainedRuns:[
@@ -88,15 +74,6 @@ test('已释放且无未决工作的历史不常驻输入区，仍活动的执�
  assert.doesNotMatch(html,/data-retained-run="released"/);
  const held=html.split('data-retained-run="held"')[1].split('</section>')[0];
  assert.match(held,/停止原执行/);assert.doesNotMatch(held,/后台连接已释放/);
-});
-
-test('保留执行已请求停止时只等待结束确认，不重复提供停止',()=>{
- const conversation={participants:[{id:'p',label:'原执行方'}],requests:[],retainedRuns:[
-  {id:'stopping',participantId:'p',status:'unknown',resourcesReleased:false,stopRequested:true,tools:[]},
- ]};
- const html=renderToStaticMarkup(React.createElement(ConversationRetainedWork,{conversation,busy(){return false;},onObserve(){},onStop(){}}));
- assert.match(html,/停止已请求，结束状态待确认/);
- assert.doesNotMatch(html,/停止原执行/);
 });
 
 test('后台已释放仍保留未知工具及必要问题，全部历史结束时不渲染提示',()=>{

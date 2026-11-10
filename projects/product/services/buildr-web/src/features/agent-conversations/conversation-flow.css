@@ -4,14 +4,14 @@
 .ac-process.is-flow .ac-process-narration{margin:0 0 15px}
 .ac-process.is-flow .ac-process-narration .markdown-body{font-size: var(--font-size-reading);line-height:1.85;color:var(--soft-ink,#252a31)}
 .ac-process.is-flow .ac-step{margin:3px 0 12px}
-.ac-process.is-flow .ac-step>summary{padding:3px 4px 3px 0;min-height:29px;font-size: var(--font-size-secondary)}
+.ac-process.is-flow .ac-step>summary{padding:3px 4px 3px 0;min-height:29px;font-size: var(--font-size-body)}
 .ac-process.is-flow .ac-tool-detail{margin-left:0}
 .ac-process.is-flow>summary{font-size: var(--font-size-body);color:var(--soft-muted);margin-bottom:12px;padding-inline:0}
 .ac-process.is-flow:not([open])>summary{margin-bottom:0}
 .ac-process.is-flow .ac-process-failures{font-size: var(--font-size-secondary)}
 .ac-execution-indicator{display:flex;align-items:center;gap:9px;min-height:27px;color:var(--soft-primary,#397d74);font-size: var(--font-size-secondary);font-variant-numeric:tabular-nums}
 .ac-execution-light{color:var(--soft-primary,#397d74);width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.55;flex:none}
-.ac-execution-indicator.is-active .ac-execution-light{animation:ac-execution-breathe 2.2s ease-in-out infinite}
+.ac-execution-indicator.is-active .ac-execution-light,.ac-step-group.is-live>summary>.ac-execution-light{animation:ac-execution-breathe 2.2s ease-in-out infinite}
 .ac-execution-indicator time{color:#84958b;line-height:20px}
 .ac-turn{position:relative;min-width:0;margin-bottom:24px}
 .ac-turn-head{display:flex;flex-direction:column;gap:16px;padding-block:12px}
@@ -61,7 +61,7 @@
 .ac-process-inline:empty{display:none}
 .ac-step-group.is-live>summary,.ac-step.is-running>summary{animation:ac-live-row 2.2s ease-in-out infinite}
 @keyframes ac-live-row{0%,100%{background-color:transparent}50%{background-color:color-mix(in srgb,var(--soft-primary,#397d74) 9%,transparent)}}
-@media(prefers-reduced-motion:reduce){.ac-step-group.is-live>summary,.ac-step.is-running>summary{animation:none}}
+@media(prefers-reduced-motion:reduce){.ac-step-group.is-live>summary,.ac-step.is-running>summary{animation:none}.ac-step-group.is-live>summary>.ac-execution-light{animation:none;opacity:.8}}
 
 .ac-recovery-target{color:var(--soft-primary,#397d74);font-size:var(--font-size-secondary)}
 .ac-waiting-handoff { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:8px 0 12px; padding:12px; border:1px solid var(--soft-border,#dbe6e2); border-radius:10px; background:var(--soft-surface,#f7faf8); }

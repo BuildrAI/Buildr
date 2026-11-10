@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { connectAgentProcess as connect, prepareAgentRuntime as prepare, stopAgentProcess as stop } from '../../src/index.ts';
 import type { AgentProcessConnection, AgentRuntimeUnit } from '../../src/index.ts';
-import { readProcessInstances, readProcessRecord } from '../../src/process/ownership.ts';
+import { readProcessInstances } from '../../src/process/ownership.ts';
 import { request } from '../../src/process/transport.ts';
 
 import { phase } from './process-timing.ts';
@@ -25,13 +25,13 @@ export async function until<T>(read:()=>Promise<T>,accept:(value:T)=>boolean):Pr
 export async function actor(options:{dataRoot:string;profileId:string;runtime:AgentRuntimeUnit;workspace:string;autoContinueInterrupted?:boolean;legacySourceId?:string}){
   const child=fork(path.join(import.meta.dirname,'../integration/fixtures/agent-host-process.mjs'),[path.join(options.runtime.directory,'build/index.js'),JSON.stringify(options)],{execPath:options.runtime.node,stdio:['ignore','pipe','pipe','ipc']});
   let output='';child.stderr?.on('data',value=>{output+=value;});
-  const waiting=new Map<string,{resolve(value:any):void;reject(error:Error):void;origin:Error}>();
+  const waiting=new Map<string,{resolve(value:any):void;reject(error:Error):void}>();
   let readyResolve:(value:any)=>void,readyReject:(error:Error)=>void;
   const ready=new Promise<any>((resolve,reject)=>{readyResolve=resolve;readyReject=reject;});
-  child.on('message',(message:any)=>{if(message.ready){readyResolve(message);return;}const pending=waiting.get(message.id);if(pending){waiting.delete(message.id);if(message.error)pending.reject(Object.assign(pending.origin,{message:message.error.message,code:message.error.code}));else pending.resolve(message.result);}});
+  child.on('message',(message:any)=>{if(message.ready){readyResolve(message);return;}const pending=waiting.get(message.id);if(pending){waiting.delete(message.id);if(message.error)pending.reject(Object.assign(new Error(message.error.message),{code:message.error.code}));else pending.resolve(message.result);}});
   child.once('exit',()=>{readyReject(new Error('host exited: '+output));for(const pending of waiting.values())pending.reject(new Error('host exited: '+output));});
   const timer=setTimeout(()=>{child.kill('SIGTERM');readyReject(new Error('host start timeout: '+output));},20000);let info:any;try{info=await phase('start-host', () => ready);}finally{clearTimeout(timer);}
-  const call=(operation:string,args:unknown[]=[])=>phase('interaction', () => new Promise<any>((resolve,reject)=>{const id=randomUUID();waiting.set(id,{resolve,reject,origin:new Error('Fixture operation: '+operation)});child.send({id,operation,args});}));
+  const call=(operation:string,args:unknown[]=[])=>phase('interaction', () => new Promise<any>((resolve,reject)=>{const id=randomUUID();waiting.set(id,{resolve,reject});child.send({id,operation,args});}));
   return{child,info,call,async close(){if(child.exitCode!==null||child.signalCode!==null)return;const exited=once(child,'exit');const id=randomUUID();child.send({id,action:'close'});await phase('exit-host', () => exited);}};
 }
 
@@ -60,7 +60,7 @@ export async function cleanupProcessFixture({ root, dataRoot, profileId, host, o
     }
   };
   observe();
-  let connection: AgentProcessConnection | undefined;
+  let connection = observer;
   const errors: unknown[] = [];
   let uncertainReleases=0;
   try {
@@ -69,12 +69,8 @@ export async function cleanupProcessFixture({ root, dataRoot, profileId, host, o
       for (const marker of ['release', 'release-other', 'release-second', 'finish-stop', 'release-uncertain-resource']) {
         fs.writeFileSync(path.join(dataRoot, marker), 'yes');
       }
-      const record=readProcessRecord(dataRoot);
-      const current=record&&owned.has(record.identity.pid)&&!record.stopped&&isLive(record.identity.pid)?record:undefined;
-      // A test can hand off several times. Its original observer may now point
-      // at a confirmed retired process; release through the exact current owner.
-      if(current){await connection?.disconnect();connection=await connectAgentProcess({dataRoot,profileId,runtime:current.identity.runtime,sourceId:'minimal'});}
-      else if(![...owned.values()].some(value=>isLive(value.identity.pid))){await connection?.disconnect();connection=undefined;}
+      const current = [...owned.values()].find(record => !record.stopped && isLive(record.identity.pid));
+      if (!connection && current) connection = await connectAgentProcess({dataRoot,profileId,runtime:current.identity.runtime,sourceId:'minimal'});
       if (connection) {
         // Revocation stops native question/command loops as well as the visible current round.
         for (const id of ['first', 'second']) {
@@ -94,9 +90,7 @@ export async function cleanupProcessFixture({ root, dataRoot, profileId, host, o
     });
   } catch (error) { errors.push(error); }
   try { await host?.close(); } catch (error) { errors.push(error); host?.child.kill('SIGTERM'); }
-  for (const client of [connection, observer]) {
-    try { await client?.disconnect(); } catch (error) { errors.push(error); }
-  }
+  try { await connection?.disconnect(); } catch (error) { errors.push(error); }
   try {
     observe();
     // Deliberate crash/restart scenarios retain unconfirmed historical receipts.
@@ -117,14 +111,11 @@ export async function cleanupProcessFixture({ root, dataRoot, profileId, host, o
     const { execFileSync } = await import('node:child_process');
     for (const [pid, record] of owned) if (isLive(pid)) {
       const command = execFileSync('ps',['-p',String(pid),'-o','command='],{encoding:'utf8'});
-      if (command.includes(record.identity.runtime.entry)) process.kill(pid,'SIGTERM');
+      if (command.includes(record.identity.runtime.entry)) process.kill(pid,'SIGKILL');
     }
     await until(async () => [...owned.keys()].filter(isLive), live => live.length === 0);
   }
   if (uncertainReleases) process.stderr.write(`[agent-test-cleanup] ${JSON.stringify({releaseReceipts:'unconfirmed',count:uncertainReleases,exit:'confirmed'})}\n`);
-  // Never delete control identity while physical process exit is unproven.
-  const survivors = [...owned.keys()].filter(isLive);
-  if (survivors.length) throw new AggregateError(errors, 'Owned processes still live; fixture retained: ' + survivors.join(','));
   cleanup(root);
   if (errors.length) throw new AggregateError(errors, 'Process fixture cleanup failed; owned processes were reaped.');
 }

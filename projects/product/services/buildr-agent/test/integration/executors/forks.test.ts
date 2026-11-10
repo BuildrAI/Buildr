@@ -20,9 +20,7 @@ test('DSH fork titles use an independent tool-free gateway request and do not pr
   const runtime=Reflect.construct(DshRuntime,['binding',{close:async()=>{}},{remote:{},ctx:{}}]) as AgentRuntime;
   (runtime as any).gateway={identity:'fixture',baseUrl:'http://127.0.0.1:1234/v1',apiKey:'fixture-key',models:[{id:'gateway-model',label:'Model'}]};
   const contextRef=(runtime as any).context('work-context','/work');
-  // The application names the account catalog model, never the lease route;
-  // the auxiliary request must still use the single model this lease exposes.
-  const input={contextRef,cwd:'/work',description:'用户新的分支要求',freshInstruction:true,model:'dfmodel',signal:new AbortController().signal};
+  const input={contextRef,cwd:'/work',description:'用户新的分支要求',freshInstruction:true,signal:new AbortController().signal};
   try{
     assert.equal(await runtime.generateTitle!(input),'新的分支方向');
     assert.equal(requests.length,1);assert.equal(requests[0]!.url,'http://127.0.0.1:1234/v1/chat/completions');

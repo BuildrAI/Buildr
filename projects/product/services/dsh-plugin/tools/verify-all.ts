@@ -28,8 +28,19 @@ export function parseVerificationInputs(args: string[], env: NodeJS.ProcessEnv =
 export const archiveTreeIdentity = (bytes: Buffer) => hash(Buffer.from(JSON.stringify([...packageArchiveFiles(bytes)].map(([name, data]) => [name, hash(data)]).sort((a, b) => a[0].localeCompare(b[0])))));
 // Only the SDK-independent source phase is portable. SDK consumers run
 // freshly until their actual installed dependencies and built inputs are bound.
-import { PLUGIN_SOURCE_PHASE_IDS, PLUGIN_PEER_PHASE_FILES, pluginSourcePhaseFiles, pluginSourcePhaseStep } from './source-phase-definition.ts';
-export { PLUGIN_SOURCE_PHASE_IDS, PLUGIN_PEER_PHASE_FILES, pluginSourcePhaseFiles, pluginSourcePhaseStep } from './source-phase-definition.ts';
+export const PLUGIN_SOURCE_PHASE_IDS = ['dsh-plugin:unit'] as const;
+export const PLUGIN_PEER_PHASE_FILES = ['test/integration/source-business-gateway.test.ts'] as const;
+export function pluginSourcePhaseFiles(group: 'unit' | 'static' | 'integration' | 'e2e', pluginRoot = root): string[] {
+  const files = readdirSync(join(pluginRoot, 'test', group)).filter(name => name.endsWith('.test.ts')).sort()
+    .map(name => `test/${group}/${name}`).filter(file => !(PLUGIN_PEER_PHASE_FILES as readonly string[]).includes(file));
+  return files;
+}
+export function pluginSourcePhaseStep(group: 'unit' | 'static' | 'integration' | 'e2e', files: string[], env: NodeJS.ProcessEnv = process.env) {
+  const workers = resolveVerificationWorkerBudget({ env, fallback: 2, maximum: files.length, label: `Plugin ${group} tests` });
+  return { id: `dsh-plugin:${group}`, executor: { type: 'node-test', files: [...files].sort(), args: [`--test-concurrency=${workers}`] },
+    resourceDemand: { workers, processes: workers },
+    reuse: group === 'unit' ? { scope: 'plugin' as const, git: false } : false as const };
+}
 export function pluginSourceSdkKey(pluginRoot = root): string {
   const identity = sourceSdkIdentityFromFiles(readFileSync(join(pluginRoot, SOURCE_SDK_MANIFEST)),
     readFileSync(join(pluginRoot, 'sdk-patches/dsh-v0.2.0-rc.2-event-sources-settings.patch')));
@@ -53,21 +64,20 @@ export async function verifyPluginSourcePhase(group: 'unit' | 'static' | 'integr
   const { createCandidateRoundExecution } = await import(new URL('../../buildr/test/verification/candidate-round.ts', import.meta.url).href);
   const { reusedVerificationResult } = await import(new URL('../../buildr/test/verification/verification-reuse.ts', import.meta.url).href);
   const { runVerificationStep } = await import(new URL('../../buildr/test/verification/timing/parallel-runner.ts', import.meta.url).href);
-  const files = pluginSourcePhaseFiles(group, pluginRoot);
-  const definition = pluginSourcePhaseStep(group, files, environment);
-  const step = { ...definition, executor: { ...definition.executor, cwd: pluginRoot }, platformScope: { kind: 'common' } };
+  const files = pluginSourcePhaseFiles(group, pluginRoot), step = { ...pluginSourcePhaseStep(group, files, environment), platformScope: { kind: 'common' } };
   const imported = environment.BUILDR_SOURCE_VERIFICATION ? candidateSourceImportFromEnvironment(environment) : undefined;
   const round = group === 'unit' ? options.round ?? (imported ? { roundId: imported.roundId, imports: imported } : undefined) : undefined;
   const execution = createCandidateRoundExecution({ steps: [step] }, { productRoot, round });
   const prior = execution?.hits.get(step.id);
-  if (prior) { const phase = reusedVerificationResult(prior); console.error(`[dsh-source-phase] ${group} retained from this round`); return { phase, proof: null, log: execution.finish([], true) }; }
+  if (prior) { const phase = reusedVerificationResult(prior); console.error(`[dsh-source-phase] ${group} retained from this round`); return { phase, proof: null, log: execution.finish() }; }
   console.error(`[dsh-source-phase] ${group} started`);
   const startedAt = new Date().toISOString();
   const result = await runVerificationStep({ name: step.id, command: process.execPath, args: ['--test', ...step.executor.args, ...files], cwd: pluginRoot, env: environment, diagnosticsDirectory: options.diagnosticsDirectory });
   if (result.status !== 'passed') { if (result.stdout) process.stdout.write(result.stdout); if (result.stderr) process.stderr.write(result.stderr); }
   const phase = { ...result, id: step.id, disposition: 'executed', startedAt, finishedAt: new Date().toISOString() };
+  execution?.record(phase);
   if (result.status !== 'passed') throw Object.assign(new Error(`Plugin ${group} verification failed (${result.exitCode}).`), { sourcePhase: phase });
-  return { phase, proof: null, log: execution?.finish([phase], result.processCleanup?.status === 'clean') };
+  return { phase, proof: null, log: execution?.finish() };
 }
 /** Transport the archive already consumed by the pair check, never run a second pack. */
 export function writeVerifiedPluginCandidate(input: { output: string; tarball: string; version: string; sourceCommit: string; sourceTree: string;
@@ -83,7 +93,7 @@ export function writeVerifiedPluginCandidate(input: { output: string; tarball: s
 export async function verifyAll(args = process.argv.slice(2)) {
 const request = parseVerificationInputs(args);
 const verificationSource = captureVerificationSource(root);
-const { sdk, sdkReceipt, bundles, peer, raw, environment, discardCompletedStaging } = preparePluginCheckEnvironment(root, request);
+const { sdk, sdkReceipt, bundles, peer, raw, environment } = preparePluginCheckEnvironment(root, request);
 const run = (script: string, ...parameters: string[]): void => {
   execFileSync(process.execPath, [join(root, script), ...parameters], { cwd: root, stdio: 'inherit', env: environment, shell: false });
 };
@@ -98,8 +108,7 @@ sourcePhases.push({ id: 'dsh-plugin:peer-gateway', status: 'passed', disposition
 run('test/integration/run-source-ui.ts');
 run('tools/verify-package.ts', '--source-sdk', sdk, '--bundle', join(bundles, 'composition'));
 run('tools/verify-package.ts', '--dev', '--source-sdk', sdk, '--bundle', join(bundles, 'composition-dev'));
-const packRoot = join(bundles, 'pack-scope');
-const packEnvironment = smokePeerEnvironment({ root: packRoot, workspace: join(packRoot, 'workspace'), appData: join(packRoot, 'app'), productData: join(packRoot, 'product') }, process.execPath);
+const packEnvironment = smokePeerEnvironment({ root: bundles, workspace: join(bundles, 'pack-workspace'), appData: join(bundles, 'pack-app'), productData: join(bundles, 'pack-product') }, process.execPath);
 const packed = spawnSync(process.execPath, [resolvePeerNpm(process.execPath, request.npmCli), 'pack', join(bundles, 'composition'), '--json', '--ignore-scripts', '--pack-destination', bundles], { cwd: root, env: packEnvironment, shell: false, encoding: 'utf8', timeout: 30_000 });
 if (packed.error || packed.status !== 0) throw new Error('Verified bundle packing failed');
 const rows = JSON.parse(String(packed.stdout)); if (!Array.isArray(rows) || rows.length !== 1 || !/^[A-Za-z0-9._-]+\.tgz$/.test(rows[0].filename)) throw new Error('Verified package inventory invalid');
@@ -121,10 +130,6 @@ const report = { schemaVersion: 'buildr.dsh-full-verification/v1', status: 'pass
   sourceSdk, sourcePhases, ...(request.candidateOutput ? { candidateBound: true, sourceTree, sourceBinding: { method: 'git-tree-content-equivalence', testedGitHead: verificationSource.observedCommit, testedWorkingTreeDirty: verificationSource.dirty, verifiedContentSha256: verificationSource.contentSha256, candidateSourceCommit: sourceCommit, candidateSourceTree: sourceTree } } : {}),
   checks: ['unit', 'integration', 'source-ui', 'released-loader', 'development-loader', 'actual-package-pair'], variants: ['released', 'development'], runtimeActivated: false, desktopValidated: false };
 if (request.output) writeFileSync(request.output, `${JSON.stringify(report, null, 2)}\n`);
-// The report, phase diagnostics and exact archive remain available. A failed
-// or interrupted run keeps its staging for diagnosis; never sweep other runs.
-try { discardCompletedStaging([tarball, ...(request.output ? [request.output] : []), ...(request.candidateOutput ? [request.candidateOutput] : [])]); }
-catch (error) { console.error('[dsh-source-phase] verification passed; could not reclaim staging:', error); }
 console.log(JSON.stringify(report)); return report;
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await verifyAll();

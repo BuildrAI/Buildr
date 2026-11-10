@@ -25,32 +25,6 @@ async function generate(root: string): Promise<void> {
   await writeWorkspaceAgentAssetsDtos(root);
 }
 
-test('repeated contract generation preserves unchanged compiler inputs and replaces only drifted output', async t => {
-  const root = fixture(t);
-  await generate(root);
-  const files = ['buildr', 'buildr-web'].flatMap(service => {
-    const directory = path.join(root, service, 'build/generated');
-    return fs.readdirSync(directory).map(name => path.join(directory, name));
-  });
-  for (const file of files) fs.utimesSync(file, 1, 1);
-  const before = files.map(file => ({ ...fs.statSync(file), content: fs.readFileSync(file, 'utf8') }));
-  await generate(root);
-  for (const [index, file] of files.entries()) {
-    assert.equal(fs.statSync(file).mtimeMs, before[index]!.mtimeMs, 'identical bytes must not invalidate incremental compilation');
-    assert.equal(fs.statSync(file).ino, before[index]!.ino);
-    assert.equal(fs.readFileSync(file, 'utf8'), before[index]!.content);
-  }
-  const changed = files[0]!;
-  fs.writeFileSync(changed, 'drifted output');
-  const descriptor = fs.openSync(changed, 'r');
-  try {
-    await generate(root);
-    assert.equal(fs.readFileSync(changed, 'utf8'), before[0]!.content);
-    assert.equal(fs.readFileSync(descriptor, 'utf8'), 'drifted output', 'an existing reader retains its complete old inode');
-    for (const file of files.slice(1)) assert.equal(fs.statSync(file).mtimeMs, 1000);
-  } finally { fs.closeSync(descriptor); }
-});
-
 test('全部HTTP DTO从空显式目标生成两端闭合输出', async (t) => {
   const root = fixture(t);
   await generate(root);

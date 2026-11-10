@@ -1,4 +1,4 @@
-import { request as httpRequest, createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { once } from 'node:events';
 import { AgentServiceError, safeDiagnostic } from '../domain/agent-state.ts';
@@ -63,29 +63,23 @@ export async function listen(handler: (req: IncomingMessage, res: ServerResponse
 }
 export async function request(origin: string, token: string, route: string, value?: unknown, signal?: AbortSignal): Promise<any> {
   const operation = route === '/operations' ? (value as { operation?: string } | undefined)?.operation : undefined;
-  const payload = value === undefined ? undefined : JSON.stringify(value);
-  // A private JSON control must never reuse a socket closed while synchronous
-  // runtime preparation prevented this client from processing its close event.
-  const response = await new Promise<IncomingMessage>((resolve, reject) => {
-    const call = httpRequest(localOrigin(origin) + route, {
-      agent: false, method: value === undefined ? 'GET' : 'POST', signal,
-      headers: { Authorization: 'Bearer ' + token, ...(value === undefined ? {} : { 'Content-Type': 'application/json' }), ...(operation === 'conversations.addAttachment' ? { 'x-buildr-operation': operation } : {}) },
-    }, resolve);
-    call.once('error', reject);
-    call.end(payload);
+  const response = await fetch(localOrigin(origin) + route, {
+    method: value === undefined ? 'GET' : 'POST', headers: { Authorization: 'Bearer ' + token, ...(value === undefined ? {} : { 'Content-Type': 'application/json' }), ...(operation === 'conversations.addAttachment' ? { 'x-buildr-operation': operation } : {}) },
+    ...(value === undefined ? {} : { body: JSON.stringify(value) }), signal,
   });
-  const chunks: Buffer[] = []; let size = 0;
+  const chunks: Uint8Array[] = []; let size = 0;
+  const reader = response.body?.getReader();
   try {
-    for await (const value of response) {
-      const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value);
-      size += chunk.byteLength;
+    if (reader) for (;;) {
+      const chunk = await reader.read(); if (chunk.done) break;
+      size += chunk.value.byteLength;
       if (size > (operation === 'conversations.readAttachment' ? 46 : 16) * 1024 * 1024) throw new AgentServiceError('agent_process_response_too_large', '执行后台返回超过限制。', 502);
-      chunks.push(chunk);
+      chunks.push(chunk.value);
     }
-  } finally { response.destroy(); }
+  } finally { await reader?.cancel().catch(() => {}); reader?.releaseLock(); }
   const text = Buffer.concat(chunks).toString('utf8');
   let result: any;
   try { result = JSON.parse(text); } catch { throw new AgentServiceError('agent_process_response_invalid', '执行后台返回无效。', 502); }
-  if ((response.statusCode ?? 500) < 200 || (response.statusCode ?? 500) >= 300) { const error=new AgentServiceError(result?.error?.code ?? 'agent_process_operation_failed', result?.error?.message ?? '执行后台操作未完成。', response.statusCode ?? 500); const internal=result?.error?.internalCode; if(typeof internal==='string'&&/^[a-zA-Z][a-zA-Z0-9_]{0,99}$/.test(internal))Object.assign(error,{internalCode:internal}); throw error; }
+  if (!response.ok) { const error=new AgentServiceError(result?.error?.code ?? 'agent_process_operation_failed', result?.error?.message ?? '执行后台操作未完成。', response.status); const internal=result?.error?.internalCode; if(typeof internal==='string'&&/^[a-zA-Z][a-zA-Z0-9_]{0,99}$/.test(internal))Object.assign(error,{internalCode:internal}); throw error; }
   return result;
 }

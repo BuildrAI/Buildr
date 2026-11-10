@@ -6,7 +6,6 @@ import type { RegistryRepository } from '../persistence/workspace-registry-repos
 import type { WorkspaceRepository } from '../persistence/workspace-manifest-repository.ts';
 import { isWorkspaceId } from '../domain/workspace.ts';
 import process from 'node:process';
-import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.ts';
 import { WORKSPACE_DESCRIPTION_TODO } from '../persistence/workspace-manifest-repository.ts';
 import { declarationIntakeNextAction } from '../../../infrastructure/contracts/declaration-intake.ts';
 
@@ -134,7 +133,7 @@ export function registerWorkspaceQueryApplication(runtime: WorkspaceQueryApplica
     const localRoots = persistence.registry.roots;
     // 预览上下文把共享 Profile 的登记条目以只读来源并入列表；revision 仍指向本实例登记文件。
     const sharedRoots = (runtime.registryRepository.readSharedRegistryRoots?.().roots || [])
-      .filter((root: any) => !localRoots.some((local: string) => sameFilesystemPath(root, local)));
+      .filter((root: any) => !localRoots.includes(root));
     let preparations: WorkspacePreparation[] = [];
     try { preparations = createWorkspacePreparationStore(path.join(path.dirname(runtime.registryRepository.workspaceRegistryPath()), 'workspace-preparations')).list(); } catch { /* Preparation observations cannot hide valid registered workspaces. */ }
     const entries = [

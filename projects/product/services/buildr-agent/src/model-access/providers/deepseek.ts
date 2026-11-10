@@ -13,7 +13,7 @@ export interface DeepSeekSourceOwner {
 export interface DeepSeekProviderOptions { ownerFactory(input: { accountId: string; configRoot: string; environment: Readonly<Record<string, string>> }): DeepSeekSourceOwner | Promise<DeepSeekSourceOwner>; }
 /** Native DSH owns authentication; this source never reads or stores its account token. */
 export function createDeepSeekModelProvider(options: DeepSeekProviderOptions): ModelProvider {
-  return { id: 'deepseek', label: 'DeepSeek', async open(input) { return new DeepSeekRuntime(await options.ownerFactory(input)); } };
+  return { id: 'deepseek', label: 'DeepSeek / DSH', async open(input) { return new DeepSeekRuntime(await options.ownerFactory(input)); } };
 }
 class DeepSeekRuntime implements ModelProviderRuntime {
   readonly protocol = 'anthropic-messages' as const;

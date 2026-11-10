@@ -1,5 +1,3 @@
-import { diagnosticCode } from '../../storage/execution-log.ts';
-import { regenerableToolCaches, toolCacheReclaimable } from '../../storage/tool-cache.ts';
 import { dshContent } from './content.ts';
 import { instructionParticipation } from '../../domain/participation.ts';
 import { withExecutionFault } from '../../domain/execution-fault.ts';
@@ -13,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import type { AgentExecutor, AgentRuntime, ContextRef, ExecutionRef, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorRequest, ExecutorSendInput, LoginObservation, PermissionMode } from '../../contracts.ts';
-import { releasedNativeControl, nativeBinding, visibleText, bounded, findExecutable, inspectVersion, accountEnvironment, nativeHome, opaqueReference, parseReference, privateDirectories } from '../native-process.ts';
+import { nativeBinding, visibleText, bounded, findExecutable, inspectVersion, isolatedEnvironment, nativeHome, opaqueReference, parseReference, privateDirectories } from '../native-process.ts';
 import { launchDshHost, dshValue, type DshClient } from './client.ts';
 import { dshBalanceQuota } from './balance.ts';
 import { DshExecutionLineage, dshItem, dshHistoryItems, dshExecutionObservation, dshToolOutcomeUnknown } from './protocol.ts';
@@ -51,8 +49,8 @@ export function dshCommandDeadlinePatch() {
   return [{id:'tool-bash',name:'@deepseek-ai/dsh-tool-bash',config:{promoteOnTimeout:false}},
     {id:'tool-pwsh',name:'@deepseek-ai/dsh-tool-pwsh',config:{promoteOnTimeout:false}}];
 }
-interface ActiveTurn { lineage: DshExecutionLineage; accepted?: boolean; lastSeq?: number; inputIds?: Set<string>; restoring?: Promise<void>; reconnects?: number; retryTimer?: ReturnType<typeof setTimeout>; reject?: (error: Error) => void; observationDiagnostic?: string; observationLost?: boolean; stopRequested?: boolean; stopConfirmed?:boolean; stopping?:Promise<ExecutorObservation>; cancellation?: Promise<void>; supplementInputs?: Set<string>; supplementAdmissions?: number; supplementUnknown?: boolean; pendingEnd?: any; finish?: () => void; id: string; input: ExecutorSendInput; nativeTurn?: number; contextWindow?: number; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown' }>; pending: Map<string, { request: ExecutorRequest; resolve?: (value: string) => void; answer?: (value: { answers: any[] }) => void; reject?: (error: Error) => void; wait?: any }>; stream?: any; pump?: Promise<void>; streamTimer?: ReturnType<typeof setTimeout>; streamDirty?: boolean; streamEmittedAt?: number; streamAttempt?: { id: string; turn: number; step: number; nextIndex: number; text: string }; }
-export function createDshExecutor(): AgentExecutor { return { nativeContent: dshContent, readReleasedControl: input => releasedNativeControl('dsh',input,{allowUnknownBackgroundWork:true}), readPersistedExecution: readDshPersistedExecution, storage: { transientDirectories: regenerableToolCaches, canReclaim: toolCacheReclaimable }, descriptor: { id: 'dsh', label: 'DSH', capabilities }, open: options => DshRuntime.open(options) }; }
+interface ActiveTurn { lineage: DshExecutionLineage; accepted?: boolean; lastSeq?: number; inputIds?: Set<string>; restoring?: Promise<void>; reconnects?: number; retryTimer?: ReturnType<typeof setTimeout>; reject?: (error: Error) => void; observationDiagnostic?: string; observationLost?: boolean; stopRequested?: boolean; stopConfirmed?:boolean; stopping?:Promise<ExecutorObservation>; cancellation?: Promise<void>; supplementInputs?: Set<string>; supplementAdmissions?: number; supplementUnknown?: boolean; pendingEnd?: any; finish?: () => void; id: string; input: ExecutorSendInput; nativeTurn?: number; contextWindow?: number; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown' }>; pending: Map<string, { request: ExecutorRequest; resolve?: (value: string) => void; answer?: (value: { answers: any[] }) => void; reject?: (error: Error) => void; wait?: any }>; stream?: any; pump?: Promise<void>; streamAttempt?: { id: string; turn: number; step: number; nextIndex: number; text: string }; }
+export function createDshExecutor(): AgentExecutor { return { nativeContent: dshContent, readPersistedExecution: readDshPersistedExecution, storage: { transientDirectories: ['tmp/node-compile-cache', 'cache/node-compile', 'home/.npm/_cacache'] }, descriptor: { id: 'dsh', label: 'DSH', capabilities }, open: options => DshRuntime.open(options) }; }
 export class DshRuntime implements AgentRuntime {
   participationInstruction?: import('../../participation-contracts.ts').ParticipationMatch;
   readonly capabilities = { ...capabilities, permissionModes: ['default'] as PermissionMode[] };
@@ -72,9 +70,8 @@ export class DshRuntime implements AgentRuntime {
   private gateway?: ExecutorGateway;
   private modelBridge?: {key:string;addressFile:string};
   private forkBridge?: {key:string;addressFile:string;patch:string};
-  private readonly diagnostics?:ExecutorOpenOptions['diagnostics'];
-  private constructor(bindingIdentity: string, host: Awaited<ReturnType<typeof launchDshHost>>, client: DshClient,diagnostics?:ExecutorOpenOptions['diagnostics']) {
-    this.bindingIdentity=bindingIdentity;this.host=host;this.client=client;this.diagnostics=diagnostics;
+  private constructor(bindingIdentity: string, host: Awaited<ReturnType<typeof launchDshHost>>, client: DshClient) {
+    this.bindingIdentity=bindingIdentity;this.host=host;this.client=client;
     host.child?.once('exit',()=>{
       for(const turn of this.turns.values())if(!turn.terminal){
         if(turn.retryTimer){clearTimeout(turn.retryTimer);turn.retryTimer=undefined;}
@@ -91,10 +88,10 @@ export class DshRuntime implements AgentRuntime {
     options.signal?.throwIfAborted();
     const gateway = checkedGateway(options.gateway);
     const { home, temporary } = nativeHome(options.configRoot); const config = join(options.configRoot, 'dsh-home'); const agents = join(options.configRoot, 'dsh-agents-home');
+    await privateDirectories(options.configRoot, home, temporary, config, agents);
     const modelBridge = !gateway&&!ownerPatch?{key:randomUUID(),addressFile:join(config,'model-bridge-'+randomUUID()+'.json')}:undefined;
     const forkBridge = {key:randomUUID(),addressFile:join(config,'fork-bridge-'+randomUUID()+'.json')};
-    const env = accountEnvironment(options.environment, home, temporary, { DSH_HOME: config, DSH_AGENTS_HOME: agents, DSH_TOOLS_MODE: 'native', BUILDR_DSH_FORK_KEY:forkBridge.key, ...(modelBridge?{BUILDR_DSH_OWNER_KEY:modelBridge.key}:{}), ...(ownerPatch ? { BUILDR_DSH_OWNER_KEY: options.environment.BUILDR_DSH_OWNER_KEY } : {}), ...(gateway ? { BUILDR_MODEL_GATEWAY_KEY: gateway.apiKey, NO_PROXY: '127.0.0.1,localhost,::1', no_proxy: '127.0.0.1,localhost,::1' } : {}) }, options.cacheRoot);
-    await privateDirectories(options.configRoot, config, agents, ...(env.HOME === home ? [home] : []), ...(env.TMPDIR === temporary ? [temporary] : []));
+    const env = isolatedEnvironment(options.environment, home, temporary, { DSH_HOME: config, DSH_AGENTS_HOME: agents, DSH_TOOLS_MODE: 'native', BUILDR_DSH_FORK_KEY:forkBridge.key, ...(modelBridge?{BUILDR_DSH_OWNER_KEY:modelBridge.key}:{}), ...(ownerPatch ? { BUILDR_DSH_OWNER_KEY: options.environment.BUILDR_DSH_OWNER_KEY } : {}), ...(gateway ? { BUILDR_MODEL_GATEWAY_KEY: gateway.apiKey, NO_PROXY: '127.0.0.1,localhost,::1', no_proxy: '127.0.0.1,localhost,::1' } : {}) }, options.cacheRoot);
     const executable = await findExecutable(options.executable, ['dsh', 'dsh.exe'], env); const version = await inspectVersion(executable, env, options.signal);
     if (!isCompatibleProgram('dsh', version)) throw new Error(`dsh_version_unsupported: requires ${nativeProgramPolicy('dsh').compatibility}`);
     const binding = await consumerBinding('dsh', executable, version, config, options);
@@ -105,18 +102,17 @@ export class DshRuntime implements AgentRuntime {
     patches.push(...dshCommandDeadlinePatch());
     patches.push({insert:[{id:'buildr-command-deadline',name:fileURLToPath(new URL(import.meta.url.endsWith('.ts')?'./command-deadline-plugin.ts':'./command-deadline-plugin.js',import.meta.url))}]});
     patches.push({insert:[{id:'buildr-interaction',name:fileURLToPath(new URL(import.meta.url.endsWith('.ts')?'./interaction-plugin.ts':'./interaction-plugin.js',import.meta.url)),config:{instructions:(options.interaction??interactionPolicy).instructions}}]});
-    patches.push({insert:[{id:'buildr-narration-reminder',name:fileURLToPath(new URL(import.meta.url.endsWith('.ts')?'./narration-reminder-plugin.ts':'./narration-reminder-plugin.js',import.meta.url)),config:{threshold:6}}]});
     patches.push({insert:[{id:'buildr-fork-transfer',name:fileURLToPath(new URL(import.meta.url.endsWith('.ts')?'./fork-transfer-plugin.ts':'./fork-transfer-plugin.js',import.meta.url)),config:{addressFile:forkBridge.addressFile}}]});
     await writeFile(forkPatch, JSON.stringify(patches), {mode:0o600});
     patch = forkPatch;
     let host: Awaited<ReturnType<typeof launchDshHost>>;
-    try { host = await launchDshHost(executable, env, options.configRoot, options.signal, patch,options.diagnostics?event=>options.diagnostics!({...event,provider:'dsh'}):undefined); }
+    try { host = await launchDshHost(executable, env, options.configRoot, options.signal, patch); }
     catch (error) {
       await rm(forkBridge.addressFile,{force:true});
       await rm(forkPatch,{force:true});
       throw error;
     }
-    const runtime = new DshRuntime(binding.identity, host, host.client,options.diagnostics);
+    const runtime = new DshRuntime(binding.identity, host, host.client);
     runtime.participationInstruction = instructionParticipation('interaction-policy',(options.interaction ?? interactionPolicy).instructions);
     runtime.bindingData = binding.data; runtime.metadata.version = version;
     runtime.gateway = gateway; runtime.modelBridge=modelBridge;
@@ -179,10 +175,7 @@ export class DshRuntime implements AgentRuntime {
     // The caller prefers trusted native titles; missing native output must not
     // disable the isolated fallback for ordinary conversations.
     if(this.gateway){
-      // A gateway lease exposes exactly one model. The caller names the model by
-      // its account catalog id, which is not a gateway route, so auxiliary
-      // requests always use the lease model rather than resolving that id.
-      const model=gatewayModel(this.gateway);
+      const model=gatewayModel(this.gateway,input.model);
       return generateDshTitle(input,model.id,'chat-completions',init=>fetch(this.gateway!.baseUrl.replace(/\/$/,'')+'/chat/completions',{
         ...init,headers:{...Object.fromEntries(new Headers(init.headers)),authorization:'Bearer '+this.gateway!.apiKey},redirect:'error',
       }),Math.min(128,model.maxOutputTokens??128));
@@ -338,11 +331,9 @@ export class DshRuntime implements AgentRuntime {
     }
   }
   private followFailed(turn: ActiveTurn, cause: unknown): void {
-    this.diagnostics?.({event:'observation-lost',provider:'dsh',executionId:turn.id,contextId:turn.input.contextRef.id,code:diagnosticCode(cause),attempt:turn.reconnects??0});
     const error = cause instanceof NativeObservationError ? cause
       : new NativeObservationError('dsh_execution_observation_lost', cause, this.gateway ? [this.gateway.apiKey] : []);
     if (this.disposed) return;
-    try { this.flushAssistant(turn); } catch { /* Keep the original failure and native controls. */ }
     turn.observationLost = true; turn.observationDiagnostic = error.diagnostic;
     const recoverable = turn.accepted && !this.closed && (turn.reconnects ?? 0) < 3;
     // A lost observer does not end the native turn. Keep its original waiter
@@ -367,12 +358,10 @@ export class DshRuntime implements AgentRuntime {
     const opening = new Promise<void>((resolve, fail) => { ready = resolve; reject = fail; }); opening.catch(() => {});
     const buffer: any[] = [];
     const pump = (async () => {
-      let opened = false, frames = 0;
+      let opened = false;
       try {
         for await (const frame of stream) {
           if (this.closed || turn.stream !== stream) break;
-          // Buffered native frames must yield to HTTP, stop controls and flush timers.
-          if (++frames % 32 === 0) await new Promise<void>(resolve => setImmediate(resolve));
           if (frame.type === 'snapshot') {
             if (frame.header.id !== turn.input.contextRef.id || frame.header.cwd !== turn.input.cwd) throw new Error('dsh_context_identity_mismatch');
             if (restore) await this.restoreSnapshot(turn, frame);
@@ -441,7 +430,6 @@ export class DshRuntime implements AgentRuntime {
     // Repair durable items independently of the old in-memory projection. This also
     // repairs an event consumer that failed after mutating its native turn object.
     for (const item of dshHistoryItems(events)) if (item.executionId && turn.inputIds?.has(item.executionId)) turn.input.onEvent({ type: 'item', item });
-    if(turn.observationLost)this.diagnostics?.({event:'observation-restored',provider:'dsh',executionId:turn.id,contextId:turn.input.contextRef.id,attempt:turn.reconnects??0});
     turn.observationLost = false; turn.observationDiagnostic = undefined;
     for (const event of events) {
       if (event.seq <= (turn.lastSeq ?? -1)) continue;
@@ -456,24 +444,15 @@ export class DshRuntime implements AgentRuntime {
       const text = (active.stream ?? []).flatMap((record: any) =>
         record?.type === 'text-chunks' && Array.isArray(record.texts) ? record.texts.filter((text: unknown) => typeof text === 'string')
           : record?.type === 'chunk' && record.chunk?.type === 'text-delta' ? [String(record.chunk.text ?? '')] : []).join('');
-      this.flushAssistant(turn);
       turn.streamAttempt = { id: active.attemptId, turn: active.turn, step: active.step, nextIndex: active.nextIndex, text };
       if (text) turn.input.onEvent({ type: 'item', item: { id: 'assistant:' + active.turn + ':' + active.step, kind: 'message', role: 'assistant', text, executionId: turn.id, status: 'running' } });
     }
     turn.input.onEvent({ type: 'observation', observation: this.activeObservation(turn) });
   }
 
-  private flushAssistant(turn: ActiveTurn): void {
-    clearTimeout(turn.streamTimer); turn.streamTimer = undefined;
-    const attempt = turn.streamAttempt;
-    if (!turn.streamDirty || !attempt) return;
-    turn.streamDirty = false; turn.streamEmittedAt = performance.now();
-    turn.input.onEvent({ type: 'item', item: { id: `assistant:${attempt.turn}:${attempt.step}`, kind: 'message', role: 'assistant', text: attempt.text, executionId: turn.id, status: 'running' } });
-  }
   private assistantFrame(turn: ActiveTurn, frame: any): void {
     if (frame.type === 'start') {
       if (turn.terminal || frame.turn !== turn.nativeTurn || !turn.inputIds?.has(turn.lineage.turns.get(frame.turn)!)) return;
-      this.flushAssistant(turn); turn.streamEmittedAt = undefined;
       turn.streamAttempt = { id: frame.attemptId, turn: frame.turn, step: frame.step, nextIndex: 0, text: '' }; return;
     }
     const attempt = turn.streamAttempt;
@@ -483,18 +462,10 @@ export class DshRuntime implements AgentRuntime {
       attempt.nextIndex++; turn.reconnects = 0;
       if (frame.chunk?.type === 'text-delta') {
         attempt.text += String(frame.chunk.text ?? '');
-        turn.streamDirty = true;
-        const remaining = 50 - (performance.now() - (turn.streamEmittedAt ?? -Infinity));
-        if (remaining <= 0) this.flushAssistant(turn);
-        else if (!turn.streamTimer) {
-          turn.streamTimer = setTimeout(() => {
-            try { this.flushAssistant(turn); } catch (error) { this.followFailed(turn, error); }
-          }, remaining);
-          turn.streamTimer.unref();
-        }
+        turn.input.onEvent({ type: 'item', item: { id: `assistant:${attempt.turn}:${attempt.step}`, kind: 'message', role: 'assistant', text: attempt.text, executionId: turn.id, status: 'running' } });
       }
     }
-    if (frame.type === 'end') { this.flushAssistant(turn); turn.streamAttempt = undefined; }
+    if (frame.type === 'end') turn.streamAttempt = undefined;
   }
   async supplement(input: ExecutorSupplementInput): Promise<ExecutorInputReceipt> {
     this.reference(input.contextRef, input.cwd);
@@ -521,7 +492,6 @@ export class DshRuntime implements AgentRuntime {
     }
   }
   private event(turn: ActiveTurn, event: any): void {
-    this.flushAssistant(turn);
     const data = event.data ?? {}; const emit = (event: import('../../contracts.ts').ExecutorEvent) => turn.input.onEvent(withExecutionFault(event));
     if (event.type === 'session/title') {
       if (data.source?.kind === 'provider' && typeof data.title === 'string') {
@@ -560,7 +530,6 @@ export class DshRuntime implements AgentRuntime {
       turn.tools.set(data.callId, { id: data.callId, label: String(data.name ?? '工具'), status: 'running' });
 
     }
-    if(dshToolOutcomeUnknown(event))this.diagnostics?.({event:'native-tail-repair',provider:'dsh',executionId:turn.id,contextId:turn.input.contextRef.id,code:'TOOL_OUTCOME_UNKNOWN'});
     if (event.type === 'tool/result') { const id = data.message?.toolCallId; const tool = turn.tools.get(id); if (tool) tool.status = dshToolOutcomeUnknown(event)?'unknown':'completed'; }
     if (event.type === 'approval/decided') { for (const [id, pending] of turn.pending) if (pending.resolve && id === String(data.id)) { turn.pending.delete(id); emit({ type: 'request-resolved', requestId: id }); } }
     if (event.type === 'turn/end') {
@@ -691,14 +660,7 @@ export class DshRuntime implements AgentRuntime {
   }
   async stop({ contextRef, executionRef, toolId }: { contextRef: ContextRef; executionRef: ExecutionRef; toolId?: string }): Promise<ExecutorObservation> {
     this.reference(contextRef); const turn = this.turns.get(contextRef.id);
-    if (!turn || turn.id !== executionRef.id) {
-      // A reopened native connection can read the original history, but cannot
-      // cancel work owned by its previous host. Never signal a recovered PID or
-      // report this expected ownership boundary as an internal server failure.
-      const observation = await this.observe({ contextRef, executionRef }).catch(() => undefined);
-      if (observation?.executionRef?.id === executionRef.id && ['idle','stopped'].includes(observation.status) && observation.tools.every(tool => tool.status === 'completed')) return observation;
-      throw new AgentServiceError('agent_stop_owner_unavailable', '当前连接未持有原执行的停止通道，尚不能确认剩余命令已停止。原记录已保留；可以发送新要求，系统会保留旧执行并使用独立上下文。', 409);
-    }
+    if (!turn || turn.id !== executionRef.id) throw new Error('停止尚未确认：当前连接未持有原轮执行，已保留原工具状态；请核对原执行。');
     if (toolId) return this.stopToolJobs(turn,toolId);
     turn.stopRequested=true;
     if(turn.stopConfirmed)return this.activeObservation(turn);
@@ -748,7 +710,6 @@ export class DshRuntime implements AgentRuntime {
       }
     }
     if(!confirmed){turn.diagnostic='停止尚未确认：原生取消未完成，未终止共享主机或启动第二份执行。';turn.observationLost=true;return this.activeObservation(turn);}
-    this.flushAssistant(turn);
     turn.stopConfirmed=true;turn.terminal='stopped';turn.observationLost=false;turn.supplementUnknown=false;turn.pendingEnd=undefined;
     turn.supplementInputs?.clear();turn.lineage.stopped(owners);
     for(const tool of turn.tools.values())if(tool.status==='running')tool.status='unknown';
@@ -759,7 +720,6 @@ export class DshRuntime implements AgentRuntime {
   }
   async close(): Promise<void> {
     const controlExited=Boolean(this.host.child&&(this.host.child.exitCode!==null||this.host.child.signalCode!==null));
-    for (const turn of this.turns.values()) { try { this.flushAssistant(turn); } catch { /* Preserve unknown delivery. */ } }
     this.disposed = true;
     for (const turn of this.turns.values()) if (turn.retryTimer) { clearTimeout(turn.retryTimer); turn.retryTimer = undefined; }
     await this.cancelLogin();

@@ -92,16 +92,8 @@ export async function runSourceControlEditableDiffJourney({t, page, workspaceUrl
         .filter(({ node, rect }) => rect.width > 0 && rect.right > innerWidth + 1 && getComputedStyle(node).display !== 'none')
         .sort((a, b) => b.rect.right - a.rect.right).slice(0, 16)
         .map(({ node, rect }) => ({ tag: node.tagName, className: node.className, right: rect.right, width: rect.width, position: getComputedStyle(node).position, parent: node.parentElement?.className, overflowX: getComputedStyle(node).overflowX })) }));
-    const settledScrollWidth = bounds.scrollWidth <= bounds.width + 1 ? bounds.scrollWidth : await page.evaluate(() => new Promise<number>(resolve => {
-      const startedAt = performance.now();
-      const read = () => {
-        const scrollWidth = document.documentElement.scrollWidth;
-        if (scrollWidth <= innerWidth + 1 || performance.now() - startedAt >= 1_000) resolve(scrollWidth);
-        else requestAnimationFrame(read);
-      };
-      requestAnimationFrame(() => requestAnimationFrame(read));
-    }));
-    assert.ok(settledScrollWidth <= bounds.width + 1, '差异编辑不产生页面横向溢出: ' + JSON.stringify({...bounds, settledScrollWidth}));
+    const afterPaint = bounds.scrollWidth <= bounds.width + 1 ? bounds.scrollWidth : await page.evaluate(() => new Promise<number>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(document.documentElement.scrollWidth)))));
+    assert.ok(bounds.scrollWidth <= bounds.width + 1, '差异编辑不产生页面横向溢出: ' + JSON.stringify({...bounds, afterPaint}));
   };
   const assertLineInReader = async (text: string) => {
     await page.waitForFunction((expected: string) => {

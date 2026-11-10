@@ -3,7 +3,7 @@ import {Alert,Button} from 'antd';
 import {PlusOutlined} from '@ant-design/icons';
 import {WorkspaceViewActiveContext} from '../../app/pageTabs';
 import {useOptionalAgentConversations} from './AgentConversationsContext';
-import {ConversationAssociationPopover,AssociationHeading,AssociationRows,AssociationSearch} from './ConversationAssociationPopover';
+import {ConversationAssociationPopover,AssociationRows,AssociationSearch} from './ConversationAssociationPopover';
 import {associationPages,associationKey,conversationTaskLinks,conversationAssociationItem,type AssociationItem} from './conversation-associations';
 import {associationWorkspaces,searchConversationAssociations,ASSOCIATIONS_CHANGED} from './conversation-association-client';
 
@@ -40,7 +40,7 @@ export function TaskConversationEntry({workspaceId,taskId}:{workspaceId:string;t
   };
   return <section className="task-conversation-entry" data-task-internal-conversations={taskId}>
     <ConversationAssociationPopover key={scopeKey} kind="conversation" count={loading||error?null:rows.length} loading={loading} enabled={active}>
-      <AssociationHeading title="已关联对话" refreshing={loading} onRefresh={()=>setReload(value=>value+1)}/>{loading&&<small role="status">正在读取关联对话…</small>}
+      <strong>已关联对话</strong>{loading&&<small role="status">正在读取关联对话…</small>}
       {error&&<Alert type="warning" message={error} action={<Button size="small" onClick={()=>setReload(value=>value+1)}>重试</Button>}/>}
       {!loading&&!error&&!rows.length&&<small>暂无关联对话。</small>}
       <AssociationRows kind="conversation" items={rows} names={names} saving={saving} onOpen={item=>{context.setFull(false);context.setOpen(true);context.setView('conversation');void context.openConversation(item.workspaceId,item.id);}} onRemove={item=>void change(item,false)}/>

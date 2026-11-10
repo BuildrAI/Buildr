@@ -65,33 +65,6 @@ test('same inputs create byte-identical payload and installed resource mapping d
   }
 });
 
-test('packaged file watcher starts and closes its owned child without source files', () => {
-  const payload = prepared.first;
-  const directory = path.join(preparedRoot, 'watched directory');
-  fs.mkdirSync(directory);
-  const entry = path.join(payload.root, 'resources/runtime/source-control-watch-process.cjs');
-  const script = `
-    const { IsolatedFileWatchers } = require(process.argv[1]);
-    const assert = require('node:assert/strict');
-    (async () => {
-      const pool = new IsolatedFileWatchers();
-      try {
-        const handle = await pool.watch(process.argv[2], false, () => {});
-        assert.ok(pool.child.pid);
-        assert.notEqual(pool.child.pid, process.pid);
-        assert.equal(pool.child.spawnargs[1], process.argv[1]);
-        handle.close();
-      } finally { await pool.close(); }
-    })().catch(error => { console.error(error); process.exitCode = 1; });
-  `;
-  const result = spawnSync(process.execPath, ['-e', script, entry, directory], {
-    encoding: 'utf8', timeout: 10000,
-    env: { ...process.env, NODE_OPTIONS: '', BUILDR_APPLICATION_PAYLOAD_ROOT: payload.root },
-  });
-  assert.equal(result.error, undefined);
-  assert.equal(result.status, 0, result.stderr);
-});
-
 test('same generated inputs create byte-identical npm Candidate and reject unbound local output', async () => {
   const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-generated-candidate-repeat-'));
   try {

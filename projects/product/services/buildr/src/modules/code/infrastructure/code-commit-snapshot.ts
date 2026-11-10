@@ -19,10 +19,10 @@ export function readCommitSnapshot(source: CodeSource, options: CodeCommitSnapsh
   if (source.commitHash) throw codeFailure('code_commit_source_invalid', '提交必须选择当前工作位置。');
   const status = observeSourceControl(source, { gitConfig: options.gitConfig });
   if (status.truncated) throw codeFailure('code_commit_observation_incomplete', '变更超过完整读取上限，无法核对全部提交内容。', 409);
-  const [gitDirectory, indexPath] = gitText(source, ['rev-parse', '--path-format=absolute', '--git-dir', '--git-path', 'index']).split('\n');
-  if (!gitDirectory || !indexPath) throw codeFailure('code_git_unavailable', '无法核对 Git 管理目录和索引位置。', 404);
+  const gitDirectory = gitText(source, ['rev-parse', '--absolute-git-dir']);
   const progress = ['MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'REBASE_HEAD', 'rebase-merge', 'rebase-apply', 'sequencer', 'BISECT_START'];
   if (progress.some(name => fs.existsSync(path.join(gitDirectory, name))) || status.files.some(file => file.status === 'conflicted')) throw codeFailure('code_commit_operation_in_progress', '当前位置有未结束的 Git 操作或冲突，请处理后提交。', 409);
+  const indexPath = gitText(source, ['rev-parse', '--path-format=absolute', '--git-path', 'index']);
   const indexEntries = codeGit(source.location, ['ls-files', '--stage', '-v', '-z']);
   if (indexEntries.toString().split('\0').some(entry => /^[a-zS] /.test(entry))) throw codeFailure('code_commit_index_flags_unsupported', '索引包含稀疏或忽略变化标记，无法核对全部当前内容；请在对应 Git 工具中处理。', 409);
   const indexRevision = digest(indexEntries), configDigest = digest(codeGit(source.location, ['config', '--null', '--list']));
@@ -78,11 +78,8 @@ export function readCommitSnapshot(source: CodeSource, options: CodeCommitSnapsh
   return { source, revision, head: status.head, branch: status.branch, branchRef, paths, files, diff, indexPath, indexDigest, indexRevision, configDigest, hasChanges: status.files.length > 0 };
 }
 
-export function readCodePushSnapshot(source: CodeSource, options: { configuration?: Buffer; observed?: Pick<CodeCommitSnapshot, 'branchRef' | 'head'> } = {}): CodePushSnapshot {
-  // An immediately preceding, fully verified commit snapshot already owns these
-  // facts. Mutation/push callers without one continue to read them independently.
-  const branchRef = options.observed ? options.observed.branchRef : optional(source, ['symbolic-ref', '-q', 'HEAD']);
-  const head = options.observed ? options.observed.head : optional(source, ['rev-parse', '--verify', 'HEAD^{commit}']);
+export function readCodePushSnapshot(source: CodeSource, options: { configuration?: Buffer } = {}): CodePushSnapshot {
+  const branchRef = optional(source, ['symbolic-ref', '-q', 'HEAD']), head = optional(source, ['rev-parse', '--verify', 'HEAD^{commit}']);
   const branch = branchRef?.startsWith('refs/heads/') ? branchRef.slice(11) : null;
   const configuration = options.configuration ?? codeGit(source.location, ['config', '--null', '--list']);
   const configValue = (key: string) => {

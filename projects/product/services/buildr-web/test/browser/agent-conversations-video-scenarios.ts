@@ -8,7 +8,7 @@ export async function runVideoScenarios(fixture:AgentConversationFixture){
   const {capture,chooseAgent,conversation,input,page,panel,run,sentInputs,step,update,uploadedMedia,workspaceRoot}=fixture;
 await step('视频选择、粘贴与拖入均保留原件和画面，发送及刷新可播放，解码失败保留文字',async()=>{
       await page.setViewportSize({width:1280,height:900});
-      await fixture.startNewConversation();await input().waitFor();await chooseAgent('Codex');await input().fill('录屏说明保留');
+      await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().waitFor();await chooseAgent('Codex');await input().fill('录屏说明保留');
       const recording=await page.evaluate(async()=>{
         const canvas=document.createElement('canvas');canvas.width=160;canvas.height=90;const drawing=canvas.getContext('2d')!;
         drawing.fillStyle='#256d4f';drawing.fillRect(0,0,160,90);

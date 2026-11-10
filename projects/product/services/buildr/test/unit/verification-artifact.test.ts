@@ -19,8 +19,8 @@ test('package selection keeps common checks once and native package checks separ
     assert.deepEqual(modes.filter((mode: string, index: number) => mode !== modes[index - 1]), ['development', 'production'],
       'source and browser controllers finish before the single move to production-only consumers');
     assert.ok(plan.nodes.every((node: any) => !candidateEnvironmentPlan(node.preparation)
-      .some(operation => operation.id === 'buildr-web-source-runtime')),
-      'package verification consumes original Web bytes and never builds a source Web runtime');
+      .some(operation => ['buildr-web-dependencies', 'buildr-web-source-runtime'].includes(operation.id))),
+      'package verification consumes original Web bytes and never prepares source Web');
   }
   assert.throws(() => createLocalArtifactPlan('linux'), /No package platform/u);
 });

@@ -13,8 +13,7 @@ const TEMP_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_TEMP_BYTES = 256 * 1024 * 1024;
 const imageTypes = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
 const videoTypes = ['video/mp4', 'video/webm', 'video/quicktime'];
-/** Storage relocation is not a user attachment change; all readers and writers share this revision. */
-export const attachmentRevision = (value: StoredConversation['attachments']) => createHash('sha256').update(JSON.stringify(Object.fromEntries(Object.entries(value).map(([id,meta])=>{ const {nativeContent,...publicMeta}=meta; return [id,publicMeta]; })))).digest('hex');
+const hash = (value: StoredConversation['attachments']) => createHash('sha256').update(JSON.stringify(Object.fromEntries(Object.entries(value).map(([id,meta])=>{ const {nativeContent,...publicMeta}=meta; return [id,publicMeta]; })))).digest('hex');
 
 /** Private media files and their derived visual inputs share the conversation's save/version boundary. */
 export class ConversationAttachments {
@@ -85,7 +84,7 @@ export class ConversationAttachments {
     }
   }
   add(record: StoredConversation, input: AttachmentInput, pendingIds: string[]) {
-    if (input.expectedAttachmentRevision !== undefined) expected(attachmentRevision(record.attachments), input.expectedAttachmentRevision);
+    if (input.expectedAttachmentRevision !== undefined) expected(hash(record.attachments), input.expectedAttachmentRevision);
     else expected(record.view.revision, input.expectedRevision);
     const video = videoTypes.includes(input.mimeType);
     if ((!video && !imageTypes.includes(input.mimeType)) || !(input.bytes instanceof Uint8Array)) fail('agent_image_invalid', '请选择图片或 MP4、WebM、MOV 视频。');
@@ -136,7 +135,7 @@ export class ConversationAttachments {
     fs.writeFileSync(filename, bytes, { flag: 'wx', mode: 0o600 });
     record.attachments[id] = { mimeType: input.mimeType, size: bytes.length, createdAt: this.options.now(), ...(input.video ? { video: structuredClone(input.video) } : {}) };
     try { this.options.save(record); } catch (error) { fs.unlinkSync(filename); throw error; }
-    return { id, mimeType: input.mimeType, size: bytes.length, revision: record.view.revision, attachmentRevision: attachmentRevision(record.attachments) };
+    return { id, mimeType: input.mimeType, size: bytes.length, revision: record.view.revision, attachmentRevision: hash(record.attachments) };
   }
   read(record: Pick<StoredConversation,'view'|'attachments'>, id: string): { bytes: Buffer; mimeType: string } {
     const meta=record.attachments[id];

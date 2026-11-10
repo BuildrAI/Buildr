@@ -1,6 +1,5 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import type { ExecutorTitleInput } from '../../contracts.ts';
-import { parseTitleJsonObject } from '../title-output.ts';
 
 /** A bounded, tool-free model request. It never creates or prompts a work session. */
 export async function generateDshTitle(input: ExecutorTitleInput, model: string, protocol: 'chat-completions'|'anthropic-messages', request: (init: RequestInit) => Promise<Response>, maxOutputTokens = 128): Promise<string | undefined> {
@@ -45,8 +44,9 @@ export async function generateDshTitle(input: ExecutorTitleInput, model: string,
     text=result.content.filter((part:any)=>part.type==='text').map((part:any)=>part.text).join('');
   }
   if(typeof text!=='string'||Buffer.byteLength(text)>4096)throw new Error('agent_title_output_invalid');
-  const output=parseTitleJsonObject(text);
-  if(!output||typeof output.title!=='string')throw new Error('agent_title_output_invalid');
+  let output: {title?:unknown};
+  try { output=JSON.parse(text); } catch { throw new Error('agent_title_output_invalid'); }
+  if(typeof output.title!=='string')throw new Error('agent_title_output_invalid');
   return output.title;
 }
 

@@ -33,10 +33,10 @@ test('连续工具默认成组折叠，助手说明按原位置独立展示',()=
  assert.equal((html.match(/class="ac-step-group(?: is-failed)?"/g)||[]).length,2);assert.match(html,/3 次工具调用/);
  assert.equal((html.match(/ac-process-narration/g)||[]).length,2);assert.match(html,/1 项失败/);assert.doesNotMatch(html,/ac-step ac-step-tool|ac-tool-detail/);
 });
-test('按已有成员接续展开选择，明细保持顺序且不再出现多余底部按钮',()=>{
+test('按已有成员接续展开选择，明细保持顺序且提供底部收起',()=>{
  const html=renderEntries([tool('prepended'),tool('t1'),tool('t2')],{groupsOpen:{'tool-group:t1':true}});
  assert.match(html,/class="ac-step-group" open/);assert.equal((html.match(/ac-step ac-step-tool/g)||[]).length,3);
- assert.ok(html.indexOf('data-entry-id="prepended"')<html.indexOf('data-entry-id="t1"'));assert.doesNotMatch(html,/收起工具调用/);assert.match(html,/收起处理过程/);
+ assert.ok(html.indexOf('data-entry-id="prepended"')<html.indexOf('data-entry-id="t1"'));assert.match(html,/收起工具调用/);assert.match(html,/收起处理过程/);
 });
 test('未展开的历史过程不挂载正文，执行中的说明与工具汇总可见',()=>{
  const entries=[narration('large'),tool('t1')];const closed=renderEntries(entries,{open:false});
@@ -44,7 +44,7 @@ test('未展开的历史过程不挂载正文，执行中的说明与工具汇�
  const live=renderEntries(entries,{active:true,open:false});assert.match(live,/ac-process-narration/);assert.match(live,/ac-step-group/);assert.doesNotMatch(live,/ac-tool-detail|ac-step-group-items/);
 });
 
-test('执行中工具组不再显示行前光点，整行保留实时状态和展开图标，结束后恢复统计',()=>{const live=render(true);assert.doesNotMatch(live,/ac-execution-light/);assert.match(live,/class="ac-step-group is-live"/);assert.match(live,/ac-step-chevron/);assert.doesNotMatch(live,/次工具调用/);assert.match(render(false),/次工具调用/);});
+test('执行中光点排在工具图标之前，结束后恢复统计',()=>{const live=render(true);assert.ok(live.indexOf('ac-execution-light')<live.indexOf('ac-step-node'));assert.doesNotMatch(live,/次工具调用/);assert.match(render(false),/次工具调用/);});
 test('实时摘要携带当前工具自身状态，不使用组内历史失败作为当前状态',()=>{
  const failed={...tool('failed'),status:'failed'};
  for(const status of ['running','completed','unknown','failed']){
@@ -98,7 +98,7 @@ test('执行中已完成的单条折叠工具只显示统计和动作，当前�
  assert.equal(summaries.length,2);
  assert.match(summaries[0],/1 次工具调用/);assert.match(summaries[0],/title="运行命令"/);
  assert.doesNotMatch(summaries[0],/echo completed-command|ac-execution-light/);
- assert.match(summaries[1],/echo current-command/);assert.doesNotMatch(summaries[1],/ac-execution-light/);assert.equal((html.match(/class="ac-step-group is-live"/g)||[]).length,1);
+ assert.match(summaries[1],/echo current-command/);assert.match(summaries[1],/ac-execution-light/);
 });
 
 test('单条与多条折叠统计均不带命令、路径、搜索词或输出',()=>{
@@ -130,52 +130,29 @@ test('单条折叠统计继续提示失败和未知，展开仍能查看完整�
  assert.match(html,/ac-tool-command">echo full-command/);assert.match(html,/<pre>full-output<\/pre>/);
 });
 
-test('旧分组残留running或同轮补充分段不会产生多个实时分组',()=>{
+test('旧分组残留running或同轮补充分段不会产生多个实时指示',()=>{
  const old={...tool('old'),status:'running'},current={...tool('current'),status:'running'};
  const html=renderEntries([old,narration('between'),current],{active:true,groupsOpen:{'tool-group:old':true}});
- assert.equal((html.match(/class="ac-step-group is-live"/g)||[]).length,1);assert.doesNotMatch(html,/ac-execution-light/);
+ assert.equal((html.match(/ac-execution-light/g)||[]).length,1);
  const summaries=[...html.matchAll(/<summary data-entry-group=.*?<\/summary>/g)].map(match=>match[0]);
- assert.match(summaries[0],/1 次工具调用/);assert.match(summaries[1],/echo current/);
+ assert.match(summaries[0],/1 次工具调用/);assert.doesNotMatch(summaries[0],/ac-execution-light/);
+ assert.match(summaries[1],/ac-execution-light/);
  assert.match(html,/ac-step-group" open/,'较早分组仍保留用户明确展开选择');
  const earlierSegment=renderEntries([old],{active:true,liveToolId:'current'});
- assert.doesNotMatch(earlierSegment,/is-live/);assert.match(earlierSegment,/1 次工具调用/);
- assert.equal((renderEntries([current],{active:true,liveToolId:'current'}).match(/class="ac-step-group is-live"/g)||[]).length,1);
+ assert.doesNotMatch(earlierSegment,/ac-execution-light/);assert.match(earlierSegment,/1 次工具调用/);
+ assert.equal((renderEntries([current],{active:true,liveToolId:'current'}).match(/ac-execution-light/g)||[]).length,1);
 });
-const thinking=(id,text='内部推理 '+id)=>({id,sequence:0,kind:'thinking',role:'assistant',text,createdAt:'2026-10-27T00:00:00Z'});
-test('模型思考不进入信息流，工具与说明保持原顺序',()=>{
+const thinking=(id,text='内部推理 '+id)=>({id,sequence:0,kind:'message',role:'assistant',text,thinking:true,createdAt:'2026-10-27T00:00:00Z'});
+test('模型思考不进入处理过程，只展示助手可见说明与工具调用',()=>{
  const entries=[thinking('k1'),tool('t1'),narration('n1')];
  for(const active of [true,false]){
   const html=renderEntries(entries,{active,open:true});
-  assert.doesNotMatch(html,/ac-process-thinking|思考|内部推理/);
+  assert.doesNotMatch(html,/data-thinking|ac-process-thinking|内部推理/);
   assert.equal((html.match(/ac-process-narration/g)||[]).length,1);
   if(!active)assert.match(html,/1 次工具调用/);
  }
 });
-test('只有模型思考时不生成处理过程行',()=>{
- assert.equal(renderEntries([thinking('k1'),thinking('k2')],{active:true}),'');
-});
-test('旧版带 thinking 标记的助手条目同样跳过',()=>{
- const legacy={id:'legacy',sequence:0,kind:'message',role:'assistant',text:'旧推理',thinking:true,createdAt:'2026-10-27T00:00:00Z'};
- const html=renderEntries([legacy],{active:true});
- assert.equal(html,'');
-});
-test('展开的工具组限制高度并在组内滚动，不再出现重复的底部收起按钮',()=>{
- const css=readFileSync(new URL('../src/features/agent-conversations/agent-conversations.css',import.meta.url),'utf8');
- const rule=css.match(/\.ac-step-group\[open\]>\.ac-step-group-items\{([^}]*)\}/)?.[1]??'';
- assert.match(rule,/max-height:min\(60vh,480px\)/);
- assert.match(rule,/overflow-y:auto/);
- assert.match(rule,/overscroll-behavior:auto/);
- assert.doesNotMatch(rule,/overscroll-behavior:contain/);
- const html=renderEntries(Array.from({length:40},(_,index)=>tool('many-'+index)),{open:true,groupsOpen:{'tool-group:many-0':true}});
- assert.match(html,/ac-step-group-items/);
- assert.doesNotMatch(html,/收起工具调用/,'点击组行即可收起，不再保留重复按钮');
-});
-
-
-for(const provider of ['codex','dsh','qoder'])test(`${provider}折叠只显示元数据，展开实时详情直接显示原生输出`,()=>{
- const live={...tool('native'),provider,input:'echo private-input',text:'echo private-input\nprivate-live-output',detail:{revision:'a'.repeat(64),live:true}};
- const closed=renderEntries([live],{active:true});
- assert.doesNotMatch(closed,/private-input|private-live-output/);
- const opened=renderEntries([live],{groupsOpen:{'tool-group:native':true},toolsOpen:{'tool:native':true}});
- assert.match(opened,/private-live-output/);assert.doesNotMatch(opened,/正在读取完整工具记录/);
+test('只有模型思考时过程块不产生正文说明',()=>{
+ const html=renderEntries([thinking('k1'),thinking('k2')],{active:true});
+ assert.doesNotMatch(html,/ac-process-narration|内部推理|data-thinking/);
 });

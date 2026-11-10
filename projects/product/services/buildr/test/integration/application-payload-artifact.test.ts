@@ -50,9 +50,7 @@ test('npm release artifact freezes one tarball with complete payload and no plat
       'payload/product/resources/installation/launcher/Buildr.icns',
       'payload/product/resources/installation/launcher/Buildr.ico',
     ]) assert.equal(paths.includes(required), true, required);
-    // Forbid an actual bundled Node runtime binary, not dependency directories
-    // that happen to be named node (for example lru-cache/dist/commonjs/node).
-    assert.equal(paths.some((value: any) => /(^|\/)node(?:\.exe)?$/iu.test(value)), false);
+    assert.equal(paths.some((value: any) => /(^|\/)node(?:\.exe)?(\/|$)/iu.test(value)), false);
     assert.equal(paths.some((value: any) => value.endsWith('/preparation.yml')), false);
     assert.equal(paths.some((value: any) => value.includes('/services/buildr-web/')), false);
     assert.equal(paths.some((value: any) => value.includes('/node_modules/typescript/')), false);

@@ -105,7 +105,7 @@ export function ServicesPage() {
             ? <Button type="text" icon={<UnorderedListOutlined />} onClick={() => navigate(href(s.id) + '?view=runtime')}>查看运行</Button>
             : summary?.definition
             ? <Button className="service-directory-start" icon={<PlayCircleOutlined />} loading={preparing === s.code} disabled={list?.migrationRequired} onPointerEnter={() => { void prepareStart(s.code).catch(() => undefined); }} onFocus={() => { void prepareStart(s.code).catch(() => undefined); }} onClick={() => void openStart({ code: s.code, name: s.name })}>启动</Button>
-            : <Button type="text" icon={<SettingOutlined />} disabled={list?.migrationRequired} onClick={() => configuration.open({ code: s.code, name: s.name, definition: summary?.definition ?? null })}>运行配置</Button>}
+            : <Button type="text" icon={<SettingOutlined />} disabled={list?.migrationRequired} onClick={() => configuration.open({ code: s.code, name: s.name, definition: summary?.definition ?? null })}>开始配置</Button>}
           <Button type="text" disabled={list?.migrationRequired} onClick={() => setEditing(s.id)}>编辑</Button>
           <Button type="text" disabled={list?.migrationRequired} onClick={() => setDeleting(s.id)}>移除</Button>
         </>;
@@ -117,6 +117,6 @@ export function ServicesPage() {
     {data && editing && <AssetEditDrawer key={editing} catalog={data} kind="service" id={editing} onClose={() => setEditing(null)} />}
     {data && creating && <ServiceCreateDrawer catalog={data} initial={draft} onClose={d => { setDraft(d); setCreating(false); }} onSave={async service => { await assetCatalogApi.service({ revision: data.revision, service }); setDraft(undefined); setCreating(false); }} />}
     <StartWorktreeModal open={Boolean(starting)} serviceCode={starting?.code ?? null} serviceName={starting?.name} onClose={() => setStarting(null)} onStarted={() => void runtime.refresh({ silent: true })} />
-    <RuntimeConfigurationDrawer target={configuration.target} submitting={configuration.submitting} feedback={configuration.feedback} pending={configuration.pending} onSubmit={() => void configuration.submit()} onClose={configuration.close} onOpenConversation={configuration.openPendingConversation} />
+    <RuntimeConfigurationDrawer target={configuration.target} submitting={configuration.submitting} feedback={configuration.feedback} pending={configuration.pending} onSubmit={() => void configuration.submit()} onClose={configuration.close} onResolved={configuration.resolve} />
   </WorkspaceStage>;
 }

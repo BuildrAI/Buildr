@@ -27,25 +27,13 @@ const runSetup = (args: string[]) => {
   assert.equal(child.status, 0, 'explicit peer public setup failed'); return child.stdout;
 };
 fs.mkdirSync(workspaceEntry, {recursive:true});
-if (peer.sourceCapture) {
-  runSetup(['init', '--source-only', '--target', workspaceEntry, '--name', 'plugin-source-integration', '--description', 'isolated passive source gateway', '--profile', 'personal']);
-}
+if (peer.sourceCapture) runSetup(['init', '--source-only', '--target', workspaceEntry, '--name', 'plugin-source-integration', '--description', 'isolated passive source gateway', '--profile', 'personal']);
 else fs.writeFileSync(path.join(workspaceEntry, 'AGENTS.md'), '<!-- buildr:required begin -->\nHistorical fixture core.\n<!-- buildr:required end -->');
 const workspace = fs.realpathSync(workspaceEntry);
 const write = (relative: string, content: string) => {
   const target = path.join(workspace, relative); fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, content);
 };
 const sha = (content: string) => `sha256-${crypto.createHash('sha256').update(content).digest('hex')}`;
-if (peer.sourceCapture && !fs.existsSync(path.join(workspace,'AGENTS.md'))) {
-  // Current initialization deliberately no longer installs the historical core.
-  // This compatibility fixture uses original bytes from the integrity-verified
-  // exact peer, rather than asking production initialization to restore it.
-  const relative='payload/product/resources/workspace/AGENTS.md';
-  assert.ok(peer.files[relative],'the exact peer must contain its historical source-proof template');
-  const template=fs.readFileSync(path.join(peer.packageRoot,relative));
-  assert.equal(crypto.createHash('sha256').update(template).digest('hex'),peer.files[relative]);
-  write('AGENTS.md',template.toString('utf8'));
-}
 const rootAgents = fs.readFileSync(path.join(workspace, 'AGENTS.md'), 'utf8') + '\n工作空间自有补充，不属于 Buildr 核心区块。\n';
 write('AGENTS.md', rootAgents);
 const skillBody = '---\nname: gateway-proof\ndescription: isolated direct business query\n---\n# 当前技能\n\n只读对象正文。\n';

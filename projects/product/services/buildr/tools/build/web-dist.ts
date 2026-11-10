@@ -2,7 +2,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
-import { brotliDecompressSync, gunzipSync } from 'node:zlib';
 
 import { createOwnedArtifactStaging, inventoryGeneratedArtifact } from './generated-artifacts.ts';
 
@@ -76,17 +75,6 @@ function distError(message: string, details?: Record<string, unknown>): Error {
 export function validateWebDist(root: string): string[] {
   const files = inventoryGeneratedArtifact(root);
   const names = new Set(files.map(file => file.path));
-  for (const file of files.filter(file => /\.(?:br|gz)$/.test(file.path))) {
-    const original = file.path.replace(/\.(?:br|gz)$/, '');
-    if (!names.has(original)) throw distError('Compressed Web asset has no original representation.', { file: file.path });
-    const expected = fs.readFileSync(path.join(root, original));
-    let actual: Buffer;
-    try {
-      const decode = file.path.endsWith('.br') ? brotliDecompressSync : gunzipSync;
-      actual = decode(fs.readFileSync(path.join(root, file.path)), { maxOutputLength: expected.length + 1 });
-    } catch { throw distError('Compressed Web asset is invalid.', { file: file.path }); }
-    if (!actual.equals(expected)) throw distError('Compressed Web asset differs from its final original bytes.', { file: file.path });
-  }
   if (!names.has('index.html')) throw distError('Buildr Web staging dist is missing index.html.');
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8').replace(/<!--[\s\S]*?(?:-->|$)/g, '');
   if (!/<[a-z][^>]*\sid\s*=\s*["']root["']/i.test(html)) throw distError('Buildr Web staging entry is missing its root mount.');

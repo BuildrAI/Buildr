@@ -4,9 +4,7 @@ import { gzipSync, brotliCompressSync } from 'node:zlib';
 export function precompressedAssets() {
   return {
     name: 'buildr-precompressed-assets',
-    // Vite's import-analysis hook still replaces preload placeholders in this
-    // phase. Compress only after all ordinary generateBundle transformations.
-    generateBundle: { order: 'post', handler(_options, bundle) {
+    generateBundle(_options, bundle) {
       for (const asset of Object.values(bundle)) {
         if (!/\.(?:js|css|svg|json)$/.test(asset.fileName)) continue;
         const bytes = Buffer.from(asset.type === 'chunk' ? asset.code : asset.source);
@@ -15,6 +13,6 @@ export function precompressedAssets() {
           if (content.length < bytes.length) this.emitFile({ type: 'asset', fileName: `${asset.fileName}.${extension}`, source: content });
         }
       }
-    } },
+    },
   };
 }

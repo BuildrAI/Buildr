@@ -41,7 +41,6 @@ import process from 'node:process';
 import { spawnCommandSync } from '../../../infrastructure/process.ts';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../infrastructure/contracts/public-json.ts';
 import { CONVERGENCE_RECEIPT_SCHEMA, portableExecutableIdentity } from './convergence-model.ts';
-import { archivedChangeRoots } from './change-location.ts';
 import { convergenceReceiptPath, runOpenSpecConvergence } from './openspec-converge.ts';
 import { runOpenSpecConvergencePreflight } from './openspec-convergence-preflight.ts';
 import { observeConvergence } from './convergence-observer.ts';
@@ -100,7 +99,11 @@ export function registerOpenSpecApplication(runtime: OpenSpecRuntime, { projectQ
     try { return { changeRoot: openSpecContractChangePath(projectRoot, change), archived: false }; }
     catch (activeError) {
       const archiveRoot = path.join(projectRoot, 'openspec', 'changes', 'archive');
-      const matches = archivedChangeRoots(archiveRoot, change);
+      const matches = existsDirectory(archiveRoot)
+        ? fs.readdirSync(archiveRoot, { withFileTypes: true })
+          .filter((entry) => entry.isDirectory() && entry.name.endsWith(`-${change}`) && existsFile(path.join(archiveRoot, entry.name, '.openspec.yaml')))
+          .map((entry) => path.join(archiveRoot, entry.name))
+        : [];
       if (matches.length !== 1) throw activeError;
       return { changeRoot: matches[0], archived: true };
     }

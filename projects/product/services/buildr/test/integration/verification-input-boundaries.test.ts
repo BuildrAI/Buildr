@@ -135,28 +135,6 @@ test('module discovery distinguishes generated source and comments from actual i
   assert.deepEqual(executableModuleInputs('await import(`../renderer.ts?test=${Date.now()}-${Math.random()}`)').imports, ['../renderer.ts']);
 });
 
-test('command executables and checkout paths never become unresolved source entries', t => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-command-inputs-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const prefix = 'projects/product/services/buildr/', productRoot = path.join(root, prefix);
-  fs.mkdirSync(productRoot, { recursive: true });
-  const files = new Map<string, string>([
-    [prefix + 'package.json', '{}'],
-    [prefix + 'tools/check.ts', 'export {};'],
-    [prefix + 'src/product.ts', 'export const value = 1;'],
-  ]);
-  const step = {
-    id: 'service-command', reuse: { scope: 'backend' as const },
-    executor: { type: 'command', file: process.execPath, args: [path.join(productRoot, 'tools/check.ts')], cwd: productRoot },
-  };
-  const inputs = scopedVerificationInputs([...files].map(([file, text]) => [file, text]), root, productRoot, step, {
-    proof: true, readText: file => files.get(file)!,
-  });
-  assert.equal(inputs.fallback, true, 'a command keeps the conservative read scope');
-  assert.deepEqual(inputs.unresolved, []);
-  assert.doesNotMatch(JSON.stringify(inputs.recipe), /executor:unknown-entry/u);
-});
-
 test('reviewed release-note independence preserves real readers, unknown roots and local/Git agreement', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-note-inputs-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

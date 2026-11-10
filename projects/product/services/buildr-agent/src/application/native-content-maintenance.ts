@@ -89,7 +89,6 @@ export function maintainNativeContent(dataRoot: string, options: {dryRun?:boolea
       };
       try {
         const existing=ConversationEntryStore.reference(row);
-        if(existing?.version === 3) continue;
         if(existing){provider=existing.provider;reason('already_native');continue;}
         const entry=ConversationEntryStore.decode(row), record=JSON.parse(row.header) as StoredConversation;
         provider=entry.provider??'none';

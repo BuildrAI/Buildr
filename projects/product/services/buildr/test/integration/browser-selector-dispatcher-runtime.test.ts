@@ -7,8 +7,8 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { runAgentConversationCommands, runPhase } from '../verification/browser-selector-dispatcher.ts';
 import { createVerificationResourceCoordinator } from '../verification/resource-coordinator.ts';
-
-import { AGENT_CONVERSATION_QUEUE_ITEMS, agentConversationQueueDirectory, inspectAgentConversationQueue } from '../../../buildr-web/test/browser/agent-conversation-queue.ts';
+import { AGENT_CONVERSATION_GROUPS } from '../../../buildr-web/test/browser/agent-conversation-groups.ts';
+import { inspectAgentConversationQueue } from '../../../buildr-web/test/browser/agent-conversation-queue.ts';
 
 test('Browser dispatcher phase runner is asynchronous and bounded', async () => {
   const passed: any = await runPhase('fixture', [process.execPath, '-e', 'process.stdout.write("fixture-ready")'], process.cwd(), 1_000);
@@ -126,8 +126,8 @@ test('two long-lived processes dynamically claim each conversation group once', 
       path.resolve(import.meta.dirname, '../..'), 10_000, { ...process.env, TEST_QUEUE: root, WORKER: command.worker }),
   });
   assert.deepEqual(results.map(result => result.status), ['passed', 'passed']);
-  assert.deepEqual(inspectAgentConversationQueue(root), { unclaimed: [], unfinished: [], attempted: [...AGENT_CONVERSATION_QUEUE_ITEMS] });
-  const owners = new Set(AGENT_CONVERSATION_QUEUE_ITEMS.map(group => fs.readFileSync(path.join(agentConversationQueueDirectory(root, group), 'owner'), 'utf8').trim()));
+  assert.deepEqual(inspectAgentConversationQueue(root), { unclaimed: [], unfinished: [], attempted: [...AGENT_CONVERSATION_GROUPS] });
+  const owners = new Set(AGENT_CONVERSATION_GROUPS.map(group => fs.readFileSync(path.join(root, group, 'owner'), 'utf8').trim()));
   assert.equal(owners.size, 2);
 });
 
@@ -158,5 +158,5 @@ test('a crashed worker is reported and a replacement executes only unclaimed gro
   const state = inspectAgentConversationQueue(root);
   assert.deepEqual(state.unclaimed, []);
   assert.deepEqual(state.unfinished, ['setup']);
-  assert.deepEqual(state.attempted, AGENT_CONVERSATION_QUEUE_ITEMS.slice(1));
+  assert.deepEqual(state.attempted, AGENT_CONVERSATION_GROUPS.slice(1));
 });

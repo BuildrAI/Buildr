@@ -152,7 +152,7 @@ test('timing summary 保留向后兼容的 step 调度时间轴', () => {
     startedAt: 1000,
     finishedAt: 1200,
     schedulingMode: 'cost',
-    executionProfile: { id: 'ci', capacityPolicy: 'explicit-jobs', capacityObservation: { parallelism: 15, memoryBytes: 64 * 1024 ** 3, initialWidth: 4, requestedJobs: 4 }, limits: { global: 4, classes: { 'workspace-heavy': 3 }, resources: { 'workspace-saturating': 1 } } },
+    executionProfile: { id: 'ci', limits: { global: 4, classes: { 'workspace-heavy': 3 }, resources: { 'workspace-saturating': 1 } } },
     contextLifecycle: {
       contexts: [{ provider: 'task-lifecycle/v1', identity: `sha256-${'a'.repeat(64)}`, owned: true, prepareDurationMs: 12 }],
       events: [{ operation: 'prepare', provider: 'task-lifecycle/v1', durationMs: 12, identity: `sha256-${'a'.repeat(64)}` }],
@@ -170,8 +170,6 @@ test('timing summary 保留向后兼容的 step 调度时间轴', () => {
       scheduling: { mode: 'cost', stepCostMs: 50, remainingCostMs: 125, directDependentCount: 1, demand: { workers: 2, processes: 2 }, grant: { workers: 2, processes: 2 } },
       phases: [{ id: 'install', status: 'passed', durationMs: 25 }],
       testContextRuntime: { hosts: 2, creates: 2, cacheHits: 6, materializeDurationMs: 40, cleanupDurationMs: 12 },
-    stateCleanup: { status: 'cleaned', observationCount: 2, settledOwnerPids: ['123'] },
-    childResult: { status: 'passed', exitCode: 0, durationMs: 100 },
     }],
   });
   assert.deepEqual(summary.steps[0], {
@@ -186,18 +184,12 @@ test('timing summary 保留向后兼容的 step 调度时间轴', () => {
     scheduling: { mode: 'cost', stepCostMs: 50, remainingCostMs: 125, directDependentCount: 1, demand: { workers: 2, processes: 2 }, grant: { workers: 2, processes: 2 } },
     phases: [{ id: 'install', status: 'passed', durationMs: 25 }],
     testContextRuntime: { hosts: 2, creates: 2, cacheHits: 6, materializeDurationMs: 40, cleanupDurationMs: 12 },
-    stateCleanup: { status: 'cleaned', observationCount: 2, settledOwnerPids: ['123'] },
-    childResult: { status: 'passed', exitCode: 0, durationMs: 100 },
   });
   assert.equal(summary.environment.schedulingMode, 'cost');
   assert.equal(summary.environment.executionProfile, 'ci');
-  assert.equal(summary.environment.capacityPolicy, 'explicit-jobs');
-  assert.deepEqual(summary.environment.capacityObservation, { parallelism: 15, memoryBytes: 64 * 1024 ** 3, initialWidth: 4, requestedJobs: 4 });
   assert.deepEqual(summary.environment.concurrency.resources, { 'workspace-saturating': 1 });
   assert.deepEqual(summary.contextLifecycle.contexts.map((context: any) => context.provider), ['task-lifecycle/v1']);
   assert.deepEqual(summary.contextLifecycle.events.map((event: any) => event.operation), ['prepare']);
-  assert.deepEqual(summary.steps[0].stateCleanup, { status: 'cleaned', observationCount: 2, settledOwnerPids: ['123'] });
-  assert.deepEqual(summary.steps[0].childResult, { status: 'passed', exitCode: 0, durationMs: 100 });
   assert.deepEqual(summary.steps[0].testContextRuntime, {
     hosts: 2,
     creates: 2,

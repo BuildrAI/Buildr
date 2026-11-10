@@ -1,7 +1,6 @@
 import { realpathSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { Worker } from 'node:worker_threads';
 import { spawn } from 'node:child_process';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -9,8 +8,6 @@ import type { AgentProgramManager, ProgramCandidate, ProgramCatalog } from '../c
 import { AgentServiceError, fail } from '../domain/agent-state.ts';
 import { executableIdentity, findExecutable, inspectVersion, isolatedEnvironment, nativeCommand, privateDirectories } from './native-process.ts';
 import { nativeProgramPolicy, isCompatibleProgram, isProgramReleaseVersion } from './program-policy.ts';
-import { recordSharedCacheUse } from '../storage/shared-cache.ts';
-import { sharedToolchainEnvironment } from '../storage/toolchain-environment.ts';
 import { ProgramInstallDiagnostics } from './program-install-diagnostics.ts';
 
 const run = promisify(execFile);
@@ -32,8 +29,7 @@ export class NativeProgramManager implements AgentProgramManager {
   private async probeEnvironment(): Promise<NodeJS.ProcessEnv> {
     const home = path.join(this.root, 'program-probes', 'home'), temporary = path.join(this.root, 'program-probes', 'tmp');
     await privateDirectories(home, temporary);
-    const shared = sharedToolchainEnvironment(this.root, this.environment);
-    return isolatedEnvironment(shared.environment, home, temporary, {}, shared.cacheRoot);
+    return isolatedEnvironment(this.environment, home, temporary);
   }
   async discover(input: Parameters<AgentProgramManager['discover']>[0]): Promise<ProgramCatalog> {
     const policy = nativeProgramPolicy(input.provider), env = await this.probeEnvironment();
@@ -89,7 +85,7 @@ export class NativeProgramManager implements AgentProgramManager {
     try {
       const home = path.join(staging, '.home'), temporary = path.join(staging, '.tmp');
       await privateDirectories(home, temporary);
-      const installEnv = isolatedEnvironment(env, home, temporary, { npm_config_update_notifier: 'false', npm_config_registry: 'https://registry.npmjs.org/', QODER_INSTALL_BUNDLED_CLI: '1' }, path.join(this.root, 'toolchains/cache'));
+      const installEnv = isolatedEnvironment(this.environment, home, temporary, { npm_config_cache: path.join(staging, '.cache'), npm_config_update_notifier: 'false', npm_config_registry: 'https://registry.npmjs.org/', QODER_INSTALL_BUNDLED_CLI: '1' });
       let npm: string | undefined;
       try { npm = await findExecutable(undefined, ['npm-cli.js', 'npm'], this.environment); } catch { /* Try the npm shipped with the current Node runtime. */ }
       if (!npm || process.platform === 'win32' && !/\.[cm]?js$/i.test(npm)) {
@@ -100,9 +96,7 @@ export class NativeProgramManager implements AgentProgramManager {
       }
       if (!npm) fail('agent_install_npm_missing', '独立安装需要 npm。可先安装官方 Node.js 后重新检查。');
       input.progress(`正在下载并准备 ${packageSpec}，首次准备可能需要几分钟。`);
-      try { recordSharedCacheUse(this.root,Date.now(),['npm-download']); } catch { /* Optional cache observation. */ }
       await installPackage(npm, ['install', '--prefix', staging, '--no-audit', '--no-fund', '--save-exact', '--registry=https://registry.npmjs.org/', packageSpec], installEnv, input.signal);
-      try { recordSharedCacheUse(this.root,Date.now(),['npm-download']); } catch { /* Optional cache observation. */ }
       input.progress('下载完成，正在检查程序与兼容版本。');
       const stagedExecutable = path.join(staging, policy.entry);
       const stagedRelative = path.relative(await fs.realpath(staging), await fs.realpath(stagedExecutable));
@@ -112,10 +106,6 @@ export class NativeProgramManager implements AgentProgramManager {
       if (installed.name !== packageName || installed.version !== releaseVersion || !isCompatibleProgram(input.provider, version) || (input.provider !== 'qoder' && version !== releaseVersion)) fail('agent_install_version_mismatch', '下载软件包或程序版本不匹配或不兼容，未启用该程序。');
       input.signal.throwIfAborted();
       for (const directory of ['.home', '.tmp', '.cache']) await fs.rm(path.join(staging, directory), { recursive: true, force: true });
-      const worker = new Worker(new URL(import.meta.url.endsWith('.ts') ? '../process/storage-maintenance.ts' : '../process/storage-maintenance.js', import.meta.url), { workerData: { kind: 'agent-storage-program', dataRoot: path.dirname(this.root), root: this.root, directory: staging } });
-      await new Promise<void>((resolve,reject) => { worker.once('error',reject); worker.once('exit',code=>code===0?resolve():reject(new Error('agent_program_sharing_failed'))); });
-      input.signal.throwIfAborted();
-      await inspectVersion(stagedExecutable, env, input.signal);
       await fs.rename(staging, destination);
       return executable;
     } finally { await fs.rm(staging, { recursive: true, force: true }); }

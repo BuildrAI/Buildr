@@ -16,33 +16,10 @@ await step('模型名称选择器仅在悬停时显示外形',async()=>{
       const idle=await read();assert.equal(idle.width,'1px');assert.equal(idle.background,'rgba(0, 0, 0, 0)');assert.equal(idle.border,'rgba(0, 0, 0, 0)');assert.ok(idle.text.length>0,'模型名称在未悬停时仍可读');
       const box=await picker.boundingBox();assert.ok(box);await page.mouse.move(box.x+box.width/2,box.y+box.height/2);
       await page.waitForFunction(()=>{const node=document.querySelector<HTMLElement>('.ac-model-popover .ac-model-picker.ant-select');if(!node)return false;const style=getComputedStyle(node);return style.backgroundColor!=='rgba(0, 0, 0, 0)'&&style.borderTopColor!=='rgba(0, 0, 0, 0)';});
-      await picker.evaluate((node:HTMLElement)=>Promise.all(node.getAnimations().map(animation=>animation.finished.catch(()=>{}))));
       const hovered=await read();assert.notEqual(hovered.background,'rgba(0, 0, 0, 0)');assert.notEqual(hovered.border,'rgba(0, 0, 0, 0)');
       const hoveredCenter=await modelSettings().evaluate((node:HTMLElement)=>{const row=node.querySelector('.ac-model-top-row')!.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(node.querySelector('.ant-select-selection-item')!);const text=range.getBoundingClientRect();return Math.abs(text.left+text.right-row.left-row.right)/2;});assert.ok(hoveredCenter<=2,'悬停不改变模型名居中：'+hoveredCenter);
       await page.mouse.move(4,4);
       await page.waitForFunction(()=>{const node=document.querySelector<HTMLElement>('.ac-model-popover .ac-model-picker.ant-select');if(!node)return false;const style=getComputedStyle(node);return style.backgroundColor==='rgba(0, 0, 0, 0)'&&style.borderTopColor==='rgba(0, 0, 0, 0)';});
-      const combo=modelSettings().getByRole('combobox',{name:'执行模型',exact:true});await combo.focus();await combo.press('ArrowDown');
-      const modelList=page.locator('.ac-model-list-popup:visible');await modelList.waitFor();
-      await page.waitForFunction(()=>{const node=document.querySelector('.ac-model-list-popup');return Boolean(node&&getComputedStyle(node).opacity==='1'&&!/(?:enter|appear)-active/.test(node.className));});
-      await picker.evaluate((node:HTMLElement)=>Promise.all(node.getAnimations().map(animation=>animation.finished.catch(()=>{}))));
-      const opened=await read();assert.deepEqual({background:opened.background,border:opened.border},{background:hovered.background,border:hovered.border},'展开候选与悬停使用同一模型框样式');
-      assert.equal(await picker.evaluate((node:HTMLElement)=>getComputedStyle(node).outlineStyle),'none','展开候选不叠加第二层描边');
-      await capture(page,'agent-model-search.png');
-      const listBox=await modelList.boundingBox(),effortBox=await modelSettings().locator('.ac-effort-controls').boundingBox();
-      assert.ok(listBox&&effortBox&&Math.abs(listBox.width-effortBox.width)<=2,'模型下拉与推理强度区域同宽：'+JSON.stringify({list:listBox,effort:effortBox}));
-      assert.ok(listBox.width>=300,'模型下拉为长名称保留足够宽度：'+listBox.width);
-      const clipped=await modelList.locator('.ant-select-item-option-content').evaluateAll((nodes:HTMLElement[])=>nodes.filter((node:HTMLElement)=>node.scrollWidth>node.clientWidth+1).map(node=>node.textContent));
-      assert.deepEqual(clipped,[],'模型名称不被截断：'+JSON.stringify(clipped));
-      assert.equal(await picker.locator('input:not([readonly])').count(),0,'模型行不包含可编辑输入框与闪烁光标');
-      assert.equal(await picker.locator('input').evaluate((node:HTMLInputElement)=>node.style.opacity),'0','只读的隐藏输入不显示光标');
-      const modelSearch=modelList.getByRole('textbox',{name:'搜索模型',exact:true});await modelSearch.waitFor();
-      await modelSearch.fill('Fast');await modelList.getByText('Fast model',{exact:true}).waitFor();
-      assert.equal(await modelList.getByText('Fixture model',{exact:true}).count(),0,'搜索按模型名称过滤');
-      await modelSearch.press('Escape');await modelList.waitFor({state:'hidden'});
-      await combo.focus();await combo.press('ArrowDown');await modelList.waitFor();
-      await page.mouse.click(4,4);await modelSettings().waitFor({state:'hidden'});await modelList.waitFor({state:'hidden'});
-      assert.equal(await modelTrigger().getAttribute('aria-expanded'),'false','点击外部关闭模型设置时候选列表同步关闭');
-      await openModelSettings();await modelList.waitFor({state:'hidden'});
       await closeModelSettings();
     });
 
@@ -103,48 +80,12 @@ await step('单项停止只对原生明确可停止的命令开放，旧记录�
       }finally{await page.unroute(matcher,intercept);await page.setViewportSize({width:1600,height:1000});}
     });
 
-await step('后台命令未核对及停止未确认时仍可发送新要求，读取结果直接可见',async()=>{
-      await chooseAgent('Codex');await chooseModel('Fixture model');await setHighEffort();await closeModelSettings();
-      for(const status of ['tools-active','unknown','stopping']){
-        update({run:run(status,'codex',{canContinue:false,stopRequested:status!=='tools-active',tools:[{id:'old-command',label:'需要保留的原命令',status:'unknown'}]}),requests:[],pendingSend:undefined});
-        await reopen();
-        if(status==='tools-active'){
-          const notice=panel().locator('.ac-active-tools');
-          await notice.getByText('仍有 1 项命令待核对，可继续对话',{exact:true}).waitFor();
-          await notice.getByRole('button',{name:'查看命令',exact:true}).click();await notice.getByText('需要保留的原命令',{exact:true}).waitFor();
-          await notice.getByRole('button',{name:'重新读取',exact:true}).click();
-          await notice.locator('small[role="status"]').filter({hasText:'读取完成：尚未取得部分命令的结束记录'}).waitFor();
-          await capture(page,'agent-controls-read-feedback.png');
-        }
-        const before=fixture.sends;await input().fill('新的要求 '+status);
-        await panel().getByRole('button',{name:'发送对话',exact:true}).click();
-        await panel().locator('[data-run-status="running"]').waitFor();
-        assert.equal(fixture.sends,before+1,'每条新要求准确发送一次');
-        assert.equal(sentInputs.at(-1)?.text,'新的要求 '+status);assert.equal(await input().inputValue(),'');
-      }
-    });
-
-await step('取消旧交接保留草稿，下一次只发送当前的新指令',async()=>{
-      await chooseAgent('Codex');await chooseModel('Fixture model');await setHighEffort();await closeModelSettings();
-      update({run:run('unknown','codex',{resourcesReleased:true,stopRequested:true,tools:[{id:'old',label:'原命令',status:'unknown'}]}),requests:[],pendingSend:undefined});await reopen();
-      const before=fixture.sends;fixture.prepareError={code:'agent_session_confirmation_required',message:'旧后台要求确认内部会话。'};
-      await input().fill('旧指令，暂不发送');await panel().getByRole('button',{name:'发送对话',exact:true}).click();
-      const drawer=panel().locator('.ac-handoff-drawer');await drawer.getByRole('button',{name:'关闭交接内容',exact:true}).waitFor();
-      assert.equal(fixture.sends,before);await drawer.getByRole('button',{name:'关闭交接内容',exact:true}).click();await drawer.waitFor({state:'hidden'});
-      assert.equal(await input().inputValue(),'旧指令，暂不发送','关闭预览不清除草稿');
-      await input().fill('已经有人部署了，可以不部署了');await panel().getByRole('button',{name:'发送对话',exact:true}).click();
-      await panel().locator('[data-run-status="running"]').waitFor();
-      assert.equal(fixture.sends,before+1);assert.equal(sentInputs.at(-1)?.text,'已经有人部署了，可以不部署了');
-      assert.equal(sentInputs.slice(before).some((item:any)=>item.text==='旧指令，暂不发送'),false,'已取消的预览不能再次发送旧指令');
-      assert.equal(await panel().locator('.ac-handoff-drawer:visible').count(),0);
-    });
-
 await step('仅后台作业不占执行中模型且历史保留后台状态',async()=>{
       const at=new Date().toISOString();
       update({run:run('tools-active','codex',{canContinue:true,executionState:'active',tools:[{id:'background-server',label:'bash',status:'running',canStop:true}]}),pendingSend:undefined,requests:[],activity:{version:1,seenThrough:1,active:false,updatedAt:at},entries:[{id:'bg-input',sequence:1,runId:'run-fixture',kind:'message',role:'user',text:'启动服务',createdAt:at},{id:'bg-answer',sequence:2,runId:'run-fixture',kind:'message',role:'assistant',text:'服务已启动',createdAt:at}]});
       await reopen();
-      await panel().getByRole('region',{name:'尚未结束的命令'}).getByRole('status').filter({hasText:'仍有 1 项命令运行，可继续对话'}).waitFor();
-      await fixture.openHistoryList();
+      await panel().getByText('模型已结束，后台作业仍在运行',{exact:true}).waitFor();
+      await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();
       await page.locator('.ac-history-meta').filter({hasText:'后台作业运行中'}).first().waitFor();
       assert.match(await page.locator('.ac-execution-summary strong').innerText(),/执行中模型\s*0/);
       assert.equal(await page.locator('.ac-history-list .ac-activity-status.is-running').count(),0);
@@ -157,20 +98,20 @@ await step('390px下对话输入、停止、历史与关闭可达且无页面横
       await chooseAgent('Codex');await chooseModel('Fixture model');await setHighEffort();await closeModelSettings();
       const toolbar=await panel().locator('.ac-compose-toolbar').evaluate((node:HTMLElement)=>({width:node.clientWidth,scroll:node.scrollWidth,controls:[...node.querySelectorAll<HTMLElement>('.ac-compose-access,.ac-compose-execution,.ac-choice')].map(item=>({text:item.innerText,width:item.clientWidth,scroll:item.scrollWidth,left:item.getBoundingClientRect().left,right:item.getBoundingClientRect().right}))}));
       assert.ok(toolbar.scroll<=toolbar.width+1,JSON.stringify(toolbar));for(const item of toolbar.controls)assert.ok(item.scroll<=item.width+1,JSON.stringify(item));
-      await page.setViewportSize({width:390,height:844});assert.equal(await page.locator('#global-conversations-entry').isVisible(),true,'手机保留顶部对话入口');await input().waitFor();assert.ok(await input().isVisible());await fixture.openHistoryList();await page.getByRole('textbox',{name:'搜索对话',exact:true}).waitFor();await page.locator('.ac-history-list button').first().waitFor();const overflow=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,nodes:[...document.querySelectorAll('body *')].filter(node=>node.getClientRects().length&&node.getBoundingClientRect().right>innerWidth+1).slice(0,8).map(node=>({tag:node.tagName,class:node.className,right:node.getBoundingClientRect().right}))}));assert.ok(overflow.scroll<=overflow.width+1,JSON.stringify(overflow));const geometry=await page.evaluate(()=>({header:document.querySelector('.topbar')!.getBoundingClientRect().bottom,panel:document.querySelector('#agent-conversation-panel')!.getBoundingClientRect().top}));assert.ok(geometry.panel>=geometry.header-1,'移动端对话标题栏不能被换行顶栏遮挡');await capture(page,'agent-conversation-mobile.png');await closeConversation();await panel().waitFor({state:'hidden'});assert.equal(await page.evaluate(()=>Boolean(document.activeElement?.closest('.global-conversations-control'))),true,'手机收起后焦点回到可见的全局入口');const mobileEntry=page.locator('#global-conversations-entry'),priorConversation=await panel().getAttribute('data-conversation-id');await mobileEntry.click();await input().waitFor();assert.equal(await panel().getAttribute('data-conversation-id'),priorConversation,'手机主入口保留当前会话');await closeConversation();fixture.additionalPending=[{id:'mobile-attention',workspaceId:workspaceId,cwd:'/isolated/mobile-attention',title:'手机待回应对话',revision:'mobile-attention-r1',hidden:false,updatedAt:new Date().toISOString(),participants:[],entries:[],requests:[],run:run('waiting-question'),activity:{version:1,seenThrough:0,active:true,updatedAt:new Date().toISOString()}}];await page.evaluate(()=>window.dispatchEvent(new Event('focus')));const mobileActivity=page.locator('.global-conversations-control').getByRole('button',{name:/^所有对话，/});await mobileActivity.waitFor();await page.locator('.global-conversations-control').getByLabel('1 个待处理对话',{exact:true}).waitFor();await mobileEntry.click();await input().waitFor();assert.equal(await panel().getAttribute('data-conversation-id'),priorConversation,'有活动时手机主入口仍不劫持当前会话');assert.equal(await panel().locator('.ac-activity-count').count(),0,'手机不在标题重复活动徽标');await closeConversation();await mobileActivity.hover();const mobileMenu=page.locator('.ac-activity-menu:visible');await mobileMenu.locator('button[data-activity-id="mobile-attention"]').waitFor();await mobileMenu.locator('button[data-activity-id="mobile-attention"]').click();await page.locator('#agent-conversation-panel[data-conversation-id="mobile-attention"]').waitFor();await page.waitForFunction(()=>Boolean(document.activeElement?.closest('#agent-conversation-panel')&&document.activeElement.getClientRects().length));fixture.additionalPending=[];
+      await page.setViewportSize({width:390,height:844});assert.equal(await page.locator('#global-conversations-entry').isVisible(),true,'手机保留顶部对话入口');await input().waitFor();assert.ok(await input().isVisible());await panel().getByRole('button',{name:'查看对话列表',exact:true}).click();await page.getByRole('textbox',{name:'搜索对话',exact:true}).waitFor();await page.locator('.ac-history-list button').first().waitFor();const overflow=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,nodes:[...document.querySelectorAll('body *')].filter(node=>node.getClientRects().length&&node.getBoundingClientRect().right>innerWidth+1).slice(0,8).map(node=>({tag:node.tagName,class:node.className,right:node.getBoundingClientRect().right}))}));assert.ok(overflow.scroll<=overflow.width+1,JSON.stringify(overflow));const geometry=await page.evaluate(()=>({header:document.querySelector('.topbar')!.getBoundingClientRect().bottom,panel:document.querySelector('#agent-conversation-panel')!.getBoundingClientRect().top}));assert.ok(geometry.panel>=geometry.header-1,'移动端对话标题栏不能被换行顶栏遮挡');await capture(page,'agent-conversation-mobile.png');await closeConversation();await panel().waitFor({state:'hidden'});assert.equal(await page.evaluate(()=>Boolean(document.activeElement?.closest('.global-conversations-control'))),true,'手机收起后焦点回到可见的全局入口');const mobileEntry=page.locator('#global-conversations-entry'),priorConversation=await panel().getAttribute('data-conversation-id');await mobileEntry.click();await input().waitFor();assert.equal(await panel().getAttribute('data-conversation-id'),priorConversation,'手机主入口保留当前会话');await closeConversation();fixture.additionalPending=[{id:'mobile-attention',workspaceId:workspaceId,cwd:'/isolated/mobile-attention',title:'手机待回应对话',revision:'mobile-attention-r1',hidden:false,updatedAt:new Date().toISOString(),participants:[],entries:[],requests:[],run:run('waiting-question'),activity:{version:1,seenThrough:0,active:true,updatedAt:new Date().toISOString()}}];await page.evaluate(()=>window.dispatchEvent(new Event('focus')));const mobileActivity=page.locator('.global-conversations-control').getByRole('button',{name:/^所有对话，/});await mobileActivity.waitFor();await page.locator('.global-conversations-control').getByLabel('1 个待处理对话',{exact:true}).waitFor();await mobileEntry.click();await input().waitFor();assert.equal(await panel().getAttribute('data-conversation-id'),priorConversation,'有活动时手机主入口仍不劫持当前会话');assert.equal(await panel().locator('.ac-activity-count').count(),0,'手机不在标题重复活动徽标');await closeConversation();await mobileActivity.hover();const mobileMenu=page.locator('.ac-activity-menu:visible');await mobileMenu.locator('button[data-activity-id="mobile-attention"]').waitFor();await mobileMenu.locator('button[data-activity-id="mobile-attention"]').click();await page.locator('#agent-conversation-panel[data-conversation-id="mobile-attention"]').waitFor();await page.waitForFunction(()=>Boolean(document.activeElement?.closest('#agent-conversation-panel')&&document.activeElement.getClientRects().length));fixture.additionalPending=[];
     });
 
 await step('统一套餐模型跨执行者保留准确来源，档位保留强度且发送与刷新保留实际选择',async()=>{
       fixture.sharedModels=[{id:'shared-offering',modelId:'shared-model',label:'共享模型',accountId:'fixture-account',accountIdentity:'source-one',accountRevision:'account-r1',accountLabel:'套餐验证',provider:'fixture',available:true,enabled:true,images:true,tools:true,contextWindow:128000,defaultServiceTier:'fast',serviceTiers:[
         {id:'fast',label:'快速',contextWindow:128000,reasoningEfforts:[{id:'medium',label:'中'},{id:'high',label:'高'}],defaultReasoningEffort:'medium'},
         {id:'standard',label:'标准',contextWindow:256000,reasoningEfforts:[{id:'low',label:'低'},{id:'high',label:'高'}],defaultReasoningEffort:'low'}]}];
-      await page.setViewportSize({width:1600,height:1000});await page.reload();await input().waitFor();await fixture.startNewConversation();await input().waitFor();await chooseAgent('Codex');await input().fill('统一模型来源与服务档位验证');const sendsBefore=fixture.sends,preparesBeforeShared=fixture.prepares;
+      await page.setViewportSize({width:1600,height:1000});await page.reload();await input().waitFor();await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().waitFor();await chooseAgent('Codex');await input().fill('统一模型来源与服务档位验证');const sendsBefore=fixture.sends,preparesBeforeShared=fixture.prepares;
       await chooseModel('共享模型');const tierButton=()=>modelSettings().getByRole('button',{name:'切换服务档位',exact:true});await tierButton().click();assert.equal(await page.getByRole('menu').count(),0,'闪电直接切换，不弹出档位菜单');assert.equal(await modelSettings().getByRole('slider',{name:'思考深度',exact:true}).getAttribute('aria-valuetext'),'低');assert.equal(await panel().locator('.ac-model-trigger .ac-tier-mark').count(),1,'非默认档位在供应商前显示闪电');await setHighEffort();
       await tierButton().click();assert.equal(await modelSettings().getByRole('slider',{name:'思考深度',exact:true}).getAttribute('aria-valuetext'),'高','切换档位保留已选推理强度');assert.equal(await modelSettings().getByRole('button',{name:'恢复默认推理强度',exact:true}).count(),0,'当前界面由切换模型或档位继承默认');await closeModelSettings();assert.equal(await panel().locator('.ac-model-trigger .ac-tier-mark').count(),0,'默认快速档位不在供应商前重复标记');
       await chooseAgent('DSH');await assertModelSummary('Fast model');await chooseModel('共享模型');await assertModelSummary('fixture / 共享模型','中');await setHighEffort();await closeModelSettings();assert.equal(fixture.sends,sendsBefore,'配置和执行者切换不发送');assert.equal(await input().inputValue(),'统一模型来源与服务档位验证');
       await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().locator('[data-run-status="running"]').waitFor();assert.equal(fixture.sends,sendsBefore+1);
       assert.equal(fixture.prepares,preparesBeforeShared,'atomic first send needs no persisted preview conversation');for(const request of [sentInputs.at(-1)])assert.deepEqual([request.modelAccountId,request.modelAccountIdentity,request.modelAccountRevision,request.model,request.serviceTier,request.reasoningEffort,request.connectionId],['fixture-account','source-one','account-r1','shared-model','fast','high','dsh'],'预览及发送绑定同一准确来源、已观察版本、档位与强度');
-      await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();await page.reload();await panel().locator('[data-run-status="stopped"]').waitFor();assert.equal(await panel().locator('.ac-run-status').count(),0,'正常停止不显示额外状态文案');assert.ok((await panel().innerText()).includes('fixture / 共享模型'),'停止后保留模型身份');await assertModelSummary('fixture / 共享模型','高');await openModelSettings();assert.equal(await modelSettings().getByRole('slider',{name:'思考深度',exact:true}).getAttribute('aria-valuetext'),'高');await closeModelSettings();assert.equal(fixture.sends,sendsBefore+1,'刷新恢复配置不自动执行');
+      await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();await page.reload();await panel().locator('[data-run-status="stopped"]').waitFor();const sharedRunStatus=await panel().locator('.ac-run-status').innerText();assert.match(sharedRunStatus,/^已确认停止 · DSH · fixture \/ 共享模型 · /,'状态行使用共享模型的来源与模型名称');assert.ok(!sharedRunStatus.includes('套餐验证'),'状态行不显示来源账号观察标签');await assertModelSummary('fixture / 共享模型','高');await openModelSettings();assert.equal(await modelSettings().getByRole('slider',{name:'思考深度',exact:true}).getAttribute('aria-valuetext'),'高');await closeModelSettings();assert.equal(fixture.sends,sendsBefore+1,'刷新恢复配置不自动执行');
     });
 
 await step('Devin SWE-2默认及完全访问可选，模式切换保留草稿与准确发送权限',async()=>{
@@ -209,7 +150,7 @@ await step('旧对话原生模型绑定来源和切换档位后仍恢复上次�
         await chooseModel('其他模型');await chooseModel('原生模型记忆');
         assert.equal(await modelSettings().getByRole('slider',{name:'思考深度',exact:true}).getAttribute('aria-valuetext'),'高');
         assert.equal(fixture.conversation.run.reasoningEffort,'medium','主动选择不改写旧运行记录');
-        await closeModelSettings();await fixture.startNewConversation();await input().waitFor();await assertModelSummary('ChatGPT / 原生模型记忆','高');
+        await closeModelSettings();await panel().getByRole('button',{name:'新建对话',exact:true}).click();await input().waitFor();await assertModelSummary('Codex / 原生模型记忆','高');
       }finally{fixture.sharedModels=previousModels;update(previousConversation);}
     });
 }

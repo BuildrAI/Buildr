@@ -329,13 +329,12 @@ test('source aggregate rejects unbound bytes, wrong peer origin and a failed act
   }
 });
 
-test('workflow keeps explicit/release entries and plugin source Candidate has no publication authority', () => {
+test('workflow keeps default/dev entries and plugin source Candidate has no publication authority', () => {
   const file = path.resolve(import.meta.dirname, '../../../../../../.github/workflows/verify.yml');
   const workflow = fs.readFileSync(file, 'utf8');
   assert.match(workflow, /options: \[candidate, release-rehearsal\]/u);
   assert.match(workflow, /release_packages:\n(?:[^\n]*\n)*?        default: ''\n        type: string/u);
-  assert.match(workflow, /branches: \[main\]/u);
-  assert.doesNotMatch(workflow, /^  push:/mu);
+  assert.match(workflow, /branches: \[dev, main\]/u);
   assert.match(workflow, /github\.head_ref == 'dev'/u);
   const development = workflow.split('  dev-feedback-macos:\n')[1].split('  dev-feedback-windows:\n')[0];
   const peerObservation = "observePublishedPackageArtifact('buildr', { distTag: 'next' })";

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { compile } from 'json-schema-to-typescript';
 import { WORKBENCH_HTTP_DEFINITIONS } from '../../../src/modules/workbench/interfaces/http/workbench-http-schema.ts';
-import { cliOutputRoot, contractOutputPaths, writeContractOutput } from './output-paths.ts';
+import { cliOutputRoot, contractOutputPaths } from './output-paths.ts';
 
 export async function renderWorkbenchDto(): Promise<string> {
   const names = Object.keys(WORKBENCH_HTTP_DEFINITIONS).filter((name) => name.startsWith('Workbench') || name.startsWith('TaskWork'));
@@ -12,7 +12,7 @@ export async function renderWorkbenchDto(): Promise<string> {
 export async function writeWorkbenchDto(outputRoot?: string): Promise<string[]> {
   const content = await renderWorkbenchDto();
   const files = Object.values(contractOutputPaths('workbench-dto.ts', outputRoot));
-  for (const file of files) { writeContractOutput(file, content); }
+  for (const file of files) { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, content); }
   return files;
 }
 export async function checkWorkbenchDto(outputRoot?: string): Promise<string[]> {

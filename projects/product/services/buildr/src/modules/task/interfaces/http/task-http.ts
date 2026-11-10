@@ -15,9 +15,6 @@ import {
 export { TASK_ID_SOURCE };
 
 const TASK_QUERY_FIELDS = new Set(['q', 'project', 'service', 'status', 'hasChildren', 'taskType', 'retrospectiveState', 'pageSize', 'cursor']);
-const TASK_TITLE_SUMMARIES_PATH = '/tasks/title-summaries';
-const TASK_TITLE_ID_LIMIT = 100;
-const TASK_ID_PATTERN = new RegExp(`^${TASK_ID_SOURCE}$`);
 const TASK_RECORD_PATH = new RegExp(`^/tasks/(${TASK_ID_SOURCE})$`);
 const TASK_RETROSPECTIVE_DOCUMENT_PATH = new RegExp(`^/tasks/(${TASK_ID_SOURCE})/retrospective-document$`);
 const TASK_COMPLETE_PATH = new RegExp(`^/tasks/(${TASK_ID_SOURCE})/complete$`);
@@ -28,7 +25,6 @@ type HttpBusinessError = Error & { code: string; status: number; details?: unkno
 type HttpResult = { status: number; body: unknown };
 type TaskHttpRuntime = {
   queryTasks(root: string, input: unknown): unknown;
-  readTaskTitles(root: string, taskIds: string[]): Map<string, string>;
   inspectTaskRetrospectiveDocument(root: string, taskId: string): unknown;
   inspectTaskView(root: string, taskId: string): unknown;
   updateTask(root: string, taskId: string, input: unknown): unknown;
@@ -98,39 +94,9 @@ function taskQueryInput(searchParams: URLSearchParams): Record<string, string> {
   return { ...validateRequest('task-record.list', input, 'Task list') };
 }
 
-function titleSummaryIds(searchParams: URLSearchParams): string[] {
-  if ([...searchParams.keys()].some((key) => key !== 'ids')) {
-    throw Object.assign(new Error('批量任务标题不接受 ids 以外的查询参数。'), { code: 'task_api_query_forbidden', status: 400 });
-  }
-  if (searchParams.getAll('ids').length !== 1) {
-    throw Object.assign(new Error('批量任务标题仅接受一个 ids 参数。'), { code: 'task_api_query_invalid', status: 400 });
-  }
-  const input = validateRequest('task-record.title-summaries', { ids: searchParams.get('ids') ?? '' }, 'Task title summaries');
-  const ids = [...new Set(input.ids.split(','))];
-  if (!ids.length || ids.length > TASK_TITLE_ID_LIMIT || ids.some((id) => !TASK_ID_PATTERN.test(id))) {
-    throw Object.assign(new Error(`批量任务标题一次最多读取${TASK_TITLE_ID_LIMIT}项合法任务身份。`), { code: 'task_title_ids_invalid', status: 400 });
-  }
-  return ids;
-}
-
 export async function handleTaskHttpRequest({ request, suffix, searchParams, root, runtime, authorizeWrite, readBody }: TaskHttpInput): Promise<HttpResult | null> {
   if (request.method === 'GET' && suffix === '/tasks') {
     return { status: 200, body: runtime.queryTasks(root, taskQueryInput(searchParams)) };
-  }
-  if (request.method === 'GET' && suffix === TASK_TITLE_SUMMARIES_PATH) {
-    const ids = titleSummaryIds(searchParams);
-    const titles = runtime.readTaskTitles(root, ids);
-    return {
-      status: 200,
-      body: {
-        schemaVersion: 'buildr.task-title-summary-list/v1',
-        items: ids.flatMap((taskId) => {
-          const title = titles.get(taskId);
-          return title === undefined ? [] : [{ taskId, title }];
-        }),
-        missingTaskIds: ids.filter((taskId) => !titles.has(taskId)),
-      },
-    };
   }
 
   const retrospectiveDocumentMatch = suffix.match(TASK_RETROSPECTIVE_DOCUMENT_PATH);
