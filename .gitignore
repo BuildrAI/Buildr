@@ -36,3 +36,5 @@ CLAUDE.local.md
 /.buildr/tasks/
 # Retired Task asset review data remains untracked
 # Retired Task asset review path remains ignored until local cleanup
+# Producer-owned local release reports (not source assets)
+/build/verification/release-process/
