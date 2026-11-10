@@ -59,6 +59,9 @@ export default {
       "tools/codegen/**",
       "tools/testing/**",
       "tools/development/**",
+      "test/helpers/in-process-cli.ts",
+      "test/register-development-entry.ts",
+      "src/infrastructure/filesystem/test-state-boundary.ts",
       "tools/verification/candidate-environment.ts",
       "tools/verification/candidate-preparation-reuse.ts",
       "src/bootstrap/cli/identity.ts",
@@ -107,7 +110,7 @@ export default {
     "inputExclusions": []
   },
 "e2e-workspace-assets": {
-    "inputs": ["src/modules/workspace/**", "src/modules/agent-assets/**", "src/infrastructure/filesystem/**", "src/infrastructure/product-resources/**", "resources/workspace/**", "tools/development/workspace-continuity-check.ts", "tools/development/run-isolated-workspace-check.ts", "test/helpers/asset-relationships.ts", "test/helpers/inline-core-fixture.ts"],
+    "inputs": ["src/modules/workspace/**", "src/modules/agent-assets/**", "src/infrastructure/filesystem/**", "src/infrastructure/product-resources/**", "resources/workspace/**", "tools/development/workspace-continuity-check.ts", "tools/development/run-isolated-workspace-check.ts", "test/helpers/in-process-cli.ts", "test/helpers/asset-relationships.ts", "test/helpers/inline-core-fixture.ts"],
     "inputExclusions": []
   },
 "integration-workspace-assets": {
@@ -254,6 +257,8 @@ export default {
   },
 "integration-data-store": {
     "inputs": [
+      "src/infrastructure/filesystem/test-state-boundary.ts",
+      "test/integration/workspace-registry-scope.test.ts",
       "test/integration/workspace-management-fence.test.ts",
       "test/integration/workspace-sqlite.test.ts",
       "test/integration/task-read-snapshot.test.ts",
@@ -332,6 +337,7 @@ export default {
   },
 "e2e-workspace": {
     "inputs": [
+      "test/helpers/in-process-cli.ts",
       "test/e2e/package-capability-retirement.test.ts",
       "test/fixtures/legacy-task-record-contract-v3.md",
       "test/e2e/project-product.test.ts",
@@ -352,6 +358,7 @@ export default {
   },
 "e2e-task": {
     "inputs": [
+      "test/helpers/in-process-cli.ts",
       "test/helpers/legacy-asset-catalog.ts",
       "src/modules/task/persistence/task-repository.ts",
       "src/modules/task/persistence/task-project-repository.ts",

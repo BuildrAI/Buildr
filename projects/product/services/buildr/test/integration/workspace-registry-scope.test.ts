@@ -12,6 +12,8 @@ import { registerWorkspaceManagementFence } from '../../src/modules/workspace/in
 import { registerWorkspaceQueryApplication } from '../../src/modules/workspace/application/workspace-query-application.ts';
 import { ensureRegisteredTarget, registerWorkspaceCommandApplication } from '../../src/modules/workspace/application/workspace-command-application.ts';
 import { oppositeWebProfile, resolveWebProfile } from '../../src/modules/installation/contracts/web-profile.ts';
+import { createIsolatedWorkspaceState } from '../../tools/development/isolated-workspace-state.ts';
+import { createTestStateWriteBoundary } from '../../src/infrastructure/filesystem/test-state-boundary.ts';
 
 const DEVELOPMENT: any = { channel: 'development', runtime: { role: 'development' } };
 
@@ -98,6 +100,97 @@ function writeRegistry(file: any, roots: any) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, `${JSON.stringify({ schemaVersion: WORKSPACE_REGISTRY_SCHEMA, roots, lastOpenedRoot: null }, null, 2)}\n`);
 }
+
+function testEnvironment(t: any, env: NodeJS.ProcessEnv) {
+  const saved = { ...process.env };
+  Object.assign(process.env, env);
+  t.after(() => {
+    for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
+    Object.assign(process.env, saved);
+  });
+}
+
+test('Buildr 测试缺少生命周期身份不得回退用户状态，普通预览及外部 Node 测试不受影响', () => {
+  const destination = path.join(os.tmpdir(), `simulated-user-${crypto.randomUUID()}`, 'workspace-registry.json');
+  assert.throws(() => createTestStateWriteBoundary({ BUILDR_TEST_STATE_REQUIRED: '1' })(destination),
+    (error: any) => error.code === 'buildr_test_state_boundary');
+  assert.doesNotThrow(() => createTestStateWriteBoundary({
+    NODE_TEST_CONTEXT: 'child-v8', BUILDR_LOCAL_APP_PREVIEW: '{"instance":"normal-preview"}',
+  })(destination));
+  assert.equal(fs.existsSync(path.dirname(destination)), false);
+});
+
+test('测试登记与管理归属拒绝继承的用户数据根，不依赖工作空间名称', t => {
+  const state = createIsolatedWorkspaceState();
+  t.after(() => state.cleanup());
+  const userRoot = path.join(path.dirname(state.root), `user-profile-${crypto.randomUUID()}`);
+  const root = workspace(state.root, 'repository/.buildr/local/inproc-probe/demo');
+  testEnvironment(t, { ...state.env, BUILDR_APP_DATA_DIR: userRoot });
+  const profile = resolveWebProfile(DEVELOPMENT);
+  const runtime = runtimeFor(profile, { development: profile });
+  const file = path.join(root, '.buildr/local/web-management.json');
+  const before = runtime.listRegisteredWorkspaces();
+  const blocked = (error: any) => error.code === 'buildr_test_state_boundary';
+  assert.throws(() => register(runtime, root), blocked);
+  assert.throws(() => runtime.ensureWorkspaceManagementClaim(root), blocked);
+  assert.throws(() => runtime.registryRepository.withWorkspaceRegistryMutation(before.revision, (value: any) => value), blocked);
+  assert.throws(() => runtime.registryRepository.writeWorkspaceRegistry(path.join(userRoot, 'workspace-registry.json'), {
+    schemaVersion: WORKSPACE_REGISTRY_SCHEMA, roots: [root], lastOpenedRoot: null,
+  }), blocked);
+  assert.equal(fs.existsSync(file), false);
+  assert.equal(fs.existsSync(`${file}.lock`), false);
+  assert.equal(fs.existsSync(userRoot), false, '拒绝必须发生在用户目录、锁及登记创建前');
+});
+
+test('测试登记按真实路径拒绝数据目录的符号链接逃逸', t => {
+  const state = createIsolatedWorkspaceState();
+  t.after(() => state.cleanup());
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'outside-test-state-'));
+  t.after(() => fs.rmSync(outside, { recursive: true, force: true }));
+  const alias = path.join(state.root, 'app-link');
+  fs.symlinkSync(outside, alias, process.platform === 'win32' ? 'junction' : 'dir');
+  testEnvironment(t, { ...state.env, BUILDR_APP_DATA_DIR: alias });
+  const profile = resolveWebProfile(DEVELOPMENT);
+  const runtime = runtimeFor(profile, { development: profile });
+  const root = workspace(state.root, 'ordinary-workspace');
+  assert.throws(() => register(runtime, root), (error: any) => error.code === 'buildr_test_state_boundary');
+  assert.deepEqual(fs.readdirSync(outside), []);
+  assert.equal(fs.existsSync(path.join(root, '.buildr/local/web-management.json')), false);
+});
+
+test('缓存登记实例不能跨测试范围写入，移除环境变量也不能获得用户写入权限', t => {
+  const first = createIsolatedWorkspaceState(), second = createIsolatedWorkspaceState();
+  t.after(() => { first.cleanup(); second.cleanup(); });
+  testEnvironment(t, first.env);
+  const profile = resolveWebProfile(DEVELOPMENT);
+  const runtime = runtimeFor(profile, { development: profile });
+  const root = workspace(first.root, 'demo');
+  Object.assign(process.env, second.env);
+  assert.throws(() => register(runtime, root), (error: any) => error.code === 'buildr_test_state_boundary');
+  delete process.env.BUILDR_TEST_LOCAL_STATE_ROOT;
+  delete process.env.NODE_TEST_CONTEXT;
+  assert.throws(() => runtime.ensureWorkspaceManagementClaim(root), (error: any) => error.code === 'buildr_test_state_boundary');
+  assert.equal(fs.existsSync(path.join(profile.dataRoot, 'workspace-registry.json')), false);
+  assert.equal(fs.existsSync(path.join(root, '.buildr/local/web-management.json')), false);
+});
+
+test('失效测试身份阻止写入，合法隔离身份恢复后仍可正常登记', t => {
+  const state = createIsolatedWorkspaceState();
+  t.after(() => state.cleanup());
+  testEnvironment(t, state.env);
+  const profile = resolveWebProfile(DEVELOPMENT);
+  const runtime = runtimeFor(profile, { development: profile });
+  const root = workspace(state.root, 'ordinary-workspace');
+  const marker = path.join(state.root, '.buildr-test-state.json');
+  const original = fs.readFileSync(marker, 'utf8');
+  fs.writeFileSync(marker, JSON.stringify({ ...JSON.parse(original), completed: true }));
+  assert.throws(() => register(runtime, root), (error: any) => error.code === 'buildr_test_state_boundary');
+  assert.equal(fs.existsSync(path.join(root, '.buildr/local/web-management.json')), false);
+  fs.rmSync(marker);
+  assert.throws(() => register(runtime, root), (error: any) => error.code === 'buildr_test_state_boundary');
+  fs.writeFileSync(marker, original);
+  assert.equal(register(runtime, root).workspaces.length, 1);
+});
 
 test('预览登记列表合并共享条目并标注只读来源', (t: any) => {
   const base: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-registry-scope-'));

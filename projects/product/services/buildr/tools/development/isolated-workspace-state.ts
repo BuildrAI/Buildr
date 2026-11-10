@@ -2,6 +2,24 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createTestStateWriteBoundary } from '../../src/infrastructure/filesystem/test-state-boundary.ts';
+
+/** Share a verified scenario scope; own a fresh scope when called standalone. */
+export function activateIsolatedWorkspaceState({ reuseInherited = false } = {}) {
+  if (reuseInherited && process.env.BUILDR_TEST_LOCAL_STATE_ROOT) {
+    createTestStateWriteBoundary()(process.env.BUILDR_APP_DATA_DIR!, process.env.BUILDR_PRODUCT_DATA_DIR!);
+    return;
+  }
+  const state = createIsolatedWorkspaceState();
+  Object.assign(process.env, state.env);
+  process.once('exit', () => {
+    try { state.cleanup(); }
+    catch (error) {
+      process.stderr.write(`Development test state cleanup failed: ${error instanceof Error ? error.message : String(error)}\n`);
+      process.exitCode = 1;
+    }
+  });
+}
 
 /**
  * Development checks own their local state, including state written by child
@@ -20,6 +38,7 @@ export function createIsolatedWorkspaceState(options: { env?: NodeJS.ProcessEnv;
     root,
     env: {
       ...env,
+      BUILDR_TEST_STATE_REQUIRED: '1',
       BUILDR_TEST_LOCAL_STATE_ROOT: root,
       // Synthetic service fixtures must not adopt or verify the real user's
       // package cache; dependency preparation still uses the native manager.

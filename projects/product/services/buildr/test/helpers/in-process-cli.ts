@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict';
+import path from 'node:path';
 import process from 'node:process';
+import { createTestStateWriteBoundary } from '../../src/infrastructure/filesystem/test-state-boundary.ts';
+import { activateIsolatedWorkspaceState } from '../../tools/development/isolated-workspace-state.ts';
+
+process.env.BUILDR_NPM_ENTRY_PATH ??= path.resolve(import.meta.dirname, '../../bin/buildr.mjs');
+activateIsolatedWorkspaceState({ reuseInherited: true });
 
 /**
  * Runs the real CLI entry (`runCli`) inside the current test process.
@@ -16,6 +22,7 @@ import process from 'node:process';
  */
 
 const EXIT_SENTINEL: any = Symbol('buildr-cli-exit');
+const assertTestWrite = createTestStateWriteBoundary();
 
 type CliResult = { status: number; stdout: string; stderr: string };
 
@@ -55,11 +62,12 @@ export async function runCliInProcess(args: readonly string[], expected?: number
     throw { [EXIT_SENTINEL]: true, code: typeof code === 'number' ? code : 0 };
   };
   process.exitCode = undefined;
-  if (options.cwd) process.chdir(options.cwd);
   try {
+    if (options.cwd) process.chdir(options.cwd);
     const { runCli, reportCliFailure }: any = await import('../../src/bootstrap/cli/main.ts');
     const argv: string[] = ['node', 'buildr', ...args];
     try {
+      assertTestWrite(process.env.BUILDR_APP_DATA_DIR!, process.env.BUILDR_PRODUCT_DATA_DIR!);
       await runCli(argv);
     } catch (error: any) {
       if (error && error[EXIT_SENTINEL]) {

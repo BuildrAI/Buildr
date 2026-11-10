@@ -100,6 +100,46 @@ test('Workspace check 子场景失败仍清理并保持用户状态零副作用'
   assert.deepEqual(snapshot(state.root), state.before);
 });
 
+test('直接同进程探针自动隔离，显式用户数据根覆盖失败且退出清理', { timeout: 60_000 }, t => {
+  const state = setupUserState(t);
+  const helper = path.join(serviceRoot, 'test/helpers/in-process-cli.ts');
+  const script = `
+import fs from 'node:fs';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+const inheritedApp = process.env.BUILDR_APP_DATA_DIR;
+const inheritedProduct = process.env.BUILDR_PRODUCT_DATA_DIR;
+const { runCliInProcess } = await import(${JSON.stringify(helper)});
+const root = process.env.BUILDR_TEST_LOCAL_STATE_ROOT;
+assert.notEqual(process.env.BUILDR_APP_DATA_DIR, inheritedApp);
+assert.notEqual(process.env.BUILDR_PRODUCT_DATA_DIR, inheritedProduct);
+const workspace = path.join(root, 'repository/.buildr/local/inproc-probe/demo');
+await runCliInProcess(['init', '--target', workspace, '--name', 'demo', '--profile', 'personal'], 0);
+const registry = JSON.parse(fs.readFileSync(path.join(process.env.BUILDR_APP_DATA_DIR, 'workspace-registry.json')));
+assert.deepEqual(registry.roots, [workspace]);
+const original = process.env.BUILDR_APP_DATA_DIR;
+for (const env of [{BUILDR_APP_DATA_DIR:inheritedApp}, {BUILDR_PRODUCT_DATA_DIR:inheritedProduct}]) {
+  const result = await runCliInProcess(['init', '--target', path.join(root, 'forbidden'), '--name', 'demo'], undefined, {env});
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /buildr_test_state_boundary/);
+  assert.equal(fs.existsSync(path.join(root,'forbidden')), false);
+  assert.equal(process.env.BUILDR_APP_DATA_DIR, original);
+}
+await runCliInProcess(['not-a-buildr-command'], 2);
+console.log(JSON.stringify({root, isolated:true}));
+`;
+  const result = spawnSync(process.execPath, ['--input-type=module', '--eval', script], {
+    cwd: serviceRoot, encoding: 'utf8', timeout: 55_000,
+    env: { ...process.env, NODE_TEST_CONTEXT: undefined, BUILDR_TEST_LOCAL_STATE_ROOT: undefined, BUILDR_NPM_ENTRY_PATH: undefined,
+      BUILDR_APP_DATA_DIR: state.appData, BUILDR_PRODUCT_DATA_DIR: state.productData },
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const receipt = JSON.parse(result.stdout.trim().split('\n').at(-1)!);
+  assert.equal(receipt.isolated, true);
+  assert.equal(fs.existsSync(receipt.root), false);
+  assert.deepEqual(snapshot(state.root), state.before);
+});
+
 for (const mode of ['deadline', 'cancellation']) test(`Workspace check external ${mode} stops descendants before deleting owned files`, { timeout: 15_000 }, async t => {
   const state = setupUserState(t);
   const proof = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-smoke-stop-proof-'));

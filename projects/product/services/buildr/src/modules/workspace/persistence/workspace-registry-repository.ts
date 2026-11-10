@@ -6,6 +6,7 @@ import process from 'node:process';
 import { productDataRoot } from '../../../infrastructure/filesystem/product-data-root.ts';
 import { withExclusiveFileLock } from '../../../infrastructure/filesystem/exclusive-file-lock.ts';
 import { isConfirmedMissingPath, sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.ts';
+import { createTestStateWriteBoundary } from '../../../infrastructure/filesystem/test-state-boundary.ts';
 
 export const WORKSPACE_REGISTRY_SCHEMA = 'buildr.local-workspace-registry/v1';
 
@@ -107,6 +108,7 @@ export function resolvePreviewSharedRegistryFile(webProfile: WebProfile, env: No
 }
 
 export function createWorkspaceRegistryRepository(runtime: WorkspaceRegistryRepositoryRuntime, options: WorkspaceRegistryRepositoryOptions = {}) {
+  const assertTestWrite = createTestStateWriteBoundary();
   const productIdentity = options.productIdentity || options.readProductIdentity?.();
   if (!productIdentity) throw new Error('Workspace registry repository requires the System Installation identity port.');
   if (typeof options.resolveWebProfile !== 'function') throw new Error('Workspace registry repository requires the System Installation Web Profile contract.');
@@ -156,15 +158,18 @@ export function createWorkspaceRegistryRepository(runtime: WorkspaceRegistryRepo
   }
 
   function writeWorkspaceRegistry(file: any, registry: any) {
+    assertTestWrite(file);
     runtime.atomicWriteJson(file, canonicalRegistry(registry, 'Workspace registry'));
   }
 
   function withWorkspaceRegistryMutation(expectedRevision: any, mutate: any) {
     const file = workspaceRegistryPath();
     const lock = `${file}.lock`;
+    assertTestWrite(file);
     runtime.ensureDirectory(path.dirname(file));
     try {
       return withExclusiveFileLock(lock, file, () => {
+        assertTestWrite(file);
         const current = readWorkspaceRegistryPersistence();
         if (current.revision !== expectedRevision) {
           const conflict: Error & Record<string, any> = new Error('Workspace 登记列表已变化，请刷新后重试。');
