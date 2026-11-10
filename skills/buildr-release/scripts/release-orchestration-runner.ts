@@ -22,6 +22,7 @@ import { retryCandidateFailedShards, classifyCandidateFailure } from './candidat
 import { releaseCommandDiagnostic, releaseDispatchRejected, releaseRecoveryPlan } from './release-failure.ts';
 import { extractReleaseNotes } from './release-notes.ts';
 import { assertCandidateDispatchBudget, continueCandidateRepair } from './candidate-repair-operation.ts';
+import { excludesAllCandidateBoundaries } from '../../../projects/product/services/buildr/test/verification/candidate-declared-scope.ts';
 import { containsCredentialMaterial, releasePublishAuthority } from './release-authority.ts';
 import { createReleaseLifecycle, projectReleaseLifecycleOrchestration } from './release-lifecycle.ts';
 import { compactReleasePhaseTimeline, createReleasePhaseTimeline, projectCandidateAttempts } from './release-phase-timeline.ts';
@@ -1152,6 +1153,11 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
           excludedStepIds = candidateStepIds.filter((id: string) => !selectedStepIds!.includes(id)).sort();
           state.verificationSelection = { excludedBoundaries: [...excludedBoundaries].sort(), selectedStepIds, excludedStepIds,
             selectionMode: 'excluded-boundaries', statement: scopeStatement!.trim(), source: 'user-instruction', recordedAt: new Date().toISOString() };
+          save();
+        }
+        if (plan && excludesAllCandidateBoundaries(state.verificationSelection)) {
+          plan = { ...plan, requirements: { ...plan.requirements, plugin: false } };
+          state.candidatePlan = plan;
           save();
         }
         const dispatchScope = (excludedBoundaries?.length || excludedStepIds.length) ? {

@@ -41,6 +41,10 @@ export function parseCandidateDeclaredScope(encoded: string | null | undefined):
   return { ...body, identity: digest(body) };
 }
 
+export function excludesAllCandidateBoundaries(scope: any): boolean {
+  return Boolean(scope) && CANDIDATE_SCOPE_BOUNDARIES.every(boundary => scope.excludedBoundaries?.includes(boundary));
+}
+
 /** Exclusions are applied per registered step. Candidate shard steps have no
  * intra-shard prerequisites, so a shard can run its remaining steps while the
  * declared checks stay unexecuted and are recorded as such. A shard with no

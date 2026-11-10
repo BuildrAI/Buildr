@@ -14,6 +14,7 @@ import { normalizeReleaseTargets } from '../../../../../../../skills/buildr-rele
 import { readArtifactInput } from '../../../../dsh-plugin/tools/buildr-peer.ts';
 import { assertBoundVerificationManifest } from '../../../../dsh-plugin/tools/full-verification.ts';
 import { CANDIDATE_CI_AGGREGATE_SCHEMA } from './candidate-ci-contract.ts';
+import { excludesAllCandidateBoundaries, parseCandidateDeclaredScope } from '../candidate-declared-scope.ts';
 
 function requireFact(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -244,7 +245,9 @@ async function main(): Promise<void> {
     if (action === 'plan') {
       const plan = createReleaseCandidatePlan(planEnv, planGit);
       fs.writeFileSync(path.join(process.env.RUNNER_TEMP ?? os.tmpdir(), 'release-candidate-plan.json'), `${JSON.stringify(plan)}\n`);
-      if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `buildr=${plan.requirements.buildr}\nplugin=${plan.requirements.plugin}\njoint=${plan.selection?.packages.join(',') === 'buildr,dsh-plugin'}\ncandidate_peer=${plan.selection?.packages.includes('buildr') === true}\nplugin_version=${plan.pluginVersion ?? ''}\n`);
+      const declaredScope = parseCandidateDeclaredScope(process.env.BUILDR_CANDIDATE_VERIFICATION_SCOPE);
+      const plugin = plan.requirements.plugin && !excludesAllCandidateBoundaries(declaredScope);
+      if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `buildr=${plan.requirements.buildr}\nplugin=${plugin}\njoint=${plan.selection?.packages.join(',') === 'buildr,dsh-plugin'}\ncandidate_peer=${plan.selection?.packages.includes('buildr') === true}\nplugin_version=${plan.pluginVersion ?? ''}\n`);
       process.stdout.write(`${JSON.stringify(plan)}\n`);
     } else if (action === 'plugin-aggregate') {
       const plan = createReleaseCandidatePlan(planEnv, planGit);
