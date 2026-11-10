@@ -1,3 +1,4 @@
+import { documentTypes, documentBytes, attachmentName } from '../domain/document-attachments.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
@@ -9,7 +10,9 @@ export interface DraftImageView { id: string; name: string; mimeType: string; si
 export interface DraftImagesView { revision: string; images: DraftImageView[] }
 type Row = DraftImageView & { bytes: Uint8Array };
 const uuid = /^[a-f0-9-]{36}$/;
-export function imageBytes(input: { mimeType: string; bytes: Uint8Array }): Buffer {
+export function imageBytes(input: { mimeType: string; bytes: Uint8Array; name?: string }): Buffer {
+  attachmentName(input.name);
+  if (documentTypes.includes(input.mimeType)) return documentBytes(input);
   if (!(input.bytes instanceof Uint8Array)) fail('agent_image_invalid', '图片内容无效。');
   const bytes = Buffer.from(input.bytes);
   if (!bytes.length || bytes.length > (input.mimeType.startsWith('video/') ? 32 : 8) * 1024 * 1024) fail(input.mimeType.startsWith('video/') ? 'agent_video_invalid' : 'agent_image_invalid', input.mimeType.startsWith('video/') ? '视频为空或超过32 MiB。' : '图片内容无效或超过8 MiB。', 413);
@@ -62,6 +65,7 @@ export class DraftImageRepository {
   }
   add(source: string, draft: string, input: { expectedRevision: string; name: string; mimeType: string; bytes: Uint8Array; frame?: boolean; video?: VideoAttachment }): DraftImagesView {
     this.check(draft);
+    if (input.frame && !input.mimeType.startsWith('image/')) fail('agent_image_invalid', '视频画面必须为图片。');
     const bytes = imageBytes(input);
     if (typeof input.name !== 'string' || !input.name.trim() || input.name.length > 255) fail('agent_image_invalid', '图片名称无效。');
     return this.use(true, db => {
@@ -74,7 +78,7 @@ export class DraftImageRepository {
         for(const frame of video.frames){const found=rows.find(row=>row.id===frame.id);if(!found?.frame || !found.mimeType.startsWith('image/') || !Number.isFinite(frame.time) || frame.time<0 || frame.time>video.duration || frame.time<=previous || rows.some(row=>row.video?.frames.some(f=>f.id===frame.id)))fail('agent_video_invalid','视频必须引用本草稿尚未使用的有序画面。');previous=frame.time;}
       } else if(input.video) fail('agent_video_invalid','图片不能声明视频画面。');
       const total = db.prepare('SELECT coalesce(sum(size),0) AS total FROM images WHERE source=?').get(source) as { total: number };
-      if ((!input.frame && rows.filter(row=>!row.frame).length >= 4) || rows.length >= 36 || total.total + bytes.length > 256 * 1024 * 1024) fail('agent_attachment_capacity', '每份草稿最多4份材料，本机未发送材料最多256 MiB；请移除不需要的图片。', 413);
+      if ((!input.frame && rows.filter(row=>!row.frame).length >= 9) || rows.length >= 81 || total.total + bytes.length > 256 * 1024 * 1024) fail('agent_attachment_capacity', '每份草稿最多9份材料，本机未发送材料最多256 MiB；请移除不需要的图片。', 413);
       db.prepare('INSERT INTO images(source,draft,id,name,mimeType,size,bytes,metadata) VALUES(?,?,?,?,?,?,?,?)').run(source, draft, randomUUID(), input.name, input.mimeType, bytes.length, bytes, JSON.stringify({...input.frame ? {frame:true} : {},...input.video ? {video:input.video} : {}}));
       return this.view(this.rows(db, source, draft));
     }, undefined as never);

@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { createTestStateWriteBoundary } from '../../../infrastructure/filesystem/test-state-boundary.ts';
 import path from 'node:path';
 import process from 'node:process';
 
@@ -110,6 +111,7 @@ function sameOwner(left: any, right: any) {
 }
 
 export function registerWorkspaceManagementFence(runtime: WorkspaceManagementFenceRuntime, options: WorkspaceManagementFenceOptions = {}) {
+  const assertTestWrite = createTestStateWriteBoundary();
   const oppositeWebProfile = options.oppositeWebProfile;
   if (typeof oppositeWebProfile !== 'function') throw new Error('Workspace Management Fence requires the System Installation Web Profile contract.');
   const resolveOppositeWebProfile = oppositeWebProfile;
@@ -231,8 +233,10 @@ export function registerWorkspaceManagementFence(runtime: WorkspaceManagementFen
     const profile = options.profile || runtime.currentWebProfile();
     const identity = managementIdentity(targetRoot);
     const file = managementPath(identity.canonicalRoot);
+    assertTestWrite(path.join(profile.dataRoot, 'workspace-registry.json'), file);
     const lock = `${file}.lock`;
     return withExclusiveFileLock(lock, identity.canonicalRoot, () => {
+      assertTestWrite(path.join(profile.dataRoot, 'workspace-registry.json'), file);
       options.assertSafe?.();
       assertCurrentRegistryReadable();
       const observed = readManagementRecord(file);
@@ -240,6 +244,7 @@ export function registerWorkspaceManagementFence(runtime: WorkspaceManagementFen
       assertNoPeerRegistration(identity, profile, observed.status === 'ready');
       let created = false;
       if (observed.status === 'absent') {
+        assertTestWrite(path.join(profile.dataRoot, 'workspace-registry.json'), file);
         options.assertSafe?.();
         runtime.atomicWriteJson(file, {
           schemaVersion: WORKSPACE_MANAGEMENT_SCHEMA,
@@ -259,6 +264,7 @@ export function registerWorkspaceManagementFence(runtime: WorkspaceManagementFen
             options.assertSafe?.();
             const current = readManagementRecord(file);
             if (current.record?.workspaceId === identity.workspaceId && sameOwner(current.record.owner, ownerFor(profile))) {
+              assertTestWrite(path.join(profile.dataRoot, 'workspace-registry.json'), file);
               options.assertSafe?.();
               runtime.removePath(file);
             }
@@ -284,8 +290,10 @@ export function registerWorkspaceManagementFence(runtime: WorkspaceManagementFen
     const identity = managementIdentity(targetRoot);
     if (workspaceId && identity.workspaceId !== workspaceId) return false;
     const file = managementPath(identity.canonicalRoot);
+    assertTestWrite(path.join(profile.dataRoot, 'workspace-registry.json'), file);
     const lock = `${file}.lock`;
     return withExclusiveFileLock(lock, identity.canonicalRoot, () => {
+      assertTestWrite(path.join(profile.dataRoot, 'workspace-registry.json'), file);
       const observed = readManagementRecord(file);
       if (!observed.record || observed.record.workspaceId !== identity.workspaceId || !sameOwner(observed.record.owner, ownerFor(profile))) return false;
       const current = runtime.readWorkspaceRegistryPersistence().registry;
@@ -296,6 +304,7 @@ export function registerWorkspaceManagementFence(runtime: WorkspaceManagementFen
         } catch { return true; }
       });
       if (stillRegistered) return false;
+      assertTestWrite(path.join(profile.dataRoot, 'workspace-registry.json'), file);
       runtime.removePath(file);
       return true;
     });

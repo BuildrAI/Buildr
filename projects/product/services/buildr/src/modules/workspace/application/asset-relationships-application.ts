@@ -270,7 +270,6 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
           if (String(parsed.target || parsed.path || '').includes('services/manifest.yml')) continue;
           runtime.writeMappedFileIfMissing(root, destination, parsed, { project: project.code }, []);
         }
-        runtime.trackWrite(root, path.join(destination, 'capabilities.yml'), runtime.renderProjectCapabilitiesYaml(), []);
         runtime.trackWrite(root, path.join(destination, 'commands.yml'), runtime.renderProjectCommandsYaml(), []);
       }
       for (const directory of directories.filter(d => !d.observation)) runtime.ensureDirectory(path.join(root, directory.path));

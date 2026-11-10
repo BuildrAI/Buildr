@@ -48,7 +48,9 @@ dependencies: any = {}): any {
     const runs = JSON.parse(scope.gh(['run', 'list', '--repo', 'BuildrAI/Buildr', '--workflow', 'verify.yml', '--branch', candidate.branch,
       '--event', 'workflow_dispatch', '--limit', '100', '--json', 'databaseId,headSha,displayTitle,status,conclusion']));
     if (!Array.isArray(runs)) throw new Error('Candidate repair history is unknown.');
-    const matches = runs.filter(run => run.headSha === candidate.sourceCommit && run.displayTitle === title);
+    const previous = new Set(pointer.previousRunIds ?? []);
+    const matches = runs.filter(run => run.headSha === candidate.sourceCommit && run.displayTitle === title
+      && !previous.has(run.databaseId));
     if (matches.length > 1) throw new Error('Candidate repair request is ambiguous.');
     return matches[0] ?? null;
   };
@@ -62,11 +64,13 @@ dependencies: any = {}): any {
       ...(options.artifactTransport ? ['artifact_verification=' + options.artifactTransport] : [])];
     assertCandidateDispatchBudget(fields);
     scope.ensureCarrier();
+    pointer.dispatchArgs = ['workflow', 'run', 'verify.yml', '--repo', 'BuildrAI/Buildr', '--ref', candidate.branch,
+      ...fields.flatMap(field => ['-f', field])];
     pointer.requested = true; pointer.rejected = false; scope.save();
     const effect = { type: 'candidate-repair-dispatched', sourceCommit: candidate.sourceCommit, verificationSource: source, state: 'unknown' };
     effects.push(effect);
     try {
-      scope.gh(['workflow', 'run', 'verify.yml', '--repo', 'BuildrAI/Buildr', '--ref', candidate.branch, ...fields.flatMap(field => ['-f', field])]);
+      scope.gh(pointer.dispatchArgs);
       effect.state = 'confirmed';
     } catch (error: any) {
       pointer.diagnostic = error.diagnostic ?? { code: 'candidate-repair-dispatch-unknown', message: String(error.message).slice(-8192) };

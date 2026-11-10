@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { continuationDraft } from '../../src/domain/conversation-continuation.ts';
+import { continuationDraft, stoppedContinuation } from '../../src/domain/conversation-continuation.ts';
 import { messageSignature } from '../../src/domain/conversation-activity.ts';
 import type { StoredConversation } from '../../src/domain/agent-state.ts';
 import type { ConversationEntry, SendDraft } from '../../src/contracts.ts';
@@ -36,4 +36,24 @@ test('streaming thinking does not advance conversation activity', () => {
   const visible = view('第一步');
   visible.view.entries[2]!.text = '答复（更新）';
   assert.notEqual(messageSignature(view('第一步')), messageSignature(visible));
+});
+
+test('explicit stop escape does not require acceptance, release or completed tools and never replays input', () => {
+  for (const accepted of [true, false]) {
+    const base = record([message(1, { role: 'user', text: 'DANGEROUS_ORIGINAL_COMMAND' })]);
+    base.view.run = { id: 'run-1', participantId: 'p', status: 'unknown', stopRequested: true, accepted, tools: [{id:'tool',status:'running'}] } as NonNullable<StoredConversation['view']['run']>;
+    base.participants = [{id:'p',connectionId:'local'}] as never;
+    const draft = {...send,connectionId:'local',permissionMode:'default' as const};
+    const snapshot = structuredClone(base);
+    assert.equal(stoppedContinuation(base,draft),true);
+    const result=continuationDraft(base,draft);
+    assert.match(result.text,/旧命令可能仍在运行/);
+    assert.match(result.text,/不要重发原输入/);
+    assert.ok(!result.text.includes('DANGEROUS_ORIGINAL_COMMAND'));
+    assert.deepEqual(base,snapshot);
+    assert.throws(()=>continuationDraft(base,{...draft,continueRunId:'other'}),/原执行已变化/);
+    assert.equal(stoppedContinuation(base,{...draft,connectionId:'other'}),false);
+    base.view.run!.stopRequested=false;
+    assert.equal(stoppedContinuation(base,draft),false);
+  }
 });

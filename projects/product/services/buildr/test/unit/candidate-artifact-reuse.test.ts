@@ -109,3 +109,20 @@ test('failed local groups retain successful children across assertion and depend
   const changedEnvironment = { ...original.executionEnvironment, dependencyIdentity: hash('new actual controller') };
   assert.deepEqual(reusableCandidateArtifactStepIds(original, group, context, currentInputs, artifact, { executionEnvironment: changedEnvironment }), ['source-contracts', 'payload']);
 });
+
+test('hosted partial package retry requires an explicit same-run earlier attempt and retains real CI provenance', () => {
+  const group = { ...descriptor, steps: [{ id: 'first' }, { id: 'second' }] };
+  const original = evidence(group);
+  original.workflow = { runId: '52', runAttempt: '1' };
+  original.status = 'failed'; original.results[1].status = 'failed'; original.results[1].exitCode = 1;
+  const retryWorkflow = { runId: '52', runAttempt: '2' };
+  assert.deepEqual(reusableCandidateArtifactStepIds(original, group, context, original.checkInputs, artifact), []);
+  assert.deepEqual(reusableCandidateArtifactStepIds(original, group, context, original.checkInputs, artifact, { retryWorkflow }), ['first']);
+  for (const workflow of [{ runId: '53', runAttempt: '2' }, { runId: '52', runAttempt: '1' }]) {
+    assert.deepEqual(reusableCandidateArtifactStepIds(original, group, context, original.checkInputs, artifact, { retryWorkflow: workflow }), []);
+  }
+  const adopted = reusedCandidateArtifactResult(original, 'first');
+  assert.equal(adopted.reusedFrom.kind, 'ci');
+  assert.deepEqual(adopted.artifactRecord.workflow, original.workflow);
+  assert.equal(validateCandidateArtifactEvidence(original, group, context, original.checkInputs, artifact), false);
+});

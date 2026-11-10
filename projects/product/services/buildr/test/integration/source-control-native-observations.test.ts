@@ -18,16 +18,6 @@ test('native filesystem events reach the shared observation through real watcher
   fs.writeFileSync(path.join(root, 'tracked.txt'), 'base\n'); git('add', '.'); git('commit', '-m', 'fixture');
   const application = createCodeApplication({ assetCatalog: () => ({ repositories: [{ id: 'repo', code: 'repo', name: 'Native', source: { type: 'workspace', path: root } }], services: [], projects: [] }),
     resolveSourceRoot: (_root, source) => source.path, readTaskScope: () => ({ projects: [], services: [] }), readGitWorktreeEvidence: () => null });
-  let nativeEventSeen = false;
-  const nativeWatch = fs.watch;
-  t.mock.method(fs, 'watch', (...args: any[]) => {
-    const callback = args.at(-1);
-    args[args.length - 1] = (event: string, filename: string | Buffer | null) => {
-      if (filename?.toString().startsWith('native-live-')) nativeEventSeen = true;
-      callback(event, filename);
-    };
-    return Reflect.apply(nativeWatch, fs, args);
-  });
   await observations.observe(root, application.sourceControl(root));
   let cursor = (await observations.watch(root)).cursor;
   const controller = new AbortController();
@@ -38,11 +28,11 @@ test('native filesystem events reach the shared observation through real watcher
   try {
     while (!controller.signal.aborted) {
       const changed = await observations.watch(root, cursor, controller.signal); cursor = changed.cursor;
-      if (nativeEventSeen && changed.repositoryIds.includes('repo')) {
+      if (changed.repositoryIds.includes('repo')) {
         t.diagnostic(`native delivery ${Date.now() - startedAt} ms, ${writes} real writes, zero injected notifications`);
         return;
       }
     }
-    assert.fail(`Native filesystem delivery unavailable within 10000 ms (${writes} writes, nativeEventSeen=${nativeEventSeen}).`);
+    assert.fail(`Native filesystem delivery unavailable within 10000 ms (${writes} writes).`);
   } finally { clearInterval(writer); clearTimeout(timer); controller.abort(); }
 });

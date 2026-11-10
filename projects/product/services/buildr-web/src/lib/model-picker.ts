@@ -12,9 +12,29 @@ export function sortReasoningEfforts<T extends {id:string}>(options:readonly T[]
   return options.map((value,index)=>({value,index,rank:reasoningEffortRank(value.id)})).sort((a,b)=>(a.rank??Infinity)-(b.rank??Infinity)||a.index-b.index).map(item=>item.value);
 }
 
+export type ModelPickerGroup={id:string;label:string;options:{value:string;label:string;disabled?:boolean}[]};
+
+const modelNameOrder=new Intl.Collator('zh-Hans-CN',{sensitivity:'base',numeric:true});
+
+/** 来源分组与组内模型按显示名称稳定排序，再只按模型或来源名称过滤可见选项；分组标签匹配时保留该来源的完整选项。 */
+export function filterModelGroups(groups:readonly ModelPickerGroup[],query:string):ModelPickerGroup[] {
+  const needle=query.trim().toLocaleLowerCase();
+  const visible=needle?groups.map(group=>{
+    const source=group.label.toLocaleLowerCase().includes(needle);
+    return {...group,options:group.options.filter(option=>source||option.label.toLocaleLowerCase().includes(needle))};
+  }).filter(group=>group.options.length>0):groups;
+  return visible.map(group=>({...group,options:[...group.options].sort((a,b)=>modelNameOrder.compare(a.label,b.label))})).sort((a,b)=>modelNameOrder.compare(a.label,b.label));
+}
+
 export function modelSourceName(provider:string):string {
   const id=provider.replace(/^native-/, '');
-  return ({codex:'Codex',dsh:'DSH',deepseek:'DeepSeek',qoder:'Qoder',devin:'Devin'} as Record<string,string>)[id]??provider;
+  return ({codex:'ChatGPT',openai:'ChatGPT API',dsh:'DeepSeek',deepseek:'DeepSeek',qoder:'Qoder','qoder-cn':'Qoder CN',devin:'Devin'} as Record<string,string>)[id]??provider;
+}
+
+/** Execution agent names stay separate from model-source names. */
+export function executionAgentName(provider:string):string {
+  const id=provider.replace(/^native-/, '');
+  return ({codex:'Codex',dsh:'DSH',qoder:'Qoder','qoder-cn':'Qoder CN',devin:'Devin',deepseek:'DeepSeek'} as Record<string,string>)[id]??provider;
 }
 
 
@@ -31,4 +51,9 @@ export function tierReasoningEffort(tier:{reasoningEfforts?:ReadonlyArray<{id:st
   if(!effort)return effort;
   const options=tier?.reasoningEfforts??fallback;
   return options?.some(option=>option.id===effort)?effort:undefined;
+}
+
+/** Only agents prepared on this machine can start a conversation; installed-but-unprepared ones stay in settings. */
+export function preparedAgentConnections<T extends {enabled:boolean;configPath?:string}>(connections:readonly T[]):T[] {
+  return connections.filter(connection => connection.enabled && !!connection.configPath);
 }

@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import { nodeContextTestArguments, nodeTestConcurrencyArguments, parseNodeTestContextSummary, workerBudgetEnvironment } from '../verification/executor.ts';
 import { resolveVerificationExecutionProfile, verificationSteps } from '../verification/registry.ts';
+import { runVerificationDag } from '../verification/dag-scheduler.ts';
 import { VERIFICATION_WORKER_BUDGET_ENV, resolveVerificationWorkerBudget } from '../verification/worker-budget.ts';
 
 test('验证内部 worker budget 使用默认值并受 suite 上限约束', () => {
@@ -104,4 +105,29 @@ test('the seven reviewed long-running owners have nonzero scheduling estimates',
     const step = verificationSteps.find((item: any) => item.id === id);
     assert.ok(Number.isFinite(step.schedulingCostMs) && step.schedulingCostMs > 0, id);
   }
+});
+
+test('nested CLI load is bounded without making unrelated checks globally exclusive', async () => {
+  const hot = ['integration-workspace-assets', 'integration-connections-cli'];
+  const definitions = [...hot, 'test-file-ownership'].map(id => verificationSteps.find((step: any) => step.id === id));
+  const run = async (steps: any[]) => {
+    const active = new Set<string>(); let overlap = false, concurrent = false;
+    const results = await runVerificationDag({ steps }, {
+      concurrency: resolveVerificationExecutionProfile('local').limits,
+      execute: async (step: any) => {
+        active.add(step.id);
+        overlap ||= hot.every(id => active.has(id));
+        concurrent ||= active.size > 1;
+        await new Promise<void>(resolve => setImmediate(resolve));
+        active.delete(step.id);
+        return { status: 'passed', exitCode: 0, durationMs: 1 };
+      },
+    });
+    assert.ok(results.every((result: any) => result.status === 'passed'));
+    return { overlap, concurrent };
+  };
+  assert.deepEqual(await run(definitions), { overlap: false, concurrent: true });
+  assert.equal((await run(definitions.map(step => hot.includes(step.id)
+    ? { ...step, resourceDemand: { ...step.resourceDemand, workspaceIo: 1 } } : step))).overlap, true,
+  'the former one-slot accounting permits both nested CLI chains to contend');
 });

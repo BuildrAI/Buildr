@@ -93,7 +93,7 @@ test('service close cancels installation without starting a native runtime',asyn
 test('new discovery ignores desktop and PATH programs while existing bindings remain inspectable',async t=>{
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-program-discovery-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
   const bin=path.join(root,'bin');fs.mkdirSync(bin);const program=path.join(bin,'codex.js');fs.writeFileSync(program,"console.log('codex-cli 0.163.0-alpha.11.2');\n");fs.symlinkSync(program,path.join(bin,'codex'));
-  const manager=new NativeProgramManager(path.join(root,'private'),{PATH:[bin,bin].join(path.delimiter),HOME:root});
+  const manager=new NativeProgramManager(path.join(root,'private'),{PATH:[bin,bin].join(path.delimiter),HOME:root},async()=>({latestVersion:'0.167.0',source:'fixture'}));
   const signal=new AbortController().signal;
   const actual=fs.realpathSync(program);
   const found=await manager.discover({provider:'codex',signal});assert.equal(found.candidates.length,0);
@@ -120,15 +120,51 @@ test('admission follows each major including minor upgrades and prereleases, ind
     assert.equal(isCompatibleProgram(provider,nativeProgramPolicy(provider).version),true,'pinned downloads remain admitted');
   }
 });
-test('fixed package installer uses an isolated prefix, verifies its result and reuses it',async t=>{
+test('default package installer uses the official latest release, an isolated prefix and reuses its verified result',async t=>{
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-program-install-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
   const bin=path.join(root,'bin');fs.mkdirSync(bin);const script=path.join(bin,'npm-cli.js');
-  fs.writeFileSync(script,`const fs=require('node:fs'),path=require('node:path');const args=process.argv.slice(2);if(!args.includes('@openai/codex@0.163.0')||!args.includes('--registry=https://registry.npmjs.org/'))process.exit(2);const prefix=args[args.indexOf('--prefix')+1];if(process.env.CODEX_HOME||process.env.OPENAI_API_KEY||!process.env.HOME.startsWith(prefix))process.exit(3);const file=path.join(prefix,'node_modules/@openai/codex/bin/codex.js');fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,"console.log('codex-cli 0.163.0');");fs.writeFileSync(path.join(prefix,'node_modules/@openai/codex/package.json'),JSON.stringify({name:'@openai/codex',version:'0.163.0'}));`);
+  fs.writeFileSync(script,`const fs=require('node:fs'),path=require('node:path');const args=process.argv.slice(2);if(!args.includes('@openai/codex@0.167.0')||!args.includes('--registry=https://registry.npmjs.org/'))process.exit(2);const prefix=args[args.indexOf('--prefix')+1];if(process.env.CODEX_HOME||process.env.OPENAI_API_KEY||!process.env.HOME.startsWith(prefix))process.exit(3);const file=path.join(prefix,'node_modules/@openai/codex/bin/codex.js');fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,"console.log('codex-cli 0.167.0');");fs.writeFileSync(path.join(prefix,'node_modules/@openai/codex/package.json'),JSON.stringify({name:'@openai/codex',version:'0.167.0'}));`);
   fs.symlinkSync(script,path.join(bin,'npm'));
-  const manager=new NativeProgramManager(path.join(root,'profile'),{PATH:bin,HOME:root,OPENAI_API_KEY:'not-inherited'}),signal=new AbortController().signal;
+  const manager=new NativeProgramManager(path.join(root,'profile'),{PATH:bin,HOME:root,OPENAI_API_KEY:'not-inherited'},async()=>({latestVersion:'0.167.0',source:'fixture'})),signal=new AbortController().signal;
   const progress:string[]=[];const executable=await manager.install({provider:'codex',signal,progress:message=>progress.push(message)});
   assert.ok(fs.existsSync(executable));assert.equal(progress.length,2);assert.equal(await manager.install({provider:'codex',signal,progress:()=>assert.fail('must reuse')}),executable);
   assert.deepEqual(fs.readdirSync(path.dirname(path.dirname(path.dirname(path.dirname(path.dirname(executable)))))).filter(name=>name.startsWith('.prepare-')),[]);
+});
+
+test('latest release lookup failure stops installation and never falls back to the legacy pin',async t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-program-latest-missing-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  const manager=new NativeProgramManager(path.join(root,'profile'),{PATH:process.env.PATH??'',HOME:root},async()=>{throw new Error('agent_release_unavailable');}),signal=new AbortController().signal;
+  await assert.rejects(manager.install({provider:'codex',signal,progress:()=>{}}),/agent_release_unavailable/);
+  const catalog=await manager.discover({provider:'dsh',signal});
+  assert.equal(catalog.installation.canInstall,false);
+  assert.equal(catalog.installation.version,nativeProgramPolicy('dsh').version);
+  assert.match(catalog.installation.diagnostic??'',/无法读取官方最新版本/);
+});
+
+test('a prepared managed program remains discoverable when the official latest lookup is unavailable',async t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-program-prepared-offline-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  const profile=path.join(root,'profile'),version='0.167.0',directory=path.join(profile,'programs','codex',`package-${version}-${process.platform}-${process.arch}`),executable=path.join(directory,'node_modules/@openai/codex/bin/codex.js');
+  fs.mkdirSync(path.dirname(executable),{recursive:true});fs.writeFileSync(executable,"console.log('codex-cli 0.167.0');\n");
+  fs.writeFileSync(path.join(profile,'programs','codex','prepared.json'),JSON.stringify({version,executable}));
+  const manager=new NativeProgramManager(profile,{PATH:process.env.PATH??'',HOME:root},async()=>{throw new Error('agent_release_unavailable');}),signal=new AbortController().signal;
+  const catalog=await manager.discover({provider:'codex',signal});
+  assert.equal(catalog.installation.canInstall,false);
+  assert.equal(catalog.candidates[0]?.executable,fs.realpathSync(executable));
+  assert.equal(catalog.candidates[0]?.version,version);
+  assert.equal(catalog.candidates[0]?.compatible,true);
+});
+
+test('an incompatible official latest version stops installation without hiding prepared programs',async t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-program-latest-incompatible-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  const profile=path.join(root,'profile'),version='0.167.0',directory=path.join(profile,'programs','codex',`package-${version}-${process.platform}-${process.arch}`),executable=path.join(directory,'node_modules/@openai/codex/bin/codex.js');
+  fs.mkdirSync(path.dirname(executable),{recursive:true});fs.writeFileSync(executable,"console.log('codex-cli 0.167.0');\n");
+  fs.writeFileSync(path.join(profile,'programs','codex','prepared.json'),JSON.stringify({version,executable}));
+  const manager=new NativeProgramManager(profile,{PATH:process.env.PATH??'',HOME:root},async()=>({latestVersion:'1.0.0',source:'fixture'})),signal=new AbortController().signal;
+  const catalog=await manager.discover({provider:'codex',signal});
+  assert.equal(catalog.installation.canInstall,false);
+  assert.match(catalog.installation.diagnostic??'',/不在兼容范围/);
+  assert.equal(catalog.candidates[0]?.version,version);
+  await assert.rejects(manager.install({provider:'codex',version:'1.0.0',signal,progress:()=>{}}),{code:'agent_install_version_invalid'});
 });
 
 test('a real installer failure reaches preparation with its last error, redacted credentials and staging cleaned',async t=>{
@@ -148,7 +184,7 @@ test('missing archive tools report the actual operating system error rather than
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-program-unpack-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
   const bin=path.join(root,'bin');fs.mkdirSync(bin);
   fs.writeFileSync(path.join(bin,'npm-cli.js'),`const {spawnSync}=require('node:child_process');const result=spawnSync('buildr-test-missing-unpacker',['--version'],{env:{PATH:process.env.PATH}});if(!result.error)process.exit(99);process.stderr.write('npm error archive extraction failed: '+result.error.message);process.exitCode=3;`);
-  const manager=new NativeProgramManager(path.join(root,'profile'),{PATH:bin,HOME:root});
+  const manager=new NativeProgramManager(path.join(root,'profile'),{PATH:bin,HOME:root},async()=>({latestVersion:'1.0.59',source:'fixture'}));
   await assert.rejects(manager.install({provider:'qoder',signal:new AbortController().signal,progress:()=>{}}),error=>{
     assert.equal((error as any).code,'agent_install_failed');
     assert.match((error as Error).message,/退出码 3/);assert.match((error as Error).message,/解压程序文件/);assert.match((error as Error).message,/buildr-test-missing-unpacker ENOENT/);
@@ -162,7 +198,7 @@ test('cancelling a real installer reaps its owned process group and removes only
   const bin=path.join(root,'bin');fs.mkdirSync(bin);const script=path.join(bin,'npm-cli.js'),marker=path.join(root,'child.pid'),outside=path.join(root,'keep');fs.writeFileSync(outside,'preserve');
   fs.writeFileSync(script,`const fs=require('node:fs'),{spawn}=require('node:child_process');process.on('SIGTERM',()=>{});const child=spawn(process.execPath,['-e','process.on("SIGTERM",()=>{});setInterval(()=>{},1000)'],{stdio:'ignore'});fs.writeFileSync(${JSON.stringify(marker)},String(child.pid));setInterval(()=>{},1000);`);
   fs.symlinkSync(script,path.join(bin,'npm'));
-  const profile=path.join(root,'profile'),manager=new NativeProgramManager(profile,{PATH:bin,HOME:root}),controller=new AbortController();
+  const profile=path.join(root,'profile'),manager=new NativeProgramManager(profile,{PATH:bin,HOME:root},async()=>({latestVersion:'0.167.0',source:'fixture'})),controller=new AbortController();
   const work=manager.install({provider:'codex',signal:controller.signal,progress:()=>{}});const rejected=assert.rejects(work,{name:'AbortError'});
   for(let i=0;i<100&&!fs.existsSync(marker);i++)await new Promise(resolve=>setTimeout(resolve,10));
   assert.ok(fs.existsSync(marker));const pid=Number(fs.readFileSync(marker,'utf8'));controller.abort();await rejected;

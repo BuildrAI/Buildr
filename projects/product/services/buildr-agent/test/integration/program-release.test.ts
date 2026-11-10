@@ -3,7 +3,18 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import test from 'node:test';
-import { readProgramRelease } from '../../src/executors/program-release.ts';
+import { readProgramLatestRelease, readProgramRelease } from '../../src/executors/program-release.ts';
+
+test('latest release lookup uses each provider fixed vendor package endpoint', async t => {
+  for (const [provider, packageName, version] of [['codex', '@openai/codex', '0.167.0'], ['dsh', '@deepseek-ai/dsh', '0.2.2-rc.1'], ['qoder', '@qoder-ai/qoder-agent-sdk', '1.0.59']] as const) {
+    const mock = t.mock.method(globalThis, 'fetch', async (url: Parameters<typeof fetch>[0]) => {
+      assert.equal(url, `https://registry.npmjs.org/${encodeURIComponent(packageName)}/latest`);
+      return Response.json({ name: packageName, version });
+    });
+    try { assert.equal((await readProgramLatestRelease(provider, new AbortController().signal)).latestVersion, version); }
+    finally { mock.mock.restore(); }
+  }
+});
 
 test('release reader pins vendor registry identity and derives Qoder package version from the bound executable', async t => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'program-release-'));

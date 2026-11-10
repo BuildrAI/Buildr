@@ -96,6 +96,9 @@ export async function runChildConversationScenarios(fixture:AgentConversationFix
       await entry.focus();await page.getByRole('tooltip',{name:'子对话 1 · 尚未开始',exact:true}).waitFor();
       const layout=await panel().evaluate((node:HTMLElement)=>({header:node.querySelector(':scope > .ac-thread-header')!.getBoundingClientRect().bottom,stream:node.querySelector(':scope > .ac-stream')!.getBoundingClientRect().top}));
       assert.ok(Math.abs(layout.header-layout.stream)<2,'顶部不再占用子对话和参与记录两行');
+      const fill=await panel().evaluate((node:HTMLElement)=>{const win=node.querySelector('.ac-child-window:not([hidden])')!.getBoundingClientRect(),box=node.getBoundingClientRect();return{winHeight:win.height,bottomGap:box.bottom-win.bottom};});
+      assert.ok(fill.winHeight>680,'长视口下子浮窗不再停在固定高度：'+JSON.stringify(fill));
+      assert.ok(fill.bottomGap>=0&&fill.bottomGap<=12,'子浮窗用满父面板竖向空间：'+JSON.stringify(fill));
       assert.equal(fixture.sends,1);assert.equal(childSends,0);assert.equal(JSON.stringify(fixture.conversation),before);
       await window().getByRole('textbox',{name:'子对话输入',exact:true}).fill('解释支线问题');
       await window().getByRole('button',{name:'发送对话',exact:true}).click();await window().getByText('支线答复第 30 段：这里只是子对话的说明，不属于主对话。',{exact:false}).waitFor();

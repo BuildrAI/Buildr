@@ -82,7 +82,7 @@ Buildr MUST 将支持的 Agent runtime 视为从 Buildr 源资产、canonical sc
 - **AND** Buildr MUST 按 workspace `skills/manifest.yml` 投射 enabled skills
 - **AND** Buildr 内置项 MUST 在 manifest 中排在用户项之前
 - **AND** rule discovery plan MUST order ancestor sources before descendant sources
-- **AND** 在处理 Project scope 时，Buildr MUST 在 workspace 资产之后处理 Project 用户资产与 capability/applicability context
+- **AND** 在处理 Project scope 时，Buildr MUST 在 workspace 资产之后处理 Project 用户规则资产
 - **AND** 更具体的源资产 MUST 在 Agent 可读入口中更靠后出现
 
 #### Scenario: Rules 语义索引读取
@@ -115,7 +115,7 @@ Buildr MUST 将支持的 Agent runtime 视为从 Buildr 源资产、canonical sc
 #### Scenario: 深层 Rules scope 与 Skills source 分离
 - **WHEN** Agent renders a Service or deeper canonical scope through the combined `buildr render` command
 - **THEN** Rules discovery MUST use the full canonical scope
-- **AND** Skills resolution MUST use the workspace source authority and applicable Project capability/applicability context
+- **AND** Skills resolution MUST use the workspace source authority only
 - **AND** Buildr MUST NOT infer Service-level Skill source support
 
 #### Scenario: Render conflict is validated before writes
@@ -139,7 +139,7 @@ Buildr runtime projection MUST 区分产品内置 Agent Skills 与 workspace Ski
 #### Scenario: 保持 workspace Skill 解析
 - **WHEN** workspace 根定义了 `skills/manifest.yml`
 - **THEN** `buildr skills render <agent>` MUST 从工作空间采用清单解析 enabled Skills，官方引用从已采用共享资源集读取，组织自有内容从本地源读取
-- **AND** Project `capabilities.yml` MUST 只提供 requirements、bindings 与 applicability context
+- **AND** Buildr MUST NOT 消费 Project `capabilities.yml` 的 requirements、bindings 或 applicability
 - **AND** Buildr MUST 根据 manifest 条目的本地源、远端 resolved 状态和 install mode 选择 render 方式
 
 #### Scenario: 渲染本地作者型 Skill

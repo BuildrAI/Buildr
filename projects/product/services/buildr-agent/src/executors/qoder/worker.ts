@@ -15,7 +15,7 @@ import { bounded, closeOwnedProcess, visibleText, nativePreview } from '../nativ
 import * as embeddedSdk from '@qoder-ai/qoder-agent-sdk';
 let { query, qodercliAuth, ProcessTransport, getSessionInfo, getSessionMessages, InMemorySessionStore, importSessionToStore, forkSession } = embeddedSdk;
 let shutdownDaemon = embeddedSdk.shutdownDaemon;
-import { qoderHistoryItems, qoderResultOutcome, qoderInterruptionIds, qoderInterruptedObservation, qoderParentTool, qoderTaskResult, qoderTaskNotificationIds } from './protocol.ts';
+import { qoderHistoryItems, qoderHistoryPage, qoderResultOutcome, qoderInterruptionIds, qoderInterruptedObservation, qoderParentTool, qoderTaskResult, qoderTaskNotificationIds } from './protocol.ts';
 import { qoderModel } from '../model-options.ts';
 import { resolvePermissionMode } from '../../domain/permission-mode.ts';
 import { safeDiagnostic } from '../../domain/agent-state.ts';
@@ -45,6 +45,7 @@ class ConversationInput implements AsyncIterableIterator<any> {
   close(): void { this.ended = true; this.values = []; this.waiter?.({ done: true, value: undefined }); this.waiter = undefined; }
 }
 interface LiveQuery {
+  contextCompaction?: import('../../contracts.ts').ContextCompaction;
   startedAt: number;
   dispatched?:boolean;
   startupFailure?:string;
@@ -70,7 +71,14 @@ interface ConversationQuery {
 }
 const live = new Map<string, LiveQuery>();
 const conversations = new Map<string, ConversationQuery>();
+interface HistorySnapshot { token: string; contextId: string; cwd: string; items: ExecutorItem[]; expiresAt: number; timer?: ReturnType<typeof setTimeout> }
+const historySnapshots = new Map<string, HistorySnapshot>();
+const HISTORY_PAGE_BYTES = 4 * 1024 * 1024 - 64 * 1024;
+const HISTORY_SNAPSHOT_TTL = 2 * 60 * 1000;
+const MAX_HISTORY_SNAPSHOTS = 8;
 const fingerprint = (records: any[]) => createHash('sha256').update(JSON.stringify(records)).digest('hex');
+/** Terminal native task notifications; `killed` is what the CLI reports for a stopped command. */
+const terminalTaskStatuses = new Set(['completed', 'failed', 'stopped', 'killed']);
 const unresolvedTool = (tool: { status: string; taskPending?: boolean }) => Boolean(tool.taskPending) || tool.status !== 'completed';
 const protectedWork = (state: LiveQuery) => state.ambiguous || state.supplementUnknown || state.pending.size > 0 || state.inputAcks.size > 0 || [...state.tools.values()].some(unresolvedTool);
 const canClose = (state: LiveQuery) => Boolean(state.terminal) && !protectedWork(state);
@@ -112,7 +120,7 @@ const emit = (state: LiveQuery, event: ExecutorEvent) => {
   stream.push(withExecutionFault(event));
 };
 const accepted = (state: LiveQuery) => { if (!state.accepted) { state.accepted = true; emit(state, { type: 'accepted', executionRef: { id: state.id }, inputItemId: state.id }); } };
-const observe = (state: LiveQuery): ExecutorObservation => ({ status: state.ambiguous ? 'unknown' : state.pending.size ? 'waiting' : state.nativeExited && !state.terminal ? state.blockedOnExit || [...state.tools.values()].some(tool => unresolvedTool(tool) || tool.taskId) ? 'unknown' : 'stopped' : state.terminal ? [...state.tools.values()].some(tool => tool.status === 'running' || tool.taskPending && tool.status !== 'unknown') ? 'tools-active' : [...state.tools.values()].some(tool => tool.status === 'unknown') ? 'unknown' : state.terminal === 'stopped' ? 'stopped' : 'idle' : state.pending.size ? 'waiting' : 'running', executionRef: { id: state.id }, tools: [...state.tools.values()].map(({ taskId, taskPending, ...tool }) => ({ ...tool, status: tool.status === 'unknown' ? 'unknown' : taskPending ? 'running' : tool.status, canStop: Boolean(taskId) && Boolean(taskPending || tool.status === 'running') })), backgroundWork: state.unownedTasks.size > 0 || [...state.tools.values()].some(tool => Boolean(tool.taskId) && unresolvedTool(tool)), requests: [...state.pending.values()].map(pending => pending.request), ...(state.diagnostic ? { diagnostic: state.diagnostic } : {}) });
+const observe = (state: LiveQuery): ExecutorObservation => ({ contextCompaction: state.terminal || state.ambiguous || state.nativeExited ? null : state.contextCompaction ?? null, status: state.ambiguous ? 'unknown' : state.pending.size ? 'waiting' : state.nativeExited && !state.terminal ? state.blockedOnExit || [...state.tools.values()].some(tool => unresolvedTool(tool) || tool.taskId) ? 'unknown' : 'stopped' : state.terminal ? [...state.tools.values()].some(tool => tool.status === 'running' || tool.taskPending && tool.status !== 'unknown') ? 'tools-active' : [...state.tools.values()].some(tool => tool.status === 'unknown') ? 'unknown' : state.terminal === 'stopped' ? 'stopped' : 'idle' : state.pending.size ? 'waiting' : 'running', executionRef: { id: state.id }, tools: [...state.tools.values()].map(({ taskId, taskPending, ...tool }) => ({ ...tool, status: tool.status === 'unknown' ? 'unknown' : taskPending ? 'running' : tool.status, canStop: Boolean(taskId) && Boolean(taskPending || tool.status === 'running') })), backgroundWork: state.unownedTasks.size > 0 || [...state.tools.values()].some(tool => Boolean(tool.taskId) && unresolvedTool(tool)), requests: [...state.pending.values()].map(pending => pending.request), ...(state.diagnostic ? { diagnostic: state.diagnostic } : {}) });
 function gatewayPolicy(context: any, selected?: string, effort?: string) {
   const policy = qoderGatewayPolicy(gateway!, selected, effort);
   assertGatewayModel(context.availableModels);
@@ -197,10 +205,57 @@ async function transcript(contextId: string, cwd: string): Promise<{ messages: a
   const messages: any[] = await getSessionMessages(contextId, { dir: cwd, sessionStore: store, view: 'historical', includeSystemMessages: true, limit: 20000 });
   return { messages, records };
 }
-async function history(contextId: string, cwd: string): Promise<ExecutorItem[]> {
-  const { messages, records } = await transcript(contextId, cwd);
-  await checkHistory(contextId, cwd, records);
-  return qoderHistoryItems(messages, contextId, qoderInterruptionIds(messages, records, contextId), records);
+function releaseHistorySnapshot(snapshot: HistorySnapshot): void {
+  if (snapshot.timer) clearTimeout(snapshot.timer);
+  snapshot.timer = undefined;
+  if (historySnapshots.get(snapshot.token) === snapshot) historySnapshots.delete(snapshot.token);
+}
+function scheduleHistoryExpiry(snapshot: HistorySnapshot): void {
+  if (snapshot.timer) clearTimeout(snapshot.timer);
+  snapshot.expiresAt = Date.now() + HISTORY_SNAPSHOT_TTL;
+  snapshot.timer = setTimeout(() => releaseHistorySnapshot(snapshot), HISTORY_SNAPSHOT_TTL);
+  snapshot.timer.unref();
+}
+function pruneHistorySnapshots(): void {
+  const now = Date.now();
+  for (const snapshot of historySnapshots.values()) if (snapshot.expiresAt <= now) releaseHistorySnapshot(snapshot);
+}
+async function history(contextId: string, cwd: string, snapshotId?: string, cursor?: string): Promise<any> {
+  pruneHistorySnapshots();
+  let snapshot: HistorySnapshot;
+  if (snapshotId !== undefined) {
+    if (typeof snapshotId !== 'string' || !snapshotId || cursor === undefined) throw new Error('qoder_history_cursor_invalid');
+    const found = historySnapshots.get(snapshotId);
+    if (!found || found.contextId !== contextId || found.cwd !== cwd || found.expiresAt <= Date.now()) {
+      if (found) releaseHistorySnapshot(found);
+      throw new Error('qoder_history_snapshot_expired');
+    }
+    snapshot = found;
+  } else {
+    if (cursor !== undefined) throw new Error('qoder_history_cursor_invalid');
+    const { messages, records } = await transcript(contextId, cwd);
+    await checkHistory(contextId, cwd, records);
+    const token = randomUUID();
+    snapshot = { token, contextId, cwd, items: qoderHistoryItems(messages, contextId, qoderInterruptionIds(messages, records, contextId), records), expiresAt: 0 };
+    while (historySnapshots.size >= MAX_HISTORY_SNAPSHOTS) {
+      const oldest = historySnapshots.values().next().value as HistorySnapshot | undefined;
+      if (!oldest) break;
+      releaseHistorySnapshot(oldest);
+    }
+    historySnapshots.set(token, snapshot);
+    scheduleHistoryExpiry(snapshot);
+  }
+  const offset = cursor === undefined ? 0 : Number(cursor);
+  if (!Number.isSafeInteger(offset) || offset < 0) { releaseHistorySnapshot(snapshot); throw new Error('qoder_history_cursor_invalid'); }
+  try {
+    const page = qoderHistoryPage(snapshot.items, offset, HISTORY_PAGE_BYTES);
+    if (page.nextCursor === undefined) releaseHistorySnapshot(snapshot);
+    else scheduleHistoryExpiry(snapshot);
+    return { data: page.data, ...(page.nextCursor === undefined ? {} : { nextCursor: page.nextCursor, snapshotId: snapshot.token }) };
+  } catch (error) {
+    releaseHistorySnapshot(snapshot);
+    throw error;
+  }
 }
 const TITLE_TEXT_LIMIT = 128 * 1024;
 /** The early title must follow the exact user input of the admitted run. */
@@ -227,7 +282,7 @@ async function generateTitle(requestId: string, contextId: string, cwd: string, 
   try {
     if (userText !== undefined) {
       const state = await Promise.race([waitForTitleState(contextId, userText), cancelled]);
-      if (!state) throw new Error('agent_title_unavailable');
+      if (!state) throw new Error('agent_title_not_ready');
       return await requestTitle(state.q, qoderTitleMatchText(userText), cancelled);
     }
     const state = live.get(contextId);
@@ -384,14 +439,24 @@ async function readConversation(owner: ConversationQuery): Promise<void> {
         const text = visibleText(message.message?.content);
         const taskId = /<task-id>([^<>]+)<\/task-id>/.exec(text)?.[1];
         const toolId = /<tool-use-id>([^<>]+)<\/tool-use-id>/.exec(text)?.[1];
-        const status = /<status>(completed|failed|stopped)<\/status>/.exec(text)?.[1];
+        const status = /<status>([^<>]+)<\/status>/.exec(text)?.[1]?.trim();
         const tool = toolId ? state.tools.get(toolId) : undefined;
         // Text alone never establishes ownership. Require native origin and the exact launch receipt.
-        if (!owner.closing && !state.stopping && !state.ambiguous && tool && tool.taskId === taskId && taskId && status && typeof message.uuid === 'string') {
+        const owned = !owner.closing && !state.stopping && !state.ambiguous && tool && tool.taskId === taskId && taskId && typeof message.uuid === 'string';
+        // The status word says how the command ended; it never decides whether this turn owns it.
+        if (owned && status && terminalTaskStatuses.has(status)) {
           owner.reusable = false; state.terminal = undefined; state.diagnostic = undefined;
           (state.continuationIds ??= new Set()).add(message.uuid);
           owner.commandIds.add(message.uuid);
           tool.taskPending = false; tool.status = 'completed';
+          emit(state, { type: 'observation', observation: observe(state) }); continue;
+        }
+        if (owned) {
+          // An owned notification we cannot classify is not evidence of foreign work:
+          // reopen the native continuation, but do not invent a terminal tool result.
+          owner.reusable = false; state.terminal = undefined; state.diagnostic = undefined;
+          (state.continuationIds ??= new Set()).add(message.uuid);
+          owner.commandIds.add(message.uuid);
           emit(state, { type: 'observation', observation: observe(state) }); continue;
         }
         owner.reusable = false; state.ambiguous = true; state.diagnostic = 'qoder_task_owner_unconfirmed';
@@ -414,6 +479,13 @@ async function readConversation(owner: ConversationQuery): Promise<void> {
       }
       // Warm reuse is admitted only by this exact native input echo, not an old child or tool event.
       if (owner.rounds > 1 && !state.echoed && !(primary && message.type === 'user' && message.uuid === state.id)) throw new Error('qoder_round_identity_unconfirmed');
+      if (primary && message.type === 'system' && (message.subtype === 'status' || message.subtype === 'compact_boundary')) {
+        if (message.subtype === 'status' && message.status === 'compacting') {
+          accepted(state);
+          state.contextCompaction ??= {id:state.id,startedAt:new Date().toISOString()};
+        } else if (message.subtype === 'compact_boundary' || message.status === null) delete state.contextCompaction;
+        emit(state, {type:'observation',observation:observe(state)});
+      }
       if (primary && ['assistant', 'stream_event', 'result'].includes(message.type)) accepted(state);
       if (message.type === 'assistant') {
         if (primary && message.message?.id) state.completedMessages.add(message.message.id);
@@ -421,7 +493,7 @@ async function readConversation(owner: ConversationQuery): Promise<void> {
         if (text) emit(state, { type: 'item', item: { id, ...parent, kind: 'message', role: 'assistant', text, executionId: state.id, status: 'completed' } });
         for (const part of message.message?.content ?? []) if (part.type === 'tool_use') {
           state.tools.set(part.id, { id: part.id, label: String(part.name ?? '工具'), status: 'running' });
-          emit(state, { type: 'item', item: { id: part.id, ...parent, kind: 'tool', role: 'system', name: part.name || undefined, participation: nativeParticipation(part.input===undefined?undefined:JSON.stringify(part.input),undefined,'pending'), input: nativePreview(JSON.stringify(part.input ?? {})), text: String(part.name ?? '工具') + '\n' + nativePreview(JSON.stringify(part.input ?? {})), executionId: state.id, status: 'running' } });
+          emit(state, { type: 'item', item: { id: part.id, ...parent, kind: 'tool', nativeTool: true, role: 'system', name: part.name || undefined, participation: nativeParticipation(part.input===undefined?undefined:JSON.stringify(part.input),undefined,'pending'), input: nativePreview(JSON.stringify(part.input ?? {})), text: String(part.name ?? '工具') + '\n' + nativePreview(JSON.stringify(part.input ?? {})), executionId: state.id, status: 'running' } });
         }
       }
       if (message.type === 'stream_event') {
@@ -451,7 +523,7 @@ async function readConversation(owner: ConversationQuery): Promise<void> {
           const taskId = receipt?.kind === 'backgrounded' ? receipt.taskId : receipt?.backgroundTaskId;
           if (tool && typeof taskId === 'string' && taskId) { tool.taskId = taskId; tool.taskPending = true; }
           const text = nativePreview(visibleText(part.content)); state.toolDetails.set(part.tool_use_id, text);
-          emit(state, { type: 'item', item: { id: part.tool_use_id, participation: nativeParticipation(undefined,part.content===undefined?undefined:visibleText(part.content),part.is_error?'failed':'unknown'), ...parent, kind: 'tool', role: 'system', text, executionId: state.id, status: part.is_error ? 'failed' : 'completed' } });
+          emit(state, { type: 'item', item: { id: part.tool_use_id, participation: nativeParticipation(undefined,part.content===undefined?undefined:visibleText(part.content),part.is_error?'failed':'unknown'), ...parent, kind: 'tool', nativeTool: true, role: 'system', text, executionId: state.id, status: part.is_error ? 'failed' : 'completed' } });
         }
       }
       if (message.type === 'system' && message.subtype === 'task_started') { const tool = state.tools.get(message.tool_use_id); if (tool) { tool.taskId = message.task_id; tool.taskPending = true; } }
@@ -462,7 +534,7 @@ async function readConversation(owner: ConversationQuery): Promise<void> {
         if (tool && (!message.tool_use_id || tool.id === message.tool_use_id) && (!tool.taskPending || !tool.taskId || tool.taskId === message.task_id)) {
           tool.taskPending = false; tool.status = 'completed';
           const text = qoderTaskResult(state.toolDetails.get(tool.id), message);
-          if (text) { state.toolDetails.set(tool.id, text); emit(state, { type: 'item', item: { id: tool.id, kind: 'tool', role: 'system', text, executionId: state.id, status: message.status === 'failed' ? 'failed' : 'completed' } }); }
+          if (text) { state.toolDetails.set(tool.id, text); emit(state, { type: 'item', item: { id: tool.id, kind: 'tool', nativeTool: true, role: 'system', text, executionId: state.id, status: message.status === 'failed' ? 'failed' : 'completed' } }); }
         } else if (tool) { owner.reusable = false; state.ambiguous = true; state.diagnostic = 'qoder_task_owner_unconfirmed'; }
       }
       if (primary && message.type === 'result') await endRound(owner, message);
@@ -517,7 +589,7 @@ async function dispatch(method: string, params: any): Promise<any> {
     return await forkSession(params.contextId, { dir: params.cwd, upToMessageId: boundary.uuid, title: '新对话' });
   }
   if (method === 'resume') { await checkHistory(params.contextId, params.cwd); const info = await getSessionInfo(params.contextId, { dir: params.cwd }); if (!info || info.sessionId !== params.contextId || info.cwd && info.cwd !== params.cwd) throw new Error('qoder_context_not_found'); return {}; }
-  if (method === 'history') return await history(params.contextId, params.cwd);
+  if (method === 'history') return await history(params.contextId, params.cwd, params.snapshotId, params.cursor);
   if (method === 'prepare') { await execute({...params,clientRequestId:randomUUID()},true); return {}; }
   if(method==='verify-upgrade') {
     const id=randomUUID();const owner:TitleQuery={q:undefined,release(){},cancel(){}};
@@ -566,6 +638,7 @@ async function dispatch(method: string, params: any): Promise<any> {
     return {released:!owner||Boolean(owner.exited)};
   }
   if (method === 'close') {
+    for (const snapshot of [...historySnapshots.values()]) releaseHistorySnapshot(snapshot);
     await Promise.allSettled([...titleQueries.values()].map(async owner=>{owner.cancel();await closeTitle(owner);}));
     await Promise.allSettled([...live.values()].map(async item => {
       item.stopping = true; for (const pending of item.pending.values()) pending.resolve({ behavior: 'deny', message: 'Host closed.' });

@@ -67,6 +67,18 @@ test('release PR gate reuses the exact successful Candidate and its two artifact
   assert.deepEqual(await verifyReleasePullRequestCandidate(event, repository, requestJson, scoped), { status: 'passed', runId, sourceCommit, branch });
 });
 
+test('registered entry accepts its reusable Candidate job but never platform diagnosis as release proof', async () => {
+  const value = fixture({ jobs: { total_count: 2, jobs: [
+    { name: 'Candidate gate', conclusion: 'skipped' },
+    { name: 'Original package / Candidate gate', conclusion: 'success' },
+  ] } });
+  await verifyReleasePullRequestCandidate(value.event, repository, value.requestJson, value.scoped);
+  const diagnostic = fixture({ jobs: { total_count: 1, jobs: [
+    { name: 'Original package / Package diagnostic', conclusion: 'success' },
+  ] } });
+  await assert.rejects(verifyReleasePullRequestCandidate(diagnostic.event, repository, diagnostic.requestJson, diagnostic.scoped), /Candidate gate did not pass/);
+});
+
 test('a green hosted handoff cannot replace complete main Candidate coverage, including legacy recovery', async () => {
   for (const mutate of [
     (proof: any) => { proof.aggregate.status = 'incomplete'; proof.aggregate.deferredIds = ['runtime-macos']; },
@@ -329,20 +341,20 @@ test('source aggregate rejects unbound bytes, wrong peer origin and a failed act
   }
 });
 
-test('workflow keeps default/dev entries and plugin source Candidate has no publication authority', () => {
+test('workflow keeps explicit/release entries and plugin source Candidate has no publication authority', () => {
   const file = path.resolve(import.meta.dirname, '../../../../../../.github/workflows/verify.yml');
   const workflow = fs.readFileSync(file, 'utf8');
-  assert.match(workflow, /options: \[candidate, release-rehearsal\]/u);
+  assert.match(workflow, /options: \[candidate, release-rehearsal, local-package\]/u);
   assert.match(workflow, /release_packages:\n(?:[^\n]*\n)*?        default: ''\n        type: string/u);
-  assert.match(workflow, /branches: \[dev, main\]/u);
+  assert.match(workflow, /branches: \[main\]/u);
+  assert.doesNotMatch(workflow, /^  push:/mu);
   assert.match(workflow, /github\.head_ref == 'dev'/u);
   const development = workflow.split('  dev-feedback-macos:\n')[1].split('  dev-feedback-windows:\n')[0];
-  const peerObservation = "observePublishedPackageArtifact('buildr', { distTag: 'next' })";
-  assert.ok(development.includes(peerObservation), 'development must observe the exact published next peer');
-  assert.match(development, /if \(observation\.status !== 'present' \|\| !bytes\) throw new Error/u, 'missing peer bytes must fail preparation');
-  assert.match(development, /schemaVersion: packageArtifactInputSchema, artifact: observation\.artifact, tarball/u, 'peer input must retain the observed artifact identity');
-  assert.match(development, /BUILDR_DSH_BUILDR_PEER_INPUT/u);
-  assert.ok(development.indexOf(peerObservation) < development.indexOf('npm run check'));
+  assert.doesNotMatch(development, /prepare-release-sdk|prepare-check-environment|pnpm@|observePublishedPackageArtifact|BUILDR_DSH_BUILDR_PEER_INPUT/u,
+    'ordinary feedback must not download the SDK, fetch a peer or build plugin inputs');
+  assert.match(development, /SDK-dependent checks remain unavailable, not passed/u);
+  assert.match(development, /npm run check/u);
+  assert.match(development, /npm run test:related/u);
   const plugin = workflow.split('  plugin-source-candidate:\n')[1].split('  candidate-gate:\n')[0];
   assert.doesNotMatch(plugin, /id-token|npm-production|tools\/trusted-publish|npm publish/u);
   assert.match(plugin, /--buildr-peer/u);

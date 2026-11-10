@@ -6,14 +6,42 @@ import path from 'node:path';
 // Complete read scopes are independent of changed-path ownership. Unreviewed
 // files remain inputs; only these known test/tool namespaces are partitioned.
 const sharedRecipe = [
-  'test/register-development-entry.ts', 'tools/development/isolated-workspace-state.ts', 'test/verification/executor.ts', 'test/verification/plan-runner.ts',
+  'test/verification/result-applicability.ts', 'test/verification/package-adapter.ts', 'test/verification/candidate-check-inputs.ts',
+  'test/verification/settle-diagnostics.mjs', 'test/register-development-entry.ts', 'tools/development/isolated-workspace-state.ts', 'test/verification/executor.ts', 'test/verification/plan-runner.ts',
   'test/verification/dag-scheduler.ts', 'test/verification/verification-reuse.ts', 'test/verification/verification-inputs.ts',
   'test/verification/resource-coordinator.ts', 'test/verification/candidate-round.ts', 'test/verification/integration-progress-reporter.ts', 'test/verification/test-files.ts', 'test/verification/verification-input-discovery.ts',
 ];
 const sharedTrees = ['test/context/', 'test/fixtures/', 'test/verification/timing/', 'test/verification/support/'];
 type Entry = string[];
 
-export function scopedVerificationInputs(entries: Entry[], repositoryRoot: string, productRoot: string, step: any, options: { proof?: boolean; readText?: (file: string) => string; legacyDeclarations?: boolean } = {}): {
+/** Pure parsing belongs to one source observation, not to each check that
+ * imports the same helper. No filesystem facts survive into another reader. */
+export function createVerificationInputAnalysis() {
+  const slices = new Map<string, Map<string, ReturnType<typeof verificationModuleSlice>>>();
+  const modules = new Map<string, ReturnType<typeof executableModuleInputs>>();
+  const urls = new Map<string, ReturnType<typeof literalUrlImports>>();
+  return {
+    slice(source: string, names: Set<string> | null) {
+      let entries = slices.get(source);
+      if (!entries) slices.set(source, entries = new Map());
+      // Existing proof digests preserve discovery order as well as members.
+      const key = JSON.stringify(names === null ? null : [...names]);
+      if (!entries.has(key)) entries.set(key, verificationModuleSlice(source, names));
+      return entries.get(key)!;
+    },
+    executable(source: string, resolveKnown: boolean) {
+      const key = JSON.stringify([source, resolveKnown]);
+      if (!modules.has(key)) modules.set(key, executableModuleInputs(source, resolveKnown));
+      return modules.get(key)!;
+    },
+    urls(source: string) {
+      if (!urls.has(source)) urls.set(source, literalUrlImports(source));
+      return urls.get(source)!;
+    },
+  };
+}
+
+export function scopedVerificationInputs(entries: Entry[], repositoryRoot: string, productRoot: string, step: any, options: { proof?: boolean; readText?: (file: string) => string; legacyDeclarations?: boolean; analysis?: ReturnType<typeof createVerificationInputAnalysis> } = {}): {
   content: Entry[]; recipe: Entry[]; fallback: boolean; unresolved: string[];
 } {
   const prefix = path.relative(fs.realpathSync(repositoryRoot), fs.realpathSync(productRoot)).split(path.sep).join('/') + '/';
@@ -31,7 +59,7 @@ export function scopedVerificationInputs(entries: Entry[], repositoryRoot: strin
   const local = (file: string) => file.startsWith(prefix) ? file.slice(prefix.length) : null;
   const recipeFile = (file: string) => {
     const relative = local(file);
-    return !options.legacyDeclarations && ['projects/product/verification.yml', '.github/workflows/verify.yml'].includes(file)
+    return !options.legacyDeclarations && ['projects/product/verification.yml', '.github/workflows/verify.yml', '.github/workflows/verify-package.yml'].includes(file)
       || file.startsWith('skills/buildr-release/') || relative !== null && (relative.startsWith('test/') || relative.startsWith('tools/release/') || relative.startsWith('tools/verification/'));
   };
   // These fixture/source checks were reviewed for real checkout readers. Their
@@ -78,7 +106,7 @@ export function scopedVerificationInputs(entries: Entry[], repositoryRoot: strin
     const sourceEntry = byPath.get(file);
     if (!recipeFile(file) || !/\.[cm]?[jt]sx?$/u.test(file) || !sourceEntry || sourceEntry[1] === 'absent') continue;
     const source = options.readText ? options.readText(file) : fs.readFileSync(path.resolve(repositoryRoot, file), 'utf8');
-    const slice = narrow ? verificationModuleSlice(source, members.get(file) ?? null) : null;
+    const slice = narrow ? (options.analysis?.slice ?? verificationModuleSlice)(source, members.get(file) ?? null) : null;
     const text = slice?.text ?? source;
     if (slice && members.get(file) !== null) fragments.set(file, crypto.createHash('sha256').update(JSON.stringify([text,
       [...slice.imports].map(([target, names]) => [target, names && [...names].sort()])])).digest('hex'));
@@ -87,7 +115,11 @@ export function scopedVerificationInputs(entries: Entry[], repositoryRoot: strin
     // The map selects checks; their executable descriptors are already bound.
     // Only actual map readers (or unknown readers below) consume its text.
     if (!options.legacyDeclarations && (narrow ? /\b(?:readFileSync|readFile)\s*\([^;]*['"]projects\/product\/verification\.yml['"]/u.test(text) : readsRepository || /\bverification\.yml\b/u.test(text))) selected.add('projects/product/verification.yml');
-    if (!options.legacyDeclarations && (narrow ? /\b(?:readFileSync|readFile)\s*\([^;]*['"]\.github\/workflows\/verify\.yml['"]/u.test(text) : readsRepository || /(?:\.github\/workflows|verify\.yml)/u.test(text))) selected.add('.github/workflows/verify.yml');
+    if (!options.legacyDeclarations) for (const workflow of ['verify.yml', 'verify-package.yml']) {
+      const file = `.github/workflows/${workflow}`;
+      const explicitRead = new RegExp(`\\b(?:readFileSync|readFile)\\s*\\([^;]*['"]${file.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}['"]`, 'u');
+      if (narrow ? explicitRead.test(text) : readsRepository || text.includes('.github/workflows') || text.includes(workflow)) selected.add(file);
+    }
     if (narrow && independent) {
       for (const [candidate] of entries) if (material(candidate!) && (text.includes(candidate!) || text.includes(candidate!.replace('projects/product/', '')))
         && /\b(?:readFileSync|readFile|readdirSync|readdir)\s*\(/u.test(text)) selected.add(candidate!);
@@ -103,8 +135,8 @@ export function scopedVerificationInputs(entries: Entry[], repositoryRoot: strin
     if (/\bCHANGELOG\.md\b/iu.test(text) || readsRepository && (!narrow
       || /\b(?:readdirSync|readdir)\s*\(\s*(?:repositoryRoot|workspaceRoot|gitRoot)\s*[,)]/u.test(text)
       || /\b(?:readFileSync|readFile)\s*\(\s*path\.(?:join|resolve)\s*\(\s*(?:repositoryRoot|workspaceRoot|gitRoot)\s*,\s*[a-zA-Z_$]/u.test(text))) readsReleaseNotes = true;
-    const urls = literalUrlImports(text);
-    const executable = options.proof ? executableModuleInputs(text, !options.legacyDeclarations) : null;
+    const urls = (options.analysis?.urls ?? literalUrlImports)(text);
+    const executable = options.proof ? (options.analysis?.executable ?? executableModuleInputs)(text, !options.legacyDeclarations) : null;
     // Child scripts are often passed to spawn via a repository-relative literal,
     // rather than imported into the current test process.
     const catalog = /\/test\/(?:verification|context)\/(?:registry|ownership|journey-suites|profiles|dispositions)\.ts$/u.test(file);

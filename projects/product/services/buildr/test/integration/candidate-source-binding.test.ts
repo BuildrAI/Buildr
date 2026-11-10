@@ -16,6 +16,7 @@ import { createReleaseArtifactFixture } from '../helpers/release-artifact-fixtur
 import { createCandidateCiEvidence, candidateCiRegistryIdentity, aggregateCandidateCiEvidence, readCandidateCiEvidenceFiles } from '../verification/candidate-ci-evidence.ts';
 import { createVerificationSourceInputReader } from '../verification/verification-source-inputs.ts';
 import { candidateDependencyInputsIdentity } from '../verification/candidate-artifact-reuse.ts';
+import { BUILD_INPUT_POLICY } from '../../../../../../skills/buildr-release/scripts/build-input-policy.ts';
 
 test('shared candidate input reader resolves a real service directory once and preserves immutable historical identities', t => {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'candidate-service-input-reader-'));
@@ -65,6 +66,13 @@ test('real source binding preserves producer identity for test repair and reject
   write(prefix + '../../../../skills/buildr-release/scripts/plugin-hosted-release.ts', 'export const repaired = true;\n');
   const repaired = commit();
   const binding = createCandidateSourceBinding(repo, original, repaired);
+  assert.equal(binding.schemaVersion, 'buildr.candidate-source-binding/v2');
+  assert.deepEqual(binding.inputPolicy, BUILD_INPUT_POLICY);
+  const legacy = createCandidateSourceBinding(repo, original, repaired, null);
+  assert.equal(legacy.schemaVersion, 'buildr.candidate-source-binding/v1');
+  assert.equal(Object.hasOwn(legacy, 'inputPolicy'), false);
+  assert.doesNotThrow(() => assertCandidateSourceBinding(repo, legacy));
+  assert.throws(() => assertCandidateSourceBinding(repo, { ...binding, inputPolicy: { ...BUILD_INPUT_POLICY, identity: `sha256-${'f'.repeat(64)}` } }), /policy/);
   assert.equal(binding.productSource, original); assert.equal(binding.verificationSource, repaired);
   assert.notEqual(binding.productTree, binding.verificationTree);
   assert.doesNotThrow(() => assertCandidateSourceBinding(repo, binding));

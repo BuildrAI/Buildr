@@ -1,4 +1,4 @@
-import { readSharedResourceSet, readResourceAdoption, adoptPackageResources } from '../../../infrastructure/product-resources/shared-resources.ts';
+import { ensurePackageResources, readResourceAdoption, adoptPackageResources, sharedResourcesRoot } from '../../../infrastructure/product-resources/shared-resources.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -10,6 +10,20 @@ import { ephemeralWorkspaceRootReason } from './workspace-command-application.ts
 export type { WorkspacePreparation } from '../persistence/workspace-preparation-store.ts';
 import { createWorkspacePreparationStore, type WorkspacePreparation } from '../persistence/workspace-preparation-store.ts';
 const fail = (code: string, message: string) => Object.assign(new Error(message), { code, status: 409 });
+/**
+ * Shared resources are capability inputs. An unidentified directory (manifest
+ * missing or damaged) is rebuilt from the current installation; foreign content
+ * keeps its place and is reported with a path instead of a raw filesystem error.
+ */
+function currentSharedResourceSet() {
+  try { return ensurePackageResources(); }
+  catch (error: any) {
+    const message = error?.code === 'shared_resources_foreign_content'
+      ? error.message
+      : `共享资源目录 ${sharedResourcesRoot()} 尚未准备完成。已保留现有内容，可以重试；若多次失败，请查看详情后按提示处理。`;
+    throw Object.assign(fail('workspace_resources_unavailable', message), { diagnostic: error?.message ?? String(error) });
+  }
+}
 export function createWorkspacePreparation(runtime: any, options: { spawnProcess?: typeof spawnCommand } = {}) {
   const running = new Map<string, Promise<void>>();
   let refreshBatch: Promise<void> | undefined;
@@ -39,7 +53,7 @@ export function createWorkspacePreparation(runtime: any, options: { spawnProcess
   // Refresh only generated local entries; source updates remain with their existing owner.
   function refreshResourceProjection(root: string) {
     try {
-      const resources = readSharedResourceSet();
+      const resources = currentSharedResourceSet();
       const adopted = readResourceAdoption(root);
       if (adopted?.resourceSet === resources.id && adopted.ready) return { status: 'current' };
       for (const adapter of detectManagedRuntimeAdapters(root)) {
@@ -79,7 +93,7 @@ export function createWorkspacePreparation(runtime: any, options: { spawnProcess
       // Re-adding a ready directory is registration, not an explicit full update.
       // Keep the existing recovery path if current assets need repair or adoption.
       const adopted = readResourceAdoption(root);
-      if (reuseReady && !keep.length && adopted?.ready && adopted.resourceSet === readSharedResourceSet().id) {
+      if (reuseReady && !keep.length && adopted?.ready && adopted.resourceSet === currentSharedResourceSet().id) {
         const findings = runtime.syncPackageBuiltins(root, { checkOnly: true }).findings;
         const needsRecovery = findings.some((item: any) => item.converge || ['modified', 'missing', 'blocked', 'invalid'].includes(item.status))
           || runtime.packageComponentsStatus(root).components.some((item: any) => ['modified', 'missing', 'blocked', 'invalid'].includes(item.status));
@@ -140,7 +154,7 @@ export function createWorkspacePreparation(runtime: any, options: { spawnProcess
   function refreshPreparedWorkspaces(): Promise<void> {
     if (refreshBatch) return refreshBatch;
     refreshBatch = (async () => {
-      const target = readSharedResourceSet().id;
+      const target = currentSharedResourceSet().id;
       let tail = Promise.resolve();
       for (const entry of runtime.listRegisteredWorkspaces().workspaces) {
         try {
@@ -166,7 +180,11 @@ export function createWorkspacePreparation(runtime: any, options: { spawnProcess
   }
   function prepareWorkspaceForOpen(id: string) {
     const resolved = runtime.resolveRegisteredWorkspace(id);
-    const local = runtime.listRegisteredWorkspaces().workspaces.find((entry: any) => entry.workspace?.id === id && entry.registryScope !== 'shared');
+    const entry = runtime.listRegisteredWorkspaces().workspaces.find((entry: any) => entry.workspace?.id === id);
+    // Opening a shared workspace is navigation, not a transfer of management
+    // ownership or permission to refresh its assets from candidate code.
+    if (entry?.registryScope === 'shared') return { ready: true as const, workspaceId: id };
+    const local = entry;
     if (!local) throw fail('workspace_management_channel_conflict', '此目录属于其他管理来源，不能从当前页面更新。');
     runtime.assertWorkspaceManagementAccess(resolved.rootPath);
     const owned = store.list().find(item => item.rootPath === fs.realpathSync(resolved.rootPath) && item.directoryIdentity === identity(resolved.rootPath) && item.status === 'preparing');
@@ -175,7 +193,7 @@ export function createWorkspacePreparation(runtime: any, options: { spawnProcess
       if (observed.status === 'preparing') { const {ownerPid, directoryIdentity, ...preparation} = observed; return preparation; }
     }
     try {
-      const failed = store.list().find(item => item.rootPath === fs.realpathSync(resolved.rootPath) && item.directoryIdentity === identity(resolved.rootPath) && item.status === 'failed' && item.resourceSet === readSharedResourceSet().id);
+      const failed = store.list().find(item => item.rootPath === fs.realpathSync(resolved.rootPath) && item.directoryIdentity === identity(resolved.rootPath) && item.status === 'failed' && item.resourceSet === currentSharedResourceSet().id);
       if (failed) { const {ownerPid, directoryIdentity, ...preparation} = failed; return preparation; }
       const adopted = readResourceAdoption(resolved.rootPath);
       if (adopted?.ready) {

@@ -41,9 +41,16 @@ test('后台已释放时说明结果仍未知，保留核对并撤下无效停�
 
 test('缺少明确释放证明时保留停止，不把未知当作已释放',()=>{
  for(const resourcesReleased of [undefined,false]){
-  const html=renderToStaticMarkup(React.createElement(ConversationExecutionNotice,{resourcesReleased,observing:false,stopping:false,onObserve(){},onStop(){}}));
+  const html=renderToStaticMarkup(React.createElement(ConversationExecutionNotice,{resourcesReleased,stopRequested:false,observing:false,stopping:false,onObserve(){},onStop(){}}));
   assert.match(html,/>停止</);assert.doesNotMatch(html,/后台已释放/);
  }
+});
+
+test('停止请求已提交时明确结束动作，不重复保留停止按钮',()=>{
+ const html=renderToStaticMarkup(React.createElement(ConversationExecutionNotice,{resourcesReleased:false,stopRequested:true,observing:false,stopping:false,onObserve(){},onStop(){}}));
+ assert.match(html,/停止已请求，结束状态待确认/);
+ assert.match(html,/停止请求已提交，尚未确认旧执行结束/);
+ assert.doesNotMatch(html,/>停止<\/button>|正在执行|执行成功/);
 });
 
 test('核对未得到新结果时在原行给出结论，不新增说明行或展开块',()=>{
@@ -60,4 +67,11 @@ test('停止期间说明整轮范围，返回后直接显示真实停止结果',
  const done=renderToStaticMarkup(React.createElement(ConversationExecutionNotice,{...base,resourcesReleased:true,stopping:false,feedback}));
  assert.match(done,/>已终止本轮独占控制资源；原操作结果仍待核对。<\/span>/);
  assert.doesNotMatch(done,/>停止<\/button>|执行成功/);
+});
+
+test('停止未确认的显式继续保留未知说明，不提供虚假的彻底停止',()=>{
+ const html=renderToStaticMarkup(React.createElement(ConversationExecutionNotice,{resourcesReleased:false,stopRequested:true,observing:false,stopping:false,onObserve(){},onStop(){},onContinue(){}}));
+ assert.match(html,/>结束等待并继续</);
+ assert.match(html,/独立上下文继续/);
+ assert.doesNotMatch(html,/>停止<|已确认停止|彻底停止/);
 });

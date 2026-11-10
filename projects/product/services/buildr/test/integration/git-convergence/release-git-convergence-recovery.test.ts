@@ -32,20 +32,25 @@ test('root preservation or repository mismatch prevents all generation deletions
   });
 });
 
-test('v1 and narrow formal cleanup retain branches with active uses', t => {
+test('automatic and narrow cleanup retain active refs while safe older generations are cleaned', t => {
   const data = convergenceFixture(true, true);
   t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
-  const { current, options } = multiGenerationCloseout(data, 'delete-owned-release-branches/v1');
+  const { earlier, current, options } = multiGenerationCloseout(data, 'delete-owned-release-branches/v1');
   const execute = (command: string, args: string[], execOptions: any): any => {
     if (command === 'gh' && args[3]?.includes('/pulls?')) return { status: 0, stdout: JSON.stringify([[{ number: 99, state: 'open',
       head: { ref: current, repo: { full_name: 'BuildrAI/Buildr' } }, base: { ref: 'release-0.1.0-rc.5' } }]]) };
     return inactiveGithub(command, args, execOptions);
   };
+  const activeRefs = [current, 'release-0.1.0-rc.5'];
+  const before = activeRefs.map(branch => git(data.controller, 'ls-remote', 'origin', `refs/heads/${branch}`));
   const broad = closeoutReleaseGitResources(options, { execute });
   const narrow = cleanupRemoteReleaseBranch(options, { execute });
   assert.equal(broad.status, 'blocked', JSON.stringify(broad));
   assert.equal(narrow.status, 'blocked', JSON.stringify(narrow));
-  assert.deepEqual(broad.effects, []);
+  assert.ok(broad.effects.some((effect: any) => effect.type === 'remote-release-carrier-deleted' && effect.ref === `refs/heads/${earlier}`));
+  assert.ok(broad.effects.every((effect: any) => effect.ref === `refs/heads/${earlier}`));
+  assert.equal(git(data.controller, 'ls-remote', 'origin', `refs/heads/${earlier}`), '');
+  assert.deepEqual(activeRefs.map(branch => git(data.controller, 'ls-remote', 'origin', `refs/heads/${branch}`)), before);
   assert.deepEqual(narrow.effects, []);
 });
 

@@ -395,7 +395,7 @@ export function createAgentAssetsCliContributions(): any  {
     }),
     route({
       key: 'skills add',
-      summary: '只维护 workspace Skills 源资产；Project 使用 capabilities.yml 引用 workspace Skill。',
+      summary: '只维护 workspace Skills 源资产与能力绑定；项目适用边界由技能说明和项目规则表达。',
       usage: [
         'Usage: buildr skills add [<id>] --source <skill-dir> [--target <workspace>] [--replace] [--ignore-unsupported] [--provides <capability>@<version>] [--requires <capability>@<version>:<required|optional>] [--connection-definition <relative-file> ...]',
         'Usage: buildr skills add <id> --remote-source <url> [--target <workspace>] [--source-kind <kind>] [--description <text>] [--replace]',
@@ -406,8 +406,8 @@ export function createAgentAssetsCliContributions(): any  {
     }),
     ...[
       ['skills remove', '移除 workspace Skills 登记，保留源目录和全部文件。', 'Usage: buildr skills remove <id> [--target <workspace>]', (runtime: any, context: any) => runSkillsRemove(runtime, context.argv.slice(4))],
-      ['skills bind', '显式选择当前 scope 的 capability provider；不会安装 Skill 或证明其行为正确。', 'Usage: buildr skills bind <capability>@<version> --provider <skill-id> --scope <.|projects/project> [--target <dir>]', (runtime: any, context: any) => runSkillsBinding(runtime, context.argv.slice(4), false)],
-      ['skills unbind', '删除当前 scope 的显式 binding，由 resolver 重新判断唯一 provider、歧义或缺失。', 'Usage: buildr skills unbind <capability>@<version> --scope <.|projects/project> [--target <dir>]', (runtime: any, context: any) => runSkillsBinding(runtime, context.argv.slice(4), true)],
+      ['skills bind', '显式选择 workspace 的 capability provider；不会安装 Skill 或证明其行为正确。', 'Usage: buildr skills bind <capability>@<version> --provider <skill-id> [--scope .] [--target <dir>]', (runtime: any, context: any) => runSkillsBinding(runtime, context.argv.slice(4), false)],
+      ['skills unbind', '删除 workspace 的显式 binding，由 resolver 重新判断唯一 provider、歧义或缺失。', 'Usage: buildr skills unbind <capability>@<version> [--scope .] [--target <dir>]', (runtime: any, context: any) => runSkillsBinding(runtime, context.argv.slice(4), true)],
     ].map(([key, summary, usage, run]: any) => route({ key, summary, usage, match: ({ domain, action }: any) => domain === 'skills' && action === key.split(' ')[1], run })),
     route({
       key: 'skill install', surface: 'agent-machine', requiresAgent: true,

@@ -7,7 +7,7 @@ import { BUILDR_WEB_HTTP_SCHEMAS } from '../../../src/web/http/buildr-web-http-c
 import { RELEASE_AWARENESS_HTTP_SCHEMAS } from '../../../src/modules/installation/interfaces/http/release-awareness-http-contracts.ts';
 import { UPDATE_FLOW_HTTP_SCHEMAS } from '../../../src/modules/installation/interfaces/http/update-flow-http-contracts.ts';
 import { PUBLICATION_HTTP_SCHEMAS } from '../../../src/modules/publication/interfaces/http/publication-http-contracts.ts';
-import { cliOutputRoot, contractOutputPaths } from './output-paths.ts';
+import { cliOutputRoot, contractOutputPaths, writeContractOutput } from './output-paths.ts';
 
 const serviceRoot: any = path.resolve(import.meta.dirname, '../../..');
 const productRoot: any = path.resolve(serviceRoot, '../..');
@@ -46,8 +46,7 @@ export async function writeRuntimeSystemDto(outputRoot: any = undefined): Promis
   const selected: any = outputRoot ? contractOutputPaths('runtime-system-http-dto.ts', outputRoot) : defaultOutputs;
   const outputs: any[] = [selected.backend, selected.web];
   for (const file of outputs) {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, content);
+    writeContractOutput(file, content);
   }
   return outputs;
 }

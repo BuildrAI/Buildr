@@ -13,7 +13,7 @@ function StoredImage({ conversation, id, index, read }: { conversation: Conversa
     const load = () => {
       if (started) return; started = true;
       void read(conversation, id, controller.signal).then(blob => {
-        const name = `${blob.type.startsWith('video/')?'视频':'图片'} ${index + 1}`;
+        const name = blob instanceof File ? blob.name : `${blob.type.startsWith('video/')?'视频':blob.type.startsWith('image/')?'图片':'文档'} ${index + 1}`;
         if (active) setImage({ name, file: new File([blob], name, { type: blob.type }) });
       }).catch(() => { if (active) setFailed(true); });
     };

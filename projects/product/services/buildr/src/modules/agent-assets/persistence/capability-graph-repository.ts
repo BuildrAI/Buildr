@@ -4,7 +4,6 @@ import path from 'node:path';
 import {
   capabilityKey,
   parseCapabilityContract,
-  parseProjectCapabilities,
   parseSkillsManifestDocument,
 } from './skill-manifest.ts';
 import { resolveSkills } from '../infrastructure/runtime/skills/sources.ts';
@@ -20,13 +19,11 @@ function relative(root: any, file: any): any  {
   return path.relative(root, file).split(path.sep).join('/');
 }
 
-export function resolveSkillCapabilityGraph(organizationRoot: any, projectRoot: any = null, options: any = {}): any  {
+export function resolveSkillCapabilityGraph(organizationRoot: any, options: any = {}): any  {
   const runtime = options.runtime ?? null;
-  const scope = projectRoot ? options.scope || `projects/${path.basename(projectRoot)}` : '.';
+  const scope = '.';
   const layers: any[] = [layerFor(organizationRoot, '.')];
   const visibleLayers = layers.filter(Boolean);
-  const projectCapabilitiesPath = projectRoot ? path.join(projectRoot, 'capabilities.yml') : null;
-  const projectContext = projectCapabilitiesPath && fs.existsSync(projectCapabilitiesPath) ? parseProjectCapabilities(projectCapabilitiesPath) : null;
   const definitions: any = new Map();
   for (const layer of visibleLayers) {
     for (const contract of layer.document.contracts || []) {
@@ -47,7 +44,7 @@ export function resolveSkillCapabilityGraph(organizationRoot: any, projectRoot: 
     }
   }
 
-  const skills = resolveSkills(organizationRoot, projectRoot, {
+  const skills = resolveSkills(organizationRoot, null, {
     runtime,
     adapterId: options.adapterId,
     projectScope: scope,
@@ -55,12 +52,7 @@ export function resolveSkillCapabilityGraph(organizationRoot: any, projectRoot: 
   });
   const skillsById: any = new Map(skills.map((skill: any) => [skill.id, skill]));
   const allEntries = visibleLayers.flatMap((layer: any) => (layer.document.skills || []).map((skill: any) => ({ ...skill, declaredScope: layer.scope })));
-  for (const reference of projectContext?.skills || []) {
-    const id = typeof reference === 'string' ? reference : reference.id;
-    if (!allEntries.some((skill: any) => skill.id === id)) throw new Error(`Project capability context references unknown workspace Skill: ${id} (${projectCapabilitiesPath})`);
-  }
   const bindings: any[] = [
-    ...(projectContext?.bindings || []).map((binding: any) => ({ ...binding, scope, manifestPath: relative(organizationRoot, projectCapabilitiesPath), context: 'project' })),
     ...[...visibleLayers].reverse().flatMap((layer: any) => (layer.document.bindings || []).map((binding: any) => ({ ...binding, scope: layer.scope, manifestPath: relative(organizationRoot, layer.manifestPath), context: 'workspace-default' }))),
   ];
   const memo: any = new Map();
@@ -156,22 +148,6 @@ export function resolveSkillCapabilityGraph(organizationRoot: any, projectRoot: 
   }
 
   const consumers = skills.filter((skill: any) => (skill.requires || []).length > 0).map((skill: any) => evaluateConsumer(skill.id));
-  if (projectContext?.requires?.length) consumers.push({
-    consumer: `project:${path.basename(projectRoot)}`,
-    scope,
-    readiness: 'ready',
-    reason: null,
-    dependencies: projectContext.requires.map((dependency: any) => resolveDependency({ id: `project:${path.basename(projectRoot)}`, declaredScope: scope }, dependency, [])),
-    structurallyRoutableOnly: true,
-    projectContext: true,
-  });
-  const projectConsumer = consumers.find((consumer: any) => consumer.projectContext);
-  if (projectConsumer) {
-    const requiredFailure = projectConsumer.dependencies.find((item: any) => item.mode === 'required' && item.readiness === 'blocked');
-    const optionalFailure = projectConsumer.dependencies.find((item: any) => item.mode === 'optional' && item.readiness !== 'ready');
-    projectConsumer.readiness = requiredFailure ? 'blocked' : optionalFailure ? 'degraded' : 'ready';
-    projectConsumer.reason = requiredFailure?.reason || optionalFailure?.reason || null;
-  }
   return {
     schemaVersion: 'buildr.skill-capability-graph/v1',
     scope,
@@ -180,7 +156,6 @@ export function resolveSkillCapabilityGraph(organizationRoot: any, projectRoot: 
     bindings,
     consumers,
     skills,
-    projectContext: projectContext ? { path: relative(organizationRoot, projectCapabilitiesPath), skills: projectContext.skills || [] } : null,
     structurallyRoutableOnly: true,
   };
 }
@@ -202,78 +177,12 @@ export function capabilityBindingsForSkill(graph: any, skillId: any): any  {
   return graph.consumers.find((consumer: any) => consumer.consumer === skillId) || null;
 }
 
-function directCapabilityRoute(graph: any, capability: any, version: any): any  {
-  const contract = graph.contracts.find((item: any) => item.id === capability && item.version === version) || null;
-  const binding = graph.bindings.find((item: any) => item.capability === capability && item.version === version) || null;
-  const providers = graph.skills.filter((skill: any) => (skill.provides || []).some((item: any) => item.capability === capability && item.version === version));
-  const selected = binding ? providers.find((skill: any) => skill.id === binding.provider) || null : providers.length === 1 ? providers[0] : null;
-  let reason: any = null;
-  if (!contract) reason = 'contract_missing';
-  else if (binding && !selected) reason = 'invalid_binding';
-  else if (!binding && providers.length > 1) reason = 'ambiguous_provider';
-  else if (!selected) reason = 'missing_provider';
-  const providerReadiness = selected ? graph.consumers.find((consumer: any) => consumer.consumer === selected.id) || null : null;
-  if (!reason && providerReadiness?.readiness === 'blocked') reason = 'provider_not_ready';
-  return {
-    scope: graph.scope,
-    capability,
-    version,
-    readiness: reason ? 'blocked' : providerReadiness?.readiness || 'ready',
-    reason,
-    contract: contract ? { path: contract.contractPath, digest: `sha256-${contract.digest}` } : null,
-    binding: binding ? { scope: binding.scope, provider: binding.provider, provenance: binding.context } : null,
-    selectedProvider: selected ? { id: selected.id, scope: selected.declaredScope || graph.scope, runtimePath: selected.runtimePath || selected.id } : null,
-  };
-}
-
-export function resolveCapabilityRoute(organizationRoot: any, projectNames: any, capability: any, version: any, options: any = {}): any  {
-  const projects = [...new Set(projectNames || [])].sort((left: any, right: any) => left.localeCompare(right));
-  const graphs = projects.length
-    ? projects.map((name: any) => resolveSkillCapabilityGraph(organizationRoot, path.join(organizationRoot, 'projects', name), { runtime: options.runtime, scope: `projects/${name}` }))
-    : [resolveSkillCapabilityGraph(organizationRoot, null, { runtime: options.runtime })];
-  const routes = graphs.map((graph: any) => directCapabilityRoute(graph, capability, version));
-  const blocked = routes.find((route: any) => route.readiness === 'blocked');
-  if (blocked) return blocked;
-  const providerIdentities: any = new Set(routes.map((route: any) => `${route.selectedProvider?.id || ''}:${route.selectedProvider?.runtimePath || ''}`));
-  if (providerIdentities.size > 1) return {
-    scope: 'cross-project', capability, version, readiness: 'blocked', reason: 'cross_project_binding_ambiguous', contract: routes[0]?.contract || null, binding: null, selectedProvider: null,
-  };
-  return routes[0];
-}
-
-function capabilityGraphsForWorkspace(organizationRoot: any, runtime: any, changedScope: any = '.'): any  {
-  if (changedScope !== '.') {
-    const projectRoot = path.join(organizationRoot, changedScope);
-    return [resolveSkillCapabilityGraph(organizationRoot, projectRoot, { runtime, scope: changedScope })];
-  }
-  const graphs: any[] = [resolveSkillCapabilityGraph(organizationRoot, null, { runtime })];
-  const projectsRoot = path.join(organizationRoot, 'projects');
-  if (!fs.existsSync(projectsRoot)) return graphs;
-  for (const name of fs.readdirSync(projectsRoot).sort()) {
-    const projectRoot = path.join(projectsRoot, name);
-    if (!fs.statSync(projectRoot).isDirectory() || !fs.existsSync(path.join(projectRoot, 'capabilities.yml'))) continue;
-    graphs.push(resolveSkillCapabilityGraph(organizationRoot, projectRoot, { runtime, scope: `projects/${name}` }));
-  }
-  return graphs;
-}
-
-export function resolveCrossProjectCapabilityContext(organizationRoot: any, projectNames: any, options: any = {}): any  {
-  const graphs = projectNames.map((name: any) => resolveSkillCapabilityGraph(organizationRoot, path.join(organizationRoot, 'projects', name), { runtime: options.runtime, scope: `projects/${name}` }));
-  const byCapability: any = new Map();
-  for (const graph of graphs) for (const binding of graph.bindings.filter((item: any) => item.context === 'project')) {
-    const key = capabilityKey(binding.capability, binding.version);
-    if (!byCapability.has(key)) byCapability.set(key, []);
-    byCapability.get(key).push({ project: graph.scope, provider: binding.provider });
-  }
-  const conflicts = [...byCapability.entries()].filter(([, bindings]: any) => new Set(bindings.map((item: any) => item.provider)).size > 1).map(([capability, bindings]: any) => ({ reason: 'cross_project_binding_ambiguous', capability, bindings, nextActions: ['Split the task into per-Project actions.', 'Provide an explicit provider selection for this cross-Project task.'] }));
-  return { schemaVersion: 'buildr.cross-project-capability-context/v1', projects: projectNames, readiness: conflicts.length ? 'blocked' : 'ready', conflicts, graphs };
-}
-
 export function selectedProviderImpacts(organizationRoot: any, providerId: any, options: any = {}): any  {
   const runtime = options.runtime || 'codex';
-  const changedScope = options.scope || '.';
+  if (options.scope && options.scope !== '.') return [];
+  const changedScope = '.';
   const capability = options.capability || null;
-  return capabilityGraphsForWorkspace(organizationRoot, runtime, changedScope).flatMap((graph: any) =>
+  return [resolveSkillCapabilityGraph(organizationRoot, { runtime })].flatMap((graph: any) =>
     graph.consumers.flatMap((consumer: any) => consumer.dependencies
       .filter((dependency: any) => dependency.selectedProvider?.id === providerId
         && dependency.selectedProvider?.scope === changedScope

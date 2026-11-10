@@ -7,9 +7,8 @@
 .ac-model-trigger .anticon-down{flex:none;color:var(--soft-muted);font-size:var(--icon-size-tiny)}
 .ac-model-trigger.ant-btn:disabled{color:#a0a6ad}
 .ac-model-popover .ant-popover-inner{padding:12px;border:1px solid var(--soft-line);border-radius:13px;box-shadow:0 5px 20px #263b301a}
-.ac-model-controls{width:264px;max-width:calc(100vw - 56px);color:var(--soft-ink)}
+.ac-model-controls{width:320px;max-width:calc(100vw - 56px);color:var(--soft-ink)}
 .ac-model-picker.ant-select{display:block;width:100%;font-size: var(--font-size-body)}
-.ac-model-picker .ant-select-selector{background:var(--soft-surface)!important;border-color:var(--soft-line)!important}
 .ac-model-picker .ant-select-selection-item{color:var(--soft-muted);font-size: var(--font-size-body)}
 .ac-effort-controls{margin-top:12px;padding:0 0 2px;display:flex;flex-direction:column;gap:5px}
 .ac-effort-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size: var(--font-size-secondary);color:var(--soft-muted)}
@@ -19,22 +18,22 @@
 .ac-effort-list>.ant-btn.is-selected{background:var(--ant-color-primary-bg,#e7efec);color:var(--soft-primary)}
 .ac-effort-list small{margin-left:8px;color:var(--soft-muted);font-size: var(--font-size-meta);font-weight:400}
 .ac-model-list-popup.ant-select-dropdown{border:1px solid var(--soft-line,#d8e1dc);box-shadow:0 8px 28px #263b3029;background:var(--soft-surface,#fff);padding:5px;border-radius:10px}
-.ac-model-source-nav{display:flex;flex-wrap:wrap;gap:2px;padding:3px 2px 6px;border-bottom:1px solid var(--soft-line,#d8e1dc);margin-bottom:4px}
-.ac-model-source-nav .ant-btn{height:25px;font-size: var(--font-size-body);padding:0 7px;color:var(--soft-primary)}
+.ac-model-search{padding:2px 2px 5px}.ac-model-search .ant-input-affix-wrapper{padding-inline:9px;border-radius:8px;background:var(--soft-surface,#fff);border-color:var(--soft-line,#d8e1dc)}.ac-model-search .ant-input{font-size:var(--font-size-body);background:transparent}.ac-model-search .ant-input-prefix{margin-inline-end:6px;color:var(--soft-muted)}.ac-model-search-empty{color:var(--soft-muted);font-size:var(--font-size-body)}
+.ac-model-source-nav{display:flex;flex-wrap:nowrap;gap:2px;padding:3px 2px 6px;border-bottom:1px solid var(--soft-line,#d8e1dc);margin-bottom:4px;overflow-x:auto;overscroll-behavior-inline:contain;scrollbar-width:none}
+.ac-model-source-nav::-webkit-scrollbar{display:none}
+.ac-model-source-nav .ant-btn{flex:none;height:25px;white-space:nowrap;font-size: var(--font-size-body);padding:0 7px;color:var(--soft-primary)}
 .ac-model-list-popup .ant-select-item-group{position:sticky;top:0;z-index:2;background:#f2f5f3;color:var(--soft-ink);border-bottom:1px solid var(--soft-line,#d8e1dc);font-weight:600;padding:7px 10px}
 .ac-effort-unavailable{margin:0;text-align:center;font-size: var(--font-size-body);color:var(--soft-muted)}
 .ac-model-trigger .ac-tier-mark{color:var(--soft-primary);font-size:var(--icon-size-small);flex:none}
 .ac-depth-slider{padding:0 14px 27px}.ac-depth-value{font-size:var(--font-size-body);font-weight:600;color:var(--soft-primary);margin:1px -5px 12px;display:flex;gap:8px;align-items:center}.ac-depth-value small{font-size: var(--font-size-meta);font-weight:400;color:var(--soft-muted)}.ac-depth-slider .ant-slider{margin:8px 0 0}.ac-depth-slider .ant-slider-rail{background:#e3e8e6;height:5px}.ac-depth-slider .ant-slider-track{background:var(--soft-primary);height:5px}.ac-depth-slider .ant-slider-dot{width:7px;height:7px;top:-1px;border:2px solid #d8dfdc;background:#fff}.ac-depth-slider .ant-slider-dot-active{border-color:var(--soft-primary)}.ac-depth-slider .ant-slider-handle::after{box-shadow:0 0 0 2px var(--soft-primary);background:#fff}.ac-depth-labels{position:relative;height:16px;margin-top:8px;font-size: var(--font-size-secondary);color:var(--soft-muted)}.ac-depth-labels>span{position:absolute;transform:translateX(-50%);white-space:nowrap}.ac-depth-labels>.is-selected{color:var(--soft-primary);font-weight:600}
-/* Balance the tier button with an empty trailing column so the model stays centered. */
-.ac-model-top-row{display:grid;grid-template-columns:28px minmax(0,1fr) 28px;align-items:center;gap:6px}.ac-model-top-row .ac-model-picker{flex:1;min-width:0}.ac-tier-lightning{flex:none;color:var(--soft-muted)}.ac-depth-slider{padding-bottom:6px!important}.ac-effort-controls{margin-top:12px}.ac-model-controls{gap:8px}
-.ac-model-top-row{min-height:32px;margin-bottom:4px}.ac-model-picker .ant-select-selector{justify-content:center!important;box-shadow:none!important}.ac-model-picker .ant-select-selection-item{text-align:center}.ac-model-picker:hover,.ac-model-picker.ant-select-focused,.ac-model-picker.ant-select-open{background:var(--soft-surface);border-radius:6px}.ac-model-top-row .ac-tier-lightning{color:var(--soft-primary)}
-.ac-model-picker.ant-select:not(:hover):not(.ant-select-focused):not(.ant-select-open) .ant-select-selector{background:transparent!important;border-color:transparent!important;box-shadow:none!important}.ac-model-picker.ant-select:hover .ant-select-selector,.ac-model-picker.ant-select-focused .ant-select-selector,.ac-model-picker.ant-select-open .ant-select-selector{background:var(--soft-surface)!important;border-color:var(--soft-line)!important}
+/* 模型行用整行宽度，档位按钮叠放在行首；下拉与下方推理强度区域同宽。 */
+.ac-model-top-row{display:grid;grid-template-columns:minmax(0,1fr);align-items:center}.ac-model-top-row .ac-tier-lightning{grid-area:1/1;justify-self:start;align-self:center;z-index:1;margin-inline-start:2px}.ac-model-top-row .ac-model-picker{grid-area:1/1;min-width:0}.ac-tier-lightning{flex:none;color:var(--soft-muted)}.ac-depth-slider{padding-bottom:6px!important}.ac-effort-controls{margin-top:12px}.ac-model-controls{gap:8px}
+.ac-model-top-row{min-height:32px;margin-bottom:4px}.ac-model-top-row .ac-tier-lightning{color:var(--soft-primary)}
 .ac-tier-lightning.ant-btn{outline:none!important;box-shadow:none!important;border-color:transparent!important;color:var(--soft-muted)}.ac-tier-lightning.is-active{color:var(--soft-primary)}.ac-tier-lightning.ant-btn:not(:disabled):hover{color:var(--soft-muted)}.ac-tier-lightning.is-active.ant-btn:not(:disabled):hover{color:var(--soft-primary)}
 .ac-model-top-row .ac-model-picker.ant-select{height:38px;border-radius:9px;background:transparent;border:1px solid transparent;transition:background-color .15s ease,border-color .15s ease}
 .ac-model-top-row .ac-model-picker.ant-select:hover,.ac-model-top-row .ac-model-picker.ant-select-focused,.ac-model-top-row .ac-model-picker.ant-select-open{background:color-mix(in srgb,var(--soft-primary,#397d74) 5%,var(--soft-surface,#fff));border-color:var(--soft-line,#d8e1dc)}
-.ac-model-top-row .ac-model-picker .ant-select-selector{padding-inline:12px!important;background:transparent!important;border:0!important}
+.ac-model-top-row .ac-model-picker .ant-select-selector{padding-inline:12px!important;background:transparent!important;border:0!important;box-shadow:none!important;justify-content:center!important}
 .ac-model-top-row .ac-model-picker .ant-select-selection-item,.ac-model-top-row .ac-model-picker .ant-select-selection-placeholder{text-align:center;padding-inline-end:0;font-size:var(--font-size-body);font-weight:500}
-.ac-model-top-row .ac-model-picker.ant-select-focused{outline:2px solid color-mix(in srgb,var(--soft-primary,#397d74) 30%,transparent);outline-offset:2px}
 .ac-depth-slider{padding-inline:18px}
 .ac-depth-slider .ant-slider{padding-block:16px;margin:4px 0 0;height:40px;touch-action:none}
 .ac-depth-slider .ant-slider-rail,.ac-depth-slider .ant-slider-track{top:16px;height:7px;border-radius:5px}
@@ -45,3 +44,6 @@
 .ac-depth-slider .ant-slider-handle::after{width:18px;height:18px;inset:5px;box-shadow:0 0 0 2px var(--soft-primary,#397d74)}
 .ac-depth-slider .ant-slider-handle:hover::after,.ac-depth-slider .ant-slider-handle:focus::after,.ac-depth-slider .ant-slider-handle:active::after{width:18px;height:18px;inset:5px;box-shadow:0 0 0 4px color-mix(in srgb,var(--soft-primary,#397d74) 35%,transparent)}
 .ac-depth-labels{margin-top:2px;font-size:var(--font-size-body);height:20px}
+
+/* Cross-vendor sources stay visible; this explains why they cannot be chosen. */
+.ac-model-notice{margin:0 8px 6px;padding:6px 8px;border-radius:6px;font-size:var(--font-size-meta);line-height:1.45;color:var(--ant-color-warning-text,inherit);background:var(--ant-color-warning-bg,transparent);border:1px solid var(--ant-color-warning-border,transparent);}

@@ -64,22 +64,33 @@ export function claim(dataRoot: string, name: 'owner' | 'startup' | 'storage'): 
   writePrivate(path.join(stage, 'identity.json'), value);
   const publish = () => fs.renameSync(stage, filename);
   try {
-    try { publish(); }
-    catch (error) {
-      if (!fs.existsSync(filename)) throw error;
-      const prior = readLock(dataRoot, name);
-      if (!prior || live(prior.pid)) throw new AgentServiceError('agent_process_owned', '执行后台正在启动或仍被准确实例持有。', 409);
-      const reclaim = filename + '.reclaim';
-      try { fs.mkdirSync(reclaim, { mode: 0o700 }); }
-      catch { throw new AgentServiceError('agent_process_owned', '持有记录正在核对，未接管已有实例。', 409); }
-      try {
-        const current = readLock(dataRoot, name);
-        if (!current || current.nonce !== prior.nonce || live(current.pid)) throw new AgentServiceError('agent_process_owned', '执行后台持有记录已变化。', 409);
-        const retired = stage + '-retired';
-        fs.renameSync(filename, retired);
-        fs.rmSync(retired, {recursive:true});
-        try { publish(); } catch { throw new AgentServiceError('agent_process_owned', '执行后台已被其他入口持有。', 409); }
-      } finally { fs.rmdirSync(reclaim); }
+    for (;;) {
+      try { publish(); break; }
+      catch (error) {
+        if (!fs.existsSync(filename)) {
+          // The holder released the lock between the failed rename and this check.
+          // The original error describes a conflict that no longer exists, so retry
+          // the publish instead of leaking a stale ENOTEMPTY/EEXIST to the caller.
+          // Any other fault (for example a missing stage or a permission error) is real.
+          const code = (error as NodeJS.ErrnoException).code;
+          if (code !== 'ENOTEMPTY' && code !== 'EEXIST') throw error;
+          continue;
+        }
+        const prior = readLock(dataRoot, name);
+        if (!prior || live(prior.pid)) throw new AgentServiceError('agent_process_owned', '执行后台正在启动或仍被准确实例持有。', 409);
+        const reclaim = filename + '.reclaim';
+        try { fs.mkdirSync(reclaim, { mode: 0o700 }); }
+        catch { throw new AgentServiceError('agent_process_owned', '持有记录正在核对，未接管已有实例。', 409); }
+        try {
+          const current = readLock(dataRoot, name);
+          if (!current || current.nonce !== prior.nonce || live(current.pid)) throw new AgentServiceError('agent_process_owned', '执行后台持有记录已变化。', 409);
+          const retired = stage + '-retired';
+          fs.renameSync(filename, retired);
+          fs.rmSync(retired, {recursive:true});
+          try { publish(); } catch { throw new AgentServiceError('agent_process_owned', '执行后台已被其他入口持有。', 409); }
+        } finally { fs.rmdirSync(reclaim); }
+        break;
+      }
     }
   } finally { if (fs.existsSync(stage)) fs.rmSync(stage, {recursive:true}); }
   return { release() {

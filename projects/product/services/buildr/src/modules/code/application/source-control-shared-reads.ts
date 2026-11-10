@@ -52,6 +52,12 @@ export class SourceControlSharedReads {
           }
         }
         entry.value = value; entry.bytes = bytes; entry.expires = Date.now() + this.maxAgeMs;
+        // Partial reads retain each checkout's original observation time. A new
+        // response must not renew an older checkout through the outer cache.
+        for (const repository of value.repositories || []) for (const worktree of repository.worktrees) {
+          const observed = Date.parse(worktree.readAt);
+          if (Number.isFinite(observed)) entry.expires = Math.min(entry.expires, observed + this.maxAgeMs);
+        }
       }
       return value;
     }).finally(() => {

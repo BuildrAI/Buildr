@@ -10,7 +10,7 @@ export const JOURNEY_SUITES: any = Object.freeze([
     id: 'integration-changed-paths',
     name: 'changed-path selection regression',
     innerConcurrency: 1,
-    schedulingCostMs: 5000,
+    schedulingCostMs: 6000,
     concurrencyClass: 'cpu-heavy',
     resources: Object.freeze([]),
     contexts: Object.freeze([TASK_LIFECYCLE_CONTEXT_KEY]),
@@ -22,7 +22,7 @@ export const JOURNEY_SUITES: any = Object.freeze([
     id: 'integration-verification-runtime',
     name: 'verification orchestration contracts',
     innerConcurrency: 3,
-    schedulingCostMs: 9000,
+    schedulingCostMs: 7000,
     concurrencyClass: 'cpu-heavy',
     resources: Object.freeze([]),
     files: Object.freeze([
@@ -35,7 +35,7 @@ export const JOURNEY_SUITES: any = Object.freeze([
     id: 'integration-public-json',
     name: 'public JSON contracts',
     innerConcurrency: 1,
-    schedulingCostMs: 20000,
+    schedulingCostMs: 66000,
     concurrencyClass: 'cpu-heavy',
     resources: Object.freeze([]),
     files: Object.freeze([
@@ -46,7 +46,7 @@ export const JOURNEY_SUITES: any = Object.freeze([
     id: 'integration-openspec-audit',
     name: 'OpenSpec contract audit',
     innerConcurrency: 1,
-    schedulingCostMs: 4000,
+    schedulingCostMs: 7000,
     concurrencyClass: 'cpu-heavy',
     resources: Object.freeze([]),
     files: Object.freeze([
@@ -57,7 +57,7 @@ export const JOURNEY_SUITES: any = Object.freeze([
     id: 'e2e-workspace',
     name: 'Workspace lifecycle',
     innerConcurrency: 2,
-    schedulingCostMs: 145000,
+    schedulingCostMs: 108000,
     concurrencyClass: 'workspace-heavy',
     resources: Object.freeze(['workspace-saturating']),
     contexts: Object.freeze([
@@ -76,7 +76,7 @@ export const JOURNEY_SUITES: any = Object.freeze([
     id: 'e2e-task',
     name: 'Task lifecycle',
     innerConcurrency: 2,
-    schedulingCostMs: 16000,
+    schedulingCostMs: 153000,
     concurrencyClass: 'workspace-heavy',
     resources: Object.freeze(['workspace-saturating']),
     contexts: Object.freeze([TASK_LIFECYCLE_CONTEXT_KEY]),
@@ -92,7 +92,7 @@ export const JOURNEY_SUITES: any = Object.freeze([
     id: 'e2e-worktree',
     name: 'Worktree lifecycle',
     innerConcurrency: 1,
-    schedulingCostMs: 25000,
+    schedulingCostMs: 102000,
     concurrencyClass: 'workspace-heavy',
     resources: Object.freeze(['workspace-saturating']),
     contexts: Object.freeze([WORKSPACE_FOUNDATION_CONTEXT_KEY]),
@@ -104,7 +104,7 @@ export const JOURNEY_SUITES: any = Object.freeze([
     id: 'e2e-nested-git',
     name: 'nested Git isolation lifecycle',
     innerConcurrency: 1,
-    schedulingCostMs: 121000,
+    schedulingCostMs: 112000,
     // Its public lifecycle has a bounded nested process deadline. Do not
     // compete with other CLI-heavy owners while that deadline is running.
     concurrencyClass: 'exclusive',
@@ -117,7 +117,7 @@ export const JOURNEY_SUITES: any = Object.freeze([
     id: 'e2e-runtime-recovery',
     name: 'runtime recovery',
     innerConcurrency: 1,
-    schedulingCostMs: 30000,
+    schedulingCostMs: 27000,
     concurrencyClass: 'workspace-heavy',
     resources: Object.freeze(['workspace-saturating']),
     files: Object.freeze([
@@ -131,7 +131,7 @@ export const JOURNEY_SUITES: any = Object.freeze([
     id: 'integration-web-http',
     name: 'Buildr Web Runtime',
     innerConcurrency: 2,
-    schedulingCostMs: 20000,
+    schedulingCostMs: 26000,
     concurrencyClass: 'workspace-heavy',
     resources: Object.freeze([]),
     contexts: Object.freeze([TASK_LIFECYCLE_CONTEXT_KEY]),
@@ -143,9 +143,10 @@ export const JOURNEY_SUITES: any = Object.freeze([
   }),
   Object.freeze({
     id: 'e2e-app-process',
+    requiresWebDist: true,
     name: 'Buildr Web process and preview',
     innerConcurrency: 2,
-    schedulingCostMs: 25000,
+    schedulingCostMs: 130000,
     concurrencyClass: 'workspace-heavy',
     resources: Object.freeze(['workspace-saturating', 'app-runtime']),
     files: Object.freeze([

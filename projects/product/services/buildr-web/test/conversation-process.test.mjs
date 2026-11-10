@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {groupConversationStream,processBlockKey,carryExpandedProcessBlocks,processEntryStatus,conversationStreamTurns,conversationTurnExecution} from '../src/features/agent-conversations/conversation-state.ts';
+import {needsConversationObservation,groupConversationStream,processBlockKey,carryExpandedProcessBlocks,processEntryStatus,conversationStreamTurns,conversationTurnExecution,conversationRunLive} from '../src/features/agent-conversations/conversation-state.ts';
 import {processTool,conversationFileTarget} from '../src/features/agent-conversations/conversation-process.ts';
 import {visibleConversationEntries} from '../src/features/agent-conversations/conversation-notices.ts';
 const message=(id,text,runId='r1',role='assistant')=>({id,sequence:0,kind:'message',role,text,runId,createdAt:'2026-10-26T00:00:00Z'});
@@ -29,16 +29,37 @@ test('当前轮未结束时说明仍在过程，完成后才显示最终答复',
 test('后台可继续输入、保留旧执行和终态与执行事实冲突时，阶段说明不提升为最终答复',()=>{
   const entries=[tool('t'),message('stage','已开始修复，稍后继续')];
   const pending={id:'r1',status:'tools-active',canContinue:true,tools:[{id:'child',status:'running'}],executionState:'active'};
-  for(const run of [pending,{...pending,status:'completed'},{...pending,status:'completed',tools:[],executionState:'unknown'}]){
+  for(const run of [pending,{...pending,status:'completed'}]){
     const grouped=groupConversationStream(entries,run);
     assert.equal(grouped.length,1);assert.equal(grouped[0].type,'process-block');assert.equal(grouped[0].active,true);
   }
+  // 终态与执行事实冲突时按已结束呈现，阶段说明仍不当最终答复。
+  const conflicting=groupConversationStream(entries,{...pending,status:'completed',tools:[],executionState:'unknown'});
+  assert.equal(conflicting.length,1);assert.equal(conflicting[0].active,false);assert.equal(conflicting[0].entries.length,2);
   assert.equal(groupConversationStream(entries,{id:'new',status:'running'},[pending]).filter(item=>item.type==='entry').length,0);
   const turn=conversationStreamTurns(groupConversationStream(entries,pending))[0];
   assert.deepEqual(conversationTurnExecution(turn,pending),{current:true,active:true,waiting:'模型已结束，后台作业仍在运行'});
   assert.equal(conversationTurnExecution(turn,{...pending,resourcesReleased:true}).active,false);
   const ended=groupConversationStream(entries,{...pending,status:'completed',executionState:'ended',tools:[]});
   assert.equal(ended.at(-1).entry.id,'stage');
+});
+test('已释放的结果待核对轮次收起过程，仍在执行的过程保持实时',()=>{
+  const entries=[tool('t'),message('stage','已开始修复，稍后继续')];
+  const released={id:'r1',status:'unknown',executionState:'unknown',resourcesReleased:true,tools:[]};
+  assert.equal(conversationRunLive(released),false);
+  const [block]=groupConversationStream(entries,released);
+  assert.equal(block.type,'process-block');assert.equal(block.active,false,'释放后不再按实时呈现');
+  assert.equal(block.entries.length,2,'阶段说明不能被提升为最终答复');
+  assert.equal(processEntryStatus(entries[0],block.active),'completed');
+  const running={...released,status:'running',executionState:'active',resourcesReleased:false};
+  assert.equal(conversationRunLive(running),true);
+  assert.equal(groupConversationStream(entries,running)[0].active,true);
+});
+test('完成轮里的失败工具不把整轮留在实时态',()=>{
+  const entries=[tool('a'),tool('b',{status:'failed'})];
+  const run={id:'r1',status:'completed',executionState:'ended',resourcesReleased:true,tools:[{id:'a',status:'completed'},{id:'b',status:'failed'}]};
+  assert.equal(conversationRunLive(run),false);
+  assert.equal(groupConversationStream(entries,run)[0].active,false);
 });
 test('普通无工具回答不生成空过程；没有助手答复时不伪造结论',()=>{
   assert.deepEqual(groupConversationStream([message('a','答复')]).map(item=>item.type),['entry']);
@@ -256,4 +277,12 @@ test('首条输入前的交接回执不能冒充原用户输入',()=>{
  const receipt={...message('receipt','接续','new','system'),kind:'handoff'};
  const turns=conversationStreamTurns(groupConversationStream([receipt,message('first','新要求','new','user'),message('extra','补充','new','user')]));
  assert.equal(turns.at(-1).prompt.id,'first');assert.equal(turns.at(-1).items[0].entry.id,'extra');
+});
+
+
+test('工具等待原生详情就绪时保持现有订阅，切换后按执行状态结束观察',()=>{
+ const conversation={entries:[{detail:{revision:'r',live:true}}],requests:[],run:{status:'completed',tools:[]}};
+ assert.equal(needsConversationObservation(conversation),true);
+ conversation.entries[0].detail={revision:'r'};
+ assert.equal(needsConversationObservation(conversation),false);
 });

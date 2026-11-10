@@ -10,7 +10,6 @@ export interface PackageAssetsDependencies {
   readSkillManifest: ReturnType<typeof import('../skills.ts').registerDomainsSkills>['readSkillManifest'];
   readSkillManifestSchemaVersion: ReturnType<typeof import('../skills.ts').registerDomainsSkills>['readSkillManifestSchemaVersion'];
   renderSkillsManifestYaml: ReturnType<typeof import('../skills.ts').registerDomainsSkills>['renderSkillsManifestYaml'];
-  renderProjectCapabilitiesYaml: ReturnType<typeof import('../skills.ts').registerDomainsSkills>['renderProjectCapabilitiesYaml'];
   renderProjectCommandsYaml: ReturnType<typeof import('../commands.ts').registerDomainsCommands>['renderProjectCommandsYaml'];
   skillsManifestPath: ReturnType<typeof import('../skills.ts').registerDomainsSkills>['skillsManifestPath'];
   parseYamlValue: typeof import('../../../../infrastructure/filesystem/yaml.ts').parseYamlValue;
@@ -35,7 +34,6 @@ export function registerAgentAssetsPackageAssets(dependencies: PackageAssetsDepe
     readSkillManifest,
     readSkillManifestSchemaVersion,
     renderSkillsManifestYaml,
-    renderProjectCapabilitiesYaml,
     renderProjectCommandsYaml,
     skillsManifestPath,
     parseYamlValue,
@@ -256,7 +254,6 @@ export function registerAgentAssetsPackageAssets(dependencies: PackageAssetsDepe
       if (changed.length > before) changed[changed.length - 1] = `projects/${projectName}/${entry.target}`;
     }
     for (const [relativePath, content] of [
-      ['capabilities.yml', renderProjectCapabilitiesYaml()],
       ['commands.yml', renderProjectCommandsYaml()],
     ]) {
       const file = path.join(projectRoot, relativePath);
@@ -315,7 +312,6 @@ export function registerAgentAssetsPackageAssets(dependencies: PackageAssetsDepe
         const entry = parseManifestFileEntry(rawEntry, 'projectFiles');
         affected.add(path.join(projectRoot, entry.target));
       }
-      affected.add(path.join(projectRoot, 'capabilities.yml'));
       affected.add(path.join(projectRoot, 'commands.yml'));
       affected.add(path.join(projectRoot, 'services.yml'));
       affected.add(skillsManifestPath(projectRoot));

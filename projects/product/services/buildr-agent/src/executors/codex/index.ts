@@ -1,9 +1,13 @@
+import { regenerableToolCaches, toolCacheReclaimable } from '../../storage/tool-cache.ts';
+import { codexItem } from './items.ts';
+export { codexItem } from './items.ts';
+import { codexFindTurn, codexLatestTurn, codexThreadMetadata, codexTurnItems, codexTurns } from './pagination.ts';
 import { codexContent } from './content.ts';
 import { instructionParticipation } from '../../domain/participation.ts';
 import { nativeParticipation, participationRequests } from '../../domain/participation.ts';
 import { withExecutionFault } from '../../domain/execution-fault.ts';
 import { codexUnsettledTools } from './recovery.ts';
-import { codexCacheReclaimable, codexCuratedIdentity } from './storage.ts';
+import { codexCacheReclaimable, codexCuratedIdentity, codexDiagnosticLogs } from './storage.ts';
 import { interactionPolicy, blocksExecution } from '../../domain/interaction-policy.ts';
 import {createHash} from 'node:crypto';
 import { errorDiagnostic, NativeObservationError } from '../../domain/error-diagnostic.ts';
@@ -12,7 +16,7 @@ import { join, relative, sep, isAbsolute } from 'node:path';
 import { lstat, readFile, writeFile, copyFile, realpath, chmod } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import type { AgentExecutor, AgentRuntime, ContextRef, ExecutionRef, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorRequest, ExecutorSendInput, ExecutorTitleInput, LoginObservation, PermissionMode } from '../../contracts.ts';
-import { NativeRpc, nativePreview, nativeBinding, bounded, findExecutable, inspectVersion, isolatedEnvironment, ownedProcessGroupIdle, nativeCommand, nativeHome, opaqueReference, parseReference, privateDirectories, visibleText, type RpcMessage } from '../native-process.ts';
+import { NativeRpc, nativePreview, nativeBinding, bounded, findExecutable, inspectVersion, accountEnvironment, ownedProcessGroupIdle, nativeCommand, nativeHome, opaqueReference, parseReference, privateDirectories, visibleText, type RpcMessage } from '../native-process.ts';
 import { modelOptions } from '../model-options.ts';
 import { generateCodexTitle } from './title.ts';
 import { codexThreadPermissions, codexTurnPermissions } from './permissions.ts';
@@ -46,9 +50,9 @@ function codexGatewayCatalog(gateway: ExecutorGateway) {
     truncation_policy: { mode: 'tokens', limit: 10000 },
   })) };
 }
-interface ActiveTurn { contextId: string; id: string; input: ExecutorSendInput; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown'; processId?: string; executionId: string }>; pending: Map<string, { nativeId: string | number; method: string; params: any }>; texts: Map<string, string>; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string; done: () => void; reject: (error: Error) => void; accepted: boolean; buffered: RpcMessage[] }
+interface ActiveTurn { contextCompaction?: import('../../contracts.ts').ContextCompaction; commandStreams?: Map<string,{command:string;output:string}>; contextId: string; id: string; input: ExecutorSendInput; tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown'; processId?: string; executionId: string }>; pending: Map<string, { nativeId: string | number; method: string; params: any }>; texts: Map<string, string>; terminal?: 'completed' | 'stopped' | 'failed'; diagnostic?: string; done: () => void; reject: (error: Error) => void; accepted: boolean; buffered: RpcMessage[] }
 export function createCodexExecutor(): AgentExecutor {
-  return { nativeContent: codexContent, storage: { transientDirectories: ['tmp/node-compile-cache', 'cache/node-compile', 'home/.npm/_cacache', 'codex-home/.tmp/plugins'], canReclaim: codexCacheReclaimable, snapshots: [{ relative: 'codex-home/.tmp/plugins', key: 'curated-plugins', identity: codexCuratedIdentity }] }, descriptor: { id: 'codex', label: 'Codex', capabilities }, async open(options) { return await CodexRuntime.open(options); } };
+  return { nativeContent: codexContent, storage: { transientDirectories: [...regenerableToolCaches, 'codex-home/.tmp/plugins'], diagnostics:codexDiagnosticLogs, canReclaim: (root, relative) => toolCacheReclaimable(root, relative) && codexCacheReclaimable(root, relative), snapshots: [{ relative: 'codex-home/.tmp/plugins', key: 'curated-plugins', identity: codexCuratedIdentity }] }, descriptor: { id: 'codex', label: 'Codex', capabilities }, async open(options) { return await CodexRuntime.open(options); } };
 }
 class CodexRuntime implements AgentRuntime {
   participationInstruction?: import('../../participation-contracts.ts').ParticipationMatch;
@@ -71,8 +75,8 @@ class CodexRuntime implements AgentRuntime {
     const gateway = checkedGateway(options.gateway);
     const { home, temporary } = nativeHome(options.configRoot);
     const config = join(options.configRoot, 'codex-home');
-    await privateDirectories(options.configRoot, home, temporary, config);
-    const env = isolatedEnvironment(options.environment, home, temporary, { CODEX_HOME: config, ...(gateway ? { BUILDR_MODEL_GATEWAY_KEY: gateway.apiKey, NO_PROXY: '127.0.0.1,localhost,::1', no_proxy: '127.0.0.1,localhost,::1' } : {}) }, options.cacheRoot);
+    const env = accountEnvironment(options.environment, home, temporary, { CODEX_HOME: config, ...(gateway ? { BUILDR_MODEL_GATEWAY_KEY: gateway.apiKey, NO_PROXY: '127.0.0.1,localhost,::1', no_proxy: '127.0.0.1,localhost,::1' } : {}) }, options.cacheRoot);
+    await privateDirectories(options.configRoot, config, ...(env.HOME === home ? [home] : []), temporary);
     const executable = await findExecutable(options.executable, ['codex', 'codex.exe'], env);
     const version = await inspectVersion(executable, env, options.signal);
     if (!isCompatibleProgram('codex', version)) throw new Error(`codex_version_unsupported: requires ${nativeProgramPolicy('codex').compatibility}`);
@@ -86,7 +90,7 @@ class CodexRuntime implements AgentRuntime {
       const values = { web_search: 'disabled', model_provider: 'buildr-models', model: model.id, review_model: model.id, model_catalog_json: catalog, 'model_providers.buildr-models.name': 'Buildr', 'model_providers.buildr-models.base_url': gateway.baseUrl.replace(/\/$/, ''), 'model_providers.buildr-models.env_key': 'BUILDR_MODEL_GATEWAY_KEY', 'model_providers.buildr-models.wire_api': 'responses', 'model_providers.buildr-models.requires_openai_auth': false, 'model_providers.buildr-models.supports_websockets': false, ...(model.contextWindow ? { model_context_window: model.contextWindow } : {}) };
       for (const [key, value] of Object.entries(values)) overrides.push('-c', `${key}=${JSON.stringify(value)}`);
     }
-    const rpc = new NativeRpc(launch.command, [...launch.prefix, 'app-server', '--listen', 'stdio://', '-c', 'cli_auth_credentials_store="file"', ...overrides], { cwd: options.configRoot, env });
+    const rpc = new NativeRpc(launch.command, [...launch.prefix, 'app-server', '--listen', 'stdio://', '-c', 'cli_auth_credentials_store="file"', ...overrides], { cwd: options.configRoot, env, diagnostics:options.diagnostics?event=>options.diagnostics!({...event,provider:'codex'}):undefined });
     const runtime = new CodexRuntime(binding.identity, rpc, join(temporary, 'title-requests'));
     runtime.interaction = { ...conversationInteraction, developerInstructions: (options.interaction ?? interactionPolicy).instructions + '\n必要提问使用 request_user_input。' };
     runtime.participationInstruction = instructionParticipation('interaction-policy',runtime.interaction.developerInstructions);
@@ -172,18 +176,17 @@ class CodexRuntime implements AgentRuntime {
     const source = input.source;
     if (!(source instanceof CodexRuntime)) throw new Error('agent_context_binding_mismatch');
     source.reference(input.contextRef, input.cwd);
-    const observed = await source.rpc.call('thread/read', { threadId: input.contextRef.id, includeTurns: true });
-    const turns = observed.thread?.turns ?? [];
-    const selected = turns.find((turn: any) => turn.id === input.executionRef.id);
-    if (observed.thread?.id !== input.contextRef.id || observed.thread.cwd !== input.cwd || !selected || selected.status === 'inProgress') throw new Error('agent_fork_boundary_unavailable');
+    const observed = await codexThreadMetadata(source.rpc, input.contextRef.id, input.cwd);
+    const selected = await codexFindTurn(source.rpc, input.contextRef.id, input.executionRef.id);
+    if (!selected || selected.status === 'inProgress') throw new Error('agent_fork_boundary_unavailable');
     // A paginated Codex store cannot resolve a foreign CODEX_HOME's thread from
     // path alone. Copy the native-owned opaque rollout into the destination's
     // private store first; Codex, not Buildr, interprets and slices that history.
     // Never link or mutate the original; the imported snapshot is not used for work.
     let importPath: string | undefined;
     if (source !== this) {
-      if (typeof observed.thread.path !== 'string' || !source.modelConfig || !this.modelConfig) throw new Error('agent_fork_unavailable');
-      const filename = await realpath(observed.thread.path), root = await realpath(source.modelConfig);
+      if (typeof observed.path !== 'string' || !source.modelConfig || !this.modelConfig) throw new Error('agent_fork_unavailable');
+      const filename = await realpath(observed.path), root = await realpath(source.modelConfig);
       const local = relative(root, filename);
       if (!local || isAbsolute(local) || local.startsWith('..' + sep) || !['sessions','archived_sessions'].includes(local.split(sep)[0]!)) throw new Error('agent_context_binding_mismatch');
       const info = await lstat(filename);
@@ -198,27 +201,31 @@ class CodexRuntime implements AgentRuntime {
     }
     const forked = await this.rpc.call('thread/fork', {
       threadId: input.contextRef.id, ...(importPath ? { path: importPath } : {}),
-      lastTurnId: input.executionRef.id, cwd: input.cwd, ephemeral: false, deferGoalContinuation: true, ...this.interaction,
+      lastTurnId: input.executionRef.id, cwd: input.cwd, ephemeral: false, excludeTurns: true, deferGoalContinuation: true, ...this.interaction,
       ...(this.gateway ? { model: gatewayModel(this.gateway).id, modelProvider: 'buildr-models' } : {}),
     });
     if (!forked.thread?.id || forked.thread.id === input.contextRef.id || forked.thread.cwd !== input.cwd) throw new Error('agent_fork_identity_invalid');
     const ref = this.context(forked.thread.id, input.cwd);
     input.onCreated(ref);
-    // Older servers can ignore unknown fields. Never accept a whole-history fork.
-    const result = await this.rpc.call('thread/read', { threadId: ref.id, includeTurns: true });
-    if (result.thread?.turns?.at(-1)?.id !== input.executionRef.id) throw new Error('agent_fork_boundary_unavailable');
+    // Older servers can ignore unknown fields. A paginated boundary read proves
+    // the fork without asking either process to hydrate the whole history.
+    const boundary = await codexLatestTurn(this.rpc, ref.id);
+    if (boundary?.id !== input.executionRef.id) throw new Error('agent_fork_boundary_unavailable');
     return ref;
   }
   async resumeContext({ contextRef, cwd, permissionMode }: { contextRef: ContextRef; cwd: string; permissionMode?: PermissionMode }): Promise<void> {
     this.reference(contextRef, cwd);
-    const result = await this.rpc.call('thread/resume', { threadId: contextRef.id, cwd, ...this.interaction, ...(permissionMode === undefined ? {} : codexThreadPermissions(permissionMode)) });
+    const result = await this.rpc.call('thread/resume', { threadId: contextRef.id, cwd, excludeTurns: true, ...this.interaction, ...(permissionMode === undefined ? {} : codexThreadPermissions(permissionMode)) });
     if (result.thread?.id !== contextRef.id || result.thread.cwd !== cwd) throw new Error('codex_context_identity_mismatch');
   }
   async readHistory({ contextRef, cwd }: { contextRef: ContextRef; cwd: string }): Promise<ExecutorItem[]> {
     this.reference(contextRef, cwd);
-    const result = await this.rpc.call('thread/read', { threadId: contextRef.id, includeTurns: true });
-    if (result.thread?.id !== contextRef.id || result.thread.cwd !== cwd) throw new Error('codex_context_identity_mismatch');
-    return (result.thread.turns ?? []).flatMap((turn: any) => (turn.items ?? []).flatMap((item: any) => codexItem(item, turn.id, turn.status)));
+    await codexThreadMetadata(this.rpc, contextRef.id, cwd);
+    const items: ExecutorItem[] = [];
+    for (const turn of await codexTurns(this.rpc, contextRef.id)) {
+      for (const item of await codexTurnItems(this.rpc, contextRef.id, turn.id)) items.push(...codexItem(item, turn.id, turn.status));
+    }
+    return items;
   }
   async readTitle({ contextRef, cwd }: { contextRef: ContextRef; cwd: string }): Promise<string | undefined> {
     this.reference(contextRef, cwd);
@@ -317,13 +324,33 @@ class CodexRuntime implements AgentRuntime {
       if (!request) { this.rpc.write({ id: message.id, error: { code: -32601, message: 'Unsupported Buildr request' } }); return; }
       turn.pending.set(request.id, { nativeId: message.id, method: message.method, params: p }); emit({ type: 'request', request }); return;
     }
+    if(message.method === 'item/commandExecution/outputDelta' && typeof p.delta === 'string') {
+      const tool = turn.tools.get(p.itemId), stream = turn.commandStreams?.get(p.itemId);
+      if(tool?.status !== 'running' || tool.executionId !== turn.id || !stream) return;
+      const output = nativePreview(stream.output + p.delta);
+      if(output === stream.output) return;
+      stream.output = output;
+      for(const item of codexItem({type:'commandExecution',id:p.itemId,command:stream.command,aggregatedOutput:stream.output,status:'inProgress'},turn.id,'inProgress')) emit({type:'item',item});
+      return;
+    }
     if (message.method === 'item/agentMessage/delta') {
       const text = (turn.texts.get(p.itemId) ?? '') + String(p.delta ?? ''); turn.texts.set(p.itemId, text);
       emit({ type: 'item', item: { id: p.itemId, kind: 'message', role: 'assistant', text, executionId: turn.id, status: 'running' } });
     }
     if (message.method === 'item/started' || message.method === 'item/completed') {
       const item = p.item;
-      if (item?.type === 'commandExecution') turn.tools.set(item.id, { id: item.id, label: String(item.command ?? '命令'), status: message.method === 'item/completed' ? 'completed' : 'running', processId: item.processId, executionId: turn.id });
+      if (item?.type === 'contextCompaction' && typeof item.id === 'string' && !turn.terminal) {
+        if (message.method === 'item/started' && turn.contextCompaction?.id !== item.id) turn.contextCompaction = {id:item.id,startedAt:new Date().toISOString()};
+        if (message.method === 'item/completed' && turn.contextCompaction?.id === item.id) delete turn.contextCompaction;
+      }
+      if (item?.type === 'commandExecution') {
+        turn.tools.set(item.id, {id:item.id,label:'命令',status:message.method === 'item/completed'?'completed':'running',processId:item.processId,executionId:turn.id});
+        if(message.method === 'item/completed') turn.commandStreams?.delete(item.id);
+        else {
+          turn.commandStreams ??= new Map();
+          if(turn.commandStreams.size < 128) turn.commandStreams.set(item.id,{command:nativePreview(String(item.command ?? '')),output:''});
+        }
+      }
       else if (item?.type === 'fileChange' || item?.type === 'mcpToolCall') turn.tools.set(item.id, { id: item.id, label: item.type === 'fileChange' ? '修改文件' : String(item.tool ?? '工具'), status: message.method === 'item/completed' ? 'completed' : 'running', executionId: turn.id });
       for (const safe of codexItem(item, turn.id, message.method === 'item/completed' ? 'completed' : 'inProgress')) emit({ type: 'item', item: safe });
       emit({ type: 'observation', observation: this.activeObservation(turn) });
@@ -346,26 +373,27 @@ class CodexRuntime implements AgentRuntime {
     const tools = [...turn.tools.values()].map(({ processId, executionId, ...tool }) => ({ ...tool, canStop: Boolean(processId) && tool.status === 'running' }));
     const requests = [...turn.pending].flatMap(([id, pending]) => codexRequest(id, pending.method, pending.params) ?? []);
     const canContinue = turn.terminal === 'completed' && !turn.pending.size && tools.some(tool => tool.status === 'running') && [...turn.tools.values()].every(tool => tool.status === 'completed' || tool.status === 'running' && Boolean(tool.processId));
-    return { canContinue, status: turn.terminal ? tools.some(tool => tool.status === 'running') ? 'tools-active' : tools.some(tool => tool.status === 'unknown') ? 'unknown' : turn.terminal === 'stopped' ? 'stopped' : 'idle' : requests.some(blocksExecution) ? 'waiting' : 'running', executionRef: this.rpc.executionRef(turn.id, turn.contextId, this.bindingIdentity, [...turn.tools.values()].some(tool => Boolean(tool.processId) && tool.status !== 'completed')), tools, requests, ...(turn.terminal === 'failed' && turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) };
+    return { contextCompaction: turn.terminal ? null : turn.contextCompaction ?? null, canContinue, status: turn.terminal ? tools.some(tool => tool.status === 'running') ? 'tools-active' : tools.some(tool => tool.status === 'unknown') ? 'unknown' : turn.terminal === 'stopped' ? 'stopped' : 'idle' : requests.some(blocksExecution) ? 'waiting' : 'running', executionRef: this.rpc.executionRef(turn.id, turn.contextId, this.bindingIdentity, [...turn.tools.values()].some(tool => Boolean(tool.processId) && tool.status !== 'completed')), tools, requests, ...(turn.terminal === 'failed' && turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) };
   }
   async observe({ contextRef, executionRef, knownItems }: { contextRef: ContextRef; executionRef?: ExecutionRef; knownItems?: readonly ExecutorItem[] }): Promise<ExecutorObservation> {
     this.reference(contextRef);
     const turn = this.turns.get(contextRef.id);
     if (turn && (!executionRef || executionRef.id === turn.id)) { if (turn.terminal) await this.refreshTerminals(turn); return this.activeObservation(turn); }
-    const history = await this.rpc.call('thread/read', { threadId: contextRef.id, includeTurns: true });
-    const exact = executionRef ? history.thread?.turns?.find((item: any) => item.id === executionRef.id) : history.thread?.turns?.at(-1);
+    const thread = await codexThreadMetadata(this.rpc, contextRef.id);
+    const exact = executionRef ? await codexFindTurn(this.rpc, contextRef.id, executionRef.id) : await codexLatestTurn(this.rpc, contextRef.id);
     if (!exact) return { status: 'unknown', tools: [], diagnostic: 'codex_turn_not_observed' };
+    const exactItems = await codexTurnItems(this.rpc, contextRef.id, exact.id);
     let unsettled: Awaited<ReturnType<typeof codexUnsettledTools>> = [];
     if (exact.status === 'interrupted') {
-      try { unsettled = await codexUnsettledTools(history.thread.path, this.modelConfig!, contextRef.id, exact.id);
+      try { unsettled = await codexUnsettledTools(thread.path, this.modelConfig!, contextRef.id, exact.id);
         const received = new Set((knownItems ?? []).filter(item => item.kind === 'tool' && item.executionId === exact.id && ['completed', 'failed'].includes(item.status ?? '') && !/Process running with session ID/.test(item.text)).map(item => item.id));
-        for (const item of exact.items ?? []) {
+        for (const item of exactItems) {
           if (['commandExecution', 'fileChange', 'mcpToolCall'].includes(item.type) && ['completed', 'failed', 'declined'].includes(item.status)) received.add(item.id);
         }
         unsettled = unsettled.filter(tool => !received.has(tool.id)); }
       catch { return { status: 'unknown', executionRef: { id: exact.id }, tools: [], diagnostic: 'codex_recovery_history_unconfirmed' }; }
     }
-    return { status: exact.status === 'inProgress' ? 'unknown' : exact.status === 'interrupted' ? 'stopped' : 'idle', executionRef: executionRef ?? { id: exact.id }, tools: [...new Map([...unsettled, ...(exact.items ?? []).filter((item: any) => ['commandExecution', 'fileChange', 'mcpToolCall'].includes(item.type) && !['completed', 'failed', 'declined'].includes(item.status)).map((item: any) => ({ id: item.id, label: String(item.command ?? '命令'), status: 'unknown' as const, canStop: false }))].map(tool => [tool.id, tool])).values()] };
+    return { status: exact.status === 'inProgress' ? 'unknown' : exact.status === 'interrupted' ? 'stopped' : 'idle', executionRef: executionRef ?? { id: exact.id }, tools: [...new Map([...unsettled, ...exactItems.filter((item: any) => ['commandExecution', 'fileChange', 'mcpToolCall'].includes(item.type) && !['completed', 'failed', 'declined'].includes(item.status)).map((item: any) => ({ id: item.id, label: item.type === 'mcpToolCall' ? String(item.tool ?? '工具') : '命令', status: 'unknown' as const, canStop: false }))].map(tool => [tool.id, tool])).values()] };
   }
   async canRelease({contextRef,executionRef}:{contextRef:ContextRef;executionRef:ExecutionRef}):Promise<boolean|{executionState:'ended'|'unknown'}>{
     this.reference(contextRef);
@@ -426,16 +454,17 @@ class CodexRuntime implements AgentRuntime {
       if (toolId) return { status: 'unknown', tools: [], diagnostic: 'codex_exact_live_turn_unavailable' };
       return this.observe({ contextRef, executionRef });
     }
-    if (!turn.terminal && !toolId) await this.rpc.call('turn/interrupt', { threadId: contextRef.id, turnId: turn.id }, 5000);
+    const interrupt = !turn.terminal && !toolId ? this.rpc.call('turn/interrupt', { threadId: contextRef.id, turnId: turn.id }, 5000) : Promise.resolve();
     if (turn.terminal && !toolId) turn.terminal = 'stopped'; // An unconfirmed whole-run stop must not release queued input.
-    await this.refreshTerminals(turn);
-    const selected = [...turn.tools.values()].filter(tool => tool.status === 'running' && (!toolId || tool.id === toolId));
+    // Stop known exact processes immediately, without putting terminal-list
+    // observation ahead of cancellation. Unknown observations retain identity.
+    const selected = [...turn.tools.values()].filter(tool => (toolId ? tool.status === 'running' && tool.id === toolId : tool.status !== 'completed'));
     if (toolId && !selected.some(tool => tool.processId)) throw new Error('codex_exact_tool_stop_unavailable');
-    for (const tool of selected) {
-      if (!tool.processId) continue;
+    const [interrupted] = await Promise.allSettled([interrupt,...selected.filter(tool=>tool.processId).map(async tool => {
       try { await this.rpc.call('thread/backgroundTerminals/terminate', { threadId: contextRef.id, processId: tool.processId }, 4000); }
       catch { tool.status = 'unknown'; }
-    }
+    })]);
+    if(interrupted!.status==='rejected')throw interrupted.reason;
     return await this.observe({ contextRef, executionRef });
   }
   private async refreshTerminals(turn: ActiveTurn): Promise<void> {
@@ -462,24 +491,7 @@ class CodexRuntime implements AgentRuntime {
     await this.rpc.close();
   }
 }
-export function codexItem(item: any, executionId: string, status: string): ExecutorItem[] {
-  if (!item?.id) return [];
-  // A stopped turn does not undo tools which already completed. Conversely,
-  // an unfinished historical item is uncertain, not a live execution.
-  const final: ExecutorItem['status'] = item.status === 'completed' ? 'completed' : item.status === 'failed' || item.status === 'declined' ? 'failed' : item.status === 'inProgress' ? status === 'inProgress' ? 'running' : undefined : status === 'completed' ? 'completed' : status === 'failed' ? 'failed' : status === 'interrupted' ? undefined : 'running';
-  if (item.type === 'agentMessage') return [{ id: item.id, kind: 'message', role: 'assistant', text: String(item.text ?? ''), executionId, status: final }];
-  if (item.type === 'userMessage') return [{ id: item.id, ...(typeof item.clientId === 'string' && item.clientId ? { clientRequestId: item.clientId } : {}), kind: 'message', role: 'user', text: visibleText(item.content), executionId, status: 'completed' }];
-  if (item.type === 'commandExecution') return [{ id: item.id, kind: 'tool', role: 'system', name: 'command', participation: nativeParticipation(item.command===undefined?undefined:String(item.command), item.aggregatedOutput === undefined ? undefined : String(item.aggregatedOutput), item.exitCode === 0 ? 'succeeded' : typeof item.exitCode === 'number' || item.status === 'failed' ? 'failed' : final === 'running' ? 'pending' : 'unknown', item.exitCode), input: String(item.command ?? ''), text: String(item.command ?? '命令') + (item.aggregatedOutput ? '\n' + nativePreview(String(item.aggregatedOutput)) : ''), executionId, status: final }];
-  if (item.type === 'imageView') return [{ id: item.id, kind: 'tool', role: 'system', name: 'view-image', text: '查看图片\n' + String(item.path ?? ''), executionId, status: 'completed' }];
-  if (item.type === 'fileChange') return [{ id: item.id, kind: 'tool', role: 'system', name: 'file-change', participation:nativeParticipation(item.changes===undefined?undefined:JSON.stringify(item.changes),undefined,item.status==='failed'?'failed':final==='running'?'pending':'unknown'), text: '修改文件\n' + (item.changes ?? []).map((change: any) => String(change.path ?? '')).join('\n'), executionId, status: final }];
-  if (item.type === 'mcpToolCall') {
-    const input=item.arguments===undefined?undefined:JSON.stringify(item.arguments);
-    const participation=nativeParticipation(input,item.result===undefined?undefined:typeof item.result==='string'||Array.isArray(item.result)?visibleText(item.result):Array.isArray(item.result?.content)?visibleText(item.result.content):undefined,item.error?'failed':final==='running'?'pending':'unknown');
-    participation.matches=participationRequests(item.tool,input);
-    return [{ id: item.id, kind: 'tool', role: 'system', name: 'mcp-tool', participation, input: input===undefined?undefined:nativePreview(input), text: String(item.tool ?? '工具'), executionId, status: final }];
-  }
-  return [];
-}
+
 function codexRequest(id: string, method: string, params: any): ExecutorRequest | undefined {
   if (method === 'item/tool/requestUserInput') return { id, kind: 'question', blocking: params.isBlocking !== false, title: '需要你的回复', questions: (params.questions ?? []).map((question: any) => ({ id: question.id, label: String(question.question ?? question.header ?? ''), allowOther: Boolean(question.isOther), options: question.options?.map((option: any) => ({ id: option.label, label: option.label, ...(typeof option.description === 'string' ? { description: option.description } : {}) })) })) };
   if (method === 'item/permissions/requestApproval') return { id, kind: 'approval', title: '允许本轮所列权限？', description: String(params.reason ?? '') + '\n' + JSON.stringify(params.permissions ?? {}), options: [{ id: 'approve', label: '允许本轮所列权限' }, { id: 'deny', label: '拒绝' }] };

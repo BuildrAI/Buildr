@@ -179,6 +179,21 @@ function treeOf(commit: any, repo: any, dependencies: any): any  {
   return runGit(['rev-parse', `${commit}^{tree}`], repo, dependencies).stdout.trim();
 }
 
+function releasedMainState(mainCommit: any, mainTree: any, repo: any, dependencies: any): any  {
+  const listing: any = runGit(['for-each-ref', '--format=%(refname:strip=2)%09%(objectname)%09%(*objectname)', 'refs/tags'], repo, dependencies, { allowFailure: true });
+  if (listing.status !== 0) return null;
+  for (const line of listing.stdout.split(/\r?\n/u).map((value: any) => value.trim()).filter(Boolean)) {
+    const [name, objectName, peeled] = line.split('\t');
+    if (!name || !VERSION.test(name.replace(/^v/u, ''))) continue;
+    const commit: any = SHA.test(peeled ?? '') ? peeled : objectName;
+    if (!SHA.test(commit ?? '')) continue;
+    if (treeOf(commit, repo, dependencies) !== mainTree) continue;
+    if (!ancestor(commit, mainCommit, repo, dependencies)) continue;
+    return { tag: name, commit, tree: mainTree };
+  }
+  return null;
+}
+
 function changedPaths(from: any, to: any, repo: any, dependencies: any): any  {
   const result: any = runGit(['diff', '--no-renames', '--name-only', '--diff-filter=ACDMRTUXB', `${from}..${to}`], repo, dependencies);
   return [...new Set(result.stdout.split(/\r?\n/u).map((value: any) => value.trim()).filter(Boolean))].sort();
@@ -593,13 +608,22 @@ export function reconcileReleaseSelectionWithMain(options: any = {}, dependencie
       return { ...state, operation: 'reconcile-main', status: 'passed', action: 'already-converged', executionBindingIdentity: executionBinding.identity, effects: [], reconciliation: { mainParent: mainCommit, releaseParent, coverageIdentity, resultReleaseCommit: releaseParent }, nextActions: ['current main已在release历史中；当前frozen generation可作为Candidate最终source。'] };
     }
     const mergeBase: any = runGit(['merge-base', releaseParent, mainCommit], repo, dependencies).stdout.trim();
+    const mainTree: any = treeOf(mainCommit, repo, dependencies);
     const mainPaths: any = changedPaths(mergeBase, mainCommit, repo, dependencies).filter(releaseProductPath);
     const releasePaths: any = new Set(historyChangedPaths(mergeBase, releaseParent, repo, dependencies).filter(releaseProductPath));
     const uncoveredPaths: any = mainPaths.filter((entry: any) => !releasePaths.has(entry));
-    const coverageIdentity: any = digest({ version: state.version, ...targetIdentity, mainParent: mainCommit, releaseParent, mergeBase, mainPaths, releasePaths: [...releasePaths].sort(), uncoveredPaths });
-    if (uncoveredPaths.length) return errorResult('reconcile-main', version, new Error('Current main contains product paths not covered by current dev/release provenance.'), {
+    // A withdrawn unpublished release merge can leave main's ancestry ahead of
+    // its own tree: the content returns to the last release while the merge
+    // base moves forward, so path provenance alone reports the whole published
+    // release state as main-only content. Accept it only when main's tree is
+    // exactly a published release tag that main already descends from; that
+    // proves main holds no unpublished content the release line would drop.
+    const releasedState: any = uncoveredPaths.length ? releasedMainState(mainCommit, mainTree, repo, dependencies) : null;
+    const coverageDisposition: any = uncoveredPaths.length === 0 ? 'complete' : (releasedState ? 'main-released-state' : 'incomplete');
+    const coverageIdentity: any = digest({ version: state.version, ...targetIdentity, mainParent: mainCommit, releaseParent, mergeBase, mainTree, mainPaths, releasePaths: [...releasePaths].sort(), uncoveredPaths, coverageDisposition, releasedState });
+    if (uncoveredPaths.length && !releasedState) return errorResult('reconcile-main', version, new Error('Current main contains product paths not covered by current dev/release provenance.'), {
       code: 'release_main_coverage_incomplete',
-      details: { mainParent: mainCommit, releaseParent, mergeBase, uncoveredPaths, coverageIdentity },
+      details: { mainParent: mainCommit, releaseParent, mergeBase, mainTree, uncoveredPaths, coverageDisposition, coverageIdentity },
       nextActions: ['先通过正式Task把列出的main独有内容交付dev，再选择该dev commit并重新执行coverage。'],
     });
     const releaseTree: any = treeOf(releaseParent, repo, dependencies);
@@ -613,6 +637,8 @@ export function reconcileReleaseSelectionWithMain(options: any = {}, dependencie
       `Buildr-Main-Reconciliation-Release: ${releaseParent}`,
       `Buildr-Main-Reconciliation-Coverage: ${coverageIdentity}`,
       `Buildr-Main-Reconciliation-Resolution: ${resolutionIdentity}`,
+      `Coverage-Disposition: ${coverageDisposition}`,
+      ...(releasedState ? [`Released-State: ${releasedState.tag} ${releasedState.commit} ${releasedState.tree}`] : []),
     ].join('\n');
     const reconciledCommit: any = runGit(['commit-tree', releaseTree, '-p', releaseParent, '-p', mainCommit], repo, dependencies, { input: `${message}\n` }).stdout.trim();
     if (!SHA.test(reconciledCommit)) throw new Error('Tree-preserving main reconciliation did not create a commit.');
@@ -754,7 +780,7 @@ export function cleanupReleaseSelection(options: any = {}, dependencies: any = {
     updateRefs(observed.map(({ ref, commit }: any) => `delete ${ref} ${commit}`), repo, dependencies);
     removed.state = 'confirmed';
     if (refExists(branchRef, repo, dependencies) || refsUnder(`refs/buildr/release/${required}/`, repo, dependencies).length) throw new Error('Release local refs remain after cleanup; preserve and inspect the current facts.');
-    return { schemaVersion: releaseSelectionSchema, operation: 'cleanup', version: inspected.version, ...(options.selectionId === undefined ? {} : { selectionId: required }), branch, status: 'passed', action: 'cleaned', cleanupAuthority, effects: [...(branchExists ? [{ type: 'branch-deleted', ref: branchRef }] : []), ...refs.map((ref: any) => ({ type: 'lifecycle-ref-deleted', ref }))], nextActions: [] };
+    return { schemaVersion: releaseSelectionSchema, operation: 'cleanup', version: inspected.version, ...(options.selectionId === undefined ? {} : { selectionId: required }), branch, status: 'passed', action: 'cleaned', cleanupAuthority, effects: observed.map(({ ref, commit }: any) => ({ type: ref === branchRef ? 'branch-deleted' : 'lifecycle-ref-deleted', version: inspected.version, ref, commit, state: 'confirmed' })), nextActions: [] };
   } catch (error: any) {
     return errorResult('cleanup', version, error, { code: 'release_selection_cleanup_blocked', effects, nextActions: ['确认本地 branch 未 checkout、资源ownership明确且传入 --confirm 后重试；正式远端release ref由独立owner核验。'] });
   }

@@ -53,9 +53,10 @@ export async function publishFrozenArtifact(options: any, dependencies: any = {}
     const before = await read();
     assertRegistryArtifact(before, manifest);
     if (before.published) return { status: 'passed', action: 'reused', registry: before, effects: [], attempted };
-    if (previousAttempt !== 'not-attempted') return { status: 'blocked', action: 'readback-required', attempted, effects,
-      diagnostic: { code: previousAttempt === 'attempted' ? 'npm-publication-attempt-unconfirmed' : 'npm-publication-history-unknown', message: 'The previous publication journal does not authorize another npm write.' },
-      nextActions: ['回读原请求的准确版本与完整性；404不能授权重发，缺失或不匹配的原日志只阻止新增npm写入。'] };
+    // The owner already bound this call to the authorized frozen bytes. A
+    // successful Registry 404 permits retry; transport errors still stop below.
+    if (previousAttempt !== 'not-attempted') effects.push({ type: 'npm-publication-retry-authorized', basis: 'official-registry-version-404',
+      package: manifest.packageName, version: manifest.version, integrity: manifest.integrity, previousAttempt, observedAt: new Date().toISOString() });
     const publishEffect = { type: 'npm-published', package: manifest.packageName, version: manifest.version, sourceCommit: manifest.sourceCommit,
       sha256: manifest.sha256, integrity: manifest.integrity, state: 'unknown' };
     effects.push(publishEffect);

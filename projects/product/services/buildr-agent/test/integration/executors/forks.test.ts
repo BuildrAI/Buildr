@@ -20,7 +20,9 @@ test('DSH fork titles use an independent tool-free gateway request and do not pr
   const runtime=Reflect.construct(DshRuntime,['binding',{close:async()=>{}},{remote:{},ctx:{}}]) as AgentRuntime;
   (runtime as any).gateway={identity:'fixture',baseUrl:'http://127.0.0.1:1234/v1',apiKey:'fixture-key',models:[{id:'gateway-model',label:'Model'}]};
   const contextRef=(runtime as any).context('work-context','/work');
-  const input={contextRef,cwd:'/work',description:'用户新的分支要求',freshInstruction:true,signal:new AbortController().signal};
+  // The application names the account catalog model, never the lease route;
+  // the auxiliary request must still use the single model this lease exposes.
+  const input={contextRef,cwd:'/work',description:'用户新的分支要求',freshInstruction:true,model:'dfmodel',signal:new AbortController().signal};
   try{
     assert.equal(await runtime.generateTitle!(input),'新的分支方向');
     assert.equal(requests.length,1);assert.equal(requests[0]!.url,'http://127.0.0.1:1234/v1/chat/completions');
@@ -119,7 +121,7 @@ test('Codex imports an exact source rollout into the destination profile and rej
     const rpc=(target as any).rpc,call=rpc.call.bind(rpc);
     rpc.call=async(method:string,params:any,...rest:any[])=>{
       const result=await call(method,params,...rest);
-      if(method==='thread/read')result.thread.turns.push({id:'unexpected-later',items:[]});
+      if(method==='thread/turns/list'&&params.sortDirection==='desc'&&params.limit===1&&result.data[0])result.data=[{...result.data[0],id:'unexpected-later'}];
       return result;
     };
     await assert.rejects(target.forkContext!({source:target,contextRef:child,cwd:root,executionRef:{id:'one'},itemId:'answer-one',onCreated:value=>{known=value.id;}}),/boundary/);

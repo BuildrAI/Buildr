@@ -1,6 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {organizeHandoff,handoffEntries,receivingBudget,formatHandoffRounds,displayRounds} from '../../src/domain/handoff-material.ts';
+import {handoffEntry} from '../../src/application/handoff-sources.ts';
 import type {ConversationEntry} from '../../src/contracts.ts';
 const entry=(sequence:number,fields:Partial<ConversationEntry>):ConversationEntry=>({id:String(sequence),sequence,kind:'message',role:'user',text:'request',createdAt:'2026-10-27T00:00:00Z',runId:'one',...fields});
 test('round identity preserves in-run answers, failed tools and explicit artifacts without copying scripts or read bodies',()=>{
@@ -10,10 +11,10 @@ test('round identity preserves in-run answers, failed tools and explicit artifac
  assert.equal(handoffEntries(records).length,6);
 });
 test('thinking fragments never become handoff evidence or a final reply',()=>{
- const records=[entry(1,{}),entry(2,{role:'assistant',text:'内部推理',thinking:true,status:'completed'}),entry(3,{role:'assistant',text:'结论',status:'completed'})];
+ const records=[entry(1,{}),entry(2,{role:'assistant',text:'内部推理',thinking:true,status:'completed'}),entry(3,{kind:'thinking',role:'assistant',text:'折叠推理',status:'completed'}),entry(4,{role:'assistant',text:'结论',status:'completed'})];
  const round=organizeHandoff(records)[0]!;
  assert.equal(round.finalReply,'结论');assert.deepEqual(round.assistantNotes,[]);assert.equal(handoffEntries(records).length,2);
- assert.ok(!JSON.stringify(round).includes('内部推理'));
+ assert.ok(!JSON.stringify(round).includes('内部推理'));assert.ok(!JSON.stringify(round).includes('折叠推理'));
 });
 test('interruption after assistant commentary does not invent a final reply or artifact',()=>{
  const rounds=organizeHandoff([entry(1,{}),entry(2,{role:'assistant',text:'will inspect',status:'completed'}),entry(3,{kind:'tool',role:'system',name:'read',text:'not finished',status:'running'})]);
@@ -47,4 +48,11 @@ test('child inputs and reports stay out of primary handoff while child tool evid
  assert.equal(handoffEntries([...records,tool]).at(-1),tool);
  assert.equal(organizeHandoff([...records,tool])[0]!.finalReply,'primary final');
  assert.equal(organizeHandoff([...records,{...tool,status:'running'}])[0]!.finalReply,undefined);
+});
+
+test('handoff tool projection never evaluates native or legacy body getters',()=>{
+ const tool=entry(1,{kind:'tool',role:'system',name:'command',status:'failed',detail:{revision:'a'.repeat(64)}});
+ Object.defineProperties(tool,{text:{enumerable:true,get(){throw Error('tool body read');}},input:{enumerable:true,get(){throw Error('tool input read');}}});
+ const projected=handoffEntry(tool);assert.equal(projected.text,'');assert.equal(projected.input,undefined);assert.equal(projected.detail!.revision,'a'.repeat(64));
+ const round=organizeHandoff([projected])[0];assert.match(round.execution[0].result,/失败/);
 });

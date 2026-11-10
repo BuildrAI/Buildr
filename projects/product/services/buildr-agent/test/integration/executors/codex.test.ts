@@ -13,6 +13,62 @@ import { PendingSends } from '../../../src/process/pending-sends.ts';
 const source = readFileSync(new URL('./fixtures/codex-cli.mjs', import.meta.url), 'utf8');
 async function eventually(condition: () => unknown, timeout = 1000) { const until = Date.now() + timeout; while (!condition()) { if (Date.now() > until) throw new Error('condition timeout'); await new Promise(resolve => setTimeout(resolve, 5)); } }
 
+test('Codex resume, history, observation and forks use metadata plus bounded pages', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-codex-pagination-'));
+  let runtime: AgentRuntime | undefined;
+  try {
+    const executable = join(root, 'codex.mjs'), requests = join(root, 'requests.jsonl');
+    await writeFile(executable, source.replace('const m=JSON.parse(l);', `const m=JSON.parse(l);fs.appendFileSync(${JSON.stringify(requests)},JSON.stringify(m)+'\\n');`));
+    const open = () => createCodexExecutor().open({ connectionId: 'codex', configRoot: root, executable, environment: { PATH: process.env.PATH ?? '' } });
+    runtime = await open();
+    const contextRef = await runtime.createContext({ cwd: root }), events: ExecutorEvent[] = [];
+    await runtime.send({ contextRef, cwd: root, text: '[finish]', images: [], clientRequestId: 'history-request', onEvent: event => events.push(event) });
+    const accepted = events.find(event => event.type === 'accepted'); assert.equal(accepted?.type, 'accepted');
+    await runtime.close(); runtime = undefined;
+    const statePath = join(root, 'codex-home/state.json'), state = JSON.parse(await readFile(statePath, 'utf8'));
+    const turn = state[contextRef.id].turns[0];
+    for (let index = 0; index < 25; index++) turn.items.push({ id: 'history-' + index, type: 'agentMessage', text: 'history ' + index });
+    await writeFile(statePath, JSON.stringify(state));
+    await writeFile(requests, '');
+    runtime = await open();
+    await runtime.resumeContext({ contextRef, cwd: root });
+    const history = await runtime.readHistory({ contextRef, cwd: root });
+    assert.equal(history.filter(item => /^history-\d+$/.test(item.id)).length, 25);
+    assert.equal((await runtime.observe({ contextRef })).status, 'idle');
+    let child: ContextRef | undefined;
+    await runtime.forkContext!({ source: runtime, contextRef, cwd: root, executionRef: accepted.executionRef, itemId: 'history-0', onCreated: value => { child = value; } });
+    assert.ok(child);
+    assert.equal((await runtime.readHistory({ contextRef: child, cwd: root })).filter(item => /^history-\d+$/.test(item.id)).length, 25);
+    const sent = (await readFile(requests, 'utf8')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
+    assert.ok(sent.filter(row => row.method === 'thread/resume').every(row => row.params.excludeTurns === true));
+    assert.ok(sent.filter(row => row.method === 'thread/read').every(row => row.params.includeTurns === false));
+    assert.ok(sent.filter(row => row.method === 'thread/turns/list').every(row => row.params.itemsView === 'notLoaded'));
+    const itemPages = sent.filter(row => row.method === 'thread/items/list');
+    assert.ok(itemPages.length >= 5, 'history and observation must fetch per-turn item pages');
+    assert.ok(itemPages.every(row => row.params.limit === 20));
+    assert.ok(sent.filter(row => row.method === 'thread/fork').every(row => row.params.excludeTurns === true));
+  } finally { await runtime?.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test('whole-round stop terminates the known command even when terminal listing fails',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'buildr-codex-stop-observation-'));let runtime:AgentRuntime|undefined;
+ try{
+  const executable=join(root,'codex.mjs');
+  await writeFile(executable,source.replace('const m=JSON.parse(l);',"const m=JSON.parse(l);fs.appendFileSync(path.join(process.env.CODEX_HOME,'requests.jsonl'),JSON.stringify(m)+'\\n');"));
+  runtime=await createCodexExecutor().open({connectionId:'codex',configRoot:root,executable,environment:{PATH:process.env.PATH??''}});
+  const contextRef=await runtime.createContext({cwd:root}),events:ExecutorEvent[]=[];
+  await runtime.send({contextRef,cwd:root,text:'[retain-command]',images:[],clientRequestId:'first',onEvent:event=>events.push(event)});
+  const accepted=events.find(event=>event.type==='accepted');assert.equal(accepted?.type,'accepted');
+  await writeFile(join(root,'codex-home/fail-terminal-observation'),'fail');
+  const before=(await readFile(join(root,'codex-home/requests.jsonl'),'utf8')).trim().split('\n').length;
+  await runtime.stop({contextRef,executionRef:accepted.executionRef});
+  const methods=(await readFile(join(root,'codex-home/requests.jsonl'),'utf8')).trim().split('\n').slice(before).map(line=>JSON.parse(line).method);
+  assert.ok(methods.indexOf('thread/backgroundTerminals/terminate')<methods.indexOf('thread/backgroundTerminals/list'),'cancel exact tools before waiting for terminal observations');
+  await rm(join(root,'codex-home/fail-terminal-observation'));
+  assert.equal((await runtime.observe({contextRef,executionRef:accepted.executionRef})).tools.some(tool=>tool.status!=='completed'),false);
+ }finally{await runtime?.close();await rm(root,{recursive:true,force:true});}
+});
+
 test('normal completion retains command control across turns without letting a late old receipt end the new turn', async () => {
   const root=await mkdtemp(join(tmpdir(),'buildr-codex-retained-'));let runtime:AgentRuntime|undefined;
   try {
@@ -63,7 +119,7 @@ test('unknown observations and unconfirmed whole-run stops revoke continuation w
   } finally { await runtime?.close();await rm(root,{recursive:true,force:true}); }
 });
 
-test('queued input cannot confirm a new context; explicit handoff preserves old receipt ownership', async () => {
+test('queued same-selection recovery creates one context and preserves old receipt ownership', async () => {
   const root=await mkdtemp(join(tmpdir(),'buildr-codex-queued-retained-'));
   const dataRoot=join(root,'profile');let service:ReturnType<typeof createAgentService>|undefined;
   try {
@@ -82,13 +138,7 @@ test('queued input cannot confirm a new context; explicit handoff preserves old 
     service.conversations.queueSend('workspace',id,{expectedRevision:before.revision,connectionId:'codex',text:'[finish]',clientRequestId:'queued-next'});
     const pump=new PendingSends({dataRoot,service,active:()=>true,generationAlive:()=>true,conversationBusy:async(scope,id)=>service!.conversationInputBusy(scope,id)});
     await pump.pump();
-    const refused=service.conversations.read('workspace',id);
-    assert.equal(refused.run!.id,ownerRunId);assert.equal(refused.pendingSend?.state,'failed');
-    assert.equal(refused.entries.some(entry=>entry.role==='user'&&entry.text==='[finish]'),false,'no native input is admitted by the queue');
-    service.conversations.cancelPendingSend('workspace',id,{expectedPendingRevision:refused.pendingSend!.revision});
-    const confirmed={expectedRevision:service.conversations.read('workspace',id).revision,connectionId:'codex',text:'[finish]'};
-    const confirmation=service.conversations.prepareSend('workspace',id,confirmed);
-    service.conversations.send('workspace',id,{...confirmed,previewToken:confirmation.token,clientRequestId:'queued-next'});
+    assert.equal(service.conversations.read('workspace',id).pendingSend,undefined);
     await eventually(()=>service!.conversations.read('workspace',id).run?.id!==ownerRunId && service!.conversations.read('workspace',id).run?.status==='completed');
     await pump.pump();
     const after=service.conversations.read('workspace',id);
@@ -395,3 +445,44 @@ test('Codex image viewing appears once in both live flow and durable history', a
     await runtime.stop({contextRef,executionRef:started.executionRef});await next;
   }finally{await runtime?.close();await rm(root,{recursive:true,force:true});}
  });
+
+
+test('native command output deltas use ordinary tool events with their original identity',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'buildr-codex-tool-stream-'));let runtime:AgentRuntime|undefined;
+ try {
+  const executable=join(root,'codex.mjs');await writeFile(executable,source);
+  runtime=await createCodexExecutor().open({connectionId:'codex',configRoot:root,executable,environment:{PATH:process.env.PATH??''}});
+  const contextRef=await runtime.createContext({cwd:root}),events:ExecutorEvent[]=[];
+  await runtime.send({contextRef,cwd:root,text:'[stream-tool-output]',images:[],clientRequestId:'stream-request',onEvent:event=>events.push(event)});
+  const tools=events.filter((event):event is Extract<ExecutorEvent,{type:'item'}>=>event.type==='item'&&event.item.kind==='tool').map(event=>event.item);
+  const partial=tools.find(item=>item.status==='running'&&item.text.endsWith('first second'));
+  assert.ok(partial,'the latest cumulative output crosses the completion barrier');
+  assert.ok(tools.indexOf(partial)<tools.length-1);
+  assert.ok(tools.every(item=>item.nativeTool===true&&item.id===tools[0]!.id&&item.executionId===tools[0]!.executionId));
+  assert.equal(tools.some(item=>item.text.includes('foreign')),false);
+  assert.equal(tools.at(-1)!.status,'completed');
+ } finally {await runtime?.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('Codex compaction lifecycle is exact, repeat-safe and absent after completion', async () => {
+ const root=await mkdtemp(join(tmpdir(),'codex-compaction-'));let runtime:AgentRuntime|undefined;
+ try {
+  const executable=join(root,'codex.mjs');
+  const marker="setTimeout(()=>{event('item/started'";
+  assert.ok(source.includes(marker));
+  await writeFile(executable,source.replace(marker,`setTimeout(()=>{
+   event('item/started',{threadId:p.threadId,turnId:'old-turn',item:{type:'contextCompaction',id:'foreign'}});
+   event('item/started',{threadId:p.threadId,turnId:id,item:{type:'contextCompaction',id:'compact'}});
+   event('item/started',{threadId:p.threadId,turnId:id,item:{type:'contextCompaction',id:'compact'}});
+   event('item/completed',{threadId:p.threadId,turnId:id,item:{type:'contextCompaction',id:'other'}});
+   event('item/completed',{threadId:p.threadId,turnId:id,item:{type:'contextCompaction',id:'compact'}});
+   event('item/started'`));
+  runtime=await createCodexExecutor().open({connectionId:'codex',configRoot:root,executable,environment:{PATH:process.env.PATH??''}});
+  const contextRef=await runtime.createContext({cwd:root}),events:ExecutorEvent[]=[];
+  await runtime.send({contextRef,cwd:root,text:'[finish]',images:[],clientRequestId:'compact',onEvent:e=>events.push(e)});
+  const phases=events.filter((e):e is Extract<ExecutorEvent,{type:'observation'}>=>e.type==='observation').map(e=>e.observation.contextCompaction);
+  const active=phases.filter(p=>p?.id==='compact');assert.equal(active.length,3);
+  assert.equal(new Set(active.map(p=>p!.startedAt)).size,1);assert.equal(phases.some(p=>p?.id==='foreign'),false);
+  assert.equal(phases.at(-1),null);assert.equal((await runtime.observe({contextRef})).contextCompaction,null);
+ } finally {await runtime?.close();await rm(root,{recursive:true,force:true});}
+});

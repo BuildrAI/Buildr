@@ -24,7 +24,12 @@ function fixture(t: test.TestContext) {
   // Cache storage is owned runtime state, outside the observed source inventory.
   fs.writeFileSync(path.join(root, '.git/info/exclude'), '.cache/\n');
   const step = { id: 'source-fixture', executor: { type: 'node', file: 'check.ts' }, reuse: { scope: 'backend' as const } };
-  const options = { productRoot, env, steps: [step] };
+  // The scope-comparison cases below consume Web/plugin tool identities too.
+  // Observe those plans explicitly; a backend-only observation cannot prove them.
+  const options = { productRoot, env, steps: [step,
+    { ...step, id: 'runtime-fixture', reuse: { scope: 'runtime' as const } },
+    { ...step, id: 'plugin-fixture', reuse: { scope: 'plugin' as const } },
+  ] };
   const observe = () => collectVerificationReuseSnapshot(options);
   return { root, productRoot, step, options, observe };
 }
@@ -70,14 +75,15 @@ test('verification children cannot overwrite parent preparation evidence through
   const file = path.join(f.productRoot, 'inspect-environment.mjs');
   fs.writeFileSync(file, `import fs from 'node:fs';
 if (process.env.BUILDR_CANDIDATE_PREPARATION_OUTPUT) fs.writeFileSync(process.env.BUILDR_CANDIDATE_PREPARATION_OUTPUT, '{}');
-process.stdout.write(JSON.stringify({ output: process.env.BUILDR_CANDIDATE_PREPARATION_OUTPUT ?? null, id: process.env.BUILDR_CANDIDATE_PREPARATION_ID ?? null, profile: process.env.BUILDR_VERIFICATION_PROFILE, worker: process.env.BUILDR_VERIFICATION_WORKER_BUDGET }));\n`);
-  const env = { ...f.options.env, BUILDR_CANDIDATE_PREPARATION_OUTPUT: output, BUILDR_CANDIDATE_PREPARATION_ID: 'parent', BUILDR_VERIFICATION_PROFILE: 'ci-workspace-limited' };
+process.stdout.write(JSON.stringify({ output: process.env.BUILDR_CANDIDATE_PREPARATION_OUTPUT ?? null, id: process.env.BUILDR_CANDIDATE_PREPARATION_ID ?? null, profile: process.env.BUILDR_VERIFICATION_PROFILE, worker: process.env.BUILDR_VERIFICATION_WORKER_BUDGET, jobs: process.env.BUILDR_VERIFICATION_JOBS ?? null }));\n`);
+  const env = { ...f.options.env, BUILDR_CANDIDATE_PREPARATION_OUTPUT: output, BUILDR_CANDIDATE_PREPARATION_ID: 'parent', BUILDR_VERIFICATION_PROFILE: 'ci-workspace-limited', BUILDR_VERIFICATION_JOBS: '1' };
   const execute = createVerificationExecutor({ productRoot: f.productRoot, env, minimumNodeVersion: null });
   const result = await execute({ id: 'receipt-isolation', executor: { type: 'node', file: 'inspect-environment.mjs' } }, { resourceGrant: { workers: 2 } });
   assert.equal(result.status, 'passed', result.stderr);
-  assert.deepEqual(JSON.parse(result.stdout), { output: null, id: null, profile: 'ci-workspace-limited', worker: '2' });
+  assert.deepEqual(JSON.parse(result.stdout), { output: null, id: null, profile: 'ci-workspace-limited', worker: '2', jobs: null });
   assert.equal(fs.readFileSync(output, 'utf8'), '{"durationMs":17000}\n');
   assert.equal(env.BUILDR_CANDIDATE_PREPARATION_OUTPUT, output);
+  assert.equal(env.BUILDR_VERIFICATION_JOBS, '1');
 });
 
 test('reviewed runtime proof partitions unrelated tests while binding its real test and tool imports', t => {

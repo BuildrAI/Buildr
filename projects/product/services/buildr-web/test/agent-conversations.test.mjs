@@ -132,6 +132,12 @@ test('执行状态行只表达智能体与模型，不把模型来源账号标�
   const native={id:'codex',provider:'codex',models:[{id:'gpt-5-codex',label:'GPT-5 Codex'}]};
   assert.equal(conversationRunIdentity({...conversation.run,provider:'codex',model:'gpt-5-codex'},native,[]),'Codex · GPT-5 Codex');
   assert.equal(conversationRunIdentity({...conversation.run,provider:'codex',model:'custom-model'},undefined,[]),'Codex · custom-model');
+  const subscription=[{accountId:'native-codex',accountIdentity:'subscription',modelId:'gpt-6.1-sol',accountLabel:'订阅账号',accountRevision:'r1',provider:'native-codex',label:'GPT-6.1-Sol',available:true,enabled:true}];
+  const api=[{...subscription[0],accountId:'api',accountIdentity:'api',accountLabel:'ChatGPT API',provider:'openai'}];
+  assert.equal(conversationRunIdentity({...conversation.run,provider:'codex',modelAccountId:'native-codex',model:'gpt-6.1-sol'},native,subscription),'Codex · ChatGPT / GPT-6.1-Sol');
+  assert.equal(conversationRunIdentity({...conversation.run,provider:'codex',modelAccountId:'api',model:'gpt-6.1-sol'},native,api),'Codex · ChatGPT API / GPT-6.1-Sol');
+  const deepseek=[{accountId:'native-dsh',accountIdentity:'deepseek',modelId:'deepseek-v4',accountLabel:'DeepSeek',accountRevision:'r2',provider:'native-dsh',label:'DeepSeek-V4',available:true,enabled:true}];
+  assert.equal(conversationRunIdentity({...conversation.run,provider:'dsh',modelAccountId:'native-dsh',model:'deepseek-v4'},undefined,deepseek),'DSH · DeepSeek / DeepSeek-V4');
 });
 
 test('输入法组合和Shift+Enter不发送，执行与未知状态保留新内容为草稿',()=>{
@@ -418,6 +424,11 @@ test('活动主状态只显示一个静态结果，完成未查看仍属于活�
   assert.equal(activityState({...row,requests:conversation.requests}),'waiting','valid approvals require a decision even while execution continues');
   assert.equal(activityState({...row,run:{...row.run,status:'waiting-question'}}),'waiting');
   assert.equal(activityState({...row,run:{...row.run,status:'unknown'}}),'unknown');
+  const settled={...row,run:{...row.run,status:'unknown',accepted:false,stopRequested:true,executionState:'unknown',resourcesReleased:false,tools:[]},activity:{...row.activity,active:false,seenThrough:3}};
+  assert.equal(activityState(settled),null,'未受理停止且没有在途工作时不再显示状态待确认');
+  assert.equal(isActiveConversation(settled),false);
+  assert.equal(activityState({...settled,activity:{...settled.activity,active:true,seenThrough:2}}),'unknown','后端仍报告活跃或未读时保留活动身份');
+  assert.equal(isActiveConversation({...settled,activity:{...settled.activity,active:true,seenThrough:2}}),true);
   assert.equal(activityState({...row,run:{...row.run,status:'completed'}}),'unseen');
   assert.equal(isActiveConversation({...row,run:{...row.run,status:'completed'}}),true);
   const seen={...row,run:{...row.run,status:'completed'},activity:{...row.activity,active:false,seenThrough:3}};
@@ -426,8 +437,8 @@ test('活动主状态只显示一个静态结果，完成未查看仍属于活�
 test('全空间查询不继承浏览空间，查看确认携带准确身份与已呈现位置',async t=>{
   const requests=[];t.mock.method(globalThis,'fetch',async(url,init)=>{requests.push({url,init});return new Response(JSON.stringify({conversations:[],activity:{version:4,seenThrough:3}}));});
   const api=createAgentConversationsClient(createApiClient({getWorkspaceId:()=> 'browsing-ws',sessionAdapter:session}),session);
-  await api.listAll({activeOnly:true,workspaceId:'saved/ws',agent:'codex',limit:10});await api.seen(conversation,3);
-  const url=new URL(requests[0].url,'http://local');assert.equal(url.pathname,'/api/v1/app/agent-service/conversations');assert.equal(url.searchParams.get('workspaceId'),'saved/ws');assert.equal(url.searchParams.get('activeOnly'),'true');
+  await api.listAll({activeOnly:true,workspaceId:'saved/ws',agent:'codex',limit:10,draftConversationIds:['draft/id']});await api.seen(conversation,3);
+  const url=new URL(requests[0].url,'http://local');assert.equal(url.pathname,'/api/v1/app/agent-service/conversations');assert.equal(url.searchParams.get('workspaceId'),'saved/ws');assert.equal(url.searchParams.get('activeOnly'),'true');assert.deepEqual(JSON.parse(url.searchParams.get('draftConversationIds')),['draft/id']);
   assert.equal(requests[1].url,'/api/v1/workspaces/saved%2Fws/agent-conversations/chat%2Fid/seen');assert.deepEqual(JSON.parse(requests[1].init.body),{through:3});
 });
 
@@ -757,7 +768,7 @@ test('实时订阅协商增量并在客户端还原完整事件，重连不沿�
  let frames=[first,next],request;
  const api=createAgentConversationsClient(async()=>({}),session,async(url,init)=>{request={url,init};return new Response(frames.map(event=>'data: '+JSON.stringify(event)+'\n\n').join(''));});
  const events=[];await assert.rejects(api.subscribe(conversation.workspaceId,conversation.id,new AbortController().signal,event=>events.push(event)),/连接已中断/);
- assert.equal(request.init.headers['x-buildr-conversation-transfer'],'delta-v1');assert.equal(events[1].payload.conversation.entries[0].text,'new');assert.equal(events[1].payload.delta,undefined);
+ assert.equal(request.init.headers['x-buildr-conversation-transfer'],'delta-v2');assert.equal(events[1].payload.conversation.entries[0].text,'new');assert.equal(events[1].payload.delta,undefined);
  frames=[next];await assert.rejects(api.subscribe(conversation.workspaceId,conversation.id,new AbortController().signal,()=>assert.fail('must not assemble old baseline')),/基准/);
 });
 
@@ -790,4 +801,31 @@ test('Webhook client keeps normal reads secret-free and sends reveal/test as exp
  await api.saveWebhookSettings({expectedRevision:'v1',enabled:false,url:'https://receiver.test'});assert.equal('secret' in JSON.parse(calls[2].init.body),false);
  await api.testWebhook('v2');assert.ok(calls[3].url.endsWith('/test'));assert.deepEqual(JSON.parse(calls[3].init.body),{expectedRevision:'v2'});
  assert.ok(calls.every(call=>call.init.headers['x-buildr-session']==='native-test-session'));
+});
+
+test('实时订阅对旧HTTP服务只读回退v1，不重用失败基线',async()=>{
+ const attempts=[],snapshot={cursor:0,generation:'g',type:'snapshot',workspaceId:conversation.workspaceId,conversationId:conversation.id,revision:conversation.revision,payload:{conversation}};
+ const api=createAgentConversationsClient(async()=>({}),session,async(_url,init)=>{attempts.push(init.headers['x-buildr-conversation-transfer']);return attempts.length===1?new Response('{}',{status:400}):new Response('data: '+JSON.stringify(snapshot)+'\n\n');});
+ const received=[];await assert.rejects(api.subscribe(conversation.workspaceId,conversation.id,new AbortController().signal,e=>received.push(e)),/连接已中断/);
+ assert.deepEqual(attempts,['delta-v2','delta-v1']);assert.deepEqual(received,[snapshot]);
+});
+
+test('旧格式回退保留认证刷新，取消后不另开订阅',async()=>{
+ let calls=0,refresh=0;const first={cursor:0,generation:'g',type:'snapshot',workspaceId:conversation.workspaceId,conversationId:conversation.id,revision:conversation.revision,payload:{conversation}};
+ const localSession={writeHeaders:()=>({'x-buildr-session':String(refresh)}),refreshSession:async()=>{refresh++;return true;}};
+ const api=createAgentConversationsClient(async()=>({}),localSession,async(_url,init)=>{calls++;if(calls===1)return new Response('{}',{status:400});if(calls===2)return new Response(JSON.stringify({error:{code:'session_forbidden'}}),{status:403});assert.equal(init.headers['x-buildr-conversation-transfer'],'delta-v1');assert.equal(init.headers['x-buildr-session'],'1');return new Response('data: '+JSON.stringify(first)+'\n\n');});
+ const events=[];await assert.rejects(api.subscribe(conversation.workspaceId,conversation.id,new AbortController().signal,e=>events.push(e)),/连接已中断/);assert.equal(refresh,1);assert.equal(calls,3);assert.deepEqual(events,[first]);
+ const abort=new AbortController();let cancelledCalls=0;const cancelled=createAgentConversationsClient(async()=>({}),session,async()=>{cancelledCalls++;abort.abort();return new Response('{}',{status:400});});await assert.rejects(cancelled.subscribe(conversation.workspaceId,conversation.id,abort.signal,()=>{}),{name:'AbortError'});assert.equal(cancelledCalls,1);
+});
+
+test('停止未确认时可显式结束等待，不依赖受理或释放证明且不放宽关闭',async()=>{
+ const {canContinueConversation,canCloseUncertainConversation,conversationRecoveryAction}=await import('../src/features/agent-conversations/conversation-state.ts');
+ for(const accepted of [true,false]){
+  const view={...conversation,requests:[],retainedRuns:[],run:{...conversation.run,status:'unknown',stopRequested:true,accepted,resourcesReleased:false,executionState:'active',tools:[{id:'live',status:'running'}]}};
+  assert.equal(canContinueConversation(view),true);
+  assert.deepEqual(conversationRecoveryAction(view),{kind:'recover',label:'结束等待并继续'});
+  assert.equal(canCloseUncertainConversation(view),false);
+  assert.equal(canContinueConversation({...view,pendingSend:{id:'queued'}}),false);
+  assert.equal(canContinueConversation({...view,run:{...view.run,stopRequested:false}}),false);
+ }
 });

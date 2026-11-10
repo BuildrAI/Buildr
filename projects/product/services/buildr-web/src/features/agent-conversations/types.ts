@@ -2,15 +2,16 @@ import type { AgentProgramUpgradeProgramUpgrade } from '../../../build/generated
 export type ProgramUpgradeView = AgentProgramUpgradeProgramUpgrade;
 import type { AgentProgramUpdatesProgramUpdates } from '../../../build/generated/agent-service-http-dto';
 export type ProgramUpdatesView = AgentProgramUpdatesProgramUpdates;
-import type { AgentModelAccountModelAccount, AgentModelCatalogModelCatalog } from '../../../build/generated/agent-service-http-dto';
+import type { AgentModelAccountModelAccount, AgentModelAccountsModelAccounts, AgentModelCatalogModelCatalog } from '../../../build/generated/agent-service-http-dto';
 export type ModelAccount = AgentModelAccountModelAccount;
 export type CatalogModel = AgentModelCatalogModelCatalog['models'][number];
+export type ModelProviderView = AgentModelAccountsModelAccounts['providers'][number];
 import type { AgentServiceConnectionConnection, AgentConversationConversation, AgentConversationDraftRequestDraft, AgentConversationSendPreviewPreview, AgentConversationEventEvent, AgentConversationAttachmentResultAttachmentResult } from '../../../build/generated/agent-service-http-dto';
 import type { AgentServicePreparationPreparation } from '../../../build/generated/agent-service-http-dto';
 
 // Display choices are the three validated executors; HTTP views come from the host schema.
-export type ProviderId = 'codex' | 'dsh' | 'qoder';
-export const providerNames: Record<string,string> = {codex:'Codex',dsh:'DSH',qoder:'Qoder'};
+export type ProviderId = 'codex' | 'dsh' | 'qoder' | 'qoder-cn';
+export const providerNames: Record<string,string> = {codex:'Codex',dsh:'DSH',qoder:'Qoder','qoder-cn':'Qoder CN'};
 export type ConnectionView = AgentServiceConnectionConnection;
 export type PreparationView = AgentServicePreparationPreparation;
 export type ConversationView = AgentConversationConversation;

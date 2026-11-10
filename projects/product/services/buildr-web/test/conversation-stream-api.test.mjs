@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {registerHooks} from 'node:module';
 registerHooks({resolve(specifier,context,next){
+ if(context.parentURL?.endsWith('/agent-conversations-api.ts')&&specifier==='../conversation-stop')return next(new URL('../conversation-stop.ts',context.parentURL).href,context);
  if(context.parentURL?.endsWith('/agent-conversations-api.ts')&&specifier==='../../../api')return {url:'data:text/javascript,export const createApiClient=()=>()=>{}; export class LocalSessionAdapter {}',shortCircuit:true};
  if(context.parentURL?.endsWith('/agent-conversations-api.ts')&&specifier==='../conversation-state')return {url:'data:text/javascript,export const parseEventFrame=frame=>({data:frame.split("data: ")[1]});',shortCircuit:true};
  return next(specifier,context);

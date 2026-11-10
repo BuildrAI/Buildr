@@ -9,7 +9,11 @@ on:
         required: true
         default: candidate
         type: choice
-        options: [candidate, release-rehearsal]
+        options: [candidate, release-rehearsal, local-package]
+      local_package:
+        description: Frozen local original package handoff, data only
+        required: false
+        type: string
       diagnostic_scope:
         description: Independent source diagnosis; does not produce a complete Candidate
         required: false
@@ -82,6 +86,10 @@ on:
         required: false
         type: choice
         options: ['', macos, windows]
+      verification_scope:
+        description: 'Recorded user decision as JSON, e.g. {"excludedBoundaries":["E2E"],"statement":"..."}; empty keeps the full Candidate'
+        required: false
+        type: string
       repair_candidate_run_id:
         description: Completed controlled Candidate whose original package and valid checks are preserved
         required: false
@@ -94,10 +102,10 @@ on:
         description: Exact verification-tool commit on dev; product inputs and workflow must match the original Candidate
         required: false
         type: string
+  # Daily development is verified on the developer's current host.
+  # Remote platform verification is explicit; the dev-to-main PR is the release entry.
   pull_request:
-    branches: [dev, main]
-  push:
-    branches: [dev]
+    branches: [main]
 
 permissions:
   contents: read
@@ -107,6 +115,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  # The lock file is normalized to the authoritative registry. Keep npm's
+  # registry explicit so a runner-local mirror config cannot redirect installs.
+  npm_config_registry: https://registry.npmjs.org/
   CANDIDATE_SOURCE_SHA: ${{ inputs.repair_candidate_run_id && inputs.verification_source || github.event.pull_request.head.sha || github.sha }}
   BUILDR_CANDIDATE_PURPOSE: ${{ inputs.purpose || 'candidate' }}
   BUILDR_CANDIDATE_EXPECTED_SOURCE_TREE: ${{ inputs.expected_source_tree || '' }}
@@ -124,11 +135,31 @@ env:
   BUILDR_SOURCE_VERIFICATION: ${{ github.event_name == 'workflow_dispatch' && inputs.source_verification || '' }}
   BUILDR_ARTIFACT_VERIFICATION: ${{ github.event_name == 'workflow_dispatch' && inputs.artifact_verification || '' }}
   BUILDR_CANDIDATE_LOCAL_RUNNER: ${{ github.event_name == 'workflow_dispatch' && !inputs.repair_candidate_run_id && inputs.local_runner || '' }}
+  BUILDR_CANDIDATE_VERIFICATION_SCOPE: ${{ github.event_name == 'workflow_dispatch' && inputs.verification_scope || '' }}
   BUILDR_CANDIDATE_REPAIR_RUN_ID: ${{ inputs.repair_candidate_run_id || '' }}
   BUILDR_CANDIDATE_PRODUCT_SOURCE: ${{ inputs.product_source || '' }}
   BUILDR_CANDIDATE_VERIFICATION_SOURCE: ${{ inputs.verification_source || '' }}
 
 jobs:
+  local-package:
+    name: Original package
+    if: github.event_name == 'workflow_dispatch' && inputs.purpose == 'local-package'
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/verify-package.yml
+    with:
+      preserve_only: ${{ fromJSON(inputs.local_package || '{}').preserve_only == true }}
+      diagnostic_only: ${{ fromJSON(inputs.local_package || '{}').diagnostic_only == true }}
+      diagnostic_source_commit: ${{ fromJSON(inputs.local_package || '{}').diagnostic_source_commit || '' }}
+      product_source: ${{ fromJSON(inputs.local_package || '{}').product_source || '' }}
+      verification_source: ${{ fromJSON(inputs.local_package || '{}').verification_source || '' }}
+      selection_id: ${{ inputs.selection_id }}
+      source_tree: ${{ fromJSON(inputs.local_package || '{}').source_tree }}
+      package_commit: ${{ fromJSON(inputs.local_package || '{}').package_commit }}
+      package_identity: ${{ fromJSON(inputs.local_package || '{}').package_identity }}
+      package_sha256: ${{ fromJSON(inputs.local_package || '{}').package_sha256 }}
+      remote_runner: ${{ fromJSON(inputs.local_package || '{}').remote_runner == 'windows-2025' && 'windows-2025' || 'macos-15' }}
   dev-feedback-macos:
     name: Development feedback (macOS source checks)
     outputs:
@@ -168,49 +199,11 @@ jobs:
         continue-on-error: true
         working-directory: projects/product/services/buildr-web
         run: npm ci
-      - name: Install pinned DSH package manager
+      - name: Report local-only plugin integration coverage
         if: steps.services.outputs.dsh == 'true'
-        continue-on-error: true
-        shell: bash
         run: |
-          mkdir -p "${RUNNER_TEMP}/dsh-tooling"
-          : > "${RUNNER_TEMP}/dsh-tooling/user.npmrc"
-          : > "${RUNNER_TEMP}/dsh-tooling/global.npmrc"
-          cd "${RUNNER_TEMP}/dsh-tooling"
-          env -i PATH="${PATH}" NPM_CONFIG_USERCONFIG="${RUNNER_TEMP}/dsh-tooling/user.npmrc" NPM_CONFIG_GLOBALCONFIG="${RUNNER_TEMP}/dsh-tooling/global.npmrc" \
-            npm install --prefix "${RUNNER_TEMP}/dsh-tooling" --ignore-scripts --no-save --no-package-lock --no-audit --no-fund --registry=https://registry.npmjs.org/ pnpm@11.7.0
-      - name: Prepare pinned DSH SDK
-        if: steps.services.outputs.dsh == 'true'
-        continue-on-error: true
-        working-directory: projects/product/services/dsh-plugin
-        shell: bash
-        run: |
-          node tools/prepare-release-sdk.ts --node "$(command -v node)" --pnpm "${RUNNER_TEMP}/dsh-tooling/node_modules/pnpm/bin/pnpm.cjs" > "${RUNNER_TEMP}/development-dsh-sdk.json"
-          node --input-type=module -e 'import fs from "node:fs"; import path from "node:path"; const result = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); if (result.schemaVersion !== "buildr.dsh-release-sdk/v1" || result.status !== "prepared" || typeof result.sdk !== "string" || !path.isAbsolute(result.sdk) || /[\u0000-\u001f\u007f]/.test(result.sdk)) throw new Error("SDK output missing"); fs.appendFileSync(process.env.GITHUB_ENV, `BUILDR_DSH_SOURCE_SDK_ROOT=${result.sdk}\n`);' "${RUNNER_TEMP}/development-dsh-sdk.json"
-      - name: Observe the exact published Buildr peer for affected plugin checks
-        if: steps.services.outputs.dsh == 'true'
-        continue-on-error: true
-        shell: bash
-        run: |
-          node --input-type=module - <<'JS'
-          import fs from 'node:fs';
-          import path from 'node:path';
-          import { observePublishedPackageArtifact, packageArtifactInputSchema } from '../../../../skills/buildr-release/scripts/package-artifact-observation.ts';
-          const { observation, bytes } = await observePublishedPackageArtifact('buildr', { distTag: 'next' });
-          if (observation.status !== 'present' || !bytes) throw new Error(JSON.stringify(observation));
-          const tarball = path.join(process.env.RUNNER_TEMP, 'development-buildr-peer.tgz');
-          fs.writeFileSync(tarball, bytes);
-          fs.writeFileSync(path.join(process.env.RUNNER_TEMP, 'development-buildr-peer.json'), JSON.stringify({ schemaVersion: packageArtifactInputSchema, artifact: observation.artifact, tarball }));
-          JS
-          node --input-type=module -e 'import fs from "node:fs"; fs.appendFileSync(process.env.GITHUB_ENV, `BUILDR_DSH_BUILDR_PEER_INPUT=${process.argv[1]}\n`);' "${RUNNER_TEMP}/development-buildr-peer.json"
-      - name: Prepare related plugin integration inputs
-        if: steps.services.outputs.dsh == 'true'
-        continue-on-error: true
-        working-directory: projects/product/services/dsh-plugin
-        shell: bash
-        run: |
-          node tools/prepare-check-environment.ts --source-sdk "${BUILDR_DSH_SOURCE_SDK_ROOT}" --buildr-peer "${BUILDR_DSH_BUILDR_PEER_INPUT}" --output "${RUNNER_TEMP}/plugin-check-environment.json"
-          node --input-type=module -e 'import fs from "node:fs"; const receipt=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); for(const [key,value] of Object.entries(receipt.env)){if(typeof value!=="string" || /[\r\n]/u.test(value))throw Error("Invalid prepared environment"); fs.appendFileSync(process.env.GITHUB_ENV,`${key}=${value}\n`);}' "${RUNNER_TEMP}/plugin-check-environment.json"
+          echo 'DSH SDK, exact-peer and packaged-plugin checks run locally during explicit release preparation; this feedback job does not prepare them.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'SDK-dependent checks remain unavailable, not passed, in the uploaded verification report.' >> "$GITHUB_STEP_SUMMARY"
       - name: Verify all source static and unit checks
         continue-on-error: true
         env:
@@ -375,7 +368,7 @@ jobs:
 
   candidate-plan:
     name: Candidate plan
-    if: (!inputs.diagnostic_scope || inputs.diagnostic_scope == 'none') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev'))
+    if: inputs.purpose != 'local-package' && (!inputs.diagnostic_scope || inputs.diagnostic_scope == 'none') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev'))
     runs-on: macos-15
     timeout-minutes: 5
     permissions:
@@ -1224,7 +1217,7 @@ jobs:
 
   candidate-gate:
     name: Candidate gate
-    if: always() && (!inputs.diagnostic_scope || inputs.diagnostic_scope == 'none') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main'))
+    if: always() && inputs.purpose != 'local-package' && (!inputs.diagnostic_scope || inputs.diagnostic_scope == 'none') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main'))
     needs: [candidate-plan, candidate-bootstrap, candidate-source, candidate-artifact-consumers, candidate-host-node, plugin-source-candidate]
     runs-on: macos-15
     timeout-minutes: 5

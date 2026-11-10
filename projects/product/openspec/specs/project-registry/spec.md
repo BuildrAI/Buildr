@@ -140,37 +140,6 @@ Buildr MUST 在修复既有 Project baseline 或 registry 前验证 materialized
 - **WHEN** a new Project clone or subsequent baseline preflight fails
 - **THEN** Buildr MUST NOT leave a partial Project directory or registry entry
 
-### Requirement: Project 只引用 workspace 能力资产
-Buildr MUST 允许 Project 声明对 workspace Skill 和 capability 的逻辑引用，并 MUST NOT 将这些引用解释为 Skill 安装、发现或访问隔离范围。
-
-#### Scenario: Project 声明 capability requirement
-- **WHEN** Project 声明一个 required 或 optional capability
-- **THEN** Buildr MUST 将该声明解析到 workspace `skills/manifest.yml` 中的 contract 和 providers
-- **AND** Project MUST NOT 内嵌或复制 provider Skill 内容
-
-#### Scenario: Project 声明 Skill applicability
-- **WHEN** Project 将一个 workspace Skill 标记为适用于自身业务任务
-- **THEN** Buildr MUST 将该信息用于 Agent 路由提示和 doctor readiness 检查
-- **AND** Buildr MUST NOT 将 applicability 描述为 Agent runtime 可见性限制
-
-#### Scenario: Project 引用不存在的 workspace Skill
-- **WHEN** Project 引用的 Skill ID 或 capability identity 无法从 workspace registry 解析
-- **THEN** doctor MUST 报告 error、Project、缺失 identity 和可执行 nextActions
-- **AND** Buildr MUST NOT 从 Project 目录猜测或生成 Skill 源
-
-### Requirement: Project capability context 保持跨 Project 确定性
-Buildr MUST 使用明确的 Project task context 解析 Project binding，并 MUST 在跨 Project 绑定不一致时 fail closed。
-
-#### Scenario: 单 Project task 使用 Project binding
-- **WHEN** 当前任务明确属于一个 Project 且该 Project 为 capability 声明 binding
-- **THEN** Buildr MUST 使用该 binding 选择 workspace provider
-- **AND** 该选择 MUST NOT 改变 provider 的 runtime 可见范围
-
-#### Scenario: 跨 Project binding 冲突
-- **WHEN** 当前任务涉及多个 Project 且它们为同一 capability 选择不同 providers
-- **THEN** Buildr MUST 报告 `cross_project_binding_ambiguous`
-- **AND** Agent MUST 拆分 Project 动作或取得明确选择，不得依据当前目录或 Project 顺序猜测
-
 ### Requirement: Project registry 识别 Command requirement context
 Buildr MUST 将已登记 Project 的 `commands.yml` 识别为 Project context asset，并 MUST 验证其与 workspace Command catalog 的引用完整性。
 
@@ -190,12 +159,12 @@ Buildr MUST 将已登记 Project 的 `commands.yml` 识别为 Project context as
 - **AND** doctor MAY 报告未登记目录，但 MUST 避免派生 machine readiness 噪音
 
 ### Requirement: Project registry 识别可选测试能力声明
-Buildr MUST 将已登记 Project 的 `verification.yml` 识别为 Project context asset，并 MUST 保持该资产可选、跟随 Project ownership 且独立于 Skill capability context。
+Buildr MUST 将已登记 Project 的 `verification.yml` 识别为 Project context asset，并 MUST 保持该资产可选、跟随 Project ownership 且独立于技能配置。
 
 #### Scenario: Project 没有测试声明
 - **WHEN** Buildr 创建 Project 或诊断没有 `verification.yml` 的既有 Project
 - **THEN** Project MUST 保持有效且默认 baseline MUST NOT 强制生成空声明
-- **AND** Buildr MUST NOT 因缺失声明改变 `capabilities.yml`、`commands.yml` 或 Service registry
+- **AND** Buildr MUST NOT 因缺失声明改变 `commands.yml` 或 Service registry
 
 #### Scenario: Project 初始化测试声明
 - **WHEN** Agent 经用户意图在已登记 Project 中创建 `verification.yml`
@@ -259,7 +228,7 @@ Project Application MUST only allow low-risk metadata updates using a registry r
 - **THEN** 系统 MUST 保持提交前登记状态，不留下半完成引用
 
 ### Requirement: Project context必须识别Preparation Declaration
-Buildr MUST将已登记Project根的`preparation.yml`识别为可选Project context asset，保持Project ownership并独立于`capabilities.yml`、`commands.yml`和`verification.yml`。Project create、sync、Doctor或GET MUST不静默生成或更新该声明。
+Buildr MUST将已登记Project根的`preparation.yml`识别为可选Project context asset，保持Project ownership并独立于`commands.yml`和`verification.yml`。Project create、sync、Doctor或GET MUST不静默生成或更新该声明。
 
 #### Scenario: Project没有Preparation Declaration
 - **WHEN** 创建或诊断一个没有`preparation.yml`的Project
@@ -283,3 +252,25 @@ Project或Service成功注册后，Buildr MUST向Agent提供对应scope的声明
 - **WHEN** `service create`成功完成Service与registry写入
 - **THEN**结果 MUST提示只读刷新所属Project及该Service的声明候选
 - **AND** MUST不静默把Service加入任一声明
+
+### Requirement: 项目能力上下文退役并保全旧配置
+Buildr MUST NOT 创建、修复或要求项目 `capabilities.yml`，MUST 保留非空需求/绑定、异常、未知字段与不安全文件且不自动迁移配置；同步 MUST 自动清理只有空需求/绑定及技能名单的安全旧文件。
+
+#### Scenario: 新建或修复项目
+- **WHEN** 创建、同步或修复一个项目
+- **THEN** Buildr MUST NOT 生成 `capabilities.yml`
+- **AND** 缺少此文件 MUST NOT 产生项目基线缺失诊断
+
+#### Scenario: 已登记项目保留旧文件
+- **WHEN** Doctor 发现旧 `capabilities.yml`
+- **THEN** MUST 提示文件已退役且不参与能力选择
+- **AND** 非空 requires/bindings 或不能安全识别的内容 MUST 给出 warning 和具体核对指引
+- **AND** 只有技能名单或空字段 MUST 仅给出 info；MUST NOT 校验名单中的过期技能 ID
+- **AND** Doctor MUST NOT 修改文件或自动创建工作空间绑定；同步只按安全预检执行清理
+
+#### Scenario: 同步安全清理与版本保护
+- **WHEN** 已登记且归属当前工作空间的项目旧文件为可安全识别的普通文件，只有空 requires/bindings 和技能 ID 名单
+- **THEN** 同步 MUST 在既有事务内自动删除并报告准确路径，重复同步 MUST 不重复删除
+- **AND** 删除前 MUST 复核观察到的文件身份与内容，变化时 MUST 保留新内容并停止对应写入
+- **AND** 非空需求/绑定、未知字段、格式异常、符号链接、未登记目录和外部附加根 MUST NOT 被自动删除
+- **AND** 同步后续失败时 MUST 按既有事务恢复已删除文件

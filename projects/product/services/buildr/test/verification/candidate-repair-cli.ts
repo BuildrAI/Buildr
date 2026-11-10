@@ -75,7 +75,8 @@ export function materializeCandidateRepair(plan: any, directory: string, workflo
 
 export function preservePluginSourceCandidate(options: { repo: string; temporaryRoot: string; runId: string; verificationSource: string; workflow: any }, dependencies: any = {}): any {
   const plan = JSON.parse(fs.readFileSync(path.join(options.temporaryRoot, 'release-candidate-plan.json'), 'utf8'));
-  const binding = createCandidateSourceBinding(options.repo, plan.sourceCommit, options.verificationSource);
+  const binding = createCandidateSourceBinding(options.repo, plan.sourceCommit, options.verificationSource,
+    plan.sourceBinding?.schemaVersion === 'buildr.candidate-source-binding/v1' ? null : plan.sourceBinding?.inputPolicy);
   const call = dependencies.call ?? ((args: string[]) => execFileSync('gh', args, { cwd: options.repo, encoding: 'utf8', timeout: 120000, maxBuffer: 8 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] }));
   const run = JSON.parse(call(['api', 'repos/BuildrAI/Buildr/actions/runs/' + options.runId]));
   validateCandidateRepairRun(run, 'BuildrAI/Buildr', options.runId);

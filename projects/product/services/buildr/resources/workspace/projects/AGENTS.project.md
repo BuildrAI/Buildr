@@ -14,7 +14,6 @@
 |------|------|------|
 | Project rules | `AGENTS.md` | 当前 Project 的 Agent 工作规则 |
 | OpenSpec | `openspec/` | Project 事实、能力规范、变更和归档 |
-| Capability context | `capabilities.yml` | 引用 workspace Skill，并声明 Project requirements、bindings 与 applicability；不存储 Skill 源 |
 | 项目组成（Project Composition） | 工作空间 `projects/manifest.yml` | 项目通过 `serviceIds` 引用服务，可共享引用同一服务 |
 | 服务登记（Service Registry） | 工作空间 `services/manifest.yml` | 服务说明实现职责并引用唯一代码库实例，不由项目目录层级决定归属 |
 | 代码库登记（Repository Registry） | 工作空间 `repositories/manifest.yml` | 代码库实例及本机路径是定位代码的依据；实际 Git 边界须现场核对 |

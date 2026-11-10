@@ -136,7 +136,7 @@ test('legacy executors without physical release evidence remain conservative abo
 });
 
 test('failed stop restores unknown rather than pretending a model is still executing',async()=>{
- const f=await fixture({stopFails:true});try{let c=await f.start('uncertain');await assert.rejects(f.service.conversations.stop('workspace',c.id,{expectedRevision:c.revision,runId:c.run!.id,participantId:c.run!.participantId,generation:c.run!.generation}));c=f.service.conversations.read('workspace',c.id);assert.equal(c.run?.status,'unknown');assert.equal(f.service.conversations.listAll(['workspace'],{activeOnly:true}).stats.modelExecutions.length,0);}finally{await f.close();}
+ const f=await fixture({stopFails:true});try{const c=await f.start('uncertain');const result=await f.service.conversations.stop('workspace',c.id,{expectedRevision:c.revision,runId:c.run!.id,participantId:c.run!.participantId,generation:c.run!.generation});assert.equal(result.run?.status,'unknown');assert.equal(result.run?.stopRequested,true);assert.match(result.run?.diagnostic??'',/停止已请求/);assert.equal(f.service.conversations.listAll(['workspace'],{activeOnly:true}).stats.modelExecutions.length,0);}finally{await f.close();}
 });
 
 
@@ -233,6 +233,35 @@ test('program upgrade proceeds after exact resources release while the historica
  }finally{await f.close();}
 });
 
+test('program upgrade is not held forever by an unknown run from a dead generation',async()=>{
+ const f=await fixture({upgrade:true});try{
+  const chat=await f.start('done');await f.wait(()=>f.service.conversations.read('workspace',chat.id).run?.resourcesReleased===true);
+  const repository=new ConversationRepository(path.join(f.root,'agent-service')),saved=repository.readConversation(chat.id)!,revision=saved.view.revision,participant=chat.participants[0];
+  saved.view.retainedRuns=[{id:randomUUID(),participantId:participant.id,provider:'codex',generation:'dead-generation',status:'unknown',accepted:false,tools:[],model:chat.run!.model,startedAt:'2026-11-04T05:29:32.179Z',updatedAt:'2026-11-04T05:40:09.908Z',diagnostic:'尚未确认原执行的准确身份，保留记录并重新观察。'}];
+  repository.saveConversation(saved,revision);
+  const current=f.service.connections.read('codex');
+  f.service.connections.upgradeProgram('codex',{expectedRevision:current.revision,expectedVersion:'0.166.0'});
+  await f.wait(()=>f.service.connections.programUpdates().programs[0]?.upgrade?.state==='completed');
+  assert.equal(f.service.connections.read('codex').executable,f.installed);
+  const stale=f.service.conversations.read('workspace',chat.id).retainedRuns?.find(run=>run.generation==='dead-generation');
+  assert.equal(stale?.status,'unknown');assert.equal(stale?.resourcesReleased,undefined);assert.deepEqual(f.sent,['done']);
+ }finally{await f.close();}
+});
+
+test('program upgrade still waits for an unknown run whose generation is alive',async()=>{
+ const f=await fixture({upgrade:true,oldOwnerAlive:true});try{
+  const chat=await f.start('done');await f.wait(()=>f.service.conversations.read('workspace',chat.id).run?.resourcesReleased===true);
+  const repository=new ConversationRepository(path.join(f.root,'agent-service')),saved=repository.readConversation(chat.id)!,revision=saved.view.revision,participant=chat.participants[0];
+  saved.view.retainedRuns=[{id:randomUUID(),participantId:participant.id,provider:'codex',generation:'live-generation',status:'unknown',accepted:false,tools:[],model:chat.run!.model,startedAt:'2026-11-04T05:29:32.179Z',updatedAt:'2026-11-04T05:40:09.908Z',diagnostic:'尚未确认原执行的准确身份，保留记录并重新观察。'}];
+  repository.saveConversation(saved,revision);
+  const current=f.service.connections.read('codex');
+  f.service.connections.upgradeProgram('codex',{expectedRevision:current.revision,expectedVersion:'0.166.0'});
+  await f.wait(()=>f.service.connections.programUpdates().programs[0]?.upgrade?.state==='waiting');
+  await new Promise(resolve=>setTimeout(resolve,200));
+  assert.equal(f.service.connections.programUpdates().programs[0]?.upgrade?.state,'waiting');assert.equal(f.service.connections.read('codex').executable,f.original);
+ }finally{await f.close();}
+});
+
 
 test('natural completion automatically releases its source and gateway; historical observation releases again',async()=>{
  const f=await fixture();try{
@@ -286,9 +315,9 @@ for(const supported of [false,true])test('cancelled unaccepted submission releas
  const f=await fixture({unaccepted:true,unacceptedProof:supported});try{
   const first=await f.start('no-receipt'),other=await f.start('hold'),run=first.run!;
   let result=await f.service.conversations.stop('workspace',first.id,{expectedRevision:first.revision,runId:run.id,participantId:run.participantId,generation:run.generation});
-  assert.equal(result.run!.status,'unknown');assert.notEqual(result.run!.resourcesReleased,true);assert.equal(f.closed.length,0);
+  assert.equal(result.run!.status,'stopped');assert.equal(result.run!.stopRequested,true);assert.notEqual(result.run!.resourcesReleased,true);assert.equal(f.closed.length,0);
   f.contexts.get(first.participants[0].contextId)!.idle=true;await f.service.releaseIdleSources();result=f.service.conversations.read('workspace',first.id);
-  assert.equal(result.run!.status,supported?'stopped':'unknown');assert.equal(result.run!.resourcesReleased===true,supported);
+  assert.equal(result.run!.status,'stopped');assert.equal(result.run!.resourcesReleased===true,supported);
   if(supported){assert.equal(result.run!.executionState,'unknown');assert.match(result.run!.diagnostic!,/是否送达仍未知/);assert.equal(result.entries.find(e=>e.role==='user')!.status,'unknown');}
   assert.equal(f.service.conversations.read('workspace',other.id).run!.status,'running');assert.deepEqual(f.sent,['no-receipt','hold']);assert.equal(f.closed.length,supported?1:0);
   const stored=new ConversationRepository(path.join(f.root,'agent-service')).readConversation(first.id)!;assert.equal(stored.interruption!.cancelled,true);
@@ -300,7 +329,7 @@ test('an unaccepted cancellation cannot close a source shared with another execu
   const first=await f.start('no-receipt'),other=await f.start('hold'),run=first.run!;
   f.contexts.get(first.participants[0].contextId)!.idle=true;
   const stopped=await f.service.conversations.stop('workspace',first.id,{expectedRevision:first.revision,runId:run.id,participantId:run.participantId,generation:run.generation});
-  assert.equal(stopped.run!.status,'unknown');assert.notEqual(stopped.run!.resourcesReleased,true);assert.equal(f.closed.length,0);assert.equal(f.service.conversations.read('workspace',other.id).run!.status,'running');assert.deepEqual(f.sent,['no-receipt','hold']);
+  assert.equal(stopped.run!.status,'stopped');assert.equal(stopped.run!.stopRequested,true);assert.notEqual(stopped.run!.resourcesReleased,true);assert.equal(f.closed.length,0);assert.equal(f.service.conversations.read('workspace',other.id).run!.status,'running');assert.deepEqual(f.sent,['no-receipt','hold']);
  }finally{await f.close();}
 });
 
@@ -367,7 +396,7 @@ for(const released of [true,false])test('historical unknown ownership is separat
  }finally{await f.close();}
 });
 
-test('a pending request cannot fabricate confirmation while the previous native context is held',async()=>{
+test('a queued same-selection instruction preserves the previous native owner and is delivered once',async()=>{
  const f=await fixture({oldOwnerAlive:true});try{
   let chat=await f.start('done');const repository=new ConversationRepository(path.join(f.root,'agent-service'));
   const record=repository.readConversation(chat.id)!;record.view.run!.generation='old-generation';delete record.view.run!.resourcesReleased;repository.saveConversation(record,record.view.revision);
@@ -375,9 +404,12 @@ test('a pending request cannot fabricate confirmation while the previous native 
   f.service.conversations.queueSend('workspace',chat.id,{expectedRevision:chat.revision,connectionId:'local',modelAccountId:chat.run!.modelAccountId,model:'model',text:'new queued instruction',clientRequestId:requestId});
   const pump=new PendingSends({dataRoot:f.root,service:f.service,active:()=>true,generationAlive:()=>true,conversationBusy:async()=>false});
   await pump.pump();await pump.pump();
-  assert.equal(f.sent.length,1);assert.equal(f.service.conversations.read('workspace',chat.id).run!.id,original);
-  const pending=new PendingSendRepository(path.join(f.root,'agent-service')).lookup('workspace',chat.id,requestId);
-  assert.equal(pending?.state,'failed');assert.match(pending?.reason??'',/明确确认/);
+  await f.wait(()=>f.service.conversations.read('workspace',chat.id).run?.status==='completed');
+  const after=f.service.conversations.read('workspace',chat.id);
+  assert.notEqual(after.run!.id,original);assert.equal(f.sent.length,2);
+  assert.ok(f.sent[1].endsWith('new queued instruction'));
+  assert.equal(after.retainedRuns?.find(run=>run.id===original)?.generation,'old-generation');
+  assert.equal(after.pendingSend,undefined);await pump.pump();assert.equal(f.sent.length,2);
  }finally{await f.close();}
 });
 

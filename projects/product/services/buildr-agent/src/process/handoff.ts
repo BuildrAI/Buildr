@@ -1,3 +1,4 @@
+import { executionLog,diagnosticCode } from '../storage/execution-log.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
@@ -30,7 +31,10 @@ export function launchAgentProcess(bootstrap: ProcessBootstrap): number {
   const log = fs.openSync(path.join(controlRoot(bootstrap.dataRoot), 'startup.log'), 'a', 0o600);
   try {
     const child = spawn(bootstrap.runtime.node, [bootstrap.runtime.entry, input], { detached: true, stdio: ['ignore', log, log], windowsHide: true });
-    child.once('error', () => {}); child.unref();
+    const diagnostics=executionLog(path.join(bootstrap.dataRoot,'agent-service'),'launcher-'+process.pid);
+    diagnostics({event:'service-launch',childPid:child.pid,runtimeDigest:bootstrap.runtime.digest});
+    child.once('error', error => diagnostics({event:'service-launch-error',childPid:child.pid,code:diagnosticCode(error)}));
+    child.once('exit',(exitCode,signal)=>diagnostics({event:'service-child-exit',childPid:child.pid,exitCode,signal}));child.unref();
     if (!child.pid) throw new Error('agent_process_start_failed'); return child.pid;
   } finally { fs.closeSync(log); }
 }

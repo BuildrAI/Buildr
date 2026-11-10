@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { conversationSendRoute, refreshConversationSend, latestConversationSend } from '../src/features/agent-conversations/conversation-send-route.ts';
+import { needsConversationObservation, executionLocked } from '../src/features/agent-conversations/conversation-state.ts';
 import { createConversationInputAttempts, reconcileConversationInputAttempt } from '../src/features/agent-conversations/conversation-actions.ts';
 const chat=(status='running',requests=[])=>({run:{id:'run',participantId:'participant',generation:'generation',status,accepted:true},requests});
 const request=kind=>({id:'request',kind,runId:'run',participantId:'participant',generation:'generation'});
@@ -8,12 +9,12 @@ test('running input uses the same native round, including approval wait',()=>{
   assert.equal(conversationSendRoute(chat(),false),'supplement');
   assert.equal(conversationSendRoute(chat('waiting-approval',[request('approval')]),false),'supplement');
 });
-test('questions and changed selections cannot bypass a pending response',()=>{
-  for(const changed of [false,true])assert.equal(conversationSendRoute(chat('waiting-question',[request('question')]),changed),'pending');
+test('new requirements do not answer questions; changed approval selections remain guarded',()=>{
+  for(const changed of [false,true])assert.equal(conversationSendRoute(chat('waiting-question',[request('question')]),changed),'send');
   assert.equal(conversationSendRoute(chat('waiting-approval',[request('approval')]),true),'pending');
 });
 test('stopping, starting and uncertain rounds cannot become new sends',()=>{
-  for(const status of ['starting','stopping','tools-active'])assert.equal(conversationSendRoute(chat(status),false),'unavailable',status);
+  for(const status of ['starting','stopping'])assert.equal(conversationSendRoute(chat(status),false),'unavailable',status);
 });
 test('completed rounds continue and changed selections use guarded send',()=>{
   assert.equal(conversationSendRoute(chat('completed'),false),'send');
@@ -28,7 +29,33 @@ test('preview never dispatches an input or releases a pending request',()=>{
 test('an accepted unknown round reaches native verification instead of a local refusal',()=>{
   assert.equal(conversationSendRoute(chat('unknown'),false),'supplement');
   const stopped=chat('unknown');stopped.run.stopRequested=true;
-  assert.equal(conversationSendRoute(stopped,false),'unavailable');
+  assert.equal(conversationSendRoute(stopped,false),'send');
+});
+test('background work and explicit stop preserve old controls while admitting new requirements',()=>{
+  for(const status of ['tools-active','unknown','stopping']){
+    const before=chat(status);before.run.tools=[{id:'old-job',label:'original job',status:'unknown'}];
+    if(status!=='tools-active')before.run.stopRequested=true;
+    const original=structuredClone(before);
+    assert.equal(conversationSendRoute(before,false),'send');
+    assert.deepEqual(before,original,'routing must retain the original execution and tool facts');
+    assert.equal(conversationSendRoute({...before,requests:[request('approval')]},false),'pending');
+    assert.equal(conversationSendRoute({...before,requests:[request('question')]},false),'send');
+    assert.equal(conversationSendRoute(before,false,true),'preview');
+  }
+  const unaccepted=chat('starting');unaccepted.run.accepted=false;unaccepted.run.stopRequested=true;
+  assert.equal(conversationSendRoute(unaccepted,false),'unavailable');
+});
+test('released uncertain control admits a new send without disabling observation or answering old decisions',async()=>{
+  const released={...chat('unknown'),entries:[],run:{...chat('unknown').run,resourcesReleased:true,executionState:'unknown',tools:[]}};
+  assert.equal(conversationSendRoute(released,false),'send');
+  assert.equal(executionLocked(released.run),true,'observation and display still regard the outcome as uncertain');
+  assert.equal(needsConversationObservation(released),true);
+  assert.equal(await refreshConversationSend(released,{observe:async()=>assert.fail('released control cannot accept supplements'),apply:()=>{},isCurrent:()=>true}),released);
+  for(const kind of ['question','approval']){
+    assert.equal(conversationSendRoute({...released,requests:[request(kind)]},false),kind==='question'?'send':'pending');
+  }
+  assert.equal(conversationSendRoute({...released,run:{...released.run,resourcesReleased:false}},false),'supplement');
+  assert.equal(conversationSendRoute(released,false,true),'preview');
 });
 test('unknown input facts are observed once and keep the exact round identity',async()=>{
   const before={...chat('unknown'),revision:'r1'},next={...chat(),revision:'r2'};let observes=0;const applied=[];
@@ -38,7 +65,7 @@ test('unknown input facts are observed once and keep the exact round identity',a
 test('a still uncertain native owner is not assumed ended and new question facts remain authoritative',async()=>{
   for(const next of [chat('unknown'),chat('waiting-question',[request('question')])]){
     const result=await refreshConversationSend(chat('unknown'),{observe:async()=>next,apply:()=>{},isCurrent:()=>true});
-    assert.equal(conversationSendRoute(result,false),next.run.status==='unknown'?'supplement':'pending');
+    assert.equal(conversationSendRoute(result,false),next.run.status==='unknown'?'supplement':'send');
   }
 });
 test('a changed round or owner cannot receive stale supplementary input',async()=>{

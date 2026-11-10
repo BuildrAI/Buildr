@@ -119,7 +119,7 @@ test('CLI 集成验证独立Task Retrospective卸载不影响生命周期consume
   assert.equal(consumer(report, '.', 'task-finish').readiness, 'ready');
 });
 
-test('CLI 集成验证 Git Operations required/optional consumers、legacy Project 拒绝与 Project override', { concurrency: true }, async (t: any) => {
+test('CLI 集成验证 Git Operations required/optional consumers、legacy Project 拒绝与项目能力退役', { concurrency: true }, async (t: any) => {
   const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-capability-project-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   await run(['init', '--source-only', '--target', root, '--name', 'capability-project', '--profile', 'personal']);
@@ -148,15 +148,40 @@ test('CLI 集成验证 Git Operations required/optional consumers、legacy Proje
   ], 1);
   assert.equal(YAML.parse(fs.readFileSync(projectManifestPath, 'utf8')).schemaVersion, 'buildr.skills/v1', 'rejected Project source mutation must write nothing');
   await run(['skills', 'add', '--source', projectSource, '--target', root, '--provides', 'buildr.git-operations@1']);
-  await run(['skills', 'bind', 'buildr.git-operations@1', '--provider', 'project-git', '--scope', 'projects/demo', '--target', root]);
-  const projectFinish: any = consumer(await doctor(root, 'projects/demo', 1), 'projects/demo', 'task-finish');
-  assert.equal(projectFinish.readiness, 'ready', 'optional Git Operations dependency resolves through Project override');
-  const projectGitDependency: any = projectFinish.dependencies.find((item: any) => item.capability === 'buildr.git-operations');
-  assert.equal(projectGitDependency.selectedProvider.id, 'project-git');
+  const workspaceBefore = fs.readFileSync(path.join(root, 'skills', 'manifest.yml'));
+  const legacyFile = path.join(root, 'projects', 'demo', 'capabilities.yml');
+  assert.equal(fs.existsSync(legacyFile), false);
+  for (const operation of ['bind', 'unbind']) {
+    const args = ['skills', operation, 'buildr.git-operations@1', '--scope', 'projects/demo', '--target', root];
+    if (operation === 'bind') args.push('--provider', 'project-git');
+    const rejected: any = await run(args, 1);
+    assert.match(rejected.stderr, /Project capability context is retired/);
+    assert.deepEqual(fs.readFileSync(path.join(root, 'skills', 'manifest.yml')), workspaceBefore);
+    assert.equal(fs.existsSync(legacyFile), false);
+  }
+  fs.writeFileSync(legacyFile, YAML.stringify({ schemaVersion: 'buildr.project-capabilities/v1', requires: [], bindings: [{ capability: 'buildr.git-operations', version: 1, provider: 'project-git' }], skills: ['unknown-retired-skill'] }));
+  const legacyBefore = fs.readFileSync(legacyFile);
+  const observed: any = await doctor(root, 'projects/demo', 1);
+  assert.ok(observed.findings.some((item: any) => item.code === 'projects.capabilities_retired' && item.status === 'warning'));
+  assert.equal(observed.findings.some((item: any) => item.code === 'capability.graph_invalid'), false);
+  assert.deepEqual(observed.capabilities.graphs.map((item: any) => item.scope), ['.']);
+  const finish: any = consumer(observed, '.', 'task-finish');
+  assert.equal(finish.dependencies.find((item: any) => item.capability === 'buildr.git-operations').selectedProvider.id, 'git-operations');
+  await run(['skills', 'bind', 'buildr.git-operations@1', '--provider', 'project-git', '--scope', 'projects/demo', '--target', root], 1);
+  assert.deepEqual(fs.readFileSync(legacyFile), legacyBefore);
+  fs.rmSync(path.dirname(projectManifestPath), { recursive: true });
+  await run(['project', 'create', 'cleanup', '--target', root]);
+  const cleanupFile = path.join(root, 'projects', 'cleanup', 'capabilities.yml');
+  fs.writeFileSync(cleanupFile, YAML.stringify({ schemaVersion: 'buildr.project-capabilities/v1', requires: [], bindings: [], skills: ['unknown-retired-skill'] }));
+  await doctor(root);
+  assert.equal(fs.existsSync(cleanupFile), true, 'read-only doctor must never clean files');
+  const sync: any = await run(['sync', 'codex', '--target', root]);
+  assert.equal(fs.existsSync(cleanupFile), false, 'sync automatically removes safe retired configuration');
+  assert.match(sync.stdout, /projects\/cleanup\/capabilities\.yml/);
+  await run(['sync', 'codex', '--target', root]);
+  assert.equal(fs.existsSync(cleanupFile), false, 'repeated sync must remain idempotent');
+  assert.deepEqual(fs.readFileSync(legacyFile), legacyBefore, 'sync must preserve retired user configuration');
 
-  const projectCapabilities: any = YAML.parse(fs.readFileSync(path.join(root, 'projects', 'demo', 'capabilities.yml'), 'utf8'));
-  assert.equal(projectCapabilities.schemaVersion, 'buildr.project-capabilities/v1');
-  assert.equal(projectCapabilities.bindings[0].provider, 'project-git');
 });
 
 test('skills render 将 source workspace 与 user/workspace destination 分离并复用用户投射', { concurrency: true }, async (t: any) => {

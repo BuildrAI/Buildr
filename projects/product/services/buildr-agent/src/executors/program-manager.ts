@@ -1,13 +1,18 @@
 import { realpathSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { Worker } from 'node:worker_threads';
 import { spawn } from 'node:child_process';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { randomUUID } from 'node:crypto';
 import type { AgentProgramManager, ProgramCandidate, ProgramCatalog } from '../contracts.ts';
 import { AgentServiceError, fail } from '../domain/agent-state.ts';
 import { executableIdentity, findExecutable, inspectVersion, isolatedEnvironment, nativeCommand, privateDirectories } from './native-process.ts';
 import { nativeProgramPolicy, isCompatibleProgram, isProgramReleaseVersion } from './program-policy.ts';
+import { readProgramLatestRelease } from './program-release.ts';
+import { recordSharedCacheUse } from '../storage/shared-cache.ts';
+import { sharedToolchainEnvironment } from '../storage/toolchain-environment.ts';
 import { ProgramInstallDiagnostics } from './program-install-diagnostics.ts';
 
 const run = promisify(execFile);
@@ -17,8 +22,30 @@ const sourceLabels = { configured: '原接入程序', selected: '指定程序', 
 export class NativeProgramManager implements AgentProgramManager {
   private readonly root: string;
   private readonly environment: Record<string, string>;
-  constructor(root: string, environment: Record<string, string>) { this.root = root; this.environment = environment; }
-  private destination(provider: string, version?: string): string { return path.join(this.root, 'programs', provider, `${version ? 'package-' + version : nativeProgramPolicy(provider).version}-${process.platform}-${process.arch}`); }
+  private readonly latestRelease: typeof readProgramLatestRelease;
+  constructor(root: string, environment: Record<string, string>, latestRelease = readProgramLatestRelease) { this.root = root; this.environment = environment; this.latestRelease = latestRelease; }
+  private destination(provider: string, version: string): string { return path.join(this.root, 'programs', provider, `package-${version}-${process.platform}-${process.arch}`); }
+  private async preparedExecutable(provider: string): Promise<string | undefined> {
+    const marker = path.join(this.root, 'programs', provider, 'prepared.json');
+    try {
+      const info = await fs.lstat(marker);
+      if (!info.isFile() || info.isSymbolicLink() || info.size > 65536) return undefined;
+      const prepared = JSON.parse(await fs.readFile(marker, 'utf8'));
+      if (typeof prepared.version !== 'string' || !isProgramReleaseVersion(prepared.version) || typeof prepared.executable !== 'string') return undefined;
+      const expected = path.join(this.destination(provider, prepared.version), nativeProgramPolicy(provider).entry);
+      if (path.resolve(prepared.executable) !== path.resolve(expected)) return undefined;
+      const actual = await fs.realpath(expected);
+      return this.isManaged(provider, actual) ? actual : undefined;
+    } catch { return undefined; }
+  }
+  private async retainPrepared(provider: string, version: string, executable: string): Promise<void> {
+    const directory = path.join(this.root, 'programs', provider), marker = path.join(directory, 'prepared.json'), temporary = marker + '.' + randomUUID();
+    await privateDirectories(directory);
+    try {
+      await fs.writeFile(temporary, JSON.stringify({ version, executable }) + '\n', { mode: 0o600, flag: 'wx' });
+      await fs.rename(temporary, marker);
+    } finally { await fs.rm(temporary, { force: true }); }
+  }
   isManaged(provider: string, executable: string): boolean {
     let root = path.resolve(this.root), actual = path.resolve(executable);
     try { root = realpathSync(root); } catch { /* A new private root has not been created yet. */ }
@@ -29,19 +56,45 @@ export class NativeProgramManager implements AgentProgramManager {
   private async probeEnvironment(): Promise<NodeJS.ProcessEnv> {
     const home = path.join(this.root, 'program-probes', 'home'), temporary = path.join(this.root, 'program-probes', 'tmp');
     await privateDirectories(home, temporary);
-    return isolatedEnvironment(this.environment, home, temporary);
+    const shared = sharedToolchainEnvironment(this.root, this.environment);
+    return isolatedEnvironment(shared.environment, home, temporary, {}, shared.cacheRoot);
   }
   async discover(input: Parameters<AgentProgramManager['discover']>[0]): Promise<ProgramCatalog> {
     const policy = nativeProgramPolicy(input.provider), env = await this.probeEnvironment();
     const candidates: ProgramCandidate[] = [], seen = new Set<string>();
     const paths: Array<{ executable: string; source: ProgramCandidate['source']; bundle?: string }> = [];
     const explicit = input.executable ?? input.boundExecutable;
+    let installVersion: string = policy.version;
+    let releaseDiagnostic: string | undefined;
     if (explicit) {
       if (!path.isAbsolute(explicit)) fail('agent_executable_invalid', '请指定程序的准确绝对路径。');
       paths.push({ executable: explicit, source: input.boundExecutable ? 'configured' : 'selected' });
       if (!input.boundExecutable && !this.isManaged(input.provider, explicit)) fail('agent_program_not_managed', '新接入仅使用 Buildr 独立程序，请选择准备独立程序。');
     } else {
-      paths.push({ executable: path.join(this.destination(input.provider), policy.entry), source: 'managed' });
+      const addFallback = async () => {
+        const prepared = await this.preparedExecutable(input.provider);
+        if (prepared) { paths.push({ executable: prepared, source: 'managed' }); return; }
+        const legacy = path.join(this.root, 'programs', input.provider, `${policy.version}-${process.platform}-${process.arch}`, policy.entry);
+        const fallback = await fs.realpath(legacy).catch(() => undefined);
+        if (fallback && this.isManaged(input.provider, fallback)) paths.push({ executable: fallback, source: 'managed' });
+      };
+      try {
+        installVersion = (await this.latestRelease(input.provider, input.signal)).latestVersion;
+        if (!isProgramReleaseVersion(installVersion)) throw new Error('agent_release_invalid');
+        if (!isCompatibleProgram(input.provider, installVersion)) {
+          releaseDiagnostic = `官方最新版本 ${installVersion} 不在兼容范围 ${policy.compatibility} 内，已停止下载；不会回退安装旧版本。`;
+          await addFallback();
+        } else {
+          paths.push({ executable: path.join(this.destination(input.provider, installVersion), policy.entry), source: 'managed' });
+          if (!await fs.stat(paths[0]!.executable).then(item => item.isFile(), () => false)) await addFallback();
+        }
+      } catch (error) {
+        input.signal.throwIfAborted();
+        installVersion = policy.version;
+        releaseDiagnostic = '无法读取官方最新版本，请检查网络后重新检查；不会回退安装旧版本。';
+        if (error instanceof Error && error.message === 'agent_release_invalid') releaseDiagnostic = '官方最新版本格式无效，已停止下载。';
+        await addFallback();
+      }
     }
     for (const candidate of paths) {
       input.signal.throwIfAborted();
@@ -63,20 +116,23 @@ export class NativeProgramManager implements AgentProgramManager {
       }
       candidates.push(item);
     }
-    const supported = ['darwin', 'linux', 'win32'].includes(process.platform) && ['arm64', 'x64'].includes(process.arch) && !(input.provider === 'qoder' && process.platform === 'win32' && process.arch === 'arm64');
-    return { candidates, installation: { label: policy.label, version: policy.version, url: policy.url, canInstall: supported && !input.boundExecutable, ...(!supported ? { diagnostic: '此系统或架构尚无可用的自动准备方式，请查看官方安装说明。' } : input.boundExecutable ? { diagnostic: '已有接入已绑定原程序；请恢复该程序，不会自动安装并改绑。' } : {}) } };
+    const supported = ['darwin', 'linux', 'win32'].includes(process.platform) && ['arm64', 'x64'].includes(process.arch) && !(['qoder','qoder-cn'].includes(input.provider) && process.platform === 'win32' && process.arch === 'arm64');
+    return { candidates, installation: { label: policy.label, version: installVersion, url: policy.url, canInstall: supported && !input.boundExecutable && !releaseDiagnostic, ...(!supported ? { diagnostic: '此系统或架构尚无可用的自动准备方式，请查看官方安装说明。' } : input.boundExecutable ? { diagnostic: '已有接入已绑定原程序；请恢复该程序，不会自动安装并改绑。' } : releaseDiagnostic ? { diagnostic: releaseDiagnostic } : {}) } };
   }
   async install(input: Parameters<AgentProgramManager['install']>[0]): Promise<string> {
-    const policy = nativeProgramPolicy(input.provider), releaseVersion = input.version ?? policy.package.slice(policy.package.lastIndexOf('@') + 1);
-    if (!isProgramReleaseVersion(releaseVersion)) fail('agent_install_version_invalid', '更新版本无效。');
+    const policy = nativeProgramPolicy(input.provider), releaseVersion = input.version ?? (await this.latestRelease(input.provider, input.signal)).latestVersion;
+    if (!isProgramReleaseVersion(releaseVersion) || !isCompatibleProgram(input.provider, releaseVersion)) fail('agent_install_version_invalid', '更新版本无效或不在兼容范围内。');
     const packageName = policy.package.replace(/@[^@]+$/, ''), packageSpec = `${packageName}@${releaseVersion}`;
-    const destination = this.destination(input.provider, input.version);
+    const destination = this.destination(input.provider, releaseVersion);
     const executable = path.join(destination, policy.entry), env = await this.probeEnvironment();
     if (await fs.lstat(destination).then(() => true, () => false)) {
       if ((await fs.lstat(destination)).isSymbolicLink() || !this.isManaged(input.provider,await fs.realpath(executable))) fail('agent_install_existing_invalid','独立安装目录不能引用外部程序。');
       const installed = JSON.parse(await fs.readFile(path.join(destination, 'node_modules', packageName, 'package.json'), 'utf8'));
       const version = await inspectVersion(executable, env, input.signal);
-      if (installed.name === packageName && installed.version === releaseVersion && isCompatibleProgram(input.provider, version) && (input.provider === 'qoder' || version === releaseVersion)) return executable;
+      if (installed.name === packageName && installed.version === releaseVersion && isCompatibleProgram(input.provider, version) && (input.provider === 'qoder' || version === releaseVersion)) {
+        await this.retainPrepared(input.provider, releaseVersion, executable);
+        return executable;
+      }
       fail('agent_install_existing_invalid', '已有受管程序需要检查；不会覆盖该目录。');
     }
     input.signal.throwIfAborted();
@@ -85,7 +141,7 @@ export class NativeProgramManager implements AgentProgramManager {
     try {
       const home = path.join(staging, '.home'), temporary = path.join(staging, '.tmp');
       await privateDirectories(home, temporary);
-      const installEnv = isolatedEnvironment(this.environment, home, temporary, { npm_config_cache: path.join(staging, '.cache'), npm_config_update_notifier: 'false', npm_config_registry: 'https://registry.npmjs.org/', QODER_INSTALL_BUNDLED_CLI: '1' });
+      const installEnv = isolatedEnvironment(env, home, temporary, { npm_config_update_notifier: 'false', npm_config_registry: 'https://registry.npmjs.org/', QODER_INSTALL_BUNDLED_CLI: '1' }, path.join(this.root, 'toolchains/cache'));
       let npm: string | undefined;
       try { npm = await findExecutable(undefined, ['npm-cli.js', 'npm'], this.environment); } catch { /* Try the npm shipped with the current Node runtime. */ }
       if (!npm || process.platform === 'win32' && !/\.[cm]?js$/i.test(npm)) {
@@ -96,7 +152,9 @@ export class NativeProgramManager implements AgentProgramManager {
       }
       if (!npm) fail('agent_install_npm_missing', '独立安装需要 npm。可先安装官方 Node.js 后重新检查。');
       input.progress(`正在下载并准备 ${packageSpec}，首次准备可能需要几分钟。`);
+      try { recordSharedCacheUse(this.root,Date.now(),['npm-download']); } catch { /* Optional cache observation. */ }
       await installPackage(npm, ['install', '--prefix', staging, '--no-audit', '--no-fund', '--save-exact', '--registry=https://registry.npmjs.org/', packageSpec], installEnv, input.signal);
+      try { recordSharedCacheUse(this.root,Date.now(),['npm-download']); } catch { /* Optional cache observation. */ }
       input.progress('下载完成，正在检查程序与兼容版本。');
       const stagedExecutable = path.join(staging, policy.entry);
       const stagedRelative = path.relative(await fs.realpath(staging), await fs.realpath(stagedExecutable));
@@ -106,7 +164,12 @@ export class NativeProgramManager implements AgentProgramManager {
       if (installed.name !== packageName || installed.version !== releaseVersion || !isCompatibleProgram(input.provider, version) || (input.provider !== 'qoder' && version !== releaseVersion)) fail('agent_install_version_mismatch', '下载软件包或程序版本不匹配或不兼容，未启用该程序。');
       input.signal.throwIfAborted();
       for (const directory of ['.home', '.tmp', '.cache']) await fs.rm(path.join(staging, directory), { recursive: true, force: true });
+      const worker = new Worker(new URL(import.meta.url.endsWith('.ts') ? '../process/storage-maintenance.ts' : '../process/storage-maintenance.js', import.meta.url), { workerData: { kind: 'agent-storage-program', dataRoot: path.dirname(this.root), root: this.root, directory: staging } });
+      await new Promise<void>((resolve,reject) => { worker.once('error',reject); worker.once('exit',code=>code===0?resolve():reject(new Error('agent_program_sharing_failed'))); });
+      input.signal.throwIfAborted();
+      await inspectVersion(stagedExecutable, env, input.signal);
       await fs.rename(staging, destination);
+      await this.retainPrepared(input.provider, releaseVersion, executable);
       return executable;
     } finally { await fs.rm(staging, { recursive: true, force: true }); }
   }

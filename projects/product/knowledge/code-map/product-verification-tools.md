@@ -20,6 +20,12 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
   - [verification-inputs.ts](../../services/buildr/test/verification/verification-inputs.ts) — 已核验运行检查的产品与配方输入分离、静态依赖及子脚本读取；未知输入保守回退
   - [verification-source-inputs.ts](../../services/buildr/test/verification/verification-source-inputs.ts) — 本机与正式补验共享的源码读取、字节与权限规范化、范围及逐项输入；准确提交只读 Git 对象，不切换工作目录
   - [local-source-verification.ts](../../services/buildr/test/verification/local-source-verification.ts) — 发布派发前读取同轮主包及插件普通日志，失败或未执行项只返回补齐动作
+  - [build-input-policy.ts](../../../../skills/buildr-release/scripts/build-input-policy.ts) — 版本化输入分类和冻结验证规则的纯值契约，不授予公开权限
+  - [local-consumption-preflight.ts](../../../../skills/buildr-release/scripts/local-consumption-preflight.ts) — 只读采用本机证明并复用正式原包／插件消费者，不重测或重打包
+  - [local-consumption-record.ts](../../../../skills/buildr-release/scripts/local-consumption-record.ts) — 冻结本机消费汇总；保全时核对输入、规则、覆盖及准确原包后采用，不重推导源码证明
+  - [verification-rules.ts](../../services/buildr/test/verification/release/verification-rules.ts) — 从验证登记与插件配方捕获规则，接续时校验而非覆盖冻结值
+  - [local-package-coverage.ts](../../services/buildr/test/verification/local-package-coverage.ts) — 校验冻结的本机必需／对端可选策略，供聚合与正式消费共用；旧候选不降级
+  - [package-smoke.ts](../../services/buildr/test/verification/release/package-smoke.ts) — 独立原包冒烟，一次安装、CLI身份和Web健康，不生成候选证明
   - [candidate-source-reuse.ts](../../services/buildr/test/verification/candidate-source-reuse.ts) — 有界受控交接、源码分片（Shard）覆盖计算；轮次及真实平台由普通结果入口核对
   - [test-files.ts](../../services/buildr/test/verification/test-files.ts) — 解析安全路径、展开文件匹配并去重，空集合失败
   - [ownership.ts](../../services/buildr/test/verification/ownership.ts) — 改动路径归属、排除项、委托与扩大范围的依据
@@ -31,7 +37,7 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
   - [executor.ts](../../services/buildr/test/verification/executor.ts) — 将步骤和实际额度转成具体子进程调用
   - [resource-coordinator.ts](../../services/buildr/test/verification/resource-coordinator.ts) — 同机多次执行间的共享资源协调
   - [candidate.ts](../../services/buildr/test/verification/candidate.ts) — 内部发布候选（Candidate）集合入口，只执行当前机器适用的登记步骤；不作为日常并列类型入口
-  - [candidate-ci.ts](../../services/buildr/test/verification/candidate-ci.ts) — 按有效证明选择跨平台源码／原包缺项，执行宿主 Node.js（Host Node）组合并汇总；全部必需源码通过后才进入产包
+  - [candidate-ci.ts](../../services/buildr/test/verification/candidate-ci.ts) — 新主包模型采用真实本机源码及原包证明，只执行对端平台原包缺项并汇总；旧远端产包模型仅供历史接续
   - [candidate-ci-evidence.ts](../../services/buildr/test/verification/candidate-ci-evidence.ts) — 检查证据齐全性以及源码、登记、作业和唯一压缩包身份
   - [candidate-repair.ts](../../services/buildr/test/verification/candidate-repair.ts) — 同轮原包补验保留成功、只补失败及缺项；核对原字节、真实平台和最低宿主，保留原始来源
   - [candidate-repair-cli.ts](../../services/buildr/test/verification/candidate-repair-cli.ts) — 受控原运行、真实包读取，生成缺项矩阵及保留证据；采用不变 DSH 原包与精确对端证明
@@ -64,6 +70,12 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
   - [release-orchestration-runner.ts](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/release-orchestration-runner.ts) — 正常准备、只读逐包运行观察、授权公开及恢复入口
   - [candidate-run-observation.ts](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/candidate-run-observation.ts) — 同轮原包就绪、准确字节交接及远端作业／步骤耗时投影；未知只观察，不产包或派发
   - [candidate-package.ts](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/candidate-package.ts) — 生产主包原字节，供后续检查共同消费
+  - [local-package-build.ts](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/local-package-build.ts) — 从冻结检出目录加载生产构建代码，避免误用维护者工作树的运行输入
+  - [local-package-preparation.ts](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/local-package-preparation.ts) — 本机源码就绪、唯一制包、通用与本机验包以及必要插件兼容
+  - [local-package-handoff.ts](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/local-package-handoff.ts) — 真实系统对称选择、原包分块与不可变数据引用；不修改产品索引，不执行数据引用中的代码
+  - [local-package-operation.ts](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/local-package-operation.ts) — 新准备派发原包与证明保全；对端独立可选，等待不重新启动本机检查
+  - [local-package-remote.ts](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/local-package-remote.ts) — 远端恢复原数据、校验准确字节并传递真实证明，不制包
+  - [local-candidate-withdrawal.ts](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/local-candidate-withdrawal.ts) — 默认只读撤回计划，准确授权后先保全原包、源码和证明，再按身份清理当前临时引用及附件；未知请求不重发
   - [candidate-source-binding.ts](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/candidate-source-binding.ts) — 原产包与验证提交的真实构建输入比较；调用共享输入实现形成检查身份，旧算法只核验历史结果；另行保护发布工具检出
   - [candidate-repair-operation.ts](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/candidate-repair-operation.ts) — 在原承载引用请求正式补验，未知请求回读，保留原包和运行指针
   - [release-failure.ts](https://github.com/BuildrAI/Buildr/blob/dev/skills/buildr-release/scripts/release-failure.ts) — 有界命令诊断、明确拒绝识别与阶段恢复建议；不创建第二份发布事实
@@ -119,7 +131,7 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
     - [buildr-web-browser.test.ts](../../services/buildr/test/e2e/buildr-web-browser.test.ts) — 隔离服务、浏览器（Browser）和测试现场的组装、选择与清理
     - [workbench-journey.ts](../../services/buildr/test/e2e/workbench-journey.ts) — 实际页面回应、并发冲突后的重读保存、偏好恢复与资料阅读旅程
 
-跨平台编排由仓库根 `.github/workflows/verify.yml` 消费 `candidate-ci.ts` 和 `registry.ts` 的检查归属与宿主组合。通用源码与原包检查本机执行一次，平台源码与平台原包分别由本机系统和 GitHub 另一系统提供真实证明；最低 Node 要求仍按实际执行满足。历史分片名称中的 `macos` 不再代表通用检查只能在 macOS 执行，实际归属以 `platformScope` 为准。汇总由 `candidate-ci-evidence.ts` 核验原包、源码、环境与原始来源；同轮普通本机日志可用于接续已有成功，不能代替另一平台或尚未执行的原包检查。`main` 候选仍执行来源校验，不支持来源不能因跳过取得成功。
+新候选从已登记的 `.github/workflows/verify.yml` 的 `local-package` 入口调用 `.github/workflows/verify-package.yml`：主包和独立插件仅校验并保全原包及证明，对端冒烟显式可选；其他入口保留开发反馈、合入检查与旧模型接续。`skills/buildr-release/scripts/local-plugin-preparation.ts` 统一独立／联合插件本机准备，插件服务的 `tools/ensure-release-sdk.ts` 校验复用或新建 SDK。本机生产唯一原包并执行通用和本机平台验收，两端保持真实来源及最低 Node 证明；另一系统源码专项不再作为每次发布自动全量前置。历史分片名称中的 `macos` 不代表通用检查只能在 macOS 执行，实际归属以 `platformScope` 为准。新主包在本机由 `candidate-ci-evidence.ts` 核验源码、原包、环境与原始来源后冻结汇总，保全采用 `local-consumption-record.ts` 核对；旧交接和独立验证源保留原推导。不能用本机成功替代对端尚未执行的验包。
 
 ## 测试源码检查与按边界执行
 
@@ -132,3 +144,13 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
 - [source-control-selection.ts](../../services/buildr-web/src/features/code/source-control-selection.ts) 承担任务入口、显式用户选择与已观察来源的优先级判断，由页面工作台调用并由无服务器单元测试直接验证。
 - [source-control-row-density.ts](../../services/buildr-web/src/features/code/components/source-control-row-density.ts) 只计算测量值对应的逐级展示；行组件继续拥有 DOM 测量与真实交互，计算边界由单元测试覆盖。
 - 文件浏览与源代码管理分别由 `e2e-browser:code-explorer`、`e2e-browser:code` 选择。源码浏览器检查共享不可变构建，各自创建临时现场，独立资源限制允许最多两个检查并行；真实 Git 与 HTTP 矩阵仍由现有集成入口执行。
+
+## 验证与发布之间的窄消费边界
+
+- [release-verification.ts](../../services/buildr/test/verification/release-verification.ts)：发布消费的覆盖集合、证明传输与已有候选能力入口，发布不解释内部缓存及分片成员。
+- [release-consumption-contract.ts](../../services/buildr/test/verification/release/release-consumption-contract.ts)：轻量覆盖定义及原包身份核验；原 `release-consumption.ts` 保留真实包消费执行与兼容导出。
+- [candidate-check-inputs.ts](../../services/buildr/test/verification/candidate-check-inputs.ts)：统一检查输入读取、身份计算及历史输入认证；[candidate-source-binding.ts](../../../../skills/buildr-release/scripts/candidate-source-binding.ts) 保留构建输入及公开执行来源绑定。
+- [result-applicability.ts](../../services/buildr/test/verification/result-applicability.ts)：共用输入事实比较；日常缓存、候选轮次及平台采用分别施加政策。
+- [package-adapter.ts](../../services/buildr/test/verification/package-adapter.ts)：组合入口按需装配产包能力，执行器只消费明确适配。
+- [source-phase-definition.ts](../../services/dsh-plugin/tools/source-phase-definition.ts)：插件源码检查的实际成员与执行配方，由执行与就绪检查共同消费。
+- [release-operation-wait.ts](../../../../skills/buildr-release/scripts/release-operation-wait.ts)：有界等待同一发布操作；不选择新源码、重发未知请求或维护另一份发布状态。

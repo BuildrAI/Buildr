@@ -8,10 +8,10 @@ const root = path.resolve(import.meta.dirname, '../..');
 
 test('project has one visible command for each supported selection and no retired command aliases', () => {
   const { scripts } = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-  for (const [entry, mode] of Object.entries({ test: 'unit', check: 'check', 'test:static': 'static', 'test:integration': 'integration', 'test:e2e': 'e2e', 'test:related': 'related' })) {
+  for (const [entry, mode] of Object.entries({ test: 'unit', check: 'check', 'test:static': 'static', 'test:integration': 'integration', 'test:e2e': 'e2e', 'test:system': 'system', 'test:related': 'related' })) {
     assert.match(scripts[entry], new RegExp(`test/verification/cli\\.ts ${mode}$`), entry);
   }
-  for (const entry of ['test:fast', 'test:core', 'test:daily-full', 'test:component', 'test:contract', 'test:system', 'test:changed', 'test:focus']) assert.equal(scripts[entry], undefined, entry);
+  for (const entry of ['test:fast', 'test:core', 'test:daily-full', 'test:component', 'test:contract', 'test:changed', 'test:focus']) assert.equal(scripts[entry], undefined, entry);
 });
 
 test('registered checks have exactly one of the four supported types and unique identities', () => {

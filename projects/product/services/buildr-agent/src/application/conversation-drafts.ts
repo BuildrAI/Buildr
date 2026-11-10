@@ -27,7 +27,7 @@ export class ConversationDrafts {
   remove(scope: string, id: string, input: { expectedRevision: string; attachmentId: string }) { return this.images.remove(this.ports.source(scope), id, [input.attachmentId], input.expectedRevision); }
   image(scope: string, id: string, attachmentId: string) {
     const image = this.images.read(this.ports.source(scope), id, attachmentId);
-    return { bytes: Buffer.from(image.bytes), mimeType: image.mimeType };
+    return { bytes: Buffer.from(image.bytes), mimeType: image.mimeType, name: image.name };
   }
   identity(scope: string, id: string, requestId: string): string {
     if (![id, requestId].every(value => /^[a-f0-9-]{36}$/.test(value))) fail('agent_draft_invalid', '草稿或提交身份无效。');
@@ -72,7 +72,7 @@ export class ConversationDrafts {
     const ids = normalized.attachmentIds ?? [];
     if (new Set(ids).size !== ids.length) fail('agent_attachments_invalid', '图片身份重复。');
     const originals = ids.map(key => this.images.read(source, id, key));
-    if(originals.length>4||originals.some(image=>image.frame))fail('agent_attachments_invalid','请选择最多4份原始材料。');
+    if(originals.length>9||originals.some(image=>image.frame))fail('agent_attachments_invalid','请选择最多9份原始材料。');
     const allIds=[...new Set([...ids,...originals.flatMap(image=>image.video?.frames.map(frame=>frame.id)??[])])];
     const selected = allIds.map(key => this.images.read(source,id,key));
     const parent = path.join(this.ports.root, 'attachments'), directory = path.join(parent, target);
@@ -93,7 +93,7 @@ export class ConversationDrafts {
           fs.mkdirSync(directory, { mode: 0o700 }); copied = true;
           for (const image of selected) fs.writeFileSync(path.join(directory, image.id), image.bytes, { flag: 'wx', mode: 0o600 });
         }
-        for (const image of selected) record.attachments[image.id] = { mimeType: image.mimeType, size: image.size, createdAt: new Date().toISOString(), ...(image.video ? {video:image.video} : {}) };
+        for (const image of selected) record.attachments[image.id] = { name: image.name, mimeType: image.mimeType, size: image.size, createdAt: new Date().toISOString(), ...(image.video ? {video:image.video} : {}) };
       }
       const draft = { ...normalized, permissionMode: input.permissionMode, expectedRevision: record.view.revision };
       const preview = this.ports.prepare(record, draft);

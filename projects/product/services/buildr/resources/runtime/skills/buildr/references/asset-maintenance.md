@@ -105,9 +105,9 @@
 
 ## Skills
 
-- 工作空间（Workspace）的 `skills/manifest.yml` 管理采用与绑定；组织自有技能（Skill）源位于空间 `skills/`，官方源通过清单中的 `resource` 引用共享资源集 `~/.buildr/resources/`。不要手工编辑共享官方资源或生成入口。Project 只在 `capabilities.yml` 引用 workspace Skill 并声明 requirements/bindings/applicability，不作为安装或可见性边界。
+- 工作空间（Workspace）的 `skills/manifest.yml` 管理采用与绑定；组织自有技能（Skill）源位于空间 `skills/`，官方源通过清单中的 `resource` 引用共享资源集 `~/.buildr/resources/`。不要手工编辑共享官方资源或生成入口。项目能力上下文 `capabilities.yml` 已退役，不再生成或消费；Doctor 对已有文件只读提示；同步自动清理确认安全的空需求/绑定及技能名单配置，非空或异常文件保留。项目适用边界由技能说明和项目规则表达。
 - 定制非组件管理的共享官方技能（Skill）时，核对影响后用 `skills add <id> --source <已核实的完整共享目录> --replace --target <workspace>` 建立当前空间副本，再修改与同步。保留原资产身份、绑定及附件，来源转为本空间维护；组件成员仍由组件维护入口负责，不编辑共享库。
-- 本地作者型 Skill 可以只适用于某个 Project，但内容仍在 workspace 维护，由 Project applicability 表达业务范围；远端发布型 Skill 适合已发布或外部维护的 Skill。
+- 本地作者型 Skill 可以只适用于某个 Project，但内容仍在 workspace 维护，由技能说明和项目规则表达业务范围；远端发布型 Skill 适合已发布或外部维护的 Skill。
 - Buildr 随包场景化流程通过 workspace Skills 承载；Agent 价值观、边界和约束由 `AGENTS.md` 承载。
 - 本地作者型：`buildr skills add [<id>] --source <skill-dir> --target <workspace>`；移除登记用 `buildr skills remove <id> --target <workspace>`，保留本地源目录和全部文件；组件受管技能继续走组件维护入口，不能借此删除成员。旧 `--scope .` 只作 deprecated 兼容；Project scope 已不受支持。
 - 本地作者型和 package Skill 的完整源目录可包含 `SKILL.md` 以及 `agents/`、`assets/`、`examples/`、`references/`、`scripts/`、`templates/`；render 保留随附文件的原始字节与 owner executable 状态，只有 `SKILL.md` 会注入 managed marker、contributions、capability bindings 和 adapter context。
@@ -144,3 +144,17 @@ npm 更新会自动将同一安装槽位（Installation Slot）中正在运行�
 任一提供者（Provider）返回 `treeChanged: true` 后，对相关工作空间（Workspace）执行当前智能体（Agent）的 Doctor。协作者的 upstream 提交属于普通更新；本地没有协作者任务是正常事实，不能按作者、HEAD、脏目录或投射漂移补造任务或交付记录。
 
 Doctor 只指向当前智能体（Agent）受管源或运行时投射陈旧时，执行一次适用的 `buildr sync` 并消费最终诊断；仅在缺少该范围授权时询问用户是否由 Agent 立即同步，并提供准确手动命令作为备选。包含 CLI、组件（Component）、命令（Command）、Git 或其他问题时，分别交给对应所有者，不能把一次同步称为完整修复。当前 session 是否重新发现新资产由 Agent runtime 决定。普通同步不创建任务、工作树（Worktree）、验证或自举证据。
+
+## Agent HOME 与公共缓存占用
+
+新执行优先复用宿主HOME，账号、会话和专属配置通过适配器独立指定；旧私有HOME及兼容例外继续按以下机制维护。HOME发现不包括真实用户主目录，不获得宿主工具或缓存的通用删除权限。项目node_modules仍由对应项目管理，不以重复包数量授权合并或删除。
+
+调查Agent存储时，先核对准确应用数据目录。若该版本提供`agent-service/process/storage-observation.json`，读取其生成时间、`homeStorage.complete`、各对象归属/调查动作和公共缓存策略；这是原维护线程生成的有界元数据快照，不是删除许可。扫描不完整时，大小仅为已观察部分，不能据此声称完整占用或实际释放量。需要当前完整事实时沿产品公开存储inspect能力与实际文件归属继续核对，不复制账号正文。
+
+公共内容对象有视图引用时保留；公共缓存不设容量预算，下载缓存30天、编译加速7天；分类窗口不能绕过当前执行、安装、系统占用、待确认结果或恢复引用。未知HOME大目录须查明创建者和可再生性后，才交给明确工具策略迁移；不能因为目录大或旧就直接删除，也不能把迁移字节当净空间释放。账号、原生会话、宿主Maven仓库、项目依赖与工作成果不统一过期。旧版本可能没有该诊断快照；缺失只说明能力或观测尚未形成，不能当作目录为空。
+
+使用时间核对cache-use观察与当前引用，不把目录mtime当最近使用。首次无历史使用观察时保守重新起算；运行对象的30天从最后视图引用变化起算。有引用的安装依赖/运行环境持续保留；Yarn/uv等可能兼作安装来源的目录，外部引用未查清时不整目录过期。已结束临时测试现场沿原24小时策略，不把业务构建成果仅按目录名或后缀删除。
+
+新增工具无需按包名逐一登记：维护线程从HOME元数据发现npm安装锁，再核验本地归档SRI与安装文件。只有归档一致的安装文件可进入共享，额外配置/账号文件不进入对象池；缺少完整证据会保留并周期复查。发现游标会接续单个大HOME，`componentSharing`给出实际共享、预算延迟、占用或协议/完整性保留原因。新安装改变后自动重新核验，不能把“已发现”说成“已共享”。
+
+未知组件没有只读契约时，共享采用文件系统写时复制，原路径、可写权限和各自修改隔离仍保留；已明确不可变的Buildr运行版本沿用硬链接。平台不支持可靠写时复制则保留并报告，不能用可写硬链接代替。共享字节是成功建立视图的数据量，不是净回收量；APFS逐路径分配不能证明独占共享块，空间验收须另看卷可用及新增对象。

@@ -48,7 +48,7 @@ export function maintainNativeContent(dataRoot: string, options: {dryRun?:boolea
       const key=JSON.stringify([config,record.view.cwd,prefix]);let index=indexes.get(key);
       if(!index) {
         if(indexes.size>=8)return {reason:'context_budget'};
-        const provider=participant.provider,suffix=provider==='codex'?'codex-home/sessions':provider==='qoder'?'qoder-config/projects':'dsh-home/sessions';
+        const provider=participant.provider,suffix=provider==='codex'?'codex-home/sessions':provider==='qoder'?'qoder-config/projects':provider==='qoder-cn'?'qoder-cn-config/projects':'dsh-home/sessions';
         const input={root,configRoot:config,cwd:record.view.cwd,contextId:''};
         const files=nativeContentFiles(input,path.join(config,suffix),file=>provider==='dsh'?/^session\.v4\.jsonl(?:\.zstd)?$/.test(path.basename(file)):file.endsWith('.jsonl'),6);
         if(files.length>128)return {reason:'native_lookup_scope_budget'};
@@ -89,6 +89,7 @@ export function maintainNativeContent(dataRoot: string, options: {dryRun?:boolea
       };
       try {
         const existing=ConversationEntryStore.reference(row);
+        if(existing?.version === 3) continue;
         if(existing){provider=existing.provider;reason('already_native');continue;}
         const entry=ConversationEntryStore.decode(row), record=JSON.parse(row.header) as StoredConversation;
         provider=entry.provider??'none';

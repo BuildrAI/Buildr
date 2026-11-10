@@ -18,8 +18,8 @@ export interface AgentOperations {
 const names = {
   webhooks: ['read','save','reveal','test'],
   connections: ['upgradeProgram','programUpdates','checkProgramUpdates','list','read','prepare','preparation','currentPreparation','cancelPreparation','connect','check','login','loginAttempt','cancelLogin','disconnect'],
-  conversations: ['replayWebhook','participation','participationSummary','readDraft','addDraftImage','removeDraftImage','readDraftImage','startDraft','lookupDraft','listAll','readEntry','markSeen','list','create','fork','createChild','listChildren','read','update','generateTitle','prepareHandoff','prepareSend','send','supplement','queueSend','cancelPendingSend','observe','observeRun','releaseQuestionWait','stop','reply','addAttachment','readAttachment','pending','pendingSummary','lookupRequest'],
-  'models.accounts': ['list','read','preferences','add','login','attempt','cancelLogin','check','disconnect'],
+  conversations: ['readHistory','replayWebhook','participation','participationSummary','readDraft','addDraftImage','removeDraftImage','readDraftImage','startDraft','lookupDraft','listAll','readEntry','markSeen','list','create','fork','createChild','listChildren','read','update','generateTitle','prepareHandoff','prepareSend','send','supplement','queueSend','cancelPendingSend','observe','observeRun','releaseQuestionWait','stop','reply','addAttachment','readAttachment','pending','pendingSummary','lookupRequest'],
+  'models.accounts': ['list','read','preferences','add','configure','login','attempt','cancelLogin','check','disconnect'],
   'models.catalog': ['list'],
 } as const;
 export const OPERATION_NAMES: readonly string[] = Object.entries(names).flatMap(([group, methods]) => methods.map(method => group + '.' + method));
@@ -37,8 +37,8 @@ const inputs: Record<string, [number, string]> = {
   'connections.checkProgramUpdates':[0,'programUpdateCheck'],
   'connections.prepare':[1,'prepare'], 'connections.connect':[1,'connect'], 'connections.check':[1,'check'], 'connections.login':[1,'revision'], 'connections.disconnect':[1,'revision'], 'connections.cancelLogin':[2,'revision'],
   'conversations.createChild':[2,'createChild'],
-  'conversations.fork':[2,'fork'], 'conversations.create':[1,'create'], 'conversations.update':[2,'update'], 'conversations.markSeen':[2,'seen'], 'conversations.generateTitle':[2,'revision'], 'conversations.prepareHandoff':[2,'draft'], 'conversations.prepareSend':[2,'draft'], 'conversations.send':[2,'send'], 'conversations.supplement':[2,'supplement'], 'conversations.observeRun':[2,'control'], 'conversations.releaseQuestionWait':[2,'control'], 'conversations.stop':[2,'stop'], 'conversations.reply':[3,'reply'],
-  'models.accounts.preferences':[1,'modelPreferences'], 'models.accounts.add':[0,'addModelAccount'], 'models.accounts.login':[1,'revision'], 'models.accounts.cancelLogin':[2,'revision'], 'models.accounts.check':[1,'check'], 'models.accounts.disconnect':[1,'revision'],
+  'conversations.readHistory':[2,'historyQuery'], 'conversations.fork':[2,'fork'], 'conversations.create':[1,'create'], 'conversations.update':[2,'update'], 'conversations.markSeen':[2,'seen'], 'conversations.generateTitle':[2,'revision'], 'conversations.prepareHandoff':[2,'draft'], 'conversations.prepareSend':[2,'draft'], 'conversations.send':[2,'send'], 'conversations.supplement':[2,'supplement'], 'conversations.observeRun':[2,'control'], 'conversations.releaseQuestionWait':[2,'control'], 'conversations.stop':[2,'stop'], 'conversations.reply':[3,'reply'],
+  'models.accounts.preferences':[1,'modelPreferences'], 'models.accounts.add':[0,'addModelAccount'], 'models.accounts.configure':[1,'modelApiKey'], 'models.accounts.login':[1,'revision'], 'models.accounts.cancelLogin':[2,'revision'], 'models.accounts.check':[1,'check'], 'models.accounts.disconnect':[1,'revision'],
 };
 export function validateOperation(name: string, args: unknown): asserts args is any[] {
   if (!OPERATION_NAMES.includes(name) || !Array.isArray(args) || args.length > 6) throw new AgentServiceError('agent_process_operation_invalid', '不支持的执行操作。');
@@ -46,7 +46,7 @@ export function validateOperation(name: string, args: unknown): asserts args is 
   if (input && !validators.get(input[1])!(JSON.parse(JSON.stringify(args[input[0]] ?? (input[1] === 'check' ? {} : null))))) throw new AgentServiceError('agent_process_input_invalid', '执行操作字段无效。');
   if (name === 'conversations.addAttachment' || name === 'conversations.addDraftImage') {
     const value = args[2];
-    if (!value || typeof value.base64 !== 'string' || value.base64.length > (typeof value.mimeType === 'string' && value.mimeType.startsWith('video/') ? 44 : 12) * 1024 * 1024 || !(name === 'conversations.addDraftImage' ? validators.get('draftImage')!({expectedRevision:value.expectedRevision,name:value.name,mimeType:value.mimeType,frame:value.frame,video:value.video}) : validators.get('attachment')!({ expectedRevision: value.expectedRevision, expectedAttachmentRevision: value.expectedAttachmentRevision, mimeType: value.mimeType, video: value.video }))) throw new AgentServiceError('agent_process_input_invalid', '附件字段无效。');
+    if (!value || typeof value.base64 !== 'string' || value.base64.length > (typeof value.mimeType === 'string' && !value.mimeType.startsWith('image/') ? 44 : 12) * 1024 * 1024 || !(name === 'conversations.addDraftImage' ? validators.get('draftImage')!({expectedRevision:value.expectedRevision,name:value.name,mimeType:value.mimeType,frame:value.frame,video:value.video}) : validators.get('attachment')!({ expectedRevision: value.expectedRevision, expectedAttachmentRevision: value.expectedAttachmentRevision, name: value.name, mimeType: value.mimeType, video: value.video }))) throw new AgentServiceError('agent_process_input_invalid', '附件字段无效。');
   }
 }
 export async function dispatchOperation(service: AgentService, name: string, args: any[]): Promise<unknown> {
@@ -57,6 +57,6 @@ export async function dispatchOperation(service: AgentService, name: string, arg
   for (const part of parts) owner = owner[part];
   // Names are the closed allowlist above; no arbitrary method/property invocation.
   const value = await owner[method](...args);
-  if (name === 'conversations.readAttachment' || name === 'conversations.readDraftImage') return { base64: value.bytes.toString('base64'), mimeType: value.mimeType };
+  if (name === 'conversations.readAttachment' || name === 'conversations.readDraftImage') return { base64: value.bytes.toString('base64'), mimeType: value.mimeType, name: value.name };
   return value;
 }

@@ -29,7 +29,7 @@ export function ConversationComposer({ images, attachmentAccept=conversationAtta
         <input ref={fileInput} type="file" accept={attachmentAccept} multiple hidden onChange={event => {
           const files = Array.from(event.target.files ?? []); event.target.value = ''; if (files.length) void onAdd(files);
         }} />
-        <Button type="text" icon={<PlusOutlined />} aria-label={addLabel??"添加图片或视频"} title={addLabel??"添加图片或视频，也可粘贴或拖入；视频最多32 MiB"} loading={uploading} disabled={addDisabled} onClick={() => fileInput.current?.click()} />
+        <Button type="text" icon={<PlusOutlined />} aria-label={addLabel??"添加图片、视频或文档"} title={addLabel??"添加图片、视频或文档，也可粘贴或拖入；文档和视频最多32 MiB，图片最多8 MiB"} loading={uploading} disabled={addDisabled} onClick={() => fileInput.current?.click()} />
         {access}
       </div>
       <div className="ac-compose-execution">{execution}</div>

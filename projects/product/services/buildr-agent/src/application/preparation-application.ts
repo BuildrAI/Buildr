@@ -82,14 +82,14 @@ export class PreparationApplication {
     if (candidates.length) executable = original.executable ?? candidates[0]!.executable;
     else if (input.install && !input.executable && !original.executable && attempt.view.catalog.installation.canInstall) {
       this.update(attempt, 'installing', '正在准备独立程序，不改动全局安装。');
-      executable = await this.programs.install({ provider: original.provider, signal, progress: message => { if (!signal.aborted) this.update(attempt, 'installing', message); } });
+      executable = await this.programs.install({ provider: original.provider, version: attempt.view.catalog.installation.version, signal, progress: message => { if (!signal.aborted) this.update(attempt, 'installing', message); } });
       signal.throwIfAborted();
       const installed = await this.programs.discover({ provider: original.provider, executable, signal });
       if (!installed.candidates.some(candidate => candidate.compatible)) fail('agent_install_verification_failed', '安装后程序验证未通过，未启用此接入。');
       attempt.view.catalog = installed;
     } else {
       if (original.executable) this.connections.programUnavailable(id, input.expectedRevision, '原绑定程序已缺失或版本不兼容，账号和历史已保留；请恢复原程序或核对兼容版本。');
-      this.update(attempt, 'installation-required', original.executable || input.executable ? '指定程序缺失或不兼容，请核对原程序；不会自动切换来源。' : '尚未发现兼容程序，请安装后重新检查，或准备独立程序。'); return;
+      this.update(attempt, 'installation-required', attempt.view.catalog.installation.diagnostic ?? (original.executable || input.executable ? '指定程序缺失或不兼容，请核对原程序；不会自动切换来源。' : '尚未发现兼容程序，请安装后重新检查，或准备独立程序。')); return;
     }
     await this.finishConnection(id, attempt, executable);
   }

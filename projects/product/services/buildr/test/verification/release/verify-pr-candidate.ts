@@ -14,6 +14,8 @@ import { normalizeReleaseTargets } from '../../../../../../../skills/buildr-rele
 import { readArtifactInput } from '../../../../dsh-plugin/tools/buildr-peer.ts';
 import { assertBoundVerificationManifest } from '../../../../dsh-plugin/tools/full-verification.ts';
 import { CANDIDATE_CI_AGGREGATE_SCHEMA } from './candidate-ci-contract.ts';
+import { excludesAllCandidateBoundaries, parseCandidateDeclaredScope } from '../candidate-declared-scope.ts';
+import { currentVerificationRules } from './verification-rules.ts';
 
 function requireFact(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -21,6 +23,7 @@ function requireFact(condition: unknown, message: string): asserts condition {
 
 export const PLUGIN_SOURCE_AGGREGATE_SCHEMA = 'buildr.dsh-plugin-source-ci-aggregate/v1';
 const workflowPath = '.github/workflows/verify.yml';
+const packageWorkflowPath = '.github/workflows/verify-package.yml';
 const sha = /^[0-9a-f]{40}$/u;
 const digest = /^(?:sha256-)?[0-9a-f]{64}$/u;
 type Selection = { id: string; packages: string[]; versions: Record<string, string>; baseline: string; main: string; identity: string };
@@ -34,6 +37,7 @@ const releaseSupportTests = new Set([
   'release-authority-cli', 'release-contract-cold-start', 'release-convergence',
   'release-node-runner', 'release-operation', 'release-recovery', 'release-rehearsal',
   'release-selection', 'release-skill-ownership', 'release-source-scope',
+  'local-package-handoff', 'local-candidate-withdrawal',
 ].map(name => `test/integration/${name}.test.ts`));
 
 /** Publication targets cannot reduce the checks required by the complete main-to-source tree diff. */
@@ -96,11 +100,15 @@ export function createReleaseCandidatePlan(env: NodeJS.ProcessEnv, git: GitRead)
     requireFact(/^sha512-[A-Za-z0-9+/]{86}==$/u.test(env.BUILDR_BUILDR_PEER_INTEGRITY ?? ''), 'Exact published Buildr peer integrity is required.');
     registryPeer = { version: peerVersion, integrity: env.BUILDR_BUILDR_PEER_INTEGRITY! };
   }
+  const selectedWorkflow = env.BUILDR_LOCAL_PACKAGE_MODEL === 'buildr.local-package/v1'
+    ? env.BUILDR_LOCAL_PACKAGE_WORKFLOW ?? workflowPath : workflowPath;
+  requireFact([workflowPath, packageWorkflowPath].includes(selectedWorkflow), 'Unsupported local package workflow.');
   return { schemaVersion: 'buildr.package-candidate-plan/v1', legacy: false, selection, sourceCommit,
     sourceTree: git(['rev-parse', `${sourceCommit}^{tree}`]).trim(),
     serviceTree: git(['rev-parse', `${sourceCommit}:${PLUGIN_SERVICE_PATH}`]).trim(),
     pluginVersion: JSON.parse(git(['show', `${sourceCommit}:${PLUGIN_SERVICE_PATH}/package.json`, '--'])).version,
-    workflowSha256: createHash('sha256').update(git(['show', `${sourceCommit}:${workflowPath}`, '--'])).digest('hex'),
+    ...(selectedWorkflow !== workflowPath ? { workflowPath: selectedWorkflow } : {}),
+    workflowSha256: createHash('sha256').update(git(['show', `${sourceCommit}:${selectedWorkflow}`, '--'])).digest('hex'),
     changedPaths, requirements, ...(sourceSdk ? { sourceSdk } : {}), ...(registryPeer ? { registryPeer } : {}) };
 }
 
@@ -112,7 +120,7 @@ export function createPluginSourceAggregate(plan: any, candidate: any, full: any
   requireFact(/^[1-9]\d*$/u.test(String(workflow?.runId)) && Number.isSafeInteger(workflow?.runAttempt) && workflow.runAttempt >= 1 && workflow.runAttempt <= 100, 'Plugin source verification run identity is invalid.');
   return { schemaVersion: PLUGIN_SOURCE_AGGREGATE_SCHEMA, status: 'passed', purpose: 'source-admission', repository: 'BuildrAI/Buildr',
     sourceCommit: plan.sourceCommit, sourceTree: plan.sourceTree, serviceTree: plan.serviceTree,
-    workflow: { path: workflowPath, sha256: plan.workflowSha256, runId: workflow.runId, runAttempt: workflow.runAttempt }, selection: plan.selection,
+    workflow: { path: plan.workflowPath ?? workflowPath, sha256: plan.workflowSha256, runId: workflow.runId, runAttempt: workflow.runAttempt }, selection: plan.selection,
     changedPaths: plan.changedPaths, requirements: plan.requirements,
     candidate: { artifactName: `plugin-candidate-v${candidate.version}`, ...candidate },
     verification: full, checks: [{ id: 'plugin-full', status: 'passed' }, { id: 'plugin-candidate-bytes', status: 'passed' }] };
@@ -133,10 +141,15 @@ export function assertBoundPluginVerification(plan: any, candidate: any, full: a
 export function assertPluginSourceAggregate(value: any, plan: any, runId: number, runAttempt = 1): void {
   requireFact(value?.schemaVersion === PLUGIN_SOURCE_AGGREGATE_SCHEMA && value.status === 'passed' && value.purpose === 'source-admission' && value.repository === 'BuildrAI/Buildr', 'Plugin source aggregate is invalid.');
   requireFact(value.sourceCommit === plan.sourceCommit && value.sourceTree === plan.sourceTree && value.serviceTree === plan.serviceTree && isDeepStrictEqual(value.selection, plan.selection) && isDeepStrictEqual(value.requirements, plan.requirements) && isDeepStrictEqual(value.changedPaths, plan.changedPaths), 'Plugin source aggregate differs from exact selection.');
-  requireFact(value.workflow?.path === workflowPath && value.workflow.sha256 === plan.workflowSha256 && Number(value.workflow.runId) === runId && Number.isSafeInteger(value.workflow.runAttempt) && value.workflow.runAttempt >= 1 && value.workflow.runAttempt <= runAttempt && runAttempt <= 100, 'Plugin source aggregate recipe or run differs.');
+  requireFact(value.workflow?.path === (plan.workflowPath ?? workflowPath) && value.workflow.sha256 === plan.workflowSha256 && Number(value.workflow.runId) === runId && Number.isSafeInteger(value.workflow.runAttempt) && value.workflow.runAttempt >= 1 && value.workflow.runAttempt <= runAttempt && runAttempt <= 100, 'Plugin source aggregate recipe or run differs.');
   requireFact(value.verification?.status === 'passed' && ['plugin-full', 'plugin-candidate-bytes'].every(id => value.checks?.filter((check: any) => check.id === id && check.status === 'passed').length === 1), 'Plugin source aggregate checks did not pass.');
   requireFact(value.candidate?.sourceCommit === plan.sourceCommit && value.candidate.sourceTree === plan.serviceTree && value.candidate.version === plan.pluginVersion && value.candidate.artifactName === `plugin-candidate-v${value.candidate.version}`, 'Plugin source aggregate candidate differs.');
   parseReleaseCandidate(value.candidate);
+  if (value.verificationRules) {
+    requireFact(isDeepStrictEqual(value.verificationRules,
+      currentVerificationRules(path.resolve(import.meta.dirname, '../../../../../../..'), null, 'plugin', null)),
+    'Plugin source aggregate frozen recipe differs from the consumer.');
+  }
   assertBoundPluginVerification(plan, value.candidate, value.verification);
 }
 
@@ -164,7 +177,6 @@ export async function verifyReleasePullRequestCandidate(
     const expectedPeer = peerLines.length === 1 ? parseCompatibilityArtifact(JSON.parse(peerLines[0][1])) : undefined;
     requireFact(/^codex\/release-main-(.+)-g\d+$/u.exec(branch)?.[1] === selection.id && pullRequest.base.sha === selection.main, 'Release carrier or current main differs from selection.');
     plan = createReleaseCandidatePlan({ BUILDR_RELEASE_PACKAGES: selection.packages.join(','), BUILDR_SOURCE_BUILDR_VERSION: selection.versions.buildr, BUILDR_PLUGIN_VERSION: selection.versions['dsh-plugin'], BUILDR_SELECTION_ID: selection.id, BUILDR_SELECTION_BASELINE: selection.baseline, BUILDR_SELECTION_MAIN: selection.main, BUILDR_SELECTION_IDENTITY: selection.identity, BUILDR_BUILDR_PEER_VERSION: expectedPeer?.version, BUILDR_BUILDR_PEER_INTEGRITY: expectedPeer?.integrity, CANDIDATE_SOURCE_SHA: sourceCommit }, scoped.git);
-    requireFact(!plan.requirements.plugin || expectedPeer, 'Scoped plugin source PR requires its frozen peer context.');
     if (expectedPeer) plan.expectedPeer = expectedPeer;
   } else {
     // A missing body projection is not proof of a legacy release. Only the
@@ -182,21 +194,21 @@ export async function verifyReleasePullRequestCandidate(
 
   const run = await requestJson(`repos/${repository}/actions/runs/${runId}`);
   requireFact(run?.id === runId && run?.repository?.full_name === repository, 'Candidate run repository or ID differs from the pull request.');
-  requireFact(run.event === 'workflow_dispatch' && run.path?.split('@')[0] === '.github/workflows/verify.yml', 'Referenced run is not a dispatched Candidate verification.');
+  requireFact(run.event === 'workflow_dispatch' && [workflowPath, packageWorkflowPath].includes(run.path?.split('@')[0]), 'Referenced run is not a dispatched Candidate verification.');
   requireFact(run.head_sha === sourceCommit && run.head_branch === branch, 'Candidate run source differs from the release pull request.');
   requireFact(run.status === 'completed' && run.conclusion === 'success', 'Matching Candidate verification has not passed.');
   requireFact(Number.isSafeInteger(run.run_attempt) && run.run_attempt >= 1 && run.run_attempt <= 100, 'Candidate run attempt is invalid.');
+  if (plan && run.path?.split('@')[0] === packageWorkflowPath) {
+    plan.workflowPath = packageWorkflowPath;
+    plan.workflowSha256 = createHash('sha256').update(scoped!.git(['show', `${sourceCommit}:${packageWorkflowPath}`, '--'])).digest('hex');
+  }
 
   const jobs = await requestJson(`repos/${repository}/actions/runs/${runId}/jobs?per_page=100`);
   requireFact(Number.isSafeInteger(jobs?.total_count) && jobs.total_count >= 0 && jobs.total_count < 100 && jobs.jobs?.length === jobs.total_count, 'Candidate job list is incomplete.');
-  requireFact(jobs?.jobs?.filter((job: any) => job.name === 'Candidate gate' && job.conclusion === 'success').length === 1, 'Matching Candidate gate did not pass.');
+  requireFact(jobs?.jobs?.filter((job: any) => ['Candidate gate', 'Original package / Candidate gate'].includes(job.name)
+    && job.conclusion === 'success').length === 1, 'Matching Candidate gate did not pass.');
   const artifacts = await requestJson(`repos/${repository}/actions/runs/${runId}/artifacts?per_page=100`);
   requireFact(Number.isSafeInteger(artifacts?.total_count) && artifacts.total_count >= 0 && artifacts.total_count < 100 && artifacts.artifacts?.length === artifacts.total_count, 'Candidate artifact list is incomplete.');
-  const names = !plan || plan.requirements.buildr ? ['candidate-package', 'candidate-aggregate'] : [];
-  if (plan?.requirements.plugin) names.push(`plugin-candidate-v${plan.selection.versions['dsh-plugin'] ?? JSON.parse(scoped!.git(['show', `${sourceCommit}:${PLUGIN_SERVICE_PATH}/package.json`, '--'])).version}`, 'plugin-candidate-aggregate');
-  for (const name of names) {
-    requireFact(artifacts?.artifacts?.filter((artifact: any) => artifact.name === name && artifact.expired === false && artifact.size_in_bytes > 0).length === 1, `Matching Candidate ${name} is unavailable or not unique.`);
-  }
   if (!plan || plan.requirements.buildr) {
     requireFact(scoped?.loadBuildrAggregate, 'Buildr Candidate requires its complete aggregate and original package proof.');
     const { aggregate, manifest } = await scoped.loadBuildrAggregate(runId);
@@ -218,6 +230,15 @@ export async function verifyReleasePullRequestCandidate(
     ]);
     requireFact(aggregate.registryIdentity === candidateCiRegistryIdentity(), 'Buildr Candidate aggregate registry is stale.');
     assertReleaseConsumptionCoverage(aggregate, { sourceCommit, sourceTree }, manifest);
+    if (plan && aggregate.executionModel === 'buildr.local-package/v1' && excludesAllCandidateBoundaries(aggregate.declaredScope)) {
+      plan.requirements = { ...plan.requirements, plugin: false };
+    }
+  }
+  requireFact(!plan?.requirements.plugin || plan.expectedPeer, 'Scoped plugin source PR requires its frozen peer context.');
+  const names = !plan || plan.requirements.buildr ? ['candidate-package', 'candidate-aggregate'] : [];
+  if (plan?.requirements.plugin) names.push(`plugin-candidate-v${plan.selection.versions['dsh-plugin'] ?? JSON.parse(scoped!.git(['show', `${sourceCommit}:${PLUGIN_SERVICE_PATH}/package.json`, '--'])).version}`, 'plugin-candidate-aggregate');
+  for (const name of names) {
+    requireFact(artifacts?.artifacts?.filter((artifact: any) => artifact.name === name && artifact.expired === false && artifact.size_in_bytes > 0).length === 1, `Matching Candidate ${name} is unavailable or not unique.`);
   }
   if (plan?.requirements.plugin) assertPluginSourceAggregate(await scoped!.loadAggregate(runId), plan, runId, run.run_attempt);
   return { status: 'passed', runId, sourceCommit, branch };
@@ -244,7 +265,9 @@ async function main(): Promise<void> {
     if (action === 'plan') {
       const plan = createReleaseCandidatePlan(planEnv, planGit);
       fs.writeFileSync(path.join(process.env.RUNNER_TEMP ?? os.tmpdir(), 'release-candidate-plan.json'), `${JSON.stringify(plan)}\n`);
-      if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `buildr=${plan.requirements.buildr}\nplugin=${plan.requirements.plugin}\njoint=${plan.selection?.packages.join(',') === 'buildr,dsh-plugin'}\ncandidate_peer=${plan.selection?.packages.includes('buildr') === true}\nplugin_version=${plan.pluginVersion ?? ''}\n`);
+      const declaredScope = parseCandidateDeclaredScope(process.env.BUILDR_CANDIDATE_VERIFICATION_SCOPE);
+      const plugin = plan.requirements.plugin && !excludesAllCandidateBoundaries(declaredScope);
+      if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `buildr=${plan.requirements.buildr}\nplugin=${plugin}\njoint=${plan.selection?.packages.join(',') === 'buildr,dsh-plugin'}\ncandidate_peer=${plan.selection?.packages.includes('buildr') === true}\nplugin_version=${plan.pluginVersion ?? ''}\n`);
       process.stdout.write(`${JSON.stringify(plan)}\n`);
     } else if (action === 'plugin-aggregate') {
       const plan = createReleaseCandidatePlan(planEnv, planGit);

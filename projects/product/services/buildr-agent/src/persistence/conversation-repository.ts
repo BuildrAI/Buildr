@@ -10,14 +10,14 @@ import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
 import { AgentServiceError, fail } from '../domain/agent-state.ts';
-import type { StoredConnection, StoredConversation } from '../domain/agent-state.ts';
+import type { StoredConnection, StoredConversation, StoredParticipant } from '../domain/agent-state.ts';
 import { ConversationReadModel, type ConversationReadState } from './conversation-read-model.ts';
 import { ConversationEntryStore } from './conversation-entry-store.ts';
 import type { NativeToolContent } from '../native-content-contracts.ts';
 import type { ConversationEntry } from '../contracts.ts';
 import { beginConversationMigration, migrateConversationEntries } from './conversation-migration.ts';
 
-export const CONVERSATION_SCHEMA_VERSION = 7;
+export const CONVERSATION_SCHEMA_VERSION = 9;
 const SCHEMA_VERSION = CONVERSATION_SCHEMA_VERSION;
 // 附件准备不等于开始；已发送或结果未知的尝试仍必须可发现。
 const LEGACY_HAS_WORK = "(json_array_length(json_extract(body,'$.view.entries'))>0 OR json_array_length(json_extract(body,'$.attempts'))>0 OR json_type(body,'$.view.run')='object' OR json_type(body,'$.view.childOf')='object')";
@@ -28,7 +28,7 @@ const HAS_UNFINISHED = "EXISTS(SELECT 1 FROM json_each(body,'$.view.retainedRuns
 const SEARCH_TERM_LIMIT = 6;
 const SEARCH_ENTRY = "(json_extract(entry.value,'$.kind')='message' AND json_extract(entry.value,'$.role') IN ('user','assistant') AND coalesce(json_extract(entry.value,'$.thinking'),0)=0 AND instr(lower(json_extract(entry.value,'$.text')),lower(?))>0)";
 const searchTerms = (query?: string) => (query ?? '').trim().split(/\s+/).filter(Boolean).slice(0, SEARCH_TERM_LIMIT);
-const searchClause = (terms: string[], title: string, body: string) => terms.map(() => `(instr(lower(${title}),lower(?))>0 OR EXISTS(SELECT 1 FROM conversation_search_entries AS entry WHERE entry.owner_id=id AND ${SEARCH_ENTRY}))`).join(' AND ');
+const searchClause = (terms: string[], title: string) => terms.map(() => `(instr(lower(id),lower(?))>0 OR instr(lower(${title}),lower(?))>0 OR EXISTS(SELECT 1 FROM conversation_search_entries AS entry WHERE entry.owner_id=id AND ${SEARCH_ENTRY}))`).join(' AND ');
 const searchSnippet = (terms: string[]) => {
   const text = "json_extract(entry.value,'$.text')";
   const starts = terms.map(() => `CASE WHEN instr(lower(${text}),lower(?))>0 THEN instr(lower(${text}),lower(?)) ELSE 1000000 END`).join(',');
@@ -43,9 +43,10 @@ export class ConversationRepository {
   private repairs = new Set<string>();
   private repairScheduled = false;
   private stopped = false;
+  private readonly savedRecords = new WeakMap<StoredConversation,string>();
   private readonly nativeReader: NativeContentReader;
   private readonly nativeTool?: (record:StoredConversation,entry:ConversationEntry)=>NativeToolContent|undefined;
-  constructor(directory: string,nativeTool?:(record:StoredConversation,entry:ConversationEntry)=>NativeToolContent|undefined) { this.nativeTool=nativeTool;this.nativeReader = new NativeContentReader(directory); this.directory = directory; this.filename = path.join(directory, 'conversations.sqlite'); }
+  constructor(directory: string,nativeTool?:(record:StoredConversation,entry:ConversationEntry)=>NativeToolContent|undefined, readTool?:(reference:NativeToolContent)=>ConversationEntry|undefined) { this.nativeTool=nativeTool;this.nativeReader = new NativeContentReader(directory,readTool); this.directory = directory; this.filename = path.join(directory, 'conversations.sqlite'); }
 
   private open(write: boolean): DatabaseSync | undefined {
     if (!fs.existsSync(this.filename) && !write) return undefined;
@@ -133,6 +134,22 @@ export class ConversationRepository {
                 WHEN json_extract(NEW.body,'$._bodyFormat') IS NOT 7 OR json_array_length(NEW.body,'$.view.entries')>0 OR json_array_length(NEW.body,'$.inheritedContext.entries')>0
                 BEGIN SELECT RAISE(ABORT,'agent_storage_writer_incompatible'); END;`).join('\n')}
               PRAGMA user_version=7; COMMIT;`);
+          }
+          if(row.user_version < 8) {
+            db.exec(`BEGIN IMMEDIATE; DROP TRIGGER IF EXISTS conversation_body_format_insert; DROP TRIGGER IF EXISTS conversation_body_format_update;
+              UPDATE conversations SET body=json_set(body,'$._bodyFormat',8);
+              ${['INSERT','UPDATE OF body'].map((op,index)=>`CREATE TRIGGER conversation_body_format_${index?'update':'insert'} BEFORE ${op} ON conversations
+                WHEN json_extract(NEW.body,'$._bodyFormat') IS NOT 8 OR json_array_length(NEW.body,'$.view.entries')>0 OR json_array_length(NEW.body,'$.inheritedContext.entries')>0
+                BEGIN SELECT RAISE(ABORT,'agent_storage_writer_incompatible'); END;`).join('\n')}
+              PRAGMA user_version=8; COMMIT;`);
+          }
+          if(row.user_version < 9) {
+            db.exec(`BEGIN IMMEDIATE; DROP TRIGGER IF EXISTS conversation_body_format_insert; DROP TRIGGER IF EXISTS conversation_body_format_update;
+              UPDATE conversations SET body=json_set(body,'$._bodyFormat',9);
+              ${['INSERT','UPDATE OF body'].map((op,index)=>`CREATE TRIGGER conversation_body_format_${index?'update':'insert'} BEFORE ${op} ON conversations
+                WHEN json_extract(NEW.body,'$._bodyFormat') IS NOT 9 OR json_array_length(NEW.body,'$.view.entries')>0 OR json_array_length(NEW.body,'$.inheritedContext.entries')>0
+                BEGIN SELECT RAISE(ABORT,'agent_storage_writer_incompatible'); END;`).join('\n')}
+              PRAGMA user_version=9; COMMIT;`);
           }
           const HAS_WORK = hasWork(db);
         db.exec('CREATE TABLE IF NOT EXISTS conversation_participation (id TEXT PRIMARY KEY, revision TEXT NOT NULL, body TEXT NOT NULL)');
@@ -241,7 +258,16 @@ export class ConversationRepository {
     try {
       db.exec('BEGIN IMMEDIATE');
       const current = db.prepare('SELECT revision FROM conversations WHERE id=?').get(id) as {revision:string}|undefined;
-      if (current?.revision === record.view.revision) { ConversationReadModel.saveHeader(db, record); ConversationReadModel.saveEntries(db, record); db.prepare('INSERT INTO conversation_participation(id,revision,body) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,body=excluded.body').run(id,record.view.revision,JSON.stringify(projectParticipation(record))); }
+      if (current?.revision === record.view.revision) {
+        // Ordinary saves already commit the header and entries atomically. The
+        // queued participation refresh must not rewrite that canonical history.
+        const messages = db.prepare('SELECT revision,message_revision FROM conversation_read_states WHERE id=?').get(id) as {revision:string;message_revision:string|null}|undefined;
+        if (messages?.revision !== current.revision || messages.message_revision !== current.revision) {
+          ConversationReadModel.saveHeader(db, record);
+          ConversationReadModel.saveEntries(db, record);
+        }
+        db.prepare('INSERT INTO conversation_participation(id,revision,body) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,body=excluded.body').run(id,record.view.revision,JSON.stringify(projectParticipation(record)));
+      }
       else this.queueReadRepair(id);
       db.exec('COMMIT');
     } catch (error) { try { db.exec('ROLLBACK'); } catch {} throw error; } finally { db.close(); }
@@ -276,6 +302,20 @@ export class ConversationRepository {
     const entry=this.readConversation(id)?.view.entries.find(entry=>entry.id===entryId);
     if(entry){if(createHash('sha256').update(JSON.stringify(entry)).digest('hex')!==revision)fail('agent_entry_changed','工具记录已变化，请重新读取当前对话。',409);return entry;}
   }
+  readToolReferences(id:string):Map<string,NativeToolContent> {
+    const refs=new Map<string,NativeToolContent>(),db=this.open(false);if(!db)return refs;
+    try{
+      for(const row of db.prepare("SELECT c.* FROM conversation_entry_contents c JOIN conversation_read_entries e USING(conversation_id,content_revision) WHERE c.conversation_id=? AND c.codec='native-tool'").all(id)){
+        const ref=ConversationEntryStore.reference(row as any);
+        if(ref?.version===3&&ref.entry.kind==='tool'&&ref.entry.text===''&&!ref.entry.input&&!ref.text.length&&!ref.input?.length)refs.set(ref.entry.id+':'+row.content_revision,ref);
+      }
+      return refs;
+    }finally{db.close();}
+  }
+  readNativeReference(ref:NativeToolContent,revision:string) {
+    if(ref.version!==3||createHash('sha256').update(JSON.stringify(ref)).digest('hex')!==revision)fail('agent_entry_corrupt','原生工具引用的修订不一致。',409);
+    return this.nativeReader.tool(ref,revision);
+  }
   readRevision(id:string):{revision:string;seenThrough?:number}|undefined {
     const db=this.open(false);if(!db)return;
     try{if(ConversationReadModel.available(db)){const row=db.prepare("SELECT revision,json_extract(state,'$.view.activity.seenThrough') AS seenThrough FROM conversation_read_states WHERE id=?").get(id) as {revision:string;seenThrough?:number}|undefined;if(row)return row;}const row=db.prepare('SELECT revision,summary FROM conversations WHERE id=?').get(id) as {revision:string;summary:string}|undefined;return row?{revision:row.revision,seenThrough:JSON.parse(row.summary)?.activity?.seenThrough}:undefined;}finally{db.close();}
@@ -286,7 +326,7 @@ export class ConversationRepository {
     return this.readConversation(id);
   }
   /** Canonical headers only: maintenance never loads message bodies or trusts optional read caches. */
-  storageDependencies(): { complete: boolean; contexts: string[] } {
+  storageDependencies(onReference?: (record: {view: Pick<StoredConversation['view'], 'id' | 'cwd'>}, participant: StoredParticipant, bindingIdentity?: string, consumer?: {run?: RunView; executionRef?: import('../contracts.ts').ExecutionRef; pending: boolean}) => void): { complete: boolean; contexts: string[] } {
     let db: DatabaseSync | undefined;
     try {
       db = this.open(false);
@@ -295,6 +335,7 @@ export class ConversationRepository {
       const contexts = new Set<string>();
       const needsEvidence = (run: RunView) => unfinishedRun(run) || run.resourcesReleased !== true || run.executionState === 'unknown' || run.executionState === 'active';
       for (const row of db.prepare(`SELECT json_object(
+        'view',json_object('id',json_extract(body,'$.view.id'),'cwd',json_extract(body,'$.view.cwd')),
         'participants',json_extract(body,'$.participants'),'attempts',json_extract(body,'$.attempts'),
         'outcomes',json_extract(body,'$.runOutcomes'),'run',json_extract(body,'$.view.run'),
         'retainedRuns',json_extract(body,'$.view.retainedRuns'),'requests',json_extract(body,'$.view.requests')) AS header FROM conversations`).iterate()) {
@@ -306,22 +347,24 @@ export class ConversationRepository {
           !header.participants.some((participant: {id: string}) => participant.id === item.participantId))) throw new Error('invalid_storage_participant');
         for (const participant of header.participants) {
           if (typeof participant.id !== 'string' || typeof participant.provider !== 'string') throw new Error('invalid_storage_participant');
-          const preserve = (context: unknown) => {
-            if (context === undefined) return; // Not all attempts reached native context creation.
+          const preserve = (context: unknown, bindingIdentity?: string, consumer?: {run?: RunView; executionRef?: import('../contracts.ts').ExecutionRef; pending: boolean}) => {
+            if (context === undefined) { onReference?.({view: header.view}, participant, bindingIdentity, consumer); return; } // Starting work still owns its environment before native context creation.
             if (typeof context !== 'string' || !context) throw new Error('invalid_storage_context');
             contexts.add(`${participant.provider}:${context}`);
+            onReference?.({view: header.view}, participant, bindingIdentity, consumer);
           };
-          if (runs.some(run => run.participantId === participant.id && needsEvidence(run)) ||
-              header.requests.some((request: { participantId: string; runId: string }) => request.participantId === participant.id ||
-                runs.some(run => run.id === request.runId && run.participantId === participant.id))) {
-            preserve(participant.contextRef?.id);
+          const pending = header.requests.some((request: {participantId: string; runId: string}) => request.participantId === participant.id || runs.some(run => run.id === request.runId && run.participantId === participant.id));
+          if (pending) preserve(participant.contextRef?.id, undefined, {pending: true});
+          for (const run of runs.filter(run => run.participantId === participant.id && needsEvidence(run))) {
+            const attempt = header.attempts.find((attempt: {runId: string; participantId: string}) => attempt.runId === run.id && attempt.participantId === participant.id);
+            preserve(participant.contextRef?.id, undefined, {run, executionRef: attempt?.executionRef, pending: false});
           }
           for (const attempt of header.attempts.filter((attempt: {participantId: string}) => attempt.participantId === participant.id)) {
             const run = runs.find(run => run.id === attempt.runId), outcome = header.outcomes?.[attempt.runId];
             // Retained rounds can still refer to a replaced context; current participant state is insufficient.
             if ((run ? needsEvidence(run) : !['completed', 'failed', 'stopped'].includes(outcome?.status)) ||
                 header.requests.some((request: {runId: string}) => request.runId === attempt.runId)) {
-              preserve(attempt.executionRef?.data?.resourceContext ?? participant.contextRef?.id);
+              preserve(attempt.executionRef?.data?.resourceContext ?? participant.contextRef?.id, attempt.executionRef?.data?.resourceBinding, {run, executionRef: attempt.executionRef, pending: header.requests.some((request: {runId: string}) => request.runId === attempt.runId)});
             }
           }
         }
@@ -361,7 +404,7 @@ export class ConversationRepository {
       if (options.taskId) { where.push("(EXISTS(SELECT 1 FROM json_each(read_state,'$.view.taskLinks') WHERE json_extract(value,'$.workspaceId')=? AND json_extract(value,'$.taskId')=?) OR (json_type(read_state,'$.view.taskLinks') IS NULL AND workspace_id=? AND ((json_type(read_state,'$.view.taskIds') IS NULL AND task_id=?) OR EXISTS(SELECT 1 FROM json_each(read_state,'$.view.taskIds') WHERE value=?))))"); values.push(workspaceId,options.taskId,workspaceId,options.taskId,options.taskId); }
       if (options.parentConversationId) { where.push("json_extract(read_state,'$.view.childOf.conversationId')=?"); values.push(options.parentConversationId); }
       const terms = searchTerms(options.query);
-      if (terms.length) { where.push(searchClause(terms, "json_extract(read_state,'$.view.title')", 'body')); for (const term of terms) values.push(term, term); }
+      if (terms.length) { where.push(searchClause(terms, "json_extract(read_state,'$.view.title')")); for (const term of terms) values.push(term, term, term); }
       if (options.before) { where.push('(updated_at || \'/\' || id) < ?'); values.push(options.before); }
       values.push(options.limit);
       return (db.prepare(`SELECT read_state${modern?',summary':''} FROM ${source} WHERE ${where.length?where.join(' AND '):'1'} ORDER BY updated_at DESC,id DESC LIMIT ?`).all(...values) as {read_state:string;summary?:string}[]).map(row=>{
@@ -391,13 +434,17 @@ export class ConversationRepository {
     const db=this.open(false);if(!db)return [];
     try{return (db.prepare("SELECT body FROM conversations WHERE json_extract(body,'$.view.titleState.status')='generating' AND json_extract(body,'$.view.run.generation')<>?").all(generation) as Array<{body:string}>).map(row=>ConversationEntryStore.hydrate(db,JSON.parse(row.body) as StoredConversation,this.nativeReader));}finally{db.close();}
   }
+  listTitleFailureCandidates(): StoredConversation[] {
+    const db=this.open(false);if(!db)return [];
+    try{return (db.prepare("SELECT body FROM conversations WHERE json_extract(body,'$.titleOrigin')='default' AND json_extract(body,'$.view.title')='新对话' AND json_extract(body,'$.view.titleState.status') IN ('failed','unavailable')").all() as Array<{body:string}>).map(row=>ConversationEntryStore.hydrate(db,JSON.parse(row.body) as StoredConversation,this.nativeReader));}finally{db.close();}
+  }
   listInterrupted(): StoredConversation[] {
     const db = this.open(false); if (!db) return [];
     try {
       return (db.prepare(`SELECT body FROM conversations WHERE json_extract(body,'$.interruption.runId')=json_extract(body,'$.view.run.id') OR json_extract(body,'$.view.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','unknown','tools-active') ORDER BY updated_at DESC`).all() as {body:string}[]).map(row=>ConversationEntryStore.hydrate(db,JSON.parse(row.body) as StoredConversation,this.nativeReader));
     } finally { db.close(); }
   }
-  querySummaries(workspaceIds: string[], input: {workspaceId?:string;activeOnly?:boolean;hidden?:boolean;query?:string;agent?:string;model?:string;activityState?:string;generation?:string;cursor?:string;limit:number}, generationAlive?: (generation:string)=>boolean): {conversations:ConversationView[];nextCursor?:string;total:number;stats:{modelExecutions:Array<{accountId:string;accountLabel:string;model:string;count:number}>;agents:Array<{label:string;count:number}>;models:Array<{label:string;count:number}>;executions:Array<{provider:string;model:string;count:number}>};activityCounts:{pendingSend?:number;active:number;running:number;waiting:number;unseen:number;unknown:number;attention:number}} {
+  querySummaries(workspaceIds: string[], input: {draftConversationIds?:string[];workspaceId?:string;activeOnly?:boolean;hidden?:boolean;query?:string;agent?:string;model?:string;activityState?:string;generation?:string;cursor?:string;limit:number}, generationAlive?: (generation:string)=>boolean): {conversations:ConversationView[];nextCursor?:string;total:number;stats:{modelExecutions:Array<{accountId:string;accountLabel:string;model:string;count:number}>;agents:Array<{label:string;count:number}>;models:Array<{label:string;count:number}>;executions:Array<{provider:string;model:string;count:number}>};activityCounts:{pendingSend?:number;active:number;running:number;waiting:number;unseen:number;unknown:number;attention:number}} {
     const empty={conversations:[],total:0,stats:{agents:[],models:[],executions:[],modelExecutions:[]},activityCounts:{active:0,running:0,waiting:0,unseen:0,unknown:0,attention:0}};
     const db=this.open(false);if(!db||!workspaceIds.length){db?.close();return empty;}
     try {
@@ -420,7 +467,9 @@ export class ConversationRepository {
       const compactDecisions="json_extract(summary,'$.activity.pendingDecisionCount')";
       // New summaries stay on the covering index. Only legacy/mismatched rows
       // need their current request header (or canonical legacy body) inspected.
-      const historicalCandidate="is_active=1 AND (json_extract(summary,'$.run.status')='tools-active' OR EXISTS(SELECT 1 FROM json_each(summary,'$.retainedRuns') AS historical WHERE json_extract(historical.value,'$.resourcesReleased')=1 OR json_extract(historical.value,'$.status')='tools-active'))";
+      // Retained unknown runs are included because a completed conversation may
+      // still carry an old unreleased unknown that should no longer be active.
+      const historicalCandidate="is_active=1 AND (json_extract(summary,'$.run.status')='tools-active' OR (json_extract(summary,'$.run.status')='unknown' AND json_extract(summary,'$.run.stopRequested')=1 AND json_extract(summary,'$.run.accepted')=0) OR EXISTS(SELECT 1 FROM json_each(summary,'$.retainedRuns') AS historical WHERE json_extract(historical.value,'$.resourcesReleased')=1 OR json_extract(historical.value,'$.status') IN ('tools-active','unknown')))";
       const compatibility=modern?db.prepare(`SELECT max(${compactDecisions} IS NULL OR json_extract(summary,'$.revision')<>revision) AS decisions,max(${historicalCandidate}) AS historical FROM ${table} WHERE ${indexed?`${HAS_WORK} AND `:''}workspace_id IN (${ids.map(()=>'?').join(',')})`).get(...ids) as {decisions:number;historical:number}:undefined;
       const legacyDecisions=!modern || Boolean(compatibility?.decisions);
       let decisionCount=compactDecisions;
@@ -443,11 +492,16 @@ export class ConversationRepository {
       const retained = input.generation && generationAlive ? (db.prepare(`SELECT DISTINCT json_extract(summary,'$.run.generation') AS generation FROM ${storedSource} WHERE ${indexed?`${HAS_WORK} AND `:''}workspace_id IN (${ids.map(()=>'?').join(',')}) AND ${status} IN ('starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown')`).all(...ids) as Array<{generation:string|null}>).map(row=>row.generation).filter((generation):generation is string=>Boolean(generation&&generation!==input.generation&&generationAlive(generation))) : [];
       const generations = input.generation ? [...new Set([input.generation,...retained])].sort() : [];
       const effectiveStatus = generations.length ? `CASE WHEN coalesce(json_extract(summary,'$.run.generation'),'') NOT IN (${generations.map(()=>'?').join(',')}) AND ${status} IN ('starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown') THEN 'unknown' ELSE ${status} END` : status;
-      const state = `CASE WHEN send_activity IS NOT NULL THEN 'send-'||json_extract(send_activity,'$.state') WHEN pending_decision_count>0 THEN 'waiting' WHEN hidden=1 AND is_active=0 THEN NULL WHEN effective_status='unknown' THEN 'unknown' WHEN effective_status IN ('waiting-approval','waiting-question') THEN 'waiting' WHEN effective_status IN ('starting','running','stopping') THEN 'running' WHEN activity_version>seen_version THEN 'unseen' ELSE NULL END`;
-      const source=`(SELECT *,CASE WHEN activity_state IN ('waiting','unseen','send-failed') THEN 2 WHEN list_active=1 THEN 1 ELSE 0 END AS sort_priority FROM (SELECT *,${state} AS activity_state FROM (SELECT *,${effectiveStatus} AS effective_status FROM ${withDecisions})))`;
+      const state = `CASE WHEN send_activity IS NOT NULL THEN 'send-'||json_extract(send_activity,'$.state') WHEN pending_decision_count>0 THEN 'waiting' WHEN hidden=1 AND list_active=0 THEN NULL WHEN effective_status='unknown' AND list_active=1 THEN 'unknown' WHEN effective_status IN ('waiting-approval','waiting-question') THEN 'waiting' WHEN effective_status IN ('starting','running','stopping') THEN 'running' WHEN activity_version>seen_version THEN 'unseen' ELSE NULL END`;
+      const drafts=new Set(input.draftConversationIds??[]);
+      if(drafts.size)db.function('buildr_has_draft',{deterministic:true},id=>Number(drafts.has(String(id))));
+      const draftPriority=drafts.size?'WHEN buildr_has_draft(id)=1 THEN 1 ':'';
+      const finalReplyAt="json_extract(summary,'$.activity.finalReplyAt')";
+      const orderAt=`CASE WHEN sort_priority>1 THEN user_at WHEN json_extract(summary,'$.run.status')='completed' AND json_extract(summary,'$.run.supersededBy') IS NULL AND coalesce(${finalReplyAt},activity_at)>user_at THEN coalesce(${finalReplyAt},activity_at) ELSE user_at END`;
+      const source=`(SELECT *,${orderAt} AS order_at FROM (SELECT *,CASE WHEN activity_state IN ('waiting','unseen','send-failed') THEN 3 WHEN list_active=1 THEN 2 ${draftPriority}ELSE 0 END AS sort_priority FROM (SELECT *,${state} AS activity_state FROM (SELECT *,${effectiveStatus} AS effective_status FROM ${withDecisions}))))`;
       // Resolved generations can change outside this scope. Any effect on the
       // actual filtered list is already captured by its membership/order keys.
-      const scope=createHash('sha256').update(JSON.stringify(['message-activity-first-v2',ids,{...input,cursor:undefined,limit:undefined}])).digest('hex');
+      const scope=createHash('sha256').update(JSON.stringify(['final-reply-activity-v1',ids,{...input,draftConversationIds:[...drafts].sort(),cursor:undefined,limit:undefined}])).digest('hex');
       const where=[`workspace_id IN (${ids.map(()=>'?').join(',')})`];const values:Array<string|number>=[...generations,...ids];
       if(input.workspaceId){where.push('workspace_id=?');values.push(input.workspaceId);}
       where.push(HAS_WORK);
@@ -500,7 +554,7 @@ export class ConversationRepository {
       if(input.activeOnly)where.push('(list_active=1 OR pending_decision_count>0)');
       else {where.push('(list_active=1 OR pending_decision_count>0 OR hidden=?)');values.push(Number(input.hidden===true));}
       const terms=searchTerms(input.query);
-      if(terms.length){where.push(searchClause(terms,"json_extract(summary,'$.title')",'body'));for(const term of terms)values.push(term,term);}
+      if(terms.length){where.push(searchClause(terms,"json_extract(summary,'$.title')"));for(const term of terms)values.push(term,term,term);}
       if(input.agent||input.model)where.push("effective_status IN ('starting','running','stopping')");
       if(input.agent){where.push("coalesce(nullif(json_extract(summary,'$.run.provider'),''),'未指定')=?");values.push(input.agent);}
       if(input.model){where.push("coalesce(nullif(json_extract(summary,'$.run.model'),''),'未指定')=?");values.push(input.model);}
@@ -510,21 +564,21 @@ export class ConversationRepository {
       // Aggregate compact keys alongside the existing count in this read
       // transaction; no full histories or server-side snapshots are retained.
       const membership=db.prepare(`SELECT count(*) AS n,
-        json_group_array(json_array(id,sort_priority,user_at) ORDER BY id) AS keys
+        json_group_array(json_array(id,sort_priority,order_at) ORDER BY id) AS keys
         FROM ${source} WHERE ${where.join(' AND ')}`).get(...values) as {n:number;keys:string};
       const total=membership.n;
       const epoch=createHash('sha256').update(membership.keys).digest('hex');
       if(input.cursor){
         let cursor:{scope:string;epoch:string;priority:number;at:string;id:string};
         try{cursor=JSON.parse(Buffer.from(input.cursor,'base64url').toString('utf8'));}catch{fail('agent_cursor_invalid','对话列表位置无效，请刷新列表。',409);}
-        if(!cursor||typeof cursor!=='object'||cursor.scope!==scope||cursor.epoch!==epoch||typeof cursor.at!=='string'||typeof cursor.id!=='string'||![0,1,2].includes(cursor.priority))fail('agent_cursor_stale','对话列表顺序已变化，请刷新后继续。',409);
-        where.push('(sort_priority < ? OR (sort_priority=? AND (user_at < ? OR (user_at=? AND id < ?))))');values.push(cursor.priority,cursor.priority,cursor.at,cursor.at,cursor.id);
+        if(!cursor||typeof cursor!=='object'||cursor.scope!==scope||cursor.epoch!==epoch||typeof cursor.at!=='string'||typeof cursor.id!=='string'||![0,1,2,3].includes(cursor.priority))fail('agent_cursor_stale','对话列表顺序已变化，请刷新后继续。',409);
+        where.push('(sort_priority < ? OR (sort_priority=? AND (order_at < ? OR (order_at=? AND id < ?))))');values.push(cursor.priority,cursor.priority,cursor.at,cursor.at,cursor.id);
       }
       const snippet=terms.length?`, ${searchSnippet(terms)} AS search_snippet`:'';
       const snippetValues=terms.length?[...terms.flatMap(term=>[term,term]),...terms]:[];
-      const rows=db.prepare(`SELECT summary,sort_priority,list_active,user_at,activity_at,pending_decision_count,send_activity,id${snippet} FROM ${source} WHERE ${where.join(' AND ')} ORDER BY sort_priority DESC,user_at DESC,id DESC LIMIT ?`).all(...snippetValues,...values,input.limit+1) as Array<{summary:string;sort_priority:number;list_active:number;user_at:string;activity_at:string;pending_decision_count:number;send_activity:string|null;id:string;search_snippet?:string|null}>;
+      const rows=db.prepare(`SELECT summary,sort_priority,list_active,user_at,activity_at,pending_decision_count,send_activity,id,order_at${snippet} FROM ${source} WHERE ${where.join(' AND ')} ORDER BY sort_priority DESC,order_at DESC,id DESC LIMIT ?`).all(...snippetValues,...values,input.limit+1) as Array<{summary:string;sort_priority:number;list_active:number;user_at:string;activity_at:string;pending_decision_count:number;send_activity:string|null;id:string;order_at:string;search_snippet?:string|null}>;
       const chosen=rows.slice(0,input.limit),last=chosen.at(-1);
-      return {conversations:chosen.map(row=>{const view=JSON.parse(row.summary) as ConversationView;const snippetText=row.search_snippet?.replace(/\s+/g,' ').trim();return {...view,...(snippetText?{searchSnippet:snippetText}:{}),activity:view.activity?{...view.activity,userInputAt:row.user_at||undefined,updatedAt:row.activity_at,pendingDecisionCount:row.pending_decision_count,pendingSend:row.send_activity?JSON.parse(row.send_activity):undefined,active:Boolean(row.list_active)||row.pending_decision_count>0}:undefined,entries:[],requests:[],run:view.run?{...view.run,tools:[]}:undefined,participants:view.participants.map(participant=>({...participant,contextId:''}))};}),total,activityCounts:{...counts},stats,nextCursor:rows.length>input.limit&&last?Buffer.from(JSON.stringify({scope,epoch,priority:last.sort_priority,at:last.user_at,id:last.id})).toString('base64url'):undefined};
+      return {conversations:chosen.map(row=>{const view=JSON.parse(row.summary) as ConversationView;const snippetText=row.search_snippet?.replace(/\s+/g,' ').trim();return {...view,...(snippetText?{searchSnippet:snippetText}:{}),activity:view.activity?{...view.activity,userInputAt:row.user_at||undefined,updatedAt:row.activity_at,pendingDecisionCount:row.pending_decision_count,pendingSend:row.send_activity?JSON.parse(row.send_activity):undefined,active:Boolean(row.list_active)||row.pending_decision_count>0}:undefined,entries:[],requests:[],run:view.run?{...view.run,tools:[]}:undefined,participants:view.participants.map(participant=>({...participant,contextId:''}))};}),total,activityCounts:{...counts},stats,nextCursor:rows.length>input.limit&&last?Buffer.from(JSON.stringify({scope,epoch,priority:last.sort_priority,at:last.order_at,id:last.id})).toString('base64url'):undefined};
     }finally{db.close();}
   }
   markSeen(workspaceId:string,id:string,through:number): NonNullable<ConversationView['activity']> {
@@ -547,18 +601,23 @@ export class ConversationRepository {
       db.exec('COMMIT');return activity;
     }catch(error){try{db.exec('ROLLBACK');}catch{}throw error;}finally{db.close();}
   }
-  saveConversation(record: StoredConversation, priorRevision?: string): void {
+  /** textEntryId is only for a caller-proven single-entry mutation of the same saved record. */
+  saveConversation(record: StoredConversation, priorRevision?: string, options: {participationUnchanged?:boolean;textEntryId?:string} = {}): void {
     // Preserve optional observations in the original private record, not strict legacy public DTOs.
-    for(const entry of record.view.entries)if(entry.participation){const value=normalizeParticipation(entry.participation);delete entry.participation;if(value)(record.participationTools??={})[entry.id]={...value,entryRevision:createHash('sha256').update(JSON.stringify(entry)).digest('hex')};}
+    for(const entry of record.view.entries)if(entry.participation){const value=normalizeParticipation(entry.participation);delete entry.participation;if(value)(record.participationTools??={})[entry.id]={...value,entryRevision:record.nativeTools?.[entry.id]?undefined:createHash('sha256').update(JSON.stringify(entry)).digest('hex')};}
     const db = this.open(true)!;
     try {
-      const prepared=ConversationEntryStore.prepare(db,record,this.nativeTool?entry=>this.nativeTool!(record,entry):undefined);
+      const textUpdate=priorRevision!==undefined&&options.participationUnchanged&&options.textEntryId&&this.savedRecords.get(record)===priorRevision
+        ?ConversationEntryStore.prepareText(db,record,options.textEntryId):undefined;
+      this.savedRecords.delete(record);
+      const prepared=textUpdate?undefined:ConversationEntryStore.prepare(db,record,this.nativeTool?entry=>this.nativeTool!(record,entry):undefined);
+      for(const row of prepared??[]) if(record.nativeTools?.[row.entry.id] && record.participationTools?.[row.entry.id]) record.participationTools[row.entry.id]!.entryRevision=row.revision;
       db.exec('BEGIN IMMEDIATE');
       const prior = db.prepare('SELECT revision,summary,message_signature,activity_at,user_at,activity_version,seen_version FROM conversations WHERE id=?').get(record.view.id) as {revision:string;summary:string;message_signature:string;activity_at:string;user_at:string;activity_version:number;seen_version:number}|undefined;
       if ((prior?.revision ?? undefined) !== priorRevision) fail('agent_revision_conflict', '对话已变化，请重新读取。', 409);
-      const physical=db.prepare('SELECT body FROM conversations WHERE id=?').get(record.view.id) as {body:string}|undefined;
+      const physical=Object.keys(record.attachments).length?db.prepare("SELECT json_extract(body,'$.attachments') AS attachments FROM conversations WHERE id=?").get(record.view.id) as {attachments:string}|undefined:undefined;
       if (physical) {
-        const attachments=(JSON.parse(physical.body) as StoredConversation).attachments;
+        const attachments=JSON.parse(physical.attachments) as StoredConversation['attachments'];
         for (const [id,meta] of Object.entries(record.attachments)) {
           const current=attachments[id];
           if (current?.nativeContent && !meta.nativeContent && current.size===meta.size && current.mimeType===meta.mimeType) meta.nativeContent=current.nativeContent;
@@ -577,13 +636,23 @@ export class ConversationRepository {
       const summary=summaryView(record,version,prior?.seen_version??0,activityAt);
       record.view.activity=summary.activity;
       ConversationReadModel.saveHeader(db, record);
-      ConversationReadModel.saveEntries(db, record, prepared);
+      if(textUpdate)ConversationEntryStore.saveText(db,record.view.id,textUpdate);
+      else ConversationReadModel.saveEntries(db, record, prepared);
       db.prepare('UPDATE conversations SET summary=?,message_signature=?,activity_at=?,user_at=?,activity_version=?,is_active=? WHERE id=?').run(JSON.stringify(summary),signature,activityAt,userAt,version,Number(summary.activity!.active),record.view.id);
       const before=prior?.summary?JSON.parse(prior.summary) as ConversationView:undefined;
       const rank=(v:ConversationView|undefined)=>JSON.stringify([v?.title,v?.hidden,v?.run?.status,v?.activity,v?.run?.provider,v?.run?.model]);
       if(rank(before)!==rank(summary))db.exec('UPDATE conversation_epoch SET value=value+1 WHERE id=1');
+      // Assistant text changes neither tool evidence nor input participation.
+      // Carry forward only a valid projection of the exact previous revision;
+      // missing/stale projections still take the existing repair path.
+      const participationCurrent = options.participationUnchanged && priorRevision !== undefined &&
+        db.prepare(`UPDATE conversation_participation SET revision=?,body=json_set(body,'$.revision',?)
+          WHERE id=? AND revision=? AND CASE WHEN json_valid(body)
+            THEN json_extract(body,'$.version')=1 AND json_extract(body,'$.parserVersion')=1 ELSE 0 END`)
+          .run(record.view.revision,record.view.revision,record.view.id,priorRevision).changes === 1;
       db.exec('COMMIT');
-      this.queueReadRepair(record.view.id);
+      this.savedRecords.set(record,record.view.revision);
+      if (!participationCurrent) this.queueReadRepair(record.view.id);
     } catch (error) { try { db.exec('ROLLBACK'); } catch {} throw error; }
     finally { db.close(); }
   }

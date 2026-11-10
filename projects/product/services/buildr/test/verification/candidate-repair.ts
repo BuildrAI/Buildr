@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
-import { createCandidateSourceBinding, createCandidateCheckInputReader } from '../../../../../../skills/buildr-release/scripts/candidate-source-binding.ts';
+import { createCandidateSourceBinding } from '../../../../../../skills/buildr-release/scripts/candidate-source-binding.ts';
+import { createCandidateCheckInputReader } from './candidate-check-inputs.ts';
 import { CANDIDATE_CI_EVIDENCE_SCHEMA } from './release/candidate-ci-contract.ts';
 import { CANDIDATE_CI_SHARDS, CANDIDATE_CI_HOST_NODE_TUPLES, verificationSteps, resolveVerificationExecutionProfile } from './registry.ts';
 import { candidateDependencyInputsIdentity, validateCandidateArtifactEvidence, validCandidateExecutionEnvironment } from './candidate-artifact-reuse.ts';
@@ -55,7 +56,8 @@ export function createCandidateRepairPlan(input: {
       || item.sourceCommit !== productSource || item.sourceTree !== binding.productTree
       || item.purpose !== 'candidate' || item.rehearsalIdentity) throw new Error('Candidate repair evidence belongs to another source, purpose or run.');
     if (item.verificationSource) {
-      const priorBinding = createCandidateSourceBinding(input.repo, productSource, item.verificationSource);
+      const priorBinding = createCandidateSourceBinding(input.repo, productSource, item.verificationSource,
+        item.sourceBinding?.schemaVersion === 'buildr.candidate-source-binding/v1' ? null : item.sourceBinding?.inputPolicy);
       if (!isDeepStrictEqual(item.sourceBinding, priorBinding)) throw new Error('Candidate repair prior verification source is unbound.');
     }
     if (item.artifact && !sameArtifact(item.artifact, input.artifact)) throw new Error('Candidate repair evidence refers to different package bytes.');
@@ -117,7 +119,8 @@ export function assertCandidateRepairPlan(plan: any, repo: string, registryIdent
   if (plan?.schemaVersion !== CANDIDATE_REPAIR_SCHEMA || plan.registryIdentity !== registryIdentity) throw new Error('Candidate repair plan schema or registry differs.');
   const { identity, ...body } = plan;
   if (identity !== digest(body)) throw new Error('Candidate repair plan integrity differs.');
-  const binding = createCandidateSourceBinding(repo, plan.sourceBinding.productSource, plan.sourceBinding.verificationSource);
+  const binding = createCandidateSourceBinding(repo, plan.sourceBinding.productSource, plan.sourceBinding.verificationSource,
+    plan.sourceBinding.schemaVersion === 'buildr.candidate-source-binding/v1' ? null : plan.sourceBinding.inputPolicy);
   if (!isDeepStrictEqual(binding, plan.sourceBinding)) throw new Error('Candidate repair source binding changed.');
   validateCandidateRepairRun(plan.originalRun, plan.repository, plan.originalRun.id);
   const expected = candidateProofDescriptors();

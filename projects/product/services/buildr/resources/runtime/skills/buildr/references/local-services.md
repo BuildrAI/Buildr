@@ -47,6 +47,16 @@ buildr service-runtime task-start --task <task-id> --services <backend-code>,<fr
 
 只启动任务前端并连接远程时，使用 `--services <frontend-code> --connection remote`。命令行接口（CLI）默认启动来源为智能体（Agent）；使用 `--origin agent` 明确本次入口。任务组合逐项返回启动、复用或错误，已有成功项保留；局部失败先读该项日志，不重启无关成功实例或把整组表述为成功。
 
+## 生成或更新运行定义
+
+`runtime.yml` 由智能体按服务真实启动方式生成或更新，写入前逐项核对：
+
+- 启动命令、工作目录、首选端口与端口参数来自实际可运行验证；就绪检查对应真实路径。
+- 前端把**实际访问的每个后端**写进 `local.backends`：服务编码、注入变量、默认 QA 地址。漏写的后端不会被替换，请求仍走默认地址。
+- 需要参与任务泳道（Lane）的后端声明 `local.routing`：`serviceId` 取应用真实发现名，注入变量与观察路径与服务端接入一致。前端不声明 `local.routing`。
+- 前端启动脚本读取注入变量：目标是本机 `127.0.0.1` 时转发到本地，其余请求保持 QA 网关；按服务路径前缀分流，不按域名改写。
+- 生成后核对：`service-runtime show --service <code>` 能看到每个声明后端，`service-runtime task-show --task <id>` 能看到服务与目录。
+
 ## 任务内服务发现（Service Discovery）
 
 版本 2 复用 `local.backends`，发现条目声明真实应用名称及固定 QA 回落；混合列表的直接地址条目须显式使用 `kind: direct-url`。旧 `local.backend` 和版本 1 列表继续可读。以下是协议结构示例，应用名称与入口必须沿真实代码验证，不能照抄后填验证时间：

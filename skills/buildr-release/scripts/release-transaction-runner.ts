@@ -18,7 +18,7 @@ import {
   releaseWorkflowPath,
   sha256,
 } from './release-authority.ts';
-import { assertReleaseConsumptionCoverage } from '../../../projects/product/services/buildr/test/verification/release/release-consumption.ts';
+import { assertReleaseConsumptionCoverage } from '../../../projects/product/services/buildr/test/verification/release/release-consumption-contract.ts';
 import { readReleaseArtifact, RELEASE_ARTIFACT_METADATA_MAX_BYTES } from './release-artifact.ts';
 import { createReleaseContext, evaluateReleaseReadiness, releaseContextIdentity, validateReleaseContext } from './release-readiness.ts';
 import { inspectReleaseSelection } from './release-selection.ts';
@@ -27,6 +27,7 @@ import { inspectHostedReleaseTransaction } from './release-transaction-evidence.
 import { artifactFromTarball, releaseManifestFromTarball } from './package-artifact-observation.ts';
 import { releaseExecutionCommit, validateReleaseExecutorRecovery } from './release-executor-recovery.ts';
 import { assertCandidateSourceBinding } from './candidate-source-binding.ts';
+import { isCandidateVerificationWorkflow } from './local-package-handoff.ts';
 import { CANDIDATE_CI_AGGREGATE_SCHEMA } from '../../../projects/product/services/buildr/test/verification/release/candidate-ci-contract.ts';
 
 const serviceRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../projects/product/services/buildr');
@@ -226,6 +227,17 @@ function taskCorrelationProjection(value: any): any  {
   return value ? releaseTaskAssociationProjection(value) : null;
 }
 
+/** Restore only inputs already present in a validated frozen release context. */
+export function frozenReleaseDispatchArgs(value: any, releaseId: string): string[] {
+  const context = validateReleaseContext(value);
+  const workflowDigest = context.executorRecovery?.workflowDigest ?? context.workflow.digest;
+  return ['workflow', 'run', releasePublishAuthority.workflow, '--repo', releasePublishAuthority.repository, '--ref', 'main',
+    '-f', `release_id=${releaseId}`, '-f', `version=${context.release.version}`, '-f', `source_commit=${context.convergence.mainCommit}`,
+    '-f', `candidate_base=${context.release.sourceCommit}`, '-f', `candidate_tree=${context.release.sourceTree}`,
+    '-f', `workflow_sha256=${workflowDigest.slice(7)}`,
+    '-f', `context_digest=${context.identity}`, '-f', `candidate_run_id=${context.candidate.runId}`, '-f', `release_context=${JSON.stringify(context)}`];
+}
+
 export async function runHostedReleaseTransaction(options: any = {}, dependencies: any = {}): Promise<any>  {
   const rawExecute: any = dependencies.execute ?? defaultExecute;
   const exactNode: any = createExactNodeExecutionEnvironment({ nodeExecutable: process.execPath, env: process.env, requireNpm: true, minimumVersion: '24.15.0' });
@@ -265,7 +277,7 @@ export async function runHostedReleaseTransaction(options: any = {}, dependencie
       const run = parseJson(invoke(execute, ghCommand, ['api', `repos/${releasePublishAuthority.repository}/actions/runs/${candidateRunId}`], repo), 'Recovery Candidate run readback');
       if (run.id !== candidateRunId || run.repository?.full_name !== releasePublishAuthority.repository || run.status !== 'completed'
         || run.conclusion !== 'success' || !['pull_request', 'workflow_dispatch'].includes(run.event)
-        || run.path?.split('@')[0] !== '.github/workflows/verify.yml' || run.head_sha !== candidateBase
+        || !isCandidateVerificationWorkflow(run.path) || run.path?.split('@')[0] !== context.candidate.workflow || run.head_sha !== candidateBase
         || run.run_attempt !== context.candidate.runAttempt) throw new Error('Recovery Candidate run changed.');
       const candidateEvidence = readCandidateEvidence({ candidateRunId, ghCommand, repo, execute, dependencies });
       const { aggregate, manifest } = candidateEvidence;
@@ -301,7 +313,7 @@ export async function runHostedReleaseTransaction(options: any = {}, dependencie
       repository: releasePublishAuthority.repository,
       status: 'completed',
       conclusion: 'success',
-      workflowPath: '.github/workflows/verify.yml',
+      workflowPath: isCandidateVerificationWorkflow(candidateActual.workflowPath) ? candidateActual.workflowPath : '.github/workflows/verify.yml',
     };
     if (JSON.stringify({ ...candidateActual, event: undefined }) !== JSON.stringify({ ...candidateExpected, event: undefined }) || !['pull_request', 'workflow_dispatch'].includes(candidateActual.event)) throw new Error(`Candidate run readback mismatch: ${JSON.stringify({ expected: { ...candidateExpected, event: ['pull_request', 'workflow_dispatch'] }, actual: candidateActual })}`);
     const candidateSourceCommit: any = requiredHash(candidateRun?.head_sha, 'Candidate run head SHA');
@@ -357,7 +369,7 @@ export async function runHostedReleaseTransaction(options: any = {}, dependencie
       } : null,
       release: { version, sourceCommit: candidateSourceCommit, sourceTree: candidateSourceTree },
       candidate: {
-        workflow: '.github/workflows/verify.yml',
+        workflow: candidateActual.workflowPath,
         runId: candidateRunId,
         runAttempt: Number(candidateRun.run_attempt),
         runUrl: candidateRun.html_url || `https://github.com/${releasePublishAuthority.repository}/actions/runs/${candidateRunId}`,
@@ -401,8 +413,9 @@ export async function runHostedReleaseTransaction(options: any = {}, dependencie
     mainCommit: sourceCommit,
     mainTree: actualTree,
     workflowDigest: `sha256-${workflowSha256}`,
-    nodeVersion: exactNode.audit.version,
-    nodeIdentity: exactNode.audit.identity,
+    // Local resumption consumes the original protected execution identity, not this CLI process identity.
+    nodeVersion: suppliedContext ? context.node.version : exactNode.audit.version,
+    nodeIdentity: suppliedContext ? context.node.executionIdentity : exactNode.audit.identity,
   };
   if (JSON.stringify(observedBindings) !== JSON.stringify(expectedBindings)) throw new Error(`Release context/current source binding mismatch: ${JSON.stringify({ expected: expectedBindings, actual: observedBindings })}`);
   const readiness: any = evaluateReleaseReadiness({ stage: 'dispatch-check', context });
@@ -417,20 +430,20 @@ export async function runHostedReleaseTransaction(options: any = {}, dependencie
     const runs = parseJson(invoke(execute, ghCommand, ['run', 'list', '--repo', releasePublishAuthority.repository, '--workflow', releasePublishAuthority.workflow,
       '--event', 'workflow_dispatch', '--branch', 'main', '--limit', '100', '--json', 'databaseId,displayTitle,headSha,status,conclusion,url'], repo), 'GitHub release run lookup');
     if (!Array.isArray(runs)) throw new Error('GitHub release run lookup is not an array.');
-    return runs.find((item: any) => item.displayTitle === title && item.headSha === sourceCommit) ?? null;
+    const excluded = new Set(options.excludedRunIds ?? []);
+    return runs.find((item: any) => item.displayTitle === title && item.headSha === sourceCommit && !excluded.has(item.databaseId)) ?? null;
   };
   let run = listRun();
   if (!run && options.dispatchPreviouslyRequested !== true) {
     const intent = { type: 'workflow-dispatched', releaseId, contextIdentity: context.identity, state: 'unknown' };
     effects.push(intent);
-    dependencies.onDispatchIntent?.({ releaseId, contextIdentity: context.identity });
+    const dispatchArgs = ['workflow', 'run', releasePublishAuthority.workflow, '--repo', releasePublishAuthority.repository, '--ref', 'main',
+      '-f', `release_id=${releaseId}`, '-f', `version=${version}`, '-f', `source_commit=${context.convergence.mainCommit}`,
+      '-f', `candidate_base=${candidateBase}`, '-f', `candidate_tree=${candidateTree}`, '-f', `workflow_sha256=${workflowSha256}`,
+      '-f', `context_digest=${context.identity}`, '-f', `candidate_run_id=${context.candidate.runId}`, '-f', `release_context=${JSON.stringify(context)}`];
+    dependencies.onDispatchIntent?.({ releaseId, contextIdentity: context.identity, dispatchArgs });
     try {
-      invoke(execute, ghCommand, [
-        'workflow', 'run', releasePublishAuthority.workflow, '--repo', releasePublishAuthority.repository, '--ref', 'main',
-        '-f', `release_id=${releaseId}`, '-f', `version=${version}`, '-f', `source_commit=${context.convergence.mainCommit}`,
-        '-f', `candidate_base=${candidateBase}`, '-f', `candidate_tree=${candidateTree}`, '-f', `workflow_sha256=${workflowSha256}`,
-        '-f', `context_digest=${context.identity}`, '-f', `candidate_run_id=${context.candidate.runId}`, '-f', `release_context=${JSON.stringify(context)}`,
-      ], repo);
+      invoke(execute, ghCommand, dispatchArgs, repo);
       intent.state = 'confirmed';
     } catch { /* Read the same request identity; do not issue another dispatch. */ }
   }

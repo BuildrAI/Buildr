@@ -1,8 +1,11 @@
-/** Version admission, pinned downloads and stable persisted binding namespaces. */
+/** Version admission, legacy fallback metadata and stable persisted binding namespaces.
+ * New managed installs resolve the official registry `latest`; these versions are not
+ * used to prevent a newer release from being downloaded. */
 export const nativeProgramPolicies = {
   codex: { major: 0, bindingSeries: '0.163', compatibility: '0.x.x', version: '0.163.0', package: '@openai/codex@0.163.0', entry: 'node_modules/@openai/codex/bin/codex.js', names: ['codex', 'codex.exe'], url: 'https://developers.openai.com/codex/cli', label: 'Codex 独立程序' },
   dsh: { major: 0, bindingSeries: '0.2', compatibility: '0.x.x', version: '0.2.1-rc.2', package: '@deepseek-ai/dsh@0.2.1-rc.2', entry: 'node_modules/@deepseek-ai/dsh/lib/bin.js', names: ['dsh', 'dsh.exe'], url: 'https://www.deepseek.com/en/harness/', label: 'DSH 官方程序' },
   qoder: { major: 1, bindingSeries: '1.1', compatibility: '1.x.x', version: '1.1.75', package: '@qoder-ai/qoder-agent-sdk@1.0.55', entry: `node_modules/@qoder-ai/qoder-agent-sdk/dist/_bundled/qodercli${process.platform === 'win32' ? '.exe' : ''}`, names: ['qodercli', 'qoder', 'qodercli.exe', 'qoder.exe'], url: 'https://docs.qoder.com/zh/cli/sdk/overview', label: 'Qoder 配套执行程序' },
+  'qoder-cn': { major: 1, bindingSeries: '1.1', compatibility: '1.x.x', version: '1.1.86', package: '@qodercn-ai/qoderclicn@1.1.86', entry: `node_modules/@qodercn-ai/qoderclicn/bundle/qoderclicn.js`, names: ['qodercn', 'qoderclicn', 'qoder-cn', 'qodercn.exe', 'qoderclicn.exe'], url: 'https://docs.qoder.cn/cli/installation', label: 'Qoder CN 配套执行程序' },
 } as const;
 export function nativeProgramPolicy(provider: string) {
   if (!Object.hasOwn(nativeProgramPolicies, provider)) throw new Error('agent_program_provider_unsupported');

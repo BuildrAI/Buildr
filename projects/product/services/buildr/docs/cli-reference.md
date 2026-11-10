@@ -103,7 +103,7 @@ npm 更新后的网页交接由新版独立进程执行，复用认证退出、�
 
 开发环境、开发版与发布版共用一套 `~/.buildr/resources/`。普通 `sync` 消费当前共享技能与附件，不因调用程序的随包内容不同而替换共享集。软件更新负责显式发布完整资源；Buildr 自举激活由唯一执行器使用 `sync <agent> --publish-resources`，先核对并发布本次交付来源，再同步工作空间。该选项不是普通用户同步的默认步骤；候选工作树禁止借此发布真实用户资源。较低版本不能回退覆盖当前集，同版本不同内容只在显式发布时选择来源。
 
-共享集变化会刷新可重建的本机入口，保留工作空间自有技能、规则和定制源。局部附件缺失或损坏会报告具体资源，已准备工作空间仍可打开；查看共享位置显示实际共享集，而非假定它必须等于当前安装包。未升级的旧程序仍可能执行旧覆盖逻辑；共存程序需要一起升级，单边升级不能约束旧二进制。
+共享集变化会刷新可重建的本机入口，保留工作空间自有技能、规则和定制源。共享目录存在但清单缺失、损坏或不是普通文件时，准备会按当前安装重建完整共享集，不再因底层文件错误而无法重试；目录顶层含 Buildr 无法识别的内容时保留原样，报告真实路径与条目并提示移走后重试。局部附件缺失或损坏会报告具体资源，已准备工作空间仍可打开；查看共享位置显示实际共享集，而非假定它必须等于当前安装包。未升级的旧程序仍可能执行旧覆盖逻辑；共存程序需要一起升级，单边升级不能约束旧二进制。
 
 用户要求“更新工作空间”或“同步工作空间”时，智能体（Agent）先判断根目录是否由 Git 管理：受 Git 管理时，按 `buildr.git-operations/v1` 能力绑定（Capability Binding）选择提供者（Provider），明确目标目录、上游和更新动作，成功后执行 `buildr sync <agent> --target <workspace>`；不受 Git 管理时直接同步。所需提供者（Provider）不可用，或遇到本地改动、分叉、冲突等需要决定的情况时，停止相关更新与同步并保留现场，不自动执行 `stash`、`reset`、`rebase`、`merge` 或覆盖文件。Git 更新成功后不重复询问同步。
 
@@ -172,7 +172,7 @@ buildr help assets
 | `buildr task verification inspect\|record <task-id>` | 读取或整值保存Workspace SQLite中的current任务验证报告。`record --report <json-file>`接收Agent在开发完成后形成的实际检查、选择范围、目标、结果、未覆盖项和结论；`inspect`可带当前内容identity判断报告是否仍适用。命令不生成计划、不执行测试、不绑定Candidate。 |
 | `buildr rules render` | 按 `AGENTS.md` 的 scope 祖先链与子树投射规则内容；`rules add/remove` 与 `rules/manifest.yml` 已退役，既有文件保留为兼容内容。 |
 | `buildr skills add/remove` | 只维护 workspace `skills/` 中的 Skill source；旧 `--scope .` 仅兼容并警告，Project scope 被拒绝。 |
-| `buildr skills bind/unbind` | 维护 workspace 默认 binding，或在 `projects/<project>/capabilities.yml` 维护 Project context binding。 |
+| `buildr skills bind/unbind` | 仅维护 workspace 默认 binding；项目 scope 已退役，请求会在写入前拒绝。 |
 | `buildr skills render [<agent>] [--adapter <adapter-id>] --destination workspace\|user` | 从 `--target <workspace>` 读取源资产，投射到工作空间（Workspace）或个人用户层；默认 workspace，不按品牌登记限制通用技能（Skill）。 |
 | `buildr commands add/remove` | 维护 workspace Command catalog definitions；最后一个 definition 仍被 requirement 引用时零写入。 |
 | `buildr commands check [--project <project> ...]` | 按显式 Project task context 合并 requirements 并观察本机环境；无 Project 时只检查 workspace defaults。 |
@@ -325,7 +325,7 @@ current Task报告使用`buildr.task-verification-report/v1`，绑定Task scope�
 
 ## Skill capability contracts
 
-`buildr.skills/v3` 为每个 workspace Skill 保存稳定 `assetIdentity`/`sourceIdentity`，并支持 versioned contract、provider `provides`、consumer `requires` 和 workspace 默认 binding。Project context 使用 `buildr.project-capabilities/v1`。安装 provider 本身不会静默改绑。
+`buildr.skills/v3` 为每个 workspace Skill 保存稳定 `assetIdentity`/`sourceIdentity`，并支持 versioned contract、provider `provides`、consumer `requires` 和 workspace 默认 binding。项目能力上下文 `buildr.project-capabilities/v1` 已退役，旧 `capabilities.yml` 不参与解析；Doctor 只读提示，同步自动清理确认安全的空需求/绑定及技能名单文件，其他内容保留，不自动迁移。安装 provider 本身不会静默改绑。
 
 Contract 格式、scope 规则、替换示例以及 `ready` 的边界见 [Skill Capability Contracts](skill-capability-contracts.md)。
 

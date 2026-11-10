@@ -361,19 +361,27 @@
       "type": "skill",
       "id": "project-verification",
       "target": "skills/buildr/project-verification",
-      "integrity": "sha256-08833fbf21d9c9093af37b1b31021319a70c2968e6f6abe6106aabaf31d1e145",
+      "integrity": "sha256-bf45d0fc6879b7df7d3dc3ba2cd54d51d1d5f7a89c4271777e5dd6ee58e38c7e",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-59a62fd28da96259eaa8eb2b219e771a75fe58e9ad49c24642ce784ff2513513"
+          "integrity": "sha256-86fe1ba5d3e1b2aa2a5365fd4e3de04d17e3f1f49bdecaf44b0907aae4d8b6d4"
         },
         {
           "path": "references/frontend-verification.md",
           "integrity": "sha256-7bf441404e8bdbd1c1adf9d2e58b70939dcb653e73e09c287bee6e5d191fc204"
         },
         {
+          "path": "references/impact-selection.md",
+          "integrity": "sha256-d886cea6909bbf377267f315279404f503fdc1ef8937fe5ed41b8a51267857e5"
+        },
+        {
           "path": "references/record-report.md",
           "integrity": "sha256-8bc6facb683b31547ec443704c096b24af4cca79319e9a2b0904b95f8dd4dd3d"
+        },
+        {
+          "path": "scripts/verify-impact.mjs",
+          "integrity": "sha256-2057a900d6fa84f18a20a45b6d7db2e41b224277266ee5057eb3612b14b5d994"
         }
       ]
     },

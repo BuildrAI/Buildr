@@ -1,3 +1,5 @@
+import { observeRetiredProjectCapabilities } from '../project-capability-retirement.ts';
+
 export function createScopeDiagnostics(deps: any) {
   const {
     addDoctorFinding,
@@ -152,7 +154,6 @@ export function createScopeDiagnostics(deps: any) {
       openspecSpecs: existsDirectory(path.join(projectRoot, 'openspec', 'specs')),
       knowledge: existsDirectory(path.join(projectRoot, 'knowledge')),
       openspecChanges: existsDirectory(path.join(projectRoot, 'openspec', 'changes')),
-      capabilities: existsFile(path.join(projectRoot, 'capabilities.yml')),
       commandsContext: existsFile(path.join(projectRoot, 'commands.yml')),
       servicesMetadata: existsFile(metadataPath),
       servicesDirectory: existsDirectory(path.join(projectRoot, 'services')),
@@ -165,7 +166,6 @@ export function createScopeDiagnostics(deps: any) {
       openspecSpecs: 'openspec/specs',
       knowledge: 'knowledge',
       openspecChanges: 'openspec/changes',
-      capabilities: 'capabilities.yml',
       servicesMetadata: 'services/manifest.yml',
       servicesDirectory: 'services',
     };
@@ -236,6 +236,11 @@ export function createScopeDiagnostics(deps: any) {
 
     for (const [projectName, project] of Object.entries(registry.projects || {}).sort(([left]: any, [right]: any) => left.localeCompare(right))) {
       const view = projectView(projectName, project);
+      const retired = observeRetiredProjectCapabilities(resolveSourceRoot(targetRoot, view.source));
+      if (retired) addDoctorFinding(result, retired.status, retired.code, `${projectName}: ${retired.message}`, {
+        path: toPosixRelative(targetRoot, retired.file),
+        suggestion: retired.suggestion,
+      });
       registryResult.projects.push({
         id: view.id,
         workspaceId: view.workspaceId,

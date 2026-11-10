@@ -1,3 +1,5 @@
+import { isVerificationFrameworkInput } from './ownership.ts';
+import { semanticTagsForPaths } from './semantic-tags.ts';
 import fs from 'node:fs';
 import { selectBrowserSelectors } from './browser-selector-dispatcher.ts';
 import path from 'node:path';
@@ -602,7 +604,7 @@ export function estimateVerificationPlan(plan: any, options: any = {}): any  {
   const resourceCapacityLowerBounds: any = Object.freeze(Object.entries(concurrency.resources ?? {}).map(([resource, capacity]: any) => {
     const resourceSteps: any = plan.steps.filter((step: any) => (step.resources ?? []).includes(resource));
     const stepIds: any = resourceSteps.map((step: any) => step.id);
-    const estimatedDurationMs: any = resourceSteps.reduce((total: any, step: any) => total + (Number.isFinite(cost(step)) && cost(step) >= 0 ? cost(step) : 0), 0);
+    const estimatedDurationMs: any = resourceSteps.reduce((total: any, step: any) => total + (Number.isFinite(cost(step)) && cost(step) >= 0 ? cost(step) : 0) * (step.resourceUnits?.[resource] ?? 1), 0);
     return Object.freeze({
       resource,
       capacity,
@@ -645,7 +647,17 @@ export function createVerificationPlan(request: any = {}, steps: any = verificat
   const productionOwnerAudit: any = request.related ? { gaps: [] } : auditProductionOwnerCoverage(paths, steps);
   const profiles: any[] = [...new Set(request.profiles ?? [])];
   const groups: any[] = [...new Set(request.groups ?? [])];
+  const excludeGroups: any[] = [...new Set(request.excludeGroups ?? [])];
   const stepIds: any[] = [...new Set(request.stepIds ?? [])];
+  const tags: string[] = [...new Set<string>([...(request.tags ?? []), ...(request.semantic ? semanticTagsForPaths(paths) : [])])];
+  const knownTags = new Set(steps.flatMap((step: any) => step.tags ?? []));
+  for (const tag of request.tags ?? []) if (!knownTags.has(tag)) throw new Error(`Unknown semantic tag: ${tag}`);
+  for (const step of steps) {
+    const matched = tags.filter(tag => step.tags?.includes(tag));
+    if (!matched.length || !eligible(step) || step.selection === 'explicit-only') continue;
+    selected.add(step.id);
+    reasons.set(step.id, matched.map(tag => `semantic tag ${tag}`));
+  }
   const versionOnlyPackagePaths: any = new Set((request.versionOnlyPackagePaths ?? []).map(normalizeProductPath));
   const selectionOnlyPaths: any = new Set([
     ...versionOnlyPackagePaths,
@@ -664,7 +676,7 @@ export function createVerificationPlan(request: any = {}, steps: any = verificat
     if (!selectionOnlyPaths.has(productPath)) throw new Error(`Selection reason path is not classified as selection-only: ${productPath}`);
     if (typeof code !== 'string' || code.length === 0) throw new Error(`Invalid selection reason code for path: ${productPath}`);
   }
-  const fullScopeMatches: any = paths.filter((productPath: any) => !selectionOnlyPaths.has(productPath)).flatMap((productPath: any) => VERIFICATION_FULL_SCOPE_AUTHORITIES
+  const fullScopeMatches: any = paths.filter((productPath: any) => !selectionOnlyPaths.has(productPath) && !(request.related && isVerificationFrameworkInput(productPath))).flatMap((productPath: any) => VERIFICATION_FULL_SCOPE_AUTHORITIES
     .filter((authority: any) => matchesInput(productPath, authority.pattern))
     .map((authority: any) => ({ productPath, authority })));
   for (const id of stepIds) {
@@ -678,8 +690,15 @@ export function createVerificationPlan(request: any = {}, steps: any = verificat
       selected.add(step.id); reasons.set(step.id, [`complete ${step.testing.executionBoundary} source checks`]);
     }
   }
-  const browserPlan: any = paths.length ? selectBrowserSelectors(paths) : { selectors: [], diagnostics: [] };
-  const selectedBrowsers = new Set<string>(browserPlan.selectors ?? []);
+  const browserPaths = request.related ? paths.filter((file: string) => !isVerificationFrameworkInput(file)) : paths;
+  if (request.related && paths.some(isVerificationFrameworkInput)) {
+    for (const id of ['unit', 'test-syntax', 'test-typecheck', 'integration-changed-paths', 'integration-verification-runtime']) {
+      if (!byId.has(id)) continue;
+      selected.add(id); reasons.set(id, [...(reasons.get(id) ?? []), 'verification framework contract']);
+    }
+  }
+  const browserPlan: any = browserPaths.length ? selectBrowserSelectors(browserPaths) : { selectors: [], diagnostics: [] };
+  const selectedBrowsers = new Set<string>(browserPlan.selectors?.includes('all') ? steps.filter((step:any)=>step.browserSelector).map((step:any)=>step.browserSelector) : browserPlan.selectors ?? []);
   for (const diagnostic of browserPlan.diagnostics ?? []) gaps.push({ code: 'browser-selection-gap', ...diagnostic });
   for (const profile of profiles) {
     if (!VERIFICATION_PROFILES.includes(profile)) throw new Error(`Unknown verification profile: ${profile}`);
@@ -694,6 +713,9 @@ export function createVerificationPlan(request: any = {}, steps: any = verificat
       selected.add(item.id);
       reasons.set(item.id, [...(reasons.get(item.id) ?? []), `group ${group}`]);
     }
+  }
+  for (const group of excludeGroups) {
+    if (!VERIFICATION_GROUPS.includes(group)) throw new Error(`Unknown verification group: ${group}`);
   }
   const unmatchedPaths: any[] = [];
   const delegatedPaths: any[] = [];
@@ -734,13 +756,28 @@ export function createVerificationPlan(request: any = {}, steps: any = verificat
       reasons.set(item.id, [...(reasons.get(item.id) ?? []), ...fullScopeReasons.map((reason: any) => reason.message)]);
     }
   }
+  if (request.related && paths.length === 0 && stepIds.length === 0 && tags.length === 0
+    && request.comparison?.containsHead === true) {
+    gaps.push({
+      code: 'empty-comparison',
+      comparison: request.comparison.base,
+      head: request.comparison.head,
+      reason: 'The comparison base already contains HEAD, so no changed paths can be selected. Use a base before this task\'s changes or pass explicit --check/--tag selection.',
+    });
+  }
   expandDependencies(selected, byId, reasons);
+  // A caller may keep the release-only owners out of an ordinary full run while
+  // the release gate still selects them explicitly.
+  for (const id of [...selected]) {
+    const step: any = byId.get(id);
+    if (step?.groups?.some((group: string) => excludeGroups.includes(group))) selected.delete(id);
+  }
   const orderedIds: any = topologicalOrder(selected, steps);
   const scopeMode: any = types.length && (stepIds.length === 0 || request.completeTypes === true) || fullScopeReasons.length > 0 || profiles.some((profile: any) => profile === 'candidate')
     ? 'full'
     : (mappedPaths.length > 0 || selectionOnlyPaths.size > 0)
       ? 'affected'
-      : (profiles.length > 0 || groups.length > 0 || stepIds.length > 0)
+      : (profiles.length > 0 || groups.length > 0 || stepIds.length > 0 || tags.length > 0)
         ? 'explicit'
         : 'not-applicable';
   const scopeReasons: any[] = [
@@ -765,6 +802,8 @@ export function createVerificationPlan(request: any = {}, steps: any = verificat
     paths: Object.freeze(paths),
     profiles: Object.freeze(profiles),
     groups: Object.freeze(groups),
+    excludeGroups: Object.freeze(excludeGroups),
+    tags: Object.freeze(tags),
     stepIds: Object.freeze(stepIds),
     scope: Object.freeze({ mode: scopeMode, reasons: Object.freeze(scopeReasons) }),
     delegated: Object.freeze(delegatedPaths),
@@ -836,8 +875,10 @@ export function createCandidateCiShardPlan(shardId: any, options: any = {}, step
   const shard: any = CANDIDATE_CI_SHARDS.find((item: any) => item.id === shardId);
   if (!shard) throw new Error(`Unknown Candidate CI shard: ${shardId}`);
   if (shard.requiresArtifact && options.externalArtifact !== true) throw new Error(`Candidate CI shard ${shardId} requires an external candidate artifact`);
-  const plan: any = createVerificationPlan({ stepIds: shard.stepIds }, steps);
-  const primary: any = new Set(shard.stepIds);
+  const stepIds: string[] = options.stepIds ?? shard.stepIds;
+  if (stepIds.some((id: string) => !shard.stepIds.includes(id))) throw new Error(`Candidate CI shard ${shardId} was asked to run an undeclared step`);
+  const plan: any = createVerificationPlan({ stepIds }, steps);
+  const primary: any = new Set(stepIds);
   const projectedSteps: any[] = [];
   for (const item of plan.steps) {
     if (!primary.has(item.id) && item.id !== 'candidate-tarball') {
@@ -853,7 +894,7 @@ export function createCandidateCiShardPlan(shardId: any, options: any = {}, step
     ...plan,
     source: 'candidate-ci-shard',
     shard,
-    primaryStepIds: shard.stepIds,
+    primaryStepIds: stepIds,
     steps: Object.freeze(projectedSteps),
   });
 }

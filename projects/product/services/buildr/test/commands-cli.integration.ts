@@ -45,7 +45,7 @@ test('Commands CLI 分离 catalog、Project requirements 和 machine observation
     { id: 'optional-missing', required: false },
   ]);
   writeRequirements(root, 'beta', [{ id: 'node', required: false, version: '<30.0.0' }]);
-  for (const relative of ['capabilities.yml', 'commands.yml', 'services/manifest.yml']) {
+  for (const relative of ['commands.yml', 'services/manifest.yml']) {
     fs.rmSync(path.join(root, 'projects', 'legacy', relative));
   }
 
@@ -81,7 +81,7 @@ test('Commands CLI 分离 catalog、Project requirements 和 machine observation
 
   run(['project', 'create', 'legacy', '--target', root]);
   assert.equal(fs.existsSync(path.join(root, 'projects', 'legacy', 'commands.yml')), true, 'project create must safely repair the empty baseline');
-  assert.equal(fs.existsSync(path.join(root, 'projects', 'legacy', 'capabilities.yml')), true, 'project create must repair the capability registry through its domain renderer');
+  assert.equal(fs.existsSync(path.join(root, 'projects', 'legacy', 'capabilities.yml')), false, 'project create must not restore retired capability context');
   assert.equal(fs.existsSync(path.join(root, 'projects', 'legacy', 'services', 'manifest.yml')), true, 'project create must repair the service registry through its domain writer');
 });
 

@@ -5,7 +5,7 @@ import {readFileSync,existsSync} from 'node:fs';
 import ts from 'typescript';
 import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
-import {groupConversationWorkspaces,orderActivityItems,activityBadge,activityReminder,activityState,pendingSendReason,isExecuting,conversationMetadata,reminderFallbackRows,completeActivitySnapshot} from '../src/features/agent-conversations/conversation-activity.ts';
+import {groupConversationWorkspaces,orderActivityItems,activityBadge,activityReminder,activityState,pendingSendReason,isExecuting,isActiveConversation,conversationMetadata,reminderFallbackRows,completeActivitySnapshot} from '../src/features/agent-conversations/conversation-activity.ts';
 import {conversationTierChoice} from '../src/features/agent-conversations/conversation-options.ts';
 
 registerHooks({
@@ -50,6 +50,15 @@ test('非阻塞问题在运行时仍为待决策，列表和提醒只展示待�
   assert.match(html,/1 个待处理对话/);assert.match(html,/待决策 1、待查看 0），执行中 1/);
   assert.equal(activityState({...row,activity:{...row.activity,pendingDecisionCount:0}}),'running');
   assert.equal(activityState({run:{status:'running'},requests:[{blocking:false}]}),'waiting','legacy full views retain their question');
+});
+test('未受理停止且无在途工作退出提醒组，未读、待决定仍保留',()=>{
+ const settled={id:'settled',workspaceId:'w',run:{status:'unknown',accepted:false,stopRequested:true,executionState:'unknown',resourcesReleased:false,tools:[]},activity:{version:4,seenThrough:4,active:false,pendingDecisionCount:0}};
+ assert.equal(activityState(settled),null);assert.equal(isActiveConversation(settled),false);
+ assert.deepEqual(reminderFallbackRows([settled]),{pending:[],running:[]});
+ const unread={...settled,activity:{...settled.activity,active:true,seenThrough:3}};
+ assert.equal(activityState(unread),'unknown');assert.equal(isActiveConversation(unread),true);
+ const decision={...settled,activity:{...settled.activity,active:true,pendingDecisionCount:1}};
+ assert.equal(activityState(decision),'waiting');assert.deepEqual(reminderFallbackRows([decision]).pending,[decision]);
 });
 test('提醒组内按用户输入而非后台回复排序，待决策仍优先',()=>{
   const items=[

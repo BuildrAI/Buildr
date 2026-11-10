@@ -48,11 +48,29 @@ export function qoderHistoryItems(messages: any[], contextId: string, interrupti
     if (isOrdinaryInput) executionId = message.uuid;
     if (text && message.type === 'assistant' || isOrdinaryInput) items.push({ id: message.type === 'assistant' ? `message:${message.message?.id ?? message.uuid}` : message.uuid, ...parent, ...(isOrdinaryInput ? { clientRequestId: message.uuid } : {}), kind: 'message', role: message.type === 'assistant' ? 'assistant' : 'user', text, executionId, status: 'completed' });
     for (const part of Array.isArray(content) ? content : []) {
-      if (part.type === 'tool_use') items.push({ id: part.id, ...parent, kind: 'tool', role: 'system', name: typeof part.name === 'string' && part.name ? part.name : undefined, participation: nativeParticipation(part.input===undefined?undefined:JSON.stringify(part.input),undefined,'pending'), input: nativePreview(JSON.stringify(part.input ?? {})), text: String(part.name ?? '工具') + '\n' + nativePreview(JSON.stringify(part.input ?? {})), executionId, status: 'running' });
-      if (part.type === 'tool_result') items.push({ id: part.tool_use_id, ...parent, kind: 'tool', role: 'system', participation: nativeParticipation(undefined,part.content===undefined?undefined:visibleText(part.content),part.is_error?'failed':'unknown'), text: nativePreview(visibleText(part.content)), executionId, status: part.is_error ? 'failed' : 'completed' });
+      if (part.type === 'tool_use') items.push({ id: part.id, ...parent, kind: 'tool', nativeTool: true, role: 'system', name: typeof part.name === 'string' && part.name ? part.name : undefined, participation: nativeParticipation(part.input===undefined?undefined:JSON.stringify(part.input),undefined,'pending'), input: nativePreview(JSON.stringify(part.input ?? {})), text: String(part.name ?? '工具') + '\n' + nativePreview(JSON.stringify(part.input ?? {})), executionId, status: 'running' });
+      if (part.type === 'tool_result') items.push({ id: part.tool_use_id, ...parent, kind: 'tool', nativeTool: true, role: 'system', participation: nativeParticipation(undefined,part.content===undefined?undefined:visibleText(part.content),part.is_error?'failed':'unknown'), text: nativePreview(visibleText(part.content)), executionId, status: part.is_error ? 'failed' : 'completed' });
     }
   }
   const latest = new Map<string, ExecutorItem>(); for (const item of items) { const prior=latest.get(item.id);latest.set(item.id, { ...prior, ...item, ...(item.kind==='tool'?{participation:mergeParticipation(prior?.participation,item.participation,item.name??prior?.name,item.input??prior?.input)}:{}) }); } return [...latest.values()];
+}
+
+/** Split an already-projected history into frames that stay well below the
+ * native RPC limit. A single oversized item fails explicitly instead of
+ * letting the worker's response kill the control channel. */
+export function qoderHistoryPage(items: readonly ExecutorItem[], offset = 0, maximumBytes = 4 * 1024 * 1024, maximumItems = 100): { data: ExecutorItem[]; nextCursor?: string } {
+  if (!Number.isSafeInteger(offset) || offset < 0 || offset > items.length) throw new Error('qoder_history_cursor_invalid');
+  if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 1024 || !Number.isSafeInteger(maximumItems) || maximumItems < 1) throw new Error('qoder_history_page_invalid');
+  let end = offset, bytes = 2;
+  while (end < items.length && end - offset < maximumItems) {
+    const itemBytes = Buffer.byteLength(JSON.stringify(items[end]));
+    const addition = (end === offset ? 0 : 1) + itemBytes;
+    if (end === offset && addition + bytes > maximumBytes) throw new Error('qoder_history_item_too_large');
+    if (end > offset && bytes + addition > maximumBytes) break;
+    bytes += addition;
+    end++;
+  }
+  return { data: items.slice(offset, end), ...(end < items.length ? { nextCursor: String(end) } : {}) };
 }
 
 /** The SDK projection omits origin metadata. Match only native primary-chain receipts, never user text alone. */

@@ -12,7 +12,7 @@ registerHooks({
       if (specifier === 'react') return facade(['useCallback', 'useContext', 'useEffect', 'useMemo', 'useRef', 'useState'].map(name => `export const ${name}=(...args)=>globalThis.__runtimeHooks.${name}(...args);`).join('\n') + '\nexport const createContext=value=>({cacheContext:true,defaultValue:value});');
       if (specifier.endsWith('.css')) return facade('');
       if (specifier.endsWith('/useServiceRuntime') || specifier.endsWith('/service-runtime/model')) return next(new URL(specifier + '.ts', context.parentURL).href, context);
-      if (specifier.endsWith('/useRuntimeConfiguration')) return facade('export const useRuntimeConfiguration=()=>({discovery:null,pendingCode:"",configure(){},closeDiscovery(){}});');
+      if (specifier.endsWith('/useRuntimeConfiguration')) return facade('export const useRuntimeConfiguration=()=>({discovery:null,pendingCode:"",configure(){},closeDiscovery(){}});export const useRuntimeConfigurationStartRequest=()=>false;');
       const source = ts.createSourceFile('host.tsx', readFileSync(new URL(context.parentURL), 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
       const imported = source.statements.filter(item => ts.isImportDeclaration(item) && item.moduleSpecifier.text === specifier);
       if (!imported.length) return next(specifier, context);
@@ -47,9 +47,11 @@ const settle = async () => { for (let index = 0; index < 8; index++) await Promi
 function harness(render) {
   const sharedCache = createWorkspaceReadCache();
   const slots = [], effects = [], requests = []; let cursor = 0, active = true;
-  const timers = new Map(); let timerId = 0; const nativeSet = globalThis.setInterval, nativeClear = globalThis.clearInterval;
-  globalThis.setInterval = (callback, milliseconds) => { timers.set(++timerId, { callback, milliseconds }); return timerId; };
+  const timers = new Map(); let timerId = 0; const nativeSet = globalThis.setInterval, nativeClear = globalThis.clearInterval, nativeTimeout = globalThis.setTimeout, nativeClearTimeout = globalThis.clearTimeout, nativeNow = Date.now; let now=Date.now(); Date.now=()=>now;
+  globalThis.setInterval = (callback, milliseconds) => { timers.set(++timerId, { callback, milliseconds, due:now+milliseconds, repeat:true }); return timerId; };
   globalThis.clearInterval = id => timers.delete(id);
+  globalThis.setTimeout = (callback,milliseconds) => {timers.set(++timerId,{callback,milliseconds,due:now+milliseconds,repeat:false});return timerId;};
+  globalThis.clearTimeout = id => timers.delete(id);
   const same = (left, right) => left && right && left.length === right.length && left.every((item, index) => Object.is(item, right[index]));
   const memo = (fn, deps) => { const index = cursor++; if (!same(slots[index]?.deps, deps)) slots[index] = { deps, value: fn() }; return slots[index].value; };
   globalThis.window = new EventTarget(); globalThis.document = Object.assign(new EventTarget(), { visibilityState: 'visible' });
@@ -61,7 +63,7 @@ function harness(render) {
     useState(value) { const index = cursor++; slots[index] ||= { value: typeof value === 'function' ? value() : value }; return [slots[index].value, next => { slots[index].value = typeof next === 'function' ? next(slots[index].value) : next; }]; },
     useEffect(fn, deps) { const index = cursor++; if (!same(slots[index]?.deps, deps)) { const old = slots[index]; slots[index] = { deps }; effects.push(() => { old?.cleanup?.(); slots[index].cleanup = fn(); }); } },
   };
-  return { requests, tick(milliseconds) { for (const timer of [...timers.values()]) if (timer.milliseconds === milliseconds) timer.callback(); }, render(props, workspace = 'A', visible = true) { active = visible; globalThis.__runtimeWorkspace = workspace; cursor = 0; const value = render(props, workspace); effects.splice(0).forEach(effect => effect()); return value; }, values() { return slots.filter(slot => slot && Object.hasOwn(slot, 'value')).map(slot => slot.value); }, dispose() { slots.forEach(slot => slot?.cleanup?.()); sharedCache.dispose(); globalThis.setInterval = nativeSet; globalThis.clearInterval = nativeClear; for (const key of ['window', 'document', '__runtimeHooks', '__runtimeRequest', '__runtimeWorkspace', '__runtimeCopied', '__runtimeMessages']) delete globalThis[key]; } };
+  return { requests, tick(milliseconds) { now+=milliseconds; for (const [id,timer] of [...timers.entries()]) if (timer.due<=now) {if(timer.repeat)timer.due=now+timer.milliseconds;else timers.delete(id);timer.callback();} }, render(props, workspace = 'A', visible = true) { active = visible; globalThis.__runtimeWorkspace = workspace; cursor = 0; const value = render(props, workspace); effects.splice(0).forEach(effect => effect()); return value; }, values() { return slots.filter(slot => slot && Object.hasOwn(slot, 'value')).map(slot => slot.value); }, dispose() { slots.forEach(slot => slot?.cleanup?.()); sharedCache.dispose(); globalThis.setInterval = nativeSet; globalThis.clearInterval = nativeClear; globalThis.setTimeout=nativeTimeout;globalThis.clearTimeout=nativeClearTimeout;Date.now=nativeNow; for (const key of ['window', 'document', '__runtimeHooks', '__runtimeRequest', '__runtimeWorkspace', '__runtimeCopied', '__runtimeMessages']) delete globalThis[key]; } };
 }
 const find = (tree, type) => { if (Array.isArray(tree)) return tree.flatMap(item => find(item, type)); if (!tree || typeof tree !== 'object') return []; return [...(tree.type === type ? [tree] : []), ...find(tree.props?.children, type)]; };
 const run = id => ({ id, serviceCode: 'front', worktreePath: '/actual/' + id, worktreeLabel: 'task', main: false, taskId: 'task', taskTitle: '订单验证', branch: 'topic', head: 'a'.repeat(40), actualPort: 3000, status: 'running', startedAt: '2026-10-22T01:00:00Z', failure: null, logPath: '/logs/' + id });
@@ -89,7 +91,7 @@ test('切换详情携带明确任务范围，任务变化拒绝旧响应，普�
   try {
     h.render('old task'); await settle(); assert.equal(new URL(h.requests[0].url, 'http://fixture').searchParams.get('taskId'), 'old task');
     h.requests[0].resolve({ readAt: 'old', connectionTargets: {} }); await settle(); assert.equal(h.render('old task').data.readAt, 'old');
-    h.tick(5000); await settle(); const late = h.requests[1];
+    h.tick(30000); await settle(); const late = h.requests[1];
     const next = h.render('new/task'); await settle(); assert.equal(next.data, null);
     assert.match(h.requests[2].url, /\/services\/front\?taskId=new%2Ftask$/u);
     assert.equal(Object.hasOwn(h.requests[2], 'taskId'), false, '任务只作为URL查询参数，不混入请求选项');
@@ -155,7 +157,8 @@ test('可见空目录轮询发现外部启动，同工作空间写入立即同�
   const action = tree => find(find(tree, 'resource-directory')[0].props.rowActions(item), 'service-action-button')[0];
   try {
     h.render(); await settle(); h.requests[0].resolve(overview([])); await settle(); assert.equal(action(h.render()).props.children, '启动');
-    h.tick(5000); await settle(); assert.equal(h.requests.length, 2, '零实例也定期读取，发现外部智能体启动');
+    h.tick(5000); await settle(); assert.equal(h.requests.length,1,'稳定时不再每五秒重复读取');
+    h.tick(25000); await settle(); assert.equal(h.requests.length, 2, '空闲仍三十秒核对，发现外部智能体启动');
     h.requests[1].resolve(overview([run('external')])); await settle();
     let button = action(h.render()); assert.equal(button.props.children, '查看运行'); button.props.onClick(); assert.match(navigations.at(-1), /services\/front-id\?view=runtime$/);
     const client = createServiceRuntimeClient(async () => ({}), 'A');

@@ -16,7 +16,8 @@ test('linked sources are discovered once without adding accounts, native login, 
  try{
   for(const id of ['codex','dsh','qoder'])await service.connections.connect(id,{expectedRevision:'unconfigured'});
   const catalog=await service.models.catalog.list({refresh:true});assert.equal(catalog.models.length,3);assert.ok(catalog.models.every(m=>m.enabled===false&&!m.available));
-  const first=(await service.models.accounts.list()).accounts;assert.deepEqual(first.map(a=>a.connectionId),['codex','dsh','qoder']);assert.equal(requests,5);
+  const first=(await service.models.accounts.list()).accounts;assert.deepEqual(first.filter(a=>a.connectionId).map(a=>a.connectionId),['codex','dsh','qoder']);assert.equal(requests,5);
+  const cn=first.find(a=>a.id==='native-qoder-cn');assert.ok(cn);assert.equal(cn.connectionId,undefined);assert.equal(cn.status,'not-authenticated');assert.deepEqual(cn.models,[]);
   await service.models.catalog.list();assert.equal(requests,5);
   const qoder=service.connections.read('qoder');await service.connections.disconnect('qoder',{expectedRevision:qoder.revision});
   const disabled=await service.models.catalog.list();assert.equal(disabled.models.some(m=>m.accountId==='native-qoder'&&m.available),false);assert.equal(disabled.diagnostic,undefined,'intentional disconnect is not a background failure');
@@ -139,7 +140,7 @@ test('Qoder reports credits quota and per-model credit factor without blocking t
  const runtime=await createQoderModelProvider({inspect:async()=>({status:'ready'}),identity:async()=>'user',request:async(path:string)=>{requests.push(path);return path==='/usage'?new Response(usage):Response.json({chat:[{key:'model',enable:true,price_factor:0.5,display_name:'Auto'},{key:'free',enable:true,price_factor:0},{key:'other',enable:true}]});}}).open({accountId:'native-qoder',configRoot:'unused',environment:{}});
  const observation=await runtime.inspect();assert.deepEqual(requests,['/models','/usage']);
  assert.equal(observation.models[0].creditFactor,0.5);assert.equal(observation.models[1].creditFactor,0);assert.equal(observation.models[2].creditFactor,undefined);
- assert.equal(observation.quota?.available,true);assert.equal(observation.quota?.planLabel,'Teams');assert.equal(observation.quota?.resetsAt,'2026-10-30T08:07:42.000Z');assert.equal(observation.quota?.remainingPercent,93.1);assert.equal(observation.quota?.windows?.length,1);assert.ok(observation.quota?.summary?.includes('2794 / 3000'));
+ assert.equal(observation.quota?.available,true);assert.equal(observation.quota?.planLabel,'Teams');assert.equal(observation.quota?.resetsAt,'2026-10-30T08:07:42.000Z');assert.equal(observation.quota?.remainingPercent,93.1);assert.equal(observation.quota?.windows?.length,1);assert.ok(observation.quota?.summary?.includes('套餐 2,794 / 3,000'));
  usage='not-json';const failed=await runtime.inspect();assert.equal(failed.status,'ready');assert.equal(failed.quota?.available,false);await runtime.close();
 });
 

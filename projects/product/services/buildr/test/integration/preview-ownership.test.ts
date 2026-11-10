@@ -305,13 +305,73 @@ server.listen(0, '127.0.0.1', () => {
   };
   const seededStore = () => path.join(worktree, '.buildr', 'local', 'workspace.sqlite');
   return { target, canonical, worktree, dataRoot, pidFile, runtime, seededStore,
-    start() { return startPreview(runtime, 'task-demo', ['--target', canonical, '--task', 'demo-task', '--no-open'], { dataRoot }); } };
+    start(mode: string | null = 'snapshot') { return startPreview(runtime, 'task-demo', ['--target', canonical, '--task', 'demo-task', '--no-open', ...(mode === null ? [] : ['--workspace-mode', mode])], { dataRoot }); } };
 }
+
+test('task preview 默认从工作树运行代码、直接服务 canonical 且不播种副本', async t => {
+  const fixture = taskStoreFixture(t, { withCanonicalStore: false });
+  const observed = path.join(fixture.target, 'invocation.json');
+  const worker = path.join(fixture.target, 'worker.mjs');
+  fs.appendFileSync(worker, `\nfs.writeFileSync(${JSON.stringify(observed)}, JSON.stringify({args:process.argv, cwd:process.cwd(), owner:JSON.parse(process.env.BUILDR_LOCAL_APP_PREVIEW)}));\n`);
+  const started = await fixture.start(null);
+  const invocation = JSON.parse(fs.readFileSync(observed, 'utf8'));
+  assert.equal(invocation.args[invocation.args.indexOf('--target') + 1], fixture.canonical);
+  assert.equal(fs.realpathSync(invocation.cwd), fs.realpathSync(fixture.canonical));
+  assert.equal(started.owner.worktree, fixture.worktree);
+  assert.equal(started.owner.productCheckout, path.join(fixture.worktree, 'product'));
+  assert.equal(started.owner.workspaceMode, 'shared');
+  assert.equal(started.owner.environmentRoot, fixture.canonical);
+  assert.equal(started.owner.taskStore, null);
+  assert.equal(fs.existsSync(fixture.seededStore()), false);
+  assert.equal(readPreviewOwner('task-demo', fixture.dataRoot)?.environmentRoot, fixture.canonical);
+  // A rejected switch must not create the snapshot database, even if canonical is missing.
+  await assert.rejects(fixture.start('snapshot'), error => coded(error, 'preview_owner_conflict'));
+  assert.equal(fs.existsSync(fixture.seededStore()), false);
+  await stopPreview('task-demo', { dataRoot: fixture.dataRoot, caller: {
+    taskId: 'demo-task', workspaceRoot: fixture.canonical, worktree: fixture.worktree,
+    worktreeEvidencePath: path.join(fixture.target, 'evidence.json'), worktreePlanDigest: 'sha256-' + 'b'.repeat(64),
+  } });
+});
+
+test('preview rejects invalid workspace modes before creating preview state', async t => {
+  const fixture = taskStoreFixture(t);
+  await assert.rejects(fixture.start('unknown'), error => coded(error, 'preview_workspace_mode_invalid'));
+  assert.equal(fs.existsSync(previewDataRoot('task-demo', fixture.dataRoot)), false);
+  assert.equal(fs.existsSync(fixture.seededStore()), false);
+});
+
+test('普通停止保留的快照登记不得无声混入 shared 模式', async t => {
+  const fixture = taskStoreFixture(t);
+  const first = await fixture.start();
+  const root = previewDataRoot('task-demo', fixture.dataRoot);
+  const file = path.join(root, 'workspace-registry.json');
+  const registry = JSON.stringify({ schemaVersion: 'buildr.local-workspace-registry/v1', roots: [fixture.worktree], lastOpenedRoot: fixture.worktree });
+  fs.writeFileSync(file, registry);
+  const caller = {
+    taskId: 'demo-task', workspaceRoot: fixture.canonical, worktree: fixture.worktree,
+    worktreeEvidencePath: path.join(fixture.target, 'evidence.json'), worktreePlanDigest: 'sha256-' + 'b'.repeat(64),
+  };
+  // A legacy owner has no data-mode fields, but must still be safely stoppable.
+  const legacy = { ...first.owner };
+  delete legacy.workspaceMode;
+  delete legacy.environmentRoot;
+  fs.writeFileSync(path.join(root, 'preview.json'), JSON.stringify(legacy));
+  assert.equal(readPreviewOwner('task-demo', fixture.dataRoot)?.workspaceMode, 'snapshot');
+  await assert.rejects(fixture.start(null), error => coded(error, 'preview_owner_conflict'));
+  await assert.rejects(fixture.start(), error => coded(error, 'preview_owner_conflict'));
+  await stopPreview('task-demo', { dataRoot: fixture.dataRoot, caller });
+  await assert.rejects(fixture.start(null), error => coded(error, 'preview_workspace_mode_conflict'));
+  assert.equal(fs.readFileSync(file, 'utf8'), registry);
+  await fixture.start();
+  await stopPreview('task-demo', { dataRoot: fixture.dataRoot, caller });
+});
 
 test('task preview seeds the workspace store into the worktree once and reuses it', { timeout: 20_000 }, async (t) => {
   const fixture = taskStoreFixture(t);
   const result = await fixture.start();
   assert.equal(result.status, 'started');
+  assert.equal(result.owner.workspaceMode, 'snapshot');
+  assert.equal(result.owner.environmentRoot, fixture.worktree);
   assert.deepEqual(result.owner.taskStore, { source: 'canonical', seeded: true });
   assert.equal(result.owner.workspaceRoot, fixture.canonical);
   const storeFile = fixture.seededStore();

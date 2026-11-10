@@ -40,21 +40,21 @@ test('retiring versions release idle native writers while other conversations ke
       return service.conversations.send('workspace',id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});
     };
     const idle=await old.conversations.create('workspace',{}),active=await old.conversations.create('workspace',{});
-    send(old,idle.id,'first');await wait(()=>!old.conversationBusy('workspace',idle.id));
+    send(old,idle.id,'first');await wait(()=>sent.length===1);await wait(()=>!old.conversationBusy('workspace',idle.id));
     send(old,active.id,'hold');await wait(()=>old.conversations.read('workspace',active.id).run?.accepted===true);
     const contextIds=[...writers.keys()];assert.equal(contextIds.length,2);
     assert.equal(old.retainsConversationSource('workspace',active.id),true);
     await old.freezeMetadata();await old.releaseIdleSources();
     assert.equal(writers.has(contextIds[0]),false);assert.equal(writers.has(contextIds[1]),true,'active native writer stays with its original generation');
     next=createAgentService(options);
-    send(next,idle.id,'ordinary next request');await wait(()=>!next!.conversationBusy('workspace',idle.id));
+    send(next,idle.id,'ordinary next request');await wait(()=>sent.length===2);await wait(()=>!next!.conversationBusy('workspace',idle.id));
     assert.equal(next.conversations.read('workspace',idle.id).run?.status,'completed');
     assert.equal(writers.has(contextIds[0]),true,'the successor resumes the exact original context');
     assert.equal(writers.size,2,'no replacement native conversation was created');
     await old.releaseIdleSources();assert.equal(writers.has(contextIds[0]),true,'the old generation cannot close the successor runtime');
     finish();await wait(()=>!old.conversationBusy('workspace',active.id));await old.releaseIdleSources();
     assert.equal(writers.has(contextIds[1]),false,'a later completed old execution also releases its writer');
-    send(next,active.id,'next after old completion');await wait(()=>!next!.conversationBusy('workspace',active.id));
+    send(next,active.id,'next after old completion');await wait(()=>sent.length===3);await wait(()=>!next!.conversationBusy('workspace',active.id));
     assert.equal(next.conversations.read('workspace',active.id).run?.status,'completed');
     assert.deepEqual(sent,['first','hold','ordinary next request','next after old completion']);
     const legacy=await next.conversations.create('workspace',{});
@@ -164,6 +164,10 @@ test('the current executor rejects unverified Devin model-source combinations be
     await service.models.accounts.preferences(added.id,{expectedRevision:checked.revision,models:checked.models.map(model=>({id:model.id,enabled:true}))});
     const conversation=await service.conversations.create('workspace',{});
     const draft={expectedRevision:conversation.revision,modelAccountId:added.id,modelAccountIdentity:checked.identity,text:'compatibility probe',permissionMode:'default' as const};
-    for(const [connectionId,model] of [['qoder','swe-2'],['qoder','other-model'],['dsh','swe-2'],['dsh','other-model'],['codex','swe-2'],['codex','other-model']])service.conversations.prepareSend('workspace',conversation.id,{...draft,connectionId,model});
+    for(const [connectionId,model] of [['qoder','swe-2'],['qoder','other-model'],['dsh','swe-2'],['dsh','other-model'],['codex','swe-2'],['codex','other-model']]){
+      const prepare=()=>service.conversations.prepareSend('workspace',conversation.id,{...draft,connectionId,model});
+      if(connectionId==='qoder')assert.throws(prepare,{code:'agent_model_source_unsupported'});
+      else prepare();
+    }
   }finally{await service.close();rmSync(root,{recursive:true,force:true});}
 });

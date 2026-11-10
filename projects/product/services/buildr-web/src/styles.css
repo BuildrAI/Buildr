@@ -198,6 +198,12 @@ a {
 .workspace-switcher-option-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .workspace-switcher-option-check { display:flex; justify-content:center; width:16px; flex:none; color:var(--soft-primary); }
 
+/* 下拉选项浮层与页面同为白色，边界和投影不足时容易和下方内容混在一起；统一补一层可见边界。 */
+.ant-select-dropdown.ant-select-dropdown {
+  border: 1px solid var(--soft-line);
+  box-shadow: 0 10px 28px rgba(30, 42, 42, 0.12);
+}
+
 .app-shell .nav-quit,
 .app-shell .nav-quit.ant-btn,
 .app-shell .nav-more,
@@ -1493,6 +1499,10 @@ button.table-action {
 .markdown-body th { background: #f5f7f5; color: var(--soft-ink); font-weight: 700; }
 .markdown-body strong { color: var(--soft-ink); }
 .markdown-body img { display: block; width: auto; max-width: min(100%, 840px); height: auto; margin: 4px auto; border: 1px solid var(--soft-line); border-radius: 8px; }
+/* 可放大的 Markdown 图片：只在宿主提供预览时附加该类，保持其他阅读面行为不变。 */
+.markdown-body img.markdown-zoomable-image { cursor: zoom-in; }
+.markdown-body img.markdown-zoomable-image:hover { border-color: #c4d4cd; }
+.markdown-body img.markdown-zoomable-image:focus-visible { outline: 2px solid var(--soft-primary); outline-offset: 2px; }
 .markdown-image-fallback { display: block; padding: 8px 10px; border: 1px dashed var(--soft-line); border-radius: 6px; color: var(--soft-muted); font-size: var(--font-size-secondary); }
 .task-intent-markdown { margin-top: 8px; }
 .task-intent-markdown > .markdown-body > p { color: inherit; font-size: inherit; line-height: inherit; }

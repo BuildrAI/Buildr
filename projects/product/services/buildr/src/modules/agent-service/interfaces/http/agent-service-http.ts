@@ -16,7 +16,7 @@ function query(input: URLSearchParams, allowed: string[]): void {
 }
 function numberQuery(value: string | null): number | undefined { if (value === null) return; if (!/^\d+$/.test(value)) throw inputError(); const number = Number(value); if (!Number.isSafeInteger(number)) throw inputError(); return number; }
 
-export function createAgentServiceHttpContribution(resolve: () => AgentService | AgentOperations | Promise<AgentService | AgentOperations>, options: { defaultWorkspace?: () => { rootPath: string }; registeredWorkspaceIds?: () => string[]; runtimeStatus?: () => Promise<unknown>; runtimeAligning?: () => Promise<boolean>; prepareDefaultWorkspace?: () => void } = {}) {
+export function createAgentServiceHttpContribution(resolve: () => AgentService | AgentOperations | Promise<AgentService | AgentOperations>, options: { defaultWorkspace?: () => { rootPath: string }; registeredWorkspaceIds?: () => string[]; runtimeStatus?: () => Promise<unknown>; restartRuntime?: (input: {expectedGeneration:string}) => Promise<unknown>; runtimeAligning?: () => Promise<boolean>; prepareDefaultWorkspace?: () => void } = {}) {
   const { defaultWorkspace, registeredWorkspaceIds = () => [] } = options;
   const contribution = {
     id: 'agent-service.http', schemas: SCHEMAS, operations: AGENT_SERVICE_HTTP_OPERATIONS,
@@ -26,10 +26,16 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       if (pathname !== prefix && !pathname.startsWith(`${prefix}/`)) return null;
       if(pathname===prefix+'/conversations'&&request.method==='GET'&&!searchParams.has('taskId')){
         authorizeRead();
-        query(searchParams,['workspaceId','cursor','limit','hidden','query','activeOnly','agent','model','activityState']);
+        query(searchParams,['workspaceId','cursor','limit','hidden','query','activeOnly','agent','model','activityState','draftConversationIds']);
         for(const key of ['activeOnly','hidden'])if(searchParams.has(key)&&!['true','false'].includes(searchParams.get(key)!))throw inputError();
         if(searchParams.has('activityState')&&!['running','waiting','unseen','unknown','attention'].includes(searchParams.get('activityState')!))throw inputError();
-        return result('conversations',await (await resolve()).conversations.listAll(registeredWorkspaceIds(),{workspaceId:searchParams.get('workspaceId')??undefined,cursor:searchParams.get('cursor')??undefined,limit:numberQuery(searchParams.get('limit')),hidden:searchParams.get('hidden')==='true',activeOnly:searchParams.get('activeOnly')==='true',query:searchParams.get('query')??undefined,agent:searchParams.get('agent')??undefined,model:searchParams.get('model')??undefined,activityState:searchParams.get('activityState')??undefined}));
+        let draftConversationIds:string[]|undefined;
+        if(searchParams.has('draftConversationIds')){
+          try{draftConversationIds=JSON.parse(searchParams.get('draftConversationIds')!);}catch{throw inputError();}
+          if(!Array.isArray(draftConversationIds)||draftConversationIds.some(id=>typeof id!=='string'||!id||id.length>200))throw inputError();
+          draftConversationIds=[...new Set(draftConversationIds)].sort();
+        }
+        return result('conversations',await (await resolve()).conversations.listAll(registeredWorkspaceIds(),{draftConversationIds,workspaceId:searchParams.get('workspaceId')??undefined,cursor:searchParams.get('cursor')??undefined,limit:numberQuery(searchParams.get('limit')),hidden:searchParams.get('hidden')==='true',activeOnly:searchParams.get('activeOnly')==='true',query:searchParams.get('query')??undefined,agent:searchParams.get('agent')??undefined,model:searchParams.get('model')??undefined,activityState:searchParams.get('activityState')??undefined}));
       }
       if (pathname === prefix + '/activity-summary' && request.method === 'GET') {
         authorizeRead(); query(searchParams, ['revision']);
@@ -50,6 +56,7 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       query(searchParams, []);
       if (pathname === `${prefix}/default-workspace` && request.method === 'GET' && defaultWorkspace) return result('defaultWorkspace', defaultWorkspace());
       if (pathname === `${prefix}/runtime` && request.method === 'GET' && options.runtimeStatus) return result('runtimeStatus', await options.runtimeStatus());
+      if (pathname === `${prefix}/runtime/restart` && request.method === 'POST' && options.restartRuntime) return result('runtimeStatus', await options.restartRuntime(validate('runtimeRestart', await readJsonBody())));
       const service = await resolve();
       if (pathname === `${prefix}/webhook-settings`) {
         if (request.method === 'GET') return result('webhookSettings', await service.webhooks.read());
@@ -62,13 +69,14 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
         if (request.method === 'POST') return result('modelAccount', await service.models.accounts.add(validate('addModelAccount', await readJsonBody())), 201);
       }
       if (pathname === `${prefix}/model-catalog` && request.method === 'GET') return result('modelCatalog', await service.models.catalog.list({refresh:false}));
-      const accountRoute = pathname.slice(prefix.length).match(/^\/model-accounts\/([a-zA-Z0-9_-]{1,100})(?:\/(check|disconnect|login-attempts|preferences)(?:\/([a-f0-9-]{36})(?:\/(cancel))?)?)?$/);
+      const accountRoute = pathname.slice(prefix.length).match(/^\/model-accounts\/([a-zA-Z0-9_-]{1,100})(?:\/(check|disconnect|login-attempts|preferences|api-key)(?:\/([a-f0-9-]{36})(?:\/(cancel))?)?)?$/);
       if (accountRoute) {
         const [, accountId, action, attemptId, cancel] = accountRoute;
         if (request.method === 'GET' && !action) return result('modelAccount', await service.models.accounts.read(accountId));
         if (request.method === 'GET' && action === 'login-attempts' && attemptId && !cancel) return result('modelAccount', await service.models.accounts.attempt(accountId, attemptId));
         if (request.method !== 'POST') return null;
         if(action==='preferences'&&!attemptId&&!cancel)return result('modelAccount',await service.models.accounts.preferences(accountId,validate('modelPreferences',await readJsonBody())));
+        if(action==='api-key'&&!attemptId&&!cancel)return result('modelAccount',await service.models.accounts.configure(accountId,validate('modelApiKey',await readJsonBody())));
         const body = validate('revision', await readJsonBody());
         if (action === 'check') return result('modelAccount', await service.models.accounts.check(accountId, body));
         if (action === 'disconnect') return result('modelAccount', await service.models.accounts.disconnect(accountId, body));
@@ -114,13 +122,13 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
         if (request.method === 'GET' && action === 'submissions' && childId) return result('draftLookup', await service.conversations.lookupDraft(workspaceId, draftId, childId));
         if (request.method === 'GET' && action === 'attachments' && childId) {
           const image = await service.conversations.readDraftImage(workspaceId, draftId, childId);
-          respond.binary(image.bytes, image.mimeType, { disposition: 'inline', filename: childId }); return true;
+          respond.binary(image.bytes, image.mimeType, { disposition: /^(image|video)\//.test(image.mimeType) ? 'inline' : 'attachment', filename: image.name || childId }); return true;
         }
         if (request.method === 'POST' && action === 'attachments' && !childId) {
           let name: string; try { name = decodeURIComponent(request.headers['x-buildr-image-name'] ?? '图片'); } catch { throw inputError(); }
           let video: unknown;try {if(request.headers['x-buildr-video'])video=JSON.parse(request.headers['x-buildr-video']);}catch{throw inputError();}
           const metadata = validate('draftImage', { expectedRevision: request.headers['x-buildr-draft-revision'], name, mimeType: request.headers['content-type'], ...(request.headers['x-buildr-frame']==='true'?{frame:true}:{}), ...(video!==undefined?{video}:{}) });
-          return result('draftImages', await service.conversations.addDraftImage(workspaceId, draftId, { ...metadata, bytes: await readBinaryBody((metadata.mimeType.startsWith('video/')?32:8) * 1024 * 1024) }), 201);
+          return result('draftImages', await service.conversations.addDraftImage(workspaceId, draftId, { ...metadata, bytes: await readBinaryBody((metadata.mimeType.startsWith('image/')?8:32) * 1024 * 1024) }), 201);
         }
         if (request.method === 'DELETE' && action === 'attachments' && childId) return result('draftImages', await service.conversations.removeDraftImage(workspaceId, draftId, validate('removeDraftImage', { ...await readJsonBody(), attachmentId: childId })));
         if (request.method === 'POST' && action === 'send' && !childId) {
@@ -157,8 +165,13 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
         query(searchParams,['runId']);
         return result('participation',await service.conversations.participation(workspaceId,participationMatch[1],validate('participationQuery',{runId:searchParams.get('runId')})));
       }
+      const historyMatch=suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})\/history-source$/);
+      if(historyMatch&&request.method==='GET'){
+        query(searchParams,['sourceId','roundId','cursor','limit']);
+        return result('historyPage',await service.conversations.readHistory(workspaceId,historyMatch[1],validate('historyQuery',{sourceId:searchParams.get('sourceId'),roundId:searchParams.get('roundId')??undefined,cursor:numberQuery(searchParams.get('cursor')),limit:numberQuery(searchParams.get('limit'))})));
+      }
       const detailMatch=suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})\/entry-detail\/([^/]+)$/);
-      if(detailMatch&&request.method==='GET'){query(searchParams,['revision']);const revision=searchParams.get('revision');if(!revision||!(/^[a-f0-9]{64}$/).test(revision))throw inputError();let entryId:string;try{entryId=decodeURIComponent(detailMatch[2]);}catch{throw inputError();}if(!entryId||entryId.length>1024)throw inputError();return result('entry',await service.conversations.readEntry(workspaceId,detailMatch[1],entryId,revision));}
+      if(detailMatch&&request.method==='GET'){query(searchParams,['revision','sourceId']);const revision=searchParams.get('revision');if(!revision||!(/^[a-f0-9]{64}$/).test(revision))throw inputError();let entryId:string;try{entryId=decodeURIComponent(detailMatch[2]);}catch{throw inputError();}if(!entryId||entryId.length>1024)throw inputError();return result('entry',await service.conversations.readEntry(workspaceId,detailMatch[1],entryId,revision,searchParams.get('sourceId')??undefined));}
       const match = suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})(?:\/(webhook-replay|fork|prepare-send|send|supplement|pending-send|cancel-pending-send|generate-title|children|seen|observe|stop|events|entries|attachments|requests)(?:\/([a-f0-9-]{36})(?:\/(reply))?)?)?$/);
       if (!match) return null;
       const [, id, action, childId, reply] = match;
@@ -174,16 +187,16 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
         if (action === 'events') {
           query(searchParams, ['cursor', 'generation']);
           const transfer = request.headers['x-buildr-conversation-transfer'];
-          if (transfer !== undefined && transfer !== 'delta-v1') throw inputError();
+          if (transfer !== undefined && transfer !== 'delta-v1' && transfer !== 'delta-v2') throw inputError();
           numberQuery(searchParams.get('cursor'));
           const subscription = await service.conversations.subscribe(workspaceId, id);
-          const encode = conversationEventEncoder();
-          return respond.stream(subscription, (event: any) => validate('event', transfer === 'delta-v1' ? encode(event) : event, true));
+          const encode = conversationEventEncoder(transfer==='delta-v2'?'delta-v2':'delta-v1');
+          return respond.stream(subscription, (event: any) => validate('event', transfer !== undefined ? encode(event) : event, true));
         }
         if (action === 'attachments' && childId) {
           query(searchParams, []);
           const attachment = await service.conversations.readAttachment(workspaceId, id, childId);
-          respond.binary(attachment.bytes, attachment.mimeType, { disposition: 'inline', filename: childId }); return true;
+          respond.binary(attachment.bytes, attachment.mimeType, { disposition: /^(image|video)\//.test(attachment.mimeType) ? 'inline' : 'attachment', filename: attachment.name || childId }); return true;
         }
         return null;
       }
@@ -211,8 +224,9 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       if (action === 'attachments' && !childId) {
         let video: unknown;
         try { if (request.headers['x-buildr-video']) video = JSON.parse(request.headers['x-buildr-video']); } catch { throw inputError(); }
-        const metadata = validate('attachment', { expectedRevision: request.headers['x-buildr-conversation-revision'], expectedAttachmentRevision: request.headers['x-buildr-attachment-revision'], mimeType: request.headers['content-type'], ...(video !== undefined ? { video } : {}) });
-        return result('attachmentResult', await service.conversations.addAttachment(workspaceId, id, { ...metadata, bytes: await readBinaryBody((metadata.mimeType.startsWith('video/') ? 32 : 8) * 1024 * 1024) }), 201);
+        let name: string | undefined; try { if (request.headers['x-buildr-image-name']) name = decodeURIComponent(request.headers['x-buildr-image-name']); } catch { throw inputError(); }
+        const metadata = validate('attachment', { ...(name ? {name} : {}), expectedRevision: request.headers['x-buildr-conversation-revision'], expectedAttachmentRevision: request.headers['x-buildr-attachment-revision'], mimeType: request.headers['content-type'], ...(video !== undefined ? { video } : {}) });
+        return result('attachmentResult', await service.conversations.addAttachment(workspaceId, id, { ...metadata, bytes: await readBinaryBody((metadata.mimeType.startsWith('image/') ? 8 : 32) * 1024 * 1024) }), 201);
       }
       return null;
     },

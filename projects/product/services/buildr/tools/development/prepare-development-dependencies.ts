@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
+import { withDevelopmentAgentPreparationLock } from './prepare-development-agent.ts';
 
 const serviceRoot: any = path.resolve(import.meta.dirname, '../..');
 const projectRoot: any = path.resolve(serviceRoot, '../..');
@@ -98,7 +99,15 @@ export function prepareDevelopmentDependencies({
       continue;
     }
     const executable = path.join(cwd, entry.executable);
-    const result = execute(executable, entry.args, cwd);
+    const result = entry.id === 'buildr-agent.build'
+      ? withDevelopmentAgentPreparationLock(path.join(root, 'services/buildr'), () => {
+        // Another public preparation entry may have completed the build while
+        // this caller waited. Never delete its output to rebuild it again.
+        if (readied(entry, root)) return null;
+        return execute(executable, entry.args, cwd);
+      })
+      : execute(executable, entry.args, cwd);
+    if (result === null) { reused.push(entry.id); continue; }
     if (result.error || result.status !== 0) {
       throw new Error(`development_preparation_failed: ${entry.id} exited ${result.status ?? result.error?.message}`);
     }

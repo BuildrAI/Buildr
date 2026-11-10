@@ -272,7 +272,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'managed',
   }, {
     id: 'service-runtime',
-    requires: [WORKSPACE_APPLICATION, CODE_APPLICATION, TASK_QUERY_APPLICATION, TASK_WORKTREE_PROVIDER],
+    requires: [WORKSPACE_APPLICATION, CODE_APPLICATION, TASK_QUERY_APPLICATION, TASK_WORKTREE_PROVIDER, 'task.commits-application'],
     provides: ['service-runtime.application', 'service-runtime.view', 'service-runtime.task-application', SERVICE_RUNTIME_SOURCES],
     contributions: { cli: ['service-runtime'], http: ['service-runtime.http'], diagnostics: [] },
     lifecycle: 'none',

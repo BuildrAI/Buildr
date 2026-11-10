@@ -26,7 +26,7 @@ export async function runWorkspacePaneJourney({ t, page, workspaceUrl, capture }
       await card.getByText('本地定制需要确认，其他空间已继续刷新。',{exact:true}).waitFor();
       await capture(page,'background-workspace-refresh-result.png');
     } finally {
-      await page.unroute('**/api/v1/workspaces',handler);
+      await page.unrouteAll({behavior:'wait'});
       await page.goto(`${workspaceUrl}/overview`);
       await page.locator('#workbench-overview').waitFor();
     }

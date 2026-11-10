@@ -1,6 +1,6 @@
 import {taskApi} from '../task/api/task-api';
 import {workspaceApi} from '../workspace/api/workspace-api';
-import {associationCandidates,associationQueryReady,associationPages,prefixAssociationMatches,conversationAssociationItem,type AssociationItem,type AssociationResult} from './conversation-associations';
+import {associationCandidates,associationKey,associationQueryReady,associationPages,prefixAssociationMatches,conversationAssociationItem,taskLinkKey,type AssociationItem,type AssociationResult} from './conversation-associations';
 import type {ConversationTaskLink} from './types';
 import type {AgentConversationsClient} from './api/agent-conversations-api';
 
@@ -11,10 +11,21 @@ export async function associationWorkspaces(signal:AbortSignal):Promise<Associat
   return registry.workspaces.flatMap(entry=>entry.workspace?.id&&entry.status!=='identity_conflict'?[{id:entry.workspace.id,name:entry.workspace.name}]:[]);
 }
 export async function linkedTaskItems(links:ConversationTaskLink[],signal:AbortSignal):Promise<AssociationItem[]>{
-  return Promise.all(links.map(async link=>{
-    try{const value=await taskApi.detail(link.taskId,{signal},link.workspaceId);return {workspaceId:link.workspaceId,id:link.taskId,title:value.record.title};}
-    catch(failure){signal.throwIfAborted();return {workspaceId:link.workspaceId,id:link.taskId,title:link.taskId,error:failure instanceof Error?failure.message:'任务暂时无法读取。'};}
+  signal.throwIfAborted();
+  const groups=new Map<string,ConversationTaskLink[]>();
+  for(const link of links)groups.set(link.workspaceId,[...(groups.get(link.workspaceId)??[]),link]);
+  const rows=await Promise.all([...groups].map(async([workspaceId,group])=>{
+    try{
+      const result=await taskApi.titleSummaries(workspaceId,group.map(link=>link.taskId),{signal});
+      const titles=new Map(result.items.map(item=>[item.taskId,item.title])),missing=new Set(result.missingTaskIds);
+      return group.map(link=>({workspaceId,id:link.taskId,title:titles.get(link.taskId)??link.taskId,...(missing.has(link.taskId)?{error:'任务不存在。'}:{})}));
+    }catch(failure){
+      signal.throwIfAborted();
+      return group.map(link=>({workspaceId,id:link.taskId,title:link.taskId,error:failure instanceof Error?failure.message:'任务暂时无法读取。'}));
+    }
   }));
+  const byKey=new Map(rows.flat().map(row=>[associationKey(row),row]));
+  return links.map(link=>byKey.get(taskLinkKey(link))).filter((row):row is AssociationItem=>Boolean(row));
 }
 export async function searchTaskAssociations(workspaces:AssociationWorkspace[],query:string,signal:AbortSignal):Promise<AssociationResult>{
   const result:AssociationResult={items:[],errors:[]};

@@ -1,12 +1,13 @@
+import type { ExecutionDiagnosticSink } from '../../contracts.ts';
 import { type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { OwnedControlResource, bounded, closeOwnedProcess, nativeCommand, type NativeEnvironment } from '../native-process.ts';
 
 export interface DshClient { ctx: any; remote: any; origin: string; close(): Promise<void>; }
 /** Owns the complete native web Host; the authorization URL and cookie stay private. */
-export async function launchDshHost(executable: string, env: NativeEnvironment, cwd: string, signal?: AbortSignal, patch?: string): Promise<{ control: OwnedControlResource; child: ChildProcessWithoutNullStreams; client: DshClient; close(): Promise<void> }> {
+export async function launchDshHost(executable: string, env: NativeEnvironment, cwd: string, signal?: AbortSignal, patch?: string,diagnostics?:ExecutionDiagnosticSink): Promise<{ control: OwnedControlResource; child: ChildProcessWithoutNullStreams; client: DshClient; close(): Promise<void> }> {
   signal?.throwIfAborted();
   const launch = nativeCommand(executable);
-  const control=new OwnedControlResource(launch.command,[...launch.prefix,'web',...(patch?['--patch',patch]:[]),'--no-open','--port','0'],{cwd,env});
+  const control=new OwnedControlResource(launch.command,[...launch.prefix,'web',...(patch?['--patch',patch]:[]),'--no-open','--port','0'],{cwd,env,diagnostics});
   const child=control.child;
   let output = ''; let settled = false;
   const ready = new Promise<string>((resolve, reject) => {

@@ -19,6 +19,33 @@ const SHARED_SOURCE_ROOTS = ['workspace/skills/', 'runtime/skills/', 'workspace/
 const isSharedSource = (source: string) => source.startsWith('workspace/skills/') || source.startsWith('runtime/skills/')
   || /^workspace\/components\/buildr\/[^/]+\/contributions\//.test(source)
   || /^workspace\/commands\/buildr\/[^/]+\/manifest\.yml$/.test(source);
+// Everything else in the shared directory belongs to someone we cannot identify;
+// recovery reports it instead of deleting it.
+const OWNED_SHARED_ENTRIES = new Set(['skills', 'contracts', 'components', 'commands']);
+// The pre-fixed layout kept one directory per resource identity; it is still ours.
+const LEGACY_SET_DIRECTORY = /^\d+(?:\.\d+){1,3}(?:[-+][0-9A-Za-z.-]+)?$/;
+const TRANSIENT_FILESYSTEM_CODES = new Set(['EPERM', 'EBUSY', 'ENOTEMPTY']);
+const TRANSIENT_RETRY_ATTEMPTS = 6;
+const TRANSIENT_RETRY_INITIAL_DELAY_MS = 25;
+const TRANSIENT_RETRY_MAX_DELAY_MS = 400;
+function pauseSynchronously(milliseconds: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+}
+/** Windows antivirus, indexers or a reader can hold a directory open for a moment. */
+function withTransientRetry<T>(operation: () => T): T {
+  let delay = TRANSIENT_RETRY_INITIAL_DELAY_MS;
+  for (let attempt = 1; ; attempt += 1) {
+    try { return operation(); }
+    catch (error: any) {
+      if (attempt >= TRANSIENT_RETRY_ATTEMPTS || !TRANSIENT_FILESYSTEM_CODES.has(error?.code)) throw error;
+      pauseSynchronously(delay);
+      delay = Math.min(delay * 2, TRANSIENT_RETRY_MAX_DELAY_MS);
+    }
+  }
+}
+function foreignSharedContent(target: string, entries: string[]): Error & Record<string, any> {
+  return Object.assign(new Error(`共享资源目录 ${target} 含有 Buildr 无法识别的内容：${entries.join('、')}。为避免删除你的文件，已停止恢复；请将该目录移走后重试。`), { code: 'shared_resources_foreign_content', status: 409, target, entries: [...entries] });
+}
 const relativeFile = (value: string) => {
   if (!value || value.includes('\\') || value.includes('\0') || path.posix.normalize(value) !== value || value.startsWith('/') || value.split('/').includes('..')) throw new Error(`Invalid resource path: ${value}`);
   return value;
@@ -103,25 +130,53 @@ export function readSharedResourceSet(): ResourceSet {
 export function inspectSharedResources(expectedId?: string): ResourceSet {
   return inspectResourceDirectory(sharedResourcesRoot(), expectedId);
 }
-/** Consume the current shared set. Ordinary preparation never replaces another publisher's content. */
+/** Only an identified or clearly install-owned directory may be replaced. */
+function assertOwnedSharedDirectory(target: string): void {
+  const stat = fs.lstatSync(target, { throwIfNoEntry: false });
+  if (!stat) return;
+  if (!stat.isDirectory() || stat.isSymbolicLink()) throw Object.assign(new Error(`共享资源路径 ${target} 不是普通目录，已停止恢复；请将该路径移走后重试。`), { code: 'shared_resources_foreign_content', status: 409, target, entries: [path.basename(target)] });
+  const unknown = fs.readdirSync(target).filter(name => {
+    if (name === 'resource-set.json' || OWNED_SHARED_ENTRIES.has(name)) return false;
+    const own = fs.lstatSync(path.join(target, name), { throwIfNoEntry: false });
+    return !(own?.isDirectory() && !own.isSymbolicLink() && LEGACY_SET_DIRECTORY.test(name));
+  }).sort();
+  if (unknown.length) throw foreignSharedContent(target, unknown);
+}
+/** Consume the current shared set; a directory without a readable descriptor is rebuilt from this installation. */
 export function ensurePackageResources(product = resolveProductRoot()): ResourceSet {
+  const target = sharedResourcesRoot();
   try { return readSharedResourceSet(); }
-  catch (error: any) {
-    if (error.code !== 'ENOENT' || fs.existsSync(sharedResourcesRoot())) throw error;
-    const target = sharedResourcesRoot(), parent = path.dirname(target), previous = path.join(parent, '.resources-previous');
-    if (fs.existsSync(previous)) {
-      return withExclusiveFileLock(path.join(parent, '.resources.lock'), target, () => {
-        assertPlainPath(previous); assertPlainPath(target);
-        if (!fs.existsSync(target) && fs.existsSync(previous)) fs.renameSync(previous, target);
-        return readDescriptor(target);
-      });
-    }
-    try { return publishPackageResources(product, { expectedId: null }); }
-    catch (publicationError: any) {
-      if (['shared_resources_changed','shared_resources_downgrade'].includes(publicationError.code)) return readSharedResourceSet();
-      throw publicationError;
-    }
+  catch {
+    return fs.existsSync(target) ? recoverSharedResources(product, target) : initializeSharedResources(product, target);
   }
+}
+function initializeSharedResources(product: string, target: string): ResourceSet {
+  const parent = path.dirname(target), previous = path.join(parent, '.resources-previous');
+  if (fs.existsSync(previous)) {
+    return withExclusiveFileLock(path.join(parent, '.resources.lock'), target, () => {
+      assertPlainPath(previous); assertPlainPath(target);
+      if (!fs.existsSync(target) && fs.existsSync(previous)) withTransientRetry(() => fs.renameSync(previous, target));
+      try { return readDescriptor(target); }
+      catch { /* The restored backup is unidentified too; rebuild it under the same lock. */ }
+      assertOwnedSharedDirectory(target);
+      return publishWithinLock(product, describePackageResources(product), target, { recovery: true });
+    });
+  }
+  try { return publishPackageResources(product, { expectedId: null }); }
+  catch (publicationError: any) {
+    if (['shared_resources_changed','shared_resources_downgrade'].includes(publicationError.code)) return readSharedResourceSet();
+    throw publicationError;
+  }
+}
+/** An unidentified directory has no publisher identity to protect; rebuild it or keep foreign content untouched. */
+function recoverSharedResources(product: string, target: string): ResourceSet {
+  const parent = path.dirname(target);
+  return withExclusiveFileLock(path.join(parent, '.resources.lock'), target, () => {
+    try { return readDescriptor(target); }
+    catch { /* Another publisher may have converged it before we took the lock. */ }
+    assertOwnedSharedDirectory(target);
+    return publishWithinLock(product, describePackageResources(product), target, { recovery: true });
+  });
 }
 /** Observation used by explicit update jobs across process restart. */
 export function observeSharedResourcePublication(): string | null {
@@ -135,8 +190,11 @@ export function observeSharedResourcePublication(): string | null {
     // Explicit preparation may migrate an old directory layout or repair metadata.
     // Observe its actual metadata so another publisher cannot silently supersede it.
     if (fs.existsSync(target)) {
-      const descriptor = path.join(target, 'resource-set.json'); assertPlainPath(descriptor);
-      return `unprepared-${digest(fs.existsSync(descriptor) ? fs.readFileSync(descriptor) : JSON.stringify(fs.readdirSync(target).sort()))}`;
+      const descriptor = path.join(target, 'resource-set.json');
+      const stat = fs.lstatSync(descriptor, { throwIfNoEntry: false });
+      // An unidentified directory is observed by listing; never read through a link.
+      if (stat?.isFile() && !stat.isSymbolicLink()) { assertPlainPath(descriptor); return `unprepared-${digest(fs.readFileSync(descriptor))}`; }
+      return `unprepared-${digest(JSON.stringify(fs.readdirSync(target).sort()))}`;
     }
     throw error;
   }
@@ -145,18 +203,25 @@ export function observeSharedResourcePublication(): string | null {
 export function publishPackageResources(product = resolveProductRoot(), options: { expectedId?: string | null } = {}): ResourceSet {
   const desired = describePackageResources(product), target = sharedResourcesRoot();
   const expectedId = options.expectedId === undefined ? observeSharedResourcePublication() : options.expectedId;
+  const parent = path.dirname(target);
+  fs.mkdirSync(parent, { recursive: true });
+  return withExclusiveFileLock(path.join(parent, '.resources.lock'), target, () => publishWithinLock(product, desired, target, { expectedId }));
+}
+function publishWithinLock(product: string, desired: ResourceSet, target: string, options: { expectedId?: string | null; recovery?: boolean }): ResourceSet {
   const parent = path.dirname(target), stage = path.join(parent, '.resources-next'), previous = path.join(parent, '.resources-previous');
   for (const file of [target, stage, previous]) assertPlainPath(file);
-  fs.mkdirSync(parent, { recursive: true });
-  return withExclusiveFileLock(path.join(parent, '.resources.lock'), target, () => {
-    // A crash between the two renames must not strand the stable public path.
-    if (!fs.existsSync(target) && fs.existsSync(previous)) fs.renameSync(previous, target);
-    const currentId = observeSharedResourcePublication();
+  // A crash between the two renames must not strand the stable public path.
+  if (!fs.existsSync(target) && fs.existsSync(previous)) withTransientRetry(() => fs.renameSync(previous, target));
+  const currentId = observeSharedResourcePublication();
+  // Replacing an unidentified set must never remove content we cannot claim.
+  if (currentId?.startsWith('unprepared-')) assertOwnedSharedDirectory(target);
+  if (options.recovery !== true) {
     if (currentId && !currentId.startsWith('unprepared-')) {
       const current = readDescriptor(target);
       if (parseSemver(current.version) && parseSemver(desired.version) && compareVersions(desired.version,current.version)<0) throw Object.assign(new Error('当前共享资源版本更高，已保留现有内容；请升级程序后再准备。'), {code:'shared_resources_downgrade'});
     }
-    if (currentId !== expectedId && currentId !== desired.id) throw Object.assign(new Error('共享资源在更新期间已变化，请重新核对后重试。'), { code: 'shared_resources_changed' });
+    if (currentId !== options.expectedId && currentId !== desired.id) throw Object.assign(new Error('共享资源在更新期间已变化，请重新核对后重试。'), { code: 'shared_resources_changed' });
+  }
     // Two-stage retirement: sources declared `replaces`/`retired` in the package
     // manifest keep a preserved copy so workspaces still referencing them can
     // resolve until their manifest converges. Archify keeps its historical path.
@@ -165,7 +230,7 @@ export function publishPackageResources(product = resolveProductRoot(), options:
     if (retiredSources.size) {
       let old: ResourceSet | null = null;
       try { old = readDescriptor(target); }
-      catch (error) { if (fs.existsSync(path.join(target, 'skills'))) throw error; }
+      catch { /* An unidentified set has no preservable identity; its source area is left untouched. */ }
       if (old) {
         for (const sourcePrefix of retiredSources) {
           if (desired.files.some(file => file.source.startsWith(sourcePrefix))) continue;
@@ -175,11 +240,11 @@ export function publishPackageResources(product = resolveProductRoot(), options:
     }
     try {
       const existing = inspectResourceDirectory(target, desired.id);
-      fs.rmSync(stage, { recursive: true, force: true });
-      fs.rmSync(previous, { recursive: true, force: true });
+      withTransientRetry(() => fs.rmSync(stage, { recursive: true, force: true }));
+      withTransientRetry(() => fs.rmSync(previous, { recursive: true, force: true }));
       return existing;
     } catch { /* Missing, old or damaged official content is replaced as a whole. */ }
-    fs.rmSync(stage, { recursive: true, force: true });
+    withTransientRetry(() => fs.rmSync(stage, { recursive: true, force: true }));
     fs.mkdirSync(stage);
     let published = false;
     try {
@@ -191,26 +256,26 @@ export function publishPackageResources(product = resolveProductRoot(), options:
       }
       fs.writeFileSync(path.join(stage, 'resource-set.json'), `${JSON.stringify(desired)}\n`, { flag: 'wx' });
       inspectResourceDirectory(stage, desired.id);
-      fs.rmSync(previous, { recursive: true, force: true });
-      if (fs.existsSync(target)) fs.renameSync(target, previous);
+      withTransientRetry(() => fs.rmSync(previous, { recursive: true, force: true }));
+      if (fs.existsSync(target)) withTransientRetry(() => fs.renameSync(target, previous));
       try {
-        fs.renameSync(stage, target);
+        withTransientRetry(() => fs.renameSync(stage, target));
         inspectResourceDirectory(target, desired.id);
       } catch (error) {
         // If the new directory was published but failed verification, move it aside first.
-        if (fs.existsSync(target)) fs.renameSync(target, stage);
-        if (fs.existsSync(previous)) fs.renameSync(previous, target);
+        if (fs.existsSync(target)) withTransientRetry(() => fs.renameSync(target, stage));
+        if (fs.existsSync(previous)) withTransientRetry(() => fs.renameSync(previous, target));
         throw error;
       }
       published = true;
       // Includes superseded official files, old version directories and old damaged sets.
-      fs.rmSync(previous, { recursive: true, force: true });
+      try { withTransientRetry(() => fs.rmSync(previous, { recursive: true, force: true })); }
+      catch (error: any) { console.warn(`共享资源备份目录暂时无法清理，已保留：${previous}`, error?.message || error); }
       return desired;
     } finally {
       // A failed rollback leaves its candidates intact for the next explicit recovery.
-      if (published || fs.existsSync(target)) fs.rmSync(stage, { recursive: true, force: true });
+      if (published || fs.existsSync(target)) withTransientRetry(() => fs.rmSync(stage, { recursive: true, force: true }));
     }
-  });
 }
 const adoptionPath = (root: string) => path.join(root, '.buildr/local/package-resources.json');
 export function readResourceAdoption(root: string): { resourceSet: string; ready: boolean } | null {

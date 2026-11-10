@@ -74,7 +74,7 @@ bindings:
 
 `task-finish/v1` 指导智能体（Agent）组合已有 Git、业务工具、任务记录和资源能力；不要求任务、候选、研发交接或旧执行运行。写入前检查对象、授权和范围，写入后回读结果，删除前检查归属与内容保全。内容检查复用仍适用的结果，不建立统一验证门禁。
 
-`buildr.task-verification/v4` 保留既有应用及报告协议，默认由 `project-verification` 提供选择、实际执行和证据判断。`project-testing` 是测试代码与 `verification.yml` 内容的唯一维护者，原 Project Verification Application 继续承担安全读写，Task Verification Application 保存已有任务报告。项目测试地图不进入 `capabilities.yml`。
+`buildr.task-verification/v4` 保留既有应用及报告协议，默认由 `project-verification` 提供选择、实际执行和证据判断。`project-testing` 是测试代码与 `verification.yml` 内容的唯一维护者，原 Project Verification Application 继续承担安全读写，Task Verification Application 保存已有任务报告。项目测试地图独立于技能能力配置。
 
 用户可指定任意现有检查、类型、全量或相关范围，由 `project-verification` 根据 description 发现并执行，不要求正式任务或比较基线。开发按目标选齐相关四类检查；收尾按具体项目政策核对推送前完整证明，Buildr 产品要求四服务全量静态检查（Static Check）和单元测试（Unit Test）。有已有正式任务时按实际结果登记报告，无任务直接交付证据。
 
@@ -86,7 +86,7 @@ Buildr不再提供统一任务环境能力。需要隔离Git位置时，Agent调
 
 ### 3. Resolver 与 readiness
 
-Buildr 按明确项目（Project）上下文、工作空间（Workspace）默认绑定和唯一兼容提供者（Provider）的顺序解析，校验契约（Contract）版本、provider `provides`、运行时（Runtime）可用性和 provider 自身的必要依赖。不同项目选择冲突时显式报告歧义，不按当前目录猜测。本例 binding 选择 `git-operations`，供明确选择的 Git 动作使用；ready 只表示可路由，不证明交付成功。provider 不可用只影响需要它的 Git 动作，收尾继续处理其他安全工作。
+Buildr 只按工作空间（Workspace）默认绑定和唯一兼容提供者（Provider）的顺序解析，校验契约（Contract）版本、provider `provides`、运行时（Runtime）可用性和 provider 自身的必要依赖。多个未绑定提供者（Provider）存在时显式报告歧义，不按项目路径或当前目录猜测。本例 binding 选择 `git-operations`，供明确选择的 Git 动作使用；ready 只表示可路由，不证明交付成功。provider 不可用只影响需要它的 Git 动作，收尾继续处理其他安全工作。
 
 ### 4. Runtime evidence
 
@@ -185,7 +185,7 @@ Skill entry 的 `required` 与 `requires[].mode` 是两件事：
 - `requires[].mode: required` 表示依赖不可用时 consumer 必须 blocked。
 - `requires[].mode: optional` 表示 consumer 保持可用但 degraded，并由正文说明降级行为。
 
-Workspace manifest 保存全部 provider、consumer、contracts 与默认 binding；Project `capabilities.yml` 只保存业务 context 的 requirements、bindings 和 workspace Skill applicability 引用。解析顺序是明确 Project context、workspace default、唯一兼容 provider。跨 Project 对同一 capability 选择不同 provider 时报告 `cross_project_binding_ambiguous`，不得按当前目录猜测。
+Workspace manifest 保存全部 provider、consumer、contracts 与默认 binding，是能力配置的唯一作用域。解析顺序是 workspace default、唯一兼容 provider；多个未绑定 provider 报告歧义。项目 `capabilities.yml` 已退役，不参与选择和依赖计算，项目 bind/unbind 在写入前拒绝。Doctor 只读提示退役；同步自动清理确认安全的空需求/绑定及技能名单文件，其他文件保留；非空需求、绑定或无法安全读取的配置报告 warning，空配置和技能名单仅报告 info，不校验过期技能 ID。不得将项目局部绑定自动迁移为工作空间默认。
 
 ## 声明与替换
 

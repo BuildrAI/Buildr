@@ -457,16 +457,16 @@ test('CI and publish workflows use the supported Node runtime', async () => {
   const publishWorkflow: any = fs.readFileSync(path.join(workspaceRoot, '.github/workflows/publish.yml'), 'utf8');
   const verifyDocument: any = YAML.parseDocument(verifyWorkflow, { uniqueKeys: true }).toJS();
   const hostNodeSmoke: any = fs.readFileSync(path.join(serviceRoot, 'test/verification/host-node/cli-consumption.ts'), 'utf8');
-  assert.deepEqual(Object.keys(verifyDocument.on).sort(), ['pull_request', 'push', 'workflow_dispatch']);
-  assert.deepEqual(verifyDocument.on.pull_request.branches, ['dev', 'main']);
-  assert.deepEqual(verifyDocument.on.push.branches, ['dev']);
+  assert.deepEqual(Object.keys(verifyDocument.on).sort(), ['pull_request', 'workflow_dispatch']);
+  assert.deepEqual(verifyDocument.on.pull_request.branches, ['main']);
+  assert.equal(verifyDocument.on.push, undefined, 'daily dev pushes must not start remote platform verification');
   assert.equal(verifyDocument.env.BUILDR_VERIFICATION_BASE, '${{ inputs.selection_baseline || \'\' }}', 'Candidate and formal repair share their already frozen selection baseline');
   assert.equal(verifyDocument.jobs['dev-feedback-macos'].if, "(github.event_name == 'pull_request' && github.base_ref == 'dev') || (github.event_name == 'push' && github.ref == 'refs/heads/dev')");
   assert.equal(verifyDocument.jobs['dev-feedback-windows'].if, "(github.event_name == 'pull_request' && github.base_ref == 'dev') || (github.event_name == 'push' && github.ref == 'refs/heads/dev')");
   assert.equal(verifyDocument.jobs['dev-feedback-macos']['runs-on'], 'macos-latest');
   assert.equal(verifyDocument.jobs['dev-feedback-windows']['runs-on'], 'windows-latest');
-  assert.equal(verifyDocument.jobs['candidate-plan'].if, "(!inputs.diagnostic_scope || inputs.diagnostic_scope == 'none') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev'))");
-  assert.deepEqual(verifyDocument.on.workflow_dispatch.inputs.purpose.options, ['candidate', 'release-rehearsal']);
+  assert.equal(verifyDocument.jobs['candidate-plan'].if, "inputs.purpose != 'local-package' && (!inputs.diagnostic_scope || inputs.diagnostic_scope == 'none') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev'))");
+  assert.deepEqual(verifyDocument.on.workflow_dispatch.inputs.purpose.options, ['candidate', 'release-rehearsal', 'local-package']);
   assert.deepEqual(verifyDocument.on.workflow_dispatch.inputs.diagnostic_scope.options, ['none', 'development-windows', 'core-project-task-macos', 'nested-git-isolation-windows', 'runtime-windows', 'failed-windows', 'package-consumer-windows', 'nested-lifecycle-windows', 'app-process-windows', 'readonly-files-windows', 'task-lifecycle-windows', 'preview-lifecycle-windows', 'publication-effects-windows', 'package-pair-publisher']);
   assert.equal(verifyDocument.on.workflow_dispatch.inputs.diagnostic_scope.default, 'none');
 
@@ -536,7 +536,7 @@ test('CI and publish workflows use the supported Node runtime', async () => {
   const agentPreparation = pluginSteps.findIndex((step: any) => step.name === 'Prepare the private Agent package');
   const generatedInputs = pluginSteps.findIndex((step: any) => step.name === 'Prepare shared release-tool generated test inputs');
   assert.ok(agentPreparation >= 0 && generatedInputs > agentPreparation, 'the plugin candidate builds the private agent before artifacts:prepare');
-  assert.equal(verifyDocument.jobs['candidate-gate'].if, "always() && (!inputs.diagnostic_scope || inputs.diagnostic_scope == 'none') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main'))");
+  assert.equal(verifyDocument.jobs['candidate-gate'].if, "always() && inputs.purpose != 'local-package' && (!inputs.diagnostic_scope || inputs.diagnostic_scope == 'none') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main'))");
   const diagnosis = verifyDocument.jobs['diagnostic-core-project-task-macos'];
   assert.equal(diagnosis.if, "github.event_name == 'workflow_dispatch' && inputs.diagnostic_scope == 'core-project-task-macos'");
   assert.equal(diagnosis.needs, undefined);

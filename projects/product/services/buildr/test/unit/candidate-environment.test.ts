@@ -16,6 +16,7 @@ test('Candidate environment profiles are closed and select the minimum preparati
     'buildr-agent-dependencies',
     'buildr-agent-build',
     'buildr-dependencies',
+    'buildr-web-dependencies',
     'generated-contracts-and-test-context',
   ]);
   assert.deepEqual(candidateEnvironmentPlan('artifact', roots).map((item) => item.id), [

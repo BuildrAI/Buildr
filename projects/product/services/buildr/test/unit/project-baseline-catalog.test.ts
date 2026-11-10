@@ -10,7 +10,7 @@ function fixture(t: any, version: string, global: boolean, legacy: boolean) {
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const project = path.join(root, 'projects', 'example');
   for (const dir of ['openspec/specs', 'openspec/changes', 'knowledge', 'services']) fs.mkdirSync(path.join(project, dir), { recursive: true });
-  for (const file of ['AGENTS.md', 'capabilities.yml', 'commands.yml']) fs.writeFileSync(path.join(project, file), '');
+  for (const file of ['AGENTS.md', 'commands.yml']) fs.writeFileSync(path.join(project, file), '');
   if (global) { fs.mkdirSync(path.join(root, 'services')); fs.writeFileSync(path.join(root, 'services/manifest.yml'), 'schemaVersion: buildr.services/v3\nservices: {}\n'); }
   if (legacy) fs.writeFileSync(path.join(project, 'services/manifest.yml'), 'schemaVersion: buildr.services/v2\nservices: {}\n');
   const exists = (p: string, directory: boolean) => { try { return directory ? fs.statSync(p).isDirectory() : fs.statSync(p).isFile(); } catch { return false; } };

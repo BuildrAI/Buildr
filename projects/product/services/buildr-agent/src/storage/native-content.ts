@@ -12,6 +12,7 @@ const maxDecoded = 128 * 1024 * 1024, cacheBudget = 32 * 1024 * 1024;
 const roots: Record<string, RegExp> = {
   codex: /^codex-home\/sessions\/.+\.jsonl$/,
   qoder: /^qoder-config\/projects\/.+\.jsonl$/,
+  'qoder-cn': /^qoder-cn-config\/projects\/.+\.jsonl$/,
   dsh: /^dsh-home\/(?:sessions\/.+\/(?:session\.v4\.jsonl(?:\.zstd)?|attachments\/.+)|attachments\/v1\/objects\/[a-f0-9]{2}\/[a-f0-9]{64})$/,
 };
 const unavailable = () => new AgentServiceError('agent_native_content_unavailable', '原生正文缺失、变化或不可安全读取；已保留来源引用，不会重发操作。', 409);
@@ -51,7 +52,8 @@ export class NativeContentReader {
   private readonly root: string;
   private readonly cache = new Map<string, { identity: string; value: unknown; bytes: number }>();
   private cacheBytes = 0;
-  constructor(root: string) { this.root = path.resolve(root); }
+  private readonly readTool?: (reference: NativeToolContent) => ConversationEntry | undefined;
+  constructor(root: string, readTool?: (reference: NativeToolContent) => ConversationEntry | undefined) { this.root = path.resolve(root); this.readTool = readTool; }
   private source(provider: string, source: NativeContentSource): unknown {
     if (!source || !Number.isSafeInteger(source.offset) || source.offset < 0 || !Number.isSafeInteger(source.length) || source.length < 1 ||
       source.length > maxNativeSourceBytes || !/^[a-f0-9]{64}$/.test(source.sha256)) throw unavailable();
@@ -126,6 +128,12 @@ export class NativeContentReader {
   }
   tool(reference: NativeToolContent, revision: string): ConversationEntry {
     try {
+      if(reference.version === 3) {
+        if(nativeContentHash(JSON.stringify(reference)) !== revision) throw unavailable();
+        const entry = this.readTool?.(reference);
+        if(!entry) throw unavailable();
+        return entry;
+      }
       if (![1, 2].includes(reference.version) || typeof reference.contextId !== 'string' || reference.entry.kind !== 'tool') throw unavailable();
       const entry = structuredClone(reference.entry);
       if (reference.input) entry.input = this.text(reference.provider, reference.input);

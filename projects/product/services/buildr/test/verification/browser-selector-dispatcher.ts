@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import {HISTORY_SCENARIO_CATALOG} from '../../../buildr-web/test/browser/agent-conversation-history-catalog.ts';
+import {selectIndependentScenarios} from '../../../buildr-web/test/browser/agent-conversation-scenarios.ts';
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -10,8 +12,8 @@ import { executeVerificationCommand } from './support/process-executor.ts';
 
 import { collectChangedProductPaths } from './changed-paths.ts';
 
-import { BROWSER_SELECTORS } from './browser-selector-catalog.ts';
-import { AGENT_CONVERSATION_GROUPS, AGENT_CONVERSATION_WORKERS } from '../../../buildr-web/test/browser/agent-conversation-groups.ts';
+import { BROWSER_BUNDLES, BROWSER_SELECTORS } from './browser-selector-catalog.ts';
+import { AGENT_CONVERSATION_BATCHES, AGENT_CONVERSATION_GROUPS } from '../../../buildr-web/test/browser/agent-conversation-groups.ts';
 import { inspectAgentConversationQueue } from '../../../buildr-web/test/browser/agent-conversation-queue.ts';
 import { createVerificationResourceCoordinator, coordinatedResourcesFromLimits, resolveVerificationCoordinationRoot } from './resource-coordinator.ts';
 import { resolveVerificationWorkerBudget } from './worker-budget.ts';
@@ -45,9 +47,10 @@ export function planAgentConversationGroups(env: any = process.env): any[] {
     error.code = 'browser_agent_conversation_focus_invalid';
     throw error;
   }
-  if (focus !== 'all') return [{ id: focus, parts: [focus], queue: false, processTimeoutMs: 195_000 }];
-  return Array.from({ length: AGENT_CONVERSATION_WORKERS }, (_, index) => ({
-    id: `worker-${index + 1}`, parts: [], queue: true, processTimeoutMs: 465_000,
+  if(focus==='history')selectIndependentScenarios(HISTORY_SCENARIO_CATALOG,env.BUILDR_AGENT_SCENARIO_FOCUS);
+  if (focus !== 'all') return [{ id: focus, parts: [focus], queue: false, processTimeoutMs: focus==='history'?465_000:195_000 }];
+  return AGENT_CONVERSATION_BATCHES.map((parts: ReadonlyArray<string>, index: number) => ({
+    id: `worker-${index + 1}`, parts: [...parts], queue: false, processTimeoutMs: 600_000,
   }));
 }
 
@@ -55,6 +58,18 @@ export function planBrowserCommands(selectors: any[], webDistRoot: string, env: 
   const selected = selectors.includes('all') ? BROWSER_SELECTORS : selectors;
   const browserTest = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../e2e/buildr-web-browser.test.ts');
   const isolationRunner = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../tools/development/run-isolated-workspace-check.ts');
+  const bundle = selected.length > 1
+    ? BROWSER_BUNDLES.find((candidate: any) => selected.every((selector: string) => candidate.selectors.includes(selector)))
+    : null;
+  if (bundle) {
+    return [{
+      id: `browser:bundle:${bundle.id}`,
+      argv: [process.execPath, isolationRunner, '--script', browserTest, '--', selected.join(',')],
+      cwd: productRoot,
+      timeoutMs: 900_000,
+      env: { ...env, BUILDR_BROWSER_WEB_DIST_ROOT: webDistRoot },
+    }];
+  }
   return selected.flatMap((selector: string) => {
     const groups = selector === 'code' || selector === 'code-explorer' ? planCodeBrowserGroups(env, selector) : selector === 'agent-conversations' ? planAgentConversationGroups(env) : [null];
     return groups.map((group: any) => ({
@@ -66,8 +81,8 @@ export function planBrowserCommands(selectors: any[], webDistRoot: string, env: 
         ...env,
         BUILDR_BROWSER_WEB_DIST_ROOT: webDistRoot,
         ...(group && selector === 'agent-conversations' ? {
-          BUILDR_AGENT_JOURNEY_PART: group.queue ? '' : group.parts[0],
-          BUILDR_AGENT_JOURNEY_BATCH: '',
+          BUILDR_AGENT_JOURNEY_PART: group.queue || group.parts.length > 1 ? '' : group.parts[0],
+          BUILDR_AGENT_JOURNEY_BATCH: !group.queue && group.parts.length > 1 ? JSON.stringify(group.parts) : '',
           BUILDR_AGENT_JOURNEY_QUEUE_ROOT: '',
           BUILDR_AGENT_JOURNEY_USES_QUEUE: group.queue ? '1' : '',
         } : {}),
@@ -160,6 +175,10 @@ export function selectBrowserSelectors(changedPaths: any): any  {
     }
     if (value.startsWith('src/web/http/')) {
       plan.reasons.push({ path: originalValue, selector: null, reason: 'HTTP/API owner; verify through the Buildr Web HTTP integration owner without starting Chrome.' });
+      continue;
+    }
+    if (/^services\/buildr-web\/test\/browser\/agent-conversations?[-.]/.test(originalValue)) {
+      add(plan,'agent-conversations',originalValue,'Conversation browser scenarios keep their direct browser owner.');
       continue;
     }
     if (originalValue.startsWith('services/buildr-web/') && !originalValue.startsWith('services/buildr-web/src/')) {
@@ -299,12 +318,17 @@ async function main(): Promise<any>  {
   const full: any = args.includes('--full');
   const selectorIndex: any = args.indexOf('--selector');
   const explicitSelector: any = selectorIndex < 0 ? null : args[selectorIndex + 1];
-  if (selectorIndex >= 0 && (!explicitSelector || !BROWSER_SELECTORS.includes(explicitSelector))) throw new Error('--selector requires one known Browser selector.');
+  const explicitSelectors: string[] | null = explicitSelector
+    ? explicitSelector.split(',').map((value: string) => value.trim()).filter(Boolean) : null;
+  if (selectorIndex >= 0 && (!explicitSelectors?.length || explicitSelectors.some((selector: string) => !BROWSER_SELECTORS.includes(selector)))) {
+    throw new Error('--selector requires one or more comma-separated known Browser selectors.');
+  }
   const run: any = args.includes('--run');
   let plan: any;
   try {
     plan = explicitSelector
-      ? { status: 'selected', mode: 'explicit', paths: [], selectors: [explicitSelector], reasons: [{ path: null, selector: explicitSelector, reason: 'Explicit Browser selector.' }], diagnostics: [] }
+      ? { status: 'selected', mode: 'explicit', paths: [], selectors: explicitSelectors,
+        reasons: explicitSelectors!.map((selector: string) => ({ path: null, selector, reason: 'Explicit Browser selector.' })), diagnostics: [] }
       : full
       ? { status: 'selected', mode: 'full', paths: [], selectors: ['all'], reasons: [{ path: null, selector: 'all', reason: 'Complete browser journeys.' }], diagnostics: [] }
       : selectBrowserSelectors(parseChangedPaths());
@@ -339,11 +363,19 @@ async function main(): Promise<any>  {
   const stagingRoot: any = suppliedWebDist ? path.resolve(suppliedWebDist) : path.join(stagingParent, 'web-dist');
   const controller = new AbortController();
   let unsafeCleanupDetected = false;
+  let preparedRuntimeRoot: any = null;
   const cancel = () => controller.abort();
   process.on('SIGINT', cancel);
   process.on('SIGTERM', cancel);
   try {
     const commands = planBrowserCommands(plan.selectors, stagingRoot, { ...process.env, BUILDR_BROWSER_SELECTOR_PLAN_JSON: JSON.stringify(plan) });
+    if (commands.length > 1 && !process.env.BUILDR_AGENT_PREPARED_RUNTIME_SEED && process.env.BUILDR_AGENT_PREPARED_RUNTIME_REUSE !== '0') {
+      const { prepareSharedAgentRuntime } = await import('../helpers/prepared-agent-runtime.ts');
+      preparedRuntimeRoot = fs.mkdtempSync(path.join(process.env.BUILDR_TEST_SHARED_TEMP_ROOT || os.tmpdir(), 'buildr-browser-agent-runtime-'));
+      const descriptor = prepareSharedAgentRuntime({ productRoot, root: preparedRuntimeRoot });
+      for (const command of commands) command.env.BUILDR_AGENT_PREPARED_RUNTIME_SEED = descriptor;
+      process.stderr.write(`[browser-agent-runtime] prepared seed for ${commands.length} browser processes\n`);
+    }
     if (!suppliedWebDist) {
     const prepareResult = await runPhase('artifacts', [process.execPath, path.join(productRoot, 'tools/development/run-development-npm.ts'), '--prefix', productRoot, 'run', 'artifacts:prepare'], productRoot, 120_000, process.env, controller.signal);
     if (prepareResult.status !== 'passed') {
@@ -410,6 +442,7 @@ async function main(): Promise<any>  {
     process.off('SIGINT', cancel);
     process.off('SIGTERM', cancel);
     if (stagingParent) fs.rmSync(stagingParent, { recursive: true, force: true });
+    if (preparedRuntimeRoot) fs.rmSync(preparedRuntimeRoot, { recursive: true, force: true });
   }
 }
 

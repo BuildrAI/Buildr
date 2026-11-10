@@ -40,6 +40,12 @@ function HistoryControls({active = true, workspaceId, repository, worktree, vers
 /** Each concrete location owns its read-only history conditions. All writes live in the row adapter. */
 export function useSourceControlBranches(workspaceId: string, fetchActions?: SourceControlFetchActions, syncActions?:SourceControlSyncActions): SourceControlBranchExtension {
   const [ranges, setRanges] = useState<Record<string, {branchRef: string; authorEmail: string}>>({});
+  const [busySources,setBusySources]=useState<Record<string,string>>({});
+  const repositoryBusy=(repositoryId:string)=>Object.values(busySources).includes(repositoryId);
+  const busyChanged=(source:string,repositoryId:string,value:boolean)=>setBusySources(previous=>{
+    if(Boolean(previous[source])===value)return previous;
+    const next={...previous};if(value)next[source]=repositoryId;else delete next[source];return next;
+  });
   const [openMenu, setOpenMenu] = useState('');
   const [branchRequest, setBranchRequest] = useState({key:'', serial:0});
   const [selection, setSelection] = useState<SourceControlBranchExtension['selection']>();
@@ -47,15 +53,17 @@ export function useSourceControlBranches(workspaceId: string, fetchActions?: Sou
   const key = (repository: SourceControlRepository, worktree: SourceControlWorktree) => JSON.stringify([workspaceId, sourceControlWorktreeKey(repository.id, worktree.worktreeId)]);
   const range = (repository: SourceControlRepository, worktree: SourceControlWorktree) => ranges[key(repository, worktree)] || {branchRef: 'HEAD', authorEmail: ''};
   const openPosition = (repositoryId: string, worktreeId: string, scene: 'history' | 'changes') => setSelection({key: workspaceId + ':' + ++serial.current, repositoryId, worktreeId, scene});
-  useEffect(() => { setSelection(undefined); setOpenMenu(''); }, [workspaceId]);
+  useEffect(() => { setSelection(undefined); setOpenMenu('');setBusySources({}); }, [workspaceId]);
   const syncing = (repository:SourceControlRepository) => repository.worktrees.some(worktree => syncActions?.pending[sourceControlWorktreeKey(repository.id, worktree.worktreeId)]);
   return {
+    readsSuspended: repositoryBusy,
     historyRange(repository, worktree) {
       const current = range(repository, worktree);
       return {branch: current.branchRef === 'HEAD' ? undefined : current.branchRef, authorEmail: current.authorEmail || undefined};
     },
     selection,
-    rowControl: (repository, worktree, ready, context) => <SourceControlBranchControl key={JSON.stringify([workspaceId, repository.id, worktree.worktreeId])} workspaceId={workspaceId} fetchActions={fetchActions} repository={repository} worktree={worktree} version={repository.refsVersion || repository.readVersion || ''} ready={ready && !repository.cached && !syncing(repository)} inlineVisible={context.branchVisible} rowVisible={context.rowVisible} openRequest={branchRequest.key === key(repository, worktree) ? branchRequest.serial : 0}
+    rowControl: (repository, worktree, ready, context) => <SourceControlBranchControl key={JSON.stringify([workspaceId, repository.id, worktree.worktreeId])} workspaceId={workspaceId} fetchActions={fetchActions} repository={repository} worktree={worktree} version={repository.refsVersion || repository.readVersion || ''} ready={ready && !repository.cached && !syncing(repository) && !repositoryBusy(repository.id)} inlineVisible={context.branchVisible} rowVisible={context.rowVisible} openRequest={branchRequest.key === key(repository, worktree) ? branchRequest.serial : 0}
+      onBusy={value=>busyChanged(key(repository,worktree),repository.id,value)}
       onOpenPosition={worktreeId => openPosition(repository.id, worktreeId, 'history')} onViewChanges={() => openPosition(repository.id, worktree.worktreeId, 'changes')} />,
     rowActions: fetchActions && syncActions ? (repository, worktree, ready, context) => {
       const available = ready && !repository.cached && worktree.status !== 'offline' && Boolean(repository.gitId && repository.checkoutId);
@@ -66,7 +74,7 @@ export function useSourceControlBranches(workspaceId: string, fetchActions?: Sou
     viewChanges:(repositoryId, worktreeId) => openPosition(repositoryId, worktreeId, 'changes'),
     historyControls(repository, worktree, controls) {
       const id = key(repository, worktree), current = range(repository, worktree);
-      return <HistoryControls active={controls.active} key={id} workspaceId={workspaceId} repository={repository} worktree={worktree} version={repository.refsVersion || repository.readVersion || ''} {...current} query={controls.query}
+      return <HistoryControls active={controls.active&&!repositoryBusy(repository.id)} key={id} workspaceId={workspaceId} repository={repository} worktree={worktree} version={repository.refsVersion || repository.readVersion || ''} {...current} query={controls.query}
         onBranchChange={branchRef => setRanges(previous => ({...previous, [id]: {...current, branchRef}}))}
         onAuthorChange={authorEmail => setRanges(previous => ({...previous, [id]: {...current, authorEmail}}))}
         onClear={() => { setRanges(previous => ({...previous, [id]: {branchRef: 'HEAD', authorEmail: ''}})); controls.clearSearch(); }} />;

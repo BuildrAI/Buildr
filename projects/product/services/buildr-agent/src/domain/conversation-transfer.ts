@@ -1,4 +1,6 @@
 import type { ConversationView, ServiceEvent } from '../contracts.ts';
+import {conversationPatchEncoder,restoreConversationPatch,type ConversationPatch} from './conversation-patch.ts';
+export type {ConversationPatch} from './conversation-patch.ts';
 
 export interface ConversationDelta {
   baseCursor: number;
@@ -7,14 +9,25 @@ export interface ConversationDelta {
   entryIds: string[];
   entries: ConversationView['entries'];
 }
-export type TransferEvent = ServiceEvent & { payload: ServiceEvent['payload'] & { delta?: ConversationDelta } };
+export type TransferEvent = ServiceEvent & { payload: ServiceEvent['payload'] & { delta?: ConversationDelta;patch?:ConversationPatch } };
 
 /** Connection-local baseline only; a new connection always starts with a snapshot. */
-export function conversationEventEncoder() {
+export function conversationEventEncoder(transfer:'delta-v1'|'delta-v2'='delta-v1') {
   let previous: ServiceEvent | undefined;
+  const patch=conversationPatchEncoder();
   return (event: ServiceEvent): TransferEvent => {
     const view = event.payload.conversation, base = previous?.payload.conversation;
     let result: TransferEvent = event;
+    if(transfer==='delta-v2'){
+      if(view){
+        const baseline=base&&previous&&event.type!=='snapshot'&&event.generation===previous.generation&&view.id===base.id&&view.workspaceId===base.workspaceId&&event.cursor>previous.cursor
+          ?{cursor:previous.cursor,revision:base.revision}:undefined;
+        const changes=patch(view,baseline);
+        if(changes)result={...event,payload:{...(event.payload.connection?{connection:event.payload.connection}:{}),patch:changes}};
+        previous=event;
+      }
+      return result;
+    }
     if (view && base && previous && event.type !== 'snapshot'
       && event.generation === previous.generation && view.id === base.id && view.workspaceId === base.workspaceId
       && event.cursor > previous.cursor) {
@@ -36,6 +49,13 @@ export function conversationEventEncoder() {
 export function conversationEventDecoder() {
   let previous: ServiceEvent | undefined;
   return (event: TransferEvent): ServiceEvent => {
+    const patch=event.payload.patch;
+    if(patch){
+      const base=previous?.payload.conversation;
+      if(!base||!previous||event.type==='snapshot'||event.payload.delta||event.payload.conversation||event.generation!==previous.generation||patch.baseCursor!==previous.cursor||patch.baseRevision!==base.revision||event.cursor<=previous.cursor||event.conversationId!==base.id||event.workspaceId!==base.workspaceId||patch.changes.revision!==event.revision)throw new Error('conversation_patch_baseline_mismatch');
+      const result:ServiceEvent={...event,payload:{...(event.payload.connection?{connection:event.payload.connection}:{}),conversation:restoreConversationPatch(base,patch)}};
+      previous=result;return result;
+    }
     const delta = event.payload.delta;
     let result: ServiceEvent = event;
     if (delta) {

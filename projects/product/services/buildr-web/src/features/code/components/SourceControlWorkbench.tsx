@@ -26,6 +26,7 @@ import '../source-control.css';
 export type { SourceControlChange, SourceControlCommit, SourceControlRepository, SourceControlFileTarget, SourceControlScene, SourceControlState } from '../source-control-model';
 
 export type SourceControlBranchExtension = {
+  readsSuspended?(repositoryId: string): boolean;
   historyRange(repository: SourceControlRepository, worktree: SourceControlWorktree): {branch?: string; authorEmail?: string};
   viewChanges?(repositoryId:string, worktreeId:string):void;
   selection?: {key: string; repositoryId: string; worktreeId: string; scene: 'changes' | 'history'};
@@ -99,6 +100,7 @@ export function SourceControlWorkbench({ active = true, repositories, defaultRep
   const sources = repositories.flatMap(repository => repository.worktrees.map(worktree => ({repository, worktree})));
   const selectedSource = scopeSelection && selectionEpoch !== scopeSelection.key ? undefined : selectedWorktreeKey ? sources.find(({repository, worktree}) => sourceControlWorktreeKey(repository.id, worktree.worktreeId) === selectedWorktreeKey) : sourceControlDefaultSource(defaultRepositories || repositories);
   const selectedRepository = selectedSource?.repository, selectedWorktree = selectedSource?.worktree;
+  const sourceChanging = Boolean(selectedRepository && branchExtension?.readsSuspended?.(selectedRepository.id));
   const selectedIdentity = selectedSource ? sourceControlWorktreeKey(selectedSource.repository.id, selectedSource.worktree.worktreeId) : '';
   const entryIntentKey = sourceEntryKey || scopeSelection?.key;
   useEffect(() => {
@@ -192,7 +194,7 @@ export function SourceControlWorkbench({ active = true, repositories, defaultRep
   const historyVersion = JSON.stringify([selectedRepository?.refsVersion, selectedWorktree?.head, selectedWorktree?.branch, historyRange, refreshToken]);
   const detailVersion = history ? String(refreshToken) : version;
   const historyInput: CodeSourceControlInput = { repositoryId: selectedRepository?.id, worktreeId: selectedWorktree?.worktreeId, branch: historyRange?.branch, authorEmail: historyRange?.authorEmail, query: searchQuery || undefined, limit: 100 };
-  const historyRead = useSourceControlRead(JSON.stringify([readKey, historyInput]), historyInput, reader.history, Boolean(active && (history || showHistoryList) && selectedWorktree && selectedWorktree.status !== 'offline'), historyVersion);
+  const historyRead = useSourceControlRead(JSON.stringify([readKey, historyInput]), historyInput, reader.history, Boolean(active && !sourceChanging && (history || showHistoryList) && selectedWorktree && selectedWorktree.status !== 'offline'), historyVersion);
   const commits = historyRead.data?.commits.map(commit => sourceControlCommit(commit)) || [];
   const selectedCommit = commitSummary?.hash === commitHash ? commitSummary : undefined;
   const candidateFiles = !selectedWorktree ? [] : history ? selectedCommit?.files || [] : sourceControlWorkingChanges(selectedWorktree.changes);
@@ -217,7 +219,7 @@ export function SourceControlWorkbench({ active = true, repositories, defaultRep
   // still be refreshing after a save; the server verifies its own read revision.
   // Fixed/task readers retain their original snapshot precondition.
   const diffInput = editableWorkspaceId && !history ? { ...target, expectedRevision: undefined } : target;
-  const diffRead = useSourceControlRead(targetKey, diffInput, reader.diff, Boolean(active && selectedWorktree?.status !== 'offline' && currentFile && scene !== 'full-file' && (listedFile || !editableWorkspaceId)), diffVersion);
+  const diffRead = useSourceControlRead(targetKey, diffInput, reader.diff, Boolean(active && (history || !sourceChanging) && selectedWorktree?.status !== 'offline' && currentFile && scene !== 'full-file' && (listedFile || !editableWorkspaceId)), diffVersion);
   const imagePreview = diffRead.data?.imagePreview;
   const liveDiff = editableWorkspaceId && diffRead.data && !history && ['unstaged', 'untracked', 'working'].includes(diffRead.data.area)
     && !diffRead.data.binary && !diffRead.data.file.previewTruncated && !['deleted', 'conflicted'].includes(diffRead.data.file.status)
@@ -234,7 +236,7 @@ export function SourceControlWorkbench({ active = true, repositories, defaultRep
   const continuingPage = filePage.key === targetKey && Boolean(filePage.revision);
   const fullInput: CodeSourceControlInput = { ...target, page: continuingPage ? filePage.page : undefined,
     expectedRevision: continuingPage ? filePage.revision : history || fileReload.key === targetKey ? undefined : target.expectedRevision };
-  const fullRead = useSourceControlRead(JSON.stringify([targetKey, fullInput.page]), fullInput, reader.sourceFile, Boolean(active && selectedWorktree?.status !== 'offline' && scene === 'full-file' && currentFile && !fullImage), detailVersion + ':' + fileReload.version);
+  const fullRead = useSourceControlRead(JSON.stringify([targetKey, fullInput.page]), fullInput, reader.sourceFile, Boolean(active && (history || !sourceChanging) && selectedWorktree?.status !== 'offline' && scene === 'full-file' && currentFile && !fullImage), detailVersion + ':' + fileReload.version);
   // A deleted image's old side is already verified; keep its exact source rather than requesting a missing current file.
   const file = fullImage ? {...fullImage,readAt:fullImage.observedAt,observedRevision:fullImage.revision,coverage:{limit:fullImage.limitBytes,truncated:fullImage.truncated,nextCursor:null},diagnostics:[]} : fullRead.data;
   useEffect(() => {

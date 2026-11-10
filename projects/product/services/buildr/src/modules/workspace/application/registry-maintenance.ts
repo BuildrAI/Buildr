@@ -1,3 +1,4 @@
+import { planProjectCapabilityCleanup, cleanupProjectCapabilities } from './project-capability-retirement.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -219,5 +220,9 @@ export function createRegistryMaintenance(runtime: RegistryMaintenanceDependenci
     return [...new Set(changed)];
   }
 
-  return Object.freeze({ convergeRegistryManifests });
+  return Object.freeze({
+    convergeRegistryManifests,
+    planProjectCapabilityCleanup: (targetRoot: string) => planProjectCapabilityCleanup(targetRoot, runtime.readProjectRegistryRecord(targetRoot).projects),
+    cleanupProjectCapabilities,
+  });
 }

@@ -21,16 +21,11 @@ export function createCapabilityDiagnostics({ addDoctorFinding, isSupportedAgent
   function diagnoseSkillCapabilities(result: any, targetRoot: any, scopes: any, requestedAgent: any) {
     const selected = requestedAgent && typeof requestedAgent === 'object' ? requestedAgent : resolveRuntimeSelection({ runtimeId: requestedAgent ?? null });
     const { runtimeId, adapterId } = selected;
-    const targets = [{ scope: '.', projectRoot: null }];
-    for (const scope of scopes) {
-      if (!scope.project) continue;
-      const scopeId = `projects/${scope.project}`;
-      if (!targets.some((item: any) => item.scope === scopeId)) targets.push({ scope: scopeId, projectRoot: path.join(targetRoot, scopeId) });
-    }
+    const targets = [{ scope: '.' }];
     result.capabilities = { structurallyRoutableOnly: true, graphs: [], items: [] };
     for (const target of targets) {
       try {
-        const graph = resolveSkillCapabilityGraph(targetRoot, target.projectRoot, { runtime: runtimeId, runtimeId, adapterId, scope: target.scope });
+        const graph = resolveSkillCapabilityGraph(targetRoot, { runtime: runtimeId, runtimeId, adapterId, scope: target.scope });
         const consumers = graph.consumers.map(publicConsumer);
         result.capabilities.graphs.push({
           schemaVersion: graph.schemaVersion,

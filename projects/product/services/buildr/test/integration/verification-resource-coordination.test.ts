@@ -32,33 +32,33 @@ function runWorker(root: any, taskId: any, acquiredFile: any, releaseFile: any, 
   return spawnSupervised(process.execPath, [worker, root, taskId, acquiredFile, releaseFile, String(ttlMs)], { owner: { taskId, runId: `run-${taskId}` }, timeoutMs: 15_000 });
 }
 
-function ticketCount(root: any): any  {
-  let count: any = 0;
-  const visit: any = (directory: any) => {
-    if (!fs.existsSync(directory)) return;
-    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-      const current: any = path.join(directory, entry.name);
-      if (entry.isDirectory()) visit(current);
-      else if (entry.name === 'ticket.json') count += 1;
+// Publication and release rename directories atomically. Observe only published
+// tickets, and let a concurrently released entry disappear between observations.
+function visitTickets(root: string, visit: (file: string) => void): void {
+  try {
+    for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+      if (entry.name.startsWith('.')) continue;
+      const current = path.join(root, entry.name);
+      if (entry.isDirectory()) visitTickets(current, visit);
+      else if (entry.name === 'ticket.json') {
+        try { visit(current); }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+      }
     }
-  };
-  visit(root);
+  } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+}
+
+function ticketCount(root: string): number {
+  let count = 0;
+  visitTickets(root, () => { count += 1; });
   return count;
 }
 
-function expireTickets(root: any): any  {
-  const visit: any = (directory: any) => {
-    if (!fs.existsSync(directory)) return;
-    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-      const current: any = path.join(directory, entry.name);
-      if (entry.isDirectory()) visit(current);
-      else if (entry.name === 'ticket.json') {
-        const ticket: any = JSON.parse(fs.readFileSync(current, 'utf8'));
-        fs.writeFileSync(current, `${JSON.stringify({ ...ticket, expiresAt: new Date(0).toISOString() }, null, 2)}\n`);
-      }
-    }
-  };
-  visit(root);
+function expireTickets(root: string): void {
+  visitTickets(root, current => {
+    const ticket = JSON.parse(fs.readFileSync(current, 'utf8'));
+    fs.writeFileSync(current, `${JSON.stringify({ ...ticket, expiresAt: new Date(0).toISOString() }, null, 2)}\n`);
+  });
 }
 
 test('独立进程共享 Workspace 容量槽并按 owner 释放', async (t: any) => {

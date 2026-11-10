@@ -20,7 +20,7 @@
 .ac-activity-row{position:relative;display:flex;align-items:flex-start;gap:2px;border-radius:6px}
 .ac-activity-row:hover,.ac-activity-row.is-selected{background:#f0f5f2}
 .ac-activity-row-main{display:block;flex:1;min-width:0;text-align:left;border:0;border-radius:6px;padding:10px 8px;background:none;color:inherit;cursor:pointer}
-.ac-activity-row:focus-within{outline:1px solid var(--soft-primary);outline-offset:-1px}
+.ac-activity-row:has(:focus-visible){outline:1px solid var(--soft-primary);outline-offset:-1px}
 .ac-activity-row-copy.ant-btn{position:absolute;left:5px;bottom:10px;z-index:1;width:20px;height:18px;padding:0;color:#9aa8a0}
 .ac-activity-row-copy.ant-btn:hover{color:var(--soft-primary)}
 .ac-activity-title{display:flex;align-items:center;gap:12px;min-width:0}

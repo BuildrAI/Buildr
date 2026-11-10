@@ -11,7 +11,6 @@ export { capabilityKey, validateCapabilityIdentity } from '../domain/capability-
 export const SKILLS_SCHEMA_V1 = 'buildr.skills/v1';
 export const SKILLS_SCHEMA_V2 = 'buildr.skills/v2';
 export const SKILLS_SCHEMA_V3 = 'buildr.skills/v3';
-export const PROJECT_CAPABILITIES_SCHEMA = 'buildr.project-capabilities/v1';
 export const CAPABILITY_CONTRACT_SCHEMA = 'buildr.capability-contract/v1';
 export const CAPABILITY_REASONS = Object.freeze([
   'missing_provider',
@@ -200,33 +199,6 @@ export function parseSkillsManifestContent(content: string, manifestPath: string
 export function parseSkillsManifestDocument(manifestPath: any, options: any = {}): any  {
   ensureFile(manifestPath, `Manifest not found: ${manifestPath}`);
   return parseSkillsManifestContent(fs.readFileSync(manifestPath, 'utf8'), manifestPath, options);
-}
-
-export function validateProjectCapabilitiesDocument(document: any, file: any = 'capabilities.yml'): any  {
-  if (!isPlainObject(document) || document.schemaVersion !== PROJECT_CAPABILITIES_SCHEMA) throw new Error(`Unsupported Project capabilities schemaVersion in ${file}: ${document?.schemaVersion || '<missing>'}`);
-  for (const field of ['requires', 'bindings', 'skills']) if (document[field] !== undefined && !Array.isArray(document[field])) throw new Error(`${field} must be an array in ${file}`);
-  validateDeclarations(document.requires, 'requires', true);
-  const bindings: any = new Set();
-  for (const [index, binding] of (document.bindings || []).entries()) {
-    validateCapabilityIdentity(binding.capability, binding.version, `bindings[${index}]`);
-    if (typeof binding.provider !== 'string' || !binding.provider) throw new Error(`bindings[${index}].provider is required in ${file}`);
-    const key = capabilityKey(binding.capability, binding.version);
-    if (bindings.has(key)) throw new Error(`Duplicate capability binding in ${file}: ${key}`);
-    bindings.add(key);
-  }
-  const skills: any = new Set();
-  for (const [index, skill] of (document.skills || []).entries()) {
-    const id = typeof skill === 'string' ? skill : skill?.id;
-    if (typeof id !== 'string' || !id) throw new Error(`skills[${index}] must reference a workspace Skill id in ${file}`);
-    if (skills.has(id)) throw new Error(`Duplicate Skill applicability in ${file}: ${id}`);
-    skills.add(id);
-  }
-  return document;
-}
-
-export function parseProjectCapabilities(file: any): any  {
-  ensureFile(file, `Project capabilities not found: ${file}`);
-  return validateProjectCapabilitiesDocument(parseYaml(fs.readFileSync(file, 'utf8'), file), file);
 }
 
 export function parseSkillsManifest(manifestPath: any, options: any = {}): any  {

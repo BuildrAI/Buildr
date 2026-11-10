@@ -102,8 +102,8 @@ const TEST_SUPPORT_METHODS = Object.freeze([
   'readWorkspaceRegistryPersistence', 'withWorkspaceRegistryMutation', 'repositoryCloneIdle',
 ]);
 
-const WORKSPACE_ASSET_METHODS = ["convergeRegistryManifests","workspaceMigrationPlan","migrateWorkspaceMetadata","readProjectRegistryRecord","projectMigrationPlan","migrateProjectRegistry","projectsManifestPath","writeProjectRegistry","renderProjectsManifest","parseProjectsYaml","renderProjectsYaml","validateProjectsRegistry","writeProjectsRegistry","writeServiceRegistry","parseServicesManifest","renderServicesDomainManifest","parseServicesYaml","parseServicesManifestYaml","renderServicesManifestYaml","servicesManifestPath","writeServicesManifest","defaultAssetDescription","sourceIdentity","gitDefaultBranch","inferRepoKind","gitBoundaryFor","ensureGitBoundaries"] as const;
-export type WorkspaceAssetSupport = Pick<WorkspacePrivateComposition, Exclude<typeof WORKSPACE_ASSET_METHODS[number], 'convergeRegistryManifests'>> & ReturnType<typeof createRegistryMaintenance>;
+const WORKSPACE_ASSET_METHODS = ["planProjectCapabilityCleanup","cleanupProjectCapabilities","convergeRegistryManifests","workspaceMigrationPlan","migrateWorkspaceMetadata","readProjectRegistryRecord","projectMigrationPlan","migrateProjectRegistry","projectsManifestPath","writeProjectRegistry","renderProjectsManifest","parseProjectsYaml","renderProjectsYaml","validateProjectsRegistry","writeProjectsRegistry","writeServiceRegistry","parseServicesManifest","renderServicesDomainManifest","parseServicesYaml","parseServicesManifestYaml","renderServicesManifestYaml","servicesManifestPath","writeServicesManifest","defaultAssetDescription","sourceIdentity","gitDefaultBranch","inferRepoKind","gitBoundaryFor","ensureGitBoundaries"] as const;
+export type WorkspaceAssetSupport = Pick<WorkspacePrivateComposition, Exclude<typeof WORKSPACE_ASSET_METHODS[number], 'convergeRegistryManifests' | 'planProjectCapabilityCleanup' | 'cleanupProjectCapabilities'>> & ReturnType<typeof createRegistryMaintenance>;
 
 function pick(source: WorkspacePrivateComposition, methods: readonly string[]) {
   for (const method of methods) {
@@ -228,7 +228,7 @@ export function createWorkspaceModule(runtime: DynamicRuntime, { readProductIden
         readProjectRegistryRecord: privateComposition.readProjectRegistryRecord,
         renderProjectsManifest: privateComposition.renderProjectsManifest, writeProjectRegistry: privateComposition.writeProjectRegistry,
       });
-      privateComposition.convergeRegistryManifests = registryMaintenance.convergeRegistryManifests;
+      Object.assign(privateComposition, registryMaintenance);
 
       const workspace = Object.freeze({
         ...pick(privateComposition, WORKSPACE_METHODS),

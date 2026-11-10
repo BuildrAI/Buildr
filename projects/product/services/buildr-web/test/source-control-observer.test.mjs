@@ -260,3 +260,69 @@ test('首次无游标监听握手不重复扫描，后续真实变化仍安排�
     await until(()=>f.requests.length===2);assert.equal(f.requests[1].repositoryId,'a');f.requests[1].resolve(response(repository('a','changed')));
   }finally{f.observer.dispose();}
 });
+
+test('recent verified catalogs coalesce focus and retained-view reentry, while changes and manual reads stay immediate', async t => {
+  t.mock.timers.enable({apis:['Date','setTimeout'],now:1000});
+  const settle=async()=>{for(let i=0;i<20;i++)await Promise.resolve();};
+  const f=fixture({debounceMs:1,minimumReconcileMs:30000});
+  try{
+    f.observer.start();t.mock.timers.tick(1);assert.equal(f.requests.length,1);
+    f.requests[0].resolve(response(repository('a')));await settle();
+    assert.equal(f.observer.catalog().snapshot().selectionReady,true);
+    for(let i=0;i<10;i++)f.observer.reconcile();t.mock.timers.tick(1000);await settle();assert.equal(f.requests.length,1);
+    f.notice({repositoryId:'a',cause:'file-save'});t.mock.timers.tick(1);assert.equal(f.requests.length,2);
+    f.requests[1].resolve(response(repository('a','changed')));await settle();
+    const manual=f.observer.refresh('a');assert.equal(f.requests.length,3);f.requests[2].resolve(response(repository('a','manual')));await manual;await settle();
+    f.observer.reconcile();t.mock.timers.tick(1);assert.equal(f.requests.length,3);
+    t.mock.timers.tick(30000);f.observer.reconcile();t.mock.timers.tick(1);assert.equal(f.requests.length,4);
+    assert.equal(f.requests[3].repositoryId,undefined);
+  }finally{f.observer.dispose();}
+});
+
+test('healthy observation avoids two-minute full scans and retains a bounded five-minute safety check', async t => {
+  t.mock.timers.enable({apis:['Date','setTimeout'],now:1000});
+  const settle=async()=>{for(let i=0;i<20;i++)await Promise.resolve();};
+  const f=fixture({debounceMs:1,fallbackMs:undefined});
+  try{
+    f.observer.start();t.mock.timers.tick(1);f.requests[0].resolve(response(repository('a')));await settle();
+    t.mock.timers.tick(120000);await settle();assert.equal(f.requests.length,1);
+    t.mock.timers.tick(180002);t.mock.timers.tick(1);await settle();assert.equal(f.requests.length,2);
+    assert.equal(f.requests[1].repositoryId,undefined);
+  }finally{f.observer.dispose();}
+});
+
+test('watch diagnostics retain the thirty-second compensation and bypass focus freshness', async t => {
+  t.mock.timers.enable({apis:['Date','setTimeout'],now:1000});
+  const settle=async()=>{for(let i=0;i<20;i++)await Promise.resolve();};
+  const f=fixture({debounceMs:1,fallbackMs:undefined,minimumReconcileMs:300000});
+  try{
+    f.observer.start();t.mock.timers.tick(1);f.requests[0].resolve(response(repository('a')));await settle();
+    f.watches[0].reject(Error('watch unavailable'));await settle();assert.equal(f.observer.snapshot().diagnostics.length,1);
+    t.mock.timers.tick(30000);t.mock.timers.tick(1);await settle();assert.equal(f.requests.length,2);
+    assert.equal(f.requests[1].repositoryId,undefined);
+  }finally{f.observer.dispose();}
+});
+
+test('a truncated catalog cannot extend the recent verified-result window', async t => {
+  t.mock.timers.enable({apis:['Date','setTimeout'],now:1000});
+  const settle=async()=>{for(let i=0;i<20;i++)await Promise.resolve();};
+  const f=fixture({debounceMs:1});
+  try{
+    f.observer.start();t.mock.timers.tick(1);
+    const partial=response(repository('a'));partial.repositories[0].worktreeCoverage.truncated=true;
+    f.requests[0].resolve(partial);await settle();
+    f.observer.reconcile();t.mock.timers.tick(1);assert.equal(f.requests.length,2);
+  }finally{f.observer.dispose();}
+});
+
+test('a newer incomplete read invalidates reuse of an earlier complete observation', async t => {
+  t.mock.timers.enable({apis:['Date','setTimeout'],now:1000});
+  const settle=async()=>{for(let i=0;i<20;i++)await Promise.resolve();};
+  const f=fixture({debounceMs:1});
+  try{
+    f.observer.start();t.mock.timers.tick(1);f.requests[0].resolve(response(repository('a')));await settle();
+    const manual=f.observer.refresh();const partial=response(repository('a'));partial.repositories[0].worktreeCoverage.truncated=true;
+    f.requests[1].resolve(partial);await manual;await settle();
+    f.observer.reconcile();t.mock.timers.tick(1);assert.equal(f.requests.length,3);
+  }finally{f.observer.dispose();}
+});

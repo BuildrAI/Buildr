@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import {fork} from 'node:child_process';
+import {once} from 'node:events';
 import { authorize, json, listen, privateToken, request, keepEventStreamAlive } from '../../src/process/transport.ts';
 
 test('accepted response finishes before the execution channel closes', { timeout: 10_000 }, async t => {
@@ -52,4 +54,16 @@ test('a quiet internal event stream emits comments across a long question wait a
     stop();t.mock.timers.tick(60_000);
     controller.abort();
   }finally{stop();controller.abort();await reader.cancel().catch(()=>{});reader.releaseLock();await channel.close();t.mock.timers.reset();}
+});
+
+test('control writes never reuse an expired socket after synchronous preparation', {timeout:15_000}, async t=>{
+ const child=fork(new URL('./fixtures/idle-control-server.mjs',import.meta.url),[],{stdio:['ignore','ignore','inherit','ipc']});
+ t.after(async()=>{if(child.exitCode!==null||child.signalCode!==null)return;const ended=once(child,'exit');child.kill('SIGTERM');await ended;});
+ const [port]=await once(child,'message');const origin='http://127.0.0.1:'+port;
+ // Two reads fill both idle slots of the former fetch pool. Blocking the client
+ // leaves their close events pending while the independent server expires them.
+ await request(origin,'fixture','/status');await request(origin,'fixture','/status');
+ Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,5500);
+ assert.deepEqual(await request(origin,'fixture','/runtime',{mutation:true}),{writes:1});
+ assert.deepEqual(await request(origin,'fixture','/status'),{writes:1},'one accepted mutation; no replay');
 });

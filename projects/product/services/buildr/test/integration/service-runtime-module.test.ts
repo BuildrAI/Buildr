@@ -8,6 +8,7 @@ import { pathToFileURL } from 'node:url';
 import { createCodeApplication } from '../../src/modules/code/application/code-application.ts';
 import { CODE_APPLICATION } from '../../src/modules/code/module.ts';
 import { TASK_QUERY_APPLICATION, TASK_WORKTREE_PROVIDER } from '../../src/modules/task/module.ts';
+import { TASK_COMMITS_APPLICATION } from '../../src/modules/task/commits/module.ts';
 import { registerGitWorktreeProvider } from '../../src/modules/task/infrastructure/git-worktree-provider.ts';
 import { WORKSPACE_APPLICATION } from '../../src/modules/workspace/module.ts';
 import { SERVICE_RUNTIME_APPLICATION, SERVICE_RUNTIME_MODULE, SERVICE_RUNTIME_SOURCES, SERVICE_RUNTIME_VIEW, SERVICE_TASK_RUNTIME_APPLICATION } from '../../src/modules/service-runtime/module.ts';
@@ -15,6 +16,25 @@ import { createServiceRuntimeCliContributions } from '../../src/modules/service-
 import { createServiceRuntimeView } from '../../src/modules/service-runtime/application/service-runtime-view.ts';
 import { processAlive } from '../../src/modules/service-runtime/infrastructure/managed-process.ts';
 import { freeRuntimePort, runtimeDefinition, runtimeFixture } from '../helpers/service-runtime-fixture.ts';
+
+test('已清理任务只读提交快检，不逐服务扫描无关代码库状态', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'task-runtime-fast-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  let sourceReads = 0;
+  const catalog = { repositories: [{ id: 'repo' }], projects: [], services: [{ id: 'backend', code: 'backend', name: 'backend', repositoryId: 'repo', modulePath: '' }] };
+  const module: any = SERVICE_RUNTIME_MODULE.create({
+    [WORKSPACE_APPLICATION]: { assetCatalog: () => catalog },
+    [CODE_APPLICATION]: { sourceControl() { sourceReads++; throw new Error('must not scan cleaned task sources'); } },
+    [TASK_QUERY_APPLICATION]: { inspectTaskSummaryView: () => ({ record: { taskId: 'cleaned', title: '已清理任务', scope: { projects: [], services: [] } } }) },
+    [TASK_WORKTREE_PROVIDER]: { readGitWorktreeEvidence: () => null },
+    [TASK_COMMITS_APPLICATION]: { inspectTaskCommits: () => ({ status: 'complete', repositories: [], commits: [], coverage: { truncated: false }, diagnostics: [] }) },
+  });
+  const detail = await module.provides[SERVICE_TASK_RUNTIME_APPLICATION].detail(root, 'cleaned');
+  assert.equal(sourceReads, 0);
+  assert.deepEqual(detail.services, []);
+  assert.deepEqual(detail.diagnostics, []);
+  assert.equal(detail.integration.complete, false);
+});
 
 test('模块从真实代码库解析服务目录与分支，不依赖部署连接', async t => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'service-runtime-module-'));
@@ -122,7 +142,7 @@ test('无关服务仓库缺失不阻塞当前任务的真实目录、启动和�
   for (const invalid of ['taskId=../escape', 'taskId=current&taskId=other', 'taskId=current&extra=1', 'taskId=']) await assert.rejects(query(invalid), (error: any) => error.status === 400);
   await runtime.stopRun(root, result.results[0].run.id);
   git(checkout, 'switch', '-c', 'different-task-branch');
-  assert.equal((await taskRuntime.detail(root, task.taskId)).services.find((item: any) => item.service.code === 'backend').worktree, null);
+  assert.equal((await taskRuntime.detail(root, task.taskId)).services.find((item: any) => item.service.code === 'backend'), undefined);
   assert.deepEqual((await query('taskId=current')).body.worktrees, [], 'changed checkout identity must not fall back to the main checkout');
   await assert.rejects(runtime.startRun(root, { serviceCode: 'backend', worktreeId: source.id, taskId: task.taskId }), (error: any) => error.code === 'service_runtime_worktree_unknown');
 });
@@ -187,4 +207,31 @@ test('CLI restart 共用先校验后停启的连接能力，并等待新实例�
   assert.equal(ready.connection.url, backend.url);
   assert.equal(processAlive(original.pid), false);
   assert.equal(processAlive(backend.pid), true);
+});
+
+test('集成快检区分主库包含、未包含、无提交与截断，不把任务检出当作主库', async t => {
+  const { checkTaskIntegration } = await import('../../src/modules/service-runtime/infrastructure/task-integration-check.ts');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'task-integration-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  git('init', '--initial-branch=dev'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.com'); git('config', 'commit.gpgSign', 'false');
+  git('commit', '--allow-empty', '-m', 'base');
+  const base = git('rev-parse', 'HEAD');
+  git('checkout', '-b', 'task'); git('commit', '--allow-empty', '-m', 'task');
+  const taskHead = git('rev-parse', 'HEAD'); git('checkout', 'dev');
+  const checkout = path.join(root, 'task-checkout');
+  git('worktree', 'add', checkout, 'task');
+  const read = { status: 'complete', repositories: [{ id: 'repo', root, label: 'repo', status: 'complete' }], commits: [{ repositoryId: 'repo', hash: base }], coverage: { truncated: false }, diagnostics: [] };
+  const passed = checkTaskIntegration(read);
+  assert.equal(passed.complete, true); assert.equal(passed.repositories[0].branch, 'dev');
+  assert.equal(passed.repositories[0].contained, 1);
+  assert.equal(checkTaskIntegration({ ...read, commits: [{ repositoryId: 'repo', hash: taskHead }] }).repositories[0].status, 'not-contained');
+  const fromTaskCheckout = checkTaskIntegration({ ...read, repositories: [{ ...read.repositories[0], root: checkout }], commits: [{ repositoryId: 'repo', hash: taskHead }] });
+  assert.equal(fromTaskCheckout.repositories[0].branch, 'dev');
+  assert.equal(fromTaskCheckout.repositories[0].status, 'not-contained');
+  assert.equal(checkTaskIntegration({ ...read, commits: [] }).repositories[0].status, 'unknown');
+  assert.equal(checkTaskIntegration({ ...read, coverage: { truncated: true } }).complete, false);
+  assert.equal(checkTaskIntegration({ ...read, repositories: [{ ...read.repositories[0], root: path.join(root, 'missing') }] }).repositories[0].status, 'unknown');
+  git('merge', '--ff-only', 'task');
+  assert.equal(checkTaskIntegration({ ...read, commits: [{ repositoryId: 'repo', hash: taskHead }] }).complete, true);
 });

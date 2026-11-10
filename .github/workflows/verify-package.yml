@@ -1,0 +1,261 @@
+name: Verify original package
+run-name: Package ${{ inputs.selection_id }} on ${{ inputs.remote_runner }}
+on:
+  workflow_call:
+    inputs:
+      product_source:
+        required: false
+        default: ''
+        type: string
+      verification_source:
+        required: false
+        default: ''
+        type: string
+      preserve_only:
+        required: false
+        default: false
+        type: boolean
+      diagnostic_only:
+        required: false
+        default: false
+        type: boolean
+      diagnostic_source_commit:
+        required: false
+        default: ''
+        type: string
+      selection_id:
+        required: true
+        type: string
+      source_tree:
+        required: true
+        type: string
+      package_commit:
+        required: true
+        type: string
+      package_identity:
+        required: true
+        type: string
+      package_sha256:
+        required: true
+        type: string
+      remote_runner:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      product_source:
+        description: Original frozen product source for independently bound proof consumption
+        required: false
+        default: ''
+        type: string
+      verification_source:
+        description: Exact verifier-only commit; never receives publication authority
+        required: false
+        default: ''
+        type: string
+      preserve_only:
+        description: Preserve a new-policy locally verified original without remote package tests
+        required: false
+        default: false
+        type: boolean
+      diagnostic_only:
+        description: Platform diagnosis only; never produces a complete Candidate aggregate
+        required: false
+        default: false
+        type: boolean
+      diagnostic_source_commit:
+        description: Original package source for a workflow-only diagnostic repair
+        required: false
+        default: ''
+        type: string
+      selection_id:
+        required: true
+        type: string
+      source_tree:
+        required: true
+        type: string
+      package_commit:
+        required: true
+        type: string
+      package_identity:
+        required: true
+        type: string
+      package_sha256:
+        required: true
+        type: string
+      remote_runner:
+        required: true
+        type: choice
+        options: [windows-2025, macos-15]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: original-package-${{ inputs.selection_id }}
+  cancel-in-progress: false
+jobs:
+  package:
+    name: ${{ inputs.diagnostic_only && 'Package diagnostic' || 'Candidate gate' }}
+    runs-on: ${{ inputs.preserve_only && !inputs.diagnostic_only && 'ubuntu-24.04' || inputs.remote_runner }}
+    timeout-minutes: 35
+    defaults:
+      run:
+        shell: bash
+        working-directory: projects/product/services/buildr
+    env:
+      npm_config_registry: https://registry.npmjs.org/
+      CANDIDATE_SOURCE_SHA: ${{ inputs.product_source || inputs.diagnostic_only && inputs.diagnostic_source_commit || github.sha }}
+      BUILDR_CANDIDATE_SOURCE_SHA: ${{ inputs.product_source || inputs.diagnostic_only && inputs.diagnostic_source_commit || github.sha }}
+      BUILDR_SELECTION_ID: ${{ inputs.selection_id }}
+      BUILDR_CANDIDATE_PURPOSE: candidate
+      BUILDR_LOCAL_PACKAGE_COMMIT: ${{ inputs.package_commit }}
+      BUILDR_LOCAL_PACKAGE_SOURCE_TREE: ${{ inputs.source_tree }}
+      BUILDR_LOCAL_PACKAGE_IDENTITY: ${{ inputs.package_identity }}
+      BUILDR_LOCAL_PACKAGE_SHA256: ${{ inputs.package_sha256 }}
+      BUILDR_LOCAL_PACKAGE_PRESERVE_ONLY: ${{ inputs.preserve_only }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SOURCE_SHA }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.15.0'
+          package-manager-cache: false
+      - name: Validate independent verifier dispatch
+        if: inputs.product_source != '' || inputs.verification_source != ''
+        env:
+          PRODUCT_SOURCE: ${{ inputs.product_source }}
+          VERIFICATION_SOURCE: ${{ inputs.verification_source }}
+          PRESERVE_ONLY: ${{ inputs.preserve_only }}
+          DIAGNOSTIC_ONLY: ${{ inputs.diagnostic_only }}
+        run: |
+          node --input-type=module -e 'const e=process.env;if(!e.PRODUCT_SOURCE?.match(/^[a-f0-9]{40}$/)||!e.VERIFICATION_SOURCE?.match(/^[a-f0-9]{40}$/)||e.PRESERVE_ONLY!=="true"||e.DIAGNOSTIC_ONLY==="true")throw new Error("Independent proof consumption requires exact product/verifier sources and preservation-only execution");'
+          node --input-type=module -e 'import fs from "node:fs";import {createCandidateSourceBinding} from "../../../../skills/buildr-release/scripts/candidate-source-binding.ts";const b=createCandidateSourceBinding(process.cwd(),process.env.PRODUCT_SOURCE,process.env.VERIFICATION_SOURCE);fs.writeFileSync(`${process.env.RUNNER_TEMP}/local-package-verifier-binding.json`,JSON.stringify(b)+"\n");'
+          echo '.package-proof-verifier/' >> "$(git rev-parse --git-path info/exclude)"
+      - name: Checkout independent proof verifier
+        if: inputs.verification_source != ''
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.verification_source }}
+          path: .package-proof-verifier
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Initialize isolated runtime paths
+        run: |
+          {
+            echo "BUILDR_LOCAL_PACKAGE_DIRECTORY=${RUNNER_TEMP}/local-package"
+            echo "BUILDR_CANDIDATE_CI_OUTPUT_DIR=${RUNNER_TEMP}/package-evidence"
+            echo "BUILDR_CANDIDATE_CI_EVIDENCE_DIR=${RUNNER_TEMP}/package-evidence"
+            echo "BUILDR_CANDIDATE_CI_AGGREGATE_OUTPUT=${RUNNER_TEMP}/package-evidence/candidate-ci-aggregate.json"
+          } >> "$GITHUB_ENV"
+      - name: Fetch immutable data objects without checking them out
+        run: git fetch --no-tags origin "${BUILDR_LOCAL_PACKAGE_COMMIT}"
+      - name: Prepare package verifier
+        run: node tools/verification/candidate-environment.ts prepare --profile base
+      - name: Prepare independent proof verifier dependencies
+        if: inputs.verification_source != ''
+        working-directory: .package-proof-verifier/projects/product/services/buildr
+        run: node tools/verification/candidate-environment.ts prepare --profile base
+      - name: Restore and verify the original local package
+        run: node ../../../../skills/buildr-release/scripts/local-package-remote.ts restore
+      - name: Restore completed platform checks from the same run
+        if: github.run_attempt != 1 && env.BUILDR_LOCAL_PACKAGE_KIND != 'plugin' && !inputs.preserve_only && !inputs.diagnostic_only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node ../../../../skills/buildr-release/scripts/local-package-remote.ts retry
+      - name: Validate and adopt local proofs without executing source checks
+        if: env.BUILDR_LOCAL_PACKAGE_KIND != 'plugin' && !inputs.diagnostic_only && (!inputs.preserve_only || env.BUILDR_LOCAL_PACKAGE_HAS_CONSUMPTION != 'true' || inputs.verification_source != '')
+        env:
+          VERIFICATION_SOURCE: ${{ inputs.verification_source }}
+        run: |
+          if [ -n "${VERIFICATION_SOURCE}" ]; then
+            export BUILDR_LOCAL_PACKAGE_PRODUCT_ROOT="${GITHUB_WORKSPACE}/projects/product/services/buildr"
+            export BUILDR_LOCAL_PACKAGE_VERIFICATION_SOURCE="${VERIFICATION_SOURCE}"
+            node "${GITHUB_WORKSPACE}/.package-proof-verifier/projects/product/services/buildr/test/verification/candidate-ci.ts" plan
+          else
+            node test/verification/candidate-ci.ts plan
+          fi
+      - name: Verify only the other system against the same package
+        if: env.BUILDR_LOCAL_PACKAGE_KIND != 'plugin' && !inputs.preserve_only && !inputs.diagnostic_only
+        env:
+          PACKAGE_DIAGNOSTIC_ONLY: ${{ inputs.diagnostic_only }}
+        run: |
+          if [ "${PACKAGE_DIAGNOSTIC_ONLY}" = true ]; then
+            unset BUILDR_SOURCE_VERIFICATION BUILDR_SOURCE_VERIFICATION_FILE BUILDR_ARTIFACT_VERIFICATION BUILDR_ARTIFACT_VERIFICATION_FILE
+          fi
+          if [ "${RUNNER_OS}" = Windows ]; then
+            echo "Default archive reader: $(command -v tar)"
+            node --input-type=module -e 'import fs from "node:fs";import path from "node:path";import {spawnSync} from "node:child_process";const root=process.env.BUILDR_CANDIDATE_CI_ARTIFACT_DIR;const m=JSON.parse(fs.readFileSync(path.join(root,"release-artifact.json"),"utf8"));const r=spawnSync("tar",["-xOf",path.join(root,m.filename),"package/README.md"],{encoding:"utf8",timeout:30000});console.log(JSON.stringify({defaultTarExitCode:r.status,error:r.error?.message,stderr:r.stderr}));'
+            # Git Bash prepends GNU tar, which interprets a native drive colon as a remote archive.
+            # This OS boundary must use the Windows-native archive tool.
+            export PATH="$(cygpath -u "$(node -p 'process.env.SystemRoot')")/System32:${PATH}"
+            echo "Native archive reader: $(command -v tar)"
+            tar --version
+          fi
+          node test/verification/artifact.ts --artifact-dir "${BUILDR_CANDIDATE_CI_ARTIFACT_DIR}" --output "${BUILDR_CANDIDATE_CI_OUTPUT_DIR}" --scope platform
+      - name: Checkout independent smoke verifier
+        if: inputs.diagnostic_only && env.BUILDR_LOCAL_PACKAGE_KIND != 'plugin'
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: .package-smoke-verifier
+          persist-credentials: false
+      - name: Independent package smoke without Candidate qualification
+        if: inputs.diagnostic_only && env.BUILDR_LOCAL_PACKAGE_KIND != 'plugin'
+        working-directory: .package-smoke-verifier/projects/product/services/buildr
+        env:
+          BUILDR_SMOKE_TIMEOUT_MS: '330000'
+        run: |
+          node tools/development/run-isolated-workspace-check.ts --script test/verification/release/package-smoke.ts -- --artifact-dir "${BUILDR_CANDIDATE_CI_ARTIFACT_DIR}" --output "${BUILDR_CANDIDATE_CI_OUTPUT_DIR}/package-smoke.json"
+      - name: Aggregate existing local and actual platform results
+        if: env.BUILDR_LOCAL_PACKAGE_KIND != 'plugin' && !inputs.diagnostic_only
+        env:
+          VERIFICATION_SOURCE: ${{ inputs.verification_source }}
+        run: |
+          if [ -n "${VERIFICATION_SOURCE}" ]; then
+            export BUILDR_LOCAL_PACKAGE_PRODUCT_ROOT="${GITHUB_WORKSPACE}/projects/product/services/buildr"
+            export BUILDR_LOCAL_PACKAGE_VERIFICATION_SOURCE="${VERIFICATION_SOURCE}"
+            node "${GITHUB_WORKSPACE}/.package-proof-verifier/projects/product/services/buildr/test/verification/candidate-ci.ts" aggregate
+          else
+            node test/verification/candidate-ci.ts aggregate
+          fi
+      - name: Adopt already verified local plugin bytes
+        if: '!inputs.diagnostic_only'
+        id: plugin
+        run: node ../../../../skills/buildr-release/scripts/local-package-remote.ts plugin
+      - uses: actions/upload-artifact@v7
+        if: env.BUILDR_LOCAL_PACKAGE_KIND != 'plugin'
+        with:
+          name: candidate-package
+          path: ${{ runner.temp }}/local-package/candidate-package
+          if-no-files-found: error
+          overwrite: true
+      - uses: actions/upload-artifact@v7
+        if: env.BUILDR_LOCAL_PACKAGE_KIND != 'plugin' && !inputs.diagnostic_only
+        with:
+          name: candidate-aggregate
+          path: ${{ runner.temp }}/package-evidence/candidate-ci-aggregate.json
+          if-no-files-found: error
+          overwrite: true
+      - uses: actions/upload-artifact@v7
+        if: steps.plugin.outputs.version != ''
+        with:
+          name: plugin-candidate-v${{ steps.plugin.outputs.version }}
+          path: ${{ runner.temp }}/local-package/plugin-candidate
+          if-no-files-found: error
+          overwrite: true
+      - uses: actions/upload-artifact@v7
+        if: steps.plugin.outputs.version != ''
+        with:
+          name: plugin-candidate-aggregate
+          path: ${{ runner.temp }}/local-package/plugin-candidate/plugin-candidate-ci-aggregate.json
+          if-no-files-found: error
+          overwrite: true
+      - uses: actions/upload-artifact@v7
+        if: always() && env.BUILDR_LOCAL_PACKAGE_KIND != 'plugin'
+        with:
+          name: package-platform-evidence
+          path: ${{ runner.temp }}/package-evidence
+          if-no-files-found: warn
+          overwrite: true

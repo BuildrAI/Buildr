@@ -328,7 +328,7 @@ export function registerApplicationRuntime(dependencies: RuntimeProjectionDepend
     const updated = withWorkspaceMutation(targetRoot, `buildr.sync:${agent}`, preflight.affectedPaths, () => {
       const workspaceMigration = migrateWorkspaceMetadata(targetRoot);
       const projectMigration = migrateProjectRegistry(targetRoot);
-      const sourceUpdate = syncPackageBuiltins(targetRoot);
+      const sourceUpdate = syncPackageBuiltins(targetRoot, { projectCapabilityCleanup: lockedPlan.builtins.projectCapabilityCleanup });
       const components = syncPackageComponents(targetRoot, { plans: lockedPlan.components.plans, preparedFindings: lockedPlan.components.findings, strictPreparedPlans: true });
       const requiredErrors = components.errors.filter((item: any) => item.required === true);
       if (requiredErrors.length) throw new Error(`sync 暂停：required Component 源资产存在冲突。\n- ${requiredErrors.map((item: any) => item.error).join('\n- ')}`);
@@ -371,13 +371,13 @@ export function registerApplicationRuntime(dependencies: RuntimeProjectionDepend
       }
     }
     for (const warning of rendered.warnings) console.error(`Warning: ${warning}`);
-    if (finalDoctor.classification.status !== 'passed') {
+    if (!['passed', 'skipped'].includes(finalDoctor.classification.status)) {
       const detail = finalDoctor.classification.diagnostic ? `\n${finalDoctor.classification.diagnostic}` : '';
       throw new Error(`${runtimeId ?? adapterId} sync 未完成：${finalDoctor.classification.message}${detail}`);
     }
     const hasPending = updated.findings.some((item:any)=>['modified','missing','blocked'].includes(item.status)&&!item.converge);
     adoptPackageResources(targetRoot, !hasPending, resourceSet);
-    console.log('doctor 通过。');
+    console.log(finalDoctor.classification.status === 'skipped' ? 'doctor 由验证检查覆盖。' : 'doctor 通过。');
   }
 
   return Object.freeze({

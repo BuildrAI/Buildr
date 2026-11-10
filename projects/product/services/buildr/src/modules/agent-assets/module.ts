@@ -42,7 +42,7 @@ import {
   renderClaudeCodeRules,
   resolveRuleScope,
 } from './infrastructure/runtime/rule-projection.ts';
-import { resolveCapabilityRoute, resolveSkillCapabilityGraph } from './persistence/capability-graph-repository.ts';
+import { resolveSkillCapabilityGraph } from './persistence/capability-graph-repository.ts';
 
 export const AGENT_ASSETS_MODULE_ID = 'agent-assets';
 export const AGENT_ASSETS_APPLICATION = 'agent-assets.application';
@@ -109,7 +109,6 @@ function runtimeCompositionPort() {
 
 function capabilityQueryPort() {
   return Object.freeze({
-    resolveCapabilityRoute,
     resolveSkillCapabilityGraph,
   });
 }
@@ -295,6 +294,8 @@ export function createAgentAssetsModule(infrastructure: AgentAssetsInfrastructur
         mutationPathFingerprint: infrastructure.mutationPathFingerprint,
         packageRegistryMutationPaths: (...args: Parameters<PackageMaintenanceDependencies['packageRegistryMutationPaths']>) => packageAssets.packageRegistryMutationPaths(...args),
         assertSafeSyncMutationPaths: (...args: Parameters<PackageMaintenanceDependencies['assertSafeSyncMutationPaths']>) => packageAssets.assertSafeSyncMutationPaths(...args),
+        planProjectCapabilityCleanup: workspace.planProjectCapabilityCleanup,
+        cleanupProjectCapabilities: workspace.cleanupProjectCapabilities,
         convergeRegistryManifests: (...args: Parameters<PackageMaintenanceDependencies['convergeRegistryManifests']>) => packageAssets.convergeRegistryManifests(...args),
         readSkillsManifestForWrite: skills.readSkillsManifestForWrite,
         writeSkillsManifest: skills.writeSkillsManifest,
@@ -321,7 +322,6 @@ export function createAgentAssetsModule(infrastructure: AgentAssetsInfrastructur
         readSkillManifest: skills.readSkillManifest,
         readSkillManifestSchemaVersion: skills.readSkillManifestSchemaVersion,
         renderSkillsManifestYaml: skills.renderSkillsManifestYaml,
-        renderProjectCapabilitiesYaml: skills.renderProjectCapabilitiesYaml,
         renderProjectCommandsYaml: commands.renderProjectCommandsYaml,
         skillsManifestPath: skills.skillsManifestPath,
         parseYamlValue: infrastructure.parseYamlValue,
@@ -402,7 +402,6 @@ export function createAgentAssetsModule(infrastructure: AgentAssetsInfrastructur
         syncPackageBuiltins: packageMaintenance.syncPackageBuiltins,
         syncPackageComponents: components.syncPackageComponents,
         renderSkillsManifestYaml: skills.renderSkillsManifestYaml,
-        renderProjectCapabilitiesYaml: skills.renderProjectCapabilitiesYaml,
         renderProjectCommandsYaml: commands.renderProjectCommandsYaml,
         renderCommandsManifestYaml: commands.renderCommandsManifestYaml,
         renderComponentsManifestYaml: components.renderComponentsManifestYaml,

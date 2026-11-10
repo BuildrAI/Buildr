@@ -1,6 +1,6 @@
 {
   "name": "@buildr-ai/buildr",
-  "version": "0.1.0-rc.55",
+  "version": "0.1.0-rc.58",
   "buildrCompatibility": {
     "schemaVersion": "buildr.package-compatibility/v1",
     "provides": [
@@ -92,6 +92,7 @@
     "test:static": "node --import ./test/register-development-entry.ts test/verification/cli.ts static",
     "test:integration": "node --import ./test/register-development-entry.ts test/verification/cli.ts integration",
     "test:e2e": "node --import ./test/register-development-entry.ts test/verification/cli.ts e2e",
+    "test:system": "node --import ./test/register-development-entry.ts test/verification/cli.ts system",
     "test:related": "node --import ./test/register-development-entry.ts test/verification/cli.ts related",
     "browser:prepare": "playwright-core install chromium --only-shell"
   },

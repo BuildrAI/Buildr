@@ -96,9 +96,15 @@ export function readCandidateArtifactImports(filename: string): any[] {
 
 export function candidateArtifactImportFromEnvironment(env: Record<string, string | undefined>): any[] {
   const encoded = env[CANDIDATE_ARTIFACT_IMPORT_ENV];
-  if (!encoded) return [];
+  const file = env.BUILDR_ARTIFACT_VERIFICATION_FILE;
+  if (file && encoded) throw new Error('Artifact verification must have one explicit input.');
+  if (!encoded && !file) return [];
   if (env.GITHUB_EVENT_NAME && env.GITHUB_EVENT_NAME !== 'workflow_dispatch') throw new Error('Imported artifact verification requires the controlled manual Candidate entry.');
-  return decodeCandidateArtifactImport(encoded);
+  if (!file) return decodeCandidateArtifactImport(encoded!);
+  if (fs.statSync(file).size > MAX_BYTES) throw new Error('Artifact verification file exceeds its byte budget.');
+  const evidence = JSON.parse(fs.readFileSync(file, 'utf8')).evidence;
+  assertEvidence(evidence);
+  return evidence;
 }
 
 export function candidateDeferredArtifactIds(descriptors: any[], localRunner?: string): string[] {
@@ -213,8 +219,12 @@ export function validateCandidateArtifactEvidence(evidence: any, descriptor: any
  * can survive a retry only after their own inputs and the real environment agree.
  * The caller also authenticates any separate verification source binding. */
 export function reusableCandidateArtifactStepIds(evidence: any, descriptor: any, context: any, checkInputs: Record<string, string>, artifact: any,
-  expectedEnvironment?: { dependencyInputsIdentity?: string; executionEnvironment?: any }): string[] {
-  if (evidence?.workflow || !evidence?.checkInputs
+  expectedEnvironment?: { dependencyInputsIdentity?: string; executionEnvironment?: any; retryWorkflow?: any }): string[] {
+  const retry = expectedEnvironment?.retryWorkflow;
+  const samePriorAttempt = retry && String(evidence?.workflow?.runId) === String(retry.runId)
+    && Number.isSafeInteger(Number(evidence?.workflow?.runAttempt)) && Number(evidence.workflow.runAttempt) >= 1
+    && Number(evidence.workflow.runAttempt) < Number(retry.runAttempt);
+  if (evidence?.workflow && !samePriorAttempt || !evidence?.checkInputs
     || !validateCandidateArtifactEnvelope(evidence, descriptor, context, evidence.checkInputs, artifact, expectedEnvironment, true)) return [];
   return descriptor.steps.filter((step: any) => passedArtifactStep(evidence.results.find((result: any) => result.id === step.id))).map((step: any) => step.id);
 }

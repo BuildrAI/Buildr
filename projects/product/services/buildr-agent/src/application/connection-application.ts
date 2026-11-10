@@ -1,3 +1,4 @@
+import { executionLog } from '../storage/execution-log.ts';
 import { ExecutorStorage } from './executor-storage.ts';
 import { interactionPolicy } from '../domain/interaction-policy.ts';
 import { createHash, randomUUID } from 'node:crypto';
@@ -84,8 +85,8 @@ export class ConnectionApplication {
       this.runtimes.delete(id);
       for (const [key] of owned) this.gatewayRuntimes.delete(key);
       candidate = await open(original, executable, source);
-      if(original.view.provider==='qoder') {
-        if(!candidate.verifyUpgrade)fail('agent_program_update_verification_failed','Qoder 缺少配套对话验证，保留原接入。',409);
+      if(['qoder','qoder-cn'].includes(original.view.provider)) {
+        if(!candidate.verifyUpgrade)fail('agent_program_update_verification_failed',`${original.view.provider==='qoder-cn'?'Qoder CN':'Qoder'} 缺少配套对话验证，保留原接入。`,409);
         await candidate.verifyUpgrade();
       }
       if (original.bindingIdentity && candidate.bindingIdentity !== original.bindingIdentity) fail('agent_binding_changed', '新版未能延续原上下文身份，已保留旧程序。', 409);
@@ -138,7 +139,7 @@ export class ConnectionApplication {
   }
 
   private async openExecutor(executor: AgentExecutor, options: import('../contracts.ts').ExecutorOpenOptions): Promise<AgentRuntime> {
-    return this.storage.opened(await executor.open(this.storage.options(executor, options)), executor, options.configRoot);
+    return this.storage.opened(await executor.open(this.storage.options(executor, {...options,diagnostics:executionLog(this.options.root,this.options.generation)})), executor, options.configRoot);
   }
 
   private stored(id: string): StoredConnection {
@@ -275,7 +276,7 @@ export class ConnectionApplication {
   async releaseGatewayRuntime(runtime: AgentRuntime): Promise<void> {
     const owned = [];
     for (const [key, pending] of this.gatewayRuntimes) {
-      const candidate = await pending.catch(() => undefined);
+      const candidate = await Promise.race([pending.catch(() => undefined), new Promise<undefined>(resolve => setImmediate(() => resolve(undefined)))]);
       if (candidate === runtime) owned.push({key,pending});
     }
     if (!owned.length) {

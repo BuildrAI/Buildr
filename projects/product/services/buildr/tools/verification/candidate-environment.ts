@@ -38,7 +38,9 @@ export function candidateEnvironmentPlan(profileValue: string, roots = { service
   plan.push({ id: 'buildr-dependencies', executable: 'npm', args: consumesArtifact ? ['ci', '--omit=dev', '--ignore-scripts', '--install-links'] : ['ci', '--install-links'], cwd: roots.serviceRoot });
   if (profile === 'publisher') plan.push({ id: 'publisher-npm', executable: 'npm', args: ['install', '--prefix', path.join(roots.serviceRoot, 'node_modules/.buildr-publisher'), '--ignore-scripts', '--no-save', '--no-package-lock', '--no-audit', '--no-fund', `npm@${PUBLISH_NPM_VERSION}`], cwd: roots.serviceRoot });
   if (consumesArtifact) return plan;
-  if (profile === 'artifact' || profile === 'frontend' || profile === 'source-runtime') {
+  // Base checks import Web pure modules directly, so a fresh preflight needs
+  // the locked Web dependency tree even when no browser build is requested.
+  if (profile === 'base' || profile === 'artifact' || profile === 'frontend' || profile === 'source-runtime') {
     plan.push({ id: 'buildr-web-dependencies', executable: 'npm', args: ['ci'], cwd: roots.webRoot });
   }
   // The artifact builder generates its isolated inputs itself. Source tests need

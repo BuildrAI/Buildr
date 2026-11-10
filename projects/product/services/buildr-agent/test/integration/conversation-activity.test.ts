@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { CONVERSATION_SCHEMA_VERSION, ConversationRepository } from '../../src/persistence/conversation-repository.ts';
+import { conversationActive } from '../../src/domain/conversation-activity.ts';
 import type { StoredConversation } from '../../src/domain/agent-state.ts';
 
 function fixture(t:TestContext) {
@@ -135,6 +136,87 @@ test('search matches titles and visible messages only, ANDs terms, and returns a
   const snippet=search('命中词').conversations.find(row=>row.id==='visible')?.searchSnippet;
   assert.ok(snippet?.includes('命中词'));assert.ok(snippet!.length<=120);assert.ok(!snippet!.includes('另一个词'));
   assert.deepEqual(repo.listConversations('w1',{limit:10,query:'命中词'}).map(r=>r.view.id).sort(),['both','title-only','visible']);
+});
+
+test('historical unknown without in-flight work no longer keeps a completed conversation active',()=>{
+  const view=record('active-rule').view, at='2026-10-27T00:00:00Z';
+  view.run={id:'current',participantId:'p',provider:'codex',generation:'g',status:'completed',accepted:true,executionState:'ended',tools:[],startedAt:at,updatedAt:at};
+  view.retainedRuns=[{id:'old',participantId:'p',provider:'codex',generation:'g0',status:'unknown',accepted:false,stopRequested:true,canContinue:false,executionState:'unknown',tools:[],startedAt:at,updatedAt:at}];
+  assert.equal(conversationActive(view,1,1),false);
+  view.retainedRuns[0].tools=[{id:'tool',label:'bash',status:'running'}];
+  assert.equal(conversationActive(view,1,1),true);
+  view.retainedRuns[0].tools=[{id:'tool',label:'bash',status:'unknown'}];
+  assert.equal(conversationActive(view,1,1),true);
+  view.retainedRuns[0].tools=[];view.retainedRuns[0].executionState='active';
+  assert.equal(conversationActive(view,1,1),true);
+  view.retainedRuns[0].executionState='unknown';
+  assert.equal(conversationActive(view,2,1),true);
+  view.requests=[{id:'q',kind:'question',blocking:false,title:'question',questions:[],conversationId:view.id,workspaceId:view.workspaceId,runId:'old',participantId:'p',generation:'g0'}];
+  assert.equal(conversationActive(view,1,1),true);
+});
+
+test('list reinterprets old active summaries with retained unknown runs without writing',t=>{
+  const repo=fixture(t),at='2026-10-27T00:00:00Z';
+  const stale=record('stale');message(stale,'stale-input','old input');
+  stale.view.run={id:'current',participantId:'p',provider:'codex',generation:'g',status:'completed',accepted:true,executionState:'ended',tools:[],startedAt:at,updatedAt:at};
+  stale.view.retainedRuns=[{id:'old',participantId:'p',provider:'codex',generation:'g0',status:'unknown',accepted:false,stopRequested:true,canContinue:false,executionState:'unknown',tools:[],startedAt:at,updatedAt:at}];
+  repo.saveConversation(stale);repo.markSeen('w1',stale.view.id,stale.view.activity!.version);
+  const newer=record('newer');newer.view.updatedAt='2026-10-27T01:00:00Z';message(newer,'newer-input','new input');repo.saveConversation(newer);repo.markSeen('w1',newer.view.id,newer.view.activity!.version);
+  const db=new DatabaseSync(repo.filename);db.prepare("UPDATE conversations SET is_active=1, summary=json_set(summary,'$.activity.active',json('true')) WHERE id='stale'").run();db.close();
+  const before=fs.readFileSync(repo.filename);
+  const read=repo.querySummaries(['w1'],{limit:10});
+  assert.equal(read.conversations.find(row=>row.id==='stale')?.activity?.active,false);
+  assert.deepEqual(read.conversations.map(row=>row.id),['newer','stale']);
+  assert.equal(repo.querySummaries(['w1'],{limit:10,activeOnly:true}).total,0);
+  assert.deepEqual(fs.readFileSync(repo.filename),before,'compatibility read stays zero-write');
+});
+
+test('old active summaries exit for unaccepted stops without work but keep unknown evidence and live tools',t=>{
+  const repo=fixture(t),at='2026-11-09T00:00:00Z';
+  const saveStale=(id:string,toolStatus?:'running'|'unknown')=>{
+    const item=record(id);message(item,id+'-input','old input');
+    item.view.run={id:'run-'+id,participantId:'p',provider:'qoder',generation:'g',status:'unknown',accepted:false,stopRequested:true,canContinue:false,resourcesReleased:false,executionState:'unknown',tools:toolStatus?[{id:'tool',label:'command',status:toolStatus}]:[],diagnostic:'上一轮资源仍待释放，请稍后核对。',model:'m',startedAt:at,updatedAt:at};
+    repo.saveConversation(item);repo.markSeen('w1',item.view.id,item.view.activity!.version);
+    return item;
+  };
+  const quiet=saveStale('unaccepted-quiet'),busy=saveStale('unaccepted-busy','unknown');
+  const db=new DatabaseSync(repo.filename);
+  db.prepare("UPDATE conversations SET is_active=1,summary=json_set(summary,'$.activity.active',json('true')) WHERE id IN (?,?)").run(quiet.view.id,busy.view.id);
+  db.close();
+  const before=fs.readFileSync(repo.filename);
+  const active=repo.querySummaries(['w1'],{activeOnly:true,limit:10});
+  assert.deepEqual(active.conversations.map(row=>row.id),[busy.view.id]);
+  assert.equal(active.activityCounts.active,1);assert.equal(active.activityCounts.unknown,1);
+  const all=repo.querySummaries(['w1'],{limit:10});
+  const quietRow=all.conversations.find(row=>row.id===quiet.view.id)!;
+  assert.equal(quietRow.activity!.active,false);assert.equal(quietRow.run!.status,'unknown');assert.equal(quietRow.run!.stopRequested,true);
+  const preserved=repo.readConversation(quiet.view.id)!;
+  assert.equal(preserved.view.run!.status,'unknown');assert.equal(preserved.view.run!.stopRequested,true);
+  assert.match(preserved.view.run!.diagnostic??'',/待释放/);
+  assert.deepEqual(fs.readFileSync(repo.filename),before,'summary reinterpretation stays zero-write');
+});
+
+test('search matches conversation id substrings while keeping title and message scope',t=>{
+  const repo=fixture(t);
+  const entry=(r:StoredConversation,id:string,kind:'message'|'tool'|'notice',role:'user'|'assistant'|'system',text:string,extra:{thinking?:boolean}={})=>{
+    r.view.entries.push({id,sequence:r.view.entries.length+1,kind,role,text,createdAt:r.view.updatedAt,...extra});
+  };
+  const idOnly=record('id-only-7f3a');idOnly.view.title='普通标题';entry(idOnly,'id-only-entry','message','user','普通内容');
+  const idAndMessage=record('id-and-message-9b2c');idAndMessage.view.title='普通标题二';entry(idAndMessage,'id-message-entry','message','user','这里包含关键词');
+  const titleOnly=record('title-hit');titleOnly.view.title='关键词标题';entry(titleOnly,'title-hit-entry','message','user','普通内容');
+  const messageOnly=record('message-hit');messageOnly.view.title='普通标题三';entry(messageOnly,'message-hit-entry','message','user','关键词内容');
+  const toolOnly=record('tool-hit');toolOnly.view.title='工具现场';entry(toolOnly,'tool-hit-entry','tool','system','7f3a');
+  for(const r of [idOnly,idAndMessage,titleOnly,messageOnly,toolOnly])repo.saveConversation(r);
+  const search=(query:string)=>repo.querySummaries(['w1'],{limit:10,query});
+  assert.deepEqual(search('7f3a').conversations.map(row=>row.id).sort(),['id-only-7f3a']);
+  assert.deepEqual(search('ID-ONLY').conversations.map(row=>row.id).sort(),['id-only-7f3a']);
+  assert.deepEqual(search('9b2c 关键词').conversations.map(row=>row.id).sort(),['id-and-message-9b2c']);
+  assert.deepEqual(search('7f3a 关键词').conversations.map(row=>row.id),[]);
+  assert.equal(search('7f3a').conversations[0]?.searchSnippet,undefined);
+  const snippet=search('关键词').conversations.find(row=>row.id==='message-hit')?.searchSnippet;
+  assert.ok(snippet?.includes('关键词'));
+  assert.deepEqual(repo.listConversations('w1',{limit:10,query:'7f3a'}).map(r=>r.view.id).sort(),['id-only-7f3a']);
+  assert.deepEqual(repo.listConversations('w1',{limit:10,query:'9b2c 关键词'}).map(r=>r.view.id).sort(),['id-and-message-9b2c']);
 });
 
 test('legacy reads are zero-write, upgrade establishes seen baseline, then counts only new messages',t=>{
@@ -351,6 +433,62 @@ test('列表仅按用户新输入前移，助手与工具输出不改变排序',
   assert.equal(repo.querySummaries(['w1'],{limit:10}).conversations.find(row=>row.id==='a')!.activity!.updatedAt,at);
   save(repo,a,r=>{r.view.updatedAt='2026-10-27T00:04:00Z';message(r,'a2','next');});
   assert.deepEqual(order(),['a','b'],'用户输入也更新消息时间');
+});
+
+test('completed final replies move non-active conversations while failed rounds and intermediate output do not',t=>{
+  const repo=fixture(t);
+  const make=(id:string,userAt:string)=>{const r=record(id);r.view.updatedAt=userAt;message(r,`${id}-user`,'input');return r;};
+  const a=make('final-a','2026-11-05T11:08:00Z'),b=make('final-b','2026-11-05T11:23:00Z'),c=make('final-c','2026-11-05T11:30:00Z');
+  for(const r of [a,b,c]){repo.saveConversation(r);repo.markSeen('w1',r.view.id,r.view.activity!.version);}
+  const order=()=>repo.querySummaries(['w1'],{limit:10}).conversations.map(row=>row.id);
+  assert.deepEqual(order(),['final-c','final-b','final-a']);
+  const runFor=(id:string,status:'completed'|'running'|'failed'='completed')=>({id:`run-${id}`,participantId:'p',provider:'codex',generation:'g',status,accepted:true,tools:[],startedAt:'2026-11-05T11:08:00Z',updatedAt:'2026-11-05T11:35:00Z'});
+  const reply=(r:StoredConversation,id:string,createdAt:string,runId:string)=>r.view.entries.push({id,sequence:r.view.entries.length+1,kind:'message',role:'assistant',text:id,createdAt,runId});
+  save(repo,a,r=>{reply(r,'final-a-reply','2026-11-05T11:35:00Z','run-final-a');r.view.run=runFor('final-a');});
+  repo.markSeen('w1',a.view.id,a.view.activity!.version);
+  assert.deepEqual(order(),['final-a','final-c','final-b']);
+  assert.equal(repo.querySummaries(['w1'],{limit:10}).conversations[0]!.activity!.finalReplyAt,'2026-11-05T11:35:00Z');
+  save(repo,b,r=>{reply(r,'failed-b-reply','2026-11-05T11:50:00Z','run-final-b');r.view.run=runFor('final-b','failed');});
+  repo.markSeen('w1',b.view.id,b.view.activity!.version);
+  assert.deepEqual(order(),['final-a','final-c','final-b'],'a failed latest round is not a final reply');
+  save(repo,b,r=>{r.view.run!.status='completed';});
+  repo.markSeen('w1',b.view.id,b.view.activity!.version);
+  assert.deepEqual(order(),['final-b','final-a','final-c']);
+  save(repo,b,r=>{r.view.run!.supersededBy='new';});
+  repo.markSeen('w1',b.view.id,b.view.activity!.version);
+  assert.deepEqual(order(),['final-a','final-c','final-b'],'a superseded completed run falls back to user input');
+  save(repo,b,r=>{delete r.view.run!.supersededBy;});
+  repo.markSeen('w1',b.view.id,b.view.activity!.version);
+  assert.deepEqual(order(),['final-b','final-a','final-c']);
+  const cursor=repo.querySummaries(['w1'],{limit:1}).nextCursor;
+  save(repo,c,r=>{reply(r,'running-c-reply','2026-11-05T11:55:00Z','run-final-c');r.view.run=runFor('final-c','running');});
+  assert.equal(repo.querySummaries(['w1'],{limit:10}).conversations[0].id,'final-c');
+  assert.equal(repo.querySummaries(['w1'],{limit:10}).conversations[0].activity!.active,true);
+  assert.throws(()=>repo.querySummaries(['w1'],{limit:1,cursor}),/顺序/,'intermediate running work changes priority and invalidates the old cursor');
+  repo.markSeen('w1',c.view.id,c.view.activity!.version);
+  save(repo,c,r=>{r.view.run!.status='completed';});
+  repo.markSeen('w1',c.view.id,c.view.activity!.version);
+  assert.deepEqual(order(),['final-c','final-b','final-a']);
+});
+
+test('legacy completed summaries without finalReplyAt use activity time and final reply changes invalidate cursors',t=>{
+  const repo=fixture(t);
+  const a=record('legacy-a'),b=record('legacy-b');
+  a.view.updatedAt='2026-11-05T11:08:00Z';message(a,'legacy-a-user','input');
+  b.view.updatedAt='2026-11-05T11:23:00Z';message(b,'legacy-b-user','input');
+  for(const r of [a,b]){repo.saveConversation(r);repo.markSeen('w1',r.view.id,r.view.activity!.version);}
+  save(repo,a,r=>{
+    r.view.entries.push({id:'legacy-a-reply',sequence:r.view.entries.length+1,kind:'message',role:'assistant',text:'final',createdAt:'2026-11-05T11:35:00Z',runId:'run-legacy-a'});
+    r.view.run={id:'run-legacy-a',participantId:'p',provider:'codex',generation:'g',status:'completed',accepted:true,tools:[],startedAt:'2026-11-05T11:08:00Z',updatedAt:'2026-11-05T11:35:00Z'};
+  });
+  repo.markSeen('w1',a.view.id,a.view.activity!.version);
+  const order=()=>repo.querySummaries(['w1'],{limit:10}).conversations.map(row=>row.id);
+  assert.deepEqual(order(),['legacy-a','legacy-b']);
+  const db=new DatabaseSync(repo.filename);db.prepare("UPDATE conversations SET summary=json_remove(summary,'$.activity.finalReplyAt') WHERE id=?").run('legacy-a');db.close();
+  assert.deepEqual(order(),['legacy-a','legacy-b'],'legacy completed row falls back to activity time');
+  const page=repo.querySummaries(['w1'],{limit:1});assert.ok(page.nextCursor);
+  save(repo,a,r=>{r.view.entries.at(-1)!.createdAt='2026-11-05T12:00:00Z';r.view.updatedAt='2026-11-05T12:00:00Z';r.view.run!.updatedAt='2026-11-05T12:00:00Z';});
+  assert.throws(()=>repo.querySummaries(['w1'],{limit:1,cursor:page.nextCursor}),/顺序/,'a changed final reply changes the order key');
 });
 
 test('execution model and agent pairs aggregate full scope without guessing across pagination',t=>{
@@ -627,4 +765,27 @@ test('a submitted next instruction preserves a real old model execution and deci
  assert.equal(page.stats.modelExecutions[0].count,1);
  assert.equal(repo.querySummaries(['w1'],{activityState:'waiting',limit:10}).total,1);
  assert.equal(repo.querySummaries(['w1'],{activityState:'running',limit:10}).total,1);
+});
+
+
+test('draft priority applies before pagination without changing activity, filtering or stored records',t=>{
+ const repo=fixture(t);
+ const rows=['ordinary','draft','running','waiting','empty'].map(id=>record(id));
+ for(const [index,row] of rows.entries()){
+  row.view.updatedAt=`2026-10-${String(28-index).padStart(2,'0')}T00:00:00Z`;
+  if(row.view.id!=='empty')message(row,'input-'+row.view.id,'work');
+  if(['running','waiting'].includes(row.view.id))row.view.run={id:'r-'+row.view.id,participantId:'p',provider:'codex',generation:'g',status:row.view.id==='waiting'?'waiting-question':'running',accepted:true,tools:[],startedAt:row.view.updatedAt,updatedAt:row.view.updatedAt};
+  repo.saveConversation(row);repo.markSeen('w1',row.view.id,0);
+ }
+ const normal=repo.querySummaries(['w1'],{limit:20});
+ assert.deepEqual(normal.conversations.map(row=>row.id),['waiting','running','ordinary','draft']);
+ const options={draftConversationIds:['draft','empty','unregistered'],limit:1};
+ const found:string[]=[];let cursor:string|undefined;
+ do{const page=repo.querySummaries(['w1'],{...options,cursor});assert.deepEqual(page.activityCounts,normal.activityCounts);assert.equal(page.total,4);found.push(...page.conversations.map(row=>row.id));cursor=page.nextCursor;}while(cursor);
+ assert.deepEqual(found,['waiting','running','draft','ordinary']);
+ const first=repo.querySummaries(['w1'],options);
+ assert.throws(()=>repo.querySummaries(['w1'],{limit:1,cursor:first.nextCursor,draftConversationIds:[]}),/顺序已变化/);
+ assert.equal(repo.querySummaries(['w1'],{...options,query:'missing'}).total,0);
+ assert.deepEqual(repo.querySummaries(['w1'],{...options,activeOnly:true,limit:20}).conversations.map(row=>row.id),['waiting','running']);
+ assert.deepEqual(repo.querySummaries(['w1'],{limit:20}).conversations.map(row=>row.id),normal.conversations.map(row=>row.id),'clearing drafts restores ordering with no write');
 });

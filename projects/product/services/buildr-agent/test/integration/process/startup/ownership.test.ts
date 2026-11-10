@@ -117,7 +117,17 @@ test('independent process survives real host exits, preserves approvals and hand
     fs.writeFileSync(path.join(packageRoot,'build/broken.mjs'),'throw new Error("fixture startup failure");\n');
     const broken=prepareAgentRuntime({dataRoot,packageRoot,entry:'build/broken.mjs'});
     await until(()=>observer!.lifecycle.status(),value=>!value.activity.busy);
-    await observer.lifecycle.requestRuntime({expectedGeneration:second.generation,runtime:broken});
+    const deadline=Date.now()+5000;
+    for(;;){
+      try{await observer.lifecycle.requestRuntime({expectedGeneration:second.generation,runtime:broken});break;}
+      catch(error){
+        if((error as {code?:string}).code!=='agent_process_owned'||Date.now()>=deadline)throw error;
+        const rejected=await observer.lifecycle.status();
+        assert.equal(rejected.identity.generation,second.generation);
+        assert.notEqual(rejected.pendingRuntime?.digest,broken.digest,'a refused storage write cannot publish an in-memory adoption');
+        await new Promise(resolve=>setTimeout(resolve,50));
+      }
+    }
     const restored=await until(()=>observer!.lifecycle.status(),value=>value.identity.instanceId!==second.instanceId && value.identity.runtime.digest===next.digest && !!value.diagnostic);
     assert.equal(restored.pendingRuntime?.digest,broken.digest);
     assert.equal((await observer.operations.conversations.read(scope,view.id)).run?.status,'completed');

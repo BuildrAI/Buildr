@@ -3,11 +3,9 @@ import path from 'node:path';
 import YAML from 'yaml';
 
 import {
-  PROJECT_CAPABILITIES_SCHEMA,
   SKILLS_SCHEMA_V3,
   migrateSkillsManifestDocument,
   parseSkillsManifestDocument,
-  validateProjectCapabilitiesDocument,
   validateSkillsManifestDocument,
 } from './skill-manifest.ts';
 
@@ -49,15 +47,6 @@ export function createSkillRepository(dependencies: Dependencies) {
     return YAML.stringify(document, { lineWidth: 0 });
   }
 
-  function renderProjectCapabilitiesYaml(document: any = {}): string {
-    const normalized = {
-      schemaVersion: PROJECT_CAPABILITIES_SCHEMA,
-      requires: document.requires || [], bindings: document.bindings || [], skills: document.skills || [],
-    };
-    validateProjectCapabilitiesDocument(normalized, 'capabilities.yml');
-    return YAML.stringify(normalized, { lineWidth: 0 });
-  }
-
   function skillsManifestPath(scopeRoot: string): string {
     return path.join(scopeRoot, 'skills', 'manifest.yml');
   }
@@ -82,5 +71,5 @@ export function createSkillRepository(dependencies: Dependencies) {
     return file;
   }
 
-  return Object.freeze({ manifestDocumentFor, attachManifestDocument, readSkillManifestDocument, readSkillManifest, readSkillManifestSchemaVersion, renderSkillsManifestYaml, renderProjectCapabilitiesYaml, skillsManifestPath, readSkillsManifestForWrite, writeSkillsManifest });
+  return Object.freeze({ manifestDocumentFor, attachManifestDocument, readSkillManifestDocument, readSkillManifest, readSkillManifestSchemaVersion, renderSkillsManifestYaml, skillsManifestPath, readSkillsManifestForWrite, writeSkillsManifest });
 }

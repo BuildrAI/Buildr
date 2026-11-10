@@ -8,7 +8,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { assertPluginSourceAggregate, releaseCandidateRequirements } from '../../../../projects/product/services/buildr/test/verification/release/verify-pr-candidate.ts';
 import { assertReleaseExecutorSource } from '../release-executor-recovery.ts';
 import { containsCredentialMaterial } from '../release-authority.ts';
-import { assertReleaseConsumptionCoverage } from '../../../../projects/product/services/buildr/test/verification/release/release-consumption.ts';
+import { assertReleaseConsumptionCoverage } from '../../../../projects/product/services/buildr/test/verification/release/release-consumption-contract.ts';
 import { assertBoundVerification } from '../../../../projects/product/services/dsh-plugin/tools/full-verification.ts';
 import { parseReleaseCandidate, readReleaseCandidate, sourceSdkIdentityFromFiles, SOURCE_SDK_MANIFEST, PLUGIN_SERVICE_PATH, type ReleaseCandidate } from './release-candidate.ts';
 import { assertPluginCandidateAdoption, createPluginCandidateAdoption, PLUGIN_CANDIDATE_ADOPTION_FILE, type PluginCandidateAdoption, type PluginCandidateMain } from './candidate-adoption.ts';
@@ -17,6 +17,8 @@ export const REPOSITORY = 'BuildrAI/Buildr';
 export const WORKFLOW = '.github/workflows/publish-dsh-plugin.yml';
 export const PUBLISH_STEP = 'Publish immutable plugin';
 export const BUILDR_CANDIDATE_WORKFLOW = '.github/workflows/verify.yml';
+const PACKAGE_CANDIDATE_WORKFLOW = '.github/workflows/verify-package.yml';
+const candidateWorkflow = (value: string) => [BUILDR_CANDIDATE_WORKFLOW, PACKAGE_CANDIDATE_WORKFLOW].includes(value?.split('@')[0]);
 export interface BuildrPeerInput { origin: 'registry' | 'candidate'; version: string; integrity: string; candidateRunId?: string }
 export interface WorkflowInput { operation: 'prepare' | 'publish'; version: string; candidateRunId?: string; recoveryRunId?: string; buildrPeer?: BuildrPeerInput; sourceCandidateRunId?: string; sourceCommit?: string; selectionIdentity?: string; publicationSourceCommit?: string }
 export interface BuildrPeerCandidateSource { mainCommit: string; candidateCommit: string; mainParents: string[]; mainTree: string; candidateTree: string; workflowId: number }
@@ -90,19 +92,22 @@ export async function verifySourceCandidateAdoption(input: WorkflowInput, main: 
   if (main.parents.length !== 2 || main.parents[1] !== sourceCommit || main.parents[0] !== aggregate?.selection?.main || main.tree !== sourceTree
     || candidate.manifest.sourceCommit !== sourceCommit || candidate.manifest.sourceTree !== main.serviceTree || candidate.manifest.version !== input.version
     || aggregate?.selection?.identity !== input.selectionIdentity || !aggregate.selection.packages.includes('dsh-plugin')) fail('plugin-source-protected-merge-mismatch');
-  const workflow = await api(`/repos/${REPOSITORY}/actions/workflows/verify.yml`);
   const run: Run = await api(`/repos/${REPOSITORY}/actions/runs/${input.sourceCandidateRunId}`);
-  if (workflow.path !== BUILDR_CANDIDATE_WORKFLOW || !Number.isSafeInteger(workflow.id) || run?.repository?.full_name !== REPOSITORY
-    || run.path?.split('@')[0] !== BUILDR_CANDIDATE_WORKFLOW || run.workflow_id !== workflow.id || run.event !== 'workflow_dispatch'
+  if (!candidateWorkflow(run?.path)) fail('plugin-source-candidate-run-mismatch');
+  const path = run.path.split('@')[0];
+  const workflow = await api(`/repos/${REPOSITORY}/actions/workflows/${path.split('/').at(-1)}`);
+  if (workflow.path !== path || !Number.isSafeInteger(workflow.id) || run?.repository?.full_name !== REPOSITORY
+    || run.workflow_id !== workflow.id || run.event !== 'workflow_dispatch'
     || String(run.id) !== input.sourceCandidateRunId || run.head_sha !== sourceCommit || run.status !== 'completed' || run.conclusion !== 'success'
     || !Number.isSafeInteger(run.run_attempt) || run.run_attempt < 1 || run.run_attempt > 100) fail('plugin-source-candidate-run-mismatch');
   const changedPaths = git(['diff', '--no-renames', '--name-only', '-z', main.parents[0]!, sourceCommit, '--']).split('\0').filter(Boolean).sort();
   const sourceFile = (name: string) => Buffer.from(git(['show', `${sourceCommit}:${PLUGIN_SERVICE_PATH}/${name}`, '--']));
   const sourceSdk = sourceSdkIdentityFromFiles(sourceFile(SOURCE_SDK_MANIFEST), sourceFile('sdk-patches/dsh-v0.2.0-rc.2-event-sources-settings.patch'));
-  const workflowSha256 = createHash('sha256').update(git(['show', `${sourceCommit}:${BUILDR_CANDIDATE_WORKFLOW}`, '--'])).digest('hex');
+  const workflowSha256 = createHash('sha256').update(git(['show', `${sourceCommit}:${path}`, '--'])).digest('hex');
   const peer = input.buildrPeer;
   const plan = { sourceCommit, sourceTree, serviceTree: main.serviceTree, pluginVersion: input.version, selection: aggregate.selection,
     requirements: releaseCandidateRequirements({ packages: aggregate.selection.packages, changedPaths }), changedPaths, workflowSha256, sourceSdk,
+    ...(path === PACKAGE_CANDIDATE_WORKFLOW ? { workflowPath: path } : {}),
     ...(peer.origin === 'registry' ? { registryPeer: { version: peer.version, integrity: peer.integrity } } : {}) };
   assertPluginSourceAggregate(aggregate, plan, run.id, run.run_attempt);
   if (aggregate.verification.peer.origin !== peer.origin || aggregate.verification.peer.version !== peer.version || aggregate.verification.peer.integrity !== peer.integrity
@@ -114,7 +119,7 @@ export async function verifySourceCandidateAdoption(input: WorkflowInput, main: 
 /** A pre-main Buildr candidate is consumed only through its exact protected merge. */
 export function validateBuildrPeerCandidateRun(run: Run, input: BuildrPeerInput, source: BuildrPeerCandidateSource): void {
   if (input.origin !== 'candidate' || !input.candidateRunId) fail('buildr-candidate-peer-required');
-  if (!run || run.repository?.full_name !== REPOSITORY || run.path !== BUILDR_CANDIDATE_WORKFLOW || run.event !== 'workflow_dispatch'
+  if (!run || run.repository?.full_name !== REPOSITORY || !candidateWorkflow(run.path) || run.event !== 'workflow_dispatch'
     || String(run.id) !== input.candidateRunId || run.workflow_id !== source.workflowId || !Number.isSafeInteger(run.run_attempt) || run.run_attempt < 1
     || run.status !== 'completed' || run.conclusion !== 'success' || run.head_sha !== source.candidateCommit) fail('buildr-peer-candidate-run-mismatch');
   if (![source.mainCommit, source.candidateCommit, source.mainTree, source.candidateTree].every(value => /^[a-f0-9]{40,64}$/.test(value))) fail('buildr-peer-source-identity');
@@ -131,9 +136,10 @@ export async function verifyBuildrPeerCandidate(input: WorkflowInput, mainCommit
   if (manifest.schemaVersion !== 'buildr.release-artifact/v1' || manifest.packageName !== '@buildr-ai/buildr' || manifest.version !== peer.version
     || manifest.integrity !== peer.integrity || !/^[a-f0-9]{40,64}$/.test(manifest.sourceCommit ?? '')) fail('buildr-peer-candidate-artifact-mismatch');
   const base = `/repos/${REPOSITORY}/actions`;
-  const workflow = await api(`${base}/workflows/verify.yml`);
-  if (workflow.path !== BUILDR_CANDIDATE_WORKFLOW || !Number.isSafeInteger(workflow.id)) fail('buildr-candidate-workflow-unavailable');
   const run: Run = await api(`${base}/runs/${peer.candidateRunId}`);
+  if (!candidateWorkflow(run?.path)) fail('buildr-peer-candidate-run-mismatch');
+  const workflow = await api(`${base}/workflows/${run.path.split('@')[0].split('/').at(-1)}`);
+  if (workflow.path !== run.path.split('@')[0] || !Number.isSafeInteger(workflow.id)) fail('buildr-candidate-workflow-unavailable');
   const git = (...args: string[]) => execFileSync('git', args, { encoding: 'utf8' }).trim();
   const parents = git('rev-list', '--parents', '-n', '1', mainCommit).split(' ');
   if (parents[0] !== mainCommit) fail('buildr-peer-source-identity');

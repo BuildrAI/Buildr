@@ -101,7 +101,7 @@ for (const unavailable of [false,true]) test('Qoder repairs lost items before pu
   try{
     runtime=await createQoderExecutor().open({connectionId:'qoder',configRoot:join(root,'config'),executable,environment:{PATH:process.env.PATH??''}});
     const contextRef=await runtime.createContext({cwd:workspace}),rpc=(runtime as any).rpc,call=rpc.call.bind(rpc);
-    rpc.call=(method:string,args:any,...rest:any[])=>method==='history'?(unavailable?Promise.reject(Error('history unavailable')):Promise.resolve([{id:lostId,kind:'message',role:'assistant',text:'completed once',executionId:requestId,status:'completed'}])):call(method,args,...rest);
+    rpc.call=(method:string,args:any,...rest:any[])=>method==='history'?(unavailable?Promise.reject(Error('history unavailable')):Promise.resolve({data:[{id:lostId,kind:'message',role:'assistant',text:'completed once',executionId:requestId,status:'completed'}]})):call(method,args,...rest);
     const sending=runtime.send({contextRef,cwd:workspace,text:'等待用户',images:[],clientRequestId:requestId,onEvent:event=>{if(event.type==='item'&&!failed){failed=true;lostId=event.item.id;throw Error('record write failed');}events.push(event);}});
     await assert.rejects(sending,/qoder_event_observation_lost/);
     const accepted=events.find(e=>e.type==='accepted');assert.equal(accepted?.type,'accepted');
@@ -223,3 +223,25 @@ test('Qoder unaccepted release requires the original settled submission and chec
     await runtime.stop({contextRef,executionRef:started.executionRef});await next;
   }finally{await runtime?.close();await rm(root,{recursive:true,force:true});}
  });
+
+test('Qoder primary compaction status clears at boundary and ignores child status',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'qoder-compaction-')),workspace=join(root,'workspace');await mkdir(workspace);
+ let runtime:AgentRuntime|undefined;
+ try{
+  const executable=join(root,'qoder.mjs'),marker="emit({type:'assistant',uuid:'snapshot-1'";assert.ok(cli.includes(marker));
+  await writeFile(executable,cli.replace(marker,`emit({type:'system',subtype:'status',status:'compacting',session_id:sid,uuid:'c1'});
+   emit({type:'system',subtype:'status',status:null,session_id:sid,parent_tool_use_id:'child-tool',uuid:'child-end'});
+   emit({type:'system',subtype:'compact_boundary',session_id:sid,uuid:'boundary',compact_metadata:{trigger:'auto',pre_tokens:100}});
+   emit({type:'system',subtype:'status',status:'compacting',session_id:sid,parent_tool_use_id:'child-tool',uuid:'child-start'});
+   emit({type:'assistant',uuid:'snapshot-1'`));
+  runtime=await createQoderExecutor().open({connectionId:'qoder',configRoot:join(root,'config'),executable,environment:{PATH:process.env.PATH??''}});
+  const contextRef=await runtime.createContext({cwd:workspace}),events:ExecutorEvent[]=[];
+  const sending=runtime.send({contextRef,cwd:workspace,text:'work',images:[],clientRequestId:'e2838d1e-8592-4dd3-8bf0-9b2e8ed2a640',onEvent:e=>events.push(e)});
+  const deadline=Date.now()+5000;while(!events.some(e=>e.type==='request')){if(Date.now()>deadline)throw Error('question timeout');await new Promise(r=>setTimeout(r,5));}
+  const observations=events.filter((e):e is Extract<ExecutorEvent,{type:'observation'}>=>e.type==='observation').map(e=>e.observation);
+  assert.equal(observations.filter(o=>o.contextCompaction).length,1);assert.ok(observations.some(o=>o.contextCompaction===null));
+  assert.equal((await runtime.observe({contextRef})).contextCompaction,null);
+  const accepted=events.find(e=>e.type==='accepted');assert.equal(accepted?.type,'accepted');
+  await runtime.stop({contextRef,executionRef:accepted.executionRef});await sending;
+ }finally{await runtime?.close();await rm(root,{recursive:true,force:true});}
+});

@@ -2,6 +2,16 @@ import type { LoginObservation } from '../contracts.ts';
 
 export type ModelProtocol = 'responses' | 'chat-completions' | 'anthropic-messages';
 export type ProtocolJson = Record<string, unknown>;
+export interface ModelProviderAuthentication {
+  type: 'oauth' | 'api-key';
+  label: string;
+  placeholder?: string;
+  description?: string;
+}
+export interface ModelProviderGroup {
+  id: string;
+  label: string;
+}
 export interface ModelOffering {
   id: string;
   label: string;
@@ -39,6 +49,8 @@ export interface ModelQuotaObservation {
 export interface ModelProviderObservation {
   /** The inspection did not establish current availability; not a confirmed account failure. */
   incomplete?: boolean;
+  /** The selected source has a locally configured credential without exposing it. */
+  credentialConfigured?: boolean;
   status: 'not-authenticated' | 'ready' | 'expired' | 'failed';
   label?: string;
   identity?: string;
@@ -56,6 +68,10 @@ export interface ProviderInferenceInput {
 export interface ModelProviderRuntime {
   readonly protocol: ModelProtocol;
   inspect(): Promise<ModelProviderObservation>;
+  /** Local credential identity; read by this provider, never derived from an agent connection. */
+  identity?(): Promise<string>;
+  /** Validate and replace an API-key credential atomically. */
+  configure?(input: { apiKey: string }): Promise<ModelProviderObservation>;
   beginLogin(update: (value: LoginObservation) => void): Promise<void>;
   cancelLogin(): Promise<void>;
   /** Response uses protocol, including its native streaming and errors. */
@@ -66,6 +82,11 @@ export interface ModelProvider {
   readonly id: string;
   readonly label: string;
   readonly connectionId?: string;
+  /** Created automatically from a native account that no agent connection owns. */
+  readonly linked?: boolean;
+  readonly authentication?: ModelProviderAuthentication;
+  readonly group?: ModelProviderGroup;
+  readonly modeLabel?: string;
   open(input: { accountId: string; configRoot: string; environment: Readonly<Record<string, string>> }): Promise<ModelProviderRuntime>;
 }
 export interface ModelAccountView {
@@ -78,6 +99,11 @@ export interface ModelAccountView {
   revision: string;
   enabled: boolean;
   status: 'not-authenticated' | 'ready' | 'expired' | 'failed' | 'disconnected';
+  /** Provider-declared credential mechanism; never the credential itself. */
+  authType?: 'oauth' | 'api-key';
+  group?: ModelProviderGroup;
+  modeLabel?: string;
+  credentialConfigured?: boolean;
   accountLabel?: string;
   models: ModelOffering[];
   observedAt?: string;

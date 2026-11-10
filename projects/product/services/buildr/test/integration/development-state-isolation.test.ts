@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { createVerificationExecutor } from '../verification/executor.ts';
 import { createVerificationPlan } from '../verification/planner.ts';
+import { createIsolatedWorkspaceState } from '../../tools/development/isolated-workspace-state.ts';
 
 const serviceRoot = path.resolve(import.meta.dirname, '../..');
 const bootstrap = pathToFileURL(path.join(serviceRoot, 'test/register-development-entry.ts')).href;
@@ -41,7 +42,9 @@ function fixture(t: test.TestContext) {
 test('direct application and child CLI init keep auto-registration inside test state', t => {
   const f = fixture(t);
   const script = path.join(f.root, 'direct-check.mjs');
-  const workspaces = ['application', 'cli', 'source-only'].map(name => path.join(f.root, name));
+  const state = createIsolatedWorkspaceState({env:f.env});
+  t.after(()=>state.cleanup());
+  const workspaces = ['application', 'cli', 'source-only'].map(name => path.join(state.root, name));
   fs.writeFileSync(script, `
 import fs from 'node:fs';
 import path from 'node:path';
@@ -59,13 +62,14 @@ for (const [index, extra] of [[1, []], [2, ['--source-only']]]) {
 const registry = JSON.parse(fs.readFileSync(path.join(process.env.BUILDR_APP_DATA_DIR, 'workspace-registry.json'), 'utf8'));
 console.log(JSON.stringify({ root: process.env.BUILDR_TEST_LOCAL_STATE_ROOT, app: process.env.BUILDR_APP_DATA_DIR, product: process.env.BUILDR_PRODUCT_DATA_DIR, roots: registry.roots }));
 `);
-  const result = spawnSync(process.execPath, [script], { cwd: serviceRoot, env: { ...f.env, NODE_COMPILE_CACHE: path.join(f.root, 'compile-cache') }, encoding: 'utf8', timeout: 120_000 });
+  const result = spawnSync(process.execPath, [script], { cwd: serviceRoot, env: { ...state.env, BUILDR_SMOKE_ROOT:state.root, NODE_COMPILE_CACHE: path.join(f.root, 'compile-cache') }, encoding: 'utf8', timeout: 120_000 });
   assert.equal(result.status, 0, result.stderr || result.stdout || result.error?.message);
   const observed = JSON.parse(result.stdout.trim());
   assert.notEqual(observed.app, f.appData);
   assert.notEqual(observed.product, f.productData);
   assert.deepEqual(observed.roots, workspaces.slice(0, 2));
-  assert.equal(fs.existsSync(observed.root), false, 'owned test state must be removed after success');
+  assert.equal(observed.root,state.root,'application and child CLI share the workspace runner scope');
+  assert.equal(fs.existsSync(observed.root), true, 'child does not clean the parent runner scope');
   for (const directory of [f.appData, f.productData]) assert.deepEqual(fs.readdirSync(directory), ['keep']);
   assert.ok(fs.existsSync(path.join(workspaces[2], '.buildr/workspace.yml')));
 });
@@ -170,26 +174,57 @@ setInterval(() => {}, 1000);
 
 test('test temporary isolation retains reusable verification evidence outside disposable state', t => {
   const f = fixture(t);
+  const repository = path.join(f.root, 'repository'), worktree = path.join(f.root, 'worktree');
+  fs.mkdirSync(repository);
+  const git = (...args: string[]) => execFileSync('git', ['-C', repository, ...args], { stdio: 'pipe' });
+  git('init', '-q');
+  git('-c', 'user.name=Verification Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '--allow-empty', '-qm', 'Fixture');
+  git('worktree', 'add', '--detach', '-q', worktree, 'HEAD');
   const reuse = pathToFileURL(path.join(serviceRoot, 'test/verification/verification-reuse.ts')).href;
   const script = path.join(f.root, 'reuse-check.mjs');
   fs.writeFileSync(script, `
 import fs from 'node:fs';
 import path from 'node:path';
 import { resolveVerificationReuseDirectory } from ${JSON.stringify(reuse)};
-const options = { productRoot: ${JSON.stringify(serviceRoot)} };
+const options = { productRoot: ${JSON.stringify(repository)} };
 const before = resolveVerificationReuseDirectory(options);
 await import(${JSON.stringify(bootstrap)});
-const after = resolveVerificationReuseDirectory(options);
+const after = resolveVerificationReuseDirectory({ productRoot: ${JSON.stringify(worktree)} });
 fs.mkdirSync(after, { recursive: true });
 fs.writeFileSync(path.join(after, 'proof'), 'reusable verification evidence');
 console.log(JSON.stringify({ before, after, root: process.env.BUILDR_TEST_LOCAL_STATE_ROOT }));
 `);
   const result = spawnSync(process.execPath, [script], {
-    env: { ...f.env, BUILDR_VERIFICATION_REUSE_DIR: undefined, BUILDR_TEST_SHARED_TEMP_ROOT: f.externalTemp }, encoding: 'utf8',
+    env: { ...f.env, BUILDR_VERIFICATION_REUSE_DIR: undefined, BUILDR_TEST_SHARED_TEMP_ROOT: undefined }, encoding: 'utf8',
   });
   assert.equal(result.status, 0, result.stderr || result.stdout);
   const observed = JSON.parse(result.stdout);
-  assert.equal(observed.after, observed.before, 'temporary isolation must not move the reusable verification store');
+  assert.equal(observed.before, path.join(fs.realpathSync(repository), '.git', 'buildr', 'verification-reuse', 'v1'));
+  assert.equal(observed.after, observed.before, 'worktrees and isolated temp directories share the repository verification store');
   assert.equal(fs.existsSync(observed.root), false);
   assert.equal(fs.readFileSync(path.join(observed.after, 'proof'), 'utf8'), 'reusable verification evidence');
+});
+
+
+test('test state keeps ownership evidence while a live file is held, then cleans after release', {skip:process.platform!=='darwin'},()=>{
+ const state=createIsolatedWorkspaceState(),file=path.join(state.root,'held');fs.writeFileSync(file,'fixture');const fd=fs.openSync(file,'r');
+ try {
+  assert.throws(()=>state.cleanup(),/test_state_still_in_use/);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(state.root,'.buildr-test-state.json'),'utf8')).completed,false);
+  assert.ok(fs.existsSync(file));
+ } finally {fs.closeSync(fd);state.cleanup();}
+ assert.equal(fs.existsSync(state.root),false);
+});
+
+test('workspace runner bootstrap reuses its verified fixture scope without cleaning the parent owner', t => {
+  const state=createIsolatedWorkspaceState();t.after(()=>state.cleanup());
+  const result=spawnSync(process.execPath,['--input-type=module','-e',`
+await import(${JSON.stringify(bootstrap)});
+console.log(JSON.stringify({root:process.env.BUILDR_TEST_LOCAL_STATE_ROOT,app:process.env.BUILDR_APP_DATA_DIR}));
+`],{cwd:serviceRoot,env:{...state.env,BUILDR_SMOKE_ROOT:state.root,NODE_TEST_CONTEXT:undefined},encoding:'utf8',timeout:15000});
+  assert.equal(result.status,0,result.stderr);
+  const observed=JSON.parse(result.stdout);
+  assert.equal(observed.root,state.root);
+  assert.equal(observed.app,state.env.BUILDR_APP_DATA_DIR);
+  assert.equal(fs.existsSync(state.root),true,'only the workspace runner owns cleanup');
 });

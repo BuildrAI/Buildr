@@ -133,9 +133,7 @@ try {
   useLegacyAssetCatalog(legacySourceOnly);
   result = run(['project', 'create', 'demo', '--target', legacySourceOnly]);
   assert.equal(result.status, 0, output(result));
-  assert.deepEqual(YAML.parse(fs.readFileSync(path.join(legacySourceOnly, 'projects', 'demo', 'capabilities.yml'), 'utf8')), {
-    schemaVersion: 'buildr.project-capabilities/v1', requires: [], bindings: [], skills: [],
-  });
+  assert.equal(fs.existsSync(path.join(legacySourceOnly, 'projects', 'demo', 'capabilities.yml')), false);
   assert.deepEqual(YAML.parse(fs.readFileSync(path.join(legacySourceOnly, 'projects', 'demo', 'commands.yml'), 'utf8')), {
     schemaVersion: 'buildr.project-commands/v1', requirements: [],
   });
@@ -170,12 +168,12 @@ try {
   assert.equal(result.status, 0, output(result));
   result = run(['project', 'create', 'synced', '--target', legacySourceOnly]);
   assert.equal(result.status, 0, output(result));
-  for (const relative of ['capabilities.yml', 'commands.yml', 'services/manifest.yml']) {
+  for (const relative of ['commands.yml', 'services/manifest.yml']) {
     fs.rmSync(path.join(legacySourceOnly, 'projects', 'synced', relative));
   }
   result = run(['sync', 'codex', '--target', legacySourceOnly]);
   assert.equal(result.status, 0, output(result));
-  for (const relative of ['capabilities.yml', 'commands.yml', 'services/manifest.yml']) {
+  for (const relative of ['commands.yml', 'services/manifest.yml']) {
     assert.equal(fs.existsSync(path.join(legacySourceOnly, 'projects', 'synced', relative)), true, `sync must generate missing ${relative}`);
   }
 

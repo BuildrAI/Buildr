@@ -13,10 +13,16 @@ export function canContinueReleasedConversation(conversation: ConversationView |
   return Boolean(conversation?.run?.status === 'unknown' && conversation.run.accepted && canCloseUncertainConversation(conversation));
 }
 
+/** Explicit stop-escape preserves the old owner and starts an independent context. */
+export function canContinueConversation(conversation: ConversationView | null): boolean {
+  return Boolean(conversation && !conversation.pendingSend &&
+    (conversation.run?.status === 'unknown' && conversation.run.stopRequested || canContinueReleasedConversation(conversation)));
+}
+
 export function conversationRecoveryAction(conversation: ConversationView | null): {kind:'recover'|'observe';label:string} | null {
   const run = conversation?.run; if (!conversation || !run) return null;
   if (run.status === 'tools-active' && run.canContinue) return null;
-  if (canContinueReleasedConversation(conversation)) return {kind:'recover',label:'继续工作'};
+  if (canContinueConversation(conversation)) return {kind:'recover',label:run.stopRequested?'结束等待并继续':'继续工作'};
   if (run.status === 'unknown' || run.status === 'tools-active' || ['failed','stopped','completed'].includes(run.status) && run.tools.some(tool => tool.status !== 'completed')) return {kind:'observe',label:'核对状态'};
   if (executionLocked(run) || currentConversationRequests(conversation).length || run.tools.some(tool => tool.status !== 'completed')) return null;
   const replied = conversation.entries.some(entry => !entry.parentToolId && !entry.thinking && entry.role === 'assistant' && entry.kind === 'message' && entry.text.trim() && (entry.runId === run.id || !entry.runId && entry.createdAt >= run.startedAt));
@@ -48,7 +54,7 @@ export function executionLocked(run?: ConversationRun): boolean {
 export function needsConversationObservation(conversation: ConversationView | null): boolean {
   if (!conversation) return false;
   if (conversation.hidden && canCloseUncertainConversation(conversation)) return false;
-  if (conversation.pendingSend || conversation.requests.length || conversation.retainedRuns?.some(run=>!run.supersededBy&&(executionLocked(run)||run.tools.some(tool=>tool.status!=='completed')))) return true;
+  if (conversation.entries.some(entry=>entry.detail?.live) || conversation.pendingSend || conversation.requests.length || conversation.retainedRuns?.some(run=>!run.supersededBy&&(executionLocked(run)||run.tools.some(tool=>tool.status!=='completed')))) return true;
   const run = conversation.run;
   return Boolean(run && (executionLocked(run) || run.tools.some(tool => tool.status !== 'completed') ||
     run.executionState === 'active' || run.executionState === 'unknown'));
@@ -191,6 +197,14 @@ export function conversationRunSettled(run?:ConversationRun):boolean {
     run.executionState!=='active'&&run.executionState!=='unknown'&&
     !(run.tools??[]).some(tool=>tool.status!=='completed');
 }
+/** A run stays live while its execution can still produce steps. A released or
+ * ended execution keeps its unverified outcome without the live presentation. */
+export function conversationRunLive(run?:ConversationRun):boolean {
+  if(!run)return false;
+  if(run.executionState==='active')return true;
+  if(run.executionState==='ended'||run.resourcesReleased)return false;
+  return !['completed','stopped','failed'].includes(run.status);
+}
 /** Legacy records have no message phase: the last assistant message of a settled
  * run is its visible reply, regardless of length. Never promote live narration. */
 export function finalConversationReplyIds(entries:readonly ConversationEntry[],runs:readonly ConversationRun[]=[]):Set<string> {
@@ -207,13 +221,14 @@ export function groupConversationStream(entries:readonly ConversationEntry[],cur
   const items:ConversationStreamItem[]=[];
   const runs=[...retainedRuns,...(currentRun?[currentRun]:[])],known=new Map(runs.map(run=>[run.id,run]));
   const finals=finalConversationReplyIds(entries,runs);
-  const isProcess=(entry:ConversationEntry)=>entry.kind==='tool'||entry.kind==='message'&&entry.role==='assistant';
+  // 思考是过程条目，留在处理过程内；它不能成为最终答复（finalConversationReplyIds 只认助手消息）。
+  const isProcess=(entry:ConversationEntry)=>entry.kind==='tool'||entry.kind==='thinking'||entry.kind==='message'&&entry.role==='assistant';
   for(let index=0;index<entries.length;){
     const first=entries[index];
     if(!isProcess(first)){items.push({type:'entry',entry:first});index++;continue;}
     const run:ConversationEntry[]=[];
     while(index<entries.length&&isProcess(entries[index])&&entries[index].runId===first.runId)run.push(entries[index++]);
-    const active=!conversationRunSettled(first.runId?known.get(first.runId):undefined);
+    const active=conversationRunLive(first.runId?known.get(first.runId):undefined);
     const result=active?undefined:run.find(entry=>finals.has(entry.id));
     const process=result?run.filter(entry=>entry!==result):run;
     if(process.length)items.push({type:'process-block',entries:process,active,finishedAt:result?.createdAt});

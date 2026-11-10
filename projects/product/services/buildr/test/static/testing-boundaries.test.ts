@@ -111,7 +111,8 @@ test('Task lifecycle context 只共享不可变基线并保留全生命周期测
   const runner: any = fs.readFileSync(path.join(productRoot, 'test', 'verification', 'journeys.ts'), 'utf8');
   assert.match(helper, /TASK_LIFECYCLE_CONTEXT_ID(?:: any)? = TASK_LIFECYCLE_CONTEXT_KEY/);
   assert.match(helper, /defaultTestContextPool/, 'direct files and inherited runners must use the same Pool contract');
-  assert.match(contextRuntime, /fs\.cpSync\(context\.seedRoot, sandboxRoot, \{ recursive: true \}\)/, 'test cases must receive copied sandboxes');
+  assert.match(contextRuntime, /fs\.cpSync\(context\.seedRoot, sandboxRoot, \{ recursive: true(?:, mode: fs\.constants\.COPYFILE_FICLONE)? \}\)/, 'test cases must receive copied sandboxes');
+  assert.match(contextRuntime, /mode: fs\.constants\.COPYFILE_FICLONE/, 'sandbox materialization should prefer copy-on-write');
   assert.match(contextRuntime, /actualIdentity !== marker\.identity/, 'shared baseline must be identity checked');
   assert.match(contextRuntime, /test_context_sandbox_alias/);
   assert.match(provider, /runtime\.initBuildr/);

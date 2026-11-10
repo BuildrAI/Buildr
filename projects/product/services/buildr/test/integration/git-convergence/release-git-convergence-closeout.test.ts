@@ -62,12 +62,18 @@ test('黄金生命周期以同一active Task等待授权并在零中间资源clo
     publicationEvidence: data.publicationEvidence,
   });
   assert.equal(first.status, 'passed', JSON.stringify(first));
-  assert.equal(first.formalReleaseRef.disposition, 'retained-and-verified');
+  assert.equal(first.formalReleaseRef.disposition, 'cleaned-and-verified');
   assert.equal(first.tag.local, 'absent');
   assert.equal(first.tag.remote, 'retained-and-verified');
   assert.equal(spawnSync('git', ['show-ref', '--verify', '--quiet', 'refs/tags/v0.1.0-rc.5'], { cwd: data.controller }).status, 1);
   assert.notEqual(git(data.controller, 'ls-remote', 'origin', 'refs/tags/v0.1.0-rc.5'), '');
-  assert.equal(git(data.work, 'ls-remote', 'origin', 'refs/heads/release-0.1.0-rc.5').startsWith(data.releaseCommit), true);
+  assert.equal(git(data.work, 'ls-remote', 'origin', 'refs/heads/release-0.1.0-rc.5'), '');
+  assert.equal(spawnSync('git', ['show-ref', '--verify', '--quiet', 'refs/heads/release-0.1.0-rc.5'], { cwd: data.controller }).status, 1);
+  assert.equal(git(data.controller, 'for-each-ref', '--format=%(refname)', 'refs/buildr/release/0.1.0-rc.5/'), '');
+  const audit = fs.readFileSync(first.auditFile, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+  assert.ok(audit.every(entry => entry.version === '0.1.0-rc.5'));
+  assert.ok(audit.flatMap(entry => entry.effects ?? []).some(effect => effect.type === 'lifecycle-ref-deleted'
+    && effect.ref.startsWith('refs/buildr/release/0.1.0-rc.5/') && /^[a-f0-9]{40}$/.test(effect.commit)));
   assert.equal(git(data.work, 'ls-remote', 'origin', `refs/heads/${carrier}`), '');
   const second: any = closeoutReleaseGitResources({
     repo: data.work,
@@ -175,7 +181,7 @@ test('发布编排真实调用Git closeout并把精确交付映射直接交给Wo
   const closed: any = await runReleaseOrchestration(options, dependencies);
   assert.equal(closed.status, 'passed', JSON.stringify(closed));
   assert.equal(git(data.controller, 'ls-remote', 'origin', `refs/heads/${carrier}`), '');
-  assert.equal(git(data.controller, 'ls-remote', 'origin', `refs/heads/release-${version}`).startsWith(data.releaseCommit), true);
+  assert.equal(git(data.controller, 'ls-remote', 'origin', `refs/heads/release-${version}`), '');
   assert.deepEqual(controllerCalls[1].slice(3, 7), ['--expected-source', `workspace=${data.releaseCommit}`, '--delivered-ref', `workspace=${data.mainCommit}`]);
   const repeated: any = await runReleaseOrchestration(options, dependencies);
   assert.equal(repeated.status, 'passed', JSON.stringify(repeated));

@@ -314,6 +314,8 @@ artifacts:
     sources:
       [
         release-coordination-source,
+        release-local-package-source,
+        release-package-handoff-source,
         release-selection-source,
         release-publication-source,
         verification-source-reader,
@@ -324,7 +326,7 @@ artifacts:
         verification-artifact-reuse
       ]
   - id: product-release-architecture
-    title: Buildr 发布：谁负责什么
+    title: 历史发布模型：谁负责什么
     kind: diagram
     path: knowledge/archify/flows/release-architecture.html
     graphSource: knowledge/archify/flows/release-architecture.json
@@ -343,7 +345,7 @@ artifacts:
         verification-artifact-reuse
       ]
   - id: product-release-workflow
-    title: Buildr 发布：五步流程
+    title: 历史发布模型：五步流程
     kind: diagram
     path: knowledge/archify/flows/release-workflow.html
     graphSource: knowledge/archify/flows/release-workflow.json
@@ -370,6 +372,7 @@ artifacts:
       - agent-service-connections-source
       - agent-service-preparation-source
       - agent-service-programs-source
+      - agent-service-program-packages-source
       - agent-service-conversations-source
       - agent-service-question-wait-source
       - agent-service-handoff-source
@@ -379,8 +382,15 @@ artifacts:
       - agent-service-codex-source
       - agent-service-dsh-source
       - agent-service-qoder-source
+      - openai-api-model-source
+      - private-api-key-source
+      - agent-service-model-account-http-source
+      - model-account-api-key-ui-source
+      - model-account-source-view-source
       - agent-service-host-source
       - agent-service-ui-source
+      - agent-conversation-image-preview-source
+      - markdown-image-preview-source
       - agent-service-ui-options-source
       - agent-service-conversation-preferences-source
       - agent-service-product-action-source
@@ -388,6 +398,8 @@ artifacts:
       - service-runtime-configuration-action-source
       - service-runtime-configuration-prompt-source
       - service-runtime-configuration-hook-source
+      - service-runtime-configuration-handoff-source
+      - service-runtime-configuration-start-source
       - service-runtime-configuration-copy-source
       - service-runtime-configuration-drawer-source
       - service-runtime-configuration-outcome-source
@@ -561,6 +573,8 @@ artifacts:
       - service-runtime-configuration-action-source
       - service-runtime-configuration-prompt-source
       - service-runtime-configuration-hook-source
+      - service-runtime-configuration-handoff-source
+      - service-runtime-configuration-start-source
       - service-runtime-configuration-copy-source
       - service-runtime-configuration-drawer-source
       - service-runtime-configuration-outcome-source
@@ -1252,6 +1266,8 @@ artifacts:
     objects:
       - verification-product-tools
     sources:
+      - release-local-package-source
+      - release-package-handoff-source
       - verification-test-type-config
       - verification-plugin-test-types
       - verification-local-source
@@ -1295,6 +1311,8 @@ artifacts:
     objects:
       - verification-product-tools
     sources:
+      - release-local-package-source
+      - release-package-handoff-source
       - verification-test-type-config
       - verification-plugin-test-types
       - verification-local-source
@@ -1674,6 +1692,29 @@ sources:
     kind: skill
     skillId: buildr-release
     path: scripts/release-orchestration-runner.ts
+  - id: release-local-package-source
+    title: 本机原包准备与对端派发
+    kind: skill
+    skillId: buildr-release
+    path: scripts/local-package-operation.ts
+    summary: 先完成本机源码、唯一制包和验包，再交接准确原包；轮询不重做本机检查。
+  - id: release-local-plugin-source
+    title: 独立与联合插件本机准备
+    kind: skill
+    skillId: buildr-release
+    path: scripts/local-plugin-preparation.ts
+    summary: 自动准备准确SDK并完整验证唯一插件原包，保留冻结主包对端，远端不重构建。
+  - id: release-local-sdk-source
+    title: 本机SDK准备与校验复用
+    kind: code
+    path: services/dsh-plugin/tools/ensure-release-sdk.ts
+    summary: 绑定固定输入、构建工具、平台、实际依赖与生成物；失效时新建准备输出。
+  - id: release-package-handoff-source
+    title: 不可变原包数据交接
+    kind: skill
+    skillId: buildr-release
+    path: scripts/local-package-handoff.ts
+    summary: 按源码、系统、原包摘要和冻结范围绑定分块数据，拒绝非法文件及凭证，远端不执行数据引用内容。
   - id: release-candidate-observation-source
     title: 候选原包交接与运行耗时
     kind: skill
@@ -1988,6 +2029,11 @@ sources:
     kind: code
     path: services/buildr-agent/src/executors/program-manager.ts
     summary: 核对本机路径、应用身份和固定版本，在独立目录准备官方程序并清理本次安装进程。
+  - id: agent-service-program-packages-source
+    title: 受管程序包引用与回收候选
+    kind: code
+    path: services/buildr-agent/src/storage/program-packages.ts
+    summary: 观察连接绑定、未完成更新与默认安装位置引用，为维护提供程序包候选并在执行时复查引用。
   - id: agent-service-storage-source
     title: 本机私有交互库
     kind: code
@@ -2018,6 +2064,31 @@ sources:
     kind: code
     path: services/buildr-agent/src/executors/qoder/index.ts
     summary: 隔离工作进程（Worker）使用官方软件开发工具包（SDK）与qodercli，恢复准确原生上下文。
+  - id: openai-api-model-source
+    title: ChatGPT 官方 API Key 来源
+    kind: code
+    path: services/buildr-agent/src/model-access/providers/openai-api.ts
+    summary: 固定 OpenAI 官方端点，核对候选密钥后原子替换，发现文本对话模型，并以无状态 Responses 推理供统一网关使用。
+  - id: private-api-key-source
+    title: 模型来源私有 API Key
+    kind: code
+    path: services/buildr-agent/src/model-access/providers/private-api-key.ts
+    summary: 在账号私有目录以 0600 文件保存密钥，拒绝链接与非单链接目标，原子替换且不进入公共账号元数据。
+  - id: agent-service-model-account-http-source
+    title: 模型账号公开 HTTP 入口
+    kind: code
+    path: services/buildr/src/modules/agent-service/interfaces/http/agent-service-http.ts
+    summary: 受本机认证保护的账号读取、目录、偏好、API Key 配置、检查、登录与断开入口；普通响应不返回密钥。
+  - id: model-account-api-key-ui-source
+    title: ChatGPT API Key 账号设置
+    kind: code
+    path: services/buildr-web/src/features/agent-conversations/AccountModelManager.tsx
+    summary: 提供独立 ChatGPT API 来源卡片，可订阅与 API Key 同时使用，并支持密码录入、验证、更换、刷新、模型管理和断开，不显示 URL 输入。
+  - id: model-account-source-view-source
+    title: 模型来源与 ChatGPT API 独立分类
+    kind: code
+    path: services/buildr-web/src/features/agent-conversations/account-model-view.ts
+    summary: 将订阅与 API Key 输出为两个独立来源，保留认证与已配置状态；没有 API Key 账号时提供 ChatGPT API 配置入口，两者可同时展示。
   - id: agent-service-host-source
     title: 智能体服务宿主装配
     kind: code
@@ -2027,7 +2098,17 @@ sources:
     title: 全局内部对话
     kind: code
     path: services/buildr-web/src/features/agent-conversations/ConversationPanel.tsx
-    summary: 统一历史、发送与接续预览、模型深度、授权问题、停止与标题操作。
+    summary: 统一历史、发送与接续预览、模型深度、授权问题、停止与标题操作；正文图片可点击放大到原始像素。
+  - id: agent-conversation-image-preview-source
+    title: 对话图片放大预览
+    kind: code
+    path: services/buildr-web/src/features/agent-conversations/ConversationImagePreview.tsx
+    summary: 复用同一认证图片地址放大查看，提供实际像素与适应窗口切换、新窗口打开及失败重试。
+  - id: markdown-image-preview-source
+    title: Markdown 图片放大触发
+    kind: code
+    path: services/buildr-web/src/lib/markdownImagePreviews.ts
+    summary: 宿主提供回调时才给已解析图片附加放大操作与键盘触发，其他阅读面保持不可交互。
   - id: agent-service-ui-dock-source
     title: 对话停靠与开合边界
     kind: code
@@ -2057,17 +2138,27 @@ sources:
     title: 服务运行配置交接钩子（Hook）
     kind: code
     path: services/buildr-web/src/features/service-runtime/hooks/useRuntimeConfiguration.ts
-    summary: 持有待确认目标、提交与失败反馈；确认后才创建对话并记录待完成交接，完成后按对话结束与运行定义读取反馈。
+    summary: 持有待确认目标、提交与失败反馈；确认后才创建对话并写入可恢复的交接记录，进行中的服务入口回到原对话；并订阅完成后的一次性启动请求。
+  - id: service-runtime-configuration-handoff-source
+    title: 运行配置交接记录
+    kind: code
+    path: services/buildr-web/src/features/service-runtime/runtimeConfigurationHandoff.ts
+    summary: 按工作空间保存已提交交接的服务、原对话与定义快照，刷新和跨入口恢复进行中状态；只是界面索引，不表示配置完成。
+  - id: service-runtime-configuration-start-source
+    title: 运行配置完成后的启动请求
+    kind: code
+    path: services/buildr-web/src/features/service-runtime/runtimeConfigurationStart.ts
+    summary: 保存完成通知的一次性“启动本地”请求，由目标服务运行区打开启动抽屉后消费；不依赖地址参数或存储，刷新或超时未消费即失效。
   - id: service-runtime-configuration-copy-source
     title: 运行配置交接正文
     kind: code
     path: services/buildr-web/src/features/service-runtime/components/AgentDiscoveryContent.tsx
-    summary: 先展示尚未执行、目标、步骤、授权影响与完成标准，完整请求按需展开；复制不冒充执行或配置成功。
+    summary: 先展示尚未执行、目标、步骤、授权影响与完成标准，完整请求按需展开；进行中只说明状态，复制不冒充执行或配置成功。
   - id: service-runtime-configuration-drawer-source
     title: 运行配置交接抽屉
     kind: code
     path: services/buildr-web/src/features/service-runtime/components/RuntimeConfigurationDrawer.tsx
-    summary: 三个入口先在这里说明目标和影响，单一“开始配置”确认后才提交；未接入时切换为复制，提交中不能关闭或重复提交。
+    summary: 三个入口先在这里说明目标和影响，单一“运行配置”确认后才提交；进行中只提供查看对话，未接入时切换为复制。
   - id: service-runtime-configuration-outcome-source
     title: 运行配置完成判定
     kind: code
@@ -2077,7 +2168,7 @@ sources:
     title: 运行配置结果反馈
     kind: code
     path: services/buildr-web/src/features/service-runtime/components/RuntimeConfigurationOutcome.tsx
-    summary: 观察原配置对话，执行结束后读取真实运行定义并通知结果；超时只停止观察，不伪造成功。
+    summary: 在应用壳层观察原配置对话，执行结束后读取真实运行定义并通知结果、清除交接记录；完成或检查完成时可从通知直接打开启动抽屉；超时或对话不可读只结束观察，不伪造成功。
   - id: agent-service-ui-options-source
     title: 对话执行选项
     kind: code
@@ -2731,7 +2822,7 @@ sources:
     kind: code
     path: services/buildr-web/src/components/MarkdownHost.tsx
     observedDigest: 006c52ae5759501944c887d13af3d9c53c2359048131983110a8047497395a28
-    summary: 将文档渲染接入页面及相对链接事件。
+    summary: 将文档渲染接入页面，处理相对链接与由宿主决定的图片放大事件。
   - id: tree-ui
     title: 可折叠事实文件树
     kind: code

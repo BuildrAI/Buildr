@@ -171,6 +171,17 @@ export const TASK_HTTP_SCHEMAS = Object.freeze({
     tasks: arrayOf({ $ref: '#/$defs/StoredTaskView' }),
     diagnostics: arrayOf({ $ref: '#/$defs/ReferenceDiagnostic' }),
   }, ['schemaVersion', 'filters', 'filterOptions', 'totalTaskCount', 'matchingTaskCount', 'pageSize', 'hasMore', 'nextCursor', 'tasks', 'diagnostics']), defs),
+  titleSummariesRequest: schema('title-summaries/request', 'TaskTitleSummariesRequest', closed({
+    ids: { type: 'string', minLength: 1, maxLength: 30000, pattern: '\\S' },
+  }, ['ids']), defs),
+  titleSummariesResponse: schema('title-summaries/response', 'TaskTitleSummariesResponse', closed({
+    schemaVersion: { const: 'buildr.task-title-summary-list/v1' },
+    items: arrayOf(closed({
+      taskId: { $ref: '#/$defs/TaskId' },
+      title: nonEmptyText,
+    }, ['taskId', 'title'])),
+    missingTaskIds: arrayOf({ $ref: '#/$defs/TaskId' }),
+  }, ['schemaVersion', 'items', 'missingTaskIds']), defs),
   detailRequest: schema('detail/request', 'TaskDetailRequest', closed({}), defs),
   detailResponse: schema('detail/response', 'TaskDetailResponse', closed({
     schemaVersion: { const: 'buildr.task-record-view/v3' },
@@ -313,6 +324,7 @@ export const TASK_HTTP_OPERATIONS = Object.freeze([
   operation('task-materials.record', 'POST', '/tasks/:taskId/materials', 'materialsRecordRequest', 'materialsResponse'),
   operation('task-materials.write', 'POST', '/tasks/:taskId/materials/documents', 'materialsWriteRequest', 'materialsWriteResponse'),
   operation('task-record.list', 'GET', '/tasks', 'listRequest', 'listResponse'),
+  operation('task-record.title-summaries', 'GET', '/tasks/title-summaries', 'titleSummariesRequest', 'titleSummariesResponse'),
   operation('task-record.detail', 'GET', '/tasks/:taskId', 'detailRequest', 'detailResponse'),
   operation('task-record.update', 'PATCH', '/tasks/:taskId', 'updateRequest', 'updateResponse'),
   operation('task-record.complete', 'POST', '/tasks/:taskId/complete', 'completeRequest', 'completeResponse'),

@@ -150,7 +150,7 @@ const trigger = setInterval(() => {
   if (fs.existsSync(continuation)) {
     const mode = fs.readFileSync(continuation, 'utf8');
     fs.unlinkSync(continuation);
-    const notification = record('user', randomUUID(), { role: 'user', content: [{ type: 'text', text: `<task-notification><task-id>${mode === 'foreign-task' ? 'foreign-task' : 'continued-task'}</task-id><tool-use-id>${mode === 'foreign-tool' ? 'foreign-tool' : 'continued-tool'}</tool-use-id><status>completed</status></task-notification>` }] });
+    const notification = record('user', randomUUID(), { role: 'user', content: [{ type: 'text', text: `<task-notification><task-id>${mode === 'foreign-task' ? 'foreign-task' : 'continued-task'}</task-id><tool-use-id>${mode === 'foreign-tool' ? 'foreign-tool' : 'continued-tool'}</tool-use-id><status>${mode === 'unknown-status' ? 'future-status' : mode === 'killed' ? 'killed' : 'completed'}</status></task-notification>` }] });
     notification.isMeta = true; notification.origin = { kind: mode === 'human' ? 'human' : 'task-notification' }; persist([notification]);
     emit({ ...notification, session_id: sid, parent_tool_use_id: null });
     const assistant = record('assistant', randomUUID(), { role: 'assistant', id: randomUUID(), content: [{ type: 'tool_use', id: 'continuation-tool', name: 'Read', input: {} }] }); persist([assistant]);

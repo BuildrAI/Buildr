@@ -67,6 +67,7 @@ export class ConversationForks {
     child.view.id = childId;
     child.view.forkedFrom = { conversationId: id, workspaceId: scope, entryId: entry.id, runId, throughSequence: through, title: source.view.title, forkedAt: this.options.now() };
     child.view.entries = structuredClone(source.view.entries.filter(value => value.sequence <= through));
+    child.nativeTools = structuredClone(source.nativeTools);
     if (source.inheritedContext) child.inheritedContext = structuredClone(source.inheritedContext);
     child.runOutcomes = structuredClone(Object.fromEntries(Object.entries(source.runOutcomes ?? {}).filter(([key]) => child.view.entries.some(value => value.runId === key))));
     // Historical identities remain visible, but no original context can be resumed or controlled.

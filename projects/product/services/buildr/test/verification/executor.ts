@@ -1,19 +1,15 @@
 import fs from 'node:fs';
+
 import path from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 import { buildCommandInvocation, createExactNodeExecutionEnvironment } from '../../src/infrastructure/process.ts';
-import {
-  createCandidatePackage,
-  CANDIDATE_PACK_METADATA_ENV,
-  CANDIDATE_RELEASE_MANIFEST_ENV,
-  CANDIDATE_TARBALL_ENV,
-  readSharedCandidatePackage,
-} from '../../../../../../skills/buildr-release/scripts/candidate-package.ts';
+import type { CandidatePackageAdapter } from './package-adapter.ts';
 import { runVerificationStep, writeVerificationDiagnostics } from './timing/parallel-runner.ts';
 import { resolveNodeTestFiles } from './test-files.ts';
 import { createIsolatedWorkspaceState } from '../../tools/development/isolated-workspace-state.ts';
 
+const settlePreload = new URL('./settle-diagnostics.mjs', import.meta.url).href;
 const testPreload = pathToFileURL(path.resolve(import.meta.dirname, '../register-development-entry.ts')).href;
 
 function innerConcurrencyBudget(step: any, executionContext: any = {}): any  {
@@ -80,7 +76,14 @@ export function createVerificationExecutor(options: any): any  {
   // fixtures must not overwrite its timing receipt through process.env.
   delete baseEnv.BUILDR_CANDIDATE_PREPARATION_OUTPUT;
   delete baseEnv.BUILDR_CANDIDATE_PREPARATION_ID;
-  const sharedCandidate: any = readSharedCandidatePackage(baseEnv);
+  delete baseEnv.BUILDR_VERIFICATION_FORCE;
+  delete baseEnv.BUILDR_VERIFICATION_JOBS;
+  const packageAdapter: CandidatePackageAdapter | undefined = options.packageAdapter;
+  const sharedCandidate: any = packageAdapter?.read(baseEnv);
+  function requirePackageAdapter(): CandidatePackageAdapter {
+    if (!packageAdapter) throw new Error('Candidate package production requires an explicit package adapter.');
+    return packageAdapter;
+  }
   const artifacts: any = sharedCandidate ? { candidate: sharedCandidate } : {};
   const preparations: Map<string, Promise<any>> = options.preparations ?? new Map();
   const browserWebDist = path.join(options.diagnosticsDirectory ?? artifactDirectoryForBrowser(), 'browser-web-dist');
@@ -97,7 +100,10 @@ export function createVerificationExecutor(options: any): any  {
         let state: ReturnType<typeof createIsolatedWorkspaceState> | null = null;
         let result: any;
         try {
-          state = createIsolatedWorkspaceState({ env: baseEnv });
+          // Derived setup never owns the Doctor proof; explicit checks do.
+          // Keeping the skip on preparations avoids nested process boots that
+          // do not change their assertions.
+          state = createIsolatedWorkspaceState({ env: { ...baseEnv, BUILDR_SKIP_FINAL_DOCTOR: '1' } });
           result = await runVerificationStep({ id, diagnosticId: id, name: args.join(' '), command, args, cwd, env: state.env, timeoutMs: 300_000, diagnosticsDirectory: options.diagnosticsDirectory }, { signal: options.signal });
         } catch (error: any) {
           result = { status: 'failed', exitCode: 1, durationMs: Date.now() - startedAt, stdout: '', stderr: error.message,
@@ -115,8 +121,8 @@ export function createVerificationExecutor(options: any): any  {
     }
     return preparations.get(key)!;
   };
-  const nodeTestFile: any = (file: any) => {
-    const relative: any = path.relative(productRoot, file).split(path.sep).join('/');
+  const nodeTestFile: any = (file: any, cwd: string = productRoot) => {
+    const relative: any = path.relative(cwd, file).split(path.sep).join('/');
     return relative.startsWith('.') ? relative : `./${relative}`;
   };
 
@@ -128,9 +134,11 @@ export function createVerificationExecutor(options: any): any  {
     }
     if (executor.type === 'node') return { command: exactNode.nodeExecutable, args: [path.join(productRoot, executor.file), ...(executor.args ?? [])] };
     if (executor.type === 'node-test') {
-      const files: any = resolveNodeTestFiles(productRoot, executor.files, `verification step ${step.id}`);
+      const executionRoot = path.resolve(productRoot, executor.cwd ?? '.');
+      const files: any = resolveNodeTestFiles(executionRoot, executor.files, `verification step ${step.id}`);
       return {
         command: exactNode.nodeExecutable,
+        cwd: executionRoot,
         // Preserve case names and timings in the normal diagnostic log. A
         // focused execution uses this same executor and produces reusable
         // proof, so diagnosis need not be followed by a duplicate formal run.
@@ -138,7 +146,7 @@ export function createVerificationExecutor(options: any): any  {
           .filter((argument: any) => !argument.startsWith('--test-concurrency') && !argument.startsWith('--test-reporter')),
           '--test-reporter=spec',
           '--test-reporter-destination=stdout',
-          `--test-reporter=${pathToFileURL(path.join(import.meta.dirname, 'integration-progress-reporter.ts')).href}`, '--test-reporter-destination=stderr', ...files.map(nodeTestFile)],
+          `--test-reporter=${pathToFileURL(path.join(import.meta.dirname, 'integration-progress-reporter.ts')).href}`, '--test-reporter-destination=stderr', ...files.map((file: string) => nodeTestFile(file, executionRoot))],
       };
     }
     if (executor.type === 'node-context-test') {
@@ -148,7 +156,7 @@ export function createVerificationExecutor(options: any): any  {
         args: nodeContextTestArguments(step, executionContext, {
           runner: path.join(productRoot, 'build/test-context/node-runner-cli.js'),
           cwd: productRoot,
-          files: files.map(nodeTestFile),
+          files: files.map((file: string) => nodeTestFile(file, productRoot)),
         }),
       };
     }
@@ -167,7 +175,7 @@ export function createVerificationExecutor(options: any): any  {
 
   const requiredPreparationsFor = (step: any) => [
     ...(step.preparations ?? []),
-    ...(step.browserSelector ? [
+    ...((step.browserSelector || step.requiresWebDist) ? [
       { file: process.execPath, args: [path.join(productRoot, 'tools/development/run-development-npm.ts'), '--prefix', productRoot, 'run', 'artifacts:prepare'], cwd: productRoot },
       { file: process.execPath, args: [path.join(productRoot, 'test/verification/web-dist.ts'), '--output', browserWebDist], cwd: productRoot },
     ] : []),
@@ -177,10 +185,10 @@ export function createVerificationExecutor(options: any): any  {
       const startedAt: any = Date.now();
       let error: any = null;
       try {
-        if (!sharedCandidate) {
+        if (!artifacts.candidate) {
           const artifactDirectory: any = path.resolve(options.artifactDirectory);
           fs.mkdirSync(artifactDirectory, { recursive: true });
-          const candidate: any = await createCandidatePackage(productRoot, artifactDirectory, { npmExecutable });
+          const candidate: any = await requirePackageAdapter().create(productRoot, artifactDirectory, { npmExecutable });
           artifacts.candidate = candidate;
         }
       } catch (caught: any) {
@@ -210,13 +218,20 @@ export function createVerificationExecutor(options: any): any  {
     }
     const resolved: any = commandFor(step, executionContext);
     const artifactEnv: any = step.executor.consumesArtifact && artifacts.candidate ? {
-      [CANDIDATE_TARBALL_ENV]: artifacts.candidate.tarball,
-      [CANDIDATE_PACK_METADATA_ENV]: artifacts.candidate.metadataPath,
-      [CANDIDATE_RELEASE_MANIFEST_ENV]: artifacts.candidate.manifestPath,
+      [requirePackageAdapter().environment.tarball]: artifacts.candidate.tarball,
+      [requirePackageAdapter().environment.metadata]: artifacts.candidate.metadataPath,
+      [requirePackageAdapter().environment.manifest]: artifacts.candidate.manifestPath,
     } : {};
-    const state = createIsolatedWorkspaceState({
-      env: { ...baseEnv, ...executionContext.resourceEnvironment, ...artifactEnv, ...workerBudgetEnvironment(step, executionContext), ...(step.browserSelector ? { BUILDR_BROWSER_WEB_DIST_ROOT: browserWebDist } : {}) },
-    });
+    const stepEnvironment: any = {
+      ...baseEnv,
+      ...executionContext.resourceEnvironment,
+      ...artifactEnv,
+      ...workerBudgetEnvironment(step, executionContext),
+      ...((step.browserSelector || step.requiresWebDist) ? { BUILDR_BROWSER_WEB_DIST_ROOT: browserWebDist } : {}),
+    };
+    if (step.keepFinalDoctor === true) delete stepEnvironment.BUILDR_SKIP_FINAL_DOCTOR;
+    else stepEnvironment.BUILDR_SKIP_FINAL_DOCTOR = '1';
+    const state = createIsolatedWorkspaceState({ env: stepEnvironment });
     let result: any;
     let diagnosticLine = '';
     try {
@@ -224,7 +239,7 @@ export function createVerificationExecutor(options: any): any  {
         ...step,
         ...resolved,
         cwd: resolved.cwd ?? productRoot,
-        env: state.env,
+        env: { ...state.env, NODE_OPTIONS: [(state.env as NodeJS.ProcessEnv).NODE_OPTIONS, `--import=${settlePreload}`].filter(Boolean).join(' ') },
         diagnosticsDirectory: options.diagnosticsDirectory,
       }, {
         signal: options.signal,
@@ -236,6 +251,7 @@ export function createVerificationExecutor(options: any): any  {
           const lines = diagnosticLine.split('\n');
           diagnosticLine = lines.pop()!.slice(-16_384);
           for (const line of lines) {
+            if (line.startsWith('[buildr-state-diagnostic] ') && line.length <= 65_536) options.errorStream?.write(`${line}\n`);
             if (!line.startsWith('[buildr-integration-progress] ') || line.length > 16_384) continue;
             try {
               const event = JSON.parse(line.slice('[buildr-integration-progress] '.length));
@@ -245,7 +261,13 @@ export function createVerificationExecutor(options: any): any  {
         },
       });
     } finally {
-      state.cleanup();
+      try { const stateCleanup = state.cleanup(); if (result) result = { ...result, stateCleanup }; }
+      catch (error: any) {
+        if (!result) throw error;
+        result = { ...result, childResult: { status: result.status, exitCode: result.exitCode, durationMs: result.durationMs },
+          status: 'failed', exitCode: 1, failureCode: 'verification-state-cleanup-failed',
+          stderr: `${result.stderr ?? ''}\nVerification state cleanup failed: ${error.message}\n` };
+      }
     }
     const testContextRuntime: any = step.executor.type === 'node-context-test' ? parseNodeTestContextSummary(result.stdout) : null;
     return { ...result, ...(testContextRuntime ? { testContextRuntime } : {}), ...(preparationResults.length ? { preparations: preparationResults } : {}) };

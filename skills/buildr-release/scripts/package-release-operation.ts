@@ -406,7 +406,9 @@ export async function continuePackageRelease(options: any, scope: any, dependenc
       if (!pointer.runId) {
         const title = `Release ${context.targets.versions.buildr} (${pointer.releaseId || context.packages.buildr.ownerContext.identity.slice(7, 31)})`;
         const runs = JSON.parse(gh(['run', 'list', '--repo', 'BuildrAI/Buildr', '--workflow', 'publish.yml', '--event', 'workflow_dispatch', '--limit', '100', '--json', 'databaseId,displayTitle,headSha']));
-        const matches = runs.filter((run: any) => run.displayTitle === title && run.headSha === releaseExecutionCommit(context.packages.buildr.ownerContext));
+        const previous = new Set(pointer.previousRunIds ?? []);
+        const matches = runs.filter((run: any) => run.displayTitle === title
+          && run.headSha === releaseExecutionCommit(context.packages.buildr.ownerContext) && !previous.has(run.databaseId));
         if (matches.length > 1) return { status: 'publication-dispatch-ambiguous', package: name, nextActions: ['多个运行匹配原主包请求；保留原指针，核对准确运行身份，不再次派发。'] };
         const found = matches[0];
         if (!found) return { status: 'publication-dispatch-unconfirmed', nextActions: ['回读原主包请求，不再次派发。'] };
@@ -492,9 +494,10 @@ export async function continuePackageRelease(options: any, scope: any, dependenc
   let dispatched: any;
   if (next === 'buildr') {
     dispatched = await (dependencies.runHostedReleaseTransaction ?? runHostedReleaseTransaction)({ ...state.transactions.buildr, action: 'dispatch', publicationAuthorized: true,
-      dispatchPreviouslyRequested: pointer.requested }, { ...dependencies.transactionDependencies,
+      dispatchPreviouslyRequested: pointer.requested, releaseContext: context.packages.buildr.ownerContext,
+      releaseId: pointer.releaseId, excludedRunIds: pointer.previousRunIds }, { ...dependencies.transactionDependencies,
       ...(candidates.buildr?.candidateEvidence ? { candidateEvidence: candidates.buildr.candidateEvidence } : {}),
-      onDispatchIntent: (intent: any) => { Object.assign(pointer, { requested: true, releaseId: intent.releaseId }); save(); },
+      onDispatchIntent: (intent: any) => { Object.assign(pointer, { requested: true, releaseId: intent.releaseId, dispatchArgs: intent.dispatchArgs }); save(); },
       onDispatchObserved: (run: any) => { Object.assign(pointer, { requested: true, runId: run.runId }); save(); },
     });
     if (dispatched.github?.runId) { pointer.requested = true; pointer.runId = dispatched.github.runId; save(); }
@@ -513,16 +516,18 @@ async function closeoutPackageRelease(options: any, scope: any, dependencies: an
     && state.closeout?.outcomes?.cleanup === 'cleaned' && state.closeout?.outcomes?.taskRegistration === 'completed';
   let cleanup = retained ? state.closeout.cleanup : null;
   if (!retained) {
+    scope.changePhase?.('dev-reconciliation');
     const reconciliation = (dependencies.reconcilePublishedReleaseWithDev ?? reconcilePublishedReleaseWithDev)({ repo: scope.workspace, publicationEvidence: options.evidence, inspectDriftedReleaseForCleanup: true }, { execute: scope.execute });
     effects.push(...(reconciliation.effects ?? []));
     if (reconciliation.status !== 'passed') return { status: 'published-dev-reconciliation-blocked', outcomes: { publication: 'passed' }, ownerResult: reconciliation, nextActions: reconciliation.nextActions };
+    scope.changePhase?.('release-ref-cleanup');
     cleanup = (dependencies.closeoutReleaseGitResources ?? closeoutReleaseGitResources)({ repo: scope.workspace, version: state.targets.versions.buildr ?? null,
       selectionId: state.targets.selectionId, targets: state.targets, generation: options.context.selection.generation, expectedCommit: options.context.selection.releaseHead,
       publicationEvidence: options.evidence, authorizeCarrierCleanup: true, authorizeLocalSelectionCleanup: true,
-      authorizeRemoteDelete: state.publicationAuthorization?.contextIdentity === options.context.identity, cleanupPolicy: state.publicationAuthorization?.cleanupPolicy,
       ghCommand: options.ghCommand }, { execute: scope.execute });
     effects.push(...(cleanup.effects ?? []));
     if (cleanup.status !== 'passed') return { status: 'published-cleanup-blocked', outcomes: { publication: 'passed' }, cleanup, nextActions: cleanup.nextActions };
+    scope.changePhase?.('task-registration');
     const runtime = dependencies.runtime ?? createReleaseToolRuntime();
     const taskId = `release-${state.targets.selectionId}`;
     const controller = dependencies.resolveRetainedController(scope.workspace);
@@ -533,6 +538,7 @@ async function closeoutPackageRelease(options: any, scope: any, dependencies: an
       effects.push(...(completed.effects ?? [])); task = runtime.inspectTask(scope.workspace, taskId);
     }
     if (task.record.status !== 'completed') return { status: 'published-registration-blocked', outcomes: { publication: 'passed', cleanup: 'passed' }, nextActions: ['恢复准确发布任务登记，保留公开事实。'] };
+    scope.changePhase?.('worktree-cleanup');
     const worktree = invoke(controller, ['worktree', 'cleanup', taskId, '--expected-source', `workspace=${options.context.selection.releaseHead}`,
       '--delivered-ref', `workspace=${options.context.convergence.mainCommit}`, '--target', scope.workspace, '--json']);
     effects.push(...(worktree.effects ?? []));

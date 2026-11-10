@@ -10,7 +10,7 @@ Buildr 把可复用的工作方法保存在技能（Skill）中，再为不同�
 
 主线是：源文件与附件 → 组合内容增强和局部依赖 → 生成工具入口并保存归属回执 → 智能体（Agent）按需发现。[单独打开投射图](../../archify/flows/skill-projection.html)可查看各节点依据。
 
-生成过程保持源文件独立：`SKILL.md` 可以组合增强内容，`references/`、`scripts/`、`assets/` 等附件按原始字节和可执行状态投射。各适配器（Adapter）共享组合逻辑，只改变目标根、诊断身份和启用信息。项目（Project）的 `capabilities.yml` 保存适用性、需求和选择，不另外保存技能（Skill）副本。
+生成过程保持源文件独立：`SKILL.md` 可以组合增强内容，`references/`、`scripts/`、`assets/` 等附件按原始字节和可执行状态投射。各适配器（Adapter）共享组合逻辑，只改变目标根、诊断身份和启用信息。能力需求与绑定只在工作空间（Workspace）管理；项目（Project）的 `capabilities.yml` 已退役，旧文件不参与技能选择；Doctor 只读提示，同步自动清理安全的空需求/绑定及技能名单配置，非空或异常文件保留。
 
 因此，调整组织自有方法应修改空间源目录，再生成目标入口；官方方法随 Buildr 更新。保留本地定制需要明确选择，内容摘要复核后归当前空间维护。添加目录和网页更新会自动执行相应准备与检查。直接修改 `.agents/skills` 等派生目录，不能成为可持续维护的办法。完整实现见[技能投射代码地图](../../code-map/skill-projection.md)；需要逐节点查看时，可打开[投射关系图](../../archify/flows/skill-projection.html)。
 
@@ -27,7 +27,7 @@ Buildr 把可复用的工作方法保存在技能（Skill）中，再为不同�
 | 一份方法自己的步骤或例子 | 对应源目录，不必新建契约（Contract） |
 | 为另一份方法补充局部说明 | 组件（Component）的内容增强 |
 | 替换协作方法，同时保持输入、副作用和结果保证 | 能力契约（Capability Contract）、提供者声明及绑定（Binding） |
-| 确定一个项目（Project）采用哪些方法 | `capabilities.yml` |
+| 说明项目（Project）适用方法与边界 | 技能（Skill）说明和项目规则 |
 
 声明格式、解析顺序和替换入口见[能力契约参考](../../../services/buildr/docs/skill-capability-contracts.md)。
 

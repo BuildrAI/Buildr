@@ -5,7 +5,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { compile } from 'json-schema-to-typescript';
 import { TASK_PROFESSIONAL_HTTP_SCHEMAS } from '../../../src/modules/task/interfaces/http/task-professional-http-contracts.ts';
-import { cliOutputRoot, contractOutputPaths } from './output-paths.ts';
+import { cliOutputRoot, contractOutputPaths, writeContractOutput } from './output-paths.ts';
 
 const serviceRoot: any = path.resolve(import.meta.dirname, '../../..');
 const productRoot: any = path.resolve(serviceRoot, '../..');
@@ -64,8 +64,7 @@ export async function writeTaskProfessionalHttpDto(outputRoot: any = undefined):
   const selected: any = outputRoot ? contractOutputPaths('task-professional-http-dto.ts', outputRoot) : defaultOutputs;
   const outputs: any[] = [selected.backend, selected.web];
   for (const output of outputs) {
-    fs.mkdirSync(path.dirname(output), { recursive: true });
-    fs.writeFileSync(output, expected);
+    writeContractOutput(output, expected);
   }
   return outputs;
 }

@@ -23,12 +23,22 @@ export async function runSourceControlLiveRefreshJourney({t, page, workspaceUrl,
     .filter({has: page.locator('.task-changed-path[data-file-path="' + filePath + '"]')});
   const readRequests = () => {
     const reads: Array<{repositoryId: string | null; operation: string; observation: string | null}> = [];
+    const pending = new Set<any>(); let activityAt = Date.now();
     const observe = (request: any) => {
       const url = new URL(request.url());
-      if (url.pathname === new URL(api).pathname + '/code/source-control') reads.push({repositoryId: url.searchParams.get('repositoryId'), operation: 'source-control', observation: url.searchParams.get('observation')});
+      if (url.pathname === new URL(api).pathname + '/code/source-control') { reads.push({repositoryId: url.searchParams.get('repositoryId'), operation: 'source-control', observation: url.searchParams.get('observation')}); pending.add(request); activityAt = Date.now(); }
     };
-    page.on('request', observe);
-    return {reads, reset: () => {reads.length = 0;}, dispose: () => page.off('request', observe)};
+    const finished = (request: any) => { if (pending.delete(request)) activityAt = Date.now(); };
+    page.on('request', observe); page.on('requestfinished', finished); page.on('requestfailed', finished);
+    return {reads, reset: () => {reads.length = 0;}, settled: async () => {
+      const deadline = Date.now() + 10000;
+      // Initial progressive reads and native registration catch-up belong to
+      // setup, not the later external edit whose source isolation is asserted.
+      while (pending.size || Date.now() - activityAt < 1000) {
+        assert.ok(Date.now() < deadline, 'initial source observations must settle');
+        await new Promise(resolve => setTimeout(resolve, 25));
+      }
+    }, dispose: () => { page.off('request', observe); page.off('requestfinished', finished); page.off('requestfailed', finished); }};
   };
   const assertLocalReads = (reads: Array<{repositoryId: string | null}>, repositoryId: string) => {
     assert.ok(reads.some(read => read.repositoryId === repositoryId), '外部变化必须经单库真实读取核对');
@@ -57,6 +67,8 @@ export async function runSourceControlLiveRefreshJourney({t, page, workspaceUrl,
   await scenario('自动刷新：未打开源代码管理时外部保存更新入口、文件和祖先提示且只读取受影响库', async () => {
     await fixture.withBranches(async (branches: any) => {
       branches.liveRefresh.removeUntrackedKeep();
+      const requests = readRequests();
+      try {
       await page.setViewportSize({width: 1440, height: 900});
       await page.goto(workspaceUrl + '/code/explorer');
       await page.locator('.repository-root-name').first().waitFor();
@@ -83,8 +95,7 @@ export async function runSourceControlLiveRefreshJourney({t, page, workspaceUrl,
       // present initially, so the new file/ancestor marks and local read prove
       // propagation rather than treating an existing circle as a transition.
       await catalog();
-      const requests = readRequests();
-      try {
+      await requests.settled(); requests.reset();
         branches.liveRefresh.write(longText(41));
         await page.locator('.repository-tree-file[data-file-path="' + branches.liveRefresh.path + '"][data-code-status="M"]').waitFor();
         await showPrimaryNavigation(page, 'code');await page.locator('.primary-secondary-navigation:visible [data-nav="source-control"][data-has-changes="true"] .shell-nav-change-dot').waitFor();await page.locator('.primary-navigation-rail button[data-nav="code"]').press('Escape');
@@ -225,7 +236,9 @@ export async function runSourceControlLiveRefreshJourney({t, page, workspaceUrl,
         assert.equal(await message().inputValue(), draft, '首次真实核对不清理已输入说明');
         assert.equal(await row().locator('.source-control-row-action-button').isDisabled(), false, '真实读取后恢复分支入口');
 
-        // Focus is a production background reconciliation trigger; do not publish a fake change notice.
+        // Focus after the verified-result reuse window still reconciles through
+        // production HTTP. Advancing only browser time avoids a 30 second sleep.
+        await page.clock.install({time: Date.now() + 31000});
         const savedAfterRestore = await page.evaluate((key: string) => localStorage.getItem(key), cacheKey);
         const beforeBackground = intercepted.length;
         hold();

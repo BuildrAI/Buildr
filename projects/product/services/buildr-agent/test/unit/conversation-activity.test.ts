@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { summaryView, pendingDecisionCount } from '../../src/domain/conversation-activity.ts';
+import { summaryView, pendingDecisionCount, finalReplyActivityAt } from '../../src/domain/conversation-activity.ts';
 import type { StoredConversation } from '../../src/domain/agent-state.ts';
 
 test('legacy requests without a run identity remain pending rather than crashing discovery',()=>{
@@ -8,7 +8,34 @@ test('legacy requests without a run identity remain pending rather than crashing
  assert.equal(summaryView(record,0,0,'now').activity!.active,true);
 });
 
-test('released historical unknown rounds do not keep a stopped conversation active; only proven running tools still do',()=>{
+
+test('final reply comes only from the latest completed run and ignores intermediate evidence',()=>{
+ const at='2026-11-05T00:00:00Z';
+ const run={id:'current',participantId:'p',generation:'g',status:'completed',startedAt:at,updatedAt:at,tools:[]} as any;
+ const entry=(id:string,createdAt:string,extra:Record<string,unknown>={})=>({id,sequence:1,kind:'message' as const,role:'assistant' as const,text:id,createdAt,runId:'current',...extra});
+ const record={view:{run,entries:[
+  {id:'user',sequence:1,kind:'message',role:'user',text:'input',createdAt:at,runId:'current'},
+  entry('middle','2026-11-05T00:01:00Z'),
+  entry('thinking','2026-11-05T00:02:00Z',{thinking:true}),
+  entry('child','2026-11-05T00:03:00Z',{parentToolId:'tool'}),
+  entry('failed','2026-11-05T00:04:00Z',{status:'failed'}),
+  {id:'old-run',sequence:6,kind:'message',role:'assistant',text:'old',createdAt:'2026-11-05T00:06:00Z',runId:'old'},
+  entry('final','2026-11-05T00:05:00Z')
+ ],requests:[]},participants:[]} as unknown as StoredConversation;
+ assert.equal(finalReplyActivityAt(record),'2026-11-05T00:05:00Z');
+ assert.equal(summaryView(record,1,0,'now').activity!.finalReplyAt,'2026-11-05T00:05:00Z');
+ run.status='running';assert.equal(finalReplyActivityAt(record),undefined);
+ run.status='failed';assert.equal(finalReplyActivityAt(record),undefined);
+ run.status='completed';record.view.run!.supersededBy='new';assert.equal(finalReplyActivityAt(record),undefined);
+ delete record.view.run!.supersededBy;
+ // Legacy entries without runId only count from the current run's start.
+ record.view.run={...run,id:'legacy',startedAt:'2026-11-05T00:10:00Z'};
+ record.view.entries=[{id:'legacy-user',sequence:1,kind:'message',role:'user',text:'input',createdAt:'2026-11-05T00:10:00Z'},{id:'legacy-old',sequence:2,kind:'message',role:'assistant',text:'old',createdAt:'2026-11-05T00:09:00Z'},{id:'legacy-final',sequence:3,kind:'message',role:'assistant',text:'final',createdAt:'2026-11-05T00:11:00Z'}];
+ assert.equal(finalReplyActivityAt(record),'2026-11-05T00:11:00Z');
+ record.view.entries=[];assert.equal(finalReplyActivityAt(record),undefined);
+});
+
+test('historical unknown rounds only keep a stopped conversation active while work is in flight',()=>{
  const run={id:'old',status:'unknown',resourcesReleased:true,executionState:'unknown',tools:[]} as any;
  const record={view:{run:{id:'cancelled',status:'stopped',resourcesReleased:true,tools:[]},retainedRuns:[run],requests:[],hidden:false},participants:[]} as unknown as StoredConversation;
  assert.equal(summaryView(record,3,3,'now').activity!.active,false);
@@ -16,7 +43,23 @@ test('released historical unknown rounds do not keep a stopped conversation acti
  run.tools=[{id:'uncertain-operation',status:'unknown'}];assert.equal(summaryView(record,3,3,'now').activity!.active,false);
  run.tools=[{id:'live-operation',status:'running'}];assert.equal(summaryView(record,3,3,'now').activity!.active,true);
  run.executionState='active';run.tools=[];assert.equal(summaryView(record,3,3,'now').activity!.active,true);run.executionState='unknown';
- run.tools=[];run.resourcesReleased=false;assert.equal(summaryView(record,3,3,'now').activity!.active,true,'unreleased work remains visible');
+ run.tools=[];run.resourcesReleased=false;assert.equal(summaryView(record,3,3,'now').activity!.active,false,'historical unknown without in-flight work is not active');
+ run.tools=[{id:'live-operation',status:'running'}];assert.equal(summaryView(record,3,3,'now').activity!.active,true,'unreleased running work remains visible');
+});
+
+test('an unaccepted stop without in-flight work settles activity while preserving unknown evidence',()=>{
+ const at='2026-11-09T00:00:00Z';
+ const run={id:'unaccepted',participantId:'p',generation:'g',status:'unknown',accepted:false,stopRequested:true,resourcesReleased:false,executionState:'unknown',tools:[],diagnostic:'上一轮资源仍待释放，请稍后核对。',startedAt:at,updatedAt:at} as any;
+ const record={view:{run,requests:[],hidden:false},participants:[]} as unknown as StoredConversation;
+ assert.equal(summaryView(record,3,3,'now').activity!.active,false);
+ assert.equal(record.view.run?.status,'unknown');assert.equal(record.view.run?.stopRequested,true);assert.match(record.view.run?.diagnostic??'',/待释放/);
+ assert.equal(summaryView(record,4,3,'now').activity!.active,true,'unread output still needs attention');
+ run.tools=[{id:'live-operation',status:'running'}];assert.equal(summaryView(record,3,3,'now').activity!.active,true);
+ run.tools=[{id:'uncertain-operation',status:'unknown'}];assert.equal(summaryView(record,3,3,'now').activity!.active,true);
+ run.tools=[];run.executionState='active';assert.equal(summaryView(record,3,3,'now').activity!.active,true);
+ run.executionState='unknown';run.accepted=true;assert.equal(summaryView(record,3,3,'now').activity!.active,true,'only a proven unaccepted stop settles the unknown');
+ run.accepted=false;record.view.requests=[{id:'q',runId:'unaccepted',participantId:'p',generation:'g'} as any];
+ assert.equal(summaryView(record,3,3,'now').activity!.active,true,'pending decisions always keep attention');
 });
 
 test('closing a released unknown result preserves facts and cannot mute retained live work',()=>{

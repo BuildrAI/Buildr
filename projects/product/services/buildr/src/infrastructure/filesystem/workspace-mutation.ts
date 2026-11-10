@@ -5,6 +5,9 @@ import process from 'node:process';
 
 import { atomicWriteJson, setAtomicWriteMutationObserver } from './atomic-files.ts';
 
+// A detected external edit must not be overwritten by snapshot rollback.
+export class WorkspaceSourceConflictError extends Error {}
+
 type Dependencies = {
   ensureDirectory(directory: string): void;
   existsFile(file: string): boolean;
@@ -208,6 +211,9 @@ export function createWorkspaceMutation(dependencies: Dependencies) {
       record.phase = 'rollback';
       try {
         assertControlPaths();
+        if (error instanceof WorkspaceSourceConflictError) {
+          throw new Error('Observed source changed; automatic rollback withheld to preserve current content.');
+        }
         const plan = prepareMutationRestore(root, transactionRoot, [...snapshots].reverse(), assertPath);
         for (const snapshot of plan) restoreMutationSnapshot(snapshot);
         record.phase = 'rolled-back';

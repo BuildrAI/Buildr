@@ -1,3 +1,4 @@
+import { notifyConversationDraft } from './conversation-draft-presence.ts';
 import { useEffect, useRef, useState } from 'react';
 import type { DraftImage } from './ConversationImageInput';
 import type { ConversationView } from './types';
@@ -8,7 +9,7 @@ export function readConversationImages(storage: Pick<Storage, 'getItem'>, key: s
   try {
     const value = JSON.parse(storage.getItem(key) || '{}');
     if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-    return Object.fromEntries(Object.entries(value).filter(([id, images]) => id && Array.isArray(images) && images.length <= 4 && images.every(image =>
+    return Object.fromEntries(Object.entries(value).filter(([id, images]) => id && Array.isArray(images) && images.length <= 9 && images.every(image =>
       image && ['id', 'name', 'mimeType', 'revision'].every(field => typeof image[field] === 'string') && typeof image.size === 'number'))) as Images;
   } catch { return {}; }
 }
@@ -24,7 +25,7 @@ export function useConversationAttachments(api: AgentConversationsClient, chat: 
   const [attachments, setAttachments] = useState<Images>(() => { try { return readConversationImages(sessionStorage, key); } catch { return {}; } });
   const [available, setAvailable] = useState(true);
   const current = useRef(attachments); current.current = attachments;
-  useEffect(() => { try { setAvailable(writeConversationImages(sessionStorage, key, attachments)); } catch { setAvailable(false); } }, [key, attachments]);
+  useEffect(() => { notifyConversationDraft(key, JSON.stringify(Object.fromEntries(Object.entries(attachments).filter(([, images]) => images.length).map(([id]) => [id, [true]])))); try { setAvailable(writeConversationImages(sessionStorage, key, attachments)); } catch { setAvailable(false); } }, [key, attachments]);
   const membership = (chat ? attachments[chat.id] ?? [] : []).map(image => image.id).join(',');
   useEffect(() => {
     if (!chat) return;

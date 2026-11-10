@@ -1,3 +1,4 @@
+import { notifyConversationDraft } from './conversation-draft-presence.ts';
 import type {ConversationTaskLink} from './types';
 import { useEffect, useRef, useState } from 'react';
 import { draftKey, readDraft, transferDraftText, writeDraft } from './conversation-state';
@@ -24,7 +25,7 @@ export function useConversationDraft(workspaceId: string | null, conversationId:
     } catch { /* Keep same-page drafts usable. */ }
     return {...saved,...(memory.current.get(target)||{})};
   };
-  const save = (target:string,text:string,taskId?:string,selectedWorkspace?:string,taskLinks?:ConversationTaskLink[]) => {memory.current.set(target,{text,taskId,workspaceId:selectedWorkspace,taskLinks});try {return writeDraft(target,text,sessionStorage,taskId,selectedWorkspace,taskLinks);}catch {return false;}};
+  const save = (target:string,text:string,taskId?:string,selectedWorkspace?:string,taskLinks?:ConversationTaskLink[]) => {memory.current.set(target,{text,taskId,workspaceId:selectedWorkspace,taskLinks});notifyConversationDraft(target,text ? JSON.stringify({text}) : null);try {return writeDraft(target,text,sessionStorage,taskId,selectedWorkspace,taskLinks);}catch {return false;}};
   const [state, setState] = useState(() => ({key,...read()}));
   const value = state.key === key ? state : {key,...read()};
   useEffect(() => { if (state.key !== key) setState({key,...read()}); }, [key, state.key]);

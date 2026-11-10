@@ -1,7 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DshExecutionLineage, dshExecutionObservation, dshHistoryItems, dshItem } from '../../src/executors/dsh/protocol.ts';
-import { qoderHistoryItems, qoderResultOutcome, qoderInterruptionIds, qoderInterruptedObservation } from '../../src/executors/qoder/protocol.ts';
+import { qoderHistoryItems, qoderHistoryPage, qoderResultOutcome, qoderInterruptionIds, qoderInterruptedObservation } from '../../src/executors/qoder/protocol.ts';
+
+test('Qoder history pages are byte-bounded, reversible and reject one oversized item', () => {
+  const items = Array.from({ length: 25 }, (_, index) => ({ id: String(index), kind: 'message' as const, role: 'assistant' as const, text: 'x'.repeat(180), status: 'completed' as const }));
+  const pages = []; let cursor: string | undefined;
+  do {
+    const page = qoderHistoryPage(items, cursor === undefined ? 0 : Number(cursor), 1024);
+    pages.push(page.data);
+    assert.ok(Buffer.byteLength(JSON.stringify(page.data)) <= 1024);
+    cursor = page.nextCursor;
+  } while (cursor !== undefined);
+  assert.deepEqual(pages.flat().map(item => item.id), items.map(item => item.id));
+  assert.throws(() => qoderHistoryPage([{ ...items[0]!, text: 'x'.repeat(2000) }], 0, 1024), /history_item_too_large/);
+  assert.throws(() => qoderHistoryPage(items, items.length + 1, 1024), /history_cursor_invalid/);
+});
 
 test('Qoder native task notifications preserve the original execution in history without inventing user input', () => {
   const input = (uuid: string, text: string) => ({ type: 'user', uuid, session_id: 's', message: { content: [{ type: 'text', text }] } });
@@ -50,15 +64,25 @@ test('DSH flat user event maps request identity to all corresponding turn items'
     { type: 'tool/call', seq: 5, data: { turn: 7, callId: 'tool-native', name: 'read', arguments: '{}' } },
     { type: 'tool/result', seq: 6, data: { turn: 7, message: { toolCallId: 'tool-native', content: [{ type: 'text', text: '文件结果' }] } } },
   ]);
-  assert.equal(items.length, 3); assert.equal(items[0].id, 'u-native'); assert.equal(items[0].executionId, 'client-exact');
-  // 模型思考不是对话条目：只有可见文字成为助手消息，且保持该步的原始身份。
-  assert.equal(items[1].id, 'assistant:7:1'); assert.equal(items[1].executionId, 'client-exact'); assert.equal(items[1].text, '完成');
-  assert.equal(items[2].status, 'completed'); assert.equal(items[2].name, 'read'); assert.equal(items[2].input, '{}');
-  assert.ok(!JSON.stringify(items).includes('hidden'));
+  assert.equal(items.length, 4); assert.equal(items[0].id, 'u-native'); assert.equal(items[0].executionId, 'client-exact');
+  // 思考是独立过程条目；助手可见文字仍是该步的消息，两者都保持原始执行身份。
+  assert.equal(items[1].kind, 'thinking'); assert.equal(items[1].text, 'hidden'); assert.equal(items[1].executionId, 'client-exact');
+  assert.equal(items[2].id, 'assistant:7:1'); assert.equal(items[2].executionId, 'client-exact'); assert.equal(items[2].text, '完成');
+  assert.equal(items[3].status, 'completed'); assert.equal(items[3].name, 'read'); assert.equal(items[3].input, '{}');
+  assert.ok(!JSON.stringify(items).includes('credentials'));
 });
-test('DSH reasoning-only steps produce no conversation item', () => {
+test('DSH reasoning-only steps produce folded thinking items, never assistant messages', () => {
   const items = dshItem({ type: 'assistant/message', data: { turn: 3, step: 2, message: { content: [{ type: 'reasoning', text: '  plan  ' }, { type: 'reasoning', text: 'check' }] } } });
-  assert.deepEqual(items, []);
+  assert.deepEqual(items.map(item => ({ kind: item.kind, role: item.role, text: item.text, id: item.id })), [
+    { kind: 'thinking', role: 'assistant', text: 'plan', id: 'assistant:3:2:thinking:0' },
+    { kind: 'thinking', role: 'assistant', text: 'check', id: 'assistant:3:2:thinking:1' },
+  ]);
+});
+test('narration reminders never become conversation user messages', () => {
+  const reminder = { type: 'user/message', data: { id: 'reminder-1', source: { kind: 'buildr:narration-reminder' }, content: [{ type: 'text', text: '（系统提醒）先说明' }] } };
+  assert.deepEqual(dshItem(reminder), []);
+  // 真实用户输入仍按原身份进入对话。
+  assert.equal(dshItem({ type: 'user/message', data: { id: 'user-1', source: { kind: 'user' }, content: [{ type: 'text', text: '继续' }] } })[0]?.id, 'user-1');
 });
 test('Qoder durable snapshots collapse by native message ID, preserving exact user UUIDs', () => {
   const messages = [

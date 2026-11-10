@@ -400,8 +400,8 @@ export function createPackageRuntimeChecks(deps: any): any  {
     if (existsFile(path.join(tempRoot, 'projects', 'demo', 'services', 'manifest.yml'))) {
       problems.push('project create must use the global Service registry without installing a legacy Project services/manifest.yml.');
     }
-    if (!existsFile(path.join(tempRoot, 'projects', 'demo', 'capabilities.yml')) || existsDirectory(path.join(tempRoot, 'projects', 'demo', 'skills'))) {
-      problems.push('project create must install capabilities.yml without creating a legacy Project Skill source scope.');
+    if (existsFile(path.join(tempRoot, 'projects', 'demo', 'capabilities.yml')) || existsDirectory(path.join(tempRoot, 'projects', 'demo', 'skills'))) {
+      problems.push('project create must not install retired capabilities.yml or create a legacy Project Skill source scope.');
     }
     const projectCommandsFile = path.join(tempRoot, 'projects', 'demo', 'commands.yml');
     if (!existsFile(projectCommandsFile)) {

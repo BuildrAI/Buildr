@@ -1,32 +1,20 @@
 schemaVersion: buildr.knowledge-impact/v1
-task: runtime-configuration-confirmation
-change: add-runtime-configuration-confirmation
+task: conversation-title-error-reminder
+change: conversation-title-failure-reminder
 operation: reconcile
 impacts:
-  - type: reference
-    target: knowledge/code-map/technical-layers.md
-    reason: 运行配置入口先打开交接抽屉、确认后才提交；补充提交后的配置中状态，以及本次执行结束且运行定义可读时的完成反馈。
-    status: updated
-    sourceIdentities:
-      - services/buildr-web/src/features/service-runtime/components/RuntimeConfigurationDrawer.tsx
-      - services/buildr-web/src/features/service-runtime/components/AgentDiscoveryContent.tsx
-      - services/buildr-web/src/features/service-runtime/hooks/useRuntimeConfiguration.ts
-      - services/buildr-web/src/features/service-runtime/configurationOutcome.ts
-      - services/buildr-web/src/features/service-runtime/components/RuntimeConfigurationOutcome.tsx
-  - type: reference
+  - type: technical-architecture
     target: knowledge/docs/architecture/agent-integration.md
-    reason: 补充配置交接发生在提交之前，并在执行结束后按运行定义可读反馈完成或未完成；完成不等于服务启动或业务验证。
+    reason: 自动标题两个有界阶段都失败后回填失败提醒标题，历史记录启动补齐，手动名称优先；标题说明同步校准。
     status: updated
     sourceIdentities:
-      - openspec/changes/add-runtime-configuration-confirmation/specs/service-runtime-operations/spec.md
-      - services/buildr-web/src/features/service-runtime/configurationAction.ts
-      - services/buildr-web/src/features/service-runtime/configurationOutcome.ts
-  - type: reference
-    target: knowledge/index.yml
-    reason: 更新运行配置动作、钩子、交接正文与抽屉摘要，并登记完成判定和结果反馈源码。
+      - services/buildr-agent/src/application/conversation-application.ts
+      - services/buildr-agent/src/persistence/conversation-repository.ts
+      - openspec/changes/conversation-title-failure-reminder/specs/agent-conversations/spec.md
+  - type: code-map
+    target: knowledge/code-map/technical-layers.md
+    reason: 对话应用的短标题职责补充最终失败提醒与历史补齐说明。
     status: updated
     sourceIdentities:
-      - services/buildr-web/src/features/service-runtime/components/RuntimeConfigurationDrawer.tsx
-      - services/buildr-web/src/features/service-runtime/configurationOutcome.ts
-      - services/buildr-web/src/features/service-runtime/components/RuntimeConfigurationOutcome.tsx
+      - services/buildr-agent/src/application/conversation-application.ts
 unresolvedItems: []

@@ -1,7 +1,18 @@
-import {reasoningEffortLabel,reasoningEffortRank,sortReasoningEfforts,modelSourceName,tierReasoningEffort} from '../../lib/model-picker.ts';
-export {reasoningEffortLabel,reasoningEffortRank,sortReasoningEfforts,modelSourceName,nextServiceTier,tierReasoningEffort} from '../../lib/model-picker.ts';
+import {reasoningEffortLabel,reasoningEffortRank,sortReasoningEfforts,modelSourceName,executionAgentName,tierReasoningEffort} from '../../lib/model-picker.ts';
+export {reasoningEffortLabel,reasoningEffortRank,sortReasoningEfforts,modelSourceName,executionAgentName,nextServiceTier,tierReasoningEffort} from '../../lib/model-picker.ts';
 import type {ConnectionView, ConversationRun, SendDraft, CatalogModel} from './types';
 
+/** Qoder and Qoder CN agents consume only their own product's models. */
+export function qoderSourceNotice(provider:string|undefined):string|undefined{
+  if(provider!=='qoder'&&provider!=='qoder-cn')return;
+  const label=provider==='qoder-cn'?'Qoder CN Agent':'Qoder Agent';
+  return `${label} 暂不支持其他供应商的模型，相关来源已标记但不可选；请改用 ${label} 原生模型或切换智能体。`;
+}
+export function qoderSourceUnsupported(provider:string|undefined,sourceProvider:string):boolean{
+  if(provider!=='qoder'&&provider!=='qoder-cn')return false;
+  const native=provider==='qoder-cn'?['qoder-cn','native-qoder-cn']:['qoder','native-qoder'];
+  return !native.includes(sourceProvider);
+}
 export type ConversationChoice = Pick<SendDraft,'connectionId'|'model'|'reasoningEffort'|'serviceTier'|'modelAccountId'|'modelAccountRevision'|'modelAccountIdentity'>;
 export type PermissionMode=NonNullable<SendDraft['permissionMode']>;
 export const permissionModeLabels:Record<PermissionMode,string>={default:'默认权限','full-access':'完全访问'};
@@ -66,11 +77,20 @@ export function conversationReasoningSelection(connection:ConnectionView|undefin
   return {options,index,ordered,inherited:choice.reasoningEffort===undefined,label:index>=0?reasoningEffortLabel(options[index]!):choice.reasoningEffort||'默认'};
 }
 
+/**
+ * 执行目标是否变化只看智能体、来源账号、模型、档位与权限。
+ * 思考深度是单轮参数：原原生会话可以用新强度接收下一条要求，不构成换人交接。
+ */
+export function executionSelectionChanged(run:Pick<ConversationRun,'model'|'modelAccountId'|'serviceTier'|'permissionMode'>|undefined,participantConnectionId:string|undefined,choice:Pick<ConversationChoice,'connectionId'|'model'|'modelAccountId'|'serviceTier'>,permissionMode:PermissionMode):boolean {
+  if(!run)return false;
+  return participantConnectionId!==choice.connectionId||run.model!==choice.model||run.modelAccountId!==choice.modelAccountId||run.serviceTier!==choice.serviceTier||(run.permissionMode??'default')!==permissionMode;
+}
+
 /** 状态行表达执行身份（智能体与模型）；来源账号只保留在模型设置和发送预览。 */
 export function conversationRunIdentity(run:ConversationRun,connection:ConnectionView|undefined,catalog:CatalogModel[]):string {
   const shared=catalog.find(model=>model.accountId===run.modelAccountId&&model.modelId===run.model);
   const model=shared?modelSourceName(shared.provider)+' / '+shared.label:selectedConversationModel(connection,run.model)?.label||run.model;
-  return [modelSourceName(run.provider),model].filter(Boolean).join(' · ');
+  return [executionAgentName(run.provider),model].filter(Boolean).join(' · ');
 }
 
 /** A legacy native choice must bind its own catalog source before selecting a tier. */
@@ -86,4 +106,12 @@ export function officialConversationChoice(connection:ConnectionView|undefined,c
  const own=catalog.filter(item=>item.accountId==='native-'+connectionId&&item.available&&item.enabled!==false);
  const source=own.find(item=>item.modelId===connection?.models.find(model=>model.isDefault)?.id)??own[0];
  return source?{connectionId,model:source.modelId,modelAccountId:source.accountId,modelAccountRevision:source.accountRevision,modelAccountIdentity:source.accountIdentity,serviceTier:source.defaultServiceTier}:{connectionId};
+}
+
+/** 首条发送前把连接实际提供的原生账号绑定到选择；没有可证明的同名模型来源时保持原选择，不推断账号。 */
+export function nativeConversationChoice(choice:ConversationChoice,connection:ConnectionView|undefined,catalog:CatalogModel[]):ConversationChoice {
+  if(choice.modelAccountId)return choice;
+  const model=choice.model??selectedConversationModel(connection)?.id??connection?.models[0]?.id;
+  const source=catalog.find(item=>item.accountId==='native-'+choice.connectionId&&item.modelId===model&&item.available&&item.enabled!==false);
+  return source?{...choice,model:model??source.modelId,modelAccountId:source.accountId,modelAccountRevision:source.accountRevision,modelAccountIdentity:source.accountIdentity,serviceTier:choice.serviceTier??source.defaultServiceTier}:choice;
 }
