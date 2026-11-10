@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { mkdir, chmod, lstat, readFile, rename, writeFile, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { once } from 'node:events';
-import { lstatSync, readFileSync } from 'node:fs';
+import { lstatSync, readFileSync, writeFileSync } from 'node:fs';
 import { ModelAccessError, type CatalogModel, type ModelAccessOptions, type ModelAccountView, type ModelGatewayLease, type ModelLeaseInput, type ModelOffering, type ModelProtocol, type ModelProviderRuntime, type ProtocolJson } from './contracts.ts';
 import { effectiveModel, selectedOffering, modelConfiguration, modelLeaseIdentity } from './model-preferences.ts';
 import type {ModelPreference,ModelPreferenceUpdate} from './contracts.ts';
@@ -70,12 +70,21 @@ export class ModelAccessApplication {
       const data: unknown = JSON.parse(content);
       const stored = object(data);
       if (stored.version !== 1 || !Array.isArray(stored.accounts)) throw new Error('invalid');
+      let migrated = false;
       for (const raw of stored.accounts) {
         const row = object(raw);
         if (typeof row.id !== 'string' || !safeId(row.id) || typeof row.provider !== 'string' || typeof row.revision !== 'string' || !Array.isArray(row.models)) throw new Error('invalid');
         const view = row as unknown as ModelAccountView;
         // Legacy records predate credential generations; their stable account ID is isolated.
         if(!view.identity) view.identity = digest('legacy-account:'+view.id);
+        // A source that now owns its credential domain no longer acts as an agent connection.
+        // Keep the observation but require an explicit login in the source's own domain.
+        const provider = this.providers.get(view.provider);
+        if (!this.metadataReadOnly && view.connectionId && provider && typeof provider.connectionId !== 'string' && provider.linked) {
+          delete view.connectionId;
+          view.status = 'not-authenticated'; view.models = []; delete view.quota; delete view.accountLabel; delete view.observedAt; delete view.loginAttempt;
+          row.revision = randomUUID(); migrated = true;
+        }
         if(view.loginAttempt) delete view.loginAttempt.url;
         if (!this.metadataReadOnly && view.loginAttempt && ['initializing', 'waiting-browser', 'checking'].includes(view.loginAttempt.state)) view.loginAttempt = { ...view.loginAttempt, state: 'expired', diagnostic: '服务已重启，请重新登录。' };
         const prefs=object(object(stored.preferences)[view.id]) as Record<string,ModelPreference>;
@@ -83,7 +92,17 @@ export class ModelAccessApplication {
         for(const value of Object.values(prefs))if(!value||typeof value.enabled!=='boolean'||value.contextWindow!==undefined&&(!Number.isSafeInteger(value.contextWindow)||value.contextWindow<1||value.contextWindow>10000000))throw new Error('invalid-preference');
         this.preferences.set(view.id,prefs);this.rows.set(view.id, view);
       }
+      if (migrated) this.persistMigrated();
     } catch (error) { if (object(error).code !== 'ENOENT') throw new ModelAccessError('model_storage_unavailable', '模型账号存储不可读取，原数据已保留。'); }
+  }
+  /** One bounded write for a schema-level ownership correction; failures keep the loaded state. */
+  private persistMigrated() {
+    try {
+      const body: Stored = { version: 1, preferences:structuredClone(Object.fromEntries(this.preferences)), accounts: [...this.rows.values()].map(row => { const copy = structuredClone(row); if (copy.loginAttempt) delete copy.loginAttempt.url; return copy; }) };
+      const content = JSON.stringify(body) + '\n';
+      writeFileSync(join(this.options.root, 'accounts.json'), content, { mode: 0o600 });
+      this.storedDigest = digest(content);
+    } catch { /* The in-memory correction still applies; the next save writes it. */ }
   }
   private async privateRoot() {
     await mkdir(this.options.root, { recursive: true, mode: 0o700 });

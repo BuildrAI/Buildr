@@ -30,7 +30,7 @@ export function AgentConnectionSettings(){
  const openedLogin=useRef(new Set<string>());
  // Opening the official page as soon as the CLI prints it is the expected "click login → browser" flow;
  // the card keeps a manual button when a browser blocks this automatic tab.
- useEffect(()=>{for(const account of accounts){const attempt=account.loginAttempt;if(!attempt?.url||account.connectionId||attempt.state!=='waiting-browser')continue;if(openedLogin.current.has(attempt.id))continue;openedLogin.current.add(attempt.id);window.open(attempt.url,'_blank','noopener,noreferrer');}},[accounts]);
+ useEffect(()=>{for(const account of accounts){const attempt=account.loginAttempt;if(!attempt?.url||account.connectionId||attempt.state!=='waiting-browser')continue;if(openedLogin.current.has(attempt.id))continue;openedLogin.current.add(attempt.id);window.open(attempt.url,'_blank');}},[accounts]);
  const revisions=context.connections.map(connection=>connection.id+':'+connection.revision).join(',');
  useEffect(()=>{if(context.settings)void refresh().catch(()=>{});},[revisions,context.settings,refresh]);
  const onPending=useCallback((id:string,value:boolean)=>setPreparing(previous=>previous[id]===value?previous:{...previous,[id]:value}),[]);
