@@ -8,7 +8,7 @@ import { enumerateSkillSourceFiles } from '../../src/modules/agent-assets/infras
 import { assetIntegrity } from '../../src/modules/agent-assets/infrastructure/component-source.ts';
 import { createBuiltinReceipts } from '../../src/modules/agent-assets/application/package-maintenance/builtin-receipts.ts';
 import { collectFiles } from '../../src/infrastructure/filesystem/tree-files.ts';
-import { describePackageResources, publishPackageResources as ensurePackageResources, inspectSharedResources, sharedResourcesRoot } from '../../src/infrastructure/product-resources/shared-resources.ts';
+import { describePackageResources, ensurePackageResources as ensureSharedResources, publishPackageResources, publishPackageResources as ensurePackageResources, inspectSharedResources, observeSharedResourcePublication, sharedResourcesRoot } from '../../src/infrastructure/product-resources/shared-resources.ts';
 
 test('共享命令登记损坏定位来源，独立本地命令目录继续可见', async t => {
   const { createRuntime } = await import('../helpers/runtime-harness.ts');
@@ -240,4 +240,122 @@ test('退出的Archify先完整保全，再替换共享目录；同源重用且�
   fs.unlinkSync(oldFile); fs.symlinkSync(path.join(product, 'package.json'), oldFile);
   assert.throws(() => ensurePackageResources(product), /symbolic/);
   assert.equal(fs.readFileSync(path.join(product, 'package.json'), 'utf8'), '{"version":"1.0.2"}');
+});
+
+test('共享目录缺少清单时按当前安装恢复，无法识别的内容保留现场', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-shared-unidentified-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const previous = process.env.BUILDR_PRODUCT_DATA_DIR;
+  process.env.BUILDR_PRODUCT_DATA_DIR = path.join(root, 'data');
+  t.after(() => { if (previous === undefined) delete process.env.BUILDR_PRODUCT_DATA_DIR; else process.env.BUILDR_PRODUCT_DATA_DIR = previous; });
+  const product = path.join(root, 'product');
+  fs.mkdirSync(path.join(product, 'resources/workspace/skills/buildr/example'), { recursive: true });
+  fs.writeFileSync(path.join(product, 'package.json'), '{"version":"1.2.3"}');
+  fs.writeFileSync(path.join(product, 'resources/workspace/skills/buildr/example/SKILL.md'), 'official');
+  const expected = describePackageResources(product).id;
+  const states: Array<[string, () => void]> = [
+    ['空目录', () => {}],
+    ['旧内容无清单', () => { fs.mkdirSync(path.join(sharedResourcesRoot(), 'skills/legacy'), { recursive: true }); fs.writeFileSync(path.join(sharedResourcesRoot(), 'skills/legacy/SKILL.md'), 'legacy'); }],
+    ['清单损坏', () => fs.writeFileSync(path.join(sharedResourcesRoot(), 'resource-set.json'), '{')],
+    ['清单是目录', () => fs.mkdirSync(path.join(sharedResourcesRoot(), 'resource-set.json'), { recursive: true })],
+  ];
+  for (const [label, prepare] of states) {
+    fs.rmSync(sharedResourcesRoot(), { recursive: true, force: true });
+    fs.mkdirSync(sharedResourcesRoot(), { recursive: true });
+    prepare();
+    const recovered = ensureSharedResources(product);
+    assert.equal(recovered.id, expected, label);
+    assert.equal(inspectSharedResources(expected).id, expected, label);
+    assert.equal(fs.existsSync(path.join(sharedResourcesRoot(), 'skills/legacy')), false, label);
+    assert.equal(fs.existsSync(path.join(sharedResourcesRoot(), '.resources-next')), false, label);
+  }
+  fs.rmSync(sharedResourcesRoot(), { recursive: true, force: true });
+  fs.mkdirSync(sharedResourcesRoot(), { recursive: true });
+  fs.writeFileSync(path.join(sharedResourcesRoot(), 'notes.txt'), 'mine');
+  const error: any = (() => { try { ensureSharedResources(product); return null; } catch (thrown) { return thrown; } })();
+  assert.equal(error?.code, 'shared_resources_foreign_content');
+  assert.equal(error?.target, sharedResourcesRoot());
+  assert.match(error.message, /无法识别的内容/);
+  assert.match(error.message, /notes\.txt/);
+  assert.match(error.message, /移走/);
+  assert.equal(fs.readFileSync(path.join(sharedResourcesRoot(), 'notes.txt'), 'utf8'), 'mine');
+});
+
+test('中断备份同样缺少清单时按当前安装恢复', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-shared-previous-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const previous = process.env.BUILDR_PRODUCT_DATA_DIR;
+  process.env.BUILDR_PRODUCT_DATA_DIR = path.join(root, 'data');
+  t.after(() => { if (previous === undefined) delete process.env.BUILDR_PRODUCT_DATA_DIR; else process.env.BUILDR_PRODUCT_DATA_DIR = previous; });
+  const product = path.join(root, 'product');
+  fs.mkdirSync(path.join(product, 'resources/workspace/skills/buildr/example'), { recursive: true });
+  fs.writeFileSync(path.join(product, 'package.json'), '{"version":"1.2.3"}');
+  fs.writeFileSync(path.join(product, 'resources/workspace/skills/buildr/example/SKILL.md'), 'official');
+  const target = sharedResourcesRoot(), parent = path.dirname(target);
+  fs.mkdirSync(path.join(parent, '.resources-previous/skills/legacy'), { recursive: true });
+  fs.writeFileSync(path.join(parent, '.resources-previous/skills/legacy/SKILL.md'), 'legacy');
+  const recovered = ensureSharedResources(product);
+  assert.equal(recovered.id, describePackageResources(product).id);
+  assert.equal(inspectSharedResources(recovered.id).id, recovered.id);
+  assert.equal(fs.existsSync(path.join(parent, '.resources-previous')), false);
+});
+
+test('显式发布接管缺少清单的目录，未知内容仍拒绝替换', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-shared-publish-unidentified-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const previous = process.env.BUILDR_PRODUCT_DATA_DIR;
+  process.env.BUILDR_PRODUCT_DATA_DIR = path.join(root, 'data');
+  t.after(() => { if (previous === undefined) delete process.env.BUILDR_PRODUCT_DATA_DIR; else process.env.BUILDR_PRODUCT_DATA_DIR = previous; });
+  const product = path.join(root, 'product');
+  fs.mkdirSync(path.join(product, 'resources/workspace/skills/buildr/example'), { recursive: true });
+  fs.writeFileSync(path.join(product, 'package.json'), '{"version":"1.2.3"}');
+  fs.writeFileSync(path.join(product, 'resources/workspace/skills/buildr/example/SKILL.md'), 'official');
+  const target = sharedResourcesRoot();
+  fs.mkdirSync(path.join(target, 'skills/legacy'), { recursive: true });
+  fs.writeFileSync(path.join(target, 'skills/legacy/SKILL.md'), 'legacy');
+  const observed = observeSharedResourcePublication();
+  assert.match(String(observed), /^unprepared-/);
+  fs.writeFileSync(path.join(target, 'notes.txt'), 'mine');
+  assert.throws(() => publishPackageResources(product, { expectedId: observed }), /无法识别的内容/);
+  assert.equal(fs.readFileSync(path.join(target, 'notes.txt'), 'utf8'), 'mine');
+  fs.unlinkSync(path.join(target, 'notes.txt'));
+  const published = publishPackageResources(product);
+  assert.equal(published.id, describePackageResources(product).id);
+  assert.equal(inspectSharedResources(published.id).id, published.id);
+});
+
+test('Windows 瞬时占用在有界次数内重试，耗尽后恢复原共享集', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-shared-transient-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const previous = process.env.BUILDR_PRODUCT_DATA_DIR;
+  process.env.BUILDR_PRODUCT_DATA_DIR = path.join(root, 'data');
+  t.after(() => { if (previous === undefined) delete process.env.BUILDR_PRODUCT_DATA_DIR; else process.env.BUILDR_PRODUCT_DATA_DIR = previous; });
+  const product = path.join(root, 'product');
+  fs.mkdirSync(path.join(product, 'resources/workspace/skills/buildr/example'), { recursive: true });
+  fs.writeFileSync(path.join(product, 'package.json'), '{"version":"1.2.3"}');
+  const source = path.join(product, 'resources/workspace/skills/buildr/example/SKILL.md');
+  fs.writeFileSync(source, 'first');
+  const first = ensureSharedResources(product);
+  fs.writeFileSync(source, 'second');
+  const target = sharedResourcesRoot(), rename = fs.renameSync;
+  let attempts = 0;
+  const failing = t.mock.method(fs, 'renameSync', ((from: any, to: any) => {
+    if (to === target && String(from).endsWith('.resources-next')) { attempts += 1; const error: any = new Error('EPERM: operation not permitted, rename'); error.code = 'EPERM'; throw error; }
+    return rename(from, to);
+  }) as typeof fs.renameSync);
+  assert.throws(() => ensurePackageResources(product), /EPERM/);
+  assert.equal(attempts, 6);
+  failing.mock.restore();
+  assert.equal(inspectSharedResources(first.id).id, first.id);
+  let transient = 0;
+  const flaky = t.mock.method(fs, 'renameSync', ((from: any, to: any) => {
+    if (to === target && String(from).endsWith('.resources-next') && transient < 2) { transient += 1; const error: any = new Error('EPERM: operation not permitted, rename'); error.code = 'EPERM'; throw error; }
+    return rename(from, to);
+  }) as typeof fs.renameSync);
+  const second = publishPackageResources(product);
+  flaky.mock.restore();
+  assert.equal(transient, 2);
+  assert.notEqual(second.id, first.id);
+  assert.equal(inspectSharedResources(second.id).id, second.id);
+  assert.equal(fs.readFileSync(path.join(target, 'skills/buildr/example/SKILL.md'), 'utf8'), 'second');
 });
