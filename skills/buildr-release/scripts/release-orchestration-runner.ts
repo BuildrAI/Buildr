@@ -1130,7 +1130,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
         if (excludedBoundaries?.length && !scopeStatement?.trim()) {
           throw new Error('--excluded-boundaries requires --scope-statement so the maintainer decision is recorded.');
         }
-        const { verificationSteps } = await import('../../../projects/product/services/buildr/test/verification/registry.ts');
+        const { verificationSteps, CANDIDATE_CI_HOST_NODE_TUPLES } = await import('../../../projects/product/services/buildr/test/verification/registry.ts');
         const buildStepIds = new Set<string>(verificationSteps.filter((step: any) => step.executor?.type === 'candidate-artifact').map((step: any) => step.id));
         const candidateStepIds: string[] = verificationSteps.filter((step: any) => step.profiles.includes('candidate')).map((step: any) => step.id);
         let selectedStepIds: string[] | undefined = state.verificationSelection?.selectedStepIds;
@@ -1157,12 +1157,14 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
         }
         if (plan && excludesAllCandidateBoundaries(state.verificationSelection)) {
           plan = { ...plan, requirements: { ...plan.requirements, plugin: false } };
+          state.verificationSelection.excludedEvidenceIds = CANDIDATE_CI_HOST_NODE_TUPLES.map((tuple: any) => tuple.id).sort();
           state.candidatePlan = plan;
           save();
         }
         const dispatchScope = (excludedBoundaries?.length || excludedStepIds.length) ? {
           ...(excludedBoundaries?.length ? { excludedBoundaries: [...excludedBoundaries].sort() } : {}),
           ...(excludedStepIds.length ? { excludedStepIds } : {}),
+          ...(state.verificationSelection?.excludedEvidenceIds?.length ? { excludedEvidenceIds: state.verificationSelection.excludedEvidenceIds } : {}),
           statement: scopeStatement!.trim(),
         } : null;
         if (dispatchScope) parseCandidateDeclaredScope(JSON.stringify(dispatchScope));
