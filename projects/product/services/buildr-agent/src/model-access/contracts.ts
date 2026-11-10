@@ -68,6 +68,8 @@ export interface ProviderInferenceInput {
 export interface ModelProviderRuntime {
   readonly protocol: ModelProtocol;
   inspect(): Promise<ModelProviderObservation>;
+  /** Local credential identity; read by this provider, never derived from an agent connection. */
+  identity?(): Promise<string>;
   /** Validate and replace an API-key credential atomically. */
   configure?(input: { apiKey: string }): Promise<ModelProviderObservation>;
   beginLogin(update: (value: LoginObservation) => void): Promise<void>;
@@ -80,6 +82,8 @@ export interface ModelProvider {
   readonly id: string;
   readonly label: string;
   readonly connectionId?: string;
+  /** Created automatically from a native account that no agent connection owns. */
+  readonly linked?: boolean;
   readonly authentication?: ModelProviderAuthentication;
   readonly group?: ModelProviderGroup;
   readonly modeLabel?: string;

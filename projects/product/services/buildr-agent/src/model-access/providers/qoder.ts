@@ -9,6 +9,8 @@ import { ModelAccessError } from '../contracts.ts';
 import { upstreamFailure } from '../errors.ts';
 import { qoderAccountFailure, qoderAuthenticationError } from './qoder-auth.ts';
 import { qoderProduct, type QoderProductId } from '../../executors/qoder/product.ts';
+import { beginQoderCnLogin, cancelQoderCnLogin, qoderCnProgramPresent, type QoderCnLoginSession } from './qoder-cn-login.ts';
+import { readQoderIdentity as readIdentity } from './qoder.ts';
 
 /** Read only the exact Buildr private profile. The native CLI remains the credential writer. */
 export async function readQoderIdentity(config: string) {
@@ -125,7 +127,7 @@ export function createQoderModelProvider(owner:QoderModelOwner,productId:QoderPr
         return{...failure,incomplete:failure.status==='failed',identity,models:[]};
       }
     };
-    return {protocol:'chat-completions',inspect,
+    return {protocol:'chat-completions',inspect,identity:()=>owner.identity(),
       async beginLogin(){throw new Error(`请在 ${product.label} 账号中登录。`);},async cancelLogin(){},async close(){},
       async infer(input){
         if((await owner.inspect()).status!=='ready')return Response.json({error:{code:'qoder_login_required'}},{status:401});

@@ -161,8 +161,8 @@ export class ModelAccessApplication {
   async ensureLinked() {
     await this.ready;
     for (const provider of this.providers.values()) {
-      if (!provider.connectionId || this.rows.has(provider.id)) continue;
-      this.rows.set(provider.id, { id:provider.id, identity:randomUUID(), provider:provider.id, connectionId:provider.connectionId, label:provider.label, revision:randomUUID(),enabled:true,status:'not-authenticated',models:[] });
+      if ((!provider.connectionId && !provider.linked) || this.rows.has(provider.id)) continue;
+      this.rows.set(provider.id, { id:provider.id, identity:randomUUID(), provider:provider.id, ...(provider.connectionId?{connectionId:provider.connectionId}:{}), label:provider.label, revision:randomUUID(),enabled:true,status:'not-authenticated',models:[] });
       await this.save();
     }
   }
