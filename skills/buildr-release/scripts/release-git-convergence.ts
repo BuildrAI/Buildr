@@ -711,7 +711,27 @@ export function closeoutReleaseGitResources(options: any = {}, dependencies: any
     if ((source.selectionId ?? source.version) !== releaseSelectionKey(options) || source.releaseCommit !== options.expectedCommit || evidence.context.selection?.generation !== generation) {
       return blocked('closeout', 'release-closeout-publication-mismatch', 'Publication evidence does not match the requested release source and generation.');
     }
-    return closeoutPublishedReleaseBranches({ ...options, generation }, dependencies, evidence);
+    // Only validated, complete Publication evidence reaches this owner.
+    // The existing closeout still checks exact refs, preservation and activity.
+    const repo = path.resolve(options.repo ?? process.cwd());
+    const common = git(repo, ['rev-parse', '--git-common-dir'], dependencies).stdout.trim();
+    if (!common) throw new Error('Release cleanup audit Git directory is missing.');
+    const auditFile = path.join(path.resolve(repo, common), 'buildr/release-cleanup.jsonl');
+    fs.mkdirSync(path.dirname(auditFile), { recursive: true });
+    const audit = (entry: any) => fs.appendFileSync(auditFile, JSON.stringify({
+      version: source.version ?? options.version ?? evidence.context.targets?.versions?.['dsh-plugin'] ?? null,
+      versions: evidence.context.targets?.versions ?? null, selectionId: releaseSelectionKey(options),
+      at: new Date().toISOString(), publicationIdentity: evidence.identity, ...entry,
+    }) + '\n', { mode: 0o600 });
+    audit({ status: 'started' });
+    const closed = closeoutPublishedReleaseBranches({ ...options, generation,
+      authorizeCarrierCleanup: true, authorizeLocalSelectionCleanup: true,
+      authorizeRemoteDelete: true, cleanupPolicy: 'delete-owned-release-branches/v2',
+    }, dependencies, evidence);
+    try { audit({ status: closed.status, effects: closed.effects, findings: closed.findings ?? [], diagnostic: closed.diagnostic ?? null }); }
+    catch (error: any) { return { ...closed, status: 'blocked', auditFile,
+      diagnostic: { code: 'release-cleanup-audit-failed', message: error.message } }; }
+    return { ...closed, auditFile };
   } catch (error: any) {
     return blocked('closeout', 'release-closeout-blocked', error.message);
   }

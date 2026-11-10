@@ -41,7 +41,13 @@ description: 准备、检查、发布或恢复 Buildr 主包、DSH 插件或联�
 
 candidate 与发布作业默认排队 600 秒仍未开始时取消：先确认该运行没有任何作业或步骤启动，再取消并回读 `completed/cancelled`；随后清除当前指针及 journal 引用，保留 runId、取消依据、清理字段和每次重派原因的审计历史，再用完整冻结派发参数创建新运行。默认最多重派两次，可用 `--queue-timeout-seconds <seconds>` 与 `--max-queue-redispatches <count>` 调整。已启动后取消、取消结果未知、缺少原始参数或次数用尽时局部停止，不自动重派、不猜测新参数、不重复未知请求。旧的已授权请求若缺少冻结派发参数，只能从原已校验发布上下文恢复；不能从当前 `dev` 或手写参数重建。
 
-官方 npm 注册表对准确版本返回 HTTP 404 仍只是版本不存在的事实，**不单独授权重发结果未知的 npm 写入**。网络错误、认证错误、完整性冲突及历史未知继续先回读；只有原发布请求、原冻结上下文和原包摘要全部一致时才进入原有重试路径。
+重试沿用已授权的原发布请求、冻结上下文及原包；官方 Registry 确认准确版本 HTTP 404 后，允许同一 releaseId 重试，不再由旧日志状态单独拦截。已存在版本校验 integrity 后复用；网络、认证、完整性错误仍停止相关写入，不把查询失败当作版本不存在。
+
+环境审批必须调用 `scripts/environment-approval.ts` 的 `approvePendingEnvironmentDeployments()`；整数环境 id 用大写 `-F`，或用 `--input` 的 JSON 数字。禁止手写小写 `-f` 的 `gh api` 命令绕过该函数。
+
+发布成功后，现有 `closeoutReleaseGitResources()` 自动清理对应 release 分支、临时载体及 `refs/buildr/release/<version>/` 全部冻结引用（联合选择沿用 selectionId）。先验证 Registry、GitHub Release、tag、引用归属和源码保全；失败、未知、引用漂移或活动占用时保留相关现场。清理审计追加到 Git 公共目录 `buildr/release-cleanup.jsonl`，包含版本、ref、提交和结果。
+
+正常发布入口在每次结束时从现有阶段时间线、错误、恢复动作及发布证据生成 `build/verification/release-process/<version>/release-report.json` 与 `release-report.md`，不由智能体手工补写。时间使用 UTC，耗时逐阶段以秒表示，同选择重试保留历史；仅完整公开证据与收尾通过标为 succeeded，失败为 failed，等待或证据不足为 unknown，缺失字段保留 null。报告写入失败独立报告，不撤销已确认公开事实；inspect 不写报告。
 
 冻结所选包、独立版本、分支（Branch）、准确提交（Commit）、源码树和准确对端，正常准备不跟随 `dev`。全部检查及结果汇总交给产品既有验证框架；先查看本轮普通日志中的成功、失败、未执行项和耗时，再只执行失败及未执行部分。不要因阶段切换重复执行仍有效的检查；一轮集中收集互不依赖的失败，经用户同意修复后只补失败及未执行项。同一发布轮内源码输入变化时，使用 `source.ts --invalidate <step-id,...>` 只重跑受影响步骤，其余通过记录继续采用；失败 Node 节点在普通 round 结果内保留完整文件成功，按真实输入只补失败、新增或失效文件；共享实现／夹具变化扩大补验范围。缺少事件、信号中断、清理失败不能成为成功；日志会报告执行、复用和完整成员数量。显式失效节点不采用其旧文件证明。新候选轮次（新版本或新选择）从头完整执行。验证范围由用户决定：使用 `--selected-checks <step-id,...>` 只验收指定检查，范围外已有同轮通过记录标记 `retainedByUserInstruction`，没有基线记录记为 `not-run`，不因此 fail closed；使用 `--excluded-boundaries E2E --scope-statement "<用户决定>"` 时，本地源码轮与远端候选都不执行该执行边界下的检查（打包步骤 `candidate-artifact` 不受影响），聚合结果以 `declaredScope` 和 `notRun` 如实记录未执行证据，发布消费接受该声明但不接受任何真实失败。未声明的缺失证据仍使候选失败；声明只减少执行范围，从不把失败或未执行伪装成通过。修复确认并提交版本材料后，直接以本次 selectionId/roundId 运行源码轮并写入候选 round 路径，使该轮成为候选证据；不要先跑一套独立全量再重复候选全量。本机能充分证明的在本机完成，GitHub 只补真实平台、干净环境或受保护执行边界。相关开发检查在改动交付前完成，避免到发布时才修过时检查。不要在检查运行时改变其源码或共享 Git 比较事实。
 

@@ -8,6 +8,7 @@ import { releaseContextSchema } from './release-readiness.ts';
 import { recoverQueuedRelease, releaseQueuePolicy } from './github-queue-recovery.ts';
 
 import crypto from 'node:crypto';
+import { writeReleaseProcessReports } from './release-process-report.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
@@ -146,6 +147,7 @@ function result(options: any, action: any, status: any, state: any, steps: any, 
     ...(state.gitCloseout ? { cleanup: { status: state.gitCloseout.status, branches: state.gitCloseout.branches ?? [], findings: state.gitCloseout.findings ?? [], diagnostic: state.gitCloseout.diagnostic ?? null } } : {}),
     nextActions,
     timeline: phaseTimeline,
+    ...(state.evidence ? { publicationEvidence: state.evidence } : {}),
     ...(state.context ? { context: state.context } : {}),
     ...(state.closeoutProgress ? { closeoutProgress: state.closeoutProgress } : {}),
     ...(lifecycle ? { lifecycle } : {}),
@@ -231,11 +233,13 @@ async function closeout(options: any, dependencies: any): Promise<any>  {
     && options.closeoutProgress?.taskCompletion?.status === 'completed' && options.closeoutProgress?.worktreeCleanup?.status === 'cleaned';
   let { reconciliation, gitCloseout, lifecycle, taskCompletion, worktreeCleanup } = retained ? options.closeoutProgress : {};
   if (!retained) {
+    dependencies.onPhase?.('dev-reconciliation');
     reconciliation = (dependencies.reconcilePublishedReleaseWithDev ?? reconcilePublishedReleaseWithDev)({ repo: options.repo, publicationEvidence: evidence, remote: options.remote, main: options.main, dev: options.dev,
       inspectDriftedReleaseForCleanup: true }, dependencies.gitDependencies);
     steps.push(step('release-git-convergence', 'reconcile-dev', reconciliation));
     if (reconciliation.status !== 'passed') return blocked(options, 'closeout', { evidence, context, reconciliation }, steps, reconciliation, '恢复dev provenance reconciliation后重试。');
 
+    dependencies.onPhase?.('release-ref-cleanup');
     gitCloseout = (dependencies.closeoutReleaseGitResources ?? closeoutReleaseGitResources)({
       repo: options.repo,
       remote: options.remote,
@@ -276,6 +280,7 @@ async function closeout(options: any, dependencies: any): Promise<any>  {
     });
     if (activeLifecycle.status !== 'passed' || activeLifecycle.phase !== 'closed') return blocked(options, 'closeout', { evidence, context, reconciliation, gitCloseout, lifecycle: activeLifecycle }, steps, activeLifecycle, '恢复release lifecycle closed事实后重试。');
 
+    dependencies.onPhase?.('task-registration');
     if (taskResult.record.status === 'completed') taskCompletion = { status: 'completed', recordDigest: taskResult.recordDigest, effects: [] };
     else if (taskResult.record.status === 'active') {
       taskCompletion = invokeRetained(controller, ['task', 'complete', options.releaseTask, '--summary', options.completionSummary ?? `Release ${options.version} Publication、dev provenance与资源收尾已完成。`, '--expected-record', taskResult.recordDigest, '--target', root, '--json']);
@@ -284,6 +289,7 @@ async function closeout(options: any, dependencies: any): Promise<any>  {
     steps.push(step('task-record', 'complete', taskCompletion, taskCompletion.effects?.length ? 'executed' : 'reused'));
     if (taskResult.record.status !== 'completed') return blocked(options, 'closeout', { evidence, context, reconciliation, gitCloseout, lifecycle: activeLifecycle, taskCompletion }, steps, taskCompletion, '恢复Task completion后重试。');
 
+    dependencies.onPhase?.('worktree-cleanup');
     worktreeCleanup = invokeRetained(controller, [
       'worktree', 'cleanup', options.releaseTask,
       '--expected-source', `workspace=${context.release.sourceCommit}`,
@@ -633,6 +639,23 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
   const currentEffects: any[] = [];
   let phase = action === 'publish' ? 'publication' : 'preflight';
   const operationStartedAt = Date.now();
+  const reportId = crypto.randomUUID();
+  const phases: any[] = [];
+  let phaseStartedAt = operationStartedAt, reportActive = false;
+  const finishPhase = (status: string) => {
+    const end = Date.now();
+    phases.push({ phase, status, startedAt: new Date(phaseStartedAt).toISOString(), finishedAt: new Date(end).toISOString(), durationSeconds: (end - phaseStartedAt) / 1000 });
+    phaseStartedAt = end;
+  };
+  const changePhase = (next: string) => { finishPhase('passed'); phase = next; };
+  const report = (value: any, finishedAt: string | null) => writeReleaseProcessReports(workspace, state, {
+    id: reportId, action, phase, startedAt: new Date(operationStartedAt).toISOString(), finishedAt,
+    remoteTiming: value.remoteTiming ?? null,
+    phases: [...phases, ...(value.result?.timeline?.phases ?? []).map((item: any) => ({
+      phase: item.phase, status: item.status, startedAt: item.timing.startedAt, finishedAt: item.timing.finishedAt,
+      durationSeconds: item.timing.durationMs == null ? null : item.timing.durationMs / 1000,
+    }))],
+  }, value);
   const execute = dependencies.execute ?? ((command: string, args: string[], spawnOptions: any) => spawnSync(command, args, { timeout: 30_000, ...spawnOptions, encoding: 'utf8' }));
   const command = (executable: string, args: string[], cwd = workspace) => {
     const timeout = executable === (options.ghCommand || 'gh') && args.includes('--log-failed') ? 90_000 : 30_000;
@@ -676,7 +699,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
     invokeRetainedController: dependencies.invokeRetainedController ?? defaultInvokeRetained,
     readCandidateEvidence: (runId: number) => readCandidateEvidence({ candidateRunId: runId, ghCommand: options.ghCommand || 'gh', repo: state.executionRoot ?? workspace, execute, dependencies: dependencies.candidateDependencies }),
   };
-  const packageScope = () => ({ state, workspace, save, effects: currentEffects, execute, git, gh, readRun, ghCommand: options.ghCommand });
+  const packageScope = () => ({ state, workspace, save, changePhase, effects: currentEffects, execute, git, gh, readRun, ghCommand: options.ghCommand });
   const legacyRetryCompatibility = async () => {
     const runId = state.candidate?.runId ?? state.context?.candidate?.runId ?? state.transaction?.candidateRunId;
     if (!runId) return !declaresCompatibility;
@@ -691,6 +714,13 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
   };
   let devDrift: any[] = [];
   const answer = (status: string, nextActions: string[] = [], extra: any = {}) => {
+    if (reportActive) {
+      const finishedAt = new Date().toISOString();
+      finishPhase(/failed|blocked|diagnosis-required/u.test(status) ? 'failed' : status === 'passed' ? 'passed' : 'unknown');
+      try { extra.releaseReports = report({ status, effects: currentEffects, ...extra }, finishedAt); }
+      catch (error: any) { extra.reportDiagnostic = { code: 'release-report-write-failed', message: error.message };
+        nextActions = [...nextActions, '恢复发版报告写入；不要重新发布已确认的原包。']; }
+    }
     if (options.detail !== 'full') {
       const { result: _result, run, selection, ...rest } = extra;
       extra = { ...rest,
@@ -703,9 +733,8 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
     ...(scoped ? { selectionId: key, targets, compatibility: state.compatibility ?? null, packagePublications: state.packagePublications ?? {} } : {}),
     baseline: state.baseline ?? null, selectedSources: state.sources, sourceCommit: state.sourceCommit ?? null,
     candidate: state.candidate, publication: state.publication, contextIdentity: state.context?.identity ?? null,
-    cleanupPlan: state.context ? { policy: state.publication?.requested ? state.publication.cleanupAuthorization?.policy ?? 'retain-formal-release-branch' : 'delete-owned-release-branches/v2',
-      remoteBranches: [`release-${key}`, scoped || !state.publication?.requested || state.publication.cleanupAuthorization?.policy === 'delete-owned-release-branches/v2'
-        ? `codex/release-main-${key}-g*` : releaseCarrierBranchFor(key, state.context.selection.generation)],
+    cleanupPlan: state.context ? { policy: 'delete-owned-release-branches/v2',
+      remoteBranches: [`release-${key}`, `codex/release-main-${key}-g*`],
       retainedTag: targets.packages.includes('buildr') ? `v${targets.versions.buildr}` : null } : null,
     effects: currentEffects, nextActions, ...(devDrift.length ? { devDrift } : {}), ...extra,
     recovery: releaseRecoveryPlan(phase, status, state, nextActions), operationDurationMs: Date.now() - operationStartedAt,
@@ -747,9 +776,14 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
     }
   }
   try {
+    reportActive = action !== 'withdraw';
     if (fs.existsSync(file)) state = JSON.parse(fs.readFileSync(file, 'utf8'));
     if (scoped && JSON.stringify(state.targets) !== JSON.stringify(targets)) throw new Error('Stored release targets changed while acquiring the operation lock.');
     if (state.workspace !== workspace) throw new Error('Stored release Workspace changed while acquiring the operation lock.');
+    if (reportActive) {
+      try { report({ status: 'unknown' }, null); }
+      catch { /* Report I/O cannot authorize or deny publication; answer exposes any final write failure. */ }
+    }
     if (action === 'withdraw') {
       const withdrawn = await withdrawLocalCandidate(state, key, options, { git, gh, execute, save, effects: currentEffects, fetchImpl: dependencies.withdrawalFetch });
       return answer(withdrawn.status, withdrawn.nextActions, withdrawn);
@@ -803,7 +837,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
         const owned = runtime.inspectGitWorktrees({ workspaceRoot: workspace, taskId: `release-${key}` });
         const checkout = owned.repositories?.find((entry: any) => entry.selector === 'workspace')?.checkoutPath;
         if (owned.status !== 'ready' || !checkout || checkout !== state.executionRoot) throw new Error('Running Candidate checkout ownership changed.');
-        phase = 'candidate-verification'; return observeRunningCandidate(running, checkout);
+        changePhase('candidate-verification'); return observeRunningCandidate(running, checkout);
       }
     }
     const preparationInputChanged = state.preparation && ((options.baseline && git(['rev-parse', `${options.baseline}^{commit}`]) !== state.baseline)
@@ -832,7 +866,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
     }
     if (state.preparation && !preparationInputChanged && (stopAfterCandidate || action === 'resume' && !state.preparation.adoptionRequested)
         && !state.publicationAuthorization && !state.publication?.requested && !state.publicationEvidence) {
-      phase = 'candidate-closeout';
+      changePhase('candidate-closeout');
       const selection = inspectReleaseSelection({ ...selectionArgs, repo: workspace, devRef: 'origin/dev' });
       const snapshot = readPreparedCandidate(workspace, state, selection);
       const runtime = dependencies.runtime ?? createReleaseToolRuntime();
@@ -845,6 +879,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
     if (action === 'resume' && state.preparation?.adoptionRequested && !state.context && !state.publicationAuthorization && !state.publication?.requested) action = 'prepare';
     if (scoped && (action === 'publish' || action === 'resume' || (action === 'prepare' && (state.publicationAuthorization || Object.values(state.packagePublications ?? {}).some((value: any) => value.requested))))) {
       if (action === 'prepare') action = 'resume';
+      changePhase('publication');
       const continued = await continuePackageRelease({ ...options, action }, packageScope(), packageDependencies);
       save(); return answer(continued.status, continued.nextActions, continued);
     }
@@ -912,19 +947,17 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
         effect.state = 'confirmed';
         return answer('publication-running', ['等待同一运行的新attempt终态。']);
       }
-      const cleanupAuthorized = ['delete-owned-release-branches/v1', 'delete-owned-release-branches/v2'].includes(state.publication.cleanupAuthorization?.policy)
-        && state.publication.cleanupAuthorization?.contextIdentity === state.publication.contextIdentity
-        && state.publication.contextIdentity === state.context?.identity;
+      changePhase('publication-closeout');
       const closed = await runReleaseOrchestration({ action: 'closeout', version: options.version, releaseTask: `release-${options.version}`, publishRunId: state.publication.runId,
         expectedContextDigest: state.publication.contextIdentity,
         closeoutProgress: state.closeout?.progress,
         repo: workspace, canonicalWorkspace: workspace, remote: 'origin', agent: options.agent || 'codex', authorizeCarrierCleanup: true, authorizeLocalSelectionCleanup: true,
-        authorizeRemoteDelete: cleanupAuthorized,
-        cleanupPolicy: cleanupAuthorized ? state.publication.cleanupAuthorization.policy : undefined,
         ghCommand: options.ghCommand }, { ...dependencies.orchestrationDependencies,
+          onPhase: changePhase,
           onCloseoutProgress: (progress: any) => { state.closeout = { ...state.closeout, progress }; save(); },
         });
       currentEffects.push(...closed.effects);
+      if (closed.publicationEvidence) state.publicationEvidence = closed.publicationEvidence;
       state.closeout = { status: closed.status, outcomes: closed.outcomes, progress: closed.closeoutProgress };
       writeOperation(file, state);
       return answer(closed.status, closed.nextActions, { outcomes: closed.outcomes, cleanup: closed.cleanup, result: closed });
@@ -978,7 +1011,8 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
     try { task = runtime.inspectTask(workspace, taskId); }
     catch (error: any) {
       if (error.code !== 'task_record_not_found') throw error;
-      if (git(['branch', '--show-current']) !== 'dev' || git(['status', '--porcelain=v1']).trim() || git(['rev-parse', 'HEAD']) !== git(['rev-parse', 'origin/dev'])) throw new Error('Creating a release Task requires the clean retained dev baseline to be synchronized first.');
+      // Derived process reports do not change the selected product source.
+      if (git(['branch', '--show-current']) !== 'dev' || git(['status', '--porcelain=v1', '--untracked-files=all', '--', '.', ':(exclude)build/verification/release-process/']).trim() || git(['rev-parse', 'HEAD']) !== git(['rev-parse', 'origin/dev'])) throw new Error('Creating a release Task requires the clean retained dev baseline to be synchronized first.');
       const services = targets.packages.flatMap(name => name === 'buildr' ? ['product/buildr', 'product/buildr-web'] : ['product/dsh-plugin']);
       task = take(invoke(controller, ['task', 'create', taskId, '--title', `准备发布 ${key}`, '--intent', '验证已明确选择的最终发布组合和唯一产物；公开发布需独立授权。', '--project', 'product', ...services.flatMap(service => ['--service', service]), '--target', workspace, '--json']));
     }
@@ -1124,7 +1158,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       if (prepared.status !== 'ready') return answer(prepared.status, prepared.nextActions, prepared);
     }
     if (!localPackageMode && !completedPreparation && (options.verificationSource || options.artifactVerification || (options.sourceVerification && state.candidate.runId) || state.candidate.repair)) {
-      phase = 'candidate-verification';
+      changePhase('candidate-verification');
       const fields = scoped ? [`release_packages=${targets.packages.join(',')}`, `buildr_version=${JSON.parse(git(['show', `${sourceCommit}:projects/product/services/buildr/package.json`, '--'], repo)).version}`,
         `plugin_version=${plan.pluginVersion}`, `selection_id=${key}`, `selection_baseline=${baseline}`, `selection_main=${plan.selection.main}`,
         `selection_identity=${selection.selectionIdentity}`, ...(!targets.packages.includes('buildr') && plan.requirements.plugin
@@ -1161,7 +1195,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       let existing = find();
       if (!existing && state.candidate.dispatchRejected === true) state.candidate.dispatchRequested = false;
       if (!existing && !state.candidate.dispatchRequested) {
-        phase = 'source-verification';
+        changePhase('source-verification');
         const excludedBoundaries: string[] | undefined = options.excludedBoundaries ?? state.verificationSelection?.excludedBoundaries;
         let scopeStatement: string | undefined = options.scopeStatement ?? state.verificationSelection?.statement;
         if (excludedBoundaries?.length && !scopeStatement?.trim()) {
@@ -1215,7 +1249,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
           return answer('local-verification-required', localSource.nextActions, { localSource });
         }
         ensureCandidateBranch(carrier);
-        phase = 'candidate-verification';
+        changePhase('candidate-verification');
         const fields = scoped ? [`release_packages=${targets.packages.join(',')}`, `buildr_version=${JSON.parse(git(['show', `${sourceCommit}:projects/product/services/buildr/package.json`, '--'], repo)).version}`,
           `plugin_version=${plan.pluginVersion}`, `selection_id=${key}`, `selection_baseline=${baseline}`, `selection_main=${plan.selection.main}`,
           `selection_identity=${selection.selectionIdentity}`, ...(!targets.packages.includes('buildr') && plan.requirements.plugin
@@ -1257,7 +1291,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       state.candidate.runId = Number(existing.databaseId);
     }
     writeOperation(file, state);
-    phase = 'candidate-verification';
+    changePhase('candidate-verification');
     const candidate = readRun(state.candidate.runId);
     if (candidate.head_sha !== sourceCommit) throw new Error('Candidate run source differs from the frozen release.');
       if (candidate.repository?.full_name !== releasePublishAuthority.repository || !isCandidateVerificationWorkflow(candidate.path)
@@ -1301,7 +1335,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
         || aggregate.findings?.some((finding: any) => finding.code !== 'evidence-missing' || !aggregate.deferredIds.includes(finding.id))) {
         throw new Error('Candidate local handoff differs from the frozen source or contains an unrelated failure.');
       }
-      phase = 'artifact-verification';
+      changePhase('artifact-verification');
       const handoff = localArtifactHandoff(repo, state.candidate);
       const evidenceDirectory = handoff.evidenceDirectory;
       const localArtifact = { ...handoff, artifactDirectory: candidateEvidence.artifactDirectory ?? artifactDestination,
@@ -1336,7 +1370,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       state.pluginSourceAggregate = pluginSource.aggregate; pluginSourceCandidate = pluginSource; save();
     }
     if (stopAfterCandidate) {
-      phase = 'candidate-closeout';
+      changePhase('candidate-closeout');
       state.preparation ??= preserveCandidatePreparation(workspace, key, selection, main, candidate, candidateEvidence, pluginSourceCandidate, {
         sourceCommit: candidateEvidence?.aggregate.verificationSource ?? state.candidate.repair?.verificationSource ?? sourceCommit,
         source: state.candidate.verificationInputs?.source ?? state.candidate.sourceVerification?.digest ?? null,
@@ -1347,7 +1381,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       return answer(completed.status, completed.nextActions, { ...completed, stopAfter: 'candidate', sourceTree: selection.releaseTree, run: candidate,
         artifacts: snapshot.artifacts, preparationCloseout: state.preparation });
     }
-    phase = 'adoption-readiness';
+    changePhase('adoption-readiness');
     const pr = take(ensureReleaseToMainPullRequest({ ...selectionArgs, generation: selection.generation, repo, candidateCommit: sourceCommit, candidateTree: selection.releaseTree,
       title: `Release ${key}`, body: `Release ${key} from frozen ${sourceCommit}.\n\nCandidate run ID: ${state.candidate.runId}${scoped ? `\nRelease selection: ${JSON.stringify(plan.selection)}${plan.requirements.plugin ? `\nBuildr peer: ${JSON.stringify(state.pluginSourceAggregate.verification.peer)}` : ''}` : ''}`,
       authorizeReleasePush: true, authorizePullRequest: true }, { execute }));
@@ -1411,7 +1445,7 @@ export async function runReleaseOperationUntilSettled(options: any, dependencies
 
 export function compactReleaseOperation(value: any): any {
   const keys = ['schemaVersion', 'action', 'status', 'version', 'selectionId', 'targets', 'sourceCommit', 'contextIdentity',
-    'package', 'stopAfter', 'outcomes', 'cleanup', 'cleanupPlan', 'diagnostic', 'nextActions', 'effects', 'waiting', 'operationDurationMs', 'remoteTiming', 'artifactObservation', 'plan'];
+    'releaseReports', 'reportDiagnostic', 'package', 'stopAfter', 'outcomes', 'cleanup', 'cleanupPlan', 'diagnostic', 'nextActions', 'effects', 'waiting', 'operationDurationMs', 'remoteTiming', 'artifactObservation', 'plan'];
   const summary = Object.fromEntries(keys.filter(key => value[key] !== undefined).map(key => [key, value[key]]));
   for (const key of ['candidate', 'publication', 'run']) {
     const item = value[key];

@@ -754,7 +754,7 @@ export function cleanupReleaseSelection(options: any = {}, dependencies: any = {
     updateRefs(observed.map(({ ref, commit }: any) => `delete ${ref} ${commit}`), repo, dependencies);
     removed.state = 'confirmed';
     if (refExists(branchRef, repo, dependencies) || refsUnder(`refs/buildr/release/${required}/`, repo, dependencies).length) throw new Error('Release local refs remain after cleanup; preserve and inspect the current facts.');
-    return { schemaVersion: releaseSelectionSchema, operation: 'cleanup', version: inspected.version, ...(options.selectionId === undefined ? {} : { selectionId: required }), branch, status: 'passed', action: 'cleaned', cleanupAuthority, effects: [...(branchExists ? [{ type: 'branch-deleted', ref: branchRef }] : []), ...refs.map((ref: any) => ({ type: 'lifecycle-ref-deleted', ref }))], nextActions: [] };
+    return { schemaVersion: releaseSelectionSchema, operation: 'cleanup', version: inspected.version, ...(options.selectionId === undefined ? {} : { selectionId: required }), branch, status: 'passed', action: 'cleaned', cleanupAuthority, effects: observed.map(({ ref, commit }: any) => ({ type: ref === branchRef ? 'branch-deleted' : 'lifecycle-ref-deleted', version: inspected.version, ref, commit, state: 'confirmed' })), nextActions: [] };
   } catch (error: any) {
     return errorResult('cleanup', version, error, { code: 'release_selection_cleanup_blocked', effects, nextActions: ['确认本地 branch 未 checkout、资源ownership明确且传入 --confirm 后重试；正式远端release ref由独立owner核验。'] });
   }

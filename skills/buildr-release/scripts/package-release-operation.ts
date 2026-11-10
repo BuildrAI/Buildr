@@ -516,16 +516,18 @@ async function closeoutPackageRelease(options: any, scope: any, dependencies: an
     && state.closeout?.outcomes?.cleanup === 'cleaned' && state.closeout?.outcomes?.taskRegistration === 'completed';
   let cleanup = retained ? state.closeout.cleanup : null;
   if (!retained) {
+    scope.changePhase?.('dev-reconciliation');
     const reconciliation = (dependencies.reconcilePublishedReleaseWithDev ?? reconcilePublishedReleaseWithDev)({ repo: scope.workspace, publicationEvidence: options.evidence, inspectDriftedReleaseForCleanup: true }, { execute: scope.execute });
     effects.push(...(reconciliation.effects ?? []));
     if (reconciliation.status !== 'passed') return { status: 'published-dev-reconciliation-blocked', outcomes: { publication: 'passed' }, ownerResult: reconciliation, nextActions: reconciliation.nextActions };
+    scope.changePhase?.('release-ref-cleanup');
     cleanup = (dependencies.closeoutReleaseGitResources ?? closeoutReleaseGitResources)({ repo: scope.workspace, version: state.targets.versions.buildr ?? null,
       selectionId: state.targets.selectionId, targets: state.targets, generation: options.context.selection.generation, expectedCommit: options.context.selection.releaseHead,
       publicationEvidence: options.evidence, authorizeCarrierCleanup: true, authorizeLocalSelectionCleanup: true,
-      authorizeRemoteDelete: state.publicationAuthorization?.contextIdentity === options.context.identity, cleanupPolicy: state.publicationAuthorization?.cleanupPolicy,
       ghCommand: options.ghCommand }, { execute: scope.execute });
     effects.push(...(cleanup.effects ?? []));
     if (cleanup.status !== 'passed') return { status: 'published-cleanup-blocked', outcomes: { publication: 'passed' }, cleanup, nextActions: cleanup.nextActions };
+    scope.changePhase?.('task-registration');
     const runtime = dependencies.runtime ?? createReleaseToolRuntime();
     const taskId = `release-${state.targets.selectionId}`;
     const controller = dependencies.resolveRetainedController(scope.workspace);
@@ -536,6 +538,7 @@ async function closeoutPackageRelease(options: any, scope: any, dependencies: an
       effects.push(...(completed.effects ?? [])); task = runtime.inspectTask(scope.workspace, taskId);
     }
     if (task.record.status !== 'completed') return { status: 'published-registration-blocked', outcomes: { publication: 'passed', cleanup: 'passed' }, nextActions: ['恢复准确发布任务登记，保留公开事实。'] };
+    scope.changePhase?.('worktree-cleanup');
     const worktree = invoke(controller, ['worktree', 'cleanup', taskId, '--expected-source', `workspace=${options.context.selection.releaseHead}`,
       '--delivered-ref', `workspace=${options.context.convergence.mainCommit}`, '--target', scope.workspace, '--json']);
     effects.push(...(worktree.effects ?? []));
