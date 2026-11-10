@@ -638,6 +638,45 @@ test('unrelated documentation does not activate or access Task records', (t: any
   assert.equal(calls.some(args => args.includes('sync') || args.includes('task') || args[0] === 'push'), false);
 });
 
+for (const mode of ['stale', 'other-scope', 'mixed', 'render-failed', 'still-stale']) {
+  test(`runtime-only activation repairs only root projection drift once: ${mode}`, t => {
+    const f = fixture(t), relative = 'projects/product/services/buildr/src/modules/runtime-fixture.ts';
+    fs.mkdirSync(path.dirname(path.join(f.root, relative)), { recursive: true });
+    fs.writeFileSync(path.join(f.root, relative), 'export const runtime = true;\n');
+    git(f.root, 'add', '--', relative); git(f.root, 'commit', '-m', 'runtime only'); git(f.root, 'push', 'origin', 'dev');
+    const deliveredRef = git(f.root, 'rev-parse', 'HEAD'), perform = executor(f.root), bridge = fs.realpathSync(f.projectBridge);
+    const calls: string[][] = [];
+    let doctors = 0, renders = 0;
+    const findings: any[] = [{ code: 'runtime.codex_stale', scope: mode === 'other-scope' ? 'projects/demo' : '.' }];
+    if (mode === 'mixed') findings.push({ code: 'source.conflict', scope: '.' });
+    const result = runDirectSelfBootstrapCloseout({
+      workspaceRoot: f.root, baseRef: f.baseRef, deliveredRef, targetBranch: 'dev', remote: 'origin',
+      agent: 'codex', nodeExecutable: process.execPath, environment: f.environment,
+      execute(command: string, args: string[], context: any) {
+        calls.push(args);
+        if (command === bridge && args[0] === 'doctor') {
+          doctors++;
+          return { status: 0, stdout: JSON.stringify(doctors > 1 && mode !== 'still-stale'
+            ? { health: { ready: true }, findings: [] } : { health: { ready: false }, findings }), stderr: '' };
+        }
+        if (command === bridge && args[0] === 'render') {
+          renders++;
+          assert.deepEqual(args, ['render', 'codex', '--target', fs.realpathSync(f.root)]);
+          return { status: mode === 'render-failed' ? 1 : 0, stdout: '', stderr: '' };
+        }
+        return perform(command, args, context);
+      },
+    });
+    assert.equal(result.status, mode === 'stale' ? 'passed' : 'blocked', JSON.stringify(result));
+    assert.equal(renders, ['other-scope', 'mixed'].includes(mode) ? 0 : 1);
+    assert.equal(doctors, ['stale', 'still-stale'].includes(mode) ? 2 : 1);
+    assert.equal(calls.some(args => args.includes('--publish-resources') || args[0] === 'sync'), false);
+    assert.equal(calls.some(args => ['add', 'commit', 'push'].includes(args[0])), false);
+    assert.equal(git(f.root, 'rev-parse', 'HEAD'), deliveredRef);
+    assert.equal(git(f.root, 'status', '--porcelain'), '');
+  });
+}
+
 for (const [role, sourcePath] of [
   ['module', 'src/modules/workspace/application/runtime-fixture.ts'],
   ['bin', 'bin/runtime-fixture.mjs'],
