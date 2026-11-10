@@ -7,7 +7,8 @@ import { fileURLToPath } from 'node:url';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
 import { assertMinimumNodeVersion, spawnCommandSync } from '../../src/infrastructure/process.ts';
 import { candidateEnvironmentPlan, prepareCandidateEnvironment } from '../../tools/verification/candidate-environment.ts';
-import { CANDIDATE_CI_HOST_NODE_TUPLES, CANDIDATE_CI_SHARDS } from './registry.ts';
+import { CANDIDATE_CI_HOST_NODE_TUPLES, CANDIDATE_CI_SHARDS, verificationSteps } from './registry.ts';
+import { applyCandidateDeclaredScope, parseCandidateDeclaredScope } from './candidate-declared-scope.ts';
 import { readCandidateCiArtifact, resolveCandidateExecutionContext, resolveCandidateSourceCommit } from './candidate-ci-evidence.ts';
 import { createCandidateCheckInputReader } from './candidate-check-inputs.ts';
 import { candidateProofDefinition, candidateProofDescriptors } from './candidate-repair.ts';
@@ -46,10 +47,15 @@ export function createLocalArtifactPlan(platform = process.platform, options: an
   const scope = options.scope ?? 'all';
   const nodeTuple = options.nodeTuple ?? 'minimum';
   if (!['all', 'common', 'platform'].includes(scope) || nodeTuple !== 'minimum') throw new Error('Invalid local package selection.');
-  const shards = CANDIDATE_CI_SHARDS.filter((shard: any) => shard.requiresArtifact && (
+  const declared = applyCandidateDeclaredScope({
+    scope: options.verificationScope ?? parseCandidateDeclaredScope(process.env.BUILDR_CANDIDATE_VERIFICATION_SCOPE),
+    shards: CANDIDATE_CI_SHARDS, hostNodeTuples: CANDIDATE_CI_HOST_NODE_TUPLES,
+    executionBoundaryOf: (id: string) => verificationSteps.find((step: any) => step.id === id)?.testing?.executionBoundary,
+  });
+  const shards = declared.shards.filter((shard: any) => shard.requiresArtifact && (
     shard.platformScope.kind === 'common' ? scope !== 'platform' : scope !== 'common' && shard.platformScope.runners.includes(runner)
   ));
-  const hosts = scope === 'common' ? [] : CANDIDATE_CI_HOST_NODE_TUPLES.filter((tuple: any) => tuple.runner === runner && tuple.expectation === nodeTuple);
+  const hosts = scope === 'common' ? [] : declared.hostNodeTuples.filter((tuple: any) => tuple.runner === runner && tuple.expectation === nodeTuple);
   const nodes = [...shards.map((shard: any) => ({ id: shard.id, action: 'run', preparation: shard.preparation, stepIds: shard.stepIds })),
     ...hosts.map((tuple: any) => ({ id: tuple.id, action: 'host', preparation: tuple.id === 'host-minimum-macos' ? 'publisher' : 'host', stepIds: ['host-node-compatibility'] }))];
   // Source verification leaves a full controller environment. Consume it first,
@@ -64,7 +70,7 @@ export function createLocalArtifactPlan(platform = process.platform, options: an
 export function runLocalArtifactVerification(options: any, dependencies: any = {}): any {
   const plan = createLocalArtifactPlan(dependencies.platform ?? process.platform, options);
   const nodeVersion = dependencies.nodeVersion ?? process.versions.node;
-  if (plan.scope !== 'common' && plan.nodeTuple === 'minimum' && nodeVersion !== '24.15.0') throw new Error(`Minimum Node package checks require actual Node 24.15.0, active ${nodeVersion}.`);
+  if (plan.nodes.length && plan.scope !== 'common' && plan.nodeTuple === 'minimum' && nodeVersion !== '24.15.0') throw new Error(`Minimum Node package checks require actual Node 24.15.0, active ${nodeVersion}.`);
   assertMinimumNodeVersion(nodeVersion, '24.15.0');
   const artifactDirectory = path.resolve(options.artifactDirectory);
   const output = path.resolve(options.output);
@@ -80,7 +86,9 @@ export function runLocalArtifactVerification(options: any, dependencies: any = {
   const env: NodeJS.ProcessEnv = { ...process.env, BUILDR_VERIFICATION_PROFILE: 'ci-workspace-limited', BUILDR_CANDIDATE_CI_ARTIFACT_DIR: artifactDirectory, BUILDR_CANDIDATE_CI_OUTPUT_DIR: output };
   // A local process retains its local identity; it never impersonates an
   // Actions job just because it will later contribute to a hosted aggregate.
-  for (const key of ['GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'GITHUB_JOB', 'GITHUB_EVENT_NAME', 'BUILDR_CANDIDATE_CI_EVIDENCE_OUTPUT']) delete env[key];
+  for (const key of ['GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'GITHUB_JOB', 'GITHUB_EVENT_NAME', 'BUILDR_CANDIDATE_CI_EVIDENCE_OUTPUT']) {
+    if (!env.BUILDR_LOCAL_PACKAGE_HANDOFF || !process.env.GITHUB_RUN_ID || key === 'BUILDR_CANDIDATE_CI_EVIDENCE_OUTPUT') delete env[key];
+  }
   const prepared = new Set<string>();
   const results: any[] = [];
   const reusableEvidence = dependencies.reusableEvidence ?? ((node: any): boolean => {
@@ -129,7 +137,7 @@ export function runLocalArtifactVerification(options: any, dependencies: any = {
  * selection does not run a minimum host check. */
 export function localArtifactRequiredNode(options: any, platform = process.platform): string | null {
   const plan = createLocalArtifactPlan(platform, options);
-  if (plan.scope === 'common' || plan.nodeTuple !== 'minimum') return null;
+  if (!plan.nodes.length || plan.scope === 'common' || plan.nodeTuple !== 'minimum') return null;
   return CANDIDATE_CI_HOST_NODE_TUPLES.find((tuple: any) => tuple.runner === plan.runner && tuple.expectation === 'minimum')?.requestedNode ?? null;
 }
 

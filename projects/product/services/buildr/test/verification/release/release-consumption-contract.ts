@@ -1,5 +1,9 @@
 import crypto from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { PUBLISH_NPM_VERSION } from '../../../tools/verification/candidate-environment.ts';
+import { LOCAL_PACKAGE_MODEL, validatePackageHandoff } from '../../../../../../../skills/buildr-release/scripts/local-package-handoff.ts';
+import { localPackageCoverage } from '../local-package-coverage.ts';
+import { assertFrozenVerificationRules } from '../../../../../../../skills/buildr-release/scripts/build-input-policy.ts';
 
 // This is the executable coverage contract, shared by Candidate and publication.
 // A new check must either name its Candidate evidence or explain its live boundary.
@@ -54,6 +58,27 @@ export function validateReleaseCheckDefinitions(checks: readonly any[] = RELEASE
 export function assertReleaseConsumptionCoverage(aggregate: any, expected: { sourceCommit: string; sourceTree?: string }, artifact: any, _recoveryContext?: any): void {
   validateReleaseCheckDefinitions();
   if (aggregate?.status !== 'passed' || aggregate.sourceCommit !== expected.sourceCommit || (expected.sourceTree && aggregate.sourceTree !== expected.sourceTree)) throw new Error('Release consumption requires a passed Candidate for the exact source.');
+  let optionalEvidenceIds: string[] = [];
+  if (aggregate.executionModel === LOCAL_PACKAGE_MODEL) {
+    const handoff = validatePackageHandoff(aggregate.packageHandoff);
+    if (handoff.verificationRules) {
+      assertFrozenVerificationRules(handoff.verificationRules);
+      if (handoff.verificationRules.kind !== 'buildr' || handoff.verificationRules.recipeIdentity !== aggregate.registryIdentity
+        || handoff.verificationRules.consumptionIdentity !== releaseConsumptionIdentity()) {
+        throw new Error('Frozen verification recipe or formal consumption contract differs.');
+      }
+    }
+    if (handoff.sourceCommit !== expected.sourceCommit || handoff.sourceTree !== aggregate.sourceTree
+      || handoff.artifactSha256 !== artifact?.sha256
+      || (handoff.verificationScope?.identity ?? null) !== (aggregate.declaredScope?.identity ?? null)) {
+      throw new Error('Local original, verification scope and published Candidate do not share one frozen contract.');
+    }
+    const coverage = localPackageCoverage(handoff, [], []);
+    if (!isDeepStrictEqual(aggregate.platformVerification, coverage.platformVerification)) {
+      throw new Error('Platform verification differs from the frozen local package policy.');
+    }
+    optionalEvidenceIds = coverage.platformVerification?.optionalEvidenceIds ?? [];
+  }
   // The aggregate owner validates individual proofs. This consumer checks current
   // coverage and exact bytes; a whole-list digest change is not a missing check.
   // Evidence the maintainer explicitly declared out of scope is reported by the
@@ -63,7 +88,7 @@ export function assertReleaseConsumptionCoverage(aggregate: any, expected: { sou
   if (notRun.size > 0 && !aggregate.declaredScope) throw new Error('Candidate reports not-run evidence without the user declaration that authorized it.');
   for (const check of RELEASE_CHECKS) {
     if (!('evidence' in check)) continue;
-    const undeclared = check.evidence.filter((id: string) => !present.has(id) && !notRun.has(id));
+    const undeclared = check.evidence.filter((id: string) => !present.has(id) && !notRun.has(id) && !optionalEvidenceIds.includes(id));
     if (undeclared.length) throw new Error(`Candidate is missing release check ${check.id}: ${undeclared.join(', ')}.`);
   }
   for (const field of ['sourceCommit', 'filename', 'size', 'sha256', 'integrity', 'applicationPayloadDigest']) {

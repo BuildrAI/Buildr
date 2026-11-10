@@ -5,7 +5,7 @@ import { dirname, join, resolve } from 'node:path';
 import { test, type TestContext } from 'node:test';
 import { DSH_SDK_BASELINES, DSH_SDK_REPOSITORY } from '../../tools/sdk-baselines.ts';
 import { ownedBuildRoot, sha256, SOURCE_SDK_RECEIPT, type SourceSdkReceipt } from '../../tools/prepare-source-sdk.ts';
-import { parseReleaseSdkInput, preparedReleaseSdkOutput, prepareReleaseSdk, releaseSdkEnvironment, releaseSdkPlan, releaseSdkStore, releaseSdkValidationCommand, RELEASE_SDK_MANIFEST, RELEASE_SDK_PNPM_VERSION, RELEASE_SDK_REPOSITORY, RELEASE_SDK_STORE_DIRECTORY, verifyPatchedReleaseSdkCheckout, verifyReleaseSdkCheckout, type ReleaseSdkCommand } from '../../tools/prepare-release-sdk.ts';
+import { parseReleaseSdkInput, preparedReleaseSdkOutput, prepareReleaseSdk, releaseSdkEnvironment, releaseSdkPlan, releaseSdkValidationCommand, RELEASE_SDK_MANIFEST, RELEASE_SDK_PNPM_VERSION, RELEASE_SDK_REPOSITORY, verifyPatchedReleaseSdkCheckout, verifyReleaseSdkCheckout, type ReleaseSdkCommand } from '../../tools/prepare-release-sdk.ts';
 
 const service = resolve(import.meta.dirname, '../..'), plan = releaseSdkPlan();
 function directory(t: TestContext, prefix = 'release-sdk-test-'): string {
@@ -36,17 +36,6 @@ test('runner environment gives installers empty explicit configs and no inherite
   assert.equal(env.npm_config_manage_package_manager_versions, 'false');
   assert.ok(env.PATH?.startsWith('/tmp/tools'));
   for (const key of ['NPM_TOKEN', 'NODE_AUTH_TOKEN', 'NPM_CONFIG_AUTH', 'npm_config_auth', 'BUILDR_DSH_SOURCE_SDK_ROOT', 'BUILDR_DSH_SDK_ROOT', 'GIT_DIR', 'GIT_WORK_TREE', 'GIT_ASKPASS', 'SSH_AUTH_SOCK']) assert.equal(env[key], undefined);
-});
-test('download store survives independent preparations but rejects files and external directory aliases', t => {
-  const root = directory(t), service = join(root, 'service'); mkdirSync(service);
-  const store = releaseSdkStore(service);
-  writeFileSync(join(store, 'retained-download'), 'downloaded bytes');
-  assert.equal(releaseSdkStore(service), store);
-  assert.equal(readFileSync(join(store, 'retained-download'), 'utf8'), 'downloaded bytes');
-  rmSync(store, { recursive: true }); writeFileSync(store, 'not a directory');
-  assert.throws(() => releaseSdkStore(service), /owned regular directory/);
-  rmSync(store); symlinkSync(root, store);
-  assert.throws(() => releaseSdkStore(service), /owned regular directory/);
 });
 function localGit(t: TestContext) {
   const root = directory(t), source = join(root, 'source'); mkdirSync(source);
@@ -98,10 +87,16 @@ function collaborators(t: TestContext, options: FakeOptions = {}) {
     assert.equal(readFileSync(request.env.NPM_CONFIG_USERCONFIG!, 'utf8'), '');
     assert.equal(readFileSync(request.env.NPM_CONFIG_GLOBALCONFIG!, 'utf8'), '');
     if (args[0] === '--version') { t.after(() => rmSync(request.cwd, { recursive: true, force: true })); return options.nodeVersion ?? process.version; }
+    if (args[0] === pnpm && args[1] === 'store') return join(root, 'store');
     if (args[0] === pnpm && args[1] === '--version') return options.pnpmVersion ?? plan.pnpmVersion;
+    if (file === 'git' && args[0] === '--git-dir') {
+      if (args[2] === 'rev-parse' && args[3] === '--is-bare-repository') return 'true';
+      if (args[3] === 'FETCH_HEAD^{commit}') return options.wrongTag ? 'a'.repeat(40) : plan.manifest.upstream.commit;
+      return '';
+    }
     if (file === 'git') {
       source = request.cwd;
-      if (args[0] === 'init') mkdirSync(join(source, '.git'));
+      if (args[0] === 'init') mkdirSync(args.includes('--bare') ? args.at(-1)! : join(source, '.git'));
       if (args[0] === 'checkout') {
         writeFileSync(join(source, 'package.json'), JSON.stringify({ version: plan.manifest.upstream.version, packageManager: `pnpm@${plan.pnpmVersion}` }));
         writeFileSync(join(source, 'pnpm-lock.yaml'), 'frozen dependency lock\n');
@@ -129,6 +124,7 @@ function collaborators(t: TestContext, options: FakeOptions = {}) {
   return {
     input: { node: process.execPath, pnpm }, calls, getSdk: () => sdk, getSource: () => source, getPatchChecks: () => patchChecks,
     dependencies: {
+      cacheRoot: join(root, 'git-cache'),
       command,
       verifyInput: (input: string, manifest: string) => { assert.equal(input, source); assert.equal(manifest, plan.manifestFile); return { source, manifest: plan.manifest, patchFile: join(dirname(plan.manifestFile), plan.manifest.patch.path) }; },
       verifyPatched: (input: string, selected: typeof plan) => { assert.equal(input, source); assert.deepEqual(selected, plan); patchChecks += 1; },
@@ -145,13 +141,13 @@ test('preparer fetches only the fixed tag, installs frozen patched dependencies,
   assert.equal(result.status, 'prepared'); assert.equal(result.sdk, fake.getSdk());
   assert.equal(result.nodeRequirement, plan.nodeRequirement); assert.equal(result.nodeVersion, process.versions.node);
   assert.equal(result.nodeExecutable, realpathSync(process.execPath));
-  assert.equal(result.dependencyStore, join(ownedBuildRoot(service), RELEASE_SDK_STORE_DIRECTORY));
+  assert.equal(result.dependencyStore, join(dirname(fake.input.pnpm), 'store'));
   assert.deepEqual(Object.keys(result.timingsMs), ['toolValidation', 'sourceDownloadAndPatch', 'dependencyInstall', 'sourceSdkBuild', 'outputValidation', 'total']);
   assert.ok(Object.values(result.timingsMs).every(value => Number.isSafeInteger(value) && value >= 0));
   assert.deepEqual(result.baseline, plan.manifest.upstream); assert.equal(result.runtimeActivated, false);
   assert.equal(fake.getPatchChecks(), 2);
   assert.deepEqual(fake.calls.find(call => call.args[0] === 'remote' && call.args[1] === 'add')?.args, ['remote', 'add', 'origin', RELEASE_SDK_REPOSITORY]);
-  assert.deepEqual(fake.calls.find(call => call.args[0] === 'fetch')?.args, ['fetch', '--quiet', '--depth=1', 'origin', `refs/tags/${plan.manifest.upstream.tag}`]);
+  assert.deepEqual(fake.calls.find(call => call.args[0] === '--git-dir' && call.args[2] === 'fetch')?.args.slice(2), ['fetch', '--quiet', '--depth=1', '--no-tags', RELEASE_SDK_REPOSITORY, `refs/tags/${plan.manifest.upstream.tag}`]);
   const install = fake.calls.find(call => call.args[1] === 'install')!;
   assert.equal(install.file, process.execPath); assert.deepEqual(install.args, [fake.input.pnpm, 'install', '--frozen-lockfile', '--ignore-scripts', '--prefer-offline', '--verify-store-integrity=true', '--store-dir', result.dependencyStore]);
   assert.equal(install.cwd, fake.getSource());
@@ -163,6 +159,7 @@ test('default input and final validation also run under explicit Node with isola
   const fake = collaborators(t), ordinary = fake.dependencies.command;
   const actions: string[] = [];
   const deps = {
+    cacheRoot: fake.dependencies.cacheRoot,
     command: ((file, args, request) => {
       if (args[0] !== '--input-type=module') return ordinary(file, args, request);
       assert.equal(file, process.execPath); assert.equal(request.cwd, service);

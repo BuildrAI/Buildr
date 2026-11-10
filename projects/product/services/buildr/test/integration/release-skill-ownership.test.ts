@@ -76,7 +76,7 @@ test('the relocated source release CLI exposes help without creating release or 
   });
   assert.ifError(result.error);
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /Usage: release-orchestration-runner\.ts <prepare\|inspect\|publish\|resume>/u);
+  assert.match(result.stdout, /Usage: release-orchestration-runner\.ts <prepare\|inspect\|publish\|resume\|withdraw>/u);
   assert.match(result.stdout, /--workspace/u);
   assert.match(result.stdout, /--packages/u);
   assert.match(result.stdout, /--authorized/u);
@@ -150,6 +150,9 @@ test('method and publication recovery repairs preserve the original package sour
   }
   const repaired = fixture.commit();
   const binding = createCandidateSourceBinding(fixture.root, original, repaired);
+  const legacy = createCandidateSourceBinding(fixture.root, original, repaired, null);
+  assert.equal(legacy.buildInputsIdentity, binding.buildInputsIdentity, 'legacy bindings retain the complete release Skill exclusion');
+  assert.equal(legacy.schemaVersion, 'buildr.candidate-source-binding/v1');
   assert.equal(binding.productSource, original);
   assert.equal(binding.verificationSource, repaired);
   assert.notEqual(binding.productTree, binding.verificationTree);

@@ -67,6 +67,18 @@ test('release PR gate reuses the exact successful Candidate and its two artifact
   assert.deepEqual(await verifyReleasePullRequestCandidate(event, repository, requestJson, scoped), { status: 'passed', runId, sourceCommit, branch });
 });
 
+test('registered entry accepts its reusable Candidate job but never platform diagnosis as release proof', async () => {
+  const value = fixture({ jobs: { total_count: 2, jobs: [
+    { name: 'Candidate gate', conclusion: 'skipped' },
+    { name: 'Original package / Candidate gate', conclusion: 'success' },
+  ] } });
+  await verifyReleasePullRequestCandidate(value.event, repository, value.requestJson, value.scoped);
+  const diagnostic = fixture({ jobs: { total_count: 1, jobs: [
+    { name: 'Original package / Package diagnostic', conclusion: 'success' },
+  ] } });
+  await assert.rejects(verifyReleasePullRequestCandidate(diagnostic.event, repository, diagnostic.requestJson, diagnostic.scoped), /Candidate gate did not pass/);
+});
+
 test('a green hosted handoff cannot replace complete main Candidate coverage, including legacy recovery', async () => {
   for (const mutate of [
     (proof: any) => { proof.aggregate.status = 'incomplete'; proof.aggregate.deferredIds = ['runtime-macos']; },
@@ -332,7 +344,7 @@ test('source aggregate rejects unbound bytes, wrong peer origin and a failed act
 test('workflow keeps explicit/release entries and plugin source Candidate has no publication authority', () => {
   const file = path.resolve(import.meta.dirname, '../../../../../../.github/workflows/verify.yml');
   const workflow = fs.readFileSync(file, 'utf8');
-  assert.match(workflow, /options: \[candidate, release-rehearsal\]/u);
+  assert.match(workflow, /options: \[candidate, release-rehearsal, local-package\]/u);
   assert.match(workflow, /release_packages:\n(?:[^\n]*\n)*?        default: ''\n        type: string/u);
   assert.match(workflow, /branches: \[main\]/u);
   assert.doesNotMatch(workflow, /^  push:/mu);

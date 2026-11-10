@@ -1,7 +1,7 @@
 import { releasePublishAuthority } from './release-authority.ts';
 
 const repository = releasePublishAuthority.repository;
-const workflows = new Set(['.github/workflows/verify.yml', '.github/workflows/publish.yml', '.github/workflows/publish-dsh-plugin.yml']);
+const workflows = new Set(['.github/workflows/verify.yml', '.github/workflows/verify-package.yml', '.github/workflows/publish.yml', '.github/workflows/publish-dsh-plugin.yml']);
 
 export function releaseQueuePolicy(options: any = {}): any {
   const timeoutSeconds = Number(options.queueTimeoutSeconds ?? 600);

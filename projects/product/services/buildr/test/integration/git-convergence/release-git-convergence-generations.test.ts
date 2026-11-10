@@ -1,8 +1,13 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import path from 'node:path';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 
 import { closeoutReleaseGitResources, convergenceFixture, git, inactiveGithub, multiGenerationCloseout } from './helpers.ts';
+import { createPackageHandoff, createPackageHandoffCommit } from '../../../../../../../skills/buildr-release/scripts/local-package-handoff.ts';
+import { createReleaseContext } from '../../../../../../../skills/buildr-release/scripts/release-readiness.ts';
+import { createReleaseTransactionEvidence } from '../../../../../../../skills/buildr-release/scripts/release-transaction-evidence.ts';
 
 test('v2 cleans every proved generation, keeps other versions, and reconstructs ownership after local selection cleanup', t => {
   const data = convergenceFixture(true, true);
@@ -38,6 +43,44 @@ test('v1 keeps earlier generations and continues to accept a CLI string generati
   assert.notEqual(git(data.controller, 'ls-remote', 'origin', `refs/heads/${earlier}`), '');
   assert.equal(git(data.controller, 'ls-remote', 'origin', `refs/heads/${current}`), '');
   assert.equal(cleaned.resources.carriers, undefined, 'a v1 result cannot claim all generations are absent');
+});
+
+test('package data closeout retains bytes still read by a source-carrier job, then deletes only the exact preserved ref', t => {
+  const data = convergenceFixture(true, true);
+  t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
+  const { current, options } = multiGenerationCloseout(data);
+  const bytes = Buffer.from('exact fixture npm archive'), sha256 = createHash('sha256').update(bytes).digest('hex');
+  const input = path.join(data.root, 'package.tgz'); fs.writeFileSync(input, bytes);
+  const proof = path.join(data.root, 'proof.json'); fs.writeFileSync(proof, '{"passed":true}\n');
+  const directory = path.join(data.root, 'handoff');
+  createPackageHandoff({ output: directory, sourceCommit: data.releaseCommit, sourceTree: data.releaseTree, platform: 'darwin', artifactSha256: sha256,
+    files: ['candidate-package/package.tgz', 'candidate-package/release-artifact.json', 'candidate-package/npm-pack.json', 'source-verification.json', 'artifact-verification.json']
+      .map(file => ({ path: file, source: file.endsWith('.tgz') ? input : proof })) });
+  const transport = createPackageHandoffCommit(data.controller, directory), branch = `${current}-input-${sha256.slice(0, 12)}`;
+  git(data.controller, 'push', 'origin', `${transport.commit}:refs/heads/${branch}`);
+  const published = data.publicationEvidence;
+  const { schemaVersion: _schema, identity: _identity, ...context } = published.context;
+  options.publicationEvidence = createReleaseTransactionEvidence({
+    context: createReleaseContext({ ...context, artifact: { filename: 'package.tgz', sourceCommit: data.releaseCommit, size: bytes.length, sha256, integrity: 'sha512-YnVpbGRy' } }),
+    publish: published.publish, outcome: 'passed',
+    publicFacts: { version: published.release.npmVersion, tagCommit: published.release.tagCommit, npmDistTag: published.release.npmDistTag,
+      registryPublished: true, registryIntegrity: published.release.registryIntegrity, githubRelease: published.release.githubRelease, registrySmoke: 'passed' },
+  });
+  const active = closeoutReleaseGitResources(options, { execute: (command: string, args: string[], settings: any) => {
+    if (command === 'gh' && args[3]?.includes(`branch=${encodeURIComponent(current)}&`)) return {
+      status: 0, stdout: JSON.stringify([{ total_count: 1, workflow_runs: [{ id: 123, head_branch: current, status: 'in_progress' }] }]),
+    };
+    return inactiveGithub(command, args, settings);
+  } });
+  assert.equal(active.status, 'blocked', JSON.stringify(active));
+  const retained = active.branches.find((item: any) => item.ref === `refs/heads/${branch}`);
+  assert.equal(retained.disposition, 'retained');
+  assert.deepEqual(retained.activity.runs, [123]);
+  assert.ok(git(data.controller, 'ls-remote', 'origin', `refs/heads/${branch}`).startsWith(transport.commit));
+  const closed = closeoutReleaseGitResources(options);
+  assert.equal(closed.status, 'passed', JSON.stringify(closed));
+  assert.equal(git(data.controller, 'ls-remote', 'origin', `refs/heads/${branch}`), '');
+  assert.equal(closed.branches.find((item: any) => item.ref === `refs/heads/${branch}`).expectedCommit, transport.commit);
 });
 
 test('v2 retains only a drifted, active, unknown, or failed generation and reports recoverable partial effects', async t => {

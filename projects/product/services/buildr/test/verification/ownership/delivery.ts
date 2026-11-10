@@ -20,6 +20,7 @@ export default {
   },
 "integration-candidate-release": {
     "inputs": [
+      "skills/buildr-release/scripts/local-candidate-withdrawal.ts",
       "skills/buildr-release/scripts/candidate-source-binding.ts",
       "skills/buildr-release/scripts/candidate-repair-operation.ts",
       "skills/buildr-release/scripts/release-failure.ts",

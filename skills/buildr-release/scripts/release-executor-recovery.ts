@@ -22,7 +22,7 @@ const plugin = 'projects/product/services/dsh-plugin/';
 export const releaseExecutorRecoveryPaths = new Set([
   'README.md', 'README.en.md', `${buildr}README.md`, `${buildr}docs/cli-reference.md`,
   `${plugin}test/unit/plugin-release.test.ts`,
-  '.github/workflows/publish.yml', '.github/workflows/publish-dsh-plugin.yml', '.github/workflows/verify.yml',
+  '.github/workflows/publish.yml', '.github/workflows/publish-dsh-plugin.yml', '.github/workflows/verify.yml', '.github/workflows/verify-package.yml',
   ...['release-executor-recovery', 'release-readiness', 'release-authority-oidc-probe', 'release-convergence',
     'release-transaction-evidence', 'release-package-evidence', 'release-publication', 'package-pair-diagnostics',
     'package-release-operation', 'release-transaction-runner', 'release-orchestration-runner', 'plugin-hosted-release',

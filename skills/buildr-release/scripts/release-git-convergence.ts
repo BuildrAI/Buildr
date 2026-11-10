@@ -12,6 +12,7 @@ import { cleanupReleaseSelection, inspectReleaseSelection, inspectReleaseSelecti
 import { validateReleaseTransactionEvidence } from './release-transaction-evidence.ts';
 import { packagePublicationEvidenceSchema, packageReleaseContextSchema, validatePackagePublicationEvidence } from './release-package-evidence.ts';
 import { repositoryFromUrl } from './release-authority-preflight.ts';
+import { assertPublishedPackageData } from './local-package-handoff.ts';
 
 export const releaseGitConvergenceSchema: any = 'buildr.release-git-convergence/v1';
 
@@ -619,8 +620,9 @@ function closeoutPublishedReleaseBranches(options: any, dependencies: any, evide
     }
     for (const branch of names) {
       const suffix = branch.slice(prefix.length);
-      const branchGeneration = branch === formalBranch ? generation : /^(?:0|[1-9]\d*)$/u.test(suffix) ? Number(suffix) : -1;
-      const expected = provenance.generationCommits[branchGeneration] ?? null;
+      const packageData = /^((?:0|[1-9]\d*))-input-([a-f0-9]{12})$/u.exec(suffix);
+      const branchGeneration = branch === formalBranch ? generation : packageData ? Number(packageData[1]) : /^(?:0|[1-9]\d*)$/u.test(suffix) ? Number(suffix) : -1;
+      let expected = provenance.generationCommits[branchGeneration] ?? null;
       const actual = remoteRefs.get(branch) ?? null;
       const local = localRefs.get(branch) ?? null;
       const item: any = { ref: `refs/heads/${branch}`, generation: branchGeneration, expectedCommit: expected, observedCommit: actual,
@@ -628,6 +630,18 @@ function closeoutPublishedReleaseBranches(options: any, dependencies: any, evide
       branches.push(item);
       if (!actual && !local) { item.disposition = 'already-cleaned'; continue; }
       try {
+        if (packageData) {
+          const dataCommit = actual ?? local;
+          if (!expected || actual && local && actual !== local) throw new Error('Temporary package data reference changed identity.');
+          if (git(repo, ['cat-file', '-e', `${dataCommit}:handoff.json`], dependencies, { allowFailure: true }).status !== 0) {
+            git(repo, ['fetch', '--no-tags', remote, dataCommit], dependencies);
+          }
+          const manifest = JSON.parse(git(repo, ['show', `${dataCommit}:handoff.json`], dependencies).stdout);
+          assertPublishedPackageData(manifest, expected, evidence.context.artifact?.sha256);
+          if (manifest.artifactSha256.slice(0, 12) !== packageData[2]) throw new Error('Temporary package data branch name differs from its original bytes.');
+          item.productSourceCommit = expected;
+          expected = dataCommit; item.expectedCommit = expected; item.kind = 'package-data';
+        }
         if (!expected || (actual && actual !== expected) || (local && local !== expected)) {
           throw new Error('Release branch identity does not match its published generation.');
         }
@@ -639,6 +653,11 @@ function closeoutPublishedReleaseBranches(options: any, dependencies: any, evide
           }
         }
         const activity = inspectReleaseBranchActivity(repo, branch, repository, options, dependencies);
+        if (packageData) {
+          const sourceActivity = inspectReleaseBranchActivity(repo, releaseCarrierBranchFor(version, branchGeneration), repository, options, dependencies);
+          activity.pullRequests = [...new Set([...activity.pullRequests, ...sourceActivity.pullRequests])];
+          activity.runs = [...new Set([...activity.runs, ...sourceActivity.runs])];
+        }
         if (activity.pullRequests.length || activity.runs.length) {
           item.activity = activity;
           throw new Error('Release branch is still used by an open pull request or unfinished workflow run.');

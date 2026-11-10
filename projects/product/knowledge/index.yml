@@ -314,6 +314,8 @@ artifacts:
     sources:
       [
         release-coordination-source,
+        release-local-package-source,
+        release-package-handoff-source,
         release-selection-source,
         release-publication-source,
         verification-source-reader,
@@ -324,7 +326,7 @@ artifacts:
         verification-artifact-reuse
       ]
   - id: product-release-architecture
-    title: Buildr 发布：谁负责什么
+    title: 历史发布模型：谁负责什么
     kind: diagram
     path: knowledge/archify/flows/release-architecture.html
     graphSource: knowledge/archify/flows/release-architecture.json
@@ -343,7 +345,7 @@ artifacts:
         verification-artifact-reuse
       ]
   - id: product-release-workflow
-    title: Buildr 发布：五步流程
+    title: 历史发布模型：五步流程
     kind: diagram
     path: knowledge/archify/flows/release-workflow.html
     graphSource: knowledge/archify/flows/release-workflow.json
@@ -1264,6 +1266,8 @@ artifacts:
     objects:
       - verification-product-tools
     sources:
+      - release-local-package-source
+      - release-package-handoff-source
       - verification-test-type-config
       - verification-plugin-test-types
       - verification-local-source
@@ -1307,6 +1311,8 @@ artifacts:
     objects:
       - verification-product-tools
     sources:
+      - release-local-package-source
+      - release-package-handoff-source
       - verification-test-type-config
       - verification-plugin-test-types
       - verification-local-source
@@ -1686,6 +1692,29 @@ sources:
     kind: skill
     skillId: buildr-release
     path: scripts/release-orchestration-runner.ts
+  - id: release-local-package-source
+    title: 本机原包准备与对端派发
+    kind: skill
+    skillId: buildr-release
+    path: scripts/local-package-operation.ts
+    summary: 先完成本机源码、唯一制包和验包，再交接准确原包；轮询不重做本机检查。
+  - id: release-local-plugin-source
+    title: 独立与联合插件本机准备
+    kind: skill
+    skillId: buildr-release
+    path: scripts/local-plugin-preparation.ts
+    summary: 自动准备准确SDK并完整验证唯一插件原包，保留冻结主包对端，远端不重构建。
+  - id: release-local-sdk-source
+    title: 本机SDK准备与校验复用
+    kind: code
+    path: services/dsh-plugin/tools/ensure-release-sdk.ts
+    summary: 绑定固定输入、构建工具、平台、实际依赖与生成物；失效时新建准备输出。
+  - id: release-package-handoff-source
+    title: 不可变原包数据交接
+    kind: skill
+    skillId: buildr-release
+    path: scripts/local-package-handoff.ts
+    summary: 按源码、系统、原包摘要和冻结范围绑定分块数据，拒绝非法文件及凭证，远端不执行数据引用内容。
   - id: release-candidate-observation-source
     title: 候选原包交接与运行耗时
     kind: skill

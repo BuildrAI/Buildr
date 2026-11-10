@@ -77,6 +77,7 @@ export function createVerificationExecutor(options: any): any  {
   delete baseEnv.BUILDR_CANDIDATE_PREPARATION_OUTPUT;
   delete baseEnv.BUILDR_CANDIDATE_PREPARATION_ID;
   delete baseEnv.BUILDR_VERIFICATION_FORCE;
+  delete baseEnv.BUILDR_VERIFICATION_JOBS;
   const packageAdapter: CandidatePackageAdapter | undefined = options.packageAdapter;
   const sharedCandidate: any = packageAdapter?.read(baseEnv);
   function requirePackageAdapter(): CandidatePackageAdapter {

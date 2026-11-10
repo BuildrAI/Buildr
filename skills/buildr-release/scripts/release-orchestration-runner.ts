@@ -1,5 +1,9 @@
 #!/usr/bin/env node
+import { withdrawLocalCandidate } from './local-candidate-withdrawal.ts';
 import { waitForReleaseOperation } from './release-operation-wait.ts';
+import { continueLocalPackageCandidate } from './local-package-operation.ts';
+import { localPackageVerificationScope } from './local-package-preparation.ts';
+import { LOCAL_PACKAGE_MODEL, isCandidateVerificationWorkflow } from './local-package-handoff.ts';
 import { releaseContextSchema } from './release-readiness.ts';
 import { recoverQueuedRelease, releaseQueuePolicy } from './github-queue-recovery.ts';
 
@@ -608,7 +612,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
   const stopAfterCandidate = options.stopAfter === 'candidate';
   releaseQueuePolicy(options);
   if (options.recoverPublication === true && (action !== 'resume' || options.authorized !== true)) throw new Error('Publication executor recovery requires explicit resume --recover-publication --authorized.');
-  if (!['prepare', 'inspect', 'publish', 'resume'].includes(action)) throw new Error('Release operation must be prepare, inspect, publish or resume.');
+  if (!['prepare', 'inspect', 'publish', 'resume', 'withdraw'].includes(action)) throw new Error('Release operation must be prepare, inspect, publish, resume or withdraw.');
   const targets = normalizeReleaseTargets({ packages: options.packages, version: options.version, pluginVersion: options.pluginVersion, selectionId: options.selectionId });
   const key = targets.selectionId;
   if (!options.workspace) throw new Error('Release operation requires --workspace <canonical-workspace>.');
@@ -623,7 +627,9 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       ? JSON.stringify(saved.targets) !== JSON.stringify(targets) : saved.version !== options.version || explicitTargets))) throw new Error('Release operation identity conflicts with the requested Workspace, targets or versions.');
   const selectionArgs = scoped ? { version: targets.versions.buildr ?? null, selectionId: key, targets } : { version: options.version };
   let state: any = saved ?? { schemaVersion: scoped ? 'buildr.release-operation-input/v2' : 'buildr.release-operation-input/v1',
-    version: targets.versions.buildr ?? null, ...(scoped ? { targets } : {}), workspace, sources: [], candidate: null, publication: null };
+    version: targets.versions.buildr ?? null, ...(scoped ? { targets } : {}), workspace, sources: [], candidate: null, publication: null,
+    executionModel: LOCAL_PACKAGE_MODEL };
+  const localPackageMode = state.executionModel === LOCAL_PACKAGE_MODEL;
   const currentEffects: any[] = [];
   let phase = action === 'publish' ? 'publication' : 'preflight';
   const operationStartedAt = Date.now();
@@ -644,13 +650,16 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
   const observeRunningCandidate = (run: any, repo: string) => {
     const pointer = state.candidate;
     if (run.id !== pointer.runId || run.head_sha !== pointer.sourceCommit
-      || run.repository?.full_name !== releasePublishAuthority.repository || run.path?.split('@')[0] !== '.github/workflows/verify.yml'
+      || run.repository?.full_name !== releasePublishAuthority.repository || !isCandidateVerificationWorkflow(run.path)
       || run.event !== 'workflow_dispatch' || run.head_branch !== pointer.branch) throw new Error('Running candidate no longer matches its frozen identity.');
     let remoteTiming: any = { status: 'unknown' };
     try {
       const pages = JSON.parse(gh(['api', '--paginate', '--slurp', `repos/${releasePublishAuthority.repository}/actions/runs/${run.id}/attempts/${run.run_attempt}/jobs?per_page=100`], repo));
       if (Array.isArray(pages) && pages.every(page => Array.isArray(page.jobs))) remoteTiming = candidateRunTimings(run, pages.flatMap(page => page.jobs));
     } catch { /* Progress is diagnostic, never a candidate gate. */ }
+    if (localPackageMode) return answer('candidate-running', [state.localPackage?.platformPolicy
+      ? '本机验收已完成；等待同一原包与证明的轻量保全，不执行对端重型验包。'
+      : '等待同一对端验包；本机原包与有效证明保持不变。'], { run, remoteTiming });
     const observation = observeCandidatePackage({ candidate: pointer, repo, handoff: localArtifactHandoff(repo, pointer),
       hasLocalEvidence: Boolean(options.artifactVerification || pointer.verificationInputs?.artifact || pointer.repair?.verificationInputs?.artifact),
       version: targets.versions.buildr, ghCommand: options.ghCommand }, { gh: (args: string[]) => gh(args, repo), execute,
@@ -707,6 +716,10 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
     if (!['passed', 'ready', 'created', 'inspected', 'updated', 'reused'].includes(value.status)) throw Object.assign(new Error(value.diagnostic?.message || value.nextActions?.join(' ') || 'Release owner did not complete.'), { ownerResult: value });
     return value;
   };
+  if (action === 'withdraw' && options.authorized !== true) {
+    const withdrawn = await withdrawLocalCandidate(state, key, options, { git, gh, execute, save, effects: currentEffects, fetchImpl: dependencies.withdrawalFetch });
+    return answer(withdrawn.status, withdrawn.nextActions, withdrawn);
+  }
   if (action === 'inspect') {
     const selection = inspectReleaseSelection({ ...selectionArgs, repo: workspace, devRef: 'origin/dev' });
     const runObservation = observeReleaseRun(state.publication?.runId ? state.publication : state.candidate, readRun);
@@ -716,7 +729,8 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       // never advances pointers, dispatches work, or rewrites prior public facts.
       return [name, { ...(pointer ?? {}), runObservation: observeReleaseRun(pointer, readRun) }];
     })) : null;
-    return answer('inspected', ['按当前运行终态继续同一prepare或resume。'], { selection,
+    return answer('inspected', [state.withdrawal ? '此选择已进入撤回；仅接续withdraw，不再prepare或publish。' : '按当前运行终态继续同一prepare或resume。'], { selection,
+      ...(state.withdrawal ? { withdrawal: state.withdrawal } : {}),
       run: runObservation.status === 'observed' ? runObservation.run : null, runObservation,
       ...(packagePublications ? { packagePublications } : {}) });
   }
@@ -735,6 +749,12 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
   try {
     if (fs.existsSync(file)) state = JSON.parse(fs.readFileSync(file, 'utf8'));
     if (scoped && JSON.stringify(state.targets) !== JSON.stringify(targets)) throw new Error('Stored release targets changed while acquiring the operation lock.');
+    if (state.workspace !== workspace) throw new Error('Stored release Workspace changed while acquiring the operation lock.');
+    if (action === 'withdraw') {
+      const withdrawn = await withdrawLocalCandidate(state, key, options, { git, gh, execute, save, effects: currentEffects, fetchImpl: dependencies.withdrawalFetch });
+      return answer(withdrawn.status, withdrawn.nextActions, withdrawn);
+    }
+    if (state.withdrawal) return answer('candidate-withdrawal-active', ['此选择已进入撤回；只读inspect或接续withdraw，不重建引用或公开。'], { withdrawal: state.withdrawal });
     if (action === 'resume') {
       // Older records may have persisted the public request without its frozen
       // dispatch inputs. Restore only bytes already present in the validated context.
@@ -1049,6 +1069,10 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
     // Plugin-only preparation does not require an unrelated main release note.
     if (targets.packages.includes('buildr')) extractReleaseNotes(git(['show', `${sourceCommit}:CHANGELOG.md`, '--'], repo), targets.versions.buildr);
     state.sourceCommit = sourceCommit;
+    if (localPackageMode) {
+      state.localPackageScope = localPackageVerificationScope(options, state.localPackageScope);
+      save();
+    }
     let plan: any = null;
     if (scoped) {
       if (alreadyMerged) {
@@ -1068,9 +1092,14 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
           return String(value.stdout ?? '');
         };
         plan = createReleaseCandidatePlan({ BUILDR_RELEASE_PACKAGES: targets.packages.join(','), BUILDR_SOURCE_BUILDR_VERSION: targets.versions.buildr,
+          ...(localPackageMode ? { BUILDR_LOCAL_PACKAGE_MODEL: LOCAL_PACKAGE_MODEL,
+            BUILDR_LOCAL_PACKAGE_WORKFLOW: state.candidate?.workflow ?? '.github/workflows/verify.yml' } : {}),
           BUILDR_PLUGIN_VERSION: targets.versions['dsh-plugin'], BUILDR_SELECTION_ID: key, BUILDR_SELECTION_BASELINE: baseline,
           BUILDR_SELECTION_MAIN: main, BUILDR_SELECTION_IDENTITY: selection.selectionIdentity, CANDIDATE_SOURCE_SHA: sourceCommit,
           ...(!targets.packages.includes('buildr') ? { BUILDR_BUILDR_PEER_VERSION: state.preparationPeer?.version, BUILDR_BUILDR_PEER_INTEGRITY: state.preparationPeer?.integrity } : {}) }, rawGit);
+        if (localPackageMode && excludesAllCandidateBoundaries(state.localPackageScope)) {
+          plan = { ...plan, requirements: { ...plan.requirements, plugin: false } };
+        }
         state.candidatePlan = plan; save();
       }
     }
@@ -1084,9 +1113,17 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       const platform = dependencies.platform ?? process.platform;
       const localRunner = platform === 'darwin' ? 'macos' : platform === 'win32' ? 'windows' : null;
       state.candidate = { sourceCommit, branch: carrier, runId: options.candidateRunId || null, dispatchRequested: false,
+        generation: selection.generation,
         ...(!options.candidateRunId && localRunner ? { localRunner } : {}) };
     }
-    if (!completedPreparation && (options.verificationSource || options.artifactVerification || (options.sourceVerification && state.candidate.runId) || state.candidate.repair)) {
+    if (localPackageMode && !completedPreparation) {
+      if (options.verificationSource && options.verificationSource !== sourceCommit) throw new Error('New local package preparation executes its frozen verifier; explicitly select changed verifier inputs before replacing frozen proof.');
+      const prepared = await continueLocalPackageCandidate({ repo, workspace, key, sourceCommit, sourceTree: selection.releaseTree,
+        baseline, plan, options }, { state, save, effects: currentEffects, git, gh, execute, ensureCarrier: ensureCandidateBranch,
+        platform: dependencies.platform, ...dependencies.localPackageDependencies });
+      if (prepared.status !== 'ready') return answer(prepared.status, prepared.nextActions, prepared);
+    }
+    if (!localPackageMode && !completedPreparation && (options.verificationSource || options.artifactVerification || (options.sourceVerification && state.candidate.runId) || state.candidate.repair)) {
       phase = 'candidate-verification';
       const fields = scoped ? [`release_packages=${targets.packages.join(',')}`, `buildr_version=${JSON.parse(git(['show', `${sourceCommit}:projects/product/services/buildr/package.json`, '--'], repo)).version}`,
         `plugin_version=${plan.pluginVersion}`, `selection_id=${key}`, `selection_baseline=${baseline}`, `selection_main=${plan.selection.main}`,
@@ -1117,7 +1154,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       if (repaired.status !== 'adopted') return answer(repaired.status, repaired.nextActions, repaired);
       state.candidate.verificationInputs = { ...state.candidate.verificationInputs, ...state.candidate.repair?.verificationInputs }; save();
     }
-    if (!state.candidate.runId) {
+    if (!localPackageMode && !state.candidate.runId) {
       const previous = new Set(state.candidate.previousRunIds ?? []);
       const find = () => JSON.parse(gh(['run', 'list', '--repo', releasePublishAuthority.repository, '--workflow', 'verify.yml', '--branch', carrier, '--event', 'workflow_dispatch', '--limit', '100', '--json', 'databaseId,headSha,status,conclusion'])).find((run: any) => run.headSha === sourceCommit
         && !previous.has(run.databaseId));
@@ -1223,10 +1260,16 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
     phase = 'candidate-verification';
     const candidate = readRun(state.candidate.runId);
     if (candidate.head_sha !== sourceCommit) throw new Error('Candidate run source differs from the frozen release.');
-      if (candidate.repository?.full_name !== releasePublishAuthority.repository || candidate.path?.split('@')[0] !== '.github/workflows/verify.yml' || candidate.event !== 'workflow_dispatch' || (scoped && candidate.head_branch !== carrier)) throw new Error('Candidate run does not belong to the expected repository, carrier and verification workflow.');
+      if (candidate.repository?.full_name !== releasePublishAuthority.repository || !isCandidateVerificationWorkflow(candidate.path)
+        || state.candidate.workflow && candidate.path?.split('@')[0] !== state.candidate.workflow
+        || candidate.event !== 'workflow_dispatch' || (scoped && candidate.head_branch !== carrier)) throw new Error('Candidate run does not belong to the expected repository, carrier and verification workflow.');
     if (candidate.status !== 'completed' || candidate.conclusion !== 'success') ensureCandidateBranch(carrier);
     if (candidate.status !== 'completed') return observeRunningCandidate(candidate, repo);
     if (candidate.conclusion !== 'success') {
+      if (localPackageMode) return answer('diagnosis-required', [
+        state.localPackage?.platformPolicy ? '诊断同一原包保全失败，仅恢复其校验或上传；不执行可选对端冒烟，不重新制包。'
+          : '诊断同一对端验包失败；原因消除后仅恢复该运行的失败作业，保留本机原包和证明，不派发旧候选补验链。',
+      ], { run: candidate });
       const previousRetry = state.candidate.retry;
       if (previousRetry?.runId === state.candidate.runId && Number(candidate.run_attempt) <= previousRetry.previousAttempt) {
         return answer('candidate-retry-unconfirmed', ['回读同一候选运行的新attempt；不重复发送失败作业恢复请求。'], { run: candidate });
@@ -1243,6 +1286,9 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
     const candidateEvidence = !scoped || plan.requirements.buildr ? readCandidateEvidence({ candidateRunId: state.candidate.runId, ghCommand: options.ghCommand || 'gh', repo, execute,
       artifactDestination, dependencies: dependencies.candidateDependencies }) : null;
     if (candidateEvidence?.aggregate) {
+      if (localPackageMode && candidateEvidence.aggregate.packageHandoff?.identity !== state.localPackage?.handoffIdentity) {
+        throw new Error('Remote package proof belongs to a different local original or verification scope.');
+      }
       const { recordCandidateStepTimings } = await import('./candidate-step-timings.ts');
       const recorded = recordCandidateStepTimings(path.join(workspace, 'projects/product/services/buildr'), candidateEvidence.aggregate, state.candidate.runId);
       if (recorded > 0) currentEffects.push({ type: 'candidate-step-timings-recorded', runId: state.candidate.runId, steps: recorded });
@@ -1365,12 +1411,15 @@ export async function runReleaseOperationUntilSettled(options: any, dependencies
 
 export function compactReleaseOperation(value: any): any {
   const keys = ['schemaVersion', 'action', 'status', 'version', 'selectionId', 'targets', 'sourceCommit', 'contextIdentity',
-    'package', 'stopAfter', 'outcomes', 'cleanup', 'cleanupPlan', 'diagnostic', 'nextActions', 'effects', 'waiting', 'operationDurationMs', 'remoteTiming', 'artifactObservation'];
+    'package', 'stopAfter', 'outcomes', 'cleanup', 'cleanupPlan', 'diagnostic', 'nextActions', 'effects', 'waiting', 'operationDurationMs', 'remoteTiming', 'artifactObservation', 'plan'];
   const summary = Object.fromEntries(keys.filter(key => value[key] !== undefined).map(key => [key, value[key]]));
   for (const key of ['candidate', 'publication', 'run']) {
     const item = value[key];
     if (item) summary[key] = Object.fromEntries(['runId', 'runAttempt', 'id', 'status', 'conclusion', 'url', 'sourceCommit'].filter(field => item[field] !== undefined).map(field => [field, item[field]]));
   }
+  if (value.withdrawal) summary.withdrawal = { identity: value.withdrawal.identity, status: value.withdrawal.status,
+    preservation: value.withdrawal.preservation ? { directory: value.withdrawal.preservation.directory, files: value.withdrawal.preservation.files.length } : null,
+    requests: value.withdrawal.requests };
   if (value.localSource) summary.localSource = { status: value.localSource.status, missingStepIds: value.localSource.missingStepIds,
     selectedStepIds: value.localSource.selectedStepIds, retainedStepIds: value.localSource.retainedStepIds,
     missingBaselineStepIds: value.localSource.missingBaselineStepIds, nextActions: value.localSource.nextActions };
@@ -1411,9 +1460,9 @@ function parseOptions(argv: any): any  {
     index++;
   }
   if (!['compact', 'full'].includes(options.detail)) throw new Error('--detail must be compact or full.');
-  if (!options.input && ['prepare', 'inspect', 'publish', 'resume'].includes(action)) return {
+  if (!options.input && ['prepare', 'inspect', 'publish', 'resume', 'withdraw'].includes(action)) return {
     ...options, normalOperation: true, candidateRunId: options['candidate-run-id'] ? Number(options['candidate-run-id']) : null,
-    pluginVersion: options['plugin-version'], selectionId: options['selection-id'],
+    pluginVersion: options['plugin-version'], selectionId: options['selection-id'], planIdentity: options['plan-identity'],
     sourceVerification: options['source-verification'],
     artifactVerification: options['artifact-verification'],
     verificationSource: options['verification-source'],
@@ -1428,7 +1477,7 @@ function parseOptions(argv: any): any  {
     supportTasks: options['support-tasks'] ? options['support-tasks'].split(',').filter(Boolean) : undefined,
   };
   if (options['stop-after'] !== undefined) throw new Error('--stop-after candidate is only supported by normal prepare, without --input.');
-    if (!options.input) throw new Error('Usage: release-orchestration-runner.ts <prepare|inspect|publish|resume> --workspace <root> [--packages buildr|dsh-plugin|buildr,dsh-plugin] [--version <main-version>] [--plugin-version <plugin-version>] [--baseline <ref>] [--source <sha> ...] [--selected-checks <step-id,...>] [--excluded-boundaries Static|Unit|Integration|E2E,... --scope-statement <user-decision>] [--stop-after candidate] [--authorized] [--recover-publication]');
+    if (!options.input) throw new Error('Usage: release-orchestration-runner.ts <prepare|inspect|publish|resume|withdraw> --workspace <root> [--packages buildr|dsh-plugin|buildr,dsh-plugin] [--version <main-version>] [--plugin-version <plugin-version>] [--baseline <ref>] [--source <sha> ...] [--selected-checks <step-id,...>] [--excluded-boundaries Static|Unit|Integration|E2E,... --scope-statement <user-decision>] [--stop-after candidate] [--authorized] [--plan-identity <withdrawal-plan-identity>] [--recover-publication]');
   if (!['compact', 'full'].includes(options.detail)) throw new Error('--detail must be compact or full.');
   const input: any = JSON.parse(fs.readFileSync(path.resolve(options.input), 'utf8'));
   if (action === 'inspect') return { action, detail: options.detail, output: options.output ? path.resolve(options.output) : null, expectedTimelineIdentity: options['timeline-identity'] ?? null, inspectedResult: input };
@@ -1447,7 +1496,7 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
       process.on('SIGTERM', terminate);
     }
     if (options.help) {
-      process.stdout.write('Usage: release-orchestration-runner.ts <prepare|inspect|publish|resume> --workspace <root> [--packages buildr|dsh-plugin|buildr,dsh-plugin] [--version <main-version>] [--plugin-version <plugin-version>] [--baseline <ref>] [--source <sha> ...] [--selected-checks <step-id,...>] [--excluded-boundaries Static|Unit|Integration|E2E,... --scope-statement <user-decision>] [--stop-after candidate] [--authorized] [--recover-publication] [--wait] [--wait-timeout-ms <ms>] [--wait-interval-ms <ms>] [--queue-timeout-seconds <seconds>] [--max-queue-redispatches <count>] [--output <file>] [--detail compact|full]\n');
+      process.stdout.write('Usage: release-orchestration-runner.ts <prepare|inspect|publish|resume|withdraw> --workspace <root> [--packages buildr|dsh-plugin|buildr,dsh-plugin] [--version <main-version>] [--plugin-version <plugin-version>] [--baseline <ref>] [--source <sha> ...] [--selected-checks <step-id,...>] [--excluded-boundaries Static|Unit|Integration|E2E,... --scope-statement <user-decision>] [--stop-after candidate] [--authorized] [--plan-identity <withdrawal-plan-identity>] [--recover-publication] [--wait] [--wait-timeout-ms <ms>] [--wait-interval-ms <ms>] [--queue-timeout-seconds <seconds>] [--max-queue-redispatches <count>] [--output <file>] [--detail compact|full]\n');
     } else {
     const value: any = options.normalOperation ? await runReleaseOperationUntilSettled(options, {
       signal: controller.signal,
@@ -1457,7 +1506,7 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
       : await runReleaseOrchestration(options);
     if (options.output) fs.writeFileSync(options.output, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
     process.stdout.write(`${JSON.stringify(options.detail === 'full' ? value : options.normalOperation ? compactReleaseOperation(value) : compactReleaseOrchestration(value), null, 2)}\n`);
-    if (value.status === 'blocked') process.exitCode = 1;
+    if (['blocked', 'withdrawal-blocked', 'candidate-withdrawal-active'].includes(value.status)) process.exitCode = 1;
     if (value.waiting?.status === 'cancelled') process.exitCode = controller.signal.reason === 'SIGTERM' ? 143 : 130;
     }
   } catch (error: any) {

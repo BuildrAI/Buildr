@@ -3,42 +3,22 @@ import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { assertReleaseExecutorRecoverySource, releaseExecutionCommit } from './release-executor-recovery.ts';
+import { BUILD_INPUT_POLICY, assertBuildInputPolicy, verificationOnlyPath } from './build-input-policy.ts';
+export { releaseBuildInputPaths, verificationOnlyPath } from './build-input-policy.ts';
 
-export const CANDIDATE_SOURCE_BINDING_SCHEMA = 'buildr.candidate-source-binding/v1';
+export const CANDIDATE_SOURCE_BINDING_SCHEMA = 'buildr.candidate-source-binding/v2';
+const LEGACY_BINDING_SCHEMA = 'buildr.candidate-source-binding/v1';
 const sha = /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/u;
 const prefix = 'projects/product/services/buildr/';
 const digest = (value: unknown) => 'sha256-' + crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const gitRead = (repo: string, args: string[]) => execFileSync('git', args, { cwd: repo, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
-const releaseScripts = 'skills/buildr-release/scripts/';
-export const releaseBuildInputPaths = new Set([
-  'skills/buildr-release/scripts/package.json',
-  ...['candidate-package', 'application-payload', 'application-payload-entry', 'mysql-connection-entry',
-    'release-artifact', 'release-files', 'release-contract', 'release-notes'].map(name => `${releaseScripts}${name}.ts`),
-  `${releaseScripts}dsh-plugin/release.ts`,
-]);
-
-export function verificationOnlyPath(file: string): boolean {
-  // A repair runs the original controlled workflow with a separate checkout.
-  // Changing that workflow requires its own fresh infrastructure acceptance.
-  if (/^projects\/product\/(?:knowledge|openspec|tasks)\//u.test(file)) return true;
-  if (file.startsWith('skills/buildr-release/')) return !releaseBuildInputPaths.has(file);
-  // The Web Service's test fixtures are verifier inputs, not Vite or package inputs.
-  if (file.startsWith('projects/product/services/buildr-web/test/')) return true;
-  if (!file.startsWith(prefix)) return false;
-  const relative = file.slice(prefix.length);
-  // Test Context is itself a public package export; the package producer and
-  // build/prepare tooling are build inputs, even though used by verification.
-  if (relative.startsWith('test/') && !relative.startsWith('test/context/') && relative !== 'test/verification/release/candidate-package.ts') return true;
-  return /^tools\/release\//u.test(relative)
-    && !/^tools\/release\/(?:application-payload|release-artifact|release-contract|release-notes)(?:[./-]|$)/u.test(relative);
-}
-
 import { readGitSourceInventory, type GitSourceEntry } from '../../../projects/product/services/buildr/test/verification/candidate-check-inputs.ts';
 export { readGitSourceInventory, candidateCheckInputIdentity, createCandidateCheckInputReader, type GitSourceEntry } from '../../../projects/product/services/buildr/test/verification/candidate-check-inputs.ts';
 
-export function createCandidateSourceBinding(repo: string, productSource: string, verificationSource: string): any {
+export function createCandidateSourceBinding(repo: string, productSource: string, verificationSource: string, policy: any = BUILD_INPUT_POLICY): any {
+  if (policy !== null) assertBuildInputPolicy(policy);
   const original = readGitSourceInventory(repo, productSource), current = readGitSourceInventory(repo, verificationSource);
-  const buildInputs = (entries: GitSourceEntry[]) => entries.filter(entry => !verificationOnlyPath(entry.path));
+  const buildInputs = (entries: GitSourceEntry[]) => entries.filter(entry => !verificationOnlyPath(entry.path, policy ?? BUILD_INPUT_POLICY));
   const previous = buildInputs(original), next = buildInputs(current);
   if (!previous.some(entry => entry.path === prefix + 'package.json')) throw new Error('Candidate product source has no package identity.');
   if (digest(previous) !== digest(next)) {
@@ -47,7 +27,8 @@ export function createCandidateSourceBinding(repo: string, productSource: string
     const changedPaths = [...new Set([...before.keys(), ...after.keys()])].filter(file => before.get(file) !== after.get(file)).sort();
     throw Object.assign(new Error('Candidate build inputs changed; the affected package requires a new build.'), { code: 'candidate-build-inputs-changed', changedPaths });
   }
-  const binding = { schemaVersion: CANDIDATE_SOURCE_BINDING_SCHEMA, productSource,
+  const binding = { schemaVersion: policy === null ? LEGACY_BINDING_SCHEMA : CANDIDATE_SOURCE_BINDING_SCHEMA,
+    ...(policy === null ? {} : { inputPolicy: BUILD_INPUT_POLICY }), productSource,
     productTree: gitRead(repo, ['rev-parse', productSource + '^{tree}']).trim(), verificationSource,
     verificationTree: gitRead(repo, ['rev-parse', verificationSource + '^{tree}']).trim(),
     buildInputsIdentity: digest(previous) };
@@ -55,18 +36,23 @@ export function createCandidateSourceBinding(repo: string, productSource: string
 }
 
 export function assertCandidateSourceBinding(repo: string, binding: any): void {
-  if (!isDeepStrictEqual(createCandidateSourceBinding(repo, binding?.productSource, binding?.verificationSource), binding)) {
+  validateCandidateSourceBindingValue(binding);
+  if (!isDeepStrictEqual(createCandidateSourceBinding(repo, binding.productSource, binding.verificationSource,
+    binding.schemaVersion === LEGACY_BINDING_SCHEMA ? null : binding.inputPolicy), binding)) {
     throw new Error('Candidate source binding differs from actual Git inputs.');
   }
 }
 
 export function validateCandidateSourceBindingValue(value: any): any {
-  const fields = ['schemaVersion', 'productSource', 'productTree', 'verificationSource', 'verificationTree', 'buildInputsIdentity', 'identity'];
+  const legacy = value?.schemaVersion === LEGACY_BINDING_SCHEMA;
+  const fields = ['schemaVersion', 'productSource', 'productTree', 'verificationSource', 'verificationTree', 'buildInputsIdentity', 'identity',
+    ...(legacy ? [] : ['inputPolicy'])];
   if (!value || Object.keys(value).length !== fields.length || fields.some(key => !Object.hasOwn(value, key))
-    || value.schemaVersion !== CANDIDATE_SOURCE_BINDING_SCHEMA
+    || ![CANDIDATE_SOURCE_BINDING_SCHEMA, LEGACY_BINDING_SCHEMA].includes(value.schemaVersion)
     || !['productSource', 'productTree', 'verificationSource', 'verificationTree'].every(key => sha.test(value[key] ?? ''))
     || !/^sha256-[a-f0-9]{64}$/u.test(value.buildInputsIdentity ?? '')) throw new Error('Candidate source binding schema is invalid.');
-  const binding = { schemaVersion: CANDIDATE_SOURCE_BINDING_SCHEMA, productSource: value.productSource, productTree: value.productTree,
+  if (!legacy) assertBuildInputPolicy(value.inputPolicy);
+  const binding = { schemaVersion: value.schemaVersion, ...(legacy ? {} : { inputPolicy: BUILD_INPUT_POLICY }), productSource: value.productSource, productTree: value.productTree,
     verificationSource: value.verificationSource, verificationTree: value.verificationTree, buildInputsIdentity: value.buildInputsIdentity };
   if (value.identity !== digest(binding)) throw new Error('Candidate source binding integrity differs.');
   return { ...binding, identity: value.identity };

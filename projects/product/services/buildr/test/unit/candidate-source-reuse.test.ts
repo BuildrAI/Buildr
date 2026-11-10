@@ -106,4 +106,19 @@ test('platform source proofs retain their original same-OS environment instead o
     environment: { ...environment, platform: 'linux', arch: 'x64', nodeVersion: '24.22.2' } };
   assert.equal(validateCandidateSourceRecord({ record, step, runner: 'macos', selectionId: 'round', snapshot: checker }), true);
   assert.equal(validateCandidateSourceRecord({ record, step, runner: 'windows', selectionId: 'round', snapshot: checker }), false);
+  const later: VerificationReuseSnapshot = { ...checker, sourceCommit: '9'.repeat(40),
+    contentIdentities: { ...checker.contentIdentities, 'platform-backend': `sha256-${'8'.repeat(64)}` } };
+  const scoped = { ...step, inputs: ['test/kept.test.ts'] };
+  const validate = (changed: string[] | null, selected = scoped, evidence = record) =>
+    validateCandidateSourceRecord({ record: evidence, step: selected, runner: 'macos', selectionId: 'round', snapshot: later,
+      readChangedPaths(from, to) { assert.equal(from, snapshot.sourceCommit); assert.equal(to, later.sourceCommit); return changed; } });
+  assert.equal(validate(['projects/product/services/buildr/test/unrelated.test.ts']), true,
+    'CI must honor the ordinary source owner proof that broad-scope changes do not affect this check');
+  assert.equal(validate(['projects/product/services/buildr/test/kept.test.ts']), false);
+  assert.equal(validate(null), false, 'unknown source changes cannot retain a broad-scope proof');
+  const changedRecipe = { ...scoped, executor: { ...scoped.executor, args: ['--no-warnings'] } };
+  assert.equal(validate(['projects/product/services/buildr/test/unrelated.test.ts'], changedRecipe), false, 'recipe changes still invalidate');
+  assert.equal(validate(['projects/product/services/buildr/test/unrelated.test.ts'], scoped,
+    { ...record, result: { ...record.result, inputEnvironment: { ...environment, variablesIdentity: `sha256-${'7'.repeat(64)}` } } }), false,
+    'execution environment changes still invalidate');
 });

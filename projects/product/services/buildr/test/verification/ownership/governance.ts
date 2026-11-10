@@ -35,6 +35,7 @@ export default {
       "src/web/http/server.ts",
       ".github/workflows/publish.yml",
       ".github/workflows/verify.yml",
+      ".github/workflows/verify-package.yml",
       "skills/buildr-release/scripts/release-authority.ts",
       "skills/buildr-release/scripts/release-authority-oidc-probe.ts",
       "skills/buildr-release/scripts/release-authority-preflight.ts",

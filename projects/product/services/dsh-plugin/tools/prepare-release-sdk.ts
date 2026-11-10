@@ -5,16 +5,17 @@ import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { DSH_SDK_REPOSITORY, type DshSdkBaseline } from './sdk-baselines.ts';
 import { ownedBuildRoot, parseSourcePatchManifest, sha256, SOURCE_SDK_RECEIPT, validatePreparedSourceSdk, verifySourcePatchInput, type SourceSdkReceipt } from './prepare-source-sdk.ts';
+import { cachedSource, downloadRegistry, installSdkDependencies, sharedPnpmStore, sourceCacheRoot } from './release-sdk-downloads.ts';
 
 const SERVICE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const RELEASE_SDK_REPOSITORY = `https://github.com/${DSH_SDK_REPOSITORY}.git`;
 export const RELEASE_SDK_MANIFEST = 'sdk-patches/dsh-v0.2.0-rc.2-event-sources-settings.json';
 export const RELEASE_SDK_PNPM_VERSION = '11.7.0';
-export const RELEASE_SDK_STORE_DIRECTORY = 'dsh-release-sdk-pnpm-store';
 export interface ReleaseSdkInput { node: string; pnpm: string }
 interface CommandOptions { cwd: string; env: NodeJS.ProcessEnv; diagnostic?: boolean }
 export type ReleaseSdkCommand = (executable: string, args: string[], options: CommandOptions) => string;
 interface Dependencies {
+  cacheRoot?: string;
   command?: ReleaseSdkCommand;
   verifyInput?: typeof verifySourcePatchInput;
   verifyPatched?: typeof verifyPatchedReleaseSdkCheckout;
@@ -26,13 +27,6 @@ function absoluteFile(value: string, label: string): string {
   const file = realpathSync(value);
   if (!lstatSync(file).isFile()) fail(`${label} must be a regular file`);
   return file;
-}
-/** Share downloaded bytes only; each preparation still owns its checkout, install and generated SDK. */
-export function releaseSdkStore(serviceRoot = SERVICE_ROOT): string {
-  const store = join(ownedBuildRoot(serviceRoot), RELEASE_SDK_STORE_DIRECTORY);
-  if (!existsSync(store)) mkdirSync(store, { recursive: true });
-  if (!lstatSync(store).isDirectory() || lstatSync(store).isSymbolicLink() || realpathSync(store) !== store) fail('dependency store must be an owned regular directory');
-  return store;
 }
 /** Public input selects tools, never upstream repositories, refs, manifests or existing SDKs. */
 export function parseReleaseSdkInput(args: string[]): ReleaseSdkInput {
@@ -70,17 +64,23 @@ function selectedNodeVersion(output: string, requirement: string): string {
 }
 const command: ReleaseSdkCommand = (executable, args, options) => execFileSync(executable, args, {
   cwd: options.cwd, env: options.env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024,
+  timeout: 20 * 60 * 1000,
   stdio: options.diagnostic ? ['ignore', 2, 2] : ['ignore', 'pipe', 'pipe'],
 }) ?? '';
 /** No inherited auth, npm configuration, SDK selectors, Git overrides or implicit package-manager switching. */
 export function releaseSdkEnvironment(node: string, userConfig: string, globalConfig: string): NodeJS.ProcessEnv {
+  const gitName = process.platform === 'win32' ? 'git.exe' : 'git';
+  const gitDirectory = (process.env.PATH ?? '').split(delimiter).find(directory => existsSync(join(directory, gitName)));
   return {
-    PATH: [dirname(node), '/usr/local/bin', '/usr/bin', '/bin'].join(delimiter),
+    PATH: [...new Set([dirname(node), ...(gitDirectory ? [gitDirectory] : []),
+      ...(process.platform === 'win32' ? process.env.SystemRoot ? [join(process.env.SystemRoot, 'System32')] : [] : ['/usr/local/bin', '/usr/bin', '/bin'])])].join(delimiter),
     ...(process.platform === 'win32' && process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
     CI: 'true', GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: globalConfig,
     GIT_ALLOW_PROTOCOL: 'https', GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.hooksPath', GIT_CONFIG_VALUE_0: dirname(userConfig),
     NPM_CONFIG_USERCONFIG: userConfig, NPM_CONFIG_GLOBALCONFIG: globalConfig, NPM_CONFIG_REGISTRY: 'https://registry.npmjs.org/',
     NPM_CONFIG_CACHE: join(dirname(userConfig), 'npm-cache'), TMPDIR: join(dirname(userConfig), 'tmp'),
+    HOME: dirname(userConfig),
+    ...(process.platform === 'win32' ? { USERPROFILE: dirname(userConfig), TEMP: join(dirname(userConfig), 'tmp'), TMP: join(dirname(userConfig), 'tmp') } : {}),
     XDG_CONFIG_HOME: join(dirname(userConfig), 'config'), XDG_CACHE_HOME: join(dirname(userConfig), 'cache'),
     XDG_DATA_HOME: join(dirname(userConfig), 'data'), XDG_STATE_HOME: join(dirname(userConfig), 'state'),
     PNPM_CONFIG_NPMRC_AUTH_FILE: userConfig,
@@ -143,6 +143,7 @@ export async function prepareReleaseSdk(input: ReleaseSdkInput, dependencies: De
   let phaseStarted = started;
   const finishPhase = (name: string) => { const now = performance.now(); timingsMs[name] = Math.round(now - phaseStarted); phaseStarted = now; };
   const run = dependencies.command ?? command, verifyPatched = dependencies.verifyPatched ?? verifyPatchedReleaseSdkCheckout;
+  const registry = downloadRegistry();
   const plan = releaseSdkPlan(), node = absoluteFile(input.node, 'Node'), pnpm = absoluteFile(input.pnpm, 'pnpm');
   if (!/\.(?:cjs|mjs|js)$/.test(pnpm)) fail('pnpm must name its installed JavaScript entry');
   const build = ownedBuildRoot(SERVICE_ROOT), stage = mkdtempSync(join(build, 'dsh-release-sdk-'));
@@ -157,7 +158,8 @@ export async function prepareReleaseSdk(input: ReleaseSdkInput, dependencies: De
   const source = join(stage, 'source'); mkdirSync(source);
   git(source, ['init', '--quiet'], run, env);
   git(source, ['remote', 'add', 'origin', plan.repository], run, env);
-  git(source, ['fetch', '--quiet', '--depth=1', 'origin', `refs/tags/${plan.manifest.upstream.tag}`], run, env);
+  const sourceCache = await cachedSource({ source, repository: plan.repository, tag: plan.manifest.upstream.tag,
+    commit: plan.manifest.upstream.commit, cacheRoot: dependencies.cacheRoot ?? sourceCacheRoot(), run, env });
   if (git(source, ['rev-parse', 'FETCH_HEAD^{commit}'], run, env) !== plan.manifest.upstream.commit) fail('fetched upstream tag differs from its registered exact commit');
   git(source, ['checkout', '--quiet', '--detach', plan.manifest.upstream.commit], run, env);
   verifyReleaseSdkCheckout(source, plan.manifest.upstream, run, env);
@@ -169,8 +171,9 @@ export async function prepareReleaseSdk(input: ReleaseSdkInput, dependencies: De
   verifyPatched(source, plan, run, env);
   const lock = join(source, 'pnpm-lock.yaml'), lockSha256 = sha256(readFileSync(lock));
   finishPhase('sourceDownloadAndPatch');
-  const store = releaseSdkStore();
-  run(node, [pnpm, 'install', '--frozen-lockfile', '--ignore-scripts', '--prefer-offline', '--verify-store-integrity=true', '--store-dir', store], { cwd: source, env, diagnostic: true });
+  const store = sharedPnpmStore(node, pnpm, run, env, stage);
+  const officialFallback = installSdkDependencies(node, [pnpm, 'install', '--frozen-lockfile', '--ignore-scripts', '--prefer-offline', '--verify-store-integrity=true', '--store-dir', store],
+    source, { ...env, NPM_CONFIG_REGISTRY: registry }, run);
   if (!existsSync(join(source, 'node_modules')) || !lstatSync(join(source, 'node_modules')).isDirectory() || lstatSync(join(source, 'node_modules')).isSymbolicLink()) fail('frozen dependency installation did not create owned dependencies');
   if (sha256(readFileSync(lock)) !== lockSha256) fail('frozen dependency lockfile changed during installation');
   verifyPatched(source, plan, run, env);
@@ -192,7 +195,7 @@ export async function prepareReleaseSdk(input: ReleaseSdkInput, dependencies: De
   }
   finishPhase('outputValidation');
   timingsMs.total = Math.round(performance.now() - started);
-  return { schemaVersion: 'buildr.dsh-release-sdk/v1', status: 'prepared', sdk, baseline: receipt.baseline, sourceManifestSha256: receipt.sourceManifest.sha256, patchSha256: receipt.patchSha256, nodeRequirement: plan.nodeRequirement, nodeVersion, nodeExecutable: node, pnpmVersion: plan.pnpmVersion, dependencyStore: store, timingsMs, runtimeActivated: false, desktopValidated: false };
+  return { schemaVersion: 'buildr.dsh-release-sdk/v1', status: 'prepared', sdk, baseline: receipt.baseline, sourceManifestSha256: receipt.sourceManifest.sha256, patchSha256: receipt.patchSha256, nodeRequirement: plan.nodeRequirement, nodeVersion, nodeExecutable: node, pnpmVersion: plan.pnpmVersion, dependencyStore: store, sourceCache, registry, officialFallback, timingsMs, runtimeActivated: false, desktopValidated: false };
 }
 
 if (import.meta.main) console.log(JSON.stringify(await prepareReleaseSdk(parseReleaseSdkInput(process.argv.slice(2)))));

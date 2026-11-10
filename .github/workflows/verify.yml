@@ -9,7 +9,11 @@ on:
         required: true
         default: candidate
         type: choice
-        options: [candidate, release-rehearsal]
+        options: [candidate, release-rehearsal, local-package]
+      local_package:
+        description: Frozen local original package handoff, data only
+        required: false
+        type: string
       diagnostic_scope:
         description: Independent source diagnosis; does not produce a complete Candidate
         required: false
@@ -137,6 +141,25 @@ env:
   BUILDR_CANDIDATE_VERIFICATION_SOURCE: ${{ inputs.verification_source || '' }}
 
 jobs:
+  local-package:
+    name: Original package
+    if: github.event_name == 'workflow_dispatch' && inputs.purpose == 'local-package'
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/verify-package.yml
+    with:
+      preserve_only: ${{ fromJSON(inputs.local_package || '{}').preserve_only == true }}
+      diagnostic_only: ${{ fromJSON(inputs.local_package || '{}').diagnostic_only == true }}
+      diagnostic_source_commit: ${{ fromJSON(inputs.local_package || '{}').diagnostic_source_commit || '' }}
+      product_source: ${{ fromJSON(inputs.local_package || '{}').product_source || '' }}
+      verification_source: ${{ fromJSON(inputs.local_package || '{}').verification_source || '' }}
+      selection_id: ${{ inputs.selection_id }}
+      source_tree: ${{ fromJSON(inputs.local_package || '{}').source_tree }}
+      package_commit: ${{ fromJSON(inputs.local_package || '{}').package_commit }}
+      package_identity: ${{ fromJSON(inputs.local_package || '{}').package_identity }}
+      package_sha256: ${{ fromJSON(inputs.local_package || '{}').package_sha256 }}
+      remote_runner: ${{ fromJSON(inputs.local_package || '{}').remote_runner == 'windows-2025' && 'windows-2025' || 'macos-15' }}
   dev-feedback-macos:
     name: Development feedback (macOS source checks)
     outputs:
@@ -383,7 +406,7 @@ jobs:
 
   candidate-plan:
     name: Candidate plan
-    if: (!inputs.diagnostic_scope || inputs.diagnostic_scope == 'none') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev'))
+    if: inputs.purpose != 'local-package' && (!inputs.diagnostic_scope || inputs.diagnostic_scope == 'none') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev'))
     runs-on: macos-15
     timeout-minutes: 5
     permissions:
@@ -1232,7 +1255,7 @@ jobs:
 
   candidate-gate:
     name: Candidate gate
-    if: always() && (!inputs.diagnostic_scope || inputs.diagnostic_scope == 'none') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main'))
+    if: always() && inputs.purpose != 'local-package' && (!inputs.diagnostic_scope || inputs.diagnostic_scope == 'none') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main'))
     needs: [candidate-plan, candidate-bootstrap, candidate-source, candidate-artifact-consumers, candidate-host-node, plugin-source-candidate]
     runs-on: macos-15
     timeout-minutes: 5

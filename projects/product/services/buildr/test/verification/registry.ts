@@ -808,6 +808,8 @@ const builtInVerificationSteps: any = Object.freeze([
   step({ id: 'runtime-adapter-contract', name: 'runtime adapter contract', executor: { type: 'node', file: 'test/verification/runtime/adapter-contract.ts' }, profiles: ['candidate'], groups: ['runtime'], }),
 
   step({ id: 'integration-candidate-release', workerDemand: 2, name: 'Candidate integration: release contracts and recovery', executor: { type: 'node', file: 'test/verification/run-node-tests.ts', args: [
+    'test/integration/local-package-handoff.test.ts',
+    'test/integration/local-candidate-withdrawal.test.ts',
     'test/integration/candidate-source-binding.test.ts',
     'test/integration/package-publication-evidence.test.ts',
     'test/integration/package-release-operation.test.ts',

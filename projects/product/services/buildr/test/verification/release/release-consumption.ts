@@ -24,8 +24,10 @@ export function validateArtifactDocumentLinks(tarball: string, inventory: any, e
   let checked = 0;
   for (const file of ['README.md', 'payload/product/README.md']) {
     if (!files.has(file)) throw new Error(`Package documentation is missing ${file}.`);
-    const result = execute('tar', ['-xOf', tarball, `package/${file}`], { encoding: 'utf8', timeout: 30_000 });
-    if (result.error || result.status !== 0) throw new Error(`Unable to read package documentation ${file}.`);
+    const tar = process.platform === 'win32'
+      ? path.join(process.env.SystemRoot || process.env.SYSTEMROOT || 'C:\\Windows', 'System32', 'tar.exe') : 'tar';
+    const result = execute(tar, ['-xOf', tarball, `package/${file}`], { encoding: 'utf8', timeout: 30_000 });
+    if (result.error || result.status !== 0) throw new Error(`Unable to read package documentation ${file}: ${result.error?.message || String(result.stderr || result.status).trim()}`);
     for (const match of String(result.stdout).matchAll(/\]\(([^)\s]+)(?:\s+"[^"]*")?\)/gu)) {
       const target = match[1]!;
       if (/^(?:https?:|mailto:|#)/u.test(target)) continue;

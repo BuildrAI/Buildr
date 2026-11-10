@@ -94,9 +94,31 @@ test('standalone source phase preserves history but invalidates edited inputs in
   const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, stdio: ['ignore', 'pipe', 'pipe'] });
   git('init', '-q'); git('config', 'user.name', 'Plugin test'); git('config', 'user.email', 'plugin@example.com'); git('add', '.'); git('commit', '-qm', 'source');
   const env: NodeJS.ProcessEnv = { ...process.env, BUILDR_VERIFICATION_WORKER_BUDGET: '1' }; delete env.NODE_TEST_CONTEXT; delete env.BUILDR_SOURCE_VERIFICATION;
+  delete env.BUILDR_SOURCE_VERIFICATION_FILE;
+  delete env.BUILDR_SELECTION_ID;
+  delete env.BUILDR_VERIFICATION_ROUND;
+  delete env.BUILDR_VERIFICATION_NETWORK_MODE;
   const round = { roundId: 'first', output: join(repo, 'first.json') };
   const executed = await verifyPluginSourcePhase('unit', { pluginRoot, env, round });
   assert.equal(executed.phase.status, 'passed'); assert.equal(executed.phase.disposition, 'executed');
+  const { collectVerificationReuseSnapshot, createVerificationReuseIdentity } = await import('../../../buildr/test/verification/verification-reuse.ts');
+  const { enforceOfflineVerification } = await import('../../../buildr/src/infrastructure/network/verification-network-policy.ts');
+  const definition = pluginSourcePhaseStep('unit', pluginSourcePhaseFiles('unit', pluginRoot), env);
+  const sourceStep = { ...definition, executor: { ...definition.executor, cwd: pluginRoot }, platformScope: { kind: 'common' } };
+  const expected = createVerificationReuseIdentity(sourceStep,
+    collectVerificationReuseSnapshot({ productRoot: backend, steps: [sourceStep], env: enforceOfflineVerification({ ...env }) }));
+  assert.equal(executed.log.records[0].result.inputIdentity.environmentIdentity, expected!.environmentIdentity,
+    'standalone source proofs must use the same offline environment identity as the formal consumer');
+  assert.equal(env.BUILDR_VERIFICATION_NETWORK_MODE, undefined, 'source verification must not mutate its caller environment');
+  const { encodeCandidateSourceImport } = await import('../../../buildr/test/verification/candidate-source-reuse.ts');
+  const packet = join(repo, 'source-proof.json');
+  writeFileSync(packet, JSON.stringify({ transport: encodeCandidateSourceImport(executed.log) }));
+  const fileEnv = { ...env, BUILDR_VERIFICATION_ROUND: round.roundId, BUILDR_SOURCE_VERIFICATION_FILE: packet };
+  const imported = await collectPluginSourceVerificationBundle({ env: fileEnv });
+  assert.equal(imported.records.length, 1);
+  assert.equal(imported.records[0].identity.stepId, 'dsh-plugin:unit');
+  const adopted = await verifyPluginSourcePhase('unit', { pluginRoot, env: fileEnv });
+  assert.equal(adopted.phase.disposition, 'reused', 'file input must retain the local unit proof instead of executing it again');
   writeFileSync(file, "import test from 'node:test'; test('changed input', () => { throw Error('new failure'); });\n");
   await assert.rejects(verifyPluginSourcePhase('unit', { pluginRoot, env, round }), /verification failed/u);
   const retained = JSON.parse(readFileSync(round.output, 'utf8'));

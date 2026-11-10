@@ -27,6 +27,7 @@ import { inspectHostedReleaseTransaction } from './release-transaction-evidence.
 import { artifactFromTarball, releaseManifestFromTarball } from './package-artifact-observation.ts';
 import { releaseExecutionCommit, validateReleaseExecutorRecovery } from './release-executor-recovery.ts';
 import { assertCandidateSourceBinding } from './candidate-source-binding.ts';
+import { isCandidateVerificationWorkflow } from './local-package-handoff.ts';
 import { CANDIDATE_CI_AGGREGATE_SCHEMA } from '../../../projects/product/services/buildr/test/verification/release/candidate-ci-contract.ts';
 
 const serviceRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../projects/product/services/buildr');
@@ -276,7 +277,7 @@ export async function runHostedReleaseTransaction(options: any = {}, dependencie
       const run = parseJson(invoke(execute, ghCommand, ['api', `repos/${releasePublishAuthority.repository}/actions/runs/${candidateRunId}`], repo), 'Recovery Candidate run readback');
       if (run.id !== candidateRunId || run.repository?.full_name !== releasePublishAuthority.repository || run.status !== 'completed'
         || run.conclusion !== 'success' || !['pull_request', 'workflow_dispatch'].includes(run.event)
-        || run.path?.split('@')[0] !== '.github/workflows/verify.yml' || run.head_sha !== candidateBase
+        || !isCandidateVerificationWorkflow(run.path) || run.path?.split('@')[0] !== context.candidate.workflow || run.head_sha !== candidateBase
         || run.run_attempt !== context.candidate.runAttempt) throw new Error('Recovery Candidate run changed.');
       const candidateEvidence = readCandidateEvidence({ candidateRunId, ghCommand, repo, execute, dependencies });
       const { aggregate, manifest } = candidateEvidence;
@@ -312,7 +313,7 @@ export async function runHostedReleaseTransaction(options: any = {}, dependencie
       repository: releasePublishAuthority.repository,
       status: 'completed',
       conclusion: 'success',
-      workflowPath: '.github/workflows/verify.yml',
+      workflowPath: isCandidateVerificationWorkflow(candidateActual.workflowPath) ? candidateActual.workflowPath : '.github/workflows/verify.yml',
     };
     if (JSON.stringify({ ...candidateActual, event: undefined }) !== JSON.stringify({ ...candidateExpected, event: undefined }) || !['pull_request', 'workflow_dispatch'].includes(candidateActual.event)) throw new Error(`Candidate run readback mismatch: ${JSON.stringify({ expected: { ...candidateExpected, event: ['pull_request', 'workflow_dispatch'] }, actual: candidateActual })}`);
     const candidateSourceCommit: any = requiredHash(candidateRun?.head_sha, 'Candidate run head SHA');
@@ -368,7 +369,7 @@ export async function runHostedReleaseTransaction(options: any = {}, dependencie
       } : null,
       release: { version, sourceCommit: candidateSourceCommit, sourceTree: candidateSourceTree },
       candidate: {
-        workflow: '.github/workflows/verify.yml',
+        workflow: candidateActual.workflowPath,
         runId: candidateRunId,
         runAttempt: Number(candidateRun.run_attempt),
         runUrl: candidateRun.html_url || `https://github.com/${releasePublishAuthority.repository}/actions/runs/${candidateRunId}`,

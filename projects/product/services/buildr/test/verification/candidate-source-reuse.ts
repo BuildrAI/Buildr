@@ -1,8 +1,9 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 import { assertCandidateRound, passedRoundRecord, ROUND_SCHEMA } from './candidate-round.ts';
 import { brotliCompressSync, brotliDecompressSync, gzipSync, gunzipSync } from 'node:zlib';
-import { verificationInputApplicability } from './result-applicability.ts';
 import { createVerificationReuseIdentity, validEnvironment, type VerificationReuseEnvironment, type VerificationReuseSnapshot } from './verification-reuse.ts';
+import { createChangedVerificationSourcePathsReader, sourceChangeAffected, verificationInputApplicabilityForSourceChange } from './source-change-applicability.ts';
 
 export const CANDIDATE_SOURCE_IMPORT_ENV = 'BUILDR_SOURCE_VERIFICATION';
 // Common checks have one coverage owner across declared executable systems.
@@ -73,7 +74,10 @@ export function decodeCandidateSourceImport(encoded: string): SourceBundle {
 }
 
 export function candidateSourceImportFromEnvironment(env: Record<string, string | undefined>): SourceBundle {
-  const input = env[CANDIDATE_SOURCE_IMPORT_ENV];
+  const file = env.BUILDR_SOURCE_VERIFICATION_FILE;
+  if (file && env[CANDIDATE_SOURCE_IMPORT_ENV]) throw new Error('Source verification must have one explicit input.');
+  if (file && fs.statSync(file).size > MAX_DECODED_BYTES) throw new Error('Source verification file exceeds its byte budget.');
+  const input = file ? JSON.parse(fs.readFileSync(file, 'utf8')).transport : env[CANDIDATE_SOURCE_IMPORT_ENV];
   if (!input) return { schemaVersion: BUNDLE_SCHEMA, records: [] };
   if (env.GITHUB_EVENT_NAME && env.GITHUB_EVENT_NAME !== 'workflow_dispatch') {
     throw new Error('Imported source verification requires the controlled manual Candidate entry.');
@@ -85,6 +89,18 @@ export function candidateSourceImportFromEnvironment(env: Record<string, string 
 
 export function candidateSourceRunnerPlatform(runner: string): string {
   return runner === 'macos' ? 'darwin' : runner === 'windows' ? 'win32' : runner;
+}
+
+/** A locally produced package needs local/common source proof, not a second
+ * source suite on the package-consumer host. Artifact nodes remain symmetric. */
+export function selectLocalPackageShards(shards: any[], steps: any[], localRunner: string): any[] {
+  const byId = new Map(steps.map(step => [step.id, step]));
+  return shards.filter(shard => !shard.producesArtifact).map(shard => shard.requiresArtifact ? shard : {
+    ...shard, stepIds: shard.stepIds.filter((id: string) => {
+      const step = byId.get(id);
+      return step?.platformScope.kind === 'common' || step?.platformScope.runners.includes(localRunner);
+    }),
+  }).filter(shard => shard.stepIds.length);
 }
 
 /** The recorded execution environment is authoritative for source proofs.
@@ -108,6 +124,7 @@ export function candidateSourceRecordEnvironment(step: any, record: any, runner:
  * applicability and recipe identity as ordinary source reuse. */
 export function validateCandidateSourceRecord(options: {
   record: any; step: any; runner: string; selectionId: string | undefined; snapshot: VerificationReuseSnapshot;
+  readChangedPaths?: (from: string, to: string) => string[] | null;
 }): boolean {
   const { record, step, runner, selectionId, snapshot } = options;
   if (!step || !selectionId || !passedRoundRecord(record, selectionId, step, runner)) return false;
@@ -118,7 +135,10 @@ export function validateCandidateSourceRecord(options: {
   try {
     const environment = candidateSourceRecordEnvironment(step, record, runner);
     if (!environment) return false;
-    return verificationInputApplicability(record.result?.inputIdentity, createVerificationReuseIdentity(step, { ...snapshot, environment })).applicable;
+    const affected = sourceChangeAffected(step, record, snapshot.sourceCommit,
+      options.readChangedPaths ?? createChangedVerificationSourcePathsReader(snapshot.repositoryRoot));
+    return verificationInputApplicabilityForSourceChange(record.result?.inputIdentity,
+      createVerificationReuseIdentity(step, { ...snapshot, environment }), affected).applicable;
   } catch {
     return false;
   }

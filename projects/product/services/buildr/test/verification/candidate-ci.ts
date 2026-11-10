@@ -3,21 +3,22 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
+import { LOCAL_PACKAGE_MODEL, validatePackageHandoff } from '../../../../../../skills/buildr-release/scripts/local-package-handoff.ts';
+import { localPackageCoverage } from './local-package-coverage.ts';
 import { assertMinimumNodeVersion, createExactNodeExecutionEnvironment, spawnCommandSync } from '../../src/infrastructure/process.ts';
 import { enforceOfflineVerification } from '../../src/infrastructure/network/verification-network-policy.ts';
 import { executePlan } from './plan-runner.ts';
 import { createCandidateCiShardPlan } from './planner.ts';
 import { candidateSourceImportFromEnvironment, candidateSourceShardReuse, planCandidateSourceReuse, reusedCandidateSourceResult,
-  validateCandidateSourceRecord } from './candidate-source-reuse.ts';
+  selectLocalPackageShards, validateCandidateSourceRecord } from './candidate-source-reuse.ts';
 import { assertFrozenCandidateCheckout, candidateArtifactImportFromEnvironment, candidateDeferredArtifactIds, candidateDependencyInputsIdentity, createCandidateDeferredPlan,
   createCandidateExecutionEnvironment, readCandidateDeferredPlan, reusableCandidateArtifactStepIds, reusedCandidateArtifactResult, validateCandidateArtifactEvidence } from './candidate-artifact-reuse.ts';
 import { collectVerificationReuseSnapshot } from './verification-reuse.ts';
-import { CANDIDATE_CI_HOST_NODE_TUPLES, CANDIDATE_CI_SHARDS, resolveVerificationExecutionProfile, verificationSteps } from './registry.ts';
+import { localPackageVerifierBinding } from '../../../../../../skills/buildr-release/scripts/local-package-verifier-binding.ts';
 import { createCandidateSourceBinding } from '../../../../../../skills/buildr-release/scripts/candidate-source-binding.ts';
 import { createCandidateCheckInputReader } from './candidate-check-inputs.ts';
-import { assertCandidateRepairPlan, candidateProofDefinition, candidateProofDescriptors, candidateRepairShardPlan, reusedCandidateProofResult, validateCandidateRepairProof } from './candidate-repair.ts';
 import { applyCandidateDeclaredScope, CANDIDATE_DECLARED_SCOPE_ENV, parseCandidateDeclaredScope } from './candidate-declared-scope.ts';
 import {
   aggregateCandidateCiEvidence,
@@ -27,7 +28,7 @@ import {
   readCandidateCiArtifact,
   readCandidateCiEvidenceFiles,
   readCandidateCiPreparationFiles,
-  resolveCandidateExecutionContext,
+  resolveCandidateExecutionContext as originalExecutionContext,
   resolveCandidateSourceCommit,
   writeCandidateCiEvidence,
   writeCandidateCiCheckpoint,
@@ -38,7 +39,22 @@ import {
   CANDIDATE_TARBALL_ENV,
 } from '../../../../../../skills/buildr-release/scripts/candidate-package.ts';
 
-const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const verifierRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const independent = localPackageVerifierBinding({ verifierRoot, action: process.argv[2] ?? '', env: process.env });
+const productRoot: any = independent.productRoot;
+// Recipes and proof inputs still describe the original product, not the repair.
+const { CANDIDATE_CI_HOST_NODE_TUPLES, CANDIDATE_CI_SHARDS, resolveVerificationExecutionProfile, verificationSteps } =
+  await import(pathToFileURL(path.join(productRoot, 'test/verification/registry.ts')).href) as typeof import('./registry.ts');
+const { assertCandidateRepairPlan, candidateProofDefinition, candidateProofDescriptors, candidateRepairShardPlan, reusedCandidateProofResult, validateCandidateRepairProof } =
+  await import(pathToFileURL(path.join(productRoot, 'test/verification/candidate-repair.ts')).href) as typeof import('./candidate-repair.ts');
+function resolveCandidateExecutionContext(root: string, source: string): any {
+  const context = originalExecutionContext(root, source);
+  if (!independent.binding) return context;
+  if (process.env.BUILDR_CANDIDATE_PRODUCT_SOURCE || process.env.BUILDR_CANDIDATE_REPAIR_PLAN) {
+    throw new Error('Independent local consumption cannot be combined with a remote repair.');
+  }
+  return { ...context, verificationSource: independent.binding.verificationSource, sourceBinding: independent.binding };
+}
 const projectRoot: any = path.resolve(productRoot, '../..');
 const action: any = process.argv[2];
 const id: any = process.argv[3];
@@ -51,6 +67,19 @@ const workflowIdentity: any = process.env.GITHUB_RUN_ID ? {
   runAttempt: process.env.GITHUB_RUN_ATTEMPT ?? null,
   job: process.env.GITHUB_JOB ?? null,
 } : null;
+
+function localPackageHandoff(): any {
+  const file = process.env.BUILDR_LOCAL_PACKAGE_HANDOFF;
+  if (!file) return null;
+  const handoff = validatePackageHandoff(JSON.parse(fs.readFileSync(file, 'utf8')));
+  const source = resolveCandidateSourceCommit(productRoot, expectedSource);
+  const context = resolveCandidateExecutionContext(productRoot, source);
+  if (handoff.sourceCommit !== source || handoff.sourceTree !== context.sourceTree
+    || parseCandidateDeclaredScope(process.env[CANDIDATE_DECLARED_SCOPE_ENV])?.identity !== handoff.verificationScope?.identity) {
+    throw new Error('Local package handoff source or frozen verification scope differs.');
+  }
+  return handoff;
+}
 
 /** The maintenance decision is explicit input, never inferred from a failed or
  * absent check. Excluding a boundary removes whole shards from the round and
@@ -65,6 +94,13 @@ function candidateScope(): any {
       return step?.executor?.type === 'candidate-artifact' ? undefined : step?.testing?.executionBoundary;
     },
   });
+  const handoff = localPackageHandoff();
+  if (handoff) {
+    view.shards = selectLocalPackageShards(view.shards, verificationSteps, handoff.localRunner);
+    const coverage = localPackageCoverage(handoff, view.shards, view.hostNodeTuples);
+    view.shards = coverage.shards;
+    view.hostNodeTuples = coverage.hostNodeTuples;
+  }
   return { scope, ...view, evidenceIds: new Set([...view.shards.map((item: any) => item.id), ...view.hostNodeTuples.map((item: any) => item.id)]) };
 }
 
@@ -98,7 +134,8 @@ function validateSourceRecord(record: any, stepId: string, runner: string): bool
 function artifactRecordSourceMatches(record: any): boolean {
   try {
     const source = record.verificationSource ?? record.sourceCommit;
-    const binding = createCandidateSourceBinding(productRoot, record.sourceCommit, source);
+    const binding = createCandidateSourceBinding(productRoot, record.sourceCommit, source,
+      record.sourceBinding?.schemaVersion === 'buildr.candidate-source-binding/v1' ? null : record.sourceBinding?.inputPolicy);
     return record.sourceTree === binding.productTree && (!record.verificationSource
       ? !record.sourceBinding : isDeepStrictEqual(record.sourceBinding, binding));
   } catch { return false; }
@@ -113,7 +150,8 @@ function validateArtifactRecord(record: any, evidenceId: string, artifact?: any,
   const environment = { dependencyInputsIdentity: candidateDependencyInputsIdentity(productRoot, verificationSource,
     descriptor.preparation ?? (descriptor.kind === 'host-node' ? descriptor.id === 'host-minimum-macos' ? 'publisher' : 'host' : 'base')) };
   return validateCandidateArtifactEvidence(record, descriptor, context, inputs, artifact, environment)
-    || Boolean(stepId && reusableCandidateArtifactStepIds(record, descriptor, context, inputs, artifact, environment).includes(stepId));
+    || Boolean(stepId && reusableCandidateArtifactStepIds(record, descriptor, context, inputs, artifact,
+      { ...environment, ...(workflowIdentity && localPackageHandoff() ? { retryWorkflow: workflowIdentity } : {}) }).includes(stepId));
 }
 
 function artifactEnvironment(artifact: any): any  {
@@ -152,12 +190,14 @@ async function runShard(shardId: any): Promise<any>  {
       .map(item => reusedCandidateSourceResult(item.record))
     : [];
   let localReused: any[] = [];
-  if (!Object.entries(process.env).some(([key, value]) => key.startsWith('GITHUB_') && value) && externalArtifact) {
+  const hostedPackageRetry = workflowIdentity && localPackageHandoff();
+  if ((!Object.entries(process.env).some(([key, value]) => key.startsWith('GITHUB_') && value) || hostedPackageRetry) && externalArtifact) {
     try {
       const previous = JSON.parse(fs.readFileSync(evidencePath(shardId), 'utf8'));
       const descriptor = candidateProofDescriptors().find(item => item.id === shardId);
       const reusable = artifactRecordSourceMatches(previous) ? reusableCandidateArtifactStepIds(previous, descriptor, executionContext, checkInputs,
-        externalArtifact.identity, { executionEnvironment: createCandidateExecutionEnvironment(productRoot, checkInputs, process.env, { preparation: shard.preparation }) }) : [];
+        externalArtifact.identity, { executionEnvironment: createCandidateExecutionEnvironment(productRoot, checkInputs, process.env, { preparation: shard.preparation }),
+          ...(hostedPackageRetry ? { retryWorkflow: workflowIdentity } : {}) }) : [];
       localReused = reusable.map(stepId => reusedCandidateArtifactResult(previous, stepId));
     } catch { /* Invalid, stale or incomplete prior proof must execute again. */ }
   }
@@ -214,7 +254,7 @@ async function runShard(shardId: any): Promise<any>  {
       taskId: `candidate-ci-${shardId}`,
       reuse: false,
       round: { roundId: process.env.BUILDR_SELECTION_ID ?? `ci-${process.env.GITHUB_RUN_ID ?? process.pid}`,
-        imports: process.env.BUILDR_SOURCE_VERIFICATION ? candidateSourceImportFromEnvironment(process.env) : undefined },
+        imports: process.env.BUILDR_SOURCE_VERIFICATION || process.env.BUILDR_SOURCE_VERIFICATION_FILE ? candidateSourceImportFromEnvironment(process.env) : undefined },
       onComplete(result: any): any  {
         completedResults.push(result);
         writeCheckpoint(result.status === 'passed' ? 'running' : 'failed');
@@ -357,6 +397,16 @@ function aggregate(): any  {
     declaredScope: scope.scope,
     notRun: scope.notRun,
   });
+  const handoff = localPackageHandoff();
+  if (handoff) {
+    const artifact = readCandidateCiArtifact(process.env.BUILDR_CANDIDATE_CI_ARTIFACT_DIR, sourceCommit);
+    if (artifact.identity.sha256 !== handoff.artifactSha256) throw new Error('Aggregated package bytes differ from the local producer.');
+    result.executionModel = LOCAL_PACKAGE_MODEL;
+    result.packageHandoff = handoff;
+    result.artifact = artifact.identity;
+    const coverage = localPackageCoverage(handoff, CANDIDATE_CI_SHARDS, CANDIDATE_CI_HOST_NODE_TUPLES);
+    if (coverage.platformVerification) result.platformVerification = coverage.platformVerification;
+  }
   result.timing.aggregation = { startedAt: new Date(startedAtMs).toISOString(), finishedAt: new Date().toISOString(), elapsedMs: Date.now() - startedAtMs };
   const output: any = path.resolve(process.env.BUILDR_CANDIDATE_CI_AGGREGATE_OUTPUT || path.join(outputRoot, 'candidate-ci-aggregate.json'));
   fs.mkdirSync(path.dirname(output), { recursive: true });
@@ -416,6 +466,12 @@ if (action === 'plan') {
     artifact: scope.shards.filter((shard: any) => shard.requiresArtifact && selected(shard.id)).map((shard: any) => ({ shard: shard.id, os: platforms[shard.runner], preparation: shard.preparation })),
     host: scope.hostNodeTuples.filter((tuple: any) => selected(tuple.id)).map((tuple: any) => ({ id: tuple.id, os: platforms[tuple.runner], node: tuple.requestedNode, preparation: tuple.id === 'host-minimum-macos' ? 'publisher' : 'host' })),
   };
+  const handoff = localPackageHandoff();
+  if (handoff && (matrices.source.length || matrices.artifact.some((item: any) => scope.shards.find((shard: any) => shard.id === item.shard)?.platformScope.kind !== 'platform'
+    || scope.shards.find((shard: any) => shard.id === item.shard)?.runner !== handoff.remoteRunner)
+    || matrices.host.some((item: any) => scope.hostNodeTuples.find((tuple: any) => tuple.id === item.id)?.runner !== handoff.remoteRunner))) {
+    throw new Error('Local package proof is incomplete; remote execution cannot replace local source or common artifact checks.');
+  }
   if (process.env.GITHUB_OUTPUT) for (const [key, include] of Object.entries(matrices)) fs.appendFileSync(process.env.GITHUB_OUTPUT, `${key}=${JSON.stringify({ include })}\n`);
   if (process.env.GITHUB_OUTPUT) for (const [key, include] of Object.entries(matrices)) fs.appendFileSync(process.env.GITHUB_OUTPUT, `${key}_required=${include.length > 0}\n`);
   process.stdout.write(`${JSON.stringify({ schemaVersion: 'buildr.candidate-ci-plan/v1', registryIdentity: candidateCiRegistryIdentity(), matrices,

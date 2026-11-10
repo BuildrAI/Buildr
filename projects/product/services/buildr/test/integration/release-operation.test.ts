@@ -426,7 +426,7 @@ test('reprepare releases only a terminal failed Publication pointer for a new un
   assert.throws(() => reconcilePublicationAfterPreparedContext(publication, context, { id: 41, status: 'completed', conclusion: 'success' }), /succeeded/u);
 });
 
-for (const repairTools of [false, true]) test(`prepare ${repairTools ? 'repairs tools on original bytes' : 'adopts late source proof after an unknown aggregate retry'} through adoption and readiness after unrelated dev and Task changes`, async t => {
+for (const repairTools of [false, true]) test(`historical remote-produced prepare ${repairTools ? 'repairs tools on original bytes' : 'adopts late source proof after an unknown aggregate retry'} through adoption and readiness after unrelated dev and Task changes`, async t => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-operation-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const workspace = path.join(root, 'workspace');
@@ -562,6 +562,12 @@ for (const repairTools of [false, true]) test(`prepare ${repairTools ? 'repairs 
     },
     orchestrationDependencies: { transactionDependencies: { execute, runtime, candidateEvidence } },
   };
+  // This fixture specifically resumes the historical remote-produced model.
+  // A new operation now correctly requires the local original and its proof.
+  const legacyOperation = path.join(workspace, '.git/buildr/release-operations', `${version}.json`);
+  fs.mkdirSync(path.dirname(legacyOperation), { recursive: true });
+  fs.writeFileSync(legacyOperation, JSON.stringify({ schemaVersion: 'buildr.release-operation-input/v1',
+    version, workspace, sources: [], candidate: null, publication: null }));
   const options = { action: 'prepare', workspace, version };
   const missingNotes = await runReleaseOperation(options, { ...dependencies,
     execute: (command: any, args: any, invocation: any) => command === 'git' && args[0] === 'show' && args[1]?.endsWith(':CHANGELOG.md')

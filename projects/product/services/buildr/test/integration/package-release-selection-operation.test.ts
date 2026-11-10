@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { gzipSync } from 'node:zlib';
 import test from 'node:test';
 import { runReleaseOperation } from '../../../../../../skills/buildr-release/scripts/release-orchestration-runner.ts';
+import { normalizeReleaseTargets } from '../../../../../../skills/buildr-release/scripts/release-targets.ts';
 import { containsCredentialMaterial } from '../../../../../../skills/buildr-release/scripts/release-authority.ts';
 import { artifactFromTarball } from '../../../../../../skills/buildr-release/scripts/package-artifact-observation.ts';
 import { createPluginSourceAggregate } from '../verification/release/verify-pr-candidate.ts';
@@ -135,7 +136,7 @@ test('formal repair preserves actual plugin bytes and peer proof without rebuild
   assert.throws(() => preservePluginSourceCandidate({ repo, temporaryRoot, runId: '42', verificationSource: sourceCommit, workflow: { runId: 52, runAttempt: 1 } }, { call }), /different bytes|invalid|differs/u);
 });
 
-function fixture(t: any, changes: { mainRuntime?: boolean; omitSourcePatch?: boolean; mutateAggregate?: (value: any) => void } = {}): any {
+function fixture(t: any, changes: { mainRuntime?: boolean; omitSourcePatch?: boolean; mutateAggregate?: (value: any) => void; localPackage?: boolean } = {}): any {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-package-selection-operation-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const workspace = path.join(root, 'workspace'), remote = path.join(root, 'remote.git');
@@ -159,6 +160,13 @@ function fixture(t: any, changes: { mainRuntime?: boolean; omitSourcePatch?: boo
   const peer = artifactFromTarball(peerBytes, { origin: 'registry', packageName: '@buildr-ai/buildr', version: mainVersion,
     integrity: 'sha512-' + crypto.createHash('sha512').update(peerBytes).digest('base64') });
   const file = path.join(workspace, '.git/buildr/release-operations', selectionId + '.json');
+  // These recovery scenarios own historical remote-produced operations.
+  // A new independent plugin operation defaults to local production.
+  if (!changes.localPackage) {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ schemaVersion: 'buildr.release-operation-input/v2', workspace, version: null,
+      targets: normalizeReleaseTargets({ packages: 'dsh-plugin', pluginVersion }), sources: [], candidate: null, publication: null }));
+  }
   const state = () => JSON.parse(fs.readFileSync(file, 'utf8'));
   let task: any = null, worktreeCreated = false, candidateVisible = false, candidateDispatches = 0, pluginDispatches = 0;
   let merges = 0, mainReads = 0, unpublishedReads = 0, pluginSourceReads = 0, postMainReads = 0, pr: any = null, postMainSource = '';
@@ -396,7 +404,7 @@ releaseSelectionTest('completed candidate preparation resumes the same pending m
   assert.ok(data.requests.every((args: string[]) => !args.includes('operation=publish')));
 });
 
-releaseSelectionTest('plugin-only prepare recovers one lost source dispatch, admits exact peer proof, and prepares separate main bytes without resurrecting refs', async t => {
+releaseSelectionTest('historical plugin-only prepare recovers one lost source dispatch and adopts original bytes without resurrecting refs', async t => {
   const data = fixture(t);
   const first = await runReleaseOperation(data.options, data.dependencies);
   assertReleaseStatus(first, 'candidate-dispatch-unconfirmed'); assert.equal(first.version, null); assert.equal(first.selectionId, selectionId);
@@ -422,6 +430,21 @@ releaseSelectionTest('plugin-only prepare recovers one lost source dispatch, adm
   assert.equal(data.counts().candidateDispatches, 1); assert.equal(data.counts().pluginDispatches, 1); assert.equal(data.counts().merges, 1);
   assert.equal(data.remoteRef('release-' + selectionId), ''); assert.equal(data.remoteRef(record.candidate.branch), '');
   assert.ok(data.requests.filter((args: string[]) => args[0] === 'workflow').every((args: string[]) => !args.includes('operation=publish')));
+});
+
+releaseSelectionTest('new independent plugin preparation uses the local producer and never dispatches the historical SDK job', async t => {
+  const data = fixture(t, { localPackage: true });
+  let inputs: any = null;
+  data.dependencies.localPackageDependencies = {
+    async preparePackage(input: any) { inputs = input; return { status: 'local-plugin-verification-required', nextActions: ['local diagnosis'] }; },
+  };
+  const result = await runReleaseOperation(data.options, data.dependencies);
+  assertReleaseStatus(result, 'local-plugin-verification-required');
+  assert.equal(data.state().executionModel, 'buildr.local-package/v1');
+  assert.equal(inputs.plan.requirements.buildr, false);
+  assert.equal(inputs.peer.origin, 'registry');
+  assert.equal(data.counts().candidateDispatches, 0);
+  assert.equal(data.counts().pluginDispatches, 0);
 });
 
 releaseSelectionTest('plugin-only target selection cannot waive main QA required by the complete source diff', async t => {

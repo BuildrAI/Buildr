@@ -59,7 +59,7 @@ export function scopedVerificationInputs(entries: Entry[], repositoryRoot: strin
   const local = (file: string) => file.startsWith(prefix) ? file.slice(prefix.length) : null;
   const recipeFile = (file: string) => {
     const relative = local(file);
-    return !options.legacyDeclarations && ['projects/product/verification.yml', '.github/workflows/verify.yml'].includes(file)
+    return !options.legacyDeclarations && ['projects/product/verification.yml', '.github/workflows/verify.yml', '.github/workflows/verify-package.yml'].includes(file)
       || file.startsWith('skills/buildr-release/') || relative !== null && (relative.startsWith('test/') || relative.startsWith('tools/release/') || relative.startsWith('tools/verification/'));
   };
   // These fixture/source checks were reviewed for real checkout readers. Their
@@ -115,7 +115,11 @@ export function scopedVerificationInputs(entries: Entry[], repositoryRoot: strin
     // The map selects checks; their executable descriptors are already bound.
     // Only actual map readers (or unknown readers below) consume its text.
     if (!options.legacyDeclarations && (narrow ? /\b(?:readFileSync|readFile)\s*\([^;]*['"]projects\/product\/verification\.yml['"]/u.test(text) : readsRepository || /\bverification\.yml\b/u.test(text))) selected.add('projects/product/verification.yml');
-    if (!options.legacyDeclarations && (narrow ? /\b(?:readFileSync|readFile)\s*\([^;]*['"]\.github\/workflows\/verify\.yml['"]/u.test(text) : readsRepository || /(?:\.github\/workflows|verify\.yml)/u.test(text))) selected.add('.github/workflows/verify.yml');
+    if (!options.legacyDeclarations) for (const workflow of ['verify.yml', 'verify-package.yml']) {
+      const file = `.github/workflows/${workflow}`;
+      const explicitRead = new RegExp(`\\b(?:readFileSync|readFile)\\s*\\([^;]*['"]${file.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}['"]`, 'u');
+      if (narrow ? explicitRead.test(text) : readsRepository || text.includes('.github/workflows') || text.includes(workflow)) selected.add(file);
+    }
     if (narrow && independent) {
       for (const [candidate] of entries) if (material(candidate!) && (text.includes(candidate!) || text.includes(candidate!.replace('projects/product/', '')))
         && /\b(?:readFileSync|readFile|readdirSync|readdir)\s*\(/u.test(text)) selected.add(candidate!);

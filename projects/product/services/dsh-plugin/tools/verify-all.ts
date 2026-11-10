@@ -11,6 +11,7 @@ import { captureVerificationSource, gitTreeSourceIdentity } from './verification
 import { createReleaseCandidate, readReleaseCandidate, sourceSdkIdentityFromFiles, SOURCE_SDK_MANIFEST, type SourceSdkIdentity } from '../../../../../skills/buildr-release/scripts/dsh-plugin/release-candidate.ts';
 import { resolveVerificationWorkerBudget } from '../../buildr/test/verification/worker-budget.ts';
 import { preparePluginCheckEnvironment } from './check-environment.ts';
+import { enforceOfflineVerification } from '../../buildr/src/infrastructure/network/verification-network-policy.ts';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export function parseVerificationInputs(args: string[], env: NodeJS.ProcessEnv = process.env): {sourceSdk:string;peerInput?:string;peerManifest?:string;output?:string;npmCli?:string;candidateOutput?:string} {
@@ -41,14 +42,14 @@ export async function collectPluginSourceVerificationBundle(options: { env?: Nod
   const { assertCandidateRound, emptyCandidateRound } = await import(new URL('../../buildr/test/verification/candidate-round.ts', import.meta.url).href);
   const environment = options.env ?? process.env;
   const roundId = environment.BUILDR_VERIFICATION_ROUND ?? environment.BUILDR_SELECTION_ID;
-  const log = options.imports ?? (environment.BUILDR_SOURCE_VERIFICATION ? candidateSourceImportFromEnvironment(environment) : emptyCandidateRound(roundId ?? 'standalone'));
+  const log = options.imports ?? (environment.BUILDR_SOURCE_VERIFICATION || environment.BUILDR_SOURCE_VERIFICATION_FILE ? candidateSourceImportFromEnvironment(environment) : emptyCandidateRound(roundId ?? 'standalone'));
   assertCandidateRound(log, roundId);
   return { ...log, records: log.records.filter((record: any) => PLUGIN_SOURCE_PHASE_IDS.includes(record.identity.stepId) && record.result.status === 'passed') };
 }
 
 export async function verifyPluginSourcePhase(group: 'unit' | 'static' | 'integration' | 'e2e', options: { pluginRoot?: string; env?: NodeJS.ProcessEnv; diagnosticsDirectory?: string; round?: any } = {}) {
   const pluginRoot = options.pluginRoot ?? root, productRoot = resolve(pluginRoot, '../buildr');
-  const environment = options.env ?? process.env;
+  const environment = enforceOfflineVerification({ ...(options.env ?? process.env) });
   const { candidateSourceImportFromEnvironment } = await import(new URL('../../buildr/test/verification/candidate-source-reuse.ts', import.meta.url).href);
   const { createCandidateRoundExecution } = await import(new URL('../../buildr/test/verification/candidate-round.ts', import.meta.url).href);
   const { reusedVerificationResult } = await import(new URL('../../buildr/test/verification/verification-reuse.ts', import.meta.url).href);
@@ -56,9 +57,9 @@ export async function verifyPluginSourcePhase(group: 'unit' | 'static' | 'integr
   const files = pluginSourcePhaseFiles(group, pluginRoot);
   const definition = pluginSourcePhaseStep(group, files, environment);
   const step = { ...definition, executor: { ...definition.executor, cwd: pluginRoot }, platformScope: { kind: 'common' } };
-  const imported = environment.BUILDR_SOURCE_VERIFICATION ? candidateSourceImportFromEnvironment(environment) : undefined;
+  const imported = environment.BUILDR_SOURCE_VERIFICATION || environment.BUILDR_SOURCE_VERIFICATION_FILE ? candidateSourceImportFromEnvironment(environment) : undefined;
   const round = group === 'unit' ? options.round ?? (imported ? { roundId: imported.roundId, imports: imported } : undefined) : undefined;
-  const execution = createCandidateRoundExecution({ steps: [step] }, { productRoot, round });
+  const execution = createCandidateRoundExecution({ steps: [step] }, { productRoot, round, env: environment });
   const prior = execution?.hits.get(step.id);
   if (prior) { const phase = reusedVerificationResult(prior); console.error(`[dsh-source-phase] ${group} retained from this round`); return { phase, proof: null, log: execution.finish([], true) }; }
   console.error(`[dsh-source-phase] ${group} started`);

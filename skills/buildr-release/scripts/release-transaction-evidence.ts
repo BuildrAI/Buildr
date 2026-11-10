@@ -110,7 +110,7 @@ export function createReleaseTransactionContext(input: any): any  {
   sha(candidate.sourceCommit, 'candidate.sourceCommit');
   positiveInteger(candidate.runId, 'candidate.runId');
   if (candidate.runAttempt !== null && candidate.runAttempt !== undefined) positiveInteger(candidate.runAttempt, 'candidate.runAttempt');
-  if (candidate.workflow !== '.github/workflows/verify.yml') throw new Error('candidate.workflow must be .github/workflows/verify.yml.');
+  if (!['.github/workflows/verify.yml', '.github/workflows/verify-package.yml'].includes(candidate.workflow)) throw new Error('candidate.workflow must identify a supported controlled verification workflow.');
   const convergence: any = closed(input.convergence, ['candidateBase', 'candidateTree', 'sourceCommit', 'mainCommit', 'devCommit'], 'convergence');
   for (const [field, value] of Object.entries(convergence)) sha(value, `convergence.${field}`);
   if (convergence.sourceCommit !== convergence.mainCommit) throw new Error('Publish source commit must match mainCommit.');
