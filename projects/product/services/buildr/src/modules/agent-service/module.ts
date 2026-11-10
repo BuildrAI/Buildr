@@ -1,3 +1,4 @@
+import { createProgrammaticHttpContribution } from './interfaces/http/programmatic-http.ts';
 import { createAgentCliContributions } from './interfaces/cli/agent.ts';
 import { createParticipationSourceObserver } from './application/participation-source.ts';
 import { AGENT_ASSETS_SOURCE_QUERY } from '../agent-assets/source/module.ts';
@@ -104,7 +105,15 @@ export function createAgentServiceModule(options: { readLocalInstance?(): unknow
         try { await active?.then(value=>value.disconnect()); }
         catch(error) { if(error!==initialization.signal.reason)throw error; }
       };
-      return { provides: { [AGENT_SERVICE_APPLICATION]: { start, close, status:async()=>(await connect()).lifecycle.status(), generate: async (input: Parameters<AgentOperations['models']['generate']>[0]) => (await resolve()).models.generate(input) } }, contributions: { cli: createAgentCliContributions(options.readLocalInstance), http: [createAgentServiceHttpContribution(resolve, { defaultWorkspace, registeredWorkspaceIds, runtimeStatus, restartRuntime, runtimeAligning, prepareDefaultWorkspace: () => {fs.mkdirSync(defaultWorkspace().rootPath,{recursive:true});} })] }, lifecycle: { start: async () => { void start().catch(() => { console.warn('执行后台连接未完成，已有工作记录保留。'); }); }, stop: close } };
+      const agentHttp = createAgentServiceHttpContribution(resolve, { defaultWorkspace, registeredWorkspaceIds, runtimeStatus, restartRuntime, runtimeAligning, prepareDefaultWorkspace: () => {fs.mkdirSync(defaultWorkspace().rootPath,{recursive:true});} });
+      const programmaticHttp = createProgrammaticHttpContribution(resolve, agentHttp, {
+        dataRoot: () => profile().dataRoot,
+        version: () => String((options.readProductIdentity() as {version?:string})?.version ?? 'unknown'),
+        workspaces: () => requires[WORKSPACE_APPLICATION].listRegisteredWorkspaces().workspaces
+          .filter((entry: any) => entry.workspace?.id && entry.status !== 'identity_conflict')
+          .map((entry: any) => ({ id: entry.workspace.id, name: entry.workspace.name ?? entry.workspace.id })),
+      });
+      return { provides: { [AGENT_SERVICE_APPLICATION]: { start, close, status:async()=>(await connect()).lifecycle.status(), generate: async (input: Parameters<AgentOperations['models']['generate']>[0]) => (await resolve()).models.generate(input) } }, contributions: { cli: createAgentCliContributions(options.readLocalInstance), http: [agentHttp, programmaticHttp] }, lifecycle: { start: async () => { void start().catch(() => { console.warn('执行后台连接未完成，已有工作记录保留。'); }); }, stop: close } };
     },
   };
 }

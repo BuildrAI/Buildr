@@ -54,6 +54,7 @@ export default {
       "services/buildr-agent/**",
       "test/integration/agent-service-delivery.test.ts",
       "test/integration/agent-service-http.test.ts",
+      "test/integration/programmatic-agent-http.test.ts",
       "src/modules/agent-service/**",
       "tools/build/**",
       "tools/codegen/**",

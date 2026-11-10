@@ -256,7 +256,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     id: 'agent-service',
     requires: [WORKSPACE_APPLICATION, TASK_QUERY_APPLICATION, AGENT_ASSETS_SOURCE_QUERY],
     provides: [AGENT_SERVICE_APPLICATION],
-    contributions: { cli: ['agent send', 'agent read', 'agent stop', 'agent list', 'agent reply', 'agent continue', 'agent supplement', 'agent replay'], http: ['agent-service.http'], diagnostics: [] },
+    contributions: { cli: ['agent send', 'agent read', 'agent stop', 'agent list', 'agent reply', 'agent continue', 'agent supplement', 'agent replay'], http: ['agent-service.http', 'programmatic-access.http'], diagnostics: [] },
     lifecycle: 'managed',
   }, {
     id: 'code',
@@ -385,7 +385,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'doctor',
   ]);
   assert.deepEqual(runtimeContributions(runtime, 'http').map((item: any) => item.id), [
-    'workspace-core.http', 'agent-assets.http', 'knowledge.http', 'task-work-context.http', 'task.http', 'workbench.http', 'task.commits.http', 'task.changed-files.http', 'task.materials.http', 'publication.http', 'change.http', 'agent-service.http', 'code.files.http', 'code.generation.http',
+    'workspace-core.http', 'agent-assets.http', 'knowledge.http', 'task-work-context.http', 'task.http', 'workbench.http', 'task.commits.http', 'task.changed-files.http', 'task.materials.http', 'publication.http', 'change.http', 'agent-service.http', 'programmatic-access.http', 'code.files.http', 'code.generation.http',
     'connection-skills.http', 'service-runtime.http', 'mysql-query.http',
     'task-review.http', 'task-verification.http',
     'task-parent-coordination.http', 'system-installation.release-awareness.http',
