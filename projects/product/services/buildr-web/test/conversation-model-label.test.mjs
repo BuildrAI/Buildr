@@ -28,3 +28,22 @@ test('来源名称来自已绑定账号的供应商；缺失时明示账号未�
  assert.equal(executionAgentName('codex'),'Codex','执行智能体名称与模型来源名称分开');
  assert.equal(executionAgentName('dsh'),'DSH','DSH 作为执行智能体名称保留');
 });
+
+test('Qoder 与 Qoder CN 各自只接受本产品原生模型，并给出对应提示',async()=>{
+  const {qoderSourceNotice,qoderSourceUnsupported}=await import('../src/features/agent-conversations/conversation-options.ts');
+  assert.equal(qoderSourceUnsupported('qoder','native-qoder'),false);
+  assert.equal(qoderSourceUnsupported('qoder','native-qoder-cn'),true);
+  assert.equal(qoderSourceUnsupported('qoder-cn','native-qoder-cn'),false);
+  assert.equal(qoderSourceUnsupported('qoder-cn','native-qoder'),true);
+  assert.equal(qoderSourceUnsupported('qoder-cn','native-codex'),true);
+  assert.equal(qoderSourceUnsupported('codex','native-qoder-cn'),false);
+  assert.match(qoderSourceNotice('qoder-cn')??'',/^Qoder CN Agent 暂不支持其他供应商的模型/);
+  assert.match(qoderSourceNotice('qoder')??'',/^Qoder Agent 暂不支持其他供应商的模型/);
+  assert.equal(qoderSourceNotice('dsh'),undefined);
+});
+
+test('执行方下拉只包含本机已准备的智能体',async()=>{
+  const {preparedAgentConnections}=await import('../src/lib/model-picker.ts');
+  const connections=[{id:'dsh',enabled:true,configPath:'/a'},{id:'qoder',enabled:true},{id:'qoder-cn',enabled:false,configPath:'/b'},{id:'codex',enabled:true,configPath:'/c'}];
+  assert.deepEqual(preparedAgentConnections(connections).map(item=>item.id),['dsh','codex']);
+});

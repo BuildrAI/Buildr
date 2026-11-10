@@ -2,6 +2,17 @@ import {reasoningEffortLabel,reasoningEffortRank,sortReasoningEfforts,modelSourc
 export {reasoningEffortLabel,reasoningEffortRank,sortReasoningEfforts,modelSourceName,executionAgentName,nextServiceTier,tierReasoningEffort} from '../../lib/model-picker.ts';
 import type {ConnectionView, ConversationRun, SendDraft, CatalogModel} from './types';
 
+/** Qoder and Qoder CN agents consume only their own product's models. */
+export function qoderSourceNotice(provider:string|undefined):string|undefined{
+  if(provider!=='qoder'&&provider!=='qoder-cn')return;
+  const label=provider==='qoder-cn'?'Qoder CN Agent':'Qoder Agent';
+  return `${label} 暂不支持其他供应商的模型，相关来源已标记但不可选；请改用 ${label} 原生模型或切换智能体。`;
+}
+export function qoderSourceUnsupported(provider:string|undefined,sourceProvider:string):boolean{
+  if(provider!=='qoder'&&provider!=='qoder-cn')return false;
+  const native=provider==='qoder-cn'?['qoder-cn','native-qoder-cn']:['qoder','native-qoder'];
+  return !native.includes(sourceProvider);
+}
 export type ConversationChoice = Pick<SendDraft,'connectionId'|'model'|'reasoningEffort'|'serviceTier'|'modelAccountId'|'modelAccountRevision'|'modelAccountIdentity'>;
 export type PermissionMode=NonNullable<SendDraft['permissionMode']>;
 export const permissionModeLabels:Record<PermissionMode,string>={default:'默认权限','full-access':'完全访问'};

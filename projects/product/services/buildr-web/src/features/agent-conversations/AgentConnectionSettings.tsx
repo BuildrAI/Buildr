@@ -35,7 +35,7 @@ export function AgentConnectionSettings(){
  function login(id:string){void act(async()=>{
   let account=accounts.find(account=>account.id===id);
   if(!account){account=await context.api.addModelAccount('devin');update(account);setSelection(current=>({...current,sourceId:account!.id}));}
-  if(account.connectionId){const connection=context.connections.find(connection=>connection.id===account!.connectionId);if(!connection)throw new Error('请重新读取本机智能体程序。');if(!connection.enabled){setPendingLogin(connection.id);setMode('agents');setProgram(connection.id);return;}await nativeLogin(connection);}
+  if(account.connectionId){const connection=context.connections.find(connection=>connection.id===account!.connectionId);if(!connection)throw new Error('请重新读取本机智能体程序。');if(!connection.enabled||!connection.configPath){setMode('agents');setProgram(connection.id);return;}await nativeLogin(connection);}
   else update(await context.api.modelAccountAction(account,'login-attempts'));
  });}
  function configureKey(id:string,key:string){return act(async()=>{let account=accounts.find(item=>item.id===id);if(!account){account=await context.api.addModelAccount('openai');update(account);setSelection(current=>({...current,sourceId:account!.id}));}const configured=await context.api.configureModelAccount(account,key);update(configured);setSelection(current=>({...current,sourceId:configured.id}));});}

@@ -52,3 +52,8 @@ export function tierReasoningEffort(tier:{reasoningEfforts?:ReadonlyArray<{id:st
   const options=tier?.reasoningEfforts??fallback;
   return options?.some(option=>option.id===effort)?effort:undefined;
 }
+
+/** Only agents prepared on this machine can start a conversation; installed-but-unprepared ones stay in settings. */
+export function preparedAgentConnections<T extends {enabled:boolean;configPath?:string}>(connections:readonly T[]):T[] {
+  return connections.filter(connection => connection.enabled && !!connection.configPath);
+}
