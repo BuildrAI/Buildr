@@ -279,6 +279,12 @@ export class ConnectionApplication {
     const configRoot = input.gatewayIdentity ? path.join(base, 'model-bindings', createHash('sha256').update(input.gatewayIdentity).digest('hex')) : base;
     return executor.readPersistedExecution({ ...input, configRoot, nativeAccountConfigRoot: record.view.configPath ?? base, executable: record.view.executable, programSource: record.programSource });
   }
+  async readSupplementReceipt(id: string, input: Omit<Parameters<NonNullable<AgentExecutor['readSupplementReceipt']>>[0], 'configRoot'|'nativeAccountConfigRoot'|'executable'|'programSource'>) {
+    const executor = this.executors.get(id), record = this.stored(id);
+    if (!executor?.readSupplementReceipt) return;
+    const base = path.join(this.options.root, 'connections', id);
+    return executor.readSupplementReceipt({ ...input, configRoot: base, nativeAccountConfigRoot: this.options.nativeAccountConfigRoots?.[id] ?? record.view.configPath ?? base, executable: record.view.executable ?? '', programSource: record.programSource });
+  }
   async releaseGatewayRuntime(runtime: AgentRuntime): Promise<void> {
     const owned = [];
     for (const [key, pending] of this.gatewayRuntimes) {

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { chmod, cp, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createCipheriv, createHash, randomUUID } from 'node:crypto';
 import { createQoderCnExecutor } from '../../../build/executors/qoder-cn/index.js';
 import { readNativeTool } from '../../../src/executors/index.ts';
@@ -215,14 +215,15 @@ function latestItems(events: ExecutorEvent[]): ExecutorItem[] {
   return [...items.values()];
 }
 
-async function withRuntime(run: (input: { runtime: AgentRuntime; config: string; workspace: string; contextRef: Awaited<ReturnType<AgentRuntime['createContext']>> }) => Promise<void>) {
+async function withRuntime(run: (input: { executor: ReturnType<typeof createQoderCnExecutor>; runtime: AgentRuntime; configRoot: string; config: string; executable: string; workspace: string; contextRef: Awaited<ReturnType<AgentRuntime['createContext']>> }) => Promise<void>) {
   const root = await mkdtemp(join(tmpdir(), 'buildr-qoder-cn-alignment-'));
   const workspace = join(root, 'workspace'), configRoot = join(root, 'config');
   await mkdir(workspace);
-  const runtime = await createQoderCnExecutor().open({ connectionId: 'qoder-cn', configRoot, executable: await program(root), environment: { PATH: process.env.PATH ?? '' } });
+  const executor = createQoderCnExecutor(), executable = await program(root);
+  const runtime = await executor.open({ connectionId: 'qoder-cn', configRoot, executable, environment: { PATH: process.env.PATH ?? '' } });
   try {
     const contextRef = await runtime.createContext({ cwd: workspace });
-    await run({ runtime, config: join(configRoot, 'qoder-cn-config'), workspace, contextRef });
+    await run({ executor, runtime, configRoot, executable, config: join(configRoot, 'qoder-cn-config'), workspace, contextRef });
   } finally { await runtime.close(); await rm(root, { recursive: true, force: true }); }
 }
 
@@ -352,9 +353,9 @@ for(const scenario of ['queue-missing-receipt','queue-disconnect'])test(`Qoder C
   });
 });
 
-test('Qoder CN confirms a queued supplement from the durable native bridge receipt before the terminal response',{timeout:15000},async()=>{
+for(const [scenario,label] of [['queue-durable-receipt','legacy bridge attachment'],['queue-durable-user-receipt','native human prompt']] as const)test(`Qoder CN confirms a queued supplement from the durable ${label} before the terminal response`,{timeout:15000},async()=>{
   await withRuntime(async({runtime,config,workspace,contextRef})=>{
-    await writeFile(join(config,'scenario'),'queue-durable-receipt');
+    await writeFile(join(config,'scenario'),scenario);
     const events:ExecutorEvent[]=[];
     const sending=runtime.send({contextRef,cwd:workspace,text:'第一条',images:[],clientRequestId:'queue-owned',onEvent:event=>events.push(event)});sending.catch(()=>{});
     await eventually(()=>events.some(event=>event.type==='request'));
@@ -379,6 +380,30 @@ test('Qoder CN confirms a queued supplement from the durable native bridge recei
     assert.equal(events.filter(event=>event.type==='item'&&event.item.clientRequestId==='durable-extra').length,1);
     assert.equal(events.filter(event=>event.type==='completed').length,1);
     assert.equal((await runtime.observe({contextRef})).status,'idle');
+  });
+});
+
+test('Qoder CN reads a historical native human prompt as an exact supplement receipt without opening a runtime',{timeout:15000},async()=>{
+  await withRuntime(async({executor,runtime,configRoot,config,executable,workspace,contextRef})=>{
+    await writeFile(join(config,'scenario'),'queue-durable-user-receipt');
+    const events:ExecutorEvent[]=[];
+    const sending=runtime.send({contextRef,cwd:workspace,text:'第一条',images:[],clientRequestId:'queue-owned',onEvent:event=>events.push(event)});sending.catch(()=>{});
+    await eventually(()=>events.some(event=>event.type==='request'));
+    const request=events.find(event=>event.type==='request');assert.equal(request?.type,'request');
+    const accepted=events.find(event=>event.type==='accepted');assert.equal(accepted?.type,'accepted');
+    const created='追加历史回执',admittedAt=new Date().toISOString();
+    const supplement=runtime.supplement!({contextRef,executionRef:accepted.executionRef,cwd:workspace,text:created,images:[],clientRequestId:'durable-history-extra'});
+    await eventually(()=>existsSync(join(config,'fixture-queued.jsonl')));
+    const transcript=join(config,'projects','fixture',contextRef.id+'.jsonl');
+    await eventually(()=>existsSync(transcript)&&readFileSync(transcript,'utf8').includes(created));
+    const nativeRow=readFileSync(transcript,'utf8').trim().split('\n').map(line=>JSON.parse(line)).find(row=>row.type==='user'&&row.humanInput?.text===created);
+    assert.ok(nativeRow?.uuid);
+    const receipt=await executor.readSupplementReceipt!({configRoot,nativeAccountConfigRoot:configRoot,executable,bindingIdentity:runtime.bindingIdentity,contextRef,executionRef:accepted.executionRef,cwd:workspace,clientRequestId:'durable-history-extra',text:created,createdAt:admittedAt});
+    assert.deepEqual(receipt,{inputItemId:nativeRow.uuid});
+    assert.equal(await executor.readSupplementReceipt!({configRoot,nativeAccountConfigRoot:configRoot,executable,bindingIdentity:runtime.bindingIdentity,contextRef,executionRef:accepted.executionRef,cwd:workspace,clientRequestId:'durable-history-extra',text:created,createdAt:'2999-01-01T00:00:00.000Z'}),undefined,'a record before admission is not a receipt');
+    assert.equal(await executor.readSupplementReceipt!({configRoot,nativeAccountConfigRoot:configRoot,executable,bindingIdentity:runtime.bindingIdentity,contextRef,executionRef:accepted.executionRef,cwd:workspace,clientRequestId:'durable-history-extra',text:'另一个输入',createdAt:admittedAt}),undefined,'text alone must be exact');
+    await runtime.reply({contextRef,executionRef:{id:'queue-owned'},requestId:request.request.id,answer:'allow-once'});
+    await supplement;await sending;
   });
 });
 

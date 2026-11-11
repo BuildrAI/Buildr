@@ -242,6 +242,13 @@ export interface AgentExecutor {
   /** Observe exact abandoned control resources without login, opening a channel, or proving operation success. */
   readReleasedControl?(input: {bindingIdentity:string;contextRef:ContextRef;executionRef:ExecutionRef;cwd:string}): Promise<boolean>;
 
+  /** Confirm one already-dispatched supplementary input from a durable native user record. */
+  readSupplementReceipt?(input: {
+    configRoot: string; nativeAccountConfigRoot?: string; executable: string; programSource?: string;
+    bindingIdentity: string; contextRef: ContextRef; executionRef: ExecutionRef; cwd: string;
+    clientRequestId: string; text: string; createdAt: string;
+  }): Promise<{inputItemId:string} | undefined>;
+
   /** Read exact durable terminal evidence without opening a native process or taking its controls. */
   readPersistedExecution?(input: {
     configRoot: string; nativeAccountConfigRoot?: string; executable: string; programSource?: string; gatewayIdentity?: string;

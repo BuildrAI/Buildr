@@ -229,6 +229,7 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       operationScopes(input.sourceId, input.operation, input.args);
       validateOperation(input.operation, input.args);
       const name: string = input.operation;
+      if(name==='conversations.read')await service.conversations.reconcileSupplementReceipts(input.args[0],input.args[1]);
       if (['conversations.observe','conversations.observeRun'].includes(name) &&
           await service.reconcilePersisted(input.args[0],input.args[1],name==='conversations.observeRun'?input.args[2]:undefined)) {
         json(res,200,service.conversations.read(input.args[0],input.args[1]));return;

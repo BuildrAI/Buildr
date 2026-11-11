@@ -7,6 +7,11 @@ export function conversationRunStoppable(run:ConversationView['run']):boolean {
   if(!run)return false;
   if(run.status==='stopping'||run.stopRequested)return false;
   if(run.executionState==='active')return true;
+  // An unresolved execution whose control resources are still owned may
+  // still be stoppable even when the last native observation was unknown.
+  // The notice exposes one stop attempt for it; keep local freezing and
+  // aggregate stop identities consistent with that action.
+  if(run.status==='unknown'&&run.resourcesReleased!==true)return true;
   if(run.tools.some(tool=>tool.status==='running'||(tool.status!=='completed'&&tool.canStop===true)))return true;
   return ['starting','running','waiting-approval','waiting-question','tools-active'].includes(run.status);
 }
@@ -28,9 +33,9 @@ export function canStopConversation(conversation:ConversationView):boolean {
 export function conversationStopControlState(conversation:ConversationView|null,requesting=false):'hidden'|'ready'|'stopping' {
   if(!conversation)return 'hidden';
   if(requesting)return 'stopping';
-  if(canStopConversation(conversation))return 'ready';
-  return [...(conversation.run?[conversation.run]:[]),...conversation.retainedRuns??[]]
-    .some(run=>run.stopRequested&&run.status==='stopping'&&!run.resourcesReleased&&run.executionState!=='ended')?'stopping':'hidden';
+  const runs=[...(conversation.run?[conversation.run]:[]),...conversation.retainedRuns??[]];
+  if(runs.some(run=>run.stopRequested&&run.status==='stopping'&&!run.resourcesReleased&&run.executionState!=='ended'))return 'stopping';
+  return canStopConversation(conversation)?'ready':'hidden';
 }
 
 /** Freeze only this round's output; continue receiving control facts and other rounds. */

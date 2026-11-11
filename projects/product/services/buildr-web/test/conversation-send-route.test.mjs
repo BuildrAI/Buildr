@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { conversationSendRoute, refreshConversationSend, latestConversationSend } from '../src/features/agent-conversations/conversation-send-route.ts';
 import { needsConversationObservation, executionLocked } from '../src/features/agent-conversations/conversation-state.ts';
-import { createConversationInputAttempts, reconcileConversationInputAttempt } from '../src/features/agent-conversations/conversation-actions.ts';
+import { conversationInputAttemptAccepted, conversationInputAttemptMatches, createConversationInputAttempts, reconcileConversationInputAttempt } from '../src/features/agent-conversations/conversation-actions.ts';
 const chat=(status='running',requests=[])=>({run:{id:'run',participantId:'participant',generation:'generation',status,accepted:true},requests});
 const request=kind=>({id:'request',kind,runId:'run',participantId:'participant',generation:'generation'});
 test('running input uses the same native round, including approval wait',()=>{
@@ -130,4 +130,25 @@ test('accepted supplements finish their exact original retry without sending a s
   const before={...chat(),id:'chat',workspaceId:'ws'},attempts=createConversationInputAttempts(),original=attempts.begin(before,'draft',[]);let requests=0;
   const result=await reconcileConversationInputAttempt(original,{reconcile:async attempt=>{requests++;assert.equal(attempt.clientRequestId,original.clientRequestId);return {delivery:'accepted',conversation:before};},finish:id=>attempts.finish(before,id),isCurrent:()=>true});
   assert.equal(result.delivery,'accepted');assert.equal(requests,1);assert.equal(attempts.read(before),undefined);
+});
+
+test('an unknown local attempt only governs its exact owner, text and attachment order',()=>{
+  const current={...chat('completed'),id:'chat',workspaceId:'ws'};
+  const attempt={runId:'run',participantId:'participant',generation:'generation',clientRequestId:'old',text:'跑完之后收尾',images:[{id:'one'},{id:'two'}]};
+  assert.equal(conversationInputAttemptMatches(attempt,current,attempt.text,attempt.images),true);
+  assert.equal(conversationInputAttemptMatches(attempt,current,'新的要求',attempt.images),false,'different text must remain sendable');
+  assert.equal(conversationInputAttemptMatches(attempt,{...current,run:{...current.run,id:'replacement'}},attempt.text,attempt.images),false,'a newer round must not reconcile an old request');
+  assert.equal(conversationInputAttemptMatches(attempt,current,attempt.text,[{id:'two'},{id:'one'}]),false,'attachment order is part of the original request identity');
+  assert.equal(conversationInputAttemptMatches(attempt,current,attempt.text,[{id:'one'}]),false,'a changed attachment set is a different request');
+  assert.equal(conversationSendRoute(current,false),'send','different current content still routes as a fresh send');
+});
+
+test('a bounded read repairs an unknown supplement before the send path keeps its draft',()=>{
+  const attempt={runId:'run',participantId:'participant',generation:'generation',clientRequestId:'request',text:'打开预览',images:[{id:'image',name:'a.png',mimeType:'image/png',size:8,revision:'r'}]};
+  const entry={id:'user',sequence:2,kind:'message',role:'user',text:'打开预览',attachments:['image'],runId:'run',status:'accepted'};
+  const pending={...entry,status:'unknown'},before={entries:[{...pending,id:'older-accepted',status:'accepted'},pending]},after={entries:[entry]};
+  assert.equal(conversationInputAttemptAccepted(before,after,attempt),true);
+  assert.equal(conversationInputAttemptAccepted({entries:[{...entry,id:'older-accepted'}]},after,attempt),false,'an older accepted copy is not this request receipt');
+  assert.equal(conversationInputAttemptAccepted(before,{entries:[{...entry,attachments:[]}]},attempt),false);
+  assert.equal(conversationInputAttemptAccepted(before,{entries:[{...entry,runId:'other'}]},attempt),false);
 });

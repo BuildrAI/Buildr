@@ -10,7 +10,7 @@ import { createAgentService, ExecutorInputRejected, type AgentExecutor, type Age
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5EsAAAAASUVORK5CYII=', 'base64');
 function gate() { let resolve!: () => void; const promise = new Promise<void>(done => { resolve = done; }); return { promise, resolve }; }
 async function wait(read: () => boolean) { for (let i = 0; i < 400; i++) { if (read()) return; await new Promise(resolve => setTimeout(resolve, 2)); } assert.fail('state did not settle'); }
-async function fixture(options: { beforeSupplement?: Promise<void>; delivery?: 'rejected' | 'unknown'; supported?: boolean; provider?: string; historyReceipt?: boolean; historyClientId?: string; beforeObserve?: Promise<void>; endOnReject?: boolean } = {}) {
+async function fixture(options: { beforeSupplement?: Promise<void>; delivery?: 'rejected' | 'unknown'; supported?: boolean; provider?: string; historyReceipt?: boolean; historyClientId?: string; beforeObserve?: Promise<void>; endOnReject?: boolean; persistedReceipt?: boolean } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-supplement-')), ending = gate();
   const calls: ExecutorSupplementInput[] = [], items: ExecutorItem[] = []; let emit: (event: ExecutorEvent) => void = () => {};
   let observation: ExecutorObservation = { status: 'idle', tools: [] };
@@ -33,7 +33,11 @@ async function fixture(options: { beforeSupplement?: Promise<void>; delivery?: '
     },
     async observe() { await options.beforeObserve; return structuredClone(observation); }, async reply() {}, async stop() { observation = { status: 'stopped', tools: [] }; ending.resolve(); return observation; }, async close() { ending.resolve(); },
   };
-  const executor: AgentExecutor = { descriptor: { id: options.provider ?? 'fixture', label: 'Fixture', capabilities }, async open() { return runtime; } };
+  const executor: AgentExecutor = {
+    readSupplementReceipt: options.persistedReceipt ? async input => ({inputItemId:'persisted-'+input.clientRequestId}) : undefined,
+    descriptor: { id: options.provider ?? 'fixture', label: 'Fixture', capabilities },
+    async open() { return runtime; },
+  };
   const service = createAgentService({ dataRoot: path.join(root, 'private'), executors: [executor], modelProviders: [], resolveWorkspace() { return { rootPath: root }; } });
   await service.connections.connect(options.provider ?? 'fixture', { expectedRevision: service.connections.read(options.provider ?? 'fixture').revision });
   let view = await service.conversations.create('workspace', {});
@@ -168,6 +172,18 @@ test('rechecking a persisted unknown request reconciles a later native receipt w
     assert.equal(result.delivery,'accepted');assert.equal(f.calls.length,1);
     assert.equal(result.conversation.entries.filter(entry=>entry.text===input.text).length,1);
     assert.equal(result.conversation.entries.at(-1)!.deliveryDiagnostic,undefined);
+  }finally{await f.close();}
+});
+
+test('reading a conversation repairs an unknown supplement from a persisted native receipt without another dispatch',async()=>{
+  const f=await fixture({delivery:'unknown',persistedReceipt:true});try{
+    const input=f.input('receipt discovered by read');
+    assert.equal((await f.service.conversations.supplement('workspace',f.read().id,input)).delivery,'unknown');
+    assert.equal(f.read().entries.at(-1)!.status,'unknown');
+    await f.service.conversations.reconcileSupplementReceipts('workspace',f.read().id);
+    assert.equal(f.read().entries.at(-1)!.status,'accepted');
+    assert.equal(f.read().entries.at(-1)!.deliveryDiagnostic,undefined);
+    assert.equal(f.calls.length,1,'repair must never dispatch the input again');
   }finally{await f.close();}
 });
 

@@ -16,6 +16,7 @@ import type { CatalogModel, ConnectionView, ConversationEvent, ConversationView,
 import { conversationProductActionSelection, recoverConversationProductAction, startConversationProductAction } from './conversation-product-action';
 import { firstConversationSubmissions } from './conversation-first-submission';
 import { readConversationModelPreference, readConversationModulePreference } from './conversation-preferences';
+import { startConversationRecoveryRead } from './conversation-observation-fallback';
 
 type Scope = {workspaceId: string; conversationId: string};
 export type DraftScope = {workspaceId: string; taskId?: string;taskLinks?:{workspaceId:string;taskId:string}[]};
@@ -283,6 +284,19 @@ export function AgentConversationsProvider({children, client = agentConversation
     return () => { controller.abort(); if (retryTimer) clearTimeout(retryTimer);setReconnecting(false); };
     // Ordinary snapshot changes must not recreate the subscriber or lose its cursor.
   }, [client, scope?.workspaceId, scope?.conversationId, observationKey, pageVisible, observation, refreshPending, refreshConnections,apply,getSelection,isSelectionCurrent]);
+  const recoveryReadKey=conversationObservationKey(conversation);
+  useEffect(()=>{
+    if(!scope||!recoveryReadKey||!pageVisible)return;
+    const selection=getSelection();
+    const reader=startConversationRecoveryRead({
+      current:()=>conversationRef.current,
+      visible:()=>document.visibilityState!=='hidden',
+      read:()=>client.read(scope.workspaceId,scope.conversationId),
+      apply:(next,observedRevision)=>apply(next,observedRevision),
+      isCurrent:()=>isSelectionCurrent(selection),
+    });
+    return()=>reader.stop();
+  },[client,scope?.workspaceId,scope?.conversationId,recoveryReadKey,pageVisible,apply,getSelection,isSelectionCurrent]);
   useEffect(()=>{
     if(!scope||conversation?.run?.status!=='unknown')return;
     const selection=getSelection(),key=conversationObservationKey(conversation);

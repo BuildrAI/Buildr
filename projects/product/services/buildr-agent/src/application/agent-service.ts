@@ -228,6 +228,7 @@ export function createAgentService(options: AgentServiceOptions) {
       queueSend: (workspaceId: string, id: string, input: Parameters<ConversationApplication['queueSend']>[2]) => conversations.queueSend(workspaceId, id, input),
       cancelPendingSend: (workspaceId: string, id: string, input: Parameters<ConversationApplication['cancelPendingSend']>[2]) => conversations.cancelPendingSend(workspaceId, id, input),
       supplement: (workspaceId: string, id: string, input: Parameters<ConversationApplication['supplement']>[2]) => conversations.supplement(workspaceId, id, input),
+      reconcileSupplementReceipts: (workspaceId:string,id:string) => conversations.reconcileSupplementReceipts(workspaceId,id),
       releaseQuestionWait: (workspaceId:string,id:string,input:Parameters<ConversationApplication['releaseQuestionWait']>[2]) => conversations.releaseQuestionWait(workspaceId,id,input),
       settleRetainedRun: (workspaceId:string,id:string,input:Parameters<ConversationApplication['settleRetainedRun']>[2]) => conversations.settleRetainedRun(workspaceId,id,input),
       observeRun: (workspaceId:string,id:string,input:Parameters<ConversationApplication['observeRun']>[2]) => conversations.observeRun(workspaceId,id,input),

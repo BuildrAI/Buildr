@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {stoppedConversationEntries,stopConversationWithRecovery,conversationStopControlState} from '../src/features/agent-conversations/conversation-stop.ts';
+import {stoppedConversationEntries,stopConversationWithRecovery,conversationStopControlState,conversationStopRunIds} from '../src/features/agent-conversations/conversation-stop.ts';
+import {conversationRecoveryAction,executionLocked} from '../src/features/agent-conversations/conversation-state.ts';
 const chat={id:'chat',workspaceId:'ws',revision:'r1',entries:[{id:'a',runId:'run',text:'点击时的文字',kind:'message'}],run:{id:'run',participantId:'p',generation:'g',status:'running',tools:[]}};
 const conflict=()=>Object.assign(new Error('内容已变化，请刷新后重试。'),{status:409,code:'agent_revision_conflict'});
 test('independent stop control retains pending feedback and covers retained work without depending on drafts',()=>{
@@ -14,7 +15,8 @@ test('independent stop control retains pending feedback and covers retained work
  assert.equal(conversationStopControlState(ended),'hidden');
  assert.equal(conversationStopControlState({...ended,retainedRuns:[{...cancelling.run,id:'retained-cancelling'}]}),'stopping');
  for(const status of ['running','tools-active'])assert.equal(conversationStopControlState({...ended,retainedRuns:[{...chat.run,id:'retained',status}]}),'ready');
- assert.equal(conversationStopControlState({...ended,retainedRuns:[{...chat.run,id:'retained',status:'unknown'}]}),'hidden','unknown without a live control is not actionable');
+ assert.equal(conversationStopControlState({...ended,retainedRuns:[{...chat.run,id:'retained',status:'unknown'}]}),'ready','unknown without release proof keeps one real stop attempt');
+ assert.equal(conversationStopControlState({...ended,retainedRuns:[{...chat.run,id:'retained',status:'unknown',resourcesReleased:true}]}),'hidden','released unknown has no live control to stop');
  assert.equal(conversationStopControlState({...ended,retainedRuns:[{...chat.run,id:'retained',status:'unknown',executionState:'active'}]}),'ready');
  assert.equal(conversationStopControlState({...ended,pendingSend:{id:'pending'}}),'ready');
  assert.equal(conversationStopControlState({...cancelling,retainedRuns:[{...chat.run,id:'unconfirmed',status:'unknown'}]}),'stopping','the current stop keeps its own waiting state');
@@ -79,4 +81,28 @@ test('normal aggregate cancellation prevents duplicate effects, while unresolved
  assert.equal(canStopConversation({...stopping,run:{...stopping.run,status:'unknown',executionState:'active',stopRequested:false}}),true,'an unknown run with a live control remains actionable before a stop request');
  assert.equal(canStopConversation({...stopping,run:{...stopping.run,status:'unknown',executionState:'active'}}),false,'an already-requested live stop is not repeated');
  assert.equal(canStopConversation({...stopping,run:{...stopping.run,status:'stopped'},retainedRuns:[{...chat.run,id:'new'}]}),true);
+});
+
+test('a completed current round with historical unknown leaves the current controls idle',()=>{
+ const current={
+  ...chat,
+  entries:[
+   {id:'user',runId:'run',kind:'message',role:'user',text:'完成这件事'},
+   {id:'answer',runId:'run',kind:'message',role:'assistant',text:'已经完成',status:'completed'},
+  ],
+  run:{...chat.run,status:'completed',executionState:'ended',resourcesReleased:true},
+  retainedRuns:[{...chat.run,id:'historical',status:'unknown',executionState:'unknown',stopRequested:true,tools:[{id:'old',status:'completed'}]}],
+  requests:[],
+ };
+ assert.equal(conversationStopControlState(current),'hidden');
+ assert.equal(executionLocked(current.run),false);
+ assert.equal(conversationRecoveryAction(current,current.entries),null);
+});
+
+test('an unresolved execution with owned resources keeps one real stop attempt',()=>{
+ const unresolved={...chat,run:{...chat.run,status:'unknown',executionState:'unknown',resourcesReleased:false,tools:[]},requests:[]};
+ assert.equal(conversationStopControlState(unresolved),'ready');
+ assert.deepEqual(conversationStopRunIds(unresolved),['run']);
+ assert.equal(conversationStopControlState({...unresolved,run:{...unresolved.run,stopRequested:true}}),'hidden');
+ assert.equal(conversationStopControlState({...unresolved,run:{...unresolved.run,resourcesReleased:true}}),'hidden');
 });

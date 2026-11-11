@@ -44,7 +44,7 @@ import { imageSelectionError, conversationDocumentTypes } from './conversation-i
 import { uploadConversationMaterials } from './conversation-material-upload';
 import {conversationPermissionKey,conversationPermissionStorageKey,conversationRunIdentity,executionSelectionChanged,nativeConversationChoice,permissionModeLabels,readConversationPermission,selectedConversationModel,selectedConversationPermission,supportsConversationPermission,validConversationChoice,writeConversationPermission,type ConversationChoice,type PermissionMode} from './conversation-options';
 import { appendDraftAttachment, canGenerateConversationTitle, conversationConflictNeedsRefresh, conversationTurnBinding, executionLocked, groupConversationStream, conversationStreamTurns, conversationTurnExecution, conversationTurnTiming, participantExecutionPairs, removeSubmittedAttachments, shouldSendOnKey, latestConversationParticipant, processBlockKey, type ConversationSelection } from './conversation-state';
-import { conversationActionKey, createConversationActions, createConversationInputAttempts, reconcileConversationInputAttempt } from './conversation-actions';
+import { conversationActionKey, conversationInputAttemptAccepted, conversationInputAttemptMatches, createConversationActions, createConversationInputAttempts, reconcileConversationInputAttempt } from './conversation-actions';
 import { useNewConversationImages } from './useNewConversationImages';
 import { useConversationAttachments } from './useConversationAttachments';
 import { draftMaterialIds, firstConversationSubmissions, type FirstSubmission } from './conversation-first-submission';
@@ -407,7 +407,9 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
       };
       if(!continueRunId&&!await refreshLatest())return;
       const pendingInput=inputAttempts.read(current);
-      if(!show&&!continueRunId&&pendingInput){
+      // An unknown receipt protects only its exact original draft. A different
+      // instruction must remain sendable and must never replay that request.
+      if(!show&&!continueRunId&&pendingInput&&conversationInputAttemptMatches(pendingInput,current,sendText,requestImages)){
         const result=await reconcileConversationInputAttempt(pendingInput,{
           reconcile:attempt=>context.api.supplement(current,{text:attempt.text,attachmentIds:attempt.images.map(image=>image.id) as NonNullable<SendDraft['attachmentIds']>,clientRequestId:attempt.clientRequestId,sameRunOnly:true},attempt),
           finish:requestId=>inputAttempts.finish(current,requestId),
@@ -415,9 +417,23 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
         });
         if(!result)return;
         if('conversation' in result){context.apply(result.conversation,current.revision);current=result.conversation;}
-        if(result.delivery==='unknown')throw new Error('消息是否送达仍待确认，请勿重复发送；输入已保留。');
+        if(result.delivery==='unknown'){
+          // The bounded authoritative read may repair the exact native receipt while
+          // the supplement response is still returning.
+          const beforeRefresh=current;
+          if(!await refreshLatest())return;
+          if(conversationInputAttemptAccepted(beforeRefresh,current,pendingInput)){
+            inputAttempts.finish(current,pendingInput.clientRequestId);
+            if(pendingInput.text===sendText&&JSON.stringify(pendingInput.images.map(image=>image.id))===JSON.stringify(requestImages.map(image=>image.id))){
+              draft.clearSubmitted(current.workspaceId,current.id,pendingInput.text);
+              setAttachments(previous=>({...previous,[current.id]:removeSubmittedAttachments(previous[current.id]||[],pendingInput.images.map(image=>image.id))}));
+            }
+            setFeedback('上条追加消息已确认接收，无需重复发送。');return;
+          }
+          throw new Error('消息是否送达仍待确认，请勿重复发送；输入已保留。');
+        }
         if(result.delivery==='accepted'||result.delivery==='continued'){
-          if(pendingInput.text===sendText&&JSON.stringify(pendingInput.images.map(image=>image.id))===JSON.stringify(requestImages.map(image=>image.id))){
+          if(conversationInputAttemptMatches(pendingInput,current,sendText,requestImages)){
             draft.clearSubmitted(current.workspaceId,current.id,pendingInput.text);
             setAttachments(previous=>({...previous,[current.id]:removeSubmittedAttachments(previous[current.id]||[],pendingInput.images.map(image=>image.id))}));
             setFeedback('上条追加消息已确认接收，无需重复发送。');return;
@@ -438,11 +454,20 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
             isCurrent:()=>activeSend.current===operation&&context.isSelectionCurrent(operation.selection),
           });
           if(!result)return;
-          if('conversation' in result)context.apply(result.conversation,current.revision);
+          if('conversation' in result){context.apply(result.conversation,current.revision);current=result.conversation;}
           if(result.delivery==='accepted'||result.delivery==='continued'){
             draft.clearSubmitted(current.workspaceId,current.id,sendText);
             setAttachments(previous=>({...previous,[current.id]:removeSubmittedAttachments(previous[current.id]||[],requestImages.map(item=>item.id))}));
           }else {
+            if(result.delivery==='unknown'){
+              const beforeRefresh=current;
+              if(!await refreshLatest())return;
+              if(conversationInputAttemptAccepted(beforeRefresh,current,attempt)){
+                draft.clearSubmitted(current.workspaceId,current.id,sendText);
+                setAttachments(previous=>({...previous,[current.id]:removeSubmittedAttachments(previous[current.id]||[],requestImages.map(item=>item.id))}));
+                setFeedback('消息已进入当前执行，并已确认原生接收。');return;
+              }
+            }
             const refusal='conversation' in result?result.conversation.entries.slice().reverse().find(entry=>entry.runId===attempt.runId&&entry.kind==='message'&&entry.role==='user'&&entry.status==='failed'&&entry.text===sendText)?.deliveryDiagnostic:result.diagnostic;
             throw new Error(result.delivery==='unknown'?'消息是否送达仍待确认，请勿重复发送；输入已保留。':refusal||'原轮未接收这条消息；输入已保留，不会另开会话。');
           }
@@ -729,10 +754,10 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
             const turnRun=turnRuns.find(value=>value.id===(prompt?.runId??assistant?.runId));
             const turnPaused=Boolean(stoppedOutput&&stoppedOutput.workspaceId===chat.workspaceId&&stoppedOutput.conversationId===chat.id&&(stoppedOutput.runIds??[stoppedOutput.runId]).includes(turnRun?.id??''));
             const unverified=Boolean(turnRun&&turnRun.status==='unknown'&&!execution.current&&!turnRun.supersededBy);
-            return <ConversationTurn key={turn.key} id={turn.key} runId={execution.current?run?.id:assistant?.runId||prompt?.runId} prompt={prompt?{id:prompt.id,text:prompt.text,images:prompt.attachments?.length?<ConversationMessageImages conversation={chat} ids={prompt.attachments} read={context.api.readImage}/>:undefined,diagnostic:prompt.deliveryDiagnostic?<small className="ac-input-diagnostic" role="status">{prompt.deliveryDiagnostic}</small>:prompt.status==='unknown'?<Tag color="warning">是否送达待确认</Tag>:undefined}:undefined}
+            return <ConversationTurn key={turn.key} id={turn.key} runId={execution.current?run?.id:assistant?.runId||prompt?.runId} prompt={prompt?{id:prompt.id,text:prompt.text,images:prompt.attachments?.length?<ConversationMessageImages conversation={chat} ids={prompt.attachments} read={context.api.readImage}/>:undefined,diagnostic:prompt.deliveryDiagnostic?<small className="ac-input-diagnostic" role="status">{prompt.deliveryDiagnostic}</small>:prompt.status==='unknown'&&(execution.current||turnExpanded)?<Tag color={execution.current?'warning':'default'}>{execution.current?'是否送达待确认':'历史送达未确认'}</Tag>:undefined}:undefined}
               onCollapseProcess={processKeys.some(key=>expandedToolGroups[key]===true)?()=>setExpandedToolGroups(previous=>({...previous,...Object.fromEntries(processKeys.map(key=>[key,false]))})):undefined} collapseLabel={hasExpandedProcess?'收起处理过程':'收起工具调用'} identity={execution.current?runIdentity:turnIdentity(assistant||prompt)} executing={executing&&!turnPaused} startedAt={timing.startedAt} finishedAt={timing.finishedAt} processExpanded={turnExpanded} onToggleProcess={hasProcess||hasSupplement?()=>setExpandedToolGroups(previous=>({...previous,[turnExpansionKey]:!turnExpanded,...Object.fromEntries(settled.flatMap(item=>item.type==='process-block'?[[processBlockKey(item.entries),!turnExpanded]]:[]))})):undefined}>
               {executing&&execution.waiting&&<small className="ac-input-diagnostic" role="status">{execution.waiting}</small>}
-              {unverified&&<small className="ac-input-diagnostic" title={turnRun?.diagnostic}>{turnRun?.attentionSettled?'本轮提醒已结束；原执行结果仍未知，原记录保留在可展开的处理过程中。':<>本轮结果待核对，原记录保留在可展开的处理过程中。{canSettleRetainedRun(chat,turnRun)&&<Button type="link" size="small" loading={Boolean(chat&&actions.has(actionKey(chat,'settle-retained',turnRun!.id)))} onClick={()=>void settleRetained(turnRun!)} title="仅结束提醒：原执行结果仍未知，不终止可能仍在运行的进程，不会重发原操作。">结束提醒</Button>}</>}</small>}
+              {unverified&&turnExpanded&&<small className="ac-input-diagnostic" title={turnRun?.diagnostic}>{turnRun?.attentionSettled?'历史执行提醒已结束；原记录仍保留。':<>历史执行结果未确认，不影响当前对话。原记录保留在可展开的处理过程中。{canSettleRetainedRun(chat,turnRun)&&<Button type="link" size="small" loading={Boolean(chat&&actions.has(actionKey(chat,'settle-retained',turnRun!.id)))} onClick={()=>void settleRetained(turnRun!)} title="仅结束提醒：原执行结果仍未知，不终止可能仍在运行的进程，不会重发原操作。">结束提醒</Button>}</>}</small>}
               {turn.items.map(item=>{
                 if(item.type==='entry')return item.entry.kind==='message'&&item.entry.role==='user'&&!turnExpanded?null:renderEntry(item.entry);
                 const key=processBlockKey(item.entries);

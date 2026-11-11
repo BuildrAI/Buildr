@@ -152,6 +152,7 @@ export class ConversationApplication {
   private releasingIdleSources?: Promise<void>;
   private readonly idleReleaseTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly releaseChecks = new Map<string,Promise<boolean>>();
+  private readonly supplementReceiptChecks = new Map<string,Promise<void>>();
   private readonly releasedRuns = new Set<string>();
   private readonly nativeSourceOwners = new Set<string>();
   private closing = false;
@@ -1009,6 +1010,44 @@ export class ConversationApplication {
   }
 
   supplement(workspaceId: string, id: string, input: SupplementInput) { return this.supplements.send(workspaceId, id, input); }
+
+  /** Repair only persisted unknown supplements when a durable native user record proves acceptance. */
+  async reconcileSupplementReceipts(workspaceId:string,id:string):Promise<void> {
+    const key=`${workspaceId}/${id}`;
+    const existing=this.supplementReceiptChecks.get(key);
+    if(existing)return existing;
+    const work=(async()=>{
+      let record=this.load(workspaceId,id);
+      const candidates=record.attempts.filter(attempt=>attempt.supplement&&!attempt.accepted&&attempt.executionRef&&
+        (()=>{const entry=record.view.entries.find(item=>item.id===attempt.userEntryId);return Boolean(entry&&['sending','unknown'].includes(entry.status??''));})());
+      for(const candidate of candidates){
+        record=this.load(workspaceId,id);
+        const attempt=record.attempts.find(item=>item.clientRequestId===candidate.clientRequestId&&item.runId===candidate.runId);
+        const entry=attempt?record.view.entries.find(item=>item.id===attempt.userEntryId):undefined;
+        const participant=attempt?record.participants.find(item=>item.id===attempt.participantId):undefined;
+        if(!attempt?.executionRef||!entry||entry.status!=='unknown'&&entry.status!=='sending'||!participant?.contextRef||!participant.bindingIdentity||!entry.text.trim())continue;
+        try{
+          const receipt=await this.options.connections.readSupplementReceipt(participant.connectionId,{
+            bindingIdentity:participant.bindingIdentity,contextRef:participant.contextRef,executionRef:attempt.executionRef,
+            cwd:record.view.cwd,clientRequestId:attempt.clientRequestId,text:entry.text,createdAt:entry.createdAt,
+          });
+          if(!receipt)continue;
+          record=this.load(workspaceId,id);
+          const current=record.attempts.find(item=>item.clientRequestId===candidate.clientRequestId&&item.runId===candidate.runId);
+          const currentEntry=current?record.view.entries.find(item=>item.id===current.userEntryId):undefined;
+          const currentParticipant=current?record.participants.find(item=>item.id===current.participantId):undefined;
+          if(!current||current.accepted||!currentEntry||currentEntry.status!=='unknown'&&currentEntry.status!=='sending'||!currentParticipant)continue;
+          current.accepted=true;current.nativeInputItemId=receipt.inputItemId;
+          currentEntry.status='accepted';delete currentEntry.deliveryDiagnostic;
+          record.sources[`${currentParticipant.id}:message:${receipt.inputItemId}`]=currentEntry.id;
+          currentParticipant.deliveredThrough=Math.max(currentParticipant.deliveredThrough,current.through);
+          this.save(record);
+        }catch{/* A failed or changed native read preserves the unknown record for the next observation. */}
+      }
+    })();
+    this.supplementReceiptChecks.set(key,work);
+    try{await work;}finally{if(this.supplementReceiptChecks.get(key)===work)this.supplementReceiptChecks.delete(key);}
+  }
 
   private currentRun(workspaceId: string, id: string, runId: string): StoredConversation | undefined {
     const record = this.load(workspaceId, id);
@@ -1966,6 +2005,7 @@ export class ConversationApplication {
   }
 
   async observe(workspaceId: string, id: string): Promise<ConversationView> {
+    await this.reconcileSupplementReceipts(workspaceId,id);
     await this.reconcileReleasedControls(workspaceId,id);
     if(await this.reconcilePersisted(workspaceId,id))return this.read(workspaceId,id,{compactTools:true});
     const key = `${workspaceId}/${id}`;

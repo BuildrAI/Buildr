@@ -9,6 +9,7 @@ import { qoderProduct } from '../qoder/product.ts';
 import { qoderStorage } from '../qoder/storage.ts';
 import { qoderForm } from './forms.ts';
 import { readQoderCnUsage } from './usage.ts';
+import { qoderCnPromptReceipt, readQoderCnSupplementReceipt } from './transcript.ts';
 import { nativeContentFiles } from '../native-content.ts';
 import { interactionPolicy } from '../../domain/interaction-policy.ts';
 import { instructionParticipation } from '../../domain/participation.ts';
@@ -248,9 +249,9 @@ class QoderCnRuntime implements AgentRuntime {
     return files.length === 1 ? files[0] : undefined;
   }
 
-  /** The native bridge-prompt attachment is the durable acceptance receipt of a queued
-   * supplement. FIFO dispatch order plus exact text equality prevents misattribution;
-   * any structural anomaly disables the scan and leaves the terminal receipt authoritative. */
+  /** A native human prompt is the durable acceptance receipt of a queued supplement.
+   * FIFO dispatch order plus exact text equality prevents misattribution; qoder-cn
+   * 1.1.86 writes a regular user row, while older bridge attachments remain accepted. */
   private scanDurableSupplements(turn: TurnState): void {
     const scan = turn.durableScan;
     if (!scan || scan.broken || !turn.supplementOrder.length) return;
@@ -279,16 +280,15 @@ class QoderCnRuntime implements AgentRuntime {
         for (const line of text.split('\n')) {
           if (!line) continue;
           let row: any; try { row = JSON.parse(line); } catch { scan.broken = true; return; }
-          if (row?.type !== 'attachment' || row.sessionId !== turn.contextId || row.isSidechain !== false || row.cwd !== cwd) continue;
-          const attachment = row.attachment;
-          if (attachment?.commandMode !== 'prompt' || attachment?.origin?.kind !== 'bridge' || typeof row.uuid !== 'string') continue;
+          const receipt = qoderCnPromptReceipt(row, turn.contextId, cwd!);
+          if (!receipt) continue;
           const target = turn.supplementOrder[scan.next];
           if (!target) continue;
-          if (textOf(attachment.prompt) !== target.text) { scan.broken = true; return; }
+          if (receipt.text !== target.text) { scan.broken = true; return; }
           scan.next++;
           if (turn.durableReceipts.has(target.clientRequestId)) continue;
-          turn.durableReceipts.set(target.clientRequestId, row.uuid);
-          this.item(turn, { id: row.uuid, clientRequestId: target.clientRequestId, kind: 'message', role: 'user', text: target.text, executionId: turn.executionId, status: 'completed' });
+          turn.durableReceipts.set(target.clientRequestId, receipt.id);
+          this.item(turn, { id: receipt.id, clientRequestId: target.clientRequestId, kind: 'message', role: 'user', text: target.text, executionId: turn.executionId, status: 'completed' });
         }
       } finally { fs.closeSync(fd); }
     } catch { /* durable observation is best-effort; the terminal receipt still applies */ }
@@ -795,5 +795,11 @@ function quotaMessage(message: string): string {
 }
 
 export function createQoderCnExecutor(): AgentExecutor {
-  return { nativeContent: input => qoderContent(input, 'qoder-cn'), storage: qoderStorage(), descriptor: { id: 'qoder-cn', label: product.label, capabilities }, open: options => QoderCnRuntime.open(options) };
+  return {
+    nativeContent: input => qoderContent(input, 'qoder-cn'),
+    readSupplementReceipt: input => readQoderCnSupplementReceipt(input),
+    storage: qoderStorage(),
+    descriptor: { id: 'qoder-cn', label: product.label, capabilities },
+    open: options => QoderCnRuntime.open(options),
+  };
 }

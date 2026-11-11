@@ -58,7 +58,7 @@ function finishPrompt(stopReason) {
     appendNative(session, {type:'assistant',uuid:finalId,parentUuid:responseId,message:{content:[{type:'text',text:'fixture answer'}],usage:{input_tokens:2345,output_tokens:50}}});
     writeSession(session);
   }
-  result(id, { ...((scenario()==='queue-missing-receipt'||scenario()==='queue-durable-receipt')&&toolSequence>1?{}:{userMessageId}), stopReason: scenario() === 'truncated' ? 'max_tokens' : scenario() === 'unknown-reason' ? 'vendor_new_reason' : stopReason });
+  result(id, { ...((scenario()==='queue-missing-receipt'||scenario().startsWith('queue-durable'))&&toolSequence>1?{}:{userMessageId}), stopReason: scenario() === 'truncated' ? 'max_tokens' : scenario() === 'unknown-reason' ? 'vendor_new_reason' : stopReason });
   if(queue.length)setTimeout(()=>handle(queue.shift()),5);
 }
 
@@ -104,28 +104,41 @@ function handle(message) {
       queue.push(message);log('fixture-queued.jsonl',{id,sessionId:params.sessionId,prompt:params.prompt});
       if(scenario()==='queue-durable-receipt'){
         const session=readSession(params.sessionId);
-        if(session)appendNative(session,{type:'attachment',uuid:randomUUID(),attachment:{prompt:params.prompt,commandMode:'prompt',origin:{kind:'bridge',sessionId:params.sessionId},type:'bridge_prompt'}});
+        if(session)appendNative(session,{type:'attachment',uuid:randomUUID(),timestamp:new Date().toISOString(),attachment:{prompt:params.prompt,commandMode:'prompt',origin:{kind:'bridge',sessionId:params.sessionId},type:'bridge_prompt'}});
+      }
+      if(scenario()==='queue-durable-user-receipt'){
+        const session=readSession(params.sessionId);
+        if(session){
+          const text=(params.prompt ?? []).map(part=>part.text ?? '').join('');
+          appendNative(session,{type:'user',uuid:randomUUID(),timestamp:new Date().toISOString(),message:{role:'user',content:[{type:'text',text}]},permissionMode:'yolo',origin:{kind:'human'},promptId:randomUUID(),humanInput:{text,mode:'prompt'}});
+          session.queuedReceipt=true;writeSession(session);
+        }
       }
       return;
     }
     const text = (params.prompt ?? []).map(part => part.text ?? '').join('');
     log('fixture-prompts.jsonl', { sessionId: params.sessionId, text });
     const session = readSession(params.sessionId);
-    if (session) { session.messages.push({ role: 'user', text }); writeSession(session); }
+    const queuedReceipt = Boolean(session?.queuedReceipt);
+    if (session) {
+      if(queuedReceipt)delete session.queuedReceipt;
+      else session.messages.push({ role: 'user', text });
+      writeSession(session);
+    }
     notify('session/update', { sessionId: params.sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '收到：' + text } } });
     notify('session/update', { sessionId: params.sessionId, update: { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '检查文件内容' } } });
     notify('session/update', { sessionId: params.sessionId, update: { sessionUpdate: 'user_message_chunk', content: { type: 'text', text } } });
     const toolId = `tool-${++toolSequence}`, userMessageId=randomUUID(),assistantId=randomUUID();
     if(scenario()==='cancel-ignored-child'){const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});log('fixture-owned-child.jsonl',{pid:child.pid});}
     notify('session/update', { sessionId: params.sessionId, update: { sessionUpdate: 'tool_call', toolCallId: toolId, title: '读取文件', kind: scenario()==='cancel-ignored-execute'?'execute':'read', rawInput: { path: 'fixture.txt' }, status: 'running' } });
-    appendNative(session,{type:'user',uuid:userMessageId,humanInput:true,origin:{kind:'human'},message:{content:[{type:'text',text}]}});
+    if(!queuedReceipt&&scenario()!=='queue-missing-receipt')appendNative(session,{type:'user',uuid:userMessageId,timestamp:new Date().toISOString(),humanInput:true,origin:{kind:'human'},message:{content:[{type:'text',text}]}});
     appendNative(session,{type:'assistant',uuid:assistantId,parentUuid:userMessageId,message:{content:[{type:'tool_use',id:toolId,name:'Read',input:{path:'fixture.txt'}}],usage:{input_tokens:1234,output_tokens:20}}});
     pendingPrompt = { id, sessionId: params.sessionId, toolId, userMessageId,assistantId };
     if (scenario() === 'disconnect' || scenario()==='queue-disconnect'&&toolSequence>1) { process.exit(0); return; }
     if(scenario()==='question'){
       send({jsonrpc:'2.0',id:901,method:'elicitation/create',params:{sessionId:params.sessionId,mode:'form',toolCallId:toolId,message:'确认实施方案',requestedSchema:{type:'object',additionalProperties:false,properties:{choice:{type:'string',title:'方案',oneOf:[{const:'A',title:'方案A'},{const:'B',title:'方案B'}]},features:{type:'array',title:'功能',items:{type:'string',anyOf:[{const:'问答'},{const:'追加'}]},minItems:1},note:{type:'string',minLength:1},count:{type:'integer',minimum:1},confirm:{type:'boolean'}},required:['choice','features','note','count','confirm']}}});return;
     }
-    if(scenario().startsWith('queue')&&toolSequence>1){setTimeout(()=>finishPrompt('end_turn'),scenario()==='queue-durable-receipt'?6000:30);return;}
+    if(scenario().startsWith('queue')&&toolSequence>1){setTimeout(()=>finishPrompt('end_turn'),scenario().startsWith('queue-durable')?6000:30);return;}
     if (autoAllow() || session?.mode === 'yolo') { setTimeout(() => finishPrompt('end_turn'), 5); return; }
     send({ jsonrpc: '2.0', id: 900, method: 'session/request_permission', params: { sessionId: params.sessionId, toolCall: { toolCallId: toolId, title: '读取文件', kind: 'read' }, options: [{ optionId: 'allow-always', name: '总是允许', kind: 'allow_always' }, { optionId: 'allow-once', name: '允许一次', kind: 'allow_once' }, { optionId: 'reject-once', name: '拒绝', kind: 'reject_once' }] } });
     return;

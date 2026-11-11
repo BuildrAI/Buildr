@@ -53,13 +53,14 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
   let holdTaskList=false,releaseTaskList:(()=>void)|undefined,taskListStarted:(()=>void)|undefined;
   let holdTitle=false,releaseTitle:(()=>void)|undefined,titleStarted:(()=>void)|undefined,titleGenerations=0;
   let supplementaryCalls=0,holdSupplement=false,releaseSupplement:(()=>void)|undefined,supplementStarted:(()=>void)|undefined;let supplementaryDelivery:'accepted'|'rejected'|'unknown'|'continued'='accepted';
+  let repairSupplementOnRead=false,lastSupplementRequestId:string|undefined;
   const supplementaryInputs:any[]=[];
   const uploadedMedia=new Map<string,{mimeType:string;bytes:Buffer;video?:any}>();
   let attachmentUploads=0,holdUploadAt=0,releaseUpload:(()=>void)|undefined,uploadStarted:(()=>void)|undefined;
   let preferencePosts=0,holdPreferences=false,releasePreferences:(()=>void)|undefined,preferencesStarted:(()=>void)|undefined;
   const preferenceBodies:any[]=[];
   let connectionProbeBarrier:Promise<void>|undefined,releaseConnectionProbe:(()=>void)|undefined;
-  let connectionReads=0,conversationReads=0,connectionEventProbe=false,dropEventStreams=0,eventStreams=0,observes=0,recoverNextObserve=false;
+  let connectionReads=0,conversationReads=0,connectionEventProbe=false,dropEventStreams=0,eventStreams=0,observes=0,recoverNextObserve=false,recoverNextRead=false;
   let eventStreamHook:(()=>void|Promise<void>)|undefined;
   let programScenario='ready';
   const programAttempts:Record<string,any>={};
@@ -228,6 +229,7 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
     if(url.pathname.includes('/attachments/')&&method==='GET'){const stored=uploadedMedia.get(url.pathname.split('/').at(-1)!);return route.fulfill(stored?{contentType:stored.mimeType,body:stored.bytes}:{contentType:'image/png',body:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5EsAAAAASUVORK5CYII=','base64')});}
     if(url.pathname.endsWith('/supplement')){
       supplementaryCalls++;const body=request.postDataJSON();supplementaryInputs.push(body);assert.equal(body.runId,conversation.run.id);assert.equal(body.participantId,conversation.run.participantId);assert.equal(body.generation,conversation.run.generation);
+      lastSupplementRequestId=body.clientRequestId;
       const entry={id:body.clientRequestId,sequence:conversation.entries.length+1,kind:'message',role:'user',text:body.text,attachments:body.attachmentIds,participantId:body.participantId,provider:conversation.run.provider,runId:body.runId,status:supplementaryDelivery==='accepted'?'accepted':supplementaryDelivery==='rejected'?'failed':'unknown',deliveryDiagnostic:supplementaryDelivery==='unknown'?'消息已保存，是否送达仍待确认，请勿重复发送。':supplementaryDelivery==='rejected'?'这条消息未发送成功，文字与图片仍保留在输入框。':undefined,createdAt:new Date().toISOString()};
       if(holdSupplement){holdSupplement=false;await new Promise<void>(resolve=>{releaseSupplement=resolve;supplementStarted?.();});}
       if(supplementaryDelivery==='continued'){
@@ -269,7 +271,18 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
       return route.fulfill({json:isCurrent?conversation:target});
     }
     if(method==='POST'&&url.pathname.endsWith('/seen')){const body=request.postDataJSON();const target=[...additionalConversations,...additionalPending].find(item=>url.pathname.includes('/'+item.id+'/'))||conversation;const activity={version:Math.max(body.through,target?.activity?.version??body.through),seenThrough:body.through,updatedAt:new Date().toISOString(),active:target?.activity?.active??true};if(target)target.activity=activity;return route.fulfill({json:{activity}});}
-    if(method==='GET'){conversationReads++;return route.fulfill({json:[...additionalConversations,...additionalPending].find(item=>url.pathname.endsWith('/'+item.id))||conversation});}
+    if(method==='GET'){
+      conversationReads++;
+      if(recoverNextRead&&url.pathname.endsWith('/'+conversation.id)){
+        recoverNextRead=false;
+        update({run:{...conversation.run,status:'completed',executionState:'ended',tools:[]}});
+      }
+      if(repairSupplementOnRead&&lastSupplementRequestId&&url.pathname.endsWith('/'+conversation.id)){
+        const entry=conversation.entries.find((item:any)=>item.id===lastSupplementRequestId&&item.status==='unknown');
+        if(entry){entry.status='accepted';delete entry.deliveryDiagnostic;repairSupplementOnRead=false;}
+      }
+      return route.fulfill({json:[...additionalConversations,...additionalPending].find(item=>url.pathname.endsWith('/'+item.id))||conversation});
+    }
     return route.fallback();
   };
   await page.route('**/api/v1/app/agent-service/**',route);
@@ -421,6 +434,7 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
     programAttempts,
     get programScenario(){return programScenario;}, set programScenario(value){programScenario=value;},
     get recoverNextObserve(){return recoverNextObserve;}, set recoverNextObserve(value){recoverNextObserve=value;},
+    get recoverNextRead(){return recoverNextRead;}, set recoverNextRead(value){recoverNextRead=value;},
     get releaseConnectionProbe(){return releaseConnectionProbe;}, set releaseConnectionProbe(value){releaseConnectionProbe=value;},
     get releaseConnections(){return releaseConnections;}, set releaseConnections(value){releaseConnections=value;},
     get releaseCreate(){return releaseCreate;}, set releaseCreate(value){releaseCreate=value;},
@@ -457,6 +471,7 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
     get supplementaryDelivery(){return supplementaryDelivery;}, set supplementaryDelivery(value){supplementaryDelivery=value;},
     supplementaryInputs,
     get supplementStarted(){return supplementStarted;}, set supplementStarted(value){supplementStarted=value;},
+    get repairSupplementOnRead(){return repairSupplementOnRead;}, set repairSupplementOnRead(value){repairSupplementOnRead=value;},
     get taskListStarted(){return taskListStarted;}, set taskListStarted(value){taskListStarted=value;},
     get titleGenerations(){return titleGenerations;}, set titleGenerations(value){titleGenerations=value;},
     get titleStarted(){return titleStarted;}, set titleStarted(value){titleStarted=value;},

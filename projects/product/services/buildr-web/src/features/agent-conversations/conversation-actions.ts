@@ -17,6 +17,35 @@ import type { SupplementResult } from './types';
 import type { DraftImage } from './ConversationImageInput';
 export type InputAttempt={runId:string;participantId:string;generation:string;clientRequestId:string;text:string;images:Omit<DraftImage,'file'>[]};
 
+/** A local receipt belongs to one exact draft and owner; it never locks the conversation. */
+export function conversationInputAttemptMatches(
+  attempt:InputAttempt|undefined,
+  conversation:Pick<ConversationView,'run'>,
+  text:string,
+  images:readonly {id:string}[],
+):boolean {
+  const run=conversation.run;
+  return Boolean(attempt&&run&&attempt.runId===run.id&&attempt.participantId===run.participantId&&attempt.generation===run.generation&&
+    attempt.text===text&&attempt.images.length===images.length&&attempt.images.every((image,index)=>image.id===images[index]?.id));
+}
+
+/** Durable read may have repaired this exact unknown row while the send response was in flight. */
+export function conversationInputAttemptAccepted(
+  before:Pick<ConversationView,'entries'>,
+  after:Pick<ConversationView,'entries'>,
+  attempt:InputAttempt,
+):boolean {
+  const ids=attempt.images.map(image=>image.id);
+  const pending=[...before.entries].reverse().find(entry=>
+    entry.runId===attempt.runId&&entry.kind==='message'&&entry.role==='user'&&entry.text===attempt.text&&
+    (entry.attachments??[]).length===ids.length&&(entry.attachments??[]).every((id,index)=>id===ids[index])&&
+    (entry.status==='sending'||entry.status==='unknown')
+  );
+  return Boolean(pending&&after.entries.some(entry=>entry.id===pending.id&&entry.status==='accepted'&&
+    entry.runId===attempt.runId&&entry.kind==='message'&&entry.role==='user'&&entry.text===attempt.text&&
+    (entry.attachments??[]).length===ids.length&&(entry.attachments??[]).every((id,index)=>id===ids[index])));
+}
+
 /** Reconcile only the original idempotent request; unknown receipt never frees it. */
 export async function reconcileConversationInputAttempt(attempt:InputAttempt, options:{
   reconcile(attempt:InputAttempt):Promise<SupplementResult>;
