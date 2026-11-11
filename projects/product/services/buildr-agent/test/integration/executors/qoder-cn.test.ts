@@ -101,6 +101,106 @@ test('Qoder CN streams ACP chunks and settles an approval request', { timeout: 2
   } finally { await runtime?.close(); await rm(root, { recursive: true, force: true }); }
 });
 
+test('Qoder CN settles a completed native turn when the ACP terminal response is lost', { timeout: 15000 }, async () => {
+  await withRuntime(async ({ runtime, config, workspace, contextRef }) => {
+    await writeFile(join(config, 'auto-allow'), '');
+    await writeFile(join(config, 'scenario'), 'missing-terminal-response');
+    const events: ExecutorEvent[] = [];
+    await runtime.send({ contextRef, cwd: workspace, text: '终态丢失', images: [], clientRequestId: 'missing-terminal-response', onEvent: event => events.push(event) });
+    assert.equal((await runtime.observe({ contextRef })).status, 'idle');
+    assert.ok(events.some(event => event.type === 'completed' && event.status === 'completed'));
+    assert.ok(events.some(event => event.type === 'item' && event.item.role === 'assistant' && event.item.text.includes('fixture answer') && event.item.status === 'completed'));
+  });
+});
+
+test('Qoder CN settles a queued bridged supplement from its native lineage when the terminal response is lost', { timeout: 20000 }, async () => {
+  await withRuntime(async ({ runtime, config, workspace, contextRef }) => {
+    await writeFile(join(config, 'scenario'), 'queue-durable-receipt-missing-terminal');
+    const events: ExecutorEvent[] = [];
+    const sending = runtime.send({ contextRef, cwd: workspace, text: '第一条', images: [], clientRequestId: 'queued-loss', onEvent: event => events.push(event) });
+    sending.catch(() => {});
+    await eventually(() => events.some(event => event.type === 'request'));
+    const supplement = runtime.supplement!({ contextRef, executionRef: { id: 'queued-loss' }, cwd: workspace, text: '追加终态', images: [], clientRequestId: 'queued-loss-supplement' });
+    await eventually(() => existsSync(join(config, 'fixture-queued.jsonl')));
+    const request = events.find(event => event.type === 'request');
+    assert.equal(request?.type, 'request');
+    await runtime.reply({ contextRef, executionRef: { id: 'queued-loss' }, requestId: request.request.id, answer: 'allow-once' });
+    const receipt = await supplement;
+    await sending;
+    assert.ok(receipt.inputItemId && receipt.inputItemId !== 'queued-loss-supplement');
+    assert.ok(events.some(event => event.type === 'item' && event.item.clientRequestId === 'queued-loss-supplement' && event.item.id === receipt.inputItemId));
+    assert.ok(events.some(event => event.type === 'completed' && event.status === 'completed'));
+    assert.equal((await runtime.observe({ contextRef })).status, 'idle');
+    assert.equal((await records(join(config, 'fixture-prompts.jsonl'))).length, 2, 'the exact queued input is sent once and never replayed');
+  });
+});
+
+test('Qoder CN reads a completed turn from the native transcript without a terminal response', { timeout: 15000 }, async () => {
+  await withRuntime(async ({ executor, runtime, configRoot, config, executable, workspace, contextRef }) => {
+    await writeFile(join(config, 'auto-allow'), '');
+    await writeFile(join(config, 'scenario'), 'missing-terminal-response');
+    const before = new Date(Date.now() - 1000).toISOString();
+    const events: ExecutorEvent[] = [];
+    const sending = runtime.send({ contextRef, cwd: workspace, text: '持久终态', images: [], clientRequestId: 'persisted-terminal', onEvent: event => events.push(event) });
+    await sending;
+    const accepted = events.find(event => event.type === 'accepted');
+    assert.equal(accepted?.type, 'accepted');
+    await runtime.close();
+    const evidence = await executor.readPersistedExecution!({
+      configRoot, nativeAccountConfigRoot: configRoot, executable, bindingIdentity: runtime.bindingIdentity,
+      contextRef, executionRef: accepted!.executionRef, cwd: workspace, startedAt: before,
+      nativeInputs: [{ clientRequestId: 'persisted-terminal', text: '持久终态', createdAt: before }],
+    });
+    assert.equal(evidence?.observation.status, 'idle');
+    assert.equal(evidence?.observation.executionRef?.id, accepted!.executionRef.id);
+    assert.ok(evidence?.observation.tools.length);
+    assert.ok(evidence?.items.some(item => item.clientRequestId === 'persisted-terminal' && item.status === 'completed'));
+    assert.equal(await executor.readPersistedExecution!({
+      configRoot, nativeAccountConfigRoot: configRoot, executable, bindingIdentity: runtime.bindingIdentity,
+      contextRef, executionRef: accepted!.executionRef, cwd: workspace, startedAt: before,
+      nativeInputs: [{ clientRequestId: 'persisted-terminal', text: '不同输入', createdAt: before }],
+    }), undefined);
+  });
+});
+
+test('Qoder CN cold read attributes a prefixed primary input and a queued attachment to the same completed turn', { timeout: 15000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-qoder-cn-native-lineage-'));
+  const workspace = join(root, 'workspace'), configRoot = join(root, 'config'), config = join(configRoot, 'qoder-cn-config');
+  await mkdir(workspace); await mkdir(join(config, 'projects', 'fixture'), { recursive: true });
+  const contextId = randomUUID(), bindingIdentity = 'fixture-binding';
+  const primaryId = randomUUID(), primaryPromptId = randomUUID(), primaryAssistantId = randomUUID();
+  const attachmentId = randomUUID(), attachmentAssistantId = randomUUID();
+  const primaryResultId = randomUUID(), attachmentResultId = randomUUID(), finalId = randomUUID();
+  const primaryText = '先检查额度表达', attachmentText = '再核对标题生成';
+  const rows = [
+    { type: 'user', uuid: primaryId, promptId: primaryPromptId, timestamp: '2026-11-11T00:00:02.000Z', humanInput: { text: `Buildr 本对话工作控制：\n受管上下文\n\n${primaryText}`, mode: 'prompt' }, origin: { kind: 'human' }, message: { content: [{ type: 'text', text: primaryText }] } },
+    { type: 'assistant', uuid: primaryAssistantId, parentUuid: primaryId, message: { content: [{ type: 'tool_use', id: 'primary-tool', name: 'Read', input: {} }] } },
+    { type: 'user', uuid: primaryResultId, parentUuid: primaryAssistantId, promptId: primaryPromptId, timestamp: '2026-11-11T00:00:03.000Z', message: { content: [{ type: 'tool_result', tool_use_id: 'primary-tool', content: 'ok' }] } },
+    { type: 'attachment', uuid: attachmentId, parentUuid: primaryResultId, timestamp: '2026-11-11T00:00:05.000Z', attachment: { prompt: [{ type: 'text', text: attachmentText }], commandMode: 'prompt', origin: { kind: 'bridge', sessionId: contextId }, type: 'queued_command' } },
+    { type: 'assistant', uuid: attachmentAssistantId, parentUuid: attachmentId, message: { content: [{ type: 'tool_use', id: 'attachment-tool', name: 'Search', input: {} }] } },
+    { type: 'user', uuid: attachmentResultId, parentUuid: attachmentAssistantId, promptId: primaryPromptId, timestamp: '2026-11-11T00:00:06.000Z', message: { content: [{ type: 'tool_result', tool_use_id: 'attachment-tool', content: 'ok' }] } },
+    { type: 'assistant', uuid: finalId, parentUuid: attachmentResultId, timestamp: '2026-11-11T00:00:10.000Z', message: { content: [{ type: 'text', text: 'done' }], stop_reason: 'end_turn' } },
+  ].map(row => JSON.stringify({ sessionId: contextId, cwd: workspace, isSidechain: false, ...row }));
+  const file = join(config, 'projects', 'fixture', contextId + '.jsonl');
+  await writeFile(file, rows.join('\n') + '\n');
+  const contextRef = { id: contextId, data: { cwd: workspace, native: JSON.stringify({ version: 1, provider: 'qoder-cn', nativeSessionId: contextId, cwd: workspace, bindingIdentity }) } };
+  const executionRef = { id: 'execution', data: { resourceContext: contextId, resourceBinding: bindingIdentity, backgroundWork: false } };
+  const input = {
+    configRoot, nativeAccountConfigRoot: configRoot, executable: 'unused', bindingIdentity, contextRef, executionRef, cwd: workspace,
+    nativeInputs: [
+      { clientRequestId: 'primary-input', text: primaryText, createdAt: '2026-11-11T00:00:00.000Z' },
+      { clientRequestId: 'attachment-input', text: attachmentText, createdAt: '2026-11-11T00:00:04.000Z' },
+    ],
+  };
+  const evidence = await createQoderCnExecutor().readPersistedExecution!(input);
+  assert.equal(evidence?.observation.status, 'idle');
+  assert.equal(evidence?.endedAt, '2026-11-11T00:00:10.000Z');
+  assert.deepEqual(evidence?.items.map(item => [item.clientRequestId, item.status]), [['primary-input', 'completed'], ['attachment-input', 'completed']]);
+  assert.deepEqual(evidence?.observation.tools.map(tool => [tool.id, tool.status]), [['primary-tool', 'completed'], ['attachment-tool', 'completed']]);
+  await writeFile(file, [...rows, JSON.stringify({ sessionId: contextId, cwd: workspace, isSidechain: false, type: 'user', uuid: randomUUID(), promptId: randomUUID(), timestamp: '2026-11-11T00:00:11.000Z', humanInput: { text: 'unrelated later input', mode: 'prompt' }, origin: { kind: 'human' }, message: { content: [{ type: 'text', text: 'unrelated later input' }] } })].join('\n') + '\n');
+  assert.equal(await createQoderCnExecutor().readPersistedExecution!(input), undefined);
+});
+
 test('Qoder CN stop cancels the native turn instead of claiming success', { timeout: 15000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'buildr-qoder-cn-stop-')); const workspace = join(root, 'workspace'); await mkdir(workspace);
   let runtime: AgentRuntime | undefined;

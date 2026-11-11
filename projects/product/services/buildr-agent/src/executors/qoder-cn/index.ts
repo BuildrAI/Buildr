@@ -9,12 +9,12 @@ import { qoderProduct } from '../qoder/product.ts';
 import { qoderStorage } from '../qoder/storage.ts';
 import { qoderForm } from './forms.ts';
 import { readQoderCnUsage } from './usage.ts';
-import { qoderCnPromptReceipt, readQoderCnSupplementReceipt } from './transcript.ts';
+import { qoderCnFinishedTurns, qoderCnPromptReceipt, readQoderCnPersistedExecution, readQoderCnTranscriptAppend, readQoderCnSupplementReceipt } from './transcript.ts';
 import { nativeContentFiles } from '../native-content.ts';
 import { interactionPolicy } from '../../domain/interaction-policy.ts';
 import { instructionParticipation } from '../../domain/participation.ts';
 import { isCompatibleProgram, nativeProgramPolicy } from '../program-policy.ts';
-import { accountEnvironment, findExecutable, inspectVersion, nativeCommand, nativeHome, opaqueReference, parseReference, privateDirectories, bounded, closeOwnedProcess } from '../native-process.ts';
+import { accountEnvironment, findExecutable, inspectVersion, nativeCommand, nativeHome, opaqueReference, parseReference, privateDirectories, bounded, closeOwnedProcess, releasedNativeControl } from '../native-process.ts';
 import { checkedGateway, consumerBinding, gatewayModel, qoderGatewayPolicy, type ExecutorGateway } from '../model-gateway.ts';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { AgentServiceError } from '../../domain/agent-state.ts';
@@ -44,6 +44,21 @@ function selectOptions(value: unknown): Map<string, SelectOption> {
   }
   return map;
 }
+interface Deferred<T> { promise: Promise<T>; resolve(value: T): void }
+function deferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>(value => { resolve = value; });
+  return { promise, resolve };
+}
+interface NativePromptCompletion { stopReason: string; text?: string; timestamp?: string }
+interface NativePromptWait {
+  clientRequestId?: string;
+  text: string;
+  admittedAt: number;
+  receipt?: { id: string; promptId?: string; timestamp?: string };
+  completion?: NativePromptCompletion;
+  terminal: Deferred<NativePromptCompletion>;
+}
 interface TurnState {
   contextId: string;
   executionId: string;
@@ -64,9 +79,9 @@ interface TurnState {
   supplements: Map<string, Promise<void>>;
   supplementFailed?: boolean;
   supplementInputs: Map<string, { digest: string; work: Promise<ExecutorInputReceipt> }>;
-  supplementOrder: Array<{ clientRequestId: string; text: string }>;
   durableReceipts: Map<string, string>;
-  durableScan?: { file?: string; offset: number; next: number; broken?: boolean };
+  nativePrompts: NativePromptWait[];
+  nativeScan?: { file?: string; offset: number; rows: any[]; broken?: boolean };
   stopReason?: string;
   stopping?: Promise<ExecutorObservation>;
   stopConfirmed?: boolean;
@@ -249,49 +264,56 @@ class QoderCnRuntime implements AgentRuntime {
     return files.length === 1 ? files[0] : undefined;
   }
 
-  /** A native human prompt is the durable acceptance receipt of a queued supplement.
-   * FIFO dispatch order plus exact text equality prevents misattribution; qoder-cn
-   * 1.1.86 writes a regular user row, while older bridge attachments remain accepted. */
-  private scanDurableSupplements(turn: TurnState): void {
-    const scan = turn.durableScan;
-    if (!scan || scan.broken || !turn.supplementOrder.length) return;
+  /** Baseline native evidence at admission; only later rows can prove this turn. */
+  private startNativeScan(turn: TurnState): void {
+    let offset = 0;
+    const file = this.transcriptFile(turn.contextId);
+    if (file) try {
+      const stat = fs.lstatSync(file);
+      if (stat.isFile() && !stat.isSymbolicLink()) offset = stat.size;
+    } catch { /* A new native session may create its transcript after admission. */ }
+    turn.nativeScan = { ...(file ? { file } : {}), offset, rows: [] };
+  }
+
+  /** Qoder CN 1.1.86 can finish a native turn without sending the ACP
+   * `session/prompt` response. Its append-only transcript still records the exact
+   * human prompt and terminal stop reason, so use those facts without replaying
+   * any input. Exact text plus append offset prevents historical misattribution. */
+  private scanNativeTurn(turn: TurnState): void {
+    const scan = turn.nativeScan;
+    if (!scan || scan.broken) return;
     try {
       const file = scan.file ??= this.transcriptFile(turn.contextId);
       if (!file) return;
-      const before = fs.lstatSync(file);
-      if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1) return;
-      if (before.size < scan.offset) { scan.broken = true; return; }
-      if (before.size === scan.offset) return;
-      const fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
-      try {
-        const opened = fs.fstatSync(fd);
-        if (opened.ino !== before.ino || opened.dev !== before.dev) return;
-        const length = Math.min(opened.size - scan.offset, 8 * 1024 * 1024);
-        const buffer = Buffer.alloc(length);
-        let read = 0;
-        while (read < length) { const n = fs.readSync(fd, buffer, read, length - read, scan.offset + read); if (!n) break; read += n; }
-        const after = fs.fstatSync(fd);
-        if (after.ino !== before.ino || after.dev !== before.dev || after.size < before.size) return;
-        const end = read ? buffer.lastIndexOf(10, read - 1) : -1;
-        if (end < 0) return;
-        const text = new TextDecoder('utf-8', { fatal: true }).decode(buffer.subarray(0, end));
-        scan.offset += end + 1;
-        const cwd = this.contexts.get(turn.contextId);
-        for (const line of text.split('\n')) {
-          if (!line) continue;
-          let row: any; try { row = JSON.parse(line); } catch { scan.broken = true; return; }
-          const receipt = qoderCnPromptReceipt(row, turn.contextId, cwd!);
-          if (!receipt) continue;
-          const target = turn.supplementOrder[scan.next];
-          if (!target) continue;
-          if (receipt.text !== target.text) { scan.broken = true; return; }
-          scan.next++;
-          if (turn.durableReceipts.has(target.clientRequestId)) continue;
-          turn.durableReceipts.set(target.clientRequestId, receipt.id);
-          this.item(turn, { id: receipt.id, clientRequestId: target.clientRequestId, kind: 'message', role: 'user', text: target.text, executionId: turn.executionId, status: 'completed' });
-        }
-      } finally { fs.closeSync(fd); }
-    } catch { /* durable observation is best-effort; the terminal receipt still applies */ }
+      const delta = readQoderCnTranscriptAppend(file, scan.offset);
+      if (!delta) return;
+      scan.offset = delta.offset;
+      if (!delta.rows.length) return;
+      scan.rows.push(...delta.rows);
+      const cwd = this.contexts.get(turn.contextId); if (!cwd) return;
+      for (const row of delta.rows) {
+        const receipt = qoderCnPromptReceipt(row, turn.contextId, cwd);
+        if (!receipt) continue;
+        const receiptAt = receipt.timestamp ? Date.parse(receipt.timestamp) : NaN;
+        const prompt = turn.nativePrompts.find(value => !value.receipt && value.text === receipt.text &&
+          Number.isFinite(receiptAt) && receiptAt + 1000 >= value.admittedAt);
+        if (!prompt) continue;
+        prompt.receipt = { id: receipt.id, ...(receipt.promptId ? { promptId: receipt.promptId } : {}), ...(receipt.timestamp ? { timestamp: receipt.timestamp } : {}) };
+        if (!prompt.clientRequestId || turn.durableReceipts.has(prompt.clientRequestId)) continue;
+        turn.durableReceipts.set(prompt.clientRequestId, receipt.id);
+        this.item(turn, { id: receipt.id, clientRequestId: prompt.clientRequestId, kind: 'message', role: 'user', text: prompt.text, executionId: turn.executionId, status: 'completed' });
+      }
+      const finished = qoderCnFinishedTurns(scan.rows, turn.contextId, cwd);
+      for (const prompt of turn.nativePrompts) {
+        if (!prompt.receipt || prompt.completion) continue;
+        const completion = prompt.receipt.promptId
+          ? finished.byPromptId.get(prompt.receipt.promptId) ?? finished.byReceiptId.get(prompt.receipt.id)
+          : finished.byReceiptId.get(prompt.receipt.id);
+        if (!completion) continue;
+        prompt.completion = completion;
+        prompt.terminal.resolve(completion);
+      }
+    } catch { /* best-effort native evidence; ACP response remains primary */ }
   }
 
   private async serverRequest(request: AcpServerRequest): Promise<unknown> {
@@ -516,7 +538,7 @@ class QoderCnRuntime implements AgentRuntime {
   async readHistory({ contextRef, cwd }: { contextRef: ContextRef; cwd: string }): Promise<ExecutorItem[]> {
     this.reference(contextRef, cwd);
     const turn = this.turn;
-    if (turn?.contextId === contextRef.id) this.scanDurableSupplements(turn);
+    if (turn?.contextId === contextRef.id) this.scanNativeTurn(turn);
     return [...(this.history.get(contextRef.id)?.values() ?? [])];
   }
 
@@ -549,27 +571,48 @@ class QoderCnRuntime implements AgentRuntime {
     const executionId = input.clientRequestId;
     let settle!: () => void;
     const settled = new Promise<void>(resolve => { settle = resolve; });
-    const turn: TurnState = { contextId: input.contextRef.id, executionId, onEvent: input.onEvent, items: new Map(), tools: new Map(), independentTools: new Set(), approvals: new Map(), approvalPendingTools: new Set(), status: 'running', segment: 0, pending: true, cancelRequested: false, settled, settle, supplements: new Map(), supplementInputs: new Map(), supplementOrder: [], durableReceipts: new Map() };
+    const primaryPrompt: NativePromptWait = { text: input.text, admittedAt: Date.now(), terminal: deferred() };
+    const turn: TurnState = { contextId: input.contextRef.id, executionId, onEvent: input.onEvent, items: new Map(), tools: new Map(), independentTools: new Set(), approvals: new Map(), approvalPendingTools: new Set(), status: 'running', segment: 0, pending: true, cancelRequested: false, settled, settle, supplements: new Map(), supplementInputs: new Map(), durableReceipts: new Map(), nativePrompts: [primaryPrompt] };
     this.turn = turn;
+    this.startNativeScan(turn);
     input.onEvent({ type: 'accepted', executionRef: this.executionRef(executionId), inputItemId: executionId });
     const userItem: ExecutorItem = { id: `user:${executionId}`, kind: 'message', role: 'user', text: input.text, clientRequestId: executionId, executionId, status: 'completed' };
     this.item(turn, userItem);
     this.observeUsage(turn);
     const usageTimer=setInterval(()=>{try{this.observeUsage(turn);}catch{/* local observation cannot interrupt work */}},2000);
     usageTimer.unref();
-    const durableTimer=setInterval(()=>{this.scanDurableSupplements(turn);},2000);
+    const durableTimer=setInterval(()=>{try{this.scanNativeTurn(turn);}catch{/* native evidence is best-effort */}},1000);
     durableTimer.unref();
     try {
       const sessionId = this.sessionId!;
       const client = await this.transport();
-      await client.request('session/prompt', { sessionId, prompt }, 24 * 60 * 60 * 1000, result => {
-        this.finishText(turn);
-        turn.stopReason=result?.stopReason;
+      const request = client.request('session/prompt', { sessionId, prompt }, 24 * 60 * 60 * 1000, result => {
+        const completion: NativePromptCompletion = { stopReason: typeof result?.stopReason === 'string' ? result.stopReason : 'unknown' };
+        if (!primaryPrompt.completion) { primaryPrompt.completion = completion; primaryPrompt.terminal.resolve(completion); }
+        if (turn.pending) { this.finishText(turn); turn.stopReason = completion.stopReason; }
       });
+      // A lost terminal ACP frame must not turn a natively completed turn into
+      // an endless running control. The transcript watcher resolves this waiter.
+      request.catch(() => {});
+      const completed = await Promise.race([
+        request.then(result => ({ stopReason: typeof result?.stopReason === 'string' ? result.stopReason : 'unknown' })),
+        primaryPrompt.terminal.promise,
+      ]);
+      if (!primaryPrompt.completion) primaryPrompt.completion = completed;
+      turn.stopReason = completed.stopReason;
+      this.scanNativeTurn(turn);
       // Native queued prompts belong to this Buildr execution. The first prompt
       // ending cannot release their controls or promote an intermediate answer.
       while (turn.supplements.size) await Promise.allSettled([...turn.supplements.values()]);
-      const stopReason = turn.stopReason;
+      // Queued supplements are independent native turns too. Wait for their
+      // terminal facts, not only their durable acceptance receipts.
+      for (;;) {
+        const pending = turn.nativePrompts.filter(value => value.clientRequestId && !value.completion);
+        if (!pending.length) break;
+        await Promise.allSettled(pending.map(value => value.terminal.promise));
+      }
+      const supplementCompletion = turn.nativePrompts.filter(value => value.clientRequestId && value.completion).at(-1)?.completion;
+      const stopReason = supplementCompletion?.stopReason ?? turn.stopReason;
       const normal = stopReason === 'end_turn';
       const stopped = turn.cancelRequested || stopReason === 'cancelled' || stopReason === 'refusal' || stopReason === 'max_tokens' || stopReason === 'max_turn_requests';
       this.finishText(turn, normal ? 'completed' : 'unknown');
@@ -622,39 +665,63 @@ class QoderCnRuntime implements AgentRuntime {
       if(existing.digest!==digest)throw new ExecutorInputRejected('qoder_cn_supplement_conflict');
       return await bounded(existing.work,15000);
     }
-    if(!turn.durableScan){
-      // The baseline excludes native records persisted before the first queued dispatch.
-      let offset:number|undefined;
-      const file=this.transcriptFile(turn.contextId);
-      if(file)try{const stat=fs.lstatSync(file);if(stat.isFile()&&!stat.isSymbolicLink())offset=stat.size;}catch{/* best-effort baseline */}
-      turn.durableScan=offset===undefined?{offset:0,next:0,broken:true}:{offset,next:0};
-    }
+    if(!turn.nativeScan) this.startNativeScan(turn);
+    let nativePrompt:NativePromptWait|undefined;
     const work=(async ():Promise<ExecutorInputReceipt>=>{
       const prompt=[{type:'text',text:input.text},...await Promise.all(input.images.map(async image=>({type:'image',data:(await readFile(image.path)).toString('base64'),mimeType:image.mimeType})))];
       if(!turn.pending||turn.cancelRequested||this.turn!==turn)throw new ExecutorInputRejected('qoder_cn_supplement_stale');
       const client=await this.transport();
-      turn.supplementOrder.push({clientRequestId:input.clientRequestId,text:input.text});
-      const result=await client.request('session/prompt',{sessionId:turn.contextId,prompt},24*60*60*1000,value=>{
-        this.finishText(turn);
-        turn.stopReason=value?.stopReason;
+      const promptWait:NativePromptWait={clientRequestId:input.clientRequestId,text:input.text,admittedAt:Date.now(),terminal:deferred()};
+      nativePrompt=promptWait;
+      turn.nativePrompts.push(promptWait);
+      const request=client.request('session/prompt',{sessionId:turn.contextId,prompt},24*60*60*1000,value=>{
+        const completion:NativePromptCompletion={stopReason:typeof value?.stopReason==='string'?value.stopReason:'unknown'};
+        if(!promptWait.completion)promptWait.completion=completion;
+        if(turn.pending){this.finishText(turn);turn.stopReason=completion.stopReason;}
       });
-      this.scanDurableSupplements(turn);
+      request.catch(()=>{});
+      const settled=await Promise.race([
+        request.then(result=>({kind:'response' as const,result})),
+        promptWait.terminal.promise.then(completion=>({kind:'terminal' as const,completion})),
+      ]);
+      this.scanNativeTurn(turn);
+      if(settled.kind==='terminal')return this.supplementReceipt(turn,input.clientRequestId);
+      const result=settled.result;
       // The durable bridge-prompt record proves native acceptance even when the
       // terminal response is late or lacks its receipt; the terminal id wins when present.
       if(typeof result?.userMessageId==='string'&&result.userMessageId){
         this.item(turn,{id:result.userMessageId,clientRequestId:input.clientRequestId,kind:'message',role:'user',text:input.text,executionId:turn.executionId,status:'completed'});
         return {executionRef:this.executionRef(turn.executionId),inputItemId:result.userMessageId};
       }
-      const durable=turn.durableReceipts.get(input.clientRequestId);
-      if(durable)return {executionRef:this.executionRef(turn.executionId),inputItemId:durable};
+      // A native receipt may land just after the terminal frame. Observe the
+      // exact admitted prompt briefly, but never claim acceptance without it.
+      for(const delay of [50,100,200,400,800]){
+        await new Promise(resolve=>setTimeout(resolve,delay));
+        this.scanNativeTurn(turn);
+        const durable=turn.durableReceipts.get(input.clientRequestId);
+        if(durable)return {executionRef:this.executionRef(turn.executionId),inputItemId:durable};
+      }
       throw new Error('qoder_cn_supplement_receipt_missing');
-    })();
+    })().catch(error=>{
+      if(nativePrompt&&!nativePrompt.completion){
+        const completion:NativePromptCompletion={stopReason:'unknown'};
+        nativePrompt.completion=completion;
+        nativePrompt.terminal.resolve(completion);
+      }
+      throw error;
+    });
     turn.supplementInputs.set(input.clientRequestId,{digest,work});
     const pending=work.then(()=>{},error=>{if(!(error instanceof ExecutorInputRejected))turn.supplementFailed=true;}).finally(()=>{turn.supplements.delete(input.clientRequestId);});
     turn.supplements.set(input.clientRequestId,pending);
     // Timeout keeps the underlying queued input and its eventual exact receipt.
     // The application can reconcile it; it must never blindly send it again.
     return await bounded(work,15000);
+  }
+
+  private supplementReceipt(turn:TurnState,clientRequestId:string):ExecutorInputReceipt {
+    const durable=turn.durableReceipts.get(clientRequestId);
+    if(!durable)throw new Error('qoder_cn_supplement_receipt_missing');
+    return {executionRef:this.executionRef(turn.executionId),inputItemId:durable};
   }
 
   async observe(input: { contextRef: ContextRef; executionRef?: { id: string } }): Promise<ExecutorObservation> { this.exactTurn(input.contextRef, input.executionRef); return this.observation(); }
@@ -797,6 +864,8 @@ function quotaMessage(message: string): string {
 export function createQoderCnExecutor(): AgentExecutor {
   return {
     nativeContent: input => qoderContent(input, 'qoder-cn'),
+    readReleasedControl: input => releasedNativeControl('qoder-cn',input),
+    readPersistedExecution: input => readQoderCnPersistedExecution(input),
     readSupplementReceipt: input => readQoderCnSupplementReceipt(input),
     storage: qoderStorage(),
     descriptor: { id: 'qoder-cn', label: product.label, capabilities },

@@ -54,10 +54,11 @@ function finishPrompt(stopReason) {
   if (session) {
     session.messages.push({ role: 'assistant', text: 'fixture answer' });
     const responseId=randomUUID(),finalId=randomUUID();
-    appendNative(session, {type:'user',uuid:responseId,parentUuid:assistantId,promptId:userMessageId,sourceToolAssistantUUID:assistantId,toolUseResult:{stdout:'native full detail '.repeat(1500),stderr:''},message:{content:[{type:'tool_result',tool_use_id:toolId,content:'native summary'}]}});
-    appendNative(session, {type:'assistant',uuid:finalId,parentUuid:responseId,message:{content:[{type:'text',text:'fixture answer'}],usage:{input_tokens:2345,output_tokens:50}}});
+      appendNative(session, {type:'user',uuid:responseId,parentUuid:assistantId,promptId:userMessageId,sourceToolAssistantUUID:assistantId,toolUseResult:{stdout:'native full detail '.repeat(1500),stderr:''},message:{content:[{type:'tool_result',tool_use_id:toolId,content:'native summary'}]}});
+    appendNative(session, {type:'assistant',uuid:finalId,parentUuid:responseId,timestamp:new Date().toISOString(),message:{content:[{type:'text',text:'fixture answer'}],stop_reason:'end_turn',usage:{input_tokens:2345,output_tokens:50}}});
     writeSession(session);
   }
+  if(scenario()==='missing-terminal-response'||scenario()==='queue-durable-receipt-missing-terminal'&&toolSequence>1)return;
   result(id, { ...((scenario()==='queue-missing-receipt'||scenario().startsWith('queue-durable'))&&toolSequence>1?{}:{userMessageId}), stopReason: scenario() === 'truncated' ? 'max_tokens' : scenario() === 'unknown-reason' ? 'vendor_new_reason' : stopReason });
   if(queue.length)setTimeout(()=>handle(queue.shift()),5);
 }
@@ -104,14 +105,15 @@ function handle(message) {
       queue.push(message);log('fixture-queued.jsonl',{id,sessionId:params.sessionId,prompt:params.prompt});
       if(scenario()==='queue-durable-receipt'){
         const session=readSession(params.sessionId);
-        if(session)appendNative(session,{type:'attachment',uuid:randomUUID(),timestamp:new Date().toISOString(),attachment:{prompt:params.prompt,commandMode:'prompt',origin:{kind:'bridge',sessionId:params.sessionId},type:'bridge_prompt'}});
+        if(session){const uuid=randomUUID();appendNative(session,{type:'attachment',uuid,timestamp:new Date().toISOString(),attachment:{prompt:params.prompt,commandMode:'prompt',origin:{kind:'bridge',sessionId:params.sessionId},type:'bridge_prompt'}});session.queuedReceiptUuid=uuid;writeSession(session);}
       }
       if(scenario()==='queue-durable-user-receipt'){
         const session=readSession(params.sessionId);
         if(session){
           const text=(params.prompt ?? []).map(part=>part.text ?? '').join('');
-          appendNative(session,{type:'user',uuid:randomUUID(),timestamp:new Date().toISOString(),message:{role:'user',content:[{type:'text',text}]},permissionMode:'yolo',origin:{kind:'human'},promptId:randomUUID(),humanInput:{text,mode:'prompt'}});
-          session.queuedReceipt=true;writeSession(session);
+          const uuid=randomUUID();
+          appendNative(session,{type:'user',uuid,timestamp:new Date().toISOString(),message:{role:'user',content:[{type:'text',text}]},permissionMode:'yolo',origin:{kind:'human'},promptId:randomUUID(),humanInput:{text,mode:'prompt'}});
+          session.queuedReceipt=true;session.queuedReceiptUuid=uuid;writeSession(session);
         }
       }
       return;
@@ -120,18 +122,19 @@ function handle(message) {
     log('fixture-prompts.jsonl', { sessionId: params.sessionId, text });
     const session = readSession(params.sessionId);
     const queuedReceipt = Boolean(session?.queuedReceipt);
+    const queuedReceiptUuid = typeof session?.queuedReceiptUuid === 'string' ? session.queuedReceiptUuid : undefined;
     if (session) {
-      if(queuedReceipt)delete session.queuedReceipt;
+      if(queuedReceipt){delete session.queuedReceipt;delete session.queuedReceiptUuid;}
       else session.messages.push({ role: 'user', text });
       writeSession(session);
     }
     notify('session/update', { sessionId: params.sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '收到：' + text } } });
     notify('session/update', { sessionId: params.sessionId, update: { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '检查文件内容' } } });
     notify('session/update', { sessionId: params.sessionId, update: { sessionUpdate: 'user_message_chunk', content: { type: 'text', text } } });
-    const toolId = `tool-${++toolSequence}`, userMessageId=randomUUID(),assistantId=randomUUID();
+    const toolId = `tool-${++toolSequence}`, userMessageId=queuedReceiptUuid??randomUUID(),assistantId=randomUUID();
     if(scenario()==='cancel-ignored-child'){const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});log('fixture-owned-child.jsonl',{pid:child.pid});}
     notify('session/update', { sessionId: params.sessionId, update: { sessionUpdate: 'tool_call', toolCallId: toolId, title: '读取文件', kind: scenario()==='cancel-ignored-execute'?'execute':'read', rawInput: { path: 'fixture.txt' }, status: 'running' } });
-    if(!queuedReceipt&&scenario()!=='queue-missing-receipt')appendNative(session,{type:'user',uuid:userMessageId,timestamp:new Date().toISOString(),humanInput:true,origin:{kind:'human'},message:{content:[{type:'text',text}]}});
+    if(!queuedReceipt&&scenario()!=='queue-missing-receipt')appendNative(session,{type:'user',uuid:userMessageId,promptId:userMessageId,timestamp:new Date().toISOString(),humanInput:{text,mode:'prompt'},origin:{kind:'human'},message:{content:[{type:'text',text}]}});
     appendNative(session,{type:'assistant',uuid:assistantId,parentUuid:userMessageId,message:{content:[{type:'tool_use',id:toolId,name:'Read',input:{path:'fixture.txt'}}],usage:{input_tokens:1234,output_tokens:20}}});
     pendingPrompt = { id, sessionId: params.sessionId, toolId, userMessageId,assistantId };
     if (scenario() === 'disconnect' || scenario()==='queue-disconnect'&&toolSequence>1) { process.exit(0); return; }

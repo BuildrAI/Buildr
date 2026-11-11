@@ -1973,8 +1973,12 @@ export class ConversationApplication {
       const gatewayIdentity=participant.modelAccountId&&participant.modelAccountIdentity&&participant.modelId&&participant.modelConfiguration!==undefined
         ?modelLeaseIdentity(participant.modelAccountId,participant.modelAccountIdentity,participant.modelId,id,participant.connectionId,participant.modelLeaseConfiguration??participant.modelConfiguration):undefined;
       if(participant.modelAccountId&&!gatewayIdentity)continue;
+      const nativeInputs=record.attempts.filter(value=>value.runId===run.id&&value.executionRef).flatMap(value=>{
+        const entry=record.view.entries.find(item=>item.id===value.userEntryId);
+        return entry?.text.trim()&&(!entry.status||!['failed'].includes(entry.status))?[{clientRequestId:value.clientRequestId,text:entry.text,createdAt:entry.createdAt}]:[];
+      });
       let evidence;
-      try{evidence=await this.options.connections.readPersistedExecution(participant.connectionId,{bindingIdentity:participant.bindingIdentity,contextRef:participant.contextRef,executionRef:attempt.executionRef,cwd:record.view.cwd,gatewayIdentity});}
+      try{evidence=await this.options.connections.readPersistedExecution(participant.connectionId,{bindingIdentity:participant.bindingIdentity,contextRef:participant.contextRef,executionRef:attempt.executionRef,cwd:record.view.cwd,gatewayIdentity,startedAt:run.startedAt,nativeInputs});}
       catch{continue; /* Native observation remains available; unsafe evidence never overrides it. */}
       if(!evidence||!['idle','stopped'].includes(evidence.observation.status)||evidence.observation.tools.some(tool=>tool.status!=='completed')||evidence.observation.executionRef?.id!==attempt.executionRef.id)continue;
       record=this.load(workspaceId,id);

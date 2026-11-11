@@ -108,3 +108,28 @@
 - **WHEN** 补充发送响应返回 `delivery=unknown`，随后同一请求的权威读取返回 accepted
 - **THEN** 页面 MUST 清除该请求对应的草稿和附件
 - **AND** MUST NOT 显示黄色送达待确认告警，也 MUST NOT 再次发送该请求
+
+### Requirement: ACP 终态帧丢失时按原生 transcript 收敛完成
+
+Qoder CN 的 `session/prompt` 终态响应可能丢失，而原生执行已经完成并写入 transcript。此时服务端 MUST 能从该执行绑定、追加写入的原生 transcript 中核对完成事实：本轮已受理输入必须按准确文本、受理时间下限、唯一匹配和 session/cwd/sidechain 身份对应；每个对应回合 MUST 有 `end_turn` 终态；区间内每个工具调用 MUST 有结果；且 MUST NOT 借用后续其他输入的终态。任一条件不满足时 MUST 保持未知，不得猜测完成。
+
+实时等待 MUST 同时接受 ACP 终态响应与准确的 transcript 完成证据。权威读取发现执行仍为活动或未知状态时，MUST 仅只读 transcript 即可把该轮收敛为 `completed`、`executionState=ended`，并把准确证据记为持久结束；MUST NOT 打开新的原生执行、获取原控制资源、重发输入或伪造工具成功。
+
+#### Scenario: ACP 终态响应丢失但原生回合正常结束
+
+- **WHEN** 本轮输入已被原生 transcript 记录，最终助手条目为 `end_turn`，工具调用均有结果，但 `session/prompt` 终态响应始终未返回
+- **THEN** 本轮 MUST 在收到准确 transcript 完成证据后收敛为 `completed`
+- **AND** 页面 MUST 撤下仅适用于活动执行的停止、继续和“状态未确认”入口
+- **AND** MUST NOT 重发原输入
+
+#### Scenario: 冷读取核对已完成的原生回合
+
+- **WHEN** 原后台状态仍为 `running` 或 `unknown`，但只读 transcript 证明本次已受理的全部输入均以 `end_turn` 结束且工具均有结果
+- **THEN** 权威读取 MUST 将该轮收敛为 `completed`，并保留原执行身份
+- **AND** MUST NOT 打开原生进程、占有原控制资源或改写未知操作的结果
+
+#### Scenario: transcript 证据不唯一或仍有未完成回合
+
+- **WHEN** 输入文本或受理时间不唯一匹配、存在后续其他输入、回合缺少 `end_turn`、工具调用缺少结果，或 transcript 仍在变化无法形成完整快照
+- **THEN** 该轮 MUST 保持原活动或未知状态
+- **AND** MUST NOT 将证据部分匹配当作完成

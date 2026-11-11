@@ -253,6 +253,9 @@ export interface AgentExecutor {
   readPersistedExecution?(input: {
     configRoot: string; nativeAccountConfigRoot?: string; executable: string; programSource?: string; gatewayIdentity?: string;
     bindingIdentity: string; contextRef: ContextRef; executionRef: ExecutionRef; cwd: string;
+    startedAt?: string;
+    /** Exact admitted inputs for this run, used only when the native format has no Buildr request id. */
+    nativeInputs?: ReadonlyArray<{clientRequestId:string;text:string;createdAt:string}>;
   }): Promise<{ items: ExecutorItem[]; observation: ExecutorObservation; endedAt?: string } | undefined>;
   /** Adapter-owned cache knowledge, applied by the shared service lifecycle. */
   storage?: {
