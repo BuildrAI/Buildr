@@ -352,6 +352,36 @@ for(const scenario of ['queue-missing-receipt','queue-disconnect'])test(`Qoder C
   });
 });
 
+test('Qoder CN confirms a queued supplement from the durable native bridge receipt before the terminal response',{timeout:15000},async()=>{
+  await withRuntime(async({runtime,config,workspace,contextRef})=>{
+    await writeFile(join(config,'scenario'),'queue-durable-receipt');
+    const events:ExecutorEvent[]=[];
+    const sending=runtime.send({contextRef,cwd:workspace,text:'第一条',images:[],clientRequestId:'queue-owned',onEvent:event=>events.push(event)});sending.catch(()=>{});
+    await eventually(()=>events.some(event=>event.type==='request'));
+    const request=events.find(event=>event.type==='request');assert.equal(request?.type,'request');
+    let settled=false;
+    const supplement=runtime.supplement!({contextRef,executionRef:{id:'queue-owned'},cwd:workspace,text:'追加',images:[],clientRequestId:'durable-extra'});
+    supplement.then(()=>{settled=true;},()=>{settled=true;});
+    await eventually(()=>existsSync(join(config,'fixture-queued.jsonl')));
+    await eventually(()=>events.some(event=>event.type==='item'&&event.item.clientRequestId==='durable-extra'));
+    assert.ok(!settled,'durable acceptance must be observable while the terminal response is still pending');
+    assert.ok(!events.some(event=>event.type==='completed'));
+    const durable=events.find(event=>event.type==='item'&&event.item.clientRequestId==='durable-extra');
+    assert.equal(durable?.type,'item');
+    const receipt=(await runtime.readHistory({contextRef,cwd:workspace})).find(item=>item.clientRequestId==='durable-extra');
+    assert.equal(receipt?.id,durable.type==='item'?durable.item.id:'');
+    assert.equal(receipt?.text,'追加');
+    assert.equal(receipt?.status,'completed');
+    await runtime.reply({contextRef,executionRef:{id:'queue-owned'},requestId:request.request.id,answer:'allow-once'});
+    const confirmed=await supplement;await sending;
+    assert.equal(confirmed.executionRef.id,'queue-owned');
+    assert.equal(confirmed.inputItemId,receipt?.id,'the terminal response lacks a receipt, so the durable native id confirms');
+    assert.equal(events.filter(event=>event.type==='item'&&event.item.clientRequestId==='durable-extra').length,1);
+    assert.equal(events.filter(event=>event.type==='completed').length,1);
+    assert.equal((await runtime.observe({contextRef})).status,'idle');
+  });
+});
+
 test('Qoder CN refuses unsupported selections and unapplied mode before admitting any input', { timeout: 15000 }, async () => {
   await withRuntime(async ({ runtime, config, workspace, contextRef }) => {
     const events: ExecutorEvent[] = [];

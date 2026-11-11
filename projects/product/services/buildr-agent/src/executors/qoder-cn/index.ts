@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
+import fs from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { readQoderIdentity, requestQoderModel, inspectQoderLogin } from '../../model-access/providers/qoder.ts';
 import { AcpClient, type AcpServerRequest } from '../qoder/acp.ts';
 import { qoderContent } from '../qoder/content.ts';
@@ -8,6 +9,7 @@ import { qoderProduct } from '../qoder/product.ts';
 import { qoderStorage } from '../qoder/storage.ts';
 import { qoderForm } from './forms.ts';
 import { readQoderCnUsage } from './usage.ts';
+import { nativeContentFiles } from '../native-content.ts';
 import { interactionPolicy } from '../../domain/interaction-policy.ts';
 import { instructionParticipation } from '../../domain/participation.ts';
 import { isCompatibleProgram, nativeProgramPolicy } from '../program-policy.ts';
@@ -61,6 +63,9 @@ interface TurnState {
   supplements: Map<string, Promise<void>>;
   supplementFailed?: boolean;
   supplementInputs: Map<string, { digest: string; work: Promise<ExecutorInputReceipt> }>;
+  supplementOrder: Array<{ clientRequestId: string; text: string }>;
+  durableReceipts: Map<string, string>;
+  durableScan?: { file?: string; offset: number; next: number; broken?: boolean };
   stopReason?: string;
   stopping?: Promise<ExecutorObservation>;
   stopConfirmed?: boolean;
@@ -234,6 +239,59 @@ class QoderCnRuntime implements AgentRuntime {
     // The native request count is authoritative even when no native window is
     // reported. The UI already distinguishes the configured and reported window.
     turn.onEvent({type:'context-usage',...(usage.usedTokens===undefined?{}:{usedTokens:usage.usedTokens}),...(usage.usedRatio===undefined?{}:{usedRatio:usage.usedRatio})});
+  }
+
+  private transcriptFile(contextId: string): string | undefined {
+    const cwd = this.contexts.get(contextId); if (!cwd) return;
+    const root = dirname(this.config);
+    const files = nativeContentFiles({ root, configRoot: root, contextId, cwd }, join(this.config, 'projects'), file => basename(file) === `${contextId}.jsonl`, 3);
+    return files.length === 1 ? files[0] : undefined;
+  }
+
+  /** The native bridge-prompt attachment is the durable acceptance receipt of a queued
+   * supplement. FIFO dispatch order plus exact text equality prevents misattribution;
+   * any structural anomaly disables the scan and leaves the terminal receipt authoritative. */
+  private scanDurableSupplements(turn: TurnState): void {
+    const scan = turn.durableScan;
+    if (!scan || scan.broken || !turn.supplementOrder.length) return;
+    try {
+      const file = scan.file ??= this.transcriptFile(turn.contextId);
+      if (!file) return;
+      const before = fs.lstatSync(file);
+      if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1) return;
+      if (before.size < scan.offset) { scan.broken = true; return; }
+      if (before.size === scan.offset) return;
+      const fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
+      try {
+        const opened = fs.fstatSync(fd);
+        if (opened.ino !== before.ino || opened.dev !== before.dev) return;
+        const length = Math.min(opened.size - scan.offset, 8 * 1024 * 1024);
+        const buffer = Buffer.alloc(length);
+        let read = 0;
+        while (read < length) { const n = fs.readSync(fd, buffer, read, length - read, scan.offset + read); if (!n) break; read += n; }
+        const after = fs.fstatSync(fd);
+        if (after.ino !== before.ino || after.dev !== before.dev || after.size < before.size) return;
+        const end = read ? buffer.lastIndexOf(10, read - 1) : -1;
+        if (end < 0) return;
+        const text = new TextDecoder('utf-8', { fatal: true }).decode(buffer.subarray(0, end));
+        scan.offset += end + 1;
+        const cwd = this.contexts.get(turn.contextId);
+        for (const line of text.split('\n')) {
+          if (!line) continue;
+          let row: any; try { row = JSON.parse(line); } catch { scan.broken = true; return; }
+          if (row?.type !== 'attachment' || row.sessionId !== turn.contextId || row.isSidechain !== false || row.cwd !== cwd) continue;
+          const attachment = row.attachment;
+          if (attachment?.commandMode !== 'prompt' || attachment?.origin?.kind !== 'bridge' || typeof row.uuid !== 'string') continue;
+          const target = turn.supplementOrder[scan.next];
+          if (!target) continue;
+          if (textOf(attachment.prompt) !== target.text) { scan.broken = true; return; }
+          scan.next++;
+          if (turn.durableReceipts.has(target.clientRequestId)) continue;
+          turn.durableReceipts.set(target.clientRequestId, row.uuid);
+          this.item(turn, { id: row.uuid, clientRequestId: target.clientRequestId, kind: 'message', role: 'user', text: target.text, executionId: turn.executionId, status: 'completed' });
+        }
+      } finally { fs.closeSync(fd); }
+    } catch { /* durable observation is best-effort; the terminal receipt still applies */ }
   }
 
   private async serverRequest(request: AcpServerRequest): Promise<unknown> {
@@ -457,6 +515,8 @@ class QoderCnRuntime implements AgentRuntime {
 
   async readHistory({ contextRef, cwd }: { contextRef: ContextRef; cwd: string }): Promise<ExecutorItem[]> {
     this.reference(contextRef, cwd);
+    const turn = this.turn;
+    if (turn?.contextId === contextRef.id) this.scanDurableSupplements(turn);
     return [...(this.history.get(contextRef.id)?.values() ?? [])];
   }
 
@@ -489,7 +549,7 @@ class QoderCnRuntime implements AgentRuntime {
     const executionId = input.clientRequestId;
     let settle!: () => void;
     const settled = new Promise<void>(resolve => { settle = resolve; });
-    const turn: TurnState = { contextId: input.contextRef.id, executionId, onEvent: input.onEvent, items: new Map(), tools: new Map(), independentTools: new Set(), approvals: new Map(), approvalPendingTools: new Set(), status: 'running', segment: 0, pending: true, cancelRequested: false, settled, settle, supplements: new Map(), supplementInputs: new Map() };
+    const turn: TurnState = { contextId: input.contextRef.id, executionId, onEvent: input.onEvent, items: new Map(), tools: new Map(), independentTools: new Set(), approvals: new Map(), approvalPendingTools: new Set(), status: 'running', segment: 0, pending: true, cancelRequested: false, settled, settle, supplements: new Map(), supplementInputs: new Map(), supplementOrder: [], durableReceipts: new Map() };
     this.turn = turn;
     input.onEvent({ type: 'accepted', executionRef: this.executionRef(executionId), inputItemId: executionId });
     const userItem: ExecutorItem = { id: `user:${executionId}`, kind: 'message', role: 'user', text: input.text, clientRequestId: executionId, executionId, status: 'completed' };
@@ -497,6 +557,8 @@ class QoderCnRuntime implements AgentRuntime {
     this.observeUsage(turn);
     const usageTimer=setInterval(()=>{try{this.observeUsage(turn);}catch{/* local observation cannot interrupt work */}},2000);
     usageTimer.unref();
+    const durableTimer=setInterval(()=>{this.scanDurableSupplements(turn);},2000);
+    durableTimer.unref();
     try {
       const sessionId = this.sessionId!;
       const client = await this.transport();
@@ -541,6 +603,7 @@ class QoderCnRuntime implements AgentRuntime {
       turn.approvals.clear();
       while(turn.supplements.size) await Promise.allSettled([...turn.supplements.values()]);
       clearInterval(usageTimer);
+      clearInterval(durableTimer);
       this.observeUsage(turn);
       turn.pending = false;
       turn.settle();
@@ -559,18 +622,32 @@ class QoderCnRuntime implements AgentRuntime {
       if(existing.digest!==digest)throw new ExecutorInputRejected('qoder_cn_supplement_conflict');
       return await bounded(existing.work,15000);
     }
+    if(!turn.durableScan){
+      // The baseline excludes native records persisted before the first queued dispatch.
+      let offset:number|undefined;
+      const file=this.transcriptFile(turn.contextId);
+      if(file)try{const stat=fs.lstatSync(file);if(stat.isFile()&&!stat.isSymbolicLink())offset=stat.size;}catch{/* best-effort baseline */}
+      turn.durableScan=offset===undefined?{offset:0,next:0,broken:true}:{offset,next:0};
+    }
     const work=(async ():Promise<ExecutorInputReceipt>=>{
       const prompt=[{type:'text',text:input.text},...await Promise.all(input.images.map(async image=>({type:'image',data:(await readFile(image.path)).toString('base64'),mimeType:image.mimeType})))];
       if(!turn.pending||turn.cancelRequested||this.turn!==turn)throw new ExecutorInputRejected('qoder_cn_supplement_stale');
-      const result=await (await this.transport()).request('session/prompt',{sessionId:turn.contextId,prompt},24*60*60*1000,value=>{
+      const client=await this.transport();
+      turn.supplementOrder.push({clientRequestId:input.clientRequestId,text:input.text});
+      const result=await client.request('session/prompt',{sessionId:turn.contextId,prompt},24*60*60*1000,value=>{
         this.finishText(turn);
         turn.stopReason=value?.stopReason;
       });
-      // ACP confirms its durable user identity only in this prompt's response.
-      // A local write or the preceding prompt's terminal result proves nothing.
-      if(typeof result?.userMessageId!=='string'||!result.userMessageId)throw new Error('qoder_cn_supplement_receipt_missing');
-      this.item(turn,{id:result.userMessageId,clientRequestId:input.clientRequestId,kind:'message',role:'user',text:input.text,executionId:turn.executionId,status:'completed'});
-      return {executionRef:this.executionRef(turn.executionId),inputItemId:result.userMessageId};
+      this.scanDurableSupplements(turn);
+      // The durable bridge-prompt record proves native acceptance even when the
+      // terminal response is late or lacks its receipt; the terminal id wins when present.
+      if(typeof result?.userMessageId==='string'&&result.userMessageId){
+        this.item(turn,{id:result.userMessageId,clientRequestId:input.clientRequestId,kind:'message',role:'user',text:input.text,executionId:turn.executionId,status:'completed'});
+        return {executionRef:this.executionRef(turn.executionId),inputItemId:result.userMessageId};
+      }
+      const durable=turn.durableReceipts.get(input.clientRequestId);
+      if(durable)return {executionRef:this.executionRef(turn.executionId),inputItemId:durable};
+      throw new Error('qoder_cn_supplement_receipt_missing');
     })();
     turn.supplementInputs.set(input.clientRequestId,{digest,work});
     const pending=work.then(()=>{},error=>{if(!(error instanceof ExecutorInputRejected))turn.supplementFailed=true;}).finally(()=>{turn.supplements.delete(input.clientRequestId);});
