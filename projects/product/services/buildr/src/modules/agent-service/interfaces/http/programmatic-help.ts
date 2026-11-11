@@ -20,7 +20,7 @@ export const programmaticGuide = `# Buildr 本机程序 API（第一期）
 示例首次发送前以600保存draftId、clientRequestId、原始输入与serviceId。可使用--model明确模型；不传则使用连接默认模型。再次执行同一命令会读取原提交，再轮询，不新建请求。更换目标请使用新的state文件。不要把包含目标正文的state文件提交到Git。
 
 ## 发现与权限
-发现返回版本、apiVersion、就绪状态、稳定serviceId、当前凭据、授权工作空间、Agent连接、模型目录、可用操作与文档地址。请选择enabled且status=ready的连接；原生模型来自connections[].models，跨来源模型选择用models目录及其accountId/modelId。模型实际可用性仍由发送时的Application校验。
+发现返回版本、apiVersion、就绪状态、稳定serviceId、当前凭据、授权工作空间、Agent连接、模型目录、可用操作与文档地址。请选择enabled且status=ready的连接；原生模型来自connections[].models，跨来源模型选择用models目录及其accountId/modelId。Qoder CN的模型来自独立账号native-qoder-cn；发现入口按该账号的登录与已启用模型返回连接状态和模型，发送该连接时可省略modelAccountId。模型实际可用性仍由发送时的Application校验。
 - read：发现、查询、读消息及observe（虽为POST，但不发送消息）。
 - execute：首发、prepare-send/send、supplement和停止。
 - answer：仅回答question卡片；approve：仅处理approval卡片。两者互不替代。

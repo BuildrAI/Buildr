@@ -126,6 +126,8 @@ export class ConnectionApplication {
     environment: Record<string, string>;
     /** Account-owned config for model-bound executions, separate from program bindings. */
     nativeAccountConfigRoots?: Record<string, string>;
+    /** Compose externally visible facts whose login is owned by another source. */
+    present?(view: ConnectionView): ConnectionView;
     generation: string;
     now(): string;
     changed(connection: ConnectionView): void;
@@ -161,8 +163,9 @@ export class ConnectionApplication {
     // Auth URLs live only in the current login attempt, never in persistent records or event diagnostics.
     if (record.view.loginAttempt) delete record.view.loginAttempt.url;
     this.options.repository.saveConnection(record, prior);
-    this.options.changed(structuredClone(record.view));
-    return this.get(record.view.id);
+    const view = this.get(record.view.id);
+    this.options.changed(structuredClone(view));
+    return view;
   }
   get(id: string, includeLoginUrl = false): ConnectionView {
     const view = structuredClone(this.stored(id).view);
@@ -175,7 +178,8 @@ export class ConnectionApplication {
       const navigation = this.loginUrls.get(id);
       if (navigation?.attemptId === view.loginAttempt.id) view.loginAttempt.url = navigation.url;
     }
-    return view;
+    const presented = this.options.present?.(view);
+    return presented ?? view;
   }
   list(): ConnectionView[] { return [...this.executors.keys()].map(id => this.get(id)); }
   programUnavailable(id: string, revision: string, diagnostic: string): ConnectionView {

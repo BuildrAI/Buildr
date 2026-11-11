@@ -5,7 +5,8 @@ import { ProgramUpgrades } from './program-upgrades.ts';
 import { ProgramUpdates } from './program-updates.ts';
 import {createQoderModelProvider} from '../model-access/providers/qoder.ts';
 import {createQoderCnModelProvider} from '../model-access/providers/qoder-cn.ts';
-import type {QoderProductId} from '../executors/qoder/product.ts';
+import {qoderCnModelAccountId, type QoderProductId} from '../executors/qoder/product.ts';
+import { presentConnection } from './connection-presentation.ts';
 import type {ModelProvider} from '../model-access/contracts.ts';
 import {createHash} from 'node:crypto';
 import {ModelAccessError} from '../model-access/contracts.ts';
@@ -42,7 +43,8 @@ export function createAgentService(options: AgentServiceOptions) {
   const events = new ConversationEvents(generation, webhooks);
   const now = () => (options.now?.() ?? new Date()).toISOString();
   let linkedChanged: ((connection:ConnectionView)=>void)|undefined;
-  const connections = new ConnectionApplication({ repository, root, executors: options.executors ?? createNativeExecutors(), environment: executorEnvironment(options.environment ?? process.env), nativeAccountConfigRoots: { 'qoder-cn': path.join(root, 'model-access', 'accounts', 'native-qoder-cn') }, generation, now, changed: (connection: ConnectionView) => {events.publish({ type: 'connection', revision: connection.revision, payload: { connection } });linkedChanged?.(connection);} });
+  let presentConnectionView: ((view: ConnectionView) => ConnectionView) | undefined;
+  const connections = new ConnectionApplication({ repository, root, executors: options.executors ?? createNativeExecutors(), environment: executorEnvironment(options.environment ?? process.env), nativeAccountConfigRoots: { 'qoder-cn': path.join(root, 'model-access', 'accounts', qoderCnModelAccountId) }, present: view => presentConnectionView?.(view) ?? view, generation, now, changed: (connection: ConnectionView) => {events.publish({ type: 'connection', revision: connection.revision, payload: { connection } });linkedChanged?.(connection);} });
   const programManager = options.programManager ?? new NativeProgramManager(root, executorEnvironment(options.environment ?? process.env));
   const programUpdates = new ProgramUpdates(() => connections.list(), programManager, now, options.programRelease);
   const preparations = new PreparationApplication(connections, programManager, generation, now);
@@ -63,6 +65,11 @@ export function createAgentService(options: AgentServiceOptions) {
     if(candidates.length!==1) throw new ModelAccessError('model_dsh_program_unavailable','请先在智能体程序中准备并选择准确的 DSH 程序。');
     return createDeepSeekAccountOwner({...input,executable:candidates[0]!.executable});
   }})], environment: executorEnvironment(options.environment ?? process.env)});
+  presentConnectionView = view => {
+    if (view.id !== 'qoder-cn') return view;
+    try { return presentConnection(view, models.accounts.snapshot(qoderCnModelAccountId)); }
+    catch { return view; }
+  };
   let closed = false;
   let discovery:Promise<void>|undefined, discoveryDiagnostic:string|undefined;
   let discoveryTimer:ReturnType<typeof setInterval>|undefined;

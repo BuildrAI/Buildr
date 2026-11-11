@@ -25,7 +25,7 @@ import {selectedOffering,modelConfiguration} from '../model-access/model-prefere
 import type {ModelAccountView, ModelOffering} from '../model-access/contracts.ts';
 import type { ModelAccess } from '../model-access/application.ts';
 import { modelQuotaFailure } from '../model-access/quota.ts';
-import { isQoderProvider, qoderProduct } from '../executors/qoder/product.ts';
+import { isQoderProvider, qoderCnModelAccountId, qoderProduct } from '../executors/qoder/product.ts';
 import { qoderLoginExpiredMessage } from '../model-access/providers/qoder-auth.ts';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import fs from 'node:fs';
@@ -718,6 +718,9 @@ export class ConversationApplication {
     if (stoppedContinuation(record, input) && this.pendingSends.read(record.view.workspaceId, record.view.id)) fail('agent_continue_unavailable', '已有待发送要求，请先处理后再继续。', 409);
     input = continuationDraft(record, input);
     const connection = this.options.connections.get(input.connectionId);
+    // Qoder CN's independent model account is the execution login; selecting the
+    // connection's native models does not require repeating that account identity.
+    if (!input.modelAccountId && connection.provider === 'qoder-cn') input.modelAccountId = qoderCnModelAccountId;
     // A stale or unknown model account must not mask a Qoder program-level
     // login failure: the saved draft still needs the account-switch action.
     // Defer any source lookup failure until the connection checks below.
@@ -730,7 +733,7 @@ export class ConversationApplication {
     // CN's independent account is the same native login used by its executor.
     // A stale program observation cannot veto a current, ready account; ACP
     // still validates the actual login before accepting any work.
-    const readyCnAccount = connection.provider === 'qoder-cn' && source?.id === 'native-qoder-cn' && source.provider === 'native-qoder-cn' && source.enabled && source.status === 'ready';
+    const readyCnAccount = connection.provider === 'qoder-cn' && source?.id === qoderCnModelAccountId && source.provider === qoderCnModelAccountId && source.enabled && source.status === 'ready';
     if (!readyCnAccount && connection.enabled && isQoderProvider(connection.provider) && connection.status === 'expired') fail('qoder_platform_login_expired', qoderProduct(connection.provider).label === 'Qoder' ? qoderLoginExpiredMessage : `${qoderProduct(connection.provider).label} 登录授权已失效，请重新登录。所选模型来源保持不变。`, 409);
     if (!connection.enabled || (!input.modelAccountId && connection.status !== 'ready')) fail('agent_account_unavailable', '请先准备智能体程序，并连接所选模型账号。', 409);
     if (!readyCnAccount && input.modelAccountId && isQoderProvider(connection.provider) && connection.status === 'not-authenticated') fail('qoder_platform_login_required', `${qoderProduct(connection.provider).label} 程序需要先完成基础平台登录；所选套餐不变，不要求使用 Qoder 自有模型。`, 409);

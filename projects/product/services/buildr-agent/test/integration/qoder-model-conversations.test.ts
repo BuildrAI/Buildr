@@ -58,6 +58,9 @@ for (const programStatus of ['not-authenticated', 'expired'] as const) test(`Qod
     assert.equal(service.models.accounts.read(account.id).status, 'ready');
     await service.connections.check('qoder-cn');
     assert.equal(service.models.accounts.read(account.id).status, 'ready');
+    const presented = service.connections.read('qoder-cn');
+    assert.equal(presented.status, 'ready', 'the independent account owns the execution login');
+    assert.deepEqual(presented.models.map(model => model.id), ['qwen']);
     const chat = await service.conversations.create('workspace', {});
     const draft = { expectedRevision: chat.revision, connectionId: 'qoder-cn', modelAccountId: account.id, model: 'qwen', text: 'account route regression' };
     const preview = service.conversations.prepareSend('workspace', chat.id, draft);
@@ -66,6 +69,14 @@ for (const programStatus of ['not-authenticated', 'expired'] as const) test(`Qod
     const result = service.conversations.read('workspace', chat.id);
     assert.equal(result.run?.status, 'completed', result.run?.diagnostic);
     assert.equal(accepted, 1);
+    const nativeChat = await service.conversations.create('workspace', {});
+    const nativeDraft = { expectedRevision: nativeChat.revision, connectionId: 'qoder-cn', model: 'qwen', text: 'native account default route' };
+    const nativePreview = service.conversations.prepareSend('workspace', nativeChat.id, nativeDraft);
+    assert.equal(nativePreview.modelAccountId, account.id, 'omitted modelAccountId binds the independent account');
+    service.conversations.send('workspace', nativeChat.id, { ...nativeDraft, previewToken: nativePreview.token, clientRequestId: randomUUID() });
+    for (let i = 0; i < 200 && !['completed', 'failed'].includes(service.conversations.read('workspace', nativeChat.id).run?.status ?? ''); i++) await new Promise(resolve => setTimeout(resolve, 5));
+    assert.equal(service.conversations.read('workspace', nativeChat.id).run?.status, 'completed');
+    assert.equal(accepted, 2);
     assert.ok(opens.length > 0);
     assert.ok(opens.some(options => options.gateway));
     assert.ok(opens.filter(options => options.gateway).every(options => options.nativeAccountConfigRoot === accountRoot));
@@ -78,9 +89,12 @@ for (const programStatus of ['not-authenticated', 'expired'] as const) test(`Qod
     await service.connections.connect('qoder-cn', { ...prepareProgram, expectedRevision: service.connections.read('qoder-cn').revision });
     accountReady = false;
     await service.models.accounts.check(account.id);
+    const offline = service.connections.read('qoder-cn');
+    assert.equal(offline.status, 'not-authenticated');
+    assert.deepEqual(offline.models, []);
     const missingChat = await service.conversations.create('workspace', {});
     assert.throws(() => service.conversations.prepareSend('workspace', missingChat.id, { ...draft, expectedRevision: missingChat.revision }), /登录|套餐尚未连接/);
-    assert.equal(accepted, 1, 'a genuinely missing login must not dispatch');
+    assert.equal(accepted, 2, 'a genuinely missing login must not dispatch');
   } finally { await service.close(); await rm(root, { recursive: true, force: true }); }
 });
 

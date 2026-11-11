@@ -1,7 +1,7 @@
 import type { AccountObservation, AgentProgramManager } from '../../contracts.ts';
 import type { ModelProvider, ModelProviderObservation, ModelProviderRuntime } from '../contracts.ts';
 import { createQoderModelProvider, readQoderIdentity, requestQoderModel } from './qoder.ts';
-import { qoderProduct } from '../../executors/qoder/product.ts';
+import { qoderCnModelAccountId, qoderProduct } from '../../executors/qoder/product.ts';
 import { beginQoderCnLogin, cancelQoderCnLogin, qoderCnConfigRoot, type QoderCnLoginSession } from './qoder-cn-login.ts';
 
 const product = qoderProduct('qoder-cn');
@@ -9,7 +9,7 @@ const product = qoderProduct('qoder-cn');
 /** The CN model account owns its login and credentials, so it never waits for an agent program. */
 export function createQoderCnModelProvider(programs?: AgentProgramManager): ModelProvider {
   return {
-    id: 'native-qoder-cn',
+    id: qoderCnModelAccountId,
     label: product.label,
     linked: true,
     async open(input): Promise<ModelProviderRuntime> {
