@@ -24,6 +24,8 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
   let catalogDiagnostic:string|undefined;
   let sharedModels:any[]=[];let latestPreview:any;let forceCapacity=false,prepareError:{code:string;message:string}|undefined;
   let loseFirstResponse=false;let draftImageRevision=0;const draftImages:any[]=[];const firstResponses=new Map<string,any>();
+  /** Draft attachments live in the fixture, outside sessionStorage; scenarios must clear them explicitly. */
+  const clearDraftAttachments=()=>{draftImages.splice(0,draftImages.length);draftImageRevision++;};
   let conversation:any=null,revision=0,sends=0,prepares=0,stops=0,replies=0,cursor=0,creations=0;
   let additionalConversations:any[]=[];
   const historyPages=new Map<number,any>();let entryReads=0,failEntryRead=false,holdEntryRead=false,releaseEntryRead:(()=>void)|undefined,entryReadStarted:(()=>void)|undefined;
@@ -315,6 +317,7 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
     assertNavigationHighlight,
     assertReminderGap,
     get attachmentUploads(){return attachmentUploads;}, set attachmentUploads(value){attachmentUploads=value;},
+    clearDraftAttachments,
     capture,
     get catalogDiagnostic(){return catalogDiagnostic;}, set catalogDiagnostic(value){catalogDiagnostic=value;},
     chooseAgent,

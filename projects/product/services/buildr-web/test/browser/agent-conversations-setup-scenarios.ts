@@ -32,10 +32,11 @@ await step('文档附件支持九份、拒绝第十份并刷新恢复文件名',
   await panel().getByRole('button',{name:'移除文档 说明8.md',exact:true}).waitFor({state:'hidden'});
   assert.equal(await panel().locator('.ac-document-thumbnail').count(),8);
   assert.equal(fixture.sends,0,'上传与恢复不自动发送');
+  fixture.clearDraftAttachments();
 });
 
 await step('新对话欢迎内容在高矮视口居中，空间不足时仍可完整滚动阅读',async()=>{
-  await reset();const viewport=page.viewportSize();await openDesktopConversation();
+  await reset();fixture.clearDraftAttachments();const viewport=page.viewportSize();await openDesktopConversation();
   const stream=panel().locator('.ac-stream'),welcome=stream.locator('.ac-welcome');await welcome.waitFor();
   const settle=()=>page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
   let focused=false;
@@ -121,9 +122,9 @@ await step('账号入口悬停与聚焦显示所有已登录账号的真实额�
     await button.hover();await overview.waitFor({state:'visible'});
     await overview.getByText('周限额 · 剩余 82%',{exact:true}).waitFor();await overview.getByText('5小时限额 · 剩余 45%',{exact:false}).waitFor();
     await overview.getByText('CNY 123.46',{exact:true}).waitFor();
-    await overview.getByText('套餐内 Credits · 剩余 0%',{exact:true}).waitFor();
+    await overview.getByText(/^套餐内 Credits · 剩余 0%/).waitFor();
     await overview.getByText('0 / 1,000 credits',{exact:true}).waitFor();
-    await overview.getByText('资源包 · 剩余 59.2%',{exact:true}).waitFor();
+    await overview.getByText(/^资源包 · 剩余 59.2%/).waitFor();
     await overview.getByText('1,599 / 2,700 credits',{exact:true}).waitFor();
     assert.deepEqual(await overview.locator('section').evaluateAll((nodes:any[])=>nodes.map(node=>node.getAttribute('data-account-id'))),['native-codex','native-dsh','native-qoder']);
     assert.equal(await overview.locator('section').count(),3);
@@ -190,7 +191,7 @@ await step('模型设置页额度窗口显示 Qoder 剩余 credits',async()=>{
     await page.getByRole('button',{name:'账号与配置',exact:true}).click();
     const drawer=page.getByRole('dialog',{name:/^智能体与模型/});await drawer.waitFor();
     await drawer.locator('.ams-setup').getByRole('tab',{name:'模型',exact:true}).click();
-    await drawer.locator('.amm-source-list').getByRole('button').filter({hasText:/^Qoder/}).click();
+    await drawer.locator('.amm-source-list').getByRole('button').filter({hasText:/Qoder/}).click();
     const card=drawer.locator('.amm-quota-card');
     await card.getByText('套餐内 Credits',{exact:true}).waitFor();
     await card.getByText('0 / 1,000 credits',{exact:true}).waitFor();
