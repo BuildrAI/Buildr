@@ -19,10 +19,10 @@ function record(id: string, workspaceId = 'w1'): StoredConversation {
 function message(r: StoredConversation, id: string, text: string) {
   r.view.entries.push({ id, sequence: r.view.entries.length + 1, text, kind: 'message', role: 'user', createdAt: r.view.updatedAt } as never);
 }
-function withRetainedUnknown(r: StoredConversation) {
+function withRetainedUnknown(r: StoredConversation, stopRequested = true) {
   const at = r.view.updatedAt;
   r.view.run = { id: 'current', participantId: 'p', provider: 'codex', generation: 'g', status: 'completed', accepted: true, tools: [], startedAt: at, updatedAt: at } as never;
-  r.view.retainedRuns = [{ id: 'old', participantId: 'p', provider: 'qoder-cn', generation: 'old-gen', status: 'unknown', accepted: true, stopRequested: true, executionState: 'unknown', tools: [{ id: 't', label: '命令', status: 'unknown', canStop: false }], diagnostic: 'Qoder CN 本轮仍有未确认结束的工具，结果未知。', startedAt: at, updatedAt: at }] as never;
+  r.view.retainedRuns = [{ id: 'old', participantId: 'p', provider: 'qoder-cn', generation: 'old-gen', status: 'unknown', accepted: true, stopRequested, executionState: 'unknown', tools: [{ id: 't', label: '命令', status: 'unknown', canStop: false }], diagnostic: 'Qoder CN 本轮仍有未确认结束的工具，结果未知。', startedAt: at, updatedAt: at }] as never;
 }
 function seen(repo: ConversationRepository, id: string) {
   const row = repo.querySummaries(['w1'], { limit: 50 }).conversations.find(value => value.id === id)!;
@@ -32,7 +32,7 @@ function seen(repo: ConversationRepository, id: string) {
 test('retained unknown activity is visible as pending confirmation and settles back to normal history', t => {
   const repo = fixture(t), pinned = record('pinned'), draft = record('draft');
   message(pinned, 'user', '早先输入');
-  withRetainedUnknown(pinned);
+  withRetainedUnknown(pinned, false);
   draft.view.updatedAt = '2026-11-11T01:00:00Z';
   message(draft, 'user', '较新输入');
   repo.saveConversation(pinned); repo.saveConversation(draft);

@@ -25,14 +25,14 @@ export function canContinueConversation(conversation: ConversationView | null): 
     (conversation.run?.status === 'unknown' && conversation.run.stopRequested || canContinueReleasedConversation(conversation)));
 }
 
-export function conversationRecoveryAction(conversation: ConversationView | null): {kind:'recover'|'observe';label:string} | null {
+export function conversationRecoveryAction(conversation: ConversationView | null, entries: ConversationView['entries'] = conversation?.entries ?? []): {kind:'recover'|'observe';label:string} | null {
   const run = conversation?.run; if (!conversation || !run) return null;
   if (run.status === 'tools-active' && run.canContinue) return null;
   if (canContinueConversation(conversation)) return {kind:'recover',label:run.stopRequested?'结束等待并继续':'继续工作'};
   if (run.status === 'unknown' || run.status === 'tools-active' || ['failed','stopped','completed'].includes(run.status) && run.tools.some(tool => tool.status !== 'completed')) return {kind:'observe',label:'核对状态'};
   if (executionLocked(run) || currentConversationRequests(conversation).length || run.tools.some(tool => tool.status !== 'completed')) return null;
-  const replied = conversation.entries.some(entry => !entry.parentToolId && !entry.thinking && entry.role === 'assistant' && entry.kind === 'message' && entry.text.trim() && (entry.runId === run.id || !entry.runId && entry.createdAt >= run.startedAt));
-  if (!['failed','stopped','completed'].includes(run.status) || run.status === 'completed' && replied) return null;
+  const replied = finalConversationReplyIds(entries, [run]).size > 0;
+  if (!['failed','stopped','completed'].includes(run.status) || replied) return null;
   return {kind:'recover',label:run.accepted?'继续':'重试'};
 }
 
@@ -56,11 +56,16 @@ export function executionLocked(run?: ConversationRun): boolean {
   if (run?.status === 'tools-active' && run.canContinue) return false;
   return Boolean(run && ['starting', 'running', 'waiting-approval', 'waiting-question', 'stopping', 'tools-active', 'unknown'].includes(run.status));
 }
+/** A historical stop request with no live owner or running tool is evidence, not current activity. */
+export function historicalStopSettled(run?: ConversationRun): boolean {
+  return Boolean(run && run.stopRequested === true && run.executionState !== 'active' &&
+    !run.tools.some(tool => tool.status === 'running'));
+}
 /** Completion or explicitly closing a released doubt ends automatic observation. */
 export function needsConversationObservation(conversation: ConversationView | null): boolean {
   if (!conversation) return false;
   if (conversation.hidden && canCloseUncertainConversation(conversation)) return false;
-  if (conversation.entries.some(entry=>entry.detail?.live) || conversation.pendingSend || conversation.requests.length || conversation.retainedRuns?.some(run=>!run.supersededBy&&(executionLocked(run)||run.tools.some(tool=>tool.status!=='completed')))) return true;
+  if (conversation.entries.some(entry=>entry.detail?.live) || conversation.pendingSend || conversation.requests.length || conversation.retainedRuns?.some(run=>!run.supersededBy&&!historicalStopSettled(run)&&(executionLocked(run)||run.tools.some(tool=>tool.status!=='completed')))) return true;
   const run = conversation.run;
   return Boolean(run && (executionLocked(run) || run.tools.some(tool => tool.status !== 'completed') ||
     run.executionState === 'active' || run.executionState === 'unknown'));

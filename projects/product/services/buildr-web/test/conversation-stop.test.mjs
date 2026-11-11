@@ -13,9 +13,11 @@ test('independent stop control retains pending feedback and covers retained work
  const ended={...current,run:{...current.run,status:'stopped',executionState:'ended',resourcesReleased:true}};
  assert.equal(conversationStopControlState(ended),'hidden');
  assert.equal(conversationStopControlState({...ended,retainedRuns:[{...cancelling.run,id:'retained-cancelling'}]}),'stopping');
- for(const status of ['running','tools-active','unknown'])assert.equal(conversationStopControlState({...ended,retainedRuns:[{...chat.run,id:'retained',status}]}),'ready');
+ for(const status of ['running','tools-active'])assert.equal(conversationStopControlState({...ended,retainedRuns:[{...chat.run,id:'retained',status}]}),'ready');
+ assert.equal(conversationStopControlState({...ended,retainedRuns:[{...chat.run,id:'retained',status:'unknown'}]}),'hidden','unknown without a live control is not actionable');
+ assert.equal(conversationStopControlState({...ended,retainedRuns:[{...chat.run,id:'retained',status:'unknown',executionState:'active'}]}),'ready');
  assert.equal(conversationStopControlState({...ended,pendingSend:{id:'pending'}}),'ready');
- assert.equal(conversationStopControlState({...cancelling,retainedRuns:[{...chat.run,id:'unconfirmed',status:'unknown'}]}),'ready','partial uncertainty stays actionable');
+ assert.equal(conversationStopControlState({...cancelling,retainedRuns:[{...chat.run,id:'unconfirmed',status:'unknown'}]}),'stopping','the current stop keeps its own waiting state');
 });
 test('stop freezes this round while control state and other rounds remain live',()=>{
  const stopped={workspaceId:'ws',conversationId:'chat',runId:'run',entries:structuredClone(chat.entries)};
@@ -73,6 +75,8 @@ test('normal aggregate cancellation prevents duplicate effects, while unresolved
  const {canStopConversation}=await import('../src/features/agent-conversations/conversation-stop.ts');
  const stopping={...chat,requests:[],run:{...chat.run,status:'stopping',stopRequested:true}};
  assert.equal(canStopConversation(stopping),false);
- assert.equal(canStopConversation({...stopping,run:{...stopping.run,status:'unknown'}}),true);
+ assert.equal(canStopConversation({...stopping,run:{...stopping.run,status:'unknown'}}),false,'an already-requested unknown stop is not actionable');
+ assert.equal(canStopConversation({...stopping,run:{...stopping.run,status:'unknown',executionState:'active',stopRequested:false}}),true,'an unknown run with a live control remains actionable before a stop request');
+ assert.equal(canStopConversation({...stopping,run:{...stopping.run,status:'unknown',executionState:'active'}}),false,'an already-requested live stop is not repeated');
  assert.equal(canStopConversation({...stopping,run:{...stopping.run,status:'stopped'},retainedRuns:[{...chat.run,id:'new'}]}),true);
 });

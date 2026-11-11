@@ -2,7 +2,7 @@ import {createConversationInputAttempts} from '../src/features/agent-conversatio
 import {finalReplyIds,forkableReplyIds} from '../src/features/agent-conversations/conversation-fork.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {needsConversationObservation,conversationObservationKey,conversationTurnTiming,conversationStreamTurns} from '../src/features/agent-conversations/conversation-state.ts';
+import {needsConversationObservation,conversationObservationKey,conversationTurnTiming,conversationStreamTurns,historicalStopSettled} from '../src/features/agent-conversations/conversation-state.ts';
 import {conversationActionKey,createConversationActions} from '../src/features/agent-conversations/conversation-actions.ts';
 import { registerHooks } from 'node:module';
 import { existsSync } from 'node:fs';
@@ -546,8 +546,10 @@ test('异常恢复入口只取决于原执行状态，与选择模型或智能�
   assert.deepEqual(conversationRecoveryAction(view('failed')),{kind:'recover',label:'继续'});
   assert.deepEqual(conversationRecoveryAction(view('stopped')),{kind:'recover',label:'继续'});
   assert.deepEqual(conversationRecoveryAction(view('completed')),{kind:'recover',label:'继续'});
-  const reply={kind:'message',role:'assistant',runId:base.run.id,text:'已完成并答复',createdAt:'2026-10-28T00:00:01Z'};
+  const reply={id:'final-reply',kind:'message',role:'assistant',runId:base.run.id,text:'已完成并答复',createdAt:'2026-10-28T00:00:01Z'};
   assert.equal(conversationRecoveryAction(view('completed',true,[reply])),null);
+  assert.equal(conversationRecoveryAction(view('stopped',true,[reply])),null,'stopped output with a visible final reply is not a missing answer');
+  assert.equal(conversationRecoveryAction(view('failed',true,[reply])),null,'a failed process after a visible final reply does not claim the answer is missing');
   assert.deepEqual(conversationRecoveryAction(view('completed',true,[{...reply,parentToolId:'agent-tool'}])),{kind:'recover',label:'继续'},'子报告不代替缺失的主答复');
   assert.deepEqual(conversationRecoveryAction(view('unknown')),{kind:'observe',label:'核对状态'});
   for(const status of ['starting','running','stopping','waiting-approval','waiting-question']) assert.equal(conversationRecoveryAction(view(status)),null);
@@ -630,6 +632,12 @@ test('结束轮次退出观察，未知/工具/待回应/待发送保持观察�
   for(const status of ['running','unknown'])assert.equal(needsConversationObservation({...ended,run:{...ended.run,tools:[{id:'tool',status}]}}),true,status);
   const old={...conversation.run,status:'unknown',tools:[{id:'uncertain',status:'unknown'}]};
   assert.equal(needsConversationObservation({...ended,retainedRuns:[old]}),true);
+  const stoppedOld={...old,stopRequested:true,executionState:'unknown'};
+  assert.equal(historicalStopSettled(stoppedOld),true);
+  assert.equal(needsConversationObservation({...ended,retainedRuns:[stoppedOld]}),false,'已请求停止且无活动控制的历史未知轮不再维持观察');
+  assert.equal(conversationObservationKey({...ended,retainedRuns:[stoppedOld]}),null);
+  assert.equal(needsConversationObservation({...ended,retainedRuns:[{...stoppedOld,tools:[{id:'live',status:'running'}]}]}),true,'运行中的工具仍保护观察');
+  assert.equal(needsConversationObservation({...ended,retainedRuns:[{...stoppedOld,executionState:'active'}]}),true,'活动执行仍保护观察');
   assert.equal(needsConversationObservation({...ended,retainedRuns:[{...old,supersededBy:ended.run.id}]}),false,'系统善后不维持前端观察循环');
   assert.equal(needsConversationObservation({...ended,requests:conversation.requests}),true);
   assert.equal(needsConversationObservation({...ended,pendingSend:{id:'queued',state:'waiting'}}),true);

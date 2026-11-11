@@ -2,17 +2,26 @@ import type { ConversationEntry, ConversationView } from './types';
 
 export type StoppedConversationOutput = {workspaceId:string;conversationId:string;runId?:string;runIds?:string[];entries:ConversationEntry[]};
 
+/** Only work with a live owner or a real running/stop-capable tool is actionable. */
+export function conversationRunStoppable(run:ConversationView['run']):boolean {
+  if(!run)return false;
+  if(run.status==='stopping'||run.stopRequested)return false;
+  if(run.executionState==='active')return true;
+  if(run.tools.some(tool=>tool.status==='running'||(tool.status!=='completed'&&tool.canStop===true)))return true;
+  return ['starting','running','waiting-approval','waiting-question','tools-active'].includes(run.status);
+}
+
 export function conversationStopRunIds(conversation:ConversationView):string[] {
   return [...(conversation.run?[conversation.run]:[]),...conversation.retainedRuns??[]]
-    .filter(run=>run.executionState==='active'||['starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown'].includes(run.status)||run.tools.some(tool=>tool.status!=='completed')||conversation.requests.some(request=>request.runId===run.id))
+    .filter(run=>conversationRunStoppable(run)||conversation.requests.some(request=>request.runId===run.id))
     .map(run=>run.id);
 }
 
 /** Normal cancellation has no repeated button; partial/unknown work remains controllable. */
 export function canStopConversation(conversation:ConversationView):boolean {
   if(conversation.pendingSend)return true;
-  const ids=new Set(conversationStopRunIds(conversation));
-  return [...(conversation.run?[conversation.run]:[]),...conversation.retainedRuns??[]].some(run=>ids.has(run.id)&&(!run.stopRequested||run.status!=='stopping'));
+  return [...(conversation.run?[conversation.run]:[]),...conversation.retainedRuns??[]]
+    .some(run=>conversationRunStoppable(run)||conversation.requests.some(request=>request.runId===run.id));
 }
 
 /** Keep cancellation feedback in the same control without allowing duplicate effects. */

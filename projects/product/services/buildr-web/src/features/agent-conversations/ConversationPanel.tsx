@@ -124,6 +124,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   const actionKey=(value:ConversationView,action:string,identity=value.run?.id||'')=>conversationActionKey({workspaceId:value.workspaceId,conversationId:value.id},action,identity);
   const uploadKey=chat?actionKey(chat,'upload',''):conversationActionKey({workspaceId:draftWorkspaceId,conversationId:'new'},'upload');
   const [stoppedOutput,setStoppedOutput]=useState<StoppedConversationOutput|null>(null);
+  const visibleEntries=useMemo(()=>chat?visibleConversationEntries(stoppedConversationEntries(chat,stoppedOutput)):[],[chat,stoppedOutput]);
   const outputPaused=Boolean(chat&&stoppedOutput&&stoppedOutput.workspaceId===chat.workspaceId&&stoppedOutput.conversationId===chat.id&&(stoppedOutput.runIds??[stoppedOutput.runId]).includes(chat.run?.id??''));
   const stopping=Boolean(chat&&actions.has(actionKey(chat,'stop'))),observing=Boolean(chat&&actions.has(actionKey(chat,'observe'))),uploading=actions.has(uploadKey);
   const stopControl=conversationStopControlState(chat,stopping);
@@ -155,7 +156,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   const waitingQuestions=currentConversationRequests(chat).filter(request=>request.kind==='question');
   const waitingHandoffLabel=draft.text.trim()||images.length?'交接并发送':'交接并继续';
   const sendText=conversationContinuationText(chat,executionChanged,draft.text,images.length);
-  const recovery=conversationRecoveryAction(chat);
+  const recovery=conversationRecoveryAction(chat,visibleEntries);
   const queuedImages=useRef<Record<string,DraftImage[]>>({});
   useEffect(()=>{
     if(!chat||chat.pendingSend||!attachments['@pending:'+chat.id])return;
@@ -628,7 +629,6 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   const titleStatus=chat?.titleState;
   const titleLabels={pending:'等待执行开始后生成标题，首轮结束后可补生成',generating:'正在生成标题',generated:'标题已自动生成',manual:'标题已手动设置',failed:'标题未能自动生成',unavailable:'当前无法自动生成标题',unknown:'旧对话未记录标题生成状态'};
   const settings=<div className="ac-location-settings">{chat&&<><strong>标题</strong><span>{titleLabels[titleStatus?.status??'unknown']}</span>{titleStatus?.reason&&<small>{titleStatus.reason}</small>}{canGenerateConversationTitle(chat)&&<Button size="small" loading={generatingTitle} onClick={()=>void generateTitle()}>生成简短标题</Button>}</>}<strong>工作空间</strong>{chat?<><span>{workspace?.name||(chat.workspaceId==='@default'?'默认工作空间':chat.workspaceId)}</span><code>{chat.cwd}</code></>:<><Select classNames={{popup:{root:'ac-panel-popup'}}} aria-label="新对话工作空间" allowClear={draftWorkspaceId!=='@default'} value={draftWorkspaceId==='@default'?undefined:draftWorkspaceId} placeholder="默认工作空间" options={workspaces.filter(item=>item.id!=='@default').map(item=>({value:item.id,label:item.name}))} onChange={value=>{const workspaceId=value||'@default';draft.setWorkspace(workspaceId);context.newConversation({preserveVisibility:true,scope:{workspaceId}});setPrepared(null);}}/></>}</div>;
-  const visibleEntries=useMemo(()=>chat?visibleConversationEntries(stoppedConversationEntries(chat,stoppedOutput)):[],[chat,stoppedOutput]);
   const transcript=useMemo(()=>groupConversationStream(visibleEntries,chat?.run,chat?.retainedRuns),[visibleEntries,chat?.run,chat?.retainedRuns]);
   const liveToolId=!outputPaused&&chat?.run?.status==='running'?[...visibleEntries].reverse().find(entry=>entry.kind==='tool'&&entry.runId===chat.run!.id)?.id??null:null;
   const modelWarning=conversationModelWarning(context.modelCatalogReady,choice.modelAccountId,selectedSourceModel);

@@ -138,7 +138,7 @@ test('search matches titles and visible messages only, ANDs terms, and returns a
   assert.deepEqual(repo.listConversations('w1',{limit:10,query:'命中词'}).map(r=>r.view.id).sort(),['both','title-only','visible']);
 });
 
-test('historical unknown without in-flight work no longer keeps a completed conversation active',()=>{
+test('a requested historical stop without in-flight work no longer keeps a completed conversation active',()=>{
   const view=record('active-rule').view, at='2026-10-27T00:00:00Z';
   view.run={id:'current',participantId:'p',provider:'codex',generation:'g',status:'completed',accepted:true,executionState:'ended',tools:[],startedAt:at,updatedAt:at};
   view.retainedRuns=[{id:'old',participantId:'p',provider:'codex',generation:'g0',status:'unknown',accepted:false,stopRequested:true,canContinue:false,executionState:'unknown',tools:[],startedAt:at,updatedAt:at}];
@@ -146,7 +146,10 @@ test('historical unknown without in-flight work no longer keeps a completed conv
   view.retainedRuns[0].tools=[{id:'tool',label:'bash',status:'running'}];
   assert.equal(conversationActive(view,1,1),true);
   view.retainedRuns[0].tools=[{id:'tool',label:'bash',status:'unknown'}];
-  assert.equal(conversationActive(view,1,1),true);
+  assert.equal(conversationActive(view,1,1),false,'unknown tools whose stop was requested are historical evidence');
+  view.retainedRuns[0].stopRequested=false;
+  assert.equal(conversationActive(view,1,1),true,'unknown tools without a stop request remain discoverable');
+  view.retainedRuns[0].stopRequested=true;
   view.retainedRuns[0].tools=[];view.retainedRuns[0].executionState='active';
   assert.equal(conversationActive(view,1,1),true);
   view.retainedRuns[0].executionState='unknown';
