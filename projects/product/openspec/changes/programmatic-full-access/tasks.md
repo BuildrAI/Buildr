@@ -11,5 +11,5 @@
 - [x] 4.1 集成测试覆盖 full-access 受理、关闭 403、发现透传、OpenAPI enum、开关切换
 - [x] 4.2 前端逻辑测试覆盖 update 客户端与开关
 - [x] 4.3 buildr/buildr-web 静态检查与单元测试、相关集成通过
-- [ ] 4.4 部署本机开发版 127.0.0.1:4458 并核对 GrokBot allowFullAccess 开启、full-access 受理与关闭 403
-- [ ] 4.5 按 task-finish 收尾：清理开发环境、集成并推送代码，报告接口变更与提交 id
+- [x] 4.4 部署本机开发版 127.0.0.1:4458 并核对 GrokBot allowFullAccess 开启、full-access 受理与关闭 403
+- [x] 4.5 按 task-finish 收尾：清理开发环境、集成并推送代码，报告接口变更与提交 id
