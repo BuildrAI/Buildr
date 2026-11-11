@@ -42,7 +42,9 @@ function digestTree(root: string, names: string[], node: string, entry: string):
   return digest.digest('hex');
 }
 function runtimeFileNames(packageRoot: string): string[] {
-  const names = files(path.join(packageRoot, 'build')).map(name => path.join('build', name));
+  const build = path.join(packageRoot, 'build');
+  if (!fs.existsSync(build)) throw new AgentServiceError('agent_runtime_entry_missing', '执行运行单元尚未构建。', 409);
+  const names = files(build).map(name => path.join('build', name));
   if (fs.existsSync(path.join(packageRoot, 'node_modules'))) names.push(...files(path.join(packageRoot, 'node_modules')).map(name => path.join('node_modules', name)));
   names.push('package.json');
   return names.sort();
