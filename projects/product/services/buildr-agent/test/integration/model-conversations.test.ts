@@ -67,7 +67,7 @@ test('retiring versions release idle native writers while other conversations ke
   } finally {finish();await next?.close();await old.close();rmSync(root,{recursive:true,force:true});}
 });
 
-test('Codex Devin participants bind permission modes and hand off visible history without mixing native instructions',async()=>{
+test('Codex Devin participants bind permission modes and deliver visible history transparently without mixing native instructions',async()=>{
  for(const providerId of ['devin','fixture']){
   const root=mkdtempSync(join(tmpdir(),'buildr-permission-context-')),contexts=new Map<string,string>(),sent:Array<{context:string;mode:string;text:string}>=[];let execution='';
   const capabilities={text:true,images:false,approval:true,questions:true,stop:true,resume:true,maxInputBytes:65536,permissionModes:['default','full-access'] as Array<'default'|'full-access'>};
@@ -78,10 +78,10 @@ test('Codex Devin participants bind permission modes and hand off visible histor
    await service.connections.connect('codex',{expectedRevision:'unconfigured'});const added=await service.models.accounts.add({provider:providerId}),checked=await service.models.accounts.check(added.id);await service.models.accounts.preferences(added.id,{expectedRevision:checked.revision,models:[{id:'swe-2',enabled:true}]});const conversation=await service.conversations.create('workspace',{});
    for(const [index,permissionMode]of (['default','full-access','full-access','default'] as const).entries()){
     const view=service.conversations.read('workspace',conversation.id),draft={expectedRevision:view.revision,connectionId:'codex',modelAccountId:added.id,model:'swe-2',permissionMode,text:'explicit current request '+index};const preview=service.conversations.prepareSend('workspace',view.id,draft);
-    if(index===1&&providerId==='devin'){assert.equal(preview.participantId,undefined);assert.ok(preview.history.some(entry=>entry.text==='explicit current request 0'));}
+    if(index===1&&providerId==='devin'){assert.equal(preview.participantId,undefined);assert.equal(preview.switching,false,'权限变化不构成换人交接');assert.ok(preview.history.some(entry=>entry.text==='explicit current request 0'));}
     service.conversations.send('workspace',view.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});for(let i=0;i<200&&service.conversations.read('workspace',view.id).run?.status!=='completed';i++)await new Promise(resolve=>setTimeout(resolve,5));assert.equal(service.conversations.read('workspace',view.id).run?.status,'completed');
    }
-   assert.equal(contexts.size,providerId==='devin'?2:1);assert.equal(sent[1].context,sent[2].context);assert.equal(sent[0].context,sent[3].context);if(providerId==='devin'){assert.notEqual(sent[0].context,sent[1].context);assert.ok(sent[1].text.includes('不新增授权'));}
+   assert.equal(contexts.size,providerId==='devin'?2:1);assert.equal(sent[1].context,sent[2].context);assert.equal(sent[0].context,sent[3].context);if(providerId==='devin'){assert.notEqual(sent[0].context,sent[1].context);assert.ok(sent[1].text.includes('不新增授权'));assert.equal(service.conversations.read('workspace',conversation.id).entries.filter(entry=>entry.kind==='handoff'&&!entry.nativeSession).length,0,'权限变化透明建立新上下文，不产生用户选择的交接');}
   }finally{await service.close();rmSync(root,{recursive:true,force:true});}
  }
 });

@@ -1252,6 +1252,36 @@ test('changing only the reasoning effort reuses the native session and delivers 
   } finally { await f.close(); }
 });
 
+test('changing only the permission mode reuses the native session and delivers just the new requirement', async () => {
+  const native = fake();
+  native.executor.descriptor.capabilities.permissionModes = ['default', 'full-access'];
+  const open = native.executor.open;
+  native.executor.open = async input => { const runtime = await open(input); runtime.capabilities.permissionModes = ['default', 'full-access']; return runtime; };
+  const f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'local'); const view = await f.service.conversations.create('workspace-one', {});
+    const first = { expectedRevision: view.revision, connectionId: 'local', text: 'first requirement', permissionMode: 'default' as const };
+    const preview = f.service.conversations.prepareSend('workspace-one', view.id, first);
+    f.service.conversations.send('workspace-one', view.id, { ...first, previewToken: preview.token, clientRequestId: randomUUID() });
+    const done = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed');
+    const contextId = done.participants[0]!.contextId;
+    const second = { expectedRevision: done.revision, connectionId: 'local', text: 'second requirement', permissionMode: 'full-access' as const };
+    const next = f.service.conversations.prepareSend('workspace-one', view.id, second);
+    assert.equal(next.switching, false, '权限不是执行组合变化');
+    assert.deepEqual(next.handoff?.changes, []); assert.equal(next.permissionMode, 'full-access');
+    const started = f.service.conversations.send('workspace-one', view.id, { ...second, previewToken: next.token, clientRequestId: randomUUID() });
+    assert.equal(started.run!.permissionMode, 'full-access');
+    const after = await waitUntil(() => f.service.conversations.read('workspace-one', view.id), value => value.run?.status === 'completed' && value.run.id !== done.run!.id);
+    assert.equal(after.participants.length, 1, '同一原生会话不因权限新增参与者');
+    assert.equal(after.participants[0]!.contextId, contextId);
+    assert.equal(after.entries.some(entry => entry.kind === 'handoff'), false, '不生成交接记录');
+    assert.equal(native.sends.length, 2);
+    assert.equal(native.sends[1]!.contextRef.id, contextId, '新要求送达同一原生会话');
+    assert.equal(native.sends[1]!.permissionMode, 'full-access');
+    assert.equal(native.sends[1]!.text, 'second requirement', '只交付新要求，不重新注入交接资料');
+  } finally { await f.close(); }
+});
+
 test('observed native model selection refreshes the private default and reaches the active conversation SSE', async () => {
   const native = fake(); const open = native.executor.open; let selected = 'a';
   const models = () => ['a', 'b'].map(id => ({ id, label: id, isDefault: id === selected, reasoningEfforts: [{ id: 'low', label: 'Low' }], defaultReasoningEffort: 'low' }));

@@ -770,9 +770,10 @@ export class ConversationApplication {
     input.serviceTier=source?(boundModel as ModelOffering|undefined)?.defaultServiceTier:undefined;
     const modelConfig=source&&selectedModel?modelConfiguration(selectedModel as ModelOffering,input.serviceTier):undefined;
     // Native Codex keeps earlier permission instructions in its thread. Devin
-    // rejects the default-mode block even after a later full-access turn.
-    // Match a permission-bound participant and use the normal visible handoff;
-    // never remove native instructions or silently raise the selected mode.
+    // rejects the default-mode block even after a later full-access turn, so its
+    // participant binds the permission into the configuration hash: a mode change
+    // opens a fresh context transparently, never removing native instructions or
+    // silently raising the selected mode. Permission itself is not a handoff.
     const configuration=source?.provider==='devin'&&connection.provider==='codex'?hash({model:modelConfig,permission:input.permissionMode}):modelConfig;
     input.reasoningEffort ??= boundModel?.defaultReasoningEffort;
     if (input.reasoningEffort && !boundModel?.reasoningEfforts?.some(effort => effort.id === input.reasoningEffort)) fail('agent_reasoning_unavailable', '该思考深度不在所选模型的可用目录中。', 409);
@@ -802,13 +803,11 @@ export class ConversationApplication {
     const through = record.view.entries.at(-1)?.sequence ?? record.view.childOf?.throughSequence ?? 0;
     const changes = handoffEntries([...(record.inheritedContext?.entries??[]),...record.view.entries],participant?.deliveredThrough??0).map(handoffEntry);
     const previous = record.participants.find(value=>value.id===record.view.run?.participantId) ?? record.participants.at(-1);
-    const previousRun = record.view.run;
     // Native context identity governs control and history, never whether the user changed execution choice.
-    // Reasoning effort is a per-turn parameter of the same native session: every executor receives it with the
-    // new input, so changing it alone reuses the session instead of organizing a user-visible handoff.
+    // Reasoning effort and permission mode are per-turn parameters: every executor receives them with the new
+    // input, so changing either alone reuses the execution combination instead of organizing a user-visible handoff.
     const switching = Boolean(previous && (previous.connectionId!==input.connectionId || previous.modelAccountId!==input.modelAccountId ||
-      previous.modelAccountIdentity!==source?.identity || previous.modelId!==input.model || previous.serviceTier!==input.serviceTier ||
-      previousRun && (previousRun.permissionMode??'default')!==input.permissionMode));
+      previous.modelAccountIdentity!==source?.identity || previous.modelId!==input.model || previous.serviceTier!==input.serviceTier));
     const history = changes.map(entry => ({sequence:entry.sequence,role:entry.role,provider:entry.provider,text:entry.kind==='tool'?`${entry.name??'工具'} · ${entry.status??'结果未知'}（具体内容见本地来源）`:entry.text.length>4096?entry.text.slice(0,4096)+'…（完整原文见本地来源）':entry.text}));
     const maxInputBytes=receivingBudget(connection.capabilities.maxInputBytes,boundModel&&'contextWindow' in boundModel?boundModel.contextWindow:undefined,boundModel&&'maxOutputTokens' in boundModel?boundModel.maxOutputTokens:undefined);
     const localRounds=changes.length ? organizeHandoff(changes,{...record.inheritedContext?.outcomes,...record.runOutcomes,...(record.view.run?{[record.view.run.id]:record.view.run}:{})}) : [];

@@ -85,12 +85,12 @@ export function conversationReasoningSelection(connection:ConnectionView|undefin
 }
 
 /**
- * 执行目标是否变化只看智能体、来源账号、模型、档位与权限。
- * 思考深度是单轮参数：原原生会话可以用新强度接收下一条要求，不构成换人交接。
+ * 执行目标是否变化只看智能体、来源账号、模型与档位。
+ * 思考深度与权限都是单轮参数：原原生会话可以用新强度或新授权接收下一条要求，不构成换人交接。
  */
-export function executionSelectionChanged(run:Pick<ConversationRun,'model'|'modelAccountId'|'serviceTier'|'permissionMode'>|undefined,participantConnectionId:string|undefined,choice:Pick<ConversationChoice,'connectionId'|'model'|'modelAccountId'|'serviceTier'>,permissionMode:PermissionMode):boolean {
+export function executionSelectionChanged(run:Pick<ConversationRun,'model'|'modelAccountId'|'serviceTier'>|undefined,participantConnectionId:string|undefined,choice:Pick<ConversationChoice,'connectionId'|'model'|'modelAccountId'|'serviceTier'>):boolean {
   if(!run)return false;
-  return participantConnectionId!==choice.connectionId||run.model!==choice.model||run.modelAccountId!==choice.modelAccountId||run.serviceTier!==choice.serviceTier||(run.permissionMode??'default')!==permissionMode;
+  return participantConnectionId!==choice.connectionId||run.model!==choice.model||run.modelAccountId!==choice.modelAccountId||run.serviceTier!==choice.serviceTier;
 }
 
 /** 状态行表达执行身份（智能体与模型）；来源账号只保留在模型设置和发送预览。 */
