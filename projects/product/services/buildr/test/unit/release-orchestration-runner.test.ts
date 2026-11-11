@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
+import path from 'node:path';
 import test from 'node:test';
 
-import { compactReleaseOrchestration, inspectReleaseOrchestration, runReleaseOrchestration } from '../../../../../../skills/buildr-release/scripts/release-orchestration-runner.ts';
+import { compactReleaseOrchestration, frozenVerificationOwnerUrl, inspectReleaseOrchestration, runReleaseOrchestration } from '../../../../../../skills/buildr-release/scripts/release-orchestration-runner.ts';
 
 const digest: any = (letter: any) => `sha256-${letter.repeat(64)}`;
 const commit: any = (letter: any) => letter.repeat(40);
@@ -57,6 +58,14 @@ function closeoutDependencies(overrides: any = {}): any  {
   };
   return { dependencies, calls, getTask: () => task, getGitCloseoutInput: () => gitCloseoutInput, setTask: (value: any) => { task = value; } };
 }
+
+test('source verification owner loads from the frozen release checkout', () => {
+  const repo: any = path.resolve(import.meta.dirname, '../../../../../..');
+  const url: any = frozenVerificationOwnerUrl(repo);
+  assert.match(url, /\/projects\/product\/services\/buildr\/test\/verification\/release-verification\.ts$/u);
+  assert.throws(() => frozenVerificationOwnerUrl(path.join(repo, '.missing-release-checkout')),
+    /Frozen release checkout is missing source verification/u);
+});
 
 test('prepare-dispatch has no effects and returns the unique current approval request', async () => {
   const current: any = context();

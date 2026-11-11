@@ -76,6 +76,17 @@ export async function continueLocalPackageCandidate(input: any, dependencies: an
       gh(pointer.dispatchArgs, input.repo); effect.state = 'confirmed';
       existing = find();
     }
+    if (!existing && pointer.dispatchRequested) {
+      // GitHub can expose the dispatched run a few seconds after the API call.
+      // Retry briefly before requiring a second prepare, without re-dispatching.
+      const attempts = dependencies.runLookupAttempts ?? 3;
+      const delayMs = dependencies.runLookupDelayMs ?? 1_000;
+      const wait = dependencies.waitForRunLookup ?? ((milliseconds: number) => new Promise(resolve => setTimeout(resolve, milliseconds)));
+      for (let attempt = 0; attempt < attempts && !existing; attempt += 1) {
+        await wait(delayMs);
+        existing = find();
+      }
+    }
     if (!existing) return { status: 'candidate-dispatch-unconfirmed', nextActions: ['回读同一对端验包请求，不重新制包或重复派发。'] };
     pointer.runId = Number(existing.databaseId); save();
   }

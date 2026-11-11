@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import test from 'node:test';
 
-import { releaseCarrierBranchFor } from '../../../../../../../skills/buildr-release/scripts/release-git-convergence.ts';
+import { publishedPackageSha256, releaseCarrierBranchFor } from '../../../../../../../skills/buildr-release/scripts/release-git-convergence.ts';
 import { createReleaseContext } from '../../../../../../../skills/buildr-release/scripts/release-readiness.ts';
 import { createReleaseLifecycle } from '../../../../../../../skills/buildr-release/scripts/release-lifecycle.ts';
 import { createReleaseTransactionEvidence } from '../../../../../../../skills/buildr-release/scripts/release-transaction-evidence.ts';
@@ -15,6 +15,13 @@ import {
   git,
   runReleaseOrchestration,
 } from './helpers.ts';
+
+test('清理只采用 Registry 证据绑定的已发布原包字节', () => {
+  const sha = 'a'.repeat(64);
+  assert.equal(publishedPackageSha256({ registryArtifact: { artifactSha256: sha } }), sha);
+  assert.equal(publishedPackageSha256({ context: { artifact: { sha256: sha } } }), sha);
+  assert.throws(() => publishedPackageSha256({ context: {} }), /Registry artifact SHA-256/u);
+});
 
 test('黄金生命周期以同一active Task等待授权并在零中间资源closeout后完成', (t: any) => {
   const data: any = convergenceFixture();

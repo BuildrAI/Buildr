@@ -20,6 +20,14 @@ const SHA: any = /^[a-f0-9]{40}$/u;
 const VERSION: any = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u;
 const DIGEST: any = /^sha256-[a-f0-9]{64}$/u;
 
+/** Registry evidence, not the release context, binds the exact npm tarball bytes. */
+export function publishedPackageSha256(evidence: any): string {
+  const value = [evidence?.registryArtifact?.artifactSha256, evidence?.context?.artifact?.sha256]
+    .find((candidate: any): candidate is string => typeof candidate === 'string' && /^[a-f0-9]{64}$/u.test(candidate));
+  if (!value) throw new Error('Publication evidence lacks the exact Registry artifact SHA-256.');
+  return value;
+}
+
 function execute(command: any, args: any, options: any = {}): any  {
   return spawnSync(command, args, { cwd: options.cwd, encoding: 'utf8', windowsHide: true, timeout: 30_000 });
 }
@@ -637,7 +645,7 @@ function closeoutPublishedReleaseBranches(options: any, dependencies: any, evide
             git(repo, ['fetch', '--no-tags', remote, dataCommit], dependencies);
           }
           const manifest = JSON.parse(git(repo, ['show', `${dataCommit}:handoff.json`], dependencies).stdout);
-          assertPublishedPackageData(manifest, expected, evidence.context.artifact?.sha256);
+          assertPublishedPackageData(manifest, expected, publishedPackageSha256(evidence));
           if (manifest.artifactSha256.slice(0, 12) !== packageData[2]) throw new Error('Temporary package data branch name differs from its original bytes.');
           item.productSourceCommit = expected;
           expected = dataCommit; item.expectedCommit = expected; item.kind = 'package-data';
