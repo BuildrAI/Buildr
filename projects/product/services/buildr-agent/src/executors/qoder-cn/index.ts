@@ -20,6 +20,9 @@ import { ExecutorInputRejected } from '../../contracts.ts';
 import type { AccountObservation, AgentExecutor, AgentRuntime, ContextRef, ExecutorEvent, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorRequest, ExecutorSendInput, ExecutorSupplementInput, ExecutorInputReceipt, LoginObservation, PermissionMode } from '../../contracts.ts';
 
 const product = qoderProduct('qoder-cn');
+// Qoder CN defaults AI responses to English when `language` is empty. Buildr's
+// product language is Chinese, so pin the native system prompt language at launch.
+const responseLanguageSettings = JSON.stringify({ language: 'Chinese' });
 const capabilities = { interaction: { policy: interactionPolicy.version, nonBlockingQuestions: false }, supplement: true, permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
 
 interface PendingApproval {
@@ -116,7 +119,7 @@ class QoderCnRuntime implements AgentRuntime {
     if (this.opening) return await this.opening;
     this.opening = (async () => {
       const client = AcpClient.open({
-        executable: this.executable, args: ['--acp'], cwd: this.config, environment: this.environments,
+        executable: this.executable, args: ['--acp', '--settings', responseLanguageSettings], cwd: this.config, environment: this.environments,
         onNotification: (method, params) => this.notification(method, params),
         onServerRequest: request => this.serverRequest(request),
         onExit: () => this.transportLost(),

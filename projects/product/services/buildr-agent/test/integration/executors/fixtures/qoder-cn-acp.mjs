@@ -25,6 +25,7 @@ const send = value => process.stdout.write(JSON.stringify(value) + '\n');
 const result = (id, value) => send({ jsonrpc: '2.0', id, result: value });
 const notify = (method, params) => send({ jsonrpc: '2.0', method, params });
 const log = (name, value) => { try { mkdirSync(config, { recursive: true }); writeFileSync(join(config, name), JSON.stringify(value) + '\n', { flag: 'a' }); } catch { /* fixture logging stays optional */ } };
+log('fixture-launch.jsonl', { args });
 const sessionPath = id => join(sessions, id + '.json');
 const readSession = id => { try { return JSON.parse(readFileSync(sessionPath(id), 'utf8')); } catch { return undefined; } };
 const writeSession = session => { mkdirSync(sessions, { recursive: true }); writeFileSync(sessionPath(session.id), JSON.stringify(session)); };

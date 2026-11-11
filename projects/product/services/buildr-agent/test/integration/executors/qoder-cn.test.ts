@@ -51,6 +51,21 @@ test('Qoder CN reports a missing login instead of a generic failure', { timeout:
   } finally { await runtime?.close(); await rm(root, { recursive: true, force: true }); }
 });
 
+test('Qoder CN launches the native CLI with Chinese response language', { timeout: 15000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-qoder-cn-language-')); let runtime: AgentRuntime | undefined;
+  try {
+    runtime = await createQoderCnExecutor().open({ connectionId: 'qoder-cn', configRoot: join(root, 'config'), executable: await program(root), environment: { PATH: process.env.PATH ?? '' } });
+    await runtime.inspectAccount();
+    const launched = await records(join(root, 'config', 'qoder-cn-config', 'fixture-launch.jsonl'));
+    const acp = launched.find(entry => Array.isArray(entry.args) && (entry.args as string[]).includes('--acp'));
+    assert.ok(acp, 'the fixture must observe the ACP launch arguments');
+    const args = acp.args as string[];
+    const settingsAt = args.indexOf('--settings');
+    assert.notEqual(settingsAt, -1, 'the native CLI must receive a settings override');
+    assert.deepEqual(JSON.parse(args[settingsAt + 1]!), { language: 'Chinese' });
+  } finally { await runtime?.close(); await rm(root, { recursive: true, force: true }); }
+});
+
 test('Qoder CN streams ACP chunks and settles an approval request', { timeout: 20000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'buildr-qoder-cn-turn-')); const workspace = join(root, 'workspace'); await mkdir(workspace);
   let runtime: AgentRuntime | undefined;
