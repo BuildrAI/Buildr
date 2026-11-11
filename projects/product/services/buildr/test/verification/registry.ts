@@ -668,6 +668,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/preview-ownership.test.ts',
     'test/integration/preview-reuse-lifecycle.test.ts',
     'test/integration/preview-reuse-agent-runtime.test.ts',
+    'test/integration/preview-candidate-runtime.test.ts',
     'test/integration/runtime-system-http-contract.test.ts',
     'test/integration/service-runtime-connections.test.ts',
     'test/integration/service-runtime-http.test.ts',

@@ -53,10 +53,17 @@ function rewriteValue(value: unknown, sourceRoot: string, targetRoot: string): u
   return value;
 }
 
-function containsSourcePath(value: unknown, sourceRoot: string): boolean {
-  if (typeof value === 'string') return value === sourceRoot || value.startsWith(`${sourceRoot}${path.sep}`);
-  if (Array.isArray(value)) return value.some((entry) => containsSourcePath(entry, sourceRoot));
-  if (value && typeof value === 'object') return Object.values(value).some((entry) => containsSourcePath(entry, sourceRoot));
+function containsSourcePath(value: unknown, sourceRoot: string, targetRoot: string): boolean {
+  if (typeof value === 'string') {
+    const underSource = value === sourceRoot || value.startsWith(`${sourceRoot}${path.sep}`);
+    // The preview root may be nested inside the source root, so a path already
+    // rewritten into the target subtree still carries the source prefix. Such
+    // paths point at the preview, not the source environment, and are safe.
+    const underTarget = value === targetRoot || value.startsWith(`${targetRoot}${path.sep}`);
+    return underSource && !underTarget;
+  }
+  if (Array.isArray(value)) return value.some((entry) => containsSourcePath(entry, sourceRoot, targetRoot));
+  if (value && typeof value === 'object') return Object.values(value).some((entry) => containsSourcePath(entry, sourceRoot, targetRoot));
   return false;
 }
 
@@ -205,7 +212,7 @@ function relocateOffline(input: { sourceRoot: string; targetRoot: string; source
       continue;
     }
     const rewritten = rewriteValue(record, sourceRoot, targetRoot) as Record<string, any>;
-    if (containsSourcePath(rewritten, sourceRoot)) {
+    if (containsSourcePath(rewritten, sourceRoot, targetRoot)) {
       result.failed.push({ provider: row.provider, stage: 'rewrite', diagnostic: 'source_path_remaining' });
       continue;
     }

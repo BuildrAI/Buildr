@@ -162,7 +162,8 @@
     - [migrations/0035_add_task_brief.sql](../../services/buildr/src/infrastructure/sqlite/migrations/0035_add_task_brief.sql) — 连续追加任务正文及摘要列，保留原记录与历史
     - [transaction.ts](../../services/buildr/src/infrastructure/sqlite/transaction.ts) — 原子提交与失败回滚
   - **`services/buildr/src/web/application/`** — 临时预览资源
-    - [preview-lifecycle.ts](../../services/buildr/src/web/application/preview-lifecycle.ts) — 核对实例与进程所有者，独立创建和停止预览（Preview）；`--task` 预览为服务目标工作树按需播种 canonical 任务库一致副本并在 owner 中如实标注来源
+    - [preview-lifecycle.ts](../../services/buildr/src/web/application/preview-lifecycle.ts) — 核对实例与进程所有者，独立创建和停止预览（Preview）；`--task` 预览为服务目标工作树按需播种 canonical 任务库一致副本并在 owner 中如实标注来源；task 模式启动前准备候选产物并钉住 Agent 运行单元 digest，网页就绪后轮询 health 携带的 agentRuntime 直到候选 digest 就绪才宣告 started，未就绪 fail closed 回收宿主与后台、不回退开发版；owner 携带 Agent digest/generation/accepting、前端产物来源与数据模式
+    - [preview-candidate.ts](../../services/buildr/src/web/application/preview-candidate.ts) — 在工作树准备候选 web-dist 与 Agent 私有包，以源码输入摘要新鲜度标记跳过未变化重准备，并从已物化私有包计算候选运行单元 digest；写入只落工作树
   - **`services/buildr/src/modules/openspec/application/`** — 变更文件发现与说明读取
     - [prototype-metadata.ts](../../services/buildr/src/modules/openspec/application/prototype-metadata.ts) — 有界解析 HTML 内可选说明，不新增独立状态
   - `services/buildr-web/src/` — 前端协作

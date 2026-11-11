@@ -93,7 +93,15 @@ export function createRuntime(options: { agentRuntime?: import('@buildr-ai/build
   registry.install(createParentCoordinationModule(runtime));
   registry.install(createArtifactLifecycleModule(runtime));
   registry.install(createSystemInstallationModule(runtime));
-  registry.install(createWebModule(runtime, { httpContributions: registry.contributions('http'), onReady: async () => {
+  registry.install(createWebModule(runtime, { httpContributions: registry.contributions('http'), agentRuntimeStatus: async () => {
+    // Health must stay responsive while the backend activates a pinned runtime;
+    // a slow or failing status read reports null instead of blocking readiness.
+    try {
+      const status = registry.provide(AGENT_SERVICE_APPLICATION).runtimeStatus();
+      const timeout = new Promise<null>((resolve) => { const timer = setTimeout(() => resolve(null), 500); timer.unref?.(); });
+      return await Promise.race([Promise.resolve(status).catch(() => null), timeout]);
+    } catch { return null; }
+  }, onReady: async () => {
     // start() resolves the service lazily; a synchronous throw here must not
     // escape the listen callback and kill the process.
     // Publish readiness only after the backend retains the package bytes. An npm

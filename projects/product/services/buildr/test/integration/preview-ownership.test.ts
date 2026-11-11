@@ -9,6 +9,23 @@ import { execFileSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 
 import { assertPreviewStopOwner, previewDataRoot, readPreviewOwner, resolveTaskPreviewWorktree, startPreview, stopPreview, type PreviewCaller, type PreviewOwner, type PreviewRuntime } from '../../src/web/application/preview-lifecycle.ts';
+import { previewCandidateSourceDigest } from '../../src/web/application/preview-candidate.ts';
+
+// Task previews prepare and pin a candidate runtime before launch. The fixture
+// provides an already prepared fake package plus a matching freshness marker so
+// preparation is reused (no real build) and the worker can report its digest.
+function seedPreparedCandidate(productRoot: string): void {
+  const agentPackage = path.join(productRoot, 'node_modules', '@buildr-ai', 'buildr-agent');
+  fs.mkdirSync(path.join(agentPackage, 'build', 'process'), { recursive: true });
+  fs.writeFileSync(path.join(agentPackage, 'package.json'), '{"name":"@buildr-ai/buildr-agent","version":"0.0.0-fixture"}\n');
+  fs.writeFileSync(path.join(agentPackage, 'build', 'index.js'), '// fixture public entry\n');
+  fs.writeFileSync(path.join(agentPackage, 'build', 'process', 'entry.js'), '// fixture process entry\n');
+  fs.mkdirSync(path.join(productRoot, 'web-dist'), { recursive: true });
+  fs.writeFileSync(path.join(productRoot, 'web-dist', 'index.html'), '<!doctype html><title>fixture</title>\n');
+  const sourceDigest = previewCandidateSourceDigest(productRoot);
+  fs.writeFileSync(path.join(productRoot, 'node_modules', '.buildr-preview-candidate.json'),
+    `${JSON.stringify({ schemaVersion: 'buildr.local-app-preview-candidate/v1', sourceDigest }, null, 2)}\n`);
+}
 
 const head = 'a'.repeat(40);
 const owner: PreviewOwner = {
@@ -266,6 +283,7 @@ function taskStoreFixture(t: test.TestContext, { withCanonicalStore = true }: { 
   execFileSync('git', ['-C', canonical, 'worktree', 'add', '--quiet', '--detach', worktree, 'HEAD']);
   fs.mkdirSync(path.join(product, 'bin'), { recursive: true });
   fs.writeFileSync(path.join(product, 'bin', 'buildr.mjs'), '// fixture cli\n');
+  seedPreparedCandidate(product);
   fs.writeFileSync(worker, `
 import fs from 'node:fs';
 import path from 'node:path';
@@ -274,7 +292,7 @@ fs.writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
 const server = http.createServer((req, res) => {
   if (req.headers['x-buildr-instance'] !== 'fixture-secret') { res.writeHead(403).end(); return; }
   if (req.method === 'POST') { res.writeHead(202).end(); server.close(() => process.exit(0)); }
-  else res.end(JSON.stringify({ schemaVersion: 'buildr.local-app-health/v1', status: 'ready', pid: process.pid }));
+  else res.end(JSON.stringify({ schemaVersion: 'buildr.local-app-health/v1', status: 'ready', pid: process.pid, agentRuntime: { currentDigest: process.env.BUILDR_PREVIEW_AGENT_DIGEST || null, generation: 'fixture-generation', accepting: true, pendingDigest: null } }));
 });
 server.listen(0, '127.0.0.1', () => {
   fs.writeFileSync(path.join(process.env.BUILDR_APP_DATA_DIR, 'instance.json'), JSON.stringify({

@@ -4,7 +4,7 @@ import { createParticipationSourceObserver } from './application/participation-s
 import { AGENT_ASSETS_SOURCE_QUERY } from '../agent-assets/source/module.ts';
 import fs from 'node:fs';
 import { createHash } from 'node:crypto';
-import { connectAgentProcess, restartAgentProcess, AgentServiceError } from '@buildr-ai/buildr-agent';
+import { connectAgentProcess, restartAgentProcess, prepareAgentRuntime, AgentServiceError } from '@buildr-ai/buildr-agent';
 import type { AgentHostCapabilities, AgentProcessConnection, AgentOperations, AgentRuntimeUnit } from '@buildr-ai/buildr-agent';
 import { WORKSPACE_APPLICATION } from '../workspace/module.ts';
 import { TASK_QUERY_APPLICATION } from '../task/module.ts';
@@ -12,6 +12,13 @@ import { defaultWorkspaceRoot } from './infrastructure/default-workspace.ts';
 import { createAgentServiceHttpContribution } from './interfaces/http/agent-service-http.ts';
 
 export const AGENT_SERVICE_APPLICATION = 'agent-service.application';
+
+/** A task preview pins the candidate digest it prepared in the worktree. The host
+ * must run exactly that unit; a mismatch fails closed instead of accepting stale code. */
+function readPreviewCandidateDigest(env: NodeJS.ProcessEnv = process.env): string | null {
+  const value = env.BUILDR_PREVIEW_AGENT_DIGEST;
+  return typeof value === 'string' && /^[a-f0-9]{64}$/.test(value) ? value : null;
+}
 
 export function createAgentServiceModule(options: { readLocalInstance?(): unknown; readProductIdentity(): unknown; resolveWebProfile(identity: unknown): { dataRoot: string; profile?: string; overridden?: boolean }; runtime?: AgentRuntimeUnit }) {
   return {
@@ -60,11 +67,20 @@ export function createAgentServiceModule(options: { readLocalInstance?(): unknow
         }),
         async listExecutionScopes({ sourceId }) { assertSource(sourceId); const refs=registeredWorkspaceIds().map(id=>({sourceId,id}));return {refs,revision:digest(refs)}; },
       };
+      const candidateDigest = readPreviewCandidateDigest();
+      let pinnedRuntime: AgentRuntimeUnit | undefined;
+      const runtimeOptions = (dataRoot: string): { runtime?: AgentRuntimeUnit; requireRuntime?: boolean } => {
+        if (options.runtime) return { runtime: options.runtime };
+        if (!candidateDigest) return {};
+        pinnedRuntime ??= prepareAgentRuntime({ dataRoot });
+        if (pinnedRuntime.digest !== candidateDigest) throw new AgentServiceError('preview_candidate_digest_mismatch', '候选执行运行单元与预览期望不一致，未接管后台。', 409);
+        return { runtime: pinnedRuntime, requireRuntime: true };
+      };
       const connect = () => {
         if(closed)throw new AgentServiceError('agent_process_client_closed','本机主程序连接已释放。',503);
         if(!connection){
           const bound=profile();
-          connection=connectAgentProcess({dataRoot:bound.dataRoot,profileId:bound.profile??(bound.overridden?'preview':'released'),sourceId:'buildr',legacySourceId:'buildr',host,autoContinueInterrupted:true,signal:initialization.signal,...(options.runtime?{runtime:options.runtime}:{})}).catch(error=>{connection=undefined;throw error;});
+          connection=connectAgentProcess({dataRoot:bound.dataRoot,profileId:bound.profile??(bound.overridden?'preview':'released'),sourceId:'buildr',legacySourceId:'buildr',host,autoContinueInterrupted:true,signal:initialization.signal,...runtimeOptions(bound.dataRoot)}).catch(error=>{connection=undefined;throw error;});
         }
         return connection;
       };
@@ -90,7 +106,7 @@ export function createAgentServiceModule(options: { readLocalInstance?(): unknow
           previous = await connect();
           if (closed) throw new AgentServiceError('agent_process_client_closed', '网页服务正在退出。', 503);
           const bound = profile();
-          const pending = restartAgentProcess({dataRoot:bound.dataRoot,profileId:bound.profile??(bound.overridden?'preview':'released'),sourceId:'buildr',legacySourceId:'buildr',host,autoContinueInterrupted:true,expectedGeneration:input.expectedGeneration,...(options.runtime?{runtime:options.runtime}:{})});
+          const pending = restartAgentProcess({dataRoot:bound.dataRoot,profileId:bound.profile??(bound.overridden?'preview':'released'),sourceId:'buildr',legacySourceId:'buildr',host,autoContinueInterrupted:true,expectedGeneration:input.expectedGeneration,...runtimeOptions(bound.dataRoot)});
           // Busy/stale refusal leaves the existing host and its active work intact.
           connection = pending.catch(() => previous!);
           await pending;
@@ -113,7 +129,7 @@ export function createAgentServiceModule(options: { readLocalInstance?(): unknow
           .filter((entry: any) => entry.workspace?.id && entry.status !== 'identity_conflict')
           .map((entry: any) => ({ id: entry.workspace.id, name: entry.workspace.name ?? entry.workspace.id })),
       });
-      return { provides: { [AGENT_SERVICE_APPLICATION]: { start, close, status:async()=>(await connect()).lifecycle.status(), generate: async (input: Parameters<AgentOperations['models']['generate']>[0]) => (await resolve()).models.generate(input) } }, contributions: { cli: createAgentCliContributions(options.readLocalInstance), http: [agentHttp, programmaticHttp] }, lifecycle: { start: async () => { void start().catch(() => { console.warn('执行后台连接未完成，已有工作记录保留。'); }); }, stop: close } };
+      return { provides: { [AGENT_SERVICE_APPLICATION]: { start, close, status:async()=>(await connect()).lifecycle.status(), runtimeStatus, generate: async (input: Parameters<AgentOperations['models']['generate']>[0]) => (await resolve()).models.generate(input) } }, contributions: { cli: createAgentCliContributions(options.readLocalInstance), http: [agentHttp, programmaticHttp] }, lifecycle: { start: async () => { void start().catch(() => { console.warn('执行后台连接未完成，已有工作记录保留。'); }); }, stop: close } };
     },
   };
 }

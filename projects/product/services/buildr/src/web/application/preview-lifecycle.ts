@@ -21,6 +21,7 @@ import {
   type PreviewReuseFacet,
   type PreviewReuseSelection,
 } from './preview-reuse.ts';
+import { computePreviewCandidateDigest, preparePreviewCandidateArtifacts } from './preview-candidate.ts';
 
 const PREVIEW_SCHEMA = 'buildr.local-app-preview/v1';
 const PREVIEW_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
@@ -56,6 +57,8 @@ export type PreviewOwner = {
   taskStore?: { source: 'canonical' | 'existing'; seeded: boolean } | null;
   reuse?: PreviewReuseFacts;
   managedProcess?: { pid: number; url?: string; state: 'healthy' | 'cleanup-failed' };
+  agent?: { digest: string; generation?: string; accepting?: boolean };
+  frontendSource?: string;
 };
 
 export type PreviewCaller = {
@@ -93,6 +96,7 @@ type PreviewStartOptions = {
   cliPath?: string;
   dataRoot?: string;
   startupTimeoutMs?: number;
+  candidateReadyTimeoutMs?: number;
   reuse?: { env?: NodeJS.ProcessEnv; home?: string; platform?: NodeJS.Platform; registry?: readonly PreviewReuseFacet[] };
 };
 type PreviewStopOptions = { dataRoot?: string; caller?: PreviewCaller | null; retainOwner?: boolean; purge?: boolean };
@@ -140,6 +144,16 @@ function parseManagedProcess(value: unknown): PreviewOwner['managedProcess'] {
   return { pid: Number(item.pid), url: optionalString(item.url) || undefined, state: item.state };
 }
 
+function parsePreviewAgent(value: unknown): PreviewOwner['agent'] {
+  const item = record(value);
+  if (!item || typeof item.digest !== 'string' || !/^[a-f0-9]{64}$/.test(item.digest)) return undefined;
+  return {
+    digest: item.digest,
+    generation: optionalString(item.generation) || undefined,
+    accepting: typeof item.accepting === 'boolean' ? item.accepting : undefined,
+  };
+}
+
 function parsePreviewOwner(value: unknown, expectedName?: string): PreviewOwner | null {
   const item = record(value);
   if (!item
@@ -181,6 +195,8 @@ function parsePreviewOwner(value: unknown, expectedName?: string): PreviewOwner 
     taskStore: parseTaskStore(item.taskStore),
     reuse: readPreviewReuseFacts(item.reuse) ?? undefined,
     managedProcess: parseManagedProcess(item.managedProcess),
+    agent: parsePreviewAgent(item.agent),
+    frontendSource: optionalString(item.frontendSource) || undefined,
   };
 }
 
@@ -362,6 +378,33 @@ function requestInstanceShutdown(instance: PreviewInstance): Promise<void> {
     request.once('error', reject);
     request.end();
   });
+}
+
+type CandidateAgentReadiness = { generation: string; accepting: boolean };
+
+// The preview only holds the instance secret, so candidate readiness rides the
+// authenticated health endpoint rather than the session-token agent API.
+async function readInstanceAgentRuntime(instance: PreviewInstance): Promise<Record<string, unknown> | null> {
+  try {
+    const response = await fetch(`${instance.url}/api/v1/health`, {
+      headers: { 'x-buildr-instance': instance.secret },
+      signal: AbortSignal.timeout(1000),
+    });
+    if (!response.ok) return null;
+    return record((await response.json())?.agentRuntime);
+  } catch { return null; }
+}
+
+async function waitForCandidateAgentReady(instance: PreviewInstance, candidateDigest: string, timeoutMs: number): Promise<CandidateAgentReadiness | null> {
+  const began = performance.now();
+  while (performance.now() - began < timeoutMs) {
+    const runtime = await readInstanceAgentRuntime(instance);
+    if (runtime && runtime.currentDigest === candidateDigest && runtime.accepting === true && !runtime.pendingDigest && typeof runtime.generation === 'string') {
+      return { generation: runtime.generation, accepting: true };
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 100));
+  }
+  return null;
 }
 
 export function readPreviewIdentityFromEnvironment(env: NodeJS.ProcessEnv = process.env): PreviewOwner | null {
@@ -595,6 +638,15 @@ export async function startPreview(runtime: PreviewRuntime, name: string, args: 
   if (workspaceMode === 'snapshot' && taskWorktree) {
     owner = { ...owner, taskStore: prepareTaskPreviewStore(taskWorktree) };
   }
+  // Task previews run the worktree's own code: prepare its candidate artifacts and
+  // pin the exact Agent runtime digest before the host launches. Every write stays
+  // inside the worktree; the development instance and its data root are untouched.
+  let candidateDigest: string | null = null;
+  if (taskWorktree) {
+    const candidate = preparePreviewCandidateArtifacts({ serviceRoot: appInvocation.sourceRoot, node: appInvocation.command });
+    candidateDigest = computePreviewCandidateDigest({ serviceRoot: appInvocation.sourceRoot, node: appInvocation.command });
+    owner = { ...owner, agent: { digest: candidateDigest }, frontendSource: candidate.webDist };
+  }
   const root = previewDataRoot(instance, dataRoot);
   fs.mkdirSync(root, { recursive: true });
   const previousReuse = existingOwner?.reuse ?? readStoredPreviewReuse(instance, dataRoot);
@@ -619,7 +671,7 @@ export async function startPreview(runtime: PreviewRuntime, name: string, args: 
       cwd: environmentRoot,
       detached: true,
       stdio: ['ignore', logDescriptor, logDescriptor],
-      env: { ...process.env, BUILDR_APP_DATA_DIR: root, BUILDR_LOCAL_APP_PREVIEW: JSON.stringify(ownedOwner) },
+      env: { ...process.env, BUILDR_APP_DATA_DIR: root, BUILDR_LOCAL_APP_PREVIEW: JSON.stringify(ownedOwner), ...(candidateDigest ? { BUILDR_PREVIEW_AGENT_DIGEST: candidateDigest } : {}) },
     });
   } finally { fs.closeSync(logDescriptor); }
   const startup: PreviewStartup = { spawnError: null, processError: null, phase: 'spawned', elapsedMs: 0 };
@@ -648,10 +700,38 @@ export async function startPreview(runtime: PreviewRuntime, name: string, args: 
     const code = !['terminated', 'already-exited'].includes(cleanup) ? 'preview_start_cleanup_failed' : failed ? 'preview_start_failed' : 'preview_start_timeout';
     throw codedError(message, code, { instance, pid: child.pid ?? null, phase: startup.phase, elapsedMs: startup.elapsedMs, exitCode: child.exitCode, signal: child.signalCode, cleanup, logFile, diagnostic });
   }
+  let candidateReady: CandidateAgentReadiness | null = null;
+  if (candidateDigest) {
+    candidateReady = await waitForCandidateAgentReady(started, candidateDigest, options.candidateReadyTimeoutMs ?? 60_000);
+    if (!candidateReady) {
+      // Fail closed: a stale or absent candidate backend is recycled, never
+      // silently replaced by the development backend. An unconfirmed stop keeps
+      // the scene so the owner can still be stopped explicitly.
+      let cleanup: string;
+      try {
+        try { await requestInstanceShutdown(started); } catch { /* graceful quit is best effort */ }
+        cleanup = await reclaimPreviewChild(child, startup);
+        await stopAgentProcess({ dataRoot: root });
+        const state = readPreviewInstance(instance, dataRoot);
+        if (state?.pid === child.pid) runtime.removePath(previewInstancePath(instance, dataRoot));
+        clearOwner(instance, dataRoot);
+      } catch (error) {
+        cleanup = errorMessage(error);
+        writeOwner(runtime, { ...ownedOwner, managedProcess: { pid: started.pid, url: started.url, state: 'cleanup-failed' } }, dataRoot);
+      }
+      let diagnostic: string | null = null;
+      try { diagnostic = fs.readFileSync(logFile, 'utf8').trim().slice(-4096) || null; } catch {}
+      throw codedError(`预览实例 ${instance} 的候选执行后台未以钉住 digest 就绪，已回收，未回退开发版后台。digest=${candidateDigest} cleanup=${cleanup}${diagnostic ? `\n${diagnostic}` : ''}`, 'preview_candidate_not_ready', { instance, digest: candidateDigest, cleanup, logFile, diagnostic });
+    }
+  }
   if (workspaceRoots.length) seedPreviewWorkspaces(root, workspaceRoots);
   const startedPort = Number(new URL(started.url).port);
   if (Number.isInteger(startedPort) && startedPort > 0) writePreferredPort(instance, startedPort, dataRoot);
-  const managedOwner: PreviewOwner = { ...ownedOwner, managedProcess: { pid: started.pid, url: started.url, state: 'healthy' } };
+  const managedOwner: PreviewOwner = {
+    ...ownedOwner,
+    managedProcess: { pid: started.pid, url: started.url, state: 'healthy' },
+    ...(candidateDigest ? { agent: { digest: candidateDigest, generation: candidateReady?.generation, accepting: candidateReady?.accepting } } : {}),
+  };
   writeOwner(runtime, managedOwner, dataRoot);
   const result: PreviewResult = { schemaVersion: PREVIEW_SCHEMA, status: 'started', owner: managedOwner, url: started.url, pid: started.pid, portNote };
   if (!args.includes('--no-open')) openBrowser(started.url);

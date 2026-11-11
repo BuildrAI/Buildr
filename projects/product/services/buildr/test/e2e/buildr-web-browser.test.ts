@@ -560,6 +560,10 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     previewIdentity: {
       schemaVersion: 'buildr.local-app-preview/v1', instance: 'browser-preview', worktree: workspaceRoot,
       repository: workspaceRoot, branch: 'preview-branch', head: '0123456789abcdef', dirty: true,
+      workspaceMode: 'shared', environmentRoot: workspaceRoot,
+      frontendSource: `${workspaceRoot}/projects/product/services/buildr/web-dist`,
+      agent: { digest: 'a'.repeat(64), generation: 'gen-browser', accepting: true },
+      reuse: { source: 'development', facets: ['model-catalog', 'agent-runtime'] },
     },
   });
   previewServer = previewInstance.server;
@@ -1059,9 +1063,13 @@ test(`Buildr Web 浏览器端到端测试（E2E）：${selectorLabel}`, { timeou
     assert.equal(await page.title(), 'Buildr Web Dev');
     assert.equal(await page.locator('#preview-identity').isHidden(), true);
     await page.goto(previewUrl);
-    await page.locator('#preview-identity').waitFor({ state: 'attached' });
-    assert.equal(await page.locator('#preview-identity').isHidden(), true);
+    await page.locator('#preview-identity').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#preview-identity').isHidden(), false, '托管预览展示组件级来源身份条');
     assert.match(await page.locator('#preview-identity').getAttribute('data-preview') || '', /开发预览：browser-preview · preview-branch · 0123456789ab · 有未提交修改/);
+    assert.equal(await page.locator('#preview-identity').getAttribute('data-workspace-mode'), 'shared');
+    assert.equal(await page.locator('#preview-identity').getAttribute('data-agent-digest'), 'a'.repeat(64));
+    assert.match(await page.locator('#preview-identity').innerText(), /Agent：a{12} · generation gen-browser · 已就绪/);
+    assert.match(await page.locator('#preview-identity').innerText(), /数据：共享开发版工作空间 · 沿用 development/);
     await page.locator('#more-actions').hover();
     await page.locator('#quit-buildr').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#restart-buildr').locator('xpath=ancestor::*[@role="menuitem"]').getAttribute('aria-disabled'), 'true', '托管预览在统一菜单中禁用重启');
