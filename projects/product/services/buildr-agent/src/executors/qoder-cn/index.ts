@@ -47,6 +47,7 @@ interface TurnState {
   onEvent: (event: ExecutorEvent) => void;
   items: Map<string, ExecutorItem>;
   tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown' }>;
+  independentTools: Set<string>;
   approvals: Map<string, PendingApproval>;
   approvalPendingTools: Set<string>;
   status: ExecutorObservation['status'];
@@ -61,6 +62,8 @@ interface TurnState {
   supplementFailed?: boolean;
   supplementInputs: Map<string, { digest: string; work: Promise<ExecutorInputReceipt> }>;
   stopReason?: string;
+  stopping?: Promise<ExecutorObservation>;
+  stopConfirmed?: boolean;
   usageKey?: string;
 }
 
@@ -184,6 +187,9 @@ class QoderCnRuntime implements AgentRuntime {
       const id = typeof toolCall.toolCallId === 'string' ? toolCall.toolCallId : typeof toolCall.tool_call_id === 'string' ? toolCall.tool_call_id : undefined;
       if (!id) return;
       const prior = turn.items.get(id);
+      // ACP execute calls can leave native background tasks outside the control
+      // group. Without their own terminal receipt, group exit proves no outcome.
+      if(toolCall.kind==='execute'||toolCall.kind==='other')turn.independentTools.add(id);
       const label = typeof toolCall.title === 'string' && toolCall.title ? toolCall.title : prior?.name ?? (typeof toolCall.kind === 'string' ? toolCall.kind : '工具');
       const state = toolCall.status;
       const status: ExecutorItem['status'] = state === 'completed' ? 'completed' : state === 'failed' ? 'failed' : state === undefined ? prior?.status ?? 'running' : 'running';
@@ -274,14 +280,18 @@ class QoderCnRuntime implements AgentRuntime {
     if (!turn) return { status: 'idle', tools: [] };
     return {
       status: turn.status,
-      ...(['idle', 'stopped'].includes(turn.status) ? {} : { executionRef: this.executionRef(turn.executionId) }),
+      executionRef: this.executionRef(turn.executionId),
       tools: [...turn.tools.values()],
       requests: [...turn.approvals.values()].map(approval => approval.request),
       ...(turn.diagnostic ? { diagnostic: turn.diagnostic } : {}),
     };
   }
 
-  private executionRef(id: string) { return { id, data: { native: opaqueReference('qoder-cn', id, this.config, this.bindingIdentity), resourceContext: this.turn?.contextId ?? this.sessionId, resourceBinding: this.bindingIdentity } }; }
+  private executionRef(id: string) {
+    const contextId=this.turn?.contextId??this.sessionId!;
+    const ref=this.client?.executionRef(id,contextId,this.bindingIdentity);
+    return {id,data:{...ref?.data,native:opaqueReference('qoder-cn',id,this.config,this.bindingIdentity),resourceContext:contextId,resourceBinding:this.bindingIdentity}};
+  }
 
   private reference(context: ContextRef, cwd?: string): string {
     const saved = this.contexts.get(context.id) ?? (typeof context.data?.cwd === 'string' ? context.data.cwd : undefined);
@@ -479,7 +489,7 @@ class QoderCnRuntime implements AgentRuntime {
     const executionId = input.clientRequestId;
     let settle!: () => void;
     const settled = new Promise<void>(resolve => { settle = resolve; });
-    const turn: TurnState = { contextId: input.contextRef.id, executionId, onEvent: input.onEvent, items: new Map(), tools: new Map(), approvals: new Map(), approvalPendingTools: new Set(), status: 'running', segment: 0, pending: true, cancelRequested: false, settled, settle, supplements: new Map(), supplementInputs: new Map() };
+    const turn: TurnState = { contextId: input.contextRef.id, executionId, onEvent: input.onEvent, items: new Map(), tools: new Map(), independentTools: new Set(), approvals: new Map(), approvalPendingTools: new Set(), status: 'running', segment: 0, pending: true, cancelRequested: false, settled, settle, supplements: new Map(), supplementInputs: new Map() };
     this.turn = turn;
     input.onEvent({ type: 'accepted', executionRef: this.executionRef(executionId), inputItemId: executionId });
     const userItem: ExecutorItem = { id: `user:${executionId}`, kind: 'message', role: 'user', text: input.text, clientRequestId: executionId, executionId, status: 'completed' };
@@ -502,7 +512,7 @@ class QoderCnRuntime implements AgentRuntime {
       const stopped = turn.cancelRequested || stopReason === 'cancelled' || stopReason === 'refusal' || stopReason === 'max_tokens' || stopReason === 'max_turn_requests';
       this.finishText(turn, normal ? 'completed' : 'unknown');
       turn.status = stopped ? 'stopped' : normal ? 'idle' : 'unknown';
-      if(turn.supplementFailed) { turn.status='unknown';turn.diagnostic='Qoder CN 追加输入或排队执行结果未确认，不会自动重发。'; }
+      if(turn.supplementFailed) { if(!turn.stopConfirmed)turn.status='unknown';turn.diagnostic='Qoder CN 追加输入或排队执行结果未确认，不会自动重发。'; }
       if (stopReason === 'max_tokens' || stopReason === 'max_turn_requests') turn.diagnostic = 'Qoder CN 输出或工具轮次达到上限，本轮回复未完整完成。';
       else if (stopReason === 'refusal') turn.diagnostic = 'Qoder CN 拒绝了本轮请求。';
       else if (!normal && !stopped) turn.diagnostic = 'Qoder CN 未返回可确认的正常结束原因，本轮结果未知。';
@@ -586,19 +596,58 @@ class QoderCnRuntime implements AgentRuntime {
   }
 
   async stop(input: { contextRef: ContextRef; executionRef?: { id: string } }): Promise<ExecutorObservation> {
-    const turn = this.exactTurn(input.contextRef, input.executionRef); if (!turn || !turn.pending) return this.observation();
+    const turn = this.exactTurn(input.contextRef, input.executionRef);
+    if(!turn)return this.observation();
+    if(turn.stopping)return turn.stopping;
+    const stopping=this.stopTurn(turn).finally(()=>{if(turn.stopping===stopping)turn.stopping=undefined;});
+    turn.stopping=stopping;return stopping;
+  }
+  private async stopTurn(turn:TurnState):Promise<ExecutorObservation> {
+    if(turn.stopConfirmed)return this.observation();
+    const queued=turn.supplements.size>0;
     if (!turn.cancelRequested) {
       turn.cancelRequested = true;
-      if (this.sessionId === turn.contextId) this.client?.notify('session/cancel', { sessionId: turn.contextId });
-      for (const approval of turn.approvals.values()) {
-        approval.settle(approval.request.kind==='question'?{action:'cancel'}:{ outcome: { outcome: 'cancelled' } });
-        turn.onEvent({ type: 'request-resolved', requestId: approval.request.id });
+      // ACP has no atomic cancel-all for its prompt queue. Terminate this exact
+      // owned group before resolving decisions can release another queued prompt.
+      if (!queued && this.sessionId === turn.contextId) this.client?.notify('session/cancel', { sessionId: turn.contextId });
+      if(!queued){
+        for (const approval of turn.approvals.values()) {
+          approval.settle(approval.request.kind==='question'?{action:'cancel'}:{ outcome: { outcome: 'cancelled' } });
+          turn.onEvent({ type: 'request-resolved', requestId: approval.request.id });
+        }
+        turn.approvals.clear();
       }
-      turn.approvals.clear();
     }
-    // A sent cancellation is not a stop receipt. The prompt response owns termination.
-    await bounded(turn.settled, 5000).catch(() => {});
+    // A prompt response can precede a queued prompt or leave unresolved tools.
+    if(turn.pending&&!queued)await bounded(turn.settled, 5000).catch(() => {});
+    const client=this.client;
+    const ref=this.executionRef(turn.executionId);
+    if(client){
+      const ended=!turn.pending&&['idle','stopped'].includes(turn.status)&&[...turn.tools.values()].every(tool=>tool.status==='completed');
+      const released=!queued&&await client.released(ref,turn.contextId,this.bindingIdentity,ended);
+      if(released){turn.stopConfirmed=true;turn.status='stopped';}
+      else if(await client.stopExecution(ref,turn.contextId,this.bindingIdentity)){
+        // The owned group has exited; tool *results* without receipts remain unknown.
+        await client.close();
+        await bounded(turn.settled,1000).catch(()=>{});
+        turn.stopConfirmed=true;turn.status='stopped';
+        for(const tool of turn.tools.values())if(tool.status!=='completed')tool.status=turn.independentTools.has(tool.id)?'unknown':'completed';
+        for(const item of turn.items.values())if(item.kind==='tool'&&item.status==='running')this.item(turn,{...item,status:'unknown'});
+        turn.diagnostic='本轮所属执行资源已确认退出；缺少完成回执的操作结果仍未知，不会重发。';
+      }
+    }
+    if(turn.stopConfirmed){
+      this.finishText(turn,'unknown');
+      turn.onEvent({type:'observation',observation:this.observation()});
+    }
     return this.observation();
+  }
+  async canRelease(input:{contextRef:ContextRef;executionRef:{id:string}}):Promise<boolean|{executionState:'unknown'}> {
+    const turn=this.exactTurn(input.contextRef,input.executionRef);
+    if(!turn||turn.pending||!['idle','stopped'].includes(turn.status))return false;
+    const released=await this.client?.released(this.executionRef(turn.executionId),turn.contextId,this.bindingIdentity,true);
+    if(!released)return false;
+    return [...turn.tools.values()].every(tool=>tool.status==='completed')?true:{executionState:'unknown'};
   }
 
   async verifyUpgrade(): Promise<void> { await this.session(this.config); }

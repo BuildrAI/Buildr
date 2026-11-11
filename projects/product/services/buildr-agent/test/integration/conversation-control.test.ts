@@ -19,7 +19,8 @@ test('packaged control subprocess reads, observes and precisely stops without ex
   const identity={instanceId:randomUUID(),generation:randomUUID(),pid:process.pid,profileId:'control-test',dataRoot:root};
   const binding={dataRoot:root,profileId:identity.profileId,sourceId:'local',scope:'scope',conversationId:'conversation'};
   const run={id:'old',participantId:'participant',generation:identity.generation,status:'tools-active',tools:[{id:'tool',status:'running',canStop:true}]};
-  const observed={revision:'observed-revision',run:{id:'new'},retainedRuns:[run],requests:[{id:'question',runId:'old'}],entries:[{text:'private history not returned by the control command'}]};
+  const stopRequest={id:'aggregate-stop',runIds:[run.id],createdAt:'now'};
+  const observed={revision:'observed-revision',stopRequest,run:{id:'new'},retainedRuns:[run],requests:[{id:'question',runId:'old'}],entries:[{text:'private history not returned by the control command'}]};
   const channel=await listen(async(req,res)=>{
     authorize(req,token);
     if(req.url==='/identity'){json(res,200,identity);return;}
@@ -31,6 +32,7 @@ test('packaged control subprocess reads, observes and precisely stops without ex
       const control=input.args[2];
       assert.deepEqual(control,{expectedRevision:observed.revision,runId:run.id,participantId:run.participantId,generation:run.generation,toolId:'tool'});
     }
+    if(input.operation==='conversations.stopAll')assert.deepEqual(input.args[2],{expectedRevision:observed.revision,clientRequestId:stopRequest.id});
     json(res,200,observed);
   });
   try{
@@ -59,9 +61,14 @@ test('packaged control subprocess reads, observes and precisely stops without ex
     await assert.rejects(invoke('entry',JSON.stringify({entryId:'tool',revision:'invalid'})));
     await assert.rejects(invoke('history',JSON.stringify({sourceId:'../../secret'})));
     await assert.rejects(invoke('history',JSON.stringify({sourceId:'index-'+'a'.repeat(64)+'.json',view:'invalid'})));
+    const stopped=JSON.parse((await invoke('stop-all',JSON.stringify({expectedRevision:observed.revision,clientRequestId:stopRequest.id}))).stdout);
+    assert.deepEqual(stopped.stopRequest,stopRequest);assert.equal(stopped.entries,undefined);
+    assert.equal(calls.at(-1)?.operation,'conversations.stopAll');
+    await assert.rejects(invoke('stop-all','{}'));
+    assert.match(conversationControlInstruction(binding,process.execPath),/stop-all/);
     identity.instanceId=randomUUID();
     await assert.rejects(invoke('read'),/后台身份已变化/);
-    assert.equal(calls.length,10);
+    assert.equal(calls.length,11);
   }finally{await channel.close();fs.rmSync(root,{recursive:true,force:true});}
 });
 

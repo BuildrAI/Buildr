@@ -144,7 +144,7 @@ test('Qoder CN settles a tool cancelled while waiting for approval and accepts t
   });
 });
 
-test('Qoder CN keeps an approved running tool unknown when cancelled without a terminal update', { timeout: 15000 }, async () => {
+test('Qoder CN confirms owned control exit but preserves an approved tool outcome without a terminal update', { timeout: 15000 }, async () => {
   await withRuntime(async ({ runtime, config, workspace, contextRef }) => {
     await writeFile(join(config, 'scenario'), 'stop-running-tool');
     const events: ExecutorEvent[] = [];
@@ -156,11 +156,15 @@ test('Qoder CN keeps an approved running tool unknown when cancelled without a t
     await runtime.reply({ contextRef, executionRef: { id: 'running-stop' }, requestId: request.request.id, answer: 'allow-once' });
     const stopped = await runtime.stop({ contextRef, executionRef: { id: 'running-stop' } });
     await sending.catch(() => {});
-    assert.notEqual(stopped.status, 'stopped');
+    assert.equal(stopped.status, 'stopped');
     const observed = await runtime.observe({ contextRef });
-    assert.equal(observed.status, 'unknown', 'a genuinely running tool may still be live after cancellation');
-    assert.ok(observed.tools.some(tool => tool.status !== 'completed'));
-    await assert.rejects(runtime.send({ contextRef, cwd: workspace, text: '不得重发', images: [], clientRequestId: 'retry', onEvent() {} }), /unsettled/);
+    assert.equal(observed.status, 'stopped', 'owned group exit settles control, not operation success');
+    assert.equal(runtime.closed, true);
+    assert.equal(await runtime.canRelease!({contextRef,executionRef:{id:'running-stop'}}), true);
+    const tool = latestItems(events).find(item => item.kind === 'tool');
+    assert.equal(tool?.status, 'unknown', 'an approved operation without a receipt must not be reported as successful or never executed');
+    assert.doesNotMatch(tool?.text ?? '', /工具未执行/);
+    assert.equal((await records(join(config, 'fixture-prompts.jsonl'))).length, 1, 'stopping never resends the input');
   });
 });
 
@@ -415,7 +419,7 @@ test('Qoder CN awaits the native cancellation receipt and does not infer a stop 
   });
 });
 
-test('Qoder CN leaves an ignored cancellation live and sends it only once', { timeout: 20000 }, async () => {
+test('Qoder CN escalates an ignored cancellation to verified owned termination and coalesces duplicate stops', { timeout: 20000 }, async () => {
   await withRuntime(async ({ runtime, config, workspace, contextRef }) => {
     await writeFile(join(config, 'scenario'), 'cancel-ignored');
     const events: ExecutorEvent[] = [];
@@ -423,9 +427,15 @@ test('Qoder CN leaves an ignored cancellation live and sends it only once', { ti
     sending.catch(() => {});
     await eventually(() => events.some(event => event.type === 'request'));
     const [one, two] = await Promise.all([runtime.stop({ contextRef, executionRef: { id: 'ignored' } }), runtime.stop({ contextRef, executionRef: { id: 'ignored' } })]);
-    assert.notEqual(one.status, 'stopped'); assert.notEqual(two.status, 'stopped');
+    assert.equal(one.status, 'stopped'); assert.equal(two.status, 'stopped');
+    assert.equal(one.tools.every(tool=>tool.status==='completed'),true);
+    assert.match(one.diagnostic??'',/资源已确认退出/);
+    assert.equal(runtime.closed,true);
     assert.equal((await records(join(config, 'fixture-cancels.jsonl'))).length, 1);
-    await assert.rejects(runtime.send({ contextRef, cwd: workspace, text: '不得重发', images: [], clientRequestId: 'retry', onEvent() {} }), /unsettled/);
+    assert.equal(await runtime.canRelease!({contextRef,executionRef:{id:'ignored'}}),true);
+    const tools=(await runtime.readHistory({contextRef,cwd:workspace})).filter(item=>item.kind==='tool');
+    assert.ok(tools.length>0);assert.ok(tools.every(item=>item.status==='unknown'));
+    assert.ok(events.some(event=>event.type==='item'&&event.item.kind==='tool'&&event.item.status==='unknown'));
     await runtime.close();
     await assert.rejects(sending);
   });
@@ -468,4 +478,66 @@ test('Qoder CN reports a missing native session as a recoverable context failure
       return true;
     });
   } finally { await second.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test('Qoder CN stop clears native queued prompts before they start and preserves receipt unknowns', {timeout:15000}, async()=>{
+ await withRuntime(async({runtime,config,workspace,contextRef})=>{
+  await writeFile(join(config,'scenario'),'queue');
+  const events:ExecutorEvent[]=[];
+  const sending=runtime.send({contextRef,cwd:workspace,text:'first',images:[],clientRequestId:'queue-stop',onEvent:event=>events.push(event)});sending.catch(()=>{});
+  await eventually(()=>events.some(event=>event.type==='request'));
+  const supplement=runtime.supplement!({contextRef,cwd:workspace,executionRef:{id:'queue-stop'},clientRequestId:'queued-stop-input',text:'must not start',images:[]});supplement.catch(()=>{});
+  await eventually(()=>existsSync(join(config,'fixture-queued.jsonl')));
+  const observed=await runtime.stop({contextRef,executionRef:{id:'queue-stop'}});
+  await assert.rejects(readFile(join(config,'fixture-permission-responses.jsonl'),'utf8'),{code:'ENOENT'},'queued stop must not unblock the first prompt before its owned group exits');
+  assert.equal(observed.status,'stopped');assert.equal(observed.tools.every(tool=>tool.status==='completed'),true);
+  assert.equal((await records(join(config,'fixture-prompts.jsonl'))).length,1,'queued work never enters execution');
+  await assert.rejects(supplement);await assert.rejects(sending);
+  assert.equal(await runtime.canRelease!({contextRef,executionRef:{id:'queue-stop'}}),true);
+  assert.match(observed.diagnostic??'',/操作结果仍未知/);
+ });
+});
+
+test('Qoder CN can stop a settled unknown supplement without resending its input', {timeout:15000},async()=>{
+ await withRuntime(async({runtime,config,workspace,contextRef})=>{
+  await writeFile(join(config,'scenario'),'queue-missing-receipt');
+  const events:ExecutorEvent[]=[];
+  const sending=runtime.send({contextRef,cwd:workspace,text:'first',images:[],clientRequestId:'settled-stop',onEvent:event=>events.push(event)});sending.catch(()=>{});
+  await eventually(()=>events.some(event=>event.type==='request'));
+  const supplement=runtime.supplement!({contextRef,cwd:workspace,executionRef:{id:'settled-stop'},clientRequestId:'missing-receipt',text:'queued',images:[]});supplement.catch(()=>{});
+  await eventually(()=>existsSync(join(config,'fixture-queued.jsonl')));
+  const approval=events.find(event=>event.type==='request')!;
+  if(approval.type!=='request')throw new Error('missing approval');
+  await runtime.reply({contextRef,executionRef:{id:'settled-stop'},requestId:approval.request.id,answer:'allow-once'});
+  await sending;await assert.rejects(supplement);
+  assert.equal((await runtime.observe({contextRef})).status,'unknown');
+  const before=(await records(join(config,'fixture-prompts.jsonl'))).length;
+  const stopped=await runtime.stop({contextRef,executionRef:{id:'settled-stop'}});
+  assert.equal(stopped.status,'stopped');assert.equal((await records(join(config,'fixture-prompts.jsonl'))).length,before);
+ });
+});
+
+test('Qoder CN control exit does not claim that an independent execute tool finished', {timeout:15000},async()=>{
+ await withRuntime(async({runtime,config,workspace,contextRef})=>{
+  await writeFile(join(config,'scenario'),'cancel-ignored-execute');const events:ExecutorEvent[]=[];
+  const sending=runtime.send({contextRef,cwd:workspace,text:'independent tool',images:[],clientRequestId:'independent-stop',onEvent:event=>events.push(event)});sending.catch(()=>{});
+  await eventually(()=>events.some(event=>event.type==='request'));
+  const observed=await runtime.stop({contextRef,executionRef:{id:'independent-stop'}});
+  assert.equal(observed.status,'stopped');assert.equal(observed.tools[0].status,'unknown');
+  assert.ok((await runtime.readHistory({contextRef,cwd:workspace})).filter(item=>item.kind==='tool').every(item=>item.status==='unknown'));
+  assert.deepEqual(await runtime.canRelease!({contextRef,executionRef:{id:'independent-stop'}}),{executionState:'unknown'});
+  await assert.rejects(sending);
+ });
+});
+
+test('Qoder CN forced stop verifies that the owned native group and its child have exited', {timeout:15000},async()=>{
+ await withRuntime(async({runtime,config,workspace,contextRef})=>{
+  await writeFile(join(config,'scenario'),'cancel-ignored-child');const events:ExecutorEvent[]=[];
+  const sending=runtime.send({contextRef,cwd:workspace,text:'owned child',images:[],clientRequestId:'child-stop',onEvent:event=>events.push(event)});sending.catch(()=>{});
+  await eventually(()=>events.some(event=>event.type==='request')&&existsSync(join(config,'fixture-owned-child.jsonl')));
+  const pid=(await records(join(config,'fixture-owned-child.jsonl')))[0].pid as number;
+  const live=()=>{try{process.kill(pid,0);return true;}catch{return false;}};assert.equal(live(),true);
+  const observed=await runtime.stop({contextRef,executionRef:{id:'child-stop'}});assert.equal(observed.status,'stopped');
+  await eventually(()=>!live());assert.equal(await runtime.canRelease!({contextRef,executionRef:{id:'child-stop'}}),true);await assert.rejects(sending);
+ });
 });

@@ -226,6 +226,7 @@ export function createAgentService(options: AgentServiceOptions) {
       releaseQuestionWait: (workspaceId:string,id:string,input:Parameters<ConversationApplication['releaseQuestionWait']>[2]) => conversations.releaseQuestionWait(workspaceId,id,input),
       observeRun: (workspaceId:string,id:string,input:Parameters<ConversationApplication['observeRun']>[2]) => conversations.observeRun(workspaceId,id,input),
       observe: (workspaceId: string, id: string) => conversations.observe(workspaceId, id),
+      stopAll: (workspaceId:string,id:string,input:Parameters<ConversationApplication['stopAll']>[2]) => conversations.stopAll(workspaceId,id,input),
       stop: (workspaceId: string, id: string, input: Parameters<ConversationApplication['stop']>[2]) => conversations.stop(workspaceId, id, input),
       reply: (workspaceId: string, id: string, requestId: string, input: Parameters<ConversationApplication['reply']>[3]) => conversations.reply(workspaceId, id, requestId, input),
       addAttachment: (workspaceId: string, id: string, input: Parameters<ConversationApplication['addAttachment']>[2]) => conversations.addAttachment(workspaceId, id, input),

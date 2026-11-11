@@ -47,6 +47,8 @@ import { ConversationDrafts } from './conversation-drafts.ts';
 import { ConversationForks } from './conversation-forks.ts';
 import type { ConversationForkInput } from '../contracts.ts';
 import { ConversationChildren, type CreateChildInput } from './conversation-children.ts';
+import { ConversationStops } from './conversation-stops.ts';
+import type { ConversationStopInput } from '../contracts.ts';
 
 type PreparedSource = { runtime: AgentRuntime; model: string; leaseIdentity?: string };
 const TITLE_TIMEOUT_MS = 45_000;
@@ -73,9 +75,11 @@ const bounded = (value: number | undefined, fallback: number, max: number) => Ma
 
 export class ConversationApplication {
   readonly drafts: ConversationDrafts;
+  private readonly stops: ConversationStops;
   activity(): Array<{kind:string;count:number}> {
     return [
       {kind:'execution',count:this.workers.size},
+      {kind:'stop',count:this.stops.active},
       {kind:'input',count:this.supplements.size},
       {kind:'title',count:this.titleWork.size + this.earlyTitles.size},
       {kind:'recovery',count:this.recoveries.size},
@@ -174,6 +178,13 @@ export class ConversationApplication {
   constructor(options: ConversationApplication['options']) {
     this.options = options;
     this.diagnostics=executionLog(options.root,options.generation);
+    this.stops=new ConversationStops({
+      load:(scope,id)=>this.load(scope,id),save:record=>this.save(record),
+      read:(scope,id)=>this.read(scope,id,{compactTools:true}),pending:this.pendingSends,now:options.now,activeRun:runId=>this.workers.has(runId),
+      invoke:(scope,id,input,action)=>options.controlSupersededRun
+        ?options.controlSupersededRun(scope,id,input,action)
+        :action==='stop'?this.stop(scope,id,input):this.observeRun(scope,id,input),
+    });
     this.idleTimer=setInterval(()=>{void this.collectIdle().catch(()=>{});},60_000);this.idleTimer.unref();
     this.media = new ConversationAttachments({ root: options.root, now: options.now, save: record => this.save(record) });
     this.forks = new ConversationForks({
@@ -884,7 +895,9 @@ export class ConversationApplication {
   }
   private submit(record: StoredConversation, raw: SendDraft & { previewToken?: string; clientRequestId: string }, systemRecovery = false, initial = false, answerMaterials: string[] = []): { run: RunView; conversation: ConversationView } {
     const { workspaceId, id } = record.view;
+    if(systemRecovery&&record.view.run&&this.conversationStopRequested(record,record.view.run.id))fail('agent_continue_cancelled','原执行已经请求停止，不会自动续行。',409);
     const clientRequestId = nonempty(raw.clientRequestId, '请求身份', 200);
+    if(record.stops?.some(stop=>stop.pendingSendId===clientRequestId))fail('agent_pending_cancelled','此输入已随对话停止取消，不会自动发送。',409);
     const inputDigest = hash({ ...this.draft(raw), expectedRevision: undefined });
     const repeated = record.attempts.find(attempt => attempt.clientRequestId === clientRequestId);
     if (repeated) {
@@ -1084,7 +1097,7 @@ export class ConversationApplication {
       attempt.accepted = true; attempt.executionRef = event.executionRef; attempt.nativeInputItemId = event.inputItemId;
       for(const receipt of record.view.entries.filter(e=>e.kind==='handoff'&&e.runId===runId))receipt.status='accepted';
       run.accepted = true;
-      run.status = run.status === 'stopping' || record.interruption?.runId === runId && record.interruption.cancelled ? 'stopping' : 'running';
+      run.status = this.conversationStopRequested(record,runId) || run.status === 'stopping' || record.interruption?.runId === runId && record.interruption.cancelled ? 'stopping' : 'running';
       participant.deliveredThrough = Math.max(participant.deliveredThrough, attempt.through);
       const entry = record.view.entries.find(value => value.id === attempt.userEntryId)!; entry.status = 'accepted';
       if (event.inputItemId) record.sources[`${participant.id}:message:${event.inputItemId}`] = entry.id;
@@ -1281,7 +1294,7 @@ export class ConversationApplication {
       const participant = record.participants.find(value => value.id === record!.view.run!.participantId)!;
       if (participant.bindingIdentity && participant.bindingIdentity !== runtime.bindingIdentity) fail('agent_binding_changed', '此参与者的原连接身份不匹配，不能恢复到其他配置。', 409);
       participant.bindingIdentity = runtime.bindingIdentity;
-      if (record.view.run!.status === 'stopping') { record.view.run!.status = 'stopped'; this.save(record); return; }
+      if (this.conversationStopRequested(record,runId) || record.view.run!.status === 'stopping') { record.view.run!.status = 'stopped'; this.save(record); return; }
       let replacedContext: ContextRef | undefined;
       if (participant.contextRef) {
         try {
@@ -1513,7 +1526,7 @@ export class ConversationApplication {
         controller.signal.addEventListener('abort', finish, { once: true });
       });
       record = this.currentRun(workspaceId, id, runId);
-      if (controller.signal.aborted || this.closing || !record || record.view.run?.status !== 'starting') return;
+      if (controller.signal.aborted || this.closing || !record || this.conversationStopRequested(record,runId) || record.interruption?.cancelled || record.view.run?.status !== 'starting') return;
       this.retryWaits.delete(runId);
       record.view.run.status = 'failed'; record.view.run.diagnostic = diagnostic; this.save(record);
       const latestAccount=record.view.run.modelAccountId?this.options.modelAccess?.accounts.snapshot(record.view.run.modelAccountId):undefined;
@@ -1702,6 +1715,7 @@ export class ConversationApplication {
         });
         const record=this.load(candidate.view.workspaceId,candidate.view.id);
         this.scheduleQuestionWaitReleases(record);
+        for(const stop of record.stops??[])void this.stops.resume(record.view.workspaceId,record.view.id,stop.id).catch(()=>{});
         if(conversationRuns(record.view).some(run=>run.supersededBy))void this.cleanupSuperseded(record.view.workspaceId,record.view.id).catch(()=>{});
       } catch { /* A local conflict must not prevent recovery of unrelated work. */ }
     }
@@ -1761,7 +1775,7 @@ export class ConversationApplication {
       run.interrupted=true;run.diagnostic='服务重启导致执行中断，正在核对原执行。';this.save(record);
     }
     const originalId=run.id,marker=record.interruption;
-    if(marker.runId!==originalId||marker.cancelled||run.status==='completed'||run.status==='failed'&&marker.reason!=='execution-fault')return;
+    if(marker.runId!==originalId||marker.cancelled||this.conversationStopRequested(record,run.id)||run.status==='completed'||run.status==='failed'&&marker.reason!=='execution-fault')return;
     const requestId='host-recovery:'+originalId;
     if(record.attempts.some(attempt=>attempt.clientRequestId===requestId))return;
     const unavailable=(reason:string)=>{
@@ -2008,6 +2022,14 @@ export class ConversationApplication {
     });
     return this.read(workspaceId,id,{compactTools:true});
   }
+  private conversationStopRequested(record:StoredConversation,runId:string):boolean { return record.stops?.some(stop=>stop.targets.some(target=>target.runId===runId))===true; }
+  async stopAll(workspaceId:string,id:string,input:ConversationStopInput):Promise<ConversationView> {
+    const view=await this.stops.stop(workspaceId,id,input);
+    // Queue cancellation commits independently of the conversation row; publish
+    // the post-commit projection even when no native execution needed stopping.
+    this.options.events.publish({type:'conversation',workspaceId,conversationId:id,revision:view.revision,payload:{conversation:view}});
+    return view;
+  }
   async stop(workspaceId: string, id: string, input: { expectedRevision: string; runId: string; participantId: string; generation: string; toolId?: string }): Promise<ConversationView> {
     const facts={workspaceId,conversationId:id,runId:input.runId,participantId:input.participantId,ownerGeneration:input.generation};
     this.diagnostics({...facts,event:'stop-request',reason:input.toolId?'individual-tool':'whole-run'});
@@ -2028,11 +2050,11 @@ export class ConversationApplication {
    * the native end cannot be proven, while durably recording the stop intent
    * and returning the latest conversation for the client to render.
    */
-  private finalizeUnconfirmedStop(workspaceId:string,id:string,input:{runId:string;participantId:string}):ConversationView|undefined{
+  private finalizeUnconfirmedStop(workspaceId:string,id:string,input:{runId:string;participantId:string;generation:string}):ConversationView|undefined{
     let found=false;
     this.retryRecordUpdate(()=>{
       const record=this.load(workspaceId,id);
-      const run=conversationRuns(record.view).find(value=>value.id===input.runId&&value.participantId===input.participantId);
+      const run=conversationRuns(record.view).find(value=>value.id===input.runId&&value.participantId===input.participantId&&value.generation===input.generation);
       if(!run)return;
       found=true;
       run.stopRequested=true;run.canContinue=false;
@@ -2277,6 +2299,7 @@ export class ConversationApplication {
   }
   async reply(workspaceId: string, id: string, requestId: string, input: { expectedRevision: string; runId: string; participantId: string; generation: string; answer: unknown }): Promise<ConversationView> {
     const control = this.control(workspaceId, id, input);
+    if(this.conversationStopRequested(control.record,input.runId))fail('agent_request_stale','本轮已请求停止，不能向已取消的执行提交回答或授权。',409);
     const request = control.record.view.requests.find(value => value.id === requestId);
     const binding = control.record.requests[requestId];
     if (!request || !binding || request.runId !== control.run.id || request.participantId !== control.participant.id || binding.executionRef.id !== control.executionRef?.id || !control.participant.contextRef || request.generation !== this.options.generation) fail('agent_request_stale', '此问题或授权已失效，请重新观察。', 409);

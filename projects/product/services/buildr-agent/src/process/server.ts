@@ -235,13 +235,14 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       }
       if(name==='conversations.reply') {
         const view=repository.readState(input.args[1])?.view;
+        if(view?.stopRequest?.runIds.includes(input.args[3]?.runId))throw new AgentServiceError('agent_request_stale','本轮已经请求停止，不能向已取消执行提交回答或授权。',409);
         if(view?.retainedRuns?.some(run=>run.id===input.args[3]?.runId&&run.supersededBy))throw new AgentServiceError('agent_request_stale','原问题等待已结束，不能向旧执行提交回答。',409);
       }
       let target: ProcessRecord | undefined;
       let controlGeneration:string|undefined;
       const perConversation = name.startsWith('conversations.') && !/Draft/.test(name) && typeof input.args[0] === 'string' && typeof input.args[1] === 'string';
       // Metadata belongs to the current application schema, not the retained native run owner.
-      if (perConversation && !['conversations.replayWebhook','conversations.participation','conversations.update','conversations.read','conversations.readEntry','conversations.readHistory','conversations.fork','conversations.createChild','conversations.listChildren','conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.queueSend','conversations.cancelPendingSend'].includes(name)) {
+      if (perConversation && !['conversations.replayWebhook','conversations.participation','conversations.update','conversations.stopAll','conversations.read','conversations.readEntry','conversations.readHistory','conversations.fork','conversations.createChild','conversations.listChildren','conversations.send','conversations.prepareSend','conversations.prepareHandoff','conversations.queueSend','conversations.cancelPendingSend'].includes(name)) {
         const control = ['conversations.stop','conversations.observeRun','conversations.releaseQuestionWait','conversations.supplement'].includes(name) ? input.args[2] : name === 'conversations.reply' ? input.args[3] : undefined;
         controlGeneration=control?.generation;
         target = await recipient(input.args[0], input.args[1], controlGeneration);

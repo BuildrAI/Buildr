@@ -60,7 +60,7 @@ export async function runChildConversationScenarios(fixture:AgentConversationFix
       update(row,{run,entries,requests:pending,participants:[{id:participantId,provider:'codex',connectionId:body.connectionId,label:'Codex',model:body.model??'fixture-model',deliveredThrough:entries.at(-1).sequence,contextId:'context-'+id}]});
       return route.fulfill({status:202,json:{conversation:row}});
     }
-    if(action==='stop'){childStops++;update(row,{run:{...row.run,status:'stopped'},requests:[]});return route.fulfill({json:row});}
+    if(action==='stop'||action==='stop-all'){childStops++;update(row,{run:{...row.run,status:'stopped'},requests:[]});return route.fulfill({json:row});}
     if(action==='requests/child-question/reply'){childReplies++;assert.equal(request.postDataJSON().answer.scope,'yes');update(row,{run:{...row.run,status:'completed'},requests:[]});return route.fulfill({json:row});}
     if(action==='seen')return route.fulfill({json:{activity:{version:0,seenThrough:0,active:false,updatedAt:row.updatedAt}}});
     if(action==='observe')return route.fulfill({json:row});
@@ -133,9 +133,9 @@ export async function runChildConversationScenarios(fixture:AgentConversationFix
       await window().getByRole('button',{name:'回答并继续',exact:true}).click();await window().getByText('子对话范围确认',{exact:true}).waitFor({state:'hidden'});assert.equal(childReplies,1);
       await page.locator('[data-child-entry="'+secondId+'"]').click();assert.equal(await window().getByRole('textbox',{name:'子对话输入',exact:true}).inputValue(),'第二条子对话草稿');
       await window().getByRole('textbox',{name:'子对话输入',exact:true}).fill('持续工作');await window().getByRole('button',{name:'发送对话',exact:true}).click();
-      await window().getByRole('button',{name:'停止本次执行',exact:true}).waitFor();await window().getByRole('button',{name:'收起子对话',exact:true}).click();
+      await window().getByRole('button',{name:'停止对话',exact:true}).waitFor();await window().getByRole('button',{name:'收起子对话',exact:true}).click();
       await childStatus(secondId,'正在处理').waitFor();assert.equal(childStops,0);
-      await page.locator('[data-child-entry="'+secondId+'"]').click();await window().getByRole('button',{name:'停止本次执行',exact:true}).click();
+      await page.locator('[data-child-entry="'+secondId+'"]').click();await window().getByRole('button',{name:'停止对话',exact:true}).click();
       await childStatus(secondId,'已停止').waitFor();assert.equal(childStops,1);assert.equal(fixture.stops,0);assert.equal(fixture.conversation.run.status,'running');
       await page.reload();await input().waitFor();await page.locator('[data-child-entry="'+firstId+'"]').waitFor();await page.locator('[data-child-entry="'+secondId+'"]').waitFor();
       assert.equal(await input().inputValue(),'主对话未发送的文字');assert.equal(await window().count(),0);

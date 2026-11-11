@@ -15,6 +15,7 @@ export const PROGRAMMATIC_OPERATIONS: PublicOperation[] = [
   { id: 'prepare-send', method: 'POST', path: '/:conversationId/prepare-send', scope: 'execute', input: 'draft', output: 'preview', summary: '按已观察修订准备发送' },
   { id: 'send', method: 'POST', path: '/:conversationId/send', scope: 'execute', input: 'send', output: 'sent', summary: '发送后续消息；clientRequestId必须跨重试保留' },
   { id: 'supplement', method: 'POST', path: '/:conversationId/supplement', scope: 'execute', input: 'supplement', output: 'supplemented', summary: '向准确原执行补充输入' },
+  { id:'stop-all',method:'POST',path:'/:conversationId/stop-all',scope:'execute',input:'stopAll',output:'conversation',summary:'停止准确对话受理时的全部在途执行与排队输入' },
   { id: 'stop', method: 'POST', path: '/:conversationId/stop', scope: 'execute', input: 'stop', output: 'conversation', summary: '按修订和完整执行身份停止原工作' },
   { id: 'reply', method: 'POST', path: '/:conversationId/requests/:requestId/reply', scope: 'answer', input: 'reply', output: 'conversation', summary: '回答问题需answer；审批需approve，不互相替代' },
 ];

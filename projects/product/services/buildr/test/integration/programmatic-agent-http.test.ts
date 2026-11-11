@@ -261,3 +261,17 @@ test('unsafe token directory cannot create or change a credential and is not ove
  assert.equal((await f.call('',token)).status,200);
  fs.unlinkSync(dir);fs.renameSync(saved,dir);
 });
+
+test('public conversation-wide stop uses a stable request identity and does not require a live current run',async t=>{
+ const f=await fixture(t),{token}=await f.create(),endpoint='/workspaces/'+f.workspaceId+'/conversations',draft=randomUUID();
+ const state=await(await f.call(endpoint+'/drafts/'+draft,token)).json();
+ const first=await f.call(endpoint+'/drafts/'+draft+'/send',token,{connectionId:'fixture',text:'stop this work',clientRequestId:randomUUID(),expectedDraftRevision:state.revision});
+ assert.equal(first.status,202);const sent=await first.json(),path=endpoint+'/'+sent.conversation.id;
+ for(let n=0;n<100&&!f.counts().sends;n++)await new Promise(resolve=>setTimeout(resolve,2));
+ const current=await(await f.call(path,token)).json(),stopId=randomUUID();
+ const {token:readToken}=await f.create(['read']);assert.equal((await f.call(path+'/stop-all',readToken,{expectedRevision:current.revision,clientRequestId:stopId})).status,403);
+ assert.equal((await f.call(path+'/stop-all',token,{expectedRevision:'stale',clientRequestId:stopId})).status,409);
+ const result=await f.call(path+'/stop-all',token,{expectedRevision:current.revision,clientRequestId:stopId});assert.equal(result.status,200,await result.clone().text());
+ const stopped=await result.json();assert.equal(stopped.stopRequest.id,stopId);assert.equal(stopped.run.status,'stopped');assert.deepEqual(stopped.stopRequest.runIds,[current.run.id]);
+ const replay=await f.call(path+'/stop-all',token,{expectedRevision:'stale',clientRequestId:stopId});assert.equal(replay.status,200);assert.equal(f.counts().stops,1);assert.equal(f.counts().sends,1);
+});

@@ -379,7 +379,8 @@ function fake(id = 'local', options: { hold?: boolean; disconnect?: 'stopped'|'r
 function fixture(executors: AgentExecutor[], settings: { taskIds?: string[]; modelProviders?: AgentServiceOptions['modelProviders']; autoContinueInterrupted?: boolean; shutdownTimeoutMs?: number; now?: () => Date; controlSupersededRun?: AgentServiceOptions['controlSupersededRun'] } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-agent-core-'));
   const workspace = path.join(root, 'workspace'); fs.mkdirSync(workspace);
-  const options = { ...settings, dataRoot: path.join(root, 'profile'), executors, resolveWorkspace(id: string) { assert.equal(id, 'workspace-one'); return { rootPath: workspace }; }, assertTask(_id: string, taskId: string) { assert.ok((settings.taskIds ?? ['task-one']).includes(taskId), '任务不存在'); } };
+  const cnProviders:AgentServiceOptions['modelProviders']=[{id:'native-qoder-cn',label:'Fixture CN',linked:true,async open(){return{protocol:'chat-completions',async inspect(){return{status:'ready',models:[{id:'test-model',label:'Test',images:false,tools:true}]};},async beginLogin(){},async cancelLogin(){},async infer(){throw Error('unused');},async close(){}};}}];
+  const options = { ...settings, ...(executors.some(executor=>executor.descriptor.id==='qoder-cn')&&!settings.modelProviders?{modelProviders:cnProviders}:{}), dataRoot: path.join(root, 'profile'), executors, resolveWorkspace(id: string) { assert.equal(id, 'workspace-one'); return { rootPath: workspace }; }, assertTask(_id: string, taskId: string) { assert.ok((settings.taskIds ?? ['task-one']).includes(taskId), '任务不存在'); } };
   const service = createAgentService(options);
   return { root, workspace, options, service, async close() { await service.close(); fs.rmSync(root, { recursive: true, force: true }); } };
 }
@@ -417,7 +418,7 @@ test('a lost native context is replaced visibly instead of failing later message
     assert.match(receipt.text, /原生会话已无法恢复/);
   } finally { await f.close(); }
 });
-async function connected(service: ReturnType<typeof createAgentService>, id: string) { return service.connections.connect(id, { expectedRevision: service.connections.read(id).revision }); }
+async function connected(service: ReturnType<typeof createAgentService>, id: string) { const view=await service.connections.connect(id, { expectedRevision: service.connections.read(id).revision });if(id==='qoder-cn'){await service.models.accounts.list({refresh:true});const checked=await service.models.accounts.check('native-qoder-cn');await service.models.accounts.preferences('native-qoder-cn',{expectedRevision:checked.revision,models:[{id:'test-model',enabled:true}]});}return view; }
 async function waitUntil<T>(read: () => T, predicate: (value: T) => boolean): Promise<T> {
   for (let i = 0; i < 500; i++) { const value = read(); if (predicate(value)) return value; await new Promise(resolve => setTimeout(resolve, 2)); }
   assert.fail('observable state did not settle: ' + JSON.stringify(read()).slice(-1800));
@@ -3684,5 +3685,52 @@ for(const status of ['completed','failed','stopped'] as const)test('compaction i
   input.onEvent({type:'observation',observation:{...observation,status:status==='stopped'?'stopped':'idle',contextCompaction:null}});
   input.onEvent({type:'observation',observation});
   assert.equal(f.service.conversations.read('workspace-one',chat.id).run!.contextCompaction,undefined);
+ }finally{await f.close();}
+});
+
+for(const provider of ['codex','dsh','qoder','qoder-cn'])test(`${provider} conversation-wide stop ends retained work when the latest round already ended, without stopping another conversation`,async()=>{
+  const native=fake(provider,{hold:true}),f=fixture([native.executor]);
+  try{
+    await connected(f.service,provider);
+    const chat=await f.service.conversations.create('workspace-one',{}),brother=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,provider,'old retained work');send(f.service,brother.id,provider,'independent work');
+    const running=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.accepted===true);
+    await waitUntil(()=>f.service.conversations.read('workspace-one',brother.id),view=>view.run?.accepted===true);
+    const repository=new ConversationRepository(path.join(f.options.dataRoot,'agent-service'));
+    const record=repository.readConversation(chat.id)!,prior=record.view.revision,old=record.view.run!;
+    record.view.retainedRuns=[old];record.view.run={...old,id:randomUUID(),status:'stopped',accepted:false,tools:[]};record.view.revision=randomUUID();repository.saveConversation(record,prior);
+    const current=f.service.conversations.read('workspace-one',chat.id);
+    const stopId=randomUUID();const stopped=await f.service.conversations.stopAll('workspace-one',chat.id,{expectedRevision:current.revision,clientRequestId:stopId});
+    assert.equal(stopped.retainedRuns?.find(run=>run.id===running.run!.id)?.status,'stopped');
+    assert.deepEqual(stopped.stopRequest?.runIds,[old.id]);assert.equal(stopped.stopRequest?.id,stopId);
+    assert.equal(f.service.conversations.read('workspace-one',brother.id).run?.status,'running');
+    const replay=await f.service.conversations.stopAll('workspace-one',chat.id,{expectedRevision:'stale',clientRequestId:stopId});assert.equal(replay.stopRequest?.id,stopId);
+    const live=f.service.conversations.read('workspace-one',brother.id);await f.service.conversations.stopAll('workspace-one',brother.id,{expectedRevision:live.revision,clientRequestId:randomUUID()});
+  }finally{for(const context of native.contexts.values()){context.observation={status:'stopped',tools:[]};context.unblock?.();}await f.close();}
+});
+
+test('conversation stop prevents late answers when the original native cancellation is unconfirmed',async()=>{
+ const native=fake('local',{question:true}),f=fixture([native.executor],{controlSupersededRun:async()=>{throw new Error('original owner unavailable');}});
+ try{
+  await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});send(f.service,chat.id,'local','question');
+  const waiting=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.requests.length>0);
+  const stopped=await f.service.conversations.stopAll('workspace-one',chat.id,{expectedRevision:waiting.revision,clientRequestId:randomUUID()});
+  const request=waiting.requests[0],run=waiting.run!;
+  await assert.rejects(f.service.conversations.reply('workspace-one',chat.id,request.id,{expectedRevision:stopped.revision,runId:run.id,participantId:run.participantId,generation:run.generation,answer:'yes'}),{code:'agent_request_stale'});
+  assert.equal(native.replies.length,0);
+ }finally{for(const context of native.contexts.values()){context.observation={status:'stopped',tools:[]};context.unblock?.();}await f.close();}
+});
+
+test('queue-only conversation stop publishes its committed cancellation and preserves the submitted draft',async()=>{
+ const native=fake('local'),f=fixture([native.executor]);
+ try{
+  await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});
+  const queued=f.service.conversations.queueSend('workspace-one',chat.id,{expectedRevision:chat.revision,connectionId:'local',text:'keep cancelled input',clientRequestId:randomUUID()});
+  const subscription=f.service.conversations.subscribe('workspace-one',chat.id),iterator=subscription.events[Symbol.asyncIterator]();await iterator.next();
+  try{
+   const stopped=await f.service.conversations.stopAll('workspace-one',chat.id,{expectedRevision:queued.revision,clientRequestId:randomUUID()});
+   assert.equal(stopped.pendingSend,undefined);assert.equal(stopped.stopRequest?.cancelledSend?.draft.text,'keep cancelled input');
+   const event=await iterator.next();assert.equal(event.value.payload.conversation.pendingSend,undefined);assert.equal(native.sends.length,0);
+  }finally{subscription.close();}
  }finally{await f.close();}
 });

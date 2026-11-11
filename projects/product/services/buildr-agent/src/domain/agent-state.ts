@@ -85,6 +85,11 @@ export interface StoredParticipant {
   deliveredThrough: number;
 }
 export interface StoredConversation {
+  stops?: Array<{
+    id: string;
+    targets: Array<{runId:string;participantId:string;generation:string;requested?:boolean}>;
+    pendingSendId?: string;
+  }>;
   /** Buildr tool entry IDs whose execution body belongs to the native executor. */
   nativeTools?: Record<string, true | {parentToolId:string}>;
   participationTools?: Record<string,import('../participation-contracts.ts').ParticipationObservation & {entryRevision?:string}>;

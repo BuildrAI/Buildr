@@ -42,7 +42,7 @@ await step('视频选择、粘贴与拖入均保留原件和画面，发送及�
       await panel().locator('.ac-message-images video').waitFor();await page.reload();await panel().locator('.ac-message-images video').waitFor();
       await page.waitForFunction(()=>{const video=document.querySelector<HTMLVideoElement>('.ac-message-images video');return Boolean(video&&video.readyState>=2&&video.videoWidth===160);});
       await capture(page,'agent-conversation-video.png');
-      await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
+      await panel().getByRole('button',{name:'停止对话',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
     });
   await step('对话 Markdown 图片按可访问路径显示，缺失图片给出说明',async()=>{
     const imagePath=path.join(workspaceRoot,'conversation-markdown.png');

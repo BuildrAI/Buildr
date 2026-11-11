@@ -420,7 +420,16 @@ export interface PendingRequestView extends ExecutorRequest {
   generation: string;
 }
 export interface ConversationTaskLink {workspaceId:string;taskId:string}
+export interface ConversationStopInput { expectedRevision: string; clientRequestId: string }
+export interface ConversationStopView {
+  id: string;
+  runIds: string[];
+  createdAt: string;
+  /** A cancelled, submitted input remains readable; it is never automatically resent. */
+  cancelledSend?: { id: string; draft: SendDraft };
+}
 export interface ConversationView {
+  stopRequest?: ConversationStopView;
   /** Immutable direct-parent provenance, independent of current titles and UI state. */
   forkedFrom?: ConversationForkOrigin;
   forkState?: { status: 'creating' | 'ready' | 'failed'; reason?: string };

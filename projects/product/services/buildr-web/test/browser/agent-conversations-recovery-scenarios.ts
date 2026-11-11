@@ -9,7 +9,7 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
   await step('点击停止立即截断输出且正常停止不显示提示或黄色警示',async()=>{
     const saved=structuredClone(fixture.conversation),text='点击停止时保留的文字',late='停止后迟到的输出';
     let release:()=>void=()=>{};const gate=new Promise<void>(resolve=>{release=resolve;});
-    const pattern='**/agent-conversations/'+saved.id+'/stop';
+    const pattern='**/agent-conversations/'+saved.id+'/stop-all';
     const handler=async(route:any)=>{
       await gate;
       const current=fixture.conversation;
@@ -19,11 +19,11 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
     try{
       const owner=run('running');update({run:owner,requests:[],entries:[...saved.entries,{id:'stop-output',sequence:9000,kind:'message',role:'assistant',text,runId:owner.id,participantId:owner.participantId,status:'running',createdAt:new Date().toISOString()}]});
       await page.reload();await panel().getByText(text,{exact:true}).waitFor();await page.route(pattern,handler);
-      const request=page.waitForRequest((request:any)=>request.url().endsWith('/stop'));
-      await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await request;
-      assert.equal(await panel().getByRole('button',{name:'停止本次执行',exact:true}).count(),0);
+      const request=page.waitForRequest((request:any)=>request.url().endsWith('/stop-all'));
+      await panel().getByRole('button',{name:'停止对话',exact:true}).click();await request;
+      assert.equal(await panel().getByRole('button',{name:'停止对话',exact:true}).count(),0);
       assert.equal(await panel().getByText(/正在停止|已确认停止|内容已变化/).count(),0);
-      const response=page.waitForResponse((response:any)=>response.url().endsWith('/stop'));release();await response;
+      const response=page.waitForResponse((response:any)=>response.url().endsWith('/stop-all'));release();await response;
       await panel().locator('.ac-compose-wrap[data-run-status="stopped"]').waitFor();
       assert.equal(await panel().getByText(text,{exact:true}).count(),1);assert.equal(await panel().getByText(late,{exact:false}).count(),0);
       assert.equal(await panel().locator('.ac-compose-wrap .ant-alert-warning').count(),0);
@@ -75,7 +75,7 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
         await page.reload();await input().waitFor();
         const state=panel().locator('.ac-execution-statusbar');
         await state.getByText('停止已请求，等待结束确认',{exact:true}).waitFor();
-        assert.equal(await panel().getByRole('button',{name:'停止本次执行',exact:true}).count(),0);
+        assert.equal(await panel().getByRole('button',{name:'停止对话',exact:true}).count(),0);
         assert.equal(fixture.conversation.run.stopRequested,true);
       }
       assert.equal(fixture.stops,beforeStops);
@@ -390,14 +390,14 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
     const streams=fixture.eventStreams,sends=fixture.sends;const subscribed=page.waitForResponse((response:any)=>new URL(response.url()).pathname.endsWith('/events'));await input().fill('下一轮');await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().locator('[data-run-status="running"]').waitFor();
     await subscribed;
     assert.equal(fixture.sends,sends+1);assert.ok(fixture.eventStreams>streams);assert.equal(await notice().count(),0);
-    await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
+    await panel().getByRole('button',{name:'停止对话',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
   });
   await step('既有全局活动发现其他入口新轮，按当前身份读一次并恢复观察',async()=>{
     update({run:completed()});await page.reload();await panel().locator('[data-run-status="completed"]').waitFor();const streams=fixture.eventStreams,sends=fixture.sends;
     update({run:run('running','codex',{id:'external-run',generation:'external-generation'})});
     // Idle activity discovery runs every 30 seconds; allow one full refresh.
     await panel().locator('[data-run-status="running"]').waitFor({timeout:40000});assert.ok(fixture.eventStreams>streams);assert.equal(fixture.sends,sends);
-    await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
+    await panel().getByRole('button',{name:'停止对话',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();
   });
   await step('切换新草稿后旧连接迟到关闭，不污染新对话也不继续重试',async()=>{
     let release:(()=>void)|undefined,started:(()=>void)|undefined;

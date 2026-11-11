@@ -3,6 +3,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import {spawn} from 'node:child_process';
 const args = process.argv.slice(2);
 if (args.includes('--version')) { process.stdout.write('1.1.86\n'); process.exit(0); }
 if (args.includes('login')) {
@@ -71,7 +72,7 @@ function appendNative(session,row) {
 function handle(message) {
   const { id, method, params = {} } = message;
   // A response from the client (permission decision) finishes the pending prompt.
-  if (!method) { log('fixture-permission-responses.jsonl', message); if ((id === 900 || id===901) && !['cancel-delayed', 'cancel-ignored', 'stop-running-tool'].includes(scenario())) finishPrompt('end_turn'); return; }
+  if (!method) { log('fixture-permission-responses.jsonl', message); if ((id === 900 || id===901) && !['cancel-delayed', 'stop-running-tool'].includes(scenario()) && !scenario().startsWith('cancel-ignored')) finishPrompt('end_turn'); return; }
   if (method === 'initialize') { log('fixture-initialize.jsonl', params); return result(id, { protocolVersion: 1, authMethods: [{ id: 'qoderclicn-login', name: 'Use qoderclicn login' }], agentInfo: { name: 'qoder-cli-cn', title: 'Qoder CLI CN', version: '1.1.86' }, agentCapabilities: { loadSession: true, promptCapabilities: { image: true } }, sessionCapabilities: { resume: {} } }); }
   if (method === 'session/new') {
     if (process.env.FIXTURE_UNAUTHENTICATED === '1' || existsSync(join(process.env.QODERCN_CONFIG_DIR ?? '', 'unauthenticated'))) return send({ jsonrpc: '2.0', id, error: { code: -32000, message: 'Authentication required: Authentication is required.' } });
@@ -108,7 +109,8 @@ function handle(message) {
     notify('session/update', { sessionId: params.sessionId, update: { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '检查文件内容' } } });
     notify('session/update', { sessionId: params.sessionId, update: { sessionUpdate: 'user_message_chunk', content: { type: 'text', text } } });
     const toolId = `tool-${++toolSequence}`, userMessageId=randomUUID(),assistantId=randomUUID();
-    notify('session/update', { sessionId: params.sessionId, update: { sessionUpdate: 'tool_call', toolCallId: toolId, title: '读取文件', kind: 'read', rawInput: { path: 'fixture.txt' }, status: 'running' } });
+    if(scenario()==='cancel-ignored-child'){const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});log('fixture-owned-child.jsonl',{pid:child.pid});}
+    notify('session/update', { sessionId: params.sessionId, update: { sessionUpdate: 'tool_call', toolCallId: toolId, title: '读取文件', kind: scenario()==='cancel-ignored-execute'?'execute':'read', rawInput: { path: 'fixture.txt' }, status: 'running' } });
     appendNative(session,{type:'user',uuid:userMessageId,humanInput:true,origin:{kind:'human'},message:{content:[{type:'text',text}]}});
     appendNative(session,{type:'assistant',uuid:assistantId,parentUuid:userMessageId,message:{content:[{type:'tool_use',id:toolId,name:'Read',input:{path:'fixture.txt'}}],usage:{input_tokens:1234,output_tokens:20}}});
     pendingPrompt = { id, sessionId: params.sessionId, toolId, userMessageId,assistantId };
@@ -123,7 +125,7 @@ function handle(message) {
   }
   if (method === 'session/cancel') {
     log('fixture-cancels.jsonl', params);
-    if (scenario() === 'cancel-ignored') return;
+    if (scenario().startsWith('cancel-ignored')) return;
     if (scenario() === 'cancel-delayed') { setTimeout(() => finishPrompt('cancelled'), 100); return; }
     finishPrompt('cancelled'); return;
   }

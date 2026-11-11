@@ -73,7 +73,11 @@ test('parallel versions retain old controls, dispatch durable next instructions 
     assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dataRoot,'native-inputs.jsonl'),'utf8').trim()),{text:'continue original execution',version:'old'},'new clients route supplementary input to the original runtime');
     const fresh=await start('new independent work');
     assert.equal(fresh.run?.generation,adopted.identity.generation);
-    first=await observer.operations.conversations.stop(scope,first.id,{expectedRevision:first.revision,runId:first.run!.id,participantId:first.run!.participantId,generation:first.run!.generation});
+    const aggregateStopId=randomUUID(),oldRunId=first.run!.id;
+    first=await observer.operations.conversations.stopAll(scope,first.id,{expectedRevision:first.revision,clientRequestId:aggregateStopId});
+    assert.equal(first.stopRequest?.id,aggregateStopId);assert.deepEqual(first.stopRequest?.runIds,[oldRunId]);
+    assert.equal((await observer.operations.conversations.read(scope,second.id)).run?.status,'running','aggregate stop routes to the exact old owner and keeps its other conversation');
+    first=await until(()=>observer!.operations.conversations.read(scope,first.id),value=>value.run?.status==='tools-active');
     assert.equal(first.run?.status,'tools-active');
     const original=first.run!;
     await main.close();main=undefined;
