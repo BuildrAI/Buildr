@@ -703,6 +703,9 @@ test('tool detail reads preserve full history, enforce content revisions and rem
   const history=endpoint+'/history-source?'+new URLSearchParams({sourceId,roundId:'http-round'});
   response=await fetch(history);assert.equal(response.status,403);
   response=await fetch(history,{headers});assert.equal(response.status,200);const sourcePage=await response.json();assert.equal(sourcePage.entries[0].text,'');assert.equal(sourcePage.entries[0].input,undefined);assert.equal(sourcePage.entries[0].detail.revision,page.entries[0].detail.revision);
+  response=await fetch(history+'&view=messages',{headers});assert.equal(response.status,200);assert.deepEqual((await response.json()).entries,[]);
+  response=await fetch(history+'&view=all',{headers});assert.equal(response.status,200);assert.deepEqual(await response.json(),sourcePage);
+  response=await fetch(history+'&view=invalid',{headers});assert.equal(response.status,400);
   response=await fetch(history+'&limit=101',{headers});assert.equal(response.status,400);
   response=await fetch(endpoint+'/history-source?sourceId=../../secret',{headers});assert.equal(response.status,400);
   response=await fetch(detail.replace(page.entries[0].detail.revision,'0'.repeat(64)),{headers});assert.equal(response.status,409);

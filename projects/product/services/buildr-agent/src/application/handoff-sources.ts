@@ -14,7 +14,7 @@ export function handoffEntry(entry:ConversationEntry):ConversationEntry {
   provider:entry.provider,participantId:entry.participantId,runId:entry.runId,name:entry.name,status:entry.status,
   parentToolId:entry.parentToolId,presentedFiles:entry.presentedFiles,detail:{revision:entry.detail?.revision??entryContentRevision(entry)}};
 }
-export interface HandoffHistoryQuery {sourceId:string;roundId?:string;cursor?:number;limit?:number}
+export interface HandoffHistoryQuery {sourceId:string;roundId?:string;cursor?:number;limit?:number;view?:'all'|'messages'}
 export interface HandoffHistoryPage {entries:ConversationEntry[];nextCursor?:number;truncatedIds:string[];unavailable:Array<{id:string;revision:string;reason:string}>}
 type SourceEntry={id:string;sequence:number;revision:string;runId?:string;tool?:ConversationEntry;native?:NativeToolContent};
 interface SourceIndex {version:2;conversationId:string;from:number;through:number;records:SourceEntry[];rounds:HandoffRound[];images:unknown[]}
@@ -38,7 +38,7 @@ export function handoffSources(root:string,id:string,entries:ConversationEntry[]
  const value:SourceIndex={version:2,conversationId:id,from:entries[0]?.sequence??0,through:entries.at(-1)?.sequence??0,records,rounds:rounds.map(handoffRoundReference),images};
  const identity=hash(JSON.stringify(value)),sourceId=`index-${identity}.json`,file=path.join(sourceDirectory(root,id,true),sourceId),body=JSON.stringify(value)+'\n';
  try{fs.writeFileSync(file,body,{flag:'wx',mode:0o600});}catch(error){if((error as NodeJS.ErrnoException).code!=='EEXIST')throw error;const stat=fs.lstatSync(file);if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1||fs.readFileSync(file,'utf8')!==body)fail('agent_handoff_source_changed','交接来源已变化。',409);}
- return {index:file,sourceId,rounds:rounds.map(round=>({...round,sourcePath:`${file}；history ${JSON.stringify({sourceId,roundId:round.id})}`}))};
+ return {index:file,sourceId,rounds:rounds.map(round=>({...round,sourcePath:`history '${JSON.stringify({sourceId,roundId:round.id,view:'messages',limit:10})}'`}))};
 }
 function loadHandoffSource(root:string,id:string,sourceId:string):SourceIndex {
  if(!/^index-[a-f0-9]{64}\.json$/.test(sourceId))fail('agent_handoff_source_invalid','交接来源身份无效。',400);
@@ -121,11 +121,11 @@ export function handoffNativeReferences(root:string):{complete:boolean;reference
  }catch{return {complete:false,references};}
 }
 export function readHandoffSource(root:string,id:string,query:HandoffHistoryQuery,read:(entry:SourceEntry)=>ConversationEntry|undefined):HandoffHistoryPage {
- const {sourceId,roundId,cursor=0,limit=30}=query??{};
- if(typeof sourceId!=='string'||!/^index-[a-f0-9]{64}\.json$/.test(sourceId)||roundId!==undefined&&(typeof roundId!=='string'||!roundId)||!Number.isSafeInteger(cursor)||cursor<0||!Number.isSafeInteger(limit)||limit<1||limit>100)fail('agent_handoff_source_invalid','来源、轮次或续读位置无效。',400);
+ const {sourceId,roundId,cursor=0,limit=30,view='all'}=query??{};
+ if(typeof sourceId!=='string'||!/^index-[a-f0-9]{64}\.json$/.test(sourceId)||roundId!==undefined&&(typeof roundId!=='string'||!roundId)||!Number.isSafeInteger(cursor)||cursor<0||!Number.isSafeInteger(limit)||limit<1||limit>100||!['all','messages'].includes(view))fail('agent_handoff_source_invalid','来源、轮次、视图或续读位置无效。',400);
  const index=loadHandoffSource(root,id,sourceId);
  const round=roundId===undefined?undefined:index.rounds.find(r=>r.id===roundId);if(roundId!==undefined&&!round)fail('agent_handoff_round_missing','来源中没有此轮记录。',404);
- const records=index.records.filter(e=>!round||e.runId===round.id||!e.runId&&e.sequence>=round.from&&e.sequence<=round.through);
+ const records=index.records.filter(e=>(!round||e.runId===round.id||!e.runId&&e.sequence>=round.from&&e.sequence<=round.through)&&(view==='all'||!e.tool));
  if(cursor>records.length)fail('agent_handoff_source_invalid','来源续读位置超出范围。',400);
  const page:HandoffHistoryPage={entries:[],truncatedIds:[],unavailable:[]};let position=cursor,bytes=0;
  const append=(entry:ConversationEntry)=>{const size=Buffer.byteLength(JSON.stringify(entry));if(size>1024*1024)fail('agent_handoff_source_budget','该条元数据超过读取预算，请按准确条目读取。',413);if(bytes+size>1024*1024)return false;bytes+=size;page.entries.push(entry);return true;};

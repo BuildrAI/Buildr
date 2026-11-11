@@ -37,7 +37,7 @@ import type { StoredConversation, StoredParticipant } from '../domain/agent-stat
 import type { ConversationRepository } from '../persistence/conversation-repository.ts';
 import type { ConnectionApplication } from './connection-application.ts';
 import type { ConversationEvents } from './conversation-events.ts';
-import {HANDOFF_PROMPT,handoffEntries,organizeHandoff,displayRounds,receivingBudget,formatHandoffRounds} from '../domain/handoff-material.ts';
+import {HANDOFF_PROMPT,handoffEntries,organizeHandoff,displayRounds,receivingBudget,formatHandoffRounds,formatHandoffNavigation} from '../domain/handoff-material.ts';
 import {handoffSources,handoffEntry,handoffReceipt,readHandoffSource,handoffSourceEntry,type HandoffHistoryQuery} from './handoff-sources.ts';
 import type { HostContext } from './host-context.ts';
 import { PendingSendRepository } from '../persistence/pending-send-repository.ts';
@@ -822,7 +822,8 @@ export class ConversationApplication {
     const controlInstruction = this.options.conversationControl?.(record.view.workspaceId,record.view.id) ?? '';
     const fullText=controlInstruction + (changes.length||switching||waitingQuestions?`${handoffPrompt}\n工作位置与来源：${context}\n按轮次组织的本地记录：\n${formatHandoffRounds(rounds)}${suffix}`:input.text+materials.description);
     const needsCompression=Buffer.byteLength(fullText)>maxInputBytes;
-    const text=needsCompression&&sources?`${controlInstruction}${handoffPrompt}\n工作位置与来源：${context}\n完整历史共有 ${rounds.length} 轮，记录 #${changes[0]?.sequence??0}–#${through}，超过内联容量。请先读取本地索引 ${sources.index}，使用本对话 history ${JSON.stringify({sourceId:sources.sourceId})} 并指定roundId按轮读取用户要求、授权纠正、失败未知、成果和待办；工具详情用entry及准确修订读取。正文没有省略来源，具体内容需按引用读取。${suffix}`:fullText;
+    const indexedPrefix=`${controlInstruction}${handoffPrompt}\n工作位置与来源：${context}\n历史记录 #${changes[0]?.sequence??0}–#${through} 超过内联容量；以下仅为导航，原始要求与失败未知需按来源读取。\n`;
+    const text=needsCompression&&sources?indexedPrefix+formatHandoffNavigation(rounds,sources.sourceId,Math.min(2048,Math.max(0,maxInputBytes-Buffer.byteLength(indexedPrefix+suffix))))+suffix:fullText;
     const difference:Array<{kind:'agent'|'model';label:string;before:string;after:string}>=[];
     if(previous&&previous.connectionId!==input.connectionId)difference.push({kind:'agent',label:'智能体',before:previous.label,after:connection.label});
     if(previous&&(record.view.run?.model!==input.model||previous.modelAccountId!==input.modelAccountId))difference.push({kind:'model',label:'模型',before:record.view.run?.model??'默认模型',after:boundModel?.label??input.model??'默认模型'});

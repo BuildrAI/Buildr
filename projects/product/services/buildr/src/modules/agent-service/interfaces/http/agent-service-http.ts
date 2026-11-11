@@ -169,8 +169,8 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       }
       const historyMatch=suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})\/history-source$/);
       if(historyMatch&&request.method==='GET'){
-        query(searchParams,['sourceId','roundId','cursor','limit']);
-        return result('historyPage',await service.conversations.readHistory(workspaceId,historyMatch[1],validate('historyQuery',{sourceId:searchParams.get('sourceId'),roundId:searchParams.get('roundId')??undefined,cursor:numberQuery(searchParams.get('cursor')),limit:numberQuery(searchParams.get('limit'))})));
+        query(searchParams,['sourceId','roundId','cursor','limit','view']);
+        return result('historyPage',await service.conversations.readHistory(workspaceId,historyMatch[1],validate('historyQuery',{sourceId:searchParams.get('sourceId'),roundId:searchParams.get('roundId')??undefined,cursor:numberQuery(searchParams.get('cursor')),limit:numberQuery(searchParams.get('limit')),view:searchParams.get('view')??undefined})));
       }
       const detailMatch=suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})\/entry-detail\/([^/]+)$/);
       if(detailMatch&&request.method==='GET'){query(searchParams,['revision','sourceId']);const revision=searchParams.get('revision');if(!revision||!(/^[a-f0-9]{64}$/).test(revision))throw inputError();let entryId:string;try{entryId=decodeURIComponent(detailMatch[2]);}catch{throw inputError();}if(!entryId||entryId.length>1024)throw inputError();return result('entry',await service.conversations.readEntry(workspaceId,detailMatch[1],entryId,revision,searchParams.get('sourceId')??undefined));}

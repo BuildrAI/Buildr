@@ -16,7 +16,7 @@ export function conversationControlInstruction(binding:Binding,node:string):stri
   return `Buildr 本对话工作控制：\n${command} read\n` +
     `用同一命令将 read 换成 observe 可核对当前状态，observe '<JSON>' 可按同样的准确身份核对某个原执行；停止原执行时使用 stop '<JSON>'，JSON 必须从刚读取的记录取 expectedRevision、runId、participantId、generation，可选 toolId。` +
     `智能体在本对话成功创建、激活或明确接续本轮实际执行的任务后，应自动维护关联，不要求用户手动点击：将 read 换成 link-task '<JSON>'，JSON 为 {"taskId":"已核对的任务标识"}，跨空间时另传任务所属 workspaceId；核对 taskLinks 中准确空间和任务。命令内部即时读取并按观察版本追加，也可传 expectedRevision 钉住明确观察，核对返回 taskIds 已包含该任务。link-task 只追加本对话关系，保留其他关联，不修改任务状态、不发送消息；冲突时重读判断，不覆盖集合。仅提及、只读查询或浏览任务不关联；没有准确对话绑定不猜关系。` +
-    `按需查历史：将 read 换成 history '<JSON>'，JSON含交接资料给出的sourceId，可选roundId、cursor、limit（1–100）；只返回该来源固定范围内的消息和工具元数据，按nextCursor续读。truncatedIds标明仅返回片段的消息，unavailable标明不可读修订，不得当作完整历史。工具或完整消息详情用 entry '<JSON>'，JSON为{"sourceId":"交接来源sourceId","entryId":"条目ID","revision":"读取结果中的detail.revision"}，由适配层读取原生工具，不读私有账号或数据库。` +
+    `按需查历史：直接将 read 换成 history '<JSON>'，无需整文件读取内部索引。JSON含交接资料给出的sourceId，可选roundId、cursor、limit（1–100）、view（messages或all，默认all）；messages只返回消息与通知，all另含工具元数据。只返回该来源固定范围内的记录，按nextCursor续读且保持sourceId、roundId、view不变。truncatedIds标明仅返回片段的消息，unavailable标明不可读修订，不得当作完整历史。工具或完整消息详情用 entry '<JSON>'，JSON为{"sourceId":"交接来源sourceId","entryId":"条目ID","revision":"读取结果中的detail.revision"}，由适配层读取原生工具，不读私有账号或数据库。` +
     `read 返回当前轮、retainedRuns、任务关联和未回答问题；这些执行仍归原上下文控制，不要向新厂商传递旧厂商的进程内标识。` +
     `用户确认切换后的旧问题关闭和旧执行停止由系统自动善后，未回答不构成同意。接续时只核对与当前目标相关的成果和未知副作用；不要重复停止已请求停止的旧执行，不因历史未知阻塞独立工作。内部善后、过期卡片和旧执行状态默认静默，不在进展或最终回复追加说明；仅实际影响当前目标且需要用户决定时说明具体影响。未知结果不重放，普通消息不是原问题回答或审批，不自动重试停止或强杀。\n\n`;
 }

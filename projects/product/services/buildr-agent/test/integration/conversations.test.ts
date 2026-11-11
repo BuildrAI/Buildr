@@ -44,6 +44,11 @@ test('handoff references preserve ordered inputs and read details without duplic
  let cursor:number|undefined=0;const entries:ConversationEntry[]=[];
  do{const page=f.service.conversations.readHistory('workspace-one',chat.id,{sourceId,limit:2,cursor});assert.equal(page.unavailable.length,0);entries.push(...page.entries);cursor=page.nextCursor;}while(cursor!==undefined);
  assert.deepEqual(entries.map(e=>e.sequence),[1,2,3,4,5,6]);assert.equal(entries[2].text,'');assert.equal(entries[2].input,undefined);assert.equal(f.service.conversations.readEntry('workspace-one',chat.id,toolId,entries[2].detail!.revision).text,output);
+ const messages:ConversationEntry[]=[];cursor=0;
+ do{const page=f.service.conversations.readHistory('workspace-one',chat.id,{sourceId,view:'messages',limit:2,cursor});assert.deepEqual(page.unavailable,[]);messages.push(...page.entries);cursor=page.nextCursor;}while(cursor!==undefined);
+ assert.deepEqual(messages.map(e=>e.sequence),[1,2,4,5,6]);assert.deepEqual(messages.filter(e=>e.role==='user').map(e=>e.text),[text,'追加纠正','问题回答']);
+ assert.deepEqual(f.service.conversations.readHistory('workspace-one',chat.id,{sourceId,view:'all'}).entries,entries);
+ assert.throws(()=>f.service.conversations.readHistory('workspace-one',chat.id,{sourceId,view:'invalid' as any}),{code:'agent_handoff_source_invalid'});
  assert.throws(()=>f.service.conversations.readHistory('foreign',chat.id,{sourceId}),{code:'agent_conversation_missing'});
  assert.throws(()=>f.service.conversations.readHistory('workspace-one',chat.id,{sourceId:'../../secret'}),{code:'agent_handoff_source_invalid'});
  assert.throws(()=>f.service.conversations.readHistory('workspace-one',chat.id,{sourceId,roundId:'other'}),{code:'agent_handoff_round_missing'});
@@ -1708,7 +1713,7 @@ test('tool result updates preserve original invocation input and name across his
 });
 
 
-test('long handoff uses local index without auxiliary summary; receipt identifies the exact sent body',async()=>{
+test('long handoff uses paged navigation over a large internal index without auxiliary summary; receipt identifies the exact sent body',async t=>{
  let calls=0;const a=fake('a',{summary:async()=>{calls++;return 'unique auxiliary summary: verify the directory';}}),b=fake('b'),c=fake('c');
  b.executor.descriptor.capabilities.maxInputBytes=8192;
  const f=fixture([a.executor,b.executor,c.executor]);
@@ -1716,10 +1721,26 @@ test('long handoff uses local index without auxiliary summary; receipt identifie
   for(const id of ['a','b','c'])await connected(f.service,id);
   const chat=await f.service.conversations.create('workspace-one',{});
   send(f.service,chat.id,'a','x'.repeat(12000));const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
-  const draft={expectedRevision:done.revision,connectionId:'b',text:'continue'};
+  const repo=new ConversationRepository(path.join(f.options.dataRoot,'agent-service'));const record=repo.readConversation(chat.id)!;
+  try{
+   const entry=(sequence:number,fields:Partial<ConversationEntry>):ConversationEntry=>({id:randomUUID(),sequence,kind:'message',role:'user',runId:done.run!.id,text:'',createdAt:'now',...fields});
+   record.view.entries=[entry(1,{text:'x'.repeat(12000)}),...Array.from({length:800},(_,i)=>entry(i+2,{kind:'tool',role:'system',name:'read',status:'completed'})),entry(802,{text:'保留最新纠正'}),entry(803,{kind:'notice',text:'保留问题回答'}),entry(804,{role:'assistant',text:'original final',status:'completed'})];
+   record.view.revision=randomUUID();repo.saveConversation(record,done.revision);
+  }finally{repo.stopReadModels();}
+  const draft={expectedRevision:record.view.revision,connectionId:'b',text:'continue'};
   const skipped=await f.service.conversations.prepareHandoff('workspace-one',chat.id,{...draft,skipHandoffSummary:true});assert.equal(skipped.handoff!.mode,'indexed');assert.equal(calls,0);
   const preview=await f.service.conversations.prepareHandoff('workspace-one',chat.id,draft);
   assert.equal(preview.handoff!.mode,'indexed');assert.equal(calls,0);assert.equal(a.sends.length,1,'summary must not enter the work context');
+  assert.ok(fs.statSync(preview.handoff!.sourcePath!).size>256*1024);
+  assert.equal(preview.fits,true);assert.ok(preview.inputBytes<=preview.maxInputBytes);
+  const query=JSON.parse(preview.handoff!.body.match(/history '([^']+)'/)![1]);
+  assert.deepEqual(query,{sourceId:preview.handoff!.sourceId!,view:'messages' as const,limit:10});
+  const page=f.service.conversations.readHistory('workspace-one',chat.id,query);
+  assert.deepEqual(page.entries.map(e=>e.sequence),[1,802,803,804]);assert.deepEqual(page.unavailable,[]);
+  assert.deepEqual(page.truncatedIds,[page.entries[0].id]);assert.equal(page.nextCursor,undefined);
+  assert.equal(f.service.conversations.readEntry('workspace-one',chat.id,page.entries[0].id,page.entries[0].detail!.revision,query.sourceId).text,'x'.repeat(12000));
+  assert.ok(preview.handoff!.body.includes('roundId='+done.run!.id));assert.ok(!preview.handoff!.body.includes('请先读取本地索引'));
+  t.diagnostic(JSON.stringify({indexBytes:fs.statSync(preview.handoff!.sourcePath!).size,promptBytes:preview.inputBytes,messageCount:page.entries.length,toolMetadataSkipped:800}));
   f.service.conversations.send('workspace-one',chat.id,{...draft,previewToken:preview.token,clientRequestId:'summarized'});
   const second=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),v=>v.run?.status==='completed');
   assert.equal(b.sends[0]!.text,preview.handoff!.body);assert.equal(second.entries.find(e=>e.kind==='handoff')!.handoff!.bodyDigest,createHash('sha256').update(b.sends[0]!.text).digest('hex'));

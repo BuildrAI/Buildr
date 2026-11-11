@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {organizeHandoff,handoffEntries,receivingBudget,formatHandoffRounds,displayRounds} from '../../src/domain/handoff-material.ts';
+import {organizeHandoff,handoffEntries,receivingBudget,formatHandoffRounds,displayRounds,formatHandoffNavigation} from '../../src/domain/handoff-material.ts';
 import {handoffEntry} from '../../src/application/handoff-sources.ts';
 import type {ConversationEntry} from '../../src/contracts.ts';
 const entry=(sequence:number,fields:Partial<ConversationEntry>):ConversationEntry=>({id:String(sequence),sequence,kind:'message',role:'user',text:'request',createdAt:'2026-10-27T00:00:00Z',runId:'one',...fields});
@@ -55,4 +55,23 @@ test('handoff tool projection never evaluates native or legacy body getters',()=
  Object.defineProperties(tool,{text:{enumerable:true,get(){throw Error('tool body read');}},input:{enumerable:true,get(){throw Error('tool input read');}}});
  const projected=handoffEntry(tool);assert.equal(projected.text,'');assert.equal(projected.input,undefined);assert.equal(projected.detail!.revision,'a'.repeat(64));
  const round=organizeHandoff([projected])[0];assert.match(round.execution[0].result,/失败/);
+});
+
+test('bounded navigation provides executable full-source parameters and exact recent round identities without bodies',()=>{
+ const rounds=Array.from({length:100},(_,i)=>organizeHandoff([entry(i*2+1,{runId:'round-'+i,text:'private user body'}),entry(i*2+2,{runId:'round-'+i,role:'assistant',text:'private final',status:'completed'})])[0]);
+ const sourceId='index-'+'a'.repeat(64)+'.json';
+ const navigation=formatHandoffNavigation(rounds,sourceId);
+ assert.ok(Buffer.byteLength(navigation)<=2048);
+ assert.ok(!navigation.includes('private'));assert.ok(navigation.includes('roundId=round-99'));
+ assert.ok(!navigation.includes('roundId=round-0，'));assert.match(navigation,/未列出/);
+ const query=JSON.parse(navigation.match(/history '([^']+)'/)![1]);
+ assert.deepEqual(query,{sourceId,view:'messages',limit:10});
+ for(const row of navigation.split('\n').filter(line=>line.startsWith('- '))){
+  const id=row.match(/roundId=([^，]+)/)![1],round=rounds.find(r=>r.id===id)!;
+  assert.ok(row.includes(`#${round.from}–#${round.through}`));
+ }
+ const small=formatHandoffNavigation(rounds,sourceId,700);
+ assert.ok(Buffer.byteLength(small)<=700);assert.ok(small.includes(sourceId));assert.match(small,/覆盖全部来源/);
+ const complete=formatHandoffNavigation(rounds.slice(-1),sourceId);
+ assert.match(complete,/目录覆盖全部轮次/);
 });
