@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { Alert, Button, Checkbox, Form, Input, Modal, Select } from 'antd';
+import { Alert, Button, Checkbox, Form, Input, Modal, Select, Switch } from 'antd';
 import type { AccessScope, ProgrammaticAccessView } from './api/programmatic-access-api';
 
-export type ProgrammaticAccessInput = { name: string; workspaceIds: string[]; scopes: AccessScope[] };
+export type ProgrammaticAccessInput = { name: string; workspaceIds: string[]; scopes: AccessScope[]; allowFullAccess: boolean };
 const permissions = [
   { value: 'execute', label: '执行开发', description: '发起、补充和停止工作' },
   { value: 'answer', label: '回答问题', description: '允许程序代答问题卡片' },
@@ -15,9 +15,10 @@ export function ProgrammaticAccessCreateModal({ open, view, busy, error, onClose
 }) {
   const [name, setName] = useState(''), [spaces, setSpaces] = useState<string[]>([]);
   const [scopes, setScopes] = useState<AccessScope[]>(['read', 'execute']);
+  const [allowFullAccess, setAllowFullAccess] = useState(true);
   async function create() {
-    if (await onCreate({ name, workspaceIds: spaces, scopes })) {
-      setName(''); setSpaces([]); setScopes(['read', 'execute']);
+    if (await onCreate({ name, workspaceIds: spaces, scopes, allowFullAccess })) {
+      setName(''); setSpaces([]); setScopes(['read', 'execute']); setAllowFullAccess(true);
     }
   }
   return <Modal title="新建接入程序" open={open} onCancel={onClose} footer={null}
@@ -40,6 +41,10 @@ export function ProgrammaticAccessCreateModal({ open, view, busy, error, onClose
             <span className="pas-permission-label">{permission.label}<small>{permission.description}</small></span>
           </Checkbox>)}
         </div>
+      </Form.Item>
+      <Form.Item label="全部授权执行">
+        <div className="pas-full-access"><Switch checked={allowFullAccess} disabled={busy} onChange={setAllowFullAccess} aria-label="允许全部授权执行" />
+          <span className="pas-full-access-hint">允许程序在 start/send/续聊请求 permissionMode=full-access（与网页全部授权一致）；关闭后请求 full-access 返回 403。</span></div>
       </Form.Item>
       {(scopes.includes('answer') || scopes.includes('approve')) && <Alert type="warning" showIcon message="你正在允许程序代答或审批，请确认这是你希望的自动化范围。" />}
       <p className="pas-form-note">凭据自动保存到本机私有文件（600），不需要复制令牌。工作空间授权不是操作系统文件沙箱。</p>

@@ -48,6 +48,11 @@ export function createProgrammaticHttpContribution(resolve: () => AgentService |
           if (!input || typeof input !== 'object' || Object.keys(input).some(key => key !== 'expectedRevision') || typeof input.expectedRevision !== 'string') accessError('programmatic_input_invalid', '需要凭据的已观察修订。', 400);
           return { status: 200, body: match[2] === 'regenerate' ? store().regenerate(match[1], input.expectedRevision) : { credential: store().revoke(match[1], input.expectedRevision) } };
         }
+        const fullAccess = pathname.match(/^\/api\/v1\/app\/programmatic-access\/([a-f0-9-]{36})\/full-access$/);
+        if (request.method === 'POST' && fullAccess) {
+          if (!input || typeof input !== 'object' || Object.keys(input).some(key => !['expectedRevision', 'allowFullAccess'].includes(key)) || typeof input.expectedRevision !== 'string' || typeof input.allowFullAccess !== 'boolean') accessError('programmatic_input_invalid', '需要凭据的已观察修订与布尔 allowFullAccess。', 400);
+          return { status: 200, body: { credential: store().updateFullAccess(fullAccess[1], input.expectedRevision, input.allowFullAccess) } };
+        }
         return { status: 404, body: { error: { code: 'programmatic_route_missing', message: '没有此凭据管理操作。' } } };
       }
       if (pathname !== base && !pathname.startsWith(base + '/')) return null;
@@ -58,7 +63,7 @@ export function createProgrammaticHttpContribution(resolve: () => AgentService |
       if (pathname === base && request.method === 'GET') {
         if (searchParams.size) accessError('programmatic_input_invalid', '发现入口不接受查询参数。', 400);
         const service = await resolve();
-        const connections = (await service.connections.list()).connections.map(({ id, label, provider, enabled, status, models, capabilities }) => ({ id, label, provider, enabled, status, models, capabilities: { ...capabilities, permissionModes: ['default'] } }));
+        const connections = (await service.connections.list()).connections.map(({ id, label, provider, enabled, status, models, capabilities }) => ({ id, label, provider, enabled, status, models, capabilities }));
         const catalog = await service.models.catalog.list({ refresh: false });
         const current = authenticate();
         return { status: 200, body: { schemaVersion: 'buildr.programmatic-discovery/v1', apiVersion: '1', version: options.version(), contractVersion: programmaticContractVersion(programmaticOpenApi(options.version())), status: 'ready', serviceId: createHash('sha256').update(options.dataRoot()).digest('hex'), ...locations(context), credential: current, capabilities: PROGRAMMATIC_OPERATIONS.filter(item => current.scopes.includes(item.scope) || item.id === 'reply' && current.scopes.includes('approve')).map(({ id, method, path, scope, summary }) => ({ id, method, path: `${base}/workspaces/:workspaceId/conversations${path}`, scope, summary, documentationUrl: `${base}/operations/${id}` })), workspaces: options.workspaces().filter(item => current.workspaceIds.includes(item.id)), connections, models: catalog.models } };
@@ -97,9 +102,10 @@ export function createProgrammaticHttpContribution(resolve: () => AgentService |
         if (!validators.validate(schemas[operation.input].$id, input).valid) accessError('agent_http_input_invalid', '智能体服务请求字段无效。', 400);
         if (input && typeof input === 'object') {
           if (input.clientRequestId !== undefined && !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(input.clientRequestId)) accessError('programmatic_input_invalid', '程序提交clientRequestId必须为UUID。', 400);
-          if (input.cwd !== undefined || input.permissionMode === 'full-access' || input.taskLinks?.some((link: any) => !credential.workspaceIds.includes(link.workspaceId))) accessError('programmatic_forbidden', '程序接口不接受任意执行目录、越权任务关联或full-access提升。');
-          if (['start', 'send', 'prepare-send'].includes(operation.id)) {
-            // Admission explicitly pins default mode, including existing full-access conversations.
+          if (input.cwd !== undefined || input.taskLinks?.some((link: any) => !credential.workspaceIds.includes(link.workspaceId))) accessError('programmatic_forbidden', '程序接口不接受任意执行目录或越权任务关联。');
+          if (input.permissionMode === 'full-access' && !credential.allowFullAccess) accessError('programmatic_forbidden', '此凭据未开启允许全部授权执行，无法请求 full-access。');
+          if ((schemas[operation.input] as { properties?: Record<string, unknown> }).properties?.permissionMode) {
+            // Omitted mode stays default; explicit full-access is gated by the credential toggle above.
             input.permissionMode ??= 'default';
           }
         }

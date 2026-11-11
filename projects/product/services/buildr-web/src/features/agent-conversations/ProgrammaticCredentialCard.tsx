@@ -1,13 +1,13 @@
 import { ApiOutlined, DownOutlined, MoreOutlined, ReloadOutlined, StopOutlined } from '@ant-design/icons';
-import { Button, Dropdown, Tag, Typography } from 'antd';
+import { Button, Dropdown, Switch, Tag, Typography } from 'antd';
 import { CopyButton } from '../../components/CopyButton';
 import { programmaticConnectionInfo } from './programmatic-connection-info';
 import type { AccessCredential, ProgrammaticAccessView } from './api/programmatic-access-api';
 
 const labels = { read: '读取', execute: '执行', answer: '答复', approve: '审批' };
-export function ProgrammaticCredentialCard({ item, view, busy, expanded, onToggle, onRegenerate, onRevoke }: {
+export function ProgrammaticCredentialCard({ item, view, busy, expanded, onToggle, onRegenerate, onRevoke, onToggleFullAccess }: {
   item: AccessCredential; view: ProgrammaticAccessView; busy: boolean; expanded: boolean;
-  onToggle(): void; onRegenerate(): void; onRevoke(): void;
+  onToggle(): void; onRegenerate(): void; onRevoke(): void; onToggleFullAccess(value: boolean): void;
 }) {
   const info = programmaticConnectionInfo(view, item);
   const workspaces = item.workspaceIds.map(id => view.workspaces.find(w => w.id === id)?.name ?? id).join('、');
@@ -45,6 +45,7 @@ export function ProgrammaticCredentialCard({ item, view, busy, expanded, onToggl
       <dl className="pas-metadata">
         {item.tokenFilePath && <><dt>凭据文件</dt><dd><Typography.Text copyable>{item.tokenFilePath}</Typography.Text><Tag>600</Tag></dd></>}
         <dt>操作权限</dt><dd>{item.scopes.map(scope => <Tag key={scope}>{labels[scope]}</Tag>)}</dd>
+        <dt>全部授权执行</dt><dd><div className="pas-full-access"><Switch size="small" checked={item.allowFullAccess} disabled={busy || !!item.revokedAt} onChange={onToggleFullAccess} aria-label={`切换${item.name}允许全部授权执行`} /><span className="pas-full-access-hint">{item.allowFullAccess ? '允许程序请求 full-access' : '已关闭，full-access 请求返回 403'}</span></div></dd>
         <dt>创建时间</dt><dd><time dateTime={item.createdAt}>{new Date(item.createdAt).toLocaleString('zh-CN', { hour12: false })}</time></dd>
         <dt>凭据标识</dt><dd><Typography.Text type="secondary" copyable>{item.id}</Typography.Text></dd>
       </dl>

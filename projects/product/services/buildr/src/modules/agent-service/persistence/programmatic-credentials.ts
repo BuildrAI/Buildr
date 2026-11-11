@@ -6,8 +6,10 @@ import { AgentServiceError } from '@buildr-ai/buildr-agent';
 
 export const PROGRAMMATIC_SCOPES = ['read', 'execute', 'answer', 'approve'] as const;
 export type ProgrammaticScope = typeof PROGRAMMATIC_SCOPES[number];
-export interface ProgrammaticCredential { id: string; name: string; workspaceIds: string[]; scopes: ProgrammaticScope[]; revision: string; createdAt: string; revokedAt: string | null; tokenFilePath?: string }
+export interface ProgrammaticCredential { id: string; name: string; workspaceIds: string[]; scopes: ProgrammaticScope[]; allowFullAccess: boolean; revision: string; createdAt: string; revokedAt: string | null; tokenFilePath?: string }
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
+// Legacy records predating the toggle keep full-access available; the switch only gates explicit requests.
+const normalize = (credential: ProgrammaticCredential): ProgrammaticCredential => ({ ...credential, allowFullAccess: credential.allowFullAccess ?? true });
 export function accessError(code: string, message: string, status = 403): never { throw new AgentServiceError(code, message, status); }
 /** SQLite stores only hashes; caller-readable secrets live in profile-private 600 files. */
 export class ProgrammaticCredentials {
@@ -31,7 +33,7 @@ export class ProgrammaticCredentials {
     } catch (error) { if (write && db.isTransaction) db.exec('ROLLBACK'); throw error; }
     finally { db.close(); }
   }
-  list(): ProgrammaticCredential[] { return this.use(false, db => db.prepare('SELECT metadata FROM credentials ORDER BY rowid DESC').all().map(row => JSON.parse(String(row.metadata)))); }
+  list(): ProgrammaticCredential[] { return this.use(false, db => db.prepare('SELECT metadata FROM credentials ORDER BY rowid DESC').all().map(row => normalize(JSON.parse(String(row.metadata))))); }
   private saveToken(credential: ProgrammaticCredential, token: string) {
     const parent = path.join(this.dataRoot, 'programmatic-access');
     const dir = path.join(parent, 'tokens');
@@ -66,10 +68,11 @@ export class ProgrammaticCredentials {
   create(raw: unknown, registered: string[]) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) accessError('programmatic_input_invalid', '凭据参数必须为对象。', 400);
     const value = raw as Record<string, unknown>;
-    if (Object.keys(value).some(key => !['name', 'workspaceIds', 'scopes'].includes(key)) || typeof value.name !== 'string' || !value.name.trim() || value.name.length > 100
+    if (Object.keys(value).some(key => !['name', 'workspaceIds', 'scopes', 'allowFullAccess'].includes(key)) || typeof value.name !== 'string' || !value.name.trim() || value.name.length > 100
       || !Array.isArray(value.workspaceIds) || !value.workspaceIds.length || !value.workspaceIds.every(id => typeof id === 'string' && registered.includes(id))
-      || !Array.isArray(value.scopes) || !value.scopes.includes('read') || !value.scopes.every(scope => PROGRAMMATIC_SCOPES.includes(scope as ProgrammaticScope))) accessError('programmatic_input_invalid', '请选择名称、已登记工作空间及合法权限（必须含读取）。', 400);
-    const credential: ProgrammaticCredential = { id: randomUUID(), name: value.name.trim(), workspaceIds: [...new Set(value.workspaceIds as string[])], scopes: [...new Set(value.scopes as ProgrammaticScope[])], revision: randomUUID(), createdAt: new Date().toISOString(), revokedAt: null };
+      || !Array.isArray(value.scopes) || !value.scopes.includes('read') || !value.scopes.every(scope => PROGRAMMATIC_SCOPES.includes(scope as ProgrammaticScope))
+      || value.allowFullAccess !== undefined && typeof value.allowFullAccess !== 'boolean') accessError('programmatic_input_invalid', '请选择名称、已登记工作空间及合法权限（必须含读取）。', 400);
+    const credential: ProgrammaticCredential = { id: randomUUID(), name: value.name.trim(), workspaceIds: [...new Set(value.workspaceIds as string[])], scopes: [...new Set(value.scopes as ProgrammaticScope[])], allowFullAccess: value.allowFullAccess ?? true, revision: randomUUID(), createdAt: new Date().toISOString(), revokedAt: null };
     const token = `brp_${randomBytes(32).toString('base64url')}`;
     this.persistToken(credential, token, db => db.prepare('INSERT INTO credentials VALUES (?, ?, ?)').run(credential.id, hash(token), JSON.stringify(credential)));
     return { credential, token };
@@ -83,7 +86,7 @@ export class ProgrammaticCredentials {
     this.persistToken(credential, token, db => {
       // Recheck inside the transaction: a revoke/regenerate may have won since list().
       const row = db.prepare('SELECT metadata FROM credentials WHERE id=?').get(id);
-      const current = row && JSON.parse(String(row.metadata)) as ProgrammaticCredential | undefined;
+      const current = row && normalize(JSON.parse(String(row.metadata)) as ProgrammaticCredential);
       if (!current || current.revokedAt || current.revision !== revision) accessError('programmatic_revision_conflict', '凭据已变化或撤销，请重新读取。', 409);
       db.prepare('UPDATE credentials SET digest=?, metadata=? WHERE id=?').run(hash(token), JSON.stringify(credential), id);
     });
@@ -93,16 +96,28 @@ export class ProgrammaticCredentials {
     return this.use(true, db => {
       const row = db.prepare('SELECT metadata FROM credentials WHERE id=?').get(id);
       if (!row) accessError('programmatic_credential_missing', '凭据不存在。', 404);
-      const credential = JSON.parse(String(row.metadata)) as ProgrammaticCredential;
+      const credential = normalize(JSON.parse(String(row.metadata)) as ProgrammaticCredential);
       if (credential.revision !== revision) accessError('programmatic_revision_conflict', '凭据已变化，请重新读取。', 409);
       credential.revokedAt ??= new Date().toISOString(); credential.revision = randomUUID();
       db.prepare('UPDATE credentials SET metadata=? WHERE id=?').run(JSON.stringify(credential), id);
       return credential;
     });
   }
+  updateFullAccess(id: string, revision: unknown, allowFullAccess: unknown) {
+    if (typeof allowFullAccess !== 'boolean') accessError('programmatic_input_invalid', 'allowFullAccess 必须为布尔值。', 400);
+    return this.use(true, db => {
+      const row = db.prepare('SELECT metadata FROM credentials WHERE id=?').get(id);
+      if (!row) accessError('programmatic_credential_missing', '凭据不存在。', 404);
+      const credential = normalize(JSON.parse(String(row.metadata)) as ProgrammaticCredential);
+      if (credential.revokedAt || credential.revision !== revision) accessError('programmatic_revision_conflict', '凭据已变化或撤销，请重新读取。', 409);
+      credential.allowFullAccess = allowFullAccess; credential.revision = randomUUID();
+      db.prepare('UPDATE credentials SET metadata=? WHERE id=?').run(JSON.stringify(credential), id);
+      return credential;
+    });
+  }
   authenticate(authorization: unknown): ProgrammaticCredential {
     if (typeof authorization !== 'string' || !/^Bearer brp_[A-Za-z0-9_-]{43}$/.test(authorization)) accessError('programmatic_unauthorized', '需要有效的程序 Bearer 凭据。', 401);
-    const credential = this.use(false, db => { const row = db.prepare('SELECT metadata FROM credentials WHERE digest=?').get(hash(authorization.slice(7))); return row ? JSON.parse(String(row.metadata)) as ProgrammaticCredential : undefined; });
+    const credential = this.use(false, db => { const row = db.prepare('SELECT metadata FROM credentials WHERE digest=?').get(hash(authorization.slice(7))); return row ? normalize(JSON.parse(String(row.metadata)) as ProgrammaticCredential) : undefined; });
     if (!credential || credential.revokedAt) accessError('programmatic_unauthorized', '程序凭据无效或已撤销。', 401);
     return credential;
   }

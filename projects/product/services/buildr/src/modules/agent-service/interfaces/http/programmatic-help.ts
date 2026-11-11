@@ -24,8 +24,9 @@ export const programmaticGuide = `# Buildr 本机程序 API（第一期）
 - read：发现、查询、读消息及observe（虽为POST，但不发送消息）。
 - execute：首发、prepare-send/send、supplement和停止。
 - answer：仅回答question卡片；approve：仅处理approval卡片。两者互不替代。
+- 全部授权：凭据携带“允许全部授权执行”开关（allowFullAccess，默认开启），在「程序接入」创建时选择或在凭据卡片切换。开启时start/send/续聊可传permissionMode=full-access，与网页选择全部授权一致；关闭时请求full-access返回403。发现入口connections[].capabilities.permissionModes透传连接真实支持的模式，支持全部授权的连接列出["default","full-access"]。
 GrokBot默认只授read/execute；问题和审批转人，从同一Buildr Web对话回答。若人明确使用专用自动化凭据回复，必须另授对应权限并提供原卡片的准确身份。
-工作空间授权不是操作系统文件沙箱。Agent使用本机工具、规则与已有执行权限；本期程序入口不接受cwd或full-access提升，固定default模式。账号、密钥、升级、全局私有会话及其他管理接口不开放给Bearer。
+工作空间授权不是操作系统文件沙箱。Agent使用本机工具、规则与已有执行权限。程序入口仍不接受任意cwd；permissionMode省略默认default，显式full-access按上述凭据开关门禁。账号、密钥、升级、全局私有会话及其他管理接口不开放给Bearer。
 
 ## 首发与恢复
 所有程序提交的clientRequestId必须为小写UUID。先生成并持久保存draftId与clientRequestId（UUID），GET /workspaces/{workspaceId}/conversations/drafts/{draftId}取revision；POST其/send，传connectionId、text、expectedDraftRevision、clientRequestId及可选model、modelAccountId、reasoningEffort。路径均以/api/v1/programmatic开头。
@@ -56,7 +57,7 @@ import argparse, json, os, stat, time, uuid, urllib.request, urllib.error, urlli
 from pathlib import Path
 p=argparse.ArgumentParser(description=__doc__)
 p.add_argument('base'); p.add_argument('workspace'); p.add_argument('connection'); p.add_argument('text')
-p.add_argument('--model'); p.add_argument('--state',default='buildr-request.json'); p.add_argument('--token-file',default=str(Path.home()/'.buildr/grokbot.token'))
+p.add_argument('--model'); p.add_argument('--permission-mode',choices=['default','full-access'],default='default'); p.add_argument('--state',default='buildr-request.json'); p.add_argument('--token-file',default=str(Path.home()/'.buildr/grokbot.token'))
 p.add_argument('--polls',type=int,default=150)
 a=p.parse_args(); address=urllib.parse.urlsplit(a.base)
 if address.scheme!='http' or address.hostname!='127.0.0.1' or not address.port or address.username or address.password or address.path not in ['', '/'] or address.query or address.fragment: raise SystemExit('只允许明确端口的本机Buildr地址')
@@ -81,6 +82,7 @@ else:
     draft=str(uuid.uuid4()); revision=call('/workspaces/'+a.workspace+'/conversations/drafts/'+draft)['revision']
     body={'connectionId':a.connection,'text':a.text,'expectedDraftRevision':revision,'clientRequestId':str(uuid.uuid4())}
     if a.model: body['model']=a.model
+    if a.permission_mode!='default': body['permissionMode']=a.permission_mode
     state={'serviceId':info['serviceId'],'workspace':a.workspace,'draftId':draft,'body':body}
     fd=os.open(state_path,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
     with os.fdopen(fd,'w') as f: json.dump(state,f); f.flush(); os.fsync(f.fileno())

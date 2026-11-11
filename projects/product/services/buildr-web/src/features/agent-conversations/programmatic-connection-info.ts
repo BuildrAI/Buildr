@@ -10,6 +10,7 @@ export function programmaticConnectionInfo(view: ProgrammaticAccessView, credent
     '从该本机私有文件读取令牌，作为 Authorization: Bearer 请求头使用；不要输出令牌或读取浏览器认证。',
     `授权工作空间：${credential.workspaceIds.map(id => `${view.workspaces.find(item => item.id === id)?.name ?? id}（${id}）`).join('、')}`,
     `权限：${credential.scopes.join(', ')}`,
+    `全部授权执行：${credential.allowFullAccess ? '已开启，start/send/续聊可请求 permissionMode=full-access' : '已关闭，请求 full-access 将返回 403'}`,
     `使用指南：${view.documentationUrl}`,
     `轻量操作目录：${view.operationsUrl ?? view.apiUrl + '/operations'}`,
     '先看指南和目录，按需读取目录中单个操作的 documentationUrl；可按 contractVersion 缓存文档，无需每次读取完整 OpenAPI。',

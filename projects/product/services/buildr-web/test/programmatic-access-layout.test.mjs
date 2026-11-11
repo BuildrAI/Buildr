@@ -29,10 +29,10 @@ const view = {
   openapiUrl: 'http://127.0.0.1:4458/api/v1/programmatic/openapi.json',
   workspaces: [{ id: 'workspace', name: 'Buildr' }],
 };
-const item = { id: 'hidden-credential-id', name: '千问办公', workspaceIds: ['workspace'], scopes: ['read', 'execute'], createdAt: '2026-11-11T02:00:00Z', revokedAt: null };
+const item = { id: 'hidden-credential-id', name: '千问办公', workspaceIds: ['workspace'], scopes: ['read', 'execute'], allowFullAccess: true, createdAt: '2026-11-11T02:00:00Z', revokedAt: null };
 function render(extra = {}) {
   return renderToStaticMarkup(React.createElement(App, null, React.createElement(ProgrammaticCredentialCard, {
-    item, view, busy: false, expanded: false, onToggle() {}, onRegenerate() {}, onRevoke() {}, ...extra,
+    item, view, busy: false, expanded: false, onToggle() {}, onRegenerate() {}, onRevoke() {}, onToggleFullAccess() {}, ...extra,
   })));
 }
 test('接入行默认仅显示名称、状态、工作空间和操作摘要，不重复展开长警告或元信息', () => {
@@ -61,4 +61,14 @@ test('撤销接入没有复制与管理入口，但仍可查看历史元信息',
   const html = render({ item: { ...item, tokenFilePath: '/private/old.token', revokedAt: '2026-11-11T03:00:00Z' }, expanded: true });
   assert.match(html, /已撤销/); assert.match(html, /凭据标识/);
   assert.doesNotMatch(html, /复制千问办公接入信息|管理千问办公接入|给程序的接入信息|重新生成并保存/);
+});
+test('详情展示全部授权执行开关，关闭与撤销状态如实呈现', () => {
+  const on = render({ expanded: true });
+  assert.match(on, /全部授权执行/); assert.match(on, /允许程序请求 full-access/);
+  assert.match(on, /aria-label="切换千问办公允许全部授权执行"/);
+  const off = render({ item: { ...item, allowFullAccess: false }, expanded: true });
+  assert.match(off, /已关闭，full-access 请求返回 403/);
+  const revoked = render({ item: { ...item, revokedAt: '2026-11-11T03:00:00Z' }, expanded: true });
+  assert.match(revoked, /全部授权执行/);
+  assert.doesNotMatch(render(), /全部授权执行/);
 });

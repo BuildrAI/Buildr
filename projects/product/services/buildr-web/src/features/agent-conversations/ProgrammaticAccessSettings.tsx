@@ -51,6 +51,12 @@ export function ProgrammaticAccessSettings() {
         const result = await programmaticAccessApi.read(); if (live.current) setView(result);
       }) });
   }
+  function toggleFullAccess(item: AccessCredential, value: boolean) {
+    void act(async () => {
+      const { credential } = await programmaticAccessApi.updateFullAccess(item, value);
+      if (live.current) setView(current => current ? { ...current, credentials: current.credentials.map(entry => entry.id === credential.id ? credential : entry) } : current);
+    });
+  }
   async function refresh() {
     await act(async () => { const result = await programmaticAccessApi.read(); if (live.current) setView(result); });
   }
@@ -75,7 +81,7 @@ export function ProgrammaticAccessSettings() {
       {view?.credentials.length ? <div className="pas-credential-list">{view.credentials.map(item => <ProgrammaticCredentialCard key={item.id}
         item={item} view={view} busy={busy} expanded={expanded.includes(item.id)}
         onToggle={() => setExpanded(current => current.includes(item.id) ? current.filter(id => id !== item.id) : [...current, item.id])}
-        onRegenerate={() => confirmRegenerate(item)} onRevoke={() => confirmRevoke(item)} />)}</div>
+        onRegenerate={() => confirmRegenerate(item)} onRevoke={() => confirmRevoke(item)} onToggleFullAccess={value => toggleFullAccess(item, value)} />)}</div>
         : view && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有接入程序，创建一个开始使用。" />}
     </section>
     <p className="pas-footnote">每个程序使用独立凭据，按工作空间授权。工作空间授权不等同于操作系统文件沙箱。</p>

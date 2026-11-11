@@ -30,7 +30,7 @@ async function fixture(t:any){
  let release:()=>void=()=>{};
  const {base,root}=taskRecordFixture({after:(callback:()=>void)=>{release=callback;}},'programmatic-http');let sends=0,stops=0,replies=0,emit:(event:ExecutorEvent)=>void=()=>{};
  let finish:()=>void=()=>{};const ending=new Promise<void>(resolve=>{finish=resolve;});
- const capabilities={text:true,images:false,approval:true,questions:true,stop:true,resume:true,maxInputBytes:65536};
+ const capabilities={text:true,images:false,approval:true,questions:true,stop:true,resume:true,maxInputBytes:65536,permissionModes:['default','full-access'] as Array<'default'|'full-access'>};
  const native:AgentRuntime={bindingIdentity:'fixture-binding',capabilities,inspectAccount:async()=>({status:'ready'}),models:async()=>[{id:'fixture-model',label:'Fixture',isDefault:true}],beginLogin:async()=>{},cancelLogin:async()=>{},createContext:async()=>({id:'context'}),resumeContext:async()=>{},readHistory:async()=>[],
   async send(input){sends++;emit=input.onEvent;emit({type:'accepted',executionRef:{id:'native-run'},inputItemId:input.clientRequestId});emit({type:'item',item:{id:'result-note',kind:'message',role:'assistant',text:'fixture result',executionId:'native-run'}});await ending;},
   observe:async()=>({status:'running',executionRef:{id:'native-run'},tools:[]}),reply:async()=>{replies++;},stop:async()=>{stops++;finish();return{status:'stopped',tools:[]};},close:async()=>{finish();}};
@@ -45,7 +45,7 @@ async function fixture(t:any){
  const manager=ready.url+'/api/v1/app/programmatic-access',url=ready.url+'/api/v1/programmatic';
  const webHeaders={'x-buildr-session':ready.sessionToken,origin:ready.url,'content-type':'application/json'};
  const call=async(suffix:string,token?:string,body?:unknown,extra:Record<string,string>={})=>fetch(url+suffix,{method:body===undefined?'GET':'POST',headers:{...(token?{authorization:'Bearer '+token}:{}),'content-type':'application/json',...extra},...(body===undefined?{}:{body:JSON.stringify(body)})});
- const create=async(scopes=['read','execute'])=>{const response=await fetch(manager,{method:'POST',headers:webHeaders,body:JSON.stringify({name:'GrokBot fixture',workspaceIds:[workspaceId],scopes})});assert.equal(response.status,201,await response.clone().text());return response.json();};
+ const create=async(scopes=['read','execute'],allowFullAccess?:boolean)=>{const response=await fetch(manager,{method:'POST',headers:webHeaders,body:JSON.stringify({name:'GrokBot fixture',workspaceIds:[workspaceId],scopes,...(allowFullAccess===undefined?{}:{allowFullAccess})})});assert.equal(response.status,201,await response.clone().text());return response.json();};
  return {base,service,appData,ready,workspaceId,manager,webHeaders,call,create,emit:(event:ExecutorEvent)=>emit(event),counts:()=>({sends,stops,replies})};
 }
 
@@ -79,7 +79,8 @@ test('public first submit is idempotent across lost responses, rejects changed c
  const lookup=await (await f.call(endpoint+'/drafts/'+draft+'/submissions/'+requestId,token)).json();assert.equal(lookup.found,true);assert.equal(lookup.conversation.id,first.conversation.id);
  assert.equal((await f.call(endpoint+'/drafts/'+draft+'/send',token,{...input,text:'changed'})).status,409);
  assert.equal((await f.call(endpoint+'/drafts/'+randomUUID()+'/send',token,{...input,cwd:'/tmp'})).status,403);
- assert.equal((await f.call(endpoint+'/drafts/'+randomUUID()+'/send',token,{...input,permissionMode:'full-access'})).status,403);
+ const {token:noFull}=await f.create(['read','execute'],false);
+ assert.equal((await f.call(endpoint+'/drafts/'+randomUUID()+'/send',noFull,{...input,permissionMode:'full-access'})).status,403);
  const conversation=endpoint+'/'+first.conversation.id;
  const observe=await f.call(conversation+'/observe',token,{});assert.equal(observe.status,200);const view=await observe.json();assert.equal(view.run.id,lookup.conversation.run.id);
  const messages=await (await f.call(conversation+'/entries',token)).json();assert.ok(messages.entries.some((entry:any)=>entry.text==='fixture result'));
@@ -177,7 +178,7 @@ test('compact OpenAPI preserves response schemas and only emits resolvable share
    const input=withoutSchemaIds(AGENT_SERVICE_HTTP_SCHEMAS[operation.input]);
    if(input.properties?.cwd)delete input.properties.cwd;
    if(input.properties?.clientRequestId)input.properties.clientRequestId={type:'string',format:'uuid',pattern:'^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'};
-   if(input.properties?.permissionMode)input.properties.permissionMode={const:'default',default:'default'};
+   if(input.properties?.permissionMode)input.properties.permissionMode={enum:['default','full-access'],default:'default',description:'省略默认 default。full-access 需凭据开启“允许全部授权执行”（allowFullAccess），否则返回 403；连接须支持该模式。'};
    const actual=result.requestBody.content['application/json'].schema;
    if(operation.id==='send'){assert.match(actual.properties.previewToken.description,/prepareResponse\.token/);delete actual.properties.previewToken.description;}
    assert.deepEqual(actual,input,`${operation.id} input changed`);
@@ -274,4 +275,34 @@ test('public conversation-wide stop uses a stable request identity and does not 
  const result=await f.call(path+'/stop-all',token,{expectedRevision:current.revision,clientRequestId:stopId});assert.equal(result.status,200,await result.clone().text());
  const stopped=await result.json();assert.equal(stopped.stopRequest.id,stopId);assert.equal(stopped.run.status,'stopped');assert.deepEqual(stopped.stopRequest.runIds,[current.run.id]);
  const replay=await f.call(path+'/stop-all',token,{expectedRevision:'stale',clientRequestId:stopId});assert.equal(replay.status,200);assert.equal(f.counts().stops,1);assert.equal(f.counts().sends,1);
+});
+
+test('full-access execution follows the credential toggle and discovery passes through connection modes',async t=>{
+ const f=await fixture(t),endpoint='/workspaces/'+f.workspaceId+'/conversations';
+ const {token,credential}=await f.create();
+ assert.equal(credential.allowFullAccess,true,'new credentials default to allowing full-access');
+ const discovery=await(await f.call('',token)).json();
+ assert.deepEqual(discovery.connections[0].capabilities.permissionModes,['default','full-access'],'discovery passes through real connection modes');
+ const draft=randomUUID(),state=await(await f.call(endpoint+'/drafts/'+draft,token)).json();
+ const started=await f.call(endpoint+'/drafts/'+draft+'/send',token,{connectionId:'fixture',text:'authorized full-access work',clientRequestId:randomUUID(),expectedDraftRevision:state.revision,permissionMode:'full-access'});
+ assert.equal(started.status,202,await started.clone().text());
+ const conversation=endpoint+'/'+(await started.json()).conversation.id;
+ for(let n=0;n<100&&!f.counts().sends;n++)await new Promise(r=>setTimeout(r,2));
+ const view=await(await f.call(conversation+'/observe',token,{})).json();
+ assert.equal((await f.call(conversation+'/stop',token,{expectedRevision:view.revision,runId:view.run.id,participantId:view.run.participantId,generation:view.run.generation})).status,200);
+ const after=await(await f.call(conversation,token)).json();
+ const preview=await(await f.call(conversation+'/prepare-send',token,{expectedRevision:after.revision,connectionId:'fixture',text:'full-access follow-up',permissionMode:'full-access'})).json();
+ assert.equal(preview.permissionMode,'full-access');
+ const sent=await f.call(conversation+'/send',token,{expectedRevision:preview.revision,connectionId:'fixture',text:'full-access follow-up',permissionMode:'full-access',previewToken:preview.token,clientRequestId:randomUUID()});
+ assert.equal(sent.status,202,await sent.clone().text());
+ const off=await fetch(f.manager+'/'+credential.id+'/full-access',{method:'POST',headers:f.webHeaders,body:JSON.stringify({expectedRevision:credential.revision,allowFullAccess:false})});
+ assert.equal(off.status,200,await off.clone().text());const toggled=(await off.json()).credential;
+ assert.equal(toggled.allowFullAccess,false);assert.notEqual(toggled.revision,credential.revision);
+ const blocked=await f.call(endpoint+'/drafts/'+randomUUID()+'/send',token,{connectionId:'fixture',text:'x',clientRequestId:randomUUID(),expectedDraftRevision:state.revision,permissionMode:'full-access'});
+ assert.equal(blocked.status,403);assert.equal((await blocked.json()).error.code,'programmatic_forbidden');
+ assert.equal((await fetch(f.manager+'/'+credential.id+'/full-access',{method:'POST',headers:f.webHeaders,body:JSON.stringify({expectedRevision:credential.revision,allowFullAccess:true})})).status,409);
+ assert.equal((await fetch(f.manager+'/'+credential.id+'/full-access',{method:'POST',headers:f.webHeaders,body:JSON.stringify({expectedRevision:toggled.revision,allowFullAccess:'yes'})})).status,400);
+ const doc=await(await f.call('/openapi.json',token)).json(),expanded=expandRefs(doc,doc);
+ const startRoute='/api/v1/programmatic/workspaces/{workspaceId}/conversations/drafts/{draftId}/send';
+ assert.deepEqual(expanded.paths[startRoute].post.requestBody.content['application/json'].schema.properties.permissionMode.enum,['default','full-access']);
 });
