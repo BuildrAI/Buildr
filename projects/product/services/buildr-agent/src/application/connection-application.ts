@@ -167,6 +167,10 @@ export class ConnectionApplication {
     this.options.changed(structuredClone(view));
     return view;
   }
+  /** Native account files can live outside the connection's private program config. */
+  private nativeAccountRoot(id: string, record: StoredConnection): string {
+    return this.options.nativeAccountConfigRoots?.[id] ?? record.view.configPath ?? path.join(this.options.root, 'connections', id);
+  }
   get(id: string, includeLoginUrl = false): ConnectionView {
     const view = structuredClone(this.stored(id).view);
     view.capabilities.maxInputBytes = Math.min(view.capabilities.maxInputBytes, 64 * 1024);
@@ -262,7 +266,7 @@ export class ConnectionApplication {
     const configRoot = path.join(this.options.root, 'connections', id, 'model-bindings', createHash('sha256').update(gateway.identity).digest('hex'));
     const lifecycle = this.lifecycles.get(id);
     const opening = new AbortController(); this.opening.set(key, opening);
-    const promise = this.openExecutor(this.executors.get(id)!, { interaction: interactionPolicy, connectionId: id, configRoot, executable: record.view.executable, programSource: record.programSource, environment: this.options.environment, signal: opening.signal, gateway, nativeAccountConfigRoot: this.options.nativeAccountConfigRoots?.[id] ?? record.view.configPath ?? path.join(this.options.root, 'connections', id) }).then(async runtime => {
+    const promise = this.openExecutor(this.executors.get(id)!, { interaction: interactionPolicy, connectionId: id, configRoot, executable: record.view.executable, programSource: record.programSource, environment: this.options.environment, signal: opening.signal, gateway, nativeAccountConfigRoot: this.nativeAccountRoot(id, record) }).then(async runtime => {
       if (this.closing || opening.signal.aborted || this.lifecycles.get(id) !== lifecycle) { await runtime.close(); fail('agent_connection_disabled', '接入已断开。', 409); }
       return runtime;
     }).catch(error => { if (this.gatewayRuntimes.get(key) === promise) this.gatewayRuntimes.delete(key); throw error; }).finally(() => { this.opening.delete(key); });
@@ -277,13 +281,13 @@ export class ConnectionApplication {
     if (!executor?.readPersistedExecution || !record.view.executable) return;
     const base = path.join(this.options.root, 'connections', id);
     const configRoot = input.gatewayIdentity ? path.join(base, 'model-bindings', createHash('sha256').update(input.gatewayIdentity).digest('hex')) : base;
-    return executor.readPersistedExecution({ ...input, configRoot, nativeAccountConfigRoot: record.view.configPath ?? base, executable: record.view.executable, programSource: record.programSource });
+    return executor.readPersistedExecution({ ...input, configRoot, nativeAccountConfigRoot: this.nativeAccountRoot(id, record), executable: record.view.executable, programSource: record.programSource });
   }
   async readSupplementReceipt(id: string, input: Omit<Parameters<NonNullable<AgentExecutor['readSupplementReceipt']>>[0], 'configRoot'|'nativeAccountConfigRoot'|'executable'|'programSource'>) {
     const executor = this.executors.get(id), record = this.stored(id);
     if (!executor?.readSupplementReceipt) return;
     const base = path.join(this.options.root, 'connections', id);
-    return executor.readSupplementReceipt({ ...input, configRoot: base, nativeAccountConfigRoot: this.options.nativeAccountConfigRoots?.[id] ?? record.view.configPath ?? base, executable: record.view.executable ?? '', programSource: record.programSource });
+    return executor.readSupplementReceipt({ ...input, configRoot: base, nativeAccountConfigRoot: this.nativeAccountRoot(id, record), executable: record.view.executable ?? '', programSource: record.programSource });
   }
   async releaseGatewayRuntime(runtime: AgentRuntime): Promise<void> {
     const owned = [];
