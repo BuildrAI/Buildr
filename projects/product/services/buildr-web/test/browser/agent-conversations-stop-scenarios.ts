@@ -13,15 +13,16 @@ export async function runStopAllScenarios(fixture:AgentConversationFixture){
         await page.setViewportSize({width,height:1000});await page.reload();await input().waitFor();
         const button=panel().getByRole('button',{name:'停止对话',exact:true});
         await button.waitFor();assert.equal(await button.innerText(),'停止');
-        const glyph=await button.locator('.ac-stop-glyph').evaluate((node:HTMLElement)=>{const rect=node.getBoundingClientRect();return {width:rect.width,height:rect.height,background:getComputedStyle(node).backgroundColor};});
-        assert.equal(glyph.width,10);assert.equal(glyph.height,10);assert.notEqual(glyph.background,'rgba(0, 0, 0, 0)','停止图形是实心方块，而不是禁止符号');
+        assert.equal(await button.locator('.anticon-stop svg').count(),1,'复用历史StopOutlined图标');
+        assert.equal(await button.evaluate((node:HTMLElement)=>node.classList.contains('ant-btn-text')),true,'恢复历史无边框文字按钮');
+        assert.equal(await button.locator('.ac-stop-glyph').count(),0,'不使用自制实心方块');
         for(const text of ['', '运行中仍可编辑追加草稿']){
           await input().fill(text);
           const stop=await button.boundingBox(),composer=await panel().locator('.ac-composer').boundingBox(),send=await panel().getByRole('button',{name:'发送对话',exact:true}).boundingBox();
           assert.ok(stop&&composer&&send);
           assert.ok(stop.y+stop.height<=composer.y+1,'停止必须在输入框外的上方，不在统计/发送工具栏');
           assert.ok(Math.abs(stop.x+stop.width-composer.x-composer.width)<=2,'停止与输入框右边缘对齐');
-          assert.ok(stop.y<send.y);assert.ok(stop.width>=70&&stop.height>=32,'独立文字按钮有足够点击区域');
+          assert.ok(stop.y<send.y);assert.ok(stop.width>=60&&stop.height>=32,'独立文字按钮有足够点击区域');
           assert.equal(await button.isEnabled(),true);assert.equal(await input().inputValue(),text);
           assert.equal(await panel().locator('.ac-compose-execution .ac-stop-button,.ac-thread-actions .ac-stop-button').count(),0);
         }
