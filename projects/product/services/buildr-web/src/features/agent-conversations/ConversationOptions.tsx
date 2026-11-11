@@ -8,7 +8,7 @@ import { providerNames, type ConnectionView, type CatalogModel } from './types';
 import { contextReportWindow, conversationUsageReport } from './conversation-state';
 import { ContextUsageSummary } from './ContextUsageSummary';
 import {rememberReasoningEffort,restoreReasoningChoice} from './conversation-preferences';
-import {modelSourceName,nextServiceTier,conversationTierChoice,conversationReasoningSelection,selectedConversationModel,qoderSourceNotice,qoderSourceUnsupported,type ConversationChoice} from './conversation-options';
+import {modelSourceName,nextServiceTier,conversationTierChoice,conversationReasoningSelection,selectedConversationModel,catalogConversationOption,type ConversationChoice} from './conversation-options';
 import {preparedAgentConnections} from '../../lib/model-picker.ts';
 
 type Props = {
@@ -36,12 +36,6 @@ export function ConversationOptions({connections,modelCatalog,value,disabled,onC
   const reportSource=usageReport&&shared.find(item=>item.accountId===usageReport.modelAccountId&&item.modelId===usageReport.model&&(!usageReport.modelAccountIdentity||item.accountIdentity===usageReport.modelAccountIdentity));
   const reportLabel=usageReport?(reportSource?modelSourceName(reportSource.provider)+' / '+reportSource.label:usageReport.model||usageReport.modelSourceLabel||modelSourceName(usageReport.provider??'')):undefined;
   const candidates=shared.filter(item=>item.enabled!==false||item.accountId===value.modelAccountId&&item.modelId===value.model);
-  // Qoder resolves third-party models only inside its interactive BYOK wizard; the
-  // execution channel cannot use them. Keep those sources visible and say why.
-  const unsupportedSource=(item:CatalogModel)=>qoderSourceUnsupported(original?.provider,item.provider);
-  const unsupportedVisible=candidates.some(unsupportedSource);
-  const unsupportedNotice=qoderSourceNotice(original?.provider);
-  const sharedOption=(accountId:string,item:CatalogModel)=>{const unsupported=unsupportedSource(item);const base=item.creditFactor!==undefined?`${item.label} · ${item.creditFactor.toFixed(2)}x`:item.label;return {value:'shared:'+accountId+'::'+item.modelId,label:unsupported?`${base} · 暂不支持`:base,disabled:!item.available||unsupported};};
   const groups=Array.from(new Set(candidates.map(item=>item.accountId))).map(id=>{const source=candidates.find(item=>item.accountId===id)!;const name=modelSourceName(source.provider);return {id,label:name+(new Set(candidates.filter(item=>modelSourceName(item.provider)===name).map(item=>item.accountId)).size>1?' · '+source.accountLabel:'')};});
   const nativeFallback=false; // The shared catalog is authoritative, including disabled sources.
   const connection=original&&(!value.model||value.modelAccountId||effectiveShared)?{...original,models:effectiveShared?[{...effectiveShared,id:effectiveShared.modelId,isDefault:true}]:[]}:original;
@@ -56,8 +50,7 @@ export function ConversationOptions({connections,modelCatalog,value,disabled,onC
     <Popover trigger={['hover','click']} placement="top" content={<ContextUsageSummary configuredWindow={configuredWindow} report={usageReport} reportWindow={reportWindow} reportLabel={reportLabel}/>}><Button type="text" size="small" className="ac-context-trigger" aria-label="上下文窗口与用量"><Progress type="circle" size={14} strokeWidth={15} percent={usedPercent??0} showInfo={false}/></Button></Popover>
     <ModelPicker selectedKey={value.modelAccountId?'shared:'+value.modelAccountId+'::'+value.model:value.model||''} modelLabel={modelLabel} defaultLabel={value.model?defaultModel?.label:'请选择模型'} reasoning={reasoning} disabled={disabled} unavailable={unavailable} resetKey={value.connectionId}
       tierSwitchable={!!selectedShared?.serviceTiers&&selectedShared.serviceTiers.length>1} tierDisabled={disabled||selectedShared?.enabled===false||!selectedShared?.available} tierLabel={tier?.label} accelerated={accelerated}
-      notice={value.model&&!selectedShared?'原模型来源不可用或已停用，请重新选择模型。':!value.model?'请选择模型；没有有效记忆时不会自动选择默认模型。':unsupportedVisible?unsupportedNotice:undefined}
-      groups={[...(original?.models.length&&nativeFallback?[{id:'native',label:'原生账号',options:[{value:'',label:'原生默认模型'},...original.models.map(item=>({value:item.id,label:item.label}))]}]:[]),...groups.map(group=>({...group,options:candidates.filter(item=>item.accountId===group.id).map(item=>sharedOption(group.id,item))}))]}
+      groups={[...(original?.models.length&&nativeFallback?[{id:'native',label:'原生账号',options:[{value:'',label:'原生默认模型'},...original.models.map(item=>({value:item.id,label:item.label}))]}]:[]),...groups.map(group=>({...group,options:candidates.filter(item=>item.accountId===group.id).map(item=>catalogConversationOption(original?.provider,item))}))]}
       onCycleTier={()=>{if(selectedShared){const next=nextServiceTier(selectedShared.serviceTiers,value.serviceTier,selectedShared.defaultServiceTier);onChange(conversationTierChoice(value,selectedShared,next),true);}}}
       onSelectModel={model=>{const source=shared.find(item=>'shared:'+item.accountId+'::'+item.modelId===model);const next={...value,model:source?.modelId||model||undefined,modelAccountId:source?.accountId,modelAccountRevision:source?.accountRevision,modelAccountIdentity:source?.accountIdentity,serviceTier:source?.defaultServiceTier,reasoningEffort:undefined};onChange(restoreReasoningChoice(next,original,shared),true);}}
       onSelectEffort={effort=>{rememberReasoningEffort({...value,model:nativeModelId,...(selectedShared?{modelAccountId:selectedShared.accountId,modelAccountIdentity:selectedShared.accountIdentity}:{})},effort);onChange({...value,reasoningEffort:effort},true);}}/>

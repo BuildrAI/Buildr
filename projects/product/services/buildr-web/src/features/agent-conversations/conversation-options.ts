@@ -13,6 +13,12 @@ export function qoderSourceUnsupported(provider:string|undefined,sourceProvider:
   const native=provider==='qoder-cn'?['qoder-cn','native-qoder-cn']:['qoder','native-qoder'];
   return !native.includes(sourceProvider);
 }
+/** Disabled choices keep their actual model name; compatibility is not a name suffix. */
+export function catalogConversationOption(provider:string|undefined,item:CatalogModel) {
+  return {value:'shared:'+item.accountId+'::'+item.modelId,
+    label:item.creditFactor!==undefined?`${item.label} · ${item.creditFactor.toFixed(2)}x`:item.label,
+    disabled:!item.available||qoderSourceUnsupported(provider,item.provider)};
+}
 export type ConversationChoice = Pick<SendDraft,'connectionId'|'model'|'reasoningEffort'|'serviceTier'|'modelAccountId'|'modelAccountRevision'|'modelAccountIdentity'>;
 export type PermissionMode=NonNullable<SendDraft['permissionMode']>;
 export const permissionModeLabels:Record<PermissionMode,string>={default:'默认权限','full-access':'完全访问'};

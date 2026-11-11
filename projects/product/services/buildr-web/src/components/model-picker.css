@@ -1,5 +1,8 @@
 .ac-choice-popup{background:#fff}.ac-choice-popup .ant-select-item{font-size: var(--font-size-body);min-height:32px;color:var(--soft-ink,#252a31)}
 .ac-choice-popup .ant-select-item-option-active:not(.ant-select-item-option-disabled){background:#f4f6f7}.ac-choice-popup .ant-select-item-option-selected:not(.ant-select-item-option-disabled){background:#e7efec}
+/* Preserve a distinct disabled foreground despite the shared option color above. */
+.ac-model-list-popup .ant-select-item-option-disabled,
+.ac-model-list-popup .ant-select-item-option-disabled .ant-select-item-option-content{color:var(--ant-color-text-disabled,#9ca3af);cursor:not-allowed}
 .ac-model-trigger.ant-btn{display:inline-flex;align-items:center;gap:5px;height:auto;min-height:28px;max-width:100%;padding:3px 6px;border-radius:6px;color:var(--soft-ink);font-size: var(--font-size-body);font-weight:500}
 .ac-model-trigger.ant-btn:not(:disabled):hover,.ac-model-trigger[aria-expanded=true]{background:#e7efec}
 .ac-model-trigger .ac-model-label{white-space:normal;overflow-wrap:anywhere;text-align:left;line-height:1.4;min-width:0}
