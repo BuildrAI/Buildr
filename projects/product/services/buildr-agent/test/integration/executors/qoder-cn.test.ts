@@ -102,6 +102,53 @@ test('Qoder CN stop cancels the native turn instead of claiming success', { time
   } finally { await runtime?.close(); await rm(root, { recursive: true, force: true }); }
 });
 
+test('Qoder CN settles a tool cancelled while waiting for approval and accepts the next input', { timeout: 15000 }, async () => {
+  await withRuntime(async ({ runtime, config, workspace, contextRef }) => {
+    await writeFile(join(config, 'scenario'), 'stop-approval-pending');
+    const events: ExecutorEvent[] = [];
+    const sending = runtime.send({ contextRef, cwd: workspace, text: '等待批准', images: [], clientRequestId: 'approval-stop', onEvent: event => events.push(event) });
+    sending.catch(() => {});
+    await eventually(() => events.some(event => event.type === 'request'));
+    const stopped = await runtime.stop({ contextRef, executionRef: { id: 'approval-stop' } });
+    await sending;
+    assert.equal(stopped.status, 'stopped');
+    const observed = await runtime.observe({ contextRef });
+    assert.equal(observed.status, 'stopped');
+    assert.ok(observed.tools.every(tool => tool.status === 'completed'), 'a tool cancelled at approval never ran and must settle');
+    const tool = latestItems(events).find(item => item.kind === 'tool');
+    assert.equal(tool?.status, 'completed');
+    assert.match(tool?.text ?? '', /未执行/, 'the display must honestly say the tool did not run');
+    assert.ok(events.some(event => event.type === 'completed' && event.status === 'stopped'));
+    // The reported bug: the conversation was permanently rejected after this stop.
+    await writeFile(join(config, 'scenario'), '');
+    await writeFile(join(config, 'auto-allow'), '');
+    const next: ExecutorEvent[] = [];
+    await runtime.send({ contextRef, cwd: workspace, text: '继续', images: [], clientRequestId: 'after-stop', onEvent: event => next.push(event) });
+    assert.ok(next.some(event => event.type === 'accepted'));
+    assert.equal((await runtime.observe({ contextRef })).status, 'idle');
+  });
+});
+
+test('Qoder CN keeps an approved running tool unknown when cancelled without a terminal update', { timeout: 15000 }, async () => {
+  await withRuntime(async ({ runtime, config, workspace, contextRef }) => {
+    await writeFile(join(config, 'scenario'), 'stop-running-tool');
+    const events: ExecutorEvent[] = [];
+    const sending = runtime.send({ contextRef, cwd: workspace, text: '批准后运行', images: [], clientRequestId: 'running-stop', onEvent: event => events.push(event) });
+    sending.catch(() => {});
+    await eventually(() => events.some(event => event.type === 'request'));
+    const request = events.find(event => event.type === 'request');
+    assert.equal(request?.type, 'request');
+    await runtime.reply({ contextRef, executionRef: { id: 'running-stop' }, requestId: request.request.id, answer: 'allow-once' });
+    const stopped = await runtime.stop({ contextRef, executionRef: { id: 'running-stop' } });
+    await sending.catch(() => {});
+    assert.notEqual(stopped.status, 'stopped');
+    const observed = await runtime.observe({ contextRef });
+    assert.equal(observed.status, 'unknown', 'a genuinely running tool may still be live after cancellation');
+    assert.ok(observed.tools.some(tool => tool.status !== 'completed'));
+    await assert.rejects(runtime.send({ contextRef, cwd: workspace, text: '不得重发', images: [], clientRequestId: 'retry', onEvent() {} }), /unsettled/);
+  });
+});
+
 test('Qoder CN sends the native model instead of the Buildr lease and keeps one session across messages', { timeout: 20000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'buildr-qoder-cn-lease-')); const configRoot = join(root, 'config'), workspace = join(root, 'workspace');
   await mkdir(workspace); const accountIdentity = await signIn(configRoot); await writeFile(join(configRoot, 'qoder-cn-config', 'auto-allow'), ''); const executable = await program(root);

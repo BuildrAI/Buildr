@@ -37,7 +37,10 @@ const configOptions = session => [
 function finishPrompt(stopReason) {
   if (!pendingPrompt) return;
   const { id, sessionId, toolId, userMessageId, assistantId } = pendingPrompt; pendingPrompt = undefined;
-  if (scenario() !== 'unsettled-tool') {
+  // The real native aborts an approval wait without a terminal tool_call_update.
+  const skipToolUpdate = scenario() === 'unsettled-tool'
+    || (stopReason === 'cancelled' && (scenario() === 'stop-approval-pending' || scenario() === 'stop-running-tool'));
+  if (!skipToolUpdate) {
     notify('session/update', { sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId: toolId, status: scenario() === 'failed-tool' ? 'failed' : 'completed', content: [{ type: 'content', content: { type: 'text', text: '文件已读取' } }] } });
     notify('session/update', { sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId: toolId } });
   }
@@ -67,7 +70,7 @@ function appendNative(session,row) {
 function handle(message) {
   const { id, method, params = {} } = message;
   // A response from the client (permission decision) finishes the pending prompt.
-  if (!method) { log('fixture-permission-responses.jsonl', message); if ((id === 900 || id===901) && scenario() !== 'cancel-delayed' && scenario() !== 'cancel-ignored') finishPrompt('end_turn'); return; }
+  if (!method) { log('fixture-permission-responses.jsonl', message); if ((id === 900 || id===901) && !['cancel-delayed', 'cancel-ignored', 'stop-running-tool'].includes(scenario())) finishPrompt('end_turn'); return; }
   if (method === 'initialize') { log('fixture-initialize.jsonl', params); return result(id, { protocolVersion: 1, authMethods: [{ id: 'qoderclicn-login', name: 'Use qoderclicn login' }], agentInfo: { name: 'qoder-cli-cn', title: 'Qoder CLI CN', version: '1.1.86' }, agentCapabilities: { loadSession: true, promptCapabilities: { image: true } }, sessionCapabilities: { resume: {} } }); }
   if (method === 'session/new') {
     if (process.env.FIXTURE_UNAUTHENTICATED === '1' || existsSync(join(process.env.QODERCN_CONFIG_DIR ?? '', 'unauthenticated'))) return send({ jsonrpc: '2.0', id, error: { code: -32000, message: 'Authentication required: Authentication is required.' } });

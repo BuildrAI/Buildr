@@ -27,6 +27,7 @@ interface PendingApproval {
   options: Array<Record<string, unknown>>;
   settle(value: unknown): void;
   answer?(value: unknown): unknown;
+  toolCallId?: string;
 }
 interface SelectOption { id?: string; currentValue?: string; options?: Array<{ value: string; name?: string }> }
 function selectOptions(value: unknown): Map<string, SelectOption> {
@@ -44,6 +45,7 @@ interface TurnState {
   items: Map<string, ExecutorItem>;
   tools: Map<string, { id: string; label: string; status: 'running' | 'completed' | 'unknown' }>;
   approvals: Map<string, PendingApproval>;
+  approvalPendingTools: Set<string>;
   status: ExecutorObservation['status'];
   diagnostic?: string;
   textSegment?: { id: string; kind: string; nativeId?: string };
@@ -247,6 +249,7 @@ class QoderCnRuntime implements AgentRuntime {
     }
     const options = Array.isArray(params.options) ? params.options as Array<Record<string, unknown>> : [];
     const toolCall = params.toolCall && typeof params.toolCall === 'object' ? params.toolCall as Record<string, unknown> : {};
+    const toolCallId = typeof toolCall.toolCallId === 'string' ? toolCall.toolCallId : typeof toolCall.tool_call_id === 'string' ? toolCall.tool_call_id : undefined;
     const requestId = `qoder-cn-${request.id}`;
     const pending: ExecutorRequest = {
       id: requestId, kind: 'approval', blocking: true,
@@ -255,8 +258,9 @@ class QoderCnRuntime implements AgentRuntime {
       options: options.filter(option => typeof option.optionId === 'string').map(option => ({ id: String(option.optionId), label: String(option.name ?? option.optionId) })),
     };
     turn.status = 'waiting';
+    if (toolCallId) turn.approvalPendingTools.add(toolCallId);
     const settled = new Promise<unknown>(resolve => {
-      turn.approvals.set(requestId, { request: pending, options, settle: resolve });
+      turn.approvals.set(requestId, { request: pending, options, settle: resolve, ...(toolCallId ? { toolCallId } : {}) });
     });
     turn.onEvent({ type: 'request', request: pending });
     return await settled;
@@ -472,7 +476,7 @@ class QoderCnRuntime implements AgentRuntime {
     const executionId = input.clientRequestId;
     let settle!: () => void;
     const settled = new Promise<void>(resolve => { settle = resolve; });
-    const turn: TurnState = { contextId: input.contextRef.id, executionId, onEvent: input.onEvent, items: new Map(), tools: new Map(), approvals: new Map(), status: 'running', segment: 0, pending: true, cancelRequested: false, settled, settle, supplements: new Map(), supplementInputs: new Map() };
+    const turn: TurnState = { contextId: input.contextRef.id, executionId, onEvent: input.onEvent, items: new Map(), tools: new Map(), approvals: new Map(), approvalPendingTools: new Set(), status: 'running', segment: 0, pending: true, cancelRequested: false, settled, settle, supplements: new Map(), supplementInputs: new Map() };
     this.turn = turn;
     input.onEvent({ type: 'accepted', executionRef: this.executionRef(executionId), inputItemId: executionId });
     const userItem: ExecutorItem = { id: `user:${executionId}`, kind: 'message', role: 'user', text: input.text, clientRequestId: executionId, executionId, status: 'completed' };
@@ -499,6 +503,15 @@ class QoderCnRuntime implements AgentRuntime {
       if (stopReason === 'max_tokens' || stopReason === 'max_turn_requests') turn.diagnostic = 'Qoder CN 输出或工具轮次达到上限，本轮回复未完整完成。';
       else if (stopReason === 'refusal') turn.diagnostic = 'Qoder CN 拒绝了本轮请求。';
       else if (!normal && !stopped) turn.diagnostic = 'Qoder CN 未返回可确认的正常结束原因，本轮结果未知。';
+      // A tool that asked for permission and was never allowed to run cannot have
+      // executed. The confirmed turn end settles it instead of leaving it unknown,
+      // which would otherwise reject every later input for this conversation.
+      for (const tool of turn.tools.values()) {
+        if (tool.status !== 'running' || !turn.approvalPendingTools.has(tool.id)) continue;
+        tool.status = 'completed';
+        const item = turn.items.get(tool.id);
+        if (item) this.item(turn, { ...item, status: 'completed', text: `${item.text ? item.text + '\n' : ''}授权等待已取消，工具未执行。` });
+      }
       for (const tool of turn.tools.values()) if (tool.status === 'running') tool.status = 'unknown';
       if ([...turn.tools.values()].some(tool => tool.status !== 'completed')) { turn.status = 'unknown'; turn.diagnostic ??= 'Qoder CN 本轮仍有未确认结束的工具，结果未知。'; }
       if (turn.status === 'idle' || turn.status === 'stopped') input.onEvent({ type: 'completed', status: turn.status === 'idle' ? 'completed' : 'stopped', ...(turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) });
@@ -561,6 +574,8 @@ class QoderCnRuntime implements AgentRuntime {
     const approval = turn?.pending && !turn.cancelRequested ? turn.approvals.get(input.requestId) : undefined;
     if (!approval) throw new Error('agent_request_not_found');
     const outcome = approval.answer ? approval.answer(input.answer) : permissionOutcome(approval.options, input.answer);
+    // An allowed tool may now execute; it is no longer a never-run approval wait.
+    if (approval.toolCallId && allowedOutcome(approval.options, outcome)) this.turn!.approvalPendingTools.delete(approval.toolCallId);
     this.turn!.approvals.delete(input.requestId);
     this.turn!.status = 'running';
     approval.settle(outcome);
@@ -617,6 +632,12 @@ function permissionOutcome(options: Array<Record<string, unknown>>, answer: unkn
   const allow = options.find(option => option.kind === 'allow_once');
   if (value.approved === true && allow && typeof allow.optionId === 'string') return { outcome: { outcome: 'selected', optionId: allow.optionId } };
   return { outcome: { outcome: 'cancelled' } };
+}
+function allowedOutcome(options: Array<Record<string, unknown>>, outcome: unknown): boolean {
+  const value = outcome && typeof outcome === 'object' ? (outcome as { outcome?: { outcome?: unknown; optionId?: unknown } }).outcome : undefined;
+  if (!value || value.outcome !== 'selected' || typeof value.optionId !== 'string') return false;
+  const option = options.find(item => item.optionId === value.optionId);
+  return typeof option?.kind === 'string' && option.kind.startsWith('allow');
 }
 function textOf(content: unknown): string {
   if (typeof content === 'string') return content;
