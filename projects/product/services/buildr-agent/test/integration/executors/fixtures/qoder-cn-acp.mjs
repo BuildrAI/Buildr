@@ -2,6 +2,7 @@
 // Minimal Qoder CN ACP fixture: newline-delimited JSON-RPC over stdio, no network.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 const args = process.argv.slice(2);
 if (args.includes('--version')) { process.stdout.write('1.1.86\n'); process.exit(0); }
 if (args.includes('login')) {
@@ -16,6 +17,7 @@ const models = ['auto', 'fast', 'qmodel_latest', 'dfmodel'];
 const autoAllow = () => existsSync(join(config, 'auto-allow'));
 let buffer = '';
 let pendingPrompt;
+const queue = [];
 let sequence = 0;
 let toolSequence = 0;
 const scenario = () => { try { return readFileSync(join(config, 'scenario'), 'utf8').trim(); } catch { return ''; } };
@@ -34,7 +36,7 @@ const configOptions = session => [
 
 function finishPrompt(stopReason) {
   if (!pendingPrompt) return;
-  const { id, sessionId, toolId } = pendingPrompt; pendingPrompt = undefined;
+  const { id, sessionId, toolId, userMessageId, assistantId } = pendingPrompt; pendingPrompt = undefined;
   if (scenario() !== 'unsettled-tool') {
     notify('session/update', { sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId: toolId, status: scenario() === 'failed-tool' ? 'failed' : 'completed', content: [{ type: 'content', content: { type: 'text', text: '文件已读取' } }] } });
     notify('session/update', { sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId: toolId } });
@@ -44,18 +46,32 @@ function finishPrompt(stopReason) {
     notify('session/update', { sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'answer' } } });
   }
   const session = readSession(sessionId);
-  if (session) { session.messages.push({ role: 'assistant', text: 'fixture answer' }); writeSession(session); }
-  result(id, { stopReason: scenario() === 'truncated' ? 'max_tokens' : scenario() === 'unknown-reason' ? 'vendor_new_reason' : stopReason });
+  if (session) {
+    session.messages.push({ role: 'assistant', text: 'fixture answer' });
+    const responseId=randomUUID(),finalId=randomUUID();
+    appendNative(session, {type:'user',uuid:responseId,parentUuid:assistantId,promptId:userMessageId,sourceToolAssistantUUID:assistantId,toolUseResult:{stdout:'native full detail '.repeat(1500),stderr:''},message:{content:[{type:'tool_result',tool_use_id:toolId,content:'native summary'}]}});
+    appendNative(session, {type:'assistant',uuid:finalId,parentUuid:responseId,message:{content:[{type:'text',text:'fixture answer'}],usage:{input_tokens:2345,output_tokens:50}}});
+    writeSession(session);
+  }
+  result(id, { ...(scenario()==='queue-missing-receipt'&&toolSequence>1?{}:{userMessageId}), stopReason: scenario() === 'truncated' ? 'max_tokens' : scenario() === 'unknown-reason' ? 'vendor_new_reason' : stopReason });
+  if(queue.length)setTimeout(()=>handle(queue.shift()),5);
+}
+
+function appendNative(session,row) {
+  const directory=join(config,'projects','fixture');mkdirSync(directory,{recursive:true});
+  const file=join(directory,session.id+'.jsonl');
+  writeFileSync(file,JSON.stringify({sessionId:session.id,cwd:session.cwd,isSidechain:false,...row})+'\n',{flag:'a'});
+  writeFileSync(file,JSON.stringify({type:'active-leaf',sessionId:session.id,leafUuid:row.uuid})+'\n',{flag:'a'});
 }
 
 function handle(message) {
   const { id, method, params = {} } = message;
   // A response from the client (permission decision) finishes the pending prompt.
-  if (!method) { log('fixture-permission-responses.jsonl', message); if (id === 900 && scenario() !== 'cancel-delayed' && scenario() !== 'cancel-ignored') finishPrompt('end_turn'); return; }
+  if (!method) { log('fixture-permission-responses.jsonl', message); if ((id === 900 || id===901) && scenario() !== 'cancel-delayed' && scenario() !== 'cancel-ignored') finishPrompt('end_turn'); return; }
   if (method === 'initialize') { log('fixture-initialize.jsonl', params); return result(id, { protocolVersion: 1, authMethods: [{ id: 'qoderclicn-login', name: 'Use qoderclicn login' }], agentInfo: { name: 'qoder-cli-cn', title: 'Qoder CLI CN', version: '1.1.86' }, agentCapabilities: { loadSession: true, promptCapabilities: { image: true } }, sessionCapabilities: { resume: {} } }); }
   if (method === 'session/new') {
     if (process.env.FIXTURE_UNAUTHENTICATED === '1' || existsSync(join(process.env.QODERCN_CONFIG_DIR ?? '', 'unauthenticated'))) return send({ jsonrpc: '2.0', id, error: { code: -32000, message: 'Authentication required: Authentication is required.' } });
-    const sessionId = `fixture-session-${process.pid}-${++sequence}`;
+    const sessionId = randomUUID(); ++sequence;
     const session = { id: sessionId, cwd: params.cwd, model: 'auto', mode: 'default', messages: [] };
     writeSession(session); log('fixture-session-new.jsonl', { sessionId, cwd: params.cwd });
     return result(id, { sessionId, configOptions: configOptions(session) });
@@ -79,6 +95,7 @@ function handle(message) {
     return result(id, { configOptions: configOptions(session) });
   }
   if (method === 'session/prompt') {
+    if(pendingPrompt) {queue.push(message);log('fixture-queued.jsonl',{id,sessionId:params.sessionId,prompt:params.prompt});return;}
     const text = (params.prompt ?? []).map(part => part.text ?? '').join('');
     log('fixture-prompts.jsonl', { sessionId: params.sessionId, text });
     const session = readSession(params.sessionId);
@@ -86,10 +103,16 @@ function handle(message) {
     notify('session/update', { sessionId: params.sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '收到：' + text } } });
     notify('session/update', { sessionId: params.sessionId, update: { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '检查文件内容' } } });
     notify('session/update', { sessionId: params.sessionId, update: { sessionUpdate: 'user_message_chunk', content: { type: 'text', text } } });
-    const toolId = `tool-${++toolSequence}`;
+    const toolId = `tool-${++toolSequence}`, userMessageId=randomUUID(),assistantId=randomUUID();
     notify('session/update', { sessionId: params.sessionId, update: { sessionUpdate: 'tool_call', toolCallId: toolId, title: '读取文件', kind: 'read', rawInput: { path: 'fixture.txt' }, status: 'running' } });
-    pendingPrompt = { id, sessionId: params.sessionId, toolId };
-    if (scenario() === 'disconnect') { process.exit(0); return; }
+    appendNative(session,{type:'user',uuid:userMessageId,humanInput:true,origin:{kind:'human'},message:{content:[{type:'text',text}]}});
+    appendNative(session,{type:'assistant',uuid:assistantId,parentUuid:userMessageId,message:{content:[{type:'tool_use',id:toolId,name:'Read',input:{path:'fixture.txt'}}],usage:{input_tokens:1234,output_tokens:20}}});
+    pendingPrompt = { id, sessionId: params.sessionId, toolId, userMessageId,assistantId };
+    if (scenario() === 'disconnect' || scenario()==='queue-disconnect'&&toolSequence>1) { process.exit(0); return; }
+    if(scenario()==='question'){
+      send({jsonrpc:'2.0',id:901,method:'elicitation/create',params:{sessionId:params.sessionId,mode:'form',toolCallId:toolId,message:'确认实施方案',requestedSchema:{type:'object',additionalProperties:false,properties:{choice:{type:'string',title:'方案',oneOf:[{const:'A',title:'方案A'},{const:'B',title:'方案B'}]},features:{type:'array',title:'功能',items:{type:'string',anyOf:[{const:'问答'},{const:'追加'}]},minItems:1},note:{type:'string',minLength:1},count:{type:'integer',minimum:1},confirm:{type:'boolean'}},required:['choice','features','note','count','confirm']}}});return;
+    }
+    if(scenario().startsWith('queue')&&toolSequence>1){setTimeout(()=>finishPrompt('end_turn'),30);return;}
     if (autoAllow() || session?.mode === 'yolo') { setTimeout(() => finishPrompt('end_turn'), 5); return; }
     send({ jsonrpc: '2.0', id: 900, method: 'session/request_permission', params: { sessionId: params.sessionId, toolCall: { toolCallId: toolId, title: '读取文件', kind: 'read' }, options: [{ optionId: 'allow-always', name: '总是允许', kind: 'allow_always' }, { optionId: 'allow-once', name: '允许一次', kind: 'allow_once' }, { optionId: 'reject-once', name: '拒绝', kind: 'reject_once' }] } });
     return;

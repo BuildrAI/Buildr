@@ -1,10 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, cp, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { existsSync } from 'node:fs';
 import { createCipheriv, createHash, randomUUID } from 'node:crypto';
 import { createQoderCnExecutor } from '../../../build/executors/qoder-cn/index.js';
+import { readNativeTool } from '../../../src/executors/index.ts';
 import type { AgentRuntime, ExecutorEvent, ExecutorItem } from '../../../src/contracts.ts';
 
 const fixture = await readFile(new URL('./fixtures/qoder-cn-acp.mjs', import.meta.url), 'utf8');
@@ -176,7 +178,111 @@ test('Qoder CN applies native full access and restores default without answering
     assert.deepEqual(choices.filter(item => item.configId === 'reasoning_effort').map(item => item.value), ['high']);
     const permissions = await records(join(config, 'fixture-permission-responses.jsonl'));
     assert.equal((permissions[0]?.result as any)?.outcome?.optionId, 'allow-once', 'approve once cannot create a persistent grant');
-    assert.deepEqual((await records(join(config, 'fixture-initialize.jsonl')))[0]?.clientCapabilities, {});
+    assert.deepEqual((await records(join(config, 'fixture-initialize.jsonl')))[0]?.clientCapabilities, {elicitation:{form:{}}});
+  });
+});
+
+test('Qoder CN native form questions pause full-access work and preserve typed answers', {timeout:15000}, async()=>{
+  await withRuntime(async({runtime,config,workspace,contextRef})=>{
+    await writeFile(join(config,'scenario'),'question');
+    const events:ExecutorEvent[]=[];
+    const sending=runtime.send({contextRef,cwd:workspace,text:'询问业务',images:[],permissionMode:'full-access',clientRequestId:'question-owned',onEvent:event=>events.push(event)});
+    sending.catch(()=>{});
+    await eventually(()=>events.some(event=>event.type==='request'&&event.request.kind==='question'));
+    const request=events.find(event=>event.type==='request');
+    assert.equal(request?.type,'request');assert.equal(request.request.kind,'question');
+    assert.equal((await runtime.observe({contextRef})).status,'waiting');
+    const input={contextRef,executionRef:{id:'question-owned'},requestId:request.request.id};
+    await assert.rejects(runtime.reply({...input,answer:{choice:'invalid'}}),/answer_invalid/);
+    assert.equal((await runtime.observe({contextRef})).requests?.length,1);
+    await runtime.reply({...input,answer:{choice:'B',features:['问答','追加'],note:'按计划实施',count:'2',confirm:'true'}});
+    await sending;
+    const answer=(await records(join(config,'fixture-permission-responses.jsonl')))[0]?.result;
+    assert.deepEqual(answer,{action:'accept',content:{choice:'B',features:['问答','追加'],note:'按计划实施',count:2,confirm:true}});
+    assert.equal((await runtime.observe({contextRef})).status,'idle');
+    assert.ok(events.some(event=>event.type==='context-usage'&&event.usedTokens===2345));
+  });
+});
+
+test('Qoder CN stops a native question without supplying an answer', {timeout:15000}, async()=>{
+  await withRuntime(async({runtime,config,workspace,contextRef})=>{
+    await writeFile(join(config,'scenario'),'question');
+    const events:ExecutorEvent[]=[];
+    const sending=runtime.send({contextRef,cwd:workspace,text:'询问',images:[],clientRequestId:'question-stop',onEvent:event=>events.push(event)});sending.catch(()=>{});
+    await eventually(()=>events.some(event=>event.type==='request'));
+    const observed=await runtime.stop({contextRef,executionRef:{id:'question-stop'}});
+    await sending;
+    assert.equal(observed.status,'stopped');
+    assert.deepEqual((await records(join(config,'fixture-permission-responses.jsonl')))[0]?.result,{action:'cancel'});
+  });
+});
+
+test('Qoder CN queues supplementary images in the same execution and confirms only their own native receipt', {timeout:15000}, async()=>{
+  await withRuntime(async({runtime,config,workspace,contextRef})=>{
+    await writeFile(join(config,'scenario'),'queue');
+    const events:ExecutorEvent[]=[];
+    const sending=runtime.send({contextRef,cwd:workspace,text:'第一条',images:[],clientRequestId:'queue-owned',onEvent:event=>events.push(event)});sending.catch(()=>{});
+    await eventually(()=>events.some(event=>event.type==='request'));
+    const request=events.find(event=>event.type==='request');assert.equal(request?.type,'request');
+    const image=join(config,'image.png');await writeFile(image,Buffer.from('fixture-image'));
+    const extra={contextRef,executionRef:{id:'queue-owned'},cwd:workspace,text:'追加说明',images:[{id:'fixture-image',path:image,mimeType:'image/png'}],clientRequestId:'extra-1'};
+    const supplement=runtime.supplement!(extra);supplement.catch(()=>{});
+    await eventually(()=>existsSync(join(config,'fixture-queued.jsonl')));
+    await assert.rejects(runtime.supplement!({...extra,executionRef:{id:'wrong'}}),/identity_mismatch/);
+    assert.ok(!events.some(event=>event.type==='item'&&event.item.clientRequestId==='extra-1'));
+    assert.ok(!events.some(event=>event.type==='completed'));
+    await runtime.reply({contextRef,executionRef:{id:'queue-owned'},requestId:request.request.id,answer:'allow-once'});
+    const receipt=await supplement;await sending;
+    assert.equal(receipt.executionRef.id,'queue-owned');
+    assert.ok(receipt.inputItemId&&receipt.inputItemId!=='extra-1');
+    assert.ok(events.some(event=>event.type==='item'&&event.item.clientRequestId==='extra-1'&&event.item.id===receipt.inputItemId));
+    assert.equal(events.filter(event=>event.type==='completed').length,1);
+    assert.equal((await records(join(config,'fixture-session-new.jsonl'))).length,1);
+    const queued=await records(join(config,'fixture-queued.jsonl'));
+    assert.equal(queued.length,1);
+    assert.equal((queued[0]?.prompt as any[])[1]?.data,Buffer.from('fixture-image').toString('base64'));
+    const tools=latestItems(events).filter(item=>item.kind==='tool');
+    assert.equal(tools.length,2);
+    assert.equal((await runtime.observe({contextRef})).status,'idle');
+  });
+});
+
+test('Qoder CN actual ACP tool IDs resolve full durable content, not the live preview', {timeout:15000}, async()=>{
+  await withRuntime(async({runtime,config,workspace,contextRef})=>{
+    await writeFile(join(config,'auto-allow'),'');
+    const events:ExecutorEvent[]=[];
+    await runtime.send({contextRef,cwd:workspace,text:'读取详情',images:[],clientRequestId:'native-reference',onEvent:event=>events.push(event)});
+    const tool=latestItems(events).find(item=>item.kind==='tool')!;
+    const root=join(config,'../..','native-store'),account=join(root,'model-access/accounts/native-qoder-cn');
+    await mkdir(account,{recursive:true});await cp(config,join(account,'qoder-cn-config'),{recursive:true});
+    const reference={version:3 as const,provider:'qoder-cn',contextId:contextRef.id,nativeId:tool.id,entry:{...tool,id:'display-tool',text:'',sequence:1,createdAt:new Date(0).toISOString()},session:{config:'model-access/accounts/native-qoder-cn',cwd:workspace},text:[]};
+    const detail=readNativeTool(root,reference);
+    assert.equal(detail?.text,'native full detail '.repeat(1500));
+    assert.equal(detail?.input,'{"path":"fixture.txt"}');
+    assert.notEqual(detail?.text,tool.text,'detail comes from native durable result, not ACP preview');
+    assert.equal(readNativeTool(root,{...reference,session:{...reference.session,config:'connections/qoder-cn'}})?.text,detail?.text,'old references use only the known CN account alias');
+    assert.equal(readNativeTool(root,{...reference,session:{...reference.session,cwd:'/other'}}),undefined);
+    assert.equal(readNativeTool(root,{...reference,session:{...reference.session,config:'model-access/accounts/other'}}),undefined);
+    const accepted=events.find(event=>event.type==='accepted');assert.equal(accepted?.type,'accepted');
+    assert.equal(accepted.executionRef.data?.resourceContext,contextRef.id);
+  });
+});
+
+for(const scenario of ['queue-missing-receipt','queue-disconnect'])test(`Qoder CN ${scenario} cannot confirm a supplement or mark the run successful`,{timeout:15000},async()=>{
+  await withRuntime(async({runtime,config,workspace,contextRef})=>{
+    await writeFile(join(config,'scenario'),scenario);
+    const events:ExecutorEvent[]=[];
+    const sending=runtime.send({contextRef,cwd:workspace,text:'第一条',images:[],clientRequestId:'queue-owned',onEvent:event=>events.push(event)});sending.catch(()=>{});
+    await eventually(()=>events.some(event=>event.type==='request'));
+    const request=events.find(event=>event.type==='request');assert.equal(request?.type,'request');
+    const supplement=runtime.supplement!({contextRef,executionRef:{id:'queue-owned'},cwd:workspace,text:'追加',images:[],clientRequestId:'unknown-extra'});supplement.catch(()=>{});
+    await eventually(()=>existsSync(join(config,'fixture-queued.jsonl')));
+    await runtime.reply({contextRef,executionRef:{id:'queue-owned'},requestId:request.request.id,answer:'allow-once'});
+    await assert.rejects(supplement);
+    await sending.catch(()=>{});
+    assert.equal((await runtime.observe({contextRef})).status,'unknown');
+    assert.ok(!events.some(event=>event.type==='completed'&&event.status==='completed'));
+    assert.ok(!events.some(event=>event.type==='item'&&event.item.clientRequestId==='unknown-extra'));
   });
 });
 

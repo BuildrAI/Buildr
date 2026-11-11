@@ -5,7 +5,7 @@ import {ModelPicker} from '../../components/ModelPicker';
 import { Button, Popover, Select, Progress } from 'antd';
 import { RobotOutlined } from '@ant-design/icons';
 import { providerNames, type ConnectionView, type CatalogModel } from './types';
-import { contextReportWindow, conversationUsageReport } from './conversation-state';
+import { contextReportWindow, contextUsedPercent, conversationUsageReport } from './conversation-state';
 import { ContextUsageSummary } from './ContextUsageSummary';
 import {rememberReasoningEffort,restoreReasoningChoice} from './conversation-preferences';
 import {modelSourceName,nextServiceTier,conversationTierChoice,conversationReasoningSelection,selectedConversationModel,catalogConversationOption,type ConversationChoice} from './conversation-options';
@@ -32,7 +32,7 @@ export function ConversationOptions({connections,modelCatalog,value,disabled,onC
   const effectiveShared=selectedShared?{...selectedShared,reasoningEfforts:tier?.reasoningEfforts??selectedShared.reasoningEfforts,defaultReasoningEffort:tier?.defaultReasoningEffort??selectedShared.defaultReasoningEffort}:undefined;
   const configuredWindow=selectedShared?.contextWindowOverride===undefined?(tier?.contextWindow??selectedShared?.contextWindow):Math.min(selectedShared.contextWindowOverride,tier?.contextWindow??selectedShared.reportedContextWindow??selectedShared.contextWindowOverride);
   const reportWindow=usageReport?contextReportWindow(usageReport,shared):undefined;
-  const usedPercent=usageReport&&reportWindow?Math.min(100,Math.floor(usageReport.usedTokens/reportWindow*100)):undefined;
+  const usedPercent=contextUsedPercent(usageReport,reportWindow);
   const reportSource=usageReport&&shared.find(item=>item.accountId===usageReport.modelAccountId&&item.modelId===usageReport.model&&(!usageReport.modelAccountIdentity||item.accountIdentity===usageReport.modelAccountIdentity));
   const reportLabel=usageReport?(reportSource?modelSourceName(reportSource.provider)+' / '+reportSource.label:usageReport.model||usageReport.modelSourceLabel||modelSourceName(usageReport.provider??'')):undefined;
   const candidates=shared.filter(item=>item.enabled!==false||item.accountId===value.modelAccountId&&item.modelId===value.model);

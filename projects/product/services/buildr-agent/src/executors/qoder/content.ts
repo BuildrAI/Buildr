@@ -1,14 +1,23 @@
 import path from 'node:path';
+import { existsSync } from 'node:fs';
 import type { NativeContentContext, NativeContentInventory, NativeToolContent } from '../../native-content-contracts.ts';
 import { nativeContentFiles, nativeContentImages, nativeContentRows } from '../native-content.ts';
 import {nativeToolContext,nativeToolRows} from '../native-tool-source.ts';
 import {visibleText} from '../native-process.ts';
 
 export function readQoderTool(root:string,reference:NativeToolContent,product:'qoder'|'qoder-cn'='qoder') {
-  const input=nativeToolContext(root,reference,product);if(!input)return;
+  let input=nativeToolContext(root,reference,product);if(!input)return;
   const configDirectory=product==='qoder'?'qoder-config':'qoder-cn-config';
   try{
-    const primary=nativeContentFiles(input,path.join(input.configRoot,configDirectory,'projects'),file=>path.basename(file)===input.contextId+'.jsonl',3);
+    let primary=nativeContentFiles(input,path.join(input.configRoot,configDirectory,'projects'),file=>path.basename(file)===input!.contextId+'.jsonl',3);
+    // Earlier CN references recorded the connection root even though execution
+    // wrote to the sole account-owned root. Repair only that known legacy alias,
+    // never scan other accounts or replace an existing original transcript.
+    if(!primary.length&&product==='qoder-cn'&&reference.session?.config==='connections/qoder-cn'&&
+      !existsSync(path.join(input.configRoot,configDirectory,'projects'))) {
+      input={...input,configRoot:path.join(root,'model-access','accounts','native-qoder-cn')};
+      primary=nativeContentFiles(input,path.join(input.configRoot,configDirectory,'projects'),file=>path.basename(file)===input!.contextId+'.jsonl',3);
+    }
     if(primary.length!==1)return;
     let files=primary;
     const parent=reference.session?.parentToolId;

@@ -61,7 +61,7 @@ export interface ParticipationFact extends ParticipationMatch {
 export interface ParticipationView {
   schemaVersion: 'buildr.agent-participation/v1';
   contextConfiguration: 'new' | 'inherited' | 'unknown';
-  contextUsage?: {usedTokens:number;windowTokens?:number};
+  contextUsage?: {usedTokens?:number;usedRatio?:number;windowTokens?:number};
   runStatus?: string;
   workspaceId: string;
   conversationId: string;

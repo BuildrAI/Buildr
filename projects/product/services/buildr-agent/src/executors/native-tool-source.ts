@@ -7,7 +7,8 @@ import {maxNativeSourceBytes,nativeContentPath} from '../storage/native-content.
 export function nativeToolContext(root:string,reference:NativeToolContent,provider:'dsh'|'qoder'|'qoder-cn'):NativeContentContext|undefined {
   const session=reference.session;
   if(reference.version!==3||reference.provider!==provider||!session||!reference.nativeId||
-    !new RegExp('^connections/'+provider+'(?:/model-bindings/[a-f0-9]{64})?$').test(session.config)||
+    !(new RegExp('^connections/'+provider+'(?:/model-bindings/[a-f0-9]{64})?$').test(session.config)||
+      provider==='qoder-cn'&&session.config==='model-access/accounts/native-qoder-cn')||
     !(provider==='dsh'?/^session-[a-f0-9-]{36}$/:/^[a-f0-9-]{36}$/).test(reference.contextId))return;
   return {root,configRoot:path.join(root,session.config),contextId:reference.contextId,cwd:session.cwd};
 }

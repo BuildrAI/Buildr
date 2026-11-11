@@ -5,7 +5,7 @@ import {readFileSync} from 'node:fs';
 import ts from 'typescript';
 import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
-import {rememberContextReport,visibleContextReport,contextReportWindow,conversationUsageReport} from '../src/features/agent-conversations/conversation-state.ts';
+import {rememberContextReport,visibleContextReport,contextReportWindow,conversationUsageReport,contextUsedPercent} from '../src/features/agent-conversations/conversation-state.ts';
 
 registerHooks({load(url,context,next){
   if(url.endsWith('/ContextUsageSummary.tsx'))return {format:'module',source:ts.transpileModule(readFileSync(new URL(url),'utf8'),{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText,shortCircuit:true};
@@ -19,6 +19,19 @@ const catalog=[
   {id:'a',label:'Alpha',modelId:'m',accountId:'acc-1',accountIdentity:'id-1',accountRevision:'r1',provider:'shared-x',accountLabel:'One',available:true,images:false,tools:true,contextWindow:100000,serviceTiers:[{id:'fast',label:'F',contextWindow:64000}],defaultServiceTier:'fast'},
   {id:'b',label:'Alpha',modelId:'m',accountId:'acc-2',accountIdentity:'id-2',accountRevision:'r1',provider:'shared-y',accountLabel:'Two',available:true,images:false,tools:true,contextWindow:200000},
 ];
+
+test('原生只报告上下文占比时不伪造token数，百分比不受配置窗口覆盖',()=>{
+  const chat=conversation('cn','w1',run('cn-r',{usedRatio:0.25},{provider:'qoder-cn'}));
+  const report=rememberContextReport(null,chat);
+  assert.equal(report.usedTokens,undefined);
+  assert.equal(contextUsedPercent(report,500000),25);
+  assert.equal(contextUsedPercent(report,1000000),25);
+  const html=renderToStaticMarkup(React.createElement(ContextUsageSummary,{configuredWindow:500000,report,reportWindow:500000}));
+  assert.match(html,/25%/);assert.match(html,/原生未报告 token 数/);
+  assert.doesNotMatch(html,/125K/);assert.doesNotMatch(html,/尚未收到/);
+  assert.equal(rememberContextReport(report,conversation('cn','w1',run('bad',{usedRatio:2}))),report);
+  assert.equal(rememberContextReport(report,conversation('cn','w1',run('zero',{usedRatio:0}))).usedRatio,0);
+});
 
 test('发送新一轮未报告时保留最近真实报告，新一轮到达后整体替换',()=>{
   const chat=conversation('c1','w1',run('r1',{usedTokens:50000,windowTokens:200000}));

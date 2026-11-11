@@ -368,7 +368,8 @@ export type ConversationContextReport = {
   modelAccountIdentity?: string;
   modelSourceLabel?: string;
   serviceTier?: string;
-  usedTokens: number;
+  usedTokens?: number;
+  usedRatio?: number;
   windowTokens?: number;
 };
 
@@ -376,8 +377,11 @@ export type ConversationContextReport = {
 export function rememberContextReport(current: ConversationContextReport | null, conversation: ConversationView | null | undefined): ConversationContextReport | null {
   const run = conversation?.run;
   const usage = run?.contextUsage;
-  if (!conversation || !run || !usage || !Number.isSafeInteger(usage.usedTokens) || usage.usedTokens < 0) return current;
-  if (current?.runId === run.id && current.conversationId === conversation.id && current.usedTokens === usage.usedTokens && current.windowTokens === usage.windowTokens) return current;
+  if (!conversation || !run || !usage) return current;
+  const tokens=Number.isSafeInteger(usage.usedTokens)&&usage.usedTokens!>=0;
+  const ratio=typeof usage.usedRatio==='number'&&Number.isFinite(usage.usedRatio)&&usage.usedRatio>=0&&usage.usedRatio<=1;
+  if(!tokens&&!ratio)return current;
+  if (current?.runId === run.id && current.conversationId === conversation.id && current.usedTokens === usage.usedTokens && current.usedRatio===usage.usedRatio && current.windowTokens === usage.windowTokens) return current;
   return {
     workspaceId: conversation.workspaceId,
     conversationId: conversation.id,
@@ -388,9 +392,17 @@ export function rememberContextReport(current: ConversationContextReport | null,
     modelAccountIdentity: run.modelAccountIdentity,
     modelSourceLabel: run.modelSourceLabel,
     serviceTier: run.serviceTier,
-    usedTokens: usage.usedTokens,
+    ...(tokens?{usedTokens:usage.usedTokens}:{}),
+    ...(ratio?{usedRatio:usage.usedRatio}:{}),
     windowTokens: Number.isSafeInteger(usage.windowTokens) && usage.windowTokens! > 0 ? usage.windowTokens : undefined,
   };
+}
+
+export function contextUsedPercent(report: ConversationContextReport | null | undefined, window?:number):number|undefined {
+  if(!report)return;
+  if(typeof report.usedRatio==='number'&&Number.isFinite(report.usedRatio)&&report.usedRatio>=0&&report.usedRatio<=1)return Math.floor(report.usedRatio*100);
+  if(report.usedTokens!==undefined&&window&&window>0)return Math.min(100,Math.floor(report.usedTokens/window*100));
+  return;
 }
 
 /** A retained report is only visible in the workspace and conversation that produced it. */

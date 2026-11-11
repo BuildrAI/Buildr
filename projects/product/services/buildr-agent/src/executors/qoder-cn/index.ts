@@ -6,6 +6,8 @@ import { AcpClient, type AcpServerRequest } from '../qoder/acp.ts';
 import { qoderContent } from '../qoder/content.ts';
 import { qoderProduct } from '../qoder/product.ts';
 import { qoderStorage } from '../qoder/storage.ts';
+import { qoderForm } from './forms.ts';
+import { readQoderCnUsage } from './usage.ts';
 import { interactionPolicy } from '../../domain/interaction-policy.ts';
 import { instructionParticipation } from '../../domain/participation.ts';
 import { isCompatibleProgram, nativeProgramPolicy } from '../program-policy.ts';
@@ -15,15 +17,16 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { AgentServiceError } from '../../domain/agent-state.ts';
 import { errorDiagnostic } from '../../domain/error-diagnostic.ts';
 import { ExecutorInputRejected } from '../../contracts.ts';
-import type { AccountObservation, AgentExecutor, AgentRuntime, ContextRef, ExecutorEvent, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorRequest, ExecutorSendInput, LoginObservation, PermissionMode } from '../../contracts.ts';
+import type { AccountObservation, AgentExecutor, AgentRuntime, ContextRef, ExecutorEvent, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorRequest, ExecutorSendInput, ExecutorSupplementInput, ExecutorInputReceipt, LoginObservation, PermissionMode } from '../../contracts.ts';
 
 const product = qoderProduct('qoder-cn');
-const capabilities = { interaction: { policy: interactionPolicy.version, nonBlockingQuestions: false }, supplement: false, permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: false, stop: true, resume: true, maxInputBytes: 96 * 1024 };
+const capabilities = { interaction: { policy: interactionPolicy.version, nonBlockingQuestions: false }, supplement: true, permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
 
 interface PendingApproval {
   request: ExecutorRequest;
   options: Array<Record<string, unknown>>;
   settle(value: unknown): void;
+  answer?(value: unknown): unknown;
 }
 interface SelectOption { id?: string; currentValue?: string; options?: Array<{ value: string; name?: string }> }
 function selectOptions(value: unknown): Map<string, SelectOption> {
@@ -49,6 +52,11 @@ interface TurnState {
   cancelRequested: boolean;
   settled: Promise<void>;
   settle(): void;
+  supplements: Map<string, Promise<void>>;
+  supplementFailed?: boolean;
+  supplementInputs: Map<string, { digest: string; work: Promise<ExecutorInputReceipt> }>;
+  stopReason?: string;
+  usageKey?: string;
 }
 
 /** Qoder CN ships no importable Agent SDK; the official ACP server is its programmable surface. */
@@ -113,7 +121,7 @@ class QoderCnRuntime implements AgentRuntime {
       });
       try {
         // The CLI owns filesystem tools; client-side filesystem RPCs are not implemented.
-        await client.request('initialize', { protocolVersion: 1, clientCapabilities: {} }, 30_000);
+        await client.request('initialize', { protocolVersion: 1, clientCapabilities: { elicitation: { form: {} } } }, 30_000);
         return client;
       } catch (error) { await client.close(); throw error; }
     })().finally(() => { this.opening = undefined; });
@@ -128,7 +136,7 @@ class QoderCnRuntime implements AgentRuntime {
     turn.diagnostic = 'Qoder CN 连接已中断，本轮执行结果未知；请重新检查后再继续。';
     this.finishText(turn, 'unknown');
     for (const tool of turn.tools.values()) if (tool.status === 'running') tool.status = 'unknown';
-    for (const approval of turn.approvals.values()) { approval.settle({ outcome: { outcome: 'cancelled' } }); try { turn.onEvent({ type: 'request-resolved', requestId: approval.request.id }); } catch { /* keep transport closed */ } }
+    for (const approval of turn.approvals.values()) { approval.settle(approval.request.kind==='question'?{action:'cancel'}:{ outcome: { outcome: 'cancelled' } }); try { turn.onEvent({ type: 'request-resolved', requestId: approval.request.id }); } catch { /* keep transport closed */ } }
     turn.approvals.clear();
     try { turn.onEvent({ type: 'observation', observation: this.observation() }); } catch { /* original transport stays closed */ }
   }
@@ -142,6 +150,12 @@ class QoderCnRuntime implements AgentRuntime {
     const kind = String(update.sessionUpdate ?? update.session_update ?? '');
     if (kind === 'config_option_update') { this.configOptions = selectOptions(update.configOptions); return; }
     const turn = this.turn; if (!turn?.pending || turn.contextId !== sessionId) return;
+    if(kind==='usage_update') {
+      const used=update.used,window=update.size;
+      if(Number.isSafeInteger(used)&&Number(used)>=0&&Number.isSafeInteger(window)&&Number(window)>0)
+        turn.onEvent({type:'context-usage',usedTokens:Number(used),windowTokens:Number(window)});
+      return;
+    }
     // send() already projected this input. Native echoes are not supplements.
     if (kind === 'user_message_chunk') return;
     if (kind === 'agent_message_chunk' || kind === 'agent_thought_chunk') {
@@ -201,11 +215,36 @@ class QoderCnRuntime implements AgentRuntime {
     if (prior) this.item(turn, { ...prior, status });
   }
 
+  private observeUsage(turn: TurnState): void {
+    if(this.turn!==turn||turn.contextId!==this.sessionId)return;
+    const usage=readQoderCnUsage(this.config,turn.contextId,this.sessionContext!);
+    if(!usage||usage.key===turn.usageKey)return;
+    turn.usageKey=usage.key;
+    // The native request count is authoritative even when no native window is
+    // reported. The UI already distinguishes the configured and reported window.
+    turn.onEvent({type:'context-usage',...(usage.usedTokens===undefined?{}:{usedTokens:usage.usedTokens}),...(usage.usedRatio===undefined?{}:{usedRatio:usage.usedRatio})});
+  }
+
   private async serverRequest(request: AcpServerRequest): Promise<unknown> {
-    if (request.method !== 'session/request_permission') throw new Error('acp_request_unsupported');
+    if (request.method !== 'session/request_permission' && request.method !== 'elicitation/create') throw new Error('acp_request_unsupported');
     const turn = this.turn;
-    if (!turn?.pending || turn.cancelRequested || request.params?.sessionId !== turn.contextId) return { outcome: { outcome: 'cancelled' } };
+    const cancelled = request.method === 'elicitation/create' ? { action: 'cancel' } : { outcome: { outcome: 'cancelled' } };
+    if (!turn?.pending || turn.cancelRequested || request.params?.sessionId !== turn.contextId) return cancelled;
     const params = request.params ?? {};
+    if (request.method === 'elicitation/create') {
+      let form:ReturnType<typeof qoderForm>;
+      try { form=qoderForm(params, `qoder-cn-form-${request.id}`); }
+      catch {
+        turn.onEvent({type:'diagnostic',message:'Qoder CN 请求了当前界面无法安全表达的表单，已取消该表单，不会自动代答或转为工具批准。'});
+        return {action:'cancel'};
+      }
+      turn.status = 'waiting';
+      const result = new Promise<unknown>(resolve => {
+        turn.approvals.set(form.request.id, { request: form.request, options: [], settle: resolve, answer: form.answer });
+      });
+      turn.onEvent({ type: 'request', request: form.request });
+      return await result;
+    }
     const options = Array.isArray(params.options) ? params.options as Array<Record<string, unknown>> : [];
     const toolCall = params.toolCall && typeof params.toolCall === 'object' ? params.toolCall as Record<string, unknown> : {};
     const requestId = `qoder-cn-${request.id}`;
@@ -235,7 +274,7 @@ class QoderCnRuntime implements AgentRuntime {
     };
   }
 
-  private executionRef(id: string) { return { id, data: { native: opaqueReference('qoder-cn', id, this.config, this.bindingIdentity) } }; }
+  private executionRef(id: string) { return { id, data: { native: opaqueReference('qoder-cn', id, this.config, this.bindingIdentity), resourceContext: this.turn?.contextId ?? this.sessionId, resourceBinding: this.bindingIdentity } }; }
 
   private reference(context: ContextRef, cwd?: string): string {
     const saved = this.contexts.get(context.id) ?? (typeof context.data?.cwd === 'string' ? context.data.cwd : undefined);
@@ -433,21 +472,31 @@ class QoderCnRuntime implements AgentRuntime {
     const executionId = input.clientRequestId;
     let settle!: () => void;
     const settled = new Promise<void>(resolve => { settle = resolve; });
-    const turn: TurnState = { contextId: input.contextRef.id, executionId, onEvent: input.onEvent, items: new Map(), tools: new Map(), approvals: new Map(), status: 'running', segment: 0, pending: true, cancelRequested: false, settled, settle };
+    const turn: TurnState = { contextId: input.contextRef.id, executionId, onEvent: input.onEvent, items: new Map(), tools: new Map(), approvals: new Map(), status: 'running', segment: 0, pending: true, cancelRequested: false, settled, settle, supplements: new Map(), supplementInputs: new Map() };
     this.turn = turn;
     input.onEvent({ type: 'accepted', executionRef: this.executionRef(executionId), inputItemId: executionId });
     const userItem: ExecutorItem = { id: `user:${executionId}`, kind: 'message', role: 'user', text: input.text, clientRequestId: executionId, executionId, status: 'completed' };
     this.item(turn, userItem);
+    this.observeUsage(turn);
+    const usageTimer=setInterval(()=>{try{this.observeUsage(turn);}catch{/* local observation cannot interrupt work */}},2000);
+    usageTimer.unref();
     try {
       const sessionId = this.sessionId!;
       const client = await this.transport();
-      const result = await client.request('session/prompt', { sessionId, prompt }, 24 * 60 * 60 * 1000);
-      const stopReason = typeof result?.stopReason === 'string' ? result.stopReason : undefined;
+      await client.request('session/prompt', { sessionId, prompt }, 24 * 60 * 60 * 1000, result => {
+        this.finishText(turn);
+        turn.stopReason=result?.stopReason;
+      });
+      // Native queued prompts belong to this Buildr execution. The first prompt
+      // ending cannot release their controls or promote an intermediate answer.
+      while (turn.supplements.size) await Promise.allSettled([...turn.supplements.values()]);
+      const stopReason = turn.stopReason;
       const normal = stopReason === 'end_turn';
-      const stopped = stopReason === 'cancelled' || stopReason === 'refusal' || stopReason === 'max_tokens';
+      const stopped = turn.cancelRequested || stopReason === 'cancelled' || stopReason === 'refusal' || stopReason === 'max_tokens' || stopReason === 'max_turn_requests';
       this.finishText(turn, normal ? 'completed' : 'unknown');
       turn.status = stopped ? 'stopped' : normal ? 'idle' : 'unknown';
-      if (stopReason === 'max_tokens') turn.diagnostic = 'Qoder CN 输出达到上限，本轮回复未完整完成。';
+      if(turn.supplementFailed) { turn.status='unknown';turn.diagnostic='Qoder CN 追加输入或排队执行结果未确认，不会自动重发。'; }
+      if (stopReason === 'max_tokens' || stopReason === 'max_turn_requests') turn.diagnostic = 'Qoder CN 输出或工具轮次达到上限，本轮回复未完整完成。';
       else if (stopReason === 'refusal') turn.diagnostic = 'Qoder CN 拒绝了本轮请求。';
       else if (!normal && !stopped) turn.diagnostic = 'Qoder CN 未返回可确认的正常结束原因，本轮结果未知。';
       for (const tool of turn.tools.values()) if (tool.status === 'running') tool.status = 'unknown';
@@ -464,10 +513,45 @@ class QoderCnRuntime implements AgentRuntime {
     } finally {
       for (const approval of turn.approvals.values()) { try { input.onEvent({ type: 'request-resolved', requestId: approval.request.id }); } catch { /* preserve original */ } }
       turn.approvals.clear();
+      while(turn.supplements.size) await Promise.allSettled([...turn.supplements.values()]);
+      clearInterval(usageTimer);
+      this.observeUsage(turn);
       turn.pending = false;
       turn.settle();
       try { input.onEvent({ type: 'observation', observation: this.observation() }); } catch { /* preserve original */ }
     }
+  }
+
+  async supplement(input: ExecutorSupplementInput): Promise<ExecutorInputReceipt> {
+    this.reference(input.contextRef,input.cwd);
+    const turn=this.exactTurn(input.contextRef,input.executionRef);
+    if(!turn?.pending||turn.cancelRequested||turn.status==='unknown'||
+      [...turn.approvals.values()].some(value=>value.request.kind==='question'))throw new ExecutorInputRejected('qoder_cn_supplement_unavailable');
+    const digest=createHash('sha256').update(JSON.stringify([input.text,input.images])).digest('hex');
+    const existing=turn.supplementInputs.get(input.clientRequestId);
+    if(existing) {
+      if(existing.digest!==digest)throw new ExecutorInputRejected('qoder_cn_supplement_conflict');
+      return await bounded(existing.work,15000);
+    }
+    const work=(async ():Promise<ExecutorInputReceipt>=>{
+      const prompt=[{type:'text',text:input.text},...await Promise.all(input.images.map(async image=>({type:'image',data:(await readFile(image.path)).toString('base64'),mimeType:image.mimeType})))];
+      if(!turn.pending||turn.cancelRequested||this.turn!==turn)throw new ExecutorInputRejected('qoder_cn_supplement_stale');
+      const result=await (await this.transport()).request('session/prompt',{sessionId:turn.contextId,prompt},24*60*60*1000,value=>{
+        this.finishText(turn);
+        turn.stopReason=value?.stopReason;
+      });
+      // ACP confirms its durable user identity only in this prompt's response.
+      // A local write or the preceding prompt's terminal result proves nothing.
+      if(typeof result?.userMessageId!=='string'||!result.userMessageId)throw new Error('qoder_cn_supplement_receipt_missing');
+      this.item(turn,{id:result.userMessageId,clientRequestId:input.clientRequestId,kind:'message',role:'user',text:input.text,executionId:turn.executionId,status:'completed'});
+      return {executionRef:this.executionRef(turn.executionId),inputItemId:result.userMessageId};
+    })();
+    turn.supplementInputs.set(input.clientRequestId,{digest,work});
+    const pending=work.then(()=>{},error=>{if(!(error instanceof ExecutorInputRejected))turn.supplementFailed=true;}).finally(()=>{turn.supplements.delete(input.clientRequestId);});
+    turn.supplements.set(input.clientRequestId,pending);
+    // Timeout keeps the underlying queued input and its eventual exact receipt.
+    // The application can reconcile it; it must never blindly send it again.
+    return await bounded(work,15000);
   }
 
   async observe(input: { contextRef: ContextRef; executionRef?: { id: string } }): Promise<ExecutorObservation> { this.exactTurn(input.contextRef, input.executionRef); return this.observation(); }
@@ -476,7 +560,7 @@ class QoderCnRuntime implements AgentRuntime {
     const turn = this.exactTurn(input.contextRef, input.executionRef);
     const approval = turn?.pending && !turn.cancelRequested ? turn.approvals.get(input.requestId) : undefined;
     if (!approval) throw new Error('agent_request_not_found');
-    const outcome = permissionOutcome(approval.options, input.answer);
+    const outcome = approval.answer ? approval.answer(input.answer) : permissionOutcome(approval.options, input.answer);
     this.turn!.approvals.delete(input.requestId);
     this.turn!.status = 'running';
     approval.settle(outcome);
@@ -489,7 +573,7 @@ class QoderCnRuntime implements AgentRuntime {
       turn.cancelRequested = true;
       if (this.sessionId === turn.contextId) this.client?.notify('session/cancel', { sessionId: turn.contextId });
       for (const approval of turn.approvals.values()) {
-        approval.settle({ outcome: { outcome: 'cancelled' } });
+        approval.settle(approval.request.kind==='question'?{action:'cancel'}:{ outcome: { outcome: 'cancelled' } });
         turn.onEvent({ type: 'request-resolved', requestId: approval.request.id });
       }
       turn.approvals.clear();

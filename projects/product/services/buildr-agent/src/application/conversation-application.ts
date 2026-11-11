@@ -1064,7 +1064,11 @@ export class ConversationApplication {
       if (owner && this.applyItem(record, participant, event.item, owner.runId, true)) this.save(record);
       return;
     }
-    if(event.type==='context-usage'){if(Number.isSafeInteger(event.usedTokens)&&event.usedTokens>=0){run.contextUsage={usedTokens:event.usedTokens,...(Number.isSafeInteger(event.windowTokens)&&event.windowTokens!>0?{windowTokens:event.windowTokens}:{})};run.updatedAt=this.options.now();this.save(record);}return;}
+    if(event.type==='context-usage'){
+      const tokens=Number.isSafeInteger(event.usedTokens)&&event.usedTokens!>=0;
+      const ratio=typeof event.usedRatio==='number'&&Number.isFinite(event.usedRatio)&&event.usedRatio>=0&&event.usedRatio<=1;
+      if(tokens||ratio){run.contextUsage={...(tokens?{usedTokens:event.usedTokens}:{}),...(ratio?{usedRatio:event.usedRatio}:{}),...(Number.isSafeInteger(event.windowTokens)&&event.windowTokens!>0?{windowTokens:event.windowTokens}:{})};run.updatedAt=this.options.now();this.save(record);}return;
+    }
     if (event.type === 'models') {
       const connection = this.options.connections.observeModels(participant.connectionId, participant.bindingIdentity, event.models);
       this.options.events.publish({ type: 'connection', workspaceId, conversationId: id, revision: connection.revision, payload: { connection } }); return;

@@ -33,7 +33,8 @@ export function nativeValueText(value: unknown, format?: NativeContentValue['for
 /** A stored address grants access only to a declared native content namespace. */
 export function nativeContentPath(root: string, provider: string, relative: string): string {
   if (!roots[provider] || typeof relative !== 'string' || relative.includes('\\') || path.isAbsolute(relative)) throw unavailable();
-  const prefix = `connections/${provider}/`;
+  const accountPrefix='model-access/accounts/native-qoder-cn/';
+  const prefix = provider==='qoder-cn'&&relative.startsWith(accountPrefix)?accountPrefix:`connections/${provider}/`;
   if (!relative.startsWith(prefix)) throw unavailable();
   const local = relative.slice(prefix.length).replace(/^model-bindings\/[a-f0-9]{64}\//, '');
   if (!roots[provider]!.test(local) || relative.split('/').some(part => !part || part === '.' || part === '..')) throw unavailable();

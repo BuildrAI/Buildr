@@ -25,7 +25,7 @@ export interface AcpClientOptions {
 /** Newline-delimited JSON-RPC over stdio. The CLI owns native sessions and tools. */
 export class AcpClient {
   private readonly child: ChildProcessWithoutNullStreams;
-  private readonly pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void; timer?: ReturnType<typeof setTimeout> }>();
+  private readonly pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void; timer?: ReturnType<typeof setTimeout>; onResult?: (value: any) => void }>();
   private nextId = 1;
   private closed = false;
   private exitReason = 'acp_transport_closed';
@@ -63,7 +63,10 @@ export class AcpClient {
     this.pending.delete(message.id);
     if (waiting.timer) clearTimeout(waiting.timer);
     if (message.error) waiting.reject(Object.assign(new Error(typeof message.error.message === 'string' ? message.error.message : 'acp_request_failed'), { acpCode: message.error.code }));
-    else waiting.resolve(message.result);
+    else {
+      try { waiting.onResult?.(message.result); waiting.resolve(message.result); }
+      catch(error) { waiting.reject(error instanceof Error ? error : new Error('acp_result_projection_failed')); }
+    }
   }
 
   private async answerServerRequest(request: { id: number; method: string; params?: Record<string, unknown> }): Promise<void> {
@@ -76,13 +79,13 @@ export class AcpClient {
     }
   }
 
-  request<T = any>(method: string, params: Record<string, unknown>, timeoutMs = 60_000): Promise<T> {
+  request<T = any>(method: string, params: Record<string, unknown>, timeoutMs = 60_000, onResult?: (value: T) => void): Promise<T> {
     if (this.closed) return Promise.reject(new Error(this.exitReason));
     const id = this.nextId++;
     return new Promise<T>((resolve, reject) => {
       const timer = timeoutMs > 0 ? setTimeout(() => { this.pending.delete(id); reject(new Error('acp_request_timeout')); }, timeoutMs) : undefined;
       timer?.unref?.();
-      this.pending.set(id, { resolve, reject, timer });
+      this.pending.set(id, { resolve, reject, timer, onResult });
       try { this.child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n'); }
       catch (error) { this.pending.delete(id); if (timer) clearTimeout(timer); reject(error instanceof Error ? error : new Error('acp_transport_write_failed')); }
     });

@@ -26,7 +26,7 @@ import { modelLeaseIdentity } from '../../src/model-access/model-preferences.ts'
 import type {NativeToolContent} from '../../src/native-content-contracts.ts';
 import {readNativeTool} from '../../src/executors/index.ts';
 
-function semanticNative(t:test.TestContext,provider:'dsh'|'qoder',compressed=provider==='dsh') {
+function semanticNative(t:test.TestContext,provider:'dsh'|'qoder'|'qoder-cn',compressed=provider==='dsh') {
   const f=fixture(t,provider),turnId=randomUUID(),assistantId=randomUUID();
   if(provider==='dsh'&&!compressed){const original=f.file;f.file=original.replace(/\.zstd$/,'');fs.unlinkSync(original);}
   const meta={sessionId:f.contextId,cwd:f.cwd,isSidechain:false};
@@ -71,6 +71,31 @@ for(const provider of ['dsh','qoder'] as const)test(`${provider} stores only nat
   const prior=record.view.revision;entry.status='completed';record.view.revision='r2';repo.saveConversation(record,prior);const revision=check();assert.notEqual(revision,pending,'changed tool metadata invalidates the cached reference');
   f.write();assert.equal(repo.readEntry(record.view.id,entry.id,revision)?.text,f.output);
   const cold=new ConversationRepository(f.root,undefined,ref=>readNativeTool(f.root,ref));t.after(()=>cold.stopReadModels());assert.equal(cold.readPage(record.view.id,undefined,undefined,true)!.view.entries[0].text,'');assert.equal(cold.readEntry(record.view.id,entry.id,revision)?.text,f.output);
+});
+
+test('Qoder CN account-owned tools survive cold reads and legacy connection references without copying bodies',t=>{
+  const f=semanticNative(t,'qoder-cn');
+  const account=path.join(f.root,'model-access/accounts/native-qoder-cn');
+  fs.mkdirSync(path.dirname(account),{recursive:true});fs.renameSync(f.configRoot,account);
+  const resolver=new NativeContentResolver(f.root),repo=new ConversationRepository(f.root,(record,entry)=>resolver.tool(record,entry),ref=>readNativeTool(f.root,ref));
+  t.after(()=>repo.stopReadModels());
+  const participantId=randomUUID(),runId=randomUUID(),entry:ConversationEntry={...f.entry,status:'completed',runId,participantId};
+  const record:StoredConversation={view:{id:randomUUID(),workspaceId:'ws',revision:'cn1',cwd:f.cwd,title:'CN native',updatedAt:'now',hidden:false,requests:[],participants:[],entries:[entry]},participants:[{id:participantId,connectionId:'qoder-cn',provider:'qoder-cn',label:'CN',bindingIdentity:'binding',deliveredThrough:0,contextRef:{id:f.contextId,data:{native:opaqueReference('qoder-cn',f.contextId,f.cwd,'binding')}}}],sources:{[participantId+':tool:'+f.toolId]:entry.id},nativeTools:{[entry.id]:true},attachments:{},requests:{},attempts:[{clientRequestId:f.turnId,inputDigest:'digest',runId,participantId,through:0,userEntryId:'user',accepted:true,executionRef:{id:randomUUID(),data:{resourceContext:f.contextId,resourceBinding:'binding'}}}]};
+  repo.saveConversation(record);
+  const db=new DatabaseSync(repo.filename,{readOnly:true});t.after(()=>db.close());
+  const row=db.prepare('SELECT c.body,c.content_revision FROM conversation_entry_contents c JOIN conversation_read_entries e USING(conversation_id,content_revision) WHERE c.conversation_id=?').get(record.view.id)!;
+  const stored=Buffer.from(row.body as Uint8Array).toString(),ref=JSON.parse(stored);
+  assert.equal(ref.session.config,'model-access/accounts/native-qoder-cn');
+  assert.equal(stored.includes(f.output),false,'Buildr stores only the native reference, never the tool body');
+  assert.equal(repo.readEntry(record.view.id,entry.id,row.content_revision as string)?.text,f.output);
+  const cold=new ConversationRepository(f.root,undefined,reference=>readNativeTool(f.root,reference));t.after(()=>cold.stopReadModels());
+  assert.equal(cold.readEntry(record.view.id,entry.id,row.content_revision as string)?.text,f.output);
+  assert.equal(readNativeTool(f.root,{...ref,session:{...ref.session,config:'connections/qoder-cn'}})?.text,f.output);
+  assert.equal(readNativeTool(f.root,{...ref,session:{...ref.session,config:'model-access/accounts/another-account'}}),undefined);
+  // The visible run no longer matches this historical tool; its exact persisted
+  // resourceContext still establishes the original native session.
+  record.view.run={id:randomUUID(),participantId,generation:'new',provider:'qoder-cn',status:'running',tools:[]} as any;
+  assert.equal(resolver.tool(record,entry)?.contextId,f.contextId);
 });
 
 test('Qoder native detail traverses more than 64 MiB without a full inventory',t=>{
@@ -144,8 +169,8 @@ function fixture(t: test.TestContext, provider: string) {
     rows = [{ type: 'session_meta', payload: { id: contextId, cwd } },
       { type: 'response_item', payload: { type: 'function_call', call_id: toolId, arguments: JSON.stringify({ cmd: input }) } },
       { type: 'response_item', payload: { type: 'function_call_output', call_id: toolId, output } }];
-  } else if (provider === 'qoder') {
-    file = path.join(configRoot, 'qoder-config/projects/bucket', contextId + '.jsonl');
+  } else if (provider === 'qoder' || provider === 'qoder-cn') {
+    file = path.join(configRoot, provider+'-config/projects/bucket', contextId + '.jsonl');
     const meta = { sessionId: contextId, cwd, isSidechain: false };
     rows = [{ ...meta, type: 'assistant', message: { content: [{ type: 'tool_use', id: toolId, input: { command: input } }] } },
       { ...meta, type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: toolId, content: output }] } }];

@@ -1687,6 +1687,10 @@ test('context usage stores the latest executor observation and ignores invalid c
     assert.deepEqual(f.service.conversations.read('workspace-one',created.id).run?.contextUsage,{usedTokens:12000,windowTokens:500000});
     native.sends[0]!.onEvent({type:'context-usage',usedTokens:-1});
     assert.equal(f.service.conversations.read('workspace-one',created.id).run?.contextUsage?.usedTokens,12000);
+    native.sends[0]!.onEvent({type:'context-usage',usedRatio:0.25});
+    assert.deepEqual(f.service.conversations.read('workspace-one',created.id).run?.contextUsage,{usedRatio:0.25});
+    native.sends[0]!.onEvent({type:'context-usage',usedRatio:2});
+    assert.deepEqual(f.service.conversations.read('workspace-one',created.id).run?.contextUsage,{usedRatio:0.25});
   } finally {await f.close();}
 });
 

@@ -14,7 +14,10 @@ export function configRoot(root: string, record: {view: Pick<StoredConversation[
   try { if (participant.contextRef && parseReference(String(participant.contextRef.data?.native ?? ''),participant.provider,record.view.cwd,participant.bindingIdentity).nativeSessionId !== participant.contextRef.id) return; }
   catch { return; }
   const base = path.join(root,'connections',participant.provider);
-  if (!participant.modelAccountId || participant.provider==='qoder' || participant.provider==='qoder-cn') return base;
+  // Qoder CN execution and login share this account-owned root (agent-service.ts).
+  // Gateway bindings remain under connections/, but they do not own transcripts.
+  if(participant.provider==='qoder-cn')return path.join(root,'model-access','accounts','native-qoder-cn');
+  if (!participant.modelAccountId || participant.provider==='qoder') return base;
   if (!participant.modelAccountIdentity || !participant.modelId || participant.modelConfiguration === undefined) return;
   let configuration=participant.modelLeaseConfiguration??participant.modelConfiguration;
   if(participant.modelLeaseConfiguration!==undefined){
