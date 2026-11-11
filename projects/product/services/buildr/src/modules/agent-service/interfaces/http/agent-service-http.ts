@@ -53,7 +53,9 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
         return this.handle({ ...context, workspaceId: '@default', suffix: '/agent-conversations' + pathname.slice(`${prefix}/conversations`.length) });
       }
       if (request.method === 'GET') authorizeRead(); else authorizeWrite();
-      query(searchParams, []);
+      const modelAccountsRead = pathname === `${prefix}/model-accounts` && request.method === 'GET';
+      query(searchParams, modelAccountsRead ? ['includeDisabled'] : []);
+      if (modelAccountsRead && searchParams.has('includeDisabled') && !['true','false'].includes(searchParams.get('includeDisabled')!)) throw inputError();
       if (pathname === `${prefix}/default-workspace` && request.method === 'GET' && defaultWorkspace) return result('defaultWorkspace', defaultWorkspace());
       if (pathname === `${prefix}/runtime` && request.method === 'GET' && options.runtimeStatus) return result('runtimeStatus', await options.runtimeStatus());
       if (pathname === `${prefix}/runtime/restart` && request.method === 'POST' && options.restartRuntime) return result('runtimeStatus', await options.restartRuntime(validate('runtimeRestart', await readJsonBody())));
@@ -65,7 +67,7 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       if (pathname === `${prefix}/webhook-settings/reveal` && request.method === 'POST') return result('webhookSecret', await service.webhooks.reveal(validate('revision', await readJsonBody())));
       if (pathname === `${prefix}/webhook-settings/test` && request.method === 'POST') return result('webhookTest', await service.webhooks.test(validate('revision', await readJsonBody())));
       if (pathname === `${prefix}/model-accounts`) {
-        if (request.method === 'GET') return result('modelAccounts', await service.models.accounts.list({refresh:false}));
+        if (request.method === 'GET') return result('modelAccounts', await service.models.accounts.list({refresh:false,includeDisabled:searchParams.get('includeDisabled')==='true'}));
         if (request.method === 'POST') return result('modelAccount', await service.models.accounts.add(validate('addModelAccount', await readJsonBody())), 201);
       }
       if (pathname === `${prefix}/model-catalog` && request.method === 'GET') return result('modelCatalog', await service.models.catalog.list({refresh:false}));

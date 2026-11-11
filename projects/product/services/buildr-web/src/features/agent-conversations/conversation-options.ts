@@ -63,6 +63,7 @@ export function choiceReasoningOptions(choice:ConversationChoice,connection:Conn
 
 /** 只修正下一次选择和发送，不修改历史运行记录。 */
 export function validConversationChoice(choice:ConversationChoice,connection:ConnectionView|undefined,catalog:CatalogModel[]):ConversationChoice {
+  if(choice.modelAccountId&&!catalog.some(item=>item.accountId===choice.modelAccountId&&item.modelId===choice.model&&item.available&&item.enabled!==false&&(!choice.modelAccountIdentity||item.accountIdentity===choice.modelAccountIdentity)))return {connectionId:choice.connectionId};
   const options=choiceReasoningOptions(choice,connection,catalog);
   return choice.reasoningEffort&&options&&!options.some(item=>item.id===choice.reasoningEffort)?{...choice,reasoningEffort:undefined}:choice;
 }
@@ -110,7 +111,7 @@ export function officialConversationChoice(connection:ConnectionView|undefined,c
 
 /** 首条发送前把连接实际提供的原生账号绑定到选择；没有可证明的同名模型来源时保持原选择，不推断账号。 */
 export function nativeConversationChoice(choice:ConversationChoice,connection:ConnectionView|undefined,catalog:CatalogModel[]):ConversationChoice {
-  if(choice.modelAccountId)return choice;
+  if(choice.modelAccountId||!choice.model)return choice;
   const model=choice.model??selectedConversationModel(connection)?.id??connection?.models[0]?.id;
   const source=catalog.find(item=>item.accountId==='native-'+choice.connectionId&&item.modelId===model&&item.available&&item.enabled!==false);
   return source?{...choice,model:model??source.modelId,modelAccountId:source.accountId,modelAccountRevision:source.accountRevision,modelAccountIdentity:source.accountIdentity,serviceTier:choice.serviceTier??source.defaultServiceTier}:choice;

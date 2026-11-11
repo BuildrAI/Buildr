@@ -545,3 +545,17 @@ test('native decimal balances survive account persistence and failed observation
     assert.deepEqual(access.accounts.read(added.id).quota?.balances,balances);
   } finally { await access.close(); await rm(root,{recursive:true,force:true}); }
 });
+
+test('gateway bounds actual output to provider capability without overwriting native request defaults',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'buildr-output-capability-'));const seen:ProtocolJson[]=[];
+ const source=provider(async input=>{seen.push(structuredClone(input.body));return chat({role:'assistant',content:'ok'});});
+ const originalOpen=source.open;source.open=async input=>{const runtime=await originalOpen(input),inspect=runtime.inspect;runtime.inspect=async()=>{const value=await inspect();return {...value,models:value.models.map(model=>({...model,maxOutputTokens:2048}))};};return runtime;};
+ const access=createModelAccess({root,providers:[source]});
+ try{
+  const added=await access.accounts.add({provider:'fixture'}),account=await checkEnabled(access,added.id),lease=await access.leases.create({accountId:account.id,modelId:model.id,agentId:'dsh',conversationId:'one',runId:'run'});
+  for(const max_tokens of [128000,512,undefined]){
+   const response=await fetch(lease.baseUrl+'/chat/completions',{method:'POST',headers:{authorization:'Bearer '+lease.apiKey,'content-type':'application/json'},body:JSON.stringify({model:lease.model,messages:[],...(max_tokens?{max_tokens}:{})})});assert.equal(response.status,200);await response.text();
+  }
+  assert.deepEqual(seen.map(body=>body.max_tokens),[2048,512,undefined]);assert.equal(lease.offering.maxOutputTokens,2048);
+ }finally{await access.close();await rm(root,{recursive:true,force:true});}
+});

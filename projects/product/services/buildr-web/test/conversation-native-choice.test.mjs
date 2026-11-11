@@ -6,7 +6,7 @@ const connection = {id: 'codex', models: [{id: 'gpt-6.1-sol', label: 'GPT-6.1-So
 const source = {accountId: 'native-codex', accountIdentity: 'identity', accountRevision: 'revision', provider: 'native-codex', modelId: 'gpt-6.1-sol', label: 'GPT-6.1-Sol', available: true, enabled: true, defaultServiceTier: 'default'};
 
 test('首条发送为实际提供的原生模型补上账号身份', () => {
-  assert.deepEqual(nativeConversationChoice({connectionId: 'codex'}, connection, [source]), {connectionId: 'codex', model: 'gpt-6.1-sol', modelAccountId: 'native-codex', modelAccountIdentity: 'identity', modelAccountRevision: 'revision', serviceTier: 'default'});
+  assert.deepEqual(nativeConversationChoice({connectionId: 'codex'}, connection, [source]), {connectionId: 'codex'});
   assert.equal(nativeConversationChoice({connectionId: 'codex', model: 'gpt-6.1-sol', reasoningEffort: 'high'}, connection, [source]).modelAccountId, 'native-codex');
 });
 

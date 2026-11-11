@@ -85,6 +85,7 @@ export class ModelAccessApplication {
           view.status = 'not-authenticated'; view.models = []; delete view.quota; delete view.accountLabel; delete view.observedAt; delete view.loginAttempt;
           row.revision = randomUUID(); migrated = true;
         }
+        if(view.sourceEnabled!==undefined&&typeof view.sourceEnabled!=='boolean')throw new Error('invalid-source-preference');
         if(view.loginAttempt) delete view.loginAttempt.url;
         if (!this.metadataReadOnly && view.loginAttempt && ['initializing', 'waiting-browser', 'checking'].includes(view.loginAttempt.state)) view.loginAttempt = { ...view.loginAttempt, state: 'expired', diagnostic: '服务已重启，请重新登录。' };
         const prefs=object(object(stored.preferences)[view.id]) as Record<string,ModelPreference>;
@@ -144,7 +145,7 @@ export class ModelAccessApplication {
     return row;
   }
   private view(row: ModelAccountView): ModelAccountView {
-    const result = structuredClone(row), url = this.urls.get(row.id);
+    const result = {...structuredClone(row),sourceEnabled:row.sourceEnabled!==false}, url = this.urls.get(row.id);
     const provider = this.providers.get(row.provider);
     if (provider?.authentication) result.authType = provider.authentication.type;
     if (provider?.group) result.group = structuredClone(provider.group);
@@ -155,7 +156,7 @@ export class ModelAccessApplication {
   }
   private selectionState(row: ModelAccountView): string {
     const current=this.view(row);
-    return JSON.stringify({identity:current.identity,enabled:current.enabled,status:current.status,label:current.label,accountLabel:current.accountLabel,models:selectionModels(current.models)});
+    return JSON.stringify({identity:current.identity,enabled:current.enabled,sourceEnabled:current.sourceEnabled,status:current.status,label:current.label,accountLabel:current.accountLabel,models:selectionModels(current.models)});
   }
   private async changed(row: ModelAccountView) { row.revision = randomUUID(); await this.save(); this.options.changed?.(structuredClone(row)); return this.view(row); }
   private async observed(row: ModelAccountView, before: string) {
@@ -192,10 +193,10 @@ export class ModelAccessApplication {
     row.status='not-authenticated';row.models=[];delete row.quota;delete row.accountLabel;delete row.observedAt;
     for(const lease of [...this.leasesByIdentity.values()])if(lease.input.accountId===id&&!(input.abortActive===false&&lease.requests.size>0))this.release(lease.view.identity);
   }
-  list() {
+  list(input:{includeDisabled?:boolean}={}) {
     if (this.storageError) throw this.storageError;
     return {
-      accounts: [...this.rows.values()].map(row => this.view(row)),
+      accounts: [...this.rows.values()].filter(row=>input.includeDisabled||row.sourceEnabled!==false).map(row => this.view(row)),
       providers: [...this.providers.values()].filter(provider => !provider.connectionId).map(provider => ({
         id: provider.id,
         label: provider.label,
@@ -323,9 +324,9 @@ export class ModelAccessApplication {
   }
   async updatePreferences(id:string,input:ModelPreferenceUpdate) {
     await this.ready;const row=this.current(id);conflict(row.revision,input.expectedRevision);
-    if(!Array.isArray(input.models)||!input.models.length||input.models.length>2000)throw new ModelAccessError('model_preferences_invalid','请选择需要修改的模型。',400);
+    if(input.sourceEnabled!==undefined&&typeof input.sourceEnabled!=='boolean'||input.models!==undefined&&(!Array.isArray(input.models)||!input.models.length||input.models.length>2000)||input.models===undefined&&input.sourceEnabled===undefined)throw new ModelAccessError('model_preferences_invalid','请选择需要修改的模型。',400);
     const next=structuredClone(this.preferences.get(id)??{}),seen=new Set<string>();
-    for(const update of input.models){
+    for(const update of input.models??[]){
       const model=row.models.find(model=>model.id===update.id);
       if(!model||seen.has(update.id))throw new ModelAccessError('model_unavailable','模型目录已变化，请刷新后重试。',409);
       seen.add(update.id);const preference=next[model.id]??{enabled:false};
@@ -337,14 +338,15 @@ export class ModelAccessApplication {
       }
       Object.defineProperty(next,model.id,{value:preference,enumerable:true,writable:true,configurable:true});
     }
-    const previous=this.preferences.get(id),revision=row.revision;this.preferences.set(id,next);
+    const previous=this.preferences.get(id),revision=row.revision,sourceEnabled=row.sourceEnabled;this.preferences.set(id,next);
+    if(input.sourceEnabled!==undefined)row.sourceEnabled=input.sourceEnabled;
     const saving=this.changed(row),writtenRevision=row.revision;
-    try{return await saving;}catch(error){if(row.revision===writtenRevision&&this.preferences.get(id)===next){if(previous)this.preferences.set(id,previous);else this.preferences.delete(id);row.revision=revision;}throw error;}
+    try{return await saving;}catch(error){if(row.revision===writtenRevision&&this.preferences.get(id)===next){if(previous)this.preferences.set(id,previous);else this.preferences.delete(id);row.revision=revision;row.sourceEnabled=sourceEnabled;}throw error;}
   }
   catalog() {
     if (this.storageError) throw this.storageError;
     const models: CatalogModel[] = [];
-    for (const stored of this.rows.values()) { const row=this.view(stored); for (const model of row.models) models.push({ ...structuredClone(model), id: `${row.id}::${model.id}`, accountId: row.id, accountIdentity:row.identity, provider: row.provider, accountLabel: row.accountLabel || row.label, modelId: model.id, accountRevision: row.revision, available: row.enabled && row.status === 'ready' && model.enabled!==false, observedAt: row.observedAt }); }
+    for (const stored of this.rows.values()) { if(stored.sourceEnabled===false)continue; const row=this.view(stored); for (const model of row.models) models.push({ ...structuredClone(model), id: `${row.id}::${model.id}`, accountId: row.id, accountIdentity:row.identity, provider: row.provider, accountLabel: row.accountLabel || row.label, modelId: model.id, accountRevision: row.revision, available: row.enabled && row.status === 'ready' && model.enabled!==false, observedAt: row.observedAt }); }
     return { models };
   }
   private async encryptionKey() {
@@ -368,7 +370,9 @@ export class ModelAccessApplication {
     return this.starting;
   }
   async createLease(input: ModelLeaseInput): Promise<ModelGatewayLease> {
-    await this.ready; const account = this.current(input.accountId); conflict(account.revision,input.expectedRevision);
+    await this.ready; const account = this.current(input.accountId);
+    if(account.sourceEnabled===false)throw new ModelAccessError('model_source_disabled','所选模型来源已停用，请重新启用或选择其他来源。');
+    conflict(account.revision,input.expectedRevision);
     if(input.expectedIdentity!==undefined&&input.expectedIdentity!==account.identity) throw new ModelAccessError('model_account_identity_changed','套餐登录来源已变化，请建立新的执行上下文。');
     if (!account.enabled || account.status !== 'ready') throw new ModelAccessError('model_account_unavailable', '所选模型套餐当前不可用。');
     const model = this.view(account).models.find(model => model.id === input.modelId);
@@ -451,6 +455,9 @@ export class ModelAccessApplication {
       controller.signal.throwIfAborted();
       const quotaFailure = modelQuotaFailure(account, lease.view.offering, Date.parse(this.now)); if (quotaFailure) throw quotaFailure;
       const translated = translateRequest(body,protocol,runtime.protocol,opaque); translated.model = binding.modelId;
+      // Capability ceiling only: leave native output defaults and context budgeting intact.
+      const limit=lease.view.offering.maxOutputTokens;
+      if(limit)for(const key of ['max_tokens','max_completion_tokens','max_output_tokens'])if(typeof translated[key]==='number'&&translated[key]>limit)translated[key]=limit;
       delete translated.service_tier;if(binding.serviceTier)translated.service_tier=binding.serviceTier;
       const upstream = await runtime.infer({body:translated,modelId:binding.modelId,signal:AbortSignal.any([controller.signal,upstreamController.signal]),context:{accountId:account.id,agentId:binding.agentId,conversationId:binding.conversationId,runId:binding.runId,requestId:randomUUID()}});
       if (!upstream.ok) {
@@ -495,7 +502,7 @@ export function createModelAccess(options: ModelAccessOptions) {
   const application = new ModelAccessApplication(options);
   return {
     ensureLinked: () => application.ensureLinked(), invalidate: (id:string,input?:{abortActive?:boolean}) => application.invalidate(id,input),
-    accounts: { list: () => application.list(), read: (id: string) => application.read(id), snapshot: (id:string) => application.read(id), preferences:(id:string,input:ModelPreferenceUpdate)=>application.updatePreferences(id,input), add: (input: {provider:string;label?:string}) => application.add(input), configure: (id:string,input:{expectedRevision:string;apiKey:string}) => application.configure(id,input), login: (id:string,input:{expectedRevision:string}) => application.login(id,input), attempt: (id:string,attemptId:string) => application.attempt(id,attemptId), cancelLogin: (id:string,attemptId:string,input:{expectedRevision:string}) => application.cancelLogin(id,attemptId,input), check: (id:string,input:{expectedRevision?:string}={}) => application.check(id,input), disconnect: (id:string,input:{expectedRevision:string}) => application.disconnect(id,input) },
+    accounts: { list: (input?:{includeDisabled?:boolean}) => application.list(input), read: (id: string) => application.read(id), snapshot: (id:string) => application.read(id), preferences:(id:string,input:ModelPreferenceUpdate)=>application.updatePreferences(id,input), add: (input: {provider:string;label?:string}) => application.add(input), configure: (id:string,input:{expectedRevision:string;apiKey:string}) => application.configure(id,input), login: (id:string,input:{expectedRevision:string}) => application.login(id,input), attempt: (id:string,attemptId:string) => application.attempt(id,attemptId), cancelLogin: (id:string,attemptId:string,input:{expectedRevision:string}) => application.cancelLogin(id,attemptId,input), check: (id:string,input:{expectedRevision?:string}={}) => application.check(id,input), disconnect: (id:string,input:{expectedRevision:string}) => application.disconnect(id,input) },
     catalog: { list: () => application.catalog() },
     activity: () => application.activity(),
     freezeMetadata: (value = true) => application.freezeMetadata(value),

@@ -32,7 +32,7 @@ export interface ModelOffering {
   serviceTiers?: Array<{id:string;label:string;contextWindow?:number;reasoningEfforts?:Array<{id:string;label:string}>;defaultReasoningEffort?:string}>;
 }
 export interface ModelPreference { enabled:boolean;contextWindow?:number; }
-export interface ModelPreferenceUpdate { expectedRevision:string;models:Array<{id:string;enabled?:boolean;contextWindow?:number|null}>; }
+export interface ModelPreferenceUpdate { expectedRevision:string;sourceEnabled?:boolean;models?:Array<{id:string;enabled?:boolean;contextWindow?:number|null}>; }
 export interface ModelQuotaObservation {
   observedAt: string;
   available: boolean;
@@ -98,6 +98,8 @@ export interface ModelAccountView {
   label: string;
   revision: string;
   enabled: boolean;
+  /** Selection visibility, independent of credential/login state. Missing legacy value means enabled. */
+  sourceEnabled?: boolean;
   status: 'not-authenticated' | 'ready' | 'expired' | 'failed' | 'disconnected';
   /** Provider-declared credential mechanism; never the credential itself. */
   authType?: 'oauth' | 'api-key';

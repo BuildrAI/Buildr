@@ -418,7 +418,13 @@ test('model preferences enforce authentication, revision and context limits', {t
  for(const value of [0,1.5,258001])assert.equal((await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:checked.revision,models:[{id:'model',contextWindow:value}]})})).status,400);
  const response=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:checked.revision,models:[{id:'model',enabled:true,contextWindow:128000}]})});assert.equal(response.status,200);const updated=await response.json();assert.equal(updated.models[0].contextWindow,128000);assert.equal(updated.models[0].contextWindowOverride,128000);assert.equal(updated.quota.windows[0].remainingPercent,93);assert.equal(JSON.stringify(updated).includes('apiKey'),false);
  assert.equal((await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:checked.revision,models:[{id:'model',enabled:false}]})})).status,409);
- const reset=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:updated.revision,models:[{id:'model',contextWindow:null}]})});assert.equal(reset.status,200);assert.equal((await reset.json()).models[0].contextWindow,258000);
+ const reset=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:updated.revision,models:[{id:'model',contextWindow:null}]})});assert.equal(reset.status,200);const resetAccount=await reset.json();assert.equal(resetAccount.models[0].contextWindow,258000);
+ const disabledResponse=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:resetAccount.revision,sourceEnabled:false})});assert.equal(disabledResponse.status,200);const disabled=await disabledResponse.json();assert.equal(disabled.enabled,true);assert.equal(disabled.sourceEnabled,false);assert.equal(disabled.status,'ready');
+ const listUrl=url+'/api/v1/app/agent-service/model-accounts';
+ const hidden=await (await fetch(listUrl,{headers})).json();assert.equal(hidden.accounts.some((a:any)=>a.id===added.id),false);
+ for(const query of ['includeDisabled=invalid','includeDisabled=true&includeDisabled=false'])assert.equal((await fetch(listUrl+'?'+query,{headers})).status,400);
+ const allResponse=await fetch(listUrl+'?includeDisabled=true',{headers});assert.equal(allResponse.status,200);const all=await allResponse.json();assert.equal(all.accounts.find((a:any)=>a.id===added.id).sourceEnabled,false);
+ const enabledResponse=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:disabled.revision,sourceEnabled:true})});assert.equal(enabledResponse.status,200);assert.equal((await enabledResponse.json()).identity,disabled.identity);
 });
 
 test('HTTP handoff exposes the exact bounded body, local sources and confirmed receipt without manual condensation', {timeout:15_000}, async t=>{

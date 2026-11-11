@@ -262,9 +262,11 @@ test('renderMarkdown 以文本节点转义危险内容且默认拒绝相对与�
   assert.equal(root.querySelectorAll('b').length, 0);
   assert.match(textOf(root), /<script>alert\(1\)<\/script>/);
   assert.match(textOf(root), /正常 <b>标签字面量<\/b>/);
-  assert.match(textOf(root), /\[相对链接\]\(proposal\.md\)/);
-  assert.match(textOf(root), /\[越界链接\]\(\.\.\/readme\.md\)/);
-  assert.match(textOf(root), /\[协议相对\]\(\/\/example\.com\/docs\)/);
+  assert.match(textOf(root), /相对链接/);
+  assert.match(textOf(root), /当前视图不允许打开此链接：proposal\.md/);
+  assert.match(textOf(root), /越界链接.*当前视图不允许打开此链接.*\.\.\/readme\.md/);
+  assert.match(textOf(root), /协议相对.*当前视图不允许打开此链接.*\/\/example\.com\/docs/);
+  assert.doesNotMatch(textOf(root), /\[相对链接\]\(/);
   assert.equal(root.querySelector('a'), null);
 });
 
@@ -289,9 +291,31 @@ test('renderMarkdown 在启用相对链接时安全渲染 Change 内路径', asy
   assert.equal(links[1].getAttribute('href'), 'tasks.md#done');
   assert.equal(links[2].getAttribute('href'), 'https://example.com/docs');
   assert.equal(links[2].getAttribute('target'), '_blank');
-  assert.match(textOf(root), /\[越界\]\(\.\.\/secret\.md\)/);
-  assert.match(textOf(root), /\[绝对\]\(\/etc\/passwd\)/);
-  assert.match(textOf(root), /\[脚本\]\(javascript:alert\(1\)\)/);
+  assert.match(textOf(root), /越界.*链接路径超出允许范围.*\.\.\/secret\.md/);
+  assert.match(textOf(root), /绝对.*链接路径包含非法字符.*\/etc\/passwd/);
+  assert.match(textOf(root), /脚本.*不支持此链接协议.*javascript:alert\(1\)/);
+  assert.doesNotMatch(textOf(root), /\[越界\]\(/);
+});
+
+test('本地 file 链接归一为文件路径并局部说明无法打开的链接', async () => {
+  const { renderMarkdown }: any = await loadRenderer();
+  const root: any = renderMarkdown([
+    '- [查看 help 完整内容](file:///tmp/buildr-api-docs/help.md)',
+    '- [查看 OpenAPI 行](file:///tmp/buildr-api-docs/openapi.json#L12)',
+    '- [远程文件](file://server/share/a.md)',
+    '- [脚本](javascript:alert(1))',
+  ].join('\n'), { allowRelativeLinks: true, allowAbsoluteFileLinks: true });
+  const links: any[] = [...root.querySelectorAll('a')];
+  assert.equal(links.length, 2);
+  assert.equal(links[0].getAttribute('href'), '/tmp/buildr-api-docs/help.md');
+  assert.equal(links[0].getAttribute('data-markdown-href'), '/tmp/buildr-api-docs/help.md');
+  assert.equal(links[0].textContent, '查看 help 完整内容');
+  assert.equal(links[1].getAttribute('href'), '/tmp/buildr-api-docs/openapi.json#L12');
+  assert.equal(links[1].getAttribute('data-markdown-href'), '/tmp/buildr-api-docs/openapi.json#L12');
+  const text = textOf(root);
+  assert.ok(text.includes('远程文件（仅支持本机 file:// 文件链接：file://server/share/a.md）'));
+  assert.ok(text.includes('脚本（不支持此链接协议：javascript:alert(1)）'));
+  assert.doesNotMatch(text, /\[查看 help 完整内容\]\(/);
 });
 
 test('renderMarkdown 可按需允许父级相对路径段', async () => {
@@ -522,7 +546,7 @@ test('标准语法不启用实体混淆协议、HTML或未授权图片，代码�
   assert.equal(root.querySelectorAll('img').length, 0);
   assert.equal(root.querySelectorAll('iframe').length, 0);
   assert.equal(root.querySelectorAll('script').length, 0);
-  assert.equal(root.querySelector('code').textContent, '&amp; <script>');
+  assert.equal([...root.querySelectorAll('code')].at(-1).textContent, '&amp; <script>');
   assert.match(root.textContent, /<iframe/);
 });
 

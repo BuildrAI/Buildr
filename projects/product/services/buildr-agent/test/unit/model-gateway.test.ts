@@ -54,7 +54,7 @@ test('DSH keeps supported reasoning levels when a model also offers an unreprese
   const gateway = structuredClone(lease);
   gateway.models[0].reasoningEfforts = [{ id: 'high', label: 'High' }, { id: 'max', label: 'Maximum' }, { id: 'ultra', label: 'Ultra' }];
   const original = structuredClone(gateway);
-  assert.deepEqual(dshGatewayModels(gateway), [{ id: 'opaque-model-route', name: 'GPT · Devin', contextWindow: 200000, maxTokens: 32000, input: ['text', 'image'], reasoningEfforts: { high: 'high', max: 'max' } }]);
+  assert.deepEqual(dshGatewayModels(gateway), [{ id: 'opaque-model-route', name: 'GPT · Devin', contextWindow: 200000, input: ['text', 'image'], reasoningEfforts: { high: 'high', max: 'max' } }]);
   assert.equal(dshGatewayEffort(gateway, undefined, 'high'), 'high');
   assert.throws(() => dshGatewayEffort(gateway, undefined, 'ultra'), (error: any) => error.code === 'agent_reasoning_unavailable');
   assert.deepEqual(gateway, original);
@@ -72,6 +72,14 @@ test('DSH does not silently replace an unsupported default or treat it as no rea
   assert.equal(dshGatewayEffort(gateway), undefined);
 });
 
+test('DSH leaves request output and window adaptation native-owned without rewriting capabilities',()=>{
+ for(const window of [500000,200000,100000,65536,undefined]){
+  const gateway=structuredClone(lease);gateway.models[0].contextWindow=window;gateway.models[0].maxOutputTokens=393216;
+  const before=structuredClone(gateway);const [model]=dshGatewayModels(gateway);
+  assert.equal(model.contextWindow,window);assert.equal('maxTokens' in model,false);assert.deepEqual(gateway,before);
+ }
+ const gateway=structuredClone(lease);delete gateway.models[0].maxOutputTokens;assert.equal('maxTokens' in dshGatewayModels(gateway)[0],false);
+});
 test('isolated DSH foreground deadline policy keeps explicit background capability intact',()=>{
  const patches=dshCommandDeadlinePatch();assert.equal(patches.length,2);
  for(const patch of patches){assert.equal(patch.config.promoteOnTimeout,false);assert.equal('enableRunInBackground' in patch.config,false);}

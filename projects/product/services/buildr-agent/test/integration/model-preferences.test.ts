@@ -47,3 +47,27 @@ test('failed quota observations retain the timestamp and windows of the last suc
  const source=provider(()=>[basic]),original=source.open;source.open=async input=>({...await original(input),inspect:async()=>({status:'ready',models:[basic],quota:{available,observedAt:available?'2026-10-25T00:00:00Z':'2026-10-25T01:00:00Z',...(available?{windows:[{id:'weekly',label:'Week',remainingPercent:93}]}:{})}})});
  const app=createModelAccess({root,providers:[source]});try{const account=await app.accounts.add({provider:'fixture'});await app.accounts.check(account.id);available=false;const view=await app.accounts.check(account.id);assert.equal(view.status,'ready');assert.equal(view.quota?.stale,true);assert.equal(view.quota?.observedAt,'2026-10-25T00:00:00Z');assert.equal(view.quota?.windows?.[0].remainingPercent,93);}finally{await app.close();await rm(root,{recursive:true,force:true});}
 });
+
+test('source disable is persistent selection state, not logout, and never interrupts an accepted lease',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'buildr-source-disabled-'));const source=provider(()=>[basic]);let app=createModelAccess({root,providers:[source]});
+ try{
+  const added=await app.accounts.add({provider:'fixture'}),checked=await app.accounts.check(added.id);
+  const enabled=await app.accounts.preferences(added.id,{expectedRevision:checked.revision,models:[{id:'m',enabled:true,contextWindow:128000}]});
+  const input={accountId:added.id,modelId:'m',conversationId:'c',agentId:'dsh',runId:'r'};
+  const lease=await app.leases.create(input);
+  const off=await app.accounts.preferences(added.id,{expectedRevision:enabled.revision,sourceEnabled:false});
+  assert.equal(off.enabled,true);assert.equal(off.status,'ready');assert.equal(off.identity,enabled.identity);assert.deepEqual(off.models,enabled.models);
+  assert.deepEqual(app.accounts.list().accounts,[]);assert.equal(app.accounts.list({includeDisabled:true}).accounts[0].sourceEnabled,false);assert.deepEqual(app.catalog.list().models,[]);
+  await assert.rejects(app.leases.create({...input,runId:'new'}),{code:'model_source_disabled'});
+  await assert.rejects(app.accounts.preferences(added.id,{expectedRevision:enabled.revision,sourceEnabled:true}),{code:'model_revision_conflict'});
+  const response=await fetch(lease.baseUrl+'/chat/completions',{method:'POST',headers:{authorization:'Bearer '+lease.apiKey,'content-type':'application/json'},body:JSON.stringify({model:lease.model,messages:[]})});assert.equal(response.status,200);await response.text();
+  await app.close();app=createModelAccess({root,providers:[source]});assert.equal(app.accounts.read(added.id).sourceEnabled,false);assert.equal(app.accounts.list().accounts.length,0);
+  const on=await app.accounts.preferences(added.id,{expectedRevision:app.accounts.read(added.id).revision,sourceEnabled:true});assert.equal(on.identity,enabled.identity);assert.equal(on.models[0].contextWindow,128000);assert.equal(on.models[0].enabled,true);assert.equal(app.catalog.list().models.length,1);
+ }finally{await app.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('a never-authenticated source can be hidden and restored without opening its credential runtime',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'buildr-source-unconfigured-'));let opened=0;
+ const source=provider(()=>[]),open=source.open;source.open=async input=>{opened++;return open(input);};const app=createModelAccess({root,providers:[source]});
+ try{const added=await app.accounts.add({provider:'fixture'}),off=await app.accounts.preferences(added.id,{expectedRevision:added.revision,sourceEnabled:false});assert.equal(opened,0);assert.equal(off.status,'not-authenticated');assert.equal(app.accounts.list().accounts.length,0);const on=await app.accounts.preferences(added.id,{expectedRevision:off.revision,sourceEnabled:true});assert.equal(on.identity,added.identity);assert.equal(on.status,'not-authenticated');assert.equal(opened,0);}finally{await app.close();await rm(root,{recursive:true,force:true});}
+});

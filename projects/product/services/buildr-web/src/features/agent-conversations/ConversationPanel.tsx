@@ -146,7 +146,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
     setAtBottom(bottom.current);
   },[]);
   const selectedSourceModel=context.modelCatalog.find(model=>model.accountId===choice.modelAccountId&&model.modelId===choice.model&&(!choice.modelAccountIdentity||model.accountIdentity===choice.modelAccountIdentity));
-  const effectiveModel=choice.model??selectedConversationModel(connection,undefined)?.id;
+  const effectiveModel=choice.model;
   const effectiveModelLabel=selectedSourceModel?.label||selectedConversationModel(connection,effectiveModel)?.label||effectiveModel||'默认模型';
   const executionChangedFor=(value:ConversationView|null|undefined)=>executionSelectionChanged(value?.run,value?latestConversationParticipant(value)?.connectionId:undefined,{...choice,model:effectiveModel},permissionMode);
   const executionChanged=executionChangedFor(chat);
@@ -183,7 +183,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
     if(remember){
       if(chat?.run)setHandoffSelections(previous=>({...previous,[choiceKey]:chat.run!.id}));
       setModulePreference(current=>{const next=rememberConversationAgent(current,value.connectionId);writeConversationModulePreference(next);return next;});
-      const nextModel=modelPreferenceFromChoice(value);setModelPreference(nextModel);writeConversationModelPreference(nextModel);
+      const nextModel=modelPreferenceFromChoice(value);writeConversationModelPreference(nextModel);setModelPreference(readConversationModelPreference());
     }
     setPrepared(null);setSelectedHandoff(null);setPreviewOpen(false);
   };
@@ -384,7 +384,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
       finally{if(activeSend.current===operation){activeSend.current=null;setSending(false);}}
       return;
     }
-    const unavailable=(!connection?.enabled?'请先接入可用的智能体。':!permissionAvailable?'当前执行者不支持'+permissionModeLabels[permissionMode]:requestImages.some(image=>!conversationDocumentTypes.includes(image.mimeType))&&!connection.capabilities.images?'当前执行者不支持图片或视频画面。请移除附件或选择支持图片的执行者。':choice.modelAccountId&&context.modelCatalogReady&&!selectedSourceModel?.available?'所选模型暂不可用，请重新选择。':'');
+    const unavailable=(!connection?.enabled?'请先接入可用的智能体。':!choice.model?'请选择模型；没有有效记忆时不会自动选择默认模型。':!permissionAvailable?'当前执行者不支持'+permissionModeLabels[permissionMode]:requestImages.some(image=>!conversationDocumentTypes.includes(image.mimeType))&&!connection.capabilities.images?'当前执行者不支持图片或视频画面。请移除附件或选择支持图片的执行者。':choice.modelAccountId&&context.modelCatalogReady&&!selectedSourceModel?.available?'所选模型暂不可用，请重新选择。':'');
     if(unavailable){setError(unavailable);return;}
     if(activeSend.current||(!canSend&&!skipSummary)||(!continueRunId&&!show&&!sendText.trim()&&!images.length))return;
     setSelectedHandoff(null);

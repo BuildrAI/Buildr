@@ -64,16 +64,16 @@ test('模型选择器记忆恢复准确来源、档位与思考深度，并按�
  const missingTier=preferredConversationChoice(modulePreference,{version:1,connectionId:'dsh',model:'swe-2',modelAccountId:'devin',serviceTier:'missing',reasoningEffort:'unknown'},connections,catalog);
  assert.deepEqual([missingTier.serviceTier,missingTier.reasoningEffort],['standard',undefined]);
  const unavailable=preferredConversationChoice(modulePreference,{version:1,connectionId:'dsh',model:'swe-2',modelAccountId:'gone'},connections,catalog);
- assert.deepEqual([unavailable.modelAccountId,unavailable.model],['native-dsh','dsh-model']);
+ assert.deepEqual([unavailable.modelAccountId,unavailable.model],[undefined,undefined]);
  const restored=preferredConversationChoice({version:1,agent:{connectionId:'qoder'}},{version:1,connectionId:'qoder',model:'swe-2',modelAccountId:'devin'},connections,catalog);
- assert.deepEqual([restored.modelAccountId,restored.model],['devin','swe-2']);
+ assert.deepEqual([restored.modelAccountId,restored.model],[undefined,undefined]);
 });
 
 test('不同智能体不借用模型记忆，且对话模型写入不改变执行模型偏好',()=>{
  const store=storage({'buildr.execution-model':JSON.stringify(['execution-account','execution-model'])}),modulePreference={version:1,agent:{connectionId:'dsh'}};
  const memory={version:1,connectionId:'qoder',model:'swe-2',modelAccountId:'devin'};
  const selected=preferredConversationChoice(modulePreference,memory,connections,catalog);
- assert.equal(selected.connectionId,'dsh');assert.deepEqual([selected.modelAccountId,selected.model],['native-dsh','dsh-model']);
+ assert.equal(selected.connectionId,'dsh');assert.deepEqual([selected.modelAccountId,selected.model],[undefined,undefined]);
  writeConversationModulePreference(modulePreference,store,'dev');writeConversationModelPreference(memory,store,'dev');
  assert.equal(store.dump()['buildr.execution-model'],JSON.stringify(['execution-account','execution-model']));
 });
@@ -81,7 +81,7 @@ test('不同智能体不借用模型记忆，且对话模型写入不改变执�
 test('native model draft memory restores only a currently supported reasoning effort',()=>{
   const native=[{id:'codex',provider:'codex',label:'Codex',enabled:true,status:'ready',models:[{id:'native-model',label:'Native',isDefault:true,reasoningEfforts:[{id:'high',label:'High'}]}]}];
   const module={version:1,agent:{connectionId:'codex'}};
-  assert.equal(preferredConversationChoice(module,{version:1,connectionId:'codex',model:'native-model',reasoningEffort:'high'},native,[]).reasoningEffort,'high');
+  assert.equal(preferredConversationChoice(module,{version:1,connectionId:'codex',model:'native-model',reasoningEffort:'high'},native,[{accountId:'native-codex',modelId:'native-model',available:true,reasoningEfforts:[{id:'high'}]}]).reasoningEffort,'high');
   assert.equal(preferredConversationChoice(module,{version:1,connectionId:'codex',model:'native-model',reasoningEffort:'unsupported'},native,[]).reasoningEffort,undefined);
 });
 
@@ -122,7 +122,7 @@ test('存储不可用仍可在当前页面记住选择；来源变更不沿用�
  assert.equal(restoreReasoningChoice(native,connection,[],denied,'denied').reasoningEffort,'high');
  const module={version:1,agent:{connectionId:'dsh'}};
  const old={version:1,connectionId:'dsh',model:'swe-2',modelAccountId:'devin',modelAccountIdentity:'old-identity',reasoningEffort:'high'};
- assert.equal(preferredConversationChoice(module,old,connections,catalog).reasoningEffort,undefined);
+ assert.deepEqual(preferredConversationChoice(module,old,connections,catalog),{connectionId:'dsh'});
  assert.equal(preferredConversationChoice(module,{...old,modelAccountIdentity:undefined},connections,catalog).reasoningEffort,undefined);
 });
 
@@ -135,4 +135,29 @@ test('旧对话的原生模型绑定当前来源时使用同一份强度记忆',
  assert.equal(restoreReasoningChoice(bound,connection,[source],store,'native-binding').reasoningEffort,'high');
  assert.equal(validConversationChoice({...legacy,reasoningEffort:'high'},connection,[{...source,reasoningEfforts:[]}]).reasoningEffort,undefined);
  assert.equal(restoreReasoningChoice(legacy,connection,[{...source,accountIdentity:'replacement'}],store,'native-binding').reasoningEffort,undefined);
+});
+
+test('model memories survive switching agents, reload and a legacy single-slot migration without default fallback',()=>{
+ const key=conversationPreferenceKeys('per-agent').model;
+ const old={version:1,connectionId:'dsh',model:'swe-2',modelAccountId:'devin',modelAccountIdentity:'devin-identity',serviceTier:'fast',reasoningEffort:'low'};
+ const store=storage({[key]:JSON.stringify(old)});
+ writeConversationModelPreference({version:1,connectionId:'qoder',model:'native-model',modelAccountId:'native-qoder',modelAccountIdentity:'qoder-identity'},store,'per-agent');
+ const memory=readConversationModelPreference(store,'per-agent');
+ const dsh=preferredConversationChoice({version:1,agent:{connectionId:'dsh'}},memory,connections,catalog);
+ assert.equal(dsh.model,'swe-2');assert.equal(dsh.serviceTier,'fast');assert.equal(dsh.reasoningEffort,'low');
+ assert.equal(preferredConversationChoice({version:1,agent:{connectionId:'qoder'}},memory,connections,catalog).model,'native-model');
+ const saved=store.dump()[key];writeConversationModelPreference({version:1,connectionId:'dsh'},store,'per-agent');assert.equal(store.dump()[key],saved);
+ assert.deepEqual(preferredConversationChoice({version:1,agent:{connectionId:'dsh'}},memory,connections,catalog.filter(item=>item.accountId!=='devin')),{connectionId:'dsh'});
+ assert.deepEqual(preferredConversationChoice({version:1,agent:{connectionId:'dsh'}},memory,connections,catalog.map(item=>item.accountId==='devin'?{...item,accountIdentity:'replaced'}:item)),{connectionId:'dsh'});
+ assert.deepEqual(preferredConversationChoice({version:1,agent:{connectionId:'dsh'}},null,connections,catalog),{connectionId:'dsh'});
+});
+
+test('readable but read-only browser storage uses current-page model memory instead of stale saved choices',()=>{
+ const saved=JSON.stringify({version:1,connectionId:'dsh',model:'old-model'});
+ const denied={getItem(){return saved;},setItem(){throw new Error('read only');},removeItem(){throw new Error('read only');}};
+ const selected={version:1,connectionId:'dsh',model:'swe-2',modelAccountId:'devin',modelAccountIdentity:'devin-identity'};
+ assert.equal(writeConversationModelPreference(selected,denied,'read-only-models'),false);
+ assert.equal(readConversationModelPreference(denied,'read-only-models').model,'swe-2');
+ writeConversationModelPreference({version:1,connectionId:'qoder',model:'native-model',modelAccountId:'native-qoder'},denied,'read-only-models');
+ assert.equal(preferredConversationChoice({version:1,agent:{connectionId:'dsh'}},readConversationModelPreference(denied,'read-only-models'),connections,catalog).model,'swe-2');
 });

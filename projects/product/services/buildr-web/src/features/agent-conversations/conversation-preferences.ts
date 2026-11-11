@@ -1,9 +1,9 @@
 import type {CatalogModel,ConnectionView} from './types.ts';
-import {choiceReasoningOptions,officialConversationChoice,selectedConversationModel,type ConversationChoice,type PermissionMode} from './conversation-options.ts';
+import {choiceReasoningOptions,qoderSourceUnsupported,selectedConversationModel,type ConversationChoice,type PermissionMode} from './conversation-options.ts';
 
 type PreferenceStorage=Pick<Storage,'getItem'|'setItem'|'removeItem'>;
 export type ConversationModulePreference={version:1;agent?:{connectionId:string};permission?:{mode?:PermissionMode;workspaceId?:string;workspaces?:Record<string,PermissionMode>}};
-export type ConversationModelPreference={version:1;connectionId:string;model?:string;modelAccountId?:string;modelAccountIdentity?:string;serviceTier?:string;reasoningEffort?:string};
+export type ConversationModelPreference={version:1;connectionId:string;model?:string;modelAccountId?:string;modelAccountIdentity?:string;serviceTier?:string;reasoningEffort?:string;byConnection?:Record<string,ConversationModelPreference>};
 
 const emptyModule=():ConversationModulePreference=>({version:1});
 const webProfile=()=>typeof document==='undefined'?'local':document.querySelector('meta[name="buildr-web-profile"]')?.getAttribute('content')||'local';
@@ -53,23 +53,35 @@ export function rememberConversationPermission(preference:ConversationModulePref
  return {...preference,permission:{mode,workspaceId,workspaces}};
 }
 
-export function readConversationModelPreference(storage:PreferenceStorage|undefined=defaultStorage(),profile=webProfile()):ConversationModelPreference|null{
- const value=parsed(stored(storage,conversationPreferenceKeys(profile).model));
- const connectionId=optionalString(value?.connectionId);
- if(value?.version!==1||!connectionId)return null;
+const volatileModelPreferences=new Map<string,ConversationModelPreference>();
+function parseModelPreference(value:Record<string,unknown>|undefined):ConversationModelPreference|null{
+ const connectionId=optionalString(value?.connectionId);if(value?.version!==1||!connectionId)return null;
  const model=optionalString(value.model),modelAccountId=optionalString(value.modelAccountId),modelAccountIdentity=optionalString(value.modelAccountIdentity),serviceTier=optionalString(value.serviceTier),reasoningEffort=optionalString(value.reasoningEffort);
  return {version:1,connectionId,...(model?{model}:{}),...(modelAccountId?{modelAccountId}:{}),...(modelAccountIdentity?{modelAccountIdentity}:{}),...(serviceTier?{serviceTier}:{}),...(reasoningEffort?{reasoningEffort}:{})};
+}
+export function readConversationModelPreference(storage:PreferenceStorage|undefined=defaultStorage(),profile=webProfile()):ConversationModelPreference|null{
+ const volatile=volatileModelPreferences.get(profile);if(volatile)return volatile;
+ const value=parsed(stored(storage,conversationPreferenceKeys(profile).model));
+ if(value?.version===2){
+  const entries=object(value.connections)??{};
+  const byConnection=Object.fromEntries(Object.entries(entries).flatMap(([id,raw])=>{const p=parseModelPreference(object(raw));return p?.connectionId===id?[[id,p]]:[];}));
+  const last=typeof value.lastConnectionId==='string'?byConnection[value.lastConnectionId]:undefined;
+  return last?{...last,byConnection}:null;
+ }
+ return parseModelPreference(value)??volatileModelPreferences.get(profile)??null;
 }
 export function modelPreferenceFromChoice(choice:ConversationChoice):ConversationModelPreference|null{
  if(!choice.connectionId)return null;
  return {version:1,connectionId:choice.connectionId,...(choice.model?{model:choice.model}:{}),...(choice.modelAccountId?{modelAccountId:choice.modelAccountId}:{}),...(choice.modelAccountIdentity?{modelAccountIdentity:choice.modelAccountIdentity}:{}),...(choice.serviceTier?{serviceTier:choice.serviceTier}:{}),...(choice.reasoningEffort?{reasoningEffort:choice.reasoningEffort}:{})};
 }
 export function writeConversationModelPreference(preference:ConversationModelPreference|null,storage:PreferenceStorage|undefined=defaultStorage(),profile=webProfile()):boolean{
- try{
-  const key=conversationPreferenceKeys(profile).model;
-  if(preference)storage?.setItem(key,JSON.stringify(preference));else storage?.removeItem(key);
-  return Boolean(storage);
- }catch{return false;}
+ if(!preference?.model)return false; // Empty/invalid selections never erase the last explicit model.
+ const previous=readConversationModelPreference(storage,profile);
+ const byConnection={...(previous?.byConnection??(previous?{[previous.connectionId]:previous}:{}))};
+ const {byConnection:_,...selected}=preference;byConnection[selected.connectionId]=selected;
+ const next={...selected,byConnection};
+ try{storage?.setItem(conversationPreferenceKeys(profile).model,JSON.stringify({version:2,lastConnectionId:selected.connectionId,connections:byConnection}));if(storage){volatileModelPreferences.delete(profile);return true;}}catch{}
+ volatileModelPreferences.set(profile,next);return false;
 }
 
 export function rememberedConversationAgent(preference:ConversationModulePreference,connections:ConnectionView[]):ConnectionView|undefined{
@@ -86,17 +98,21 @@ export function rememberedConversationPermission(preference:ConversationModulePr
  return 'full-access';
 }
 
-function selectableModel(connection:ConnectionView,catalog:CatalogModel[],preference:ConversationModelPreference){
+function selectableModel(connection:ConnectionView,catalog:CatalogModel[],preference:ConversationModelPreference):{choice:ConversationChoice}|undefined{
  if(preference.model&&preference.modelAccountId){
   const source=catalog.find(model=>model.accountId===preference.modelAccountId&&model.modelId===preference.model&&model.available&&model.enabled!==false);
-  if(!source)return;
+  if(!source||qoderSourceUnsupported(connection.provider,source.provider)||preference.modelAccountIdentity&&preference.modelAccountIdentity!==source.accountIdentity)return;
   const tier=source.serviceTiers?.find(item=>item.id===preference.serviceTier)?preference.serviceTier:source.defaultServiceTier;
   const efforts=source.serviceTiers?.find(item=>item.id===tier)?.reasoningEfforts??source.reasoningEfforts;
   return {choice:{connectionId:connection.id,model:source.modelId,modelAccountId:source.accountId,modelAccountRevision:source.accountRevision,modelAccountIdentity:source.accountIdentity,serviceTier:tier,reasoningEffort:preference.modelAccountIdentity&&preference.modelAccountIdentity===source.accountIdentity&&preference.reasoningEffort&&efforts?.some(item=>item.id===preference.reasoningEffort)?preference.reasoningEffort:undefined} satisfies ConversationChoice};
  }
  if(preference.model){
-  const native=connection.models.find(model=>model.id===preference.model);
-  if(native)return {choice:{connectionId:connection.id,model:native.id,reasoningEffort:preference.reasoningEffort&&native.reasoningEfforts?.some(item=>item.id===preference.reasoningEffort)?preference.reasoningEffort:undefined} satisfies ConversationChoice};
+  const source=catalog.find(item=>item.accountId==='native-'+connection.id&&item.modelId===preference.model&&item.available&&item.enabled!==false);
+  if(source){
+   const selected=selectableModel(connection,catalog,{...preference,modelAccountId:source.accountId});
+   if(selected&&!preference.modelAccountIdentity)selected.choice.reasoningEffort=source.reasoningEfforts?.some(option=>option.id===preference.reasoningEffort)?preference.reasoningEffort:undefined;
+   return selected;
+  }
  }
 }
 
@@ -104,11 +120,12 @@ function selectableModel(connection:ConnectionView,catalog:CatalogModel[],prefer
 export function preferredConversationChoice(modulePreference:ConversationModulePreference,modelPreference:ConversationModelPreference|null,connections:ConnectionView[],catalog:CatalogModel[]):ConversationChoice|undefined{
  const connection=rememberedConversationAgent(modulePreference,connections);
  if(!connection)return;
- if(modelPreference?.connectionId===connection.id){
-  const selected=selectableModel(connection,catalog,modelPreference);
+ const remembered=modelPreference?.byConnection?.[connection.id]??(modelPreference?.connectionId===connection.id?modelPreference:null);
+ if(remembered){
+  const selected=selectableModel(connection,catalog,remembered);
   if(selected)return restoreReasoningChoice(selected.choice,connection,catalog);
  }
- return restoreReasoningChoice(officialConversationChoice(connection,catalog),connection,catalog);
+ return {connectionId:connection.id};
 }
 
 // 每个身份使用独立存储项，多个选择器或标签页写入不同模型时不会覆盖整张表。

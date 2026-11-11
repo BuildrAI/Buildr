@@ -30,7 +30,7 @@ const dshReasoningEfforts = new Set(['off', 'minimal', 'low', 'medium', 'high', 
 export function dshGatewayModels(gateway: ExecutorGateway) {
   return gateway.models.map(model => {
     const efforts = model.reasoningEfforts?.filter(effort => dshReasoningEfforts.has(effort.id));
-    return { id: model.id, name: model.label, ...(model.contextWindow ? { contextWindow: model.contextWindow } : {}), ...(model.maxOutputTokens ? { maxTokens: model.maxOutputTokens } : {}), input: model.vision ? ['text', 'image'] : ['text'], reasoningEfforts: efforts?.length ? Object.fromEntries(efforts.map(effort => [effort.id, effort.id])) : false };
+    return { id: model.id, name: model.label, ...(model.contextWindow ? { contextWindow: model.contextWindow } : {}), input: model.vision ? ['text', 'image'] : ['text'], reasoningEfforts: efforts?.length ? Object.fromEntries(efforts.map(effort => [effort.id, effort.id])) : false };
   });
 }
 export function dshGatewayEffort(gateway: ExecutorGateway, modelId?: string, effort?: string): string | undefined {

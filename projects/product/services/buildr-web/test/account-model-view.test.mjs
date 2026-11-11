@@ -70,3 +70,13 @@ test('登录准备显示实际进度，失败原因优先于旧账号检查提�
  const failed=view('failed','程序下载失败，请重试');assert.equal(failed.diagnostic,'程序下载失败，请重试');assert.equal(failed.loginPending,false);
  assert.equal(view('cancelled').loginPending,false);
 });
+
+test('disabled sources stay hidden without synthesizing a logged-out replacement',()=>{
+ const account={id:'native-dsh',provider:'native-dsh',connectionId:'dsh',label:'DeepSeek',status:'ready',enabled:true,sourceEnabled:false,models:[]};
+ assert.equal(modelSourceViews([account],[]).some(source=>source.id===account.id),false);
+ assert.equal(modelSourceViews([account],[],true).find(source=>source.id===account.id).sourceEnabled,false);
+ for(const provider of ['devin','openai']){
+  const off={...account,id:'account-'+provider,provider,connectionId:undefined};
+  assert.equal(modelSourceViews([off],[]).some(source=>source.provider===provider),false);
+ }
+});

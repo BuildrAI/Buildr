@@ -150,7 +150,7 @@ export function createAgentService(options: AgentServiceOptions) {
     preserveWaitingQuestions: (scope:string,id:string,requestId:string) => conversations.preserveWaitingQuestions(scope,id,requestId),
     dispatchWaitingHandoff: (scope:string,id:string,requestId:string) => conversations.dispatchWaitingHandoff(scope,id,requestId),
     revokeModel: (id: string) => models.invalidate(id),
-    models: { startRefreshing, generate: models.generate, accounts: {...models.accounts,list:async(input:{refresh?:boolean}={})=>{if(input.refresh===true)await discover();return models.accounts.list();}}, catalog: {list:async(input:{refresh?:boolean}={})=>{if(input.refresh===true)await discover();return cachedCatalog();}} },
+    models: { startRefreshing, generate: models.generate, accounts: {...models.accounts,list:async(input:{refresh?:boolean;includeDisabled?:boolean}={})=>{if(input.refresh===true)await discover();return models.accounts.list(input);}}, catalog: {list:async(input:{refresh?:boolean}={})=>{if(input.refresh===true)await discover();return cachedCatalog();}} },
     connections: {
       list: () => ({ connections: connections.list() }),
       programUpdates: () => withUpgrades(programUpdates.list()),
