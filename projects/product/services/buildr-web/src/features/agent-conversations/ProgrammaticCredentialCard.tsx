@@ -2,6 +2,7 @@ import { ApiOutlined, DownOutlined, MoreOutlined, ReloadOutlined, StopOutlined }
 import { Button, Dropdown, Switch, Tag, Typography } from 'antd';
 import { CopyButton } from '../../components/CopyButton';
 import { programmaticConnectionInfo } from './programmatic-connection-info';
+import { ProgrammaticPushbackSettings } from './ProgrammaticPushbackSettings';
 import type { AccessCredential, ProgrammaticAccessView } from './api/programmatic-access-api';
 
 const labels = { read: '读取', execute: '执行', answer: '答复', approve: '审批' };
@@ -49,6 +50,7 @@ export function ProgrammaticCredentialCard({ item, view, busy, expanded, onToggl
         <dt>创建时间</dt><dd><time dateTime={item.createdAt}>{new Date(item.createdAt).toLocaleString('zh-CN', { hour12: false })}</time></dd>
         <dt>凭据标识</dt><dd><Typography.Text type="secondary" copyable>{item.id}</Typography.Text></dd>
       </dl>
+      {!item.revokedAt && <ProgrammaticPushbackSettings credentialId={item.id} credentialName={item.name} />}
     </div>}
   </article>;
 }

@@ -9,6 +9,7 @@ import { App } from 'antd';
 
 registerHooks({
   resolve(specifier, context, next) {
+    if (specifier === '../../../api' && context.parentURL?.endsWith('/programmatic-access-api.ts')) return { url: 'data:text/javascript,export const api=()=>{throw Error("unexpected real API")}', shortCircuit: true };
     if (specifier.startsWith('.') && context.parentURL?.startsWith('file:')) {
       const url = new URL(specifier, context.parentURL);
       for (const suffix of ['.tsx', '.ts']) if (existsSync(new URL(url.href + suffix))) return next(url.href + suffix, context);

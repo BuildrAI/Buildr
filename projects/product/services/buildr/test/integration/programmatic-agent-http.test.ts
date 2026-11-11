@@ -3,12 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
 import test from 'node:test';
-import {createAgentService, type AgentRuntime, type ExecutorEvent} from '@buildr-ai/buildr-agent';
-import {taskRecordFixture} from '../helpers/task-record-system-fixture.ts';
-import {createRuntime,runtimeContributions} from '../helpers/runtime-harness.ts';
-import {createLocalWorkspaceServer} from '../../src/web/http/server.ts';
-import {createAgentServiceHttpContribution} from '../../src/modules/agent-service/interfaces/http/agent-service-http.ts';
-import {createProgrammaticHttpContribution} from '../../src/modules/agent-service/interfaces/http/programmatic-http.ts';
+import {programmaticHttpFixture} from '../helpers/programmatic-http-fixture.ts';
 import {ProgrammaticCredentials} from '../../src/modules/agent-service/persistence/programmatic-credentials.ts';
 import {PROGRAMMATIC_OPERATIONS} from '../../src/modules/agent-service/interfaces/http/programmatic-operations.ts';
 import {AGENT_SERVICE_HTTP_SCHEMAS} from '../../src/modules/agent-service/interfaces/http/agent-service-http-contracts.ts';
@@ -26,28 +21,7 @@ function withoutSchemaIds(value:any):any {
  return Object.fromEntries(Object.entries(value).filter(([key])=>!['$id','$schema'].includes(key)).map(([key,item])=>[key,withoutSchemaIds(item)]));
 }
 
-async function fixture(t:any){
- let release:()=>void=()=>{};
- const {base,root}=taskRecordFixture({after:(callback:()=>void)=>{release=callback;}},'programmatic-http');let sends=0,stops=0,replies=0,emit:(event:ExecutorEvent)=>void=()=>{};
- let finish:()=>void=()=>{};const ending=new Promise<void>(resolve=>{finish=resolve;});
- const capabilities={text:true,images:false,approval:true,questions:true,stop:true,resume:true,maxInputBytes:65536,permissionModes:['default','full-access'] as Array<'default'|'full-access'>};
- const native:AgentRuntime={bindingIdentity:'fixture-binding',capabilities,inspectAccount:async()=>({status:'ready'}),models:async()=>[{id:'fixture-model',label:'Fixture',isDefault:true}],beginLogin:async()=>{},cancelLogin:async()=>{},createContext:async()=>({id:'context'}),resumeContext:async()=>{},readHistory:async()=>[],
-  async send(input){sends++;emit=input.onEvent;emit({type:'accepted',executionRef:{id:'native-run'},inputItemId:input.clientRequestId});emit({type:'item',item:{id:'result-note',kind:'message',role:'assistant',text:'fixture result',executionId:'native-run'}});await ending;},
-  observe:async()=>({status:'running',executionRef:{id:'native-run'},tools:[]}),reply:async()=>{replies++;},stop:async()=>{stops++;finish();return{status:'stopped',tools:[]};},close:async()=>{finish();}};
- const service=createAgentService({dataRoot:path.join(base,'agent'),environment:{HOME:base},modelProviders:[],executors:[{descriptor:{id:'fixture',label:'Fixture',capabilities},open:async()=>native}],resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
- await service.connections.connect('fixture',{expectedRevision:'unconfigured'});
- const runtime=createRuntime();let workspaceId='';const appData=path.join(base,'app');
- const agent=createAgentServiceHttpContribution(()=>service);
- const program=createProgrammaticHttpContribution(()=>service,agent,{dataRoot:()=>appData,version:()=>'test-version',workspaces:()=>[{id:workspaceId,name:'Allowed'}]});
- const contributions=runtimeContributions(runtime,'http').filter((item:{id:string})=>!['agent-service.http','programmatic-access.http'].includes(item.id));contributions.push(agent,program);
- const server=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions}),ready=await server.ready;workspaceId=ready.initialWorkspaceId;
- t.after(async()=>{finish();await service.close();server.server.closeAllConnections();await new Promise<void>(resolve=>server.server.close(()=>resolve()));release();});
- const manager=ready.url+'/api/v1/app/programmatic-access',url=ready.url+'/api/v1/programmatic';
- const webHeaders={'x-buildr-session':ready.sessionToken,origin:ready.url,'content-type':'application/json'};
- const call=async(suffix:string,token?:string,body?:unknown,extra:Record<string,string>={})=>fetch(url+suffix,{method:body===undefined?'GET':'POST',headers:{...(token?{authorization:'Bearer '+token}:{}),'content-type':'application/json',...extra},...(body===undefined?{}:{body:JSON.stringify(body)})});
- const create=async(scopes=['read','execute'],allowFullAccess?:boolean)=>{const response=await fetch(manager,{method:'POST',headers:webHeaders,body:JSON.stringify({name:'GrokBot fixture',workspaceIds:[workspaceId],scopes,...(allowFullAccess===undefined?{}:{allowFullAccess})})});assert.equal(response.status,201,await response.clone().text());return response.json();};
- return {base,service,appData,ready,workspaceId,manager,webHeaders,call,create,emit:(event:ExecutorEvent)=>emit(event),counts:()=>({sends,stops,replies})};
-}
+const fixture=(t:any)=>programmaticHttpFixture(t);
 
 test('Bearer authentication is separate, revocable, persistent and workspace scoped',async t=>{
  const f=await fixture(t),{token,credential}=await f.create();
@@ -172,7 +146,7 @@ test('compact OpenAPI preserves response schemas and only emits resolvable share
   const result=expanded.paths[route][operation.method.toLowerCase()];
   const expected=withoutSchemaIds(AGENT_SERVICE_HTTP_SCHEMAS[operation.output]);
   if(operation.id==='prepare-send'){assert.match(result.responses['200'].content['application/json'].schema.properties.token.description,/previewToken = prepareResponse\.token/);delete result.responses['200'].content['application/json'].schema.properties.token.description;}
-  const status=['start','send','supplement'].includes(operation.id)?'202':'200';
+  const status=['start','send','supplement','messages'].includes(operation.id)?'202':'200';
   assert.deepEqual(result.responses[status].content['application/json'].schema,expected,`${operation.id} response changed`);
   if(operation.method==='POST'){
    const input=withoutSchemaIds(AGENT_SERVICE_HTTP_SCHEMAS[operation.input]);
@@ -192,8 +166,8 @@ test('light operation index and self-contained per-operation contracts support s
  assert.equal((await f.call('/operations/start')).status,401);
  const index=await(await f.call('/operations',token)).json(),full=await(await f.call('/openapi.json',token)).json();
  assert.equal(index.contractVersion,programmaticContractVersion(full));assert.ok(Buffer.byteLength(JSON.stringify(index))<8_000);
- assert.equal(index.operations.length,PROGRAMMATIC_OPERATIONS.length+1);
- assert.deepEqual(new Set(index.operations.map((item:any)=>item.id)),new Set(['discover',...PROGRAMMATIC_OPERATIONS.map(item=>item.id)]));
+ assert.equal(index.operations.length,PROGRAMMATIC_OPERATIONS.length+2);
+ assert.deepEqual(new Set(index.operations.map((item:any)=>item.id)),new Set(['discover','events',...PROGRAMMATIC_OPERATIONS.map(item=>item.id)]));
  for(const item of index.operations){
   const response=await f.call('/operations/'+item.id,token);assert.equal(response.status,200);
   const document=await response.json();assert.equal(document['x-buildr-contract-version'],index.contractVersion);

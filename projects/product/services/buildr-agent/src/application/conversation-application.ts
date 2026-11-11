@@ -31,7 +31,7 @@ import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto
 import fs from 'node:fs';
 import path from 'node:path';
 import { ExecutorInputRejected } from '../contracts.ts';
-import type { AgentRuntime, AgentServiceOptions, ContextRef, ConversationEntry, ConversationView, ExecutorEvent, ExecutorImage, ExecutorItem, ExecutorObservation, RunView, SendDraft, SendPreview } from '../contracts.ts';
+import type { AgentRuntime, AgentServiceOptions, ContextRef, ConversationActivityCounts, ConversationEntry, ConversationSummaryView, ConversationView, ExecutorEvent, ExecutorImage, ExecutorItem, ExecutorObservation, RunView, SendDraft, SendPreview } from '../contracts.ts';
 import { AgentServiceError, BUSY_STATES, conversationRuns, unfinishedRun, expected, fail, nonempty, safeDiagnostic } from '../domain/agent-state.ts';
 import type { StoredConversation, StoredParticipant } from '../domain/agent-state.ts';
 import type { ConversationRepository } from '../persistence/conversation-repository.ts';
@@ -72,6 +72,11 @@ async function within<T>(work: Promise<T>, milliseconds: number, code: string, s
   finally { if (timer) clearTimeout(timer); if (cancel) signal?.removeEventListener('abort', cancel); }
 }
 const bounded = (value: number | undefined, fallback: number, max: number) => Math.max(1, Math.min(Number.isFinite(value) ? Math.trunc(value!) : fallback, max));
+const needsAttention = (view: ConversationView): boolean => (view.activity?.pendingDecisionCount ?? 0) > 0 || view.requests.length > 0 || view.run?.status === 'failed' || view.run?.status === 'unknown';
+const conversationSummary = (view: ConversationView): ConversationSummaryView => ({ id: view.id, title: view.title, runStatus: view.run?.status ?? null, updatedAt: view.updatedAt, active: view.activity?.active ?? false, pendingDecisionCount: view.activity?.pendingDecisionCount ?? 0 });
+
+type ConversationListInput = { taskId?: string; workspaceIds?: string[]; cursor?: string; limit?: number; hidden?: boolean; query?: string; active?: boolean; attention?: boolean; fields?: 'summary' };
+type ConversationListResult<T> = { conversations: T[]; nextCursor?: string; activityCounts: ConversationActivityCounts };
 
 export class ConversationApplication {
   readonly drafts: ConversationDrafts;
@@ -582,11 +587,18 @@ export class ConversationApplication {
     if(!current)fail('agent_conversation_missing','该工作空间中没有此对话。',404);
     return [current.revision,current.seenThrough,this.pendingSends.read(workspaceId,id)?.revision].join(':');
   }
-  list(workspaceId: string, input: { taskId?: string; workspaceIds?:string[]; cursor?: string; limit?: number; hidden?: boolean; query?: string } = {}): { conversations: ConversationView[]; nextCursor?: string } {
+  list(workspaceId: string, input: ConversationListInput & { fields: 'summary' }): ConversationListResult<ConversationSummaryView>;
+  list(workspaceId: string, input?: ConversationListInput & { fields?: undefined }): ConversationListResult<ConversationView>;
+  list(workspaceId: string, input?: ConversationListInput): ConversationListResult<ConversationView | ConversationSummaryView>;
+  list(workspaceId: string, input: ConversationListInput = {}): ConversationListResult<ConversationView | ConversationSummaryView> {
     const limit = bounded(input.limit, 30, 100);
-    const records = this.options.repository.listConversations(workspaceId, { taskId: input.taskId, workspaceIds:input.workspaceIds, before: input.cursor, limit: limit + 1, includeHidden: input.hidden, query: input.query?.trim().slice(0, 200) });
+    const query = input.query?.trim().slice(0, 200);
+    const records = this.options.repository.listConversations(workspaceId, { taskId: input.taskId, workspaceIds:input.workspaceIds, before: input.cursor, limit: limit + 1, includeHidden: input.hidden, query, active: input.active, attention: input.attention });
     const chosen = records.slice(0, limit);
-    return { conversations: chosen.map(record => ({ ...this.view(record, undefined, 1), entries: [] })), nextCursor: records.length > limit ? `${chosen.at(-1)!.view.updatedAt}/${chosen.at(-1)!.view.id}` : undefined };
+    const views = chosen.map(record => ({ ...this.view(record, undefined, 1), entries: [] })).filter(view => (input.active !== true || view.activity?.active === true) && (input.attention !== true || needsAttention(view)));
+    const conversations = input.fields === 'summary' ? views.map(conversationSummary) : views;
+    const activityCounts = this.options.repository.querySummaries([workspaceId], { workspaceId, hidden: input.hidden, query, generation: this.options.generation, limit: 0 }, this.options.generationAlive).activityCounts;
+    return { conversations, nextCursor: records.length > limit ? `${chosen.at(-1)!.view.updatedAt}/${chosen.at(-1)!.view.id}` : undefined, activityCounts };
   }
   participation(workspaceId:string,id:string,input:{runId:string}) {
     if(!input || Object.keys(input).some(key=>key!=='runId') || typeof input.runId!=='string')fail('agent_participation_query_invalid','需要准确runId。');
@@ -603,7 +615,7 @@ export class ConversationApplication {
   }
   pendingSummary() { return { conversations: this.options.repository.listPendingStates().map(record => pendingConversationSummary(this.view(record, undefined, 1))) }; }
   pending(): { conversations: ConversationView[] } { return { conversations: this.options.repository.listPendingStates().map(record => ({ ...this.view(record, undefined, 1), entries: [] })) }; }
-  listAll(workspaceIds:string[],input:{draftConversationIds?:string[];workspaceId?:string;activeOnly?:boolean;hidden?:boolean;query?:string;agent?:string;model?:string;activityState?:string;cursor?:string;limit?:number}={}) {
+  listAll(workspaceIds:string[],input:{draftConversationIds?:string[];workspaceId?:string;activeOnly?:boolean;active?:boolean;attention?:boolean;hidden?:boolean;query?:string;agent?:string;model?:string;activityState?:string;cursor?:string;limit?:number}={}) {
     if(input.workspaceId&&!workspaceIds.includes(input.workspaceId))fail('agent_workspace_missing','工作空间未登记。',404);
     const result=this.options.repository.querySummaries(workspaceIds,{...input,draftConversationIds:[...new Set(input.draftConversationIds??[])].sort(),generation:this.options.generation,query:input.query?.trim().slice(0,200),limit:bounded(input.limit,30,100)},this.options.generationAlive);
     for(const view of result.conversations){

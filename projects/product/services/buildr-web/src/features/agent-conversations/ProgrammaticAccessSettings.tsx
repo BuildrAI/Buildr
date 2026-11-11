@@ -78,6 +78,7 @@ export function ProgrammaticAccessSettings() {
     </div> : !error && <Skeleton active paragraph={{ rows: 2 }} />}
     <section className="pas-programs" aria-label="已接入程序">
       <div className="pas-section-heading"><h4>接入程序</h4><span>{view ? `${view.credentials.filter(item => !item.revokedAt).length} 个有效接入` : '正在读取…'}</span></div>
+      <Typography.Paragraph type="secondary" className="pas-migration-note">原全局“事件通知”已改为按凭据回推：展开凭据详情即可配置接收地址、密钥与速率。既有全局配置已迁移到 GrokBot 凭据并保持停用，可在其详情中启用。</Typography.Paragraph>
       {view?.credentials.length ? <div className="pas-credential-list">{view.credentials.map(item => <ProgrammaticCredentialCard key={item.id}
         item={item} view={view} busy={busy} expanded={expanded.includes(item.id)}
         onToggle={() => setExpanded(current => current.includes(item.id) ? current.filter(id => id !== item.id) : [...current, item.id])}

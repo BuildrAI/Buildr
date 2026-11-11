@@ -1,15 +1,15 @@
 import type { ServiceEvent } from '../contracts.ts';
-import type { ConversationWebhooks } from './conversation-webhooks.ts';
+import type { ProgrammaticPushback } from './programmatic-pushback.ts';
 
 /** Bounded live observation; durable conversation records remain the recovery authority. */
 export class ConversationEvents {
   private cursor = 0;
   private readonly observers = new Set<{ accept(event: ServiceEvent): void; close(): void }>();
   readonly generation: string;
-  private readonly webhooks?: Pick<ConversationWebhooks, 'publish' | 'close'>;
-  constructor(generation: string, webhooks?: Pick<ConversationWebhooks, 'publish' | 'close'>) { this.generation = generation; this.webhooks = webhooks; }
+  private readonly pushback?: Pick<ProgrammaticPushback, 'publish' | 'close'>;
+  constructor(generation: string, pushback?: Pick<ProgrammaticPushback, 'publish' | 'close'>) { this.generation = generation; this.pushback = pushback; }
   publish(event: Omit<ServiceEvent, 'cursor' | 'generation'>): void {
-    this.webhooks?.publish(event);
+    this.pushback?.publish(event);
     const value = { ...event, cursor: ++this.cursor, generation: this.generation };
     for (const observer of this.observers) observer.accept(value);
   }
@@ -54,5 +54,5 @@ export class ConversationEvents {
     };
     return { events, close };
   }
-  close(): void { this.webhooks?.close(); for (const observer of this.observers) observer.close(); }
+  close(): void { this.pushback?.close(); for (const observer of this.observers) observer.close(); }
 }

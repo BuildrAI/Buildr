@@ -1,11 +1,11 @@
-import {runWebhookSettingsJourney} from './webhook-settings-journey.ts';
+import {runPushbackSettingsJourney} from './pushback-settings-journey.ts';
 import {runAgentProgramUpdatesJourney} from './agent-program-updates-journey.ts';
 import assert from 'node:assert/strict';
 import type {AgentConversationFixture} from './agent-conversation-fixture.ts';
 
 /** setup 场景使用独立准备的对话现场。 */
 export async function runSetupScenarios(fixture:AgentConversationFixture){
-  await runWebhookSettingsJourney(fixture);
+  await runPushbackSettingsJourney(fixture);
   const {assertFixed,assertModelSummary,assertNavigationHighlight,assertReminderGap,capture,chooseAgent,chooseModel,chooseOption,closeConversation,closeModelSettings,connections,expectedBrowserErrors,input,modelSettings,openDesktopConversation,openModelSettings,page,panel,preferenceBodies,preparedInputs,programAttempts,reset,run,sentInputs,setHighEffort,step,workspaceId}=fixture;
 await step('文档附件支持九份、拒绝第十份并刷新恢复文件名',async()=>{
   await reset();await openDesktopConversation();await input().waitFor();

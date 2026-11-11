@@ -34,6 +34,22 @@ test('网页文档显式启用会话，重新生成携带当前修订',async()=>
  assert.deepEqual(calls[3],['/api/v1/app/programmatic-access/documents/operations',{headers:{'x-buildr-session':''}}]);
  assert.deepEqual(calls[4],['/api/v1/app/programmatic-access/documents/operations/start',{headers:{'x-buildr-session':''}}]);
 });
+test('凭据回推读取启用网页会话，保存/查看/测试携带精确版本化输入且默认不带密钥',async()=>{
+ const calls=[],client=createProgrammaticAccessClient(async(...args)=>{calls.push(args);return {};});
+ const controller=new AbortController();
+ await client.pushback('credential',controller.signal);
+ assert.deepEqual(calls[0],['/api/v1/app/programmatic-access/credential/pushback',{headers:{'x-buildr-session':''},signal:controller.signal}]);
+ await client.savePushback('credential',{expectedRevision:'v1',enabled:true,url:'https://receiver.test/hook',rateLimitHour:180,rateLimitMinute:20});
+ assert.equal(calls[1][0],'/api/v1/app/programmatic-access/credential/pushback');assert.equal(calls[1][1].method,'POST');
+ assert.deepEqual(JSON.parse(calls[1][1].body),{expectedRevision:'v1',enabled:true,url:'https://receiver.test/hook',rateLimitHour:180,rateLimitMinute:20});
+ assert.equal('secret' in JSON.parse(calls[1][1].body),false);
+ await client.savePushback('credential',{expectedRevision:'v2',enabled:false,url:'https://receiver.test/hook',secret:'private-key'});
+ assert.equal(JSON.parse(calls[2][1].body).secret,'private-key');
+ await client.revealPushback('credential','v3');
+ assert.equal(calls[3][0],'/api/v1/app/programmatic-access/credential/pushback/reveal');assert.deepEqual(JSON.parse(calls[3][1].body),{expectedRevision:'v3'});
+ await client.testPushback('credential','v4');
+ assert.equal(calls[4][0],'/api/v1/app/programmatic-access/credential/pushback/test');assert.deepEqual(JSON.parse(calls[4][1].body),{expectedRevision:'v4'});
+});
 const {programmaticConnectionInfo}=await import('../src/features/agent-conversations/programmatic-connection-info.ts');
 test('接入信息只包含必要入口与文件路径，旧凭据与撤销凭据不伪造可用信息',()=>{
  const view={apiUrl:'http://127.0.0.1:4458/api/v1/programmatic',documentationUrl:'http://127.0.0.1:4458/api/v1/programmatic/help',openapiUrl:'http://127.0.0.1:4458/api/v1/programmatic/openapi.json',workspaces:[{id:'workspace',name:'Buildr'}]};

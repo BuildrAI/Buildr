@@ -1,4 +1,4 @@
-import { WebhookManagement } from './webhook-management.ts';
+import { ProgrammaticPushback } from './programmatic-pushback.ts';
 import { conversationRuns, unfinishedRun } from '../domain/agent-state.ts';
 import { AgentServiceError } from '../domain/agent-state.ts';
 import { ProgramUpgrades } from './program-upgrades.ts';
@@ -39,8 +39,8 @@ export function createAgentService(options: AgentServiceOptions) {
   const resolver=new NativeContentResolver(root,id=>repository.readConversation(id));
   const repository:ConversationRepository = new ConversationRepository(root,(record,entry)=>resolver.tool(record,entry),reference=>readNativeTool(root,reference));
   repository.startReadModels();
-  const webhooks = new WebhookManagement(options.environment ?? process.env, root, after => repository.webhookRecoveryPage(after));
-  const events = new ConversationEvents(generation, webhooks);
+  const pushback = new ProgrammaticPushback({ root: path.join(root, 'programmatic-pushback'), ...(options.pushbackTransport ? { transport: options.pushbackTransport } : {}), ...(options.pushbackNow ? { now: options.pushbackNow } : {}) });
+  const events = new ConversationEvents(generation, pushback);
   const now = () => (options.now?.() ?? new Date()).toISOString();
   let linkedChanged: ((connection:ConnectionView)=>void)|undefined;
   let presentConnectionView: ((view: ConnectionView) => ConnectionView) | undefined;
@@ -122,7 +122,16 @@ export function createAgentService(options: AgentServiceOptions) {
   const withUpgrades=(snapshot:ReturnType<typeof programUpdates.list>)=>({programs:snapshot.programs.map(program=>({...program,upgrade:(()=>{const job=upgrades.read(program.connectionId);return job&&(job.executable===program.executable||job.installedExecutable===program.executable)?job:undefined;})()}))});
   return {
     generation,
-    webhooks: { read: () => webhooks.read(), save: (input: import('../contracts.ts').WebhookSettingsInput) => webhooks.save(input), reveal: (input: {expectedRevision:string}) => webhooks.reveal(input), test: (input: {expectedRevision:string}) => webhooks.test(input) },
+    pushback: {
+      read: (credentialId: string) => pushback.read(credentialId),
+      save: (credentialId: string, input: import('../contracts.ts').PushbackSettingsInput) => pushback.save(credentialId, input),
+      reveal: (credentialId: string, input: {expectedRevision:string}) => pushback.reveal(credentialId, input),
+      test: (credentialId: string, input: {expectedRevision:string}) => pushback.test(credentialId, input),
+      markTakeover: (workspaceId: string, conversationId: string, credentialId: string) => pushback.markTakeover(workspaceId, conversationId, credentialId),
+      recordStop: (workspaceId: string, conversationId: string, runId: string, credentialId: string) => pushback.recordStop(workspaceId, conversationId, runId, credentialId),
+      listEvents: (credentialId: string, workspaceId: string, input: {after?:string;limit?:number}) => pushback.listEvents(credentialId, workspaceId, input),
+      migrateGlobal: (credentialId: string, input: {url:string;secret:string}) => pushback.migrateGlobal(credentialId, input),
+    },
     activity() {
       const reasons = [...conversations.activity(), ...preparations.activity(), ...connections.activity(), ...models.activity(), ...upgrades.activity()];
       if(discovery)reasons.push({kind:'model-discovery',count:1});
@@ -200,7 +209,7 @@ export function createAgentService(options: AgentServiceOptions) {
       recoverInterrupted: () => conversations.recoverInterrupted(),
       listAll: (workspaceIds: string[], input: Parameters<ConversationApplication['listAll']>[1] = {}) => conversations.listAll(workspaceIds, input),
       markSeen: (workspaceId: string, id: string, input: Parameters<ConversationApplication['markSeen']>[2]) => conversations.markSeen(workspaceId, id, input),
-      list: (workspaceId: string, input: Parameters<ConversationApplication['list']>[1] = {}) => conversations.list(workspaceId, input),
+      list: ((workspaceId: string, input?: Parameters<ConversationApplication['list']>[1]) => conversations.list(workspaceId, input)) as ConversationApplication['list'],
       fork: (workspaceId: string, id: string, input: Parameters<ConversationApplication['fork']>[2]) => conversations.fork(workspaceId, id, input),
       createChild: (workspaceId:string,id:string,input:Parameters<ConversationApplication['createChild']>[2]) => conversations.createChild(workspaceId,id,input),
       listChildren: (workspaceId:string,id:string,input:Parameters<ConversationApplication['listChildren']>[2]={}) => conversations.listChildren(workspaceId,id,input),
@@ -218,11 +227,6 @@ export function createAgentService(options: AgentServiceOptions) {
       send: (workspaceId: string, id: string, input: Parameters<ConversationApplication['send']>[2]) => conversations.send(workspaceId, id, input),
       queueSend: (workspaceId: string, id: string, input: Parameters<ConversationApplication['queueSend']>[2]) => conversations.queueSend(workspaceId, id, input),
       cancelPendingSend: (workspaceId: string, id: string, input: Parameters<ConversationApplication['cancelPendingSend']>[2]) => conversations.cancelPendingSend(workspaceId, id, input),
-      replayWebhook: (workspaceId: string, id: string, input: {eventId:string}) => {
-        conversations.read(workspaceId,id);
-        if(!webhooks) throw new AgentServiceError('agent_webhook_unavailable','本实例未配置有效通知目标。',409);
-        return webhooks.replay(workspaceId,id,input.eventId);
-      },
       supplement: (workspaceId: string, id: string, input: Parameters<ConversationApplication['supplement']>[2]) => conversations.supplement(workspaceId, id, input),
       releaseQuestionWait: (workspaceId:string,id:string,input:Parameters<ConversationApplication['releaseQuestionWait']>[2]) => conversations.releaseQuestionWait(workspaceId,id,input),
       settleRetainedRun: (workspaceId:string,id:string,input:Parameters<ConversationApplication['settleRetainedRun']>[2]) => conversations.settleRetainedRun(workspaceId,id,input),

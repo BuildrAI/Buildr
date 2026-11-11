@@ -55,14 +55,19 @@ const modelProvider = closed({id:text,label:text,authentication:providerAuthenti
 const modelAccount = closed({connectionId:text,id: text, identity: text, provider: text, label: text, revision: text, enabled: boolean, sourceEnabled:boolean, status: {enum:['not-authenticated','ready','expired','failed','disconnected']},authType:{enum:['oauth','api-key']},group:providerGroup,modeLabel:text,credentialConfigured:boolean,accountLabel: text, models: list(offering), observedAt: text, quota, diagnostic: text, loginAttempt: closed({id: text, state: {enum:['initializing','waiting-browser','checking','completed','cancelled','expired','failed']},updatedAt:text,url:string,diagnostic:string},['id','state','updatedAt'])},['id','provider','label','revision','enabled','status','models']);
 const catalogModel = {...offering, properties: {...offering.properties, accountId:text,accountIdentity:text,provider:text,accountLabel:text,modelId:text,accountRevision:text,available:boolean,observedAt:text}, required:[...offering.required,'accountId','accountIdentity','provider','accountLabel','modelId','accountRevision','available']};
 const programUpgrade = closed({id:text,connectionId:text,expectedVersion:text,executable:string,state:{enum:['downloading','waiting','restarting','completed','failed','interrupted']},message:string,updatedAt:text,installedExecutable:text,currentVersion:text},['id','connectionId','expectedVersion','executable','state','message','updatedAt']);
-const webhookDelivery = closed({at:text,success:boolean,status:{type:'integer',minimum:100,maximum:599},kind:{enum:['event','test']}},['at','success','kind']);
+const pushbackDelivery = closed({at:text,success:boolean,status:{type:'integer',minimum:100,maximum:599},kind:{enum:['event','test']}},['at','success','kind']);
+const pushbackRequest = closed({requestId:text,kind:{enum:['approval','question']},title:text,options:list(option)},['requestId','kind','title']);
+const pushbackEvent = closed({eventId:text,type:{enum:['decision.requested','run.completed','run.failed','run.stopped','run.stalled','events_dropped']},occurredAt:text,machine:closed({id:text,name:text},['id','name']),workspaceId:text,conversationId:text,title:text,runId:text,runStatus:run.properties.status,request:pushbackRequest,summary:{type:'string',maxLength:500},detailUrl:text,sequence:integer,mergedCount:integer,droppedCount:integer},['eventId','type','occurredAt','machine','workspaceId','conversationId','title','summary','detailUrl','sequence']);
+const conversationSummary = closed({id:text,title:text,runStatus:{anyOf:[run.properties.status,{type:'null'}]},updatedAt:text,active:boolean,pendingDecisionCount:integer},['id','title','runStatus','updatedAt','active','pendingDecisionCount']);
 export const AGENT_OPERATION_SCHEMAS = {
-  webhookSettings: named('AgentWebhookSettings',closed({revision:text,source:{enum:['private-file','external-file','environment']},writable:boolean,state:{enum:['unconfigured','invalid','disabled','enabled']},url:string,hasSecret:boolean,lastDelivery:webhookDelivery},['revision','source','writable','state','url','hasSecret'])),
-  webhookSettingsInput: named('AgentWebhookSettingsInput',closed({expectedRevision:text,url:{type:'string',maxLength:8192},secret:{type:'string',maxLength:4096},enabled:boolean},['expectedRevision','url','enabled'])),
-  webhookSecret: named('AgentWebhookSecret',closed({secret:string})),
-  webhookTest: named('AgentWebhookTest',webhookDelivery),
-  webhookReplay: named('AgentWebhookReplayRequest',closed({eventId:{type:'string',pattern:'^[a-f0-9]{64}$'}},['eventId'])),
-  webhookReplayed: named('AgentWebhookReplayResult',closed({eventId:text,queued:{const:true}},['eventId','queued'])),
+  pushbackSettings: named('AgentPushbackSettings',closed({credentialId:text,revision:text,state:{enum:['unconfigured','invalid','disabled','enabled']},url:string,hasSecret:boolean,rateLimitHour:integer,rateLimitMinute:integer,lastDelivery:pushbackDelivery,recentDeliveries:list(pushbackDelivery)},['credentialId','revision','state','url','hasSecret','rateLimitHour','rateLimitMinute'])),
+  pushbackSettingsInput: named('AgentPushbackSettingsInput',closed({expectedRevision:text,enabled:boolean,url:{type:'string',maxLength:8192},secret:{type:'string',maxLength:4096},rateLimitHour:{type:'integer',minimum:1,maximum:100000},rateLimitMinute:{type:'integer',minimum:1,maximum:10000}},['expectedRevision','enabled','url'])),
+  pushbackSecret: named('AgentPushbackSecret',closed({secret:string})),
+  pushbackTest: named('AgentPushbackTest',pushbackDelivery),
+  pushbackEventsQuery: named('AgentPushbackEventsQuery',closed({after:{type:'string',maxLength:4096},limit:{type:'integer',minimum:1,maximum:200}},[])),
+  pushbackEvents: named('AgentPushbackEvents',closed({events:list(pushbackEvent),nextCursor:{anyOf:[text,{type:'null'}]}},['events','nextCursor'])),
+  pushbackMigrate: named('AgentPushbackMigrate',closed({url:{type:'string',maxLength:8192},secret:{type:'string',maxLength:4096}},['url','secret'])),
+  pushbackMigrated: named('AgentPushbackMigrated',closed({migrated:boolean})),
   participation: named('AgentParticipation',participationViewSchema),
   participationSummary: named('AgentParticipationSummary',participationSummarySchema),
   participationQuery: named('AgentParticipationQuery', closed({runId:text})),
@@ -89,7 +94,7 @@ export const AGENT_OPERATION_SCHEMAS = {
   revision: named('AgentServiceRevisionRequest', closed({ expectedRevision: text })),
   check: named('AgentServiceCheckRequest', closed({ expectedRevision: text }, [])),
   defaultWorkspace: named('AgentDefaultWorkspace', closed({ rootPath: text })),
-  conversations: named('AgentConversationsPage', closed({ conversations: list(conversation), nextCursor: text,total:integer,stats,activityCounts:closed({pendingSend:integer,active:integer,running:integer,waiting:integer,unseen:integer,unknown:integer,attention:integer},['active','running','waiting','unseen','unknown','attention']) }, ['conversations'])),
+  conversations: named('AgentConversationsPage', closed({ conversations: list({anyOf:[conversation,conversationSummary]}), nextCursor: text,total:integer,stats,activityCounts:closed({pendingSend:integer,active:integer,running:integer,waiting:integer,unseen:integer,unknown:integer,attention:integer},['active','running','waiting','unseen','unknown','attention']) }, ['conversations'])),
   conversation: named('AgentConversation', conversation),
   seen: named('AgentConversationSeen',closed({through:integer})),
   seenResult: named('AgentConversationSeenResult',closed({activity})),
@@ -100,6 +105,7 @@ export const AGENT_OPERATION_SCHEMAS = {
   update: named('AgentConversationUpdateRequest', closed({ expectedRevision: text, title: text, hidden: boolean, taskLinks:list(taskLink), taskIds: list(text), taskId: { anyOf: [text, { type: 'null' }] } }, ['expectedRevision'])),
   draft: named('AgentConversationDraftRequest', closed(draftFields, ['expectedRevision', 'connectionId', 'text'])),
   send: named('AgentConversationSendRequest', closed({ ...draftFields, previewToken: text, clientRequestId: text }, ['expectedRevision', 'connectionId', 'text', 'clientRequestId'])),
+  messages: named('AgentConversationMessagesRequest', closed({ text: {type:'string',maxLength:65536}, clientRequestId: text, expectedRevision: text }, ['text','clientRequestId'])),
   queueSend: named('AgentConversationQueueSendRequest', closed({...draftFields,clientRequestId:text,expectedPendingRevision:text,previousRunId:text},['expectedRevision','connectionId','text','clientRequestId'])),
   cancelPendingSend: named('AgentConversationCancelPendingSendRequest',closed({expectedPendingRevision:text})),
   control: named('AgentConversationControl', closed(controlFields)),

@@ -1,6 +1,6 @@
 export { programmaticOpenApi } from './programmatic-openapi.ts';
 
-export const programmaticGuide = `# Buildr 本机程序 API（第一期）
+export const programmaticGuide = `# Buildr 本机程序 API（第二期）
 
 ## 开始
 在 Buildr「智能体与模型 → 程序接入」中创建凭据，选择工作空间及权限。创建后宿主自动将令牌保存到当前实例的私有文件（目录700、文件600），在接入条目中可随时查看路径和复制接入信息；无需手工保存。不要把令牌放进聊天、URL或日志。旧版仅哈希凭据无法恢复原令牌，须由人在页面明确确认重新生成并保存，原令牌随之失效。撤销即时影响后续调用，**不会取消已受理工作**。
@@ -36,10 +36,20 @@ GET /conversations/{conversationId}或POST /observe（正文{}）轮询。Web和
 
 ## 后续消息、读取与停止
 后续消息先prepare-send，使用当前conversation.revision、connectionId、text和模型选项；prepare-send 响应字段名是 token，不是 previewToken；send 的 previewToken 取自这个 token 字段，即 previewToken = prepareResponse.token，同时 expectedRevision = prepareResponse.revision。再send带上述previewToken及稳定clientRequestId。发送超时先GET /conversations/{conversationId}/submissions/{clientRequestId}读取原结果；同请求标识不得换正文。若冲突，重新观察并理解变化，不自动把旧意图套上新版本发送。
+单步续聊用POST /conversations/{conversationId}/messages（execute），正文必填text与clientRequestId，可选expectedRevision。它内部完成prepare-send与send，复用原连接与模型，返回202和runId，幂等规则与send一致：相同clientRequestId与相同正文重放返回原run，正文不同返回409。对话仍在执行或修订漂移返回409；没有可复用执行返回agent_conversation_idle。需要精确控制预览或模型时仍用prepare-send/send。
 GET对话与/entries支持before、limit分页；较早消息通过nextBefore续读。entries包含正文、工具状态和presentedFiles等实际提供的成果引用；最终总结不等于测试、Git交付等外部事实已成立。taskLinks/taskIds指向同一工作空间中的任务记录；不复制为另一套任务事实。
+列表GET /workspaces/{workspaceId}/conversations支持taskId、cursor、limit、hidden、query、active、attention、fields。active=true只返回活动中对话，attention=true只返回待处理对话，fields=summary仅返回id、title、runStatus、updatedAt、active、pendingDecisionCount；activityCounts始终返回，limit始终生效。
 停止整个对话使用POST /stop-all，传expectedRevision和稳定clientRequestId，覆盖受理时全部在途轮次、追加队列与待发送输入；超时先读stopRequest核对原请求，不以新身份重发。精确停止某轮或工具使用POST /stop，传expectedRevision、runId、participantId、generation（可选toolId），全部来自刚观察的准确原执行。不要按最新对话猜测要停哪个run。
 问题回复用POST /requests/{requestId}/reply，正文同样含expectedRevision、runId、participantId、generation和answer；结构化问题使用原question/option标识，不猜位置。服务继续校验原卡片与执行代次，旧卡片返回冲突。
-本期不开放程序事件流；轮询通常2秒即可，按响应节流。以后增加事件流不改变恢复原标识的原则。
+本期不提供程序实时事件流；除回推外仍按轮询观察，通常2秒即可，按响应节流。回推与事件补读见下节，不改变恢复原标识的原则。
+
+## 事件回推
+回推按凭据配置：在「智能体与模型 → 程序接入」展开凭据详情，设置接收地址、密钥、启停与速率上限，并可发送测试通知。原全局“事件通知”已退役，既有配置自动迁移到GrokBot凭据并保持停用。密钥只保存在本机私有文件（600），界面默认隐藏、日志不输出明文；投递以Authorization: Bearer携带密钥。管理入口仅网页会话可用，不向Bearer开放。
+只有被该凭据接管（首次API创建/发送/续聊/补充即标记）的对话才会回推，且只推五类关键事件：decision.requested（问题或审批）、run.completed、run.failed、run.stopped（非该凭据发起的停止）、run.stalled（故障或状态未知持续5分钟）。不推工具调用、流式输出、思考、中间消息、starting/running转换或标题生成。
+事件正文含eventId（全局唯一）、type、occurredAt、machine{id,name}、workspaceId、conversationId、title、runId、runStatus、summary（≤500字符）、detailUrl（程序读取地址）；decision.requested另含request{requestId,kind,title,options}。不含任何密钥和完整对话内容。
+速率按凭据计，默认180/小时、20/分钟，可在界面调整。限额内立即推送；超限按同对话同类型合并（保留最新状态与mergedCount），配额恢复后补发；decision.requested优先且永不合并。投递为HTTP POST JSON、每请求一条事件，2xx为成功；失败按10/30/90/270/810秒退避，最多5次后置为undelivered。
+事件持久保留7天、sequence跨重启连续。补读GET /api/v1/programmatic/workspaces/{workspaceId}/events?after={cursor}&limit={n}（read，limit默认50、最大200），按sequence升序返回含undelivered的事件；超出保留期被丢弃时发出events_dropped。测试环境、候选实例与自动化测试一律不得向真实接收地址推送，只用本地假接收端。
+最小闭环：配置回推→收到decision.requested→按detailUrl读对话取得准确卡片身份→由人回答或审批；执行结束后用单步续聊POST /messages发起下一轮。
 
 ## 错误与副作用
 400参数/字段非法；401无有效凭据或已撤销；403工作空间/操作越权或跨站；404对象/路由不存在；409修订漂移、执行身份变化或同标识不同内容；413正文过大；415非JSON；503未就绪或结果未知。响应为{error:{code,message}}，保留code用于诊断。
@@ -48,7 +58,7 @@ POST observe只更新观察；首发、send、supplement可启动本机工具；
 ## 文档
 先阅读本指南，再读取轻量操作目录 GET /api/v1/programmatic/operations；需要哪个操作，再按目录中的documentationUrl读取 GET /api/v1/programmatic/operations/{operationId}。单操作描述是自包含的OpenAPI，只包含该操作与全部传递依赖模型，无需下载其他文档来解析引用。例如start是首发，observe是重新观察；具体字段以对应描述为准。
 目录与发现返回contractVersion，单操作描述包含x-buildr-contract-version。调用方可缓存文档；内容摘要未变不必重读，变化后再更新所需操作。它不是实时工作状态的缓存版本，不能代替重新观察修订与执行身份。
-完整OpenAPI：/api/v1/programmatic/openapi.json，使用components.schemas和$ref共享模型，供完整导入或生成客户端，不要求每次调用前读取。可运行示例：/api/v1/programmatic/example.py。所有程序文档均需要Bearer。已登录的人可在「智能体与模型 → 程序接入」直接查看指南、操作目录/单操作和完整OpenAPI并下载，无需输入Bearer；网页文档入口使用现有网页会话，不向程序开放凭据管理权限。API主版本在路径和发现中明确；第一期仅对显式列出的程序操作承诺，不代表所有网页API已对外开放。
+完整OpenAPI：/api/v1/programmatic/openapi.json，使用components.schemas和$ref共享模型，供完整导入或生成客户端，不要求每次调用前读取。可运行示例：/api/v1/programmatic/example.py。所有程序文档均需要Bearer。已登录的人可在「智能体与模型 → 程序接入」直接查看指南、操作目录/单操作和完整OpenAPI并下载，无需输入Bearer；网页文档入口使用现有网页会话，不向程序开放凭据管理权限。API主版本在路径和发现中明确；第二期仅对显式列出的程序操作承诺，不代表所有网页API已对外开放。
 `;
 
 export const programmaticExample = `#!/usr/bin/env python3

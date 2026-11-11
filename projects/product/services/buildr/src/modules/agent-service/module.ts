@@ -10,6 +10,7 @@ import { WORKSPACE_APPLICATION } from '../workspace/module.ts';
 import { TASK_QUERY_APPLICATION } from '../task/module.ts';
 import { defaultWorkspaceRoot } from './infrastructure/default-workspace.ts';
 import { createAgentServiceHttpContribution } from './interfaces/http/agent-service-http.ts';
+import { GROKBOT_CREDENTIAL_ID, readLegacyGlobalWebhook } from './persistence/legacy-webhook-migration.ts';
 
 export const AGENT_SERVICE_APPLICATION = 'agent-service.application';
 
@@ -85,7 +86,14 @@ export function createAgentServiceModule(options: { readLocalInstance?(): unknow
         return connection;
       };
       const resolve = async (): Promise<AgentOperations> => (await connect()).operations;
-      const start = async () => { await connect(); };
+      let legacyMigration: Promise<void> | undefined;
+      const migrateLegacyWebhook = () => legacyMigration ??= (async () => {
+        const legacy = readLegacyGlobalWebhook();
+        if (!legacy) return;
+        try { await (await resolve()).pushback.migrateGlobal(GROKBOT_CREDENTIAL_ID, legacy); }
+        catch { console.warn('[agent_pushback_migration] 既有全局通知配置迁移未完成，保留原配置等待重试。'); }
+      })();
+      const start = async () => { await connect(); await migrateLegacyWebhook(); };
       // 运行单元不一致或存在待切换单元时，响应契约差异来自版本对齐窗口而非违约。
       const runtimeAligning = async () => {
         const connection = await connect();

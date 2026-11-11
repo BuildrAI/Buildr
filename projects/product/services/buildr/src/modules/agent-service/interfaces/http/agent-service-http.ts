@@ -60,12 +60,6 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       if (pathname === `${prefix}/runtime` && request.method === 'GET' && options.runtimeStatus) return result('runtimeStatus', await options.runtimeStatus());
       if (pathname === `${prefix}/runtime/restart` && request.method === 'POST' && options.restartRuntime) return result('runtimeStatus', await options.restartRuntime(validate('runtimeRestart', await readJsonBody())));
       const service = await resolve();
-      if (pathname === `${prefix}/webhook-settings`) {
-        if (request.method === 'GET') return result('webhookSettings', await service.webhooks.read());
-        if (request.method === 'POST') return result('webhookSettings', await service.webhooks.save(validate('webhookSettingsInput', await readJsonBody())));
-      }
-      if (pathname === `${prefix}/webhook-settings/reveal` && request.method === 'POST') return result('webhookSecret', await service.webhooks.reveal(validate('revision', await readJsonBody())));
-      if (pathname === `${prefix}/webhook-settings/test` && request.method === 'POST') return result('webhookTest', await service.webhooks.test(validate('revision', await readJsonBody())));
       if (pathname === `${prefix}/model-accounts`) {
         if (request.method === 'GET') return result('modelAccounts', await service.models.accounts.list({refresh:false,includeDisabled:searchParams.get('includeDisabled')==='true'}));
         if (request.method === 'POST') return result('modelAccount', await service.models.accounts.add(validate('addModelAccount', await readJsonBody())), 201);
@@ -143,9 +137,10 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       }
       if (suffix === '/agent-conversations') {
         if (request.method === 'GET') {
-          query(searchParams, ['taskId', 'cursor', 'limit', 'hidden', 'query']);
-          if (searchParams.has('hidden') && !['true', 'false'].includes(searchParams.get('hidden'))) throw inputError();
-          return result('conversations', await service.conversations.list(workspaceId, { taskId: searchParams.get('taskId') ?? undefined, workspaceIds:[...new Set([...registeredWorkspaceIds(),workspaceId])], cursor: searchParams.get('cursor') ?? undefined, limit: numberQuery(searchParams.get('limit')), hidden: searchParams.get('hidden') === 'true', query: searchParams.get('query') ?? undefined }));
+          query(searchParams, ['taskId', 'cursor', 'limit', 'hidden', 'query', 'active', 'attention', 'fields']);
+          for (const key of ['hidden', 'active', 'attention']) if (searchParams.has(key) && !['true', 'false'].includes(searchParams.get(key)!)) throw inputError();
+          if (searchParams.has('fields') && searchParams.get('fields') !== 'summary') throw inputError();
+          return result('conversations', await service.conversations.list(workspaceId, { taskId: searchParams.get('taskId') ?? undefined, workspaceIds:[...new Set([...registeredWorkspaceIds(),workspaceId])], cursor: searchParams.get('cursor') ?? undefined, limit: numberQuery(searchParams.get('limit')), hidden: searchParams.get('hidden') === 'true', query: searchParams.get('query') ?? undefined, active: searchParams.get('active') === 'true', attention: searchParams.get('attention') === 'true', fields: searchParams.get('fields') === 'summary' ? 'summary' : undefined }));
         }
         query(searchParams, []);
         if (request.method === 'POST') {
@@ -174,7 +169,7 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       }
       const detailMatch=suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})\/entry-detail\/([^/]+)$/);
       if(detailMatch&&request.method==='GET'){query(searchParams,['revision','sourceId']);const revision=searchParams.get('revision');if(!revision||!(/^[a-f0-9]{64}$/).test(revision))throw inputError();let entryId:string;try{entryId=decodeURIComponent(detailMatch[2]);}catch{throw inputError();}if(!entryId||entryId.length>1024)throw inputError();return result('entry',await service.conversations.readEntry(workspaceId,detailMatch[1],entryId,revision,searchParams.get('sourceId')??undefined));}
-      const match = suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})(?:\/(webhook-replay|fork|prepare-send|send|supplement|pending-send|cancel-pending-send|generate-title|children|seen|observe|observe-run|stop|stop-all|events|entries|attachments|requests)(?:\/([a-f0-9-]{36})(?:\/(reply))?)?)?$/);
+      const match = suffix.match(/^\/agent-conversations\/([a-f0-9-]{36})(?:\/(fork|prepare-send|send|messages|supplement|pending-send|cancel-pending-send|generate-title|children|seen|observe|observe-run|stop|stop-all|events|entries|attachments|requests)(?:\/([a-f0-9-]{36})(?:\/(reply))?)?)?$/);
       if (!match) return null;
       const [, id, action, childId, reply] = match;
       if (request.method === 'GET') {
@@ -212,9 +207,22 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       if (action === 'children' && !childId) return result('conversation',await service.conversations.createChild(workspaceId,id,validate('createChild',await readJsonBody())),201);
       if (action === 'prepare-send') return result('preview', await service.conversations.prepareHandoff(workspaceId, id, validate('draft', await readJsonBody(128 * 1024))));
       if (action === 'send') return result('sent', await service.conversations.send(workspaceId, id, validate('send', await readJsonBody(128 * 1024))), 202);
+      if (action === 'messages') {
+        const input = validate('messages', await readJsonBody(128 * 1024));
+        const view = await service.conversations.read(workspaceId, id);
+        const lastRun = view.run ?? view.retainedRuns?.at(-1);
+        const participant = lastRun ? view.participants.find(item => item.id === lastRun.participantId) : undefined;
+        if (!lastRun || !participant) throw new AgentServiceError('agent_conversation_idle', '对话尚无可复用的执行选择，请先发送首条消息。', 409);
+        const expectedRevision = input.expectedRevision ?? view.revision;
+        const selection = { connectionId: participant.connectionId, permissionMode: 'default' as const,
+          ...(lastRun.modelAccountId ? { modelAccountId: lastRun.modelAccountId } : {}), ...(lastRun.model ? { model: lastRun.model } : {}), ...(lastRun.serviceTier ? { serviceTier: lastRun.serviceTier } : {}), ...(lastRun.reasoningEffort ? { reasoningEffort: lastRun.reasoningEffort } : {}) };
+        // send() re-runs prepare atomically. Omitting the preview token keeps
+        // the running-conflict check (agent_native_supplement_required) intact;
+        // a separate prepare would only duplicate work and race the send.
+        return result('sent', await service.conversations.send(workspaceId, id, { text: input.text, expectedRevision, ...selection, clientRequestId: input.clientRequestId }), 202);
+      }
       if (action === 'pending-send') return result('conversation', await service.conversations.queueSend(workspaceId, id, validate('queueSend', await readJsonBody(128 * 1024))), 202);
       if (action === 'cancel-pending-send') return result('conversation', await service.conversations.cancelPendingSend(workspaceId, id, validate('cancelPendingSend', await readJsonBody())));
-      if (action === 'webhook-replay') return result('webhookReplayed', await service.conversations.replayWebhook(workspaceId,id,validate('webhookReplay',await readJsonBody())));
       if (action === 'supplement') return result('supplemented', await service.conversations.supplement(workspaceId, id, validate('supplement', await readJsonBody(128 * 1024))), 202);
       if (action === 'seen') return result('seenResult',await service.conversations.markSeen(workspaceId,id,validate('seen',await readJsonBody())));
       if (action === 'observe') { validate('empty', await readJsonBody()); return result('conversation', await service.conversations.observe(workspaceId, id)); }

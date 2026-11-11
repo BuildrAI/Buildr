@@ -602,18 +602,45 @@ export interface AgentServiceOptions {
   resolveWorkspace?(workspaceId: string): Promise<{ rootPath: string }> | { rootPath: string };
   assertTask?(workspaceId: string, taskId: string): Promise<void> | void;
   now?: () => Date;
+  /** Injected pushback delivery transport; tests and candidates use a local fake receiver, never a real address. */
+  pushbackTransport?: typeof fetch;
+  pushbackNow?: () => number;
   /** Bounded host shutdown; chiefly useful for deterministic lifecycle tests. */
   shutdownTimeoutMs?: number;
 }
 
-export interface WebhookDeliveryResult { at: string; success: boolean; status?: number; kind: 'event' | 'test' }
-export interface WebhookSettingsView {
+export type PushbackEventType = 'decision.requested' | 'run.completed' | 'run.failed' | 'run.stopped' | 'run.stalled';
+export interface PushbackRequest { requestId: string; kind: 'approval' | 'question'; title: string; options?: Array<{ id: string; label: string; description?: string }> }
+export interface PushbackEvent {
+  eventId: string;
+  type: PushbackEventType | 'events_dropped';
+  occurredAt: string;
+  machine: { id: string; name: string };
+  workspaceId: string;
+  conversationId: string;
+  title: string;
+  runId?: string;
+  runStatus?: RunStatus;
+  request?: PushbackRequest;
+  summary: string;
+  detailUrl: string;
+  sequence: number;
+  mergedCount?: number;
+  droppedCount?: number;
+}
+export interface PushbackDeliveryResult { at: string; success: boolean; status?: number; kind: 'event' | 'test' }
+export interface PushbackSettingsView {
+  credentialId: string;
   revision: string;
-  source: 'private-file' | 'external-file' | 'environment';
-  writable: boolean;
   state: 'unconfigured' | 'invalid' | 'disabled' | 'enabled';
   url: string;
   hasSecret: boolean;
-  lastDelivery?: WebhookDeliveryResult;
+  rateLimitHour: number;
+  rateLimitMinute: number;
+  lastDelivery?: PushbackDeliveryResult;
+  recentDeliveries?: PushbackDeliveryResult[];
 }
-export interface WebhookSettingsInput { expectedRevision: string; enabled: boolean; url: string; secret?: string }
+export interface PushbackSettingsInput { expectedRevision: string; enabled: boolean; url: string; secret?: string; rateLimitHour?: number; rateLimitMinute?: number }
+export interface PushbackEventPage { events: PushbackEvent[]; nextCursor: string | null }
+export interface ConversationSummaryView { id: string; title: string; runStatus: RunStatus | null; updatedAt: string; active: boolean; pendingDecisionCount: number }
+export interface ConversationActivityCounts { pendingSend?: number; active: number; running: number; waiting: number; unseen: number; unknown: number; attention: number }

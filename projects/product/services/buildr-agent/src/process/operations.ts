@@ -9,16 +9,16 @@ export interface AgentSubscription { events: AsyncIterable<ServiceEvent>; close(
 /** Public asynchronous operations; native SDK objects never cross this boundary. */
 export interface AgentOperations {
   generation: string;
-  webhooks: RemoteMethods<AgentService['webhooks']>;
+  pushback: RemoteMethods<AgentService['pushback']>;
   connections: RemoteMethods<AgentService['connections']>;
   conversations: Omit<RemoteMethods<AgentService['conversations']>, 'subscribe' | 'recoverInterrupted' | 'observeForRelease' | 'retainsConversationSource'> & { subscribe(scope: string, id: string): Promise<AgentSubscription> };
   models: { accounts: Omit<RemoteMethods<AgentService['models']['accounts']>, 'snapshot'>; catalog: RemoteMethods<AgentService['models']['catalog']>; generate: AgentService['models']['generate'] };
 }
 
 const names = {
-  webhooks: ['read','save','reveal','test'],
+  pushback: ['read','save','reveal','test','markTakeover','recordStop','listEvents','migrateGlobal'],
   connections: ['upgradeProgram','programUpdates','checkProgramUpdates','list','read','prepare','preparation','currentPreparation','cancelPreparation','connect','check','login','loginAttempt','cancelLogin','disconnect'],
-  conversations: ['readHistory','replayWebhook','participation','participationSummary','readDraft','addDraftImage','removeDraftImage','readDraftImage','startDraft','lookupDraft','listAll','readEntry','markSeen','list','create','fork','createChild','listChildren','read','update','generateTitle','prepareHandoff','prepareSend','send','supplement','queueSend','cancelPendingSend','observe','observeRun','releaseQuestionWait','settleRetainedRun','stop','stopAll','reply','addAttachment','readAttachment','pending','pendingSummary','lookupRequest'],
+  conversations: ['readHistory','participation','participationSummary','readDraft','addDraftImage','removeDraftImage','readDraftImage','startDraft','lookupDraft','listAll','readEntry','markSeen','list','create','fork','createChild','listChildren','read','update','generateTitle','prepareHandoff','prepareSend','send','supplement','queueSend','cancelPendingSend','observe','observeRun','releaseQuestionWait','settleRetainedRun','stop','stopAll','reply','addAttachment','readAttachment','pending','pendingSummary','lookupRequest'],
   'models.accounts': ['list','read','preferences','add','configure','login','attempt','cancelLogin','check','disconnect'],
   'models.catalog': ['list'],
 } as const;
@@ -28,8 +28,7 @@ const Constructor: any = Ajv2020;
 const ajv = new Constructor({ strict: true, allErrors: true, allowUnionTypes: true });
 const validators = new Map(Object.entries(AGENT_OPERATION_SCHEMAS).map(([name, schema]) => [name, ajv.compile(schema)]));
 const inputs: Record<string, [number, string]> = {
-  'webhooks.save':[0,'webhookSettingsInput'], 'webhooks.reveal':[0,'revision'], 'webhooks.test':[0,'revision'],
-  'conversations.replayWebhook':[2,'webhookReplay'],
+  'pushback.save':[1,'pushbackSettingsInput'], 'pushback.reveal':[1,'revision'], 'pushback.test':[1,'revision'], 'pushback.listEvents':[2,'pushbackEventsQuery'], 'pushback.migrateGlobal':[1,'pushbackMigrate'],
   'conversations.participation':[2,'participationQuery'], 'conversations.participationSummary':[1,'participationSummaryQuery'],
   'conversations.startDraft':[2,'startDraft'], 'conversations.removeDraftImage':[2,'removeDraftImage'],
   'conversations.queueSend': [2, 'queueSend'], 'conversations.cancelPendingSend': [2, 'cancelPendingSend'],

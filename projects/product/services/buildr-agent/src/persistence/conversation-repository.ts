@@ -214,15 +214,6 @@ export class ConversationRepository {
       return {projections,incomplete};
     }finally{db.close();}
   }
-  /** Bounded recovery of notification projections; no model or task operations. */
-  webhookRecoveryPage(after = '', limit = 100): ConversationView[] {
-    const db=this.open(false);if(!db)return [];
-    try {
-      const rows=db.prepare('SELECT id FROM conversations WHERE id>? ORDER BY id LIMIT ?').all(after,limit) as Array<{id:string}>;
-      return rows.flatMap(row=>{const record=this.readConversation(row.id);return record?[record.view]:[];});
-    } finally {db.close();}
-  }
-
   readConversation(id: string): StoredConversation | undefined {
     const db = this.open(false); if (!db) return;
     try { const modern=(db.prepare('PRAGMA user_version').get() as {user_version:number}).user_version>=2; const row = db.prepare(`SELECT body${modern?',summary':''} FROM conversations WHERE id=?`).get(id) as {body:string;summary?:string}|undefined; if(!row)return;const record=ConversationEntryStore.hydrate(db,JSON.parse(row.body) as StoredConversation,this.nativeReader);if(row.summary)record.view.activity=JSON.parse(row.summary).activity;return record; }
@@ -429,7 +420,7 @@ export class ConversationRepository {
   private isPending(record:ConversationReadState,includeActive:boolean):boolean {
     return Boolean(record.view.requests.length || record.view.retainedRuns?.some(unfinishedRun) || record.view.run?.tools.some(tool=>tool.status!=='completed') || (includeActive ? ['starting','running','waiting-approval','waiting-question','stopping','unknown','tools-active'] : ['unknown','tools-active']).includes(record.view.run?.status ?? ''));
   }
-  listConversations(workspaceId: string, options: { parentConversationId?: string; taskId?: string; workspaceIds?:string[]; before?: string; limit: number; includeHidden?: boolean; query?: string }): ConversationReadState[] {
+  listConversations(workspaceId: string, options: { parentConversationId?: string; taskId?: string; workspaceIds?:string[]; before?: string; limit: number; includeHidden?: boolean; query?: string; active?: boolean; attention?: boolean }): ConversationReadState[] {
     const db = this.open(false); if (!db) return [];
     try {
       const modern=(db.prepare('PRAGMA user_version').get() as {user_version:number}).user_version>=2;
@@ -446,6 +437,12 @@ export class ConversationRepository {
       if (options.parentConversationId) { where.push("json_extract(read_state,'$.view.childOf.conversationId')=?"); values.push(options.parentConversationId); }
       const terms = searchTerms(options.query);
       if (terms.length) { where.push(searchClause(terms, "json_extract(read_state,'$.view.title')")); for (const term of terms) values.push(term, term, term); }
+      // Apply programmatic list filters before the page bound. Filtering after
+      // LIMIT would return short pages even when more matching rows exist.
+      // Older stores have no compact summary column; callers retain their
+      // in-memory compatibility filter for that read-only case.
+      if (options.active && modern) where.push("json_extract(summary,'$.activity.active')=1");
+      if (options.attention && modern) where.push("(coalesce(json_extract(summary,'$.activity.pendingDecisionCount'),0)>0 OR json_array_length(coalesce(json_extract(read_state,'$.view.requests'),'[]'))>0 OR coalesce(json_extract(summary,'$.run.status'),json_extract(read_state,'$.view.run.status')) IN ('failed','unknown'))");
       if (options.before) { where.push('(updated_at || \'/\' || id) < ?'); values.push(options.before); }
       values.push(options.limit);
       return (db.prepare(`SELECT read_state${modern?',summary':''} FROM ${source} WHERE ${where.length?where.join(' AND '):'1'} ORDER BY updated_at DESC,id DESC LIMIT ?`).all(...values) as {read_state:string;summary?:string}[]).map(row=>{
@@ -485,7 +482,7 @@ export class ConversationRepository {
       return (db.prepare(`SELECT body FROM conversations WHERE json_extract(body,'$.interruption.runId')=json_extract(body,'$.view.run.id') OR json_extract(body,'$.view.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','unknown','tools-active') ORDER BY updated_at DESC`).all() as {body:string}[]).map(row=>ConversationEntryStore.hydrate(db,JSON.parse(row.body) as StoredConversation,this.nativeReader));
     } finally { db.close(); }
   }
-  querySummaries(workspaceIds: string[], input: {draftConversationIds?:string[];workspaceId?:string;activeOnly?:boolean;hidden?:boolean;query?:string;agent?:string;model?:string;activityState?:string;generation?:string;cursor?:string;limit:number}, generationAlive?: (generation:string)=>boolean): {conversations:ConversationView[];nextCursor?:string;total:number;stats:{modelExecutions:Array<{accountId:string;accountLabel:string;model:string;count:number}>;agents:Array<{label:string;count:number}>;models:Array<{label:string;count:number}>;executions:Array<{provider:string;model:string;count:number}>};activityCounts:{pendingSend?:number;active:number;running:number;waiting:number;unseen:number;unknown:number;attention:number}} {
+  querySummaries(workspaceIds: string[], input: {draftConversationIds?:string[];workspaceId?:string;activeOnly?:boolean;active?:boolean;attention?:boolean;hidden?:boolean;query?:string;agent?:string;model?:string;activityState?:string;generation?:string;cursor?:string;limit:number}, generationAlive?: (generation:string)=>boolean): {conversations:ConversationView[];nextCursor?:string;total:number;stats:{modelExecutions:Array<{accountId:string;accountLabel:string;model:string;count:number}>;agents:Array<{label:string;count:number}>;models:Array<{label:string;count:number}>;executions:Array<{provider:string;model:string;count:number}>};activityCounts:{pendingSend?:number;active:number;running:number;waiting:number;unseen:number;unknown:number;attention:number}} {
     const empty={conversations:[],total:0,stats:{agents:[],models:[],executions:[],modelExecutions:[]},activityCounts:{active:0,running:0,waiting:0,unseen:0,unknown:0,attention:0}};
     const db=this.open(false);if(!db||!workspaceIds.length){db?.close();return empty;}
     try {
@@ -593,8 +590,9 @@ export class ConversationRepository {
         where.push(input.activityState==='attention'?"(activity_state IN ('waiting','unseen','unknown') OR (send_activity IS NOT NULL AND pending_decision_count>0))":input.activityState==='running'?"effective_status IN ('starting','running','stopping')":input.activityState==='waiting'?"(activity_state='waiting' OR (send_activity IS NOT NULL AND (pending_decision_count>0 OR effective_status IN ('waiting-approval','waiting-question'))))":'activity_state=?');
         if(!['attention','running','waiting'].includes(input.activityState))values.push(input.activityState);
       }
-      if(input.activeOnly)where.push('(list_active=1 OR pending_decision_count>0)');
+      if(input.activeOnly||input.active)where.push('(list_active=1 OR pending_decision_count>0)');
       else {where.push('(list_active=1 OR pending_decision_count>0 OR hidden=?)');values.push(Number(input.hidden===true));}
+      if(input.attention)where.push("(pending_decision_count>0 OR effective_status IN ('failed','unknown'))");
       const terms=searchTerms(input.query);
       if(terms.length){where.push(searchClause(terms,"json_extract(summary,'$.title')"));for(const term of terms)values.push(term,term,term);}
       if(input.agent||input.model)where.push("effective_status IN ('starting','running','stopping')");

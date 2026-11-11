@@ -47,20 +47,6 @@ test('linked task verification uses the authoritative summary without resolving 
   assert.equal(rejected.status,404);assert.equal(rejected.body.error.code,'agent_task_missing');
 });
 
-test('HTTP service fixtures ignore host webhook configuration', async t => {
-  const { base } = taskRecordFixture(t, 'agent-http-host-isolation');
-  const config = path.join(base, 'host-webhook.json');
-  fs.writeFileSync(config, JSON.stringify({ url: 'http://127.0.0.1:1/host-only', secret: 'fixture-only-secret' }), { mode: 0o600 });
-  const previous = process.env.BUILDR_AGENT_WEBHOOK_CONFIG;
-  process.env.BUILDR_AGENT_WEBHOOK_CONFIG = config;
-  t.after(() => { if (previous === undefined) delete process.env.BUILDR_AGENT_WEBHOOK_CONFIG; else process.env.BUILDR_AGENT_WEBHOOK_CONFIG = previous; });
-  const dataRoot = path.join(base, 'agent-profile');
-  const service = createAgentService({ dataRoot, executors: [], modelProviders: [] });
-  t.after(() => service.close());
-  assert.equal(service.webhooks.read().state, 'unconfigured');
-  assert.equal(fs.existsSync(dataRoot), false, 'host notification configuration must not initialize fixture storage');
-});
-
 test('program preparation is authenticated, schema checked and independently observable/cancellable', { timeout: 30_000 }, async t => {
   const { base, root } = taskRecordFixture(t, 'agent-program-http');
   const previous = process.env.BUILDR_APP_DATA_DIR;
@@ -850,46 +836,6 @@ test('CLI target proof accepts only current authorized physical entry, not PATH 
  const observed=observeParticipationCli(identity,entry)!;assert.equal(observed.status,'confirmed');assert.equal(observed.observedVersion,undefined);assert.match(observed.offeredVersion!,/^sha256-/);
  assert.equal(observeParticipationCli({...identity,package:'untrusted'},entry),undefined);
 });
-
-test('webhook replay HTTP validates authentication, conversation scope and immutable event ID',async t=>{
- const {base,root}=taskRecordFixture(t,'webhook-replay-http'),runtime=createRuntime();
- const previous=process.env.BUILDR_APP_DATA_DIR;process.env.BUILDR_APP_DATA_DIR=path.join(base,'private');t.after(()=>{if(previous===undefined)delete process.env.BUILDR_APP_DATA_DIR;else process.env.BUILDR_APP_DATA_DIR=previous;});
- const id='11111111-1111-4111-8111-111111111111',eventId='a'.repeat(64),calls:any[]=[];
- const service:any={conversations:{replayWebhook:(scope:string,conversationId:string,input:any)=>{calls.push([scope,conversationId,input]);return{eventId:input.eventId,queued:true};}}};
- const contributions=runtimeContributions(runtime,'http').filter((item:any)=>item.id!=='agent-service.http');contributions.push(createAgentServiceHttpContribution(()=>service));
- const instance=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions});const {url,sessionToken,initialWorkspaceId}=await instance.ready;
- t.after(async()=>{instance.server.closeAllConnections();await new Promise<void>(resolve=>instance.server.close(()=>resolve()));});
- const headers={origin:url,'x-buildr-session':sessionToken,'content-type':'application/json'},endpoint=`${url}/api/v1/workspaces/${initialWorkspaceId}/agent-conversations/${id}/webhook-replay`;
- assert.equal((await fetch(endpoint,{method:'POST',body:JSON.stringify({eventId})})).status,403);assert.equal(calls.length,0);
- for(const body of [{eventId:'bad'},{eventId,workspaceId:'other'},{eventId,payload:{text:'arbitrary'}}])assert.equal((await fetch(endpoint,{method:'POST',headers,body:JSON.stringify(body)})).status,400);
- const response=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({eventId})});assert.equal(response.status,200);assert.deepEqual(await response.json(),{eventId,queued:true});assert.deepEqual(calls,[[initialWorkspaceId,id,{eventId}]]);
-});
-
-test('webhook settings require authentication, protect secret reads and reject stale saves', {timeout:30_000}, async t=>{
-  const {base,root}=taskRecordFixture(t,'webhook-settings-http');
-  const runtime=createRuntime();
-  const service=createAgentService({dataRoot:path.join(base,'agent-profile'),environment:{HOME:base},executors:[],modelProviders:[],resolveWorkspace:()=>({rootPath:root}),assertTask(){}});
-  const contribution=createAgentServiceHttpContribution(()=>service);
-  const contributions=runtimeContributions(runtime,'http').filter((item:{id:string})=>item.id!=='agent-service.http');contributions.push(contribution);
-  const server=createLocalWorkspaceServer(runtime,{targetRoot:root,httpContributions:contributions});
-  const {url,sessionToken}=await server.ready;
-  t.after(async()=>{await service.close();server.server.closeAllConnections();await new Promise<void>(resolve=>server.server.close(()=>resolve()));});
-  const endpoint=url+'/api/v1/app/agent-service/webhook-settings';
-  const headers={origin:url,'x-buildr-session':sessionToken,'content-type':'application/json'};
-  assert.equal((await fetch(endpoint)).status,403);
-  let response=await fetch(endpoint,{headers});assert.equal(response.status,200);
-  const initial=await response.json();assert.equal(initial.state,'unconfigured');assert.equal('secret' in initial,false);
-  response=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:initial.revision,url:'https://receiver.invalid/hook',secret:'http-secret-test',enabled:true,unexpected:true})});assert.equal(response.status,400);
-  response=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:initial.revision,url:'https://receiver.invalid/hook',secret:'http-secret-test',enabled:true})});assert.equal(response.status,200);
-  const saved=await response.json();assert.equal(saved.state,'enabled');assert.equal(JSON.stringify(saved).includes('http-secret-test'),false);
-  assert.equal((await fetch(endpoint+'/reveal',{method:'POST',headers:{...headers,origin:'https://foreign.invalid'},body:JSON.stringify({expectedRevision:saved.revision})})).status,403);
-  assert.equal((await fetch(endpoint+'/reveal',{headers})).status,404);
-  response=await fetch(endpoint+'/reveal',{method:'POST',headers,body:JSON.stringify({expectedRevision:saved.revision})});assert.equal(response.status,200);assert.equal(response.headers.get('cache-control'),'no-store');assert.deepEqual(await response.json(),{secret:'http-secret-test'});
-  response=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:initial.revision,url:saved.url,enabled:false})});assert.equal(response.status,409);
-  response=await fetch(endpoint,{method:'POST',headers,body:JSON.stringify({expectedRevision:saved.revision,url:saved.url,enabled:false})});assert.equal(response.status,200);const disabled=await response.json();assert.equal(disabled.state,'disabled');
-  response=await fetch(endpoint+'/test',{method:'POST',headers,body:JSON.stringify({expectedRevision:disabled.revision})});assert.equal(response.status,409);
-});
-
 
 test('runtime restart authorizes writes, validates the observed generation and returns ready identity', async () => {
   const status={instanceId:'new-instance',generation:'new-generation',pid:42,currentDigest:'digest',busy:false,accepting:true,reasons:[]};

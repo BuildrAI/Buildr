@@ -801,16 +801,6 @@ test('新轮未受理或失败时旧卡片仍可回答，问题结束标记不�
  }
 });
 
-test('Webhook client keeps normal reads secret-free and sends reveal/test as explicit versioned mutations',async()=>{
- const calls=[];
- const api=createAgentConversationsClient(async(url,init)=>{calls.push({url,init});return url.endsWith('/reveal')?{secret:'test-key'}:{revision:'v1'};},session);
- await api.webhookSettings();assert.equal(calls.length,1);assert.ok(calls[0].url.endsWith('/webhook-settings'));assert.equal(calls[0].init.method,undefined);
- await api.revealWebhookSecret('v1');assert.equal(calls[1].init.method,'POST');assert.deepEqual(JSON.parse(calls[1].init.body),{expectedRevision:'v1'});
- await api.saveWebhookSettings({expectedRevision:'v1',enabled:false,url:'https://receiver.test'});assert.equal('secret' in JSON.parse(calls[2].init.body),false);
- await api.testWebhook('v2');assert.ok(calls[3].url.endsWith('/test'));assert.deepEqual(JSON.parse(calls[3].init.body),{expectedRevision:'v2'});
- assert.ok(calls.every(call=>call.init.headers['x-buildr-session']==='native-test-session'));
-});
-
 test('实时订阅对旧HTTP服务只读回退v1，不重用失败基线',async()=>{
  const attempts=[],snapshot={cursor:0,generation:'g',type:'snapshot',workspaceId:conversation.workspaceId,conversationId:conversation.id,revision:conversation.revision,payload:{conversation}};
  const api=createAgentConversationsClient(async()=>({}),session,async(_url,init)=>{attempts.push(init.headers['x-buildr-conversation-transfer']);return attempts.length===1?new Response('{}',{status:400}):new Response('data: '+JSON.stringify(snapshot)+'\n\n');});

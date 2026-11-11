@@ -3,6 +3,7 @@ import { AGENT_SERVICE_HTTP_SCHEMAS as schemas } from './agent-service-http-cont
 import { PROGRAMMATIC_BASE as base, PROGRAMMATIC_OPERATIONS } from './programmatic-operations.ts';
 
 const previewTokenMapping = 'send 的 previewToken 取自 prepare-send 返回的 token 字段：previewToken = prepareResponse.token；expectedRevision = prepareResponse.revision。prepare-send 不返回名为 previewToken 的字段。';
+const DOCUMENTED_OPERATION_IDS = ['discover', 'events', ...PROGRAMMATIC_OPERATIONS.map(item => item.id)];
 
 export function programmaticOpenApi(version: string) {
   const paths: Record<string, any> = {};
@@ -25,11 +26,12 @@ export function programmaticOpenApi(version: string) {
     if (input.properties?.permissionMode) input.properties.permissionMode = { enum: ['default', 'full-access'], default: 'default', description: '省略默认 default。full-access 需凭据开启“允许全部授权执行”（allowFullAccess），否则返回 403；连接须支持该模式。' };
     const parameters: any[] = [...route.matchAll(/\{([^}]+)\}/g)].map(match => ({ name: match[1], in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }));
     for (const name of operation.query ?? []) parameters.push({ name, in: 'query', schema: ['before', 'limit'].includes(name) ? { type: 'integer', minimum: name === 'limit' ? 1 : 0 } : name === 'hidden' ? { type: 'boolean' } : { type: 'string' } });
-    (paths[route] ??= {})[operation.method.toLowerCase()] = { operationId: operation.id, summary: operation.summary, description: `需要${operation.scope}权限及路径工作空间授权。${['prepare-send', 'send'].includes(operation.id) ? previewTokenMapping : ''}${input.properties?.permissionMode ? 'permissionMode 省略默认 default；full-access 需凭据开启允许全部授权执行，否则403。' : ''}${operation.id === 'reply' ? 'approval卡片改需approve权限；问题需answer。' : ''}超时先查询原提交或观察原执行，禁止另造标识盲目重发。`, 'x-buildr-scope': operation.scope, parameters, ...(operation.method === 'POST' ? { requestBody: { required: true, content: { 'application/json': { schema: input } } } } : {}), responses: responses(output, ['start', 'send', 'supplement'].includes(operation.id)) };
+    (paths[route] ??= {})[operation.method.toLowerCase()] = { operationId: operation.id, summary: operation.summary, description: `需要${operation.scope}权限及路径工作空间授权。${['prepare-send', 'send'].includes(operation.id) ? previewTokenMapping : ''}${input.properties?.permissionMode ? 'permissionMode 省略默认 default；full-access 需凭据开启允许全部授权执行，否则403。' : ''}${operation.id === 'reply' ? 'approval卡片改需approve权限；问题需answer。' : ''}超时先查询原提交或观察原执行，禁止另造标识盲目重发。`, 'x-buildr-scope': operation.scope, parameters, ...(operation.method === 'POST' ? { requestBody: { required: true, content: { 'application/json': { schema: input } } } } : {}), responses: responses(output, ['start', 'send', 'supplement', 'messages'].includes(operation.id)) };
   }
   for (const [suffix, type, description] of [['help', 'text/markdown', '中文API帮助'], ['openapi.json', 'application/json', 'OpenAPI 3.1'], ['example.py', 'text/x-python', '可运行发任务/轮询/读结果脚本']]) paths[`${base}/${suffix}`] = { get: { operationId: suffix, summary: description, responses: { '200': { description, content: { [type]: { schema: { type: 'string' } } } }, '401': { description: '需要有效Bearer凭据' } } } };
+  paths[`${base}/workspaces/{workspaceId}/events`] = { get: { operationId: 'events', summary: '分页补读本凭据接管对话的回推事件，含未投递', description: '需要read权限及路径工作空间授权。after传上一页nextCursor，limit默认50、最大200；事件按sequence升序返回，包含undelivered。回推投递与补读共用同一持久事件流。', 'x-buildr-scope': 'read', parameters: [{ name: 'workspaceId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }, { name: 'after', in: 'query', schema: { type: 'string' } }, { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 200 } }], responses: responses(structuredClone(schemas.pushbackEvents)) } };
   paths[base + '/operations'] = { get: { operationId: 'operation-index', summary: '轻量操作目录，不含模型和完整Schema', responses: responses({ type: 'object' }) } };
-  paths[base + '/operations/{operationId}'] = { get: { operationId: 'operation-document', summary: '单操作自包含OpenAPI，仅含选中操作与依赖模型', parameters: [{ name: 'operationId', in: 'path', required: true, schema: { type: 'string', enum: ['discover', ...PROGRAMMATIC_OPERATIONS.map(item => item.id)] } }], responses: responses({ type: 'object' }) } };
+  paths[base + '/operations/{operationId}'] = { get: { operationId: 'operation-document', summary: '单操作自包含OpenAPI，仅含选中操作与依赖模型', parameters: [{ name: 'operationId', in: 'path', required: true, schema: { type: 'string', enum: DOCUMENTED_OPERATION_IDS } }], responses: responses({ type: 'object' }) } };
   return shareSchemas({ openapi: '3.1.0', info: { title: 'Buildr 本机程序接入 API', version, description: '只监听本机，复用现有Agent Service；轮询基线。访问令牌不是操作系统沙箱，也不自动授予审批、提交或推送权限。' }, servers: [{ url: '/' }], security: [{ programmaticBearer: [] }], components: { securitySchemes: { programmaticBearer: { type: 'http', scheme: 'bearer', bearerFormat: 'Buildr programmatic access token' } } }, paths });
 }
 
@@ -77,7 +79,7 @@ export function programmaticContractVersion(document: any): string {
 }
 
 function describedOperations(document: any) {
-  const ids = new Set(['discover', ...PROGRAMMATIC_OPERATIONS.map(item => item.id)]);
+  const ids = new Set(DOCUMENTED_OPERATION_IDS);
   return Object.entries(document.paths).flatMap(([path, item]) => Object.entries(item as any)
     .filter(([, operation]: [string, any]) => ids.has(operation.operationId))
     .map(([method, operation]: [string, any]) => ({

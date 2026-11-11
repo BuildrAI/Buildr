@@ -7,8 +7,8 @@ function mock(replies: any[]) {
   const calls: Array<{route: string; body?: any}> = [];
   return { calls, request: async (route: string, body?: any) => { calls.push({route, body}); const value = replies.shift(); if (value instanceof Error) throw value; return value; } };
 }
-test('agent exposes eight commands and strictly parses arguments before effects', () => {
-  assert.deepEqual(createAgentCliContributions().map(item => item.key), ['agent send','agent read','agent stop','agent list','agent reply','agent continue','agent supplement','agent replay']);
+test('agent exposes seven commands and strictly parses arguments before effects', () => {
+  assert.deepEqual(createAgentCliContributions().map(item => item.key), ['agent send','agent read','agent stop','agent list','agent reply','agent continue','agent supplement']);
   for (const [action, args] of [['send', []], ['send', [' ']], ['read', ['bad']], ['stop', [id, '--connection', 'x']], ['send', ['hi', '--json', '--json']], ['read', [id, '--limit', '0']], ['send', ['hi', '--target', '.', '--workspace-id', id]], ['send', ['hi', 'extra']]] as Array<[string,string[]]>) assert.throws(() => parseAgentArgs(action,args));
   assert.equal(parseAgentArgs('send',['你好']).value,'你好');
   assert.throws(()=>parseAgentArgs('send',['你好','--connection','codex']));
@@ -239,9 +239,7 @@ test('supplement inserts into the observed running execution without creating a 
     const blocked=mock([{run:current}]);await assert.rejects(executeAgentCommand(parseAgentArgs('supplement',[id,'hi']),id,blocked.request));assert.equal(blocked.calls.length,1);
   }
 });
-test('replay uses exact saved eventId only and sends no model input',async()=>{
-  const eventId='a'.repeat(64),m=mock([{eventId,queued:true}]);
-  await executeAgentCommand(parseAgentArgs('replay',[id,eventId]),id,m.request);
-  assert.equal(m.calls.length,1);assert.equal(m.calls[0].route.endsWith('/webhook-replay'),true);assert.deepEqual(m.calls[0].body,{eventId});
-  assert.throws(()=>parseAgentArgs('replay',[id,'invalid']));assert.throws(()=>parseAgentArgs('send',['hi','--model','model']));
+test('replay is retired and send still rejects model overrides',()=>{
+  assert.throws(()=>parseAgentArgs('replay',[id,'a'.repeat(64)]));
+  assert.throws(()=>parseAgentArgs('send',['hi','--model','model']));
 });
