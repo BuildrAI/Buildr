@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { readQoderIdentity, requestQoderModel, inspectQoderLogin } from '../../model-access/providers/qoder.ts';
@@ -10,12 +10,14 @@ import { interactionPolicy } from '../../domain/interaction-policy.ts';
 import { instructionParticipation } from '../../domain/participation.ts';
 import { isCompatibleProgram, nativeProgramPolicy } from '../program-policy.ts';
 import { accountEnvironment, findExecutable, inspectVersion, nativeCommand, nativeHome, opaqueReference, parseReference, privateDirectories, bounded, closeOwnedProcess } from '../native-process.ts';
-import { consumerBinding } from '../model-gateway.ts';
+import { checkedGateway, consumerBinding, gatewayModel, qoderGatewayPolicy, type ExecutorGateway } from '../model-gateway.ts';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { AgentServiceError } from '../../domain/agent-state.ts';
+import { ExecutorInputRejected } from '../../contracts.ts';
 import type { AccountObservation, AgentExecutor, AgentRuntime, ContextRef, ExecutorEvent, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorRequest, ExecutorSendInput, LoginObservation, PermissionMode } from '../../contracts.ts';
 
 const product = qoderProduct('qoder-cn');
-const capabilities = { interaction: { policy: interactionPolicy.version, nonBlockingQuestions: false }, supplement: false, permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: false, stop: true, resume: false, maxInputBytes: 96 * 1024 };
+const capabilities = { interaction: { policy: interactionPolicy.version, nonBlockingQuestions: false }, supplement: false, permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: false, stop: true, resume: true, maxInputBytes: 96 * 1024 };
 
 interface PendingApproval {
   request: ExecutorRequest;
@@ -54,11 +56,13 @@ class QoderCnRuntime implements AgentRuntime {
   private sessionContext?: string;
   private configOptions = new Map<string, SelectOption>();
   private turn?: TurnState;
+  private loading = false;
+  private readonly gateway?: ExecutorGateway;
   private readonly contexts = new Map<string, string>();
   private login?: { child: ChildProcessWithoutNullStreams; cancelled: boolean; update: (value: LoginObservation) => void };
 
-  private constructor(bindingIdentity: string, config: string, environments: NodeJS.ProcessEnv) {
-    this.bindingIdentity = bindingIdentity; this.config = config; this.environments = environments;
+  private constructor(bindingIdentity: string, config: string, environments: NodeJS.ProcessEnv, gateway?: ExecutorGateway) {
+    this.bindingIdentity = bindingIdentity; this.config = config; this.environments = environments; this.gateway = gateway;
     this.participationInstruction = instructionParticipation('interaction-policy', interactionPolicy.instructions);
   }
 
@@ -66,6 +70,9 @@ class QoderCnRuntime implements AgentRuntime {
 
   static async open(options: ExecutorOpenOptions): Promise<QoderCnRuntime> {
     options.signal?.throwIfAborted();
+    const gateway = checkedGateway(options.gateway);
+    // The CN CLI selects native account models; a lease without a CN native model has no route here.
+    if (gateway && gateway.nativeModel?.provider !== 'qoder-cn') throw new Error('qoder_cn_model_source_unsupported');
     const { home, temporary } = nativeHome(options.configRoot);
     const config = join(options.nativeAccountConfigRoot ?? options.configRoot, product.configDirectory);
     const env = accountEnvironment(options.environment, home, temporary, { [product.configEnvironment]: config }, options.cacheRoot);
@@ -74,8 +81,9 @@ class QoderCnRuntime implements AgentRuntime {
     const version = await inspectVersion(executable, env, options.signal);
     if (!isCompatibleProgram('qoder-cn', version)) throw new Error(`qoder_cn_version_unsupported: requires ${nativeProgramPolicy('qoder-cn').compatibility}`);
     const binding = await consumerBinding('qoder-cn', executable, version, config, options);
-    const runtime = new QoderCnRuntime(binding.identity, config, env);
+    const runtime = new QoderCnRuntime(binding.identity, config, env, gateway);
     runtime.executable = executable;
+    if (gateway) await runtime.assertNativeAccount();
     return runtime;
   }
 
@@ -110,7 +118,8 @@ class QoderCnRuntime implements AgentRuntime {
   }
 
   private notification(method: string, params: Record<string, unknown>): void {
-    if (method !== 'session/update') return;
+    // session/load replays the stored transcript; it is history, not this turn's output.
+    if (this.loading || method !== 'session/update') return;
     const sessionId = typeof params.sessionId === 'string' ? params.sessionId : typeof params.session_id === 'string' ? params.session_id : undefined;
     if (!sessionId || this.sessionId && sessionId !== this.sessionId) return;
     const update = params.update as Record<string, unknown> | undefined; if (!update) return;
@@ -192,8 +201,8 @@ class QoderCnRuntime implements AgentRuntime {
     this.contexts.set(context.id, saved); return saved;
   }
 
-  private async session(cwd: string): Promise<string> {
-    if (this.sessionId) return this.sessionId;
+  private async session(cwd: string, fresh = false): Promise<string> {
+    if (!fresh && this.sessionId && this.sessionContext === cwd) return this.sessionId;
     const client = await this.transport();
     const result = await client.request('session/new', { cwd, mcpServers: [] }, 60_000);
     const id = typeof result?.sessionId === 'string' ? result.sessionId : typeof result?.session_id === 'string' ? result.session_id : undefined;
@@ -201,6 +210,41 @@ class QoderCnRuntime implements AgentRuntime {
     this.sessionId = id; this.sessionContext = cwd;
     this.configOptions = selectOptions(result?.configOptions);
     return id;
+  }
+
+  /** Resume the exact native session and keep its replay out of the live turn. */
+  private async load(id: string, cwd: string): Promise<void> {
+    if (this.sessionId === id && this.sessionContext === cwd) return;
+    const client = await this.transport();
+    this.loading = true;
+    try {
+      const result = await client.request('session/load', { sessionId: id, cwd, mcpServers: [] }, 60_000);
+      this.sessionId = id; this.sessionContext = cwd;
+      this.configOptions = selectOptions(result?.configOptions);
+      this.contexts.set(id, cwd);
+    } catch (error) {
+      if (resumeUnavailable(error)) throw new AgentServiceError('agent_context_unavailable', '原 Qoder CN 原生会话已无法恢复，将建立新的原生会话继续本轮；此前对话记录与输入已保留。', 409);
+      throw error;
+    } finally { this.loading = false; }
+  }
+
+  private async assertNativeAccount(): Promise<void> {
+    if (!this.gateway?.nativeModel) return;
+    const identity = await readQoderIdentity(this.config);
+    if (createHash('sha256').update(this.gateway.nativeModel.provider + ':' + identity.userID).digest('hex') !== this.gateway.nativeModel.accountIdentity) throw new Error('qoder_native_account_changed');
+  }
+
+  /** A gateway lease names a Buildr route; the native CLI only accepts its own model id. */
+  private selection(model: string | undefined, reasoningEffort: string | undefined): { model?: string; reasoningEffort?: string } {
+    if (!this.gateway) return { model, reasoningEffort };
+    try {
+      gatewayModel(this.gateway, model);
+      const policy = qoderGatewayPolicy(this.gateway, model, reasoningEffort);
+      return { model: this.gateway.nativeModel!.id, reasoningEffort: policy.parameters.reasoningEffort };
+    } catch (error) {
+      if (error instanceof AgentServiceError) throw error;
+      throw new ExecutorInputRejected(error instanceof Error ? error.message : 'agent_gateway_model_mismatch');
+    }
   }
 
   /** The CN account authorizes only a subset of the catalog; `auto` is not always one of them. */
@@ -212,7 +256,7 @@ class QoderCnRuntime implements AgentRuntime {
       const available = modelOption?.options?.map(option => option.value) ?? [];
       if (!available.includes(model)) {
         if (!available.length) return;
-        throw new Error(`qoder_cn_model_unavailable: 当前账号未授权模型 ${model}，可用：${available.join('、')}`);
+        throw new ExecutorInputRejected(`qoder_cn_model_unavailable: 当前账号未授权模型 ${model}，可用：${available.join('、')}`);
       }
       const updated = await client.request('session/set_config_option', { sessionId, configId: 'model', value: model }, 30_000);
       this.configOptions = selectOptions(updated?.configOptions);
@@ -220,7 +264,7 @@ class QoderCnRuntime implements AgentRuntime {
     if (reasoningEffort) {
       const effort = this.configOptions.get('reasoning_effort');
       const available = effort?.options?.map(option => option.value) ?? [];
-      if (available.length && !available.includes(reasoningEffort)) throw new Error(`qoder_cn_reasoning_unavailable: 当前模型不支持推理强度 ${reasoningEffort}，可用：${available.join('、')}`);
+      if (available.length && !available.includes(reasoningEffort)) throw new ExecutorInputRejected(`qoder_cn_reasoning_unavailable: 当前模型不支持推理强度 ${reasoningEffort}，可用：${available.join('、')}`);
       if (available.includes(reasoningEffort)) {
         const updated = await client.request('session/set_config_option', { sessionId, configId: 'reasoning_effort', value: reasoningEffort }, 30_000);
         this.configOptions = selectOptions(updated?.configOptions);
@@ -276,13 +320,16 @@ class QoderCnRuntime implements AgentRuntime {
   async cancelLogin(): Promise<void> { const login = this.login; if (!login) return; this.login = undefined; login.cancelled = true; await closeOwnedProcess(login.child); login.update({ state: 'cancelled' }); }
 
   async createContext({ cwd }: { cwd: string }): Promise<ContextRef> {
-    const id = randomUUID(); this.contexts.set(id, cwd);
+    await this.assertNativeAccount();
+    const id = await this.session(cwd, true);
+    this.contexts.set(id, cwd);
     return { id, data: { cwd, native: opaqueReference('qoder-cn', id, cwd, this.bindingIdentity) } };
   }
 
   async resumeContext({ contextRef, cwd }: { contextRef: ContextRef; cwd: string }): Promise<void> {
     this.reference(contextRef, cwd);
-    throw new Error('qoder_cn_resume_unsupported');
+    await this.assertNativeAccount();
+    await this.load(contextRef.id, cwd);
   }
 
   async readHistory({ contextRef, cwd }: { contextRef: ContextRef; cwd: string }): Promise<ExecutorItem[]> {
@@ -292,13 +339,21 @@ class QoderCnRuntime implements AgentRuntime {
 
   async prepareContext(input: { contextRef: ContextRef; cwd: string; model?: string; reasoningEffort?: string }): Promise<void> {
     this.reference(input.contextRef, input.cwd);
-    await this.session(input.cwd);
-    await this.selectModel(input.model, input.reasoningEffort);
+    await this.assertNativeAccount();
+    await this.load(input.contextRef.id, input.cwd);
+    const selected = this.selection(input.model, input.reasoningEffort);
+    await this.selectModel(selected.model, selected.reasoningEffort);
   }
 
   async send(input: ExecutorSendInput): Promise<void> {
     const cwd = this.reference(input.contextRef, input.cwd);
     if (this.turn && ['running', 'waiting'].includes(this.turn.status)) throw new Error('agent_native_turn_active');
+    // Model and session checks happen before the accepted receipt: a rejected
+    // selection never claims the input reached the native prompt.
+    await this.assertNativeAccount();
+    const selected = this.selection(input.model, input.reasoningEffort);
+    await this.load(input.contextRef.id, cwd);
+    await this.selectModel(selected.model, selected.reasoningEffort);
     const executionId = input.clientRequestId;
     const turn: TurnState = { executionId, onEvent: input.onEvent, items: new Map(), tools: new Map(), approvals: new Map(), status: 'running' };
     this.turn = turn;
@@ -306,8 +361,7 @@ class QoderCnRuntime implements AgentRuntime {
     const userItem: ExecutorItem = { id: `user:${executionId}`, kind: 'message', role: 'user', text: input.text, clientRequestId: executionId, executionId, status: 'completed' };
     turn.items.set(userItem.id, userItem); input.onEvent({ type: 'item', item: userItem });
     try {
-      const sessionId = await this.session(cwd);
-      await this.selectModel(input.model, input.reasoningEffort);
+      const sessionId = this.sessionId!;
       const client = await this.transport();
       const prompt = [{ type: 'text', text: input.text }, ...await Promise.all(input.images.map(async image => ({ type: 'image', data: (await readFile(image.path)).toString('base64'), mimeType: image.mimeType })))];
       const result = await client.request('session/prompt', { sessionId, prompt }, 24 * 60 * 60 * 1000);
@@ -380,6 +434,12 @@ function previewOf(content: unknown): string {
   try { return typeof content === 'string' ? content : JSON.stringify(content ?? '').slice(0, 4000); } catch { return ''; }
 }
 function messageOf(error: unknown, fallback: string): string { return error instanceof Error && error.message ? error.message : fallback; }
+/** A missing native session is recoverable by creating a new one; anything else is a real failure. */
+function resumeUnavailable(error: unknown): boolean {
+  const code = error && typeof error === 'object' ? (error as { acpCode?: unknown }).acpCode : undefined;
+  if (code === -32601 || code === -32602) return true;
+  return /invalid session identifier|session (?:not found|unknown)|unknown session|no such session/i.test(messageOf(error, ''));
+}
 /** The CN gateway reports a missing or spent plan as 402/403 carrying a pricing link. */
 function quotaMessage(message: string): string {
   const quota = /pricingUrl|\/pricing/i.test(message) || /quota|credit/i.test(message) && /\((?:402|403)\)|\b(?:402|403)\b/.test(message);

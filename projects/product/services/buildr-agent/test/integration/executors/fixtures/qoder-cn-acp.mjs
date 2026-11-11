@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Minimal Qoder CN ACP fixture: newline-delimited JSON-RPC over stdio, no network.
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 const args = process.argv.slice(2);
 if (args.includes('--version')) { process.stdout.write('1.1.86\n'); process.exit(0); }
@@ -10,16 +10,31 @@ if (args.includes('login')) {
 }
 if (!args.includes('--acp')) { process.stderr.write('fixture expects --acp\n'); process.exit(2); }
 
+const config = process.env.QODERCN_CONFIG_DIR ?? '';
+const sessions = join(config, 'fixture-sessions');
+const models = ['auto', 'fast', 'qmodel_latest', 'dfmodel'];
+const autoAllow = () => existsSync(join(config, 'auto-allow'));
 let buffer = '';
 let pendingPrompt;
+let sequence = 0;
 const send = value => process.stdout.write(JSON.stringify(value) + '\n');
 const result = (id, value) => send({ jsonrpc: '2.0', id, result: value });
 const notify = (method, params) => send({ jsonrpc: '2.0', method, params });
+const log = (name, value) => { try { mkdirSync(config, { recursive: true }); writeFileSync(join(config, name), JSON.stringify(value) + '\n', { flag: 'a' }); } catch { /* fixture logging stays optional */ } };
+const sessionPath = id => join(sessions, id + '.json');
+const readSession = id => { try { return JSON.parse(readFileSync(sessionPath(id), 'utf8')); } catch { return undefined; } };
+const writeSession = session => { mkdirSync(sessions, { recursive: true }); writeFileSync(sessionPath(session.id), JSON.stringify(session)); };
+const configOptions = session => [
+  { id: 'mode', currentValue: session.mode ?? 'default', options: [{ value: 'default', name: 'Default' }, { value: 'full-access', name: 'Full access' }] },
+  { id: 'model', currentValue: session.model ?? 'auto', options: models.map(value => ({ value, name: value })) },
+];
 
 function finishPrompt(stopReason) {
   if (!pendingPrompt) return;
   const { id, sessionId } = pendingPrompt; pendingPrompt = undefined;
   notify('session/update', { sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId: 'tool-1', status: 'completed', content: { type: 'text', text: '文件已读取' } } });
+  const session = readSession(sessionId);
+  if (session) { session.messages.push({ role: 'assistant', text: 'fixture answer' }); writeSession(session); }
   result(id, { stopReason });
 }
 
@@ -27,15 +42,38 @@ function handle(message) {
   const { id, method, params = {} } = message;
   // A response from the client (permission decision) finishes the pending prompt.
   if (!method) { finishPrompt('end_turn'); return; }
-  if (method === 'initialize') return result(id, { protocolVersion: 1, authMethods: [{ id: 'qoderclicn-login', name: 'Use qoderclicn login' }], agentInfo: { name: 'qoder-cli-cn', title: 'Qoder CLI CN', version: '1.1.86' }, agentCapabilities: { promptCapabilities: { image: true } } });
+  if (method === 'initialize') return result(id, { protocolVersion: 1, authMethods: [{ id: 'qoderclicn-login', name: 'Use qoderclicn login' }], agentInfo: { name: 'qoder-cli-cn', title: 'Qoder CLI CN', version: '1.1.86' }, agentCapabilities: { loadSession: true, promptCapabilities: { image: true } }, sessionCapabilities: { resume: {} } });
   if (method === 'session/new') {
     if (process.env.FIXTURE_UNAUTHENTICATED === '1' || existsSync(join(process.env.QODERCN_CONFIG_DIR ?? '', 'unauthenticated'))) return send({ jsonrpc: '2.0', id, error: { code: -32000, message: 'Authentication required: Authentication is required.' } });
-    return result(id, { sessionId: 'fixture-session' });
+    const sessionId = `fixture-session-${process.pid}-${++sequence}`;
+    const session = { id: sessionId, cwd: params.cwd, model: 'auto', mode: 'default', messages: [] };
+    writeSession(session); log('fixture-session-new.jsonl', { sessionId, cwd: params.cwd });
+    return result(id, { sessionId, configOptions: configOptions(session) });
+  }
+  if (method === 'session/load') {
+    const sessionId = typeof params.sessionId === 'string' ? params.sessionId : '';
+    const session = readSession(sessionId);
+    if (!session) return send({ jsonrpc: '2.0', id, error: { code: -32602, message: `Invalid session identifier "${sessionId}"` } });
+    log('fixture-session-load.jsonl', { sessionId });
+    for (const entry of session.messages) notify('session/update', { sessionId, update: { sessionUpdate: entry.role === 'user' ? 'user_message_chunk' : 'agent_message_chunk', content: { type: 'text', text: entry.text } } });
+    return result(id, { configOptions: configOptions(session) });
+  }
+  if (method === 'session/set_config_option') {
+    const session = readSession(params.sessionId);
+    if (!session) return send({ jsonrpc: '2.0', id, error: { code: -32602, message: `Invalid session identifier "${params.sessionId}"` } });
+    log('fixture-config-selections.jsonl', { sessionId: params.sessionId, configId: params.configId, value: params.value });
+    if (params.configId === 'model') session.model = params.value;
+    if (params.configId === 'mode') session.mode = params.value;
+    writeSession(session);
+    return result(id, { configOptions: configOptions(session) });
   }
   if (method === 'session/prompt') {
     const text = (params.prompt ?? []).map(part => part.text ?? '').join('');
+    const session = readSession(params.sessionId);
+    if (session) { session.messages.push({ role: 'user', text }); writeSession(session); }
     notify('session/update', { sessionId: params.sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '收到：' + text } } });
     notify('session/update', { sessionId: params.sessionId, update: { sessionUpdate: 'tool_call', toolCallId: 'tool-1', title: '读取文件', kind: 'read', status: 'running' } });
+    if (autoAllow()) { pendingPrompt = { id, sessionId: params.sessionId }; setTimeout(() => finishPrompt('end_turn'), 5); return; }
     pendingPrompt = { id, sessionId: params.sessionId };
     send({ jsonrpc: '2.0', id: 900, method: 'session/request_permission', params: { sessionId: params.sessionId, toolCall: { toolCallId: 'tool-1', title: '读取文件', kind: 'read' }, options: [{ optionId: 'allow-once', name: '允许一次', kind: 'allow_once' }, { optionId: 'reject-once', name: '拒绝', kind: 'reject_once' }] } });
     return;

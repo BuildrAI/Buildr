@@ -22,7 +22,7 @@ import { ConversationEntryStore } from '../persistence/conversation-entry-store.
 import { LOCAL_CREDENTIAL_RETRIES, RETRY_DELAYS, localCredentialFailure, transientFailure } from '../domain/transient-failure.ts';
 import { NativeRequestError } from '../domain/error-diagnostic.ts';
 import {selectedOffering,modelConfiguration} from '../model-access/model-preferences.ts';
-import type {ModelOffering} from '../model-access/contracts.ts';
+import type {ModelAccountView, ModelOffering} from '../model-access/contracts.ts';
 import type { ModelAccess } from '../model-access/application.ts';
 import { modelQuotaFailure } from '../model-access/quota.ts';
 import { isQoderProvider, qoderProduct } from '../executors/qoder/product.ts';
@@ -31,7 +31,7 @@ import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto
 import fs from 'node:fs';
 import path from 'node:path';
 import { ExecutorInputRejected } from '../contracts.ts';
-import type { AgentRuntime, AgentServiceOptions, ConversationEntry, ConversationView, ExecutorEvent, ExecutorImage, ExecutorItem, ExecutorObservation, RunView, SendDraft, SendPreview } from '../contracts.ts';
+import type { AgentRuntime, AgentServiceOptions, ContextRef, ConversationEntry, ConversationView, ExecutorEvent, ExecutorImage, ExecutorItem, ExecutorObservation, RunView, SendDraft, SendPreview } from '../contracts.ts';
 import { AgentServiceError, BUSY_STATES, conversationRuns, unfinishedRun, expected, fail, nonempty, safeDiagnostic } from '../domain/agent-state.ts';
 import type { StoredConversation, StoredParticipant } from '../domain/agent-state.ts';
 import type { ConversationRepository } from '../persistence/conversation-repository.ts';
@@ -718,7 +718,15 @@ export class ConversationApplication {
     if (stoppedContinuation(record, input) && this.pendingSends.read(record.view.workspaceId, record.view.id)) fail('agent_continue_unavailable', '已有待发送要求，请先处理后再继续。', 409);
     input = continuationDraft(record, input);
     const connection = this.options.connections.get(input.connectionId);
-    const source = input.modelAccountId ? this.options.modelAccess?.accounts.snapshot(input.modelAccountId) : undefined;
+    // A stale or unknown model account must not mask a Qoder program-level
+    // login failure: the saved draft still needs the account-switch action.
+    // Defer any source lookup failure until the connection checks below.
+    let source: ModelAccountView | undefined;
+    let sourceError: unknown;
+    if (input.modelAccountId) {
+      try { source = this.options.modelAccess?.accounts.snapshot(input.modelAccountId); }
+      catch (error) { sourceError = error; }
+    }
     // CN's independent account is the same native login used by its executor.
     // A stale program observation cannot veto a current, ready account; ACP
     // still validates the actual login before accepting any work.
@@ -727,6 +735,7 @@ export class ConversationApplication {
     if (!connection.enabled || (!input.modelAccountId && connection.status !== 'ready')) fail('agent_account_unavailable', '请先准备智能体程序，并连接所选模型账号。', 409);
     if (!readyCnAccount && input.modelAccountId && isQoderProvider(connection.provider) && connection.status === 'not-authenticated') fail('qoder_platform_login_required', `${qoderProduct(connection.provider).label} 程序需要先完成基础平台登录；所选套餐不变，不要求使用 Qoder 自有模型。`, 409);
     if (!(connection.capabilities.permissionModes ?? ['default']).includes(input.permissionMode!)) fail('agent_permission_unavailable', '此接入尚不支持所选权限模式，请明确改选后重试。', 409);
+    if (sourceError) throw sourceError;
     if (input.modelAccountId && (!source || !source.enabled || source.status !== 'ready')) fail('agent_model_source_unavailable', '所选套餐尚未连接，请检查账号。', 409);
     if (source && input.modelAccountIdentity && source.identity !== input.modelAccountIdentity) fail('agent_model_source_changed', '套餐登录来源已变化，请重新选择套餐模型。', 409);
     // Qoder resolves third-party models only through its interactive BYOK wizard,
@@ -1265,8 +1274,18 @@ export class ConversationApplication {
       if (participant.bindingIdentity && participant.bindingIdentity !== runtime.bindingIdentity) fail('agent_binding_changed', '此参与者的原连接身份不匹配，不能恢复到其他配置。', 409);
       participant.bindingIdentity = runtime.bindingIdentity;
       if (record.view.run!.status === 'stopping') { record.view.run!.status = 'stopped'; this.save(record); return; }
+      let replacedContext: ContextRef | undefined;
       if (participant.contextRef) {
-        await runtime.resumeContext({ contextRef: participant.contextRef, cwd: record.view.cwd, permissionMode: prepared.draft.permissionMode });
+        try {
+          await runtime.resumeContext({ contextRef: participant.contextRef, cwd: record.view.cwd, permissionMode: prepared.draft.permissionMode });
+        } catch (error) {
+          if (!(error instanceof AgentServiceError) || error.code !== 'agent_context_unavailable') throw error;
+          // The native session is gone. Keep the stored transcript and continue
+          // this input in a new session instead of failing every later message.
+          replacedContext = participant.contextRef;
+        }
+      }
+      if (participant.contextRef && !replacedContext) {
         const history = await runtime.readHistory({ contextRef: participant.contextRef, cwd: record.view.cwd });
         let needsReview = false;
         // Native reads are asynchronous: a retained generation may update its
@@ -1296,7 +1315,14 @@ export class ConversationApplication {
         this.retryRecordUpdate(()=>{
           const current=this.currentRun(workspaceId,id,runId);if(!current)return;
           const storedParticipant=current.participants.find(value=>value.id===participant.id)!;
-          storedParticipant.contextRef=ref;storedParticipant.bindingIdentity=runtime.bindingIdentity;this.save(current);
+          storedParticipant.contextRef=ref;storedParticipant.bindingIdentity=runtime.bindingIdentity;
+          if(replacedContext&&!current.view.entries.some(entry=>entry.id==='native-session-'+runId))current.view.entries.push({
+            id:'native-session-'+runId, sequence:(current.view.entries.at(-1)?.sequence??0)+1, createdAt:this.options.now(),
+            kind:'handoff', role:'system', runId, participantId:participant.id, provider:participant.provider, status:'sending',
+            text:`${participant.label} 的原生会话已无法恢复，已建立新的原生会话继续本轮；此前对话记录与输入已保留。`,
+            nativeSession:{reason:'session-replacement',description:'原原生会话不可恢复，使用新的原生会话',from:{contextId:replacedContext.id},to:{contextId:ref.id,generation:this.options.generation}},
+          });
+          this.save(current);
         });
         record = this.currentRun(workspaceId,id,runId);if(!record)return;
         participant.contextRef = ref;

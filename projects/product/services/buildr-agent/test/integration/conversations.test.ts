@@ -307,7 +307,7 @@ test('native text streams persist every fragment and reload after concurrent wri
   assert.ok(!repo.readConversation(chat.id)!.view.entries.some(e=>e.text==='late text after stop'));
 });
 
-function fake(id = 'local', options: { hold?: boolean; disconnect?: 'stopped'|'running'|'unknown'|'tool'; disconnectError?: string; beforeDisconnect?: Promise<void>; disconnectAlways?: boolean; disconnectOn?: number; beforeResume?: Promise<void>; unknown?: boolean; images?: boolean; noAnswer?: boolean; multipleModels?: boolean; request?: boolean; question?: boolean; coldUnknown?: boolean; beforeAccepted?: Promise<void>; replyAfterTerminal?: boolean; toolSurvives?: boolean; toolInput?: boolean; failure?: string | ((attempt: number) => string | undefined); prepareFailures?: number; unknownCreate?: boolean; beforeObservation?: Promise<void>; wrongObservation?: boolean; summary?:(input:ExecutorTitleInput)=>Promise<string|undefined> } = {}) {
+function fake(id = 'local', options: { hold?: boolean; disconnect?: 'stopped'|'running'|'unknown'|'tool'; disconnectError?: string; beforeDisconnect?: Promise<void>; disconnectAlways?: boolean; disconnectOn?: number; beforeResume?: Promise<void>; resumeUnavailable?: boolean; unknown?: boolean; images?: boolean; noAnswer?: boolean; multipleModels?: boolean; request?: boolean; question?: boolean; coldUnknown?: boolean; beforeAccepted?: Promise<void>; replyAfterTerminal?: boolean; toolSurvives?: boolean; toolInput?: boolean; failure?: string | ((attempt: number) => string | undefined); prepareFailures?: number; unknownCreate?: boolean; beforeObservation?: Promise<void>; wrongObservation?: boolean; summary?:(input:ExecutorTitleInput)=>Promise<string|undefined> } = {}) {
   const contexts = new Map<string, Context>(); const sends: ExecutorSendInput[] = []; const replies: unknown[] = []; const opens: ExecutorOpenOptions[] = [];
   let preparations = 0;
   let loginUpdate: ((value: LoginObservation) => void) | undefined;
@@ -323,7 +323,10 @@ function fake(id = 'local', options: { hold?: boolean; disconnect?: 'stopped'|'r
       async beginLogin(update) { loginUpdate = update; update({ state: 'waiting-browser', url: 'https://example.test/official?secret=temporary' }); },
       async cancelLogin() {},
       async createContext() { if (++preparations <= (options.prepareFailures ?? 0)) throw options.unknownCreate ? new Error('agent_native_timeout') : new NativeRequestError('service temporarily unavailable'); const ref = { id: randomUUID() }; contexts.set(ref.id, { items: [], observation: { status: 'idle', tools: [] } }); return ref; },
-      async resumeContext({ contextRef }) { if (opens.length > 1) await options.beforeResume; get(contextRef); },
+      async resumeContext({ contextRef }) {
+        if (options.resumeUnavailable) { const { AgentServiceError } = await import('../../src/index.ts'); throw new AgentServiceError('agent_context_unavailable', '原原生会话已无法恢复，将建立新的原生会话继续本轮；此前对话记录与输入已保留。'); }
+        if (opens.length > 1) await options.beforeResume; get(contextRef);
+      },
       async readHistory({ contextRef }) { return structuredClone(get(contextRef).items); },
       async send(input) {
         didSend = true;
@@ -391,6 +394,23 @@ test('Qoder expired preparation retains the account-switch action for native and
     }
     assert.equal(native.sends.length,0);
   } finally {await f.close();}
+});
+test('a lost native context is replaced visibly instead of failing later messages', async () => {
+  const native = fake('qoder-cn', { resumeUnavailable: true }), f = fixture([native.executor]);
+  try {
+    await connected(f.service, 'qoder-cn');
+    const chat = await f.service.conversations.create('workspace-one', {});
+    send(f.service, chat.id, 'qoder-cn', 'first');
+    await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => view.run?.status === 'completed');
+    const second = send(f.service, chat.id, 'qoder-cn', 'second');
+    const done = await waitUntil(() => f.service.conversations.read('workspace-one', chat.id), view => view.run?.id === second.run.id && ['completed', 'failed', 'unknown'].includes(view.run.status));
+    assert.equal(done.run?.status, 'completed', done.run?.diagnostic);
+    assert.equal(native.contexts.size, 2, 'the lost context is replaced by one new native context');
+    assert.deepEqual(native.sends.map(input => input.text), ['first', 'second'], 'the earlier input is never resent');
+    const receipt = done.entries.find(entry => entry.kind === 'handoff' && entry.nativeSession?.reason === 'session-replacement');
+    assert.ok(receipt, 'the replacement is visible in the transcript');
+    assert.match(receipt.text, /原生会话已无法恢复/);
+  } finally { await f.close(); }
 });
 async function connected(service: ReturnType<typeof createAgentService>, id: string) { return service.connections.connect(id, { expectedRevision: service.connections.read(id).revision }); }
 async function waitUntil<T>(read: () => T, predicate: (value: T) => boolean): Promise<T> {
