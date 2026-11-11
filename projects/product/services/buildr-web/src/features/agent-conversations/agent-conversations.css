@@ -143,7 +143,10 @@
 
 .ac-execution-statusbar{display:flex;align-items:center;gap:8px;min-height:32px;margin-bottom:6px;color:var(--soft-muted);font-size:var(--font-size-meta)}
 .ac-execution-statusbar .ac-execution-indicator{margin:0}
-.ac-execution-statusbar .ac-stop-button{margin-left:auto;color:var(--soft-primary)}
+.ac-execution-statusbar:empty{display:none}
+.ac-compose-controls{display:flex;justify-content:flex-end;align-items:center;margin-bottom:6px;min-height:32px}
+.ac-compose-controls>.ac-stop-button.ant-btn{height:32px;min-width:76px;padding-inline:12px;gap:6px;font-size:var(--font-size-body);font-weight:500;flex:none}
+.ac-stop-glyph{display:inline-block;width:10px;height:10px;border-radius:1px;background:currentColor}
 .ac-message .markdown-relative-link{overflow-wrap:anywhere;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
 
 /* Docking reorders one retained panel instead of remounting its drafts and attachments. */

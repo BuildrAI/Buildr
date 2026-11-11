@@ -1,8 +1,22 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {stoppedConversationEntries,stopConversationWithRecovery} from '../src/features/agent-conversations/conversation-stop.ts';
+import {stoppedConversationEntries,stopConversationWithRecovery,conversationStopControlState} from '../src/features/agent-conversations/conversation-stop.ts';
 const chat={id:'chat',workspaceId:'ws',revision:'r1',entries:[{id:'a',runId:'run',text:'点击时的文字',kind:'message'}],run:{id:'run',participantId:'p',generation:'g',status:'running',tools:[]}};
 const conflict=()=>Object.assign(new Error('内容已变化，请刷新后重试。'),{status:409,code:'agent_revision_conflict'});
+test('independent stop control retains pending feedback and covers retained work without depending on drafts',()=>{
+ const current={...chat,requests:[]};
+ assert.equal(conversationStopControlState(null),'hidden');
+ assert.equal(conversationStopControlState(current),'ready');
+ assert.equal(conversationStopControlState(current,true),'stopping');
+ const cancelling={...current,run:{...current.run,status:'stopping',stopRequested:true}};
+ assert.equal(conversationStopControlState(cancelling),'stopping');
+ const ended={...current,run:{...current.run,status:'stopped',executionState:'ended',resourcesReleased:true}};
+ assert.equal(conversationStopControlState(ended),'hidden');
+ assert.equal(conversationStopControlState({...ended,retainedRuns:[{...cancelling.run,id:'retained-cancelling'}]}),'stopping');
+ for(const status of ['running','tools-active','unknown'])assert.equal(conversationStopControlState({...ended,retainedRuns:[{...chat.run,id:'retained',status}]}),'ready');
+ assert.equal(conversationStopControlState({...ended,pendingSend:{id:'pending'}}),'ready');
+ assert.equal(conversationStopControlState({...cancelling,retainedRuns:[{...chat.run,id:'unconfirmed',status:'unknown'}]}),'ready','partial uncertainty stays actionable');
+});
 test('stop freezes this round while control state and other rounds remain live',()=>{
  const stopped={workspaceId:'ws',conversationId:'chat',runId:'run',entries:structuredClone(chat.entries)};
  const fresh={...chat,entries:[{...chat.entries[0],text:'迟到片段',status:'completed'},{id:'late',runId:'run',text:'新输出'},{id:'next',runId:'next',text:'下一轮'}]};
@@ -55,7 +69,7 @@ test('whole conversation stop retries a rejected stream revision but never widen
  calls=0;const lost=new Error('lost receipt');await assert.rejects(stopAllWithRecovery(chat,'stop-id',async()=>{calls++;throw lost;},async()=>chat),lost);assert.equal(calls,1);
 });
 
-test('normal aggregate cancellation hides the main button, while unresolved or new work remains controllable',async()=>{
+test('normal aggregate cancellation prevents duplicate effects, while unresolved or new work remains controllable',async()=>{
  const {canStopConversation}=await import('../src/features/agent-conversations/conversation-stop.ts');
  const stopping={...chat,requests:[],run:{...chat.run,status:'stopping',stopRequested:true}};
  assert.equal(canStopConversation(stopping),false);

@@ -15,6 +15,15 @@ export function canStopConversation(conversation:ConversationView):boolean {
   return [...(conversation.run?[conversation.run]:[]),...conversation.retainedRuns??[]].some(run=>ids.has(run.id)&&(!run.stopRequested||run.status!=='stopping'));
 }
 
+/** Keep cancellation feedback in the same control without allowing duplicate effects. */
+export function conversationStopControlState(conversation:ConversationView|null,requesting=false):'hidden'|'ready'|'stopping' {
+  if(!conversation)return 'hidden';
+  if(requesting)return 'stopping';
+  if(canStopConversation(conversation))return 'ready';
+  return [...(conversation.run?[conversation.run]:[]),...conversation.retainedRuns??[]]
+    .some(run=>run.stopRequested&&run.status==='stopping'&&!run.resourcesReleased&&run.executionState!=='ended')?'stopping':'hidden';
+}
+
 /** Freeze only this round's output; continue receiving control facts and other rounds. */
 export function stoppedConversationEntries(conversation:ConversationView, stopped:StoppedConversationOutput|null):ConversationEntry[] {
   if(!stopped||conversation.workspaceId!==stopped.workspaceId||conversation.id!==stopped.conversationId)return conversation.entries;

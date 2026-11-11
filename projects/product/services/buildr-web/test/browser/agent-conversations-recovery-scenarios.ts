@@ -21,7 +21,8 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
       await page.reload();await panel().getByText(text,{exact:true}).waitFor();await page.route(pattern,handler);
       const request=page.waitForRequest((request:any)=>request.url().endsWith('/stop-all'));
       await panel().getByRole('button',{name:'停止对话',exact:true}).click();await request;
-      assert.equal(await panel().getByRole('button',{name:'停止对话',exact:true}).count(),0);
+      const pendingStop=panel().getByRole('button',{name:'停止对话',exact:true});
+      assert.equal(await pendingStop.count(),1);assert.equal(await pendingStop.isDisabled(),true);assert.equal(await pendingStop.innerText(),'停止中');
       assert.equal(await panel().getByText(/正在停止|已确认停止|内容已变化/).count(),0);
       const response=page.waitForResponse((response:any)=>response.url().endsWith('/stop-all'));release();await response;
       await panel().locator('.ac-compose-wrap[data-run-status="stopped"]').waitFor();
