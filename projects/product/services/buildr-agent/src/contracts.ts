@@ -390,6 +390,8 @@ export interface RunView {
   executionState?: 'active' | 'ended' | 'unknown';
   /** This backend no longer holds the original control resources; independent command outcomes may remain unknown. */
   resourcesReleased?: boolean;
+  /** User-confirmed attention settlement; never claims completion, releases resources, or erases unknown evidence. */
+  attentionSettled?: boolean;
   fault?: ExecutionFault;
   /** Host interruption is unfinished work, distinct from a user stop. */
   interrupted?: boolean;

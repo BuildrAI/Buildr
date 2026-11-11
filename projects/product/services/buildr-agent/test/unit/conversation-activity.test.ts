@@ -47,6 +47,20 @@ test('historical unknown rounds only keep a stopped conversation active while wo
  run.tools=[{id:'live-operation',status:'running'}];assert.equal(summaryView(record,3,3,'now').activity!.active,true,'unreleased running work remains visible');
 });
 
+test('user-settled retained unknown rounds stop pinning activity while evidence and real work stay protected',()=>{
+ const run={id:'old',status:'unknown',accepted:true,stopRequested:true,executionState:'unknown',tools:[{id:'uncertain',status:'unknown'}]} as any;
+ const record={view:{run:{id:'current',status:'completed',tools:[]},retainedRuns:[run],requests:[],hidden:false},participants:[]} as unknown as StoredConversation;
+ assert.equal(summaryView(record,3,3,'now').activity!.active,true,'unknown tools keep the conversation discoverable before settlement');
+ run.attentionSettled=true;
+ assert.equal(summaryView(record,3,3,'now').activity!.active,false,'settlement closes the attention, not the evidence');
+ assert.equal(run.status,'unknown');assert.equal(run.tools[0].status,'unknown');
+ run.tools=[{id:'live',status:'running'}];assert.equal(summaryView(record,3,3,'now').activity!.active,true,'running work overrides settlement');
+ run.tools=[];run.executionState='active';assert.equal(summaryView(record,3,3,'now').activity!.active,true,'active execution overrides settlement');
+ run.executionState='unknown';
+ assert.equal(summaryView(record,4,3,'now').activity!.active,true,'unread output still needs attention');
+ record.view.requests=[{id:'q',runId:'old'}] as any;assert.equal(summaryView(record,3,3,'now').activity!.active,true,'valid questions still need attention');
+});
+
 test('an unaccepted stop without in-flight work settles activity while preserving unknown evidence',()=>{
  const at='2026-11-09T00:00:00Z';
  const run={id:'unaccepted',participantId:'p',generation:'g',status:'unknown',accepted:false,stopRequested:true,resourcesReleased:false,executionState:'unknown',tools:[],diagnostic:'上一轮资源仍待释放，请稍后核对。',startedAt:at,updatedAt:at} as any;

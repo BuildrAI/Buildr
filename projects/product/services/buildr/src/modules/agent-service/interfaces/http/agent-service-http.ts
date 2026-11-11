@@ -219,6 +219,7 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
       if (action === 'seen') return result('seenResult',await service.conversations.markSeen(workspaceId,id,validate('seen',await readJsonBody())));
       if (action === 'observe') { validate('empty', await readJsonBody()); return result('conversation', await service.conversations.observe(workspaceId, id)); }
       if (action === 'observe-run') return result('conversation',await service.conversations.observeRun(workspaceId,id,validate('control',await readJsonBody())));
+      if (action === 'settle-retained-run') return result('conversation',await service.conversations.settleRetainedRun(workspaceId,id,validate('control',await readJsonBody())));
       if (action === 'fork') return result('conversation', await service.conversations.fork(workspaceId, id, validate('fork', await readJsonBody())), 201);
       if (action === 'generate-title') return result('conversation', await service.conversations.generateTitle(workspaceId, id, validate('revision', await readJsonBody())));
       if (action === 'stop-all') return result('conversation', await service.conversations.stopAll(workspaceId,id,validate('stopAll',await readJsonBody())));

@@ -533,7 +533,8 @@ export class ConversationRepository {
       const retained = input.generation && generationAlive ? (db.prepare(`SELECT DISTINCT json_extract(summary,'$.run.generation') AS generation FROM ${storedSource} WHERE ${indexed?`${HAS_WORK} AND `:''}workspace_id IN (${ids.map(()=>'?').join(',')}) AND ${status} IN ('starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown')`).all(...ids) as Array<{generation:string|null}>).map(row=>row.generation).filter((generation):generation is string=>Boolean(generation&&generation!==input.generation&&generationAlive(generation))) : [];
       const generations = input.generation ? [...new Set([input.generation,...retained])].sort() : [];
       const effectiveStatus = generations.length ? `CASE WHEN coalesce(json_extract(summary,'$.run.generation'),'') NOT IN (${generations.map(()=>'?').join(',')}) AND ${status} IN ('starting','running','waiting-approval','waiting-question','stopping','tools-active','unknown') THEN 'unknown' ELSE ${status} END` : status;
-      const state = `CASE WHEN send_activity IS NOT NULL THEN 'send-'||json_extract(send_activity,'$.state') WHEN pending_decision_count>0 THEN 'waiting' WHEN hidden=1 AND list_active=0 THEN NULL WHEN effective_status='unknown' AND list_active=1 THEN 'unknown' WHEN effective_status IN ('waiting-approval','waiting-question') THEN 'waiting' WHEN effective_status IN ('starting','running','stopping') THEN 'running' WHEN activity_version>seen_version THEN 'unseen' ELSE NULL END`;
+      // Residual active rows (e.g. retained unknown runs) must stay explainable as pending confirmation, never silent.
+      const state = `CASE WHEN send_activity IS NOT NULL THEN 'send-'||json_extract(send_activity,'$.state') WHEN pending_decision_count>0 THEN 'waiting' WHEN hidden=1 AND list_active=0 THEN NULL WHEN effective_status='unknown' AND list_active=1 THEN 'unknown' WHEN effective_status IN ('waiting-approval','waiting-question') THEN 'waiting' WHEN effective_status IN ('starting','running','stopping') THEN 'running' WHEN activity_version>seen_version THEN 'unseen' WHEN list_active=1 THEN 'unknown' ELSE NULL END`;
       const drafts=new Set(input.draftConversationIds??[]);
       if(drafts.size)db.function('buildr_has_draft',{deterministic:true},id=>Number(drafts.has(String(id))));
       const draftPriority=drafts.size?'WHEN buildr_has_draft(id)=1 THEN 1 ':'';
@@ -542,7 +543,7 @@ export class ConversationRepository {
       const source=`(SELECT *,${orderAt} AS order_at FROM (SELECT *,CASE WHEN activity_state IN ('waiting','unseen','send-failed') THEN 3 WHEN list_active=1 THEN 2 ${draftPriority}ELSE 0 END AS sort_priority FROM (SELECT *,${state} AS activity_state FROM (SELECT *,${effectiveStatus} AS effective_status FROM ${withDecisions}))))`;
       // Resolved generations can change outside this scope. Any effect on the
       // actual filtered list is already captured by its membership/order keys.
-      const scope=createHash('sha256').update(JSON.stringify(['final-reply-activity-v1',ids,{...input,draftConversationIds:[...drafts].sort(),cursor:undefined,limit:undefined}])).digest('hex');
+      const scope=createHash('sha256').update(JSON.stringify(['final-reply-activity-v2',ids,{...input,draftConversationIds:[...drafts].sort(),cursor:undefined,limit:undefined}])).digest('hex');
       const where=[`workspace_id IN (${ids.map(()=>'?').join(',')})`];const values:Array<string|number>=[...generations,...ids];
       if(input.workspaceId){where.push('workspace_id=?');values.push(input.workspaceId);}
       where.push(HAS_WORK);

@@ -1,5 +1,11 @@
 import type { ConversationView, ConversationEntry, ConversationEvent, ConversationRun, ConversationTaskLink, CatalogModel } from './types';
 
+/** User-confirmed attention settlement for a retained unknown run; real in-flight work and valid questions stay protected. */
+export function canSettleRetainedRun(conversation: ConversationView | null, run: ConversationRun | undefined): boolean {
+  return Boolean(conversation && run && conversation.retainedRuns?.some(value => value.id === run.id) && !run.supersededBy && run.status === 'unknown' && !run.attentionSettled &&
+    run.executionState !== 'active' && !run.tools.some(tool => tool.status === 'running') && !conversation.requests.some(request => request.runId === run.id));
+}
+
 /** Closing only dismisses a released historical doubt, never a protected owner. */
 export function canCloseUncertainConversation(conversation: ConversationView | null): boolean {
   if (!conversation) return false;

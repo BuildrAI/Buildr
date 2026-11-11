@@ -25,7 +25,7 @@ import { useAgentConversations } from './AgentConversationsContext';
 import {useEarlierConversationEntries} from './useEarlierConversationEntries';
 import {conversationImageSource,conversationImageLinkSource} from './conversation-markdown-images';
 import { ConversationImagePreview } from './ConversationImagePreview';
-import {needsConversationObservation, conversationObservationFeedback, carryExpandedProcessBlocks, conversationContinuationText, conversationRecoveryAction, canCloseUncertainConversation, canContinueConversation} from './conversation-state';
+import {needsConversationObservation, conversationObservationFeedback, carryExpandedProcessBlocks, conversationContinuationText, conversationRecoveryAction, canCloseUncertainConversation, canContinueConversation, canSettleRetainedRun} from './conversation-state';
 import { ConversationHistory, type ConversationWorkspace } from './ConversationHistory';
 import { ConversationRequest } from './ConversationRequest';
 import { ConversationPendingSend } from './ConversationPendingSend';
@@ -49,7 +49,7 @@ import { useNewConversationImages } from './useNewConversationImages';
 import { useConversationAttachments } from './useConversationAttachments';
 import { draftMaterialIds, firstConversationSubmissions, type FirstSubmission } from './conversation-first-submission';
 import { useConversationDraft } from './useConversationDraft';
-import { providerNames, type ConversationEntry, type ConversationView, type SendDraft, type SendPreview } from './types';
+import { providerNames, type ConversationEntry, type ConversationRun, type ConversationView, type SendDraft, type SendPreview } from './types';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { codeApi } from '../code/api/code-api';
 import { conversationFileReference, conversationFileTarget } from './conversation-process';
@@ -529,6 +529,11 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
       void context.refreshPending().catch(()=>{});
     }catch(failure){if(context.isSelectionCurrent(selection)){fail(failure);void context.refresh().catch(()=>{});}}finally{actions.finish(key);}
   };
+  const settleRetained=async(target:ConversationRun)=>{
+    if(!chat)return;const key=actionKey(chat,'settle-retained',target.id);if(!actions.begin(key))return;const selection=context.getSelection();setError('');
+    try{const result=await context.api.settleRetainedRun(chat,target);context.apply(result,chat.revision);if(context.isSelectionCurrent(selection))setFeedback('已结束本轮提醒；原执行结果仍未知，未终止任何进程，不会重发原操作。');}
+    catch(failure){if(context.isSelectionCurrent(selection)){fail(failure);void context.refresh().catch(()=>{});}}finally{actions.finish(key);}
+  };
   const reply=async(requestId:string,answer:unknown)=>{
     const request=chat?.requests.find(request=>request.id===requestId);
     if(!chat)return;const key=actionKey(chat,'reply',requestId);if(!actions.begin(key))return;const selection=context.getSelection();setError('');setReplyFailure(null);
@@ -727,7 +732,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
             return <ConversationTurn key={turn.key} id={turn.key} runId={execution.current?run?.id:assistant?.runId||prompt?.runId} prompt={prompt?{id:prompt.id,text:prompt.text,images:prompt.attachments?.length?<ConversationMessageImages conversation={chat} ids={prompt.attachments} read={context.api.readImage}/>:undefined,diagnostic:prompt.deliveryDiagnostic?<small className="ac-input-diagnostic" role="status">{prompt.deliveryDiagnostic}</small>:prompt.status==='unknown'?<Tag color="warning">是否送达待确认</Tag>:undefined}:undefined}
               onCollapseProcess={processKeys.some(key=>expandedToolGroups[key]===true)?()=>setExpandedToolGroups(previous=>({...previous,...Object.fromEntries(processKeys.map(key=>[key,false]))})):undefined} collapseLabel={hasExpandedProcess?'收起处理过程':'收起工具调用'} identity={execution.current?runIdentity:turnIdentity(assistant||prompt)} executing={executing&&!turnPaused} startedAt={timing.startedAt} finishedAt={timing.finishedAt} processExpanded={turnExpanded} onToggleProcess={hasProcess||hasSupplement?()=>setExpandedToolGroups(previous=>({...previous,[turnExpansionKey]:!turnExpanded,...Object.fromEntries(settled.flatMap(item=>item.type==='process-block'?[[processBlockKey(item.entries),!turnExpanded]]:[]))})):undefined}>
               {executing&&execution.waiting&&<small className="ac-input-diagnostic" role="status">{execution.waiting}</small>}
-              {unverified&&<small className="ac-input-diagnostic" title={turnRun?.diagnostic}>本轮结果待核对，原记录保留在可展开的处理过程中。</small>}
+              {unverified&&<small className="ac-input-diagnostic" title={turnRun?.diagnostic}>{turnRun?.attentionSettled?'本轮提醒已结束；原执行结果仍未知，原记录保留在可展开的处理过程中。':<>本轮结果待核对，原记录保留在可展开的处理过程中。{canSettleRetainedRun(chat,turnRun)&&<Button type="link" size="small" loading={Boolean(chat&&actions.has(actionKey(chat,'settle-retained',turnRun!.id)))} onClick={()=>void settleRetained(turnRun!)} title="仅结束提醒：原执行结果仍未知，不终止可能仍在运行的进程，不会重发原操作。">结束提醒</Button>}</>}</small>}
               {turn.items.map(item=>{
                 if(item.type==='entry')return item.entry.kind==='message'&&item.entry.role==='user'&&!turnExpanded?null:renderEntry(item.entry);
                 const key=processBlockKey(item.entries);

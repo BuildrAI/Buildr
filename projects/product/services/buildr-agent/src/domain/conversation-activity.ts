@@ -72,6 +72,8 @@ export function conversationActive(view: ConversationView, version: number, seen
     // unknown tools and an active execution state still protect real work.
     if(historical && run.status==='unknown' && run.executionState!=='active' && !run.tools.some(tool=>tool.status==='running'||tool.status==='unknown'))return false;
     if(historical && run.resourcesReleased && run.executionState!=='active' && !run.tools.some(tool=>tool.status==='running'))return false;
+    // User-confirmed settlement closes the attention, never the evidence; real in-flight work still protects itself.
+    if(historical && run.attentionSettled && run.executionState!=='active' && !run.tools.some(tool=>tool.status==='running'))return false;
     return run.executionState==='active' || (!run.resourcesReleased&&BUSY_STATES.has(run.status)) || run.tools.some(tool=>tool.status!=='completed');
   };
   return pendingDecisionCount(view)>0 || !hiddenReleasedOutcome(view) &&

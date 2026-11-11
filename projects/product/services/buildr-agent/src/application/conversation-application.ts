@@ -2225,6 +2225,20 @@ export class ConversationApplication {
     }
   }
   /** Internal authenticated control; cannot stop tools or grant an unanswered request. */
+  /** User-confirmed attention settlement for a retained unknown run; never claims completion, kills work, or releases resources. */
+  async settleRetainedRun(workspaceId: string, id: string, input: { expectedRevision: string; runId: string; participantId: string; generation: string }): Promise<ConversationView> {
+    const record = this.load(workspaceId, id); expected(record.view.revision, input.expectedRevision);
+    const run = record.view.retainedRuns?.find(value => value.id === input.runId);
+    if (!run || run.participantId !== input.participantId || run.generation !== input.generation) fail('agent_control_stale', '原执行身份已变化，请重新读取。', 409);
+    if (run.attentionSettled) return this.view(record);
+    if (run.supersededBy || run.status !== 'unknown' || run.executionState === 'active' || run.tools.some(tool => tool.status === 'running') ||
+        this.workers.has(run.id) || record.view.requests.some(request => request.runId === run.id))
+      fail('agent_run_settle_unavailable', '原执行仍有在途工作或有效问题，不能结束提醒；请先核对原执行。', 409);
+    run.attentionSettled = true; run.updatedAt = this.options.now();
+    this.save(record);
+    return this.view(record);
+  }
+
   async releaseQuestionWait(workspaceId: string, id: string, input: { expectedRevision: string; runId: string; participantId: string; generation: string }): Promise<ConversationView> {
     let record = this.load(workspaceId, id); expected(record.view.revision, input.expectedRevision);
     const old = conversationRuns(record.view).find(run => run.id === input.runId);

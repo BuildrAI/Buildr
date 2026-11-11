@@ -42,9 +42,11 @@ export function activityState(row:ConversationSummary):ActivityState {
   if(['waiting-approval','waiting-question'].includes(row.run?.status??''))return 'waiting';
   if(isExecuting(row))return 'running';
   if(row.activity&&row.activity.version>row.activity.seenThrough)return 'unseen';
+  // Residual active rows (e.g. retained unknown runs) stay explainable, never silently pinned.
+  if(row.activity?.active&&!unacceptedStopSettled(row))return 'unknown';
   return null;
 }
-/** The global activity snapshot keeps rows that are active only for an old unknown run; they belong to no reminder group. */
+/** The global activity snapshot keeps rows active only for an old unknown run; they join the pending group as pending confirmation. */
 export function reminderFallbackRows<T extends ConversationSummary>(rows:readonly T[]) {
   const pending:T[]=[],running:T[]=[];
   for(const row of rows){
