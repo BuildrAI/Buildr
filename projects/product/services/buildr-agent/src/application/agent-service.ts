@@ -150,6 +150,7 @@ export function createAgentService(options: AgentServiceOptions) {
     conversationInputBusy: (scope: string, id: string) => conversations.inputBusy(scope, id),
     retainsConversationSource: (scope:string,id:string) => conversations.retainsConversationSource(scope,id),
     releaseIdleSources: (owner?:{workspaceId:string;id:string}) => conversations.releaseIdleSources(owner),
+    releaseRetiredWork: () => conversations.releaseRetiredWork(),
     observeForRelease: (scope:string,id:string,runId:string,generation:string) => conversations.observeForRelease(scope,id,runId,generation),
     verifyNext: (scope: string, id: string) => conversations.verifyNext(scope, id),
     validatePending: (scope: string, id: string, input: SendDraft) => conversations.validatePending(scope, id, input),

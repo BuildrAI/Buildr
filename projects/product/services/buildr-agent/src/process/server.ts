@@ -366,11 +366,28 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     } finally { startup?.release(); }
   }
   const storageMaintenance = new StorageMaintenance(options.dataRoot, { enabled: () => accepting && !retiring && !closing, runtime:options.runtime });
+  let retiringSince: number | undefined, retirementAttempt = 0;
+  const RETIRED_GRACE_MS = 60_000, RETIRED_RETRY_MS = 5_000;
   const timer = setInterval(() => {
     if (closing || adopting) return;
+    if (!retiring) { retiringSince = undefined; retirementAttempt = 0; }
     if (retiring) {
-      adopting = service.releaseIdleSources().then(() => {
-        if (!status().activity.busy && !inflight) void close('retired-idle').finally(()=>{process.exitCode=0;});
+      const now = Date.now(); retiringSince ??= now;
+      // Retrying a release proof four times a second never changes the outcome
+      // and keeps the retired process hot. Retry slowly instead.
+      if (now - retirementAttempt < RETIRED_RETRY_MS) return;
+      retirementAttempt = now;
+      adopting = service.releaseIdleSources().then(async () => {
+        const current = status();
+        if (!current.activity.busy && !inflight) { void close('retired-idle').finally(()=>{process.exitCode=0;}); return; }
+        // A successor already owns new work; only this generation's own
+        // execution can keep it alive. When the remaining reasons are native
+        // resources whose release can no longer be proven, record the exact
+        // uncertainty and exit instead of holding the process forever.
+        const unsettledOnly = current.activity.reasons.every(reason => reason.kind === 'source-resource' || reason.kind === 'unfinished-execution');
+        if (inflight || !unsettledOnly || now - retiringSince! < RETIRED_GRACE_MS) return;
+        await service.releaseRetiredWork();
+        if (!status().activity.busy && !inflight) void close('retired-unconfirmed').finally(()=>{process.exitCode=0;});
       }).catch(() => { /* Keep the exact old owner until native release is confirmed. */ }).finally(() => { adopting=undefined; });
       return;
     }

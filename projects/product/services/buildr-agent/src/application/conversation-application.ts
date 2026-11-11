@@ -414,6 +414,35 @@ export class ConversationApplication {
   retainsConversationSource(workspaceId:string,id:string): boolean {
     return this.nativeSourceOwners.has(`${workspaceId}/${id}`) || [...this.sourceOwners.entries()].some(([participant,owner])=>this.sourceRuntimes.has(participant)&&owner.workspaceId===workspaceId && owner.id===id);
   }
+  /** A retiring generation releases idle native sources after a bounded grace.
+   * Ownership proof may never arrive; the exact uncertainty is recorded on the
+   * run and the process may exit instead of retrying a proof that no longer
+   * exists. Live execution, input, recovery, title and reply work is never
+   * touched, and no new effect is ever sent for an unknown run. */
+  async releaseRetiredWork(): Promise<void> {
+    if(this.closing||this.workers.size||this.supplements.size||this.repliesInFlight.size||this.recoveries.size||this.forks.active||this.titleWork.size||this.earlyTitles.size)return;
+    const runtimes=new Set<AgentRuntime>();
+    for(const [id,source] of [...this.sourceRuntimes]){
+      const value=await Promise.race([source.catch(()=>undefined),new Promise<undefined>(resolve=>setImmediate(()=>resolve(undefined)))]);
+      if(!value)continue;
+      runtimes.add(value.runtime);
+      if(this.sourceRuntimes.get(id)===source){this.sourceRuntimes.delete(id);this.sourceOwners.delete(id);this.sourceConnections.delete(id);}
+    }
+    for(const runtime of runtimes)await this.options.connections.releaseGatewayRuntime(runtime).catch(()=>{});
+    for(const saved of this.options.repository.listPendingStates(true)){
+      const record=this.load(saved.view.workspaceId,saved.view.id);
+      let changed=false;
+      for(const run of conversationRuns(record.view)){
+        if(run.generation!==this.options.generation||run.resourcesReleased||!unfinishedRun(run))continue;
+        run.resourcesReleased=true;run.executionState='unknown';
+        if(!['stopped','failed','completed'].includes(run.status)){run.status='unknown';run.interrupted=true;}
+        run.tools=run.tools.map(tool=>tool.status==='running'?{...tool,status:'unknown',canStop:false}:tool);
+        run.diagnostic='执行后台已退役并释放后台连接；本轮结束状态未确认，已有操作结果保留，不会重发。';
+        run.updatedAt=this.options.now();changed=true;
+      }
+      if(changed)this.save(record);
+    }
+  }
   /** A retained process acknowledges release only after the exact native round and
    * all conversation-specific work have ended. Shared writers are never closed here. */
   async observeForRelease(workspaceId:string, id:string, expectedRunId:string, generation:string): Promise<boolean> {
