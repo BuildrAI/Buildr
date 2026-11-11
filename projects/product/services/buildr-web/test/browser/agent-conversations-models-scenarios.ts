@@ -36,7 +36,8 @@ await step('模型名称选择器仅在悬停时显示外形',async()=>{
       assert.equal(await picker.locator('input:not([readonly])').count(),0,'模型行不包含可编辑输入框与闪烁光标');
       assert.equal(await picker.locator('input').evaluate((node:HTMLInputElement)=>node.style.opacity),'0','只读的隐藏输入不显示光标');
       const modelSearch=modelList.getByRole('textbox',{name:'搜索模型',exact:true});await modelSearch.waitFor();
-      await modelSearch.fill('Fast');await modelList.getByText('Fast model',{exact:true}).waitFor();
+      await modelSearch.fill('Fast');await page.waitForFunction(()=>document.querySelectorAll('.ac-model-list-popup .ant-select-item-option').length===3);
+      assert.equal(await modelList.getByText('Fast model',{exact:true}).count(),3,'按名称搜索保留三个来源的同名模型');
       assert.equal(await modelList.getByText('Fixture model',{exact:true}).count(),0,'搜索按模型名称过滤');
       await modelSearch.press('Escape');await modelList.waitFor({state:'hidden'});
       await combo.focus();await combo.press('ArrowDown');await modelList.waitFor();
@@ -167,7 +168,7 @@ await step('统一套餐模型跨执行者保留准确来源，档位保留强�
       await page.setViewportSize({width:1600,height:1000});await page.reload();await input().waitFor();await fixture.startNewConversation();await input().waitFor();await chooseAgent('Codex');await input().fill('统一模型来源与服务档位验证');const sendsBefore=fixture.sends,preparesBeforeShared=fixture.prepares;
       await chooseModel('共享模型');const tierButton=()=>modelSettings().getByRole('button',{name:'切换服务档位',exact:true});await tierButton().click();assert.equal(await page.getByRole('menu').count(),0,'闪电直接切换，不弹出档位菜单');assert.equal(await modelSettings().getByRole('slider',{name:'思考深度',exact:true}).getAttribute('aria-valuetext'),'低');assert.equal(await panel().locator('.ac-model-trigger .ac-tier-mark').count(),1,'非默认档位在供应商前显示闪电');await setHighEffort();
       await tierButton().click();assert.equal(await modelSettings().getByRole('slider',{name:'思考深度',exact:true}).getAttribute('aria-valuetext'),'高','切换档位保留已选推理强度');assert.equal(await modelSettings().getByRole('button',{name:'恢复默认推理强度',exact:true}).count(),0,'当前界面由切换模型或档位继承默认');await closeModelSettings();assert.equal(await panel().locator('.ac-model-trigger .ac-tier-mark').count(),0,'默认快速档位不在供应商前重复标记');
-      await chooseAgent('DSH');await assertModelSummary('Fast model');await chooseModel('共享模型');await assertModelSummary('fixture / 共享模型','中');await setHighEffort();await closeModelSettings();assert.equal(fixture.sends,sendsBefore,'配置和执行者切换不发送');assert.equal(await input().inputValue(),'统一模型来源与服务档位验证');
+      await chooseAgent('DSH');await assertModelSummary('请选择模型');await chooseModel('共享模型');await assertModelSummary('fixture / 共享模型','中');await setHighEffort();await closeModelSettings();assert.equal(fixture.sends,sendsBefore,'配置和执行者切换不发送');assert.equal(await input().inputValue(),'统一模型来源与服务档位验证');
       await panel().getByRole('button',{name:'发送对话',exact:true}).click();await panel().locator('[data-run-status="running"]').waitFor();assert.equal(fixture.sends,sendsBefore+1);
       assert.equal(fixture.prepares,preparesBeforeShared,'atomic first send needs no persisted preview conversation');for(const request of [sentInputs.at(-1)])assert.deepEqual([request.modelAccountId,request.modelAccountIdentity,request.modelAccountRevision,request.model,request.serviceTier,request.reasoningEffort,request.connectionId],['fixture-account','source-one','account-r1','shared-model','fast','high','dsh'],'预览及发送绑定同一准确来源、已观察版本、档位与强度');
       await panel().getByRole('button',{name:'停止本次执行',exact:true}).click();await panel().locator('[data-run-status="stopped"]').waitFor();await page.reload();await panel().locator('[data-run-status="stopped"]').waitFor();assert.equal(await panel().locator('.ac-run-status').count(),0,'正常停止不显示额外状态文案');assert.ok((await panel().innerText()).includes('fixture / 共享模型'),'停止后保留模型身份');await assertModelSummary('fixture / 共享模型','高');await openModelSettings();assert.equal(await modelSettings().getByRole('slider',{name:'思考深度',exact:true}).getAttribute('aria-valuetext'),'高');await closeModelSettings();assert.equal(fixture.sends,sendsBefore+1,'刷新恢复配置不自动执行');
@@ -182,7 +183,7 @@ await step('Devin SWE-2默认及完全访问可选，模式切换保留草稿与
       const isBlocked=async(option:any)=>(await option.getAttribute('class')).includes('ant-select-item-option-disabled');
       try{
         for(const label of ['Codex','Qoder','DSH']){
-          await chooseAgent(label);const dropdown=await openModelList(),option=dropdown.locator('.ant-select-item-option').filter({hasText:'SWE-2'});await option.waitFor();assert.equal(await isBlocked(option),false);await option.click();
+          await chooseAgent(label);const dropdown=await openModelList(),option=dropdown.locator('.ant-select-item-option').filter({hasText:'SWE-2'});await option.waitFor();assert.equal(await isBlocked(option),label==='Qoder','Qoder 只接受自身来源，Codex 与 DSH 可选 Devin');if(label!=='Qoder')await option.click();
           await closeModelList();
         }
         assert.equal(fixture.sends,sendsBefore);assert.equal(fixture.prepares,preparesBefore);

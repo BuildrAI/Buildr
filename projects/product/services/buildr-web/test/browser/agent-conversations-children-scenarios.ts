@@ -69,7 +69,7 @@ export async function runChildConversationScenarios(fixture:AgentConversationFix
   const patterns=['**/api/v1/workspaces/*/agent-conversations/**','**/api/v1/app/agent-service/conversations/**'];
   for(const pattern of patterns)await page.route(pattern,route);
   const window=()=>page.locator('.ac-child-window:not([hidden])');
-  const header=()=>panel().locator(':scope > .ac-thread-header');
+  const header=()=>panel().locator(':scope > .ac-conversation-view > .ac-thread-header');
   const createChild=async()=>{
     await header().getByRole('button',{name:'更多对话操作',exact:true}).click();
     assert.equal(await page.getByRole('menuitem',{name:'智能体与模型',exact:true}).count(),0);
@@ -81,12 +81,13 @@ export async function runChildConversationScenarios(fixture:AgentConversationFix
     await step('创建多个子浮窗不替换主对话，切换保留各自草稿和阅读位置',async()=>{
       assert.equal(await input().getAttribute('placeholder'),'提出问题，或描述想完成的工作');
       assert.equal(await panel().locator('.ac-location-settings code').count(),0,'新对话不展示工作空间目录');
+      await fixture.chooseModel('Fixture model');await fixture.closeModelSettings();
       await input().fill('主对话保持原来的工作');await panel().getByRole('button',{name:'发送对话',exact:true}).click();
-      await panel().locator(':scope > .ac-thread-header[data-run-status="running"]').waitFor();
+      await panel().locator(':scope > .ac-conversation-view > .ac-thread-header[data-run-status="running"]').waitFor();
       const parentId=fixture.conversation.id;
       fixture.update({entries:[...fixture.conversation.entries,{id:'long-parent-answer',sequence:100,kind:'message',role:'assistant',text:Array.from({length:30},(_,i)=>`主线记录 ${i}，主对话应保持原阅读位置。`).join('\n\n'),status:'completed',createdAt:new Date().toISOString()}]});
       await page.reload();await input().waitFor();await input().fill('主对话未发送的文字');
-      const stream=panel().locator(':scope > .ac-stream');
+      const stream=panel().locator(':scope > .ac-conversation-view > .ac-stream');
       await stream.evaluate((node:HTMLElement)=>{node.scrollTop=120;node.dispatchEvent(new Event('scroll'));});
       const top=await stream.evaluate((node:HTMLElement)=>node.scrollTop),before=JSON.stringify(fixture.conversation);
       await createChild();
@@ -94,7 +95,7 @@ export async function runChildConversationScenarios(fixture:AgentConversationFix
       const entry=page.locator('[data-child-entry="'+firstId+'"]');
       assert.equal(await entry.innerText(),'','子对话入口仅保留图标');
       await entry.focus();await page.getByRole('tooltip',{name:'子对话 1 · 尚未开始',exact:true}).waitFor();
-      const layout=await panel().evaluate((node:HTMLElement)=>({header:node.querySelector(':scope > .ac-thread-header')!.getBoundingClientRect().bottom,stream:node.querySelector(':scope > .ac-stream')!.getBoundingClientRect().top}));
+      const layout=await panel().evaluate((node:HTMLElement)=>({header:node.querySelector(':scope > .ac-conversation-view > .ac-thread-header')!.getBoundingClientRect().bottom,stream:node.querySelector(':scope > .ac-conversation-view > .ac-stream')!.getBoundingClientRect().top}));
       assert.ok(Math.abs(layout.header-layout.stream)<2,'顶部不再占用子对话和参与记录两行');
       const fill=await panel().evaluate((node:HTMLElement)=>{const win=node.querySelector('.ac-child-window:not([hidden])')!.getBoundingClientRect(),box=node.getBoundingClientRect();return{winHeight:win.height,bottomGap:box.bottom-win.bottom};});
       assert.ok(fill.winHeight>680,'长视口下子浮窗不再停在固定高度：'+JSON.stringify(fill));

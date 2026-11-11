@@ -3,6 +3,7 @@ import {createHash} from 'node:crypto';
 import {canCloseUncertainConversation} from '../../src/features/agent-conversations/conversation-state.ts';
 import {resolveQuestionAnswer,questionAnswerDisplay} from '../../../buildr-agent/src/domain/question-answer.ts';
 import type {ConnectionView} from '../../src/features/agent-conversations/types.ts';
+import {modelSourceName} from '../../src/lib/model-picker.ts';
 
 /** Actual hosted UI; only the new HTTP transport is replaced with explicit fixtures. */
 export async function createAgentConversationFixture({t,page,workspaceUrl,workspaceRoot,otherWorkspaceId,capture:capturePage,expectedBrowserErrors,scenarioSelectionHandled=false}:any){
@@ -22,10 +23,23 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
   const quotaOverrides=new Map<string,any>();
   const nativeAccounts=()=>connections.map(connection=>({id:'native-'+connection.id,identity:'identity-'+connection.id,connectionId:connection.id,provider:connection.provider,label:connection.label,accountLabel:'fixture account',revision:'model-account-'+connection.id,enabled:connection.enabled,status:disconnectedAccounts.has(connection.id)?'not-authenticated':connection.status,models:connection.models.map(model=>{const patch=preferenceOverrides.get('native-'+connection.id)?.get(model.id);const override=patch?.contextWindow===undefined?undefined:patch.contextWindow===null?undefined:patch.contextWindow;return {...model,enabled:patch?.enabled??true,contextWindow:override??32000,contextWindowOverride:override,images:connection.capabilities.images,tools:true};}),quota:quotaOverrides.get(connection.id)??{available:false,planLabel:'Fixture套餐',observedAt:'2026-10-25T00:00:00Z'}}));
   let catalogDiagnostic:string|undefined;
-  let sharedModels:any[]=[];let latestPreview:any;let forceCapacity=false,prepareError:{code:string;message:string}|undefined;
+  // The picker consumes the shared catalog, not connection.models. Keep the
+  // default HTTP observation consistent with the account observation; explicit
+  // catalog overrides (including an empty list) remain available to scenarios.
+  let sharedModels:any[]|undefined;
+  const modelCatalog=()=>sharedModels??nativeAccounts().flatMap(account=>account.models.map(model=>({
+    ...model,id:account.id+'::'+model.id,modelId:model.id,accountId:account.id,
+    accountIdentity:account.identity,accountRevision:account.revision,accountLabel:account.accountLabel,
+    provider:account.provider,available:account.enabled&&account.status==='ready'&&model.enabled,
+  })));
+  let latestPreview:any;let forceCapacity=false,prepareError:{code:string;message:string}|undefined;
   let loseFirstResponse=false;let draftImageRevision=0;const draftImages:any[]=[];const firstResponses=new Map<string,any>();
   /** Draft attachments live in the fixture, outside sessionStorage; scenarios must clear them explicitly. */
   const clearDraftAttachments=()=>{draftImages.splice(0,draftImages.length);draftImageRevision++;};
+  const restoreNativeModelState=()=>{
+    disconnectedAccounts.clear();preferenceOverrides.clear();
+    for(const connection of connections){connection.enabled=true;connection.status='ready';}
+  };
   let conversation:any=null,revision=0,sends=0,prepares=0,stops=0,replies=0,cursor=0,creations=0;
   let additionalConversations:any[]=[];
   const historyPages=new Map<number,any>();let entryReads=0,failEntryRead=false,holdEntryRead=false,releaseEntryRead:(()=>void)|undefined,entryReadStarted:(()=>void)|undefined;
@@ -51,11 +65,18 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
   const programAttempts:Record<string,any>={};
   const preparedInputs:any[]=[],sentInputs:any[]=[];
   const update=(input:any={})=>conversation={...conversation,...input,revision:'r'+(++revision),updatedAt:new Date().toISOString()};
-  const run=(status:string,provider='codex',options:any={})=>({id:'run-fixture',participantId:'participant-'+provider,provider,generation:'generation-fixture',status,accepted:true,permissionMode:'default',tools:[],startedAt:new Date().toISOString(),updatedAt:new Date().toISOString(),...options});
+  const run=(status:string,provider='codex',options:any={})=>{
+    const model=connections.find(item=>item.id===provider)?.models.find(item=>item.isDefault);
+    return {id:'run-fixture',participantId:'participant-'+provider,provider,generation:'generation-fixture',status,accepted:true,permissionMode:'default',tools:[],
+      // Legacy observed runs may omit account metadata; explicit modern runs
+      // pass it through options. Both still record the actual model.
+      model:model?.id,
+      startedAt:new Date().toISOString(),updatedAt:new Date().toISOString(),...options};
+  };
   const route=async(route:any)=>{
     const request=route.request(),url=new URL(request.url()),method=request.method();
     if(url.pathname.startsWith('/api/v1/app/agent-service/program-updates'))return route.fulfill({json:{programs:connections.map(connection=>({connectionId:connection.id,provider:connection.provider,label:connection.label,revision:connection.revision,executable:connection.enabled?'/isolated/'+connection.id:undefined,status:connection.enabled?'unchecked':'not-connected',managed:true,versionKind:'program',packageName:connection.id,updateUrl:'https://fixture.invalid'}))}});
-    if(url.pathname==='/api/v1/app/agent-service/model-catalog'){return route.fulfill({json:{models:sharedModels,hasSnapshot:sharedModels.length>0,...(catalogDiagnostic?{diagnostic:catalogDiagnostic}:{})}});}
+    if(url.pathname==='/api/v1/app/agent-service/model-catalog'){return route.fulfill({json:{models:modelCatalog(),hasSnapshot:true,...(catalogDiagnostic?{diagnostic:catalogDiagnostic}:{})}});}
     if(url.pathname==='/api/v1/app/agent-service/model-accounts')return route.fulfill({json:{accounts:nativeAccounts(),providers:[]}});
     if(url.pathname.startsWith('/api/v1/app/agent-service/model-accounts/')){
       const parts=url.pathname.split('/'),account=nativeAccounts().find(item=>item.id===parts[6]);assert.ok(account,'model action targets an observed native account');
@@ -269,9 +290,25 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
   const modelSettings=()=>page.getByRole('dialog',{name:'模型与推理强度设置',exact:true});
   const openModelSettings=async()=>{if(await modelTrigger().getAttribute('aria-expanded')!=='true')await modelTrigger().click();await modelSettings().waitFor();return modelSettings();};
   const closeModelSettings=async()=>{await modelSettings().getByRole('combobox',{name:'执行模型',exact:true}).focus();await page.keyboard.press('Escape');await modelSettings().waitFor({state:'hidden'});assert.equal(await modelTrigger().getAttribute('aria-expanded'),'false');assert.equal(await modelTrigger().evaluate((node:HTMLElement)=>node===document.activeElement),true,'关闭设置后焦点回到模型入口');};
-  const chooseModel=async(label:string)=>chooseOption('执行模型',label,await openModelSettings());
+  const chooseModel=async(label:string)=>{
+    const dialog=await openModelSettings(),combo=dialog.getByRole('combobox',{name:'执行模型',exact:true});
+    await combo.focus();await combo.press('ArrowDown');
+    const popup=page.locator('.ac-model-list-popup:visible');
+    if(modelCatalog().filter(model=>model.label===label).length>1){
+      const agent=await panel().locator('.ac-provider-select .ant-select-selection-item').innerText();
+      const connection=connections.find(item=>item.label===agent);assert.ok(connection,'按当前智能体明确选择同名原生模型来源');
+      await popup.getByRole('textbox',{name:'搜索模型',exact:true}).fill(modelSourceName(connection.provider));
+    }
+    await popup.getByText(label,{exact:true}).click();await popup.waitFor({state:'hidden'});
+  };
   const setHighEffort=async()=>{const dialog=await openModelSettings(),slider=dialog.getByRole('slider',{name:'思考深度',exact:true});await slider.press('End');assert.equal(await slider.getAttribute('aria-valuenow'),await slider.getAttribute('aria-valuemax'));assert.equal(await slider.getAttribute('aria-valuetext'),'高');};
-  const assertModelSummary=async(model:string,effort?:string)=>{const label=modelTrigger().locator('.ac-model-label');await label.filter({hasText:model}).waitFor();assert.equal(await label.innerText(),model);const depth=modelTrigger().locator('.ac-model-effort');if(effort){await depth.filter({hasText:effort}).waitFor();assert.equal(await depth.innerText(),effort);}else assert.equal(await depth.count(),0);};
+  const assertModelSummary=async(model:string,effort?:string)=>{
+    const agent=await panel().locator('.ac-provider-select .ant-select-selection-item').innerText();
+    const connection=connections.find(item=>item.label===agent);
+    const expected=model==='请选择模型'||model.includes(' / ')?model:modelSourceName(connection!.provider)+' / '+model;
+    const label=modelTrigger().locator('.ac-model-label');await label.filter({hasText:expected}).waitFor();assert.equal(await label.innerText(),expected);
+    const depth=modelTrigger().locator('.ac-model-effort');if(effort){await depth.filter({hasText:effort}).waitFor();assert.equal(await depth.innerText(),effort);}else assert.equal(await depth.count(),0);
+  };
   const reset=async()=>{await page.goto(workspaceUrl+'/overview');await page.evaluate(()=>sessionStorage.clear());await page.reload();await page.locator('#workbench-overview').waitFor();};
   // 固定/专注下标题栏不再重复列表与返回入口，统一走导轨（手机为顶栏）；暂看仍用标题栏以保持不固定布局。
   const isPeeking=()=>panel().evaluate((node:HTMLElement)=>node.classList.contains('is-peeking'));
@@ -309,6 +346,7 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
   };
   const dispose=async()=>{releaseEntryRead?.();releaseSend?.();releasePrepare?.();releaseCreate?.();releaseUpload?.();releaseConnections?.();releaseStop?.();releaseTaskList?.();releaseTitle?.();releaseSupplement?.();releaseConnectionProbe?.();await page.evaluate(()=>{(window as any).__releaseTaskSpinnerMotion?.();sessionStorage.removeItem('__buildrHoldTaskSpinnerMotion');}).catch(()=>{});await page.unroute('**/api/v1/app/agent-service/webhook-settings',webhookRoute);await page.unroute('**/api/v1/app/agent-service/**',route);await page.unroute('**/api/v1/workspaces/*/agent-conversations**',route);await page.setViewportSize({width:1280,height:900});await page.evaluate(()=>sessionStorage.clear()).catch(()=>{});if(scenarioFocus.length)assert.ok(stepIndex>0,'BUILDR_AGENT_SCENARIO_FOCUS 没有匹配任何场景');};
   return {
+    restoreNativeModelState,
     quotaOverrides,otherWorkspaceId,
     get additionalConversations(){return additionalConversations;}, set additionalConversations(value){additionalConversations=value;},
     get additionalPending(){return additionalPending;}, set additionalPending(value){additionalPending=value;},
@@ -401,7 +439,7 @@ export async function createAgentConversationFixture({t,page,workspaceUrl,worksp
     get sendStarted(){return sendStarted;}, set sendStarted(value){sendStarted=value;},
     sentInputs,
     setHighEffort,
-    get sharedModels(){return sharedModels;}, set sharedModels(value){sharedModels=value;},
+    get sharedModels(){return modelCatalog();}, set sharedModels(value){sharedModels=value;},
     step,
     get unknownStop(){return unknownStop;},set unknownStop(value){unknownStop=value;},
     get stops(){return stops;}, set stops(value){stops=value;},

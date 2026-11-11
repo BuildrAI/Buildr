@@ -280,6 +280,8 @@ await step('智能体与模型分开管理，程序准备、取消与刷新恢�
     });
 
 await step('全局对话保留草稿与执行位置，左右停靠到一级导航外侧，刷新不发送',async()=>{
+      // 前两项故意断开账号、停用模型与程序；后续草稿流程从正常账号开始。
+      fixture.restoreNativeModelState();
       await page.setViewportSize({width:1600,height:1000});await reset();
       assert.equal(await page.locator('#global-conversations-entry').isHidden(),true,'桌面顶部不重复提供对话主按钮');await openDesktopConversation();await panel().waitFor();assert.equal(await panel().locator('.ac-location-settings .ant-select-selection-item').innerText(),await page.locator('.workspace-switcher strong').innerText(),'首次新建默认当前页面工作空间');await input().fill('草稿只保存，不自动执行');
       await assertFixed(true);assert.equal(await panel().locator('.ac-thread-header .ant-btn').count(),1,'固定布局顶部只留更多，新建/列表/返回归导轨');await closeConversation();await panel().waitFor({state:'hidden'});await assertFixed(false);await page.getByRole('complementary',{name:'当前对话与所有对话',exact:true}).getByRole('button',{name:'展开当前对话',exact:true}).click();await input().waitFor();assert.equal(await input().inputValue(),'草稿只保存，不自动执行');await assertFixed(true);
@@ -330,7 +332,7 @@ await step('全局对话保留草稿与执行位置，左右停靠到一级导�
       await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
       await activityMenu().locator('button[data-activity-id="unknown-reminder"] .ac-activity-status').getByText('状态待确认',{exact:true}).waitFor();await activityBadge.waitFor();
       assert.equal(await activityMenu().locator('.ant-alert').count(),0,'浮窗不再显示未知执行聚合提示条');
-      fixture.additionalPending=[{...originalPending[0],id:'running-reminder',title:'仍在执行的对话',run:run('running')}];
+      fixture.additionalPending=[{...originalPending[0],id:'running-reminder',title:'仍在执行的对话',run:run('running','codex',{model:undefined})}];
       await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
       await railActivity.locator('[data-count-kind="running"][aria-label="1 个执行中对话"]').waitFor();
       await activityMenu().locator('button[data-activity-id="running-reminder"]').waitFor();
@@ -386,7 +388,7 @@ await step('模型设置按真实弹层和滑块交互，切换与恢复默认�
       await page.mouse.move(handleBox!.x+handleBox!.width/2,handleBox!.y+handleBox!.height/2);await page.mouse.down();await page.mouse.move(railBox!.x+railBox!.width,railBox!.y+railBox!.height/2,{steps:8});await page.mouse.up();assert.equal(await slider.getAttribute('aria-valuetext'),'高','鼠标可拖动到最高档');await slider.press('Home');assert.equal(await slider.getAttribute('aria-valuetext'),'中');
       await setHighEffort();await chooseModel('Fast model');await chooseModel('Fixture model');assert.equal(await slider.getAttribute('aria-valuetext'),'高','切换模型恢复上次选择的强度');
       await setHighEffort();await closeModelSettings();await assertModelSummary('Fixture model','高');assert.equal((await panel().locator('.ac-compose-toolbar').boundingBox())!.height,modelToolbarBefore!.height,'弹层与输入工具栏布局独立');
-      await chooseAgent('DSH');await assertModelSummary('Fixture model');await openModelSettings();await modelSettings().getByText('此模型未提供可调节的推理强度',{exact:true}).waitFor();await closeModelSettings();
+      await chooseAgent('DSH');await chooseModel('Fixture model');await closeModelSettings();await assertModelSummary('Fixture model');await openModelSettings();await modelSettings().getByText('此模型未提供可调节的推理强度',{exact:true}).waitFor();await closeModelSettings();
       await chooseAgent('Codex');await assertModelSummary('Fixture model','高');await chooseModel('Fixture model');await setHighEffort();await closeModelSettings();
       assert.equal(await input().inputValue(),draft,'模型与推理配置不清空草稿');assert.equal(fixture.sends,0,'选择执行者、模型、强度与恢复默认不会执行');
       const toolbar=await panel().locator('.ac-compose-toolbar').boundingBox();const controls=await panel().locator('.ac-provider-select,.ac-model-trigger').evaluateAll((nodes:HTMLElement[])=>nodes.map(node=>({text:node.innerText,left:node.getBoundingClientRect().left,right:node.getBoundingClientRect().right,height:node.getBoundingClientRect().height})));

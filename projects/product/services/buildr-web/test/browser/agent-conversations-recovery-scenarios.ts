@@ -347,7 +347,7 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
     await page.reload();await panel().locator('[data-run-status="running"]').waitFor();await page.waitForTimeout(1000);assert.equal(await notice().count(),0);
     await notice().waitFor({timeout:20000});assert.equal(fixture.eventStreams,streams+6,'首次连接加五次退避重试');assert.equal(fixture.sends,sends);
     assert.match(await notice().innerText(),/正在自动重连/);assert.doesNotMatch(await notice().innerText(),/原执行状态尚未确认/);assert.equal(await panel().locator('[data-run-status="running"]').count(),1);
-    // Reproduce the two independent warnings together; changing selection never sends work.
+    // 失效模型会清空选择，不再渲染旧的账号警告；连接恢复提示仍独立保留。
     const previousModels=fixture.sharedModels;
     const offering={id:'alignment-offering',modelId:'alignment-model',label:'对齐检查模型',accountId:'alignment-account',accountIdentity:'alignment-identity',accountRevision:'alignment-r1',accountLabel:'对齐检查账号',provider:'fixture',available:true,enabled:true,images:true,tools:true,contextWindow:128000};
     fixture.sharedModels=[...previousModels,offering];await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
@@ -355,20 +355,19 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
     fixture.sharedModels=[...previousModels,{...offering,available:false}];
     // Consecutive focus metadata refreshes are intentionally throttled for 1 second.
     await page.waitForTimeout(1100);await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
-    const accountWarning=panel().locator('.ac-compose-wrap>.ant-alert').filter({hasText:'所选模型账号当前不可用'});await accountWarning.waitFor();
+    await fixture.assertModelSummary('请选择模型');
+    assert.equal(await panel().locator('.ac-compose-wrap>.ant-alert').filter({hasText:'所选模型账号当前不可用'}).count(),0);
     const assertAligned=async(label:string)=>{
       const geometry=await notice().evaluate((node:HTMLElement)=>{
-        const compose=node.closest('.ac-compose-wrap')!,account=[...compose.querySelectorAll<HTMLElement>(':scope>.ant-alert')].find(item=>item.textContent?.includes('所选模型账号当前不可用'))!;
+        const compose=node.closest('.ac-compose-wrap')!;
         const rect=(item:Element)=>{const box=item.getBoundingClientRect();return{x:box.x,right:box.right,top:box.top,bottom:box.bottom};};
-        return{connection:rect(node),account:rect(account),composer:rect(compose.querySelector('.ac-composer')!),icons:[rect(node.querySelector('.ant-alert-icon')!),rect(account.querySelector('.ant-alert-icon')!)],messages:[rect(node.querySelector('.ant-alert-message')!),rect(account.querySelector('.ant-alert-message')!)],description:rect(node.querySelector('.ant-alert-description')!),action:rect(node.querySelector('.ant-alert-action')!),overflow:node.scrollWidth-node.clientWidth};
+        return{connection:rect(node),composer:rect(compose.querySelector('.ac-composer')!),message:rect(node.querySelector('.ant-alert-message')!),description:rect(node.querySelector('.ant-alert-description')!),action:rect(node.querySelector('.ant-alert-action')!),overflow:node.scrollWidth-node.clientWidth};
       });
       const aligned=(a:number,b:number)=>assert.ok(Math.abs(a-b)<1,label+': '+a+' vs '+b);
-      aligned(geometry.connection.x,geometry.account.x);aligned(geometry.connection.right,geometry.account.right);
       aligned(geometry.connection.x,geometry.composer.x);aligned(geometry.connection.right,geometry.composer.right);
-      aligned(geometry.icons[0].x,geometry.icons[1].x);aligned(geometry.messages[0].x,geometry.messages[1].x);aligned(geometry.description.x,geometry.messages[0].x);
-      assert.ok(geometry.account.top>=geometry.connection.bottom&&geometry.account.top-geometry.connection.bottom<=12,label+'警告间距一致');
+      aligned(geometry.description.x,geometry.message.x);
       assert.ok(geometry.action.x>=geometry.connection.x&&geometry.action.right<=geometry.connection.right&&geometry.overflow<=1,label+'按钮不溢出');
-      if(label==='mobile'){aligned(geometry.action.x,geometry.messages[0].x);assert.ok(geometry.action.top>=geometry.description.bottom-1,'窄屏按钮在正文下方');}
+      if(label==='mobile'){aligned(geometry.action.x,geometry.message.x);assert.ok(geometry.action.top>=geometry.description.bottom-1,'窄屏按钮在正文下方');}
       await fixture.capture(page,'conversation-notices-aligned-'+label+'.png');
     };
     try{

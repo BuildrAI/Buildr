@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {createAgentConversationFixture,type AgentConversationFixture} from './agent-conversation-fixture.ts';
 
-type ConversationScrollSample={at:number;top:number;height:number;viewport:number;visible:boolean;entries:number;listBottom:number|null;streamBottom:number|null;listTop:number|null;streamTop:number|null};
+type ConversationScrollSample={conversationId:string|null;at:number;top:number;height:number;viewport:number;visible:boolean;entries:number;listBottom:number|null;streamBottom:number|null;listTop:number|null;streamTop:number|null};
 
 /** history 场景使用独立准备的对话现场。 */
 const historyRuns = {
@@ -409,7 +409,7 @@ const historyRuns = {
         const stream=document.querySelector<HTMLElement>('#agent-conversation-panel .ac-stream');
         const list=stream?.querySelector<HTMLElement>('.ac-message-list');
         const entries=stream?[...stream.querySelectorAll<HTMLElement>('[data-entry-id]')].filter(node=>node.getClientRects().length).length:0;
-        trace.push({at:performance.now(),top:stream?.scrollTop??0,height:stream?.scrollHeight??0,viewport:stream?.clientHeight??0,visible:Boolean(stream?.getClientRects().length&&list),entries,listBottom:list?.getBoundingClientRect().bottom??null,streamBottom:stream?.getBoundingClientRect().bottom??null,listTop:list?.getBoundingClientRect().top??null,streamTop:stream?.getBoundingClientRect().top??null});
+        trace.push({conversationId:document.querySelector('#agent-conversation-panel')?.getAttribute('data-conversation-id')??null,at:performance.now(),top:stream?.scrollTop??0,height:stream?.scrollHeight??0,viewport:stream?.clientHeight??0,visible:Boolean(stream?.getClientRects().length&&list),entries,listBottom:list?.getBoundingClientRect().bottom??null,streamBottom:stream?.getBoundingClientRect().bottom??null,listTop:list?.getBoundingClientRect().top??null,streamTop:stream?.getBoundingClientRect().top??null});
         if(++frames<240)requestAnimationFrame(sample);
       };
       requestAnimationFrame(sample);
@@ -420,7 +420,7 @@ const historyRuns = {
     await entryReadStarted;
     await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
     const beforeFill:ConversationScrollSample[]=await page.evaluate(()=>(window as any).__conversationScrollTrace as ConversationScrollSample[]);
-    const visible=beforeFill.filter(sample=>sample.visible&&sample.entries>0);
+    const visible=beforeFill.filter(sample=>sample.conversationId===targetId&&sample.visible&&sample.entries>0);
     assert.ok(visible.length,'首批最新记录应在补页请求挂起时可见');
     const misplaced=visible.find(sample=>sample.listTop===null||sample.streamTop===null||Math.abs(sample.listTop-sample.streamTop)>1||sample.top!==0);
     assert.equal(misplaced,undefined,'补页期间不足一屏的内容必须顶对齐，不能撑高或产生滚动：'+JSON.stringify(visible.slice(-8)));
