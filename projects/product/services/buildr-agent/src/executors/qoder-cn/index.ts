@@ -13,6 +13,7 @@ import { accountEnvironment, findExecutable, inspectVersion, nativeCommand, nati
 import { checkedGateway, consumerBinding, gatewayModel, qoderGatewayPolicy, type ExecutorGateway } from '../model-gateway.ts';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { AgentServiceError } from '../../domain/agent-state.ts';
+import { errorDiagnostic } from '../../domain/error-diagnostic.ts';
 import { ExecutorInputRejected } from '../../contracts.ts';
 import type { AccountObservation, AgentExecutor, AgentRuntime, ContextRef, ExecutorEvent, ExecutorItem, ExecutorObservation, ExecutorOpenOptions, ExecutorRequest, ExecutorSendInput, LoginObservation, PermissionMode } from '../../contracts.ts';
 
@@ -27,10 +28,14 @@ interface PendingApproval {
 interface SelectOption { id?: string; currentValue?: string; options?: Array<{ value: string; name?: string }> }
 function selectOptions(value: unknown): Map<string, SelectOption> {
   const map = new Map<string, SelectOption>();
-  for (const option of Array.isArray(value) ? value as SelectOption[] : []) if (option && typeof option.id === 'string' && Array.isArray(option.options)) map.set(option.id, option);
+  for (const option of Array.isArray(value) ? value as SelectOption[] : []) if (option && typeof option.id === 'string' && Array.isArray(option.options)) {
+    const options = option.options.flatMap(entry => 'options' in entry && Array.isArray(entry.options) ? entry.options : [entry]);
+    map.set(option.id, { ...option, options });
+  }
   return map;
 }
 interface TurnState {
+  contextId: string;
   executionId: string;
   onEvent: (event: ExecutorEvent) => void;
   items: Map<string, ExecutorItem>;
@@ -38,6 +43,12 @@ interface TurnState {
   approvals: Map<string, PendingApproval>;
   status: ExecutorObservation['status'];
   diagnostic?: string;
+  textSegment?: { id: string; kind: string; nativeId?: string };
+  segment: number;
+  pending: boolean;
+  cancelRequested: boolean;
+  settled: Promise<void>;
+  settle(): void;
 }
 
 /** Qoder CN ships no importable Agent SDK; the official ACP server is its programmable surface. */
@@ -56,6 +67,8 @@ class QoderCnRuntime implements AgentRuntime {
   private sessionContext?: string;
   private configOptions = new Map<string, SelectOption>();
   private turn?: TurnState;
+  private admitting = false;
+  private readonly history = new Map<string, Map<string, ExecutorItem>>();
   private loading = false;
   private readonly gateway?: ExecutorGateway;
   private readonly contexts = new Map<string, string>();
@@ -99,7 +112,8 @@ class QoderCnRuntime implements AgentRuntime {
         onExit: () => this.transportLost(),
       });
       try {
-        await client.request('initialize', { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } } }, 30_000);
+        // The CLI owns filesystem tools; client-side filesystem RPCs are not implemented.
+        await client.request('initialize', { protocolVersion: 1, clientCapabilities: {} }, 30_000);
         return client;
       } catch (error) { await client.close(); throw error; }
     })().finally(() => { this.opening = undefined; });
@@ -109,10 +123,12 @@ class QoderCnRuntime implements AgentRuntime {
 
   private transportLost(): void {
     this.sessionId = undefined; this.sessionContext = undefined;
-    const turn = this.turn; if (!turn) return;
+    const turn = this.turn; if (!turn?.pending) return;
     turn.status = 'unknown';
     turn.diagnostic = 'Qoder CN 连接已中断，本轮执行结果未知；请重新检查后再继续。';
-    for (const approval of turn.approvals.values()) { try { turn.onEvent({ type: 'request-resolved', requestId: approval.request.id }); } catch { /* keep transport closed */ } }
+    this.finishText(turn, 'unknown');
+    for (const tool of turn.tools.values()) if (tool.status === 'running') tool.status = 'unknown';
+    for (const approval of turn.approvals.values()) { approval.settle({ outcome: { outcome: 'cancelled' } }); try { turn.onEvent({ type: 'request-resolved', requestId: approval.request.id }); } catch { /* keep transport closed */ } }
     turn.approvals.clear();
     try { turn.onEvent({ type: 'observation', observation: this.observation() }); } catch { /* original transport stays closed */ }
   }
@@ -121,48 +137,74 @@ class QoderCnRuntime implements AgentRuntime {
     // session/load replays the stored transcript; it is history, not this turn's output.
     if (this.loading || method !== 'session/update') return;
     const sessionId = typeof params.sessionId === 'string' ? params.sessionId : typeof params.session_id === 'string' ? params.session_id : undefined;
-    if (!sessionId || this.sessionId && sessionId !== this.sessionId) return;
+    if (!sessionId || sessionId !== this.sessionId) return;
     const update = params.update as Record<string, unknown> | undefined; if (!update) return;
-    const turn = this.turn; if (!turn) return;
     const kind = String(update.sessionUpdate ?? update.session_update ?? '');
-    if (kind === 'agent_message_chunk' || kind === 'user_message_chunk' || kind === 'agent_thought_chunk') {
+    if (kind === 'config_option_update') { this.configOptions = selectOptions(update.configOptions); return; }
+    const turn = this.turn; if (!turn?.pending || turn.contextId !== sessionId) return;
+    // send() already projected this input. Native echoes are not supplements.
+    if (kind === 'user_message_chunk') return;
+    if (kind === 'agent_message_chunk' || kind === 'agent_thought_chunk') {
       const text = textOf(update.content); if (!text) return;
-      const id = kind === 'agent_thought_chunk' ? `thinking:${turn.executionId}` : kind === 'agent_message_chunk' ? `message:${turn.executionId}` : `user:${turn.executionId}`;
+      const nativeId = typeof update.messageId === 'string' ? update.messageId : undefined;
+      if (turn.textSegment && (turn.textSegment.kind !== kind || turn.textSegment.nativeId !== nativeId)) this.finishText(turn);
+      const id = turn.textSegment?.id ?? `${kind === 'agent_thought_chunk' ? 'thinking' : 'message'}:${turn.executionId}:${++turn.segment}`;
+      turn.textSegment = { id, kind, nativeId };
       const prior = turn.items.get(id);
       const item: ExecutorItem = {
-        ...(prior ?? {}), id, role: kind === 'user_message_chunk' ? 'user' : 'assistant',
+        ...(prior ?? {}), id, role: 'assistant',
         kind: kind === 'agent_thought_chunk' ? 'thinking' : 'message', text: (prior?.text ?? '') + text,
         ...(kind === 'agent_thought_chunk' ? { thinking: true } : {}), executionId: turn.executionId, status: 'running',
       };
-      turn.items.set(id, item); turn.onEvent({ type: 'item', item });
+      this.item(turn, item);
       return;
     }
     if (kind === 'tool_call' || kind === 'tool_call_update') {
+      this.finishText(turn);
       const toolCall = update.toolCall && typeof update.toolCall === 'object' ? update.toolCall as Record<string, unknown> : update;
       const id = typeof toolCall.toolCallId === 'string' ? toolCall.toolCallId : typeof toolCall.tool_call_id === 'string' ? toolCall.tool_call_id : undefined;
       if (!id) return;
-      const label = typeof toolCall.title === 'string' && toolCall.title ? toolCall.title : typeof toolCall.kind === 'string' ? toolCall.kind : '工具';
-      const state = String(toolCall.status ?? 'pending');
-      const status: ExecutorItem['status'] = state === 'completed' ? 'completed' : state === 'failed' ? 'failed' : 'running';
+      const prior = turn.items.get(id);
+      const label = typeof toolCall.title === 'string' && toolCall.title ? toolCall.title : prior?.name ?? (typeof toolCall.kind === 'string' ? toolCall.kind : '工具');
+      const state = toolCall.status;
+      const status: ExecutorItem['status'] = state === 'completed' ? 'completed' : state === 'failed' ? 'failed' : state === undefined ? prior?.status ?? 'running' : 'running';
       const content = toolCall.content === undefined ? '' : textOf(toolCall.content) || previewOf(toolCall.content);
-      const item: ExecutorItem = { id, kind: 'tool', nativeTool: true, role: 'system', name: label, text: content || label, executionId: turn.executionId, status };
-      turn.items.set(id, item); turn.tools.set(id, { id, label, status: status === 'running' ? 'running' : status === 'completed' ? 'completed' : 'unknown' });
-      turn.onEvent({ type: 'item', item });
+      const item: ExecutorItem = { ...prior, id, kind: 'tool', nativeTool: true, role: 'system', name: label, text: content || prior?.text || label, ...(toolCall.rawInput === undefined ? {} : { input: previewOf(toolCall.rawInput) }), executionId: turn.executionId, status };
+      // Failure is an observed end, not a successful result or an unknown live command.
+      turn.tools.set(id, { id, label, status: status === 'running' ? 'running' : status === 'completed' || status === 'failed' ? 'completed' : 'unknown' });
+      this.item(turn, item);
       return;
     }
     if (kind === 'plan') {
+      this.finishText(turn);
       const entries = Array.isArray(update.entries) ? update.entries as Array<Record<string, unknown>> : [];
       const text = entries.map(entry => typeof entry.content === 'string' ? entry.content : '').filter(Boolean).join('\n');
       if (!text) return;
       const id = `plan:${turn.executionId}`;
       const item: ExecutorItem = { id, kind: 'notice', role: 'assistant', text, executionId: turn.executionId, status: 'running' };
-      turn.items.set(id, item); turn.onEvent({ type: 'item', item });
+      this.item(turn, item);
     }
+  }
+
+  private item(turn: TurnState, item: ExecutorItem): void {
+    turn.items.set(item.id, item);
+    let history = this.history.get(turn.contextId);
+    if (!history) this.history.set(turn.contextId, history = new Map());
+    history.set(item.id, item);
+    turn.onEvent({ type: 'item', item });
+  }
+
+  private finishText(turn: TurnState, status: ExecutorItem['status'] = 'completed'): void {
+    const id = turn.textSegment?.id;
+    turn.textSegment = undefined;
+    const prior = id ? turn.items.get(id) : undefined;
+    if (prior) this.item(turn, { ...prior, status });
   }
 
   private async serverRequest(request: AcpServerRequest): Promise<unknown> {
     if (request.method !== 'session/request_permission') throw new Error('acp_request_unsupported');
-    const turn = this.turn; if (!turn) return { outcome: { outcome: 'cancelled' } };
+    const turn = this.turn;
+    if (!turn?.pending || turn.cancelRequested || request.params?.sessionId !== turn.contextId) return { outcome: { outcome: 'cancelled' } };
     const params = request.params ?? {};
     const options = Array.isArray(params.options) ? params.options as Array<Record<string, unknown>> : [];
     const toolCall = params.toolCall && typeof params.toolCall === 'object' ? params.toolCall as Record<string, unknown> : {};
@@ -171,6 +213,7 @@ class QoderCnRuntime implements AgentRuntime {
       id: requestId, kind: 'approval', blocking: true,
       title: typeof toolCall.title === 'string' && toolCall.title ? toolCall.title : 'Qoder CN 请求批准工具操作',
       ...(typeof toolCall.kind === 'string' ? { description: toolCall.kind } : {}),
+      options: options.filter(option => typeof option.optionId === 'string').map(option => ({ id: String(option.optionId), label: String(option.name ?? option.optionId) })),
     };
     turn.status = 'waiting';
     const settled = new Promise<unknown>(resolve => {
@@ -201,8 +244,21 @@ class QoderCnRuntime implements AgentRuntime {
     this.contexts.set(context.id, saved); return saved;
   }
 
+  private assertQuiescent(): void {
+    if (this.turn && (this.turn.pending || !['idle', 'stopped'].includes(this.turn.status) || [...this.turn.tools.values()].some(tool => tool.status !== 'completed'))) throw new ExecutorInputRejected('qoder_cn_previous_execution_unsettled');
+  }
+
+  private exactTurn(contextRef: ContextRef, executionRef?: { id: string }): TurnState | undefined {
+    this.reference(contextRef);
+    const turn = this.turn;
+    if (turn && (turn.contextId !== contextRef.id || executionRef && turn.executionId !== executionRef.id)) throw new Error('qoder_cn_execution_identity_mismatch');
+    if (!turn && executionRef) throw new Error('qoder_cn_execution_unavailable');
+    return turn;
+  }
+
   private async session(cwd: string, fresh = false): Promise<string> {
     if (!fresh && this.sessionId && this.sessionContext === cwd) return this.sessionId;
+    this.assertQuiescent();
     const client = await this.transport();
     const result = await client.request('session/new', { cwd, mcpServers: [] }, 60_000);
     const id = typeof result?.sessionId === 'string' ? result.sessionId : typeof result?.session_id === 'string' ? result.session_id : undefined;
@@ -215,6 +271,7 @@ class QoderCnRuntime implements AgentRuntime {
   /** Resume the exact native session and keep its replay out of the live turn. */
   private async load(id: string, cwd: string): Promise<void> {
     if (this.sessionId === id && this.sessionContext === cwd) return;
+    this.assertQuiescent();
     const client = await this.transport();
     this.loading = true;
     try {
@@ -255,21 +312,31 @@ class QoderCnRuntime implements AgentRuntime {
     if (model) {
       const available = modelOption?.options?.map(option => option.value) ?? [];
       if (!available.includes(model)) {
-        if (!available.length) return;
         throw new ExecutorInputRejected(`qoder_cn_model_unavailable: 当前账号未授权模型 ${model}，可用：${available.join('、')}`);
       }
       const updated = await client.request('session/set_config_option', { sessionId, configId: 'model', value: model }, 30_000);
       this.configOptions = selectOptions(updated?.configOptions);
+      if (this.configOptions.get('model')?.currentValue !== model) throw new ExecutorInputRejected('qoder_cn_model_not_applied');
     }
     if (reasoningEffort) {
       const effort = this.configOptions.get('reasoning_effort');
       const available = effort?.options?.map(option => option.value) ?? [];
-      if (available.length && !available.includes(reasoningEffort)) throw new ExecutorInputRejected(`qoder_cn_reasoning_unavailable: 当前模型不支持推理强度 ${reasoningEffort}，可用：${available.join('、')}`);
+      if (!available.includes(reasoningEffort)) throw new ExecutorInputRejected(`qoder_cn_reasoning_unavailable: 当前模型不支持推理强度 ${reasoningEffort}，可用：${available.join('、')}`);
       if (available.includes(reasoningEffort)) {
         const updated = await client.request('session/set_config_option', { sessionId, configId: 'reasoning_effort', value: reasoningEffort }, 30_000);
         this.configOptions = selectOptions(updated?.configOptions);
+        if (this.configOptions.get('reasoning_effort')?.currentValue !== reasoningEffort) throw new ExecutorInputRejected('qoder_cn_reasoning_not_applied');
       }
     }
+  }
+
+  private async selectPermission(mode: PermissionMode = 'default'): Promise<void> {
+    const value = mode === 'full-access' ? 'yolo' : 'default';
+    const available = this.configOptions.get('mode')?.options?.map(option => option.value) ?? [];
+    if (!available.includes(value)) throw new ExecutorInputRejected(`qoder_cn_permission_unavailable: 当前程序未提供 ${mode} 对应的原生权限模式。`);
+    const result = await (await this.transport()).request('session/set_config_option', { sessionId: this.sessionId!, configId: 'mode', value }, 30_000);
+    this.configOptions = selectOptions(result?.configOptions);
+    if (this.configOptions.get('mode')?.currentValue !== value) throw new ExecutorInputRejected('qoder_cn_permission_not_applied');
   }
 
   async inspectAccount(): Promise<AccountObservation> {
@@ -334,71 +401,101 @@ class QoderCnRuntime implements AgentRuntime {
 
   async readHistory({ contextRef, cwd }: { contextRef: ContextRef; cwd: string }): Promise<ExecutorItem[]> {
     this.reference(contextRef, cwd);
-    return this.turn ? [...this.turn.items.values()] : [];
+    return [...(this.history.get(contextRef.id)?.values() ?? [])];
   }
 
-  async prepareContext(input: { contextRef: ContextRef; cwd: string; model?: string; reasoningEffort?: string }): Promise<void> {
+  async prepareContext(input: { contextRef: ContextRef; cwd: string; model?: string; reasoningEffort?: string; permissionMode?: PermissionMode }): Promise<void> {
+    this.assertQuiescent();
     this.reference(input.contextRef, input.cwd);
     await this.assertNativeAccount();
     await this.load(input.contextRef.id, input.cwd);
     const selected = this.selection(input.model, input.reasoningEffort);
     await this.selectModel(selected.model, selected.reasoningEffort);
+    await this.selectPermission(input.permissionMode);
   }
 
   async send(input: ExecutorSendInput): Promise<void> {
     const cwd = this.reference(input.contextRef, input.cwd);
-    if (this.turn && ['running', 'waiting'].includes(this.turn.status)) throw new Error('agent_native_turn_active');
+    this.assertQuiescent();
+    if (this.admitting) throw new ExecutorInputRejected('qoder_cn_input_admission_active');
+    this.admitting = true;
     // Model and session checks happen before the accepted receipt: a rejected
     // selection never claims the input reached the native prompt.
-    await this.assertNativeAccount();
-    const selected = this.selection(input.model, input.reasoningEffort);
-    await this.load(input.contextRef.id, cwd);
-    await this.selectModel(selected.model, selected.reasoningEffort);
+    let prompt: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
+    try {
+      await this.assertNativeAccount();
+      const selected = this.selection(input.model, input.reasoningEffort);
+      await this.load(input.contextRef.id, cwd);
+      await this.selectModel(selected.model, selected.reasoningEffort);
+      await this.selectPermission(input.permissionMode);
+      prompt = [{ type: 'text', text: input.text }, ...await Promise.all(input.images.map(async image => ({ type: 'image', data: (await readFile(image.path)).toString('base64'), mimeType: image.mimeType })))];
+    } finally { this.admitting = false; }
     const executionId = input.clientRequestId;
-    const turn: TurnState = { executionId, onEvent: input.onEvent, items: new Map(), tools: new Map(), approvals: new Map(), status: 'running' };
+    let settle!: () => void;
+    const settled = new Promise<void>(resolve => { settle = resolve; });
+    const turn: TurnState = { contextId: input.contextRef.id, executionId, onEvent: input.onEvent, items: new Map(), tools: new Map(), approvals: new Map(), status: 'running', segment: 0, pending: true, cancelRequested: false, settled, settle };
     this.turn = turn;
     input.onEvent({ type: 'accepted', executionRef: this.executionRef(executionId), inputItemId: executionId });
     const userItem: ExecutorItem = { id: `user:${executionId}`, kind: 'message', role: 'user', text: input.text, clientRequestId: executionId, executionId, status: 'completed' };
-    turn.items.set(userItem.id, userItem); input.onEvent({ type: 'item', item: userItem });
+    this.item(turn, userItem);
     try {
       const sessionId = this.sessionId!;
       const client = await this.transport();
-      const prompt = [{ type: 'text', text: input.text }, ...await Promise.all(input.images.map(async image => ({ type: 'image', data: (await readFile(image.path)).toString('base64'), mimeType: image.mimeType })))];
       const result = await client.request('session/prompt', { sessionId, prompt }, 24 * 60 * 60 * 1000);
       const stopReason = typeof result?.stopReason === 'string' ? result.stopReason : undefined;
-      turn.status = stopReason === 'cancelled' || stopReason === 'refusal' ? 'stopped' : 'idle';
-      if (stopReason && !['end_turn', 'max_tokens', 'cancelled', 'refusal'].includes(stopReason)) turn.diagnostic = `Qoder CN 本轮结束原因：${stopReason}。`;
+      const normal = stopReason === 'end_turn';
+      const stopped = stopReason === 'cancelled' || stopReason === 'refusal' || stopReason === 'max_tokens';
+      this.finishText(turn, normal ? 'completed' : 'unknown');
+      turn.status = stopped ? 'stopped' : normal ? 'idle' : 'unknown';
+      if (stopReason === 'max_tokens') turn.diagnostic = 'Qoder CN 输出达到上限，本轮回复未完整完成。';
+      else if (stopReason === 'refusal') turn.diagnostic = 'Qoder CN 拒绝了本轮请求。';
+      else if (!normal && !stopped) turn.diagnostic = 'Qoder CN 未返回可确认的正常结束原因，本轮结果未知。';
+      for (const tool of turn.tools.values()) if (tool.status === 'running') tool.status = 'unknown';
+      if ([...turn.tools.values()].some(tool => tool.status !== 'completed')) { turn.status = 'unknown'; turn.diagnostic ??= 'Qoder CN 本轮仍有未确认结束的工具，结果未知。'; }
+      if (turn.status === 'idle' || turn.status === 'stopped') input.onEvent({ type: 'completed', status: turn.status === 'idle' ? 'completed' : 'stopped', ...(turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) });
     } catch (error) {
       const message = messageOf(error, 'qoder_cn_prompt_failed');
       // The CN gateway reports a missing plan as an HTTP 403 carrying a pricing link.
-      const diagnostic = quotaMessage(message);
+      const diagnostic = errorDiagnostic(quotaMessage(message)) ?? 'qoder_cn_prompt_failed';
+      this.finishText(turn, 'unknown');
+      for (const tool of turn.tools.values()) if (tool.status === 'running') tool.status = 'unknown';
       if (turn.status !== 'stopped' && this.turn === turn) { turn.status = 'unknown'; turn.diagnostic = diagnostic; }
       throw new Error(diagnostic);
     } finally {
       for (const approval of turn.approvals.values()) { try { input.onEvent({ type: 'request-resolved', requestId: approval.request.id }); } catch { /* preserve original */ } }
       turn.approvals.clear();
+      turn.pending = false;
+      turn.settle();
       try { input.onEvent({ type: 'observation', observation: this.observation() }); } catch { /* preserve original */ }
     }
   }
 
-  async observe(): Promise<ExecutorObservation> { return this.observation(); }
+  async observe(input: { contextRef: ContextRef; executionRef?: { id: string } }): Promise<ExecutorObservation> { this.exactTurn(input.contextRef, input.executionRef); return this.observation(); }
 
-  async reply(input: { contextRef: ContextRef; requestId: string; answer: unknown }): Promise<void> {
-    this.reference(input.contextRef);
-    const approval = this.turn?.approvals.get(input.requestId);
+  async reply(input: { contextRef: ContextRef; executionRef: { id: string }; requestId: string; answer: unknown }): Promise<void> {
+    const turn = this.exactTurn(input.contextRef, input.executionRef);
+    const approval = turn?.pending && !turn.cancelRequested ? turn.approvals.get(input.requestId) : undefined;
     if (!approval) throw new Error('agent_request_not_found');
+    const outcome = permissionOutcome(approval.options, input.answer);
     this.turn!.approvals.delete(input.requestId);
     this.turn!.status = 'running';
-    approval.settle(permissionOutcome(approval.options, input.answer));
+    approval.settle(outcome);
     this.turn!.onEvent({ type: 'request-resolved', requestId: input.requestId });
   }
 
-  async stop(input: { contextRef: ContextRef }): Promise<ExecutorObservation> {
-    this.reference(input.contextRef);
-    const turn = this.turn; if (!turn) return this.observation();
-    if (this.sessionId) this.client?.notify('session/cancel', { sessionId: this.sessionId });
-    for (const approval of turn.approvals.values()) approval.settle({ outcome: { outcome: 'cancelled' } });
-    turn.approvals.clear(); turn.status = 'stopped';
+  async stop(input: { contextRef: ContextRef; executionRef?: { id: string } }): Promise<ExecutorObservation> {
+    const turn = this.exactTurn(input.contextRef, input.executionRef); if (!turn || !turn.pending) return this.observation();
+    if (!turn.cancelRequested) {
+      turn.cancelRequested = true;
+      if (this.sessionId === turn.contextId) this.client?.notify('session/cancel', { sessionId: turn.contextId });
+      for (const approval of turn.approvals.values()) {
+        approval.settle({ outcome: { outcome: 'cancelled' } });
+        turn.onEvent({ type: 'request-resolved', requestId: approval.request.id });
+      }
+      turn.approvals.clear();
+    }
+    // A sent cancellation is not a stop receipt. The prompt response owns termination.
+    await bounded(turn.settled, 5000).catch(() => {});
     return this.observation();
   }
 
@@ -413,21 +510,38 @@ class QoderCnRuntime implements AgentRuntime {
 }
 
 function permissionOutcome(options: Array<Record<string, unknown>>, answer: unknown): unknown {
+  if (typeof answer === 'string') {
+    // The shared web approval buttons submit the exact option id as a string.
+    const option = options.find(option => option.optionId === answer)
+      ?? (['approve', 'accept', 'allow-once'].includes(answer) ? options.find(option => option.kind === 'allow_once') : undefined)
+      ?? (['deny', 'decline'].includes(answer) ? options.find(option => option.kind === 'reject_once') : undefined);
+    if (!option || typeof option.optionId !== 'string') throw new Error('qoder_cn_permission_option_invalid');
+    return { outcome: { outcome: 'selected', optionId: option.optionId } };
+  }
   const value = answer && typeof answer === 'object' ? answer as Record<string, unknown> : {};
   if (value.selected !== undefined) {
-    const index = Number(value.selected);
-    const option = Number.isInteger(index) ? options[index] : options.find(item => item.optionId === value.selected);
+    const index = typeof value.selected === 'number' ? value.selected : NaN;
+    const option = options.find(item => item.optionId === value.selected) ?? (Number.isInteger(index) ? options[index] : undefined);
     if (option && typeof option.optionId === 'string') return { outcome: { outcome: 'selected', optionId: option.optionId } };
+    throw new Error('qoder_cn_permission_option_invalid');
   }
-  if (typeof value.optionId === 'string') return { outcome: { outcome: 'selected', optionId: value.optionId } };
-  const allow = options.find(option => /^(allow|approved)/i.test(String(option.kind ?? option.optionId ?? ''))) ?? options.find(option => /allow/i.test(String(option.name ?? '')));
+  if (typeof value.optionId === 'string') {
+    if (!options.some(option => option.optionId === value.optionId)) throw new Error('qoder_cn_permission_option_invalid');
+    return { outcome: { outcome: 'selected', optionId: value.optionId } };
+  }
+  // A generic "approve once" must never select a persistent grant.
+  const allow = options.find(option => option.kind === 'allow_once');
   if (value.approved === true && allow && typeof allow.optionId === 'string') return { outcome: { outcome: 'selected', optionId: allow.optionId } };
   return { outcome: { outcome: 'cancelled' } };
 }
 function textOf(content: unknown): string {
   if (typeof content === 'string') return content;
-  if (Array.isArray(content)) return content.map(part => part && typeof part === 'object' && typeof (part as Record<string, unknown>).text === 'string' ? String((part as Record<string, unknown>).text) : '').join('');
-  if (content && typeof content === 'object' && typeof (content as Record<string, unknown>).text === 'string') return String((content as Record<string, unknown>).text);
+  if (Array.isArray(content)) return content.map(textOf).join('');
+  if (content && typeof content === 'object') {
+    const part = content as Record<string, unknown>;
+    if (typeof part.text === 'string') return part.text;
+    if (part.type === 'content') return textOf(part.content);
+  }
   return '';
 }
 function previewOf(content: unknown): string {
