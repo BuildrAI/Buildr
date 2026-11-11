@@ -428,7 +428,7 @@ export class ConversationApplication {
       runtimes.add(value.runtime);
       if(this.sourceRuntimes.get(id)===source){this.sourceRuntimes.delete(id);this.sourceOwners.delete(id);this.sourceConnections.delete(id);}
     }
-    for(const runtime of runtimes)await this.options.connections.releaseGatewayRuntime(runtime).catch(()=>{});
+    for(const runtime of runtimes)await Promise.race([this.options.connections.releaseGatewayRuntime(runtime).catch(()=>{}),new Promise<void>(resolve=>{const timer=setTimeout(resolve,10_000);timer.unref?.();})]);
     for(const saved of this.options.repository.listPendingStates(true)){
       const record=this.load(saved.view.workspaceId,saved.view.id);
       let changed=false;

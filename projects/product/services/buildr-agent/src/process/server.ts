@@ -377,7 +377,12 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
       // and keeps the retired process hot. Retry slowly instead.
       if (now - retirementAttempt < RETIRED_RETRY_MS) return;
       retirementAttempt = now;
-      adopting = service.releaseIdleSources().then(async () => {
+      adopting = Promise.race([
+        service.releaseIdleSources().catch(() => {}),
+        // A native release proof may itself stall; the retired process still
+        // reaches the bounded exit below instead of waiting on it forever.
+        new Promise<void>(resolve => { const stalled = setTimeout(resolve, 20_000); stalled.unref?.(); }),
+      ]).then(async () => {
         const current = status();
         if (!current.activity.busy && !inflight) { void close('retired-idle').finally(()=>{process.exitCode=0;}); return; }
         // A successor already owns new work; only this generation's own
