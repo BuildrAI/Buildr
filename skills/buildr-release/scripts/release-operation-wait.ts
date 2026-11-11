@@ -111,8 +111,11 @@ export async function waitForReleaseOperation(options: ReleaseWaitOptions, depen
     const watch = dependencies.watchRun ?? watchReleaseRun;
     const watchStartedAt = now();
     // Periodic command deadlines allow queue recovery and local artifact handoff; gh owns status polling.
+    // Publication runs can wait on a protected environment. Return to the
+    // owner within the poll interval so it can approve the pending deployment;
+    // using the full queue budget would leave the run waiting for minutes.
     const budget = Math.min(timeoutMs - durationMs, releaseQueuePolicy(options).timeoutSeconds * 1000,
-      value.status === 'candidate-running' ? intervalMs : Infinity);
+      value.status === 'candidate-running' || value.status === 'publication-running' ? intervalMs : Infinity);
     const watched = await watch({ runId, timeoutMs: budget, intervalSeconds: Math.max(1, Math.ceil(intervalMs / 1000)),
       ghCommand: String(options.ghCommand ?? 'gh'), cwd: typeof options.workspace === 'string' ? options.workspace : undefined, signal: dependencies.signal });
     watchMs += now() - watchStartedAt;
