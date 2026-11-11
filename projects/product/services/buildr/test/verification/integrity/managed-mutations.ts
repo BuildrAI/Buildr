@@ -34,6 +34,9 @@ const allowed: any = new Map([
   ['src/infrastructure/filesystem/index.ts', new Set(['copyDirectory', 'removePath'])],
   ['src/infrastructure/filesystem/atomic-files.ts', new Set(['atomicWriteFile'])],
   ['src/infrastructure/filesystem/exclusive-file-lock.ts', new Set(['publishCandidate', 'moveAndRemove'])],
+  // Only saveToken writes a new profile-private credential: exclusive no-follow
+  // descriptor, mode 0600, fsync, and cleanup limited to this attempt's file.
+  ['src/modules/agent-service/persistence/programmatic-credentials.ts', new Set(['saveToken'])],
   ['src/infrastructure/filesystem/workspace-mutation.ts', new Set([
     'snapshotMutationPath', 'removeMutationRestoreTarget', 'restoreMutationSnapshot', 'withWorkspaceMutation',
   ])],

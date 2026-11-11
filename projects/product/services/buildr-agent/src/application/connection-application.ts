@@ -124,6 +124,8 @@ export class ConnectionApplication {
     root: string;
     executors: AgentExecutor[];
     environment: Record<string, string>;
+    /** Account-owned config for model-bound executions, separate from program bindings. */
+    nativeAccountConfigRoots?: Record<string, string>;
     generation: string;
     now(): string;
     changed(connection: ConnectionView): void;
@@ -256,7 +258,7 @@ export class ConnectionApplication {
     const configRoot = path.join(this.options.root, 'connections', id, 'model-bindings', createHash('sha256').update(gateway.identity).digest('hex'));
     const lifecycle = this.lifecycles.get(id);
     const opening = new AbortController(); this.opening.set(key, opening);
-    const promise = this.openExecutor(this.executors.get(id)!, { interaction: interactionPolicy, connectionId: id, configRoot, executable: record.view.executable, programSource: record.programSource, environment: this.options.environment, signal: opening.signal, gateway, nativeAccountConfigRoot: record.view.configPath ?? path.join(this.options.root, 'connections', id) }).then(async runtime => {
+    const promise = this.openExecutor(this.executors.get(id)!, { interaction: interactionPolicy, connectionId: id, configRoot, executable: record.view.executable, programSource: record.programSource, environment: this.options.environment, signal: opening.signal, gateway, nativeAccountConfigRoot: this.options.nativeAccountConfigRoots?.[id] ?? record.view.configPath ?? path.join(this.options.root, 'connections', id) }).then(async runtime => {
       if (this.closing || opening.signal.aborted || this.lifecycles.get(id) !== lifecycle) { await runtime.close(); fail('agent_connection_disabled', '接入已断开。', 409); }
       return runtime;
     }).catch(error => { if (this.gatewayRuntimes.get(key) === promise) this.gatewayRuntimes.delete(key); throw error; }).finally(() => { this.opening.delete(key); });

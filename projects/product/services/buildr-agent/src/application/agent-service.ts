@@ -42,7 +42,7 @@ export function createAgentService(options: AgentServiceOptions) {
   const events = new ConversationEvents(generation, webhooks);
   const now = () => (options.now?.() ?? new Date()).toISOString();
   let linkedChanged: ((connection:ConnectionView)=>void)|undefined;
-  const connections = new ConnectionApplication({ repository, root, executors: options.executors ?? createNativeExecutors(), environment: executorEnvironment(options.environment ?? process.env), generation, now, changed: (connection: ConnectionView) => {events.publish({ type: 'connection', revision: connection.revision, payload: { connection } });linkedChanged?.(connection);} });
+  const connections = new ConnectionApplication({ repository, root, executors: options.executors ?? createNativeExecutors(), environment: executorEnvironment(options.environment ?? process.env), nativeAccountConfigRoots: { 'qoder-cn': path.join(root, 'model-access', 'accounts', 'native-qoder-cn') }, generation, now, changed: (connection: ConnectionView) => {events.publish({ type: 'connection', revision: connection.revision, payload: { connection } });linkedChanged?.(connection);} });
   const programManager = options.programManager ?? new NativeProgramManager(root, executorEnvironment(options.environment ?? process.env));
   const programUpdates = new ProgramUpdates(() => connections.list(), programManager, now, options.programRelease);
   const preparations = new PreparationApplication(connections, programManager, generation, now);
@@ -89,6 +89,10 @@ export function createAgentService(options: AgentServiceOptions) {
     discoveryTimer=setInterval(refreshInBackground,60_000);discoveryTimer.unref();
   };
   linkedChanged=connection=>{
+    // Only connection-owned accounts follow program login/disconnect. Qoder CN
+    // owns its login independently and remains usable by other executors.
+    const account = models.accounts.list().accounts.find(account => account.id === 'native-' + connection.id);
+    if (account?.connectionId !== connection.id) return;
     if(!connection.enabled||['not-authenticated','expired'].includes(connection.status)||connection.loginAttempt&&['initializing','waiting-browser'].includes(connection.loginAttempt.state))models.invalidate('native-'+connection.id,{abortActive:false});
     // Login completion must not wait for an unrelated source's discovery.
     if(discoveryTimer&&connection.enabled&&!connection.loginAttempt?.state.match(/^(initializing|waiting-browser|checking)$/))void models.accounts.check('native-'+connection.id).catch(()=>{});

@@ -718,11 +718,15 @@ export class ConversationApplication {
     if (stoppedContinuation(record, input) && this.pendingSends.read(record.view.workspaceId, record.view.id)) fail('agent_continue_unavailable', '已有待发送要求，请先处理后再继续。', 409);
     input = continuationDraft(record, input);
     const connection = this.options.connections.get(input.connectionId);
-    if (connection.enabled && isQoderProvider(connection.provider) && connection.status === 'expired') fail('qoder_platform_login_expired', qoderProduct(connection.provider).label === 'Qoder' ? qoderLoginExpiredMessage : `${qoderProduct(connection.provider).label} 登录授权已失效，请重新登录。所选模型来源保持不变。`, 409);
-    if (!connection.enabled || (!input.modelAccountId && connection.status !== 'ready')) fail('agent_account_unavailable', '请先准备智能体程序，并连接所选模型账号。', 409);
-    if (input.modelAccountId && isQoderProvider(connection.provider) && connection.status === 'not-authenticated') fail('qoder_platform_login_required', `${qoderProduct(connection.provider).label} 程序需要先完成基础平台登录；所选套餐不变，不要求使用 Qoder 自有模型。`, 409);
-    if (!(connection.capabilities.permissionModes ?? ['default']).includes(input.permissionMode!)) fail('agent_permission_unavailable', '此接入尚不支持所选权限模式，请明确改选后重试。', 409);
     const source = input.modelAccountId ? this.options.modelAccess?.accounts.snapshot(input.modelAccountId) : undefined;
+    // CN's independent account is the same native login used by its executor.
+    // A stale program observation cannot veto a current, ready account; ACP
+    // still validates the actual login before accepting any work.
+    const readyCnAccount = connection.provider === 'qoder-cn' && source?.id === 'native-qoder-cn' && source.provider === 'native-qoder-cn' && source.enabled && source.status === 'ready';
+    if (!readyCnAccount && connection.enabled && isQoderProvider(connection.provider) && connection.status === 'expired') fail('qoder_platform_login_expired', qoderProduct(connection.provider).label === 'Qoder' ? qoderLoginExpiredMessage : `${qoderProduct(connection.provider).label} 登录授权已失效，请重新登录。所选模型来源保持不变。`, 409);
+    if (!connection.enabled || (!input.modelAccountId && connection.status !== 'ready')) fail('agent_account_unavailable', '请先准备智能体程序，并连接所选模型账号。', 409);
+    if (!readyCnAccount && input.modelAccountId && isQoderProvider(connection.provider) && connection.status === 'not-authenticated') fail('qoder_platform_login_required', `${qoderProduct(connection.provider).label} 程序需要先完成基础平台登录；所选套餐不变，不要求使用 Qoder 自有模型。`, 409);
+    if (!(connection.capabilities.permissionModes ?? ['default']).includes(input.permissionMode!)) fail('agent_permission_unavailable', '此接入尚不支持所选权限模式，请明确改选后重试。', 409);
     if (input.modelAccountId && (!source || !source.enabled || source.status !== 'ready')) fail('agent_model_source_unavailable', '所选套餐尚未连接，请检查账号。', 409);
     if (source && input.modelAccountIdentity && source.identity !== input.modelAccountIdentity) fail('agent_model_source_changed', '套餐登录来源已变化，请重新选择套餐模型。', 409);
     // Qoder resolves third-party models only through its interactive BYOK wizard,

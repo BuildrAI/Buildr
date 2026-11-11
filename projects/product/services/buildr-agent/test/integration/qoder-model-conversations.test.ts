@@ -1,12 +1,88 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createAgentService } from '../../src/index.ts';
 import type { AgentExecutor, ExecutorOpenOptions } from '../../src/contracts.ts';
 import type { ModelProvider } from '../../src/model-access/contracts.ts';
+
+for (const programStatus of ['not-authenticated', 'expired'] as const) test(`Qoder CN uses its independent model login despite stale program status: ${programStatus}`, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'buildr-cn-account-route-'));
+  const accountRoot = join(root, 'agent-service/model-access/accounts/native-qoder-cn');
+  const opens: ExecutorOpenOptions[] = [];
+  const capabilities = { text: true, images: false, approval: false, questions: false, stop: true, resume: false, maxInputBytes: 65536 };
+  let accountReady = true, accepted = 0;
+  const executor: AgentExecutor = { descriptor: { id: 'qoder-cn', label: 'Qoder CN', capabilities }, async open(options) {
+    opens.push(options);
+    let execution = '';
+    return {
+      bindingIdentity: 'cn-fixture', capabilities,
+      inspectAccount: async () => ({ status: programStatus }), models: async () => [],
+      beginLogin: async () => {}, cancelLogin: async () => {},
+      async createContext() {
+        // Native admission reads the same account-owned config, never a copy
+        // under connections/. A cached model observation cannot replace it.
+        assert.equal(options.nativeAccountConfigRoot, accountRoot);
+        assert.equal(await readFile(join(options.nativeAccountConfigRoot!, 'qoder-cn-config/.auth/user'), 'utf8'), 'fixture-login');
+        return { id: randomUUID() };
+      },
+      resumeContext: async () => {}, readHistory: async () => [],
+      async send(input) {
+        accepted++;
+        execution = input.clientRequestId;
+        input.onEvent({ type: 'accepted', executionRef: { id: input.clientRequestId } });
+        input.onEvent({ type: 'completed', status: 'completed' });
+      },
+      observe: async () => ({ status: 'idle', tools: [], executionRef: { id: execution } }), reply: async () => {}, stop: async () => ({ status: 'stopped', tools: [] }), close: async () => {},
+    };
+  }};
+  const provider: ModelProvider = { id: 'native-qoder-cn', label: 'Qoder CN', linked: true, async open(input) {
+    assert.equal(input.configRoot, accountRoot);
+    return { protocol: 'chat-completions',
+      inspect: async () => ({ status: accountReady ? 'ready' : 'not-authenticated', identity: 'cn-user', models: accountReady ? [{ id: 'qwen', label: 'Qwen', tools: true, images: false }] : [] }),
+      beginLogin: async () => {}, cancelLogin: async () => {}, infer: async () => { throw new Error('no paid inference'); }, close: async () => {},
+    };
+  }};
+  const service = createAgentService({ dataRoot: root, executors: [executor], modelProviders: [provider], resolveWorkspace: () => ({ rootPath: root }), assertTask() {} });
+  try {
+    await mkdir(join(accountRoot, 'qoder-cn-config/.auth'), { recursive: true });
+    await writeFile(join(accountRoot, 'qoder-cn-config/.auth/user'), 'fixture-login');
+    await service.models.catalog.list({ refresh: true });
+    const account = await service.models.accounts.check('native-qoder-cn');
+    await service.models.accounts.preferences(account.id, { expectedRevision: account.revision, models: [{ id: 'qwen', enabled: true }] });
+    // Login happened before program preparation, just like the reported failure.
+    const prepareProgram = { expectedRevision: 'unconfigured', programOnly: true };
+    await service.connections.connect('qoder-cn', prepareProgram);
+    assert.equal(service.models.accounts.read(account.id).status, 'ready');
+    await service.connections.check('qoder-cn');
+    assert.equal(service.models.accounts.read(account.id).status, 'ready');
+    const chat = await service.conversations.create('workspace', {});
+    const draft = { expectedRevision: chat.revision, connectionId: 'qoder-cn', modelAccountId: account.id, model: 'qwen', text: 'account route regression' };
+    const preview = service.conversations.prepareSend('workspace', chat.id, draft);
+    service.conversations.send('workspace', chat.id, { ...draft, previewToken: preview.token, clientRequestId: randomUUID() });
+    for (let i = 0; i < 200 && !['completed', 'failed'].includes(service.conversations.read('workspace', chat.id).run?.status ?? ''); i++) await new Promise(resolve => setTimeout(resolve, 5));
+    const result = service.conversations.read('workspace', chat.id);
+    assert.equal(result.run?.status, 'completed', result.run?.diagnostic);
+    assert.equal(accepted, 1);
+    assert.ok(opens.length > 0);
+    assert.ok(opens.some(options => options.gateway));
+    assert.ok(opens.filter(options => options.gateway).every(options => options.nativeAccountConfigRoot === accountRoot));
+    assert.ok(opens.filter(options => !options.gateway).every(options => options.nativeAccountConfigRoot === undefined), 'keep existing program bindings unchanged');
+    const connection = service.connections.read('qoder-cn');
+    await service.connections.disconnect('qoder-cn', { expectedRevision: connection.revision });
+    assert.equal(service.models.accounts.read(account.id).status, 'ready', 'disconnecting a program must not revoke its independent model account');
+    const disabledChat = await service.conversations.create('workspace', {});
+    assert.throws(() => service.conversations.prepareSend('workspace', disabledChat.id, { ...draft, expectedRevision: disabledChat.revision }), /准备智能体程序/);
+    await service.connections.connect('qoder-cn', { ...prepareProgram, expectedRevision: service.connections.read('qoder-cn').revision });
+    accountReady = false;
+    await service.models.accounts.check(account.id);
+    const missingChat = await service.conversations.create('workspace', {});
+    assert.throws(() => service.conversations.prepareSend('workspace', missingChat.id, { ...draft, expectedRevision: missingChat.revision }), /登录|套餐尚未连接/);
+    assert.equal(accepted, 1, 'a genuinely missing login must not dispatch');
+  } finally { await service.close(); await rm(root, { recursive: true, force: true }); }
+});
 
 test('failed source initialization releases its owner so the same conversation can retry',async()=>{
  const root=await mkdtemp(join(tmpdir(),'buildr-source-owner-'));let failOpen=true,execution='';
