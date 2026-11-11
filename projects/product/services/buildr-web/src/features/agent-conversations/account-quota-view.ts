@@ -1,11 +1,33 @@
 import type { ModelAccount } from './types';
 
 type Quota = NonNullable<ModelAccount['quota']>;
+type QuotaWindow = NonNullable<Quota['windows']>[number];
+const sourceLabels: Record<string, string> = { codex: 'ChatGPT', openai: 'ChatGPT API', dsh: 'DeepSeek', deepseek: 'DeepSeek', qoder: 'Qoder', 'qoder-cn': 'Qoder CN', devin: 'Devin' };
+const sourceNameOrder = new Intl.Collator('zh-Hans-CN', { sensitivity: 'base', numeric: true });
 function formatBalance(value: string): string {
   const amount = Number(value);
   return value.trim() && Number.isFinite(amount)
     ? amount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     : value;
+}
+function formatCredits(value: number): string {
+  return Number.isInteger(value)
+    ? value.toLocaleString('zh-CN')
+    : value.toLocaleString('zh-CN', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+}
+/** Display name shared with the model settings source list; never derive it from the account plan. */
+export function accountSourceName(account: ModelAccount): string {
+  if (account.authType === 'api-key') return 'ChatGPT API';
+  const provider = account.connectionId || (account.provider.startsWith('native-') ? account.provider.slice('native-'.length) : account.provider);
+  return account.group?.label || sourceLabels[provider] || account.label;
+}
+export function compareSourceNames(left: string, right: string): number {
+  return sourceNameOrder.compare(left, right);
+}
+/** Platform amounts stay optional so percentage-only windows never show inferred credits. */
+export function quotaWindowCredits(window: Pick<QuotaWindow, 'remainingCredits' | 'totalCredits'>): string | undefined {
+  if (window.remainingCredits === undefined || window.totalCredits === undefined) return undefined;
+  return `${formatCredits(window.remainingCredits)} / ${formatCredits(window.totalCredits)} credits`;
 }
 export function balanceLines(balances: Quota['balances'], compact = false): string[] {
   return (balances ?? []).map(balance => {
@@ -18,10 +40,13 @@ export function balanceLines(balances: Quota['balances'], compact = false): stri
   });
 }
 export function accountQuotaView(account: ModelAccount, now = Date.now(), compact = false) {
-  const quota = account.quota, lines: Array<{ text: string; resetsAt?: string }> = [];
+  const quota = account.quota, lines: Array<{ text: string; credits?: string; resetsAt?: string }> = [];
   if (quota?.available) {
     lines.push(...balanceLines(quota.balances, compact).map(text => ({ text })));
-    lines.push(...(quota.windows ?? []).map(window => ({ text: `${window.label} · 剩余 ${window.remainingPercent}%`, resetsAt: window.resetsAt })));
+    lines.push(...(quota.windows ?? []).map(window => {
+      const credits = quotaWindowCredits(window);
+      return { text: `${window.label} · 剩余 ${window.remainingPercent}%`, ...(credits ? { credits } : {}), resetsAt: window.resetsAt };
+    }));
     if (!lines.length && typeof quota.remainingPercent === 'number') lines.push({ text: `账号额度 · 剩余 ${quota.remainingPercent}%`, resetsAt: quota.resetsAt });
     if (!lines.length && quota.summary) lines.push({ text: quota.summary });
   }
@@ -39,5 +64,9 @@ export function accountQuotaWarning(account: ModelAccount): string|undefined {
 }
 /** Failed observations with a previous authenticated snapshot remain explicitly unconfirmed. */
 export function quotaOverviewAccounts(accounts: ModelAccount[]): ModelAccount[] {
-  return accounts.filter(account => account.status === 'ready' || account.status === 'failed' && !!account.observedAt && (!!account.quota || account.models.length > 0));
+  return accounts
+    .filter(account => account.status === 'ready' || account.status === 'failed' && !!account.observedAt && (!!account.quota || account.models.length > 0))
+    .sort((left, right) => compareSourceNames(accountSourceName(left), accountSourceName(right))
+      || compareSourceNames(left.accountLabel || left.label, right.accountLabel || right.label)
+      || left.id.localeCompare(right.id));
 }

@@ -4,5 +4,6 @@
 .ac-account-quota-overview section:last-child{border-bottom:0;padding-bottom:0}
 .ac-account-quota-overview section>div{min-width:0;text-align:right;font-variant-numeric:tabular-nums}
 .ac-account-quota-overview p{margin:0}
+.ac-account-quota-overview .ac-account-quota-credits{display:block;color:var(--soft-muted);font-size:var(--font-size-meta);line-height:1.4}
 .ac-account-quota-overview .ac-account-quota-warning{display:block;color:var(--soft-muted);font-size:var(--font-size-meta)}
 .ac-account-quota-overview .ant-spin{display:block;padding:16px}

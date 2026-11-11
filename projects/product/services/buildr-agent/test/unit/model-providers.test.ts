@@ -167,7 +167,7 @@ test('Qoder merges app-only models and uses add-on quota instead of reporting ex
   assert.equal(duck.images,true);
   assert.deepEqual(duck.reasoningEfforts?.map(effort=>effort.id),['low','high']);
   assert.equal(duck.defaultReasoningEffort,'high');
-  assert.deepEqual(result.quota?.windows?.map(window=>[window.id,window.label,window.remainingPercent]),[['credits','套餐内 Credits',0],['add-on','资源包',59.2]]);
+  assert.deepEqual(result.quota?.windows?.map(window=>[window.id,window.label,window.remainingPercent,window.remainingCredits,window.totalCredits]),[['credits','套餐内 Credits',0,0,1000],['add-on','资源包',59.2,1599,2700]]);
   assert.equal(result.quota?.remainingPercent,43.2);
   assert.match(result.quota?.summary??'',/套餐 0 \/ 1,000 credits/);
   assert.match(result.quota?.summary??'',/资源包 1,599 \/ 2,700 credits/);
@@ -192,7 +192,7 @@ test('Qoder keeps org resource package compatibility and does not block models w
   const runtime = await createQoderModelProvider(owner).open({accountId:'qoder',configRoot:'unused',environment:{}});
   t.after(async()=>{await runtime.close();});
   const ready = await runtime.inspect();
-  assert.deepEqual(ready.quota?.windows?.map(window=>[window.id,window.remainingPercent]),[['credits',100],['org-package',50]]);
+  assert.deepEqual(ready.quota?.windows?.map(window=>[window.id,window.remainingPercent,window.remainingCredits,window.totalCredits]),[['credits',100,1000,1000],['org-package',50,250,500]]);
   assert.equal(ready.quota?.remainingPercent,83.3);
   usageStatus=500;
   const failed = await runtime.inspect();

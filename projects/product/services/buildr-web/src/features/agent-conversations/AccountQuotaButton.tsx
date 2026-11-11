@@ -43,7 +43,7 @@ export function AccountQuotaButton({ onClick }: Props) {
       return <section key={account.id} data-account-id={account.id} title={`额度最近更新：${view.observedLabel}`}>
         <strong>{account.accountLabel || account.label}</strong>
         <div>
-          {view.lines.map((line, index) => <p key={index}>{line.text}</p>)}
+          {view.lines.map((line, index) => <p key={index}>{line.text}{line.credits && <small className="ac-account-quota-credits">{line.credits}</small>}</p>)}
           {warning && <small className="ac-account-quota-warning" title={account.quota?.diagnostic}>{warning}</small>}
         </div>
       </section>;

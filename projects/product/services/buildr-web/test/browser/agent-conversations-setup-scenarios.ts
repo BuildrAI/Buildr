@@ -114,14 +114,19 @@ await step('账号入口悬停与聚焦显示所有已登录账号的真实额�
   const observedAt=new Date().toISOString();
   fixture.quotaOverrides.set('codex',{available:true,observedAt,windows:[{id:'week',label:'周限额',remainingPercent:82},{id:'hour',label:'5小时限额',remainingPercent:45,resetsAt:new Date(Date.now()+3600000).toISOString()}]});
   fixture.quotaOverrides.set('dsh',{available:true,observedAt,balances:[{currency:'CNY',total:'123.45600000000000',toppedUp:'120.00600000000000',granted:'3.45'}]});
-  fixture.quotaOverrides.set('qoder',{available:false,observedAt});
+  fixture.quotaOverrides.set('qoder',{available:true,observedAt,windows:[{id:'credits',label:'套餐内 Credits',remainingPercent:0,remainingCredits:0,totalCredits:1000},{id:'add-on',label:'资源包',remainingPercent:59.2,remainingCredits:1599,totalCredits:2700}]});
   try{
     const button=page.getByRole('button',{name:'账号与配置',exact:true}),overview=page.getByTestId('account-quota-overview');
     const leaveQuota=async()=>{await button.evaluate((node:HTMLElement)=>node.blur());await page.mouse.move(70,100);await overview.waitFor({state:'hidden'});};
     await button.hover();await overview.waitFor({state:'visible'});
     await overview.getByText('周限额 · 剩余 82%',{exact:true}).waitFor();await overview.getByText('5小时限额 · 剩余 45%',{exact:false}).waitFor();
     await overview.getByText('CNY 123.46',{exact:true}).waitFor();
-    assert.equal(await overview.locator('section').count(),3);await overview.getByText('额度暂不可读取',{exact:true}).waitFor();
+    await overview.getByText('套餐内 Credits · 剩余 0%',{exact:true}).waitFor();
+    await overview.getByText('0 / 1,000 credits',{exact:true}).waitFor();
+    await overview.getByText('资源包 · 剩余 59.2%',{exact:true}).waitFor();
+    await overview.getByText('1,599 / 2,700 credits',{exact:true}).waitFor();
+    assert.deepEqual(await overview.locator('section').evaluateAll((nodes:any[])=>nodes.map(node=>node.getAttribute('data-account-id'))),['native-codex','native-dsh','native-qoder']);
+    assert.equal(await overview.locator('section').count(),3);
     assert.doesNotMatch(await overview.innerText(),/观察时间|重置|充值|赠送/);
     // Measure the settled popover, not a scaled frame of its entrance animation.
     await overview.evaluate(async(node:HTMLElement)=>{
@@ -177,6 +182,24 @@ await step('账号入口悬停与聚焦显示所有已登录账号的真实额�
     finally{await page.unroute('**/api/v1/app/agent-service/model-accounts',emptyAccounts);await leaveQuota();}
   }finally{fixture.quotaOverrides.clear();await page.setViewportSize({width:1280,height:900});}
 });
+await step('模型设置页额度窗口显示 Qoder 剩余 credits',async()=>{
+  await reset();
+  const observedAt=new Date().toISOString();
+  fixture.quotaOverrides.set('qoder',{available:true,observedAt,windows:[{id:'credits',label:'套餐内 Credits',remainingPercent:0,remainingCredits:0,totalCredits:1000},{id:'add-on',label:'资源包',remainingPercent:59.2,remainingCredits:1599,totalCredits:2700}]});
+  try{
+    await page.getByRole('button',{name:'账号与配置',exact:true}).click();
+    const drawer=page.getByRole('dialog',{name:/^智能体与模型/});await drawer.waitFor();
+    await drawer.locator('.ams-setup').getByRole('tab',{name:'模型',exact:true}).click();
+    await drawer.locator('.amm-source-list').getByRole('button').filter({hasText:/^Qoder/}).click();
+    const card=drawer.locator('.amm-quota-card');
+    await card.getByText('套餐内 Credits',{exact:true}).waitFor();
+    await card.getByText('0 / 1,000 credits',{exact:true}).waitFor();
+    await card.getByText('1,599 / 2,700 credits',{exact:true}).waitFor();
+    await capture(page,'agent-account-qoder-credits.png');
+    await drawer.getByRole('button',{name:'关闭智能体账号与配置',exact:true}).click();await drawer.waitFor({state:'hidden'});
+  }finally{fixture.quotaOverrides.delete('qoder');}
+});
+
 await step('两处程序更新共用结果，Buildr 发布失败与单项失败独立',async()=>{await reset();await runAgentProgramUpdatesJourney({page,capture,expectedBrowserErrors});});
 await step('悬停预览与点击固定分离，重复点击收起，切组和键盘保留工作屏',async()=>{
       await page.setViewportSize({width:1600,height:1000});await reset();

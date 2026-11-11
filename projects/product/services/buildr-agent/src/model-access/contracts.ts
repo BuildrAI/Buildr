@@ -44,7 +44,7 @@ export interface ModelQuotaObservation {
   diagnostic?:string;
   /** Decimal strings preserve the native wallet precision; currencies are never converted. */
   balances?: Array<{currency:string;total:string;toppedUp?:string;granted?:string}>;
-  windows?: Array<{id:string;label:string;remainingPercent:number;resetsAt?:string;limitWindowSeconds?:number}>;
+  windows?: Array<{id:string;label:string;remainingPercent:number;resetsAt?:string;limitWindowSeconds?:number;/** Platform-reported credit amounts; omitted when the source only reports percentages. */remainingCredits?:number;totalCredits?:number}>;
 }
 export interface ModelProviderObservation {
   /** The inspection did not establish current availability; not a confirmed account failure. */

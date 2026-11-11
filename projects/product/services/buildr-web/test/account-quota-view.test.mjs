@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {accountQuotaView,accountQuotaWarning,quotaOverviewAccounts} from '../src/features/agent-conversations/account-quota-view.ts';
+import {accountQuotaView,accountQuotaWarning,accountSourceName,quotaOverviewAccounts} from '../src/features/agent-conversations/account-quota-view.ts';
 import {modelSourceViews} from '../src/features/agent-conversations/account-model-view.ts';
 const now=Date.parse('2026-10-30T00:00:00Z');
 const account={id:'a',identity:'i',provider:'deepseek',label:'DeepSeek',accountLabel:'已登录账号',revision:'r',enabled:false,status:'ready',models:[],observedAt:new Date(now).toISOString()};
@@ -41,4 +41,29 @@ test('缓存额度直接展示，不额外提示非实时；只有账号待确�
  assert.equal(accountQuotaWarning(cached),undefined);
  assert.equal(accountQuotaWarning({...cached,status:'failed'}),'账号待确认');
  assert.equal(accountQuotaWarning({...cached,quota:{...quota,diagnostic:'本次额度读取未完成，以下保留上次观察。'}}),undefined);
+});
+test('额度概览按来源显示名称稳定排序，同一来源按账号名排序',()=>{
+ const rows=[
+  {...account,id:'qoder-cn',provider:'qoder-cn',label:'Qoder CN',accountLabel:'Qoder CN'},
+  {...account,id:'deepseek',provider:'dsh',label:'DeepSeek',accountLabel:'DeepSeek'},
+  {...account,id:'qoder-b',provider:'qoder',label:'Qoder',accountLabel:'Qoder · B'},
+  {...account,id:'api',provider:'openai',label:'ChatGPT API',accountLabel:'ChatGPT API',authType:'api-key'},
+  {...account,id:'qoder-a',provider:'qoder',label:'Qoder',accountLabel:'Qoder · A'},
+  {...account,id:'codex',provider:'codex',label:'ChatGPT',accountLabel:'ChatGPT · proLite'},
+ ];
+ assert.deepEqual(quotaOverviewAccounts(rows).map(row=>row.id),['codex','api','deepseek','qoder-a','qoder-b','qoder-cn']);
+ assert.equal(accountSourceName(rows.at(-1)),'ChatGPT');
+ assert.equal(accountSourceName({...account,provider:'openai',label:'OpenAI',authType:'api-key'}),'ChatGPT API');
+});
+test('平台返回数量时额度窗口显示剩余 credits，缺任一侧不推算',()=>{
+ const source={...account,provider:'qoder',label:'Qoder',accountLabel:'Qoder',quota:{available:true,observedAt:new Date(now).toISOString(),windows:[
+  {id:'credits',label:'套餐内 Credits',remainingPercent:0,remainingCredits:0,totalCredits:1000},
+  {id:'add-on',label:'资源包',remainingPercent:59.2,remainingCredits:1599,totalCredits:2700},
+  {id:'partial',label:'数量不全',remainingPercent:50,remainingCredits:10},
+ ]}};
+ const view=accountQuotaView(source,now,true);
+ assert.deepEqual(view.lines.map(line=>line.text),['套餐内 Credits · 剩余 0%','资源包 · 剩余 59.2%','数量不全 · 剩余 50%']);
+ assert.deepEqual(view.lines.map(line=>line.credits),['0 / 1,000 credits','1,599 / 2,700 credits',undefined]);
+ const card=modelSourceViews([source],[]).find(item=>item.id===source.id);
+ assert.deepEqual(card.windows.map(window=>window.balanceLabel),['0 / 1,000 credits','1,599 / 2,700 credits',undefined]);
 });

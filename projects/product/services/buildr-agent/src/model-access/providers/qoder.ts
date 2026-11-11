@@ -59,6 +59,11 @@ export async function inspectQoderLogin(config: string, productId:QoderProductId
 const quotaNumber=(value:unknown):number|undefined=>typeof value==='number'&&Number.isFinite(value)?value:undefined;
 const quotaFormat=(value:number):string=>Number.isInteger(value)?value.toLocaleString('zh-CN'):value.toFixed(1);
 const quotaPercent=(value:number):number=>value>0?Math.max(0.1,Math.round(Math.min(100,value)*10)/10):0;
+/** Keep upstream amounts only when both sides are known; never infer a total from a percentage. */
+const creditAmounts=(bucket:Record<string,unknown>,total:number|undefined):{remainingCredits?:number;totalCredits?:number}=>{
+  const remaining=quotaNumber(bucket.remaining);
+  return total!==undefined&&remaining!==undefined?{remainingCredits:remaining,totalCredits:total}:{};
+};
 /** Read the openapi credits usage. A failed read keeps the model catalog usable. */
 async function observeQoderQuota(request:(path:string,init?:RequestInit)=>Promise<Response>,productLabel='Qoder'):Promise<ModelProviderObservation['quota']>{
   const observedAt=new Date().toISOString();
@@ -72,14 +77,14 @@ async function observeQoderQuota(request:(path:string,init?:RequestInit)=>Promis
       if(total!==undefined&&remaining!==undefined)return quotaPercent(remaining/total*100);
       const used=quotaNumber(bucket.percentage);return used===undefined?undefined:quotaPercent((1-used)*100);
     };
-    const windows:Array<{id:string;label:string;remainingPercent:number;resetsAt?:string}>=[];
+    const windows:Array<{id:string;label:string;remainingPercent:number;resetsAt?:string;remainingCredits?:number;totalCredits?:number}>=[];
     const user=record(data.userQuota),userPercent=remainingPercent(user,'total');
     const buckets:Array<{total?:number;remaining?:number}>=[];
-    if(userPercent!==undefined){windows.push({id:'credits',label:'套餐内 Credits',remainingPercent:userPercent,...(resetsAt?{resetsAt}:{})});buckets.push({total:positive(user.total),remaining:quotaNumber(user.remaining)});}
+    if(userPercent!==undefined){windows.push({id:'credits',label:'套餐内 Credits',remainingPercent:userPercent,...creditAmounts(user,positive(user.total)),...(resetsAt?{resetsAt}:{})});buckets.push({total:positive(user.total),remaining:quotaNumber(user.remaining)});}
     const addOn=record(data.addOnQuota),addOnPercent=remainingPercent(addOn,'total');
-    if(addOnPercent!==undefined){windows.push({id:'add-on',label:'资源包',remainingPercent:addOnPercent,...(resetsAt?{resetsAt}:{})});buckets.push({total:positive(addOn.total),remaining:quotaNumber(addOn.remaining)});}
+    if(addOnPercent!==undefined){windows.push({id:'add-on',label:'资源包',remainingPercent:addOnPercent,...creditAmounts(addOn,positive(addOn.total)),...(resetsAt?{resetsAt}:{})});buckets.push({total:positive(addOn.total),remaining:quotaNumber(addOn.remaining)});}
     const org=record(data.orgResourcePackage),orgPercent=addOnPercent===undefined?(org.available===true?remainingPercent(org,'cap'):remainingPercent(org,'total')):undefined;
-    if(orgPercent!==undefined){windows.push({id:'org-package',label:'组织资源包',remainingPercent:orgPercent});buckets.push({total:positive(org.cap)??positive(org.total),remaining:quotaNumber(org.remaining)});}
+    if(orgPercent!==undefined){windows.push({id:'org-package',label:'组织资源包',remainingPercent:orgPercent,...creditAmounts(org,positive(org.cap)??positive(org.total))});buckets.push({total:positive(org.cap)??positive(org.total),remaining:quotaNumber(org.remaining)});}
     if(!windows.length)return{available:false,observedAt};
     const userType=string(data.userType),planLabel=userType==='teams'?'Teams':userType?userType.split('_').map(part=>part?part[0]!.toUpperCase()+part.slice(1):part).join(' '):undefined;
     const combined=buckets.length?(()=>{const total=buckets.reduce((sum,bucket)=>sum+(bucket.total??0),0),remaining=buckets.reduce((sum,bucket)=>sum+(bucket.remaining??0),0);return total>0?quotaPercent(remaining/total*100):undefined;})():undefined;
