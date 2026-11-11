@@ -316,6 +316,47 @@ export class ConversationRepository {
     if(ref.version!==3||createHash('sha256').update(JSON.stringify(ref)).digest('hex')!==revision)fail('agent_entry_corrupt','原生工具引用的修订不一致。',409);
     return this.nativeReader.tool(ref,revision);
   }
+  /** Every canonical header contributes native references, including historical
+   * participants and all attempts. A missing database proves no conversations;
+   * an unreadable one proves nothing and retains the affected scope. */
+  readNativeHeaders(): { complete: boolean; headers: Array<{ view: { id: string; cwd: string }; participants: StoredParticipant[]; attempts: StoredConversation['attempts'] }> } {
+    let db: DatabaseSync | undefined;
+    try {
+      db = this.open(false);
+      if (!db) return { complete: true, headers: [] };
+      db.exec('BEGIN');
+      const headers: Array<{ view: { id: string; cwd: string }; participants: StoredParticipant[]; attempts: StoredConversation['attempts'] }> = [];
+      for (const row of db.prepare(`SELECT json_object('view',json_object('id',json_extract(body,'$.view.id'),'cwd',json_extract(body,'$.view.cwd')),
+        'participants',json_extract(body,'$.participants'),'attempts',json_extract(body,'$.attempts')) AS header FROM conversations`).iterate()) {
+        const header = JSON.parse(row.header as string);
+        if (typeof header?.view?.id !== 'string' || typeof header?.view?.cwd !== 'string' || !Array.isArray(header.participants) || !Array.isArray(header.attempts)) throw new Error('invalid_native_header');
+        if (header.participants.some((participant: { id?: unknown; provider?: unknown }) => typeof participant?.id !== 'string' || typeof participant?.provider !== 'string') ||
+            header.attempts.some((attempt: { participantId?: unknown; accepted?: unknown }) => typeof attempt?.participantId !== 'string' || attempt?.accepted !== undefined && typeof attempt.accepted !== 'boolean')) throw new Error('invalid_native_attempt');
+        headers.push(header);
+      }
+      return { complete: true, headers };
+    } catch { return { complete: false, headers: [] }; }
+    finally { try { db?.exec('COMMIT'); } catch { /* No transaction to commit. */ } db?.close(); }
+  }
+  /** All durable native tool references, including legacy encodings and rows
+   * no longer reachable from the current read model. */
+  readNativeToolReferences(): { complete: boolean; references: NativeToolContent[] } {
+    let db: DatabaseSync | undefined;
+    try {
+      db = this.open(false);
+      if (!db) return { complete: true, references: [] };
+      if (!ConversationEntryStore.available(db)) return { complete: false, references: [] };
+      db.exec('BEGIN');
+      const references: NativeToolContent[] = [];
+      for (const row of db.prepare("SELECT codec,body,body_bytes,content_revision FROM conversation_entry_contents WHERE codec IN ('native-tool','native-v1','native-v2','native-v2-zstd')").iterate()) {
+        const reference = ConversationEntryStore.reference(row as { content_revision: string; codec: string; body_bytes: number; body: string | Uint8Array });
+        if (!reference) throw new Error('native_reference_unreadable');
+        references.push(reference);
+      }
+      return { complete: true, references };
+    } catch { return { complete: false, references: [] }; }
+    finally { try { db?.exec('COMMIT'); } catch { /* No transaction to commit. */ } db?.close(); }
+  }
   readRevision(id:string):{revision:string;seenThrough?:number}|undefined {
     const db=this.open(false);if(!db)return;
     try{if(ConversationReadModel.available(db)){const row=db.prepare("SELECT revision,json_extract(state,'$.view.activity.seenThrough') AS seenThrough FROM conversation_read_states WHERE id=?").get(id) as {revision:string;seenThrough?:number}|undefined;if(row)return row;}const row=db.prepare('SELECT revision,summary FROM conversations WHERE id=?').get(id) as {revision:string;summary:string}|undefined;return row?{revision:row.revision,seenThrough:JSON.parse(row.summary)?.activity?.seenThrough}:undefined;}finally{db.close();}

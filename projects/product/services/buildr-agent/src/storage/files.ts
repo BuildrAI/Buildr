@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 
 export interface StorageUse { complete: boolean; paths: readonly string[]; diagnostic?: string }
 export interface StorageCandidate {
-  kind: 'cache' | 'runtime' | 'diagnostic' | 'test-artifact' | 'runtime-share' | 'runtime-object' | 'shared-cache' | 'program-package'; path: string; ownerRoot: string;
+  kind: 'cache' | 'runtime' | 'diagnostic' | 'test-artifact' | 'runtime-share' | 'runtime-object' | 'shared-cache' | 'program-package' | 'native-session'; path: string; ownerRoot: string;
   sizeBytes: number; identity?: string; eligible: boolean; reason: string;
   rootChanged?: number;
   /** Only regenerable cache data with a fresh execution/recovery proof may
@@ -17,6 +17,8 @@ export interface StorageCandidate {
   /** Exact nested Buildr profile, discovered only under a private native HOME. */
   runtimeDataRoot?: string;
   diagnostic?: { provider: string; producerPid?: number; contextId?: string; config?:string; database?:string };
+  /** Exact native session identity read from the provider-owned layout. */
+  nativeSession?: { provider: 'codex' | 'dsh'; contextId: string; binding: string };
 }
 export interface StorageVersion { identity: string; sizeBytes: number; modified: number; rootChanged: number }
 export const storageUseRoot=(item:StorageCandidate)=>item.kind==='cache'&&item.useRoot===item.path?item.path:item.ownerRoot;
@@ -106,7 +108,7 @@ export function storageCandidate(root: string, kind: StorageCandidate['kind'], d
 
 /** The caller holds the service storage lock; recheck immediately around the narrow rename. */
 export function removeStorageCandidate(root: string, item: StorageCandidate, observe = observeStorageUse, unreferenced: (directory: string) => boolean = () => true): boolean {
-  const safe = () => item.kind === 'diagnostic' ? safeStorageResource(root, item.path) : safeStoragePath(root, item.path);
+  const safe = () => item.kind === 'diagnostic' || item.kind === 'native-session' ? safeStorageResource(root, item.path) : safeStoragePath(root, item.path);
   if (!item.eligible || !item.identity || !safe() || !unreferenced(item.path) || storageInUse(storageUseRoot(item), observe())) return false;
   if (storageVersion(item.path).identity !== item.identity) return false;
   const retired = path.join(path.dirname(item.path), '.reclaim-' + randomUUID());
@@ -147,8 +149,16 @@ export function removeDiagnosticDatabaseFamily(root:string,items:StorageCandidat
 export function removeCacheBatch(root:string,items:StorageCandidate[],observe=observeStorageUse,deadline=Date.now()+3000,unreferenced:(item:StorageCandidate)=>boolean=()=>true):string[]{
   return removeSmallResourceBatch(root,items,unreferenced,observe,deadline,'cache');
 }
+
+/** Only individually proven, unreferenced native sessions are staged. Native
+ * files can be large; they keep the same before/after occupancy and identity
+ * proof, and never inherit authority from another candidate kind. */
+export function removeNativeSessionBatch(root:string,items:StorageCandidate[],unreferenced:(item:StorageCandidate)=>boolean,
+  observe=observeStorageUse,deadline=Date.now()+3000):string[]{
+  return removeSmallResourceBatch(root,items,unreferenced,observe,deadline,'native-session');
+}
 function removeSmallResourceBatch(root:string,items:StorageCandidate[],unreferenced:(item:StorageCandidate)=>boolean,
-  observe:typeof observeStorageUse,deadline:number,kind:'diagnostic'|'cache',database=false):string[]{
+  observe:typeof observeStorageUse,deadline:number,kind:'diagnostic'|'cache'|'native-session',database=false):string[]{
   const remaining=Math.max(0,deadline-Date.now());if(!remaining)return [];
   // System observation has its own subprocess timeout. Charge the file-work
   // budget after it completes, so a slow lsof cannot starve every small batch.
@@ -161,7 +171,9 @@ function removeSmallResourceBatch(root:string,items:StorageCandidate[],unreferen
       try {
         if(item.kind!==kind||!item.eligible||!item.identity||!safeStorageResource(root,item.path,kind==='cache'?5000:64)||storageInUse(item.ownerRoot,before)||!unreferenced(item))continue;
         const info=fs.lstatSync(item.path),version=storageVersion(item.path);
-        if((database?!info.isFile():!info.isFile()&&!info.isDirectory())||!database&&version.sizeBytes>256*1024||version.identity!==item.identity)continue;
+        if(kind==='native-session'?!info.isFile()&&!info.isDirectory():database?!info.isFile():!info.isFile()&&!info.isDirectory())continue;
+        if(!database&&kind!=='native-session'&&version.sizeBytes>256*1024)continue;
+        if(version.identity!==item.identity)continue;
         const retired=path.join(path.dirname(item.path),'.reclaim-'+randomUUID());fs.renameSync(item.path,retired);
         const moved={item,retired,changed:0};renamed.push(moved);moved.changed=fs.lstatSync(retired).ctimeMs;
       }catch{/* A changed or unavailable file is retained independently. */}

@@ -5,6 +5,7 @@ import type {ConversationEntry,HandoffRound,HandoffMaterial} from '../contracts.
 import type {NativeToolContent} from '../native-content-contracts.ts';
 import {entryContentRevision} from '../domain/entry-revision.ts';
 import {fail} from '../domain/agent-state.ts';
+import {safeStoragePath} from '../storage/files.ts';
 
 /** Strip tool bodies before organizing, hashing or serializing handoff material. */
 export function handoffEntry(entry:ConversationEntry):ConversationEntry {
@@ -52,6 +53,72 @@ export function handoffSourceEntry(root:string,id:string,sourceId:string,entryId
  const ref=loadHandoffSource(root,id,sourceId).records.find(entry=>entry.id===entryId&&entry.revision===revision);
  if(!ref)fail('agent_handoff_entry_missing','该来源中没有此条目及修订。',404);
  return ref;
+}
+const handoffIndex=/^index-[a-f0-9]{64}\.json$/u,handoffRound=/^round-[a-f0-9]{64}\.json$/u;
+function readHandoffFile(file:string):string|undefined {
+ try{
+  const fd=fs.openSync(file,fs.constants.O_RDONLY|(fs.constants.O_NOFOLLOW??0));
+  try{const stat=fs.fstatSync(fd);if(!stat.isFile()||stat.nlink!==1||stat.size>32*1024*1024)return undefined;return fs.readFileSync(fd,'utf8');}finally{fs.closeSync(fd);}
+ }catch{return undefined;}
+}
+/** Only structured native identities count; body text that happens to mention a
+ * path is not a durable reference. */
+function storedNativeReferences(value:unknown):NativeToolContent[] {
+ const references:NativeToolContent[]=[];
+ const seen=new Set<unknown>();
+ const walk=(node:unknown):void=>{
+  if(!node||typeof node!=='object'||seen.has(node))return;
+  seen.add(node);
+  if(Array.isArray(node)){for(const item of node)walk(item);return;}
+  const record=node as Partial<NativeToolContent>&{session?:{config?:unknown}};
+  const provider=record.provider;
+  if((provider==='codex'||provider==='dsh')&&(typeof record.contextId==='string'||typeof record.session?.config==='string'))
+   references.push(record as NativeToolContent);
+  for(const child of Object.values(record))walk(child);
+ };
+ walk(value);return references;
+}
+/** Every immutable index is durable evidence for native sessions. An
+ * unreadable or unsafe index proves nothing and retains the affected scope.
+ * Legacy v1 indexes hashed their pre-projection input, so their file identity
+ * cannot be recomputed; they are accepted only through independently verified
+ * round files. */
+export function handoffNativeReferences(root:string):{complete:boolean;references:NativeToolContent[]} {
+ const references:NativeToolContent[]=[];
+ try{
+  const base=path.join(root,'handoff-materials');
+  if(!fs.existsSync(base))return {complete:true,references};
+  if(!safeStoragePath(root,base))return {complete:false,references};
+  for(const conversation of fs.readdirSync(base).sort()){
+   const directory=path.join(base,conversation);
+   if(!safeStoragePath(root,directory))return {complete:false,references};
+   const names=fs.readdirSync(directory).sort(),rounds=new Set<string>();
+   for(const name of names){
+    if(!handoffRound.test(name))continue;
+    const body=readHandoffFile(path.join(directory,name));
+    if(body===undefined)return {complete:false,references};
+    let value:unknown;
+    try{value=JSON.parse(body);}catch{return {complete:false,references};}
+    if(hash(JSON.stringify(value))!==name.slice(6,-5))return {complete:false,references};
+    rounds.add(name);references.push(...storedNativeReferences(value));
+   }
+   for(const name of names){
+    if(!handoffIndex.test(name))continue;
+    const file=path.join(directory,name),body=readHandoffFile(file);
+    if(body===undefined)return {complete:false,references};
+    let index:{version?:unknown;conversationId?:unknown;records?:unknown;rounds?:unknown};
+    try{index=JSON.parse(body);}catch{return {complete:false,references};}
+    if(hash(JSON.stringify(index))===name.slice(6,-5)&&index.version===2&&index.conversationId===conversation&&Array.isArray(index.records)&&Array.isArray(index.rounds)){
+     for(const record of index.records as SourceEntry[])if(record.native)references.push(record.native);
+     continue;
+    }
+    if(!('version' in index)&&index.conversationId===conversation&&Array.isArray(index.rounds)
+     &&(index.rounds as Array<{path?:unknown}>).every(round=>typeof round?.path==='string'&&handoffRound.test(path.basename(round.path))&&rounds.has(path.basename(round.path))))continue;
+    return {complete:false,references};
+   }
+  }
+  return {complete:true,references};
+ }catch{return {complete:false,references};}
 }
 export function readHandoffSource(root:string,id:string,query:HandoffHistoryQuery,read:(entry:SourceEntry)=>ConversationEntry|undefined):HandoffHistoryPage {
  const {sourceId,roundId,cursor=0,limit=30}=query??{};
