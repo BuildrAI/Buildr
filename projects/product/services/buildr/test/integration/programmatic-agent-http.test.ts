@@ -11,6 +11,20 @@ import {createAgentServiceHttpContribution} from '../../src/modules/agent-servic
 import {createProgrammaticHttpContribution} from '../../src/modules/agent-service/interfaces/http/programmatic-http.ts';
 import {ProgrammaticCredentials} from '../../src/modules/agent-service/persistence/programmatic-credentials.ts';
 import {PROGRAMMATIC_OPERATIONS} from '../../src/modules/agent-service/interfaces/http/programmatic-operations.ts';
+import {AGENT_SERVICE_HTTP_SCHEMAS} from '../../src/modules/agent-service/interfaces/http/agent-service-http-contracts.ts';
+import {programmaticOpenApi,programmaticContractVersion,programmaticOperationIndex} from '../../src/modules/agent-service/interfaces/http/programmatic-openapi.ts';
+
+function expandRefs(value:any,document:any):any {
+ if(!value||typeof value!=='object')return value;
+ if(Array.isArray(value))return value.map(item=>expandRefs(item,document));
+ if(value.$ref){assert.match(value.$ref,/^#\/components\/schemas\//);const name=value.$ref.slice('#/components/schemas/'.length);assert.ok(document.components.schemas[name],`unresolved ${name}`);return expandRefs(document.components.schemas[name],document);}
+ return Object.fromEntries(Object.entries(value).map(([key,item])=>[key,expandRefs(item,document)]));
+}
+function withoutSchemaIds(value:any):any {
+ if(!value||typeof value!=='object')return value;
+ if(Array.isArray(value))return value.map(withoutSchemaIds);
+ return Object.fromEntries(Object.entries(value).filter(([key])=>!['$id','$schema'].includes(key)).map(([key,item])=>[key,withoutSchemaIds(item)]));
+}
 
 async function fixture(t:any){
  let release:()=>void=()=>{};
@@ -119,10 +133,131 @@ test('HTTP help and OpenAPI use the dispatch allowlist and include executable re
  const help=await f.call('/help',token);assert.equal(help.status,200);assert.match(help.headers.get('content-type')!,/text\/markdown/);
  const guide=await help.text();assert.match(guide,/previewToken = prepareResponse\.token/);
  const route='/api/v1/programmatic/workspaces/{workspaceId}/conversations/{conversationId}';
- const prepare=doc.paths[route+'/prepare-send'].post,send=doc.paths[route+'/send'].post;
+ const expanded=expandRefs(doc,doc),prepare=expanded.paths[route+'/prepare-send'].post,send=expanded.paths[route+'/send'].post;
  assert.ok(prepare.responses['200'].content['application/json'].schema.properties.token);
  assert.equal(prepare.responses['200'].content['application/json'].schema.properties.previewToken,undefined);
  assert.match(prepare.description,/previewToken = prepareResponse\.token/);
  assert.match(send.requestBody.content['application/json'].schema.properties.previewToken.description,/prepareResponse\.token/);
  const example=await f.call('/example.py',token);assert.equal(example.status,200);assert.ok((await example.text()).includes('os.O_EXCL'));
+});
+
+test('browser session reads shared documentation without Bearer, not anonymously or with program credentials',async t=>{
+ const f=await fixture(t),{token}=await f.create();
+ for(const kind of ['help','openapi.json','operations','operations/start']){
+  const url=f.manager+'/documents/'+kind;
+  assert.equal((await fetch(url)).status,403);
+  assert.equal((await fetch(url,{headers:{authorization:'Bearer '+token}})).status,403);
+  const response=await fetch(url,{headers:f.webHeaders});assert.equal(response.status,200);
+  const doc=await response.json(),external=await f.call('/'+kind,token);
+  assert.equal(typeof doc.content,'string');
+  if(kind==='help'){assert.equal(doc.content,await external.text());assert.equal(doc.mediaType,'text/markdown');}
+  else{assert.deepEqual(JSON.parse(doc.content),await external.json());assert.equal(doc.mediaType,'application/json');}
+  assert.ok(!JSON.stringify(doc).includes(token));
+  assert.equal((await fetch(url,{headers:{...f.webHeaders,origin:'https://foreign.example'}})).status,403);
+ }
+ assert.equal((await f.call('/help')).status,401,'public docs still require Bearer');
+ assert.equal((await fetch(f.manager+'/documents/missing',{headers:f.webHeaders})).status,404);
+ assert.deepEqual(f.counts(),{sends:0,stops:0,replies:0});
+});
+
+test('compact OpenAPI preserves response schemas and only emits resolvable shared schema references',async t=>{
+ const f=await fixture(t),{token}=await f.create();
+ const doc=await(await f.call('/openapi.json',token)).json(),expanded=expandRefs(doc,doc);
+ assert.ok(Object.keys(doc.components.schemas).length>0);
+ assert.ok(Buffer.byteLength(JSON.stringify(doc))<100_000,'full contract size regression');
+ assert.ok(Buffer.byteLength(JSON.stringify(doc,null,2))<200_000,'formatted contract size regression');
+ for(const operation of PROGRAMMATIC_OPERATIONS){
+  const route=('/api/v1/programmatic/workspaces/:workspaceId/conversations'+operation.path).replace(/:([A-Za-z]+)/g,'{$1}');
+  const result=expanded.paths[route][operation.method.toLowerCase()];
+  const expected=withoutSchemaIds(AGENT_SERVICE_HTTP_SCHEMAS[operation.output]);
+  if(operation.id==='prepare-send'){assert.match(result.responses['200'].content['application/json'].schema.properties.token.description,/previewToken = prepareResponse\.token/);delete result.responses['200'].content['application/json'].schema.properties.token.description;}
+  const status=['start','send','supplement'].includes(operation.id)?'202':'200';
+  assert.deepEqual(result.responses[status].content['application/json'].schema,expected,`${operation.id} response changed`);
+  if(operation.method==='POST'){
+   const input=withoutSchemaIds(AGENT_SERVICE_HTTP_SCHEMAS[operation.input]);
+   if(input.properties?.cwd)delete input.properties.cwd;
+   if(input.properties?.clientRequestId)input.properties.clientRequestId={type:'string',format:'uuid',pattern:'^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'};
+   if(input.properties?.permissionMode)input.properties.permissionMode={const:'default',default:'default'};
+   const actual=result.requestBody.content['application/json'].schema;
+   if(operation.id==='send'){assert.match(actual.properties.previewToken.description,/prepareResponse\.token/);delete actual.properties.previewToken.description;}
+   assert.deepEqual(actual,input,`${operation.id} input changed`);
+  }
+ }
+});
+
+test('light operation index and self-contained per-operation contracts support stable content versions',async t=>{
+ const f=await fixture(t),{token}=await f.create();
+ assert.equal((await f.call('/operations')).status,401);
+ assert.equal((await f.call('/operations/start')).status,401);
+ const index=await(await f.call('/operations',token)).json(),full=await(await f.call('/openapi.json',token)).json();
+ assert.equal(index.contractVersion,programmaticContractVersion(full));assert.ok(Buffer.byteLength(JSON.stringify(index))<8_000);
+ assert.equal(index.operations.length,PROGRAMMATIC_OPERATIONS.length+1);
+ assert.deepEqual(new Set(index.operations.map((item:any)=>item.id)),new Set(['discover',...PROGRAMMATIC_OPERATIONS.map(item=>item.id)]));
+ for(const item of index.operations){
+  const response=await f.call('/operations/'+item.id,token);assert.equal(response.status,200);
+  const document=await response.json();assert.equal(document['x-buildr-contract-version'],index.contractVersion);
+  assert.equal(document['x-buildr-operation-id'],item.id);
+  assert.deepEqual(Object.keys(document.paths),[item.path]);
+  assert.deepEqual(Object.keys(document.paths[item.path]),[item.method.toLowerCase()]);
+  assert.deepEqual(expandRefs(document.paths,document),expandRefs({[item.path]:{[item.method.toLowerCase()]:full.paths[item.path][item.method.toLowerCase()]}},full));
+  assert.ok(Buffer.byteLength(JSON.stringify(document))<35_000);
+ }
+ assert.equal((await f.call('/operations/not-an-operation',token)).status,404);
+ assert.equal((await f.call('/operations/start/extra',token)).status,404);
+ assert.equal((await f.call('/operations?unexpected=1',token)).status,400);
+ assert.equal((await fetch(f.manager+'/documents/operations/not-an-operation',{headers:f.webHeaders})).status,404);
+ assert.equal(programmaticOperationIndex('test-version').contractVersion,index.contractVersion,'content version stable across reads');
+ const changed=programmaticOpenApi('test-version');changed.info.description+=' contract change';
+ assert.notEqual(programmaticContractVersion(changed),index.contractVersion,'content version changes without a release version bump');
+ assert.deepEqual(f.counts(),{sends:0,stops:0,replies:0});
+});
+
+test('creating and regenerating credentials safely saves private token files, rejects stale and revoked mutations',async t=>{
+ const f=await fixture(t),{token,credential}=await f.create(),file=credential.tokenFilePath;
+ assert.equal(fs.readFileSync(file,'utf8').trim(),token);
+ assert.equal(fs.statSync(file).mode&0o777,0o600);
+ assert.equal(fs.statSync(path.dirname(file)).mode&0o777,0o700);
+ const regen=(revision:string)=>fetch(f.manager+'/'+credential.id+'/regenerate',{method:'POST',headers:f.webHeaders,body:JSON.stringify({expectedRevision:revision})});
+ assert.equal((await fetch(f.manager+'/'+credential.id+'/regenerate',{method:'POST',headers:{authorization:'Bearer '+token,'content-type':'application/json'},body:JSON.stringify({expectedRevision:credential.revision})})).status,403);
+ assert.equal((await regen('stale')).status,409);
+ assert.equal((await f.call('',token)).status,200);
+ const results=await Promise.all([regen(credential.revision),regen(credential.revision)]);
+ assert.deepEqual(results.map(r=>r.status).sort(),[200,409]);
+ const updated=await results.find(r=>r.status===200)!.json();
+ assert.equal(updated.credential.id,credential.id);
+ assert.deepEqual(updated.credential.workspaceIds,credential.workspaceIds);assert.deepEqual(updated.credential.scopes,credential.scopes);
+ assert.notEqual(updated.credential.tokenFilePath,file);
+ const newToken=fs.readFileSync(updated.credential.tokenFilePath,'utf8').trim();
+ assert.equal(newToken,updated.token);assert.equal(fs.statSync(updated.credential.tokenFilePath).mode&0o777,0o600);
+ assert.equal((await f.call('',token)).status,401);assert.equal((await f.call('',newToken)).status,200);
+ assert.equal(fs.readFileSync(file,'utf8').trim(),token,'do not delete old files during regeneration');
+ assert.equal(fs.readdirSync(path.dirname(file)).length,2,'failed concurrent regeneration leaves no new file');
+ const metadata=await(await fetch(f.manager,{headers:f.webHeaders})).json();
+ assert.equal(metadata.credentials[0].tokenFilePath,updated.credential.tokenFilePath);
+ assert.ok(!JSON.stringify(metadata).includes(newToken));assert.ok(!JSON.stringify(metadata).includes(token));
+ await fetch(f.manager+'/'+credential.id+'/revoke',{method:'POST',headers:f.webHeaders,body:JSON.stringify({expectedRevision:updated.credential.revision})});
+ assert.equal((await regen(updated.credential.revision)).status,409);
+ assert.equal((await f.call('',newToken)).status,401);
+});
+
+test('unsafe token directory cannot create or change a credential and is not overwritten',async t=>{
+ const f=await fixture(t),{token,credential}=await f.create();
+ const dir=path.dirname(credential.tokenFilePath),saved=dir+'-original';
+ fs.renameSync(dir,saved);fs.symlinkSync(f.base,dir,'dir');
+ const response=await fetch(f.manager,{method:'POST',headers:f.webHeaders,body:JSON.stringify({name:'must not activate',workspaceIds:[f.workspaceId],scopes:['read']})});
+ assert.equal(response.status,409);assert.equal((await response.json()).error.code,'programmatic_storage_unsafe');
+ const updated=await fetch(f.manager+'/'+credential.id+'/regenerate',{method:'POST',headers:f.webHeaders,body:JSON.stringify({expectedRevision:credential.revision})});
+ assert.equal(updated.status,409);
+ assert.equal((await f.call('',token)).status,200,'original credential is unaffected');
+ assert.equal(new ProgrammaticCredentials(f.appData).list().length,1);
+ assert.ok(fs.lstatSync(dir).isSymbolicLink(),'do not remove the conflicting object');
+ assert.equal(fs.readdirSync(f.base).some(name=>name.endsWith('.token')),false);
+ fs.unlinkSync(dir);fs.renameSync(saved,dir);
+ fs.renameSync(dir,saved);fs.writeFileSync(dir,'conflicting ordinary file');
+ const failed=await fetch(f.manager,{method:'POST',headers:f.webHeaders,body:JSON.stringify({name:'cannot save',workspaceIds:[f.workspaceId],scopes:['read']})});
+ assert.equal(failed.status,500);assert.equal((await failed.json()).error.code,'programmatic_token_save_failed');
+ assert.equal(fs.readFileSync(dir,'utf8'),'conflicting ordinary file');
+ assert.equal(new ProgrammaticCredentials(f.appData).list().length,1);
+ assert.equal((await f.call('',token)).status,200);
+ fs.unlinkSync(dir);fs.renameSync(saved,dir);
 });

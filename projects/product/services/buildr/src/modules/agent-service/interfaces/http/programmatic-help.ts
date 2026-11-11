@@ -1,48 +1,21 @@
-import { AGENT_SERVICE_HTTP_SCHEMAS as schemas } from './agent-service-http-contracts.ts';
-import { PROGRAMMATIC_BASE as base, PROGRAMMATIC_OPERATIONS } from './programmatic-operations.ts';
-
-const previewTokenMapping = 'send 的 previewToken 取自 prepare-send 返回的 token 字段：previewToken = prepareResponse.token；expectedRevision = prepareResponse.revision。prepare-send 不返回名为 previewToken 的字段。';
-
-export function programmaticOpenApi(version: string) {
-  const paths: Record<string, any> = {};
-  const error = { type: 'object', required: ['error'], properties: { error: { type: 'object', required: ['code', 'message'], properties: { code: { type: 'string' }, message: { type: 'string' } } } } };
-  const responses = (schema: unknown, accepted = false) => Object.fromEntries([
-    [accepted ? '202' : '200', { description: accepted ? '已受理；使用返回标识观察，不等于工作完成' : '当前结果', content: { 'application/json': { schema } } }],
-    ...['400', '401', '403', '404', '409', '413', '415', '503'].map(code => [code, { description: ({ '400': '参数非法', '401': '无有效凭据或已撤销', '403': '越权或来源不允许', '404': '对象或接口不存在', '409': '修订、身份或请求内容冲突', '413': '请求过大', '415': '需要application/json', '503': '服务未就绪或结果待核对；不盲目重发' } as Record<string, string>)[code], content: { 'application/json': { schema: error } } }]),
-  ]);
-  const discovery = { type: 'object', required: ['schemaVersion', 'apiVersion', 'version', 'status', 'serviceId', 'apiUrl', 'capabilities', 'workspaces', 'connections', 'models'], properties: { schemaVersion: { const: 'buildr.programmatic-discovery/v1' }, apiVersion: { const: '1' }, version: { type: 'string' }, status: { const: 'ready' }, serviceId: { type: 'string' }, apiUrl: { type: 'string' }, discoveryUrl: { type: 'string' }, documentationUrl: { type: 'string' }, openapiUrl: { type: 'string' }, exampleUrl: { type: 'string' }, credential: { type: 'object' }, capabilities: { type: 'array', items: { type: 'object' } }, workspaces: { type: 'array', items: { type: 'object', required: ['id', 'name'], properties: { id: { type: 'string' }, name: { type: 'string' } } } }, connections: { type: 'array', items: { type: 'object' } }, models: { type: 'array', items: { type: 'object' } } } };
-  paths[base] = { get: { operationId: 'discover', summary: '当前实例与凭据可访问能力；不返回账号秘密', responses: responses(discovery) } };
-  for (const operation of PROGRAMMATIC_OPERATIONS) {
-    const route = `${base}/workspaces/:workspaceId/conversations${operation.path}`.replace(/:([A-Za-z]+)/g, '{$1}');
-    const input: any = structuredClone(schemas[operation.input]);
-    const output: any = structuredClone(schemas[operation.output]);
-    if (operation.id === 'prepare-send') output.properties.token.description = previewTokenMapping;
-    if (operation.id === 'send') input.properties.previewToken.description = previewTokenMapping;
-    if (input.properties?.cwd) delete input.properties.cwd;
-    if (input.properties?.clientRequestId) input.properties.clientRequestId = { type: 'string', format: 'uuid', pattern: '^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$' };
-    if (input.properties?.permissionMode) input.properties.permissionMode = { const: 'default', default: 'default' };
-    const parameters: any[] = [...route.matchAll(/\{([^}]+)\}/g)].map(match => ({ name: match[1], in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }));
-    for (const name of operation.query ?? []) parameters.push({ name, in: 'query', schema: ['before', 'limit'].includes(name) ? { type: 'integer', minimum: name === 'limit' ? 1 : 0 } : name === 'hidden' ? { type: 'boolean' } : { type: 'string' } });
-    (paths[route] ??= {})[operation.method.toLowerCase()] = { operationId: operation.id, summary: operation.summary, description: `需要${operation.scope}权限及路径工作空间授权。${['prepare-send', 'send'].includes(operation.id) ? previewTokenMapping : ''}${operation.id === 'reply' ? 'approval卡片改需approve权限；问题需answer。' : ''}超时先查询原提交或观察原执行，禁止另造标识盲目重发。`, 'x-buildr-scope': operation.scope, parameters, ...(operation.method === 'POST' ? { requestBody: { required: true, content: { 'application/json': { schema: input } } } } : {}), responses: responses(output, ['start', 'send', 'supplement'].includes(operation.id)) };
-  }
-  for (const [suffix, type, description] of [['help', 'text/markdown', '中文API帮助'], ['openapi.json', 'application/json', 'OpenAPI 3.1'], ['example.py', 'text/x-python', '可运行发任务/轮询/读结果脚本']]) paths[`${base}/${suffix}`] = { get: { operationId: suffix, summary: description, responses: { '200': { description, content: { [type]: { schema: { type: 'string' } } } }, '401': { description: '需要有效Bearer凭据' } } } };
-  return { openapi: '3.1.0', info: { title: 'Buildr 本机程序接入 API', version, description: '只监听本机，复用现有Agent Service；轮询基线。访问令牌不是操作系统沙箱，也不自动授予审批、提交或推送权限。' }, servers: [{ url: '/' }], security: [{ programmaticBearer: [] }], components: { securitySchemes: { programmaticBearer: { type: 'http', scheme: 'bearer', bearerFormat: 'Buildr programmatic access token' } } }, paths };
-}
+export { programmaticOpenApi } from './programmatic-openapi.ts';
 
 export const programmaticGuide = `# Buildr 本机程序 API（第一期）
 
 ## 开始
-在 Buildr「智能体与模型 → 程序接入」中创建凭据，选择工作空间及权限。令牌只显示一次，保存到本机私有文件（600），不要放进聊天、URL或日志。撤销即时影响后续调用，**不会取消已受理工作**。
+在 Buildr「智能体与模型 → 程序接入」中创建凭据，选择工作空间及权限。创建后宿主自动将令牌保存到当前实例的私有文件（目录700、文件600），在接入条目中可随时查看路径和复制接入信息；无需手工保存。不要把令牌放进聊天、URL或日志。旧版仅哈希凭据无法恢复原令牌，须由人在页面明确确认重新生成并保存，原令牌随之失效。撤销即时影响后续调用，**不会取消已受理工作**。
 固定发现路径为 GET /api/v1/programmatic。API地址显示在设置中；Web宿主需要运行，但不需要打开浏览器。程序调用不访问首页、不用x-buildr-session、无需Origin。仍拒绝跨站来源和错误Host。开发版、发布版和预览凭据各自隔离。
 
 以下命令只从文件设置Header，不把令牌放进进程参数或聊天：
-\
+
+~~~bash
     BASE=http://127.0.0.1:端口
-    TOKEN_FILE="$HOME/.buildr/grokbot.token"
+    TOKEN_FILE="<接入信息中的凭据文件绝对路径>"
     curl --noproxy '*' --max-time 30 -fsS -H @<(printf 'Authorization: Bearer '; cat "$TOKEN_FILE") "$BASE/api/v1/programmatic"
     curl --noproxy '*' --max-time 30 -fsS -H @<(printf 'Authorization: Bearer '; cat "$TOKEN_FILE") "$BASE/api/v1/programmatic/openapi.json"
     curl --noproxy '*' --max-time 30 -fsS -H @<(printf 'Authorization: Bearer '; cat "$TOKEN_FILE") "$BASE/api/v1/programmatic/example.py" -o /tmp/buildr-example.py
-    python3 /tmp/buildr-example.py "$BASE" 工作空间UUID 连接ID "实现一个已授权的小改动" --state ./buildr-request.json
+    python3 /tmp/buildr-example.py "$BASE" 工作空间UUID 连接ID "实现一个已授权的小改动" --token-file "$TOKEN_FILE" --state ./buildr-request.json
+~~~
 
 示例首次发送前以600保存draftId、clientRequestId、原始输入与serviceId。可使用--model明确模型；不传则使用连接默认模型。再次执行同一命令会读取原提交，再轮询，不新建请求。更换目标请使用新的state文件。不要把包含目标正文的state文件提交到Git。
 
@@ -72,7 +45,9 @@ GET对话与/entries支持before、limit分页；较早消息通过nextBefore续
 POST observe只更新观察；首发、send、supplement可启动本机工具；reply可放行原操作；stop影响指定执行。API接入不授予Git提交/推送、发布或其他目标之外的副作用。
 
 ## 文档
-OpenAPI：/api/v1/programmatic/openapi.json；可运行示例：/api/v1/programmatic/example.py。三个入口均需要Bearer。API主版本在路径和发现中明确；第一期仅对显式列出的程序操作承诺，不代表所有网页API已对外开放。
+先阅读本指南，再读取轻量操作目录 GET /api/v1/programmatic/operations；需要哪个操作，再按目录中的documentationUrl读取 GET /api/v1/programmatic/operations/{operationId}。单操作描述是自包含的OpenAPI，只包含该操作与全部传递依赖模型，无需下载其他文档来解析引用。例如start是首发，observe是重新观察；具体字段以对应描述为准。
+目录与发现返回contractVersion，单操作描述包含x-buildr-contract-version。调用方可缓存文档；内容摘要未变不必重读，变化后再更新所需操作。它不是实时工作状态的缓存版本，不能代替重新观察修订与执行身份。
+完整OpenAPI：/api/v1/programmatic/openapi.json，使用components.schemas和$ref共享模型，供完整导入或生成客户端，不要求每次调用前读取。可运行示例：/api/v1/programmatic/example.py。所有程序文档均需要Bearer。已登录的人可在「智能体与模型 → 程序接入」直接查看指南、操作目录/单操作和完整OpenAPI并下载，无需输入Bearer；网页文档入口使用现有网页会话，不向程序开放凭据管理权限。API主版本在路径和发现中明确；第一期仅对显式列出的程序操作承诺，不代表所有网页API已对外开放。
 `;
 
 export const programmaticExample = `#!/usr/bin/env python3

@@ -6,10 +6,10 @@ import { AgentServiceError } from '@buildr-ai/buildr-agent';
 
 export const PROGRAMMATIC_SCOPES = ['read', 'execute', 'answer', 'approve'] as const;
 export type ProgrammaticScope = typeof PROGRAMMATIC_SCOPES[number];
-export interface ProgrammaticCredential { id: string; name: string; workspaceIds: string[]; scopes: ProgrammaticScope[]; revision: string; createdAt: string; revokedAt: string | null }
+export interface ProgrammaticCredential { id: string; name: string; workspaceIds: string[]; scopes: ProgrammaticScope[]; revision: string; createdAt: string; revokedAt: string | null; tokenFilePath?: string }
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 export function accessError(code: string, message: string, status = 403): never { throw new AgentServiceError(code, message, status); }
-/** Profile-owned secrets: only hashes persist, every call rechecks revocation. */
+/** SQLite stores only hashes; caller-readable secrets live in profile-private 600 files. */
 export class ProgrammaticCredentials {
   private readonly dataRoot: string;
   constructor(dataRoot: string) { this.dataRoot = dataRoot; }
@@ -32,6 +32,37 @@ export class ProgrammaticCredentials {
     finally { db.close(); }
   }
   list(): ProgrammaticCredential[] { return this.use(false, db => db.prepare('SELECT metadata FROM credentials ORDER BY rowid DESC').all().map(row => JSON.parse(String(row.metadata)))); }
+  private saveToken(credential: ProgrammaticCredential, token: string) {
+    const parent = path.join(this.dataRoot, 'programmatic-access');
+    const dir = path.join(parent, 'tokens');
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    if (fs.lstatSync(dir).isSymbolicLink() || fs.realpathSync(dir) !== path.join(fs.realpathSync(parent), 'tokens')) accessError('programmatic_storage_unsafe', '程序令牌目录身份不安全。', 409);
+    fs.chmodSync(parent, 0o700);
+    fs.chmodSync(dir, 0o700);
+    const file = path.join(dir, `${credential.id}-${credential.revision}.token`);
+    const fd = fs.openSync(file, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_NOFOLLOW, 0o600);
+    try {
+      fs.fchmodSync(fd, 0o600);
+      fs.writeFileSync(fd, token + '\n', 'utf8');
+      fs.fsyncSync(fd);
+    } catch (error) { fs.unlinkSync(file); throw error; }
+    finally { fs.closeSync(fd); }
+    credential.tokenFilePath = path.resolve(file);
+  }
+  private persistToken<T>(credential: ProgrammaticCredential, token: string, write: (db: DatabaseSync) => T): T {
+    let saved = false;
+    try {
+      return this.use(true, db => {
+        this.saveToken(credential, token); saved = true;
+        return write(db);
+      });
+    } catch (error) {
+      // Only remove the exclusive file from this attempt, never a prior credential.
+      if (saved && credential.tokenFilePath) fs.unlinkSync(credential.tokenFilePath);
+      if (error instanceof AgentServiceError) throw error;
+      accessError('programmatic_token_save_failed', '程序令牌未能安全保存，凭据未生效。请检查实例私有目录与磁盘权限。', 500);
+    }
+  }
   create(raw: unknown, registered: string[]) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) accessError('programmatic_input_invalid', '凭据参数必须为对象。', 400);
     const value = raw as Record<string, unknown>;
@@ -40,7 +71,22 @@ export class ProgrammaticCredentials {
       || !Array.isArray(value.scopes) || !value.scopes.includes('read') || !value.scopes.every(scope => PROGRAMMATIC_SCOPES.includes(scope as ProgrammaticScope))) accessError('programmatic_input_invalid', '请选择名称、已登记工作空间及合法权限（必须含读取）。', 400);
     const credential: ProgrammaticCredential = { id: randomUUID(), name: value.name.trim(), workspaceIds: [...new Set(value.workspaceIds as string[])], scopes: [...new Set(value.scopes as ProgrammaticScope[])], revision: randomUUID(), createdAt: new Date().toISOString(), revokedAt: null };
     const token = `brp_${randomBytes(32).toString('base64url')}`;
-    this.use(true, db => db.prepare('INSERT INTO credentials VALUES (?, ?, ?)').run(credential.id, hash(token), JSON.stringify(credential)));
+    this.persistToken(credential, token, db => db.prepare('INSERT INTO credentials VALUES (?, ?, ?)').run(credential.id, hash(token), JSON.stringify(credential)));
+    return { credential, token };
+  }
+  regenerate(id: string, revision: unknown) {
+    const previous = this.list().find(item => item.id === id);
+    if (!previous) accessError('programmatic_credential_missing', '凭据不存在。', 404);
+    if (previous.revokedAt || previous.revision !== revision) accessError('programmatic_revision_conflict', '凭据已变化或撤销，请重新读取。', 409);
+    const credential = { ...previous, revision: randomUUID() };
+    const token = `brp_${randomBytes(32).toString('base64url')}`;
+    this.persistToken(credential, token, db => {
+      // Recheck inside the transaction: a revoke/regenerate may have won since list().
+      const row = db.prepare('SELECT metadata FROM credentials WHERE id=?').get(id);
+      const current = row && JSON.parse(String(row.metadata)) as ProgrammaticCredential | undefined;
+      if (!current || current.revokedAt || current.revision !== revision) accessError('programmatic_revision_conflict', '凭据已变化或撤销，请重新读取。', 409);
+      db.prepare('UPDATE credentials SET digest=?, metadata=? WHERE id=?').run(hash(token), JSON.stringify(credential), id);
+    });
     return { credential, token };
   }
   revoke(id: string, revision: unknown) {

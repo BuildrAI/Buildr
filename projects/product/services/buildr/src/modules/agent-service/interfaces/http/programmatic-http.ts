@@ -5,6 +5,7 @@ import { AgentServiceError } from '@buildr-ai/buildr-agent';
 import { ProgrammaticCredentials, accessError, PROGRAMMATIC_SCOPES, type ProgrammaticCredential, type ProgrammaticScope } from '../../persistence/programmatic-credentials.ts';
 import { PROGRAMMATIC_BASE as base, PROGRAMMATIC_OPERATIONS, matchPublicOperation } from './programmatic-operations.ts';
 import { programmaticOpenApi, programmaticGuide, programmaticExample } from './programmatic-help.ts';
+import { programmaticContractVersion, programmaticOperationIndex, programmaticOperationDocument } from './programmatic-openapi.ts';
 
 type Workspaces = () => Array<{ id: string; name: string }>;
 type Options = { dataRoot(): string; workspaces: Workspaces; version(): string };
@@ -16,7 +17,7 @@ export function createProgrammaticHttpContribution(resolve: () => AgentService |
   };
   const locations = (context: any) => {
     const origin = `http://${context.request.headers.host}`;
-    return { apiUrl: origin + base, discoveryUrl: origin + base, documentationUrl: origin + base + '/help', openapiUrl: origin + base + '/openapi.json', exampleUrl: origin + base + '/example.py' };
+    return { apiUrl: origin + base, discoveryUrl: origin + base, documentationUrl: origin + base + '/help', operationsUrl: origin + base + '/operations', openapiUrl: origin + base + '/openapi.json', exampleUrl: origin + base + '/example.py' };
   };
   const contribution = {
     id: 'programmatic-access.http', schemas: {}, operations: [],
@@ -28,13 +29,24 @@ export function createProgrammaticHttpContribution(resolve: () => AgentService |
           context.authorizeRead();
           return { status: 200, body: { ...locations(context), workspaces: options.workspaces(), scopes: PROGRAMMATIC_SCOPES, credentials: store().list() } };
         }
+        if (request.method === 'GET' && pathname.startsWith(manager + '/documents/')) {
+          context.authorizeRead();
+          const document = pathname.slice((manager + '/documents/').length);
+          const detail = document.startsWith('operations/') ? programmaticOperationDocument(options.version(), document.slice('operations/'.length)) : undefined;
+          if (!['help', 'openapi.json', 'operations'].includes(document) && !detail) return { status: 404, body: { error: { code: 'programmatic_route_missing', message: '没有此程序文档。' } } };
+          return { status: 200, body: {
+            fileName: document === 'help' ? 'buildr-api-help.md' : document === 'openapi.json' ? 'buildr-openapi.json' : document === 'operations' ? 'buildr-operations.json' : `buildr-operation-${detail!['x-buildr-operation-id']}.json`,
+            mediaType: document === 'help' ? 'text/markdown' : 'application/json',
+            content: document === 'help' ? programmaticGuide : JSON.stringify(document === 'operations' ? programmaticOperationIndex(options.version()) : detail ?? programmaticOpenApi(options.version()), null, 2),
+          } };
+        }
         context.authorizeWrite();
         const input = await context.readJsonBody();
         if (request.method === 'POST' && pathname === manager) return { status: 201, body: store().create(input, options.workspaces().map(item => item.id)) };
-        const match = pathname.match(/^\/api\/v1\/app\/programmatic-access\/([a-f0-9-]{36})\/revoke$/);
+        const match = pathname.match(/^\/api\/v1\/app\/programmatic-access\/([a-f0-9-]{36})\/(revoke|regenerate)$/);
         if (request.method === 'POST' && match) {
           if (!input || typeof input !== 'object' || Object.keys(input).some(key => key !== 'expectedRevision') || typeof input.expectedRevision !== 'string') accessError('programmatic_input_invalid', '需要凭据的已观察修订。', 400);
-          return { status: 200, body: { credential: store().revoke(match[1], input.expectedRevision) } };
+          return { status: 200, body: match[2] === 'regenerate' ? store().regenerate(match[1], input.expectedRevision) : { credential: store().revoke(match[1], input.expectedRevision) } };
         }
         return { status: 404, body: { error: { code: 'programmatic_route_missing', message: '没有此凭据管理操作。' } } };
       }
@@ -49,7 +61,15 @@ export function createProgrammaticHttpContribution(resolve: () => AgentService |
         const connections = (await service.connections.list()).connections.map(({ id, label, provider, enabled, status, models, capabilities }) => ({ id, label, provider, enabled, status, models, capabilities: { ...capabilities, permissionModes: ['default'] } }));
         const catalog = await service.models.catalog.list({ refresh: false });
         const current = authenticate();
-        return { status: 200, body: { schemaVersion: 'buildr.programmatic-discovery/v1', apiVersion: '1', version: options.version(), status: 'ready', serviceId: createHash('sha256').update(options.dataRoot()).digest('hex'), ...locations(context), credential: current, capabilities: PROGRAMMATIC_OPERATIONS.filter(item => current.scopes.includes(item.scope) || item.id === 'reply' && current.scopes.includes('approve')).map(({ id, method, path, scope, summary }) => ({ id, method, path: `${base}/workspaces/:workspaceId/conversations${path}`, scope, summary })), workspaces: options.workspaces().filter(item => current.workspaceIds.includes(item.id)), connections, models: catalog.models } };
+        return { status: 200, body: { schemaVersion: 'buildr.programmatic-discovery/v1', apiVersion: '1', version: options.version(), contractVersion: programmaticContractVersion(programmaticOpenApi(options.version())), status: 'ready', serviceId: createHash('sha256').update(options.dataRoot()).digest('hex'), ...locations(context), credential: current, capabilities: PROGRAMMATIC_OPERATIONS.filter(item => current.scopes.includes(item.scope) || item.id === 'reply' && current.scopes.includes('approve')).map(({ id, method, path, scope, summary }) => ({ id, method, path: `${base}/workspaces/:workspaceId/conversations${path}`, scope, summary, documentationUrl: `${base}/operations/${id}` })), workspaces: options.workspaces().filter(item => current.workspaceIds.includes(item.id)), connections, models: catalog.models } };
+      }
+      if (request.method === 'GET' && (pathname === base + '/operations' || pathname.startsWith(base + '/operations/'))) {
+        if (searchParams.size) accessError('programmatic_input_invalid', '操作文档入口不接受查询参数。', 400);
+        const document = pathname === base + '/operations'
+          ? programmaticOperationIndex(options.version())
+          : programmaticOperationDocument(options.version(), pathname.slice((base + '/operations/').length));
+        if (!document) accessError('programmatic_route_missing', '没有此程序操作文档。', 404);
+        return { status: 200, body: document };
       }
       if (request.method === 'GET' && [base + '/help', base + '/openapi.json', base + '/example.py'].includes(pathname)) {
         if (pathname.endsWith('/openapi.json')) return { status: 200, body: programmaticOpenApi(options.version()) };
