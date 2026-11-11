@@ -16,7 +16,7 @@ import type { AgentExecutor, AgentRuntime, ContextRef, ExecutionRef, ExecutorIte
 import { releasedNativeControl, nativeBinding, visibleText, bounded, findExecutable, inspectVersion, accountEnvironment, nativeHome, opaqueReference, parseReference, privateDirectories } from '../native-process.ts';
 import { launchDshHost, dshValue, type DshClient } from './client.ts';
 import { dshBalanceQuota } from './balance.ts';
-import { DshExecutionLineage, dshItem, dshHistoryItems, dshExecutionObservation, dshToolOutcomeUnknown } from './protocol.ts';
+import { DshExecutionLineage, dshItem, dshHistoryItems, dshExecutionObservation, dshFinishedTurnStatus, dshToolOutcomeUnknown, withoutDshContinuationMarkers } from './protocol.ts';
 import { modelOptions } from '../model-options.ts';
 import { applyDshPermissions, dshPermissionCatalog } from './permissions.ts';
 import { AgentServiceError } from '../../domain/agent-state.ts';
@@ -642,7 +642,10 @@ export class DshRuntime implements AgentRuntime {
     turn.cancellation=work;return work;
   }
   private activeObservation(turn: ActiveTurn): ExecutorObservation {
-    const tools = turn.lineage.mergeTools([...turn.tools.values()], turn.inputIds ?? new Set([turn.id])).map(tool => ({ ...tool, canStop: Boolean(this.forkBridge && turn.lineage.toolJobs(tool.id,turn.inputIds ?? new Set([turn.id])).length) })); return { contextCompaction: turn.terminal || turn.observationLost ? null : turn.contextCompaction ?? null, status: turn.observationLost || turn.supplementUnknown ? 'unknown' : turn.terminal ? tools.some(tool => tool.status === 'running') ? 'tools-active' : tools.some(tool=>tool.status==='unknown')?'unknown': turn.terminal === 'stopped' ? 'stopped' : 'idle' : turn.pending.size ? 'waiting' : 'running', executionRef: this.executionReference(turn.id,turn.input.contextRef.id), tools: turn.observationLost ? tools.map(tool => ({ ...tool, status: tool.status === 'running' ? 'unknown' as const : tool.status })) : tools, requests: [...turn.pending.values()].map(value => value.request), ...(turn.stopRequested&&turn.diagnostic?{diagnostic:turn.diagnostic}:turn.observationLost ? { diagnostic: '无法确认 DSH 原执行状态，自动恢复未成功。' + (turn.observationDiagnostic ? ' 原因：' + turn.observationDiagnostic : '') } : turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) };
+    const merged = turn.lineage.mergeTools([...turn.tools.values()], turn.inputIds ?? new Set([turn.id])).map(tool => ({ ...tool, canStop: Boolean(this.forkBridge && turn.lineage.toolJobs(tool.id,turn.inputIds ?? new Set([turn.id])).length) }));
+    // 已结束的轮次不带合成接续标记，否则正常完成的一轮会一直显示为未知。
+    const tools = turn.terminal ? withoutDshContinuationMarkers(merged) : merged;
+    return { contextCompaction: turn.terminal || turn.observationLost ? null : turn.contextCompaction ?? null, status: turn.observationLost || turn.supplementUnknown ? 'unknown' : turn.terminal ? dshFinishedTurnStatus(tools, turn.terminal === 'stopped') : turn.pending.size ? 'waiting' : 'running', executionRef: this.executionReference(turn.id,turn.input.contextRef.id), tools: turn.observationLost ? tools.map(tool => ({ ...tool, status: tool.status === 'running' ? 'unknown' as const : tool.status })) : tools, requests: [...turn.pending.values()].map(value => value.request), ...(turn.stopRequested&&turn.diagnostic?{diagnostic:turn.diagnostic}:turn.observationLost ? { diagnostic: '无法确认 DSH 原执行状态，自动恢复未成功。' + (turn.observationDiagnostic ? ' 原因：' + turn.observationDiagnostic : '') } : turn.diagnostic ? { diagnostic: turn.diagnostic } : {}) };
   }
   async observe({ contextRef, executionRef,knownItems=[] }: { contextRef: ContextRef; executionRef?: ExecutionRef;knownItems?:readonly ExecutorItem[] }): Promise<ExecutorObservation> {
     this.reference(contextRef); const turn = this.turns.get(contextRef.id);
