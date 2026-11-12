@@ -23,6 +23,7 @@ const DIGEST: any = /^sha256-[a-f0-9]{64}$/u;
 /** Registry evidence, not the release context, binds the exact npm tarball bytes. */
 export function publishedPackageSha256(evidence: any): string {
   const value = [evidence?.registryArtifact?.artifactSha256, evidence?.context?.artifact?.sha256]
+    .concat(Object.values(evidence?.publications ?? {}).map((publication: any) => publication?.registryArtifact?.artifactSha256))
     .find((candidate: any): candidate is string => typeof candidate === 'string' && /^[a-f0-9]{64}$/u.test(candidate));
   if (!value) throw new Error('Publication evidence lacks the exact Registry artifact SHA-256.');
   return value;
