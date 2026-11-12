@@ -28,7 +28,7 @@ export function executionLog(root:string,generation:string,limit=2*1024*1024):Ex
    const row:Record<string,unknown>={schemaVersion:1,time:new Date().toISOString(),pid:process.pid,generation:token(generation),event:token(event.event)};
    if(!row.event)return;
    for(const key of ['provider','conversationId','workspaceId','runId','participantId','contextId','executionId','controlId','ownerGeneration','reason','code','signal','status','runtimeDigest','previousGeneration'] as const){const value=token(event[key]);if(value!==undefined)row[key]=value;}
-   for(const key of ['childPid','exitCode','attempt','previousPid','runningTools','unknownTools'] as const){const value=event[key];if(typeof value==='number'&&Number.isSafeInteger(value))row[key]=value;}
+   for(const key of ['childPid','exitCode','attempt','previousPid','runningTools','unknownTools','durationMs'] as const){const value=event[key];if(typeof value==='number'&&Number.isSafeInteger(value))row[key]=value;}
    for(const key of ['accepted','stopRequested','resourcesReleased','confirmed','expected'] as const)if(typeof event[key]==='boolean')row[key]=event[key];
    const line=JSON.stringify(row)+'\n',stat=fs.lstatSync(file,{throwIfNoEntry:false});
    if(stat&&(stat.isSymbolicLink()||!stat.isFile()))throw Error('unsafe_diagnostic_file');

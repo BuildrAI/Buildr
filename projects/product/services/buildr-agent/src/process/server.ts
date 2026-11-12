@@ -369,7 +369,12 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
   const storageMaintenance = new StorageMaintenance(options.dataRoot, { enabled: () => accepting && !retiring && !closing, runtime:options.runtime });
   let retiringSince: number | undefined, retirementAttempt = 0;
   const RETIRED_GRACE_MS = 60_000, RETIRED_RETRY_MS = 5_000;
+  let previousTick = performance.now();
   const timer = setInterval(() => {
+    const tick = performance.now();
+    const durationMs = Math.round(tick - previousTick - 250);
+    previousTick = tick;
+    if (durationMs >= 500) diagnostics({event:'service-event-loop-delay',durationMs});
     if (closing || adopting) return;
     if (!retiring) { retiringSince = undefined; retirementAttempt = 0; }
     if (retiring) {

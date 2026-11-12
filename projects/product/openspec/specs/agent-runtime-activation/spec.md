@@ -1,7 +1,7 @@
 # agent-runtime-activation Specification
 
 ## Purpose
-TBD - created by archiving change activation-retained-handoff. Update Purpose after archive.
+规定 Buildr 智能体执行后台如何采用目标运行单元、验证新版就绪，并在交接或激活失败时保全原有执行与待发送输入。
 
 ## Requirements
 

@@ -128,7 +128,7 @@ test('lightweight pending read falls back only on explicit unsupported operation
  const server=createServer(async(req,res)=>{
   if(req.url==='/identity'){res.end(JSON.stringify(identity));return;}
   let raw='';for await(const part of req)raw+=part;const input=JSON.parse(raw);calls.push(input.operation);
-  if(input.operation==='conversations.pendingSummary'){res.writeHead(400);res.end(JSON.stringify({error:{code:failure,message:'explicit read failure'}}));return;}
+  if(['conversations.pendingSummary','conversations.activityEpoch'].includes(input.operation)){res.writeHead(400);res.end(JSON.stringify({error:{code:failure,message:'explicit read failure'}}));return;}
   res.end(JSON.stringify({conversations:[{id:'chat',workspaceId:'scope',title:'work',requests:[],entries:[],run:{status:'unknown',tools:[{label:'never transferred'}]}}]}));
  });
  server.listen(0,'127.0.0.1');await once(server,'listening');const address=server.address();assert.ok(address&&typeof address!=='string');
@@ -137,6 +137,9 @@ test('lightweight pending read falls back only on explicit unsupported operation
  const connection=await connectAgentProcess({dataRoot:root,profileId:'fixture',sourceId:'minimal',runtime});t.after(()=>connection.disconnect());
  assert.deepEqual(await connection.operations.conversations.pendingSummary(),{conversations:[{conversationId:'chat',workspaceId:'scope',title:'work',status:'unknown',count:0}]});
  assert.deepEqual(calls,['conversations.pendingSummary','conversations.pending']);
+ calls.length = 0;
+ assert.equal(await connection.operations.conversations.activityEpoch(['scope']), undefined);
+ assert.deepEqual(calls, ['conversations.activityEpoch']);
  failure='agent_host_source_mismatch';calls.length=0;
  assert.equal((await connection.operations.conversations.pendingSummary()).conversations[0].conversationId,'chat');
  assert.deepEqual(calls,['conversations.pendingSummary','conversations.pending']);
@@ -144,31 +147,59 @@ test('lightweight pending read falls back only on explicit unsupported operation
  await assert.rejects(connection.operations.conversations.pendingSummary(),{code:failure});assert.deepEqual(calls,['conversations.pendingSummary']);
 });
 
-test('local conversation projections do not wait for a stalled callback refresh', {timeout:10_000}, async t => {
+test('local reads stay available while concurrent detail reads share a callback refresh', {timeout:10_000}, async t => {
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'agent-local-projection-'));
   const runtime:AgentRuntimeUnit={schemaVersion:1,digest:'d'.repeat(64),directory:root,entry:path.join(root,'entry.js'),node:process.execPath};
   const identity:AgentProcessIdentity={contracts:AGENT_EXECUTION_CONTRACTS,instanceId:'projection-owner',generation:'projection-generation',profileId:'fixture',dataRoot:root,pid:process.pid,runtime};
-  let stalled=false,attachments=0,operations=0;
+  let stallNext = false, failNext = false, attachments = 0;
+  const stalled = Promise.withResolvers<void>();
+  const operations: string[] = [];
   const server=createServer(async(req,res)=>{
     if(req.url==='/identity'){res.end(JSON.stringify(identity));return;}
     let raw='';for await(const chunk of req)raw+=chunk;const input=JSON.parse(raw);
-    if(req.url==='/host/attach'){attachments++;if(!stalled)res.end('{}');return;}
+    if (req.url === '/host/attach') {
+      attachments++;
+      if (stallNext) { stallNext = false; stalled.resolve(); return; }
+      if (failNext) { failNext = false; res.destroy(); return; }
+      res.end('{}');
+      return;
+    }
     if(req.url==='/host/detach'){res.end('{}');return;}
-    operations++;res.end(JSON.stringify({conversations:[],operation:input.operation}));
+    operations.push(input.operation);
+    res.end(JSON.stringify({conversations:[],operation:input.operation}));
   });
   server.listen(0,'127.0.0.1');await once(server,'listening');const address=server.address();assert.ok(address&&typeof address!=='string');
   writePrivate(path.join(controlRoot(root),'instance.json'),{identity,origin:`http://127.0.0.1:${address.port}`,token:'projection-fixture-token'});
   const host={resolveExecutionScope:async({ref}:any)=>({ref,revision:'one',rootPath:root}),verifyWorkObject:async({ref}:any)=>({ref,revision:'one'}),listExecutionScopes:async()=>({refs:[],revision:'one'})};
   const connection=await connectAgentProcess({dataRoot:root,profileId:'fixture',sourceId:'minimal',runtime,host});
   t.after(async()=>{await connection.disconnect();server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));fs.rmSync(root,{recursive:true,force:true});});
-  const initial=attachments;stalled=true;const start=performance.now();
+  const initial = attachments;
+  stallNext = true;
+  const details = Promise.all([
+    connection.operations.conversations.read('scope', 'one'),
+    connection.operations.conversations.read('scope', 'two'),
+  ]);
+  await stalled.promise;
+  const start = performance.now();
   await Promise.all([
     connection.operations.conversations.listAll(['scope'],{activeOnly:true,limit:100}),
     connection.operations.conversations.pendingSummary(),
     connection.operations.conversations.pending(),
+    connection.operations.conversations.listChildren('scope', 'one'),
+    connection.operations.connections.list(),
+    connection.operations.models.accounts.list(),
+    connection.operations.models.catalog.list({refresh:false}),
   ]);
-  assert.equal(attachments,initial,'local reads must not refresh a callback they do not use');
-  assert.equal(operations,3);assert.ok(performance.now()-start<1000,'ready projections must not inherit the 3-second callback timeout');
-  await assert.rejects(connection.operations.conversations.read('scope','chat'),{code:'agent_host_unavailable',status:503});
-  assert.equal(operations,3,'a failed prerequisite must not dispatch or replay the operation');
+  assert.ok(performance.now()-start<1000,'ready projections must not inherit the 3-second callback timeout');
+  assert.equal(attachments, initial + 1, 'concurrent detail reads share the in-flight registration');
+  assert.equal(operations.length, 7, 'only local reads are dispatched before registration succeeds');
+  await details;
+  assert.equal(attachments, initial + 2, 'the timed-out registration is retried once for both detail reads');
+  assert.deepEqual(operations.slice(7), ['conversations.read', 'conversations.read']);
+  await connection.operations.models.catalog.list({refresh:true});
+  assert.equal(attachments, initial + 3, 'an explicit refresh still registers the host');
+  failNext = true;
+  await assert.rejects(connection.operations.connections.check('codex'), {code:'agent_host_unavailable',status:503});
+  assert.equal(attachments, initial + 4, 'a mutation still fails before dispatch when registration fails');
+  assert.ok(!operations.includes('connections.check'));
 });

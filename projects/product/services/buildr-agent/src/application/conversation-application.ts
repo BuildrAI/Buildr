@@ -545,6 +545,7 @@ export class ConversationApplication {
     return view;
   }
   private save(record: StoredConversation, initial = false, textOnly = false, textEntryId?:string): void {
+    const started = performance.now();
     for (const run of conversationRuns(record.view)) if (run.stopRequested || run.supersededBy || run.resourcesReleased || !['running','waiting-approval','waiting-question'].includes(run.status)) delete run.contextCompaction;
     if(record.view.run?.status==='completed'){record.view.run.interrupted=undefined;delete record.interruption;}
     for(const observed of conversationRuns(record.view))if(['completed','failed','stopped','unknown','tools-active'].includes(observed.status)){record.runOutcomes??={};record.runOutcomes[observed.id]={status:observed.status,diagnostic:observed.diagnostic,model:observed.model,provider:observed.provider,contextUsage:observed.contextUsage,generation:observed.generation,updatedAt:observed.updatedAt};}
@@ -558,13 +559,18 @@ export class ConversationApplication {
       if(this.diagnosticStates.get(run.id)!==signature){this.diagnostics(facts);this.diagnosticStates.delete(run.id);this.diagnosticStates.set(run.id,signature);if(this.diagnosticStates.size>512)this.diagnosticStates.delete(this.diagnosticStates.keys().next().value!);}
     }
     this.options.events.publish({ type: 'conversation', workspaceId: record.view.workspaceId, conversationId: record.view.id, revision: record.view.revision, payload: { conversation: this.view(record) } });
+    const durationMs = Math.round(performance.now() - started);
+    if (durationMs >= 250) this.diagnostics({event:'conversation-save-slow',conversationId:record.view.id,workspaceId:record.view.workspaceId,durationMs});
   }
   read(workspaceId: string, id: string, options: { before?: number; limit?: number; compactTools?: boolean } = {}): ConversationView {
+    const started = performance.now();
     const limit=options.limit===undefined?undefined:bounded(options.limit,PAGE_SIZE,200);
     const record=this.options.repository.readPage(id,options.before,limit,options.compactTools)??this.load(workspaceId,id);
     if(record.view.workspaceId!==workspaceId)fail('agent_conversation_missing','该工作空间中没有此对话。',404);
     const result=this.view(record,options.before,limit,true,options.compactTools===true);
     if(options.compactTools)result.entries=result.entries.map(entry=>entry.detail||this.liveTools.has(entry.id)?entry:ConversationReadModel.compact(entry));
+    const durationMs = Math.round(performance.now() - started);
+    if (durationMs >= 250) this.diagnostics({event:'conversation-read-slow',conversationId:id,workspaceId,durationMs});
     return result;
   }
   readHistory(workspaceId:string,id:string,query:HandoffHistoryQuery) {
