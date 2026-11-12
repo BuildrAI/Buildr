@@ -5,6 +5,7 @@ import { sharedCheckPreparation } from '../../../buildr/tools/testing/verificati
 
 const root = path.resolve(import.meta.dirname, '../..');
 const processTests = (group: string, omit: string) => fs.globSync(`test/integration/process/${group}/*.test.ts`, { cwd: root }).filter(file => path.basename(file) !== omit).sort();
+const recoveryTests = (...names: string[]) => names.map(name => `test/integration/process/recovery/${name}`);
 const rootTests = fs.globSync('test/integration/*.test.ts', { cwd: root }).filter(file => path.basename(file) !== 'conversations.test.ts').sort();
 const runner = path.resolve(root, '../buildr/tools/testing/run-service-tests.ts');
 /** Each integration file has one primary owner. The public full entry consumes this catalogue. */
@@ -32,8 +33,12 @@ export const agentIntegrationChecks = [
   { id: 'agent-integration-handoff-activation', name: 'Agent retained runtime activation and failed successor recovery',
     testFiles: ['test/integration/process/handoff/activation.test.ts'], schedulingCostMs: 100000, timeoutMs: 180000,
     resourceDemand: { workers: 1, processes: 1, workspaceIo: 1 }, resources: ['agent-process-tests'] },
-  { id: 'agent-integration-recovery', name: 'Agent real observation, cancellation and resource release',
-    testFiles: processTests('recovery','protocol-budget.test.ts'), schedulingCostMs: 240000, timeoutMs: 360000,
+  { id: 'agent-integration-recovery', name: 'Agent real observation and cancellation recovery',
+    testFiles: recoveryTests('cancellation.test.ts', 'durable-completion.test.ts', 'goal-continuation.test.ts', 'observation.test.ts'),
+    schedulingCostMs: 180000, timeoutMs: 300000,
+    resourceDemand: { workers: 1, processes: 1, workspaceIo: 1 }, resources: ['agent-process-tests'] },
+  { id: 'agent-integration-recovery-resources', name: 'Agent real recovery resource release',
+    testFiles: recoveryTests('resources.test.ts'), schedulingCostMs: 120000, timeoutMs: 300000,
     resourceDemand: { workers: 1, processes: 1, workspaceIo: 1 }, resources: ['agent-process-tests'] },
   { id: 'agent-integration-recovery-budget', name: 'Agent real recovery backoff budget',
     testFiles: ['test/integration/process/recovery/protocol-budget.test.ts'], schedulingCostMs: 35000, timeoutMs: 60000,
