@@ -49,7 +49,9 @@ const allowed: any = new Map([
     'acquireBuildrWebStartLock', 'releaseBuildrWebStartLock', 'clearBuildrWebInstance',
   ])],
   ['src/bootstrap/cli/main.ts', new Set(['writeInternalDownload'])],
-  ['src/web/application/preview-lifecycle.ts', new Set(['clearOwner', 'prepareTaskPreviewStore', 'writePreferredPort', 'seedPreviewWorkspaces', 'stopPreview'])],
+  // prune deletes only orphan directories without owner records and with confirmed-dead
+  // processes, through the same preview-root containment and symlink-safe removal as purge.
+  ['src/web/application/preview-lifecycle.ts', new Set(['clearOwner', 'prepareTaskPreviewStore', 'writePreferredPort', 'seedPreviewWorkspaces', 'stopPreview', 'pruneOrphanPreviews'])],
   // Reuse copies stage every facet in an owned sibling, verify, then rename; purge is
   // guarded by stop confirmation, owner identity, preview-root containment and symlinks.
   ['src/web/application/preview-reuse-files.ts', new Set(['copyTree', 'replacePreviewDirectory'])],

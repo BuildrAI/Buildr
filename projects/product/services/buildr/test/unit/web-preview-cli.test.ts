@@ -13,6 +13,11 @@ test('preview CLI 帮助声明沿用与清理边界', () => {
   for (const token of ['--reuse <profile>[:facet,...]', '--refresh-reuse', 'model-catalog', 'agent-runtime', '来源只读', '会话、附件、交接材料']) assert.match(startHelp, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   const stopHelp = stop.help.join('\n');
   for (const token of ['--purge', '默认只停止实例并保留数据', 'owner 不匹配', '不是真实目录', '符号链接按条目删除']) assert.match(stopHelp, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  const prune = contributions.find((entry) => entry.key === 'web preview prune');
+  assert.ok(prune);
+  const pruneHelp = prune.help.join('\n');
+  for (const token of ['无 owner 登记', '存活进程', '跳过', '符号链接按条目删除', '单个目录失败不影响其余目录']) assert.ok(pruneHelp.includes(token));
+  assert.equal(prune.match({ domain: 'web', action: 'preview', runtimeId: 'prune' }), true);
   assert.equal(start.match({ domain: 'web', action: 'preview', runtimeId: 'start' }), true);
   assert.equal(stop.match({ domain: 'web', action: 'preview', runtimeId: 'stop' }), true);
 });

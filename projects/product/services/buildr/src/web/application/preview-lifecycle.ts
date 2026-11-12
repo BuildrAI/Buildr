@@ -764,3 +764,42 @@ export async function stopPreview(name: string, options: PreviewStopOptions = {}
   if (!options.retainOwner) clearOwner(instance, dataRoot);
   return { schemaVersion: PREVIEW_SCHEMA, status: healthy ? 'stopped' : 'stale_cleaned', instance, owner };
 }
+
+export type PreviewPruneEntry = { instance: string; status: 'pruned' | 'skipped'; reason?: string };
+
+export function pruneOrphanPreviews(options: { dataRoot?: string } = {}): { schemaVersion: typeof PREVIEW_SCHEMA; results: PreviewPruneEntry[] } {
+  const dataRoot = options.dataRoot || buildrWebDataRoot();
+  const root = path.join(path.resolve(dataRoot), 'previews');
+  const results: PreviewPruneEntry[] = [];
+  if (!fs.existsSync(root)) return { schemaVersion: PREVIEW_SCHEMA, results };
+  // 删除不可逆：登记文件存在但读不懂时按有主/未知跳过，只有记录缺失或能确认进程已死才算无主。
+  const liveRecord = (file: string): string | null => {
+    if (!fs.existsSync(file)) return null;
+    const item = record(readJson(file));
+    if (!item || !Number.isInteger(item.pid)) return '记录无法解析，无法确认进程已死';
+    return processAlive(Number(item.pid)) ? '进程存活' : null;
+  };
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !PREVIEW_NAME.test(entry.name)) continue;
+    const instance = entry.name;
+    try {
+      const directory = previewDataRoot(instance, dataRoot);
+      if (fs.existsSync(path.join(directory, 'preview.json'))) {
+        results.push({ instance, status: 'skipped', reason: 'owner 登记存在，归托管 stop/purge' });
+        continue;
+      }
+      const reason = liveRecord(path.join(directory, 'instance.json'))
+        || liveRecord(path.join(directory, 'agent-service', 'process', 'instance.json'));
+      if (reason) {
+        results.push({ instance, status: 'skipped', reason });
+        continue;
+      }
+      const target = assertPurgeTargetSafe(instance, dataRoot);
+      fs.rmSync(target, { recursive: true, force: false });
+      results.push({ instance, status: 'pruned' });
+    } catch (error) {
+      results.push({ instance, status: 'skipped', reason: errorMessage(error) });
+    }
+  }
+  return { schemaVersion: PREVIEW_SCHEMA, results };
+}

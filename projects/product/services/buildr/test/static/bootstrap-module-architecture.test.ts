@@ -342,7 +342,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     requires: [WORKSPACE_APPLICATION, TASK_QUERY_APPLICATION, TASK_WORKTREE_PROVIDER, SYSTEM_INSTALLATION_IDENTITY, SYSTEM_INSTALLATION_LAUNCHER, SYSTEM_INSTALLATION_APPLICATION],
     provides: [WEB_INSTANCE_LIFECYCLE],
     contributions: {
-      cli: ['web preview start', 'web preview list', 'web preview stop', 'web'],
+      cli: ['web preview start', 'web preview list', 'web preview stop', 'web preview prune', 'web'],
       http: [],
       diagnostics: ['web-instance-lifecycle.diagnostics'],
     },
@@ -381,7 +381,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'artifact register', 'artifact list', 'artifact status', 'artifact release', 'artifact clean',
     'installation status', 'update check', 'update',
     'web launcher install', 'web launcher status', 'web launcher repair', 'web launcher uninstall',
-    'web preview start', 'web preview list', 'web preview stop', 'web',
+    'web preview start', 'web preview list', 'web preview stop', 'web preview prune', 'web',
     'doctor',
   ]);
   assert.deepEqual(runtimeContributions(runtime, 'http').map((item: any) => item.id), [

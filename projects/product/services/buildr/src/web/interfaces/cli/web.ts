@@ -74,6 +74,20 @@ export function createWebCliContributions(application: WebCliRuntime | null = nu
     run: (r, c) => (application || r).manageBuildrWebPreview('stop', c.argv.slice(5)),
   },
   {
+    key: "web preview prune",
+    surface: "maintenance",
+    summary: "清理无 owner 登记且无存活进程的孤儿预览目录；有 owner 登记或存活进程一律跳过并逐项报告，不改变 stop 默认保留数据语义。",
+    help: [
+      "Usage: buildr web preview prune [--json]",
+      "",
+      "扫描预览根，仅删除无 owner 登记且实例与后台进程均确认已死的孤儿实例目录，逐项报告 pruned/skipped 及原因。",
+      "owner 登记存在（含无法解析）、存活进程或记录无法确认进程已死时跳过并保留现场；有 owner 的目录仍归托管 stop/purge。",
+      "删除与 purge 同款安全语义：目标位于预览根内且为真实目录，实例内符号链接按条目删除，不跟随链接目标。单个目录失败不影响其余目录。",
+    ],
+    match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'preview' && runtimeId === 'prune',
+    run: (r, c) => (application || r).manageBuildrWebPreview('prune', c.argv.slice(5)),
+  },
+  {
     key: "web",
     surface: "primary",
     summary: "启动或复用只监听 127.0.0.1 的全局本机 Web 应用，并默认打开浏览器；--no-open 只启动服务。",
@@ -109,7 +123,7 @@ export const WEB_CLI_GROUPS: readonly Readonly<{
   surface: 'maintenance',
   summary: '预览以实例名隔离本地状态与 loopback URL；Task-owned preview 的归属和关闭安全由预览能力直接管理。',
   help: Object.freeze([
-    'Usage: buildr web preview <start|list|stop> ...',
+    'Usage: buildr web preview <start|list|stop|prune> ...',
     '',
     '预览以实例名隔离本地状态与 loopback URL；Task-owned preview 的归属和关闭安全由预览能力直接管理。',
   ]),

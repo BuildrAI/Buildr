@@ -29,6 +29,7 @@ import {
 } from '../infrastructure/instance-runtime.ts';
 import {
   listPreviews,
+  pruneOrphanPreviews,
   readPreviewIdentityFromEnvironment,
   resolveTaskPreviewWorktree,
   startPreview,
@@ -491,6 +492,17 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
       const result = await stopPreview(name, { caller, purge: commandOptions.includes('--purge') });
       if (commandOptions.includes('--json')) console.log(JSON.stringify(withJsonSchema(PUBLIC_JSON_SCHEMAS.localAppPreview, result), null, 2));
       else console.log(result.status === 'purged' ? `Buildr Web 开发预览已停止并清理实例目录：${result.instance}` : `Buildr Web 开发预览已停止：${result.instance}`);
+      return result;
+    }
+    if (action === 'prune') {
+      runtime.assertNoUnknownOptions(args, new Set(['--json']), new Set(['--json']));
+      const result = pruneOrphanPreviews();
+      if (args.includes('--json')) console.log(JSON.stringify(withJsonSchema(PUBLIC_JSON_SCHEMAS.localAppPreview, result), null, 2));
+      else {
+        for (const item of result.results) console.log(`${item.instance}\t${item.status}${item.reason ? `\t${item.reason}` : ''}`);
+        const pruned = result.results.filter((item) => item.status === 'pruned').length;
+        console.log(`无主预览清理完成：删除 ${pruned} 个，跳过 ${result.results.length - pruned} 个。`);
+      }
       return result;
     }
     throw new Error(`未知 preview 操作：${action}`);

@@ -79,5 +79,5 @@ BUILDR_APP_DATA_DIR="$ISOLATED" <worktree>/projects/product/buildr web --target 
 ## 交付与停止
 
 - 报告验收链接、实例身份（worktree/branch/HEAD/dirty、数据目标与沿用来源、是否托管）、所做改动的事实依据；需要持续验收时保持实例运行并说明仍在监听。
-- 完成后 `web preview stop`（托管）或退出进程并删除隔离根（手工）； `.worktrees/`、任务分支与 canonical 现场保持原状。
+- 验收完成后必须清理本任务预览：托管实例用 `web preview stop <instance> --purge` 停止并删除隔离根（只 stop 不 purge 会留下数据副本）；手工实例退出进程并删除隔离根。收尾时另跑一次 `web preview prune` 清理无主残留。`.worktrees/`、任务分支与 canonical 现场保持原状。
 - 预览中发现"任务工作树当前不可读取"、材料来源不是 `task-worktree-candidate` 或 CLI 身份不是工作树 checkout 时，如实报告为产品缺陷，不用主目录文件顶替。
