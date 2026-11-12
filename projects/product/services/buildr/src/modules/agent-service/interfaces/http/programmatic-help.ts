@@ -49,7 +49,7 @@ GET对话与/entries支持before、limit分页；较早消息通过nextBefore续
 事件正文含eventId（全局唯一）、type、occurredAt、machine{id,name}、workspaceId、conversationId、title、runId、runStatus、summary（≤500字符）、detailUrl（程序读取地址）；decision.requested另含request{requestId,kind,title,options}。不含任何密钥和完整对话内容。
 速率按凭据计，默认180/小时、20/分钟，可在界面调整。限额内立即推送；超限按同对话同类型合并（保留最新状态与mergedCount），配额恢复后补发；decision.requested优先且永不合并。投递为HTTP POST JSON、每请求一条事件，2xx为成功；失败按10/30/90/270/810秒退避，最多5次后置为undelivered。
 回推停用（state=disabled）只停止对外投递，不停止事件记录：被该凭据接管对话的五类事件仍按上述判定写入同一持久事件流，可用events补查；停用期间已记录的事件不会在重新启用后重放。未配置回推的凭据不产生事件。
-事件持久保留7天、sequence跨重启连续。补读GET /api/v1/programmatic/workspaces/{workspaceId}/events?after={cursor}&limit={n}（read，limit默认50、最大200），按sequence升序返回含undelivered的事件；after必须是上一页nextCursor返回的非负整数序号，不是合法游标时返回400 programmatic_input_invalid；超出保留期被丢弃时发出events_dropped。测试环境、候选实例与自动化测试一律不得向真实接收地址推送，只用本地假接收端。
+事件持久保留7天、sequence跨重启连续。补读GET /api/v1/programmatic/workspaces/{workspaceId}/events?after={cursor}&limit={n}（read，limit默认50、最大200），按sequence升序返回含undelivered的事件；after必须是上一页nextCursor返回的非负整数序号，不是合法游标时返回400 programmatic_input_invalid。nextCursor始终返回本页最后一条事件的sequence（字符串）；本页为空时返回请求中的after；未传after且没有任何事件时为null。hasMore表示以after=nextCursor再次读取时是否还有更多事件。轮询方应保存nextCursor，下次用after=nextCursor补查，而不是把null当作继续游标。超出保留期被丢弃时发出events_dropped。测试环境、候选实例与自动化测试一律不得向真实接收地址推送，只用本地假接收端。
 最小闭环：配置回推→收到decision.requested→按detailUrl读对话取得准确卡片身份→由人回答或审批；执行结束后用单步续聊POST /messages发起下一轮。
 
 ## 错误与副作用

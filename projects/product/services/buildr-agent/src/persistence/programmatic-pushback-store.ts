@@ -186,11 +186,11 @@ export class ProgrammaticPushbackStore {
     const row = db.prepare("SELECT min(max(nextAttemptAt,lease)) AS due FROM events WHERE deliveryState='pending' AND held=0").get() as { due: number | null };
     return row.due === null ? undefined : Math.max(now, row.due);
   }
-  listEvents(credentialId: string, workspaceId: string, after: number, limit: number): { events: PushbackEvent[]; nextCursor: string | null } {
-    const db = this.existing(); if (!db) return { events: [], nextCursor: null };
+  listEvents(credentialId: string, workspaceId: string, after: number, limit: number): { events: PushbackEvent[]; hasMore: boolean } {
+    const db = this.existing(); if (!db) return { events: [], hasMore: false };
     const rows = db.prepare('SELECT body,sequence FROM events WHERE credentialId=? AND workspaceId=? AND sequence>? ORDER BY sequence ASC LIMIT ?').all(credentialId, workspaceId, after, limit + 1) as Array<{ body: string; sequence: number }>;
     const chosen = rows.slice(0, limit);
-    return { events: chosen.map(row => JSON.parse(row.body) as PushbackEvent), nextCursor: rows.length > limit && chosen.length ? String(chosen.at(-1)!.sequence) : null };
+    return { events: chosen.map(row => JSON.parse(row.body) as PushbackEvent), hasMore: rows.length > limit };
   }
   cleanup(now: number, retentionMs: number): Array<{ credentialId: string; workspaceId: string; dropped: number }> {
     const db = this.existing(); if (!db) return [];

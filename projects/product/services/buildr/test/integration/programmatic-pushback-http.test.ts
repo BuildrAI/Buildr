@@ -112,7 +112,12 @@ test('events backfill is read-scoped and only the takeover credential receives e
  const {token:tokenA,credential:credA}=await f.create(),{token:tokenB,credential:credB}=await f.create();
  await configurePushback(f,credA.id,'https://receiver.test/a');
  await configurePushback(f,credB.id,'https://receiver.test/b');
- const {conversationId}=await startConversation(f,tokenA);
+ const {endpoint,conversationId}=await startConversation(f,tokenA);
+ await f.flush();
+ f.complete();
+ await f.flush();
+ const continued=await f.call(endpoint+'/'+conversationId+'/messages',tokenA,{text:'second event',clientRequestId:randomUUID()});
+ assert.equal(continued.status,202,await continued.clone().text());
  await f.flush();
  f.complete();
  await f.flush();
@@ -122,7 +127,13 @@ test('events backfill is read-scoped and only the takeover credential receives e
  const pageA=await(await f.call(eventsRoute,tokenA)).json();
  assert.ok(pageA.events.some((event:any)=>event.type==='run.completed'&&event.conversationId===conversationId));
  assert.ok(pageA.events.every((event:any,index:number)=>index===0||event.sequence>pageA.events[index-1].sequence),'ascending sequence');
- assert.deepEqual((await(await f.call(eventsRoute,tokenB)).json()).events,[]);
+ assert.ok(pageA.events.length>=2,'two completed rounds');
+ assert.equal(pageA.nextCursor,String(pageA.events.at(-1).sequence),'end page still exposes its last sequence');
+ assert.equal(pageA.hasMore,false);
+ const tokenBPage=await(await f.call(eventsRoute,tokenB)).json();
+ assert.deepEqual(tokenBPage.events,[]);
+ assert.equal(tokenBPage.nextCursor,null);
+ assert.equal(tokenBPage.hasMore,false);
  assert.equal((await f.call(eventsRoute+'?limit=0',tokenA)).status,400);
  assert.equal((await f.call(eventsRoute+'?limit=201',tokenA)).status,400);
  assert.equal((await f.call(eventsRoute+'?unknown=1',tokenA)).status,400);
@@ -132,9 +143,19 @@ test('events backfill is read-scoped and only the takeover credential receives e
   assert.equal((await invalid.json()).error.code,'programmatic_input_invalid');
  }
  assert.equal((await f.call(eventsRoute)).status,401,'anonymous access is rejected');
- const first=pageA.events[0];
- const afterPage=await(await f.call(eventsRoute+'?after='+first.sequence,tokenA)).json();
- assert.ok(afterPage.events.every((event:any)=>event.sequence>first.sequence));
+ const pageOne=await(await f.call(eventsRoute+'?limit=1',tokenA)).json();
+ assert.equal(pageOne.events.length,1);
+ assert.equal(pageOne.nextCursor,String(pageOne.events[0].sequence));
+ assert.equal(pageOne.hasMore,true);
+ const pageTwo=await(await f.call(eventsRoute+'?after='+pageOne.nextCursor+'&limit=1',tokenA)).json();
+ assert.equal(pageTwo.events.length,1);
+ assert.ok(pageTwo.events[0].sequence>pageOne.events[0].sequence);
+ assert.equal(pageTwo.nextCursor,String(pageTwo.events[0].sequence));
+ assert.equal(pageTwo.hasMore,false);
+ const end=await(await f.call(eventsRoute+'?after='+pageTwo.nextCursor,tokenA)).json();
+ assert.deepEqual(end.events,[]);
+ assert.equal(end.nextCursor,pageTwo.nextCursor,'empty page echoes the requested after');
+ assert.equal(end.hasMore,false);
 });
 
 test('disabled pushback still records takeover events for events backfill',async t=>{

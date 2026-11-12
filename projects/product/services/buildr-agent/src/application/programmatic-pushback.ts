@@ -125,7 +125,9 @@ export class ProgrammaticPushback {
     const limit = Math.max(1, Math.min(Number.isFinite(input.limit) ? Math.trunc(input.limit!) : 50, 200));
     if (input.after !== undefined && (!/^\d+$/.test(input.after) || !Number.isSafeInteger(Number(input.after)))) throw failure('programmatic_input_invalid', 'after 必须为上一页返回的 nextCursor。', 400);
     const after = input.after === undefined ? 0 : Number(input.after);
-    return this.store.listEvents(credentialId, workspaceId, after, limit);
+    const page = this.store.listEvents(credentialId, workspaceId, after, limit);
+    const nextCursor = page.events.length ? String(page.events.at(-1)!.sequence) : input.after ?? null;
+    return { events: page.events, nextCursor, hasMore: page.hasMore };
   }
   migrateGlobal(credentialId: string, input: { url: string; secret: string }): { migrated: boolean } {
     if (this.store.migration(GLOBAL_MIGRATION_KEY)) return { migrated: false };

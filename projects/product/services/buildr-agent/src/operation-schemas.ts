@@ -65,7 +65,7 @@ export const AGENT_OPERATION_SCHEMAS = {
   pushbackSecret: named('AgentPushbackSecret',closed({secret:string})),
   pushbackTest: named('AgentPushbackTest',pushbackDelivery),
   pushbackEventsQuery: named('AgentPushbackEventsQuery',closed({after:{type:'string',maxLength:4096,pattern:'^\\d+$'},limit:{type:'integer',minimum:1,maximum:200}},[])),
-  pushbackEvents: named('AgentPushbackEvents',closed({events:list(pushbackEvent),nextCursor:{anyOf:[text,{type:'null'}]}},['events','nextCursor'])),
+  pushbackEvents: named('AgentPushbackEvents',closed({events:list(pushbackEvent),nextCursor:{anyOf:[text,{type:'null'}],description:'本页最后一条事件的 sequence；本页为空时返回请求中的 after；未传 after 且没有任何事件时为 null。'},hasMore:{type:'boolean',description:'以 nextCursor 作为 after 再次读取时是否还有更多事件。'}},['events','nextCursor','hasMore'])),
   pushbackMigrate: named('AgentPushbackMigrate',closed({url:{type:'string',maxLength:8192},secret:{type:'string',maxLength:4096}},['url','secret'])),
   pushbackMigrated: named('AgentPushbackMigrated',closed({migrated:boolean})),
   participation: named('AgentParticipation',participationViewSchema),

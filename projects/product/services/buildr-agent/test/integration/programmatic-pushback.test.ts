@@ -86,8 +86,14 @@ test('only conversations taken over by an enabled credential produce events', as
     assert.equal(s.fake.calls[0]!.init.headers.authorization, `Bearer ${SECRET}`);
     assert.equal(s.fake.calls[0]!.init.redirect, 'error');
     assert.ok(s.fake.calls[0]!.init.signal, 'delivery is bounded by an abort signal');
-    assert.deepEqual(s.pb.listEvents('cred-two', 'workspace-one', {}).events, [], 'a credential without the marker sees nothing');
-    assert.equal(s.pb.listEvents('cred-one', 'workspace-one', {}).events.length, 1);
+    const none = s.pb.listEvents('cred-two', 'workspace-one', {});
+    assert.deepEqual(none.events, [], 'a credential without the marker sees nothing');
+    assert.equal(none.nextCursor, null);
+    assert.equal(none.hasMore, false);
+    const one = s.pb.listEvents('cred-one', 'workspace-one', {});
+    assert.equal(one.events.length, 1);
+    assert.equal(one.nextCursor, '1');
+    assert.equal(one.hasMore, false);
   } finally { s.close(); }
 });
 
@@ -251,13 +257,20 @@ test('listEvents returns ascending sequences including undelivered events with a
     for (let i = 0; i < 8; i++) { s.advance(100); s.pb.drain(); await s.flush(); }
     const all = s.pb.listEvents('cred-one', 'workspace-one', {});
     assert.deepEqual(all.events.map(event => event.sequence), [1, 2, 3]);
-    assert.equal(all.nextCursor, null);
+    assert.equal(all.nextCursor, '3');
+    assert.equal(all.hasMore, false);
     const page = s.pb.listEvents('cred-one', 'workspace-one', { limit: 2 });
     assert.deepEqual(page.events.map(event => event.sequence), [1, 2]);
     assert.equal(page.nextCursor, '2');
+    assert.equal(page.hasMore, true);
     const next = s.pb.listEvents('cred-one', 'workspace-one', { after: page.nextCursor!, limit: 2 });
     assert.deepEqual(next.events.map(event => event.sequence), [3]);
-    assert.equal(next.nextCursor, null);
+    assert.equal(next.nextCursor, '3');
+    assert.equal(next.hasMore, false);
+    const empty = s.pb.listEvents('cred-one', 'workspace-one', { after: next.nextCursor! });
+    assert.deepEqual(empty.events, []);
+    assert.equal(empty.nextCursor, '3');
+    assert.equal(empty.hasMore, false);
     assert.ok(s.rows('SELECT deliveryState FROM events').every(row => row.deliveryState === 'undelivered'));
   } finally { s.close(); }
 });
