@@ -273,6 +273,15 @@ test('多次同轮补充保持首条输入与稳定轮次，缺少身份或独�
  assert.equal(legacy.length,2);
 });
 
+test('字节截断后的稀疏首条输入与尾段仍聚合为同一执行轮',()=>{
+ const prompt={...message('prompt','本轮要求','run','user'),sequence:1};
+ const tail=[{...tool('tail-1',{runId:'run'}),sequence:125},{...tool('tail-2',{runId:'run'}),sequence:126}];
+ const turns=conversationStreamTurns(groupConversationStream([prompt,...tail],{id:'run',status:'running'}));
+ assert.equal(turns.length,1);
+ assert.equal(turns[0].prompt.id,'prompt');
+ assert.deepEqual(turns[0].items.flatMap(item=>item.type==='process-block'?item.entries:item.type==='entry'?[item.entry]:[]).map(entry=>entry.id),['tail-1','tail-2']);
+});
+
 test('首条输入前的交接回执不能冒充原用户输入',()=>{
  const receipt={...message('receipt','接续','new','system'),kind:'handoff'};
  const turns=conversationStreamTurns(groupConversationStream([receipt,message('first','新要求','new','user'),message('extra','补充','new','user')]));

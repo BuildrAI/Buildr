@@ -112,10 +112,13 @@ export function isCurrentConversationEvent(event:ConversationEvent,scope:{worksp
 export function mergeConversationView(current: ConversationView | null,next: ConversationView, observedRevision?: string): ConversationView {
   if(current && current.id===next.id && current.workspaceId===next.workspaceId && observedRevision && current.revision!==observedRevision && current.revision!==next.revision)return current;
   if (!current || current.id !== next.id || current.workspaceId !== next.workspaceId || !next.entries.length) return next;
-  const oldest = next.entries[0].sequence;
-  const older = current.entries.filter(entry => entry.sequence < oldest);
+  // A compact page may pin the round prompt before its byte-bounded tail. The
+  // cursor, not the first rendered entry, marks where that retained tail starts.
+  const oldest = next.nextEntryCursor ?? next.entries[0].sequence;
+  const nextIds = new Set(next.entries.map(entry => entry.id));
+  const older = current.entries.filter(entry => entry.sequence < oldest && !nextIds.has(entry.id));
   if (!older.length) return next;
-  return {...next, entries:[...older,...next.entries], nextEntryCursor:current.nextEntryCursor};
+  return {...next, entries:[...older,...next.entries].sort((left,right)=>left.sequence-right.sequence), nextEntryCursor:current.nextEntryCursor};
 }
 export function prependConversationEntries(current: ConversationView,page: ConversationView): ConversationView {
   if(current.id!==page.id||current.workspaceId!==page.workspaceId)return current;

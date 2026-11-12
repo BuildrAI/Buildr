@@ -1128,6 +1128,52 @@ test('default history pages keep a dense round input when the round exceeds the 
   }
 });
 
+test('default compact pages keep the round prompt when the round exceeds the byte budget', async () => {
+  const f = fixture([]);
+  try {
+    const created = await f.service.conversations.create('workspace-one', {});
+    const entries: ConversationEntry[] = [
+      { id: 'oversized-input', sequence: 1, kind: 'message', role: 'user', text: '这条输入必须和当前执行一起出现在固定头部', runId: 'oversized-run', status: 'accepted', createdAt: created.updatedAt },
+      ...Array.from({ length: 720 }, (_, index): ConversationEntry => ({
+        id: `oversized-tool-${index}`,
+        sequence: index + 2,
+        kind: 'tool',
+        role: 'system',
+        runId: 'oversized-run',
+        text: `工具 ${index} 的有限输出 ` + 'x'.repeat(700),
+        status: 'completed',
+        createdAt: created.updatedAt,
+      })),
+    ];
+    const repository = new ConversationRepository(path.join(f.options.dataRoot, 'agent-service'));
+    const stored = repository.readConversation(created.id)!;
+    const revision = stored.view.revision;
+    stored.view.entries = entries; stored.view.revision = randomUUID();
+    repository.saveConversation(stored, revision);
+
+    const recent = f.service.conversations.read('workspace-one', created.id, { compactTools: true });
+    assert.equal(recent.entries[0]?.id, 'oversized-input', 'the first page must retain the prompt outside the byte-bounded tail');
+    assert.equal(recent.nextEntryCursor, recent.entries[1]!.sequence, 'the cursor must point at the first tail entry so the omitted middle remains reachable');
+    assert.equal(recent.entries.at(-1)?.sequence, entries.at(-1)!.sequence);
+
+    const explicit = f.service.conversations.read('workspace-one', created.id, { limit: 100, compactTools: true });
+    assert.deepEqual(explicit.entries, entries.slice(-100), 'explicit entry-count callers retain their existing semantics');
+    assert.equal(explicit.nextEntryCursor, explicit.entries[0]!.sequence);
+
+    const recovered = new Map(recent.entries.map(entry => [entry.id, entry]));
+    let before: number | undefined = recent.nextEntryCursor;
+    while (before !== undefined) {
+      const page = f.service.conversations.read('workspace-one', created.id, { before, compactTools: true });
+      for (const entry of page.entries) recovered.set(entry.id, entry);
+      before = page.nextEntryCursor;
+    }
+    assert.equal(recovered.size, entries.length);
+    assert.deepEqual([...recovered.values()].sort((left, right) => left.sequence - right.sequence), entries);
+  } finally {
+    await f.close();
+  }
+});
+
 test('default round pages split oversized rounds by bytes without dropping durable entries', async () => {
   const f = fixture([]);
   try {
@@ -1192,8 +1238,11 @@ test('large native items remain durable while the handoff carries actions and re
     const iterator = subscription.events[Symbol.asyncIterator]();
     try {
       const snapshot = (await iterator.next()).value!;
-      assert.equal(snapshot.type, 'snapshot'); assert.deepEqual(snapshot.payload.conversation!.entries, recent.entries);
-      assert.equal(snapshot.payload.conversation!.nextEntryCursor, recent.nextEntryCursor);
+      const defaultPage = f.service.conversations.read('workspace-one', created.id);
+      assert.equal(snapshot.type, 'snapshot'); assert.deepEqual(snapshot.payload.conversation!.entries, defaultPage.entries);
+      assert.equal(snapshot.payload.conversation!.nextEntryCursor, defaultPage.nextEntryCursor);
+      assert.equal(defaultPage.entries[0]?.text, 'read large tool output');
+      assert.deepEqual(defaultPage.entries.slice(1), recent.entries);
       assert.ok(Buffer.byteLength(JSON.stringify(snapshot)) < 8 * 1024 * 1024);
     } finally { subscription.close(); await iterator.return?.(); }
     const draft = { expectedRevision: recent.revision, connectionId: 'b', text: 'continue' };

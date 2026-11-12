@@ -183,6 +183,18 @@ test('历史分页遇到流式更新保留较新的执行事实，更新当前�
   const updated=mergeConversationView(paged,{...current,entries:[{...latest,text:'new chunk'}],nextEntryCursor:100});assert.deepEqual(updated.entries.map(item=>item.text),['old history','new chunk']);assert.equal(updated.nextEntryCursor,1);
 });
 
+test('稀疏首条输入不会让流式快照丢弃已载入的中间历史',()=>{
+  const prompt={id:'prompt',sequence:1,kind:'message',role:'user',runId:'run',text:'本轮输入'};
+  const middle={id:'middle',sequence:60,kind:'tool',role:'system',runId:'run',text:'已载入的中间过程'};
+  const tail={id:'tail',sequence:125,kind:'tool',role:'system',runId:'run',text:'旧尾段'};
+  const current={...conversation,revision:'loaded-page',entries:[prompt,middle,tail],nextEntryCursor:undefined};
+  const streamed={...conversation,revision:'streamed-page',entries:[prompt,{...tail,text:'新尾段'}],nextEntryCursor:125};
+  const merged=mergeConversationView(current,streamed);
+  assert.deepEqual(merged.entries.map(entry=>entry.id),['prompt','middle','tail']);
+  assert.equal(merged.entries.at(-1).text,'新尾段');
+  assert.equal(merged.nextEntryCursor,undefined,'已加载全部更早记录时不能重新出现旧游标');
+});
+
 
 test('二进制图片上传携带会话认证和准确修订，不编码为JSON或在URL传秘密',async()=>{
   let request;const bytes=new Uint8Array([137,80,78,71,13,10,26,10]);

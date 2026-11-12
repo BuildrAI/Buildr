@@ -102,6 +102,7 @@ export class ConversationReadModel {
     const maxSequence = before ?? Number.MAX_SAFE_INTEGER;
     const positionQuery = db.prepare(`SELECT sequence,round_id,${bytes} AS bytes FROM conversation_read_entries WHERE conversation_id=? ${normalized ? "AND scope='main'" : ''} AND sequence<? ORDER BY sequence DESC LIMIT ?`);
     type Position = {sequence: number; round_id: string; bytes: number};
+    type NormalizedPageRow = {sequence: number; id: string; compact: string | null; codec: string; body_bytes: number; body: string; content_revision: string};
     const selected: number[] = [], rounds = new Set<string>();
     let size = 2, nextEntryCursor: number | undefined;
     if (limit !== undefined) {
@@ -130,13 +131,43 @@ export class ConversationReadModel {
       nextEntryCursor = hasMore ? selected.at(-1) : undefined;
     }
     if (normalized) {
-      const rows = selected.length ? db.prepare(`SELECT e.id,e.compact,c.codec,c.body_bytes,${compact ? 'CASE WHEN e.compact IS NULL THEN c.body END' : 'c.body'} AS body,e.content_revision
+      let rows = selected.length ? db.prepare(`SELECT e.sequence,e.id,e.compact,c.codec,c.body_bytes,${compact ? 'CASE WHEN e.compact IS NULL THEN c.body END' : 'c.body'} AS body,e.content_revision
         FROM conversation_read_entries e LEFT JOIN conversation_entry_contents c
         ON c.conversation_id=e.conversation_id AND c.content_revision=e.content_revision
-        WHERE e.conversation_id=? AND e.scope='main' AND e.sequence>=? AND e.sequence<? ORDER BY e.sequence`).all(id, selected.at(-1)!, maxSequence) : [];
+        WHERE e.conversation_id=? AND e.scope='main' AND e.sequence>=? AND e.sequence<? ORDER BY e.sequence`).all(id, selected.at(-1)!, maxSequence) as NormalizedPageRow[] : [];
+      if (limit === undefined && before === undefined && selected.length && rounds.size) {
+        // A single oversized round is split by the byte budget. Keep the tail
+        // contiguous for pagination, but pin its first user input so the active
+        // turn can render the prompt before any earlier page is loaded.
+        const roundIds = [...rounds], placeholders = roundIds.map(() => '?').join(',');
+        const prompts = db.prepare(`WITH candidates AS (
+          SELECT e.sequence,e.id,e.compact,c.codec,c.body_bytes,${compact ? 'CASE WHEN e.compact IS NULL THEN c.body END' : 'c.body'} AS body,e.content_revision,
+            row_number() OVER (PARTITION BY e.round_id ORDER BY e.sequence) AS prompt_rank
+          FROM conversation_read_entries e JOIN conversation_entry_contents c
+          ON c.conversation_id=e.conversation_id AND c.content_revision=e.content_revision
+          WHERE e.conversation_id=? AND e.scope='main' AND e.visible=1 AND e.sequence<?
+            AND e.round_id IN (${placeholders})
+            AND c.codec='raw'
+            AND json_extract(c.body,'$.kind')='message' AND json_extract(c.body,'$.role')='user'
+        ) SELECT sequence,id,compact,codec,body_bytes,body,content_revision FROM candidates
+          WHERE prompt_rank=1 ORDER BY sequence`).all(id, selected.at(-1)!, ...roundIds) as NormalizedPageRow[];
+        if (prompts.length) rows = [...prompts, ...rows].sort((left, right) => left.sequence - right.sequence);
+      }
       record.view.entries = rows.map(row => compact && row.compact !== null ? JSON.parse(row.compact as string) : ConversationEntryStore.decode(row as any, reader, row.codec === 'native-tool' || row.compact !== null, row.compact as string));
     } else {
-      record.view.entries = selected.length ? (db.prepare(`SELECT ${column} AS body FROM conversation_read_entries WHERE conversation_id=? AND sequence>=? AND sequence<? ORDER BY sequence`).all(id, selected.at(-1)!, maxSequence) as Array<{body: string}>).map(row => JSON.parse(row.body)) : [];
+      let rows = selected.length ? db.prepare(`SELECT sequence,${column} AS body FROM conversation_read_entries WHERE conversation_id=? AND sequence>=? AND sequence<? ORDER BY sequence`).all(id, selected.at(-1)!, maxSequence) as Array<{sequence: number; body: string}> : [];
+      if (limit === undefined && before === undefined && selected.length && rounds.size) {
+        const roundIds = [...rounds], placeholders = roundIds.map(() => '?').join(',');
+        const prompts = db.prepare(`WITH candidates AS (
+          SELECT sequence,${column} AS body,
+            row_number() OVER (PARTITION BY round_id ORDER BY sequence) AS prompt_rank
+          FROM conversation_read_entries
+          WHERE conversation_id=? AND sequence<? AND round_id IN (${placeholders})
+            AND json_extract(body,'$.kind')='message' AND json_extract(body,'$.role')='user'
+        ) SELECT sequence,body FROM candidates WHERE prompt_rank=1 ORDER BY sequence`).all(id, selected.at(-1)!, ...roundIds) as Array<{sequence: number; body: string}>;
+        if (prompts.length) rows = [...prompts, ...rows].sort((left, right) => left.sequence - right.sequence);
+      }
+      record.view.entries = rows.map(row => JSON.parse(row.body));
     }
     record.view.nextEntryCursor = nextEntryCursor;
     return record;
