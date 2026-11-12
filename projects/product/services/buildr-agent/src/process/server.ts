@@ -84,6 +84,8 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     if (retiring || closing || recovering) return;
     recovering = true;
     void (async () => {
+      // Acknowledge registration before the synchronous part of recovery.
+      await new Promise<void>(resolve => setImmediate(resolve));
       while (recoveryRequested && !retiring && !closing) {
         recoveryRequested = false;
         await service.conversations.recoverInterrupted().catch(() => {});
@@ -152,10 +154,12 @@ export async function startAgentExecutionServer(options: ProcessBootstrap & { se
     if (attachmentUpload && input.operation !== 'conversations.addAttachment') throw new AgentServiceError('agent_process_operation_invalid', '附件传输操作不匹配。');
     if (req.url === '/host/attach') {
       if (closing) throw new AgentServiceError('agent_process_switching','执行后台正在退出，宿主尚未接入。',503);
-      hosts.attach(input.peer);
+      const attached = hosts.attach(input.peer);
       // A new owning host refreshes policy even when the old bootstrap launched this generation.
-      if (input.peer.sourceId===options.legacySourceId && typeof input.autoContinueInterrupted==='boolean') options.autoContinueInterrupted=input.autoContinueInterrupted;
-      recoverAfterHostAttach();
+      const ownsPolicy = input.peer.sourceId === options.legacySourceId;
+      const enabledRecovery = ownsPolicy && input.autoContinueInterrupted === true && !options.autoContinueInterrupted;
+      if (ownsPolicy && typeof input.autoContinueInterrupted === 'boolean') options.autoContinueInterrupted = input.autoContinueInterrupted;
+      if (attached || enabledRecovery) recoverAfterHostAttach();
       json(res, 200, { attached: true }); return;
     }
     if (req.url === '/host/detach') { hosts.detach(input.peerId); json(res, 200, { detached: true }); return; }

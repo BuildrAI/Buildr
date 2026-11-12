@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { insideFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.ts';
 import { codeGitEnvironment } from './code-git-environment.ts';
 export const CODE_LIMITS = Object.freeze({ entries: 1000, textBytes: 5 * 1024 * 1024, pageBytes: 512 * 1024, readMs: 15000, imageBytes: 8 * 1024 * 1024, matches: 100, matchLines: 200, searchOutputBytes: 8 * 1024 * 1024, searchMs: 15000 });
@@ -11,10 +11,25 @@ export function relativeCodePath(value:string, allowEmpty=false) {
   if ((!value && !allowEmpty) || value.includes('\\') || value.includes('\0') || value.includes('//') || path.posix.isAbsolute(value) || value.split('/').some(p=>p==='..'||p==='.'||p.toLowerCase()==='.git') || /^[A-Za-z]:/.test(value)) throw codeFailure('code_path_forbidden','文件路径必须位于所选代码库内。');
   return value.replace(/\/$/,'');
 }
+function codeGitArgs(root: string, args: string[], config: string[] = []) {
+  return ['--literal-pathspecs', '--no-optional-locks', '--no-replace-objects', '-c', 'gc.auto=0', '-c', 'maintenance.auto=false', '-c', 'core.fsmonitor=false', ...config.flatMap(value => ['-c', value]), '-C', root, ...args];
+}
+const codeGitOptions = (maxBuffer: number) => ({env: {...codeGitEnvironment(), GIT_OPTIONAL_LOCKS: '0'}, timeout: 4000, maxBuffer});
+const unavailableGit = () => codeFailure('code_git_unavailable', '该代码库的指定 Git 内容当前不可读取。', 404);
+
 export function codeGit(root:string,args:string[],maxBuffer=CODE_LIMITS.imageBytes+1,input?:string|Buffer,config: string[] = []): Buffer {
-  const env=codeGitEnvironment();
-  try { return execFileSync('git',['--literal-pathspecs','--no-optional-locks','--no-replace-objects','-c','gc.auto=0','-c','maintenance.auto=false','-c','core.fsmonitor=false',...config.flatMap(value => ['-c',value]),'-C',root,...args],{env:{...env,GIT_OPTIONAL_LOCKS:'0'},timeout:4000,maxBuffer,input,stdio:[input===undefined?'ignore':'pipe','pipe','ignore']}); }
-  catch { throw codeFailure('code_git_unavailable','该代码库的指定 Git 内容当前不可读取。',404); }
+  try { return execFileSync('git', codeGitArgs(root,args,config), {...codeGitOptions(maxBuffer),input,stdio:[input===undefined?'ignore':'pipe','pipe','ignore']}); }
+  catch { throw unavailableGit(); }
+}
+
+export function codeGitAsync(root: string, args: string[], maxBuffer: number): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const child = execFile('git', codeGitArgs(root,args), {...codeGitOptions(maxBuffer),encoding:'buffer'}, (error, stdout) => {
+      if (error) reject(unavailableGit());
+      else resolve(stdout);
+    });
+    child.stdin?.end();
+  });
 }
 export function gitCommonDirectory(root:string) { const value=codeGit(root,['rev-parse','--git-common-dir']).toString().trim(); return fs.realpathSync(path.resolve(root,value)); }
 const metadataLocations=new WeakMap<CodeSource,string>();

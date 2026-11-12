@@ -24,12 +24,14 @@ export async function exposeAgentHost(sourceId: string, host: AgentHostCapabilit
 /** Connections can disappear; stable authority source identities do not. */
 export class AgentHostRegistry implements AgentHostCapabilities {
   private peers = new Map<string, HostPeer>();
-  attach(value: HostPeer): void {
+  attach(value: HostPeer): boolean {
     if (!value || typeof value.sourceId !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,99}$/.test(value.sourceId) || typeof value.peerId !== 'string' || typeof value.token !== 'string' || value.token.length < 32) throw new AgentServiceError('agent_host_peer_invalid', '宿主连接身份无效。');
     localOrigin(value.origin);
     // A refreshed live callback takes precedence over callbacks from old hosts.
+    const previous = this.peers.get(value.peerId);
     this.peers.delete(value.peerId);
     this.peers.set(value.peerId, structuredClone(value));
+    return !previous || previous.sourceId !== value.sourceId || previous.origin !== value.origin || previous.token !== value.token;
   }
   detach(peerId: string): void { this.peers.delete(peerId); }
   private async call(method: Method, sourceId: string, input: unknown): Promise<any> {

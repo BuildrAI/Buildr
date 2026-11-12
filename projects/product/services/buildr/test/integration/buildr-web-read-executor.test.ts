@@ -314,6 +314,32 @@ test('commit-context HTTP traverses the real bounded worker and resolves the reg
   } finally { await executor.close(); }
 });
 
+test('source-control worker returns the same status and identities across a full batch and its remainder', async t => {
+  const { root } = copyPreparedWorkspace(t, 'source-control-worker'), runtime = createRuntime();
+  const workspaceId = runtime.getWorkspace(root).workspace.id;
+  const repository = path.join(root, 'fixture-repository');
+  fs.mkdirSync(repository);
+  const git = (...args: string[]) => execFileSync('git', ['-C', repository, ...args], { stdio: 'ignore' });
+  git('init', '--initial-branch=main');
+  git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test', 'commit', '--allow-empty', '-m', 'base');
+  for (let n = 1; n <= 3; n++) {
+    const worktree = path.join(root, 'fixture-worktree-' + n);
+    git('worktree', 'add', '-b', 'fixture-' + n, worktree);
+    fs.writeFileSync(path.join(worktree, 'new-' + n + '.txt'), 'untracked');
+  }
+  const repositoryId = crypto.randomUUID();
+  fs.writeFileSync(path.join(root, 'repositories', 'manifest.yml'), JSON.stringify({ schemaVersion: 'buildr.repositories/v1', repositories: { fixture: { id: repositoryId, workspaceId, code: 'fixture', name: 'Fixture', description: '', source: { type: 'git', path: 'fixture-repository' } } } }));
+  const code = runtimeProvide(runtime, CODE_APPLICATION);
+  const expected = code.sourceControl(root, { repositoryId });
+  const executor = createBoundedBuildrWebReadExecutor({ workerCount: 1 });
+  try {
+    const actual = await executor.run('code-source-control', { targetRoot: root, taskId: 'code-files', input: JSON.stringify({ repositoryId }) });
+    assert.equal(actual.worktreeCoverage.read, 4);
+    assert.equal(actual.observedRevision, expected.observedRevision);
+    assert.deepEqual(actual.repositories[0].worktrees.flatMap(tree => tree.changes.map(change => change.path)).sort(), ['new-1.txt', 'new-2.txt', 'new-3.txt']);
+  } finally { await executor.close(); }
+});
+
 test('one warm slot leaves the rest of the bounded pool lazy until concurrent work needs it', async () => {
   const metrics: any = { calls: 0, active: 0, maxActive: 0, started: [] }, factory = fakeWorkerFactory({ metrics });
   let created = 0;

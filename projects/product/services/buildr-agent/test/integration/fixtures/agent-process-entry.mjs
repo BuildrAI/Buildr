@@ -13,6 +13,14 @@ if(marker.version==='wait-for-startup-storage-contention'){
     await new Promise(resolve=>setTimeout(resolve,20));
   }
 }
+if (marker.version === 'goal') {
+  const { ConversationApplication } = await import('./application/conversation-application.js');
+  const recover = ConversationApplication.prototype.recoverInterrupted;
+  ConversationApplication.prototype.recoverInterrupted = function () {
+    fs.appendFileSync(path.join(bootstrap.dataRoot, 'recovery-scans'), 'scan\n');
+    return recover.call(this);
+  };
+}
 if(marker.version==='legacy-unbound-stop'){
   // Emulate the retained binary's bug so the new router, rather than an already
   // fixed old owner, must recover the stop result. This never runs in product.
