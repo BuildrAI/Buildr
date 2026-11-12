@@ -62,6 +62,7 @@ export const VERIFICATION_STEP_TESTING: any = Object.freeze({
   typecheck: testing(SERVICE_OWNER, 'Static Conformance', 'Static', 'Buildr TypeScript production sources satisfy the strict no-emit execution contract.', TEST_ENVIRONMENTS.sourceReadOnly),
   unit: testing(SERVICE_OWNER, 'Development', 'Unit', 'Pure Buildr logic behaves correctly with collaborators replaced.', TEST_ENVIRONMENTS.pure),
   integration: testing(SERVICE_OWNER, 'Development', 'Integration', 'Generated inputs and verification tools preserve their process, build and compatibility boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
+  'integration-agent-host': testing(SERVICE_OWNER, 'Development', 'Integration', 'The host consumes the Agent public package through delivery, activation and authenticated HTTP boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-generated-artifacts': testing(SERVICE_OWNER, 'Development', 'Integration', 'Generated artifact sets are reproducible and refresh the checkout DTO projection without transient reads.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'integration-code': testing(SERVICE_OWNER, 'Development', 'Integration', 'Code browsing, editing, observation and Git operations preserve the actual checkout and mutation boundaries.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-knowledge': testing(SERVICE_OWNER, 'Development', 'Integration', 'Knowledge and Agent source reading preserve current content, provenance and HTTP results.', TEST_ENVIRONMENTS.repeatedCli),
@@ -415,6 +416,7 @@ const step: any = (definition: any) => {
     resourceDemand: Object.freeze({ ...resourceDemand }),
     inputs: ownership.inputs,
     inputExclusions: ownership.inputExclusions,
+    behaviorOnlyInputs: ownership.behaviorOnlyInputs,
     preflight: definition.preflight ? Object.freeze({ ...definition.preflight, inputs: ownership.preflightInputs }) : null,
     timeoutMs,
     reuse: sourceReusePolicy(definition),
@@ -470,7 +472,7 @@ export const VERIFICATION_EXECUTION_PROFILES: any = Object.freeze({
   local: concurrency(4, 3, 2, { integration: 4, 'integration-candidate-release': 2, 'runtime-adapter-parity': 2, ...Object.fromEntries(JOURNEY_SUITES.map((suite: any) => [suite.id, suite.innerConcurrency])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }, { workers: 8, processes: 8, git: 3, workspaceIo: 3 }),
   'local-auto': concurrency(4, 3, 2, { integration: 4, 'integration-candidate-release': 2, 'runtime-adapter-parity': 2, ...Object.fromEntries(JOURNEY_SUITES.map((suite: any) => [suite.id, suite.innerConcurrency])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }, { workers: 8, processes: 8, git: 3, workspaceIo: 3 }),
   ci: concurrency(4, 3, 2, { integration: 4, 'integration-candidate-release': 2, 'runtime-adapter-parity': 2, ...Object.fromEntries(JOURNEY_SUITES.map((suite: any) => [suite.id, suite.innerConcurrency])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }, { workers: 8, processes: 8, git: 3, workspaceIo: 3 }),
-  'ci-workspace-limited': concurrency(4, 2, 1, { integration: 3, unit: 3, 'source-contracts': 2, 'integration-runtime': 2, 'integration-code': 2, 'integration-knowledge': 1, 'integration-workspace-assets': 2, 'integration-archify': 1, 'integration-task-records': 2, 'integration-connections': 2, 'integration-runtime-projection': 1,  ...Object.fromEntries(JOURNEY_SUITES.map((suite: any) => [suite.id, Math.min(suite.innerConcurrency, 2)])), 'integration-candidate-release': 2, 'runtime-adapter-parity': 2, 'integration-candidate-release-selection': 1, 'integration-candidate-package-selection': 1, 'integration-candidate-release-effects': 1, 'integration-candidate-git-convergence': 2, 'integration-candidate-git-selection': 2, 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 2 }, { workers: 3, processes: 3, git: 2, workspaceIo: 2 }),
+  'ci-workspace-limited': concurrency(4, 2, 1, { integration: 3, 'integration-agent-host': 3, unit: 3, 'source-contracts': 2, 'integration-runtime': 2, 'integration-code': 2, 'integration-knowledge': 1, 'integration-workspace-assets': 2, 'integration-archify': 1, 'integration-task-records': 2, 'integration-connections': 2, 'integration-runtime-projection': 1,  ...Object.fromEntries(JOURNEY_SUITES.map((suite: any) => [suite.id, Math.min(suite.innerConcurrency, 2)])), 'integration-candidate-release': 2, 'runtime-adapter-parity': 2, 'integration-candidate-release-selection': 1, 'integration-candidate-package-selection': 1, 'integration-candidate-release-effects': 1, 'integration-candidate-git-convergence': 2, 'integration-candidate-git-selection': 2, 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 2 }, { workers: 3, processes: 3, git: 2, workspaceIo: 2 }),
 });
 
 export const VERIFICATION_CONCURRENCY: any = VERIFICATION_EXECUTION_PROFILES.local;
@@ -516,13 +518,17 @@ const integrationSlice: any = (id: any, files: any, options: any = {}) => Object
 export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
   // Explicit stable owners replace the exclusive catch-all. The tool owner
   // remains exclusive because generated-artifact-set refreshes checkout DTOs.
-  integrationSlice('integration', [
+  // Split the existing 253s scheduling allowance, not a new measured baseline.
+  // Membership is disjoint; full execution retains all original files.
+  integrationSlice('integration-agent-host', [
     'test/integration/agent-service-delivery.test.ts',
     'test/integration/agent-service-http.test.ts',
     'test/integration/programmatic-agent-http.test.ts',
     'test/integration/programmatic-pushback-http.test.ts',
     'test/integration/programmatic-pushback-migration.test.ts',
     'test/integration/agent-service-activation.test.ts',
+  ], { schedulingCostMs: 100000, timeoutMs: 300_000, args: ['--test-concurrency=4'] }),
+  integrationSlice('integration', [
     'test/integration/browser-launch.test.ts',
     'test/integration/browser-selector-dispatcher-runtime.test.ts',
     'test/integration/development-entry.test.ts',
@@ -537,7 +543,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/verification-reuse-filesystem.test.ts',
     'test/integration/verification-inputs.test.ts',
     'test/integration/windows-artifact-diagnosis.test.ts',
-  ], { schedulingCostMs: 253000, timeoutMs: 300_000, args: ['--test-concurrency=4'] }),
+  ], { schedulingCostMs: 153000, timeoutMs: 300_000, args: ['--test-concurrency=4'] }),
   // buildGeneratedArtifactSet refreshes the checkout DTO projection in addition
   // to its temporary outputs. Keep that one writer exclusive without forcing
   // the other tool-boundary files to wait for an idle machine.
@@ -773,6 +779,7 @@ const builtInVerificationSteps: any = Object.freeze([
       'integration-knowledge': 'Knowledge and source reading integration slice',
       'integration-code': 'Code and Git application integration slice',
       'integration': 'Build and verification tool boundaries',
+      'integration-agent-host': 'Agent public package host integration',
       'integration-generated-artifacts': 'Generated artifact set refresh',
       'integration-declarations': 'Project declaration integration slice',
       'integration-openspec': 'OpenSpec application integration slice',
@@ -925,6 +932,7 @@ const serviceSteps = serviceSets.flatMap(([service, checks]) => checks.map((chec
     ...(check.selection ? { selection: check.selection } : {}),
     inputs: [...new Set([...(inherited?.inputs ?? []), ...(check.sourcePaths ?? ['src/**']).map(input), ...(check.testFiles ?? []).map(input), input('tools/testing/verification-checks.ts')])],
     inputExclusions: [...new Set([...(inherited?.inputExclusions ?? []), ...(check.inputExclusions ?? []).map(input)])],
+    behaviorOnlyInputs: [...new Set([...(inherited?.behaviorOnlyInputs ?? []), ...(check.behaviorOnlyInputs ?? []).map(input)])],
     executor: { type: 'command', ...command(check.command), discoveredFiles: (check.testFiles ?? []).map((file: string) => path.relative(path.join(servicesRoot, 'buildr'), path.join(root, file)).replaceAll('\\', '/')) },
     preparations: (check.prepare ?? []).map(command), requirements: check.requirements ?? [],
     requiredEnvironment: check.requiredEnvironment ?? [], requiresFiles: (check.requiresFiles ?? []).map((file: string) => path.resolve(root, file)),
@@ -996,6 +1004,7 @@ const candidateShard: any = (id: any, runner: any, phase: any, stepIds: any, opt
 
 export const CORE_MACOS_STEP_IDS: any = Object.freeze([
   'integration',
+  'integration-agent-host',
   'integration-generated-artifacts',
   'integration-code',
   'integration-knowledge',
@@ -1046,6 +1055,7 @@ export const CORE_MACOS_SHARDS: any = Object.freeze([
   ]),
   candidateShard('core-project-task-macos', 'macos', 'verification', [
     'integration',
+    'integration-agent-host',
     'integration-generated-artifacts',
     'integration-code',
     'integration-knowledge',

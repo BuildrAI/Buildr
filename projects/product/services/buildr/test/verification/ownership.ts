@@ -6,6 +6,7 @@ const freezeOwnership: any = (value: any) => Object.freeze({
   inputs: Object.freeze(value.inputs),
   inputExclusions: Object.freeze(value.inputExclusions),
   preflightInputs: Object.freeze(value.preflightInputs ?? []),
+  behaviorOnlyInputs: Object.freeze(value.behaviorOnlyInputs ?? []),
 });
 
 export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries(
@@ -65,10 +66,12 @@ export function verificationStepOwnership(id: any, executor: any = null): any  {
   if (!value) throw new Error(`Missing verification ownership declaration: ${id}`);
   // The executing file selectors are also changed-path inputs; do not maintain
   // a second hand-copied membership list beside the primary suite registry.
-  const domain = Object.entries({ development, runtime, delivery, governance }).find(([, entries]) => Object.hasOwn(entries, id))?.[0];
   const members: string[] = executor?.files ?? executor?.discoveredFiles
     ?? (executor?.file === 'test/verification/run-node-tests.ts' ? executor.args : []) ?? [];
-  const sources = [...members, ...(domain ? [`test/verification/ownership/${domain}.ts`] : [])];
+  // Ownership declarations govern selection, not the behavior exercised by
+  // every row in their file. Related runs verify their framework contracts;
+  // actual executable test members remain direct changed-path inputs.
+  const sources = [...members];
   return sources.length === 0 ? value : Object.freeze({ ...value, inputs: Object.freeze([...new Set([...value.inputs, ...sources])]) });
 }
 

@@ -1,8 +1,23 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { EventEmitter } from 'node:events';
-import { checkAvailability, parseVerificationArguments, planVerification, verificationCoverageEntry, withVerificationSignals } from '../verification/cli.ts';
 import { verificationSteps } from '../verification/registry.ts';
+import { checkAvailability, parseVerificationArguments, planVerification, verificationCoverageEntry, withVerificationSignals } from '../verification/cli.ts';
+
+test('automatic related CLI caps final execution but retains deferred candidates; explicit tags bypass the budget', () => {
+  const options = { collectChanged: () => ({ paths: ['services/buildr-agent/src/index.ts'], base: 'fixture-base' }) };
+  const automatic = planVerification(parseVerificationArguments(['related', '--base', 'fixture-base', '--plan']), options);
+  assert.ok(automatic.steps.length <= 10);
+  assert.equal(automatic.selection, 'daily-targeted');
+  assert.ok(automatic.selectionBudget.candidateCount > automatic.steps.length);
+  assert.equal(automatic.selectionBudget.deferred.length + automatic.steps.length, automatic.selectionBudget.candidateCount);
+  for (const step of automatic.steps) for (const id of step.dependsOn) {
+    assert.ok(automatic.steps.some((candidate: any) => candidate.id === id), `${step.id}: ${id}`);
+  }
+  const explicit = planVerification(parseVerificationArguments(['related', '--base', 'fixture-base', '--tag', 'recovery', '--plan']), options);
+  assert.equal(explicit.selectionBudget, undefined);
+  assert.ok(explicit.steps.length > 10);
+});
 
 test('verification interruption retains its first signal and releases handlers after evidence or failure', async () => {
   for (const fails of [false, true]) {

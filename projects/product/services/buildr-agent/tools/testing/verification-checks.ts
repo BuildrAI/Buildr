@@ -39,6 +39,19 @@ export const agentIntegrationChecks = [
     testFiles: ['test/integration/process/recovery/protocol-budget.test.ts'], schedulingCostMs: 35000, timeoutMs: 60000,
     resourceDemand: { workers: 1, processes: 1, workspaceIo: 1 }, resources: ['agent-process-tests'] },
 ].map(group => ({ ...group, type: 'Integration',
+  behaviorOnlyInputs: ['src/**', 'tools/testing/verification-checks.ts'],
+  // Native/conversation checks do not materialize retained runtime units.
+  // Their public import/link boundary is still covered by agent-integration
+  // and integration-agent-host. Shared contracts and unknown source stay broad.
+  inputExclusions: [
+    ...(['agent-integration-native', 'agent-integration-conversations'].includes(group.id)
+      ? ['src/process/runtime-unit.ts', 'src/process/runtime-preparation.ts'] : []),
+    // Real lifecycle fixtures inject first/second controlled executors in
+    // test/integration/fixtures/agent-process-entry.mjs. Provider protocol
+    // behavior belongs to native + conversation owners, not these fixtures.
+    ...(group.id.startsWith('agent-integration-startup') || group.id.startsWith('agent-integration-handoff') || group.id.startsWith('agent-integration-recovery')
+      ? ['src/executors/codex/**', 'src/executors/dsh/**', 'src/executors/qoder/**', 'src/executors/qoder-cn/**'] : []),
+  ],
   sourcePaths: ['src/**', 'tools/testing/**', 'test/support/**', 'test/integration/fixtures/**', 'package.json',
     'services/buildr/tools/testing/run-service-tests.ts', 'services/buildr/test/verification/worker-budget.ts'],
   command: { file: process.execPath, args: [path.resolve(root, 'tools/testing/run-integration.ts'), '--group', group.id], cwd: '.' },

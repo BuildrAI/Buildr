@@ -6,9 +6,9 @@ import path from 'node:path';
 import process from 'node:process';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { collectChangedProductPaths, collectImpactSnapshot } from './changed-paths.ts';
+import { collectChangedProductPaths, collectImpactSnapshot, contentChangesAtSnapshot } from './changed-paths.ts';
 import { estimateVerificationPlan } from './planner.ts';
-import { createVerificationPlan } from './planner.ts';
+import { createVerificationPlan, budgetRelatedVerificationPlan } from './planner.ts';
 import { executePlan, localExecutionStep } from './plan-runner.ts';
 import { resolveVerificationExecutionProfile, verificationSteps } from './registry.ts';
 import { collectVerificationSourceIdentity, createVerificationEvidencePaths, writeVerificationTimingEvidence } from './timing/evidence.ts';
@@ -81,22 +81,29 @@ export function planVerification(request: ReturnType<typeof parseVerificationArg
   const executionProfile = options.executionProfile ?? resolveVerificationExecutionProfile(undefined, options.env ?? process.env);
   let changed = request.base && request.mode === 'related' ? (options.collectChanged ?? collectChangedProductPaths)({ productRoot: options.productRoot ?? productRoot, projectRoot: options.projectRoot ?? projectRoot, base: request.base }) : { paths: [], base: null };
   const previousEvidence = request.failedFrom ? JSON.parse(fs.readFileSync(request.failedFrom, 'utf8')) : null;
-  const deliveryChanged = changed;
   const snapshotOptions = { productRoot: options.productRoot ?? productRoot, projectRoot: options.projectRoot ?? projectRoot };
   const previousSnapshot = previousEvidence?.coverage?.impactSnapshot;
   const snapshotBase = options.snapshotBase ?? request.base;
   const impactSnapshot = snapshotBase && (!request.planOnly || previousSnapshot) && !options.collectChanged
     ? previousSnapshot?.version === 1 ? collectImpactSnapshot(changed, snapshotOptions, previousSnapshot)
       : collectVerificationContentSnapshot({ ...snapshotOptions, base: snapshotBase, env: options.env, environmentInputs: steps.flatMap((step: any) => step.requiredEnvironment ?? []) }, previousSnapshot) : null;
+  if (impactSnapshot && changed.contentChanges?.length && !previousSnapshot && !options.collectChanged) {
+    // Discovery may precede an expensive snapshot. Re-read paths and bind the
+    // bounded proofs to those exact bytes before omitting any behavior owner.
+    changed = collectChangedProductPaths({ ...snapshotOptions, base: request.base });
+    changed = { ...changed, contentChanges: contentChangesAtSnapshot(changed, impactSnapshot, snapshotOptions) };
+  }
+  const deliveryChanged = changed;
   if (impactSnapshot && previousEvidence?.coverage?.impactSnapshot) {
     const paths = impactSnapshot.changedSincePrevious;
-    changed = { ...changed, paths, versionOnlyPackagePaths: (changed.versionOnlyPackagePaths ?? []).filter((file: string) => paths.includes(file)),
+    changed = { ...changed, paths, contentChanges: [], versionOnlyPackagePaths: (changed.versionOnlyPackagePaths ?? []).filter((file: string) => paths.includes(file)),
       selectionOnlyPaths: (changed.selectionOnlyPaths ?? []).filter((file: string) => paths.includes(file)),
       selectionReasons: (changed.selectionReasons ?? []).filter((item: any) => paths.includes(item.path)) };
   }
   const failedIds = request.failedFrom ? [...new Set<string>([...readFailedVerificationGroups(request.failedFrom, previousEvidence), ...(impactSnapshot?.environmentChanged ? previousEvidence.coverage.selected.map((step: any) => step.id) : [])])] : [];
   const discoveredPlan = createVerificationPlan({ ...changed, tags: request.tags, semantic: request.semantic, types: modes[request.mode], stepIds: [...new Set([...request.checks, ...failedIds])], target: 'source', related: request.mode === 'related', completeTypes: request.mode === 'check', excludeGroups: request.excludeGroups }, steps);
-  const plan = { ...discoveredPlan, steps: discoveredPlan.steps.map((step: any) => localExecutionStep(step, executionProfile, executionProfile.limits)) };
+  const budgetedPlan = budgetRelatedVerificationPlan(discoveredPlan, request);
+  const plan = { ...budgetedPlan, steps: budgetedPlan.steps.map((step: any) => localExecutionStep(step, executionProfile, executionProfile.limits)) };
   // Narrow execution after repairs, but recheck unresolved ownership against the
   // complete delivery diff. A previous mapping gap must never disappear as green.
   const deliveryGaps = previousEvidence?.coverage?.impactSnapshot
@@ -128,12 +135,16 @@ export function planVerification(request: ReturnType<typeof parseVerificationArg
       gaps.push({ code: 'dependency-unavailable', checkId: step.id, dependencies: step.dependsOn.filter((id: string) => unavailable.has(id)), reason: 'A required producer cannot execute in this environment.' });
     }
   }
-  return { ...plan, executionProfile, estimate: estimateVerificationPlan(plan, { concurrency: executionProfile.limits }), impactSnapshot, repair: request.failedFrom ? { evidence: path.resolve(request.failedFrom), failedIds, comparison: previousEvidence?.coverage?.impactSnapshot ? 'previous-run-contents' : 'delivery-base' } : null, targetExclusions, selectionExclusions, status: gaps.length ? 'incomplete' : 'ready', gaps, mode: request.mode, selection: request.mode === 'related' ? request.base ? 'related-plus-explicit' : 'explicit' : request.mode === 'check' || !request.checks.length ? 'full' : 'explicit', base: changed.base ?? request.base, reference: request.reference, steps: plan.steps.map((step: any) => ({ ...step, ...(failedIds.includes(step.id) ? { reuse: false, reuseDisabledReason: 'previous-run-did-not-pass' } : {}), availability: unavailable.has(step.id) ? 'unavailable' : 'ready' })) };
+  return { ...plan, executionProfile, estimate: estimateVerificationPlan(plan, { concurrency: executionProfile.limits }), impactSnapshot, repair: request.failedFrom ? { evidence: path.resolve(request.failedFrom), failedIds, comparison: previousEvidence?.coverage?.impactSnapshot ? 'previous-run-contents' : 'delivery-base' } : null, targetExclusions, selectionExclusions, status: gaps.length ? 'incomplete' : 'ready', gaps, mode: request.mode, selection: plan.selectionBudget ? 'daily-targeted' : request.mode === 'related' ? request.base ? 'related-plus-explicit' : 'explicit' : request.mode === 'check' || !request.checks.length ? 'full' : 'explicit', base: changed.base ?? request.base, reference: request.reference, steps: plan.steps.map((step: any) => ({ ...step, ...(failedIds.includes(step.id) ? { reuse: false, reuseDisabledReason: 'previous-run-did-not-pass' } : {}), availability: unavailable.has(step.id) ? 'unavailable' : 'ready' })) };
 }
 
 function print(plan: any) {
   process.stdout.write(`Verification: ${plan.mode} selection=${plan.selection} target=${plan.target} status=${plan.status}\n`);
   if (plan.base) process.stdout.write(`Comparison: reference=${plan.reference ?? plan.base} commit=${plan.base}\n`);
+  if (plan.selectionBudget) {
+    process.stdout.write(`Daily budget: selected=${plan.steps.length}/${plan.selectionBudget.limit} candidates=${plan.selectionBudget.candidateCount}; proof scope=targeted, not full coverage.\n`);
+    for (const item of plan.selectionBudget.deferred) process.stdout.write(`deferred: ${item.id} — ${item.reason}; selected by: ${item.reasons.join('; ')}\n`);
+  }
   for (const step of plan.steps) {
     process.stdout.write(`${step.availability} ${step.testing.executionBoundary} ${step.id} — ${step.name}\n`);
     if (step.tags?.length) process.stdout.write(`  tags: ${step.tags.join(', ')}\n`);
@@ -157,6 +168,10 @@ function print(plan: any) {
   for (const item of plan.selectionExclusions) process.stdout.write(`supplementary check excluded: ${item.type} ${item.id} — ${item.reason}\n`);
   for (const item of plan.targetExclusions) process.stdout.write(`target excluded: ${item.type} ${item.id} — ${item.reason}\n`);
   for (const gap of plan.gaps) process.stdout.write(`gap: ${JSON.stringify(gap)}\n`);
+  for (const refinement of plan.refinements ?? []) {
+    process.stdout.write(`content refinement: ${refinement.path} ${refinement.kind}; behavioral edges omitted: ${refinement.skippedOwnerIds.join(', ') || 'none'}; explicit selections remain additive\n`);
+  }
+  if (plan.contentFallback) process.stdout.write(`content fallback: ${plan.contentFallback}\n`);
 }
 
 /** Keep the handler through evidence finalization; a second signal does not
@@ -231,6 +246,7 @@ async function runVerification(args: string[], signal: AbortSignal) {
     ...(cleanupError ? [{ code: 'execution-cleanup-incomplete', reason: cleanupError }] : [])];
   const coverage = {
     repair: plan.repair, impactSnapshot: plan.impactSnapshot, mode: plan.mode, selection: plan.selection, target: plan.target, reference: plan.reference, base: plan.base, targetExclusions: plan.targetExclusions, selectionExclusions: plan.selectionExclusions,
+    selectionBudget: plan.selectionBudget ?? null, proofScope: plan.selectionBudget ? 'targeted' : 'requested',
     selected: plan.steps.map((step: any) => {
       const result = execution.results.find((item: any) => item.id === step.id);
       return verificationCoverageEntry(step, result);
@@ -249,7 +265,7 @@ async function runVerification(args: string[], signal: AbortSignal) {
     status: passed ? 'passed' : 'failed', results: execution.results, timings: { ...execution.timings, selectionMs: startedAt - invocationStartedAt, totalMs: Date.now() - invocationStartedAt }, contextLifecycle: execution.contextLifecycle,
     startedAt: invocationStartedAt, finishedAt: Date.now(), diagnosticsDirectory: evidence.diagnosticsOutput, prefix: 'verify',
     stream: process.stdout, errorStream: process.stderr, executionProfile });
-  process.stdout.write(`Verification ${conclusion}: selected=${coverage.selectedCount} executed=${coverage.executedCount} reused=${coverage.reusedCount} failed=${failedCount} unavailable=${coverage.unavailableCount} not-run=${notRunCount} gaps=${gaps.length}.\n`);
+  process.stdout.write(`Verification ${conclusion}${plan.selectionBudget ? ' (targeted, not full coverage)' : ''}: selected=${coverage.selectedCount} executed=${coverage.executedCount} reused=${coverage.reusedCount} failed=${failedCount} unavailable=${coverage.unavailableCount} not-run=${notRunCount} gaps=${gaps.length}.\n`);
   return passed ? 0 : 1;
 
 }

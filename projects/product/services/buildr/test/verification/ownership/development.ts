@@ -50,12 +50,8 @@ export default {
     "inputExclusions": []
   },
 "integration": {
+    "behaviorOnlyInputs": ["tools/testing/verification-checks.ts"],
     "inputs": [
-      "services/buildr-agent/**",
-      "test/integration/agent-service-delivery.test.ts",
-      "test/integration/agent-service-http.test.ts",
-      "test/integration/programmatic-agent-http.test.ts",
-      "src/modules/agent-service/**",
       "tools/build/**",
       "tools/codegen/**",
       "tools/testing/**",
@@ -72,6 +68,34 @@ export default {
       "test/verification/verification-reuse.ts",
       "test/verification/plan-runner.ts",
       "buildr"
+    ],
+    "inputExclusions": []
+  },
+"integration-agent-host": {
+    "behaviorOnlyInputs": ["services/buildr-agent/src/**", "services/buildr-agent/tools/testing/verification-checks.ts", "tools/testing/verification-checks.ts"],
+    "inputs": [
+      "services/buildr-agent/src/**",
+      "services/buildr-agent/package.json",
+      "services/buildr-agent/package-lock.json",
+      "services/buildr-agent/tools/**",
+      "src/modules/agent-service/**",
+      "test/helpers/prepared-agent-runtime.ts",
+      "tools/build/**",
+      "tools/codegen/**",
+      "tools/testing/**",
+      "tools/development/**",
+      "test/helpers/in-process-cli.ts",
+      "tools/verification/candidate-environment.ts",
+      "tools/verification/candidate-preparation-reuse.ts",
+      "src/bootstrap/cli/identity.ts",
+      "src/infrastructure/process.ts",
+      "test/verification/worker-budget.ts",
+      "test/verification/verification-reuse.ts",
+      "test/verification/plan-runner.ts",
+      "buildr",
+      "test/register-development-entry.ts",
+      "src/infrastructure/filesystem/test-state-boundary.ts",
+      "test/verification/support/**"
     ],
     "inputExclusions": []
   },

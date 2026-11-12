@@ -7,6 +7,7 @@ import { createRequire } from 'node:module';
 import { normalizeProductPath } from './planner.ts';
 import { VERIFICATION_GOVERNED_REPOSITORY_INPUTS, isVerificationGovernedRepositoryInput } from './ownership.ts';
 import { sameFilesystemPath } from '../../src/infrastructure/git/checkout-identity.ts';
+import { sourceChangeEvidence, type SourceChangeEvidence } from './source-diff.ts';
 
 const require: any = createRequire(import.meta.url);
 
@@ -176,6 +177,35 @@ export function collectChangedProductPaths(options: any): any  {
     if (relative) paths.push(normalizeProductPath(relative));
   }
   const uniquePaths: any = [...new Set(paths)].sort();
+  const contentChanges: SourceChangeEvidence[] = [];
+  // Read exact comparison bytes, not a task's prose or a path-only assertion.
+  // Use the merge base, matching the triple-dot discovery above.
+  for (const productPath of uniquePaths.filter((file: string) => /\.[cm]?tsx?$/u.test(file))) {
+    try {
+      const workspacePath = workspacePaths.find((file: string) => normalizeProductPath(
+        file.startsWith(`${productPrefix}/`) ? file.slice(productPrefix.length + 1)
+          : file.startsWith(`${projectPrefix}/`) ? file.slice(projectPrefix.length + 1) : file,
+      ) === productPath);
+      if (!workspacePath) continue;
+      const read = (file: string, version: 'before' | 'after') => {
+        if (path.posix.isAbsolute(file) || file.split('/').includes('..')) throw new Error('Invalid source path');
+        if (version === 'before' || options.head) {
+          const ref = version === 'before' ? mergeBase : headCommit;
+          if (!/^100644 blob /u.test(git(gitRoot, ['ls-tree', ref, '--', file]))) throw new Error('Unknown source mode');
+          return git(gitRoot, ['show', `${ref}:${file}`]);
+        }
+        const absolute = path.join(gitRoot, file), stat = fs.lstatSync(absolute);
+        if (!stat.isFile() || stat.isSymbolicLink() || stat.mode & 0o111) throw new Error('Unknown source mode');
+        return fs.readFileSync(absolute, 'utf8');
+      };
+      const evidence = sourceChangeEvidence(productPath, read(workspacePath, 'before'), read(workspacePath, 'after'),
+        (specifier, version) => {
+          if (!specifier.startsWith('./') && !specifier.startsWith('../')) throw new Error('External barrel');
+          return read(path.posix.normalize(path.posix.join(path.posix.dirname(workspacePath), specifier)), version);
+        });
+      if (evidence) contentChanges.push(evidence);
+    } catch { /* New, deleted, unreadable or opaque source retains broad ownership. */ }
+  }
   const versionOnlyPackagePaths: any[] = [];
   const selectionOnlyPaths: any[] = [];
   const selectionReasons: any[] = [];
@@ -217,7 +247,31 @@ export function collectChangedProductPaths(options: any): any  {
       }
     } catch {}
   }
-  return { base, head, comparison, paths: uniquePaths, source: 'git', versionOnlyPackagePaths, selectionOnlyPaths: [...new Set(selectionOnlyPaths)].sort(), selectionReasons };
+  return { base, head, comparison, paths: uniquePaths, source: 'git', contentChanges, versionOnlyPackagePaths, selectionOnlyPaths: [...new Set(selectionOnlyPaths)].sort(), selectionReasons };
+}
+
+/** A proof observed before snapshot collection must not narrow different
+ * execution bytes. Failed reads/modes fall back to declared ownership. */
+export function contentChangesAtSnapshot(changed: any, snapshot: any, options: any): SourceChangeEvidence[] {
+  if (!snapshot?.files || ![1, 2].includes(snapshot.version)) return [];
+  const productRoot = fs.realpathSync(options.productRoot), projectRoot = fs.realpathSync(options.projectRoot);
+  const repository = fs.realpathSync(git(productRoot, ['rev-parse', '--show-toplevel']).trim());
+  return (changed.contentChanges ?? []).filter((evidence: SourceChangeEvidence) => {
+    try {
+      const file = normalizeProductPath(evidence.path);
+      const projectOwned = /^(?:services|knowledge|openspec|docs)\//u.test(file);
+      const absolute = path.resolve(projectOwned ? projectRoot : productRoot, file);
+      const relative = path.relative(repository, absolute).replaceAll('\\', '/');
+      if (relative.startsWith('../') || path.isAbsolute(relative)) return false;
+      const stat = fs.lstatSync(absolute);
+      if (!stat.isFile() || stat.isSymbolicLink() || stat.mode & 0o111) return false;
+      const bytes = fs.readFileSync(absolute);
+      if (crypto.createHash('sha256').update(bytes).digest('hex') !== evidence.afterDigest) return false;
+      const hash = crypto.createHash('sha256').update(String(stat.mode));
+      if (snapshot.version === 1) hash.update('\0');
+      return hash.update(bytes).digest('hex') === snapshot.files[snapshot.version === 1 ? file : relative];
+    } catch { return false; }
+  });
 }
 
 /** Capture changed contents so a repair compares against the actual preceding run,

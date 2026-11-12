@@ -43,6 +43,7 @@ export const serviceVerificationChecks = [
   },
   {
     id: 'generated-contracts', type: 'Static', name: 'Generated public types match their owning declarations',
-    sourcePaths: ['src/**', 'tools/codegen/**'], command: node('tools/testing/check-generated.ts'), prepare: sharedCheckPreparation,
+    sourcePaths: ['src/**', 'tools/codegen/**', 'services/buildr-agent/src/index.ts'],
+    command: node('tools/testing/check-generated.ts'), prepare: sharedCheckPreparation,
   },
 ] as const;
