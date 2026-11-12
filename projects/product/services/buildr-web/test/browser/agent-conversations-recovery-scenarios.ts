@@ -479,7 +479,7 @@ export async function runRecoveryScenarios(fixture:AgentConversationFixture){
     // Consecutive focus metadata refreshes are intentionally throttled for 1 second.
     await page.waitForTimeout(1100);await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
     await fixture.assertModelSummary('请选择模型');
-    assert.equal(await panel().locator('.ac-compose-wrap>.ant-alert').filter({hasText:'所选模型账号当前不可用'}).count(),0);
+    assert.equal(await panel().locator('.ac-compose-wrap>.ant-alert').filter({hasText:'所选模型供应商当前不可用'}).count(),0);
     const assertAligned=async(label:string)=>{
       const geometry=await notice().evaluate((node:HTMLElement)=>{
         const compose=node.closest('.ac-compose-wrap')!;

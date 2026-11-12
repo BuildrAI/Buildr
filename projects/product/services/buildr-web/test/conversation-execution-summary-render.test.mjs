@@ -11,7 +11,7 @@ registerHooks({load(url,context,next){
 }});
 const {ConversationExecutionSummary}=await import('../src/features/agent-conversations/ConversationExecutionSummary.tsx');
 const {conversationModelSourceLabel,conversationModelLabel}=await import('../src/features/agent-conversations/conversation-model-label.ts');
-const render=(stats={agents:[{label:'codex',count:2}],models:[{label:'gpt-6.1-sol',count:2}],executions:[],modelExecutions:[{accountId:'native-codex',accountLabel:'ChatGPT',model:'gpt-6.1-sol',count:1},{accountId:'unknown:conversation',accountLabel:'账号未记录',model:'gpt-6.1-sol',count:1}]})=>renderToStaticMarkup(React.createElement(ConversationExecutionSummary,{
+const render=(stats={agents:[{label:'codex',count:2}],models:[{label:'gpt-6.1-sol',count:2}],executions:[],modelExecutions:[{accountId:'native-codex',accountLabel:'ChatGPT',model:'gpt-6.1-sol',count:1},{accountId:'unknown:conversation',accountLabel:'供应商未记录',model:'gpt-6.1-sol',count:1}]})=>renderToStaticMarkup(React.createElement(ConversationExecutionSummary,{
   stats,
   sourceLabel:id=>conversationModelSourceLabel(id,[{accountId:'native-codex',provider:'native-codex'}]),
   modelLabel:(id,accountId)=>conversationModelLabel(id,[], [{accountId:'native-codex',modelId:'gpt-6.1-sol',label:'GPT-6.1-Sol'}],{modelAccountId:accountId}),
@@ -19,13 +19,13 @@ const render=(stats={agents:[{label:'codex',count:2}],models:[{label:'gpt-6.1-so
   onFilter(){},
 }));
 
-test('执行中模型按账号来源与模型组合展示，缺失账号明示账号未记录',()=>{
+test('执行中模型按供应商与模型组合展示，缺失供应商明示供应商未记录',()=>{
   const html=render();
   assert.match(html,/ChatGPT · GPT-6\.1-Sol/);
-  assert.match(html,/账号未记录 · GPT-6\.1-Sol/);
+  assert.match(html,/供应商未记录 · GPT-6\.1-Sol/);
   assert.doesNotMatch(html,/来源未记录/);
   assert.equal((html.match(/class="ac-execution-chip"/g)??[]).length,2);
 });
-test('没有模型明细时不伪造账号来源，总数仍来自执行统计',()=>{
-  assert.match(render({agents:[{label:'codex',count:1}],models:[]}),/账号与模型明细尚未读取/);
+test('没有模型明细时不伪造供应商来源，总数仍来自执行统计',()=>{
+  assert.match(render({agents:[{label:'codex',count:1}],models:[]}),/供应商与模型明细尚未读取/);
 });

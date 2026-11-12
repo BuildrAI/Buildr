@@ -78,6 +78,25 @@ test('登录准备显示实际进度，失败原因优先于旧账号检查提�
  assert.equal(view('cancelled').loginPending,false);
 });
 
+test('自定义供应商按用户名称显示，未就绪时仍保留已接入的卡片',()=>{
+ const custom={id:'custom',provider:'custom',label:'我的网关',revision:'r9',enabled:true,status:'not-authenticated',modeLabel:'OpenAI 兼容',credentialConfigured:false,observedAt:'2026-11-12T07:10:00.000Z',models:[{id:'m',label:'M',images:false,tools:true,enabled:true}],custom:{protocol:'chat-completions',baseUrl:'https://models.example.com/v1',useApiKey:false,models:[{id:'m'}]}};
+ const view=modelSourceViews([custom],[]).find(item=>item.id==='custom');
+ assert.ok(view);
+ assert.equal(view.providerLabel,'我的网关');
+ assert.equal(view.modeLabel,'OpenAI 兼容');
+ assert.equal(view.planLabel,'OpenAI 兼容');
+ assert.deepEqual(view.windows,[]);
+ assert.equal(view.observedLabel,new Date(custom.observedAt).toLocaleString());
+ assert.equal(view.observedLabel.includes('尚未读取'),false);
+ assert.match(view.quotaNote,/自定义供应商没有额度接口/);
+ assert.equal(view.custom?.baseUrl,'https://models.example.com/v1');
+ assert.equal(view.custom?.protocol,'chat-completions');
+ assert.equal(view.custom?.useApiKey,false);
+ assert.deepEqual(view.custom?.models,[{id:'m'}]);
+ assert.equal(modelSourceViews([{...custom,sourceEnabled:false}],[]).some(item=>item.id==='custom'),false);
+ assert.equal(modelSourceViews([{...custom,sourceEnabled:false}],[],true).find(item=>item.id==='custom').sourceEnabled,false);
+});
+
 test('disabled sources stay hidden without synthesizing a logged-out replacement',()=>{
  const account={id:'native-dsh',provider:'native-dsh',connectionId:'dsh',label:'DeepSeek',status:'ready',enabled:true,sourceEnabled:false,models:[]};
  assert.equal(modelSourceViews([account],[]).some(source=>source.id===account.id),false);

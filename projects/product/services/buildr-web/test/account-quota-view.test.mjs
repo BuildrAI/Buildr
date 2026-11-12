@@ -33,14 +33,24 @@ test('详细余额保留两位小数，未知与空值不冒充零',()=>{
  const balances=[{currency:'CNY',total:'81.362111880000000',toppedUp:'81.362111880000000',granted:'0'},{currency:'USD',total:'12.999',toppedUp:'未知',granted:''}];
  assert.deepEqual(accountQuotaView({...account,quota:{available:true,balances}},now).lines.map(line=>line.text),['账户余额 CNY 81.36（充值 81.36 · 赠送 0.00）','账户余额 USD 13.00（充值 未知 · 赠送 ）']);
 });
-test('缓存额度直接展示，不额外提示非实时；只有账号待确认时说明',()=>{
+test('缓存额度直接展示，不额外提示非实时；只有供应商待确认时说明',()=>{
  const quota={available:true,observedAt:new Date(now-61000).toISOString(),windows:[{id:'week',label:'每周窗口',remainingPercent:84}]};
  const cached={...account,quota};
  assert.equal(accountQuotaView(cached,now).stale,true);
  assert.equal(accountQuotaView(cached,now).lines[0].text,'每周窗口 · 剩余 84%');
  assert.equal(accountQuotaWarning(cached),undefined);
- assert.equal(accountQuotaWarning({...cached,status:'failed'}),'账号待确认');
+ assert.equal(accountQuotaWarning({...cached,status:'failed'}),'供应商待确认');
  assert.equal(accountQuotaWarning({...cached,quota:{...quota,diagnostic:'本次额度读取未完成，以下保留上次观察。'}}),undefined);
+});
+test('自定义供应商显示用户填写的名称，不改用 ChatGPT API 名称',()=>{
+ const custom={...account,id:'custom',provider:'custom',label:'我的网关',accountLabel:'我的网关',authType:'api-key',modeLabel:'OpenAI 兼容',custom:{protocol:'chat-completions',baseUrl:'https://models.example.com/v1',useApiKey:true,models:[{id:'m',label:'M'}]}};
+ assert.equal(accountSourceName(custom),'我的网关');
+ assert.equal(accountSourceName({...account,provider:'qoder',authType:'api-key'}),'Qoder');
+ assert.equal(accountQuotaView(custom,now).lines[0].text,'额度暂不可读取');
+ const card=modelSourceViews([custom],[]).find(item=>item.id==='custom');
+ assert.equal(card.providerLabel,'我的网关');
+ assert.deepEqual(card.windows,[]);
+ assert.match(card.quotaNote,/自定义供应商没有额度接口/);
 });
 test('额度概览按来源显示名称稳定排序，同一来源按账号名排序',()=>{
  const rows=[

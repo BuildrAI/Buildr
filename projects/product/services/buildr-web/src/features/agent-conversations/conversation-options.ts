@@ -6,7 +6,7 @@ import type {ConnectionView, ConversationRun, SendDraft, CatalogModel} from './t
 export function qoderSourceNotice(provider:string|undefined):string|undefined{
   if(provider!=='qoder'&&provider!=='qoder-cn')return;
   const label=provider==='qoder-cn'?'Qoder CN Agent':'Qoder Agent';
-  return `${label} 暂不支持其他供应商的模型，相关来源已标记但不可选；请改用 ${label} 原生模型或切换智能体。`;
+  return `${label} 暂不支持其他供应商的模型，相关供应商已标记但不可选；请改用 ${label} 原生模型或切换智能体。`;
 }
 export function qoderSourceUnsupported(provider:string|undefined,sourceProvider:string):boolean{
   if(provider!=='qoder'&&provider!=='qoder-cn')return false;

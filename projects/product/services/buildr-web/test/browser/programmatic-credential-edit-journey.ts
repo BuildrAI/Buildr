@@ -27,8 +27,8 @@ export async function runProgrammaticCredentialEditJourney(fixture:AgentConversa
   };
   await page.route(matcher,route);
   const drawer=page.getByRole('dialog',{name:/^智能体与模型/});
-  const open=async()=>{if(!(await drawer.isVisible()))await page.getByRole('button',{name:'账号与配置',exact:true}).click();await drawer.waitFor();await drawer.getByRole('tab',{name:'程序接入',exact:true}).click();};
-  const close=async()=>{await drawer.getByRole('button',{name:'关闭智能体账号与配置',exact:true}).click();await drawer.waitFor({state:'hidden'});await page.locator('.ant-drawer-content-wrapper').waitFor({state:'hidden'});};
+  const open=async()=>{if(!(await drawer.isVisible()))await page.getByRole('button',{name:'智能体与模型设置',exact:true}).click();await drawer.waitFor();await drawer.getByRole('tab',{name:'程序接入',exact:true}).click();};
+  const close=async()=>{await drawer.getByRole('button',{name:'关闭智能体与模型设置',exact:true}).click();await drawer.waitFor({state:'hidden'});await page.locator('.ant-drawer-content-wrapper').waitFor({state:'hidden'});};
   try{
    await open();
    assert.equal(await drawer.getByRole('button',{name:'管理旧程序接入'}).count(),0,'已撤销凭据不提供管理入口');

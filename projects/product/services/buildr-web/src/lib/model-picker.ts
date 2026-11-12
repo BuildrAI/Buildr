@@ -28,7 +28,7 @@ export function filterModelGroups(groups:readonly ModelPickerGroup[],query:strin
 
 export function modelSourceName(provider:string):string {
   const id=provider.replace(/^native-/, '');
-  return ({codex:'ChatGPT',openai:'ChatGPT API',anthropic:'Claude API',dsh:'DeepSeek',deepseek:'DeepSeek',qoder:'Qoder','qoder-cn':'Qoder CN',devin:'Devin'} as Record<string,string>)[id]??provider;
+  return ({codex:'ChatGPT',openai:'ChatGPT API',anthropic:'Claude API',dsh:'DeepSeek',deepseek:'DeepSeek',qoder:'Qoder','qoder-cn':'Qoder CN',devin:'Devin',custom:'自定义供应商'} as Record<string,string>)[id]??provider;
 }
 
 /** Execution agent names stay separate from model-source names. */

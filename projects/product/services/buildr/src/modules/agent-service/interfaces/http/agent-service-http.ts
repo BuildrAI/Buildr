@@ -76,8 +76,9 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
         if (request.method === 'GET') return result('modelAccounts', await service.models.accounts.list({refresh:false,includeDisabled:searchParams.get('includeDisabled')==='true'}));
         if (request.method === 'POST') return result('modelAccount', await service.models.accounts.add(validate('addModelAccount', await readJsonBody())), 201);
       }
+      if (pathname === `${prefix}/model-custom/discovery` && request.method === 'POST') return result('modelCustomDiscoveryResult', await service.models.accounts.discoverCustom(validate('modelCustomDiscovery', await readJsonBody())));
       if (pathname === `${prefix}/model-catalog` && request.method === 'GET') return result('modelCatalog', await service.models.catalog.list({refresh:false}));
-      const accountRoute = pathname.slice(prefix.length).match(/^\/model-accounts\/([a-zA-Z0-9_-]{1,100})(?:\/(check|disconnect|login-attempts|preferences|api-key)(?:\/([a-f0-9-]{36})(?:\/(cancel))?)?)?$/);
+      const accountRoute = pathname.slice(prefix.length).match(/^\/model-accounts\/([a-zA-Z0-9_-]{1,100})(?:\/(check|disconnect|login-attempts|preferences|api-key|custom)(?:\/([a-f0-9-]{36})(?:\/(cancel))?)?)?$/);
       if (accountRoute) {
         const [, accountId, action, attemptId, cancel] = accountRoute;
         if (request.method === 'GET' && !action) return result('modelAccount', await service.models.accounts.read(accountId));
@@ -85,6 +86,7 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
         if (request.method !== 'POST') return null;
         if(action==='preferences'&&!attemptId&&!cancel)return result('modelAccount',await service.models.accounts.preferences(accountId,validate('modelPreferences',await readJsonBody())));
         if(action==='api-key'&&!attemptId&&!cancel)return result('modelAccount',await service.models.accounts.configure(accountId,validate('modelApiKey',await readJsonBody())));
+        if(action==='custom'&&!attemptId&&!cancel)return result('modelAccount',await service.models.accounts.configureCustom(accountId,validate('modelCustomConfigure',await readJsonBody())));
         const body = validate('revision', await readJsonBody());
         if (action === 'check') return result('modelAccount', await service.models.accounts.check(accountId, body));
         if (action === 'disconnect') return result('modelAccount', await service.models.accounts.disconnect(accountId, body));

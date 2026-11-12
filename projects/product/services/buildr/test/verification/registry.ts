@@ -523,6 +523,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
   integrationSlice('integration-agent-host', [
     'test/integration/agent-service-delivery.test.ts',
     'test/integration/agent-service-http.test.ts',
+    'test/integration/model-access.test.ts',
     'test/integration/programmatic-agent-http.test.ts',
     'test/integration/programmatic-pushback-http.test.ts',
     'test/integration/programmatic-pushback-migration.test.ts',

@@ -51,8 +51,14 @@ const offering = closed({kind:{enum:['model','combination']},family:text,enabled
 const quota = closed({balances:list(closed({currency:text,total:text,toppedUp:text,granted:text},['currency','total'])),stale:boolean,diagnostic:text,planLabel:text,windows:list(closed({id:text,label:text,remainingPercent:{type:'number',minimum:0,maximum:100},resetsAt:text,limitWindowSeconds:integer,remainingCredits:{type:'number',minimum:0},totalCredits:{type:'number',minimum:0}},['id','label','remainingPercent'])), observedAt: text, available: boolean, summary: text, remainingPercent: {type:'number',minimum:0,maximum:100}, resetsAt: text }, ['observedAt','available']);
 const providerGroup = closed({id:text,label:text},['id','label']);
 const providerAuthentication = closed({type:{enum:['oauth','api-key']},label:text,placeholder:text,description:text},['type','label']);
-const modelProvider = closed({id:text,label:text,authentication:providerAuthentication,group:providerGroup,modeLabel:text},['id','label']);
-const modelAccount = closed({connectionId:text,id: text, identity: text, provider: text, label: text, revision: text, enabled: boolean, sourceEnabled:boolean, status: {enum:['not-authenticated','ready','expired','failed','disconnected']},authType:{enum:['oauth','api-key']},group:providerGroup,modeLabel:text,credentialConfigured:boolean,accountLabel: text, models: list(offering), observedAt: text, quota, diagnostic: text, loginAttempt: closed({id: text, state: {enum:['initializing','waiting-browser','checking','completed','cancelled','expired','failed']},updatedAt:text,url:string,diagnostic:string},['id','state','updatedAt'])},['id','provider','label','revision','enabled','status','models']);
+const modelProvider = closed({id:text,label:text,authentication:providerAuthentication,group:providerGroup,modeLabel:text,custom:boolean},['id','label']);
+const customModel = closed({id:text,label:text,contextWindow:{type:'integer',minimum:1,maximum:10000000}},['id']);
+const modelProtocol = {enum:['chat-completions','responses','anthropic-messages','gemini']};
+const customConfig = closed({protocol:modelProtocol,baseUrl:{type:'string',minLength:1,maxLength:2048},useApiKey:boolean,models:list(customModel)},['protocol','baseUrl','useApiKey','models']);
+const customConfigure = closed({expectedRevision:text,label:text,baseUrl:{type:'string',minLength:1,maxLength:2048},protocol:modelProtocol,useApiKey:boolean,apiKey:{type:'string',minLength:1,maxLength:4096},models:list(customModel)},['label','baseUrl','protocol','useApiKey']);
+const customDiscovery = closed({accountId:text,baseUrl:{type:'string',minLength:1,maxLength:2048},protocol:modelProtocol,useApiKey:boolean,apiKey:{type:'string',minLength:1,maxLength:4096}},['baseUrl','protocol','useApiKey']);
+const customDiscoveryResult = closed({models:list(closed({id:text,label:text},['id'])),observedAt:text,incomplete:boolean,diagnostic:text},['models']);
+const modelAccount = closed({connectionId:text,id: text, identity: text, provider: text, label: text, revision: text, enabled: boolean, sourceEnabled:boolean, status: {enum:['not-authenticated','ready','expired','failed','disconnected']},authType:{enum:['oauth','api-key']},group:providerGroup,modeLabel:text,credentialConfigured:boolean,accountLabel: text, custom:customConfig, models: list(offering), observedAt: text, quota, diagnostic: text, loginAttempt: closed({id: text, state: {enum:['initializing','waiting-browser','checking','completed','cancelled','expired','failed']},updatedAt:text,url:string,diagnostic:string},['id','state','updatedAt'])},['id','provider','label','revision','enabled','status','models']);
 const catalogModel = {...offering, properties: {...offering.properties, accountId:text,accountIdentity:text,provider:text,accountLabel:text,modelId:text,accountRevision:text,available:boolean,observedAt:text}, required:[...offering.required,'accountId','accountIdentity','provider','accountLabel','modelId','accountRevision','available']};
 const programUpgrade = closed({id:text,connectionId:text,expectedVersion:text,executable:string,state:{enum:['downloading','waiting','restarting','completed','failed','interrupted']},message:string,updatedAt:text,installedExecutable:text,currentVersion:text},['id','connectionId','expectedVersion','executable','state','message','updatedAt']);
 const pushbackDelivery = closed({at:text,success:boolean,status:{type:'integer',minimum:100,maximum:599},kind:{enum:['event','test']}},['at','success','kind']);
@@ -82,8 +88,11 @@ export const AGENT_OPERATION_SCHEMAS = {
   modelAccount: named('AgentModelAccount', modelAccount),
   modelAccounts: named('AgentModelAccounts', closed({accounts:list(modelAccount),providers:list(modelProvider)})),
   modelApiKey: named('AgentModelApiKey', closed({expectedRevision:text,apiKey:{type:'string',minLength:1,maxLength:4096}},['expectedRevision','apiKey'])),
+  modelCustomConfigure: named('AgentModelCustomConfigure', customConfigure),
+  modelCustomDiscovery: named('AgentModelCustomDiscovery', customDiscovery),
+  modelCustomDiscoveryResult: named('AgentModelCustomDiscoveryResult', customDiscoveryResult),
   modelCatalog: named('AgentModelCatalog', closed({models:list(catalogModel),diagnostic:text,hasSnapshot:boolean},['models'])),
-  addModelAccount: named('AgentModelAccountAdd', closed({provider:text,label:text},['provider'])),
+  addModelAccount: named('AgentModelAccountAdd', closed({provider:text,label:text,custom:customConfigure},['provider'])),
   empty: named('AgentServiceEmptyRequest', closed({})),
   connection: named('AgentServiceConnection', connection),
   connections: named('AgentServiceConnections', closed({ connections: list(connection) })),

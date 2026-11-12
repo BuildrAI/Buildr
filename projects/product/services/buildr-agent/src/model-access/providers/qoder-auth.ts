@@ -1,13 +1,13 @@
 import type { AccountObservation } from '../../contracts.ts';
 import { ModelAccessError } from '../contracts.ts';
 
-export const qoderLoginExpiredMessage = 'Qoder 登录授权已失效，请重新登录。若团队账号额度已用尽，请更换有额度的账号后登录，反复登录原账号不能恢复使用；所选模型来源保持不变。';
+export const qoderLoginExpiredMessage = 'Qoder 登录授权已失效，请重新登录。若团队账号额度已用尽，请更换有额度的账号后登录，反复登录原账号不能恢复使用；所选模型供应商保持不变。';
 export const qoderTeamQuotaMessage = 'Qoder 团队账号额度已用尽，无法继续使用，请更换有额度的账号后重新登录。';
 
 function productMessages(label: string) {
   if (label === 'Qoder') return { expired: qoderLoginExpiredMessage, quota: qoderTeamQuotaMessage };
   return {
-    expired: `${label} 登录授权已失效，请重新登录。若团队账号额度已用尽，请更换有额度的账号后登录，反复登录原账号不能恢复使用；所选模型来源保持不变。`,
+    expired: `${label} 登录授权已失效，请重新登录。若团队账号额度已用尽，请更换有额度的账号后登录，反复登录原账号不能恢复使用；所选模型供应商保持不变。`,
     quota: `${label} 团队账号额度已用尽，无法继续使用，请更换有额度的账号后重新登录。`,
   };
 }

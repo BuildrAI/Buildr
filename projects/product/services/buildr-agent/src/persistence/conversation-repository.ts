@@ -601,7 +601,7 @@ export class ConversationRepository {
           SELECT provider,model,count(*) AS n FROM executing GROUP BY provider,model ORDER BY n DESC,provider,model
         )) AS executions,
         (SELECT json_group_array(json_object('accountId',account_id,'accountLabel',account_label,'model',model,'count',n)) FROM (
-          SELECT account_id,coalesce(nullif(max(account_label),''),'账号未记录') AS account_label,model,count(*) AS n
+          SELECT account_id,coalesce(nullif(max(account_label),''),'供应商未记录') AS account_label,model,count(*) AS n
           FROM executing GROUP BY account_id,model ORDER BY n DESC,account_id,model
         )) AS model_executions`).get(...statsValues) as {counts:string;send_count:number;agents:string;models:string;executions:string;model_executions:string};
       const counts = {...JSON.parse(overview.counts),...(overview.send_count?{pendingSend:overview.send_count}:{})} as typeof empty.activityCounts;

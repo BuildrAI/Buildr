@@ -20,6 +20,11 @@ type Props = {
   onChange(value:ConversationChoice,remember?:boolean):void;
 };
 
+/** Custom suppliers show the user-given name; built-in sources keep their fixed brand. */
+function catalogSourceName(source:CatalogModel):string {
+  return source.provider==='custom'?(source.accountLabel||'自定义供应商'):modelSourceName(source.provider);
+}
+
 export function ConversationOptions({connections,modelCatalog,value,disabled,onChange,showAgent=true}:Props) {
   const context=useOptionalAgentConversations();
   const shared=modelCatalog??context?.modelCatalog??[];
@@ -34,16 +39,16 @@ export function ConversationOptions({connections,modelCatalog,value,disabled,onC
   const reportWindow=usageReport?contextReportWindow(usageReport,shared):undefined;
   const usedPercent=contextUsedPercent(usageReport,reportWindow);
   const reportSource=usageReport&&shared.find(item=>item.accountId===usageReport.modelAccountId&&item.modelId===usageReport.model&&(!usageReport.modelAccountIdentity||item.accountIdentity===usageReport.modelAccountIdentity));
-  const reportLabel=usageReport?(reportSource?modelSourceName(reportSource.provider)+' / '+reportSource.label:usageReport.model||usageReport.modelSourceLabel||modelSourceName(usageReport.provider??'')):undefined;
+  const reportLabel=usageReport?(reportSource?catalogSourceName(reportSource)+' / '+reportSource.label:usageReport.model||usageReport.modelSourceLabel||modelSourceName(usageReport.provider??'')):undefined;
   const candidates=shared.filter(item=>item.enabled!==false||item.accountId===value.modelAccountId&&item.modelId===value.model);
-  const groups=Array.from(new Set(candidates.map(item=>item.accountId))).map(id=>{const source=candidates.find(item=>item.accountId===id)!;const name=modelSourceName(source.provider);return {id,label:name+(new Set(candidates.filter(item=>modelSourceName(item.provider)===name).map(item=>item.accountId)).size>1?' · '+source.accountLabel:'')};});
+  const groups=Array.from(new Set(candidates.map(item=>item.accountId))).map(id=>{const source=candidates.find(item=>item.accountId===id)!;const name=catalogSourceName(source);return {id,label:name+(new Set(candidates.filter(item=>catalogSourceName(item)===name).map(item=>item.accountId)).size>1?' · '+source.accountLabel:'')};});
   const nativeFallback=false; // The shared catalog is authoritative, including disabled sources.
   const connection=original&&(!value.model||value.modelAccountId||effectiveShared)?{...original,models:effectiveShared?[{...effectiveShared,id:effectiveShared.modelId,isDefault:true}]:[]}:original;
   const model=selectedConversationModel(connection,value.model);
   useEffect(()=>{if(selectedShared&&value.modelAccountIdentity===selectedShared.accountIdentity&&value.modelAccountRevision!==selectedShared.accountRevision)onChange({...value,modelAccountRevision:selectedShared.accountRevision},false);},[selectedShared?.accountRevision,selectedShared?.accountIdentity,value.modelAccountIdentity,value.modelAccountRevision]);
   const defaultModel=selectedConversationModel(connection);
   const reasoning=conversationReasoningSelection(connection,value);
-  const modelLabel=(selectedShared?modelSourceName(selectedShared.provider)+' / '+selectedShared.label+(selectedShared.enabled===false?'（已停用）':''):undefined)||model?.label||value.model||'请选择模型';
+  const modelLabel=(selectedShared?catalogSourceName(selectedShared)+' / '+selectedShared.label+(selectedShared.enabled===false?'（已停用）':''):undefined)||model?.label||value.model||'请选择模型';
   const unavailable=disabled||(!original?.models.length&&!shared.some(item=>item.available));
   return <div className="ac-execution-options">
     {showAgent&&<ConversationAgentSelect connections={preparedAgentConnections(connections)} value={value} modelCatalog={shared} disabled={disabled} onChange={onChange}/>}

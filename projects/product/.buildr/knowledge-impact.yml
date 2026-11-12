@@ -1,13 +1,22 @@
 schemaVersion: buildr.knowledge-impact/v1
-task: qwen-dedicated-credits
-change: qwen-dedicated-credits
-operation: reconcile
+task: model-provider-byok
+change: model-provider-byok
+operation: assess
 impacts:
   - type: technical-architecture
     target: knowledge/docs/architecture/agent-integration.md
-    reason: Qoder `/usage` 的专属资源包作为独立额度窗口表达，名称按多语言标题回退，且不纳入账号级剩余比例与耗尽判断。
+    reason: 新增 BYOK 自定义供应商（用户声明 Base URL、四种 API 协议、可选 API Key、发现或手工模型列表），并把模型接入界面术语统一为“供应商”；文档需说明 Chat Completions、OpenAI Responses、Anthropic Messages 与 Gemini 的端点、认证、发现差异及 Gemini 转换边界，并按实现事实校准用词。
     status: updated
     sourceIdentities:
-      - services/buildr-agent/src/model-access/providers/qoder.ts
-      - openspec/changes/qwen-dedicated-credits/specs/model-usage-controls/spec.md
+      - openspec/changes/model-provider-byok/specs/custom-model-providers/spec.md
+      - openspec/changes/model-provider-byok/specs/model-provider-api-access/spec.md
+      - openspec/changes/model-provider-byok/design.md
+      - services/buildr-agent/src/model-access/application.ts
+      - services/buildr-agent/src/model-access/contracts.ts
+      - services/buildr-agent/src/model-access/providers/custom.ts
+      - services/buildr-agent/src/model-access/providers/private-api-key.ts
+      - services/buildr-agent/src/model-access/providers/openai-api.ts
+      - services/buildr-agent/src/model-access/protocols.ts
+      - services/buildr-agent/src/model-access/tool-stream-guard.ts
+      - services/buildr-web/src/features/agent-conversations/CustomProviderForm.tsx
 unresolvedItems: []

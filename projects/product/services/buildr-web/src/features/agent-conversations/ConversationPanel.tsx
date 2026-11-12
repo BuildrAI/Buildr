@@ -530,7 +530,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
         });
         if(!result)return;
         current=result.conversation;preview=result.value;
-        if(recovery.used&&input.modelAccountId&&input.modelAccountRevision&&preview.modelAccountRevision!==input.modelAccountRevision)throw Object.assign(new Error('模型账号状态已更新，请核对所选模型后重新发送。'),{status:409,code:'agent_model_source_changed'});
+        if(recovery.used&&input.modelAccountId&&input.modelAccountRevision&&preview.modelAccountRevision!==input.modelAccountRevision)throw Object.assign(new Error('模型供应商状态已更新，请核对所选模型后重新发送。'),{status:409,code:'agent_model_source_changed'});
         input={...input,expectedRevision:current.revision};
       }catch(failure){if(!continueRunId&&!show&&['agent_process_switching','agent_conversation_busy'].includes((failure as ApiError)?.code||'')){setPreparing(false);await queue(current,input);return;}throw failure;}
       if(activeSend.current!==operation||!context.isSelectionCurrent(operation.selection))return;

@@ -5,5 +5,5 @@ export function modelQuotaFailure(account: Pick<ModelAccountView, 'label'|'accou
   const quota = account.quota, observed = Date.parse(quota?.observedAt ?? '');
   if (!quota?.available || quota.stale || !Number.isFinite(observed) || now - observed > 60_000 || observed > now + 5_000 || quota.remainingPercent !== 0) return;
   if ((account.provider === 'native-qoder' || account.provider === 'native-qoder-cn') && model?.creditFactor === 0) return;
-  return new ModelAccessError('model_quota_exhausted', `${account.accountLabel || account.label} 账号额度已用尽，请更换可用账号或模型后继续。`, 429);
+  return new ModelAccessError('model_quota_exhausted', `${account.accountLabel || account.label} 供应商额度已用尽，请更换可用供应商或模型后继续。`, 429);
 }

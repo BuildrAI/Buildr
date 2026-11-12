@@ -21,6 +21,8 @@ export const AGENT_SERVICE_HTTP_OPERATIONS = [
   operation('model-catalog', 'GET', `${base}/model-catalog`, 'empty', 'modelCatalog'),
   operation('model-preferences','POST',`${base}/model-accounts/:accountId/preferences`,'modelPreferences','modelAccount'),
   operation('configure-model-account','POST',`${base}/model-accounts/:accountId/api-key`,'modelApiKey','modelAccount'),
+  operation('configure-model-custom','POST',`${base}/model-accounts/:accountId/custom`,'modelCustomConfigure','modelAccount'),
+  operation('discover-model-custom','POST',`${base}/model-custom/discovery`,'modelCustomDiscovery','modelCustomDiscoveryResult'),
   operation('check-model-account', 'POST', `${base}/model-accounts/:accountId/check`, 'revision', 'modelAccount'),
   operation('disconnect-model-account', 'POST', `${base}/model-accounts/:accountId/disconnect`, 'revision', 'modelAccount'),
   operation('login-model-account', 'POST', `${base}/model-accounts/:accountId/login-attempts`, 'revision', 'modelAccount'),

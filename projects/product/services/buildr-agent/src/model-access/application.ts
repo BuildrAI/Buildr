@@ -4,9 +4,10 @@ import { mkdir, chmod, lstat, readFile, rename, writeFile, unlink } from 'node:f
 import { join } from 'node:path';
 import { once } from 'node:events';
 import { lstatSync, readFileSync, writeFileSync } from 'node:fs';
-import { ModelAccessError, type CatalogModel, type ModelAccessOptions, type ModelAccountView, type ModelGatewayLease, type ModelLeaseInput, type ModelOffering, type ModelProtocol, type ModelProviderRuntime, type ProtocolJson } from './contracts.ts';
+import { ModelAccessError, type CatalogModel, type CustomProviderConfig, type CustomProviderConfigureInput, type CustomProviderDiscoveryInput, type CustomProviderDiscoveryResult, type ModelAccessOptions, type ModelAccountView, type ModelGatewayLease, type ModelLeaseInput, type ModelOffering, type ModelProvider, type ModelProviderObservation, type ModelProviderRuntime, type ModelProtocol, type ProtocolJson } from './contracts.ts';
 import { effectiveModel, selectedOffering, modelConfiguration, modelLeaseIdentity } from './model-preferences.ts';
 import type {ModelPreference,ModelPreferenceUpdate} from './contracts.ts';
+import { customProtocolLabel, normalizeCustomBaseUrl, normalizeCustomConfiguration, normalizeCustomLabel, normalizeCustomProtocol } from './providers/custom.ts';
 import { translateRequest, translateResponse, type OpaqueReasoning } from './protocols.ts';
 import { modelFailure, upstreamFailure } from './errors.ts';
 import { modelQuotaFailure } from './quota.ts';
@@ -26,7 +27,7 @@ const selectionModels = (models: ModelOffering[]) => models.map(model => ({
   reasoningEfforts: selectionEfforts(model.reasoningEfforts), defaultServiceTier: model.defaultServiceTier,
   serviceTiers: selectionTiers(model.serviceTiers),
 })).sort(byId);
-function conflict(actual: string, expected: string | undefined) { if (expected !== undefined && expected !== actual) throw new ModelAccessError('model_revision_conflict', '模型账号已变化，请刷新后重试。'); }
+function conflict(actual: string, expected: string | undefined) { if (expected !== undefined && expected !== actual) throw new ModelAccessError('model_revision_conflict', '模型供应商已变化，请刷新后重试。'); }
 interface Stored { version: 1; accounts: ModelAccountView[]; preferences?:Record<string,Record<string,ModelPreference>> }
 interface LeaseRecord { view: ModelGatewayLease; input: ModelLeaseInput; tokenHash: string; requests: Map<AbortController,string>; cancelledRun?:string; streamFailure?:{code:string;message:string;runId:string} }
 
@@ -59,7 +60,7 @@ export class ModelAccessApplication {
     this.options = options;
     this.providers = new Map(options.providers.map(provider => [provider.id, provider]));
     if (this.providers.size !== options.providers.length || [...this.providers.keys()].some(id => !safeId(id))) throw new ModelAccessError('model_provider_invalid', '模型提供者声明无效。');
-    try { this.load(); } catch (error) { this.storageError = error instanceof ModelAccessError ? error : new ModelAccessError('model_storage_unavailable','模型账号存储不可读取。'); }
+    try { this.load(); } catch (error) { this.storageError = error instanceof ModelAccessError ? error : new ModelAccessError('model_storage_unavailable','模型供应商存储不可读取。'); }
     this.ready = Promise.resolve();
   }
   private load() {
@@ -86,6 +87,7 @@ export class ModelAccessApplication {
           row.revision = randomUUID(); migrated = true;
         }
         if(view.sourceEnabled!==undefined&&typeof view.sourceEnabled!=='boolean')throw new Error('invalid-source-preference');
+        if(view.custom!==undefined){try{view.custom=normalizeCustomConfiguration(view.custom);}catch{throw new Error('invalid-custom-config');}}
         if(view.loginAttempt) delete view.loginAttempt.url;
         if (!this.metadataReadOnly && view.loginAttempt && ['initializing', 'waiting-browser', 'checking'].includes(view.loginAttempt.state)) view.loginAttempt = { ...view.loginAttempt, state: 'expired', diagnostic: '服务已重启，请重新登录。' };
         const prefs=object(object(stored.preferences)[view.id]) as Record<string,ModelPreference>;
@@ -94,7 +96,7 @@ export class ModelAccessApplication {
         this.preferences.set(view.id,prefs);this.rows.set(view.id, view);
       }
       if (migrated) this.persistMigrated();
-    } catch (error) { if (object(error).code !== 'ENOENT') throw new ModelAccessError('model_storage_unavailable', '模型账号存储不可读取，原数据已保留。'); }
+    } catch (error) { if (object(error).code !== 'ENOENT') throw new ModelAccessError('model_storage_unavailable', '模型供应商存储不可读取，原数据已保留。'); }
   }
   /** One bounded write for a schema-level ownership correction; failures keep the loaded state. */
   private persistMigrated() {
@@ -108,7 +110,7 @@ export class ModelAccessApplication {
   private async privateRoot() {
     await mkdir(this.options.root, { recursive: true, mode: 0o700 });
     const info = await lstat(this.options.root);
-    if (!info.isDirectory() || info.isSymbolicLink()) throw new ModelAccessError('model_storage_unsafe', '模型账号目录来源不安全。');
+    if (!info.isDirectory() || info.isSymbolicLink()) throw new ModelAccessError('model_storage_unsafe', '模型供应商目录不安全。');
     await chmod(this.options.root, 0o700);
   }
   private async save() {
@@ -124,7 +126,7 @@ export class ModelAccessApplication {
       try {
         let current: string | undefined;
         try { current = digest(await readFile(join(this.options.root,'accounts.json'),'utf8')); } catch(error) { if (object(error).code !== 'ENOENT') throw error; }
-        if (current !== this.storedDigest) throw new ModelAccessError('model_revision_conflict','模型账号存储已被其他入口修改，请重新加载。');
+        if (current !== this.storedDigest) throw new ModelAccessError('model_revision_conflict','模型供应商存储已被其他入口修改，请重新加载。');
         const content = JSON.stringify(body) + '\n';
         await writeFile(temporary, content, { mode: 0o600, flag: 'wx' });
         await rename(temporary, join(this.options.root, 'accounts.json')); this.storedDigest = digest(content);
@@ -135,13 +137,13 @@ export class ModelAccessApplication {
   private current(id: string): ModelAccountView {
     if (this.metadataReadOnly) {
       const filename=join(this.options.root,'accounts.json'),stat=lstatSync(filename);
-      if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1)throw new ModelAccessError('model_storage_unsafe','模型账号存储来源不安全。',409);
+      if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1)throw new ModelAccessError('model_storage_unsafe','模型供应商存储不安全。',409);
       const content = readFileSync(filename, 'utf8');
       if (digest(content) !== this.storedDigest) { this.rows.clear(); this.preferences.clear(); this.load(); }
     }
     if (this.storageError) throw this.storageError;
     const row = this.rows.get(id);
-    if (!row) throw new ModelAccessError('model_account_missing', '模型账号不存在。', 404);
+    if (!row) throw new ModelAccessError('model_account_missing', '模型供应商不存在。', 404);
     return row;
   }
   private view(row: ModelAccountView): ModelAccountView {
@@ -149,7 +151,8 @@ export class ModelAccessApplication {
     const provider = this.providers.get(row.provider);
     if (provider?.authentication) result.authType = provider.authentication.type;
     if (provider?.group) result.group = structuredClone(provider.group);
-    if (provider?.modeLabel) result.modeLabel = provider.modeLabel;
+    if (provider?.custom && row.custom) result.modeLabel = customProtocolLabel(row.custom.protocol);
+    else if (provider?.modeLabel) result.modeLabel = provider.modeLabel;
     result.models=result.models.map(model=>effectiveModel(model,this.preferences.get(row.id)?.[model.id]));
     if (result.loginAttempt && url?.attemptId === result.loginAttempt.id) result.loginAttempt.url = url.url;
     return result;
@@ -166,13 +169,17 @@ export class ModelAccessApplication {
     if(changed)this.options.changed?.(structuredClone(row));
     return this.view(row);
   }
+  private async openRuntime(row: ModelAccountView, provider: ModelProvider, custom?: CustomProviderConfig): Promise<ModelProviderRuntime> {
+    await this.privateRoot(); const root = join(this.options.root, 'accounts', row.id); await mkdir(root, { recursive: true, mode: 0o700 }); const info = await lstat(root); if (!info.isDirectory() || info.isSymbolicLink()) throw new ModelAccessError('model_storage_unsafe', '账号配置目录来源不安全。');
+    return await provider.open({ accountId: row.id, configRoot: root, environment: this.options.environment ?? {}, ...(custom ? { custom: structuredClone(custom) } : {}) });
+  }
   private async runtime(id: string): Promise<ModelProviderRuntime> {
     if (this.closed) throw new ModelAccessError('model_access_closed', '模型服务已关闭。', 503);
     const row = this.current(id), provider = this.providers.get(row.provider);
     if (!provider) throw new ModelAccessError('model_provider_unavailable', '此模型来源当前不可用。', 503);
     let runtime = this.runtimes.get(id);
     if (!runtime) {
-      runtime = (async () => { await this.privateRoot(); const root = join(this.options.root, 'accounts', id); await mkdir(root, { recursive: true, mode: 0o700 }); const info = await lstat(root); if (!info.isDirectory() || info.isSymbolicLink()) throw new ModelAccessError('model_storage_unsafe', '账号配置目录来源不安全。'); return await provider.open({ accountId: id, configRoot: root, environment: this.options.environment ?? {} }); })();
+      runtime = this.openRuntime(row, provider, row.custom);
       this.runtimes.set(id, runtime);
       void runtime.catch(() => { if (this.runtimes.get(id) === runtime) this.runtimes.delete(id); });
     }
@@ -203,20 +210,103 @@ export class ModelAccessApplication {
         ...(provider.authentication ? { authentication: structuredClone(provider.authentication) } : {}),
         ...(provider.group ? { group: structuredClone(provider.group) } : {}),
         ...(provider.modeLabel ? { modeLabel: provider.modeLabel } : {}),
+        ...(provider.custom ? { custom: true } : {}),
       })),
     };
   }
   read(id: string) { return this.view(this.current(id)); }
-  async add(input: { provider: string; label?: string }) {
+  async add(input: { provider: string; label?: string; custom?: CustomProviderConfigureInput }) {
     await this.ready; if (this.storageError) throw this.storageError;
     const provider = this.providers.get(input.provider);
     if (!provider || provider.connectionId) throw new ModelAccessError('model_provider_unavailable', '此模型来源由已有账号自动发现。', 404);
+    if (provider.custom) {
+      if (!input.custom) throw new ModelAccessError('model_custom_config_required', '自定义供应商需要填写名称、Base URL 与协议。', 400);
+      return await this.createCustom(provider, input.custom);
+    }
+    if (input.custom) throw new ModelAccessError('model_custom_unsupported', '此模型来源不支持自定义端点配置。', 400);
     const row: ModelAccountView = { id: randomUUID(), identity:randomUUID(), provider: provider.id, label: input.label?.trim().slice(0, 160) || provider.label, revision: randomUUID(), enabled: true, status: 'not-authenticated', credentialConfigured: false, models: [] };
     this.rows.set(row.id, row); await this.save(); this.options.changed?.(this.view(row)); return this.view(row);
   }
+  async configureCustom(id: string, input: CustomProviderConfigureInput) {
+    await this.ready;
+    if (this.closed || this.metadataReadOnly) throw new ModelAccessError('model_access_closed', '模型供应商配置未能保存。', 503);
+    const row = this.current(id);
+    if (row.connectionId) throw new ModelAccessError('model_managed_account', '此账号复用原生登录，请在对应账号入口操作。', 409);
+    conflict(row.revision, input.expectedRevision);
+    return await this.applyCustom(row, input);
+  }
+  async discoverCustom(input: CustomProviderDiscoveryInput): Promise<CustomProviderDiscoveryResult> {
+    await this.ready;
+    if (this.closed || this.metadataReadOnly) throw new ModelAccessError('model_access_closed', '模型服务当前不可用。', 503);
+    const baseUrl = normalizeCustomBaseUrl(input.baseUrl), protocol = normalizeCustomProtocol(input.protocol);
+    if (typeof input.useApiKey !== 'boolean') throw new ModelAccessError('model_custom_config_invalid', '请选择是否使用 API Key。', 400);
+    const apiKey = input.useApiKey && typeof input.apiKey === 'string' && input.apiKey.trim() ? input.apiKey.trim() : undefined;
+    if (input.accountId !== undefined) {
+      const row = this.current(input.accountId);
+      const provider = this.providers.get(row.provider);
+      if (!provider?.custom) throw new ModelAccessError('model_custom_unsupported', '此模型来源不支持自定义模型发现。', 400);
+      const runtime = await this.runtime(row.id);
+      if (!runtime.discoverCustom) throw new ModelAccessError('model_custom_unsupported', '此模型来源尚未实现模型发现。', 503);
+      return await runtime.discoverCustom({ accountId: row.id, baseUrl, protocol, useApiKey: input.useApiKey, ...(apiKey ? { apiKey } : {}) });
+    }
+    if (input.useApiKey && !apiKey) throw new ModelAccessError('model_custom_api_key_required', '请填写 API Key 后再获取模型列表。', 400);
+    const provider = [...this.providers.values()].find(candidate => candidate.custom && candidate.discover);
+    if (!provider?.discover) throw new ModelAccessError('model_custom_unsupported', '当前没有可用的自定义供应商发现入口。', 503);
+    return await provider.discover({ baseUrl, protocol, useApiKey: input.useApiKey, ...(apiKey ? { apiKey } : {}) });
+  }
+  private async createCustom(provider: ModelProvider, input: CustomProviderConfigureInput): Promise<ModelAccountView> {
+    if (this.closed || this.metadataReadOnly) throw new ModelAccessError('model_access_closed', '模型供应商配置未能保存。', 503);
+    const label = normalizeCustomLabel(input.label), config = normalizeCustomConfiguration({ baseUrl: input.baseUrl, protocol: input.protocol, useApiKey: input.useApiKey, models: input.models ?? [] });
+    const row: ModelAccountView = { id: randomUUID(), identity: randomUUID(), provider: provider.id, label, revision: randomUUID(), enabled: true, status: 'not-authenticated', credentialConfigured: false, custom: config, models: [] };
+    this.rows.set(row.id, row);
+    try {
+      const created = await this.applyCustom(row, { ...input, label });
+      this.options.changed?.(structuredClone(row));
+      return created;
+    } catch (error) {
+      this.rows.delete(row.id);
+      const pending = this.runtimes.get(row.id); this.runtimes.delete(row.id); await pending?.then(runtime => runtime.close()).catch(() => {});
+      throw error;
+    }
+  }
+  private async applyCustom(row: ModelAccountView, input: CustomProviderConfigureInput): Promise<ModelAccountView> {
+    const provider = this.providers.get(row.provider);
+    if (!provider?.custom) throw new ModelAccessError('model_custom_unsupported', '此模型来源不支持自定义端点配置。', 400);
+    const label = normalizeCustomLabel(input.label);
+    const config = normalizeCustomConfiguration({ baseUrl: input.baseUrl, protocol: input.protocol, useApiKey: input.useApiKey, models: input.models ?? row.custom?.models ?? [] });
+    const candidate = await this.openRuntime(row, provider, config);
+    let observation: ModelProviderObservation;
+    try {
+      if (!candidate.configureCustom) throw new ModelAccessError('model_custom_unsupported', '此模型来源尚未实现自定义配置。', 503);
+      observation = await candidate.configureCustom({ ...input, label, baseUrl: config.baseUrl, protocol: config.protocol, useApiKey: config.useApiKey, models: config.models });
+    } catch (error) { await candidate.close().catch(() => {}); throw error; }
+    if (this.closed || this.metadataReadOnly) { await candidate.close().catch(() => {}); throw new ModelAccessError('model_access_closed', '模型供应商配置未能保存。', 503); }
+    const before = this.selectionState(row), previousIdentity = row.identity;
+    const nextIdentity = observation.identity ? digest(observation.identity) : previousIdentity;
+    row.custom = config; row.label = label; row.enabled = true;
+    row.status = observation.status; row.credentialConfigured = observation.credentialConfigured ?? config.useApiKey;
+    row.diagnostic = observation.diagnostic; delete row.quota;
+    if (previousIdentity !== nextIdentity) {
+      row.identity = nextIdentity;
+      for (const lease of [...this.leasesByIdentity.values()]) if (lease.input.accountId === row.id) this.release(lease.view.identity);
+    }
+    if (observation.curatedModels) {
+      const preferences = this.preferences.get(row.id) ?? {};
+      for (const model of observation.models) if (!Object.hasOwn(preferences, model.id)) Object.defineProperty(preferences, model.id, { value: { enabled: false }, enumerable: true, writable: true, configurable: true });
+      this.preferences.set(row.id, preferences); row.models = structuredClone(observation.models);
+    }
+    if (observation.status === 'ready') row.observedAt = this.now;
+    const cached = this.runtimes.get(row.id);
+    if (previousIdentity !== nextIdentity) {
+      this.runtimes.set(row.id, Promise.resolve(candidate));
+      if (cached) await cached.then(runtime => runtime.close()).catch(() => {});
+    } else if (cached) await candidate.close().catch(() => {});
+    else this.runtimes.set(row.id, Promise.resolve(candidate));
+    return await this.observed(row, before);
+  }
   async configure(id: string, input: { expectedRevision: string; apiKey: string }) {
     await this.ready;
-    if (this.closed || this.metadataReadOnly) throw new ModelAccessError('model_access_closed', '模型账号配置未能保存。', 503);
+    if (this.closed || this.metadataReadOnly) throw new ModelAccessError('model_access_closed', '模型供应商配置未能保存。', 503);
     const row = this.current(id);
     if (row.connectionId) throw new ModelAccessError('model_managed_account', '此账号复用原生登录，请在对应账号入口操作。', 409);
     conflict(row.revision, input.expectedRevision);
@@ -228,7 +318,7 @@ export class ModelAccessApplication {
     const operation = (this.operations.get(id) ?? 0) + 1;
     this.operations.set(id, operation);
     const observation = await runtime.configure({ apiKey: input.apiKey });
-    if (this.closed || this.metadataReadOnly) throw new ModelAccessError('model_access_closed', '模型账号配置未能保存。', 503);
+    if (this.closed || this.metadataReadOnly) throw new ModelAccessError('model_access_closed', '模型供应商配置未能保存。', 503);
     const before = this.selectionState(row);
     if (observation.identity && row.identity !== digest(observation.identity)) {
       row.identity = digest(observation.identity);
@@ -271,11 +361,12 @@ export class ModelAccessApplication {
       row.enabled = true; row.status = observation.status === 'failed' && observation.incomplete === true && row.status === 'ready' && (!observation.identity || row.identity === digest(observation.identity)) ? 'ready' : observation.status; if(observation.credentialConfigured!==undefined)row.credentialConfigured=observation.credentialConfigured; if(observation.label) row.accountLabel = observation.label; row.diagnostic = observation.diagnostic;
       if(observation.status==='ready') {
         const prefs=this.preferences.get(id)??{};
-        for(const model of observation.models)if(!Object.hasOwn(prefs,model.id))Object.defineProperty(prefs,model.id,{value:{enabled:false},enumerable:true,writable:true,configurable:true});
-        this.preferences.set(id,prefs);row.models = structuredClone(observation.models); row.observedAt = this.now;
+        // A curated custom catalog stays authoritative; inspections only refresh availability.
+        if(!observation.curatedModels){for(const model of observation.models)if(!Object.hasOwn(prefs,model.id))Object.defineProperty(prefs,model.id,{value:{enabled:false},enumerable:true,writable:true,configurable:true});row.models = structuredClone(observation.models);}
+        this.preferences.set(id,prefs); row.observedAt = this.now;
       }
       if(observation.quota)row.quota=!observation.quota.available&&row.quota?.available?{...row.quota,stale:true,diagnostic:'本次额度读取未完成，以下保留上次观察。'}:observation.quota;
-    } catch { if (this.closed || this.metadataReadOnly || this.operations.get(id) !== operation) return this.view(this.current(id)); before??=this.selectionState(row); if (row.status !== 'ready') row.status = 'failed'; row.diagnostic = '模型账号检查未完成，已保留上次目录。'; }
+    } catch { if (this.closed || this.metadataReadOnly || this.operations.get(id) !== operation) return this.view(this.current(id)); before??=this.selectionState(row); if (row.status !== 'ready') row.status = 'failed'; row.diagnostic = '模型供应商检查未完成，已保留上次目录。'; }
     return await this.observed(row, before!);
   }
   async login(id: string, input: { expectedRevision: string }) {
@@ -296,7 +387,7 @@ export class ModelAccessApplication {
         const checked=await this.check(id);
         const latest=this.current(id);
         if(this.closed||latest.loginAttempt?.id!==attemptId||latest.loginAttempt.state!=='checking'||latest.identity!==checked.identity)return;
-        latest.loginAttempt={id:attemptId,updatedAt:this.now,state:checked.status==='ready'&&checked.models.length?'completed':'failed',...(checked.status==='ready'&&checked.models.length?{}:{diagnostic:checked.diagnostic??'账号登录后未取得可用模型，请重新检查。'})};
+        latest.loginAttempt={id:attemptId,updatedAt:this.now,state:checked.status==='ready'&&checked.models.length?'completed':'failed',...(checked.status==='ready'&&checked.models.length?{}:{diagnostic:checked.diagnostic??'登录后未取得可用模型，请重新检查。'})};
         await this.changed(latest);return;
       }
       if (value.url) { try { const url = new URL(value.url); if (url.protocol === 'https:') this.urls.set(id, { attemptId, url: url.href }); } catch {} }
@@ -464,7 +555,7 @@ export class ModelAccessApplication {
       if(!token || (typeof apiKey==='string'&&auth?.startsWith('Bearer ')&&apiKey!==token)) throw new ModelAccessError('model_gateway_unauthorized','模型调用缺少准确本机认证。',401);
       lease = this.leasesByToken.get(digest(token)); if (!lease) throw new ModelAccessError('model_gateway_unauthorized','模型调用的本机凭据已失效。',401);
       const account = this.current(lease.input.accountId); if (!account.enabled) throw new ModelAccessError('model_account_unavailable','所选套餐已断开。');
-      if(account.identity!==lease.input.expectedIdentity)throw new ModelAccessError('model_account_identity_changed','账号登录来源已变化，原调用不可改用新身份。',409);
+      if(account.identity!==lease.input.expectedIdentity)throw new ModelAccessError('model_account_identity_changed','供应商登录来源已变化，原调用不可改用新身份。',409);
       const pathname = new URL(req.url ?? '/',this.origin).pathname;
       if (req.method === 'GET' && (pathname === '/v1/models' || pathname === '/models')) { this.json(res,200,{object:'list',data:[{id:lease.view.model,object:'model',owned_by:account.provider}]}); return; }
       const protocols: Record<string,ModelProtocol> = {'/v1/responses':'responses','/v1/chat/completions':'chat-completions','/v1/messages':'anthropic-messages'};
@@ -547,7 +638,7 @@ export function createModelAccess(options: ModelAccessOptions) {
   const application = new ModelAccessApplication(options);
   return {
     ensureLinked: () => application.ensureLinked(), invalidate: (id:string,input?:{abortActive?:boolean}) => application.invalidate(id,input),
-    accounts: { list: (input?:{includeDisabled?:boolean}) => application.list(input), read: (id: string) => application.read(id), snapshot: (id:string) => application.read(id), preferences:(id:string,input:ModelPreferenceUpdate)=>application.updatePreferences(id,input), add: (input: {provider:string;label?:string}) => application.add(input), configure: (id:string,input:{expectedRevision:string;apiKey:string}) => application.configure(id,input), login: (id:string,input:{expectedRevision:string}) => application.login(id,input), attempt: (id:string,attemptId:string) => application.attempt(id,attemptId), cancelLogin: (id:string,attemptId:string,input:{expectedRevision:string}) => application.cancelLogin(id,attemptId,input), check: (id:string,input:{expectedRevision?:string}={}) => application.check(id,input), disconnect: (id:string,input:{expectedRevision:string}) => application.disconnect(id,input) },
+    accounts: { list: (input?:{includeDisabled?:boolean}) => application.list(input), read: (id: string) => application.read(id), snapshot: (id:string) => application.read(id), preferences:(id:string,input:ModelPreferenceUpdate)=>application.updatePreferences(id,input), add: (input: {provider:string;label?:string;custom?:CustomProviderConfigureInput}) => application.add(input), configure: (id:string,input:{expectedRevision:string;apiKey:string}) => application.configure(id,input), configureCustom: (id:string,input:CustomProviderConfigureInput) => application.configureCustom(id,input), discoverCustom: (input:CustomProviderDiscoveryInput) => application.discoverCustom(input), login: (id:string,input:{expectedRevision:string}) => application.login(id,input), attempt: (id:string,attemptId:string) => application.attempt(id,attemptId), cancelLogin: (id:string,attemptId:string,input:{expectedRevision:string}) => application.cancelLogin(id,attemptId,input), check: (id:string,input:{expectedRevision?:string}={}) => application.check(id,input), disconnect: (id:string,input:{expectedRevision:string}) => application.disconnect(id,input) },
     catalog: { list: () => application.catalog() },
     activity: () => application.activity(),
     freezeMetadata: (value = true) => application.freezeMetadata(value),

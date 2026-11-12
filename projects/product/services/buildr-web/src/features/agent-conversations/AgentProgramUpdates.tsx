@@ -55,7 +55,7 @@ export function AgentProgramUpdates({ active, checkRequest = 0, scope = 'setting
     else void install(program);
   };
   return <section className="ac-program-updates" id={`agent-program-updates-${scope}`} aria-label="智能体程序更新">
-    <div className="ac-program-updates-heading"><div><h2>{scope==='settings'?'本机程序':'智能体'}</h2>{scope==='settings'&&<p className="ac-program-updates-note">管理程序与更新，账号登录和可选模型在“模型”中维护。</p>}</div><Button icon={<SyncOutlined />} loading={busy === '*'} disabled={busy !== null} onClick={() => void check()}>检查更新</Button></div>
+    <div className="ac-program-updates-heading"><div><h2>{scope==='settings'?'本机程序':'智能体'}</h2>{scope==='settings'&&<p className="ac-program-updates-note">管理程序与更新，供应商接入和可选模型在“模型”中维护。</p>}</div><Button icon={<SyncOutlined />} loading={busy === '*'} disabled={busy !== null} onClick={() => void check()}>检查更新</Button></div>
     {error && <Alert type="warning" showIcon message={error} />}
     {!snapshot && !error && <p role="status">正在读取程序信息…</p>}
     {snapshot?.programs.map(program => {

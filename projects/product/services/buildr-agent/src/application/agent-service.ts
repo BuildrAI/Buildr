@@ -17,6 +17,7 @@ import {createCodexModelProvider} from '../model-access/providers/codex.ts';
 import {createDeepSeekModelProvider} from '../model-access/providers/deepseek.ts';
 import {createOpenAIApiModelProvider} from '../model-access/providers/openai-api.ts';
 import {createAnthropicApiModelProvider} from '../model-access/providers/anthropic-api.ts';
+import {createCustomModelProvider} from '../model-access/providers/custom.ts';
 import {createDeepSeekAccountOwner} from '../executors/dsh/model-source-owner.ts';
 import path from 'node:path';
 import process from 'node:process';
@@ -60,7 +61,7 @@ export function createAgentService(options: AgentServiceOptions) {
   const nativeDsh:ModelProvider={...dshProvider,id:'native-dsh',label:'DeepSeek',connectionId:'dsh',async open(input){const runtime=await dshProvider.open(input);return{protocol:runtime.protocol,inspect:async()=>{const value=await runtime.inspect();return{...value,...(value.status==='ready'?{identity:await dsh.identity()}: {})};},beginLogin:u=>runtime.beginLogin(u),cancelLogin:()=>runtime.cancelLogin(),infer:i=>runtime.infer(i),close:()=>runtime.close()};}};
   const qoderProvider=(product:QoderProductId)=>createQoderModelProvider(owner(product),product);
   const linkedProviders=[createCodexModelProvider({owner:owner('codex')}),nativeDsh,qoderProvider('qoder'),createQoderCnModelProvider(programManager)].map(provider=>({...provider,async open(input:Parameters<ModelProvider['open']>[0]){const runtime=await provider.open(input);return{protocol:runtime.protocol,inspect:()=>runtime.inspect(),...(runtime.identity?{identity:()=>runtime.identity!()}:{}),beginLogin:(u:Parameters<typeof runtime.beginLogin>[0])=>runtime.beginLogin(u),cancelLogin:()=>runtime.cancelLogin(),close:()=>runtime.close(),infer:async(i:Parameters<typeof runtime.infer>[0])=>{const current=await runtime.identity?.();const identity=createHash('sha256').update(current??(provider.connectionId?await owner(provider.connectionId).identity():'')).digest('hex');if(!current&&!provider.connectionId)throw new ModelAccessError('model_identity_unavailable','该模型来源尚未提供账号身份。');if(models.accounts.read(provider.id).identity!==identity)throw new ModelAccessError('model_identity_conflict','账号身份已变化，请刷新模型。');return runtime.infer(i);}};}}));
-  const models = createModelAccess({root: path.join(root, 'model-access'), diagnostics: executionLog(root,generation), providers: options.modelProviders ?? [...linkedProviders,createCodexModelProvider(),createOpenAIApiModelProvider(),createAnthropicApiModelProvider(), createDevinModelProvider(), createDeepSeekModelProvider({ownerFactory: async input => {
+  const models = createModelAccess({root: path.join(root, 'model-access'), diagnostics: executionLog(root,generation), providers: options.modelProviders ?? [...linkedProviders,createCodexModelProvider(),createOpenAIApiModelProvider(),createAnthropicApiModelProvider(),createCustomModelProvider(), createDevinModelProvider(), createDeepSeekModelProvider({ownerFactory: async input => {
     const bound = connections.get('dsh').executable;
     const catalog = await programManager.discover({provider:'dsh',...(bound?{executable:bound,boundExecutable:bound}:{}),signal:new AbortController().signal});
     const candidates = catalog.candidates.filter(candidate=>candidate.compatible);
@@ -83,9 +84,9 @@ export function createAgentService(options: AgentServiceOptions) {
         await models.ensureLinked();
         if(closed)return;
         const results=await Promise.allSettled(models.accounts.list().accounts.filter(account=>account.enabled&&(account.connectionId||['ready','failed'].includes(account.status))&&!account.loginAttempt?.state?.match(/^(initializing|waiting-browser|checking)$/)).map(account=>models.accounts.check(account.id)));
-        discoveryDiagnostic=results.some(result=>result.status==='rejected'||!!result.value.diagnostic)?'部分模型账号核对失败，已保留已有模型列表。':undefined;
+        discoveryDiagnostic=results.some(result=>result.status==='rejected'||!!result.value.diagnostic)?'部分供应商核对失败，已保留已有模型列表。':undefined;
       } catch(error) {
-        discoveryDiagnostic='模型账号核对未完成，已保留已有模型列表。';
+        discoveryDiagnostic='供应商核对未完成，已保留已有模型列表。';
         throw error;
       }
     })().finally(()=>{discovery=undefined;});
@@ -116,7 +117,7 @@ export function createAgentService(options: AgentServiceOptions) {
       if(connection&&(!connection.enabled||connection.loginAttempt?.state.match(/^(initializing|waiting-browser|checking)$/)))return false;
       return account.status==='failed'||account.status==='expired'||account.status==='not-authenticated'&&!!account.observedAt;
     });
-    const diagnostic=discoveryDiagnostic||(failed?'部分模型账号核对失败或登录已失效，请在智能体与模型中查看。':undefined);
+    const diagnostic=discoveryDiagnostic||(failed?'部分供应商核对失败或登录已失效，请在智能体与模型中查看。':undefined);
     return {...result,hasSnapshot,...(diagnostic?{diagnostic}:{})};
   };
   const conversations = new ConversationApplication({ backendChange:options.backendChange, conversationControl:options.conversationControl, controlSupersededRun:options.controlSupersededRun, repository, connections, modelAccess: models, events, root, generation, now, host: new HostContext(options), get autoContinueInterrupted() { return options.autoContinueInterrupted; }, generationAlive: options.generationAlive, generationReleased:options.generationReleased });

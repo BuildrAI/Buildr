@@ -34,7 +34,7 @@ export async function runAgentProgramUpdatesJourney({page,capture,expectedBrowse
     await global.getByRole('button',{name:'更新 Codex',exact:true}).click();await page.getByRole('button',{name:'更新并切换',exact:true}).click();await state(global,'codex','downloading');assert.equal(upgrades,1);
     codex.upgrade.state='waiting';codex.upgrade.message='下载完成，等待当前工作结束后重启。';await state(global,'codex','waiting');assert.equal(await global.locator('[data-program="codex"]').getByRole('button',{name:/更新中/}).isDisabled(),true);
     await page.getByRole('dialog').filter({has:page.locator('#update-details-modal')}).getByRole('button',{name:'Close',exact:true}).click();
-    await page.getByRole('button',{name:'账号与配置',exact:true}).click();const settings=page.locator('.agent-conversation-settings');await settings.getByRole('tab',{name:'智能体',exact:true}).click();
+    await page.getByRole('button',{name:'智能体与模型设置',exact:true}).click();const settings=page.locator('.agent-conversation-settings');await settings.getByRole('tab',{name:'智能体',exact:true}).click();
     const standalone=page.locator('#agent-program-updates-settings');await state(standalone,'codex','waiting');assert.equal(await settings.locator('.ams-executor').count(),0,'only one program list');
     codex.upgrade.state='restarting';codex.upgrade.message='正在切换并重启智能体。';await state(standalone,'codex','restarting');
     codex.upgrade.state='completed';codex.upgrade.message='更新完成，下一次执行将使用新版。';codex.upgrade.currentVersion='0.164.0';codex.upgrade.installedExecutable='/fixture/managed/codex';codex.executable=codex.upgrade.installedExecutable;codex.currentVersion='0.164.0';codex.status='latest';codex.managed=true;codex.revision='after-upgrade';
@@ -50,7 +50,7 @@ export async function runAgentProgramUpdatesJourney({page,capture,expectedBrowse
     fail=true;await standalone.locator('[data-program="codex"] summary').click();await standalone.getByRole('button',{name:'检查 Codex 更新',exact:true}).click();await standalone.locator('[data-program="codex"][data-update-status="unknown"]').waitFor();
     await page.setViewportSize({width:390,height:844});assert.equal(await standalone.evaluate((element:any)=>element.scrollWidth>element.clientWidth+1),false);
     await standalone.scrollIntoViewIfNeeded();await capture(page,'agent-program-updates-settings-narrow.png');
-    await page.getByRole('button',{name:'关闭智能体账号与配置',exact:true}).click();
+    await page.getByRole('button',{name:'关闭智能体与模型设置',exact:true}).click();
   } finally {
     await page.unroute(endpoint,handler);await page.unroute(upgradeEndpoint,upgradeHandler);await page.unroute('**/api/v1/release-awareness',releaseHandler);await page.setViewportSize({width:1600,height:1000});
   }

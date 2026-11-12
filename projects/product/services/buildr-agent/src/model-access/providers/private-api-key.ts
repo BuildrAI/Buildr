@@ -43,4 +43,13 @@ export class PrivateApiKey {
     this.queue = work.catch(() => {});
     await work;
   }
+  /** Removes a credential that the configuration no longer uses. */
+  async delete(): Promise<void> {
+    let work!: Promise<void>;
+    work = this.queue.then(async () => {
+      try { await unlink(this.filename); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+    });
+    this.queue = work.catch(() => {});
+    await work;
+  }
 }

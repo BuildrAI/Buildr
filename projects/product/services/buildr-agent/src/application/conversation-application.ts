@@ -762,8 +762,8 @@ export class ConversationApplication {
     const draft = this.draft(input);
     for (const attachment of draft.attachmentIds ?? []) this.media.get(record, attachment);
     const account = draft.modelAccountId ? this.options.modelAccess?.accounts.read(draft.modelAccountId) : undefined;
-    if (draft.modelAccountId && !account) fail('agent_model_source_unavailable', '所选模型账号不可用。', 409);
-    if (account && draft.modelAccountIdentity && draft.modelAccountIdentity !== account.identity) fail('agent_model_source_changed', '所选模型账号身份已变化，请重新选择。', 409);
+    if (draft.modelAccountId && !account) fail('agent_model_source_unavailable', '所选模型供应商不可用。', 409);
+    if (account && draft.modelAccountIdentity && draft.modelAccountIdentity !== account.identity) fail('agent_model_source_changed', '所选模型供应商身份已变化，请重新选择。', 409);
     return { ...draft, ...(account ? { modelAccountIdentity: account.identity } : {}) };
   }
   queueSend(workspaceId: string, id: string, input: SendDraft & { clientRequestId: string; expectedPendingRevision?: string; previousRunId?: string }): ConversationView {
@@ -830,7 +830,7 @@ export class ConversationApplication {
     // still validates the actual login before accepting any work.
     const readyCnAccount = connection.provider === 'qoder-cn' && source?.id === qoderCnModelAccountId && source.provider === qoderCnModelAccountId && source.enabled && source.status === 'ready';
     if (!readyCnAccount && connection.enabled && isQoderProvider(connection.provider) && connection.status === 'expired') fail('qoder_platform_login_expired', qoderProduct(connection.provider).label === 'Qoder' ? qoderLoginExpiredMessage : `${qoderProduct(connection.provider).label} 登录授权已失效，请重新登录。所选模型来源保持不变。`, 409);
-    if (!connection.enabled || (!input.modelAccountId && connection.status !== 'ready')) fail('agent_account_unavailable', '请先准备智能体程序，并连接所选模型账号。', 409);
+    if (!connection.enabled || (!input.modelAccountId && connection.status !== 'ready')) fail('agent_account_unavailable', '请先准备智能体程序，并连接所选模型供应商。', 409);
     if (!readyCnAccount && input.modelAccountId && isQoderProvider(connection.provider) && connection.status === 'not-authenticated') fail('qoder_platform_login_required', `${qoderProduct(connection.provider).label} 程序需要先完成基础平台登录；所选套餐不变，不要求使用 Qoder 自有模型。`, 409);
     if (!(connection.capabilities.permissionModes ?? ['default']).includes(input.permissionMode!)) fail('agent_permission_unavailable', '此接入尚不支持所选权限模式，请明确改选后重试。', 409);
     if (sourceError) throw sourceError;

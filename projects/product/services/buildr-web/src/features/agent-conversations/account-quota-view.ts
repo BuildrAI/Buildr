@@ -24,8 +24,10 @@ function formatCredits(value: number): string {
     ? value.toLocaleString('zh-CN')
     : value.toLocaleString('zh-CN', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 }
-/** Display name shared with the model settings source list; never derive it from the account plan. */
+/** Display name shared with the model settings provider list; never derive it from the account plan. */
 export function accountSourceName(account: ModelAccount): string {
+  // Custom providers are named by the user; their protocol label is not a display name.
+  if (account.provider === 'custom') return account.group?.label || account.label || '自定义供应商';
   if (account.authType === 'api-key') return account.provider === 'anthropic' ? 'Claude API' : 'ChatGPT API';
   const provider = account.connectionId || (account.provider.startsWith('native-') ? account.provider.slice('native-'.length) : account.provider);
   return account.group?.label || sourceLabels[provider] || account.label;
@@ -60,7 +62,7 @@ export function accountQuotaView(account: ModelAccount, now = Date.now(), compac
       const credits = quotaWindowCredits(window, compact);
       return { kind: 'window' as const, label: window.label, percent: window.remainingPercent, ...(credits ? { credits } : {}), text: `${window.label} · 剩余 ${window.remainingPercent}%`, resetsAt: window.resetsAt };
     }));
-    if (!lines.length && typeof quota.remainingPercent === 'number') lines.push({ kind: 'window', label: '账号额度', percent: quota.remainingPercent, text: `账号额度 · 剩余 ${quota.remainingPercent}%`, resetsAt: quota.resetsAt });
+    if (!lines.length && typeof quota.remainingPercent === 'number') lines.push({ kind: 'window', label: '供应商额度', percent: quota.remainingPercent, text: `供应商额度 · 剩余 ${quota.remainingPercent}%`, resetsAt: quota.resetsAt });
     if (!lines.length && quota.summary) lines.push({ kind: 'summary', text: quota.summary });
   }
   if (!lines.length) lines.push({ kind: 'summary', text: quota?.summary || '额度暂不可读取' });
@@ -73,7 +75,7 @@ export function accountQuotaView(account: ModelAccount, now = Date.now(), compac
 }
 /** 缓存额度照常展示；只有账号本身待确认才额外说明，额度过期或诊断不另提示。 */
 export function accountQuotaWarning(account: ModelAccount): string|undefined {
-  return account.status === 'failed' ? '账号待确认' : undefined;
+  return account.status === 'failed' ? '供应商待确认' : undefined;
 }
 /** Failed observations with a previous authenticated snapshot remain explicitly unconfirmed. */
 export function quotaOverviewAccounts(accounts: ModelAccount[]): ModelAccount[] {

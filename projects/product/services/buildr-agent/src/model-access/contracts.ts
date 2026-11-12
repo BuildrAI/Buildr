@@ -1,6 +1,6 @@
 import type { LoginObservation } from '../contracts.ts';
 
-export type ModelProtocol = 'responses' | 'chat-completions' | 'anthropic-messages';
+export type ModelProtocol = 'responses' | 'chat-completions' | 'anthropic-messages' | 'gemini';
 export type ProtocolJson = Record<string, unknown>;
 export interface ModelProviderAuthentication {
   type: 'oauth' | 'api-key';
@@ -46,11 +46,50 @@ export interface ModelQuotaObservation {
   balances?: Array<{currency:string;total:string;toppedUp?:string;granted?:string}>;
   windows?: Array<{id:string;label:string;remainingPercent:number;resetsAt?:string;limitWindowSeconds?:number;/** Platform-reported credit amounts; omitted when the source only reports percentages. */remainingCredits?:number;totalCredits?:number}>;
 }
+export interface CustomProviderModel {
+  /** Upstream model id, sent verbatim. */
+  id: string;
+  label?: string;
+  contextWindow?: number;
+}
+export interface CustomProviderConfig {
+  protocol: ModelProtocol;
+  baseUrl: string;
+  useApiKey: boolean;
+  models: CustomProviderModel[];
+}
+export interface CustomProviderConfigureInput {
+  expectedRevision?: string;
+  label: string;
+  baseUrl: string;
+  protocol: string;
+  useApiKey: boolean;
+  /** Required when `useApiKey` is true; omitted means keep the stored key. */
+  apiKey?: string;
+  models?: CustomProviderModel[];
+}
+export interface CustomProviderDiscoveryInput {
+  /** Reuse the stored key of an existing custom account when `apiKey` is omitted. */
+  accountId?: string;
+  baseUrl: string;
+  protocol: string;
+  useApiKey: boolean;
+  apiKey?: string;
+}
+export interface CustomProviderDiscoveryResult {
+  models: Array<{ id: string; label?: string }>;
+  observedAt?: string;
+  /** The endpoint did not complete discovery; partial or empty results are not a credential failure. */
+  incomplete?: boolean;
+  diagnostic?: string;
+}
 export interface ModelProviderObservation {
   /** The inspection did not establish current availability; not a confirmed account failure. */
   incomplete?: boolean;
   /** The selected source has a locally configured credential without exposing it. */
   credentialConfigured?: boolean;
+  /** The observed model list is user-curated and must not be replaced by an inspection. */
+  curatedModels?: boolean;
   status: 'not-authenticated' | 'ready' | 'expired' | 'failed';
   label?: string;
   identity?: string;
@@ -72,6 +111,10 @@ export interface ModelProviderRuntime {
   identity?(): Promise<string>;
   /** Validate and replace an API-key credential atomically. */
   configure?(input: { apiKey: string }): Promise<ModelProviderObservation>;
+  /** Validate and persist custom endpoint configuration without exposing its credential. */
+  configureCustom?(input: CustomProviderConfigureInput): Promise<ModelProviderObservation>;
+  /** Read the configured endpoint's model list as discovery candidates only. */
+  discoverCustom?(input: CustomProviderDiscoveryInput): Promise<CustomProviderDiscoveryResult>;
   beginLogin(update: (value: LoginObservation) => void): Promise<void>;
   cancelLogin(): Promise<void>;
   /** Response uses protocol, including its native streaming and errors. */
@@ -87,7 +130,11 @@ export interface ModelProvider {
   readonly authentication?: ModelProviderAuthentication;
   readonly group?: ModelProviderGroup;
   readonly modeLabel?: string;
-  open(input: { accountId: string; configRoot: string; environment: Readonly<Record<string, string>> }): Promise<ModelProviderRuntime>;
+  /** Accounts of this provider carry user-declared endpoint configuration. */
+  readonly custom?: boolean;
+  open(input: { accountId: string; configRoot: string; environment: Readonly<Record<string, string>>; custom?: CustomProviderConfig }): Promise<ModelProviderRuntime>;
+  /** Stateless discovery for an unsaved custom configuration. */
+  discover?(input: CustomProviderDiscoveryInput): Promise<CustomProviderDiscoveryResult>;
 }
 export interface ModelAccountView {
   id: string;
@@ -107,6 +154,8 @@ export interface ModelAccountView {
   modeLabel?: string;
   credentialConfigured?: boolean;
   accountLabel?: string;
+  /** Public custom endpoint configuration; never contains the API key. */
+  custom?: CustomProviderConfig;
   models: ModelOffering[];
   observedAt?: string;
   quota?: ModelQuotaObservation;

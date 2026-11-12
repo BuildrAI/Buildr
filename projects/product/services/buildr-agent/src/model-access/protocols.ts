@@ -111,10 +111,12 @@ function parseRequest(body: ProtocolJson, protocol: ModelProtocol, opaque: Opaqu
       add(role === 'tool' ? 'user' : role, parts);
     }
     for (const raw of list(body.tools)) { const tool = record(raw); if (tool.type !== 'function') throw new ModelAccessError('model_tool_unsupported', '该模型尚不支持此工具类型。', 400); tools.push(record(tool.function)); }
-  } else {
+  } else if (protocol === 'anthropic-messages') {
     if (body.system) add('system', parseContent(body.system, protocol));
     for (const raw of list(body.messages)) { const item = record(raw); add(string(item.role), parseContent(item.content, protocol)); }
     for (const raw of list(body.tools)) { const tool = record(raw); if (tool.type) throw new ModelAccessError('model_tool_unsupported', '该模型尚不支持此服务端工具类型。', 400); tools.push({ name: tool.name, description: tool.description, parameters: tool.input_schema ?? {} }); }
+  } else {
+    throw new ModelAccessError('model_protocol_unsupported', 'Gemini 只作为自定义供应商的上游协议，不作为执行器入口。', 400);
   }
   const parameters: ProtocolJson = { model: body.model, stream: body.stream === true };
   for (const key of ['temperature', 'top_p', 'stop', 'parallel_tool_calls']) if (body[key] !== undefined) parameters[key] = body[key];
@@ -134,6 +136,36 @@ function parseRequest(body: ProtocolJson, protocol: ModelProtocol, opaque: Opaqu
 function anthropicImage(url: string): ProtocolJson {
   const match = /^data:([^;,]+);base64,(.*)$/s.exec(url);
   return { type: 'image', source: match ? { type: 'base64', media_type: match[1], data: match[2] } : { type: 'url', url } };
+}
+function geminiImage(url: string): ProtocolJson {
+  const match = /^data:([^;,]+);base64,(.*)$/s.exec(url);
+  if (!match) throw new ModelAccessError('model_content_unsupported', 'Gemini 不能直接读取远程图片地址，请改用 data URL。', 400);
+  return { inlineData: { mimeType: match[1], data: match[2] } };
+}
+function geminiToolResult(content: unknown): ProtocolJson {
+  if (typeof content === 'string') return { result: content };
+  if (Array.isArray(content)) {
+    const result = parseContent(content, 'gemini').map(part => { if (part.type !== 'text') throw new ModelAccessError('model_tool_result_unsupported', 'Gemini 工具结果只支持文本内容。', 400); return part.text; });
+    return { result: result.join('\n') };
+  }
+  return content !== null && typeof content === 'object' ? content as ProtocolJson : { result: JSON.stringify(content ?? '') };
+}
+function geminiSchema(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(geminiSchema);
+  if (value === null || typeof value !== 'object') return value;
+  const result: ProtocolJson = {};
+  for (const [key, item] of Object.entries(value as ProtocolJson)) {
+    if (key === 'type' && typeof item === 'string') result[key] = item.toUpperCase();
+    else if (key === 'properties' && item !== null && typeof item === 'object' && !Array.isArray(item)) result[key] = Object.fromEntries(Object.entries(item as ProtocolJson).map(([name, schema]) => [name, geminiSchema(schema)]));
+    else if (key === 'additionalProperties' || key === 'items' || key === 'anyOf' || key === 'oneOf' || key === 'allOf') result[key] = geminiSchema(item);
+    else result[key] = item;
+  }
+  return result;
+}
+function geminiFinish(reason: string): string {
+  if (reason === 'MAX_TOKENS') return 'length';
+  if (['SAFETY', 'RECITATION', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII', 'IMAGE_SAFETY'].includes(reason)) return 'content_filter';
+  return 'stop';
 }
 function resultContent(content:unknown,protocol:ModelProtocol):unknown {
   if(!Array.isArray(content)) return typeof content==='string'?content:JSON.stringify(content??'');
@@ -191,7 +223,7 @@ function serializeRequest(parsed: Parsed, protocol: ModelProtocol, opaque: Opaqu
     if (body.max_tokens === undefined) body.max_tokens = 8192;
     if (body.reasoning_effort) { body.output_config = { effort: body.reasoning_effort }; delete body.reasoning_effort; }
     delete body.parallel_tool_calls;
-  } else {
+  } else if (protocol === 'responses') {
     const input: ProtocolJson[] = [];
     for (const message of parsed.messages) {
       let content: ProtocolJson[] = [];
@@ -207,6 +239,41 @@ function serializeRequest(parsed: Parsed, protocol: ModelProtocol, opaque: Opaqu
     if (parsed.tools.length) body.tools = parsed.tools.map(tool => ({ type: 'function', ...tool }));
     if (body.max_tokens !== undefined) { body.max_output_tokens = body.max_tokens; delete body.max_tokens; }
     if (body.reasoning_effort) { body.reasoning = { effort: body.reasoning_effort }; delete body.reasoning_effort; }
+  } else {
+    const system: string[] = [], contents: ProtocolJson[] = [], callNames = new Map<string, string>();
+    const push = (role: 'user' | 'model', parts: ProtocolJson[]) => {
+      if (!parts.length) return;
+      const previous = contents.at(-1);
+      if (previous?.role === role) previous.parts = [...list(previous.parts), ...parts];
+      else contents.push({ role, parts });
+    };
+    for (const message of parsed.messages) {
+      if (message.role === 'system' || message.role === 'developer') {
+        for (const part of message.parts) { if (part.type !== 'text') throw new ModelAccessError('model_content_unsupported', 'Gemini 的系统提示只支持文本内容。', 400); system.push(part.text); }
+        continue;
+      }
+      const parts: ProtocolJson[] = [];
+      for (const part of message.parts) {
+        if (part.type === 'text') parts.push({ text: part.text });
+        else if (part.type === 'image') parts.push(geminiImage(part.url));
+        else if (part.type === 'tool') { callNames.set(part.id, part.name); parts.push({ functionCall: { name: part.name, args: parseArguments(part.arguments) } }); }
+        else if (part.type === 'result') { const name = callNames.get(part.id); if (!name) throw new ModelAccessError('model_tool_result_unsupported', 'Gemini 工具结果缺少可解析的工具名称。', 400); parts.push({ functionResponse: { name, response: geminiToolResult(part.content), ...(part.id ? { id: part.id } : {}) } }); }
+      }
+      push(message.role === 'assistant' ? 'model' : 'user', parts);
+    }
+    body.contents = contents;
+    if (system.length) body.systemInstruction = { parts: system.map(text => ({ text })) };
+    if (parsed.tools.length) body.tools = [{ functionDeclarations: parsed.tools.map(tool => ({ name: tool.name, ...(tool.description ? { description: tool.description } : {}), parameters: geminiSchema(tool.parameters ?? { type: 'object', properties: {} }) })) }];
+    const generation: ProtocolJson = {};
+    if (body.temperature !== undefined) generation.temperature = body.temperature;
+    if (body.top_p !== undefined) generation.topP = body.top_p;
+    if (body.max_tokens !== undefined) generation.maxOutputTokens = body.max_tokens;
+    if (body.stop !== undefined) generation.stopSequences = Array.isArray(body.stop) ? body.stop : [body.stop];
+    if (Object.keys(generation).length) body.generationConfig = generation;
+    const choice = record(body.tool_choice);
+    const mode = body.tool_choice === 'auto' ? 'AUTO' : body.tool_choice === 'none' ? 'NONE' : body.tool_choice === 'required' ? 'ANY' : choice.type === 'function' ? 'ANY' : undefined;
+    if (mode) body.toolConfig = { functionCallingConfig: { mode, ...(choice.type === 'function' ? { allowedFunctionNames: [string(record(choice.function).name)] } : {}) } };
+    for (const key of ['model', 'temperature', 'top_p', 'stop', 'max_tokens', 'tool_choice', 'parallel_tool_calls', 'reasoning_effort']) delete body[key];
   }
   return body;
 }
@@ -284,7 +351,7 @@ async function* sse(body: ReadableStream<Uint8Array>): AsyncGenerator<ProtocolJs
 async function* decodeRawEvents(response: Response, protocol: ModelProtocol): AsyncGenerator<Event> {
   const streaming = response.headers.get('content-type')?.includes('text/event-stream');
   const anthropicTools = new Map<string, { explicitEmptyInput: boolean; hasJsonDelta: boolean }>();
-  let finished = false;
+  let finished = false, geminiToolIndex = 0;
   if (!streaming) {
     const body = record(await response.json());
     if (body.error) throw upstreamFailure(body.error, response.status >= 400 ? response.status : 502);
@@ -299,9 +366,26 @@ async function* decodeRawEvents(response: Response, protocol: ModelProtocol): As
       for (const [index, raw] of list(body.content).entries()) { const part = record(raw); if (part.type === 'text') yield { type: 'text', delta: string(part.text) }; else if (part.type === 'tool_use') yield { type: 'tool', key: String(index), id: string(part.id), name: string(part.name), delta: JSON.stringify(part.input ?? {}) }; else if (part.type === 'thinking' || part.type === 'redacted_thinking') yield { type: 'reasoning', opaque: part }; }
       const usage = record(body.usage); yield { type: 'usage', input: number(usage.input_tokens), output: number(usage.output_tokens), cache: number(usage.cache_read_input_tokens) };
       yield { type: 'finish', reason: string(body.stop_reason) || 'end_turn' };
-    } else {
+    } else if (protocol === 'responses') {
       for (const raw of list(body.output)) { const part = record(raw); if (part.type === 'message') for (const p of list(part.content)) { const content = record(p); if (content.type === 'output_text') yield { type: 'text', delta: string(content.text) }; } else if (part.type === 'function_call') yield { type: 'tool', key: string(part.id), id: string(part.call_id), name: string(part.name), delta: string(part.arguments) }; else if (part.type === 'reasoning') yield { type: 'reasoning', opaque: { type: 'responses-reasoning', item: part } }; }
       const usage = record(body.usage); yield { type: 'usage', input: number(usage.input_tokens), output: number(usage.output_tokens) }; yield { type: 'finish', reason: body.status === 'incomplete' ? 'length' : 'stop' };
+    } else {
+      const candidate = record(list(body.candidates)[0]);
+      for (const [index, raw] of list(record(candidate.content).parts).entries()) {
+        const part = record(raw);
+        if (part.functionCall !== undefined) {
+          const call = record(part.functionCall), name = string(call.name);
+          if (!name) throw new ModelAccessError('model_tool_invalid', 'Gemini 工具调用缺少名称。', 502);
+          yield { type: 'tool', key: String(index), id: `call_${id()}`, name, delta: JSON.stringify(call.args ?? {}) };
+        } else if (typeof part.text === 'string') {
+          if (part.thought === true) yield { type: 'reasoning', delta: part.text };
+          else if (part.text) yield { type: 'text', delta: part.text };
+        } else if (part.thoughtSignature === undefined) throw new ModelAccessError('model_content_unsupported', 'Gemini 返回了无法转换的内容类型。', 502);
+      }
+      const usage = record(body.usageMetadata);
+      yield { type: 'usage', input: number(usage.promptTokenCount), output: number(usage.candidatesTokenCount), cache: number(usage.cachedContentTokenCount) };
+      const reason = string(candidate.finishReason) || (record(body.promptFeedback).blockReason ? 'SAFETY' : '');
+      yield { type: 'finish', reason: reason ? geminiFinish(reason) : 'stop' };
     }
     return;
   }
@@ -345,7 +429,7 @@ async function* decodeRawEvents(response: Response, protocol: ModelProtocol): As
       }
       if (body.type === 'message_delta') { const u = record(body.usage); yield { type: 'usage', input: number(u.input_tokens), output: number(u.output_tokens) }; if (record(body.delta).stop_reason) yield { type: 'finish', reason: string(record(body.delta).stop_reason) }; }
       if (body.type === 'message_stop') finished = true;
-    } else {
+    } else if (protocol === 'responses') {
       if (body.type === 'response.output_text.delta') yield { type: 'text', delta: string(body.delta) };
       if (body.type === 'response.output_item.added') { const item = record(body.item); if (item.type === 'function_call') yield { type: 'tool', key: string(item.id) || String(body.output_index), id: string(item.call_id), name: string(item.name), ...(typeof item.arguments === 'string' && item.arguments ? { arguments: item.arguments } : {}) }; }
       if (body.type === 'response.function_call_arguments.delta') yield { type: 'tool', key: string(body.item_id) || String(body.output_index), delta: string(body.delta) };
@@ -353,6 +437,21 @@ async function* decodeRawEvents(response: Response, protocol: ModelProtocol): As
       if (body.type === 'response.output_item.done' && record(body.item).type === 'function_call') { const item = record(body.item); yield { type: 'tool', key: string(item.id) || String(body.output_index), id: string(item.call_id), name: string(item.name), ...(typeof item.arguments === 'string' ? { arguments: item.arguments } : {}), complete: true }; }
       if (body.type === 'response.output_item.done' && record(body.item).type === 'reasoning') yield { type: 'reasoning', opaque: { type: 'responses-reasoning', item: body.item } };
       if (body.type === 'response.completed' || body.type === 'response.incomplete') { const r = record(body.response), u = record(r.usage); for (const [index, raw] of list(r.output).entries()) { const item = record(raw); if (item.type === 'function_call') yield { type: 'tool', key: string(item.id) || String(index), id: string(item.call_id), name: string(item.name), ...(typeof item.arguments === 'string' ? { arguments: item.arguments } : {}), complete: true }; } yield { type: 'usage', input: number(u.input_tokens), output: number(u.output_tokens) }; finished = true; yield { type: 'finish', reason: body.type === 'response.incomplete' ? 'length' : 'stop' }; }
+    } else {
+      const candidate = record(list(body.candidates)[0]);
+      for (const raw of list(record(candidate.content).parts)) {
+        const part = record(raw);
+        if (part.functionCall !== undefined) {
+          const call = record(part.functionCall), name = string(call.name);
+          if (!name) throw new ModelAccessError('model_tool_invalid', 'Gemini 工具调用缺少名称。', 502);
+          yield { type: 'tool', key: `gemini-${geminiToolIndex++}`, id: `call_${id()}`, name, delta: JSON.stringify(call.args ?? {}) };
+        } else if (typeof part.text === 'string') {
+          if (part.thought === true) yield { type: 'reasoning', delta: part.text };
+          else if (part.text) yield { type: 'text', delta: part.text };
+        } else if (part.thoughtSignature === undefined) throw new ModelAccessError('model_content_unsupported', 'Gemini 返回了无法转换的内容类型。', 502);
+      }
+      if (body.usageMetadata) { const u = record(body.usageMetadata); yield { type: 'usage', input: number(u.promptTokenCount), output: number(u.candidatesTokenCount), cache: number(u.cachedContentTokenCount) }; }
+      if (candidate.finishReason) { finished = true; yield { type: 'finish', reason: geminiFinish(string(candidate.finishReason)) }; }
     }
   }
   if (!finished) throw new ModelAccessError('model_stream_incomplete', '模型流结束但没有完成标记。', 502);
@@ -483,6 +582,7 @@ class Output {
   error(cause: unknown): string { const error = modelFailure(cause); return this.protocol === 'responses' ? this.event('response.failed', { response: { id: this.responseId, object: 'response', status: 'failed', error } }) : this.protocol === 'anthropic-messages' ? this.event('error', { error: { type: 'api_error', ...error } }) : `data: ${JSON.stringify({ error })}\n\n`; }
 }
 export async function translateResponse(response: Response, from: ModelProtocol, to: ModelProtocol, options: { model: string; stream: boolean; request: ProtocolJson; opaque: OpaqueReasoning; signal: AbortSignal; onStreamError?: (error: unknown) => void }): Promise<Response> {
+  if (to === 'gemini') throw new ModelAccessError('model_protocol_unsupported', 'Gemini 只作为自定义供应商的上游协议，不作为执行器入口。', 400);
   if (from === to) return response;
   const bindings=to==='responses'?toolBindings(options.request):new Map<string,ToolBinding>();
   const customTools = new Set([...bindings].filter(([,binding])=>binding.custom).map(([wireName])=>wireName));

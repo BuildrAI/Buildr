@@ -17,13 +17,13 @@ test('参与者、内容和其他工作记录形成合并边界，普通用户�
   const users=[receipt('one',{kind:'message',role:'user'}),receipt('two',{kind:'message',role:'user'})];
   assert.deepEqual(visibleConversationEntries(users),users);
 });
-test('目录未就绪不误报模型停用，真实停用与来源不可用分别说明',()=>{
+test('目录未就绪不误报模型停用，真实停用与供应商不可用分别说明',()=>{
   assert.equal(conversationModelWarning(false,'account',undefined),undefined);
   assert.equal(conversationModelWarning(true,undefined,undefined),undefined);
   assert.equal(conversationModelWarning(true,'account',{available:true,enabled:true}),undefined);
   assert.match(conversationModelWarning(true,'account',{available:false,enabled:false}),/已停用/);
-  assert.match(conversationModelWarning(true,'account',{available:false,enabled:true}),/账号.*登录状态/);
-  assert.match(conversationModelWarning(true,'account',undefined),/账号/);
+  assert.match(conversationModelWarning(true,'account',{available:false,enabled:true}),/供应商.*状态/);
+  assert.match(conversationModelWarning(true,'account',undefined),/供应商/);
 });
 test('重试后的模型警告只取当前状态，恢复后去除旧错误，其他失败仍可见',()=>{
   const warning=conversationModelWarning(true,'account',{available:false});

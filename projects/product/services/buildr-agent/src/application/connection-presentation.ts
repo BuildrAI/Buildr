@@ -24,7 +24,7 @@ function withAccount(view: ConnectionView, account: ModelAccountView, status: Co
 export function presentConnection(view: ConnectionView, account?: ModelAccountView): ConnectionView {
   if (view.id !== QODER_CN || !view.enabled || !view.configPath || !account) return view;
   if (account.sourceEnabled === false) return withAccount(view, account, 'not-authenticated', [], 'Qoder CN 模型来源已停用，请在“模型”中重新启用。');
-  if (!account.enabled) return withAccount(view, account, 'not-authenticated', [], 'Qoder CN 模型账号已停用。');
+  if (!account.enabled) return withAccount(view, account, 'not-authenticated', [], 'Qoder CN 模型供应商已停用。');
   if (account.status !== 'ready') {
     return withAccount(view, account, account.status === 'disconnected' ? 'not-authenticated' : account.status, [], account.diagnostic);
   }

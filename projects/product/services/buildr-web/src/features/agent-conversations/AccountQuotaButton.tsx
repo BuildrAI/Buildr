@@ -36,7 +36,7 @@ export function AccountQuotaButton({ onClick }: Props) {
   const visible = quotaOverviewAccounts(accounts);
   const content = <div className="ac-account-quota-overview" data-testid="account-quota-overview">
     {error && <Alert type="warning" showIcon message={error}/>}
-    {!loaded && !error ? <Spin size="small"/> : !visible.length && !error ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚无已登录账号，点击图标接入"/> : null}
+    {!loaded && !error ? <Spin size="small"/> : !visible.length && !error ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚无已接入的供应商，点击图标接入"/> : null}
     {visible.map(account => {
       const view = accountQuotaView(account, Date.now(), true), warning = accountQuotaWarning(account);
       const billingUrl = accountBillingUrl(account), showBilling = Boolean(billingUrl && !account.quota?.available);
@@ -66,13 +66,13 @@ export function AccountQuotaButton({ onClick }: Props) {
       </section>;
     })}
   </div>;
-  return <Popover title="账号额度" content={content} placement="topLeft" trigger={['hover']} open={previewOpen} mouseEnterDelay={0.2} mouseLeaveDelay={0.5}
+  return <Popover title="供应商额度" content={content} placement="topLeft" trigger={['hover']} open={previewOpen} mouseEnterDelay={0.2} mouseLeaveDelay={0.5}
     onOpenChange={next => {
       if (next && (dismissed.current || settings)) return;
       if (!next && document.activeElement === entry.current && !pointerFocus.current) return;
       setOpen(next);
     }}>
-    <Button ref={entry} type="text" className="ac-conversation-icon ac-account-settings" icon={<SettingOutlined aria-hidden="true"/>} aria-label="账号与配置"
+    <Button ref={entry} type="text" className="ac-conversation-icon ac-account-settings" icon={<SettingOutlined aria-hidden="true"/>} aria-label="智能体与模型设置"
       onFocus={() => { if (!pointerFocus.current && !dismissed.current && !settings) setOpen(true); }}
       onBlur={() => { pointerFocus.current = false; if (!settings) dismissed.current = false; setOpen(false); }}
       onPointerEnter={() => { if (!pointerFocus.current) dismissed.current = false; }}
