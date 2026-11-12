@@ -8,7 +8,7 @@
 
 - [x] 2.1 激活集成新增用例：忙 owner + storage 锁竞争 + 安装包目标 → 激活 ready、旧代际保留、对话 run 仍在旧代次运行。
 - [x] 2.2 不兼容/损坏目标既有用例（broken target、busy 保护）回归通过。
-- [ ] 2.3 既有 handoff/startup 组回归通过。
+- [x] 2.3 handoff 组 5/5；startup 组 storage-maintenance 用例失败为 dev 基线预存（主 checkout 对照同样失败），其余通过。
 
 ## 3. 当前认知
 
@@ -16,6 +16,6 @@
 
 ## 4. 验证
 
-- [ ] 4.1 agent 静态（typecheck/source-boundaries）+ 单元 + handoff 集成。
-- [ ] 4.2 buildr `npm run check` 全量。
-- [ ] 4.3 交付后以同一 closeout 入口重试自举激活，确认保留交接完成。
+- [x] 4.1 激活集成 4/4；handoff 组 5/5；agent 静态+单元含于 npm run check。
+- [x] 4.2 buildr `npm run check` 21/21 通过。
+- [x] 4.3 自举激活重试 passed：sync/install/入口验证/最终 Doctor 全过，开发版重启并页面验证，旧执行保留接续。
