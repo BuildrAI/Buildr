@@ -13,6 +13,7 @@ import { createBoundedBuildrWebReadExecutor } from '../../src/web/http/read-exec
 import { copyPreparedWorkspace, copyPreparedProjectWorkspace } from '../helpers/prepared-fixtures.ts';
 import { createRuntime } from '../helpers/runtime-harness.ts';
 import { runtimeProvide } from '../../src/bootstrap/runtime.ts';
+import type { CodeSourceControlResponse } from '../../src/modules/code/application/source-control-model.ts';
 import { CODE_APPLICATION } from '../../src/modules/code/module.ts';
 import { createCodeHttpContribution } from '../../src/modules/code/interfaces/http/code-http.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
@@ -333,7 +334,7 @@ test('source-control worker returns the same status and identities across a full
   const expected = code.sourceControl(root, { repositoryId });
   const executor = createBoundedBuildrWebReadExecutor({ workerCount: 1 });
   try {
-    const actual = await executor.run('code-source-control', { targetRoot: root, taskId: 'code-files', input: JSON.stringify({ repositoryId }) });
+    const actual = await executor.run('code-source-control', { targetRoot: root, taskId: 'code-files', input: JSON.stringify({ repositoryId }) }) as CodeSourceControlResponse;
     assert.equal(actual.worktreeCoverage.read, 4);
     assert.equal(actual.observedRevision, expected.observedRevision);
     assert.deepEqual(actual.repositories[0].worktrees.flatMap(tree => tree.changes.map(change => change.path)).sort(), ['new-1.txt', 'new-2.txt', 'new-3.txt']);
