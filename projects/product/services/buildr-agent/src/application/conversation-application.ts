@@ -72,7 +72,7 @@ async function within<T>(work: Promise<T>, milliseconds: number, code: string, s
   finally { if (timer) clearTimeout(timer); if (cancel) signal?.removeEventListener('abort', cancel); }
 }
 const bounded = (value: number | undefined, fallback: number, max: number) => Math.max(1, Math.min(Number.isFinite(value) ? Math.trunc(value!) : fallback, max));
-const needsAttention = (view: ConversationView): boolean => (view.activity?.pendingDecisionCount ?? 0) > 0 || view.requests.length > 0 || view.run?.status === 'failed' || view.run?.status === 'unknown';
+const needsAttention = (view: ConversationView): boolean => (view.activity?.pendingDecisionCount ?? 0) > 0 || view.run?.status === 'failed' || view.run?.status === 'unknown';
 const conversationSummary = (view: ConversationView): ConversationSummaryView => ({ id: view.id, title: view.title, runStatus: view.run?.status ?? null, updatedAt: view.updatedAt, active: view.activity?.active ?? false, pendingDecisionCount: view.activity?.pendingDecisionCount ?? 0 });
 
 type ConversationListInput = { taskId?: string; workspaceIds?: string[]; cursor?: string; limit?: number; hidden?: boolean; query?: string; active?: boolean; attention?: boolean; fields?: 'summary' };

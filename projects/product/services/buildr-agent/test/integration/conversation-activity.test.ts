@@ -377,9 +377,10 @@ test('activity counts are exclusive, full-scope and filter before pagination wit
       message(r,'input','work '+i);
       r.view.hidden=true;
       r.view.run={id:'run-'+i,participantId:'p',provider:'codex',generation:'g',status,accepted:true,tools:[],model:'m',startedAt:r.view.updatedAt,updatedAt:r.view.updatedAt};
+      if(status==='waiting-approval'||status==='waiting-question')r.view.requests=[{id:'permit-'+i,kind:'approval',title:'Approve',options:[{id:'allow',label:'Allow'}],conversationId:r.view.id,workspaceId:r.view.workspaceId,participantId:'p',runId:'run-'+i,generation:'g'}];
     });
   }
-  const counts={active:8,running:2,waiting:2,unseen:3,unknown:1,attention:6};
+  const counts={active:8,running:2,waiting:2,unseen:3,unknown:1,attention:4};
   const first=repo.querySummaries(['w1','w2'],{limit:1,activeOnly:true});
   assert.deepEqual(first.activityCounts,counts);
   const search=repo.querySummaries(['w1','w2'],{limit:1,query:'no result',hidden:false,model:'m'});
@@ -398,9 +399,9 @@ test('activity counts are exclusive, full-scope and filter before pagination wit
   repo.markSeen('w1','counts-5',1);
   assert.equal(repo.querySummaries(['w1','w2'],{limit:1}).activityCounts.unseen,2);
   const stale=repo.querySummaries(['w1','w2'],{limit:1,generation:'new'});
-  assert.deepEqual(stale.activityCounts,{active:7,running:0,waiting:0,unseen:1,unknown:6,attention:7});
+  assert.deepEqual(stale.activityCounts,{active:7,running:0,waiting:2,unseen:1,unknown:4,attention:4});
   assert.deepEqual(stale.stats.agents,[]);
-  assert.equal(repo.querySummaries(['w1'],{limit:10,generation:'new',activityState:'unknown'}).total,5);
+  assert.equal(repo.querySummaries(['w1'],{limit:10,generation:'new',activityState:'unknown'}).total,3);
 });
 
 test('empty and attachment-only drafts stay readable but absent from every list; failed or unknown work remains discoverable',t=>{

@@ -60,10 +60,13 @@ test('list filters by active and attention, projects summary fields, always retu
   const active = f.service.conversations.list('workspace-one', { active: true });
   assert.deepEqual(active.conversations.map(c => c.id).sort(), activeIds);
   assert.equal(active.activityCounts.active, 3);
+  assert.equal(active.activityCounts.active, active.conversations.length, 'active count matches the filter');
 
   const attention = f.service.conversations.list('workspace-one', { attention: true });
   assert.deepEqual(attention.conversations.map(c => c.id).sort(), attentionIds);
   assert.equal(attention.activityCounts.active, 3);
+  assert.equal(attention.activityCounts.attention, 3, 'attention count matches the filter');
+  assert.equal(attention.activityCounts.attention, attention.conversations.length);
 
   const summary = f.service.conversations.list('workspace-one', { fields: 'summary' });
   assert.equal(summary.conversations.length, 5);
@@ -103,6 +106,44 @@ test('list activityCounts stays zero without creating storage for an empty works
   assert.deepEqual(result.conversations, []);
   assert.equal(result.nextCursor, undefined);
   assert.deepEqual(result.activityCounts, { active: 0, running: 0, waiting: 0, unseen: 0, unknown: 0, attention: 0 });
+});
+
+test('completed unseen conversations are active but not attention, and counts match both filters', async t => {
+  const f = fixture(); t.after(() => f.close());
+  const names = ['done-unseen', 'failed', 'waiting'] as const;
+  const ids: Record<string, string> = {};
+  for (const name of names) ids[name] = (await f.service.conversations.create('workspace-one', { title: name })).id;
+  const seed = (name: string, mutate: (view: ConversationView) => void) => {
+    const record = f.repository.readConversation(ids[name])!;
+    const prior = record.view.revision;
+    mutate(record.view);
+    record.view.revision = randomUUID();
+    f.repository.saveConversation(record, prior);
+  };
+  seed('done-unseen', view => {
+    view.entries.push({ id: 'done-output', sequence: 1, kind: 'message', role: 'assistant', text: 'done', createdAt: NOW });
+    view.run = run('run-done', 'completed');
+  });
+  seed('failed', view => { view.run = run('run-failed', 'failed'); });
+  seed('waiting', view => {
+    view.run = run('run-waiting', 'waiting-approval');
+    view.requests = [approval(view.id, 'run-waiting')];
+  });
+
+  const all = f.service.conversations.list('workspace-one');
+  assert.equal(all.activityCounts.active, 2, 'completed unseen and waiting are active');
+  assert.equal(all.activityCounts.attention, 2, 'failed and waiting need attention');
+  const active = f.service.conversations.list('workspace-one', { active: true });
+  assert.deepEqual(active.conversations.map(item => item.id).sort(), [ids['done-unseen'], ids['waiting']].sort());
+  assert.equal(active.activityCounts.active, active.conversations.length);
+  const attention = f.service.conversations.list('workspace-one', { attention: true });
+  assert.deepEqual(attention.conversations.map(item => item.id).sort(), [ids['failed'], ids['waiting']].sort());
+  assert.equal(attention.activityCounts.attention, attention.conversations.length);
+
+  f.repository.markSeen('workspace-one', ids['done-unseen'], 1);
+  const seen = f.service.conversations.list('workspace-one');
+  assert.equal(seen.activityCounts.active, 1, 'viewing the completed result removes it from active');
+  assert.equal(seen.activityCounts.attention, 2);
 });
 
 test('active and attention filters are applied before the page limit', async t => {

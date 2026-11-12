@@ -214,7 +214,10 @@ export function createAgentServiceHttpContribution(resolve: () => AgentService |
         const participant = lastRun ? view.participants.find(item => item.id === lastRun.participantId) : undefined;
         if (!lastRun || !participant) throw new AgentServiceError('agent_conversation_idle', '对话尚无可复用的执行选择，请先发送首条消息。', 409);
         const expectedRevision = input.expectedRevision ?? view.revision;
-        const selection = { connectionId: participant.connectionId, permissionMode: 'default' as const,
+        // A single-step continuation inherits the latest run's authorization
+        // unless the caller explicitly selects a mode for this round.
+        const permissionMode: 'default' | 'full-access' = input.permissionMode ?? lastRun.permissionMode ?? 'default';
+        const selection = { connectionId: participant.connectionId, permissionMode,
           ...(lastRun.modelAccountId ? { modelAccountId: lastRun.modelAccountId } : {}), ...(lastRun.model ? { model: lastRun.model } : {}), ...(lastRun.serviceTier ? { serviceTier: lastRun.serviceTier } : {}), ...(lastRun.reasoningEffort ? { reasoningEffort: lastRun.reasoningEffort } : {}) };
         // send() re-runs prepare atomically. Omitting the preview token keeps
         // the running-conflict check (agent_native_supplement_required) intact;

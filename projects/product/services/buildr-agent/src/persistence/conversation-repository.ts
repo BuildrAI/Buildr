@@ -441,13 +441,23 @@ export class ConversationRepository {
       // LIMIT would return short pages even when more matching rows exist.
       // Older stores have no compact summary column; callers retain their
       // in-memory compatibility filter for that read-only case.
-      if (options.active && modern) where.push("json_extract(summary,'$.activity.active')=1");
-      if (options.attention && modern) where.push("(coalesce(json_extract(summary,'$.activity.pendingDecisionCount'),0)>0 OR json_array_length(coalesce(json_extract(read_state,'$.view.requests'),'[]'))>0 OR coalesce(json_extract(summary,'$.run.status'),json_extract(read_state,'$.view.run.status')) IN ('failed','unknown'))");
+      const pendingActive = options.active && modern
+        ? new PendingSendRepository(this.directory).activitySummaries(options.taskId ? (options.workspaceIds ?? [workspaceId]) : [workspaceId])
+        : [];
+      const pendingIds = [...new Set(pendingActive.map(item => item.conversationId))];
+      if (options.active && modern) {
+        where.push(pendingIds.length
+          ? `(json_extract(summary,'$.activity.active')=1 OR id IN (${pendingIds.map(() => '?').join(',')}))`
+          : "json_extract(summary,'$.activity.active')=1");
+        values.push(...pendingIds);
+      }
+      if (options.attention && modern) where.push("(coalesce(json_extract(summary,'$.activity.pendingDecisionCount'),0)>0 OR coalesce(json_extract(summary,'$.run.status'),json_extract(read_state,'$.view.run.status')) IN ('failed','unknown'))");
       if (options.before) { where.push('(updated_at || \'/\' || id) < ?'); values.push(options.before); }
       values.push(options.limit);
       return (db.prepare(`SELECT read_state${modern?',summary':''} FROM ${source} WHERE ${where.length?where.join(' AND '):'1'} ORDER BY updated_at DESC,id DESC LIMIT ?`).all(...values) as {read_state:string;summary?:string}[]).map(row=>{
         const record=JSON.parse(row.read_state) as ConversationReadState;
         if(row.summary)record.view.activity=JSON.parse(row.summary).activity;
+        if(pendingIds.includes(record.view.id))record.view.activity={...(record.view.activity??{version:0,seenThrough:0,updatedAt:record.view.updatedAt}),active:true};
         return record;
       });
     } finally { db.close(); }
@@ -548,7 +558,8 @@ export class ConversationRepository {
       // Materialize only compact, scoped facts once. Search, pagination and
       // execution filters must not narrow the overview's scope.
       const overview = db.prepare(`WITH scoped AS MATERIALIZED (
-        SELECT activity_state,effective_status,pending_decision_count,send_activity,
+        SELECT activity_state,effective_status,pending_decision_count,send_activity,list_active,
+          json_extract(summary,'$.run.status') AS run_status,
           coalesce(nullif(json_extract(summary,'$.run.provider'),''),'未指定') AS provider,
           coalesce(nullif(json_extract(summary,'$.run.model'),''),'未指定') AS model,
           coalesce(nullif(json_extract(summary,'$.run.modelAccountId'),''),'unknown:'||id) AS account_id,
@@ -558,12 +569,12 @@ export class ConversationRepository {
         SELECT provider,model,account_id,account_label FROM scoped
         WHERE effective_status IN ('starting','running','stopping')
       ) SELECT
-        (SELECT json_object('active',count(activity_state),
+        (SELECT json_object('active',coalesce(sum(list_active=1 OR pending_decision_count>0),0),
           'running',coalesce(sum(effective_status IN ('starting','running','stopping')),0),
           'waiting',coalesce(sum(activity_state='waiting' OR (send_activity IS NOT NULL AND (pending_decision_count>0 OR effective_status IN ('waiting-approval','waiting-question')))),0),
           'unseen',coalesce(sum(activity_state='unseen'),0),
           'unknown',coalesce(sum(activity_state='unknown'),0),
-          'attention',coalesce(sum(activity_state IN ('waiting','unseen','unknown') OR (send_activity IS NOT NULL AND pending_decision_count>0)),0)) FROM scoped) AS counts,
+          'attention',coalesce(sum(pending_decision_count>0 OR run_status IN ('failed','unknown')),0)) FROM scoped) AS counts,
         (SELECT count(*) FROM scoped WHERE send_activity IS NOT NULL) AS send_count,
         (SELECT json_group_array(json_object('label',label,'count',n)) FROM (
           SELECT provider AS label,count(*) AS n FROM executing GROUP BY label ORDER BY n DESC,label
@@ -592,7 +603,7 @@ export class ConversationRepository {
       }
       if(input.activeOnly||input.active)where.push('(list_active=1 OR pending_decision_count>0)');
       else {where.push('(list_active=1 OR pending_decision_count>0 OR hidden=?)');values.push(Number(input.hidden===true));}
-      if(input.attention)where.push("(pending_decision_count>0 OR effective_status IN ('failed','unknown'))");
+      if(input.attention)where.push("(pending_decision_count>0 OR json_extract(summary,'$.run.status') IN ('failed','unknown'))");
       const terms=searchTerms(input.query);
       if(terms.length){where.push(searchClause(terms,"json_extract(summary,'$.title')"));for(const term of terms)values.push(term,term,term);}
       if(input.agent||input.model)where.push("effective_status IN ('starting','running','stopping')");

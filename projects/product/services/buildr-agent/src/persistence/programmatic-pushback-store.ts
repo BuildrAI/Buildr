@@ -140,12 +140,13 @@ export class ProgrammaticPushbackStore {
     const db = this.existing(); if (!db) return undefined;
     return db.prepare("SELECT sequence,eventId,mergedCount FROM events WHERE credentialId=? AND conversationId=? AND type=? AND held=1 AND deliveryState='pending' ORDER BY sequence DESC LIMIT 1").get(credentialId, conversationId, type) as { sequence: number; eventId: string; mergedCount: number } | undefined;
   }
-  appendEvent(input: { credentialId: string; workspaceId: string; conversationId: string; type: string; dedupKey: string; held: boolean; mergeKey: string | null; now: number; build: (sequence: number, eventId: string) => PushbackEvent }): { sequence: number; eventId: string } {
+  appendEvent(input: { credentialId: string; workspaceId: string; conversationId: string; type: string; dedupKey: string; held: boolean; mergeKey: string | null; now: number; deliveryState?: 'pending' | 'undelivered'; build: (sequence: number, eventId: string) => PushbackEvent }): { sequence: number; eventId: string } {
     return this.transaction(() => {
       const db = this.db;
       const temporary = randomUUID();
-      const info = db.prepare("INSERT INTO events(eventId,credentialId,workspaceId,conversationId,type,body,deliveryState,attempts,nextAttemptAt,mergedCount,held,mergeKey,createdAt) VALUES(?,?,?,?,?,'','pending',0,?,1,?,?,?)")
-        .run(temporary, input.credentialId, input.workspaceId, input.conversationId, input.type, input.now, Number(input.held), input.mergeKey, input.now);
+      const deliveryState = input.deliveryState ?? 'pending';
+      const info = db.prepare("INSERT INTO events(eventId,credentialId,workspaceId,conversationId,type,body,deliveryState,attempts,nextAttemptAt,mergedCount,held,mergeKey,createdAt) VALUES(?,?,?,?,?,'',?,0,?,1,?,?,?)")
+        .run(temporary, input.credentialId, input.workspaceId, input.conversationId, input.type, deliveryState, input.now, Number(input.held), input.mergeKey, input.now);
       const sequence = Number(info.lastInsertRowid);
       const eventId = digest([this.instanceId, sequence, input.credentialId, input.dedupKey]);
       const body = JSON.stringify(input.build(sequence, eventId));

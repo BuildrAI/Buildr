@@ -17,7 +17,7 @@
 - **THEN** 系统 MUST NOT 向该凭据推送该对话的任何事件
 
 ### Requirement: 五类事件与内容
-系统 SHALL 仅回推 `decision.requested`、`run.completed`、`run.failed`、`run.stopped`、`run.stalled` 五类事件。`decision.requested` MUST 在出现提问卡片或审批请求时产生；`run.completed`/`run.failed` MUST 在一轮执行完成/失败时产生；`run.stopped` MUST 在执行被停止且停止非由该凭据发起时产生；`run.stalled` MUST 在执行出现 fault 或状态 unknown 连续 5 分钟时产生。工具调用、流式片段、思考、中间消息、starting/running 状态切换、标题生成 MUST NOT 推送。每条事件 MUST 含 eventId（全局唯一）、type、occurredAt、machine（id 为本机稳定标识、name 为主机名）、workspaceId、conversationId、title、runId、runStatus、summary（最多 500 字；completed 取最终回复摘要、failed 取诊断信息）、detailUrl（该对话的程序接入 read 地址）；`request`（requestId、kind、title、options）MUST 仅在 decision.requested 提供。事件 MUST NOT 携带任何密钥或完整对话内容。
+系统 SHALL 仅回推 `decision.requested`、`run.completed`、`run.failed`、`run.stopped`、`run.stalled` 五类事件。`decision.requested` MUST 在出现提问卡片或审批请求时产生；`run.completed`/`run.failed` MUST 在一轮执行完成/失败时产生；`run.stopped` MUST 在执行被停止且停止非由该凭据发起时产生；`run.stalled` MUST 在执行出现 fault 或状态 unknown 连续 5 分钟时产生。工具调用、流式片段、思考、中间消息、starting/running 状态切换、标题生成 MUST NOT 推送。每条事件 MUST 含 eventId（全局唯一）、type、occurredAt、machine（id 为本机稳定标识、name 为主机名）、workspaceId、conversationId、title、runId、runStatus、summary（最多 500 字；completed 取最终回复摘要、failed 取诊断信息）、detailUrl（该对话的程序接入 read 地址）；`request`（requestId、kind、title、options）MUST 仅在 decision.requested 提供。事件 MUST NOT 携带任何密钥或完整对话内容。回推设置停用（state=disabled）MUST NOT 停止上述五类事件写入持久事件流，只停止对外投递；这些事件 MUST 标记为未投递并可由 events 补查；重新启用后 MUST NOT 重放停用期间已记录的事件。
 
 #### Scenario: 决策事件
 - **WHEN** 已接手对话出现新的提问卡片或审批请求
@@ -34,6 +34,11 @@
 #### Scenario: 不推过程
 - **WHEN** 执行产生工具调用、流式片段、思考、中间消息或 starting/running 切换、标题生成
 - **THEN** 系统 MUST NOT 推送任何事件
+
+#### Scenario: 停用仍记录
+- **WHEN** 凭据回推设置为 disabled 且已接手对话产生五类事件之一
+- **THEN** 系统 MUST 将事件写入同一持久事件流并标记为未投递，MUST NOT 对外投递
+- **AND** events 补查 MUST 能返回这些事件；重新启用后 MUST NOT 重放
 
 ### Requirement: 速率限制与合并
 系统 SHALL 对每个凭据施加可配置的速率限制，默认每小时 180 次、每分钟 20 次，并允许在界面修改。未超限时事件 MUST 立即推送，不做等待。超限后同一对话同类事件 MUST 合并为一条（保留最新状态与合并条数），在额度恢复后发出；`decision.requested` MUST 优先发出且不被合并。
@@ -54,7 +59,7 @@
 - **THEN** 系统 MUST 以原 eventId 按 10/30/90/270/810 秒退避重试最多 5 次，仍失败标记未送达并记录，不重做原业务动作
 
 ### Requirement: 持久化与序号补查
-系统 SHALL 持久保存事件 7 天，服务重启后序号连续。系统 SHALL 提供 `GET /api/v1/programmatic/workspaces/{workspaceId}/events?after={cursor}&limit={n}`（read 权限，limit 默认 50、最大 200），按序号升序返回该凭据可见的事件，含未送达事件。事件被丢弃时系统 MUST 补发 `events_dropped`。
+系统 SHALL 持久保存事件 7 天，服务重启后序号连续。系统 SHALL 提供 `GET /api/v1/programmatic/workspaces/{workspaceId}/events?after={cursor}&limit={n}`（read 权限，limit 默认 50、最大 200），按序号升序返回该凭据可见的事件，含未送达事件。`after` MUST 为上一页 nextCursor 返回的非负整数序号；不是合法游标时 MUST 返回 400 programmatic_input_invalid。事件被丢弃时系统 MUST 补发 `events_dropped`。
 
 #### Scenario: 重启序号连续
 - **WHEN** 服务重启后继续产生事件
@@ -63,6 +68,10 @@
 #### Scenario: 补查含未送达
 - **WHEN** 凭据以 after 游标读取 events
 - **THEN** 系统 MUST 按序号升序返回该凭据可见事件（含未送达），limit 默认 50、最大 200
+
+#### Scenario: 非法游标
+- **WHEN** 请求的 after 不是非负整数序号
+- **THEN** 系统 MUST 返回 400 programmatic_input_invalid，MUST NOT 当作 0 静默补查
 
 ### Requirement: 测试与候选隔离
 测试环境、候选实例和自动化测试 MUST NOT 向真实接收地址推送；测试 MUST 仅使用本地假接收端。

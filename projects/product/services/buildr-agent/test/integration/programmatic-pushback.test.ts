@@ -91,6 +91,34 @@ test('only conversations taken over by an enabled credential produce events', as
   } finally { s.close(); }
 });
 
+test('disabled pushback records takeover events for backfill without delivering or retrying them', async () => {
+  const s = setup();
+  try {
+    s.configure('cred-one', { enabled: false });
+    s.pb.markTakeover('workspace-one', 'conversation-one', 'cred-one');
+    s.pb.publish(conversationEvent(view({ run: run('run-one', 'completed') })));
+    await s.flush();
+    assert.equal(s.fake.calls.length, 0, 'disabled pushback never calls the receiver');
+    assert.deepEqual(s.pb.listEvents('cred-one', 'workspace-one', {}).events.map(event => event.type), ['run.completed']);
+    const stored = s.rows('SELECT deliveryState,held FROM events')[0];
+    assert.equal(stored.deliveryState, 'undelivered', 'backfill events do not enter the retry queue');
+    assert.equal(stored.held, 0);
+    s.pb.drain();
+    await s.flush();
+    assert.equal(s.fake.calls.length, 0);
+    s.pb.publish(conversationEvent(view({ run: run('run-one', 'completed'), revision: 'r2' })));
+    await s.flush();
+    assert.equal(s.pb.listEvents('cred-one', 'workspace-one', {}).events.length, 1, 'the same transition is recorded once');
+
+    s.pb.publish(conversationEvent(view({ run: run('run-two', 'unknown'), revision: 'r3' })));
+    s.advance(360000);
+    s.pb.tick();
+    await s.flush();
+    assert.ok(s.pb.listEvents('cred-one', 'workspace-one', {}).events.some(event => event.type === 'run.stalled'), 'stalled events are recorded while disabled');
+    assert.equal(s.fake.calls.length, 0);
+  } finally { s.close(); }
+});
+
 test('event bodies and views redact the secret and receiver address', async () => {
   const s = setup();
   try {

@@ -108,7 +108,11 @@ export function createProgrammaticHttpContribution(resolve: () => AgentService |
         permitted(credential, 'read', workspaceId);
         for (const key of searchParams.keys()) if (!['after', 'limit'].includes(key) || searchParams.getAll(key).length !== 1) accessError('programmatic_input_invalid', '事件补查只接受 after 与 limit。', 400);
         const eventsQuery: { after?: string; limit?: number } = {};
-        if (searchParams.has('after')) eventsQuery.after = searchParams.get('after')!;
+        if (searchParams.has('after')) {
+          const raw = searchParams.get('after')!;
+          if (!/^\d+$/.test(raw) || !Number.isSafeInteger(Number(raw))) accessError('programmatic_input_invalid', 'after 必须为上一页返回的 nextCursor。', 400);
+          eventsQuery.after = raw;
+        }
         if (searchParams.has('limit')) {
           const raw = searchParams.get('limit')!;
           if (!/^\d+$/.test(raw)) accessError('programmatic_input_invalid', 'limit 必须为正整数。', 400);
@@ -140,8 +144,9 @@ export function createProgrammaticHttpContribution(resolve: () => AgentService |
           if (input.clientRequestId !== undefined && !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(input.clientRequestId)) accessError('programmatic_input_invalid', '程序提交clientRequestId必须为UUID。', 400);
           if (input.cwd !== undefined || input.taskLinks?.some((link: any) => !credential.workspaceIds.includes(link.workspaceId))) accessError('programmatic_forbidden', '程序接口不接受任意执行目录或越权任务关联。');
           if (input.permissionMode === 'full-access' && !credential.allowFullAccess) accessError('programmatic_forbidden', '此凭据未开启允许全部授权执行，无法请求 full-access。');
-          if ((schemas[operation.input] as { properties?: Record<string, unknown> }).properties?.permissionMode) {
-            // Omitted mode stays default; explicit full-access is gated by the credential toggle above.
+          if (operation.id !== 'messages' && (schemas[operation.input] as { properties?: Record<string, unknown> }).properties?.permissionMode) {
+            // Omitted mode stays default for explicit sends. /messages instead
+            // inherits the latest run's mode; defaulting it here would erase that.
             input.permissionMode ??= 'default';
           }
         }

@@ -13,13 +13,18 @@ async function configurePushback(f:any,credentialId:string,url=RECEIVER,extra:Re
  assert.equal(response.status,200,await response.clone().text());
  return response.json();
 }
-async function startConversation(f:any,token:string,text='authorized work'){
+async function startConversation(f:any,token:string,text='authorized work',extra:Record<string,unknown>={}){
  const endpoint='/workspaces/'+f.workspaceId+'/conversations',draft=randomUUID();
  const state=await(await f.call(endpoint+'/drafts/'+draft,token)).json();
- const response=await f.call(endpoint+'/drafts/'+draft+'/send',token,{connectionId:'fixture',text,clientRequestId:randomUUID(),expectedDraftRevision:state.revision});
+ const response=await f.call(endpoint+'/drafts/'+draft+'/send',token,{connectionId:'fixture',text,clientRequestId:randomUUID(),expectedDraftRevision:state.revision,...extra});
  assert.equal(response.status,202,await response.clone().text());
  const sent=await response.json();
  return {endpoint,conversationId:sent.conversation.id as string,sent};
+}
+async function stopCurrent(f:any,token:string,conversation:string){
+ const view=await(await f.call(conversation+'/observe',token,{})).json();
+ const response=await f.call(conversation+'/stop',token,{expectedRevision:view.revision,runId:view.run.id,participantId:view.run.participantId,generation:view.run.generation});
+ assert.equal(response.status,200,await response.clone().text());
 }
 
 test('messages single-step continue reuses the connection and enforces send semantics',async t=>{
@@ -54,6 +59,28 @@ test('messages on a conversation without a reusable run returns idle 409',async 
  const idle=await f.service.conversations.create(f.workspaceId,{title:'idle'});
  const response=await f.call('/workspaces/'+f.workspaceId+'/conversations/'+idle.id+'/messages',token,{text:'x',clientRequestId:randomUUID()});
  assert.equal(response.status,409);assert.equal((await response.json()).error.code,'agent_conversation_idle');
+});
+
+test('messages inherits the latest permissionMode unless explicitly overridden and enforces allowFullAccess',async t=>{
+ const f=await programmaticHttpFixture(t),{token}=await f.create();
+ const full=await startConversation(f,token,'full access work',{permissionMode:'full-access'});
+ const fullConversation=full.endpoint+'/'+full.conversationId;
+ await stopCurrent(f,token,fullConversation);
+ const inherited=await f.call(fullConversation+'/messages',token,{text:'inherit',clientRequestId:randomUUID()});
+ assert.equal(inherited.status,202,await inherited.clone().text());
+ assert.equal((await inherited.json()).run.permissionMode,'full-access','omission inherits the latest run');
+ await stopCurrent(f,token,fullConversation);
+ const overridden=await f.call(fullConversation+'/messages',token,{text:'override',clientRequestId:randomUUID(),permissionMode:'default'});
+ assert.equal(overridden.status,202,await overridden.clone().text());
+ assert.equal((await overridden.json()).run.permissionMode,'default','explicit mode overrides inheritance');
+
+ const restricted=await startConversation(f,token,'default work');
+ const restrictedConversation=restricted.endpoint+'/'+restricted.conversationId;
+ await stopCurrent(f,token,restrictedConversation);
+ const {token:noFull}=await f.create(['read','execute'],false);
+ const forbidden=await f.call(restrictedConversation+'/messages',noFull,{text:'full',clientRequestId:randomUUID(),permissionMode:'full-access'});
+ assert.equal(forbidden.status,403);
+ assert.equal((await forbidden.json()).error.code,'programmatic_forbidden');
 });
 
 test('pushback management is session-only, redacts the secret and records deliveries',async t=>{
@@ -99,10 +126,31 @@ test('events backfill is read-scoped and only the takeover credential receives e
  assert.equal((await f.call(eventsRoute+'?limit=0',tokenA)).status,400);
  assert.equal((await f.call(eventsRoute+'?limit=201',tokenA)).status,400);
  assert.equal((await f.call(eventsRoute+'?unknown=1',tokenA)).status,400);
+ for(const after of ['bogus','-1','1.2','']){
+  const invalid=await f.call(eventsRoute+'?after='+after,tokenA);
+  assert.equal(invalid.status,400,'after='+after);
+  assert.equal((await invalid.json()).error.code,'programmatic_input_invalid');
+ }
  assert.equal((await f.call(eventsRoute)).status,401,'anonymous access is rejected');
  const first=pageA.events[0];
  const afterPage=await(await f.call(eventsRoute+'?after='+first.sequence,tokenA)).json();
  assert.ok(afterPage.events.every((event:any)=>event.sequence>first.sequence));
+});
+
+test('disabled pushback still records takeover events for events backfill',async t=>{
+ const receiver=fakePushbackReceiver(),f=await programmaticHttpFixture(t,{pushbackTransport:receiver.transport});
+ const {token,credential}=await f.create(),route=f.manager+'/'+credential.id+'/pushback';
+ const initial=await(await fetch(route,{headers:f.webHeaders})).json();
+ const saved=await fetch(route,{method:'POST',headers:f.webHeaders,body:JSON.stringify({expectedRevision:initial.revision,enabled:false,url:RECEIVER,secret:SECRET})});
+ assert.equal(saved.status,200,await saved.clone().text());
+ assert.equal((await saved.json()).state,'disabled');
+ const {conversationId}=await startConversation(f,token);
+ await f.flush();
+ f.complete();
+ await f.flush();
+ assert.equal(receiver.calls.length,0,'disabled pushback does not deliver');
+ const page=await(await f.call('/workspaces/'+f.workspaceId+'/events',token)).json();
+ assert.ok(page.events.some((event:any)=>event.type==='run.completed'&&event.conversationId===conversationId),'backfill sees the completed event');
 });
 
 test('stop attribution suppresses the initiator credential run.stopped',async t=>{

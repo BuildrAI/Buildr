@@ -18,7 +18,11 @@ function validUrl(url: string): boolean {
   try { const parsed = new URL(url); return ['http:', 'https:'].includes(parsed.protocol) && !parsed.username && !parsed.password; } catch { return false; }
 }
 function redact<T>(value: T, secret: string, url: string): T {
-  return JSON.parse(JSON.stringify(value, (_key, item: unknown) => typeof item === 'string' ? item.split(secret).join('[REDACTED]').split(url).join('[REDACTED]') : item)) as T;
+  return JSON.parse(JSON.stringify(value, (_key, item: unknown) => {
+    if (typeof item !== 'string') return item;
+    const withoutSecret = secret ? item.split(secret).join('[REDACTED]') : item;
+    return url ? withoutSecret.split(url).join('[REDACTED]') : withoutSecret;
+  })) as T;
 }
 const detailUrl = (workspaceId: string, conversationId: string) => `/api/v1/programmatic/workspaces/${workspaceId}/conversations/${conversationId}`;
 const eventsUrl = (workspaceId: string) => `/api/v1/programmatic/workspaces/${workspaceId}/events`;
@@ -119,8 +123,9 @@ export class ProgrammaticPushback {
   }
   listEvents(credentialId: string, workspaceId: string, input: { after?: string; limit?: number }): PushbackEventPage {
     const limit = Math.max(1, Math.min(Number.isFinite(input.limit) ? Math.trunc(input.limit!) : 50, 200));
+    if (input.after !== undefined && (!/^\d+$/.test(input.after) || !Number.isSafeInteger(Number(input.after)))) throw failure('programmatic_input_invalid', 'after 必须为上一页返回的 nextCursor。', 400);
     const after = input.after === undefined ? 0 : Number(input.after);
-    return this.store.listEvents(credentialId, workspaceId, Number.isFinite(after) ? after : 0, limit);
+    return this.store.listEvents(credentialId, workspaceId, after, limit);
   }
   migrateGlobal(credentialId: string, input: { url: string; secret: string }): { migrated: boolean } {
     if (this.store.migration(GLOBAL_MIGRATION_KEY)) return { migrated: false };
@@ -140,23 +145,39 @@ export class ProgrammaticPushback {
     const credentials = this.store.takeoversForConversation(view.workspaceId, view.id);
     for (const credentialId of credentials) {
       const config = this.store.getConfig(credentialId);
-      if (!config?.enabled) continue;
-      const secret = this.store.readSecret(config.secretFilePath);
-      if (!secret) continue;
+      if (!config) continue;
+      const secret = config.enabled ? this.store.readSecret(config.secretFilePath) : undefined;
+      // Delivery needs a usable credential; disabled pushback still records
+      // the same takeover events so /events can backfill them.
+      if (config.enabled && !secret) continue;
       const prior = this.store.getProjection<PushbackSnapshot>(credentialId, view.workspaceId, view.id);
       const next = pushbackNotifications(view, prior, { now: this.clock(), stoppedByCredential: this.store.stoppedRuns(view.workspaceId, view.id, credentialId), stalledThresholdMs: this.stalledThresholdMs });
       this.store.putProjection(credentialId, view.workspaceId, view.id, next.snapshot);
-      for (const notification of next.events) this.enqueueNotification(credentialId, config, secret, view, notification);
+      for (const notification of next.events) {
+        if (config.enabled && secret) this.enqueueNotification(credentialId, config, secret, view, notification);
+        else this.persistNotification(credentialId, config, view, notification);
+      }
     }
   }
   private enqueueNotification(credentialId: string, config: PushbackConfig, secret: string, view: ConversationView, notification: PushbackNotification): void {
+    this.enqueue(credentialId, config, view.workspaceId, view.id, notification.type, notification.dedupKey, secret, config.url, (sequence, eventId, mergedCount) => this.notificationEvent(view, notification, sequence, eventId, mergedCount));
+  }
+  private notificationEvent(view: ConversationView, notification: PushbackNotification, sequence: number, eventId: string, mergedCount = 1): PushbackEvent {
     const machine = this.machine();
-    this.enqueue(credentialId, config, view.workspaceId, view.id, notification.type, notification.dedupKey, secret, config.url, (sequence, eventId, mergedCount) => ({
+    return {
       eventId, type: notification.type, occurredAt: notification.occurredAt, machine, workspaceId: view.workspaceId, conversationId: view.id, title: view.title,
       ...(notification.runId === undefined ? {} : { runId: notification.runId }), ...(notification.runStatus === undefined ? {} : { runStatus: notification.runStatus }),
       ...(notification.request === undefined ? {} : { request: notification.request }), summary: notification.summary, detailUrl: detailUrl(view.workspaceId, view.id), sequence,
       ...(mergedCount > 1 ? { mergedCount } : {}),
-    }));
+    };
+  }
+  private persistNotification(credentialId: string, config: PushbackConfig, view: ConversationView, notification: PushbackNotification): void {
+    this.persist(credentialId, config, view.workspaceId, view.id, notification.type, notification.dedupKey, (sequence, eventId) => this.notificationEvent(view, notification, sequence, eventId));
+  }
+  /** Persist a takeover event without entering the delivery/retry queue. */
+  private persist(credentialId: string, config: PushbackConfig, workspaceId: string, conversationId: string, type: string, dedupKey: string, build: (sequence: number, eventId: string) => PushbackEvent): void {
+    const secret = this.store.readSecret(config.secretFilePath);
+    this.store.appendEvent({ credentialId, workspaceId, conversationId, type, dedupKey, held: false, mergeKey: null, now: this.clock(), deliveryState: 'undelivered', build: (sequence, eventId) => redact(build(sequence, eventId), secret ?? '', config.url) });
   }
   private enqueue(credentialId: string, config: PushbackConfig, workspaceId: string, conversationId: string, type: string, dedupKey: string, secret: string, url: string, build: (sequence: number, eventId: string, mergedCount: number) => PushbackEvent): void {
     const safe = (sequence: number, eventId: string, mergedCount: number) => redact(build(sequence, eventId, mergedCount), secret, url);
@@ -182,19 +203,21 @@ export class ProgrammaticPushback {
     const now = this.clock();
     for (const projection of this.store.listProjections()) {
       const config = this.store.getConfig(projection.credentialId);
-      if (!config?.enabled) continue;
-      const secret = this.store.readSecret(config.secretFilePath);
-      if (!secret) continue;
+      if (!config) continue;
+      const secret = config.enabled ? this.store.readSecret(config.secretFilePath) : undefined;
+      if (config.enabled && !secret) continue;
       const snapshot = JSON.parse(projection.snapshot) as PushbackSnapshot;
       let changed = false;
       for (const [runId, state] of Object.entries(snapshot.runs)) {
         if (state.status !== 'unknown' || state.stalled || state.unknownSince === undefined || now - state.unknownSince < this.stalledThresholdMs) continue;
         state.stalled = true; changed = true;
         const machine = this.machine();
-        this.enqueue(projection.credentialId, config, projection.workspaceId, projection.conversationId, 'run.stalled', digest([runId, 'unknown']), secret, config.url, (sequence, eventId) => ({
+        const build = (sequence: number, eventId: string) => ({
           eventId, type: 'run.stalled', occurredAt: new Date(now).toISOString(), machine, workspaceId: projection.workspaceId, conversationId: projection.conversationId, title: snapshot.title,
           runId, runStatus: 'unknown', summary: '执行状态未知已超过 5 分钟', detailUrl: detailUrl(projection.workspaceId, projection.conversationId), sequence,
-        }));
+        }) as PushbackEvent;
+        if (config.enabled && secret) this.enqueue(projection.credentialId, config, projection.workspaceId, projection.conversationId, 'run.stalled', digest([runId, 'unknown']), secret, config.url, build);
+        else this.persist(projection.credentialId, config, projection.workspaceId, projection.conversationId, 'run.stalled', digest([runId, 'unknown']), build);
       }
       if (changed) this.store.putProjection(projection.credentialId, projection.workspaceId, projection.conversationId, snapshot);
     }

@@ -152,7 +152,9 @@ test('compact OpenAPI preserves response schemas and only emits resolvable share
    const input=withoutSchemaIds(AGENT_SERVICE_HTTP_SCHEMAS[operation.input]);
    if(input.properties?.cwd)delete input.properties.cwd;
    if(input.properties?.clientRequestId)input.properties.clientRequestId={type:'string',format:'uuid',pattern:'^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'};
-   if(input.properties?.permissionMode)input.properties.permissionMode={enum:['default','full-access'],default:'default',description:'省略默认 default。full-access 需凭据开启“允许全部授权执行”（allowFullAccess），否则返回 403；连接须支持该模式。'};
+   if(input.properties?.permissionMode)input.properties.permissionMode=operation.id==='messages'
+     ?{enum:['default','full-access'],description:'省略时沿用该对话最近一轮执行的 permissionMode；没有最近轮次时默认 default。full-access 需凭据开启“允许全部授权执行”（allowFullAccess），否则返回 403。'}
+     :{enum:['default','full-access'],default:'default',description:'省略默认 default。full-access 需凭据开启“允许全部授权执行”（allowFullAccess），否则返回 403；连接须支持该模式。'};
    const actual=result.requestBody.content['application/json'].schema;
    if(operation.id==='send'){assert.match(actual.properties.previewToken.description,/prepareResponse\.token/);delete actual.properties.previewToken.description;}
    assert.deepEqual(actual,input,`${operation.id} input changed`);
@@ -279,4 +281,8 @@ test('full-access execution follows the credential toggle and discovery passes t
  const doc=await(await f.call('/openapi.json',token)).json(),expanded=expandRefs(doc,doc);
  const startRoute='/api/v1/programmatic/workspaces/{workspaceId}/conversations/drafts/{draftId}/send';
  assert.deepEqual(expanded.paths[startRoute].post.requestBody.content['application/json'].schema.properties.permissionMode.enum,['default','full-access']);
+ const messagesRoute='/api/v1/programmatic/workspaces/{workspaceId}/conversations/{conversationId}/messages';
+ const messagesMode=expanded.paths[messagesRoute].post.requestBody.content['application/json'].schema.properties.permissionMode;
+ assert.equal(messagesMode.default,undefined,'messages omission must not document a default');
+ assert.match(messagesMode.description,/沿用该对话最近一轮/);
 });

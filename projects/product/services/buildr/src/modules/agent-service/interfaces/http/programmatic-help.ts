@@ -26,7 +26,7 @@ export const programmaticGuide = `# Buildr 本机程序 API（第二期）
 - answer：仅回答question卡片；approve：仅处理approval卡片。两者互不替代。
 - 全部授权：凭据携带“允许全部授权执行”开关（allowFullAccess，默认开启），在「程序接入」创建时选择或在凭据卡片切换。开启时start/send/续聊可传permissionMode=full-access，与网页选择全部授权一致；关闭时请求full-access返回403。发现入口connections[].capabilities.permissionModes透传连接真实支持的模式，支持全部授权的连接列出["default","full-access"]。
 GrokBot默认只授read/execute；问题和审批转人，从同一Buildr Web对话回答。若人明确使用专用自动化凭据回复，必须另授对应权限并提供原卡片的准确身份。
-工作空间授权不是操作系统文件沙箱。Agent使用本机工具、规则与已有执行权限。程序入口仍不接受任意cwd；permissionMode省略默认default，显式full-access按上述凭据开关门禁。账号、密钥、升级、全局私有会话及其他管理接口不开放给Bearer。
+工作空间授权不是操作系统文件沙箱。Agent使用本机工具、规则与已有执行权限。程序入口仍不接受任意cwd；start/send等显式发送请求省略permissionMode时默认default，单步续聊/messages省略时沿用该对话最近一轮执行的permissionMode；显式full-access按上述凭据开关门禁。账号、密钥、升级、全局私有会话及其他管理接口不开放给Bearer。
 
 ## 首发与恢复
 所有程序提交的clientRequestId必须为小写UUID。先生成并持久保存draftId与clientRequestId（UUID），GET /workspaces/{workspaceId}/conversations/drafts/{draftId}取revision；POST其/send，传connectionId、text、expectedDraftRevision、clientRequestId及可选model、modelAccountId、reasoningEffort。路径均以/api/v1/programmatic开头。
@@ -36,9 +36,9 @@ GET /conversations/{conversationId}或POST /observe（正文{}）轮询。Web和
 
 ## 后续消息、读取与停止
 后续消息先prepare-send，使用当前conversation.revision、connectionId、text和模型选项；prepare-send 响应字段名是 token，不是 previewToken；send 的 previewToken 取自这个 token 字段，即 previewToken = prepareResponse.token，同时 expectedRevision = prepareResponse.revision。再send带上述previewToken及稳定clientRequestId。发送超时先GET /conversations/{conversationId}/submissions/{clientRequestId}读取原结果；同请求标识不得换正文。若冲突，重新观察并理解变化，不自动把旧意图套上新版本发送。
-单步续聊用POST /conversations/{conversationId}/messages（execute），正文必填text与clientRequestId，可选expectedRevision。它内部完成prepare-send与send，复用原连接与模型，返回202和runId，幂等规则与send一致：相同clientRequestId与相同正文重放返回原run，正文不同返回409。对话仍在执行或修订漂移返回409；没有可复用执行返回agent_conversation_idle。需要精确控制预览或模型时仍用prepare-send/send。
+单步续聊用POST /conversations/{conversationId}/messages（execute），正文必填text与clientRequestId，可选expectedRevision与permissionMode（default或full-access）。省略permissionMode时沿用该对话最近一轮执行的模式，因此上一轮为full-access时不会悄悄退回default；显式full-access仍受凭据allowFullAccess门禁，关闭时返回403 programmatic_forbidden。它内部完成prepare-send与send，复用原连接与模型，返回202和runId，幂等规则与send一致：相同clientRequestId与相同正文重放返回原run，正文不同返回409。对话仍在执行或修订漂移返回409；没有可复用执行返回agent_conversation_idle。需要精确控制预览或模型时仍用prepare-send/send。
 GET对话与/entries支持before、limit分页；较早消息通过nextBefore续读。entries包含正文、工具状态和presentedFiles等实际提供的成果引用；最终总结不等于测试、Git交付等外部事实已成立。taskLinks/taskIds指向同一工作空间中的任务记录；不复制为另一套任务事实。
-列表GET /workspaces/{workspaceId}/conversations支持taskId、cursor、limit、hidden、query、active、attention、fields。active=true只返回活动中对话，attention=true只返回待处理对话，fields=summary仅返回id、title、runStatus、updatedAt、active、pendingDecisionCount；activityCounts始终返回，limit始终生效。
+列表GET /workspaces/{workspaceId}/conversations支持taskId、cursor、limit、hidden、query、active、attention、fields。active=true只返回活动中的对话：有待决请求、仍有执行中或未释放的工作，或产生了尚未查看的新结果；已完成但未查看的对话属于active，不属于attention。attention=true只返回待处理对话：存在待决问题/审批，或当前执行状态为failed/unknown；单是已完成未查看不算attention。关闭已释放的unknown等用户确认善后后，不再因历史未知继续active。fields=summary仅返回id、title、runStatus、updatedAt、active、pendingDecisionCount；activityCounts始终返回，limit只限制返回页，activityCounts.active与active=true的总数一致、activityCounts.attention与attention=true的总数一致。
 停止整个对话使用POST /stop-all，传expectedRevision和稳定clientRequestId，覆盖受理时全部在途轮次、追加队列与待发送输入；超时先读stopRequest核对原请求，不以新身份重发。精确停止某轮或工具使用POST /stop，传expectedRevision、runId、participantId、generation（可选toolId），全部来自刚观察的准确原执行。不要按最新对话猜测要停哪个run。
 问题回复用POST /requests/{requestId}/reply，正文同样含expectedRevision、runId、participantId、generation和answer；结构化问题使用原question/option标识，不猜位置。服务继续校验原卡片与执行代次，旧卡片返回冲突。
 本期不提供程序实时事件流；除回推外仍按轮询观察，通常2秒即可，按响应节流。回推与事件补读见下节，不改变恢复原标识的原则。
@@ -48,7 +48,8 @@ GET对话与/entries支持before、limit分页；较早消息通过nextBefore续
 只有被该凭据接管（首次API创建/发送/续聊/补充即标记）的对话才会回推，且只推五类关键事件：decision.requested（问题或审批）、run.completed、run.failed、run.stopped（非该凭据发起的停止）、run.stalled（故障或状态未知持续5分钟）。不推工具调用、流式输出、思考、中间消息、starting/running转换或标题生成。
 事件正文含eventId（全局唯一）、type、occurredAt、machine{id,name}、workspaceId、conversationId、title、runId、runStatus、summary（≤500字符）、detailUrl（程序读取地址）；decision.requested另含request{requestId,kind,title,options}。不含任何密钥和完整对话内容。
 速率按凭据计，默认180/小时、20/分钟，可在界面调整。限额内立即推送；超限按同对话同类型合并（保留最新状态与mergedCount），配额恢复后补发；decision.requested优先且永不合并。投递为HTTP POST JSON、每请求一条事件，2xx为成功；失败按10/30/90/270/810秒退避，最多5次后置为undelivered。
-事件持久保留7天、sequence跨重启连续。补读GET /api/v1/programmatic/workspaces/{workspaceId}/events?after={cursor}&limit={n}（read，limit默认50、最大200），按sequence升序返回含undelivered的事件；超出保留期被丢弃时发出events_dropped。测试环境、候选实例与自动化测试一律不得向真实接收地址推送，只用本地假接收端。
+回推停用（state=disabled）只停止对外投递，不停止事件记录：被该凭据接管对话的五类事件仍按上述判定写入同一持久事件流，可用events补查；停用期间已记录的事件不会在重新启用后重放。未配置回推的凭据不产生事件。
+事件持久保留7天、sequence跨重启连续。补读GET /api/v1/programmatic/workspaces/{workspaceId}/events?after={cursor}&limit={n}（read，limit默认50、最大200），按sequence升序返回含undelivered的事件；after必须是上一页nextCursor返回的非负整数序号，不是合法游标时返回400 programmatic_input_invalid；超出保留期被丢弃时发出events_dropped。测试环境、候选实例与自动化测试一律不得向真实接收地址推送，只用本地假接收端。
 最小闭环：配置回推→收到decision.requested→按detailUrl读对话取得准确卡片身份→由人回答或审批；执行结束后用单步续聊POST /messages发起下一轮。
 
 ## 错误与副作用
