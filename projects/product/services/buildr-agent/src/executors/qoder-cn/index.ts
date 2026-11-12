@@ -27,6 +27,7 @@ const product = qoderProduct('qoder-cn');
 // Qoder CN defaults AI responses to English when `language` is empty. Buildr's
 // product language is Chinese, so pin the native system prompt language at launch.
 const responseLanguageSettings = JSON.stringify({ language: 'Chinese' });
+const progressLanguageInstruction = '面向用户的进展说明使用简体中文，包括调用工具前、工具返回后和连续工具调用之间说明当前进展或下一步。引用命令、代码、路径、标识符、错误消息或工具输出时保留原文。';
 const capabilities = { interaction: { policy: interactionPolicy.version, nonBlockingQuestions: false }, supplement: true, permissionModes: ['default', 'full-access'] as PermissionMode[], text: true, images: true, maxImageBytes: 8 * 1024 * 1024, approval: true, questions: true, stop: true, resume: true, maxInputBytes: 96 * 1024 };
 
 interface PendingApproval {
@@ -145,7 +146,9 @@ class QoderCnRuntime implements AgentRuntime {
     if (this.opening) return await this.opening;
     this.opening = (async () => {
       const client = AcpClient.open({
-        executable: this.executable, args: ['--acp', '--settings', responseLanguageSettings], cwd: this.config, environment: this.environments,
+        executable: this.executable,
+        args: ['--acp', '--settings', responseLanguageSettings, '--append-system-prompt', progressLanguageInstruction],
+        cwd: this.config, environment: this.environments,
         onNotification: (method, params) => this.notification(method, params),
         onServerRequest: request => this.serverRequest(request),
         onExit: () => this.transportLost(),

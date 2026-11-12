@@ -52,7 +52,7 @@ test('Qoder CN reports a missing login instead of a generic failure', { timeout:
   } finally { await runtime?.close(); await rm(root, { recursive: true, force: true }); }
 });
 
-test('Qoder CN launches the native CLI with Chinese response language', { timeout: 15000 }, async () => {
+test('Qoder CN appends a Chinese tool-progress instruction to the native system prompt', { timeout: 15000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'buildr-qoder-cn-language-')); let runtime: AgentRuntime | undefined;
   try {
     runtime = await createQoderCnExecutor().open({ connectionId: 'qoder-cn', configRoot: join(root, 'config'), executable: await program(root), environment: { PATH: process.env.PATH ?? '' } });
@@ -64,6 +64,10 @@ test('Qoder CN launches the native CLI with Chinese response language', { timeou
     const settingsAt = args.indexOf('--settings');
     assert.notEqual(settingsAt, -1, 'the native CLI must receive a settings override');
     assert.deepEqual(JSON.parse(args[settingsAt + 1]!), { language: 'Chinese' });
+    const appendedAt = args.indexOf('--append-system-prompt');
+    assert.notEqual(appendedAt, -1);
+    assert.match(args[appendedAt + 1]!, /进展说明使用简体中文.*工具返回后.*保留原文/);
+    assert.ok(!args.includes('--system-prompt'), 'keep the native system prompt');
   } finally { await runtime?.close(); await rm(root, { recursive: true, force: true }); }
 });
 
