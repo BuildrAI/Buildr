@@ -98,22 +98,47 @@ export class ConversationReadModel {
     // Select only positions/sizes first. Large omitted bodies never cross the database boundary.
     const normalized = ConversationEntryStore.available(db);
     if (normalized) ConversationEntryStore.assertPositions(db, id);
-    const positions = db.prepare(`SELECT sequence,round_id,${bytes} AS bytes FROM conversation_read_entries WHERE conversation_id=? ${normalized ? "AND scope='main'" : ''} AND sequence<? ORDER BY sequence DESC LIMIT ?`).all(id, before ?? Number.MAX_SAFE_INTEGER, (limit ?? 200) + 1) as Array<{sequence: number; round_id: string; bytes: number}>;
-    const rounds = new Set<string>(); let size = 2; const selected: number[] = [];
-    for (const position of positions) {
-      if (selected.length >= (limit ?? 200) || limit === undefined && !rounds.has(position.round_id) && rounds.size >= 5 || selected.length && size + position.bytes + 1 > (compact ? 256 * 1024 : 4 * 1024 * 1024)) break;
-      selected.push(position.sequence); rounds.add(position.round_id); size += position.bytes + 1;
+    const pageBytes = compact ? 256 * 1024 : 4 * 1024 * 1024;
+    const maxSequence = before ?? Number.MAX_SAFE_INTEGER;
+    const positionQuery = db.prepare(`SELECT sequence,round_id,${bytes} AS bytes FROM conversation_read_entries WHERE conversation_id=? ${normalized ? "AND scope='main'" : ''} AND sequence<? ORDER BY sequence DESC LIMIT ?`);
+    type Position = {sequence: number; round_id: string; bytes: number};
+    const selected: number[] = [], rounds = new Set<string>();
+    let size = 2, nextEntryCursor: number | undefined;
+    if (limit !== undefined) {
+      const positions = positionQuery.all(id, maxSequence, limit + 1) as Position[];
+      for (const position of positions) {
+        if (selected.length >= limit || selected.length > 0 && size + position.bytes + 1 > pageBytes) break;
+        selected.push(position.sequence); rounds.add(position.round_id); size += position.bytes + 1;
+      }
+      nextEntryCursor = positions.length > selected.length ? selected.at(-1) : undefined;
+    } else {
+      // A default page follows round boundaries. The byte budget still bounds the
+      // response; a fixed entry count must not cut off the current round's input.
+      let cursor = maxSequence, hasMore = false;
+      for (;;) {
+        const positions = positionQuery.all(id, cursor, 512) as Position[];
+        for (const position of positions) {
+          const outsideRoundWindow = !rounds.has(position.round_id) && rounds.size >= 5;
+          const exceedsPageBytes = selected.length > 0 && size + position.bytes + 1 > pageBytes;
+          if (outsideRoundWindow || exceedsPageBytes) {
+            hasMore = true; break;
+          }
+          selected.push(position.sequence); rounds.add(position.round_id); size += position.bytes + 1; cursor = position.sequence;
+        }
+        if (hasMore || positions.length < 512) break;
+      }
+      nextEntryCursor = hasMore ? selected.at(-1) : undefined;
     }
     if (normalized) {
       const rows = selected.length ? db.prepare(`SELECT e.id,e.compact,c.codec,c.body_bytes,${compact ? 'CASE WHEN e.compact IS NULL THEN c.body END' : 'c.body'} AS body,e.content_revision
         FROM conversation_read_entries e LEFT JOIN conversation_entry_contents c
         ON c.conversation_id=e.conversation_id AND c.content_revision=e.content_revision
-        WHERE e.conversation_id=? AND e.scope='main' AND e.sequence>=? AND e.sequence<? ORDER BY e.sequence`).all(id, selected.at(-1)!, before ?? Number.MAX_SAFE_INTEGER) : [];
+        WHERE e.conversation_id=? AND e.scope='main' AND e.sequence>=? AND e.sequence<? ORDER BY e.sequence`).all(id, selected.at(-1)!, maxSequence) : [];
       record.view.entries = rows.map(row => compact && row.compact !== null ? JSON.parse(row.compact as string) : ConversationEntryStore.decode(row as any, reader, row.codec === 'native-tool' || row.compact !== null, row.compact as string));
     } else {
-      record.view.entries = selected.length ? (db.prepare(`SELECT ${column} AS body FROM conversation_read_entries WHERE conversation_id=? AND sequence>=? AND sequence<? ORDER BY sequence`).all(id, selected.at(-1)!, before ?? Number.MAX_SAFE_INTEGER) as Array<{body: string}>).map(row => JSON.parse(row.body)) : [];
+      record.view.entries = selected.length ? (db.prepare(`SELECT ${column} AS body FROM conversation_read_entries WHERE conversation_id=? AND sequence>=? AND sequence<? ORDER BY sequence`).all(id, selected.at(-1)!, maxSequence) as Array<{body: string}>).map(row => JSON.parse(row.body)) : [];
     }
-    record.view.nextEntryCursor = positions.length > selected.length ? selected.at(-1) : undefined;
+    record.view.nextEntryCursor = nextEntryCursor;
     return record;
   }
 }

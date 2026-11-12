@@ -1091,6 +1091,43 @@ test('default history pages retain five rounds including dense tools and in-roun
   });
 });
 
+test('default history pages keep a dense round input when the round exceeds the legacy entry cap but not the byte budget', async () => {
+  const f = fixture([]);
+  try {
+    const created = await f.service.conversations.create('workspace-one', {});
+    const entries: ConversationEntry[] = [
+      { id: 'dense-input', sequence: 1, kind: 'message', role: 'user', text: '这个要求必须和当前轮次一起返回', runId: 'dense-run', createdAt: created.updatedAt },
+      ...Array.from({ length: 260 }, (_, index): ConversationEntry => ({
+        id: `dense-tool-${index}`,
+        sequence: index + 2,
+        kind: 'tool',
+        role: 'system',
+        runId: 'dense-run',
+        text: `工具 ${index} 的有限输出`,
+        status: 'completed',
+        createdAt: created.updatedAt,
+      })),
+      { id: 'dense-answer', sequence: 262, kind: 'message', role: 'assistant', text: '当前轮最终答复', runId: 'dense-run', status: 'completed', createdAt: created.updatedAt },
+    ];
+    const repository = new ConversationRepository(path.join(f.options.dataRoot, 'agent-service'));
+    const stored = repository.readConversation(created.id)!;
+    const revision = stored.view.revision;
+    stored.view.entries = entries; stored.view.revision = randomUUID();
+    repository.saveConversation(stored, revision);
+
+    const recent = f.service.conversations.read('workspace-one', created.id);
+    assert.equal(recent.entries.length, entries.length);
+    assert.deepEqual(recent.entries.map(entry => entry.id), entries.map(entry => entry.id));
+    assert.equal(recent.nextEntryCursor, undefined);
+
+    const explicit = f.service.conversations.read('workspace-one', created.id, { limit: 100 });
+    assert.deepEqual(explicit.entries, entries.slice(-100), 'explicit entry-count callers retain their existing semantics');
+    assert.equal(explicit.nextEntryCursor, explicit.entries[0]!.sequence);
+  } finally {
+    await f.close();
+  }
+});
+
 test('default round pages split oversized rounds by bytes without dropping durable entries', async () => {
   const f = fixture([]);
   try {
