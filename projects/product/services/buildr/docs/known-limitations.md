@@ -40,4 +40,4 @@
 
 ## Claude 原生接入的兼容边界
 
-源码中的 `Claude Agent` 使用独立管理的 Claude Code 与固定官方 Agent SDK，不继承用户默认 Claude 配置，不提供未经许可的 claude.ai 订阅登录。已有共享模型可通过本机 Anthropic Messages 网关使用；非 Claude 模型不在 Anthropic 官方支持范围内，Buildr 的协议与工具测试不能代替每个真实模型、账号及版本组合的验收。不支持的思考档位会明确拒绝，不自动回退模型。原生规则与技能需要对应工作目录的 Claude 文件适配；程序准备本身不证明已加载。
+源码中的 `Claude Code` 使用独立管理的 Claude Code 与固定官方 Agent SDK，不继承用户默认 Claude 配置，不提供未经许可的 claude.ai 订阅登录。已有共享模型可通过本机 Anthropic Messages 网关使用；非 Claude 模型不在 Anthropic 官方支持范围内，Buildr 的协议与工具测试不能代替每个真实模型、账号及版本组合的验收。不支持的思考档位会明确拒绝，不自动回退模型。原生规则与技能需要对应工作目录的 Claude 文件适配；程序准备本身不证明已加载。

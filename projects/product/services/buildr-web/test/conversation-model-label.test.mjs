@@ -64,3 +64,11 @@ test('自持源账号在未登录时仍显示，且按产品名标注',async()=>
   assert.ok(sources.some(source=>source.id==='native-qoder'));
   assert.equal(sources.some(source=>source.id.startsWith('2bb3d2b7')),false,'无归属的旧行仍隐藏');
 });
+
+test('Claude Code display names agree across execution selection and participant history',async()=>{
+ const {providerNames}=await import('../src/features/agent-conversations/types.ts');
+ assert.equal(executionAgentName('claude-code'),'Claude Code');
+ assert.equal(executionAgentName('native-claude-code'),'Claude Code');
+ assert.equal(providerNames['claude-code'],'Claude Code');
+ assert.equal(modelSourceName('anthropic'),'Claude API');
+});

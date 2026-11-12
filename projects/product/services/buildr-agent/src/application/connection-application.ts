@@ -173,6 +173,8 @@ export class ConnectionApplication {
   }
   get(id: string, includeLoginUrl = false): ConnectionView {
     const view = structuredClone(this.stored(id).view);
+    // Product names follow the current descriptor, not cached configuration labels.
+    view.label = this.executors.get(id)?.descriptor.label ?? view.label;
     view.capabilities.maxInputBytes = Math.min(view.capabilities.maxInputBytes, 64 * 1024);
     if (view.capabilities.images) view.capabilities.maxImageBytes = Math.min(view.capabilities.maxImageBytes ?? 8 * 1024 * 1024, 8 * 1024 * 1024);
     if (view.loginAttempt && view.loginAttempt.generation !== this.options.generation && ['initializing', 'waiting-browser', 'checking'].includes(view.loginAttempt.state)) {

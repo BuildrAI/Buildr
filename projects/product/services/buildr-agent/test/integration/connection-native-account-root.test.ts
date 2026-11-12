@@ -52,3 +52,19 @@ test('durable reads resolve native account content outside the connection config
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('existing prepared connections present the current product name without rewriting configuration', async () => {
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'connection-display-name-'));
+  const capabilities={text:true,images:false,approval:false,questions:false,stop:true,resume:true,maxInputBytes:65536};
+  const executor:AgentExecutor={descriptor:{id:'claude-code',label:'Claude Code',capabilities},async open(){throw new Error('name reads must not open a runtime');}};
+  const repository=new ConversationRepository(root);
+  repository.saveConnection({view:{id:'claude-code',provider:'claude-code',label:'Claude Agent',revision:'existing',status:'ready',enabled:true,configPath:path.join(root,'connections/claude-code'),models:[],capabilities}});
+  const app=new ConnectionApplication({root,repository,executors:[executor],environment:{},generation:'fixture',now:()=>new Date().toISOString(),changed(){throw new Error('name reads must not write');}});
+  try {
+    assert.equal(app.get('claude-code').label,'Claude Code');
+    assert.equal(app.list()[0]?.label,'Claude Code');
+    assert.equal(app.get('claude-code').revision,'existing');
+    assert.equal(app.get('claude-code').status,'ready');
+    assert.equal(repository.readConnection('claude-code')?.view.label,'Claude Agent');
+  } finally {await app.close();fs.rmSync(root,{recursive:true,force:true});}
+});

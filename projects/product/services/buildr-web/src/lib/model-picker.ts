@@ -34,7 +34,7 @@ export function modelSourceName(provider:string):string {
 /** Execution agent names stay separate from model-source names. */
 export function executionAgentName(provider:string):string {
   const id=provider.replace(/^native-/, '');
-  return ({codex:'Codex','claude-code':'Claude Agent',dsh:'DSH',qoder:'Qoder','qoder-cn':'Qoder CN',devin:'Devin',deepseek:'DeepSeek'} as Record<string,string>)[id]??provider;
+  return ({codex:'Codex','claude-code':'Claude Code',dsh:'DSH',qoder:'Qoder','qoder-cn':'Qoder CN',devin:'Devin',deepseek:'DeepSeek'} as Record<string,string>)[id]??provider;
 }
 
 

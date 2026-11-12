@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { claudeInputId, claudeItems, ClaudeItemProjector, claudeQuestion, claudeAnswers, claudeGatewayEnvironment, claudeEffort } from '../../src/executors/claude/protocol.ts';
 import { isCompatibleProgram, nativeProgramPolicy } from '../../src/executors/program-policy.ts';
+import { createClaudeExecutor } from '../../src/executors/claude/index.ts';
 import { ClaudeControlInput } from '../../src/executors/claude/control.ts';
 
 const gateway={identity:'lease',baseUrl:'http://127.0.0.1:1234/v1',apiKey:'private',models:[{id:'buildr-selected',label:'Selected',contextWindow:64000,maxOutputTokens:4096,reasoningEfforts:[{id:'high',label:'High'}]}]};
@@ -56,4 +57,8 @@ test('Claude atomic queue cancellation only extends the documented interrupt env
   const rows=Buffer.concat(chunks).toString().trim().split('\n').map(line=>JSON.parse(line));
   assert.deepEqual(rows[0],interrupt);assert.deepEqual(rows[1],JSON.parse(text));
   assert.deepEqual(rows[2],{...interrupt,request:{subtype:'interrupt',cancel_queued:true}});
+});
+
+test('Claude Code uses the requested product name without changing its provider identity',()=>{
+  const executor=createClaudeExecutor();assert.equal(executor.descriptor.id,'claude-code');assert.equal(executor.descriptor.label,'Claude Code');
 });

@@ -11,7 +11,7 @@ import type { AgentServicePreparationPreparation } from '../../../build/generate
 
 // Display choices are the three validated executors; HTTP views come from the host schema.
 export type ProviderId = 'codex' | 'dsh' | 'qoder' | 'qoder-cn' | 'claude-code';
-export const providerNames: Record<string,string> = {codex:'Codex',dsh:'DSH',qoder:'Qoder','qoder-cn':'Qoder CN','claude-code':'Claude Agent'};
+export const providerNames: Record<string,string> = {codex:'Codex',dsh:'DSH',qoder:'Qoder','qoder-cn':'Qoder CN','claude-code':'Claude Code'};
 export type ConnectionView = AgentServiceConnectionConnection;
 export type PreparationView = AgentServicePreparationPreparation;
 export type ConversationView = AgentConversationConversation;

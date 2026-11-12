@@ -61,7 +61,7 @@ export function claudeGatewayEnvironment(gateway: ExecutorGateway): Record<strin
 export function claudeEffort(gateway: ExecutorGateway, selected?: string, effort?: string): 'low' | 'medium' | 'high' | 'xhigh' | 'max' | undefined {
   const value = gatewayEffort(gateway, selected, effort);
   if (!value) return;
-  if (!['low','medium','high','xhigh','max'].includes(value)) throw new AgentServiceError('agent_claude_reasoning_unavailable','Claude Agent 尚不支持所选思考档位，请选择该模型支持的 low、medium、high、xhigh 或 max。',409);
+  if (!['low','medium','high','xhigh','max'].includes(value)) throw new AgentServiceError('agent_claude_reasoning_unavailable','Claude Code 尚不支持所选思考档位，请选择该模型支持的 low、medium、high、xhigh 或 max。',409);
   return value as 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 }
 

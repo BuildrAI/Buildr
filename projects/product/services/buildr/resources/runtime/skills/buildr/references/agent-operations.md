@@ -4,7 +4,7 @@
 
 ## Claude 原生执行与模型选择
 
-`claude-code` 执行方在界面显示为 `Claude Agent`，由官方 Agent SDK 驱动 Buildr 独立管理的 Claude Code 程序。程序准备与模型账号分开；从模型页选择已有来源或配置独立 `Claude API` 密钥即可，不提供 claude.ai 订阅登录、令牌复制或订阅额度共享。准备成功不表示已验证某个真实模型组合。
+`claude-code` 执行方在界面显示为 `Claude Code`，由官方 Agent SDK 驱动 Buildr 独立管理的 Claude Code 程序。程序准备与模型账号分开；从模型页选择已有来源或配置独立 `Claude API` 密钥即可，不提供 claude.ai 订阅登录、令牌复制或订阅额度共享。准备成功不表示已验证某个真实模型组合。
 
 规则与技能使用既有 `claude-code` 文件适配：`CLAUDE.md` 引用桥及 `.claude/skills/`。需要判断加载情况时，核对准确工作目录的原文件、适配检查和真实会话，不把 `.agents/skills/` 存在冒充 Claude 原生发现。缺少投射时按已授权的组织工作方式采用 `buildr sync claude-code --target <准确工作空间>`，不直接编辑受管副本或覆盖用户文件；普通源文件仍可按权限读取。
 

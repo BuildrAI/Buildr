@@ -22,7 +22,7 @@ const capabilities = {
 };
 export function createClaudeExecutor(): AgentExecutor {
   return {
-    descriptor:{id:provider,label:'Claude Agent',capabilities},nativeContent:claudeContent,
+    descriptor:{id:provider,label:'Claude Code',capabilities},nativeContent:claudeContent,
     readReleasedControl:input=>releasedNativeControl(provider,input),
     readPersistedExecution:readClaudePersistedExecution,readSupplementReceipt:readClaudeSupplementReceipt,
     storage:{transientDirectories:[]},
@@ -110,7 +110,7 @@ class ClaudeRuntime implements AgentRuntime {
   }
   async models(){return structuredClone(this.gateway?.models??[]);}
   async beginLogin(update:(value:LoginObservation)=>void):Promise<void>{
-    update({state:'failed',diagnostic:'Claude Agent 使用模型页的 API Key 或已有模型来源，不提供 claude.ai 订阅登录。'});
+    update({state:'failed',diagnostic:'Claude Code 使用模型页的 API Key 或已有模型来源，不提供 claude.ai 订阅登录。'});
   }
   async cancelLogin():Promise<void>{}
   async verifyUpgrade():Promise<void>{await this.rpc.call('probe',{},15000);}
