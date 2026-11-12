@@ -45,6 +45,13 @@ test('ChatGPT API 模型已观察但余额不可读时显示模型观察时间�
  assert.equal(view.observedLabel.includes('尚未读取'),false);
 });
 
+test('仅 ChatGPT API 来源提供 OpenAI 平台账单入口',()=>{
+ const apiView=modelSourceViews([api],[]).find(view=>view.id===api.id);
+ assert.equal(apiView.billingUrl,'https://platform.openai.com/settings/organization/billing/overview');
+ const subscriptionView=modelSourceViews([subscription],[]).find(view=>view.id===subscription.id);
+ assert.equal(subscriptionView.billingUrl,undefined);
+});
+
 test('DSH 接入的 DeepSeek 模型来源显示 DeepSeek，不显示执行智能体名称',()=>{
  const dsh={id:'native-dsh',identity:'deepseek',provider:'native-dsh',connectionId:'dsh',label:'DeepSeek',authType:'oauth',revision:'r3',enabled:true,status:'ready',accountLabel:'DeepSeek',models:[{id:'deepseek-v4',label:'DeepSeek-V4',images:false,tools:true,enabled:true}]};
  const view=modelSourceViews([dsh],[]).find(view=>view.id===dsh.id);
