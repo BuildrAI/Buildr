@@ -24,7 +24,7 @@ const LEGACY_HAS_WORK = "(json_array_length(json_extract(body,'$.view.entries'))
 const hasWork = (db: DatabaseSync) => ConversationEntryStore.available(db)
   ? LEGACY_HAS_WORK.replace("json_array_length(json_extract(body,'$.view.entries'))", 'entry_count') : LEGACY_HAS_WORK;
 // Legacy/offline readers must inspect optional JSON fields without materializing a full record.
-const HAS_UNFINISHED = "EXISTS(SELECT 1 FROM json_each(body,'$.view.retainedRuns') AS retained WHERE json_extract(retained.value,'$.status') IN ('starting','running','waiting-approval','waiting-question','stopping','unknown','tools-active') OR EXISTS(SELECT 1 FROM json_each(retained.value,'$.tools') AS tool WHERE COALESCE(json_extract(tool.value,'$.status'),'unknown')<>'completed')) OR json_array_length(body,'$.view.requests')>0 OR json_extract(body,'$.view.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','unknown','tools-active') OR EXISTS(SELECT 1 FROM json_each(body,'$.view.run.tools') AS tool WHERE COALESCE(json_extract(tool.value,'$.status'),'unknown')<>'completed') OR json_extract(body,'$.view.titleState.status')='generating'";
+const HAS_UNFINISHED = "EXISTS(SELECT 1 FROM json_each(body,'$.view.retainedRuns') AS retained WHERE json_extract(retained.value,'$.status') IN ('starting','running','waiting-approval','waiting-question','stopping','unknown','tools-active') OR EXISTS(SELECT 1 FROM json_each(retained.value,'$.tools') AS tool WHERE COALESCE(json_extract(tool.value,'$.status'),'unknown')<>'completed')) OR json_array_length(body,'$.view.requests')>0 OR json_extract(body,'$.view.run.status') IN ('starting','running','waiting-approval','waiting-question','stopping','unknown','tools-active') OR EXISTS(SELECT 1 FROM json_each(body,'$.view.run.tools') AS tool WHERE COALESCE(json_extract(tool.value,'$.status'),'unknown')<>'completed')";
 const SEARCH_TERM_LIMIT = 6;
 const SEARCH_ENTRY = "(json_extract(entry.value,'$.kind')='message' AND json_extract(entry.value,'$.role') IN ('user','assistant') AND coalesce(json_extract(entry.value,'$.thinking'),0)=0 AND instr(lower(json_extract(entry.value,'$.text')),lower(?))>0)";
 const searchTerms = (query?: string) => (query ?? '').trim().split(/\s+/).filter(Boolean).slice(0, SEARCH_TERM_LIMIT);
@@ -486,20 +486,12 @@ export class ConversationRepository {
     const db=this.open(false);if(!db)return false;
     try {
       if (ConversationReadModel.available(db)) {
-        if (db.prepare('SELECT 1 FROM conversation_read_states WHERE active=1 UNION ALL SELECT 1 FROM conversation_read_states WHERE title_work=1 LIMIT 1').get()) return true;
+        if (db.prepare('SELECT 1 FROM conversation_read_states WHERE active=1 LIMIT 1').get()) return true;
         return !!db.prepare(`WITH unprojected AS MATERIALIZED (SELECT c.body FROM conversations c LEFT JOIN conversation_read_states s ON c.id=s.id WHERE s.id IS NULL) SELECT 1 FROM unprojected WHERE ${HAS_UNFINISHED} LIMIT 1`).get();
       }
       return !!db.prepare(`SELECT 1 FROM conversations WHERE ${HAS_UNFINISHED} LIMIT 1`).get();
     }
     finally{db.close();}
-  }
-  listInterruptedTitles(generation:string): StoredConversation[] {
-    const db=this.open(false);if(!db)return [];
-    try{return (db.prepare("SELECT body FROM conversations WHERE json_extract(body,'$.view.titleState.status')='generating' AND json_extract(body,'$.view.run.generation')<>?").all(generation) as Array<{body:string}>).map(row=>ConversationEntryStore.hydrate(db,JSON.parse(row.body) as StoredConversation,this.nativeReader));}finally{db.close();}
-  }
-  listTitleFailureCandidates(): StoredConversation[] {
-    const db=this.open(false);if(!db)return [];
-    try{return (db.prepare("SELECT body FROM conversations WHERE json_extract(body,'$.titleOrigin')='default' AND json_extract(body,'$.view.title')='新对话' AND json_extract(body,'$.view.titleState.status') IN ('failed','unavailable')").all() as Array<{body:string}>).map(row=>ConversationEntryStore.hydrate(db,JSON.parse(row.body) as StoredConversation,this.nativeReader));}finally{db.close();}
   }
   listInterrupted(): StoredConversation[] {
     const db = this.open(false); if (!db) return [];

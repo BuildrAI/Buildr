@@ -17,6 +17,7 @@ import { isCompatibleProgram, nativeProgramPolicy } from '../program-policy.ts';
 import { accountEnvironment, findExecutable, inspectVersion, nativeCommand, nativeHome, opaqueReference, parseReference, privateDirectories, bounded, closeOwnedProcess, releasedNativeControl } from '../native-process.ts';
 import { checkedGateway, consumerBinding, gatewayModel, qoderGatewayPolicy, type ExecutorGateway } from '../model-gateway.ts';
 import { generateModelTitle } from '../model-title.ts';
+import { generateQoderNativeTitle } from '../qoder/model-title.ts';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { AgentServiceError } from '../../domain/agent-state.ts';
 import { errorDiagnostic } from '../../domain/error-diagnostic.ts';
@@ -543,9 +544,9 @@ class QoderCnRuntime implements AgentRuntime {
   }
 
   async models(): Promise<Array<{ id: string; label: string; images?: boolean; tools?: boolean }>> { return []; }
-  /** A bounded, tool-free request on the existing gateway lease; it never opens a native session. */
+  /** A bounded, tool-free request on the gateway lease, or the native model channel without one. */
   async generateTitle(input: ExecutorTitleInput): Promise<string | undefined> {
-    if (!this.gateway) throw new Error('agent_title_unavailable');
+    if (!this.gateway) return generateQoderNativeTitle(input, (path, init) => this.requestModel(path, init));
     // The lease exposes exactly one route model; the caller's catalog id is not a gateway model.
     const model = gatewayModel(this.gateway);
     return generateModelTitle(input, model.id, 'chat-completions', init => fetch(this.gateway!.baseUrl.replace(/\/$/, '') + '/chat/completions', {

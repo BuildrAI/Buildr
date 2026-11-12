@@ -91,9 +91,11 @@ test('Qoder full-access uses native bypass mode, preserves business questions an
       const request = events.find(event => event.type === 'request'); const accepted = events.find(event => event.type === 'accepted'); assert.equal(request?.type, 'request'); assert.equal(accepted?.type, 'accepted'); assert.equal(request.request.kind, 'question');
       await runtime.reply({ contextRef, executionRef: accepted.executionRef, requestId: request.request.id, answer: { '0': '蓝' } });
       await runtime.stop({ contextRef, executionRef: accepted.executionRef }); await sending;
-      if (permissionMode === undefined) await runtime.generateTitle!({ contextRef, cwd: workspace, description: '{\"messages\":[]}', signal: new AbortController().signal });
+      // Titles use the model channel now; this fixture has no credentials, so it
+      // fails closed without opening an auxiliary native session.
+      if (permissionMode === undefined) await assert.rejects(runtime.generateTitle!({ contextRef, cwd: workspace, description: '{"messages":[]}', signal: new AbortController().signal }));
     }
-    const allCalls = (await fs.readFile(log, 'utf8')).trim().split('\n').map(line => JSON.parse(line)); const auxiliary = allCalls.find((args: string[]) => args.includes('--no-session-persistence')); assert.ok(auxiliary); assert.ok(!auxiliary.includes('--dangerously-skip-permissions')); const calls = allCalls.filter((args: string[]) => !args.includes('--no-session-persistence')); assert.equal(calls.length, 2);
+    const calls = (await fs.readFile(log, 'utf8')).trim().split('\n').map(line => JSON.parse(line)); assert.equal(calls.length, 2); assert.ok(calls.every((args: string[]) => !args.includes('--no-session-persistence')));
     const option = (args: string[], name: string) => args[args.indexOf(name) + 1]; assert.equal(option(calls[0], '--permission-mode'), 'bypassPermissions'); assert.ok(calls[0].includes('--dangerously-skip-permissions')); assert.equal(option(calls[1], '--permission-mode'), 'default'); assert.ok(!calls[1].includes('--dangerously-skip-permissions'));
     assert.ok(calls.every((args: string[]) => option(args, '--session-id') === contextRef.id));
   } finally { await runtime?.close(); await fs.rm(root, { recursive: true, force: true }); }

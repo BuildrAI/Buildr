@@ -746,7 +746,7 @@ test('Qoder CN generates a bounded tool-free title on the gateway lease without 
   } finally { await runtime?.close(); await new Promise<void>(resolve => server.close(() => resolve())); await rm(root, { recursive: true, force: true }); }
 });
 
-test('Qoder CN reports title generation unavailable without a gateway lease', {timeout:15000}, async () => {
+test('Qoder CN reports title generation unavailable when a gateway is absent and the native account is not ready', {timeout:15000}, async () => {
   const root = await mkdtemp(join(tmpdir(), 'buildr-qoder-cn-title-none-')); let runtime: AgentRuntime | undefined;
   try {
     runtime = await createQoderCnExecutor().open({ connectionId: 'qoder-cn', configRoot: join(root, 'config'), executable: await program(root), environment: { PATH: process.env.PATH ?? '' } });

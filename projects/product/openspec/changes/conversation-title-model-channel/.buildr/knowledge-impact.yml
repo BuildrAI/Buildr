@@ -1,0 +1,20 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: conversation-title-model-channel
+operation: reconcile
+impacts:
+  - type: technical-architecture
+    target: knowledge/docs/architecture/agent-integration.md
+    reason: 对话标题改为受理即落首条消息兜底标题、首轮完成后一次独立模型请求，并删除早期/重启尝试与失败提醒标题。
+    status: updated
+    sourceIdentities:
+      - services/buildr-agent/src/application/conversation-application.ts
+      - services/buildr-agent/src/executors/qoder/model-title.ts
+      - services/buildr-agent/src/executors/qoder-cn/index.ts
+      - openspec/changes/conversation-title-model-channel/specs/agent-conversations/spec.md
+  - type: code-map
+    target: knowledge/code-map/technical-layers.md
+    reason: 对话应用职责描述同步为首条消息兜底标题、首轮完成后单次独立短标题及手动名保护。
+    status: updated
+    sourceIdentities:
+      - services/buildr-agent/src/application/conversation-application.ts
+unresolvedItems: []

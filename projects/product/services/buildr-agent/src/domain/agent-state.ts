@@ -114,11 +114,7 @@ export interface StoredConversation {
   hostScope?: import('../execution-contracts.ts').ExecutionScope;
   interruption?: { runId: string; awaitingUser: boolean; reason?: 'transport' | 'execution-fault'; attempted?: boolean; cancelled?: boolean };
   runOutcomes?: Record<string,Pick<RunView,'status'|'diagnostic'|'model'|'provider'|'contextUsage'|'updatedAt'> & {generation?:string}>;
-  titleOrigin?: 'default' | 'generated' | 'manual';
-  titleAttempted?: boolean;
-  earlyTitleAttempted?: boolean;
-  titleAttemptsByParticipant?: Record<string,{early?:boolean;completion?:boolean}>;
-  titleDiagnostics?: Array<{runId:string;phase:'early'|'completion'|'manual';code:string;reason:string;at:string}>;
+  titleOrigin?: 'default' | 'fallback' | 'generated' | 'manual';
   participants: StoredParticipant[];
   sources: Record<string, string>;
   attachments: Record<string, { name?: string; mimeType: string; size: number; createdAt?: string; nativeContent?: import('../native-content-contracts.ts').NativeAttachmentContent; video?: import('../contracts.ts').VideoAttachment }>;
