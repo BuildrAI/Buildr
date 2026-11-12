@@ -44,22 +44,23 @@ const operations: Readonly<Record<string, Readonly<{ capability: string | typeof
 
 const taskReadCapabilities = new Set([CHANGE_APPLICATION, TASK_CHANGED_FILES_APPLICATION, TASK_COMMITS_APPLICATION, TASK_MATERIALS_APPLICATION]);
 let taskReadProvider: Promise<(capability: string) => any> | undefined;
-let fullReadProvider: Promise<{ provide: (capability: string) => any; codeCapability: string }> | undefined;
+let codeReadApplication: Promise<ReturnType<typeof import('../../bootstrap/code-read-runtime.ts').createCodeReadApplication>> | undefined;
+let fullReadProvider: Promise<(capability: string) => any> | undefined;
 
 async function readApplication(capability: string | typeof codeRead) {
-  if (typeof capability === 'string' && taskReadCapabilities.has(capability)) {
+  if (capability === codeRead) {
+    codeReadApplication ||= import('../../bootstrap/code-read-runtime.ts').then(({ createCodeReadApplication }) => createCodeReadApplication());
+    return codeReadApplication;
+  }
+  if (taskReadCapabilities.has(capability)) {
     taskReadProvider ||= import('../../bootstrap/task-read-runtime.ts').then(({ createTaskReadRuntime }) => createTaskReadRuntime());
     return (await taskReadProvider)(capability);
   }
-  fullReadProvider ||= Promise.all([
-    import('../../bootstrap/runtime.ts'),
-    import('../../modules/code/module.ts'),
-  ]).then(([{ createRuntime, runtimeProvide }, { CODE_APPLICATION }]) => {
+  fullReadProvider ||= import('../../bootstrap/runtime.ts').then(({ createRuntime, runtimeProvide }) => {
     const runtime = createRuntime();
-    return { provide: (name: string) => runtimeProvide(runtime, name), codeCapability: CODE_APPLICATION };
+    return (name: string) => runtimeProvide(runtime, name);
   });
-  const { provide, codeCapability } = await fullReadProvider;
-  return provide(capability === codeRead ? codeCapability : capability);
+  return (await fullReadProvider)(capability);
 }
 
 function validMessage(message: any) {
