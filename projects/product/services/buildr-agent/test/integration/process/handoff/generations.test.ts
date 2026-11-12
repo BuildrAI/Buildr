@@ -143,12 +143,15 @@ test('parallel versions retain old controls, dispatch durable next instructions 
         first=await main.call('conversations.read',[scope,first.id]);
       }
     }
-    first=await until(()=>observer!.operations.conversations.read(scope,first.id),value=>value.run?.generation===adopted.identity.generation&&value.run?.status==='completed');
+    // The new round may complete before a heavily loaded observer can read the
+    // retired generation's live status. Wait for both facts from one snapshot;
+    // delivery still must not wait for the old stop itself.
+    first=await until(()=>observer!.operations.conversations.read(scope,first.id),value=>value.run?.generation===adopted.identity.generation&&value.run?.status==='completed'
+      &&value.retainedRuns?.find(run=>run.id===original.id)?.status==='tools-active',20000);
     const sent=fs.readFileSync(path.join(dataRoot,'native-sends.jsonl'),'utf8').trim().split('\n').map(line=>JSON.parse(line));
     assert.equal(sent.filter(value=>value.text==='queued revised').length,1,`queued revised sends: ${JSON.stringify(sent.filter(value=>value.text==='queued revised'))}`);
     assert.equal(sent.find(value=>value.text==='queued revised').version,'new');
     assert.equal(sent.filter(value=>value.text==='queued original').length,0,`queued original sends: ${JSON.stringify(sent.filter(value=>value.text==='queued original'))}`);
-    assert.equal(first.retainedRuns?.find(run=>run.id===original.id)?.status,'tools-active','delivery must not wait for the old stop');
     fs.writeFileSync(path.join(dataRoot,'finish-stop'),'yes');
     // Withdrawing the saved instruction never replays it behind the explicit send.
     assert.equal((await observer.operations.conversations.lookupRequest(scope,first.id,requestId)).runId,undefined);
