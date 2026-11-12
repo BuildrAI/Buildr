@@ -304,7 +304,7 @@ function mergeSplitAssistantSegments(entries:readonly ConversationEntry[]):Conve
   }
   return out;
 }
-export type ConversationTurnItems={key:string;prompt?:ConversationEntry;items:ConversationStreamItem[]};
+export type ConversationTurnItems={key:string;prompt?:ConversationEntry;continuedFrom?:NonNullable<ConversationRun['continuedFrom']>;items:ConversationStreamItem[]};
 /** Time the entire owned turn, including a final answer and an unsettled process block. */
 export function conversationTurnTiming(turn:ConversationTurnItems,runs:readonly ConversationRun[]=[]):{startedAt?:string;finishedAt?:string}{
   const entries=[...(turn.prompt?[turn.prompt]:[]),...turn.items.flatMap(item=>item.type==='entry'?[item.entry]:item.entries)];
@@ -314,8 +314,10 @@ export function conversationTurnTiming(turn:ConversationTurnItems,runs:readonly 
   const times=[...owned.map(entry=>entry.createdAt),...(run?[run.updatedAt]:[])].filter(value=>Number.isFinite(Date.parse(value)));
   return {startedAt:run?.startedAt??turn.prompt?.createdAt??owned[0]?.createdAt,finishedAt:times.sort((a,b)=>Date.parse(a)-Date.parse(b)).at(-1)};
 }
-export function conversationStreamTurns(items:readonly ConversationStreamItem[]):ConversationTurnItems[]{
+export function conversationStreamTurns(items:readonly ConversationStreamItem[],runs:readonly ConversationRun[]=[]):ConversationTurnItems[]{
   const turns:ConversationTurnItems[]=[], owners=new Map<string,ConversationTurnItems>();
+  const continuations=new Map(runs.flatMap(run=>run.continuedFrom?[[run.id,run.continuedFrom] as const]:[]));
+  const runOwner=(runId:string,key='run:'+runId):ConversationTurnItems=>({key,items:[],...(continuations.has(runId)?{continuedFrom:continuations.get(runId)}:{})});
   for(const item of items){
     const entry=item.type==='entry'?item.entry:item.entries[0];
     const inputOwner=entry.runId?owners.get(entry.runId):undefined;
@@ -329,14 +331,14 @@ export function conversationStreamTurns(items:readonly ConversationStreamItem[])
       if(!turns.length)turns.push({key:'earlier',items:[]});
       let owner=entry.runId?owners.get(entry.runId):undefined;
       if(!owner&&entry.kind==='notice'&&entry.runId){
-        owner={key:'run:'+entry.runId,items:[]};turns.push(owner);owners.set(entry.runId,owner);
+        owner=runOwner(entry.runId);turns.push(owner);owners.set(entry.runId,owner);
       }
       const latest=turns.at(-1)!,latestItem=latest.items.at(-1);
       const latestRun=latest.prompt?.runId??(latestItem?.type==='entry'?latestItem.entry.runId:latestItem?.entries[0]?.runId);
       if(!owner&&(item.type==='process-block'||entry.kind==='message')&&entry.runId&&latestRun&&entry.runId!==latestRun){
         // A replayed result may precede the loaded history page. It cannot belong
         // to the latest input merely because it was projected later.
-        owner={key:'history:'+entry.runId,items:[]};turns.unshift(owner);
+        owner=runOwner(entry.runId,'history:'+entry.runId);turns.unshift(owner);
       }
       owner??=turns.at(-1)!;
       let previous:ConversationStreamItem|undefined;

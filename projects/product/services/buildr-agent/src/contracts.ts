@@ -390,6 +390,13 @@ export interface ConversationEntry {
   createdAt: string;
 }
 export interface RunView {
+  /** Read-only prompt provenance for a run admitted from an explicit continuation. */
+  continuedFrom?: {
+    runId: string;
+    userEntryId: string;
+    /** Omitted from list and summary projections to keep those responses bounded. */
+    prompt?: ConversationEntry;
+  };
   /** Questions are no longer actionable; native controls and tools may still be retained. */
   questionsEndedBy?: string;
   /** Replaced by a confirmed new execution; cleanup is system-owned. */

@@ -1128,6 +1128,32 @@ const historyRuns = {
       }
       await capture(page,'conversation-running-context-history.png');fixture.conversation=previous;await page.reload();await input().waitFor();
   },
+  'history/continuation-prompt': async (fixture: AgentConversationFixture) => {
+    const {capture,input,page,panel,run,update}=fixture;
+    const previous=structuredClone(fixture.conversation),at=new Date().toISOString();
+    const source={id:'continuation-source',sequence:1,kind:'message',role:'user',text:'这是要继续的原始要求',runId:'source-run',createdAt:at,status:'accepted'};
+    try{
+      update({
+        participants:[{id:'participant-codex',connectionId:'codex',provider:'codex',label:'Codex',model:'fixture-model',contextId:'native',deliveredThrough:0}],
+        entries:[
+          source,
+          {id:'continuation-notice',sequence:2,kind:'notice',role:'system',text:'已请求继续上次执行。',runId:'continuation-run',createdAt:at,status:'accepted'},
+          {id:'continuation-progress',sequence:3,kind:'message',role:'assistant',text:Array.from({length:35},(_,i)=>'接续执行过程 '+(i+1)).join('\n\n'),runId:'continuation-run',createdAt:at,status:'running'},
+        ],
+        nextEntryCursor:undefined,
+        requests:[],
+        run:run('running','codex',{id:'continuation-run',model:'fixture-model',continuedFrom:{runId:'source-run',userEntryId:'continuation-source',prompt:source}}),
+      });
+      await page.reload();await input().waitFor();
+      const executing=panel().locator('.ac-turn.is-executing');
+      await executing.locator('.ac-turn-prompt').filter({hasText:'这是要继续的原始要求'}).waitFor();
+      assert.equal(await executing.locator('.ac-continuation-prompt-label').innerText(),'继续上次要求');
+      await panel().locator('.ac-stream').evaluate((node:HTMLElement)=>{const turn=node.querySelector<HTMLElement>('.ac-turn.is-executing')!;node.scrollTop+=turn.getBoundingClientRect().top-node.getBoundingClientRect().top+220;});
+      const sticky=await executing.locator('.ac-turn-head').evaluate((node:HTMLElement)=>({position:getComputedStyle(node).position,top:node.getBoundingClientRect().top,stream:node.closest('.ac-stream')!.getBoundingClientRect().top}));
+      assert.equal(sticky.position,'sticky');assert.ok(Math.abs(sticky.top-sticky.stream)<2,JSON.stringify(sticky));
+      await capture(page,'conversation-continuation-prompt.png');
+    }finally{fixture.conversation=previous;await page.reload();await input().waitFor();}
+  },
   'history/reading-position': async (fixture: AgentConversationFixture) => {
   const {expectedBrowserErrors,capture,chooseAgent,chooseModel,closeModelSettings,historyPages,input,page,panel,run,step,update,workspaceId,workspaceRoot,workspaceUrl}=fixture;
 

@@ -2840,6 +2840,26 @@ test('manual continuation works with the same selection, another model or anothe
   }
 });
 
+test('manual continuation exposes the exact source prompt while list summaries omit its body', async () => {
+  const native=fake('local',{failure:n=>n===1?'permission_denied: previous execution failed':undefined}),f=fixture([native.executor]);
+  try {
+    await connected(f.service,'local');const chat=await f.service.conversations.create('workspace-one',{});
+    send(f.service,chat.id,'local','Original exact requirement');
+    const failed=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='failed');
+    const source=failed.entries.find(entry=>entry.kind==='message'&&entry.role==='user')!;
+    const draft=continueDraft(f.service,chat.id),preview=f.service.conversations.prepareSend('workspace-one',chat.id,draft);
+    f.service.conversations.send('workspace-one',chat.id,{...draft,previewToken:preview.token,clientRequestId:randomUUID()});
+    const done=await waitUntil(()=>f.service.conversations.read('workspace-one',chat.id),view=>view.run?.status==='completed');
+    assert.equal(done.run?.continuedFrom?.runId,failed.run?.id);
+    assert.equal(done.run?.continuedFrom?.userEntryId,source.id);
+    assert.equal(done.run?.continuedFrom?.prompt?.text,'Original exact requirement');
+    const listed=f.service.conversations.list('workspace-one',{}).conversations.find(value=>value.id===chat.id)!;
+    assert.equal(listed.run?.continuedFrom?.runId,failed.run?.id);
+    assert.equal(listed.run?.continuedFrom?.userEntryId,source.id);
+    assert.equal(listed.run?.continuedFrom?.prompt,undefined);
+  } finally {await f.close();}
+});
+
 test('an empty completed response can continue, but a normal response or unknown work cannot', async () => {
   for(const options of [{noAnswer:true},{unknown:true},{toolSurvives:true},{}]) {
     const native=fake('local',options),f=fixture([native.executor]);

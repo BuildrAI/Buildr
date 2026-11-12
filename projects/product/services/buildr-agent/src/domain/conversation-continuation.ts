@@ -1,6 +1,23 @@
 import { resolvePermissionMode } from './permission-mode.ts';
-import type { SendDraft } from '../contracts.ts';
+import type { RunView, SendDraft } from '../contracts.ts';
 import { fail, type StoredConversation } from './agent-state.ts';
+
+export type ContinuedFrom = NonNullable<RunView['continuedFrom']>;
+
+/** Resolve the first real user input behind a continuation chain, never a nearby message. */
+export function continuationPrompt(record: Pick<StoredConversation, 'view' | 'attempts'>, runId: string): ContinuedFrom | undefined {
+  let sourceRunId = record.attempts.find(attempt => attempt.runId === runId && !attempt.supplement)?.continuationOf;
+  const seen = new Set<string>();
+  while (sourceRunId && !seen.has(sourceRunId)) {
+    seen.add(sourceRunId);
+    const attempt = record.attempts.find(value => value.runId === sourceRunId && !value.supplement);
+    if (!attempt) return;
+    const prompt = record.view.entries.find(entry => entry.id === attempt.userEntryId);
+    if (prompt?.kind === 'message' && prompt.role === 'user') return {runId: sourceRunId, userEntryId: prompt.id, prompt};
+    sourceRunId = attempt.continuationOf;
+  }
+  return;
+}
 
 /** Explicitly continue the goal, never reinterpret an uncertain operation as finished. */
 export function releasedContinuation(record: StoredConversation, input: SendDraft): boolean {

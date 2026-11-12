@@ -111,6 +111,50 @@ test('thinking entries keep their process-only flag through the read model',t=>{
  assert.deepEqual(page.view.entries.map(entry=>[entry.id,entry.thinking===true,entry.text]),[['think',true,'内部推理'],['say',false,'答复']]);
 });
 
+test('continuation source prompt remains available when the source round is outside the selected page',t=>{
+ const repo=fixture(t),r=record('continuation-page');
+ r.view.entries=[{id:'source-input',sequence:1,kind:'message',role:'user',text:'原要求必须精确保留',runId:'source',createdAt:'now'}];
+ for(let round=1;round<=6;round++)r.view.entries.push(
+  {id:'prompt-'+round,sequence:round*2,kind:'message',role:'user',text:'后续轮次 '+round,runId:'round-'+round,createdAt:'now'},
+  {id:'answer-'+round,sequence:round*2+1,kind:'message',role:'assistant',text:'答复 '+round,runId:'round-'+round,status:'completed',createdAt:'now'},
+ );
+ const current={id:'current',participantId:'p',provider:'codex' as const,generation:'g',status:'running' as const,accepted:true,tools:[],startedAt:'now',updatedAt:'now'};
+ r.view.run=current;
+ r.view.entries.push({id:'continue-notice',sequence:14,kind:'notice',role:'system',text:'已请求继续上次执行。',runId:'current',createdAt:'now'});
+ r.attempts=[
+  {clientRequestId:'source',inputDigest:'d',runId:'source',participantId:'p',through:1,userEntryId:'source-input',accepted:true},
+  {clientRequestId:'current',inputDigest:'d',runId:'current',participantId:'p',through:14,userEntryId:'continue-notice',accepted:true,continuationOf:'source'},
+ ];
+ repo.saveConversation(r);
+ const page=repo.readPage(r.view.id,undefined,undefined,true)!;
+ assert.ok(!page.view.entries.some(entry=>entry.id==='source-input'),'the source prompt is outside the five-round page');
+ assert.equal(page.continuations?.current?.runId,'source');
+ assert.equal(page.continuations?.current?.prompt?.text,'原要求必须精确保留');
+});
+
+test('legacy read headers without continuation facts are repaired instead of falling back on every page read',t=>{
+ const repo=fixture(t),r=record('continuation-migration');
+ r.view.entries=[{id:'source-input',sequence:1,kind:'message',role:'user',text:'迁移后仍要保留的原要求',runId:'source',createdAt:'now'}];
+ for(let round=1;round<=6;round++)r.view.entries.push(
+  {id:'prompt-'+round,sequence:round*2,kind:'message',role:'user',text:'后续轮次 '+round,runId:'round-'+round,createdAt:'now'},
+  {id:'answer-'+round,sequence:round*2+1,kind:'message',role:'assistant',text:'答复 '+round,runId:'round-'+round,status:'completed',createdAt:'now'},
+ );
+ r.view.run={id:'current',participantId:'p',provider:'codex',generation:'g',status:'running',accepted:true,tools:[],startedAt:'now',updatedAt:'now'};
+ r.view.entries.push({id:'continue-notice',sequence:14,kind:'notice',role:'system',text:'已请求继续上次执行。',runId:'current',createdAt:'now'});
+ r.attempts=[
+  {clientRequestId:'source',inputDigest:'d',runId:'source',participantId:'p',through:1,userEntryId:'source-input',accepted:true},
+  {clientRequestId:'current',inputDigest:'d',runId:'current',participantId:'p',through:14,userEntryId:'continue-notice',accepted:true,continuationOf:'source'},
+ ];
+ repo.saveConversation(r);repo.stopReadModels();
+ const db=new DatabaseSync(repo.filename);t.after(()=>db.close());
+ db.prepare("UPDATE conversation_read_states SET state=json_remove(state,'$.continuations','$.continuationVersion') WHERE id=?").run(r.view.id);
+ assert.equal(repo.readPage(r.view.id,undefined,undefined,true),undefined,'a legacy header cannot serve continuation provenance from the visible page alone');
+ repo.rebuildReadModel(r.view.id);
+ const migrated=repo.readPage(r.view.id,undefined,undefined,true)!;
+ assert.equal(migrated.continuationVersion,1);
+ assert.equal(migrated.continuations?.current?.prompt?.text,'迁移后仍要保留的原要求');
+});
+
 test('page reads retrieve a bounded suffix and every original entry remains reachable in order',t=>{
  const repo=fixture(t),r=record();r.view.entries=Array.from({length:1000},(_,i)=>({id:'e'+i,sequence:i+1,kind:i%2?'tool':'message',role:i%2?'system':'user',runId:'round'+Math.floor(i/10),text:'x'.repeat(i===999?100*1024:100),input:i===999?'command '+ 'a'.repeat(20000):undefined,createdAt:'now'}));repo.saveConversation(r);
  const compact=repo.readPage(r.view.id,undefined,undefined,true)!;assert.ok(compact.view.entries.length<=50);assert.ok(JSON.stringify(compact).length<256*1024);const last=compact.view.entries.at(-1)!;assert.ok(last.detail);assert.equal(repo.readEntry(r.view.id,last.id,last.detail!.revision)?.input,r.view.entries.at(-1)!.input);

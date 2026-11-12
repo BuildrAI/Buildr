@@ -288,6 +288,24 @@ test('首条输入前的交接回执不能冒充原用户输入',()=>{
  assert.equal(turns.at(-1).prompt.id,'first');assert.equal(turns.at(-1).items[0].entry.id,'extra');
 });
 
+test('纯接续执行轮借用准确来源输入，直接输入优先且缺失来源不猜测',()=>{
+ const source={...message('source-prompt','原始要求','source','user'),sequence:1};
+ const notice={...message('continue-notice','已请求继续上次执行。','current','system'),kind:'notice',status:'accepted'};
+ const run={id:'current',status:'running',continuedFrom:{runId:'source',userEntryId:'source-prompt',prompt:source}};
+ const turns=conversationStreamTurns(groupConversationStream([notice,tool('tail',{runId:'current'})],run),[run]);
+ assert.equal(turns.at(-1).continuedFrom.prompt.id,'source-prompt');
+ assert.equal(turns.at(-1).prompt,undefined);
+ const historical=conversationStreamTurns(groupConversationStream([source,notice,tool('tail',{runId:'current'})],run),[run]);
+ assert.ok(historical.some(turn=>turn.prompt?.id==='source-prompt'));
+ assert.equal(historical.at(-1).continuedFrom.prompt.id,'source-prompt');
+ const direct=conversationStreamTurns(groupConversationStream([message('direct','本轮新要求','current','user'),tool('tail',{runId:'current'})],run),[run]);
+ assert.equal(direct.at(-1).prompt.id,'direct');
+ assert.equal(direct.at(-1).continuedFrom,undefined);
+ const missing=conversationStreamTurns(groupConversationStream([notice,tool('tail',{runId:'current'})],{...run,continuedFrom:undefined}));
+ assert.equal(missing.at(-1).prompt,undefined);
+ assert.equal(missing.at(-1).continuedFrom,undefined);
+});
+
 
 test('工具等待原生详情就绪时保持现有订阅，切换后按执行状态结束观察',()=>{
  const conversation={entries:[{detail:{revision:'r',live:true}}],requests:[],run:{status:'completed',tools:[]}};

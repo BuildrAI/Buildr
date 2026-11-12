@@ -15,7 +15,7 @@ import { reconcileLegacySupersededRuns } from '../domain/superseded-runs.ts';
 import { blocksExecution } from '../domain/interaction-policy.ts';
 import { ConversationAttachments, attachmentRevision, MAX_IMAGE_BYTES, MAX_VISUAL_INPUTS } from './conversation-attachments.ts';
 import type { AttachmentInput } from '../contracts.ts';
-import { continuationDraft, releasedContinuation, stoppedContinuation } from '../domain/conversation-continuation.ts';
+import { continuationDraft, continuationPrompt, releasedContinuation, stoppedContinuation } from '../domain/conversation-continuation.ts';
 import { waitingHandoffQuestions, waitingQuestionText } from '../domain/waiting-question-handoff.ts';
 import { ConversationReadModel, type ConversationReadState } from '../persistence/conversation-read-model.ts';
 import { ConversationEntryStore } from '../persistence/conversation-entry-store.ts';
@@ -480,7 +480,7 @@ export class ConversationApplication {
     return record;
   }
   private readonly legacyPresentedFiles = new Map<string, ReturnType<typeof presentedFilesForEntry>>();
-  private view(record: ConversationReadState, before?: number, limit?: number, readLegacyFiles = false, compactTools = true): ConversationView {
+  private view(record: ConversationReadState & Partial<Pick<StoredConversation, 'attempts'>>, before?: number, limit?: number, readLegacyFiles = false, compactTools = true, includeContinuationPrompt = true): ConversationView {
     setConversationTaskLinks(record.view,conversationTaskLinks(record.view));
     normalizeQuestionCapabilities(record);
     const entries = before === undefined ? record.view.entries : record.view.entries.filter(entry => entry.sequence < before);
@@ -545,11 +545,18 @@ export class ConversationApplication {
       id: participant.id, provider: participant.provider, connectionId: participant.connectionId,
       label: participant.label, model: participant.modelId, modelAccountId:participant.modelAccountId, deliveredThrough: participant.deliveredThrough, contextId: participant.contextRef?.id ?? '',
     }));
-    for (const run of conversationRuns(view)) if (run.generation !== this.options.generation && !this.options.generationAlive?.(run.generation) && BUSY_STATES.has(run.status)) {
-      run.status = 'unknown'; run.interrupted = true; run.diagnostic = '服务重启后原执行尚待核对，工作记录已保留。';
+    for (const run of conversationRuns(view)) {
+      const continuation = record.continuations?.[run.id] ?? (record.attempts ? continuationPrompt(record as Pick<StoredConversation, 'view' | 'attempts'>, run.id) : undefined);
+      if (continuation) run.continuedFrom = includeContinuationPrompt ? continuation : {runId: continuation.runId, userEntryId: continuation.userEntryId};
+      if (run.generation !== this.options.generation && !this.options.generationAlive?.(run.generation) && BUSY_STATES.has(run.status)) {
+        run.status = 'unknown'; run.interrupted = true; run.diagnostic = '服务重启后原执行尚待核对，工作记录已保留。';
+      }
     }
     view.pendingSend = this.pendingSends.view(this.pendingSends.read(view.workspaceId, view.id));
     return view;
+  }
+  private summaryView(record: ConversationReadState & Partial<Pick<StoredConversation, 'attempts'>>): ConversationView {
+    return {...this.view(record, undefined, 1, false, true, false), entries: []};
   }
   private save(record: StoredConversation, initial = false, textOnly = false, textEntryId?:string): void {
     const started = performance.now();
@@ -624,7 +631,7 @@ export class ConversationApplication {
     const query = input.query?.trim().slice(0, 200);
     const records = this.options.repository.listConversations(workspaceId, { taskId: input.taskId, workspaceIds:input.workspaceIds, before: input.cursor, limit: limit + 1, includeHidden: input.hidden, query, active: input.active, attention: input.attention });
     const chosen = records.slice(0, limit);
-    const views = chosen.map(record => ({ ...this.view(record, undefined, 1), entries: [] })).filter(view => (input.active !== true || view.activity?.active === true) && (input.attention !== true || needsAttention(view)));
+    const views = chosen.map(record => this.summaryView(record)).filter(view => (input.active !== true || view.activity?.active === true) && (input.attention !== true || needsAttention(view)));
     const conversations = input.fields === 'summary' ? views.map(conversationSummary) : views;
     const activityCounts = this.options.repository.querySummaries([workspaceId], { workspaceId, hidden: input.hidden, query, generation: this.options.generation, limit: 0 }, this.options.generationAlive).activityCounts;
     return { conversations, nextCursor: records.length > limit ? `${chosen.at(-1)!.view.updatedAt}/${chosen.at(-1)!.view.id}` : undefined, activityCounts };
@@ -642,8 +649,8 @@ export class ConversationApplication {
     const record=this.load(workspaceId,id),attempt=record.attempts.find(value=>value.clientRequestId===clientRequestId);
     return attempt ? {found:true,runId:attempt.runId,accepted:attempt.accepted,conversation:this.view(record)} : {found:false};
   }
-  pendingSummary() { return { conversations: this.options.repository.listPendingStates().map(record => pendingConversationSummary(this.view(record, undefined, 1))) }; }
-  pending(): { conversations: ConversationView[] } { return { conversations: this.options.repository.listPendingStates().map(record => ({ ...this.view(record, undefined, 1), entries: [] })) }; }
+  pendingSummary() { return { conversations: this.options.repository.listPendingStates().map(record => pendingConversationSummary(this.summaryView(record))) }; }
+  pending(): { conversations: ConversationView[] } { return { conversations: this.options.repository.listPendingStates().map(record => this.summaryView(record)) }; }
   listAll(workspaceIds:string[],input:{draftConversationIds?:string[];workspaceId?:string;activeOnly?:boolean;active?:boolean;attention?:boolean;hidden?:boolean;query?:string;agent?:string;model?:string;activityState?:string;cursor?:string;limit?:number}={}) {
     if(input.workspaceId&&!workspaceIds.includes(input.workspaceId))fail('agent_workspace_missing','工作空间未登记。',404);
     const result=this.options.repository.querySummaries(workspaceIds,{...input,draftConversationIds:[...new Set(input.draftConversationIds??[])].sort(),generation:this.options.generation,query:input.query?.trim().slice(0,200),limit:bounded(input.limit,30,100)},this.options.generationAlive);
@@ -668,7 +675,7 @@ export class ConversationApplication {
     const limit=bounded(input.limit,30,100);
     const records=this.options.repository.listConversations(workspaceId,{parentConversationId:id,before:input.cursor,limit:limit+1});
     const chosen=records.slice(0,limit);
-    return {conversations:chosen.map(record=>({...this.view(record,undefined,1),entries:[]})),nextCursor:records.length>limit?`${chosen.at(-1)!.view.updatedAt}/${chosen.at(-1)!.view.id}`:undefined};
+    return {conversations:chosen.map(record=>this.summaryView(record)),nextCursor:records.length>limit?`${chosen.at(-1)!.view.updatedAt}/${chosen.at(-1)!.view.id}`:undefined};
   }
   async create(workspaceId: string, input: { cwd?: string; taskId?: string; taskLinks?:ConversationTaskLink[]; title?: string }): Promise<ConversationView> {
     const record = await this.candidate(workspaceId, input);

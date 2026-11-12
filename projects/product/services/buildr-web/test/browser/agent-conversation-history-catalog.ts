@@ -136,6 +136,10 @@ export const HISTORY_SCENARIO_CATALOG = [
     "name": "仅当前运行段悬浮，历史无嵌套卡片，结束失败停止和待回应立即恢复自然排版"
   },
   {
+    "id": "history/continuation-prompt",
+    "name": "纯接续执行轮在固定头部显示准确的原始用户输入和继接标识"
+  },
+  {
     "id": "history/reading-position",
     "name": "刷新异步排版与输入框增高始终贴底，主动上翻保留阅读位置"
   },

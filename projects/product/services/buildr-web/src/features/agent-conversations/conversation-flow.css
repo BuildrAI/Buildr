@@ -35,6 +35,7 @@
 .ac-turn-content>.ac-assistant-reply{border:0;padding:0;margin-bottom:14px}
 .ac-thread-actions>.ac-stop-button.ant-btn{width:auto;padding-inline:8px;gap:5px;font-size: var(--font-size-body);color:var(--soft-primary,#397d74)}
 .ac-turn-prompt .ac-input-diagnostic{display:block;color:#a2742e;font-size: var(--font-size-body);line-height:1.6;margin-top:6px}
+.ac-turn-prompt .ac-continuation-prompt-label{display:block;color:var(--soft-secondary,#6f7782);font-size:var(--font-size-meta);line-height:1.5;margin-top:6px}
 @keyframes ac-execution-breathe{0%,100%{opacity:.4;box-shadow:0 0 0 0 color-mix(in srgb,currentColor 0%,transparent)}50%{opacity:1;box-shadow:0 0 0 4px color-mix(in srgb,currentColor 12%,transparent)}}
 @media(prefers-reduced-motion:reduce){.ac-execution-indicator.is-active .ac-execution-light{animation:none;opacity:.8}}
 

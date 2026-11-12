@@ -234,7 +234,7 @@ export class ConversationRepository {
     if (!fs.existsSync(this.filename)) return;
     const db = this.open(true)!;
     try {
-      for (const row of db.prepare('SELECT c.id FROM conversations c LEFT JOIN conversation_read_states s ON c.id=s.id LEFT JOIN conversation_participation p ON p.id=c.id WHERE s.message_revision IS NULL OR s.message_revision<>c.revision OR p.revision IS NULL OR p.revision<>c.revision').all() as Array<{id:string}>) this.queueReadRepair(row.id);
+      for (const row of db.prepare("SELECT c.id FROM conversations c LEFT JOIN conversation_read_states s ON c.id=s.id LEFT JOIN conversation_participation p ON p.id=c.id WHERE s.message_revision IS NULL OR s.message_revision<>c.revision OR json_extract(s.state,'$.continuationVersion') IS NOT 1 OR p.revision IS NULL OR p.revision<>c.revision").all() as Array<{id:string}>) this.queueReadRepair(row.id);
     } finally { db.close(); }
   }
   stopReadModels(): void { this.stopped = true; this.repairs.clear(); }
@@ -262,8 +262,8 @@ export class ConversationRepository {
       if (current?.revision === record.view.revision) {
         // Ordinary saves already commit the header and entries atomically. The
         // queued participation refresh must not rewrite that canonical history.
-        const messages = db.prepare('SELECT revision,message_revision FROM conversation_read_states WHERE id=?').get(id) as {revision:string;message_revision:string|null}|undefined;
-        if (messages?.revision !== current.revision || messages.message_revision !== current.revision) {
+        const messages = db.prepare("SELECT revision,message_revision,json_extract(state,'$.continuationVersion') AS continuation_version FROM conversation_read_states WHERE id=?").get(id) as {revision:string;message_revision:string|null;continuation_version:number|null}|undefined;
+        if (messages?.revision !== current.revision || messages.message_revision !== current.revision || messages.continuation_version !== 1) {
           ConversationReadModel.saveHeader(db, record);
           ConversationReadModel.saveEntries(db, record);
         }

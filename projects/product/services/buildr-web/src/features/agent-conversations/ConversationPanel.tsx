@@ -659,7 +659,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
   const modelWarning=conversationModelWarning(context.modelCatalogReady,choice.modelAccountId,selectedSourceModel);
   const actionError=conversationActionError(error||(replyFailure&&!confirmedConversationReply(chat,replyFailure.attempt)?replyFailure.message:'')||(needsDefaultRoot?defaultRootError:''),modelWarning);
   const connectionWarning=context.streamError&&needsConversationObservation(chat)&&run?.status!=='unknown'&&<Alert className="ac-stream-disconnect" type="warning" showIcon message="实时连接正在恢复" description={context.streamError.replace(/^对话连接已中断[；;]\s*/,'')} action={<Button type="text" size="small" loading={observing} onClick={()=>void observe()}>重新连接并核对</Button>}/>;
-  const turns=useMemo(()=>conversationStreamTurns(transcript),[transcript]);
+  const turns=useMemo(()=>conversationStreamTurns(transcript,[...(chat?.retainedRuns??[]),...(run?[run]:[])]),[transcript,chat?.retainedRuns,run]);
   const turnIdentity=(entry:ConversationEntry|undefined)=>{
     if(!entry)return '';
     const {participant,run:boundRun}=conversationTurnBinding(entry,chat);
@@ -738,7 +738,7 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
           {turns.map((turn,index)=>{
             const first=turn.items.find(item=>item.type==='process-block'||item.type==='entry'&&item.entry.role==='assistant');
             const assistant=first?.type==='process-block'?first.entries[0]:first?.entry;
-            const prompt=turn.prompt;
+            const prompt=turn.prompt,shownPrompt=prompt??turn.continuedFrom?.prompt;
             const execution=conversationTurnExecution(turn,run);
             const executing=index===turns.length-1&&execution.active;
             const processKeys=turn.items.flatMap(item=>item.type==='process-block'?[...(!item.active?[processBlockKey(item.entries)]:[]),...item.entries.filter(entry=>entry.kind==='tool').flatMap(entry=>['tool-group:'+entry.id,'tool:'+entry.id])]:[]);
@@ -746,16 +746,16 @@ export function ConversationPanel({workspaces,defaultWorkspaceId,portalTarget,em
             const settled=turn.items.filter(item=>item.type==='process-block'&&!item.active);
             const hasSupplement=turn.items.some(item=>item.type==='entry'&&item.entry.kind==='message'&&item.entry.role==='user');
             const hasProcess=turn.items.some(item=>item.type==='process-block');
-            const turnExpansionKey='turn:'+(prompt?.runId??assistant?.runId??turn.key);
+            const turnExpansionKey='turn:'+(execution.current?run?.id:assistant?.runId??prompt?.runId??turn.key);
             const turnExpanded=expandedToolGroups[turnExpansionKey]??(execution.active||turn.items.some(item=>item.type==='process-block'&&item.active)||hasExpandedProcess);
             const turnRuns=[...(chat.retainedRuns??[]),...(run?[run]:[])];
             const timing=conversationTurnTiming(turn,turnRuns);
             /* A released run may have ended without a verified outcome; the current
                run keeps its own prominent notice, so only recalled turns need this. */
-            const turnRun=turnRuns.find(value=>value.id===(prompt?.runId??assistant?.runId));
+            const turnRun=turnRuns.find(value=>value.id===(execution.current?run?.id:assistant?.runId??prompt?.runId));
             const turnPaused=Boolean(stoppedOutput&&stoppedOutput.workspaceId===chat.workspaceId&&stoppedOutput.conversationId===chat.id&&(stoppedOutput.runIds??[stoppedOutput.runId]).includes(turnRun?.id??''));
             const unverified=Boolean(turnRun&&turnRun.status==='unknown'&&!execution.current&&!turnRun.supersededBy);
-            return <ConversationTurn key={turn.key} id={turn.key} runId={execution.current?run?.id:assistant?.runId||prompt?.runId} prompt={prompt?{id:prompt.id,text:prompt.text,images:prompt.attachments?.length?<ConversationMessageImages conversation={chat} ids={prompt.attachments} read={context.api.readImage}/>:undefined,diagnostic:prompt.deliveryDiagnostic?<small className="ac-input-diagnostic" role="status">{prompt.deliveryDiagnostic}</small>:prompt.status==='unknown'&&(execution.current||turnExpanded)?<Tag color={execution.current?'warning':'default'}>{execution.current?'是否送达待确认':'历史送达未确认'}</Tag>:undefined}:undefined}
+            return <ConversationTurn key={turn.key} id={turn.key} runId={execution.current?run?.id:assistant?.runId||prompt?.runId} prompt={shownPrompt?{id:shownPrompt.id,text:shownPrompt.text,images:shownPrompt.attachments?.length?<ConversationMessageImages conversation={chat} ids={shownPrompt.attachments} read={context.api.readImage}/>:undefined,diagnostic:prompt?(prompt.deliveryDiagnostic?<small className="ac-input-diagnostic" role="status">{prompt.deliveryDiagnostic}</small>:prompt.status==='unknown'&&(execution.current||turnExpanded)?<Tag color={execution.current?'warning':'default'}>{execution.current?'是否送达待确认':'历史送达未确认'}</Tag>:undefined):<small className="ac-continuation-prompt-label">继续上次要求</small>}:undefined}
               onCollapseProcess={processKeys.some(key=>expandedToolGroups[key]===true)?()=>setExpandedToolGroups(previous=>({...previous,...Object.fromEntries(processKeys.map(key=>[key,false]))})):undefined} collapseLabel={hasExpandedProcess?'收起处理过程':'收起工具调用'} identity={execution.current?runIdentity:turnIdentity(assistant||prompt)} executing={executing&&!turnPaused} startedAt={timing.startedAt} finishedAt={timing.finishedAt} processExpanded={turnExpanded} onToggleProcess={hasProcess||hasSupplement?()=>setExpandedToolGroups(previous=>({...previous,[turnExpansionKey]:!turnExpanded,...Object.fromEntries(settled.flatMap(item=>item.type==='process-block'?[[processBlockKey(item.entries),!turnExpanded]]:[]))})):undefined}>
               {executing&&execution.waiting&&<small className="ac-input-diagnostic" role="status">{execution.waiting}</small>}
               {unverified&&turnExpanded&&<small className="ac-input-diagnostic" title={turnRun?.diagnostic}>{turnRun?.attentionSettled?'历史执行提醒已结束；原记录仍保留。':<>历史执行结果未确认，不影响当前对话。原记录保留在可展开的处理过程中。{canSettleRetainedRun(chat,turnRun)&&<Button type="link" size="small" loading={Boolean(chat&&actions.has(actionKey(chat,'settle-retained',turnRun!.id)))} onClick={()=>void settleRetained(turnRun!)} title="仅结束提醒：原执行结果仍未知，不终止可能仍在运行的进程，不会重发原操作。">结束提醒</Button>}</>}</small>}

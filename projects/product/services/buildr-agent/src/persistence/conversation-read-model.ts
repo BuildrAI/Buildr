@@ -2,10 +2,14 @@ import type { NativeContentReader } from '../storage/native-content.ts';
 import { ConversationEntryStore, type PreparedEntries } from './conversation-entry-store.ts';
 import { createHash } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
-import type { ConversationEntry } from '../contracts.ts';
-import { unfinishedRun, type StoredConversation } from '../domain/agent-state.ts';
+import type { ConversationEntry, RunView } from '../contracts.ts';
+import { conversationRuns, unfinishedRun, type StoredConversation } from '../domain/agent-state.ts';
+import { continuationPrompt } from '../domain/conversation-continuation.ts';
 
-export type ConversationReadState = Pick<StoredConversation, 'view' | 'participants' | 'attachments'>;
+export type ConversationReadState = Pick<StoredConversation, 'view' | 'participants' | 'attachments'> & {
+  continuations?: Record<string, NonNullable<RunView['continuedFrom']>>;
+  continuationVersion?: 1;
+};
 const busy = "('starting','running','waiting-approval','waiting-question','stopping','unknown','tools-active')";
 const tools = (value: string) => `EXISTS(SELECT 1 FROM json_each(${value},'$.tools') AS pending_tool WHERE coalesce(json_extract(pending_tool.value,'$.status'),'unknown')<>'completed')`;
 const retained = `EXISTS(SELECT 1 FROM json_each(NEW.body,'$.view.retainedRuns') AS retained_run WHERE json_extract(retained_run.value,'$.status') IN ${busy} OR ${tools('retained_run.value')})`;
@@ -43,12 +47,16 @@ export class ConversationReadModel {
       END;
       COMMIT;`);
   }
-  static saveHeader(db: DatabaseSync, record: ConversationReadState): void {
+  static saveHeader(db: DatabaseSync, record: StoredConversation): void {
     const view = record.view;
     const common = view.requests.length > 0 || view.retainedRuns?.some(unfinishedRun) || view.run?.tools.some(tool => tool.status !== 'completed');
+    const continuations = Object.fromEntries(conversationRuns(view).flatMap(run => {
+      const continuation = continuationPrompt(record, run.id);
+      return continuation ? [[run.id, continuation]] : [];
+    }));
     db.prepare(`INSERT INTO conversation_read_states(id,revision,updated_at,state,pending,active,title_work) VALUES(?,?,?,?,?,?,?)
       ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,updated_at=excluded.updated_at,state=excluded.state,pending=excluded.pending,active=excluded.active,title_work=excluded.title_work,message_revision=NULL`).run(
-      view.id, view.revision, view.updatedAt, JSON.stringify({view: {...view, entries: []}, participants: record.participants, attachments: record.attachments}),
+      view.id, view.revision, view.updatedAt, JSON.stringify({view: {...view, entries: []}, participants: record.participants, attachments: record.attachments, continuations, continuationVersion: 1}),
       Number(Boolean(common || ['unknown', 'tools-active'].includes(view.run?.status ?? ''))),
       Number(Boolean(common || view.run && unfinishedRun(view.run))), Number(view.titleState?.status === 'generating'));
   }
@@ -170,6 +178,11 @@ export class ConversationReadModel {
       record.view.entries = rows.map(row => JSON.parse(row.body));
     }
     record.view.nextEntryCursor = nextEntryCursor;
+    if (record.continuationVersion !== 1) {
+      const runs = new Set(record.view.entries.flatMap(entry => entry.runId ? [entry.runId] : []));
+      const prompts = new Set(record.view.entries.filter(entry => entry.runId && entry.kind === 'message' && entry.role === 'user').map(entry => entry.runId!));
+      if ([...runs].some(runId => !prompts.has(runId))) return;
+    }
     return record;
   }
 }
